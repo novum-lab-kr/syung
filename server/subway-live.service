@@ -1,0 +1,16 @@
+[Unit]
+Description=Nol-meok Seoul subway realtime cache proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/subway-live-map
+EnvironmentFile=-/etc/subway-live.env
+ExecStart=/usr/bin/python3 /opt/subway-live-map/server/subway_live_proxy.py
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

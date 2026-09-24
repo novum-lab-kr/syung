@@ -1,0 +1,17 @@
+# raw sources and caches (large; rebuilt by pipeline/)
+data/ktdb-gtfs-2025/202503_GTFS_DataSet/
+data/ktdb-gtfs-2025/*.zip
+data/ktdb-gtfs-2025/*.xlsx
+data/ktdb-gtfs-2025/*.pdf
+data/osm-tracks/line-*.json
+data/osm-tracks/relations.json
+data/osm-tracks/stations.json
+data/osm-tracks/roads/
+data/live-samples/
+build/
+# secrets
+*.env
+!*.env.example
+__pycache__/
+*.pyc
+*.pre-*

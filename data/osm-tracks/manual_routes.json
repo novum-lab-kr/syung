@@ -1,0 +1,3 @@
+{
+ "_comment": "Hand-picked track courses where OSM's tunnel geometry is too coarse. Key: line|from station|to station; interior waypoints only (ends snap to the stops)."
+}
