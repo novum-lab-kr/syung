@@ -1018,14 +1018,15 @@ function updateSun(){
     for(const ring of rings){
       if(!ring||ring.length<3)continue;
       const key=ring[0][0].toFixed(6)+ring[0][1].toFixed(6)+h;if(seen.has(key))continue;seen.add(key);
-      const len=Math.min(600,h*k),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
+      // real low-sun shadows run ~10× the height; on a map that blankets whole blocks, so cap at 3.5× height / 250 m
+      const len=Math.min(250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
       const pts=[];for(const [x,y] of ring){pts.push([x,y]);pts.push([x+dx,y+dy])}
       const hp=hull(pts).map(q=>{const m=maplibregl.MercatorCoordinate.fromLngLat(q);return [m.x-O.x,m.y-O.y]});
       for(let i=1;i<hp.length-1;i++)tris.push(...hp[0],...hp[i],...hp[i+1]);   // convex hull → triangle fan
     }
   }
   // fade in over the first ~8° after sunrise (and out before sunset): very long low-sun shadows get cut off otherwise
-  const fade=Math.max(0,Math.min(1,(el-1)/7));
+  const fade=Math.max(0,Math.min(1,(el-2)/13));   // fade in over the first ~15° after sunrise, out before sunset
   sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(.34,.14+el/150)*fade*(dark?.55:1));
   map.triggerRepaint();
 }
