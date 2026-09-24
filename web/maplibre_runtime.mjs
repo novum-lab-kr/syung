@@ -852,7 +852,7 @@ map.on('load',()=>{
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();{const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
-  map.getContainer().append(tagLayer);map.on('render',updateTrainTags);
+  map.getContainer().append(tagLayer,sunBadge);map.on('render',updateTrainTags);
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
@@ -941,7 +941,31 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   b.onclick=()=>{themeChoice={auto:'light',light:'dark',dark:'auto'}[themeChoice]||'auto';try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
   $('toggleTrains').after(b);
 }
-setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
+setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun();updateSunBadge()},5*60*1000);
+
+// ---- sunrise / sunset badge (bottom right) -------------------------------------------------
+// A tiny sky: horizon line, the day's arc, and the sun at its place along it (the moon below at night).
+const sunBadge=document.createElement('div');sunBadge.className='sun-badge';sunBadge.setAttribute('role','img');
+document.head.insertAdjacentHTML('beforeend',`<style>
+.sun-badge{position:absolute;z-index:5;right:64px;bottom:18px;display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border:1px solid #8e9b9f;border-radius:4px;background:#fff;color:#33434a;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.sun-badge svg{display:block}
+html[data-theme=dark] .sun-badge{background:#152026;color:#dbe5e8;border-color:#3a4b52}
+@media (max-width:720px),(pointer:coarse){.sun-badge .times{display:none}.sun-badge{padding:3px 5px}}
+</style>`);
+function updateSunBadge(){
+  const now=window.__sunTime||new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
+  const day=now>=rise&&now<set,t=day?(now-rise)/(set-rise):0;
+  const W=34,H=20,cx=W/2,cy=H-3,R=13;let x,y,body;
+  if(day){const a=Math.PI*(1-t);x=cx+R*Math.cos(a);y=cy-R*Math.sin(a);
+    body=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/>`}
+  else{x=cx;y=cy+.5;body=`<path d="M${cx+2.6} ${cy-7.5}a4 4 0 1 0 2.6 6.4a3.2 3.2 0 1 1-2.6-6.4z" fill="#9fb4c8"/>`}
+  sunBadge.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <path d="M${cx-R} ${cy}A${R} ${R} 0 0 1 ${cx+R} ${cy}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.2" stroke-dasharray="2 2"/>
+    <line x1="2" y1="${cy}" x2="${W-2}" y2="${cy}" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/>${body}</svg>
+    <span class="times">일출 ${hm(rise)} · 일몰 ${hm(set)}</span>`;
+  const label=`서울 일출 ${hm(rise)}, 일몰 ${hm(set)} (${day?'낮':'밤'})`;sunBadge.title=label;sunBadge.setAttribute('aria-label',label);
+}
+updateSunBadge();
 
 // ---- sun light and shadows ----------------------------------------------------------------
 // Real-time sun position over Seoul drives building face lighting (map light) and ground shadows:
@@ -1089,4 +1113,4 @@ map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels
 setInterval(()=>{if(!document.hidden)refreshLive(true)},20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,refreshLive,updateSun,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
+window.__subwayWebGL={map,refreshLive,updateSun,updateSunBadge,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
