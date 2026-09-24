@@ -482,7 +482,9 @@ class TrainLayer{
       if(pose.moving)animating=true;
       const previous=lastPose.get(plan.id);
       if(previous){previous.x=mid.x+shiftX;previous.y=mid.y+shiftY}else lastPose.set(plan.id,{x:mid.x+shiftX,y:mid.y+shiftY});
-      if(mid.x<lo.x-pad||mid.x>hi.x+pad||mid.y>lo.y+pad||mid.y<hi.y-pad)continue;
+      // off-screen test with the train's half length as margin: zoomed in, a train is longer than the screen
+      const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit)/2+lanePx*unit;
+      if(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach)continue;
       const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit),car=total/n,tail=pose.dist-total/2;
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
       const P=d=>{const q=trackPoint(plan,d);q.x+=shiftX;q.y+=shiftY;return q};
@@ -794,7 +796,8 @@ function liveLines(){
   for(const s of stations)if(b.contains([s.lon,s.lat]))for(const x of s.lines)n[x.name]=(n[x.name]||0)+1;
   // also lines merely passing through the view (no station inside it)
   const c=map.getCenter();
-  const w=(b.getEast()-b.getWest())*.75,h=(b.getNorth()-b.getSouth())*.75;
+  // lines passing through the view: stations within 0.75 view or at least ~1.5 km of the centre (zoomed in the view is tiny)
+  const w=Math.max((b.getEast()-b.getWest())*.75,.019),h=Math.max((b.getNorth()-b.getSouth())*.75,.0135);
   for(const s of stations)if(Math.abs(s.lon-c.lng)<w&&Math.abs(s.lat-c.lat)<h)for(const x of s.lines)n[x.name]??=.5;
   return Object.keys(n).sort((x,y)=>n[y]-n[x]).slice(0,LIVE_MAX_LINES);
 }
