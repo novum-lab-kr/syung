@@ -846,6 +846,7 @@ map.on('load',()=>{
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
+  map.on('rotate',()=>{if(themeChoice==='auto'){const b=$('toggleTheme');if(b){const sa=sunArcIcon();b.innerHTML=sa.svg}}});
   {const g=document.createElement('div');g.className='maplibregl-ctrl maplibregl-ctrl-group';g.append($('toggleMap'),$('toggleTrains'),$('toggleTheme'));map.getContainer().querySelector('.maplibregl-ctrl-top-right').append(g)}
   // recompute shadows when the view settles or building tiles arrive (debounced)
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(updateSun,400)};
@@ -950,23 +951,24 @@ setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 // ---- sun position icon (theme button in 자동) -------------------------------------------------
 // Horizon, the day's arc filled up to the sun's place (moon + night progress after sunset).
 function sunArcIcon(){
+  // Top-down: the ring is the horizon around "here"; the sun sits at its compass bearing as seen on the
+  // map (rotates with the map), nearer the centre the higher it is; the stub from the centre is the
+  // shadow, pointing the same way as the building shadows.
   const now=window.__sunTime||new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
-  const day=now>=rise&&now<set;
-  // night progress: from the last sunset to the next sunrise
-  let t;
-  if(day)t=(now-rise)/(set-rise);
-  else{const prevSet=now<rise?seoulSun(new Date(now-864e5)).set:set,nextRise=now<rise?rise:seoulSun(new Date(+now+864e5)).rise;t=(now-prevSet)/(nextRise-prevSet)}
-  t=Math.max(0,Math.min(1,t));
-  const W=34,H=20,cx=W/2,cy=H-3,R=13,a=Math.PI*(1-t),x=cx+R*Math.cos(a),y=cy-R*Math.sin(a),f=n=>n.toFixed(1);
-  const done=`M${cx-R} ${cy}A${R} ${R} 0 0 1 ${f(x)} ${f(y)}`;
-  const tint=day?'#f5a524':'#7f97b0',body=day
-    ?`<circle cx="${f(x)}" cy="${f(y)}" r="3.6" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/>`
-    :`<path d="M${f(x+1.6)} ${f(y-3.6)}a3.8 3.8 0 1 0 2.4 6.2a3 3 0 1 1-2.4-6.2z" fill="#b8c9da" stroke="#7f97b0" stroke-width=".6"/>`;
-  return {svg:`<svg width="24" height="15" viewBox="0 0 ${W} ${H}" aria-hidden="true">
-    <path d="${done}L${f(x)} ${cy}Z" fill="${tint}" fill-opacity=".22"/>
-    <path d="M${cx-R} ${cy}A${R} ${R} 0 0 1 ${cx+R} ${cy}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.2" stroke-dasharray="2 2"/>
-    <path d="${done}" fill="none" stroke="${tint}" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="2" y1="${cy}" x2="${W-2}" y2="${cy}" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/>${body}</svg>`,rise:hm(rise),set:hm(set),day};
+  const {elevation:el,azimuth:az}=sunPosition(now),day=el>0,f=n=>n.toFixed(1);
+  const S=22,c=S/2,R=8.5,ang=(az-(ready?map.getBearing():0))*Math.PI/180,r=R*(1-Math.max(0,Math.min(90,el))/90*.75);
+  const sx=c+Math.sin(ang)*r,sy=c-Math.cos(ang)*r,len=day?Math.min(7,1.2/Math.tan(Math.max(4,el)*Math.PI/180)*3):0;
+  const hx=c-Math.sin(ang)*len,hy=c+Math.cos(ang)*len;
+  const svg=day
+    ?`<svg width="22" height="22" viewBox="0 0 ${S} ${S}" aria-hidden="true">
+       <circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.1" stroke-dasharray="2 1.6"/>
+       <line x1="${c}" y1="${c}" x2="${f(hx)}" y2="${f(hy)}" stroke="currentColor" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"/>
+       <circle cx="${c}" cy="${c}" r="1.4" fill="currentColor"/>
+       <circle cx="${f(sx)}" cy="${f(sy)}" r="3.2" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/></svg>`
+    :`<svg width="22" height="22" viewBox="0 0 ${S} ${S}" aria-hidden="true">
+       <circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="1.1" stroke-dasharray="2 1.6"/>
+       <path d="M${c+1.8} ${c-5}a5 5 0 1 0 3.3 8.3a4 4 0 1 1-3.3-8.3z" fill="#b8c9da" stroke="#7f97b0" stroke-width=".7"/></svg>`;
+  return {svg,rise:hm(rise),set:hm(set),day};
 }
 
 // ---- sun light and shadows ----------------------------------------------------------------
