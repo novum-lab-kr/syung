@@ -640,7 +640,7 @@ function showTrainPopup(plan){
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
 // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
 function pickTrain(point){
-  if(!trainsEnabled||map.getZoom()<LIVE_ZOOM)return null;
+  if(!trainsEnabled||!liveOn)return null;
   const unit=1/(512*2**map.getZoom());let best=null;
   for(const plan of plans){
     const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
@@ -784,9 +784,11 @@ function filterLine(line){
 // Live trains show from zoom 13 for every line on screen (or just the selected line). The proxy
 // serves all lines from one cached upstream call, so the number of lines requested is free.
 const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
-let liveKey='',liveAt=0,liveFetchedAt=null;
+let liveOn=false,liveKey='',liveAt=0,liveFetchedAt=null;
 function liveLines(){
-  if(map.getZoom()<LIVE_ZOOM)return [];
+  // hysteresis: trains appear at zoom 13 but only disappear below 12.5, so pinching around 13 doesn't blink them
+  liveOn=map.getZoom()>=LIVE_ZOOM||(liveOn&&map.getZoom()>=LIVE_ZOOM-.5);
+  if(!liveOn)return [];
   if(selected!=='all')return [selected];
   const b=map.getBounds(),n={};
   for(const s of stations)if(b.contains([s.lon,s.lat]))for(const x of s.lines)n[x.name]=(n[x.name]||0)+1;
@@ -800,7 +802,7 @@ async function refreshLive(force=false){
   const lines=liveLines();
   if(!lines.length){
     liveRequest++;liveKey='';if(plans.length){trains=[];plans=[];lastPose.clear();map.triggerRepaint()}
-    liveState.textContent=map.getZoom()<LIVE_ZOOM?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
+    liveState.textContent=!liveOn?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
     return;
   }
   const key=lines.join(',');
