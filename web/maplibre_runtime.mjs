@@ -1032,7 +1032,9 @@ function updateSun(){
   }
   // fade in over the first ~8° after sunrise (and out before sunset): very long low-sun shadows get cut off otherwise
   const fade=Math.max(0,Math.min(1,(el-2)/13));   // fade in over the first ~15° after sunrise, out before sunset
-  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(.34,.14+el/150)*fade*(dark?.55:1));
+  // phones: small bright screens make the same shade read much darker, so lighten it there
+  const phone=matchMedia('(max-width:720px),(pointer:coarse)').matches?.6:1;
+  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(.34,.14+el/150)*fade*(dark?.55:1)*phone);
   map.triggerRepaint();
 }
 
