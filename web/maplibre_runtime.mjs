@@ -852,7 +852,7 @@ map.on('load',()=>{
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();{const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
-  map.getContainer().append(tagLayer,sunBadge);map.on('render',updateTrainTags);
+  map.getContainer().append(tagLayer);map.on('render',updateTrainTags);
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
@@ -911,7 +911,11 @@ function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=n
 function applyTheme(){
   const t=effectiveTheme(),P=MAP_THEMES[t];
   document.documentElement.dataset.theme=t;
-  const btn=$('toggleTheme');if(btn)iconButton(btn,themeChoice==='auto'?'auto':t==='dark'?'moon':'sun',themeChoice==='auto'?`테마: 자동 (지금 ${t==='dark'?'다크':'라이트'}) · 눌러서 라이트로`:t==='dark'?'테마: 다크 · 눌러서 자동으로':'테마: 라이트 · 눌러서 다크로');
+  const btn=$('toggleTheme');
+  if(btn){
+    if(themeChoice==='auto'){const sa=sunArcIcon(),label=`테마: 자동 (지금 ${t==='dark'?'다크':'라이트'}) · 일출 ${sa.rise} · 일몰 ${sa.set} · 눌러서 라이트로`;btn.innerHTML=sa.svg;btn.setAttribute('aria-label',label);btn.title=label}
+    else iconButton(btn,t==='dark'?'moon':'sun',t==='dark'?'테마: 다크 · 눌러서 자동으로':'테마: 라이트 · 눌러서 다크로');
+  }
   if(!ready)return;
   const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
   set('background','background-color',P.bg);map.triggerRepaint();
@@ -941,18 +945,11 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   b.onclick=()=>{themeChoice={auto:'light',light:'dark',dark:'auto'}[themeChoice]||'auto';try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
   $('toggleTrains').after(b);
 }
-setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun();updateSunBadge()},5*60*1000);
+setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
-// ---- sunrise / sunset badge (bottom right) -------------------------------------------------
-// A tiny sky: horizon line, the day's arc, and the sun at its place along it (the moon below at night).
-const sunBadge=document.createElement('div');sunBadge.className='sun-badge';sunBadge.setAttribute('role','img');
-document.head.insertAdjacentHTML('beforeend',`<style>
-.sun-badge{position:absolute;z-index:5;right:64px;bottom:18px;display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border:1px solid #8e9b9f;border-radius:4px;background:#fff;color:#33434a;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
-.sun-badge svg{display:block}
-html[data-theme=dark] .sun-badge{background:#152026;color:#dbe5e8;border-color:#3a4b52}
-@media (max-width:720px),(pointer:coarse){.sun-badge .times{display:none}.sun-badge{padding:3px 5px}}
-</style>`);
-function updateSunBadge(){
+// ---- sun position icon (theme button in 자동) -------------------------------------------------
+// Horizon, the day's arc filled up to the sun's place (moon + night progress after sunset).
+function sunArcIcon(){
   const now=window.__sunTime||new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
   const day=now>=rise&&now<set;
   // night progress: from the last sunset to the next sunrise
@@ -965,15 +962,12 @@ function updateSunBadge(){
   const tint=day?'#f5a524':'#7f97b0',body=day
     ?`<circle cx="${f(x)}" cy="${f(y)}" r="3.6" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/>`
     :`<path d="M${f(x+1.6)} ${f(y-3.6)}a3.8 3.8 0 1 0 2.4 6.2a3 3 0 1 1-2.4-6.2z" fill="#b8c9da" stroke="#7f97b0" stroke-width=".6"/>`;
-  sunBadge.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+  return {svg:`<svg width="24" height="15" viewBox="0 0 ${W} ${H}" aria-hidden="true">
     <path d="${done}L${f(x)} ${cy}Z" fill="${tint}" fill-opacity=".22"/>
     <path d="M${cx-R} ${cy}A${R} ${R} 0 0 1 ${cx+R} ${cy}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.2" stroke-dasharray="2 2"/>
     <path d="${done}" fill="none" stroke="${tint}" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="2" y1="${cy}" x2="${W-2}" y2="${cy}" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/>${body}</svg>
-    <span class="times">일출 ${hm(rise)} · 일몰 ${hm(set)}</span>`;
-  const label=`서울 일출 ${hm(rise)}, 일몰 ${hm(set)} (${day?'낮':'밤'})`;sunBadge.title=label;sunBadge.setAttribute('aria-label',label);
+    <line x1="2" y1="${cy}" x2="${W-2}" y2="${cy}" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/>${body}</svg>`,rise:hm(rise),set:hm(set),day};
 }
-updateSunBadge();
 
 // ---- sun light and shadows ----------------------------------------------------------------
 // Real-time sun position over Seoul drives building face lighting (map light) and ground shadows:
@@ -1121,4 +1115,4 @@ map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels
 setInterval(()=>{if(!document.hidden)refreshLive(true)},20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,refreshLive,updateSun,updateSunBadge,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
+window.__subwayWebGL={map,refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
