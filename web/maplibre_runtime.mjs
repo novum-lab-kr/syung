@@ -954,13 +954,21 @@ html[data-theme=dark] .sun-badge{background:#152026;color:#dbe5e8;border-color:#
 </style>`);
 function updateSunBadge(){
   const now=window.__sunTime||new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
-  const day=now>=rise&&now<set,t=day?(now-rise)/(set-rise):0;
-  const W=34,H=20,cx=W/2,cy=H-3,R=13;let x,y,body;
-  if(day){const a=Math.PI*(1-t);x=cx+R*Math.cos(a);y=cy-R*Math.sin(a);
-    body=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/>`}
-  else{x=cx;y=cy+.5;body=`<path d="M${cx+2.6} ${cy-7.5}a4 4 0 1 0 2.6 6.4a3.2 3.2 0 1 1-2.6-6.4z" fill="#9fb4c8"/>`}
+  const day=now>=rise&&now<set;
+  // night progress: from the last sunset to the next sunrise
+  let t;
+  if(day)t=(now-rise)/(set-rise);
+  else{const prevSet=now<rise?seoulSun(new Date(now-864e5)).set:set,nextRise=now<rise?rise:seoulSun(new Date(+now+864e5)).rise;t=(now-prevSet)/(nextRise-prevSet)}
+  t=Math.max(0,Math.min(1,t));
+  const W=34,H=20,cx=W/2,cy=H-3,R=13,a=Math.PI*(1-t),x=cx+R*Math.cos(a),y=cy-R*Math.sin(a),f=n=>n.toFixed(1);
+  const done=`M${cx-R} ${cy}A${R} ${R} 0 0 1 ${f(x)} ${f(y)}`;
+  const tint=day?'#f5a524':'#7f97b0',body=day
+    ?`<circle cx="${f(x)}" cy="${f(y)}" r="3.6" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/>`
+    :`<path d="M${f(x+1.6)} ${f(y-3.6)}a3.8 3.8 0 1 0 2.4 6.2a3 3 0 1 1-2.4-6.2z" fill="#b8c9da" stroke="#7f97b0" stroke-width=".6"/>`;
   sunBadge.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <path d="${done}L${f(x)} ${cy}Z" fill="${tint}" fill-opacity=".22"/>
     <path d="M${cx-R} ${cy}A${R} ${R} 0 0 1 ${cx+R} ${cy}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.2" stroke-dasharray="2 2"/>
+    <path d="${done}" fill="none" stroke="${tint}" stroke-width="1.8" stroke-linecap="round"/>
     <line x1="2" y1="${cy}" x2="${W-2}" y2="${cy}" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/>${body}</svg>
     <span class="times">일출 ${hm(rise)} · 일몰 ${hm(set)}</span>`;
   const label=`서울 일출 ${hm(rise)}, 일몰 ${hm(set)} (${day?'낮':'밤'})`;sunBadge.title=label;sunBadge.setAttribute('aria-label',label);
