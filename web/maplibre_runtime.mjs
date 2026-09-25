@@ -678,7 +678,7 @@ function layoutLabels(){
     let dx=p1.x-p0.x,dy=p1.y-p0.y;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
     const nx=-dy,ny=dx,cx=(p0.x+p1.x)/2+nx*r.offset,cy=(p0.y+p1.y)/2+ny*r.offset;   // line-offset: right of drawing direction
     let ang=Math.atan2(dy,dx);if(ang>Math.PI/2)ang-=Math.PI;else if(ang<-Math.PI/2)ang+=Math.PI;
-    const tw=measure(item.text,font),bw=Math.max(len*(r.plat||1),tw+10);
+    const tw=measure(item.text,font),bw=Math.max(len,tw+10);
     const ex=(Math.abs(Math.cos(ang))*bw+Math.abs(Math.sin(ang))*hgt)/2,ey=(Math.abs(Math.sin(ang))*bw+Math.abs(Math.cos(ang))*hgt)/2;
     const box=[cx-ex,cy-ey,cx+ex,cy+ey];
     if(box[2]<0||box[0]>cw||box[3]<0||box[1]>ch||placed.some(o=>box[0]<o[2]&&box[2]>o[0]&&box[1]<o[3]&&box[3]>o[1]))continue;
@@ -748,8 +748,7 @@ void main(){
       const cx=(p0.x+p1.x)/2-dy*r.offset,cy=(p0.y+p1.y)/2+dx*r.offset;if(cx<-60||cy<-60||cx>cw+60||cy>ch+60)continue;
       if(pointsOnly)quad(cx,cy,0,dot,dot,[0,0,0,0],hexRGB3(colors[line]||'#52646a'),0,0);
       else{const h=platformPx(r,hgt),col=hexRGB3(colors[line]||'#52646a'),a=Math.atan2(dy,dx);
-        if(r.plat<.95){const faint=col.map(c=>c*.45+(document.documentElement.dataset.theme==='dark'?.08:.55));quad(cx,cy,a,Math.max(len,h*.5),h*.5,[0,0,0,0],faint,0,0)}   // passages out to the exits
-        quad(cx,cy,a,Math.max(len*r.plat,h),h,[0,0,0,0],col,0,0)}   // platform
+        quad(cx,cy,a,Math.max(len,h),h,[0,0,0,0],col,0,0)}   // one box: platform and passages out to the exits
     }
     if(!pointsOnly)for(const L of layoutLabels()){
       const uv=this.uv.get(L.item.text);if(!uv)continue;
