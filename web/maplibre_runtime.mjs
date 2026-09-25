@@ -21,7 +21,7 @@ const edgeOffset=(line,a,b)=>{const shared=[...(edgeLines.get(edgeKey(a,b))||[li
 // Real track geometry (OSM, built by build_track_shapes.py), keyed line:lo:hi and drawn lo→hi.
 // Edges without a shape fall back to a straight station-to-station segment.
 // Stops are each station projected onto that line's track, so a transfer station has one on-track point per line.
-let shapes={},stops={},stopDirs={},stopHalf={},stopWidth={};   // stopDirs: platform direction (east, north) per line:stop, along its street
+let shapes={},stops={},stopDirs={},stopHalf={},platformHalf={},stopWidth={};   // stopDirs: platform direction (east, north) per line:stop, along its street
 const stopPos=(line,s)=>stops[`${line}:${s.id}`]||[s.lon,s.lat];
 const stopMerc=new Map(),mercStop=(line,s)=>{const k=`${line}:${s.id}`;let m=stopMerc.get(k);if(!m){m=maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));stopMerc.set(k,m)}return m};
 // OSM track polylines are simplified to a few metres, which reads as kinks when zoomed in;
@@ -113,7 +113,9 @@ function buildStationFeatures(){
     const toLL=(x,y)=>[c[0]+x/(kx*M),c[1]+y/M],coords=[toLL(cxm-dx*h,cym-dy*h),toLL(cxm+dx*h,cym+dy*h)];
     // The pill runs prev→next; put it on the same parallel track as the adjoining route line.
     const ref=next?[s,next]:prev?[prev,s]:null,offset=ref?edgeOffset(line,ref[0].id,ref[1].id)*(ref[0].id<ref[1].id?1:-1):0;
-    stationRects.set(`${line}:${s.id}`,{coords,offset,widthM:stopWidth[`${line}:${s.id}`]||0});   // widthM: metres across, from the exits
+    // plat: platform share of the station length (the rest is passages out to the exits)
+    const ph=platformHalf[`${line}:${s.id}`];
+    stationRects.set(`${line}:${s.id}`,{coords,offset,widthM:stopWidth[`${line}:${s.id}`]||0,plat:ph?Math.min(1,ph/h):1});   // widthM: metres across, from the exits
     return {type:'Feature',properties:{id:s.id,name:s.name,line,lines:s.lines.map(y=>y.name).join('|'),color:colors[line],transfer:s.lines.length>1?1:0,offset},geometry:{type:'LineString',coordinates:coords}};
   }));
 }
@@ -131,7 +133,7 @@ function buildTransferFeatures(){
   return out;
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
@@ -676,7 +678,7 @@ function layoutLabels(){
     let dx=p1.x-p0.x,dy=p1.y-p0.y;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
     const nx=-dy,ny=dx,cx=(p0.x+p1.x)/2+nx*r.offset,cy=(p0.y+p1.y)/2+ny*r.offset;   // line-offset: right of drawing direction
     let ang=Math.atan2(dy,dx);if(ang>Math.PI/2)ang-=Math.PI;else if(ang<-Math.PI/2)ang+=Math.PI;
-    const tw=measure(item.text,font),bw=Math.max(len,tw+10);
+    const tw=measure(item.text,font),bw=Math.max(len*(r.plat||1),tw+10);
     const ex=(Math.abs(Math.cos(ang))*bw+Math.abs(Math.sin(ang))*hgt)/2,ey=(Math.abs(Math.sin(ang))*bw+Math.abs(Math.cos(ang))*hgt)/2;
     const box=[cx-ex,cy-ey,cx+ex,cy+ey];
     if(box[2]<0||box[0]>cw||box[3]<0||box[1]>ch||placed.some(o=>box[0]<o[2]&&box[2]>o[0]&&box[1]<o[3]&&box[3]>o[1]))continue;
@@ -745,7 +747,9 @@ void main(){
       let dx=p1.x-p0.x,dy=p1.y-p0.y;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
       const cx=(p0.x+p1.x)/2-dy*r.offset,cy=(p0.y+p1.y)/2+dx*r.offset;if(cx<-60||cy<-60||cx>cw+60||cy>ch+60)continue;
       if(pointsOnly)quad(cx,cy,0,dot,dot,[0,0,0,0],hexRGB3(colors[line]||'#52646a'),0,0);
-      else{const h=platformPx(r,hgt);quad(cx,cy,Math.atan2(dy,dx),Math.max(len,h),h,[0,0,0,0],hexRGB3(colors[line]||'#52646a'),0,0)}
+      else{const h=platformPx(r,hgt),col=hexRGB3(colors[line]||'#52646a'),a=Math.atan2(dy,dx);
+        if(r.plat<.95){const faint=col.map(c=>c*.45+(document.documentElement.dataset.theme==='dark'?.08:.55));quad(cx,cy,a,Math.max(len,h*.5),h*.5,[0,0,0,0],faint,0,0)}   // passages out to the exits
+        quad(cx,cy,a,Math.max(len*r.plat,h),h,[0,0,0,0],col,0,0)}   // platform
     }
     if(!pointsOnly)for(const L of layoutLabels()){
       const uv=this.uv.get(L.item.text);if(!uv)continue;

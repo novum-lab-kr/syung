@@ -467,6 +467,7 @@ def main(out_paths: list[Path]) -> None:
     exit_anchored = 0
     platform_matched = 0
     exit_half: dict[str, float] = {}
+    plat_half: dict[str, int] = {}
     raw_routes: dict[str, tuple[list, list]] = {}
     for line, variants in source["lines"].items():
         pattern = re.compile(LINE_PATTERNS.get(line, r"^$"))
@@ -553,7 +554,8 @@ def main(out_paths: list[Path]) -> None:
                 q = h[3]
                 # Re-centre on this line's exits: exits within EXIT_TRACK_METRES of the track, projected
                 # along it; their middle is the platform centre and their spread its length.
-                ex = [e for e in EXITS.get(str(n), []) if metres((e[0], e[1]), q) < 350]
+                # exits named after the station count along its whole passage (≤ 900 m); others only nearby
+                ex = [e for e in EXITS.get(str(n), []) if metres((e[0], e[1]), q) < (900 if len(e) > 4 and e[4] else 350)]
                 a, b = graph.coord[h[1]], graph.coord[h[2]]
                 tx, ty = _local(b, a)
                 tl = math.hypot(tx, ty) or 1
@@ -601,6 +603,7 @@ def main(out_paths: list[Path]) -> None:
                     platform_half = (cars * car_m + 10) / 2
                 # the station as a whole: the platform, or as far as its exits reach along the line if longer
                 stop_half[f"{line}:{n}"] = round(min(350, max(platform_half, exit_half.get(f"{line}:{n}", 0))))
+                plat_half[f"{line}:{n}"] = round(platform_half)
                 stop_width[f"{line}:{n}"] = PLATFORM_WIDTH_METRES
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
         snapped = 0
@@ -675,11 +678,52 @@ def main(out_paths: list[Path]) -> None:
             if a > b:
                 pts.reverse()
             shapes[f"{line}:{min(a, b)}:{max(a, b)}"] = pts
+    # Transfer stations: an exit counts toward the line whose track it is nearest (exits along a crossing
+    # line would otherwise stretch this one). Recompute the station extent from those exits only.
+    def seg_dist(p, a, b):
+        ax, ay = _local(a, p); bx, by = _local(b, p); vx, vy = bx - ax, by - ay
+        t = 0.0 if vx == vy == 0 else max(0.0, min(1.0, -(ax * vx + ay * vy) / (vx * vx + vy * vy)))
+        return math.hypot(ax + vx * t, ay + vy * t)
+    near_edges = defaultdict(list)
+    for k, pts in shapes.items():
+        line, lo, hi = k.rsplit(":", 2)
+        near_edges[(line, lo)].append(pts)
+        near_edges[(line, hi)].append(pts)
+    def track_dist(line, sid, p):
+        return min((seg_dist(p, a, b) for pts in near_edges.get((line, sid), []) for a, b in zip(pts, pts[1:])), default=math.inf)
+    lines_at = defaultdict(list)
+    for key_ in stops:
+        line, sid = key_.rsplit(":", 1)
+        lines_at[sid].append(line)
+    reassigned = 0
+    for sid, lines_here in lines_at.items():
+        if len(lines_here) < 2 or sid not in EXITS:
+            continue
+        for line in lines_here:
+            k = f"{line}:{sid}"
+            c = tuple(stops[k])
+            pts = [p for e in near_edges.get((line, sid), []) for p in e]
+            if len(pts) < 2:
+                continue
+            far = max(pts, key=lambda p: metres(p, c))
+            tx, ty = _local(far, c); tl = math.hypot(tx, ty) or 1; tx, ty = tx / tl, ty / tl
+            along = []
+            for e in EXITS[sid]:
+                p = (e[0], e[1]); mine = track_dist(line, sid, p)
+                if mine > EXIT_TRACK_METRES or any(track_dist(o, sid, p) + 10 < mine for o in lines_here if o != line):
+                    continue
+                lx, ly = _local(p, c); along.append(lx * tx + ly * ty)
+            if len(along) >= 2:
+                half = (max(along) - min(along)) / 2 + 10
+                new = round(min(350, max(plat_half.get(k, 0), half)))
+                if new != stop_half.get(k):
+                    reassigned += 1
+                stop_half[k] = new
     stop_dirs = orient_stations(shapes, stops, stop_half)
-    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
-    print(json.dumps({"osm_platform_areas": platform_matched, "exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
+    print(json.dumps({"transfer_extent_updates": reassigned, "osm_platform_areas": platform_matched, "exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

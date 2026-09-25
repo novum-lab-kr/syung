@@ -3,7 +3,7 @@
 
 Each railway=subway_entrance node (exit number in `ref`) is assigned to the nearest station node
 within 400 m, preferring one whose name appears in the entrance description ("월계역 2번출구").
-Output: {"<station id>": [[lon, lat, "2", wheelchair(1/0/null)], ...]}
+Output: {"<station id>": [[lon, lat, "2", wheelchair(1/0/null), named(1/0)], ...]}
 """
 
 from __future__ import annotations
@@ -40,14 +40,18 @@ def main() -> None:
             continue
         p = (e["lon"], e["lat"])
         desc = t.get("description:ko") or t.get("description") or t.get("name") or ""
-        near = sorted((metres(p, (n["lon"], n["lat"])), n) for n in nodes if abs(n["lat"] - p[1]) < .005 and abs(n["lon"] - p[0]) < .006)
-        near = [(d, n) for d, n in near if d <= 400]
-        if not near:
+        near = sorted(((metres(p, (n["lon"], n["lat"])), n) for n in nodes if abs(n["lat"] - p[1]) < .01 and abs(n["lon"] - p[0]) < .012), key=lambda x: x[0])
+        # an exit named after a station ("청담역 1번출구") belongs to it even far along a long passage (≤ 900 m);
+        # unnamed exits go to the nearest station within 400 m
+        named = [(d, n) for d, n in near if d <= 900 and norm(n["name"]) and norm(n["name"]) in norm(desc)]
+        if named:
+            d, n = named[0]
+        elif near and near[0][0] <= 400:
+            d, n = near[0]
+        else:
             continue
-        named = [(d, n) for d, n in near if norm(n["name"]) and norm(n["name"]) in norm(desc)]
-        d, n = (named or near)[0]
         wc = {"yes": 1, "limited": 1, "no": 0}.get(t.get("wheelchair"))
-        out.setdefault(str(n["id"]), []).append([round(p[0], 6), round(p[1], 6), ref, wc])
+        out.setdefault(str(n["id"]), []).append([round(p[0], 6), round(p[1], 6), ref, wc, 1 if named else 0])   # last: named after the station
         kept += 1
     for v in out.values():
         v.sort(key=lambda x: (int(re.match(r"\d+", x[2]).group()) if re.match(r"\d+", x[2]) else 999, x[2]))
