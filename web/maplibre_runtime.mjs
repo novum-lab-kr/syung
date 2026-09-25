@@ -249,7 +249,9 @@ function planTrain(t){
   // The geometry runs past where motion stops so a train held at a station keeps its full length.
   const seq=previous?[previous,...r.ahead]:[...r.ahead],cum=[0];
   for(let i=1;i<seq.length;i++)cum.push(cum[i-1]+geom(t.line,seq[i-1].id,seq[i].id).total);
-  const [cars,carMetres]=CONSIST[t.line]||[8,20];
+  let [cars,carMetres]=CONSIST[t.line]||[8,20];
+  // 2호선 branches run short trains: 성수지선 4 cars, 신정지선 6 cars (Seoul Metro)
+  if(t.line==='2호선'){const where=`${t.station} ${t.destination}`;if(/신설동|용두|신답|용답|성수지선/.test(where))cars=4;else if(/까치산|신정네거리|양천구청|도림천|신도림지선/.test(where))cars=6}
   return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres};
 }
 // Where the middle of the train is, as a distance (mercator units) along plan.seq.
