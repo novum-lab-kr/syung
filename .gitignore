@@ -1,5 +1,5 @@
 # raw sources and caches (large; rebuilt by pipeline/)
-data/ktdb-gtfs-2025/202503_GTFS_DataSet/
+data/ktdb-gtfs-2025/202503_GTFS_DataSet
 data/ktdb-gtfs-2025/*.zip
 data/ktdb-gtfs-2025/*.xlsx
 data/ktdb-gtfs-2025/*.pdf
@@ -15,3 +15,6 @@ build/
 __pycache__/
 *.pyc
 *.pre-*
+data/osm-tracks/branches.json
+data/osm-tracks/exits-raw.json
+data/osm-tracks/entrances.json
