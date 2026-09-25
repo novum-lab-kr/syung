@@ -557,8 +557,8 @@ def main(out_paths: list[Path]) -> None:
                         # platform width: reach the exits on both sides of the (shifted) centre line
                         # (median exit distance, not the farthest: exits sit out at corner pavements)
                         off = sorted(abs(a_ - side) for a_ in across)
-                        stop_width[f"{line}:{n}"] = round(max(24, min(50, 2 * off[len(off) // 2] + 6)))
-                        stop_half[f"{line}:{n}"] = round(max(60, min(125, (along[-1] - along[0]) / 2 + 20)))
+                        stop_width[f"{line}:{n}"] = round(max(20, min(32, 2 * off[len(off) // 2])))
+                        stop_half[f"{line}:{n}"] = round(max(40, min(125, (along[-1] - along[0]) / 2 + 10)))   # 10 m past the end exits, 80-250 m
                         exit_anchored += 1
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
         snapped = 0
