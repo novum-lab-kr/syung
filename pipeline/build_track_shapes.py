@@ -315,7 +315,7 @@ ROADS = RoadGraph()
 # Station platforms are drawn along the street the station sits under, and the route line is
 # re-threaded so it enters and leaves each platform at its two ends.
 # Exits (pipeline/build_entrances.py) re-centre platforms: {station id: [[lon, lat, ref, wheelchair]]}
-EXIT_TRACK_METRES = 150
+EXIT_TRACK_METRES, EXIT_SHIFT_METRES = 150, 60
 _exits_file = Path(__file__).resolve().parent.parent / "data" / "osm-tracks" / "exits.json"
 EXITS = json.loads(_exits_file.read_text(encoding="utf-8")) if _exits_file.exists() else {}
 PLATFORM_HALF_METRES, PLATFORM_JOIN_METRES, STATION_ROAD_METRES, STATION_ROAD_MAX_ANGLE = 90, 15, 50, 45
@@ -533,18 +533,24 @@ def main(out_paths: list[Path]) -> None:
                 tx, ty = _local(b, a)
                 tl = math.hypot(tx, ty) or 1
                 tx, ty = tx / tl, ty / tl
-                along = []
+                along, across = [], []
                 for e in ex:
                     hit = graph.candidates((e[0], e[1]))
                     if hit and hit[0][0] <= EXIT_TRACK_METRES:
                         lx, ly = _local((e[0], e[1]), q)
                         along.append(lx * tx + ly * ty)
+                        across.append(-lx * ty + ly * tx)
                 if len(along) >= 2:
                     along.sort()
                     mid = (along[0] + along[-1]) / 2
                     cand = graph.candidates(_lonlat((tx * mid, ty * mid), q))
                     if cand:
                         q = min(cand, key=lambda c: c[0])[3]
+                        # OSM tunnels are often drawn tens of metres off; when the exits sit to one side of
+                        # the drawn track (up to EXIT_SHIFT_METRES), move the platform over to them.
+                        side = sum(across) / len(across)
+                        if 8 < abs(side) <= EXIT_SHIFT_METRES:
+                            q = _lonlat((-ty * side, tx * side), q)
                         stop_half[f"{line}:{n}"] = round(max(60, min(125, (along[-1] - along[0]) / 2 + 20)))
                         exit_anchored += 1
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
