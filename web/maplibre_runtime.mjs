@@ -132,8 +132,18 @@ function buildTransferFeatures(){
 }
 
 const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
-const map=new maplibregl.Map({container:'map',localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
+// Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
+const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
+const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+// My location; on the first fix, open the nearest station (within 1.5 km) with its upcoming trains.
+const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:true,fitBoundsOptions:{maxZoom:16}});
+map.addControl(geolocate,'top-right');
+let geoOpened=false;
+geolocate.on('geolocate',e=>{if(geoOpened)return;geoOpened=true;const here=[e.coords.longitude,e.coords.latitude];let best=null;
+  for(const st of stations){const d=Math.hypot((st.lon-here[0])*88000,(st.lat-here[1])*111000);if(d<1500&&(!best||d<best.d))best={st,d}}
+  if(best)setTimeout(()=>showStationPopup(best.st,[best.st.lon,best.st.lat]),900)});
+geolocate.on('error',()=>updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.'));
 let selected='all',trains=[],trainsEnabled=true,labels=[],liveRequest=0,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
 const lineList=$('lineList'),lineSelect=$('lineSelect'),liveState=document.querySelector('#liveState span'),lines=Object.keys(counts).sort((a,b)=>a.localeCompare(b,'ko'));
@@ -573,7 +583,8 @@ class TrainLayer{
       gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
       // Depth: test against what 3D buildings wrote (so a building in front hides the train) but never
       // write — the model's own faces are still ordered by the painter's pass above.
-      gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);gl.depthMask(false);   // nothing opaque is drawn before trains; skipping the test avoids low-precision flicker on phones
+      gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
       gl.bindBuffer(gl.ARRAY_BUFFER,this.b);
       if(this.gpuCapacity!==this.data.length){gl.bufferData(gl.ARRAY_BUFFER,this.data.byteLength,gl.DYNAMIC_DRAW);this.gpuCapacity=this.data.length}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,this.data,0,this.used);
@@ -582,7 +593,7 @@ class TrainLayer{
       gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
       gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
       // depth-only pass: record the train so the translucent buildings drawn later stay behind it where they should
-      gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
+      gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.ALWAYS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
     }
     if(!animating)for(const plan of plans){let duration=0;for(let i=0;i<plan.phases.length-1;i++)duration+=plan.phases[i].dur;if(age(plan.t.receivedAt)<duration){animating=true;break}}
     if(animating)this.map.triggerRepaint();
@@ -668,6 +679,16 @@ function pickTrain(point){
   }
   return best&&best.plan;
 }
+
+// ---- live-data notice: a strip over the map when the feed fails or goes stale -----------------
+const liveNotice=document.createElement('div');liveNotice.className='live-notice';liveNotice.hidden=true;liveNotice.setAttribute('role','status');
+document.head.insertAdjacentHTML('beforeend','<style>.live-notice{position:absolute;z-index:6;left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 120px);padding:8px 12px;border-radius:8px;background:#fff6e0;color:#6b4a00;border:1px solid #f0cf7a;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12)}html[data-theme=dark] .live-notice{background:#3a2f12;color:#f4dc9a;border-color:#6d5620}</style>');
+function updateLiveNotice(msg){
+  // also flag data that stopped updating (no fresh fetch for 3 minutes while trains are shown)
+  if(!msg&&liveFetchedAt&&liveOn&&Date.now()-new Date(liveFetchedAt).getTime()>180000)msg=`실시간 정보가 ${new Date(liveFetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 이후 갱신되지 않았어요.`;
+  liveNotice.textContent=msg||'';liveNotice.hidden=!msg||!liveOn;
+}
+setInterval(()=>updateLiveNotice(liveNotice.hidden?null:liveNotice.textContent),30000);
 
 // ---- station popup: upcoming trains -----------------------------------------------------------
 // From the proxy's arrivals index (the same cached all-lines call): per line and direction, the next
@@ -832,7 +853,7 @@ function filterLine(line){
 // Live trains show from zoom 13 for every line on screen (or just the selected line). The proxy
 // serves all lines from one cached upstream call, so the number of lines requested is free.
 const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
-let liveOn=false,liveKey='',liveAt=0,liveFetchedAt=null;
+let liveOn=false,liveFailures=0,liveKey='',liveAt=0,liveFetchedAt=null;
 function liveLines(){
   // hysteresis: trains appear at zoom 13 but only disappear below 12.5, so pinching around 13 doesn't blink them
   liveOn=map.getZoom()>=LIVE_ZOOM||(liveOn&&map.getZoom()>=LIVE_ZOOM-.5);
@@ -866,11 +887,11 @@ async function refreshLive(force=false){
     // service); extrapolating it would park a ghost train somewhere down the line.
     const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=STALE_SECONDS);const stale=all.length-trains.length;
     // Fresh data replaces positions outright (no glide from the old prediction).
-    liveFetchedAt=d.fetchedAt;learnDirections(trains);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
     const unplaced=trains.length-plans.length,shown=d.lines||lines;
     liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
     map.triggerRepaint();
-  }catch{if(request===liveRequest){liveKey='';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도'}}
+  }catch{if(request===liveRequest){liveKey='';liveFailures++;liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';if(liveFailures>=2||!plans.length)updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
 }
 
 map.on('load',()=>{
@@ -905,7 +926,7 @@ map.on('load',()=>{
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   {const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
-  map.getContainer().append(tagLayer);map.on('render',updateTrainTags);
+  map.getContainer().append(tagLayer,liveNotice);map.on('render',updateTrainTags);
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
@@ -1134,7 +1155,7 @@ function addBasemap(){
   map.addLayer(sunShadows,'routes');   // on the ground: over water/parks/building footprints, under streets (added next), lines and 3D buildings
   // Translucent buildings drawn last, over lines, platforms and trains: whatever is behind a building
   // shows through it; trains write their depth first so a building behind a train doesn't cover it.
-  map.addLayer({id:'bm-bld3d',type:'fill-extrusion',source:'ofm','source-layer':'building',minzoom:14,paint:{'fill-extrusion-color':'#d9dde0','fill-extrusion-height':['interpolate',['linear'],['zoom'],14,0,15,['coalesce',['get','render_height'],10]],'fill-extrusion-base':['coalesce',['get','render_min_height'],0],'fill-extrusion-opacity':.5}});
+  map.addLayer({id:'bm-bld3d',type:'fill-extrusion',source:'ofm','source-layer':'building',minzoom:PHONE?15:14,paint:{'fill-extrusion-color':'#d9dde0','fill-extrusion-height':['interpolate',['linear'],['zoom'],14,0,15,['coalesce',['get','render_height'],10]],'fill-extrusion-base':['coalesce',['get','render_min_height'],0],'fill-extrusion-opacity':.5}});
   L({id:'bm-road-minor',type:'line',source:'ofm','source-layer':'transportation',minzoom:14,filter:['in',['get','class'],['literal',['tertiary','minor']]],paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],14,.6,17,3],'line-opacity':.8}});
   L({id:'bm-road-major',type:'line',source:'ofm','source-layer':'transportation',filter:['in',['get','class'],['literal',['motorway','trunk','primary','secondary']]],paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,.8,14,3,17,9]}});
   // labels: glyphs from OpenFreeMap for Latin; Hangul is drawn with the device's own font (localIdeographFontFamily)
