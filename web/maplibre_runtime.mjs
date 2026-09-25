@@ -213,6 +213,7 @@ function segmentSeconds(a,b,line){
 // Dead reckoning: the API only reports the last event (진입/도착/출발/전역출발) and when it happened.
 // Roll the train forward from that moment: approach → dwell → run → dwell … along its route,
 // so a train that "arrived 90s ago" is drawn already heading to the next stop.
+const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whose express stops the GTFS lists
 const dwellFor=line=>lineDwell[line]||30,smooth=x=>x*x*(3-2*x);
 // Typical consist per line: [cars, metres per car]. Drawn at true length along the track.
 const CONSIST={'1호선':[10,20],'2호선':[10,20],'3호선':[10,20],'4호선':[10,20],'5호선':[8,20],'6호선':[8,20],'7호선':[8,20],'8호선':[6,18],'9호선':[6,19.5],'GTX-A':[8,23.5],'경강선':[4,20],'경의중앙선':[8,20],'경춘선':[8,20],'공항철도':[6,22],'김포골드라인':[2,13],'서해선':[4,20],'수인분당선':[6,20],'신림선':[3,13],'신분당선':[6,19.5],'에버라인선':[1,12],'우이신설선':[2,13],'의정부선':[2,13],'인천1호선':[8,18],'인천2호선':[2,18]};
@@ -220,15 +221,23 @@ function planTrain(t){
   const s=stationByLine.get(`${t.line}:${key(t.station)}`);if(!s)return null;
   // Only move as far as the feed implies: the reported station may be left (after its dwell),
   // but the next station is only reached, never departed, until fresh data says so.
-  const r=route(t,s),previous=r.previous,ahead=r.ahead.slice(0,2),status=normStatus(t.status),phases=[];
-  const run=(from,to,k0=0,k1=1,dur=segmentSeconds(from,to,t.line))=>phases.push({from,to,k0,k1,dur,ease:k0===0&&k1===1});
+  // Express trains (1·9호선, whose express stops are in the GTFS) only stop at express stations and run
+  // straight through the others; "the next station" for them means the next express stop.
+  const expressLine=t.express&&EXPRESS_LINES.has(t.line),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
+  const stops=st=>!expressLine||(st.express||[]).includes(t.line)||st===dest;
+  const r=route(t,s),previous=r.previous,status=normStatus(t.status),phases=[];
+  let upto=1;if(expressLine){upto=r.ahead.findIndex((st,j)=>j>0&&stops(st));if(upto<0)upto=r.ahead.length-1}
+  const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
+  // ease: slow at a stop, full speed through a station the train passes
+  const run=(from,to,k0=0,k1=1,dur=segmentSeconds(from,to,t.line))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
+    phases.push({from,to,k0,k1,dur:dur*(a&&b?1:a||b?.9:.8),ease:a&&b?'both':a?'in':b?'out':'none'})};
   const DWELL=dwellFor(t.line),dwell=(at,i)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur:DWELL}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur:DWELL})};
   // 진입 → 도착 reports are ~53 s apart in the live feed (921 samples, 2026-09-24 evening): start the
   // approach three-quarters along and take up to 50 s to stop.
   if(status==='진입'&&previous)run(previous,s,.75,1,Math.min(50,segmentSeconds(previous,s,t.line)*.55));
   if(status==='전역출발'&&previous)run(previous,s);
-  if(status!=='출발')dwell(s,0);
-  for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1)dwell(ahead[i+1],i+1)}
+  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0);
+  for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
   // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
   const last=ahead[ahead.length-1],before=ahead.length>1?ahead[ahead.length-2]:previous;
   phases.push(before?{from:before,to:last,k0:1,k1:1,dur:Infinity}:{from:last,to:last,k0:0,k1:0,dur:Infinity});
@@ -243,7 +252,7 @@ function planTrain(t){
 function trainPose(p){
   let el=age(p.t.receivedAt),ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
-  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),k=ph.k0+(ph.k1-ph.k0)*(ph.ease?smooth(u):u);
+  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
   return {dist:p.cum[i]+len*(ph.from===ph.to?0:k),moving:ph.k0!==ph.k1};
 }
