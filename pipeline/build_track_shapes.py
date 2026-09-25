@@ -466,6 +466,7 @@ def main(out_paths: list[Path]) -> None:
     stop_width: dict[str, int] = {}
     exit_anchored = 0
     platform_matched = 0
+    exit_half: dict[str, float] = {}
     raw_routes: dict[str, tuple[list, list]] = {}
     for line, variants in source["lines"].items():
         pattern = re.compile(LINE_PATTERNS.get(line, r"^$"))
@@ -581,7 +582,7 @@ def main(out_paths: list[Path]) -> None:
                         # (median exit distance, not the farthest: exits sit out at corner pavements)
                         off = sorted(abs(a_ - side) for a_ in across)
                         stop_width[f"{line}:{n}"] = round(max(20, min(32, 2 * off[len(off) // 2])))
-                        stop_half[f"{line}:{n}"] = round(max(40, min(125, (along[-1] - along[0]) / 2 + 10)))   # 10 m past the end exits, 80-250 m
+                        exit_half[f"{line}:{n}"] = (along[-1] - along[0]) / 2 + 10   # 10 m past the end exits
                         exit_anchored += 1
                 # an OSM platform area along this track near the stop gives the real centre and length
                 best = None
@@ -593,11 +594,13 @@ def main(out_paths: list[Path]) -> None:
                     cand = graph.candidates(best[0])
                     if cand:
                         q = min(cand, key=lambda c: c[0])[3]
-                    stop_half[f"{line}:{n}"] = round(best[1] / 2)
+                    platform_half = best[1] / 2
                     platform_matched += 1
                 else:
                     cars, car_m = CONSIST.get(line, (8, 20))
-                    stop_half[f"{line}:{n}"] = round((cars * car_m + 10) / 2)
+                    platform_half = (cars * car_m + 10) / 2
+                # the station as a whole: the platform, or as far as its exits reach along the line if longer
+                stop_half[f"{line}:{n}"] = round(min(350, max(platform_half, exit_half.get(f"{line}:{n}", 0))))
                 stop_width[f"{line}:{n}"] = PLATFORM_WIDTH_METRES
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
         snapped = 0
