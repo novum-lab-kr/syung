@@ -441,6 +441,7 @@ def main(out_paths: list[Path]) -> None:
     relations = overpass(f'[out:json][timeout:180];relation["type"="route"]["route"~"^(subway|train|light_rail|monorail)$"]({BBOX});out tags;', "relations.json")
     shapes, stops, report = {}, {}, {}
     stop_half: dict[str, int] = {}
+    stop_width: dict[str, int] = {}
     exit_anchored = 0
     raw_routes: dict[str, tuple[list, list]] = {}
     for line, variants in source["lines"].items():
@@ -551,6 +552,12 @@ def main(out_paths: list[Path]) -> None:
                         side = sum(across) / len(across)
                         if 8 < abs(side) <= EXIT_SHIFT_METRES:
                             q = _lonlat((-ty * side, tx * side), q)
+                        else:
+                            side = 0
+                        # platform width: reach the exits on both sides of the (shifted) centre line
+                        # (median exit distance, not the farthest: exits sit out at corner pavements)
+                        off = sorted(abs(a_ - side) for a_ in across)
+                        stop_width[f"{line}:{n}"] = round(max(24, min(50, 2 * off[len(off) // 2] + 6)))
                         stop_half[f"{line}:{n}"] = round(max(60, min(125, (along[-1] - along[0]) / 2 + 20)))
                         exit_anchored += 1
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
@@ -627,7 +634,7 @@ def main(out_paths: list[Path]) -> None:
                 pts.reverse()
             shapes[f"{line}:{min(a, b)}:{max(a, b)}"] = pts
     stop_dirs = orient_stations(shapes, stops, stop_half)
-    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half}, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
     print(json.dumps({"exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
