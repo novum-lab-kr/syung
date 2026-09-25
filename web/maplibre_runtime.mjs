@@ -214,6 +214,10 @@ function segmentSeconds(a,b,line){
 // Roll the train forward from that moment: approach → dwell → run → dwell … along its route,
 // so a train that "arrived 90s ago" is drawn already heading to the next stop.
 const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whose express stops the GTFS lists
+// Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
+let exits={};
+const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
+function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
 const dwellFor=line=>lineDwell[line]||30,smooth=x=>x*x*(3-2*x);
 // Typical consist per line: [cars, metres per car]. Drawn at true length along the track.
 const CONSIST={'1호선':[10,20],'2호선':[10,20],'3호선':[10,20],'4호선':[10,20],'5호선':[8,20],'6호선':[8,20],'7호선':[8,20],'8호선':[6,18],'9호선':[6,19.5],'GTX-A':[8,23.5],'경강선':[4,20],'경의중앙선':[8,20],'경춘선':[8,20],'공항철도':[6,22],'김포골드라인':[2,13],'서해선':[4,20],'수인분당선':[6,20],'신림선':[3,13],'신분당선':[6,19.5],'에버라인선':[1,12],'우이신설선':[2,13],'의정부선':[2,13],'인천1호선':[8,18],'인천2호선':[2,18]};
@@ -671,6 +675,11 @@ function arrivalText(a){
   return a.message.replace(/\[(\d+)\]번째 전역/,'$1번째 전역')||'-';
 }
 function arrivalRank(a){if(a.eta>0)return Math.max(0,a.eta-age(a.receivedAt));const m=a.message;if(/도착|진입/.test(m)&&!/전역/.test(m))return 0;const n=+(m.match(/\[(\d+)\]/)||[])[1];return n?n*120:/전역/.test(m)?90:600}
+function exitList(st){
+  const list=exits[st.id];if(!list||!list.length)return '';
+  const seen=new Set(),items=list.filter(e=>!seen.has(e[2])&&seen.add(e[2]));
+  return `<div class="exits"><span class="muted">출구</span>${items.map(([,,ref,wc])=>`<span class="exit" title="${esc(ref)}번 출구${wc===1?' · 휠체어 가능':''}">${esc(ref)}${wc===1?'<i>♿</i>':''}</span>`).join('')}</div>`;
+}
 async function showStationPopup(st,lngLat){
   if(!st)return;
   const popup=new maplibregl.Popup({maxWidth:'340px'}).setLngLat(lngLat).setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보 불러오는 중…</div></div>`).addTo(map);
@@ -681,13 +690,13 @@ async function showStationPopup(st,lngLat){
     const rows=order.map(k=>{const [line,dir]=k.split('|'),list=groups.get(k).sort((a,b)=>arrivalRank(a)-arrivalRank(b)).slice(0,2);
       const toward=(list[0].heading.split('-')[1]||'').trim();
       return `<tr><th><span class="dot" style="--c:${colors[line]||'#52646a'}"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></th><td>${list.map(a=>`<div><b>${esc(arrivalText(a))}</b> <span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</td></tr>`}).join('');
-    popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
+    popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}${exitList(st)}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
   };
   try{const r=await fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error();render(d);
     const timer=setInterval(()=>{if(!popup.isOpen())return clearInterval(timer);render(d)},15000);}
   catch{popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보를 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.</div></div>`)}
 }
-document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}</style>');
+document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
 // ---- station labels (DOM markers with box collision) --------------------------------
 let labelFrame=0;
@@ -886,7 +895,13 @@ map.on('load',()=>{
   // recompute shadows when the view settles or building tiles arrive (debounced)
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(updateSun,400)};
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
-  addBasemap();{const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
+  addBasemap();
+  // exits: yellow number discs (like station exit signs) from zoom 16
+  map.addSource('exits',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'exits',type:'circle',source:'exits',minzoom:16,paint:{'circle-radius':['interpolate',['linear'],['zoom'],16,6.5,18,9],'circle-color':'#ffd200','circle-stroke-color':'#3a3a3a','circle-stroke-width':1}});   // above the 3D buildings so every exit stays readable
+  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:16,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,9,18,12],'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#1d1d1d'}});
+  exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
+  {const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
   map.getContainer().append(tagLayer);map.on('render',updateTrainTags);
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
@@ -1121,7 +1136,7 @@ function addBasemap(){
   L({id:'bm-road-minor',type:'line',source:'ofm','source-layer':'transportation',minzoom:14,filter:['in',['get','class'],['literal',['tertiary','minor']]],paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],14,.6,17,3],'line-opacity':.8}});
   L({id:'bm-road-major',type:'line',source:'ofm','source-layer':'transportation',filter:['in',['get','class'],['literal',['motorway','trunk','primary','secondary']]],paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,.8,14,3,17,9]}});
   // labels: glyphs from OpenFreeMap for Latin; Hangul is drawn with the device's own font (localIdeographFontFamily)
-  try{map.setGlyphs('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf')}catch{}
+  try{if(!map.getGlyphs?.())map.setGlyphs('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf')}catch{}
   const name=['coalesce',['get','name:ko'],['get','name']],font=['Noto Sans Regular'],halo={'text-halo-color':'rgba(255,255,255,.9)','text-halo-width':1.4};
   L({id:'bm-rail',type:'line',source:'ofm','source-layer':'transportation',filter:['==',['get','class'],'rail'],minzoom:12,paint:{'line-color':'#c3cbcf','line-width':1.2,'line-dasharray':[3,2]}});
   // symbols sit under the route lines so map text never covers lines, stations or trains
