@@ -1,16 +1,15 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
+import {key,normStatus,createRouter} from './lib/routing.mjs';
+import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData'),counts=json('lineCounts'),paths=json('linePaths');
 const colors={'1호선':'#0052A4','2호선':'#00A84D','3호선':'#EF7C1C','4호선':'#00A5DE','5호선':'#996CAC','6호선':'#CD7C2F','7호선':'#747F00','8호선':'#E6186C','9호선':'#BDB092','GTX-A':'#9A6292','경강선':'#0054A6','경의중앙선':'#77C4A3','경춘선':'#178C72','공항철도':'#0090D2','김포골드라인':'#AD8605','서해선':'#8FC31F','수인분당선':'#F5A200','신림선':'#6789CA','신분당선':'#D4003B','에버라인선':'#6FB245','우이신설선':'#B7C452','의정부선':'#FDA600','인천1호선':'#7CA8D5','인천2호선':'#ED8B00'};
 const HOME={center:[126.98,37.53],zoom:10},LINE_GAP=5;
-const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-// Stations renamed after the GTFS snapshot (live feed name → GTFS name).
-const RENAMED={'불암산':'당고개'};
-const key=v=>{const k=String(v||'').replace(/\([^)]*\)/g,'').replace(/(종착|지선|순환|역)$/,'').replace(/\s/g,'').toLocaleLowerCase('ko');return RENAMED[k]||k};
 const edgeKey=(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`;
-const byId=new Map(stations.map(s=>[s.id,s])),stationByLine=new Map();
-stations.forEach(s=>s.lines.forEach(x=>stationByLine.set(`${x.name}:${key(s.name)}`,s)));
+const router=createRouter({stations,paths}),{byId,stationByLine,route,learnDirections}=router;
+const sunPosition=(date=window.__sunTime||new Date())=>sunAt(date);   // __sunTime: preview another time of day
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const merc=s=>(s.m??=maplibregl.MercatorCoordinate.fromLngLat([s.lon,s.lat]));
 
 // Shared track: every line on an edge gets a stable slot. Geometry is always emitted
@@ -150,66 +149,6 @@ const lineList=$('lineList'),lineSelect=$('lineSelect'),liveState=document.query
 lines.forEach(line=>{const o=document.createElement('option');o.value=line;o.textContent=`${line} · ${counts[line]}개 역`;lineSelect.append(o);const b=document.createElement('button');b.type='button';b.className='line-btn';b.dataset.line=line;b.setAttribute('aria-pressed','false');b.innerHTML=`<span class="swatch" style="--line:${colors[line]}"></span><span>${esc(line)}</span><span class="count">${counts[line]}</span>`;b.onclick=()=>filterLine(selected===line?'all':line);lineList.append(b)});
 
 // ---- live train routing -------------------------------------------------------------
-// Seoul API statuses: 진입(approaching s), 도착(at s), 출발(left s), 전역출발(left the stop before s).
-const normStatus=v=>String(v||'').replace(/\s/g,'');
-function ringOf(line){const raw=(paths[line]||[])[0];if(!raw)return null;const end=raw.indexOf(raw[0],1);return end>1?raw.slice(0,end):null}
-const ring2=ringOf('2호선');
-// Stations the train will pass from s onward (s first), stopping at its destination.
-// Which index direction 상행/하행 means differs per line and per path chunk, so learn it from
-// trains whose destination resolves: dirVotes["line|chunk|up|down"] = Σ sign(dest index − index).
-let dirVotes={};
-const dirLabel=t=>/상|내/.test(String(t.direction||''))?'up':'down';
-function learnDirections(list){
-  dirVotes={};
-  for(const t of list){
-    const s=stationByLine.get(`${t.line}:${key(t.station)}`),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
-    if(!s||!dest||dest.id===s.id)continue;
-    (paths[t.line]||[]).forEach((ids,ci)=>{const i=ids.indexOf(s.id),j=ids.indexOf(dest.id);if(i>=0&&j>=0){const k=`${t.line}|${ci}|${dirLabel(t)}`;dirVotes[k]=(dirVotes[k]||0)+(j>i?1:-1)}});
-  }
-}
-function route(t,s){
-  const dest=stationByLine.get(`${t.line}:${key(t.destination)}`),dir=String(t.direction||''),MAX=8;
-  // A train already at its destination has finished its run: hold it there (only use the
-  // neighbour for orientation) instead of extrapolating onward in its direction of travel.
-  const terminated=dest&&dest.id===s.id;
-  if(t.line==='2호선'&&ring2&&!/신설동|성수지선|신도림지선|까치산/.test(String(t.destination||''))){
-    const i=ring2.indexOf(s.id);
-    if(i>=0){
-      const sign=dir.includes('외')?-1:1,n=ring2.length,ahead=[];
-      for(let k=0;k<=MAX;k++){const st=byId.get(ring2[((i+sign*k)%n+n)%n]);ahead.push(st);if(k&&dest&&st.id===dest.id)break}
-      return {previous:byId.get(ring2[((i-sign)%n+n)%n]),ahead:terminated?[s]:ahead};
-    }
-  }
-  // 6호선 응암 loop: one-way 응암 → 역촌 → 불광 → 독바위 → 연신내 → 구산 → 응암. 상행 '응암순환' trains run into
-  // it at 응암; inside it the feed labels them 하행 (봉화산/신내) until they leave it at 응암 toward 새절.
-  if(t.line==='6호선'){
-    const ids=(paths['6호선']||[])[0]||[],eungam=stationByLine.get('6호선:응암'),a=eungam?ids.indexOf(eungam.id):-1,b=a>=0?ids.indexOf(eungam.id,a+1):-1;
-    if(a>=0&&b>a&&b-a<12){
-      const up=/상/.test(dir),circ=/순환/.test(String(t.destination||'')),st=normStatus(t.status);
-      let i=-1;
-      if(s.id===eungam.id)i=up&&circ?a:(/도착|진입/.test(st)?b:a);      // 하행 at 응암: arriving = finishing the loop
-      else{const k=ids.indexOf(s.id);if(k>a&&k<b)i=k;else if(up&&circ){const k2=ids.lastIndexOf(s.id,a);if(k2>=0&&k2<a)i=k2}}
-      if(i>=0){
-        const ahead=[];for(let j=i;j<ids.length&&ahead.length<=MAX;j++){ahead.push(byId.get(ids[j]));if(j>i&&circ&&j===b)break}
-        return {previous:byId.get(ids[i-1]),ahead};
-      }
-    }
-  }
-  let best=null;
-  (paths[t.line]||[]).forEach((ids,ci)=>{for(let i=0;i<ids.length;i++){
-    if(ids[i]!==s.id)continue;
-    const consider=(sign,d)=>{if(ids[i+sign]!==undefined&&(!best||d<best.d))best={ids,i,sign,d}};
-    if(dest&&dest.id!==s.id){const j=ids.indexOf(dest.id);if(j>=0)consider(j>i?1:-1,Math.abs(j-i))}
-    // No usable destination: go the way other trains with the same 상행/하행 label go on this chunk.
-    const vote=dirVotes[`${t.line}|${ci}|${dirLabel(t)}`],guess=vote?Math.sign(vote):(/상|내/.test(dir)?-1:1);
-    consider(guess,1e6);
-    consider(-guess,2e6);
-  }});
-  if(!best)return {previous:undefined,ahead:[s]};
-  const {ids,i,sign}=best,ahead=[];
-  for(let j=i;j>=0&&j<ids.length&&ahead.length<=MAX;j+=sign){const st=byId.get(ids[j]);if(!st)break;ahead.push(st);if(j!==i&&dest&&st.id===dest.id)break}
-  return {previous:byId.get(ids[i-sign]),ahead:terminated?[s]:ahead};
-}
 function age(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Math.max(0,(Date.now()-Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]))/1000):0}
 // Run time between adjacent stations: the GTFS timetable's median (edge_times.json, built by
 // build_edge_times.py); failing that, track length at the timetable's typical 12.4 m/s.
@@ -972,15 +911,6 @@ const THEME_KEY='subway-theme';
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
-function seoulSun(date=new Date()){
-  // solar noon of the *Seoul* calendar day (KST = UTC+9); using the UTC day picked yesterday before 09:00 KST
-  const KST=9*3600e3,noon=Math.floor((date.getTime()+KST)/864e5)*864e5-KST+12*3600e3;
-  const rad=Math.PI/180,lat=37.5665,lon=126.978,J=noon/864e5+2440587.5,n=Math.round(J-2451545+.0008);
-  const Js=n-lon/360,M=(357.5291+.98560028*Js)%360,C=1.9148*Math.sin(M*rad)+.02*Math.sin(2*M*rad)+.0003*Math.sin(3*M*rad);
-  const L=(M+C+282.9372)%360,Jt=2451545+Js+.0053*Math.sin(M*rad)-.0069*Math.sin(2*L*rad),d=Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
-  const w=Math.acos((Math.sin(-.833*rad)-Math.sin(lat*rad)*Math.sin(d))/(Math.cos(lat*rad)*Math.cos(d)))/rad;
-  const toDate=j=>new Date((j-2440587.5)*864e5);return {rise:toDate(Jt-w/360),set:toDate(Jt+w/360)};
-}
 function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
 function applyTheme(){
   const t=effectiveTheme(),P=MAP_THEMES[t];
@@ -1049,15 +979,6 @@ function sunArcIcon(){
 // each building footprint is swept away from the sun by height ÷ tan(elevation) and the hull drawn
 // on the ground under the lines. Trains cast their shadow the same way. No shadows after sunset.
 let sunTrainShadow=[1.1,1.5];
-function sunPosition(date=window.__sunTime||new Date()){   // __sunTime: preview another time of day
-  const rad=Math.PI/180,lat=37.5665*rad,lon=126.978,d=date.getTime()/864e5-10957.5;   // days since J2000.0
-  const g=(357.529+.98560028*d)*rad,q=280.459+.98564736*d,L=(q+1.915*Math.sin(g)+.02*Math.sin(2*g))*rad,e=(23.439-3.6e-7*d)*rad;
-  const ra=Math.atan2(Math.cos(e)*Math.sin(L),Math.cos(L)),dec=Math.asin(Math.sin(e)*Math.sin(L));
-  const gmst=(18.697374558+24.06570982441908*d)%24,H=((gmst*15+lon)*rad-ra);
-  const el=Math.asin(Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(H));
-  const az=Math.atan2(-Math.sin(H),Math.tan(dec)*Math.cos(lat)-Math.sin(lat)*Math.cos(H));   // from north, clockwise
-  return {elevation:el/rad,azimuth:((az/rad)+360)%360};
-}
 function hull(pts){pts=[...pts].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const c=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
   for(const p of pts){while(lo.length>1&&c(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p)}
   for(const p of pts.reverse()){while(up.length>1&&c(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p)}

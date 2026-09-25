@@ -29,6 +29,13 @@ python3 -m http.server -d /tmp/subway-site 8080
 ```
 실시간 열차는 `./api/live`(프록시)가 있어야 나옵니다. 없으면 노선·역만 보입니다.
 
+## 테스트
+
+```bash
+node --test tests/*.test.mjs
+```
+열차 경로·방향 예측(`web/lib/routing.mjs`)과 일출·일몰·해 위치(`web/lib/sun.mjs`)를, 실제로 고쳤던 사례(청량리 종착, 화랑대 방향, 응암순환 고리, 오전 9시 전 다크 모드 등)로 검증합니다.
+
 ## 실시간 프록시
 
 `server/subway_live_proxy.py` — 서울시 `realtimeStationArrival/ALL`을 90초마다 한 번만 불러

@@ -9,6 +9,7 @@ for d in "${TARGETS[@]}"; do
   mkdir -p "$d/vendor"
   cp "$ROOT/web/index.html" "$ROOT/web/maplibre_runtime.mjs" "$d/"
   cp "$ROOT"/web/vendor/* "$d/vendor/"
+  mkdir -p "$d/lib" && cp "$ROOT"/web/lib/*.mjs "$d/lib/"
   cp "$ROOT/data/osm-tracks/track_shapes.json" "$ROOT/data/osm-tracks/exits.json" "$ROOT/data/ktdb-gtfs-2025/edge_times.json" "$d/"
   echo "deployed → $d"
 done
