@@ -663,6 +663,32 @@ function pickTrain(point){
   return best&&best.plan;
 }
 
+// ---- station popup: upcoming trains -----------------------------------------------------------
+// From the proxy's arrivals index (the same cached all-lines call): per line and direction, the next
+// two trains, counting down from the time each row was recorded.
+function arrivalText(a){
+  if(a.eta>0){const left=Math.max(0,a.eta-age(a.receivedAt));return left<60?'곧 도착':`${Math.floor(left/60)}분 후`}
+  return a.message.replace(/\[(\d+)\]번째 전역/,'$1번째 전역')||'-';
+}
+function arrivalRank(a){if(a.eta>0)return Math.max(0,a.eta-age(a.receivedAt));const m=a.message;if(/도착|진입/.test(m)&&!/전역/.test(m))return 0;const n=+(m.match(/\[(\d+)\]/)||[])[1];return n?n*120:/전역/.test(m)?90:600}
+async function showStationPopup(st,lngLat){
+  if(!st)return;
+  const popup=new maplibregl.Popup({maxWidth:'340px'}).setLngLat(lngLat).setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보 불러오는 중…</div></div>`).addTo(map);
+  const render=d=>{
+    const groups=new Map();
+    for(const a of (d.arrivals||[])){const k=`${a.line}|${a.direction}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(a)}
+    const lines=st.lines.map(x=>x.name),order=[...groups.keys()].sort((x,y)=>lines.indexOf(x.split('|')[0])-lines.indexOf(y.split('|')[0])||x.localeCompare(y,'ko'));
+    const rows=order.map(k=>{const [line,dir]=k.split('|'),list=groups.get(k).sort((a,b)=>arrivalRank(a)-arrivalRank(b)).slice(0,2);
+      const toward=(list[0].heading.split('-')[1]||'').trim();
+      return `<tr><th><span class="dot" style="--c:${colors[line]||'#52646a'}"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></th><td>${list.map(a=>`<div><b>${esc(arrivalText(a))}</b> <span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</td></tr>`}).join('');
+    popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
+  };
+  try{const r=await fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error();render(d);
+    const timer=setInterval(()=>{if(!popup.isOpen())return clearInterval(timer);render(d)},15000);}
+  catch{popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보를 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.</div></div>`)}
+}
+document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}</style>');
+
 // ---- station labels (DOM markers with box collision) --------------------------------
 let labelFrame=0;
 // Station names sit inside the platform rectangle, turned along it. Where the name is longer than
@@ -851,7 +877,7 @@ map.on('load',()=>{
   map.addLayer(stationNames);   // names under the trains
   map.addLayer(new TrainLayer());
   map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl)});
-  map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<div class="popup"><h3>${esc(p.name)}</h3><div>${esc(p.lines.replaceAll('|',' · '))}</div></div>`).addTo(map)});
+  map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;

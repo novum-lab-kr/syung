@@ -193,7 +193,54 @@ def _fetch_all() -> dict:
     error = payload.get("errorMessage") or {}
     if error.get("code") not in (None, "INFO-000"):
         raise RuntimeError(error.get("message") or "서울시 API 오류")
-    return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": normalize_arrivals(payload)}
+    return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": normalize_arrivals(payload), "stations": index_arrivals(payload)}
+
+
+def station_key(name: object) -> str:
+    """Station name key shared with the map: no parentheses, no trailing 역, no spaces."""
+    text = re.sub(r"\([^)]*\)", "", str(name or ""))
+    return re.sub(r"역$", "", text).replace(" ", "")
+
+
+def index_arrivals(payload: dict) -> dict[str, list[dict]]:
+    """Upcoming trains per station (as the station-arrival rows give them), for station popups."""
+    out: dict[str, list[dict]] = defaultdict(list)
+    for row in payload.get("realtimeArrivalList") or []:
+        line = LINE_NAMES.get(str(row.get("subwayId")))
+        if not line:
+            continue
+        eta = int(row["barvlDt"]) if str(row.get("barvlDt") or "").isdigit() else None
+        out[station_key(row.get("statnNm"))].append({
+            "line": line,
+            "direction": str(row.get("updnLine") or ""),
+            "heading": str(row.get("trainLineNm") or ""),
+            "destination": _clean_station(row.get("bstatnNm")),
+            "trainNo": str(row.get("btrainNo") or ""),
+            "eta": eta,
+            "message": str(row.get("arvlMsg2") or ""),
+            "where": _clean_station(row.get("arvlMsg3")),
+            "code": str(row.get("arvlCd") or ""),
+            "express": str(row.get("btrainSttus") or "") not in ("", "일반"),
+            "last": str(row.get("lstcarAt") or "0") == "1",
+            "receivedAt": row.get("recptnDt"),
+        })
+    return out
+
+
+def snapshot_arrivals(name: str) -> tuple[dict, int]:
+    """Arrivals at one station from the cached all-lines call (fetching it if the cache is cold)."""
+    global _all_cache
+    with _lock:
+        now = time.time()
+        if _all_cache is None or now - _all_cache[0] >= CACHE_SECONDS:
+            try:
+                _all_cache = (now, _fetch_all())
+            except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+                if _all_cache is None:
+                    return {"ok": False, "error": str(exc)}, 503
+        data = _all_cache[1]
+        rows = data.get("stations", {}).get(station_key(name), [])
+        return {"ok": True, "fetchedAt": data["fetchedAt"], "station": name, "arrivals": rows}, 200
 
 
 def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
@@ -285,7 +332,13 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         lines = [item.strip() for value in query.get("lines", []) for item in value.split(",") if item.strip()]
         focused = query.get("focused", [""])[0] == "1"
-        body, status = snapshot(lines, focused=focused) if self.path.startswith("/live") else ({"ok": True}, 200)
+        arrivals = query.get("arrivals", [""])[0].strip()
+        if not self.path.startswith("/live"):
+            body, status = {"ok": True}, 200
+        elif arrivals:
+            body, status = snapshot_arrivals(arrivals)
+        else:
+            body, status = snapshot(lines, focused=focused)
         data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
