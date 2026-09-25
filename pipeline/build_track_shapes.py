@@ -400,7 +400,8 @@ def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> di
         tl = math.hypot(tx, ty) or 1
         tx, ty = tx / tl, ty / tl
         dx, dy = tx, ty
-        # nearest street segment
+        # street under the station: among segments within STATION_ROAD_METRES, the one best aligned with
+        # the track (at a junction the nearest segment is often the cross street)
         best = None
         cx, cy = int(c[0] * 500), int(c[1] * 500)
         for ddx in (-1, 0, 1):
@@ -414,14 +415,19 @@ def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> di
                             continue
                         t = max(0.0, min(1.0, -(a[0] * vx + a[1] * vy) / vl2))
                         d = math.hypot(a[0] + vx * t, a[1] + vy * t)
-                        if d <= STATION_ROAD_METRES and (best is None or d < best[0]):
-                            best = (d, vx / math.sqrt(vl2), vy / math.sqrt(vl2))
+                        if d > STATION_ROAD_METRES:
+                            continue
+                        rx, ry = vx / math.sqrt(vl2), vy / math.sqrt(vl2)
+                        if rx * tx + ry * ty < 0:
+                            rx, ry = -rx, -ry
+                        ang = math.degrees(math.acos(max(-1.0, min(1.0, rx * tx + ry * ty))))
+                        if ang > STATION_ROAD_MAX_ANGLE:
+                            continue
+                        score = ang + d * 0.3          # alignment first, distance as tie-break
+                        if best is None or score < best[0]:
+                            best = (score, rx, ry)
         if best:
-            rx, ry = best[1], best[2]
-            if rx * tx + ry * ty < 0:
-                rx, ry = -rx, -ry
-            if math.degrees(math.acos(max(-1.0, min(1.0, rx * tx + ry * ty)))) <= STATION_ROAD_MAX_ANGLE:
-                dx, dy = rx, ry
+            dx, dy = best[1], best[2]
         dirs[sk] = [round(dx, 5), round(dy, 5)]
     # re-thread each edge: centre → platform end → (track beyond the platform) → platform end → centre
     for k, pts in list(shapes.items()):
