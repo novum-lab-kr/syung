@@ -18,3 +18,4 @@ __pycache__/
 data/osm-tracks/branches.json
 data/osm-tracks/exits-raw.json
 data/osm-tracks/entrances.json
+data/osm-tracks/platforms-raw.json

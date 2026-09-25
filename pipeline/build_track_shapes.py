@@ -314,6 +314,28 @@ ROADS = RoadGraph()
 
 # Station platforms are drawn along the street the station sits under, and the route line is
 # re-threaded so it enters and leaves each platform at its two ends.
+# Real platform size: the train it serves (cars × car length, +10 m), or the OSM platform area where
+# one is mapped; width is a standard island platform with its two tracks.
+CONSIST = {"1호선": (10, 20), "2호선": (10, 20), "3호선": (10, 20), "4호선": (10, 20), "5호선": (8, 20), "6호선": (8, 20),
+           "7호선": (8, 20), "8호선": (6, 18), "9호선": (6, 19.5), "GTX-A": (8, 23.5), "경강선": (4, 20), "경의중앙선": (8, 20),
+           "경춘선": (8, 20), "공항철도": (6, 22), "김포골드라인": (2, 13), "서해선": (4, 20), "수인분당선": (6, 20), "신림선": (3, 13),
+           "신분당선": (6, 19.5), "에버라인선": (1, 12), "우이신설선": (2, 13), "의정부선": (2, 13), "인천1호선": (8, 18), "인천2호선": (2, 18)}
+PLATFORM_WIDTH_METRES = 22
+_platform_file = Path(__file__).resolve().parent.parent / "data" / "osm-tracks" / "platforms-raw.json"
+PLATFORM_AREAS = []   # (centre, unit axis, length)
+if _platform_file.exists():
+    for _w in json.loads(_platform_file.read_text(encoding="utf-8"))["elements"]:
+        _g = [(p["lon"], p["lat"]) for p in _w.get("geometry", [])]
+        if len(_g) < 4:
+            continue
+        _c = (sum(x for x, _ in _g) / len(_g), sum(y for _, y in _g) / len(_g))
+        _k = math.cos(math.radians(_c[1]))
+        _xy = [((x - _c[0]) * _k * 111_320, (y - _c[1]) * 111_320) for x, y in _g]
+        _sxx = sum(a * a for a, _ in _xy); _syy = sum(b * b for _, b in _xy); _sxy = sum(a * b for a, b in _xy)
+        _th = 0.5 * math.atan2(2 * _sxy, _sxx - _syy); _ax = (math.cos(_th), math.sin(_th))
+        _pr = [a * _ax[0] + b * _ax[1] for a, b in _xy]
+        PLATFORM_AREAS.append((_c, _ax, max(_pr) - min(_pr)))
+
 # Exits (pipeline/build_entrances.py) re-centre platforms: {station id: [[lon, lat, ref, wheelchair]]}
 EXIT_TRACK_METRES, EXIT_SHIFT_METRES = 150, 60
 _exits_file = Path(__file__).resolve().parent.parent / "data" / "osm-tracks" / "exits.json"
@@ -443,6 +465,7 @@ def main(out_paths: list[Path]) -> None:
     stop_half: dict[str, int] = {}
     stop_width: dict[str, int] = {}
     exit_anchored = 0
+    platform_matched = 0
     raw_routes: dict[str, tuple[list, list]] = {}
     for line, variants in source["lines"].items():
         pattern = re.compile(LINE_PATTERNS.get(line, r"^$"))
@@ -560,6 +583,22 @@ def main(out_paths: list[Path]) -> None:
                         stop_width[f"{line}:{n}"] = round(max(20, min(32, 2 * off[len(off) // 2])))
                         stop_half[f"{line}:{n}"] = round(max(40, min(125, (along[-1] - along[0]) / 2 + 10)))   # 10 m past the end exits, 80-250 m
                         exit_anchored += 1
+                # an OSM platform area along this track near the stop gives the real centre and length
+                best = None
+                for c_, ax, ln in PLATFORM_AREAS:
+                    if 30 <= ln <= 400 and metres(c_, q) < 120 and abs(ax[0] * tx + ax[1] * ty) > 0.9:
+                        if best is None or metres(c_, q) < metres(best[0], q):
+                            best = (c_, ln)
+                if best:
+                    cand = graph.candidates(best[0])
+                    if cand:
+                        q = min(cand, key=lambda c: c[0])[3]
+                    stop_half[f"{line}:{n}"] = round(best[1] / 2)
+                    platform_matched += 1
+                else:
+                    cars, car_m = CONSIST.get(line, (8, 20))
+                    stop_half[f"{line}:{n}"] = round((cars * car_m + 10) / 2)
+                stop_width[f"{line}:{n}"] = PLATFORM_WIDTH_METRES
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
         snapped = 0
         for lo, hi in sorted(edges):
@@ -637,7 +676,7 @@ def main(out_paths: list[Path]) -> None:
     payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
-    print(json.dumps({"exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
+    print(json.dumps({"osm_platform_areas": platform_matched, "exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":
