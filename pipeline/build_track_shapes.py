@@ -314,6 +314,10 @@ ROADS = RoadGraph()
 
 # Station platforms are drawn along the street the station sits under, and the route line is
 # re-threaded so it enters and leaves each platform at its two ends.
+# Exits (pipeline/build_entrances.py) re-centre platforms: {station id: [[lon, lat, ref, wheelchair]]}
+EXIT_TRACK_METRES = 150
+_exits_file = Path(__file__).resolve().parent.parent / "data" / "osm-tracks" / "exits.json"
+EXITS = json.loads(_exits_file.read_text(encoding="utf-8")) if _exits_file.exists() else {}
 PLATFORM_HALF_METRES, PLATFORM_JOIN_METRES, STATION_ROAD_METRES, STATION_ROAD_MAX_ANGLE = 90, 15, 50, 45
 
 
@@ -327,26 +331,30 @@ def _lonlat(xy, origin):
     return (origin[0] + xy[0] / (k * 111_320), origin[1] + xy[1] / 111_320)
 
 
-def station_roads(points: list[tuple[float, float]]):
-    """Road segments near every stop (main + tertiary streets within STATION_ROAD_METRES), cached."""
+def station_roads(points: list[tuple[float, float]], radius: int = 300):
+    """Road segments around station nodes (main + tertiary streets within `radius`), cached.
+
+    Queried around the fixed KTDB station points (not the per-line stops, which move as anchoring
+    improves) so the request set stays the same and is served from the cache."""
     import hashlib
     graph = RoadGraph()
     for i in range(0, len(points), 60):
         chunk = points[i:i + 60]
-        clauses = "".join(f'way["highway"~"^(trunk|primary|secondary|tertiary)$"](around:{STATION_ROAD_METRES},{y:.6f},{x:.6f});' for x, y in chunk)
+        clauses = "".join(f'way["highway"~"^(trunk|primary|secondary|tertiary)$"](around:{radius},{y:.6f},{x:.6f});' for x, y in chunk)
         tag = hashlib.sha1(clauses.encode()).hexdigest()[:12]
         graph.load(overpass(f"[out:json][timeout:240];({clauses});(._;>;);out body qt;", f"roads/stations-{tag}.json"))
     return graph
 
 
-def orient_stations(shapes: dict, stops: dict) -> dict:
+def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> dict:
+    halves = halves or {}
     # track direction at each stop, from the edges that touch it
     touching = defaultdict(list)
     for k, pts in shapes.items():
         line, lo, hi = k.rsplit(":", 2)
         touching[f"{line}:{lo}"].append((k, 0))
         touching[f"{line}:{hi}"].append((k, -1))
-    graph = station_roads(sorted({tuple(v) for v in stops.values()}))
+    graph = station_roads(sorted({(n["lon"], n["lat"]) for n in json.loads(SOURCE.read_text(encoding="utf-8"))["nodes"]}))
     dirs = {}
     for sk, c in stops.items():
         c = tuple(c)
@@ -400,14 +408,15 @@ def orient_stations(shapes: dict, stops: dict) -> dict:
         if ka not in dirs or kb not in dirs:
             continue
         ca, cb = tuple(stops[ka]), tuple(stops[kb])
-        def end_toward(c, d, target):
+        ha, hb = halves.get(ka, PLATFORM_HALF_METRES), halves.get(kb, PLATFORM_HALF_METRES)
+        def end_toward(c, d, target, half):
             tx_, ty_ = _local(target, c)
             sign = 1 if d[0] * tx_ + d[1] * ty_ >= 0 else -1
-            return _lonlat((d[0] * PLATFORM_HALF_METRES * sign, d[1] * PLATFORM_HALF_METRES * sign), c)
-        ea, eb = end_toward(ca, dirs[ka], cb), end_toward(cb, dirs[kb], ca)
+            return _lonlat((d[0] * half * sign, d[1] * half * sign), c)
+        ea, eb = end_toward(ca, dirs[ka], cb, ha), end_toward(cb, dirs[kb], ca, hb)
         keep = [tuple(p) for p in pts[1:-1]
-                if metres(p, ca) > PLATFORM_HALF_METRES + PLATFORM_JOIN_METRES and metres(p, cb) > PLATFORM_HALF_METRES + PLATFORM_JOIN_METRES]
-        if metres(ca, cb) < 2 * PLATFORM_HALF_METRES + 20:
+                if metres(p, ca) > ha + PLATFORM_JOIN_METRES and metres(p, cb) > hb + PLATFORM_JOIN_METRES]
+        if metres(ca, cb) < ha + hb + 20:
             continue   # stations too close for full platforms: leave the track as it is
         shapes[k] = [[round(x, 6), round(y, 6)] for x, y in [ca, ea, *keep, eb, cb]]
     return dirs
@@ -431,6 +440,8 @@ def main(out_paths: list[Path]) -> None:
     osm_used = 0
     relations = overpass(f'[out:json][timeout:180];relation["type"="route"]["route"~"^(subway|train|light_rail|monorail)$"]({BBOX});out tags;', "relations.json")
     shapes, stops, report = {}, {}, {}
+    stop_half: dict[str, int] = {}
+    exit_anchored = 0
     raw_routes: dict[str, tuple[list, list]] = {}
     for line, variants in source["lines"].items():
         pattern = re.compile(LINE_PATTERNS.get(line, r"^$"))
@@ -513,7 +524,29 @@ def main(out_paths: list[Path]) -> None:
                 j = back[k].get(j, j)
         for n, hits in snaps.items():
             if hits:
-                q = hits[chosen.get(n, 0)][3]
+                h = hits[chosen.get(n, 0)]
+                q = h[3]
+                # Re-centre on this line's exits: exits within EXIT_TRACK_METRES of the track, projected
+                # along it; their middle is the platform centre and their spread its length.
+                ex = [e for e in EXITS.get(str(n), []) if metres((e[0], e[1]), q) < 350]
+                a, b = graph.coord[h[1]], graph.coord[h[2]]
+                tx, ty = _local(b, a)
+                tl = math.hypot(tx, ty) or 1
+                tx, ty = tx / tl, ty / tl
+                along = []
+                for e in ex:
+                    hit = graph.candidates((e[0], e[1]))
+                    if hit and hit[0][0] <= EXIT_TRACK_METRES:
+                        lx, ly = _local((e[0], e[1]), q)
+                        along.append(lx * tx + ly * ty)
+                if len(along) >= 2:
+                    along.sort()
+                    mid = (along[0] + along[-1]) / 2
+                    cand = graph.candidates(_lonlat((tx * mid, ty * mid), q))
+                    if cand:
+                        q = min(cand, key=lambda c: c[0])[3]
+                        stop_half[f"{line}:{n}"] = round(max(60, min(125, (along[-1] - along[0]) / 2 + 20)))
+                        exit_anchored += 1
                 stops[f"{line}:{n}"] = [round(q[0], 6), round(q[1], 6)]
         snapped = 0
         for lo, hi in sorted(edges):
@@ -587,11 +620,11 @@ def main(out_paths: list[Path]) -> None:
             if a > b:
                 pts.reverse()
             shapes[f"{line}:{min(a, b)}:{max(a, b)}"] = pts
-    stop_dirs = orient_stations(shapes, stops)
-    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs}, ensure_ascii=False, separators=(",", ":"))
+    stop_dirs = orient_stations(shapes, stops, stop_half)
+    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
-    print(json.dumps({"coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
+    print(json.dumps({"exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ const edgeOffset=(line,a,b)=>{const shared=[...(edgeLines.get(edgeKey(a,b))||[li
 // Real track geometry (OSM, built by build_track_shapes.py), keyed line:lo:hi and drawn lo→hi.
 // Edges without a shape fall back to a straight station-to-station segment.
 // Stops are each station projected onto that line's track, so a transfer station has one on-track point per line.
-let shapes={},stops={},stopDirs={};   // stopDirs: platform direction (east, north) per line:stop, along its street
+let shapes={},stops={},stopDirs={},stopHalf={};   // stopDirs: platform direction (east, north) per line:stop, along its street
 const stopPos=(line,s)=>stops[`${line}:${s.id}`]||[s.lon,s.lat];
 const stopMerc=new Map(),mercStop=(line,s)=>{const k=`${line}:${s.id}`;let m=stopMerc.get(k);if(!m){m=maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));stopMerc.set(k,m)}return m};
 // OSM track polylines are simplified to a few metres, which reads as kinks when zoomed in;
@@ -101,7 +101,7 @@ function buildStationFeatures(){
       const dev=Math.max(0,...xy.map(([x,y])=>Math.abs(-(x-mx)*dy+(y-my)*dx)));
       const t0=-mx*dx-my*dy;return {dx,dy,cx:mx+dx*t0,cy:my+dy*t0,dev};   // centre: the stop's foot on the fitted line
     };
-    let h=PLATFORM_HALF,f;
+    let h=stopHalf[`${line}:${s.id}`]||PLATFORM_HALF,f;   // half length from the exits' spread, when known
     const sd=stopDirs[`${line}:${s.id}`];
     if(sd){   // built along the station's street; the route line is threaded to its two ends
       let [ex,ey]=sd;const t=next||prev;
@@ -130,7 +130,7 @@ function buildTransferFeatures(){
   return out;
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
