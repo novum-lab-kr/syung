@@ -694,8 +694,9 @@ class StationNameLayer{
     this.map=map;
     const vs=`#version 300 es
 in vec2 a_px;in vec2 a_local;in vec2 a_size;in vec4 a_uv;in vec3 a_color;in vec2 a_tw;
-uniform vec2 u_view;out vec2 v_local;out vec2 v_size;out vec4 v_uv;out vec3 v_color;out vec2 v_tw;
-void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl_Position=vec4(a_px.x/u_view.x*2.-1.,1.-a_px.y/u_view.y*2.,0.,1.);}`;
+uniform mat4 u_matrix;out vec2 v_local;out vec2 v_size;out vec4 v_uv;out vec3 v_color;out vec2 v_tw;
+// a_px: mercator position relative to the view centre (drawn on the ground, so pitch and bearing apply)
+void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl_Position=u_matrix*vec4(a_px,0.,1.);}`;
     const fs=`#version 300 es
 precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;out vec4 o;
 void main(){
@@ -703,9 +704,9 @@ void main(){
   // rounded rectangle: white fill, line-colour border, dark name
   float r=abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
   vec2 q=abs(v_local)-(v_size*.5-r);float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-r;
-  float cover=clamp(.5-sd,0.,1.);if(cover<=0.)discard;
+  float aa=max(fwidth(sd),1e-3),cover=clamp(.5-sd/aa,0.,1.);if(cover<=0.)discard;
   vec3 fill=mix(vec3(1.),vec3(.12,.17,.2),u_dark),ink=mix(vec3(.11,.17,.19),vec3(.93,.96,.97),u_dark);   // dark mode: dark box, light name
-  vec3 col=mix(fill,v_color,smoothstep(-border-.8,-border+.8,sd));
+  vec3 col=mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd));
   if(v_tw.x>0.){vec2 t=(v_local+v_tw*.5)/v_tw;   // v_tw = text cell size (width, font × row ratio)
     if(t.x>0.&&t.x<1.&&t.y>0.&&t.y<1.){float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,ink,a);}}
   o=vec4(col*cover,cover);
@@ -715,7 +716,7 @@ void main(){
     if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p));
     this.b=gl.createBuffer();this.tex=gl.createTexture();
     this.attr=Object.fromEntries(['a_px','a_local','a_size','a_uv','a_color','a_tw'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_view','u_tex','u_dpr','u_dark'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_tex','u_dpr','u_dark'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
   }
   buildAtlas(gl){
     const texts=[...new Set(labels.map(l=>l.text))],key=texts.join('|');if(key===this.atlasKey)return;this.atlasKey=key;
@@ -730,37 +731,44 @@ void main(){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  render(gl){
+  render(gl,options){
     if(!stationRects.size)return;
     this.buildAtlas(gl);
-    const cv=map.getCanvas(),dpr=cv.width/cv.clientWidth,data=[],hgt=stationWidthPx(map.getZoom());
-    const quad=(cx,cy,ang,bw,h,uv,col,tw,th)=>{const c=Math.cos(ang),s_=Math.sin(ang),hw=bw/2,hh=h/2;
-      const corner=(lx,ly)=>[(cx+lx*c-ly*s_)*dpr,(cy+lx*s_+ly*c)*dpr,lx*dpr,ly*dpr,bw*dpr,h*dpr,uv[0],uv[1],uv[2],uv[3],...col,tw,th];
+    const z=map.getZoom(),unit=1/(512*2**z),data=[],hgt=stationWidthPx(z);
+    const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
+    // a box on the ground: centre (mercator), unit axis, length/height in CSS px at this zoom
+    const quad=(cx,cy,ax,ay,bw,h,uv,col,tw,th)=>{const nx=-ay,ny=ax,hw=bw/2,hh=h/2;
+      const corner=(lx,ly)=>[cx-ox+(ax*lx+nx*ly)*unit,cy-oy+(ay*lx+ny*ly)*unit,lx,ly,bw,h,uv[0],uv[1],uv[2],uv[3],...col,tw,th];
       const q=[corner(-hw,-hh),corner(hw,-hh),corner(hw,hh),corner(-hw,hh)];for(const i of [0,1,2,0,2,3])data.push(...q[i])};
     // zoomed out (phone ≤ 12, desktop ≤ 13): each platform is just a dot, no names
-    const pointsOnly=map.getZoom()<=(matchMedia('(max-width:720px),(pointer:coarse)').matches?12:13),dot=Math.max(7,Math.min(10,hgt*.55));
-    // every platform of the visible lines, as a plain rounded box
-    const cw=cv.clientWidth,ch=cv.clientHeight;
+    const pointsOnly=z<=(matchMedia('(max-width:720px),(pointer:coarse)').matches?12:13),dot=Math.max(7,Math.min(10,hgt*.55));
+    const b=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),pad=(hi.x-lo.x)*.2;
+    const geo=new Map();   // rect key → ground placement, reused for its name
     for(const [k,r] of stationRects){
       const line=k.slice(0,k.lastIndexOf(':'));if(selected!=='all'&&line!==selected)continue;
-      const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]);
-      let dx=p1.x-p0.x,dy=p1.y-p0.y;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-      const cx=(p0.x+p1.x)/2-dy*r.offset,cy=(p0.y+p1.y)/2+dx*r.offset;if(cx<-60||cy<-60||cx>cw+60||cy>ch+60)continue;
-      if(pointsOnly)quad(cx,cy,0,dot,dot,[0,0,0,0],hexRGB3(colors[line]||'#52646a'),0,0);
-      else{const h=platformPx(r,hgt),col=hexRGB3(colors[line]||'#52646a'),a=Math.atan2(dy,dx);
-        quad(cx,cy,a,Math.max(len,h),h,[0,0,0,0],col,0,0)}   // one box: platform and passages out to the exits
+      const m0=maplibregl.MercatorCoordinate.fromLngLat(r.coords[0]),m1=maplibregl.MercatorCoordinate.fromLngLat(r.coords[r.coords.length-1]);
+      let ax=m1.x-m0.x,ay=m1.y-m0.y;const lenU=Math.hypot(ax,ay)||1e-12;ax/=lenU;ay/=lenU;
+      const cx=(m0.x+m1.x)/2-ay*r.offset*unit,cy=(m0.y+m1.y)/2+ax*r.offset*unit;   // line-offset: right of drawing direction
+      if(cx<lo.x-pad||cx>hi.x+pad||cy>lo.y+pad||cy<hi.y-pad)continue;
+      const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt),len=lenU/unit;
+      // names read left→right on screen: flip the axis when it points leftward
+      const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
+      geo.set(k,{cx,cy,ax:ax*flip,ay:ay*flip,len,h,col});
+      if(pointsOnly)quad(cx,cy,1,0,dot,dot,[0,0,0,0],col,0,0);
+      else quad(cx,cy,ax*flip,ay*flip,Math.max(len,h),h,[0,0,0,0],col,0,0);   // one box: platform and passages out to the exits
     }
     if(!pointsOnly)for(const L of layoutLabels()){
-      const uv=this.uv.get(L.item.text);if(!uv)continue;
-      quad(L.cx,L.cy,L.ang,L.bw,L.hgt,uv,hexRGB3(colors[L.item.line]||'#52646a'),uv[4]*L.font*dpr,L.font*dpr*NAME_ROW/NAME_PX);
+      const g=geo.get(`${L.item.line}:${L.item.station.id}`),uv=this.uv.get(L.item.text);if(!g||!uv)continue;
+      quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,L.bw),g.h,uv,g.col,uv[4]*L.font,L.font*NAME_ROW/NAME_PX);
     }
     if(!data.length)return;
+    const M=options.defaultProjectionData.mainMatrix,MT=Array.from(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*ox+M[4+r]*oy+M[12+r];
     gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
     const S=15*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
     ptr('a_px',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_color',3,10);ptr('a_tw',2,13);
-    gl.uniform2f(this.uni.u_view,cv.width,cv.height);gl.uniform1f(this.uni.u_dpr,dpr);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);
+    gl.uniformMatrix4fv(this.uni.u_matrix,false,new Float32Array(MT));gl.uniform1f(this.uni.u_dpr,1);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uni.u_tex,0);
-    gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }
 }
