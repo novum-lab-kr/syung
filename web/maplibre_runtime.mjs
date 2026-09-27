@@ -140,7 +140,7 @@ const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRat
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
-map.addControl(geolocate,'top-right');
+map.addControl(geolocate,'bottom-right');
 let autoLocating=false;
 geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
 // First visit: fly to where the viewer is (inside the 수도권 only; elsewhere, or without permission,
@@ -959,7 +959,7 @@ map.on('load',()=>{
   map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
   map.once('idle',()=>{const d=map.getContainer().querySelector('.maplibregl-ctrl-attrib');if(d){d.classList.remove('maplibregl-compact-show');d.removeAttribute('open')}});
-  {const g=document.createElement('div');g.className='maplibregl-ctrl maplibregl-ctrl-group';g.append($('toggleMap'),$('toggleTrains'),$('toggleTheme'));map.getContainer().querySelector('.maplibregl-ctrl-top-right').append(g)}
+  {const g=document.createElement('div');g.className='maplibregl-ctrl maplibregl-ctrl-group';g.append($('toggleTheme'));map.getContainer().querySelector('.maplibregl-ctrl-top-right').append(g)}
   // recompute shadows when the view settles or building tiles arrive (debounced)
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(updateSun,400)};
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
@@ -969,7 +969,7 @@ map.on('load',()=>{
   map.addLayer({id:'exits',type:'circle',source:'exits',minzoom:16,paint:{'circle-radius':['interpolate',['linear'],['zoom'],16,6.5,18,9],'circle-color':'#ffd200','circle-stroke-color':'#3a3a3a','circle-stroke-width':1}});   // above the 3D buildings so every exit stays readable
   map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:16,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,9,18,12],'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#1d1d1d'}});
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
-  {const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
+  $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
   map.getContainer().append(liveNotice);map.getContainer().parentElement.append(sheet);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
@@ -999,7 +999,8 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle,html[data-theme=dark] .
 html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],html[data-theme=dark] .maplibregl-ctrl-group .train-toggle[aria-pressed=false]{color:#61737a!important}
 .webgl-zoom{display:flex;align-items:center;gap:3px;padding:4px 7px!important;font-variant-numeric:tabular-nums}
 .webgl-zoom svg{width:14px;height:14px}
-.webgl-zoom{top:auto!important;bottom:18px;right:10px!important}   /* zoom readout: bottom right */
+.webgl-zoom{top:auto!important;bottom:20px;right:56px!important}   /* zoom readout: bottom right, left of my-location */
+.webgl-zoom[hidden]{display:none!important}
 .legend{display:none}   /* legend removed; data sources stay in the side panel */
 </style>`);
 
@@ -1056,7 +1057,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 {
   const b=document.createElement('button');b.id='toggleTheme';b.type='button';b.className='map-toggle theme-toggle';b.title='자동 → 라이트 → 다크 순서로 바뀌어요. 자동은 해 뜨면 라이트, 해 지면 다크.';
   b.onclick=()=>{themeChoice={auto:'light',light:'dark',dark:'auto'}[themeChoice]||'auto';try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
-  $('toggleTrains').after(b);
+  document.querySelector('.map-area').append(b);
 }
 setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
@@ -1204,13 +1205,25 @@ function addBasemap(){
 $('toggleMap').onclick=e=>{
   if(!ready)return;
   const on=e.currentTarget.getAttribute('aria-pressed')!=='true';
-  e.currentTarget.setAttribute('aria-pressed',String(on));iconButton(e.currentTarget,'map',on?'배경 지도 끄기':'배경 지도 켜기');
+  e.currentTarget.setAttribute('aria-pressed',String(on));
   if(on&&!map.getSource('ofm'))addBasemap();
   for(const id of BASEMAP_LAYERS)if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');
   updateSun();
 };
-$('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));iconButton(e.currentTarget,'train',trainsEnabled?'열차 숨기기':'열차 보이기');map.triggerRepaint()};
-iconButton($('toggleTrains'),'train','열차 숨기기');iconButton($('toggleMap'),'map','배경 지도 켜기');
+$('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
+// ---- settings (gear in the header): on/off switches ----
+{
+  const btn=$('settingsButton'),panel=$('settingsPanel'),ZOOM_KEY='syung-show-zoom';
+  $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;$('toggleZoom').querySelector('.setting-icon').innerHTML=ICONS.zoom;
+  const setOpen=o=>{panel.hidden=!o;btn.setAttribute('aria-expanded',String(o))};
+  btn.onclick=e=>{e.stopPropagation();setOpen(panel.hidden)};
+  document.addEventListener('click',e=>{if(!panel.hidden&&!panel.contains(e.target))setOpen(false)});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){setOpen(false);btn.focus()}});
+  const showZoom=on=>{$('toggleZoom').setAttribute('aria-pressed',String(on));$('zoomLevel').hidden=!on};
+  let zoomOn=true;try{zoomOn=localStorage.getItem(ZOOM_KEY)!=='0'}catch{}
+  showZoom(zoomOn);
+  $('toggleZoom').onclick=e=>{const on=e.currentTarget.getAttribute('aria-pressed')!=='true';showZoom(on);try{localStorage.setItem(ZOOM_KEY,on?'1':'0')}catch{}};
+}
 const zoom=()=>{const z=Math.round(map.getZoom()),el=$('zoomLevel');el.innerHTML=ICONS.zoom+`<span>${z}</span>`;el.title=`줌 ${z}`;el.setAttribute('aria-label',`줌 ${z}`)};zoom();
 map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 // Server caches ~90s and the upstream key has a daily quota: don't poll from background tabs.
