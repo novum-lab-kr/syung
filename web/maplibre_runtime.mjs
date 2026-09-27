@@ -139,10 +139,11 @@ const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
 // and at the display's 60–120 Hz that kept phones hot. Panning and zooming still render at full rate.
 // One timer for all of them; animFrame hooks update animated paint just before the redraw.
-// Trains are redrawn about once per screen pixel they move (a train at ~20 m/s: 2 fps over the whole
-// network, 10 at z15, up to ANIM_FPS at z16+); the pulse and the selected-train ripple at 12.
-const ANIM_FPS=PHONE?15:24,RIPPLE_FPS=12,animFrame=[];   // phones: 15 at most (steps of ~1.4 px at z16+)let repaintTimer=0,repaintAt=0;
-const trainFps=()=>{const mpp=40075016.686*Math.cos(map.getCenter().lat*Math.PI/180)/(512*2**map.getZoom());return Math.max(2,Math.min(ANIM_FPS,20/mpp))};
+// Moving trains are redrawn about twice per screen pixel they move, between 12 fps (fewer read as
+// stutter: 2–5 fps zoomed out was too few) and 24; the pulse and the selected-train ripple at 12;
+// a followed train at FOLLOW_FPS, since then the whole map moves.
+const ANIM_FPS=24,MIN_FPS=12,RIPPLE_FPS=12,FOLLOW_FPS=30,animFrame=[];let repaintTimer=0,repaintAt=0;
+const trainFps=()=>{const mpp=40075016.686*Math.cos(map.getCenter().lat*Math.PI/180)/(512*2**map.getZoom());return Math.max(MIN_FPS,Math.min(ANIM_FPS,40/mpp))};
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
@@ -636,7 +637,7 @@ class TrainLayer{
     }
     // moving trains: trainFps(); the selected train's ripple: RIPPLE_FPS; trains standing at a
     // station: once a second, to see them set off
-    const fps=Math.max(animating?trainFps():0,rippling?RIPPLE_FPS:0);
+    const fps=Math.max(animating?(following?FOLLOW_FPS:trainFps()):0,rippling?RIPPLE_FPS:0);
     if(fps)repaintSoon(1000/fps);else if(waiting)repaintSoon(1000);
   }
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
