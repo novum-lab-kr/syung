@@ -934,7 +934,7 @@ map.on('load',()=>{
   {
     map.addSource('me',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
     const pa={'circle-pitch-alignment':'map','circle-pitch-scale':'map'};
-    map.addLayer({id:'me-accuracy',type:'circle',source:'me',paint:{...pa,'circle-radius':0,'circle-color':'rgba(255,212,0,.16)','circle-stroke-color':'rgba(242,194,0,.55)','circle-stroke-width':1.5}},'webgl-trains');
+    map.addLayer({id:'me-accuracy',type:'circle',source:'me',paint:{...pa,'circle-radius':0,'circle-color':'rgba(255,212,0,0)','circle-stroke-color':'rgba(242,194,0,.45)','circle-stroke-width':1.2}},'webgl-trains');
     map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0}},'webgl-trains');
     map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}},'webgl-trains');
     map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}},'webgl-trains');
@@ -942,8 +942,8 @@ map.on('load',()=>{
     geolocate.on('geolocate',e=>{
       const {longitude:x,latitude:y,accuracy:acc}=e.coords;shown=true;
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
-      // accuracy (metres) → pixels at each zoom
-      const k=512/(40075016.686*Math.cos(y*Math.PI/180)),r0=(acc||0)*k;
+      // accuracy (metres) → pixels at each zoom; a faint outline only, and none when the fix is rough (> 100 m)
+      const k=512/(40075016.686*Math.cos(y*Math.PI/180)),r0=(acc&&acc<=100?acc:0)*k;
       map.setPaintProperty('me-accuracy','circle-radius',['interpolate',['exponential',2],['zoom'],0,r0,24,r0*2**24]);
     });
     // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle
