@@ -276,9 +276,9 @@ void main(){
     // headlight beam on the ground ahead of the leading cab, drawn with the ground shadows
     if(u_shadow<.5)discard;
     // two cones, one from each headlight, spreading slightly outward
-    float len=W*3.4,u=p.x/len,yc=W*.31*(1.+.8*u),hw=W*(.08+.5*u);
+    float len=W*3.4,u=p.x/len,yc=W*.27*(1.+.8*u),hw=W*(.09+.5*u);
     float cone=max(1.-smoothstep(.35,1.,abs(p.y-yc)/hw),1.-smoothstep(.35,1.,abs(p.y+yc)/hw));
-    float a=pow(1.-u,1.6)*smoothstep(0.,.08,u)*cone*u_glow;
+    float a=pow(1.-u,1.6)*cone*u_glow*(1.+.8*(1.-smoothstep(0.,.12,u)));   // brightest right at the lamps
     outColor=vec4(vec3(1.,.95,.78)*a,a*.8);return;
   }
   if(u_shadow>.5){if(v_face>.5)discard;float a=(1.-smoothstep(-.4,2.4,edge))*.22;outColor=vec4(vec3(.09,.13,.16)*a,a);return;}
@@ -400,6 +400,7 @@ void main(){
   }
   outColor=vec4(col*alpha,alpha);
 }`;
+const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 class TrainLayer{
   constructor(){
     this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
@@ -436,8 +437,8 @@ class TrainLayer{
     this.corner(a,y,.65,a,.65,face);this.corner(b,yb,zb,b,zb,face);this.corner(a,y,za,a,za,face);
   }
   // Side facets follow the same rounded outline as the roof's pixel-space mask.
-  cabWall(front,side,H){
-    const W=this.width,r=W*.36,nose=W*.48,low=H*.44;
+  cabWall(front,side,H,low=H*.44){
+    const W=this.width,r=W*.36,nose=W*.48;
     let x=0,y=W*.5-r,z=low;
     for(let i=1;i<=4;i++){
       const t=i/4,xx=r*(1-Math.cos(t*Math.PI/2)),yy=W*.5-r+r*Math.sin(t*Math.PI/2),zz=low+(H-low)*xx/nose;
@@ -447,9 +448,9 @@ class TrainLayer{
     this.wall(front?this.length-r:r,front?this.length-nose:nose,z,H,side*W*.5);
   }
   // Headlight beams: a flat quad on the ground from the nose forward; the shader draws one cone per lamp.
-  // It starts at the lamps' height on the end wall and slopes down to the ground ahead.
+  // It lies on the ground from the nose tip, where the headlights sit.
   beam(L,w){
-    const len=this.width*3.4,w0=w*.8,w1=w*2.3,zl=this.width*.68*.33,zg=.3;
+    const len=this.width*3.4,w0=w*.8,w1=w*2.3,zl=.3,zg=.3;
     this.corner(L,-w0,zl,0,-w0,6);this.corner(L,w0,zl,0,w0,6);this.corner(L+len,w1,zg,len,w1,6);
     this.corner(L,-w0,zl,0,-w0,6);this.corner(L+len,w1,zg,len,w1,6);this.corner(L+len,-w1,zg,len,-w1,6);
   }
@@ -511,14 +512,14 @@ class TrainLayer{
           if(pitched){
             const alongCamera=tx*camX+ty*camY;
             if(alongCamera<0)this.end(0,back?w-bodyPx*.36:w,back?low:H,back?3:5);
-            if(alongCamera>0)this.end(L,front?w-bodyPx*.36:w,front?low:H,front?2:5);
+            if(alongCamera>0&&!front)this.end(L,w,H,5);   // the leading nose slopes to the ground: no front wall
             this.wall(a,b,H,H,side*w);
             if(back)this.cabWall(false,side,H);
-            if(front)this.cabWall(true,side,H);
+            if(front)this.cabWall(true,side,H,NOSE_Z);
           }
           this.roof(a,b,H,H,w);
           if(back)this.roof(0,a,low,H,w);
-          if(front){this.roof(b,L,H,low,w);this.beam(L,w)}
+          if(front){this.roof(b,L,H,NOSE_Z,w);this.beam(L,w)}
         }
       }else{
         // One rigid, rounded icon. Detail uses true consist spacing, but tiny cars
@@ -533,16 +534,15 @@ class TrainLayer{
         if(pitched){
           const alongCamera=tx*camX+ty*camY;
           if(alongCamera<0)this.end(0,w-bodyPx*.36,low,3);
-          if(alongCamera>0)this.end(L,w-bodyPx*.36,low,2);
           this.wall(nose,L-nose,H,H,side*w);
           this.cabWall(false,side,H);
-          this.cabWall(true,side,H);
+          this.cabWall(true,side,H,NOSE_Z);
         }
         this.roof(nose,L-nose,H,H,w+MARGIN);
         this.roof(0,nose,low,H,w+MARGIN);
-        this.roof(L-nose,L,H,low,w+MARGIN);
+        this.roof(L-nose,L,H,NOSE_Z,w+MARGIN);
         this.roof(-MARGIN,0,low,low,w+MARGIN);
-        this.roof(L,L+MARGIN,low,low,w+MARGIN);
+        this.roof(L,L+MARGIN,NOSE_Z,NOSE_Z,w+MARGIN);
         this.beam(L,w);
       }
     }
