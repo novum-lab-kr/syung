@@ -163,6 +163,10 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
         eta = int(row["barvlDt"]) if str(row.get("barvlDt") or "").isdigit() else 99999
         return (0 if code in ("0", "1", "2") else 1 if code in ("3", "4", "5") else 2, eta)
 
+    # 전역 출발/진입/도착 (3/4/5) are about the station before the row's one; arvlMsg3 names it on
+    # most rows but the row's own station on some (5·6호선): then take statnFid's station (not
+    # always: 공항철도's statnFid points at stations that are not even adjacent)
+    names = {str(r.get("statnId")): _clean_station(r.get("statnNm")) for r in payload.get("realtimeArrivalList") or []}
     out: dict[str, list[dict]] = defaultdict(list)
     for (line, train_no), rows in grouped.items():
         # Rows for one train (one per upcoming station) are not updated together: take the most
@@ -173,8 +177,12 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
         current = _clean_station(row.get("arvlMsg3")) or _clean_station(row.get("statnNm"))
         if code in ("0", "1", "2"):
             station, status = _clean_station(row.get("statnNm")), {"0": "진입", "1": "도착", "2": "출발"}[code]
+        elif code in ("3", "4", "5"):
+            if current == _clean_station(row.get("statnNm")):
+                current = names.get(str(row.get("statnFid"))) or current
+            station, status = current, {"3": "출발", "4": "진입", "5": "도착"}[code]
         else:
-            station, status = current, {"3": "출발", "4": "진입", "5": "도착"}.get(code, "운행 중")
+            station, status = current, "운행 중"
         if not station:
             continue
         out[line].append({

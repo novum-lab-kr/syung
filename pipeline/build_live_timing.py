@@ -4,6 +4,7 @@
 Output (data/live-timing.json), read by the map runtime:
   {"lines": {"<line>": {"pace": x, "zone": s, "approach": s}}, "default": {...}, "from": [...]}
 - pace: observed ÷ timetable time over 1–4 stations between two records of the same status
+  (first sightings only)
   (도착→도착, 출발→출발), median. The feed's 도착/출발 mark a train entering and leaving the
   station section, so equal-status spans cancel that offset. Clamped to 0.80–1.05 (express trains
   on 1·9호선 pull the median down).
@@ -51,6 +52,9 @@ def main(paths: list[str]) -> None:
     pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
     for (line, _), evs in trains.items():
         seq = sorted(evs.values(), key=lambda e: e["receivedAt"])
+        # the same station and status seen again later (every snapshot re-stamps it) is not a new
+        # event: keep the first sighting, or spans to the next event come out short
+        seq = [e for i, e in enumerate(seq) if i == 0 or (e["station"], e["status"]) != (seq[i - 1]["station"], seq[i - 1]["status"])]
         for e1, e2 in zip(seq, seq[1:]):
             a, b = node_of.get((line, key(e1["station"]))), node_of.get((line, key(e2["station"])))
             dt = ts(e2["receivedAt"]) - ts(e1["receivedAt"])
