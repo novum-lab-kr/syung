@@ -31,7 +31,7 @@
 <body>
 <link rel="stylesheet" href="./syung.css"><!-- after the runtime's <head> styles, so the 슝 skin wins -->
 <main class="app">
-  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>지금 내 열차, 어디쯤 슝?</p></div></div><div id="liveState" class="source-state" data-state="loading"><i></i><span>실시간 열차 불러오는 중</span></div></header>
+  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>지금 내 열차, 어디쯤 슝?</p></div></div><div id="liveState" class="source-state" data-state="loading" hidden><i></i><span>실시간 열차 불러오는 중</span></div><button id="menuButton" class="menu-button" type="button" aria-label="메뉴" aria-expanded="false"><span></span><span></span><span></span></button></header>
   <div class="layout">
     <section class="map-area" aria-labelledby="mapTitle">
       <div id="map" class="map" role="application" aria-label="수도권 철도역 WebGL 지도"></div>

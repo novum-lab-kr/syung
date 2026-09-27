@@ -26,6 +26,13 @@ html[data-theme=dark]{
 .source-state i{box-shadow:0 0 0 3px rgba(255,255,255,.7)}
 .source-state[data-state=ok] i{animation:syung-pulse 2s ease-in-out infinite}
 @keyframes syung-pulse{50%{transform:scale(1.35)}}
+/* menu (no items yet); the live status line stays in the DOM, hidden, for the runtime to write to */
+.source-state[hidden]{display:none!important}
+.menu-button{flex:none;width:40px;height:40px;display:grid;place-content:center;gap:5px;padding:0;border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer}
+.menu-button span{display:block;width:22px;height:2.5px;border-radius:2px;background:currentColor}
+.menu-button:hover{background:rgba(20,20,20,.08)}
+.menu-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+html[data-theme=dark] .menu-button:hover{background:rgba(255,212,0,.12)}
 html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
 html[data-theme=dark] .identity p{color:#c9c2a0}
 html[data-theme=dark] .source-state{background:rgba(255,212,0,.1);color:#f1efe6}
