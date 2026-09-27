@@ -580,42 +580,6 @@ class TrainLayer{
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
 }
 
-// ---- train number labels ----------------------------------------------------------------
-// From zoom 14.5, each train gets a small tag (number + destination) beside it, placed on the
-// outer side of its lane. Elements are reused per train and repositioned on every rendered frame.
-const LABEL_ZOOM=14.5,trainTags=new Map();
-const tagLayer=document.createElement('div');tagLayer.className='train-tags';
-document.head.insertAdjacentHTML('beforeend','<style>.train-tags{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}.train-tag{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;transform:translate(-50%,-50%);white-space:nowrap;font:700 10.5px/1 "Noto Sans KR",sans-serif;color:#15252b;background:rgba(255,255,255,.92);border:1.5px solid var(--c);border-radius:9px;padding:2px 6px 2px 5px;box-shadow:0 1px 3px rgba(10,30,38,.25)}.train-tag b{color:var(--c);margin-right:3px}.train-roof{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;white-space:nowrap;font-family:"Noto Sans KR",sans-serif;font-weight:800;line-height:1;letter-spacing:.02em;color:#17262d;text-shadow:0 0 2px rgba(255,255,255,.9)}.train-roof[hidden]{display:none}.train-roof i{font-style:normal;font-weight:700;color:#33454d}.train-tag[hidden]{display:none}</style>');
-// Number (and destination when there's room) written along the middle of the roof. In pitched
-// views the text is lifted by the body height so it stays on the roof rather than the ground.
-const ROOF_ZOOM=14,roofNums=new Map(),textWidth=(()=>{const c=document.createElement('canvas').getContext('2d');return (txt,px)=>{c.font=`800 ${px}px "Noto Sans KR",sans-serif`;return c.measureText(txt).width}})();
-function updateTrainTags(){
-  const z=map.getZoom(),show=trainsEnabled&&z>=ROOF_ZOOM,seen=new Set();
-  if(show){
-    const unit=1/(512*2**z),w=map.getCanvas().clientWidth,h=map.getCanvas().clientHeight,lane=laneOffsetPx(z),body=bodyWidthPx(z);
-    const lift=body*.68*Math.sin(map.getPitch()*Math.PI/180),font=Math.max(8,Math.min(13,body*.6));
-    const at=(plan,d,px)=>{const q=trackPoint(plan,d),o=(q.off+px)*unit;return map.project(new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat())};
-    for(const plan of plans){
-      const pose=trainPose(plan),c=at(plan,pose.dist,lane);
-      if(c.x<-120||c.y<-60||c.x>w+120||c.y>h+60)continue;
-      const t=plan.t,m=mercStop(t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
-      const A=at(plan,pose.dist-half,lane),B=at(plan,pose.dist+half,lane),len=Math.hypot(B.x-A.x,B.y-A.y);
-      let ang=Math.atan2(B.y-A.y,B.x-A.x)*180/Math.PI;if(ang>90)ang-=180;else if(ang<-90)ang+=180;
-      // fit: "번호 행선지" → "번호" → nothing, leaving room for the cab noses
-      const room=len-body*1.6,full=`${t.trainNo} ${destLabel(t)}`.trim();
-      const text=textWidth(full,font)<=room?full:textWidth(t.trainNo,font)<=room?t.trainNo:'';
-      let el=roofNums.get(plan.id);
-      if(!text){if(el)el.hidden=true;continue}
-      if(!el){el=document.createElement('span');el.className='train-roof';el.onclick=ev=>{ev.stopPropagation();const pl=plans.find(x=>x.id===plan.id);if(pl)showTrainPopup(pl)};tagLayer.append(el);roofNums.set(plan.id,el)}
-      if(el.dataset.k!==text){el.dataset.k=text;const sp=text.indexOf(' ');el.innerHTML=sp<0?esc(text):`${esc(text.slice(0,sp))}<i>${esc(text.slice(sp))}</i>`}
-      el.style.fontSize=`${font.toFixed(1)}px`;
-      el.style.transform=`translate(${c.x.toFixed(1)}px,${(c.y-lift).toFixed(1)}px) translate(-50%,-50%) rotate(${ang.toFixed(1)}deg)`;el.hidden=false;seen.add(plan.id);
-    }
-  }
-  for(const [id,el] of roofNums)if(!seen.has(id)){if(!plans.some(p=>p.id===id)){el.remove();roofNums.delete(id)}else el.hidden=true}
-  for(const [id,el] of trainTags){el.remove();trainTags.delete(id)}   // side tags retired: text now lives on the roof
-}
-
 // ---- train inspector ----------------------------------------------------------------------
 // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
 function trainState(plan){
@@ -627,24 +591,36 @@ function trainState(plan){
   const k=ph.k0+(ph.k1-ph.k0)*Math.min(1,el/ph.dur);
   return `${ph.from.name} → ${ph.to.name} 주행 중 · ${Math.round(k*100)}% · 도착까지 ${Math.round(left)}초 (구간 ${Math.round((ph.k1-ph.k0)?ph.dur/(ph.k1-ph.k0):ph.dur)}초)`;
 }
+// The same phase lookup as trainState, worded for riders.
+function riderState(plan){
+  let el=age(plan.t.receivedAt),ph=plan.phases[plan.phases.length-1];
+  for(const x of plan.phases){if(el<x.dur){ph=x;break}el-=x.dur}
+  if(ph.dur===Infinity)return `${ph.to.name}역에 있어요`;
+  const left=Math.max(0,ph.dur-el),when=left<60?`${Math.max(1,Math.round(left/10)*10)}초`:`${Math.round(left/60)}분`;
+  if(ph.k0===ph.k1)return `${ph.k0===0?ph.from.name:ph.to.name}역에 정차 중`;
+  return `${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
+}
 function showTrainPopup(plan){
   const t=plan.t,pose=trainPose(plan),q=trackPoint(plan,pose.dist),ll=new maplibregl.MercatorCoordinate(q.x,q.y,0).toLngLat();
   const a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
-  const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`;
-  const html=`<div class="popup train-inspect"><h3 style="color:${colors[t.line]}">${esc(t.line)} ${esc(t.trainNo)}</h3>
-  <table><tbody>
+  const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`,c=colors[t.line];
+  const badges=[t.express?'<span class="b ex">급행</span>':'',t.last?'<span class="b last">막차</span>':''].join('');
+  const html=`<div class="popup train-inspect" style="--c:${c}">
+  <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
+  <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
+  <div class="tp-now">${esc(riderState(plan))}</div>
+  <details><summary>자세히</summary><table><tbody>
   <tr><td colspan=2 class="sec">API 원본</td></tr>
-  ${row('역',esc(t.station))}${row('상태',esc(t.status))}${row('방향',esc(t.direction))}${row('행선지',`${esc(t.destination||'-')}${/순환$/.test(t.destination||'')?` <span class="muted">(${esc(destLabel(t))})</span>`:''}`)}
+  ${row('역',esc(t.station))}${row('상태',esc(t.status))}${row('방향',esc(t.direction))}${row('행선지',esc(t.destination||'-'))}
   ${row('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}
-  ${row('급행/막차',`${t.express?'급행':'일반'}${t.last?' · 막차':''}`)}
   ${row('받은 시각',kst(liveFetchedAt))}
   <tr><td colspan=2 class="sec">지도 예측</td></tr>
   <tr><td colspan=2>${esc(trainState(plan))}</td></tr>
   ${row('예측 경로',esc(plan.seq.map(s=>s.name).join(' › ')))}
-  </tbody></table></div>`;
-  new maplibregl.Popup({maxWidth:'320px'}).setLngLat(ll).setHTML(html).addTo(map);
+  </tbody></table></details></div>`;
+  new maplibregl.Popup({maxWidth:'300px'}).setLngLat(ll).setHTML(html).addTo(map);
 }
-document.head.insertAdjacentHTML('beforeend','<style>.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
+document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
 // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
 function pickTrain(point){
   if(!trainsEnabled||!liveOn)return null;
@@ -916,7 +892,7 @@ map.on('load',()=>{
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   {const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
-  map.getContainer().append(tagLayer,liveNotice);map.on('render',updateTrainTags);
+  map.getContainer().append(liveNotice);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
