@@ -20,7 +20,9 @@ HOST = os.environ.get("SUBWAY_LIVE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBWAY_LIVE_PORT", "3113"))
 CACHE_SECONDS = max(60, int(os.environ.get("SUBWAY_LIVE_CACHE_SECONDS", "90")))
 FOCUSED_CACHE_SECONDS = max(5, min(CACHE_SECONDS, int(os.environ.get("SUBWAY_LIVE_FOCUSED_CACHE_SECONDS", "15"))))
-DAILY_LIMIT = min(1000, max(1, int(os.environ.get("SUBWAY_LIVE_DAILY_LIMIT", "950"))))
+DAILY_LIMIT = max(1, int(os.environ.get("SUBWAY_LIVE_DAILY_LIMIT", "950")))   # raise it when the key's quota is raised
+# No upstream calls while no trains run (KST, "HH:MM-HH:MM", may wrap midnight; empty = always call).
+QUIET_HOURS = os.environ.get("SUBWAY_LIVE_QUIET_HOURS", "01:30-05:15").strip()
 API_KEY = os.environ.get("SEOUL_SUBWAY_API_KEY", "sample").strip() or "sample"
 API_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimePosition/0/1000/{}"
 # One call returns arrival rows for every station on every line (~3k rows); used as the primary
@@ -61,8 +63,23 @@ def _save_quota() -> None:
     temporary.replace(QUOTA_FILE)
 
 
+KST = timezone(timedelta(hours=9))
+
+
 def _today() -> str:
-    return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+    return datetime.now(KST).strftime("%Y-%m-%d")   # the key's daily quota runs on Korean days
+
+
+def _quiet(now: datetime | None = None) -> bool:
+    if not QUIET_HOURS:
+        return False
+    try:
+        start, end = ((int(x[:2]) * 60 + int(x[3:5])) for x in QUIET_HOURS.split("-"))
+    except ValueError:
+        return False
+    t = now or datetime.now(KST)
+    m = t.hour * 60 + t.minute
+    return start <= m < end if start <= end else m >= start or m < end
 
 
 def _clean_station(value: object) -> str:
@@ -308,8 +325,11 @@ def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
     global _all_cache
     selected = [line for line in dict.fromkeys(lines) if line in set(LINE_NAMES.values())]
     with _lock:
-        now, warnings = time.time(), []
-        if _all_cache is None or now - _all_cache[0] >= CACHE_SECONDS:
+        now, warnings, quiet = time.time(), [], _quiet()
+        if quiet and _all_cache is None:
+            return {"ok": True, "mode": "all", "quiet": True, "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": 0, "cacheSeconds": CACHE_SECONDS,
+                    "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": [], "trains": []}, 200
+        if not quiet and (_all_cache is None or now - _all_cache[0] >= CACHE_SECONDS):
             try:
                 _all_cache = (now, _fetch_all())
             except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
@@ -318,7 +338,7 @@ def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
                 warnings.append(f"전체 노선: 이전 자료 표시 중 ({exc})")
         data = _all_cache[1]
         trains = [t for line in selected for t in data["lines"].get(line, [])]
-        return {"ok": True, "mode": "all", "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": CACHE_SECONDS,
+        return {"ok": True, "mode": "all", "quiet": quiet, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": CACHE_SECONDS,
                 "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": warnings, "trains": trains}, 200
 
 

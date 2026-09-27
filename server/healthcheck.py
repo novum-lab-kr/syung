@@ -38,7 +38,7 @@ def main() -> None:
         info["data_age_s"] = round(age) if age is not None else None
         if not d.get("ok"):
             problems.append(f"프록시 오류: {d.get('error')}")
-        elif age is not None and age > 300:
+        elif age is not None and age > 300 and not d.get("quiet"):   # no upstream calls in the quiet hours
             problems.append(f"실시간 데이터가 {round(age / 60)}분째 갱신되지 않음")
         q = d.get("quota") or {}
         if q.get("limit") and q.get("used", 0) >= 0.9 * q["limit"]:
