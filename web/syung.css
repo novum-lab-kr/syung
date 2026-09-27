@@ -124,13 +124,12 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 html[data-theme=dark] .maplibregl-user-location-dot{box-shadow:0 0 0 2.5px var(--syung-ink),0 0 0 5px rgba(255,212,0,.35),0 3px 8px rgba(0,0,0,.5)!important}
 .maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon{filter:none}
 
-/* ---- bottom sheet (station / train details) ---- */
-.sheet{position:absolute;z-index:20;left:50%;bottom:0;width:min(440px,100%);max-height:60%;overflow:auto;overscroll-behavior:contain;
-  transform:translate(-50%,105%);transition:transform .28s cubic-bezier(.2,.9,.3,1.1);
-  background:var(--paper);color:var(--ink);border-radius:22px 22px 0 0;box-shadow:0 -4px 0 rgba(20,20,20,.05),0 -10px 30px rgba(40,35,0,.18);
-  padding:10px 20px calc(18px + env(safe-area-inset-bottom,0px))}
-.sheet.open{transform:translate(-50%,0)}
-@media(min-width:721px){.sheet{left:18px;bottom:18px;transform:translateY(calc(100% + 30px));border-radius:22px}.sheet.open{transform:none}}
+/* ---- bottom sheet (station / train details): edge to edge, slides up from the bottom of the map ---- */
+.sheet{position:absolute;z-index:20;left:0;right:0;bottom:0;max-height:62%;overflow:auto;overscroll-behavior:contain;
+  transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.8,.25,1);
+  background:var(--paper);color:var(--ink);border-radius:22px 22px 0 0;box-shadow:0 -10px 30px rgba(40,35,0,.18);
+  padding:10px max(20px,calc((100% - 760px)/2)) calc(18px + env(safe-area-inset-bottom,0px))}
+.sheet.open{transform:none}
 .sheet-grab{width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 8px}
 .sheet-close{position:absolute;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
 .sheet-close:hover{background:var(--syung);color:var(--syung-ink)}
@@ -139,6 +138,11 @@ html[data-theme=dark] .maplibregl-user-location-dot{box-shadow:0 0 0 2.5px var(-
 .sheet-follow{margin-top:12px;width:100%;height:42px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:16px;cursor:pointer;box-shadow:0 2px 0 rgba(20,20,20,.15)}
 .sheet .train-inspect .tp-dest{font-size:26px!important}
 .sheet .train-inspect .tp-now{font-size:14px}
+.sheet .train-inspect .sec{margin-top:14px;padding:0 0 4px;font-size:12px;font-weight:700;color:var(--secondary);border-bottom:1px solid var(--rule)}
+.sheet .kv{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:6px 12px;margin:8px 0 0;font-size:13px;align-items:baseline}
+.sheet .kv dt{color:var(--muted);font-weight:600;white-space:nowrap}
+.sheet .kv dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.sheet .kv .muted{color:var(--muted);font-weight:500}
 .sheet .station-pop table{font-size:13px}
 html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}

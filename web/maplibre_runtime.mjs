@@ -633,21 +633,15 @@ function riderState(plan){
 }
 function trainSheetHTML(plan){
   const t=plan.t,a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
-  const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`,c=colors[t.line];
+  const kv=(k,v)=>`<dt>${k}</dt><dd>${v}</dd>`,c=colors[t.line];
   const badges=[t.express?'<span class="b ex">급행</span>':'',t.last?'<span class="b last">막차</span>':''].join('');
   return `<div class="train-inspect" style="--c:${c}">
   <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
   <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
   <div class="tp-now">${esc(riderState(plan))}</div>
-  <details><summary>자세히</summary><table><tbody>
-  <tr><td colspan=2 class="sec">API 원본</td></tr>
-  ${row('역',esc(t.station))}${row('상태',esc(t.status))}${row('방향',esc(t.direction))}${row('행선지',esc(t.destination||'-'))}
-  ${row('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}
-  ${row('받은 시각',kst(liveFetchedAt))}
-  <tr><td colspan=2 class="sec">지도 예측</td></tr>
-  <tr><td colspan=2 class="tp-pred">${esc(trainState(plan))}</td></tr>
-  ${row('예측 경로',esc(plan.seq.map(s=>s.name).join(' › ')))}
-  </tbody></table></details></div>`;
+  <div class="sec">서울시 실시간 원본</div>
+  <dl class="kv">${kv('역',esc(t.station))}${kv('상태',esc(t.status))}${kv('방향',esc(t.direction))}${kv('행선지',esc(t.destination||'-'))}
+  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(liveFetchedAt))}</dl></div>`;
 }
 function showTrainPopup(plan){
   const token=openSheet(trainSheetHTML(plan));sheetTrain=plan.id;
@@ -656,8 +650,8 @@ function showTrainPopup(plan){
   const timer=setInterval(()=>{
     if(token!==sheetToken)return clearInterval(timer);
     const pl=plans.find(p=>p.id===sheetTrain);if(!pl)return;
-    const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest'),pred=sheetBody.querySelector('.tp-pred');
-    if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';if(pred)pred.textContent=trainState(pl);
+    const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest');
+    if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';
   },1000);
 }
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
