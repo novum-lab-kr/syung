@@ -115,13 +115,8 @@ html[data-theme=dark] .maplibregl-popup-tip{border-top-color:var(--paper);border
 html[data-theme=dark] .train-inspect .tp-now,html[data-theme=dark] .train-inspect th{color:var(--secondary)}
 html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:var(--rule)}
 
-/* my location: a 슝 yellow dot with an ink ring and a yellow pulse */
-.maplibregl-user-location-dot{width:18px!important;height:18px!important;background:var(--syung)!important;box-shadow:0 0 0 2.5px var(--syung-ink),0 0 0 5px #fff,0 3px 8px rgba(0,0,0,.3)!important}
-.maplibregl-user-location-dot:after{display:none!important}
-.maplibregl-user-location-dot:before{background:var(--syung)!important;width:18px!important;height:18px!important;opacity:.9}
-.maplibregl-user-location-dot-stale{background:#b3ad96!important}
-.maplibregl-user-location-accuracy-circle{background:rgba(255,212,0,.16)!important;border:1.5px solid rgba(242,194,0,.55)}
-html[data-theme=dark] .maplibregl-user-location-dot{box-shadow:0 0 0 2.5px var(--syung-ink),0 0 0 5px rgba(255,212,0,.35),0 3px 8px rgba(0,0,0,.5)!important}
+/* my location is drawn as map layers under the trains (me-* in the runtime); hide the control's DOM dot */
+.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle{display:none!important}
 .maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon{filter:none}
 
 /* ---- bottom sheet (station / train details): edge to edge, slides up from the bottom of the map ---- */

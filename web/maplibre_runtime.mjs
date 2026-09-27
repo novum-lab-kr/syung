@@ -156,9 +156,6 @@ map.once('load',()=>{
 });
 geolocate.on('geolocate',()=>{
   autoLocating=false;
-  // lay the dot on the ground like the accuracy circle, so it tilts and turns with the map
-  const dot=geolocate._userLocationDotMarker;
-  if(dot&&dot.getPitchAlignment()!=='map'){dot.setPitchAlignment('map');dot.setRotationAlignment('map')}
 });
 let selected='all',trains=[],trainsEnabled=true,labels=[],liveRequest=0,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
@@ -287,11 +284,10 @@ void main(){
   float rounded=length(max(cab,0.))+min(max(cab.x,cab.y),0.)-radius;
   float edge=max(max(-p.x,p.x-L),max(abs(p.y)-halfW,rounded));
   if(v_face>6.5){
-    // selected train: three line-colour rings spreading on the ground, under every train body
+    // selected train: one calm line-colour pulse, like the my-location pulse, under every train body
     if(u_shadow<.5)discard;
-    float R=W*3.4,d=length(p),a=0.;
-    for(int k=0;k<3;k++){float t=fract(u_time/2.4+float(k)/3.),r=R*t;
-      a=max(a,(1.-t)*(ink(abs(d-r)-1.4)*.9+(1.-smoothstep(r-1.,r,d))*.16));}
+    float R=W*3.4,d=length(p),k=clamp(fract(u_time/2.4)/.75,0.,1.),r=mix(W*.7,R,1.-(1.-k)*(1.-k)),fade=1.-k;
+    float a=(1.-smoothstep(r-1.5,r+.5,d))*fade*.36+ink(abs(d-r)-1.)*fade*.22;
     outColor=vec4(v_color*a,a);return;
   }
   if(v_face>5.5){
@@ -934,6 +930,29 @@ map.on('load',()=>{
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
   map.addLayer(stationNames);   // names under the trains
   map.addLayer(new TrainLayer());
+  // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
+  {
+    map.addSource('me',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    const pa={'circle-pitch-alignment':'map','circle-pitch-scale':'map'};
+    map.addLayer({id:'me-accuracy',type:'circle',source:'me',paint:{...pa,'circle-radius':0,'circle-color':'rgba(255,212,0,.16)','circle-stroke-color':'rgba(242,194,0,.55)','circle-stroke-width':1.5}},'webgl-trains');
+    map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0}},'webgl-trains');
+    map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}},'webgl-trains');
+    map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}},'webgl-trains');
+    let shown=false,last=0;
+    geolocate.on('geolocate',e=>{
+      const {longitude:x,latitude:y,accuracy:acc}=e.coords;shown=true;
+      map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
+      // accuracy (metres) → pixels at each zoom
+      const k=512/(40075016.686*Math.cos(y*Math.PI/180)),r0=(acc||0)*k;
+      map.setPaintProperty('me-accuracy','circle-radius',['interpolate',['exponential',2],['zoom'],0,r0,24,r0*2**24]);
+    });
+    // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle
+    (function pulse(now){
+      if(shown&&now-last>33){last=now;const t=(now%2000)/2000,k=Math.min(1,t/.7);
+        map.setPaintProperty('me-pulse','circle-radius',9*(1+2*k));map.setPaintProperty('me-pulse','circle-opacity',.9*(1-k))}
+      requestAnimationFrame(pulse);
+    })(0);
+  }
   map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else closeSheet()});
   map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
