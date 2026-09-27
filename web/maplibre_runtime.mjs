@@ -240,8 +240,8 @@ const laneOffsetPx=z=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+bodyWidthP
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
-// Simple and flat: one line-colour capsule per train, thin light gaps between cars. Only the
-// leading end has a dark windscreen and headlights, so the running direction reads at a glance.
+// Stainless Korean EMUs: a quiet cab-led icon grows into rigid chord-aligned cars.
+// Pixel-sized details fade in with car length; no textures, depth buffer or bent bodies.
 const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 const TRAIN_VS=`#version 300 es
 in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
@@ -254,48 +254,129 @@ precision highp float;
 in vec2 v_local;flat in vec4 v_info;flat in vec3 v_color;flat in float v_face;
 uniform float u_shadow;out vec4 outColor;
 float box(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
-float rbox(vec2 p,vec2 b,float r){return box(p,b-r)-r;}
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
-const vec3 GLASS=vec3(.12,.15,.19),LAMP=vec3(1.,.97,.82);
+float rect(vec2 p,vec2 c,vec2 b){return ink(box(p-c,b));}
+float stroke(float d,float w){return ink(abs(d)-w);}
 void main(){
   float L=v_info.x,W=v_info.y,kind=mod(v_info.z,4.),carPx=v_info.w,H=W*.68;
   bool front=mod(kind,2.)>.5,back=kind>1.5;
-  vec2 p=v_local;vec3 col=v_color;float alpha=1.;
+  vec2 p=v_local;vec3 col;float alpha=1.;
   float endX=min(back?p.x:1e5,front?L-p.x:1e5);
-  bool lead=front&&L-p.x<=endX+.001;
-  float halfW=W*.5,radius=W*.5;
-  // capsule ends (radius = half width); inter-car ends stay square. Signed distance in pixels.
+  float nose=W*.48,halfW=W*.5;
+  float localL=carPx>0.?carPx:L;
+  float detail=smoothstep(W*1.1,W*2.5,localL);
+  // Rounded cab corners only: inter-car ends remain square. Signed distance in pixels.
+  float radius=W*.36;
   vec2 cab=vec2(radius-endX,abs(p.y)-(halfW-radius));
   float rounded=length(max(cab,0.))+min(max(cab.x,cab.y),0.)-radius;
   float edge=max(max(-p.x,p.x-L),max(abs(p.y)-halfW,rounded));
   if(u_shadow>.5){if(v_face>.5)discard;float a=(1.-smoothstep(-.4,2.4,edge))*.22;outColor=vec4(vec3(.09,.13,.16)*a,a);return;}
-  vec3 gap=mix(v_color,vec3(1.),.75);
   if(v_face<.5){
-    // roof from above
     alpha=ink(edge);if(alpha<=0.)discard;
-    if(carPx>0.&&p.x>radius&&p.x<L-radius){
-      float joint=abs(mod(p.x+carPx*.5,carPx)-carPx*.5);
-      col=mix(col,gap,ink(joint-.45)*smoothstep(W*.8,W*1.5,carPx));
+    float ay=abs(p.y),x=carPx>0.?mod(p.x,carPx):p.x;
+    col=mix(vec3(.88,.91,.92),vec3(.60,.66,.70),smoothstep(W*.24,halfW,ay));
+    // Raised roof shoulder and a continuous line-colour cant rail remain legible from above.
+    col=mix(col,vec3(.97,.98,.98),stroke(ay-(halfW-1.9),.20));
+    col=mix(col,v_color,ink(abs(ay-(halfW-.95))-.70));
+    // Roof-edge glimpses of the window/door rhythm, never a stretched bitmap.
+    float pitch=localL/4.,door=abs(mod(x+pitch*.5,pitch)-pitch*.5);
+    float rim=ink(abs(ay-(halfW-.26))-.25);
+    col=mix(col,door<min(1.1,pitch*.16)?vec3(.72,.78,.80):vec3(.12,.23,.28),rim*detail);
+    vec3 cleanRoof=col;
+    if(detail>0.){
+      // Two low-profile air-conditioning packs with end grilles and a circular fan.
+      float cx=x<localL*.5?localL*.29:localL*.71;
+      vec2 q=vec2(x-cx,p.y);vec2 size=vec2(min(5.7,localL*.105),W*.235);
+      col=mix(col,vec3(.46,.53,.57),rect(q,vec2(.35,.4),size+vec2(.35)));
+      col=mix(col,vec3(.75,.80,.82),rect(q,vec2(0),size));
+      float unitMask=rect(q,vec2(0),size-vec2(.65));
+      float grille=stroke(mod(q.x+30.,1.45)-.725,.17);
+      col=mix(col,vec3(.43,.52,.57),unitMask*grille*.8);
+      float fan=length(q-vec2(-size.x*.35,0.));
+      col=mix(col,vec3(.61,.68,.71),ink(fan-W*.135));
+      col=mix(col,vec3(.36,.44,.49),stroke(fan-W*.115,.2));
+      col=mix(col,vec3(.35,.43,.47),ink(fan-.4));
+      // Longitudinal ribs and central roof hatch.
+      col=mix(col,vec3(.66,.72,.75),stroke(ay-W*.29,.17));
+      col=mix(col,vec3(.66,.72,.75),rect(vec2(x,p.y),vec2(localL*.5,0),vec2(1.5,W*.18))*.75);
+      if(v_info.z>3.5){
+        vec2 q=vec2(x-localL*.5,p.y);float diamond=abs(q.x)/2.8+abs(q.y)/2.;
+        col=mix(col,vec3(.23,.29,.32),stroke(diamond-1.,.16));
+        col=mix(col,vec3(.19,.24,.27),rect(q,vec2(0),vec2(.4,W*.29)));
+      }
     }
-    if(lead)col=mix(col,GLASS,ink(rbox(vec2(endX-W*.3,p.y),vec2(W*.14,W*.32),W*.12)));
-    col=mix(col,v_color*.8,1.-ink(edge+.8));   // slightly darker rim keeps the outline crisp
+    col=mix(cleanRoof,col,detail);
+    float hatch=smoothstep(W*.75,W*1.3,localL)*(1.-detail);
+    col=mix(col,vec3(.68,.75,.78),rect(vec2(x,p.y),vec2(localL*.5,0),vec2(localL*.16,W*.16))*hatch*.55);
+    // At icon scale seams stop at the shoulders; no transverse ladder rungs.
+    if(carPx>0.&&p.x>nose+1.&&p.x<L-nose-1.){
+      float joint=abs(mod(p.x+carPx*.5,carPx)-carPx*.5);
+      float seams=smoothstep(W*.8,W*1.5,carPx);
+      float shoulder=smoothstep(W*.22,W*.36,ay);
+      col=mix(col,vec3(.40,.49,.53),ink(joint-.25)*seams*mix(shoulder,.55,detail));
+    }
+    if(endX<nose+.7){
+      vec3 body=col;
+      // Sloping dark cab glass, narrow destination display and coloured nose apron.
+      col=mix(v_color,vec3(.82,.88,.89),.16);
+      float glass=rect(vec2(endX,p.y),vec2(nose*.66,0),vec2(nose*.24,W*.32));
+      col=mix(col,vec3(.055,.13,.18),glass);
+      col=mix(col,vec3(.30,.43,.49),glass*rect(vec2(endX,p.y),vec2(nose*.73,-W*.13),vec2(.28,W*.18)));
+      col=mix(col,vec3(.12,.19,.23),stroke(p.y,.16)*glass*detail);
+      col=mix(col,vec3(.96,.66,.20),rect(vec2(endX,p.y),vec2(nose*.89,0),vec2(.22,W*.12))*detail);
+      vec3 lamp=p.x<L*.5?vec3(1.,.12,.10):vec3(1.,.98,.79);
+      col=mix(col,lamp,rect(vec2(endX,abs(p.y)),vec2(.60,W*.32),vec2(.30,.40)));
+      col=mix(body,col,1.-smoothstep(nose-.15,nose+.55,endX));
+    }
+    col=mix(col,vec3(.24,.32,.36),1.-ink(max(abs(p.y)-halfW,rounded)+.34));
   }else if(v_face<1.5){
-    // side: flat colour, one darker skirt line
-    float z=p.y,x=carPx>0.?mod(p.x,carPx):p.x;
-    col=mix(v_color*.72,v_color*.88,smoothstep(.9,1.5,z));   // a touch darker than the roof so the body keeps its volume
-    if(carPx>0.)col=mix(col,gap,ink(min(x,carPx-x)-.3)*smoothstep(W*1.1,W*2.5,carPx));
-    if(lead&&endX<W*.6)col=mix(col,GLASS,ink(rbox(vec2(endX-W*.35,z-H*.64),vec2(W*.28,H*.17),H*.12)));
-  }else if(v_face<2.5){
-    // leading end wall: windscreen + two headlights
-    float z=p.y;vec2 q=vec2(abs(p.x),z);
-    col=mix(col,GLASS,ink(rbox(vec2(p.x,z-H*.64),vec2(W*.34,H*.17),H*.12)));
-    col=mix(col,LAMP,ink(length(q-vec2(W*.3,H*.28))-W*.07));
+    // Local x follows the rigid car, local y is actual height. Four double sliding doors.
+    float z=p.y,localL=carPx>0.?carPx:L,x=carPx>0.?mod(p.x,carPx):p.x;
+    col=mix(vec3(.51,.59,.63),vec3(.81,.85,.86),z/H);
+    col=mix(col,vec3(.17,.23,.26),1.-smoothstep(1.,1.45,z));
+    float pitch=localL/4.,cell=mod(x,pitch)-pitch*.5;
+    float doorW=min(W*.45,localL*.083),door=abs(cell);
+    float windowBand=rect(vec2(x,z),vec2(localL*.5,H*.69),vec2(localL*.5-.9,H*.165));
+    col=mix(col,vec3(.12,.23,.29),windowBand);
+    // Silver window pillars split the passenger glazing into individual panes.
+    float pillar=ink(abs(abs(cell)-pitch*.34)-.32);
+    col=mix(col,vec3(.68,.75,.78),windowBand*pillar);
+    col=mix(col,vec3(.37,.51,.58),windowBand*ink(abs(z-H*.79)-.25)*.75);
+    col=mix(col,v_color,ink(abs(z-H*.39)-H*.085));
+    float doorMask=rect(vec2(cell,z),vec2(0,H*.52),vec2(doorW*.5,H*.37));
+    col=mix(col,vec3(.43,.52,.56),doorMask);
+    col=mix(col,vec3(.78,.83,.84),rect(vec2(cell,z),vec2(0,H*.52),vec2(max(.2,doorW*.5-.38),H*.37-.28)));
+    col=mix(col,v_color,doorMask*ink(abs(z-H*.39)-H*.085));
+    float doorGlass=rect(vec2(abs(cell),z),vec2(doorW*.25,H*.70),vec2(max(.15,doorW*.18),H*.12));
+    col=mix(col,vec3(.09,.21,.27),doorGlass);
+    col=mix(col,vec3(.34,.43,.47),doorMask*stroke(cell,.17));
+    col=mix(col,vec3(.93,.95,.95),ink(abs(z-(H-.30))-.23));
+    col=mix(col,vec3(.40,.49,.54),ink(abs(z-1.75)-.15));
+    if(endX<nose+1.){
+      col=mix(vec3(.67,.74,.77),v_color,ink(abs(z-H*.39)-H*.085));
+      col=mix(col,vec3(.08,.19,.25),rect(vec2(endX,z),vec2(nose*.9,H*.72),vec2(nose*.52,H*.16)));
+      if(z<1.4)col=vec3(.16,.22,.25);
+    }
+    vec3 simpleSide=mix(vec3(.65,.72,.75),v_color,ink(abs(z-H*.45)-H*.15));
+    simpleSide=mix(simpleSide,vec3(.13,.24,.29),ink(abs(z-H*.74)-H*.13));
+    col=mix(simpleSide,col,detail);
+    if(carPx>0.)col=mix(col,vec3(.34,.42,.46),ink(min(x,carPx-x)-.25)*detail);
   }else if(v_face<3.5){
-    col=v_color*.9;                              // tail end: plain
+    // End wall under the raked windscreen: coloured mask, lights, coupler and anti-climber.
+    float z=p.y;col=mix(v_color,vec3(.12,.20,.24),.14);
+    col=mix(col,vec3(.73,.79,.81),ink(abs(z-1.6)-.5));
+    col=mix(col,vec3(.13,.19,.23),1.-smoothstep(.6,1.1,z));
+    vec3 lamp=v_face<2.5?vec3(1.,.98,.80):vec3(1.,.12,.09);
+    col=mix(col,vec3(.13,.20,.23),rect(vec2(abs(p.x),z),vec2(W*.31,H*.33),vec2(1.05,.85)));
+    col=mix(col,lamp,rect(vec2(abs(p.x),z),vec2(W*.31,H*.33),vec2(.66,.42)));
+    col=mix(col,vec3(.15,.21,.24),rect(p,vec2(0,.85),vec2(.9,.5)));
   }else if(v_face>4.5){
-    col=v_color*.9;
+    col=vec3(.55,.63,.67);
+    col=mix(col,vec3(.16,.22,.25),rect(p,vec2(0,H*.47),vec2(W*.30,H*.40)));
+    col=mix(col,vec3(.34,.41,.44),stroke(abs(p.x)-W*.25,.2));
   }else{
-    col=gap*.85;                                 // between cars
+    // Recessed rubber bellows; fine ribs distinguish the joint from an empty gap.
+    col=mix(vec3(.17,.23,.26),vec3(.38,.44,.47),stroke(mod(p.x+30.,.85)-.425,.14));
   }
   outColor=vec4(col*alpha,alpha);
 }`;
