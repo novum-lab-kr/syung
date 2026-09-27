@@ -1,12 +1,12 @@
-# Static map + live-train proxy (production: transit.nol-meok.cloud)
-transit.nol-meok.cloud {
+# Static map + live-train proxy (production: syung.nol-meok.cloud)
+syung.nol-meok.cloud {
 	encode zstd gzip
 	handle /api/live {
 		rewrite * /live
 		reverse_proxy 127.0.0.1:3113
 	}
 	handle {
-		root * /var/www/transit
+		root * /var/www/syung
 		header Cache-Control "no-store"
 		header X-Content-Type-Options "nosniff"
 		file_server
