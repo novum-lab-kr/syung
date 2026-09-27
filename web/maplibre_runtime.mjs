@@ -240,9 +240,8 @@ const laneOffsetPx=z=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+bodyWidthP
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
-// 슝 style: a chubby jelly train in pastel line colour — capsule cabs, a gloss streak, rounded
-// windows, and a little face (eyes + blush) on the leading cab. Pixel-sized details fade in with
-// car length; no textures, depth buffer or bent bodies.
+// Simple and flat: one line-colour capsule per train, thin light gaps between cars. Only the
+// leading end has a dark windscreen and headlights, so the running direction reads at a glance.
 const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 const TRAIN_VS=`#version 300 es
 in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
@@ -257,107 +256,46 @@ uniform float u_shadow;out vec4 outColor;
 float box(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
 float rbox(vec2 p,vec2 b,float r){return box(p,b-r)-r;}
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
-float rect(vec2 p,vec2 c,vec2 b){return ink(box(p-c,b));}
-float stroke(float d,float w){return ink(abs(d)-w);}
-float dot2(vec2 p,vec2 c,float r){return ink(length(p-c)-r);}
-const vec3 INK=vec3(.10,.10,.11),WHITE=vec3(1.),BLUSH=vec3(1.,.55,.62),GLASS=vec3(.16,.20,.30);
+const vec3 GLASS=vec3(.12,.15,.19),LAMP=vec3(1.,.97,.82);
 void main(){
   float L=v_info.x,W=v_info.y,kind=mod(v_info.z,4.),carPx=v_info.w,H=W*.68;
   bool front=mod(kind,2.)>.5,back=kind>1.5;
-  vec2 p=v_local;vec3 col;float alpha=1.;
+  vec2 p=v_local;vec3 col=v_color;float alpha=1.;
   float endX=min(back?p.x:1e5,front?L-p.x:1e5);
-  bool lead=front&&L-p.x<=endX+.001;          // the cab at the running end carries the face
-  float nose=W*.55,halfW=W*.5;
-  float localL=carPx>0.?carPx:L;
-  float detail=smoothstep(W*1.1,W*2.5,localL);
-  float face=smoothstep(9.,14.,W);            // eyes only once the body is wide enough to read them
-  vec3 base=mix(v_color,WHITE,.30),deep=v_color*.78;
-  // Capsule cab ends (radius = half width); inter-car ends stay square. Signed distance in pixels.
-  float radius=W*.5;
+  bool lead=front&&L-p.x<=endX+.001;
+  float halfW=W*.5,radius=W*.5;
+  // capsule ends (radius = half width); inter-car ends stay square. Signed distance in pixels.
   vec2 cab=vec2(radius-endX,abs(p.y)-(halfW-radius));
   float rounded=length(max(cab,0.))+min(max(cab.x,cab.y),0.)-radius;
   float edge=max(max(-p.x,p.x-L),max(abs(p.y)-halfW,rounded));
   if(u_shadow>.5){if(v_face>.5)discard;float a=(1.-smoothstep(-.4,2.4,edge))*.22;outColor=vec4(vec3(.09,.13,.16)*a,a);return;}
+  vec3 gap=mix(v_color,vec3(1.),.75);
   if(v_face<.5){
-    // ---- roof, seen from above ----
+    // roof from above
     alpha=ink(edge);if(alpha<=0.)discard;
-    float ay=abs(p.y),x=carPx>0.?mod(p.x,carPx):p.x;
-    // jelly shading: light middle, deeper towards the rim
-    col=mix(base,mix(base,deep,.55),smoothstep(W*.18,halfW,ay));
-    // gloss streak on one side
-    col=mix(col,WHITE,.55*ink(abs(p.y+W*.2)-W*.06)*smoothstep(0.,nose,endX));
-    // one soft round roof bump per car
-    if(detail>0.){
-      vec2 q=vec2(x-localL*.5,p.y);
-      col=mix(col,mix(base,WHITE,.35),ink(rbox(q,vec2(min(localL*.18,W*1.1),W*.2),W*.2))*detail);
-    }
-    // gentle seams between cars
-    if(carPx>0.&&p.x>nose+1.&&p.x<L-nose-1.){
+    if(carPx>0.&&p.x>radius&&p.x<L-radius){
       float joint=abs(mod(p.x+carPx*.5,carPx)-carPx*.5);
-      col=mix(col,deep,ink(joint-.45)*smoothstep(W*.8,W*1.5,carPx)*.8);
+      col=mix(col,gap,ink(joint-.45)*smoothstep(W*.8,W*1.5,carPx));
     }
-    float cabZone=lead?nose*1.25:nose;
-    if(endX<cabZone+.7){
-      vec3 body=col;
-      vec2 q=vec2(endX,p.y);
-      if(lead){
-        // a face looking the way the train runs: big eyes, blush, tiny smile at the nose
-        float ex=nose*.72,ey=W*.2,er=W*.15;
-        col=mix(col,WHITE,max(dot2(q,vec2(ex,ey),er),dot2(q,vec2(ex,-ey),er))*face);
-        col=mix(col,INK,max(dot2(q,vec2(ex-er*.3,ey),er*.62),dot2(q,vec2(ex-er*.3,-ey),er*.62))*face);   // q.x grows backwards from the nose, so −x looks forward
-        col=mix(col,WHITE,max(dot2(q,vec2(ex-er*.5,ey+er*.28),er*.22),dot2(q,vec2(ex-er*.5,-ey+er*.28),er*.22))*face);
-        float blush=max(ink(length((q-vec2(ex+er*.9,W*.36))/vec2(1.25,.8))-er*.55),ink(length((q-vec2(ex+er*.9,-W*.36))/vec2(1.25,.8))-er*.55));
-        col=mix(col,BLUSH,blush*.75*face);
-        float smile=abs(length(q-vec2(nose*.5,0.))-W*.1)-.45;   // arc opening towards the nose
-        col=mix(col,INK,ink(smile)*step(q.x,nose*.5-W*.04)*face);
-      }else{
-        // rounded rear window and two small red tail lights
-        col=mix(col,GLASS,ink(rbox(q-vec2(nose*.42,0.),vec2(nose*.2,W*.3),nose*.18)));
-        col=mix(col,vec3(1.,.3,.3),max(dot2(q,vec2(nose*.14,W*.33),W*.06),dot2(q,vec2(nose*.14,-W*.33),W*.06)));
-      }
-      col=mix(body,col,1.-smoothstep(cabZone-.15,cabZone+.55,endX));
-    }
-    // soft coloured outline instead of a grey rim
-    col=mix(col,deep*.85,1.-ink(max(abs(p.y)-halfW,rounded)+.9));
+    if(lead)col=mix(col,GLASS,ink(rbox(vec2(endX-W*.3,p.y),vec2(W*.14,W*.32),W*.12)));
+    col=mix(col,v_color*.8,1.-ink(edge+.8));   // slightly darker rim keeps the outline crisp
   }else if(v_face<1.5){
-    // ---- side: pastel body, rounded windows, darker skirt ----
+    // side: flat colour, one darker skirt line
     float z=p.y,x=carPx>0.?mod(p.x,carPx):p.x;
-    col=mix(deep,base,smoothstep(0.,H*.6,z));
-    col=mix(col,deep*.8,1.-smoothstep(.9,1.5,z));
-    float pitch=localL/4.,cell=mod(x,pitch)-pitch*.5;
-    float win=ink(rbox(vec2(cell,z-H*.66),vec2(min(pitch*.32,W*.7),H*.15),H*.14));
-    col=mix(col,GLASS,win*detail);
-    col=mix(col,WHITE,.4*win*ink(abs(cell+pitch*.12)-.35)*detail);
-    col=mix(col,WHITE,.6*ink(abs(z-H*.36)-.35));      // white belt line
-    if(endX<nose+1.){
-      col=mix(col,GLASS,ink(rbox(vec2(endX-nose*.75,z-H*.66),vec2(nose*.45,H*.16),H*.15)));
-      if(z<1.4)col=deep*.8;
-    }
-    vec3 simpleSide=mix(base,GLASS,ink(abs(z-H*.66)-H*.13));
-    col=mix(simpleSide,col,detail);
-    if(carPx>0.)col=mix(col,deep,ink(min(x,carPx-x)-.3)*detail);
+    col=mix(v_color*.72,v_color*.88,smoothstep(.9,1.5,z));   // a touch darker than the roof so the body keeps its volume
+    if(carPx>0.)col=mix(col,gap,ink(min(x,carPx-x)-.3)*smoothstep(W*1.1,W*2.5,carPx));
+    if(lead&&endX<W*.6)col=mix(col,GLASS,ink(rbox(vec2(endX-W*.35,z-H*.64),vec2(W*.28,H*.17),H*.12)));
+  }else if(v_face<2.5){
+    // leading end wall: windscreen + two headlights
+    float z=p.y;vec2 q=vec2(abs(p.x),z);
+    col=mix(col,GLASS,ink(rbox(vec2(p.x,z-H*.64),vec2(W*.34,H*.17),H*.12)));
+    col=mix(col,LAMP,ink(length(q-vec2(W*.3,H*.28))-W*.07));
   }else if(v_face<3.5){
-    // ---- end wall: the leading end gets a face, the tail two red lights ----
-    float z=p.y;col=base;
-    col=mix(col,deep*.8,1.-smoothstep(.6,1.1,z));
-    vec2 q=vec2(abs(p.x),z);
-    if(v_face<2.5){
-      float er=W*.11,ez=H*.55;
-      col=mix(col,WHITE,dot2(q,vec2(W*.2,ez),er)*face);
-      col=mix(col,INK,dot2(q,vec2(W*.2,ez-er*.1),er*.6)*face);
-      col=mix(col,BLUSH,ink(length((q-vec2(W*.36,ez-er*1.4))/vec2(1.,.7))-er*.6)*.8*face);
-      float smile=abs(length(vec2(p.x,z-ez+er*.1))-er*1.2)-.35;   // little arc under the eyes
-      col=mix(col,INK,ink(smile)*step(z,ez-er*.9)*step(abs(p.x),er*1.1)*face);
-      col=mix(col,vec3(1.,.97,.75),dot2(q,vec2(W*.34,H*.22),W*.06));
-    }else{
-      col=mix(col,vec3(1.,.3,.3),dot2(q,vec2(W*.3,H*.3),W*.08));
-    }
+    col=v_color*.9;                              // tail end: plain
   }else if(v_face>4.5){
-    col=base;
-    col=mix(col,GLASS,rect(p,vec2(0,H*.5),vec2(W*.3,H*.35)));
+    col=v_color*.9;
   }else{
-    // bellows between cars
-    col=mix(deep*.7,deep,stroke(mod(p.x+30.,1.)-.5,.2));
+    col=gap*.85;                                 // between cars
   }
   outColor=vec4(col*alpha,alpha);
 }`;
