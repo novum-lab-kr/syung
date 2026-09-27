@@ -170,7 +170,8 @@ const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whos
 let exits={};
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
-const dwellFor=line=>lineDwell[line]||30,smooth=x=>x*x*(3-2*x);
+// dwell: the timetable's per-line value (mostly 30 s) felt too long on the map; cap it at 20 s
+const DWELL_MAX=20,dwellFor=line=>Math.min(DWELL_MAX,lineDwell[line]||DWELL_MAX),smooth=x=>x*x*(3-2*x);
 // Typical consist per line: [cars, metres per car]. Drawn at true length along the track.
 const CONSIST={'1호선':[10,20],'2호선':[10,20],'3호선':[10,20],'4호선':[10,20],'5호선':[8,20],'6호선':[8,20],'7호선':[8,20],'8호선':[6,18],'9호선':[6,19.5],'GTX-A':[8,23.5],'경강선':[4,20],'경의중앙선':[8,20],'경춘선':[8,20],'공항철도':[6,22],'김포골드라인':[2,13],'서해선':[4,20],'수인분당선':[6,20],'신림선':[3,13],'신분당선':[6,19.5],'에버라인선':[1,12],'우이신설선':[2,13],'의정부선':[2,13],'인천1호선':[8,18],'인천2호선':[2,18]};
 function planTrain(t){
