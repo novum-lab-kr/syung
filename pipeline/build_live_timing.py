@@ -32,7 +32,10 @@ from analyse_live_samples import key, node_of, scheduled, times, ts  # noqa: E40
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "live-timing.json"
-DEFAULT = {"pace": 1.0, "zone": 40, "approach": 40}   # zone 40: stands the timetable's 30 s where unmeasured
+# zone 62 where unmeasured (2·5·6·7·9호선 are snapshot-stamped): 8호선 measures 62 s, and the
+# 7호선 position feed's own event times 67 s (2026-09-28, 45 stops) — 40 s had 7호선 trains leave
+# ~30 s early
+DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
 MIN_N = {"pace": 200, "zone": 100, "approach": 100}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85)}
 
