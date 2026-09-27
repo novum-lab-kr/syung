@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -188,8 +188,9 @@ def _kst(value: str) -> datetime | None:
 def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
     """Turn all-stations snapshots into a forward-only event per train.
 
-    recptnDt in that feed is the snapshot time (every train of a line and direction carries the
-    same one), not when the train reached its state. So:
+    On the Seoul Metro lines recptnDt is the snapshot time (every train of a line and direction
+    carries the same one), not when the train reached its state; the Korail lines stamp each train
+    with its own event time. For the snapshot kind:
     - a record older than the last, or one that moves the train back at the same time, is dropped
     - the same station and status seen again keeps the time it was first seen (otherwise every
       snapshot would restart the train's approach or dwell)
@@ -198,6 +199,9 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
     """
     out: dict[str, list[dict]] = {}
     for line, trains in lines.items():
+        # a stamp three or more trains of the line and direction share is a snapshot time
+        # (3·4호선 mix both: Seoul Metro and Korail sections)
+        shared = Counter((t.get("direction"), t.get("receivedAt")) for t in trains)
         kept = []
         for t in trains:
             k, seen = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
@@ -210,7 +214,7 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
                     t, snap = prev, last_snap
                 elif same:
                     t = {**t, "receivedAt": prev["receivedAt"]}
-                else:
+                elif shared[(t.get("direction"), snap)] >= 3:
                     a, b = _kst(last_snap), _kst(snap)
                     if a and b and 0 < (b - a).total_seconds() <= 180:
                         t = {**t, "receivedAt": (a + (b - a) / 2).strftime("%Y-%m-%d %H:%M:%S")}
