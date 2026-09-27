@@ -21,13 +21,18 @@ deploy/     배포 스크립트
 docs/       열차 모델 설계 메모
 ```
 
-## 로컬에서 보기
+## 로컬에서 작업하기
 
 ```bash
-deploy/deploy.sh /tmp/subway-site          # web + data를 한 폴더로
-python3 -m http.server -d /tmp/subway-site 8080
+git clone https://github.com/nol-meok/subway-live-map.git && cd subway-live-map
+python3 deploy/dev_server.py        # http://localhost:8080
 ```
-실시간 열차는 `./api/live`(프록시)가 있어야 나옵니다. 없으면 노선·역만 보입니다.
+`web/`과 `data/`를 그대로 띄우고(복사 단계 없음, 고치고 새로고침), 실시간 열차(`/api/live`)는 운영 서버
+프록시로 넘겨서 로컬에 API 키가 필요 없습니다. 다른 프록시를 쓰려면 `SUBWAY_LIVE_UPSTREAM`을 지정하세요.
+필요한 것: Python 3.10+, 테스트용 Node 20+. 설치할 패키지는 없습니다.
+
+배포는 서버에서 `git pull && deploy/deploy.sh` (프록시를 고쳤다면 `systemctl restart subway-live`).
+데이터 다시 만들기(pipeline/)는 GTFS 원본과 OSM 캐시가 있는 서버에서 하는 게 편합니다.
 
 ## 테스트
 
