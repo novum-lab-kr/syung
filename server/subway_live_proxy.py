@@ -175,28 +175,46 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
     return out
 
 
-STATUS_ORDER = {"진입": 0, "도착": 1, "출발": 2}
 _last_seen: dict[tuple[str, str], dict] = {}
 
 
-def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
-    """Never let a train go back in time between upstream calls.
+def _kst(value: str) -> datetime | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
 
-    Keep the previous record when the new one is older, or has the same time but moves the train
-    back (another station's row for the same moment, or 도착 → 진입 at the same station).
+
+def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
+    """Turn all-stations snapshots into a forward-only event per train.
+
+    recptnDt in that feed is the snapshot time (every train of a line and direction carries the
+    same one), not when the train reached its state. So:
+    - a record older than the last, or one that moves the train back at the same time, is dropped
+    - the same station and status seen again keeps the time it was first seen (otherwise every
+      snapshot would restart the train's approach or dwell)
+    - a new state is dated halfway between the previous snapshot and this one, the expected time
+      it happened, instead of at this snapshot
     """
     out: dict[str, list[dict]] = {}
     for line, trains in lines.items():
         kept = []
         for t in trains:
-            k, prev = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
-            if prev and prev.get("direction") == t.get("direction"):
-                new_at, old_at = str(t.get("receivedAt") or ""), str(prev.get("receivedAt") or "")
-                back = new_at < old_at or (new_at == old_at and (t["station"] != prev["station"]
-                       or STATUS_ORDER.get(t["status"], -1) < STATUS_ORDER.get(prev["status"], -1)))
+            k, seen = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
+            snap = str(t.get("receivedAt") or "")
+            if seen and seen["record"].get("direction") == t.get("direction"):
+                prev, last_snap = seen["record"], seen["snap"]
+                same = (t["station"], t["status"]) == (prev["station"], prev["status"])
+                back = snap < last_snap or (snap == last_snap and not same)
                 if back:
-                    t = prev
-            memory[k] = t
+                    t, snap = prev, last_snap
+                elif same:
+                    t = {**t, "receivedAt": prev["receivedAt"]}
+                else:
+                    a, b = _kst(last_snap), _kst(snap)
+                    if a and b and 0 < (b - a).total_seconds() <= 180:
+                        t = {**t, "receivedAt": (a + (b - a) / 2).strftime("%Y-%m-%d %H:%M:%S")}
+            memory[k] = {"record": t, "snap": snap}
             kept.append(t)
         out[line] = kept
     return out

@@ -664,6 +664,8 @@ function trainState(plan){
 }
 // The same phase lookup as trainState, worded for riders.
 function riderState(plan){
+  // held after fresh data (replacePlans): say where it is drawn, not where the new prediction has it
+  if(trainPose(plan).moving===false&&plan.hold!=null){const i=plan.cum.findIndex(c=>Math.abs(c-plan.hold)<1e-9);if(i>=0)return `${plan.seq[i].name}역에 정차 중`}
   let el=age(plan.t.receivedAt),ph=plan.phases[plan.phases.length-1];
   for(const x of plan.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   if(ph.dur===Infinity)return `${ph.to.name}역에 있어요`;
