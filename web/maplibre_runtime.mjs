@@ -935,10 +935,11 @@ map.on('load',()=>{
     map.addSource('me',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
     const pa={'circle-pitch-alignment':'map','circle-pitch-scale':'map'};
     map.addLayer({id:'me-accuracy',type:'circle',source:'me',paint:{...pa,'circle-radius':0,'circle-color':'rgba(255,212,0,0)','circle-stroke-color':'rgba(242,194,0,.45)','circle-stroke-width':1.2}},'webgl-trains');
-    map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0}},'webgl-trains');
+    // no paint transitions: the default 300 ms ease would chase every frame's value and visibly shrink the ring back at each cycle
+    map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0,'circle-radius-transition':{duration:0},'circle-opacity-transition':{duration:0}}},'webgl-trains');
     map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}},'webgl-trains');
     map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}},'webgl-trains');
-    let shown=false,last=0;
+    let shown=false;
     geolocate.on('geolocate',e=>{
       const {longitude:x,latitude:y,accuracy:acc}=e.coords;shown=true;
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
@@ -948,7 +949,7 @@ map.on('load',()=>{
     });
     // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle
     (function pulse(now){
-      if(shown&&now-last>33){last=now;const t=(now%2000)/2000,k=Math.min(1,t/.7);
+      if(shown){const t=(now%2000)/2000,k=Math.min(1,t/.7);
         map.setPaintProperty('me-pulse','circle-radius',9*(1+2*k));map.setPaintProperty('me-pulse','circle-opacity',.9*(1-k))}
       requestAnimationFrame(pulse);
     })(0);
