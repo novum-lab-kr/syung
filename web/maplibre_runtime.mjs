@@ -580,6 +580,37 @@ class TrainLayer{
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
 }
 
+// ---- bottom sheet: station and train details slide up from the bottom of the map -------------
+const sheet=document.createElement('section');sheet.className='sheet';sheet.hidden=true;sheet.setAttribute('aria-label','상세 정보');
+sheet.innerHTML='<div class="sheet-grab" aria-hidden="true"></div><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
+const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
+let sheetToken=0,sheetTrain=null,following=null,easing=false;
+function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
+function closeSheet(){
+  if(sheet.hidden)return;
+  sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
+  map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
+  setTimeout(()=>{if(!sheet.classList.contains('open'))sheet.hidden=true},260);
+}
+sheet.querySelector('.sheet-close').onclick=closeSheet;
+addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
+// Following: the camera keeps the chosen train in the middle of the map above the sheet.
+// Dragging the map stops it; the button in the sheet starts it again.
+const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.6);
+function trainLngLat(plan){
+  const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
+  return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
+}
+function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>p.id===id);if(!plan)return;
+  easing=true;map.once('moveend',()=>{easing=false});
+  map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
+followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
+(function followTick(){
+  if(following&&!easing){const plan=plans.find(p=>p.id===following);if(plan)map.jumpTo({center:trainLngLat(plan),padding:{top:0,bottom:sheetPad(),left:0,right:0}})}
+  requestAnimationFrame(followTick);
+})();
+map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}});
+
 // ---- train inspector ----------------------------------------------------------------------
 // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
 function trainState(plan){
@@ -596,16 +627,15 @@ function riderState(plan){
   let el=age(plan.t.receivedAt),ph=plan.phases[plan.phases.length-1];
   for(const x of plan.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   if(ph.dur===Infinity)return `${ph.to.name}역에 있어요`;
-  const left=Math.max(0,ph.dur-el),when=left<60?`${Math.max(1,Math.round(left/10)*10)}초`:`${Math.round(left/60)}분`;
+  const left=Math.max(0,ph.dur-el),when=left<60?`${Math.round(left/10)*10}초`:`${Math.round(left/60)}분`;
   if(ph.k0===ph.k1)return `${ph.k0===0?ph.from.name:ph.to.name}역에 정차 중`;
-  return `${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
+  return left<10?`${ph.from.name} → ${ph.to.name} · 곧 도착`:`${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
 }
-function showTrainPopup(plan){
-  const t=plan.t,pose=trainPose(plan),q=trackPoint(plan,pose.dist),ll=new maplibregl.MercatorCoordinate(q.x,q.y,0).toLngLat();
-  const a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
+function trainSheetHTML(plan){
+  const t=plan.t,a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
   const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`,c=colors[t.line];
   const badges=[t.express?'<span class="b ex">급행</span>':'',t.last?'<span class="b last">막차</span>':''].join('');
-  const html=`<div class="popup train-inspect" style="--c:${c}">
+  return `<div class="train-inspect" style="--c:${c}">
   <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
   <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
   <div class="tp-now">${esc(riderState(plan))}</div>
@@ -615,10 +645,20 @@ function showTrainPopup(plan){
   ${row('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}
   ${row('받은 시각',kst(liveFetchedAt))}
   <tr><td colspan=2 class="sec">지도 예측</td></tr>
-  <tr><td colspan=2>${esc(trainState(plan))}</td></tr>
+  <tr><td colspan=2 class="tp-pred">${esc(trainState(plan))}</td></tr>
   ${row('예측 경로',esc(plan.seq.map(s=>s.name).join(' › ')))}
   </tbody></table></details></div>`;
-  new maplibregl.Popup({maxWidth:'300px'}).setLngLat(ll).setHTML(html).addTo(map);
+}
+function showTrainPopup(plan){
+  const token=openSheet(trainSheetHTML(plan));sheetTrain=plan.id;
+  requestAnimationFrame(()=>follow(plan.id));
+  // keep the status line current while this train's sheet is open (plans are rebuilt on each feed update)
+  const timer=setInterval(()=>{
+    if(token!==sheetToken)return clearInterval(timer);
+    const pl=plans.find(p=>p.id===sheetTrain);if(!pl)return;
+    const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest'),pred=sheetBody.querySelector('.tp-pred');
+    if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';if(pred)pred.textContent=trainState(pl);
+  },1000);
 }
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
 // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
@@ -660,7 +700,9 @@ function exitList(st){
 }
 async function showStationPopup(st,lngLat){
   if(!st)return;
-  const popup=new maplibregl.Popup({maxWidth:'340px'}).setLngLat(lngLat).setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보 불러오는 중…</div></div>`).addTo(map);
+  following=null;sheetTrain=null;followBtn.hidden=true;
+  const token=openSheet(`<div class="station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보 불러오는 중…</div></div>`);
+  const popup={setHTML:h=>{if(token===sheetToken)sheetBody.innerHTML=h},isOpen:()=>token===sheetToken};
   const render=d=>{
     const groups=new Map();
     for(const a of (d.arrivals||[])){const k=`${a.line}|${a.direction}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(a)}
@@ -668,11 +710,11 @@ async function showStationPopup(st,lngLat){
     const rows=order.map(k=>{const [line,dir]=k.split('|'),list=groups.get(k).sort((a,b)=>arrivalRank(a)-arrivalRank(b)).slice(0,2);
       const toward=(list[0].heading.split('-')[1]||'').trim();
       return `<tr><th><span class="dot" style="--c:${colors[line]||'#52646a'}"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></th><td>${list.map(a=>`<div><b>${esc(arrivalText(a))}</b> <span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</td></tr>`}).join('');
-    popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}${exitList(st)}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
+    popup.setHTML(`<div class="station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}${exitList(st)}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
   };
   try{const r=await fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error();render(d);
     const timer=setInterval(()=>{if(!popup.isOpen())return clearInterval(timer);render(d)},15000);}
-  catch{popup.setHTML(`<div class="popup station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보를 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.</div></div>`)}
+  catch{popup.setHTML(`<div class="station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보를 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.</div></div>`)}
 }
 document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
@@ -871,7 +913,7 @@ map.on('load',()=>{
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
   map.addLayer(stationNames);   // names under the trains
   map.addLayer(new TrainLayer());
-  map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl)});
+  map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else closeSheet()});
   map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
@@ -892,7 +934,7 @@ map.on('load',()=>{
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   {const t=$('toggleMap');t.setAttribute('aria-pressed','true');iconButton(t,'map','배경 지도 끄기')}   // background map on by default
   applyTheme();
-  map.getContainer().append(liveNotice);   // train number and destination live in the train popup, not on the map
+  map.getContainer().append(liveNotice);map.getContainer().parentElement.append(sheet);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
