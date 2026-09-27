@@ -262,6 +262,7 @@ void main(){
   bool front=mod(kind,2.)>.5,back=kind>1.5;
   vec2 p=v_local;vec3 col;float alpha=1.;
   float endX=min(back?p.x:1e5,front?L-p.x:1e5);
+  bool lead=front&&L-p.x<=endX+.001;   // nearer the running end → the cab that leads
   float nose=W*.48,halfW=W*.5;
   float localL=carPx>0.?carPx:L;
   float detail=smoothstep(W*1.1,W*2.5,localL);
@@ -317,15 +318,21 @@ void main(){
     }
     if(endX<nose+.7){
       vec3 body=col;
-      // Sloping dark cab glass, narrow destination display and coloured nose apron.
-      col=mix(v_color,vec3(.82,.88,.89),.16);
-      float glass=rect(vec2(endX,p.y),vec2(nose*.66,0),vec2(nose*.24,W*.32));
-      col=mix(col,vec3(.055,.13,.18),glass);
-      col=mix(col,vec3(.30,.43,.49),glass*rect(vec2(endX,p.y),vec2(nose*.73,-W*.13),vec2(.28,W*.18)));
-      col=mix(col,vec3(.12,.19,.23),stroke(p.y,.16)*glass*detail);
-      col=mix(col,vec3(.96,.66,.20),rect(vec2(endX,p.y),vec2(nose*.89,0),vec2(.22,W*.12))*detail);
-      vec3 lamp=p.x<L*.5?vec3(1.,.12,.10):vec3(1.,.98,.79);
-      col=mix(col,lamp,rect(vec2(endX,abs(p.y)),vec2(.60,W*.32),vec2(.30,.40)));
+      if(lead){
+        // Leading cab: coloured nose apron, sloping dark glass, destination display, bright headlights.
+        col=mix(v_color,vec3(.82,.88,.89),.10);
+        float glass=rect(vec2(endX,p.y),vec2(nose*.66,0),vec2(nose*.24,W*.32));
+        col=mix(col,vec3(.055,.13,.18),glass);
+        col=mix(col,vec3(.30,.43,.49),glass*rect(vec2(endX,p.y),vec2(nose*.73,-W*.13),vec2(.28,W*.18)));
+        col=mix(col,vec3(.12,.19,.23),stroke(p.y,.16)*glass*detail);
+        col=mix(col,vec3(.96,.66,.20),rect(vec2(endX,p.y),vec2(nose*.89,0),vec2(.22,W*.12))*detail);
+        col=mix(col,vec3(1.,.98,.82),rect(vec2(endX,abs(p.y)),vec2(nose*.22,W*.27),vec2(max(.5,nose*.12),W*.09)));
+      }else{
+        // Tail: plain stainless end, narrow rear window, large red tail lights.
+        col=mix(body,vec3(.80,.85,.87),.35);
+        col=mix(col,vec3(.14,.22,.27),rect(vec2(endX,p.y),vec2(nose*.62,0),vec2(nose*.14,W*.22)));
+        col=mix(col,vec3(.95,.12,.10),rect(vec2(endX,abs(p.y)),vec2(nose*.22,W*.27),vec2(max(.5,nose*.12),W*.09)));
+      }
       col=mix(body,col,1.-smoothstep(nose-.15,nose+.55,endX));
     }
     col=mix(col,vec3(.24,.32,.36),1.-ink(max(abs(p.y)-halfW,rounded)+.34));
@@ -353,8 +360,11 @@ void main(){
     col=mix(col,vec3(.93,.95,.95),ink(abs(z-(H-.30))-.23));
     col=mix(col,vec3(.40,.49,.54),ink(abs(z-1.75)-.15));
     if(endX<nose+1.){
-      col=mix(vec3(.67,.74,.77),v_color,ink(abs(z-H*.39)-H*.085));
-      col=mix(col,vec3(.08,.19,.25),rect(vec2(endX,z),vec2(nose*.9,H*.72),vec2(nose*.52,H*.16)));
+      if(lead){   // coloured cab sides only at the leading end
+        col=mix(vec3(.67,.74,.77),v_color,ink(abs(z-H*.39)-H*.085));
+        col=mix(col,v_color,.55*(1.-smoothstep(H*.55,H*.6,z)));
+        col=mix(col,vec3(.08,.19,.25),rect(vec2(endX,z),vec2(nose*.9,H*.72),vec2(nose*.52,H*.16)));
+      }else col=mix(col,vec3(.08,.19,.25),rect(vec2(endX,z),vec2(nose*.9,H*.72),vec2(nose*.3,H*.12)));
       if(z<1.4)col=vec3(.16,.22,.25);
     }
     vec3 simpleSide=mix(vec3(.65,.72,.75),v_color,ink(abs(z-H*.45)-H*.15));
@@ -363,12 +373,12 @@ void main(){
     if(carPx>0.)col=mix(col,vec3(.34,.42,.46),ink(min(x,carPx-x)-.25)*detail);
   }else if(v_face<3.5){
     // End wall under the raked windscreen: coloured mask, lights, coupler and anti-climber.
-    float z=p.y;col=mix(v_color,vec3(.12,.20,.24),.14);
+    float z=p.y;col=v_face<2.5?mix(v_color,vec3(.12,.20,.24),.14):vec3(.74,.80,.82);   // coloured mask at the front, stainless at the tail
     col=mix(col,vec3(.73,.79,.81),ink(abs(z-1.6)-.5));
     col=mix(col,vec3(.13,.19,.23),1.-smoothstep(.6,1.1,z));
     vec3 lamp=v_face<2.5?vec3(1.,.98,.80):vec3(1.,.12,.09);
     col=mix(col,vec3(.13,.20,.23),rect(vec2(abs(p.x),z),vec2(W*.31,H*.33),vec2(1.05,.85)));
-    col=mix(col,lamp,rect(vec2(abs(p.x),z),vec2(W*.31,H*.33),vec2(.66,.42)));
+    col=mix(col,lamp,rect(vec2(abs(p.x),z),vec2(W*.31,H*.33),vec2(.9,.6)));
     col=mix(col,vec3(.15,.21,.24),rect(p,vec2(0,.85),vec2(.9,.5)));
   }else if(v_face>4.5){
     col=vec3(.55,.63,.67);
