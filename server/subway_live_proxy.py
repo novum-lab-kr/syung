@@ -243,6 +243,7 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
                     a, b = _kst(last_snap), _kst(snap)
                     if a and b and 0 < (b - a).total_seconds() <= 180:
                         t = {**t, "receivedAt": (a + (b - a) / 2).strftime("%Y-%m-%d %H:%M:%S")}
+            t = {**t, "stampedAt": snap}   # the feed's own recptnDt, kept for the samples
             memory[k] = {"record": t, "snap": snap}
             kept.append(t)
         out[line] = kept

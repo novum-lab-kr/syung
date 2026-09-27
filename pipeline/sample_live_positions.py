@@ -50,7 +50,7 @@ def main() -> None:
                     if key in seen:
                         continue
                     seen.add(key)
-                    sink.write(json.dumps({**{k: t.get(k) for k in ("line", "trainNo", "station", "status", "direction", "destination", "receivedAt")},
+                    sink.write(json.dumps({**{k: t.get(k) for k in ("line", "trainNo", "station", "status", "direction", "destination", "receivedAt", "stampedAt")},
                                            "fetchedAt": data.get("fetchedAt")}, ensure_ascii=False) + "\n")
                     events += 1
                 sink.flush()

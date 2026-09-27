@@ -41,10 +41,11 @@ def main(paths: list[str]) -> None:
             e = json.loads(row)
             if e.get("receivedAt") and e.get("status") in ("진입", "도착", "출발"):
                 records.append(e)
-                shared[(e["fetchedAt"], e["line"], e["direction"], e["receivedAt"])] += 1
+                # stampedAt: the feed's own stamp (the proxy re-dates receivedAt since 2026-09-28)
+                shared[(e["fetchedAt"], e["line"], e["direction"], e.get("stampedAt") or e["receivedAt"])] += 1
     trains = defaultdict(dict)
     for e in records:
-        e["event"] = shared[(e["fetchedAt"], e["line"], e["direction"], e["receivedAt"])] < 3
+        e["event"] = shared[(e["fetchedAt"], e["line"], e["direction"], e.get("stampedAt") or e["receivedAt"])] < 3
         trains[(e["line"], e["trainNo"])].setdefault((e["receivedAt"], e["station"], e["status"]), e)
 
     pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
