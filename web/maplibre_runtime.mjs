@@ -198,7 +198,10 @@ function planTrain(t){
   const expressLine=t.express&&EXPRESS_LINES.has(t.line),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
   const stops=st=>!expressLine||(st.express||[]).includes(t.line)||st===dest;
   const r=route(t,s),previous=r.previous,status=normStatus(t.status),phases=[];
-  let upto=1;if(expressLine){upto=r.ahead.findIndex((st,j)=>j>0&&stops(st));if(upto<0)upto=r.ahead.length-1}
+  // Roll on through PREDICT_STOPS stops (dwelling at each) before waiting for data: waiting at the
+  // very next stop left trains standing there while they had long left; replacePlans keeps an
+  // over-prediction from jumping back.
+  let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===PREDICT_STOPS){upto=j;break}
   const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
   // ease: slow at a stop, full speed through a station the train passes
   const run=(from,to,k0=0,k1=1,dur=segmentSeconds(from,to,t.line))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
@@ -232,11 +235,12 @@ function trainPose(p){
   // After fresh data (see replacePlans): never back up — wait where the train was drawn until the
   // new prediction passes it; a forward correction is run along the track instead of jumped.
   if(p.hold!=null){if(dist<p.hold)return {dist:p.hold,moving:false};p.hold=null}
-  if(p.glide){const w=(performance.now()-p.glide.at)/GLIDE_MS;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
+  if(p.glide){const w=(performance.now()-p.glide.at)/p.glide.ms;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
   return {dist,moving};
 }
 // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
-const GLIDE_MS=2500,GLIDE_MAX_M=1500,HOLD_MAX_M=2000;   // bigger corrections than these still jump
+// A forward correction is run over 10 ms per metre (1.5–8 s), so a big one is not a dash.
+const PREDICT_STOPS=2,GLIDE_MAX_M=2500,HOLD_MAX_M=3000;   // bigger corrections than these still jump
 function replacePlans(next){
   const old=new Map(plans.map(p=>[p.id,p]));
   for(const p of next){
@@ -249,7 +253,7 @@ function replacePlans(next){
     else{const k=p.seq.findIndex(s=>s.id===b);if(k<0)continue;from=Math.max(0,p.cum[k]-(1-f)*(o.cum[i+1]-o.cum[i]))}   // different route: nothing to carry over
     const to=trainPose(p).dist,m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits();
     if(from>to){if((from-to)/m<HOLD_MAX_M)p.hold=from}
-    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M)p.glide={from,at:performance.now()};
+    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M)p.glide={from,at:performance.now(),ms:Math.max(1500,Math.min(8000,(to-from)/m*10))};
   }
   plans=next;
 }
