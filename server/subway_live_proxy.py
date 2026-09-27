@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -198,6 +198,14 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
       it happened, instead of at this snapshot
     """
     out: dict[str, list[dict]] = {}
+    # a stamp ahead of the clock (seen: 3 min, and 23:59:57 in the morning) would freeze the train
+    # on the map and, as "newest", block every later record: date those now
+    now = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
+    for trains in lines.values():
+        for t in trains:
+            at = _kst(str(t.get("receivedAt") or ""))
+            if at and (at - now).total_seconds() > 30:
+                t["receivedAt"] = now.strftime("%Y-%m-%d %H:%M:%S")
     for line, trains in lines.items():
         # a stamp three or more trains of the line and direction share is a snapshot time
         # (3·4호선 mix both: Seoul Metro and Korail sections)
