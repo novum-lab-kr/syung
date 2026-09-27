@@ -248,7 +248,8 @@ in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
 uniform mat4 u_matrix;uniform vec2 u_offset;uniform float u_shadow;
 out vec2 v_local;flat out vec4 v_info;flat out vec3 v_color;flat out float v_face;
 void main(){v_local=a_local;v_info=a_info;v_color=a_color;v_face=a_face;
-  gl_Position=u_matrix*vec4(a_pos.xy+(a_face>5.5?vec2(0.):u_offset),u_shadow>.5?0.:a_pos.z,1.);}`;
+  bool beam=a_face>5.5;   // the headlight beam keeps its own slope in the ground pass and ignores the sun offset
+  gl_Position=u_matrix*vec4(a_pos.xy+(beam?vec2(0.):u_offset),beam||u_shadow<.5?a_pos.z:0.,1.);}`;
 const TRAIN_FS=`#version 300 es
 precision highp float;
 in vec2 v_local;flat in vec4 v_info;flat in vec3 v_color;flat in float v_face;
@@ -275,7 +276,7 @@ void main(){
     // headlight beam on the ground ahead of the leading cab, drawn with the ground shadows
     if(u_shadow<.5)discard;
     // two cones, one from each headlight, spreading slightly outward
-    float len=W*3.4,u=p.x/len,yc=W*.27*(1.+.9*u),hw=W*(.09+.5*u);
+    float len=W*3.4,u=p.x/len,yc=W*.31*(1.+.8*u),hw=W*(.08+.5*u);
     float cone=max(1.-smoothstep(.35,1.,abs(p.y-yc)/hw),1.-smoothstep(.35,1.,abs(p.y+yc)/hw));
     float a=pow(1.-u,1.6)*smoothstep(0.,.08,u)*cone*u_glow;
     outColor=vec4(vec3(1.,.95,.78)*a,a*.8);return;
@@ -446,10 +447,11 @@ class TrainLayer{
     this.wall(front?this.length-r:r,front?this.length-nose:nose,z,H,side*W*.5);
   }
   // Headlight beams: a flat quad on the ground from the nose forward; the shader draws one cone per lamp.
+  // It starts at the lamps' height on the end wall and slopes down to the ground ahead.
   beam(L,w){
-    const len=this.width*3.4,w0=w*.8,w1=w*2.3;
-    this.corner(L,-w0,.3,0,-w0,6);this.corner(L,w0,.3,0,w0,6);this.corner(L+len,w1,.3,len,w1,6);
-    this.corner(L,-w0,.3,0,-w0,6);this.corner(L+len,w1,.3,len,w1,6);this.corner(L+len,-w1,.3,len,-w1,6);
+    const len=this.width*3.4,w0=w*.8,w1=w*2.3,zl=this.width*.68*.33,zg=.3;
+    this.corner(L,-w0,zl,0,-w0,6);this.corner(L,w0,zl,0,w0,6);this.corner(L+len,w1,zg,len,w1,6);
+    this.corner(L,-w0,zl,0,-w0,6);this.corner(L+len,w1,zg,len,w1,6);this.corner(L+len,-w1,zg,len,-w1,6);
   }
   end(x,w,z,face){
     this.corner(x,-w,.65,-w,.65,face);this.corner(x,w,.65,w,.65,face);this.corner(x,w,z,w,z,face);
