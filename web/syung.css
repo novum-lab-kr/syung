@@ -123,7 +123,8 @@ html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syun
   body{overflow:hidden!important}
   .app{height:100%!important;grid-template-rows:62px minmax(0,1fr)!important}
   .layout{grid-template-rows:minmax(0,1fr)!important}
-  .map-search{top:10px;left:10px;width:calc(100% - 72px)}
+  .map-search{top:10px;left:10px;width:calc(100% - 20px)}
+  .maplibregl-ctrl-top-right{top:54px}   /* +/− under the full-width search bar */
   .identity h1{font-size:24px}
   .brand-icon{width:36px;height:36px;border-radius:10px}
   .line-btn{grid-template-columns:16px auto auto;min-height:34px;border:2px solid var(--rule);border-radius:999px;padding:3px 11px 3px 8px}
