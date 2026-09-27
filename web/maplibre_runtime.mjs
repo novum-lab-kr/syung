@@ -610,8 +610,14 @@ function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>
   easing=true;map.once('moveend',()=>{easing=false});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
 followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
+// Ripples on the ground around the selected train while its sheet is open.
+const rippleEl=document.createElement('div');rippleEl.className='train-ripple';rippleEl.innerHTML='<i></i><i></i><i></i>';
+const ripple=new maplibregl.Marker({element:rippleEl,pitchAlignment:'map',rotationAlignment:'map'});let rippleOn=false;
 (function followTick(){
-  if(following&&!easing){const plan=plans.find(p=>p.id===following);if(plan)map.jumpTo({center:trainLngLat(plan),padding:{top:0,bottom:sheetPad(),left:0,right:0}})}
+  const sel=sheetTrain&&plans.find(p=>p.id===sheetTrain);
+  if(sel){const ll=trainLngLat(sel);ripple.setLngLat(ll);if(!rippleOn){rippleEl.style.setProperty('--c',colors[sel.t.line]||'#ffd400');ripple.addTo(map);rippleOn=true}}
+  else if(rippleOn){ripple.remove();rippleOn=false}
+  if(following&&!easing&&sel)map.jumpTo({center:trainLngLat(sel),padding:{top:0,bottom:sheetPad(),left:0,right:0}});
   requestAnimationFrame(followTick);
 })();
 map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}});
