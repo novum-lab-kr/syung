@@ -148,7 +148,10 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
 
     out: dict[str, list[dict]] = defaultdict(list)
     for (line, train_no), rows in grouped.items():
-        row = min(rows, key=rank)
+        # Rows for one train (one per upcoming station) are not updated together: take the most
+        # recently received one, so an older row resurfacing cannot move the train back.
+        latest = max(str(r.get("recptnDt") or "") for r in rows)
+        row = min((r for r in rows if str(r.get("recptnDt") or "") == latest), key=rank)
         code = str(row.get("arvlCd"))
         current = _clean_station(row.get("arvlMsg3")) or _clean_station(row.get("statnNm"))
         if code in ("0", "1", "2"):
@@ -169,6 +172,33 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
             "last": str(row.get("lstcarAt") or "0") == "1",
             "receivedAt": row.get("recptnDt"),
         })
+    return out
+
+
+STATUS_ORDER = {"진입": 0, "도착": 1, "출발": 2}
+_last_seen: dict[tuple[str, str], dict] = {}
+
+
+def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
+    """Never let a train go back in time between upstream calls.
+
+    Keep the previous record when the new one is older, or has the same time but moves the train
+    back (another station's row for the same moment, or 도착 → 진입 at the same station).
+    """
+    out: dict[str, list[dict]] = {}
+    for line, trains in lines.items():
+        kept = []
+        for t in trains:
+            k, prev = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
+            if prev and prev.get("direction") == t.get("direction"):
+                new_at, old_at = str(t.get("receivedAt") or ""), str(prev.get("receivedAt") or "")
+                back = new_at < old_at or (new_at == old_at and (t["station"] != prev["station"]
+                       or STATUS_ORDER.get(t["status"], -1) < STATUS_ORDER.get(prev["status"], -1)))
+                if back:
+                    t = prev
+            memory[k] = t
+            kept.append(t)
+        out[line] = kept
     return out
 
 
@@ -193,7 +223,7 @@ def _fetch_all() -> dict:
     error = payload.get("errorMessage") or {}
     if error.get("code") not in (None, "INFO-000"):
         raise RuntimeError(error.get("message") or "서울시 API 오류")
-    return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": normalize_arrivals(payload), "stations": index_arrivals(payload)}
+    return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": stabilize(normalize_arrivals(payload), _last_seen), "stations": index_arrivals(payload)}
 
 
 def station_key(name: object) -> str:

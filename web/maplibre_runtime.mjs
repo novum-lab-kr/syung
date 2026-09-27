@@ -223,7 +223,30 @@ function trainPose(p){
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
-  return {dist:p.cum[i]+len*(ph.from===ph.to?0:k),moving:ph.k0!==ph.k1};
+  const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
+  // After fresh data (see replacePlans): never back up — wait where the train was drawn until the
+  // new prediction passes it; a forward correction is run along the track instead of jumped.
+  if(p.hold!=null){if(dist<p.hold)return {dist:p.hold,moving:false};p.hold=null}
+  if(p.glide){const w=(performance.now()-p.glide.at)/GLIDE_MS;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
+  return {dist,moving};
+}
+// Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
+const GLIDE_MS=2500,GLIDE_MAX_M=1500,HOLD_MAX_M=2000;   // bigger corrections than these still jump
+function replacePlans(next){
+  const old=new Map(plans.map(p=>[p.id,p]));
+  for(const p of next){
+    const o=old.get(p.id);if(!o||o.seq.length<2)continue;
+    const d=trainPose(o).dist;let i=0;while(i<o.seq.length-2&&o.cum[i+1]<d)i++;
+    const a=o.seq[i].id,b=o.seq[i+1].id,f=(d-o.cum[i])/((o.cum[i+1]-o.cum[i])||1);
+    // the same stretch of track in the new route, or else the station it was heading to
+    let from;const j=p.seq.findIndex((s,k)=>s.id===a&&p.seq[k+1]?.id===b);
+    if(j>=0)from=p.cum[j]+(p.cum[j+1]-p.cum[j])*f;
+    else{const k=p.seq.findIndex(s=>s.id===b);if(k<0)continue;from=Math.max(0,p.cum[k]-(1-f)*(o.cum[i+1]-o.cum[i]))}   // different route: nothing to carry over
+    const to=trainPose(p).dist,m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits();
+    if(from>to){if((from-to)/m<HOLD_MAX_M)p.hold=from}
+    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M)p.glide={from,at:performance.now()};
+  }
+  plans=next;
 }
 // Point on the track `dist` along plan.seq (clamped to its ends), with heading and lateral offset.
 // Trains keep to the right of their travel direction (Korean right-hand running): looking along
@@ -908,8 +931,8 @@ async function refreshLive(force=false){
     // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
     // service); extrapolating it would park a ghost train somewhere down the line.
     const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=STALE_SECONDS);const stale=all.length-trains.length;
-    // Fresh data replaces positions outright (no glide from the old prediction).
-    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+    // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
+    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();
     const unplaced=trains.length-plans.length,shown=d.lines||lines;
     liveState.parentElement.dataset.state='ok';liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
     map.triggerRepaint();
