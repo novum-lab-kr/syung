@@ -139,7 +139,7 @@ const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
-const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:true,fitBoundsOptions:{maxZoom:16}});
+const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'top-right');
 let autoLocating=false;
 geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
@@ -934,18 +934,14 @@ map.on('load',()=>{
   {
     map.addSource('me',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
     const pa={'circle-pitch-alignment':'map','circle-pitch-scale':'map'};
-    map.addLayer({id:'me-accuracy',type:'circle',source:'me',paint:{...pa,'circle-radius':0,'circle-color':'rgba(255,212,0,0)','circle-stroke-color':'rgba(242,194,0,.45)','circle-stroke-width':1.2}},'webgl-trains');
     // no paint transitions: the default 300 ms ease would chase every frame's value and visibly shrink the ring back at each cycle
     map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0,'circle-radius-transition':{duration:0},'circle-opacity-transition':{duration:0}}},'webgl-trains');
     map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}},'webgl-trains');
     map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}},'webgl-trains');
     let shown=false;
     geolocate.on('geolocate',e=>{
-      const {longitude:x,latitude:y,accuracy:acc}=e.coords;shown=true;
+      const {longitude:x,latitude:y}=e.coords;shown=true;
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
-      // accuracy (metres) → pixels at each zoom; a faint outline only, and none when the fix is rough (> 100 m)
-      const k=512/(40075016.686*Math.cos(y*Math.PI/180)),r0=(acc&&acc<=100?acc:0)*k;
-      map.setPaintProperty('me-accuracy','circle-radius',['interpolate',['exponential',2],['zoom'],0,r0,24,r0*2**24]);
     });
     // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle
     (function pulse(now){
