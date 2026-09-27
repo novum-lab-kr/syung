@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TARGETS=("$@")
-[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(/var/www/metro /var/www/control-artifacts/subway-preview)   # metro.nol-meok.cloud; old office path kept until retired
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(/var/www/transit /var/www/control-artifacts/subway-preview)   # transit.nol-meok.cloud; old office path kept until retired
 for d in "${TARGETS[@]}"; do
   mkdir -p "$d/vendor"
   cp "$ROOT/web/index.html" "$ROOT/web/maplibre_runtime.mjs" "$d/"

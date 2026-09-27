@@ -18,5 +18,5 @@ deploy/deploy.sh
 if ! git diff --quiet "$before" "$after" -- server/; then
   python3 -m py_compile server/subway_live_proxy.py && systemctl restart subway-live && echo "subway-live restarted"
 fi
-for u in https://metro.nol-meok.cloud/ https://office.nol-meok.cloud/artifacts/subway-preview/; do curl -fsS -o /dev/null "$u" && echo "site OK $u" || echo "site DOWN $u"; done
+for u in https://transit.nol-meok.cloud/ https://office.nol-meok.cloud/artifacts/subway-preview/; do curl -fsS -o /dev/null "$u" && echo "site OK $u" || echo "site DOWN $u"; done
 echo "=== deployed $(git log --oneline -1)"
