@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -210,6 +210,9 @@ def _kst(value: str) -> datetime | None:
         return None
 
 
+SNAPSHOT_LAG = 20
+
+
 def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
     """Turn all-stations snapshots into a forward-only event per train.
 
@@ -219,8 +222,9 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
     - a record older than the last, or one that moves the train back at the same time, is dropped
     - the same station and status seen again keeps the time it was first seen (otherwise every
       snapshot would restart the train's approach or dwell)
-    (Dating a new state halfway back to the previous snapshot put trains a station ahead: riding
-    7081 on 2026-09-28 08:01 between 먹골 and 중화, the snapshot stamp itself matched.)
+    - a new state carrying a snapshot stamp is dated SNAPSHOT_LAG earlier: against the per-line
+      position feed's own event times (7호선, 2026-09-28 07:58–08:10, 295 events) the snapshot
+      stamp comes 21 s later (IQR 12–36 s)
     """
     out: dict[str, list[dict]] = {}
     # a stamp ahead of the clock (seen: 3 min, and 23:59:57 in the morning) would freeze the train
@@ -232,6 +236,9 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
             if at and (at - now).total_seconds() > 30:
                 t["receivedAt"] = now.strftime("%Y-%m-%d %H:%M:%S")
     for line, trains in lines.items():
+        # a stamp three or more trains of the line and direction share is a snapshot time
+        # (3·4호선 mix both: Seoul Metro and Korail sections)
+        shared = Counter((t.get("direction"), t.get("receivedAt")) for t in trains)
         kept = []
         for t in trains:
             k, seen = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
@@ -244,6 +251,8 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
                     t, snap = prev, last_snap
                 elif same:
                     t = {**t, "receivedAt": prev["receivedAt"]}
+                elif shared[(t.get("direction"), snap)] >= 3 and (at := _kst(snap)):
+                    t = {**t, "receivedAt": (at - timedelta(seconds=SNAPSHOT_LAG)).strftime("%Y-%m-%d %H:%M:%S")}
             t = {**t, "stampedAt": snap}   # the feed's own recptnDt, kept for the samples
             memory[k] = {"record": t, "snap": snap}
             kept.append(t)
