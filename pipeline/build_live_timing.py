@@ -43,7 +43,9 @@ MIN_N = {"pace": 200, "zone": 100, "approach": 100}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85)}
 
 
-def main(paths: list[str]) -> None:
+def load(paths: list[str]) -> dict:
+    """(source, line, trainNo) → that train's records, first sightings in time order, each marked
+    event (own event time) or not (a snapshot stamp)."""
     records, shared = [], Counter()
     for p in paths:
         position = Path(p).parent.name == "position"
@@ -60,30 +62,39 @@ def main(paths: list[str]) -> None:
     for e in records:
         e["event"] = shared[(e["fetchedAt"], e["line"], e["direction"], e.get("stampedAt") or e["receivedAt"])] < 3
         trains[(e["source"], e["line"], e["trainNo"])].setdefault((e["receivedAt"], e["station"], e["status"]), e)
-
-    pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
-    for (_, line, _), evs in trains.items():
+    out = {}
+    for k, evs in trains.items():
         seq = sorted(evs.values(), key=lambda e: e["receivedAt"])
         # the same station and status seen again later (every snapshot re-stamps it) is not a new
         # event: keep the first sighting, or spans to the next event come out short
-        seq = [e for i, e in enumerate(seq) if i == 0 or (e["station"], e["status"]) != (seq[i - 1]["station"], seq[i - 1]["status"])]
+        out[k] = [e for i, e in enumerate(seq) if i == 0 or (e["station"], e["status"]) != (seq[i - 1]["station"], seq[i - 1]["status"])]
+    return out
+
+
+def pairs(trains: dict):
+    """Consecutive records of a train: (line, e1, e2, station a, station b, seconds apart)."""
+    for (_, line, _), seq in trains.items():
         for e1, e2 in zip(seq, seq[1:]):
             a, b = node_of.get((line, key(e1["station"]))), node_of.get((line, key(e2["station"])))
             dt = ts(e2["receivedAt"]) - ts(e1["receivedAt"])
-            if a is None or b is None or dt <= 0 or dt > 1500:
-                continue
-            s1, s2 = e1["status"], e2["status"]
-            if a == b:
-                if e1["event"] and e2["event"]:
-                    if (s1, s2) == ("도착", "출발") and dt < 300:
-                        zone[line].append(dt)
-                    if (s1, s2) == ("진입", "도착") and dt < 180:
-                        approach[line].append(dt)
-                continue
-            sched = scheduled(line, a, b)
-            if sched and s1 == s2 and s1 in ("도착", "출발") and e1["event"] and e2["event"]:
-                hops, run = sched
-                pace[line].append(dt / (run + hops * times["dwell"].get(line, 30)))
+            if a is not None and b is not None and 0 < dt <= 1500:
+                yield line, e1, e2, a, b, dt
+
+
+def learn(paths: list[str], verbose: bool = False) -> dict:
+    pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
+    for line, e1, e2, a, b, dt in pairs(load(paths)):
+        s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
+        if a == b:
+            if both and (s1, s2) == ("도착", "출발") and dt < 300:
+                zone[line].append(dt)
+            if both and (s1, s2) == ("진입", "도착") and dt < 180:
+                approach[line].append(dt)
+            continue
+        sched = scheduled(line, a, b)
+        if sched and s1 == s2 and s1 in ("도착", "출발") and both:
+            hops, run = sched
+            pace[line].append(dt / (run + hops * times["dwell"].get(line, 30)))
 
     stat = {"pace": statistics.median, "zone": statistics.harmonic_mean, "approach": statistics.harmonic_mean}
     lines = {}
@@ -96,10 +107,38 @@ def main(paths: list[str]) -> None:
                 out[name] = round(v, 2) if name == "pace" else round(v)
         if out:
             lines[line] = out
-    result = {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths]}
+        if verbose and out:
+            print(f"{line:6} {out}  (n pace {len(pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
+    return {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths]}
+
+
+def evaluate(timing: dict, paths: list[str]) -> dict:
+    """Median |predicted − observed| seconds for the next event, as the map rolls trains
+    (maplibre_runtime.mjs planTrain: stand zone − 10 s, run pace × (run + 30) − zone + 10 s,
+    a 출발 record 5 s into the run), over event-stamped records."""
+    errors = defaultdict(list)
+    for line, e1, e2, a, b, dt in pairs(load(paths)):
+        if not (e1["event"] and e2["event"]):
+            continue
+        tm = {**timing["default"], **timing["lines"].get(line, {})}
+        stand = max(15, tm["zone"] - 10)
+        s1, s2 = e1["status"], e2["status"]
+        if a == b and (s1, s2) == ("도착", "출발"):
+            kind, predicted = "도착→출발", stand + 5
+        elif a != b and s2 == "도착" and s1 in ("도착", "출발") and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")):
+            moving = max(0.5 * run, tm["pace"] * (run + 30) - tm["zone"]) + 10
+            kind, predicted = (f"{s1}→다음 도착", stand + moving if s1 == "도착" else moving - 5)
+        else:
+            continue
+        errors[kind].append(abs(predicted - dt))
+    every = [x for v in errors.values() for x in v]
+    return {"all": round(statistics.median(every), 1) if every else None, "n": len(every),
+            **{k: round(statistics.median(v), 1) for k, v in errors.items()}}
+
+
+def main(paths: list[str]) -> None:
+    result = learn(paths, verbose=True)
     OUT.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    for line, v in lines.items():
-        print(f"{line:6} {v}  (n pace {len(pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
 
 
 if __name__ == "__main__":

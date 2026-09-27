@@ -1,0 +1,7 @@
+[Unit]
+Description=Nol-meok subway: relearn live train timing from the last week of samples
+
+[Service]
+Type=oneshot
+Nice=10
+ExecStart=/usr/bin/python3 /root/subway-live-map/pipeline/retrain_live_timing.py /var/www/syung

@@ -1,0 +1,9 @@
+[Unit]
+Description=Relearn live train timing nightly (no trains run then)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target
