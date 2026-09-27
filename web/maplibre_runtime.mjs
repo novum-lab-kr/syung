@@ -690,25 +690,31 @@ function arrivalRank(a){if(a.eta>0)return Math.max(0,a.eta-age(a.receivedAt));co
 function exitList(st){
   const list=exits[st.id];if(!list||!list.length)return '';
   const seen=new Set(),items=list.filter(e=>!seen.has(e[2])&&seen.add(e[2]));
-  return `<div class="exits"><span class="muted">출구</span>${items.map(([,,ref,wc])=>`<span class="exit" title="${esc(ref)}번 출구${wc===1?' · 휠체어 가능':''}">${esc(ref)}${wc===1?'<i>♿</i>':''}</span>`).join('')}</div>`;
+  return `<div class="exits">${items.map(([,,ref,wc])=>`<span class="exit" title="${esc(ref)}번 출구${wc===1?' · 휠체어 가능':''}">${esc(ref)}${wc===1?'<i>♿</i>':''}</span>`).join('')}</div>`;
 }
 async function showStationPopup(st,lngLat){
   if(!st)return;
   following=null;sheetTrain=null;followBtn.hidden=true;
-  const token=openSheet(`<div class="station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보 불러오는 중…</div></div>`);
-  const popup={setHTML:h=>{if(token===sheetToken)sheetBody.innerHTML=h},isOpen:()=>token===sheetToken};
+  const lineChips=st.lines.map(x=>`<span class="chip" style="--c:${colors[x.name]||'#52646a'}"><span class="dot"></span>${esc(x.name)}</span>`).join('');
+  const head=sub=>`<div class="tp-line">${lineChips}</div><div class="tp-dest">${esc(st.name)}</div><div class="tp-now">${sub}</div>`;
+  const token=openSheet(`<div class="train-inspect station-sheet">${head('도착 정보 불러오는 중…')}</div>`);
+  const put=h=>{if(token===sheetToken)sheetBody.innerHTML=h};
   const render=d=>{
     const groups=new Map();
     for(const a of (d.arrivals||[])){const k=`${a.line}|${a.direction}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(a)}
     const lines=st.lines.map(x=>x.name),order=[...groups.keys()].sort((x,y)=>lines.indexOf(x.split('|')[0])-lines.indexOf(y.split('|')[0])||x.localeCompare(y,'ko'));
-    const rows=order.map(k=>{const [line,dir]=k.split('|'),list=groups.get(k).sort((a,b)=>arrivalRank(a)-arrivalRank(b)).slice(0,2);
+    const cards=order.map(k=>{const [line,dir]=k.split('|'),list=groups.get(k).sort((a,b)=>arrivalRank(a)-arrivalRank(b)).slice(0,2);
       const toward=(list[0].heading.split('-')[1]||'').trim();
-      return `<tr><th><span class="dot" style="--c:${colors[line]||'#52646a'}"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></th><td>${list.map(a=>`<div><b>${esc(arrivalText(a))}</b> <span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</td></tr>`}).join('');
-    popup.setHTML(`<div class="station-pop"><h3>${esc(st.name)}</h3>${rows?`<table>${rows}</table>`:'<div class="muted">지금 도착 예정 열차 정보가 없습니다.</div>'}${exitList(st)}<div class="muted foot">서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준</div></div>`);
+      return `<div class="arr" style="--c:${colors[line]||'#52646a'}"><div class="arr-h"><span class="dot"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></div>
+        ${list.map(a=>`<div class="arr-t"><b>${esc(arrivalText(a))}</b><span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</div>`}).join('');
+    const ex=exitList(st);
+    put(`<div class="train-inspect station-sheet">${head(`서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준`)}
+      <div class="sec">곧 오는 열차</div>${cards?`<div class="arrs">${cards}</div>`:'<div class="muted empty">지금 도착 예정 열차 정보가 없어요.</div>'}
+      ${ex?`<div class="sec">출구</div>${ex}`:''}</div>`);
   };
   try{const r=await fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error();render(d);
-    const timer=setInterval(()=>{if(!popup.isOpen())return clearInterval(timer);render(d)},15000);}
-  catch{popup.setHTML(`<div class="station-pop"><h3>${esc(st.name)}</h3><div class="muted">도착 정보를 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.</div></div>`)}
+    const timer=setInterval(()=>{if(token!==sheetToken)return clearInterval(timer);render(d)},15000);}
+  catch{put(`<div class="train-inspect station-sheet">${head('도착 정보를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.')}</div>`)}
 }
 document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 

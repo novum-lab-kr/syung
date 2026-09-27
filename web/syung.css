@@ -146,3 +146,19 @@ html[data-theme=dark] .maplibregl-user-location-dot{box-shadow:0 0 0 2.5px var(-
 .sheet .station-pop table{font-size:13px}
 html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}
+.sheet .station-sheet .tp-line{flex-wrap:wrap;gap:6px}
+.sheet .station-sheet .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;color:var(--c)}
+.sheet .station-sheet .chip .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
+.sheet .station-sheet .chip+.chip{margin-left:4px}
+.sheet .arrs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px 18px;margin-top:8px}
+.sheet .arr{display:grid;gap:3px;padding:8px 0;border-bottom:1px dashed var(--rule)}
+.sheet .arr-h{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--c)}
+.sheet .arr-h .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.sheet .arr-h .muted{color:var(--muted);font-weight:500}
+.sheet .arr-t{display:flex;gap:8px;align-items:baseline;font-size:14px;padding-left:14px}
+.sheet .arr-t b{min-width:4.5em;font-variant-numeric:tabular-nums}
+.sheet .arr-t .muted{color:var(--muted);font-size:13px}
+.sheet .station-sheet .empty{margin-top:8px;color:var(--muted);font-size:13px}
+.sheet .station-sheet .exits{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.sheet .station-sheet .exit{min-width:24px;height:24px;padding:0 7px;border-radius:8px;background:#ffd200;color:#1d1d1d;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:2px;box-shadow:0 1.5px 0 rgba(20,20,20,.25)}
+.sheet .station-sheet .exit i{font-style:normal;font-size:11px}
