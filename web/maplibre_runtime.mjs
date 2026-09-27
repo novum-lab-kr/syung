@@ -154,7 +154,12 @@ map.once('load',()=>{
     autoLocating=true;geolocate.trigger();   // same as pressing the button: blue dot, zoom 16
   },()=>{},{enableHighAccuracy:false,timeout:8000,maximumAge:300000});
 });
-geolocate.on('geolocate',()=>{autoLocating=false});
+geolocate.on('geolocate',()=>{
+  autoLocating=false;
+  // lay the dot on the ground like the accuracy circle, so it tilts and turns with the map
+  const dot=geolocate._userLocationDotMarker;
+  if(dot&&dot.getPitchAlignment()!=='map'){dot.setPitchAlignment('map');dot.setRotationAlignment('map')}
+});
 let selected='all',trains=[],trainsEnabled=true,labels=[],liveRequest=0,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
