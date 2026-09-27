@@ -249,7 +249,7 @@ function trainPose(p){
 }
 // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
 // A forward correction is run over 10 ms per metre (1.5–8 s), so a big one is not a dash.
-const PREDICT_STOPS=2,GLIDE_MAX_M=2500,HOLD_MAX_M=3000;   // bigger corrections than these still jump
+const PREDICT_STOPS=3,GLIDE_MAX_M=2500,HOLD_MAX_M=3000;   // bigger corrections than these still jump
 function replacePlans(next){
   const old=new Map(plans.map(p=>[p.id,p]));
   for(const p of next){
