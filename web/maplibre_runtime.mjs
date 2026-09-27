@@ -955,11 +955,10 @@ map.on('load',()=>{
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
-  map.on('rotate',()=>{if(themeChoice==='auto'){const b=$('toggleTheme');if(b){const sa=sunArcIcon();b.innerHTML=sa.svg}}});
+  map.on('rotate',()=>{if(themeChoice==='auto'){const b=$('themeIcon');if(b)b.innerHTML=sunArcIcon().svg}});
   map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
   map.once('idle',()=>{const d=map.getContainer().querySelector('.maplibregl-ctrl-attrib');if(d){d.classList.remove('maplibregl-compact-show');d.removeAttribute('open')}});
-  {const g=document.createElement('div');g.className='maplibregl-ctrl maplibregl-ctrl-group';g.append($('toggleTheme'));map.getContainer().querySelector('.maplibregl-ctrl-top-right').append(g)}
   // recompute shadows when the view settles or building tiles arrive (debounced)
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(updateSun,400)};
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
@@ -999,8 +998,6 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle,html[data-theme=dark] .
 html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],html[data-theme=dark] .maplibregl-ctrl-group .train-toggle[aria-pressed=false]{color:#61737a!important}
 .webgl-zoom{display:flex;align-items:center;gap:3px;padding:4px 7px!important;font-variant-numeric:tabular-nums}
 .webgl-zoom svg{width:14px;height:14px}
-.webgl-zoom{top:auto!important;bottom:20px;right:56px!important}   /* zoom readout: bottom right, left of my-location */
-.webgl-zoom[hidden]{display:none!important}
 .legend{display:none}   /* legend removed; data sources stay in the side panel */
 </style>`);
 
@@ -1025,10 +1022,12 @@ function applyTheme(){
   document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='dark'?'#1b1c1f':'#ffd400');
   // header logo: black tile on the yellow bar, yellow tile on the dark bar
   const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
-  const btn=$('toggleTheme');
-  if(btn){
-    if(themeChoice==='auto'){const sa=sunArcIcon(),label=`테마: 자동 (지금 ${t==='dark'?'다크':'라이트'}) · 일출 ${sa.rise} · 일몰 ${sa.set} · 눌러서 라이트로`;btn.innerHTML=sa.svg;btn.setAttribute('aria-label',label);btn.title=label}
-    else iconButton(btn,t==='dark'?'moon':'sun',t==='dark'?'테마: 다크 · 눌러서 자동으로':'테마: 라이트 · 눌러서 다크로');
+  // settings row: 자동 / 라이트 / 다크; in 자동 the icon is the sun over the map and the note gives sunrise / sunset
+  for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===themeChoice));
+  const ti=$('themeIcon'),tn=$('themeNote');
+  if(ti&&tn){
+    if(themeChoice==='auto'){const sa=sunArcIcon();ti.innerHTML=sa.svg;tn.textContent=`일출 ${sa.rise}\n일몰 ${sa.set}`}
+    else{ti.innerHTML=ICONS[t==='dark'?'moon':'sun'];tn.textContent=''}
   }
   if(!ready)return;
   const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
@@ -1054,11 +1053,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
-{
-  const b=document.createElement('button');b.id='toggleTheme';b.type='button';b.className='map-toggle theme-toggle';b.title='자동 → 라이트 → 다크 순서로 바뀌어요. 자동은 해 뜨면 라이트, 해 지면 다크.';
-  b.onclick=()=>{themeChoice={auto:'light',light:'dark',dark:'auto'}[themeChoice]||'auto';try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
-  document.querySelector('.map-area').append(b);
-}
+for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{themeChoice=b.dataset.themeChoice;try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
+$('themeNote').closest('.setting-row').title='자동은 해 뜨면 라이트, 해 지면 다크.';
 setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
 // ---- sun position icon (theme button in 자동) -------------------------------------------------
@@ -1213,18 +1209,14 @@ $('toggleMap').onclick=e=>{
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
 // ---- settings (gear in the header): on/off switches ----
 {
-  const btn=$('settingsButton'),panel=$('settingsPanel'),ZOOM_KEY='syung-show-zoom';
-  $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;$('toggleZoom').querySelector('.setting-icon').innerHTML=ICONS.zoom;
+  const btn=$('settingsButton'),panel=$('settingsPanel');
+  $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;$('zoomIcon').innerHTML=ICONS.zoom;
   const setOpen=o=>{panel.hidden=!o;btn.setAttribute('aria-expanded',String(o))};
   btn.onclick=e=>{e.stopPropagation();setOpen(panel.hidden)};
   document.addEventListener('click',e=>{if(!panel.hidden&&!panel.contains(e.target))setOpen(false)});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){setOpen(false);btn.focus()}});
-  const showZoom=on=>{$('toggleZoom').setAttribute('aria-pressed',String(on));$('zoomLevel').hidden=!on};
-  let zoomOn=true;try{zoomOn=localStorage.getItem(ZOOM_KEY)!=='0'}catch{}
-  showZoom(zoomOn);
-  $('toggleZoom').onclick=e=>{const on=e.currentTarget.getAttribute('aria-pressed')!=='true';showZoom(on);try{localStorage.setItem(ZOOM_KEY,on?'1':'0')}catch{}};
 }
-const zoom=()=>{const z=Math.round(map.getZoom()),el=$('zoomLevel');el.innerHTML=ICONS.zoom+`<span>${z}</span>`;el.title=`줌 ${z}`;el.setAttribute('aria-label',`줌 ${z}`)};zoom();
+const zoom=()=>{$('zoomValue').textContent=Math.round(map.getZoom())};zoom();   // current zoom, shown in settings
 map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 // Server caches ~90s and the upstream key has a daily quota: don't poll from background tabs.
 // The proxy refreshes upstream every 90 s and serves its cache in between, so polling it often is
