@@ -1,0 +1,97 @@
+/* 슝 skin: yellow brand, round and soft UI.
+   Linked from <body> so it comes after every <style> the runtime adds to <head> (same specificity → this wins). */
+
+:root{
+  --syung:#ffd400;--syung-deep:#f2c200;--syung-soft:#fff6c2;--syung-ink:#141414;
+  --board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#8a8676;--rule:#ece6cf;
+  --control:#f5f1e1;--selected:#fff1a8;--focus:#141414;
+  --shadow:0 3px 0 rgba(20,20,20,.08),0 6px 18px rgba(60,50,0,.10);
+  --round:"Jua","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
+}
+html[data-theme=dark]{
+  --board:#131416;--paper:#1a1c1f;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2b2d30;
+  --control:#232529;--selected:rgba(255,212,0,.16);--focus:#ffd400;
+  --shadow:0 3px 0 rgba(0,0,0,.35),0 6px 18px rgba(0,0,0,.35);
+}
+::selection{background:var(--syung);color:var(--syung-ink)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:12px}
+
+/* ---- header: the yellow bar ---- */
+.mast{background:var(--syung);color:var(--syung-ink);border-bottom:0;box-shadow:0 2px 0 rgba(20,20,20,.12);position:relative;z-index:10}
+.brand-icon{width:42px;height:42px;border-radius:12px;box-shadow:0 2px 0 rgba(20,20,20,.18);transition:transform .25s cubic-bezier(.3,1.6,.5,1)}
+.identity:hover .brand-icon{transform:translateX(3px) rotate(-6deg)}
+.identity h1{font-family:var(--round);font-weight:400;font-size:28px;letter-spacing:.02em;line-height:1}
+.identity p{color:#5b4c00;font-size:12.5px;font-weight:600;margin-top:4px}
+.source-state{background:rgba(255,255,255,.55);color:var(--syung-ink);font-weight:600;padding:6px 12px 6px 10px;border-radius:999px}
+.source-state i{box-shadow:0 0 0 3px rgba(255,255,255,.7)}
+.source-state[data-state=ok] i{animation:syung-pulse 2s ease-in-out infinite}
+@keyframes syung-pulse{50%{transform:scale(1.35)}}
+html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
+html[data-theme=dark] .identity p{color:#c9c2a0}
+html[data-theme=dark] .source-state{background:rgba(255,212,0,.1);color:#f1efe6}
+html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
+
+/* ---- side panel ---- */
+.rail{background:var(--paper);border-right:0;box-shadow:2px 0 0 var(--rule)}
+.search-wrap{border-bottom:0;padding-bottom:6px}
+.search input{height:44px;border:2px solid var(--rule);border-radius:999px;background:var(--control);padding-left:42px;transition:border-color .15s,box-shadow .15s}
+.search input:focus{outline:0;border-color:var(--syung-deep);box-shadow:0 0 0 4px rgba(255,212,0,.35);background:var(--paper)}
+.search svg{left:15px;top:13px;color:var(--muted)}
+.filter-head strong{font-family:var(--round);font-weight:400;font-size:15px}
+.text-btn{text-decoration:none;background:var(--control);color:var(--secondary);padding:5px 11px;border-radius:999px;font-weight:600}
+.text-btn:hover{background:var(--syung);color:var(--syung-ink)}
+.line-list{padding:6px 10px 10px;scrollbar-color:var(--rule) transparent}
+.line-btn{grid-template-columns:18px 1fr auto;gap:10px;border-radius:14px;min-height:40px;transition:background .15s,transform .15s}
+.line-btn:hover{background:var(--control)}
+.line-btn:active{transform:scale(.97)}
+.line-btn[aria-pressed=true]{background:var(--selected);font-weight:700}
+.swatch{width:14px;height:14px;box-shadow:0 0 0 2.5px var(--paper),0 0 0 4px var(--line)}
+.count{background:var(--control);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600}
+.line-btn[aria-pressed=true] .count{background:rgba(255,255,255,.7)}
+html[data-theme=dark] .line-btn[aria-pressed=true] .count{background:rgba(0,0,0,.3)}
+.provenance{border-top:2px dashed var(--rule);font-size:11.5px}
+.provenance strong{font-family:var(--round);font-weight:400;font-size:13px}
+html[data-theme=dark] .search input{border-color:var(--rule);background:var(--control)}
+html[data-theme=dark] .search input:focus{border-color:var(--syung);box-shadow:0 0 0 4px rgba(255,212,0,.2)}
+
+/* ---- map controls: soft rounded pills ---- */
+.maplibregl-ctrl-group{border-radius:16px!important;box-shadow:var(--shadow)!important;overflow:hidden;background:var(--paper)!important}
+.maplibregl-ctrl-group button{width:34px!important;height:34px!important;transition:background .15s}
+.maplibregl-ctrl-group button:hover{background:var(--syung-soft)!important}
+.maplibregl-ctrl-group button+button{border-top:1px solid var(--rule)!important}
+.maplibregl-ctrl-group .map-toggle,.maplibregl-ctrl-group .train-toggle{width:34px!important;height:34px!important}
+.maplibregl-ctrl-group .map-toggle+.map-toggle,.maplibregl-ctrl-group .map-toggle+.train-toggle,.maplibregl-ctrl-group .train-toggle+.map-toggle{border-top:1px solid var(--rule)!important}
+.maplibregl-ctrl-group .map-toggle[aria-pressed=true],.maplibregl-ctrl-group .train-toggle[aria-pressed=true]{color:var(--syung-ink)!important}
+.maplibregl-ctrl-top-right .maplibregl-ctrl{margin:10px 10px 0 0}
+html[data-theme=dark] .maplibregl-ctrl-group button:hover{background:rgba(255,212,0,.14)!important}
+html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=true],html[data-theme=dark] .maplibregl-ctrl-group .train-toggle[aria-pressed=true]{color:var(--syung)!important}
+.webgl-zoom{border:0!important;border-radius:999px!important;background:var(--paper)!important;color:var(--ink)!important;box-shadow:var(--shadow);padding:6px 11px!important;font-family:var(--round);font-weight:400!important;font-size:13px!important}
+.live-notice{border-radius:999px!important;border:0!important;background:var(--syung)!important;color:var(--syung-ink)!important;box-shadow:var(--shadow)!important;padding:8px 16px!important}
+html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syung)!important}
+
+/* ---- popups (station, train) ---- */
+.maplibregl-popup-content{border-radius:18px!important;padding:14px 16px 12px!important;box-shadow:var(--shadow)!important;background:var(--paper);color:var(--ink)}
+.maplibregl-popup-tip{border-top-color:var(--paper)!important;border-bottom-color:var(--paper)!important}
+.maplibregl-popup-close-button{width:26px;height:26px;border-radius:50%;margin:6px;font-size:18px;line-height:1;color:var(--muted)}
+.maplibregl-popup-close-button:hover{background:var(--control)}
+.maplibregl-popup-content h3,.maplibregl-popup-content strong:first-child{font-family:var(--round);font-weight:400}
+.station-pop .exit{border-radius:8px!important;box-shadow:0 1.5px 0 rgba(20,20,20,.25)}
+
+/* ---- train tags: chunkier pills ---- */
+.train-tag{border-radius:999px!important;border-width:2px!important;box-shadow:0 2px 0 rgba(20,20,20,.15)!important}
+
+/* ---- phone ---- */
+@media(max-width:720px){
+  .identity h1{font-size:24px}
+  .brand-icon{width:36px;height:36px;border-radius:10px}
+  .line-btn{grid-template-columns:16px auto auto;min-height:34px;border:2px solid var(--rule);border-radius:999px;padding:3px 11px 3px 8px}
+  .line-btn[aria-pressed=true]{border-color:var(--syung-deep)}
+}
+
+/* live-state dot */
+.source-state[data-state=idle] i{background:#b3ad96}
+.source-state[data-state=loading] i{background:#ff9f1a}
+.source-state[data-state=ok] i{background:#1fbf6a}
+.source-state[data-state=error] i{background:#ff5a4a}
+html[data-theme=dark] .maplibregl-popup-content{background:var(--paper)}
+html[data-theme=dark] .maplibregl-popup-tip{border-top-color:var(--paper);border-bottom-color:var(--paper)}

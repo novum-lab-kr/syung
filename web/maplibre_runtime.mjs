@@ -824,13 +824,13 @@ async function refreshLive(force=false){
   const lines=liveLines();
   if(!lines.length){
     liveRequest++;liveKey='';if(plans.length){trains=[];plans=[];lastPose.clear();map.triggerRepaint()}
-    liveState.textContent=!liveOn?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
+    liveState.parentElement.dataset.state='idle';liveState.textContent=!liveOn?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
     return;
   }
   const key=lines.join(',');
   if(!force&&key===liveKey&&Date.now()-liveAt<30000)return; // same lines, fetched recently
   const request=++liveRequest;liveKey=key;liveAt=Date.now();
-  if(!plans.length)liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
+  if(!plans.length)liveState.parentElement.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
   try{
     const r=await fetch(`./api/live?lines=${encodeURIComponent(key)}`,{cache:'no-store'}),d=await r.json();
     if(request!==liveRequest)return; // a newer view or selection superseded this response
@@ -841,9 +841,9 @@ async function refreshLive(force=false){
     // Fresh data replaces positions outright (no glide from the old prediction).
     liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
     const unplaced=trains.length-plans.length,shown=d.lines||lines;
-    liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
+    liveState.parentElement.dataset.state='ok';liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
     map.triggerRepaint();
-  }catch{if(request===liveRequest){liveKey='';liveFailures++;liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';if(liveFailures>=2||!plans.length)updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
+  }catch{if(request===liveRequest){liveKey='';liveFailures++;liveState.parentElement.dataset.state='error';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';if(liveFailures>=2||!plans.length)updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
 }
 
 map.on('load',()=>{
@@ -930,7 +930,9 @@ function applyTheme(){
   document.documentElement.dataset.theme=t;
   // favicon follows the map theme (the <link media> pair only knows the OS setting)
   for(const l of document.querySelectorAll('link[data-theme-icon]'))l.href=`./brand/favicon-${t}.svg`;
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='dark'?'#0a171d':'#102f3d');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='dark'?'#1b1c1f':'#ffd400');
+  // header logo: black tile on the yellow bar, yellow tile on the dark bar
+  const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
   const btn=$('toggleTheme');
   if(btn){
     if(themeChoice==='auto'){const sa=sunArcIcon(),label=`테마: 자동 (지금 ${t==='dark'?'다크':'라이트'}) · 일출 ${sa.rise} · 일몰 ${sa.set} · 눌러서 라이트로`;btn.innerHTML=sa.svg;btn.setAttribute('aria-label',label);btn.title=label}

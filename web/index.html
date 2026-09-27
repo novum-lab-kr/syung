@@ -10,7 +10,9 @@
 <link rel="icon" href="./brand/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)" data-theme-icon>
 <link rel="apple-touch-icon" href="./brand/syung-light-180.png">
 <link rel="manifest" href="./site.webmanifest">
-<meta name="theme-color" content="#102f3d">
+<meta name="theme-color" content="#ffd400">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <link rel="stylesheet" href="./vendor/maplibre-gl.css">
 <style>
 :root{--board:#f3f6f7;--paper:#fff;--ink:#172429;--secondary:#52646a;--muted:#6b7b80;--rule:#cbd5d8;--navy:#102f3d;--orange:#f35b38;--focus:#ffb000;--control:#eef2f3;--selected:#dbe8ec}
@@ -27,8 +29,9 @@
 .webgl-station-label{color:#24353a;font-size:11px;font-weight:700;white-space:nowrap;text-shadow:-1px -1px #fff,1px -1px #fff,-1px 1px #fff,1px 1px #fff;pointer-events:none}.webgl-zoom{position:absolute;z-index:5;right:10px;top:88px;padding:6px 8px;border:1px solid #8e9b9f;border-radius:4px;background:#fff;font-size:11px;font-weight:800}.maplibregl-popup-content{border-radius:7px}.maplibregl-ctrl-top-right{top:4px;right:0}.brand-icon{width:38px;height:38px;flex:none;display:block;border-radius:9px}.identity h1{letter-spacing:.02em}</style>
 </head>
 <body>
+<link rel="stylesheet" href="./syung.css"><!-- after the runtime's <head> styles, so the 슝 skin wins -->
 <main class="app">
-  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-light.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>수도권 실시간 전철 지도 · 652개 역</p></div></div><div id="liveState" class="source-state" data-state="loading"><i></i><span>실시간 열차 불러오는 중</span></div></header>
+  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>수도권 실시간 전철 지도 · 652개 역</p></div></div><div id="liveState" class="source-state" data-state="loading"><i></i><span>실시간 열차 불러오는 중</span></div></header>
   <div class="layout">
     <aside class="rail" aria-label="노선 탐색">
       <div class="search-wrap"><div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 16 5 5" fill="none" stroke="currentColor" stroke-width="2"/></svg><label class="sr" for="search">역명 검색</label><input id="search" type="search" placeholder="역명을 입력하세요" autocomplete="off"></div><div class="filter-head"><strong>노선 필터</strong><button id="resetFilter" class="text-btn" type="button">전체 보기</button></div><label class="sr" for="lineSelect">노선 선택</label><select id="lineSelect" class="line-select"><option value="all">전체 노선</option></select></div>
