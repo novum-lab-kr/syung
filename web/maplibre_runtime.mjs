@@ -139,12 +139,15 @@ const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
 // and at the display's 60–120 Hz that kept phones hot. Panning and zooming still render at full rate.
 // One timer for all of them; animFrame hooks update animated paint just before the redraw.
-const ANIM_FPS=24,animFrame=[];let repaintTimer=0,repaintAt=0;
+// Trains are redrawn about once per screen pixel they move (a train at ~20 m/s: 2 fps over the whole
+// network, 10 at z15, up to ANIM_FPS at z16+); the pulse and the selected-train ripple at 12.
+const ANIM_FPS=PHONE?15:24,RIPPLE_FPS=12,animFrame=[];   // phones: 15 at most (steps of ~1.4 px at z16+)let repaintTimer=0,repaintAt=0;
+const trainFps=()=>{const mpp=40075016.686*Math.cos(map.getCenter().lat*Math.PI/180)/(512*2**map.getZoom());return Math.max(2,Math.min(ANIM_FPS,20/mpp))};
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
-const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
+const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:false,maximumAge:10000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'bottom-right');
 let autoLocating=false;
 geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
@@ -533,7 +536,7 @@ class TrainLayer{
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
     this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
-    let animating=false,waiting=false;
+    let animating=false,waiting=false,rippling=false;
     for(const plan of plans){
       const pose=trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();
       // Fresh data: glide from where the old prediction had the train instead of teleporting.
@@ -547,7 +550,7 @@ class TrainLayer{
       if(pose.moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing
       const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit),car=total/n,tail=pose.dist-total/2;
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
-      if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;animating=true}
+      if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
       const P=d=>{const q=trackPoint(plan,d);q.x+=shiftX;q.y+=shiftY;return q};
       const ratio=car/unit/bodyPx,separate=ratio>=1.5;
       const unfold=smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
@@ -631,8 +634,10 @@ class TrainLayer{
       // depth-only pass: record the train so the translucent buildings drawn later stay behind it where they should
       gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.ALWAYS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
     }
-    // moving trains: ANIM_FPS; trains standing at a station: once a second, to see them set off
-    if(animating)repaintSoon(1000/ANIM_FPS);else if(waiting)repaintSoon(1000);
+    // moving trains: trainFps(); the selected train's ripple: RIPPLE_FPS; trains standing at a
+    // station: once a second, to see them set off
+    const fps=Math.max(animating?trainFps():0,rippling?RIPPLE_FPS:0);
+    if(fps)repaintSoon(1000/fps);else if(waiting)repaintSoon(1000);
   }
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
 }
@@ -662,11 +667,14 @@ function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>
   easing=true;map.once('moveend',()=>{easing=false});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
 followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
-(function followTick(){
-  const sel=sheetTrain&&plans.find(p=>p.id===sheetTrain);   // ripples are drawn by the train layer, under the bodies
-  if(following&&!easing&&sel)map.jumpTo({center:trainLngLat(sel),padding:{top:0,bottom:sheetPad(),left:0,right:0}});
-  requestAnimationFrame(followTick);
-})();
+// Keep a followed train centred, stepped with the animation redraws (moving it every display frame
+// redrew the whole map at 60–120 Hz) and only when it has moved.
+let followAt='';
+animFrame.push(()=>{
+  const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
+  const c=trainLngLat(sel),k=`${c.lng.toFixed(7)},${c.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
+  map.jumpTo({center:c,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
+});
 map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}});
 
 // ---- train inspector ----------------------------------------------------------------------
@@ -990,7 +998,7 @@ map.on('load',()=>{
     const onScreen=()=>shown&&map.getBounds().contains(me);
     animFrame.push(()=>{if(!onScreen())return;const t=(performance.now()%2000)/2000,k=Math.min(1,t/.7);
       map.setPaintProperty('me-pulse','circle-radius',9*(1+2*k));map.setPaintProperty('me-pulse','circle-opacity',.9*(1-k))});
-    map.on('render',()=>{if(onScreen())repaintSoon(1000/ANIM_FPS)});
+    map.on('render',()=>{if(onScreen())repaintSoon(1000/RIPPLE_FPS)});
   }
   map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else closeSheet()});
   map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
