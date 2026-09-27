@@ -11,6 +11,6 @@ for d in "${TARGETS[@]}"; do
   mkdir -p "$d/brand" && cp "$ROOT"/web/brand/* "$d/brand/"
   cp "$ROOT"/web/vendor/* "$d/vendor/"
   mkdir -p "$d/lib" && cp "$ROOT"/web/lib/*.mjs "$d/lib/"
-  cp "$ROOT/data/osm-tracks/track_shapes.json" "$ROOT/data/osm-tracks/exits.json" "$ROOT/data/ktdb-gtfs-2025/edge_times.json" "$d/"
+  cp "$ROOT/data/osm-tracks/track_shapes.json" "$ROOT/data/osm-tracks/exits.json" "$ROOT/data/ktdb-gtfs-2025/edge_times.json" "$ROOT/data/live-timing.json" "$d/"
   echo "deployed → $d"
 done

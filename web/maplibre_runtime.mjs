@@ -171,6 +171,12 @@ function age(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\
 // Run time between adjacent stations: the GTFS timetable's median (edge_times.json, built by
 // build_edge_times.py); failing that, track length at the timetable's typical 12.4 m/s.
 let edgeTimes={},lineDwell={};
+// Per-line timing learned from the live feed (live-timing.json, built by build_live_timing.py):
+// pace = observed ÷ timetable over several stations; zone = 도착→출발 (the feed marks a train
+// entering and leaving the station section, not stopping and starting); approach = 진입→도착.
+let liveTiming={lines:{},default:{pace:.9,zone:40,approach:40}};
+fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
+const timingFor=line=>({...liveTiming.default,...liveTiming.lines[line]});
 fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 function segmentSeconds(a,b,line){
   const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
@@ -185,8 +191,7 @@ const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whos
 let exits={};
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
-// dwell: the timetable's per-line value (mostly 30 s) felt too long on the map; cap it at 20 s
-const DWELL_MAX=20,dwellFor=line=>Math.min(DWELL_MAX,lineDwell[line]||DWELL_MAX),smooth=x=>x*x*(3-2*x);
+const smooth=x=>x*x*(3-2*x);
 // Typical consist per line: [cars, metres per car]. Drawn at true length along the track.
 const CONSIST={'1호선':[10,20],'2호선':[10,20],'3호선':[10,20],'4호선':[10,20],'5호선':[8,20],'6호선':[8,20],'7호선':[8,20],'8호선':[6,18],'9호선':[6,19.5],'GTX-A':[8,23.5],'경강선':[4,20],'경의중앙선':[8,20],'경춘선':[8,20],'공항철도':[6,22],'김포골드라인':[2,13],'서해선':[4,20],'수인분당선':[6,20],'신림선':[3,13],'신분당선':[6,19.5],'에버라인선':[1,12],'우이신설선':[2,13],'의정부선':[2,13],'인천1호선':[8,18],'인천2호선':[2,18]};
 function planTrain(t){
@@ -203,13 +208,16 @@ function planTrain(t){
   // over-prediction from jumping back.
   let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===PREDICT_STOPS){upto=j;break}
   const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
+  // Stop to stop takes pace × (timetable run + 30 s dwell). The train stands for the station section
+  // time less 10 s (the start and stop inside the section are part of the run) and runs the rest.
+  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-10);
+  const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-tm.zone)+10};
   // ease: slow at a stop, full speed through a station the train passes
-  const run=(from,to,k0=0,k1=1,dur=segmentSeconds(from,to,t.line))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
+  const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
     phases.push({from,to,k0,k1,dur:dur*(a&&b?1:a||b?.9:.8),ease:a&&b?'both':a?'in':b?'out':'none'})};
-  const DWELL=dwellFor(t.line),dwell=(at,i)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur:DWELL}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur:DWELL})};
-  // 진입 → 도착 reports are ~53 s apart in the live feed (921 samples, 2026-09-24 evening): start the
-  // approach three-quarters along and take up to 50 s to stop.
-  if(status==='진입'&&previous)run(previous,s,.75,1,Math.min(50,segmentSeconds(previous,s,t.line)*.55));
+  const dwell=(at,i)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur:DWELL}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur:DWELL})};
+  // 진입: start the approach three-quarters along, taking the line's 진입→도착 time to stop
+  if(status==='진입'&&previous)run(previous,s,.75,1,tm.approach);
   if(status==='전역출발'&&previous)run(previous,s);
   if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0);
   for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
@@ -223,11 +231,12 @@ function planTrain(t){
   let [cars,carMetres]=CONSIST[t.line]||[8,20];
   // 2호선 branches run short trains: 성수지선 4 cars, 신정지선 6 cars (Seoul Metro)
   if(t.line==='2호선'){const where=`${t.station} ${t.destination}`;if(/신설동|용두|신답|용답|성수지선/.test(where))cars=4;else if(/까치산|신정네거리|양천구청|도림천|신도림지선/.test(where))cars=6}
-  return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres};
+  // 출발 is sent as the train leaves the station section, ~5 s into its run
+  return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres,lead:status==='출발'?5:0};
 }
 // Where the middle of the train is, as a distance (mercator units) along plan.seq.
 function trainPose(p){
-  let el=age(p.t.receivedAt),ph=p.phases[p.phases.length-1];
+  let el=age(p.t.receivedAt)+p.lead,ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
@@ -663,7 +672,7 @@ map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrai
 // ---- train inspector ----------------------------------------------------------------------
 // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
 function trainState(plan){
-  let el=age(plan.t.receivedAt),ph=plan.phases[plan.phases.length-1],idx=plan.phases.length-1;
+  let el=age(plan.t.receivedAt)+plan.lead,ph=plan.phases[plan.phases.length-1],idx=plan.phases.length-1;
   for(let i=0;i<plan.phases.length;i++){const x=plan.phases[i];if(el<x.dur){ph=x;idx=i;break}el-=x.dur}
   if(ph.dur===Infinity)return `${ph.to.name}에서 대기 (예측 끝 · 다음 데이터 대기)`;
   const left=Math.max(0,ph.dur-el);
@@ -675,7 +684,7 @@ function trainState(plan){
 function riderState(plan){
   // held after fresh data (replacePlans): say where it is drawn, not where the new prediction has it
   if(trainPose(plan).moving===false&&plan.hold!=null){const i=plan.cum.findIndex(c=>Math.abs(c-plan.hold)<1e-9);if(i>=0)return `${plan.seq[i].name}역에 정차 중`}
-  let el=age(plan.t.receivedAt),ph=plan.phases[plan.phases.length-1];
+  let el=age(plan.t.receivedAt)+plan.lead,ph=plan.phases[plan.phases.length-1];
   for(const x of plan.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   if(ph.dur===Infinity)return `${ph.to.name}역에 있어요`;
   const left=Math.max(0,ph.dur-el),when=left<60?`${Math.round(left/10)*10}초`:`${Math.round(left/60)}분`;
