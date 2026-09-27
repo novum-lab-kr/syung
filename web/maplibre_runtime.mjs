@@ -136,6 +136,11 @@ function buildTransferFeatures(){
 const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
+// Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
+// and at the display's 60–120 Hz that kept phones hot. Panning and zooming still render at full rate.
+// One timer for all of them; animFrame hooks update animated paint just before the redraw.
+const ANIM_FPS=24,animFrame=[];let repaintTimer=0,repaintAt=0;
+function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
@@ -515,18 +520,18 @@ class TrainLayer{
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
     this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
-    let animating=false;
+    let animating=false,waiting=false;
     for(const plan of plans){
       const pose=trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();
       // Fresh data: glide from where the old prediction had the train instead of teleporting.
       let shiftX=0,shiftY=0;
       if(plan.blend){const w=(performance.now()-plan.blend.at)/BLEND_MS;if(w<1){const e=1-smooth(w);shiftX=(plan.blend.x-mid.x)*e;shiftY=(plan.blend.y-mid.y)*e;animating=true}else plan.blend=null}
-      if(pose.moving)animating=true;
       const previous=lastPose.get(plan.id);
       if(previous){previous.x=mid.x+shiftX;previous.y=mid.y+shiftY}else lastPose.set(plan.id,{x:mid.x+shiftX,y:mid.y+shiftY});
       // off-screen test with the train's half length as margin: zoomed in, a train is longer than the screen
       const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit)/2+lanePx*unit;
       if(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach)continue;
+      if(pose.moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing
       const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit),car=total/n,tail=pose.dist-total/2;
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
       if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;animating=true}
@@ -613,8 +618,8 @@ class TrainLayer{
       // depth-only pass: record the train so the translucent buildings drawn later stay behind it where they should
       gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.ALWAYS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
     }
-    if(!animating)for(const plan of plans){let duration=0;for(let i=0;i<plan.phases.length-1;i++)duration+=plan.phases[i].dur;if(age(plan.t.receivedAt)<duration){animating=true;break}}
-    if(animating)this.map.triggerRepaint();
+    // moving trains: ANIM_FPS; trains standing at a station: once a second, to see them set off
+    if(animating)repaintSoon(1000/ANIM_FPS);else if(waiting)repaintSoon(1000);
   }
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
 }
@@ -963,17 +968,16 @@ map.on('load',()=>{
     map.addLayer({id:'me-pulse',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-opacity':0,'circle-radius-transition':{duration:0},'circle-opacity-transition':{duration:0}}},'webgl-trains');
     map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}},'webgl-trains');
     map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}},'webgl-trains');
-    let shown=false;
+    let shown=false,me=null;
     geolocate.on('geolocate',e=>{
-      const {longitude:x,latitude:y}=e.coords;shown=true;
+      const {longitude:x,latitude:y}=e.coords;shown=true;me=[x,y];
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
     });
-    // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle
-    (function pulse(now){
-      if(shown){const t=(now%2000)/2000,k=Math.min(1,t/.7);
-        map.setPaintProperty('me-pulse','circle-radius',9*(1+2*k));map.setPaintProperty('me-pulse','circle-opacity',.9*(1-k))}
-      requestAnimationFrame(pulse);
-    })(0);
+    // the same pulse as MapLibre's dot: grows to 3× and fades over 70% of a 2 s cycle; runs only while on screen
+    const onScreen=()=>shown&&map.getBounds().contains(me);
+    animFrame.push(()=>{if(!onScreen())return;const t=(performance.now()%2000)/2000,k=Math.min(1,t/.7);
+      map.setPaintProperty('me-pulse','circle-radius',9*(1+2*k));map.setPaintProperty('me-pulse','circle-opacity',.9*(1-k))});
+    map.on('render',()=>{if(onScreen())repaintSoon(1000/ANIM_FPS)});
   }
   map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else closeSheet()});
   map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
