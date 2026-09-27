@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -219,8 +219,8 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
     - a record older than the last, or one that moves the train back at the same time, is dropped
     - the same station and status seen again keeps the time it was first seen (otherwise every
       snapshot would restart the train's approach or dwell)
-    - a new state is dated halfway between the previous snapshot and this one, the expected time
-      it happened, instead of at this snapshot
+    (Dating a new state halfway back to the previous snapshot put trains a station ahead: riding
+    7081 on 2026-09-28 08:01 between 먹골 and 중화, the snapshot stamp itself matched.)
     """
     out: dict[str, list[dict]] = {}
     # a stamp ahead of the clock (seen: 3 min, and 23:59:57 in the morning) would freeze the train
@@ -232,9 +232,6 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
             if at and (at - now).total_seconds() > 30:
                 t["receivedAt"] = now.strftime("%Y-%m-%d %H:%M:%S")
     for line, trains in lines.items():
-        # a stamp three or more trains of the line and direction share is a snapshot time
-        # (3·4호선 mix both: Seoul Metro and Korail sections)
-        shared = Counter((t.get("direction"), t.get("receivedAt")) for t in trains)
         kept = []
         for t in trains:
             k, seen = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
@@ -247,10 +244,6 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
                     t, snap = prev, last_snap
                 elif same:
                     t = {**t, "receivedAt": prev["receivedAt"]}
-                elif shared[(t.get("direction"), snap)] >= 3:
-                    a, b = _kst(last_snap), _kst(snap)
-                    if a and b and 0 < (b - a).total_seconds() <= 180:
-                        t = {**t, "receivedAt": (a + (b - a) / 2).strftime("%Y-%m-%d %H:%M:%S")}
             t = {**t, "stampedAt": snap}   # the feed's own recptnDt, kept for the samples
             memory[k] = {"record": t, "snap": snap}
             kept.append(t)

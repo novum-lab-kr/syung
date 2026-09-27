@@ -6,11 +6,13 @@ Output (data/live-timing.json), read by the map runtime:
 - pace: observed ÷ timetable time over 1–4 stations between two records of the same status
   (first sightings only)
   (도착→도착, 출발→출발), median. The feed's 도착/출발 mark a train entering and leaving the
-  station section, so equal-status spans cancel that offset. Clamped to 0.80–1.05 (express trains
-  on 1·9호선 pull the median down).
+  station section, so equal-status spans cancel that offset. Clamped to 0.95–1.05. Measured on snapshot
+  stamps it came out 0.82–0.87 on 2·5·6·7·9호선, yet riding 7호선 (7081, 2026-09-28) the trains ran
+  at timetable pace and the map, rolling them at 0.85, was a station ahead; on event stamps the
+  same lines give 0.97–1.02.
 - zone: seconds from 도착 to 출발 at one station (the train inside the station section).
 - approach: seconds from 진입 to 도착.
-zone and approach only use records stamped with their own event time (a stamp shared by three or
+All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
 short), and take the harmonic mean: a state is caught in a sample about in proportion to how long
 it lasts, so the plain mean would overweight long ones.
@@ -30,9 +32,9 @@ from analyse_live_samples import key, node_of, scheduled, times, ts  # noqa: E40
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "live-timing.json"
-DEFAULT = {"pace": 0.9, "zone": 40, "approach": 40}   # zone 40: stands the timetable's 30 s where unmeasured
+DEFAULT = {"pace": 1.0, "zone": 40, "approach": 40}   # zone 40: stands the timetable's 30 s where unmeasured
 MIN_N = {"pace": 200, "zone": 100, "approach": 100}
-CLAMP = {"pace": (0.80, 1.05), "zone": (40, 95), "approach": (25, 85)}
+CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85)}
 
 
 def main(paths: list[str]) -> None:
@@ -69,7 +71,7 @@ def main(paths: list[str]) -> None:
                         approach[line].append(dt)
                 continue
             sched = scheduled(line, a, b)
-            if sched and s1 == s2 and s1 in ("도착", "출발"):
+            if sched and s1 == s2 and s1 in ("도착", "출발") and e1["event"] and e2["event"]:
                 hops, run = sched
                 pace[line].append(dt / (run + hops * times["dwell"].get(line, 30)))
 

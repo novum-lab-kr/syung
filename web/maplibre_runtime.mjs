@@ -174,7 +174,7 @@ let edgeTimes={},lineDwell={};
 // Per-line timing learned from the live feed (live-timing.json, built by build_live_timing.py):
 // pace = observed ÷ timetable over several stations; zone = 도착→출발 (the feed marks a train
 // entering and leaving the station section, not stopping and starting); approach = 진입→도착.
-let liveTiming={lines:{},default:{pace:.9,zone:40,approach:40}};
+let liveTiming={lines:{},default:{pace:1,zone:40,approach:40}};
 fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
 const timingFor=line=>({...liveTiming.default,...liveTiming.lines[line]});
 fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
