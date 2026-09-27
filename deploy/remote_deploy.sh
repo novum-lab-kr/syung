@@ -14,9 +14,9 @@ git merge --ff-only --quiet origin/main
 after=$(git rev-parse HEAD)
 echo "HEAD $before -> $after"
 node --test tests/*.test.mjs
-deploy/deploy.sh /var/www/control-artifacts/subway-preview
+deploy/deploy.sh
 if ! git diff --quiet "$before" "$after" -- server/; then
   python3 -m py_compile server/subway_live_proxy.py && systemctl restart subway-live && echo "subway-live restarted"
 fi
-curl -fsS -o /dev/null https://office.nol-meok.cloud/artifacts/subway-preview/ && echo "site OK"
+for u in https://metro.nol-meok.cloud/ https://office.nol-meok.cloud/artifacts/subway-preview/; do curl -fsS -o /dev/null "$u" && echo "site OK $u" || echo "site DOWN $u"; done
 echo "=== deployed $(git log --oneline -1)"

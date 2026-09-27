@@ -1,4 +1,19 @@
-# Static map + live-train proxy (production: office.nol-meok.cloud)
+# Static map + live-train proxy (production: metro.nol-meok.cloud)
+metro.nol-meok.cloud {
+	encode zstd gzip
+	handle /api/live {
+		rewrite * /live
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle {
+		root * /var/www/metro
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		file_server
+	}
+}
+
+# Legacy path (office.nol-meok.cloud/artifacts/subway-preview/), kept during the move
 office.nol-meok.cloud {
 	handle /artifacts/subway-preview/api/live {
 		rewrite * /live
