@@ -29,6 +29,13 @@ API_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimePosition/0/10
 # source so any number of lines costs one upstream call per CACHE_SECONDS.
 ALL_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimeStationArrival/ALL"
 SOURCE_MODE = os.environ.get("SUBWAY_LIVE_SOURCE", "all")
+# Position bursts: the per-line position feed stamps each train with its own event time, which the
+# all-stations feed does not on the Seoul Metro lines. Every BURST_EVERY seconds one of these lines
+# is read BURST_CALLS times, BURST_GAP apart, and saved for build_live_timing.py (dwell/approach).
+BURST_LINES = [l for l in os.environ.get("SUBWAY_LIVE_BURST_LINES", "2호선,5호선,6호선,7호선,9호선").split(",") if l.strip()]
+BURST_EVERY = int(os.environ.get("SUBWAY_LIVE_BURST_EVERY", "7200"))
+BURST_CALLS, BURST_GAP = 8, 45
+BURST_DIR = Path(os.environ.get("SUBWAY_LIVE_BURST_DIR", "/var/lib/subway-live/position"))
 QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
 
 LINE_NAMES = {
@@ -435,6 +442,28 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def _burst_loop() -> None:
+    turn = 0
+    while True:
+        time.sleep(BURST_EVERY)
+        if _quiet() or not BURST_LINES:
+            continue
+        line = BURST_LINES[turn % len(BURST_LINES)]
+        turn += 1
+        for _ in range(BURST_CALLS):
+            try:
+                data = _fetch_line(line)   # counts against the daily quota; raises at the limit
+            except (OSError, ValueError, RuntimeError, urllib.error.URLError):
+                break
+            BURST_DIR.mkdir(parents=True, exist_ok=True)
+            with (BURST_DIR / f"{_today().replace('-', '')}.jsonl").open("a", encoding="utf-8") as sink:
+                for t in data["trains"]:
+                    sink.write(json.dumps({**t, "fetchedAt": data["fetchedAt"]}, ensure_ascii=False) + "\n")
+            time.sleep(BURST_GAP)
+
+
 if __name__ == "__main__":
     _load_quota()
+    if BURST_EVERY > 0:
+        threading.Thread(target=_burst_loop, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

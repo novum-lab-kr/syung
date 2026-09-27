@@ -16,7 +16,10 @@ All three only use records stamped with their own event time (a stamp shared by 
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
 short), and take the harmonic mean: a state is caught in a sample about in proportion to how long
 it lasts, so the plain mean would overweight long ones.
-Usage: build_live_timing.py <samples.jsonl> [...]
+Files under a "position" directory are position-feed bursts (the proxy's BURST_* settings):
+every record there carries its own event time, which gives zone and approach on the lines whose
+all-stations records are all snapshot-stamped (2·5·6·7·9호선).
+Usage: build_live_timing.py <samples.jsonl | position/*.jsonl> [...]
 """
 
 from __future__ import annotations
@@ -43,8 +46,12 @@ CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85)}
 def main(paths: list[str]) -> None:
     records, shared = [], Counter()
     for p in paths:
+        position = Path(p).parent.name == "position"
         for row in Path(p).read_text(encoding="utf-8").splitlines():
             e = json.loads(row)
+            e["source"] = "position" if position else "all"
+            if position:
+                e["fetchedAt"] = f"position:{e.get('fetchedAt')}:{e['trainNo']}"   # never shared: event stamps
             if e.get("receivedAt") and e.get("status") in ("진입", "도착", "출발"):
                 records.append(e)
                 # stampedAt: the feed's own stamp (the proxy re-dates receivedAt since 2026-09-28)
@@ -52,10 +59,10 @@ def main(paths: list[str]) -> None:
     trains = defaultdict(dict)
     for e in records:
         e["event"] = shared[(e["fetchedAt"], e["line"], e["direction"], e.get("stampedAt") or e["receivedAt"])] < 3
-        trains[(e["line"], e["trainNo"])].setdefault((e["receivedAt"], e["station"], e["status"]), e)
+        trains[(e["source"], e["line"], e["trainNo"])].setdefault((e["receivedAt"], e["station"], e["status"]), e)
 
     pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
-    for (line, _), evs in trains.items():
+    for (_, line, _), evs in trains.items():
         seq = sorted(evs.values(), key=lambda e: e["receivedAt"])
         # the same station and status seen again later (every snapshot re-stamps it) is not a new
         # event: keep the first sighting, or spans to the next event come out short
