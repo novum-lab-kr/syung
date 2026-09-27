@@ -31,7 +31,10 @@ python3 deploy/dev_server.py        # http://localhost:8080
 프록시로 넘겨서 로컬에 API 키가 필요 없습니다. 다른 프록시를 쓰려면 `SUBWAY_LIVE_UPSTREAM`을 지정하세요.
 필요한 것: Python 3.10+, 테스트용 Node 20+. 설치할 패키지는 없습니다.
 
-배포는 서버에서 `git pull && deploy/deploy.sh` (프록시를 고쳤다면 `systemctl restart subway-live`).
+배포는 자동이에요. `main`에 푸시(또는 PR 머지)하면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트를
+돌리고, 통과하면 서버에 SSH로 접속해 `deploy/remote_deploy.sh`를 실행해요(최신 코드 받기 → 테스트 → 배포,
+`server/`가 바뀌었으면 프록시 재시작). 배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요.
+PR에는 테스트만 돌아요. 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
 데이터 다시 만들기(pipeline/)는 GTFS 원본과 OSM 캐시가 있는 서버에서 하는 게 편합니다.
 
 ## 테스트
