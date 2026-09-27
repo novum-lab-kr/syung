@@ -928,6 +928,9 @@ function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=n
 function applyTheme(){
   const t=effectiveTheme(),P=MAP_THEMES[t];
   document.documentElement.dataset.theme=t;
+  // favicon follows the map theme (the <link media> pair only knows the OS setting)
+  for(const l of document.querySelectorAll('link[data-theme-icon]'))l.href=`./brand/favicon-${t}.svg`;
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='dark'?'#0a171d':'#102f3d');
   const btn=$('toggleTheme');
   if(btn){
     if(themeChoice==='auto'){const sa=sunArcIcon(),label=`테마: 자동 (지금 ${t==='dark'?'다크':'라이트'}) · 일출 ${sa.rise} · 일몰 ${sa.set} · 눌러서 라이트로`;btn.innerHTML=sa.svg;btn.setAttribute('aria-label',label);btn.title=label}

@@ -76,3 +76,18 @@ python3 pipeline/build_ktdb_gtfs_preview.py      # build/index.html 재생성 �
 - 노선·역·시간표: 한국교통연구원(KTDB) 대중교통 GTFS — 상업 이용 조건 확인 필요
 - 선로·역·도로·배경 지도: © OpenStreetMap contributors (ODbL), © OpenMapTiles, OpenFreeMap
 - 실시간 열차: 서울 열린데이터광장 지하철 실시간 도착·위치 정보
+
+## 브랜드 (슝)
+
+`web/brand/` — 앱 아이콘과 파비콘. 라이트는 노란 바탕 검은 열차, 다크는 반대.
+
+| 파일 | 용도 |
+|---|---|
+| `syung-{light,dark}.svg`, `-192/-512.png` | 앱 아이콘 (둥근 모서리) |
+| `syung-{light,dark}-180.png`, `-1024.png` | 애플 터치 아이콘·스토어용 (정사각형, 모서리는 OS가 둥글게) |
+| `favicon-{light,dark}.svg`, `-16/-32/-48.png` | 작은 크기용 단순화 파비콘 |
+| `favicon.svg` | OS 테마를 따라 바뀌는 파비콘 한 파일 |
+| `favicon.ico` | 16·32·48 라이트, 구형 브라우저용 |
+| `syung-mono.svg` | 단색 (알림 아이콘 등) |
+
+웹 지도에서는 파비콘이 지도 테마(자동·라이트·다크)를 따라 바뀝니다.
