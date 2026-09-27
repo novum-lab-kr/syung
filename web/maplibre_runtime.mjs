@@ -262,12 +262,12 @@ in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
 uniform mat4 u_matrix;uniform vec2 u_offset;uniform float u_shadow;
 out vec2 v_local;flat out vec4 v_info;flat out vec3 v_color;flat out float v_face;
 void main(){v_local=a_local;v_info=a_info;v_color=a_color;v_face=a_face;
-  bool beam=a_face>5.5;   // the headlight beam keeps its own slope in the ground pass and ignores the sun offset
+  bool beam=a_face>5.5;   // headlight beam and selection ripple keep their own height in the ground pass and ignore the sun offset
   gl_Position=u_matrix*vec4(a_pos.xy+(beam?vec2(0.):u_offset),beam||u_shadow<.5?a_pos.z:0.,1.);}`;
 const TRAIN_FS=`#version 300 es
 precision highp float;
 in vec2 v_local;flat in vec4 v_info;flat in vec3 v_color;flat in float v_face;
-uniform float u_shadow,u_glow;out vec4 outColor;
+uniform float u_shadow,u_glow,u_time;out vec4 outColor;
 float box(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
 float rect(vec2 p,vec2 c,vec2 b){return ink(box(p-c,b));}
@@ -286,6 +286,14 @@ void main(){
   vec2 cab=vec2(radius-endX,abs(p.y)-(halfW-radius));
   float rounded=length(max(cab,0.))+min(max(cab.x,cab.y),0.)-radius;
   float edge=max(max(-p.x,p.x-L),max(abs(p.y)-halfW,rounded));
+  if(v_face>6.5){
+    // selected train: three line-colour rings spreading on the ground, under every train body
+    if(u_shadow<.5)discard;
+    float R=W*3.4,d=length(p),a=0.;
+    for(int k=0;k<3;k++){float t=fract(u_time/2.4+float(k)/3.),r=R*t;
+      a=max(a,(1.-t)*(ink(abs(d-r)-1.4)*.9+(1.-smoothstep(r-1.,r,d))*.16));}
+    outColor=vec4(v_color*a,a);return;
+  }
   if(v_face>5.5){
     // headlight beam on the ground ahead of the leading cab, drawn with the ground shadows
     if(u_shadow<.5)discard;
@@ -429,7 +437,7 @@ class TrainLayer{
     if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p));
     this.b=gl.createBuffer();
     this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
   }
   vertex(x,y,z,u,v,face){
     if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
@@ -460,6 +468,12 @@ class TrainLayer{
       x=xx;y=yy;z=zz;
     }
     this.wall(front?this.length-r:r,front?this.length-nose:nose,z,H,side*W*.5);
+  }
+  // Selection ripple: a square on the ground centred on (x,y) in world units, radius R px.
+  ripple(x,y,R){
+    this.cx=x;this.cy=y;this.tx=1;this.ty=0;
+    this.corner(-R,-R,.2,-R,-R,7);this.corner(R,-R,.2,R,-R,7);this.corner(R,R,.2,R,R,7);
+    this.corner(-R,-R,.2,-R,-R,7);this.corner(R,R,.2,R,R,7);this.corner(-R,R,.2,-R,R,7);
   }
   // Headlight beams: a flat quad on the ground from the nose forward; the shader draws one cone per lamp.
   // It lies on the ground from the nose tip, where the headlights sit.
@@ -496,6 +510,7 @@ class TrainLayer{
       if(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach)continue;
       const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit),car=total/n,tail=pose.dist-total/2;
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
+      if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;animating=true}
       const P=d=>{const q=trackPoint(plan,d);q.x+=shiftX;q.y+=shiftY;return q};
       const ratio=car/unit/bodyPx,separate=ratio>=1.5;
       const unfold=smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
@@ -574,7 +589,7 @@ class TrainLayer{
       gl.bufferSubData(gl.ARRAY_BUFFER,0,this.data,0,this.used);
       const S=52,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
       ptr('a_pos',3,0);ptr('a_local',2,12);ptr('a_info',4,20);ptr('a_color',3,36);ptr('a_face',1,48);
-      gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
+      gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
       gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
       // depth-only pass: record the train so the translucent buildings drawn later stay behind it where they should
       gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.ALWAYS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
@@ -610,13 +625,8 @@ function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>
   easing=true;map.once('moveend',()=>{easing=false});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
 followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
-// Ripples on the ground around the selected train while its sheet is open.
-const rippleEl=document.createElement('div');rippleEl.className='train-ripple';rippleEl.innerHTML='<i></i><i></i><i></i>';
-const ripple=new maplibregl.Marker({element:rippleEl,pitchAlignment:'map',rotationAlignment:'map'});let rippleOn=false;
 (function followTick(){
-  const sel=sheetTrain&&plans.find(p=>p.id===sheetTrain);
-  if(sel){const ll=trainLngLat(sel);ripple.setLngLat(ll);if(!rippleOn){rippleEl.style.setProperty('--c',colors[sel.t.line]||'#ffd400');ripple.addTo(map);rippleOn=true}}
-  else if(rippleOn){ripple.remove();rippleOn=false}
+  const sel=sheetTrain&&plans.find(p=>p.id===sheetTrain);   // ripples are drawn by the train layer, under the bodies
   if(following&&!easing&&sel)map.jumpTo({center:trainLngLat(sel),padding:{top:0,bottom:sheetPad(),left:0,right:0}});
   requestAnimationFrame(followTick);
 })();

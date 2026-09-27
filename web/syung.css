@@ -163,11 +163,3 @@ html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 .sheet .station-sheet .exit{min-width:24px;height:24px;padding:0 7px;border-radius:8px;background:#ffd200;color:#1d1d1d;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:2px;box-shadow:0 1.5px 0 rgba(20,20,20,.25)}
 .sheet .station-sheet .exit i{font-style:normal;font-size:11px}
 
-/* selected train: line-colour ripples spreading on the ground */
-.train-ripple{width:0;height:0;pointer-events:none}
-.train-ripple i{position:absolute;left:0;top:0;width:180px;height:180px;margin:-90px 0 0 -90px;border-radius:50%;
-  border:3px solid var(--c);background:color-mix(in srgb,var(--c) 18%,transparent);opacity:0;transform:scale(.1);animation:train-ripple 2.4s cubic-bezier(.2,.6,.3,1) infinite}
-.train-ripple i:nth-child(2){animation-delay:.8s}
-.train-ripple i:nth-child(3){animation-delay:1.6s}
-@keyframes train-ripple{0%{opacity:.85;transform:scale(.1)}100%{opacity:0;transform:scale(1)}}
-@media(prefers-reduced-motion:reduce){.train-ripple i{animation:none;opacity:.5;transform:scale(.45)}.train-ripple i+i{display:none}}
