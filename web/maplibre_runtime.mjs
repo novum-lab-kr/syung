@@ -138,13 +138,9 @@ const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
-// My location; on the first fix, open the nearest station (within 1.5 km) with its upcoming trains.
+// My location (no station popup opens by itself; tap a station for its trains).
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:true,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'top-right');
-let geoOpened=false;
-geolocate.on('geolocate',e=>{if(geoOpened)return;geoOpened=true;const here=[e.coords.longitude,e.coords.latitude];let best=null;
-  for(const st of stations){const d=Math.hypot((st.lon-here[0])*88000,(st.lat-here[1])*111000);if(d<1500&&(!best||d<best.d))best={st,d}}
-  if(best)setTimeout(()=>showStationPopup(best.st,[best.st.lon,best.st.lat]),900)});
 let autoLocating=false;
 geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
 // First visit: fly to where the viewer is (inside the 수도권 only; elsewhere, or without permission,
@@ -155,7 +151,7 @@ map.once('load',()=>{
   navigator.geolocation.getCurrentPosition(pos=>{
     const {longitude:x,latitude:y}=pos.coords,[w,s,e,n]=METRO_AREA;
     if(x<w||x>e||y<s||y>n)return;
-    autoLocating=true;geolocate.trigger();   // same as pressing the button: blue dot, zoom 16, nearest station
+    autoLocating=true;geolocate.trigger();   // same as pressing the button: blue dot, zoom 16
   },()=>{},{enableHighAccuracy:false,timeout:8000,maximumAge:300000});
 });
 geolocate.on('geolocate',()=>{autoLocating=false});
