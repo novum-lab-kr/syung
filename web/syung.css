@@ -31,7 +31,17 @@ html[data-theme=dark] .identity p{color:#c9c2a0}
 html[data-theme=dark] .source-state{background:rgba(255,212,0,.1);color:#f1efe6}
 html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
 
-/* ---- side panel ---- */
+/* ---- full-width map; the line filter panel is gone, search floats on the map ---- */
+.layout{grid-template-columns:minmax(0,1fr)!important}
+.map-search{position:absolute;z-index:6;top:14px;left:14px;width:min(340px,calc(100% - 84px))}
+.map-search input{box-shadow:var(--shadow);border-color:transparent!important;background:var(--paper)!important}
+.map-search input:focus{border-color:var(--syung-deep)!important}
+.maplibregl-ctrl-attrib.maplibregl-compact{border-radius:999px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);margin:0 0 14px 12px!important}
+.maplibregl-ctrl-attrib.maplibregl-compact-show{border-radius:14px;padding:4px 30px 4px 10px;max-width:min(520px,calc(100vw - 110px))}
+.maplibregl-ctrl-attrib a{color:inherit}
+html[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1)}
+
+/* ---- search ---- */
 .rail{background:var(--paper);border-right:0;box-shadow:2px 0 0 var(--rule)}
 .search-wrap{border-bottom:0;padding-bottom:6px}
 .search input{height:44px;border:2px solid var(--rule);border-radius:999px;background:var(--control);padding-left:42px;transition:border-color .15s,box-shadow .15s}
@@ -82,6 +92,10 @@ html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syun
 
 /* ---- phone ---- */
 @media(max-width:720px){
+  body{overflow:hidden!important}
+  .app{height:100%!important;grid-template-rows:62px minmax(0,1fr)!important}
+  .layout{grid-template-rows:minmax(0,1fr)!important}
+  .map-search{top:10px;left:10px;width:calc(100% - 72px)}
   .identity h1{font-size:24px}
   .brand-icon{width:36px;height:36px;border-radius:10px}
   .line-btn{grid-template-columns:16px auto auto;min-height:34px;border:2px solid var(--rule);border-radius:999px;padding:3px 11px 3px 8px}

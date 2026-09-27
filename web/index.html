@@ -31,15 +31,11 @@
 <body>
 <link rel="stylesheet" href="./syung.css"><!-- after the runtime's <head> styles, so the 슝 skin wins -->
 <main class="app">
-  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>수도권 실시간 전철 지도 · 652개 역</p></div></div><div id="liveState" class="source-state" data-state="loading"><i></i><span>실시간 열차 불러오는 중</span></div></header>
+  <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div><h1>슝</h1><p>지금 내 열차, 어디쯤 슝?</p></div></div><div id="liveState" class="source-state" data-state="loading"><i></i><span>실시간 열차 불러오는 중</span></div></header>
   <div class="layout">
-    <aside class="rail" aria-label="노선 탐색">
-      <div class="search-wrap"><div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 16 5 5" fill="none" stroke="currentColor" stroke-width="2"/></svg><label class="sr" for="search">역명 검색</label><input id="search" type="search" placeholder="역명을 입력하세요" autocomplete="off"></div><div class="filter-head"><strong>노선 필터</strong><button id="resetFilter" class="text-btn" type="button">전체 보기</button></div><label class="sr" for="lineSelect">노선 선택</label><select id="lineSelect" class="line-select"><option value="all">전체 노선</option></select></div>
-      <div id="lineList" class="line-list"></div>
-      <div class="provenance"><strong>현재 표시 기준</strong>KTDB GTFS의 routes·trips·stop_times를 사용했습니다. 노선명 접미사를 제외한 동일 역명·500m 이내 승강장은 하나의 환승 노드로 통합했습니다.</div>
-    </aside>
     <section class="map-area" aria-labelledby="mapTitle">
-      <div id="map" class="map" role="application" aria-label="수도권 철도역 WebGL 지도"></div><div id="zoomLevel" class="webgl-zoom">줌 10</div>
+      <div id="map" class="map" role="application" aria-label="수도권 철도역 WebGL 지도"></div>
+      <div class="map-search search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 16 5 5" fill="none" stroke="currentColor" stroke-width="2"/></svg><label class="sr" for="search">역 검색</label><input id="search" type="search" placeholder="어느 역으로 슝?" autocomplete="off" enterkeyhint="search"></div><div id="zoomLevel" class="webgl-zoom">줌 10</div>
       <button id="toggleMap" class="map-toggle" type="button" aria-pressed="false">지도 켜기</button>
       <button id="toggleTrains" class="train-toggle" type="button" aria-pressed="true">열차 숨기기</button>
       <div class="map-status"><h2 id="mapTitle">652개 역 노드 전체 보기</h2><p id="status" role="status" aria-live="polite">GTFS 일반 운행계통을 표시하며, 공용 선로는 공식 노선색을 섞지 않고 평행선으로 나눕니다. 급행 정차역은 역명 옆에 (급행)으로 표시합니다.</p></div>
