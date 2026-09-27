@@ -145,7 +145,20 @@ let geoOpened=false;
 geolocate.on('geolocate',e=>{if(geoOpened)return;geoOpened=true;const here=[e.coords.longitude,e.coords.latitude];let best=null;
   for(const st of stations){const d=Math.hypot((st.lon-here[0])*88000,(st.lat-here[1])*111000);if(d<1500&&(!best||d<best.d))best={st,d}}
   if(best)setTimeout(()=>showStationPopup(best.st,[best.st.lon,best.st.lat]),900)});
-geolocate.on('error',()=>updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.'));
+let autoLocating=false;
+geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
+// First visit: fly to where the viewer is (inside the 수도권 only; elsewhere, or without permission,
+// keep the whole-network view). Asks once for location; after that the browser remembers the answer.
+const METRO_AREA=[126.3,36.8,127.9,38.3];
+map.once('load',()=>{
+  if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {longitude:x,latitude:y}=pos.coords,[w,s,e,n]=METRO_AREA;
+    if(x<w||x>e||y<s||y>n)return;
+    autoLocating=true;geolocate.trigger();   // same as pressing the button: blue dot, zoom 16, nearest station
+  },()=>{},{enableHighAccuracy:false,timeout:8000,maximumAge:300000});
+});
+geolocate.on('geolocate',()=>{autoLocating=false});
 let selected='all',trains=[],trainsEnabled=true,labels=[],liveRequest=0,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
