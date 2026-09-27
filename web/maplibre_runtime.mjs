@@ -274,8 +274,10 @@ void main(){
   if(v_face>5.5){
     // headlight beam on the ground ahead of the leading cab, drawn with the ground shadows
     if(u_shadow<.5)discard;
-    float len=W*3.4,u=p.x/len,hw=W*.5*(.55+1.15*u);
-    float a=pow(1.-u,1.6)*smoothstep(0.,.1,u)*(1.-smoothstep(.45,1.,abs(p.y)/hw))*u_glow;
+    // two cones, one from each headlight, spreading slightly outward
+    float len=W*3.4,u=p.x/len,yc=W*.27*(1.+.9*u),hw=W*(.09+.5*u);
+    float cone=max(1.-smoothstep(.35,1.,abs(p.y-yc)/hw),1.-smoothstep(.35,1.,abs(p.y+yc)/hw));
+    float a=pow(1.-u,1.6)*smoothstep(0.,.08,u)*cone*u_glow;
     outColor=vec4(vec3(1.,.95,.78)*a,a*.8);return;
   }
   if(u_shadow>.5){if(v_face>.5)discard;float a=(1.-smoothstep(-.4,2.4,edge))*.22;outColor=vec4(vec3(.09,.13,.16)*a,a);return;}
@@ -443,9 +445,9 @@ class TrainLayer{
     }
     this.wall(front?this.length-r:r,front?this.length-nose:nose,z,H,side*W*.5);
   }
-  // Headlight beam: a flat fan on the ground from the nose forward, widening to ~1.7 body widths.
+  // Headlight beams: a flat quad on the ground from the nose forward; the shader draws one cone per lamp.
   beam(L,w){
-    const len=this.width*3.4,w0=w*.55,w1=w*1.7;
+    const len=this.width*3.4,w0=w*.8,w1=w*2.3;
     this.corner(L,-w0,.3,0,-w0,6);this.corner(L,w0,.3,0,w0,6);this.corner(L+len,w1,.3,len,w1,6);
     this.corner(L,-w0,.3,0,-w0,6);this.corner(L+len,w1,.3,len,w1,6);this.corner(L+len,-w1,.3,len,-w1,6);
   }
