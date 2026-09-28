@@ -309,12 +309,12 @@ void main(){v_local=a_local;v_info=a_info;v_color=a_color;v_face=a_face;
 const TRAIN_FS=`#version 300 es
 precision highp float;
 in vec2 v_local;flat in vec4 v_info;flat in vec3 v_color;flat in float v_face;
-uniform float u_shadow,u_glow,u_time;out vec4 outColor;
+uniform float u_shadow,u_glow,u_time,u_alpha;out vec4 outColor;
 float box(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
 float rect(vec2 p,vec2 c,vec2 b){return ink(box(p-c,b));}
 float stroke(float d,float w){return ink(abs(d)-w);}
-void main(){
+void shade(){
   float L=v_info.x,W=v_info.y,kind=mod(v_info.z,4.),carPx=v_info.w,H=W*.68;
   bool front=mod(kind,2.)>.5,back=kind>1.5;
   vec2 p=v_local;vec3 col;float alpha=1.;
@@ -462,7 +462,9 @@ void main(){
     col=mix(vec3(.17,.23,.26),vec3(.38,.44,.47),stroke(mod(p.x+30.,.85)-.425,.14));
   }
   outColor=vec4(col*alpha,alpha);
-}`;
+}
+// u_alpha: a train behind a building shows through it like through the map's translucent buildings
+void main(){shade();outColor*=u_alpha;}`;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 class TrainLayer{
   constructor(){
@@ -478,7 +480,7 @@ class TrainLayer{
     if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p));
     this.b=gl.createBuffer();
     this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
   }
   vertex(x,y,z,u,v,face){
     if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
@@ -624,19 +626,21 @@ class TrainLayer{
       const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
       for(let r=0;r<4;r++)MT[12+r]=M[r]*ox+M[4+r]*oy+M[12+r]; // M · translate(origin), evaluated in double precision
       gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
-      // Depth: test against what 3D buildings wrote (so a building in front hides the train) but never
-      // write — the model's own faces are still ordered by the painter's pass above.
-      gl.disable(gl.DEPTH_TEST);gl.depthMask(false);   // nothing opaque is drawn before trains; skipping the test avoids low-precision flicker on phones
-      gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+      // Never write depth: the model's own faces are ordered by the painter's pass above (testing them
+      // against each other flickered on phones). options.occlude (the building walls' depth is in the
+      // buffer): draw what is in front of them, then what is behind at that alpha.
+      gl.depthMask(false);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
       gl.bindBuffer(gl.ARRAY_BUFFER,this.b);
       if(this.gpuCapacity!==this.data.length){gl.bufferData(gl.ARRAY_BUFFER,this.data.byteLength,gl.DYNAMIC_DRAW);this.gpuCapacity=this.data.length}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,this.data,0,this.used);
       const S=52,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
       ptr('a_pos',3,0);ptr('a_local',2,12);ptr('a_info',4,20);ptr('a_color',3,36);ptr('a_face',1,48);
-      gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
-      gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
-      // depth-only pass: record the train so the translucent buildings drawn later stay behind it where they should
-      gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.ALWAYS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.drawArrays(gl.TRIANGLES,0,this.used/13);gl.colorMask(true,true,true,true);
+      gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);
+      const pass=alpha=>{gl.uniform1f(this.uni.u_alpha,alpha);
+        gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
+        gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13)};
+      if(options.occlude){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);pass(1);gl.depthFunc(gl.GREATER);pass(options.occlude)}
+      else{gl.disable(gl.DEPTH_TEST);pass(1)}
     }
     // moving trains, ripple or pulse: TRAIN_FPS (a followed train moves the camera: map redraws at
     // FOLLOW_FPS); trains standing at a station: once a second, to see them set off
@@ -815,6 +819,46 @@ function layoutLabels(){
 }
 const hexRGB3=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 const NAME_PX=40,NAME_ROW=50;   // atlas: each name rendered once at 40 px in a 50 px row
+// 3D building walls, depth only, for the train canvas: trains behind a building show through it
+// as they did when drawn inside the map. Walls alone suffice for things on the ground outside the
+// footprints (a ray through a building always crosses one); walls along tile edges lie inside
+// the building, so they hide nothing it would not.
+const BLD_VS=`#version 300 es
+in vec3 a_pos;uniform mat4 u_matrix;uniform float u_h;
+void main(){gl_Position=u_matrix*vec4(a_pos.xy,a_pos.z*u_h,1.);}`;
+const BLD_FS=`#version 300 es
+precision mediump float;out vec4 o;void main(){o=vec4(0.);}`;
+class BuildingDepth{
+  constructor(gl){
+    const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
+    this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,BLD_VS));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,BLD_FS));gl.linkProgram(this.p);
+    this.a=gl.getAttribLocation(this.p,'a_pos');this.um=gl.getUniformLocation(this.p,'u_matrix');this.uh=gl.getUniformLocation(this.p,'u_h');
+    this.b=gl.createBuffer();this.n=0;this.gl=gl;this.M=new Float32Array(16);
+  }
+  shown(){const z=map.getZoom();return z>=(PHONE?15:14)&&map.getLayer('bm-bld3d')&&map.getLayoutProperty('bm-bld3d','visibility')!=='none'}
+  rebuild(){
+    this.n=0;if(!this.shown())return;
+    const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out=[];this.ox=O.x;this.oy=O.y;
+    const X=l=>(l+180)/360-O.x,Y=a=>(180-180/Math.PI*Math.log(Math.tan(Math.PI/4+a*Math.PI/360)))/360-O.y;
+    for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
+      const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base)continue;
+      for(const poly of g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[])for(const ring of poly)
+        for(let i=0;i+1<ring.length;i++){const x0=X(ring[i][0]),y0=Y(ring[i][1]),x1=X(ring[i+1][0]),y1=Y(ring[i+1][1]);
+          out.push(x0,y0,base,x1,y1,base,x1,y1,top,x0,y0,base,x1,y1,top,x0,y0,top)}
+    }
+    const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(out),gl.STATIC_DRAW);this.n=out.length/3;
+  }
+  // depth of the walls into the buffer; returns whether anything was drawn
+  draw(M){
+    if(!this.n||!this.shown())return false;
+    const gl=this.gl,MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.ox+M[4+r]*this.oy+M[12+r];
+    gl.useProgram(this.p);gl.uniformMatrix4fv(this.um,false,MT);gl.uniform1f(this.uh,Math.max(0,Math.min(1,map.getZoom()-14)));   // the map grows buildings in over z14–15
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.enableVertexAttribArray(this.a);gl.vertexAttribPointer(this.a,3,gl.FLOAT,false,12,0);
+    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LESS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.disable(gl.CULL_FACE);
+    gl.drawArrays(gl.TRIANGLES,0,this.n);gl.colorMask(true,true,true,true);gl.disableVertexAttribArray(this.a);
+    return true;
+  }
+}
 class StationNameLayer{
   constructor(){this.id='station-names';this.type='custom';this.renderingMode='2d';this.atlasKey=''}
   onAdd(map,gl){
@@ -989,14 +1033,19 @@ map.on('load',()=>{
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
-    const layer=new TrainLayer();layer.onAdd(map,gl);
+    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-      layer.render(gl,{defaultProjectionData:map.painter.transform.getProjectionDataForCustomLayer(true)});   // the transform the map just drew with
+      const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
+      const behind=walls.draw(pd.mainMatrix)?1-MAP_THEMES[effectiveTheme()].bld3dOpacity:0;
+      layer.render(gl,{defaultProjectionData:pd,occlude:behind});
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
+    // walls: again when new building tiles arrive or the view settles somewhere new
+    let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{walls.rebuild();requestAnimationFrame(drawTrains)},250)};
+    map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
   }
   // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
   {
