@@ -45,6 +45,11 @@ POSITION_LINES = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_LINES", "0")))
 POSITION_SECONDS = max(10, int(os.environ.get("SUBWAY_LIVE_POSITION_SECONDS", "25")))
 FOCUS_SECONDS = max(5, int(os.environ.get("SUBWAY_LIVE_FOCUS_SECONDS", "15")))
 POSITION_RESERVE = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_RESERVE", "200")))   # calls kept for the map
+# however many people look at however many lines, the overlay makes at most this many calls a day
+POSITION_BUDGET = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_BUDGET", "3000")))
+# Identical requests within this many seconds get the same bytes (the map polls every 10–20 s; a
+# busy minute is many people asking for the same few line sets)
+RESPONSE_SECONDS = max(0.0, float(os.environ.get("SUBWAY_LIVE_RESPONSE_SECONDS", "2")))
 QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
 
 LINE_NAMES = {
@@ -399,6 +404,7 @@ def _fetch_line(line: str) -> dict:
 
 _position_lock = threading.Lock()
 _position_cache: dict[str, tuple[float, list[dict]]] = {}
+_position_used = {"day": "", "calls": 0}
 
 
 def _positions(line: str, ttl: int) -> list[dict] | None:
@@ -407,8 +413,11 @@ def _positions(line: str, ttl: int) -> list[dict] | None:
         now, cached = time.time(), _position_cache.get(line)
         if cached and now - cached[0] < ttl:
             return cached[1]
-        if _quiet() or DAILY_LIMIT - _quota_used < POSITION_RESERVE:
+        if _position_used["day"] != _today():
+            _position_used.update(day=_today(), calls=0)
+        if _quiet() or DAILY_LIMIT - _quota_used < POSITION_RESERVE or _position_used["calls"] >= POSITION_BUDGET:
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
+        _position_used["calls"] += 1
         try:
             trains = _fetch_line(line)["trains"]
         except (OSError, ValueError, RuntimeError, urllib.error.URLError):
@@ -444,7 +453,8 @@ def overlay_positions(body: dict, lines: list[str], focus: str) -> dict:
             else:
                 flip = {"상행": "하행", "하행": "상행"} if line == "9호선" else {}
                 trains.append({**p, "direction": flip.get(p["direction"], p["direction"]), "source": "position"})
-    return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used}
+    return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used,
+            "positionBudget": {"used": _position_used["calls"], "limit": POSITION_BUDGET}}
 
 
 def snapshot(lines: list[str], focused: bool = False, focus: str = "") -> tuple[dict, int]:
@@ -480,11 +490,25 @@ def snapshot(lines: list[str], focused: bool = False, focus: str = "") -> tuple[
         return {"ok": True, "mode": "viewport", "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": len(trains), "cacheSeconds": ttl, "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": warnings, "trains": trains}, 200
 
 
+_response_lock = threading.Lock()
+_responses: dict[str, tuple[float, int, bytes]] = {}
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 256   # the default 5 made bursts of connections wait for SYN retries (1–2.5 s)
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path.split("?", 1)[0] not in ("/live", "/health"):
             self.send_error(404)
             return
+        if RESPONSE_SECONDS and self.path.startswith("/live"):
+            with _response_lock:
+                hit = _responses.get(self.path)
+            if hit and time.time() < hit[0]:
+                return self._send(hit[1], hit[2])
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         lines = [item.strip() for value in query.get("lines", []) for item in value.split(",") if item.strip()]
         focused = query.get("focused", [""])[0] == "1"
@@ -497,6 +521,14 @@ class Handler(BaseHTTPRequestHandler):
         else:
             body, status = snapshot(lines, focused=focused, focus=focus)
         data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
+        if RESPONSE_SECONDS and self.path.startswith("/live"):
+            with _response_lock:
+                if len(_responses) > 2000:
+                    _responses.clear()
+                _responses[self.path] = (time.time() + RESPONSE_SECONDS, status, data)
+        self._send(status, data)
+
+    def _send(self, status: int, data: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store" if self.path.startswith("/live") else "public, max-age=30")
@@ -535,4 +567,4 @@ if __name__ == "__main__":
     _load_quota()
     if BURST_EVERY > 0:
         threading.Thread(target=_burst_loop, daemon=True).start()
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    Server((HOST, PORT), Handler).serve_forever()
