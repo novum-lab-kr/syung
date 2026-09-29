@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Bus routes along the roads → data/bus-shapes.json, for drawing bus legs of 길찾기.
 
-The KTDB GTFS has no shapes, so each pattern of data/bus.json is routed through its stops in order
-on the OSRM bus-road graph (server/osrm-build-bus.sh; OSRM_BUS_URL, default http://127.0.0.1:5001),
-approaching every stop from the kerb side; a leg that cannot, or detours absurdly (a mis-snapped
-stop), is routed again from either side, else stays a straight line.
+The KTDB GTFS has no shapes, so each pattern of data/bus.json is map-matched through its stops (as a
+trace timed by the timetable) on the OSRM bus-road graph (server/osrm-build-bus.sh; OSRM_BUS_URL,
+default http://127.0.0.1:5001). Matching picks one continuous road path instead of forcing the
+route through each snapped stop, which made loops into side streets and U-turns at stops. A leg the
+matcher skips, or that detours absurdly, is routed on its own; failing that it stays straight.
 Output: {"<pattern index>": [polyline6, [point index of each stop]]}, simplified to ~3 m.
 Rebuild whenever data/bus.json is rebuilt (pattern indices).
 Usage: build_bus_shapes.py [--limit N]
@@ -24,8 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent
 BUS = ROOT / "data" / "bus.json"
 OUT = ROOT / "data" / "bus-shapes.json"
 OSRM = os.environ.get("OSRM_BUS_URL", "http://127.0.0.1:5001").rstrip("/")
-CHUNK = 80            # stops per request (overlapping by one)
-STATS = {"legs": 0, "retried": 0, "straight": 0}
+CHUNK = 300           # stops per match request (overlapping by one); osrm-routed --max-matching-size 500
+MATCH_RADIUS = 50     # metres a stop may sit from its road
+STATS = {"legs": 0, "retried": 0, "straight": 0, "kinked": 0}
 DETOUR = 3.0          # a leg longer than DETOUR × straight + 400 m is a mis-snap
 
 
@@ -114,6 +116,35 @@ def route_legs(coords: list[list[float]], curb: bool = True) -> list[list[list[f
     return legs
 
 
+def match_legs(coords: list[list[float]], times: list[float]) -> list:
+    """OSRM map matching of the stops as a trace (timetable times): the likeliest continuous road
+    path, one point list per leg (None where the matcher skipped a stop)."""
+    q = ";".join(f"{x:.6f},{y:.6f}" for x, y in coords)
+    url = (f"{OSRM}/match/v1/driving/{q}?overview=false&steps=true&geometries=polyline6&gaps=ignore&tidy=false"
+           f"&radiuses={';'.join([str(MATCH_RADIUS)] * len(coords))}"
+           f"&timestamps={';'.join(str(int(t) + i) for i, t in enumerate(times))}")
+    out = [None] * (len(coords) - 1)
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            res = json.load(r)
+    except (OSError, ValueError):
+        return out
+    if res.get("code") != "Ok":
+        return out
+    tp = res["tracepoints"]
+    for mi, m in enumerate(res["matchings"]):
+        idx = [i for i, t in enumerate(tp) if t and t["matchings_index"] == mi]
+        for li, leg in enumerate(m["legs"]):
+            if idx[li + 1] != idx[li] + 1:
+                continue
+            pts = []
+            for st in leg["steps"]:
+                g = decode(st["geometry"])
+                pts += g[1:] if pts else g
+            out[idx[li]] = pts
+    return out
+
+
 def ok(leg, a, b) -> bool:
     if not leg or len(leg) < 2:
         return False
@@ -122,25 +153,26 @@ def ok(leg, a, b) -> bool:
 
 def shape(p: dict, stops: list) -> list | None:
     coords = [[stops[i][2], stops[i][1]] for i in p["s"]]
+    times = [p["d"][0][0] + t for t in p["t"]]
     legs: list = []
     for c0 in range(0, len(coords) - 1, CHUNK - 1):
-        part = coords[c0:c0 + CHUNK]
-        got = route_legs(part)
-        if got is None or len(got) != len(part) - 1:
-            got = [None] * (len(part) - 1)
-        legs += got
+        legs += match_legs(coords[c0:c0 + CHUNK], times[c0:c0 + CHUNK])
     pts, idx = [], []
     for k, leg in enumerate(legs):
         a, b = coords[k], coords[k + 1]
         STATS["legs"] += 1
         if not ok(leg, a, b):
-            # kerb side unreachable or a detour: this leg alone, from whichever side of the road
-            alone = route_legs([a, b], curb=False)
+            # skipped by the matcher, or a detour: this leg alone, kerb side first, then either side
+            alone = route_legs([a, b])
+            if not (alone and ok(alone[0], a, b)):
+                alone = route_legs([a, b], curb=False)
             leg = alone[0] if alone and ok(alone[0], a, b) else None
             STATS["retried"] += 1
             if not leg:
                 STATS["straight"] += 1
         seg = leg if leg and len(leg) >= 2 else [a, b]
+        if leg and sum(metres(leg[i], leg[i + 1]) for i in range(len(leg) - 1)) > 1.25 * metres(a, b) + 150:
+            STATS["kinked"] += 1   # longer than it looks: worth a glance
         seg = [seg[i] for i in simplify(seg)]
         if not pts:
             pts.append(seg[0])

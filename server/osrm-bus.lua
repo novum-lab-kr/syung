@@ -107,7 +107,11 @@ function setup()
     },
 
     service_tag_forbidden = Set {
-      'emergency_access'
+      'emergency_access',
+      'alley',
+      'parking_aisle',
+      'driveway',
+      'drive-through'
     },
 
     restrictions = Sequence {
@@ -152,10 +156,10 @@ function setup()
         secondary_link  = 25,
         tertiary        = 40,
         tertiary_link   = 20,
-        unclassified    = 25,
-        residential     = 25,
-        living_street   = 10,
-        service         = 15
+        unclassified    = 15,   -- bus: keep to the main roads unless a stop is on a small one
+        residential     = 8,
+        living_street   = 3,
+        service         = 3
       }
     },
 
