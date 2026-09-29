@@ -36,6 +36,15 @@ BURST_LINES = [l for l in os.environ.get("SUBWAY_LIVE_BURST_LINES", "2호선,5�
 BURST_EVERY = int(os.environ.get("SUBWAY_LIVE_BURST_EVERY", "7200"))
 BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
 BURST_DIR = Path(os.environ.get("SUBWAY_LIVE_BURST_DIR", "/var/lib/subway-live/position"))
+# Position overlay — OFF until the key's daily quota is lifted (SUBWAY_LIVE_POSITION_LINES=0).
+# The per-line position feed is ahead of the all-stations one at 3 of 4 moments, mostly by one
+# station; the all-stations feed caught up after a median 38 s at 60 s polling (2·5·6·7·9호선,
+# 3,158 moments, 2026-09-28–29). With it on, the first N lines a request names (the map sends
+# them most-visible first) and the line of a train being followed (focus=) are read from it too.
+POSITION_LINES = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_LINES", "0")))
+POSITION_SECONDS = max(10, int(os.environ.get("SUBWAY_LIVE_POSITION_SECONDS", "25")))
+FOCUS_SECONDS = max(5, int(os.environ.get("SUBWAY_LIVE_FOCUS_SECONDS", "15")))
+POSITION_RESERVE = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_RESERVE", "200")))   # calls kept for the map
 QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
 
 LINE_NAMES = {
@@ -388,11 +397,62 @@ def _fetch_line(line: str) -> dict:
     }
 
 
-def snapshot(lines: list[str], focused: bool = False) -> tuple[dict, int]:
+_position_lock = threading.Lock()
+_position_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _positions(line: str, ttl: int) -> list[dict] | None:
+    """The line's trains from the position feed, at most `ttl` seconds old; None when unavailable."""
+    with _position_lock:
+        now, cached = time.time(), _position_cache.get(line)
+        if cached and now - cached[0] < ttl:
+            return cached[1]
+        if _quiet() or DAILY_LIMIT - _quota_used < POSITION_RESERVE:
+            return cached[1] if cached and now - cached[0] < ttl * 4 else None
+        try:
+            trains = _fetch_line(line)["trains"]
+        except (OSError, ValueError, RuntimeError, urllib.error.URLError):
+            return cached[1] if cached and now - cached[0] < ttl * 4 else None
+        _position_cache[line] = (now, trains)
+        return trains
+
+
+def overlay_positions(body: dict, lines: list[str], focus: str) -> dict:
+    """Replace the all-stations records of trains on the chosen lines with position-feed ones."""
+    names = set(LINE_NAMES.values())
+    picks = [focus] if focus in names else []
+    picks += [l for l in lines[:POSITION_LINES] if l not in picks]
+    if not POSITION_LINES or not picks:
+        return body
+    trains = list(body.get("trains") or [])
+    at = {(t["line"], t["trainNo"]): i for i, t in enumerate(trains)}
+    used = []
+    for line in picks:
+        pos = _positions(line, FOCUS_SECONDS if line == focus else POSITION_SECONDS)
+        if pos is None:
+            continue
+        used.append(line)
+        for p in pos:
+            i = at.get((p["line"], p["trainNo"]))
+            if i is not None:
+                # direction and destination as the all-stations feed names them: 9호선's updnLine
+                # is the other way round in the position feed, and trains turning at a terminus
+                # disagree for a while (2호선: 30 of 511)
+                old = trains[i]
+                trains[i] = {**p, "direction": old.get("direction") or p["direction"],
+                             "destination": old.get("destination") or p["destination"], "source": "position"}
+            else:
+                flip = {"상행": "하행", "하행": "상행"} if line == "9호선" else {}
+                trains.append({**p, "direction": flip.get(p["direction"], p["direction"]), "source": "position"})
+    return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used}
+
+
+def snapshot(lines: list[str], focused: bool = False, focus: str = "") -> tuple[dict, int]:
     if SOURCE_MODE == "all" and lines:
         result = snapshot_all(lines)
         if result:
-            return result
+            body, status = result
+            return (overlay_positions(body, lines, focus) if status == 200 and not body.get("quiet") else body), status
     now = time.time()
     selected = [line for line in dict.fromkeys(lines) if line in set(LINE_NAMES.values())][:5]
     if not selected:
@@ -428,13 +488,14 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         lines = [item.strip() for value in query.get("lines", []) for item in value.split(",") if item.strip()]
         focused = query.get("focused", [""])[0] == "1"
+        focus = query.get("focus", [""])[0].strip()
         arrivals = query.get("arrivals", [""])[0].strip()
         if not self.path.startswith("/live"):
             body, status = {"ok": True}, 200
         elif arrivals:
             body, status = snapshot_arrivals(arrivals)
         else:
-            body, status = snapshot(lines, focused=focused)
+            body, status = snapshot(lines, focused=focused, focus=focus)
         data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")

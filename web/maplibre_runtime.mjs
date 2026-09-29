@@ -996,12 +996,14 @@ async function refreshLive(force=false){
     liveState.parentElement.dataset.state='idle';liveState.textContent=!liveOn?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
     return;
   }
-  const key=lines.join(',');
+  // the line of the train whose sheet is open: the proxy reads it from the per-line position feed when that is on
+  const focus=sheetTrain?sheetTrain.split(':')[0]:'';
+  const key=lines.join(',')+(focus?'|'+focus:'');
   if(!force&&key===liveKey&&Date.now()-liveAt<30000)return; // same lines, fetched recently
   const request=++liveRequest;liveKey=key;liveAt=Date.now();
   if(!plans.length)liveState.parentElement.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
   try{
-    const r=await fetch(`./api/live?lines=${encodeURIComponent(key)}`,{cache:'no-store'}),d=await r.json();
+    const r=await fetch(`./api/live?lines=${encodeURIComponent(lines.join(','))}${focus?`&focus=${encodeURIComponent(focus)}`:''}`,{cache:'no-store'}),d=await r.json();
     if(request!==liveRequest)return; // a newer view or selection superseded this response
     if(!r.ok||!d.ok)throw Error(d.error||r.status);
     // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
@@ -1331,6 +1333,7 @@ map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels
 // The proxy refreshes upstream every 90 s and serves its cache in between, so polling it often is
 // free and picks up each upstream refresh within ~20 s.
 setInterval(()=>{if(!document.hidden)refreshLive(true)},20000);
+setInterval(()=>{if(!document.hidden&&sheetTrain)refreshLive(true)},10000);   // a selected train: every 10 s (served from the proxy's cache)
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
 window.__subwayWebGL={map,refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
