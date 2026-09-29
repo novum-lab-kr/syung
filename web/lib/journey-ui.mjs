@@ -81,6 +81,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       return `<li class="jl ride bus" style="--c:${l.color}"><span class="jl-time">${esc(l.departs)}</span><span class="jl-dot"></span><div>
       <b>${esc(l.from)}에서 <span class="jl-bus">${esc(l.route)}</span>번 버스 타기</b>
       <small>${esc(l.toward)} 방면 · ${esc(l.to)} ${esc(l.arrives)} 도착 · ${l.stops}정류장${l.wait > 60 ? ` · ${min(l.wait)}분 기다림` : ''}</small>
+      ${l.alts?.length ? `<small class="jl-alts">같은 길: ${l.alts.map(a => `<span class="jl-bus">${esc(a)}</span>`).join(' ')}</small>` : ''}
       <span class="jl-est">시간표 기준 예상</span></div></li>`;
     }
     const c = colors[l.line] || '#888';
@@ -94,9 +95,9 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   function planHTML(p, i) {
     const tag = p.tag;
     const lines = chips(p);
-    return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(tag)} ${p.minutes}분, 지도에서 보기">
+    return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(tag || '경로')} ${p.minutes}분, 지도에서 보기">
   <div class="jp-lines">${lines}</div>
-  <header><span class="jp-tag">${tag}</span><strong>${p.minutes}분</strong><span>${esc(p.leaveBy)} 출발 → ${esc(p.arrives)} 도착</span></header>
+  <header>${tag ? `<span class="jp-tag">${esc(tag)}</span>` : ''}<strong>${p.minutes}분</strong><span>${esc(p.leaveBy)} 출발 → ${esc(p.arrives)} 도착</span></header>
   <p class="jp-meta">환승 ${p.transfers}번 · 걷기 ${p.walkMinutes}분</p>
   <ol class="jl-list">${p.legs.map(legHTML).join('')}</ol>
 </article>`;
@@ -104,21 +105,33 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
 
   function chips(p) {
     return p.legs.filter(l => l.type !== 'walk').map(l => l.type === 'bus'
-      ? `<span class="jp-line bus" style="--c:${l.color}">${esc(l.route)}</span>`
+      ? `<span class="jp-line bus" style="--c:${l.color}">${esc(l.route)}${l.alts?.length ? ` <i>+${l.alts.length}</i>` : ''}</span>`
       : `<span class="jp-line" style="--c:${colors[l.line] || '#888'}">${esc(l.line)}</span>`).join('') || '<span class="jp-line walk">걷기</span>';
   }
 
+  const KINDS = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']];
   function render(d, sel) {
     const out = document.getElementById('jResult');
-    out.innerHTML = d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
+    const count = k => d.plans.filter(p => k === 'all' || p.kind === k).length;
+    const tabs = KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
+      `<button type="button" class="jt${(last.tab || 'all') === k ? ' on' : ''}" data-k="${k}" aria-pressed="${(last.tab || 'all') === k}">${name} <b>${count(k)}</b></button>`).join('');
+    out.innerHTML = `<div class="jtabs" role="group" aria-label="경로 종류">${tabs}</div>` + d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
     const cards = [...out.querySelectorAll('.jp')];
+    const filter = k => {
+      last.tab = k;
+      out.querySelectorAll('.jt').forEach(b => { b.classList.toggle('on', b.dataset.k === k); b.setAttribute('aria-pressed', String(b.dataset.k === k)); });
+      cards.forEach((c, i) => { c.hidden = !(k === 'all' || d.plans[i].kind === k); });
+      if (cards[last.sel]?.hidden) { const i = cards.findIndex(c => !c.hidden); if (i >= 0) pick(i); }
+    };
+    out.querySelectorAll('.jt').forEach(b => b.addEventListener('click', () => filter(b.dataset.k)));
     const pick = i => { last.sel = i; cards.forEach((c, j) => c.classList.toggle('on', j === i)); showRoute?.(d.plans[i]); };
     cards.forEach((c, i) => {
       c.addEventListener('click', () => { if (last.sel === i && c.classList.contains('on')) closeSheet?.(); else pick(i); });
       c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(i); } });
     });
     pick(sel);
-    cards[sel]?.scrollIntoView?.({block: 'nearest'});
+    filter(last.tab || 'all');
+    cards[last.sel]?.scrollIntoView?.({block: 'nearest'});
   }
 
   async function go() {

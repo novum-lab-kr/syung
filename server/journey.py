@@ -18,6 +18,7 @@ import heapq
 import json
 import math
 import os
+import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -39,6 +40,11 @@ STATION_BUS_M = 250           # bus stops this close to a station exit are a tra
 STATION_ACCESS = 90           # extra seconds to get between street and platform
 WALK_DETOUR, WALK_SPEED = 1.3, 1.2   # straight line × detour at m/s, for short transfer walks
 MAX_TRIP = 4 * 3600
+ASTAR_SPEED = 35.0            # m/s
+MAX_PLANS = 12                # routes shown
+ROUTE_SLACK = 40 * 60         # at most this much later than the fastest
+MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
+DOMINATED_LATE = 10 * 60      # a way no better in changes and walking is kept if within this
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
               "maeul": "#7bc043", "night": "#4a4f8c"}
 
@@ -330,15 +336,34 @@ def _node_name(n: tuple) -> str:
 
 
 def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], live: dict, penalty: int,
-            banned: frozenset = frozenset(), modes: frozenset = frozenset({"subway", "bus"})) -> dict | None:
-    """Dijkstra over stations ("at", sid), bus stops ("bs", stop) and subway riding states
+            banned: frozenset = frozenset(), modes: frozenset = frozenset({"subway", "bus"}),
+            ceiling: float = math.inf, toward: tuple[float, float] | None = None) -> dict | None:
+    """A* (Dijkstra when `toward`, the destination, is not given) over stations ("at", sid), bus stops ("bs", stop) and subway riding states
     (line, from, to, end); cost = arrival time (epoch seconds) + a penalty per boarding after the first.
     ("at"/"bs", id) is getting off there; ("at"/"bs", id, "w") is arriving on foot, which may board
-    but neither walks on (no chains of walks) nor ends the trip."""
+    but neither walks on (no chains of walks) nor ends the trip. The A* bound: the straight line to
+    the destination at ASTAR_SPEED, faster than anything runs (GTX-A averages ~28 m/s)."""
     T0 = t0.timestamp()
     day0 = t0.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     heap, best, back, tick = [], {}, {}, [0]
     bbest = [math.inf] * len(BSTOPS)   # best cost per bus stop, to turn down most bus pushes cheaply
+    scanned: dict[tuple[int, int], tuple[int, float]] = {}   # (pattern, trip start) → (from position, cost offset)
+
+    hcache: dict[tuple, float] = {}
+
+    def h(s) -> float:
+        if toward is None or s[0] == "goal":
+            return 0.0
+        k = (s[0], s[1]) if s[0] in ("at", "bs") else ("at", s[2])
+        v = hcache.get(k)
+        if v is None:
+            if k[0] == "at":
+                n = STATIONS[k[1]]
+                v = _meters((n["lat"], n["lon"]), toward) / ASTAR_SPEED
+            else:
+                v = _meters((BSTOPS[k[1]][1], BSTOPS[k[1]][2]), toward) / ASTAR_SPEED
+            hcache[k] = v
+        return v
 
     def push(s, c, t, info, ch):
         if c < best.get(s, (math.inf,))[0]:
@@ -347,7 +372,7 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
                 bbest[s[1]] = c
             back[s] = info
             tick[0] += 1
-            heapq.heappush(heap, (c, ch, tick[0], s))
+            heapq.heappush(heap, (c + h(s), ch, tick[0], c, s))
 
     for node, w in start.items():
         if node[0] == "bs" and "bus" not in modes or node[0] == "at" and "subway" not in modes:
@@ -355,15 +380,15 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
         push((*node, "w"), T0 + w[0], T0 + w[0], ("start", None, {"w": w}), 0)
     finish = False
     while heap:
-        cost, changes, _, s = heapq.heappop(heap)
+        bound, changes, _, cost, s = heapq.heappop(heap)
         if best[s][0] < cost:
             continue
         t = best[s][1]
         if s == ("goal",):
             finish = True
             break
-        if cost - T0 > MAX_TRIP:
-            break
+        if bound - T0 > MAX_TRIP or bound > ceiling:
+            break   # nothing left that arrives in time
         kind = back[s][0]
         if kind in ("alight", "bus") and s in goal:   # walk to the goal straight off a train or bus
             g = goal[s]
@@ -413,6 +438,11 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
                         continue
                     st, scale, dep = nxt
                     base, extra, ps, pt = day0 + st, cost - t + pen, p["s"], p["t"]
+                    # this very bus already boarded upstream at no higher cost: what lies ahead is done
+                    seen_ = scanned.get((pi, st))
+                    if seen_ and seen_[0] <= k and seen_[1] <= extra:
+                        continue
+                    scanned[(pi, st)] = (k, extra)
                     for j in range(k + 1, len(ps)):
                         arr = base + pt[j] * scale
                         if arr + extra < bbest[ps[j]]:
@@ -500,27 +530,134 @@ def _signature(r: dict) -> tuple:
     return tuple((l.get("line") or l.get("route"), l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
 
 
+# searches run side by side in worker processes (each loads the network once); inline when that fails
+SEARCH_WORKERS = max(0, int(os.environ.get("JOURNEY_WORKERS", "3")))
+_pool = None
+
+
+def _search_job(args: tuple) -> dict | None:
+    return _search(*args)
+
+
+def _executor():
+    global _pool
+    if _pool is None and SEARCH_WORKERS:
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+        # forkserver: a clean process to fork workers from (the proxy is threaded; forking it is not safe)
+        _pool = ProcessPoolExecutor(SEARCH_WORKERS, mp_context=multiprocessing.get_context("forkserver"))
+    return _pool
+
+
+def warm() -> None:
+    """Start the workers and have each load the network (the first request would wait ~2 s)."""
+    ex = _executor()
+    if ex:
+        for f in [ex.submit(time.sleep, 0.5) for _ in range(SEARCH_WORKERS * 2)]:
+            f.result()
+
+
+def _run_batch(jobs: list[tuple], seconds: float) -> list[dict | None]:
+    global _pool
+    ex = _executor()
+    if ex and len(jobs) > 1:
+        try:
+            futs = [ex.submit(_search_job, j) for j in jobs]
+            end, out = time.monotonic() + seconds, []
+            for f in futs:
+                try:
+                    out.append(f.result(timeout=max(0.01, end - time.monotonic())))
+                except TimeoutError:
+                    f.cancel()
+                    out.append(None)
+            return out
+        except Exception:   # a broken pool: drop it, search here
+            _pool = None
+    out, end = [], time.monotonic() + seconds
+    for j in jobs:
+        out.append(_search_job(j) if time.monotonic() < end else None)
+    return out
+
+
+def _kind(r: dict) -> str:
+    """subway, bus or mixed: what a plan rides."""
+    ks = {l["type"] for l in r["legs"] if l["type"] != "walk"}
+    return "mixed" if len(ks) > 1 else "bus" if ks == {"bus"} else "subway"
+
+
 def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: dict) -> dict:
     start = _walk_table(origin, _near_nodes(origin))
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     straight = _meters(origin, dest)
     both, subway, bus = frozenset({"subway", "bus"}), frozenset({"subway"}), frozenset({"bus"})
 
-    found: list[tuple[str, dict]] = []
-    def add(tag: str, r: dict | None) -> None:
-        if r and all(_signature(r) != _signature(f) for _, f in found):
-            found.append((tag, r))
-    fastest = _search(when, start, goal, live, TIE_PENALTY)
-    add("가장 빠른 길", fastest)
-    add("환승 적은 길", _search(when, start, goal, live, TRANSFER_PENALTY))
+    # Many routes: the fastest by each mode, then, breadth first, the same search with one more
+    # line (or bus route) of an earlier result barred — each of those finds the next best way
+    # round it. Kept: different rides, arriving at most SLACK after the fastest; bounded in searches
+    # and time.
+    found: list[dict] = []
+    seen_sigs, tried = set(), set()
+    t_start, best_arrive = time.monotonic(), math.inf
+    queue = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
     if BUS:
-        add("지하철만", _search(when, start, goal, live, TIE_PENALTY, modes=subway))
-        add("버스만", _search(when, start, goal, live, TIE_PENALTY, modes=bus))
-    if fastest:
-        transit = [l for l in fastest["legs"] if l["type"] != "walk"]
-        # other ways: not boarding where the fastest one first boards; nor its first line (or bus) anywhere
-        add("다른 길", _search(when, start, goal, live, TIE_PENALTY, frozenset({transit[0]["_ban"][0]})))
-        add("다른 노선", _search(when, start, goal, live, TIE_PENALTY, frozenset({transit[0]["_ban"][1]})))
+        queue += [(subway, frozenset(), TIE_PENALTY), (bus, frozenset(), TIE_PENALTY)]
+    searches = 0
+    while queue and searches < MAX_SEARCHES and len(found) < MAX_PLANS * 2:
+        left = SEARCH_SECONDS - (time.monotonic() - t_start)
+        if left <= 0:
+            break
+        # a batch: the searches known so far, run side by side (_run_batch)
+        batch = []
+        while queue and len(batch) < SEARCH_WORKERS * 2 and searches + len(batch) < MAX_SEARCHES:
+            item = queue.pop(0)
+            if item not in tried:
+                tried.add(item)
+                batch.append(item)
+        searches += len(batch)
+        ceiling = best_arrive + ROUTE_SLACK + 2 * TRANSFER_PENALTY
+        jobs = [(when, start, goal, live, pen, banned, modes, ceiling, dest) for modes, banned, pen in batch]
+        for (modes, banned, pen), r in zip(batch, _run_batch(jobs, left)):
+            if not r or r["arrive"] > best_arrive + ROUTE_SLACK:
+                continue
+            best_arrive = min(best_arrive, r["arrive"])
+            sig = _signature(r)
+            if sig not in seen_sigs:
+                seen_sigs.add(sig)
+                found.append(r)
+            if len(banned) < 2:   # route around each line or bus of this one
+                for l in r["legs"]:
+                    if l["type"] != "walk":
+                        queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
+    found = [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK]
+
+    def transfers(r): return sum(l["type"] != "walk" for l in r["legs"]) - 1
+    def walking(r): return sum(l["seconds"] for l in r["legs"] if l["type"] == "walk")
+    # buses between the same two stops are one way to go: keep the first to arrive, list the others
+    groups: dict[tuple, dict] = {}
+    for r in sorted(found, key=lambda r: r["arrive"]):
+        key = tuple((l["type"], l.get("line") or "", l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
+        if key not in groups:
+            groups[key] = r
+            continue
+        kept = [l for l in groups[key]["legs"] if l["type"] != "walk"]
+        for k, l in zip(kept, [l for l in r["legs"] if l["type"] != "walk"]):
+            if l["type"] == "bus" and l["route"] != k["route"] and l["route"] not in k.setdefault("alts", []):
+                k["alts"].append(l["route"])
+    found = list(groups.values())
+    # of one kind, drop a way that is DOMINATED_LATE later than another and changes and walks no less
+    found = [r for r in found if not any(q is not r and _kind(q) == _kind(r) and q["arrive"] + DOMINATED_LATE <= r["arrive"]
+             and transfers(q) <= transfers(r) and walking(q) <= walking(r)
+             and (q["arrive"], transfers(q), walking(q)) != (r["arrive"], transfers(r), walking(r)) for q in found)]
+
+    # tags: the fastest, the fewest changes, the least walking (each once)
+    tags: dict[int, str] = {}
+    if found:
+        for tag, key in (("가장 빠른 길", lambda r: (r["arrive"], transfers(r))),
+                         ("환승 적은 길", lambda r: (transfers(r), r["arrive"])),
+                         ("덜 걷는 길", lambda r: (walking(r), r["arrive"]))):
+            k = min(range(len(found)), key=lambda i: key(found[i]))
+            tags.setdefault(k, tag)
+    found = [(tags.get(i, ""), r) for i, r in enumerate(found)]
 
     plans = []
     for tag, r in found:
@@ -533,7 +670,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
             else:
                 l.pop("_dep"), l.pop("_ban")
         transit = [l for l in legs if l["type"] != "walk"]
-        plans.append({"tag": tag, "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
+        plans.append({"tag": tag, "kind": _kind(r), "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
                       "minutes": round((r["arrive"] - when.timestamp()) / 60), "transfers": max(0, len(transit) - 1),
                       "walkMinutes": round(sum(l["seconds"] for l in legs if l["type"] == "walk") / 60), "legs": legs,
                       "_arrive": r["arrive"]})
@@ -541,7 +678,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
         path, sec, metres = walk_path(origin, dest)
         if not plans or sec <= min(p["_arrive"] for p in plans) - when.timestamp() + 10 * 60:
             arrive = when.timestamp() + sec
-            plans.append({"tag": "걸어가기", "leaveBy": when.strftime("%H:%M"), "arrives": _fmt(arrive),
+            plans.append({"tag": "걸어가기", "kind": "walk", "leaveBy": when.strftime("%H:%M"), "arrives": _fmt(arrive),
                           "minutes": round(sec / 60), "transfers": 0, "walkMinutes": round(sec / 60), "_arrive": arrive,
                           "legs": [{"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True,
                                     "label": "목적지까지 걸어서", "path": path}]})
@@ -549,10 +686,11 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
     plans.sort(key=lambda p: p["_arrive"])
-    plans = plans[:6]
+    plans = plans[:MAX_PLANS]
     for p in plans:
         del p["_arrive"]
-    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans}
+    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
+           "searched": {"searches": searches, "seconds": round(time.monotonic() - t_start, 1)}}
     if not plans:
         out["error"] = "이 시각에는 다니는 열차·버스가 없거나, 가까운 역·정류장에서 이어지는 경로를 찾지 못했어요."
     return out

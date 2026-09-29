@@ -246,3 +246,18 @@ html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 .jbar-more{margin-left:auto;font-weight:700;color:var(--syung-deep)}
 .jbar-x{width:44px;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;border-left:1px solid var(--rule)}
 @media(max-width:640px){.jbar{left:10px;bottom:12px;width:calc(100% - 76px)}}
+/* 길찾기: route kind tabs */
+.jtabs{display:flex;gap:6px;overflow-x:auto;margin:4px 0 10px;padding-bottom:2px;scrollbar-width:none}
+.jtabs::-webkit-scrollbar{display:none}
+.jt{flex:none;height:32px;padding:0 12px;border:1.5px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.jt b{margin-left:2px;color:var(--muted)}
+.jt.on{background:var(--syung);border-color:var(--syung);color:var(--syung-ink)}
+.jt.on b{color:inherit}
+.jp[hidden]{display:none}
+.jp-line i{font-style:normal;opacity:.8;font-size:10px}
+.jl-alts{display:block;margin-top:3px}
+.jl-alts .jl-bus{font-size:11px;margin-right:2px}
+/* many routes: only the chosen one shows its steps */
+.jp:not(.on) .jl-list{display:none}
+.sheet-body:has(.journey){padding-right:0}
+.journey h3{padding-right:40px}

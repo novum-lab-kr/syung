@@ -643,8 +643,17 @@ def _burst_loop() -> None:
             time.sleep(BURST_GAP)
 
 
+def _warm_journey() -> None:
+    try:
+        import journey
+        journey.warm()   # route search workers up before the first 길찾기
+    except Exception as e:  # noqa: BLE001 — routing falls back to searching in-process
+        print(f"journey warm-up failed: {e}", flush=True)
+
+
 if __name__ == "__main__":
     _load_quota()
+    threading.Thread(target=_warm_journey, daemon=True).start()
     if BURST_EVERY > 0:
         threading.Thread(target=_burst_loop, daemon=True).start()
     Server((HOST, PORT), Handler).serve_forever()
