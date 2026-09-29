@@ -667,6 +667,8 @@ function showRoute(plan){
   const feats=[],pts=[];
   for(const l of plan.legs){
     if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
+    else if(l.type==='bus'){feats.push({type:'Feature',properties:{kind:'ride',color:l.color},geometry:{type:'LineString',coordinates:l.path}});
+      for(const c of [l.path[0],l.path[l.path.length-1]])pts.push({type:'Feature',properties:{kind:'stop',color:l.color},geometry:{type:'Point',coordinates:c}})}
     else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
       const s0=byId.get(l.stations[0]),s1=byId.get(l.stations[l.stations.length-1]);
       if(s0)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:[s0.lon,s0.lat]}});

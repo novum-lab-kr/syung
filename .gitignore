@@ -19,3 +19,5 @@ data/osm-tracks/branches.json
 data/osm-tracks/exits-raw.json
 data/osm-tracks/entrances.json
 data/osm-tracks/platforms-raw.json
+# derived from the KTDB GTFS by pipeline/build_bus_data.py
+data/bus.json
