@@ -490,6 +490,54 @@ def snapshot(lines: list[str], focused: bool = False, focus: str = "") -> tuple[
         return {"ok": True, "mode": "viewport", "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": len(trains), "cacheSeconds": ttl, "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": warnings, "trains": trains}, 200
 
 
+_place_cache: dict[str, tuple[float, list]] = {}
+
+
+def route_snapshot(query: dict) -> tuple[dict, int]:
+    """/route?from=lat,lng&to=lat,lng[&at=YYYY-MM-DDTHH:MM] — see journey.plan."""
+    import journey
+    try:
+        o = tuple(float(x) for x in query.get("from", [""])[0].split(","))
+        d = tuple(float(x) for x in query.get("to", [""])[0].split(","))
+        if len(o) != 2 or len(d) != 2:
+            raise ValueError
+    except ValueError:
+        return {"ok": False, "error": "출발지와 도착지 좌표가 필요해요 (from=위도,경도&to=위도,경도)"}, 400
+    at = query.get("at", [""])[0].strip()
+    try:
+        when = datetime.strptime(at, "%Y-%m-%dT%H:%M").replace(tzinfo=KST) if at else datetime.now(KST)
+    except ValueError:
+        return {"ok": False, "error": "시각은 YYYY-MM-DDTHH:MM 형식이에요"}, 400
+    snapshot_all(list(LINE_NAMES.values()))   # refreshes the shared cache if due (one upstream call at most)
+    live = (_all_cache[1]["lines"] if _all_cache else {}) if abs((when - datetime.now(KST)).total_seconds()) < 3600 else {}
+    return journey.plan(o, d, when, live), 200
+
+
+def place_snapshot(query: dict) -> tuple[dict, int]:
+    """/place?q=...[&near=lat,lng] — Kakao Local search, cached 10 minutes per query."""
+    import journey
+    q = query.get("q", [""])[0].strip()[:80]
+    if not q:
+        return {"ok": False, "error": "검색어가 필요해요"}, 400
+    near = None
+    try:
+        near = tuple(float(x) for x in query.get("near", [""])[0].split(",")) or None
+    except ValueError:
+        pass
+    k, now = f"{q}|{near}", time.time()
+    hit = _place_cache.get(k)
+    if hit and now - hit[0] < 600:
+        return {"ok": True, "places": hit[1]}, 200
+    try:
+        places = journey.search_places(q, near if near and len(near) == 2 else None)
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+        return {"ok": False, "error": f"장소 검색 실패: {exc}"}, 503
+    if len(_place_cache) > 5000:
+        _place_cache.clear()
+    _place_cache[k] = (now, places)
+    return {"ok": True, "places": places}, 200
+
+
 _response_lock = threading.Lock()
 _responses: dict[str, tuple[float, int, bytes]] = {}
 
@@ -501,7 +549,7 @@ class Server(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] not in ("/live", "/health"):
+        if self.path.split("?", 1)[0] not in ("/live", "/health", "/route", "/place"):
             self.send_error(404)
             return
         if RESPONSE_SECONDS and self.path.startswith("/live"):
@@ -514,7 +562,11 @@ class Handler(BaseHTTPRequestHandler):
         focused = query.get("focused", [""])[0] == "1"
         focus = query.get("focus", [""])[0].strip()
         arrivals = query.get("arrivals", [""])[0].strip()
-        if not self.path.startswith("/live"):
+        if self.path.startswith("/route"):
+            body, status = route_snapshot(query)
+        elif self.path.startswith("/place"):
+            body, status = place_snapshot(query)
+        elif not self.path.startswith("/live"):
             body, status = {"ok": True}, 200
         elif arrivals:
             body, status = snapshot_arrivals(arrivals)

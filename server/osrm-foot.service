@@ -1,0 +1,14 @@
+[Unit]
+Description=OSRM foot routing for South Korea (walking times for the 슝 journey planner)
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f osrm-foot
+ExecStart=/usr/bin/docker run --rm --name osrm-foot -p 127.0.0.1:5000:5000 -v /var/lib/osrm:/data ghcr.io/project-osrm/osrm-backend:v6.0.0 osrm-routed --algorithm mld --max-table-size 500 /data/south-korea-latest.osrm
+ExecStop=/usr/bin/docker stop osrm-foot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

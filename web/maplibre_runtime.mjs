@@ -1,6 +1,7 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
+import {initJourney} from './lib/journey-ui.mjs';
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData'),counts=json('lineCounts'),paths=json('linePaths');
@@ -656,6 +657,7 @@ sheet.innerHTML='<div class="sheet-grab" aria-hidden="true"></div><button type="
 const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
 let sheetToken=0,sheetTrain=null,following=null,easing=false;
 function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
+initJourney({openSheet,map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')});
 function closeSheet(){
   if(sheet.hidden)return;
   sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
