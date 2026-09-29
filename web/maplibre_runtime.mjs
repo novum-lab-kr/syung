@@ -657,8 +657,40 @@ sheet.innerHTML='<div class="sheet-grab" aria-hidden="true"></div><button type="
 const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
 let sheetToken=0,sheetTrain=null,following=null,easing=false;
 function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
-initJourney({openSheet,map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')});
-function closeSheet(){
+// 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
+function rideCoords(line,ids){
+  const out=[];
+  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=edgeCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}
+  return out;
+}
+function showRoute(plan){
+  const feats=[],pts=[];
+  for(const l of plan.legs){
+    if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
+    else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
+      const s0=byId.get(l.stations[0]),s1=byId.get(l.stations[l.stations.length-1]);
+      if(s0)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:[s0.lon,s0.lat]}});
+      if(s1)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:[s1.lon,s1.lat]}})}
+  }
+  const first=plan.legs[0],last=plan.legs[plan.legs.length-1];
+  if(first.path)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]}});
+  if(last.path)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});
+  const data={type:'FeatureCollection',features:[...feats,...pts]};
+  if(!map.getSource('journey')){
+    map.addSource('journey',{type:'geojson',data});
+    map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,6,16,14]}});
+    map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],10,3.5,16,9]}});
+    map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#141414','line-width':['interpolate',['linear'],['zoom'],10,2.5,16,5],'line-dasharray':[0.1,1.8]}});
+    map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:{'circle-radius':6,'circle-color':'#ffffff','circle-stroke-color':['get','color'],'circle-stroke-width':3}});
+    map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
+  }else map.getSource('journey').setData(data);
+  const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
+  if(all.length){const b=all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0]));
+    map.fitBounds(b,{padding:{top:90,bottom:sheetPad()+30,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
+}
+function clearRoute(){if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]})}
+initJourney({openSheet,map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute});
+function closeSheet(){clearRoute();
   if(sheet.hidden)return;
   sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
   map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});

@@ -3,7 +3,7 @@
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const min = s => Math.max(1, Math.round(s / 60));
 
-export function initJourney({openSheet, map, colors, myLocation, button}) {
+export function initJourney({openSheet, map, colors, myLocation, button, showRoute}) {
   const picked = {from: null, to: null};
 
   function form() {
@@ -65,7 +65,7 @@ export function initJourney({openSheet, map, colors, myLocation, button}) {
 
   function legHTML(l) {
     if (l.type === 'walk') {
-      const where = l.to ? `${esc(l.to)}역${l.exit ? ` ${esc(l.exit)}번 출구` : ''}까지` : `${esc(l.from)}역${l.exit ? ` ${esc(l.exit)}번 출구` : ''}에서 목적지까지`;
+      const where = l.direct ? '목적지까지 걸어서' : l.to ? `${esc(l.to)}역${l.exit ? ` ${esc(l.exit)}번 출구` : ''}까지` : `${esc(l.from)}역${l.exit ? ` ${esc(l.exit)}번 출구` : ''}에서 목적지까지`;
       return `<li class="jl walk"><span class="jl-time"></span><span class="jl-dot"></span><div><b>걷기 ${min(l.seconds)}분</b><small>${where} · ${Math.round(l.metres / 10) * 10}m</small></div></li>`;
     }
     const c = colors[l.line] || '#888';
@@ -77,8 +77,10 @@ export function initJourney({openSheet, map, colors, myLocation, button}) {
   }
 
   function planHTML(p, i) {
-    const tag = i === 0 ? '가장 빠른 길' : '환승 적은 길';
-    return `<article class="jp">
+    const tag = p.tag;
+    const lines = p.legs.filter(l => l.type === 'ride').map(l => `<span class="jp-line" style="--c:${colors[l.line] || '#888'}">${esc(l.line)}</span>`).join('');
+    return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(tag)} ${p.minutes}분, 지도에서 보기">
+  <div class="jp-lines">${lines || '<span class="jp-line walk">걷기</span>'}</div>
   <header><span class="jp-tag">${tag}</span><strong>${p.minutes}분</strong><span>${esc(p.leaveBy)} 출발 → ${esc(p.arrives)} 도착</span></header>
   <p class="jp-meta">환승 ${p.transfers}번 · 걷기 ${p.walkMinutes}분</p>
   <ol class="jl-list">${p.legs.map(legHTML).join('')}</ol>
@@ -99,7 +101,11 @@ export function initJourney({openSheet, map, colors, myLocation, button}) {
       const d = await r.json();
       if (!d.ok) { status.textContent = d.error || '경로를 찾지 못했어요. 출발지나 도착지를 바꿔 보세요.'; return; }
       status.textContent = '';
-      out.innerHTML = d.plans.map(planHTML).join('') + '<p class="jp-note">첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로 계산한 예상 시간이에요.</p>';
+      out.innerHTML = d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로 계산한 예상 시간이에요.</p>';
+      const cards = [...out.querySelectorAll('.jp')];
+      const pick = i => { cards.forEach((c, j) => c.classList.toggle('on', j === i)); showRoute?.(d.plans[i]); };
+      cards.forEach((c, i) => { c.addEventListener('click', () => pick(i)); c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(i); } }); });
+      pick(0);
     } catch { status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
   }
 

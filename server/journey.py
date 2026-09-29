@@ -124,8 +124,8 @@ def _near_stations(p: tuple[float, float]) -> list[int]:
     return near or [sid for _, sid in d[:2]]
 
 
-def _walk_table(origin: tuple[float, float], sids: list[int], reverse: bool = False) -> dict[int, tuple[int, int, str]]:
-    """Walking seconds between a place and each station's best exit: {sid: (seconds, metres, exit)}."""
+def _walk_table(origin: tuple[float, float], sids: list[int], reverse: bool = False) -> dict[int, tuple]:
+    """Walking seconds between a place and each station's best exit: {sid: (seconds, metres, exit, lat, lng)}."""
     pts = [(sid, p) for sid in sids for p in _points(sid)]
     coords = [f"{origin[1]:.6f},{origin[0]:.6f}"] + [f"{p[1]:.6f},{p[0]:.6f}" for _, p in pts]
     q = ("sources=" + ";".join(str(i) for i in range(1, len(coords))) + "&destinations=0") if reverse else \
@@ -143,7 +143,7 @@ def _walk_table(origin: tuple[float, float], sids: list[int], reverse: bool = Fa
     best: dict[int, tuple[int, int, str]] = {}
     for (sid, p), s, m in zip(pts, dur, dist):
         if s is not None and (sid not in best or s < best[sid][0]):
-            best[sid] = (round(s), round(m or 0), p[2])
+            best[sid] = (round(s), round(m or 0), p[2], p[0], p[1])
     return best
 
 
@@ -193,15 +193,27 @@ def _next_live(live: dict, line: str, at: int, toward: int, after: datetime) -> 
 
 # ---- search --------------------------------------------------------------------------------
 
-def _search(t0: datetime, start: dict[int, tuple[int, int, str]], goal: dict[int, tuple[int, int, str]],
-            live: dict, penalty: int) -> list[dict] | None:
+def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list, int, int]:
+    """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres); a straight line when unavailable."""
+    try:
+        url = f"{OSRM_URL}/route/v1/foot/{a[1]:.6f},{a[0]:.6f};{b[1]:.6f},{b[0]:.6f}?overview=full&geometries=geojson"
+        with urllib.request.urlopen(url, timeout=6) as r:
+            route = json.load(r)["routes"][0]
+        return route["geometry"]["coordinates"], round(route["duration"]), round(route["distance"])
+    except (OSError, ValueError, KeyError, IndexError):
+        m = _meters(a, b) * 1.3
+        return [[a[1], a[0]], [b[1], b[0]]], round(m / 1.2), round(m)
+
+
+def _search(t0: datetime, start: dict[int, tuple], goal: dict[int, tuple],
+            live: dict, penalty: int, banned: frozenset = frozenset()) -> list[dict] | None:
     """Dijkstra over (station) and (line, from, to) riding states; cost = arrival time + penalties."""
     heap, best, back = [], {}, {}
-    for sid, (walk, m, ex) in start.items():
+    for sid, (walk, m, ex, elat, elng) in start.items():
         s = ("at", sid)
         t = t0 + timedelta(seconds=walk)
         best[s] = (t.timestamp(), t)
-        back[s] = ("walk", None, {"seconds": walk, "metres": m, "exit": ex, "station": sid})
+        back[s] = ("walk", None, {"seconds": walk, "metres": m, "exit": ex, "station": sid, "point": (elat, elng)})
         heapq.heappush(heap, (t.timestamp(), 0, s))
     finish = None
     while heap:
@@ -219,10 +231,13 @@ def _search(t0: datetime, start: dict[int, tuple[int, int, str]], goal: dict[int
                 c = cost + goal[sid][0]
                 if c < best.get(("goal",), (math.inf,))[0]:
                     best[("goal",)] = (c, g)
-                    back[("goal",)] = ("walk", s, {"seconds": goal[sid][0], "metres": goal[sid][1], "exit": goal[sid][2], "station": sid})
+                    back[("goal",)] = ("walk", s, {"seconds": goal[sid][0], "metres": goal[sid][1], "exit": goal[sid][2], "station": sid,
+                                                   "point": (goal[sid][3], goal[sid][4])})
                     heapq.heappush(heap, (c, changes, ("goal",)))
             first = back[s][0] == "walk"
             for line in STATIONS[sid]["lines"]:
+                if (line, sid) in banned:
+                    continue
                 for b in ADJ[line][sid]:
                     hop = _hop(line, sid, b)
                     if not hop:
@@ -281,7 +296,7 @@ def _search(t0: datetime, start: dict[int, tuple[int, int, str]], goal: dict[int
     for kind, s, info in path:
         if kind == "walk":   # to a station's exit at the start, from one at the end
             legs.append({"type": "walk", "seconds": info["seconds"], "metres": info["metres"], "exit": info["exit"],
-                         ("from" if s == ("goal",) else "to"): STATIONS[info["station"]]["name"]})
+                         ("from" if s == ("goal",) else "to"): STATIONS[info["station"]]["name"], "point": info["point"]})
         elif kind == "board":
             train = info["train"]
             legs.append({"type": "ride", "line": s[0], "from": STATIONS[info["at"]]["name"], "departs": info["departs"].strftime("%H:%M"),
@@ -289,40 +304,73 @@ def _search(t0: datetime, start: dict[int, tuple[int, int, str]], goal: dict[int
                          "trainNo": train.get("trainNo") if train else None,
                          "destination": (train.get("destination") if train else None),
                          "trainNow": f"{train.get('station')} {train.get('status')}" if train else None,
-                         "wait": round((info["departs"] - info["ready"]).total_seconds())})
+                         "wait": round((info["departs"] - info["ready"]).total_seconds()), "stations": [s[1], s[2]]})
         elif kind == "ride":
             legs[-1]["stops"] += 1
+            legs[-1]["stations"].append(s[2])
         elif kind == "alight":
             legs[-1]["to"] = STATIONS[s[1]]["name"]   # s is ("at", station) here
             legs[-1]["arrives"] = best[s][1].strftime("%H:%M")
     return legs
 
 
+def _signature(legs: list[dict]) -> tuple:
+    return tuple((l["line"], l["stations"][0], l["stations"][-1]) for l in legs if l["type"] == "ride")
+
+
 def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: dict) -> dict:
     start = _walk_table(origin, _near_stations(origin))
     goal = _walk_table(dest, _near_stations(dest), reverse=True)
-    walk_only = _meters(origin, dest)
+    straight = _meters(origin, dest)
+
+    found: list[tuple[str, list[dict]]] = []
+    def add(tag: str, legs: list[dict] | None) -> None:
+        if legs and all(_signature(legs) != _signature(l) for _, l in found):
+            found.append((tag, legs))
     fastest = _search(when, start, goal, live, TIE_PENALTY)
-    fewest = _search(when, start, goal, live, TRANSFER_PENALTY)
+    add("가장 빠른 길", fastest)
+    add("환승 적은 길", _search(when, start, goal, live, TRANSFER_PENALTY))
+    if fastest:
+        # other ways: not boarding where the fastest one first boards, nor where it changes
+        rides = [l for l in fastest if l["type"] == "ride"]
+        add("다른 길", _search(when, start, goal, live, TIE_PENALTY, frozenset({(rides[0]["line"], rides[0]["stations"][0])})))
+        # another line from the start: the fastest one's first line barred at every nearby station
+        add("다른 노선", _search(when, start, goal, live, TIE_PENALTY, frozenset((rides[0]["line"], sid) for sid in start)))
+        if len(rides) > 1:
+            add("다른 길", _search(when, start, goal, live, TIE_PENALTY, frozenset((r["line"], r["stations"][0]) for r in rides[1:])))
 
-    def summary(legs):
-        if not legs:
-            return None
-        total = sum(l["seconds"] for l in legs if l["type"] == "walk")
+    def at(hm: str) -> datetime:
+        t = datetime.strptime(hm, "%H:%M").replace(year=when.year, month=when.month, day=when.day, tzinfo=KST)
+        return t + timedelta(days=1) if t < when - timedelta(hours=12) else t
+
+    plans = []
+    for tag, legs in found:
+        for l in legs:   # walking geometry, place ↔ exit
+            if l["type"] == "walk":
+                a, b = (origin, l["point"]) if "to" in l else (l["point"], dest)
+                l["path"], _, _ = walk_path(a, b)
+                del l["point"]
+            else:
+                l["color"] = None
         rides = [l for l in legs if l["type"] == "ride"]
-        end = datetime.strptime(rides[-1]["arrives"], "%H:%M").replace(year=when.year, month=when.month, day=when.day, tzinfo=KST) if rides else when
-        if rides and end < when - timedelta(hours=12):
-            end += timedelta(days=1)
-        arrive = end + timedelta(seconds=legs[-1]["seconds"] if legs[-1]["type"] == "walk" else 0)
-        leave = datetime.strptime(rides[0]["departs"], "%H:%M").replace(year=when.year, month=when.month, day=when.day, tzinfo=KST) - timedelta(seconds=legs[0]["seconds"]) if rides else when
-        return {"arrives": arrive.strftime("%H:%M"), "leaveBy": leave.strftime("%H:%M"),
-                "minutes": round((arrive - when).total_seconds() / 60), "transfers": max(0, len(rides) - 1),
-                "walkMinutes": round(total / 60), "legs": legs}
-
-    plans = [p for p in (summary(fastest), summary(fewest)) if p]
-    if len(plans) == 2 and plans[0]["legs"] == plans[1]["legs"]:
-        plans = plans[:1]
-    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(walk_only), "plans": plans}
+        leave = at(rides[0]["departs"]) - timedelta(seconds=legs[0]["seconds"] if legs[0]["type"] == "walk" else 0)
+        arrive = at(rides[-1]["arrives"]) + timedelta(seconds=legs[-1]["seconds"] if legs[-1]["type"] == "walk" else 0)
+        plans.append({"tag": tag, "leaveBy": leave.strftime("%H:%M"), "arrives": arrive.strftime("%H:%M"),
+                      "minutes": round((arrive - when).total_seconds() / 60), "transfers": max(0, len(rides) - 1),
+                      "walkMinutes": round(sum(l["seconds"] for l in legs if l["type"] == "walk") / 60), "legs": legs,
+                      "_arrive": arrive})
+    if straight < 2500:   # close enough to just walk
+        path, sec, metres = walk_path(origin, dest)
+        if not plans or sec <= (min(p["_arrive"] for p in plans) - when).total_seconds() + 10 * 60:
+            arrive = when + timedelta(seconds=sec)
+            plans.append({"tag": "걸어가기", "leaveBy": when.strftime("%H:%M"), "arrives": arrive.strftime("%H:%M"),
+                          "minutes": round(sec / 60), "transfers": 0, "walkMinutes": round(sec / 60), "_arrive": arrive,
+                          "legs": [{"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "path": path}]})
+    plans.sort(key=lambda p: p["_arrive"])
+    plans = plans[:5]
+    for p in plans:
+        del p["_arrive"]
+    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans}
     if not plans:
         out["error"] = "이 시각에는 다니는 열차가 없거나, 가까운 역에서 이어지는 경로를 찾지 못했어요."
     return out
