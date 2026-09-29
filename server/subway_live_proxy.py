@@ -277,7 +277,8 @@ def _fetch_all() -> dict:
         payload = json.load(response)
     _quota_used += 1
     _save_quota()
-    error = payload.get("errorMessage") or {}
+    # errors come in errorMessage, or at the top level (ERROR-337 daily limit: {"status":500,"code":...})
+    error = payload.get("errorMessage") or ({"code": payload.get("code"), "message": payload.get("message")} if payload.get("code") else {})
     if error.get("code") not in (None, "INFO-000"):
         raise RuntimeError(error.get("message") or "서울시 API 오류")
     return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": stabilize(normalize_arrivals(payload), _last_seen), "stations": index_arrivals(payload)}
@@ -369,7 +370,8 @@ def _fetch_line(line: str) -> dict:
         payload = json.load(response)
     _quota_used += 1
     _save_quota()
-    error = payload.get("errorMessage") or {}
+    # errors come in errorMessage, or at the top level (ERROR-337 daily limit: {"status":500,"code":...})
+    error = payload.get("errorMessage") or ({"code": payload.get("code"), "message": payload.get("message")} if payload.get("code") else {})
     if error.get("code") not in (None, "INFO-000"):
         raise RuntimeError(error.get("message") or "서울시 API 오류")
     trains = normalize_positions(payload, line)
