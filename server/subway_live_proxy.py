@@ -34,7 +34,7 @@ SOURCE_MODE = os.environ.get("SUBWAY_LIVE_SOURCE", "all")
 # is read BURST_CALLS times, BURST_GAP apart, and saved for build_live_timing.py (dwell/approach).
 BURST_LINES = [l for l in os.environ.get("SUBWAY_LIVE_BURST_LINES", "2호선,5호선,6호선,7호선,9호선").split(",") if l.strip()]
 BURST_EVERY = int(os.environ.get("SUBWAY_LIVE_BURST_EVERY", "7200"))
-BURST_CALLS, BURST_GAP = 8, 45
+BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
 BURST_DIR = Path(os.environ.get("SUBWAY_LIVE_BURST_DIR", "/var/lib/subway-live/position"))
 QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
 
@@ -344,11 +344,15 @@ def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
                 _all_cache = (now, _fetch_all())
             except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
                 if _all_cache is None:
+                    if _quota_used >= DAILY_LIMIT:   # not an outage: say so instead of a 503
+                        return {"ok": True, "mode": "all", "quotaExhausted": True, "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": 0,
+                                "cacheSeconds": CACHE_SECONDS, "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": [str(exc)], "trains": []}, 200
                     return None
                 warnings.append(f"전체 노선: 이전 자료 표시 중 ({exc})")
+        quota_out = _quota_used >= DAILY_LIMIT
         data = _all_cache[1]
         trains = [t for line in selected for t in data["lines"].get(line, [])]
-        return {"ok": True, "mode": "all", "quiet": quiet, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": CACHE_SECONDS,
+        return {"ok": True, "mode": "all", "quiet": quiet, "quotaExhausted": quota_out, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": CACHE_SECONDS,
                 "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": warnings, "trains": trains}, 200
 
 
@@ -447,6 +451,8 @@ def _burst_loop() -> None:
     while True:
         time.sleep(BURST_EVERY)
         if _quiet() or not BURST_LINES:
+            continue
+        if DAILY_LIMIT - _quota_used < BURST_RESERVE:   # keep the rest of the day's calls for the map
             continue
         line = BURST_LINES[turn % len(BURST_LINES)]
         turn += 1

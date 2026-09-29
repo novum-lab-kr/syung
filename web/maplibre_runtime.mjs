@@ -1008,7 +1008,7 @@ async function refreshLive(force=false){
     // service); extrapolating it would park a ghost train somewhere down the line.
     const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=STALE_SECONDS);const stale=all.length-trains.length;
     // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
-    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();
+    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();
     const unplaced=trains.length-plans.length,shown=d.lines||lines;
     liveState.parentElement.dataset.state='ok';liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
     map.triggerRepaint();
