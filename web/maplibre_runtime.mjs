@@ -657,8 +657,10 @@ class TrainLayer{
     }
     // moving trains, ripple or pulse: TRAIN_FPS (a followed train moves the camera: map redraws at
     // FOLLOW_FPS); trains standing at a station: once a second, to see them set off
-    if(animating&&following)repaintSoon(1000/FOLLOW_FPS);
-    if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
+    // following a moving train: camera, map and trains step together (followSoon), and no extra
+    // train-only frames in between — they drew the train ahead of the map it sits on (jitter)
+    if(animating&&following&&!easing)followSoon();
+    else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
   }
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
 }
@@ -736,16 +738,26 @@ function trainLngLat(plan){
   return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
 }
 function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>p.id===id);if(!plan)return;
-  easing=true;map.once('moveend',()=>{easing=false});
+  easing=true;cam=null;map.once('moveend',()=>{easing=false;map.triggerRepaint()});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
 followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
-// Keep a followed train centred, stepped with the animation redraws (moving it every display frame
-// redrew the whole map at 60–120 Hz) and only when it has moved.
-let followAt='';
+// Keep a followed train centred at FOLLOW_FPS (every display frame redrew the whole map at 60–120 Hz,
+// hot phones), on display frames (requestAnimationFrame, not timers: even steps), camera first and
+// the map with its trains drawn right after in one render. The camera eases toward the train
+// (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
+const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
+function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
+function followLoop(ts){followRaf=0;if(!following||easing)return;
+  if(ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS
+  followLast=ts;for(const f of animFrame)f();map.triggerRepaint()}
 animFrame.push(()=>{
   const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
-  const c=trainLngLat(sel),k=`${c.lng.toFixed(7)},${c.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
-  map.jumpTo({center:c,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
+  const c=trainLngLat(sel),now=performance.now();
+  if(!cam||now-camAt>1000)cam={lng:c.lng,lat:c.lat};
+  else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(c.lng-cam.lng)*a,lat:cam.lat+(c.lat-cam.lat)*a}}
+  camAt=now;
+  const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
+  map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
 });
 map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}});
 
