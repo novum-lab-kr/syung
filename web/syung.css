@@ -233,3 +233,13 @@ html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 .jp-line.walk{background:var(--rule);color:var(--ink)}
 .jp-line.bus::before{content:"";display:inline-block;width:9px;height:9px;margin-right:4px;vertical-align:-1px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z%27/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z%27/%3E%3C/svg%3E") center/contain no-repeat}
 .jl-bus{display:inline-block;padding:0 6px;border-radius:5px;background:var(--c);color:#fff;font-size:12px}
+/* 길찾기: chosen route bar while the sheet is closed */
+.jbar{position:absolute;z-index:15;left:14px;bottom:18px;width:min(460px,calc(100% - 84px));display:flex;align-items:stretch;background:var(--paper);color:var(--ink);border-radius:16px;box-shadow:var(--shadow);border:1.5px solid var(--syung)}
+.jbar[hidden]{display:none}
+.jbar-open{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:10px 4px 10px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.jbar-lines{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+.jbar-open b{font-size:17px}
+.jbar-open span{font-size:13px}
+.jbar-more{margin-left:auto;font-weight:700;color:var(--syung-deep)}
+.jbar-x{width:44px;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;border-left:1px solid var(--rule)}
+@media(max-width:640px){.jbar{left:10px;bottom:12px;width:calc(100% - 76px)}}

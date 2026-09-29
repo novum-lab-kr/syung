@@ -3,8 +3,18 @@
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const min = s => Math.max(1, Math.round(s / 60));
 
-export function initJourney({openSheet, map, colors, myLocation, button, showRoute}) {
+export function initJourney({openSheet, closeSheet, map, colors, myLocation, button, showRoute, clearRoute}) {
   const picked = {from: null, to: null};
+  let last = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
+  let inSheet = false;   // the journey sheet (not a station or train one) is what's open
+
+  // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
+  const bar = document.createElement('div');
+  bar.className = 'jbar'; bar.hidden = true;
+  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기">✕</button>';
+  document.body.append(bar);
+  bar.querySelector('.jbar-open').onclick = () => open();
+  bar.querySelector('.jbar-x').onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
 
   function form() {
     const here = myLocation();
@@ -83,15 +93,32 @@ export function initJourney({openSheet, map, colors, myLocation, button, showRou
 
   function planHTML(p, i) {
     const tag = p.tag;
-    const lines = p.legs.filter(l => l.type !== 'walk').map(l => l.type === 'bus'
-      ? `<span class="jp-line bus" style="--c:${l.color}">${esc(l.route)}</span>`
-      : `<span class="jp-line" style="--c:${colors[l.line] || '#888'}">${esc(l.line)}</span>`).join('');
+    const lines = chips(p);
     return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(tag)} ${p.minutes}분, 지도에서 보기">
-  <div class="jp-lines">${lines || '<span class="jp-line walk">걷기</span>'}</div>
+  <div class="jp-lines">${lines}</div>
   <header><span class="jp-tag">${tag}</span><strong>${p.minutes}분</strong><span>${esc(p.leaveBy)} 출발 → ${esc(p.arrives)} 도착</span></header>
   <p class="jp-meta">환승 ${p.transfers}번 · 걷기 ${p.walkMinutes}분</p>
   <ol class="jl-list">${p.legs.map(legHTML).join('')}</ol>
 </article>`;
+  }
+
+  function chips(p) {
+    return p.legs.filter(l => l.type !== 'walk').map(l => l.type === 'bus'
+      ? `<span class="jp-line bus" style="--c:${l.color}">${esc(l.route)}</span>`
+      : `<span class="jp-line" style="--c:${colors[l.line] || '#888'}">${esc(l.line)}</span>`).join('') || '<span class="jp-line walk">걷기</span>';
+  }
+
+  function render(d, sel) {
+    const out = document.getElementById('jResult');
+    out.innerHTML = d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
+    const cards = [...out.querySelectorAll('.jp')];
+    const pick = i => { last.sel = i; cards.forEach((c, j) => c.classList.toggle('on', j === i)); showRoute?.(d.plans[i]); };
+    cards.forEach((c, i) => {
+      c.addEventListener('click', () => { if (last.sel === i && c.classList.contains('on')) closeSheet?.(); else pick(i); });
+      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(i); } });
+    });
+    pick(sel);
+    cards[sel]?.scrollIntoView?.({block: 'nearest'});
   }
 
   async function go() {
@@ -108,22 +135,40 @@ export function initJourney({openSheet, map, colors, myLocation, button, showRou
       const d = await r.json();
       if (!d.ok) { status.textContent = d.error || '경로를 찾지 못했어요. 출발지나 도착지를 바꿔 보세요.'; return; }
       status.textContent = '';
-      out.innerHTML = d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
-      const cards = [...out.querySelectorAll('.jp')];
-      const pick = i => { cards.forEach((c, j) => c.classList.toggle('on', j === i)); showRoute?.(d.plans[i]); };
-      cards.forEach((c, i) => { c.addEventListener('click', () => pick(i)); c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(i); } }); });
-      pick(0);
+      last = {d, sel: 0, from: document.getElementById('jFrom').value, to: document.getElementById('jTo').value, at, picked: {...picked}};
+      render(d, 0);
     } catch { status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
   }
 
   function open() {
+    bar.hidden = true;
     openSheet(form());
+    inSheet = true;
     bindPlace('from'); bindPlace('to');
     document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; document.getElementById('jFrom').value = '내 위치'; });
     document.getElementById('jGo').addEventListener('click', go);
-    document.getElementById('jTo').focus();
+    if (last) {   // back to the last search, as it was
+      document.getElementById('jFrom').value = last.from;
+      document.getElementById('jTo').value = last.to;
+      document.getElementById('jAt').value = last.at;
+      Object.assign(picked, last.picked);
+      render(last.d, last.sel);
+    } else document.getElementById('jTo').focus();
   }
 
+  // the sheet was closed: keep the route and show the bar when it was ours; true if a route stays up
+  function sheetClosed() {
+    const was = inSheet; inSheet = false;
+    if (!last || !was) return false;
+    const p = last.d.plans[last.sel];
+    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-lines">${chips(p)}</span><b>${p.minutes}분</b><span>${esc(p.leaveBy)} → ${esc(p.arrives)}</span><span class="jbar-more">결과 보기</span>`;
+    bar.hidden = false;
+    return true;
+  }
+
+  // another sheet (station, train) took the place of ours
+  function sheetReplaced() { if (inSheet) { inSheet = false; if (last) sheetClosed(); } }
+
   button.addEventListener('click', open);
-  return {open};
+  return {open, sheetClosed, sheetReplaced};
 }

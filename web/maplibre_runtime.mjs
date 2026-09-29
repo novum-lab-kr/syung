@@ -687,15 +687,19 @@ function showRoute(plan){
     map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
   }else map.getSource('journey').setData(data);
   const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
-  if(all.length){const b=all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0]));
-    map.fitBounds(b,{padding:{top:90,bottom:sheetPad()+30,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
+  routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
+  fitRoute(sheetPad()+30);
 }
-function clearRoute(){if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]})}
-initJourney({openSheet,map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute});
-function closeSheet(){clearRoute();
+let routeBounds=null;
+function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
+function clearRoute(){routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]})}
+const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
+function closeSheet(){
   if(sheet.hidden)return;
   sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
-  map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
+  // a chosen route stays on the map, with a bar to bring the results back (journey-ui)
+  if(routeBounds&&journey.sheetClosed())fitRoute(110);
+  else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
   setTimeout(()=>{if(!sheet.classList.contains('open'))sheet.hidden=true},260);
 }
 sheet.querySelector('.sheet-close').onclick=closeSheet;
