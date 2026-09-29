@@ -31,6 +31,9 @@ html[data-theme=dark]{
 .settings-button{flex:none;width:40px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer}
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
 .settings-button[aria-expanded=true] svg{transform:rotate(60deg)}
+.refresh-button{margin-left:auto}
+.refresh-button+.settings-button{margin-left:0}
+.refresh-button.spin svg{transform:rotate(360deg);transition:transform .6s}
 .settings-button:hover{background:rgba(20,20,20,.08)}
 html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .settings-panel{position:absolute;z-index:30;top:calc(100% + 8px);right:12px;width:min(304px,calc(100vw - 24px));padding:8px;border-radius:18px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
