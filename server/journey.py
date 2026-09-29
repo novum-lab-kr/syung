@@ -80,6 +80,40 @@ for _i, (_, _la, _lo) in enumerate(BSTOPS):
     _bgrid[(int(_la / 0.0027), int(_lo / 0.0034))].append(_i)
 
 
+_shapes_file = ROOT / "data/bus-shapes.json"   # pipeline/build_bus_shapes.py; optional
+BUS_SHAPES = json.loads(_shapes_file.read_text(encoding="utf-8")) if BUS and _shapes_file.exists() else {}
+
+
+def _decode(s: str) -> list[list[float]]:
+    """Polyline (precision 6) → [[lng, lat], ...]."""
+    pts, i, lat, lng = [], 0, 0, 0
+    while i < len(s):
+        for which in (0, 1):
+            shift = result = 0
+            while True:
+                b = ord(s[i]) - 63
+                i += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            d = ~(result >> 1) if result & 1 else result >> 1
+            if which == 0:
+                lat += d
+            else:
+                lng += d
+        pts.append([lng / 1e6, lat / 1e6])
+    return pts
+
+
+def _bus_path(pi: int, k: int, j: int) -> list[list[float]]:
+    """Where the bus goes from its k-th to its j-th stop: along the roads when shaped, else stop to stop."""
+    p, sh = BPATS[pi], BUS_SHAPES.get(str(pi))
+    if sh and len(sh[1]) == len(p["s"]):
+        return _decode(sh[0])[sh[1][k]:sh[1][j] + 1]
+    return [[BSTOPS[i][2], BSTOPS[i][1]] for i in p["s"][k:j + 1]]
+
+
 def _stops_near(p: tuple[float, float], radius: float) -> list[tuple[float, int]]:
     r = int(radius / 300) + 1
     cy, cx = int(p[0] / 0.0027), int(p[1] / 0.0034)
@@ -455,7 +489,7 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
                          "from": BSTOPS[ids[0]][0], "to": BSTOPS[ids[-1]][0], "departs": _fmt(info["departs"]),
                          "arrives": _fmt(best[s][1]), "stops": len(ids) - 1, "wait": round(info["departs"] - info["ready"]),
                          "realtime": False, "toward": BSTOPS[p["s"][-1]][0],
-                         "path": [[BSTOPS[i][2], BSTOPS[i][1]] for i in ids],
+                         "path": _bus_path(info["p"], info["k"], info["j"]),
                          "_dep": info["departs"], "_ban": [("bus", p["r"], ids[0]), ("bus", p["r"])]})
     transit = [l for l in legs if l["type"] != "walk"]
     leave = transit[0]["_dep"] - (legs[0]["seconds"] if legs[0]["type"] == "walk" else 0) if transit else T0
