@@ -181,7 +181,11 @@ let edgeTimes={},lineDwell={};
 // entering and leaving the station section, not stopping and starting); approach = 진입→도착.
 let liveTiming={lines:{},default:{pace:1,zone:62,approach:40}};
 fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
-const timingFor=line=>({...liveTiming.default,...liveTiming.lines[line]});
+// weekday rush hours (KST minutes of the day; pipeline/build_live_timing.py RUSH): lines that run
+// slower then have their own pace (rushPace)
+const RUSH=[[420,570],[1050,1200]];
+const rushNow=()=>{const k=new Date(Date.now()+9*3600e3),d=k.getUTCDay(),m=k.getUTCHours()*60+k.getUTCMinutes();return d>0&&d<6&&RUSH.some(([a,b])=>m>=a&&m<b)};
+const timingFor=line=>{const tm={...liveTiming.default,...liveTiming.lines[line]};if(tm.rushPace&&rushNow())tm.pace=tm.rushPace;return tm};
 fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 function segmentSeconds(a,b,line){
   const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
@@ -213,18 +217,25 @@ function planTrain(t){
   // over-prediction from jumping back.
   let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===PREDICT_STOPS){upto=j;break}
   const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
-  // Stop to stop takes pace × (timetable run + 30 s dwell). The train stands for the station section
-  // time less 10 s (the start and stop inside the section are part of the run) and runs the rest.
-  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-10);
-  const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-tm.zone)+10};
+  // Stop to stop takes pace × (timetable run + 30 s dwell). The feed's 도착→출발 (the station section,
+  // zone ~64 s) is not all standing: 도착 comes as the train enters the section, ~24 s of braking
+  // before it stops, then ~STAND s (40) at the platform, and it pulls out ~10 s before 출발. Standing the
+  // whole zone − 10 s had trains stop ~30 s early and run too short (7071 면목→사가정, 2026-09-30:
+  // 41 s drawn, 75 s ridden). So a predicted stop stands STAND and the run takes the rest; at the
+  // station of a 도착 record the train brakes in first and still leaves zone − 10 s after the record.
+  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-10),STAND=Math.min(DWELL,tm.stand||40),BRAKE=DWELL-STAND;
+  const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
   // ease: slow at a stop, full speed through a station the train passes
   const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
     phases.push({from,to,k0,k1,dur:dur*(a&&b?1:a||b?.9:.8),ease:a&&b?'both':a?'in':b?'out':'none'})};
-  const dwell=(at,i)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur:DWELL}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur:DWELL})};
-  // 진입: start the approach three-quarters along, taking the line's 진입→도착 time to stop
-  if(status==='진입'&&previous)run(previous,s,.75,1,tm.approach);
+  const dwell=(at,i,dur=STAND)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur})};
+  // the reported station: 진입 → the approach (the line's 진입→도착 time) → 도착 → braking to the
+  // platform (BRAKE) → standing; it leaves DWELL after 도착 as before
+  const brakes=previous&&BRAKE>0&&(status==='진입'||status==='도착');
+  if(status==='진입'&&previous)run(previous,s,.75,brakes?.97:1,tm.approach);
   if(status==='전역출발'&&previous)run(previous,s);
-  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0);
+  if(brakes)phases.push({from:previous,to:s,k0:.97,k1:1,dur:BRAKE,ease:'out'});
+  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,brakes?STAND:DWELL);
   for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
   // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
   const last=ahead[ahead.length-1],before=ahead.length>1?ahead[ahead.length-2]:previous;

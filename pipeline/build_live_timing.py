@@ -10,6 +10,9 @@ Output (data/live-timing.json), read by the map runtime:
   stamps it came out 0.82–0.87 on 2·5·6·7·9호선, yet riding 7호선 (7081, 2026-09-28) the trains ran
   at timetable pace and the map, rolling them at 0.85, was a station ahead; on event stamps the
   same lines give 0.97–1.02.
+- rushPace: pace over spans starting in weekday rush hours (RUSH, KST), when Seoul Metro lines run
+  slower (7호선 1.045 against 0.927 the rest of the day, 2026-09-24–30); the map uses it then.
+  Only for lines with RUSH_MIN_N spans; else the map keeps pace.
 - zone: seconds from 도착 to 출발 at one station (the train inside the station section).
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
@@ -39,8 +42,19 @@ OUT = ROOT / "data" / "live-timing.json"
 # 7호선 position feed's own event times 67 s (2026-09-28, 45 stops) — 40 s had 7호선 trains leave
 # ~30 s early
 DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
-MIN_N = {"pace": 200, "zone": 100, "approach": 100}
-CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85)}
+MIN_N = {"pace": 200, "zone": 100, "approach": 100, "rushPace": 60}
+CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85), "rushPace": (0.95, 1.12)}
+# weekday rush hours, KST minutes of the day [start, end) — maplibre_runtime.mjs RUSH is the same
+RUSH = ((7 * 60, 9 * 60 + 30), (17 * 60 + 30, 20 * 60))
+
+
+def rush(stamp: str) -> bool:
+    """A receivedAt ("YYYY-MM-DD HH:MM:SS", KST) in weekday rush hours."""
+    from datetime import date
+    if date.fromisoformat(stamp[:10]).weekday() >= 5:
+        return False
+    m = int(stamp[11:13]) * 60 + int(stamp[14:16])
+    return any(a <= m < b for a, b in RUSH)
 
 
 def load(paths: list[str]) -> dict:
@@ -82,7 +96,7 @@ def pairs(trains: dict):
 
 
 def learn(paths: list[str], verbose: bool = False) -> dict:
-    pace, zone, approach = defaultdict(list), defaultdict(list), defaultdict(list)
+    pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     for line, e1, e2, a, b, dt in pairs(load(paths)):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
@@ -95,20 +109,26 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
         if sched and s1 == s2 and s1 in ("도착", "출발") and both:
             hops, run = sched
             pace[line].append(dt / (run + hops * times["dwell"].get(line, 30)))
+            if rush(e1["receivedAt"]):
+                rush_pace[line].append(pace[line][-1])
 
-    stat = {"pace": statistics.median, "zone": statistics.harmonic_mean, "approach": statistics.harmonic_mean}
+    stat = {"pace": statistics.median, "zone": statistics.harmonic_mean, "approach": statistics.harmonic_mean,
+            "rushPace": statistics.median}
     lines = {}
     for line in sorted(set(pace) | set(zone) | set(approach)):
         out = {}
-        for name, values in (("pace", pace[line]), ("zone", zone[line]), ("approach", approach[line])):
+        for name, values in (("pace", pace[line]), ("zone", zone[line]), ("approach", approach[line]),
+                             ("rushPace", rush_pace[line])):
             if len(values) >= MIN_N[name]:
                 lo, hi = CLAMP[name]
                 v = min(hi, max(lo, stat[name](values)))
-                out[name] = round(v, 2) if name == "pace" else round(v)
+                out[name] = round(v, 2) if name in ("pace", "rushPace") else round(v)
+        if abs(out.get("rushPace", 0) - out.get("pace", DEFAULT["pace"])) < 0.02:
+            out.pop("rushPace", None)   # no different at rush hour
         if out:
             lines[line] = out
         if verbose and out:
-            print(f"{line:6} {out}  (n pace {len(pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
+            print(f"{line:6} {out}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
     return {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths]}
 
 
@@ -121,6 +141,8 @@ def evaluate(timing: dict, paths: list[str]) -> dict:
         if not (e1["event"] and e2["event"]):
             continue
         tm = {**timing["default"], **timing["lines"].get(line, {})}
+        if "rushPace" in tm and rush(e1["receivedAt"]):
+            tm["pace"] = tm["rushPace"]
         stand = max(15, tm["zone"] - 10)
         s1, s2 = e1["status"], e2["status"]
         if a == b and (s1, s2) == ("도착", "출발"):

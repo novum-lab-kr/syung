@@ -36,7 +36,8 @@ BURST_LINES = [l for l in os.environ.get("SUBWAY_LIVE_BURST_LINES", "2호선,5�
 BURST_EVERY = int(os.environ.get("SUBWAY_LIVE_BURST_EVERY", "7200"))
 BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
 BURST_DIR = Path(os.environ.get("SUBWAY_LIVE_BURST_DIR", "/var/lib/subway-live/position"))
-# Position overlay — OFF until the key's daily quota is lifted (SUBWAY_LIVE_POSITION_LINES=0).
+# Position overlay — off by default (SUBWAY_LIVE_POSITION_LINES=0); until the key's daily quota is
+# lifted it runs for one line in commuting hours only (SUBWAY_LIVE_POSITION_HOURS, _BUDGET).
 # The per-line position feed is ahead of the all-stations one at 3 of 4 moments, mostly by one
 # station; the all-stations feed caught up after a median 38 s at 60 s polling (2·5·6·7·9호선,
 # 3,158 moments, 2026-09-28–29). With it on, the first N lines a request names (the map sends
@@ -45,6 +46,9 @@ POSITION_LINES = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_LINES", "0")))
 POSITION_SECONDS = max(10, int(os.environ.get("SUBWAY_LIVE_POSITION_SECONDS", "25")))
 FOCUS_SECONDS = max(5, int(os.environ.get("SUBWAY_LIVE_FOCUS_SECONDS", "15")))
 POSITION_RESERVE = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_RESERVE", "200")))   # calls kept for the map
+# only at these KST times ("07:00-09:30,17:30-20:00"; empty = all day) — while the quota is 1000 a
+# day, commuting hours are when being a station off matters most
+POSITION_HOURS = os.environ.get("SUBWAY_LIVE_POSITION_HOURS", "").strip()
 # however many people look at however many lines, the overlay makes at most this many calls a day
 POSITION_BUDGET = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_BUDGET", "3000")))
 # Identical requests within this many seconds get the same bytes (the map polls every 10–20 s; a
@@ -407,6 +411,21 @@ _position_cache: dict[str, tuple[float, list[dict]]] = {}
 _position_used = {"day": "", "calls": 0}
 
 
+def _position_hours(now: datetime | None = None) -> bool:
+    if not POSITION_HOURS:
+        return True
+    t = now or datetime.now(KST)
+    m = t.hour * 60 + t.minute
+    for span in POSITION_HOURS.split(","):
+        try:
+            a, b = ((int(x[:2]) * 60 + int(x[3:5])) for x in span.strip().split("-"))
+        except ValueError:
+            continue
+        if a <= m < b:
+            return True
+    return False
+
+
 def _positions(line: str, ttl: int) -> list[dict] | None:
     """The line's trains from the position feed, at most `ttl` seconds old; None when unavailable."""
     with _position_lock:
@@ -415,13 +434,15 @@ def _positions(line: str, ttl: int) -> list[dict] | None:
             return cached[1]
         if _position_used["day"] != _today():
             _position_used.update(day=_today(), calls=0)
-        if _quiet() or DAILY_LIMIT - _quota_used < POSITION_RESERVE or _position_used["calls"] >= POSITION_BUDGET:
+        if _quiet() or not _position_hours() or DAILY_LIMIT - _quota_used < POSITION_RESERVE or _position_used["calls"] >= POSITION_BUDGET:
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
         _position_used["calls"] += 1
         try:
-            trains = _fetch_line(line)["trains"]
+            data = _fetch_line(line)
         except (OSError, ValueError, RuntimeError, urllib.error.URLError):
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
+        _save_positions(data)   # event-stamped records: build_live_timing.py learns rush-hour pace from them
+        trains = data["trains"]
         _position_cache[line] = (now, trains)
         return trains
 
@@ -593,6 +614,16 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def _save_positions(data: dict) -> None:
+    try:
+        BURST_DIR.mkdir(parents=True, exist_ok=True)
+        with (BURST_DIR / f"{_today().replace('-', '')}.jsonl").open("a", encoding="utf-8") as sink:
+            for t in data["trains"]:
+                sink.write(json.dumps({**t, "fetchedAt": data["fetchedAt"]}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def _burst_loop() -> None:
     turn = 0
     while True:
@@ -608,10 +639,7 @@ def _burst_loop() -> None:
                 data = _fetch_line(line)   # counts against the daily quota; raises at the limit
             except (OSError, ValueError, RuntimeError, urllib.error.URLError):
                 break
-            BURST_DIR.mkdir(parents=True, exist_ok=True)
-            with (BURST_DIR / f"{_today().replace('-', '')}.jsonl").open("a", encoding="utf-8") as sink:
-                for t in data["trains"]:
-                    sink.write(json.dumps({**t, "fetchedAt": data["fetchedAt"]}, ensure_ascii=False) + "\n")
+            _save_positions(data)
             time.sleep(BURST_GAP)
 
 
