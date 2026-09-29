@@ -679,6 +679,9 @@ function showRoute(plan){
   if(last.path)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});
   const data={type:'FeatureCollection',features:[...feats,...pts]};
   if(!map.getSource('journey')){
+    // veil: everything under the route (base map, other lines, station names) fades back
+    map.addSource('journey-veil',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]]]}}});
+    map.addLayer({id:'journey-veil',type:'fill',source:'journey-veil',paint:{'fill-color':veilColor(),'fill-opacity':.68,'fill-opacity-transition':{duration:300}}});
     map.addSource('journey',{type:'geojson',data});
     map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,6,16,14]}});
     map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],10,3.5,16,9]}});
@@ -686,13 +689,21 @@ function showRoute(plan){
     map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:{'circle-radius':6,'circle-color':'#ffffff','circle-stroke-color':['get','color'],'circle-stroke-width':3}});
     map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
   }else map.getSource('journey').setData(data);
+  focusRoute(true);
   const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
   routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
   fitRoute(sheetPad()+30);
 }
 let routeBounds=null;
 function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
-function clearRoute(){routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]})}
+function clearRoute(){routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}
+const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
+// route focus: veil on, trains faded, my location kept above the veil
+function focusRoute(on){
+  if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor())}
+  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
+  if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
+}
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
 function closeSheet(){
   if(sheet.hidden)return;
@@ -1165,7 +1176,7 @@ let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
 function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
-function applyTheme(){
+function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))map.setPaintProperty('journey-veil','fill-color',veilColor())});
   const t=effectiveTheme(),P=MAP_THEMES[t];
   document.documentElement.dataset.theme=t;
   // favicon follows the map theme (the <link media> pair only knows the OS setting)
