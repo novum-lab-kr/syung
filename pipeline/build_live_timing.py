@@ -134,8 +134,9 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
 
 def evaluate(timing: dict, paths: list[str]) -> dict:
     """Median |predicted − observed| seconds for the next event, as the map rolls trains
-    (maplibre_runtime.mjs planTrain: stand zone − 10 s, run pace × (run + 30) − zone + 10 s,
-    a 출발 record 5 s into the run), over event-stamped records."""
+    (maplibre_runtime.mjs planTrain: a 도착 record's train leaves zone − 20 s later and is 15 s into
+    its run at 출발, so 출발 comes zone − 5 s after 도착; the next 도착 comes pace × (run + 30) −
+    zone + 5 s after 출발), over event-stamped records."""
     errors = defaultdict(list)
     for line, e1, e2, a, b, dt in pairs(load(paths)):
         if not (e1["event"] and e2["event"]):

@@ -218,12 +218,13 @@ function planTrain(t){
   let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===PREDICT_STOPS){upto=j;break}
   const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
   // Stop to stop takes pace × (timetable run + 30 s dwell). The feed's 도착→출발 (the station section,
-  // zone ~64 s) is not all standing: 도착 comes as the train enters the section, ~24 s of braking
-  // before it stops, then ~STAND s (40) at the platform, and it pulls out ~10 s before 출발. Standing the
-  // whole zone − 10 s had trains stop ~30 s early and run too short (7071 면목→사가정, 2026-09-30:
-  // 41 s drawn, 75 s ridden). So a predicted stop stands STAND and the run takes the rest; at the
-  // station of a 도착 record the train brakes in first and still leaves zone − 10 s after the record.
-  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-10),STAND=Math.min(DWELL,tm.stand||40),BRAKE=DWELL-STAND;
+  // zone ~64 s) is not all standing: 도착 comes as the train enters the section and brakes along the
+  // platform, it stands ~STAND s, and pulls out ~20 s before 출발. Standing the whole zone − 10 s had
+  // trains stop early and leave late (7071 하행 면목·사가정·어린이대공원, 2026-09-30 ride). So a
+  // predicted stop stands STAND and the run takes the rest; at the station of a 도착 record the train
+  // brakes in over the last stretch (BRAKE s) and leaves zone − 20 s after the record. The times the
+  // feed's next events are expected at are unchanged (build_live_timing.evaluate).
+  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,tm.stand||30),BRAKE=DWELL-STAND;
   const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
   // ease: slow at a stop, full speed through a station the train passes
   const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
@@ -232,9 +233,9 @@ function planTrain(t){
   // the reported station: 진입 → the approach (the line's 진입→도착 time) → 도착 → braking to the
   // platform (BRAKE) → standing; it leaves DWELL after 도착 as before
   const brakes=previous&&BRAKE>0&&(status==='진입'||status==='도착');
-  if(status==='진입'&&previous)run(previous,s,.75,brakes?.97:1,tm.approach);
+  if(status==='진입'&&previous)run(previous,s,.75,brakes?.85:1,tm.approach);
   if(status==='전역출발'&&previous)run(previous,s);
-  if(brakes)phases.push({from:previous,to:s,k0:.97,k1:1,dur:BRAKE,ease:'out'});
+  if(brakes)phases.push({from:previous,to:s,k0:.85,k1:1,dur:BRAKE,ease:'out'});
   if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,brakes?STAND:DWELL);
   for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
   // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
@@ -247,8 +248,8 @@ function planTrain(t){
   let [cars,carMetres]=CONSIST[t.line]||[8,20];
   // 2호선 branches run short trains: 성수지선 4 cars, 신정지선 6 cars (Seoul Metro)
   if(t.line==='2호선'){const where=`${t.station} ${t.destination}`;if(/신설동|용두|신답|용답|성수지선/.test(where))cars=4;else if(/까치산|신정네거리|양천구청|도림천|신도림지선/.test(where))cars=6}
-  // 출발 is sent as the train leaves the station section, ~5 s into its run
-  return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres,lead:status==='출발'?5:0};
+  // 출발 is sent as the train leaves the station section, ~15 s into its run
+  return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres,lead:status==='출발'?15:0};
 }
 // Where the middle of the train is, as a distance (mercator units) along plan.seq.
 function trainPose(p){
