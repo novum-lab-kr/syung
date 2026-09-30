@@ -1,3 +1,49 @@
 {
- "_comment": "Hand-picked track courses where OSM's tunnel geometry is too coarse. Key: line|from station|to station; interior waypoints only (ends snap to the stops)."
+ "_comment": "Hand-picked track courses where OSM's tunnel geometry is too coarse. Key: line|from station|to station; interior waypoints only (ends snap to the stops).",
+ "수인분당선|왕십리|청량리": [
+  [
+   127.038486,
+   37.562767
+  ],
+  [
+   127.038179,
+   37.563634
+  ],
+  [
+   127.038124,
+   37.563563
+  ],
+  [
+   127.037838,
+   37.564442
+  ],
+  [
+   127.037637,
+   37.565575
+  ],
+  [
+   127.037665,
+   37.566367
+  ],
+  [
+   127.037929,
+   37.567185
+  ],
+  [
+   127.038399,
+   37.567906
+  ],
+  [
+   127.044473,
+   37.575813
+  ],
+  [
+   127.04505,
+   37.576645
+  ],
+  [
+   127.045638,
+   37.577694
+  ]
+ ]
 }

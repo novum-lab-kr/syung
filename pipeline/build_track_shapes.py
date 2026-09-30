@@ -353,6 +353,45 @@ def _lonlat(xy, origin):
     return (origin[0] + xy[0] / (k * 111_320), origin[1] + xy[1] / 111_320)
 
 
+def remove_spikes(pts: list, min_leg: float = 25.0) -> list:
+    """Drop the vertices where a shape doubles back on itself.
+
+    A stop off the routed track was bridged to from the route's own end, so the shape ran on past
+    the station and came back (1호선 영등포–신길 193 m, 5호선 강동–둔촌동 200 m, 경의중앙선 용산–이촌):
+    a vertex whose two legs point the same way (within ~30°), one of them min_leg or longer, is
+    removed, until none is left. Real track never turns that sharply."""
+    pts = list(pts)
+    changed = True
+    while changed and len(pts) > 2:
+        changed = False
+        for i in range(1, len(pts) - 1):
+            ax, ay = _local(pts[i - 1], pts[i]); bx, by = _local(pts[i + 1], pts[i])
+            la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+            if la < 1 or lb < 1 or max(la, lb) < min_leg:
+                continue
+            if (ax * bx + ay * by) / (la * lb) > 0.85:
+                del pts[i]
+                changed = True
+                break
+    return pts
+
+    def near(p, a, b):
+        ax, ay = _local(a, p); bx, by = _local(b, p); vx, vy = bx - ax, by - ay
+        l2 = vx * vx + vy * vy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, -(ax * vx + ay * vy) / l2))
+        return math.hypot(ax + vx * t, ay + vy * t), _lonlat((ax + vx * t, ay + vy * t), p)
+
+    half = len(pts) // 2
+    start = max((i for i in range(1, half) if near(pts[0], pts[i], pts[i + 1])[0] <= tolerance), default=None)
+    if start is not None:
+        pts = [pts[0], near(pts[0], pts[start], pts[start + 1])[1], *pts[start + 1:]]
+    half = len(pts) // 2
+    end = min((i for i in range(half, len(pts) - 2) if near(pts[-1], pts[i], pts[i + 1])[0] <= tolerance), default=None)
+    if end is not None:
+        pts = [*pts[:end + 1], near(pts[-1], pts[end], pts[end + 1])[1], pts[-1]]
+    return pts
+
+
 def station_roads(points: list[tuple[float, float]], radius: int = 300):
     """Road segments around station nodes (main + tertiary streets within `radius`), cached.
 
@@ -627,7 +666,7 @@ def main(out_paths: list[Path]) -> None:
                 best = min(pairs, key=lambda x: x[0])
                 r = (best[0], [tuple(stops[f"{line}:{lo}"]), *best[1], tuple(stops[f"{line}:{hi}"])], [False, *best[2], False])
             raw_routes[f"{line}:{lo}:{hi}"] = (r[1], r[2] if len(r) > 2 else [])
-            points = simplify(r[1])
+            points = remove_spikes(simplify(r[1]))
             shapes[f"{line}:{lo}:{hi}"] = [[round(x, 6), round(y, 6)] for x, y in points]
             snapped += 1
         report[line] = {"relations": len(ids), "edges": len(edges), "snapped": snapped}
