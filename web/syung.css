@@ -153,15 +153,17 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 .maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon{filter:none}
 
 /* ---- bottom sheet (station / train details): edge to edge, slides up from the bottom of the map ---- */
-.sheet{position:absolute;z-index:20;left:0;right:0;bottom:0;max-height:62%;overflow:auto;overscroll-behavior:contain;
+.sheet{position:absolute;z-index:20;left:0;right:0;bottom:0;max-height:62%;display:flex;flex-direction:column;
   transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.8,.25,1);
   background:var(--paper);color:var(--ink);border-radius:22px 22px 0 0;box-shadow:0 -10px 30px rgba(40,35,0,.18);
   padding:10px max(20px,calc((100% - 760px)/2)) calc(18px + env(safe-area-inset-bottom,0px))}
 .sheet.open{transform:none}
+.sheet[hidden]{display:none}
 .sheet-grab{width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 8px}
 .sheet-close{position:absolute;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
 .sheet-close:hover{background:var(--syung);color:var(--syung-ink)}
-.sheet-body{padding-right:36px}
+.sheet-body{padding-right:36px;min-height:0;flex:0 1 auto;overflow:auto;overscroll-behavior:contain}   /* the body scrolls, not the sheet: a scrolling sheet over the WebGL canvas blanked the map above it in Chromium */
+.sheet-grab,.sheet-follow{flex:none}
 .sheet h3{font-family:var(--round);font-weight:400;font-size:24px;margin:2px 0 6px}
 .sheet-follow{margin-top:12px;width:100%;height:42px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:16px;cursor:pointer;box-shadow:0 2px 0 rgba(20,20,20,.15)}
 .sheet .train-inspect .tp-dest{font-size:26px!important}
@@ -218,33 +220,56 @@ html[data-theme=dark] .route-cta{box-shadow:0 3px 0 rgba(0,0,0,.4),0 10px 24px r
 .st-journey button{height:46px;border:0;border-radius:999px;background:var(--control);color:var(--ink);font-family:var(--round);font-size:16px;cursor:pointer}
 .st-journey button[data-end=to]{background:var(--syung);color:var(--syung-ink)}
 .journey{display:flex;flex-direction:column;gap:10px}
-.jf{position:relative;display:flex;flex-direction:column;gap:4px}
-.jf label{font-size:12px;font-weight:700;color:var(--secondary)}
-.jf input,.jf select{width:100%;height:46px;padding:0 12px;border:1.5px solid var(--rule);border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:16px}   /* 16px: iOS zooms the page into smaller fields */
-.jf select{width:auto;flex:none;padding-right:8px}
-.jf-label{font-size:12px;font-weight:700;color:var(--secondary)}
-.jf-when{align-self:flex-start}
-.jf-when button{padding:8px 14px;font-size:14px}
+.journey h3{margin:0;padding:4px 44px 0 2px;font-size:17px!important}
+/* 출발/도착: one card, two rows, a dot for each end, swap on the right */
+.jcard{position:relative;border-radius:16px;background:var(--control);padding:2px 48px 2px 0}
+.jf{position:relative}
+.jrow{display:flex;align-items:center;gap:10px;padding-left:14px}
+.jrow+.jrow{border-top:1px solid var(--rule)}
+.jdot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--syung);box-shadow:0 0 0 2px var(--syung-ink)}
+.jdot.to{background:var(--syung-ink);box-shadow:0 0 0 2px var(--syung)}
+html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
+.jrow input{flex:1;min-width:0;height:48px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px}   /* 16px: iOS zooms the page into smaller fields */
+.jrow input:focus{outline:none}
+.jrow:focus-within .jdot{transform:scale(1.25)}
+.jrow input::placeholder{color:var(--muted)}
+.jf-here{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:2px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--secondary);cursor:pointer}
+.jf-here svg{width:20px;height:20px}
+.jf-here:hover{background:var(--paper);color:var(--ink)}
+.jswap{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;border-radius:50%;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
+.jswap svg{width:18px;height:18px}
+/* 출발 시각: a small row under the card */
+.jopts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.jf-when button{padding:7px 13px;font-size:13px}
+.jf-at{display:flex;gap:6px;flex:1;min-width:190px}
 .jf-at[hidden]{display:none}
-.jf input:focus,.jf select:focus{outline:none;border-color:var(--syung-deep)}
-.jf-row{display:flex;gap:6px}.jf-row input{flex:1;min-width:0}
-.jf-here{flex:none;height:46px;padding:0 12px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
-.jf-hint{font-size:12px;color:var(--muted)}
-.jf-list{position:absolute;z-index:3;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;border-radius:12px;background:var(--paper);box-shadow:var(--shadow);max-height:240px;overflow:auto}
+.jf-at select,.jf-at input{height:38px;padding:0 10px;border:1.5px solid var(--rule);border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:16px}
+.jf-at input{flex:1;min-width:0}
+.jf-at select:focus,.jf-at input:focus{outline:none;border-color:var(--syung-deep)}
+/* results up: the form folds into one line */
+.journey.done .jcard,.journey.done .jopts{display:none}
+.jsum{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:10px 14px;border:0;border-radius:14px;background:var(--control);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.jsum[hidden]{display:none}
+.jsum-trip{display:flex;align-items:center;gap:7px;min-width:0;max-width:100%;font-size:15px}
+.jsum-trip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.jsum-arrow{color:var(--muted)}
+.jsum-meta{font-size:12px;color:var(--secondary)}
+.jsum-meta u{text-decoration:none;font-weight:700;color:var(--ink)}
+.journey.done h3{display:none}
+.jf-list{position:absolute;z-index:5;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;border-radius:12px;background:var(--paper);box-shadow:var(--shadow);max-height:240px;overflow:auto}
 .jf-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .jf-list button:hover{background:var(--control)}
 .jf-list b{font-size:14px}.jf-list small,.jf-empty{font-size:12px;color:var(--muted)}.jf-empty{padding:8px 10px}
-.jf-go{height:50px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:17px;cursor:pointer}
 .jf-status{font-size:13px;color:var(--secondary);min-height:18px}
-.jp{padding:12px;border-radius:14px;background:var(--control);display:flex;flex-direction:column;gap:6px}
+.jp{padding:10px 12px;border-radius:14px;background:var(--control);display:flex;flex-direction:column;gap:4px}
 .jp+.jp{margin-top:8px}
 .jp header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
 .jp-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--syung);color:var(--syung-ink)}
-.jp header strong{font-family:var(--round);font-weight:400;font-size:24px}
+.jp header strong{font-family:var(--round);font-weight:400;font-size:22px}
 .jp header span:last-child{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
 .jp-meta{margin:0;font-size:12px;color:var(--muted)}
 .jl-list{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column}
-.jl{display:grid;grid-template-columns:44px 14px 1fr;gap:8px;align-items:start;padding:6px 0}
+.jl{display:grid;grid-template-columns:40px 12px 1fr;gap:8px;align-items:start;padding:4px 0}
 .jl-time{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;padding-top:1px}
 .jl-dot{width:12px;height:12px;margin-top:4px;border-radius:50%;background:var(--c,var(--muted));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--muted)) 25%,transparent)}
 .jl.walk .jl-dot{background:transparent;border:2px dashed var(--muted);box-shadow:none;width:10px;height:10px}
@@ -284,10 +309,9 @@ html[data-theme=dark] .route-cta{box-shadow:0 3px 0 rgba(0,0,0,.4),0 10px 24px r
 /* many routes: only the chosen one shows its steps */
 .jp:not(.on) .jl-list{display:none}
 .sheet-body:has(.journey){padding-right:0}
-.journey h3{padding-right:40px}
 
 /* 길찾기 sheet: taller, so the routes have room under the form */
-.sheet:has(.journey){max-height:86%}
+.sheet:has(.journey){max-height:72%}
 /* no double-tap page zoom on the controls; the map keeps its own gestures */
 .mast,.map-search,.route-cta,.sheet,.jbar,.settings-panel{touch-action:manipulation}
 @media(max-width:720px){
@@ -298,3 +322,6 @@ html[data-theme=dark] .route-cta{box-shadow:0 3px 0 rgba(0,0,0,.4),0 10px 24px r
 }
 /* phones: pinch to zoom; the +/− buttons only take room */
 @media(pointer:coarse){.maplibregl-ctrl-top-right{display:none}}
+.journey.done .jsum{width:calc(100% - 44px)}   /* clear of the sheet's ✕ */
+.journey.done .jf-status:empty{display:none}
+.journey.done .jtabs{margin-top:0}

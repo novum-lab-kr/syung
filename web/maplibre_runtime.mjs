@@ -694,15 +694,21 @@ function rideCoords(line,ids){
 }
 function showRoute(plan){
   const feats=[],pts=[];
-  for(const l of plan.legs){
+  plan.legs.forEach((l,i)=>{
     if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
     else if(l.type==='bus'){feats.push({type:'Feature',properties:{kind:'ride',color:l.color},geometry:{type:'LineString',coordinates:l.path}});
       for(const c of [l.path[0],l.path[l.path.length-1]])pts.push({type:'Feature',properties:{kind:'stop',color:l.color},geometry:{type:'Point',coordinates:c}})}
     else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
+      // boarding and alighting where the ride is drawn from (the platform on the track), not the
+      // station's centre point, which sat 50–270 m off both the ride and the exit the walk reached
       const s0=byId.get(l.stations[0]),s1=byId.get(l.stations[l.stations.length-1]);
-      if(s0)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:[s0.lon,s0.lat]}});
-      if(s1)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:[s1.lon,s1.lat]}})}
-  }
+      for(const s of [s0,s1])if(s)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:stopPos(l.line,s)}});
+      // the walk ends at an exit: join it to the platform, fainter (inside the station)
+      const prev=plan.legs[i-1],next=plan.legs[i+1];
+      if(prev&&prev.type==='walk'&&prev.path&&s0)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[prev.path[prev.path.length-1],stopPos(l.line,s0)]}});
+      if(next&&next.type==='walk'&&next.path&&s1)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[stopPos(l.line,s1),next.path[0]]}})}
+
+  });
   const first=plan.legs[0],last=plan.legs[plan.legs.length-1];
   if(first.path)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]}});
   if(last.path)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});
@@ -715,6 +721,7 @@ function showRoute(plan){
     map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,6,16,14]}});
     map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],10,3.5,16,9]}});
     map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});
+    map.addLayer({id:'journey-inside',type:'line',source:'journey',filter:['==',['get','kind'],'inside'],layout:{'line-cap':'round'},paint:{'line-color':walkColor(),'line-opacity':.45,'line-width':['interpolate',['linear'],['zoom'],10,2,16,4],'line-dasharray':[0.1,2.2]}});
     map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:{'circle-radius':6,'circle-color':'#ffffff','circle-stroke-color':['get','color'],'circle-stroke-width':3}});
     map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
   }else map.getSource('journey').setData(data);
@@ -730,7 +737,7 @@ const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#
 const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
 // route focus: veil on, trains faded, my location kept above the veil
 function focusRoute(on){
-  if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor())}
+  if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
@@ -747,7 +754,7 @@ sheet.querySelector('.sheet-close').onclick=closeSheet;
 addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 // Following: the camera keeps the chosen train in the middle of the map above the sheet.
 // Dragging the map stops it; the button in the sheet starts it again.
-const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.6);
+const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);   // the 길찾기 sheet grows to 72%
 function trainLngLat(plan){
   const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
   return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();

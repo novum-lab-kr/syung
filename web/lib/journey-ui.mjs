@@ -6,7 +6,8 @@ const min = s => Math.max(1, Math.round(s / 60));
 export function initJourney({openSheet, closeSheet, map, colors, myLocation, button, showRoute, clearRoute}) {
   const picked = {from: null, to: null};
   let last = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
-  let inSheet = false;   // the journey sheet (not a station or train one) is what's open
+  let inSheet = false;
+  let goSeq = 0;   // the latest route search; older answers are dropped   // the journey sheet (not a station or train one) is what's open
 
   // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
   const bar = document.createElement('div');
@@ -16,30 +17,31 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   bar.querySelector('.jbar-open').onclick = () => open();
   bar.querySelector('.jbar-x').onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
 
+  const PIN = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>';
+  const SWAP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4"/></svg>';
+  // one card, two rows (출발 / 도착), like a map app; the search runs as soon as both ends are known
   function form() {
     const here = myLocation();
     return `<div class="journey">
   <h3>길찾기</h3>
-  <div class="jf">
-    <label for="jFrom">출발</label>
-    <div class="jf-row"><input id="jFrom" type="text" autocomplete="off" placeholder="주소나 장소 (예: 강남역 스타벅스)" value="${here ? '내 위치' : ''}">
-    ${here ? '<button type="button" class="jf-here" id="jHere">내 위치</button>' : ''}</div>
-    <ul class="jf-list" id="jFromList" hidden></ul>
+  <button type="button" class="jsum" id="jSum" hidden></button>
+  <div class="jcard">
+    <div class="jf jrow"><i class="jdot from" aria-hidden="true"></i>
+      <input id="jFrom" type="text" autocomplete="off" aria-label="출발지" placeholder="출발지 (주소나 장소)" value="${here ? '내 위치' : ''}">
+      ${here ? `<button type="button" class="jf-here" id="jHere" aria-label="내 위치에서 출발" title="내 위치">${PIN}</button>` : ''}
+      <ul class="jf-list" id="jFromList" hidden></ul></div>
+    <div class="jf jrow"><i class="jdot to" aria-hidden="true"></i>
+      <input id="jTo" type="text" autocomplete="off" aria-label="도착지" placeholder="어디로 갈까요?">
+      <ul class="jf-list" id="jToList" hidden></ul></div>
+    <button type="button" class="jswap" id="jSwap" aria-label="출발지와 도착지 바꾸기" title="바꾸기">${SWAP}</button>
   </div>
-  <div class="jf">
-    <label for="jTo">도착</label>
-    <input id="jTo" type="text" autocomplete="off" placeholder="어디로 갈까요?">
-    <ul class="jf-list" id="jToList" hidden></ul>
-  </div>
-  <div class="jf jf-time" role="group" aria-labelledby="jAtLabel">
-    <span class="jf-label" id="jAtLabel">출발 시각</span>
+  <div class="jopts" role="group" aria-label="출발 시각">
     <div class="segmented jf-when"><button type="button" data-when="now" aria-pressed="true">지금 출발</button><button type="button" data-when="later" aria-pressed="false">시간 지정</button></div>
-    <div class="jf-row jf-at" hidden>
+    <div class="jf-at" hidden>
       <select id="jDay" aria-label="날짜"><option value="0">오늘</option><option value="1">내일</option></select>
-      <input id="jTime" type="time" aria-label="시각" step="300">
+      <input id="jTime" type="time" aria-label="출발 시각" step="300">
     </div>
   </div>
-  <button type="button" class="jf-go" id="jGo">경로 찾기</button>
   <div class="jf-status" id="jStatus" role="status" aria-live="polite"></div>
   <div id="jResult"></div>
 </div>`;
@@ -90,13 +92,33 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
             const li = document.createElement('li'), b = document.createElement('button');
             b.type = 'button';
             b.innerHTML = `<b>${esc(p.name)}</b><small>${esc(p.address)}</small>`;
-            b.onclick = () => { picked[which] = p; input.value = p.name; list.hidden = true; };
+            b.onclick = () => { picked[which] = p; input.value = p.name; list.hidden = true; next(which); };
             li.append(b); list.append(li);
           }
           list.hidden = false;
         } catch { if (my === seq) { list.innerHTML = '<li class="jf-empty">검색하지 못했어요</li>'; list.hidden = false; } }
       }, 300);
     });
+  }
+
+  // the start is known: a picked place, or 내 위치 while it is there
+  const fromOf = () => picked.from || (document.getElementById('jFrom').value.trim() === '내 위치' && myLocation() ? {lat: myLocation()[1], lng: myLocation()[0]} : null);
+  function next(which) {
+    if (fromOf() && picked.to) { go(); return; }
+    const empty = !fromOf() ? 'jFrom' : 'jTo';
+    if (which) document.getElementById(empty).focus();
+  }
+  // results up: the form folds into one line; tap it to change the trip
+  function fold(on) {
+    const j = document.querySelector('.journey'); if (!j) return;
+    j.classList.toggle('done', on);
+    const sum = document.getElementById('jSum');
+    sum.hidden = !on;
+    if (on) {
+      const at = whenValue(), t = at ? `${document.getElementById('jDay').value === '1' ? '내일 ' : ''}${at.slice(11)} 출발` : '지금 출발';
+      sum.innerHTML = `<span class="jsum-trip"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b><span class="jsum-arrow">→</span><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span><span class="jsum-meta">${esc(t)} · <u>바꾸기</u></span>`;
+      sum.setAttribute('aria-label', `${document.getElementById('jFrom').value}에서 ${document.getElementById('jTo').value}까지, ${t}. 눌러서 바꾸기`);
+    }
   }
 
   function legHTML(l) {
@@ -162,23 +184,24 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
 
   async function go() {
     const status = document.getElementById('jStatus'), out = document.getElementById('jResult');
-    const here = myLocation();
-    const from = picked.from || (document.getElementById('jFrom').value.trim() === '내 위치' && here ? {lat: here[1], lng: here[0]} : null);
-    const to = picked.to;
+    const from = fromOf(), to = picked.to, my = ++goSeq;
+    const trip = {from: document.getElementById('jFrom').value, to: document.getElementById('jTo').value, picked: {...picked}};
     if (!from) { status.textContent = '출발지를 목록에서 골라 주세요.'; return; }
     if (!to) { status.textContent = '도착지를 목록에서 골라 주세요.'; return; }
     const at = whenValue();
-    status.textContent = '경로를 찾는 중…'; out.replaceChildren();
+    status.textContent = '경로를 찾는 중…'; out.replaceChildren(); fold(false);
     document.activeElement?.blur?.();   // phone keyboard down, so the results have the room
     try {
       const r = await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
       const d = await r.json();
+      if (my !== goSeq || !out.isConnected) return;   // a newer search took over, or the sheet shows something else now
       if (!d.ok) { status.textContent = d.error || '경로를 찾지 못했어요. 출발지나 도착지를 바꿔 보세요.'; return; }
       status.textContent = '';
-      last = {d, sel: 0, from: document.getElementById('jFrom').value, to: document.getElementById('jTo').value, at, picked: {...picked}};
+      last = {d, sel: 0, from: trip.from, to: trip.to, at, picked: trip.picked};
       render(d, 0);
-      out.scrollIntoView?.({block: 'start', behavior: 'smooth'});   // the results, not the form, fill the sheet
-    } catch { status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
+      fold(true);
+      const sh = out.closest('.sheet-body'); if (sh) sh.scrollTop = 0;   // the trip line and the tabs first
+    } catch { if (my === goSeq) status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
   }
 
   function open(fresh = false) {
@@ -186,15 +209,23 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     openSheet(form());
     inSheet = true;
     bindPlace('from'); bindPlace('to');
-    document.querySelectorAll('.jf-when button').forEach(b => b.addEventListener('click', () => whenSet(b.dataset.when === 'later')));
-    document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; document.getElementById('jFrom').value = '내 위치'; });
-    document.getElementById('jGo').addEventListener('click', go);
+    document.querySelectorAll('.jf-when button').forEach(b => b.addEventListener('click', () => { const later = b.dataset.when === 'later'; whenSet(later); if (!later) next(); }));
+    for (const id of ['jDay', 'jTime']) document.getElementById(id).addEventListener('change', () => next());
+    document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus(); });
+    document.getElementById('jSwap').addEventListener('click', () => {
+      const f = document.getElementById('jFrom'), t = document.getElementById('jTo'), fp = fromOf();
+      [f.value, t.value] = [t.value, f.value];
+      [picked.from, picked.to] = [picked.to, fp && !picked.from ? {...fp, name: '내 위치'} : picked.from];
+      next();
+    });
+    document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; document.getElementById('jFrom').value = '내 위치'; next('from'); });
     if (last) {   // back to the last search, as it was
       document.getElementById('jFrom').value = last.from;
       document.getElementById('jTo').value = last.to;
       whenSet(!!last.at, last.at);
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
+      fold(true);
     } else if (!fresh) document.getElementById('jTo').focus();
   }
 
