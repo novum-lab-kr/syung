@@ -81,7 +81,7 @@ function trackFrom(line,s,n,dist){
 function neighbours(line,s){for(const ids of paths[line]||[]){const i=ids.indexOf(s.id);if(i>=0)return {prev:byId.get(ids[i-1]),next:byId.get(ids[i+1])}}return {}}
 const STATION_WIDTH_STOPS=[[8,6],[12,11],[14,16],[16,24],[18,28]];   // [zoom, outline width px]
 const stationWidthPx=z=>{const S=STATION_WIDTH_STOPS;if(z<=S[0][0])return S[0][1];for(let i=1;i<S.length;i++)if(z<=S[i][0]){const [z0,w0]=S[i-1],[z1,w1]=S[i];return w0+(w1-w0)*(z-z0)/(z1-z0)}return S[S.length-1][1]};
-const stationRects=new Map();
+const stationRects=new Map(),PLATFORM_SCALE=.3;   // platform bars: a third of the old outline width (names sit beside them now)
 const platformPx=(r,base)=>{if(!r.widthM)return base;const lat=r.coords[0][1]*Math.PI/180,mpp=40075016.686*Math.cos(lat)/(512*2**map.getZoom());return Math.max(base,Math.min(base*2,r.widthM/mpp))};
 function buildStationFeatures(){
   return stations.flatMap(s=>s.lines.map(x=>{
@@ -119,19 +119,6 @@ function buildStationFeatures(){
     stationRects.set(`${line}:${s.id}`,{coords,offset,widthM:stopWidth[`${line}:${s.id}`]||0,plat:ph?Math.min(1,ph/h):1});   // widthM: metres across, from the exits
     return {type:'Feature',properties:{id:s.id,name:s.name,line,lines:s.lines.map(y=>y.name).join('|'),color:colors[line],transfer:s.lines.length>1?1:0,offset},geometry:{type:'LineString',coordinates:coords}};
   }));
-}
-// Transfer stations: tie the per-line points together with a short connector (minimum spanning tree).
-function buildTransferFeatures(){
-  const out=[];
-  for(const s of stations){
-    if(s.lines.length<2)continue;
-    const pts=[...new Map(s.lines.map(x=>[String(stopPos(x.name,s)),stopPos(x.name,s)])).values()];
-    if(pts.length<2)continue;
-    const d=(a,b)=>Math.hypot((a[0]-b[0])*Math.cos(a[1]*Math.PI/180),a[1]-b[1]),inTree=[0],segs=[];
-    while(inTree.length<pts.length){let best=null;for(const i of inTree)pts.forEach((p,j)=>{if(!inTree.includes(j)&&(!best||d(pts[i],p)<best[0]))best=[d(pts[i],p),i,j]});inTree.push(best[2]);segs.push([pts[best[1]],pts[best[2]]])}
-    out.push({type:'Feature',properties:{id:s.id},geometry:{type:'MultiLineString',coordinates:segs}});
-  }
-  return out;
 }
 
 const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
@@ -744,7 +731,7 @@ function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?.25:.9);
   stationAlpha=on?.35:1;map.triggerRepaint();
-  for(const id of ['transfer-casing','transfer-fill'])if(map.getLayer(id))map.setPaintProperty(id,'line-opacity',on?.3:1);
+  for(const id of ['station-labels','station-labels-more'])if(map.getLayer(id))map.setPaintProperty(id,'text-opacity',on?.35:1);
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
@@ -974,22 +961,6 @@ let labelFrame=0;
 // They are drawn by a WebGL layer placed *below* the trains, so a train at a station stays visible.
 const measure=(()=>{const c=document.createElement('canvas').getContext('2d'),cache=new Map();return (t,px)=>{const k=px.toFixed(1)+t;let w=cache.get(k);if(w==null){c.font=`700 ${px}px "Noto Sans KR",sans-serif`;w=c.measureText(t).width;cache.set(k,w)}return w}})();
 // Screen-space placement of every visible name box (collision-culled), recomputed each frame.
-function layoutLabels(){
-  const cw=map.getCanvas().clientWidth,ch=map.getCanvas().clientHeight,z=map.getZoom(),hgt=stationWidthPx(z),font=Math.max(9,Math.min(13,hgt*.58)),placed=[],out=[];
-  for(const item of labels){
-    const r=stationRects.get(`${item.line}:${item.station.id}`);if(!r)continue;
-    const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]);
-    let dx=p1.x-p0.x,dy=p1.y-p0.y;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-    const nx=-dy,ny=dx,cx=(p0.x+p1.x)/2+nx*r.offset,cy=(p0.y+p1.y)/2+ny*r.offset;   // line-offset: right of drawing direction
-    let ang=Math.atan2(dy,dx);if(ang>Math.PI/2)ang-=Math.PI;else if(ang<-Math.PI/2)ang+=Math.PI;
-    const tw=measure(item.text,font),bw=Math.max(len,tw+10);
-    const ex=(Math.abs(Math.cos(ang))*bw+Math.abs(Math.sin(ang))*hgt)/2,ey=(Math.abs(Math.sin(ang))*bw+Math.abs(Math.cos(ang))*hgt)/2;
-    const box=[cx-ex,cy-ey,cx+ex,cy+ey];
-    if(box[2]<0||box[0]>cw||box[3]<0||box[1]>ch||placed.some(o=>box[0]<o[2]&&box[2]>o[0]&&box[1]<o[3]&&box[3]>o[1]))continue;
-    placed.push(box);out.push({item,cx,cy,ang,bw,hgt:platformPx(r,hgt),font,tw});
-  }
-  return out;
-}
 const hexRGB3=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 const NAME_PX=40,NAME_ROW=50;   // atlas: each name rendered once at 40 px in a 50 px row
 // 3D building walls, depth only, for the train canvas: trains behind a building show through it
@@ -1050,11 +1021,11 @@ void main(){
   if(v_tw.x<-.5){vec2 hs=v_size*.5,q=abs(v_local)-(hs-hs.y);float sd=length(max(q,0.))-hs.y+min(max(q.x,q.y),0.),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;
     vec3 col=v_tw.x<-2.5?mix(vec3(1.),vec3(.12,.17,.2),u_dark):v_color;o=vec4(col*c,c)*u_alpha;return;}
   // rounded rectangle: white fill, line-colour border, dark name
-  float r=abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
+  float r=abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*(v_tw.x>0.?.32:.12),v_size.x*.5),border=(abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
   vec2 q=abs(v_local)-(v_size*.5-r);float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-r;
   float aa=max(fwidth(sd),1e-3),cover=clamp(.5-sd/aa,0.,1.);if(cover<=0.)discard;
   vec3 fill=mix(vec3(1.),vec3(.12,.17,.2),u_dark),ink=mix(vec3(.11,.17,.19),vec3(.93,.96,.97),u_dark);   // dark mode: dark box, light name
-  vec3 col=mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd));
+  vec3 col=v_tw.x>0.?mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd)):v_color;   // platform: solid line colour, set into the map
   if(v_tw.x>0.){vec2 t=(v_local+v_tw*.5)/v_tw;   // v_tw = text cell size (width, font × row ratio)
     if(t.x>0.&&t.x<1.&&t.y>0.&&t.y<1.){float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,ink,a);}}
   o=vec4(col*cover,cover)*u_alpha;   // premultiplied; faded behind a 길찾기 route
@@ -1098,7 +1069,7 @@ void main(){
       let ax=m1.x-m0.x,ay=m1.y-m0.y;const lenU=Math.hypot(ax,ay)||1e-12;ax/=lenU;ay/=lenU;
       const cx=(m0.x+m1.x)/2-ay*r.offset*unit,cy=(m0.y+m1.y)/2+ax*r.offset*unit;   // line-offset: right of drawing direction
       if(cx<lo.x-pad||cx>hi.x+pad||cy>lo.y+pad||cy<hi.y-pad)continue;
-      const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt),len=lenU/unit;
+      const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt)*PLATFORM_SCALE,len=lenU/unit;
       // names read left→right on screen: flip the axis when it points leftward
       const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
       geo.set(k,{cx,cy,ax:ax*flip,ay:ay*flip,len,h,col,id:k.slice(k.lastIndexOf(':')+1)});
@@ -1126,12 +1097,7 @@ void main(){
     }
     for(const g of geo.values()){
       if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}
-      if(z>=15)quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h)+12,g.h+12,[0,0,0,0],g.col,-2,0);   // soft shadow lifts the box off the map
-      quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h),g.h,[0,0,0,0],g.col,0,0);   // one box: platform and passages out to the exits
-    }
-    if(!pointsOnly)for(const L of layoutLabels()){
-      const g=geo.get(`${L.item.line}:${L.item.station.id}`),uv=this.uv.get(L.item.text);if(!g||!uv)continue;
-      quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,L.bw),g.h,uv,g.col,uv[4]*L.font,L.font*NAME_ROW/NAME_PX);
+      quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h),g.h,[0,0,0,0],g.col,0,0);   // one bar: platform and passages out to the exits
     }
     if(!data.length)return;
     const M=options.defaultProjectionData.mainMatrix,MT=Array.from(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*ox+M[4+r]*oy+M[12+r];
@@ -1155,6 +1121,13 @@ function rebuildLabels(){
     const line=selected!=='all'&&s.lines.some(x=>x.name===selected)?selected:s.lines[0].name;
     labels.push({station:s,line,text:s.name+(s.express?.length?' (급행)':'')});
   }
+  // a name beside each (visible) line's platform, like Kakao: the station's first line from the start, its others from zoom 16
+  const src=map.getSource('station-labels');
+  if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text})=>s.lines.filter(x=>selected==='all'||x.name===selected).flatMap((x,i)=>{
+    const r=stationRects.get(`${x.name}:${s.id}`);if(!r)return [];
+    const c=[(r.coords[0][0]+r.coords[r.coords.length-1][0])/2,(r.coords[0][1]+r.coords[r.coords.length-1][1])/2];
+    return [{type:'Feature',properties:{text,rank:i*10-s.lines.length,primary:i?0:1},geometry:{type:'Point',coordinates:c}}];
+  }))});
   scheduleLabels();
 }
 
@@ -1163,7 +1136,6 @@ function filterLine(line){
   selected=line;
   map.setFilter('routes',line==='all'?null:['==',['get','line'],line]);
   for(const id of ['stations','stations-casing'])map.setFilter(id,line==='all'?null:['==',['get','line'],line]);
-  for(const id of ['transfer-casing','transfer-fill'])map.setLayoutProperty(id,'visibility',line==='all'?'visible':'none');
   rebuildLabels();
   const visible=stations.filter(s=>line==='all'||s.lines.some(x=>x.name===line));
   $('mapTitle').textContent=line==='all'?`${stations.length}개 역 노드 전체 보기`:`${line} · ${visible.length}개 역`;
@@ -1221,17 +1193,18 @@ async function refreshLive(force=false){
 
 map.on('load',()=>{
   map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:buildLineFeatures()}});
-  shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('transfers').setData({type:'FeatureCollection',features:buildTransferFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
+  shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
   map.addLayer({id:'routes',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],8,1.5,15,4],'line-offset':['get','offset'],'line-opacity':.9}});
-  map.addSource('transfers',{type:'geojson',data:{type:'FeatureCollection',features:buildTransferFeatures()}});
-  map.addLayer({id:'transfer-casing',type:'line',source:'transfers',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#52646a','line-width':['interpolate',['linear'],['zoom'],9,5,15,11]}});
-  map.addLayer({id:'transfer-fill',type:'line',source:'transfers',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#fff','line-width':['interpolate',['linear'],['zoom'],9,2.5,15,7]}});
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:buildStationFeatures()}});
   // Stations: square-ended platform rectangles filled with the line colour (no outline), widths shared with the name boxes.
   // line layers kept (invisible) for clicking; the visible platforms are drawn by the station-names layer
   map.addLayer({id:'stations-casing',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.flat()]}});
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
-  map.addLayer(stationNames);   // names under the trains
+  map.addLayer(stationNames);   // platforms under the trains
+  // station names: flat on the map beside the platform, dark with a halo (like Kakao); dots only when zoomed out
+  map.addSource('station-labels',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',filter:['==',['get','primary'],1],minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','text'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
+  map.addLayer({id:'station-labels-more',type:'symbol',source:'station-labels',filter:['==',['get','primary'],0],minzoom:16,layout:{'text-field':['get','text'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
   // trains: their own canvas over the map (see TRAIN_FPS)
   {
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
@@ -1278,12 +1251,12 @@ map.on('load',()=>{
   addBasemap();
   // exits: yellow number discs (like station exit signs) from zoom 16
   map.addSource('exits',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  // exit sign: yellow rounded square with an ink rim and a drop edge, stretched to the number (like the station sheet's chips)
+  // exit sign: flat yellow rounded square with a thin ink rim, stretched to the number
   {const R=2,S=26*R,c=document.createElement('canvas');c.width=S;c.height=S+2*R;const x=c.getContext('2d');
-   const rr=(y,f)=>{x.beginPath();x.roundRect(R,y,S-2*R,S-2*R,8*R);x.fillStyle=f;x.fill()};
-   rr(2.5*R,'rgba(20,20,20,.28)');rr(R,'#141414');x.beginPath();x.roundRect(2.5*R,2.5*R,S-5*R,S-5*R,6.5*R);x.fillStyle='#ffd400';x.fill();
+   x.beginPath();x.roundRect(R,R,S-2*R,S-2*R,4*R);x.fillStyle='#141414';x.fill();
+   x.beginPath();x.roundRect(2.2*R,2.2*R,S-4.4*R,S-4.4*R,3*R);x.fillStyle='#ffd400';x.fill();   // flat: thin ink rim, no drop shadow
    map.addImage('exit-sign',x.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
-  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'icon-ignore-placement':true,'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#141414'}});   // above the 3D buildings so every exit stays readable
+  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'text-allow-overlap':true},paint:{'text-color':'#141414'}});   // above the 3D buildings so every exit stays readable; station names make way for them
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
@@ -1343,9 +1316,9 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 // 자동 (default): light from sunrise to sunset in Seoul, dark at night; 라이트 / 다크: fixed by the viewer.
 const MAP_THEMES={
   light:{bld3d:'#d9dde0',bld3dOpacity:.5,bg:'#edf2f1',water:'#cfe0e8',park:'#dde8da',land:'#e1eadf',bld:'#dfe4e6',roadMinor:'#ffffff',roadMajor:'#ffffff',rail:'#c3cbcf',
-         text:'#56656a',road:'#7a8589',waterText:'#5d8aa3',parkText:'#5f8a5a',poi:'#8a7f6d',halo:'rgba(255,255,255,.9)',xferCase:'#52646a',xferFill:'#ffffff'},
+         text:'#56656a',road:'#7a8589',waterText:'#5d8aa3',parkText:'#5f8a5a',poi:'#8a7f6d',halo:'rgba(255,255,255,.9)',stationText:'#141414'},
   dark:{bld3d:'#3a4a53',bld3dOpacity:.78,bg:'#10181c',water:'#16293a',park:'#15241c',land:'#15211b',bld:'#1c262b',roadMinor:'#243238',roadMajor:'#2f3f47',rail:'#35454d',
-        text:'#9aabb1',road:'#7f9096',waterText:'#6f9bb5',parkText:'#6e9a69',poi:'#a59a86',halo:'rgba(12,19,23,.9)',xferCase:'#8ea1a8',xferFill:'#10181c'},
+        text:'#9aabb1',road:'#7f9096',waterText:'#6f9bb5',parkText:'#6e9a69',poi:'#a59a86',halo:'rgba(12,19,23,.9)',stationText:'#eef3f4'},
 };
 const THEME_KEY='subway-theme';
 let themeChoice='auto';
@@ -1374,7 +1347,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
-  set('transfer-casing','line-color',P.xferCase);set('transfer-fill','line-color',P.xferFill);
+  for(const id of ['station-labels','station-labels-more']){set(id,'text-color',P.stationText);set(id,'text-halo-color',P.halo)}
 }
 document.head.insertAdjacentHTML('beforeend',`<style>
 html[data-theme=dark]{--board:#0f171b;--paper:#152026;--ink:#e2ebee;--secondary:#a2b3b8;--muted:#8799a0;--rule:#28383f;--navy:#0a171d;--control:#1b2930;--selected:#213d48;color-scheme:dark}
