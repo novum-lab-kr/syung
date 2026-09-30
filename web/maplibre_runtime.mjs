@@ -199,6 +199,7 @@ function segmentSeconds(a,b,line){
 const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whose express stops the GTFS lists
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
 let exits={};
+const EXIT_MINZOOM=16,EXIT_MAX_M=350;   // exits (and their passages) from this zoom; farther than this from every platform: no passage
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
 const smooth=x=>x*x*(3-2*x);
@@ -1043,13 +1044,18 @@ void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl
     const fs=`#version 300 es
 precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;uniform float u_alpha;out vec4 o;
 void main(){
-  vec2 d=v_size*.5-abs(v_local);                         // px to the box edge
+  // v_tw.x: >0 name cell, 0 box, -1 exit passage (full-round ends, dotted walk), -2 soft shadow (size includes 6px blur)
+  if(v_tw.x<-1.5){vec2 hs=v_size*.5-6.,q=abs(v_local)-(hs-min(hs.y,hs.x));float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-min(hs.y,hs.x);
+    float a=(1.-smoothstep(-2.,6.,sd))*mix(.16,.4,u_dark);if(a<=0.)discard;o=vec4(0.,0.,0.,a)*u_alpha;return;}
+  bool pass=v_tw.x<-.5;
   // rounded rectangle: white fill, line-colour border, dark name
-  float r=abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
+  float r=pass?v_size.y*.5:abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(pass?1.4:abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
   vec2 q=abs(v_local)-(v_size*.5-r);float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-r;
   float aa=max(fwidth(sd),1e-3),cover=clamp(.5-sd/aa,0.,1.);if(cover<=0.)discard;
   vec3 fill=mix(vec3(1.),vec3(.12,.17,.2),u_dark),ink=mix(vec3(.11,.17,.19),vec3(.93,.96,.97),u_dark);   // dark mode: dark box, light name
   vec3 col=mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd));
+  if(pass){float g=v_size.y*1.1,x=mod(v_local.x+v_size.x*.5,g)-g*.5,dd=length(vec2(x,v_local.y))-v_size.y*.13;   // footstep dots along the passage
+    col=mix(col,mix(vec3(.72,.76,.78),vec3(.4,.46,.5),u_dark),clamp(.5-dd/aa,0.,1.)*step(abs(v_local.x),v_size.x*.5-v_size.y*.9));}
   if(v_tw.x>0.){vec2 t=(v_local+v_tw*.5)/v_tw;   // v_tw = text cell size (width, font × row ratio)
     if(t.x>0.&&t.x<1.&&t.y>0.&&t.y<1.){float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,ink,a);}}
   o=vec4(col*cover,cover)*u_alpha;   // premultiplied; faded behind a 길찾기 route
@@ -1096,9 +1102,33 @@ void main(){
       const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt),len=lenU/unit;
       // names read left→right on screen: flip the axis when it points leftward
       const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
-      geo.set(k,{cx,cy,ax:ax*flip,ay:ay*flip,len,h,col});
-      if(pointsOnly)quad(cx,cy,1,0,dot,dot,[0,0,0,0],col,0,0);
-      else quad(cx,cy,ax*flip,ay*flip,Math.max(len,h),h,[0,0,0,0],col,0,0);   // one box: platform and passages out to the exits
+      geo.set(k,{cx,cy,ax:ax*flip,ay:ay*flip,len,h,col,id:k.slice(k.lastIndexOf(':')+1)});
+    }
+    // zoom 16+: each exit hangs off its station by a short passage (drawn first, so the box covers its root)
+    if(!pointsOnly&&z>=EXIT_MINZOOM){
+      const byStation=new Map();for(const g of geo.values()){if(!byStation.has(g.id))byStation.set(g.id,[]);byStation.get(g.id).push(g)}
+      const w=Math.max(5,Math.min(9,hgt*.32)),grey=[.6,.65,.67],pass=[];
+      for(const [id,boxes] of byStation)for(const [lon,lat] of exits[id]||[]){
+        const e=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]);let best=null;
+        for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
+          const rx=(e.x-g.cx)/unit,ry=(e.y-g.cy)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),t=Math.max(-half,Math.min(half,rx*g.ax+ry*g.ay));
+          const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(!best||d<best.d)best={sx,sy,d,g}}
+        if(!best||best.d*unit*40075016.686*Math.cos(lat*Math.PI/180)>EXIT_MAX_M||best.d<best.g.h/2)continue;   // too far to be this station's, or inside the box
+        // past the box's end: the concourse runs on along the box's axis and the exit branches off it square
+        const g=best.g,t=((e.x-g.cx)*g.ax+(e.y-g.cy)*g.ay)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2);
+        if(Math.abs(t)>half){const side=t>0?1:-1;g.trunk=g.trunk||{};g.trunk[side]=Math.max(g.trunk[side]||half,Math.abs(t))}
+        const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(d<g.h/2)continue;
+        pass.push([(sx+e.x)/2,(sy+e.y)/2,(e.x-sx)/unit/d,(e.y-sy)/unit/d,d+w,w]);
+      }
+      for(const g of geo.values())for(const [side,far] of Object.entries(g.trunk||{})){const half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),m=(half+far)/2*side;
+        pass.unshift([g.cx+g.ax*m*unit,g.cy+g.ay*m*unit,g.ax*side,g.ay*side,far-half+w*1.6,w*1.6]);delete g.trunk}   // wider: the concourse the exits share
+      for(const [cx,cy,ux,uy,l,ww] of pass)quad(cx,cy,ux,uy,l+10,ww+10,[0,0,0,0],grey,-2,0);   // soft shadow
+      for(const [cx,cy,ux,uy,l,ww] of pass)quad(cx,cy,ux,uy,l,ww,[0,0,0,0],grey,-1,0);          // passage: white, grey rim, footstep dots
+    }
+    for(const g of geo.values()){
+      if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}
+      if(z>=15)quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h)+12,g.h+12,[0,0,0,0],g.col,-2,0);   // soft shadow lifts the box off the map
+      quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h),g.h,[0,0,0,0],g.col,0,0);   // one box: platform and passages out to the exits
     }
     if(!pointsOnly)for(const L of layoutLabels()){
       const g=geo.get(`${L.item.line}:${L.item.station.id}`),uv=this.uv.get(L.item.text);if(!g||!uv)continue;
@@ -1249,8 +1279,12 @@ map.on('load',()=>{
   addBasemap();
   // exits: yellow number discs (like station exit signs) from zoom 16
   map.addSource('exits',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addLayer({id:'exits',type:'circle',source:'exits',minzoom:16,paint:{'circle-radius':['interpolate',['linear'],['zoom'],16,6.5,18,9],'circle-color':'#ffd200','circle-stroke-color':'#3a3a3a','circle-stroke-width':1}});   // above the 3D buildings so every exit stays readable
-  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:16,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,9,18,12],'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#1d1d1d'}});
+  // exit sign: yellow rounded square with an ink rim and a drop edge, stretched to the number (like the station sheet's chips)
+  {const R=2,S=26*R,c=document.createElement('canvas');c.width=S;c.height=S+2*R;const x=c.getContext('2d');
+   const rr=(y,f)=>{x.beginPath();x.roundRect(R,y,S-2*R,S-2*R,8*R);x.fillStyle=f;x.fill()};
+   rr(2.5*R,'rgba(20,20,20,.28)');rr(R,'#141414');x.beginPath();x.roundRect(2.5*R,2.5*R,S-5*R,S-5*R,6.5*R);x.fillStyle='#ffd400';x.fill();
+   map.addImage('exit-sign',x.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
+  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'icon-ignore-placement':true,'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#141414'}});   // above the 3D buildings so every exit stays readable
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
