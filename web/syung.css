@@ -262,7 +262,6 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .mast,.map-search,.route-cta,.sheet,.jbar,.settings-panel{touch-action:manipulation}
 @media(max-width:720px){
   .app{grid-template-rows:52px minmax(0,1fr)!important}
-  .brand-line p{font-size:13px}
   .brand-icon{width:32px;height:32px}
   .identity h1{font-size:22px}
 }
@@ -435,3 +434,4 @@ html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 .identity .brand-line h1{margin:0;white-space:nowrap}
 .identity .brand-line p{display:flex;align-items:center;gap:10px;margin:0;font-size:14px;white-space:nowrap}
 .identity .brand-line p::before{content:"";width:1.5px;height:14px;border-radius:1px;background:currentColor;opacity:.45}
+@media(max-width:720px){.identity .brand-line p{display:none}}   /* phones: the name only */
