@@ -779,7 +779,22 @@ if(window.visualViewport){const vv=visualViewport;let dropTimer=0;
   const watch=()=>{const run=performance.now()>=until;until=performance.now()+1100;if(run)requestAnimationFrame(settle)};
   vv.addEventListener('resize',watch);vv.addEventListener('scroll',watch);
   for(const ev of ['focusin','focusout','pointerup'])sheet.addEventListener(ev,e=>{if(ev!=='pointerup'||e.target.closest('input,select,textarea'))watch()});
-  addEventListener('scroll',()=>{if(sheet.classList.contains('kb'))fitKeyboard()},{passive:true})}
+  addEventListener('scroll',()=>{if(sheet.classList.contains('kb'))fitKeyboard()},{passive:true});
+  // Tapping another field: iOS focuses it by scrolling the page to it (then the page is put back: a jump).
+  // Take the tap and focus without scrolling; the sheet already sits above the keyboard, so the field is in view.
+  // (Not the time chip: its tap must reach the field for the phone's clock to open.)
+  let tx=0,ty=0;
+  sheet.addEventListener('touchstart',e=>{const t=e.touches[0];tx=t.clientX;ty=t.clientY},{passive:true});
+  sheet.addEventListener('touchend',e=>{const f=e.target.closest?.('input[type=text],input[type=search],input:not([type])');const t=e.changedTouches[0];
+    if(!f||document.activeElement===f||Math.hypot(t.clientX-tx,t.clientY-ty)>10)return;
+    e.preventDefault();f.focus({preventScroll:true});const n=f.value.length;try{f.setSelectionRange(n,n)}catch{};watch()},{passive:false});
+  // #kbdebug: the numbers behind the keyboard lift, live, for chasing a jump on a real phone
+  if(location.hash.includes('kbdebug')){const o=document.createElement('pre');o.style.cssText='position:fixed;z-index:99;left:4px;top:4px;margin:0;padding:6px 8px;font:11px/1.35 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#ffd400;border-radius:8px;pointer-events:none;white-space:pre';document.body.append(o);
+    const log=[];const snap=()=>`H ${document.documentElement.clientHeight} iH ${innerHeight}\nvv ${Math.round(vv.height)} top ${Math.round(vv.offsetTop)} s ${vv.scale.toFixed(2)}\nscrollY ${Math.round(scrollY)} kb ${sheet.style.getPropertyValue('--kb')||'-'}\nfocus ${document.activeElement?.id||document.activeElement?.tagName}`;
+    const tick=()=>{o.textContent=snap()+'\n'+log.slice(-6).join('\n');requestAnimationFrame(tick)};tick();
+    for(const ev of ['resize','scroll'])vv.addEventListener(ev,()=>log.push(`${(performance.now()/1e3).toFixed(2)} vv.${ev} ${Math.round(vv.height)}/${Math.round(vv.offsetTop)}`));
+    addEventListener('scroll',()=>log.push(`${(performance.now()/1e3).toFixed(2)} win.scroll ${Math.round(scrollY)}`),{passive:true});
+    document.addEventListener('focusin',e=>log.push(`${(performance.now()/1e3).toFixed(2)} focus ${e.target.id||e.target.tagName}`))}}
 addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 // Following: the camera keeps the chosen train in the middle of the map above the sheet.
 // Dragging the map stops it; the button in the sheet starts it again.

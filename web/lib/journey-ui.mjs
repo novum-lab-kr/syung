@@ -107,7 +107,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   function next(which) {
     if (fromOf() && picked.to) { go(); return; }
     const empty = !fromOf() ? 'jFrom' : 'jTo';
-    if (which) document.getElementById(empty).focus();
+    if (which) document.getElementById(empty).focus({preventScroll: true});
   }
   // results up: the form folds into one line; tap it to change the trip
   function fold(on) {
@@ -262,7 +262,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     const time = document.getElementById('jTime');
     time.addEventListener('click', () => { try { time.showPicker?.(); } catch {} });   // desktop: open the clock, not the segments
     time.addEventListener('change', () => { if (time.value) { whenSet({k: 'at', t: time.value}); next(); } });
-    document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus(); });
+    document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus({preventScroll: true}); });
     document.getElementById('jSwap').addEventListener('click', () => {
       const f = document.getElementById('jFrom'), t = document.getElementById('jTo'), fp = fromOf();
       [f.value, t.value] = [t.value, f.value];
@@ -277,7 +277,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
       fold(true);
-    } else if (!fresh) document.getElementById('jTo').focus();
+    } else if (!fresh) document.getElementById('jTo').focus({preventScroll: true});
   }
 
   // from a station sheet: this station is one end; ask for the other
@@ -289,7 +289,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     document.getElementById(end === 'from' ? 'jFrom' : 'jTo').value = place.name;
     const o = document.getElementById(other === 'from' ? 'jFrom' : 'jTo');
     if (other === 'from' && o.value === '내 위치') { go(); return; }   // to here from where I am: straight to the routes
-    o.value = ''; o.focus();
+    o.value = ''; o.focus({preventScroll: true});
   }
 
   // the sheet was closed: keep the route and show the bar when it was ours; true if a route stays up
