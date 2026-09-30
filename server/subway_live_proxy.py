@@ -581,7 +581,48 @@ class Server(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
+    # ---- owner login for the private pages (owner_auth.py; Caddy forward_auth → /auth) ----
+    def _redirect(self, status: int, location: str, cookie: str | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Location", location)
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _auth(self) -> None:
+        import owner_auth
+        if owner_auth.valid(self.headers.get("Cookie")):
+            self.send_response(204)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+        uri = self.headers.get("X-Forwarded-Uri", "/learning")
+        if uri.split("?", 1)[0].endswith(".json"):
+            return self._send(401, b'{"ok":false,"error":"login"}')
+        self._redirect(302, "/login.html?next=" + urllib.parse.quote(owner_auth.safe_next(uri), safe=""))
+
+    def do_POST(self) -> None:
+        import owner_auth
+        path = self.path.split("?", 1)[0]
+        if path == "/logout":
+            return self._redirect(303, "/login.html", owner_auth.clear_cookie())
+        if path != "/login":
+            return self.send_error(404)
+        size = min(int(self.headers.get("Content-Length") or 0), 4096)
+        form = urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"))
+        user, password = form.get("user", [""])[0], form.get("password", [""])[0]
+        nxt = owner_auth.safe_next(form.get("next", ["/learning"])[0])
+        address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+        if owner_auth.check_password(user, password, address):
+            return self._redirect(303, nxt, owner_auth.make_cookie())
+        error = "wait" if owner_auth.blocked(address) else "1"
+        self._redirect(303, f"/login.html?e={error}&next=" + urllib.parse.quote(nxt, safe=""))
+
     def do_GET(self) -> None:
+        if self.path.split("?", 1)[0] == "/auth":
+            return self._auth()
         if self.path.split("?", 1)[0] not in ("/live", "/health", "/route", "/place"):
             self.send_error(404)
             return
@@ -616,7 +657,7 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, status: int, data: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store" if self.path.startswith("/live") else "public, max-age=30")
+        self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth")) else "public, max-age=30")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

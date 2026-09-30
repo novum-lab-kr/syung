@@ -7,7 +7,7 @@ TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(/var/www/syung)   # syung.nol-meok.cloud
 for d in "${TARGETS[@]}"; do
   mkdir -p "$d/vendor"
-  cp "$ROOT/web/index.html" "$ROOT/web/learning.html" "$ROOT/web/maplibre_runtime.mjs" "$ROOT/web/site.webmanifest" "$ROOT/web/syung.css" "$d/"
+  cp "$ROOT/web/index.html" "$ROOT/web/learning.html" "$ROOT/web/login.html" "$ROOT/web/maplibre_runtime.mjs" "$ROOT/web/site.webmanifest" "$ROOT/web/syung.css" "$d/"
   # learning.html (+ learning.json from the nightly retrain) is owner-only: Caddy basic_auth
   mkdir -p "$d/brand" && cp "$ROOT"/web/brand/* "$d/brand/"
   cp "$ROOT"/web/vendor/* "$d/vendor/"
