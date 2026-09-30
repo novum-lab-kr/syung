@@ -1110,6 +1110,83 @@ void main(){
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }
 }
+// Exit pillars (zoom 16+), drawn on the train canvas above the trains: a dark post standing on the exit
+// with a flat yellow number sign on top, like the pillar signs at real entrances. Screen-space quads:
+// the post runs from the exit's ground point to a point PILLAR_PX above it, so it stands up as the
+// map tilts; the sign always faces the viewer.
+const PILLAR_PX=[[16,12],[18,24]];
+class ExitPillars{
+  init(gl){
+    const vs=`#version 300 es
+in vec2 a_pos;in vec2 a_local;in vec2 a_size;in vec4 a_uv;in float a_mode;uniform vec2 u_view;
+out vec2 v_local;out vec2 v_size;out vec4 v_uv;out float v_mode;
+void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_mode=a_mode;gl_Position=vec4(a_pos/u_view*vec2(2.,-2.)+vec2(-1.,1.),0.,1.);}`;
+    const fs=`#version 300 es
+precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in float v_mode;uniform sampler2D u_tex;uniform float u_dpr;out vec4 o;
+float box(vec2 p,vec2 h,float r){vec2 q=abs(p)-(h-r);return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
+void main(){
+  vec2 h=v_size*.5;
+  if(v_mode<.5){float d=length(v_local/h);float a=(1.-smoothstep(.3,1.,d))*.28;if(a<=0.)discard;o=vec4(0.,0.,0.,a);return;}   // ground shadow
+  if(v_mode<1.5){float sd=box(v_local,h,h.x*.5),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;   // post: lit on its left
+    vec3 col=mix(vec3(.3,.33,.36),vec3(.1,.11,.12),smoothstep(-h.x,h.x,v_local.x));o=vec4(col*c,c);return;}
+  float sd=box(v_local,h,min(3.,h.y*.3)),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;   // sign: ink rim, yellow face, number
+  vec3 col=mix(vec3(1.,.83,0.),vec3(.08),smoothstep(-1.2-aa,-1.2+aa,sd));
+  vec2 t=(v_local+h)/v_size;float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,vec3(.08),a*step(sd,-1.6));
+  o=vec4(col*c,c);
+}`;
+    const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
+    this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
+    this.attr=Object.fromEntries(['a_pos','a_local','a_size','a_uv','a_mode'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
+    this.uView=gl.getUniformLocation(this.p,'u_view');this.uTex=gl.getUniformLocation(this.p,'u_tex');
+    this.b=gl.createBuffer();this.tex=gl.createTexture();this.gl=gl;this.key='';
+  }
+  // number atlas: each exit ref once, bold, on a row of the texture
+  atlas(){
+    const refs=[...new Set(Object.values(exits).flatMap(l=>l.map(e=>String(e[2]))))].sort(),key=refs.join('|');if(key===this.key)return;this.key=key;
+    const F=24,ROW=30,W=1024,c=document.createElement('canvas'),x=c.getContext('2d');x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;
+    let px=0,py=0;const pos=new Map();
+    for(const r of refs){const w=Math.ceil(x.measureText(r).width)+6;if(px+w>W){px=0;py+=ROW}pos.set(r,[px,py,w]);px+=w}
+    c.width=W;c.height=py+ROW;x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;x.textBaseline='middle';x.textAlign='center';x.fillStyle='#000';
+    for(const [r,[a,b,w]] of pos)x.fillText(r,a+w/2,b+ROW/2+1);
+    this.uv=new Map([...pos].map(([r,[a,b,w]])=>[r,[a/W,b/c.height,(a+w)/W,(b+ROW)/c.height,w/ROW]]));
+    const gl=this.gl;gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);   // no mipmaps: they blur the digits' strokes into outlines
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  }
+  render(gl,M,W,H,dpr){
+    const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
+    if(!this.p)this.init(gl);this.atlas();
+    const unit=1/(512*2**z),P=PILLAR_PX,hpx=P[0][1]+(P[1][1]-P[0][1])*Math.max(0,Math.min(1,(z-P[0][0])/(P[1][0]-P[0][0])));
+    const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H]};
+    const data=[],q=(cx,cy,ux,uy,w,h,uv,mode)=>{const nx=-uy,ny=ux,c=(lx,ly)=>[cx+ux*lx+nx*ly,cy+uy*lx+ny*ly,lx,ly,w,h,...uv,mode];
+      const k=[c(-w/2,-h/2),c(w/2,-h/2),c(w/2,h/2),c(-w/2,h/2)];for(const i of [0,1,2,0,2,3])data.push(...k[i])};
+    const S=Math.round(14+4*Math.max(0,Math.min(1,(z-16)/2))),post=Math.max(3,S*.28),items=[];
+    const ids=new Set(selected==='all'?Object.keys(exits):stations.filter(s=>s.lines.some(x=>x.name===selected)).map(s=>String(s.id)));
+    for(const id of ids)for(const [lon,lat,ref] of exits[id]||[]){
+      const m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=proj(m.x,m.y,0);if(!b||b[0]<-40||b[0]>W+40||b[1]<-60||b[1]>H+40)continue;
+      const t=proj(m.x,m.y,hpx*unit);if(t)items.push([b,t,String(ref)]);
+    }
+    items.sort((a,b)=>a[0][1]-b[0][1]);   // far (higher on screen) first, near ones drawn over them
+    for(const [b,t,ref] of items){
+      let dx=t[0]-b[0],dy=t[1]-b[1];const L=Math.hypot(dx,dy);
+      const uv=this.uv.get(ref)||[0,0,0,0,1],sw=Math.max(S,S*.62*uv[4]+6),lift=Math.min(L,S*.5);
+      q(b[0],b[1],1,0,S*.9,S*.38,[0,0,0,0],0);   // shadow on the ground
+      if(L>1){dx/=L;dy/=L;q((b[0]+t[0])/2,(b[1]+t[1])/2,dy*-1,dx,post,L+post,[0,0,0,0],1)}   // post, drawn along the screen-up direction
+      const cx=t[0],cy=t[1]-(L>1?lift:0);
+      q(cx,cy,1,0,sw,S,[uv[0],uv[1],uv[2],uv[3]],2);   // number sign facing the viewer
+    }
+    if(!data.length)return;
+    gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
+    const st=11*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
+    ptr('a_pos',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_mode',1,10);
+    gl.uniform2f(this.uView,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uTex,0);
+    gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLES,0,data.length/11);
+    for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
+  }
+}
+const exitPillars=new ExitPillars();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer();
 function updateLabelVisibility(){labelFrame=0;map.triggerRepaint()}
@@ -1119,15 +1196,17 @@ function rebuildLabels(){
   const visible=stations.filter(s=>selected==='all'||s.lines.some(x=>x.name===selected)).sort((a,b)=>b.lines.length-a.lines.length);
   for(const s of visible){
     const line=selected!=='all'&&s.lines.some(x=>x.name===selected)?selected:s.lines[0].name;
-    labels.push({station:s,line,text:s.name+(s.express?.length?' (급행)':'')});
+    labels.push({station:s,line,text:s.name});
   }
   // a name beside each (visible) line's platform, like Kakao: the station's first line from the start, its others from zoom 16
   const src=map.getSource('station-labels');
-  if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text})=>s.lines.filter(x=>selected==='all'||x.name===selected).flatMap((x,i)=>{
+  // above the name, its line(s) in line colour: all of them on the station's one early name, each line's own beside its platform
+  const lineProps=names=>Object.fromEntries([0,1,2,3].flatMap(k=>[[`l${k}`,names[k]?(k?' ':'')+names[k]:''],[`c${k}`,colors[names[k]]||'#52646a']]));
+  if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text})=>{const shown=s.lines.filter(x=>selected==='all'||x.name===selected);return shown.flatMap((x,i)=>{
     const r=stationRects.get(`${x.name}:${s.id}`);if(!r)return [];
     const c=[(r.coords[0][0]+r.coords[r.coords.length-1][0])/2,(r.coords[0][1]+r.coords[r.coords.length-1][1])/2];
-    return [{type:'Feature',properties:{text,rank:i*10-s.lines.length,primary:i?0:1},geometry:{type:'Point',coordinates:c}}];
-  }))});
+    return [{type:'Feature',properties:{text,rank:i*10-s.lines.length,primary:i?0:1,...lineProps(i?[x.name]:shown.map(y=>y.name)),...Object.fromEntries(['m0','m1','m2','m3'].map((k,j)=>[k,j?'':x.name])),mc:colors[x.name]||'#52646a'},geometry:{type:'Point',coordinates:c}}];
+  })})});
   scheduleLabels();
 }
 
@@ -1203,8 +1282,8 @@ map.on('load',()=>{
   map.addLayer(stationNames);   // platforms under the trains
   // station names: flat on the map beside the platform, dark with a halo (like Kakao); dots only when zoomed out
   map.addSource('station-labels',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',filter:['==',['get','primary'],1],minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','text'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
-  map.addLayer({id:'station-labels-more',type:'symbol',source:'station-labels',filter:['==',['get','primary'],0],minzoom:16,layout:{'text-field':['get','text'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
+  map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',filter:['==',['get','primary'],1],minzoom:PHONE?12.01:13.01,layout:{'text-field':['step',['zoom'],['format',['get','l0'],{'text-color':['get','c0'],'font-scale':.78},['get','l1'],{'text-color':['get','c1'],'font-scale':.78},['get','l2'],{'text-color':['get','c2'],'font-scale':.78},['get','l3'],{'text-color':['get','c3'],'font-scale':.78},'\n',{},['get','text'],{}],16,['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}]],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
+  map.addLayer({id:'station-labels-more',type:'symbol',source:'station-labels',filter:['==',['get','primary'],0],minzoom:16,layout:{'text-field':['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
   // trains: their own canvas over the map (see TRAIN_FPS)
   {
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
@@ -1218,6 +1297,7 @@ map.on('load',()=>{
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
       const behind=walls.draw(pd.mainMatrix)?1-MAP_THEMES[effectiveTheme()].bld3dOpacity:0;
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
+      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
@@ -1256,7 +1336,7 @@ map.on('load',()=>{
    x.beginPath();x.roundRect(R,R,S-2*R,S-2*R,4*R);x.fillStyle='#141414';x.fill();
    x.beginPath();x.roundRect(2.2*R,2.2*R,S-4.4*R,S-4.4*R,3*R);x.fillStyle='#ffd400';x.fill();   // flat: thin ink rim, no drop shadow
    map.addImage('exit-sign',x.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
-  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'text-allow-overlap':true},paint:{'text-color':'#141414'}});   // above the 3D buildings so every exit stays readable; station names make way for them
+  map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'text-allow-overlap':true},paint:{'text-color':'#141414','text-opacity':0,'icon-opacity':0}});   // invisible: holds the exits' room so station names make way (the pillars are drawn with the trains)
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
