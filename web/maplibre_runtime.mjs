@@ -172,7 +172,8 @@ const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
 
 // ---- live train routing -------------------------------------------------------------
-function age(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Math.max(0,(Date.now()-Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]))/1000):0}
+function kstMs(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]):NaN}
+function age(v){const t=kstMs(v);return t===t?Math.max(0,(Date.now()-t)/1000):0}
 // Run time between adjacent stations: the GTFS timetable's median (edge_times.json, built by
 // build_edge_times.py); failing that, track length at the timetable's typical 12.4 m/s.
 let edgeTimes={},lineDwell={};
@@ -236,7 +237,9 @@ function planTrain(t){
   if(status==='진입'&&previous)run(previous,s,.75,brakes?.85:1,tm.approach);
   if(status==='전역출발'&&previous)run(previous,s);
   if(brakes)phases.push({from:previous,to:s,k0:.85,k1:1,dur:BRAKE,ease:'out'});
-  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,brakes?STAND:DWELL);
+  // a train standing at the terminus it starts from, minutes before leaving (proxy: departsAt)
+  const wait=t.departsAt?(kstMs(t.departsAt)-kstMs(t.receivedAt))/1000:0;
+  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,Math.max(brakes?STAND:DWELL,wait||0));
   for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
   // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
   const last=ahead[ahead.length-1],before=ahead.length>1?ahead[ahead.length-2]:previous;
@@ -260,7 +263,15 @@ function trainPose(p){
   const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
   // After fresh data (see replacePlans): never back up — wait where the train was drawn until the
   // new prediction passes it; a forward correction is run along the track instead of jumped.
-  if(p.hold!=null){if(dist<p.hold)return {dist:p.hold,moving:false};p.hold=null}
+  if(p.hold!=null){
+    // ahead of fresh data: run on to the station it was heading for and wait at the platform there
+    // (standing still between stations looked broken), then go on once the prediction catches up
+    let at=p.hold,creeping=false;
+    if(p.creep){const w=(performance.now()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
+    if(dist<p.hold)return {dist:at,moving:creeping};
+    if(creeping&&at<dist)p.glide={from:at,at:performance.now(),ms:1500};
+    p.hold=null;p.creep=null;
+  }
   if(p.glide){const w=(performance.now()-p.glide.at)/p.glide.ms;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
   return {dist,moving};
 }
@@ -278,7 +289,11 @@ function replacePlans(next){
     if(j>=0)from=p.cum[j]+(p.cum[j+1]-p.cum[j])*f;
     else{const k=p.seq.findIndex(s=>s.id===b);if(k<0)continue;from=Math.max(0,p.cum[k]-(1-f)*(o.cum[i+1]-o.cum[i]))}   // different route: nothing to carry over
     const to=trainPose(p).dist,m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits();
-    if(from>to){if((from-to)/m<HOLD_MAX_M)p.hold=from}
+    if(from>to){if((from-to)/m<HOLD_MAX_M){
+      // hold at the next station along (not where it happens to be drawn), reached at ~10 m/s
+      const k=p.cum.findIndex(c=>c>=from-1e-9),st=k>=0?p.cum[k]:from;p.hold=st;
+      if(st>from)p.creep={from,at:performance.now(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
+    }}
     else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M)p.glide={from,at:performance.now(),ms:Math.max(1500,Math.min(8000,(to-from)/m*10))};
   }
   plans=next;
@@ -784,16 +799,19 @@ function riderState(plan){
   return left<10?`${ph.from.name} → ${ph.to.name} · 곧 도착`:`${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
 }
 function trainSheetHTML(plan){
-  const t=plan.t,a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
-  const kv=(k,v)=>`<dt>${k}</dt><dd>${v}</dd>`,c=colors[t.line];
+  const t=plan.t,c=colors[t.line];
   const badges=[t.express?'<span class="b ex">급행</span>':'',t.last?'<span class="b last">막차</span>':''].join('');
   return `<div class="train-inspect" style="--c:${c}">
   <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
   <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
   <div class="tp-now">${esc(riderState(plan))}</div>
   <div class="sec">서울시 실시간 원본</div>
-  <dl class="kv">${kv('역',esc(t.station))}${kv('상태',esc(t.status))}${kv('방향',esc(t.direction))}${kv('행선지',esc(t.destination||'-'))}
-  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(liveFetchedAt))}</dl></div>`;
+  <dl class="kv">${rawFeedHTML(t)}</dl></div>`;
+}
+function rawFeedHTML(t){
+  const a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-',kv=(k,v)=>`<dt>${k}</dt><dd>${v}</dd>`;
+  return `${kv('역',esc(t.station))}${kv('상태',esc(t.status))}${kv('방향',esc(t.direction))}${kv('행선지',esc(t.destination||'-'))}
+  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(liveFetchedAt))}`;
 }
 function showTrainPopup(plan){
   const token=openSheet(trainSheetHTML(plan));sheetTrain=plan.id;
@@ -804,6 +822,8 @@ function showTrainPopup(plan){
     const pl=plans.find(p=>p.id===sheetTrain);if(!pl)return;
     const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest');
     if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';
+    // the raw record too: plan.t is replaced on every feed update, and the "N초 전" age ticks
+    const raw=sheetBody.querySelector('.train-inspect .kv'),h=rawFeedHTML(pl.t);if(raw&&raw.innerHTML!==h)raw.innerHTML=h;
   },1000);
 }
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
@@ -1409,8 +1429,9 @@ map.on('zoom',zoom);map.on('move',scheduleLabels);map.on('resize',scheduleLabels
 // Server caches ~90s and the upstream key has a daily quota: don't poll from background tabs.
 // The proxy refreshes upstream every 90 s and serves its cache in between, so polling it often is
 // free and picks up each upstream refresh within ~20 s.
-setInterval(()=>{if(!document.hidden)refreshLive(true)},20000);
-setInterval(()=>{if(!document.hidden&&sheetTrain)refreshLive(true)},10000);   // a selected train: every 10 s (served from the proxy's cache)
+// one timer: every 20 s, or every 10 s while a train's sheet is open (served from the proxy's cache).
+// Two separate 20 s / 10 s timers fired together every 20 s and sent the same request twice.
+setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
 window.__subwayWebGL={map,refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
