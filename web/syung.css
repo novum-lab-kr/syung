@@ -160,7 +160,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 .sheet.open{transform:none}
 .sheet[hidden]{display:none}
 .sheet-grab{width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 8px}
-.sheet-close{position:absolute;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
+.sheet-close{position:absolute;z-index:2;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
 .sheet-close:hover{background:var(--syung);color:var(--syung-ink)}
 .sheet-body{padding-right:36px;min-height:0;flex:0 1 auto;overflow:auto;overscroll-behavior:contain}   /* the body scrolls, not the sheet: a scrolling sheet over the WebGL canvas blanked the map above it in Chromium */
 .sheet-grab,.sheet-follow{flex:none}
@@ -246,69 +246,11 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jf-at select,.jf-at input{height:38px;padding:0 10px;border:1.5px solid var(--rule);border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:16px}
 .jf-at input{flex:1;min-width:0}
 .jf-at select:focus,.jf-at input:focus{outline:none;border-color:var(--syung-deep)}
-/* results up: the form folds into one line */
-.journey.done .jcard,.journey.done .jopts{display:none}
-.jsum{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:10px 14px;border:0;border-radius:14px;background:var(--control);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.jsum[hidden]{display:none}
-.jsum-trip{display:flex;align-items:center;gap:7px;min-width:0;max-width:100%;font-size:15px}
-.jsum-trip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.jsum-arrow{color:var(--muted)}
-.jsum-meta{font-size:12px;color:var(--secondary)}
-.jsum-meta u{text-decoration:none;font-weight:700;color:var(--ink)}
-.journey.done h3{display:none}
 .jf-list{position:absolute;z-index:5;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;border-radius:12px;background:var(--paper);box-shadow:var(--shadow);max-height:240px;overflow:auto}
 .jf-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .jf-list button:hover{background:var(--control)}
 .jf-list b{font-size:14px}.jf-list small,.jf-empty{font-size:12px;color:var(--muted)}.jf-empty{padding:8px 10px}
-.jf-status{font-size:13px;color:var(--secondary);min-height:18px}
-.jp{padding:10px 12px;border-radius:14px;background:var(--control);display:flex;flex-direction:column;gap:4px}
-.jp+.jp{margin-top:8px}
-.jp header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
-.jp-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--syung);color:var(--syung-ink)}
-.jp header strong{font-family:var(--round);font-weight:400;font-size:22px}
-.jp header span:last-child{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
-.jp-meta{margin:0;font-size:12px;color:var(--muted)}
-.jl-list{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column}
-.jl{display:grid;grid-template-columns:40px 12px 1fr;gap:8px;align-items:start;padding:4px 0}
-.jl-time{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;padding-top:1px}
-.jl-dot{width:12px;height:12px;margin-top:4px;border-radius:50%;background:var(--c,var(--muted));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--muted)) 25%,transparent)}
-.jl.walk .jl-dot{background:transparent;border:2px dashed var(--muted);box-shadow:none;width:10px;height:10px}
-.jl b{display:block;font-size:14px}.jl small{display:block;font-size:12px;color:var(--secondary)}
-.jl-live{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;color:#1f8f55}
-.jl-est{display:inline-block;margin-top:3px;font-size:11px;color:var(--muted)}
-.jp-note{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
-.jp{cursor:pointer;border:2px solid transparent;transition:border-color .15s}
-.jp.on{border-color:var(--syung-deep);background:var(--paper);box-shadow:var(--shadow)}
-.jp:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.jp-lines{display:flex;flex-wrap:wrap;gap:4px}
-.jp-line{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--c);color:#fff}
-.jp-line.walk{background:var(--rule);color:var(--ink)}
-.jp-line.bus::before{content:"";display:inline-block;width:9px;height:9px;margin-right:4px;vertical-align:-1px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z%27/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z%27/%3E%3C/svg%3E") center/contain no-repeat}
-.jl-bus{display:inline-block;padding:0 6px;border-radius:5px;background:var(--c);color:#fff;font-size:12px}
-/* 길찾기: chosen route bar while the sheet is closed */
-.jbar{position:absolute;z-index:15;left:14px;bottom:18px;width:min(460px,calc(100% - 84px));display:flex;align-items:stretch;background:var(--paper);color:var(--ink);border-radius:16px;box-shadow:var(--shadow);border:1.5px solid var(--syung)}
-.jbar[hidden]{display:none}
-.jbar-open{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:10px 4px 10px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.jbar-lines{display:flex;flex-wrap:wrap;gap:4px;width:100%}
-.jbar-open b{font-size:17px}
-.jbar-open span{font-size:13px}
-.jbar-more{margin-left:auto;font-weight:700;color:var(--syung-deep)}
-.jbar-x{width:44px;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;border-left:1px solid var(--rule)}
-@media(max-width:640px){.jbar{left:10px;bottom:12px;width:calc(100% - 76px)}}
-/* 길찾기: route kind tabs */
-.jtabs{display:flex;gap:6px;overflow-x:auto;margin:4px 0 10px;padding-bottom:2px;scrollbar-width:none}
-.jtabs::-webkit-scrollbar{display:none}
-.jt{flex:none;height:32px;padding:0 12px;border:1.5px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
-.jt b{margin-left:2px;color:var(--muted)}
-.jt.on{background:var(--syung);border-color:var(--syung);color:var(--syung-ink)}
-.jt.on b{color:inherit}
-.jp[hidden]{display:none}
-.jp-line i{font-style:normal;opacity:.8;font-size:10px}
-.jl-alts{display:block;margin-top:3px}
-.jl-alts .jl-bus{font-size:11px;margin-right:2px}
-/* many routes: only the chosen one shows its steps */
-.jp:not(.on) .jl-list{display:none}
-.sheet-body:has(.journey){padding-right:0}
+.sheet-body:has(.journey){margin:0 -12px;padding:0 12px}
 
 /* 길찾기 sheet: taller, so the routes have room under the form */
 .sheet:has(.journey){max-height:72%}
@@ -321,7 +263,160 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
   .identity h1{font-size:22px}
 }
 /* phones: pinch to zoom; the +/− buttons only take room */
-@media(pointer:coarse){.maplibregl-ctrl-top-right{display:none}}
-.journey.done .jsum{width:calc(100% - 44px)}   /* clear of the sheet's ✕ */
-.journey.done .jf-status:empty{display:none}
-.journey.done .jtabs{margin-top:0}
+@media(pointer:coarse){.maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in){display:none}}
+
+/* ==== 길찾기 results (lib/journey-ui.mjs) ==== */
+.jf-status{font-size:13px;color:var(--secondary);min-height:18px}
+.journey.done .jf-status:empty,.jf-status:empty{display:none}
+.journey.done h3,.journey.done .jcard,.journey.done .jopts{display:none}
+/* 출발/도착 card: a dotted rail joins the two ends */
+.jcard::before{content:"";position:absolute;left:18px;top:30px;bottom:30px;border-left:2px dotted var(--muted);opacity:.6}
+
+/* the trip, folded: from over to, the time, a pencil */
+.jsum{margin-left:2px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-items:center;gap:2px 10px;width:calc(100% - 44px);padding:2px 0 12px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.jsum[hidden]{display:none}
+.jsum-trip{display:flex;flex-direction:column;gap:3px;min-width:0}
+.jsum-end{display:flex;align-items:center;gap:9px;min-width:0;font-size:15px}
+.jsum-end b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jsum-end .jdot{width:8px;height:8px}
+.jsum-when{grid-column:1;font-size:12px;font-weight:600;color:var(--secondary);padding-left:17px}
+.jsum-edit{grid-column:2;grid-row:1/3;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--control);color:var(--ink)}
+.jsum-edit svg{width:17px;height:17px}
+.jsum:hover .jsum-edit{background:var(--syung);color:var(--syung-ink)}
+
+/* kind filter: the same segmented control as the time and the theme */
+.jkinds{align-self:flex-start;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.jkinds::-webkit-scrollbar{display:none}
+.jkinds button{padding:6px 12px;font-size:13px}
+.jkinds button b{margin-left:4px;font-weight:700;opacity:.55;font-variant-numeric:tabular-nums}
+.jkinds button[aria-pressed=true] b{opacity:.8}
+
+/* one row per route */
+.jplans{display:flex;flex-direction:column;margin-top:4px}
+.jp{position:relative;display:flex;flex-direction:column;gap:7px;padding:13px 12px 12px;margin:0 -12px;border-radius:16px;cursor:pointer;transition:background .18s}
+.jp+.jp::before{content:"";position:absolute;left:12px;right:12px;top:0;border-top:1px solid var(--rule)}
+.jp.on::before,.jp.on+.jp::before{display:none}
+.jp[hidden]{display:none}
+.jp:hover{background:color-mix(in srgb,var(--control) 55%,transparent)}
+.jp.on{background:var(--control)}
+.jp:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.jp-top{display:flex;align-items:baseline;gap:8px;min-width:0}
+.jp-min{font-family:var(--round);font-weight:400;font-size:26px;line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.jp-min small{font-size:15px;margin-left:1px}
+.jp-arr{font-size:14px;font-weight:700;color:var(--secondary);font-variant-numeric:tabular-nums}
+.jp-tag{margin-left:auto;align-self:center;flex:none;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--syung-soft);color:#5b4c00}
+html[data-theme=dark] .jp-tag{background:rgba(255,212,0,.14);color:var(--syung)}
+.jp-meta{margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--secondary);font-variant-numeric:tabular-nums}
+.jp-live{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font-size:11.5px;font-weight:700;color:#1f8f55}
+.jp-live::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 22%,transparent)}
+html[data-theme=dark] .jp-live{color:#3ddc84}
+
+/* the bar: walk, wait and every ride at their share of the trip */
+.jtrack{display:flex;align-items:center;gap:2px;height:24px}
+.jseg{display:flex;align-items:center;justify-content:center;gap:3px;min-width:5px;height:100%;border-radius:7px;overflow:hidden;white-space:nowrap;font-style:normal;font-size:11.5px;font-weight:800;letter-spacing:-.01em}
+.jseg svg{flex:none;width:12px;height:12px}
+.jseg.ride{min-width:10px;background:var(--c);color:var(--t);box-shadow:inset 0 -2px 0 rgba(0,0,0,.14)}
+.jseg.walk{min-width:6px;height:4px;border-radius:0;background:radial-gradient(circle,var(--muted) 1.6px,transparent 2px) 0 50%/6px 4px repeat-x;opacity:.9}
+.jseg.wait{min-width:3px;height:4px;border-radius:999px;background:var(--rule)}
+
+/* steps of the chosen route: times, a rail in the line colour, places */
+.jsteps{display:none;margin:6px 0 2px;padding:0;list-style:none}
+.jp.on .jsteps{display:block;animation:js-in .22s cubic-bezier(.2,.8,.25,1)}
+@keyframes js-in{from{opacity:0;transform:translateY(-4px)}}
+.js{display:grid;grid-template-columns:40px 16px minmax(0,1fr);column-gap:10px;align-items:start}
+.js-t{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--secondary);padding-top:1px;text-align:right}
+.js-b{min-width:0;padding:0 0 2px}
+.js-b b{display:block;font-size:14.5px;font-weight:700;line-height:1.35}
+.js-b small{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:12px;color:var(--secondary);line-height:1.45}
+.js-b small svg{width:13px;height:13px;flex:none}
+.js-b p{margin:0 0 2px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13.5px;font-weight:600}
+.js-dot{justify-self:center;width:14px;height:14px;margin-top:2px;border-radius:50%;background:var(--paper);box-shadow:inset 0 0 0 3.5px var(--c)}
+.jp.on .js-dot{background:var(--control)}
+.js.node.start .js-dot{background:var(--syung);box-shadow:inset 0 0 0 2px var(--syung-ink)}
+.js.node.end .js-dot{background:var(--syung-ink);box-shadow:inset 0 0 0 3px var(--syung)}
+.js.node.change .js-dot{width:16px;height:16px;margin-top:1px;box-shadow:inset 0 0 0 4px var(--c)}
+.js.node .js-b{padding-bottom:10px}
+.js-rail{justify-self:center;align-self:stretch;width:5px;margin:-10px 0 -2px;border-radius:3px;background:var(--c)}
+.js.walk .js-rail{width:0;border-left:3px dotted var(--muted);border-radius:0;background:none;opacity:.8}
+.js.ride .js-b,.js.walk .js-b{padding:1px 0 12px}
+.js-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:7px;background:var(--c);color:var(--t);font-size:12px;font-weight:800}
+.js-chip svg{width:12px;height:12px}
+.js-live{color:#1f8f55;font-weight:700}
+html[data-theme=dark] .js-live{color:#3ddc84}
+html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
+.jp-note{margin:10px 0 0;font-size:11.5px;line-height:1.5;color:var(--muted)}
+
+/* loading: the rows that will come, 슝 running along the first bar */
+.jload{display:flex;flex-direction:column;margin-top:2px}
+.jsk{display:flex;flex-direction:column;gap:9px;padding:14px 0 13px}
+.jsk+.jsk{border-top:1px solid var(--rule)}
+.jsk-min,.jsk-meta{display:block;height:18px;width:38%;border-radius:7px;background:var(--control)}
+.jsk-meta{height:11px;width:56%}
+.jsk-track{position:relative;height:24px;border-radius:7px;background:var(--control);overflow:hidden}
+.jsk:nth-child(2) .jsk-min{width:30%}.jsk:nth-child(3) .jsk-min{width:34%}
+.jsk:nth-child(2){opacity:.7}.jsk:nth-child(3){opacity:.45}
+.jsk-run{position:absolute;top:50%;left:0;width:34px;height:18px;margin-top:-9px;animation:jsk-run 1.6s cubic-bezier(.65,0,.35,1) infinite}
+.jsk-run i{position:absolute;inset:0;border-radius:6px;background:var(--syung);box-shadow:0 1px 0 rgba(20,20,20,.25)}
+.jsk-run i::after{content:"";position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--syung-ink)}
+.jsk-run::before{content:"";position:absolute;right:100%;top:4px;width:26px;height:10px;margin-right:3px;
+  background:linear-gradient(var(--syung),var(--syung)) 100% 0/60% 2px no-repeat,linear-gradient(var(--syung),var(--syung)) 100% 4px/100% 2px no-repeat,linear-gradient(var(--syung),var(--syung)) 100% 8px/45% 2px no-repeat;opacity:.8}
+@keyframes jsk-run{0%{left:-40px;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:calc(100% + 4px);opacity:0}}
+.jf-status:not(:empty):has(+ #jResult .jload){font-family:var(--round);font-size:15px;color:var(--ink)}
+@media(prefers-reduced-motion:reduce){.jsk-run{animation:none;left:calc(50% - 17px)}.jp.on .jsteps{animation:none}}
+
+/* nothing found */
+.jerr{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;border-radius:16px;background:var(--control)}
+.jerr b{font-family:var(--round);font-weight:400;font-size:18px}
+.jerr p{margin:0;font-size:13px;color:var(--secondary)}
+.jerr-retry{margin-top:6px;height:40px;padding:0 18px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:15px;cursor:pointer}
+
+/* chosen route while the sheet is closed */
+.jbar{position:absolute;z-index:15;left:14px;bottom:calc(18px + env(safe-area-inset-bottom,0px));width:min(460px,calc(100% - 84px));display:flex;align-items:stretch;background:var(--paper);color:var(--ink);border-radius:18px;box-shadow:var(--shadow)}
+.jbar[hidden]{display:none}
+.jbar-open{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding:11px 6px 12px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.jbar-top{display:flex;align-items:baseline;gap:8px}
+.jbar-top b{font-family:var(--round);font-weight:400;font-size:21px;line-height:1}
+.jbar-top b small{font-size:13px}
+.jbar-top span{font-size:13px;font-weight:700;color:var(--secondary)}
+.jbar-top .jbar-more{margin-left:auto;font-size:12.5px;color:var(--ink);text-decoration:underline;text-decoration-color:var(--syung);text-decoration-thickness:2px;text-underline-offset:3px}
+.jbar .jtrack{height:18px}
+.jbar .jseg{font-size:10.5px;border-radius:5px}
+.jbar-x{flex:none;width:44px;border:0;background:none;color:var(--muted);cursor:pointer;border-left:1px solid var(--rule);font-size:15px}
+.jbar-x:hover{color:var(--ink)}
+@media(max-width:640px){.jbar{left:10px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 76px)}}
+
+/* my location: under +/−, in the 슝 palette (the control's own icon is a blue sprite) */
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group+.maplibregl-ctrl-group{margin-top:8px}
+.maplibregl-ctrl-geolocate{color:var(--ink)}
+.maplibregl-ctrl-geolocate .maplibregl-ctrl-icon{background-image:none!important;background-color:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='7'/%3E%3Ccircle cx='12' cy='12' r='2.6' fill='black' stroke='none'/%3E%3Cpath d='M12 2v3M12 19v3M2 12h3M19 12h3'/%3E%3C/svg%3E") center/20px 20px no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='7'/%3E%3Ccircle cx='12' cy='12' r='2.6' fill='black' stroke='none'/%3E%3Cpath d='M12 2v3M12 19v3M2 12h3M19 12h3'/%3E%3C/svg%3E") center/20px 20px no-repeat}
+.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active{background:var(--syung)!important;color:var(--syung-ink)}
+.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-background{color:var(--syung-deep)}
+html[data-theme=dark] .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-background{color:var(--syung)}
+html[data-theme=dark] .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate .maplibregl-ctrl-icon{filter:none}   /* the runtime inverts the sprite icons in dark */
+.maplibregl-ctrl-geolocate-waiting .maplibregl-ctrl-icon{animation:me-wait 1.1s ease-in-out infinite}
+@keyframes me-wait{50%{opacity:.35}}
+.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active-error,.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-background-error{color:#d8452f}
+@media(pointer:coarse){.maplibregl-ctrl-geolocate{width:42px!important;height:42px!important}}
+@media(prefers-reduced-motion:reduce){.maplibregl-ctrl-geolocate-waiting .maplibregl-ctrl-icon{animation:none}}
+
+/* the preview's title box and legend, hidden here (the runtime hid them only once it had loaded,
+   so a reload showed "655개 역 노드 전체 보기" and the KTDB legend for a second or two) */
+.map-status,.legend{display:none!important}
+/* dark ground under the map from the first paint (the light preview grid showed until the map loaded) */
+html[data-theme=dark] .map{background-color:#10181c!important;background-image:none!important}
+/* the dark theme's logo from the first paint too (the runtime swaps the <img> src once loaded) */
+html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
+
+/* phone keyboard up: the sheet sits on it (--kb from the runtime), the header and map stay put */
+.sheet{bottom:var(--kb,0px);transition:transform .32s cubic-bezier(.2,.8,.25,1),bottom .2s ease-out}
+.sheet.kb{max-height:calc(100% - var(--kb,0px) - 8px);border-radius:22px 22px 0 0;padding-bottom:10px}
+.sheet.kb .sheet-grab{display:none}
+@media(prefers-reduced-motion:reduce){.sheet{transition:none}}
+/* typing a place: the matches open right under the card, in the flow (a popover the scrolling body would clip);
+   the time row and the swap step aside until one is picked */
+.journey .jf-list{position:static;margin:-4px 0 0;max-height:none;padding:4px;box-shadow:none;background:var(--control);border-radius:14px}
+.journey .jf-list[hidden]{display:none}
+.jf-list button{min-height:48px}
+.journey:has(.jf-list:not([hidden])) .jopts,.journey:has(.jf-list:not([hidden])) .jswap{display:none}

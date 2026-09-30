@@ -12,7 +12,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
   const bar = document.createElement('div');
   bar.className = 'jbar'; bar.hidden = true;
-  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기">✕</button>';
+  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(bar);
   bar.querySelector('.jbar-open').onclick = () => open();
   bar.querySelector('.jbar-x').onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
@@ -28,13 +28,13 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   <div class="jcard">
     <div class="jf jrow"><i class="jdot from" aria-hidden="true"></i>
       <input id="jFrom" type="text" autocomplete="off" aria-label="출발지" placeholder="출발지 (주소나 장소)" value="${here ? '내 위치' : ''}">
-      ${here ? `<button type="button" class="jf-here" id="jHere" aria-label="내 위치에서 출발" title="내 위치">${PIN}</button>` : ''}
-      <ul class="jf-list" id="jFromList" hidden></ul></div>
+      ${here ? `<button type="button" class="jf-here" id="jHere" aria-label="내 위치에서 출발" title="내 위치">${PIN}</button>` : ''}</div>
     <div class="jf jrow"><i class="jdot to" aria-hidden="true"></i>
-      <input id="jTo" type="text" autocomplete="off" aria-label="도착지" placeholder="어디로 갈까요?">
-      <ul class="jf-list" id="jToList" hidden></ul></div>
+      <input id="jTo" type="text" autocomplete="off" aria-label="도착지" placeholder="어디로 갈까요?"></div>
     <button type="button" class="jswap" id="jSwap" aria-label="출발지와 도착지 바꾸기" title="바꾸기">${SWAP}</button>
   </div>
+  <ul class="jf-list" id="jFromList" aria-label="출발지 찾기 결과" hidden></ul>
+  <ul class="jf-list" id="jToList" aria-label="도착지 찾기 결과" hidden></ul>
   <div class="jopts" role="group" aria-label="출발 시각">
     <div class="segmented jf-when"><button type="button" data-when="now" aria-pressed="true">지금 출발</button><button type="button" data-when="later" aria-pressed="false">시간 지정</button></div>
     <div class="jf-at" hidden>
@@ -116,70 +116,113 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     sum.hidden = !on;
     if (on) {
       const at = whenValue(), t = at ? `${document.getElementById('jDay').value === '1' ? '내일 ' : ''}${at.slice(11)} 출발` : '지금 출발';
-      sum.innerHTML = `<span class="jsum-trip"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b><span class="jsum-arrow">→</span><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span><span class="jsum-meta">${esc(t)} · <u>바꾸기</u></span>`;
+      sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span></span><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}</span>`;
       sum.setAttribute('aria-label', `${document.getElementById('jFrom').value}에서 ${document.getElementById('jTo').value}까지, ${t}. 눌러서 바꾸기`);
     }
   }
 
-  function legHTML(l) {
-    if (l.type === 'walk') {
-      return `<li class="jl walk"><span class="jl-time"></span><span class="jl-dot"></span><div><b>걷기 ${min(l.seconds)}분</b><small>${esc(l.label)} · ${Math.round(l.metres / 10) * 10}m</small></div></li>`;
+  // ---- results: one row per route; a bar shows each part of the trip at its real share of the time
+  const hm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+  const legSecs = l => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
+  const legColor = l => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
+  const legName = l => l.type === 'bus' ? l.route : l.line;
+  const legShort = l => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
+  // text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
+  const inkOn = hex => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
+    const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+    const L = .2126 * r + .7152 * g + .0722 * b;
+    return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
+  const dur = m => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
+  const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
+  const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
+  const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
+
+  function track(p, width = 330) {
+    const segs = [];
+    for (const l of p.legs) {
+      if (l.type !== 'walk' && l.wait > 30) segs.push({k: 'wait', s: l.wait});
+      segs.push({k: l.type === 'walk' ? 'walk' : 'ride', s: legSecs(l), l});
     }
-    if (l.type === 'bus') {
-      return `<li class="jl ride bus" style="--c:${l.color}"><span class="jl-time">${esc(l.departs)}</span><span class="jl-dot"></span><div>
-      <b>${esc(l.from)}에서 <span class="jl-bus">${esc(l.route)}</span>번 버스 타기</b>
-      <small>${esc(l.toward)} 방면 · ${esc(l.to)} ${esc(l.arrives)} 도착 · ${l.stops}정류장${l.wait > 60 ? ` · ${min(l.wait)}분 기다림` : ''}</small>
-      ${l.alts?.length ? `<small class="jl-alts">같은 길: ${l.alts.map(a => `<span class="jl-bus">${esc(a)}</span>`).join(' ')}</small>` : ''}
-      <span class="jl-est">시간표 기준 예상</span></div></li>`;
+    const total = segs.reduce((a, g) => a + g.s, 0) || 1;
+    return `<div class="jtrack" aria-hidden="true">${segs.map(g => {
+      const px = g.s / total * width;
+      if (g.k === 'walk') return `<i class="jseg walk" style="flex:${g.s} 1 0"></i>`;
+      if (g.k === 'wait') return `<i class="jseg wait" style="flex:${g.s} 1 0"></i>`;
+      const c = legColor(g.l), label = px >= 14 + legName(g.l).length * 8 ? legName(g.l) : px >= 26 ? legShort(g.l) : '';
+      return `<i class="jseg ride${g.l.type === 'bus' ? ' bus' : ''}" style="flex:${g.s} 1 0;--c:${c};--t:${inkOn(c)}">${g.l.type === 'bus' && px >= 64 ? BUS : ''}${esc(label)}</i>`;
+    }).join('')}</div>`;
+  }
+
+  // the steps of the chosen route: places (with times) joined by rides and walks on a rail
+  function steps(p) {
+    const station = (l, n) => l.type === 'bus' ? n : `${n}역`;
+    const items = [{n: 'start', name: last?.from || '출발', t: p.leaveBy, c: 'var(--syung)'}];
+    for (const l of p.legs) {
+      if (l.type === 'walk') { items.push({e: 'walk', l}); continue; }
+      items.push({n: 'board', name: station(l, l.from), t: l.departs, c: legColor(l)}, {e: 'ride', l}, {n: 'alight', name: station(l, l.to), t: l.arrives, c: legColor(l)});
     }
-    const c = colors[l.line] || '#888';
-    const dest = l.destination ? `${esc(l.destination)}행` : esc(l.direction || '');
-    const live = l.realtime ? `<span class="jl-live">실시간 · 지금 ${esc(l.trainNow)}</span>` : `<span class="jl-est">배차 간격 기준 예상</span>`;
-    return `<li class="jl ride" style="--c:${c}"><span class="jl-time">${esc(l.departs)}</span><span class="jl-dot"></span><div>
-      <b>${esc(l.from)}역에서 ${esc(l.line)} ${dest} 타기</b>
-      <small>${esc(l.to)}역 ${esc(l.arrives)} 도착 · ${l.stops}정거장${l.wait > 60 ? ` · ${min(l.wait)}분 기다림` : ''}</small>${live}</div></li>`;
+    items.push({n: 'end', name: last?.to || '도착', t: p.arrives, c: 'var(--ink)'});
+    const rows = [];
+    for (let k = 0; k < items.length; k++) {   // two places in a row: one stop, where the change happens
+      const a = items[k], b = items[k + 1];
+      if (a.n && b?.n) { rows.push({n: 'change', name: a.name === b.name ? a.name : `${a.name} → ${b.name}`, t: a.t, t2: b.t, c: b.c}); k++; }
+      else rows.push(a);
+    }
+    return `<ol class="jsteps">${rows.map(r => {
+      if (r.n) return `<li class="js node ${r.n}" style="--c:${r.c}"><span class="js-t">${esc(r.t)}</span><span class="js-dot"></span><div class="js-b"><b>${esc(r.name)}</b>${r.n === 'change' ? `<small>갈아타기${r.t2 && r.t2 !== r.t ? ` · ${esc(r.t2)} 출발` : ''}</small>` : ''}</div></li>`;
+      const l = r.l;
+      if (r.e === 'walk') return `<li class="js walk"><span class="js-t"></span><span class="js-rail"></span><div class="js-b"><small>${WALK}걷기 ${min(l.seconds)}분 · ${Math.round(l.metres / 10) * 10}m${l.exit ? ` · ${esc(l.exit)}번 출구` : ''}</small></div></li>`;
+      const c = legColor(l), toward = l.type === 'bus' ? `${esc(l.toward)} 방면` : (l.destination ? `${esc(l.destination)}행` : esc(l.direction || ''));
+      const note = l.type === 'bus' ? (l.alts?.length ? `같은 길 ${l.alts.map(esc).join(' · ')}` : '시간표 기준') : (l.realtime ? `<span class="js-live">실시간 · 지금 ${esc(l.trainNow)}</span>` : '배차 간격 기준');
+      return `<li class="js ride" style="--c:${c};--t:${inkOn(c)}"><span class="js-t"></span><span class="js-rail"></span><div class="js-b">
+        <p><span class="js-chip">${l.type === 'bus' ? BUS : ''}${esc(legName(l))}</span>${toward}</p>
+        <small>${l.stops}${l.type === 'bus' ? '정류장' : '정거장'}${l.wait > 60 ? ` · ${min(l.wait)}분 기다림` : ''} · ${note}</small></div></li>`;
+    }).join('')}</ol>`;
   }
 
   function planHTML(p, i) {
-    const tag = p.tag;
-    const lines = chips(p);
-    return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(tag || '경로')} ${p.minutes}분, 지도에서 보기">
-  <div class="jp-lines">${lines}</div>
-  <header>${tag ? `<span class="jp-tag">${esc(tag)}</span>` : ''}<strong>${p.minutes}분</strong><span>${esc(p.leaveBy)} 출발 → ${esc(p.arrives)} 도착</span></header>
-  <p class="jp-meta">환승 ${p.transfers}번 · 걷기 ${p.walkMinutes}분</p>
-  <ol class="jl-list">${p.legs.map(legHTML).join('')}</ol>
+    const live = p.legs.some(l => l.realtime);
+    return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(p.tag || '경로')} ${p.minutes}분, ${esc(p.arrives)} 도착, 지도에서 보기">
+  <div class="jp-top"><strong class="jp-min">${dur(p.minutes)}</strong><span class="jp-arr">${esc(p.arrives)} 도착</span>${p.tag ? `<span class="jp-tag">${esc(p.tag)}</span>` : ''}</div>
+  ${track(p)}
+  <p class="jp-meta">${esc(p.leaveBy)} 출발 · 환승 ${p.transfers}번 · 걷기 ${p.walkMinutes}분${live ? '<span class="jp-live">실시간</span>' : ''}</p>
+  ${steps(p)}
 </article>`;
-  }
-
-  function chips(p) {
-    return p.legs.filter(l => l.type !== 'walk').map(l => l.type === 'bus'
-      ? `<span class="jp-line bus" style="--c:${l.color}">${esc(l.route)}${l.alts?.length ? ` <i>+${l.alts.length}</i>` : ''}</span>`
-      : `<span class="jp-line" style="--c:${colors[l.line] || '#888'}">${esc(l.line)}</span>`).join('') || '<span class="jp-line walk">걷기</span>';
   }
 
   const KINDS = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']];
   function render(d, sel) {
     const out = document.getElementById('jResult');
     const count = k => d.plans.filter(p => k === 'all' || p.kind === k).length;
-    const tabs = KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
-      `<button type="button" class="jt${(last.tab || 'all') === k ? ' on' : ''}" data-k="${k}" aria-pressed="${(last.tab || 'all') === k}">${name} <b>${count(k)}</b></button>`).join('');
-    out.innerHTML = `<div class="jtabs" role="group" aria-label="경로 종류">${tabs}</div>` + d.plans.map(planHTML).join('') + '<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
+    const kinds = KINDS.filter(([k]) => k !== 'all' && count(k));
+    if (kinds.length < 2) last.tab = 'all';   // one kind only: nothing to filter
+    const tabs = kinds.length < 2 ? '' : `<div class="segmented jkinds" role="group" aria-label="경로 종류">${KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
+      `<button type="button" data-k="${k}" aria-pressed="${(last.tab || 'all') === k}">${name}<b>${count(k)}</b></button>`).join('')}</div>`;
+    out.innerHTML = tabs + `<div class="jplans">${d.plans.map(planHTML).join('')}</div>` + '<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>';
     const cards = [...out.querySelectorAll('.jp')];
     const filter = k => {
       last.tab = k;
-      out.querySelectorAll('.jt').forEach(b => { b.classList.toggle('on', b.dataset.k === k); b.setAttribute('aria-pressed', String(b.dataset.k === k)); });
+      out.querySelectorAll('.jkinds button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
       cards.forEach((c, i) => { c.hidden = !(k === 'all' || d.plans[i].kind === k); });
       if (cards[last.sel]?.hidden) { const i = cards.findIndex(c => !c.hidden); if (i >= 0) pick(i); }
     };
-    out.querySelectorAll('.jt').forEach(b => b.addEventListener('click', () => filter(b.dataset.k)));
-    const pick = i => { last.sel = i; cards.forEach((c, j) => c.classList.toggle('on', j === i)); showRoute?.(d.plans[i]); };
+    out.querySelectorAll('.jkinds button').forEach(b => b.addEventListener('click', () => filter(b.dataset.k)));
+    const pick = i => { last.sel = i; cards.forEach((c, j) => { c.classList.toggle('on', j === i); c.setAttribute('aria-expanded', String(j === i)); }); showRoute?.(d.plans[i]); };
     cards.forEach((c, i) => {
       c.addEventListener('click', () => { if (last.sel === i && c.classList.contains('on')) closeSheet?.(); else pick(i); });
-      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(i); } });
+      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); c.click(); } });
     });
     pick(sel);
     filter(last.tab || 'all');
-    cards[last.sel]?.scrollIntoView?.({block: 'nearest'});
+  }
+
+  // while the routes are worked out (a few seconds): the rows they will fill, 슝 running along the first
+  const LOADING = `<div class="jload" aria-hidden="true">${[0, 1, 2].map(i => `<div class="jsk"><i class="jsk-min"></i><div class="jsk-track">${i === 0 ? '<span class="jsk-run"><i></i></span>' : ''}</div><i class="jsk-meta"></i></div>`).join('')}</div>`;
+  function failed(out, msg) {
+    const status = document.getElementById('jStatus');
+    if (status) { status.textContent = `경로를 찾지 못했어요. ${msg}`; status.classList.add('sr'); }   // announced; the card below shows it
+    out.innerHTML = `<div class="jerr"><b>경로를 찾지 못했어요</b><p>${esc(msg)}</p><button type="button" class="jerr-retry">다시 찾기</button></div>`;
+    out.querySelector('.jerr-retry').addEventListener('click', () => go());
   }
 
   async function go() {
@@ -189,19 +232,19 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     if (!from) { status.textContent = '출발지를 목록에서 골라 주세요.'; return; }
     if (!to) { status.textContent = '도착지를 목록에서 골라 주세요.'; return; }
     const at = whenValue();
-    status.textContent = '경로를 찾는 중…'; out.replaceChildren(); fold(false);
+    status.classList.remove('sr'); status.textContent = '경로를 찾고 있어요'; out.innerHTML = LOADING; fold(false);
     document.activeElement?.blur?.();   // phone keyboard down, so the results have the room
     try {
       const r = await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
       const d = await r.json();
       if (my !== goSeq || !out.isConnected) return;   // a newer search took over, or the sheet shows something else now
-      if (!d.ok) { status.textContent = d.error || '경로를 찾지 못했어요. 출발지나 도착지를 바꿔 보세요.'; return; }
+      if (!d.ok) { failed(out, d.error || '출발지나 도착지를 바꿔 보세요.'); return; }
       status.textContent = '';
       last = {d, sel: 0, from: trip.from, to: trip.to, at, picked: trip.picked};
       render(d, 0);
       fold(true);
       const sh = out.closest('.sheet-body'); if (sh) sh.scrollTop = 0;   // the trip line and the tabs first
-    } catch { if (my === goSeq) status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
+    } catch { if (my === goSeq && out.isConnected) { failed(out, '연결이 불안정해요. 잠시 뒤 다시 찾아 주세요.'); } }
   }
 
   function open(fresh = false) {
@@ -246,7 +289,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     const was = inSheet; inSheet = false;
     if (!last || !was) return false;
     const p = last.d.plans[last.sel];
-    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-lines">${chips(p)}</span><b>${p.minutes}분</b><span>${esc(p.leaveBy)} → ${esc(p.arrives)}</span><span class="jbar-more">결과 보기</span>`;
+    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span><span class="jbar-more">결과 보기</span></span>${track(p, 240)}`;
     bar.hidden = false;
     return true;
   }

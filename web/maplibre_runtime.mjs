@@ -150,7 +150,7 @@ const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRat
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:false,maximumAge:10000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
-map.addControl(geolocate,'bottom-right');
+map.addControl(geolocate,'top-right');   // under +/−; alone on phones, where +/− are hidden
 let autoLocating=false;
 geolocate.on('error',()=>{if(autoLocating){autoLocating=false;return}updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
 // First visit: fly to where the viewer is (inside the 수도권 only; elsewhere, or without permission,
@@ -751,6 +751,14 @@ function closeSheet(){
   setTimeout(()=>{if(!sheet.classList.contains('open'))sheet.hidden=true},260);
 }
 sheet.querySelector('.sheet-close').onclick=closeSheet;
+// Phone keyboard: only the sheet rises above it. iOS scrolls the whole page up to show a focused field
+// (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
+if(window.visualViewport){const vv=visualViewport;
+  const fitKeyboard=()=>{const kb=vv.scale>1.01?0:Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
+    sheet.style.setProperty('--kb',kb+'px');sheet.classList.toggle('kb',kb>40);
+    if(scrollY||document.documentElement.scrollTop||document.body.scrollTop){scrollTo(0,0);document.body.scrollTop=0}};
+  vv.addEventListener('resize',fitKeyboard);vv.addEventListener('scroll',fitKeyboard);
+  addEventListener('scroll',()=>{if(sheet.classList.contains('kb'))fitKeyboard()},{passive:true})}
 addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 // Following: the camera keeps the chosen train in the middle of the map above the sheet.
 // Dragging the map stops it; the button in the sheet starts it again.
