@@ -186,16 +186,55 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
             grouped[(line, train_no)].append(row)
 
     def rank(row: dict) -> tuple[int, int]:
+        # A 진입/도착/출발 row far out is not where the train is now: on the 응암 loop a 하행 train
+        # entering it (역촌 2분 후) also has "응암 도착" 12 minutes out, for coming round again — taken
+        # as at 응암, it was run on toward 새절 and vanished (6303, 2026-09-30). Then the nearest row.
         code = str(row.get("arvlCd"))
         eta = int(row["barvlDt"]) if str(row.get("barvlDt") or "").isdigit() else 99999
-        return (0 if code in ("0", "1", "2") else 1 if code in ("3", "4", "5") else 2, eta)
+        return (0 if code in ("0", "1", "2") and eta < 300 else 1 if code in ("3", "4", "5") and eta < 480 else 2, eta)
 
     # 전역 출발/진입/도착 (3/4/5) are about the station before the row's one; arvlMsg3 names it on
     # most rows but the row's own station on some (5·6호선): then take statnFid's station (not
     # always: 공항철도's statnFid points at stations that are not even adjacent)
     names = {str(r.get("statnId")): _clean_station(r.get("statnNm")) for r in payload.get("realtimeArrivalList") or []}
+    # A train's next trip is listed before it starts: at 신내 a 상행 '응암순환' number appears while the
+    # train is still running in as 하행, placed where that 하행 train is (6308/6310 at 화랑대·태릉입구,
+    # 2026-09-30) — a ghost that runs backwards and then jumps to 신내. Such a train is listed only at
+    # stations where the other direction's trains end (not its own destination; a running train is also
+    # listed at the stations after), and is not there yet (see below): it has to get there before this
+    # trip begins. Its current trip is
+    # drawn under its other number; skip this one until it starts.
+    ends: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for (line, _), rows in grouped.items():
+        for r in rows:
+            ends[(line, str(r.get("updnLine") or ""))].add(_clean_station(r.get("bstatnNm")))
+    other = {"상행": "하행", "하행": "상행", "내선": "외선", "외선": "내선"}
+
+    def next_trip(line: str, rows: list[dict]) -> bool:
+        for r in rows:
+            at, code = _clean_station(r.get("statnNm")), str(r.get("arvlCd"))
+            eta = int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 0
+            if at not in ends[(line, other.get(str(r.get("updnLine") or ""), ""))] or at == _clean_station(r.get("bstatnNm")):
+                return False
+            # not there yet: "22분 후 (화랑대)" from elsewhere, or 전역 출발/진입/도착 still 8+ minutes out
+            # (6310 "신내 전역출발" 18 min while it ran in as 6283; a running one is 1–4 min)
+            if not ((code == "99" and _clean_station(r.get("arvlMsg3")) != at) or (code in ("3", "4", "5") and eta >= 480)):
+                return False
+        return True
+
     out: dict[str, list[dict]] = defaultdict(list)
+    skipped, idle = set(), set()
     for (line, train_no), rows in grouped.items():
+        if next_trip(line, rows):
+            skipped.add((line, train_no))
+            continue
+        # Not running yet, wherever the position feed puts it: its nearest row is 전역 출발/진입/도착
+        # (one station away) but 8+ minutes out — standing at a terminus or coming out of the depot.
+        # 6312 sat in the position feed as "봉화산 전역출발" (신내 → 봉화산, a 2-minute run) for 4+
+        # minutes while this feed had it 15 minutes out and 6310 was still at the 신내 platform.
+        near = min(rows, key=lambda r: int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 99999)
+        if str(near.get("arvlCd")) in ("3", "4", "5") and str(near.get("barvlDt") or "").isdigit() and int(near["barvlDt"]) >= 480:
+            idle.add((line, train_no))
         # Rows for one train (one per upcoming station) are not updated together: take the most
         # recently received one, so an older row resurfacing cannot move the train back.
         latest = max(str(r.get("recptnDt") or "") for r in rows)
@@ -212,6 +251,21 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
             station, status = current, "운행 중"
         if not station:
             continue
+        # Standing at a terminus 8+ minutes before leaving — 진입/도착/출발 there with a long wait (5717
+        # 방화 14 min, 6316 신내 45 min), or a 전역 row far out (6308 "봉화산 전역출발" 11 min: at 신내):
+        # the map holds it there till departsAt instead of running it off after a normal dwell.
+        departs = None
+        terminus = ends[(line, other.get(str(row.get("updnLine") or ""), ""))] - {_clean_station(row.get("bstatnNm"))}
+        eta_of = lambda r: int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 0
+        wait = next((r for r in rows if str(r.get("arvlCd")) in ("0", "1", "2") and eta_of(r) >= 480
+                     and _clean_station(r.get("statnNm")) == station), None) if station in terminus else None
+        lead = 0
+        if wait is None and code in ("3", "4", "5") and eta_of(row) >= 480 and station in terminus:
+            wait, lead = row, 120
+        stamp = _kst(str(wait.get("recptnDt") or "")) if wait else None
+        if stamp:
+            status = "도착"
+            departs = (stamp + timedelta(seconds=eta_of(wait) - lead)).strftime("%Y-%m-%d %H:%M:%S")
         out[line].append({
             "line": line,
             "trainNo": train_no,
@@ -223,10 +277,17 @@ def normalize_arrivals(payload: dict) -> dict[str, list[dict]]:
             "express": str(row.get("btrainSttus") or "") not in ("", "일반"),
             "last": str(row.get("lstcarAt") or "0") == "1",
             "receivedAt": row.get("recptnDt"),
+            **({"departsAt": departs} if departs else {}),   # the map holds it there till then
         })
+    _next_trips.clear()
+    _next_trips.update(skipped)   # the position feed lists these too (6310 신내 전역출발): overlay_positions
+    _idle.clear()
+    _idle.update(idle)
     return out
 
 
+_next_trips: set[tuple[str, str]] = set()
+_idle: set[tuple[str, str]] = set()   # not running yet (normalize_arrivals); kept off position-feed lines
 _last_seen: dict[tuple[str, str], dict] = {}
 
 
@@ -421,6 +482,19 @@ def _fetch_line(line: str) -> dict:
 _position_lock = threading.Lock()
 _position_cache: dict[str, tuple[float, list[dict]]] = {}
 _position_used = {"day": "", "calls": 0}
+_position_seen: dict[str, float] = {}   # line -> last time a request asked for it (lines being watched now)
+
+
+def _position_ttl(line: str, ttl: int, now: float) -> float:
+    """`ttl`, stretched when the budget left would not last until midnight with every line watched
+    in the last 2 minutes read at that pace (like _all_interval): with many people spread over many
+    lines the overlay slows down instead of running out in the afternoon and stopping for the day."""
+    _position_seen[line] = now
+    active = sum(1 for t in _position_seen.values() if now - t < 120)
+    t = datetime.now(KST)
+    to_midnight = (t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - t).total_seconds()
+    left = POSITION_BUDGET - _position_used["calls"]
+    return max(ttl, min(MAX_PACE_SECONDS, to_midnight * active / max(1, left)))
 
 
 def _position_hours(now: datetime | None = None) -> bool:
@@ -442,10 +516,11 @@ def _positions(line: str, ttl: int) -> list[dict] | None:
     """The line's trains from the position feed, at most `ttl` seconds old; None when unavailable."""
     with _position_lock:
         now, cached = time.time(), _position_cache.get(line)
-        if cached and now - cached[0] < ttl:
-            return cached[1]
         if _position_used["day"] != _today():
             _position_used.update(day=_today(), calls=0)
+        ttl = _position_ttl(line, ttl, now)
+        if cached and now - cached[0] < ttl:
+            return cached[1]
         if _quiet() or not _position_hours() or DAILY_LIMIT - _quota_used < POSITION_RESERVE or _position_used["calls"] >= POSITION_BUDGET:
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
         _position_used["calls"] += 1
@@ -464,13 +539,18 @@ def overlay_positions(body: dict, lines: list[str], focus: str) -> dict:
     names = set(LINE_NAMES.values())
     picks = [focus] if focus in names else []
     picks += [l for l in lines[:POSITION_LINES] if l not in picks]
-    if not POSITION_LINES or not picks:
+    if not POSITION_LINES or not (picks or _position_cache):
         return body
     trains = list(body.get("trains") or [])
     at = {(t["line"], t["trainNo"]): i for i, t in enumerate(trains)}
     used = []
-    for line in picks:
-        pos = _positions(line, FOCUS_SECONDS if line == focus else POSITION_SECONDS)
+    # also the other requested lines whose position feed was read lately for someone else (no call):
+    # a line dropping out of the first POSITION_LINES as the map moves no longer flips back to the
+    # all-stations roster, ghosts and all (6308 at 봉화산 showing and going, 2026-09-30)
+    now = time.time()
+    recent = {l: c[1] for l in lines if l not in picks and (c := _position_cache.get(l)) and now - c[0] < 2 * POSITION_SECONDS}
+    for line in picks + list(recent):
+        pos = recent[line] if line in recent else _positions(line, FOCUS_SECONDS if line == focus else POSITION_SECONDS)
         if pos is None:
             continue
         used.append(line)
@@ -482,10 +562,19 @@ def overlay_positions(body: dict, lines: list[str], focus: str) -> dict:
                 # disagree for a while (2호선: 30 of 511)
                 old = trains[i]
                 trains[i] = {**p, "direction": old.get("direction") or p["direction"],
-                             "destination": old.get("destination") or p["destination"], "source": "position"}
+                             "destination": old.get("destination") or p["destination"], "source": "position",
+                             # still standing at the terminus it starts from (normalize_arrivals)
+                             **({"departsAt": old["departsAt"]} if old.get("departsAt") and p["station"] == old["station"] else {})}
+            elif (p["line"], p["trainNo"]) in _next_trips:
+                continue   # a next trip listed before it starts (normalize_arrivals)
             else:
                 flip = {"상행": "하행", "하행": "상행"} if line == "9호선" else {}
                 trains.append({**p, "direction": flip.get(p["direction"], p["direction"]), "source": "position"})
+    # On a line read from the position feed, that feed is the roster: a train only the all-stations
+    # feed has is a next trip listed early (6308 "봉화산 도착" while not on the line, 2026-09-30), or
+    # one that ended its run at a terminus (5175 하남검단산, 3362 대화) — not a train on the line.
+    # Nor is one that feed has as not running yet (_idle: 6312).
+    trains = [t for t in trains if t["line"] not in used or (t.get("source") == "position" and (t["line"], t["trainNo"]) not in _idle)]
     return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used,
             "positionBudget": {"used": _position_used["calls"], "limit": POSITION_BUDGET}}
 
