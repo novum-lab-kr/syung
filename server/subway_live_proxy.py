@@ -22,7 +22,7 @@ CACHE_SECONDS = max(15, int(os.environ.get("SUBWAY_LIVE_CACHE_SECONDS", "90"))) 
 FOCUSED_CACHE_SECONDS = max(5, min(CACHE_SECONDS, int(os.environ.get("SUBWAY_LIVE_FOCUSED_CACHE_SECONDS", "15"))))
 DAILY_LIMIT = max(1, int(os.environ.get("SUBWAY_LIVE_DAILY_LIMIT", "950")))   # raise it when the key's quota is raised
 # No upstream calls while no trains run (KST, "HH:MM-HH:MM", may wrap midnight; empty = always call).
-QUIET_HOURS = os.environ.get("SUBWAY_LIVE_QUIET_HOURS", "01:30-05:15").strip()
+QUIET_HOURS = os.environ.get("SUBWAY_LIVE_QUIET_HOURS", "01:40-04:25").strip()   # no trains then: the last run till ~01:30, the first from ~04:30
 API_KEY = os.environ.get("SEOUL_SUBWAY_API_KEY", "sample").strip() or "sample"
 API_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimePosition/0/1000/{}"
 # One call returns arrival rows for every station on every line (~3k rows); used as the primary
