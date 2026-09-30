@@ -43,7 +43,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       <div class="jw-clock" aria-live="polite">
         <div class="jw-col"><button type="button" class="jw-step" data-u="h" data-s="1" aria-label="1시간 늦게">${UP}</button><output id="jWhenH">00</output><button type="button" class="jw-step" data-u="h" data-s="-1" aria-label="1시간 이르게">${DOWN}</button></div>
         <span class="jw-colon" aria-hidden="true">:</span>
-        <div class="jw-col"><button type="button" class="jw-step" data-u="m" data-s="10" aria-label="10분 늦게">${UP}</button><output id="jWhenM">00</output><button type="button" class="jw-step" data-u="m" data-s="-10" aria-label="10분 이르게">${DOWN}</button></div>
+        <div class="jw-col"><button type="button" class="jw-step" data-u="m" data-s="1" aria-label="1분 늦게">${UP}</button><output id="jWhenM">00</output><button type="button" class="jw-step" data-u="m" data-s="-1" aria-label="1분 이르게">${DOWN}</button></div>
       </div>
       <button type="button" class="jw-go" id="jWhenGo">이 시간에 출발</button>
     </div>
@@ -59,7 +59,8 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   const local = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const hhmm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const isTomorrow = d => d.toDateString() !== new Date().toDateString();
-  const soonest = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(Math.ceil((d.getMinutes() + 1) / 10) * 10); return d; };
+  const soonest = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + 1); return d; };   // the next minute
+  const nextTen = () => { const d = soonest(); d.setMinutes(Math.ceil(d.getMinutes() / 10) * 10); return d; };   // where the picker starts
   const latest = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 50, 0, 0); return d; };
   const clamp = d => new Date(Math.min(latest(), Math.max(soonest(), d)));
   function whenValue() { return when.k === 'at' ? local(when.d) : ''; }
@@ -70,7 +71,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     document.getElementById('jWhenText').textContent = whenLabel();
     row.classList.toggle('set', w.k === 'at');
   }
-  // hours move the time by an hour; minutes by 10 within the hour (50 → 00 keeps the hour); then kept in range
+  // hours move the time by an hour; minutes by one within the hour (59 → 00 keeps the hour); then kept in range
   function stepped(d, u, n) {
     const x = new Date(d);
     if (u === 'h') x.setTime(+x + n * 3600e3);
@@ -87,7 +88,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   function whenOpen(on) {
     const panel = document.getElementById('jWhenPanel'), row = document.getElementById('jWhenRow');
     panel.hidden = !on; row.setAttribute('aria-expanded', String(on));
-    if (on) { draft = clamp(when.k === 'at' ? new Date(when.d) : soonest()); drawDraft(); requestAnimationFrame(() => panel.scrollIntoView({block: 'nearest', behavior: 'smooth'})); }
+    if (on) { draft = clamp(when.k === 'at' ? new Date(when.d) : nextTen()); drawDraft(); requestAnimationFrame(() => panel.scrollIntoView({block: 'nearest', behavior: 'smooth'})); }
   }
 
   function bindPlace(which) {
@@ -290,8 +291,11 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     document.querySelectorAll('.jw-step').forEach(b => {   // tap: 10 minutes; hold: keeps going, faster
       const step = () => { draft = stepped(draft, b.dataset.u, +b.dataset.s); drawDraft(); };
       let hold = 0, rep = 0;
-      const stop = () => { clearTimeout(hold); clearInterval(rep); hold = rep = 0; };
-      b.addEventListener('pointerdown', e => { if (e.button) return; step(); hold = setTimeout(() => { rep = setInterval(() => { if (b.disabled) stop(); else step(); }, 90); }, 420); });
+      const stop = () => { clearTimeout(hold); clearTimeout(rep); hold = rep = 0; };
+      // held: after 0.4 s it repeats, and speeds up the longer it is held (minutes go one at a time)
+      b.addEventListener('pointerdown', e => { if (e.button) return; step(); const t0 = performance.now();
+        const tick = () => { if (b.disabled) return stop(); step(); const held = performance.now() - t0; rep = setTimeout(tick, held > 2200 ? 35 : held > 1200 ? 60 : 110); };
+        hold = setTimeout(tick, 400); });
       for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
       b.addEventListener('click', e => { if (e.detail === 0) step(); });   // keyboard (Enter/Space) presses
       b.addEventListener('touchstart', e => e.preventDefault(), {passive: false});   // no selection / callout on a long press; pointer events still step
