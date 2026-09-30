@@ -3,218 +3,238 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
 <title>슝 학습 현황</title>
-<meta name="description" content="슝이 실시간 열차 기록을 모아 열차 움직임을 배우는 과정">
+<meta name="description" content="슝이 실시간 열차 기록으로 열차 움직임을 배우는 현황">
 <link rel="icon" href="./brand/favicon.ico" sizes="48x48">
-<link rel="icon" href="./brand/favicon-light.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <script>
   // same theme choice as the map (localStorage subway-theme: auto | light | dark)
   (() => { let c = 'auto'; try { c = localStorage.getItem('subway-theme') || 'auto'; } catch {}
-    const dark = c === 'dark' || (c === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light'; })();
+    document.documentElement.dataset.theme = c === 'dark' || (c === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; })();
 </script>
 <style>
 :root{
   --syung:#ffd400;--syung-deep:#c79a00;--syung-soft:#fff6c2;--syung-ink:#141414;
-  --board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#7d796a;--rule:#ece6cf;
-  --control:#f5f1e1;--good:#1f8f55;--warn:#b5661a;
-  --bar-a:#d8cfae;--bar-b:#141414;--bar-c:#ffd400;
-  --shadow:0 3px 0 rgba(20,20,20,.06),0 6px 18px rgba(60,50,0,.08);
+  --board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#7d796a;--rule:#ece6cf;--control:#f5f1e1;
+  --good:#1f8f55;--good-soft:#e3f4ea;--mid:#b07a00;--mid-soft:#fdf1cc;--low:#8a8676;--low-soft:#efece2;
+  --shadow:0 3px 0 rgba(20,20,20,.05),0 8px 22px rgba(60,50,0,.08);
   --round:"Jua","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
 }
 html[data-theme=dark]{
-  --board:#131416;--paper:#1a1c1f;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2b2d30;
-  --control:#232529;--syung-deep:#ffd400;--good:#4cc987;--warn:#e09a4f;
-  --bar-a:#3a3c40;--bar-b:#f1efe6;--bar-c:#ffd400;
-  --shadow:0 3px 0 rgba(0,0,0,.35),0 6px 18px rgba(0,0,0,.35);
+  --board:#131416;--paper:#1c1e21;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2d2f33;--control:#25272b;
+  --syung-deep:#ffd400;--syung-soft:#2e2a14;
+  --good:#5fd394;--good-soft:#16301f;--mid:#ffcf4a;--mid-soft:#332a10;--low:#9a968a;--low-soft:#26282c;
+  --shadow:0 8px 22px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--board);color:var(--ink);font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit}
-.mast{background:var(--syung);color:var(--syung-ink);box-shadow:0 2px 0 rgba(20,20,20,.12)}
+.mast{background:var(--syung);color:var(--syung-ink)}
 html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
-.mast-in{max-width:1080px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px}
-.mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:24px;line-height:1}
-.mast p{margin:3px 0 0;font-size:13px;font-weight:700;opacity:.8}
-.back{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;border-radius:999px;background:rgba(20,20,20,.08);text-decoration:none;font-weight:700;font-size:14px}
-html[data-theme=dark] .back{background:rgba(255,212,0,.12)}
-main{max-width:1080px;margin:0 auto;padding:20px 16px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.mast-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:10px}
+.mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:22px}
+.mast .sp{flex:1}
+.pill-btn{display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:999px;background:rgba(20,20,20,.08);text-decoration:none;font-weight:700;font-size:13px;border:0;color:inherit;cursor:pointer;font-family:inherit}
+html[data-theme=dark] .pill-btn{background:rgba(255,212,0,.12)}
+main{max-width:960px;margin:0 auto;padding:18px 16px 56px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
 main>*{min-width:0}
-section{background:var(--paper);border-radius:18px;box-shadow:var(--shadow);padding:18px}
-h2{margin:0 0 4px;font-family:var(--round);font-weight:400;font-size:20px}
-.lead{margin:0 0 14px;color:var(--secondary);font-size:14px;line-height:1.55}
-.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;background:none;box-shadow:none;padding:0}
-.card{background:var(--paper);border-radius:16px;box-shadow:var(--shadow);padding:14px 16px}
-.card small{display:block;color:var(--muted);font-size:12px;font-weight:700}
-.card b{display:block;margin-top:6px;font-family:var(--round);font-weight:400;font-size:28px;font-variant-numeric:tabular-nums;line-height:1.1}
-.card span{display:block;margin-top:4px;font-size:12px;color:var(--secondary)}
-.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;counter-reset:step}
-.step{position:relative;background:var(--control);border-radius:14px;padding:12px 12px 12px 14px}
-.step::before{counter-increment:step;content:counter(step);display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--syung);color:var(--syung-ink);font-weight:800;font-size:13px;margin-bottom:8px}
-.step b{display:block;font-size:14px}
-.step p{margin:4px 0 0;font-size:12.5px;line-height:1.5;color:var(--secondary)}
-.step:not(:last-child)::after{content:"";position:absolute;right:-9px;top:22px;border:6px solid transparent;border-left-color:var(--muted)}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px;font-size:12.5px;color:var(--secondary)}
-.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.chart{width:100%;overflow-x:auto}
-.chart svg{display:block;width:100%;height:auto;min-width:520px}
-.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
-.chart .val{fill:var(--ink);font-weight:700}
-.grid line{stroke:var(--rule)}
-.note{margin:10px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5}
-table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
-th{text-align:left;font-size:12px;color:var(--muted);font-weight:700;padding:0 8px 8px;border-bottom:1.5px solid var(--rule);white-space:nowrap}
-td{padding:9px 8px;border-bottom:1px solid var(--rule);vertical-align:middle}
-td small{display:block;color:var(--muted);font-size:11px}
-.line{display:inline-block;padding:2px 9px;border-radius:999px;color:#fff;font-weight:700;font-size:12px;white-space:nowrap}
-.faster{color:var(--good)}.slower{color:var(--warn)}
-.dash{color:var(--muted)}
-.table-wrap{overflow-x:auto}
-.table-wrap table{min-width:640px}
-.empty{color:var(--muted);font-size:14px}
-@media (max-width:760px){
-  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+.box{background:var(--paper);border-radius:20px;box-shadow:var(--shadow);padding:20px}
+h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
+.muted{color:var(--muted)}
+
+/* 1. the answer */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;align-items:center}
+.hero small{font-size:13px;font-weight:700;color:var(--secondary)}
+.hero .big{display:flex;align-items:baseline;gap:6px;margin:6px 0 4px;font-family:var(--round);line-height:1}
+.hero .big b{font-weight:400;font-size:64px;font-variant-numeric:tabular-nums}
+.hero .big span{font-size:24px}
+.delta{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700}
+.delta.down{background:var(--good-soft);color:var(--good)}
+.delta.up{background:var(--mid-soft);color:var(--mid)}
+.delta.same{background:var(--low-soft);color:var(--low)}
+.hero p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--secondary)}
+.hero svg{width:100%;height:auto;display:block}
+
+/* 2. three numbers */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stat{background:var(--paper);border-radius:18px;box-shadow:var(--shadow);padding:14px 16px}
+.stat small{font-size:12px;font-weight:700;color:var(--muted)}
+.stat b{display:block;margin-top:4px;font-family:var(--round);font-weight:400;font-size:28px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--secondary)}
+
+/* 3. growth */
+.growth svg{width:100%;height:auto;display:block}
+.growth text{fill:var(--muted);font-size:11px;font-family:inherit}
+.growth .val{fill:var(--ink);font-weight:700;font-size:12px}
+
+/* 4. lines */
+.groups{display:grid;gap:18px}
+.group h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:14px}
+.group h3 i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-good{background:var(--good-soft);color:var(--good)}.b-mid{background:var(--mid-soft);color:var(--mid)}.b-low{background:var(--low-soft);color:var(--low)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,calc(50% - 5px)),1fr));gap:10px}
+.lc{border-radius:14px;background:var(--control);padding:12px 12px 12px 14px;border-left:5px solid var(--c)}
+.lc b{font-size:14px}
+.lc ul{list-style:none;margin:6px 0 0;padding:0;font-size:12.5px;line-height:1.6;color:var(--secondary)}
+.lc .meter{height:4px;border-radius:2px;background:var(--rule);margin-top:8px;overflow:hidden}
+.lc .meter i{display:block;height:100%;background:var(--c)}
+.faster{color:var(--good);font-weight:700}.slower{color:var(--mid);font-weight:700}
+
+/* 5. details */
+details{background:var(--paper);border-radius:20px;box-shadow:var(--shadow)}
+summary{list-style:none;cursor:pointer;padding:16px 20px;font-family:var(--round);font-size:17px;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";margin-left:auto;font-size:22px;color:var(--muted)}
+details[open] summary::after{content:"−"}
+.dbody{padding:0 20px 20px}
+.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;counter-reset:s}
+.step{background:var(--control);border-radius:14px;padding:12px}
+.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--syung);color:var(--syung-ink);font-weight:800;font-size:12px;margin-bottom:6px}
+.step b{font-size:13.5px}.step p{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--secondary)}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:0 8px 8px;border-bottom:1.5px solid var(--rule)}
+th:first-child,td:first-child{text-align:left}
+td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
+.tw{overflow-x:auto}
+@media (max-width:720px){
+  .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
+  .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
   .flow{grid-template-columns:1fr}
-  .step:not(:last-child)::after{right:auto;left:22px;top:auto;bottom:-10px;border-left-color:transparent;border-top-color:var(--muted)}
-  .card b{font-size:24px}
+  .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
+  .growth text{font-size:14px}.growth .val{font-size:15px}
 }
 </style>
 </head>
 <body>
 <header class="mast"><div class="mast-in">
-  <div><h1>슝 학습 현황</h1><p id="updated">불러오는 중…</p></div>
-  <a class="back" href="./">← 지도로</a>
+  <h1>슝 학습 현황</h1><span class="sp"></span>
+  <a class="pill-btn" href="./">지도</a>
+  <form method="post" action="/api/logout" style="margin:0"><button class="pill-btn" type="submit">로그아웃</button></form>
 </div></header>
 <main>
-  <section class="cards" aria-label="요약">
-    <div class="card"><small>모은 열차 기록</small><b id="cTotal">–</b><span id="cTotalSub"></span></div>
-    <div class="card"><small>학습에 쓸 수 있는 기록</small><b id="cEvent">–</b><span id="cEventSub"></span></div>
-    <div class="card"><small>예측 오차 (중앙값)</small><b id="cError">–</b><span id="cErrorSub"></span></div>
-    <div class="card"><small>마지막 재학습</small><b id="cLast">–</b><span id="cLastSub"></span></div>
-  </section>
-
-  <section>
-    <h2>학습은 이렇게 돌아가요</h2>
-    <p class="lead">실시간 API는 열차가 "어느 역에 도착·출발했다"만 알려줘요. 그 사이를 부드럽게 움직이려면 노선마다 역 사이를 얼마나 걸려 달리는지, 역에서 얼마나 서 있는지를 알아야 해서, 매일 모은 기록으로 그 값을 다시 배워요.</p>
-    <div class="flow">
-      <div class="step"><b>수집</b><p>전체 도착정보는 20초마다, 열차 위치는 25초마다 받아서 기록해요.</p></div>
-      <div class="step"><b>거르기</b><p>여러 열차가 같은 시각으로 찍힌 기록은 빼고, 열차마다 자기 시각이 있는 기록만 써요.</p></div>
-      <div class="step"><b>계산</b><p>노선별로 달리는 속도, 역 구간 시간, 진입 시간, 출퇴근 시간 속도를 구해요.</p></div>
-      <div class="step"><b>채점</b><p>그 전 7일로 배운 값으로 어제 열차를 예측해 보고, 실제와 몇 초 틀렸는지 재요.</p></div>
-      <div class="step"><b>적용</b><p>지금 값보다 나빠지지 않았을 때만 지도에 적용해요. 매일 새벽 3시 10분.</p></div>
+  <section class="box hero" aria-label="지금 정확도">
+    <div>
+      <small>지도의 예측 오차</small>
+      <div class="big"><b id="err">–</b><span>초</span></div>
+      <span class="delta same" id="delta">불러오는 중</span>
+      <p id="heroText"></p>
     </div>
+    <div id="errSpark" aria-hidden="true"></div>
   </section>
 
-  <section>
-    <h2>날마다 쌓인 기록</h2>
-    <p class="lead">막대 하나가 하루예요. 같은 열차가 같은 역·상태로 다시 찍힌 건 한 번만 셌어요.</p>
-    <div class="legend"><span><i style="background:var(--bar-a)"></i>전체 도착정보</span><span><i style="background:var(--bar-c)"></i>열차 위치 API</span><span><i style="background:var(--bar-b)"></i>그중 학습에 쓸 수 있는 기록</span></div>
-    <div class="chart" id="daysChart"></div>
+  <section class="stats" aria-label="모은 기록">
+    <div class="stat"><small>오늘 모은 기록</small><b id="sToday">–</b><span id="sTodaySub"></span></div>
+    <div class="stat"><small>지금까지</small><b id="sTotal">–</b><span id="sTotalSub"></span></div>
+    <div class="stat"><small>학습에 쓰인 비율</small><b id="sShare">–</b><span>자체 시각이 있는 기록</span></div>
   </section>
 
-  <section>
-    <h2>예측이 얼마나 맞았나</h2>
-    <p class="lead">그날 밤 배운 값으로 전날 열차의 다음 도착·출발 시각을 예측했을 때, 실제와 차이의 중앙값이에요. 낮을수록 좋아요.</p>
-    <div class="legend"><span><i style="background:var(--syung-deep)"></i>새로 배운 값</span><span><i style="background:var(--muted)"></i>그때 쓰던 값</span></div>
-    <div class="chart" id="errorChart"></div>
-    <p class="note" id="errorNote"></p>
+  <section class="box growth">
+    <h2>학습 데이터가 쌓이는 중</h2>
+    <div id="growth"></div>
   </section>
 
-  <section>
-    <h2>노선별로 배운 값</h2>
-    <p class="lead">지금 지도에 쓰는 값이에요. 기록이 모자란 노선은 기본값(속도 시간표대로, 역 구간 62초, 진입 40초)을 써요. 작은 숫자는 계산에 쓴 구간 수예요.</p>
-    <div class="table-wrap"><table id="linesTable">
-      <thead><tr><th>노선</th><th>달리는 속도</th><th>출퇴근 시간 속도</th><th>역 구간 시간</th><th>진입 시간</th><th>속도 변화</th></tr></thead>
-      <tbody></tbody>
-    </table></div>
+  <section class="box">
+    <h2>노선별 학습 상태</h2>
+    <div class="groups" id="groups"></div>
   </section>
+
+  <details>
+    <summary>어떻게 배우나요?</summary>
+    <div class="dbody">
+      <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.55">실시간 API는 "어느 역에 도착·출발했다"만 알려줘요. 그 사이를 자연스럽게 움직이려고, 노선마다 역 사이를 달리는 시간과 역에 서 있는 시간을 매일 다시 배워요.</p>
+      <div class="flow">
+        <div class="step"><b>수집</b><p>도착정보 20초, 열차 위치 25초마다 기록</p></div>
+        <div class="step"><b>거르기</b><p>열차마다 자기 시각이 있는 기록만 사용</p></div>
+        <div class="step"><b>계산</b><p>노선별 속도, 역 구간·진입 시간, 출퇴근 속도</p></div>
+        <div class="step"><b>채점</b><p>배운 값으로 어제 열차를 예측해 오차 측정</p></div>
+        <div class="step"><b>적용</b><p>나빠지지 않을 때만 지도에 반영 · 매일 03:10</p></div>
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>날짜별 자세한 기록</summary>
+    <div class="dbody tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>예측 오차</th><th>결과</th></tr></thead><tbody></tbody></table></div>
+  </details>
+  <p class="muted" id="updated" style="margin:0;font-size:12px;text-align:center"></p>
 </main>
 <script>
 const COLORS={'1호선':'#0052A4','2호선':'#00A84D','3호선':'#EF7C1C','4호선':'#00A5DE','5호선':'#996CAC','6호선':'#CD7C2F','7호선':'#747F00','8호선':'#E6186C','9호선':'#BDB092','GTX-A':'#9A6292','경강선':'#0054A6','경의중앙선':'#77C4A3','경춘선':'#178C72','공항철도':'#0090D2','김포골드라인':'#AD8605','서해선':'#8FC31F','수인분당선':'#F5A200','신림선':'#6789CA','신분당선':'#D4003B','에버라인선':'#6FB245','우이신설선':'#B7C452','의정부선':'#FDA600','인천1호선':'#7CA8D5','인천2호선':'#ED8B00'};
 const ORDER=Object.keys(COLORS);
+// how many timed runs a line needs before its values are trusted (pace spans)
+const ENOUGH=2000,SOME=300;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'백만':n>=1e4?(n/1e4).toFixed(1)+'만':Math.round(n).toLocaleString('ko-KR');
 const md=d=>{const [,m,dd]=d.split('-');return `${+m}/${+dd}`};
-const SVG=(w,h,body)=>`<svg viewBox="0 0 ${w} ${h}" role="img">${body}</svg>`;
+const sightings=d=>(d.samples?.sightings||0)+(d.position?.sightings||0);
+const events=d=>(d.samples?.event||0)+(d.position?.event||0);
 
-function daysChart(days){
-  const rows=days.map(d=>({date:d.date,all:d.samples?.sightings||0,pos:d.position?.sightings||0,ev:(d.samples?.event||0)+(d.position?.event||0)}));
-  if(!rows.length)return '<p class="empty">아직 기록이 없어요.</p>';
-  const W=Math.max(560,rows.length*64),H=240,L=46,B=28,T=18,max=Math.max(...rows.map(r=>r.all+r.pos))*1.08;
-  const bw=Math.min(34,(W-L-10)/rows.length*.6),x=i=>L+(i+.5)*(W-L-10)/rows.length,y=v=>T+(H-T-B)*(1-v/max);
-  let g='<g class="grid">';for(let k=0;k<=4;k++){const v=max*k/4;g+=`<line x1="${L}" x2="${W-6}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`}g+='</g>';
-  rows.forEach((r,i)=>{const cx=x(i);
-    g+=`<rect x="${cx-bw/2}" y="${y(r.all)}" width="${bw}" height="${y(0)-y(r.all)}" rx="3" fill="var(--bar-a)"><title>${md(r.date)} 전체 도착정보 ${fmt(r.all)}</title></rect>`;
-    g+=`<rect x="${cx-bw/2}" y="${y(r.all+r.pos)}" width="${bw}" height="${y(r.all)-y(r.all+r.pos)}" rx="3" fill="var(--bar-c)"><title>${md(r.date)} 열차 위치 API ${fmt(r.pos)}</title></rect>`;
-    g+=`<rect x="${cx-bw/4}" y="${y(r.ev)}" width="${bw/2}" height="${y(0)-y(r.ev)}" rx="2" fill="var(--bar-b)"><title>${md(r.date)} 학습용 ${fmt(r.ev)}</title></rect>`;
-    g+=`<text x="${cx}" y="${H-10}" text-anchor="middle">${md(r.date)}</text>`;
-    g+=`<text class="val" x="${cx}" y="${y(r.all+r.pos)-5}" text-anchor="middle">${fmt(r.all+r.pos)}</text>`});
-  return SVG(W,H,g);
+function spark(vals){
+  if(vals.length<2)return '';
+  const W=220,H=90,lo=Math.min(...vals)-1,hi=Math.max(...vals)+1,x=i=>8+i*(W-16)/(vals.length-1),y=v=>10+(H-24)*(hi-v)/(hi-lo);
+  const pts=vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="var(--syung-deep)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${vals.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="${i===vals.length-1?5:3}" fill="var(--syung-deep)"/>`).join('')}<text x="${W-8}" y="${H-2}" text-anchor="end" font-size="11" fill="var(--muted)">날마다 채점한 오차</text></svg>`;
 }
 
-function errorChart(hist){
-  const pts=hist.filter(h=>h.candidate?.all!=null);
-  if(!pts.length)return '<p class="empty">아직 채점한 날이 없어요.</p>';
-  const W=Math.max(560,pts.length*80),H=220,L=40,B=28,T=22;
-  const vals=pts.flatMap(p=>[p.candidate.all,p.current?.all].filter(v=>v!=null));
-  const lo=Math.max(0,Math.floor(Math.min(...vals)-2)),hi=Math.ceil(Math.max(...vals)+2);
-  const x=i=>pts.length===1?(L+W)/2:L+16+i*(W-L-40)/(pts.length-1),y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
-  let g='<g class="grid">';for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4;g+=`<line x1="${L}" x2="${W-6}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v.toFixed(0)}초</text>`}g+='</g>';
-  const path=key=>pts.map((p,i)=>p[key]?.all==null?null:[x(i),y(p[key].all)]).filter(Boolean);
-  const cur=path('current');if(cur.length>1)g+=`<polyline points="${cur.map(c=>c.join(',')).join(' ')}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 4"/>`;
-  const cand=path('candidate');if(cand.length>1)g+=`<polyline points="${cand.map(c=>c.join(',')).join(' ')}" fill="none" stroke="var(--syung-deep)" stroke-width="3" stroke-linejoin="round"/>`;
-  pts.forEach((p,i)=>{
-    if(p.current?.all!=null)g+=`<circle cx="${x(i)}" cy="${y(p.current.all)}" r="3.5" fill="var(--muted)"><title>${md(p.date)} 그때 쓰던 값 ${p.current.all}초</title></circle>`;
-    g+=`<circle cx="${x(i)}" cy="${y(p.candidate.all)}" r="5" fill="var(--syung-deep)" stroke="var(--paper)" stroke-width="2"><title>${md(p.date)} ${p.candidate.all}초 · ${p.candidate.n?.toLocaleString('ko-KR')}건 채점</title></circle>`;
-    g+=`<text class="val" x="${x(i)}" y="${y(p.candidate.all)-10}" text-anchor="middle">${p.candidate.all}초</text>`;
-    g+=`<text x="${x(i)}" y="${H-10}" text-anchor="middle">${md(p.date)}${p.source==='backfill'?'*':''}</text>`});
-  return SVG(W,H,g);
+function growth(days){
+  if(!days.length)return '<p class="muted">아직 기록이 없어요.</p>';
+  let acc=0;const pts=days.map(d=>({date:d.date,v:(acc+=events(d))}));
+  const W=560,H=220,L=12,R=12,T=28,B=26,max=acc*1.1;
+  const x=i=>pts.length===1?W/2:L+20+i*(W-L-R-40)/(pts.length-1),y=v=>T+(H-T-B)*(1-v/max);
+  const line=pts.map((p,i)=>`${x(i)},${y(p.v)}`).join(' ');
+  let g=`<defs><linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--syung)" stop-opacity=".55"/><stop offset="1" stop-color="var(--syung)" stop-opacity=".05"/></linearGradient></defs>`;
+  g+=`<polygon points="${x(0)},${y(0)} ${line} ${x(pts.length-1)},${y(0)}" fill="url(#gf)"/>`;
+  g+=`<polyline points="${line}" fill="none" stroke="var(--syung-deep)" stroke-width="3" stroke-linejoin="round"/>`;
+  g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
+  pts.forEach((p,i)=>{g+=`<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--paper)" stroke="var(--syung-deep)" stroke-width="2.5"/><text x="${x(i)}" y="${H-8}" text-anchor="middle">${md(p.date)}</text>`;
+    if(i===pts.length-1||i===0)g+=`<text class="val" x="${x(i)}" y="${y(p.v)-10}" text-anchor="${i===0?'start':'end'}">${fmt(p.v)}</text>`});
+  return `<div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="학습용 기록 누적 ${fmt(acc)}">${g}</svg></div><p class="muted" style="margin:6px 0 0;font-size:12.5px">학습에 쓸 수 있는 기록을 날마다 더한 값이에요. 기울기가 가파를수록 그날 많이 모았어요.</p>`;
 }
 
-function spark(values){
-  const v=values.filter(x=>x!=null);if(v.length<2)return '<span class="dash">–</span>';
-  const W=90,H=26,lo=Math.min(...v,.95),hi=Math.max(...v,1.05),x=i=>3+i*(W-6)/(values.length-1),y=a=>H-3-(H-6)*(a-lo)/(hi-lo);
-  const pts=values.map((a,i)=>a==null?null:`${x(i)},${y(a)}`).filter(Boolean).join(' ');
-  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><line x1="0" x2="${W}" y1="${y(1)}" y2="${y(1)}" stroke="var(--rule)" stroke-dasharray="2 2"/><polyline points="${pts}" fill="none" stroke="var(--syung-deep)" stroke-width="2"/></svg>`;
-}
+const pct=p=>Math.round((p-1)*100);
+const paceWords=(p,rush)=>{if(p==null)return '시간표대로 달려요';const d=pct(p);
+  return d===0?'시간표대로 달려요':d<0?`시간표보다 <span class="faster">${-d}% 빠르게</span> 달려요`:`시간표보다 <span class="slower">${d}% 느리게</span> 달려요`};
 
-const paceText=p=>{if(p==null)return '<span class="dash">시간표대로</span>';const d=Math.round((p-1)*100);
-  return d===0?'시간표대로':d<0?`<span class="faster">시간표보다 ${-d}% 빠름</span>`:`<span class="slower">시간표보다 ${d}% 느림</span>`};
-
-function linesTable(latest,hist){
+function groups(latest,hist){
   const lines=latest.lines||{},n=latest.n||[...hist].reverse().find(h=>h.n)?.n||{};
-  const names=[...new Set([...Object.keys(lines),...Object.keys(n)])].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
-  if(!names.length)return '<tr><td colspan="6" class="empty">아직 배운 값이 없어요.</td></tr>';
-  const cnt=(l,k)=>n[l]?.[k]?`<small>${n[l][k].toLocaleString('ko-KR')}구간</small>`:'';
-  return names.map(l=>{const v=lines[l]||{};
-    const trend=hist.map(h=>h.lines?.[l]?.pace??null);
-    return `<tr><td><span class="line" style="background:${COLORS[l]||'#888'}">${esc(l)}</span></td>
-      <td>${paceText(v.pace)}${cnt(l,'pace')}</td>
-      <td>${v.rushPace!=null?paceText(v.rushPace):'<span class="dash">평소와 같음</span>'}${cnt(l,'rushPace')}</td>
-      <td>${v.zone!=null?v.zone+'초':'<span class="dash">기본 62초</span>'}${cnt(l,'zone')}</td>
-      <td>${v.approach!=null?v.approach+'초':'<span class="dash">기본 40초</span>'}${cnt(l,'approach')}</td>
-      <td>${spark(trend)}</td></tr>`}).join('');
+  const all=[...new Set([...Object.keys(lines),...Object.keys(n)])].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const tier=l=>{const k=n[l]?.pace||0;return k>=ENOUGH?0:k>=SOME?1:2};
+  const meta=[['충분히 배웠어요','b-good','값을 믿고 써요'],['배우는 중','b-mid','며칠 더 모으면 정확해져요'],['데이터 모으는 중','b-low','아직 대부분 기본값을 써요']];
+  return meta.map(([name,cls,hint],t)=>{const ls=all.filter(l=>tier(l)===t);if(!ls.length)return '';
+    return `<div class="group"><h3><span class="badge ${cls}">${name}</span><i>${ls.length}개 노선 · ${hint}</i></h3><div class="cards">${ls.map(l=>{const v=lines[l]||{},k=n[l]?.pace||0;
+      const items=[paceWords(v.pace),v.zone!=null?`역에서 약 ${v.zone}초 머물러요`:null,v.rushPace!=null?`출퇴근엔 ${pct(v.rushPace)>0?`<span class="slower">${pct(v.rushPace)}% 더 느려요</span>`:`<span class="faster">${-pct(v.rushPace)}% 빨라요</span>`}`:null].filter(Boolean);
+      return `<div class="lc" style="--c:${COLORS[l]||'#888'}"><b>${esc(l)}</b><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul><div class="meter" title="${k.toLocaleString('ko-KR')}구간"><i style="width:${Math.min(100,k/ENOUGH*100)}%"></i></div></div>`}).join('')}</div></div>`}).join('');
 }
 
-fetch('./learning.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
+fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/login.html?next=/learning';throw 0}return r.json()}).then(d=>{
   const days=d.days||[],hist=d.history||[];
-  const tot=days.reduce((a,x)=>a+(x.samples?.sightings||0)+(x.position?.sightings||0),0);
-  const ev=days.reduce((a,x)=>a+(x.samples?.event||0)+(x.position?.event||0),0);
-  $('updated').textContent=`${new Date(d.generatedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 기준 · 재학습 ${d.retrainAt}`;
-  $('cTotal').textContent=fmt(tot);$('cTotalSub').textContent=`${days.length}일 동안`;
-  $('cEvent').textContent=fmt(ev);$('cEventSub').textContent=tot?`전체의 ${Math.round(ev/tot*100)}%`:'';
-  const last=[...hist].reverse().find(h=>h.candidate?.all!=null);
-  if(last){$('cError').textContent=`${last.candidate.all}초`;$('cErrorSub').textContent=`${md(last.date)} · ${last.candidate.n?.toLocaleString('ko-KR')}건 채점`}
-  const run=[...hist].reverse().find(h=>h.source==='retrain');
-  if(run){$('cLast').textContent=md(run.date);$('cLastSub').textContent=run.result==='published'?'새 값을 지도에 적용했어요':run.result==='kept current'?'나아지지 않아 그대로 뒀어요':run.result||''}
-  $('daysChart').innerHTML=daysChart(days);
-  $('errorChart').innerHTML=errorChart(hist);
-  $('errorNote').textContent=hist.some(h=>h.source==='backfill')?'* 표시한 날은 매일 밤 재학습을 켜기 전이라, 같은 방법으로 나중에 다시 계산한 값이에요.':'';
-  $('linesTable').querySelector('tbody').innerHTML=linesTable(d.latest||{},hist);
-}).catch(()=>{$('updated').textContent='학습 기록을 불러오지 못했어요.'});
+  const scored=hist.filter(h=>h.candidate?.all!=null);
+  const last=scored.at(-1),prev=scored.at(-2);
+  if(last){
+    $('err').textContent=last.candidate.all;
+    const dd=prev?+(last.candidate.all-prev.candidate.all).toFixed(1):0,el=$('delta');
+    el.className='delta '+(dd<0?'down':dd>0?'up':'same');
+    el.textContent=!prev?'첫 채점':dd<0?`▼ 전날보다 ${-dd}초 줄었어요`:dd>0?`▲ 전날보다 ${dd}초 늘었어요`:'전날과 같아요';
+    $('heroText').textContent=`열차가 다음 역에 도착하거나 출발하는 시각을 실제와 평균 ${last.candidate.all}초 차이로 맞히고 있어요. (${md(last.date)}, 열차 움직임 ${last.candidate.n?.toLocaleString('ko-KR')}건으로 채점)`;
+    $('errSpark').innerHTML=spark(scored.map(h=>h.candidate.all));
+  }
+  const today=days.at(-1),tot=days.reduce((a,x)=>a+sightings(x),0),ev=days.reduce((a,x)=>a+events(x),0);
+  if(today){$('sToday').textContent=fmt(sightings(today));$('sTodaySub').textContent=`${md(today.date)} · 학습용 ${fmt(events(today))}`}
+  $('sTotal').textContent=fmt(tot);$('sTotalSub').textContent=`${days.length}일 동안`;
+  $('sShare').textContent=tot?Math.round(ev/tot*100)+'%':'–';
+  $('growth').innerHTML=growth(days);
+  $('groups').innerHTML=groups(d.latest||{},hist);
+  const byDate=Object.fromEntries(hist.map(h=>[h.date,h]));
+  $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const h=byDate[x.date];
+    const res=!h?'':h.result==='published'?'적용':h.result==='kept current'?'유지':h.source==='backfill'?'나중에 계산':'';
+    return `<tr><td>${md(x.date)}</td><td>${fmt(x.samples?.sightings||0)}</td><td>${fmt(x.position?.sightings||0)}</td><td>${fmt(events(x))}</td><td>${h?.candidate?.all!=null?h.candidate.all+'초':'–'}</td><td>${res}</td></tr>`}).join('');
+  $('updated').textContent=`${new Date(d.generatedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}에 갱신 · 매일 03:10 재학습 뒤 새로 고쳐져요`;
+}).catch(e=>{if(e!==0)$('heroText').textContent='학습 기록을 불러오지 못했어요.'});
 </script>
 </body>
 </html>
