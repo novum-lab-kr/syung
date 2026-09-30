@@ -294,6 +294,8 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       b.addEventListener('pointerdown', e => { if (e.button) return; step(); hold = setTimeout(() => { rep = setInterval(() => { if (b.disabled) stop(); else step(); }, 90); }, 420); });
       for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
       b.addEventListener('click', e => { if (e.detail === 0) step(); });   // keyboard (Enter/Space) presses
+      b.addEventListener('touchstart', e => e.preventDefault(), {passive: false});   // no selection / callout on a long press; pointer events still step
+      b.addEventListener('contextmenu', e => e.preventDefault());
     });
     document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus({preventScroll: true}); });
     document.getElementById('jSwap').addEventListener('click', () => {

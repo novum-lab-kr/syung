@@ -166,7 +166,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 .sheet-grab:focus-visible{outline:none}.sheet-grab:focus-visible::before{background:var(--focus);width:56px;margin-left:-28px}
 .sheet-close{position:absolute;z-index:2;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
 .sheet-close:hover{background:var(--syung);color:var(--syung-ink)}
-.sheet-body{padding-right:36px;min-height:0;flex:0 1 auto;overflow:auto;overscroll-behavior:contain}   /* the body scrolls, not the sheet: a scrolling sheet over the WebGL canvas blanked the map above it in Chromium */
+.sheet-body{min-height:0;flex:0 1 auto;overflow:auto;overscroll-behavior:contain}   /* the body scrolls, not the sheet: a scrolling sheet over the WebGL canvas blanked the map above it in Chromium */
 .sheet-grab,.sheet-follow{flex:none}
 .sheet h3{font-family:var(--round);font-weight:400;font-size:24px;margin:2px 0 6px}
 .sheet-follow{margin-top:12px;width:100%;height:42px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:16px;cursor:pointer;box-shadow:0 2px 0 rgba(20,20,20,.15)}
@@ -284,7 +284,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jsum-edit{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px 0 8px;border-radius:999px;background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:700;box-shadow:0 1px 0 rgba(20,20,20,.08)}
 .jsum-edit svg{width:13px;height:13px}
 .jsum:hover .jsum-edit{background:var(--syung);color:var(--syung-ink)}
-.sheet:has(.journey) .sheet-close{display:none}   /* 길찾기: the handle closes it (drag down or tap) */
+.sheet .sheet-close{display:none}   /* every sheet: the handle closes it (drag down or tap), and Esc */
 
 /* kind filter: the same segmented control as the time and the theme */
 .jkinds{align-self:flex-start;max-width:100%;overflow-x:auto;scrollbar-width:none}
@@ -460,3 +460,6 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 .jw-step:disabled{opacity:.3;cursor:default;background:var(--paper)}
 .jw-go{height:46px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:16px;cursor:pointer;box-shadow:0 2px 0 rgba(20,20,20,.15)}
 @media(prefers-reduced-motion:reduce){.jw-panel{animation:none}.jw-row .jw-chev{transition:none}}
+/* holding − / + (or the numbers) must not start iOS text selection or its copy callout */
+.jw-panel,.jw-clock,.jw-clock *,.jw-step{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.jw-step{-webkit-tap-highlight-color:transparent}
