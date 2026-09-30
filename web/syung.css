@@ -463,3 +463,11 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 /* holding − / + (or the numbers) must not start iOS text selection or its copy callout */
 .jw-panel,.jw-clock,.jw-clock *,.jw-step{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .jw-step{-webkit-tap-highlight-color:transparent}
+/* station sheet: the line chips carry their own dot (the base .chip:before drew an empty one, a gap before it) */
+.sheet .station-sheet .chip::before{display:none}
+.sheet .station-sheet .chip{padding:3px 10px 3px 8px}
+/* arrivals on their way (past 0.7 s): rows shaped like the ones coming */
+.st-sk .arr{gap:7px}
+.st-sk i{display:block;height:12px;width:46%;border-radius:6px;background:var(--control)}
+.st-sk i+i{height:15px;width:62%;margin-left:14px}
+.st-sk i+i+i{width:52%}

@@ -935,9 +935,7 @@ async function showStationPopup(st,lngLat){
   sheetStation=st;
   const journeyHere='<div class="st-journey"><button type="button" data-end="from">여기서 출발</button><button type="button" data-end="to">여기로 도착</button></div>';
   const head=sub=>`<div class="tp-line">${lineChips}</div><div class="tp-dest">${esc(st.name)}</div><div class="tp-now">${sub}</div>${journeyHere}`;
-  const token=openSheet(`<div class="train-inspect station-sheet">${head('도착 정보 불러오는 중…')}</div>`);
-  const put=h=>{if(token===sheetToken)sheetBody.innerHTML=h};
-  const render=d=>{
+  const html=d=>{
     const groups=new Map();
     for(const a of (d.arrivals||[])){const k=`${a.line}|${a.direction}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(a)}
     const lines=st.lines.map(x=>x.name),order=[...groups.keys()].sort((x,y)=>lines.indexOf(x.split('|')[0])-lines.indexOf(y.split('|')[0])||x.localeCompare(y,'ko'));
@@ -946,14 +944,26 @@ async function showStationPopup(st,lngLat){
       return `<div class="arr" style="--c:${colors[line]||'#52646a'}"><div class="arr-h"><span class="dot"></span>${esc(line)} <span class="muted">${esc(dir)}${toward?' · '+esc(toward):''}</span></div>
         ${list.map(a=>`<div class="arr-t"><b>${esc(arrivalText(a))}</b><span class="muted">${esc(a.destination)}행${a.express?' · 급행':''}${a.last?' · 막차':''}</span></div>`).join('')}</div>`}).join('');
     const ex=exitList(st);
-    put(`<div class="train-inspect station-sheet">${head(`서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준`)}
+    return (`<div class="train-inspect station-sheet">${head(`서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 기준`)}
       <div class="sec">곧 오는 열차</div>${cards?`<div class="arrs">${cards}</div>`:'<div class="muted empty">지금 도착 예정 열차 정보가 없어요.</div>'}
       ${ex?`<div class="sec">출구</div>${ex}`:''}</div>`);
   };
-  try{const r=await fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error();render(d);
-    const timer=setInterval(()=>{if(token!==sheetToken)return clearInterval(timer);render(d)},15000);}
-  catch{put(`<div class="train-inspect station-sheet">${head('도착 정보를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.')}</div>`)}
+  const failed=`<div class="train-inspect station-sheet">${head('도착 정보를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.')}</div>`;
+  // Open once the arrivals are in, so the sheet rises at its real height instead of jumping from one line.
+  // Past 0.7 s it opens anyway, on rows shaped like the ones coming, and fills them when they land.
+  const seq=++stationSeq;
+  let d=null,err=false;
+  const settled=fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'})
+    .then(async r=>{const x=await r.json();if(!r.ok||!x.ok)throw Error();d=x},()=>{err=true});
+  await Promise.race([settled,new Promise(r=>setTimeout(r,700))]);
+  if(seq!==stationSeq)return;   // another station was tapped meanwhile
+  const skeleton=`<div class="train-inspect station-sheet">${head('도착 정보 불러오는 중…')}<div class="sec">곧 오는 열차</div><div class="arrs st-sk" aria-hidden="true">${'<div class="arr"><i></i><i></i><i></i></div>'.repeat(Math.min(4,Math.max(2,st.lines.length*2)))}</div></div>`;
+  const token=openSheet(d?html(d):err?failed:skeleton);
+  const put=h=>{if(token===sheetToken)sheetBody.innerHTML=h};
+  if(!d&&!err){await settled;put(d?html(d):failed)}
+  if(d){const timer=setInterval(()=>{if(token!==sheetToken)return clearInterval(timer);put(html(d))},15000)}
 }
+let stationSeq=0;
 document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
 // ---- station labels (DOM markers with box collision) --------------------------------
