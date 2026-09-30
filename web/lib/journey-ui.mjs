@@ -35,40 +35,53 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   </div>
   <ul class="jf-list" id="jFromList" aria-label="출발지 찾기 결과" hidden></ul>
   <ul class="jf-list" id="jToList" aria-label="도착지 찾기 결과" hidden></ul>
-  <div class="jopts jwhen" role="radiogroup" aria-label="출발 시각">
-    <button type="button" role="radio" aria-checked="true" data-k="now">지금</button>
-    <button type="button" role="radio" aria-checked="false" data-k="in" data-m="10">10분<span class="jw-l"> 뒤</span></button>
-    <button type="button" role="radio" aria-checked="false" data-k="in" data-m="30">30분<span class="jw-l"> 뒤</span></button>
-    <label class="jw-pick" role="radio" aria-checked="false">${CLOCK}<span id="jPickText">시간 선택</span><input id="jTime" type="time" aria-label="출발 시각 직접 고르기"></label>
+  <div class="jopts jwhen">
+    <button type="button" class="jw-row" id="jWhenRow" aria-expanded="false" aria-controls="jWhenPanel">${CLOCK}<span id="jWhenText">지금 출발</span>${CHEV}</button>
+    <div class="jw-panel" id="jWhenPanel" hidden>
+      <div class="jw-head"><b>출발 시각</b><button type="button" class="jw-now" id="jWhenNow">지금으로</button></div>
+      <div class="segmented jw-day" role="group" aria-label="날짜"><button type="button" data-d="0" aria-pressed="true">오늘</button><button type="button" data-d="1" aria-pressed="false">내일</button></div>
+      <div class="jw-clock">
+        <button type="button" class="jw-step" data-s="-10" aria-label="10분 앞으로">${MINUS}</button>
+        <output id="jWhenClock" aria-live="polite">00:00</output>
+        <button type="button" class="jw-step" data-s="10" aria-label="10분 뒤로">${PLUS}</button>
+      </div>
+      <p class="jw-hint">10분씩 · 누르고 있으면 빠르게</p>
+      <button type="button" class="jw-go" id="jWhenGo">이 시간에 출발</button>
+    </div>
   </div>
   <div class="jf-status" id="jStatus" role="status" aria-live="polite"></div>
   <div id="jResult"></div>
 </div>`;
   }
 
-  // 출발 시각: now, a few minutes from now, or a clock time (past already today → tomorrow)
+  // 출발 시각: now, or a time today/tomorrow picked in 10-minute steps (never before the next step from now)
   const pad = n => String(n).padStart(2, '0');
-  let when = {k: 'now'};
+  let when = {k: 'now'}, draft = null;
   const local = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const atOf = t => { const [h, m] = t.split(':').map(Number), d = new Date(); d.setHours(h, m, 0, 0); if (d < Date.now() - 60e3) d.setDate(d.getDate() + 1); return d; };
+  const hhmm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const isTomorrow = d => d.toDateString() !== new Date().toDateString();
-  function whenValue() {
-    if (when.k === 'in') return local(new Date(Date.now() + when.m * 60e3));
-    if (when.k === 'at') return local(atOf(when.t));
-    return '';
-  }
-  function whenLabel() {
-    if (when.k === 'in') return `${when.m < 60 ? `${when.m}분` : `${when.m / 60}시간`} 뒤 출발`;
-    if (when.k === 'at') { const d = atOf(when.t); return `${isTomorrow(d) ? '내일 ' : ''}${when.t} 출발`; }
-    return '지금 출발';
-  }
+  const soonest = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(Math.ceil((d.getMinutes() + 1) / 10) * 10); return d; };
+  const latest = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 50, 0, 0); return d; };
+  const clamp = d => new Date(Math.min(latest(), Math.max(soonest(), d)));
+  function whenValue() { return when.k === 'at' ? local(when.d) : ''; }
+  function whenLabel() { return when.k === 'at' ? `${isTomorrow(when.d) ? '내일' : '오늘'} ${hhmm(when.d)} 출발` : '지금 출발'; }
   function whenSet(w) {
     when = w;
-    document.querySelectorAll('.jwhen [role=radio]').forEach(b => b.setAttribute('aria-checked', String(
-      b.classList.contains('jw-pick') ? w.k === 'at' : b.dataset.k === w.k && (w.k !== 'in' || +b.dataset.m === w.m))));
-    const text = document.getElementById('jPickText'), time = document.getElementById('jTime');
-    if (w.k === 'at') { const d = atOf(w.t); text.textContent = `${isTomorrow(d) ? '내일 ' : ''}${w.t}`; time.value = w.t; }
-    else text.textContent = '시간 선택';
+    const row = document.getElementById('jWhenRow');
+    document.getElementById('jWhenText').textContent = whenLabel();
+    row.classList.toggle('set', w.k === 'at');
+  }
+  function drawDraft() {
+    document.getElementById('jWhenClock').textContent = hhmm(draft);
+    const t = isTomorrow(draft);
+    document.querySelectorAll('.jw-day button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.d === '1') === t)));
+    document.querySelector('.jw-step[data-s="-10"]').disabled = draft <= soonest();
+    document.querySelector('.jw-step[data-s="10"]').disabled = draft >= latest();
+  }
+  function whenOpen(on) {
+    const panel = document.getElementById('jWhenPanel'), row = document.getElementById('jWhenRow');
+    panel.hidden = !on; row.setAttribute('aria-expanded', String(on));
+    if (on) { draft = clamp(when.k === 'at' ? new Date(when.d) : soonest()); drawDraft(); requestAnimationFrame(() => panel.scrollIntoView({block: 'nearest', behavior: 'smooth'})); }
   }
 
   function bindPlace(which) {
@@ -136,6 +149,9 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   const dur = m => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
   const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
   const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
+  const CHEV = '<svg class="jw-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+  const MINUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 12h12"/></svg>';
+  const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg>';
   const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
   const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
 
@@ -258,10 +274,21 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     inSheet = true;
     bindPlace('from'); bindPlace('to');
     if (!last) when = {k: 'now'};
-    document.querySelectorAll('.jwhen button').forEach(b => b.addEventListener('click', () => { whenSet(b.dataset.k === 'in' ? {k: 'in', m: +b.dataset.m} : {k: 'now'}); next(); }));
-    const time = document.getElementById('jTime');
-    time.addEventListener('click', () => { try { time.showPicker?.(); } catch {} });   // desktop: open the clock, not the segments
-    time.addEventListener('change', () => { if (time.value) { whenSet({k: 'at', t: time.value}); next(); } });
+    whenSet(when);
+    document.getElementById('jWhenRow').addEventListener('click', () => whenOpen(document.getElementById('jWhenPanel').hidden));
+    document.getElementById('jWhenNow').addEventListener('click', () => { whenSet({k: 'now'}); whenOpen(false); next(); });
+    document.getElementById('jWhenGo').addEventListener('click', () => { whenSet({k: 'at', d: new Date(draft)}); whenOpen(false); next(); });
+    document.querySelectorAll('.jw-day button').forEach(b => b.addEventListener('click', () => {
+      const d = new Date(draft), today = new Date(); d.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + +b.dataset.d);
+      draft = clamp(d); drawDraft(); }));
+    document.querySelectorAll('.jw-step').forEach(b => {   // tap: 10 minutes; hold: keeps going, faster
+      const step = () => { draft = clamp(new Date(+draft + +b.dataset.s * 60e3)); drawDraft(); };
+      let hold = 0, rep = 0;
+      const stop = () => { clearTimeout(hold); clearInterval(rep); hold = rep = 0; };
+      b.addEventListener('pointerdown', e => { if (e.button) return; step(); hold = setTimeout(() => { rep = setInterval(() => { if (b.disabled) stop(); else step(); }, 90); }, 420); });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+      b.addEventListener('click', e => { if (e.detail === 0) step(); });   // keyboard (Enter/Space) presses
+    });
     document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus({preventScroll: true}); });
     document.getElementById('jSwap').addEventListener('click', () => {
       const f = document.getElementById('jFrom'), t = document.getElementById('jTo'), fp = fromOf();
@@ -273,7 +300,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     if (last) {   // back to the last search, as it was
       document.getElementById('jFrom').value = last.from;
       document.getElementById('jTo').value = last.to;
-      whenSet(last.when || {k: 'now'});
+      whenSet(last.when ? {...last.when, d: last.when.d && new Date(last.when.d)} : {k: 'now'});
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
       fold(true);

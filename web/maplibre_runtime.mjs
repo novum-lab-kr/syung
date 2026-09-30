@@ -744,11 +744,13 @@ function focusRoute(on){
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
 function closeSheet(){
   if(sheet.hidden)return;
+  // a field still focused keeps the keyboard up: let both go down together
+  if(sheet.contains(document.activeElement))document.activeElement.blur();
   sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
   // a chosen route stays on the map, with a bar to bring the results back (journey-ui)
   if(routeBounds&&journey.sheetClosed())fitRoute(110);
   else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
-  setTimeout(()=>{if(!sheet.classList.contains('open'))sheet.hidden=true},260);
+  setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
 }
 sheet.querySelector('.sheet-close').onclick=closeSheet;
 // The handle: drag the sheet down to close it (far or fast enough), or just tap it.
@@ -757,7 +759,7 @@ sheet.querySelector('.sheet-close').onclick=closeSheet;
   grab.addEventListener('pointermove',e=>{if(!drag)return;dy=Math.max(0,e.clientY-y0);if(dy>4)moved=true;sheet.style.transform=`translateY(${dy}px)`});
   const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
     const fast=dy/Math.max(1,performance.now()-t0)>.6;
-    if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(105%)';closeSheet()}
+    if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeSheet()}
     else sheet.style.transform=''};
   grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
   grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeSheet()})}
@@ -768,6 +770,7 @@ sheet.querySelector('.sheet-close').onclick=closeSheet;
 if(window.visualViewport){const vv=visualViewport;let dropTimer=0;
   const fitKeyboard=()=>{const H=document.documentElement.clientHeight||innerHeight;   // the layout height: the keyboard does not change it
     const kb=vv.scale>1.01?0:Math.max(0,Math.round(H-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
+    if(!sheet.classList.contains('open'))return;   // closing: keep the lift until it is gone, or it jumps as the keyboard drops
     const now=parseInt(sheet.style.getPropertyValue('--kb'))||0,put=v=>{sheet.style.setProperty('--kb',v+'px');sheet.classList.toggle('kb',v>40)};
     // up at once; down only once it holds for 250 ms — moving between 출발 and 도착 makes iOS report "no keyboard"
     // for a frame or two, and following that dropped the sheet and brought it back up from the bottom
