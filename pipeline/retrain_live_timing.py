@@ -58,12 +58,17 @@ def main() -> None:
                 and entry["candidate"]["all"] <= entry["current"]["all"] + SLACK:
             final = learn(train + holdout)
             publish(final, web)
-            entry["result"], entry["lines"] = "published", final["lines"]
+            entry["result"], entry["lines"], entry["n"] = "published", final["lines"], final.get("n")
         else:
             entry["result"] = "kept current"
     with LOG.open("a", encoding="utf-8") as log:
         log.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    print(json.dumps({k: v for k, v in entry.items() if k != "lines"}, ensure_ascii=False))
+    print(json.dumps({k: v for k, v in entry.items() if k not in ("lines", "n")}, ensure_ascii=False))
+    try:   # the learning page's numbers (pipeline/build_learning_stats.py)
+        from build_learning_stats import main as stats
+        stats(web)
+    except Exception as e:  # noqa: BLE001 — the retrain itself is done
+        print(f"learning stats failed: {e}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,8 @@
 """Per-line timing for rolling live trains forward, learned from sample_live_positions.py samples.
 
 Output (data/live-timing.json), read by the map runtime:
-  {"lines": {"<line>": {"pace": x, "zone": s, "approach": s}}, "default": {...}, "from": [...]}
+  {"lines": {"<line>": {"pace": x, "zone": s, "approach": s}}, "default": {...}, "from": [...],
+   "n": {"<line>": {"pace": spans, ...}}}   (n: how many spans each value was learned from)
 - pace: observed ÷ timetable time over 1–4 stations between two records of the same status
   (first sightings only)
   (도착→도착, 출발→출발), median. The feed's 도착/출발 mark a train entering and leaving the
@@ -129,7 +130,10 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
             lines[line] = out
         if verbose and out:
             print(f"{line:6} {out}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
-    return {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths]}
+    counts = {line: {k: n for k, n in (("pace", len(pace[line])), ("rushPace", len(rush_pace[line])),
+                                       ("zone", len(zone[line])), ("approach", len(approach[line]))) if n}
+              for line in sorted(set(pace) | set(zone) | set(approach))}
+    return {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths], "n": counts}
 
 
 def evaluate(timing: dict, paths: list[str]) -> dict:
