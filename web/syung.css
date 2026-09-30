@@ -32,7 +32,7 @@ html[data-theme=dark]{
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
 .settings-button[aria-expanded=true] svg{transform:rotate(60deg)}
 .refresh-button{margin-left:auto}
-.refresh-button+.settings-button{margin-left:0}
+.refresh-button+.settings-button{margin-left:-16px}   /* the pair sits together: 4px between the 40px targets, not the header's 20px */
 .refresh-button.spin svg{transform:rotate(360deg);transition:transform .6s}
 .settings-button:hover{background:rgba(20,20,20,.08)}
 html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
