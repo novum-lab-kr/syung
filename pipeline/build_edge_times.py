@@ -4,6 +4,7 @@
 Output (edge_times.json): {"edges": {"<line>:<lo id>:<hi id>": seconds}, "dwell": {"<line>": seconds}}
 - edges: median of (arrival at next stop − departure from this stop) over all regular trips.
 - dwell: median of (departure − arrival) at intermediate stops, per line (0 when the feed has none).
+- estimated: edges not in the timetable (newer sections), timed by length at the line's own pace.
 The WebGL runtime uses these instead of a guessed cruising speed when rolling trains forward.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict
@@ -68,8 +70,24 @@ def main() -> None:
 
     out = {"edges": {f"{l}:{a}:{b}": round(statistics.median(v)) for (l, a, b), v in runs.items()},
            "dwell": {l: round(statistics.median(v)) for l, v in dwells.items()}}
+    # sections newer than the timetable (인천1호선 검단연장, 2025-06): the line's own seconds per
+    # straight-line metre over its timetabled sections, times this one's length
+    at = {n["id"]: (n["lat"], n["lon"]) for n in metro["nodes"]}
+    def metres(a, b):
+        (la1, lo1), (la2, lo2) = at[a], at[b]
+        return 6371000 * math.hypot(math.radians(lo2 - lo1) * math.cos(math.radians((la1 + la2) / 2)), math.radians(la2 - la1))
+    per_metre = {}
+    for (l, a, b), v in runs.items():
+        t, m = per_metre.get(l, (0, 0))
+        per_metre[l] = (t + statistics.median(v), m + metres(a, b))
+    estimated = []
+    for l, a, b in sorted(edges - set(runs)):
+        if l in per_metre and per_metre[l][1]:
+            out["edges"][f"{l}:{a}:{b}"] = round(metres(a, b) * per_metre[l][0] / per_metre[l][1])
+            estimated.append(f"{l}:{a}:{b}")
+    out["estimated"] = estimated
     OUT.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(json.dumps({"edges": len(out["edges"]), "of": len(edges), "dwell": out["dwell"]}, ensure_ascii=False))
+    print(json.dumps({"edges": len(out["edges"]), "of": len(edges), "estimated": {k: out["edges"][k] for k in estimated}}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -109,6 +109,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=true],html
 .webgl-zoom{border:0!important;border-radius:999px!important;background:var(--paper)!important;color:var(--ink)!important;box-shadow:var(--shadow);padding:6px 11px!important;font-family:var(--round);font-weight:400!important;font-size:13px!important}
 .live-notice{border-radius:999px!important;border:0!important;background:var(--syung)!important;color:var(--syung-ink)!important;box-shadow:var(--shadow)!important;padding:8px 16px!important}
 html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syung)!important}
+.live-notice{top:66px!important;max-width:calc(100% - 28px)!important;text-align:center}   /* under the search bar, not over it */
 
 /* ---- popups (station, train) ---- */
 .maplibregl-popup-content{border-radius:18px!important;padding:14px 16px 12px!important;box-shadow:var(--shadow)!important;background:var(--paper);color:var(--ink)}
