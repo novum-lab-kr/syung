@@ -716,7 +716,10 @@ function showRoute(plan){
   if(!map.getSource('journey')){
     // veil: everything under the route (base map, other lines, station names) fades back
     map.addSource('journey-veil',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]]]}}});
-    map.addLayer({id:'journey-veil',type:'fill',source:'journey-veil',paint:{'fill-color':veilColor(),'fill-opacity':.68,'fill-opacity-transition':{duration:300}}});
+    // under the base map's labels: the ground fades back, street and place names stay readable
+    // (over everything at .68 the map around a route was too dim to read); the other lines fade
+    // by their own opacity in focusRoute
+    map.addLayer({id:'journey-veil',type:'fill',source:'journey-veil',paint:{'fill-color':veilColor(),'fill-opacity':.45,'fill-opacity-transition':{duration:300}}},map.getLayer('bm-label-water')?'bm-label-water':undefined);
     map.addSource('journey',{type:'geojson',data});
     map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,6,16,14]}});
     map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],10,3.5,16,9]}});
@@ -738,6 +741,8 @@ const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#
 // route focus: veil on, trains faded, my location kept above the veil
 function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
+  if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?.25:.9);
+  for(const id of ['transfer-casing','transfer-fill'])if(map.getLayer(id))map.setPaintProperty(id,'line-opacity',on?.3:1);
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
