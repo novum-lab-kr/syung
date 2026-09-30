@@ -765,10 +765,15 @@ sheet.querySelector('.sheet-close').onclick=closeSheet;
 // (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
 // iOS reports the keyboard late or only once (and not at all when a still-focused field is tapped again
 // after the keyboard was folded away), so while it moves the height is re-read every frame for a second.
-if(window.visualViewport){const vv=visualViewport;
+if(window.visualViewport){const vv=visualViewport;let dropTimer=0;
   const fitKeyboard=()=>{const H=document.documentElement.clientHeight||innerHeight;   // the layout height: the keyboard does not change it
     const kb=vv.scale>1.01?0:Math.max(0,Math.round(H-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
-    if(sheet.style.getPropertyValue('--kb')!==kb+'px'){sheet.style.setProperty('--kb',kb+'px');sheet.classList.toggle('kb',kb>40)}
+    const now=parseInt(sheet.style.getPropertyValue('--kb'))||0,put=v=>{sheet.style.setProperty('--kb',v+'px');sheet.classList.toggle('kb',v>40)};
+    // up at once; down only once it holds for 250 ms — moving between 출발 and 도착 makes iOS report "no keyboard"
+    // for a frame or two, and following that dropped the sheet and brought it back up from the bottom
+    if(kb>=now){clearTimeout(dropTimer);dropTimer=0;if(kb!==now)put(kb)}
+    else if(!dropTimer)dropTimer=setTimeout(()=>{dropTimer=0;const H2=document.documentElement.clientHeight||innerHeight;
+      const k2=vv.scale>1.01?0:Math.max(0,Math.round(H2-vv.height-vv.offsetTop));if(k2<(parseInt(sheet.style.getPropertyValue('--kb'))||0))put(k2)},250);
     if(scrollY||document.documentElement.scrollTop||document.body.scrollTop){scrollTo(0,0);document.body.scrollTop=0}};
   let until=0;const settle=()=>{fitKeyboard();if(performance.now()<until)requestAnimationFrame(settle)};
   const watch=()=>{const run=performance.now()>=until;until=performance.now()+1100;if(run)requestAnimationFrame(settle)};

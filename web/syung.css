@@ -413,7 +413,7 @@ html[data-theme=dark] .map{background-color:#10181c!important;background-image:n
 html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 
 /* phone keyboard up: the sheet sits on it (--kb from the runtime), the header and map stay put */
-.sheet{bottom:var(--kb,0px);transition:transform .32s cubic-bezier(.2,.8,.25,1),bottom .2s ease-out}
+.sheet{bottom:var(--kb,0px)}   /* no transition on bottom: the keyboard itself is the motion */
 .sheet.kb{max-height:calc(100% - var(--kb,0px) - 8px);border-radius:22px 22px 0 0;padding-bottom:10px}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}
 /* typing a place: the matches open right under the card, in the flow (a popover the scrolling body would clip);
