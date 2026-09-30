@@ -1044,18 +1044,17 @@ void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl
     const fs=`#version 300 es
 precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;uniform float u_alpha;out vec4 o;
 void main(){
-  // v_tw.x: >0 name cell, 0 box, -1 exit passage (full-round ends, dotted walk), -2 soft shadow (size includes 6px blur)
+  // v_tw.x: >0 name cell, 0 box, -1 exit passage (solid line colour), -3 its white casing, -2 soft shadow (size includes 6px blur)
   if(v_tw.x<-1.5){vec2 hs=v_size*.5-6.,q=abs(v_local)-(hs-min(hs.y,hs.x));float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-min(hs.y,hs.x);
     float a=(1.-smoothstep(-2.,6.,sd))*mix(.16,.4,u_dark);if(a<=0.)discard;o=vec4(0.,0.,0.,a)*u_alpha;return;}
-  bool pass=v_tw.x<-.5;
+  if(v_tw.x<-.5){vec2 hs=v_size*.5,q=abs(v_local)-(hs-hs.y);float sd=length(max(q,0.))-hs.y+min(max(q.x,q.y),0.),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;
+    vec3 col=v_tw.x<-2.5?mix(vec3(1.),vec3(.12,.17,.2),u_dark):v_color;o=vec4(col*c,c)*u_alpha;return;}
   // rounded rectangle: white fill, line-colour border, dark name
-  float r=pass?v_size.y*.5:abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(pass?1.4:abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
+  float r=abs(v_size.x-v_size.y)<.5?v_size.x*.5:min(v_size.y*.32,v_size.x*.5),border=(abs(v_size.x-v_size.y)<.5?1.8:2.2)*u_dpr;   // square box → dot
   vec2 q=abs(v_local)-(v_size*.5-r);float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-r;
   float aa=max(fwidth(sd),1e-3),cover=clamp(.5-sd/aa,0.,1.);if(cover<=0.)discard;
   vec3 fill=mix(vec3(1.),vec3(.12,.17,.2),u_dark),ink=mix(vec3(.11,.17,.19),vec3(.93,.96,.97),u_dark);   // dark mode: dark box, light name
   vec3 col=mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd));
-  if(pass){float g=v_size.y*1.1,x=mod(v_local.x+v_size.x*.5,g)-g*.5,dd=length(vec2(x,v_local.y))-v_size.y*.13;   // footstep dots along the passage
-    col=mix(col,mix(vec3(.72,.76,.78),vec3(.4,.46,.5),u_dark),clamp(.5-dd/aa,0.,1.)*step(abs(v_local.x),v_size.x*.5-v_size.y*.9));}
   if(v_tw.x>0.){vec2 t=(v_local+v_tw*.5)/v_tw;   // v_tw = text cell size (width, font × row ratio)
     if(t.x>0.&&t.x<1.&&t.y>0.&&t.y<1.){float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,ink,a);}}
   o=vec4(col*cover,cover)*u_alpha;   // premultiplied; faded behind a 길찾기 route
@@ -1107,7 +1106,7 @@ void main(){
     // zoom 16+: each exit hangs off its station by a short passage (drawn first, so the box covers its root)
     if(!pointsOnly&&z>=EXIT_MINZOOM){
       const byStation=new Map();for(const g of geo.values()){if(!byStation.has(g.id))byStation.set(g.id,[]);byStation.get(g.id).push(g)}
-      const w=Math.max(5,Math.min(9,hgt*.32)),grey=[.6,.65,.67],pass=[];
+      const w=Math.max(3,Math.min(5,hgt*.18)),pass=[];
       for(const [id,boxes] of byStation)for(const [lon,lat] of exits[id]||[]){
         const e=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]);let best=null;
         for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
@@ -1118,12 +1117,12 @@ void main(){
         const g=best.g,t=((e.x-g.cx)*g.ax+(e.y-g.cy)*g.ay)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2);
         if(Math.abs(t)>half){const side=t>0?1:-1;g.trunk=g.trunk||{};g.trunk[side]=Math.max(g.trunk[side]||half,Math.abs(t))}
         const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(d<g.h/2)continue;
-        pass.push([(sx+e.x)/2,(sy+e.y)/2,(e.x-sx)/unit/d,(e.y-sy)/unit/d,d+w,w]);
+        pass.push([(sx+e.x)/2,(sy+e.y)/2,(e.x-sx)/unit/d,(e.y-sy)/unit/d,d+w,w,g.col]);
       }
       for(const g of geo.values())for(const [side,far] of Object.entries(g.trunk||{})){const half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),m=(half+far)/2*side;
-        pass.unshift([g.cx+g.ax*m*unit,g.cy+g.ay*m*unit,g.ax*side,g.ay*side,far-half+w*1.6,w*1.6]);delete g.trunk}   // wider: the concourse the exits share
-      for(const [cx,cy,ux,uy,l,ww] of pass)quad(cx,cy,ux,uy,l+10,ww+10,[0,0,0,0],grey,-2,0);   // soft shadow
-      for(const [cx,cy,ux,uy,l,ww] of pass)quad(cx,cy,ux,uy,l,ww,[0,0,0,0],grey,-1,0);          // passage: white, grey rim, footstep dots
+        pass.unshift([g.cx+g.ax*m*unit,g.cy+g.ay*m*unit,g.ax*side,g.ay*side,far-half+w,w,g.col]);delete g.trunk}   // the concourse the exits share
+      for(const [cx,cy,ux,uy,l,ww,col] of pass)quad(cx,cy,ux,uy,l+3,ww+3,[0,0,0,0],col,-3,0);   // white casing
+      for(const [cx,cy,ux,uy,l,ww,col] of pass)quad(cx,cy,ux,uy,l,ww,[0,0,0,0],col,-1,0);       // passage: a thin line in the station's line colour
     }
     for(const g of geo.values()){
       if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}

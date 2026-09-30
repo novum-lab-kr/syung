@@ -7,7 +7,8 @@ exits and on nearby platform areas; at some stations that moved it 100–270 m a
 set from OSM's stop_position nodes of that line (the trains' stopping points, one per direction:
 their middle is the platform's middle), projected onto the line's track, and the station's edges
 are cut and joined again at that point.
-stop_overrides.json: {"<line>|<station name>": [lng, lat]} (the anchor; projected here).
+stop_overrides.json: {"<line>|<station name>": [lng, lat]} (the anchor; projected here), or
+{"at": [lng, lat], "shift": true} to also slide the track under the station over to the anchor.
 Run after build_track_shapes.py (it calls apply() itself), or alone to patch track_shapes.json.
 """
 
@@ -47,8 +48,10 @@ def _project(pts, q):
     return best
 
 
-def move_stop(ts: dict, line: str, sid: int, anchor) -> tuple[float, float] | None:
+def move_stop(ts: dict, line: str, sid: int, anchor, shift: bool = False) -> tuple[float, float] | None:
     """Move stops[line:sid] onto the track nearest `anchor`, re-cutting its (one or two) edges.
+    With `shift`, the track itself is slid over to the anchor around the station (full within
+    SHIFT_FULL m, eased out by SHIFT_FADE m) and the stop sits on the anchor.
     Returns (metres moved, anchor → track metres), or None where the station has 3+ edges."""
     keys = [k for k in ts["edges"] if k.startswith(line + ":") and str(sid) in k.split(":")[1:] and k.count(":") == 2]
     keys = [k for k in keys if str(sid) in (k.split(":")[1], k.split(":")[2])]
@@ -71,7 +74,23 @@ def move_stop(ts: dict, line: str, sid: int, anchor) -> tuple[float, float] | No
         k1, _, hi1 = ins[1]
         ts["edges"][k1] = [rnd(q) for q in (second[::-1] if hi1 else second)]
     ts["stops"][f"{line}:{sid}"] = rnd(p)
-    return _metres(old, p), d
+    if shift:   # OSM tunnel drawn beside the platform: slide the track over to the anchor near the station
+        o = _xy(anchor, p)
+        for k in keys:
+            ts["edges"][k] = [rnd(_shifted(q, p, o)) for q in ts["edges"][k]]
+        ts["stops"][f"{line}:{sid}"] = rnd(anchor)
+    return _metres(old, ts["stops"][f"{line}:{sid}"]), d
+
+
+SHIFT_FULL, SHIFT_FADE = 120, 250   # metres from the stop: moved all the way, then easing back onto the drawn track
+
+
+def _shifted(q, p, o):
+    r = _metres(q, p)
+    w = 1.0 if r <= SHIFT_FULL else max(0.0, 1 - (r - SHIFT_FULL) / (SHIFT_FADE - SHIFT_FULL))
+    w = w * w * (3 - 2 * w)
+    k = math.cos(math.radians(p[1]))
+    return [q[0] + o[0] * w / (k * 111320), q[1] + o[1] * w / 111320]
 
 
 def apply(ts: dict) -> list:
@@ -85,7 +104,9 @@ def apply(ts: dict) -> list:
             continue
         line, name = k.split("|")
         sid = by_name.get((line, name))
-        r = move_stop(ts, line, sid, anchor) if sid is not None and f"{line}:{sid}" in ts["stops"] else None
+        shift = isinstance(anchor, dict) and anchor.get("shift")
+        anchor = anchor["at"] if isinstance(anchor, dict) else anchor
+        r = move_stop(ts, line, sid, anchor, bool(shift)) if sid is not None and f"{line}:{sid}" in ts["stops"] else None
         done.append((k, None if r is None else (round(r[0]), round(r[1]))))
     return done
 
