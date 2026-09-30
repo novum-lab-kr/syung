@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_live_timing import OUT as REPO_TIMING, evaluate, learn, load  # noqa: E402
+from sample_files import all_days, day_files, lines  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 STATE = Path("/var/lib/subway-live")
@@ -30,15 +31,6 @@ HISTORY_CACHE = STATE / "learning-history.json"
 WINDOW = 7   # days of samples a retrain learns from (retrain_live_timing.DAYS)
 
 
-def day_files(d: date) -> list[Path]:
-    name = f"{d:%Y%m%d}.jsonl"
-    return [p for p in (STATE / "samples" / name, STATE / "position" / name) if p.exists()]
-
-
-def all_days() -> list[date]:
-    seen = {datetime.strptime(p.stem, "%Y%m%d").date() for sub in ("samples", "position")
-            for p in (STATE / sub).glob("*.jsonl") if p.stem.isdigit()}
-    return sorted(seen)
 
 
 def day_stats(d: date, cache: dict) -> dict:
@@ -50,7 +42,7 @@ def day_stats(d: date, cache: dict) -> dict:
     out = {"date": key, "stamp": stamp}
     for p in files:
         src = p.parent.name   # samples | position
-        rows = sum(1 for _ in p.open(encoding="utf-8"))
+        rows = sum(1 for _ in lines(p))
         trains = load([str(p)])
         events = sum(1 for seq in trains.values() for e in seq if e["event"])
         firsts = sum(len(seq) for seq in trains.values())
@@ -74,7 +66,7 @@ def backfill(d: date, have: set[date]) -> dict | None:
 def main(web: Path) -> None:
     days_cache = json.loads(DAYS_CACHE.read_text(encoding="utf-8")) if DAYS_CACHE.exists() else {}
     history = json.loads(HISTORY_CACHE.read_text(encoding="utf-8")) if HISTORY_CACHE.exists() else {}
-    days = all_days()
+    days = all_days(STATE)
     today = datetime.now(KST).date()
     stats = [day_stats(d, days_cache) for d in days]
     DAYS_CACHE.write_text(json.dumps(days_cache, ensure_ascii=False), encoding="utf-8")

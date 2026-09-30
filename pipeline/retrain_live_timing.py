@@ -7,6 +7,7 @@ predicts yesterday at least as well as the one in use.
   in seconds of the next event, event-stamped records)
 - candidate no worse (≤ current + 0.5 s): relearn with yesterday included, write it to
   /var/lib/subway-live/live-timing.json and the web folder; otherwise keep the current one
+- first, the finished days' record files are gzipped (sample_files.compress_old)
 - every run appends one JSON line to /var/lib/subway-live/retrain.log
 deploy/deploy.sh publishes /var/lib/subway-live/live-timing.json when it exists, so a deploy does
 not roll a retrained file back to the repository's copy.
@@ -22,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_live_timing import OUT as REPO_TIMING, evaluate, learn  # noqa: E402
+from sample_files import compress_old, day_files  # noqa: E402
 
 STATE = Path("/var/lib/subway-live")
 TIMING = STATE / "live-timing.json"
@@ -30,8 +32,7 @@ DAYS, SLACK = 7, 0.5
 
 
 def files(day: datetime) -> list[str]:
-    name = f"{day:%Y%m%d}.jsonl"
-    return [str(p) for p in (STATE / "samples" / name, STATE / "position" / name) if p.exists()]
+    return [str(p) for p in day_files(day.date(), STATE)]
 
 
 def publish(timing: dict, web: Path) -> None:
@@ -45,9 +46,14 @@ def publish(timing: dict, web: Path) -> None:
 def main() -> None:
     web = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/var/www/syung")
     today = datetime.now(timezone(timedelta(hours=9)))
+    try:   # yesterday's records are complete: gzip them (sample_files.py)
+        packed = compress_old(today.date(), STATE)
+    except OSError as e:
+        packed = [f"failed: {e}"]
     holdout = files(today - timedelta(days=1))
     train = [f for d in range(2, DAYS + 2) for f in files(today - timedelta(days=d))]
-    entry = {"at": today.isoformat(timespec="seconds"), "holdout": [Path(f).name for f in holdout], "train_files": len(train)}
+    entry = {"at": today.isoformat(timespec="seconds"), "holdout": [Path(f).name for f in holdout], "train_files": len(train),
+             "compressed": packed}
     if not holdout or not train:
         entry["result"] = "skipped: not enough samples"
     else:

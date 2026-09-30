@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyse_live_samples import key, node_of, scheduled, times, ts  # noqa: E402
+from sample_files import lines  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "live-timing.json"
@@ -64,7 +65,7 @@ def load(paths: list[str]) -> dict:
     records, shared = [], Counter()
     for p in paths:
         position = Path(p).parent.name == "position"
-        for row in Path(p).read_text(encoding="utf-8").splitlines():
+        for row in lines(p):   # .jsonl or .jsonl.gz
             e = json.loads(row)
             e["source"] = "position" if position else "all"
             if position:

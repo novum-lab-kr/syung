@@ -19,6 +19,7 @@ import sys
 from collections import defaultdict, deque
 from datetime import datetime
 from pathlib import Path
+from sample_files import lines as sample_lines  # .jsonl or .jsonl.gz
 
 ROOT = Path(__file__).resolve().parent.parent
 metro = json.loads((ROOT / "data/ktdb-gtfs-2025/capital-metro.json").read_text(encoding="utf-8"))
@@ -70,7 +71,7 @@ def ts(value: str) -> float:
 def main(paths: list[str]) -> None:
     events = defaultdict(dict)
     for p in paths:
-        for line in Path(p).read_text(encoding="utf-8").splitlines():
+        for line in sample_lines(p):   # .jsonl or .jsonl.gz
             e = json.loads(line)
             if e.get("receivedAt"):
                 events[(e["line"], e["trainNo"])][(e["receivedAt"], e["station"], e["status"])] = e

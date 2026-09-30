@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyse_live_samples import key, metro, node_of, times  # noqa: E402
 from extract_ktdb_capital_metro import SOURCE, normalized_station_name  # noqa: E402
+from sample_files import lines  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "journey.json"
@@ -46,7 +47,7 @@ def main(paths: list[str]) -> None:
 
     dirs, seen = defaultdict(Counter), defaultdict(list)
     for p in paths:
-        for row in Path(p).read_text(encoding="utf-8").splitlines():
+        for row in lines(p):   # .jsonl or .jsonl.gz
             e = json.loads(row)
             if e.get("receivedAt") and e.get("direction"):
                 seen[(e["line"], e["trainNo"], e["receivedAt"][:10])].append(e)
