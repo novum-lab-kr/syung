@@ -1,0 +1,11 @@
+{
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py.",
+ "7호선|고속터미널": [
+  127.005317,
+  37.5038095
+ ],
+ "5호선|동대문역사문화공원": [
+  127.0072737,
+  37.5642335
+ ]
+}

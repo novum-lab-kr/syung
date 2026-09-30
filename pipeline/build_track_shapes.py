@@ -764,6 +764,10 @@ def main(out_paths: list[Path]) -> None:
                 if new != stop_half.get(k):
                     reassigned += 1
                 stop_half[k] = new
+    # stations put back on their platform by hand (stop_overrides.json)
+    from stop_overrides import apply as apply_stop_overrides
+    for k, r in apply_stop_overrides({"edges": shapes, "stops": stops}):
+        print(f"stop override {k}: {'skipped' if r is None else f'moved {r[0]} m'}", file=sys.stderr)
     stop_dirs = orient_stations(shapes, stops, stop_half)
     payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
