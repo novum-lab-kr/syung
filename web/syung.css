@@ -244,12 +244,6 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jswap svg{width:18px;height:18px}
 /* 출발 시각: a small row under the card */
 .jopts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.jf-when button{padding:7px 13px;font-size:13px}
-.jf-at{display:flex;gap:6px;flex:1;min-width:190px}
-.jf-at[hidden]{display:none}
-.jf-at select,.jf-at input{height:38px;padding:0 10px;border:1.5px solid var(--rule);border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:16px}
-.jf-at input{flex:1;min-width:0}
-.jf-at select:focus,.jf-at input:focus{outline:none;border-color:var(--syung-deep)}
 .jf-list{position:absolute;z-index:5;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;border-radius:12px;background:var(--paper);box-shadow:var(--shadow);max-height:240px;overflow:auto}
 .jf-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .jf-list button:hover{background:var(--control)}
@@ -435,3 +429,17 @@ html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 .identity .brand-line p{display:flex;align-items:center;gap:10px;margin:0;font-size:14px;white-space:nowrap}
 .identity .brand-line p::before{content:"";width:1.5px;height:14px;border-radius:1px;background:currentColor;opacity:.45}
 @media(max-width:720px){.identity .brand-line p{display:none}}   /* phones: the name only */
+
+/* 출발 시각: one row of chips — 지금 · 10분 뒤 · 30분 뒤 · 1시간 뒤 · 시간 선택 (the phone's own clock) */
+.jwhen{display:flex;gap:6px;margin:0 -2px;padding:2px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}
+.jwhen::-webkit-scrollbar{display:none}
+.jwhen>button,.jw-pick{flex:none;position:relative;display:inline-flex;align-items:center;gap:5px;height:36px;padding:0 12px;border:1.5px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--secondary);font:inherit;font-size:13.5px;font-weight:700;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.jwhen>button:hover,.jw-pick:hover{border-color:var(--muted);color:var(--ink)}
+.jwhen [aria-checked=true]{background:var(--syung);border-color:var(--syung);color:var(--syung-ink)}
+.jw-pick svg{width:15px;height:15px;flex:none}
+.jw-pick[aria-checked=true]{font-variant-numeric:tabular-nums}
+.jw-pick input{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none}   /* tapping the chip is tapping the field: the phone's time wheel opens */
+.jw-pick:focus-within{outline:3px solid var(--focus);outline-offset:2px}
+html[data-theme=dark] .jwhen>button,html[data-theme=dark] .jw-pick{background:var(--control)}
+html[data-theme=dark] .jwhen [aria-checked=true]{background:var(--syung)}
+@media(max-width:360px){.jwhen{gap:5px}.jwhen>button,.jw-pick{padding:0 10px}.jw-l{display:none}}   /* small phones: 10분 · 30분 */

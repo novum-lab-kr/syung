@@ -761,13 +761,19 @@ sheet.querySelector('.sheet-close').onclick=closeSheet;
     else sheet.style.transform=''};
   grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
   grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeSheet()})}
-// Phone keyboard: only the sheet rises above it. iOS scrolls the whole page up to show a focused field
+// Phone keyboard: only the sheet rises above it. iOS scrolls or pans the page to show a focused field
 // (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
+// iOS reports the keyboard late or only once (and not at all when a still-focused field is tapped again
+// after the keyboard was folded away), so while it moves the height is re-read every frame for a second.
 if(window.visualViewport){const vv=visualViewport;
-  const fitKeyboard=()=>{const kb=vv.scale>1.01?0:Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
-    sheet.style.setProperty('--kb',kb+'px');sheet.classList.toggle('kb',kb>40);
+  const fitKeyboard=()=>{const H=document.documentElement.clientHeight||innerHeight;   // the layout height: the keyboard does not change it
+    const kb=vv.scale>1.01?0:Math.max(0,Math.round(H-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
+    if(sheet.style.getPropertyValue('--kb')!==kb+'px'){sheet.style.setProperty('--kb',kb+'px');sheet.classList.toggle('kb',kb>40)}
     if(scrollY||document.documentElement.scrollTop||document.body.scrollTop){scrollTo(0,0);document.body.scrollTop=0}};
-  vv.addEventListener('resize',fitKeyboard);vv.addEventListener('scroll',fitKeyboard);
+  let until=0;const settle=()=>{fitKeyboard();if(performance.now()<until)requestAnimationFrame(settle)};
+  const watch=()=>{const run=performance.now()>=until;until=performance.now()+1100;if(run)requestAnimationFrame(settle)};
+  vv.addEventListener('resize',watch);vv.addEventListener('scroll',watch);
+  for(const ev of ['focusin','focusout','pointerup'])sheet.addEventListener(ev,e=>{if(ev!=='pointerup'||e.target.closest('input,select,textarea'))watch()});
   addEventListener('scroll',()=>{if(sheet.classList.contains('kb'))fitKeyboard()},{passive:true})}
 addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 // Following: the camera keeps the chosen train in the middle of the map above the sheet.

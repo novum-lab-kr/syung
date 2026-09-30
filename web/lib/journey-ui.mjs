@@ -35,39 +35,40 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   </div>
   <ul class="jf-list" id="jFromList" aria-label="출발지 찾기 결과" hidden></ul>
   <ul class="jf-list" id="jToList" aria-label="도착지 찾기 결과" hidden></ul>
-  <div class="jopts" role="group" aria-label="출발 시각">
-    <div class="segmented jf-when"><button type="button" data-when="now" aria-pressed="true">지금 출발</button><button type="button" data-when="later" aria-pressed="false">시간 지정</button></div>
-    <div class="jf-at" hidden>
-      <select id="jDay" aria-label="날짜"><option value="0">오늘</option><option value="1">내일</option></select>
-      <input id="jTime" type="time" aria-label="출발 시각" step="300">
-    </div>
+  <div class="jopts jwhen" role="radiogroup" aria-label="출발 시각">
+    <button type="button" role="radio" aria-checked="true" data-k="now">지금</button>
+    <button type="button" role="radio" aria-checked="false" data-k="in" data-m="10">10분<span class="jw-l"> 뒤</span></button>
+    <button type="button" role="radio" aria-checked="false" data-k="in" data-m="30">30분<span class="jw-l"> 뒤</span></button>
+    <label class="jw-pick" role="radio" aria-checked="false">${CLOCK}<span id="jPickText">시간 선택</span><input id="jTime" type="time" aria-label="출발 시각 직접 고르기"></label>
   </div>
   <div class="jf-status" id="jStatus" role="status" aria-live="polite"></div>
   <div id="jResult"></div>
 </div>`;
   }
 
+  // 출발 시각: now, a few minutes from now, or a clock time (past already today → tomorrow)
   const pad = n => String(n).padStart(2, '0');
-  function whenSet(later, at = '') {
-    document.querySelectorAll('.jf-when button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.when === 'later') === later)));
-    document.querySelector('.jf-at').hidden = !later;
-    const day = document.getElementById('jDay'), time = document.getElementById('jTime');
-    if (at) {
-      const d = new Date(at), today = new Date();
-      day.value = d.toDateString() === today.toDateString() ? '0' : '1';
-      time.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    } else if (later && !time.value) {
-      const d = new Date(Date.now() + 15 * 60e3);   // a quarter of an hour from now, on the 5 minutes
-      time.value = `${pad(d.getHours())}:${pad(Math.floor(d.getMinutes() / 5) * 5)}`;
-      day.value = d.toDateString() === new Date().toDateString() ? '0' : '1';   // past midnight: 내일
-    }
-  }
+  let when = {k: 'now'};
+  const local = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const atOf = t => { const [h, m] = t.split(':').map(Number), d = new Date(); d.setHours(h, m, 0, 0); if (d < Date.now() - 60e3) d.setDate(d.getDate() + 1); return d; };
+  const isTomorrow = d => d.toDateString() !== new Date().toDateString();
   function whenValue() {
-    if (document.querySelector('.jf-at').hidden) return '';
-    const t = document.getElementById('jTime').value;
-    if (!t) return '';
-    const d = new Date(); d.setDate(d.getDate() + +document.getElementById('jDay').value);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${t}`;
+    if (when.k === 'in') return local(new Date(Date.now() + when.m * 60e3));
+    if (when.k === 'at') return local(atOf(when.t));
+    return '';
+  }
+  function whenLabel() {
+    if (when.k === 'in') return `${when.m < 60 ? `${when.m}분` : `${when.m / 60}시간`} 뒤 출발`;
+    if (when.k === 'at') { const d = atOf(when.t); return `${isTomorrow(d) ? '내일 ' : ''}${when.t} 출발`; }
+    return '지금 출발';
+  }
+  function whenSet(w) {
+    when = w;
+    document.querySelectorAll('.jwhen [role=radio]').forEach(b => b.setAttribute('aria-checked', String(
+      b.classList.contains('jw-pick') ? w.k === 'at' : b.dataset.k === w.k && (w.k !== 'in' || +b.dataset.m === w.m))));
+    const text = document.getElementById('jPickText'), time = document.getElementById('jTime');
+    if (w.k === 'at') { const d = atOf(w.t); text.textContent = `${isTomorrow(d) ? '내일 ' : ''}${w.t}`; time.value = w.t; }
+    else text.textContent = '시간 선택';
   }
 
   function bindPlace(which) {
@@ -115,7 +116,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     const sum = document.getElementById('jSum');
     sum.hidden = !on;
     if (on) {
-      const at = whenValue(), t = at ? `${document.getElementById('jDay').value === '1' ? '내일 ' : ''}${at.slice(11)} 출발` : '지금 출발';
+      const t = whenLabel();
       sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span></span><span class="jsum-side"><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}수정</span></span>`;
       sum.setAttribute('aria-label', `${document.getElementById('jFrom').value}에서 ${document.getElementById('jTo').value}까지, ${t}. 눌러서 바꾸기`);
     }
@@ -135,6 +136,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   const dur = m => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
   const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
   const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
+  const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
   const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
 
   const textW = t => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
@@ -243,7 +245,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       if (my !== goSeq || !out.isConnected) return;   // a newer search took over, or the sheet shows something else now
       if (!d.ok) { failed(out, d.error || '출발지나 도착지를 바꿔 보세요.'); return; }
       status.textContent = '';
-      last = {d, sel: 0, from: trip.from, to: trip.to, at, picked: trip.picked};
+      last = {d, sel: 0, from: trip.from, to: trip.to, at, when: {...when}, picked: trip.picked};
       render(d, 0);
       fold(true);
       const sh = out.closest('.sheet-body'); if (sh) sh.scrollTop = 0;   // the trip line and the tabs first
@@ -255,8 +257,11 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     openSheet(form());
     inSheet = true;
     bindPlace('from'); bindPlace('to');
-    document.querySelectorAll('.jf-when button').forEach(b => b.addEventListener('click', () => { const later = b.dataset.when === 'later'; whenSet(later); if (!later) next(); }));
-    for (const id of ['jDay', 'jTime']) document.getElementById(id).addEventListener('change', () => next());
+    if (!last) when = {k: 'now'};
+    document.querySelectorAll('.jwhen button').forEach(b => b.addEventListener('click', () => { whenSet(b.dataset.k === 'in' ? {k: 'in', m: +b.dataset.m} : {k: 'now'}); next(); }));
+    const time = document.getElementById('jTime');
+    time.addEventListener('click', () => { try { time.showPicker?.(); } catch {} });   // desktop: open the clock, not the segments
+    time.addEventListener('change', () => { if (time.value) { whenSet({k: 'at', t: time.value}); next(); } });
     document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus(); });
     document.getElementById('jSwap').addEventListener('click', () => {
       const f = document.getElementById('jFrom'), t = document.getElementById('jTo'), fp = fromOf();
@@ -268,7 +273,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     if (last) {   // back to the last search, as it was
       document.getElementById('jFrom').value = last.from;
       document.getElementById('jTo').value = last.to;
-      whenSet(!!last.at, last.at);
+      whenSet(last.when || {k: 'now'});
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
       fold(true);
