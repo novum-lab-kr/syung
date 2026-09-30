@@ -76,6 +76,11 @@ BSTOPS = BUS["stops"] if BUS else []
 BROUTES = BUS["routes"] if BUS else []
 BPATS = BUS["patterns"] if BUS else []
 BUS_WALK = BUS["walk"] if BUS else []
+# stops whose KTDB coordinates are rounded, put on their OSM stop (pipeline/fix_bus_stops.py)
+_fix_file = ROOT / "data/bus-stop-fix.json"
+for _i, (_la, _lo) in (json.loads(_fix_file.read_text(encoding="utf-8")).items() if BUS and _fix_file.exists() else ()):
+    if int(_i) < len(BSTOPS):
+        BSTOPS[int(_i)] = [BSTOPS[int(_i)][0], _la, _lo]
 BUS_AT: dict[int, list[tuple[int, int]]] = defaultdict(list)   # stop → [(pattern, position)]
 _bgrid: dict[tuple[int, int], list[int]] = defaultdict(list)
 for _pi, _p in enumerate(BPATS):
@@ -113,11 +118,23 @@ def _decode(s: str) -> list[list[float]]:
 
 
 def _bus_path(pi: int, k: int, j: int) -> list[list[float]]:
-    """Where the bus goes from its k-th to its j-th stop: along the roads when shaped, else stop to stop."""
+    """Where the bus goes from its k-th to its j-th stop: along the roads when shaped, else stop to stop.
+
+    Starts and ends at the stops themselves: the shape's own stop points came from matching the
+    (often rounded) coordinates onto the road and sat up to ~140 m off (643 at 사당역), so the road
+    path is cut where it passes closest to each stop, between its neighbouring stops' points."""
     p, sh = BPATS[pi], BUS_SHAPES.get(str(pi))
-    if sh and len(sh[1]) == len(p["s"]):
-        return _decode(sh[0])[sh[1][k]:sh[1][j] + 1]
-    return [[BSTOPS[i][2], BSTOPS[i][1]] for i in p["s"][k:j + 1]]
+    a, b = [BSTOPS[p["s"][k]][2], BSTOPS[p["s"][k]][1]], [BSTOPS[p["s"][j]][2], BSTOPS[p["s"][j]][1]]
+    if not (sh and len(sh[1]) == len(p["s"])):
+        return [[BSTOPS[i][2], BSTOPS[i][1]] for i in p["s"][k:j + 1]]
+    line, at = _decode(sh[0]), sh[1]
+
+    def closest(stop, lo, hi):
+        return min(range(lo, hi + 1), key=lambda n: (line[n][0] - stop[0]) ** 2 * 0.63 + (line[n][1] - stop[1]) ** 2)
+
+    s0 = closest(a, at[k - 1] if k else 0, at[k + 1] if k + 1 < len(at) else len(line) - 1)
+    s1 = closest(b, max(s0, at[j - 1]), at[j + 1] if j + 1 < len(at) else len(line) - 1)
+    return [a, *line[s0:s1 + 1], b]
 
 
 def _stops_near(p: tuple[float, float], radius: float) -> list[tuple[float, int]]:
@@ -315,13 +332,47 @@ def _next_live(live: dict, line: str, at: int, toward: int, after: datetime) -> 
 
 # ---- search --------------------------------------------------------------------------------
 
+def _unhook(pts: list, min_leg: float = 12.0) -> list:
+    """Drop vertices where a [lng, lat] path doubles back (legs within ~30° of each other, one of
+    them min_leg or longer), and repeated points."""
+    pts = [q for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
+
+    def near(q, r, m=12.0):
+        return math.hypot((q[0] - r[0]) * math.cos(math.radians(r[1])), q[1] - r[1]) * 111320 < m
+    # once the path is within 12 m of where it ends, go straight there (it curled round an exit to
+    # reach the footway point OSRM snapped it to); the same from where it starts
+    if len(pts) > 2:
+        end = next(i for i in range(len(pts)) if near(pts[i], pts[-1]))
+        pts = pts[:end] + [pts[-1]] if end else [pts[0], pts[-1]]
+        start = max(i for i in range(len(pts)) if near(pts[i], pts[0]))
+        pts = [pts[0]] + pts[start + 1:] if start < len(pts) - 1 else [pts[0], pts[-1]]
+    changed = True
+    while changed and len(pts) > 2:
+        changed = False
+        for i in range(1, len(pts) - 1):
+            k = math.cos(math.radians(pts[i][1]))
+            ax, ay = (pts[i - 1][0] - pts[i][0]) * k, pts[i - 1][1] - pts[i][1]
+            bx, by = (pts[i + 1][0] - pts[i][0]) * k, pts[i + 1][1] - pts[i][1]
+            la, lb = math.hypot(ax, ay) * 111320, math.hypot(bx, by) * 111320
+            if la < 0.5 or lb < 0.5 or max(la, lb) < min_leg:
+                continue
+            if (ax * bx + ay * by) / (math.hypot(ax, ay) * math.hypot(bx, by)) > 0.85:
+                del pts[i]
+                changed = True
+                break
+    return pts
+
+
 def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list, int, int]:
     """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres); a straight line when unavailable."""
     try:
         url = f"{OSRM_URL}/route/v1/foot/{a[1]:.6f},{a[0]:.6f};{b[1]:.6f},{b[0]:.6f}?overview=full&geometries=geojson"
         with urllib.request.urlopen(url, timeout=6) as r:
             route = json.load(r)["routes"][0]
-        return route["geometry"]["coordinates"], round(route["duration"]), round(route["distance"])
+        # from the very point to the very point (OSRM starts and ends where it snapped them onto a
+        # footway), without the hook where it ran past an exit or stop and came back to it
+        pts = [[a[1], a[0]], *route["geometry"]["coordinates"], [b[1], b[0]]]
+        return _unhook(pts), round(route["duration"]), round(route["distance"])
     except (OSError, ValueError, KeyError, IndexError):
         m = _meters(a, b) * 1.3
         return [[a[1], a[0]], [b[1], b[0]]], round(m / 1.2), round(m)
@@ -662,9 +713,18 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     plans = []
     for tag, r in found:
         legs = r["legs"]
-        for l in legs:
+        for i, l in enumerate(legs):
             if l["type"] == "walk":   # walking geometry
                 a, b = (l.pop("a"), l.pop("b")) if "a" in l else (origin, l["point"]) if "to" in l else (l["point"], dest)
+                # to and from a bus: where its drawn path starts / ends (the stop on the kerb of its
+                # road), not the stop's own coordinates — a quarter of KTDB's are rounded to 3
+                # decimals or fewer, so the walk ended ~100 m from where the bus was drawn boarding
+                # (643 at 사당역 132 m, 2016 at 신촌 142 m)
+                nxt, prv = (legs[i + 1] if i + 1 < len(legs) else None), (legs[i - 1] if i else None)
+                if nxt and nxt["type"] == "bus" and nxt.get("path"):
+                    b = (nxt["path"][0][1], nxt["path"][0][0])
+                if prv and prv["type"] == "bus" and prv.get("path"):
+                    a = (prv["path"][-1][1], prv["path"][-1][0])
                 l["path"], _, _ = walk_path(a, b)
                 l.pop("point", None)
             else:

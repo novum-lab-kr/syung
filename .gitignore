@@ -22,3 +22,4 @@ data/osm-tracks/platforms-raw.json
 # derived from the KTDB GTFS by pipeline/build_bus_data.py
 data/bus.json
 data/bus-shapes.json
+data/bus-stop-fix.json

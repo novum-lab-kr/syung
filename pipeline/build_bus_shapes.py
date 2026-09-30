@@ -185,6 +185,12 @@ def shape(p: dict, stops: list) -> list | None:
 def main() -> None:
     limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else None
     bus = json.loads(BUS.read_text(encoding="utf-8"))
+    # rounded KTDB stops put on their OSM stop first (fix_bus_stops.py): matched from the rounded
+    # points, routes took the wrong road past a stop (643 at 사당역 144 m off it)
+    fix = ROOT / "data" / "bus-stop-fix.json"
+    if fix.exists():
+        for i, (la, lo) in json.loads(fix.read_text(encoding="utf-8")).items():
+            bus["stops"][int(i)] = [bus["stops"][int(i)][0], la, lo]
     pats = bus["patterns"][:limit] if limit else bus["patterns"]
     out, done = {}, 0
     with ThreadPoolExecutor(4) as ex:
