@@ -24,6 +24,38 @@ from extract_ktdb_capital_metro import CAPITAL_LINES, DISPLAY_NAMES, SOURCE, nor
 ROOT = Path(__file__).resolve().parent.parent
 METRO = ROOT / "data" / "ktdb-gtfs-2025" / "capital-metro.json"
 OUT = ROOT / "data" / "ktdb-gtfs-2025" / "edge_times.json"
+# Runs the timetable gets wrong, set from the live feeds instead.
+OBSERVED = {
+    # 신내–봉화산: the timetable has 270 s (trips starting at 신내 seem to count their wait there);
+    # 상행 신내 출발 → 봉화산 도착 takes 90–180 s in the 2026-09-29 samples, 6310 about 2 min on
+    # 2026-09-30 22:00 (카카오 had it at 봉화산 while the map was still halfway)
+    "6호선:179:426": 130,
+    # position feed, 2026-09-28–30: edges the map ran 30+ s off with 20+ runs seen (3호선 and
+    # 1호선 downtown are whole minutes in the timetable); value = the run that makes the map's
+    # 출발→도착 match the median seen (build_live_timing.evaluate)
+    "3호선:59:60": 77,   # 지축–구파발 시간표 180s, 실제 출발→도착 49s (n=27)
+    "1호선:1:104": 61,   # 시청–서울 시간표 120s, 실제 출발→도착 39s (n=82)
+    "3호선:86:87": 64,   # 수서–가락시장 시간표 120s, 실제 출발→도착 36s (n=39)
+    "3호선:66:67": 67,   # 독립문–경복궁 시간표 120s, 실제 출발→도착 39s (n=43)
+    "1호선:1:2": 67,   # 시청–종각 시간표 120s, 실제 출발→도착 46s (n=86)
+    "2호선:56:58": 100,   # 신정네거리–까치산 시간표 150s, 실제 출발→도착 57s (n=30)
+    "3호선:60:61": 72,   # 구파발–연신내 시간표 120s, 실제 출발→도착 44s (n=42)
+    "3호선:74:75": 72,   # 압구정–신사 시간표 120s, 실제 출발→도착 44s (n=42)
+    "3호선:78:79": 73,   # 남부터미널–양재 시간표 120s, 실제 출발→도착 44s (n=44)
+    "3호선:85:86": 73,   # 일원–수서 시간표 120s, 실제 출발→도착 45s (n=44)
+    "3호선:73:74": 74,   # 옥수–압구정 시간표 120s, 실제 출발→도착 46s (n=26)
+    "3호선:63:64": 74,   # 녹번–홍제 시간표 120s, 실제 출발→도착 46s (n=29)
+    "2호선:55:56": 135,   # 양천구청–신정네거리 시간표 180s, 실제 출발→도착 91s (n=26)
+    "3호선:31:77": 80,   # 교대–고속터미널 시간표 120s, 실제 출발→도착 52s (n=45)
+    "3호선:79:80": 80,   # 양재–매봉 시간표 120s, 실제 출발→도착 52s (n=41)
+    "1호선:7:8": 51,   # 제기동–청량리 시간표 90s, 실제 출발→도착 29s (n=61)
+    "2호선:33:34": 111,   # 방배–사당 시간표 150s, 실제 출발→도착 68s (n=59)
+    "1호선:5:9": 52,   # 동대문–동묘앞 시간표 90s, 실제 출발→도착 30s (n=31)
+    "2호선:54:55": 115,   # 도림천–양천구청 시간표 150s, 실제 출발→도착 72s (n=30)
+    "1호선:6:9": 58,   # 신설동–동묘앞 시간표 90s, 실제 출발→도착 36s (n=30)
+    "1호선:2:3": 59,   # 종각–종로3가 시간표 90s, 실제 출발→도착 37s (n=48)
+    "2호선:39:40": 129,   # 신대방–구로디지털단지 시간표 90s, 실제 출발→도착 85s (n=50)
+}
 
 
 def seconds(value: str) -> int | None:
@@ -86,6 +118,9 @@ def main() -> None:
             out["edges"][f"{l}:{a}:{b}"] = round(metres(a, b) * per_metre[l][0] / per_metre[l][1])
             estimated.append(f"{l}:{a}:{b}")
     out["estimated"] = estimated
+    for k, v in OBSERVED.items():
+        out["edges"][k] = v
+    out["observed"] = sorted(OBSERVED)
     OUT.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(json.dumps({"edges": len(out["edges"]), "of": len(edges), "estimated": {k: out["edges"][k] for k in estimated}}, ensure_ascii=False))
 
