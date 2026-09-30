@@ -54,6 +54,7 @@ POSITION_BUDGET = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_BUDGET", "3000
 # Identical requests within this many seconds get the same bytes (the map polls every 10–20 s; a
 # busy minute is many people asking for the same few line sets)
 RESPONSE_SECONDS = max(0.0, float(os.environ.get("SUBWAY_LIVE_RESPONSE_SECONDS", "2")))
+PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
 QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
 
 LINE_NAMES = {
@@ -77,6 +78,7 @@ def _load_quota() -> None:
         saved = json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
         if saved.get("day") == _today():
             _quota_day, _quota_used = saved["day"], int(saved.get("used", 0))
+            _position_used.update(day=saved["day"], calls=int(saved.get("position", 0)))   # survives restarts
     except (OSError, ValueError, TypeError, KeyError):
         pass
 
@@ -84,7 +86,7 @@ def _load_quota() -> None:
 def _save_quota() -> None:
     QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
     temporary = QUOTA_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"day": _quota_day, "used": _quota_used}), encoding="utf-8")
+    temporary.write_text(json.dumps({"day": _quota_day, "used": _quota_used, "position": _position_used["calls"]}), encoding="utf-8")
     temporary.replace(QUOTA_FILE)
 
 
@@ -349,6 +351,16 @@ def snapshot_arrivals(name: str) -> tuple[dict, int]:
         return {"ok": True, "fetchedAt": data["fetchedAt"], "station": name, "arrivals": rows}, 200
 
 
+def _all_interval(now: datetime | None = None) -> float:
+    """Seconds between all-lines calls: CACHE_SECONDS, stretched when the calls left today (less
+    PACE_RESERVE for bursts and the position overlay) would not last until midnight at that rate —
+    1000 a day at 60 s runs out in the evening (2026-09-30: gone at 16:53)."""
+    t = now or datetime.now(KST)
+    to_midnight = (t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - t).total_seconds()
+    left = DAILY_LIMIT - _quota_used - PACE_RESERVE
+    return max(CACHE_SECONDS, min(MAX_PACE_SECONDS, to_midnight / max(1, left)))
+
+
 def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
     """Serve any set of lines from one cached all-lines call; None → caller falls back per line."""
     global _all_cache
@@ -358,7 +370,7 @@ def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
         if quiet and _all_cache is None:
             return {"ok": True, "mode": "all", "quiet": True, "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": 0, "cacheSeconds": CACHE_SECONDS,
                     "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": [], "trains": []}, 200
-        if not quiet and (_all_cache is None or now - _all_cache[0] >= CACHE_SECONDS):
+        if not quiet and (_all_cache is None or now - _all_cache[0] >= _all_interval()):
             try:
                 _all_cache = (now, _fetch_all())
             except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
@@ -371,7 +383,7 @@ def snapshot_all(lines: list[str]) -> tuple[dict, int] | None:
         quota_out = _quota_used >= DAILY_LIMIT
         data = _all_cache[1]
         trains = [t for line in selected for t in data["lines"].get(line, [])]
-        return {"ok": True, "mode": "all", "quiet": quiet, "quotaExhausted": quota_out, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": CACHE_SECONDS,
+        return {"ok": True, "mode": "all", "quiet": quiet, "quotaExhausted": quota_out, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": round(_all_interval()),
                 "quota": {"used": _quota_used, "limit": DAILY_LIMIT, "day": _quota_day}, "lines": selected, "warnings": warnings, "trains": trains}, 200
 
 
@@ -438,7 +450,7 @@ def _positions(line: str, ttl: int) -> list[dict] | None:
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
         _position_used["calls"] += 1
         try:
-            data = _fetch_line(line)
+            data = _fetch_line(line)   # saves the quota file, position count included
         except (OSError, ValueError, RuntimeError, urllib.error.URLError):
             return cached[1] if cached and now - cached[0] < ttl * 4 else None
         _save_positions(data)   # event-stamped records: build_live_timing.py learns rush-hour pace from them
