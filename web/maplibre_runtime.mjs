@@ -682,10 +682,10 @@ class TrainLayer{
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
 const sheet=document.createElement('section');sheet.className='sheet';sheet.hidden=true;sheet.setAttribute('aria-label','상세 정보');
-sheet.innerHTML='<div class="sheet-grab" aria-hidden="true"></div><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
+sheet.innerHTML='<button type="button" class="sheet-grab" aria-label="닫기" title="끌어내리거나 눌러서 닫기"></button><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
 const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
 let sheetToken=0,sheetTrain=null,following=null,easing=false;
-function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
+function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
   const out=[];
@@ -751,6 +751,16 @@ function closeSheet(){
   setTimeout(()=>{if(!sheet.classList.contains('open'))sheet.hidden=true},260);
 }
 sheet.querySelector('.sheet-close').onclick=closeSheet;
+// The handle: drag the sheet down to close it (far or fast enough), or just tap it.
+{const grab=sheet.querySelector('.sheet-grab');let y0=0,t0=0,dy=0,drag=false,moved=false;
+  grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
+  grab.addEventListener('pointermove',e=>{if(!drag)return;dy=Math.max(0,e.clientY-y0);if(dy>4)moved=true;sheet.style.transform=`translateY(${dy}px)`});
+  const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
+    const fast=dy/Math.max(1,performance.now()-t0)>.6;
+    if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(105%)';closeSheet()}
+    else sheet.style.transform=''};
+  grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
+  grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeSheet()})}
 // Phone keyboard: only the sheet rises above it. iOS scrolls the whole page up to show a focused field
 // (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
 if(window.visualViewport){const vv=visualViewport;

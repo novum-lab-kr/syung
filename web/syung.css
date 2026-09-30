@@ -159,7 +159,11 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
   padding:10px max(20px,calc((100% - 760px)/2)) calc(18px + env(safe-area-inset-bottom,0px))}
 .sheet.open{transform:none}
 .sheet[hidden]{display:none}
-.sheet-grab{width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 8px}
+.sheet-grab{position:relative;display:block;width:calc(100% + 40px);height:26px;margin:-10px -20px 2px;padding:0;border:0;background:none;cursor:grab;touch-action:none}   /* the whole top strip is the handle */
+.sheet-grab::before{content:"";position:absolute;left:50%;top:10px;width:40px;height:5px;margin-left:-20px;border-radius:3px;background:var(--rule);transition:background .15s,width .15s}
+.sheet-grab:hover::before,.sheet-grab:active::before{background:var(--muted)}
+.sheet-grab:active{cursor:grabbing}
+.sheet-grab:focus-visible{outline:none}.sheet-grab:focus-visible::before{background:var(--focus);width:56px;margin-left:-28px}
 .sheet-close{position:absolute;z-index:2;top:12px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:var(--control);color:var(--secondary);font-size:14px;cursor:pointer}
 .sheet-close:hover{background:var(--syung);color:var(--syung-ink)}
 .sheet-body{padding-right:36px;min-height:0;flex:0 1 auto;overflow:auto;overscroll-behavior:contain}   /* the body scrolls, not the sheet: a scrolling sheet over the WebGL canvas blanked the map above it in Chromium */
@@ -220,7 +224,7 @@ html[data-theme=dark] .route-cta{box-shadow:0 3px 0 rgba(0,0,0,.4),0 10px 24px r
 .st-journey button{height:46px;border:0;border-radius:999px;background:var(--control);color:var(--ink);font-family:var(--round);font-size:16px;cursor:pointer}
 .st-journey button[data-end=to]{background:var(--syung);color:var(--syung-ink)}
 .journey{display:flex;flex-direction:column;gap:10px}
-.journey h3{margin:0;padding:4px 44px 0 2px;font-size:17px!important}
+.journey h3{margin:0;padding:0 2px;font-size:17px!important}
 /* 출발/도착: one card, two rows, a dot for each end, swap on the right */
 .jcard{position:relative;border-radius:16px;background:var(--control);padding:2px 48px 2px 0}
 .jf{position:relative}
@@ -274,7 +278,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 
 /* the trip, folded: one card — from over to on a dotted rail, the time and a small 수정 on the right;
    the sheet's ✕ sits beside it, centred on it */
-.jsum{position:relative;display:flex;align-items:center;gap:12px;width:calc(100% - 44px);min-height:64px;margin:0;padding:10px 12px 10px 14px;border:0;border-radius:16px;background:var(--control);color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .15s}
+.jsum{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:64px;margin:0;padding:10px 12px 10px 14px;border:0;border-radius:16px;background:var(--control);color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .15s}
 .jsum[hidden]{display:none}
 .jsum:hover{background:color-mix(in srgb,var(--control) 80%,var(--ink) 6%)}
 .jsum-trip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
@@ -287,7 +291,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jsum-edit{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px 0 8px;border-radius:999px;background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:700;box-shadow:0 1px 0 rgba(20,20,20,.08)}
 .jsum-edit svg{width:13px;height:13px}
 .jsum:hover .jsum-edit{background:var(--syung);color:var(--syung-ink)}
-.sheet:has(.journey.done) .sheet-close{top:42px}   /* centred on the ~69px card that starts under the grab */
+.sheet:has(.journey) .sheet-close{display:none}   /* 길찾기: the handle closes it (drag down or tap) */
 
 /* kind filter: the same segmented control as the time and the theme */
 .jkinds{align-self:flex-start;max-width:100%;overflow-x:auto;scrollbar-width:none}
@@ -418,7 +422,6 @@ html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 /* phone keyboard up: the sheet sits on it (--kb from the runtime), the header and map stay put */
 .sheet{bottom:var(--kb,0px);transition:transform .32s cubic-bezier(.2,.8,.25,1),bottom .2s ease-out}
 .sheet.kb{max-height:calc(100% - var(--kb,0px) - 8px);border-radius:22px 22px 0 0;padding-bottom:10px}
-.sheet.kb .sheet-grab{display:none}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}
 /* typing a place: the matches open right under the card, in the flow (a popover the scrolling body would clip);
    the time row and the swap step aside until one is picked */
