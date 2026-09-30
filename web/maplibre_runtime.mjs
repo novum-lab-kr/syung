@@ -742,6 +742,7 @@ const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#
 function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?.25:.9);
+  stationAlpha=on?.35:1;map.triggerRepaint();
   for(const id of ['transfer-casing','transfer-fill'])if(map.getLayer(id))map.setPaintProperty(id,'line-opacity',on?.3:1);
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
@@ -1030,7 +1031,7 @@ uniform mat4 u_matrix;out vec2 v_local;out vec2 v_size;out vec4 v_uv;out vec3 v_
 // a_px: mercator position relative to the view centre (drawn on the ground, so pitch and bearing apply)
 void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl_Position=u_matrix*vec4(a_px,0.,1.);}`;
     const fs=`#version 300 es
-precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;out vec4 o;
+precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;uniform float u_alpha;out vec4 o;
 void main(){
   vec2 d=v_size*.5-abs(v_local);                         // px to the box edge
   // rounded rectangle: white fill, line-colour border, dark name
@@ -1041,14 +1042,14 @@ void main(){
   vec3 col=mix(fill,v_color,smoothstep(-border-aa,-border+aa,sd));
   if(v_tw.x>0.){vec2 t=(v_local+v_tw*.5)/v_tw;   // v_tw = text cell size (width, font × row ratio)
     if(t.x>0.&&t.x<1.&&t.y>0.&&t.y<1.){float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,ink,a);}}
-  o=vec4(col*cover,cover);
+  o=vec4(col*cover,cover)*u_alpha;   // premultiplied; faded behind a 길찾기 route
 }`;
     const sh=(type,src)=>{const x=gl.createShader(type);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
     if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p));
     this.b=gl.createBuffer();this.tex=gl.createTexture();
     this.attr=Object.fromEntries(['a_px','a_local','a_size','a_uv','a_color','a_tw'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_matrix','u_tex','u_dpr','u_dark'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_tex','u_dpr','u_dark','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
   }
   buildAtlas(gl){
     const texts=[...new Set(labels.map(l=>l.text))],key=texts.join('|');if(key===this.atlasKey)return;this.atlasKey=key;
@@ -1098,12 +1099,13 @@ void main(){
     gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
     const S=15*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
     ptr('a_px',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_color',3,10);ptr('a_tw',2,13);
-    gl.uniformMatrix4fv(this.uni.u_matrix,false,new Float32Array(MT));gl.uniform1f(this.uni.u_dpr,1);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);
+    gl.uniformMatrix4fv(this.uni.u_matrix,false,new Float32Array(MT));gl.uniform1f(this.uni.u_dpr,1);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);gl.uniform1f(this.uni.u_alpha,stationAlpha);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uni.u_tex,0);
     gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }
 }
+let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer();
 function updateLabelVisibility(){labelFrame=0;map.triggerRepaint()}
 const scheduleLabels=()=>{if(!labelFrame)labelFrame=requestAnimationFrame(updateLabelVisibility)};
