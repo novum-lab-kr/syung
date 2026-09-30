@@ -31,15 +31,41 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     <input id="jTo" type="text" autocomplete="off" placeholder="어디로 갈까요?">
     <ul class="jf-list" id="jToList" hidden></ul>
   </div>
-  <div class="jf jf-time">
-    <label for="jAt">출발 시각</label>
-    <input id="jAt" type="datetime-local">
-    <span class="jf-hint">비워 두면 지금 출발</span>
+  <div class="jf jf-time" role="group" aria-labelledby="jAtLabel">
+    <span class="jf-label" id="jAtLabel">출발 시각</span>
+    <div class="segmented jf-when"><button type="button" data-when="now" aria-pressed="true">지금 출발</button><button type="button" data-when="later" aria-pressed="false">시간 지정</button></div>
+    <div class="jf-row jf-at" hidden>
+      <select id="jDay" aria-label="날짜"><option value="0">오늘</option><option value="1">내일</option></select>
+      <input id="jTime" type="time" aria-label="시각" step="300">
+    </div>
   </div>
   <button type="button" class="jf-go" id="jGo">경로 찾기</button>
   <div class="jf-status" id="jStatus" role="status" aria-live="polite"></div>
   <div id="jResult"></div>
 </div>`;
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  function whenSet(later, at = '') {
+    document.querySelectorAll('.jf-when button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.when === 'later') === later)));
+    document.querySelector('.jf-at').hidden = !later;
+    const day = document.getElementById('jDay'), time = document.getElementById('jTime');
+    if (at) {
+      const d = new Date(at), today = new Date();
+      day.value = d.toDateString() === today.toDateString() ? '0' : '1';
+      time.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } else if (later && !time.value) {
+      const d = new Date(Date.now() + 15 * 60e3);   // a quarter of an hour from now, on the 5 minutes
+      time.value = `${pad(d.getHours())}:${pad(Math.floor(d.getMinutes() / 5) * 5)}`;
+      day.value = d.toDateString() === new Date().toDateString() ? '0' : '1';   // past midnight: 내일
+    }
+  }
+  function whenValue() {
+    if (document.querySelector('.jf-at').hidden) return '';
+    const t = document.getElementById('jTime').value;
+    if (!t) return '';
+    const d = new Date(); d.setDate(d.getDate() + +document.getElementById('jDay').value);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${t}`;
   }
 
   function bindPlace(which) {
@@ -141,8 +167,9 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     const to = picked.to;
     if (!from) { status.textContent = '출발지를 목록에서 골라 주세요.'; return; }
     if (!to) { status.textContent = '도착지를 목록에서 골라 주세요.'; return; }
-    const at = document.getElementById('jAt').value;
+    const at = whenValue();
     status.textContent = '경로를 찾는 중…'; out.replaceChildren();
+    document.activeElement?.blur?.();   // phone keyboard down, so the results have the room
     try {
       const r = await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
       const d = await r.json();
@@ -150,23 +177,37 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       status.textContent = '';
       last = {d, sel: 0, from: document.getElementById('jFrom').value, to: document.getElementById('jTo').value, at, picked: {...picked}};
       render(d, 0);
+      out.scrollIntoView?.({block: 'start', behavior: 'smooth'});   // the results, not the form, fill the sheet
     } catch { status.textContent = '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'; }
   }
 
-  function open() {
+  function open(fresh = false) {
     bar.hidden = true;
     openSheet(form());
     inSheet = true;
     bindPlace('from'); bindPlace('to');
+    document.querySelectorAll('.jf-when button').forEach(b => b.addEventListener('click', () => whenSet(b.dataset.when === 'later')));
     document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; document.getElementById('jFrom').value = '내 위치'; });
     document.getElementById('jGo').addEventListener('click', go);
     if (last) {   // back to the last search, as it was
       document.getElementById('jFrom').value = last.from;
       document.getElementById('jTo').value = last.to;
-      document.getElementById('jAt').value = last.at;
+      whenSet(!!last.at, last.at);
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
-    } else document.getElementById('jTo').focus();
+    } else if (!fresh) document.getElementById('jTo').focus();
+  }
+
+  // from a station sheet: this station is one end; ask for the other
+  function openWith(end, place) {
+    last = null; picked.from = picked.to = null; clearRoute?.();
+    open(true);
+    const other = end === 'from' ? 'to' : 'from';
+    picked[end] = place;
+    document.getElementById(end === 'from' ? 'jFrom' : 'jTo').value = place.name;
+    const o = document.getElementById(other === 'from' ? 'jFrom' : 'jTo');
+    if (other === 'from' && o.value === '내 위치') { go(); return; }   // to here from where I am: straight to the routes
+    o.value = ''; o.focus();
   }
 
   // the sheet was closed: keep the route and show the bar when it was ours; true if a route stays up
@@ -182,6 +223,6 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   // another sheet (station, train) took the place of ours
   function sheetReplaced() { if (inSheet) { inSheet = false; if (last) sheetClosed(); } }
 
-  button.addEventListener('click', open);
-  return {open, sheetClosed, sheetReplaced};
+  button.addEventListener('click', () => open());
+  return {open, openWith, sheetClosed, sheetReplaced};
 }
