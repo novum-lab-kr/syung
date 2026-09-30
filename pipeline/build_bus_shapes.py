@@ -8,7 +8,7 @@ route through each snapped stop, which made loops into side streets and U-turns 
 matcher skips, or that detours absurdly, is routed on its own; failing that it stays straight.
 Output: {"<pattern index>": [polyline6, [point index of each stop]]}, simplified to ~3 m.
 Rebuild whenever data/bus.json is rebuilt (pattern indices).
-Usage: build_bus_shapes.py [--limit N]
+Usage: build_bus_shapes.py [--limit N] [--patterns i,j,…]
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ OUT = ROOT / "data" / "bus-shapes.json"
 OSRM = os.environ.get("OSRM_BUS_URL", "http://127.0.0.1:5001").rstrip("/")
 CHUNK = 300           # stops per match request (overlapping by one); osrm-routed --max-matching-size 500
 MATCH_RADIUS = 50     # metres a stop may sit from its road
-STATS = {"legs": 0, "retried": 0, "straight": 0, "kinked": 0}
+STATS = {"legs": 0, "retried": 0, "straight": 0, "kinked": 0, "to_stop": 0}
+STOP_OFF = 30         # metres a matched leg may start or end from its stop
 DETOUR = 3.0          # a leg longer than DETOUR × straight + 400 m is a mis-snap
 
 
@@ -145,6 +146,10 @@ def match_legs(coords: list[list[float]], times: list[float]) -> list:
     return out
 
 
+def length(leg) -> float:
+    return sum(metres(leg[i], leg[i + 1]) for i in range(len(leg) - 1))
+
+
 def ok(leg, a, b) -> bool:
     if not leg or len(leg) < 2:
         return False
@@ -170,6 +175,21 @@ def shape(p: dict, stops: list) -> list | None:
             STATS["retried"] += 1
             if not leg:
                 STATS["straight"] += 1
+        # matched onto a road the stop is not on (a main road within MATCH_RADIUS of a stop on a side
+        # street: 서초16 at 사당역12번출구 86 m off): this leg routed from stop to stop instead, if
+        # that runs past the stops
+        # — but not by going round a block to reach the kerb (a stop-to-stop route on the kerb side
+        # looped 400+ m at 5,634 legs): no more than 15 % + 100 m longer than the matched leg,
+        # else either side of the road, else the matched leg stays
+        if leg and (metres(leg[0], a) > STOP_OFF or metres(leg[-1], b) > STOP_OFF):
+            here = length(leg)
+            for curb in (True, False):
+                alone = route_legs([a, b], curb=curb)
+                if (alone and ok(alone[0], a, b) and length(alone[0]) <= 1.15 * here + 100
+                        and metres(alone[0][0], a) + metres(alone[0][-1], b) < metres(leg[0], a) + metres(leg[-1], b) - 10):
+                    leg = alone[0]
+                    STATS["to_stop"] += 1
+                    break
         seg = leg if leg and len(leg) >= 2 else [a, b]
         if leg and sum(metres(leg[i], leg[i + 1]) for i in range(len(leg) - 1)) > 1.25 * metres(a, b) + 150:
             STATS["kinked"] += 1   # longer than it looks: worth a glance
@@ -191,10 +211,14 @@ def main() -> None:
     if fix.exists():
         for i, (la, lo) in json.loads(fix.read_text(encoding="utf-8")).items():
             bus["stops"][int(i)] = [bus["stops"][int(i)][0], la, lo]
-    pats = bus["patterns"][:limit] if limit else bus["patterns"]
-    out, done = {}, 0
+    # --patterns i,j,…: rebuild only these, into the existing output
+    only = [int(x) for x in sys.argv[sys.argv.index("--patterns") + 1].split(",")] if "--patterns" in sys.argv else None
+    order = only if only else list(range(len(bus["patterns"][:limit] if limit else bus["patterns"])))
+    pats = [bus["patterns"][i] for i in order]
+    out = json.loads(OUT.read_text(encoding="utf-8")) if only and OUT.exists() else {}
+    done = 0
     with ThreadPoolExecutor(4) as ex:
-        for i, r in enumerate(ex.map(lambda p: shape(p, bus["stops"]), pats)):
+        for i, r in zip(order, ex.map(lambda p: shape(p, bus["stops"]), pats)):
             if r:
                 out[str(i)] = r
             done += 1
