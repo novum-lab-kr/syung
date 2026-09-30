@@ -18,7 +18,7 @@ from pathlib import Path
 
 HOST = os.environ.get("SUBWAY_LIVE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBWAY_LIVE_PORT", "3113"))
-CACHE_SECONDS = max(60, int(os.environ.get("SUBWAY_LIVE_CACHE_SECONDS", "90")))
+CACHE_SECONDS = max(15, int(os.environ.get("SUBWAY_LIVE_CACHE_SECONDS", "90")))   # 60+ while the key had 1000 calls a day
 FOCUSED_CACHE_SECONDS = max(5, min(CACHE_SECONDS, int(os.environ.get("SUBWAY_LIVE_FOCUSED_CACHE_SECONDS", "15"))))
 DAILY_LIMIT = max(1, int(os.environ.get("SUBWAY_LIVE_DAILY_LIMIT", "950")))   # raise it when the key's quota is raised
 # No upstream calls while no trains run (KST, "HH:MM-HH:MM", may wrap midnight; empty = always call).
