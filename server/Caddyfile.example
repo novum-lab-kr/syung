@@ -1,5 +1,5 @@
-# Static map + live-train proxy (production: syung.nol-meok.cloud)
-syung.nol-meok.cloud {
+# Static map + live-train proxy (production: syung.novum-lab.com)
+syung.novum-lab.com {
 	encode zstd gzip
 	handle /api/live {
 		rewrite * /live

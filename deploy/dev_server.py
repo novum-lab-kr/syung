@@ -18,7 +18,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.nol-meok.cloud/api/live")
+UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.novum-lab.com/api/live")
 # published path → file in the repo
 DATA = {
     "/track_shapes.json": ROOT / "data" / "osm-tracks" / "track_shapes.json",

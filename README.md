@@ -3,7 +3,7 @@
 수도권 전철 실시간 노선도. MapLibre GL(WebGL) 위에 KTDB GTFS 노선·역, OpenStreetMap 선로 형태,
 서울시 실시간 열차 정보를 올려 열차가 선로를 따라 움직이는 모습을 보여 줍니다.
 
-- 운영 중: https://syung.nol-meok.cloud/
+- 운영 중: https://syung.novum-lab.com/
 - 열차는 줌 13 이상에서 표시, 3D 건물·해 그림자, 라이트/다크(자동: 서울 일출·일몰)
 
 ## 구성

@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TARGETS=("$@")
-[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(/var/www/syung)   # syung.nol-meok.cloud
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(/var/www/syung)   # syung.novum-lab.com
 for d in "${TARGETS[@]}"; do
   mkdir -p "$d/vendor"
   cp "$ROOT/web/index.html" "$ROOT/web/learning.html" "$ROOT/web/login.html" "$ROOT/web/maplibre_runtime.mjs" "$ROOT/web/site.webmanifest" "$ROOT/web/syung.css" "$d/"
