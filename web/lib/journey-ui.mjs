@@ -27,7 +27,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   <button type="button" class="jsum" id="jSum" hidden></button>
   <div class="jcard">
     <div class="jf jrow"><i class="jdot from" aria-hidden="true"></i>
-      <input id="jFrom" type="text" autocomplete="off" aria-label="출발지" placeholder="출발지 (주소나 장소)" value="${here ? '내 위치' : ''}">
+      <input id="jFrom" type="text" autocomplete="off" aria-label="출발지" placeholder="어디서 출발할까요?" value="${here ? '내 위치' : ''}">
       ${here ? `<button type="button" class="jf-here" id="jHere" aria-label="내 위치에서 출발" title="내 위치">${PIN}</button>` : ''}</div>
     <div class="jf jrow"><i class="jdot to" aria-hidden="true"></i>
       <input id="jTo" type="text" autocomplete="off" aria-label="도착지" placeholder="어디로 갈까요?"></div>
