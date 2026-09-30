@@ -116,7 +116,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     sum.hidden = !on;
     if (on) {
       const at = whenValue(), t = at ? `${document.getElementById('jDay').value === '1' ? '내일 ' : ''}${at.slice(11)} 출발` : '지금 출발';
-      sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span></span><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}</span>`;
+      sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span></span><span class="jsum-side"><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}수정</span></span>`;
       sum.setAttribute('aria-label', `${document.getElementById('jFrom').value}에서 ${document.getElementById('jTo').value}까지, ${t}. 눌러서 바꾸기`);
     }
   }
