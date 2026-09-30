@@ -370,20 +370,21 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 .jerr p{margin:0;font-size:13px;color:var(--secondary)}
 .jerr-retry{margin-top:6px;height:40px;padding:0 18px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:15px;cursor:pointer}
 
-/* chosen route while the sheet is closed */
-.jbar{position:absolute;z-index:15;left:14px;bottom:calc(18px + env(safe-area-inset-bottom,0px));width:min(460px,calc(100% - 84px));display:flex;align-items:stretch;background:var(--paper);color:var(--ink);border-radius:18px;box-shadow:var(--shadow)}
+/* chosen route while the sheet is closed: the whole bar opens the results; a small ✕ top right clears it */
+.jbar{position:absolute;z-index:15;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(560px,calc(100% - 20px));display:block;background:var(--paper);color:var(--ink);border-radius:18px;box-shadow:var(--shadow)}
 .jbar[hidden]{display:none}
-.jbar-open{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding:11px 6px 12px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.jbar-top{display:flex;align-items:baseline;gap:8px}
+.jbar-open{display:flex;flex-direction:column;gap:9px;width:100%;padding:12px 14px 13px;border:0;border-radius:inherit;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.jbar-open:active{background:color-mix(in srgb,var(--control) 60%,transparent)}
+.jbar-top{display:flex;align-items:baseline;gap:8px;padding-right:34px}
 .jbar-top b{font-family:var(--round);font-weight:400;font-size:21px;line-height:1}
 .jbar-top b small{font-size:13px}
 .jbar-top span{font-size:13px;font-weight:700;color:var(--secondary)}
-.jbar-top .jbar-more{margin-left:auto;font-size:12.5px;color:var(--ink);text-decoration:underline;text-decoration-color:var(--syung);text-decoration-thickness:2px;text-underline-offset:3px}
 .jbar .jtrack{height:18px}
 .jbar .jseg{font-size:10.5px;border-radius:5px}
-.jbar-x{flex:none;width:44px;border:0;background:none;color:var(--muted);cursor:pointer;border-left:1px solid var(--rule);font-size:15px}
+.jbar-x{position:absolute;top:7px;right:7px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--control);color:var(--secondary);cursor:pointer}
+.jbar-x svg{width:14px;height:14px}
 .jbar-x:hover{color:var(--ink)}
-@media(max-width:640px){.jbar{left:10px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 76px)}}
+.jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */
 
 /* my location: under +/−, in the 슝 palette (the control's own icon is a blue sprite) */
 .maplibregl-ctrl-top-right .maplibregl-ctrl-group+.maplibregl-ctrl-group{margin-top:8px}

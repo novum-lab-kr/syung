@@ -12,7 +12,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
   const bar = document.createElement('div');
   bar.className = 'jbar'; bar.hidden = true;
-  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(bar);
   bar.querySelector('.jbar-open').onclick = () => open();
   bar.querySelector('.jbar-x').onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
@@ -137,6 +137,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
   const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
 
+  const textW = t => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
   function track(p, width = 330) {
     const segs = [];
     for (const l of p.legs) {
@@ -148,8 +149,10 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       const px = g.s / total * width;
       if (g.k === 'walk') return `<i class="jseg walk" style="flex:${g.s} 1 0"></i>`;
       if (g.k === 'wait') return `<i class="jseg wait" style="flex:${g.s} 1 0"></i>`;
-      const c = legColor(g.l), label = px >= 14 + legName(g.l).length * 8 ? legName(g.l) : px >= 26 ? legShort(g.l) : '';
-      return `<i class="jseg ride${g.l.type === 'bus' ? ' bus' : ''}" style="flex:${g.s} 1 0;--c:${c};--t:${inkOn(c)}">${g.l.type === 'bus' && px >= 64 ? BUS : ''}${esc(label)}</i>`;
+      // every ride keeps room for at least its short name (a one-stop hop is still a line to board); walks give way
+      const c = legColor(g.l), full = legName(g.l), short = legShort(g.l), need = textW(short) + 12;
+      const label = px >= textW(full) + 14 ? full : short;
+      return `<i class="jseg ride${g.l.type === 'bus' ? ' bus' : ''}" style="flex:${g.s} 1 0;min-width:${need}px;--c:${c};--t:${inkOn(c)}">${g.l.type === 'bus' && px >= textW(full) + 34 ? BUS : ''}${esc(label)}</i>`;
     }).join('')}</div>`;
   }
 
@@ -289,7 +292,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     const was = inSheet; inSheet = false;
     if (!last || !was) return false;
     const p = last.d.plans[last.sel];
-    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span><span class="jbar-more">결과 보기</span></span>${track(p, 240)}`;
+    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span></span>${track(p, 240)}`;
     bar.hidden = false;
     return true;
   }
