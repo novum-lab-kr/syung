@@ -40,12 +40,11 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     <div class="jw-panel" id="jWhenPanel" hidden>
       <div class="jw-head"><b>출발 시각</b><button type="button" class="jw-now" id="jWhenNow">지금으로</button></div>
       <div class="segmented jw-day" role="group" aria-label="날짜"><button type="button" data-d="0" aria-pressed="true">오늘</button><button type="button" data-d="1" aria-pressed="false">내일</button></div>
-      <div class="jw-clock">
-        <button type="button" class="jw-step" data-s="-10" aria-label="10분 앞으로">${MINUS}</button>
-        <output id="jWhenClock" aria-live="polite">00:00</output>
-        <button type="button" class="jw-step" data-s="10" aria-label="10분 뒤로">${PLUS}</button>
+      <div class="jw-clock" aria-live="polite">
+        <div class="jw-col"><button type="button" class="jw-step" data-u="h" data-s="1" aria-label="1시간 늦게">${UP}</button><output id="jWhenH">00</output><button type="button" class="jw-step" data-u="h" data-s="-1" aria-label="1시간 이르게">${DOWN}</button></div>
+        <span class="jw-colon" aria-hidden="true">:</span>
+        <div class="jw-col"><button type="button" class="jw-step" data-u="m" data-s="10" aria-label="10분 늦게">${UP}</button><output id="jWhenM">00</output><button type="button" class="jw-step" data-u="m" data-s="-10" aria-label="10분 이르게">${DOWN}</button></div>
       </div>
-      <p class="jw-hint">10분씩 · 누르고 있으면 빠르게</p>
       <button type="button" class="jw-go" id="jWhenGo">이 시간에 출발</button>
     </div>
   </div>
@@ -71,12 +70,19 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     document.getElementById('jWhenText').textContent = whenLabel();
     row.classList.toggle('set', w.k === 'at');
   }
+  // hours move the time by an hour; minutes by 10 within the hour (50 → 00 keeps the hour); then kept in range
+  function stepped(d, u, n) {
+    const x = new Date(d);
+    if (u === 'h') x.setTime(+x + n * 3600e3);
+    else x.setMinutes((x.getMinutes() + n + 60) % 60);
+    return clamp(x);
+  }
   function drawDraft() {
-    document.getElementById('jWhenClock').textContent = hhmm(draft);
+    document.getElementById('jWhenH').textContent = pad(draft.getHours());
+    document.getElementById('jWhenM').textContent = pad(draft.getMinutes());
     const t = isTomorrow(draft);
     document.querySelectorAll('.jw-day button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.d === '1') === t)));
-    document.querySelector('.jw-step[data-s="-10"]').disabled = draft <= soonest();
-    document.querySelector('.jw-step[data-s="10"]').disabled = draft >= latest();
+    document.querySelectorAll('.jw-step').forEach(b => { b.disabled = +stepped(draft, b.dataset.u, +b.dataset.s) === +draft; });
   }
   function whenOpen(on) {
     const panel = document.getElementById('jWhenPanel'), row = document.getElementById('jWhenRow');
@@ -150,8 +156,8 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
   const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
   const CHEV = '<svg class="jw-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
-  const MINUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 12h12"/></svg>';
-  const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg>';
+  const UP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>';
+  const DOWN = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
   const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
   const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
 
@@ -282,7 +288,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       const d = new Date(draft), today = new Date(); d.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + +b.dataset.d);
       draft = clamp(d); drawDraft(); }));
     document.querySelectorAll('.jw-step').forEach(b => {   // tap: 10 minutes; hold: keeps going, faster
-      const step = () => { draft = clamp(new Date(+draft + +b.dataset.s * 60e3)); drawDraft(); };
+      const step = () => { draft = stepped(draft, b.dataset.u, +b.dataset.s); drawDraft(); };
       let hold = 0, rep = 0;
       const stop = () => { clearTimeout(hold); clearInterval(rep); hold = rep = 0; };
       b.addEventListener('pointerdown', e => { if (e.button) return; step(); hold = setTimeout(() => { rep = setInterval(() => { if (b.disabled) stop(); else step(); }, 90); }, 420); });
