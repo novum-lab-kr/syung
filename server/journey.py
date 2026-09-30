@@ -42,9 +42,9 @@ WALK_DETOUR, WALK_SPEED = 1.3, 1.2   # straight line × detour at m/s, for short
 MAX_TRIP = 4 * 3600
 ASTAR_SPEED = 35.0            # m/s
 MAX_PLANS = 12                # routes shown
-ROUTE_SLACK = 40 * 60         # at most this much later than the fastest
+ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
-DOMINATED_LATE = 10 * 60      # a way no better in changes and walking is kept if within this
+DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
               "maeul": "#7bc043", "night": "#4a4f8c"}
 
@@ -593,7 +593,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
 
     # Many routes: the fastest by each mode, then, breadth first, the same search with one more
     # line (or bus route) of an earlier result barred — each of those finds the next best way
-    # round it. Kept: different rides, arriving at most SLACK after the fastest; bounded in searches
+    # round it. Kept: different rides, arriving at most ROUTE_SLACK after the fastest; bounded in searches
     # and time.
     found: list[dict] = []
     seen_sigs, tried = set(), set()
@@ -624,7 +624,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
             if sig not in seen_sigs:
                 seen_sigs.add(sig)
                 found.append(r)
-            if len(banned) < 2:   # route around each line or bus of this one
+            if len(banned) < 3:   # route around each line or bus of this one
                 for l in r["legs"]:
                     if l["type"] != "walk":
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
