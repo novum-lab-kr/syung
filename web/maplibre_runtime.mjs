@@ -185,7 +185,7 @@ function segmentSeconds(a,b,line){
 // so a train that "arrived 90s ago" is drawn already heading to the next stop.
 const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whose express stops the GTFS lists
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
-let exits={};
+let exits={};const exitCol=new Map();   // exit "lon,lat" → the colour of the line its passage joins
 const EXIT_MINZOOM=16,EXIT_MAX_M=350;   // exits (and their passages) from this zoom; farther than this from every platform: no passage
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
@@ -1085,6 +1085,7 @@ void main(){
         for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
           const rx=(e.x-g.cx)/unit,ry=(e.y-g.cy)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),t=Math.max(-half,Math.min(half,rx*g.ax+ry*g.ay));
           const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(!best||d<best.d)best={sx,sy,d,g}}
+        if(best)exitCol.set(lon+','+lat,best.g.col);
         if(!best||best.d*unit*40075016.686*Math.cos(lat*Math.PI/180)>EXIT_MAX_M||best.d<best.g.h/2)continue;   // too far to be this station's, or inside the box
         // past the box's end: the concourse runs on along the box's axis and the exit branches off it square
         const g=best.g,t=((e.x-g.cx)*g.ax+(e.y-g.cy)*g.ay)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2);
@@ -1112,42 +1113,42 @@ void main(){
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }
 }
-// Exit pillars (zoom 16+), drawn on the train canvas above the trains: a dark post standing on the exit
-// with a flat yellow number sign on top, like the pillar signs at real entrances. Screen-space quads:
-// the post runs from the exit's ground point to a point PILLAR_PX above it, so it stands up as the
-// map tilts; the sign always faces the viewer.
-const PILLAR_PX=[[16,12],[18,24]];
+// Exit pillars (zoom 16+), drawn on the train canvas above the trains: a square column standing on the exit,
+// painted grey with a band of its line's colour round the top and the exit number in yellow, like real entrance pillars.
+// The box is built in map space, so it leans with the tilt and turns with the bearing; only the sides facing
+// the viewer are drawn, lit from the south-west. Seen from straight above, the number moves onto the cap.
+const PILLAR_PX=[[16,7,20],[18,12,36]];   // [zoom, side, height] in screen px
+// segs: [from, to (share of the height), colour (an [r,g,b], or 1: the line's), number on it]
+// segs: [from, to (share of the height), colour (an [r,g,b], 1: the line's, 'grey': the theme's), number on it]
+// grey: a slightly dark grey by day; lighter at night so the pillar stands off the dark map
+const PILLAR_STYLE={ink:[1,.83,0],cap:1,grey:{light:[.4,.42,.44],dark:[.56,.59,.62]},segs:[[0,.46,'grey'],[.46,.84,'grey',1],[.84,1,1]]};
 class ExitPillars{
   init(gl){
     const vs=`#version 300 es
-in vec2 a_pos;in vec2 a_local;in vec2 a_size;in vec4 a_uv;in float a_mode;uniform vec2 u_view;
-out vec2 v_local;out vec2 v_size;out vec4 v_uv;out float v_mode;
-void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_mode=a_mode;gl_Position=vec4(a_pos/u_view*vec2(2.,-2.)+vec2(-1.,1.),0.,1.);}`;
+in vec2 a_pos;in vec2 a_local;in vec3 a_col;in vec3 a_ink;in vec4 a_glyph;in vec4 a_guv;in float a_mode;uniform vec2 u_view;
+out vec2 v_local;out vec3 v_col;out vec3 v_ink;flat out vec4 v_glyph;flat out vec4 v_guv;out float v_mode;
+void main(){v_local=a_local;v_col=a_col;v_ink=a_ink;v_glyph=a_glyph;v_guv=a_guv;v_mode=a_mode;gl_Position=vec4(a_pos/u_view*vec2(2.,-2.)+vec2(-1.,1.),0.,1.);}`;
     const fs=`#version 300 es
-precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in float v_mode;uniform sampler2D u_tex;uniform float u_dpr;out vec4 o;
-float box(vec2 p,vec2 h,float r){vec2 q=abs(p)-(h-r);return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
+precision highp float;in vec2 v_local;in vec3 v_col;in vec3 v_ink;flat in vec4 v_glyph;flat in vec4 v_guv;in float v_mode;uniform sampler2D u_tex;out vec4 o;
 void main(){
-  vec2 h=v_size*.5;
-  if(v_mode<.5){float d=length(v_local/h);float a=(1.-smoothstep(.3,1.,d))*.28;if(a<=0.)discard;o=vec4(0.,0.,0.,a);return;}   // ground shadow
-  if(v_mode<1.5){float sd=box(v_local,h,h.x*.5),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;   // post: lit on its left
-    vec3 col=mix(vec3(.3,.33,.36),vec3(.1,.11,.12),smoothstep(-h.x,h.x,v_local.x));o=vec4(col*c,c);return;}
-  float sd=box(v_local,h,min(3.,h.y*.3)),aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);if(c<=0.)discard;   // sign: ink rim, yellow face, number
-  vec3 col=mix(vec3(1.,.83,0.),vec3(.08),smoothstep(-1.2-aa,-1.2+aa,sd));
-  vec2 t=(v_local+h)/v_size;float a=texture(u_tex,vec2(mix(v_uv.x,v_uv.z,t.x),mix(v_uv.y,v_uv.w,t.y))).a;col=mix(col,vec3(.08),a*step(sd,-1.6));
-  o=vec4(col*c,c);
+  if(v_mode<.5){float d=length(v_local);float a=(1.-smoothstep(.15,1.,d))*.3;if(a<=0.)discard;o=vec4(0.,0.,0.,a);return;}   // ground shadow
+  vec3 col=v_col;
+  if(v_mode>1.5){vec2 q=(v_local-v_glyph.xy)/(v_glyph.zw-v_glyph.xy);   // the number, printed on this face
+    if(all(greaterThanEqual(q,vec2(0.)))&&all(lessThanEqual(q,vec2(1.)))){float a=texture(u_tex,mix(v_guv.xy,v_guv.zw,vec2(q.x,1.-q.y))).a;col=mix(col,v_ink,a);}}
+  o=vec4(col,1.);
 }`;
     const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
-    this.attr=Object.fromEntries(['a_pos','a_local','a_size','a_uv','a_mode'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
+    this.attr=Object.fromEntries(['a_pos','a_local','a_col','a_ink','a_glyph','a_guv','a_mode'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
     this.uView=gl.getUniformLocation(this.p,'u_view');this.uTex=gl.getUniformLocation(this.p,'u_tex');
     this.b=gl.createBuffer();this.tex=gl.createTexture();this.gl=gl;this.key='';
   }
   // number atlas: each exit ref once, bold, on a row of the texture
   atlas(){
     const refs=[...new Set(Object.values(exits).flatMap(l=>l.map(e=>String(e[2]))))].sort(),key=refs.join('|');if(key===this.key)return;this.key=key;
-    const F=24,ROW=30,W=1024,c=document.createElement('canvas'),x=c.getContext('2d');x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;
+    const F=26,ROW=30,W=1024,c=document.createElement('canvas'),x=c.getContext('2d');x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;
     let px=0,py=0;const pos=new Map();
-    for(const r of refs){const w=Math.ceil(x.measureText(r).width)+6;if(px+w>W){px=0;py+=ROW}pos.set(r,[px,py,w]);px+=w}
+    for(const r of refs){const w=Math.ceil(x.measureText(r).width)+4;if(px+w>W){px=0;py+=ROW}pos.set(r,[px,py,w]);px+=w}
     c.width=W;c.height=py+ROW;x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;x.textBaseline='middle';x.textAlign='center';x.fillStyle='#000';
     for(const [r,[a,b,w]] of pos)x.fillText(r,a+w/2,b+ROW/2+1);
     this.uv=new Map([...pos].map(([r,[a,b,w]])=>[r,[a/W,b/c.height,(a+w)/W,(b+ROW)/c.height,w/ROW]]));
@@ -1159,32 +1160,49 @@ void main(){
   render(gl,M,W,H,dpr){
     const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
     if(!this.p)this.init(gl);this.atlas();
-    const unit=1/(512*2**z),P=PILLAR_PX,hpx=P[0][1]+(P[1][1]-P[0][1])*Math.max(0,Math.min(1,(z-P[0][0])/(P[1][0]-P[0][0])));
+    const unit=1/(512*2**z),f=Math.max(0,Math.min(1,(z-PILLAR_PX[0][0])/(PILLAR_PX[1][0]-PILLAR_PX[0][0]))),lerp=i=>PILLAR_PX[0][i]+(PILLAR_PX[1][i]-PILLAR_PX[0][i])*f;
+    const sPx=lerp(1),half=sPx/2*unit,hgt=lerp(2)*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
     const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H]};
-    const data=[],q=(cx,cy,ux,uy,w,h,uv,mode)=>{const nx=-uy,ny=ux,c=(lx,ly)=>[cx+ux*lx+nx*ly,cy+uy*lx+ny*ly,lx,ly,w,h,...uv,mode];
-      const k=[c(-w/2,-h/2),c(w/2,-h/2),c(w/2,h/2),c(-w/2,h/2)];for(const i of [0,1,2,0,2,3])data.push(...k[i])};
-    const S=Math.round(14+4*Math.max(0,Math.min(1,(z-16)/2))),post=Math.max(3,S*.28),items=[];
+    const data=[],NO=[0,0,0,0],vert=(p,l,col,ink,g,guv,mode)=>data.push(p[0],p[1],l[0],l[1],...col,...ink,...g,...guv,mode);
+    const quad=(P,Lc,col,ink,g,guv,mode)=>{for(const i of [0,1,2,0,2,3])vert(P[i],Lc[i],col,ink,g,guv,mode)};
+    const LOC=[[0,0],[1,0],[1,1],[0,1]],mul=(c,k)=>c.map(v=>v*k);
+    // where the number sits on a face of w×h screen px (local 0..1 across, 0..1 up)
+    const glyph=(uv,w,h,fill=.8)=>{let gh=h*fill,gw=gh*uv[4];if(gw>w*.92){gh*=w*.92/gw;gw=w*.92}return [.5-gw/w/2,.5-gh/h/2,.5+gw/w/2,.5+gh/h/2]};
     const ids=new Set(selected==='all'?Object.keys(exits):stations.filter(s=>s.lines.some(x=>x.name===selected)).map(s=>String(s.id)));
+    const items=[];
     for(const id of ids)for(const [lon,lat,ref] of exits[id]||[]){
       const m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=proj(m.x,m.y,0);if(!b||b[0]<-40||b[0]>W+40||b[1]<-60||b[1]>H+40)continue;
-      const t=proj(m.x,m.y,hpx*unit);if(t)items.push([b,t,String(ref)]);
+      const st=stations.find(s=>String(s.id)===id);
+      items.push([m,b,String(ref),exitCol.get(lon+','+lat)||hexRGB3(colors[st?.lines[0]?.name]||'#52646a')]);
     }
-    items.sort((a,b)=>a[0][1]-b[0][1]);   // far (higher on screen) first, near ones drawn over them
-    for(const [b,t,ref] of items){
-      let dx=t[0]-b[0],dy=t[1]-b[1];const L=Math.hypot(dx,dy);
-      const uv=this.uv.get(ref)||[0,0,0,0,1],sw=Math.max(S,S*.62*uv[4]+6),lift=Math.min(L,S*.5);
-      q(b[0],b[1],1,0,S*.9,S*.38,[0,0,0,0],0);   // shadow on the ground
-      if(L>1){dx/=L;dy/=L;q((b[0]+t[0])/2,(b[1]+t[1])/2,dy*-1,dx,post,L+post,[0,0,0,0],1)}   // post, drawn along the screen-up direction
-      const cx=t[0],cy=t[1]-(L>1?lift:0);
-      q(cx,cy,1,0,sw,S,[uv[0],uv[1],uv[2],uv[3]],2);   // number sign facing the viewer
+    items.sort((a,b)=>a[1][1]-b[1][1]);   // far (higher on screen) first, near ones drawn over them
+    const Ld=[-.6,.8];   // light from the south-west (map y runs south)
+    for(const [m,b,ref,lc] of items){
+      const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y;
+      quad([[b[0]-sPx*1.1,b[1]-sPx*.55],[b[0]+sPx*1.3,b[1]-sPx*.55],[b[0]+sPx*1.3,b[1]+sPx*.65],[b[0]-sPx*1.1,b[1]+sPx*.65]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
+      const C=[[x-half,y-half,0,-1],[x+half,y-half,1,0],[x+half,y+half,0,1],[x-half,y+half,-1,0]];   // NW,NE,SE,SW and the normal of the side that starts there
+      for(let i=0;i<4;i++){
+        const [ax,ay,nx,ny]=C[i],[bx,by]=C[(i+1)%4],A0=proj(ax,ay,0),B0=proj(bx,by,0),A1=proj(ax,ay,hgt);if(!A0||!B0||!A1)continue;
+        if((B0[0]-A0[0])*(A1[1]-A0[1])-(B0[1]-A0[1])*(A1[0]-A0[0])<=0)continue;   // faces away
+        const k=.9+.1*(nx*Ld[0]+ny*Ld[1]),fw=Math.hypot(B0[0]-A0[0],B0[1]-A0[1]);
+        for(const [t0,t1,tone,num] of St.segs){
+          const P=[proj(bx,by,hgt*t0),proj(ax,ay,hgt*t0),proj(ax,ay,hgt*t1),proj(bx,by,hgt*t1)];if(P.some(p=>!p))continue;   // b→a reads left→right from outside
+          const fh=Math.hypot(P[3][0]-P[0][0],P[3][1]-P[0][1]),col=mul(tone===1?lc:tone==='grey'?grey:tone,k),text=num&&!onTop&&fw>sPx*.55;
+          quad(P,LOC,col,St.ink,text?glyph(uv,fw,fh):NO,guv,text?2:1);
+        }
+      }
+      const T=C.map(([cx,cy])=>proj(cx,cy,hgt));if(T.some(p=>!p))continue;
+      const xs=T.map(p=>p[0]),ys=T.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+      const TL=T.map(p=>[(p[0]-x0)/Math.max(1e-3,x1-x0),(y1-p[1])/Math.max(1e-3,y1-y0)]);   // screen-upright, so the number reads from above
+      quad(T,TL,onTop?grey:St.cap===1?lc:St.cap,St.ink,onTop?glyph(uv,x1-x0,y1-y0,.72):NO,guv,onTop?2:1);   // the cap
     }
     if(!data.length)return;
     gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
-    const st=11*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
-    ptr('a_pos',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_mode',1,10);
+    const st=19*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
+    ptr('a_pos',2,0);ptr('a_local',2,2);ptr('a_col',3,4);ptr('a_ink',3,7);ptr('a_glyph',4,10);ptr('a_guv',4,14);ptr('a_mode',1,18);
     gl.uniform2f(this.uView,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uTex,0);
     gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.TRIANGLES,0,data.length/11);
+    gl.drawArrays(gl.TRIANGLES,0,data.length/19);
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
   }
 }
