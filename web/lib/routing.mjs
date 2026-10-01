@@ -1,7 +1,9 @@
 // Live-train routing: which station a feed record means, and which way the train is going.
 // Pure (no DOM / map), so it runs in tests: createRouter({stations, paths}).
-// Stations renamed after the GTFS snapshot (live feed name → GTFS name).
-export const RENAMED={'불암산':'당고개'};
+// Stations renamed after the GTFS snapshot (GTFS name → current name). The map shows the current name;
+// key() folds both onto the GTFS name so live-feed records match either way.
+export const NEW_NAMES={'당고개':'불암산','초성리':'청산','뚝섬유원지':'자양','총신대입구':'이수','화전':'한국항공대','운동장·송담대':'용인중앙시장','서구청':'서해구청'};
+export const RENAMED=Object.fromEntries(Object.entries(NEW_NAMES).map(([a,b])=>[b,a]));
 export const key=v=>{const k=String(v||'').replace(/\([^)]*\)/g,'').replace(/(종착|지선|순환|역)$/,'').replace(/\s/g,'').toLocaleLowerCase('ko');return RENAMED[k]||k};
 // Seoul API statuses: 진입(approaching s), 도착(at s), 출발(left s), 전역출발(left the stop before s).
 export const normStatus=v=>String(v||'').replace(/\s/g,'');

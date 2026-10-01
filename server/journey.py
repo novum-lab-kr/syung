@@ -59,10 +59,21 @@ for key in _data["hops"]:
     ADJ[line][int(a)].add(int(b))
 
 
+# Stations renamed after the GTFS snapshot (GTFS name → current name), as in web/lib/routing.mjs.
+NEW_NAMES = {"당고개": "불암산", "초성리": "청산", "뚝섬유원지": "자양", "총신대입구": "이수", "화전": "한국항공대",
+             "운동장·송담대": "용인중앙시장", "서구청": "서해구청"}
+_OLD = {v: k for k, v in NEW_NAMES.items()}
+
+
 def _key(name: str) -> str:
     import re
     name = re.sub(r"\([^)]*\)", "", name or "")
-    return re.sub(r"(종착|지선|역)$", "", name).replace(" ", "").lower()
+    name = re.sub(r"(종착|지선|역)$", "", name).replace(" ", "").lower()
+    return _OLD.get(name, name)
+
+
+for _n in STATIONS.values():   # riders see the current name
+    _n["name"] = NEW_NAMES.get(_n["name"], _n["name"])
 
 
 BY_NAME = {(line, _key(n["name"])): n["id"] for n in _metro["nodes"] for line in n["lines"]}

@@ -365,10 +365,16 @@ def _fetch_all() -> dict:
     return {"fetchedAt": datetime.now(timezone.utc).isoformat(), "lines": stabilize(normalize_arrivals(payload), _last_seen), "stations": index_arrivals(payload)}
 
 
+# Stations renamed after the GTFS snapshot (current name → GTFS name), as in web/lib/routing.mjs.
+RENAMED = {"불암산": "당고개", "청산": "초성리", "자양": "뚝섬유원지", "이수": "총신대입구", "한국항공대": "화전",
+           "용인중앙시장": "운동장·송담대", "서해구청": "서구청"}
+
+
 def station_key(name: object) -> str:
-    """Station name key shared with the map: no parentheses, no trailing 역, no spaces."""
+    """Station name key shared with the map: no parentheses, no trailing 역, no spaces; renamed stations fold together."""
     text = re.sub(r"\([^)]*\)", "", str(name or ""))
-    return re.sub(r"역$", "", text).replace(" ", "")
+    text = re.sub(r"역$", "", text).replace(" ", "")
+    return RENAMED.get(text, text)
 
 
 def index_arrivals(payload: dict) -> dict[str, list[dict]]:

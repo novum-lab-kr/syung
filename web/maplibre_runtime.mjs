@@ -1,10 +1,10 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
-import {key,normStatus,createRouter} from './lib/routing.mjs';
+import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
-const stations=json('stationData'),counts=json('lineCounts'),paths=json('linePaths');
+const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
 const colors={'1호선':'#0052A4','2호선':'#00A84D','3호선':'#EF7C1C','4호선':'#00A5DE','5호선':'#996CAC','6호선':'#CD7C2F','7호선':'#747F00','8호선':'#E6186C','9호선':'#BDB092','GTX-A':'#9A6292','경강선':'#0054A6','경의중앙선':'#77C4A3','경춘선':'#178C72','공항철도':'#0090D2','김포골드라인':'#AD8605','서해선':'#8FC31F','수인분당선':'#F5A200','신림선':'#6789CA','신분당선':'#D4003B','에버라인선':'#6FB245','우이신설선':'#B7C452','의정부선':'#FDA600','인천1호선':'#7CA8D5','인천2호선':'#ED8B00'};
 const HOME={center:[126.98,37.53],zoom:10},LINE_GAP=5;
 const edgeKey=(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`;
