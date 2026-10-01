@@ -52,9 +52,21 @@ def move_stop(ts: dict, line: str, sid: int, anchor, shift: bool = False) -> tup
     """Move stops[line:sid] onto the track nearest `anchor`, re-cutting its (one or two) edges.
     With `shift`, the track itself is slid over to the anchor around the station (full within
     SHIFT_FULL m, eased out by SHIFT_FADE m) and the stop sits on the anchor.
-    Returns (metres moved, anchor → track metres), or None where the station has 3+ edges."""
+    At a junction (3+ edges) only `shift` works: every edge's station end slides over to the anchor.
+    Returns (metres moved, anchor → track metres), or None at a junction without `shift`."""
     keys = [k for k in ts["edges"] if k.startswith(line + ":") and str(sid) in k.split(":")[1:] and k.count(":") == 2]
     keys = [k for k in keys if str(sid) in (k.split(":")[1], k.split(":")[2])]
+    if len(keys) > 2 and shift:   # a junction (branch, loop): no single path to re-cut, slide every edge's station end over
+        old = ts["stops"][f"{line}:{sid}"]
+        o = _xy(anchor, old)
+        rnd = lambda q: [round(q[0], 6), round(q[1], 6)]
+        for k in keys:
+            e = ts["edges"][k]
+            far = e[0] if _metres(e[-1], old) < _metres(e[0], old) else e[-1]
+            span = _metres(far, old)
+            ts["edges"][k] = [rnd(_shifted(q, old, o, min(SHIFT_FULL, .35 * span), min(SHIFT_FADE, .8 * span))) for q in e]
+        ts["stops"][f"{line}:{sid}"] = rnd(anchor)
+        return _metres(old, anchor), 0.0
     if not 1 <= len(keys) <= 2:
         return None
     # each edge oriented to run into the station, then the path through it: in[0] … station … in[1] reversed
@@ -77,17 +89,22 @@ def move_stop(ts: dict, line: str, sid: int, anchor, shift: bool = False) -> tup
     if shift:   # OSM tunnel drawn beside the platform: slide the track over to the anchor near the station
         o = _xy(anchor, p)
         for k in keys:
-            ts["edges"][k] = [rnd(_shifted(q, p, o)) for q in ts["edges"][k]]
+            e = ts["edges"][k]
+            far = e[0] if _metres(e[-1], p) < _metres(e[0], p) else e[-1]   # the neighbour's end stays put
+            span = _metres(far, p)
+            full, fade = min(SHIFT_FULL, .35 * span), min(SHIFT_FADE, .8 * span)
+            ts["edges"][k] = [rnd(_shifted(q, p, o, full, fade)) for q in e]
         ts["stops"][f"{line}:{sid}"] = rnd(anchor)
     return _metres(old, ts["stops"][f"{line}:{sid}"]), d
 
 
 SHIFT_FULL, SHIFT_FADE = 120, 250   # metres from the stop: moved all the way, then easing back onto the drawn track
+# (scaled down on short edges, so the neighbouring station's end of the edge never moves)
 
 
-def _shifted(q, p, o):
+def _shifted(q, p, o, full=SHIFT_FULL, fade=SHIFT_FADE):
     r = _metres(q, p)
-    w = 1.0 if r <= SHIFT_FULL else max(0.0, 1 - (r - SHIFT_FULL) / (SHIFT_FADE - SHIFT_FULL))
+    w = 1.0 if r <= full else max(0.0, 1 - (r - full) / max(1.0, fade - full))
     w = w * w * (3 - 2 * w)
     k = math.cos(math.radians(p[1]))
     return [q[0] + o[0] * w / (k * 111320), q[1] + o[1] * w / 111320]
