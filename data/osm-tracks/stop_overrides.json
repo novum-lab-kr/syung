@@ -1,5 +1,5 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01).",
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used).",
  "7호선|고속터미널": {
   "at": [
    127.0050068,
@@ -8,10 +8,14 @@
   "shift": true,
   "from": "kakao"
  },
- "5호선|동대문역사문화공원": [
-  127.0072737,
-  37.5642335
- ],
+ "5호선|동대문역사문화공원": {
+  "at": [
+   127.0072972,
+   37.5643047
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
  "6호선|태릉입구": {
   "at": [
    127.0745167,
@@ -42,10 +46,11 @@
  },
  "1호선|인천": {
   "at": [
-   126.6170423,
-   37.4769388
+   126.6168243,
+   37.4769389
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "2호선|을지로입구": {
   "at": [
@@ -259,10 +264,11 @@
  },
  "4호선|동대문역사문화공원": {
   "at": [
-   127.008067,
-   37.5651891
+   127.0077703,
+   37.56525
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "4호선|과천": {
   "at": [
@@ -280,10 +286,11 @@
  },
  "4호선|인덕원": {
   "at": [
-   126.9769476,
-   37.4013669
+   126.9766654,
+   37.4013857
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "4호선|평촌": {
   "at": [
@@ -462,10 +469,11 @@
  },
  "5호선|발산": {
   "at": [
-   126.8374854,
-   37.5584451
+   126.8376537,
+   37.5584113
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "5호선|광화문": {
   "at": [
@@ -511,10 +519,11 @@
  },
  "6호선|월드컵경기장": {
   "at": [
-   126.8993129,
-   37.5701546
+   126.8991056,
+   37.5701576
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "6호선|대흥": {
   "at": [
@@ -546,10 +555,11 @@
  },
  "6호선|버티고개": {
   "at": [
-   127.0066367,
-   37.548266
+   127.0069594,
+   37.5480021
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "6호선|디지털미디어시티": {
   "at": [
@@ -609,10 +619,11 @@
  },
  "6호선|합정": {
   "at": [
-   126.9135165,
-   37.5491801
+   126.9138194,
+   37.5493191
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "6호선|삼각지": {
   "at": [
@@ -749,10 +760,11 @@
  },
  "8호선|잠실": {
   "at": [
-   127.1035208,
-   37.5142978
+   127.1032799,
+   37.5143494
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "8호선|송파": {
   "at": [
@@ -847,10 +859,11 @@
  },
  "9호선|흑석": {
   "at": [
-   126.9639489,
-   37.5083822
+   126.9641033,
+   37.5084721
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "9호선|구반포": {
   "at": [
@@ -938,10 +951,11 @@
  },
  "GTX-A|수서": {
   "at": [
-   127.1011599,
-   37.4869643
+   127.1019718,
+   37.4873744
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "GTX-A|연신내": {
   "at": [
@@ -1246,10 +1260,11 @@
  },
  "신림선|서울대벤처타운": {
   "at": [
-   126.9336727,
-   37.4720473
+   126.9338086,
+   37.4721439
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-lateral"
  },
  "신림선|신림": {
   "at": [
@@ -1613,5 +1628,645 @@
   ],
   "shift": true,
   "from": "kakao"
+ },
+ "1호선|제기동": {
+  "at": [
+   127.0347415,
+   37.578171
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|신도림": {
+  "at": [
+   126.8914559,
+   37.5089686
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|서울": {
+  "at": [
+   126.9720963,
+   37.5559844
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|용산": {
+  "at": [
+   126.9643537,
+   37.5295709
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|영등포": {
+  "at": [
+   126.9071937,
+   37.5156915
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|광운대": {
+  "at": [
+   127.0618897,
+   37.6233859
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|신길": {
+  "at": [
+   126.9162176,
+   37.5175425
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|아산": {
+  "at": [
+   127.1044389,
+   36.7921683
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|배방": {
+  "at": [
+   127.0529544,
+   36.7777612
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|금정": {
+  "at": [
+   126.9433105,
+   37.3722541
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|금천구청": {
+  "at": [
+   126.8937982,
+   37.4557893
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|의왕": {
+  "at": [
+   126.9479612,
+   37.3211263
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|성균관대": {
+  "at": [
+   126.971771,
+   37.3002344
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|수원": {
+  "at": [
+   126.9997641,
+   37.2661531
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|병점": {
+  "at": [
+   127.0331935,
+   37.2067694
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|오산": {
+  "at": [
+   127.0667496,
+   37.145684
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|평택지제": {
+  "at": [
+   127.0705188,
+   37.0189167
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|두정": {
+  "at": [
+   127.1489734,
+   36.8336533
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|광명": {
+  "at": [
+   126.8847571,
+   37.4163596
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|개봉": {
+  "at": [
+   126.859115,
+   37.4945643
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|송내": {
+  "at": [
+   126.7529236,
+   37.4876571
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|동인천": {
+  "at": [
+   126.6323667,
+   37.4756339
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|동두천": {
+  "at": [
+   127.0549247,
+   37.9276259
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|소요산": {
+  "at": [
+   127.0610101,
+   37.9479852
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "1호선|연천": {
+  "at": [
+   127.0736476,
+   38.1004938
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "2호선|시청": {
+  "at": [
+   126.9767515,
+   37.5640446
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "2호선|을지로3가": {
+  "at": [
+   126.9911727,
+   37.5662997
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "2호선|사당": {
+  "at": [
+   126.9816223,
+   37.4765585
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "2호선|양천구청": {
+  "at": [
+   126.8658201,
+   37.5124213
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "3호선|충무로": {
+  "at": [
+   126.9942312,
+   37.5613271
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "3호선|양재": {
+  "at": [
+   127.0341369,
+   37.4845741
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "3호선|일원": {
+  "at": [
+   127.0842414,
+   37.4840058
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "3호선|오금": {
+  "at": [
+   127.1282632,
+   37.5020899
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|오남": {
+  "at": [
+   127.1914011,
+   37.705294
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|선바위": {
+  "at": [
+   127.0022599,
+   37.4517042
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|길음": {
+  "at": [
+   127.0251266,
+   37.6034437
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|회현": {
+  "at": [
+   126.978422,
+   37.5587495
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|서울": {
+  "at": [
+   126.9730651,
+   37.555792
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "4호선|남태령": {
+  "at": [
+   126.988969,
+   37.4648953
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "5호선|여의도": {
+  "at": [
+   126.924246,
+   37.5216789
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "6호선|동묘앞": {
+  "at": [
+   127.015702,
+   37.572513
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "6호선|연신내": {
+  "at": [
+   126.9211837,
+   37.6187329
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "6호선|불광": {
+  "at": [
+   126.9294632,
+   37.6109142
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "7호선|까치울": {
+  "at": [
+   126.8111773,
+   37.5062501
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "7호선|온수": {
+  "at": [
+   126.823601,
+   37.491882
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "7호선|상도": {
+  "at": [
+   126.9477228,
+   37.5031125
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "7호선|부평구청": {
+  "at": [
+   126.7209837,
+   37.5074546
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "7호선|가산디지털단지": {
+  "at": [
+   126.8824709,
+   37.4803416
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "8호선|강동구청": {
+  "at": [
+   127.1206171,
+   37.5307249
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "8호선|몽촌토성": {
+  "at": [
+   127.112604,
+   37.517748
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "9호선|개화": {
+  "at": [
+   126.7968941,
+   37.5783452
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "GTX-A|성남": {
+  "at": [
+   127.1205502,
+   37.3942875
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "GTX-A|운정중앙": {
+  "at": [
+   126.7281457,
+   37.7161389
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경강선|성남": {
+  "at": [
+   127.1200302,
+   37.394744
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|대곡": {
+  "at": [
+   126.810223,
+   37.6315907
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|신촌": {
+  "at": [
+   126.9421526,
+   37.5596758
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|효창공원앞": {
+  "at": [
+   126.9620552,
+   37.5388078
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|공덕": {
+  "at": [
+   126.9517887,
+   37.5429008
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|서강대": {
+  "at": [
+   126.9350431,
+   37.55247
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|디지털미디어시티": {
+  "at": [
+   126.9005768,
+   37.5774811
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|수색": {
+  "at": [
+   126.8956063,
+   37.5808963
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|능곡": {
+  "at": [
+   126.8206052,
+   37.6190086
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|금릉": {
+  "at": [
+   126.7653974,
+   37.7513553
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|파주": {
+  "at": [
+   126.792751,
+   37.8151052
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|문산": {
+  "at": [
+   126.7873893,
+   37.8544638
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경의중앙선|용산": {
+  "at": [
+   126.9645142,
+   37.5294331
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "경춘선|청량리": {
+  "at": [
+   127.0481797,
+   37.5806652
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "공항철도|홍대입구": {
+  "at": [
+   126.9268425,
+   37.5574111
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "김포골드라인|사우": {
+  "at": [
+   126.7197516,
+   37.6203288
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "서해선|김포공항": {
+  "at": [
+   126.8041669,
+   37.5617331
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "서해선|달미": {
+  "at": [
+   126.8093658,
+   37.3491318
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "수인분당선|청량리": {
+  "at": [
+   127.047296,
+   37.5808932
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "수인분당선|서현": {
+  "at": [
+   127.1232825,
+   37.3849087
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "수인분당선|기흥": {
+  "at": [
+   127.1159517,
+   37.2756188
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "수인분당선|고색": {
+  "at": [
+   126.9803191,
+   37.2496872
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "수인분당선|신포": {
+  "at": [
+   126.6245594,
+   37.4684384
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "의정부선|곤제": {
+  "at": [
+   127.0837771,
+   37.7506247
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "인천1호선|부평": {
+  "at": [
+   126.7235553,
+   37.4899268
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "인천1호선|인천대입구": {
+  "at": [
+   126.6396513,
+   37.3860468
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
+ },
+ "인천2호선|완정": {
+  "at": [
+   126.6730297,
+   37.5928799
+  ],
+  "shift": true,
+  "from": "kakao-lateral"
  }
 }
