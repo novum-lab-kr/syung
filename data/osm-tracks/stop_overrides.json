@@ -1,9 +1,13 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘).",
- "7호선|고속터미널": [
-  127.005317,
-  37.5038095
- ],
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01).",
+ "7호선|고속터미널": {
+  "at": [
+   127.0050068,
+   37.5033871
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
  "5호선|동대문역사문화공원": [
   127.0072737,
   37.5642335
@@ -1561,5 +1565,53 @@
    37.5611921
   ],
   "shift": true
+ },
+ "7호선|용마산": {
+  "at": [
+   127.0867166,
+   37.573671
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
+ "9호선|노들": {
+  "at": [
+   126.9530929,
+   37.5126742
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
+ "9호선|둔촌오륜": {
+  "at": [
+   127.1386531,
+   37.5194087
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
+ "9호선|한성백제": {
+  "at": [
+   127.116449,
+   37.5165354
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
+ "인천1호선|문학경기장": {
+  "at": [
+   126.6984487,
+   37.4346498
+  ],
+  "shift": true,
+  "from": "kakao"
+ },
+ "인천1호선|동춘": {
+  "at": [
+   126.6808478,
+   37.404575
+  ],
+  "shift": true,
+  "from": "kakao"
  }
 }
