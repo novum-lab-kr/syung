@@ -15,6 +15,9 @@ Output (data/live-timing.json), read by the map runtime:
   slower (7호선 1.045 against 0.927 the rest of the day, 2026-09-24–30); the map uses it then.
   Only for lines with RUSH_MIN_N spans; else the map keeps pace.
 - zone: seconds from 도착 to 출발 at one station (the train inside the station section).
+- stops: {station id: zone} where a station's own zone (STOP_MIN_N spans or more) is STOP_DIFF s or
+  more off the line's: busy stations stand longer (2호선 강남 83 s against the line's 75; 3370 내선
+  stood 93 s there at 18:38 on 2026-10-01 and the map had it leave ~25 s early).
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
@@ -44,6 +47,7 @@ OUT = ROOT / "data" / "live-timing.json"
 # 7호선 position feed's own event times 67 s (2026-09-28, 45 stops) — 40 s had 7호선 trains leave
 # ~30 s early
 DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
+STOP_MIN_N, STOP_DIFF, STOP_CLAMP = 30, 5, (30, 180)
 MIN_N = {"pace": 200, "zone": 100, "approach": 100, "rushPace": 60}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85), "rushPace": (0.95, 1.12)}
 # weekday rush hours, KST minutes of the day [start, end) — maplibre_runtime.mjs RUSH is the same
@@ -99,11 +103,13 @@ def pairs(trains: dict):
 
 def learn(paths: list[str], verbose: bool = False) -> dict:
     pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
+    zone_at = defaultdict(list)
     for line, e1, e2, a, b, dt in pairs(load(paths)):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
             if both and (s1, s2) == ("도착", "출발") and dt < 300:
                 zone[line].append(dt)
+                zone_at[(line, a)].append(dt)
             if both and (s1, s2) == ("진입", "도착") and dt < 180:
                 approach[line].append(dt)
             continue
@@ -125,6 +131,12 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
                 lo, hi = CLAMP[name]
                 v = min(hi, max(lo, stat[name](values)))
                 out[name] = round(v, 2) if name in ("pace", "rushPace") else round(v)
+        base = out.get("zone", DEFAULT["zone"])
+        stops = {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], statistics.harmonic_mean(v))))
+                 for (l, a), v in sorted(zone_at.items()) if l == line and len(v) >= STOP_MIN_N}
+        stops = {a: v for a, v in stops.items() if abs(v - base) >= STOP_DIFF}
+        if stops:
+            out["stops"] = stops
         if abs(out.get("rushPace", 0) - out.get("pace", DEFAULT["pace"])) < 0.02:
             out.pop("rushPace", None)   # no different at rush hour
         if out:
@@ -149,7 +161,7 @@ def evaluate(timing: dict, paths: list[str]) -> dict:
         tm = {**timing["default"], **timing["lines"].get(line, {})}
         if "rushPace" in tm and rush(e1["receivedAt"]):
             tm["pace"] = tm["rushPace"]
-        stand = max(15, tm["zone"] - 10)
+        stand = max(15, tm.get("stops", {}).get(str(a), tm["zone"]) - 10)   # the zone of the station it stands at
         s1, s2 = e1["status"], e2["status"]
         if a == b and (s1, s2) == ("도착", "출발"):
             kind, predicted = "도착→출발", stand + 5

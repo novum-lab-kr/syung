@@ -214,6 +214,8 @@ function planTrain(t){
   // brakes in over the last stretch (BRAKE s) and leaves zone − 20 s after the record. The times the
   // feed's next events are expected at are unchanged (build_live_timing.evaluate).
   const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,tm.stand||30),BRAKE=DWELL-STAND;
+  // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
+  const more=st=>(tm.stops?.[st.id]??tm.zone)-tm.zone,stand=st=>Math.max(5,STAND+more(st));
   const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
   // ease: slow at a stop, full speed through a station the train passes
   const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
@@ -227,8 +229,8 @@ function planTrain(t){
   if(brakes)phases.push({from:previous,to:s,k0:.85,k1:1,dur:BRAKE,ease:'out'});
   // a train standing at the terminus it starts from, minutes before leaving (proxy: departsAt)
   const wait=t.departsAt?(kstMs(t.departsAt)-kstMs(t.receivedAt))/1000:0;
-  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,Math.max(brakes?STAND:DWELL,wait||0));
-  for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1)}
+  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,Math.max((brakes?STAND:DWELL)+more(s),wait||0));
+  for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1,stand(ahead[i+1]))}
   // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
   const last=ahead[ahead.length-1],before=ahead.length>1?ahead[ahead.length-2]:previous;
   phases.push(before?{from:before,to:last,k0:1,k1:1,dur:Infinity}:{from:last,to:last,k0:0,k1:0,dur:Infinity});
