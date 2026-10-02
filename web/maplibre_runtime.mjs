@@ -246,35 +246,43 @@ function planTrain(t){
 }
 // 롤러코스터 (settings): between stations the lines rise off the ground like a coaster track and the
 // trains ride on it; its clock can run faster (×coasterSpeed): the trains then run ahead of the feed
-// (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m.
+// (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
+// each its own height (COASTER_LOW..COASTER_H) and spacing.
 let coaster=false,coasterSpeed=1,warp=0,warpAt=0;
-const COASTER_H=65,COASTER_FLAT=110,COASTER_RISE=160;   // m: top of the hills; flat this far either side of a station; climb over this
+const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
+const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
 const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
-// Half the long edges (≥ LOOP_MIN) also turn a loop at their middle: over LOOP_D of ground the train's
-// ground point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of LOOP_R.
-const LOOP_R=38,LOOP_D=80,LOOP_MIN=800;   // m
-const hasLoop=(L,lo,hi)=>L>=LOOP_MIN&&(lo*31+hi*17)%10<5;
+// Half the long edges (≥ LOOP_MIN) also turn a loop at their middle: over D of ground the train's ground
+// point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of radius R,
+// R = 45..100 m by edge. D/R is fixed (LOOP_DR) so one ride table (LOOP_ARC) fits every loop.
+const LOOP_DR=80/38,LOOP_MIN=800;   // m
+const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
 // [ground distance, height] (mercator units, lo→hi) where the track is at distance s along that line's edge
 function coasterAt(line,lo,hi,s){
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,k=g.total?s/g.total:0,d=Math.min(k,1-k)*L;
   const env=smooth(Math.max(0,Math.min(1,(d-COASTER_FLAT)/COASTER_RISE)));if(!env)return [s,0];
-  const n=Math.max(1,Math.round(L/380)),seed=((lo*7919+hi*104729)%997)/997,top=COASTER_H*(.7+.3*seed);
-  let sg=s,h=top*env*(.58+.42*Math.cos(2*Math.PI*n*k+seed*6.283))*mu;
-  if(hasLoop(L,lo,hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,u=(s-s0)/D;
-    if(u>0&&u<1){const t=2*Math.PI*u,r=LOOP_R*mu;sg=s0+D*u+r*Math.sin(t);h+=r*(1-Math.cos(t))}}
+  // knots at irregular spacing, tops and dips alternating, each its own height; eased from knot to knot
+  const n=Math.max(1,Math.round(L/380)),m=2*n+1,x=k*m,j=Math.min(m-1,Math.floor(x));
+  const knot=i=>{if(i<=0||i>=m)return i<=0?0:1;return (i+(hash(lo,hi,10+i)-.5)*.6)/m},hk=i=>{const r=hash(lo,hi,40+i);
+    return i%2?COASTER_LOW+(COASTER_H-COASTER_LOW)*r*r*.35:COASTER_LOW+(COASTER_H-COASTER_LOW)*(.25+.75*r)};   // odd: dips, low; even: tops, any height
+  let a=j;while(a>0&&knot(a)>k)a--;while(a<m-1&&knot(a+1)<=k)a++;const u=(k-knot(a))/((knot(a+1)-knot(a))||1);
+  let sg=s,h=env*(hk(a)+(hk(a+1)-hk(a))*smooth(Math.max(0,Math.min(1,u))))*mu;
+  const LD=loopD(L,lo,hi);
+  if(LD){const D=LD*mu,s0=g.total/2-D/2,u=(s-s0)/D;
+    if(u>0&&u<1){const t=2*Math.PI*u,r=D/LOOP_DR;sg=s0+D*u+r*Math.sin(t);h+=r*(1-Math.cos(t))}}
   return [sg,h];
 }
-// The loop is LOOP_D of ground but a much longer ride (ride length per ground length g = |(1 + k cos t, k sin t)|,
+// The loop is D of ground but a much longer ride (ride length per ground length g = |(1 + k cos t, k sin t)|,
 // k = 2πR/D). Spaced by ground distance the cars were stretched over a quarter of the loop each and crossed
 // (it looked smashed); they are spaced by ride distance instead. LOOP_ARC[i]: ride (in D) over the first i/64 of it.
-const LOOP_ARC=(()=>{const N=64,k=2*Math.PI*LOOP_R/LOOP_D,g=u=>Math.hypot(1+k*Math.cos(2*Math.PI*u),k*Math.sin(2*Math.PI*u)),a=[0];for(let i=1;i<=N;i++)a.push(a[i-1]+(g((i-1)/N)+g(i/N))/2/N);return a})(),LOOP_RIDE=LOOP_ARC[LOOP_ARC.length-1];
+const LOOP_ARC=(()=>{const N=64,k=2*Math.PI/LOOP_DR,g=u=>Math.hypot(1+k*Math.cos(2*Math.PI*u),k*Math.sin(2*Math.PI*u)),a=[0];for(let i=1;i<=N;i++)a.push(a[i-1]+(g((i-1)/N)+g(i/N))/2/N);return a})(),LOOP_RIDE=LOOP_ARC[LOOP_ARC.length-1];
 const loopArc=u=>{const N=LOOP_ARC.length-1,x=u*N,i=Math.min(N-1,Math.floor(x));return LOOP_ARC[i]+(LOOP_ARC[i+1]-LOOP_ARC[i])*(x-i)};
 const loopGround=a=>{let lo=0,hi=LOOP_ARC.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(LOOP_ARC[m]<=a)lo=m;else hi=m}return (lo+(a-LOOP_ARC[lo])/((LOOP_ARC[hi]-LOOP_ARC[lo])||1))/(LOOP_ARC.length-1)};
 // a plan's ride distance ↔ its ground distance d along plan.seq (equal outside the loops; straight on past either end)
 function rideTable(p){
   if(p.ride)return p.ride;const cum=[0],loops=[];
   for(let i=0;i<p.seq.length-1;i++){const a=p.seq[i],b=p.seq[i+1],lo=Math.min(a.id,b.id),hi=Math.max(a.id,b.id),g=geom(p.t.line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),Lg=p.cum[i+1]-p.cum[i];
-    const D=hasLoop(g.total/mu,lo,hi)?LOOP_D*mu:0;loops.push(D?[Lg/2-D/2,D]:null);cum.push(cum[i]+Lg+D*(LOOP_RIDE-1))}   // the loop sits in the middle of the edge, either way round
+    const D=loopD(g.total/mu,lo,hi)*mu;loops.push(D?[Lg/2-D/2,D]:null);cum.push(cum[i]+Lg+D*(LOOP_RIDE-1))}   // the loop sits in the middle of the edge, either way round
   return p.ride={cum,loops};
 }
 function toRide(p,d){
@@ -1304,7 +1312,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U:U.map(c=>c/ul),G:[q.fx,q.fy,0],loop:q.loop}};
     // samples on the edge's own grid (so neighbouring pieces meet), the piece's ends, and densely over the loop
     const S=[c.s0],n=Math.max(1,Math.ceil(g.total/(lvl*mu)));for(let i=Math.ceil(c.s0/g.total*n);i<=n;i++){const x=g.total*i/n;if(x>=c.s1)break;if(x>c.s0)S.push(x)}S.push(c.s1);
-    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++){const x=s0+D*i/m;if(x>c.s0&&x<c.s1)S.push(x)}S.sort((p,q)=>p-q)}
+    if(loopD(g.total/mu,e.lo,e.hi)){const D=loopD(g.total/mu,e.lo,e.hi)*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++){const x=s0+D*i/m;if(x>c.s0&&x<c.s1)S.push(x)}S.sort((p,q)=>p-q)}
     const P=S.map(at),G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
     const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
     const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
