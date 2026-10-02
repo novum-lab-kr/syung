@@ -8,7 +8,9 @@
   candidate, the result and the learned values with their sample counts. Days before the nightly
   retrain existed are backfilled the same way it works: learn on the week before yesterday, score
   on yesterday, then learn again with yesterday included.
-- latest: the live-timing.json the map uses now, with the names of the stations it has own stand times for
+- latest: the live-timing.json the map uses now, plus every line's stations in route order with
+  their names, and per station how often its stand (도착→출발) was timed over the days that timing
+  learned from and the harmonic mean (stands: {line: {id: [n, s]}}, before STOP_MIN_N/STOP_DIFF/clamp)
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).
 Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.py [web folder]
 """
@@ -16,12 +18,15 @@ Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.
 from __future__ import annotations
 
 import json
+import statistics
 import sys
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_live_timing import OUT as REPO_TIMING, evaluate, learn, load  # noqa: E402
+from analyse_live_samples import metro  # noqa: E402
+from build_live_timing import OUT as REPO_TIMING, evaluate, learn, load, pairs  # noqa: E402
 from sample_files import all_days, day_files, lines  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
@@ -29,15 +34,31 @@ STATE = Path("/var/lib/subway-live")
 DAYS_CACHE = STATE / "learning-days.json"
 HISTORY_CACHE = STATE / "learning-history.json"
 WINDOW = 7   # days of samples a retrain learns from (retrain_live_timing.DAYS)
-NODES = REPO_TIMING.parent / "ktdb-gtfs-2025" / "capital-metro.json"   # station id → name
 
 
 
 
-def station_names(timing: dict) -> dict:
-    ids = {a for v in (timing.get("lines") or {}).values() for a in v.get("stops", {})}
-    nodes = json.loads(NODES.read_text(encoding="utf-8"))["nodes"]
-    return {str(n["id"]): n["name"] for n in nodes if str(n["id"]) in ids}
+def line_stations() -> dict:
+    """{line: station ids in route order}, longest route variant first."""
+    out = {}
+    for line, variants in metro["lines"].items():
+        seen = {}
+        for v in sorted(variants, key=lambda v: -len(v["stops"])):
+            seen.update(dict.fromkeys(v["stops"]))
+        out[line] = list(seen)
+    return out
+
+
+def station_stands(paths: list[str]) -> dict:
+    """Timed stands per station, the way build_live_timing.learn collects zone_at."""
+    at = defaultdict(list)
+    for line, e1, e2, a, b, dt in pairs(load(paths)):
+        if a == b and e1["event"] and e2["event"] and (e1["status"], e2["status"]) == ("도착", "출발") and dt < 300:
+            at[(line, a)].append(dt)
+    out = defaultdict(dict)
+    for (line, a), v in sorted(at.items()):
+        out[line][str(a)] = [len(v), round(statistics.harmonic_mean(v))]
+    return dict(out)
 
 
 def day_stats(d: date, cache: dict) -> dict:
@@ -100,12 +121,16 @@ def main(web: Path) -> None:
 
     timing = STATE / "live-timing.json"
     latest = json.loads((timing if timing.exists() else REPO_TIMING).read_text(encoding="utf-8"))
+    learned_from = [str(p) for k in range(1, WINDOW + 2) for p in day_files(today - timedelta(days=k))]
+    stations = line_stations()
+    names = {n["id"]: n["name"] for n in metro["nodes"]}
     out = {"generatedAt": datetime.now(KST).isoformat(timespec="seconds"),
            "retrainAt": "매일 03:10", "window": WINDOW,
            "days": [{k: v for k, v in s.items() if k != "stamp"} for s in stats],
            "history": [history[k] for k in sorted(history)],
            "latest": {"lines": latest.get("lines"), "default": latest.get("default"), "n": latest.get("n"),
-                      "names": station_names(latest)}}
+                      "stations": stations, "stands": station_stands(learned_from),
+                      "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}}}
     target = web / "learning.json"
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

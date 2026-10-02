@@ -100,13 +100,20 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
 .tw table.wide{min-width:560px}
 td.l,th.l{text-align:left}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--c)}
+.badge,th{white-space:nowrap}
+.badge .short{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.chips button{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;border:0;background:var(--control);color:var(--secondary);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.chips button[aria-selected=true]{background:var(--c);color:#fff}
+.chips button[aria-selected=true] .dot{background:#fff}
+.chips .dot{margin-right:5px}
 .note{margin:8px 0 0;font-size:12.5px;line-height:1.55;color:var(--muted)}
 .def{color:var(--muted)}
 .up{color:var(--mid);font-weight:700}.dn{color:var(--good);font-weight:700}
 tr.sep td{border-top:1.5px solid var(--rule)}
 @media (max-width:720px){
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
-  table{font-size:12.5px}td{padding:7px 6px}
+  table{font-size:12.5px}td,th{padding:7px 5px}#stopTable td:first-child{white-space:nowrap}#stopTable .full{display:none}#stopTable .short{display:inline}#stopTable .badge::before{display:none}#stopTable .badge{padding:3px 8px;font-size:11.5px}
   .scores text{font-size:19px}.scores .val{font-size:20px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
   .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
@@ -170,8 +177,10 @@ tr.sep td{border-top:1.5px solid var(--rule)}
 
   <section class="box">
     <h2>역별 머무는 시간</h2>
-    <div class="tw"><table><thead><tr><th class="l">노선</th><th class="l">역</th><th>머무는 시간</th><th>노선 평균과 차이</th></tr></thead><tbody id="stopTable"></tbody></table></div>
-    <p class="note">노선 평균과 많이 다른 역만 따로 배워요. 사람이 많이 타고 내리는 역일수록 오래 서 있어요.</p>
+    <div class="chips" id="stopLines" role="tablist" aria-label="노선 고르기"></div>
+    <p class="note" id="stopSummary" style="margin:0 0 8px"></p>
+    <div class="tw"><table><thead><tr><th class="l">역</th><th>잰 횟수</th><th>잰 시간</th><th>지도 값</th><th class="l">상태</th></tr></thead><tbody id="stopTable"></tbody></table></div>
+    <p class="note">지난 8일 동안 역에 도착해서 출발할 때까지를 잰 값이에요. 30번 넘게 재고 노선 평균과 5초 넘게 다른 역만 따로 배우고, 나머지 역은 노선 평균을 써요. 지도 값(지도에 쓰는 값)은 30~180초 안으로 잘라요.</p>
   </section>
 
   <section class="box">
@@ -274,8 +283,21 @@ fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location
   const or=(v,f,dflt)=>v!=null?f(v):`<span class="def">${dflt!=null?f(dflt):'–'}</span>`;
   $('lineTable').innerHTML=lineIds.map(l=>{const v=LL[l]||{};
     return `<tr><td class="l"><span class="dot" style="--c:${COLORS[l]||'#888'}"></span>${esc(l)}</td><td>${or(v.pace,pp,DF.pace)}</td><td>${v.rushPace!=null?pp(v.rushPace):'<span class="def">평소와 같게</span>'}</td><td>${or(v.zone,x=>x+'초',DF.zone)}</td><td>${or(v.approach,x=>x+'초',DF.approach)}</td><td>${Object.keys(v.stops||{}).length||'–'}</td><td>${fmt(LN[l]?.pace||0)}</td></tr>`}).join('');
-  $('stopTable').innerHTML=lineIds.flatMap(l=>{const v=LL[l]||{},base=v.zone??DF.zone;
-    return Object.entries(v.stops||{}).sort((a,b)=>b[1]-a[1]).map(([id,z],i)=>`<tr${i===0?' class="sep"':''}><td class="l">${i===0?`<span class="dot" style="--c:${COLORS[l]||'#888'}"></span>${esc(l)}`:''}</td><td class="l">${esc(names[id]||'역 '+id)}</td><td>${z}초</td><td>${sgn(z-base)}초</td></tr>`)}).join('')||'<tr><td colspan="4" class="l muted">아직 따로 배운 역이 없어요.</td></tr>';
+  const ST=L.stations||{},SN=L.stands||{},MIN=30;
+  const stopLines=Object.keys(ST).filter(l=>ST[l].length).sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const showStops=l=>{const v=LL[l]||{},base=v.zone??DF.zone,own=v.stops||{},got=SN[l]||{};
+    const rows=ST[l].map(id=>{const [n,sec]=got[id]||[0,null];
+      const st=own[id]!=null?['b-good','따로 배움','따로']:n>=MIN?['b-mid','평균과 비슷','비슷']:['b-low',`모으는 중 ${n}/${MIN}`,`${n}/${MIN}`];
+      const use=own[id]??base;
+      return {st,html:`<tr><td class="l">${esc(names[id]||'역 '+id)}</td><td>${n?n.toLocaleString('ko-KR'):'–'}</td><td>${sec!=null?sec+'초':'–'}</td><td>${own[id]!=null?`<b>${use}초</b> ${sgn(use-base)}초`:`<span class="def">${use}초</span>`}</td><td class="l"><span class="badge ${st[0]}"><span class="full">${st[1]}</span><span class="short">${st[2]}</span></span></td></tr>`}});
+    const c=k=>rows.filter(r=>r.st[0]===k).length;
+    $('stopSummary').textContent=`${l} ${rows.length}개 역 · 따로 배움 ${c('b-good')} · 평균과 비슷 ${c('b-mid')} · 모으는 중 ${c('b-low')} · 노선 평균 ${base}초${v.zone==null?' (기본값)':''}`;
+    $('stopTable').innerHTML=rows.map(r=>r.html).join('');
+    document.querySelectorAll('#stopLines button').forEach(b=>b.setAttribute('aria-selected',b.dataset.l===l))};
+  $('stopLines').innerHTML=stopLines.map(l=>`<button type="button" role="tab" data-l="${esc(l)}" style="--c:${COLORS[l]||'#888'}"><span class="dot"></span>${esc(l)}</button>`).join('');
+  $('stopLines').onclick=e=>{const b=e.target.closest('button');if(b)showStops(b.dataset.l)};
+  const timed=l=>Object.values(SN[l]||{}).filter(([n])=>n>=MIN).length;   // open on the line with the most timed stations
+  if(stopLines.length)showStops(stopLines.reduce((a,b)=>timed(b)>timed(a)?b:a));
   const byDay=Object.fromEntries(sc.map(s=>[s.day,s]));
   $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const s=byDay[x.date];
     const res=!s?'':s.result==='published'?'적용':s.result==='kept current'?'유지':s.result==='backfill'?'나중에 계산':'';
