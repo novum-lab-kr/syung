@@ -10,7 +10,8 @@
   on yesterday, then learn again with yesterday included.
 - latest: the live-timing.json the map uses now, plus every line's stations in route order with
   their names, and per station how often its stand (도착→출발) was timed over the days that timing
-  learned from and the harmonic mean (stands: {line: {id: [n, s]}}, before STOP_MIN_N/STOP_DIFF/clamp)
+  learned from and the harmonic mean, and how many 도착 → next 도착 runs left it (stands: {line: {id:
+  [n, s, runs]}}, before STOP_MIN_N/STOP_DIFF/clamp; runs are what build_live_timing.onward_stops uses)
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).
 Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.py [web folder]
 """
@@ -25,7 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyse_live_samples import metro  # noqa: E402
+from analyse_live_samples import metro, times  # noqa: E402
 from build_live_timing import OUT as REPO_TIMING, evaluate, learn, load, pairs  # noqa: E402
 from sample_files import all_days, day_files, lines  # noqa: E402
 
@@ -50,14 +51,20 @@ def line_stations() -> dict:
 
 
 def station_stands(paths: list[str]) -> dict:
-    """Timed stands per station, the way build_live_timing.learn collects zone_at."""
-    at = defaultdict(list)
+    """Timed stands and onward runs per station, the way build_live_timing.learn collects them."""
+    at, runs = defaultdict(list), defaultdict(int)
     for line, e1, e2, a, b, dt in pairs(load(paths)):
-        if a == b and e1["event"] and e2["event"] and (e1["status"], e2["status"]) == ("도착", "출발") and dt < 300:
+        if not (e1["event"] and e2["event"]):
+            continue
+        if a == b and (e1["status"], e2["status"]) == ("도착", "출발") and dt < 300:
             at[(line, a)].append(dt)
+        elif a != b and (e1["status"], e2["status"]) == ("도착", "도착") \
+                and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")) and 0.5 * run < dt < run + 300:
+            runs[(line, a)] += 1
     out = defaultdict(dict)
-    for (line, a), v in sorted(at.items()):
-        out[line][str(a)] = [len(v), round(statistics.harmonic_mean(v))]
+    for line, a in sorted(set(at) | set(runs)):
+        v = at.get((line, a), [])
+        out[line][str(a)] = [len(v), round(statistics.harmonic_mean(v)) if v else None, runs.get((line, a), 0)]
     return dict(out)
 
 

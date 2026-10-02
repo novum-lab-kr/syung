@@ -18,6 +18,14 @@ Output (data/live-timing.json), read by the map runtime:
 - stops: {station id: zone} where a station's own zone (STOP_MIN_N spans or more) is STOP_DIFF s or
   more off the line's: busy stations stand longer (2호선 강남 83 s against the line's 75; 3370 내선
   stood 93 s there at 18:38 on 2026-10-01 and the map had it leave ~25 s early).
+  A station whose feed never says 출발 (코레일 sections: 1호선 off 서울역–청량리, 경의중앙선,
+  수인분당선, 경춘선, 서해선, 경강선) gets one from its 도착 → next 도착 runs instead (STOP_MIN_N of
+  them): the median of how much later than the line's pace and zone predict the next 도착 came. It
+  also takes up the timetable's error on the runs out of it, so it is not a pure stand time (it
+  agrees poorly with measured stands), but learned on 2026-09-25–30 it cut the next-도착 error on the
+  following day: 1호선 14.0 → 12.0 s, 경의중앙선 18.6 → 13.5, 수인분당선 13.0 → 11.0, 경춘선
+  19.9 → 15.7, no line worse (holdout 2026-10-01; 2026-09-30 alike). Chaining A→B against B→A
+  differences instead drifted along the line and made it worse.
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
@@ -101,9 +109,22 @@ def pairs(trains: dict):
                 yield line, e1, e2, a, b, dt
 
 
+def onward_stops(line: str, learned: dict, onward: list, zone_at: dict) -> dict:
+    """{station id: zone} from 도착 → next 도착 runs, for stations without STOP_MIN_N timed stands."""
+    tm = {**DEFAULT, **learned}
+    late = defaultdict(list)
+    for l, a, run, dt, in_rush in onward:
+        if l != line or len(zone_at.get((l, a), ())) >= STOP_MIN_N:
+            continue
+        pace = tm.get("rushPace", tm["pace"]) if in_rush else tm["pace"]
+        late[a].append(dt - (max(15, tm["zone"] - 10) + max(0.5 * run, pace * (run + 30) - tm["zone"]) + 10))   # as evaluate
+    return {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], tm["zone"] + statistics.median(v))))
+            for a, v in late.items() if len(v) >= STOP_MIN_N}
+
+
 def learn(paths: list[str], verbose: bool = False) -> dict:
     pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
-    zone_at = defaultdict(list)
+    zone_at, onward = defaultdict(list), []   # onward: 도착 → next station's 도착 runs
     for line, e1, e2, a, b, dt in pairs(load(paths)):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
@@ -113,6 +134,9 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
             if both and (s1, s2) == ("진입", "도착") and dt < 180:
                 approach[line].append(dt)
             continue
+        if both and (s1, s2) == ("도착", "도착") and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")) \
+                and 0.5 * run < dt < run + 300:
+            onward.append((line, a, run, dt, rush(e1["receivedAt"])))
         sched = scheduled(line, a, b)
         if sched and s1 == s2 and s1 in ("도착", "출발") and both:
             hops, run = sched
@@ -131,16 +155,20 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
                 lo, hi = CLAMP[name]
                 v = min(hi, max(lo, stat[name](values)))
                 out[name] = round(v, 2) if name in ("pace", "rushPace") else round(v)
+        if abs(out.get("rushPace", 0) - out.get("pace", DEFAULT["pace"])) < 0.02:
+            out.pop("rushPace", None)   # no different at rush hour
         base = out.get("zone", DEFAULT["zone"])
         stops = {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], statistics.harmonic_mean(v))))
                  for (l, a), v in sorted(zone_at.items()) if l == line and len(v) >= STOP_MIN_N}
         stops = {a: v for a, v in stops.items() if abs(v - base) >= STOP_DIFF}
+        lines[line] = out   # for onward_stops below
+        for a, v in onward_stops(line, out, onward, zone_at).items():
+            if abs(v - base) >= STOP_DIFF:
+                stops[a] = v
         if stops:
             out["stops"] = stops
-        if abs(out.get("rushPace", 0) - out.get("pace", DEFAULT["pace"])) < 0.02:
-            out.pop("rushPace", None)   # no different at rush hour
-        if out:
-            lines[line] = out
+        if not out:
+            lines.pop(line)
         if verbose and out:
             print(f"{line:6} {out}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
     counts = {line: {k: n for k, n in (("pace", len(pace[line])), ("rushPace", len(rush_pace[line])),

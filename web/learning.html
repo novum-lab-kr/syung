@@ -18,14 +18,14 @@
 :root{
   --syung:#ffd400;--syung-deep:#c79a00;--syung-soft:#fff6c2;--syung-ink:#141414;
   --board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#7d796a;--rule:#ece6cf;--control:#f5f1e1;
-  --good:#1f8f55;--good-soft:#e3f4ea;--mid:#b07a00;--mid-soft:#fdf1cc;--low:#8a8676;--low-soft:#efece2;
+  --good:#1f8f55;--good-soft:#e3f4ea;--est:#2f6fb5;--est-soft:#e4eefa;--mid:#b07a00;--mid-soft:#fdf1cc;--low:#8a8676;--low-soft:#efece2;
   --shadow:0 3px 0 rgba(20,20,20,.05),0 8px 22px rgba(60,50,0,.08);
   --round:"Jua","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
 }
 html[data-theme=dark]{
   --board:#131416;--paper:#1c1e21;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2d2f33;--control:#25272b;
   --syung-deep:#ffd400;--syung-soft:#2e2a14;
-  --good:#5fd394;--good-soft:#16301f;--mid:#ffcf4a;--mid-soft:#332a10;--low:#9a968a;--low-soft:#26282c;
+  --good:#5fd394;--good-soft:#16301f;--est:#7fb2ee;--est-soft:#172638;--mid:#ffcf4a;--mid-soft:#332a10;--low:#9a968a;--low-soft:#26282c;
   --shadow:0 8px 22px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box}
@@ -82,7 +82,7 @@ h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
 .group h3 i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400}
 .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
 .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.b-good{background:var(--good-soft);color:var(--good)}.b-mid{background:var(--mid-soft);color:var(--mid)}.b-low{background:var(--low-soft);color:var(--low)}
+.b-good{background:var(--good-soft);color:var(--good)}.b-est{background:var(--est-soft);color:var(--est)}.b-mid{background:var(--mid-soft);color:var(--mid)}.b-low{background:var(--low-soft);color:var(--low)}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,calc(50% - 5px)),1fr));gap:10px}
 .lc{border-radius:14px;background:var(--control);padding:12px 12px 12px 14px;border-left:5px solid var(--c)}
 .lc b{font-size:14px}
@@ -113,7 +113,7 @@ td.l,th.l{text-align:left}
 tr.sep td{border-top:1.5px solid var(--rule)}
 @media (max-width:720px){
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
-  table{font-size:12.5px}td,th{padding:7px 5px}#stopTable td:first-child{white-space:nowrap}#stopTable .full{display:none}#stopTable .short{display:inline}#stopTable .badge::before{display:none}#stopTable .badge{padding:3px 8px;font-size:11.5px}
+  table{font-size:12.5px}td,th{padding:7px 5px}#stopTable td{white-space:nowrap}#stopTable td:nth-child(4){white-space:normal;line-height:1.3}#stopTable .full{display:none}#stopTable .short{display:inline}#stopTable .badge::before{display:none}#stopTable .badge{padding:3px 8px;font-size:11.5px}
   .scores text{font-size:19px}.scores .val{font-size:20px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
   .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
@@ -180,7 +180,7 @@ tr.sep td{border-top:1.5px solid var(--rule)}
     <div class="chips" id="stopLines" role="tablist" aria-label="노선 고르기"></div>
     <p class="note" id="stopSummary" style="margin:0 0 8px"></p>
     <div class="tw"><table><thead><tr><th class="l">역</th><th>잰 횟수</th><th>잰 시간</th><th>지도 값</th><th class="l">상태</th></tr></thead><tbody id="stopTable"></tbody></table></div>
-    <p class="note">지난 8일 동안 역에 도착해서 출발할 때까지를 잰 값이에요. 30번 넘게 재고 노선 평균과 5초 넘게 다른 역만 따로 배우고, 나머지 역은 노선 평균을 써요. 지도 값(지도에 쓰는 값)은 30~180초 안으로 잘라요.</p>
+    <p class="note">지난 8일 동안 역에 도착해서 출발할 때까지를 잰 값이에요. 30번 넘게 재고 노선 평균과 5초 넘게 다른 역만 따로 배우고, 나머지 역은 노선 평균을 써요. 출발 신호가 없는 역(코레일 구간)은 도착해서 다음 역에 도착하기까지가 예상보다 얼마나 늦는지로 추정해요(도착 n = 그 기록 수). 추정값엔 다음 구간 시간표 오차도 섞여 있어요. 지도 값은 30~180초 안으로 잘라요.</p>
   </section>
 
   <section class="box">
@@ -286,12 +286,12 @@ fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location
   const ST=L.stations||{},SN=L.stands||{},MIN=30;
   const stopLines=Object.keys(ST).filter(l=>ST[l].length).sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
   const showStops=l=>{const v=LL[l]||{},base=v.zone??DF.zone,own=v.stops||{},got=SN[l]||{};
-    const rows=ST[l].map(id=>{const [n,sec]=got[id]||[0,null];
-      const st=own[id]!=null?['b-good','따로 배움','따로']:n>=MIN?['b-mid','평균과 비슷','비슷']:['b-low',`모으는 중 ${n}/${MIN}`,`${n}/${MIN}`];
+    const rows=ST[l].map(id=>{const [n,sec,runs=0]=got[id]||[0,null,0],timed=n>=MIN,k=timed?n:runs;
+      const st=own[id]!=null?(timed?['b-good','따로 배움','따로']:['b-est','도착으로 추정','추정']):timed||runs>=MIN?['b-mid','평균과 비슷','비슷']:['b-low',`모으는 중 ${k}/${MIN}`,`${k}/${MIN}`];
       const use=own[id]??base;
-      return {st,html:`<tr><td class="l">${esc(names[id]||'역 '+id)}</td><td>${n?n.toLocaleString('ko-KR'):'–'}</td><td>${sec!=null?sec+'초':'–'}</td><td>${own[id]!=null?`<b>${use}초</b> ${sgn(use-base)}초`:`<span class="def">${use}초</span>`}</td><td class="l"><span class="badge ${st[0]}"><span class="full">${st[1]}</span><span class="short">${st[2]}</span></span></td></tr>`}});
+      return {st,html:`<tr><td class="l">${esc(names[id]||'역 '+id)}</td><td>${n?n.toLocaleString('ko-KR'):runs?`<span class="def"><span class="full">도착 </span>${runs.toLocaleString('ko-KR')}</span>`:'–'}</td><td>${sec!=null?sec+'초':'–'}</td><td>${own[id]!=null?`<b>${use}초</b> ${sgn(use-base)}초`:`<span class="def">${use}초</span>`}</td><td class="l"><span class="badge ${st[0]}"><span class="full">${st[1]}</span><span class="short">${st[2]}</span></span></td></tr>`}});
     const c=k=>rows.filter(r=>r.st[0]===k).length;
-    $('stopSummary').textContent=`${l} ${rows.length}개 역 · 따로 배움 ${c('b-good')} · 평균과 비슷 ${c('b-mid')} · 모으는 중 ${c('b-low')} · 노선 평균 ${base}초${v.zone==null?' (기본값)':''}`;
+    $('stopSummary').textContent=`${l} ${rows.length}개 역 · 따로 배움 ${c('b-good')}${c('b-est')?` · 도착으로 추정 ${c('b-est')}`:''} · 평균과 비슷 ${c('b-mid')} · 모으는 중 ${c('b-low')} · 노선 평균 ${base}초${v.zone==null?' (기본값)':''}`;
     $('stopTable').innerHTML=rows.map(r=>r.html).join('');
     document.querySelectorAll('#stopLines button').forEach(b=>b.setAttribute('aria-selected',b.dataset.l===l))};
   $('stopLines').innerHTML=stopLines.map(l=>`<button type="button" role="tab" data-l="${esc(l)}" style="--c:${COLORS[l]||'#888'}"><span class="dot"></span>${esc(l)}</button>`).join('');
