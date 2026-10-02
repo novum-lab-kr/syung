@@ -1341,18 +1341,27 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   // · later (gone below, coming up at w.at).
   // streets(): the walkable lines on and around the screen, rebuilt when the view settles.
   streets(){
-    this.net=null;const z=map.getZoom();if(!coaster||z<RIDER_MINZOOM||!map.getSource('ofm'))return;
+    this.net=null;const z=map.getZoom();if(!coaster||!this.edges||z<RIDER_MINZOOM||!map.getSource('ofm'))return;   // edges: once init ran
     const b=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),pad=(hi.x-lo.x)*.3;
     const box=[lo.x-pad,hi.y-pad,hi.x+pad,lo.y+pad],mu=lo.meterInMercatorCoordinateUnits(),M=c=>maplibregl.MercatorCoordinate.fromLngLat(c);
     const SIDE={primary:9,secondary:7.5,tertiary:6,minor:4.5,service:3,track:2,path:0,pedestrian:0};   // m from the centre line to the pavement
     const lines=[],ends=new Map(),key=p=>Math.round(p[0]/mu)+','+Math.round(p[1]/mu);   // ends: 1 m grid → lines meeting there
     for(const f of map.querySourceFeatures('ofm',{sourceLayer:'transportation'})){
-      const side=SIDE[f.properties.class];if(side==null||f.properties.brunnel==='tunnel')continue;
+      const side=SIDE[f.properties.class];if(side==null||f.properties.brunnel)continue;   // no tunnels, and no bridges (they walked over the river)
       const g=f.geometry;for(const cs of g.type==='LineString'?[g.coordinates]:g.type==='MultiLineString'?g.coordinates:[]){
         const pts=cs.map(c=>{const m=M(c);return [m.x,m.y]});if(pts.length<2||pts.every(p=>p[0]<box[0]||p[0]>box[2]||p[1]<box[1]||p[1]>box[3]))continue;
         const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));if(cum[cum.length-1]<3*mu)continue;
         const L={pts,cum,len:cum[cum.length-1],side:side*mu,near:0};lines.push(L);
         for(const e of [0,1]){const k=key(pts[e?pts.length-1:0]);if(!ends.has(k))ends.set(k,[]);ends.get(k).push([L,e])}}}
+    // not along the subway: the lines run under the main roads, and at the platforms the track is on the ground, so walkers
+    // there walked on it. A street with more than 40 % of it within reach of a line's track is left out.
+    const mpp=1/(512*2**z)/mu,reach=(15+(laneOffsetPx(z,coasterBodyPx(z))+coasterBodyPx(z)/2)*mpp)*mu,cell=60*mu,grid=new Map(),gk=(x,y)=>Math.floor(x/cell)+','+Math.floor(y/cell);
+    for(const e of this.edges){const P=geom(e.line,e.lo,e.hi).pts;for(let i=1;i<P.length;i++){const A=P[i-1],B=P[i];if(Math.max(A.x,B.x)<box[0]||Math.min(A.x,B.x)>box[2]||Math.max(A.y,B.y)<box[1]||Math.min(A.y,B.y)>box[3])continue;
+      const n=Math.ceil(Math.hypot(B.x-A.x,B.y-A.y)/cell)+1;for(let k=0;k<=n;k++){const x=A.x+(B.x-A.x)*k/n,y=A.y+(B.y-A.y)*k/n;for(const dx of [-1,0,1])for(const dy of [-1,0,1]){const g=gk(x+dx*cell,y+dy*cell);if(!grid.has(g))grid.set(g,new Set());grid.get(g).add(A.x+','+A.y+','+B.x+','+B.y)}}}}
+    const nearTrack=(x,y)=>{const S=grid.get(gk(x,y));if(!S)return false;for(const k of S){const [ax,ay,bx,by]=k.split(',').map(Number),dx=bx-ax,dy=by-ay,u=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1)));if(Math.hypot(ax+dx*u-x,ay+dy*u-y)<reach)return true}return false};
+    for(let i=lines.length-1;i>=0;i--){const L=lines[i];let near=0,all=0;for(let s=0;s<=L.len;s+=5*mu){all++;let j=1;while(j<L.pts.length-1&&L.cum[j]<s)j++;const A=L.pts[j-1],B=L.pts[j],u=(s-L.cum[j-1])/((L.cum[j]-L.cum[j-1])||1);if(nearTrack(A[0]+(B[0]-A[0])*u,A[1]+(B[1]-A[1])*u))near++}
+      if(near>all*.4)lines.splice(i,1)}
+    ends.clear();for(const L of lines)for(const e of [0,1]){const k=key(L.pts[e?L.pts.length-1:0]);if(!ends.has(k))ends.set(k,[]);ends.get(k).push([L,e])}
     if(!lines.length)return;
     const ex=Object.entries(exits).flatMap(([sid,l])=>l.map(([lon,lat])=>{const m=M([lon,lat]);return {x:m.x,y:m.y,sid}})).filter(m=>m.x>box[0]&&m.x<box[2]&&m.y>box[1]&&m.y<box[3]);
     for(const L of lines){const m=L.pts[L.pts.length>>1];if(ex.some(e=>Math.hypot(e.x-m[0],e.y-m[1])<90*mu))L.near=1}   // within ~90 m of an exit: busier
@@ -1385,11 +1394,11 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const list=exits[sid];if(!list?.length||!this.net)return false;const [lon,lat]=list[Math.random()*list.length|0],m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=this.net.box;
     if(m.x<b[0]||m.x>b[2]||m.y<b[1]||m.y>b[3])return false;
     Object.assign(w,{mode:'up',p:[m.x,m.y],k:0,f:[1,0],takes:Math.random()<.15});
-    w.then=()=>{const s=this.snap(w.p,40);if(!s){w.mode='gone';return}const st={L:s.L,s:s.s,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1},q=this.place(st);
+    w.then=()=>{const s=this.snap(w.p,60);if(!s){w.mode='gone';return}const st={L:s.L,s:s.s,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1},q=this.place(st);
       Object.assign(w,{mode:'goto',to:[q.x,q.y],then:()=>Object.assign(w,{mode:'street',...st})})};
     return true;
   }
-  people(gl,M){
+  people(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<RIDER_MINZOOM||!map.getSource('ofm')||map.getLayoutProperty('bm-road-major','visibility')==='none')return;
     if(!this.p)this.init(gl);if(!this.net){if(!this.netTried||performance.now()-this.netTried>1000){this.netTried=performance.now();this.streets()}if(!this.net)return}
     const now=performance.now(),dt=Math.min(.1,(now-(this.tick||now))/1000);this.tick=now;
@@ -1424,7 +1433,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
           else{w.s=Math.max(0,Math.min(w.L.len,w.s));w.dir=-w.dir;w.side=-w.side;w.pause=Math.random()*2}}
         if(Math.random()<dt*.02)w.pause=1+Math.random()*3;   // now and then a stop
         q=this.place(w);w.p=[q.x,q.y];go=w.pause<=0;
-        if(w.takes){const e=ex.find(e=>Math.hypot(e.x-q.x,e.y-q.y)<14*mu);   // an exit close by: in it goes
+        if(w.takes){const e=ex.find(e=>Math.hypot(e.x-q.x,e.y-q.y)<30*mu);   // an exit close by: in it goes
           if(e)Object.assign(w,{mode:'goto',to:[e.x,e.y],then:()=>Object.assign(w,{mode:'down',k:1,then:()=>{w.mode='gone';wait[e.sid]=Math.min(12,(wait[e.sid]||0)+1)}})})}
       }else if(w.mode==='goto'){
         const dx=w.to[0]-w.p[0],dy=w.to[1]-w.p[1],d=Math.hypot(dx,dy),st=w.v*dt;w.f=d>1e-12?[dx/d,dy/d]:w.f||[1,0];
@@ -1450,9 +1459,10 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     if(!out.length)return;trainFrameSoon(1000/TRAIN_FPS);   // they walk: keep drawing
     const data=new Float32Array(out),n=data.length/22;if(!this.pb)this.pb=gl.createBuffer();
     this.use(gl,M,z);gl.bindBuffer(gl.ARRAY_BUFFER,this.pb);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);this.ptrs(gl);gl.depthMask(false);
-    // over everything, like the exit pillars: tested against the building walls they mostly came out faint (on the street
-    // a wall's base is at their own depth), at night all but lost
-    gl.disable(gl.DEPTH_TEST);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,n);
+    // as the trains: full in front of the buildings, faint behind them (through the map's see-through buildings)
+    gl.depthMask(false);
+    if(occlude){gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);gl.drawArrays(gl.TRIANGLES,0,n)}
+    gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,n);gl.depthMask(false);   // their depth: the track tests against it
     for(const k of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[k]);
   }
   render(gl,M,occlude){
@@ -1605,9 +1615,9 @@ map.on('load',()=>{
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
       const behind=walls.draw(pd.mainMatrix)?1-mapPalette().bld3dOpacity:0;
+      coasterTrack.people(gl,pd.mainMatrix,behind);   // 행인 on the streets, before the track: it covers the ones beneath it
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
-      coasterTrack.people(gl,pd.mainMatrix);   // 행인 on the streets
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
