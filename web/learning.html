@@ -55,7 +55,10 @@ h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
 .delta.up{background:var(--mid-soft);color:var(--mid)}
 .delta.same{background:var(--low-soft);color:var(--low)}
 .hero p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--secondary)}
-.hero svg{width:100%;height:auto;display:block}
+.kinds{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.kinds li{background:var(--control);border-radius:12px;padding:9px 12px;display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--secondary)}
+.kinds li b{margin-left:auto;font-family:var(--round);font-weight:400;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.kinds h3{margin:0 0 2px;font-size:12px;color:var(--muted)}
 
 /* 2. three numbers */
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
@@ -65,7 +68,11 @@ h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
 .stat span{font-size:12px;color:var(--secondary)}
 
 /* 3. growth */
-.growth svg{width:100%;height:auto;display:block}
+.growth svg,.scores svg{width:100%;height:auto;display:block}
+.scores text{fill:var(--muted);font-size:11px;font-family:inherit}
+.scores .val{fill:var(--ink);font-weight:700;font-size:12px}
+.legend{display:flex;gap:14px;margin:0 0 6px;font-size:12px;color:var(--secondary)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 .growth text{fill:var(--muted);font-size:11px;font-family:inherit}
 .growth .val{fill:var(--ink);font-weight:700;font-size:12px}
 
@@ -102,6 +109,7 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
 .tw{overflow-x:auto}
 @media (max-width:720px){
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
+  .scores text{font-size:19px}.scores .val{font-size:20px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
   .flow{grid-template-columns:1fr}
   .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
@@ -118,18 +126,25 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
 <main>
   <section class="box hero" aria-label="지금 정확도">
     <div>
-      <small>지도의 예측 오차</small>
+      <small>지도의 예측 오차 · 중앙값</small>
       <div class="big"><b id="err">–</b><span>초</span></div>
       <span class="delta same" id="delta">불러오는 중</span>
       <p id="heroText"></p>
     </div>
-    <div id="errSpark" aria-hidden="true"></div>
+    <ul class="kinds" id="kinds"></ul>
   </section>
 
   <section class="stats" aria-label="모은 기록">
-    <div class="stat"><small>오늘 모은 기록</small><b id="sToday">–</b><span id="sTodaySub"></span></div>
+    <div class="stat"><small id="sDayLabel">하루 모은 기록</small><b id="sToday">–</b><span id="sTodaySub"></span></div>
     <div class="stat"><small>지금까지</small><b id="sTotal">–</b><span id="sTotalSub"></span></div>
     <div class="stat"><small>학습에 쓰인 비율</small><b id="sShare">–</b><span>자체 시각이 있는 기록</span></div>
+  </section>
+
+  <section class="box scores">
+    <h2>날마다 채점한 오차</h2>
+    <div class="legend"><span><i style="background:var(--syung-deep)"></i>새로 배운 값</span><span><i style="border:2px solid var(--muted)"></i>쓰던 값</span></div>
+    <div id="scores"></div>
+    <p class="muted" style="margin:6px 0 0;font-size:12.5px;line-height:1.55">날마다 그날 열차 움직임으로 채점해서 시험지가 매일 달라요. 날짜끼리 오르내림엔 그날 난이도(채점 건수, 출퇴근 비중)도 섞여 있으니, 배운 게 좋아졌는지는 같은 날의 두 점을 비교해 보세요.</p>
   </section>
 
   <section class="box growth">
@@ -150,15 +165,15 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
         <div class="step"><b>수집</b><p>도착정보 20초, 열차 위치 25초마다 기록</p></div>
         <div class="step"><b>거르기</b><p>열차마다 자기 시각이 있는 기록만 사용</p></div>
         <div class="step"><b>계산</b><p>노선별 속도, 역 구간·진입 시간, 출퇴근 속도</p></div>
-        <div class="step"><b>채점</b><p>배운 값으로 어제 열차를 예측해 오차 측정</p></div>
-        <div class="step"><b>적용</b><p>나빠지지 않을 때만 지도에 반영 · 매일 03:10</p></div>
+        <div class="step"><b>채점</b><p>배운 값과 쓰던 값으로 어제 열차를 예측해 오차 중앙값 비교</p></div>
+        <div class="step"><b>적용</b><p>쓰던 값보다 0.5초 넘게 나빠지지 않으면 반영 · 매일 03:10</p></div>
       </div>
     </div>
   </details>
 
   <details>
     <summary>날짜별 자세한 기록</summary>
-    <div class="dbody tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>예측 오차</th><th>결과</th></tr></thead><tbody></tbody></table></div>
+    <div class="dbody tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>이 날로 채점<br>쓰던 값 → 새 값</th><th>결과</th></tr></thead><tbody></tbody></table></div>
   </details>
   <p class="muted" id="updated" style="margin:0;font-size:12px;text-align:center"></p>
 </main>
@@ -174,11 +189,21 @@ const md=d=>{const [,m,dd]=d.split('-');return `${+m}/${+dd}`};
 const sightings=d=>(d.samples?.sightings||0)+(d.position?.sightings||0);
 const events=d=>(d.samples?.event||0)+(d.position?.event||0);
 
-function spark(vals){
-  if(vals.length<2)return '';
-  const W=220,H=90,lo=Math.min(...vals)-1,hi=Math.max(...vals)+1,x=i=>8+i*(W-16)/(vals.length-1),y=v=>10+(H-24)*(hi-v)/(hi-lo);
-  const pts=vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
-  return `<svg viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="var(--syung-deep)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${vals.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="${i===vals.length-1?5:3}" fill="var(--syung-deep)"/>`).join('')}<text x="${W-8}" y="${H-2}" text-anchor="end" font-size="11" fill="var(--muted)">날마다 채점한 오차</text></svg>`;
+const addDay=(d,k)=>{const t=new Date(d+'T00:00:00Z');t.setUTCDate(t.getUTCDate()+k);return t.toISOString().slice(0,10)};
+
+// a nightly run on day R scores the timing on day R − 1's trains: show it under that day
+function scoreChart(sc){
+  if(!sc.length)return '<p class="muted">아직 채점 기록이 없어요.</p>';
+  const W=560,H=210,L=16,R=16,T=26,B=52,vals=sc.flatMap(s=>[s.cand,s.cur].filter(v=>v!=null));
+  const lo=Math.floor(Math.min(...vals))-1,hi=Math.ceil(Math.max(...vals))+1;
+  const x=i=>sc.length===1?W/2:L+60+i*(W-L-R-84)/(sc.length-1),y=v=>T+(H-T-B)*(hi-v)/(hi-lo);
+  let g='';
+  for(let v=Math.ceil(lo);v<=hi;v+=hi-lo>8?4:2)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${L}" y="${y(v)-3}">${v}초</text>`;
+  sc.forEach((s,i)=>{const X=x(i);
+    if(s.cur!=null)g+=`<line x1="${X}" x2="${X}" y1="${y(s.cur)}" y2="${y(s.cand)}" stroke="var(--muted)" stroke-width="2"/><circle cx="${X}" cy="${y(s.cur)}" r="8" fill="var(--paper)" stroke="var(--muted)" stroke-width="2"/>`;
+    g+=`<circle cx="${X}" cy="${y(s.cand)}" r="5" fill="var(--syung-deep)"/><text class="val" x="${X+9}" y="${y(s.cand)+4}">${s.cand}</text>`;
+    g+=`<text x="${X}" y="${H-28}" text-anchor="middle">${md(s.day)}</text><text x="${X}" y="${H-5}" text-anchor="middle">${fmt(s.n||0)}건</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="날마다 채점한 오차">${g}</svg>`;
 }
 
 function growth(days){
@@ -212,30 +237,32 @@ function groups(latest,hist){
 }
 
 fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/login.html?next=/learning';throw 0}return r.json()}).then(d=>{
-  const days=d.days||[],hist=d.history||[];
-  const scored=hist.filter(h=>h.candidate?.all!=null);
-  const last=scored.at(-1);
+  const hist=d.history||[],genDay=(d.generatedAt||'').slice(0,10);
+  const days=(d.days||[]).filter(x=>x.date<genDay);   // the stats are built at 03:10: the new day has barely begun
+  const sc=hist.filter(h=>h.candidate?.all!=null).map(h=>({day:addDay(h.date,-1),cand:h.candidate.all,cur:h.current?.all??null,n:h.candidate.n,result:h.result,kinds:h.candidate}));
+  const last=sc.at(-1);
   if(last){
-    $('err').textContent=last.candidate.all;
-    // same holdout day for both: the day-to-day number also moves with how hard that day was
-    const cur=last.current?.all,dd=cur!=null?+(last.candidate.all-cur).toFixed(1):0,el=$('delta');
-    el.className='delta '+(dd<0?'down':dd>0?'up':'same');
-    el.textContent=cur==null?'첫 채점':dd<0?`▼ 쓰던 모델보다 ${-dd}초 줄었어요`:dd>0?`▲ 쓰던 모델보다 ${dd}초 늘었어요`:'쓰던 모델과 같아요';
-    el.title='같은 날 기록으로 새 모델과 쓰던 모델을 채점한 차이예요. 날마다 채점하는 기록이 달라서 전날 숫자와 바로 비교하진 않아요.';
-    $('heroText').textContent=`열차가 다음 역에 도착하거나 출발하는 시각을 실제와 평균 ${last.candidate.all}초 차이로 맞히고 있어요. (${md(last.date)}, 열차 움직임 ${last.candidate.n?.toLocaleString('ko-KR')}건으로 채점)`;
-    $('errSpark').innerHTML=spark(scored.map(h=>h.candidate.all));
+    $('err').textContent=last.cand;
+    const cur=last.cur,dd=cur!=null?+(last.cand-cur).toFixed(1):0,el=$('delta');
+    el.className='delta '+(cur==null?'same':last.result==='kept current'?'up':dd<0?'down':'same');
+    el.textContent=cur==null?'첫 채점':last.result==='kept current'?`쓰던 값(${cur}초)이 더 나아 그대로 써요`
+      :dd<0?`▼ 같은 날 쓰던 값(${cur}초)보다 ${-dd}초 좋아졌어요`:dd>0?`쓰던 값(${cur}초)과 거의 같아요`:`같은 날 쓰던 값도 ${cur}초 · 그대로예요`;
+    $('heroText').textContent=`${md(last.day)} 하루 열차 움직임 ${last.n?.toLocaleString('ko-KR')}건을 예측해 봤더니, 절반은 실제 시각과 ${last.cand}초 안쪽으로 맞혔어요.`;
+    const K=[['도착→출발','역에 서 있는 시간'],['출발→다음 도착','출발해서 다음 역 도착'],['도착→다음 도착','도착해서 다음 역 도착']];
+    $('kinds').innerHTML='<h3>어디서 틀리나요 · 중앙값</h3>'+K.filter(([k])=>last.kinds[k]!=null).map(([k,t])=>`<li>${t}<b>${last.kinds[k]}초</b></li>`).join('');
   }
-  const today=days.at(-1),tot=days.reduce((a,x)=>a+sightings(x),0),ev=days.reduce((a,x)=>a+events(x),0);
-  if(today){$('sToday').textContent=fmt(sightings(today));$('sTodaySub').textContent=`${md(today.date)} · 학습용 ${fmt(events(today))}`}
+  $('scores').innerHTML=scoreChart(sc);
+  const lastDay=days.at(-1),tot=days.reduce((a,x)=>a+sightings(x),0),ev=days.reduce((a,x)=>a+events(x),0);
+  if(lastDay){$('sDayLabel').textContent=`${md(lastDay.date)} 하루 모은 기록`;$('sToday').textContent=fmt(sightings(lastDay));$('sTodaySub').textContent=`학습용 ${fmt(events(lastDay))}`}
   $('sTotal').textContent=fmt(tot);$('sTotalSub').textContent=`${days.length}일 동안`;
   $('sShare').textContent=tot?Math.round(ev/tot*100)+'%':'–';
   $('growth').innerHTML=growth(days);
   $('groups').innerHTML=groups(d.latest||{},hist);
-  const byDate=Object.fromEntries(hist.map(h=>[h.date,h]));
-  $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const h=byDate[x.date];
-    const res=!h?'':h.result==='published'?'적용':h.result==='kept current'?'유지':h.source==='backfill'?'나중에 계산':'';
-    return `<tr><td>${md(x.date)}</td><td>${fmt(x.samples?.sightings||0)}</td><td>${fmt(x.position?.sightings||0)}</td><td>${fmt(events(x))}</td><td>${h?.candidate?.all!=null?h.candidate.all+'초':'–'}</td><td>${res}</td></tr>`}).join('');
-  $('updated').textContent=`${new Date(d.generatedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}에 갱신 · 매일 03:10 재학습 뒤 새로 고쳐져요`;
+  const byDay=Object.fromEntries(sc.map(s=>[s.day,s]));
+  $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const s=byDay[x.date];
+    const res=!s?'':s.result==='published'?'적용':s.result==='kept current'?'유지':s.result==='backfill'?'나중에 계산':'';
+    return `<tr><td>${md(x.date)}</td><td>${fmt(x.samples?.sightings||0)}</td><td>${fmt(x.position?.sightings||0)}</td><td>${fmt(events(x))}</td><td>${!s?'–':s.cur!=null?`${s.cur} → ${s.cand}초`:s.cand+'초'}</td><td>${res}</td></tr>`}).join('');
+  $('updated').textContent=`${new Date(d.generatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}에 갱신 · 숫자는 매일 03:10 재학습 때 한 번 바뀌고, 오늘 모으는 기록은 내일 새벽에 들어가요`;
 }).catch(e=>{if(e!==0)$('heroText').textContent='학습 기록을 불러오지 못했어요.'});
 </script>
 </body>
