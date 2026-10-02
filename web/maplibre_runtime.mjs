@@ -1280,49 +1280,61 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++){
       const lo=Math.min(ids[i-1],ids[i]),hi=Math.max(ids[i-1],ids[i]),id=`${line}:${lo}:${hi}`;if(seen.has(id)||!byId.has(lo)||!byId.has(hi))continue;seen.add(id);this.edges.push({id,line,lo,hi})}
   }
-  // one edge: 22 floats a vertex — x y h hf (hf 0: on the ground) · R (across, flat) · px across: offset, ×lane, ×body, raw ·
+  // Built in pieces of ~400 m (a whole long edge at 8 m took up to 0.25 s), each with its own GPU buffer, uploaded once.
+  // 22 floats a vertex — x y h hf (hf 0: on the ground) · R (across, flat) · px across: offset, ×lane, ×body, raw ·
   // px along F, px along U · F (along the track) · U (the track's up) · rgb shade (shade < 0: the post colour)
+  pieces(){
+    if(this.list)return this.list;this.list=[];
+    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),k=Math.max(1,Math.round(g.total/mu/400)),pad=70*mu;
+      for(let j=0;j<k;j++){const s0=g.total*j/k,s1=g.total*(j+1)/k;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+        for(let i=0;i<g.pts.length;i++){if(i+1<g.pts.length&&g.cum[i+1]<s0)continue;if(i&&g.cum[i-1]>s1)break;const q=g.pts[i];x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y)}
+        this.list.push({id:`${e.id}:${j}`,e,s0,s1,box:[x0-pad,y0-pad,x1+pad,y1+pad]})}}
+    return this.list;
+  }
   // lvl: sample spacing in m (8 m close up; coarser zoomed out, where 8 m built 2.3 M vertices at z12.6 and stalled the map)
-  edge(e,lvl){
-    const ck=e.id+':'+lvl;let a=this.cache.get(ck);if(a)return a;
-    const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O,out=[];
-    let x0=1,y0=1,x1=0,y1=0;
-    const ground=s=>{let i=1;while(i<g.pts.length-1&&g.cum[i]<s)i++;const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
-      return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};
+  piece(c,lvl){
+    const ck=c.id+':'+lvl;let a=this.cache.get(ck);if(a)return a;
+    const e=c.e,g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O;
+    const ground=s=>{let i=1,j=g.pts.length-1;while(i<j){const m=(i+j)>>1;if(g.cum[m]<s)i=m+1;else j=m}const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
+      return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};   // i: first point at or past s, found by halving
     const pos=s=>{const [sg,h]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.h=h;q.loop=sg!==s;return q};
     const at=s=>{const q=pos(s),A=pos(Math.max(0,s-.5*mu)),B=pos(Math.min(g.total,s+.5*mu));
       let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],U=[-F[2]*R[1],F[2]*R[0],F[0]*R[1]-F[1]*R[0]],ul=Math.hypot(...U)||1;
-      x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U:U.map(c=>c/ul),G:[q.fx,q.fy,0],loop:q.loop}};
-    const UP=[0,0,1],v=(q,hf,side,kb,kp,kf,zp,c,sh,col_)=>{const F=col_?q.G:q.F,U=col_?UP:q.U;out.push(q.x,q.y,q.h,hf,q.R[0],q.R[1],eo,side,kb,kp,kf,zp,F[0],F[1],F[2],U[0],U[1],U[2],c[0],c[1],c[2],sh)};
-    // samples every ~8 m, and densely over the loop
-    const S=[],STEP=lvl*mu,n=Math.max(1,Math.ceil(g.total/STEP));for(let i=0;i<=n;i++)S.push(g.total*i/n);
-    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++)S.push(s0+D*i/m);S.sort((p,q)=>p-q)}
-    const P=S.map(at),G=-6,NONE=[0,0,0];   // G: girder depth, px
+    // samples on the edge's own grid (so neighbouring pieces meet), the piece's ends, and densely over the loop
+    const S=[c.s0],n=Math.max(1,Math.ceil(g.total/(lvl*mu)));for(let i=Math.ceil(c.s0/g.total*n);i<=n;i++){const x=g.total*i/n;if(x>=c.s1)break;if(x>c.s0)S.push(x)}S.push(c.s1);
+    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++){const x=s0+D*i/m;if(x>c.s0&&x<c.s1)S.push(x)}S.sort((p,q)=>p-q)}
+    const P=S.map(at),G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
+    const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
+    const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
+      out[o++]=q.x;out[o++]=q.y;out[o++]=q.h;out[o++]=hf;out[o++]=q.R[0];out[o++]=q.R[1];out[o++]=eo;out[o++]=side;out[o++]=kb;out[o++]=kp;out[o++]=kf;
+      out[o++]=zp;out[o++]=F[0];out[o++]=F[1];out[o++]=F[2];out[o++]=U[0];out[o++]=U[1];out[o++]=U[2];out[o++]=c[0];out[o++]=c[1];out[o++]=c[2];out[o++]=sh};
     for(const side of [-1,1]){
-      for(let i=0,last=-1e9;i<P.length;i++){const q=P[i];if(S[i]-last<Math.max(30,lvl*3)*mu||q.h<3*mu||q.loop)continue;last=S[i];   // columns every ~30 m (sparser zoomed out; none under the loop)
+      for(let i=1;i<P.length;i++){const q=P[i];if(Math.floor(S[i]/sp)===Math.floor(S[i-1]/sp)||q.h<3*mu||q.loop)continue;   // columns every ~30 m (sparser zoomed out; none under the loop)
         for(const [kp,kf] of [[1.8,0],[0,1.8]]){v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,0,side,0,kp,kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,1,side,0,-kp,-kf,G,NONE,-.86,1)}}
       for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
         for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
         for(const kb of [-.3,.3]){v(A,1,side,kb,-.9,0,.4,col,1);v(A,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(A,1,side,kb,-.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,-.9,0,.4,col,1)}}   // rails
       if(lvl===8)for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers (close up only)
     }
-    // its own GPU buffer, uploaded once (re-packing all visible edges into one each time the view changed stalled panning)
-    const gl=this.gl,b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(out),gl.STATIC_DRAW);
-    a={b,n:out.length/22};this.cache.set(ck,a);
-    if(this.cache.size>800){const [k0,a0]=this.cache.entries().next().value;gl.deleteBuffer(a0.b);this.cache.delete(k0)}   // oldest out
+    const gl=this.gl,b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,out.subarray(0,o),gl.STATIC_DRAW);
+    a={b,n:o/22};this.cache.set(ck,a);
+    if(this.cache.size>4000){const [k0,a0]=this.cache.entries().next().value;gl.deleteBuffer(a0.b);this.cache.delete(k0)}   // oldest out
     return a;
   }
   render(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<12.5)return;if(!this.p)this.init(gl);
-    const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.15;
-    const vis=[];for(const e of this.edges){if(selected!=='all'&&e.line!==selected)continue;
-      if(!e.box){const g=geom(e.line,e.lo,e.hi),xs=g.pts.map(p=>p.x),ys=g.pts.map(p=>p.y);e.box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
-      const [bx0,by0,bx1,by1]=e.box;if(bx1<lo.x-pad||bx0>hi.x+pad||by0>lo.y+pad||by1<hi.y-pad)continue;vis.push(e)}
+    const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),w=hi.x-lo.x;
+    const inside=(c,pad)=>{const [x0,y0,x1,y1]=c.box;return !(x1<lo.x-pad||x0>hi.x+pad||y0>lo.y+pad||y1<hi.y-pad)};
+    const mine=this.pieces().filter(c=>selected==='all'||c.e.line===selected),vis=mine.filter(c=>inside(c,w*.1));
     const mpp=40075016.686*Math.cos(37.5*Math.PI/180)/(512*2**z),lvl=8*2**Math.max(0,Math.ceil(Math.log2(6*mpp/8)));   // ~6 px a sample
-    // edges not built yet: a few each frame (~8 ms), the rest on the next frames
-    const t0=performance.now(),draw=[];let pending=false;
-    for(const e of vis){const a=this.cache.get(e.id+':'+lvl);if(a)draw.push(a);else if(performance.now()-t0<8)draw.push(this.edge(e,lvl));else pending=true}
+    // pieces not built at this level yet: a few each frame (~4 ms), meanwhile drawn at a level already built (building all
+    // at once while zooming hitched and left gaps); spare time builds the next level out over a wider area, then in
+    const t0=performance.now(),draw=[],LV=[8,16,32,64,128,256],near=[lvl*2,lvl/2,lvl*4,lvl/4,...LV];let pending=false;
+    for(const c of vis){const a=this.cache.get(c.id+':'+lvl);if(a){draw.push(a);continue}
+      if(performance.now()-t0<4){draw.push(this.piece(c,lvl));continue}
+      pending=true;for(const l of near){const b=this.cache.get(c.id+':'+l);if(b){draw.push(b);break}}}
+    if(!pending)for(const [l,pad] of [[lvl*2,w*.6],[lvl/2,0]])if(LV.includes(l))for(const c of mine){if(performance.now()-t0>=4){pending=true;break}if(inside(c,pad)&&!this.cache.has(c.id+':'+l))this.piece(c,l)}
     if(pending)trainFrameSoon(16);
     if(!draw.length)return;
     const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
