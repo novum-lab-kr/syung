@@ -197,7 +197,7 @@ const addDay=(d,k)=>{const t=new Date(d+'T00:00:00Z');t.setUTCDate(t.getUTCDate(
 // a nightly run on day R scores the timing on day R − 1's trains: show it under that day
 function scoreChart(sc){
   if(!sc.length)return '<p class="muted">아직 채점 기록이 없어요.</p>';
-  const W=560,H=210,L=16,R=16,T=26,B=52,vals=sc.flatMap(s=>[s.cand,s.cur].filter(v=>v!=null));
+  const W=560,H=190,L=16,R=16,T=26,B=34,vals=sc.flatMap(s=>[s.cand,s.cur].filter(v=>v!=null));
   const lo=Math.floor(Math.min(...vals))-1,hi=Math.ceil(Math.max(...vals))+1;
   const x=i=>sc.length===1?W/2:L+60+i*(W-L-R-84)/(sc.length-1),y=v=>T+(H-T-B)*(hi-v)/(hi-lo);
   let g='';
@@ -205,7 +205,7 @@ function scoreChart(sc){
   sc.forEach((s,i)=>{const X=x(i);
     if(s.cur!=null)g+=`<line x1="${X}" x2="${X}" y1="${y(s.cur)}" y2="${y(s.cand)}" stroke="var(--muted)" stroke-width="2"/><circle cx="${X}" cy="${y(s.cur)}" r="8" fill="var(--paper)" stroke="var(--muted)" stroke-width="2"/>`;
     g+=`<circle cx="${X}" cy="${y(s.cand)}" r="5" fill="var(--syung-deep)"/><text class="val" x="${X+9}" y="${y(s.cand)+4}">${s.cand}</text>`;
-    g+=`<text x="${X}" y="${H-28}" text-anchor="middle">${md(s.day)}</text><text x="${X}" y="${H-5}" text-anchor="middle">${fmt(s.n||0)}건</text>`});
+    g+=`<text x="${X}" y="${H-8}" text-anchor="middle">${md(s.day)}</text>`});
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="날마다 채점한 오차">${g}</svg>`;
 }
 
