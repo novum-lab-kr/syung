@@ -1333,12 +1333,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   ptrs(gl){const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
     ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18)}
   // 행인 (롤러코스터, zoom 16+, with the background map): round little people (roundPerson) stroll the streets between the
-  // buildings, and some take the subway: they walk to an exit and go down it, wait at the station (this.wait), get on a
-  // train that stops there through its doors (this.riders), ride it one to four stops and get off there, and come back up
-  // one of that station's exits onto the street. A show (no data), run where the camera is.
-  // modes: street (on a line of the net) · goto (straight to w.to, then w.then()) · down / up (into / out of the ground at
-  // an exit or the platform: shrinking / growing) · board / alight (between the platform and a door of a standing train)
-  // · later (gone below, coming up at w.at).
+  // buildings. A show (no data), run where the camera is.
   // streets(): the walkable lines on and around the screen, rebuilt when the view settles.
   streets(){
     this.net=null;const z=map.getZoom();if(!coaster||!this.edges||z<RIDER_MINZOOM||!map.getSource('ofm'))return;   // edges: once init ran
@@ -1366,96 +1361,39 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const ex=Object.entries(exits).flatMap(([sid,l])=>l.map(([lon,lat])=>{const m=M([lon,lat]);return {x:m.x,y:m.y,sid}})).filter(m=>m.x>box[0]&&m.x<box[2]&&m.y>box[1]&&m.y<box[3]);
     for(const L of lines){const m=L.pts[L.pts.length>>1];if(ex.some(e=>Math.hypot(e.x-m[0],e.y-m[1])<90*mu))L.near=1}   // within ~90 m of an exit: busier
     const total=lines.reduce((a,L)=>a+L.len*(1+3*L.near),0);
-    this.net={lines,ends,key,mu,total,ex,box,here:new Set(ex.map(e=>+e.sid))};   // here: the stations around the screen
-    // keep the walkers still on a street of the new set (their place snapped to it) and everyone off the street, the rest anew
-    const old=this.walkers||[],n=Math.max(10,Math.min(40,Math.round(lines.reduce((a,L)=>a+L.len,0)/mu/100)));this.n=n;this.walkers=[];
-    for(const w of old){if(w.mode!=='street'){this.walkers.push(w);continue}if(this.walkers.length>=n)continue;const s=this.snap(w.p);if(s)this.walkers.push({...w,...s})}
-    while(this.walkers.filter(w=>w.mode==='street').length<n)this.walkers.push(this.spawn());
-    // so something happens soon: a few waiting at the stations here, and a few on the trains here
-    this.wait??={};this.riders??=[];this.seeded??=new Set();
-    for(const e of ex)if(this.wait[e.sid]==null)this.wait[e.sid]=1+(Math.random()*3|0);
-    for(const p of plans){if(this.seeded.has(p.id))continue;const m=p.seq[1]&&merc(p.seq[1]);if(!m||m.x<box[0]||m.x>box[2]||m.y<box[1]||m.y>box[3])continue;
-      this.seeded.add(p.id);for(let k=Math.random()*3|0;k>0;k--){const d=p.seq[1+(Math.random()*3|0)];if(d)this.riders.push({plan:p.id,dest:d.id})}}
+    this.net={lines,ends,key,mu,total};
+    // keep the walkers still on a street of the new set (their place snapped to it), the rest anew
+    const old=this.walkers||[],n=Math.max(10,Math.min(40,Math.round(lines.reduce((a,L)=>a+L.len,0)/mu/100)));this.walkers=[];
+    for(const w of old){if(this.walkers.length>=n)break;const s=this.snap(w.p);if(s)this.walkers.push({...w,...s})}
+    while(this.walkers.length<n)this.walkers.push(this.spawn());
   }
   snap(p,far=4){const {lines,mu}=this.net;let best=null;
     for(const L of lines)for(let i=1;i<L.pts.length;i++){const A=L.pts[i-1],B=L.pts[i],dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((p[0]-A[0])*dx+(p[1]-A[1])*dy)/l2)),d=Math.hypot(A[0]+dx*u-p[0],A[1]+dy*u-p[1])-L.side;
       if(Math.abs(d)<far*mu&&(!best||Math.abs(d)<best.d))best={d:Math.abs(d),L,s:L.cum[i-1]+Math.sqrt(l2)*u}}
     return best&&{L:best.L,s:best.s}}
   dress(w){const pick=a=>a[Math.random()*a.length|0],mu=this.net?.mu||1e-8;
-    return Object.assign(w,{v:(1.05+Math.random()*.5)*mu,ph:Math.random()*6.3,pause:0,col:pick(SHIRTS),pants:pick(PANTS),hair:pick(HAIR),
-      takes:Math.random()<.35,k:1})}   // takes: this one heads into the next exit it passes
+    return Object.assign(w,{v:(1.05+Math.random()*.5)*mu,ph:Math.random()*6.3,pause:0,col:pick(SHIRTS),pants:pick(PANTS),hair:pick(HAIR)})}
   spawn(){const {lines,total}=this.net;let r=Math.random()*total,L=lines[0];for(const x of lines){r-=x.len*(1+3*x.near);if(r<=0){L=x;break}}
     return this.dress({mode:'street',L,s:Math.random()*L.len,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1})}
   // where a walker is: on its line at s, out to its pavement side, facing its way
   place(w){const L=w.L;let i=1;while(i<L.pts.length-1&&L.cum[i]<w.s)i++;const A=L.pts[i-1],B=L.pts[i],l=(L.cum[i]-L.cum[i-1])||1,u=Math.max(0,Math.min(1,(w.s-L.cum[i-1])/l));
     const fx=(B[0]-A[0])/l*w.dir,fy=(B[1]-A[1])/l*w.dir,o=L.side*w.side*w.dir;return {x:A[0]+(B[0]-A[0])*u-fy*o,y:A[1]+(B[1]-A[1])*u+fx*o,f:[fx,fy],r:[-fy,fx]}}
-  // up an exit of station sid onto the street: grow out of it, walk to the nearest pavement, and stroll on
-  surface(w,sid){
-    const list=exits[sid];if(!list?.length||!this.net)return false;const [lon,lat]=list[Math.random()*list.length|0],m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=this.net.box;
-    if(m.x<b[0]||m.x>b[2]||m.y<b[1]||m.y>b[3])return false;
-    Object.assign(w,{mode:'up',p:[m.x,m.y],k:0,f:[1,0],takes:Math.random()<.15});
-    w.then=()=>{const s=this.snap(w.p,60);if(!s){w.mode='gone';return}const st={L:s.L,s:s.s,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1},q=this.place(st);
-      Object.assign(w,{mode:'goto',to:[q.x,q.y],then:()=>Object.assign(w,{mode:'street',...st})})};
-    return true;
-  }
   people(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<RIDER_MINZOOM||!map.getSource('ofm')||map.getLayoutProperty('bm-road-major','visibility')==='none')return;
     if(!this.p)this.init(gl);if(!this.net){if(!this.netTried||performance.now()-this.netTried>1000){this.netTried=performance.now();this.streets()}if(!this.net)return}
     const now=performance.now(),dt=Math.min(.1,(now-(this.tick||now))/1000);this.tick=now;
-    const {ends,key,ex,mu}=this.net,sc=coasterBodyPx(z)/9,O=this.O,out=[],b=map.getBearing()*Math.PI/180,right=[Math.cos(b),Math.sin(b)],cam=[-Math.sin(b),Math.cos(b)];   // right: the screen's right on the ground; cam: towards the camera
-    const unit=1/(512*2**z),bodyPx=coasterBodyPx(z),lanePx=laneOffsetPx(z,bodyPx),W=this.walkers,wait=this.wait,riders=this.riders;
-    // the platform next to a door of a standing train, d px out from its side facing the camera
-    const door=(plan,ps,j,k,d)=>{const m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),car=plan.carMetres*m,tail=toRide(plan,ps.dist)-plan.cars*car/2,q=trackPoint(plan,fromRide(plan,tail+(j+(k?.72:.28))*car));
-      const g=(q.r[0]*cam[0]+q.r[1]*cam[1])>0?1:-1,o=(q.off+lanePx+g*(.5*bodyPx+d))*unit;return {x:q.x+q.r[0]*o,y:q.y+q.r[1]*o,f:[q.r[0]*g,q.r[1]*g]}};
-    // trains standing at a station: riders for here get off (from 1.5 s), then the ones waiting get on (from ~45 %), done 4 s before it leaves
-    const byId=new Map();
-    for(const plan of plans){
-      const ps=trainPose(plan),S=ps.stand;if(!S||S.dur<12){plan._at=null;continue}
-      if(plan._at!==S.st.id){plan._at=S.st.id;plan._off=plan._on=false}
-      byId.set(plan.id,[plan,ps]);const doors=2*plan.cars,open=1.5,on=open+(S.dur-5.5)*.45;
-      // at the stations here a few more get off and on (riders from and to beyond the screen), so there is something to see
-      const here=this.net.here.has(S.st.id);
-      if(!plan._off&&S.t>=open){plan._off=true;let i=0;const off=r=>{const d=i++%doors;W.push(this.dress({mode:'alight',plan:plan.id,st:S.st.id,j:d>>1,dk:d&1,u:-(i*.35),out:2.5+Math.random()*4}))};
-        for(let r=riders.length-1;r>=0;r--)if(riders[r].plan===plan.id&&riders[r].dest===S.st.id){riders.splice(r,1);off()}
-        if(here)for(let k=1+(Math.random()*3|0);k>0;k--)off()}
-      if(!plan._on&&S.t>=on){plan._on=true;const n=Math.min((wait[S.st.id]||0)+(here?Math.random()*3|0:0),doors);wait[S.st.id]=Math.max(0,(wait[S.st.id]||0)-n);
-        const ahead=plan.seq.slice(plan.seq.findIndex(s=>s.id===S.st.id)+1);
-        for(let i=0;i<n;i++){const dest=ahead[Math.random()*Math.min(4,ahead.length)|0];if(!dest)break;
-          W.push(this.dress({mode:'board',plan:plan.id,st:S.st.id,dest:dest.id,j:(i%doors)>>1,dk:i&1,u:-(i*.3),out:2.5+Math.random()*4}))}}
+    const {ends,key}=this.net,sc=coasterBodyPx(z)/9,O=this.O,out=[],b=map.getBearing()*Math.PI/180,right=[Math.cos(b),Math.sin(b)];   // right: the screen's right on the ground
+    for(const w of this.walkers){
+      if(w.pause>0)w.pause-=dt;else w.s+=w.v*dt*w.dir;
+      if(w.s<0||w.s>w.L.len){   // at an end: on to another line meeting there, else back
+        const e=w.s>w.L.len?1:0,P=w.L.pts[e?w.L.pts.length-1:0],next=(ends.get(key(P))||[]).filter(([L])=>L!==w.L);
+        if(next.length){const [L,ne]=next[Math.random()*next.length|0];w.L=L;w.s=ne?L.len:0;w.dir=ne?-1:1;w.side=Math.random()<.8?w.side:-w.side}
+        else{w.s=Math.max(0,Math.min(w.L.len,w.s));w.dir=-w.dir;w.side=-w.side;w.pause=Math.random()*2}}
+      if(Math.random()<dt*.02)w.pause=1+Math.random()*3;   // now and then a stop
+      const q=this.place(w);w.p=[q.x,q.y];const go=w.pause<=0;
+      const ph=w.ph+now/1000*7.5;
+      roundPerson(out,{x:q.x-O.x,y:q.y-O.y,r:[-right[1],right[0]],f:right},sc*1.3,go?Math.abs(Math.sin(ph))*.18:0,go?Math.sin(ph):0,q.f[0]*right[0]+q.f[1]*right[1]>=0?1:-1,w.col,w.pants,w.hair);
     }
-    for(const w of W){
-      let q,go=true;
-      if(w.mode==='street'){
-        if(w.pause>0)w.pause-=dt;else w.s+=w.v*dt*w.dir;
-        if(w.s<0||w.s>w.L.len){   // at an end: on to another line meeting there, else back
-          const e=w.s>w.L.len?1:0,P=w.L.pts[e?w.L.pts.length-1:0],next=(ends.get(key(P))||[]).filter(([L])=>L!==w.L);
-          if(next.length){const [L,ne]=next[Math.random()*next.length|0];w.L=L;w.s=ne?L.len:0;w.dir=ne?-1:1;w.side=Math.random()<.8?w.side:-w.side}
-          else{w.s=Math.max(0,Math.min(w.L.len,w.s));w.dir=-w.dir;w.side=-w.side;w.pause=Math.random()*2}}
-        if(Math.random()<dt*.02)w.pause=1+Math.random()*3;   // now and then a stop
-        q=this.place(w);w.p=[q.x,q.y];go=w.pause<=0;
-        if(w.takes){const e=ex.find(e=>Math.hypot(e.x-q.x,e.y-q.y)<30*mu);   // an exit close by: in it goes
-          if(e)Object.assign(w,{mode:'goto',to:[e.x,e.y],then:()=>Object.assign(w,{mode:'down',k:1,then:()=>{w.mode='gone';wait[e.sid]=Math.min(12,(wait[e.sid]||0)+1)}})})}
-      }else if(w.mode==='goto'){
-        const dx=w.to[0]-w.p[0],dy=w.to[1]-w.p[1],d=Math.hypot(dx,dy),st=w.v*dt;w.f=d>1e-12?[dx/d,dy/d]:w.f||[1,0];
-        if(d<=st){w.p=[...w.to];w.then()}else w.p=[w.p[0]+dx/d*st,w.p[1]+dy/d*st];q={x:w.p[0],y:w.p[1],f:w.f};
-      }else if(w.mode==='down'||w.mode==='up'){
-        w.k+=(w.mode==='up'?1:-1)*dt/.6;go=false;q={x:w.p[0],y:w.p[1],f:w.f||[1,0]};   // down / up the stairs: shrinking / growing
-        if(w.mode==='down'&&w.k<=0){w.k=0;w.then()}else if(w.mode==='up'&&w.k>=1){w.k=1;w.then()}
-      }else if(w.mode==='board'||w.mode==='alight'){
-        const T=byId.get(w.plan);
-        if(!T||T[1].stand.st.id!==w.st){if(w.mode==='board')riders.push({plan:w.plan,dest:w.dest});else w.mode='later',w.at=now+3e3;if(w.mode==='board')w.mode='gone';continue}   // it left: on board / gone below
-        w.u+=dt/1.6;if(w.u<0)continue;const u=Math.min(1,w.u),d=w.mode==='board'?(1-u)*w.out*sc:u*w.out*sc,P=door(T[0],T[1],w.j,w.dk,d+.5*sc);
-        q={x:P.x,y:P.y,f:w.mode==='board'?[-P.f[0],-P.f[1]]:P.f};w.p=[P.x,P.y];w.f=q.f;
-        if(u>=1){if(w.mode==='board'){w.mode='gone';riders.push({plan:w.plan,dest:w.dest})}
-          else Object.assign(w,{mode:'down',k:1,then:()=>Object.assign(w,{mode:'later',at:now+2e3+Math.random()*4e3})})}   // off: down the platform stairs, up an exit in a while
-      }else if(w.mode==='later'){if(now>=w.at&&!this.surface(w,w.st))w.mode='gone';continue}
-      else continue;
-      const ph=w.ph+now/1000*7.5,k=w.k??1;if(k<=.02)continue;
-      roundPerson(out,{x:q.x-O.x,y:q.y-O.y,r:[-right[1],right[0]],f:right},sc*1.3*k,go?Math.abs(Math.sin(ph))*.18:0,go?Math.sin(ph):0,q.f[0]*right[0]+q.f[1]*right[1]>=0?1:-1,w.col,w.pants,w.hair);
-    }
-    this.walkers=W.filter(w=>w.mode!=='gone');
-    while(this.walkers.filter(w=>w.mode==='street').length<this.n)this.walkers.push(this.spawn());   // new strollers for the ones who went below
-    if(riders.length>400)riders.splice(0,riders.length-400);
     if(!out.length)return;trainFrameSoon(1000/TRAIN_FPS);   // they walk: keep drawing
     const data=new Float32Array(out),n=data.length/22;if(!this.pb)this.pb=gl.createBuffer();
     this.use(gl,M,z);gl.bindBuffer(gl.ARRAY_BUFFER,this.pb);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);this.ptrs(gl);gl.depthMask(false);
