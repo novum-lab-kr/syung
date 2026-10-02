@@ -97,8 +97,16 @@ th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:0 
 th:first-child,td:first-child{text-align:left}
 td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
 .tw{overflow-x:auto}
+.tw table.wide{min-width:560px}
+td.l,th.l{text-align:left}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--c)}
+.note{margin:8px 0 0;font-size:12.5px;line-height:1.55;color:var(--muted)}
+.def{color:var(--muted)}
+.up{color:var(--mid);font-weight:700}.dn{color:var(--good);font-weight:700}
+tr.sep td{border-top:1.5px solid var(--rule)}
 @media (max-width:720px){
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
+  table{font-size:12.5px}td{padding:7px 6px}
   .scores text{font-size:19px}.scores .val{font-size:20px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
   .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
@@ -133,6 +141,8 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
     <h2>날마다 채점한 오차</h2>
     <div class="legend"><span><i style="background:var(--syung-deep)"></i>새로 배운 값</span><span><i style="border:2px solid var(--muted)"></i>쓰던 값</span></div>
     <div id="scores"></div>
+    <div class="tw" style="margin-top:12px"><table class="wide"><thead><tr><th>채점한 날</th><th>채점 건수</th><th>역에 서 있는 시간</th><th>출발→다음 역 도착</th><th>도착→다음 역 도착</th><th>전체</th></tr></thead><tbody id="kindTable"></tbody></table></div>
+    <p class="note">칸마다 쓰던 값 → 새로 배운 값, 오차 중앙값(초)이에요.</p>
     <p class="muted" style="margin:6px 0 0;font-size:12.5px;line-height:1.55">날마다 그날 열차 움직임으로 채점해서 시험지가 매일 달라요. 날짜끼리 오르내림엔 그날 난이도(채점 건수, 출퇴근 비중)도 섞여 있으니, 배운 게 좋아졌는지는 같은 날의 두 점을 비교해 보세요.</p>
   </section>
 
@@ -142,8 +152,26 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
   </section>
 
   <section class="box">
+    <h2>날짜별 수집 상세</h2>
+    <div class="tw"><table class="wide"><thead><tr><th>날짜</th><th class="l">피드</th><th>받은 기록</th><th>새로 본 움직임</th><th>학습용</th><th>열차 수</th></tr></thead><tbody id="collectTable"></tbody></table></div>
+    <p class="note">받은 기록: API에서 받은 줄 수 · 새로 본 움직임: 같은 열차의 같은 역·상태 반복을 뺀 것 · 학습용: 그중 자기 시각이 찍혀 있어 시간을 잴 수 있는 것.</p>
+  </section>
+
+  <section class="box">
     <h2>노선별 학습 상태</h2>
     <div class="groups" id="groups"></div>
+  </section>
+
+  <section class="box">
+    <h2>노선별 배운 값</h2>
+    <div class="tw"><table class="wide"><thead><tr><th class="l">노선</th><th>속도</th><th>출퇴근 속도</th><th>역에 머무는 시간</th><th>진입→도착</th><th>따로 배운 역</th><th>속도 학습 구간</th></tr></thead><tbody id="lineTable"></tbody></table></div>
+    <p class="note">속도는 시간표 대비(+는 느리게, −는 빠르게)예요. 회색은 데이터가 모자라 기본값을 쓰는 칸이에요.</p>
+  </section>
+
+  <section class="box">
+    <h2>역별 머무는 시간</h2>
+    <div class="tw"><table><thead><tr><th class="l">노선</th><th class="l">역</th><th>머무는 시간</th><th>노선 평균과 차이</th></tr></thead><tbody id="stopTable"></tbody></table></div>
+    <p class="note">노선 평균과 많이 다른 역만 따로 배워요. 사람이 많이 타고 내리는 역일수록 오래 서 있어요.</p>
   </section>
 
   <section class="box">
@@ -233,6 +261,21 @@ fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location
   $('sShare').textContent=tot?Math.round(ev/tot*100)+'%':'–';
   $('growth').innerHTML=growth(days);
   $('groups').innerHTML=groups(d.latest||{},hist);
+  const sgn=v=>v>0?`<span class="up">+${v}</span>`:v<0?`<span class="dn">−${-v}</span>`:'0';
+  const pair=(a,b)=>b==null?'–':a==null?`${b}`:`${a} → <b>${b}</b>`;
+  $('kindTable').innerHTML=[...sc].reverse().map(s=>{const c=hist.find(h=>addDay(h.date,-1)===s.day)?.current||{};
+    return `<tr><td>${md(s.day)}</td><td>${fmt(s.n||0)}</td>${['도착→출발','출발→다음 도착','도착→다음 도착','all'].map(k=>`<td>${pair(c[k],s.kinds[k])}</td>`).join('')}</tr>`}).join('');
+  const FEEDS=[['samples','도착정보'],['position','열차 위치']];
+  $('collectTable').innerHTML=[...days].reverse().map(x=>FEEDS.map(([k,name],i)=>{const f=x[k]||{};
+    return `<tr${i===0?' class="sep"':''}><td>${i===0?md(x.date):''}</td><td class="l">${name}</td><td>${fmt(f.records||0)}</td><td>${fmt(f.sightings||0)}</td><td>${fmt(f.event||0)}</td><td>${fmt(f.trains||0)}</td></tr>`}).join('')).join('');
+  const L=d.latest||{},LL=L.lines||{},LN=L.n||{},DF=L.default||{},names=L.names||{};
+  const lineIds=[...new Set([...Object.keys(LL),...Object.keys(LN)])].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const pp=v=>{const q=pct(v);return q>0?`<span class="up">+${q}%</span>`:q<0?`<span class="dn">−${-q}%</span>`:'0%'};
+  const or=(v,f,dflt)=>v!=null?f(v):`<span class="def">${dflt!=null?f(dflt):'–'}</span>`;
+  $('lineTable').innerHTML=lineIds.map(l=>{const v=LL[l]||{};
+    return `<tr><td class="l"><span class="dot" style="--c:${COLORS[l]||'#888'}"></span>${esc(l)}</td><td>${or(v.pace,pp,DF.pace)}</td><td>${v.rushPace!=null?pp(v.rushPace):'<span class="def">평소와 같게</span>'}</td><td>${or(v.zone,x=>x+'초',DF.zone)}</td><td>${or(v.approach,x=>x+'초',DF.approach)}</td><td>${Object.keys(v.stops||{}).length||'–'}</td><td>${fmt(LN[l]?.pace||0)}</td></tr>`}).join('');
+  $('stopTable').innerHTML=lineIds.flatMap(l=>{const v=LL[l]||{},base=v.zone??DF.zone;
+    return Object.entries(v.stops||{}).sort((a,b)=>b[1]-a[1]).map(([id,z],i)=>`<tr${i===0?' class="sep"':''}><td class="l">${i===0?`<span class="dot" style="--c:${COLORS[l]||'#888'}"></span>${esc(l)}`:''}</td><td class="l">${esc(names[id]||'역 '+id)}</td><td>${z}초</td><td>${sgn(z-base)}초</td></tr>`)}).join('')||'<tr><td colspan="4" class="l muted">아직 따로 배운 역이 없어요.</td></tr>';
   const byDay=Object.fromEntries(sc.map(s=>[s.day,s]));
   $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const s=byDay[x.date];
     const res=!s?'':s.result==='published'?'적용':s.result==='kept current'?'유지':s.result==='backfill'?'나중에 계산':'';

@@ -8,7 +8,7 @@
   candidate, the result and the learned values with their sample counts. Days before the nightly
   retrain existed are backfilled the same way it works: learn on the week before yesterday, score
   on yesterday, then learn again with yesterday included.
-- latest: the live-timing.json the map uses now
+- latest: the live-timing.json the map uses now, with the names of the stations it has own stand times for
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).
 Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.py [web folder]
 """
@@ -29,8 +29,15 @@ STATE = Path("/var/lib/subway-live")
 DAYS_CACHE = STATE / "learning-days.json"
 HISTORY_CACHE = STATE / "learning-history.json"
 WINDOW = 7   # days of samples a retrain learns from (retrain_live_timing.DAYS)
+NODES = REPO_TIMING.parent / "ktdb-gtfs-2025" / "capital-metro.json"   # station id → name
 
 
+
+
+def station_names(timing: dict) -> dict:
+    ids = {a for v in (timing.get("lines") or {}).values() for a in v.get("stops", {})}
+    nodes = json.loads(NODES.read_text(encoding="utf-8"))["nodes"]
+    return {str(n["id"]): n["name"] for n in nodes if str(n["id"]) in ids}
 
 
 def day_stats(d: date, cache: dict) -> dict:
@@ -97,7 +104,8 @@ def main(web: Path) -> None:
            "retrainAt": "매일 03:10", "window": WINDOW,
            "days": [{k: v for k, v in s.items() if k != "stamp"} for s in stats],
            "history": [history[k] for k in sorted(history)],
-           "latest": {"lines": latest.get("lines"), "default": latest.get("default"), "n": latest.get("n")}}
+           "latest": {"lines": latest.get("lines"), "default": latest.get("default"), "n": latest.get("n"),
+                      "names": station_names(latest)}}
     target = web / "learning.json"
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
