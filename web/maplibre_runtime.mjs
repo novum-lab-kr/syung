@@ -1458,7 +1458,7 @@ map.on('load',()=>{
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
-      const behind=walls.draw(pd.mainMatrix)?1-MAP_THEMES[effectiveTheme()].bld3dOpacity:0;
+      const behind=walls.draw(pd.mainMatrix)?1-mapPalette().bld3dOpacity:0;
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
@@ -1541,6 +1541,7 @@ const ICONS={
   auto:svg('<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9"/>'),
   zoom:svg('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>'),
   coaster:svg('<path d="M2 18c3 0 4-11 7.5-11S12 14 15 14s3.5-6 7-6"/><path d="M5 21v-5M9.5 21V9M15 21v-5M20 21v-10"/>'),
+  palette:svg('<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.9-.7-1.2-.7-2.1 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.9-4-8.8-9-8.8z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15" cy="7.8" r="1.2" fill="currentColor"/>'),
   speed:svg('<path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/>'),
 };
 function iconButton(el,icon,label){el.innerHTML=ICONS[icon];el.setAttribute('aria-label',label);el.title=label}
@@ -1566,13 +1567,21 @@ const MAP_THEMES={
   dark:{bld3d:'#3a4a53',bld3dOpacity:.78,bg:'#10181c',water:'#16293a',park:'#15241c',land:'#15211b',bld:'#1c262b',roadMinor:'#243238',roadMajor:'#2f3f47',rail:'#35454d',
         text:'#9aabb1',road:'#7f9096',waterText:'#6f9bb5',parkText:'#6e9a69',poi:'#a59a86',halo:'rgba(12,19,23,.9)',stationText:'#eef3f4'},
 };
+// 지도 색 (settings): 차분 keeps the quiet greys above; 컬러 paints water, green, roads and buildings over them
+const MAP_COLORS={
+  light:{water:'#7cbfe8',park:'#9dd487',land:'#b3daa0',bld:'#e5dac8',bld3d:'#ddd0bb',bld3dOpacity:.6,bg:'#eeeadc',roadMinor:'#ffffff',roadMajor:'#ffffff',rail:'#b9b2c8',waterText:'#2f78a8',parkText:'#3f8a3a'},
+  dark:{water:'#1a4260',park:'#21452c',land:'#1e3a28',bld:'#262d38',bld3d:'#444a5c',bld3dOpacity:.78,bg:'#141c24',roadMinor:'#2a343c',roadMajor:'#3e4650',rail:'#4a4560',waterText:'#7fb4d8',parkText:'#7cbf74'},
+};
+const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
 const THEME_KEY='subway-theme';
+const mapPalette=(t=effectiveTheme())=>({...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})});
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
 function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
 function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focusRoute(!!routeBounds)});
-  const t=effectiveTheme(),P=MAP_THEMES[t];
+  const t=effectiveTheme(),P=mapPalette();
+  for(const b of document.querySelectorAll('[data-map-color]'))b.setAttribute('aria-pressed',String(b.dataset.mapColor===mapColor));
   document.documentElement.dataset.theme=t;
   // favicon follows the map theme (the <link media> pair only knows the OS setting)
   for(const l of document.querySelectorAll('link[data-theme-icon]'))l.href=`./brand/favicon-${t}.svg`;
@@ -1610,6 +1619,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
+for(const b of document.querySelectorAll('[data-map-color]'))b.onclick=()=>{mapColor=b.dataset.mapColor;try{localStorage.setItem(MAP_COLOR_KEY,mapColor)}catch{}applyTheme()};
 for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{themeChoice=b.dataset.themeChoice;try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
 $('themeNote').closest('.setting-row').title='자동은 해 뜨면 라이트, 해 지면 다크.';
 setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
@@ -1782,7 +1792,7 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
   $('refreshButton').onclick=e=>{e.currentTarget.classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
   const btn=$('settingsButton'),panel=$('settingsPanel');
   $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;
-  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
+  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('mapColorIcon').innerHTML=ICONS.palette;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
   const setOpen=o=>{panel.hidden=!o;btn.setAttribute('aria-expanded',String(o))};
   btn.onclick=e=>{e.stopPropagation();setOpen(panel.hidden)};
   document.addEventListener('click',e=>{if(!panel.hidden&&!panel.contains(e.target))setOpen(false)});
