@@ -1333,15 +1333,27 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],U=[-F[2]*R[1],F[2]*R[0],F[0]*R[1]-F[1]*R[0]],ul=Math.hypot(...U)||1;
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U:U.map(c=>c/ul),G:[q.fx,q.fy,0],loop:q.loop}};
     // samples on the edge's own grid (so neighbouring pieces meet), the piece's ends, and densely over the loop
-    const S=[c.s0],n=Math.max(1,Math.ceil(g.total/(lvl*mu)));for(let i=Math.ceil(c.s0/g.total*n);i<=n;i++){const x=g.total*i/n;if(x>=c.s1)break;if(x>c.s0)S.push(x)}S.push(c.s1);
+    // zoomed out: sampled at ≤ 16 m, then thinned to what bends (every lvl m alone cut the hills and curves to zigzags)
+    const fine=Math.min(lvl,16),S=[c.s0],n=Math.max(1,Math.ceil(g.total/(fine*mu)));for(let i=Math.ceil(c.s0/g.total*n);i<=n;i++){const x=g.total*i/n;if(x>=c.s1)break;if(x>c.s0)S.push(x)}S.push(c.s1);
     if(loopD(g.total/mu,e.lo,e.hi)){const D=loopD(g.total/mu,e.lo,e.hi)*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++){const x=s0+D*i/m;if(x>c.s0&&x<c.s1)S.push(x)}S.sort((p,q)=>p-q)}
-    const P=S.map(at),G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
+    let P=S.map(s=>Object.assign(at(s),{s}));
+    if(lvl>fine){const tol=lvl/40*mu,K=[P[0]];let k=0;   // keep a sample where the ones since the last kept stray > tol (~¼ px; at ~1 px the corners showed) from a straight run
+      const off=(A,B,Q)=>{const dx=B.x-A.x,dy=B.y-A.y,dh=B.h-A.h,l2=dx*dx+dy*dy+dh*dh||1,u=Math.max(0,Math.min(1,((Q.x-A.x)*dx+(Q.y-A.y)*dy+(Q.h-A.h)*dh)/l2));return Math.hypot(A.x+dx*u-Q.x,A.y+dy*u-Q.y,A.h+dh*u-Q.h)};
+      for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
+      K.push(P[P.length-1]);P=K;
+      // their frames from the kept neighbours, not the short real segment each falls on: drawn lanes sit tens of m
+      // out zoomed out, so a few degrees off there zigzagged (the loop keeps its own; it is sampled densely)
+      for(let i=0;i<P.length;i++){const q=P[i];if(q.loop)continue;const A=P[Math.max(0,i-1)],B=P[Math.min(P.length-1,i+1)];
+        let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F),gl=Math.hypot(F[0],F[1]);if(!l||!gl)continue;F=F.map(c=>c/l);
+        const R=[-(B.y-A.y)/gl,(B.x-A.x)/gl],U=[-F[2]*R[1],F[2]*R[0],F[0]*R[1]-F[1]*R[0]],ul=Math.hypot(...U)||1;
+        Object.assign(q,{R,F,U:U.map(c=>c/ul),G:[(B.x-A.x)/gl,(B.y-A.y)/gl,0]})}}
+    const G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
     const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
     const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
       out[o++]=q.x;out[o++]=q.y;out[o++]=q.h;out[o++]=hf;out[o++]=q.R[0];out[o++]=q.R[1];out[o++]=eo;out[o++]=side;out[o++]=kb;out[o++]=kp;out[o++]=kf;
       out[o++]=zp;out[o++]=F[0];out[o++]=F[1];out[o++]=F[2];out[o++]=U[0];out[o++]=U[1];out[o++]=U[2];out[o++]=c[0];out[o++]=c[1];out[o++]=c[2];out[o++]=sh};
     for(const side of [-1,1]){
-      for(let i=1;i<P.length;i++){const q=P[i];if(Math.floor(S[i]/sp)===Math.floor(S[i-1]/sp)||q.h<3*mu||q.loop)continue;   // columns every ~30 m (sparser zoomed out; none under the loop)
+      for(let i=1;i<P.length;i++){const q=P[i];if(Math.floor(q.s/sp)===Math.floor(P[i-1].s/sp)||q.h<3*mu||q.loop)continue;   // columns every ~30 m (sparser zoomed out; none under the loop)
         for(const [kp,kf] of [[1.8,0],[0,1.8]]){v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,0,side,0,kp,kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,1,side,0,-kp,-kf,G,NONE,-.86,1)}}
       for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
         for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
