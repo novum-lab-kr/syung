@@ -214,12 +214,14 @@ function groups(latest,hist){
 fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/login.html?next=/learning';throw 0}return r.json()}).then(d=>{
   const days=d.days||[],hist=d.history||[];
   const scored=hist.filter(h=>h.candidate?.all!=null);
-  const last=scored.at(-1),prev=scored.at(-2);
+  const last=scored.at(-1);
   if(last){
     $('err').textContent=last.candidate.all;
-    const dd=prev?+(last.candidate.all-prev.candidate.all).toFixed(1):0,el=$('delta');
+    // same holdout day for both: the day-to-day number also moves with how hard that day was
+    const cur=last.current?.all,dd=cur!=null?+(last.candidate.all-cur).toFixed(1):0,el=$('delta');
     el.className='delta '+(dd<0?'down':dd>0?'up':'same');
-    el.textContent=!prev?'첫 채점':dd<0?`▼ 전날보다 ${-dd}초 줄었어요`:dd>0?`▲ 전날보다 ${dd}초 늘었어요`:'전날과 같아요';
+    el.textContent=cur==null?'첫 채점':dd<0?`▼ 쓰던 모델보다 ${-dd}초 줄었어요`:dd>0?`▲ 쓰던 모델보다 ${dd}초 늘었어요`:'쓰던 모델과 같아요';
+    el.title='같은 날 기록으로 새 모델과 쓰던 모델을 채점한 차이예요. 날마다 채점하는 기록이 달라서 전날 숫자와 바로 비교하진 않아요.';
     $('heroText').textContent=`열차가 다음 역에 도착하거나 출발하는 시각을 실제와 평균 ${last.candidate.all}초 차이로 맞히고 있어요. (${md(last.date)}, 열차 움직임 ${last.candidate.n?.toLocaleString('ko-KR')}건으로 채점)`;
     $('errSpark').innerHTML=spark(scored.map(h=>h.candidate.all));
   }
