@@ -144,7 +144,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
@@ -281,7 +281,7 @@ const rolled=(r,F,roll)=>{const d=r[0]*F[0]+r[1]*F[1];let R=[r[0]-d*F[0],r[1]-d*
 const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
 // Half the long edges (≥ LOOP_MIN) also turn a loop at their middle: over D of ground the train's ground
 // point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of radius R,
-// R = 45..100 m by edge. D/R is fixed (LOOP_DR) so one ride table (LOOP_ARC) fits every loop.
+// R = 45..100 m by edge, D = R·LOOP_DR.
 const LOOP_DR=80/38,LOOP_MIN=800;   // m
 const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
 // Some edges (≥ 700 m) also turn a corkscrew (as 88열차): over D of ground the track rolls once or twice round its own
@@ -310,36 +310,35 @@ function coasterAt(line,lo,hi,s){
   if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1){roll=corkTheta(u,C[2]);const r=CORK_R*C[1]*mu;lat=-r*Math.sin(roll);h+=r*(1-Math.cos(roll))}}
   return [sg,h,lat,roll];   // lat: across (+ to the right going lo→hi), roll: about the way lo→hi
 }
-// The loop is D of ground but a much longer ride (ride length per ground length g = |(1 + k cos t, k sin t)|,
-// k = 2πR/D), as is a corkscrew (g = √(1 + ρ²θ'²), ρ = CORK_R). Spaced by ground distance the cars were stretched over
-// a quarter of the loop each and crossed (it looked smashed); they are spaced by ride distance instead.
-// arcTable(g): ride (in D) over the first i/64 of it.
-const arcTable=g=>{const N=64,a=[0];for(let i=1;i<=N;i++)a.push(a[i-1]+(g((i-1)/N)+g(i/N))/2/N);a.ride=a[N];return a};
-const LOOP_ARC=arcTable(u=>{const k=2*Math.PI/LOOP_DR;return Math.hypot(1+k*Math.cos(2*Math.PI*u),k*Math.sin(2*Math.PI*u))});
-const CORK_ARC=[1,2].map(T=>arcTable(u=>Math.hypot(1,CORK_R*2*Math.PI*T*(1-Math.cos(2*Math.PI*u)))));
-const arcAt=(A,u)=>{const N=A.length-1,x=u*N,i=Math.min(N-1,Math.floor(x));return A[i]+(A[i+1]-A[i])*(x-i)};
-const arcGround=(A,a)=>{let lo=0,hi=A.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(A[m]<=a)lo=m;else hi=m}return (lo+(a-A[lo])/((A[hi]-A[lo])||1))/(A.length-1)};
-// a plan's ride distance ↔ its ground distance d along plan.seq (equal outside the loops and corkscrews; straight on past
-// either end). Per edge, its loop and corkscrew in the way it is run: {a: start, D, A: arc table}.
-function rideTable(p){
-  if(p.ride)return p.ride;const cum=[0],feats=[];
-  for(let i=0;i<p.seq.length-1;i++){const a=p.seq[i],b=p.seq[i+1],lo=Math.min(a.id,b.id),hi=Math.max(a.id,b.id),g=geom(p.t.line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),Lg=p.cum[i+1]-p.cum[i],F=[];
-    const D=loopD(g.total/mu,lo,hi)*mu;if(D)F.push({a:Lg/2-D/2,D,A:LOOP_ARC});   // in the middle of the edge, either way round
-    const C=corkOf(g.total/mu,lo,hi);if(C){const D=C[1]*mu;F.push({a:a.id<b.id?C[0]*mu:Lg-C[0]*mu-D,D,A:CORK_ARC[C[2]-1]})}
-    F.sort((x,y)=>x.a-y.a);feats.push(F);cum.push(cum[i]+Lg+F.reduce((t,f)=>t+f.D*(f.A.ride-1),0))}
-  return p.ride={cum,feats};
+// Cars are spaced by ride distance, the length along the track as built (hills, loop, corkscrew), not by ground
+// distance: spaced by ground distance they were stretched over a quarter of the loop each and crossed (it looked
+// smashed), and pulled apart on the steep hills. edgeArc: ride from lo at every 2 m of s along the edge.
+const edgeArcs=new Map();
+function edgeArc(line,lo,hi){
+  const id=`${line}:${lo}:${hi}`;let E=edgeArcs.get(id);if(E)return E;
+  const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),n=Math.max(1,Math.ceil(g.total/(2*mu))),A=new Float64Array(n+1);
+  const at=s=>{const [sg,h,lat]=coasterAt(line,lo,hi,s);let i=1,j=g.pts.length-1;while(i<j){const m=(i+j)>>1;if(g.cum[m]<sg)i=m+1;else j=m}
+    const P=g.pts[i-1],Q=g.pts[i],l=(g.cum[i]-g.cum[i-1])||1,u=Math.max(0,Math.min(1,(sg-g.cum[i-1])/l)),fx=(Q.x-P.x)/l,fy=(Q.y-P.y)/l;
+    return [P.x+(Q.x-P.x)*u-fy*lat,P.y+(Q.y-P.y)*u+fx*lat,h]};
+  let q=at(0);for(let k=1;k<=n;k++){const r=at(g.total*k/n);A[k]=A[k-1]+Math.hypot(r[0]-q[0],r[1]-q[1],r[2]-q[2]);q=r}
+  E={A,step:g.total/n,total:A[n]};edgeArcs.set(id,E);return E;
 }
+const arcOf=(E,s)=>{const x=Math.max(0,Math.min(E.A.length-1,s/E.step)),i=Math.min(E.A.length-2,Math.floor(x));return E.A[i]+(E.A[i+1]-E.A[i])*(x-i)};
+const sOfArc=(E,a)=>{const A=E.A;let lo=0,hi=A.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(A[m]<=a)lo=m;else hi=m}return (lo+Math.max(0,Math.min(1,(a-A[lo])/((A[hi]-A[lo])||1))))*E.step};
+// a plan's ride distance ↔ its ground distance d along plan.seq (straight on past either end). Its edges' rides are
+// added up as far as asked (only the trains drawn ask, mostly near the start of their way).
+function rideEdge(p,i){const a=p.seq[i],b=p.seq[i+1];return edgeArc(p.t.line,Math.min(a.id,b.id),Math.max(a.id,b.id))}
+function rideCum(p,i){const R=p.ride??={cum:[0]};while(R.cum.length<=i){const k=R.cum.length-1;R.cum.push(R.cum[k]+rideEdge(p,k).total)}return R.cum[i]}
 function toRide(p,d){
-  if(p.seq.length<2)return d;const {cum,feats}=rideTable(p),end=p.cum[p.cum.length-1];if(d<=0)return d;if(d>=end)return cum[cum.length-1]+d-end;
-  let i=0;while(i<p.seq.length-2&&p.cum[i+1]<d)i++;const t=d-p.cum[i];let r=t;
-  for(const f of feats[i]){if(t<=f.a)break;if(t<f.a+f.D){const u=(t-f.a)/f.D;r+=f.D*(arcAt(f.A,u)-u);break}r+=f.D*(f.A.ride-1)}
-  return cum[i]+r;
+  if(!coaster||p.seq.length<2)return d;const end=p.cum[p.cum.length-1],last=p.seq.length-1;if(d<=0)return d;if(d>=end)return rideCum(p,last)+d-end;
+  let i=0;while(i<last-1&&p.cum[i+1]<d)i++;const E=rideEdge(p,i),t=d-p.cum[i],fw=p.seq[i].id<p.seq[i+1].id;
+  return rideCum(p,i)+(fw?arcOf(E,t):E.total-arcOf(E,(p.cum[i+1]-p.cum[i])-t));
 }
 function fromRide(p,a){
-  if(p.seq.length<2)return a;const {cum,feats}=rideTable(p),end=cum[cum.length-1];if(a<=0)return a;if(a>=end)return p.cum[p.cum.length-1]+a-end;
-  let i=0;while(i<p.seq.length-2&&cum[i+1]<a)i++;const r=a-cum[i];let shift=0;
-  for(const f of feats[i]){if(r<=f.a+shift)break;if(r<f.a+shift+f.D*f.A.ride)return p.cum[i]+f.a+f.D*arcGround(f.A,(r-f.a-shift)/f.D);shift+=f.D*(f.A.ride-1)}
-  return p.cum[i]+r-shift;
+  if(!coaster||p.seq.length<2)return a;const last=p.seq.length-1;if(a<=0)return a;
+  let i=0;while(i<last&&rideCum(p,i+1)<a)i++;if(i===last)return p.cum[last]+a-rideCum(p,last);
+  const E=rideEdge(p,i),r=a-rideCum(p,i),fw=p.seq[i].id<p.seq[i+1].id,L=p.cum[i+1]-p.cum[i];
+  return p.cum[i]+(fw?sOfArc(E,r):L-sOfArc(E,E.total-r));
 }
 // Where the middle of the train is, as a distance (mercator units) along plan.seq.
 function trainPose(p){
@@ -697,12 +696,13 @@ class TrainLayer{
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
         for(let k=0;k<n;k++){
           const j=forward?k:n-1-k,A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));
+          if(coaster){const oa=(A.off+lanePx)*unit,ob=(B.off+lanePx)*unit;A.x+=A.r[0]*oa;A.y+=A.r[1]*oa;B.x+=B.r[0]*ob;B.y+=B.r[1]*ob}   // on the coaster each end on its own lane (one normal for both pulled the far end off it on curves)
           const dx=B.x-A.x,dy=B.y-A.y,dz=coaster?B.h-A.h:0,len=Math.hypot(dx,dy,dz);if(len<unit*.1)continue;
           const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
           this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
           let side=(coaster?A.r[0]*camX+A.r[1]*camY:-ty*camX+tx*camY)>=0?1:-1;
-          if(coaster){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,((A.roll||0)+(B.roll||0))/2);   // turned over in a corkscrew
-            this.fr=[A.x+A.r[0]*off,A.y+A.r[1]*off,A.h,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
+          if(coaster){const ra=A.roll||0,rb=B.roll||0,F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,Math.atan2(Math.sin(ra)+Math.sin(rb),Math.cos(ra)+Math.cos(rb)));   // turned over in a corkscrew; the mean as an angle (2π at its end and 0 past it averaged to π: upside down under the track)
+            this.fr=[A.x,A.y,A.h,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
           const back=j===0,front=j===n-1,panto=/^(1호선|4호선|경의중앙선|수인분당선)$/.test(plan.t.line)&&j%3===1;
           this.kind=(front?1:0)+(back?2:0)+(panto?4:0);
           const w=bodyPx/2,nose=bodyPx*.48,a=back?nose:0,b=front?L-nose:L,low=H*.44;
@@ -1369,13 +1369,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     if(lvl>fine){const tol=lvl/40*mu,K=[P[0]];let k=0;   // keep a sample where the ones since the last kept stray > tol (~¼ px; at ~1 px the corners showed) from a straight run
       const off=(A,B,Q)=>{const dx=B.x-A.x,dy=B.y-A.y,dh=B.h-A.h,l2=dx*dx+dy*dy+dh*dh||1,u=Math.max(0,Math.min(1,((Q.x-A.x)*dx+(Q.y-A.y)*dy+(Q.h-A.h)*dh)/l2));return Math.hypot(A.x+dx*u-Q.x,A.y+dy*u-Q.y,A.h+dh*u-Q.h)};
       for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
-      K.push(P[P.length-1]);P=K;
-      // their frames from the kept neighbours, not the short real segment each falls on: drawn lanes sit tens of m
-      // out zoomed out, so a few degrees off there zigzagged (the loop keeps its own; it is sampled densely)
-      for(let i=0;i<P.length;i++){const q=P[i];if(q.loop)continue;const A=P[Math.max(0,i-1)],B=P[Math.min(P.length-1,i+1)];
-        let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F),gl=Math.hypot(F[0],F[1]);if(!l||!gl)continue;F=F.map(c=>c/l);
-        const R=[-(B.y-A.y)/gl,(B.x-A.x)/gl],[,U]=rolled(R,F,0);
-        Object.assign(q,{R,F,U,G:[(B.x-A.x)/gl,(B.y-A.y)/gl,0]})}}
+      K.push(P[P.length-1]);P=K}
     const G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
     const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
     const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
