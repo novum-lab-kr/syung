@@ -1274,7 +1274,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
     this.attr=Object.fromEntries(['a_p','a_r','a_o','a_z','a_f','a_u','a_c'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
     this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_post','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
-    this.b=gl.createBuffer();this.gl=gl;this.key='';this.n=0;this.M=new Float32Array(16);this.cache=new Map();
+    this.gl=gl;this.M=new Float32Array(16);this.cache=new Map();
     this.O=maplibregl.MercatorCoordinate.fromLngLat(HOME.center);
     const seen=new Set();this.edges=[];
     for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++){
@@ -1282,8 +1282,9 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   }
   // one edge: 22 floats a vertex — x y h hf (hf 0: on the ground) · R (across, flat) · px across: offset, ×lane, ×body, raw ·
   // px along F, px along U · F (along the track) · U (the track's up) · rgb shade (shade < 0: the post colour)
-  edge(e){
-    let a=this.cache.get(e.id);if(a)return a;
+  // lvl: sample spacing in m (8 m close up; coarser zoomed out, where 8 m built 2.3 M vertices at z12.6 and stalled the map)
+  edge(e,lvl){
+    const ck=e.id+':'+lvl;let a=this.cache.get(ck);if(a)return a;
     const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O,out=[];
     let x0=1,y0=1,x1=0,y1=0;
     const ground=s=>{let i=1;while(i<g.pts.length-1&&g.cum[i]<s)i++;const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
@@ -1295,18 +1296,22 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U:U.map(c=>c/ul),G:[q.fx,q.fy,0],loop:q.loop}};
     const UP=[0,0,1],v=(q,hf,side,kb,kp,kf,zp,c,sh,col_)=>{const F=col_?q.G:q.F,U=col_?UP:q.U;out.push(q.x,q.y,q.h,hf,q.R[0],q.R[1],eo,side,kb,kp,kf,zp,F[0],F[1],F[2],U[0],U[1],U[2],c[0],c[1],c[2],sh)};
     // samples every ~8 m, and densely over the loop
-    const S=[],STEP=8*mu,n=Math.max(1,Math.ceil(g.total/STEP));for(let i=0;i<=n;i++)S.push(g.total*i/n);
-    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2;for(let i=1;i<96;i++)S.push(s0+D*i/96);S.sort((p,q)=>p-q)}
+    const S=[],STEP=lvl*mu,n=Math.max(1,Math.ceil(g.total/STEP));for(let i=0;i<=n;i++)S.push(g.total*i/n);
+    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,m=Math.max(24,96*8/lvl|0);for(let i=1;i<m;i++)S.push(s0+D*i/m);S.sort((p,q)=>p-q)}
     const P=S.map(at),G=-6,NONE=[0,0,0];   // G: girder depth, px
     for(const side of [-1,1]){
-      for(let i=0,last=-1e9;i<P.length;i++){const q=P[i];if(S[i]-last<30*mu||q.h<3*mu||q.loop)continue;last=S[i];   // columns every ~30 m (none under the loop)
+      for(let i=0,last=-1e9;i<P.length;i++){const q=P[i];if(S[i]-last<Math.max(30,lvl*3)*mu||q.h<3*mu||q.loop)continue;last=S[i];   // columns every ~30 m (sparser zoomed out; none under the loop)
         for(const [kp,kf] of [[1.8,0],[0,1.8]]){v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,0,side,0,kp,kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,1,side,0,-kp,-kf,G,NONE,-.86,1)}}
       for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
         for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
         for(const kb of [-.3,.3]){v(A,1,side,kb,-.9,0,.4,col,1);v(A,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(A,1,side,kb,-.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,-.9,0,.4,col,1)}}   // rails
-      for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers
+      if(lvl===8)for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers (close up only)
     }
-    a={data:new Float32Array(out),box:[x0,y0,x1,y1]};this.cache.set(e.id,a);return a;
+    // its own GPU buffer, uploaded once (re-packing all visible edges into one each time the view changed stalled panning)
+    const gl=this.gl,b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(out),gl.STATIC_DRAW);
+    a={b,n:out.length/22};this.cache.set(ck,a);
+    if(this.cache.size>800){const [k0,a0]=this.cache.entries().next().value;gl.deleteBuffer(a0.b);this.cache.delete(k0)}   // oldest out
+    return a;
   }
   render(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<12.5)return;if(!this.p)this.init(gl);
@@ -1314,20 +1319,21 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const vis=[];for(const e of this.edges){if(selected!=='all'&&e.line!==selected)continue;
       if(!e.box){const g=geom(e.line,e.lo,e.hi),xs=g.pts.map(p=>p.x),ys=g.pts.map(p=>p.y);e.box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
       const [bx0,by0,bx1,by1]=e.box;if(bx1<lo.x-pad||bx0>hi.x+pad||by0>lo.y+pad||by1<hi.y-pad)continue;vis.push(e)}
-    const key=vis.map(e=>e.id).join('|');
-    if(key!==this.key){this.key=key;const parts=vis.map(e=>this.edge(e).data),all=new Float32Array(parts.reduce((a,p)=>a+p.length,0));let o=0;for(const p of parts){all.set(p,o);o+=p.length}
-      gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,all,gl.DYNAMIC_DRAW);this.n=all.length/22}
-    if(!this.n)return;
+    const mpp=40075016.686*Math.cos(37.5*Math.PI/180)/(512*2**z),lvl=8*2**Math.max(0,Math.ceil(Math.log2(6*mpp/8)));   // ~6 px a sample
+    // edges not built yet: a few each frame (~8 ms), the rest on the next frames
+    const t0=performance.now(),draw=[];let pending=false;
+    for(const e of vis){const a=this.cache.get(e.id+':'+lvl);if(a)draw.push(a);else if(performance.now()-t0<8)draw.push(this.edge(e,lvl));else pending=true}
+    if(pending)trainFrameSoon(16);
+    if(!draw.length)return;
     const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
     gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,laneOffsetPx(z,coasterBodyPx(z)));gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
     gl.uniform3fv(this.uni.u_post,document.documentElement.dataset.theme==='dark'?[.6,.63,.67]:[.58,.6,.64]);
-    gl.bindBuffer(gl.ARRAY_BUFFER,this.b);
     const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
-    ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18);
+    const each=()=>{for(const a of draw){gl.bindBuffer(gl.ARRAY_BUFFER,a.b);ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
-    if(occlude){gl.depthMask(false);gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);gl.drawArrays(gl.TRIANGLES,0,this.n)}   // behind building walls: faint
-    gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,this.n);gl.depthMask(false);
+    if(occlude){gl.depthMask(false);gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);each()}   // behind building walls: faint
+    gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);each();gl.depthMask(false);
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
   }
 }
