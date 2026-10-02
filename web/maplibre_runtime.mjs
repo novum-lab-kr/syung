@@ -51,12 +51,34 @@ function buildLineFeatures(){
   return features;
 }
 const edgeGeom=new Map();
-function geom(line,a,b){
+// The track between two stations: the real one, or on the 롤러코스터 its own wandering path (coasterPath).
+function geom(line,a,b){return coaster?coasterPath(line,a,b):realGeom(line,a,b)}
+const withCum=pts=>{const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));return {pts,cum,total:cum[cum.length-1]}};
+function realGeom(line,a,b){
   const lo=Math.min(a,b),hi=Math.max(a,b),id=`${line}:${lo}:${hi}`;
   let g=edgeGeom.get(id);if(g)return g;
-  const pts=edgeCoords(line,lo,hi).map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)),cum=[0];
-  for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));
-  g={pts,cum,total:cum[cum.length-1]};edgeGeom.set(id,g);return g;
+  g=withCum(edgeCoords(line,lo,hi).map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));edgeGeom.set(id,g);return g;
+}
+// 롤러코스터: the trains only keep their times, so between the stations the track goes its own way — on the real
+// track through the platforms (COASTER_FLAT), then pushed off it sideways (across the line between the stations),
+// eased in over 250 m: a wide bend (a cubic bump to either side, up to 35 % of the way between the stations or 400 m)
+// and a sway of one to three waves on it (one per ≥ 450 m: shorter, sampled coarsely zoomed out, it zigzagged). Each edge its own, the same every time (hash of the line and its stations).
+// (Bending onto a curve of its own instead kinked where it left the real track.)
+function coasterPath(line,a,b){
+  const lo=Math.min(a,b),hi=Math.max(a,b),id=`c:${line}:${lo}:${hi}`;
+  let g=edgeGeom.get(id);if(g)return g;
+  const g0=realGeom(line,lo,hi),A=g0.pts[0],B=g0.pts[g0.pts.length-1],mu=A.meterInMercatorCoordinateUnits(),cx=B.x-A.x,cy=B.y-A.y,L=Math.hypot(cx,cy);
+  if(L<200*mu)return g0;
+  let ls=0;for(const ch of line)ls=Math.imul(ls,31)+ch.charCodeAt(0)|0;const r=i=>hash(lo^ls,hi,100+i);
+  const ux=cx/L,uy=cy/L,nx=-uy,ny=ux,amp=Math.min(.35*L,400*mu)*(r(0)<.25?.2:.5+.5*r(1));   // a quarter of them nearly straight
+  const o1=(r(2)*2-1)*amp,o2=(r(3)<.5?-1:1)*(.3+.7*r(4))*amp*(r(5)<.5?1:-Math.sign(o1)||1),sway=Math.min(.1*L,90*mu)*r(6),waves=Math.max(1,Math.min(1+(r(7)*3|0),Math.floor(L/mu/450))),ph=r(8)*6.283;
+  const real=s=>{let i=1;while(i<g0.pts.length-1&&g0.cum[i]<s)i++;const P=g0.pts[i-1],Q=g0.pts[i],u=Math.max(0,Math.min(1,(s-g0.cum[i-1])/((g0.cum[i]-g0.cum[i-1])||1)));return [P.x+(Q.x-P.x)*u,P.y+(Q.y-P.y)*u]};
+  const n=Math.max(32,Math.ceil((g0.total+2*amp)/(6*mu))),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,s=u*g0.total,e=smooth(Math.max(0,Math.min(1,(Math.min(s,g0.total-s)/mu-COASTER_FLAT)/250)));
+    const [rx,ry]=real(s),v=1-u,off=e*(3*v*v*u*o1+3*v*u*u*o2+sway*Math.sin(2*Math.PI*waves*u+ph)*Math.sin(Math.PI*u));
+    pts.push({x:rx+nx*off,y:ry+ny*off})}
+  for(const q of pts)q.meterInMercatorCoordinateUnits=()=>mu;   // as the MercatorCoordinates of the real track
+  g=withCum(pts);edgeGeom.set(id,g);return g;
 }
 // Point and heading at fraction k of the way from station `from` to station `to` along the track.
 function along(line,from,to,k){
@@ -177,7 +199,7 @@ const timingFor=line=>{const tm={...liveTiming.default,...liveTiming.lines[line]
 fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 function segmentSeconds(a,b,line){
   const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
-  const A=merc(a),B=merc(b),chord=Math.hypot(B.x-A.x,B.y-A.y),track=line?geom(line,a.id,b.id).total:chord,metres=Math.max(chord,track)/A.meterInMercatorCoordinateUnits();
+  const A=merc(a),B=merc(b),chord=Math.hypot(B.x-A.x,B.y-A.y),track=line?realGeom(line,a.id,b.id).total:chord,metres=Math.max(chord,track)/A.meterInMercatorCoordinateUnits();
   return Math.max(30,Math.min(180,metres/12.4));
 }
 // Dead reckoning: the API only reports the last event (진입/도착/출발/전역출발) and when it happened.
@@ -1876,14 +1898,14 @@ $('toggleMap').onclick=e=>{
   for(const id of BASEMAP_LAYERS)if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');
   updateSun();
 };
-// 롤러코스터: on, the lines are lifted (route lines stay faintly on the ground as its shadow) and the view
+// 롤러코스터: on, the lines are lifted onto their own paths (coasterPath; the real route lines are hidden) and the view
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function setCoaster(on,speed=coasterSpeed){
   const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
-  if(was!==on){if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?.3:.9);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+  if(was!==on){if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?0:.9);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900})}
   map.triggerRepaint();
 }
