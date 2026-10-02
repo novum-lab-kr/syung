@@ -91,17 +91,7 @@ h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
 .lc .meter i{display:block;height:100%;background:var(--c)}
 .faster{color:var(--good);font-weight:700}.slower{color:var(--mid);font-weight:700}
 
-/* 5. details */
-details{background:var(--paper);border-radius:20px;box-shadow:var(--shadow)}
-summary{list-style:none;cursor:pointer;padding:16px 20px;font-family:var(--round);font-size:17px;display:flex;align-items:center;gap:8px}
-summary::-webkit-details-marker{display:none}
-summary::after{content:"+";margin-left:auto;font-size:22px;color:var(--muted)}
-details[open] summary::after{content:"−"}
-.dbody{padding:0 20px 20px}
-.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;counter-reset:s}
-.step{background:var(--control);border-radius:14px;padding:12px}
-.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--syung);color:var(--syung-ink);font-weight:800;font-size:12px;margin-bottom:6px}
-.step b{font-size:13.5px}.step p{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--secondary)}
+/* 5. table */
 table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
 th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:0 8px 8px;border-bottom:1.5px solid var(--rule)}
 th:first-child,td:first-child{text-align:left}
@@ -111,7 +101,6 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
   .scores text{font-size:19px}.scores .val{font-size:20px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
-  .flow{grid-template-columns:1fr}
   .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
   .growth text{font-size:14px}.growth .val{font-size:15px}
 }
@@ -157,24 +146,10 @@ td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
     <div class="groups" id="groups"></div>
   </section>
 
-  <details>
-    <summary>어떻게 배우나요?</summary>
-    <div class="dbody">
-      <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.55">실시간 API는 "어느 역에 도착·출발했다"만 알려줘요. 그 사이를 자연스럽게 움직이려고, 노선마다 역 사이를 달리는 시간과 역에 서 있는 시간을 매일 다시 배워요.</p>
-      <div class="flow">
-        <div class="step"><b>수집</b><p>도착정보 20초, 열차 위치 25초마다 기록</p></div>
-        <div class="step"><b>거르기</b><p>열차마다 자기 시각이 있는 기록만 사용</p></div>
-        <div class="step"><b>계산</b><p>노선별 속도, 역 구간·진입 시간, 출퇴근 속도</p></div>
-        <div class="step"><b>채점</b><p>배운 값과 쓰던 값으로 어제 열차를 예측해 오차 중앙값 비교</p></div>
-        <div class="step"><b>적용</b><p>쓰던 값보다 0.5초 넘게 나빠지지 않으면 반영 · 매일 03:10</p></div>
-      </div>
-    </div>
-  </details>
-
-  <details>
-    <summary>날짜별 자세한 기록</summary>
-    <div class="dbody tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>이 날로 채점<br>쓰던 값 → 새 값</th><th>결과</th></tr></thead><tbody></tbody></table></div>
-  </details>
+  <section class="box">
+    <h2>날짜별 자세한 기록</h2>
+    <div class="tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>이 날로 채점<br>쓰던 값 → 새 값</th><th>결과</th></tr></thead><tbody></tbody></table></div>
+  </section>
   <p class="muted" id="updated" style="margin:0;font-size:12px;text-align:center"></p>
 </main>
 <script>
