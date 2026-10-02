@@ -24,6 +24,8 @@ DATA = {
     "/track_shapes.json": ROOT / "data" / "osm-tracks" / "track_shapes.json",
     "/exits.json": ROOT / "data" / "osm-tracks" / "exits.json",
     "/edge_times.json": ROOT / "data" / "ktdb-gtfs-2025" / "edge_times.json",
+    "/coaster_buildings.bin": ROOT / "data" / "osm-tracks" / "coaster_buildings.bin",
+    "/coaster_towers.json": ROOT / "data" / "osm-tracks" / "coaster_towers.json",
 }
 
 
@@ -56,7 +58,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path in DATA:
             data = DATA[path].read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "application/octet-stream" if path.endswith(".bin") else "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)

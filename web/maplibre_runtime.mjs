@@ -68,6 +68,7 @@ function realGeom(line,a,b){
 function coasterPath(line,a,b){
   const lo=Math.min(a,b),hi=Math.max(a,b),id=`c:${line}:${lo}:${hi}`;
   let g=edgeGeom.get(id);if(g)return g;
+  const T=towerCourse(line,lo,hi);if(T){g=towerPath(T,realGeom(line,lo,hi));edgeGeom.set(id,g);return g}
   const g0=realGeom(line,lo,hi),A=g0.pts[0],B=g0.pts[g0.pts.length-1],mu=A.meterInMercatorCoordinateUnits(),cx=B.x-A.x,cy=B.y-A.y,L=Math.hypot(cx,cy);
   if(L<200*mu)return g0;
   let ls=0;for(const ch of line)ls=Math.imul(ls,31)+ch.charCodeAt(0)|0;const r=i=>hash(lo^ls,hi,100+i);
@@ -271,7 +272,7 @@ function planTrain(t){
 // trains ride on it; its clock can run faster (×coasterSpeed): the trains then run ahead of the feed
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
-let coaster=false,coasterSpeed=1,warp=0,warpAt=0;
+let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
 // The frame across (R) and up (U) of a track or car going along F, from the flat right r, turned by roll about F.
@@ -283,13 +284,13 @@ const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(co
 // point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of radius R,
 // R = 45..100 m by edge, D = R·LOOP_DR.
 const LOOP_DR=80/38,LOOP_MIN=800;   // m
-const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
+const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||towerEdge(lo,hi)||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
 // Some edges (≥ 700 m) also turn a corkscrew (as 88열차): over D of ground (200–250 m a turn: shorter, a car spanned a
 // quarter turn and looked wrung) the cars roll once or twice about their own middle (θ, eased in and out) and the rails
 // wind round them (CORK_HEART: the shaders turn both about a line half a body up). Off the loop, clear of the climbs at
 // either end. [start m from lo, D m, turns] or null.
 const corkOf=(L,lo,hi)=>{
-  if(L<700||hash(lo,hi,3)>=.45)return null;const T=hash(lo,hi,4)<.3?2:1,D=(200+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
+  if(L<700||towerEdge(lo,hi)||hash(lo,hi,3)>=.45)return null;const T=hash(lo,hi,4)<.3?2:1,D=(200+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
   const ok=c=>c-D/2>=end&&c+D/2<=L-end&&(!LD||Math.abs(c-L/2)>=LD/2+D/2+30);
   const want=LD?(hash(lo,hi,6)<.5?.27:.73)*L:(.35+.3*hash(lo,hi,6))*L;
   for(const c of [want,L-want,.25*L,.75*L,.5*L])if(ok(c))return [c-D/2,D,T];return null};
@@ -298,15 +299,92 @@ const CORK_HEART=.34;   // × body px: the corkscrew's axis above the rails, the
 // twice as fast and wrung the cars there)
 const corkTheta=(u,T)=>{const e=.15,f=u<e?u*u/(2*e):u>1-e?1-e-(1-u)*(1-u)/(2*e):u-e/2;return 2*Math.PI*T*f/(1-e)};
 // [ground distance, height] (mercator units, lo→hi) where the track is at distance s along that line's edge
-function coasterAt(line,lo,hi,s){
-  const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,k=g.total?s/g.total:0,d=Math.min(k,1-k)*L;
-  const env=smooth(Math.max(0,Math.min(1,(d-COASTER_FLAT)/COASTER_RISE)));if(!env)return [s,0,0,0];
-  // knots at irregular spacing, tops and dips alternating, each its own height; eased from knot to knot
+// The hills alone, m at s (mercator) along an edge of length L m: knots at irregular spacing, tops and dips
+// alternating, each its own height; eased from knot to knot
+function hillsAt(lo,hi,L,k){
+  const d=Math.min(k,1-k)*L,env=smooth(Math.max(0,Math.min(1,(d-COASTER_FLAT)/COASTER_RISE)));if(!env)return 0;
   const n=Math.max(1,Math.round(L/380)),m=2*n+1,x=k*m,j=Math.min(m-1,Math.floor(x));
   const knot=i=>{if(i<=0||i>=m)return i<=0?0:1;return (i+(hash(lo,hi,10+i)-.5)*.6)/m},hk=i=>{const r=hash(lo,hi,40+i);
     return i%2?COASTER_LOW+(COASTER_H-COASTER_LOW)*r*r*.35:COASTER_LOW+(COASTER_H-COASTER_LOW)*(.25+.75*r)};   // odd: dips, low; even: tops, any height
   let a=j;while(a>0&&knot(a)>k)a--;while(a<m-1&&knot(a+1)<=k)a++;const u=(k-knot(a))/((knot(a+1)-knot(a))||1);
-  let sg=s,h=env*(hk(a)+(hk(a+1)-hk(a))*smooth(Math.max(0,Math.min(1,u))))*mu;
+  return env*(hk(a)+(hk(a+1)-hk(a))*smooth(Math.max(0,Math.min(1,u))));
+}
+// Tower courses: on an edge running by a very tall building the track leaves the platform, swings round onto a ring
+// about the tower and climbs it turn after turn to near its top, then comes off the ring and drops the long way down
+// to the far station. Chosen by hand (the station has to leave room); lo → hi is the way up.
+const TOWER_COURSES=[{line:'8호선',lo:24,hi:465,at:[127.102659,37.512537],tower:68,R:150,turns:5,top:440,off:800}];   // 잠실 → 석촌, 롯데월드타워 (555 m)
+const towerCourse=(line,lo,hi)=>TOWER_COURSES.find(c=>c.line===line&&c.lo===lo&&c.hi===hi);
+const towerEdge=(lo,hi)=>TOWER_COURSES.some(c=>c.lo===lo&&c.hi===hi);   // no loop or corkscrew there
+// Its ground path: the real track through the platform; then steered (turning at most 1/35 m) onto the ring of radius R
+// round the tower, the way the track already passes it; `turns` and a bit round it, leaving where the ring heads best
+// for the point `off` m along the real track; a cubic from there onto the real track, and on to the far station.
+// spiral: {a, r0, r1, b} in mercator along it — off the platform, on and off the ring, back on the real track.
+function towerPath(C,g0){
+  const mu=g0.pts[0].meterInMercatorCoordinateUnits(),T=maplibregl.MercatorCoordinate.fromLngLat(C.at),R=C.R*mu,ds=2*mu;
+  const at=s=>{let i=1;while(i<g0.pts.length-1&&g0.cum[i]<s)i++;const P=g0.pts[i-1],Q=g0.pts[i],l=(g0.cum[i]-g0.cum[i-1])||1,u=Math.max(0,Math.min(1,(s-g0.cum[i-1])/l));return {x:P.x+(Q.x-P.x)*u,y:P.y+(Q.y-P.y)*u,fx:(Q.x-P.x)/l,fy:(Q.y-P.y)/l,i}};
+  const sA=(COASTER_FLAT+10)*mu,sB=Math.min(C.off*mu,g0.total-(COASTER_FLAT+300)*mu),A=at(sA),B=at(sB),pts=[];
+  for(let i=0;i<A.i;i++)pts.push({x:g0.pts[i].x,y:g0.pts[i].y});pts.push({x:A.x,y:A.y});
+  const sg=Math.sign((A.x-T.x)*A.fy-(A.y-T.y)*A.fx)||1;   // the way round it the track already goes
+  let x=A.x,y=A.y,hd=Math.atan2(A.fy,A.fx);const turn=ds/(35*mu);
+  for(let k=0;k<3000;k++){const ex=x-T.x,ey=y-T.y,r=Math.hypot(ex,ey),e=[ex/r,ey/r],tau=[-sg*e[1],sg*e[0]],w=2*(R-r)/R;
+    const want=Math.atan2(tau[1]+w*e[1],tau[0]+w*e[0]);let d=want-hd;d=Math.atan2(Math.sin(d),Math.cos(d));
+    if(Math.abs(r-R)<.5*mu&&Math.abs(Math.atan2(Math.sin(Math.atan2(tau[1],tau[0])-hd),Math.cos(Math.atan2(tau[1],tau[0])-hd)))<.03)break;
+    hd+=Math.max(-turn,Math.min(turn,d));x+=Math.cos(hd)*ds;y+=Math.sin(hd)*ds;pts.push({x,y})}
+  const r0=pts.length-1;let f0=Math.atan2(y-T.y,x-T.x);
+  // leave where the ring's heading points best at B
+  let fx=f0,best=-2;for(let k=0;k<360;k++){const f=f0+sg*k/360*2*Math.PI,P=[T.x+R*Math.cos(f),T.y+R*Math.sin(f)],t=[-sg*Math.sin(f),sg*Math.cos(f)],v=[B.x-P[0],B.y-P[1]],l=Math.hypot(...v);const sc=(t[0]*v[0]+t[1]*v[1])/l;if(sc>best){best=sc;fx=f}}
+  const sweep=2*Math.PI*C.turns+Math.abs(fx-f0),m=Math.ceil(sweep*R/ds);
+  for(let k=1;k<=m;k++){const f=f0+sg*sweep*k/m;pts.push({x:T.x+R*Math.cos(f),y:T.y+R*Math.sin(f)})}
+  const r1=pts.length-1,P=pts[r1],tx=-sg*Math.sin(f0+sg*sweep),ty=sg*Math.cos(f0+sg*sweep),D=Math.hypot(B.x-P.x,B.y-P.y),hl=.4*D,nb=Math.ceil(1.6*D/ds);
+  const c1=[P.x+tx*hl,P.y+ty*hl],c2=[B.x-B.fx*hl,B.y-B.fy*hl];
+  for(let k=1;k<=nb;k++){const u=k/nb,v=1-u;pts.push({x:v*v*v*P.x+3*v*v*u*c1[0]+3*v*u*u*c2[0]+u*u*u*B.x,y:v*v*v*P.y+3*v*v*u*c1[1]+3*v*u*u*c2[1]+u*u*u*B.y})}
+  const b=pts.length-1;for(let i=B.i;i<g0.pts.length;i++)pts.push({x:g0.pts[i].x,y:g0.pts[i].y});
+  for(const q of pts)q.meterInMercatorCoordinateUnits=()=>mu;
+  const g=withCum(pts),aI=A.i;g.spiral={a:g.cum[aI],r0:g.cum[r0],r1:g.cum[r1],b:g.cum[b],T,tower:C.tower,top:C.top};return g;
+}
+// Building heights along the lines (pipeline/build_coaster_buildings.py: a sparse 20 m grid in web mercator), loaded
+// when the 롤러코스터 first turns on; the courses wait for it, so they never change under a running train.
+let coasterBld=null,coasterBldLoad=null;
+function loadCoasterBuildings(){
+  return coasterBldLoad??=Promise.all([fetch('./coaster_buildings.bin',{cache:'no-cache'}).then(r=>r.ok?r.arrayBuffer():null),fetch('./coaster_towers.json',{cache:'no-cache'}).then(r=>r.ok?r.json():[])]).then(([buf,towers])=>{
+    const B={blocks:new Map(),towers:towers||[]};
+    if(buf&&new TextDecoder().decode(new Uint8Array(buf,0,4))==='CBLD'){const v=new DataView(buf);
+      Object.assign(B,{x0:v.getFloat64(8,true),y0:v.getFloat64(16,true),C:v.getFloat64(24,true),W:v.getUint32(32,true)});const n=v.getUint32(40,true);
+      for(let i=0;i<n;i++){const c=v.getUint32(44+4*i,true),h=v.getUint16(44+4*n+2*i,true),ix=c%B.W,iy=(c-ix)/B.W,key=(iy>>5)*65536+(ix>>5);   // 32×32-cell blocks
+        let blk=B.blocks.get(key);if(!blk)B.blocks.set(key,blk=new Uint16Array(1024));blk[(iy&31)*32+(ix&31)]=h}}
+    coasterBld=B}).catch(()=>{coasterBld={blocks:new Map(),towers:[]}});
+}
+// the tallest building (m) over the 20 m cell at mercator x,y and its eight neighbours (the track's width and some)
+function buildingNear(x,y){
+  const B=coasterBld;if(!B?.W)return 0;const cx=Math.floor((x-B.x0)/B.C),cy=Math.floor((y-B.y0)/B.C);let h=0;
+  for(let iy=cy-1;iy<=cy+1;iy++)for(let ix=cx-1;ix<=cx+1;ix++){if(ix<0||iy<0)continue;const blk=B.blocks.get((iy>>5)*65536+(ix>>5));if(blk){const v=blk[(iy&31)*32+(ix&31)];if(v>h)h=v}}
+  return h;
+}
+// An edge's heights, every 10 m of s: the hills, raised to clear the buildings (8 m over the tallest within ~30 m)
+// with ramps of at most COASTER_GRADE (raised round a building, never lowered below one), smoothed; on the ground
+// through the platforms (COASTER_FLAT), climbing from there at COASTER_GRADE at most — a tall building right by a
+// station is gone through (the stations are underground anyway). Metres.
+const COASTER_GRADE=.7,COASTER_CLEAR=8;
+function coasterProfile(line,lo,hi){
+  const id=`h:${line}:${lo}:${hi}`;let P=edgeGeom.get(id);if(P)return P;
+  const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/10)),st=L/n,need=new Float32Array(n+1),h=new Float32Array(n+1);
+  let j=1;for(let i=0;i<=n;i++){const s=g.total*i/n;while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
+    // (a tower course does not count its own tower)
+    const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:buildingNear(X,Y);need[i]=b?b+COASTER_CLEAR:0;h[i]=Math.max(hillsAt(lo,hi,L,i/n),need[i])}
+  const G=COASTER_GRADE*st;for(let i=1;i<=n;i++)h[i]=Math.max(h[i],h[i-1]-G);for(let i=n-1;i>=0;i--)h[i]=Math.max(h[i],h[i+1]-G);
+  for(let pass=0;pass<3;pass++){const c=h.slice();for(let i=1;i<n;i++)h[i]=Math.max(need[i],(c[i-1]+2*c[i]+c[i+1])/4)}
+  for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT;h[i]=Math.min(h[i],x<=0?0:x<40?COASTER_GRADE*x*x/80:COASTER_GRADE*(x-20))}   // the platforms: on the ground, eased off it
+  const S=g.spiral;if(S){   // a tower course: up off the platform, along the ring to S.top, then the long drop (quintic eases, level at the joins)
+    const E=u=>{u=Math.max(0,Math.min(1,u));return u*u*u*(10-15*u+6*u*u)},h0=30,end=g.total-COASTER_FLAT*mu;
+    for(let i=0;i<=n;i++){const s=g.total*i/n;let v=s<=S.r0?h0*E((s-COASTER_FLAT*mu)/(S.r0-COASTER_FLAT*mu)):s<=S.r1?h0+(S.top-h0)*(s-S.r0)/(S.r1-S.r0):S.top*(1-E((s-S.r1)/(end-S.r1)));
+      h[i]=Math.max(v,s>S.r1?need[i]:0)}}
+  P={h,n,st,mu};edgeGeom.set(id,P);return P;
+}
+function coasterAt(line,lo,hi,s){
+  const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,k=g.total?s/g.total:0,d=Math.min(k,1-k)*L;
+  if(d<=COASTER_FLAT)return [s,0,0,0];
+  const P=coasterProfile(line,lo,hi),x=Math.max(0,Math.min(P.n,k*P.n)),i=Math.min(P.n-1,Math.floor(x));
+  let sg=s,h=(P.h[i]+(P.h[i+1]-P.h[i])*(x-i))*mu;
   const LD=loopD(L,lo,hi);
   if(LD){const D=LD*mu,s0=g.total/2-D/2,u=(s-s0)/D;
     if(u>0&&u<1){const t=2*Math.PI*u,r=D/LOOP_DR;sg=s0+D*u+r*Math.sin(t);h+=r*(1-Math.cos(t))}}
@@ -1350,8 +1428,9 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   // px along F, px along U · F (along the track) · U (the track's up) · rgb shade (shade < 0: the post colour)
   pieces(){
     if(this.list)return this.list;this.list=[];
-    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),k=Math.max(1,Math.round(g.total/mu/400)),pad=70*mu;
-      for(let j=0;j<k;j++){const s0=g.total*j/k,s1=g.total*(j+1)/k;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),k=Math.max(1,Math.round(g.total/mu/400)),H=coasterProfile(e.line,e.lo,e.hi);
+      for(let j=0;j<k;j++){const s0=g.total*j/k,s1=g.total*(j+1)/k;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,top=0;
+        for(let i=Math.floor(j/k*H.n);i<=Math.min(H.n,Math.ceil((j+1)/k*H.n));i++)top=Math.max(top,H.h[i]);const pad=(70+top*1.5)*mu;   // tall ones stand out of view on screen: a wider margin
         for(let i=0;i<g.pts.length;i++){if(i+1<g.pts.length&&g.cum[i+1]<s0)continue;if(i&&g.cum[i-1]>s1)break;const q=g.pts[i];x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y)}
         this.list.push({id:`${e.id}:${j}`,e,s0,s1,box:[x0-pad,y0-pad,x1+pad,y1+pad]})}}
     return this.list;
@@ -1362,7 +1441,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const e=c.e,g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O;
     const ground=s=>{let i=1,j=g.pts.length-1;while(i<j){const m=(i+j)>>1;if(g.cum[m]<s)i=m+1;else j=m}const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
       return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};   // i: first point at or past s, found by halving
-    const pos=s=>{const [sg,h,lat,roll]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.x-=q.fy*lat;q.y+=q.fx*lat;q.h=h;q.roll=roll;q.loop=sg!==s||roll!==0;return q};   // loop: no columns under it
+    const pos=s=>{const [sg,h,lat,roll]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.x-=q.fy*lat;q.y+=q.fx*lat;q.h=h;q.roll=roll;q.loop=sg!==s||roll!==0||!!(g.spiral&&s>g.spiral.r0&&s<g.spiral.r1);return q};   // loop: no columns under it (nor under a tower ring: its turns are stacked)
     const at=s=>{const q=pos(s),A=pos(Math.max(0,s-.5*mu)),B=pos(Math.min(g.total,s+.5*mu));
       let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],[,U]=rolled(R,F,q.roll);
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U,G:[q.fx,q.fy,0],loop:q.loop,roll:q.roll}};
@@ -1944,6 +2023,8 @@ $('toggleMap').onclick=e=>{
 // 롤러코스터: on, the lines are lifted onto their own paths (coasterPath; the route lines on the ground follow them, faintly) and the view
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function setCoaster(on,speed=coasterSpeed){
+  if(on&&!coasterBld){coasterWant=true;$('toggleCoaster').setAttribute('aria-pressed','true');loadCoasterBuildings().then(()=>{if(coasterWant)setCoaster(true,speed)});return}   // its courses need the buildings: wait for them
+  coasterWant=on;
   const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
