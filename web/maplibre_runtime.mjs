@@ -204,7 +204,7 @@ function planTrain(t){
   // Roll on through PREDICT_STOPS stops (dwelling at each) before waiting for data: waiting at the
   // very next stop left trains standing there while they had long left; replacePlans keeps an
   // over-prediction from jumping back.
-  let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===PREDICT_STOPS){upto=j;break}
+  let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===(coaster?99:PREDICT_STOPS)){upto=j;break}
   const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
   // Stop to stop takes pace × (timetable run + 30 s dwell). The feed's 도착→출발 (the station section,
   // zone ~64 s) is not all standing: 도착 comes as the train enters the section and brakes along the
@@ -244,9 +244,52 @@ function planTrain(t){
   // 출발 is sent as the train leaves the station section, ~15 s into its run
   return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres,lead:status==='출발'?15:0};
 }
+// 롤러코스터 (settings): between stations the lines rise off the ground like a coaster track and the
+// trains ride on it; its clock can run faster (×coasterSpeed): the trains then run ahead of the feed
+// (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m.
+let coaster=false,coasterSpeed=1,warp=0,warpAt=0;
+const COASTER_H=65,COASTER_FLAT=110,COASTER_RISE=160;   // m: top of the hills; flat this far either side of a station; climb over this
+const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
+// Half the long edges (≥ LOOP_MIN) also turn a loop at their middle: over LOOP_D of ground the train's
+// ground point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of LOOP_R.
+const LOOP_R=38,LOOP_D=80,LOOP_MIN=800;   // m
+const hasLoop=(L,lo,hi)=>L>=LOOP_MIN&&(lo*31+hi*17)%10<5;
+// [ground distance, height] (mercator units, lo→hi) where the track is at distance s along that line's edge
+function coasterAt(line,lo,hi,s){
+  const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,k=g.total?s/g.total:0,d=Math.min(k,1-k)*L;
+  const env=smooth(Math.max(0,Math.min(1,(d-COASTER_FLAT)/COASTER_RISE)));if(!env)return [s,0];
+  const n=Math.max(1,Math.round(L/380)),seed=((lo*7919+hi*104729)%997)/997,top=COASTER_H*(.7+.3*seed);
+  let sg=s,h=top*env*(.58+.42*Math.cos(2*Math.PI*n*k+seed*6.283))*mu;
+  if(hasLoop(L,lo,hi)){const D=LOOP_D*mu,s0=g.total/2-D/2,u=(s-s0)/D;
+    if(u>0&&u<1){const t=2*Math.PI*u,r=LOOP_R*mu;sg=s0+D*u+r*Math.sin(t);h+=r*(1-Math.cos(t))}}
+  return [sg,h];
+}
+// The loop is LOOP_D of ground but a much longer ride (ride length per ground length g = |(1 + k cos t, k sin t)|,
+// k = 2πR/D). Spaced by ground distance the cars were stretched over a quarter of the loop each and crossed
+// (it looked smashed); they are spaced by ride distance instead. LOOP_ARC[i]: ride (in D) over the first i/64 of it.
+const LOOP_ARC=(()=>{const N=64,k=2*Math.PI*LOOP_R/LOOP_D,g=u=>Math.hypot(1+k*Math.cos(2*Math.PI*u),k*Math.sin(2*Math.PI*u)),a=[0];for(let i=1;i<=N;i++)a.push(a[i-1]+(g((i-1)/N)+g(i/N))/2/N);return a})(),LOOP_RIDE=LOOP_ARC[LOOP_ARC.length-1];
+const loopArc=u=>{const N=LOOP_ARC.length-1,x=u*N,i=Math.min(N-1,Math.floor(x));return LOOP_ARC[i]+(LOOP_ARC[i+1]-LOOP_ARC[i])*(x-i)};
+const loopGround=a=>{let lo=0,hi=LOOP_ARC.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(LOOP_ARC[m]<=a)lo=m;else hi=m}return (lo+(a-LOOP_ARC[lo])/((LOOP_ARC[hi]-LOOP_ARC[lo])||1))/(LOOP_ARC.length-1)};
+// a plan's ride distance ↔ its ground distance d along plan.seq (equal outside the loops; straight on past either end)
+function rideTable(p){
+  if(p.ride)return p.ride;const cum=[0],loops=[];
+  for(let i=0;i<p.seq.length-1;i++){const a=p.seq[i],b=p.seq[i+1],lo=Math.min(a.id,b.id),hi=Math.max(a.id,b.id),g=geom(p.t.line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),Lg=p.cum[i+1]-p.cum[i];
+    const D=hasLoop(g.total/mu,lo,hi)?LOOP_D*mu:0;loops.push(D?[Lg/2-D/2,D]:null);cum.push(cum[i]+Lg+D*(LOOP_RIDE-1))}   // the loop sits in the middle of the edge, either way round
+  return p.ride={cum,loops};
+}
+function toRide(p,d){
+  if(p.seq.length<2)return d;const {cum,loops}=rideTable(p),end=p.cum[p.cum.length-1];if(d<=0)return d;if(d>=end)return cum[cum.length-1]+d-end;
+  let i=0;while(i<p.seq.length-2&&p.cum[i+1]<d)i++;const t=d-p.cum[i],L=loops[i];
+  return cum[i]+(!L||t<=L[0]?t:t<L[0]+L[1]?L[0]+L[1]*loopArc((t-L[0])/L[1]):t+L[1]*(LOOP_RIDE-1));
+}
+function fromRide(p,a){
+  if(p.seq.length<2)return a;const {cum,loops}=rideTable(p),end=cum[cum.length-1];if(a<=0)return a;if(a>=end)return p.cum[p.cum.length-1]+a-end;
+  let i=0;while(i<p.seq.length-2&&cum[i+1]<a)i++;const r=a-cum[i],L=loops[i];
+  return p.cum[i]+(!L||r<=L[0]?r:r<L[0]+L[1]*LOOP_RIDE?L[0]+L[1]*loopGround((r-L[0])/L[1]):r-L[1]*(LOOP_RIDE-1));
+}
 // Where the middle of the train is, as a distance (mercator units) along plan.seq.
 function trainPose(p){
-  let el=age(p.t.receivedAt)+p.lead,ph=p.phases[p.phases.length-1];
+  let el=age(p.t.receivedAt)+p.lead+(coaster?warpNow():0),ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
@@ -293,16 +336,18 @@ function replacePlans(next){
 // the 상행 direction, 상행 trains are right of the line and 하행 trains left of it.
 function trackPoint(p,dist){
   const {seq,cum}=p,line=p.t.line;
-  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0}}
+  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:0}}
   const end=cum[cum.length-1],d=Math.max(0,Math.min(end,dist)),over=dist-d; // beyond either end: extend straight
   let i=0;while(i<seq.length-2&&cum[i+1]<d)i++;
-  const a=seq[i],b=seq[i+1],len=(cum[i+1]-cum[i])||1,pt=along(line,a,b,(d-cum[i])/len),f=pt.f,r=[-f[1],f[0]],x=pt.x+f[0]*over,y=pt.y+f[1]*over;
+  const a=seq[i],b=seq[i+1],len=(cum[i+1]-cum[i])||1;let k=(d-cum[i])/len,h=0;
+  if(coaster){const lo=Math.min(a.id,b.id),hi=Math.max(a.id,b.id),g=geom(line,lo,hi),[sg,hh]=coasterAt(line,lo,hi,(a.id<b.id?k:1-k)*g.total),q=g.total?sg/g.total:0;h=hh;k=a.id<b.id?q:1-q}   // on the coaster: its ground point and height
+  const pt=along(line,a,b,k),f=pt.f,r=[-f[1],f[0]],x=pt.x+f[0]*over,y=pt.y+f[1]*over;
   // Shared-track slot changes at stations; ease it over ~60 m either side instead of jumping.
   const o=j=>edgeOffset(line,seq[j].id,seq[j+1].id)*(seq[j].id<seq[j+1].id?1:-1),B=60*(p.m??=mercStop(line,seq[0]).meterInMercatorCoordinateUnits());
   let off=o(i);
   if(i>0&&d-cum[i]<B)off+=(o(i-1)-off)*.5*(1-(d-cum[i])/B);
   else if(i<seq.length-2&&cum[i+1]-d<B)off+=(o(i+1)-off)*.5*(1-(cum[i+1]-d)/B);
-  return {x,y,f,r,off};
+  return {x,y,f,r,off,h};
 }
 let plans=[];
 const lastPose=new Map(),BLEND_MS=1200;
@@ -310,7 +355,9 @@ const lastPose=new Map(),BLEND_MS=1200;
 // Train body width and lane offset in screen px, shared by the train layer, roof numbers,
 // destination tags and click picking.
 const bodyWidthPx=z=>15+13*smooth(Math.max(0,Math.min(1,(z-13)/4))),TRAIN_MIN_PX=36;   // min on-screen length when zoomed out
-const laneOffsetPx=z=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+bodyWidthPx(z)/2;
+const laneOffsetPx=(z,body=bodyWidthPx(z))=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+body/2;
+// on the coaster (always car by car) zoomed out: a slimmer body, so a 20 m car stays longer than wide (≥ 7 px across)
+const coasterBodyPx=z=>Math.min(bodyWidthPx(z),Math.max(7,20*512*2**z/(40075016.686*Math.cos(37.5*Math.PI/180))/1.6));
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
@@ -508,6 +555,8 @@ class TrainLayer{
     d[i+9]=c[0];d[i+10]=c[1];d[i+11]=c[2];d[i+12]=face;
   }
   corner(x,y,z,u,v,face){
+    // on the coaster each car has its own frame (fr: base, F along it, R across, U its up), so it climbs and turns over in the loop
+    const f=this.fr;if(f){const X=x*this.unit,Y=y*this.unit,Z=z*this.unit;this.vertex(f[0]+f[3]*X+f[6]*Y+f[9]*Z,f[1]+f[4]*X+f[7]*Y+f[10]*Z,f[2]+f[5]*X+f[11]*Z,u,v,face);return}
     this.vertex(this.cx+(this.tx*x-this.ty*y)*this.unit,this.cy+(this.ty*x+this.tx*y)*this.unit,z*this.unit,u,v,face);
   }
   // Roof strip with a sloped height at either end (also used for gangway caps).
@@ -550,13 +599,13 @@ class TrainLayer{
   render(gl,options){
     if(!myLocation&&(!trainsEnabled||!plans.length))return;
     const drawTrainsToo=trainsEnabled;
-    const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;
+    const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=coaster?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;
     // Lane: clear of the route line (its drawn width) by a visible gap, then half a car body.
-    const lanePx=laneOffsetPx(zoom);
+    const lanePx=laneOffsetPx(zoom,bodyPx);
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
     // Keep world coordinates in double precision until subtracting the view-centre origin.
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;
+    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
@@ -572,12 +621,12 @@ class TrainLayer{
       const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit)/2+lanePx*unit;
       if(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach)continue;
       if(pose.moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing
-      const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit),car=total/n,tail=pose.dist-total/2;
+      const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,coaster?n*bodyPx*1.6*unit:0),car=total/n,tail=(coaster?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
-      if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
-      const P=d=>{const q=trackPoint(plan,d);q.x+=shiftX;q.y+=shiftY;return q};
-      const ratio=car/unit/bodyPx,separate=ratio>=1.5;
-      const unfold=smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
+      if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
+      const P=d=>{const q=trackPoint(plan,coaster?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
+      const ratio=car/unit/bodyPx,separate=coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
+      const unfold=coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
       const start=P(tail),finish=P(tail+total);
       // At the LOD boundary, car chords coincide with the compact icon's chord.
       // Articulation and physical gaps then grow continuously, including on curves.
@@ -585,6 +634,7 @@ class TrainLayer{
         const q=P(d),t=(d-tail)/total;
         q.x=(start.x+(finish.x-start.x)*t)*(1-unfold)+q.x*unfold;
         q.y=(start.y+(finish.y-start.y)*t)*(1-unfold)+q.y*unfold;
+        q.h=(start.h+(finish.h-start.h)*t)*(1-unfold)+q.h*unfold;
         return q;
       };
       if(separate){
@@ -592,13 +642,15 @@ class TrainLayer{
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
         for(let k=0;k<n;k++){
           const j=forward?k:n-1-k,A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));
-          const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy);if(len<unit*.1)continue;
-          const tx=dx/len,ty=dy/len,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
+          const dx=B.x-A.x,dy=B.y-A.y,dz=coaster?B.h-A.h:0,len=Math.hypot(dx,dy,dz);if(len<unit*.1)continue;
+          const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
           this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
+          if(coaster){const R=A.r,F=[dx/len,dy/len,dz/len],U=[-F[2]*R[1],F[2]*R[0],F[0]*R[1]-F[1]*R[0]],ul=Math.hypot(...U)||1;
+            this.fr=[A.x+R[0]*off,A.y+R[1]*off,A.h,F[0],F[1],F[2],R[0],R[1],0,U[0]/ul,U[1]/ul,U[2]/ul]}
           const back=j===0,front=j===n-1,panto=/^(1호선|4호선|경의중앙선|수인분당선)$/.test(plan.t.line)&&j%3===1;
           this.kind=(front?1:0)+(back?2:0)+(panto?4:0);
           const w=bodyPx/2,nose=bodyPx*.48,a=back?nose:0,b=front?L-nose:L,low=H*.44;
-          const side=(-ty*camX+tx*camY)>=0?1:-1;
+          const side=(coaster?A.r[0]*camX+A.r[1]*camY:-ty*camX+tx*camY)>=0?1:-1;
           if(j&&unfold>0){this.roof(-.7*unfold,0,H-.75,H-.75,w*.62,4);if(pitched)this.wall(-.7*unfold,0,H-.75,H-.75,side*w*.62,4)}
           if(j<n-1&&unfold>0){this.roof(L,L+.7*unfold,H-.75,H-.75,w*.62,4);if(pitched)this.wall(L,L+.7*unfold,H-.75,H-.75,side*w*.62,4)}
           // Draw only the visible end and side, then cap them with the roof and raked cab glass.
@@ -1207,6 +1259,79 @@ void main(){
   }
 }
 const exitPillars=new ExitPillars();
+// 롤러코스터 track (see coasterAt), drawn on the train canvas under the trains: per direction a pair of
+// rails in the line's colour on a box girder, sleepers, and white columns down to the ground.
+// Built per edge in map space once (lane offsets in px are applied in the shader, so zoom needs no rebuild).
+class CoasterTrack{
+  init(gl){
+    const vs=`#version 300 es
+in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body;uniform vec3 u_post;out vec3 v_c;
+void main(){float lat=(a_o.x+a_o.y*u_lane+a_o.z*u_body+a_o.w)*u_unit;
+  gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lat,a_p.z*a_p.w)+(a_f*a_z.x+a_u*a_z.y)*u_unit,1.);v_c=a_c.a<0.?u_post*-a_c.a:a_c.rgb*a_c.a;}`;
+    const fs=`#version 300 es
+precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o=vec4(v_c*u_alpha,u_alpha);}`;
+    const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
+    this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
+    this.attr=Object.fromEntries(['a_p','a_r','a_o','a_z','a_f','a_u','a_c'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_post','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.b=gl.createBuffer();this.gl=gl;this.key='';this.n=0;this.M=new Float32Array(16);this.cache=new Map();
+    this.O=maplibregl.MercatorCoordinate.fromLngLat(HOME.center);
+    const seen=new Set();this.edges=[];
+    for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++){
+      const lo=Math.min(ids[i-1],ids[i]),hi=Math.max(ids[i-1],ids[i]),id=`${line}:${lo}:${hi}`;if(seen.has(id)||!byId.has(lo)||!byId.has(hi))continue;seen.add(id);this.edges.push({id,line,lo,hi})}
+  }
+  // one edge: 22 floats a vertex — x y h hf (hf 0: on the ground) · R (across, flat) · px across: offset, ×lane, ×body, raw ·
+  // px along F, px along U · F (along the track) · U (the track's up) · rgb shade (shade < 0: the post colour)
+  edge(e){
+    let a=this.cache.get(e.id);if(a)return a;
+    const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O,out=[];
+    let x0=1,y0=1,x1=0,y1=0;
+    const ground=s=>{let i=1;while(i<g.pts.length-1&&g.cum[i]<s)i++;const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
+      return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};
+    const pos=s=>{const [sg,h]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.h=h;q.loop=sg!==s;return q};
+    const at=s=>{const q=pos(s),A=pos(Math.max(0,s-.5*mu)),B=pos(Math.min(g.total,s+.5*mu));
+      let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],U=[-F[2]*R[1],F[2]*R[0],F[0]*R[1]-F[1]*R[0]],ul=Math.hypot(...U)||1;
+      x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);
+      return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U:U.map(c=>c/ul),G:[q.fx,q.fy,0],loop:q.loop}};
+    const UP=[0,0,1],v=(q,hf,side,kb,kp,kf,zp,c,sh,col_)=>{const F=col_?q.G:q.F,U=col_?UP:q.U;out.push(q.x,q.y,q.h,hf,q.R[0],q.R[1],eo,side,kb,kp,kf,zp,F[0],F[1],F[2],U[0],U[1],U[2],c[0],c[1],c[2],sh)};
+    // samples every ~8 m, and densely over the loop
+    const S=[],STEP=8*mu,n=Math.max(1,Math.ceil(g.total/STEP));for(let i=0;i<=n;i++)S.push(g.total*i/n);
+    if(hasLoop(g.total/mu,e.lo,e.hi)){const D=LOOP_D*mu,s0=g.total/2-D/2;for(let i=1;i<96;i++)S.push(s0+D*i/96);S.sort((p,q)=>p-q)}
+    const P=S.map(at),G=-6,NONE=[0,0,0];   // G: girder depth, px
+    for(const side of [-1,1]){
+      for(let i=0,last=-1e9;i<P.length;i++){const q=P[i];if(S[i]-last<30*mu||q.h<3*mu||q.loop)continue;last=S[i];   // columns every ~30 m (none under the loop)
+        for(const [kp,kf] of [[1.8,0],[0,1.8]]){v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,0,side,0,kp,kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,1,side,0,-kp,-kf,G,NONE,-.86,1)}}
+      for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
+        for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
+        for(const kb of [-.3,.3]){v(A,1,side,kb,-.9,0,.4,col,1);v(A,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(A,1,side,kb,-.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,-.9,0,.4,col,1)}}   // rails
+      for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers
+    }
+    a={data:new Float32Array(out),box:[x0,y0,x1,y1]};this.cache.set(e.id,a);return a;
+  }
+  render(gl,M,occlude){
+    const z=map.getZoom();if(!coaster||z<12.5)return;if(!this.p)this.init(gl);
+    const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.15;
+    const vis=[];for(const e of this.edges){if(selected!=='all'&&e.line!==selected)continue;
+      if(!e.box){const g=geom(e.line,e.lo,e.hi),xs=g.pts.map(p=>p.x),ys=g.pts.map(p=>p.y);e.box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
+      const [bx0,by0,bx1,by1]=e.box;if(bx1<lo.x-pad||bx0>hi.x+pad||by0>lo.y+pad||by1<hi.y-pad)continue;vis.push(e)}
+    const key=vis.map(e=>e.id).join('|');
+    if(key!==this.key){this.key=key;const parts=vis.map(e=>this.edge(e).data),all=new Float32Array(parts.reduce((a,p)=>a+p.length,0));let o=0;for(const p of parts){all.set(p,o);o+=p.length}
+      gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,all,gl.DYNAMIC_DRAW);this.n=all.length/22}
+    if(!this.n)return;
+    const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
+    gl.useProgram(this.p);gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
+    gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,laneOffsetPx(z,coasterBodyPx(z)));gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
+    gl.uniform3fv(this.uni.u_post,document.documentElement.dataset.theme==='dark'?[.6,.63,.67]:[.58,.6,.64]);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.b);
+    const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
+    ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18);
+    gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
+    if(occlude){gl.depthMask(false);gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);gl.drawArrays(gl.TRIANGLES,0,this.n)}   // behind building walls: faint
+    gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,this.n);gl.depthMask(false);
+    for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
+  }
+}
+const coasterTrack=new CoasterTrack();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer();
 function updateLabelVisibility(){labelFrame=0;map.triggerRepaint()}
@@ -1316,6 +1441,7 @@ map.on('load',()=>{
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
       const behind=walls.draw(pd.mainMatrix)?1-MAP_THEMES[effectiveTheme()].bld3dOpacity:0;
+      coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
     };
@@ -1396,6 +1522,8 @@ const ICONS={
   moon:svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   auto:svg('<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9"/>'),
   zoom:svg('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>'),
+  coaster:svg('<path d="M2 18c3 0 4-11 7.5-11S12 14 15 14s3.5-6 7-6"/><path d="M5 21v-5M9.5 21V9M15 21v-5M20 21v-10"/>'),
+  speed:svg('<path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/>'),
 };
 function iconButton(el,icon,label){el.innerHTML=ICONS[icon];el.setAttribute('aria-label',label);el.title=label}
 document.head.insertAdjacentHTML('beforeend',`<style>
@@ -1617,12 +1745,26 @@ $('toggleMap').onclick=e=>{
   for(const id of BASEMAP_LAYERS)if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');
   updateSun();
 };
+// 롤러코스터: on, the lines are lifted (route lines stay faintly on the ground as its shadow) and the view
+// tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
+function setCoaster(on,speed=coasterSpeed){
+  const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
+  $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
+  for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
+  $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
+  if(was!==on){if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',on?.3:.9);plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+    if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900})}
+  map.triggerRepaint();
+}
+$('toggleCoaster').onclick=()=>setCoaster(!coaster);
+for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
 // ---- settings (gear in the header): on/off switches ----
 {
   $('refreshButton').onclick=e=>{e.currentTarget.classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
   const btn=$('settingsButton'),panel=$('settingsPanel');
   $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;
+  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
   const setOpen=o=>{panel.hidden=!o;btn.setAttribute('aria-expanded',String(o))};
   btn.onclick=e=>{e.stopPropagation();setOpen(panel.hidden)};
   document.addEventListener('click',e=>{if(!panel.hidden&&!panel.contains(e.target))setOpen(false)});
