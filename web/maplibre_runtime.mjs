@@ -306,7 +306,7 @@ function trainPose(p){
     p.hold=null;p.creep=null;
   }
   if(p.glide){const w=(performance.now()-p.glide.at)/p.glide.ms;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
-  return {dist,moving};
+  return {dist,moving,stand:!moving&&ph.dur!==Infinity?{t:el,dur:ph.dur}:null};   // stand: s into a stop and how long it lasts
 }
 // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
 // A forward correction is run over 10 ms per metre (1.5–8 s), so a big one is not a dash.
@@ -1322,6 +1322,62 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     if(this.cache.size>4000){const [k0,a0]=this.cache.entries().next().value;gl.deleteBuffer(a0.b);this.cache.delete(k0)}   // oldest out
     return a;
   }
+  use(gl,M,z){
+    const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
+    gl.useProgram(this.p);gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
+    gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,laneOffsetPx(z,coasterBodyPx(z)));gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
+    gl.uniform3fv(this.uni.u_post,document.documentElement.dataset.theme==='dark'?[.6,.63,.67]:[.58,.6,.64]);
+    gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
+  }
+  ptrs(gl){const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
+    ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18)}
+  // 승하차 (롤러코스터, zoom 16+): a train standing at a stop lets people off each door, then the ones waiting there step on,
+  // within its dwell. A show, not counts (the feed has none): 1–4 a door, more at rush hour and at stations that stand longer.
+  // They use the train's side facing the camera, drawn over the train (on the far side the body hid them, and between the
+  // two directions there is no room). Built each frame for trains on screen.
+  people(gl,M,occlude){
+    const z=map.getZoom();if(!coaster||!trainsEnabled||z<RIDER_MINZOOM)return;if(!this.p)this.init(gl);
+    {
+      const sc=coasterBodyPx(z)/9,O=this.O,out=[];   // sc: px a unit — a person ~.55 of the 3 m body width tall, as in life
+      const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast());
+      const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),busy=rushNow()?1:0;
+      const rnd=(a,b,c)=>{let h=(a*73856093^b*19349663^c*83492791)>>>0;h=Math.imul(h^h>>>13,1274126177)>>>0;return (h>>>8)/16777216};
+      const quad=(arr,q,off,a,b,c,d,col,sh)=>{const g=q.s;for(const [kp,kf,zp] of [a,b,c,a,c,d])arr.push(q.x-O.x,q.y-O.y,0,1,q.r[0]*g,q.r[1]*g,off*g,g,.5,kp,kf,zp,q.f[0],q.f[1],0,0,0,1,col[0],col[1],col[2],sh)};   // q.s: the side, ±R
+      // a person: legs, torso, arms and head; limbs lie across the train's length (the side the camera sees) and swing
+      // with the stride (sw: −1…1 while walking, 0 standing)
+      const limb=(arr,q,off,kp,f0,z0,f1,z1,w,col,sh)=>quad(arr,q,off,[kp,f0-w,z0],[kp,f0+w,z0],[kp,f1+w,z1],[kp,f1-w,z1],col,sh);
+      const person=(arr,q,off,kp,kf,bob,col,pants,sw)=>{const u=sc,z=bob*u,hip=z+2.3*u,neck=z+4*u,w=.7*u,hw=.55*u;
+        for(const [d,k] of [[-1,.75],[1,.9]])limb(arr,q,off,kp,kf+d*.28*u,hip,kf+d*.28*u+sw*d*.9*u,z,.24*u,pants,k);   // legs
+        quad(arr,q,off,[kp-w,kf,hip],[kp+w,kf,hip],[kp+w,kf,neck],[kp-w,kf,neck],col,.8);quad(arr,q,off,[kp,kf-w,hip],[kp,kf+w,hip],[kp,kf+w,neck],[kp,kf-w,neck],col,1);   // torso
+        for(const [d,k] of [[-1,.82],[1,.95]])limb(arr,q,off,kp,kf+d*.92*u,neck-.1*u,kf+d*1.02*u-sw*d*.75*u,hip+.1*u,.19*u,SKIN,k);   // arms (bare, short sleeves), swinging against the legs
+        quad(arr,q,off,[kp-hw,kf,neck],[kp+hw,kf,neck],[kp+hw,kf,neck+1.4*u],[kp-hw,kf,neck+1.4*u],SKIN,.9);quad(arr,q,off,[kp,kf-hw,neck],[kp,kf+hw,neck],[kp,kf+hw,neck+1.4*u],[kp,kf-hw,neck+1.4*u],SKIN,1)};   // head
+      const walk=(t,t0,len)=>smooth(Math.max(0,Math.min(1,(t-t0)/len)));
+      for(const plan of plans){
+        const pose=trainPose(plan);if(!pose.stand||pose.stand.dur<12)continue;
+        const mid=trackPoint(plan,pose.dist);if(mid.x<lo.x||mid.x>hi.x||mid.y>lo.y||mid.y<hi.y)continue;
+        const {t,dur}=pose.stand,m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),n=plan.cars,car=plan.carMetres*m,tail=toRide(plan,pose.dist)-n*car/2;
+        const side=(mid.r[0]*camX+mid.r[1]*camY)>0?1:-1,arr=out,no=+String(plan.t.trainNo).replace(/\D/g,'')||1;   // side: the one facing the camera
+        const open=1.5,close=dur-4,offAt=open,onAt=open+(close-open)*.42,step=Math.min(1.4,(close-open)*.45/4),many=1+busy+(dur>40?1:0);
+        for(let j=0;j<n;j++)for(let k=0;k<2;k++){
+          const q=trackPoint(plan,fromRide(plan,tail+(j+(k?.72:.28))*car));q.s=side;   // door: 28 / 72 % along the car
+          const nOff=Math.min(4,1+Math.floor(rnd(no,j,k)*(many+1))),nOn=Math.min(4,1+Math.floor(rnd(no,j,k+7)*(many+1)));
+          for(let i=0;i<nOff;i++){const t0=offAt+i*step+rnd(no,j,k*10+i)*.4,u=walk(t,t0,2.4);if(t<t0||t>t0+3.4)continue;   // off: door → platform, then gone
+            const kp=1+u*(5+rnd(no,j,30+i)*9),kf=(rnd(no,j,40+i)-.5)*12*u,go=u<1,ph=t*9+i*2;person(arr,q,q.off,kp*sc,kf*sc,go?Math.abs(Math.sin(ph))*.3:0,SHIRTS[(no+j*3+k*5+i)%SHIRTS.length],PANTS[(no+j+k+i)%PANTS.length],go?Math.sin(ph):0)}
+          for(let i=0;i<nOn;i++){const t0=onAt+i*step+rnd(no,j,k*10+i+5)*.4,u=walk(t,t0,2.4);if(t>t0+2.4)continue;   // on: waiting on the platform → door
+            const kp=1+(1-u)*(6+rnd(no,j,50+i)*8),kf=(rnd(no,j,60+i)-.5)*12*(1-u),go=u>0&&u<1,ph=t*9+i*2+1;person(arr,q,q.off,kp*sc,kf*sc,go?Math.abs(Math.sin(ph))*.3:0,SHIRTS[(no+j*5+k*3+i+4)%SHIRTS.length],PANTS[(no+j*2+k+i)%PANTS.length],go?Math.sin(ph):0)}
+        }
+      }
+      this.crowd=new Float32Array(out);
+      if(out.length)trainFrameSoon(1000/TRAIN_FPS);   // they walk: keep drawing
+    }
+    const data=this.crowd;if(!data.length)return;
+    if(!this.pb)this.pb=gl.createBuffer();
+    this.use(gl,M,z);gl.bindBuffer(gl.ARRAY_BUFFER,this.pb);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);this.ptrs(gl);
+    gl.depthMask(false);const n=data.length/22;
+    if(occlude){gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);gl.drawArrays(gl.TRIANGLES,0,n)}   // behind building walls: faint, as the trains
+    gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,n);
+    for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
+  }
   render(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<12.5)return;if(!this.p)this.init(gl);
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),w=hi.x-lo.x;
@@ -1337,18 +1393,15 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     if(!pending)for(const [l,pad] of [[lvl*2,w*.6],[lvl/2,0]])if(LV.includes(l))for(const c of mine){if(performance.now()-t0>=4){pending=true;break}if(inside(c,pad)&&!this.cache.has(c.id+':'+l))this.piece(c,l)}
     if(pending)trainFrameSoon(16);
     if(!draw.length)return;
-    const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
-    gl.useProgram(this.p);gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
-    gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,laneOffsetPx(z,coasterBodyPx(z)));gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
-    gl.uniform3fv(this.uni.u_post,document.documentElement.dataset.theme==='dark'?[.6,.63,.67]:[.58,.6,.64]);
-    const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
-    const each=()=>{for(const a of draw){gl.bindBuffer(gl.ARRAY_BUFFER,a.b);ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
+    this.use(gl,M,z);
+    const each=()=>{for(const a of draw){gl.bindBuffer(gl.ARRAY_BUFFER,a.b);this.ptrs(gl);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
     if(occlude){gl.depthMask(false);gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);each()}   // behind building walls: faint
     gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);each();gl.depthMask(false);
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
   }
 }
+const RIDER_MINZOOM=16,SKIN=[.96,.8,.66],PANTS=[[.16,.2,.32],[.24,.3,.45],[.12,.12,.14],[.42,.36,.3],[.3,.32,.36]],SHIRTS=[[.9,.32,.3],[.24,.52,.86],[.98,.76,.18],[.32,.68,.44],[.58,.42,.8],[.95,.58,.28],[.22,.26,.32],[.92,.92,.94]];
 const coasterTrack=new CoasterTrack();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer();
@@ -1461,6 +1514,7 @@ map.on('load',()=>{
       const behind=walls.draw(pd.mainMatrix)?1-mapPalette().bld3dOpacity:0;
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
+      coasterTrack.people(gl,pd.mainMatrix,behind);   // 승하차, over the trains
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
