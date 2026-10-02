@@ -284,15 +284,19 @@ const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(co
 // R = 45..100 m by edge, D = R·LOOP_DR.
 const LOOP_DR=80/38,LOOP_MIN=800;   // m
 const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
-// Some edges (≥ 700 m) also turn a corkscrew (as 88열차): over D of ground the track rolls once or twice round its own
-// line (θ, eased in and out) about a heart line CORK_R·D up, so it swings out to the side and over (lat, h) while the
-// cars turn upside down and back. Off the loop, clear of the climbs at either end. [start m from lo, D m, turns] or null.
-const CORK_R=.13,corkOf=(L,lo,hi)=>{
-  if(L<700||hash(lo,hi,3)>=.45)return null;const T=hash(lo,hi,4)<.3?2:1,D=(80+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
+// Some edges (≥ 700 m) also turn a corkscrew (as 88열차): over D of ground (200–250 m a turn: shorter, a car spanned a
+// quarter turn and looked wrung) the cars roll once or twice about their own middle (θ, eased in and out) and the rails
+// wind round them (CORK_HEART: the shaders turn both about a line half a body up). Off the loop, clear of the climbs at
+// either end. [start m from lo, D m, turns] or null.
+const corkOf=(L,lo,hi)=>{
+  if(L<700||hash(lo,hi,3)>=.45)return null;const T=hash(lo,hi,4)<.3?2:1,D=(200+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
   const ok=c=>c-D/2>=end&&c+D/2<=L-end&&(!LD||Math.abs(c-L/2)>=LD/2+D/2+30);
   const want=LD?(hash(lo,hi,6)<.5?.27:.73)*L:(.35+.3*hash(lo,hi,6))*L;
   for(const c of [want,L-want,.25*L,.75*L,.5*L])if(ok(c))return [c-D/2,D,T];return null};
-const corkTheta=(u,T)=>2*Math.PI*T*(u-Math.sin(2*Math.PI*u)/(2*Math.PI));
+const CORK_HEART=.34;   // × body px: the corkscrew's axis above the rails, the cars' middle (their height is .68 body)
+// roll at u (0..1) of the way through: a steady rate with 15 % ramps at either end (eased all the way, the middle turned
+// twice as fast and wrung the cars there)
+const corkTheta=(u,T)=>{const e=.15,f=u<e?u*u/(2*e):u>1-e?1-e-(1-u)*(1-u)/(2*e):u-e/2;return 2*Math.PI*T*f/(1-e)};
 // [ground distance, height] (mercator units, lo→hi) where the track is at distance s along that line's edge
 function coasterAt(line,lo,hi,s){
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,k=g.total?s/g.total:0,d=Math.min(k,1-k)*L;
@@ -307,8 +311,8 @@ function coasterAt(line,lo,hi,s){
   if(LD){const D=LD*mu,s0=g.total/2-D/2,u=(s-s0)/D;
     if(u>0&&u<1){const t=2*Math.PI*u,r=D/LOOP_DR;sg=s0+D*u+r*Math.sin(t);h+=r*(1-Math.cos(t))}}
   const C=corkOf(L,lo,hi);let lat=0,roll=0;
-  if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1){roll=corkTheta(u,C[2]);const r=CORK_R*C[1]*mu;lat=-r*Math.sin(roll);h+=r*(1-Math.cos(roll))}}
-  return [sg,h,lat,roll];   // lat: across (+ to the right going lo→hi), roll: about the way lo→hi
+  if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1)roll=corkTheta(u,C[2])}
+  return [sg,h,lat,roll];   // lat: across (+ to the right going lo→hi; none now), roll: about the way lo→hi
 }
 // Cars are spaced by ride distance, the length along the track as built (hills, loop, corkscrew), not by ground
 // distance: spaced by ground distance they were stretched over a quarter of the loop each and crossed (it looked
@@ -701,8 +705,9 @@ class TrainLayer{
           const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
           this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
           let side=(coaster?A.r[0]*camX+A.r[1]*camY:-ty*camX+tx*camY)>=0?1:-1;
-          if(coaster){const ra=A.roll||0,rb=B.roll||0,F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,Math.atan2(Math.sin(ra)+Math.sin(rb),Math.cos(ra)+Math.cos(rb)));   // turned over in a corkscrew; the mean as an angle (2π at its end and 0 past it averaged to π: upside down under the track)
-            this.fr=[A.x,A.y,A.h,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
+          if(coaster){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,articulated(tail+(j+.5)*car).roll||0);   // turned over in a corkscrew, as at its middle (the ends' 2π and 0 averaged to π: upside down under the track)
+            const [,U0]=rolled(A.r,F,0),hc=CORK_HEART*bodyPx*unit;   // turned about its own middle (the rails wind round the same line)
+            this.fr=[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
           const back=j===0,front=j===n-1,panto=/^(1호선|4호선|경의중앙선|수인분당선)$/.test(plan.t.line)&&j%3===1;
           this.kind=(front?1:0)+(back?2:0)+(panto?4:0);
           const w=bodyPx/2,nose=bodyPx*.48,a=back?nose:0,b=front?L-nose:L,low=H*.44;
@@ -1326,7 +1331,8 @@ class CoasterTrack{
     const vs=`#version 300 es
 in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body;uniform vec3 u_post;out vec3 v_c;
 void main(){float lane=(a_o.x+a_o.y*u_lane)*u_unit,across=(a_o.z*u_body+a_o.w)*u_unit;   // lane: flat; across: along R = U × F (turned in a corkscrew)
-  gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lane,a_p.z*a_p.w)+cross(a_u,a_f)*across+(a_f*a_z.x+a_u*a_z.y)*u_unit,1.);v_c=a_c.a<0.?u_post*-a_c.a:a_c.rgb*a_c.a;}`;
+  vec3 r=vec3(a_r,0.),p=r-dot(r,a_f)*a_f;float pl=length(p);vec3 U0=pl>1e-6?cross(a_f,p/pl):a_u;   // the up before any roll: turned (a_u ≠ U0), the rails wind round a line CORK_HEART body up
+  gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lane,a_p.z*a_p.w)+cross(a_u,a_f)*across+(a_f*a_z.x+a_u*a_z.y)*u_unit+(U0-a_u)*(${CORK_HEART}*u_body*u_unit),1.);v_c=a_c.a<0.?u_post*-a_c.a:a_c.rgb*a_c.a;}`;
     const fs=`#version 300 es
 precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o=vec4(v_c*u_alpha,u_alpha);}`;
     const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
@@ -1359,7 +1365,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const pos=s=>{const [sg,h,lat,roll]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.x-=q.fy*lat;q.y+=q.fx*lat;q.h=h;q.roll=roll;q.loop=sg!==s||roll!==0;return q};   // loop: no columns under it
     const at=s=>{const q=pos(s),A=pos(Math.max(0,s-.5*mu)),B=pos(Math.min(g.total,s+.5*mu));
       let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],[,U]=rolled(R,F,q.roll);
-      return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U,G:[q.fx,q.fy,0],loop:q.loop}};
+      return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U,G:[q.fx,q.fy,0],loop:q.loop,roll:q.roll}};
     // samples on the edge's own grid (so neighbouring pieces meet), the piece's ends, and densely over the loop
     // zoomed out: sampled at ≤ 16 m, then thinned to what bends (every lvl m alone cut the hills and curves to zigzags)
     const fine=Math.min(lvl,16),S=[c.s0],n=Math.max(1,Math.ceil(g.total/(fine*mu)));for(let i=Math.ceil(c.s0/g.total*n);i<=n;i++){const x=g.total*i/n;if(x>=c.s1)break;if(x>c.s0)S.push(x)}S.push(c.s1);
@@ -1367,8 +1373,9 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     for(const [s0,D,T] of dense){const m=Math.max(24,96*8/lvl|0)*T;for(let i=1;i<m;i++){const x=s0+D*i/m;if(x>c.s0&&x<c.s1)S.push(x)}}if(dense.length)S.sort((p,q)=>p-q);   // densely over the loop and the corkscrew
     let P=S.map(s=>Object.assign(at(s),{s}));
     if(lvl>fine){const tol=lvl/40*mu,K=[P[0]];let k=0;   // keep a sample where the ones since the last kept stray > tol (~¼ px; at ~1 px the corners showed) from a straight run
+      // every corkscrew sample is kept (roll): its turn is in U, not in x/y/h
       const off=(A,B,Q)=>{const dx=B.x-A.x,dy=B.y-A.y,dh=B.h-A.h,l2=dx*dx+dy*dy+dh*dh||1,u=Math.max(0,Math.min(1,((Q.x-A.x)*dx+(Q.y-A.y)*dy+(Q.h-A.h)*dh)/l2));return Math.hypot(A.x+dx*u-Q.x,A.y+dy*u-Q.y,A.h+dh*u-Q.h)};
-      for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
+      for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop||!!P[j-1].roll;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
       K.push(P[P.length-1]);P=K}
     const G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
     const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
