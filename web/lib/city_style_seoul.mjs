@@ -1,0 +1,612 @@
+// Seoul miniature-city art direction. All dimensions are world metres unless suffixed Px.
+// 2026-10-03 QA1: SC4 material families, daylight contrast, roof mosaics and office emission contract.
+// Data only. Existing fields remain compatible; implementationContract lists NEW fields needing renderer binding.
+// Changing this pack does not implement family selection, reflection or the independent night mask by itself.
+// See scratchpad/city/design/QA1.md and city-spec.md v1.3. No shader changes in this revision.
+export const SEOUL_CITY_STYLE = {
+  "schemaVersion": 1,
+  "id": "seoul",
+  "label": "서울 / 심시티",
+  "classification": {
+    "minimumHeightM": 3,
+    "missingHeightM": 9,
+    "unknownLanduse": "unknown",
+    "overlappingLanduse": "smallest-containing-area",
+    "equalAreaPriority": [
+      "school",
+      "hospital",
+      "university",
+      "college",
+      "civic",
+      "public",
+      "industrial",
+      "retail",
+      "commercial",
+      "residential"
+    ],
+    "rules": [
+      {"type": "civic", "landuse": ["school", "university", "college", "hospital", "civic", "public"]},
+      {"type": "industrial", "landuse": ["industrial", "railway"], "maxHeightM": 32},
+      {"type": "apartment", "landuse": ["residential"], "minHeightM": 18, "minAreaM2": 300},
+      {"type": "office", "minHeightM": 45},
+      {"type": "office", "landuse": ["commercial"], "minHeightM": 24},
+      {"type": "house", "maxHeightM": 15, "maxAreaM2": 450, "excludedLanduse": ["retail", "commercial", "industrial"]},
+      {"type": "shop"}
+    ],
+    "mergedLowrise": {"maxHeightM": 15, "areaGreaterThanM2": 1200, "facadePanelM": [8, 14], "allowPitchedRoof": false}
+  },
+  "buildingDefaults": {
+    "opacity": 1,
+    "wallWeights": [0.4, 0.3, 0.2, 0.1],
+    "parapetThicknessM": 0.18,
+    "roofEquipmentEdgeClearanceM": 0.6,
+    "glass": {"light": "#5B7684", "dark": "#1B2B33"},
+    "litWindows": {
+      "kelvin": [2700, 3500, 4500],
+      "colors": ["#FFD59A", "#FFE7BD", "#DDEAF0"],
+      "emission": 0.7,
+      "groundFloorEmission": 0.9,
+      "floorProbabilityMultiplier": [0.65, 1.2],
+      "seed": "building-floor-bay",
+      "bloom": false
+    },
+    "equipment": {
+      "minZoom": 16,
+      "minHeightM": 12,
+      "minAreaM2": 120,
+      "penthouseCount": 1,
+      "penthouseAreaRatio": [0.04, 0.07],
+      "penthouseHeightM": 1.8,
+      "hvacCount": [1, 3],
+      "hvacSizeM": [1.6, 1, 0.9],
+      "maxRoofAreaRatio": 0.12,
+      "colors": {"light": "#C0CAC7", "dark": "#4D5C59"}
+    },
+    "waterproofRoof": {"maxHeightM": 15, "probability": 0.18, "colors": {"light": "#71917D", "dark": "#3A5047"}},
+    "windowCellMinPx": 1.25,
+    "windowBandMinPx": 0.65
+  },
+  "buildings": {
+    "house": {
+      "wall": {"light": ["#BA8069", "#CEA083", "#E0CEB3", "#C7C6B5"], "dark": ["#51443E", "#5C4B40", "#625D50", "#504F46"]},
+      "roof": {
+        "flat": {"light": "#8A9291", "dark": "#333D3A"},
+        "parapetM": 0.35,
+        "pitched": {
+          "probability": 0.2,
+          "maxHeightM": 9,
+          "areaM2": [45, 180],
+          "riseMaxM": 2.2,
+          "riseHeightRatio": 0.2,
+          "colors": {"light": ["#855B49", "#656F68", "#9D7658"], "dark": ["#483B34", "#354642", "#564533"]},
+          "weights": [0.55, 0.3, 0.15]
+        },
+        "variants": {"light": ["#919B9A", "#607B93", "#A56650", "#C5C6B9"], "dark": ["#414F50", "#2D4356", "#533A32", "#5C6259"]},
+        "variantWeights": [0.35, 0.25, 0.25, 0.15]
+      },
+      "floorM": 3,
+      "bayM": 3,
+      "windowRatio": [0.42, 0.48],
+      "pattern": "punched",
+      "baysPerGroup": [2, 4],
+      "groundFloor": {"heightM": 3, "glassRatio": 0.42},
+      "night": {"litRatio": 0.42, "temperatureWeights": [0.75, 0.22, 0.03]},
+      "materialMix": [
+        {"family": "redBrick", "weight": 0.5},
+        {"family": "plaster", "weight": 0.3},
+        {"family": "paintedConcrete", "weight": 0.2}
+      ]
+    },
+    "apartment": {
+      "wall": {"light": ["#E4E5DD", "#D0DBD8", "#ECE4D3", "#BACACD"], "dark": ["#555E60", "#48585B", "#646662", "#465557"]},
+      "roof": {
+        "flat": {"light": "#A1B2B5", "dark": "#36484A"},
+        "parapetM": 0.55,
+        "variants": {"light": ["#ACBCBE", "#7F99AD", "#CCCAB9", "#8C9E91"], "dark": ["#4B5E65", "#354F62", "#626357", "#3E5147"]},
+        "variantWeights": [0.4, 0.3, 0.2, 0.1]
+      },
+      "floorM": 2.9,
+      "bayM": 3.2,
+      "windowRatio": [0.56, 0.6],
+      "pattern": "vertical-balconies",
+      "balconyEveryBays": 3,
+      "balconyBrightness": 1.07,
+      "groundFloor": {"heightM": 3.2, "glassRatio": 0.56, "colors": {"light": "#B0B6B0", "dark": "#3F5052"}},
+      "night": {"litRatio": 0.48, "temperatureWeights": [0.65, 0.3, 0.05]},
+      "materialMix": [
+        {"family": "paintedConcrete", "weight": 0.6},
+        {"family": "ivoryStone", "weight": 0.22},
+        {"family": "warmStone", "weight": 0.1},
+        {"family": "redBrick", "weight": 0.08}
+      ]
+    },
+    "shop": {
+      "wall": {"light": ["#DDC9AA", "#C8AE8D", "#ECE0C7", "#BFCBC6"], "dark": ["#5E5549", "#514B43", "#676257", "#4B5352"]},
+      "roof": {
+        "flat": {"light": "#A0A89D", "dark": "#383F3D"},
+        "parapetM": 0.55,
+        "variants": {"light": ["#9AA5A6", "#6B849A", "#A97758", "#C7CBBB"], "dark": ["#475456", "#334859", "#594231", "#5D6559"]},
+        "variantWeights": [0.35, 0.25, 0.25, 0.15]
+      },
+      "floorM": 3.5,
+      "bayM": 3,
+      "windowRatio": [0.66, 0.57],
+      "pattern": "horizontal-bands",
+      "spandrelM": 0.4,
+      "groundFloor": {"heightM": 4.2, "glassRatio": 0.72, "storefrontLanduse": ["commercial", "retail"]},
+      "awning": {
+        "minZoom": 16.5,
+        "landuse": ["retail", "commercial"],
+        "probability": 0.35,
+        "frontageRatio": [0.5, 0.7],
+        "depthM": 0.8,
+        "heightM": 0.25,
+        "baseM": 3.1,
+        "colors": {"light": ["#9C614D", "#667C6B", "#C2AC76"], "dark": ["#583D33", "#354D40", "#65573A"]},
+        "weights": [0.45, 0.35, 0.2]
+      },
+      "night": {"litRatio": 0.38, "groundFloorLitRatio": 0.78, "temperatureWeights": [0.55, 0.35, 0.1]},
+      "materialMix": [
+        {"family": "ivoryStone", "weight": 0.25},
+        {"family": "warmStone", "weight": 0.3},
+        {"family": "redBrick", "weight": 0.25},
+        {"family": "paintedConcrete", "weight": 0.12},
+        {"family": "silverGlass", "weight": 0.08}
+      ]
+    },
+    "office": {
+      "wall": {"light": ["#8AA8B9", "#CBDADF", "#B4C3C9", "#B7B4A3"], "dark": ["#344D58", "#405D65", "#2C444F", "#536B6E"]},
+      "roof": {
+        "flat": {"light": "#8FA7B4", "dark": "#293D46"},
+        "parapetM": 0.65,
+        "variants": {"light": ["#9AAFBF", "#5C748C", "#CFD5D3", "#A99171"], "dark": ["#405665", "#293E52", "#5B676D", "#4F463A"]},
+        "variantWeights": [0.4, 0.3, 0.2, 0.1]
+      },
+      "floorM": 3.6,
+      "bayM": 1.8,
+      "windowRatio": [0.82, 0.8],
+      "pattern": "curtain-wall",
+      "glass": {"light": "#82A5BA", "dark": "#233D49"},
+      "mullionM": 0.1,
+      "beltEveryFloors": 6,
+      "beltHeightM": 0.5,
+      "groundFloor": {"heightM": 4.8, "glassRatio": 0.78},
+      "setback": {"minHeightM": 80, "minAreaM2": 600, "probability": 0.35, "topHeightRatio": 0.15, "maxInsetM": 1.5},
+      "night": {
+        "litRatio": 0.22,
+    "groundFloorLitRatio": 0.45,
+        "temperatureWeights": [0.2, 0.65, 0.15],
+        "windowRatio": [0.72, 0.62],
+        "emission": 0.5,
+        "groundFloorEmission": 0.72,
+        "floorProbabilityMultiplier": [0.55, 1.15],
+        "brightnessTiers": {"multipliers": [0.55, 0.8, 1.1], "weights": [0.5, 0.4, 0.1]},
+        "targetLitFacadeAreaRatio": [0.06, 0.11],
+        "maxContiguousLitBays": 3
+      },
+      "materialMix": [
+        {"family": "navyGlass", "weight": 0.24},
+        {"family": "silverGlass", "weight": 0.22},
+        {"family": "blueGlass", "weight": 0.14},
+        {"family": "ivoryStone", "weight": 0.2},
+        {"family": "warmStone", "weight": 0.12},
+        {"family": "redBrick", "weight": 0.08}
+      ],
+      "dayReflection": {
+        "enabled": true,
+        "space": "linear-srgb",
+        "skyHorizon": "#EEF3F1",
+        "skyZenith": "#C5E4F7",
+        "heightRangeRatio": [0.15, 0.95],
+        "mixByHeight": [0.06, 0.2],
+        "faceStrengthRange": [0.65, 1],
+        "maxMix": 0.24,
+        "diffuseRangeLinear": [0.66, 1.04],
+        "bandWidthRatio": [0.2, 0.35],
+        "bandDeltaLStar": [4, 7],
+        "seed": "building-family-face",
+        "animated": false
+      },
+      "articulation": {
+        "minHeightM": 60,
+        "replacesLegacySetback": true,
+        "crownWeights": {"flatBand": 0.5, "insetCap": 0.3, "steppedCap": 0.2},
+        "topZoneHeightRatio": [0.06, 0.1],
+        "maxTopZoneHeightM": 4.5,
+        "maxInsetM": 1.2,
+        "keepOriginalMaxHeight": true,
+        "beltEveryFloors": [6, 8, 10],
+        "beltHeightM": [0.35, 0.55],
+        "cornerWidthM": [0.35, 0.65],
+        "cornerDeltaLStar": [5, 9],
+        "crownDeltaLStar": [8, 14],
+        "maxAccentFacadeAreaRatio": 0.06,
+        "minDetailZoom": 16.5
+      }
+    },
+    "industrial": {
+      "wall": {"light": ["#C4CFCD", "#ACBFCA", "#D4CBB8", "#95AAA9"], "dark": ["#485354", "#3D4F51", "#57554B", "#354C4F"]},
+      "roof": {
+        "flat": {"light": "#95ABB8", "dark": "#334951"},
+        "parapetM": 0.3,
+        "panel": {"minZoom": 16.5, "spacingM": 4, "contrastRatio": 0.08, "slopeRiseM": 0.8},
+        "variants": {"light": ["#9FB9C9", "#718FA4", "#B97657", "#C5CECB"], "dark": ["#44616F", "#30495C", "#5A3E31", "#596762"]},
+        "variantWeights": [0.35, 0.25, 0.25, 0.15]
+      },
+      "floorM": 4.5,
+      "bayM": 5,
+      "windowRatio": [0.68, 0.24],
+      "pattern": "clerestory",
+      "ribSpacingM": 5,
+      "groundFloor": {"heightM": 4.5, "glassRatio": 0.24, "colors": {"light": "#88908B", "dark": "#344548"}},
+      "night": {"litRatio": 0.12, "temperatureWeights": [0.2, 0.5, 0.3]},
+      "materialMix": [
+        {"family": "galvanizedMetal", "weight": 0.7},
+        {"family": "paintedConcrete", "weight": 0.2},
+        {"family": "redBrick", "weight": 0.1}
+      ]
+    },
+    "civic": {
+      "wall": {"light": ["#E4D5B8", "#D1CBB7", "#F0E2C9", "#C2D2C3"], "dark": ["#625D50", "#53574D", "#6B6455", "#4C5C55"]},
+      "roof": {
+        "flat": {"light": "#ACAD99", "dark": "#3B4741"},
+        "parapetM": 0.65,
+        "variants": {"light": ["#A8B8BC", "#7C94A6", "#B28261", "#C9CBB9"], "dark": ["#495C64", "#354C5D", "#604934", "#5E6658"]},
+        "variantWeights": [0.35, 0.25, 0.25, 0.15]
+      },
+      "floorM": 3.6,
+      "bayM": 3.2,
+      "windowRatio": [0.53, 0.6],
+      "pattern": "regular-grid",
+      "groundFloor": {"heightM": 4, "glassRatio": 0.53, "colors": {"light": "#BBB39E", "dark": "#484D44"}},
+      "night": {"litRatio": 0.2, "landuseLitRatio": {"hospital": 0.48}, "temperatureWeights": [0.15, 0.5, 0.35]},
+      "materialMix": [
+        {"family": "ivoryStone", "weight": 0.45},
+        {"family": "warmStone", "weight": 0.25},
+        {"family": "redBrick", "weight": 0.2},
+        {"family": "paintedConcrete", "weight": 0.1}
+      ]
+    }
+  },
+  "ground": {
+    "aliases": {
+      "unknown": "base",
+      "railway": "industrial",
+      "university": "civic",
+      "college": "civic",
+      "school": "civic",
+      "public": "civic"
+    },
+    "light": {
+      "base": "#E0E4DC",
+      "residential": "#DCE2D0",
+      "commercial": "#D5DCD9",
+      "retail": "#E2D8C3",
+      "industrial": "#C7D2D0",
+      "civic": "#E7DDC5",
+      "hospital": "#DEE7DA",
+      "park": "#9DBC83",
+      "grass": "#AEC98E",
+      "forest": "#6F965C",
+      "water": "#79B2CB",
+      "sidewalk": "#ECE7D8",
+      "ballast": "#9BA4A4"
+    },
+    "dark": {
+      "base": "#202C31",
+      "residential": "#26332F",
+      "commercial": "#2C3337",
+      "retail": "#343530",
+      "industrial": "#29363A",
+      "civic": "#343C34",
+      "hospital": "#2F3D39",
+      "park": "#274535",
+      "grass": "#304A35",
+      "forest": "#1F392E",
+      "water": "#173B4B",
+      "sidewalk": "#3D4543",
+      "ballast": "#364146"
+    },
+    "waterReflectionMaxOpacity": 0.06
+  },
+  "roads": {
+    "aliases": {"trunk": "motorway"},
+    "classes": {
+      "motorway": {"widthM": 26, "sidewalkM": 0, "colors": {"light": "#79868E", "dark": "#26353D"}},
+      "primary": {"widthM": 22, "sidewalkM": 3, "colors": {"light": "#859299", "dark": "#2E3D43"}},
+      "secondary": {"widthM": 16, "sidewalkM": 2.5, "colors": {"light": "#939FA1", "dark": "#334146"}},
+      "tertiary": {"widthM": 11, "sidewalkM": 2, "colors": {"light": "#A3ACA8", "dark": "#37454A"}},
+      "minor": {"widthM": 6, "sidewalkM": 1.4, "colors": {"light": "#B8C0B5", "dark": "#3F4B49"}},
+      "service": {"widthM": 3.5, "sidewalkM": 0.8, "colors": {"light": "#C6CABE", "dark": "#46524D"}}
+    },
+    "lane": {
+      "minZoom": 16.2,
+      "minRoadWidthPx": 10,
+      "classes": ["primary", "secondary", "tertiary"],
+      "dashM": 3,
+      "gapM": 5,
+      "widthM": 0.12,
+      "colors": {"light": "#D8D7BD", "dark": "#727C77"},
+      "opacity": {"light": 0.65, "dark": 0.45}
+    },
+    "centerLine": {"widthM": 0.14, "colors": {"light": "#CBB66D", "dark": "#827B50"}},
+    "crossing": {"minZoom": 17, "stripeM": 0.5, "gapM": 0.5, "depthM": 3, "cornerSetbackM": 2, "requireVerifiedIntersection": true}
+  },
+  "props": {
+    "trees": {
+      "streetSpacingM": {"primary": 18, "secondary": 16, "tertiary": 14},
+      "streetHeightM": [5.5, 8],
+      "streetCrownDiameterM": [3.2, 4.8],
+      "trunkDiameterM": 0.24,
+      "shapeWeights": {"rounded": 0.7, "upright": 0.3},
+      "colors": {"light": ["#5B824D", "#79A45D", "#98B96C"], "dark": ["#213F30", "#2B4D35", "#3C5840"]},
+      "weights": [0.35, 0.45, 0.2],
+      "trunk": {"light": "#766854", "dark": "#39443A"},
+      "parkAreaPerTreeM2": 180,
+      "parkMinSpacingM": 7,
+      "parkHeightM": [6, 10],
+      "parkCrownDiameterM": [4, 6],
+      "maxVisible": {"desktop": 900, "phone": 360}
+    },
+    "lamps": {
+      "spacingM": 28,
+      "primaryStaggerM": 14,
+      "intersectionClearanceM": 6,
+      "heightM": 7,
+      "armM": 1.2,
+      "poleDiameterM": 0.12,
+      "pole": {"light": "#6E7873", "dark": "#3C4C4F"},
+      "kelvin": 3000,
+      "light": "#FFD79B",
+      "poolRadiusM": 3.2,
+      "poolOpacity": 0.1,
+      "simcityPoolMaxOpacity": 0.14
+    },
+    "vehicles": {
+      "carSizeM": [4.3, 1.8, 1.45],
+      "suvSizeM": [4.8, 1.9, 1.7],
+      "suvRatio": 0.2,
+      "colors": ["#DDDCD0", "#A6AFAC", "#43545B", "#C88753", "#527E95", "#A96655"],
+      "weights": [0.36, 0.25, 0.22, 0.09, 0.05, 0.03],
+      "bus": {"ratio": 0.04, "sizeM": [10.5, 2.4, 3.1], "colors": ["#326B9D", "#5A8858"], "weights": [0.7, 0.3], "minZoom": 16.7},
+      "per100M": {"primary": 2.5, "secondary": 2, "tertiary": 1.3, "minor": 0.6, "service": 0.2},
+      "laneOffsetWidthRatio": 0.22,
+      "trafficSide": "right",
+      "intersectionClearanceM": 8,
+      "maxVisible": {"desktop": 240, "phone": 90},
+      "speedMps": [6, 10],
+      "headlights": "#FFE2AC",
+      "taillights": "#BF4E39",
+      "beamMaxM": 2,
+      "beamMaxOpacity": 0.2
+    },
+    "people": {
+      "heightM": 1.7,
+      "shoulderM": 0.45,
+      "per100M": {"retail": 7, "commercial": 7, "residential": 3, "park": 4, "industrial": 1},
+      "clothes": ["#667C89", "#AC7D65", "#D0BB8D", "#596951"],
+      "skin": {"light": "#C79D7D", "dark": "#755D4B"},
+      "maxVisible": {"desktop": 160, "phone": 50},
+      "speedMps": [0.8, 1.2]
+    }
+  },
+  "lighting": {
+    "light": {"ambient": 0.64, "directional": 0.36, "color": "#FFF9F2", "maxSideDarken": 0.34, "maxRoofBrighten": 0.12},
+    "dark": {"ambient": 0.72, "directional": 0.28, "color": "#BCD0D6"},
+    "shadow": {"color": "#394D4B", "maxLengthM": 80, "featherM": 0.8},
+    "ao": {"opacity": 0.1, "widthM": 0.5},
+    "referenceSun": {"azimuthDeg": 225, "elevationDeg": 42}
+  },
+  "modes": {
+    "simcity": {
+      "saturation": {"light": 1, "dark": 1},
+      "brightness": {"light": 1, "dark": 1},
+      "windowEmission": 1,
+      "lampPool": 1,
+      "shadowOpacity": {"light": 0.18, "dark": 0.08}
+    },
+    "coaster": {
+      "saturation": {"light": 0.82, "dark": 0.65},
+      "brightness": {"light": 1, "dark": 0.9},
+      "windowEmission": 0.82,
+      "lampPool": 0.75,
+      "shadowOpacity": {"light": 0.14, "dark": 0.06}
+    },
+    "colorMath": {"space": "linear-srgb", "lumaWeights": [0.2126, 0.7152, 0.0722]},
+    "transitionMs": 180
+  },
+  "lod": {
+    "windows": [15, 16],
+    "roofEquipment": [16, 16.5],
+    "streetTrees": [15.2, 16],
+    "parkTrees": [14.7, 15.5],
+    "lamps": [16, 16.8],
+    "vehicles": [16, 16.8],
+    "people": [17.2, 18],
+    "fade": "smoothstep",
+    "reducedMotion": "static-props"
+  },
+  "train": {
+    "coaster88": {
+      "bodyColors": {"cream": "#F4E4BC", "red": "#C94235", "gold": "#E9AF32", "teal": "#244D56"},
+      "bodyAreaWeights": {"cream": 0.5, "red": 0.3, "gold": 0.12, "teal": 0.08},
+      "seat": "#723C31",
+      "safetyBar": "#C5C4B2",
+      "chassis": "#293A3F",
+      "stripeHeightRatio": [0.08, 0.12],
+      "maxRouteColorAreaRatio": 0.08,
+      "nightMinBodyLight": 0.55,
+      "bulbColor": "#FFD27E",
+      "bulbEmission": 0.85
+    }
+  },
+  "styleRevision": "2026-10-03-QA1",
+  "changeLog": [
+    {
+      "date": "2026-10-03",
+      "revision": "QA1",
+      "changes": [
+        "SC4 reference: nine material families, type mixes, roof mosaics and stable neighbour contrast targets",
+        "Daylight neutral tint, broader value range; six office families include masonry",
+        "Office emission mask contract and night brightness tiers; renderer binding required for new fields"
+      ]
+    }
+  ],
+  "implementationContract": {
+    "status": "data-and-directions-only",
+    "existingFields": "Compatible with current resolvePack; reload to rebuild cached geometry and palette.",
+    "newFieldsRequireBinding": [
+      "materialFamilies",
+      "materialAssignment",
+      "buildings.*.materialMix",
+      "buildings.*.roof.variants",
+      "buildings.*.roof.variantWeights",
+      "buildings.office.dayReflection",
+      "buildings.office.night.windowRatio",
+      "buildings.office.night.emission",
+      "buildings.office.night.groundFloorEmission",
+      "buildings.office.night.brightnessTiers",
+      "buildings.office.night.floorProbabilityMultiplier",
+      "buildings.office.night.maxContiguousLitBays",
+      "buildings.office.night.targetLitFacadeAreaRatio",
+      "buildings.office.articulation"
+    ],
+    "priority": [
+      "material-family-selection",
+      "independent-night-emission-mask",
+      "daylight-face-and-reflection",
+      "roof-variants",
+      "crown-and-corner-detail"
+    ]
+  },
+  "materialFamilies": {
+    "navyGlass": {
+      "label": "먹남색 유리",
+      "kind": "glass",
+      "wall": {"light": ["#30475E", "#203348", "#405B74"], "dark": ["#263847", "#1D2B39", "#314553"]},
+      "glass": {"light": ["#243E57", "#192E46", "#36516C"], "dark": ["#1A2D3D", "#162433", "#233947"]},
+      "roof": {"light": ["#566D83", "#465E75", "#708699"], "dark": ["#354956", "#293D4B", "#435866"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "curtain-wall", "windowRatio": [0.82, 0.8], "reflectionScale": 0.65},
+      "targetSunlitLStar": [24, 40]
+    },
+    "silverGlass": {
+      "label": "밝은 은색 유리",
+      "kind": "glass",
+      "wall": {"light": ["#DCE5E5", "#C8D7DD", "#EDF0EA"], "dark": ["#55646A", "#445A65", "#647275"]},
+      "glass": {"light": ["#B3CCD7", "#97B6C9", "#C9DDE3"], "dark": ["#344B59", "#2B4253", "#435E67"]},
+      "roof": {"light": ["#BBC9D0", "#A7BBC7", "#CFD8D8"], "dark": ["#4D6069", "#3D535E", "#5A7075"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "curtain-wall", "windowRatio": [0.82, 0.8], "reflectionScale": 1},
+      "targetSunlitLStar": [62, 80]
+    },
+    "blueGlass": {
+      "label": "푸른 반사 유리",
+      "kind": "glass",
+      "wall": {"light": ["#81A8C4", "#698EAD", "#A6C6D8"], "dark": ["#354C61", "#2A3F55", "#486276"]},
+      "glass": {"light": ["#668FAE", "#507797", "#87AFC8"], "dark": ["#243D53", "#1C3146", "#325067"]},
+      "roof": {"light": ["#8DA8BB", "#728FA6", "#A9C0CC"], "dark": ["#3B556A", "#30475D", "#506A7C"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "curtain-wall", "windowRatio": [0.82, 0.8], "reflectionScale": 0.85},
+      "targetSunlitLStar": [43, 62]
+    },
+    "ivoryStone": {
+      "label": "크림·백색 석재",
+      "kind": "stone",
+      "wall": {"light": ["#EEE8D8", "#DCDACD", "#F6F0E4"], "dark": ["#736C5B", "#626153", "#837C6A"]},
+      "glass": {"light": ["#526876", "#425A68", "#697F87"], "dark": ["#243741", "#1C2E38", "#334751"]},
+      "roof": {"light": ["#9CAAB2", "#B3BCBF", "#7D929F"], "dark": ["#3E505A", "#50616A", "#31434F"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "regular-grid", "windowRatio": [0.48, 0.64], "reflectionScale": 0.12},
+      "targetSunlitLStar": [72, 88]
+    },
+    "warmStone": {
+      "label": "황갈 석재",
+      "kind": "stone",
+      "wall": {"light": ["#C9AD80", "#B59064", "#DCC59E"], "dark": ["#685740", "#56452F", "#7C6950"]},
+      "glass": {"light": ["#56666C", "#40535F", "#718088"], "dark": ["#25343B", "#1E2C35", "#354750"]},
+      "roof": {"light": ["#917F69", "#AD9D82", "#728896"], "dark": ["#463E35", "#585044", "#33434D"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "regular-grid", "windowRatio": [0.52, 0.62], "reflectionScale": 0.1},
+      "targetSunlitLStar": [52, 72]
+    },
+    "redBrick": {
+      "label": "적갈 벽돌",
+      "kind": "masonry",
+      "wall": {"light": ["#A96550", "#8C5144", "#C08665"], "dark": ["#523A33", "#432F2B", "#64483B"]},
+      "glass": {"light": ["#506877", "#3E5565", "#6B808A"], "dark": ["#22343F", "#1A2B36", "#31444D"]},
+      "roof": {"light": ["#697E8E", "#935F4E", "#AEB4AD"], "dark": ["#324653", "#4C3530", "#4C5553"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "punched", "windowRatio": [0.46, 0.58], "reflectionScale": 0.06},
+      "targetSunlitLStar": [37, 56]
+    },
+    "paintedConcrete": {
+      "label": "서울 회백 콘크리트",
+      "kind": "concrete",
+      "wall": {"light": ["#DDE2DC", "#BFCBD0", "#EBE5D5"], "dark": ["#586465", "#46575E", "#6D6D61"]},
+      "glass": {"light": ["#637D8C", "#4F697C", "#7E97A3"], "dark": ["#293F4D", "#203440", "#3A515A"]},
+      "roof": {"light": ["#ABB9B9", "#7D94A4", "#C5CCBF"], "dark": ["#4A5D61", "#354D5D", "#5B665D"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "type-default", "windowRatio": [0.56, 0.6], "reflectionScale": 0.08},
+      "targetSunlitLStar": [65, 84]
+    },
+    "plaster": {
+      "label": "따뜻한 미장",
+      "kind": "plaster",
+      "wall": {"light": ["#E5D4B6", "#D1C7AE", "#EFE3CC"], "dark": ["#655B47", "#585241", "#77705B"]},
+      "glass": {"light": ["#5E7680", "#4E626D", "#7D8D90"], "dark": ["#293B43", "#22313B", "#3B4A4D"]},
+      "roof": {"light": ["#8A9696", "#677C8D", "#AA775B"], "dark": ["#435354", "#304353", "#584437"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "type-default", "windowRatio": [0.42, 0.48], "reflectionScale": 0.04},
+      "targetSunlitLStar": [65, 83]
+    },
+    "galvanizedMetal": {
+      "label": "청회색 금속 지붕·패널",
+      "kind": "metal",
+      "wall": {"light": ["#B9C9D1", "#93A9B8", "#D1D8D5"], "dark": ["#4B606A", "#3A4E5C", "#606C6B"]},
+      "glass": {"light": ["#667E8A", "#526B79", "#8199A1"], "dark": ["#2A3E49", "#20343F", "#3C505A"]},
+      "roof": {"light": ["#9FB9C9", "#7998AF", "#C2CFD4"], "dark": ["#456070", "#324F63", "#5A6D76"]},
+      "variantWeights": [0.5, 0.3, 0.2],
+      "facade": {"pattern": "type-default", "windowRatio": [0.68, 0.24], "reflectionScale": 0.12},
+      "targetSunlitLStar": [49, 72]
+    }
+  },
+  "materialAssignment": {
+    "familySeed": "canonical-building-id-and-world-footprint",
+    "variantSeedSalt": 173,
+    "roofSeedSalt": 431,
+    "retainAcrossThemeModeZoom": true,
+    "recolorVisibleBuildingsOnNeighbourArrival": false,
+    "facadePolicyByType": {
+      "office": "use-family-pattern-and-window-ratio",
+      "house": "keep-type-pattern-and-window-ratio",
+      "apartment": "keep-type-pattern-and-window-ratio",
+      "shop": "keep-type-pattern-and-window-ratio",
+      "industrial": "keep-type-pattern-and-window-ratio",
+      "civic": "keep-type-pattern-and-window-ratio"
+    },
+    "roofPriority": ["waterproof-subset", "type-roof-variants", "family-roof", "legacy-flat"],
+    "roofPriorityByType": {"office": ["family-roof", "type-roof-variants", "legacy-flat"]},
+    "adjacency": {
+      "maxFacadeGapM": 55,
+      "minHeightM": 24,
+      "minAreaM2": 250,
+      "maxNeighbors": 4,
+      "maxRerolls": 2,
+      "targetDeltaLStar": 12,
+      "minPassingPairShare": 0.6,
+      "strongDeltaLStar": 22,
+      "strongPairShare": 0.25,
+      "maxSameFamilyRun": 3,
+      "targetFamilyShareTolerance": 0.08,
+      "minimumSampleBuildings": 50,
+      "measurement": "daylight-median-dominant-material-excluding-punched-windows-mullions-highlights-and-cast-shadows",
+      "scope": "stable-source-geometry-preprocess",
+      "missingNeighbours": "stable-weighted-hash-no-reroll",
+      "targetIsSoft": true
+    },
+    "roofTargets": {"lightLStarRange": [40, 75], "maxSameToneShareInLowriseBlock": 0.45}
+  }
+};
+
+export default SEOUL_CITY_STYLE;

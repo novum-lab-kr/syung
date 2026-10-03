@@ -4,6 +4,7 @@ import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
 import {RideLayer} from './lib/park_rides.mjs';
 import {NightLayer} from './lib/park_night.mjs';
+import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -822,6 +823,7 @@ class TrainLayer{
     this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
     // Reuse the staging array and matrix: no JS vertex arrays or per-vertex objects each frame.
     this.data=new Float32Array(131072);this.matrix=new Float32Array(16);this.rgb=new Map();
+    this.c88=new CoasterTrain();   // coaster-train: the 88열차 (its livery from the Seoul style pack's train.coaster88)
   }
   onAdd(map,gl){
     this.map=map;
@@ -832,6 +834,7 @@ class TrainLayer{
     this.b=gl.createBuffer();
     this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
     this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.c88.init(gl);   // coaster-train:
   }
   vertex(x,y,z,u,v,face){
     if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
@@ -891,7 +894,7 @@ class TrainLayer{
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
     // Keep world coordinates in double precision until subtracting the view-centre origin.
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;
+    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.c88.begin(ox,oy);   // coaster-train: this frame's 88열차 cars start empty
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
@@ -936,6 +939,7 @@ class TrainLayer{
           if(coaster){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,articulated(tail+(j+.5)*car).roll||0);   // turned over in a corkscrew, as at its middle (the ends' 2π and 0 averaged to π: upside down under the track)
             const [,U0]=rolled(A.r,F,0),hc=CORK_HEART*bodyPx*unit;   // turned about its own middle (the rails wind round the same line)
             this.fr=[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
+          if(coaster){this.c88.car(this.fr,L,bodyPx,color,j===n-1,j===0,plan.id,j);continue}   // coaster-train: on the coaster the car is an 88열차 car (drawn after this loop); no beam or gangways
           const back=j===0,front=j===n-1,panto=/^(1호선|4호선|경의중앙선|수인분당선)$/.test(plan.t.line)&&j%3===1;
           this.kind=(front?1:0)+(back?2:0)+(panto?4:0);
           const w=bodyPx/2,nose=bodyPx*.48,a=back?nose:0,b=front?L-nose:L,low=H*.44;
@@ -979,6 +983,8 @@ class TrainLayer{
         this.beam(L,w);
       }
     }
+    // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
+    if(coaster)this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1)});
     if(this.used){
       gl.useProgram(this.p);
       const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
@@ -1007,7 +1013,7 @@ class TrainLayer{
     if(animating&&following&&!easing)followSoon();
     else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
   }
-  onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p)}
+  onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88.dispose(gl)}   // coaster-train: and the 88열차's
 }
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
