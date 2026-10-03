@@ -12,6 +12,8 @@
 //   const night=new NightLayer(); night.init(gl); night.setTrackBulbs(coasterTrack.bulbs());
 //   night.render(gl,matrix,{now,zoom,phone,reducedMotion,bounds,pixelRatio}); night.animating(); night.dispose(gl);
 
+import { SEOUL_COASTER_STYLE as STYLE, metresPerPixel } from './coaster_style_seoul.mjs';
+
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;
 const mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
@@ -71,21 +73,21 @@ void main(){
   o = vec4(v_rgb * a, a);
 }`;
 
-const BULB_EVERY = 18;   // metres between track bulbs, as coasterTrack.bulbs() spaces them
+const BULB_EVERY = STYLE.night.bulbEveryM;   // metres between track bulbs, as coasterTrack.bulbs() spaces them
 const lerpZ = (z, a, b, c) => z <= 13 ? a : z >= 17 ? c : z <= 15 ? a + (b - a) * (z - 13) / 2 : b + (c - b) * (z - 15) / 2;
-// core diameter in CSS px by zoom, halo 4x capped at 18 px; scale 0.8 for the track string (the user: more, bigger festoons)
+// Core and halo diameters in CSS pixels; the pack caps them at 2.2 / 7 px.
 export function bulbSize(zoom, pixelRatio, scale = 1) {
-  const core = lerpZ(zoom, 2.4, 3.4, 4.6), glow = Math.min(core * 4, 18);
+  const core = lerpZ(zoom, ...STYLE.night.corePx), glow = lerpZ(zoom, ...STYLE.night.haloPx);
   return { point: glow * scale * pixelRatio, coreFrac: core / glow };
 }
 export function sparkSize(zoom, pixelRatio) {           // the fireworks: halo 3x, no cap
   const core = lerpZ(zoom, 2.6, 3.4, 4.2), glow = core * 3;
   return { point: glow * pixelRatio, coreFrac: core / glow };
 }
-// Eight to pick from, not four: the cream kept the park looking like one long string of the same lamp.
-export const BULB_PAL = ['#FFE4A3', '#E8B4A9', '#B9DAD1', '#CDBDE7', '#F2C6A0', '#A9D9DB', '#E7B8D2', '#C6DCAF'];
-export const NEON = { drop: '#A9D9DB', saucer: '#D6B4E8', swing: '#EDB6A2', ferris: '#BBD9C0' };   // one signature a ride
-export const CREAM = '#FFE4A3';
+// The existing eight-slot shader contract, with warm bulbs and restrained gold accents.
+export const BULB_PAL = [STYLE.palette.dark.bulbWarm, ...Array(7).fill(STYLE.palette.dark.gold)];
+export const NEON = {drop:STYLE.palette.dark.gold,saucer:STYLE.palette.dark.bulbWarm,swing:STYLE.palette.dark.bulbWarm,ferris:STYLE.palette.dark.bulbWarm};
+export const CREAM = STYLE.palette.dark.bulbWarm;
 
 export function compile(gl, vsrc, fsrc) {
   const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(x)); return x };
@@ -118,13 +120,10 @@ void main(){
   gl_PointSize = u_size;
   vec3 rgb = u_rgb;
   float b = u_bright;
-  if (u_chase > .5 && mod(a_p.w, 4.) < .5) {          // every fourth bulb wears its line's colour, and the wave runs through it
-    rgb = mix(u_lines[int(a_i)], vec3(1.), .25);
-    float x = mod(a_p.w * ${BULB_EVERY}. - 18. * u_time, 600.);        // a 90 m swell, 18 m/s, once every 600 m
-    b = mix(.35, .80, smoothstep(0., 1., max(0., 1. - abs(x - 45.) / 45.)));
-  }
+  if (mod(a_p.w, 4.) < .5) rgb=u_lines[int(a_i)];
+  if(u_chase>.5)b*=1.+${STYLE.night.chaseAmplitude}*sin(6.283185*(a_p.w*${BULB_EVERY}./${STYLE.night.chaseLengthM}.-u_time*u_anim/${STYLE.night.chasePeriodS}.));
   v_rgb = rgb;
-  v_mix = vec2(u_core, b * twinkle(hash1(float(gl_VertexID) * .37 + 3.1), u_time, u_anim));
+  v_mix = vec2(u_core, b);
 }`;
 
 // ── the fireworks ───────────────────────────────────────────────────────────────────────────────
@@ -142,7 +141,7 @@ export const FIREWORK_SITES = [
 const LANTERN_PAL = ['#FFD399', '#EAB0BE', '#B8D9CC'];          // in a 4:2:2 run along each cluster
 const BEAM_PAL = ['#C0D8EA', '#E5D3AB'];
 const SPARK_PAL = ['#FFD58A', '#F2A9BC', '#AFE0EA', '#CAB7EF'], HEAD = '#FFF0C8';
-const CYCLE = 28, RISE = 1.2, LIFE = 3.2, SECOND = 1.4, MAXP = 80, MAXT = 4;
+const CYCLE = STYLE.night.fireworksPeriodS, RISE = 1.2, LIFE = 3.2, SECOND = 1.4, MAXP = 80, MAXT = 4;
 
 const FW_VS = `#version 300 es
 layout(location=0) in vec4 a_f;              // site, burst (0 main / 1 여의도's smaller follow-up), particle index (-1: the rocket), trail sample
@@ -238,7 +237,7 @@ void main(){
 const BEAM_VS = `#version 300 es
 layout(location=0) in vec4 a_f;              // site, beam, plane, along (0..1)
 layout(location=1) in float a_v;             // across (-1..1)
-uniform mat4 u_matrix; uniform float u_time, u_anim, u_peak;
+uniform mat4 u_matrix; uniform float u_time, u_anim, u_peak, u_count;
 uniform vec4 u_site[4], u_lamp[4];           // lamp: the fixture's offset in metres, and the way it points
 uniform float u_on[4];
 uniform vec3 u_pal[2];
@@ -246,10 +245,10 @@ out vec3 v_rgb; out vec2 v_e;
 ${BULB_TWINKLE}
 void main(){
   int si = int(a_f.x); float beam = a_f.y, plane = a_f.z, u = a_f.w;
-  if (u_on[si] < .5) { gl_Position = vec4(2., 2., 2., 1.); return; }
+  if (u_on[si] < .5 || beam >= u_count) { gl_Position = vec4(2., 2., 2., 1.); return; }
   vec4 S = u_site[si], L = u_lamp[si];
   float h = hash1(float(si) * 3.1 + beam * 1.7);
-  float az = L.z + (beam > .5 ? .55 : -.55) + .349 * sin(6.283185 * (u_time * u_anim / (18. + h * 6.) + h));
+  float az = L.z + (beam > .5 ? .55 : -.55) + .349 * sin(6.283185 * (u_time * u_anim / (${STYLE.night.beamPeriodS}. + h * 6.) + h));
   float tilt = .262;                                           // 15° off vertical
   vec3 ax = vec3(sin(tilt) * cos(az), sin(tilt) * sin(az), cos(tilt));
   vec3 e1 = normalize(cross(ax, vec3(0., 0., 1.))), e2 = normalize(cross(ax, e1));
@@ -273,7 +272,7 @@ export class NightLayer {
     this.M = new Float32Array(16);
     this.track = null;
     this.stats = { bulbs: 0, sparks: 0, plats: 0, lanterns: 0, draws: 0, ms: 0 };
-    this.plats = null; this.ping = 0;
+    this.plats = null; this.ping = 0; this.beamOn = new Float32Array(4);
     this._moving = false;
   }
 
@@ -284,10 +283,10 @@ export class NightLayer {
     this.pF = compile(gl, FW_VS, BULB_FS);
     this.uF = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_phone', 'u_trails', 'u_site', 'u_on', 'u_pal', 'u_head', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pF, n)]));
 
-    // one vertex a spark: every site, both bursts, every particle, every trail sample, plus the rockets
+    // One burst per site/cycle; sites retain their staggered 28-second festival clock.
     const out = [];
     for (let s = 0; s < FIREWORK_SITES.length; s++) {
-      for (let b = 0; b < 2; b++) {
+      for (let b = 0; b < 1; b++) {
         if (b && !FIREWORK_SITES[s].big) continue;
         for (let t = 0; t < MAXT; t++) out.push(s, b, -1, t);                      // the rocket head and its tail
         for (let i = 0; i < MAXP; i++) for (let t = 0; t < MAXT; t++) out.push(s, b, i, t);
@@ -324,7 +323,7 @@ export class NightLayer {
 
     // the searchlights: two beams a site, two crossed wedges each
     this.pS = compile(gl, BEAM_VS, BEAM_FS);
-    this.uS = Object.fromEntries(['u_matrix', 'u_time', 'u_anim', 'u_peak', 'u_site', 'u_lamp', 'u_on', 'u_pal'].map(n => [n, gl.getUniformLocation(this.pS, n)]));
+    this.uS = Object.fromEntries(['u_matrix', 'u_time', 'u_anim', 'u_peak', 'u_count', 'u_site', 'u_lamp', 'u_on', 'u_pal'].map(n => [n, gl.getUniformLocation(this.pS, n)]));
     { const f = [], v = [];
       for (let si = 0; si < 4; si++) for (let bm = 0; bm < 2; bm++) for (let pl = 0; pl < 2; pl++)
         for (const [u, vv] of [[0,-1],[0,1],[1,1],[0,-1],[1,1],[1,-1]]) { f.push(si, bm, pl, u); v.push(vv) }
@@ -471,13 +470,13 @@ export class NightLayer {
       }
       // the cap: the track string gives way first, and below z14.5 it is every other bulb anyway (36 m)
       const cap = (phone ? 2500 : 6000) * .6;
-      const stride = Math.max(zoom < 14.5 ? 2 : 1, Math.ceil(total / Math.max(1, cap)));
-      const sz = bulbSize(zoom, pixelRatio, .8);
+      const stride = Math.max(zoom < 14.5 ? 2 : 1, Math.ceil(5*metresPerPixel(zoom)/BULB_EVERY), Math.ceil(total / Math.max(1, cap)));
+      const sz = bulbSize(zoom, pixelRatio);
       gl.useProgram(this.pT);
       gl.uniformMatrix4fv(this.uT.u_matrix, false, MT);
       gl.uniform1f(this.uT.u_time, ts); gl.uniform1f(this.uT.u_size, sz.point); gl.uniform1f(this.uT.u_core, sz.coreFrac);
-      gl.uniform1f(this.uT.u_bright, .85); gl.uniform1f(this.uT.u_stride, stride); gl.uniform1f(this.uT.u_anim, reducedMotion ? 0 : 1);
-      gl.uniform3fv(this.uT.u_rgb, this.creamRGB); gl.uniform2f(this.uT.u_wt, .85, .12);
+      gl.uniform1f(this.uT.u_bright, STYLE.night.trackEmission); gl.uniform1f(this.uT.u_stride, stride); gl.uniform1f(this.uT.u_anim, reducedMotion ? 0 : 1);
+      gl.uniform3fv(this.uT.u_rgb, this.creamRGB); gl.uniform2f(this.uT.u_wt, 1, .22);
       gl.uniform1f(this.uT.u_chase, T.chase && zoom >= 14.5 ? 1 : 0); gl.uniform3fv(this.uT.u_lines, T.lines);
       gl.bindVertexArray(T.va);
       for (let i = 0; i < runs.length; i += 2) { gl.drawArrays(gl.POINTS, runs[i], runs[i + 1]); draws++ }
@@ -492,7 +491,7 @@ export class NightLayer {
       this.on[i] = on ? 1 : 0; if (on) any = true;
     }
     // the fireworks
-    if (!reducedMotion) {
+    if (!reducedMotion && (!phone || STYLE.night.phoneFireworks)) {
       if (any) {
         const sz = sparkSize(zoom, pixelRatio);
         gl.useProgram(this.pF);
@@ -524,8 +523,8 @@ export class NightLayer {
         gl.useProgram(this.pP);
         gl.uniformMatrix4fv(this.uP.u_matrix, false, MT);
         gl.uniform2f(this.uP.u_vp, gl.drawingBufferWidth, gl.drawingBufferHeight);
-        gl.uniform1f(this.uP.u_half, 2.5 * pixelRatio); gl.uniform1f(this.uP.u_core, .3);
-        gl.uniform1f(this.uP.u_caps, zoom < 14.5 ? 1 : 0); gl.uniform2f(this.uP.u_wt, .85, .12);
+        gl.uniform1f(this.uP.u_half, 1.75 * pixelRatio); gl.uniform1f(this.uP.u_core, .3);
+        gl.uniform1f(this.uP.u_caps, zoom < 14.5 ? 1 : 0); gl.uniform2f(this.uP.u_wt, STYLE.night.stationEmission, .16);
         gl.bindVertexArray(this.platVA[pg]);
         gl.drawArrays(gl.TRIANGLES, 0, o / 12); draws++;
       }
@@ -546,13 +545,16 @@ export class NightLayer {
       gl.bindVertexArray(this.lanVA); gl.drawArrays(gl.POINTS, 0, this.lanN); draws++;
       lanterns = this.lanN;
     }
-    if (zoom >= 14.5 && !phone) {
+    if (zoom >= STYLE.night.beamMinZoom && !reducedMotion) {
+      const cx=(x0+x1)/2,cy=(y0+y1)/2;
+      const nearest=FIREWORK_SITES.map((s,i)=>({i,d:(s.x-cx)**2+(s.y-cy)**2})).filter(s=>this.on[s.i]).sort((a,b)=>a.d-b.d||a.i-b.i)[0];
+      this.beamOn.fill(0);if(nearest)this.beamOn[nearest.i]=1;
       gl.useProgram(this.pS);
       gl.uniformMatrix4fv(this.uS.u_matrix, false, MT);
       gl.uniform1f(this.uS.u_time, ts); gl.uniform1f(this.uS.u_anim, reducedMotion ? 0 : 1);
-      gl.uniform1f(this.uS.u_peak, .07);   // the spec's .025 was invisible over the river; still no banding at this
+      gl.uniform1f(this.uS.u_peak, STYLE.night.beamOpacity);gl.uniform1f(this.uS.u_count,phone?STYLE.night.phoneBeamCap:STYLE.night.beamCap);
       gl.uniform4fv(this.uS.u_site, this.site); gl.uniform4fv(this.uS.u_lamp, this.lamp);
-      gl.uniform1fv(this.uS.u_on, this.on); gl.uniform3fv(this.uS.u_pal, this.beamRGB);
+      gl.uniform1fv(this.uS.u_on, this.beamOn); gl.uniform3fv(this.uS.u_pal, this.beamRGB);
       gl.bindVertexArray(this.beamVA); gl.drawArrays(gl.TRIANGLES, 0, this.beamN); draws++;
     }
     this.ping ^= 1;

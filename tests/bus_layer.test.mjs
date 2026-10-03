@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer} from '../web/lib/bus_layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds} from '../web/lib/bus_layer.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
@@ -43,15 +43,15 @@ test('broken coordinates and unknown stop references never reach the map source'
   assert.deepEqual(data.routeById.get(route.id).stopIds, ['01', '02']);
 });
 
-async function withLayerFixture(run) {
+async function withLayerFixture(run, enabled=true) {
   const originals = Object.fromEntries(['document', 'localStorage', 'matchMedia', 'devicePixelRatio', 'cancelAnimationFrame'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
   const node = () => ({style: {}, setAttribute() {}, addEventListener() {}, removeEventListener() {}, after() {}, append() {}, remove() {}, clientWidth: 400, clientHeight: 300,
     getContext: () => ({clearRect() {}, setTransform() {}})});
   const sources = new Map(), canvas = node(), container = node();
-  const map = {getLayer: () => true, addLayer() {}, setLayoutProperty() {}, addSource: id => sources.set(id, {setData() {}}), getSource: id => sources.get(id),
+  const map = {getLayer: () => true, addLayer() {}, setLayoutProperty() {}, addSource: id => sources.set(id, {setData(data) {this.data=data;}}), getSource: id => sources.get(id),
     getCanvas: () => canvas, getContainer: () => container, getZoom: () => 16, on() {}, off() {},
     getBounds: () => ({getWest: () => 126.99, getSouth: () => 37.49, getEast: () => 127.02, getNorth: () => 37.52})};
-  Object.assign(globalThis, {document: {documentElement: {dataset: {}}, createElement: node, getElementById: () => null, addEventListener() {}, removeEventListener() {}, hidden: false},
+  Object.assign(globalThis, {document: {documentElement: {dataset: {}}, createElement: node, getElementById: () => null, querySelector: () => null, addEventListener() {}, removeEventListener() {}, hidden: false},
     localStorage: {getItem: () => null, setItem() {}}, matchMedia: () => ({matches: false, addEventListener() {}, removeEventListener() {}}), devicePixelRatio: 1, cancelAnimationFrame() {}});
   let layer; const requested = [];
   try {
@@ -61,7 +61,7 @@ async function withLayerFixture(run) {
       requested.push(url);
       return {ok: true, json: async () => url.includes('routes.json') ? {schemaVersion: 1, routes: [route]} : url.includes('stops.json') ? stops : {schemaVersion: 1, mode: 'unavailable', buses: [], routes: {}}};
     }});
-    layer.setEnabled(true);
+    layer.setEnabled(enabled);
     await new Promise(resolve => setImmediate(resolve));
     await run(layer, requested);
   } finally {
@@ -74,6 +74,62 @@ test('browser fetch loads routes and live data without an invalid method receive
   assert.equal(layer.data?.routeById.size, 1, 'static routes loaded');
   assert.equal(requested.length, 3, 'two static files and one live request');
 }));
+
+test('stops load with nearby buses off, without any live request or default route line', () => withLayerFixture((layer,requested) => {
+  assert.equal(layer.enabled,false);
+  assert.ok(layer.stopFeatures.length>0);
+  assert.equal(requested.length,2);
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
+  assert.equal(layer.map.getSource('bus-stops'),undefined,'no text/dot stop source remains');
+},false));
+
+test('a stop number selects its route with the switch off; closing returns to static stops', () => withLayerFixture((layer,requested) => {
+  layer.select({kind:'stop',id:'01'},null);
+  assert.match(layer.detailHTML(),/data-bus-route="100000001"/);
+  assert.equal(requested.length,2,'opening a stop is a static action');
+  layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
+  assert.deepEqual(layer.requested,[route.id]);
+  assert.equal(layer.enabled,false,'selection does not change the always-show preference');
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,1);
+  assert.equal(layer.active(),true);
+  layer.clearSelection();
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
+  assert.ok(layer.stopFeatures.length>0);
+  assert.equal(layer.active(),false);
+  assert.equal(layer.liveController,null);
+},false));
+
+test('a selected stop keeps mock disclosure inside the sheet that covers the map notice', () => withLayerFixture(layer => {
+  layer.select({kind:'stop',id:'01'},null);
+  layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
+  assert.doesNotMatch(layer.detailHTML(),/예시 데이터/);
+  layer.setLiveData({schemaVersion:1,mode:'mock',buses:[],routes:{}},[route.id]);
+  assert.match(layer.detailHTML(),/예시 데이터 · 실제 운행 정보 아님/);
+},false));
+
+test('background polling is limited by actual stops in the viewport, while selection wins', () => {
+  const data=prepareBusData({schemaVersion:1,routes:[route]},stops);
+  assert.deepEqual(busRoutesNearStops(data,[127.004,37.504,127.006,37.506]),[], 'a crossing line alone must not spend API quota');
+  assert.deepEqual(busRoutesNearStops(data,[127.004,37.504,127.006,37.506],[route.id]),[route.id]);
+  const screen={width:390,height:800,project:()=>({x:500,y:200})};
+  assert.deepEqual(busRoutesNearStops(data,[126.99,37.49,127.02,37.52],[],screen),[], 'rotated viewport bounds must not include offscreen stops');
+  assert.deepEqual(busRoutesNearStops(data,[126.99,37.49,127.02,37.52],[route.id],screen),[route.id], 'an explicit route stays prioritized beyond the viewport');
+});
+
+test('legacy journey names need matching geometry and clear on sheet close', () => withLayerFixture(layer => {
+  const leg={type:'bus',route:'100',path:route.path};
+  assert.deepEqual(journeyBusRouteIds(null,[leg]),[], 'journey can begin before z15 has loaded static bus data');
+  assert.deepEqual(journeyBusRouteIds(layer.data,[leg]),[route.id]);
+  assert.deepEqual(journeyBusRouteIds(layer.data,[{...leg,path:[[126,36],[126.01,36.01]]}]),[]);
+  layer.setJourney([leg]);assert.deepEqual(layer.chosenIds(),[route.id]);
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,1);
+  layer.clearSelection();assert.deepEqual(layer.chosenIds(),[]);
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
+  layer.map.getZoom=()=>11;
+  layer.setJourney([leg]);
+  assert.equal(layer.map.getSource('bus-routes').data.features.length,1,'selected journey routes stay visible when fitBounds zooms out');
+  assert.equal(layer.active(),false,'low zoom must not poll or show bus vehicles');
+},false));
 
 test('an older cached observation cannot move a bus behind a newer observation', () => withLayerFixture(layer => {
   layer.setEnabled(false);

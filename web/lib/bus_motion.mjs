@@ -68,3 +68,32 @@ export function nextBusMotion(previous, distance, now, {interval = 15000, reduce
   const reset = !previous || reduced || stale || delta < -30 || Math.abs(delta) > Math.max(350, duration / 1000 * 28);
   return {from: reset ? distance : from, to: distance, startedAt: now, duration: reset ? 0 : duration};
 }
+
+// The feed has no road width. Use an 18 m road's right lane (6 m from centre),
+// with bounded screen separation at low zoom. Geometry and vehicles share this value.
+export function busLaneMeters(zoom, latitude, roadWidth = 18) {
+  const metresPerPixel = 40075016.68557849 * Math.cos(latitude * Math.PI / 180) / (512 * 2 ** zoom);
+  return Math.min(14, Math.max(clamp(roadWidth / 2 - 3, 3, 8), 7 * metresPerPixel));
+}
+
+export function offsetBusPath(path, metres) {
+  const {points, xy, kx} = path;
+  return points.map((p, i) => {
+    const normal = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1; return [dy / len, -dx / len]; };
+    const before = normal(xy[Math.max(0, i - 1)], xy[i === 0 ? 1 : i]);
+    const after = normal(xy[i === xy.length - 1 ? i - 1 : i], xy[Math.min(xy.length - 1, i + 1)]);
+    const sx = before[0] + after[0], sy = before[1] + after[1], length = Math.hypot(sx, sy);
+    // Bound mitres at sharp corners; a U-turn uses the outgoing lane rather than a spike.
+    const n = length > .1 ? [sx / length, sy / length] : after;
+    const scale = metres / Math.max(.5, n[0] * after[0] + n[1] * after[1]);
+    return [p[0] + n[0] * scale / kx, p[1] + n[1] * scale / M];
+  });
+}
+
+export function offsetBusPointAt(path, distance, lane) {
+  const s = clamp(distance, 0, path.total); let lo = 0, hi = path.points.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (path.distances[mid] <= s) lo = mid; else hi = mid; }
+  const a = lane[lo], b = lane[hi], t = (s - path.distances[lo]) / (path.distances[hi] - path.distances[lo] || 1);
+  return {coordinate: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
+    heading: (Math.atan2((b[0] - a[0]) * path.kx, (b[1] - a[1]) * M) * 180 / Math.PI + 360) % 360, distance: s};
+}

@@ -75,7 +75,15 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .bus-detail-grid small{display:block;font-size:12px;font-weight:400;color:var(--secondary)}
 .bus-detail-note{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--secondary)}
 .bus-route-list{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;font-size:13px;line-height:1.6}
-.bus-route-list span{color:var(--bus-color)}
+.bus-route-list button{min-height:44px;min-width:64px;padding:8px 12px;border:1px solid var(--rule);border-radius:12px;background:var(--paper);color:var(--bus-color);font:inherit;cursor:pointer}
+.bus-route-list button:hover{background:var(--control)}
+.bus-route-list button[aria-pressed=true]{background:var(--selected);border-color:var(--bus-color)}
+.bus-route-list button:active{background:var(--control)}
+.bus-route-list button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
+.segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
+.segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.segmented button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink)}
 /* city-design: one optional city mode at a time, using the existing switch vocabulary. */
 .settings-panel{max-height:calc(100vh - 96px);max-height:calc(100dvh - 96px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent}
 .setting-modes{margin:8px 0;padding:8px 0;border-block:1px solid var(--rule)}
@@ -90,10 +98,6 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .setting-modes .setting-name small,.setting-modes #speedNote{color:var(--secondary);font-size:12px;line-height:1.5}
 .setting-help{margin:8px 10px 4px;font-size:12px;line-height:1.6;color:var(--secondary)}
 @media(prefers-reduced-motion:reduce){.setting-modes .setting-switch:active{transform:none}}
-.setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
-.segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
-.segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
-.segmented button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink)}
 /* my location: bottom right */
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group{margin:0 10px 18px 0}
 html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}

@@ -1,10 +1,10 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
-// Static MapLibre layers sit below the subway. Moving buses have a separate canvas,
-// so interpolation does not redraw the basemap or re-tile GeoJSON every frame.
-import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance,
-  validCoordinate, intersects, contains} from './bus_motion.mjs';
+// Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
+import {buildBusPath, snapBusToPath, nextBusMotion, busMotionDistance,
+  validCoordinate, intersects, contains, busLaneMeters, offsetBusPath, offsetBusPointAt} from './bus_motion.mjs';
+import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './bus_mesh.mjs';
 
-export const BUS_ZOOM = {routes: 13, buses: 14, stops: 15, labels: 16};
+export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
 export const BUS_TYPES = {
   trunk: {name: '간선', light: '#3567C8', dark: '#7FAAFF'},
   branch: {name: '지선', light: '#328044', dark: '#7AC98C'},
@@ -13,8 +13,8 @@ export const BUS_TYPES = {
   night: {name: '심야', light: '#3567C8', dark: '#7FAAFF'},
   other: {name: '버스', light: '#63747B', dark: '#A4B5BB'},
 };
-const SOURCE_ROUTES = 'bus-routes', SOURCE_STOPS = 'bus-stops';
-const LAYERS = ['bus-route-road', 'bus-route-approx', 'bus-stop-dot', 'bus-stop-label'];
+const SOURCE_ROUTES = 'bus-routes';
+const LAYERS = ['bus-route-road', 'bus-route-approx'];
 const SETTING_KEY = 'subway-buses', STALE_MS = 120000, EXPIRE_MS = 600000;
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
@@ -24,6 +24,7 @@ const boundsArray = bounds => [bounds.getWest(), bounds.getSouth(), bounds.getEa
 const padded = b => { const x = (b[2] - b[0]) * .12, y = (b[3] - b[1]) * .12; return [b[0] - x, b[1] - y, b[2] + x, b[3] + y]; };
 const boundsOf = points => points.reduce((b, p) => [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])], [Infinity, Infinity, -Infinity, -Infinity]);
 const color = (route, theme) => (BUS_TYPES[route.type] || BUS_TYPES.other)[theme];
+const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
 
 export function prepareBusData(routes, stops) {
   if (routes?.schemaVersion !== 1 || stops?.schemaVersion !== 1 || !Array.isArray(routes.routes) || !Array.isArray(stops.stops)) {
@@ -76,12 +77,44 @@ export function busRequestURL(routeIds, selected = null) {
   return `/api/bus/live?${query}`;
 }
 
+export function busRoutesNearStops(data, box, chosen = [], screen = null) {
+  const priority = [...new Set(chosen)].filter(id => data.routeById.has(id));
+  if (priority.length) return priority.slice(0,8);
+  const cx=(box[0]+box[2])/2,cy=(box[1]+box[3])/2,rank=new Map();
+  for(const stop of data.stopById.values()) if(contains(box,[stop.lng,stop.lat])) {
+    const point=screen?.project([stop.lng,stop.lat]);
+    if(point&&(point.x<0||point.y<0||point.x>screen.width||point.y>screen.height))continue;
+    const d=point?(point.x-screen.width/2)**2+(point.y-screen.height/2)**2:((stop.lng-cx)*.8)**2+(stop.lat-cy)**2;
+    for(const route of data.routesByStop.get(stop.id)||[]) rank.set(route.id,Math.min(rank.get(route.id)??Infinity,d));
+  }
+  return [...rank].sort((a,b)=>a[1]-b[1]||a[0].localeCompare(b[0])).slice(0,8).map(([id])=>id);
+}
+
+// Legacy journey legs have names, not Seoul route IDs. Require a unique name AND
+// matching endpoint geometry before using an official ID for live requests.
+export function journeyBusRouteIds(data, legs) {
+  if(!data)return [];
+  const ids=[];
+  for(const leg of legs) {
+    if(leg.type!=='bus')continue;
+    if(data.routeById.has(String(leg.routeId))){ids.push(String(leg.routeId));continue;}
+    const matches=[...data.routeById.values()].filter(r=>r.name===String(leg.route));
+    if(matches.length!==1||!leg.path?.length)continue;
+    const path=buildBusPath(matches[0].path);
+    if(path&&[leg.path[0],leg.path.at(-1)].every(p=>snapBusToPath(path,p,{maxError:350})))ids.push(matches[0].id);
+  }
+  return [...new Set(ids)].slice(0,8);
+}
+
 export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
-  constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch}) {
+  constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => []}) {
     this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
+    this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
+    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.laneMetres=6;
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
@@ -89,25 +122,29 @@ class BusLayer {
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.button = document.getElementById('toggleBuses'); this.note = document.getElementById('busSettingNote');
     this.nearby = document.getElementById('inspectNearbyBus');
-    this.canvas = document.createElement('canvas'); this.canvas.className = 'bus-overlay'; this.canvas.setAttribute('aria-hidden', 'true');
-    this.canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none';
-    map.getCanvas().after(this.canvas); this.ctx = this.canvas.getContext('2d');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
     this.notice.setAttribute('role', 'status'); map.getContainer().append(this.notice);
     this.installLayers();
     this.move = () => { clearTimeout(this.viewTimer); this.viewTimer = setTimeout(() => this.refreshView(), 200); };
-    this.render = () => this.draw();
     this.visibility = () => {
       this.stopLive();
-      if (!document.hidden) this.refreshView(); else this.clearCanvas();
+      if (!document.hidden) this.refreshView(); else this.clearScene();
     };
     this.motionChanged = () => { this.stopAnimation(); this.draw(); };
     this.zoom = () => { if (map.getZoom() < BUS_ZOOM.buses) this.stopLive(); this.draw(); this.updateStatus(); };
     this.toggle = () => this.setEnabled(!this.enabled);
     this.inspect = () => this.inspectNearby();
+    this.routeClick = event => {
+      const button=event.target.closest?.('.bus-detail [data-bus-route]');if(!button)return;
+      const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
+      this.selectedRoute=this.selectedRoute===id?null:id;this.journeyLegs=[];this.journeyIds=[];
+      this.refreshView();this.refreshDetail();
+      document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
+    };
     this.remove = () => this.destroy();
-    map.on('moveend', this.move); map.on('render', this.render); map.on('zoom', this.zoom); map.on('remove', this.remove);
+    map.on('moveend', this.move); map.on('zoom', this.zoom); map.on('remove', this.remove);
     document.addEventListener('visibilitychange', this.visibility); this.reduced.addEventListener('change', this.motionChanged);
+    document.addEventListener('click',this.routeClick);
     this.button?.addEventListener('click', this.toggle); this.nearby?.addEventListener('click', this.inspect);
     let saved = false; try { saved = localStorage.getItem(SETTING_KEY) === '1'; } catch {}
     this.setEnabled(saved);
@@ -117,30 +154,15 @@ class BusLayer {
     const map = this.map, before = map.getLayer(this.beforeId) ? this.beforeId : undefined;
     map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 1.5, maxzoom: 16,
       attribution: '버스 노선·정류장 <a href="https://data.seoul.go.kr/dataList/OA-1095/F/1/datasetView.do" target="_blank" rel="noopener">서울특별시 열린데이터광장</a>'});
-    map.addSource(SOURCE_STOPS, {type: 'geojson', data: collection([])});
     for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[1] : LAYERS[0], type: 'line', source: SOURCE_ROUTES,
       minzoom: BUS_ZOOM.routes, filter: ['==', ['get', 'approximate'], approximate], layout: {'line-cap': 'round', 'line-join': 'round'},
       paint: {'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 13, .8, 14, 1.2, 18, 2.2],
         'line-opacity': ['case', ['get', 'selected'], .9, .46], ...(approximate ? {'line-dasharray': [2, 2]} : {})}}, before);
-    map.addLayer({id: LAYERS[2], type: 'circle', source: SOURCE_STOPS, minzoom: BUS_ZOOM.stops,
-      paint: {'circle-radius': ['interpolate', ['linear'], ['zoom'], 15, 2.5, 18, 4], 'circle-color': '#fffdf6',
-        'circle-stroke-color': '#63747B', 'circle-stroke-width': 1.3}}, before);
-    map.addLayer({id: LAYERS[3], type: 'symbol', source: SOURCE_STOPS, minzoom: BUS_ZOOM.labels,
-      layout: {'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11,
-        'text-variable-anchor': ['right', 'left', 'top', 'bottom'], 'text-radial-offset': .7, 'text-padding': 5,
-        'text-max-width': 12, 'text-optional': true},
-      paint: {'text-color': '#5d5a4e', 'text-halo-color': '#fffdf6', 'text-halo-width': 1.5}}, before);
   }
 
   setTheme(theme) {
     if (this.disposed) return;
     this.theme = theme === 'dark' ? 'dark' : 'light';
-    const dark = this.theme === 'dark';
-    for (const [id, key, value] of [[LAYERS[2], 'circle-color', dark ? '#1a1c1f' : '#fffdf6'],
-      [LAYERS[2], 'circle-stroke-color', dark ? '#A4B5BB' : '#63747B'],
-      [LAYERS[3], 'text-color', dark ? '#b9b5a6' : '#5d5a4e'], [LAYERS[3], 'text-halo-color', dark ? '#1a1c1f' : '#fffdf6']]) {
-      if (this.map.getLayer(id)) this.map.setPaintProperty(id, key, value);
-    }
     this.renderStatic(); this.draw(); this.refreshDetail();
   }
 
@@ -149,22 +171,20 @@ class BusLayer {
     this.enabled = !!enabled;
     try { localStorage.setItem(SETTING_KEY, this.enabled ? '1' : '0'); } catch {}
     this.button?.setAttribute('aria-pressed', String(this.enabled));
-    for (const id of LAYERS) this.map.setLayoutProperty(id, 'visibility', this.enabled ? 'visible' : 'none');
-    if (!this.enabled) {
-      this.stopLive(); this.staticController?.abort(); this.staticController = null;
-      this.loading = false; this.fleet.clear(); this.clearSelection(); this.clearCanvas(); this.onClear();
-    } else this.refreshView();
+    if (!this.enabled && !this.chosenIds().length) {this.stopLive();this.fleet.clear();this.hits=[];}
+    this.refreshView();this.draw();
     this.updateStatus();
   }
 
   async loadStatic() {
-    if (this.loading || this.data || !this.enabled || this.disposed) return;
+    if (this.loading || this.data || this.disposed) return;
     this.loading = true; this.status = ''; const controller = new AbortController(); this.staticController = controller; this.updateStatus();
     try {
       const read = async url => { const r = await this.fetcher(url, {signal: controller.signal}); if (!r.ok) throw new Error('Bus data unavailable'); return r.json(); };
       const results = await Promise.all([read('/data/bus/routes.json'), read('/data/bus/stops.json')]);
       if (controller.signal.aborted || this.disposed) return;
       this.data = prepareBusData(...results); this.loading = false;
+      this.journeyIds=journeyBusRouteIds(this.data,this.journeyLegs);
       this.refreshView();
     } catch (error) {
       if (!controller.signal.aborted) { this.loading = false; this.status = '노선을 불러오지 못했어요 · 껐다 켜서 재시도'; this.updateStatus(); }
@@ -172,13 +192,17 @@ class BusLayer {
   }
 
   refreshView() {
-    if (this.disposed || !this.enabled || document.hidden) return;
+    if (this.disposed || document.hidden) return;
     if (this.map.getZoom() < BUS_ZOOM.routes) { this.stopLive(); this.visible = []; this.renderStatic(); this.updateStatus(); return; }
-    if (!this.data) { this.loadStatic(); return; }
+    if (!this.data) { if(this.map.getZoom()>=BUS_ZOOM.stops||this.journeyLegs.length)this.loadStatic(); return; }
     this.box = padded(boundsArray(this.map.getBounds()));
     this.visible = visibleBusRoutes(this.data, this.box, this.selectedRoute);
+    this.laneMetres=busLaneMeters(this.map.getZoom(),(this.box[1]+this.box[3])/2);
+    this.exitCoordinates=this.getExitCoordinates().filter(p=>contains(this.box,p));
+    const canvas=this.map.getCanvas(),screen=this.map.project?{project:p=>this.map.project(p),width:canvas.clientWidth,height:canvas.clientHeight}:null;
+    this.requested=this.enabled||this.chosenIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.chosenIds(),screen):[];
     this.renderStatic(); this.draw(); this.updateStatus();
-    const ids = this.visible.slice(0, 8).map(v => v.route.id), key = `${ids.join(',')}|${this.selectedRoute || ''}`;
+    const ids = this.requested, key = `${ids.join(',')}|${this.selectedRoute || this.journeyIds[0] || ''}`;
     if (this.map.getZoom() < BUS_ZOOM.buses || !ids.length) { this.stopLive(); return; }
     if (key !== this.requestKey) { this.stopLive(); this.requestKey = key; this.pollLive(); }
     else if (!this.liveController && !this.pollTimer) this.pollLive();
@@ -187,11 +211,15 @@ class BusLayer {
 
   renderStatic() {
     if (this.disposed) return;
-    const features = [], stopFeatures = [], stopIds = new Set();
-    for (const {route, parts} of this.visible) {
-      for (const part of parts) features.push(feature('LineString', part, {routeId: route.id, name: route.name,
-        color: color(route, this.theme), selected: route.id === this.selectedRoute, approximate: route.approximate}));
+    const features = [], stopFeatures = [], stopIds = new Set(), chosen=new Set(this.chosenIds());
+    for (const {route} of this.visible) {
+      if(chosen.has(route.id)) features.push(feature('LineString',this.lanePath(route),{routeId:route.id,name:route.name,
+        color:color(route,this.theme),selected:true,approximate:route.approximate}));
       for (const id of route.stopIds) stopIds.add(id);
+    }
+    for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){
+      const path=buildBusPath(leg.path);if(path)features.push(feature('LineString',offsetBusPath(path,this.laneMetres),
+        {routeId:'',name:String(leg.route),color:BUS_TYPES.other[this.theme],selected:true,approximate:true}));
     }
     if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const id of stopIds) {
       const stop = this.data.stopById.get(id);
@@ -199,18 +227,17 @@ class BusLayer {
       if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
     }
     this.map.getSource(SOURCE_ROUTES)?.setData(collection(features));
-    this.map.getSource(SOURCE_STOPS)?.setData(collection(stopFeatures));
     this.stopFeatures = stopFeatures;
   }
 
   async pollLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0;
-    if (this.liveController || !this.active() || !this.visible.length) return;
-    const ids = this.visible.slice(0, 8).map(v => v.route.id), controller = new AbortController();
+    if (this.liveController || !this.active() || !this.requested.length) return;
+    const ids = this.requested, controller = new AbortController();
     this.liveController = controller;
     const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const r = await this.fetcher(busRequestURL(ids, this.selectedRoute), {cache: 'no-store', signal: controller.signal});
+      const r = await this.fetcher(busRequestURL(ids, this.selectedRoute||this.journeyIds[0]), {cache: 'no-store', signal: controller.signal});
       if (!r.ok) throw new Error('Bus live unavailable');
       const payload = await r.json();
       if (!controller.signal.aborted && this.active()) this.setLiveData(payload, ids);
@@ -241,7 +268,7 @@ class BusLayer {
     route.geometry = path; return path;
   }
 
-  setLiveData(payload, requested = this.visible.slice(0, 8).map(v => v.route.id)) {
+  setLiveData(payload, requested = this.requested) {
     if (!this.data || this.disposed) return;
     if (payload?.schemaVersion !== 1 || !Array.isArray(payload.buses)) throw new Error('Unsupported bus live data');
     const now = performance.now(), wall = Date.now(), seen = new Set(), allowed = new Set(requested);
@@ -298,78 +325,102 @@ class BusLayer {
     }
     this.updateStatus(); this.refreshDetail(); this.draw();
   }
-  active() { return !this.disposed && this.enabled && !document.hidden && this.map.getZoom() >= BUS_ZOOM.buses; }
+  chosenIds(){return this.selectedRoute?[this.selectedRoute]:this.journeyIds;}
+  active() { return !this.disposed && (this.enabled||this.chosenIds().length>0) && !document.hidden && this.map.getZoom() >= BUS_ZOOM.buses; }
   stopAnimation() { clearTimeout(this.frameTimer); cancelAnimationFrame(this.frame); this.frameTimer = 0; this.frame = 0; }
   stopLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0; this.stopAnimation();
     clearInterval(this.freshnessTimer); this.freshnessTimer = 0;
     this.liveController?.abort(); this.liveController = null; this.requestKey = null;
   }
-  clearCanvas() { this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height); this.hits = []; }
+  clearScene() { this.hits=[];this.stopHits=[]; }
 
-  draw() {
-    if (!this.ctx || !this.active()) { this.clearCanvas(); return; }
-    const now = performance.now(), width = this.map.getCanvas().clientWidth, height = this.map.getCanvas().clientHeight;
-    const dpr = Math.min(devicePixelRatio || 1, 2), ctx = this.ctx;
-    if (this.canvas.width !== Math.round(width * dpr) || this.canvas.height !== Math.round(height * dpr)) {
-      this.canvas.width = Math.round(width * dpr); this.canvas.height = Math.round(height * dpr);
-      this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`;
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height); this.hits = [];
-    const box = boundsArray(this.map.getBounds()), zoom = this.map.getZoom(), cap = this.phone ? 160 : 320;
-    const routes = new Set(this.visible.map(v => v.route.id)), labels = []; this.labelBoxes = labels; let moving = false;
-    const fleet = [...this.fleet.values()].sort((a, b) => Number(b.row.id === this.selection?.id) - Number(a.row.id === this.selection?.id));
-    for (const bus of fleet) {
-      if (!routes.has(bus.route.id) || Date.now() - bus.receivedWall > EXPIRE_MS) continue;
-      if (bus.observed != null && Date.now() - bus.observed > STALE_MS) this.freeze(bus);
-      const distance = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now), pose = busPointAt(bus.path, distance);
-      if (!contains(box, pose.coordinate)) continue;
-      const p = this.map.project(pose.coordinate);
-      if (p.x < -24 || p.x > width + 24 || p.y < -24 || p.y > height + 24) continue;
-      const heading = pose.heading * Math.PI / 180, q = this.map.project([
-        pose.coordinate[0] + Math.sin(heading) * 5 / bus.path.kx, pose.coordinate[1] + Math.cos(heading) * 5 / 111320]);
-      const selected = this.selection?.kind === 'bus' && this.selection.id === bus.row.id;
-      const length = Math.min(24, 18 + (zoom - 14) * 1.5), half = length / 2, tint = color(bus.route, this.theme);
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(q.y - p.y, q.x - p.x)); ctx.globalAlpha = bus.stale ? .55 : 1;
-      if (selected) { ctx.beginPath(); ctx.roundRect(-half - 3, -8, length + 6, 16, 5); ctx.fillStyle = this.theme === 'dark' ? '#1a1c1f' : '#fffdf6'; ctx.fill(); }
-      ctx.beginPath(); ctx.roundRect(-half, -5, length, 10, 3); ctx.fillStyle = tint; ctx.fill();
-      ctx.strokeStyle = this.theme === 'dark' ? '#131416' : '#fffdf6'; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = this.theme === 'dark' ? '#131416' : '#fffdf6'; ctx.fillRect(half - 5, -3, 2, 6);
-      ctx.beginPath(); ctx.moveTo(half + 2, -3); ctx.lineTo(half + 6, 0); ctx.lineTo(half + 2, 3); ctx.fillStyle = tint; ctx.fill(); ctx.restore();
-      this.hits.push({x: p.x, y: p.y, bus});
-      if (zoom >= BUS_ZOOM.labels) {
-        ctx.font = '600 11px "Noto Sans KR",sans-serif';
-        const halfText = ctx.measureText(bus.route.name).width / 2 + 4, box = [p.x - halfText, p.y - 25, p.x + halfText, p.y - 8];
-        if (box[0] >= 4 && box[2] <= width - 4 && box[1] >= 4 && !labels.some(other => intersects(box, other))) {
-          labels.push(box); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-          ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = this.theme === 'dark' ? '#1a1c1f' : '#fffdf6';
-          ctx.strokeText(bus.route.name, p.x, p.y - 10); ctx.fillStyle = this.theme === 'dark' ? '#f1efe6' : '#1d1f21'; ctx.fillText(bus.route.name, p.x, p.y - 10);
-        }
+  lanePath(route) {
+    const path=this.geometry(route);if(!path)return route.path;
+    if(route.laneMetres!==this.laneMetres){route.laneMetres=this.laneMetres;route.lane=offsetBusPath(path,this.laneMetres);}
+    return route.lane;
+  }
+
+  refreshAnimatedDetail(now) {
+    const selectedBus=this.selection?.kind==='bus'?this.fleet.get(this.selection.id):null;
+    if(!selectedBus)return false;
+    const completedAt=selectedBus.motion.startedAt+selectedBus.motion.duration;
+    if(now-this.detailAt>=1000||(now>=completedAt&&this.detailAt<completedAt)){this.detailAt=now;this.refreshDetail();}
+    return !this.reduced.matches&&!selectedBus.stale&&now<completedAt;
+  }
+  draw(){if(this.disposed)return;this.refreshAnimatedDetail(performance.now());this.requestRender();}
+
+  // Called from drawTrains, after its building depth pass. Never creates another canvas.
+  render(gl,matrix) {
+    this.clearScene();
+    if(this.disposed||document.hidden||!this.data||this.map.getZoom()<BUS_ZOOM.stops){this.renderer.stats={vehicles:0,stops:0,drawCalls:0};return;}
+    const now=performance.now(),wall=Date.now(),zoom=this.map.getZoom(),canvas=this.map.getCanvas();
+    const width=canvas.clientWidth,height=canvas.clientHeight,unit=1/(512*2**zoom),box=boundsArray(this.map.getBounds());
+    const origin=busMercator([(box[0]+box[2])/2,(box[1]+box[3])/2]),vehicles=[],posts=[];
+    const project=(world,z)=>projectBusPoint(matrix,world[0],world[1],z,width,height);
+    const bounds=points=>[Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y))];
+    const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
+    const hitBox=(r,minimum)=>{const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2,w=Math.max(minimum,r[2]-r[0]+6),h=Math.max(minimum,r[3]-r[1]+6);return[cx-w/2,cy-h/2,cx+w/2,cy+h/2];};
+    let moving=false;
+    const allowed=new Set(this.chosenIds().length?this.chosenIds():this.requested);
+    if(this.active())for(const bus of [...this.fleet.values()].sort((a,b)=>Number(b.row.id===this.selection?.id)-Number(a.row.id===this.selection?.id))){
+      if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
+      if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
+      const distance=this.reduced.matches?bus.motion.to:busMotionDistance(bus.motion,now);
+      const pose=offsetBusPointAt(bus.path,distance,this.lanePath(bus.route));
+      if(!contains(this.box||box,pose.coordinate))continue;
+      const world=busMercator(pose.coordinate),scale=busModelScale(zoom),yaw=(pose.heading-90)*Math.PI/180;
+      const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
+      for(const x of [-1.55,1.55])for(const y of [-.56,.56])for(const z of [0,1.32]){
+        const q=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(q)corners.push(q);
       }
-      if (!this.reduced.matches && !bus.stale && now < bus.motion.startedAt + bus.motion.duration) moving = true;
-      if (this.hits.length >= cap) break;
+      if(corners.length!==8)continue;const rectangle=bounds(corners);
+      if(!intersects(rectangle,[0,0,width,height]))continue;
+      const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id;
+      vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected});
+      this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading});
+      if(!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration)moving=true;
+      if(vehicles.length>=(this.phone?160:320))break;
     }
-    const selectedBus = this.selection?.kind === 'bus' ? this.fleet.get(this.selection.id) : null;
-    if (selectedBus) {
-      const completedAt = selectedBus.motion.startedAt + selectedBus.motion.duration;
-      const completed = now >= completedAt && this.detailAt < completedAt;
-      if (now - this.detailAt >= 1000 || completed) { this.detailAt = now; this.refreshDetail(); }
-      // An open detail follows its bus even after it leaves the visible canvas.
-      if (!this.reduced.matches && !selectedBus.stale && now < completedAt) moving = true;
+    // Reserve the full screen silhouettes of nearby exit pillars before placing BUS signs.
+    const occupied=[],exitHeight=20+Math.max(0,Math.min(2,zoom-16))*8;
+    for(const coordinate of this.exitCoordinates||[]){
+      const world=busMercator(coordinate),base=project(world,0),top=project(world,exitHeight*unit);
+      if(base&&top)occupied.push(pad(bounds([base,top]),this.phone?14:10,5));
     }
-    if (moving && !this.frameTimer && !this.frame) {
-      this.frameTimer = setTimeout(() => { this.frameTimer = 0; this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); }); }, 1000 / (this.phone ? 24 : 30));
+    const bearing=(this.map.getBearing?.()||0)*Math.PI/180,scale=busPostScale(zoom),c=Math.cos(bearing),s=Math.sin(bearing);
+    const candidates=(this.stopFeatures||[]).map(f=>({f,world:busMercator(f.geometry.coordinates)}));
+    // Deterministic centre-first placement; a selected stop remains at the head of the list.
+    candidates.sort((a,b)=>Number(b.f.properties.id===this.selection?.id)-Number(a.f.properties.id===this.selection?.id)||
+      ((a.world[0]-origin[0])**2+(a.world[1]-origin[1])**2)-((b.world[0]-origin[0])**2+(b.world[1]-origin[1])**2));
+    for(const {f,world} of candidates){
+      const points=[];
+      for(const x of [-7,7])for(const y of [-3.5,3.5])for(const z of [0,20.5]){
+        const p=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(p)points.push(p);
+      }
+      if(points.length!==8)continue;const rectangle=bounds(points);
+      if(!intersects(rectangle,[0,0,width,height]))continue;
+      const touch=hitBox(rectangle,this.phone?44:28),spacing=pad(touch,zoom<16?5:2);
+      if(occupied.some(r=>intersects(spacing,r)))continue;
+      occupied.push(spacing);
+      posts.push({world,yaw:bearing,scale,rgb:[.25,.29,.30],label:'BUS',selected:this.selection?.id===f.properties.id});
+      this.stopHits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:rectangle});
+      if(posts.length>=(this.phone?700:1400))break;
+    }
+    this.renderer.render(gl,matrix,{origin,unit,dark:this.theme==='dark',vehicles,stops:posts});
+    moving=this.refreshAnimatedDetail(now)||moving;
+    if(moving&&this.active()&&!this.frameTimer&&!this.frame){
+      this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));
     }
   }
 
   selectAt(point) {
-    if (!this.enabled || !this.data || this.map.getZoom() < BUS_ZOOM.routes) return false;
-    let nearest = null, distance = this.phone ? 24 : 16;
-    for (const hit of this.hits) { const d = Math.hypot(hit.x - point.x, hit.y - point.y); if (d < distance) { nearest = hit; distance = d; } }
+    if (!this.data || this.map.getZoom() < BUS_ZOOM.stops) return false;
+    let nearest = null, distance = Infinity;
+    for (const hit of this.hits) { const d = Math.hypot(hit.x - point.x, hit.y - point.y); if (contains(hit.bounds,[point.x,point.y])&&d<distance) { nearest=hit;distance=d; } }
     if (nearest) { this.select({kind: 'bus', id: nearest.bus.row.id}, nearest.bus.route.id); return true; }
-    const radius = this.phone ? 20 : 9;
-    const stops = this.map.getZoom() >= BUS_ZOOM.stops ? this.map.queryRenderedFeatures([[point.x - radius, point.y - radius], [point.x + radius, point.y + radius]], {layers: [LAYERS[2]]}) : [];
-    if (stops.length) { this.select({kind: 'stop', id: stops[0].properties.id}, null); return true; }
+    const stop=this.stopHits.filter(h=>contains(h.bounds,[point.x,point.y])).sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0];
+    if(stop){this.select({kind:'stop',id:stop.id},null);return true;}
     const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: LAYERS.slice(0, 2)});
     if (routes.length) { const id = routes[0].properties.routeId; this.select({kind: 'route', id}, id); return true; }
     return false;
@@ -377,8 +428,8 @@ class BusLayer {
 
   inspectNearby() {
     const c = this.map.getCanvas(), centre = {x: c.clientWidth / 2, y: c.clientHeight / 2};
-    const hit = [...this.hits].sort((a, b) => Math.hypot(a.x - centre.x, a.y - centre.y) - Math.hypot(b.x - centre.x, b.y - centre.y))[0];
-    if (hit) this.select({kind: 'bus', id: hit.bus.row.id}, hit.bus.route.id);
+    const hit = [...this.stopHits].sort((a, b) => Math.hypot(a.x - centre.x, a.y - centre.y) - Math.hypot(b.x - centre.x, b.y - centre.y))[0];
+    if (hit) this.select({kind: 'stop', id: hit.id}, null);
     else if (this.stopFeatures?.length) {
       const stops = this.stopFeatures.map(f => ({f, p: this.map.project(f.geometry.coordinates)}));
       stops.sort((a, b) => Math.hypot(a.p.x - centre.x, a.p.y - centre.y) - Math.hypot(b.p.x - centre.x, b.p.y - centre.y));
@@ -392,14 +443,22 @@ class BusLayer {
   }
 
   select(selection, routeId) {
+    this.journeyLegs=[];this.journeyIds=[];
     this.selection = selection; this.selectedRoute = routeId;
     this.updateDetail = this.onSelect(this.detailHTML()) || null;
     this.refreshView();
   }
   clearSelection() {
-    if (!this.selection) return;
+    if (!this.selection&&!this.journeyLegs.length) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
-    this.restoreFocus = null; this.selection = null; this.selectedRoute = null; this.updateDetail = null; this.renderStatic(); this.draw();
+    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.journeyLegs=[];this.journeyIds=[];
+    if(!this.enabled){this.stopLive();this.fleet.clear();}
+    this.refreshView();this.renderStatic();this.draw();
+  }
+  setJourney(legs){
+    this.selection=null;this.selectedRoute=null;this.updateDetail=null;
+    this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.every(validCoordinate));
+    this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
 
@@ -409,7 +468,9 @@ class BusLayer {
     if (selection.kind === 'stop') {
       const stop = this.data.stopById.get(selection.id); if (!stop) return '';
       const routes = this.data.routesByStop.get(stop.id) || [];
-      return wrap(`<h3 tabindex="-1">${text(stop.name)}</h3><p class="bus-detail-note">버스 정류장${stop.arsId ? ` · ${text(stop.arsId)}` : ''}</p><div class="bus-route-list">${routes.map(r => `<span style="--bus-color:${color(r, this.theme)}">${text(BUS_TYPES[r.type].name)} <b>${text(r.name)}</b></span>`).join('')}</div>`);
+      const chosen=this.data.routeById.get(this.selectedRoute);
+      const mock=chosen&&(this.mode==='mock'||[...this.fleet.values()].some(b=>b.route.id===chosen.id&&b.mock));
+      return wrap(`<h3 tabindex="-1">${text(stop.name)}</h3><p class="bus-detail-note">버스 정류장${stop.arsId ? ` · ${text(stop.arsId)}` : ''}</p><p class="bus-detail-note">${chosen?`${text(chosen.name)}번 노선과 버스 표시 중`:'번호를 누르면 노선과 버스를 볼 수 있어요.'}</p>${mock?'<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>':''}<div class="bus-route-list">${routes.map(r => `<button type="button" data-bus-route="${text(r.id)}" aria-pressed="${r.id===this.selectedRoute}" style="--bus-color:${color(r, this.theme)}">${text(BUS_TYPES[r.type].name)} <b>${text(r.name)}</b></button>`).join('')}</div>`);
     }
     const bus = selection.kind === 'bus' ? this.fleet.get(selection.id) : null;
     const route = bus?.route || this.data.routeById.get(this.selectedRoute); if (!route) return '';
@@ -429,33 +490,33 @@ class BusLayer {
     const zoom = this.map.getZoom();
     const delayed = this.mode === 'error' || [...this.fleet.values()].some(b => b.stale) ||
       Object.values(this.routeStates || {}).some(s => ['stale', 'deferred', 'error'].includes(s.status));
-    let message = '노선과 버스 위치를 표시해요';
+    let message = '정류장을 눌러 원하는 노선을 볼 수 있어요';
     if (this.enabled) {
-      if (zoom < BUS_ZOOM.routes) message = '확대하면 버스 노선이 보여요';
+      if (zoom < BUS_ZOOM.buses) message = '확대하면 주변 버스가 보여요';
       else if (this.loading) message = '버스 노선 불러오는 중…';
       else if (this.status) message = this.status;
-      else if (!this.visible.length) message = '이 화면에는 서울 버스 노선이 없어요';
-      else if (zoom < BUS_ZOOM.buses) message = '더 확대하면 버스 위치를 확인할 수 있어요';
+      else if (!this.requested.length) message = '이 화면에는 서울 버스 정류장이 없어요';
       else if (this.mode === 'mock' || [...this.fleet.values()].some(b => b.mock)) message = '예시 데이터 · 실제 운행 정보 아님';
-      else if (this.mode === 'unavailable') message = '노선만 표시 · 실시간 준비 중';
-      else if (delayed) message = '노선 표시 중 · 위치 갱신 지연';
-      else if (!this.fleet.size) message = '노선 표시 중 · 수신된 버스 없음';
-      else message = `서울 버스 ${this.visible.length}개 노선`;
+      else if (this.mode === 'unavailable') message = '실시간 버스 준비 중';
+      else if (delayed) message = '주변 버스 · 위치 갱신 지연';
+      else if (!this.fleet.size) message = '수신된 버스가 없어요';
+      else message = `주변 정류장의 ${this.requested.length}개 노선`;
     }
     if (this.note) this.note.textContent = message;
-    if (this.nearby) { this.nearby.hidden = !this.enabled; this.nearby.disabled = !this.visible.length || zoom < BUS_ZOOM.routes; }
-    const approximate = this.visible.some(v => v.route.approximate), mock = this.mode === 'mock' || [...this.fleet.values()].some(b => b.mock);
+    if (this.nearby) { this.nearby.hidden = false; this.nearby.disabled = !this.stopFeatures?.length || zoom < BUS_ZOOM.stops; }
+    const chosen=new Set(this.chosenIds()),approximate=this.visible.some(v=>chosen.has(v.route.id)&&v.route.approximate),mock=this.mode==='mock'||[...this.fleet.values()].some(b=>b.mock);
     const notice = mock ? '버스 예시 데이터 · 실제 운행 정보 아님' : delayed ? '버스 위치 갱신 지연' : '';
     this.notice.textContent = [notice, approximate ? `${notice ? '' : '버스 · '}정류장 연결선` : ''].filter(Boolean).join(' · ');
-    this.notice.hidden = !this.enabled || zoom < BUS_ZOOM.routes || !this.notice.textContent;
+    this.notice.hidden = !(this.enabled||chosen.size||this.journeyLegs.length) || zoom < BUS_ZOOM.buses || !this.notice.textContent;
   }
 
   destroy() {
     if (this.disposed) return;
     this.stopLive(); clearTimeout(this.viewTimer); this.staticController?.abort(); this.disposed = true;
-    this.map.off('moveend', this.move); this.map.off('render', this.render); this.map.off('zoom', this.zoom); this.map.off('remove', this.remove);
+    this.map.off('moveend', this.move); this.map.off('zoom', this.zoom); this.map.off('remove', this.remove);
     document.removeEventListener('visibilitychange', this.visibility); this.reduced.removeEventListener('change', this.motionChanged);
+    document.removeEventListener('click',this.routeClick);
     this.button?.removeEventListener('click', this.toggle); this.nearby?.removeEventListener('click', this.inspect);
-    this.canvas.remove(); this.notice.remove(); this.fleet.clear();
+    this.renderer.dispose();this.notice.remove();this.fleet.clear();
   }
 }

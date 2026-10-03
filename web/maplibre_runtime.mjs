@@ -4,6 +4,9 @@ import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {RideLayer} from './lib/park_rides.mjs';
+import {SEOUL_COASTER_STYLE as COASTER_STYLE,trackMetrics,zoomFade} from './lib/coaster_style_seoul.mjs';   // coaster: shared park palette and metre/pixel dimensions
+import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './lib/coaster_track_mesh.mjs';
+import {CoasterStations} from './lib/coaster_stations.mjs';   // coaster: instanced boarding decks, canopies and route signs
 import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
@@ -211,7 +214,8 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 // the map (drawTrains), at TRAIN_FPS while something there moves: a map redraw (3D buildings and
 // all) is only needed when the camera moves, and following a train moves it at FOLLOW_FPS.
 const TRAIN_FPS=30,FOLLOW_FPS=30,animFrame=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation=null;
-function trainFrameSoon(ms){const at=performance.now()+ms;if(trainTimer&&trainAt<=at)return;clearTimeout(trainTimer);trainAt=at;trainTimer=setTimeout(()=>{trainTimer=0;requestAnimationFrame(()=>{if(!map.isMoving())drawTrains()})},ms)}   // while the map moves it draws them with each of its frames: a timer frame there used a newer camera than the map under it (tall rides slid and snapped back)let repaintTimer=0,repaintAt=0;
+function trainFrameSoon(ms){const at=performance.now()+ms;if(trainTimer&&trainAt<=at)return;clearTimeout(trainTimer);trainAt=at;trainTimer=setTimeout(()=>{trainTimer=0;requestAnimationFrame(()=>{if(!map.isMoving())drawTrains()})},ms)}   // while the map moves it draws them with each of its frames: a timer frame there used a newer camera than the map under it (tall rides slid and snapped back)
+let repaintTimer=0,repaintAt=0;   // coaster: keep map repaint scheduling outside the train timer's comment
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
 let busLayer=null;   // bus: owns its loading, viewport culling and animation lifecycle
@@ -337,7 +341,7 @@ const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||c
 function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9})}
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
-const BULB_EVERY=18;const COL_SPAN=60,COL_AFRAME=80,COL_CLEAR=15;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
+const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
 // The frame across (R) and up (U) of a track or car going along F, from the flat right r, turned by roll about F.
@@ -1042,10 +1046,11 @@ function rideCoords(line,ids){
   return out;
 }
 function showRoute(plan){
+  busLayer?.setJourney(plan.legs);   // bus: selected journey buses share the offset route and vehicle renderer
   const feats=[],pts=[];
   plan.legs.forEach((l,i)=>{
     if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
-    else if(l.type==='bus'){feats.push({type:'Feature',properties:{kind:'ride',color:l.color},geometry:{type:'LineString',coordinates:l.path}});
+    else if(l.type==='bus'){   // bus: route geometry is drawn once by busLayer; journey keeps its boarding markers
       for(const c of [l.path[0],l.path[l.path.length-1]])pts.push({type:'Feature',properties:{kind:'stop',color:l.color},geometry:{type:'Point',coordinates:c}})}
     else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
       // boarding and alighting where the ride is drawn from (the platform on the track), not the
@@ -1079,12 +1084,13 @@ function showRoute(plan){
   }else map.getSource('journey').setData(data);
   focusRoute(true);
   const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
+  all.push(...plan.legs.filter(l=>l.type==='bus').flatMap(l=>l.path));   // bus: retain journey fitting without a duplicate line
   routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
   fitRoute(sheetPad()+30);
 }
 let routeBounds=null;
 function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
-function clearRoute(){routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}
+function clearRoute(){busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
 const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
 const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
 // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
@@ -1097,7 +1103,7 @@ function focusRoute(on){
   routeFocus=on;setRouteOpacity();
   stationAlpha=on?.35:1;map.triggerRepaint();
   for(const id of ['station-labels','station-labels-more'])if(map.getLayer(id))map.setPaintProperty(id,'text-opacity',on?.35:1);
-  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on?'.3':'';
+  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.journeyLegs.length?'.3':'';   // bus: selected journey vehicles stay legible in the shared canvas
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
@@ -1575,20 +1581,14 @@ const exitPillars=new ExitPillars();
 // 롤러코스터 track (see coasterAt), drawn on the train canvas under the trains: per direction a pair of
 // rails in the line's colour on a box girder, sleepers, and white columns down to the ground.
 // Built per edge in map space once (lane offsets in px are applied in the shader, so zoom needs no rebuild).
-const TRACK_BYTES=(PHONE?96:192)*1e6;   // GPU memory for the built track pieces (the next levels are built ahead only below 80 %: else they went out as fast as built)
+const TRACK_BYTES=PHONE?COASTER_STYLE.performance.phoneTrackBytes:COASTER_STYLE.performance.trackBytes;   // GPU memory for the built track pieces (the next levels are built ahead only below 80 %: else they went out as fast as built)
 class CoasterTrack{
   init(gl){
-    const vs=`#version 300 es
-in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body;uniform vec3 u_post;out vec3 v_c;
-void main(){float lane=(a_o.x+a_o.y*u_lane)*u_unit,across=(a_o.z*u_body+a_o.w)*u_unit;   // lane: flat; across: along R = U × F (turned in a corkscrew)
-  vec3 r=vec3(a_r,0.),p=r-dot(r,a_f)*a_f;float pl=length(p);vec3 U0=pl>1e-6?cross(a_f,p/pl):a_u;   // the up before any roll: turned (a_u ≠ U0), the rails wind round a line CORK_HEART body up
-  gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lane,a_p.z*a_p.w)+cross(a_u,a_f)*across+(a_f*a_z.x+a_u*a_z.y)*u_unit+(U0-a_u)*(${CORK_HEART}*u_body*u_unit),1.);v_c=a_c.a<0.?u_post*-a_c.a:a_c.rgb*a_c.a;}`;
-    const fs=`#version 300 es
-precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o=vec4(v_c*u_alpha,u_alpha);}`;
+    const vs=coasterTrackVertexShader(CORK_HEART),fs=COASTER_TRACK_FS;   // coaster: geometry/materials live outside the shared runtime
     const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
     this.attr=Object.fromEntries(['a_p','a_r','a_o','a_z','a_f','a_u','a_c'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_post','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_post','u_spine','u_concrete','u_size','u_detail','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
     this.gl=gl;this.M=new Float32Array(16);this.cache=new Map();
     this.O=maplibregl.MercatorCoordinate.fromLngLat(HOME.center);
     const seen=new Set();this.edges=[];
@@ -1659,25 +1659,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       const off=(A,B,Q)=>{const dx=B.x-A.x,dy=B.y-A.y,dh=B.h-A.h,l2=dx*dx+dy*dy+dh*dh||1,u=Math.max(0,Math.min(1,((Q.x-A.x)*dx+(Q.y-A.y)*dy+(Q.h-A.h)*dh)/l2));return Math.hypot(A.x+dx*u-Q.x,A.y+dy*u-Q.y,A.h+dh*u-Q.h)};
       for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop||!!P[j-1].roll;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
       K.push(P[P.length-1]);P=K}
-    const G=-6,NONE=[0,0,0],UP=[0,0,1];   // G: girder depth, px
-    const out=new Float32Array(22*(2*42*P.length+120*((this.columns().get(e.id)||[]).length+1)));let o=0;   // room for every part on both sides
-    const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
-      out[o++]=q.x;out[o++]=q.y;out[o++]=q.h;out[o++]=hf;out[o++]=q.R[0];out[o++]=q.R[1];out[o++]=eo;out[o++]=side;out[o++]=kb;out[o++]=kp;out[o++]=kf;
-      out[o++]=zp;out[o++]=F[0];out[o++]=F[1];out[o++]=F[2];out[o++]=U[0];out[o++]=U[1];out[o++]=U[2];out[o++]=c[0];out[o++]=c[1];out[o++]=c[2];out[o++]=sh};
-    // supports (columns()): a column, or two legs splayed 18 % of the height either way, from the ground to the crossbeam
-    const leg=(B,q,w,hf0=0)=>{for(const [kp,kf] of [[w,0],[0,w]]){v(B,hf0,0,0,-kp,-kf,0,NONE,-1,1);v(B,hf0,0,0,kp,kf,0,NONE,-1,1);v(q,1,0,0,kp,kf,G,NONE,-1,1);v(B,hf0,0,0,-kp,-kf,0,NONE,-1,1);v(q,1,0,0,kp,kf,G,NONE,-1,1);v(q,1,0,0,-kp,-kf,G,NONE,-.86,1)}};
-    const cols=this.columns().get(e.id)||[],every=Math.max(1,Math.round(lvl*3/80));
-    for(let i=0;i<cols.length;i+=every){const cs=cols[i];if(cs<c.s0||cs>=c.s1)continue;const q=at(cs),h=q.h/mu;
-      if(h<COL_AFRAME)leg(q,q,2.4);
-      else{const d=.18*q.h,F=(x)=>({...q,x:q.x+q.R[0]*x,y:q.y+q.R[1]*x});leg(F(-d),q,2.4);leg(F(d),q,2.4);
-        const a=F(-d/2),b=F(d/2);for(const [A,B] of [[a,b]]){v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,-3,NONE,-.8,1)}}   // the brace halfway up
-      if(lvl<=16)for(const [z0,z1,f0,f1] of [[G,G-4,0,0],[G,G,-1.6,1.6]]){v(q,1,-1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.1,0,0,f1,z1,NONE,-.8,1)}}   // the crossbeam under both girders: its face and its underside (close up: farther out, rungs sticking out of the track)
-    for(const side of [-1,1]){
-      for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
-        for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
-        for(const kb of [-.3,.3]){v(A,1,side,kb,-.9,0,.4,col,1);v(A,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(A,1,side,kb,-.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,-.9,0,.4,col,1)}}   // rails
-      if(lvl===8)for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers (close up only)
-    }
+    const out=buildCoasterTrackMesh({points:P,at,columns:this.columns().get(e.id)||[],s0:c.s0,s1:c.s1,mu,offset:eo,lvl,color:col}),o=out.length;   // coaster: stable ties, narrow rails and shared Y/A supports
     const gl=this.gl,b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,out.subarray(0,o),gl.STATIC_DRAW);
     a={b,n:o/22};this.cache.set(ck,a);this.bytes=(this.bytes||0)+o*4;
     return a;
@@ -1686,7 +1668,9 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     const MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.O.x+M[4+r]*this.O.y+M[12+r];
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
     gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,laneOffsetPx(z,coasterBodyPx(z)));gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
-    gl.uniform3fv(this.uni.u_post,document.documentElement.dataset.theme==='dark'?[.6,.63,.67]:[.58,.6,.64]);
+    const pal=COASTER_STYLE.palette[document.documentElement.dataset.theme==='dark'?'dark':'light'],dims=trackMetrics(z);   // coaster: palette uniforms need no geometry rebuild on theme change
+    gl.uniform3fv(this.uni.u_post,hexRGB(pal.ivory));gl.uniform3fv(this.uni.u_spine,hexRGB(pal.teal));gl.uniform3fv(this.uni.u_concrete,hexRGB(pal.concrete));
+    gl.uniform4f(this.uni.u_size,dims.rail,dims.spineWidth,dims.spineDepth,dims.post);gl.uniform3f(this.uni.u_detail,dims.tie,zoomFade(z,COASTER_STYLE.lod.ties),zoomFade(z,COASTER_STYLE.lod.detail));
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
   }
   ptrs(gl){const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
@@ -1824,7 +1808,7 @@ map.on('load',()=>{
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
-    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null;   // cityLife: city-life's props
+    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,coasterStations=null;   // coaster: boarding furniture; cityLife: city-life's props
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
       c.style.width=m.style.width;c.style.height=m.style.height;
@@ -1841,6 +1825,12 @@ map.on('load',()=>{
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
         cityLife.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),pitch:map.getPitch(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
         if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
+      busLayer?.render(gl,pd.mainMatrix);   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode
+      if(coaster){   // coaster: facilities share the rides' depth; the train corridor stays open
+        if(!coasterStations){coasterStations=new CoasterStations(stationRects,colors);window.__subwayWebGL.coasterStations=coasterStations}
+        const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom(),bodyPx=coasterBodyPx(zoom);
+        coasterStations.render(gl,pd.mainMatrix,{zoom,bodyPx,lanePx:laneOffsetPx(zoom,bodyPx),selected,dark:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y]});
+      }
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -1886,7 +1876,7 @@ map.on('load',()=>{
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();
   // bus: below subway lines, using the existing detail sheet and settings controls.
-  busLayer=createBusLayer({map,phone:PHONE,onSelect:html=>{
+  busLayer=createBusLayer({map,phone:PHONE,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat(),onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
     following=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
     return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});

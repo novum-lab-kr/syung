@@ -12,6 +12,7 @@
 // opts.bearing is no longer read: a wheel keeps the yaw its hash gave it at every zoom.
 
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './park_night.mjs';
+import { SEOUL_COASTER_STYLE as STYLE, ridePalette } from './coaster_style_seoul.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;
@@ -128,13 +129,14 @@ function torusY(M, C, c, R, t, nMaj, nMin, o) {
 // ── the four rides, in unit space ───────────────────────────────────────────────────────────────
 // xy are radius units (×Sxy, or ×Smast where sel=1); z is height units (×Sz). Spec section 3.
 const CREAM = { slot: 2 }, SHADE = { slot: 3 }, A = { slot: 0 }, B = { slot: 1 };
+const RED={slot:4},GOLD_TONE={slot:5},CREAM_TONE={slot:6},IVORY={slot:7},TEAL={slot:8};
 const mast = s => ({ ...s, sel: 1 });
 
 // Drop tower — mast H, a seat ring that rises to 0.82H and falls, a small cone crown.
 function buildDrop(lod) {
   const M = new Mesh(), seg = lod ? 12 : 7, rs = lod ? 24 : 12, seats = lod ? 12 : 6, nb = lod ? 8 : 4;
   for (let i = 0; i < nb; i++)                                             // the mast, in broad alternating bands
-    tube(M, STILL, [0, 0, i / nb], [0, 0, (i + 1) / nb], 1, seg, mast(i % 2 ? SHADE : CREAM), false, false);
+    tube(M, STILL, [0, 0, i / nb], [0, 0, (i + 1) / nb], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.5, .022, 1.5, seg, mast(SHADE));                 // a low foot, not a slab
   disc(M, STILL, .022, 1.5, seg, mast(SHADE));
   if (lod) for (let i = 0; i < 3; i++) {                                   // three slim guide rails up the mast
@@ -142,7 +144,7 @@ function buildDrop(lod) {
     tube(M, STILL, [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .02], [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .97], .17, 4, mast(SHADE));
   }
   cone(M, STILL, .985, 1.9, 1.0, 1.8, seg, mast(SHADE));                   // the crown
-  cone(M, STILL, 1.0, 1.8, 1.07, 0, seg, mast(B));
+  cone(M, STILL, 1.0, 1.8, 1.05, 0, seg, mast(GOLD_TONE));
   band(M, LIFT, 0, .025, .62, 1, rs, A, 1, 8);                             // the seat ring, in eight broad blocks
   for (let i = 0; i < seats; i++) {                                        // seats slung under its outer edge
     const t = i / seats * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
@@ -155,12 +157,12 @@ function buildDrop(lod) {
 function buildFerris(lod) {
   const M = new Mesh(), hub = [0, 0, .58], maj = lod ? 32 : 16, min = lod ? 4 : 3, cab = lod ? 12 : 8, lg = lod ? 6 : 4, sp = lod ? 12 : 8;
   for (const y of [-.085, .085]) {                                         // two open A-frames
-    for (const x of [-.34, .34]) tube(M, STILL, [x, y, 0], [0, y, .575], .018, lg, CREAM, false, lod === 1);
-    box(M, STILL, [0, y, .21], .19, .011, .011, 0, CREAM);                  // the brace across each A
+    for (const x of [-.34, .34]) tube(M, STILL, [x, y, 0], [0, y, .575], .018, lg, TEAL, false, lod === 1);
+    box(M, STILL, [0, y, .21], .19, .011, .011, 0, TEAL);                  // the brace across each A
   }
-  box(M, STILL, [0, 0, .5], .014, .085, .014, 0, CREAM);                   // the tie between them
+  box(M, STILL, [0, 0, .5], .014, .085, .014, 0, TEAL);                   // the tie between them
   tube(M, STILL, [0, -.105, .58], [0, .105, .58], .03, lod ? 10 : 6, SHADE, true, lod === 1);
-  for (const y of (lod ? [-.058, .058] : [0])) torusY(M, wheel(hub), [0, y, .58], .5, .022, maj, min, A);
+  for (const y of (lod ? [-.058, .058] : [0])) torusY(M, wheel(hub), [0, y, .58], .5, .005, maj, min, {...IVORY,sel:2});
   for (let i = 0; i < sp; i++) {                                           // slender spokes, in the wheel's plane
     const t = i / sp * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
     tube(M, wheel(hub), [0, 0, .58], [c * .49, 0, .58 + s * .49], lod ? .009 : .013, 4, CREAM, false, false);
@@ -168,7 +170,7 @@ function buildFerris(lod) {
   }
   for (let i = 0; i < cab; i++) {                                          // upright gondolas: .065D across, .08D tall
     const t = i / cab * 2 * Math.PI, arm = [Math.cos(t) * .5, 0, Math.sin(t) * .5], C = orbit(hub, arm);
-    box(M, C, [0, 0, -.072], .0275, .0325, .04, 0, i % 2 ? B : A);
+    box(M, C, [0, 0, -.072], .0275, .0325, .04, 0, i/cab < .5 ? CREAM_TONE : i/cab < 10/12 ? RED : GOLD_TONE);
     if (lod) { box(M, C, [0, 0, -.018], .007, .007, .018, 0, SHADE);       // the hanger and the footboard
                box(M, C, [0, 0, -.115], .024, .03, .005, 0, SHADE) }
   }
@@ -176,19 +178,19 @@ function buildFerris(lod) {
 }
 // Sky swing — mast .90H, a shallow canopy at .78H radius r, eight seats on .14H suspensions.
 function buildSwing(lod) {
-  const M = new Mesh(), seg = lod ? 10 : 6, cs = lod ? 20 : 10, n = lod ? 8 : 5;
+  const M = new Mesh(), seg = lod ? 10 : 6, cs = STYLE.rides.swingSides, n = lod ? 12 : 8;
   tube(M, STILL, [0, 0, 0], [0, 0, .9], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
   cone(M, STILL, .9, 1.2, .93, 0, seg, mast(B));
-  cone(M, SPIN, .775, 1, .818, .13, cs, A, 1);                              // the canopy, in alternating wedges
-  disc(M, SPIN, .818, .13, cs, A);
+  cone(M, SPIN, .775, 1, .818, .13, cs, CREAM_TONE);                              // the canopy, in alternating wedges
+  disc(M, SPIN, .818, .13, cs, CREAM_TONE);
   disc(M, SPIN, .772, 1, cs, SHADE, -1);
-  cone(M, SPIN, .765, .98, .775, 1, cs, SHADE);                             // its rim
+  cone(M, SPIN, .765, .98, .775, 1, cs, GOLD_TONE);                             // its rim
   for (let i = 0; i < n; i++) {
     const t = i / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
-    tube(M, SPIN, [c * .9, s * .9, .768], [c * 1.06, s * 1.06, .636], .011, 4, CREAM, false, false);
-    box(M, SPIN, [c * 1.06, s * 1.06, .618], .085, .075, .016, t, i % 2 ? B : A);
-    box(M, SPIN, [c * 1.115, s * 1.115, .646], .014, .07, .03, t, i % 2 ? B : A);   // the backrest
+    tube(M, SPIN, [c * .9, s * .9, .768], [c * 1.06, s * 1.06, .636], .006, 4, TEAL, false, false);
+    box(M, SPIN, [c * 1.06, s * 1.06, .618], .085, .075, .016, t, RED);
+    box(M, SPIN, [c * 1.115, s * 1.115, .646], .014, .07, .03, t, RED);   // the backrest
   }
   return M;
 }
@@ -197,14 +199,14 @@ function buildSaucer(lod) {
   const M = new Mesh(), seg = lod ? 10 : 6, ds = lod ? 20 : 10, n = 8;
   tube(M, STILL, [0, 0, 0], [0, 0, .95], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
-  disc(M, STILL, .8, .72, ds, B, -1);                                       // the saucer: under, rim, over
-  cone(M, STILL, .8, .72, .8275, 1, ds, B);
-  cone(M, STILL, .8275, 1, .855, .8, ds, B);
-  disc(M, STILL, .855, .8, ds, B);
-  cone(M, STILL, .855, .55, 1, 0, lod ? 16 : 8, A);                         // the cap, to the top of the tower
+  disc(M, STILL, .8, .72, ds, TEAL, -1);                                       // the saucer: under, rim, over
+  cone(M, STILL, .8, .72, .8275, 1, ds, TEAL);
+  cone(M, STILL, .8275, 1, .855, .8, ds, CREAM_TONE);
+  disc(M, STILL, .855, .8, ds, CREAM_TONE);
+  cone(M, STILL, .855, .55, .90, 0, lod ? 16 : 8, CREAM_TONE);                         // the cap, to the top of the tower
   for (let i = 0; i < n; i++) {                                             // alternating rim panels
     const t = (i + .5) / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
-    box(M, SPIN, [c * .995, s * .995, .8275 + (i % 2 ? .008 : -.008)], .035, .175, .019, t, i % 2 ? B : A);
+    box(M, SPIN, [c * .995, s * .995, .8275 + (i % 2 ? .008 : -.008)], .015, .08, .006, t, GOLD_TONE);
   }
   return M;
 }
@@ -232,35 +234,14 @@ class Bulbs {
 }
 // One bulb in three is the warm cream; the rest run through the seven accents, and each ride turns
 // the accents on by its own hash, so two swings side by side are not the same string twice.
-const bulbCol = i => i % 3 === 0 ? 0 : 1 + (i % 7);
-const GARLANDS = 4, GSPAN = 10;      // four strings a ride, ten bulbs on each
-
+const bulbCol = i => i % 5 === 0 ? 1 : 0;
+const GARLANDS = 4, GSPAN = 10;   // legacy wire mesh remains reusable, but outline tier has no ground garlands
 function buildBulbs(kind) {
-  const B = new Bulbs(), hub = [0, 0, .58];
-  if (kind === 'ferris') {
-    for (let i = 0; i < 64; i++) {                                          // the rim, every ~6 m, standing in the wheel's plane
-      const t = i / 64 * 2 * Math.PI;
-      B.at(wheel(hub), [Math.cos(t) * .52, 0, .58 + Math.sin(t) * .52], bulbCol(i), 0, 0, i / 64, 1);
-    }
-    for (let k = 0; k < 6; k++) for (let j = 0; j < 6; j++) {               // six alternating spokes, every ~10 m
-      const t = k / 6 * 2 * Math.PI, rad = .09 + j / 5 * .37;
-      B.at(wheel(hub), [Math.cos(t) * rad, 0, .58 + Math.sin(t) * rad], bulbCol(k * 6 + j), -2, 0);   // -2: the neon spokes take this row
-    }
-  } else if (kind === 'swing') {
-    B.ring(SPIN, 40, 1.03, .772, bulbCol, 0, 0, 1);                         // the canopy edge, every ~5 m
-    for (let i = 0; i < 8; i++) { const t = i / 8 * 2 * Math.PI; B.at(SPIN, [Math.cos(t) * 1.06, Math.sin(t) * 1.06, .645], bulbCol(i * 3 + 1), 0, 0) }
-  } else if (kind === 'saucer') {
-    B.ring(STILL, 40, 1.03, .8275, bulbCol, -1, 0, 1);                      // the rim: the neon ring takes this row
-  } else {
-    for (const [a, role] of [[0, 0], [Math.PI, 0], [Math.PI / 2, 3], [-Math.PI / 2, 3]]) {   // two mast strings; Lotte gets four
-      for (let j = 0; j < 18; j++) B.at(STILL, [Math.cos(a) * 1.3, Math.sin(a) * 1.3, .08 + j / 17 * .87], bulbCol(j * 2 + (a > 0 ? 1 : 0)), -1, 1, 0, role);   // -1: the neon strips take this row
-    }
-    B.ring(LIFT, 32, 1.04, .012, bulbCol, 0, 0, 1);                         // the seat ring, every ~5 m
-  }
-  for (let g = 0; g < GARLANDS; g++) {                                      // the ground garlands (z>=15, never Lotte)
-    const a = g / GARLANDS * 2 * Math.PI, dir = [Math.cos(a), Math.sin(a), 0];
-    for (let j = 1; j <= GSPAN; j++) B.at(STILL, dir, bulbCol(g * GSPAN + j), 2, 0, j / (GSPAN + 1), 2);
-  }
+  const B=new Bulbs(),hub=[0,0,.58];
+  if(kind==='ferris')for(let i=0;i<64;i++){const t=i/64*2*Math.PI;B.at(wheel(hub),[Math.cos(t)*.51,0,.58+Math.sin(t)*.51],bulbCol(i),0,0,i/64,1)}
+  else if(kind==='swing')B.ring(SPIN,40,1.01,.777,bulbCol,0,0,1);
+  else if(kind==='saucer')B.ring(STILL,40,1.01,.8275,bulbCol,0,0,1);
+  else B.ring(STILL,24,1.9,1.0,bulbCol,0,1,1);
   return B;
 }
 // the wire the garland bulbs hang on, plus the little pole at its far end
@@ -278,9 +259,22 @@ function buildWire() {
 
 // The ride's own frame, shared by the bulbs and the neon: where a point ends up once the animation
 // has turned it and the ride's yaw has been applied, in metres about the site.
+const RIDE_DIMENSIONS = `
+vec3 rideDimensions(vec3 p,vec4 size,vec4 anim,float sel){
+  if(anim.z>70.&&anim.z<80.&&sel>1.5){
+    float k=clamp(size.x*.01,${STYLE.rides.rimM[0]},${STYLE.rides.rimM[1]})/(size.x*.01);
+    vec2 d=vec2(p.x,p.z-size.y*.58);float r=length(d);
+    d*=((r-size.x*.5)*k+size.x*.5)/max(r,1e-6);p.x=d.x;p.z=d.y+size.y*.58;
+    float y=abs(p.y)>size.x*.03?sign(p.y)*size.x*.058:0.;p.y=y+(p.y-y)*k;
+  }
+  if(anim.z<21.&&p.z>size.y)p.z=size.y+(p.z-size.y)*min(size.y*${STYLE.rides.crownHeightRatio},${STYLE.rides.crownHeightM}.)/(size.y*.05);
+  if(anim.z>89.&&sel<.5&&p.z>size.y*.8)p.z=size.y*.8+(p.z-size.y*.8)*clamp(size.y*${STYLE.rides.saucerThicknessRatio},${STYLE.rides.saucerThicknessM[0]}.,${STYLE.rides.saucerThicknessM[1]}.)/(size.y*.055);
+  return p;
+}`;
 const RIDE_POINT = `
+${RIDE_DIMENSIONS}
 vec3 ridePoint(vec3 av, vec3 aw, float m, float sel, float tt, vec4 iS, vec4 iA){
-  float sxy = sel > .5 ? iS.z : iS.x, sz = iS.y, p6 = 6.283185307;
+  float sxy = sel > .5 && sel < 1.5 ? iS.z : iS.x, sz = iS.y, p6 = 6.283185307;
   vec3 v = vec3(av.xy * sxy, av.z * sz), w = vec3(aw.xy * sxy, aw.z * sz), p;
   if (m < .5) p = v + w;
   else if (m < 1.5){ float g = p6 * fract(tt / iA.z), c = cos(g), s = sin(g);
@@ -295,6 +289,7 @@ vec3 ridePoint(vec3 av, vec3 aw, float m, float sel, float tt, vec4 iS, vec4 iA)
     p = v + w; p.z += (.15 + .67 * f) * sz; }
   else { float g = p6 * fract(tt / iA.z), c = cos(g), s = sin(g);
     p = vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) + w; }
+  p=rideDimensions(p,iS,iA,sel);
   float yc = cos(iA.w), ys = sin(iA.w);
   return vec3(p.x * yc - p.y * ys, p.x * ys + p.y * yc, p.z);
 }`;
@@ -327,19 +322,11 @@ function vw(C, p) {
   return [[0, 0, 0], p];
 }
 function buildNeon(kind) {
-  const N = new Neon(), hub = [0, 0, .58];
-  if (kind === 'drop') {                                                    // two strips up the mast
-    for (const a of [0, Math.PI]) N.seg(STILL, [Math.cos(a) * 1.35, Math.sin(a) * 1.35, .08], [Math.cos(a) * 1.35, Math.sin(a) * 1.35, .96], { sel: 1 });
-  } else if (kind === 'saucer') {                                           // a ring under the disc, with one bright length running round it
-    N.loop(STILL, 48, 1.02, .8, {}, false);
-  } else if (kind === 'swing') {                                            // eight ribs over the canopy
-    for (let i = 0; i < 8; i++) { const t = i / 8 * 2 * Math.PI;
-      N.seg(SPIN, [Math.cos(t) * .16, Math.sin(t) * .16, .816], [Math.cos(t) * 1.01, Math.sin(t) * 1.01, .777]) }
-  } else {                                                                  // a hub ring and three pairs of spokes
-    N.loop(wheel(hub), 24, .09, .58, {}, true);
-    for (let j = 0; j < 3; j++) for (const a of [j * Math.PI / 3, j * Math.PI / 3 + Math.PI])
-      N.seg(wheel(hub), [Math.cos(a) * .09, 0, .58 + Math.sin(a) * .09], [Math.cos(a) * .49, 0, .58 + Math.sin(a) * .49], { tier: 1 });
-  }
+  const N=new Neon();
+  if(kind==='drop')N.loop(STILL,24,1.9,1.,{sel:1},false);
+  else if(kind==='saucer')N.loop(STILL,48,1.02,.8275,{},false);
+  else if(kind==='swing')N.loop(SPIN,8,1.01,.777,{},false);
+  else N.loop(wheel([0,0,.58]),48,.505,.58,{},true);
   return N;
 }
 
@@ -359,8 +346,9 @@ layout(location=6) in vec4 i_a;      // phase s, rate (0 frozen), period s, yaw
 layout(location=7) in vec4 i_c;      // palette index: ride A, ride B, structure, structure shade
 uniform mat4 u_matrix; uniform float u_time; uniform vec3 u_pal[10]; uniform vec3 u_light; uniform vec2 u_lit;
 out vec3 v_col;
+${RIDE_DIMENSIONS}
 void main(){
-  float sxy = a_k.z > .5 ? i_s.z : i_s.x, sz = i_s.y;
+  float sxy = a_k.z > .5 && a_k.z < 1.5 ? i_s.z : i_s.x, sz = i_s.y;
   vec3 v = vec3(a_v.xy*sxy, a_v.z*sz), w = vec3(a_w.xy*sxy, a_w.z*sz);
   vec3 n = vec3(a_n.xy/sxy, a_n.z/sz);                       // the inverse transpose of a diagonal scale
   float tt = u_time*i_a.y + i_a.x, m = a_k.y, p6 = 6.283185307;
@@ -379,11 +367,12 @@ void main(){
     p = v + w; p.z += (.15 + .67*f)*sz; }
   else { float g = p6*fract(tt/i_a.z), c = cos(g), s = sin(g);              // orbits the hub, stays upright
     p = vec3(v.x*c + v.z*s, v.y, -v.x*s + v.z*c) + w; }
+  p=rideDimensions(p,i_s,i_a,a_k.z);
   float yc = cos(i_a.w), ys = sin(i_a.w);
   p = vec3(p.x*yc - p.y*ys, p.x*ys + p.y*yc, p.z);
   n = vec3(n.x*yc - n.y*ys, n.x*ys + n.y*yc, n.z);
   gl_Position = u_matrix * vec4(i_org + p.xy*i_s.w, p.z*i_s.w, 1.);
-  int ci = int(a_k.x < .5 ? i_c.x : a_k.x < 1.5 ? i_c.y : a_k.x < 2.5 ? i_c.z : i_c.w);
+  int ci = int(a_k.x >= 4. ? a_k.x - 4. : a_k.x < .5 ? i_c.x : a_k.x < 1.5 ? i_c.y : a_k.x < 2.5 ? i_c.z : i_c.w);
   float nl = length(n);
   float d = nl > 1e-20 ? max(dot(n / nl, u_light), 0.) : 0.;   // never normalize a zero: a NaN colour rasterizes differently every frame
   v_col = clamp(u_pal[ci]*(u_lit.x + u_lit.y*d + a_k.w), 0., 1.);
@@ -405,6 +394,7 @@ uniform mat4 u_matrix; uniform float u_time, u_size, u_core, u_tier, u_thin, u_a
 uniform vec3 u_pal[8];
 out vec3 v_rgb; out vec2 v_mix;
 ${BULB_TWINKLE}
+${RIDE_DIMENSIONS}
 void kill(){ gl_Position = vec4(2., 2., 2., 1.); gl_PointSize = 0.; }
 void main(){
   float role = a_e.y, tier = a_k.w;
@@ -413,7 +403,7 @@ void main(){
   bool garland = role > 1.5 && role < 2.5 || role > 3.5;                  // the string, and the little pole at its end
   if (garland && i_n.x < .5) { kill(); return; }                          // Lotte has the spiral round it: no garlands
   if (role > 2.5 && role < 3.5 && i_n.x > .5) { kill(); return; }         // the two extra mast strings are Lotte's only
-  if (tier > .5 && u_thin > 1.5 && mod(float(gl_VertexID), u_thin) >= .5) { kill(); return; }
+  if (u_thin > 1.5 && mod(float(gl_VertexID), u_thin) >= .5) { kill(); return; }
   float tt = u_time * i_a.y + i_a.x, p6 = 6.283185307;
   vec3 p;
   if (garland) {                                                           // worked straight in metres: a collar on the mast
@@ -439,14 +429,15 @@ void main(){
     else { float g = p6 * fract(tt / i_a.z), c = cos(g), sn = sin(g);
       p = vec3(v.x * c + v.z * sn, v.y, -v.x * sn + v.z * c) + w; }
   }
+  p=rideDimensions(p,i_s,i_a,a_k.z);
   float yc = cos(i_a.w), ys = sin(i_a.w);
   p = vec3(p.x * yc - p.y * ys, p.x * ys + p.y * yc, p.z);
   gl_Position = u_matrix * vec4(i_org + p.xy * i_s.w, p.z * i_s.w, 1.);
   gl_Position.z -= 3.5e-4 * gl_Position.w;                                 // a hair in front of the surface it is fixed to
   gl_PointSize = u_size;
   float b = u_bright;
-  if (role > .5 && role < 1.5) b *= .70 + .30 * (.5 + .5 * cos(p6 * (a_e.x - u_time / 12.)));   // one slow wave round the rim every 12 s
-  b *= twinkle(hash1(float(gl_VertexID) * .19 + float(gl_InstanceID) * .77), u_time, u_anim);
+  if (role > .5 && role < 1.5) b *= .70 + .30 * (.5 + .5 * cos(p6 * (a_e.x - u_time * u_anim / 12.)));   // one slow wave round the rim every 12 s
+  b *= twinkle(hash1(float(gl_VertexID) * .19 + i_a.x * .77), u_time, u_anim);
   v_rgb = u_pal[a_k.x < .5 ? 0 : 1 + int(mod(a_k.x - 1. + i_n.w, 7.))];   // every ride starts the accents at its own place
   v_mix = vec2(u_core, b);
 }`;
@@ -484,9 +475,7 @@ void main(){ o = vec4(u_wire.rgb * u_wire.a, u_wire.a); }`;
 
 const SUN = norm([-.30, .46, .84]);   // +x east, +y south (mercator), +z up: a high south-western sun
 // The rides do not borrow the building palette: they need to separate from the blocks they replace.
-const RIDE_LIGHT = ['#D7B566', '#D69A7D', '#CC8CA7', '#AA93C7', '#78AEC4', '#8AB58F', '#D8CEB7', '#BAB19D', '#D9C382', '#94BBC8'];
-const RIDE_DARK = ['#C5A768', '#C08E76', '#B7829E', '#A08DBB', '#80AABD', '#91B496', '#AAA391', '#8F897A', '#BAA16D', '#89A9B8'];
-//                   0 butter   1 peach   2 rose    3 lilac   4 sky     5 mint   6 structure 7 shade  8 Lotte mast 9 Lotte ring
+const RIDE_LIGHT = ridePalette(false), RIDE_DARK = ridePalette(true);
 const GOLD = 8, RING = 9, STRUCT = 6, SHADE_I = 7;
 // the ride grows toward the viewer as the map pulls back, or a 200 m tower is three pixels of stalk
 const EXAG = [13.5, 14.5, 15.5], EXAG_H = [2.4, 1.6, 1], EXAG_V = [1.35, 1.15, 1];
@@ -507,7 +496,7 @@ export class RideLayer {
       const D = Math.min(Math.max(Math.min(.85 * H, 2.8 * R), 90), 170);
       const s = {
         i, lon, lat, x: mercX(lon), y: mercY(lat), mu: muOf(lat), radius_m: fr, height_m: H, kind, lotte, q, R, r, mastR,
-        colA: q % 6, colB: (q + 2) % 6, struct: STRUCT, shade: SHADE_I,
+        colA: 0, colB: 1, struct: STRUCT, shade: SHADE_I,
         yaw: (q >>> 8 & 1023) / 1024 * Math.PI * 2, phase: (q >>> 18 & 255) / 255 * 90,
         period: kind === 'ferris' ? 75 : kind === 'swing' ? 40 : kind === 'saucer' ? 90 : 20,
       };
@@ -614,7 +603,7 @@ export class RideLayer {
     const EH = atZoom(zoom, EXAG_H), EV = atZoom(zoom, EXAG_V);   // Lotte stays at 1 (it has the spiral to fit inside)
     const vis = [];
     for (const s of this._sites) {
-      const pad = (s.top * (s.lotte ? 1 : EV) + s.wide * (s.lotte ? 1 : EH)) * s.mu;
+      const pad = (s.top * (s.lotte ? 1 : EV) + s.wide * (s.lotte ? 1 : EH)) * s.mu + (bounds ? (x1-x0)*.15 : 0);
       if (s.x < x0 - pad || s.x > x1 + pad || s.y < y0 - pad || s.y > y1 + pad) continue;
       vis.push(s);
     }
@@ -622,7 +611,8 @@ export class RideLayer {
     // freezing some of them saved nothing and cost a lot — a ride crossing the nearest-24 line jumped
     // between its live pose and its phase-only pose on alternate frames, which is the flicker while panning.
     // Reduced motion still stops the lot, and it is a global switch, so it never toggles under the camera.
-    const lod = zoom >= 14.5 ? 1 : 0, ts = now / 1000;
+    const split=STYLE.rides.detailZoom,h=STYLE.lod.hysteresis;
+    const lod=this.lod=zoom>=split+h?1:zoom<split-h?0:this.lod??(zoom>=split?1:0),ts=now/1000;
     for (const k of KINDS) this.kind[k].n = 0;
     for (const s of vis) {
       const K = this.kind[s.kind], d = K.data, i = K.n * 18, eh = s.lotte ? 1 : EH, ev = s.lotte ? 1 : EV;
@@ -641,7 +631,7 @@ export class RideLayer {
     gl.uniform1f(this.uni.u_time, ts);
     gl.uniform3fv(this.uni.u_pal, rgb);
     gl.uniform3fv(this.uni.u_light, SUN);
-    gl.uniform2fv(this.uni.u_lit, dark ? [.85, .15] : [.78, .22]);
+    gl.uniform2fv(this.uni.u_lit, dark ? [STYLE.night.rideAmbient, STYLE.night.rideDirectional] : [.78, .22]);
     // Opaque, depth on. State is set and put back blind, never read: gl.getParameter/isEnabled here forces a
     // sync with the GPU process and swallowed a whole map frame (100-400 ms) when measured.
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
@@ -668,20 +658,20 @@ export class RideLayer {
     let bulbs = 0;
     if (night) {
       // tier 0 keeps every ride's outline, 1 adds the wheel spokes, 2 the ground garlands; then a stride
-      let tier = zoom >= 15 ? 2 : zoom >= 14.5 ? 1 : 0;
+      let tier = 0;   // only each ride's signature outline; no spoke or ground-light blanket
       const cap = (phone ? 2500 : 6000) * .4;
       const count = t => KINDS.reduce((a, k) => a + this.kind[k].n * this.kind[k].tiers.slice(0, t + 1).reduce((x, y) => x + y, 0), 0);
       while (tier > 0 && count(tier) > cap) tier--;
       bulbs = count(tier);
       const thin = bulbs > cap ? Math.ceil(bulbs / cap) : 1;
-      bulbs = Math.round(bulbs / (thin > 1 ? 1.6 : 1));
+      bulbs = Math.ceil(bulbs / thin);
       const sz = bulbSize(zoom, pixelRatio);
       gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       const setUni = (u) => {
         gl.uniformMatrix4fv(u.u_matrix, false, MT);
         gl.uniform1f(u.u_time, ts); gl.uniform1f(u.u_size, sz.point); gl.uniform1f(u.u_core, sz.coreFrac);
         gl.uniform1f(u.u_tier, tier); gl.uniform1f(u.u_thin, thin); gl.uniform1f(u.u_anim, reducedMotion ? 0 : 1);
-        gl.uniform1f(u.u_bright, 1); gl.uniform3fv(u.u_pal, this.bulbRGB); gl.uniform2f(u.u_wt, .85, .12);
+        gl.uniform1f(u.u_bright, STYLE.night.rideEmission); gl.uniform3fv(u.u_pal, this.bulbRGB); gl.uniform2f(u.u_wt, .85, .12);
         gl.uniform1f(u.u_neonOn, neonOn);
       };
       // the neon outline: one signature a ride, a ribbon widened in screen pixels
@@ -690,15 +680,15 @@ export class RideLayer {
         const core = Math.min(1.8, Math.max(1.2, 1.2 + (zoom - 14) * .3));
         gl.useProgram(this.pN);
         gl.uniformMatrix4fv(this.uN.u_matrix, false, MT);
-        gl.uniform1f(this.uN.u_time, ts); gl.uniform1f(this.uN.u_half, 2 * pixelRatio);
+        gl.uniform1f(this.uN.u_time, ts); gl.uniform1f(this.uN.u_half, 1.4 * pixelRatio);
         gl.uniform1f(this.uN.u_core, core / 4); gl.uniform1f(this.uN.u_tier, zoom >= 14.5 ? 1 : 0);
         gl.uniform1f(this.uN.u_anim, reducedMotion ? 0 : 1);
         gl.uniform2f(this.uN.u_vp, gl.drawingBufferWidth, gl.drawingBufferHeight);
-        gl.uniform2f(this.uN.u_wt, .9, .10);
+        gl.uniform2f(this.uN.u_wt, STYLE.night.rideEmission, .12);
         for (const k of KINDS) {
           const K = this.kind[k]; if (!K.n) continue;
           gl.uniform3fv(this.uN.u_neon, this.neonRGB[k]);
-          gl.uniform1f(this.uN.u_chase, k === 'saucer' ? 1 : 0);            // the bright length runs round the saucers
+          gl.uniform1f(this.uN.u_chase, 0);            // the bright length runs round the saucers
           gl.bindVertexArray(K.neon.va); this.instPtr(gl, K);
           gl.drawArraysInstanced(gl.TRIANGLES, 0, K.neon.n, K.n);
         }
