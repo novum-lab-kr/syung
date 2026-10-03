@@ -192,7 +192,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
@@ -466,6 +466,25 @@ function coasterAt(line,lo,hi,s){
   if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1)roll=corkTheta(u,C[2])}
   return [sg,h,lat,roll];   // lat: across (+ to the right going lo→hi; none now), roll: about the way lo→hi
 }
+// Coaster pace: up a climb slowly, down a drop fast (speed × e^(−RIDE_PACE·grade), the grade rounded over ±15 m) —
+// only the pace within a run changes, so every phase still starts and ends when the feed says (the stations' times
+// are kept). rideClock(line,from,to): the share of a run's time spent by each point (k, the way the train runs), every 5 m.
+const RIDE_PACE=1.2,rideClocks=new Map();
+function rideClock(line,from,to){
+  const id=`${line}:${from}:${to}`;let T=rideClocks.get(id);if(T)return T;
+  const lo=Math.min(from,to),hi=Math.max(from,to),fw=from<to,g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/5)),h=new Float32Array(n+1);
+  for(let i=0;i<=n;i++){const k=i/n;h[i]=coasterAt(line,lo,hi,(fw?k:1-k)*g.total)[1]/mu}
+  const st=L/n,W=Math.max(1,Math.round(15/st));T=new Float32Array(n+1);
+  for(let i=1;i<=n;i++){const a=Math.max(0,i-1-W),b=Math.min(n,i+W),gr=Math.max(-1,Math.min(1,(h[b]-h[a])/((b-a)*st))),dt=Math.exp(RIDE_PACE*gr);T[i]=T[i-1]+dt}
+  for(let i=1;i<=n;i++)T[i]/=T[n];
+  rideClocks.set(id,T);return T;
+}
+// k (from k0 to k1 as e goes 0..1) on the coaster's pace
+function ridePace(line,from,to,k0,k1,e){
+  if(k0===k1)return k0;const T=rideClock(line,from,to),n=T.length-1,at=k=>{const x=Math.max(0,Math.min(n,k*n)),i=Math.min(n-1,Math.floor(x));return T[i]+(T[i+1]-T[i])*(x-i)};
+  const t=at(k0)+(at(k1)-at(k0))*e;let i=0,j=n;while(j-i>1){const m=(i+j)>>1;if(T[m]<=t)i=m;else j=m}
+  return (i+(T[j]>T[i]?(t-T[i])/(T[j]-T[i]):0))/n;
+}
 // Cars are spaced by ride distance, the length along the track as built (hills, loop, corkscrew), not by ground
 // distance: spaced by ground distance they were stretched over a quarter of the loop each and crossed (it looked
 // smashed), and pulled apart on the steep hills. edgeArc: ride from lo at every 2 m of s along the edge.
@@ -516,7 +535,7 @@ function spaceTrains(){
 function rawPose(p){
   let el=age(p.t.receivedAt)+p.lead+(coaster?warpNow():0),ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
-  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
+  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=coaster&&ph.from!==ph.to?ridePace(p.t.line,ph.from.id,ph.to.id,ph.k0,ph.k1,e):ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
   const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
   // After fresh data (see replacePlans): never back up — wait where the train was drawn until the
