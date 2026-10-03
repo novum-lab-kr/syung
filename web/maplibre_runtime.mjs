@@ -2,6 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
+import {RideLayer} from './lib/park_rides.mjs';
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -195,6 +196,7 @@ function buildStationFeatures(){
 const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
+const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
 // and at the display's 60–120 Hz that kept phones hot. Panning and zooming still render at full rate.
 // One timer for all of them; animFrame hooks update animated paint just before the redraw.
@@ -466,16 +468,18 @@ function coasterAt(line,lo,hi,s){
   if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1)roll=corkTheta(u,C[2])}
   return [sg,h,lat,roll];   // lat: across (+ to the right going lo→hi; none now), roll: about the way lo→hi
 }
-// Coaster pace: up a climb slowly, down a drop fast (speed × e^(−RIDE_PACE·grade), the grade rounded over ±15 m) —
-// only the pace within a run changes, so every phase still starts and ends when the feed says (the stations' times
-// are kept). rideClock(line,from,to): the share of a run's time spent by each point (k, the way the train runs), every 5 m.
-const RIDE_PACE=1.2,rideClocks=new Map();
+// Coaster pace as a real coaster runs: a chain lift pulls the car up at RIDE_LIFT m/s, and from there it rolls on its energy,
+// ½mv² + mgh = const (mass cancels, every car alike): v = √(2g(E − h)), E the height its energy reaches — a drop speeds it
+// up, a climb slows it until the lift takes over again (no friction; trim brakes hold it to RIDE_TRIM m/s). Only the pace within a run changes (scaled to the
+// run's time), so every phase still starts and ends when the feed says (the stations' times are kept).
+// rideClock(line,from,to): the share of a run's time spent by each point (k, the way the train runs), every 5 m.
+const RIDE_G=9.81,RIDE_LIFT=5,RIDE_TRIM=35,rideClocks=new Map();
 function rideClock(line,from,to){
   const id=`${line}:${from}:${to}`;let T=rideClocks.get(id);if(T)return T;
-  const lo=Math.min(from,to),hi=Math.max(from,to),fw=from<to,g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/5)),h=new Float32Array(n+1);
-  for(let i=0;i<=n;i++){const k=i/n;h[i]=coasterAt(line,lo,hi,(fw?k:1-k)*g.total)[1]/mu}
-  const st=L/n,W=Math.max(1,Math.round(15/st));T=new Float32Array(n+1);
-  for(let i=1;i<=n;i++){const a=Math.max(0,i-1-W),b=Math.min(n,i+W),gr=Math.max(-1,Math.min(1,(h[b]-h[a])/((b-a)*st))),dt=Math.exp(RIDE_PACE*gr);T[i]=T[i-1]+dt}
+  const lo=Math.min(from,to),hi=Math.max(from,to),fw=from<to,g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/5)),v=new Float32Array(n+1);
+  const lift=RIDE_LIFT*RIDE_LIFT/(2*RIDE_G);let E=lift;
+  for(let i=0;i<=n;i++){const k=i/n,h=coasterAt(line,lo,hi,(fw?k:1-k)*g.total)[1]/mu;if(E-h<lift)E=h+lift;v[i]=Math.sqrt(2*RIDE_G*(E-h));if(v[i]>RIDE_TRIM){v[i]=RIDE_TRIM;E=h+RIDE_TRIM*RIDE_TRIM/(2*RIDE_G)}}   // E − h < lift: the lift has it; over RIDE_TRIM the trim brakes take the rest (the tower's 500 m drop came to 100 m/s)
+  T=new Float32Array(n+1);for(let i=1;i<=n;i++)T[i]=T[i-1]+2/(v[i-1]+v[i]);
   for(let i=1;i<=n;i++)T[i]/=T[n];
   rideClocks.set(id,T);return T;
 }
@@ -1290,7 +1294,7 @@ class BuildingDepth{
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out=[];this.ox=O.x;this.oy=O.y;
     const X=l=>(l+180)/360-O.x,Y=a=>(180-180/Math.PI*Math.log(Math.tan(Math.PI/4+a*Math.PI/360)))/360-O.y;
     for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-      const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base)continue;
+      const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base||coaster&&top>=RIDE_H*mpu)continue;
       for(const poly of g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[])for(const ring of poly)
         for(let i=0;i+1<ring.length;i++){const x0=X(ring[i][0]),y0=Y(ring[i][1]),x1=X(ring[i+1][0]),y1=Y(ring[i+1][1]);
           out.push(x0,y0,base,x1,y1,base,x1,y1,top,x0,y0,base,x1,y1,top,x0,y0,top)}
@@ -1840,13 +1844,18 @@ map.on('load',()=>{
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
-    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);
+    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null;
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
       const behind=walls.draw(pd.mainMatrix)?1-mapPalette().bld3dOpacity:0;
+      if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
+        if(!rides){rides=new RideLayer(coasterBld.towers);rides.init(gl,maplibregl)}
+        const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+        rides.render(gl,pd.mainMatrix,{now:performance.now(),dark:effectiveTheme()==='dark',zoom:map.getZoom(),bearing:map.getBearing(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y]});
+        if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
       coasterTrack.people(gl,pd.mainMatrix,behind);   // 행인 on the streets, before the track: it covers the ones beneath it
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,occlude:behind});
@@ -1855,7 +1864,7 @@ map.on('load',()=>{
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
     let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();coasterTrack.streets();requestAnimationFrame(drawTrains)},250)};   // and the streets the walkers use; not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it
-    map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
+    wallsNow=()=>{walls.rebuild();requestAnimationFrame(drawTrains)};map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
   }
   // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
   {
@@ -1961,9 +1970,22 @@ const MAP_COLORS={
   light:{water:'#7cbfe8',park:'#9dd487',land:'#b3daa0',bld:'#e5dac8',bld3d:'#ddd0bb',bld3dOpacity:.6,bg:'#eeeadc',roadMinor:'#ffffff',roadMajor:'#ffffff',rail:'#b9b2c8',waterText:'#2f78a8',parkText:'#3f8a3a'},
   dark:{water:'#1a4260',park:'#21452c',land:'#1e3a28',bld:'#262d38',bld3d:'#444a5c',bld3dOpacity:.78,bg:'#141c24',roadMinor:'#2a343c',roadMajor:'#3e4650',rail:'#4a4560',waterText:'#7fb4d8',parkText:'#7cbf74'},
 };
+// 롤러코스터: the city as a pastel amusement park (Codex design) — every building one of six pastels by its feature id, solid
+// (just for fun: a building may hide a train), the ground in park colours (차분: 15 % toward the background). The towers
+// (RIDE_H m and up) become rides.
+const PARK_COLORS={
+  light:{blocks:['#eacb80','#e5ae91','#dca2b9','#baaad8','#96c5d8','#abd0ae'],bg:'#f5eedf',park:'#c5ddb3',land:'#d8e4c6',water:'#afd5de',bld:'#dfd2c0',shadow:.06,light:'#ffffff',lightK:.35},
+  dark:{blocks:['#ad9159','#ab7864','#a46c89','#8977ad','#6597ad','#789d7d'],bg:'#242329',park:'#354a39',land:'#303d32',water:'#2b4c5b',bld:'#3b343e',shadow:.03,light:'#fff1de',lightK:.25},
+};
+const RIDE_H=150;
+let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
+const mixHex=(a,b,t)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
 const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
 const THEME_KEY='subway-theme';
-const mapPalette=(t=effectiveTheme())=>({...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})});
+const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return P;
+  const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
+  const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
+  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return Q};
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -1988,7 +2010,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
   set('background','background-color',P.bg);map.triggerRepaint();
   set('bm-water','fill-color',P.water);set('bm-park','fill-color',P.park);set('bm-landcover','fill-color',P.land);set('bm-bld','fill-color',P.bld);
-  set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);
+  set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',coaster?['<',['coalesce',['get','render_height'],10],RIDE_H]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',!coaster)}   // the towers are rides on the coaster
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   for(const id of ['station-labels','station-labels-more']){set(id,'text-color',P.stationText);set(id,'text-halo-color',P.halo)}
@@ -2093,7 +2115,8 @@ function updateSun(){
   if(!ready)return;
   const {elevation:el,azimuth:az}=sunPosition(),up=el>1,dark=effectiveTheme()==='dark';
   // face lighting: light comes from the sun (polar = 90° − elevation); a soft overhead light at night
-  try{map.setLight({anchor:'map',position:[1.4,up?az:0,up?Math.max(10,90-el):20],intensity:up?.55:.3,color:dark?'#9fb4c8':'#ffffff'})}catch{}
+  const K=coaster&&PARK_COLORS[dark?'dark':'light'];   // the park: a warm light, softer (no blue cast at night)
+  try{map.setLight({anchor:'map',position:[1.4,up?az:0,up?Math.max(10,90-el):20],intensity:K?K.lightK:up?.55:.3,color:K?K.light:dark?'#9fb4c8':'#ffffff'})}catch{}
   // trains: shadow away from the sun, longer when it is low
   const sh=up?Math.min(7,1.6/Math.tan(el*Math.PI/180)):1.2,away=(az+180)*Math.PI/180;
   sunTrainShadow=up?[Math.sin(away)*sh,-Math.cos(away)*sh]:[.8,1.1];
@@ -2102,7 +2125,7 @@ function updateSun(){
   const k=1/Math.tan(el*Math.PI/180),ux=Math.sin(away),uy=Math.cos(away),seen=new Set(),tris=[];
   const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
   for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-    const h=+(f.properties.render_height??10),g=f.geometry;if(!h||!g)continue;
+    const h=+(f.properties.render_height??10),g=f.geometry;if(!h||!g||coaster&&h>=RIDE_H)continue;
     const rings=g.type==='Polygon'?[g.coordinates[0]]:g.type==='MultiPolygon'?g.coordinates.map(p=>p[0]):[];
     for(const ring of rings){
       if(!ring||ring.length<3)continue;
@@ -2118,7 +2141,7 @@ function updateSun(){
   const fade=Math.max(0,Math.min(1,(el-2)/13));   // fade in over the first ~15° after sunrise, out before sunset
   // phones: small bright screens make the same shade read much darker, so lighten it there
   const phone=matchMedia('(max-width:720px),(pointer:coarse)').matches?.35:1;
-  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(.34,.14+el/150)*fade*(dark?.55:1)*phone);
+  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(coaster?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
   map.triggerRepaint();
 }
 
@@ -2172,7 +2195,8 @@ function setCoaster(on,speed=coasterSpeed){
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
   if(was!==on){setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
-    if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900})}
+    if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
+    applyTheme();updateSun();wallsNow()}   // the park colours, and the towers out of the shadows and walls
   map.triggerRepaint();
 }
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
