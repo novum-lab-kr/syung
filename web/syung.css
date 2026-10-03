@@ -32,6 +32,9 @@ html[data-theme=dark]{
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
 .settings-button[aria-expanded=true] svg{transform:rotate(60deg)}
 .refresh-button{margin-left:auto}
+.zoom-badge{margin-left:auto;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,.55);font-variant-numeric:tabular-nums}   /* current map zoom, for checking views */
+html[data-theme=dark] .zoom-badge{background:rgba(255,212,0,.1)}
+.zoom-badge+.refresh-button{margin-left:-12px}
 .refresh-button+.settings-button{margin-left:-16px}   /* the pair sits together: 4px between the 40px targets, not the header's 20px */
 .refresh-button.spin svg{transform:rotate(360deg);transition:transform .6s}
 .settings-button:hover{background:rgba(20,20,20,.08)}
