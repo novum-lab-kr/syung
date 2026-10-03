@@ -422,8 +422,24 @@ function fromRide(p,a){
   const E=rideEdge(p,i),r=a-rideCum(p,i),fw=p.seq[i].id<p.seq[i+1].id,L=p.cum[i+1]-p.cum[i];
   return p.cum[i]+(fw?sOfArc(E,r):L-sOfArc(E,E.total-r));
 }
-// Where the middle of the train is, as a distance (mercator units) along plan.seq.
-function trainPose(p){
+// Where the middle of the train is, as a distance (mercator units) along plan.seq: the feed's prediction (rawPose), but
+// never into the train ahead on the same track. Two reports a moment apart put trains on top of each other (2호선 2083
+// leaving 잠실나루 and 6085 coming in 2 s later, 2026-10-03; a train held at its next platform after fresh data meets the
+// one standing there): the one behind waits TRAIN_GAP_M back, as at a signal. Same line, direction and express or not
+// (an express passes a local at a station). Worked out for all the trains at once, at most every 10 ms.
+const TRAIN_GAP_M=20,spaced=new Map();let spacedAt=-1e9,spacedFor=null;
+function trainPose(p){const now=performance.now();if(now-spacedAt>10||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
+function spaceTrains(){
+  spaced.clear();const groups=new Map(),at=e=>{const q=trackPoint(e.p,e.pose.dist);e.x=q.x;e.y=q.y;e.f=q.f};
+  for(const p of plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2)continue;
+    const m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits(),k=`${p.t.line}|${p.t.direction}|${p.t.express?1:0}`,e={p,pose,half:p.cars*p.carMetres*m/2,m};at(e);
+    if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e)}
+  for(const g of groups.values())if(g.length>1)for(let pass=0;pass<2;pass++)for(const a of g)for(const b of g){if(a===b)continue;
+    const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),need=a.half+b.half+TRAIN_GAP_M*a.m;if(d>=need)continue;
+    const ahead=dx*(a.f[0]+b.f[0])+dy*(a.f[1]+b.f[1]);if(ahead<0||ahead===0&&a.p.id<b.p.id)continue;   // b is not in front of a
+    a.pose={...a.pose,dist:Math.max(0,a.pose.dist-(need-d))};at(a);spaced.set(a.p,a.pose)}
+}
+function rawPose(p){
   let el=age(p.t.receivedAt)+p.lead+(coaster?warpNow():0),ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
   const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
