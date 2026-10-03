@@ -281,17 +281,31 @@ const rolled=(r,F,roll)=>{const d=r[0]*F[0]+r[1]*F[1];let R=[r[0]-d*F[0],r[1]-d*
   const U=[F[1]*R[2]-F[2]*R[1],F[2]*R[0]-F[0]*R[2],F[0]*R[1]-F[1]*R[0]];if(!roll)return [R,U];const c=Math.cos(roll),s=Math.sin(roll);
   return [[c*R[0]-s*U[0],c*R[1]-s*U[1],c*R[2]-s*U[2]],[c*U[0]+s*R[0],c*U[1]+s*R[1],c*U[2]+s*R[2]]]};
 const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
-// Half the long edges (≥ LOOP_MIN) also turn a loop at their middle: over D of ground the train's ground
+// Loops and corkscrews are landmarks, not the rule (on half the edges each they all looked alike): along each line, in
+// order, an edge may take one (not both) once INV_GAP m have passed since the last — a loop by chance INV_LOOP, else a
+// corkscrew by INV_CORK. Chosen once per edge, the first line through it deciding; 'loop', 'cork' or ''.
+const INV_GAP=2500,INV_LOOP=.3,INV_CORK=.25;
+let invMap=null;
+function inversion(lo,hi){
+  if(!invMap){invMap=new Map();
+    for(const chunks of Object.values(paths))for(const ids of chunks){let since=INV_GAP;
+      for(let i=1;i<ids.length;i++){const a=Math.min(ids[i-1],ids[i]),b=Math.max(ids[i-1],ids[i]),k=a+':'+b,A=byId.get(a),B=byId.get(b);if(!A||!B)continue;
+        const L=metresBetween([A.lon,A.lat],[B.lon,B.lat]);
+        if(!invMap.has(k)){let pick='';if(since+L/2>=INV_GAP&&!towerEdge(a,b))pick=hash(a,b,1)<INV_LOOP?'loop':hash(a,b,3)<INV_CORK?'cork':'';invMap.set(k,pick)}
+        since=invMap.get(k)?L/2:since+L}}}
+  return invMap.get(lo+':'+hi)||'';
+}
+// A long edge (≥ LOOP_MIN) picked for it (inversion) turns a loop at its middle: over D of ground the train's ground
 // point runs a prolate trochoid (on, back under itself at the top, on) while it climbs a circle of radius R,
 // R = 45..100 m by edge, D = R·LOOP_DR.
 const LOOP_DR=80/38,LOOP_MIN=800;   // m
-const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||towerEdge(lo,hi)||hash(lo,hi,1)>=.5)return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
-// Some edges (≥ 700 m) also turn a corkscrew (as 88열차): over D of ground (200–250 m a turn: shorter, a car spanned a
+const loopD=(L,lo,hi)=>{if(L<LOOP_MIN||inversion(lo,hi)!=='loop')return 0;const D=(45+55*hash(lo,hi,2))*LOOP_DR;return L>=D*4?D:0};   // m of ground, 0: none
+// An edge (≥ 700 m) picked for it (inversion) turns a corkscrew (as 88열차): over D of ground (200–250 m a turn: shorter, a car spanned a
 // quarter turn and looked wrung) the cars roll once or twice about their own middle (θ, eased in and out) and the rails
 // wind round them (CORK_HEART: the shaders turn both about a line half a body up). Off the loop, clear of the climbs at
 // either end. [start m from lo, D m, turns] or null.
 const corkOf=(L,lo,hi)=>{
-  if(L<700||towerEdge(lo,hi)||hash(lo,hi,3)>=.45)return null;const T=hash(lo,hi,4)<.3?2:1,D=(200+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
+  if(L<700||inversion(lo,hi)!=='cork')return null;const T=hash(lo,hi,4)<.3?2:1,D=(200+50*hash(lo,hi,5))*T,end=COASTER_FLAT+COASTER_RISE,LD=loopD(L,lo,hi);
   const ok=c=>c-D/2>=end&&c+D/2<=L-end&&(!LD||Math.abs(c-L/2)>=LD/2+D/2+30);
   const want=LD?(hash(lo,hi,6)<.5?.27:.73)*L:(.35+.3*hash(lo,hi,6))*L;
   for(const c of [want,L-want,.25*L,.75*L,.5*L])if(ok(c))return [c-D/2,D,T];return null};
@@ -300,11 +314,11 @@ const CORK_HEART=.34;   // × body px: the corkscrew's axis above the rails, the
 // twice as fast and wrung the cars there)
 const corkTheta=(u,T)=>{const e=.15,f=u<e?u*u/(2*e):u>1-e?1-e-(1-u)*(1-u)/(2*e):u-e/2;return 2*Math.PI*T*f/(1-e)};
 // [ground distance, height] (mercator units, lo→hi) where the track is at distance s along that line's edge
-// The hills alone, m at s (mercator) along an edge of length L m: knots at irregular spacing, tops and dips
-// alternating, each its own height; eased from knot to knot
+// The hills alone, m at s (mercator) along an edge of length L m: knots at irregular spacing (a top or a dip every
+// ~375 m: at ~190 m the track rippled all the way), tops and dips alternating, each its own height; eased from knot to knot
 function hillsAt(lo,hi,L,k){
   const d=Math.min(k,1-k)*L,env=smooth(Math.max(0,Math.min(1,(d-COASTER_FLAT)/COASTER_RISE)));if(!env)return 0;
-  const n=Math.max(1,Math.round(L/380)),m=2*n+1,x=k*m,j=Math.min(m-1,Math.floor(x));
+  const n=Math.max(1,Math.round(L/750)),m=2*n+1,x=k*m,j=Math.min(m-1,Math.floor(x));
   const knot=i=>{if(i<=0||i>=m)return i<=0?0:1;return (i+(hash(lo,hi,10+i)-.5)*.6)/m},hk=i=>{const r=hash(lo,hi,40+i);
     return i%2?COASTER_LOW+(COASTER_H-COASTER_LOW)*r*r*.35:COASTER_LOW+(COASTER_H-COASTER_LOW)*(.25+.75*r)};   // odd: dips, low; even: tops, any height
   let a=j;while(a>0&&knot(a)>k)a--;while(a<m-1&&knot(a+1)<=k)a++;const u=(k-knot(a))/((knot(a+1)-knot(a))||1);
@@ -1508,7 +1522,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       if(h<COL_AFRAME)leg(q,q,2.4);
       else{const d=.18*q.h,F=(x)=>({...q,x:q.x+q.R[0]*x,y:q.y+q.R[1]*x});leg(F(-d),q,2.4);leg(F(d),q,2.4);
         const a=F(-d/2),b=F(d/2);for(const [A,B] of [[a,b]]){v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,-3,NONE,-.8,1)}}   // the brace halfway up
-      for(const [z0,z1,f0,f1] of [[G,G-4,0,0],[G,G,-1.6,1.6]]){v(q,1,-1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.25,0,0,f1,z1,NONE,-.8,1)}}   // the crossbeam under both girders: its face and its underside
+      if(lvl<=16)for(const [z0,z1,f0,f1] of [[G,G-4,0,0],[G,G,-1.6,1.6]]){v(q,1,-1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.1,0,0,f0,z0,NONE,-.86,1);v(q,1,1.1,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.1,0,0,f1,z1,NONE,-.8,1)}}   // the crossbeam under both girders: its face and its underside (close up: farther out, rungs sticking out of the track)
     for(const side of [-1,1]){
       for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
         for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
