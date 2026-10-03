@@ -4,10 +4,13 @@
 // shape in *unit space* (xy in radius units, z in height units) and every instance supplies its own scales,
 // so a 555 m drop tower and a 160 m one are the same vertices. Animation is a uniform clock in the vertex
 // shader (wheel turn, swing turn, saucer panels, the drop tower's rise/pause/drop/pause), so no buffer is
-// rebuilt while they move; only the small per-frame instance list (12 floats a ride) is re-uploaded.
+// rebuilt while they move; only the small per-frame instance list (18 floats a ride) is re-uploaded.
+// opts.night hangs the festoon lights on the same instances: see buildBulbs / BULB_VS below.
 //
 //   const rides=new RideLayer(towers);           // [[lon,lat,footprintRadius_m,height_m], …]
 //   rides.init(gl,maplibregl); rides.render(gl,matrix,opts); rides.sites(); rides.dispose(gl);
+
+import { BULB_FS, BULB_TWINKLE, BULB_PAL, bulbSize, compile, hexRGB } from './park_night.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;
@@ -204,7 +207,75 @@ function buildSaucer(lod) {
   }
   return M;
 }
+// ── the lights the rides wear at night (opts.night) ─────────────────────────────────────────────
+// One point sprite a bulb, on the same unit-space / rot-mode scheme as the ride mesh, so a bulb on the
+// wheel rim turns with the rim and a bulb on the seat ring rides up and drops with it — no CPU work.
+//   a_k = (bulb colour 0-3, rot mode, xy-scale pick, tier)   tier 0 outline · 1 spokes · 2 garland
+//   a_e = (parameter, role)  role 0 plain · 1 rim (parameter = the way round, for the slow wave)
+//                                 2 ground garland (parameter = along the string) · 3 Lotte's extra mast strings
+class Bulbs {
+  constructor() { this.d = []; this.n = 0 }
+  at(C, p, col, tier, sel, param = 0, role = 0) {
+    let a, b;
+    if (C.mode === 1) { a = p; b = [0, 0, 0] }
+    else if (C.mode === 2) { a = sub(p, C.piv); b = C.piv }
+    else if (C.mode === 4) { a = C.arm; b = add(C.piv, p) }
+    else { a = [0, 0, 0]; b = p }
+    this.d.push(a[0], a[1], a[2], b[0], b[1], b[2], col, C.mode, sel, tier, param, role);
+    this.n++;
+  }
+  ring(C, n, rad, z, col0, tier, sel, role) {    // a string of bulbs the whole way round
+    for (let i = 0; i < n; i++) { const t = i / n * 2 * Math.PI; this.at(C, [Math.cos(t) * rad, Math.sin(t) * rad, z], col0(i), tier, sel, i / n, role) }
+  }
+  buffer() { return new Float32Array(this.d) }
+}
+// 3 bulbs in 4 are the warm cream; the fourth takes one of the three accents in turn
+const bulbCol = i => i % 4 === 3 ? 1 + ((i >> 2) % 3) : 0;
+const GARLANDS = 4, GSPAN = 10;      // four strings a ride, ten bulbs on each
+
+function buildBulbs(kind) {
+  const B = new Bulbs(), hub = [0, 0, .58];
+  if (kind === 'ferris') {
+    for (let i = 0; i < 64; i++) {                                          // the rim, every ~6 m, standing in the wheel's plane
+      const t = i / 64 * 2 * Math.PI;
+      B.at(wheel(hub), [Math.cos(t) * .52, 0, .58 + Math.sin(t) * .52], bulbCol(i), 0, 0, i / 64, 1);
+    }
+    for (let k = 0; k < 6; k++) for (let j = 0; j < 6; j++) {               // six alternating spokes, every ~10 m
+      const t = k / 6 * 2 * Math.PI, rad = .09 + j / 5 * .37;
+      B.at(wheel(hub), [Math.cos(t) * rad, 0, .58 + Math.sin(t) * rad], bulbCol(k * 6 + j), 1, 0);
+    }
+  } else if (kind === 'swing') {
+    B.ring(SPIN, 40, 1.03, .772, bulbCol, 0, 0, 1);                         // the canopy edge, every ~5 m
+    for (let i = 0; i < 8; i++) { const t = i / 8 * 2 * Math.PI; B.at(SPIN, [Math.cos(t) * 1.06, Math.sin(t) * 1.06, .645], bulbCol(i * 3 + 1), 0, 0) }
+  } else if (kind === 'saucer') {
+    B.ring(STILL, 40, 1.03, .8275, bulbCol, 0, 0, 1);                       // the rim, every ~5 m
+  } else {
+    for (const [a, role] of [[0, 0], [Math.PI, 0], [Math.PI / 2, 3], [-Math.PI / 2, 3]]) {   // two mast strings; Lotte gets four
+      for (let j = 0; j < 18; j++) B.at(STILL, [Math.cos(a) * 1.3, Math.sin(a) * 1.3, .08 + j / 17 * .87], bulbCol(j * 2 + (a > 0 ? 1 : 0)), 0, 1, 0, role);
+    }
+    B.ring(LIFT, 32, 1.04, .012, bulbCol, 0, 0, 1);                         // the seat ring, every ~5 m
+  }
+  for (let g = 0; g < GARLANDS; g++) {                                      // the ground garlands (z>=15, never Lotte)
+    const a = g / GARLANDS * 2 * Math.PI, dir = [Math.cos(a), Math.sin(a), 0];
+    for (let j = 1; j <= GSPAN; j++) B.at(STILL, dir, bulbCol(g * GSPAN + j), 2, 0, j / (GSPAN + 1), 2);
+  }
+  return B;
+}
+// the wire the garland bulbs hang on, plus the little pole at its far end
+function buildWire() {
+  const d = [];
+  const put = (dir, t) => d.push(0, 0, 0, dir[0], dir[1], 0, 0, 0, 0, 2, t, 2);   // the direction sits in a_w, as it does for a still bulb
+  for (let g = 0; g < GARLANDS; g++) {
+    const a = g / GARLANDS * 2 * Math.PI, dir = [Math.cos(a), Math.sin(a)];
+    for (let j = 0; j < 12; j++) { put(dir, j / 12); put(dir, (j + 1) / 12) }
+    d.push(0, 0, 0, dir[0], dir[1], 0, 0, 0, 0, 2, 1, 4);   // the pole: up from the ground to where the string ends
+    put(dir, 1);
+  }
+  return new Float32Array(d);
+}
+
 const KINDS = ['drop', 'ferris', 'swing', 'saucer'];
+const INST = [[4, 2], [5, 4], [6, 4], [7, 4], [8, 4]];   // the instance attributes, shared by the ride mesh and its lights
 const BUILD = { drop: buildDrop, ferris: buildFerris, swing: buildSwing, saucer: buildSaucer };
 
 // ── shaders ─────────────────────────────────────────────────────────────────────────────────────
@@ -250,6 +321,68 @@ void main(){
 const FS = `#version 300 es
 precision highp float; in vec3 v_col; out vec4 o; void main(){ o = vec4(v_col, 1.); }`;
 
+// the festoon lights: one sprite a bulb, instanced over the rides, carried by the same animation
+const BULB_VS = `#version 300 es
+layout(location=0) in vec3 a_v;
+layout(location=1) in vec3 a_w;
+layout(location=2) in vec4 a_k;      // bulb colour 0-3, rot mode, xy-scale pick, tier
+layout(location=3) in vec2 a_e;      // parameter, role (0 plain · 1 rim · 2 garland · 3 Lotte's extra strings · 4 garland pole foot)
+layout(location=4) in vec2 i_org;
+layout(location=5) in vec4 i_s;
+layout(location=6) in vec4 i_a;
+layout(location=8) in vec4 i_n;      // garlands on, collar height m, pole radius m, exaggeration
+uniform mat4 u_matrix; uniform float u_time, u_size, u_core, u_tier, u_thin, u_anim, u_bright;
+uniform vec3 u_pal[4];
+out vec3 v_rgb; out vec2 v_mix;
+${BULB_TWINKLE}
+void kill(){ gl_Position = vec4(2., 2., 2., 1.); gl_PointSize = 0.; }
+void main(){
+  float role = a_e.y, tier = a_k.w;
+  if (tier > u_tier + .5) { kill(); return; }
+  bool garland = role > 1.5 && role < 2.5 || role > 3.5;                  // the string, and the little pole at its end
+  if (garland && i_n.x < .5) { kill(); return; }                          // Lotte has the spiral round it: no garlands
+  if (role > 2.5 && role < 3.5 && i_n.x > .5) { kill(); return; }         // the two extra mast strings are Lotte's only
+  if (tier > .5 && u_thin > 1.5 && mod(float(gl_VertexID), u_thin) >= .5) { kill(); return; }
+  float tt = u_time * i_a.y + i_a.x, p6 = 6.283185307;
+  vec3 p;
+  if (garland) {                                                           // worked straight in metres: a collar on the mast
+    vec2 dir = a_v.xy + a_w.xy;                                            // down and out to a 6 m pole, with a sag in the middle
+    float t = a_e.x;
+    p = mix(vec3(0., 0., i_n.y), vec3(dir * i_n.z, 6.), t);
+    if (role > 3.5) p.z = 0.;                                              // the pole's foot, on the ground under the string's end
+    else p.z -= 16. * t * (1. - t);                                        // about 4 m of sag
+  } else {
+    float sxy = a_k.z > .5 ? i_s.z : i_s.x, sz = i_s.y, m = a_k.y;
+    vec3 v = vec3(a_v.xy * sxy, a_v.z * sz), w = vec3(a_w.xy * sxy, a_w.z * sz);
+    if (m < .5) p = v + w;
+    else if (m < 1.5){ float g = p6 * fract(tt / i_a.z), c = cos(g), sn = sin(g);
+      p = vec3(v.x * c - v.y * sn, v.x * sn + v.y * c, v.z) + w; }
+    else if (m < 2.5){ float g = p6 * fract(tt / i_a.z), c = cos(g), sn = sin(g);
+      p = vec3(v.x * c + v.z * sn, v.y, -v.x * sn + v.z * c) + w; }
+    else if (m < 3.5){ float u = fract(tt / 20.) * 20., f;
+      if (u < 12.) f = smoothstep(0., 1., u / 12.);
+      else if (u < 14.) f = 1.;
+      else if (u < 18.){ float q = (u - 14.) * .25; f = 1. - q * q * (2. - q); }
+      else f = 0.;
+      p = v + w; p.z += (.15 + .67 * f) * sz; }
+    else { float g = p6 * fract(tt / i_a.z), c = cos(g), sn = sin(g);
+      p = vec3(v.x * c + v.z * sn, v.y, -v.x * sn + v.z * c) + w; }
+  }
+  float yc = cos(i_a.w), ys = sin(i_a.w);
+  p = vec3(p.x * yc - p.y * ys, p.x * ys + p.y * yc, p.z);
+  gl_Position = u_matrix * vec4(i_org + p.xy * i_s.w, p.z * i_s.w, 1.);
+  gl_Position.z -= 3.5e-4 * gl_Position.w;                                 // a hair in front of the surface it is fixed to
+  gl_PointSize = u_size;
+  float b = u_bright;
+  if (role > .5 && role < 1.5) b *= .70 + .30 * (.5 + .5 * cos(p6 * (a_e.x - u_time / 12.)));   // one slow wave round the rim every 12 s
+  b *= twinkle(hash1(float(gl_VertexID) * .19 + float(gl_InstanceID) * .77), u_time, u_anim);
+  v_rgb = u_pal[int(a_k.x)];
+  v_mix = vec2(u_core, b);
+}`;
+const WIRE_FS = `#version 300 es
+precision highp float; uniform vec4 u_wire; out vec4 o;
+void main(){ o = vec4(u_wire.rgb * u_wire.a, u_wire.a); }`;
+
 const SUN = norm([-.30, .46, .84]);   // +x east, +y south (mercator), +z up: a high south-western sun
 // The rides do not borrow the building palette: they need to separate from the blocks they replace.
 const RIDE_LIGHT = ['#D7B566', '#D69A7D', '#CC8CA7', '#AA93C7', '#78AEC4', '#8AB58F', '#D8CEB7', '#BAB19D', '#D9C382', '#94BBC8'];
@@ -285,6 +418,8 @@ export class RideLayer {
       s.sz = kind === 'ferris' ? D : H;
       s.top = kind === 'ferris' ? 1.1 * D : kind === 'drop' ? 1.08 * H : H;   // metres, for the cull margin
       s.wide = kind === 'ferris' ? .55 * D : Math.max(1.2 * s.r, 2.6 * s.mastR);
+      s.collar = Math.min(.25 * H, 35);                                     // where the night garlands are tied on
+      s.pole = Math.min(1.3 * (kind === 'ferris' ? .5 * D : s.r), 65);
       return s;
     });
     this.stats = { tris: 0, rides: 0, ms: 0 };
@@ -300,18 +435,21 @@ export class RideLayer {
       const O = maplibregl.MercatorCoordinate.fromLngLat([126.978, 37.5665]); this.O = { x: O.x, y: O.y };
       for (const s of this._sites) { const m = maplibregl.MercatorCoordinate.fromLngLat([s.lon, s.lat]); s.x = m.x; s.y = m.y; s.mu = m.meterInMercatorCoordinateUnits() }
     }
-    const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(x)); return x };
-    this.p = gl.createProgram();
-    const vs = sh(gl.VERTEX_SHADER, VS), fs = sh(gl.FRAGMENT_SHADER, FS);
-    gl.attachShader(this.p, vs); gl.attachShader(this.p, fs); gl.linkProgram(this.p); gl.deleteShader(vs); gl.deleteShader(fs);
-    if (!gl.getProgramParameter(this.p, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(this.p));
+    this.p = compile(gl, VS, FS);
     this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+
+    this.pB = compile(gl, BULB_VS, BULB_FS);
+    this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pB, n)]));
+    this.pW = compile(gl, BULB_VS, WIRE_FS);
+    this.uW = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_wire'].map(n => [n, gl.getUniformLocation(this.pW, n)]));
+    this.bulbRGB = new Float32Array(BULB_PAL.flatMap(hexRGB));
+    this.wireBuf = buildWire();
 
     this.kind = {};
     for (const k of KINDS) {
       const K = this.kind[k] = { order: [], inst: gl.createBuffer(), data: null, lod: [] };
       K.order = this._sites.filter(s => s.kind === k);
-      K.data = new Float32Array(K.order.length * 14);
+      K.data = new Float32Array(K.order.length * 18);
       gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
       gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW);
       for (const lod of [0, 1]) {
@@ -322,11 +460,29 @@ export class RideLayer {
         const S = 13 * 4; let o = 0;
         for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 4]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
         gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-        const IS = 14 * 4; o = 0;
-        for (const [loc, n] of [[4, 2], [5, 4], [6, 4], [7, 4]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
+        const IS = 18 * 4; o = 0;
+        for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
         gl.bindVertexArray(null);
         K.lod[lod] = { va, vb, n: M.tris * 3, tris: M.tris };
       }
+      // the lights: one mesh a kind (no LOD; tiers and a stride thin them), on the same instance buffer
+      const lit = (buf, count) => {
+        const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
+        const va = gl.createVertexArray(); gl.bindVertexArray(va);
+        gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        const S = 12 * 4; let o = 0;
+        for (const [loc, n] of [[0, 3], [1, 3], [2, 4], [3, 2]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
+        gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
+        const IS = 18 * 4; o = 0;
+        for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
+        gl.bindVertexArray(null);
+        return { va, vb, n: count };
+      };
+      const B = buildBulbs(k);
+      K.bulb = lit(B.buffer(), B.n);
+      K.wire = lit(this.wireBuf, this.wireBuf.length / 12);
+      K.tiers = [0, 0, 0];
+      for (let i = 0; i < B.n; i++) K.tiers[B.d[i * 12 + 9]]++;             // how many bulbs each tier adds
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     this.ready = true;
@@ -335,13 +491,12 @@ export class RideLayer {
   render(gl, matrix, opts = {}) {
     if (!this.ready) return;
     const t0 = performance.now();
-    const { now = performance.now(), dark = false, zoom = 15, phone = false, reducedMotion = false, bounds, bearing = 0 } = opts;
+    const { now = performance.now(), dark = false, zoom = 15, phone = false, reducedMotion = false, bounds, bearing = 0, night = false, pixelRatio = 1 } = opts;
     // The rides carry their own palette (the building one is too close to the blocks they stand among);
     // opts.ridePalette overrides it. opts.palette / cream / shade are accepted and ignored.
     const pal = opts.ridePalette || (dark ? RIDE_DARK : RIDE_LIGHT);
     if (this._palKey !== pal) {
-      const hex = h => { const v = parseInt(String(h).replace('#', ''), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
-      this._rgb = new Float32Array(30); pal.forEach((h, i) => this._rgb.set(hex(h), i * 3)); this._palKey = pal;
+      this._rgb = new Float32Array(30); pal.forEach((h, i) => this._rgb.set(hexRGB(h), i * 3)); this._palKey = pal;
     }
     const rgb = this._rgb;
 
@@ -367,13 +522,14 @@ export class RideLayer {
     const face = Math.min(1, Math.max(0, (14.5 - zoom) / 1)), bear = bearing * Math.PI / 180;
     for (const k of KINDS) this.kind[k].n = 0;
     for (const s of vis) {
-      const K = this.kind[s.kind], d = K.data, i = K.n * 14, eh = s.lotte ? 1 : EH, ev = s.lotte ? 1 : EV;
+      const K = this.kind[s.kind], d = K.data, i = K.n * 18, eh = s.lotte ? 1 : EH, ev = s.lotte ? 1 : EV;
       let yaw = s.yaw;
       if (s.kind === 'ferris' && face > 0) { let dy = (bear - yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI; yaw += dy * face }
       d[i] = s.x - this.O.x; d[i + 1] = s.y - this.O.y;
       d[i + 2] = s.sxy * eh; d[i + 3] = s.sz * ev; d[i + 4] = s.mastR * eh; d[i + 5] = s.mu;
       d[i + 6] = s.phase; d[i + 7] = moving && !moving.has(s) ? 0 : 1; d[i + 8] = s.period; d[i + 9] = yaw;
       d[i + 10] = s.colA; d[i + 11] = s.colB; d[i + 12] = s.struct; d[i + 13] = s.shade;
+      d[i + 14] = s.lotte ? 0 : 1; d[i + 15] = s.collar; d[i + 16] = s.pole; d[i + 17] = 0;
       K.n++;
     }
 
@@ -394,15 +550,42 @@ export class RideLayer {
       const K = this.kind[k]; if (!K.n) continue;
       const L = K.lod[lod];
       gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * 14);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * 18);
       gl.bindVertexArray(L.va);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, L.n, K.n);
       tris += L.tris * K.n;
     }
+    // ── after dark: the festoon lights, on top of the same instances ────────────────────────────
+    let bulbs = 0;
+    if (night) {
+      // tier 0 keeps every ride's outline, 1 adds the wheel spokes, 2 the ground garlands; then a stride
+      let tier = zoom >= 15 ? 2 : zoom >= 14.5 ? 1 : 0;
+      const cap = (phone ? 2500 : 6000) * .4;
+      const count = t => KINDS.reduce((a, k) => a + this.kind[k].n * this.kind[k].tiers.slice(0, t + 1).reduce((x, y) => x + y, 0), 0);
+      while (tier > 0 && count(tier) > cap) tier--;
+      bulbs = count(tier);
+      const thin = bulbs > cap ? Math.ceil(bulbs / cap) : 1;
+      bulbs = Math.round(bulbs / (thin > 1 ? 1.6 : 1));
+      const sz = bulbSize(zoom, pixelRatio);
+      gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const setUni = (u) => {
+        gl.uniformMatrix4fv(u.u_matrix, false, MT);
+        gl.uniform1f(u.u_time, ts); gl.uniform1f(u.u_size, sz.point); gl.uniform1f(u.u_core, sz.coreFrac);
+        gl.uniform1f(u.u_tier, tier); gl.uniform1f(u.u_thin, thin); gl.uniform1f(u.u_anim, reducedMotion ? 0 : 1);
+        gl.uniform1f(u.u_bright, 1); gl.uniform3fv(u.u_pal, this.bulbRGB); gl.uniform2f(u.u_wt, .85, .12);
+      };
+      if (tier >= 2) {                                                      // the thin wire first, under the bulbs
+        gl.useProgram(this.pW); setUni(this.uW);
+        gl.uniform1f(this.uW.u_thin, 1); gl.uniform4f(this.uW.u_wire, .459, .408, .325, .35);
+        for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.wire.va); gl.drawArraysInstanced(gl.LINES, 0, K.wire.n, K.n) } }
+      }
+      gl.useProgram(this.pB); setUni(this.uB);
+      for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.bulb.va); gl.drawArraysInstanced(gl.POINTS, 0, K.bulb.n, K.n) } }
+    }
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     // left for the caller: DEPTH_TEST on / LEQUAL / depth writes on, BLEND on (blendFunc untouched), CULL_FACE off
-    gl.enable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
-    this.stats = { tris, rides: vis.length, moving: moving ? moving.size : vis.length, ms: performance.now() - t0, lod };
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
+    this.stats = { tris, rides: vis.length, bulbs, moving: moving ? moving.size : vis.length, ms: performance.now() - t0, lod };
     this._moving = !reducedMotion && (moving ? moving.size > 0 : vis.length > 0);
   }
 
@@ -412,8 +595,9 @@ export class RideLayer {
 
   dispose(gl) {
     if (!this.p) return;
-    for (const k of KINDS) { const K = this.kind[k]; gl.deleteBuffer(K.inst); for (const L of K.lod) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
-    gl.deleteProgram(this.p); this.p = null; this.kind = null; this.ready = false;
+    for (const k of KINDS) { const K = this.kind[k]; gl.deleteBuffer(K.inst);
+      for (const L of [...K.lod, K.bulb, K.wire]) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
+    gl.deleteProgram(this.p); gl.deleteProgram(this.pB); gl.deleteProgram(this.pW); this.p = null; this.kind = null; this.ready = false;
   }
 }
 export default RideLayer;
