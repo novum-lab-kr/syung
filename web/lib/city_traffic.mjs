@@ -160,10 +160,27 @@ export class RoadGraph {
 // goes when nothing continues (the cell beyond is not built, a one-way dead end). Spawned on the streets
 // in view to the pack's density per 100 m of road, faded in and out by scale.
 const KIND_W = [.8, .2];   // sedan, SUV (pack.suvRatio overrides)
+// The parts of an edge inside a box as ranges of s (its distance along) and their total length: where people and
+// cars are put so that they appear in view, not somewhere along a street that merely crosses it (a long street's
+// middle, or its end, is often off screen while the street itself runs right through the view).
+export function visibleRanges(e, [x0, y0, x1, y1]) {
+  const xs = e.xs, ys = e.ys, cum = e.cum, r = []; let len = 0;
+  for (let i = 1; i < xs.length; i++) {
+    const ax = xs[i - 1], ay = ys[i - 1], dx = xs[i] - ax, dy = ys[i] - ay; let t0 = 0, t1 = 1, ok = true;   // Liang–Barsky
+    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) { if (p === 0) { if (q < 0) { ok = false; break } continue } const t = q / p; if (p < 0) { if (t > t1) { ok = false; break } if (t > t0) t0 = t } else { if (t < t0) { ok = false; break } if (t < t1) t1 = t } }
+    if (!ok) continue; const L = cum[i] - cum[i - 1], s0 = cum[i - 1] + t0 * L, s1 = cum[i - 1] + t1 * L; if (s1 <= s0) continue;
+    if (r.length && Math.abs(r[r.length - 1][1] - s0) < 1e-6) r[r.length - 1][1] = s1; else r.push([s0, s1]); len += s1 - s0;
+  }
+  return { r, len };
+}
+// a distance along the edge at fraction u (0..1) of its visible length
+export function sampleS(V, u) { let d = u * V.len; for (const [s0, s1] of V.r) { if (d <= s1 - s0) return s0 + d; d -= s1 - s0 } const last = V.r[V.r.length - 1]; return last ? last[1] : 0 }
+
 export class TrafficSim {
   constructor(graph, { pack, maxCars = 1400 } = {}) {
     this.G = graph; this.pack = pack; this.cars = []; this.max = maxCars; this.poses = new Float32Array(maxCars * 10); this.count = 0;
-    const V = pack.props.vehicles; this.colors = V.colors.map(hexRgb); this.cw = V.weights; this.suv = V.suvRatio; this.per100 = V.per100M; this.laneK = V.laneOffsetWidthRatio; this.clearance = V.intersectionClearanceM;
+    const V = pack.props.vehicles; this.colors = V.colors.map(hexRgb); this.cw = V.weights; this.suv = V.suvRatio; const AL = pack.roads?.aliases || {}, D = V.per100M; this.per100 = Object.fromEntries(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service'].map(c => [c, D[c] ?? D[AL[c]] ?? ((c === 'motorway' || c === 'trunk') ? D.primary : 0)]));   // the pack's density per class; one it leaves out (the expressways, so far) through its alias, else as busy as a primary road
+    this.laneK = V.laneOffsetWidthRatio; this.clearance = V.intersectionClearanceM;
     const [lo, hi] = V.speedMps; this.vmax = { motorway: hi, trunk: hi, primary: hi, secondary: lo + (hi - lo) * .75, tertiary: lo + (hi - lo) * .5, minor: lo + (hi - lo) * .15, service: lo };
     this.stats = { cars: 0, visible: 0, target: 0 };
     this._t = 0;
@@ -188,7 +205,7 @@ export class TrafficSim {
     const [x0, y0, x1, y1] = box, W = x1 - x0, H = y1 - y0, far = [x0 - Math.max(300, W * .75), y0 - Math.max(300, H * .75), x1 + Math.max(300, W * .75), y1 + Math.max(300, H * .75)];
     // the streets in view and how many cars they call for
     const vis = []; let want = 0;
-    for (const e of G.edges) { if (e.level < 0 || e.box[2] < x0 || e.box[0] > x1 || e.box[3] < y0 || e.box[1] > y1) continue; const d = this.per100[e.cls] || 0; if (!d || e.len < 2 * this.clearance + 6) continue; vis.push(e); want += e.len / 100 * d }
+    for (const e of G.edges) { if (e.level < 0 || e.box[2] < x0 || e.box[0] > x1 || e.box[3] < y0 || e.box[1] > y1) continue; const d = this.per100[e.cls] || 0; if (!d || e.len < 2 * this.clearance + 6) continue; const V = visibleRanges(e, box); if (!V.len) continue; vis.push([e, V]); want += V.len / 100 * d }   // only the part of each street that is in view counts (and gets the cars)
     const target = Math.min(cap, Math.round(want * fade));
     // move
     for (const e of G.edges) e.q.length = 0;
@@ -238,8 +255,8 @@ export class TrafficSim {
     let visible = 0; for (const c of cars) if (c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1 && !c.dying) visible++;
     if (vis.length && visible < target && cars.length < this.max) {
       for (let k = 0; k < 6 && visible < target; k++) {
-        let r = Math.random() * want, e = vis[0]; for (const x of vis) { r -= x.len / 100 * (this.per100[x.cls] || 0); if (r <= 0) { e = x; break } }
-        const s = this.clearance + Math.random() * (e.len - 2 * this.clearance), dir = e.oneway ? e.oneway : Math.random() < .5 ? 1 : -1;
+        let r = Math.random() * want, pick = vis[0]; for (const x of vis) { r -= x[1].len / 100 * (this.per100[x[0].cls] || 0); if (r <= 0) { pick = x; break } }
+        const e = pick[0], s = Math.max(this.clearance, Math.min(e.len - this.clearance, sampleS(pick[1], Math.random()))), dir = e.oneway ? e.oneway : Math.random() < .5 ? 1 : -1;
         let clash = false; for (const c of e.q) if (c.dir === dir && Math.abs(c.s - s) < 12) { clash = true; break }
         if (clash) continue;
         const c = this.spawn(e, s, dir); nowPos(c); visible++;

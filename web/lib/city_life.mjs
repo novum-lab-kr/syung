@@ -17,7 +17,7 @@
 import SEOUL from './city_style_seoul.mjs';
 import { BULB_FS, bulbSize } from './park_night.mjs';
 import { toneRGB, hexRgb, MPP } from './city_style.mjs';
-import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi } from './city_traffic.mjs';
+import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './city_traffic.mjs';
 
 const EARTH = 40075016.685578488, ORIGIN = [126.978, 37.5665];
 const mercX = lon => lon / 360 + .5, mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
@@ -372,9 +372,9 @@ export class CityLife {
     for (const e of edges) { if (e.level !== 0 || e.cls === 'motorway' || e.cls === 'trunk' || e.ramp) continue; const p = this.graph.poseAt(e, e.len / 2, 0, 1), z = zoneAt(p.x, p.y), live = liveliness(p.x, p.y);
       for (const side of e.sidewalk ? [-1, 1] : [1]) walks.push({ e, side, off: e.sidewalk ? e.width / 2 + e.sidewalk * .5 : 0, zone: z, live, len: e.len, path: false }) }
     for (const pth of paths) { if (pth.pts.length < 2) continue; const xs = new Float64Array(pth.pts.length), ys = new Float64Array(pth.pts.length), cum = new Float64Array(pth.pts.length);
-      for (let i = 0; i < pth.pts.length; i++) { xs[i] = pth.pts[i][0]; ys[i] = pth.pts[i][1]; if (i) cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]) }
+      const bb = [Infinity, Infinity, -Infinity, -Infinity]; for (let i = 0; i < pth.pts.length; i++) { xs[i] = pth.pts[i][0]; ys[i] = pth.pts[i][1]; if (i) cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]); if (xs[i] < bb[0]) bb[0] = xs[i]; if (xs[i] > bb[2]) bb[2] = xs[i]; if (ys[i] < bb[1]) bb[1] = ys[i]; if (ys[i] > bb[3]) bb[3] = ys[i] }
       const len = cum[cum.length - 1]; if (len < 10) continue; const mx = xs[xs.length >> 1], my = ys[ys.length >> 1]; if (mx < bx0 || mx >= bx1 || my < by0 || my >= by1) continue;
-      walks.push({ e: { xs, ys, cum, len, a: null, b: null, width: 0 }, side: 0, off: 0, zone: 7, live: liveliness(mx, my), len, path: true }) }
+      walks.push({ e: { xs, ys, cum, len, a: null, b: null, width: 0, box: bb }, side: 0, off: 0, zone: 7, live: liveliness(mx, my), len, path: true }) }
     mark('crossings+walks'); yield;
     // onto the GPU: each prop sorted into an 8×8 sub-grid of the cell, so the view draws only the rows and columns it covers
     const gl = this.gl, SUB = 8, sx = (bx1 - bx0) / SUB, sy = (by1 - by0) / SUB;
@@ -413,9 +413,13 @@ export class CityLife {
     const need = this.needed(vbox), wanted = new Set();
     for (const [key, x, y] of need) { wanted.add(key); if (!this.cells.has(key)) this.cells.set(key, { key, x, y, box: this.cellBox(x, y), state: 'pending', tries: 0 }) }
     const pending = [...this.cells.values()].filter(c => c.state === 'pending');
-    if (pending.length && now - this.lastQuery > 400) {
-      this.lastQuery = now; const by = this.gather(), loaded = this.map.areTilesLoaded();
-      for (const c of pending) { const F = by.get(c.key); if (F && (F.transportation.length || F.building.length || F.landcover.length)) { c.state = 'building'; c.gen = this.build(c, F) } else if (loaded && ++c.tries >= 5) { c.state = 'ready'; c.counts = {}; c.walks = [] } }
+    const due = pending.filter(c => !(c.retryAt > now));
+    if (due.length && now - this.lastQuery > 400) {
+      this.lastQuery = now; const by = this.gather();
+      // a tile that is there but bare (water, say) is finished at once; one whose features have not come (not loaded yet, or
+      // only in the padding — the map does not fetch what is off screen) is asked after again, less and less often, and is
+      // built when they do come. (Settling for empty after a few tries left whole tiles bare after a pan: no trees, cars or people.)
+      for (const c of due) { const F = by.get(c.key); if (F && (F.transportation.length || F.building.length || F.landcover.length)) { c.state = 'building'; c.gen = this.build(c, F) } else if (F) { c.state = 'ready'; c.counts = {}; c.walks = []; c.bare = true } else { c.tries++; c.retryAt = now + Math.min(8000, 400 * 2 ** Math.min(c.tries, 5)) } }
     }
     // one cell at a time, nearest the centre first, within this frame's budget
     if (!this.building || this.building.state !== 'building') { const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2; this.building = [...this.cells.values()].filter(c => c.state === 'building').sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null }
@@ -423,7 +427,7 @@ export class CityLife {
     if (this.building) { const deadline = t0 + (moving ? 4 : Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4))), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
     if (this.cells.size > 10) for (const c of [...this.cells.values()]) { if (this.cells.size <= 8) break; if (!wanted.has(c.key) && c.state !== 'building') this.dropCell(c) }
     this.lastFrame = now;
-    const stillBuilding = [...this.cells.values()].some(c => c.state !== 'ready');
+    const stillBuilding = [...this.cells.values()].some(c => c.state === 'building' || (c.state === 'pending' && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3]))), waiting = [...this.cells.values()].filter(c => c.state === 'pending').length;   // building: the view still lacks props (being built, or its tile not here yet); waiting: cells (in view or not) without their tile
     // the frame's matrix (the local origin folded in, in double precision) and lighting
     const MT = this.M; MT.set(matrix); for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const theme = dark ? 'dark' : 'light', mode = coaster ? 'coaster' : 'simcity', Lg = pack.lighting[theme], ref = pack.lighting.referenceSun;
@@ -432,7 +436,7 @@ export class CityLife {
     const col = h => { const c = toneRGB(hexRgb(h), pack, mode, theme); return [c[0] * tint[0], c[1] * tint[1], c[2] * tint[2]] };
     const lod = pack.lod, fadeStreet = smooth(lod.streetTrees[0], lod.streetTrees[1], zoom), fadePark = smooth(lod.parkTrees[0], lod.parkTrees[1], zoom), fadeLamp = smooth(lod.lamps[0], lod.lamps[1], zoom), fadeCar = smooth(lod.vehicles[0], lod.vehicles[1], zoom), fadePeople = smooth(lod.people[0], lod.people[1], zoom), fadeCross = smooth(pack.roads.crossing.minZoom, pack.roads.crossing.minZoom + .5, zoom);
     const ready = [...this.cells.values()].filter(c => c.state === 'ready' && c.trees && !(c.box[2] < vbox[0] || c.box[0] > vbox[2] || c.box[3] < vbox[1] || c.box[1] > vbox[3]));
-    const stats = { cells: this.cells.size, ready: ready.length, trees: 0, lamps: 0, cross: 0, cars: 0, people: 0, building: stillBuilding, buildMs: Math.round(Math.max(0, ...ready.map(c => c.ms || 0))), cpuMs: Math.round(Math.max(0, ...ready.map(c => c.cpuMs || 0))), maxStep: Math.round(Math.max(0, ...ready.map(c => c.maxStep || 0))), phases: ready.map(c => c.phases), counts: ready.map(c => c.counts) };
+    const stats = { cells: this.cells.size, ready: ready.length, trees: 0, lamps: 0, cross: 0, cars: 0, people: 0, building: stillBuilding, waiting, buildMs: Math.round(Math.max(0, ...ready.map(c => c.ms || 0))), cpuMs: Math.round(Math.max(0, ...ready.map(c => c.cpuMs || 0))), maxStep: Math.round(Math.max(0, ...ready.map(c => c.maxStep || 0))), phases: ready.map(c => c.phases), counts: ready.map(c => c.counts) };
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     // ── trees (and their shadows by day): the view's sub-grid ranges of each cell, capped by rank ──
     if (fadePark > 0) {
@@ -515,7 +519,7 @@ export class CityLife {
     const PP = this.pack.props.people, L = this.people.list, dt = Math.min(.1, (now - (this.ptick || now)) / 1000); this.ptick = now; if (!reducedMotion) this.people.simT += dt;
     const RATE = { 1: PP.per100M.residential, 2: PP.per100M.commercial, 3: PP.per100M.retail, 4: PP.per100M.industrial, 5: PP.per100M.residential, 6: 1, 7: PP.per100M.park, 0: 2 };
     const vis = []; let want = 0;
-    for (const c of ready) for (const w of c.walks) { const e = w.e, mid = e.xs.length >> 1, x = e.xs[mid], y = e.ys[mid]; if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) continue; const r = (RATE[w.zone] ?? 2) * w.live * (w.path ? 1 : .5); vis.push([w, r]); want += w.len / 100 * r }
+    for (const c of ready) for (const w of c.walks) { const e = w.e, B = e.box; if (B && (B[2] < box[0] || B[0] > box[2] || B[3] < box[1] || B[1] > box[3])) continue; const V = visibleRanges(e, box); if (!V.len) continue; const r = (RATE[w.zone] ?? 2) * w.live * (w.path ? 1 : .5); vis.push([w, r, V]); want += V.len / 100 * r }   // the part of each pavement in view (a street's middle vertex was the test: long streets through the view got nobody)
     const cap = PP.maxVisible[phone ? 'phone' : 'desktop'], target = Math.min(cap, Math.round(want * fade));
     const G = this.graph, at = p => { const e = p.w.e, q = G.poseAt(e, p.s, p.w.side * p.w.off + p.jit, p.dir), h = p.hop; p.fx = q.fx; p.fy = q.fy;
       if (h) { if (!h.T) { h.T = Math.hypot(q.x - h.x0, q.y - h.y0) / p.v; if (h.T < .05) p.hop = null } if (p.hop) { const k = Math.min(1, h.t / h.T); p.x = h.x0 + (q.x - h.x0) * k; p.y = h.y0 + (q.y - h.y0) * k; return } }   // round the corner: from where they were to the next pavement, at walking pace
@@ -536,8 +540,8 @@ export class CityLife {
     }
     let visible = 0; for (const p of L) if (!p.dying) visible++;
     if (vis.length && visible < target) for (let k = 0; k < 4 && visible < target && L.length < this.people.max; k++) {
-      let r = Math.random() * want, pick = vis[0]; for (const v of vis) { r -= v[0].len / 100 * v[1]; if (r <= 0) { pick = v; break } }
-      const w = pick[0], p = { id: ++this.people.seq, w, s: Math.random() * w.len, dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, sc: 0, dying: false };
+      let r = Math.random() * want, pick = vis[0]; for (const v of vis) { r -= v[2].len / 100 * v[1]; if (r <= 0) { pick = v; break } }
+      const w = pick[0], p = { id: ++this.people.seq, w, s: sampleS(pick[2], Math.random()), dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, sc: 0, dying: false };
       at(p); L.push(p); visible++;
     } else if (visible > target * 1.3) { let n = Math.min(3, visible - target); for (const p of L) { if (n <= 0) break; if (!p.dying) { p.dying = true; n-- } } }
     const P = this.people.poses; let n = 0;

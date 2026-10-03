@@ -440,6 +440,25 @@ export const SEOUL_CITY_STYLE = {
       "bulbEmission": 0.85
     }
   },
+  // 2026-10-03 feedback (city-build): windows by face, fewer windows overall. The mesh classifies every wall when it is built
+  // (rays against the neighbouring outlines, the footprint's long axis); the shader only reads the resulting mask.
+  "facadeFaces": {
+    "neighbourGapM": 3,
+    "openDistanceM": 8,
+    "minFaceWidthM": 6,
+    "slabAspect": 1.5,
+    "primaryOnlyMaxAreaM2": 600,
+    "windowScale": {"house": 0.9, "apartment": 0.92, "shop": 0.85, "office": 1, "industrial": 1, "civic": 0.9},
+    "minPierM": {"house": 1.2, "apartment": 1.4, "shop": 1.3, "office": 1.1, "industrial": 1.5, "civic": 1.3},
+    "byType": {
+      "house": {"abutting": "blank", "near": "sparse", "open": "full", "primaryOnly": true},
+      "shop": {"abutting": "blank", "near": "sparse", "open": "full", "primaryOnly": true},
+      "apartment": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "single"},
+      "office": {"glass": "full", "masonry": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "sparse", "windowScale": 0.85}},
+      "industrial": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "sparse"},
+      "civic": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "sparse"}
+    }
+  },
   "styleRevision": "2026-10-03-QA1",
   "changeLog": [
     {
@@ -449,6 +468,13 @@ export const SEOUL_CITY_STYLE = {
         "SC4 reference: nine material families, type mixes, roof mosaics and stable neighbour contrast targets",
         "Daylight neutral tint, broader value range; six office families include masonry",
         "Office emission mask contract and night brightness tiers; renderer binding required for new fields"
+      ]
+    },
+    {
+      "date": "2026-10-03",
+      "revision": "QA1+faces",
+      "changes": [
+        "facadeFaces (city-build, after the owner's feedback): windows by face (party walls blank, slab ends one column, primary face of small buildings), pier minimums, window-width scales, stone office bays 2.4/2.7 m"
       ]
     }
   ],
@@ -517,7 +543,7 @@ export const SEOUL_CITY_STYLE = {
       "glass": {"light": ["#526876", "#425A68", "#697F87"], "dark": ["#243741", "#1C2E38", "#334751"]},
       "roof": {"light": ["#9CAAB2", "#B3BCBF", "#7D929F"], "dark": ["#3E505A", "#50616A", "#31434F"]},
       "variantWeights": [0.5, 0.3, 0.2],
-      "facade": {"pattern": "regular-grid", "windowRatio": [0.48, 0.64], "reflectionScale": 0.12},
+      "facade": {"pattern": "regular-grid", "windowRatio": [0.48, 0.64], "reflectionScale": 0.12, "bayM": 2.4},
       "targetSunlitLStar": [72, 88]
     },
     "warmStone": {
@@ -527,7 +553,7 @@ export const SEOUL_CITY_STYLE = {
       "glass": {"light": ["#56666C", "#40535F", "#718088"], "dark": ["#25343B", "#1E2C35", "#354750"]},
       "roof": {"light": ["#917F69", "#AD9D82", "#728896"], "dark": ["#463E35", "#585044", "#33434D"]},
       "variantWeights": [0.5, 0.3, 0.2],
-      "facade": {"pattern": "regular-grid", "windowRatio": [0.52, 0.62], "reflectionScale": 0.1},
+      "facade": {"pattern": "regular-grid", "windowRatio": [0.52, 0.62], "reflectionScale": 0.1, "bayM": 2.4},
       "targetSunlitLStar": [52, 72]
     },
     "redBrick": {
@@ -537,7 +563,7 @@ export const SEOUL_CITY_STYLE = {
       "glass": {"light": ["#506877", "#3E5565", "#6B808A"], "dark": ["#22343F", "#1A2B36", "#31444D"]},
       "roof": {"light": ["#697E8E", "#935F4E", "#AEB4AD"], "dark": ["#324653", "#4C3530", "#4C5553"]},
       "variantWeights": [0.5, 0.3, 0.2],
-      "facade": {"pattern": "punched", "windowRatio": [0.46, 0.58], "reflectionScale": 0.06},
+      "facade": {"pattern": "punched", "windowRatio": [0.46, 0.58], "reflectionScale": 0.06, "bayM": 2.7},
       "targetSunlitLStar": [37, 56]
     },
     "paintedConcrete": {

@@ -47,7 +47,7 @@ const FS = `#version 300 es
 precision highp float;
 in vec3 v_n;in float v_z;in float v_u;in vec2 v_wm;flat in vec4 v_wall;flat in vec4 v_bld;flat in vec4 v_misc;flat in float v_kind;
 uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD[6];uniform vec4 u_tE[6];uniform vec4 u_tF[6];uniform vec4 u_tG[6];
-uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform vec3 u_roofPal[64];
+uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
 out vec4 o;
@@ -83,8 +83,9 @@ void main(){
     vec3 wall=u_mwall[slot],glass=u_mglass[slot];
     if(kind==2)wall*=0.96;
     int pattern=famFac&&F.x>=0.0?int(F.x+0.5):int(tC.x+0.5);   // offices take their material family's facade; the rest keep the type's
-    float floorM=tA.x,bayM=tA.y,winW=famFac&&F.y>0.0?F.y:tA.z,winH=famFac&&F.z>0.0?F.z:tA.w,gM=tB.x,litR=tB.z,gLit=tB.w;
+    float floorM=tA.x,bayM=famFac&&u_mbay[slot]>0.0?u_mbay[slot]:tA.y,winW=famFac&&F.y>0.0?F.y:tA.z,winH=famFac&&F.z>0.0?F.z:tA.w,gM=tB.x,litR=tB.z,gLit=tB.w;
     bool storefront=(flags&4)!=0,absU=(flags&1)!=0,noAO=(flags&8)!=0,merged=(flags&2)!=0,cA=mod(floor(v_wall.w/64.0),2.0)>0.5,cB=v_wall.w>=128.0;   // the wall's ends: a real corner of the outline (mesh flags) or just a vertex splitting a straight facade
+    int fcls=int(mod(floor(v_wall.w/16.0),4.0)+0.5);   // the face's windows, decided by the mesh from what the wall looks onto: 0 every bay, 1 every other bay, 2 one narrow column in the middle (no windows at all = bays 0)
     // floors: the ground floor, then the rest fitted into the height so no window is cut by the roof
     float gEff=min(gM,H),up=H-gEff,nUp=up<floorM*0.6?0.0:max(1.0,floor(up/floorM+0.5)),fM=nUp>0.0?up/nUp:floorM;
     bool ground=v_z<gEff||nUp==0.0;
@@ -101,6 +102,8 @@ void main(){
     else if(pattern==2){y0=max(y0,tC.y/cellH+0.06);if(fy*cellH<tC.y)wallMul=0.93;}
     else if(pattern==3){float mx=tC.y/bay*0.5,my=tC.y/cellH*0.5,mull=max(pulse(tx+0.5,0.5-mx,0.5+mx,wx),pulse(ty+0.5,0.5-my,0.5+my,wy));wallMul=mix(1.0,lum(wall)>0.45?0.74:0.86,mull);if(beltEvery>0.0&&mod(fIdx,beltEvery)==0.0&&fy*cellH<beltM){solid=true;wallMul=1.0;}}   // curtain wall: the glass keeps the family's window ratio (x0..y1 above); the mullion is one thin dark line on each cell boundary, the frame around the glass the wall (spandrel) colour
     else if(pattern==4){y1=0.86;y0=y1-winH;float rh=0.5*tC.y/bay;wallMul*=1.0-0.15*pulse(tx+0.5,0.5-rh,0.5+rh,wx);}   // clerestory: the type's window height under the eave; ribs centred on the bay boundaries
+    if(fcls==1){if(mod(bIdx+floor(mod(v_wall.w,16.0)),2.0)>0.5)solid=true;}   // a side face: every other bay, the phase from the edge seed
+    else if(fcls==2){if(bIdx!=floor(bays*0.5))solid=true;else{float hw=winW*0.3;x0=0.5-hw;x1=0.5+hw;}}   // a slab's end or a narrow face: one narrow column
     if(ground){
       if(storefront){x0=0.05;x1=0.95;y0=0.08;y1=0.88;}
       else if(tD.z>0.5){wall=u_ground[type].rgb;if(type==4)solid=true;}
@@ -298,9 +301,10 @@ export class CityBuildings {
     const L = h => { const c = hexRGB(h).map(v => v ** 2.2), Y = c[0] * lw[0] + c[1] * lw[1] + c[2] * lw[2]; return c.map(v => (Y + (v - Y) * sat) * bri) };
     const pick = o => o && (o[th] || o.light);
     // material slots: wall, glass (the family's; a legacy type slot takes the type's glass, else the default), facade
-    const mwall = [], mglass = [], mfac = [], defGlass = pick(P.glass) || '#52696C';
+    const mwall = [], mglass = [], mfac = [], mbay = [], defGlass = pick(P.glass) || '#52696C';
     for (let i = 0; i < 32; i++) {
-      const m = P.materials[i]; if (!m) { mwall.push(0, 0, 0); mglass.push(0, 0, 0); mfac.push(-1, 0, 0, 0); continue }
+      const m = P.materials[i]; if (!m) { mwall.push(0, 0, 0); mglass.push(0, 0, 0); mfac.push(-1, 0, 0, 0); mbay.push(0); continue }
+      mbay.push(m.bayEff || 0);
       mwall.push(...L(pick(m.wall) || '#999999'));
       let g = pick(m.glass); if (!g && m.family.startsWith('type-')) { const T = P.types[P.byKey[m.family.slice(5)]]; g = T && pick(T.glass) }
       mglass.push(...L(g || defGlass)); mfac.push(m.pattern, m.winW, m.winH, m.refl);
@@ -310,7 +314,7 @@ export class CityBuildings {
     const litCols = P.lit.colors.map(c => c.map(v => v ** 2.2)), em = num(mode.windowEmission, 1);
     for (const T of P.types) {
       const gc = pick(T.groundColor); ground.push(...(gc ? L(gc) : [0, 0, 0]), gc ? 1 : 0);
-      tA.push(T.floorM, T.bayM, T.winW, T.winH); tB.push(T.groundM, T.groundGlass, T.litRatio, T.groundLit);
+      tA.push(T.floorM, T.bayEff, T.winW, T.winH); tB.push(T.groundM, T.groundGlass, T.litRatio, T.groundLit);   // the bay as the mesh counted it (piers at least the pack's minimum)
       const pat = T.pattern; let p1 = 0, p2 = 0, p3 = 0;
       if (pat === 0) { p1 = T.baysPerGroup?.[0] ?? 2; p2 = T.baysPerGroup?.[1] ?? 4 } else if (pat === 1) { p1 = T.balconyEvery; p2 = T.balconyBright } else if (pat === 2) p1 = T.spandrelM; else if (pat === 3) { p1 = T.mullionM; p2 = T.beltEvery; p3 = T.beltM } else if (pat === 4) p1 = T.ribM ? .15 : 0;
       tC.push(pat, p1, p2, p3);
@@ -337,7 +341,7 @@ export class CityBuildings {
     const artTop = [tz[0], tz[1], num(AR?.maxTopZoneHeightM, 4.5)], artBelt = [beArr[0], beArr[1] ?? beArr[0], beArr[2] ?? beArr[beArr.length - 1], Math.min(3, beArr.length)];
     const bh = pair(AR?.beltHeightM, .35, .55), cw = pair(AR?.cornerWidthM, .35, .65), cd = pair(AR?.cornerDeltaLStar, 5, 9), kd = pair(AR?.crownDeltaLStar, 8, 14);
     const artDim = [bh[0], bh[1], cw[0], cw[1]], artDL = [cd[0], cd[1], kd[0], kd[1]];
-    return { mwall, mglass, mfac, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    return { mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -364,7 +368,7 @@ export class CityBuildings {
     if (!depthOnly) {
       const K = this.palette || (this.palette = this.paletteFor());
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
-      gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform3fv(u.u_roofPal, K.roofPal);
+      gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
