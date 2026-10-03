@@ -2037,8 +2037,24 @@ const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localSto
 const THEME_KEY='subway-theme';
 const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return P;
   const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
-  const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
-  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return Q};
+  const id=['abs',['to-number',['id'],0]],ci=['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
+  Q.bld3d=['match',ci,...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];
+  // at night the façades carry lit windows (Codex): images with the colour baked in (a pattern replaces the colour) —
+  // from z15 a window tile on buildings 20 m and up (two in three), a plain tile on the rest
+  if(t==='dark'){const h3=['%',['floor',['/',['*',['%',id,9967],['%',id,9973]],11]],3],solid=['concat','park-s-',['to-string',ci]];
+    Q.bld3dPattern=['step',['zoom'],solid,15,['case',['all',['>=',['coalesce',['get','render_height'],10],20],['!=',h3,0]],['concat','park-w-',['to-string',ci],'-',['to-string',['%',h3,2]]],solid]]}
+  return Q};
+// the night façade tiles: 64 px (shown at ~21: pixelRatio 3), 4×4 windows of 4×6 px, 5 of 16 lit (four warm, one cool)
+function parkPatterns(){
+  if(map.hasImage('park-s-0'))return;const B=PARK_COLORS.dark.blocks,S=64,dim=c=>mixHex(c,'#000000',.15);
+  for(let c=0;c<6;c++){
+    const solid=document.createElement('canvas');solid.width=solid.height=S;const x=solid.getContext('2d');x.fillStyle=B[c];x.fillRect(0,0,S,S);map.addImage(`park-s-${c}`,x.getImageData(0,0,S,S),{pixelRatio:3});
+    for(let v=0;v<2;v++){const cv=document.createElement('canvas');cv.width=cv.height=S;const y=cv.getContext('2d');y.fillStyle=B[c];y.fillRect(0,0,S,S);
+      let r=(c*7+v*13+1)*2654435761>>>0;const rnd=()=>(r=Math.imul(r^r>>>15,2246822519)>>>0,r/4294967296);
+      const lit=new Set();while(lit.size<5)lit.add(Math.floor(rnd()*16));let k=0;
+      for(let i=0;i<16;i++){y.fillStyle=lit.has(i)?(k++===4?'#bbdad9':'#ffe1a0'):dim(B[c]);y.fillRect((i%4)*16+6,Math.floor(i/4)*16+5,4,6)}
+      map.addImage(`park-w-${c}-${v}`,y.getImageData(0,0,S,S),{pixelRatio:3})}}
+}
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -2063,7 +2079,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
   set('background','background-color',P.bg);map.triggerRepaint();
   set('bm-water','fill-color',P.water);set('bm-park','fill-color',P.park);set('bm-landcover','fill-color',P.land);set('bm-bld','fill-color',P.bld);
-  set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',coaster?['<',['coalesce',['get','render_height'],10],RIDE_H]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',!coaster)}   // the towers are rides on the coaster
+  if(P.bld3dPattern)parkPatterns();set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-pattern',P.bld3dPattern??undefined);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',coaster?['<',['coalesce',['get','render_height'],10],RIDE_H]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',!coaster)}   // the towers are rides on the coaster
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   for(const id of ['station-labels','station-labels-more']){set(id,'text-color',P.stationText);set(id,'text-halo-color',P.halo)}
