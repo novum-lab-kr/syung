@@ -9,6 +9,7 @@
 //
 //   const rides=new RideLayer(towers);           // [[lon,lat,footprintRadius_m,height_m], …]
 //   rides.init(gl,maplibregl); rides.render(gl,matrix,opts); rides.sites(); rides.dispose(gl);
+// opts.bearing is no longer read: a wheel keeps the yaw its hash gave it at every zoom.
 
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, bulbSize, compile, hexRGB } from './park_night.mjs';
 
@@ -315,7 +316,8 @@ void main(){
   n = vec3(n.x*yc - n.y*ys, n.x*ys + n.y*yc, n.z);
   gl_Position = u_matrix * vec4(i_org + p.xy*i_s.w, p.z*i_s.w, 1.);
   int ci = int(a_k.x < .5 ? i_c.x : a_k.x < 1.5 ? i_c.y : a_k.x < 2.5 ? i_c.z : i_c.w);
-  float d = max(dot(normalize(n), u_light), 0.);
+  float nl = length(n);
+  float d = nl > 1e-20 ? max(dot(n / nl, u_light), 0.) : 0.;   // never normalize a zero: a NaN colour rasterizes differently every frame
   v_col = clamp(u_pal[ci]*(u_lit.x + u_lit.y*d + a_k.w), 0., 1.);
 }`;
 const FS = `#version 300 es
@@ -423,7 +425,7 @@ export class RideLayer {
       return s;
     });
     this.stats = { tris: 0, rides: 0, ms: 0 };
-    this._moving = false;
+    this._moving = false; this.ping = 0;
   }
 
   // the canonical sites, so the caller can take these buildings out of the extrusion / walls / shadows
@@ -447,11 +449,10 @@ export class RideLayer {
 
     this.kind = {};
     for (const k of KINDS) {
-      const K = this.kind[k] = { order: [], inst: gl.createBuffer(), data: null, lod: [] };
+      const K = this.kind[k] = { order: [], inst: [gl.createBuffer(), gl.createBuffer()], data: null, lod: [] };
       K.order = this._sites.filter(s => s.kind === k);
       K.data = new Float32Array(K.order.length * 18);
-      gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-      gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW);
+      for (const b of K.inst) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW) }
       for (const lod of [0, 1]) {
         const M = BUILD[k](lod), buf = M.buffer(), vb = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
@@ -459,9 +460,6 @@ export class RideLayer {
         gl.bindBuffer(gl.ARRAY_BUFFER, vb);
         const S = 13 * 4; let o = 0;
         for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 4]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
-        gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-        const IS = 18 * 4; o = 0;
-        for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
         gl.bindVertexArray(null);
         K.lod[lod] = { va, vb, n: M.tris * 3, tris: M.tris };
       }
@@ -472,9 +470,6 @@ export class RideLayer {
         gl.bindBuffer(gl.ARRAY_BUFFER, vb);
         const S = 12 * 4; let o = 0;
         for (const [loc, n] of [[0, 3], [1, 3], [2, 4], [3, 2]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
-        gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-        const IS = 18 * 4; o = 0;
-        for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
         gl.bindVertexArray(null);
         return { va, vb, n: count };
       };
@@ -488,10 +483,17 @@ export class RideLayer {
     this.ready = true;
   }
 
+  // point the instance attributes of the bound VAO at this frame's store
+  instPtr(gl, K) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[this.ping]);
+    const IS = 18 * 4; let o = 0;
+    for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
+  }
+
   render(gl, matrix, opts = {}) {
     if (!this.ready) return;
     const t0 = performance.now();
-    const { now = performance.now(), dark = false, zoom = 15, phone = false, reducedMotion = false, bounds, bearing = 0, night = false, pixelRatio = 1 } = opts;
+    const { now = performance.now(), dark = false, zoom = 15, phone = false, reducedMotion = false, bounds, night = false, pixelRatio = 1 } = opts;
     // The rides carry their own palette (the building one is too close to the blocks they stand among);
     // opts.ridePalette overrides it. opts.palette / cream / shade are accepted and ignored.
     const pal = opts.ridePalette || (dark ? RIDE_DARK : RIDE_LIGHT);
@@ -510,24 +512,17 @@ export class RideLayer {
       if (s.x < x0 - pad || s.x > x1 + pad || s.y < y0 - pad || s.y > y1 + pad) continue;
       vis.push(s);
     }
-    // phones: only the nearest 24 on screen keep moving
-    let moving = null;
-    if (reducedMotion) moving = new Set();
-    else if (phone && vis.length > 24) {
-      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      moving = new Set([...vis].sort((a, b) => ((a.x - cx) ** 2 + (a.y - cy) ** 2) - ((b.x - cx) ** 2 + (b.y - cy) ** 2)).slice(0, 24));
-    }
+    // Every visible ride animates, phone or not: the pose is a clock uniform in the vertex shader, so
+    // freezing some of them saved nothing and cost a lot — a ride crossing the nearest-24 line jumped
+    // between its live pose and its phase-only pose on alternate frames, which is the flicker while panning.
+    // Reduced motion still stops the lot, and it is a global switch, so it never toggles under the camera.
     const lod = zoom >= 14.5 ? 1 : 0, ts = now / 1000;
-    // below z14.5 a wheel turned edge-on is a line: swing it toward facing the camera as the map pulls back
-    const face = Math.min(1, Math.max(0, (14.5 - zoom) / 1)), bear = bearing * Math.PI / 180;
     for (const k of KINDS) this.kind[k].n = 0;
     for (const s of vis) {
       const K = this.kind[s.kind], d = K.data, i = K.n * 18, eh = s.lotte ? 1 : EH, ev = s.lotte ? 1 : EV;
-      let yaw = s.yaw;
-      if (s.kind === 'ferris' && face > 0) { let dy = (bear - yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI; yaw += dy * face }
       d[i] = s.x - this.O.x; d[i + 1] = s.y - this.O.y;
       d[i + 2] = s.sxy * eh; d[i + 3] = s.sz * ev; d[i + 4] = s.mastR * eh; d[i + 5] = s.mu;
-      d[i + 6] = s.phase; d[i + 7] = moving && !moving.has(s) ? 0 : 1; d[i + 8] = s.period; d[i + 9] = yaw;
+      d[i + 6] = s.phase; d[i + 7] = reducedMotion ? 0 : 1; d[i + 8] = s.period; d[i + 9] = s.yaw;
       d[i + 10] = s.colA; d[i + 11] = s.colB; d[i + 12] = s.struct; d[i + 13] = s.shade;
       d[i + 14] = s.lotte ? 0 : 1; d[i + 15] = s.collar; d[i + 16] = s.pole; d[i + 17] = 0;
       K.n++;
@@ -545,13 +540,21 @@ export class RideLayer {
     // sync with the GPU process and swallowed a whole map frame (100-400 ms) when measured.
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
     gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    // This frame's instance store. Never patch the one the last frame is still drawing from: a
+    // bufferSubData into a buffer in flight is where the rides blinked on real (tile-based) GPUs.
+    // Two stores a kind, used alternately, and each is orphaned before it is filled.
+    const ping = this.ping = this.ping ^ 1;
+    for (const k of KINDS) {
+      const K = this.kind[k]; if (!K.n) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[ping]);
+      gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW);     // fresh storage
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * 18);
+    }
     let tris = 0;
     for (const k of KINDS) {
       const K = this.kind[k]; if (!K.n) continue;
       const L = K.lod[lod];
-      gl.bindBuffer(gl.ARRAY_BUFFER, K.inst);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * 18);
-      gl.bindVertexArray(L.va);
+      gl.bindVertexArray(L.va); this.instPtr(gl, K);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, L.n, K.n);
       tris += L.tris * K.n;
     }
@@ -577,16 +580,16 @@ export class RideLayer {
       if (tier >= 2) {                                                      // the thin wire first, under the bulbs
         gl.useProgram(this.pW); setUni(this.uW);
         gl.uniform1f(this.uW.u_thin, 1); gl.uniform4f(this.uW.u_wire, .459, .408, .325, .35);
-        for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.wire.va); gl.drawArraysInstanced(gl.LINES, 0, K.wire.n, K.n) } }
+        for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.wire.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.LINES, 0, K.wire.n, K.n) } }
       }
       gl.useProgram(this.pB); setUni(this.uB);
-      for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.bulb.va); gl.drawArraysInstanced(gl.POINTS, 0, K.bulb.n, K.n) } }
+      for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.bulb.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.POINTS, 0, K.bulb.n, K.n) } }
     }
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     // left for the caller: DEPTH_TEST on / LEQUAL / depth writes on, BLEND on (blendFunc untouched), CULL_FACE off
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
-    this.stats = { tris, rides: vis.length, bulbs, moving: moving ? moving.size : vis.length, ms: performance.now() - t0, lod };
-    this._moving = !reducedMotion && (moving ? moving.size > 0 : vis.length > 0);
+    this.stats = { tris, rides: vis.length, bulbs, moving: reducedMotion ? 0 : vis.length, ms: performance.now() - t0, lod };
+    this._moving = !reducedMotion && vis.length > 0;
   }
 
   // true when a ride on screen is still moving: the caller keeps asking for frames (the train overlay
@@ -595,7 +598,7 @@ export class RideLayer {
 
   dispose(gl) {
     if (!this.p) return;
-    for (const k of KINDS) { const K = this.kind[k]; gl.deleteBuffer(K.inst);
+    for (const k of KINDS) { const K = this.kind[k]; for (const b of K.inst) gl.deleteBuffer(b);
       for (const L of [...K.lod, K.bulb, K.wire]) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
     gl.deleteProgram(this.p); gl.deleteProgram(this.pB); gl.deleteProgram(this.pW); this.p = null; this.kind = null; this.ready = false;
   }
