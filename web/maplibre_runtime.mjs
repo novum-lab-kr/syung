@@ -322,7 +322,7 @@ function planTrain(t){
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
-const COL_SPAN=60,COL_AFRAME=80,COL_CLEAR=15;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
+const BULB_EVERY=18;const COL_SPAN=60,COL_AFRAME=80,COL_CLEAR=15;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
 // The frame across (R) and up (U) of a track or car going along F, from the flat right r, turned by roll about F.
@@ -428,7 +428,7 @@ function buildingNear(x,y){
 // with ramps of at most COASTER_GRADE (raised round a building, never lowered below one), smoothed; on the ground
 // through the platforms (COASTER_FLAT), climbing from there at COASTER_GRADE at most — a tall building right by a
 // station is gone through (the stations are underground anyway). Metres.
-const COASTER_GRADE=.7,COASTER_CLEAR=8;
+const COASTER_GRADE=.7,COASTER_DROP=2.2,COASTER_CLEAR=8;
 function coasterProfile(line,lo,hi){
   const id=`h:${line}:${lo}:${hi}`;let P=edgeGeom.get(id);if(P)return P;
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/10)),st=L/n,need=new Float32Array(n+1),h=new Float32Array(n+1);
@@ -447,9 +447,11 @@ function coasterProfile(line,lo,hi){
   for(let i=1;i<=n;i++)h[i]=Math.max(h[i],h[i-1]-G);for(let i=n-1;i>=0;i--)h[i]=Math.max(h[i],h[i+1]-G);
   for(let pass=0;pass<2;pass++){const c=h.slice(),at=i=>c[Math.max(0,Math.min(n,i))];let sum=0;for(let i=-W;i<=W;i++)sum+=at(i);
     for(let i=0;i<=n;i++){if(i)sum+=at(i+W)-at(i-W-1);h[i]=sum/(2*W+1)}}
-  const K=12,smax=(a,b)=>(a+b+Math.hypot(a-b,K))/2,smin=(a,b)=>(a+b-Math.hypot(a-b,K))/2;
+  const K=12,smax=(a,b)=>(a+b+Math.hypot(a-b,K))/2,smin=(a,b)=>(a+b-Math.hypot(a-b,K))/2,sminK=(a,b,k)=>(a+b-Math.hypot(a-b,k))/2;
   // the platforms: on the ground, eased off it
-  for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT,cap=x<=0?0:x<60?COASTER_GRADE*x*x/120:COASTER_GRADE*(x-30);h[i]=Math.max(0,smin(smax(h[i],env[i]),cap))}
+  // (the hills keep to COASTER_GRADE off the platform; over a building it may drop as steep as COASTER_DROP, a coaster's
+  // first drop — at 0.7 a tall block 200–300 m from a station stood through the track: 7호선 태릉입구→먹골, 118 m)
+  for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT,cap=(G,R)=>x<=0?0:x<R?G*x*x/(2*R):G*(x-R/2);h[i]=Math.max(0,sminK(smax(smin(h[i],cap(COASTER_GRADE,60)),env[i]),cap(COASTER_DROP,80),30))}
   const S=g.spiral;if(S){   // a tower course: up off the platform, along the ring to S.top, then the long drop (quintic eases, level at the joins)
     const E=u=>{u=Math.max(0,Math.min(1,u));return u*u*u*(10-15*u+6*u*u)},h0=30,end=g.total-COASTER_FLAT*mu;
     for(let i=0;i<=n;i++){const s=g.total*i/n;let v=s<=S.r0?h0*E((s-COASTER_FLAT*mu)/(S.r0-COASTER_FLAT*mu)):s<=S.r1?h0+(S.top-h0)*(s-S.r0)/(S.r1-S.r0):S.top*(1-E((s-S.r1)/(end-S.r1)));
@@ -1432,9 +1434,9 @@ const PILLAR_STYLE={ink:[1,.83,0],cap:1,grey:{light:[.4,.42,.44],dark:[.56,.59,.
 class ExitPillars{
   init(gl){
     const vs=`#version 300 es
-in vec2 a_pos;in vec2 a_local;in vec3 a_col;in vec3 a_ink;in vec4 a_glyph;in vec4 a_guv;in float a_mode;uniform vec2 u_view;
+in vec3 a_pos;in vec2 a_local;in vec3 a_col;in vec3 a_ink;in vec4 a_glyph;in vec4 a_guv;in float a_mode;uniform vec2 u_view;
 out vec2 v_local;out vec3 v_col;out vec3 v_ink;flat out vec4 v_glyph;flat out vec4 v_guv;out float v_mode;
-void main(){v_local=a_local;v_col=a_col;v_ink=a_ink;v_glyph=a_glyph;v_guv=a_guv;v_mode=a_mode;gl_Position=vec4(a_pos/u_view*vec2(2.,-2.)+vec2(-1.,1.),0.,1.);}`;
+void main(){v_local=a_local;v_col=a_col;v_ink=a_ink;v_glyph=a_glyph;v_guv=a_guv;v_mode=a_mode;gl_Position=vec4(a_pos.xy/u_view*vec2(2.,-2.)+vec2(-1.,1.),a_pos.z,1.);}`;   // z: its depth, for the solid park buildings
     const fs=`#version 300 es
 precision highp float;in vec2 v_local;in vec3 v_col;in vec3 v_ink;flat in vec4 v_glyph;flat in vec4 v_guv;in float v_mode;uniform sampler2D u_tex;out vec4 o;
 void main(){
@@ -1464,13 +1466,13 @@ void main(){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);   // no mipmaps: they blur the digits' strokes into outlines
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  render(gl,M,W,H,dpr){
+  render(gl,M,W,H,dpr,solid=false){
     const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
     if(!this.p)this.init(gl);this.atlas();
     const unit=1/(512*2**z),f=Math.max(0,Math.min(1,(z-PILLAR_PX[0][0])/(PILLAR_PX[1][0]-PILLAR_PX[0][0]))),lerp=i=>PILLAR_PX[0][i]+(PILLAR_PX[1][i]-PILLAR_PX[0][i])*f;
     const sPx=lerp(1),half=sPx/2*unit,hgt=lerp(2)*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
-    const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H]};
-    const data=[],NO=[0,0,0,0],vert=(p,l,col,ink,g,guv,mode)=>data.push(p[0],p[1],l[0],l[1],...col,...ink,...g,...guv,mode);
+    const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Z=M[2]*x+M[6]*y+M[10]*zz+M[14],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H,Z/Wc]};
+    const data=[],NO=[0,0,0,0],vert=(p,l,col,ink,g,guv,mode)=>data.push(p[0],p[1],p[2]??0,l[0],l[1],...col,...ink,...g,...guv,mode);
     const quad=(P,Lc,col,ink,g,guv,mode)=>{for(const i of [0,1,2,0,2,3])vert(P[i],Lc[i],col,ink,g,guv,mode)};
     const LOC=[[0,0],[1,0],[1,1],[0,1]],mul=(c,k)=>c.map(v=>v*k);
     // where the number sits on a face of w×h screen px (local 0..1 across, 0..1 up)
@@ -1486,7 +1488,7 @@ void main(){
     const Ld=[-.6,.8];   // light from the south-west (map y runs south)
     for(const [m,b,ref,lc] of items){
       const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y;
-      quad([[b[0]-sPx*1.1,b[1]-sPx*.55],[b[0]+sPx*1.3,b[1]-sPx*.55],[b[0]+sPx*1.3,b[1]+sPx*.65],[b[0]-sPx*1.1,b[1]+sPx*.65]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
+      quad([[b[0]-sPx*1.1,b[1]-sPx*.55,b[2]],[b[0]+sPx*1.3,b[1]-sPx*.55,b[2]],[b[0]+sPx*1.3,b[1]+sPx*.65,b[2]],[b[0]-sPx*1.1,b[1]+sPx*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
       const C=[[x-half,y-half,0,-1],[x+half,y-half,1,0],[x+half,y+half,0,1],[x-half,y+half,-1,0]];   // NW,NE,SE,SW and the normal of the side that starts there
       for(let i=0;i<4;i++){
         const [ax,ay,nx,ny]=C[i],[bx,by]=C[(i+1)%4],A0=proj(ax,ay,0),B0=proj(bx,by,0),A1=proj(ax,ay,hgt);if(!A0||!B0||!A1)continue;
@@ -1505,11 +1507,12 @@ void main(){
     }
     if(!data.length)return;
     gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
-    const st=19*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
-    ptr('a_pos',2,0);ptr('a_local',2,2);ptr('a_col',3,4);ptr('a_ink',3,7);ptr('a_glyph',4,10);ptr('a_guv',4,14);ptr('a_mode',1,18);
+    const st=20*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
+    ptr('a_pos',3,0);ptr('a_local',2,3);ptr('a_col',3,5);ptr('a_ink',3,8);ptr('a_glyph',4,11);ptr('a_guv',4,15);ptr('a_mode',1,19);
     gl.uniform2f(this.uView,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uTex,0);
-    gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.TRIANGLES,0,data.length/19);
+    if(solid){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // solid park buildings hide them; through see-through ones they show
+    gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLES,0,data.length/20);
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
   }
 }
@@ -1572,6 +1575,14 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
         const h=q.h/mu;s+=(h<30?COL_SPAN:h<COL_AFRAME?80:100)*mu}
     }
     return this.cols;
+  }
+  // Night (the park in the dark theme): a string of bulbs under each edge's centre line, BULB_EVERY m apart and 3 m under
+  // the girders — none on the ground, in a loop or corkscrew. Absolute mercator x, y and height, for NightLayer.
+  bulbs(){
+    if(this.bulbPts)return this.bulbPts;const out=[];
+    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),pos=this.sampler(e);
+      for(let s=BULB_EVERY*mu/2;s<g.total;s+=BULB_EVERY*mu){const q=pos(s);if(q.h<6*mu||q.loop)continue;out.push(q.x,q.y,q.h-3*mu)}}
+    return this.bulbPts=new Float64Array(out);   // doubles: float mercator is ~2 m coarse here
   }
   // lvl: sample spacing in m (8 m close up; coarser zoomed out, where 8 m built 2.3 M vertices at z12.6 and stalled the map)
   piece(c,lvl){
@@ -1859,7 +1870,7 @@ map.on('load',()=>{
       coasterTrack.people(gl,pd.mainMatrix,behind);   // 행인 on the streets, before the track: it covers the ones beneath it
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
-      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
+      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),coaster&&drawn);   // above the trains
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
