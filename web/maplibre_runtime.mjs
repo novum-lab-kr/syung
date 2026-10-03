@@ -1503,8 +1503,8 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     // there walked on it. A street with more than 40 % of it within reach of a line's track is left out.
     const mpp=1/(512*2**z)/mu,reach=(15+(laneOffsetPx(z,coasterBodyPx(z))+coasterBodyPx(z)/2)*mpp)*mu,cell=60*mu,grid=new Map(),gk=(x,y)=>Math.floor(x/cell)+','+Math.floor(y/cell);
     for(const e of this.edges){const P=geom(e.line,e.lo,e.hi).pts;for(let i=1;i<P.length;i++){const A=P[i-1],B=P[i];if(Math.max(A.x,B.x)<box[0]||Math.min(A.x,B.x)>box[2]||Math.max(A.y,B.y)<box[1]||Math.min(A.y,B.y)>box[3])continue;
-      const n=Math.ceil(Math.hypot(B.x-A.x,B.y-A.y)/cell)+1;for(let k=0;k<=n;k++){const x=A.x+(B.x-A.x)*k/n,y=A.y+(B.y-A.y)*k/n;for(const dx of [-1,0,1])for(const dy of [-1,0,1]){const g=gk(x+dx*cell,y+dy*cell);if(!grid.has(g))grid.set(g,new Set());grid.get(g).add(A.x+','+A.y+','+B.x+','+B.y)}}}}
-    const nearTrack=(x,y)=>{const S=grid.get(gk(x,y));if(!S)return false;for(const k of S){const [ax,ay,bx,by]=k.split(',').map(Number),dx=bx-ax,dy=by-ay,u=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1)));if(Math.hypot(ax+dx*u-x,ay+dy*u-y)<reach)return true}return false};
+      const seg=[A.x,A.y,B.x,B.y],n=Math.ceil(Math.hypot(B.x-A.x,B.y-A.y)/cell)+1;for(let k=0;k<=n;k++){const x=A.x+(B.x-A.x)*k/n,y=A.y+(B.y-A.y)*k/n;for(const dx of [-1,0,1])for(const dy of [-1,0,1]){const g=gk(x+dx*cell,y+dy*cell);if(!grid.has(g))grid.set(g,new Set());grid.get(g).add(seg)}}}}
+    const nearTrack=(x,y)=>{const S=grid.get(gk(x,y));if(!S)return false;for(const [ax,ay,bx,by] of S){const dx=bx-ax,dy=by-ay,u=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1)));if(Math.hypot(ax+dx*u-x,ay+dy*u-y)<reach)return true}return false};
     for(let i=lines.length-1;i>=0;i--){const L=lines[i];let near=0,all=0;for(let s=0;s<=L.len;s+=5*mu){all++;let j=1;while(j<L.pts.length-1&&L.cum[j]<s)j++;const A=L.pts[j-1],B=L.pts[j],u=(s-L.cum[j-1])/((L.cum[j]-L.cum[j-1])||1);if(nearTrack(A[0]+(B[0]-A[0])*u,A[1]+(B[1]-A[1])*u))near++}
       if(near>all*.4)lines.splice(i,1)}
     ends.clear();for(const L of lines)for(const e of [0,1]){const k=key(L.pts[e?L.pts.length-1:0]);if(!ends.has(k))ends.set(k,[]);ends.get(k).push([L,e])}
@@ -1717,7 +1717,7 @@ map.on('load',()=>{
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
-    let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{walls.rebuild();coasterTrack.streets();requestAnimationFrame(drawTrains)},250)};   // and the streets the walkers use
+    let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();coasterTrack.streets();requestAnimationFrame(drawTrains)},250)};   // and the streets the walkers use; not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it
     map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
   }
   // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
@@ -1742,7 +1742,7 @@ map.on('load',()=>{
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
   map.once('idle',()=>{const d=map.getContainer().querySelector('.maplibregl-ctrl-attrib');if(d){d.classList.remove('maplibregl-compact-show');d.removeAttribute('open')}});
   // recompute shadows when the view settles or building tiles arrive (debounced)
-  let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(updateSun,400)};
+  let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(()=>{if(!map.isMoving())updateSun()},400)};   // not mid-pan (as the walls): moveend runs it
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();
   // exits: yellow number discs (like station exit signs) from zoom 16
