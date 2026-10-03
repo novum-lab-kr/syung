@@ -960,7 +960,7 @@ class TrainLayer{
       const pass=alpha=>{gl.uniform1f(this.uni.u_alpha,alpha);
         gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
         gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13)};
-      if(options.occlude){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);pass(1);gl.depthFunc(gl.GREATER);pass(options.occlude)}
+      if(options.walls){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);pass(1);if(options.occlude){gl.depthFunc(gl.GREATER);pass(options.occlude)}}   // solid buildings (the park): hidden behind them
       else{gl.disable(gl.DEPTH_TEST);pass(1)}
     }
     // moving trains, ripple or pulse: TRAIN_FPS (a followed train moves the camera: map redraws at
@@ -1850,7 +1850,7 @@ map.on('load',()=>{
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
-      const behind=walls.draw(pd.mainMatrix)?1-mapPalette().bld3dOpacity:0;
+      const drawn=walls.draw(pd.mainMatrix),behind=drawn?1-mapPalette().bld3dOpacity:0;
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){rides=new RideLayer(coasterBld.towers);rides.init(gl,maplibregl)}
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
@@ -1858,7 +1858,7 @@ map.on('load',()=>{
         if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
       coasterTrack.people(gl,pd.mainMatrix,behind);   // 행인 on the streets, before the track: it covers the ones beneath it
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
-      layer.render(gl,{defaultProjectionData:pd,occlude:behind});
+      layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth));   // above the trains
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
