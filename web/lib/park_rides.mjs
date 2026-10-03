@@ -11,7 +11,7 @@
 //   rides.init(gl,maplibregl); rides.render(gl,matrix,opts); rides.sites(); rides.dispose(gl);
 // opts.bearing is no longer read: a wheel keeps the yaw its hash gave it at every zoom.
 
-import { BULB_FS, BULB_TWINKLE, BULB_PAL, bulbSize, compile, hexRGB } from './park_night.mjs';
+import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './park_night.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;
@@ -230,8 +230,9 @@ class Bulbs {
   }
   buffer() { return new Float32Array(this.d) }
 }
-// 3 bulbs in 4 are the warm cream; the fourth takes one of the three accents in turn
-const bulbCol = i => i % 4 === 3 ? 1 + ((i >> 2) % 3) : 0;
+// One bulb in three is the warm cream; the rest run through the seven accents, and each ride turns
+// the accents on by its own hash, so two swings side by side are not the same string twice.
+const bulbCol = i => i % 3 === 0 ? 0 : 1 + (i % 7);
 const GARLANDS = 4, GSPAN = 10;      // four strings a ride, ten bulbs on each
 
 function buildBulbs(kind) {
@@ -243,16 +244,16 @@ function buildBulbs(kind) {
     }
     for (let k = 0; k < 6; k++) for (let j = 0; j < 6; j++) {               // six alternating spokes, every ~10 m
       const t = k / 6 * 2 * Math.PI, rad = .09 + j / 5 * .37;
-      B.at(wheel(hub), [Math.cos(t) * rad, 0, .58 + Math.sin(t) * rad], bulbCol(k * 6 + j), 1, 0);
+      B.at(wheel(hub), [Math.cos(t) * rad, 0, .58 + Math.sin(t) * rad], bulbCol(k * 6 + j), -2, 0);   // -2: the neon spokes take this row
     }
   } else if (kind === 'swing') {
     B.ring(SPIN, 40, 1.03, .772, bulbCol, 0, 0, 1);                         // the canopy edge, every ~5 m
     for (let i = 0; i < 8; i++) { const t = i / 8 * 2 * Math.PI; B.at(SPIN, [Math.cos(t) * 1.06, Math.sin(t) * 1.06, .645], bulbCol(i * 3 + 1), 0, 0) }
   } else if (kind === 'saucer') {
-    B.ring(STILL, 40, 1.03, .8275, bulbCol, 0, 0, 1);                       // the rim, every ~5 m
+    B.ring(STILL, 40, 1.03, .8275, bulbCol, -1, 0, 1);                      // the rim: the neon ring takes this row
   } else {
     for (const [a, role] of [[0, 0], [Math.PI, 0], [Math.PI / 2, 3], [-Math.PI / 2, 3]]) {   // two mast strings; Lotte gets four
-      for (let j = 0; j < 18; j++) B.at(STILL, [Math.cos(a) * 1.3, Math.sin(a) * 1.3, .08 + j / 17 * .87], bulbCol(j * 2 + (a > 0 ? 1 : 0)), 0, 1, 0, role);
+      for (let j = 0; j < 18; j++) B.at(STILL, [Math.cos(a) * 1.3, Math.sin(a) * 1.3, .08 + j / 17 * .87], bulbCol(j * 2 + (a > 0 ? 1 : 0)), -1, 1, 0, role);   // -1: the neon strips take this row
     }
     B.ring(LIFT, 32, 1.04, .012, bulbCol, 0, 0, 1);                         // the seat ring, every ~5 m
   }
@@ -273,6 +274,73 @@ function buildWire() {
     put(dir, 1);
   }
   return new Float32Array(d);
+}
+
+// The ride's own frame, shared by the bulbs and the neon: where a point ends up once the animation
+// has turned it and the ride's yaw has been applied, in metres about the site.
+const RIDE_POINT = `
+vec3 ridePoint(vec3 av, vec3 aw, float m, float sel, float tt, vec4 iS, vec4 iA){
+  float sxy = sel > .5 ? iS.z : iS.x, sz = iS.y, p6 = 6.283185307;
+  vec3 v = vec3(av.xy * sxy, av.z * sz), w = vec3(aw.xy * sxy, aw.z * sz), p;
+  if (m < .5) p = v + w;
+  else if (m < 1.5){ float g = p6 * fract(tt / iA.z), c = cos(g), s = sin(g);
+    p = vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z) + w; }
+  else if (m < 2.5){ float g = p6 * fract(tt / iA.z), c = cos(g), s = sin(g);
+    p = vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) + w; }
+  else if (m < 3.5){ float u = fract(tt / 20.) * 20., f;
+    if (u < 12.) f = smoothstep(0., 1., u / 12.);
+    else if (u < 14.) f = 1.;
+    else if (u < 18.){ float q = (u - 14.) * .25; f = 1. - q * q * (2. - q); }
+    else f = 0.;
+    p = v + w; p.z += (.15 + .67 * f) * sz; }
+  else { float g = p6 * fract(tt / iA.z), c = cos(g), s = sin(g);
+    p = vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) + w; }
+  float yc = cos(iA.w), ys = sin(iA.w);
+  return vec3(p.x * yc - p.y * ys, p.x * ys + p.y * yc, p.z);
+}`;
+
+// a strip of neon on a ride: a run of segments, each widened across the screen
+class Neon {
+  constructor() { this.d = []; this.n = 0 }
+  seg(C, p0, p1, { sel = 0, tier = 0, param = 0 } = {}) {
+    const A = vw(C, p0), B = vw(C, p1);
+    for (const [t, side] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]]) {
+      this.d.push(A[0][0], A[0][1], A[0][2], A[1][0], A[1][1], A[1][2],
+        B[0][0], B[0][1], B[0][2], B[1][0], B[1][1], B[1][2], param, C.mode, sel, tier, t, side);
+      this.n++;
+    }
+  }
+  loop(C, n, rad, z, o, plane) {
+    for (let i = 0; i < n; i++) {
+      const a = i / n * 2 * Math.PI, b = (i + 1) / n * 2 * Math.PI, P = t => plane
+        ? [Math.cos(t) * rad, 0, z + Math.sin(t) * rad] : [Math.cos(t) * rad, Math.sin(t) * rad, z];
+      this.seg(C, P(a), P(b), { ...o, param: i / n });
+    }
+  }
+  buffer() { return new Float32Array(this.d) }
+}
+// the (turned, not turned) split a context implies, as Bulbs.at does it
+function vw(C, p) {
+  if (C.mode === 1) return [p, [0, 0, 0]];
+  if (C.mode === 2) return [sub(p, C.piv), C.piv];
+  if (C.mode === 4) return [C.arm, add(C.piv, p)];
+  return [[0, 0, 0], p];
+}
+function buildNeon(kind) {
+  const N = new Neon(), hub = [0, 0, .58];
+  if (kind === 'drop') {                                                    // two strips up the mast
+    for (const a of [0, Math.PI]) N.seg(STILL, [Math.cos(a) * 1.35, Math.sin(a) * 1.35, .08], [Math.cos(a) * 1.35, Math.sin(a) * 1.35, .96], { sel: 1 });
+  } else if (kind === 'saucer') {                                           // a ring under the disc, with one bright length running round it
+    N.loop(STILL, 48, 1.02, .8, {}, false);
+  } else if (kind === 'swing') {                                            // eight ribs over the canopy
+    for (let i = 0; i < 8; i++) { const t = i / 8 * 2 * Math.PI;
+      N.seg(SPIN, [Math.cos(t) * .16, Math.sin(t) * .16, .816], [Math.cos(t) * 1.01, Math.sin(t) * 1.01, .777]) }
+  } else {                                                                  // a hub ring and three pairs of spokes
+    N.loop(wheel(hub), 24, .09, .58, {}, true);
+    for (let j = 0; j < 3; j++) for (const a of [j * Math.PI / 3, j * Math.PI / 3 + Math.PI])
+      N.seg(wheel(hub), [Math.cos(a) * .09, 0, .58 + Math.sin(a) * .09], [Math.cos(a) * .49, 0, .58 + Math.sin(a) * .49], { tier: 1 });
+  }
+  return N;
 }
 
 const KINDS = ['drop', 'ferris', 'swing', 'saucer'];
@@ -332,14 +400,15 @@ layout(location=3) in vec2 a_e;      // parameter, role (0 plain · 1 rim · 2 g
 layout(location=4) in vec2 i_org;
 layout(location=5) in vec4 i_s;
 layout(location=6) in vec4 i_a;
-layout(location=8) in vec4 i_n;      // garlands on, collar height m, pole radius m, exaggeration
-uniform mat4 u_matrix; uniform float u_time, u_size, u_core, u_tier, u_thin, u_anim, u_bright;
-uniform vec3 u_pal[4];
+layout(location=8) in vec4 i_n;      // garlands on, collar height m, pole radius m, the ride's place in the accent colours
+uniform mat4 u_matrix; uniform float u_time, u_size, u_core, u_tier, u_thin, u_anim, u_bright, u_neonOn;
+uniform vec3 u_pal[8];
 out vec3 v_rgb; out vec2 v_mix;
 ${BULB_TWINKLE}
 void kill(){ gl_Position = vec4(2., 2., 2., 1.); gl_PointSize = 0.; }
 void main(){
   float role = a_e.y, tier = a_k.w;
+  if (tier < -.5) { if (u_neonOn > .5) { kill(); return; } tier = -tier - 1.; }   // a row the neon replaces
   if (tier > u_tier + .5) { kill(); return; }
   bool garland = role > 1.5 && role < 2.5 || role > 3.5;                  // the string, and the little pole at its end
   if (garland && i_n.x < .5) { kill(); return; }                          // Lotte has the spiral round it: no garlands
@@ -378,8 +447,36 @@ void main(){
   float b = u_bright;
   if (role > .5 && role < 1.5) b *= .70 + .30 * (.5 + .5 * cos(p6 * (a_e.x - u_time / 12.)));   // one slow wave round the rim every 12 s
   b *= twinkle(hash1(float(gl_VertexID) * .19 + float(gl_InstanceID) * .77), u_time, u_anim);
-  v_rgb = u_pal[int(a_k.x)];
+  v_rgb = u_pal[a_k.x < .5 ? 0 : 1 + int(mod(a_k.x - 1. + i_n.w, 7.))];   // every ride starts the accents at its own place
   v_mix = vec2(u_core, b);
+}`;
+const NEON_VS = `#version 300 es
+layout(location=0) in vec3 a_v;      // the segment's first end, turned / not turned
+layout(location=1) in vec3 a_w;
+layout(location=2) in vec3 a_v2;     // its second end
+layout(location=3) in vec3 a_w2;
+layout(location=9) in vec4 a_g;      // place round the loop, rot mode, xy-scale pick, tier
+layout(location=10) in vec2 a_e;     // along the segment, across it
+layout(location=4) in vec2 i_org;
+layout(location=5) in vec4 i_s;
+layout(location=6) in vec4 i_a;
+uniform mat4 u_matrix; uniform float u_time, u_half, u_core, u_tier, u_chase, u_anim;
+uniform vec2 u_vp; uniform vec3 u_neon;
+out vec3 v_rgb; out vec3 v_mix;
+${RIDE_POINT}
+${RIBBON}
+void main(){
+  if (a_g.w > u_tier + .5) { gl_Position = vec4(2., 2., 2., 1.); return; }
+  float tt = u_time * i_a.y + i_a.x;
+  vec3 A = ridePoint(a_v, a_w, a_g.y, a_g.z, tt, i_s, i_a);
+  vec3 B = ridePoint(a_v2, a_w2, a_g.y, a_g.z, tt, i_s, i_a);
+  vec4 cA = u_matrix * vec4(i_org + A.xy * i_s.w, A.z * i_s.w, 1.);
+  vec4 cB = u_matrix * vec4(i_org + B.xy * i_s.w, B.z * i_s.w, 1.);
+  gl_Position = ribbon(cA, cB, a_e.x, a_e.y, u_half, u_vp);
+  gl_Position.z -= 3.5e-4 * gl_Position.w;     // a hair in front of the surface it is fixed to
+  float b = .80;
+  if (u_chase > .5) b += .55 * smoothstep(.15, 0., fract(a_g.x - u_time * u_anim / 14.));   // one bright length, once round every 14 s
+  v_rgb = u_neon; v_mix = vec3(a_e.y, u_core, b);
 }`;
 const WIRE_FS = `#version 300 es
 precision highp float; uniform vec4 u_wire; out vec4 o;
@@ -422,6 +519,7 @@ export class RideLayer {
       s.wide = kind === 'ferris' ? .55 * D : Math.max(1.2 * s.r, 2.6 * s.mastR);
       s.collar = Math.min(.25 * H, 35);                                     // where the night garlands are tied on
       s.pole = Math.min(1.3 * (kind === 'ferris' ? .5 * D : s.r), 65);
+      s.hue = (q >>> 3) % 7;                                                // where this ride starts in the accent colours
       return s;
     });
     this.stats = { tris: 0, rides: 0, ms: 0 };
@@ -441,10 +539,13 @@ export class RideLayer {
     this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit'].map(n => [n, gl.getUniformLocation(this.p, n)]));
 
     this.pB = compile(gl, BULB_VS, BULB_FS);
-    this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pB, n)]));
+    this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn'].map(n => [n, gl.getUniformLocation(this.pB, n)]));
     this.pW = compile(gl, BULB_VS, WIRE_FS);
-    this.uW = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_wire'].map(n => [n, gl.getUniformLocation(this.pW, n)]));
+    this.uW = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn', 'u_wire'].map(n => [n, gl.getUniformLocation(this.pW, n)]));
     this.bulbRGB = new Float32Array(BULB_PAL.flatMap(hexRGB));
+    this.pN = compile(gl, NEON_VS, RIBBON_FS);
+    this.uN = Object.fromEntries(['u_matrix', 'u_time', 'u_half', 'u_core', 'u_tier', 'u_chase', 'u_anim', 'u_vp', 'u_neon', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pN, n)]));
+    this.neonRGB = Object.fromEntries(Object.entries(NEON).map(([k, h]) => [k, new Float32Array(hexRGB(h))]));
     this.wireBuf = buildWire();
 
     this.kind = {};
@@ -475,6 +576,11 @@ export class RideLayer {
       };
       const B = buildBulbs(k);
       K.bulb = lit(B.buffer(), B.n);
+      { const N = buildNeon(k), buf = N.buffer();                           // the signature outline
+        const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
+        const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        let o = 0; for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 3], [9, 4], [10, 2]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 72, o); o += n * 4 }
+        gl.bindVertexArray(null); K.neon = { va, vb, n: N.n } }
       K.wire = lit(this.wireBuf, this.wireBuf.length / 12);
       K.tiers = [0, 0, 0];
       for (let i = 0; i < B.n; i++) K.tiers[B.d[i * 12 + 9]]++;             // how many bulbs each tier adds
@@ -524,7 +630,7 @@ export class RideLayer {
       d[i + 2] = s.sxy * eh; d[i + 3] = s.sz * ev; d[i + 4] = s.mastR * eh; d[i + 5] = s.mu;
       d[i + 6] = s.phase; d[i + 7] = reducedMotion ? 0 : 1; d[i + 8] = s.period; d[i + 9] = s.yaw;
       d[i + 10] = s.colA; d[i + 11] = s.colB; d[i + 12] = s.struct; d[i + 13] = s.shade;
-      d[i + 14] = s.lotte ? 0 : 1; d[i + 15] = s.collar; d[i + 16] = s.pole; d[i + 17] = 0;
+      d[i + 14] = s.lotte ? 0 : 1; d[i + 15] = s.collar; d[i + 16] = s.pole; d[i + 17] = s.hue;
       K.n++;
     }
 
@@ -576,7 +682,27 @@ export class RideLayer {
         gl.uniform1f(u.u_time, ts); gl.uniform1f(u.u_size, sz.point); gl.uniform1f(u.u_core, sz.coreFrac);
         gl.uniform1f(u.u_tier, tier); gl.uniform1f(u.u_thin, thin); gl.uniform1f(u.u_anim, reducedMotion ? 0 : 1);
         gl.uniform1f(u.u_bright, 1); gl.uniform3fv(u.u_pal, this.bulbRGB); gl.uniform2f(u.u_wt, .85, .12);
+        gl.uniform1f(u.u_neonOn, neonOn);
       };
+      // the neon outline: one signature a ride, a ribbon widened in screen pixels
+      const neonOn = zoom >= (phone ? 15 : 14) ? 1 : 0;
+      if (neonOn) {
+        const core = Math.min(1.8, Math.max(1.2, 1.2 + (zoom - 14) * .3));
+        gl.useProgram(this.pN);
+        gl.uniformMatrix4fv(this.uN.u_matrix, false, MT);
+        gl.uniform1f(this.uN.u_time, ts); gl.uniform1f(this.uN.u_half, 2 * pixelRatio);
+        gl.uniform1f(this.uN.u_core, core / 4); gl.uniform1f(this.uN.u_tier, zoom >= 14.5 ? 1 : 0);
+        gl.uniform1f(this.uN.u_anim, reducedMotion ? 0 : 1);
+        gl.uniform2f(this.uN.u_vp, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        gl.uniform2f(this.uN.u_wt, .9, .10);
+        for (const k of KINDS) {
+          const K = this.kind[k]; if (!K.n) continue;
+          gl.uniform3fv(this.uN.u_neon, this.neonRGB[k]);
+          gl.uniform1f(this.uN.u_chase, k === 'saucer' ? 1 : 0);            // the bright length runs round the saucers
+          gl.bindVertexArray(K.neon.va); this.instPtr(gl, K);
+          gl.drawArraysInstanced(gl.TRIANGLES, 0, K.neon.n, K.n);
+        }
+      }
       if (tier >= 2) {                                                      // the thin wire first, under the bulbs
         gl.useProgram(this.pW); setUni(this.uW);
         gl.uniform1f(this.uW.u_thin, 1); gl.uniform4f(this.uW.u_wire, .459, .408, .325, .35);
@@ -599,8 +725,8 @@ export class RideLayer {
   dispose(gl) {
     if (!this.p) return;
     for (const k of KINDS) { const K = this.kind[k]; for (const b of K.inst) gl.deleteBuffer(b);
-      for (const L of [...K.lod, K.bulb, K.wire]) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
-    gl.deleteProgram(this.p); gl.deleteProgram(this.pB); gl.deleteProgram(this.pW); this.p = null; this.kind = null; this.ready = false;
+      for (const L of [...K.lod, K.bulb, K.wire, K.neon]) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
+    gl.deleteProgram(this.p); gl.deleteProgram(this.pB); gl.deleteProgram(this.pW); gl.deleteProgram(this.pN); this.p = null; this.kind = null; this.ready = false;
   }
 }
 export default RideLayer;

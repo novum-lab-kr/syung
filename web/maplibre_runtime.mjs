@@ -1614,9 +1614,10 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   // Night (the park in the dark theme): a string of bulbs under each edge's centre line, BULB_EVERY m apart and 3 m under
   // the girders — none on the ground, in a loop or corkscrew. Absolute mercator x, y and height, for NightLayer.
   bulbs(){
-    if(this.bulbPts)return this.bulbPts;const out=[];
-    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),pos=this.sampler(e);
-      for(let s=BULB_EVERY*mu/2;s<g.total;s+=BULB_EVERY*mu){const q=pos(s);if(q.h<6*mu||q.loop)continue;out.push(q.x,q.y,q.h-3*mu)}}
+    if(this.bulbPts)return this.bulbPts;const out=[],rgb=[];
+    for(const e of this.edges){const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),pos=this.sampler(e),v=parseInt((colors[e.line]||'#888888').slice(1),16);
+      for(let s=BULB_EVERY*mu/2;s<g.total;s+=BULB_EVERY*mu){const q=pos(s);if(q.h<6*mu||q.loop)continue;out.push(q.x,q.y,q.h-3*mu);rgb.push(v>>16&255,v>>8&255,v&255)}}
+    this.bulbRgb=new Uint8Array(rgb);   // the line each hangs under (a chase in its colour)
     return this.bulbPts=new Float64Array(out);   // doubles: float mercator is ~2 m coarse here
   }
   // lvl: sample spacing in m (8 m close up; coarser zoomed out, where 8 m built 2.3 M vertices at z12.6 and stalled the map)
@@ -1907,7 +1908,10 @@ map.on('load',()=>{
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
       if(coaster&&effectiveTheme()==='dark'&&coasterTrack.edges){   // (edges: once the track has been set up)
-        if(!night){night=new NightLayer();night.init(gl);night.setTrackBulbs(coasterTrack.bulbs())}
+        if(!night){night=new NightLayer();night.init(gl);night.setTrackBulbs(coasterTrack.bulbs(),coasterTrack.bulbRgb);
+          const P=[];for(const [k,r] of stationRects){const i=k.lastIndexOf(':'),line=k.slice(0,i),st=byId.get(+k.slice(i+1)),a=maplibregl.MercatorCoordinate.fromLngLat(r.coords[0]),b=maplibregl.MercatorCoordinate.fromLngLat(r.coords[r.coords.length-1]),v=parseInt((colors[line]||'#888888').slice(1),16);
+            P.push(a.x,a.y,b.x,b.y,r.widthM||0,...(st?.lines?.length>1?[255,232,181]:[v>>16&255,v>>8&255,v&255]))}   // platforms: light strips along their edges (a transfer's in cream)
+          night.setPlatforms(new Float64Array(P))}
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
         night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
