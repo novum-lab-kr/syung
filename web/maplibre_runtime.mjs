@@ -79,8 +79,55 @@ function coasterPath(line,a,b){
   for(let i=0;i<=n;i++){const u=i/n,s=u*g0.total,e=smooth(Math.max(0,Math.min(1,(Math.min(s,g0.total-s)/mu-COASTER_FLAT)/250)));
     const [rx,ry]=real(s),v=1-u,off=e*(3*v*v*u*o1+3*v*u*u*o2+sway*Math.sin(2*Math.PI*waves*u+ph)*Math.sin(Math.PI*u));
     pts.push({x:rx+nx*off,y:ry+ny*off})}
+  followCorridor(line,lo,hi,g0,pts,mu);
   for(const q of pts)q.meterInMercatorCoordinateUnits=()=>mu;   // as the MercatorCoordinates of the real track
   g=withCum(pts);edgeGeom.set(id,g);return g;
+}
+// Lines side by side (2호선 and 공항철도 by 홍대) each wandered its own way and braided across each other. Where an edge runs
+// along another line's track (within 2·CORR_NEAR, heading the same way or back), it takes that line's sideways shift
+// there — all of it within CORR_NEAR, blended back to its own by 2·CORR_NEAR — so the two keep their real spacing. The
+// line first by name leads (its own path may follow one before it); the tower course leads nothing.
+const CORR_NEAR=70;let corrGrid=null,corrRanks=null;
+const corrRank=()=>corrRanks??=new Map(Object.keys(paths).sort((a,b)=>a.localeCompare(b,'ko')).map((l,i)=>[l,i]));   // the lines in name order (localeCompare per sample took 0.3 s)
+function corridors(){
+  if(corrGrid)return corrGrid;corrGrid={cells:new Map(),size:0};const seen=new Set();
+  for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++){
+    const lo=Math.min(ids[i-1],ids[i]),hi=Math.max(ids[i-1],ids[i]),k=`${line}:${lo}:${hi}`;if(seen.has(k)||!byId.has(lo)||!byId.has(hi)||towerCourse(line,lo,hi))continue;seen.add(k);
+    const g=realGeom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),cell=corrGrid.size||=2*CORR_NEAR*mu;let j=1;
+    for(let s=0;s<=g.total;s+=20*mu){while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],l=Math.hypot(B.x-A.x,B.y-A.y)||1,u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
+      const e={line,lo,hi,s,x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l},c=Math.floor(e.x/cell)+','+Math.floor(e.y/cell);
+      if(!corrGrid.cells.has(c))corrGrid.cells.set(c,[]);corrGrid.cells.get(c).push(e)}}
+  return corrGrid;
+}
+function followCorridor(line,lo,hi,g0,pts,mu){
+  const {cells,size}=corridors(),n=pts.length-1,rank=corrRank(),me=rank.get(line),first=l=>rank.get(l)<me,ST=4,votes=new Map();let j=1;
+  const X=new Float64Array(n+1),Y=new Float64Array(n+1),FX=new Float64Array(n+1),FY=new Float64Array(n+1);
+  for(let i=0;i<=n;i++){const s=g0.total*i/n;while(j<g0.pts.length-1&&g0.cum[j]<s)j++;const A=g0.pts[j-1],B=g0.pts[j],l=Math.hypot(B.x-A.x,B.y-A.y)||1,u=Math.max(0,Math.min(1,(s-g0.cum[j-1])/((g0.cum[j]-g0.cum[j-1])||1)));
+    X[i]=A.x+(B.x-A.x)*u;Y[i]=A.y+(B.y-A.y)*u;FX[i]=(B.x-A.x)/l;FY[i]=(B.y-A.y)/l}
+  // the nearest sample of each line before it, heading the same way or back, within 2·CORR_NEAR (every ST-th point)
+  // each line before it with a sample heading the same way or back within 2·CORR_NEAR: a vote (every 2·ST-th point); no
+  // allocation per lookup (a Map each made it slow)
+  const cellsAt=i=>{const cx=Math.floor(X[i]/size),cy=Math.floor(Y[i]/size),out=[];for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const c=cells.get((cx+dx)+','+(cy+dy));if(c)out.push(c)}return out};
+  const R2=(2*CORR_NEAR*mu)**2,seen=new Set();
+  for(let i=0;i<=n;i+=2*ST){seen.clear();for(const c of cellsAt(i))for(const e of c){if(seen.has(e.line)||!first(e.line)||Math.abs(e.fx*FX[i]+e.fy*FY[i])<.85)continue;const dx=e.x-X[i],dy=e.y-Y[i];if(dx*dx+dy*dy<R2)seen.add(e.line)}
+    for(const l of seen)votes.set(l,(votes.get(l)||0)+1)}
+  // the leader: the line most often near (one line for the edge: switching between two, each with its own shift, kinked)
+  let lead=null,most=0;for(const [l,c] of votes)if(c>most){most=c;lead=l}if(!lead)return;
+  const nearest=i=>{let best=null,bd=R2;for(const c of cellsAt(i))for(const e of c){if(e.line!==lead||Math.abs(e.fx*FX[i]+e.fy*FY[i])<.85)continue;const dx=e.x-X[i],dy=e.y-Y[i],d=dx*dx+dy*dy;if(d<bd){bd=d;best=e}}return best};
+  // its shift and how close it is (w), every ST-th point, in between linearly; blended in by w, rounded over ±50 m
+  const K=[];for(let i=0;i<=n;i+=ST)K.push(i);if(K[K.length-1]!==n)K.push(n);
+  const LX=new Float64Array(K.length),LY=new Float64Array(K.length),LW=new Float64Array(K.length);
+  K.forEach((i,q)=>{const best=nearest(i);if(!best)return;const x=X[i],y=Y[i];
+    // the foot on the leader's track (along its heading from the nearest sample: snapping to the 20 m samples stepped)
+    const R=realGeom(best.line,best.lo,best.hi),t=(x-best.x)*best.fx+(y-best.y)*best.fy,ls=Math.max(0,Math.min(R.total,best.s+t)),bx=best.x+best.fx*(ls-best.s),by=best.y+best.fy*(ls-best.s);
+    const L=coasterPath(best.line,best.lo,best.hi),m=L.pts.length-1,k=ls/R.total*m,a=Math.min(m-1,Math.floor(k)),f=k-a,P=L.pts[a],Q=L.pts[a+1]||P;
+    LX[q]=P.x+(Q.x-P.x)*f-bx;LY[q]=P.y+(Q.y-P.y)*f-by;LW[q]=smooth(Math.max(0,Math.min(1,2-Math.abs((x-best.x)*best.fy-(y-best.y)*best.fx)/(CORR_NEAR*mu))))});   // w: by how far off the leader's track
+  const DX=new Float64Array(n+1),DY=new Float64Array(n+1);
+  for(let q=0;q<K.length;q++){const i0=K[q],i1=K[Math.min(K.length-1,q+1)];for(let i=i0;i<(q===K.length-1?n+1:i1);i++){const f=i1>i0?(i-i0)/(i1-i0):0,r=Math.min(K.length-1,q+1);
+    const w=LW[q]+(LW[r]-LW[q])*f,lx=LX[q]+(LX[r]-LX[q])*f,ly=LY[q]+(LY[r]-LY[q])*f,ox=pts[i].x-X[i],oy=pts[i].y-Y[i];DX[i]=ox+w*(lx-ox);DY[i]=oy+w*(ly-oy)}}
+  const st=g0.total/n/mu,W=Math.max(1,Math.round(50/st));
+  for(let pass=0;pass<2;pass++)for(const D of [DX,DY]){const c=D.slice(),at=i=>c[Math.max(0,Math.min(n,i))];let sum=0;for(let i=-W;i<=W;i++)sum+=at(i);for(let i=0;i<=n;i++){if(i)sum+=at(i+W)-at(i-W-1);D[i]=sum/(2*W+1)}}
+  for(let i=0;i<=n;i++){const e=smooth(Math.max(0,Math.min(1,(Math.min(i,n-i)*st-COASTER_FLAT)/250)));pts[i]={x:X[i]+DX[i]*e,y:Y[i]+DY[i]*e}}   // e: off its own platforms, as coasterPath
 }
 // Point and heading at fraction k of the way from station `from` to station `to` along the track.
 function along(line,from,to,k){
