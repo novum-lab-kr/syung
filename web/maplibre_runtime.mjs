@@ -1404,6 +1404,7 @@ const exitPillars=new ExitPillars();
 // 롤러코스터 track (see coasterAt), drawn on the train canvas under the trains: per direction a pair of
 // rails in the line's colour on a box girder, sleepers, and white columns down to the ground.
 // Built per edge in map space once (lane offsets in px are applied in the shader, so zoom needs no rebuild).
+const TRACK_BYTES=(PHONE?96:192)*1e6;   // GPU memory for the built track pieces (the next levels are built ahead only below 80 %: else they went out as fast as built)
 class CoasterTrack{
   init(gl){
     const vs=`#version 300 es
@@ -1470,8 +1471,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       if(lvl===8)for(let i=0;i<P.length;i++){const q=P[i],w=.36;v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,-.6,.2,NONE,-.55);v(q,1,side,w,0,.6,.2,NONE,-.55);v(q,1,side,-w,0,.6,.2,NONE,-.55)}   // sleepers (close up only)
     }
     const gl=this.gl,b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,out.subarray(0,o),gl.STATIC_DRAW);
-    a={b,n:o/22};this.cache.set(ck,a);
-    if(this.cache.size>4000){const [k0,a0]=this.cache.entries().next().value;gl.deleteBuffer(a0.b);this.cache.delete(k0)}   // oldest out
+    a={b,n:o/22};this.cache.set(ck,a);this.bytes=(this.bytes||0)+o*4;
     return a;
   }
   use(gl,M,z){
@@ -1563,12 +1563,17 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     // pieces not built at this level yet: a few each frame (~4 ms), meanwhile drawn at a level already built (building all
     // at once while zooming hitched and left gaps); spare time builds the next level out over a wider area, then in
     const t0=performance.now(),draw=[],LV=[8,16,32,64,128,256],near=[lvl*2,lvl/2,lvl*4,lvl/4,...LV];let pending=false;
-    for(const c of vis){const a=this.cache.get(c.id+':'+lvl);if(a){draw.push(a);continue}
+    const frame=this.frame=(this.frame||0)+1,hit=k=>{const a=this.cache.get(k);if(a){this.cache.delete(k);this.cache.set(k,a);a.f=frame}return a};   // used: to the back of the queue
+    for(const c of vis){const a=hit(c.id+':'+lvl);if(a){draw.push(a);continue}
       if(performance.now()-t0<4){draw.push(this.piece(c,lvl));continue}
-      pending=true;let b=null;for(const l of near)if((b=this.cache.get(c.id+':'+l)))break;
+      pending=true;let b=null;for(const l of near)if((b=hit(c.id+':'+l)))break;
       if(!b&&performance.now()-t0<12)b=this.piece(c,lvl);if(b)draw.push(b)}   // nothing built for it yet (newly on screen): up to 12 ms, rather than a gap
-    if(!pending)for(const [l,pad] of [[lvl*2,w*.6],[lvl/2,0]])if(LV.includes(l))for(const c of mine){if(performance.now()-t0>=4){pending=true;break}if(inside(c,pad)&&!this.cache.has(c.id+':'+l))this.piece(c,l)}
+    if(!pending&&(this.bytes||0)<TRACK_BYTES*.8)for(const [l,pad] of [[lvl*2,w*.6],[lvl/2,0]])if(LV.includes(l))for(const c of mine){if(performance.now()-t0>=4){pending=true;break}if(inside(c,pad)&&!this.cache.has(c.id+':'+l))this.piece(c,l)}
     if(pending)trainFrameSoon(16);
+    for(const a of draw)a.f=frame;
+    // least recently drawn out past TRACK_BYTES, never one drawn this frame (dropping the oldest built deleted pieces on screen:
+    // with every line at z13+ the 3,500 pieces at two or three levels passed the old 4,000 cap, and the track flickered)
+    for(const [k,a] of this.cache){if(this.bytes<=TRACK_BYTES||a.f===frame)break;gl.deleteBuffer(a.b);this.cache.delete(k);this.bytes-=a.n*88}
     if(!draw.length)return;
     this.use(gl,M,z);
     const each=()=>{for(const a of draw){gl.bindBuffer(gl.ARRAY_BUFFER,a.b);this.ptrs(gl);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
