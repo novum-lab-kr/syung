@@ -718,6 +718,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path.split("?", 1)[0] == "/auth":
             return self._auth()
+        # bus: separate cache/quota; the same process can serve the new endpoint.
+        if self.path.split("?", 1)[0] in ("/bus/live", "/api/bus/live"):
+            import bus_live_proxy
+            if len(self.path) > 2048:
+                return self._send(400, b'{"ok":false,"error":"invalid_request"}')
+            body, status = bus_live_proxy.snapshot(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+            return self._send(status, json.dumps(body, ensure_ascii=False, allow_nan=False).encode())
         if self.path.split("?", 1)[0] not in ("/live", "/health", "/route", "/place"):
             self.send_error(404)
             return
@@ -752,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, status: int, data: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth")) else "public, max-age=30")
+        self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/")) else "public, max-age=30")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

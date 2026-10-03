@@ -55,6 +55,27 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .setting-row{display:flex;align-items:center;gap:10px;min-height:48px;padding:0 10px;font-size:14px;font-weight:600}
 .setting-row[hidden]{display:none}   /* 열차 속도: only while 롤러코스터 is on (display:flex above beat the hidden attribute) */
 .setting-name small{display:block;white-space:pre-line;margin-top:1px;font-size:11px;font-weight:500;color:var(--muted)}
+/* bus: the existing switch, map notice and shared detail sheet use the same theme. */
+#toggleBuses{padding-block:8px;min-height:56px}
+#toggleBuses .setting-icon{flex:none}
+#busSettingNote{font-size:12px;line-height:1.5;color:var(--secondary)}
+.bus-nearby{display:block;width:100%;min-height:44px;margin:4px 0;padding:8px 12px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font-size:13px;font-weight:600;text-align:left;cursor:pointer}
+.bus-nearby[hidden]{display:none}
+.bus-nearby:hover{background:var(--selected)}
+.bus-nearby:active{background:var(--syung);color:var(--syung-ink)}
+.bus-nearby:disabled{color:var(--secondary);opacity:.6;cursor:default}
+.bus-notice{position:absolute;z-index:5;left:12px;bottom:calc(80px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 84px);margin:0;padding:8px 12px;border-radius:12px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);font-size:12px;line-height:1.5;pointer-events:none}
+.bus-notice[hidden]{display:none}
+.bus-detail{padding:0 0 4px;font-variant-numeric:tabular-nums}
+.bus-detail h3{padding-right:32px;overflow-wrap:anywhere}
+.bus-type{color:var(--bus-color);font:600 14px/1.5 "Noto Sans KR","Apple SD Gothic Neo",sans-serif;vertical-align:middle}
+.bus-detail-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;margin:12px 0;font-size:14px;line-height:1.5}
+.bus-detail-grid dt{color:var(--secondary)}
+.bus-detail-grid dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.bus-detail-grid small{display:block;font-size:12px;font-weight:400;color:var(--secondary)}
+.bus-detail-note{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--secondary)}
+.bus-route-list{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;font-size:13px;line-height:1.6}
+.bus-route-list span{color:var(--bus-color)}
 .setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
 .segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}

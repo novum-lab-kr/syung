@@ -1,6 +1,11 @@
 # Static map + live-train proxy (production: syung.novum-lab.com)
 syung.novum-lab.com {
 	encode zstd gzip
+	# bus: handled by the existing proxy, with its own cache and daily budget.
+	handle /api/bus/live {
+		rewrite * /bus/live
+		reverse_proxy 127.0.0.1:3113
+	}
 	handle /api/live {
 		rewrite * /live
 		reverse_proxy 127.0.0.1:3113
@@ -12,4 +17,3 @@ syung.novum-lab.com {
 		file_server
 	}
 }
-

@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: 22
       - run: node --test tests/*.test.mjs
+      - run: python3 -m unittest discover -s tests -p 'test_bus_*.py'
       - run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py
 
   deploy:

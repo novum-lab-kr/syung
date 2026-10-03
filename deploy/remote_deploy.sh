@@ -14,6 +14,7 @@ git merge --ff-only --quiet origin/main
 after=$(git rev-parse HEAD)
 echo "HEAD $before -> $after"
 node --test tests/*.test.mjs
+python3 -m unittest discover -s tests -p 'test_bus_*.py'
 deploy/deploy.sh
 if ! git diff --quiet "$before" "$after" -- server/; then
   python3 -m py_compile server/subway_live_proxy.py && systemctl restart subway-live && echo "subway-live restarted"

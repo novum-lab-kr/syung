@@ -2,6 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
+import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {RideLayer} from './lib/park_rides.mjs';
 import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
@@ -209,6 +210,7 @@ const TRAIN_FPS=30,FOLLOW_FPS=30,animFrame=[];let trainTimer=0,trainAt=0,drawTra
 function trainFrameSoon(ms){const at=performance.now()+ms;if(trainTimer&&trainAt<=at)return;clearTimeout(trainTimer);trainAt=at;trainTimer=setTimeout(()=>{trainTimer=0;requestAnimationFrame(()=>{if(!map.isMoving())drawTrains()})},ms)}   // while the map moves it draws them with each of its frames: a timer frame there used a newer camera than the map under it (tall rides slid and snapped back)let repaintTimer=0,repaintAt=0;
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:18,minZoom:7,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false});
+let busLayer=null;   // bus: owns its loading, viewport culling and animation lifecycle
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:false,maximumAge:10000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
@@ -1021,7 +1023,7 @@ const sheet=document.createElement('section');sheet.className='sheet';sheet.hidd
 sheet.innerHTML='<button type="button" class="sheet-grab" aria-label="닫기" title="끌어내리거나 눌러서 닫기"></button><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
 const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
 let sheetToken=0,sheetTrain=null,following=null,easing=false;
-function openSheet(html){sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}
+function openSheet(html,source='subway'){if(source!=='bus')busLayer?.clearSelection();sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
   const out=[];
@@ -1089,6 +1091,7 @@ function focusRoute(on){
 }
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
 function closeSheet(){
+  busLayer?.clearSelection();   // bus: release the highlighted bus route with the shared sheet
   if(sheet.hidden)return;
   // a field still focused keeps the keyboard up: let both go down together
   if(sheet.contains(document.activeElement))document.activeElement.blur();
@@ -1941,7 +1944,7 @@ map.on('load',()=>{
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
     });
   }
-  map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else closeSheet()});
+  map.on('click',e=>{if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(!busLayer?.selectAt(e.point))closeSheet()});   // bus: subway picking keeps priority
   map.on('click','stations',e=>{const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
@@ -1954,6 +1957,12 @@ map.on('load',()=>{
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(()=>{if(!map.isMoving())updateSun()},400)};   // not mid-pan (as the walls): moveend runs it
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();
+  // bus: below subway lines, using the existing detail sheet and settings controls.
+  busLayer=createBusLayer({map,phone:PHONE,onSelect:html=>{
+    following=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
+    return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
+  },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
+  window.__subwayWebGL.busLayer=busLayer;
   // exits: yellow number discs (like station exit signs) from zoom 16
   map.addSource('exits',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   // exit sign: flat yellow rounded square with a thin ink rim, stretched to the number
@@ -2055,6 +2064,7 @@ try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
 function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focusRoute(!!routeBounds)});
   const t=effectiveTheme(),P=mapPalette();
+  busLayer?.setTheme(t);   // bus: the same light/dark setting as the map
   for(const b of document.querySelectorAll('[data-map-color]'))b.setAttribute('aria-pressed',String(b.dataset.mapColor===mapColor));
   document.documentElement.dataset.theme=t;
   // favicon follows the map theme (the <link media> pair only knows the OS setting)

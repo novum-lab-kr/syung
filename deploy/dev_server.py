@@ -11,6 +11,7 @@ key is needed locally. Set SUBWAY_LIVE_UPSTREAM to use another proxy (e.g. http:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import urllib.request
@@ -26,6 +27,10 @@ DATA = {
     "/edge_times.json": ROOT / "data" / "ktdb-gtfs-2025" / "edge_times.json",
     "/coaster_buildings.bin": ROOT / "data" / "osm-tracks" / "coaster_buildings.bin",
     "/coaster_towers.json": ROOT / "data" / "osm-tracks" / "coaster_towers.json",
+    # bus: the same public URLs as deployment, without copying files.
+    "/data/bus/routes.json": ROOT / "data" / "bus" / "routes.json",
+    "/data/bus/stops.json": ROOT / "data" / "bus" / "stops.json",
+    "/data/bus/manifest.json": ROOT / "data" / "bus" / "manifest.json",
 }
 
 
@@ -39,6 +44,22 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        # bus: local backend, explicit BUS_LIVE_MODE=mock for UI development.
+        if path == "/api/bus/live":
+            if str(ROOT / "server") not in sys.path:
+                sys.path.insert(0, str(ROOT / "server"))
+            import bus_live_proxy
+            if len(self.path) > 2048:
+                payload, status = {"ok": False, "error": "invalid_request"}, 400
+            else:
+                payload, status = bus_live_proxy.snapshot(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+            body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path.endswith("/api/live"):
             query = self.path.split("?", 1)[1] if "?" in self.path else ""
             try:

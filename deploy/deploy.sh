@@ -12,6 +12,11 @@ for d in "${TARGETS[@]}"; do
   mkdir -p "$d/brand" && cp "$ROOT"/web/brand/* "$d/brand/"
   cp "$ROOT"/web/vendor/* "$d/vendor/"
   mkdir -p "$d/lib" && cp "$ROOT"/web/lib/*.mjs "$d/lib/"
+  # bus: keep the v1 static URLs separate from the journey planner's bus.json.
+  if [ -f "$ROOT/data/bus/routes.json" ]; then
+    mkdir -p "$d/data/bus"
+    cp "$ROOT"/data/bus/*.json "$d/data/bus/"
+  fi
   cp "$ROOT/data/osm-tracks/track_shapes.json" "$ROOT/data/osm-tracks/exits.json" "$ROOT/data/ktdb-gtfs-2025/edge_times.json" "$d/"
   cp "$ROOT/data/osm-tracks/coaster_buildings.bin" "$ROOT/data/osm-tracks/coaster_towers.json" "$d/"   # 롤러코스터: building heights along the lines
   # live timing: the nightly retrained copy (pipeline/retrain_live_timing.py) when there is one
