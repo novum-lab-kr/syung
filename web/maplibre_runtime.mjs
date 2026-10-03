@@ -273,6 +273,7 @@ function planTrain(t){
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
+const COL_SPAN=60,COL_AFRAME=80,COL_CLEAR=15;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
 // The frame across (R) and up (U) of a track or car going along F, from the flat right r, turned by roll about F.
@@ -1452,13 +1453,35 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
         this.list.push({id:`${e.id}:${j}`,e,s0,s1,box:[x0-pad,y0-pad,x1+pad,y1+pad]})}}
     return this.list;
   }
+  // the edge's point s (mercator units along it) on the coaster: ground point under it, height, lateral swing and roll
+  sampler(e){
+    const g=geom(e.line,e.lo,e.hi);
+    const ground=s=>{let i=1,j=g.pts.length-1;while(i<j){const m=(i+j)>>1;if(g.cum[m]<s)i=m+1;else j=m}const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
+      return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};   // i: first point at or past s, found by halving
+    return s=>{const [sg,h,lat,roll]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.x-=q.fy*lat;q.y+=q.fx*lat;q.h=h;q.roll=roll;q.loop=sg!==s||roll!==0||!!(g.spiral&&s>g.spiral.r0&&s<g.spiral.r1);return q};   // loop: no columns under it (nor under a tower ring: its turns are stacked)
+  }
+  // Supports: one under both directions (a crossbeam carries the two girders) a span apart by height — COL_SPAN m low,
+  // more higher up, an A-frame from COL_AFRAME m — placed along each edge the same at every zoom (zoomed out every k-th:
+  // piece), none on the ground, in a loop or corkscrew, nor within COL_CLEAR m of another line's (lines side by side made
+  // a fence: a column every 30 m under each direction of each line, ~67 a km a line close up). Worked out once for all
+  // the edges in id order, each moved on 10 m at a time until clear of the ones before.
+  columns(){
+    if(this.cols)return this.cols;this.cols=new Map();const grid=new Map(),cell=COL_CLEAR,key=(x,y)=>Math.floor(x/cell)+','+Math.floor(y/cell);
+    for(const e of [...this.edges].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0)){
+      const g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),pos=this.sampler(e),list=[];this.cols.set(e.id,list);
+      const near=q=>{const X=q.x/mu,Y=q.y/mu,ix=Math.floor(X/cell),iy=Math.floor(Y/cell);
+        for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(const c of grid.get((ix+dx)+','+(iy+dy))||[])if(c.line!==e.line&&Math.hypot(c.X-X,c.Y-Y)<COL_CLEAR)return true;return false};
+      for(let s=0;s<g.total;){const q=pos(s);if(q.h<3*mu||q.loop||near(q)){s+=10*mu;continue}
+        list.push(s);const X=q.x/mu,Y=q.y/mu,k=key(X,Y);if(!grid.has(k))grid.set(k,[]);grid.get(k).push({X,Y,line:e.line});
+        const h=q.h/mu;s+=(h<30?COL_SPAN:h<COL_AFRAME?80:100)*mu}
+    }
+    return this.cols;
+  }
   // lvl: sample spacing in m (8 m close up; coarser zoomed out, where 8 m built 2.3 M vertices at z12.6 and stalled the map)
   piece(c,lvl){
     const ck=c.id+':'+lvl;let a=this.cache.get(ck);if(a)return a;
     const e=c.e,g=geom(e.line,e.lo,e.hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),col=hexRGB(colors[e.line]||'#888888'),eo=edgeOffset(e.line,e.lo,e.hi),O=this.O;
-    const ground=s=>{let i=1,j=g.pts.length-1;while(i<j){const m=(i+j)>>1;if(g.cum[m]<s)i=m+1;else j=m}const A=g.pts[i-1],B=g.pts[i],u=Math.max(0,Math.min(1,(s-g.cum[i-1])/((g.cum[i]-g.cum[i-1])||1))),l=Math.hypot(B.x-A.x,B.y-A.y)||1;
-      return {x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l}};   // i: first point at or past s, found by halving
-    const pos=s=>{const [sg,h,lat,roll]=coasterAt(e.line,e.lo,e.hi,s),q=ground(sg);q.x-=q.fy*lat;q.y+=q.fx*lat;q.h=h;q.roll=roll;q.loop=sg!==s||roll!==0||!!(g.spiral&&s>g.spiral.r0&&s<g.spiral.r1);return q};   // loop: no columns under it (nor under a tower ring: its turns are stacked)
+    const pos=this.sampler(e);
     const at=s=>{const q=pos(s),A=pos(Math.max(0,s-.5*mu)),B=pos(Math.min(g.total,s+.5*mu));
       let F=[B.x-A.x,B.y-A.y,B.h-A.h];const l=Math.hypot(...F)||1;F=F.map(c=>c/l);const R=[-q.fy,q.fx],[,U]=rolled(R,F,q.roll);
       return {x:q.x-O.x,y:q.y-O.y,h:q.h,R,F,U,G:[q.fx,q.fy,0],loop:q.loop,roll:q.roll}};
@@ -1473,14 +1496,20 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
       const off=(A,B,Q)=>{const dx=B.x-A.x,dy=B.y-A.y,dh=B.h-A.h,l2=dx*dx+dy*dy+dh*dh||1,u=Math.max(0,Math.min(1,((Q.x-A.x)*dx+(Q.y-A.y)*dy+(Q.h-A.h)*dh)/l2));return Math.hypot(A.x+dx*u-Q.x,A.y+dy*u-Q.y,A.h+dh*u-Q.h)};
       for(let j=k+2;j<P.length;j++){let bad=P[j].loop!==P[k].loop||!!P[j-1].roll;for(let i=k+1;i<j&&!bad;i++)bad=off(P[k],P[j],P[i])>tol;if(bad){k=j-1;K.push(P[k])}}
       K.push(P[P.length-1]);P=K}
-    const G=-6,NONE=[0,0,0],UP=[0,0,1],sp=Math.max(30,lvl*3)*mu;   // G: girder depth, px; sp: column spacing
-    const out=new Float32Array(22*2*42*P.length);let o=0;   // room for every part on both sides
+    const G=-6,NONE=[0,0,0],UP=[0,0,1];   // G: girder depth, px
+    const out=new Float32Array(22*(2*42*P.length+120*((this.columns().get(e.id)||[]).length+1)));let o=0;   // room for every part on both sides
     const v=(q,hf,side,kb,kp,kf,zp,c,sh,post)=>{const F=post?q.G:q.F,U=post?UP:q.U;
       out[o++]=q.x;out[o++]=q.y;out[o++]=q.h;out[o++]=hf;out[o++]=q.R[0];out[o++]=q.R[1];out[o++]=eo;out[o++]=side;out[o++]=kb;out[o++]=kp;out[o++]=kf;
       out[o++]=zp;out[o++]=F[0];out[o++]=F[1];out[o++]=F[2];out[o++]=U[0];out[o++]=U[1];out[o++]=U[2];out[o++]=c[0];out[o++]=c[1];out[o++]=c[2];out[o++]=sh};
+    // supports (columns()): a column, or two legs splayed 18 % of the height either way, from the ground to the crossbeam
+    const leg=(B,q,w,hf0=0)=>{for(const [kp,kf] of [[w,0],[0,w]]){v(B,hf0,0,0,-kp,-kf,0,NONE,-1,1);v(B,hf0,0,0,kp,kf,0,NONE,-1,1);v(q,1,0,0,kp,kf,G,NONE,-1,1);v(B,hf0,0,0,-kp,-kf,0,NONE,-1,1);v(q,1,0,0,kp,kf,G,NONE,-1,1);v(q,1,0,0,-kp,-kf,G,NONE,-.86,1)}};
+    const cols=this.columns().get(e.id)||[],every=Math.max(1,Math.round(lvl*3/80));
+    for(let i=0;i<cols.length;i+=every){const cs=cols[i];if(cs<c.s0||cs>=c.s1)continue;const q=at(cs),h=q.h/mu;
+      if(h<COL_AFRAME)leg(q,q,2.4);
+      else{const d=.18*q.h,F=(x)=>({...q,x:q.x+q.R[0]*x,y:q.y+q.R[1]*x});leg(F(-d),q,2.4);leg(F(d),q,2.4);
+        const a=F(-d/2),b=F(d/2);for(const [A,B] of [[a,b]]){v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,0,NONE,-.9,1);v(B,.5,0,0,0,0,-3,NONE,-.8,1);v(A,.5,0,0,0,0,-3,NONE,-.8,1)}}   // the brace halfway up
+      for(const [z0,z1,f0,f1] of [[G,G-4,0,0],[G,G,-1.6,1.6]]){v(q,1,-1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.25,0,0,f0,z0,NONE,-.86,1);v(q,1,1.25,0,0,f1,z1,NONE,-.8,1);v(q,1,-1.25,0,0,f1,z1,NONE,-.8,1)}}   // the crossbeam under both girders: its face and its underside
     for(const side of [-1,1]){
-      for(let i=1;i<P.length;i++){const q=P[i];if(Math.floor(q.s/sp)===Math.floor(P[i-1].s/sp)||q.h<3*mu||q.loop)continue;   // columns every ~30 m (sparser zoomed out; none under the loop)
-        for(const [kp,kf] of [[1.8,0],[0,1.8]]){v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,0,side,0,kp,kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,0,side,0,-kp,-kf,0,NONE,-1,1);v(q,1,side,0,kp,kf,G,NONE,-1,1);v(q,1,side,0,-kp,-kf,G,NONE,-.86,1)}}
       for(let i=0;i<P.length-1;i++){const A=P[i],B=P[i+1];
         for(const kb of [-.2,.2]){v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,0,col,.62);v(B,1,side,kb,0,0,G,col,.5);v(A,1,side,kb,0,0,G,col,.5)}   // the girder's two sides
         for(const kb of [-.3,.3]){v(A,1,side,kb,-.9,0,.4,col,1);v(A,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(A,1,side,kb,-.9,0,.4,col,1);v(B,1,side,kb,.9,0,.4,col,1);v(B,1,side,kb,-.9,0,.4,col,1)}}   // rails
