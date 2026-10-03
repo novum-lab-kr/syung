@@ -385,10 +385,22 @@ function coasterProfile(line,lo,hi){
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/10)),st=L/n,need=new Float32Array(n+1),h=new Float32Array(n+1);
   let j=1;for(let i=0;i<=n;i++){const s=g.total*i/n;while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
     // (a tower course does not count its own tower)
-    const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:buildingNear(X,Y);need[i]=b?b+COASTER_CLEAR:0;h[i]=Math.max(hillsAt(lo,hi,L,i/n),need[i])}
-  const G=COASTER_GRADE*st;for(let i=1;i<=n;i++)h[i]=Math.max(h[i],h[i-1]-G);for(let i=n-1;i>=0;i--)h[i]=Math.max(h[i],h[i+1]-G);
-  for(let pass=0;pass<3;pass++){const c=h.slice();for(let i=1;i<n;i++)h[i]=Math.max(need[i],(c[i-1]+2*c[i]+c[i+1])/4)}
-  for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT;h[i]=Math.min(h[i],x<=0?0:x<40?COASTER_GRADE*x*x/80:COASTER_GRADE*(x-20))}   // the platforms: on the ground, eased off it
+    const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:buildingNear(X,Y);need[i]=b?b+COASTER_CLEAR:0;h[i]=hillsAt(lo,hi,L,i/n)}
+  // Over the buildings without corners (clamping to them after rounding, or rounding only ±20 m, bent the climbs at sharp
+  // elbows): what they need, sloped off at COASTER_GRADE either side, widened by 3·W and rounded over ±W three times — so
+  // never under it — then joined to the hills and to the platforms' cap with a soft max / min (no corner where they meet).
+  const G=COASTER_GRADE*st,W=Math.max(1,Math.round(30/st)),env=need.slice();
+  for(let i=1;i<=n;i++)env[i]=Math.max(env[i],env[i-1]-G);for(let i=n-1;i>=0;i--)env[i]=Math.max(env[i],env[i+1]-G);
+  {const c=env.slice();for(let i=0;i<=n;i++){let m=0;for(let j=Math.max(0,i-3*W);j<=Math.min(n,i+3*W);j++)m=Math.max(m,c[j]);env[i]=m}}
+  for(let pass=0;pass<3;pass++){const c=env.slice(),at=i=>c[Math.max(0,Math.min(n,i))];let sum=0;for(let i=-W;i<=W;i++)sum+=at(i);
+    for(let i=0;i<=n;i++){if(i)sum+=at(i+W)-at(i-W-1);env[i]=sum/(2*W+1)}}
+  // the hills, sloped off at COASTER_GRADE at most (close knots climbed at 0.9) and rounded twice over ±W
+  for(let i=1;i<=n;i++)h[i]=Math.max(h[i],h[i-1]-G);for(let i=n-1;i>=0;i--)h[i]=Math.max(h[i],h[i+1]-G);
+  for(let pass=0;pass<2;pass++){const c=h.slice(),at=i=>c[Math.max(0,Math.min(n,i))];let sum=0;for(let i=-W;i<=W;i++)sum+=at(i);
+    for(let i=0;i<=n;i++){if(i)sum+=at(i+W)-at(i-W-1);h[i]=sum/(2*W+1)}}
+  const K=12,smax=(a,b)=>(a+b+Math.hypot(a-b,K))/2,smin=(a,b)=>(a+b-Math.hypot(a-b,K))/2;
+  // the platforms: on the ground, eased off it
+  for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT,cap=x<=0?0:x<60?COASTER_GRADE*x*x/120:COASTER_GRADE*(x-30);h[i]=Math.max(0,smin(smax(h[i],env[i]),cap))}
   const S=g.spiral;if(S){   // a tower course: up off the platform, along the ring to S.top, then the long drop (quintic eases, level at the joins)
     const E=u=>{u=Math.max(0,Math.min(1,u));return u*u*u*(10-15*u+6*u*u)},h0=30,end=g.total-COASTER_FLAT*mu;
     for(let i=0;i<=n;i++){const s=g.total*i/n;let v=s<=S.r0?h0*E((s-COASTER_FLAT*mu)/(S.r0-COASTER_FLAT*mu)):s<=S.r1?h0+(S.top-h0)*(s-S.r0)/(S.r1-S.r0):S.top*(1-E((s-S.r1)/(end-S.r1)));
