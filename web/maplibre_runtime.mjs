@@ -193,7 +193,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
@@ -429,12 +429,43 @@ function buildingNear(x,y){
 // through the platforms (COASTER_FLAT), climbing from there at COASTER_GRADE at most — a tall building right by a
 // station is gone through (the stations are underground anyway). Metres.
 const COASTER_GRADE=.7,COASTER_DROP=2.2,COASTER_CLEAR=8;
+// Lines crossing on the coaster: where two lines' tracks cross (within CROSS_NEAR m, not side by side) the one later in
+// name order keeps CROSS_CLEAR m from the other's height there — under it where it can (no building in the way),
+// otherwise over it (the tracks are drawn some pixels wide, so at the same height they ran into each other).
+// crossings(): per edge, [s (mercator along it), the other edge, its s], one per crossing, built once.
+const CROSS_NEAR=35,CROSS_CLEAR=26;let crossIdx=null;
+function crossings(){
+  if(crossIdx)return crossIdx;crossIdx=new Map();const R=corrRank(),cells=new Map(),seen=new Set(),all=[];let cell=0;
+  for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++){
+    const lo=Math.min(ids[i-1],ids[i]),hi=Math.max(ids[i-1],ids[i]),k=`${line}:${lo}:${hi}`;if(seen.has(k)||!byId.has(lo)||!byId.has(hi)||towerCourse(line,lo,hi))continue;seen.add(k);
+    const g=coasterPath(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits();cell||=2*CROSS_NEAR*mu;const e={line,lo,hi,k,r:R.get(line)??0};let j=1;
+    for(let s=0;s<=g.total;s+=10*mu){while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],l=Math.hypot(B.x-A.x,B.y-A.y)||1,u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
+      const q={e,s,x:A.x+(B.x-A.x)*u,y:A.y+(B.y-A.y)*u,fx:(B.x-A.x)/l,fy:(B.y-A.y)/l},c=Math.floor(q.x/cell)+','+Math.floor(q.y/cell);
+      if(!cells.has(c))cells.set(c,[]);cells.get(c).push(q);all.push(q)}}
+  // nearest pair per (edge, other edge, ~100 m stretch): the later edge takes the constraint
+  const best=new Map();
+  for(const q of all){const ix=Math.floor(q.x/cell),iy=Math.floor(q.y/cell);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(const o of cells.get((ix+dx)+','+(iy+dy))||[]){
+      if(o.e.line===q.e.line||o.e.r>q.e.r||o.e.r===q.e.r&&o.e.k>q.e.k)continue;   // q's edge is the later one
+      if(Math.abs(q.fx*o.fx+q.fy*o.fy)>.9)continue;   // side by side: the corridors keep those apart
+      const d=Math.hypot(q.x-o.x,q.y-o.y);if(d>cell/2)continue;const key=q.e.k+'|'+o.e.k+'|'+Math.round(o.s/(cell*1.5));
+      const b=best.get(key);if(!b||d<b.d)best.set(key,{d,q,o})}}
+  for(const {q,o} of best.values()){if(!crossIdx.has(q.e.k))crossIdx.set(q.e.k,[]);crossIdx.get(q.e.k).push([q.s,o.e,o.s])}
+  return crossIdx;
+}
 function coasterProfile(line,lo,hi){
   const id=`h:${line}:${lo}:${hi}`;let P=edgeGeom.get(id);if(P)return P;
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/10)),st=L/n,need=new Float32Array(n+1),h=new Float32Array(n+1);
   let j=1;for(let i=0;i<=n;i++){const s=g.total*i/n;while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
     // (a tower course does not count its own tower)
     const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:buildingNear(X,Y);need[i]=b?b+COASTER_CLEAR:0;h[i]=hillsAt(lo,hi,L,i/n)}
+  // crossing lines: over (need) or under (ceil) the one before it, CROSS_CLEAR m apart
+  const ceil=new Float32Array(n+1).fill(Infinity);
+  if(coaster&&!g.spiral)for(const [cs,o,os] of crossings().get(`${line}:${lo}:${hi}`)||[]){
+    const O=coasterProfile(o.line,o.lo,o.hi),og=geom(o.line,o.lo,o.hi),ox=Math.max(0,Math.min(O.n,os/og.total*O.n)),oi=Math.min(O.n-1,Math.floor(ox)),oh=O.h[oi]+(O.h[oi+1]-O.h[oi])*(ox-oi);
+    const c=Math.round(cs/g.total*n),w=Math.ceil(CROSS_NEAR/st),a=Math.max(0,c-w),b=Math.min(n,c+w);let nb=0,hh=0;for(let i=a;i<=b;i++){nb=Math.max(nb,need[i]);hh=Math.max(hh,h[i])}
+    if(oh-CROSS_CLEAR>=Math.max(nb,6)&&hh<oh)for(let i=a;i<=b;i++)ceil[i]=Math.min(ceil[i],oh-CROSS_CLEAR);
+    else for(let i=a;i<=b;i++)need[i]=Math.max(need[i],oh+CROSS_CLEAR)}
   // Over the buildings without corners (clamping to them after rounding, or rounding only ±20 m, bent the climbs at sharp
   // elbows): what they need, sloped off at COASTER_GRADE either side, widened by 3·W and rounded over ±W three times — so
   // never under it — then joined to the hills and to the platforms' cap with a soft max / min (no corner where they meet).
@@ -452,6 +483,9 @@ function coasterProfile(line,lo,hi){
   // (the hills keep to COASTER_GRADE off the platform; over a building it may drop as steep as COASTER_DROP, a coaster's
   // first drop — at 0.7 a tall block 200–300 m from a station stood through the track: 7호선 태릉입구→먹골, 118 m)
   for(let i=0;i<=n;i++){const x=Math.min(i,n-i)*st-COASTER_FLAT,cap=(G,R)=>x<=0?0:x<R?G*x*x/(2*R):G*(x-R/2);h[i]=Math.max(0,sminK(smax(smin(h[i],cap(COASTER_GRADE,60)),env[i]),cap(COASTER_DROP,80),30))}
+  // under a crossing line: the ceiling sloped off at COASTER_GRADE either side, met softly
+  if(ceil.some(Number.isFinite)){const G2=COASTER_GRADE*st;for(let i=1;i<=n;i++)ceil[i]=Math.min(ceil[i],ceil[i-1]+G2);for(let i=n-1;i>=0;i--)ceil[i]=Math.min(ceil[i],ceil[i+1]+G2);
+    for(let i=0;i<=n;i++)if(Number.isFinite(ceil[i]))h[i]=Math.max(0,smin(h[i],ceil[i]))}
   const S=g.spiral;if(S){   // a tower course: up off the platform, along the ring to S.top, then the long drop (quintic eases, level at the joins)
     const E=u=>{u=Math.max(0,Math.min(1,u));return u*u*u*(10-15*u+6*u*u)},h0=30,end=g.total-COASTER_FLAT*mu;
     for(let i=0;i<=n;i++){const s=g.total*i/n;let v=s<=S.r0?h0*E((s-COASTER_FLAT*mu)/(S.r0-COASTER_FLAT*mu)):s<=S.r1?h0+(S.top-h0)*(s-S.r0)/(S.r1-S.r0):S.top*(1-E((s-S.r1)/(end-S.r1)));
