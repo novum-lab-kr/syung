@@ -1,0 +1,533 @@
+// The miniature city's building meshes (web/lib/city_buildings.mjs draws them; web/lib/city_worker.mjs builds them off the
+// main thread). One canonical z14 tile in → one vertex buffer, one index buffer in 4×4 chunks, each chunk's indices
+// ordered [far-LOD roofs][walls][near-LOD roofs, parapets, roof plant, awnings]. Every look value comes from the style
+// pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
+
+import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './city_geom.mjs';
+
+export const EARTH = 40075016.685578488, RAD = Math.PI / 180;
+const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (windows are placed in world metres, kept small for float precision)
+export const G = [CITY_LNG / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + CITY_LAT * RAD / 2)) / (2 * Math.PI)], S = EARTH * Math.cos(CITY_LAT * RAD);   // mercator → metres
+const TYPES = ['house', 'apartment', 'shop', 'office', 'industrial', 'civic'];
+const PATTERNS = { punched: 0, 'vertical-balconies': 1, 'horizontal-bands': 2, 'curtain-wall': 3, clerestory: 4, 'regular-grid': 5 };
+export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5 };
+const FLAG = { ABS_U: 1, MERGED: 2, STOREFRONT: 4, NO_AO: 8 };
+export const CHUNKS = 4;   // sub-chunks a tile side
+export const LOD_HI = 16;   // from here: roofs set back behind the parapet, roof plant, awnings
+export const GROW_MS = 420;
+const LANDUSE_ALIASES = { library: 'civic', kindergarten: 'school', government: 'civic', townhall: 'civic' };
+
+// ── small helpers ────────────────────────────────────────────────────────────────────────────────
+const mix32 = (a, b, c = 0, d = 0) => { let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x6b43a9b5, 0xc2b2ae35) ^ Math.imul(c + 0x27d4eb2f, 0x165667b1) ^ Math.imul(d + 0x1b873593, 0xcc9e2d51); x ^= x >>> 15; x = Math.imul(x, 0x2c1b3c6d); x ^= x >>> 12; x = Math.imul(x, 0x297a2d39); x ^= x >>> 15; return x >>> 0 };
+const unit = (h, k) => ((mix32(h, k * 0x9e37 + 17) >>> 8) / 16777216);   // 0..1 from a seed and a slot
+const pick = (weights, r) => { let acc = 0; for (let i = 0; i < weights.length; i++) { acc += weights[i]; if (r < acc) return i } return weights.length - 1 };
+export const hexRGB = h => { h = String(h || '#888888'); return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255] };
+const lin = c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+export const num = (v, d) => Number.isFinite(+v) ? +v : d;
+// which vertices of a ring are real corners (the outline turns 20° or more there) — a vertex that merely splits a straight
+// facade is not one, so no corner accent, no corner shading and no accent budget is spent on it
+const COS_CORNER = Math.cos(20 * RAD);
+function realCorners(ring) { const n = ring.length / 2, out = new Array(n); for (let i = 0; i < n; i++) { const k = (i + n - 1) % n, j = (i + 1) % n, x = ring[i * 2], y = ring[i * 2 + 1], dx1 = x - ring[k * 2], dy1 = y - ring[k * 2 + 1], dx2 = ring[j * 2] - x, dy2 = ring[j * 2 + 1] - y, l1 = Math.hypot(dx1, dy1), l2 = Math.hypot(dx2, dy2); out[i] = l1 > 0 && l2 > 0 && (dx1 * dx2 + dy1 * dy2) / (l1 * l2) < COS_CORNER } return out }
+
+// ── the style pack, flattened for the shader and the builder ─────────────────────────────────────
+// Pack keys that are design targets or documentation, read by nobody here on purpose (QA measures them on the screen):
+// materialFamilies.*.targetSunlitLStar, buildings.office.night.targetLitFacadeAreaRatio, materialAssignment.adjacency.*
+// (neighbour contrast: the stable weighted hash stays, as its missingNeighbours asks), materialAssignment.roofTargets,
+// materialAssignment.familySeed / retainAcrossThemeModeZoom / recolorVisibleBuildingsOnNeighbourArrival (true by
+// construction: one seed a footprint), dayReflection.space / seed / animated, articulation.replacesLegacySetback (the
+// crown replaces the set-back whenever articulation exists) / keepOriginalMaxHeight (always), implementationContract, changeLog.
+export function resolvePack(pack) {
+  const B = pack.buildings || {}, D = pack.buildingDefaults || {}, C = pack.classification || {}, L = pack.lighting || {}, M = pack.modes || {}, LOD = pack.lod || {};
+  const types = TYPES.map(t => {
+    const b = B[t] || {}, gf = b.groundFloor || {}, n = b.night || {}, roof = b.roof || {};
+    return {
+      key: t, floorM: num(b.floorM, 3.2), bayM: num(b.bayM, 3), winW: num(b.windowRatio?.[0], .5), winH: num(b.windowRatio?.[1], .5), pattern: PATTERNS[b.pattern] ?? 5,
+      groundM: num(gf.heightM, 3.5), groundGlass: num(gf.glassRatio, .5), groundColor: gf.colors || null, storefront: gf.storefrontLanduse || null,
+      litRatio: num(n.litRatio, .3), groundLit: num(n.groundFloorLitRatio, n.litRatio ?? .3), tempW: n.temperatureWeights || [.5, .4, .1], litByLanduse: n.landuseLitRatio || null,
+      wall: b.wall || { light: ['#bbbbbb'], dark: ['#555555'] }, roof: roof.flat || { light: '#888888', dark: '#333333' }, parapetM: num(roof.parapetM, .5), pitched: roof.pitched || null, panel: roof.panel || null,
+      glass: b.glass || null, mullionM: num(b.mullionM, .12), beltEvery: num(b.beltEveryFloors, 0), beltM: num(b.beltHeightM, .35), balconyEvery: num(b.balconyEveryBays, 0), balconyBright: num(b.balconyBrightness, 1.07),
+      spandrelM: num(b.spandrelM, 0), ribM: num(b.ribSpacingM, 0), baysPerGroup: b.baysPerGroup || null, awning: b.awning || null, setback: b.setback || null,
+      // QA1: material families, roof variants, the night emission mask and the office's crown
+      mix: b.materialMix || null, roofVariants: roof.variants || null, roofVariantW: roof.variantWeights || null,
+      nightEmission: num(n.emission, NaN), nightGroundEmission: num(n.groundFloorEmission, NaN), nightFloorMul: n.floorProbabilityMultiplier || null,
+      nightWin: n.windowRatio || null, tiers: n.brightnessTiers || null, maxContig: num(n.maxContiguousLitBays, 0),
+      articulation: b.articulation || null, dayReflection: b.dayReflection || null,
+    };
+  });
+  const eq = D.equipment || {}, lit = D.litWindows || {}, wp = D.waterproofRoof || {};
+  // material slots: a family × its variants (wall, glass and roof colours paired), or without families each type's
+  // own four walls; each type then draws from a weighted list of slots (one stable pick a building)
+  const fams = pack.materialFamilies || null, A = pack.materialAssignment || {}, materials = [], famIndex = {};
+  const at = (arr, v) => arr && arr.length ? arr[v % arr.length] : null;
+  if (fams) for (const [key, f] of Object.entries(fams)) {
+    const n = Math.max(1, f.wall?.light?.length || 1), fac = f.facade || {};
+    famIndex[key] = { base: materials.length, n, weights: f.variantWeights || [.5, .3, .2], hasRoof: !!f.roof };
+    for (let v = 0; v < n; v++) materials.push({
+      family: key, kind: f.kind || '', wall: { light: at(f.wall.light, v), dark: at(f.wall.dark || f.wall.light, v) },
+      glass: f.glass ? { light: at(f.glass.light, v), dark: at(f.glass.dark || f.glass.light, v) } : null,
+      roof: f.roof ? { light: at(f.roof.light, v), dark: at(f.roof.dark || f.roof.light, v) } : null,
+      pattern: fac.pattern && fac.pattern !== 'type-default' ? (PATTERNS[fac.pattern] ?? -1) : -1, winW: num(fac.windowRatio?.[0], 0), winH: num(fac.windowRatio?.[1], 0), refl: num(fac.reflectionScale, .1),
+    });
+  }
+  const wallWeights = D.wallWeights || [.4, .3, .2, .1];
+  for (const T of types) {
+    T.mats = [];
+    if (fams && T.mix) for (const m of T.mix) { const F = famIndex[m.family]; if (!F) continue; for (let v = 0; v < F.n; v++) T.mats.push([F.base + v, num(m.weight, 0) * num(F.weights[v], 0)]) }
+    if (!T.mats.length) {
+      const base = materials.length, cols = T.wall.light || ['#999999'], dcols = T.wall.dark || cols;
+      for (let v = 0; v < 4; v++) materials.push({ family: 'type-' + T.key, kind: '', wall: { light: cols[Math.min(v, cols.length - 1)], dark: dcols[Math.min(v, dcols.length - 1)] }, glass: null, roof: null, pattern: -1, winW: 0, winH: 0, refl: T.key === 'office' ? .85 : .1 });
+      T.mats = wallWeights.map((w, v) => [base + v, w]);
+    }
+    const sum = T.mats.reduce((a, m) => a + m[1], 0) || 1; for (const m of T.mats) m[1] /= sum;
+    T.famFacade = String(A.facadePolicyByType?.[T.key] || '').startsWith('use-family');
+  }
+  // roof slots: one a material (its family's roof, when it has one), then each type's four variants, the waterproof
+  // membrane, and each type's plain roof; the pick order (roofPriority) decides which a building gets
+  const roofs = materials.map(m => m.roof);
+  for (const T of types) { T.roofVarBase = roofs.length; const rv = T.roofVariants; for (let v = 0; v < 4; v++) roofs.push(rv ? { light: at(rv.light, v), dark: at(rv.dark || rv.light, v) } : null) }
+  const waterSlot = roofs.length; roofs.push(wp.colors || { light: '#7D9282', dark: '#3A5047' });
+  for (const T of types) { T.legacyRoofSlot = roofs.length; roofs.push(T.roof) }
+  return {
+    materials, famIndex, roofs, waterSlot, variantSalt: num(A.variantSeedSalt, 173), roofSalt: num(A.roofSeedSalt, 431),
+    roofPriority: A.roofPriority || ['waterproof-subset', 'type-roof-variants', 'family-roof', 'legacy-flat'], roofPriorityByType: A.roofPriorityByType || {},
+    lodPx: [num(D.windowBandMinPx, .65), num(D.windowCellMinPx, 1.25)],
+    pack, types, byKey: Object.fromEntries(types.map((t, i) => [t.key, i])),
+    rules: C.rules || [], minH: num(C.minimumHeightM, 3), missingH: num(C.missingHeightM, 9), merged: C.mergedLowrise || { maxHeightM: 15, areaGreaterThanM2: 1200 },
+    equalAreaPriority: C.equalAreaPriority || [], landuseAliases: { ...LANDUSE_ALIASES, ...(C.landuseAliases || {}) },
+    wallWeights, parapetT: num(D.parapetThicknessM, .18), edgeClear: num(D.roofEquipmentEdgeClearanceM, .6), glass: D.glass || { light: '#52696C', dark: '#1B2B33' },
+    lit: { colors: (lit.colors || ['#FFD59A', '#FFE7BD', '#DDEAF0']).map(hexRGB), emission: num(lit.emission, .7), groundEmission: num(lit.groundFloorEmission, .9), floorMul: lit.floorProbabilityMultiplier || [.65, 1.2] },
+    equip: { minZoom: num(eq.minZoom, 16), minH: num(eq.minHeightM, 12), minA: num(eq.minAreaM2, 120), penthouseArea: eq.penthouseAreaRatio || [.04, .07], penthouseH: num(eq.penthouseHeightM, 1.8), hvacCount: eq.hvacCount || [1, 3], hvacSize: eq.hvacSizeM || [1.6, 1, .9], colors: eq.colors || { light: '#A7ADA5', dark: '#4D5C59' } },
+    waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
+    light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },
+    ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
+    modes: M, lod: { equipment: LOD.roofEquipment || [16, 16.5], windows: LOD.windows || [15, 16] },
+  };
+}
+
+// ── building type: the one place the estimate lives (height, footprint area, landuse class) ─────
+// info = {heightM, areaM2, landuse, id, props}; returns {type, mergedLowrise}. Rules come from the pack
+// (first match; the conditions inside a rule are ANDed). Replace through opts.classify when real
+// per-building use data is available: classify(info, estimate) → type key or null to keep the estimate.
+export function classifyBuilding(info, P) {
+  const H = info.heightM, A = info.areaM2, L = info.landuse || 'unknown';
+  let type = 'shop';
+  for (const r of P.rules) {
+    if (r.landuse && !r.landuse.includes(L)) continue;
+    if (r.excludedLanduse && r.excludedLanduse.includes(L)) continue;
+    if (r.minHeightM != null && H < r.minHeightM) continue;
+    if (r.maxHeightM != null && H > r.maxHeightM) continue;
+    if (r.minAreaM2 != null && A < r.minAreaM2) continue;
+    if (r.maxAreaM2 != null && A > r.maxAreaM2) continue;
+    type = r.type; break;
+  }
+  const m = P.merged, mergedLowrise = H <= num(m.maxHeightM, 15) && A > num(m.areaGreaterThanM2, 1200);
+  return { type, mergedLowrise };
+}
+
+// ── vertex writer: 32 bytes a vertex ─────────────────────────────────────────────────────────────
+//  0 xy f32×2 (tile-relative mercator) · 8 z f32 (m) · 12 normal i8×3 + kind i8 · 16 u f32 (wall: along it, m;
+//  roof: its axis angle; plant/awning: base height) · 20 wall u8×4 (bays, length lo/hi in 5 cm, edge seed (6 bits) | corner-at-start<<6 | corner-at-end<<7)
+//  · 24 building u8×4 (seed lo/hi, type|crown<<3|famFacade<<5, flags | cornerWidthShare<<4) · 28 misc u8×4 (colour pick, lit override, H lo/hi in 10 cm)
+export const STRIDE = 32;
+class Writer {
+  constructor() { this.cap = 1 << 15; this.buf = new ArrayBuffer(this.cap * STRIDE); this.view(); this.n = 0; this.kind = 0; this.nx = 0; this.ny = 0; this.nz = 1; this.w = [0, 0, 0, 0]; this.b = [0, 0, 0, 0]; this.m = [0, 0, 0, 0] }
+  view() { this.f = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); this.i8 = new Int8Array(this.buf) }
+  grow() { const nb = new ArrayBuffer(this.cap * 2 * STRIDE); new Uint8Array(nb).set(this.u8); this.buf = nb; this.cap *= 2; this.view() }
+  normal(nx, ny, nz) { this.nx = nx; this.ny = ny; this.nz = nz }
+  v(x, y, z, u) {
+    if (this.n >= this.cap) this.grow();
+    const i = this.n++, f = i * 8, o = i * STRIDE;
+    this.f[f] = x; this.f[f + 1] = y; this.f[f + 2] = z; this.f[f + 4] = u;
+    this.i8[o + 12] = Math.round(this.nx * 127); this.i8[o + 13] = Math.round(this.ny * 127); this.i8[o + 14] = Math.round(this.nz * 127); this.i8[o + 15] = this.kind;
+    const u8 = this.u8; u8[o + 20] = this.w[0]; u8[o + 21] = this.w[1]; u8[o + 22] = this.w[2]; u8[o + 23] = this.w[3];
+    u8[o + 24] = this.b[0]; u8[o + 25] = this.b[1]; u8[o + 26] = this.b[2]; u8[o + 27] = this.b[3];
+    u8[o + 28] = this.m[0]; u8[o + 29] = this.m[1]; u8[o + 30] = this.m[2]; u8[o + 31] = this.m[3];
+    return i;
+  }
+  bytes() { return this.u8.subarray(0, this.n * STRIDE) }
+}
+
+// ── one tile's meshes, built in slices ───────────────────────────────────────────────────────────
+// src: {z,x,y,extent,buildings:VectorTileLayer,landuse:VectorTileLayer|null}
+export class TileBuilder {
+  constructor(src, P, opts) {
+    this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096;
+    const n = 2 ** src.z, latN = Math.atan(Math.sinh(Math.PI * (1 - 2 * src.y / n))), latS = Math.atan(Math.sinh(Math.PI * (1 - 2 * (src.y + 1) / n))), lat = (latN + latS) / 2;
+    this.unit = 1 / n / this.E;                        // mercator units a tile unit
+    this.mpu = 1 / (EARTH * Math.cos(lat));            // mercator units a metre at this tile (as MercatorCoordinate.meterInMercatorCoordinateUnits)
+    this.mPerUnit = this.unit / this.mpu;              // metres a tile unit (latitude corrected)
+    this.ox = src.x / n; this.oy = src.y / n;          // the tile's origin in mercator
+    this.wox = (this.ox - G[0]) * S; this.woy = (this.oy - G[1]) * S;   // and in city metres
+    this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
+    this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
+  }
+  // run until the budget (ms) is spent; true when the tile is finished
+  step(budget) {
+    const t0 = performance.now(), bl = this.src.buildings;
+    if (!this.landuse) this.landuse = this.readLanduse();
+    if (!bl) { this.done = true; return true }
+    while (this.fi < bl.length) {
+      if (!this.polys) {
+        const f = bl.feature(this.fi), p = f.properties || {};
+        if (p.hide_3d === true || p.hide_3d === 'true') { this.fi++; continue }
+        let rings; try { rings = f.loadGeometry() } catch { this.fi++; continue }
+        const flat = rings.map(r => { const a = new Array(r.length * 2); for (let i = 0; i < r.length; i++) { a[i * 2] = r[i].x; a[i * 2 + 1] = r[i].y } return a });
+        this.polys = classifyRings(flat); this.pi = 0;
+        const id = f.id ?? 0; this.cur = { idLo: id >>> 0, idHi: Math.floor(id / 4294967296) >>> 0, H: num(p.render_height, NaN), minH: Math.max(0, num(p.render_min_height, 0)) };
+      }
+      while (this.pi < this.polys.length) {
+        const poly = this.polys[this.pi++];
+        try { this.building(poly) } catch (e) { if (!this.warned) { this.warned = true; console.warn('city-build: building failed', e) } }
+        if (performance.now() - t0 > budget) return false;
+      }
+      this.polys = null; this.fi++;
+      if (performance.now() - t0 > budget) return this.fi >= bl.length ? (this.done = true) : false;
+    }
+    this.done = true; return true;
+  }
+  readLanduse() {
+    const out = [], lu = this.src.landuse; if (!lu) return out;
+    const A = this.P.landuseAliases;
+    for (let i = 0; i < lu.length; i++) {
+      const f = lu.feature(i), cls = A[f.properties?.class] || f.properties?.class; if (!cls) continue;
+      let rings; try { rings = f.loadGeometry() } catch { continue }
+      for (const poly of classifyRings(rings.map(r => { const a = []; for (const p of r) a.push(p.x, p.y); return a })))
+        out.push({ cls, outer: poly.outer, holes: poly.holes, bbox: ringBbox(poly.outer), area: poly.area2 / 2 });
+    }
+    return out;
+  }
+  landuseAt(x, y) {
+    let best = null;
+    for (const l of this.landuse) {
+      const b = l.bbox; if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+      if (!pointInPolygon(x, y, l.outer, l.holes)) continue;
+      if (!best || l.area < best.area - 1e-6 || (Math.abs(l.area - best.area) <= 1e-6 && this.priority(l.cls) < this.priority(best.cls))) best = l;
+    }
+    return best ? best.cls : 'unknown';
+  }
+  priority(cls) { const i = this.P.equalAreaPriority.indexOf(cls); return i < 0 ? 99 : i }
+  // the stable seed of one footprint: feature id + a point both tiles see (its lowest vertex, or where its
+  // outline crosses the tile edge when it was cut), on the absolute tile grid
+  seedOf(ring, clipped) {
+    const E = this.E, bx = this.src.x * E, by = this.src.y * E;
+    let kx = Infinity, ky = Infinity;
+    for (let i = 0; i < ring.length; i += 2) {
+      const x = ring[i], y = ring[i + 1], onEdge = x <= 0 || x >= E || y <= 0 || y >= E;
+      if (clipped && !onEdge) continue;
+      if (x < kx || (x === kx && y < ky)) { kx = x; ky = y }
+    }
+    if (kx === Infinity) { kx = ring[0]; ky = ring[1] }
+    return mix32(this.cur.idLo, this.cur.idHi, Math.round((bx + kx) * 4), Math.round((by + ky) * 4));
+  }
+  building(poly) {
+    const E = this.E, P = this.P, cur = this.cur;
+    let outer = poly.outer, holes = poly.holes, clipped = false;
+    const bb = ringBbox(outer);
+    if (bb[2] <= 0 || bb[0] >= E || bb[3] <= 0 || bb[1] >= E) return;
+    if (!ringInBox(outer, 0, 0, E, E)) { outer = clipRing(outer, 0, 0, E, E); clipped = true; if (outer.length < 6) return; holes = holes.filter(h => ringInBox(h, 0, 0, E, E)) }
+    else outer = simplifyRing(outer, .05);
+    if (outer.length < 6) return;
+    if (signedArea2(outer) < 0) return;   // folded by the clip
+    holes = holes.map(h => simplifyRing(h, .05)).filter(h => h.length >= 6);
+    const m2 = this.mPerUnit * this.mPerUnit, A = (Math.abs(signedArea2(outer)) / 2 - holes.reduce((s, h) => s + ringArea(h), 0)) * m2;
+    if (A < 4) return;
+    const H = Math.max(P.minH, Number.isFinite(cur.H) ? cur.H : P.missingH), minH = Math.min(cur.minH, H - .5);
+    const [ix, iy] = interiorPoint(outer, holes), landuse = this.landuseAt(ix, iy);
+    const seed = this.seedOf(outer, clipped);
+    const key = seed + ':' + H; if (this.seen.has(key)) return; this.seen.add(key);   // the same outline twice (duplicate features)
+    const info = { heightM: H, areaM2: A, landuse, id: cur.idLo + cur.idHi * 4294967296, props: null };
+    let est = classifyBuilding(info, P);
+    if (this.opts.classify) { const t = this.opts.classify(info, est); if (t && P.byKey[t] != null) est = { ...est, type: t } }
+    const ti = P.byKey[est.type] ?? 2, T = P.types[ti];
+    const mat = T.mats[pick(T.mats.map(m => m[1]), unit(seed, P.variantSalt))][0];   // the building's material slot (family and variant together)
+    // per-building bytes
+    const W = this.W, storefront = T.storefront ? T.storefront.includes(landuse) : false;
+    const litOverride = T.litByLanduse && T.litByLanduse[landuse] != null ? Math.round(T.litByLanduse[landuse] * 255) : 0;
+    const Hq = Math.min(65535, Math.round(H * 10));
+    const chunk = this.chunks[Math.min(CHUNKS - 1, Math.floor(ix / E * CHUNKS)) + CHUNKS * Math.min(CHUNKS - 1, Math.floor(iy / E * CHUNKS))];
+    const ctx = { outer, holes, A, H, minH, T, ti, seed, chunk, clipped, landuse, storefront, merged: est.mergedLowrise, mat };
+    ctx.roofSlot = this.roofSlotOf(ctx);
+    // the office's crown (QA1 articulation): flat band / inset cap / stepped cap by a stable share; the set-back kinds need a safe inset
+    const art = T.articulation; let crown = 0, crownInsets = null;
+    if (art && !clipped && !holes.length && H >= num(art.minHeightM, 60)) {
+      const r = unit(seed, 6), w = art.crownWeights || { flatBand: .5, insetCap: .3, steppedCap: .2 }; crown = r < num(w.flatBand, .5) ? 1 : r < num(w.flatBand, .5) + num(w.insetCap, .3) ? 2 : 3;
+      const d = Math.min(1.2, num(art.maxInsetM, 1.2)) / this.mPerUnit;
+      if (crown === 2) { const i1 = insetRing(outer, d) || insetRing(outer, d * .6); if (i1) crownInsets = [i1]; else crown = 1 }
+      else if (crown === 3) { const i1 = insetRing(outer, d * .5), i2 = i1 && insetRing(i1, d * .5); if (i2) crownInsets = [i1, i2]; else crown = 1 }
+    }
+    // the corner accents' width as a share (0..15/15) of the pack's range: the accent budget (maxAccentFacadeAreaRatio) over the whole
+    // facade — the belts' worst case first, then the real corners' widest strips against the perimeter — so a small or many-cornered tower gets narrower corners
+    let cwQ = 15;
+    if (art && H >= num(art.minHeightM, 60)) {
+      const corner = realCorners(outer), n = outer.length / 2; let per = 0, nc = 0;
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; per += Math.hypot(outer[j * 2] - outer[i * 2], outer[j * 2 + 1] - outer[i * 2 + 1]); if (corner[i]) nc++ }
+      per *= this.mPerUnit;
+      const arr = (v, d) => { const a = (Array.isArray(v) ? v : [v]).map(x => num(x, NaN)).filter(Number.isFinite); return a.length ? a : [d] };
+      const beLo = Math.min(...arr(art.beltEveryFloors, 6)), bhHi = Math.max(...arr(art.beltHeightM, .55)), cwHi = Math.max(...arr(art.cornerWidthM, .65));
+      const budget = num(art.maxAccentFacadeAreaRatio, 1) - bhHi / (Math.max(1, beLo) * T.floorM), use = nc * cwHi / Math.max(per, 1);
+      cwQ = Math.round(Math.max(0, Math.min(1, budget / Math.max(use, 1e-6))) * 15);
+    }
+    W.b = [seed & 255, (seed >>> 8) & 255, ti | (crown << 3) | (T.famFacade ? 32 : 0), (est.mergedLowrise ? FLAG.MERGED : 0) | (storefront ? FLAG.STOREFRONT : 0) | (cwQ << 4)];
+    W.m = [mat, litOverride, Hq & 255, Hq >>> 8];
+    this.count++; chunk.n++;
+    // roofs: gabled small houses, crowned office tops, or the flat roof behind its parapet
+    if (this.gable(ctx)) return;
+    if (crownInsets) { const tz = art.topZoneHeightRatio || [.06, .1], r0 = num(tz[0], .06), r1 = num(tz[1], .1); this.crown(ctx, crownInsets, Math.min(H * (r0 + (r1 - r0) * ((seed & 0xffff) % 5) / 4), num(art.maxTopZoneHeightM, 4.5))); return }   // the top zone's height: the pack's ratio range, the same stable pick the shader makes from the 16-bit seed it sees
+    if (!art && this.setback(ctx)) return;
+    this.wallsOf(ctx, outer, minH, H, true); for (const h of holes) this.wallsOf(ctx, h, minH, H, false);
+    this.flatRoof(ctx, outer, holes, H, true);
+    this.cutWalls(ctx);
+    this.plant(ctx);
+    this.awning(ctx);
+  }
+  // an edge lying along the tile's edge: the cut where the tile clipped the outline (the neighbour tile draws the rest)
+  cutEdge(ax, ay, bx, by) { const E = this.E; return (ax === bx && (ax <= 0 || ax >= E)) || (ay === by && (ay <= 0 || ay >= E)) }
+  // writes one ring's walls from z0 to z1; outward normals; windows fitted edge by edge. Cut edges are kept for
+  // after the roof (cutWalls): they rise only to the roof surface, so they never show as a fin across it
+  wallsOf(ctx, ring, z0, z1, isOuter, solid = false) {
+    const W = this.W, E = this.E, u = this.unit, mpu = this.mPerUnit, T = ctx.T, ch = ctx.chunk, n = ring.length / 2, corner = realCorners(ring);
+    W.kind = KIND.WALL;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, ax = ring[i * 2], ay = ring[i * 2 + 1], bx = ring[j * 2], by = ring[j * 2 + 1], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy);
+      if (l < 1e-6) continue;
+      const len = l * mpu, nx = dy / l, ny = -dx / l;   // away from the building (MVT winding)
+      const aEdge = ax <= 0 || ax >= E || ay <= 0 || ay >= E, bEdge = bx <= 0 || bx >= E || by <= 0 || by >= E;
+      if (aEdge && bEdge && this.cutEdge(ax, ay, bx, by)) { if (!solid) (ctx.cuts ||= []).push(ax, ay, bx, by, z0); continue }
+      const absU = aEdge || bEdge;
+      let bays = solid ? 0 : Math.max(1, Math.round(len / T.bayM)); if (len < T.bayM * .55) bays = 0;
+      const lq = Math.min(65535, Math.round(len * 20));
+      W.w = [Math.min(255, bays), lq & 255, lq >>> 8, (mix32(ctx.seed, i, 3) & 63) | (corner[i] ? 64 : 0) | (corner[j] ? 128 : 0)];   // the edge's seed, and whether each end is a real corner
+      const flags = W.b[3]; W.b[3] = (flags & ~(FLAG.ABS_U | FLAG.NO_AO)) | (absU ? FLAG.ABS_U | FLAG.NO_AO : 0);
+      let u0 = 0, u1 = len;
+      if (absU) { const ex = dx / l, ey = dy / l, wx = this.wox + ax * u * S, wy = this.woy + ay * u * S; u0 = wx * ex + wy * ey; u1 = u0 + len }   // a wall cut by the tile edge: its window coordinate in world metres, so the neighbour tile's piece continues it
+      W.normal(nx, ny, 0);
+      const X0 = ax * u, Y0 = ay * u, X1 = bx * u, Y1 = by * u;
+      const a0 = W.v(X0, Y0, z0, u0), b0 = W.v(X1, Y1, z0, u1), b1 = W.v(X1, Y1, z1, u1), a1 = W.v(X0, Y0, z1, u0);
+      ch.walls.push(a0, b0, b1, a0, b1, a1);
+      this.extend(ch, X0, Y0, X1, Y1, z1);
+      W.b[3] = flags;
+    }
+  }
+  // the walls along the tile's edge, up to the roof surface, solid (inside the whole building: seen only until the neighbour tile arrives)
+  cutWalls(ctx) {
+    const c = ctx.cuts; if (!c) return; const W = this.W, u = this.unit, ch = ctx.chunk, top = ctx.roofZ ?? ctx.H;
+    W.kind = KIND.WALL; W.w = [0, 0, 0, 0]; const flags = W.b[3]; W.b[3] = flags | FLAG.NO_AO;
+    for (let i = 0; i < c.length; i += 5) {
+      const ax = c[i], ay = c[i + 1], bx = c[i + 2], by = c[i + 3], z0 = c[i + 4], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy); if (l < 1e-6) continue;
+      W.normal(dy / l, -dx / l, 0);
+      const a0 = W.v(ax * u, ay * u, z0, 0), b0 = W.v(bx * u, by * u, z0, 0), b1 = W.v(bx * u, by * u, top, 0), a1 = W.v(ax * u, ay * u, top, 0);
+      ch.walls.push(a0, b0, b1, a0, b1, a1);
+    }
+    W.b[3] = flags; ctx.cuts = null;
+  }
+  extend(ch, x0, y0, x1, y1, z) {
+    if (x0 < ch.x0) ch.x0 = x0; if (x0 > ch.x1) ch.x1 = x0; if (x1 < ch.x0) ch.x0 = x1; if (x1 > ch.x1) ch.x1 = x1;
+    if (y0 < ch.y0) ch.y0 = y0; if (y0 > ch.y1) ch.y1 = y0; if (y1 < ch.y0) ch.y0 = y1; if (y1 > ch.y1) ch.y1 = y1;
+    if (z > ch.zmax) ch.zmax = z; if (z > this.zmax) this.zmax = z;
+  }
+  // a horizontal polygon (outer + holes) at z, facing up; into list
+  cap(list, outer, holes, z, kind, colourPick, axisAngle) { const tris = triangulate(outer, holes); if (tris.length) this.capWith(list, outer, holes, tris, z, kind, colourPick, axisAngle) }
+  // the same with a triangulation given (the set-back roof reuses the plain roof's: same vertices, moved a few cm)
+  capWith(list, outer, holes, tris, z, kind, colourPick, axisAngle) {
+    const W = this.W, u = this.unit, data = holes.length ? outer.concat(...holes) : outer, base = W.n;
+    W.kind = kind; W.normal(0, 0, 1); W.w = [0, 0, 0, 0]; const m0 = W.m[0]; W.m[0] = colourPick;
+    for (let i = 0; i < data.length; i += 2) W.v(data[i] * u, data[i + 1] * u, z, axisAngle);
+    W.m[0] = m0;
+    for (let t = 0; t < tris.length; t += 3) {
+      const a = tris[t], b = tris[t + 1], c = tris[t + 2];
+      const cz = (data[b * 2] - data[a * 2]) * (data[c * 2 + 1] - data[a * 2 + 1]) - (data[b * 2 + 1] - data[a * 2 + 1]) * (data[c * 2] - data[a * 2]);
+      if (cz > 0) list.push(base + a, base + b, base + c); else list.push(base + a, base + c, base + b);
+    }
+  }
+  // a flat band between two rings with matching vertices (the parapet's top), facing up
+  strip(list, a, b, z, kind, skip) {
+    const W = this.W, u = this.unit, n = a.length / 2; if (b.length !== a.length) return;
+    W.kind = kind; W.normal(0, 0, 1); W.w = [0, 0, 0, 0]; const base = W.n;
+    for (let i = 0; i < n; i++) { W.v(a[i * 2] * u, a[i * 2 + 1] * u, z, 0); W.v(b[i * 2] * u, b[i * 2 + 1] * u, z, 0) }
+    for (let i = 0; i < n; i++) {
+      if (skip && skip[i]) continue;
+      const j = (i + 1) % n, o0 = base + i * 2, o1 = base + j * 2, i0 = o0 + 1, i1 = o1 + 1;
+      const cz = (a[j * 2] - a[i * 2]) * (b[j * 2 + 1] - a[i * 2 + 1]) - (a[j * 2 + 1] - a[i * 2 + 1]) * (b[j * 2] - a[i * 2]);
+      if (cz > 0) list.push(o0, o1, i1, o0, i1, i0); else list.push(o0, i1, o1, o0, i0, i1);
+    }
+  }
+  // which roof colour slot a building gets, in the pack's order of preference for its type
+  roofSlotOf(ctx) {
+    const P = this.P, T = ctx.T, m = P.materials[ctx.mat];
+    for (const step of P.roofPriorityByType[T.key] || P.roofPriority) {
+      if (step === 'waterproof-subset') { if (ctx.H <= P.waterproof.maxH && unit(ctx.seed, 5) < P.waterproof.p) return P.waterSlot }
+      else if (step === 'type-roof-variants') { if (T.roofVariants) return T.roofVarBase + pick(T.roofVariantW || [.25, .25, .25, .25], unit(ctx.seed, P.roofSalt)) }
+      else if (step === 'family-roof') { if (m.roof) { const F = P.famIndex[m.family]; return F.base + pick(F.weights, unit(ctx.seed, P.roofSalt)) } }
+      else if (step === 'legacy-flat') return T.legacyRoofSlot;
+    }
+    return T.legacyRoofSlot;
+  }
+  // flat roof: plain at H for the far LOD; set back behind the parapet (inner faces, top) for the near one
+  flatRoof(ctx, outer, holes, H, withParapet) {
+    const P = this.P, T = ctx.T, ch = ctx.chunk, pick = ctx.roofSlot;
+    const obb = outer.length <= 400 ? orientedBox(outer) : null, ang = obb ? obb.ang : 0;
+    const bbx = ringBbox(outer); this.extend(ch, bbx[0] * this.unit, bbx[1] * this.unit, bbx[2] * this.unit, bbx[3] * this.unit, H);
+    const tris = triangulate(outer, holes); if (!tris.length) { ctx.roofZ = H; return }
+    this.capWith(ch.lo, outer, holes, tris, H, KIND.ROOF, pick, ang);
+    const p = T.parapetM, d = P.parapetT / this.mPerUnit, inset = withParapet && !this.opts.phone && p > 0 ? insetRing(outer, d) : null;
+    if (!inset) { this.capWith(ch.hi, outer, holes, tris, H, KIND.ROOF, pick, ang); ctx.roofZ = H; return }
+    const n = outer.length / 2, E = this.E, cut = new Array(n);
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n; cut[i] = this.cutEdge(outer[i * 2], outer[i * 2 + 1], outer[j * 2], outer[j * 2 + 1]) }
+    for (let i = 0; i < n; i++) if (cut[i] || cut[(i + n - 1) % n]) {   // a vertex on the cut: back onto the tile edge, so both tiles' roofs meet there
+      const x = outer[i * 2], y = outer[i * 2 + 1]; if (x <= 0 || x >= E) inset[i * 2] = x; if (y <= 0 || y >= E) inset[i * 2 + 1] = y;
+    }
+    const innerHoles = holes.map(h => insetRing(h, d, -1) || h);
+    this.capWith(ch.hi, inset, innerHoles, tris, H - p, KIND.ROOF, pick, ang);
+    ctx.roofZ = H - p; ctx.roofRing = inset; ctx.roofHoles = innerHoles;
+    // the parapet's inner faces (looking onto the roof), and its top
+    const W = this.W, u = this.unit; W.kind = KIND.PARAPET; W.w = [0, 0, 0, 0];
+    const flags = W.b[3]; W.b[3] = flags | FLAG.NO_AO;
+    const faces = (ring, skip) => { const n = ring.length / 2; for (let i = 0; i < n; i++) { if (skip && skip[i]) continue; const j = (i + 1) % n, ax = ring[i * 2], ay = ring[i * 2 + 1], bx = ring[j * 2], by = ring[j * 2 + 1], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy); if (l < 1e-6) continue;
+      W.normal(-dy / l, dx / l, 0);
+      const a0 = W.v(ax * u, ay * u, H - p, 0), b0 = W.v(bx * u, by * u, H - p, 0), b1 = W.v(bx * u, by * u, H, 0), a1 = W.v(ax * u, ay * u, H, 0);
+      ch.hi.push(a0, b1, b0, a0, a1, b1) } };
+    faces(inset, cut); for (const h of innerHoles) faces(h);
+    this.strip(ch.hi, outer, inset, H, KIND.PARAPET, cut); holes.forEach((h, i) => { if (innerHoles[i] !== h) this.strip(ch.hi, h, innerHoles[i], H, KIND.PARAPET) });
+    W.b[3] = flags;
+  }
+  // gabled roof on small near-rectangular houses (the pack's share of them)
+  gable(ctx) {
+    const T = ctx.T, g = T.pitched; if (!g || ctx.clipped || ctx.merged || ctx.holes.length) return false;
+    const [a0, a1] = g.areaM2 || [45, 180]; if (ctx.H > num(g.maxHeightM, 9) || ctx.A < a0 || ctx.A > a1) return false;
+    if (unit(ctx.seed, 2) >= num(g.probability, .2)) return false;
+    const r = simplifyRing(ctx.outer, .35 / this.mPerUnit); if (r.length !== 8) return false;
+    const obb = orientedBox(r); if (!obb || obb.area * this.mPerUnit * this.mPerUnit > ctx.A * 1.15) return false;
+    const len = i => Math.hypot(r[((i + 1) % 4) * 2] - r[i * 2], r[((i + 1) % 4) * 2 + 1] - r[i * 2 + 1]);
+    const longFirst = len(0) + len(2) >= len(1) + len(3), L = longFirst ? [0, 2] : [1, 3], Sh = longFirst ? [1, 3] : [0, 2];
+    const H = ctx.H, rise = Math.min(num(g.riseMaxM, 2.2), H * num(g.riseHeightRatio, .2)), eave = H - rise, u = this.unit, W = this.W, ch = ctx.chunk;
+    const pt = i => [r[(i % 4) * 2], r[(i % 4) * 2 + 1]];
+    const mid = i => { const a = pt(i), b = pt(i + 1); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+    const R0 = mid(Sh[0]), R1 = mid(Sh[1]);   // ridge ends over the short walls
+    this.wallsOf(ctx, r, ctx.minH, eave, true);
+    // gables: triangles over the short walls (solid wall colour)
+    W.kind = KIND.WALL; W.w = [0, 0, 0, 0]; const flags = W.b[3]; W.b[3] = flags | FLAG.NO_AO;
+    for (const si of Sh) {
+      const a = pt(si), b = pt(si + 1), dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, ridge = mid(si);
+      W.normal(dy / l, -dx / l, 0);
+      const i0 = W.v(a[0] * u, a[1] * u, eave, 0), i1 = W.v(b[0] * u, b[1] * u, eave, 0), i2 = W.v(ridge[0] * u, ridge[1] * u, H, 0);
+      ch.walls.push(i0, i1, i2);
+    }
+    W.b[3] = flags;
+    // the two roof planes: from each long eave up to the ridge
+    W.kind = KIND.PITCHED; W.m[0] = pick(g.weights || [.55, .3, .15], unit(ctx.seed, 6));
+    for (const li of L) {
+      const a = pt(li), b = pt(li + 1);
+      // ridge end nearest a, nearest b
+      const d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      const ra = d(a, R0) < d(a, R1) ? R0 : R1, rb = ra === R0 ? R1 : R0;
+      const ex = b[0] - a[0], ey = b[1] - a[1], el = Math.hypot(ex, ey) || 1, inx = -ey / el, iny = ex / el;   // toward the ridge (inward)
+      // normal: outward horizontal component scaled by rise, up by the horizontal run (in metres)
+      const run = Math.abs((ra[0] - a[0]) * inx + (ra[1] - a[1]) * iny) * this.mPerUnit || 1;
+      let nx = -inx * rise, ny = -iny * rise, nz = run; const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+      W.normal(nx, ny, nz);
+      const i0 = W.v(a[0] * u, a[1] * u, eave, 0), i1 = W.v(b[0] * u, b[1] * u, eave, 0), i2 = W.v(rb[0] * u, rb[1] * u, H, 0), i3 = W.v(ra[0] * u, ra[1] * u, H, 0);
+      ch.walls.push(i0, i1, i2, i0, i2, i3);
+    }
+    W.m[0] = ctx.mat;
+    const bbx = ringBbox(r); this.extend(ch, bbx[0] * u, bbx[1] * u, bbx[2] * u, bbx[3] * u, H);
+    return true;
+  }
+  // set-back office top: the lower body, a ledge, and the inset upper body with its own roof
+  setback(ctx) {
+    const T = ctx.T, s = T.setback; if (!s || ctx.clipped || ctx.holes.length) return false;
+    if (ctx.H < num(s.minHeightM, 80) || ctx.A < num(s.minAreaM2, 600) || unit(ctx.seed, 4) >= num(s.probability, .35)) return false;
+    const inset = insetRing(ctx.outer, num(s.maxInsetM, 1.5) / this.mPerUnit) || insetRing(ctx.outer, 1 / this.mPerUnit); if (!inset) return false;
+    const H = ctx.H, zs = H * (1 - num(s.topHeightRatio, .15)), ch = ctx.chunk;
+    this.wallsOf(ctx, ctx.outer, ctx.minH, zs, true);
+    this.cap(ch.lo, ctx.outer, [inset], zs, KIND.ROOF, ctx.roofSlot, 0); this.cap(ch.hi, ctx.outer, [inset], zs, KIND.ROOF, ctx.roofSlot, 0);   // the ledge, both LODs
+    this.wallsOf(ctx, inset, zs, H, true);
+    this.flatRoof(ctx, inset, [], H, true);
+    this.plant({ ...ctx, outer: inset, A: ringArea(inset) * this.mPerUnit * this.mPerUnit });
+    return true;
+  }
+  // the office's crown (QA1): the top zone (topH) set back once (inset cap) or twice (stepped cap); the shader tones it
+  crown(ctx, insets, topH) {
+    const H = ctx.H, ch = ctx.chunk, zs = H - topH, steps = insets.length, rs = ctx.roofSlot;
+    let ring = ctx.outer, z = ctx.minH;
+    for (let i = 0; i < steps; i++) {
+      const zt = zs + topH * i / steps, inner = insets[i];
+      this.wallsOf(ctx, ring, z, zt, true);
+      this.cap(ch.lo, ring, [inner], zt, KIND.ROOF, rs, 0); this.cap(ch.hi, ring, [inner], zt, KIND.ROOF, rs, 0);   // the ledge
+      ring = inner; z = zt;
+    }
+    this.wallsOf(ctx, ring, z, H, true);
+    this.flatRoof(ctx, ring, [], H, true);
+    this.plant({ ...ctx, outer: ring, A: ringArea(ring) * this.mPerUnit * this.mPerUnit });
+  }
+  // a box standing on the roof: 4 sides + top (kind, colour pick); base z0, top z1
+  box(ch, cx, cy, ux, uy, hx, hy, z0, z1, kind, colourPick, list) {
+    const W = this.W, u = this.unit, vx = -uy, vy = ux; W.kind = kind; W.w = [0, 0, 0, 0]; const m0 = W.m[0]; W.m[0] = colourPick; const flags = W.b[3]; W.b[3] = flags | FLAG.NO_AO;
+    const c = (i, j) => [(cx + ux * hx * i + vx * hy * j) * u, (cy + uy * hx * i + vy * hy * j) * u];
+    const side = (p, q, nx, ny) => { W.normal(nx, ny, 0); const a0 = W.v(p[0], p[1], z0, z0), b0 = W.v(q[0], q[1], z0, z0), b1 = W.v(q[0], q[1], z1, z0), a1 = W.v(p[0], p[1], z1, z0); list.push(a0, b0, b1, a0, b1, a1) };
+    const p00 = c(-1, -1), p10 = c(1, -1), p11 = c(1, 1), p01 = c(-1, 1);
+    side(p00, p10, -vx, -vy); side(p10, p11, ux, uy); side(p11, p01, vx, vy); side(p01, p00, -ux, -uy);
+    W.normal(0, 0, 1); const t0 = W.v(p00[0], p00[1], z1, z0), t1 = W.v(p10[0], p10[1], z1, z0), t2 = W.v(p11[0], p11[1], z1, z0), t3 = W.v(p01[0], p01[1], z1, z0);
+    const cz = (p10[0] - p00[0]) * (p11[1] - p00[1]) - (p10[1] - p00[1]) * (p11[0] - p00[0]);
+    if (cz > 0) list.push(t0, t1, t2, t0, t2, t3); else list.push(t0, t2, t1, t0, t3, t2);
+    W.m[0] = m0; W.b[3] = flags;
+    for (const p of [p00, p10, p11, p01]) this.extend(ch, p[0], p[1], p[0], p[1], z1);
+  }
+  // roof plant: a penthouse and a few condensers where the roof is deep enough; small boxes scattered over merged low-rise
+  plant(ctx) {
+    const P = this.P, eq = P.equip, ch = ctx.chunk, z = ctx.roofZ ?? ctx.H, mpu = this.mPerUnit, u = this.unit;
+    const outer = ctx.roofRing || ctx.outer, holes = ctx.roofHoles || ctx.holes;
+    if (ctx.merged) {
+      if (ctx.A < 400) return;
+      const bb = ringBbox(outer), step = 16 / mpu, want = Math.min(10, Math.floor(ctx.A / 350)); let placed = 0;
+      const sx = unit(ctx.seed, 7) * step, sy = unit(ctx.seed, 8) * step, cands = [];
+      for (let x = bb[0] + sx; x < bb[2]; x += step) for (let y = bb[1] + sy; y < bb[3]; y += step) if (pointInPolygon(x, y, outer, holes) && edgeDistance(x, y, [outer, ...holes]) * mpu > 1.6) cands.push([x, y]);
+      for (let i = 0; i < cands.length && placed < want; i++) { if (unit(ctx.seed, 20 + i) > .6) continue; const [x, y] = cands[i], a = unit(ctx.seed, 40 + i) * Math.PI; this.box(ch, x, y, Math.cos(a), Math.sin(a), .8 / mpu, .5 / mpu, z, z + .9, KIND.EQUIP, 0, ch.hi); placed++ }
+      return;
+    }
+    if (ctx.H < eq.minH || ctx.A < eq.minA) return;
+    const deep = deepestPoint(outer, holes, 8); if (!(deep.d > 0)) return;
+    const clear = deep.d * mpu - P.edgeClear; if (clear < 1.2) return;
+    const obb = outer.length <= 400 ? orientedBox(outer) : null, ux = obb ? obb.ux : 1, uy = obb ? obb.uy : 0;
+    // penthouse: 4–7 % of the roof, 1.3:1, shrunk to the room there is
+    const pa = ctx.A * (eq.penthouseArea[0] + (eq.penthouseArea[1] - eq.penthouseArea[0]) * unit(ctx.seed, 9));
+    let hx = Math.sqrt(pa * 1.3) / 2, hy = hx / 1.3; const halfDiag = Math.hypot(hx, hy);
+    if (halfDiag > clear) { const k = clear / halfDiag; hx *= k; hy *= k }
+    if (hx < 1) return;
+    this.box(ch, deep.x, deep.y, ux, uy, hx / mpu, hy / mpu, z, z + eq.penthouseH, KIND.EQUIP, 0, ch.hi);
+    if (this.opts.phone) return;
+    // condensers beside it
+    const n = eq.hvacCount[0] + Math.floor(unit(ctx.seed, 10) * (eq.hvacCount[1] - eq.hvacCount[0] + 1)), [sx, sy, sz] = eq.hvacSize;
+    for (let i = 0, placed = 0; i < 6 && placed < n; i++) {
+      const ang = unit(ctx.seed, 11 + i) * Math.PI * 2, dist = (hx + sx) * .5 + 1.2 + unit(ctx.seed, 30 + i) * 2.5;
+      const px = deep.x + (Math.cos(ang) * ux - Math.sin(ang) * uy) * dist / mpu, py = deep.y + (Math.cos(ang) * uy + Math.sin(ang) * ux) * dist / mpu;
+      if (!pointInPolygon(px, py, outer, holes) || edgeDistance(px, py, [outer, ...holes]) * mpu < P.edgeClear + Math.hypot(sx, sy) / 2) continue;
+      // keep clear of the penthouse box
+      const lx = ((px - deep.x) * ux + (py - deep.y) * uy) * mpu, ly = (-(px - deep.x) * uy + (py - deep.y) * ux) * mpu;
+      if (Math.abs(lx) < hx + sx / 2 + .3 && Math.abs(ly) < hy + sy / 2 + .3) continue;
+      this.box(ch, px, py, ux, uy, sx / 2 / mpu, sy / 2 / mpu, z, z + sz, KIND.EQUIP, 0, ch.hi); placed++;
+    }
+  }
+  // shop awning: a plain strip over part of the longest street-side wall
+  awning(ctx) {
+    const T = ctx.T, a = T.awning; if (!a || this.opts.phone || !ctx.storefront || ctx.H < num(a.baseM, 3.1) + 1) return;
+    if (!(a.landuse || []).includes(ctx.landuse) || unit(ctx.seed, 12) >= num(a.probability, .35)) return;
+    const r = ctx.outer, n = r.length / 2, E = this.E, mpu = this.mPerUnit; let best = -1, bl = 0;
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n, ax = r[i * 2], ay = r[i * 2 + 1], bx = r[j * 2], by = r[j * 2 + 1]; if (ax <= 0 || ax >= E || ay <= 0 || ay >= E || bx <= 0 || bx >= E || by <= 0 || by >= E) continue; const l = Math.hypot(bx - ax, by - ay); if (l > bl) { bl = l; best = i } }
+    if (best < 0 || bl * mpu < 4) return;
+    const j = (best + 1) % n, ax = r[best * 2], ay = r[best * 2 + 1], bx = r[j * 2], by = r[j * 2 + 1], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy), ex = dx / l, ey = dy / l, nx = ey, ny = -ex;
+    const [f0, f1] = a.frontageRatio || [.5, .7], frac = f0 + (f1 - f0) * unit(ctx.seed, 13), span = l * frac, s0 = (l - span) / 2, depth = num(a.depthM, .8) / mpu, z0 = num(a.baseM, 3.1), z1 = z0 + num(a.heightM, .25);
+    const cx = ax + ex * (s0 + span / 2) + nx * depth / 2, cy = ay + ey * (s0 + span / 2) + ny * depth / 2;
+    this.box(ctx.chunk, cx, cy, ex, ey, span / 2, depth / 2, z0, z1, KIND.AWNING, pick(a.weights || [.45, .35, .2], unit(ctx.seed, 14)), ctx.chunk.hi);
+  }
+  // pack the result: one vertex buffer, one index buffer in chunk order [lo][walls][hi]
+  result() {
+    const chunks = [], idx = []; let off = 0;
+    for (const c of this.chunks) {
+      if (!c.n) continue;
+      const i0 = off; for (const v of c.lo) idx.push(v); const iLo = idx.length; for (const v of c.walls) idx.push(v); const iW = idx.length; for (const v of c.hi) idx.push(v); off = idx.length;
+      chunks.push({ i0, iLo, iW, i1: off, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, zmax: c.zmax });
+    }
+    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
+  }
+}
+

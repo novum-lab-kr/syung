@@ -1,7 +1,7 @@
 // 88열차 — the coaster mode's trains, drawn as the 88 Train (서울어린이대공원, 1984–2012; see scratchpad/city/train/research.md).
 //
 // Low open cars with rows of high-backed seats and riders in them, a bar across each row, a rounded nose on the lead car
-// wearing the round "88" plate, and the livery from the Seoul style pack (stylePack.train.coaster88): cream upper body,
+// wearing its line's round badge, and the livery from the Seoul style pack (stylePack.train.coaster88): cream upper body,
 // cherry-red skirt under a gold belt, dark-teal frame, seats and wheels. The line's colour stays on every car — the
 // headrests, the lead car's headboard and the tail car's end (livery 'B', the default); zoomed out, where those are a
 // pixel, the train rides its own line's track, which names the line. (Livery 'C' instead paints the skirt and roof in the
@@ -20,18 +20,19 @@
 
 import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './park_night.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
+import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './coaster_badges.mjs';
 
 const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // as park_rides: +x east, +y south, +z up — a high south-western sun
 const LINE_MIX = [15.2, 16.6];      // zoom: below the first the skirt and roof are the line's colour, above the second the livery's
 const LOD_MID = 11, LOD_HI = 22;    // W px: wheels and a rounder nose from LOD_MID, bars, arms and the full nose from LOD_HI (riders at every level)
-const INST = 19;                    // floats an instance
+const INST = 20;                    // floats an instance (the stable rider seed, then the route badge's atlas slot)
 const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
 
 // ── the car, in unit space ───────────────────────────────────────────────────────────────────────
 // x along the car in units of L (0 the rear, 1 the front) plus an offset in W; y across (±.5 the body sides); z up, in W.
 const TUB0 = .16, TUBH = .40, WALL = .06, NOSE = .62, FLOOR = TUB0 + .02;
 // parts: how the fragment shader paints a vertex
-const P_FLAT = 0, P_SIDE = 1, P_PLATE = 2, P_LINE = 4, P_FOOT = 5, P_HEAD = 6, P_SHIRT = 8, P_ARM = 9, P_FACE = 10, P_HAIR = 11;   // 8–11: a rider (a_slot = its seat)
+const P_FLAT = 0, P_SIDE = 1, P_PLATE = 2, P_TAIL = 3, P_LINE = 4, P_FOOT = 5, P_HEAD = 6, P_SHIRT = 8, P_ARM = 9, P_FACE = 10, P_HAIR = 11;   // 8–11: a rider (a_slot = its seat)
 // palette slots (u_pal): the livery, then the people — the riders wear what the platform's walkers wear (roundPerson in the runtime: SKIN, SHIRTS, HAIR)
 const S_CREAM = 0, S_RED = 1, S_GOLD = 2, S_TEAL = 3, S_SEAT = 4, S_BAR = 5, S_CHASSIS = 6, S_WHEEL = 7, S_DECK = 8, S_SKIN = 9, S_SHIRT = 10, SHIRTS = 7, S_HAIR = 17, HAIRS = 4, PAL = 24;
 const SKIN = [.97, .82, .68], HAIR = [[.16, .12, .1], [.3, .2, .12], [.1, .1, .12], [.45, .3, .18]],
@@ -85,9 +86,10 @@ function headboard(M) {
   M.quad(1, [-th - lean, -hw, z1], [-th - lean, hw, z1], [-lean, hw, z1], [-lean, -hw, z1], o, [0, 0, 1]);   // top edge
   for (const s of [-1, 1]) M.quad(1, [0, s * hw, z0], [-lean, s * hw, z1], [-th - lean, s * hw, z1], [-th, s * hw, z0], o, [0, s, 0]);
 }
-// the tail car's end: a board in the line's colour over the rear wall, and two tail lamps
+// the tail car's end: the same route badge on a cream board, with line-coloured edges and two tail lamps
 function tailboard(M) {
-  M.slab(0, -.025, 0, 0, -.46, .46, TUB0 + .04, TUB0 + TUBH + .02, { part: P_LINE, slot: S_TEAL, vis: V_TAIL }, 'xYyZ');
+  M.slab(0, -.025, 0, 0, -.46, .46, TUB0 + .04, TUB0 + TUBH + .02, { part: P_TAIL, slot: S_CREAM, vis: V_TAIL }, 'x');
+  M.slab(0, -.025, 0, 0, -.46, .46, TUB0 + .04, TUB0 + TUBH + .02, { part: P_LINE, slot: S_TEAL, vis: V_TAIL }, 'YyZ');
   for (const s of [-1, 1]) M.box(0, [-.03, s * .3, TUB0 + TUBH * .55], [.012, .06, .05], { part: P_FLAT, slot: S_RED, vis: V_TAIL }, 'xYyZz');
 }
 function chassis(M, wheels) {
@@ -156,9 +158,9 @@ function buildBulbs() {
 const CAR_VS = `#version 300 es
 precision highp float;
 in float a_x;in vec3 a_p;in vec3 a_n;in float a_part;in float a_slot;in float a_vis;
-in vec3 i_o;in vec3 i_F;in vec3 i_R;in vec3 i_U;in vec2 i_LW;in vec3 i_rgb;in float i_flag;in float i_seed;
+in vec3 i_o;in vec3 i_F;in vec3 i_R;in vec3 i_U;in vec2 i_LW;in vec3 i_rgb;in float i_flag;in float i_seed;in float i_badge;
 uniform mat4 u_matrix;uniform float u_unit,u_pass;uniform vec2 u_shadow;uniform vec3 u_pal[${PAL}];
-out vec3 v_loc;out vec3 v_n;flat out vec3 v_rgb;flat out vec3 v_col;flat out float v_part;flat out float v_slot;flat out vec2 v_LW;
+out vec3 v_loc;out vec3 v_n;flat out vec3 v_rgb;flat out vec3 v_col;flat out float v_part;flat out float v_slot;flat out vec2 v_LW;flat out float v_badge;
 float hash1(float n){return fract(sin(n*12.9898)*43758.5453);}
 void main(){
   bool front=mod(i_flag,2.)>.5,back=mod(floor(i_flag/2.),2.)>.5,shadow=u_pass>.5;
@@ -177,39 +179,44 @@ void main(){
   vec3 w=i_o+(i_F*loc.x+i_R*loc.y+i_U*loc.z)*u_unit;
   if(shadow){w=i_o+(i_F*loc.x+i_R*loc.y)*u_unit;w.z=0.;w.xy+=u_shadow*u_unit;}   // on the ground under the car, offset as the sun throws it
   gl_Position=u_matrix*vec4(w,1.);
-  v_loc=loc;v_n=i_F*a_n.x+i_R*a_n.y+i_U*a_n.z;v_rgb=i_rgb;v_part=a_part;v_slot=a_slot;v_LW=i_LW;
+  v_loc=loc;v_n=i_F*a_n.x+i_R*a_n.y+i_U*a_n.z;v_rgb=i_rgb;v_part=a_part;v_slot=a_slot;v_LW=i_LW;v_badge=i_badge;
 }`;
 const CAR_FS = `#version 300 es
 precision highp float;
-in vec3 v_loc;in vec3 v_n;flat in vec3 v_rgb;flat in vec3 v_col;flat in float v_part;flat in float v_slot;flat in vec2 v_LW;
+in vec3 v_loc;in vec3 v_n;flat in vec3 v_rgb;flat in vec3 v_col;flat in float v_part;flat in float v_slot;flat in vec2 v_LW;flat in float v_badge;
 uniform float u_pass,u_alpha,u_lineMix,u_headrest,u_amb,u_dif,u_riderLight;uniform vec3 u_pal[${PAL}];uniform vec3 u_light;
+uniform sampler2D u_badges;uniform float u_badgeText;
 out vec4 o;
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
-float ring(vec2 p,vec2 c,float r,float t){return abs(length(p-c)-r)-t;}
-// "88": two digits side by side across the car, each two rings stacked along it; h the digit height, t the stroke
-float eight(vec2 p,vec2 c,float h,float t){float r=h*.25;return min(ring(p,c+vec2(r,0.),r,t),ring(p,c-vec2(r,0.),r,t));}
-float d88(vec2 p,vec2 c,float h,float t){float g=h*.6;return min(eight(p,c-vec2(0.,g*.5),h,t),eight(p,c+vec2(0.,g*.5),h,t));}
 void main(){
   float W=v_LW.y,L=v_LW.x;
   if(u_pass>.5){   // the ground shadow: the footprint, its edge softened as the trains' are
     float edge=max(abs(v_loc.y)-W*.5,max(-v_loc.x,v_loc.x-L));
     float a=(1.-smoothstep(-.4,2.4,edge))*.22*u_alpha;o=vec4(vec3(.09,.13,.16)*a,a);return;}
-  int part=int(v_part+.5);vec3 col;
+  int part=int(v_part+.5);vec3 col;vec2 badgeP=vec2(0.);float badgeR=0.;
   vec3 cream=u_pal[0],red=u_pal[1],gold=u_pal[2];
   vec3 skirt=mix(red,v_rgb,u_lineMix);   // zoomed out the skirt is the line's colour
   if(part==1){   // the body side: cream over the gold belt, the skirt under it (z up from the tub's floor)
     float z=v_loc.z-${TUB0}*W,H=${TUBH}*W,b0=H*.46,bh=max(.5,H*.05);
     col=cream;col=mix(col,skirt,ink(z-b0));col=mix(col,gold,ink(abs(z-b0)-bh));
-  }else if(part==2){   // the nose plate: cream, the round red emblem with "88" in it, as the zoom allows
-    vec2 p=vec2(v_loc.x-L,v_loc.y);float nl=${NOSE}*W,r=min(nl*.36,W*.3);vec2 c=vec2(nl*.46,0.);
-    col=cream;col=mix(col,red,ink(length(p-c)-r)*smoothstep(12.,17.,W));
-    col=mix(col,cream,ink(d88(p,c,r*1.05,max(.55,r*.11)))*smoothstep(20.,27.,W));
-  }else if(part==4)col=v_rgb;                                  // headboard, tail board: the line
+  }else if(part==2){   // nose: a circular route badge, upright when viewed from the front; slope-corrected along the plate
+    col=cream;badgeP=vec2(-v_loc.y,(v_loc.x-L-${NOSE * .48}*W)*1.07);badgeR=.285*W;   // mercator y points south: -R reads left-to-right from the nose
+  }else if(part==3){   // tail: the opposite across-axis, upright when viewed from behind
+    col=cream;badgeP=vec2(v_loc.y,${TUB0 + TUBH * .575}*W-v_loc.z);badgeR=.175*W;
+  }else if(part==4)col=v_rgb;                                  // headboard, tail board edges: the line
   else if(part==6)col=u_headrest>.5?v_rgb:u_pal[4];            // headrests: the line's colour, or the seat's
   else if(part>=8)col=v_col;                                   // a rider
   else col=u_pal[int(v_slot+.5)];
   float nl=length(v_n),d=nl>1e-6?max(dot(v_n/nl,u_light),0.):0.;
   col*=part>=8?max(u_amb+u_dif*d,u_riderLight):u_amb+u_dif*d;   // riders keep a floor of light (at night their own car's festoon lights them)
+  if(badgeR>0.){
+    float mask=ink(length(badgeP)-badgeR);
+    col=mix(col,v_rgb*max(.9,u_amb+u_dif*d),mask);   // retain route hue at night, below the white lettering
+    vec2 uv=clamp(badgeP/(2.*badgeR)+.5,vec2(0.),vec2(1.));
+    uv=(vec2(mod(v_badge,${BADGE_COLS}.),floor(v_badge/${BADGE_COLS}.))+uv)/vec2(${BADGE_COLS}.,${BADGE_ROWS}.);
+    vec4 glyph=texture(u_badges,uv)*(mask*u_badgeText);   // premultiplied white glyph with a thin dark keyline
+    col=col*(1.-glyph.a)+glyph.rgb;
+  }
   o=vec4(col,1.)*u_alpha;
 }`;
 const BULB_VS = `#version 300 es
@@ -249,11 +256,19 @@ export class CoasterTrain {
     if (this.p) return;
     this.p = compile(gl, CAR_VS, CAR_FS);
     this.pb = compile(gl, BULB_VS, BULB_FS);
-    const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed'];
+    const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_badge'];
     this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', 'a_vis', ...inst].map(n => [n, gl.getAttribLocation(this.p, n)]));
     this.attrB = Object.fromEntries(['a_b', ...inst].map(n => [n, gl.getAttribLocation(this.pb, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_pass', 'u_shadow', 'u_alpha', 'u_lineMix', 'u_headrest', 'u_amb', 'u_dif', 'u_riderLight', 'u_pal', 'u_light'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_pass', 'u_shadow', 'u_alpha', 'u_lineMix', 'u_headrest', 'u_amb', 'u_dif', 'u_riderLight', 'u_pal', 'u_light', 'u_badges', 'u_badgeText'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.uniB = Object.fromEntries(['u_matrix', 'u_unit', 'u_size', 'u_core', 'u_warm', 'u_red', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pb, n)]));
+    // One shared CPU atlas and one texture per GL context; preserve the other overlay layers' texture/unpack state.
+    const oldTex = gl.getParameter(gl.TEXTURE_BINDING_2D), oldPre = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL), oldFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
+    this.badges = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.badges);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, routeBadgeAtlas());
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, oldPre); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, oldFlip); gl.bindTexture(gl.TEXTURE_2D, oldTex);
     // the meshes: levels 0, 1 and 2 for 2, 3 and 4 rows of seats; each with its own vertex array
     this.meshes = new Map();
     const mesh = (key, data, stride, pointers) => {
@@ -271,8 +286,8 @@ export class CoasterTrain {
   }
   begin(ox, oy) { this.ox = ox; this.oy = oy; this.n = 0 }
   // a car: its frame on the track (base, F, R, U in mercator), L and W in px, the line's colour, whether it leads or trails,
-  // and its train's id with its number in it (the seed its riders are dealt from: the same people every frame)
-  car(fr, L, W, rgb, front, back, key, j = 0) {
+  // its train's id and car number (the stable rider seed), and the full route name for the front/tail badge
+  car(fr, L, W, rgb, front, back, key, j = 0, line = '') {
     if ((this.n + 1) * INST > this.inst.length) { const g = new Float32Array(this.inst.length * 2); g.set(this.inst); this.inst = g }
     const d = this.inst, i = this.n * INST;
     for (let k = 0; k < 12; k++) if (!Number.isFinite(fr[k])) { CoasterTrain.dropped++; return }   // (a NaN frame would rasterize anywhere)
@@ -286,12 +301,13 @@ export class CoasterTrain {
     d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = (front ? 1 : 0) + (back ? 2 : 0);
     let s = this.seeds.get(key); if (s == null) { s = fnv1a(String(key)) / 4294967296; if (this.seeds.size > 4096) this.seeds.clear(); this.seeds.set(key, s) }
     d[i + 18] = (s + j * .6180339887) % 1;
+    d[i + 19] = routeBadgeId(line);
     this.n++;
   }
   // the instance attributes on the bound vertex array, from the store filled this frame
   instancePointers(gl, A) {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]);
-    for (const [n, size, off] of [['i_o', 3, 0], ['i_F', 3, 12], ['i_R', 3, 24], ['i_U', 3, 36], ['i_LW', 2, 48], ['i_rgb', 3, 56], ['i_flag', 1, 68], ['i_seed', 1, 72]]) {
+    for (const [n, size, off] of [['i_o', 3, 0], ['i_F', 3, 12], ['i_R', 3, 24], ['i_U', 3, 36], ['i_LW', 2, 48], ['i_rgb', 3, 56], ['i_flag', 1, 68], ['i_seed', 1, 72], ['i_badge', 1, 76]]) {
       const loc = A[n]; if (loc < 0) continue;
       gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, INST * 4, off); gl.vertexAttribDivisor(loc, 1);
     }
@@ -307,13 +323,16 @@ export class CoasterTrain {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, this.n * INST);
     const W = this.inst[13], L = this.inst[12], lod = W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2, rows = Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
     const m = this.meshes.get(lod + ':' + rows), livery = CoasterTrain.livery;
-    CoasterTrain.last = { n: this.n, lod, rows, W, L, zoom: o.zoom, dropped: CoasterTrain.dropped, repaired: CoasterTrain.repaired };
+    CoasterTrain.last = { n: this.n, lod, rows, W, L, zoom: o.zoom, badgeText: o.zoom >= 16.5, dropped: CoasterTrain.dropped, repaired: CoasterTrain.repaired };
     const z = o.zoom, lineMix = livery === 'C' ? 1 - Math.min(1, Math.max(0, (z - LINE_MIX[0]) / (LINE_MIX[1] - LINE_MIX[0]))) : 0;
     gl.useProgram(this.p); gl.bindVertexArray(m.va); this.instancePointers(gl, this.attr);
     const U = this.uni; gl.uniformMatrix4fv(U.u_matrix, false, MT); gl.uniform1f(U.u_unit, o.unit); gl.uniform2f(U.u_shadow, o.shadow[0], o.shadow[1]);
     gl.uniform1f(U.u_lineMix, lineMix * lineMix * (3 - 2 * lineMix)); gl.uniform1f(U.u_headrest, livery === 'A' ? 0 : 1);
     gl.uniform1f(U.u_amb, o.dark ? Math.max(this.minLight, .62) : .64); gl.uniform1f(U.u_dif, o.dark ? .26 : .36); gl.uniform1f(U.u_riderLight, o.dark ? .85 : .78);
     gl.uniform3fv(U.u_pal, this.pal); gl.uniform3fv(U.u_light, SUN);
+    const oldActive = gl.getParameter(gl.ACTIVE_TEXTURE); gl.activeTexture(gl.TEXTURE0);
+    const oldTex = gl.getParameter(gl.TEXTURE_BINDING_2D); gl.bindTexture(gl.TEXTURE_2D, this.badges);
+    gl.uniform1i(U.u_badges, 0); gl.uniform1f(U.u_badgeText, o.zoom >= 16.5 ? 1 : 0);
     gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.DEPTH_TEST);
     const pass = (mesh, p, alpha) => { gl.uniform1f(U.u_pass, p); gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, this.n) };
     // behind the building walls: faint, before the cars have any depth of their own (no ghost of their hidden faces)
@@ -324,6 +343,7 @@ export class CoasterTrain {
     gl.bindVertexArray(m.va); this.instancePointers(gl, this.attr);
     gl.depthMask(true); pass(m, 0, 1); gl.depthMask(false);   // the cars, writing their depth: the seats sit inside the tub, the bulbs on its sides
     gl.bindVertexArray(null);
+    gl.bindTexture(gl.TEXTURE_2D, oldTex); gl.activeTexture(oldActive);
     if (o.dark && W >= LOD_MID) {   // the night: bulbs along the belt, warm; the tail lamps red
       const b = this.meshes.get('bulbs'), s = bulbSize(z, o.pixelRatio || 1, .5), UB = this.uniB;
       gl.useProgram(this.pb); gl.bindVertexArray(b.va); this.instancePointers(gl, this.attrB); lightsOn(gl);
@@ -338,6 +358,7 @@ export class CoasterTrain {
     if (!this.p) return;
     for (const m of this.meshes.values()) { gl.deleteBuffer(m.b); gl.deleteVertexArray(m.va) }
     for (const b of this.ib) gl.deleteBuffer(b);
+    gl.deleteTexture(this.badges); this.badges = null;
     gl.deleteProgram(this.p); gl.deleteProgram(this.pb); this.p = null;
   }
 }

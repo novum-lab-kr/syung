@@ -1,0 +1,20 @@
+// The city's build worker (web/lib/city_buildings.mjs posts the work): a tile's raw vector-tile bytes in, its
+// building meshes out — read by web/lib/city_mvt.mjs, built by web/lib/city_mesh.mjs — so panning never waits
+// on a build. One tile at a time, in the order asked; the vertex and index buffers go back transferred.
+import { decodeTile } from './city_mvt.mjs';
+import { TileBuilder, resolvePack } from './city_mesh.mjs';
+
+let P = null;
+self.onmessage = e => {
+  const m = e.data;
+  if (m.type === 'pack') { P = resolvePack(m.pack); return }
+  if (m.type !== 'build') return;
+  try {
+    if (!P) throw Error('city-build worker: no style pack yet');
+    const L = decodeTile(m.pbf, new Set(['building', 'landuse']));
+    const tb = new TileBuilder({ z: m.z, x: m.x, y: m.y, extent: L.building?.extent || 4096, buildings: L.building || null, landuse: L.landuse || null }, P, { phone: m.phone });
+    while (!tb.step(1e9));
+    const r = tb.result();
+    self.postMessage({ type: 'done', key: m.key, mesh: r }, [r.verts.buffer, r.idx.buffer]);
+  } catch (err) { self.postMessage({ type: 'fail', key: m.key, error: String(err && err.stack || err) }) }
+};

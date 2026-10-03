@@ -76,6 +76,20 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .bus-detail-note{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--secondary)}
 .bus-route-list{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;font-size:13px;line-height:1.6}
 .bus-route-list span{color:var(--bus-color)}
+/* city-design: one optional city mode at a time, using the existing switch vocabulary. */
+.settings-panel{max-height:calc(100vh - 96px);max-height:calc(100dvh - 96px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent}
+.setting-modes{margin:8px 0;padding:8px 0;border-block:1px solid var(--rule)}
+.setting-group-title{margin:0 10px 4px;font-size:12px;line-height:1.5;font-weight:700;color:var(--secondary)}
+.setting-modes .setting-switch{min-height:56px;padding-block:8px}
+.setting-modes .setting-switch[aria-pressed=true]{background:var(--selected)}
+.setting-modes .setting-switch:hover{background:var(--control)}
+.setting-modes .setting-switch[aria-pressed=true]:hover{background:var(--selected)}
+.setting-modes .setting-switch:active{transform:scale(.99)}
+.setting-modes .setting-switch:disabled{opacity:.55;cursor:wait}
+.setting-modes .setting-icon{flex:none}
+.setting-modes .setting-name small,.setting-modes #speedNote{color:var(--secondary);font-size:12px;line-height:1.5}
+.setting-help{margin:8px 10px 4px;font-size:12px;line-height:1.6;color:var(--secondary)}
+@media(prefers-reduced-motion:reduce){.setting-modes .setting-switch:active{transform:none}}
 .setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
 .segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}

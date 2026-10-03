@@ -6,6 +6,10 @@ import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul rou
 import {RideLayer} from './lib/park_rides.mjs';
 import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
+import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
+import {CityLife} from './lib/city_life.mjs';
+import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
+import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -325,6 +329,13 @@ function planTrain(t){
 // trains ride on it; its clock can run faster (×coasterSpeed): the trains then run ahead of the feed
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
+let simcity=false;   // 심시티 모드: the miniature city (its own look; the coaster mode keeps its rides on the same city)
+// city-build: the miniature city's buildings (web/lib/city_buildings.mjs): a custom layer under the station names (so names and
+// labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
+// stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
+const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||coaster;
+function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
+  cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9})}
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
 const BULB_EVERY=18;const COL_SPAN=60,COL_AFRAME=80,COL_CLEAR=15;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
@@ -941,7 +952,7 @@ class TrainLayer{
           if(coaster){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,articulated(tail+(j+.5)*car).roll||0);   // turned over in a corkscrew, as at its middle (the ends' 2π and 0 averaged to π: upside down under the track)
             const [,U0]=rolled(A.r,F,0),hc=CORK_HEART*bodyPx*unit;   // turned about its own middle (the rails wind round the same line)
             this.fr=[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]];side=R[0]*camX+R[1]*camY>=0?1:-1}
-          if(coaster){this.c88.car(this.fr,L,bodyPx,color,j===n-1,j===0,plan.id,j);continue}   // coaster-train: on the coaster the car is an 88열차 car (drawn after this loop); no beam or gangways
+          if(coaster){this.c88.car(this.fr,L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line);continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways
           const back=j===0,front=j===n-1,panto=/^(1호선|4호선|경의중앙선|수인분당선)$/.test(plan.t.line)&&j%3===1;
           this.kind=(front?1:0)+(back?2:0)+(panto?4:0);
           const w=bodyPx/2,nose=bodyPx*.48,a=back?nose:0,b=front?L-nose:L,low=H*.44;
@@ -1334,7 +1345,7 @@ class BuildingDepth{
     this.a=gl.getAttribLocation(this.p,'a_pos');this.um=gl.getUniformLocation(this.p,'u_matrix');this.uh=gl.getUniformLocation(this.p,'u_h');
     this.b=gl.createBuffer();this.n=0;this.gl=gl;this.M=new Float32Array(16);
   }
-  shown(){const z=map.getZoom();return z>=(PHONE?15:14)&&map.getLayer('bm-bld3d')&&map.getLayoutProperty('bm-bld3d','visibility')!=='none'}
+  shown(){if(cityOn())return false;const z=map.getZoom();return z>=(PHONE?15:14)&&map.getLayer('bm-bld3d')&&map.getLayoutProperty('bm-bld3d','visibility')!=='none'}
   rebuild(){
     this.n=0;if(!this.shown())return;
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out=[];this.ox=O.x;this.oy=O.y;
@@ -1680,77 +1691,7 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
   }
   ptrs(gl){const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
     ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18)}
-  // 행인 (롤러코스터, zoom 16+, with the background map): round little people (roundPerson) stroll the streets between the
-  // buildings. A show (no data), run where the camera is.
-  // streets(): the walkable lines on and around the screen, rebuilt when the view settles.
-  streets(){
-    this.net=null;const z=map.getZoom();if(!coaster||!this.edges||z<RIDER_MINZOOM||!map.getSource('ofm'))return;   // edges: once init ran
-    const b=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),pad=(hi.x-lo.x)*.3;
-    const box=[lo.x-pad,hi.y-pad,hi.x+pad,lo.y+pad],mu=lo.meterInMercatorCoordinateUnits(),M=c=>maplibregl.MercatorCoordinate.fromLngLat(c);
-    const SIDE={primary:9,secondary:7.5,tertiary:6,minor:4.5,service:3,track:2,path:0,pedestrian:0};   // m from the centre line to the pavement
-    const lines=[],ends=new Map(),key=p=>Math.round(p[0]/mu)+','+Math.round(p[1]/mu);   // ends: 1 m grid → lines meeting there
-    for(const f of map.querySourceFeatures('ofm',{sourceLayer:'transportation'})){
-      const side=SIDE[f.properties.class];if(side==null||f.properties.brunnel)continue;   // no tunnels, and no bridges (they walked over the river)
-      const g=f.geometry;for(const cs of g.type==='LineString'?[g.coordinates]:g.type==='MultiLineString'?g.coordinates:[]){
-        const pts=cs.map(c=>{const m=M(c);return [m.x,m.y]});if(pts.length<2||pts.every(p=>p[0]<box[0]||p[0]>box[2]||p[1]<box[1]||p[1]>box[3]))continue;
-        const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));if(cum[cum.length-1]<3*mu)continue;
-        const L={pts,cum,len:cum[cum.length-1],side:side*mu,near:0};lines.push(L);
-        for(const e of [0,1]){const k=key(pts[e?pts.length-1:0]);if(!ends.has(k))ends.set(k,[]);ends.get(k).push([L,e])}}}
-    // not along the subway: the lines run under the main roads, and at the platforms the track is on the ground, so walkers
-    // there walked on it. A street with more than 40 % of it within reach of a line's track is left out.
-    const mpp=1/(512*2**z)/mu,reach=(15+(laneOffsetPx(z,coasterBodyPx(z))+coasterBodyPx(z)/2)*mpp)*mu,cell=60*mu,grid=new Map(),gk=(x,y)=>Math.floor(x/cell)+','+Math.floor(y/cell);
-    for(const e of this.edges){const P=geom(e.line,e.lo,e.hi).pts;for(let i=1;i<P.length;i++){const A=P[i-1],B=P[i];if(Math.max(A.x,B.x)<box[0]||Math.min(A.x,B.x)>box[2]||Math.max(A.y,B.y)<box[1]||Math.min(A.y,B.y)>box[3])continue;
-      const seg=[A.x,A.y,B.x,B.y],n=Math.ceil(Math.hypot(B.x-A.x,B.y-A.y)/cell)+1;for(let k=0;k<=n;k++){const x=A.x+(B.x-A.x)*k/n,y=A.y+(B.y-A.y)*k/n;for(const dx of [-1,0,1])for(const dy of [-1,0,1]){const g=gk(x+dx*cell,y+dy*cell);if(!grid.has(g))grid.set(g,new Set());grid.get(g).add(seg)}}}}
-    const nearTrack=(x,y)=>{const S=grid.get(gk(x,y));if(!S)return false;for(const [ax,ay,bx,by] of S){const dx=bx-ax,dy=by-ay,u=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1)));if(Math.hypot(ax+dx*u-x,ay+dy*u-y)<reach)return true}return false};
-    for(let i=lines.length-1;i>=0;i--){const L=lines[i];let near=0,all=0;for(let s=0;s<=L.len;s+=5*mu){all++;let j=1;while(j<L.pts.length-1&&L.cum[j]<s)j++;const A=L.pts[j-1],B=L.pts[j],u=(s-L.cum[j-1])/((L.cum[j]-L.cum[j-1])||1);if(nearTrack(A[0]+(B[0]-A[0])*u,A[1]+(B[1]-A[1])*u))near++}
-      if(near>all*.4)lines.splice(i,1)}
-    ends.clear();for(const L of lines)for(const e of [0,1]){const k=key(L.pts[e?L.pts.length-1:0]);if(!ends.has(k))ends.set(k,[]);ends.get(k).push([L,e])}
-    if(!lines.length)return;
-    const ex=Object.entries(exits).flatMap(([sid,l])=>l.map(([lon,lat])=>{const m=M([lon,lat]);return {x:m.x,y:m.y,sid}})).filter(m=>m.x>box[0]&&m.x<box[2]&&m.y>box[1]&&m.y<box[3]);
-    for(const L of lines){const m=L.pts[L.pts.length>>1];if(ex.some(e=>Math.hypot(e.x-m[0],e.y-m[1])<90*mu))L.near=1}   // within ~90 m of an exit: busier
-    const total=lines.reduce((a,L)=>a+L.len*(1+3*L.near),0);
-    this.net={lines,ends,key,mu,total};
-    // keep the walkers still on a street of the new set (their place snapped to it), the rest anew
-    const old=this.walkers||[],n=Math.max(10,Math.min(40,Math.round(lines.reduce((a,L)=>a+L.len,0)/mu/100)));this.walkers=[];
-    for(const w of old){if(this.walkers.length>=n)break;const s=this.snap(w.p);if(s)this.walkers.push({...w,...s})}
-    while(this.walkers.length<n)this.walkers.push(this.spawn());
-  }
-  snap(p,far=4){const {lines,mu}=this.net;let best=null;
-    for(const L of lines)for(let i=1;i<L.pts.length;i++){const A=L.pts[i-1],B=L.pts[i],dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((p[0]-A[0])*dx+(p[1]-A[1])*dy)/l2)),d=Math.hypot(A[0]+dx*u-p[0],A[1]+dy*u-p[1])-L.side;
-      if(Math.abs(d)<far*mu&&(!best||Math.abs(d)<best.d))best={d:Math.abs(d),L,s:L.cum[i-1]+Math.sqrt(l2)*u}}
-    return best&&{L:best.L,s:best.s}}
-  dress(w){const pick=a=>a[Math.random()*a.length|0],mu=this.net?.mu||1e-8;
-    return Object.assign(w,{v:(1.05+Math.random()*.5)*mu,ph:Math.random()*6.3,pause:0,col:pick(SHIRTS),pants:pick(PANTS),hair:pick(HAIR)})}
-  spawn(){const {lines,total}=this.net;let r=Math.random()*total,L=lines[0];for(const x of lines){r-=x.len*(1+3*x.near);if(r<=0){L=x;break}}
-    return this.dress({mode:'street',L,s:Math.random()*L.len,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1})}
-  // where a walker is: on its line at s, out to its pavement side, facing its way
-  place(w){const L=w.L;let i=1;while(i<L.pts.length-1&&L.cum[i]<w.s)i++;const A=L.pts[i-1],B=L.pts[i],l=(L.cum[i]-L.cum[i-1])||1,u=Math.max(0,Math.min(1,(w.s-L.cum[i-1])/l));
-    const fx=(B[0]-A[0])/l*w.dir,fy=(B[1]-A[1])/l*w.dir,o=L.side*w.side*w.dir;return {x:A[0]+(B[0]-A[0])*u-fy*o,y:A[1]+(B[1]-A[1])*u+fx*o,f:[fx,fy],r:[-fy,fx]}}
-  people(gl,M,occlude){
-    const z=map.getZoom();if(!coaster||z<RIDER_MINZOOM||!map.getSource('ofm')||map.getLayoutProperty('bm-road-major','visibility')==='none')return;
-    if(!this.p)this.init(gl);if(!this.net){if(!this.netTried||performance.now()-this.netTried>1000){this.netTried=performance.now();this.streets()}if(!this.net)return}
-    const now=performance.now(),dt=Math.min(.1,(now-(this.tick||now))/1000);this.tick=now;
-    const {ends,key}=this.net,sc=coasterBodyPx(z)/9,O=this.O,out=[],b=map.getBearing()*Math.PI/180,right=[Math.cos(b),Math.sin(b)];   // right: the screen's right on the ground
-    for(const w of this.walkers){
-      if(w.pause>0)w.pause-=dt;else w.s+=w.v*dt*w.dir;
-      if(w.s<0||w.s>w.L.len){   // at an end: on to another line meeting there, else back
-        const e=w.s>w.L.len?1:0,P=w.L.pts[e?w.L.pts.length-1:0],next=(ends.get(key(P))||[]).filter(([L])=>L!==w.L);
-        if(next.length){const [L,ne]=next[Math.random()*next.length|0];w.L=L;w.s=ne?L.len:0;w.dir=ne?-1:1;w.side=Math.random()<.8?w.side:-w.side}
-        else{w.s=Math.max(0,Math.min(w.L.len,w.s));w.dir=-w.dir;w.side=-w.side;w.pause=Math.random()*2}}
-      if(Math.random()<dt*.02)w.pause=1+Math.random()*3;   // now and then a stop
-      const q=this.place(w);w.p=[q.x,q.y];const go=w.pause<=0;
-      const ph=w.ph+now/1000*7.5;
-      roundPerson(out,{x:q.x-O.x,y:q.y-O.y,r:[-right[1],right[0]],f:right},sc*1.3,go?Math.abs(Math.sin(ph))*.18:0,go?Math.sin(ph):0,q.f[0]*right[0]+q.f[1]*right[1]>=0?1:-1,w.col,w.pants,w.hair);
-    }
-    if(!out.length)return;trainFrameSoon(1000/TRAIN_FPS);   // they walk: keep drawing
-    const data=new Float32Array(out),n=data.length/22;if(!this.pb)this.pb=gl.createBuffer();
-    this.use(gl,M,z);gl.bindBuffer(gl.ARRAY_BUFFER,this.pb);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);this.ptrs(gl);gl.depthMask(false);
-    // as the trains: full in front of the buildings, faint behind them (through the map's see-through buildings)
-    gl.depthMask(false);
-    if(occlude){gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);gl.drawArrays(gl.TRIANGLES,0,n)}
-    gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,0,n);gl.depthMask(false);   // their depth: the track tests against it
-    for(const k of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[k]);
-  }
+  // city-life: the little people on the streets are city_life.mjs's now, in both city modes (the same figures in the same places, only toned by the mode); the walkers that strolled here (streets/snap/spawn/place/people) went with them.
   render(gl,M,occlude){
     const z=map.getZoom();if(!coaster||z<12.5)return;if(!this.p)this.init(gl);
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),w=hi.x-lo.x;
@@ -1780,23 +1721,6 @@ precision highp float;in vec3 v_c;uniform float u_alpha;out vec4 o;void main(){o
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
   }
 }
-const RIDER_MINZOOM=16;
-// A walker: a round little person, drawn face on to the camera (q.f is the screen's right on the ground, so nothing is
-// seen edge on): stubby legs with round feet, a round-cornered body in its shirt colour, short arms with round hands and a
-// big round head with hair on top. In px of sc; sw swings legs and arms (−1…1 walking, 0 standing), bob lifts it each
-// step, m mirrors it to the way it walks. 22 floats a vertex, as the coaster track's.
-function roundPerson(arr,q,sc,bob,sw,m,col,pants,hair){
-  const v=(f,zz,cl,sh)=>arr.push(q.x,q.y,0,1,q.r[0],q.r[1],0,0,0,0,f*m,zz,q.f[0],q.f[1],0,0,0,1,cl[0],cl[1],cl[2],sh);
-  const disc=(cf,cz,rf,rz,cl,sh,a0=0,a1=2*Math.PI,N=12)=>{for(let i=0;i<N;i++){const t0=a0+(a1-a0)*i/N,t1=a0+(a1-a0)*(i+1)/N;v(cf,cz,cl,sh);v(cf+rf*Math.cos(t0),cz+rz*Math.sin(t0),cl,sh);v(cf+rf*Math.cos(t1),cz+rz*Math.sin(t1),cl,sh)}};
-  const bar=(f0,z0,f1,z1,w,cl,sh)=>{const dx=f1-f0,dz=z1-z0,l=Math.hypot(dx,dz)||1,nf=-dz/l*w,nz=dx/l*w;for(const [f,zz] of [[f0-nf,z0-nz],[f0+nf,z0+nz],[f1+nf,z1+nz],[f0-nf,z0-nz],[f1+nf,z1+nz],[f1-nf,z1-nz]])v(f,zz,cl,sh)};
-  const u=sc,z=bob*u,hip=z+1*u,top=z+2.7*u,hr=.95*u,hz=top+.75*u;
-  for(const d of [-1,1]){const fx=d*.38*u+sw*d*.35*u;bar(d*.38*u,hip,fx,z+.25*u,.26*u,pants,.85);disc(fx+.08*u,z+.2*u,.3*u,.2*u,[.18,.18,.2],1)}   // legs, round feet
-  const bw=.85*u,br=.55*u;bar(0,hip+br*.6,0,top-br*.4,bw,col,1);disc(0,hip+br*.6,bw,br,col,1,Math.PI,2*Math.PI,8);disc(0,top-br*.4,bw,br,col,1,0,Math.PI,8);   // round body
-  for(const d of [-1,1]){const hx=d*1.15*u-sw*d*.4*u,hz2=hip+.75*u;bar(d*.75*u,top-.45*u,hx,hz2,.2*u,col,.88);disc(hx,hz2,.22*u,.22*u,SKIN,1,0,2*Math.PI,8)}   // short arms, round hands
-  disc(0,hz,hr,hr,SKIN,1);disc(0,hz+.12*u,hr*1.03,hr*.95,hair,1,Math.PI*.05,Math.PI*.95,10);   // head, hair on top
-}
-const SKIN=[.97,.82,.68],HAIR=[[.16,.12,.1],[.3,.2,.12],[.1,.1,.12],[.45,.3,.18]],
-  PANTS=[[.2,.25,.4],[.28,.34,.5],[.18,.18,.2],[.45,.38,.3]],SHIRTS=[[.95,.38,.35],[.3,.58,.92],[1,.8,.2],[.36,.74,.48],[.66,.5,.88],[.98,.62,.32],[.95,.95,.96]];
 const coasterTrack=new CoasterTrack();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer();
@@ -1900,19 +1824,23 @@ map.on('load',()=>{
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
-    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null;
+    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null;   // cityLife: city-life's props
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
       c.style.width=m.style.width;c.style.height=m.style.height;
-      gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
-      const drawn=walls.draw(pd.mainMatrix),behind=drawn?1-mapPalette().bld3dOpacity:0;
+      const drawn=cityOn()?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){rides=new RideLayer(coasterBld.towers);rides.init(gl,maplibregl)}
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
         rides.render(gl,pd.mainMatrix,{now:performance.now(),dark:effectiveTheme()==='dark',night:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y]});
         if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
-      coasterTrack.people(gl,pd.mainMatrix,behind);   // 행인 on the streets, before the track: it covers the ones beneath it
+      if(simcity||coaster){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
+        if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
+        const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+        cityLife.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),pitch:map.getPitch(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
+        if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -1929,7 +1857,7 @@ map.on('load',()=>{
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
-    let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();coasterTrack.streets();requestAnimationFrame(drawTrains)},250)};   // and the streets the walkers use; not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it
+    let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();requestAnimationFrame(drawTrains)},250)};   // not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it   // city-life: the walkers' streets went with the walkers (city_life.mjs)
     wallsNow=()=>{walls.rebuild();requestAnimationFrame(drawTrains)};map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
   }
   // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
@@ -2054,10 +1982,10 @@ let wallsNow=()=>{};   // the train canvas's building walls, again (set up with 
 const mixHex=(a,b,t)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
 const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
 const THEME_KEY='subway-theme';
-const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return P;
+const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return simcity?{...P,...cityPalette(t,{pack:CITY_STYLE})}:P;   // city-life: 심시티 — the ground from the style pack
   const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
   const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
-  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return Q};
+  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -2083,10 +2011,12 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
   set('background','background-color',P.bg);map.triggerRepaint();
   set('bm-water','fill-color',P.water);set('bm-park','fill-color',P.park);set('bm-landcover','fill-color',P.land);set('bm-bld','fill-color',P.bld);
-  set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',coaster?['<',['coalesce',['get','render_height'],10],RIDE_H]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',!coaster)}   // the towers are rides on the coaster
+  set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',cityOn()?0:P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',coaster?['<',['coalesce',['get','render_height'],10],RIDE_H]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',!coaster)}   // the towers are rides on the coaster
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   for(const id of ['station-labels','station-labels-more']){set(id,'text-color',P.stationText);set(id,'text-halo-color',P.halo)}
+  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:CITY_STYLE});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+  syncCity();   // city-build: the buildings follow the mode and theme
 }
 document.head.insertAdjacentHTML('beforeend',`<style>
 html[data-theme=dark]{--board:#0f171b;--paper:#152026;--ink:#e2ebee;--secondary:#a2b3b8;--muted:#8799a0;--rule:#28383f;--navy:#0a171d;--control:#1b2930;--selected:#213d48;color-scheme:dark}
@@ -2178,7 +2108,7 @@ precision mediump float;in vec2 uv;uniform sampler2D t;uniform vec4 c;out vec4 o
     gl.bindFramebuffer(gl.FRAMEBUFFER,prevFbo);gl.viewport(prevVp[0],prevVp[1],prevVp[2],prevVp[3]);
     gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.pComp);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(gl.getUniformLocation(this.pComp,'t'),0);
-    const a=this.alpha;gl.uniform4f(gl.getUniformLocation(this.pComp,'c'),.11*a,.17*a,.2*a,a);
+    const a=this.alpha,C=this.color||[.11,.17,.2];gl.uniform4f(gl.getUniformLocation(this.pComp,'c'),C[0]*a,C[1]*a,C[2]*a,a);   // city-build: colour settable
     gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);loc=gl.getAttribLocation(this.pComp,'a');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
@@ -2204,7 +2134,7 @@ function updateSun(){
       if(!ring||ring.length<3)continue;
       const key=ring[0][0].toFixed(6)+ring[0][1].toFixed(6)+h;if(seen.has(key))continue;seen.add(key);
       // real low-sun shadows run ~10× the height; on a map that blankets whole blocks, so cap at 3.5× height / 250 m
-      const len=Math.min(250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
+      const len=Math.min(cityOn()?+(CITY_STYLE.lighting?.shadow?.maxLengthM??80):250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
       const pts=[];for(const [x,y] of ring){pts.push([x,y]);pts.push([x+dx,y+dy])}
       const hp=hull(pts).map(q=>{const m=maplibregl.MercatorCoordinate.fromLngLat(q);return [m.x-O.x,m.y-O.y]});
       for(let i=1;i<hp.length-1;i++)tris.push(...hp[0],...hp[i],...hp[i+1]);   // convex hull → triangle fan
@@ -2214,7 +2144,9 @@ function updateSun(){
   const fade=Math.max(0,Math.min(1,(el-2)/13));   // fade in over the first ~15° after sunrise, out before sunset
   // phones: small bright screens make the same shade read much darker, so lighten it there
   const phone=matchMedia('(max-width:720px),(pointer:coarse)').matches?.35:1;
-  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},Math.min(coaster?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
+  const cityA=cityOn()?+(CITY_STYLE.modes?.[simcity?'simcity':'coaster']?.shadowOpacity?.[dark?'dark':'light']??.14):null;   // city-build: the city's shadow strength and colour from the style pack
+  sunShadows.color=cityA!=null?hexRGB3(CITY_STYLE.lighting?.shadow?.color||'#394D4B'):null;
+  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},cityA!=null?cityA*fade*phone:Math.min(coaster?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
   map.triggerRepaint();
 }
 
@@ -2248,6 +2180,7 @@ function addBasemap(){
   sym('bm-label-road','transportation_name',['in',['get','class'],['literal',['motorway','trunk','primary','secondary','tertiary']]],13,{'text-size':['interpolate',['linear'],['zoom'],13,10,17,13],'symbol-placement':'line','text-max-angle':30},{'text-color':'#7a8589'});
   sym('bm-label-poi','poi',['all',['<=',['get','rank'],8],['in',['get','class'],['literal',['college','school','hospital','park','stadium','castle','monument','museum','townhall','attraction']]]],15,{'text-size':11,'text-anchor':'top','text-offset':[0,.3]},{'text-color':'#8a7f6d'});
   sym('bm-label-place','place',['in',['get','class'],['literal',['city','town','suburb','quarter','neighbourhood']]],10,{'text-size':['match',['get','class'],'suburb',14,'quarter',12,'neighbourhood',11,15],'text-letter-spacing':.05},{'text-color':'#56656a'});
+  addCityLayers(map,{pack:CITY_STYLE});   // city-life: the city ground's layers (hidden until a city mode is on)
   applyTheme();
 }
 $('toggleMap').onclick=e=>{
@@ -2256,13 +2189,14 @@ $('toggleMap').onclick=e=>{
   e.currentTarget.setAttribute('aria-pressed',String(on));
   if(on&&!map.getSource('ofm'))addBasemap();
   for(const id of BASEMAP_LAYERS)if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');
-  updateSun();
+  updateSun();applyTheme();   // city-life: the city layers follow the map toggle
 };
 // 롤러코스터: on, the lines are lifted onto their own paths (coasterPath; the route lines on the ground follow them, faintly) and the view
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function setCoaster(on,speed=coasterSpeed){
   if(on&&!coasterBld){coasterWant=true;$('toggleCoaster').setAttribute('aria-pressed','true');loadCoasterBuildings().then(()=>{if(coasterWant)setCoaster(true,speed)});return}   // its courses need the buildings: wait for them
-  coasterWant=on;
+  coasterWant=on;if(on&&simcity){simcity=false;$('toggleSimcity')?.setAttribute('aria-pressed','false')}
+  if(on)cityMap();
   const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
@@ -2272,6 +2206,9 @@ function setCoaster(on,speed=coasterSpeed){
     applyTheme();updateSun();wallsNow()}   // the park colours, and the towers out of the shadows and walls
   map.triggerRepaint();
 }
+function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
+function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;applyTheme();updateSun();wallsNow();map.triggerRepaint()}
+if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!simcity);
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
@@ -2296,4 +2233,4 @@ map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
+window.__subwayWebGL={map,cityBuildings,setSimcity,setCoaster,get simcity(){return simcity},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
