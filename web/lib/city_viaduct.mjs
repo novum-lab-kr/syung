@@ -1,7 +1,11 @@
 // 심시티 고가 (viaduct) — in the simcity mode every line rides a viaduct over the streets, the way 2호선 does at 건대입구:
 // a concrete deck with the line's colour along its parapets, on single piers that stand only on the roads and the open
 // ground (never inside a building's footprint: a pier that would is moved along the track, or left out), with roofed
-// side platforms at the stations. The trains run on the deck (the runtime lifts them to the same height, railM).
+// side platforms at the stations and, from each platform, roofed stairs down to the station's real exits
+// (city_viaduct_exits.mjs). The trains run on the deck (the runtime lifts them to the same height, heightAt).
+// At a transfer station whose platforms overlap in plan the lines take different levels (11 m, 18 m, 25 m…), the deck
+// ramping gently between stations (city_viaduct_levels.mjs); stretches that really run in a tunnel under a street may
+// be moved onto that street (city_viaduct_snap.mjs, built offline; the runtime draws and drives on the moved path).
 // Drawn on the train overlay canvas after the buildings have written their depth, so a tall building hides the deck
 // behind it and a low one passes under it, exactly as with the trains. Stretches that really are elevated (OSM
 // bridge=*, web/lib/city_viaduct_flags.mjs) get a slightly darker concrete; the rest looks the same, only lifted.
@@ -9,13 +13,15 @@
 //
 //   const v = new CityViaduct({pack, net});
 //   v.train(zoom, bodyPx) → {bodyPx, lanePx}      // the trains' width and lane offset in this mode (the deck is cut to them)
-//   v.railM                                       // the rail height in metres (the runtime lifts the trains by it)
-//   v.render(gl, matrix, {now, zoom, dark, phone, pixelRatio, bounds, sun, life, selected, moving, bodyPx}) → true while still building
-//   v.screen(map, x, y, h)   v.shadowShift(sun)   v.routeOpacity(focus)   v.dispose(gl)
+//   v.heightAt(line, a, b, k) → metres            // the rail height k of the way from station a to b (the runtime lifts the trains by it)
+//   v.stationH(line, id) → metres                 // the rail height at a station (its level)
+//   v.snapped(line, lo, hi) → [[lon,lat]…] | null // the edge's path moved onto its street, when it was
+//   v.render(gl, matrix, {now, zoom, dark, phone, bounds, sun, life, selected, moving, bodyPx}) → true while still building
+//   v.screen(map, x, y, h)   v.shadowShift(sun, hM)   v.routeOpacity(focus)   v.dispose(gl)
 //
 //   net: the runtime's network — {paths, byId, geom(line,lo,hi) → {pts: [MercatorCoordinate…]}, offset(line,lo,hi) → px,
-//        colors, rects: Map(line:stationId → {coords, offset, plat})}
-//   life: the CityLife instance (its cells know the building footprints; piers wait for a cell before they stand)
+//        colors, rects: Map(line:stationId → {coords, offset, plat}), exits: {stationId: [[lon,lat,ref…]…]}, bodyPx(zoom) → px}
+//   life: the CityLife instance (its cells know the building footprints; piers and stairs wait for a cell before they stand)
 //
 // Widths across the track are in CSS px (the trains are px-sized, the deck must carry them), heights and the piers'
 // footprints in metres with a px floor so they never vanish. Zoomed out, where no cars drive, the deck is slimmer than
@@ -23,15 +29,19 @@
 
 import SEOUL from './city_style_seoul.mjs';
 import FLAGS from './city_viaduct_flags.mjs';
+import SNAP from './city_viaduct_snap.mjs';
 import { toneRGB, hexRgb, MPP } from './city_style.mjs';
 import { compileProgram, hashi } from './city_traffic.mjs';
 import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
+import { STRIDE, MAT, COLOR_KEYS, Mesh } from './city_viaduct_mesh.mjs';
+import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance } from './city_viaduct_levels.mjs';
+import { layoutExits, buildExits, exitSamples } from './city_viaduct_exits.mjs';
+export { STRIDE, MAT };
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
-// materials (the shader's u_col index; PARAPET and FASCIA take the line's colour)
-export const MAT = { TOP: 0, SIDE: 1, UNDER: 2, PARAPET: 3, PIER: 4, BED: 5, RAIL: 6, FLOOR: 7, ROOF: 8, ROOF_UNDER: 9, POST: 10, FASCIA: 11 };
-const COLOR_KEYS = ['concrete', 'concrete', 'under', 'concrete', 'pier', 'bed', 'rail', 'platform', 'roof', 'roofUnder', 'post', 'concrete'];
+// local metres back to lon/lat (the inverse of city_life's toM)
+export const toLL = (x, y) => { const mx = O.x + x * MU, my = O.y + y * MU; return [(mx - .5) * 360, Math.atan(Math.sinh(Math.PI * (1 - 2 * my))) * 180 / Math.PI] };
 
 // ── pure helpers (the tests use them too) ────────────────────────────────────────────────────────
 // the trains in this mode: the body the runtime gives (its slim coaster width) and a lane half a body plus the pack's gap off the line
@@ -41,6 +51,8 @@ export function deckWidths(zoom, bodyPx, pack = SEOUL) {
   const V = V_OF(pack), { lanePx } = trainMetrics(zoom, bodyPx, pack), k = smooth(V.widthZoom[0], V.widthZoom[1], zoom);
   return { lane: V.lowZoomLanePx + (lanePx - V.lowZoomLanePx) * k, body: V.lowZoomBodyPx + (bodyPx - V.lowZoomBodyPx) * k };
 }
+// the platform's outer edge from the deck's centre, in metres at a zoom (px-sized, so it varies with the zoom)
+export function platformEdgeM(zoom, bodyPx, pack = SEOUL) { const V = V_OF(pack), W = deckWidths(zoom, bodyPx, pack); return (V.marginPx + V.station.gapPx + W.lane + (.5 + V.station.platformDepthRatio) * W.body) * MPP(zoom) }
 // the rows of a ribbon along a polyline (local metres): the point, the direction F, the across vector R mitred at the bends
 // (an offset along it keeps the ribbon's width through a corner; capped at 2.5× for sharp ones) and the distance along, s
 export function ribbonRows(P) {
@@ -64,6 +76,16 @@ export function rowAt(rows, s) {
   const A = rows[i - 1], B = rows[i], l = (B.s - A.s) || 1, u = Math.max(0, Math.min(1, (s - A.s) / l)), dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
   return { x: A.x + dx * u, y: A.y + dy * u, fx: dx / d, fy: dy / d, rx: -dy / d, ry: dx / d, s };
 }
+// a ribbon's rows cut so no segment is longer than `max` metres (a ramp needs rows to bend over)
+export function densify(rows, max) {
+  if (!(max > 0)) return rows; const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    out.push(rows[i]); if (i + 1 >= rows.length) continue;
+    const A = rows[i], B = rows[i + 1], L = B.s - A.s, n = Math.ceil(L / max);
+    for (let k = 1; k < n; k++) out.push(rowAt(rows, A.s + L * k / n));
+  }
+  return out;
+}
 // pier spots along an edge: one every `every` m from a phase, each moved along the track (6 m steps, up to `search` m) off a
 // building. ok(s) → true (clear ground), false (inside a building), undefined (not known yet: that tile has not come). Returns
 // the spots and whether one was left open for want of a tile (the caller builds again when it has come).
@@ -80,51 +102,40 @@ export function pierSpots(total, every, search, phase, ok) {
 export function elevatedAt(ranges, t) { if (ranges) for (const [a, b] of ranges) if (t >= a && t <= b) return true; return false }
 // the ground route line's opacity in this mode: it fades out as the deck takes over
 export function routeOpacityExpr(focus, pack = SEOUL) { const [z0, z1] = V_OF(pack).lod.deck; return ['interpolate', ['linear'], ['zoom'], z0, focus ? .25 : .9, z1, 0] }
+const fnOf = h => typeof h === 'function' ? h : () => h;
 
 // ── meshes ──────────────────────────────────────────────────────────────────────────────────────
-// 20 floats a vertex: x y (local m) h (m) · R · F · px across, px along · ×lane, ×body (px across) · m across, m along
-// (centre) · half size across, along (m, signed) · their px floors (signed) · material, shade · normal code (0 up, ±1 ±R, ±2 ±F, 3 down)
-export const STRIDE = 20;
-class Mesh {
-  constructor(n) { this.d = new Float32Array(Math.max(STRIDE, n * STRIDE)); this.o = 0 }
-  v(r, h, px, kl, kb, apx, lm, am, szl, sza, lp, ap, mat, shade, n) {
-    if (this.o + STRIDE > this.d.length) { const g = new Float32Array(this.d.length * 2); g.set(this.d); this.d = g }
-    const d = this.d, o = this.o; this.o += STRIDE;
-    d[o] = r.x; d[o + 1] = r.y; d[o + 2] = h; d[o + 3] = r.rx; d[o + 4] = r.ry; d[o + 5] = r.fx; d[o + 6] = r.fy; d[o + 7] = px; d[o + 8] = apx; d[o + 9] = kl; d[o + 10] = kb;
-    d[o + 11] = lm; d[o + 12] = am; d[o + 13] = szl; d[o + 14] = sza; d[o + 15] = lp; d[o + 16] = ap; d[o + 17] = mat; d[o + 18] = shade; d[o + 19] = n;
-  }
-  quad(a, b, c, d) { for (const q of [a, b, c, a, c, d]) this.v(...q) }
-  data() { return this.d.subarray(0, this.o) }
-}
-// the deck along an edge: base = top, underside, sides and the parapets; detail = the two track beds and their rails
+// the deck along an edge: base = top, underside, sides and the parapets; detail = the two track beds and their rails.
+// hT: the rail height in metres, a number or a function of s (the distance along) for an edge that ramps
 export function buildDeck(rows, eo, V, flags, detail, hT = V.railHeightM) {
-  const M = new Mesh(rows.length * (detail ? 36 : 60)), hB = hT - V.deckThicknessM, hP = hT + V.parapetHeightM, mg = V.marginPx, pp = V.parapetPx, total = rows[rows.length - 1].s || 1, K = V.elevatedConcreteK;
+  const H = fnOf(hT), M = new Mesh(rows.length * (detail ? 36 : 60)), mg = V.marginPx, pp = V.parapetPx, total = rows[rows.length - 1].s || 1, K = V.elevatedConcreteK;
   for (let i = 0; i + 1 < rows.length; i++) {
-    const a = rows[i], b = rows[i + 1], sh = elevatedAt(flags, (a.s + b.s) / 2 / total) ? K : 1;
+    const a = rows[i], b = rows[i + 1], sh = elevatedAt(flags, (a.s + b.s) / 2 / total) ? K : 1, hA = H(a.s), hB = H(b.s);
     const P = (r, h, px, kl, kb, mat, n, shade = sh) => [r, h, px, kl, kb, 0, 0, 0, 0, 0, 0, 0, mat, shade, n];
     if (!detail) {
-      M.quad(P(a, hT, eo + mg, 1, .5, MAT.TOP, 0), P(b, hT, eo + mg, 1, .5, MAT.TOP, 0), P(b, hT, eo - mg, -1, -.5, MAT.TOP, 0), P(a, hT, eo - mg, -1, -.5, MAT.TOP, 0));
-      M.quad(P(a, hB, eo + mg, 1, .5, MAT.UNDER, 3), P(b, hB, eo + mg, 1, .5, MAT.UNDER, 3), P(b, hB, eo - mg, -1, -.5, MAT.UNDER, 3), P(a, hB, eo - mg, -1, -.5, MAT.UNDER, 3));
+      const dT = V.deckThicknessM, hP = V.parapetHeightM;
+      M.quad(P(a, hA, eo + mg, 1, .5, MAT.TOP, 0), P(b, hB, eo + mg, 1, .5, MAT.TOP, 0), P(b, hB, eo - mg, -1, -.5, MAT.TOP, 0), P(a, hA, eo - mg, -1, -.5, MAT.TOP, 0));
+      M.quad(P(a, hA - dT, eo + mg, 1, .5, MAT.UNDER, 3), P(b, hB - dT, eo + mg, 1, .5, MAT.UNDER, 3), P(b, hB - dT, eo - mg, -1, -.5, MAT.UNDER, 3), P(a, hA - dT, eo - mg, -1, -.5, MAT.UNDER, 3));
       for (const d of [-1, 1]) {
         const px = eo + d * mg, kl = d, kb = d * .5, pi = px - d * pp;
-        M.quad(P(a, hB, px, kl, kb, MAT.SIDE, d), P(b, hB, px, kl, kb, MAT.SIDE, d), P(b, hT, px, kl, kb, MAT.SIDE, d), P(a, hT, px, kl, kb, MAT.SIDE, d));
-        M.quad(P(a, hT, px, kl, kb, MAT.PARAPET, d, 1), P(b, hT, px, kl, kb, MAT.PARAPET, d, 1), P(b, hP, px, kl, kb, MAT.PARAPET, d, 1), P(a, hP, px, kl, kb, MAT.PARAPET, d, 1));
-        M.quad(P(a, hT, pi, kl, kb, MAT.PARAPET, -d, 1), P(b, hT, pi, kl, kb, MAT.PARAPET, -d, 1), P(b, hP, pi, kl, kb, MAT.PARAPET, -d, 1), P(a, hP, pi, kl, kb, MAT.PARAPET, -d, 1));
-        M.quad(P(a, hP, px, kl, kb, MAT.PARAPET, 0, 1), P(b, hP, px, kl, kb, MAT.PARAPET, 0, 1), P(b, hP, pi, kl, kb, MAT.PARAPET, 0, 1), P(a, hP, pi, kl, kb, MAT.PARAPET, 0, 1));
+        M.quad(P(a, hA - dT, px, kl, kb, MAT.SIDE, d), P(b, hB - dT, px, kl, kb, MAT.SIDE, d), P(b, hB, px, kl, kb, MAT.SIDE, d), P(a, hA, px, kl, kb, MAT.SIDE, d));
+        M.quad(P(a, hA, px, kl, kb, MAT.PARAPET, d, 1), P(b, hB, px, kl, kb, MAT.PARAPET, d, 1), P(b, hB + hP, px, kl, kb, MAT.PARAPET, d, 1), P(a, hA + hP, px, kl, kb, MAT.PARAPET, d, 1));
+        M.quad(P(a, hA, pi, kl, kb, MAT.PARAPET, -d, 1), P(b, hB, pi, kl, kb, MAT.PARAPET, -d, 1), P(b, hB + hP, pi, kl, kb, MAT.PARAPET, -d, 1), P(a, hA + hP, pi, kl, kb, MAT.PARAPET, -d, 1));
+        M.quad(P(a, hA + hP, px, kl, kb, MAT.PARAPET, 0, 1), P(b, hB + hP, px, kl, kb, MAT.PARAPET, 0, 1), P(b, hB + hP, pi, kl, kb, MAT.PARAPET, 0, 1), P(a, hA + hP, pi, kl, kb, MAT.PARAPET, 0, 1));
       }
     } else for (const d of [-1, 1]) {   // the track beds and the rails, at ±lane where the trains run
       const w = V.bedWidthRatio / 2, g = V.railGaugeRatio / 2, rp = V.railPx / 2;
-      M.quad(P(a, hT + .08, eo, d, w, MAT.BED, 0, 1), P(b, hT + .08, eo, d, w, MAT.BED, 0, 1), P(b, hT + .08, eo, d, -w, MAT.BED, 0, 1), P(a, hT + .08, eo, d, -w, MAT.BED, 0, 1));
-      for (const e of [-1, 1]) M.quad(P(a, hT + .16, eo + rp, d, e * g, MAT.RAIL, 0, 1), P(b, hT + .16, eo + rp, d, e * g, MAT.RAIL, 0, 1), P(b, hT + .16, eo - rp, d, e * g, MAT.RAIL, 0, 1), P(a, hT + .16, eo - rp, d, e * g, MAT.RAIL, 0, 1));
+      M.quad(P(a, hA + .08, eo, d, w, MAT.BED, 0, 1), P(b, hB + .08, eo, d, w, MAT.BED, 0, 1), P(b, hB + .08, eo, d, -w, MAT.BED, 0, 1), P(a, hA + .08, eo, d, -w, MAT.BED, 0, 1));
+      for (const e of [-1, 1]) M.quad(P(a, hA + .16, eo + rp, d, e * g, MAT.RAIL, 0, 1), P(b, hB + .16, eo + rp, d, e * g, MAT.RAIL, 0, 1), P(b, hB + .16, eo - rp, d, e * g, MAT.RAIL, 0, 1), P(a, hA + .16, eo - rp, d, e * g, MAT.RAIL, 0, 1));
     }
   }
   return M.data();
 }
 // the piers of an edge at the spots given: a square column (metres, px floor) under a cap as wide as the deck
 export function buildPiers(rows, spots, eo, V, flags, hT = V.railHeightM) {
-  const M = new Mesh(spots.length * 54), hB = hT - V.deckThicknessM, hC = hB - V.pier.capDepthM, half = V.pier.sideM / 2, mp = V.pier.minPx / 2, cl = V.pier.capLengthM / 2, total = rows[rows.length - 1].s || 1, K = V.elevatedConcreteK;
+  const H = fnOf(hT), M = new Mesh(spots.length * 54), half = V.pier.sideM / 2, mp = V.pier.minPx / 2, cl = V.pier.capLengthM / 2, total = rows[rows.length - 1].s || 1, K = V.elevatedConcreteK;
   for (const s of spots) {
-    const r = rowAt(rows, s), sh = elevatedAt(flags, s / total) ? K : 1;
+    const r = rowAt(rows, s), sh = elevatedAt(flags, s / total) ? K : 1, hB = H(s) - V.deckThicknessM, hC = hB - V.pier.capDepthM;
     const C = (h, l, a, n) => [r, h, eo, 0, 0, 0, 0, 0, l, a, Math.sign(l) * mp, Math.sign(a) * mp, MAT.PIER, sh, n];   // the column
     for (const d of [-1, 1]) {
       M.quad(C(0, d * half, -half, d), C(0, d * half, half, d), C(hC, d * half, half, d), C(hC, d * half, -half, d));
@@ -171,42 +182,58 @@ export function buildPlatform(p, eo, V, detail, hT = V.railHeightM) {
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec2 a_r; layout(location=2) in vec2 a_f; layout(location=3) in vec2 a_px; layout(location=4) in vec2 a_k;
 layout(location=5) in vec2 a_m; layout(location=6) in vec2 a_sz; layout(location=7) in vec2 a_min; layout(location=8) in vec2 a_mat; layout(location=9) in float a_n;
-uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow; uniform vec2 u_shift, u_lit, u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade; uniform vec3 u_col[12];
+uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow, u_railH; uniform vec2 u_shift, u_lit; uniform vec4 u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade; uniform vec3 u_col[16];
 out vec3 v_col; out float v_a;
 float lit(vec3 n, vec3 L, vec2 k){ float d = max(dot(n, L), 0.); return k.x + k.y * (.5 + .5 * d); }
 float sz(float m, float p){ float a = m * u_mu, b = p * u_unit; return abs(b) > abs(a) ? b : a; }   // a size in metres, never under its px floor
 void main(){
   int m = int(a_mat.x + .5);
-  if (u_shadow > .5 && m != 0 && m != 7 && m != 8) { gl_Position = vec4(2., 2., 2., 1.); return; }   // the shadow: the deck's top, the platforms, the roofs
+  if (u_shadow > .5 && m != 0 && m != 7 && m != 8 && m != 14) { gl_Position = vec4(2., 2., 2., 1.); return; }   // the shadow: the deck's top, the platforms, the roofs, the walkways
   vec2 R = a_r, F = a_f;
   float lat = a_m.x * u_mu + sz(a_sz.x, a_min.x) + (a_px.x + a_k.x * u_lane + a_k.y * u_body) * u_unit, alo = a_m.y * u_mu + sz(a_sz.y, a_min.y) + a_px.y * u_unit;
   vec3 p = vec3(a_pos.xy * u_mu + R * lat + F * alo, a_pos.z * u_mu);
-  if (u_shadow > .5) { p.xy += u_shift; p.z = .05 * u_mu; gl_Position = u_matrix * vec4(p, 1.); gl_Position.z -= 1.5e-5 * gl_Position.w; v_col = u_shade; v_a = u_alpha; return; }
+  if (u_shadow > .5) { p.xy += u_shift * clamp(a_pos.z / u_railH, 0., 4.); p.z = .05 * u_mu; gl_Position = u_matrix * vec4(p, 1.); gl_Position.z -= 1.5e-5 * gl_Position.w; v_col = u_shade; v_a = u_alpha; return; }   // on the ground, away from the sun by its height
   gl_Position = u_matrix * vec4(p, 1.);
   vec3 n = a_n == 0. ? vec3(0., 0., 1.) : abs(a_n) < 1.5 ? vec3(normalize(R) * sign(a_n), 0.) : abs(a_n) < 2.5 ? vec3(F * sign(a_n), 0.) : vec3(0., 0., -1.);
   vec3 c = (m == 3 || m == 11) ? u_line : u_col[m];
   c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;
   if (m == 2) c = mix(c, u_glow, u_night * u_glowK.x);                       // under the deck: lit softly at night
-  if (m == 9 || m == 7) c = mix(c, u_glow, u_night * u_glowK.y * (m == 7 ? .6 : 1.));   // the platforms and under their roofs
+  if (m == 9 || m == 7) c = mix(c, u_glow, u_night * u_glowK.y * (m == 7 ? .6 : 1.));   // the platforms and under their roofs (the stairs' roofs too)
+  if (m == 12) c = mix(c, u_glow, u_night * u_glowK.z);                      // the stairs' treads
+  if (m == 14) c = mix(c, u_glow, u_night * u_glowK.w);                      // the walkways
   v_col = c; v_a = u_alpha;
 }`;
 const FS = `#version 300 es
 precision highp float; in vec3 v_col; in float v_a; out vec4 o;
 void main(){ o = vec4(clamp(v_col, 0., 1.) * v_a, v_a); }`;
-const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col'];
+const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_railH', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col'];
 const ATTRS = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 2, 7], [4, 2, 9], [5, 2, 11], [6, 2, 13], [7, 2, 15], [8, 2, 17], [9, 1, 19]];
 
 export class CityViaduct {
-  constructor({ pack = SEOUL, net } = {}) { this.pack = pack; this.V = V_OF(pack); this.net = net; this.cache = new Map(); this.plats = new Map(); this.bytes = 0; this.frame = 0; this.stats = {}; this.edges = null; this.gl = null; this.broken = false; this.rgb = new Map() }
+  constructor({ pack = SEOUL, net } = {}) {
+    this.pack = pack; this.V = V_OF(pack); this.net = net; this.cache = new Map(); this.plats = new Map(); this.bytes = 0; this.frame = 0; this.stats = {}; this.edges = null; this.edgeIndex = null; this.gl = null; this.broken = false; this.rgb = new Map();
+    this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map();
+  }
   get railM() { return this.V.railHeightM }
-  // this line's rail height: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
+  // this line's rail height at level 1: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
   railFor(line) { let h = 0; for (let i = 0; i < line.length; i++) h = (h * 31 + line.charCodeAt(i)) >>> 0; return this.V.railHeightM + (h % 4) * (this.V.lineStepM ?? .04) }
+  // the rail height at a station: its level on this line (levels.stepM a level) over the line's base
+  stationH(line, id) { const L = this.levelsOf()?.get(line + ':' + id) ?? 1; return this.railFor(line) + (L - 1) * this.V.levels.stepM }
+  levelOf(line, id) { return this.levelsOf()?.get(line + ':' + id) ?? 1 }
+  // the rail height k of the way from station a to station b (metres), on the edge's profile
+  heightAt(line, a, b, k) {
+    const e = this.edgeOf(line, a, b); if (!e) return this.railFor(line);
+    const rows = this.rowsOf(e), total = rows.length ? rows[rows.length - 1].s : 0, s = (a < b ? k : 1 - k) * total;
+    return this.profileOf(e)(Math.max(0, Math.min(total, s)));
+  }
+  // the edge's path moved onto its street (built offline), or nothing
+  snapped(line, lo, hi) { return SNAP[`${line}:${lo}:${hi}`] || null }
   train(zoom, bodyPx) { return trainMetrics(zoom, bodyPx, this.pack) }
   routeOpacity(focus) { return routeOpacityExpr(focus, this.pack) }
-  // where the deck's shadow falls: away from the sun by the deck's height (mercator units; nothing when the sun is down)
-  shadowShift(sun) {
+  // where a thing hM metres up casts its shadow: away from the sun by its height (mercator units; nothing when the sun is down)
+  shadowShift(sun, hM = this.V.railHeightM) {
     const V = this.V; if (!sun || !(sun.elevation > 2)) return [0, 0];
-    const away = (sun.azimuth + 180) * Math.PI / 180, L = Math.min(V.shadow.maxLengthM, V.railHeightM / Math.tan(Math.max(sun.elevation, 8) * Math.PI / 180)) * MU;
+    const away = (sun.azimuth + 180) * Math.PI / 180, L = Math.min(V.shadow.maxLengthM * hM / V.railHeightM, hM / Math.tan(Math.max(sun.elevation, 8) * Math.PI / 180)) * MU;
     return [Math.sin(away) * L, -Math.cos(away) * L];
   }
   // a point at height h (mercator units) on the screen, through the matrix the trains are drawn with (map.project knows no height)
@@ -218,27 +245,84 @@ export class CityViaduct {
   init(gl) { this.p = compileProgram(gl, VS, FS); this.u = Object.fromEntries(UNIFORMS.map(n => [n, gl.getUniformLocation(this.p, n)])); this.gl = gl; this.MT = new Float32Array(16) }
   // every station-to-station edge of every line, as the runtime draws them (lo → hi)
   edgeList() {
-    if (this.edges) return this.edges; const { paths, byId } = this.net, seen = new Set(), out = [];
+    if (this.edges) return this.edges; const { paths, byId } = this.net, seen = new Set(), out = []; this.edgeIndex = new Map();
     for (const [line, chunks] of Object.entries(paths || {})) for (const ids of chunks) for (let i = 1; i < ids.length; i++) {
-      const lo = Math.min(ids[i - 1], ids[i]), hi = Math.max(ids[i - 1], ids[i]), id = `${line}:${lo}:${hi}`; if (seen.has(id) || !byId.has(lo) || !byId.has(hi)) continue; seen.add(id); out.push({ id, line, lo, hi, g: null, rows: null }) }
+      const lo = Math.min(ids[i - 1], ids[i]), hi = Math.max(ids[i - 1], ids[i]), id = `${line}:${lo}:${hi}`; if (seen.has(id) || !byId.has(lo) || !byId.has(hi)) continue; seen.add(id); const e = { id, line, lo, hi, g: null, rows: null }; out.push(e); this.edgeIndex.set(id, e) }
     return this.edges = out;
   }
-  // the edge's rows in local metres — again when the runtime's geometry object changes (the track shapes arrive after the first frames)
+  edgeOf(line, a, b) { this.edgeList(); return this.edgeIndex.get(`${line}:${Math.min(a, b)}:${Math.max(a, b)}`) || null }
+  // the edge's rows in local metres — again when the runtime's geometry object changes (the track shapes arrive after the first frames; the simcity path differs)
   rowsOf(e) {
     const g = this.net.geom(e.line, e.lo, e.hi); if (e.g === g && e.rows) return e.rows;
-    e.g = g; e.rows = ribbonRows(g.pts.map(q => [(q.x - O.x) / MU, (q.y - O.y) / MU])); e.flags = FLAGS[e.id] || null; e.eo = this.net.offset(e.line, e.lo, e.hi);
+    e.g = g; e.rows = ribbonRows(g.pts.map(q => [(q.x - O.x) / MU, (q.y - O.y) / MU])); e.flags = FLAGS[e.id] || null; e.eo = this.net.offset(e.line, e.lo, e.hi); e.prof = null; e.dense = null;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of e.rows) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x); y1 = Math.max(y1, r.y) } e.box = [x0, y0, x1, y1];
     for (const k of ['deck', 'det', 'pier']) this.del(k + ':' + e.id);
     return e.rows;
   }
+  // the edge's height profile: flat at each station's level, one gentle ramp between when they differ
+  profileOf(e) {
+    if (e.prof && e.profV === this.levelsVersion) return e.prof;
+    const rows = this.rowsOf(e), total = rows.length ? rows[rows.length - 1].s : 0, hLo = this.stationH(e.line, e.lo), hHi = this.stationH(e.line, e.hi);
+    e.prof = edgeProfile(hLo, hHi, total, this.platLength(e.line, e.lo) / 2, this.platLength(e.line, e.hi) / 2, this.pack); e.profV = this.levelsVersion; e.ramp = Math.abs(hLo - hHi) > 1e-6;
+    return e.prof;
+  }
+  platLength(line, id) { const r = this.net.rects?.get(line + ':' + id); return r ? this.platGeom(r).L : 2 * 90 * .5 }
+  // the rows the deck is built on: cut to short pieces where the edge ramps, so the ramp bends smoothly
+  deckRows(e) { this.profileOf(e); if (!e.ramp) return e.rows; return e.dense || (e.dense = densify(e.rows, 12)) }
+  // the levels of every line:station (city_viaduct_levels.mjs), from the station rectangles; again when they change
+  levelsOf() {
+    const rects = this.net.rects; if (!rects || !rects.size) return this.levels;
+    if (this.levels && this.levelRects === rects && this.levelCount === rects.size && !this.levelsDirty) return this.levels;
+    const Lv = this.V.levels, lines = new Map(); for (const k of rects.keys()) { const id = k.slice(k.lastIndexOf(':') + 1); lines.set(id, (lines.get(id) || 0) + 1) }
+    const levels = stationLevels(rects, toM, Lv.overlapM);
+    holdLevels(levels, this.net.paths, (line, a, b) => { const e = this.edgeOf(line, a, b); if (!e) return 1e9; const r = this.rowsOf(e); return r.length ? r[r.length - 1].s : 1e9 }, Lv.holdM, id => (lines.get(String(id)) || 0) <= 1);
+    this.levels = levels; this.levelRects = rects; this.levelCount = rects.size; this.levelsDirty = false; this.levelsVersion++;
+    for (const k of [...this.cache.keys()]) this.del(k); this.plats.clear(); this.exitLayouts.clear();   // every height may have changed
+    return levels;
+  }
   platGeom(rect) {
     const c = rect.coords, A = toM(c[0][0], c[0][1]), B = toM(c[c.length - 1][0], c[c.length - 1][1]), dx = B[0] - A[0], dy = B[1] - A[1], d = Math.hypot(dx, dy) || 1, fx = dx / d, fy = dy / d;
     const L = Math.max(20, d * Math.max(.1, Math.min(1, rect.plat || 1))), cx = (A[0] + B[0]) / 2, cy = (A[1] + B[1]) / 2, h = L / 2 + 30;
-    return { rect, row: { x: cx, y: cy, fx, fy, rx: -fy, ry: fx }, L, box: [cx - h, cy - h, cx + h, cy + h] };
+    return { rect, row: { x: cx, y: cy, fx, fy, rx: -fy, ry: fx }, L, H: d / 2, box: [cx - h, cy - h, cx + h, cy + h] };
   }
   spots(e, life) {
-    const rows = e.rows, P = this.V.pier;
-    return pierSpots(rows[rows.length - 1].s, P.everyM, P.searchM, hashi(e.lo, e.hi, 7), s => { const q = rowAt(rows, s), r = life.inBuilding(q.x, q.y); return r === undefined ? undefined : !r });
+    const rows = e.rows, P = this.V.pier, H = this.profileOf(e), obs = this.pierObstacles(e);
+    return pierSpots(rows[rows.length - 1].s, P.everyM, P.searchM, hashi(e.lo, e.hi, 7), s => {
+      const q = rowAt(rows, s);
+      if (obs.length) { const h = H(s); for (const o of obs) if (h > o.h + 1 && pointSegmentDistance([q.x, q.y], o.seg[0], o.seg[1]) < o.half) return false }   // no pier of an upper deck down through a lower line's station
+      const r = life.inBuilding(q.x, q.y); return r === undefined ? undefined : !r });
+  }
+  // the other lines' station structures at this edge's two stations: an upper deck's piers keep out of them
+  pierObstacles(e) {
+    const out = [], rects = this.net.rects; if (!rects) return out; const half = platformEdgeM(17, this.net.bodyPx ? this.net.bodyPx(17) : 26, this.pack) + 2;
+    for (const id of [e.lo, e.hi]) for (const [k, rect] of rects) {
+      const i = k.lastIndexOf(':'); if (k.slice(i + 1) !== String(id)) continue; const ln = k.slice(0, i); if (ln === e.line) continue;
+      const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect), c = g.row, hh = g.H;
+      out.push({ seg: [[c.x - c.fx * hh, c.y - c.fy * hh], [c.x + c.fx * hh, c.y + c.fy * hh]], half, h: this.stationH(ln, id) });
+    }
+    return out;
+  }
+  // ── the exits: each of the station's exits reaches the nearest platform drawn; laid out in that platform's frame ──
+  exitLayout(key, p, line, id, life, solo, selected) {
+    const X = this.V.exits, S = this.V.station, net = this.net, list = net.exits?.[id]; if (!list || !list.length) return null;
+    const r = p.row, frame = (x, y) => ({ t: (x - r.x) * r.fx + (y - r.y) * r.fy, u: (x - r.x) * r.rx + (y - r.y) * r.ry });
+    // the station's platforms drawn (all lines, or the selected one): an exit goes to the nearest; the others' decks are in the way of a stair
+    const others = [], mine = []; for (const [k, rect] of net.rects) { const i = k.lastIndexOf(':'); if (k.slice(i + 1) !== String(id)) continue; const ln = k.slice(0, i); if (solo && ln !== selected) continue; const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect); (ln === line ? mine : others).push({ line: ln, g, h: this.stationH(ln, id) }) }
+    const segOf = g => { const c = g.row, h = g.L / 2; return [[c.x - c.fx * h, c.y - c.fy * h], [c.x + c.fx * h, c.y + c.fy * h]] };
+    const exits = [];
+    for (const [lon, lat, ref] of list) {
+      const [x, y] = toM(lon, lat); let best = Infinity, bestLine = line;
+      for (const o of [...mine, ...others]) { const d = pointSegmentDistance([x, y], ...segOf(o.g)) + (this.levelOf(o.line, id) - 1) * (X.levelPenaltyM ?? 40); if (d < best) { best = d; bestLine = o.line } }   // the nearest platform, the lower levels preferred: a stair from an upper one would have to come down through the lower line's station
+      if (bestLine !== line) continue;
+      exits.push({ ref: String(ref), ...frame(x, y), lon, lat });
+    }
+    if (!exits.length) return { items: [], unknown: false, top: 0, P: null };
+    const bp = z => net.bodyPx ? net.bodyPx(z) : 28, zf = X.farZoom ?? 16, zc = X.checkZoom ?? 18, eoM = (p.rect.offset || 0) * MPP(zf);
+    const top = this.stationH(line, id) + S.platformRiseM, P = { L: p.L, H: p.H, eoM, Wfar: platformEdgeM(zf, bp(zf), this.pack), W: platformEdgeM(zc, bp(zc), this.pack), W2: platformEdgeM(zc + .5, bp(zc + .5), this.pack), top };
+    const ground = (t, u) => { const x = r.x + r.fx * t + r.rx * u, y = r.y + r.fy * t + r.ry * u, b = life.inBuilding(x, y); return b === undefined ? undefined : !b };
+    const corr = P.W + X.clearanceM, Oth = others.map(o => ({ seg: segOf(o.g), lo: o.h - this.V.deckThicknessM - this.V.pier.capDepthM - 1, hi: o.h + S.platformRiseM + S.canopyHeightM + 1.5 }));
+    const blocked = (t, u, h) => { if (!Oth.length) return false; const x = r.x + r.fx * t + r.rx * u, y = r.y + r.fy * t + r.ry * u; for (const o of Oth) if (h > o.lo && h < o.hi && pointSegmentDistance([x, y], o.seg[0], o.seg[1]) < corr) return true; return false };
+    const lay = layoutExits(P, exits, this.V, ground, blocked); lay.top = top; lay.P = P; lay.exits = exits; return lay;
   }
   // ── the GPU cache: one VAO + buffer a piece, least recently drawn out first past the pack's budget ──
   get(k) { const a = this.cache.get(k); if (a) { this.cache.delete(k); this.cache.set(k, a); a.f = this.frame } return a }
@@ -261,60 +345,99 @@ export class CityViaduct {
     const t0 = performance.now(); this.frame++;
     const mpp = MPP(zoom), unit = 1 / (512 * 2 ** zoom), W = deckWidths(zoom, bodyPx, pack), halfPx = W.lane + W.body * .5 + V.marginPx;
     const box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU], pad = (halfPx * 2 + V.pier.capOverhangPx) * mpp + 40;
-    const inView = b => !(b[2] < box[0] - pad || b[0] > box[2] + pad || b[3] < box[1] - pad || b[1] > box[3] + pad);
+    const inView = (b, extra = 0) => !(b[2] < box[0] - pad - extra || b[0] > box[2] + pad + extra || b[3] < box[1] - pad - extra || b[1] > box[3] + pad + extra);
     const budget = moving ? V.performance.buildMsMoving : V.performance.buildMs, time = () => performance.now() - t0 < budget;
-    const wantDet = zoom >= V.lod.beds, wantPiers = zoom >= V.lod.piers && !!life, solo = selected !== 'all', draw = [], plats = [];
-    let pending = false, piers = 0, open = 0;
+    const wantDet = zoom >= V.lod.beds, wantPiers = zoom >= V.lod.piers && !!life, solo = selected !== 'all', draw = [], plats = [], exitsDraw = [];
+    let pending = false, piers = 0, open = 0, levelsOn = 0;
+    this.levelsOf();   // the stations' levels, before anything is built on them
     for (const e of this.edgeList()) {
       if (solo && e.line !== selected) continue; const rows = this.rowsOf(e); if (rows.length < 2 || !inView(e.box)) continue;
-      const it = { e, deck: this.get('deck:' + e.id), det: null, pier: null };
-      if (!it.deck) { if (time()) it.deck = this.put('deck:' + e.id, buildDeck(rows, e.eo, V, e.flags, false, this.railFor(e.line))); else pending = true }
-      if (wantDet) { it.det = this.get('det:' + e.id); if (!it.det) { if (time()) it.det = this.put('det:' + e.id, buildDeck(rows, e.eo, V, e.flags, true, this.railFor(e.line))); else pending = true } }
+      const it = { e, deck: this.get('deck:' + e.id), det: null, pier: null }, H = this.profileOf(e), dr = this.deckRows(e); if (e.ramp) levelsOn++;
+      if (!it.deck) { if (time()) it.deck = this.put('deck:' + e.id, buildDeck(dr, e.eo, V, e.flags, false, H)); else pending = true }
+      if (wantDet) { it.det = this.get('det:' + e.id); if (!it.det) { if (time()) it.det = this.put('det:' + e.id, buildDeck(dr, e.eo, V, e.flags, true, H)); else pending = true } }
       if (wantPiers) {
         const k = 'pier:' + e.id; let c = this.get(k);
-        if (c && c.partial && now - c.at > 1500 && time()) { this.del(k); c = null }   // a tile has had time to come: place the piers it was waiting for
-        if (!c) { if (time()) { const sp = this.spots(e, life); c = this.put(k, buildPiers(rows, sp.spots, e.eo, V, e.flags, this.railFor(e.line))); c.partial = sp.unknown; c.at = now; c.count = sp.spots.length; c.spots = sp.spots } else pending = true }
+        if (c && c.partial && now - c.at > 1500 * 2 ** Math.min(c.tries || 0, 5) && time()) { this.pierTries = (c.tries || 0) + 1; this.del(k); c = null }   // a tile has had time to come: place the piers it was waiting for (again more and more rarely)
+        if (!c) { if (time()) { const sp = this.spots(e, life); c = this.put(k, buildPiers(rows, sp.spots, e.eo, V, e.flags, H)); c.partial = sp.unknown; c.at = now; c.count = sp.spots.length; c.spots = sp.spots; c.tries = this.pierTries || 0; this.pierTries = 0 } else pending = true }
         if (c) { it.pier = c; piers += c.count || 0; if (c.partial) open++ }
       }
       draw.push(it);
     }
+    const wantExits = zoom >= V.lodExits.stairs && !!life && this.net.exits, exitDetail = zoom >= V.lodExits.steps; let exitsOut = 0, exitsSkipped = 0, exitsOpen = 0;
     if (zoom >= V.lod.platforms && this.net.rects) for (const [key, rect] of this.net.rects) {
-      const line = key.slice(0, key.lastIndexOf(':')); if (solo && line !== selected) continue;
-      let p = this.plats.get(key); if (!p || p.rect !== rect) { p = this.platGeom(rect); this.plats.set(key, p); this.del('plat:' + key); this.del('plat:' + key + ':d') }
-      if (!inView(p.box)) continue;
-      const detail = zoom >= V.lod.posts, k = 'plat:' + key + (detail ? ':d' : ''); let c = this.get(k);
-      if (!c) { if (time()) c = this.put(k, buildPlatform(p, rect.offset || 0, V, detail, this.railFor(line))); else pending = true }
+      const i = key.lastIndexOf(':'), line = key.slice(0, i), id = key.slice(i + 1); if (solo && line !== selected) continue;
+      let p = this.plats.get(key); if (!p || p.rect !== rect) { if (p) this.levelsDirty = true; p = this.platGeom(rect); this.plats.set(key, p); this.del('plat:' + key); this.del('plat:' + key + ':d'); this.exitLayouts.delete(key) }
+      if (!inView(p.box, wantExits ? V.exits.maxM : 0)) continue;
+      const hT = this.stationH(line, id), detail = zoom >= V.lod.posts, k = 'plat:' + key + (detail ? ':d' : ''); let c = this.get(k);
+      if (!c) { if (time()) c = this.put(k, buildPlatform(p, rect.offset || 0, V, detail, hT)); else pending = true }
       if (c) plats.push([c, line]);
+      if (!wantExits) continue;
+      const ek = 'ex:' + key + (solo ? ':s' : ':a') + (exitDetail ? ':d' : ''); let x = this.get(ek);
+      if (x && x.partial && now - x.at > 1500 * 2 ** Math.min(x.tries || 0, 5) && time()) { const tries = (x.tries || 0) + 1; this.del(ek); this.exitLayouts.delete(key + (solo ? ':s' : ':a')); x = null; this.exitTries = tries }   // a tile may still come: built again, more and more rarely
+      if (!x) {
+        if (time()) {
+          const lk = key + (solo ? ':s' : ':a'); let lay = this.exitLayouts.get(lk); if (!lay || lay.partial) { lay = this.exitLayout(key, p, line, id, life, solo, selected); if (lay) { lay.partial = lay.unknown; this.exitLayouts.set(lk, lay) } }
+          if (lay && lay.items.length) { x = this.put(ek, buildExits(lay, p.row, rect.offset || 0, V, exitDetail)); x.partial = lay.unknown; x.at = now; x.count = lay.items.filter(q => !q.skip).length; x.skipped = lay.items.filter(q => q.skip).length; x.lay = lay; x.tries = this.exitTries || 0 }
+          else x = this.put(ek, new Float32Array(0));
+          this.exitTries = 0;
+        } else pending = true;
+      }
+      if (x) { exitsDraw.push([x, line]); exitsOut += x.count || 0; exitsSkipped += x.skipped || 0; if (x.partial) exitsOpen++ }
     }
     const cap = phone ? V.performance.phoneBytes : V.performance.bytes;
     for (const [k, a] of this.cache) { if (this.bytes <= cap || a.f === this.frame) break; this.del(k) }
-    this.stats = { edges: draw.length, platforms: plats.length, piers, open, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1) };
+    this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1) };
     if (!draw.length && !plats.length) return pending;
     // ── draw ──
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const Lg = pack.lighting?.[theme] || {}, ref = pack.lighting?.referenceSun || { azimuthDeg: 225, elevationDeg: 42 }, az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
-    const col = h => toneRGB(hexRgb(h), pack, 'simcity', theme), C = V.colors[theme] || V.colors.light, u = this.u;
-    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix, false, MT); gl.uniform1f(u.u_mu, MU); gl.uniform1f(u.u_unit, unit); gl.uniform1f(u.u_lane, W.lane); gl.uniform1f(u.u_body, W.body);
+    const col = h => toneRGB(hexRgb(h), pack, 'simcity', theme), C = V.colors[theme] || V.colors.light, u = this.u, N = V.night;
+    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix, false, MT); gl.uniform1f(u.u_mu, MU); gl.uniform1f(u.u_unit, unit); gl.uniform1f(u.u_lane, W.lane); gl.uniform1f(u.u_body, W.body); gl.uniform1f(u.u_railH, V.railHeightM);
     gl.uniform3f(u.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2f(u.u_lit, Lg.ambient ?? .64, Lg.directional ?? .36); gl.uniform3fv(u.u_tint, hexRgb(Lg.color || '#ffffff'));
-    gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform3fv(u.u_glow, col(V.night.glow)); gl.uniform2f(u.u_glowK, V.night.underK, V.night.platformK); gl.uniform3fv(u.u_shade, hexRgb(pack.lighting?.shadow?.color || '#394D4B'));
+    gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform3fv(u.u_glow, col(N.glow)); gl.uniform4f(u.u_glowK, N.underK, N.platformK, N.stairK ?? .5, N.walkK ?? .35); gl.uniform3fv(u.u_shade, hexRgb(pack.lighting?.shadow?.color || '#394D4B'));
     gl.uniform3fv(u.u_col, new Float32Array(COLOR_KEYS.flatMap(k => col(C[k] || C.concrete)))); gl.uniform1f(u.u_alpha, 1); gl.uniform1f(u.u_shadow, 0); gl.uniform2f(u.u_shift, 0, 0);
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     const one = a => { if (!a.n) return; gl.bindVertexArray(a.vao); gl.drawArrays(gl.TRIANGLES, 0, a.n) };
-    // 1) its shadow on the streets (the deck's height, away from the sun), under whatever stands on them
+    // 1) its shadow on the streets (each thing's height, away from the sun), under whatever stands on them
     if (!dark && sun && sun.elevation > 2 && zoom >= V.shadow.minZoom) {
       const [sx, sy] = this.shadowShift(sun); gl.uniform1f(u.u_shadow, 1); gl.uniform2f(u.u_shift, sx, sy); gl.uniform1f(u.u_alpha, (pack.modes?.simcity?.shadowOpacity?.light ?? .18) * V.shadow.opacityK);
       gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      for (const it of draw) if (it.deck) one(it.deck); for (const [c] of plats) one(c);
+      for (const it of draw) if (it.deck) one(it.deck); for (const [c] of plats) one(c); for (const [c] of exitsDraw) one(c);
       gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(u.u_shadow, 0); gl.uniform1f(u.u_alpha, 1);
     }
-    // 2) the viaduct, each edge with its line's colour on the parapets; the platforms with theirs on the canopy edge
+    // 2) the viaduct, each edge with its line's colour on the parapets; the platforms and stairs with theirs on the roof edges
     for (const it of draw) { gl.uniform3fv(u.u_line, this.lineRGB(it.e.line, theme)); if (it.deck) one(it.deck); if (it.det) one(it.det); if (it.pier) one(it.pier) }
     for (const [c, line] of plats) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
+    for (const [c, line] of exitsDraw) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
     gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
     return pending;
   }
   // the piers now standing (local metres), for checks
   debugPiers() { const out = []; if (!this.edges) return out; for (const e of this.edges) { const a = this.cache.get('pier:' + e.id); if (!a || !a.spots) continue; for (const s of a.spots) { const q = rowAt(e.rows, s); out.push([e.id, q.x, q.y]) } } return out }
+  // the exits laid out (per platform drawn): each exit's status, and the footprint's sample points in lon/lat with heights, for checks
+  debugExits() {
+    const out = [];
+    for (const [k, a] of this.cache) {
+      if (!k.startsWith('ex:') || !a.lay) continue; const key = k.slice(3).split(':'), line = key[0], id = key[1], p = this.plats.get(line + ':' + id); if (!p) continue;
+      const r = p.row, ll = (t, u) => toLL(r.x + r.fx * t + r.rx * u, r.y + r.fy * t + r.ry * u);
+      const items = a.lay.items.map(it => it.skip ? { ref: it.ref, skip: it.skip } : { ref: it.ref, far: it.far, walk: !!it.walk, bridge: !!it.bridge, posts: (it.posts || []).length });
+      const samples = a.lay.P ? exitSamples(a.lay, a.lay.P, this.V).map(s => ({ ref: s.ref, part: s.part, h: +s.h.toFixed(1), ll: ll(s.t, s.u).map(v => +v.toFixed(6)) })) : [];
+      out.push({ line, id, level: this.levelOf(line, id), top: a.lay.top, items, samples, partial: !!a.partial });
+    }
+    return out;
+  }
+  // does this exit (of station id, at lon/lat) have a stair standing? true / false (none placed, or blocked) / undefined (not laid out yet)
+  hasStair(id, lon, lat) {
+    let seen = false;
+    for (const [k, a] of this.cache) {
+      if (!k.startsWith('ex:') || !a.lay || k.split(':')[2] !== String(id)) continue; seen = true;
+      const ex = a.lay.exits?.find(e => e.lon === lon && e.lat === lat); if (!ex) continue;
+      const it = a.lay.items.find(q => q.ref === ex.ref); return !!it && !it.skip;
+    }
+    return seen ? false : undefined;
+  }
+  // every line:station with a level above the first, for checks
+  debugLevels() { const out = []; for (const [k, L] of this.levelsOf() || []) if (L > 1) out.push([k, L]); return out }
   dispose(gl) { if (!this.gl) return; for (const k of [...this.cache.keys()]) this.del(k); gl.deleteProgram(this.p); this.gl = null }
 }
 export default CityViaduct;

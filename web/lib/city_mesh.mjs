@@ -10,11 +10,16 @@ const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (window
 export const G = [CITY_LNG / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + CITY_LAT * RAD / 2)) / (2 * Math.PI)], S = EARTH * Math.cos(CITY_LAT * RAD);   // mercator → metres
 const TYPES = ['house', 'apartment', 'shop', 'office', 'industrial', 'civic'];
 const PATTERNS = { punched: 0, 'vertical-balconies': 1, 'horizontal-bands': 2, 'curtain-wall': 3, clerestory: 4, 'regular-grid': 5 };
-export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5 };
+export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5, HALL: 6 };   // HALL: the piece of a wall the viaduct passes through — the shader opens the glass band there, nowhere else
+export const RAIL_Q = { base: 10, step: .25 };   // a HALL piece carries the deck's rail height there in 6 bits (a_bld.z bits 6–7 high, a_bld.w bits 4–7 low): base + code × step, 10–25.75 m
 const FLAG = { ABS_U: 1, MERGED: 2, STOREFRONT: 4, NO_AO: 8 };
 export const CHUNKS = 4;   // sub-chunks a tile side
 export const LOD_HI = 16;   // from here: roofs set back behind the parapet, roof plant, awnings
 export const GROW_MS = 420;
+// footprints over one another (resolveOverlaps): the share of sample points inside the other that counts as overlapping at all /
+// nested / a mere duplicate, and how far the inner one is pulled in (m per nesting) and the smaller down (m, when the heights match)
+// so the two never share a plane
+export const OVERLAP = { touchShare: .1, nestedShare: .6, redundantShare: .9, insetM: .05, lowerM: .08 };
 const LANDUSE_ALIASES = { library: 'civic', kindergarten: 'school', government: 'civic', townhall: 'civic' };
 
 // ── small helpers ────────────────────────────────────────────────────────────────────────────────
@@ -27,6 +32,10 @@ export const num = (v, d) => Number.isFinite(+v) ? +v : d;
 // which vertices of a ring are real corners (the outline turns 20° or more there) — a vertex that merely splits a straight
 // facade is not one, so no corner accent, no corner shading and no accent budget is spent on it
 const COS_CORNER = Math.cos(20 * RAD);
+// where segment a–b meets segment c–d: the parameter along a–b (0..1), or -1
+function segX(ax, ay, bx, by, cx, cy, dx, dy) { const rx = bx - ax, ry = by - ay, sx = dx - cx, sy = dy - cy, den = rx * sy - ry * sx; if (Math.abs(den) < 1e-12) return -1; const qx = cx - ax, qy = cy - ay, t = (qx * sy - qy * sx) / den, s = (qx * ry - qy * rx) / den; return t >= 0 && t <= 1 && s >= 0 && s <= 1 ? t : -1 }
+// the nearest point of a polyline (segments [x0, y0, x1, y1, …]) to a point: the distance and the unit direction of that segment
+function pathNear(px, py, G) { let d = Infinity, ux = 1, uy = 0; for (let s = 0; s < G.length; s += 4) { const ax = G[s], ay = G[s + 1], vx = G[s + 2] - ax, vy = G[s + 3] - ay, l2 = vx * vx + vy * vy, t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2)) : 0, dd = Math.hypot(px - ax - vx * t, py - ay - vy * t); if (dd < d) { d = dd; const l = Math.sqrt(l2) || 1; ux = vx / l; uy = vy / l } } return { d, ux, uy } }
 function realCorners(ring) { const n = ring.length / 2, out = new Array(n); for (let i = 0; i < n; i++) { const k = (i + n - 1) % n, j = (i + 1) % n, x = ring[i * 2], y = ring[i * 2 + 1], dx1 = x - ring[k * 2], dy1 = y - ring[k * 2 + 1], dx2 = ring[j * 2] - x, dy2 = ring[j * 2 + 1] - y, l1 = Math.hypot(dx1, dy1), l2 = Math.hypot(dx2, dy2); out[i] = l1 > 0 && l2 > 0 && (dx1 * dx2 + dy1 * dy2) / (l1 * l2) < COS_CORNER } return out }
 
 // ── the style pack, flattened for the shader and the builder ─────────────────────────────────────
@@ -38,7 +47,7 @@ function realCorners(ring) { const n = ring.length / 2, out = new Array(n); for 
 // crown replaces the set-back whenever articulation exists) / keepOriginalMaxHeight (always), implementationContract, changeLog.
 export function resolvePack(pack) {
   const B = pack.buildings || {}, D = pack.buildingDefaults || {}, C = pack.classification || {}, L = pack.lighting || {}, M = pack.modes || {}, LOD = pack.lod || {};
-  const FF = pack.facadeFaces || {}, FT = FF.byType || {}, mScale = num(FT.office?.masonry?.windowScale, 1);   // windows by face (see TileBuilder.faceDensity); masonry offices' narrower windows
+  const TB = pack.throughBuildings || {}, FF = pack.facadeFaces || {}, FT = FF.byType || {}, mScale = num(FT.office?.masonry?.windowScale, 1);   // windows by face (see TileBuilder.faceDensity); masonry offices' narrower windows
   const types = TYPES.map(t => {
     const b = B[t] || {}, gf = b.groundFloor || {}, n = b.night || {}, roof = b.roof || {};
     return {
@@ -111,6 +120,8 @@ export function resolvePack(pack) {
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
     modes: M, lod: { equipment: LOD.roofEquipment || [16, 16.5], windows: LOD.windows || [15, 16] },
     faces: { gap: num(FF.neighbourGapM, 3), open: num(FF.openDistanceM, 8), minFace: num(FF.minFaceWidthM, 6), slab: num(FF.slabAspect, 1.5), primaryOnlyMaxA: num(FF.primaryOnlyMaxAreaM2, 600) },
+    // buildings the viaduct passes through (pack.throughBuildings): the glass band around the deck's rail height, the portal width, its look
+    through: { railM: num(TB.railHeightM, num(pack.viaduct?.railHeightM, 11)), below: num(TB.bandBelowM, 2), above: num(TB.bandAboveM, 4.6), glass: TB.glass || {}, frame: TB.frame || {}, inside: TB.insideLight || {}, mullEvery: Math.max(.3, num(TB.mullionEveryM, 1.5)), mull: num(TB.mullionM, .08), portalHalf: Math.max(1, num(TB.portalHalfM, 12)), near: Math.max(0, num(TB.alongsideM, 8)), skyMix: num(TB.skyMix, .4), insideMix: num(TB.insideMix, .3), nightEmission: num(TB.nightEmission, 1.7), depthOpen: TB.depthOpen !== false },
   };
 }
 
@@ -161,7 +172,7 @@ class Writer {
 // src: {z,x,y,extent,buildings:VectorTileLayer,landuse:VectorTileLayer|null}
 export class TileBuilder {
   constructor(src, P, opts) {
-    this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096;
+    this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096; this.through = opts.through || null;   // through: Map osm id → [{lng, lat, railM}] (web/lib/city_through_buildings.mjs), the buildings the viaduct passes through
     const n = 2 ** src.z, latN = Math.atan(Math.sinh(Math.PI * (1 - 2 * src.y / n))), latS = Math.atan(Math.sinh(Math.PI * (1 - 2 * (src.y + 1) / n))), lat = (latN + latS) / 2;
     this.unit = 1 / n / this.E;                        // mercator units a tile unit
     this.mpu = 1 / (EARTH * Math.cos(lat));            // mercator units a metre at this tile (as MercatorCoordinate.meterInMercatorCoordinateUnits)
@@ -195,9 +206,9 @@ export class TileBuilder {
       this.polys = null; this.fi++;
       if (performance.now() - t0 > budget) return false;
     }
-    if (!this.grid) { this.indexEdges(); if (performance.now() - t0 > budget) return false }
+    if (!this.grid) { this.resolveOverlaps(); this.indexEdges(); if (performance.now() - t0 > budget) return false }
     while (this.ei < this.items.length) {
-      const it = this.items[this.ei++];
+      const it = this.items[this.ei++]; if (it.drop) continue;
       try { this.building(it) } catch (e) { this.warn(e) }
       if (performance.now() - t0 > budget) return this.ei >= this.items.length ? (this.done = true) : false;
     }
@@ -257,8 +268,42 @@ export class TileBuilder {
     const seed = this.seedOf(outer, clipped);
     const key = seed + ':' + H; if (this.seen.has(key)) return; this.seen.add(key);   // the same outline twice (duplicate features)
     const item = this.items.length;
-    this.items.push({ item, outer, holes, clipped, A, H, minH, landuse, seed, ix, iy, idLo: cur.idLo, idHi: cur.idHi });
+    this.items.push({ item, outer, holes, clipped, A, H, minH, landuse, seed, ix, iy, idLo: cur.idLo, idHi: cur.idHi, raw, fi: this.fi, ri: poly.idx });
     this.blockers.push({ ring: raw, item });
+  }
+  // phase boundary: a footprint lying inside another one (a part traced over its outline, a courtyard ring wound the wrong
+  // way, a building drawn twice — the tiles carry many) shares its wall planes and, at the same height, its roof plane with
+  // it, and the two fight for the pixel whenever the camera moves. The inner one is pulled in by a few centimetres, lowered
+  // as much when the heights match, and dropped when it is a mere duplicate (the same height, (almost) wholly inside). Its
+  // container's outline then does not count as a neighbour for its windows (faceOpen), so the pulled-in walls keep them
+  resolveOverlaps() {
+    const items = this.items, n = items.length, O = OVERLAP, mpu = this.mPerUnit; if (n < 2) return;
+    const bb = items.map(it => ringBbox(it.outer)), order = items.map((_, i) => i).sort((a, b) => bb[a][0] - bb[b][0]);
+    const share = (s, g) => {   // the share of the smaller's sample points (its interior point, points most of the way out to its vertices) inside the larger
+      const r = s.outer, m = r.length / 2, k = Math.max(1, Math.ceil(m / 16)); let inn = 0, tot = 1; if (pointInPolygon(s.ix, s.iy, g.outer, g.holes)) inn++;
+      for (let i = 0; i < m; i += k) { tot++; if (pointInPolygon(s.ix + (r[i * 2] - s.ix) * .8, s.iy + (r[i * 2 + 1] - s.iy) * .8, g.outer, g.holes)) inn++ }
+      return inn / tot;
+    };
+    for (let oi = 0; oi < n; oi++) {
+      const i = order[oi], A = bb[i];
+      for (let oj = oi + 1; oj < n; oj++) {
+        const j = order[oj], B = bb[j]; if (B[0] >= A[2]) break;
+        if (B[1] >= A[3] || B[3] <= A[1]) continue;
+        const a = items[i], b = items[j]; if (a.drop || b.drop) continue;
+        const sa = a.A <= b.A, s = sa ? a : b, g = sa ? b : a, S = sa ? A : B, G = sa ? B : A;
+        const ix = Math.min(S[2], G[2]) - Math.max(S[0], G[0]), iy = Math.min(S[3], G[3]) - Math.max(S[1], G[1]); if (ix * iy < .1 * (S[2] - S[0]) * (S[3] - S[1])) continue;   // the boxes barely meet (neighbours along a street): not an overlap
+        const sh2 = share(s, g); if (sh2 < O.touchShare) continue;   // apart, or touching along an edge
+        const sameH = Math.abs(s.H - g.H) < .05 && Math.abs(s.minH - g.minH) < .05;
+        if (sameH && sh2 >= O.redundantShare) { s.drop = true; continue }
+        if (sh2 >= O.nestedShare) { (s.containers ||= new Set()).add(g.item); s.depth = (s.depth || 0) + 1 }   // inside: its walls would lie in the other's wall planes
+        if (sameH) s.lower = (s.lower || 0) + 1;   // the same roof plane, wholly or in part
+      }
+    }
+    for (const it of items) {
+      if (it.drop || !(it.depth || it.lower)) continue;
+      if (it.depth && !it.clipped) { const r = insetRing(it.outer, O.insetM * it.depth / mpu); if (r && r.length >= 6 && signedArea2(r) > 0) it.outer = r }   // (a cut outline stays: its cut edges must lie on the tile edge)
+      if (it.lower) { it.H = Math.max(this.P.minH * .5, it.H - O.lowerM * it.lower); it.minH = Math.min(it.minH, it.H - .5) }
+    }
   }
   // a grid (8 m cells) over the tile and its buffer holding every outline edge, for the face look-ups
   indexEdges() {
@@ -277,7 +322,7 @@ export class TileBuilder {
   // what stands in front of a wall: rays from a few points along it, outward, up to openDistanceM — the share of them that
   // meet another building's outline within neighbourGapM (a party wall) or within openDistanceM (a close neighbour), and the
   // typical free distance (m). Only other buildings count, never the wall's own
-  faceOpen(item, ax, ay, bx, by, nx, ny) {
+  faceOpen(item, ax, ay, bx, by, nx, ny, ignore = null) {
     const F = this.P.faces, mpu = this.mPerUnit, D = F.open / mpu, gap = F.gap / mpu, len = Math.hypot(bx - ax, by - ay), k = Math.max(1, Math.min(6, Math.ceil(len * mpu / 4)));
     const g = this.grid, cell = this.cell, off = this.goff, eps = .02 / mpu; let abut = 0, near = 0; const ds = [];
     for (let s = 0; s < k; s++) {
@@ -287,7 +332,7 @@ export class TileBuilder {
       for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
         const a = g.get(cx * 65536 + cy); if (!a) continue;
         for (let i = 0; i < a.length; i += 5) {
-          if (a[i] === item) continue;
+          if (a[i] === item || (ignore && ignore.has(a[i]))) continue;   // never the wall's own outline, nor the one it stands inside
           const ex = a[i + 3] - a[i + 1], ey = a[i + 4] - a[i + 2], den = nx * ey - ny * ex; if (Math.abs(den) < 1e-9) continue;   // parallel to the ray
           const wx = a[i + 1] - px, wy = a[i + 2] - py, tt = (wx * ey - wy * ex) / den, ss = (wx * ny - wy * nx) / den;   // p + n·tt = a + e·ss
           if (tt > 0 && tt < best && ss >= 0 && ss <= 1) best = tt;
@@ -324,7 +369,7 @@ export class TileBuilder {
     const litOverride = T.litByLanduse && T.litByLanduse[landuse] != null ? Math.round(T.litByLanduse[landuse] * 255) : 0;
     const Hq = Math.min(65535, Math.round(H * 10));
     const chunk = this.chunks[Math.min(CHUNKS - 1, Math.floor(ix / E * CHUNKS)) + CHUNKS * Math.min(CHUNKS - 1, Math.floor(iy / E * CHUNKS))];
-    const ctx = { outer, holes, A, H, minH, T, ti, seed, chunk, clipped, landuse, storefront, merged: est.mergedLowrise, mat, item: it.item };
+    const ctx = { outer, holes, A, H, minH, T, ti, seed, chunk, clipped, landuse, storefront, merged: est.mergedLowrise, mat, item: it.item, ignore: it.containers || null };
     const obb = outer.length <= 400 ? orientedBox(outer) : null;   // a slab (long/short ≥ slabAspect): its ends are the short faces
     ctx.slab = obb && obb.hh > 0 && obb.hw / obb.hh >= P.faces.slab ? { ux: obb.ux, uy: obb.uy } : null;
     ctx.roofSlot = this.roofSlotOf(ctx);
@@ -348,6 +393,8 @@ export class TileBuilder {
       const budget = num(art.maxAccentFacadeAreaRatio, 1) - bhHi / (Math.max(1, beLo) * T.floorM), use = nc * cwHi / Math.max(per, 1);
       cwQ = Math.round(Math.max(0, Math.min(1, budget / Math.max(use, 1e-6))) * 15);
     }
+    const th = this.throughLevel(it);   // the viaduct passes through it: {railM, segs: its path here} or 0 — wallsOf opens the band only on the wall pieces the path crosses, which carry the rail height
+    ctx.th = th && th.segs ? { segs: th.segs, half: P.through.portalHalf, near: P.through.near / this.mPerUnit, rq: Math.max(0, Math.min(63, Math.round((th.railM - RAIL_Q.base) / RAIL_Q.step))) } : null;
     W.b = [seed & 255, (seed >>> 8) & 255, ti | (crown << 3) | (T.famFacade ? 32 : 0), (est.mergedLowrise ? FLAG.MERGED : 0) | (storefront ? FLAG.STOREFRONT : 0) | (cwQ << 4)];
     W.m = [mat, litOverride, Hq & 255, Hq >>> 8];
     this.count++; chunk.n++;
@@ -361,6 +408,31 @@ export class TileBuilder {
     this.plant(ctx);
     this.awning(ctx);
   }
+  // the viaduct passes through this footprint (this.through: osm id → [{lng, lat, railM, path}], a point inside each crossed
+  // footprint): {railM: the deck's rail height there, segs: its path in tile units}, or 0 when it is not crossed. Matched by the
+  // exact ring key when the list has one, else by the feature id and the point — a merged feature carries many rings — against
+  // the unclipped outline, so both tiles' halves of a cut building agree
+  throughLevel(it) {
+    const TH = this.through; if (!TH) return 0;
+    const hit = list => { if (!list.length) return 0; let segs = null; for (const e of list) { const s = this.pathSegs(e); if (s) segs = segs ? segs.concat(s) : s } return { railM: num(list[0].railM, this.P.through.railM), segs } };   // every stretch crossing it (a station structure spans two edges): all their paths
+    const byRing = TH.byRing || null, byId = TH.byId || TH;   // {byId, byRing} from the layer, or a bare Map by id
+    if (byRing && byRing.size) { const a = byRing.get(`${this.src.z}/${this.src.x}/${this.src.y}/${it.fi}/${it.ri}`); if (a) return hit(Array.isArray(a) ? a : [a]) }   // the exact ring of this tile version
+    const list = byId && byId.size ? byId.get(it.idLo + it.idHi * 4294967296) : null; if (!list) return 0;
+    const n = 2 ** this.src.z, E = this.E, ring = it.raw || it.outer, inside = [], near = [];
+    for (const e of list) {
+      const x = ((e.lng / 360 + .5) * n - this.src.x) * E, y = ((.5 - Math.log(Math.tan(Math.PI / 4 + e.lat * RAD / 2)) / (2 * Math.PI)) * n - this.src.y) * E;
+      if (pointInPolygon(x, y, ring, [])) inside.push(e);
+      else { const b = ringBbox(ring), m = 2 / this.mPerUnit; if (x >= b[0] - m && x <= b[2] + m && y >= b[1] - m && y <= b[3] + m) near.push(e) }   // a centre outside its own (concave) outline: its box, 2 m wide
+    }
+    return hit(inside.length ? inside : near);
+  }
+  // the viaduct's path at a listed building (the entry's lng/lat points) as segments in tile units [x0, y0, x1, y1, …], or null
+  pathSegs(e) {
+    const p = e.path; if (!Array.isArray(p) || p.length < 2) return null;
+    const n = 2 ** this.src.z, E = this.E, out = []; let px = 0, py = 0;
+    for (let i = 0; i < p.length; i++) { const x = ((+p[i][0] / 360 + .5) * n - this.src.x) * E, y = ((.5 - Math.log(Math.tan(Math.PI / 4 + +p[i][1] * RAD / 2)) / (2 * Math.PI)) * n - this.src.y) * E; if (i) out.push(px, py, x, y); px = x; py = y }
+    return out.length ? out : null;
+  }
   // an edge lying along the tile's edge: the cut where the tile clipped the outline (the neighbour tile draws the rest)
   cutEdge(ax, ay, bx, by) { const E = this.E; return (ax === bx && (ax <= 0 || ax >= E)) || (ay === by && (ay <= 0 || ay >= E)) }
   // writes one ring's walls from z0 to z1; outward normals; windows fitted edge by edge. Cut edges are kept for
@@ -373,7 +445,7 @@ export class TileBuilder {
     if (!solid) for (let i = 0; i < n; i++) {
       const j = (i + 1) % n, ax = ring[i * 2], ay = ring[i * 2 + 1], bx = ring[j * 2], by = ring[j * 2 + 1], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy);
       if (l < 1e-6 || this.cutEdge(ax, ay, bx, by)) continue;
-      const f = this.faceOpen(ctx.item, ax, ay, bx, by, dy / l, -dx / l);
+      const f = this.faceOpen(ctx.item, ax, ay, bx, by, dy / l, -dx / l, ctx.ignore);
       f.short = ctx.slab ? Math.abs((dx * ctx.slab.ux + dy * ctx.slab.uy) / l) < 0.7071 : false;   // across the long axis rather than along it: a slab's end
       faces[i] = f;
       const score = (f.abut >= .5 ? 0 : f.near >= .5 ? 1 : 2) * 1e4 + l * mpu; if (score > primScore) { primScore = score; prim = i }
@@ -385,7 +457,7 @@ export class TileBuilder {
       const len = l * mpu, nx = dy / l, ny = -dx / l;   // away from the building (MVT winding)
       const aEdge = ax <= 0 || ax >= E || ay <= 0 || ay >= E, bEdge = bx <= 0 || bx >= E || by <= 0 || by >= E;
       if (aEdge && bEdge && this.cutEdge(ax, ay, bx, by)) { if (!solid) (ctx.cuts ||= []).push(ax, ay, bx, by, z0); continue }
-      const absU = aEdge || bEdge;
+      const absU0 = aEdge || bEdge;
       // the windows of this face: bays by the effective bay (piers at least the pack's minimum), then the face's density —
       // none on a party wall, every other bay on a side face, one narrow column on a slab's end or a face under minFaceWidthM
       let bays = solid ? 0 : Math.max(1, Math.round(len / bayM)); if (len < bayM * .55) bays = 0;
@@ -393,17 +465,35 @@ export class TileBuilder {
       if (dens === 'blank') bays = 0;
       else if (bays > 0 && len < F.minFace) { bays = (dens !== 'sparse' || i === prim) && len >= bayM * .8 ? 1 : 0; cls = 2 }
       else if (dens === 'sparse') cls = 1; else if (dens === 'single') cls = 2;
-      const lq = Math.min(65535, Math.round(len * 20));
-      W.w = [Math.min(255, bays), lq & 255, lq >>> 8, (mix32(ctx.seed, i, 3) & 15) | (cls << 4) | (corner[i] ? 64 : 0) | (corner[j] ? 128 : 0)];   // the edge's seed (4 bits), the face class, whether each end is a real corner
-      const flags = W.b[3]; W.b[3] = (flags & ~(FLAG.ABS_U | FLAG.NO_AO)) | (absU ? FLAG.ABS_U | FLAG.NO_AO : 0);
-      let u0 = 0, u1 = len;
-      if (absU) { const ex = dx / l, ey = dy / l, wx = this.wox + ax * u * S, wy = this.woy + ay * u * S; u0 = wx * ex + wy * ey; u1 = u0 + len }   // a wall cut by the tile edge: its window coordinate in world metres, so the neighbour tile's piece continues it
+      // the viaduct's portal (ctx.th): the band opens (KIND.HALL) where its path crosses this wall, ±portalHalf around the crossing,
+      // and along any stretch of the wall running beside the path, within alongsideM of it (the platform hall of a structure the
+      // deck runs along); the rest of the wall stays a wall. A split wall takes world-metre window coordinates (ABS_U), so its pieces' windows
+      // run on through the cuts
+      let pieces = null;
+      if (ctx.th) {
+        const G = ctx.th.segs, hw = ctx.th.half / len; let lo = 2, hi = -1;   // the open interval along the wall (0..1)
+        for (let s = 0; s < G.length; s += 4) { const t = segX(ax, ay, bx, by, G[s], G[s + 1], G[s + 2], G[s + 3]); if (t >= 0) { lo = Math.min(lo, t - hw); hi = Math.max(hi, t + hw) } }
+        if (ctx.th.near > 0) { const k = Math.max(2, Math.min(24, Math.ceil(len / 2))), ex = dx / l, ey = dy / l; for (let q = 0; q <= k; q++) { const t = q / k, r = pathNear(ax + dx * t, ay + dy * t, G); if (r.d <= ctx.th.near && Math.abs(r.ux * ex + r.uy * ey) >= .7) { lo = Math.min(lo, t - .5 / k); hi = Math.max(hi, t + .5 / k) } } }   // beside the path and roughly along it (a wall across the path is the portal's business)
+        if (hi > lo) { const t0 = Math.max(0, lo), t1 = Math.min(1, hi); if (t0 <= .02 && t1 >= .98) pieces = [[0, 1, true]]; else { pieces = []; if (t0 > .02) pieces.push([0, t0, false]); pieces.push([t0, t1, true]); if (t1 < .98) pieces.push([t1, 1, false]) } }
+      }
+      const split = !!pieces && pieces.length > 1, absU = absU0 || !!pieces;   // (a portal wall: absolute window coordinates, and no corner accents — their bits carry the rail height)
+      const flags = W.b[3], bz = W.b[2]; W.b[3] = (flags & ~(FLAG.ABS_U | FLAG.NO_AO)) | (absU ? FLAG.ABS_U | FLAG.NO_AO : 0);
+      let U0 = 0; if (absU) { const ex = dx / l, ey = dy / l, wx = this.wox + ax * u * S, wy = this.woy + ay * u * S; U0 = wx * ex + wy * ey }   // a wall cut by the tile edge, or split at a portal: its window coordinate in world metres, so the pieces continue each other
       W.normal(nx, ny, 0);
-      const X0 = ax * u, Y0 = ay * u, X1 = bx * u, Y1 = by * u;
-      const a0 = W.v(X0, Y0, z0, u0), b0 = W.v(X1, Y1, z0, u1), b1 = W.v(X1, Y1, z1, u1), a1 = W.v(X0, Y0, z1, u0);
-      ch.walls.push(a0, b0, b1, a0, b1, a1);
-      this.extend(ch, X0, Y0, X1, Y1, z1);
-      W.b[3] = flags;
+      const cornerBits = (corner[i] ? 64 : 0) | (corner[j] ? 128 : 0), eseed = mix32(ctx.seed, i, 3) & 15;
+      for (const [t0, t1, hall] of pieces || [[0, 1, false]]) {
+        const pl = len * (t1 - t0); if (pl < .02) continue;
+        const pb = split ? (bays > 0 ? Math.max(1, Math.round(pl / bayM)) : 0) : bays, lq = Math.min(65535, Math.round(pl * 20));
+        W.kind = hall ? KIND.HALL : KIND.WALL;
+        if (pieces) { const rq = hall ? ctx.th.rq : 0; W.b[2] = (bz & 63) | ((rq >> 4) << 6); W.b[3] = (W.b[3] & 15) | ((rq & 15) << 4) }   // the hall piece: the rail height code; the wall pieces of a portal wall: none (no corner accents on an absU wall anyway)
+        W.w = [Math.min(255, pb), lq & 255, lq >>> 8, eseed | (cls << 4) | (t0 <= 0 ? cornerBits & 64 : 0) | (t1 >= 1 ? cornerBits & 128 : 0)];   // the edge's seed (4 bits), the face class, whether each end is a real corner
+        const u0 = absU ? U0 + len * t0 : 0, u1 = absU ? U0 + len * t1 : pl;
+        const X0 = (ax + dx * t0) * u, Y0 = (ay + dy * t0) * u, X1 = (ax + dx * t1) * u, Y1 = (ay + dy * t1) * u;
+        const a0 = W.v(X0, Y0, z0, u0), b0 = W.v(X1, Y1, z0, u1), b1 = W.v(X1, Y1, z1, u1), a1 = W.v(X0, Y0, z1, u0);
+        ch.walls.push(a0, b0, b1, a0, b1, a1);
+        this.extend(ch, X0, Y0, X1, Y1, z1);
+      }
+      W.kind = KIND.WALL; W.b[3] = flags; W.b[2] = bz;
     }
   }
   // the walls along the tile's edge, up to the roof surface, solid (inside the whole building: seen only until the neighbour tile arrives)

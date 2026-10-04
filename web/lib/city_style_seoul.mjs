@@ -461,8 +461,21 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
   // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
+  "throughBuildings": {   // city-build: buildings the simcity viaduct passes through read as station buildings — the floor the deck crosses becomes a glass hall (list: web/lib/city_through_buildings.mjs)
+    "railHeightM": 11,                             // the deck's rail height where the list names none (city-life's list gives each building its own, ramps and levels included)
+    "bandBelowM": 2.0, "bandAboveM": 4.6,          // the glass band around the rail height: from under the deck to over the trains' roofs
+    "glass": {"light": "#A9CBD8", "dark": "#2C414C"},
+    "frame": {"light": "#55626A", "dark": "#262E33"},
+    "mullionEveryM": 1.5, "mullionM": 0.08,        // thin dark posts along the band
+    "skyMix": 0.4,                                 // by day: the sky in the glass, so the band reads lighter and more open than the windows beside it
+    "portalHalfM": 12,                             // the opening along a wall: this far either side of where the deck's path crosses it (a shorter wall opens whole); walls the deck never touches stay walls
+    "alongsideM": 20,                              // a wall running beside (along) the deck inside the building, this close to its path (m), opens along that stretch too — the platform hall of a station structure the deck runs along (건대입구: tracks, side platforms and concourse put its long walls 12–18 m from the track centreline)
+    "insideLight": "#F3ECDA", "insideMix": 0.3,    // the lit hall seen through the glass by day
+    "nightEmission": 1.15,                         // by night the hall is lit like the type's windows, this much brighter than them (× its lit-window emission)
+    "depthOpen": true                              // the band writes no depth for the train canvas: the deck and the trains show through it
+  },
   "viaduct": {
-    "railHeightM": 11, "lineStepM": 0.04, "deckThicknessM": 1.6, "parapetHeightM": 1.1, "parapetPx": 2, "marginPx": 1.5,
+    "railHeightM": 11.3, "lineStepM": 0.04, "deckThicknessM": 1.6, "parapetHeightM": 1.1, "parapetPx": 2, "marginPx": 1.5,
     "lowZoomLanePx": 2, "lowZoomBodyPx": 4, "widthZoom": [15, 16],
     "bedWidthRatio": 0.55, "railGaugeRatio": 0.3, "railPx": 0.9,
     "elevatedConcreteK": 0.88,
@@ -470,14 +483,22 @@ export const SEOUL_CITY_STYLE = {
     "station": {"platformRiseM": 0.3, "floorM": 0.5, "platformDepthRatio": 0.6, "gapPx": 0.6, "canopyHeightM": 4.2, "canopyThicknessM": 0.3,
       "canopyInsetM": 6, "canopyOverhangPx": 0.6, "postEveryM": 10, "postM": 0.3, "postPx": 1, "postInsetPx": 1},
     "colors": {
-      "light": {"concrete": "#C9CBC4", "under": "#9FA39E", "pier": "#BDBFB8", "bed": "#5E625F", "rail": "#8F9391", "platform": "#DAD6CC", "roof": "#55626A", "roofUnder": "#8E979B", "post": "#A3A8A6"},
-      "dark": {"concrete": "#5A6064", "under": "#3B4144", "pier": "#4E5457", "bed": "#2E3335", "rail": "#6B7174", "platform": "#6C6F6A", "roof": "#2F3A40", "roofUnder": "#53606A", "post": "#5C6366"}
+      "light": {"concrete": "#C9CBC4", "under": "#9FA39E", "pier": "#BDBFB8", "bed": "#5E625F", "rail": "#8F9391", "platform": "#DAD6CC", "roof": "#55626A", "roofUnder": "#8E979B", "post": "#A3A8A6", "stair": "#D6D2C8", "stairWall": "#C3C5BE", "walk": "#D3CFC6", "walkWall": "#BFC2BB"},
+      "dark": {"concrete": "#5A6064", "under": "#3B4144", "pier": "#4E5457", "bed": "#2E3335", "rail": "#6B7174", "platform": "#6C6F6A", "roof": "#2F3A40", "roofUnder": "#53606A", "post": "#5C6366", "stair": "#6A6E69", "stairWall": "#555B5E", "walk": "#676B66", "walkWall": "#52585B"}
     },
-    "night": {"glow": "#F0D6A6", "underK": 0.45, "platformK": 0.6},
+    "night": {"glow": "#F0D6A6", "underK": 0.45, "platformK": 0.6, "stairK": 0.5, "walkK": 0.35},
     "shadow": {"minZoom": 15.5, "opacityK": 1.2, "maxLengthM": 60},
     "lod": {"deck": [13.6, 14.2], "piers": 15, "beds": 16, "rails": 16.5, "platforms": 15.5, "posts": 16.5},
     "train": {"laneGapPx": 1.5},
-    "performance": {"bytes": 64e6, "phoneBytes": 24e6, "buildMs": 6, "buildMsMoving": 3}
+    "performance": {"bytes": 64e6, "phoneBytes": 24e6, "buildMs": 6, "buildMsMoving": 3},
+    "levels": {"stepM": 7, "overlapM": 40, "grade": 0.02, "holdM": 2600, "marginM": 30},
+    "exits": {"minZoom": 16, "stepsZoom": 17.5, "maxM": 350, "nearGapM": 1, "farExtraM": 2, "checkStepM": 2.5, "clearanceM": 2.5, "farZoom": 16, "checkZoom": 18, "levelPenaltyM": 40,
+      "stair": {"widthM": 3.2, "minPx": 2, "riseRun": 0.8, "landingM": 2.4, "landingDropM": 5.6, "slabM": 0.45, "wallM": 1.0, "wallPx": 0.8,
+        "roofClearM": 2.7, "roofM": 0.25, "roofOverhangM": 0.35, "stepRiseM": 0.3, "postM": 0.25, "postPx": 1, "footClearM": 12},
+      "walk": {"widthM": 3.2, "minPx": 2, "slabM": 0.4, "wallM": 1.0, "wallPx": 0.8, "postEveryM": 14, "postM": 0.6, "postPx": 1.2, "maxAlongM": 60}
+    },
+    "snap": {"nearM": 45, "maxOffsetM": 150, "farRunM": 0, "holdM": 40},
+    "lodExits": {"stairs": 16, "steps": 17.5}
   },
   "styleRevision": "2026-10-03-QA1",
   "changeLog": [

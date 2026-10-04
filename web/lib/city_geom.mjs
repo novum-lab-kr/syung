@@ -84,11 +84,12 @@ export function simplifyRing(r, eps = 1e-9) {
 export function classifyRings(rings) {
   const polys = [];
   let cur = null;
-  for (const r of rings) {
+  for (let i = 0; i < rings.length; i++) {
+    const r = rings[i];
     if (r.length < 6) continue;
     const a = signedArea2(r);
     if (a === 0) continue;
-    if (a > 0) { cur = { outer: r, holes: [], area2: a }; polys.push(cur) }
+    if (a > 0) { cur = { outer: r, holes: [], area2: a, idx: i }; polys.push(cur) }   // idx: the outer ring's index in the feature (the through list names rings so)
     else if (cur) cur.holes.push(r);
   }
   return polys;

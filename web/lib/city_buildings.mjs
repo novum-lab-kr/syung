@@ -19,9 +19,10 @@
 //   city.set({on:true,mode:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { TileBuilder, resolvePack, classifyBuilding, STRIDE, LOD_HI, GROW_MS, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
+import { TileBuilder, resolvePack, classifyBuilding, STRIDE, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
 import { sunPosition } from './sun.mjs';
+import THROUGH_LIST from './city_through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
 export { TileBuilder, classifyBuilding };
 
 // ── shaders ──────────────────────────────────────────────────────────────────────────────────────
@@ -42,7 +43,13 @@ void main(){
   v_n=a_nk.xyz;v_z=z;v_u=a_u;v_wm=u_wo+a_xy*u_S;v_wall=a_wall;v_bld=a_bld;v_misc=a_misc;v_kind=kind;
 }`;
 const FS_DEPTH = `#version 300 es
-precision mediump float;out vec4 o;void main(){o=vec4(0.0);}`;
+precision highp float;in float v_z;flat in vec4 v_bld;flat in float v_kind;uniform vec4 u_through;uniform vec4 u_thBand;out vec4 o;
+void main(){
+  if(u_through.w>0.5&&int(v_kind+0.5)==6){   // a wall piece the viaduct passes through (kind 6): its glass band writes no depth, so the deck and the trains show through it
+    int rq=((int(v_bld.z+0.5)>>6)&3)*16+(int(v_bld.w+0.5)>>4);float rail=u_through.x+float(rq)*u_through.y;   // the deck's rail height there (6 bits)
+    if(v_z>rail-u_thBand.x&&v_z<rail+u_thBand.y)discard;}
+  o=vec4(0.0);
+}`;
 const FS = `#version 300 es
 precision highp float;
 in vec3 v_n;in float v_z;in float v_u;in vec2 v_wm;flat in vec4 v_wall;flat in vec4 v_bld;flat in vec4 v_misc;flat in float v_kind;
@@ -50,6 +57,7 @@ uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
+uniform vec4 u_through;uniform vec4 u_thBand;uniform vec3 u_thGlass;uniform vec3 u_thFrame;uniform vec3 u_thInside;uniform vec3 u_thMix;   // buildings the viaduct passes through: rail height code base/step (m) + depth-open flag; band below/above, post width/spacing; glass, posts, the lit hall by day; sky mix, hall mix by day, night brightness relative to the type's lit windows
 out vec4 o;
 float hash(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);return fract((p.x+p.y)*p.z);}
 // coverage of {fract(x) in [a,b]} box-filtered over a pixel w wide (cell units): windows never alias or moiré
@@ -70,6 +78,17 @@ void main(){
   float el=u_sun.z,horiz=max(0.3,sqrt(max(0.0,1.0-el*el))),k=clamp(max(0.0,dot(n,u_sun))/horiz,0.0,1.0);
   float shade=n.z>0.6?1.0+u_shade.y*max(0.0,el)*(0.3+0.7*n.z):1.0-u_shade.x*(1.0-k);
   vec3 light=u_lightCol*shade,col;
+  if(kind==6){   // a wall piece the viaduct passes through (the portal the mesh cut around its path; its rail height in 6 bits): the floor it crosses is a glass hall — thin posts, the sky in the glass and the lit hall by day; by night lit like the type's windows, a little brighter
+    float rail=u_through.x+float(((tv>>6)&3)*16+(flags>>4))*u_through.y;
+    if(v_z>rail-u_thBand.x&&v_z<rail+u_thBand.y){
+      float mu=v_u/u_thBand.w,mw=0.5*u_thBand.z/u_thBand.w,post=pulse(mu+0.5,0.5-mw,0.5+mw,fwidth(mu));
+      vec3 g;
+      if(night)g=u_litMean[type]*u_tE[type].x*u_thMix.z;
+      else{g=mix(u_thGlass*mix(u_refl.x,u_refl.y,k),mix(u_sky[0],u_sky[1],0.5),u_thMix.x);g=mix(g,u_thInside,u_thMix.y);}
+      col=mix(g,u_thFrame*light,post);
+      o=vec4(toSrgb(col),1.0);return;
+    }
+  }
   if(kind==1){   // flat roof: its colour slot (family roof, the type's variants, the membrane or the plain roof); its axis angle in v_u
     vec3 mat=u_roofPal[slot];
     if((flags&2)!=0){vec2 c=floor(v_wm/10.0);mat*=0.965+0.07*hash(vec3(c,seed));}   // merged low-rise: roof panels
@@ -168,6 +187,18 @@ function compile(gl, vs, fs) {
   return { p, u };
 }
 
+// the through list (web/lib/city_through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
+function throughIndex(list) {
+  const byId = new Map(), byRing = new Map();
+  for (const e of list || []) {
+    if (!e || !Number.isFinite(+e.lng) || !Number.isFinite(+e.lat)) continue;
+    const r = { lng: +e.lng, lat: +e.lat, railM: Number.isFinite(+e.railM) ? +e.railM : 11, line: e.line || '', path: Array.isArray(e.path) && e.path.length >= 2 ? e.path : null };   // path: the deck's way through it (lng/lat points) — only the walls it crosses open
+    if (Number.isFinite(+e.id)) { let a = byId.get(+e.id); if (!a) byId.set(+e.id, a = []); a.push(r) }
+    if (e.ring) { let a = byRing.get(String(e.ring)); if (!a) byRing.set(String(e.ring), a = []); a.push(r) }   // "z/x/y/feature/ring": the exact outline in the tile version the list was made from (several stretches can cross one outline)
+  }
+  return { byId, byRing, size: byId.size + byRing.size };
+}
+
 // ── the layer ────────────────────────────────────────────────────────────────────────────────────
 export class CityBuildings {
   constructor(opts = {}) {
@@ -179,6 +210,7 @@ export class CityBuildings {
     this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/lib/city_worker.mjs (a classify function cannot cross into one: main thread then)
     this.debug = 0; this.lodHi = LOD_HI; this.cull = 'cw'; this.noCull = false; this.skipDraw = false;   // dev knobs: kind colours, culling, LOD, draw calls off (JS cost alone)
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
+    this.through = throughIndex(opts.through || THROUGH_LIST);   // osm id → the points where the viaduct crosses it (opts.through overrides the shipped list)
   }
   onAdd(map, gl) { this.map = map; this.gl = gl; this.context(gl) }
   onRemove(map, gl) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
@@ -234,7 +266,7 @@ export class CityBuildings {
       for (let i = 0; i < n; i++) {
         const w = new Worker(new URL('./city_worker.mjs', import.meta.url), { type: 'module' });
         w.busy = null; w.onmessage = ev => this.onWorker(w, ev.data); w.onerror = ev => { console.warn('city-build: worker failed, building on the main thread', ev.message || ev); this.dropWorkers() };
-        w.postMessage({ type: 'pack', pack: this.P.pack }); this.workers.push(w);
+        w.postMessage({ type: 'pack', pack: this.P.pack, through: this.through }); this.workers.push(w);
       }
     } catch (e) { console.warn('city-build: no worker', e); this.dropWorkers() }
     return this.workers.length > 0;
@@ -271,7 +303,7 @@ export class CityBuildings {
       if (!e.builder) {
         const fi = e.tile?.latestFeatureIndex; let layers = null; try { layers = fi?.rawTileData ? fi.loadVTLayers() : null } catch { }
         if (!layers) { this.tiles.delete(e.key); continue }   // gone before we got to it: again when it is back
-        e.builder = new TileBuilder({ z: e.z, x: e.x, y: e.y, extent: layers.building?.extent || 4096, buildings: layers.building || null, landuse: layers.landuse || null }, this.P, { phone: this.phone, classify: this.opts.classify });
+        e.builder = new TileBuilder({ z: e.z, x: e.x, y: e.y, extent: layers.building?.extent || 4096, buildings: layers.building || null, landuse: layers.landuse || null }, this.P, { phone: this.phone, classify: this.opts.classify, through: this.through });
         e.t0 = performance.now(); e.tile = null; e.state = 'building';
       }
       const left = budget - (performance.now() - t0), ts = performance.now(), done = e.builder.step(Math.max(1, left)); this.stats.mainBuildMs = (this.stats.mainBuildMs || 0) + performance.now() - ts;   // main-thread time spent in slices (0 with workers)
@@ -341,7 +373,10 @@ export class CityBuildings {
     const artTop = [tz[0], tz[1], num(AR?.maxTopZoneHeightM, 4.5)], artBelt = [beArr[0], beArr[1] ?? beArr[0], beArr[2] ?? beArr[beArr.length - 1], Math.min(3, beArr.length)];
     const bh = pair(AR?.beltHeightM, .35, .55), cw = pair(AR?.cornerWidthM, .35, .65), cd = pair(AR?.cornerDeltaLStar, 5, 9), kd = pair(AR?.crownDeltaLStar, 8, 14);
     const artDim = [bh[0], bh[1], cw[0], cw[1]], artDL = [cd[0], cd[1], kd[0], kd[1]];
-    return { mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    // buildings the viaduct passes through: the rail-height code, the band, its glass / posts / lit hall (linear), the mixes and the night brightness
+    const TH = P.through, thGlass = L(pick(TH.glass) || '#A9CBD8'), thFrame = L(pick(TH.frame) || '#55626A'), thInside = L(typeof TH.inside === 'string' ? TH.inside : pick(TH.inside) || '#F3ECDA');
+    const through = [RAIL_Q.base, RAIL_Q.step, 0, TH.depthOpen ? 1 : 0], thBand = [TH.below, TH.above, TH.mull, TH.mullEvery], thMix = [TH.skyMix, TH.insideMix, TH.nightEmission];   // (night: × the type's lit-window emission, which already carries the mode's windowEmission)
+    return { through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -365,8 +400,10 @@ export class CityBuildings {
     gl.useProgram(prog.p);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
     if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
+    const K = this.palette || (this.palette = this.paletteFor());
+    gl.uniform4fv(u.u_through, K.through); gl.uniform4fv(u.u_thBand, K.thBand);   // both passes: the depth pass leaves the band open
     if (!depthOnly) {
-      const K = this.palette || (this.palette = this.paletteFor());
+      gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
@@ -422,5 +459,5 @@ export class CityBuildings {
     return behind === 8 ? false : behind > 0 ? true : out === 0;
   }
   // for the report / tests
-  info() { const t = [...this.tiles.values()]; return { workers: this.workers ? this.workers.length : null, tiles: t.length, ready: t.filter(e => e.state === 'ready').length, visible: this.visible.length, buildings: t.reduce((s, e) => s + (e.mesh?.count || 0), 0), verts: t.reduce((s, e) => s + (e.mesh ? e.mesh.verts.byteLength / STRIDE : 0), 0), ...this.stats } }
+  info() { const t = [...this.tiles.values()]; return { workers: this.workers ? this.workers.length : null, through: this.through.size, tiles: t.length, ready: t.filter(e => e.state === 'ready').length, visible: this.visible.length, buildings: t.reduce((s, e) => s + (e.mesh?.count || 0), 0), verts: t.reduce((s, e) => s + (e.mesh ? e.mesh.verts.byteLength / STRIDE : 0), 0), ...this.stats } }
 }

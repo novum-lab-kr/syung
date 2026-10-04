@@ -60,14 +60,18 @@ function buildLineFeatures(){
   Object.entries(paths).forEach(([line,chunks])=>chunks.forEach(ids=>ids.slice(1).forEach((b,i)=>{
     const lo=Math.min(ids[i],b),hi=Math.max(ids[i],b),id=`${line}:${lo}:${hi}`;
     if(drawn.has(id)||!byId.has(lo)||!byId.has(hi))return;drawn.add(id);
-    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):edgeCoords(line,lo,hi);   // on the 롤러코스터: its own path
+    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):cityCoords(line,lo,hi);   // on the 롤러코스터: its own path   // city-life: 심시티 — the moved path, where there is one
     features.push({type:'Feature',properties:{line,color:colors[line],offset:edgeOffset(line,lo,hi)},geometry:{type:'LineString',coordinates:coords}});
   })));
   return features;
 }
 const edgeGeom=new Map();
 // The track between two stations: the real one, or on the 롤러코스터 its own wandering path (coasterPath).
-function geom(line,a,b){return coaster?coasterPath(line,a,b):realGeom(line,a,b)}
+function geom(line,a,b){return coaster?coasterPath(line,a,b):simcity?cityGeom(line,a,b):realGeom(line,a,b)}   // city-life: 심시티 — the viaduct's path (a tunnel stretch moved onto its street), else the real one
+// city-life: 심시티 — an edge's path moved onto the street it really runs under (web/lib/city_viaduct_snap.mjs, built offline), else the real track;
+// the trains, the platforms (trackFrom), the route line and a journey's ride follow it, so the deck, its trains and its stations agree
+const cityCoords=(line,lo,hi)=>(simcity&&cityViaduct.snapped(line,lo,hi))||edgeCoords(line,lo,hi);
+function cityGeom(line,a,b){const lo=Math.min(a,b),hi=Math.max(a,b),sn=cityViaduct.snapped(line,lo,hi);if(!sn)return realGeom(line,a,b);const id=`s:${line}:${lo}:${hi}`;let g=edgeGeom.get(id);if(g)return g;g=withCum(sn.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));edgeGeom.set(id,g);return g}
 const withCum=pts=>{const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));return {pts,cum,total:cum[cum.length-1]}};
 function realGeom(line,a,b){
   const lo=Math.min(a,b),hi=Math.max(a,b),id=`${line}:${lo}:${hi}`;
@@ -158,7 +162,7 @@ const PLATFORM_HALF=90;
 function metresBetween(a,b){return Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320}
 // First `dist` metres of the track from station s toward neighbour n, starting at s.
 function trackFrom(line,s,n,dist){
-  const c=edgeCoords(line,Math.min(s.id,n.id),Math.max(s.id,n.id)),pts=s.id<n.id?c:[...c].reverse(),out=[pts[0]];
+  const c=cityCoords(line,Math.min(s.id,n.id),Math.max(s.id,n.id)),pts=s.id<n.id?c:[...c].reverse(),out=[pts[0]];   // city-life: 심시티 — the platform sits on the moved path
   let left=dist;
   for(let i=1;i<pts.length&&left>0;i++){const d=metresBetween(pts[i-1],pts[i]);if(d>=left){const u=left/d;out.push([pts[i-1][0]+(pts[i][0]-pts[i-1][0])*u,pts[i-1][1]+(pts[i][1]-pts[i-1][1])*u]);left=0}else{out.push(pts[i]);left-=d}}
   return out;
@@ -355,7 +359,7 @@ function syncStationLabelMode(){   // coaster: route badges belong to the depth-
   }
 }
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
-const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom:realGeom,offset:edgeOffset,get byId(){return byId},get rects(){return stationRects}}});   // city-life: 심시티 고가 — built on the real track (realGeom), drawn in drawTrains; trackPoint lifts the trains onto it
+const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>coasterBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
@@ -655,7 +659,7 @@ function replacePlans(next){
 // the 상행 direction, 상행 trains are right of the line and 하행 trains left of it.
 function trackPoint(p,dist){
   const {seq,cum}=p,line=p.t.line;
-  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:simcity?cityViaduct.railFor(line)*m.meterInMercatorCoordinateUnits():0}}   // city-life: 심시티 — on the viaduct
+  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:simcity?cityViaduct.stationH(line,seq[0].id)*m.meterInMercatorCoordinateUnits():0}}   // city-life: 심시티 — on the viaduct, at this station's level
   const end=cum[cum.length-1],d=Math.max(0,Math.min(end,dist)),over=dist-d; // beyond either end: extend straight
   let i=0;while(i<seq.length-2&&cum[i+1]<d)i++;
   const a=seq[i],b=seq[i+1],len=(cum[i+1]-cum[i])||1;let k=(d-cum[i])/len,h=0,lat=0,roll=0;const fw=a.id<b.id?1:-1;
@@ -666,7 +670,7 @@ function trackPoint(p,dist){
   let off=o(i);
   if(i>0&&d-cum[i]<B)off+=(o(i-1)-off)*.5*(1-(d-cum[i])/B);
   else if(i<seq.length-2&&cum[i+1]-d<B)off+=(o(i+1)-off)*.5*(1-(cum[i+1]-d)/B);
-  if(simcity)h=cityViaduct.railFor(line)*p.m;   // city-life: 심시티 — the trains run on the viaduct's deck (its rail height, in mercator units here)
+  if(simcity)h=cityViaduct.heightAt(line,a.id,b.id,k)*p.m;   // city-life: 심시티 — the trains run on the viaduct's deck: its rail height here (the station's level, or the ramp between two), in mercator units
   return {x,y,f,r,off,h,roll};
 }
 let plans=[];
@@ -964,7 +968,7 @@ class TrainLayer{
         // Painter order follows camera ground direction; no hidden back wall can bleed through.
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
         for(let k=0;k<n;k++){
-          const j=forward?k:n-1-k,A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));
+          const j=forward?k:n-1-k,A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(simcity)this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
           if(coaster){const oa=(A.off+lanePx)*unit,ob=(B.off+lanePx)*unit;A.x+=A.r[0]*oa;A.y+=A.r[1]*oa;B.x+=B.r[0]*ob;B.y+=B.r[1]*ob}   // on the coaster each end on its own lane (one normal for both pulled the far end off it on curves)
           const dx=B.x-A.x,dy=B.y-A.y,dz=coaster?B.h-A.h:0,len=Math.hypot(dx,dy,dz);if(len<unit*.1)continue;
           const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
@@ -1060,7 +1064,7 @@ function openSheet(html,source='subway'){if(source!=='bus')busLayer?.clearSelect
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
   const out=[];
-  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=edgeCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}
+  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=cityCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}   // city-life: 심시티 — the ride drawn where the trains run
   return out;
 }
 function showRoute(plan,busSelection=false){   // bus: a stop's number uses the same fit, focus and journey styles
@@ -1468,6 +1472,7 @@ void main(){
       const byStation=new Map();for(const g of geo.values()){if(!byStation.has(g.id))byStation.set(g.id,[]);byStation.get(g.id).push(g)}
       const w=Math.max(3,Math.min(5,hgt*.18)),pass=[];
       for(const [id,boxes] of byStation)for(const [lon,lat] of exits[id]||[]){
+        if(this.cityOn?.()&&cityViaduct.hasStair(id,lon,lat))continue;   // city-life: 심시티 — an exit with a stair down from the platform needs no flat passage line; the ones without keep it
         const e=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]);let best=null;
         for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
           const rx=(e.x-g.cx)/unit,ry=(e.y-g.cy)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),t=Math.max(-half,Math.min(half,rx*g.ax+ry*g.ay));
@@ -2227,7 +2232,7 @@ function setCoaster(on,speed=coasterSpeed){
   map.triggerRepaint();
 }
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
-function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // city-life: setRouteOpacity — the ground line gives way to the viaduct
+function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // city-life: setRouteOpacity — the ground line gives way to the viaduct; the plans, route line and platforms follow the mode's track (a tunnel stretch moved onto its street)
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!simcity);
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
