@@ -7,7 +7,7 @@ test('northbound and southbound buses move to their own right-hand lanes',()=>{
   const north=buildBusPath([[127,37.5],[127,37.501]]),south=buildBusPath([[127,37.501],[127,37.5]]);
   assert.ok(offsetBusPath(north,6)[0][0]>127);
   assert.ok(offsetBusPath(south,6)[0][0]<127);
-  for(const z of [13,15,16,17,18])assert.ok(busLaneMeters(z,37.5)>=6&&busLaneMeters(z,37.5)<=14);
+  for(const z of [13,15,16,17,18])assert.equal(busLaneMeters(z,37.5),1.5,'unknown road width stays within one lane at every zoom');
 });
 
 test('offset motion follows the exact drawn lane around a corner',()=>{
@@ -18,7 +18,7 @@ test('offset motion follows the exact drawn lane around a corner',()=>{
   assert.ok(lane.every(p=>p.every(Number.isFinite)));
 });
 
-test('toy buses have real volume and wheels; BUS posts have a raised sign',()=>{
+test('toy buses have real volume and wheels; round bus signs have a raised face',()=>{
   for(const mesh of [buildBusMesh(),buildBusPostMesh()]){
     assert.equal(mesh.length%27,0);assert.ok(mesh.every(Number.isFinite));
     assert.ok(mesh.length/9<1500,'bounded shared prototype mesh');

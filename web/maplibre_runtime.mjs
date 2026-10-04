@@ -3,16 +3,19 @@ import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
+import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import {RideLayer} from './lib/park_rides.mjs';
 import {SEOUL_COASTER_STYLE as COASTER_STYLE,trackMetrics,zoomFade} from './lib/coaster_style_seoul.mjs';   // coaster: shared park palette and metre/pixel dimensions
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './lib/coaster_track_mesh.mjs';
 import {CoasterStations} from './lib/coaster_stations.mjs';   // coaster: instanced boarding decks, canopies and route signs
+import {CoasterRidePlacement,sampleRideTracks} from './lib/coaster_ride_placement.mjs';   // coaster: stable sites clear of city footprints and swept rail corridors
 import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
+import {CityViaduct} from './lib/city_viaduct.mjs';   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -339,8 +342,20 @@ let simcity=false;   // 심시티 모드: the miniature city (its own look; the 
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
 const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||coaster;
 function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
-  cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9})}
+  cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9});
+  syncStationLabelMode()}   // coaster: only station names stay above the park's buildings
+const stationLabelFields=new Map();   // coaster: retain the complete normal-mode route/name expressions across mode changes
+function syncStationLabelMode(){   // coaster: route badges belong to the depth-tested station furniture
+  for(const id of ['station-labels','station-labels-more']){
+    if(!map.getLayer(id))continue;
+    let saved=stationLabelFields.get(id);
+    if(!saved){saved={field:map.getLayoutProperty(id,'text-field'),coaster:false};stationLabelFields.set(id,saved)}
+    if(saved.coaster===coaster)continue;
+    map.setLayoutProperty(id,'text-field',coaster?['get','text']:saved.field);saved.coaster=coaster;
+  }
+}
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
+const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom:realGeom,offset:edgeOffset,get byId(){return byId},get rects(){return stationRects}}});   // city-life: 심시티 고가 — built on the real track (realGeom), drawn in drawTrains; trackPoint lifts the trains onto it
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
@@ -640,7 +655,7 @@ function replacePlans(next){
 // the 상행 direction, 상행 trains are right of the line and 하행 trains left of it.
 function trackPoint(p,dist){
   const {seq,cum}=p,line=p.t.line;
-  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:0}}
+  if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:simcity?cityViaduct.railFor(line)*m.meterInMercatorCoordinateUnits():0}}   // city-life: 심시티 — on the viaduct
   const end=cum[cum.length-1],d=Math.max(0,Math.min(end,dist)),over=dist-d; // beyond either end: extend straight
   let i=0;while(i<seq.length-2&&cum[i+1]<d)i++;
   const a=seq[i],b=seq[i+1],len=(cum[i+1]-cum[i])||1;let k=(d-cum[i])/len,h=0,lat=0,roll=0;const fw=a.id<b.id?1:-1;
@@ -651,6 +666,7 @@ function trackPoint(p,dist){
   let off=o(i);
   if(i>0&&d-cum[i]<B)off+=(o(i-1)-off)*.5*(1-(d-cum[i])/B);
   else if(i<seq.length-2&&cum[i+1]-d<B)off+=(o(i+1)-off)*.5*(1-(cum[i+1]-d)/B);
+  if(simcity)h=cityViaduct.railFor(line)*p.m;   // city-life: 심시티 — the trains run on the viaduct's deck (its rail height, in mercator units here)
   return {x,y,f,r,off,h,roll};
 }
 let plans=[];
@@ -863,7 +879,7 @@ class TrainLayer{
   corner(x,y,z,u,v,face){
     // on the coaster each car has its own frame (fr: base, F along it, R across, U its up), so it climbs and turns over in the loop
     const f=this.fr;if(f){const X=x*this.unit,Y=y*this.unit,Z=z*this.unit;this.vertex(f[0]+f[3]*X+f[6]*Y+f[9]*Z,f[1]+f[4]*X+f[7]*Y+f[10]*Z,f[2]+f[5]*X+f[8]*Y+f[11]*Z,u,v,face);return}
-    this.vertex(this.cx+(this.tx*x-this.ty*y)*this.unit,this.cy+(this.ty*x+this.tx*y)*this.unit,z*this.unit,u,v,face);
+    this.vertex(this.cx+(this.tx*x-this.ty*y)*this.unit,this.cy+(this.ty*x+this.tx*y)*this.unit,z*this.unit+this.h0,u,v,face);   // city-life: + h0 (the deck's height in 심시티, else 0)
   }
   // Roof strip with a sloped height at either end (also used for gangway caps).
   roof(a,b,za,zb,w,face=0){
@@ -905,19 +921,20 @@ class TrainLayer{
   render(gl,options){
     if(!myLocation&&(!trainsEnabled||!plans.length))return;
     const drawTrainsToo=trainsEnabled;
-    const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=coaster?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;
+    const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=coaster||simcity?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;   // city-life: 심시티 — the slim body too (the viaduct's deck is cut to it)
     // Lane: clear of the route line (its drawn width) by a visible gap, then half a car body.
-    const lanePx=laneOffsetPx(zoom,bodyPx);
+    const lanePx=simcity?cityViaduct.train(zoom,bodyPx).lanePx:laneOffsetPx(zoom,bodyPx);   // city-life: 심시티 — no route line on the ground to keep clear of: the two lanes close up on the deck
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
     // Keep world coordinates in double precision until subtracting the view-centre origin.
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.c88.begin(ox,oy);   // coaster-train: this frame's 88열차 cars start empty
+    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
     if(myLocation&&map.getBounds().contains(myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
     for(const plan of drawTrainsToo?plans:[]){
       const pose=trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();
+      this.h0=simcity?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
       // Fresh data: glide from where the old prediction had the train instead of teleporting.
       let shiftX=0,shiftY=0;
       if(plan.blend){const w=(performance.now()-plan.blend.at)/BLEND_MS;if(w<1){const e=1-smooth(w);shiftX=(plan.blend.x-mid.x)*e;shiftY=(plan.blend.y-mid.y)*e;animating=true}else plan.blend=null}
@@ -1017,8 +1034,9 @@ class TrainLayer{
       const S=52,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
       ptr('a_pos',3,0);ptr('a_local',2,12);ptr('a_info',4,20);ptr('a_color',3,36);ptr('a_face',1,48);
       gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);
+      const SS=simcity?cityViaduct.shadowShift(sunPosition()):[0,0];   // city-life: 심시티 — a train up on the viaduct casts its shadow where the deck casts its own
       const pass=alpha=>{gl.uniform1f(this.uni.u_alpha,alpha);
-        gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit,sunTrainShadow[1]*unit);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
+        gl.uniform2f(this.uni.u_offset,sunTrainShadow[0]*unit+SS[0],sunTrainShadow[1]*unit+SS[1]);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
         gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13)};
       if(options.walls){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);pass(1);if(options.occlude){gl.depthFunc(gl.GREATER);pass(options.occlude)}}   // solid buildings (the park): hidden behind them
       else{gl.disable(gl.DEPTH_TEST);pass(1)}
@@ -1045,13 +1063,12 @@ function rideCoords(line,ids){
   for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=edgeCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}
   return out;
 }
-function showRoute(plan){
-  busLayer?.setJourney(plan.legs);   // bus: selected journey buses share the offset route and vehicle renderer
+function showRoute(plan,busSelection=false){   // bus: a stop's number uses the same fit, focus and journey styles
+  busRouteFocus=busSelection;if(!busSelection)busLayer?.setJourney(plan.legs);   // bus: keep the stop sheet's selection intact
   const feats=[],pts=[];
   plan.legs.forEach((l,i)=>{
     if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
-    else if(l.type==='bus'){   // bus: route geometry is drawn once by busLayer; journey keeps its boarding markers
-      for(const c of [l.path[0],l.path[l.path.length-1]])pts.push({type:'Feature',properties:{kind:'stop',color:l.color},geometry:{type:'Point',coordinates:c}})}
+    else if(l.type==='bus'){}   // bus: road-matched line and boarding markers share busLayer's journey styles
     else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
       // boarding and alighting where the ride is drawn from (the platform on the track), not the
       // station's centre point, which sat 50–270 m off both the ride and the exit the walk reached
@@ -1064,8 +1081,8 @@ function showRoute(plan){
 
   });
   const first=plan.legs[0],last=plan.legs[plan.legs.length-1];
-  if(first.path)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]}});
-  if(last.path)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});
+  if(first.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]}});   // bus: a route number has stops, not journey origin/destination pins
+  if(last.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});   // bus
   const data={type:'FeatureCollection',features:[...feats,...pts]};
   if(!map.getSource('journey')){
     // veil: everything under the route (base map, other lines, station names) fades back
@@ -1075,20 +1092,20 @@ function showRoute(plan){
     // by their own opacity in focusRoute
     map.addLayer({id:'journey-veil',type:'fill',source:'journey-veil',paint:{'fill-color':veilColor(),'fill-opacity':.45,'fill-opacity-transition':{duration:300}}},map.getLayer('bm-label-water')?'bm-label-water':undefined);
     map.addSource('journey',{type:'geojson',data});
-    map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],10,6,16,14]}});
-    map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],10,3.5,16,9]}});
+    map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyCasingPaint()});   // bus: shared casing
+    map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyRidePaint()});   // bus: shared stroke
     map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});
     map.addLayer({id:'journey-inside',type:'line',source:'journey',filter:['==',['get','kind'],'inside'],layout:{'line-cap':'round'},paint:{'line-color':walkColor(),'line-opacity':.45,'line-width':['interpolate',['linear'],['zoom'],10,2,16,4],'line-dasharray':[0.1,2.2]}});
-    map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:{'circle-radius':6,'circle-color':'#ffffff','circle-stroke-color':['get','color'],'circle-stroke-width':3}});
+    map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});   // bus: shared stop marker
     map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
   }else map.getSource('journey').setData(data);
-  focusRoute(true);
+  busLayer?.raiseRoute();focusRoute(true);   // bus: keep selected lanes above the lazily created veil
   const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
   all.push(...plan.legs.filter(l=>l.type==='bus').flatMap(l=>l.path));   // bus: retain journey fitting without a duplicate line
   routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
   fitRoute(sheetPad()+30);
 }
-let routeBounds=null;
+let routeBounds=null,busRouteFocus=false;   // bus: route-number focus is released with its detail sheet
 function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
 function clearRoute(){busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
 const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
@@ -1096,14 +1113,14 @@ const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#
 // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
 // is not drawn zoomed out below 12.5: there they come back in full)
 let routeFocus=false;
-const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',coaster?['interpolate',['linear'],['zoom'],12.3,routeFocus?.25:.9,12.6,routeFocus?.1:.25]:routeFocus?.25:.9)};
+const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',simcity?cityViaduct.routeOpacity(routeFocus):coaster?['interpolate',['linear'],['zoom'],12.3,routeFocus?.25:.9,12.6,routeFocus?.1:.25]:routeFocus?.25:.9)};
 // route focus: veil on, trains faded, my location kept above the veil
 function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   routeFocus=on;setRouteOpacity();
   stationAlpha=on?.35:1;map.triggerRepaint();
   for(const id of ['station-labels','station-labels-more'])if(map.getLayer(id))map.setPaintProperty(id,'text-opacity',on?.35:1);
-  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.journeyLegs.length?'.3':'';   // bus: selected journey vehicles stay legible in the shared canvas
+  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.chosenIds().length&&!busLayer?.journeyLegs.length?'.3':'';   // bus: either entry point keeps its selected vehicles legible
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
@@ -1257,7 +1274,7 @@ function pickTrain(point){
   const unit=1/(512*2**map.getZoom());let best=null;
   for(const plan of plans){
     const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
-    const lane=laneOffsetPx(map.getZoom()),P=d=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit;return map.project(new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat())};
+    const Z=map.getZoom(),lane=simcity?cityViaduct.train(Z,coasterBodyPx(Z)).lanePx:laneOffsetPx(Z),P=d=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return simcity?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
     const A=P(pose.dist-half),B=P(pose.dist+half),dx=B.x-A.x,dy=B.y-A.y,l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((point.x-A.x)*dx+(point.y-A.y)*dy)/l2));
     const d=Math.hypot(point.x-(A.x+dx*u),point.y-(A.y+dy*u));
     if(d<14&&(!best||d<best.d))best={plan,d};
@@ -1376,7 +1393,7 @@ class BuildingDepth{
   }
 }
 class StationNameLayer{
-  constructor(){this.id='station-names';this.type='custom';this.renderingMode='2d';this.atlasKey=''}
+  constructor(){this.id='station-names';this.type='custom';this.renderingMode='3d';this.atlasKey=''}   // coaster: platforms share the buildings' depth range; actual names are separate symbols
   onAdd(map,gl){
     this.map=map;
     const vs=`#version 300 es
@@ -1479,7 +1496,8 @@ void main(){
     ptr('a_px',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_color',3,10);ptr('a_tw',2,13);
     gl.uniformMatrix4fv(this.uni.u_matrix,false,new Float32Array(MT));gl.uniform1f(this.uni.u_dpr,1);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);gl.uniform1f(this.uni.u_alpha,stationAlpha);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uni.u_tex,0);
-    gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    if(coaster||this.cityOn?.()){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // coaster: platforms and exit passages follow the exit pillars' building occlusion   // city-life: cityOn — 심시티 too (its buildings are opaque; the bars floated over them, and over the viaduct)
+    gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }
 }
@@ -1707,7 +1725,7 @@ class CoasterTrack{
 }
 const coasterTrack=new CoasterTrack();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
-const stationNames=new StationNameLayer();
+const stationNames=new StationNameLayer();stationNames.cityOn=()=>simcity;   // city-life: 심시티 — the bars take the buildings' depth there too (see its render)
 function updateLabelVisibility(){labelFrame=0;map.triggerRepaint()}
 const scheduleLabels=()=>{if(!labelFrame)labelFrame=requestAnimationFrame(updateLabelVisibility)};
 function rebuildLabels(){
@@ -1808,7 +1826,7 @@ map.on('load',()=>{
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
-    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,coasterStations=null;   // coaster: boarding furniture; cityLife: city-life's props
+    const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,coasterStations=null,ridePlacement=null;   // coaster: boarding furniture and checked ride sites; cityLife: city-life's props
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
       c.style.width=m.style.width;c.style.height=m.style.height;
@@ -1816,8 +1834,14 @@ map.on('load',()=>{
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
       const drawn=cityOn()?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
-        if(!rides){rides=new RideLayer(coasterBld.towers);rides.init(gl,maplibregl)}
+        if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
+          rides=new RideLayer(coasterBld.towers,{deferPlacement:true});rides.init(gl,maplibregl);
+          ridePlacement=new CoasterRidePlacement(rides.candidates,{map,minH:cityBuildings.P.minH,missingH:cityBuildings.P.missingH,maxH:RIDE_H,
+            getTracks:bounds=>sampleRideTracks(coasterTrack,bounds,{geometry:e=>geom(e.line,e.lo,e.hi),offset:e=>edgeOffset(e.line,e.lo,e.hi),bodyPx:coasterBodyPx(14),lanePx:laneOffsetPx(14,coasterBodyPx(14)),heart:CORK_HEART}),
+            onChange:sites=>{rides.setSites(sites);map.triggerRepaint()}});window.__subwayWebGL.ridePlacement=ridePlacement;
+        }
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+        if(coasterTrack.edges)ridePlacement.update([A.x,B.y,B.x,A.y]);   // coaster: tile loading is asynchronous; pending sites stay hidden
         rides.render(gl,pd.mainMatrix,{now:performance.now(),dark:effectiveTheme()==='dark',night:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y]});
         if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
       if(simcity||coaster){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
@@ -1831,6 +1855,9 @@ map.on('load',()=>{
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom(),bodyPx=coasterBodyPx(zoom);
         coasterStations.render(gl,pd.mainMatrix,{zoom,bodyPx,lanePx:laneOffsetPx(zoom,bodyPx),selected,dark:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y]});
       }
+      if(simcity){   // city-life: 심시티 고가 — the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
+        const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
+        if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -1843,7 +1870,7 @@ map.on('load',()=>{
         night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
-      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),coaster&&drawn);   // above the trains
+      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
@@ -1879,6 +1906,9 @@ map.on('load',()=>{
   busLayer=createBusLayer({map,phone:PHONE,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat(),onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
     following=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
     return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
+  },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
+    if(leg)showRoute({legs:[leg]},true);
+    else if(busRouteFocus){busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   // exits: yellow number discs (like station exit signs) from zoom 16
@@ -2197,7 +2227,7 @@ function setCoaster(on,speed=coasterSpeed){
   map.triggerRepaint();
 }
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
-function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;applyTheme();updateSun();wallsNow();map.triggerRepaint()}
+function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // city-life: setRouteOpacity — the ground line gives way to the viaduct
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!simcity);
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
@@ -2223,4 +2253,4 @@ map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,cityBuildings,setSimcity,setCoaster,get simcity(){return simcity},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};
+window.__subwayWebGL={map,cityBuildings,cityViaduct,setSimcity,setCoaster,get simcity(){return simcity},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'}};

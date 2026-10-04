@@ -90,7 +90,8 @@ test('a stop number selects its route with the switch off; closing returns to st
   layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
   assert.deepEqual(layer.requested,[route.id]);
   assert.equal(layer.enabled,false,'selection does not change the always-show preference');
-  assert.equal(layer.map.getSource('bus-routes').data.features.length,1);
+  assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1);
+  assert.ok(layer.map.getSource('bus-routes').data.features.some(f=>f.properties.kind==='stop'));
   assert.equal(layer.active(),true);
   layer.clearSelection();
   assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
@@ -105,6 +106,14 @@ test('a selected stop keeps mock disclosure inside the sheet that covers the map
   assert.doesNotMatch(layer.detailHTML(),/예시 데이터/);
   layer.setLiveData({schemaVersion:1,mode:'mock',buses:[],routes:{}},[route.id]);
   assert.match(layer.detailHTML(),/예시 데이터 · 실제 운행 정보 아님/);
+},false));
+
+test('number selection and closing notify the shared journey presentation without replacing the stop sheet',()=>withLayerFixture(layer=>{
+  const calls=[];layer.onRouteSelect=leg=>calls.push(leg);
+  layer.select({kind:'stop',id:'01'},null);
+  layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
+  assert.equal(calls.at(-1).routeId,route.id);assert.equal(layer.selection.kind,'stop');
+  layer.clearSelection();assert.equal(calls.at(-1),null);
 },false));
 
 test('background polling is limited by actual stops in the viewport, while selection wins', () => {
@@ -122,12 +131,12 @@ test('legacy journey names need matching geometry and clear on sheet close', () 
   assert.deepEqual(journeyBusRouteIds(layer.data,[leg]),[route.id]);
   assert.deepEqual(journeyBusRouteIds(layer.data,[{...leg,path:[[126,36],[126.01,36.01]]}]),[]);
   layer.setJourney([leg]);assert.deepEqual(layer.chosenIds(),[route.id]);
-  assert.equal(layer.map.getSource('bus-routes').data.features.length,1);
+  assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1);
   layer.clearSelection();assert.deepEqual(layer.chosenIds(),[]);
   assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
   layer.map.getZoom=()=>11;
   layer.setJourney([leg]);
-  assert.equal(layer.map.getSource('bus-routes').data.features.length,1,'selected journey routes stay visible when fitBounds zooms out');
+  assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1,'selected journey routes stay visible when fitBounds zooms out');
   assert.equal(layer.active(),false,'low zoom must not poll or show bus vehicles');
 },false));
 

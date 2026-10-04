@@ -1,8 +1,10 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
 import {buildBusPath, snapBusToPath, nextBusMotion, busMotionDistance,
-  validCoordinate, intersects, contains, busLaneMeters, offsetBusPath, offsetBusPointAt} from './bus_motion.mjs';
+  validCoordinate, intersects, contains} from './bus_motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './bus_mesh.mjs';
+import {BusRoadNetwork,busRoadPointAt,busMetresPerPixel} from './bus_roads.mjs';
+import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './journey_map_style.mjs';
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
 export const BUS_TYPES = {
@@ -14,7 +16,7 @@ export const BUS_TYPES = {
   other: {name: '버스', light: '#63747B', dark: '#A4B5BB'},
 };
 const SOURCE_ROUTES = 'bus-routes';
-const LAYERS = ['bus-route-road', 'bus-route-approx'];
+const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const SETTING_KEY = 'subway-buses', STALE_MS = 120000, EXPIRE_MS = 600000;
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
@@ -110,11 +112,12 @@ export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
-    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => []}) {
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}}) {
     this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
-    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.laneMetres=6;
+    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
+    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
@@ -139,10 +142,13 @@ class BusLayer {
       const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
       this.selectedRoute=this.selectedRoute===id?null:id;this.journeyLegs=[];this.journeyIds=[];
       this.refreshView();this.refreshDetail();
+      this.onRouteSelect(this.selectedLeg());
       document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
     };
     this.remove = () => this.destroy();
+    this.roadData=e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded){clearTimeout(this.roadTimer);this.roadTimer=setTimeout(()=>{if(!map.isMoving?.())this.refreshView();},250);}};
     map.on('moveend', this.move); map.on('zoom', this.zoom); map.on('remove', this.remove);
+    map.on('sourcedata',this.roadData);
     document.addEventListener('visibilitychange', this.visibility); this.reduced.addEventListener('change', this.motionChanged);
     document.addEventListener('click',this.routeClick);
     this.button?.addEventListener('click', this.toggle); this.nearby?.addEventListener('click', this.inspect);
@@ -151,13 +157,16 @@ class BusLayer {
   }
 
   installLayers() {
-    const map = this.map, before = map.getLayer(this.beforeId) ? this.beforeId : undefined;
-    map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 1.5, maxzoom: 16,
+    const map = this.map;
+    map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 0, maxzoom: 18,
       attribution: '버스 노선·정류장 <a href="https://data.seoul.go.kr/dataList/OA-1095/F/1/datasetView.do" target="_blank" rel="noopener">서울특별시 열린데이터광장</a>'});
-    for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[1] : LAYERS[0], type: 'line', source: SOURCE_ROUTES,
-      minzoom: BUS_ZOOM.routes, filter: ['==', ['get', 'approximate'], approximate], layout: {'line-cap': 'round', 'line-join': 'round'},
-      paint: {'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 13, .8, 14, 1.2, 18, 2.2],
-        'line-opacity': ['case', ['get', 'selected'], .9, .46], ...(approximate ? {'line-dasharray': [2, 2]} : {})}}, before);
+    const layout={'line-cap':'round','line-join':'round'},ride=['==',['get','kind'],'ride'];
+    map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:journeyCasingPaint()});
+    for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[2] : LAYERS[1], type: 'line', source: SOURCE_ROUTES,
+      filter: ['all',ride,['==', ['get', 'approximate'], approximate]], layout,
+      paint: {...journeyRidePaint(), ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
+    map.addLayer({id:LAYERS[3],type:'circle',source:SOURCE_ROUTES,filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});
+    this.raiseRoute();
   }
 
   setTheme(theme) {
@@ -197,7 +206,9 @@ class BusLayer {
     if (!this.data) { if(this.map.getZoom()>=BUS_ZOOM.stops||this.journeyLegs.length)this.loadStatic(); return; }
     this.box = padded(boundsArray(this.map.getBounds()));
     this.visible = visibleBusRoutes(this.data, this.box, this.selectedRoute);
-    this.laneMetres=busLaneMeters(this.map.getZoom(),(this.box[1]+this.box[3])/2);
+    if(this.map.getZoom()>=BUS_ZOOM.buses&&(this.enabled||this.chosenIds().length)){
+      try{this.roads.update(this.map.querySourceFeatures?.('ofm',{sourceLayer:'transportation'})||[]);}catch{/* Tiles may still be loading. */}
+    }
     this.exitCoordinates=this.getExitCoordinates().filter(p=>contains(this.box,p));
     const canvas=this.map.getCanvas(),screen=this.map.project?{project:p=>this.map.project(p),width:canvas.clientWidth,height:canvas.clientHeight}:null;
     this.requested=this.enabled||this.chosenIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.chosenIds(),screen):[];
@@ -212,14 +223,39 @@ class BusLayer {
   renderStatic() {
     if (this.disposed) return;
     const features = [], stopFeatures = [], stopIds = new Set(), chosen=new Set(this.chosenIds());
-    for (const {route} of this.visible) {
-      if(chosen.has(route.id)) features.push(feature('LineString',this.lanePath(route),{routeId:route.id,name:route.name,
-        color:color(route,this.theme),selected:true,approximate:route.approximate}));
-      for (const id of route.stopIds) stopIds.add(id);
+    for (const {route} of this.visible) for (const id of route.stopIds) stopIds.add(id);
+    const drawRoute=(route,markers)=>{
+      const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
+      const path=this.geometry(route),matched=this.matchedPath(route),overview=this.map.getZoom()<BUS_ZOOM.buses;
+      // At overview scales use the official route. Detailed views show only connected,
+      // road-matched portions, never a provisional shortcut through buildings.
+      if(overview||!this.map.querySourceFeatures)features.push(feature('LineString',route.path,properties));
+      else for(const chunk of matched.chunks){
+        let part=[],laneWidth=chunk[0].laneWidth;
+        const flush=()=>{if(part.length>1)features.push(feature('LineString',part,{...properties,laneWidth}));};
+        for(const p of chunk){
+          if(Math.abs(laneWidth-p.laneWidth)>.01){flush();part=part.length?[part.at(-1)]:[];laneWidth=p.laneWidth;}
+          part.push(p.coordinate);
+        }flush();
+      }
+      for(const marker of markers){
+        const snap=snapBusToPath(path,marker.coordinate,{maxError:1000,hint:marker.distance??null});
+        const pose=snap&&busRoadPointAt(matched,snap.distance);
+        if(!overview&&!pose&&this.map.querySourceFeatures)continue;
+        features.push(feature('Point',pose?.coordinate||marker.coordinate,{...properties,kind:'stop'}));
+      }
+    };
+    for(const id of chosen){
+      const route=this.data?.routeById.get(id);if(!route)continue;
+      const path=this.geometry(route),legs=this.journeyLegs.filter(l=>journeyBusRouteIds(this.data,[l]).includes(id));
+      const markers=legs.length?legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate}))):
+        path.stops.filter((s,i)=>this.map.getZoom()>=14||s.stop.id===this.selection?.id||i===0||i===path.stops.length-1)
+          .map(s=>({coordinate:[s.stop.lng,s.stop.lat],distance:s.distance}));
+      drawRoute(route,markers);
     }
     for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){
-      const path=buildBusPath(leg.path);if(path)features.push(feature('LineString',offsetBusPath(path,this.laneMetres),
-        {routeId:'',name:String(leg.route),color:BUS_TYPES.other[this.theme],selected:true,approximate:true}));
+      leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:true,stopIds:[]};
+      drawRoute(leg.displayRoute,[leg.path[0],leg.path.at(-1)].map(coordinate=>({coordinate})));
     }
     if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const id of stopIds) {
       const stop = this.data.stopById.get(id);
@@ -227,6 +263,7 @@ class BusLayer {
       if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
     }
     this.map.getSource(SOURCE_ROUTES)?.setData(collection(features));
+    this.raiseRoute();
     this.stopFeatures = stopFeatures;
   }
 
@@ -335,10 +372,19 @@ class BusLayer {
   }
   clearScene() { this.hits=[];this.stopHits=[]; }
 
-  lanePath(route) {
-    const path=this.geometry(route);if(!path)return route.path;
-    if(route.laneMetres!==this.laneMetres){route.laneMetres=this.laneMetres;route.lane=offsetBusPath(path,this.laneMetres);}
-    return route.lane;
+  matchedPath(route) {
+    if(route.matched?.version!==this.roads.version)route.matched=this.roads.match(this.geometry(route));
+    return route.matched;
+  }
+  selectedLeg(){
+    const r=this.data?.routeById.get(this.selectedRoute);
+    return r?{type:'bus',routeId:r.id,route:r.name,path:r.path,color:color(r,this.theme)}:null;
+  }
+  raiseRoute(){
+    // Above journey's ground veil, below raised buildings: a road line must not
+    // paint over a roof simply because the selection layers were created last.
+    const before=this.map.getLayer('city-buildings')?'city-buildings':this.map.getLayer('bm-bld3d')?'bm-bld3d':undefined;
+    if(this.map.moveLayer)for(const id of LAYERS)if(this.map.getLayer(id))this.map.moveLayer(id,before);
   }
 
   refreshAnimatedDetail(now) {
@@ -367,9 +413,11 @@ class BusLayer {
       if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
       if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
       const distance=this.reduced.matches?bus.motion.to:busMotionDistance(bus.motion,now);
-      const pose=offsetBusPointAt(bus.path,distance,this.lanePath(bus.route));
-      if(!contains(this.box||box,pose.coordinate))continue;
-      const world=busMercator(pose.coordinate),scale=busModelScale(zoom),yaw=(pose.heading-90)*Math.PI/180;
+      const pose=busRoadPointAt(this.matchedPath(bus.route),distance);
+      if(!pose||!contains(this.box||box,pose.coordinate))continue;
+      // Keep the entire toy bus inside its lane, including wheels, at every zoom.
+      const scale=Math.min(busModelScale(zoom),pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1])));
+      const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-.56,.56])for(const z of [0,1.32]){
         const q=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(q)corners.push(q);
@@ -378,7 +426,7 @@ class BusLayer {
       if(!intersects(rectangle,[0,0,width,height]))continue;
       const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id;
       vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected});
-      this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading});
+      this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading,laneWidth:pose.laneWidth,scale});
       if(!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration)moving=true;
       if(vehicles.length>=(this.phone?160:320))break;
     }
@@ -395,7 +443,7 @@ class BusLayer {
       ((a.world[0]-origin[0])**2+(a.world[1]-origin[1])**2)-((b.world[0]-origin[0])**2+(b.world[1]-origin[1])**2));
     for(const {f,world} of candidates){
       const points=[];
-      for(const x of [-7,7])for(const y of [-3.5,3.5])for(const z of [0,20.5]){
+      for(const x of [-7.5,7.5])for(const y of [-7.5,7.5])for(const z of [0,25.5]){
         const p=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(p)points.push(p);
       }
       if(points.length!==8)continue;const rectangle=bounds(points);
@@ -403,11 +451,11 @@ class BusLayer {
       const touch=hitBox(rectangle,this.phone?44:28),spacing=pad(touch,zoom<16?5:2);
       if(occupied.some(r=>intersects(spacing,r)))continue;
       occupied.push(spacing);
-      posts.push({world,yaw:bearing,scale,rgb:[.25,.29,.30],label:'BUS',selected:this.selection?.id===f.properties.id});
+      posts.push({world,yaw:bearing,scale,rgb:[.25,.29,.30],selected:this.selection?.id===f.properties.id});
       this.stopHits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:rectangle});
       if(posts.length>=(this.phone?700:1400))break;
     }
-    this.renderer.render(gl,matrix,{origin,unit,dark:this.theme==='dark',vehicles,stops:posts});
+    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
       this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));
@@ -447,17 +495,19 @@ class BusLayer {
     this.selection = selection; this.selectedRoute = routeId;
     this.updateDetail = this.onSelect(this.detailHTML()) || null;
     this.refreshView();
+    this.onRouteSelect(this.selectedLeg());
   }
   clearSelection() {
-    if (!this.selection&&!this.journeyLegs.length) return;
+    if (!this.selection&&!this.journeyLegs.length&&!this.selectedRoute) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
     this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.journeyLegs=[];this.journeyIds=[];
     if(!this.enabled){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
+    this.onRouteSelect(null);
   }
   setJourney(legs){
     this.selection=null;this.selectedRoute=null;this.updateDetail=null;
-    this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.every(validCoordinate));
+    this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
@@ -512,8 +562,9 @@ class BusLayer {
 
   destroy() {
     if (this.disposed) return;
-    this.stopLive(); clearTimeout(this.viewTimer); this.staticController?.abort(); this.disposed = true;
+    this.stopLive(); clearTimeout(this.viewTimer);clearTimeout(this.roadTimer); this.staticController?.abort(); this.disposed = true;
     this.map.off('moveend', this.move); this.map.off('zoom', this.zoom); this.map.off('remove', this.remove);
+    this.map.off('sourcedata',this.roadData);
     document.removeEventListener('visibilitychange', this.visibility); this.reduced.removeEventListener('change', this.motionChanged);
     document.removeEventListener('click',this.routeClick);
     this.button?.removeEventListener('click', this.toggle); this.nearby?.removeEventListener('click', this.inspect);

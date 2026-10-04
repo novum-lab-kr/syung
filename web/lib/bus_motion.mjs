@@ -69,11 +69,10 @@ export function nextBusMotion(previous, distance, now, {interval = 15000, reduce
   return {from: reset ? distance : from, to: distance, startedAt: now, duration: reset ? 0 : duration};
 }
 
-// The feed has no road width. Use an 18 m road's right lane (6 m from centre),
-// with bounded screen separation at low zoom. Geometry and vehicles share this value.
-export function busLaneMeters(zoom, latitude, roadWidth = 18) {
-  const metresPerPixel = 40075016.68557849 * Math.cos(latitude * Math.PI / 180) / (512 * 2 ** zoom);
-  return Math.min(14, Math.max(clamp(roadWidth / 2 - 3, 3, 8), 7 * metresPerPixel));
+// Conservative fallback only. Matched roads use busRoadLane's actual profile.
+// Zoom must never push a vehicle outside the carriageway.
+export function busLaneMeters(zoom, latitude, roadWidth = 6) {
+  return Math.min(3,Math.max(0,roadWidth/2-1.5));
 }
 
 export function offsetBusPath(path, metres) {

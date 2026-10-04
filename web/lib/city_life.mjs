@@ -297,6 +297,7 @@ export class CityLife {
     const pip = (x, y, rings) => { let inside = false; for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const yi = r[i][1], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < (r[j][0] - r[i][0]) * (y - yi) / (yj - yi) + r[i][0]) inside = !inside } return inside };
     const edgeNear = (x, y, rings, m) => { for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = r[j][0], ay = r[j][1], dx = r[i][0] - ax, dy = r[i][1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < m) return true } return false };
     const inBuilding = (x, y, m) => { const a = BG.get(Math.floor(x / BC) + ',' + Math.floor(y / BC)); if (!a) return false; for (const id of a) { const P = polys[id], b = P.box; if (x < b[0] - m || x > b[2] + m || y < b[1] - m || y > b[3] + m) continue; if (pip(x, y, P.rings) || (m > 0 && edgeNear(x, y, P.rings, m))) return true } return false };
+    cell.inBuilding = inBuilding;   // kept on the cell: the viaduct's piers ask it (CityLife.inBuilding)
     mark('buildings'); yield;
     // water, wood, park grass and lawns: a 4 m mask by scanline fill (even–odd); landuse zones on a 10 m grid
     const NW = Math.ceil((bx1 - bx0) / RASTER) + 1, NH = Math.ceil((by1 - by0) / RASTER) + 1, mask = new Uint8Array(NW * NH);
@@ -558,6 +559,9 @@ export class CityLife {
     }
     return n;
   }
+  // Is (x, y) (local metres) inside a building footprint: true / false, or undefined where no cell is ready yet (the
+  // viaduct's piers wait for that, so none stands in a building whose tile has not come).
+  inBuilding(x, y) { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }
   animating() { return this._anim }
   dispose(gl) {
     if (!this.gl) return; for (const c of [...this.cells.values()]) this.dropCell(c);
@@ -567,4 +571,5 @@ export class CityLife {
     this.vehicles.dispose(gl); this.gl = null;
   }
 }
+export { ORIGIN, MU, O as MERC_ORIGIN, toM };   // the local metre frame (city_viaduct.mjs shares it)
 export default CityLife;

@@ -459,6 +459,26 @@ export const SEOUL_CITY_STYLE = {
       "civic": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "sparse"}
     }
   },
+  // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
+  // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
+  "viaduct": {
+    "railHeightM": 11, "lineStepM": 0.04, "deckThicknessM": 1.6, "parapetHeightM": 1.1, "parapetPx": 2, "marginPx": 1.5,
+    "lowZoomLanePx": 2, "lowZoomBodyPx": 4, "widthZoom": [15, 16],
+    "bedWidthRatio": 0.55, "railGaugeRatio": 0.3, "railPx": 0.9,
+    "elevatedConcreteK": 0.88,
+    "pier": {"everyM": 28, "searchM": 12, "sideM": 2.2, "minPx": 1.6, "capDepthM": 1.4, "capLengthM": 1.8, "capOverhangPx": 0.6},
+    "station": {"platformRiseM": 0.3, "floorM": 0.5, "platformDepthRatio": 0.6, "gapPx": 0.6, "canopyHeightM": 4.2, "canopyThicknessM": 0.3,
+      "canopyInsetM": 6, "canopyOverhangPx": 0.6, "postEveryM": 10, "postM": 0.3, "postPx": 1, "postInsetPx": 1},
+    "colors": {
+      "light": {"concrete": "#C9CBC4", "under": "#9FA39E", "pier": "#BDBFB8", "bed": "#5E625F", "rail": "#8F9391", "platform": "#DAD6CC", "roof": "#55626A", "roofUnder": "#8E979B", "post": "#A3A8A6"},
+      "dark": {"concrete": "#5A6064", "under": "#3B4144", "pier": "#4E5457", "bed": "#2E3335", "rail": "#6B7174", "platform": "#6C6F6A", "roof": "#2F3A40", "roofUnder": "#53606A", "post": "#5C6366"}
+    },
+    "night": {"glow": "#F0D6A6", "underK": 0.45, "platformK": 0.6},
+    "shadow": {"minZoom": 15.5, "opacityK": 1.2, "maxLengthM": 60},
+    "lod": {"deck": [13.6, 14.2], "piers": 15, "beds": 16, "rails": 16.5, "platforms": 15.5, "posts": 16.5},
+    "train": {"laneGapPx": 1.5},
+    "performance": {"bytes": 64e6, "phoneBytes": 24e6, "buildMs": 6, "buildMsMoving": 3}
+  },
   "styleRevision": "2026-10-03-QA1",
   "changeLog": [
     {

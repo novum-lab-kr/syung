@@ -1,4 +1,4 @@
-// Instanced buses and BUS posts in the train overlay's WebGL2 context.
+// Instanced buses and round bus-stop signs in the train overlay's WebGL2 context.
 // All coordinates stay double precision until the view origin is subtracted.
 const RAD = Math.PI / 180;
 export function busMercator([lng, lat]) {
@@ -75,12 +75,16 @@ export function buildBusMesh() {
 
 export function buildBusPostMesh() {
   const {data,quad,box}=meshBuilder();
-  box(-2.5,-2.5,.05,2.5,2.5,1.1,9);
-  box(-.9,-.9,1.1,.9,.9,14.5,9);
-  box(-7,-3.5,13,7,3.5,20.5,10);
-  // Identical BUS lettering on the front and top; readable at a flat camera too.
-  quad([-6.5,3.51,13.5],[6.5,3.51,13.5],[6.5,3.51,20],[-6.5,3.51,20],[0,1,0],8);
-  quad([-6.5,3.2,20.51],[6.5,3.2,20.51],[6.5,-3.2,20.51],[-6.5,-3.2,20.51],[0,0,1],8);
+  box(-.75,-.75,.8,.75,.75,18,9);
+  for(let i=0;i<32;i++){
+    const a=i*Math.PI/16,b=(i+1)*Math.PI/16,ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b);
+    // A low circular foot, with a bevel, anchors the charcoal post.
+    quad([ca*2.7,sa*2.7,.08],[cb*2.7,sb*2.7,.08],[cb*2.3,sb*2.3,1],[ca*2.3,sa*2.3,1],[ca,sa,.4],9);
+    quad([0,0,1],[ca*2.3,sa*2.3,1],[cb*2.3,sb*2.3,1],[cb*2.3,sb*2.3,1],[0,0,1],9);
+    const A=[ca*7.5,.42,18+sa*7.5],B=[cb*7.5,.42,18+sb*7.5];
+    quad([0,.42,18],A,B,B,[0,1,0],8,[[.5,.5],[(ca+1)/2,(sa+1)/2],[(cb+1)/2,(sb+1)/2],[(cb+1)/2,(sb+1)/2]]);
+    quad([A[0],-.42,A[2]],[B[0],-.42,B[2]],B,A,[ca,0,sa],10);
+  }
   return new Float32Array(data);
 }
 
@@ -88,15 +92,23 @@ const VS=`#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_normal;
 layout(location=2) in vec2 a_uv; layout(location=3) in float a_material;
 layout(location=4) in vec4 i_pose; layout(location=5) in vec4 i_color; layout(location=6) in vec2 i_info;
-uniform mat4 u_matrix; uniform float u_unit;
+uniform mat4 u_matrix; uniform float u_unit,u_pitch;
 out vec3 v_normal; out vec2 v_uv; out vec4 v_color; flat out float v_material; flat out vec2 v_info;
-void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 p=a_pos*i_pose.w*u_unit;
+void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal;
+  // The raised disc faces the camera, like the exit signs. The post stays upright.
+  // This also keeps the pictogram legible in journey's flat-camera fit.
+  if(abs(a_material-8.)<.2||abs(a_material-10.)<.2){float y=pos.y,z=pos.z-18.;
+    pos.y=sin(u_pitch)*y-cos(u_pitch)*z;pos.z=18.+cos(u_pitch)*y+sin(u_pitch)*z;
+    normal.y=sin(u_pitch)*a_normal.y-cos(u_pitch)*a_normal.z;normal.z=cos(u_pitch)*a_normal.y+sin(u_pitch)*a_normal.z;}
+  vec3 p=pos*i_pose.w*u_unit;
   p.xy=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+i_pose.xy;
-  gl_Position=u_matrix*vec4(p,1.); v_normal=vec3(c*a_normal.x-s*a_normal.y,s*a_normal.x+c*a_normal.y,a_normal.z);
+  gl_Position=u_matrix*vec4(p,1.); v_normal=vec3(c*normal.x-s*normal.y,s*normal.x+c*normal.y,normal.z);
   v_uv=a_uv;v_color=i_color;v_material=a_material;v_info=i_info;}`;
 const FS=`#version 300 es
 precision highp float; in vec3 v_normal; in vec2 v_uv; in vec4 v_color; flat in float v_material; flat in vec2 v_info;
 uniform float u_dark,u_rows; uniform sampler2D u_atlas; out vec4 outColor;
+float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
+float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
   else if(m>12.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
@@ -108,13 +120,24 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     else if(m<5.5&&m>4.5)col=mix(vec3(.78,.82,.76),vec3(1.,.98,.78),u_dark);
     else if(m<6.5&&m>5.5)col=vec3(.89,.15,.10);
     else if(m<7.5&&m>6.5)col=vec3(.9,.92,.86);
-    else if(m<9.5&&m>8.5)col=mix(vec3(.42,.45,.46),vec3(.55,.58,.60),u_dark);
-    else if(m<10.5&&m>9.5)col=vec3(.18,.23,.25);
-    if(abs(m-8.)<.2||abs(m-12.)<.2){
-      float index=abs(m-8.)<.2?0.:v_info.x;vec2 cell=vec2(mod(index,4.),floor(index/4.));
+    else if(m<9.5&&m>8.5)col=mix(vec3(.22,.24,.25),vec3(.30,.32,.33),u_dark);
+    else if(m<10.5&&m>9.5)col=vec3(.75,.59,.10);
+    if(abs(m-8.)<.2){
+      vec2 p=(v_uv-.5)*2.;float r=length(p);
+      float ring=shape(abs(r-.82)-.025);
+      float body=shape(roundedBox(p-vec2(0.,.015),vec2(.38,.41),.11));
+      float tyres=shape(roundedBox(vec2(abs(p.x)-.25,p.y+.43),vec2(.07,.09),.02));
+      float bumper=shape(roundedBox(p+vec2(0.,.28),vec2(.43,.065),.04));
+      float window=shape(roundedBox(p-vec2(0.,.15),vec2(.28,.18),.025));
+      float lamps=shape(length(vec2(abs(p.x)-.245,p.y+.20))-.048);
+      float ink=max(ring,max(max(body,tyres),bumper)*(1.-max(window,lamps)));
+      col=mix(mix(vec3(1.,.83,.08),vec3(1.,.89,.28),u_dark),vec3(.07,.08,.08),ink);
+    }
+    if(abs(m-12.)<.2){
+      float index=v_info.x;vec2 cell=vec2(mod(index,4.),floor(index/4.));
       vec2 uv=(cell+vec2(v_uv.x,1.-v_uv.y))/vec2(4.,u_rows);
       float ink=texture(u_atlas,uv).a;
-      col=abs(m-8.)<.2?mix(vec3(.18,.23,.25),vec3(1.,.85,.16),ink):mix(vec3(.91,.93,.89),vec3(.10,.17,.20),ink);
+      col=mix(vec3(.91,.93,.89),vec3(.10,.17,.20),ink);
     }
     float lit=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);
     if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2)col*=lit;
@@ -145,7 +168,7 @@ export class BusRenderer {
   init(gl){
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
-    this.u=Object.fromEntries(['matrix','unit','dark','rows','atlas'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
+    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
     this.batches=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)].map(data=>{
       const vao=gl.createVertexArray(),mesh=gl.createBuffer(),instances=gl.createBuffer();gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER,mesh);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
@@ -156,9 +179,9 @@ export class BusRenderer {
     });gl.bindVertexArray(null);
   }
   atlas(names){
-    const labels=['BUS',...new Set(names)].sort((a,b)=>a==='BUS'?-1:b==='BUS'?1:a.localeCompare(b)),key=labels.join('|');
+    const labels=[...new Set(names)].sort(),key=labels.join('|');
     if(key===this.atlasKey)return;
-    this.atlasKey=key;this.labels=new Map(labels.map((s,i)=>[s,i]));this.rows=Math.ceil(labels.length/4);
+    this.atlasKey=key;this.labels=new Map(labels.map((s,i)=>[s,i]));this.rows=Math.max(1,Math.ceil(labels.length/4));
     const canvas=document.createElement('canvas');canvas.width=4*192;canvas.height=this.rows*64;
     const ctx=canvas.getContext('2d');ctx.font='800 48px "Noto Sans KR",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';
     labels.forEach((label,i)=>ctx.fillText(label,(i%4+.5)*192,(Math.floor(i/4)+.5)*64,178));
@@ -167,12 +190,13 @@ export class BusRenderer {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  render(gl,matrix,{origin,unit,dark,vehicles,stops}){
+  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops}){
     this.stats={vehicles:vehicles.length,stops:stops.length,drawCalls:0};
     if(!vehicles.length&&!stops.length)return;
     this.init(gl);this.atlas(vehicles.map(v=>v.label));
     this.matrix.set(matrix);for(let i=0;i<4;i++)this.matrix[12+i]=matrix[i]*origin[0]+matrix[4+i]*origin[1]+matrix[12+i];
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.u.matrix,false,this.matrix);gl.uniform1f(this.u.unit,unit);gl.uniform1f(this.u.dark,dark?1:0);
+    gl.uniform1f(this.u.pitch,pitch);
     gl.uniform1f(this.u.rows,this.rows);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.u.atlas,0);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     const draw=(batch,items,writeDepth)=>{

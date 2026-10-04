@@ -4,7 +4,7 @@
 // shape in *unit space* (xy in radius units, z in height units) and every instance supplies its own scales,
 // so a 555 m drop tower and a 160 m one are the same vertices. Animation is a uniform clock in the vertex
 // shader (wheel turn, swing turn, saucer panels, the drop tower's rise/pause/drop/pause), so no buffer is
-// rebuilt while they move; only the small per-frame instance list (18 floats a ride) is re-uploaded.
+// rebuilt while they move; only the small per-frame instance list (19 floats a ride) is re-uploaded.
 // opts.night hangs the festoon lights on the same instances: see buildBulbs / BULB_VS below.
 //
 //   const rides=new RideLayer(towers);           // [[lon,lat,footprintRadius_m,height_m], …]
@@ -13,6 +13,7 @@
 
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './park_night.mjs';
 import { SEOUL_COASTER_STYLE as STYLE, ridePalette } from './coaster_style_seoul.mjs';
+import { selectRideSites } from './coaster_ride_sites.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;
@@ -331,8 +332,13 @@ function buildNeon(kind) {
 }
 
 const KINDS = ['drop', 'ferris', 'swing', 'saucer'];
-const INST = [[4, 2], [5, 4], [6, 4], [7, 4], [8, 4]];   // the instance attributes, shared by the ride mesh and its lights
+const INSTANCE_FLOATS = 19;
+const INST = [[4, 3], [5, 4], [6, 4], [7, 4], [8, 4]];   // xyz origin and shared instance attributes for the ride mesh and its lights
 const BUILD = { drop: buildDrop, ferris: buildFerris, swing: buildSwing, saucer: buildSaucer };
+// Add the base after the ride's own pose and scale, keeping bodies and every light at the same altitude.
+const RIDE_PROJECT = `
+vec4 rideProject(vec3 p){ return u_matrix * vec4(i_org + p * i_s.w, 1.); }
+`;
 
 // ── shaders ─────────────────────────────────────────────────────────────────────────────────────
 const VS = `#version 300 es
@@ -340,12 +346,13 @@ layout(location=0) in vec3 a_v;      // turned by the animation
 layout(location=1) in vec3 a_w;      // not turned
 layout(location=2) in vec3 a_n;
 layout(location=3) in vec4 a_k;      // colour slot, rot mode, xy-scale pick, shade bias
-layout(location=4) in vec2 i_org;    // mercator, local origin taken off
+layout(location=4) in vec3 i_org;    // mercator xyz, local xy origin taken off; z is the site's base altitude
 layout(location=5) in vec4 i_s;      // Sxy, Sz, Smast (metres), mercator units a metre
 layout(location=6) in vec4 i_a;      // phase s, rate (0 frozen), period s, yaw
 layout(location=7) in vec4 i_c;      // palette index: ride A, ride B, structure, structure shade
 uniform mat4 u_matrix; uniform float u_time; uniform vec3 u_pal[10]; uniform vec3 u_light; uniform vec2 u_lit;
 out vec3 v_col;
+${RIDE_PROJECT}
 ${RIDE_DIMENSIONS}
 void main(){
   float sxy = a_k.z > .5 && a_k.z < 1.5 ? i_s.z : i_s.x, sz = i_s.y;
@@ -371,7 +378,7 @@ void main(){
   float yc = cos(i_a.w), ys = sin(i_a.w);
   p = vec3(p.x*yc - p.y*ys, p.x*ys + p.y*yc, p.z);
   n = vec3(n.x*yc - n.y*ys, n.x*ys + n.y*yc, n.z);
-  gl_Position = u_matrix * vec4(i_org + p.xy*i_s.w, p.z*i_s.w, 1.);
+  gl_Position = rideProject(p);
   int ci = int(a_k.x >= 4. ? a_k.x - 4. : a_k.x < .5 ? i_c.x : a_k.x < 1.5 ? i_c.y : a_k.x < 2.5 ? i_c.z : i_c.w);
   float nl = length(n);
   float d = nl > 1e-20 ? max(dot(n / nl, u_light), 0.) : 0.;   // never normalize a zero: a NaN colour rasterizes differently every frame
@@ -386,13 +393,14 @@ layout(location=0) in vec3 a_v;
 layout(location=1) in vec3 a_w;
 layout(location=2) in vec4 a_k;      // bulb colour 0-3, rot mode, xy-scale pick, tier
 layout(location=3) in vec2 a_e;      // parameter, role (0 plain · 1 rim · 2 garland · 3 Lotte's extra strings · 4 garland pole foot)
-layout(location=4) in vec2 i_org;
+layout(location=4) in vec3 i_org;
 layout(location=5) in vec4 i_s;
 layout(location=6) in vec4 i_a;
 layout(location=8) in vec4 i_n;      // garlands on, collar height m, pole radius m, the ride's place in the accent colours
 uniform mat4 u_matrix; uniform float u_time, u_size, u_core, u_tier, u_thin, u_anim, u_bright, u_neonOn;
 uniform vec3 u_pal[8];
 out vec3 v_rgb; out vec2 v_mix;
+${RIDE_PROJECT}
 ${BULB_TWINKLE}
 ${RIDE_DIMENSIONS}
 void kill(){ gl_Position = vec4(2., 2., 2., 1.); gl_PointSize = 0.; }
@@ -432,7 +440,7 @@ void main(){
   p=rideDimensions(p,i_s,i_a,a_k.z);
   float yc = cos(i_a.w), ys = sin(i_a.w);
   p = vec3(p.x * yc - p.y * ys, p.x * ys + p.y * yc, p.z);
-  gl_Position = u_matrix * vec4(i_org + p.xy * i_s.w, p.z * i_s.w, 1.);
+  gl_Position = rideProject(p);
   gl_Position.z -= 3.5e-4 * gl_Position.w;                                 // a hair in front of the surface it is fixed to
   gl_PointSize = u_size;
   float b = u_bright;
@@ -448,12 +456,13 @@ layout(location=2) in vec3 a_v2;     // its second end
 layout(location=3) in vec3 a_w2;
 layout(location=9) in vec4 a_g;      // place round the loop, rot mode, xy-scale pick, tier
 layout(location=10) in vec2 a_e;     // along the segment, across it
-layout(location=4) in vec2 i_org;
+layout(location=4) in vec3 i_org;
 layout(location=5) in vec4 i_s;
 layout(location=6) in vec4 i_a;
 uniform mat4 u_matrix; uniform float u_time, u_half, u_core, u_tier, u_chase, u_anim;
 uniform vec2 u_vp; uniform vec3 u_neon;
 out vec3 v_rgb; out vec3 v_mix;
+${RIDE_PROJECT}
 ${RIDE_POINT}
 ${RIBBON}
 void main(){
@@ -461,8 +470,8 @@ void main(){
   float tt = u_time * i_a.y + i_a.x;
   vec3 A = ridePoint(a_v, a_w, a_g.y, a_g.z, tt, i_s, i_a);
   vec3 B = ridePoint(a_v2, a_w2, a_g.y, a_g.z, tt, i_s, i_a);
-  vec4 cA = u_matrix * vec4(i_org + A.xy * i_s.w, A.z * i_s.w, 1.);
-  vec4 cB = u_matrix * vec4(i_org + B.xy * i_s.w, B.z * i_s.w, 1.);
+  vec4 cA = rideProject(A);
+  vec4 cB = rideProject(B);
   gl_Position = ribbon(cA, cB, a_e.x, a_e.y, u_half, u_vp);
   gl_Position.z -= 3.5e-4 * gl_Position.w;     // a hair in front of the surface it is fixed to
   float b = .80;
@@ -483,11 +492,11 @@ const atZoom = (z, v) => z <= EXAG[0] ? v[0] : z >= EXAG[2] ? v[2]
   : z <= EXAG[1] ? v[0] + (v[1] - v[0]) * (z - EXAG[0]) : v[1] + (v[2] - v[1]) * (z - EXAG[1]);
 
 export class RideLayer {
-  constructor(towers) {
+  constructor(towers,options={}) {
     this.towers = towers || [];
     this.O = { x: mercX(126.978), y: mercY(37.5665) };
     this.M = new Float32Array(16);
-    this._sites = this.towers.map(([lon, lat, fr, H], i) => {
+    this.candidates = this.towers.map(([lon, lat, fr, H], i) => {
       const R = .7 * fr, q = fnv1a(lon.toFixed(5) + ',' + lat.toFixed(5));
       const lotte = Math.abs(lon - LOTTE[0]) < 1e-4 && Math.abs(lat - LOTTE[1]) < 1e-4;
       // the ride head: broad enough at close zoom to read as an attraction, not a pin
@@ -511,12 +520,18 @@ export class RideLayer {
       s.hue = (q >>> 3) % 7;                                                // where this ride starts in the accent colours
       return s;
     });
+    this._sites=options.deferPlacement?[]:selectRideSites(this.candidates,options).sites;
     this.stats = { tris: 0, rides: 0, ms: 0 };
     this._moving = false; this.ping = 0;
   }
 
   // the canonical sites, so the caller can take these buildings out of the extrusion / walls / shadows
   sites() { return this._sites.map(s => ({ lon: s.lon, lat: s.lat, x: s.x, y: s.y, radius_m: s.radius_m, height_m: s.height_m, kind: s.kind })) }
+
+  setSites(sites){
+    this._sites=sites;
+    if(this.kind)for(const k of KINDS){const K=this.kind[k];K.order=sites.filter(s=>s.kind===k);K.data=new Float32Array(K.order.length*INSTANCE_FLOATS)}
+  }
 
   init(gl, maplibregl) {
     if (this.p) return;
@@ -541,7 +556,7 @@ export class RideLayer {
     for (const k of KINDS) {
       const K = this.kind[k] = { order: [], inst: [gl.createBuffer(), gl.createBuffer()], data: null, lod: [] };
       K.order = this._sites.filter(s => s.kind === k);
-      K.data = new Float32Array(K.order.length * 18);
+      K.data = new Float32Array(K.order.length * INSTANCE_FLOATS);
       for (const b of K.inst) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW) }
       for (const lod of [0, 1]) {
         const M = BUILD[k](lod), buf = M.buffer(), vb = gl.createBuffer();
@@ -581,7 +596,7 @@ export class RideLayer {
   // point the instance attributes of the bound VAO at this frame's store
   instPtr(gl, K) {
     gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[this.ping]);
-    const IS = 18 * 4; let o = 0;
+    const IS = INSTANCE_FLOATS * 4; let o = 0;
     for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
   }
 
@@ -597,13 +612,14 @@ export class RideLayer {
     }
     const rgb = this._rgb;
 
-    // who is on screen: the view box grown by the ride's own height (a 555 m mast leans far across the screen)
+    // Grow the view box by the same displayed dimensions and base altitude: elevated rides lean farther into view.
     let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
     if (bounds) { x0 = Math.min(bounds[0], bounds[2]); x1 = Math.max(bounds[0], bounds[2]); y0 = Math.min(bounds[1], bounds[3]); y1 = Math.max(bounds[1], bounds[3]) }
     const EH = atZoom(zoom, EXAG_H), EV = atZoom(zoom, EXAG_V);   // Lotte stays at 1 (it has the spiral to fit inside)
     const vis = [];
     for (const s of this._sites) {
-      const pad = (s.top * (s.lotte ? 1 : EV) + s.wide * (s.lotte ? 1 : EH)) * s.mu + (bounds ? (x1-x0)*.15 : 0);
+      const eh = Math.min(s.lotte ? 1 : EH, s.maxExagH ?? EXAG_H[0]), ev = Math.min(s.lotte ? 1 : EV, s.maxExagV ?? EXAG_V[0]);
+      const pad = ((s.base_m ?? 0) + s.top * ev + s.wide * eh) * s.mu + (bounds ? (x1-x0)*.15 : 0);
       if (s.x < x0 - pad || s.x > x1 + pad || s.y < y0 - pad || s.y > y1 + pad) continue;
       vis.push(s);
     }
@@ -615,12 +631,13 @@ export class RideLayer {
     const lod=this.lod=zoom>=split+h?1:zoom<split-h?0:this.lod??(zoom>=split?1:0),ts=now/1000;
     for (const k of KINDS) this.kind[k].n = 0;
     for (const s of vis) {
-      const K = this.kind[s.kind], d = K.data, i = K.n * 18, eh = s.lotte ? 1 : EH, ev = s.lotte ? 1 : EV;
-      d[i] = s.x - this.O.x; d[i + 1] = s.y - this.O.y;
-      d[i + 2] = s.sxy * eh; d[i + 3] = s.sz * ev; d[i + 4] = s.mastR * eh; d[i + 5] = s.mu;
-      d[i + 6] = s.phase; d[i + 7] = reducedMotion ? 0 : 1; d[i + 8] = s.period; d[i + 9] = s.yaw;
-      d[i + 10] = s.colA; d[i + 11] = s.colB; d[i + 12] = s.struct; d[i + 13] = s.shade;
-      d[i + 14] = s.lotte ? 0 : 1; d[i + 15] = s.collar; d[i + 16] = s.pole; d[i + 17] = s.hue;
+      const K = this.kind[s.kind], d = K.data, i = K.n * INSTANCE_FLOATS;
+      const eh = Math.min(s.lotte ? 1 : EH, s.maxExagH ?? EXAG_H[0]), ev = Math.min(s.lotte ? 1 : EV, s.maxExagV ?? EXAG_V[0]);
+      d[i] = s.x - this.O.x; d[i + 1] = s.y - this.O.y; d[i + 2] = (s.base_m ?? 0) * s.mu;
+      d[i + 3] = s.sxy * eh; d[i + 4] = s.sz * ev; d[i + 5] = s.mastR * eh; d[i + 6] = s.mu;
+      d[i + 7] = s.phase; d[i + 8] = reducedMotion ? 0 : 1; d[i + 9] = s.period; d[i + 10] = s.yaw;
+      d[i + 11] = s.colA; d[i + 12] = s.colB; d[i + 13] = s.struct; d[i + 14] = s.shade;
+      d[i + 15] = s.lotte ? 0 : 1; d[i + 16] = s.collar; d[i + 17] = s.pole; d[i + 18] = s.hue;
       K.n++;
     }
 
@@ -644,7 +661,7 @@ export class RideLayer {
       const K = this.kind[k]; if (!K.n) continue;
       gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[ping]);
       gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW);     // fresh storage
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * 18);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * INSTANCE_FLOATS);
     }
     let tris = 0;
     for (const k of KINDS) {
