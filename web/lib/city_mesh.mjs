@@ -120,8 +120,8 @@ export function resolvePack(pack) {
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
     modes: M, lod: { equipment: LOD.roofEquipment || [16, 16.5], windows: LOD.windows || [15, 16] },
     faces: { gap: num(FF.neighbourGapM, 3), open: num(FF.openDistanceM, 8), minFace: num(FF.minFaceWidthM, 6), slab: num(FF.slabAspect, 1.5), primaryOnlyMaxA: num(FF.primaryOnlyMaxAreaM2, 600) },
-    // 심시티 cutaway (pack.cutaway): buildings hiding a platform, a train or the viaduct are cut down under it (city_buildings.mjs)
-    cutaway: pack.cutaway ? (() => { const X = pack.cutaway; return { cutBelowRailM: num(X.cutBelowRailM, 2), minCutM: num(X.minCutM, 3.5), minDropM: num(X.minDropM, 1.5), fadeMs: num(X.fadeMs, 250), holdMs: num(X.holdMs, 600), enterPx: num(X.enterPx, 0), stayPx: num(X.stayPx, 24), pieceM: Math.max(5, num(X.pieceM, 30)), platformMarginM: num(X.platformMarginM, 4), platformBelowM: num(X.platformBelowM, 2.5), platformAboveM: num(X.platformAboveM, 6), trainHalfWidthM: num(X.trainHalfWidthM, 3), trainBelowM: num(X.trainBelowM, 1), trainAboveM: num(X.trainAboveM, 4.5), deckHalfWidthM: num(X.deckHalfWidthM, 6), deckBelowM: num(X.deckBelowM, 2), deckAboveM: num(X.deckAboveM, 4.5), trains: X.trains !== false, deck: X.deck !== false, section: X.section, edge: X.edge, edgeM: num(X.edgeM, .3) } })() : null,
+    // 심시티 x-ray (pack.xray): buildings hiding a station platform or a running train turn to glass there (city_buildings.mjs)
+    xray: (() => { const X = pack.xray || {}; return { alpha: num(X.alpha, .3), edgeAlpha: num(X.edgeAlpha, .75), edgePx: num(X.edgePx, 1.5), featherPx: num(X.featherPx, 24), fadeMs: num(X.fadeMs, 200), maxTargets: Math.max(1, num(X.maxTargets, 48)), pieceM: Math.max(5, num(X.pieceM, 30)), platformMarginM: num(X.platformMarginM, 4), platformBelowM: num(X.platformBelowM, 2.5), platformAboveM: num(X.platformAboveM, 6), trainHalfWidthM: num(X.trainHalfWidthM, 3), trainBelowM: num(X.trainBelowM, 1), trainAboveM: num(X.trainAboveM, 4.5), trains: X.trains !== false, on: pack.xray !== null } })(),
     // buildings the viaduct passes through (pack.throughBuildings): the glass band around the deck's rail height, the portal width, its look
     through: { railM: num(TB.railHeightM, num(pack.viaduct?.railHeightM, 11)), below: num(TB.bandBelowM, 2), above: num(TB.bandAboveM, 4.6), glass: TB.glass || {}, frame: TB.frame || {}, inside: TB.insideLight || {}, mullEvery: Math.max(.3, num(TB.mullionEveryM, 1.5)), mull: num(TB.mullionM, .08), portalHalf: Math.max(1, num(TB.portalHalfM, 12)), near: Math.max(0, num(TB.alongsideM, 8)), skyMix: num(TB.skyMix, .4), insideMix: num(TB.insideMix, .3), nightEmission: num(TB.nightEmission, 1.7), depthOpen: TB.depthOpen !== false },
   };
@@ -151,16 +151,16 @@ export function classifyBuilding(info, P) {
 //  0 xy f32×2 (tile-relative mercator) · 8 z f32 (m) · 12 normal i8×3 + kind i8 · 16 u f32 (wall: along it, m;
 //  roof: its axis angle; plant/awning: base height) · 20 wall u8×4 (bays (0 = no windows), length lo/hi in 5 cm, edge seed (4 bits) | faceClass<<4 (0 all bays, 1 every other, 2 one narrow column) | corner-at-start<<6 | corner-at-end<<7)
 //  · 24 building u8×4 (seed lo/hi, type|crown<<3|famFacade<<5, flags | cornerWidthShare<<4) · 28 misc u8×4 (colour pick, lit override, H lo/hi in 10 cm)
-export const STRIDE = 36;   // … + a_id (float, bytes 32–35): the building's index in the tile (its row in the cutaway table)
+export const STRIDE = 32;
 class Writer {
-  constructor() { this.cap = 1 << 15; this.buf = new ArrayBuffer(this.cap * STRIDE); this.view(); this.n = 0; this.id = 0; this.kind = 0; this.nx = 0; this.ny = 0; this.nz = 1; this.w = [0, 0, 0, 0]; this.b = [0, 0, 0, 0]; this.m = [0, 0, 0, 0] }
+  constructor() { this.cap = 1 << 15; this.buf = new ArrayBuffer(this.cap * STRIDE); this.view(); this.n = 0; this.kind = 0; this.nx = 0; this.ny = 0; this.nz = 1; this.w = [0, 0, 0, 0]; this.b = [0, 0, 0, 0]; this.m = [0, 0, 0, 0] }
   view() { this.f = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); this.i8 = new Int8Array(this.buf) }
   grow() { const nb = new ArrayBuffer(this.cap * 2 * STRIDE); new Uint8Array(nb).set(this.u8); this.buf = nb; this.cap *= 2; this.view() }
   normal(nx, ny, nz) { this.nx = nx; this.ny = ny; this.nz = nz }
   v(x, y, z, u) {
     if (this.n >= this.cap) this.grow();
-    const i = this.n++, f = i * 9, o = i * STRIDE;
-    this.f[f] = x; this.f[f + 1] = y; this.f[f + 2] = z; this.f[f + 4] = u; this.f[f + 8] = this.id;
+    const i = this.n++, f = i * 8, o = i * STRIDE;
+    this.f[f] = x; this.f[f + 1] = y; this.f[f + 2] = z; this.f[f + 4] = u;
     this.i8[o + 12] = Math.round(this.nx * 127); this.i8[o + 13] = Math.round(this.ny * 127); this.i8[o + 14] = Math.round(this.nz * 127); this.i8[o + 15] = this.kind;
     const u8 = this.u8; u8[o + 20] = this.w[0]; u8[o + 21] = this.w[1]; u8[o + 22] = this.w[2]; u8[o + 23] = this.w[3];
     u8[o + 24] = this.b[0]; u8[o + 25] = this.b[1]; u8[o + 26] = this.b[2]; u8[o + 27] = this.b[3];
@@ -182,7 +182,6 @@ export class TileBuilder {
     this.ox = src.x / n; this.oy = src.y / n;          // the tile's origin in mercator
     this.wox = (this.ox - G[0]) * S; this.woy = (this.oy - G[1]) * S;   // and in city metres
     this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
-    this.blds = [];   // a row a building: centre x, y and radius (mercator units from the tile origin), height, base height (m), chunk — for the cutaway
     this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
     this.items = []; this.blockers = []; this.ei = 0; this.grid = null;   // phase 1 reads every footprint (items; blockers = raw outlines, also those in the tile's buffer), phase 2 writes the meshes
   }
@@ -400,8 +399,7 @@ export class TileBuilder {
     ctx.th = th && th.segs ? { segs: th.segs, half: P.through.portalHalf, near: P.through.near / this.mPerUnit, rq: Math.max(0, Math.min(63, Math.round((th.railM - RAIL_Q.base) / RAIL_Q.step))) } : null;
     W.b = [seed & 255, (seed >>> 8) & 255, ti | (crown << 3) | (T.famFacade ? 32 : 0), (est.mergedLowrise ? FLAG.MERGED : 0) | (storefront ? FLAG.STOREFRONT : 0) | (cwQ << 4)];
     W.m = [mat, litOverride, Hq & 255, Hq >>> 8];
-    W.id = this.count; this.count++; chunk.n++;
-    { const bb = ringBbox(outer), u = this.unit; this.blds.push((bb[0] + bb[2]) / 2 * u, (bb[1] + bb[3]) / 2 * u, Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) / 2 * u, H, minH, this.chunks.indexOf(chunk)) }
+    this.count++; chunk.n++;
     // roofs: gabled small houses, crowned office tops, or the flat roof behind its parapet
     if (this.gable(ctx)) return;
     if (crownInsets) { const tz = art.topZoneHeightRatio || [.06, .1], r0 = num(tz[0], .06), r1 = num(tz[1], .1); this.crown(ctx, crownInsets, Math.min(H * (r0 + (r1 - r0) * ((seed & 0xffff) % 5) / 4), num(art.maxTopZoneHeightM, 4.5))); return }   // the top zone's height: the pack's ratio range, the same stable pick the shader makes from the 16-bit seed it sees
@@ -719,7 +717,7 @@ export class TileBuilder {
       const i0 = off; for (const v of c.lo) idx.push(v); const iLo = idx.length; for (const v of c.walls) idx.push(v); const iW = idx.length; for (const v of c.hi) idx.push(v); off = idx.length;
       chunks.push({ i0, iLo, iW, i1: off, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, zmax: c.zmax });
     }
-    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), blds: new Float32Array(this.blds), chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
+    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
   }
 }
 

@@ -13,7 +13,6 @@ import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './lib/city_life.mjs';
-import {MU as CITY_MU,MERC_ORIGIN as CITY_MERC_O} from './lib/city_life.mjs';   // city-build: the viaduct's local metre frame (its rows), for the cutaway's deck targets
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {CityViaduct} from './lib/city_viaduct.mjs';   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
@@ -346,31 +345,21 @@ let simcity=false;   // 심시티 모드: the miniature city (its own look; the 
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
 const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||coaster;
-// city-build: 심시티 cutaway — the station platforms, running trains and the viaduct near the view, as boxes in mercator for
-// cityBuildings (each with the height it cuts to: its rail height less pack.cutaway.cutBelowRailM): the buildings hiding them are cut
-// down there. Platforms: the station rect at its level; trains: tail to head on the deck; the deck: each edge in pieces on its profile
-const cityDeckPieces=new WeakMap();
-function cityCutTargets(){
-  const X=cityBuildings.P.cutaway;if(!X||!simcity)return null;
+// city-build: 심시티 x-ray — the station platforms and running trains near the view, as boxes in mercator for cityBuildings: the
+// buildings hiding them turn to glass there (pack.xray). Platforms: the station rect at its viaduct level; trains: tail to head on the deck
+function cityXrayTargets(){
+  const X=cityBuildings.P.xray;if(!X||!X.on)return null;
   const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),m=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
-  const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x,y)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad,out=[],cutOf=h=>h/m-X.cutBelowRailM,solo=selected!=='all';
-  for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);if(solo&&line!==selected)continue;
+  const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x,y)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad,out=[];
+  for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);
     const P=maplibregl.MercatorCoordinate.fromLngLat(c[0]),Q=maplibregl.MercatorCoordinate.fromLngLat(c[c.length-1]),cx=(P.x+Q.x)/2,cy=(P.y+Q.y)/2;if(!inV(cx,cy))continue;
     const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2,h=cityViaduct.stationH(line,id)*m;
-    out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,cut:cutOf(h),m})}
-  if(X.deck&&zoom>=(cityViaduct.V?.lod?.deck?.[0]??0)){const O=CITY_MERC_O,mu=CITY_MU,[x0,y0,x1,y1]=[(A.x-pad-O.x)/mu,(B.y-pad-O.y)/mu,(B.x+pad-O.x)/mu,(A.y+pad-O.y)/mu];
-    for(const e of cityViaduct.edgeList()){if(solo&&e.line!==selected)continue;const rows=cityViaduct.rowsOf(e);if(rows.length<2||!e.box||e.box[2]<x0||e.box[0]>x1||e.box[3]<y0||e.box[1]>y1)continue;
-      const prof=cityViaduct.profileOf(e);let c=cityDeckPieces.get(e);
-      if(!c||c.rows!==rows||c.prof!==prof){c={rows,prof,list:[]};let a=rows[0];   // pieces of about pieceM along the rows, each at the higher end of its profile
-        for(let i=1;i<rows.length;i++){const r=rows[i];if(r.s-a.s<X.pieceM&&i<rows.length-1)continue;const h=Math.max(prof(a.s),prof(r.s));c.list.push([O.x+a.x*mu,O.y+a.y*mu,O.x+r.x*mu,O.y+r.y*mu,h]);a=r}
-        cityDeckPieces.set(e,c)}
-      for(const [ax,ay,bx,by,h] of c.list){if(!inV((ax+bx)/2,(ay+by)/2))continue;const H=h*m;out.push({id:'d'+e.id+ax,ax,ay,bx,by,z0:H-X.deckBelowM*m,z1:H+X.deckAboveM*m,w:X.deckHalfWidthM*m,cut:h-X.cutBelowRailM,m})}}}
+    out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m})}
   if(X.trains&&trainsEnabled){const bodyPx=coasterBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
-    for(const plan of plans){if(solo&&plan.t.line!==selected)continue;const pose=trainPose(plan),q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;
+    for(const plan of plans){const pose=trainPose(plan),q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
-      out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,cut:cutOf(q.h),m})}}
+      out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
-cityBuildings.cutSource=cityCutTargets;   // city-build: read by the layer at the start of each of its frames
 function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9});
   syncStationLabelMode()}   // coaster: only station names stay above the park's buildings
@@ -711,7 +700,8 @@ const coasterBodyPx=z=>Math.min(bodyWidthPx(z),Math.max(7,20*512*2**z/(40075016.
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
-// train: a path-following compact EMU grows into articulated cars; details fade in with car length.
+// Stainless Korean EMUs: a quiet cab-led icon grows into rigid chord-aligned cars.
+// Pixel-sized details fade in with car length; no textures, depth buffer or bent bodies.
 const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 const TRAIN_VS=`#version 300 es
 in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
@@ -880,15 +870,6 @@ void shade(){
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
-// train: one lane sampler for the compact ribbon and every mode's articulated cars.
-// Average the low-zoom tangent over 2 px: a polyline vertex must not jump a car sideways.
-function trainLanePoint(at,d,unit,lane,span){
-  const q=at(d);
-  if(span>1e-12){const a=at(d-span),b=at(d+span),dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy);
-    // A coaster loop may reverse in plan view; retain its rail frame there.
-    if(l>1e-12&&dx*q.f[0]+dy*q.f[1]>l*.25){q.f=[dx/l,dy/l];q.r=[-dy/l,dx/l]}}
-  const off=(q.off+lane)*unit;q.x+=q.r[0]*off;q.y+=q.r[1]*off;return q;
-}
 class TrainLayer{
   constructor(){
     this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
@@ -915,22 +896,16 @@ class TrainLayer{
     d[i+9]=c[0];d[i+10]=c[1];d[i+11]=c[2];d[i+12]=face;
   }
   corner(x,y,z,u,v,face){
-    // train: compact roofs, walls and cab caps share the same sampled centreline.
-    if(this.curve){const q=this.curve(x);this.vertex(q.x+q.r[0]*y*this.unit,q.y+q.r[1]*y*this.unit,q.h+z*this.unit,u,v,face);return}
     // on the coaster each car has its own frame (fr: base, F along it, R across, U its up), so it climbs and turns over in the loop
     const f=this.fr;if(f){const X=x*this.unit,Y=y*this.unit,Z=z*this.unit;this.vertex(f[0]+f[3]*X+f[6]*Y+f[9]*Z,f[1]+f[4]*X+f[7]*Y+f[10]*Z,f[2]+f[5]*X+f[8]*Y+f[11]*Z,u,v,face);return}
     this.vertex(this.cx+(this.tx*x-this.ty*y)*this.unit,this.cy+(this.ty*x+this.tx*y)*this.unit,z*this.unit+this.h0,u,v,face);   // city-life: + h0 (the deck's height in 심시티, else 0)
   }
   // Roof strip with a sloped height at either end (also used for gangway caps).
   roof(a,b,za,zb,w,face=0){
-    // train: keep the old batched triangles, adding only short strips on a bent body.
-    if(this.curve&&Math.abs(b-a)>4){const n=Math.ceil(Math.abs(b-a)/4);for(let i=0;i<n;i++)this.roof(a+(b-a)*i/n,a+(b-a)*(i+1)/n,za+(zb-za)*i/n,za+(zb-za)*(i+1)/n,w,face);return}
     this.corner(a,-w,za,a,-w,face);this.corner(a,w,za,a,w,face);this.corner(b,w,zb,b,w,face);
     this.corner(a,-w,za,a,-w,face);this.corner(b,w,zb,b,w,face);this.corner(b,-w,zb,b,-w,face);
   }
   wall(a,b,za,zb,y,face=1,yb=y){
-    // train: subdivide sides at the same density as the roof (including viaduct ramps).
-    if(this.curve&&Math.abs(b-a)>4){const n=Math.ceil(Math.abs(b-a)/4);for(let i=0;i<n;i++)this.wall(a+(b-a)*i/n,a+(b-a)*(i+1)/n,za+(zb-za)*i/n,za+(zb-za)*(i+1)/n,y+(yb-y)*i/n,face,y+(yb-y)*(i+1)/n);return}
     this.corner(a,y,.65,a,.65,face);this.corner(b,yb,.65,b,.65,face);this.corner(b,yb,zb,b,zb,face);
     this.corner(a,y,.65,a,.65,face);this.corner(b,yb,zb,b,zb,face);this.corner(a,y,za,a,za,face);
   }
@@ -971,13 +946,12 @@ class TrainLayer{
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
     // Keep world coordinates in double precision until subtracting the view-centre origin.
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.curve=null;this.h0=0;this.c88.begin(ox,oy);   // train: clear the ribbon frame too   // city-life: h0 — the deck height
+    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
     if(myLocation&&map.getBounds().contains(myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
     for(const plan of drawTrainsToo?plans:[]){
-      this.curve=null;   // train: never carry a previous train's ribbon into a ripple or car
       const pose=trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();
       this.h0=simcity?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
       // Fresh data: glide from where the old prediction had the train instead of teleporting.
@@ -992,21 +966,28 @@ class TrainLayer{
       const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,coaster?n*bodyPx*1.6*unit:0),car=total/n,tail=(coaster?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
       if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
-      // train: all modes sample their own track in travel distance, then apply its local lane normal.
-      const at=d=>{const q=trackPoint(plan,coaster?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q},cache=new Map();
-      const span=unit*(1-smooth(Math.max(0,Math.min(1,(zoom-15)/1.5))));
-      const P=d=>{let q=cache.get(d);if(!q){q=trainLanePoint(at,d,unit,lanePx,span);cache.set(d,q)}return q};
+      const P=d=>{const q=trackPoint(plan,coaster?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
       const ratio=car/unit/bodyPx,separate=coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
       const unfold=coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
-      const articulated=P;   // train: gaps unfold with zoom; the track itself is never straightened
+      const start=P(tail),finish=P(tail+total);
+      // At the LOD boundary, car chords coincide with the compact icon's chord.
+      // Articulation and physical gaps then grow continuously, including on curves.
+      const articulated=(d)=>{
+        const q=P(d),t=(d-tail)/total;
+        q.x=(start.x+(finish.x-start.x)*t)*(1-unfold)+q.x*unfold;
+        q.y=(start.y+(finish.y-start.y)*t)*(1-unfold)+q.y*unfold;
+        q.h=(start.h+(finish.h-start.h)*t)*(1-unfold)+q.h*unfold;
+        return q;
+      };
       if(separate){
         // Painter order follows camera ground direction; no hidden back wall can bleed through.
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
         for(let k=0;k<n;k++){
           const j=forward?k:n-1-k,A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(simcity)this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
+          if(coaster){const oa=(A.off+lanePx)*unit,ob=(B.off+lanePx)*unit;A.x+=A.r[0]*oa;A.y+=A.r[1]*oa;B.x+=B.r[0]*ob;B.y+=B.r[1]*ob}   // on the coaster each end on its own lane (one normal for both pulled the far end off it on curves)
           const dx=B.x-A.x,dy=B.y-A.y,dz=coaster?B.h-A.h:0,len=Math.hypot(dx,dy,dz);if(len<unit*.1)continue;
-          const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit;
-          this.cx=A.x;this.cy=A.y;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;   // train: lane already applied at both endpoints
+          const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
+          this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
           let side=(coaster?A.r[0]*camX+A.r[1]*camY:-ty*camX+tx*camY)>=0?1:-1;
           if(coaster){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,articulated(tail+(j+.5)*car).roll||0);   // turned over in a corkscrew, as at its middle (the ends' 2π and 0 averaged to π: upside down under the track)
             const [,U0]=rolled(A.r,F,0),hc=CORK_HEART*bodyPx*unit;   // turned about its own middle (the rails wind round the same line)
@@ -1031,12 +1012,13 @@ class TrainLayer{
           if(front){this.roof(b,L,H,NOSE_Z,w);this.beam(L,w)}
         }
       }else{
-        // train: keep the compact silhouette and true arc length, but bend its mesh along the lane.
-        // Outside its caps (AA and headlights), extend the endpoint tangent instead of bending light.
-        this.kind=3;this.length=total/unit;this.carPx=this.length/n;
-        this.curve=x=>{const d=tail+Math.max(0,Math.min(this.length,x))*unit,q=P(d),over=(x-Math.max(0,Math.min(this.length,x)))*unit;
-          return over?{...q,x:q.x+q.f[0]*over,y:q.y+q.f[1]*over}:q};
-        const tx=mid.f[0],ty=mid.f[1];
+        // One rigid, rounded icon. Detail uses true consist spacing, but tiny cars
+        // do not split the silhouette. Use the same chord and lane rule as rigid cars.
+        const dx=finish.x-start.x,dy=finish.y-start.y,len=Math.hypot(dx,dy);
+        if(len<unit*.1)continue;
+        const tx=dx/len,ty=dy/len,off=((start.off+finish.off)/2+lanePx)*unit;
+        this.cx=start.x-ty*off;this.cy=start.y+tx*off;this.tx=tx;this.ty=ty;
+        this.kind=3;this.length=len/unit;this.carPx=this.length/n;
         const L=this.length,w=bodyPx/2,nose=Math.min(bodyPx*.48,L*.24),low=H*.44;
         const side=(-ty*camX+tx*camY)>=0?1:-1;
         if(pitched){
@@ -1870,6 +1852,7 @@ map.on('load',()=>{
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
+      if(cityOn())cityBuildings.setXray(simcity?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
       const drawn=cityOn()?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
@@ -1895,7 +1878,7 @@ map.on('load',()=>{
       }
       if(simcity){   // city-life: 심시티 고가 — the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
-        if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,pitch:map.getPitch(),dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}
+        if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -1908,6 +1891,7 @@ map.on('load',()=>{
         night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
+      if(simcity)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame

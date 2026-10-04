@@ -461,19 +461,15 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
   // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
-  "cutaway": {   // city-build: 심시티 — a building standing between the camera and a station platform, a running train or the viaduct is cut down to just under it, its top a plain section (web/lib/city_buildings.mjs cutFrame)
-    "cutBelowRailM": 2,                            // the cut: this far under the rail height of what it would hide
-    "minCutM": 3.5,                                // never lower than one floor
-    "minDropM": 1.5,                               // a building at most this much taller than its cut is left whole
-    "section": {"light": "#EDE6D8", "dark": "#5A5E5F"},   // the cut's top: plain, light, like a model's sawn floor
-    "edge": {"light": "#8C8579", "dark": "#2E3436"}, "edgeM": 0.3,   // its rim down the walls
-    "fadeMs": 250,                                 // a building comes down (and back up) over this long
-    "holdMs": 600, "enterPx": 0, "stayPx": 24,     // hysteresis: once cut, a building stays cut this long after it stops hiding anything, and is tested against boxes this much wider (px)
-    "pieceM": 30,                                  // long targets (platforms, trains, the deck) in pieces this long
-    "platformMarginM": 4, "platformBelowM": 2.5, "platformAboveM": 6,   // a platform's box: its width plus this margin each side, from under the deck to over the canopy
+  "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/lib/city_buildings.mjs xray)
+    "alpha": 0.3,                                  // the building's opacity where it hides a target
+    "edgeAlpha": 0.75, "edgePx": 1.5,              // its outline (wall corners, the roof line, the parapet) stays nearly solid, so the building keeps its shape
+    "featherPx": 24,                               // the glass fades out over this many px around each target's screen box
+    "fadeMs": 200,                                 // a target that comes into the list turns its buildings to glass over this long
+    "maxTargets": 48, "pieceM": 30,                // screen boxes a frame (nearest the view centre first); long platforms and trains cut into pieces this long
+    "platformMarginM": 4, "platformBelowM": 2.5, "platformAboveM": 6,   // the platform's box: its width plus this margin each side, from under the deck to over the canopy
     "trainHalfWidthM": 3, "trainBelowM": 1, "trainAboveM": 4.5,
-    "deckHalfWidthM": 6, "deckBelowM": 2, "deckAboveM": 4.5,            // the viaduct between stations (a train's height over it)
-    "trains": true, "deck": true
+    "trains": true
   },
   "throughBuildings": {   // city-build: buildings the simcity viaduct passes through read as station buildings — the floor the deck crosses becomes a glass hall (list: web/lib/city_through_buildings.mjs)
     "railHeightM": 11,                             // the deck's rail height where the list names none (city-life's list gives each building its own, ramps and levels included)
@@ -513,13 +509,6 @@ export const SEOUL_CITY_STYLE = {
     },
     "snap": {"nearM": 45, "maxOffsetM": 150, "farRunM": 0, "holdM": 40},
     "lodExits": {"stairs": 16, "steps": 17.5}
-  },
-  "beacon": {
-    "minZoom": 15, "fadeZoom": [15, 15.4], "radiusM": 80, "marginM": 10, "minAboveM": 14, "minM": 30, "maxM": 80,
-    "sideM": 0.9, "minPx": 2.2, "bandM": 3.5, "capM": 0.6, "offsetM": 5, "alongM": [0, 25, -25, 50, -50],
-    "badgePx": 24, "badgeGapPx": 3, "perColumn": 3, "liftPx": 6, "lowPitchDeg": 35, "lowPitchLiftPx": 26,
-    "colors": {"light": {"post": "#ECE9E1", "ring": "#FFFFFF", "edge": "#22313A"}, "dark": {"post": "#7D8387", "ring": "#F4F1E8", "edge": "#101A20"}},
-    "night": {"emission": 1.0, "haloPx": 8, "haloAlpha": 0.32}
   },
   "styleRevision": "2026-10-03-QA1",
   "changeLog": [

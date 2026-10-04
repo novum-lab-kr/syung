@@ -29,25 +29,35 @@ export { TileBuilder, classifyBuilding };
 const VS = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 a_xy;layout(location=1) in float a_z;layout(location=2) in vec4 a_nk;layout(location=3) in float a_u;
-layout(location=4) in vec4 a_wall;layout(location=5) in vec4 a_bld;layout(location=6) in vec4 a_misc;layout(location=7) in float a_id;
-uniform highp sampler2D u_cutTex;uniform int u_cutOn;   // 심시티 cutaway: this tile's table of cut heights (m) by building index; ≥ 9000 = not cut
+layout(location=4) in vec4 a_wall;layout(location=5) in vec4 a_bld;layout(location=6) in vec4 a_misc;
 uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec2 u_detail;uniform float u_maxH;
-out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;flat out float v_cut;
+out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
 void main(){
   float kind=floor(a_nk.w*127.0+0.5),H=(a_misc.z+a_misc.w*256.0)*0.1,z=a_z;
   if(kind==3.0)z=a_u+(a_z-a_u)*u_detail.x;   // roof plant grows out of the roof as the view comes closer
   if(kind==5.0)z=a_u+(a_z-a_u)*u_detail.y;   // awnings likewise
-  float cut=1e4;if(u_cutOn==1){int id=int(a_id+0.5);cut=texelFetch(u_cutTex,ivec2(id&255,id>>8),0).r;}
-  z=min(z,cut);   // a building hiding a station, a train or the viaduct: everything above its cut comes down to it (the roof becomes the section)
   z*=u_grow;
   vec4 pos=u_matrix*vec4(a_xy,z*u_mpu,1.0);
   if(H>=u_maxH)pos=vec4(0.0,0.0,2.0,1.0);   // the towers that are rides on the coaster: not drawn
   gl_Position=pos;
-  v_n=a_nk.xyz;v_z=z;v_u=a_u;v_wm=u_wo+a_xy*u_S;v_wall=a_wall;v_bld=a_bld;v_misc=a_misc;v_kind=kind;v_cut=cut;
+  v_n=a_nk.xyz;v_z=z;v_u=a_u;v_wm=u_wo+a_xy*u_S;v_wall=a_wall;v_bld=a_bld;v_misc=a_misc;v_kind=kind;
+}`;
+// x-ray (심시티): the screen boxes of the station platforms and running trains this frame (NDC x0,y0,x1,y1; their farthest window
+// depth and fade weight): a building fragment inside one (feathered by u_xv.z px) and nearer than the target turns to glass
+const XR_N = 48;
+const XR_GLSL = `uniform vec4 u_xr[${XR_N}];uniform vec2 u_xd[${XR_N}];uniform int u_xn;uniform vec4 u_xv;
+float xray(){
+  if(u_xn<=0)return 0.0;
+  vec2 p=gl_FragCoord.xy/u_xv.xy*2.0-1.0,fe=u_xv.z*2.0/u_xv.xy;float f=0.0;
+  for(int i=0;i<${XR_N};i++){if(i>=u_xn)break;if(gl_FragCoord.z>=u_xd[i].x)continue;vec4 r=u_xr[i];
+    vec2 a=smoothstep(r.xy-fe,r.xy,p)*(1.0-smoothstep(r.zw,r.zw+fe,p));f=max(f,a.x*a.y*u_xd[i].y);}
+  return f;
 }`;
 const FS_DEPTH = `#version 300 es
 precision highp float;in float v_z;flat in vec4 v_bld;flat in float v_kind;uniform vec4 u_through;uniform vec4 u_thBand;out vec4 o;
+${XR_GLSL}
 void main(){
+  if(xray()>0.5)discard;   // a building hiding a station or a train: no depth there, so the train canvas draws them (the glass pass tints them after)
   if(u_through.w>0.5&&int(v_kind+0.5)==6){   // a wall piece the viaduct passes through (kind 6): its glass band writes no depth, so the deck and the trains show through it
     int rq=((int(v_bld.z+0.5)>>6)&3)*16+(int(v_bld.w+0.5)>>4);float rail=u_through.x+float(rq)*u_through.y;   // the deck's rail height there (6 bits)
     if(v_z>rail-u_thBand.x&&v_z<rail+u_thBand.y)discard;}
@@ -60,7 +70,8 @@ uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
-flat in float v_cut;uniform vec3 u_cutCol;uniform vec3 u_cutEdge;uniform float u_cutEdgeM;   // 심시티 cutaway: the section's colour, its rim, the rim's depth down the walls (m)
+${XR_GLSL}
+uniform vec4 u_xa;   // the glass pass: opacity, outline opacity, outline width (px)
 uniform vec4 u_through;uniform vec4 u_thBand;uniform vec3 u_thGlass;uniform vec3 u_thFrame;uniform vec3 u_thInside;uniform vec3 u_thMix;   // buildings the viaduct passes through: rail height code base/step (m) + depth-open flag; band below/above, post width/spacing; glass, posts, the lit hall by day; sky mix, hall mix by day, night brightness relative to the type's lit windows
 out vec4 o;
 float hash(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);return fract((p.x+p.y)*p.z);}
@@ -73,7 +84,7 @@ float lum(vec3 c){return dot(c,vec3(0.2126,0.7152,0.0722));}
 float lstar(float Y){return Y>0.008856?116.0*pow(Y,1.0/3.0)-16.0:903.3*Y;}
 float yOfL(float L){return L>8.0?pow((L+16.0)/116.0,3.0):L/903.3;}
 float dlMul(float Y,float dL){Y=max(Y,1e-3);return clamp(yOfL(max(0.0,lstar(Y)+dL))/Y,0.25,4.0);}
-void main(){
+void shade(){
   int kind=int(v_kind+0.5),tv=int(v_bld.z+0.5),type=tv&7,crown=(tv>>3)&3,flags=int(v_bld.w+0.5),slot=int(v_misc.x+0.5);bool famFac=(tv&32)!=0;
   float seed=v_bld.x+v_bld.y*256.0,H=(v_misc.z+v_misc.w*256.0)*0.1;
   bool night=u_shade.z>0.5;
@@ -82,8 +93,6 @@ void main(){
   float el=u_sun.z,horiz=max(0.3,sqrt(max(0.0,1.0-el*el))),k=clamp(max(0.0,dot(n,u_sun))/horiz,0.0,1.0);
   float shade=n.z>0.6?1.0+u_shade.y*max(0.0,el)*(0.3+0.7*n.z):1.0-u_shade.x*(1.0-k);
   vec3 light=u_lightCol*shade,col;
-  if(v_cut<9000.0&&v_z>v_cut-0.05&&(n.z>0.6||kind==3||kind==4||kind==5)){o=vec4(toSrgb(u_cutCol*light),1.0);return;}   // the cut's top: a plain section (roof, plant, gables, awnings all came down into it)
-  if(v_cut<9000.0&&v_z>v_cut-u_cutEdgeM&&(kind==0||kind==6||kind==2)){o=vec4(toSrgb(u_cutEdge*light),1.0);return;}   // its rim down the walls: a thin line, so the cut reads as a clean edge
   if(kind==6){   // a wall piece the viaduct passes through (the portal the mesh cut around its path; its rail height in 6 bits): the floor it crosses is a glass hall — thin posts, the sky in the glass and the lit hall by day; by night lit like the type's windows, a little brighter
     float rail=u_through.x+float(((tv>>6)&3)*16+(flags>>4))*u_through.y;
     if(v_z>rail-u_thBand.x&&v_z<rail+u_thBand.y){
@@ -182,6 +191,19 @@ void main(){
     if(u_debug>2.5)col=vec3(fract(v_z/10.0),v_z/max(H,1.0),H>0.0?1.0:0.0);   // 3: height
     if(u_debug>3.5)col=vec3(hash(vec3(float(slot),1.0,2.0)),hash(vec3(float(slot),3.0,4.0)),hash(vec3(float(slot),5.0,6.0)))*(0.6+0.4*k);}   // 4: the material / roof slot
   o=vec4(toSrgb(col),1.0);
+}
+void main(){
+  float wz=fwidth(v_z),wu=fwidth(v_u);
+  if(u_xv.w<0.5){shade();return;}
+  // the glass pass (train canvas): only where the building hides a station or a train — the building at u_xa.x over what the
+  // train canvas drew there, its outline (corners, the roof line, the parapet) nearly solid so it keeps its shape
+  float f=xray();if(f<0.01)discard;
+  shade();
+  int kind=int(v_kind+0.5);float a=u_xa.x;
+  if(kind==0||kind==6){float H=(v_misc.z+v_misc.w*256.0)*0.1,len=(v_wall.y+v_wall.z*256.0)*0.05;bool absU=(int(v_bld.w+0.5)&1)!=0;
+    float dz=(H-v_z)/max(wz,1e-4),du=absU?1e4:min(v_u,len-v_u)/max(wu,1e-4);a=mix(u_xa.y,a,smoothstep(u_xa.z,u_xa.z+1.0,min(dz,du)));}
+  else if(kind==2)a=u_xa.y;
+  a=mix(1.0,a,f);o=vec4(o.rgb*a,a);
 }`;
 
 
@@ -204,8 +226,6 @@ function throughIndex(list) {
   }
   return { byId, byRing, size: byId.size + byRing.size };
 }
-
-const CUT_UNIT = 7;   // the texture unit the cutaway tables use (above the units MapLibre and the train canvas's renderers bind)
 
 // ── the layer ────────────────────────────────────────────────────────────────────────────────────
 export class CityBuildings {
@@ -329,12 +349,12 @@ export class CityBuildings {
     const t0 = performance.now(), m = e.mesh, vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
     gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts, gl.STATIC_DRAW);
     const A = (i, n, type, norm, off) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, type, norm, STRIDE, off) };
-    A(0, 2, gl.FLOAT, false, 0); A(1, 1, gl.FLOAT, false, 8); A(2, 4, gl.BYTE, true, 12); A(3, 1, gl.FLOAT, false, 16); A(4, 4, gl.UNSIGNED_BYTE, false, 20); A(5, 4, gl.UNSIGNED_BYTE, false, 24); A(6, 4, gl.UNSIGNED_BYTE, false, 28); A(7, 1, gl.FLOAT, false, 32);
+    A(0, 2, gl.FLOAT, false, 0); A(1, 1, gl.FLOAT, false, 8); A(2, 4, gl.BYTE, true, 12); A(3, 1, gl.FLOAT, false, 16); A(4, 4, gl.UNSIGNED_BYTE, false, 20); A(5, 4, gl.UNSIGNED_BYTE, false, 24); A(6, 4, gl.UNSIGNED_BYTE, false, 28);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     const g = { vao, vbo, ibo }; e.gpu.set(gl, g); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
   }
-  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.cutTex) gl.deleteTexture(g.cutTex); e.gpu.delete(gl) }
+  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   paletteFor() {
     const P = this.P, th = this.theme, mode = P.modes[this.mode] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
@@ -384,8 +404,7 @@ export class CityBuildings {
     // buildings the viaduct passes through: the rail-height code, the band, its glass / posts / lit hall (linear), the mixes and the night brightness
     const TH = P.through, thGlass = L(pick(TH.glass) || '#A9CBD8'), thFrame = L(pick(TH.frame) || '#55626A'), thInside = L(typeof TH.inside === 'string' ? TH.inside : pick(TH.inside) || '#F3ECDA');
     const through = [RAIL_Q.base, RAIL_Q.step, 0, TH.depthOpen ? 1 : 0], thBand = [TH.below, TH.above, TH.mull, TH.mullEvery], thMix = [TH.skyMix, TH.insideMix, TH.nightEmission];   // (night: × the type's lit-window emission, which already carries the mode's windowEmission)
-    const CA = P.cutaway || {}, cutCol = L(pick(CA.section) || '#EDE6D8'), cutEdge = L(pick(CA.edge) || '#8C8579'), cutEdgeM = num(CA.edgeM, .3);   // 심시티 cutaway: the section and its rim
-    return { cutCol, cutEdge, cutEdgeM, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    return { through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -397,107 +416,59 @@ export class CityBuildings {
     this.frame++; this.now = performance.now();
     if (!this.shown()) { this.visible = []; return }
     this.collect();
-    try { this.setCutaway(this.mode === 'simcity' && this.cutSource ? this.cutSource() : null) } catch (e) { this.cutIn = null; if (!this.cutWarned) { this.cutWarned = true; console.warn('city-build: cutaway targets', e) } }
-    this.cutFrame(options.defaultProjectionData.mainMatrix);   // 심시티 cutaway: this frame's cut heights, shared by this pass and the depth pass after it
     this.draw(gl, options.defaultProjectionData.mainMatrix, false);
   }
   // the walls' depth into the train canvas (its own GL context); true when anything was drawn
   drawDepth(gl, M) {
-    if (!this.shown() || !this.visible.length) return false;
+    if (!this.shown() || !this.visible.length) { this.xr = null; return false }
+    this.xrayFrame(gl, M);   // this frame's x-ray boxes (심시티): the depth pass leaves them open, drawGlass tints them after
     return this.draw(gl, M, true);
   }
-  // ── cutaway (심시티): a building standing between the camera and a station platform, a running train or the viaduct is cut
-  // down to just under it (pack.cutaway), its top a plain section ──
-  // targets: [{id, ax, ay, bx, by, z0, z1, w, cut, m}] in mercator units (a segment, its bottom/top height, half width; cut: the cut
-  // height in metres; m = one metre), from the runtime once a frame (null: none — the coaster, or off)
-  setCutaway(targets) { this.cutIn = targets && targets.length ? targets : null }
-  // the targets on screen as NDC boxes (pieces of pieceM), bucketed in a coarse screen grid; every building in a chunk under one
-  // tested (its part above the cut against the boxes, nearer the camera than the target); the cut eased in and out over fadeMs,
-  // held holdMs (and tested against wider boxes) once cut so a moving camera does not bob buildings up and down
-  cutFrame(M) {
-    const X = this.P.cutaway, now = this.now || performance.now(); let active = false;
-    for (const e of this.visible) if (e.cut && e.cut.live.size) { active = true; break }
-    if (!X || (!this.cutIn && !active)) return;
-    const c = [0, 0, 0, 0], proj = (A, x, y, z) => { c[3] = A[3] * x + A[7] * y + A[11] * z + A[15]; c[0] = A[0] * x + A[4] * y + A[8] * z + A[12]; c[1] = A[1] * x + A[5] * y + A[9] * z + A[13]; c[2] = A[2] * x + A[6] * y + A[10] * z + A[14]; return c[3] > 1e-9 };
-    // 1) the targets' screen boxes
-    const T = [], GX = 24, GY = 16, grid = Array.from({ length: GX * GY }, () => []), U = [Infinity, Infinity, -Infinity, -Infinity];
-    for (const t of this.cutIn || []) {
+  // ── x-ray (심시티): buildings between the camera and a station platform or a running train turn to glass there ──
+  // targets: [{id, ax, ay, bx, by, z0, z1, w, m}] in mercator units (a segment, its bottom/top height, half width; m = one metre),
+  // from the runtime each frame (null: off). Cut into pieces, projected to screen boxes with their farthest depth, nearest the
+  // view centre first, each fading in over the pack's fadeMs when it first shows
+  setXray(targets) { this.xrayIn = targets && targets.length ? targets : null }
+  xrayFrame(gl, M) {
+    const X = this.P.xray; this.xr = null; if (!this.xrayIn || !X) { this.xrSeen?.clear(); return }
+    const now = performance.now(), seen = this.xrSeen || (this.xrSeen = new Map()), cand = [], live = new Set(), c = [0, 0, 0, 0];
+    const proj = (x, y, z) => { c[3] = M[3] * x + M[7] * y + M[11] * z + M[15]; c[0] = M[0] * x + M[4] * y + M[8] * z + M[12]; c[1] = M[1] * x + M[5] * y + M[9] * z + M[13]; c[2] = M[2] * x + M[6] * y + M[10] * z + M[14] };
+    for (const t of this.xrayIn) {
       const dx = t.bx - t.ax, dy = t.by - t.ay, L = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(L / (X.pieceM * t.m))), ux = L > 0 ? dx / L : 1, uy = L > 0 ? dy / L : 0, px = -uy * t.w, py = ux * t.w;
       for (let k = 0; k < n; k++) {
-        const s0 = L * k / n, s1 = L * (k + 1) / n; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zc = 0, ok = true;
-        for (let q = 0; q < 8; q++) { const s = q & 1 ? s1 : s0, sd = q & 2 ? 1 : -1; if (!proj(M, t.ax + ux * s + px * sd, t.ay + uy * s + py * sd, q & 4 ? t.z1 : t.z0)) { ok = false; break } const nx = c[0] / c[3], ny = c[1] / c[3]; zc += c[2] / c[3] / 8; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny }
-        if (!ok || x1 < -1 || x0 > 1 || y1 < -1 || y0 > 1 || zc > 1) continue;
-        const b = { r: [x0, y0, x1, y1], d: zc, cut: t.cut }, ti = T.push(b) - 1;
-        U[0] = Math.min(U[0], x0); U[1] = Math.min(U[1], y0); U[2] = Math.max(U[2], x1); U[3] = Math.max(U[3], y1);
-        const gx0 = Math.max(0, Math.floor((x0 + 1) / 2 * GX)), gx1 = Math.min(GX - 1, Math.floor((x1 + 1) / 2 * GX)), gy0 = Math.max(0, Math.floor((y0 + 1) / 2 * GY)), gy1 = Math.min(GY - 1, Math.floor((y1 + 1) / 2 * GY));
-        for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) grid[gy * GX + gx].push(ti);
+        const s0 = L * k / n, s1 = L * (k + 1) / n; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zf = -Infinity, behind = false;
+        for (let q = 0; q < 8; q++) {
+          const s = q & 1 ? s1 : s0, sd = q & 2 ? 1 : -1; proj(t.ax + ux * s + px * sd, t.ay + uy * s + py * sd, q & 4 ? t.z1 : t.z0);
+          if (c[3] <= 1e-9) { behind = true; break }
+          const nx = c[0] / c[3], ny = c[1] / c[3], nz = c[2] / c[3]; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny; if (nz > zf) zf = nz;
+        }
+        if (behind || x1 < -1.05 || x0 > 1.05 || y1 < -1.05 || y0 > 1.05 || zf > 1) continue;
+        const id = t.id + '#' + k; live.add(id); if (!seen.has(id)) seen.set(id, now);
+        cand.push({ id, r: [x0, y0, x1, y1], d: Math.min(1, zf * .5 + .5), c: Math.hypot((x0 + x1) / 2, (y0 + y1) / 2) });
       }
     }
-    const W = this.gl ? this.gl.drawingBufferWidth : 1280, Hh = this.gl ? this.gl.drawingBufferHeight : 800, pxX = 2 / Math.max(1, W), pxY = 2 / Math.max(1, Hh), dpr = (this.gl?.drawingBufferWidth || 1) / Math.max(1, this.gl?.canvas?.clientWidth || this.gl?.drawingBufferWidth || 1);
-    const mIn = X.enterPx * dpr, mStay = X.stayPx * dpr, M64 = this.M64;
-    let moving = false, n0 = 0, n1 = 0;
-    // 2) each tile's buildings
-    for (const e of this.visible) {
-      const m = e.mesh, B = m.blds; if (!B || !B.length) continue;
-      const nb = B.length / 6, C = e.cut || (e.cut = { cur: new Float32Array(Math.ceil(nb / 256) * 256).fill(1e4), from: new Float32Array(nb), to: new Float32Array(nb), t0: new Float64Array(nb), seen: new Float64Array(nb), live: new Set(), ver: 1, byChunk: null });
-      if (!C.byChunk) { C.byChunk = m.chunks.map(() => []); for (let i = 0; i < nb; i++) { const ci = B[i * 6 + 5]; if (ci >= 0 && C.byChunk[ci]) C.byChunk[ci].push(i) } }
-      for (let r = 0; r < 4; r++) M64[12 + r] = M[r] * m.ox + M[4 + r] * m.oy + M[12 + r]; for (let i = 0; i < 12; i++) M64[i] = M[i];
-      const want = new Map();
-      if (T.length) {
-        const Ue = [U[0] - mStay * pxX, U[1] - mStay * pxY, U[2] + mStay * pxX, U[3] + mStay * pxY];
-        m.chunks.forEach((ch, ci) => {
-          if (!this.hitsBox(M64, ch, m.mpu, Ue)) return;
-          for (const i of C.byChunk[ci]) {
-            const o = i * 6, cx = B[o], cy = B[o + 1], rr = B[o + 2], H = B[o + 3]; n0++;
-            const mg = C.live.has(i) ? mStay : mIn, gxm = mg * pxX, gym = mg * pxY; let best = Infinity;
-            // the building's part above the lowest cut it could get: centre column from there to its top, widened by its radius on screen
-            const zLo = Math.max(X.minCutM, 0) * m.mpu, zHi = H * m.mpu;
-            if (!proj(M64, cx, cy, zHi)) continue; const ax = c[0] / c[3], ay = c[1] / c[3], ad = c[2] / c[3];
-            if (!proj(M64, cx + rr, cy, zHi)) continue; const rpx = Math.hypot(c[0] / c[3] - ax, c[1] / c[3] - ay);
-            if (!proj(M64, cx, cy + rr, zHi)) continue; const rp = Math.max(rpx, Math.hypot(c[0] / c[3] - ax, c[1] / c[3] - ay));
-            if (!proj(M64, cx, cy, zLo)) continue; const bx = c[0] / c[3], by = c[1] / c[3], bd = c[2] / c[3];
-            const x0 = Math.min(ax, bx) - rp - gxm, x1 = Math.max(ax, bx) + rp + gxm, y0 = Math.min(ay, by) - rp - gym, y1 = Math.max(ay, by) + rp + gym, dB = Math.min(ad, bd);
-            if (x1 < U[0] || x0 > U[2] || y1 < U[1] || y0 > U[3]) continue;
-            const gx0 = Math.max(0, Math.floor((x0 + 1) / 2 * GX)), gx1 = Math.min(GX - 1, Math.floor((x1 + 1) / 2 * GX)), gy0 = Math.max(0, Math.floor((y0 + 1) / 2 * GY)), gy1 = Math.min(GY - 1, Math.floor((y1 + 1) / 2 * GY));
-            for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) for (const ti of grid[gy * GX + gx]) {
-              const t = T[ti]; if (t.cut >= best || H <= t.cut + X.minDropM) continue;
-              // above the cut only: the column from the target's cut height up (its screen extent shrinks toward the top)
-              const tr = t.r; if (x1 < tr[0] || x0 > tr[2] || y1 < tr[1] || y0 > tr[3]) continue;
-              if (dB >= t.d) continue;   // the building stands behind the target
-              if (!proj(M64, cx, cy, t.cut * m.mpu)) continue; const cx2 = c[0] / c[3], cy2 = c[1] / c[3];
-              const X0 = Math.min(ax, cx2) - rp - gxm, X1 = Math.max(ax, cx2) + rp + gxm, Y0 = Math.min(ay, cy2) - rp - gym, Y1 = Math.max(ay, cy2) + rp + gym;
-              if (X1 < tr[0] || X0 > tr[2] || Y1 < tr[1] || Y0 > tr[3]) continue;
-              best = t.cut;
-            }
-            if (best < Infinity) { want.set(i, Math.max(X.minCutM, best)); C.seen[i] = now; n1++ }
-          }
-        });
-      }
-      // 3) ease each building toward its cut (or back up), holding a cut a moment after it is no longer needed
-      let dirty = false;
-      for (const i of new Set([...C.live, ...want.keys()])) {
-        const H = B[i * 6 + 3]; let goal = want.has(i) ? want.get(i) : (now - C.seen[i] < X.holdMs && C.live.has(i) ? C.to[i] : H);
-        if (!C.live.has(i)) { C.live.add(i); C.from[i] = H; C.to[i] = goal; C.t0[i] = now }
-        else if (Math.abs(goal - C.to[i]) > .5) { C.from[i] = C.cur[i] < 9000 ? C.cur[i] : H; C.to[i] = goal; C.t0[i] = now }
-        const k = Math.min(1, (now - C.t0[i]) / Math.max(1, X.fadeMs)), sk = k * k * (3 - 2 * k), v = C.from[i] + (C.to[i] - C.from[i]) * sk;
-        if (k < 1) moving = true;
-        const nv = k >= 1 && C.to[i] >= H - 1e-3 ? 1e4 : v; if (nv !== C.cur[i]) { C.cur[i] = nv; dirty = true }
-        if (nv >= 9000) C.live.delete(i);
-      }
-      if (dirty) C.ver++;
-    }
-    this.stats.cutTested = n0; this.stats.cutBuildings = n1; this.stats.cutTargets = T.length;
-    if (moving) this.map?.triggerRepaint();
+    for (const id of seen.keys()) if (!live.has(id)) seen.delete(id);   // gone (off screen, or out of the list): in again with a fresh fade
+    if (!cand.length) return;
+    cand.sort((a, b) => a.c - b.c); const n = Math.min(cand.length, X.maxTargets, XR_N), R = new Float32Array(XR_N * 4), D = new Float32Array(XR_N * 2); let fading = false;
+    const U = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < n; i++) { const t = cand[i], w = Math.min(1, (now - seen.get(t.id)) / Math.max(1, X.fadeMs)); if (w < 1) fading = true; R.set(t.r, i * 4); D[i * 2] = t.d; D[i * 2 + 1] = w * w * (3 - 2 * w); U[0] = Math.min(U[0], t.r[0]); U[1] = Math.min(U[1], t.r[1]); U[2] = Math.max(U[2], t.r[2]); U[3] = Math.max(U[3], t.r[3]) }
+    const fe = X.featherPx * 2 / Math.max(1, Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight)); U[0] -= fe; U[1] -= fe; U[2] += fe; U[3] += fe;
+    this.xr = { R, D, n, U, fading };
+    if (fading) this.map?.triggerRepaint();   // the fade runs on the map's frames (the train canvas follows them)
   }
-  // this tile's cut table on this context: a 256-wide R32F texture, uploaded when it changed; false when nothing in it is cut
-  cutBind(gl, u, e, g) {
-    const C = e.cut; if (!C || !C.live.size) { gl.uniform1i(u.u_cutOn, 0); return }
-    if (!g.cutTex) { g.cutTex = gl.createTexture(); g.cutVer = 0 }
-    gl.activeTexture(gl.TEXTURE0 + CUT_UNIT); gl.bindTexture(gl.TEXTURE_2D, g.cutTex);
-    if (g.cutVer !== C.ver) { gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 256, C.cur.length / 256, 0, gl.RED, gl.FLOAT, C.cur); g.cutVer = C.ver }
-    gl.uniform1i(u.u_cutTex, CUT_UNIT); gl.uniform1i(u.u_cutOn, 1);
+  xrayUniforms(gl, u, glass) {
+    const xr = this.xr, X = this.P.xray;
+    if (!xr) { gl.uniform1i(u.u_xn, 0); gl.uniform4f(u.u_xv, 1, 1, 1, 0); return }
+    gl.uniform4fv(u.u_xr, xr.R); gl.uniform2fv(u.u_xd, xr.D); gl.uniform1i(u.u_xn, xr.n);
+    gl.uniform4f(u.u_xv, gl.drawingBufferWidth, gl.drawingBufferHeight, X.featherPx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), glass ? 1 : 0);
+    if (glass) gl.uniform4f(u.u_xa, X.alpha, X.edgeAlpha, X.edgePx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), 0);
   }
-  draw(gl, M, depthOnly) {
+  // after the train canvas has drawn the decks and trains: the hiding buildings again, at the pack's opacity, over them
+  drawGlass(gl, M) {
+    if (!this.xr || !this.shown() || !this.visible.length) return false;
+    return this.draw(gl, M, false, true);
+  }
+  draw(gl, M, depthOnly, glass = false) {
     const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
     gl.useProgram(prog.p);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
@@ -505,7 +476,6 @@ export class CityBuildings {
     const K = this.palette || (this.palette = this.paletteFor());
     gl.uniform4fv(u.u_through, K.through); gl.uniform4fv(u.u_thBand, K.thBand);   // both passes: the depth pass leaves the band open
     if (!depthOnly) {
-      gl.uniform3fv(u.u_cutCol, K.cutCol); gl.uniform3fv(u.u_cutEdge, K.cutEdge); gl.uniform1f(u.u_cutEdgeM, K.cutEdgeM);
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
@@ -516,11 +486,12 @@ export class CityBuildings {
     const lodE = this.P.lod.equipment, sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     gl.uniform2f(u.u_detail, sm(lodE[0], lodE[1], zoom), sm(lodE[1], lodE[1] + .5, zoom)); gl.uniform1f(u.u_maxH, this.maxHeight); gl.uniform1f(u.u_S, S);
     if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
+    this.xrayUniforms(gl, u, glass);   // x-ray boxes: the depth pass and the glass pass on the train canvas; none in the map's own pass (it has no boxes then)
+    if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
     const M64 = this.M64, M32 = this.M32; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
-    let uploaded = false; const prevTex = gl.getParameter(gl.ACTIVE_TEXTURE);   // the cut tables bind on their own unit; the host's active unit is put back after
-    gl.uniform1i(u.u_cutOn, 0);
+    let uploaded = false;
     for (const e of this.visible) {
       let g = e.gpu.get(gl);
       if (!g) { if (uploaded) { growing = true; continue } g = this.upload(gl, e); uploaded = true }   // one tile's upload a frame: the rest next frame (growing: a repaint follows)
@@ -532,10 +503,10 @@ export class CityBuildings {
       for (let r = 0; r < 4; r++) M64[12 + r] = M[r] * m.ox + M[4 + r] * m.oy + M[12 + r];   // M · translate(tile origin), in double
       M32.set(M64);
       gl.uniformMatrix4fv(u.u_matrix, false, M32); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
-      this.cutBind(gl, u, e, g);
       gl.bindVertexArray(g.vao);
       for (const c of m.chunks) {
         if (!this.noCull && !this.inView(M64, c, m.mpu * grow)) continue;
+        if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr.U)) continue;   // the glass pass: only chunks under an x-ray box
         const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW; if (b <= a) continue;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
           const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu, f = 1 - sm(far[0], far[1], d);
@@ -544,8 +515,8 @@ export class CityBuildings {
         if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++;
       }
     }
-    gl.activeTexture(prevTex);
     gl.bindVertexArray(null); gl.colorMask(true, true, true, true); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW); if (depthOnly) gl.depthFunc(gl.LESS);   // the train canvas's renderers expect culling off (as BuildingDepth left it)
+    if (glass) { gl.disable(gl.BLEND); gl.depthMask(true); this.stats.glassDraws = draws; return drawn }
     this.growing = growing; if (growing && !depthOnly) map.triggerRepaint();
     const st = this.stats; st[depthOnly ? 'depthMs' : 'renderMs'] = (st[depthOnly ? 'depthMs' : 'renderMs'] || 0) + performance.now() - t0; st[depthOnly ? 'depthFrames' : 'frames'] = (st[depthOnly ? 'depthFrames' : 'frames'] || 0) + 1; st.draws = draws;
     return drawn;

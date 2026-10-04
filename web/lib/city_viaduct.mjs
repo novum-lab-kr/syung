@@ -36,7 +36,6 @@ import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
 import { STRIDE, MAT, COLOR_KEYS, Mesh } from './city_viaduct_mesh.mjs';
 import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './city_viaduct_levels.mjs';
 import { layoutExits, buildExits, exitSamples } from './city_viaduct_exits.mjs';
-import { placeBeacon, beaconCandidates, beaconHeight, buildBeaconPost, BeaconBadges } from './city_beacons.mjs';
 export { STRIDE, MAT };
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
@@ -213,7 +212,7 @@ const ATTRS = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 2, 7], [4, 2, 9], [5, 2, 11]
 export class CityViaduct {
   constructor({ pack = SEOUL, net } = {}) {
     this.pack = pack; this.V = V_OF(pack); this.net = net; this.cache = new Map(); this.plats = new Map(); this.bytes = 0; this.frame = 0; this.stats = {}; this.edges = null; this.edgeIndex = null; this.gl = null; this.broken = false; this.rgb = new Map();
-    this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map(); this.beaconWait = new Map();
+    this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map();
   }
   get railM() { return this.V.railHeightM }
   // this line's rail height at level 1: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
@@ -406,34 +405,10 @@ export class CityViaduct {
       }
       if (x) { exitsDraw.push([x, line]); exitsOut += x.count || 0; exitsSkipped += x.skipped || 0; if (x.partial) exitsOpen++ }
     }
-    // the station beacons (city_beacons.mjs): one per station in view, beside its lowest platform, taller than the buildings around
-    const BC = pack.beacon, beacons = [], wantBeacons = BC && zoom >= BC.minZoom && !!life && this.net.rects;
-    if (wantBeacons) {
-      const byStation = new Map(); for (const [key, rect] of this.net.rects) { const i = key.lastIndexOf(':'), line = key.slice(0, i), id = key.slice(i + 1); if (!byStation.has(id)) byStation.set(id, []); byStation.get(id).push({ key, line, rect }) }
-      for (const [id, list] of byStation) {
-        if (solo && !list.some(q => q.line === selected)) continue;
-        const k = 'bc:' + id; let c = this.get(k);
-        if (!c && now - (this.beaconWait.get(id) || -1e9) < 400) continue;   // its ground or the heights around were not known a moment ago
-        if (!c) {
-          const prim = [...list].sort((a, b) => this.levelOf(a.line, id) - this.levelOf(b.line, id) || compareLines(a.line, b.line))[0], p = this.plats.get(prim.key)?.rect === prim.rect ? this.plats.get(prim.key) : this.platGeom(prim.rect);
-          if (!inView(p.box, 120)) continue;
-          if (!time()) { pending = true; continue }
-          const r = p.row, bp = z => this.net.bodyPx ? this.net.bodyPx(z) : 26, eoM = (prim.rect.offset || 0) * MPP(16), S = V.station, hT = this.stationH(prim.line, id);
-          const at = placeBeacon(beaconCandidates(platformEdgeM(16, bp(16), pack), eoM, pack), (t, u) => { const b = life.inBuilding(r.x + r.fx * t + r.rx * u, r.y + r.fy * t + r.ry * u); return b === undefined ? undefined : !b });
-          const uu = at.u ?? eoM, x = r.x + r.fx * at.t + r.rx * uu, y = r.y + r.fy * at.t + r.ry * uu, roofTop = hT + S.platformRiseM + S.canopyHeightM + S.canopyThicknessM, tallest = life.maxHeight(x, y, BC.radiusM);
-          if (at.partial || tallest === undefined) { this.beaconWait.set(id, now); continue }   // not placed on a guess: when the tiles there have come (city cells ready)
-          this.beaconWait.delete(id);
-          const top = beaconHeight(tallest, roofTop, pack), base = at.onRoof ? roofTop : 0;
-          c = this.put(k, buildBeaconPost(r, at, prim.rect.offset || 0, base, top, pack));
-          c.beacon = { id, x, y, top, base, onRoof: at.onRoof, line: prim.line, lines: list.map(q => q.line).sort(compareLines), tallest };
-        }
-        beacons.push(c);
-      }
-    }
     const cap = phone ? V.performance.phoneBytes : V.performance.bytes;
     for (const [k, a] of this.cache) { if (this.bytes <= cap || a.f === this.frame) break; this.del(k) }
-    this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, beacons: beacons.length, ms: +(performance.now() - t0).toFixed(1), levelsMs: this.levelsMs, crossings: this.regions?.length, sameLevel: this.sameLevel?.length };
-    if (!draw.length && !plats.length && !beacons.length) return pending;
+    this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1), levelsMs: this.levelsMs, crossings: this.regions?.length, sameLevel: this.sameLevel?.length };
+    if (!draw.length && !plats.length) return pending;
     // ── draw ──
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const Lg = pack.lighting?.[theme] || {}, ref = pack.lighting?.referenceSun || { azimuthDeg: 225, elevationDeg: 42 }, az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
@@ -455,14 +430,6 @@ export class CityViaduct {
     for (const it of draw) { gl.uniform3fv(u.u_line, this.lineRGB(it.e.line, theme)); if (it.deck) one(it.deck); if (it.det) one(it.det); if (it.pier) one(it.pier) }
     for (const [c, line] of plats) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
     for (const [c, line] of exitsDraw) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
-    if (beacons.length) {   // the beacons' posts (the band in the station's first line colour), then their badges on top
-      const BCc = BC.colors[theme] || BC.colors.light, post = col(BCc.post), cols = new Float32Array(COLOR_KEYS.flatMap((k, i) => i === MAT.POST ? post : col(C[k] || C.concrete)));
-      gl.uniform3fv(u.u_col, cols); for (const c of beacons) { gl.uniform3fv(u.u_line, this.lineRGB(c.beacon.line, theme)); one(c) }
-      gl.uniform3fv(u.u_col, new Float32Array(COLOR_KEYS.flatMap(k => col(C[k] || C.concrete)))); gl.bindVertexArray(null);
-      const f = Math.max(0, Math.min(1, (zoom - BC.fadeZoom[0]) / (BC.fadeZoom[1] - BC.fadeZoom[0])));
-      (this.badges ||= new BeaconBadges()).draw(gl, MT, MU, beacons.map(c => ({ x: c.beacon.x, y: c.beacon.y, top: c.beacon.top, lines: c.beacon.lines.map(l => ({ line: l, rgb: this.lineRGB(l, theme) })) })),
-        { pack, dark, alpha: f, pitch: opts.pitch ?? 60, view: [gl.canvas.clientWidth || gl.drawingBufferWidth, gl.canvas.clientHeight || gl.drawingBufferHeight] });
-    }
     gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
     return pending;
   }
@@ -497,10 +464,8 @@ export class CityViaduct {
     const same = (this.sameLevel || []).map(r => { const e = this.edgeIndex.get(r.a); return { ...r, ll: e ? toLL(rowAt(e.rows, r.sa).x, rowAt(e.rows, r.sa).y).map(v => +v.toFixed(6)) : null } });
     return { regions: this.regions?.length || 0, parallel: this.parallel || 0, humps, floors: [...(this.floors || [])], notes: this.levelNotes || [], sameLevel: same, ms: this.levelsMs };
   }
-  // the beacons standing (lon/lat, base, top, the tallest building around, lines), for checks
-  debugBeacons() { const out = []; for (const [k, a] of this.cache) if (k.startsWith('bc:') && a.beacon) { const b = a.beacon; out.push({ id: b.id, ll: toLL(b.x, b.y).map(v => +v.toFixed(6)), base: +b.base.toFixed(1), top: +b.top.toFixed(1), tallest: b.tallest, onRoof: b.onRoof, lines: b.lines }) } return out }
   // every line:station with a level above the first, for checks
   debugLevels() { const out = []; for (const [k, L] of this.levelsOf() || []) if (L > 1) out.push([k, L]); return out }
-  dispose(gl) { if (!this.gl) return; for (const k of [...this.cache.keys()]) this.del(k); this.badges?.dispose(gl); gl.deleteProgram(this.p); this.gl = null }
+  dispose(gl) { if (!this.gl) return; for (const k of [...this.cache.keys()]) this.del(k); gl.deleteProgram(this.p); this.gl = null }
 }
 export default CityViaduct;
