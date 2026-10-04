@@ -34,7 +34,7 @@ import { toneRGB, hexRgb, MPP } from './city_style.mjs';
 import { compileProgram, hashi } from './city_traffic.mjs';
 import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
 import { STRIDE, MAT, COLOR_KEYS, Mesh } from './city_viaduct_mesh.mjs';
-import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance } from './city_viaduct_levels.mjs';
+import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './city_viaduct_levels.mjs';
 import { layoutExits, buildExits, exitSamples } from './city_viaduct_exits.mjs';
 export { STRIDE, MAT };
 
@@ -216,7 +216,12 @@ export class CityViaduct {
   }
   get railM() { return this.V.railHeightM }
   // this line's rail height at level 1: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
-  railFor(line) { let h = 0; for (let i = 0; i < line.length; i++) h = (h * 31 + line.charCodeAt(i)) >>> 0; return this.V.railHeightM + (h % 4) * (this.V.lineStepM ?? .04) }
+  // (each line its own step, by its place in the fixed line order: lines side by side share a level as one merged deck, and their tops never share a plane)
+  railFor(line) {
+    if (!this.lineSteps) { const names = Object.keys(this.net?.paths || {}).sort(compareLines); this.lineSteps = new Map(names.map((n, i) => [n, i])) }
+    let k = this.lineSteps.get(line); if (k === undefined) { let h = 0; for (let i = 0; i < line.length; i++) h = (h * 31 + line.charCodeAt(i)) >>> 0; k = h % 4 }
+    return this.V.railHeightM + k * (this.V.lineStepM ?? .03);
+  }
   // the rail height at a station: its level on this line (levels.stepM a level) over the line's base
   stationH(line, id) { const L = this.levelsOf()?.get(line + ':' + id) ?? 1; return this.railFor(line) + (L - 1) * this.V.levels.stepM }
   levelOf(line, id) { return this.levelsOf()?.get(line + ':' + id) ?? 1 }
@@ -262,8 +267,8 @@ export class CityViaduct {
   // the edge's height profile: flat at each station's level, one gentle ramp between when they differ
   profileOf(e) {
     if (e.prof && e.profV === this.levelsVersion) return e.prof;
-    const rows = this.rowsOf(e), total = rows.length ? rows[rows.length - 1].s : 0, hLo = this.stationH(e.line, e.lo), hHi = this.stationH(e.line, e.hi);
-    e.prof = edgeProfile(hLo, hHi, total, this.platLength(e.line, e.lo) / 2, this.platLength(e.line, e.hi) / 2, this.pack); e.profV = this.levelsVersion; e.ramp = Math.abs(hLo - hHi) > 1e-6;
+    const rows = this.rowsOf(e), total = rows.length ? rows[rows.length - 1].s : 0, hLo = this.stationH(e.line, e.lo), hHi = this.stationH(e.line, e.hi), humps = this.humps?.get(e.id) || null;
+    e.prof = edgeProfile(hLo, hHi, total, this.platLength(e.line, e.lo) / 2, this.platLength(e.line, e.hi) / 2, this.pack, humps); e.profV = this.levelsVersion; e.ramp = Math.abs(hLo - hHi) > 1e-6 || !!(humps && humps.length);
     return e.prof;
   }
   platLength(line, id) { const r = this.net.rects?.get(line + ':' + id); return r ? this.platGeom(r).L : 2 * 90 * .5 }
@@ -271,14 +276,26 @@ export class CityViaduct {
   deckRows(e) { this.profileOf(e); if (!e.ramp) return e.rows; return e.dense || (e.dense = densify(e.rows, 12)) }
   // the levels of every line:station (city_viaduct_levels.mjs), from the station rectangles; again when they change
   levelsOf() {
-    const rects = this.net.rects; if (!rects || !rects.size) return this.levels;
+    const rects = this.net.rects; if (!rects || !rects.size || this.resolving) return this.levels;
     if (this.levels && this.levelRects === rects && this.levelCount === rects.size && !this.levelsDirty) return this.levels;
-    const Lv = this.V.levels, lines = new Map(); for (const k of rects.keys()) { const id = k.slice(k.lastIndexOf(':') + 1); lines.set(id, (lines.get(id) || 0) + 1) }
-    const levels = stationLevels(rects, toM, Lv.overlapM);
-    holdLevels(levels, this.net.paths, (line, a, b) => { const e = this.edgeOf(line, a, b); if (!e) return 1e9; const r = this.rowsOf(e); return r.length ? r[r.length - 1].s : 1e9 }, Lv.holdM, id => (lines.get(String(id)) || 0) <= 1);
-    this.levels = levels; this.levelRects = rects; this.levelCount = rects.size; this.levelsDirty = false; this.levelsVersion++;
+    const t0 = performance.now(), Lv = this.V.levels, lines = new Map(); for (const k of rects.keys()) { const id = k.slice(k.lastIndexOf(':') + 1); lines.set(id, (lines.get(id) || 0) + 1) }
+    const edgeLen = (line, a, b) => { const e = this.edgeOf(line, a, b); if (!e) return 1e9; const r = this.rowsOf(e); return r.length ? r[r.length - 1].s : 1e9 }, single = id => (lines.get(String(id)) || 0) <= 1;
+    const build = floors => { const L = stationLevels(rects, toM, Lv.overlapM, floors, Lv.crossAngleDeg ?? 25); holdLevels(L, this.net.paths, edgeLen, Lv.holdM, single); return L };
+    this.resolving = true;
+    try {
+      this.levels = build(null); this.humps = new Map(); this.levelsVersion++; this.levelRects = rects; this.levelCount = rects.size; this.levelsDirty = false;
+      // 1) the stations' levels; 2) every place two decks cross or run together between stations (edgeOverlaps), separated by
+      //    humps on the later line or, where the hump's ramp has no room before the platform, that station's level (floors)
+      const all = this.edgeList().filter(e => this.rowsOf(e).length >= 2), byId = new Map(all.map(e => [e.id, e]));
+      this.regions = edgeOverlaps(all, Lv.crossM ?? 24);
+      const env = { edges: byId, profile: e => this.profileOf(e), stationH: (line, id) => this.stationH(line, id), platHalf: (line, id) => this.platLength(line, id) / 2, base: line => this.railFor(line), levelH: (line, level) => this.railFor(line) + (level - 1) * Lv.stepM,
+        apply: (floors, humps) => { this.levels = build(floors); this.humps = humps; this.levelsVersion++ } };
+      const r = resolveCrossings(this.regions, env, this.pack); this.floors = r.floors; this.humps = r.humps; this.levelNotes = r.notes;
+      this.sameLevel = sameLevelRegions(this.regions, env, this.pack); this.parallel = this.regions.filter(r => (r.ang ?? 90) < (Lv.crossAngleDeg ?? 25)).length;
+    } finally { this.resolving = false }
+    this.levelsVersion++; this.levelsMs = +(performance.now() - t0).toFixed(1);
     for (const k of [...this.cache.keys()]) this.del(k); this.plats.clear(); this.exitLayouts.clear();   // every height may have changed
-    return levels;
+    return this.levels;
   }
   platGeom(rect) {
     const c = rect.coords, A = toM(c[0][0], c[0][1]), B = toM(c[c.length - 1][0], c[c.length - 1][1]), dx = B[0] - A[0], dy = B[1] - A[1], d = Math.hypot(dx, dy) || 1, fx = dx / d, fy = dy / d;
@@ -299,6 +316,10 @@ export class CityViaduct {
       const i = k.lastIndexOf(':'); if (k.slice(i + 1) !== String(id)) continue; const ln = k.slice(0, i); if (ln === e.line) continue;
       const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect), c = g.row, hh = g.H;
       out.push({ seg: [[c.x - c.fx * hh, c.y - c.fy * hh], [c.x + c.fx * hh, c.y + c.fy * hh]], half, h: this.stationH(ln, id) });
+    }
+    for (const hm of this.humps?.get(e.id) || []) {   // the deck this one crosses over: no pier down onto it
+      const o = this.edgeIndex?.get(hm.over); if (!o || !o.rows) continue; const R = o.rows, s0 = Math.max(0, hm.so0 - 12), s1 = Math.min(R[R.length - 1].s, hm.so1 + 12), n = Math.max(1, Math.ceil((s1 - s0) / 10));
+      for (let k = 0; k < n; k++) { const a = rowAt(R, s0 + (s1 - s0) * k / n), b = rowAt(R, s0 + (s1 - s0) * (k + 1) / n); out.push({ seg: [[a.x, a.y], [b.x, b.y]], half: 11, h: -1e9 }) }
     }
     return out;
   }
@@ -386,7 +407,7 @@ export class CityViaduct {
     }
     const cap = phone ? V.performance.phoneBytes : V.performance.bytes;
     for (const [k, a] of this.cache) { if (this.bytes <= cap || a.f === this.frame) break; this.del(k) }
-    this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1) };
+    this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1), levelsMs: this.levelsMs, crossings: this.regions?.length, sameLevel: this.sameLevel?.length };
     if (!draw.length && !plats.length) return pending;
     // ── draw ──
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
@@ -435,6 +456,13 @@ export class CityViaduct {
       const it = a.lay.items.find(q => q.ref === ex.ref); return !!it && !it.skip;
     }
     return seen ? false : undefined;
+  }
+  // every crossing between decks (regions), the humps and raised stations that separate them, and any still at one level, for checks
+  debugCrossings() {
+    this.levelsOf(); const mid = (e, s0, s1) => { const q = rowAt(e.rows, (s0 + s1) / 2); return toLL(q.x, q.y).map(v => +v.toFixed(6)) };
+    const humps = []; for (const [id, list] of this.humps || []) { const e = this.edgeIndex.get(id); if (!e) continue; for (const h of list) humps.push({ edge: id, over: h.over, s0: +h.s0.toFixed(0), s1: +h.s1.toFixed(0), h: +h.h.toFixed(2), ll: mid(e, h.s0, h.s1) }) }
+    const same = (this.sameLevel || []).map(r => { const e = this.edgeIndex.get(r.a); return { ...r, ll: e ? toLL(rowAt(e.rows, r.sa).x, rowAt(e.rows, r.sa).y).map(v => +v.toFixed(6)) : null } });
+    return { regions: this.regions?.length || 0, parallel: this.parallel || 0, humps, floors: [...(this.floors || [])], notes: this.levelNotes || [], sameLevel: same, ms: this.levelsMs };
   }
   // every line:station with a level above the first, for checks
   debugLevels() { const out = []; for (const [k, L] of this.levelsOf() || []) if (L > 1) out.push([k, L]); return out }

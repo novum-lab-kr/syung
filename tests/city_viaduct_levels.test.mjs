@@ -12,9 +12,9 @@ test('crossing platforms take different levels; ones apart share the lowest (약
   const L = assignLevels([{ line: '6호선', seg: [[-100, 0], [100, 0]] }, { line: '3호선', seg: [[0, -100], [0, 100]] }], Lv.overlapM);
   assert.equal(L.get('3호선'), 1); assert.equal(L.get('6호선'), 2);
   const S = assignLevels([{ line: '1호선', seg: [[0, -150], [0, 150]] }, { line: '4호선', seg: [[-150, 20], [150, -20]] }, { line: '경의중앙선', seg: [[8, -150], [8, 150]] }, { line: '공항철도', seg: [[-300, -40], [-60, -40]] }, { line: 'GTX-A', seg: [[-120, -200], [-100, 100]] }], Lv.overlapM);
-  assert.equal(S.get('1호선'), 1); assert.equal(S.get('4호선'), 2); assert.equal(S.get('경의중앙선'), 3, 'parallel to 1호선 and across 4호선');
-  assert.equal(S.get('GTX-A'), 1, 'crosses only 4호선: shares the ground level with 1호선'); assert.equal(S.get('공항철도'), 2, 'well west of 1호선: shares 4호선\'s level');
-  assert.ok(Math.max(...S.values()) <= 3, 'five lines, three levels');
+  assert.equal(S.get('1호선'), 1); assert.equal(S.get('4호선'), 2); assert.equal(S.get('경의중앙선'), 1, 'side by side with 1호선 (8 m, parallel): the same level, one deck; across 4호선 it stays below');
+  assert.equal(S.get('GTX-A'), 1, 'crosses only 4호선: shares the ground level with 1호선'); assert.equal(S.get('공항철도'), 2, 'nearly parallel to 4호선, across GTX-A: level 2');
+  assert.ok(Math.max(...S.values()) <= 2, 'five lines, two levels: only real crossings are separated');
   assert.equal(segmentDistance([0, 0], [10, 0], [5, -5], [5, 5]), 0); assert.ok(Math.abs(segmentDistance([0, 0], [10, 0], [0, 7], [10, 7]) - 7) < 1e-9);
   const same = assignLevels([{ line: '2호선', seg: [[0, 0], [100, 0]] }, { line: '8호선', seg: [[50, -80], [50, 80]] }], Lv.overlapM);
   assert.deepEqual([...assignLevels([{ line: '8호선', seg: [[50, -80], [50, 80]] }, { line: '2호선', seg: [[0, 0], [100, 0]] }], Lv.overlapM)].sort(), [...same].sort(), 'the same whatever the order given');

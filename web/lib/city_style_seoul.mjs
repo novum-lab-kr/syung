@@ -475,7 +475,7 @@ export const SEOUL_CITY_STYLE = {
     "depthOpen": true                              // the band writes no depth for the train canvas: the deck and the trains show through it
   },
   "viaduct": {
-    "railHeightM": 11.3, "lineStepM": 0.04, "deckThicknessM": 1.6, "parapetHeightM": 1.1, "parapetPx": 2, "marginPx": 1.5,
+    "railHeightM": 11.3, "lineStepM": 0.03, "deckThicknessM": 1.6, "parapetHeightM": 1.1, "parapetPx": 2, "marginPx": 1.5,
     "lowZoomLanePx": 2, "lowZoomBodyPx": 4, "widthZoom": [15, 16],
     "bedWidthRatio": 0.55, "railGaugeRatio": 0.3, "railPx": 0.9,
     "elevatedConcreteK": 0.88,
@@ -491,7 +491,7 @@ export const SEOUL_CITY_STYLE = {
     "lod": {"deck": [13.6, 14.2], "piers": 15, "beds": 16, "rails": 16.5, "platforms": 15.5, "posts": 16.5},
     "train": {"laneGapPx": 1.5},
     "performance": {"bytes": 64e6, "phoneBytes": 24e6, "buildMs": 6, "buildMsMoving": 3},
-    "levels": {"stepM": 7, "overlapM": 40, "grade": 0.02, "holdM": 2600, "marginM": 30},
+    "levels": {"stepM": 7, "overlapM": 40, "crossM": 24, "crossAngleDeg": 25, "grade": 0.02, "humpGrade": 0.03, "humpPadM": 12, "holdM": 2600, "marginM": 30},
     "exits": {"minZoom": 16, "stepsZoom": 17.5, "maxM": 350, "nearGapM": 1, "farExtraM": 2, "checkStepM": 2.5, "clearanceM": 2.5, "farZoom": 16, "checkZoom": 18, "levelPenaltyM": 40,
       "stair": {"widthM": 3.2, "minPx": 2, "riseRun": 0.8, "landingM": 2.4, "landingDropM": 5.6, "slabM": 0.45, "wallM": 1.0, "wallPx": 0.8,
         "roofClearM": 2.7, "roofM": 0.25, "roofOverhangM": 0.35, "stepRiseM": 0.3, "postM": 0.25, "postPx": 1, "footClearM": 12},
