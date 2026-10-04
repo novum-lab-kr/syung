@@ -42,9 +42,22 @@ void main(){
   gl_Position=pos;
   v_n=a_nk.xyz;v_z=z;v_u=a_u;v_wm=u_wo+a_xy*u_S;v_wall=a_wall;v_bld=a_bld;v_misc=a_misc;v_kind=kind;
 }`;
+// x-ray (심시티): the screen boxes of the station platforms and running trains this frame (NDC x0,y0,x1,y1; their farthest window
+// depth and fade weight): a building fragment inside one (feathered by u_xv.z px) and nearer than the target turns to glass
+const XR_N = 48;
+const XR_GLSL = `uniform vec4 u_xr[${XR_N}];uniform vec2 u_xd[${XR_N}];uniform int u_xn;uniform vec4 u_xv;
+float xray(){
+  if(u_xn<=0)return 0.0;
+  vec2 p=gl_FragCoord.xy/u_xv.xy*2.0-1.0,fe=u_xv.z*2.0/u_xv.xy;float f=0.0;
+  for(int i=0;i<${XR_N};i++){if(i>=u_xn)break;if(gl_FragCoord.z>=u_xd[i].x)continue;vec4 r=u_xr[i];
+    vec2 a=smoothstep(r.xy-fe,r.xy,p)*(1.0-smoothstep(r.zw,r.zw+fe,p));f=max(f,a.x*a.y*u_xd[i].y);}
+  return f;
+}`;
 const FS_DEPTH = `#version 300 es
 precision highp float;in float v_z;flat in vec4 v_bld;flat in float v_kind;uniform vec4 u_through;uniform vec4 u_thBand;out vec4 o;
+${XR_GLSL}
 void main(){
+  if(xray()>0.5)discard;   // a building hiding a station or a train: no depth there, so the train canvas draws them (the glass pass tints them after)
   if(u_through.w>0.5&&int(v_kind+0.5)==6){   // a wall piece the viaduct passes through (kind 6): its glass band writes no depth, so the deck and the trains show through it
     int rq=((int(v_bld.z+0.5)>>6)&3)*16+(int(v_bld.w+0.5)>>4);float rail=u_through.x+float(rq)*u_through.y;   // the deck's rail height there (6 bits)
     if(v_z>rail-u_thBand.x&&v_z<rail+u_thBand.y)discard;}
@@ -57,6 +70,8 @@ uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
+${XR_GLSL}
+uniform vec4 u_xa;   // the glass pass: opacity, outline opacity, outline width (px)
 uniform vec4 u_through;uniform vec4 u_thBand;uniform vec3 u_thGlass;uniform vec3 u_thFrame;uniform vec3 u_thInside;uniform vec3 u_thMix;   // buildings the viaduct passes through: rail height code base/step (m) + depth-open flag; band below/above, post width/spacing; glass, posts, the lit hall by day; sky mix, hall mix by day, night brightness relative to the type's lit windows
 out vec4 o;
 float hash(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);return fract((p.x+p.y)*p.z);}
@@ -69,7 +84,7 @@ float lum(vec3 c){return dot(c,vec3(0.2126,0.7152,0.0722));}
 float lstar(float Y){return Y>0.008856?116.0*pow(Y,1.0/3.0)-16.0:903.3*Y;}
 float yOfL(float L){return L>8.0?pow((L+16.0)/116.0,3.0):L/903.3;}
 float dlMul(float Y,float dL){Y=max(Y,1e-3);return clamp(yOfL(max(0.0,lstar(Y)+dL))/Y,0.25,4.0);}
-void main(){
+void shade(){
   int kind=int(v_kind+0.5),tv=int(v_bld.z+0.5),type=tv&7,crown=(tv>>3)&3,flags=int(v_bld.w+0.5),slot=int(v_misc.x+0.5);bool famFac=(tv&32)!=0;
   float seed=v_bld.x+v_bld.y*256.0,H=(v_misc.z+v_misc.w*256.0)*0.1;
   bool night=u_shade.z>0.5;
@@ -176,6 +191,19 @@ void main(){
     if(u_debug>2.5)col=vec3(fract(v_z/10.0),v_z/max(H,1.0),H>0.0?1.0:0.0);   // 3: height
     if(u_debug>3.5)col=vec3(hash(vec3(float(slot),1.0,2.0)),hash(vec3(float(slot),3.0,4.0)),hash(vec3(float(slot),5.0,6.0)))*(0.6+0.4*k);}   // 4: the material / roof slot
   o=vec4(toSrgb(col),1.0);
+}
+void main(){
+  float wz=fwidth(v_z),wu=fwidth(v_u);
+  if(u_xv.w<0.5){shade();return;}
+  // the glass pass (train canvas): only where the building hides a station or a train — the building at u_xa.x over what the
+  // train canvas drew there, its outline (corners, the roof line, the parapet) nearly solid so it keeps its shape
+  float f=xray();if(f<0.01)discard;
+  shade();
+  int kind=int(v_kind+0.5);float a=u_xa.x;
+  if(kind==0||kind==6){float H=(v_misc.z+v_misc.w*256.0)*0.1,len=(v_wall.y+v_wall.z*256.0)*0.05;bool absU=(int(v_bld.w+0.5)&1)!=0;
+    float dz=(H-v_z)/max(wz,1e-4),du=absU?1e4:min(v_u,len-v_u)/max(wu,1e-4);a=mix(u_xa.y,a,smoothstep(u_xa.z,u_xa.z+1.0,min(dz,du)));}
+  else if(kind==2)a=u_xa.y;
+  a=mix(1.0,a,f);o=vec4(o.rgb*a,a);
 }`;
 
 
@@ -392,10 +420,55 @@ export class CityBuildings {
   }
   // the walls' depth into the train canvas (its own GL context); true when anything was drawn
   drawDepth(gl, M) {
-    if (!this.shown() || !this.visible.length) return false;
+    if (!this.shown() || !this.visible.length) { this.xr = null; return false }
+    this.xrayFrame(gl, M);   // this frame's x-ray boxes (심시티): the depth pass leaves them open, drawGlass tints them after
     return this.draw(gl, M, true);
   }
-  draw(gl, M, depthOnly) {
+  // ── x-ray (심시티): buildings between the camera and a station platform or a running train turn to glass there ──
+  // targets: [{id, ax, ay, bx, by, z0, z1, w, m}] in mercator units (a segment, its bottom/top height, half width; m = one metre),
+  // from the runtime each frame (null: off). Cut into pieces, projected to screen boxes with their farthest depth, nearest the
+  // view centre first, each fading in over the pack's fadeMs when it first shows
+  setXray(targets) { this.xrayIn = targets && targets.length ? targets : null }
+  xrayFrame(gl, M) {
+    const X = this.P.xray; this.xr = null; if (!this.xrayIn || !X) { this.xrSeen?.clear(); return }
+    const now = performance.now(), seen = this.xrSeen || (this.xrSeen = new Map()), cand = [], live = new Set(), c = [0, 0, 0, 0];
+    const proj = (x, y, z) => { c[3] = M[3] * x + M[7] * y + M[11] * z + M[15]; c[0] = M[0] * x + M[4] * y + M[8] * z + M[12]; c[1] = M[1] * x + M[5] * y + M[9] * z + M[13]; c[2] = M[2] * x + M[6] * y + M[10] * z + M[14] };
+    for (const t of this.xrayIn) {
+      const dx = t.bx - t.ax, dy = t.by - t.ay, L = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(L / (X.pieceM * t.m))), ux = L > 0 ? dx / L : 1, uy = L > 0 ? dy / L : 0, px = -uy * t.w, py = ux * t.w;
+      for (let k = 0; k < n; k++) {
+        const s0 = L * k / n, s1 = L * (k + 1) / n; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zf = -Infinity, behind = false;
+        for (let q = 0; q < 8; q++) {
+          const s = q & 1 ? s1 : s0, sd = q & 2 ? 1 : -1; proj(t.ax + ux * s + px * sd, t.ay + uy * s + py * sd, q & 4 ? t.z1 : t.z0);
+          if (c[3] <= 1e-9) { behind = true; break }
+          const nx = c[0] / c[3], ny = c[1] / c[3], nz = c[2] / c[3]; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny; if (nz > zf) zf = nz;
+        }
+        if (behind || x1 < -1.05 || x0 > 1.05 || y1 < -1.05 || y0 > 1.05 || zf > 1) continue;
+        const id = t.id + '#' + k; live.add(id); if (!seen.has(id)) seen.set(id, now);
+        cand.push({ id, r: [x0, y0, x1, y1], d: Math.min(1, zf * .5 + .5), c: Math.hypot((x0 + x1) / 2, (y0 + y1) / 2) });
+      }
+    }
+    for (const id of seen.keys()) if (!live.has(id)) seen.delete(id);   // gone (off screen, or out of the list): in again with a fresh fade
+    if (!cand.length) return;
+    cand.sort((a, b) => a.c - b.c); const n = Math.min(cand.length, X.maxTargets, XR_N), R = new Float32Array(XR_N * 4), D = new Float32Array(XR_N * 2); let fading = false;
+    const U = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < n; i++) { const t = cand[i], w = Math.min(1, (now - seen.get(t.id)) / Math.max(1, X.fadeMs)); if (w < 1) fading = true; R.set(t.r, i * 4); D[i * 2] = t.d; D[i * 2 + 1] = w * w * (3 - 2 * w); U[0] = Math.min(U[0], t.r[0]); U[1] = Math.min(U[1], t.r[1]); U[2] = Math.max(U[2], t.r[2]); U[3] = Math.max(U[3], t.r[3]) }
+    const fe = X.featherPx * 2 / Math.max(1, Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight)); U[0] -= fe; U[1] -= fe; U[2] += fe; U[3] += fe;
+    this.xr = { R, D, n, U, fading };
+    if (fading) this.map?.triggerRepaint();   // the fade runs on the map's frames (the train canvas follows them)
+  }
+  xrayUniforms(gl, u, glass) {
+    const xr = this.xr, X = this.P.xray;
+    if (!xr) { gl.uniform1i(u.u_xn, 0); gl.uniform4f(u.u_xv, 1, 1, 1, 0); return }
+    gl.uniform4fv(u.u_xr, xr.R); gl.uniform2fv(u.u_xd, xr.D); gl.uniform1i(u.u_xn, xr.n);
+    gl.uniform4f(u.u_xv, gl.drawingBufferWidth, gl.drawingBufferHeight, X.featherPx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), glass ? 1 : 0);
+    if (glass) gl.uniform4f(u.u_xa, X.alpha, X.edgeAlpha, X.edgePx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), 0);
+  }
+  // after the train canvas has drawn the decks and trains: the hiding buildings again, at the pack's opacity, over them
+  drawGlass(gl, M) {
+    if (!this.xr || !this.shown() || !this.visible.length) return false;
+    return this.draw(gl, M, false, true);
+  }
+  draw(gl, M, depthOnly, glass = false) {
     const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
     gl.useProgram(prog.p);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
@@ -413,6 +486,8 @@ export class CityBuildings {
     const lodE = this.P.lod.equipment, sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     gl.uniform2f(u.u_detail, sm(lodE[0], lodE[1], zoom), sm(lodE[1], lodE[1] + .5, zoom)); gl.uniform1f(u.u_maxH, this.maxHeight); gl.uniform1f(u.u_S, S);
     if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
+    this.xrayUniforms(gl, u, glass);   // x-ray boxes: the depth pass and the glass pass on the train canvas; none in the map's own pass (it has no boxes then)
+    if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
     const M64 = this.M64, M32 = this.M32; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
@@ -431,6 +506,7 @@ export class CityBuildings {
       gl.bindVertexArray(g.vao);
       for (const c of m.chunks) {
         if (!this.noCull && !this.inView(M64, c, m.mpu * grow)) continue;
+        if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr.U)) continue;   // the glass pass: only chunks under an x-ray box
         const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW; if (b <= a) continue;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
           const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu, f = 1 - sm(far[0], far[1], d);
@@ -440,9 +516,21 @@ export class CityBuildings {
       }
     }
     gl.bindVertexArray(null); gl.colorMask(true, true, true, true); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW); if (depthOnly) gl.depthFunc(gl.LESS);   // the train canvas's renderers expect culling off (as BuildingDepth left it)
+    if (glass) { gl.disable(gl.BLEND); gl.depthMask(true); this.stats.glassDraws = draws; return drawn }
     this.growing = growing; if (growing && !depthOnly) map.triggerRepaint();
     const st = this.stats; st[depthOnly ? 'depthMs' : 'renderMs'] = (st[depthOnly ? 'depthMs' : 'renderMs'] || 0) + performance.now() - t0; st[depthOnly ? 'depthFrames' : 'frames'] = (st[depthOnly ? 'depthFrames' : 'frames'] || 0) + 1; st.draws = draws;
     return drawn;
+  }
+  // the chunk's screen box against a box in NDC (x0,y0,x1,y1): false only when every corner is in front of the camera and the boxes miss
+  hitsBox(M, c, zs, U) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const x = i & 1 ? c.x1 : c.x0, y = i & 2 ? c.y1 : c.y0, z = i & 4 ? c.zmax * zs : 0, w = M[3] * x + M[7] * y + M[11] * z + M[15];
+      if (w <= 1e-9) return true;
+      const nx = (M[0] * x + M[4] * y + M[8] * z + M[12]) / w, ny = (M[1] * x + M[5] * y + M[9] * z + M[13]) / w;
+      if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny;
+    }
+    return !(x1 < U[0] || x0 > U[2] || y1 < U[1] || y0 > U[3]);
   }
   // the chunk's box against the clip volume: out when all eight corners lie beyond one plane; a box with a
   // corner behind the camera is kept (its plane tests mean nothing there)

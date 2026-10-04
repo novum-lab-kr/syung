@@ -461,6 +461,16 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
   // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
+  "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/lib/city_buildings.mjs xray)
+    "alpha": 0.3,                                  // the building's opacity where it hides a target
+    "edgeAlpha": 0.75, "edgePx": 1.5,              // its outline (wall corners, the roof line, the parapet) stays nearly solid, so the building keeps its shape
+    "featherPx": 24,                               // the glass fades out over this many px around each target's screen box
+    "fadeMs": 200,                                 // a target that comes into the list turns its buildings to glass over this long
+    "maxTargets": 48, "pieceM": 30,                // screen boxes a frame (nearest the view centre first); long platforms and trains cut into pieces this long
+    "platformMarginM": 4, "platformBelowM": 2.5, "platformAboveM": 6,   // the platform's box: its width plus this margin each side, from under the deck to over the canopy
+    "trainHalfWidthM": 3, "trainBelowM": 1, "trainAboveM": 4.5,
+    "trains": true
+  },
   "throughBuildings": {   // city-build: buildings the simcity viaduct passes through read as station buildings — the floor the deck crosses becomes a glass hall (list: web/lib/city_through_buildings.mjs)
     "railHeightM": 11,                             // the deck's rail height where the list names none (city-life's list gives each building its own, ramps and levels included)
     "bandBelowM": 2.0, "bandAboveM": 4.6,          // the glass band around the rail height: from under the deck to over the trains' roofs

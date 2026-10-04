@@ -345,6 +345,21 @@ let simcity=false;   // 심시티 모드: the miniature city (its own look; the 
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
 const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||coaster;
+// city-build: 심시티 x-ray — the station platforms and running trains near the view, as boxes in mercator for cityBuildings: the
+// buildings hiding them turn to glass there (pack.xray). Platforms: the station rect at its viaduct level; trains: tail to head on the deck
+function cityXrayTargets(){
+  const X=cityBuildings.P.xray;if(!X||!X.on)return null;
+  const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),m=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
+  const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x,y)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad,out=[];
+  for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);
+    const P=maplibregl.MercatorCoordinate.fromLngLat(c[0]),Q=maplibregl.MercatorCoordinate.fromLngLat(c[c.length-1]),cx=(P.x+Q.x)/2,cy=(P.y+Q.y)/2;if(!inV(cx,cy))continue;
+    const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2,h=cityViaduct.stationH(line,id)*m;
+    out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m})}
+  if(X.trains&&trainsEnabled){const bodyPx=coasterBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
+    for(const plan of plans){const pose=trainPose(plan),q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;
+      const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
+      out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
+  return out}
 function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9});
   syncStationLabelMode()}   // coaster: only station names stay above the park's buildings
@@ -1837,6 +1852,7 @@ map.on('load',()=>{
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
+      if(cityOn())cityBuildings.setXray(simcity?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
       const drawn=cityOn()?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
@@ -1875,6 +1891,7 @@ map.on('load',()=>{
         night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
+      if(simcity)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
       exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
