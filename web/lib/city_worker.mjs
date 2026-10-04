@@ -15,6 +15,6 @@ self.onmessage = e => {
     const tb = new TileBuilder({ z: m.z, x: m.x, y: m.y, extent: L.building?.extent || 4096, buildings: L.building || null, landuse: L.landuse || null }, P, { phone: m.phone, through: TH });
     while (!tb.step(1e9));
     const r = tb.result();
-    self.postMessage({ type: 'done', key: m.key, mesh: r }, [r.verts.buffer, r.idx.buffer]);
+    self.postMessage({ type: 'done', key: m.key, mesh: r }, [r.verts.buffer, r.idx.buffer, r.blds.buffer]);
   } catch (err) { self.postMessage({ type: 'fail', key: m.key, error: String(err && err.stack || err) }) }
 };

@@ -292,12 +292,13 @@ export class CityLife {
     const polys = [], BG = new Map(), BC = 30;
     const ringsOf = g => g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
     let nb = 0; for (const f of F.building) { if (++nb % 12 === 0) yield; for (const poly of ringsOf(f.geometry)) { const rings = poly.map(r => r.map(c => toM(c[0], c[1]))); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of rings[0]) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]) }
-      if (x1 < bx0 - 5 || x0 > bx1 + 5 || y1 < by0 - 5 || y0 > by1 + 5) continue; const id = polys.length; polys.push({ rings, box: [x0, y0, x1, y1] });
+      if (x1 < bx0 - 5 || x0 > bx1 + 5 || y1 < by0 - 5 || y0 > by1 + 5) continue; const id = polys.length; polys.push({ rings, box: [x0, y0, x1, y1], h: +(f.properties?.render_height ?? 0) || 0 });   // h: the station beacons stand taller than it (CityLife.maxHeight)
       for (let cx = Math.floor((x0 - 2) / BC); cx <= Math.floor((x1 + 2) / BC); cx++) for (let cy = Math.floor((y0 - 2) / BC); cy <= Math.floor((y1 + 2) / BC); cy++) { const k = cx + ',' + cy; let a = BG.get(k); if (!a) BG.set(k, a = []); a.push(id) } } }
     const pip = (x, y, rings) => { let inside = false; for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const yi = r[i][1], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < (r[j][0] - r[i][0]) * (y - yi) / (yj - yi) + r[i][0]) inside = !inside } return inside };
     const edgeNear = (x, y, rings, m) => { for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = r[j][0], ay = r[j][1], dx = r[i][0] - ax, dy = r[i][1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < m) return true } return false };
     const inBuilding = (x, y, m) => { const a = BG.get(Math.floor(x / BC) + ',' + Math.floor(y / BC)); if (!a) return false; for (const id of a) { const P = polys[id], b = P.box; if (x < b[0] - m || x > b[2] + m || y < b[1] - m || y > b[3] + m) continue; if (pip(x, y, P.rings) || (m > 0 && edgeNear(x, y, P.rings, m))) return true } return false };
     cell.inBuilding = inBuilding;   // kept on the cell: the viaduct's piers ask it (CityLife.inBuilding)
+    cell.heightNear = (x, y, r) => { let m = 0; const seen = new Set(); for (let cx = Math.floor((x - r) / BC); cx <= Math.floor((x + r) / BC); cx++) for (let cy = Math.floor((y - r) / BC); cy <= Math.floor((y + r) / BC); cy++) for (const id of BG.get(cx + ',' + cy) || []) { if (seen.has(id)) continue; seen.add(id); const P = polys[id], b = P.box, dx = Math.max(b[0] - x, 0, x - b[2]), dy = Math.max(b[1] - y, 0, y - b[3]); if (dx * dx + dy * dy <= r * r && P.h > m) m = P.h } return m };   // the tallest building within r (the station beacons)
     mark('buildings'); yield;
     // water, wood, park grass and lawns: a 4 m mask by scanline fill (even–odd); landuse zones on a 10 m grid
     const NW = Math.ceil((bx1 - bx0) / RASTER) + 1, NH = Math.ceil((by1 - by0) / RASTER) + 1, mask = new Uint8Array(NW * NH);
@@ -561,6 +562,8 @@ export class CityLife {
   }
   // Is (x, y) (local metres) inside a building footprint: true / false, or undefined where no cell is ready yet (the
   // viaduct's piers wait for that, so none stands in a building whose tile has not come).
+  // the tallest building within r metres of (x, y) — undefined while a cell there is not ready
+  maxHeight(x, y, r) { let m = 0, any = false; for (const c of this.cells.values()) { const b = c.box; if (x + r < b[0] || x - r >= b[2] || y + r < b[1] || y - r >= b[3]) continue; any = true; if (c.state !== 'ready') return undefined; if (!c.bare && c.heightNear) m = Math.max(m, c.heightNear(x, y, r)) } return any ? m : undefined }
   inBuilding(x, y) { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }
   animating() { return this._anim }
   dispose(gl) {
