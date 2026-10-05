@@ -835,20 +835,23 @@ def main(out_paths: list[Path]) -> None:
             shapes[k] = [[round(x, 6), round(y, 6)] for x, y in simplify(points)]
     # Hand-picked courses (manual_routes.json) override the automatic shape for their edge.
     manual_file = CACHE / "manual_routes.json"
-    if manual_file.exists():
-        by_name = {(line, n["name"]): n["id"] for n in source["nodes"] for line in n["lines"]}
-        for k, via in json.loads(manual_file.read_text(encoding="utf-8")).items():
+    manual = json.loads(manual_file.read_text(encoding="utf-8")) if manual_file.exists() else {}
+    by_name = {(line, n["name"]): n["id"] for n in source["nodes"] for line in n["lines"]}
+    def lay_manual(report_skips: bool) -> None:
+        for k, via in manual.items():
             if k.startswith("_"):
                 continue
             line, a_name, b_name = k.split("|")
             a, b = by_name.get((line, a_name)), by_name.get((line, b_name))
             if a is None or b is None or f"{line}:{a}" not in stops or f"{line}:{b}" not in stops:
-                print(f"manual route skipped: {k}", file=sys.stderr)
+                if report_skips:
+                    print(f"manual route skipped: {k}", file=sys.stderr)
                 continue
             pts = [stops[f"{line}:{a}"], *via, stops[f"{line}:{b}"]]
             if a > b:
                 pts.reverse()
             shapes[f"{line}:{min(a, b)}:{max(a, b)}"] = pts
+    lay_manual(True)
     # Transfer stations: an exit counts toward the line whose track it is nearest (exits along a crossing
     # line would otherwise stretch this one). Recompute the station extent from those exits only.
     def seg_dist(p, a, b):
@@ -891,12 +894,17 @@ def main(out_paths: list[Path]) -> None:
                     reassigned += 1
                 stop_half[k] = new
     # stations put back on their platform by hand (stop_overrides.json); "dir" · "half" · "reach" 칸도 여기서 들어간다
-    from stop_overrides import apply as apply_stop_overrides, fixed_dirs
+    from stop_overrides import apply as apply_stop_overrides, finish_ends, fixed_dirs
     stop_reach: dict[str, list] = {}
     for k, r in apply_stop_overrides({"edges": shapes, "stops": stops, "stopHalf": stop_half, "platformHalf": plat_half, "stopReach": stop_reach}):
         print(f"stop override {k}: {'skipped' if r is None else f'moved {r[0]} m'}", file=sys.stderr)
+    # 손으로 고른 경로는 옮긴 뒤의 역 점 기준으로 그린 것이라(카카오 맞춤), 역을 옮기며 함께 밀리거나 잘린 구간을 다시 깐다
+    lay_manual(False)
     stop_dirs = orient_stations(shapes, stops, stop_half, fixed_dirs())
     clean_track_shapes(shapes)
+    for k, _ in finish_ends({"edges": shapes, "stops": stops, "platformHalf": plat_half}):
+        print(f"after clean {k}", file=sys.stderr)
+    lay_manual(False)   # 손으로 고른 경로는 정리 · 꼬리 자르기 · 잇기에서 빼고 그대로
     payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width, "stopReach": stop_reach}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")

@@ -292,11 +292,15 @@ def apply(ts: dict) -> list:
         if r is not None:
             apply_extras(ts, sk, extra)
         done.append((k, None if r is None else (round(r[0]), round(r[1]))))
-    for k in trim_station_ends(ts):
-        done.append((f"trim {k}", (0, 0)))
-    for k in ease_platform_ends(ts, [sk for sk, _, v in _entries() if sk and isinstance(v, dict) and v.get("shift")]):
-        done.append((f"ease {k}", (0, 0)))
-    return done
+    return done + finish_ends(ts)
+
+
+def finish_ends(ts: dict) -> list:
+    """역 끝 꼬리 자르기 + 옮긴 역 승강장 끝 잇기. build_track_shapes.py 는 마지막 정리(clean_track_shapes) 뒤에 한 번 더 부른다
+    (손으로 고친 track_shapes.json 이 그 정리 뒤 모양에 이 둘을 한 것이라, 전체 다시 빌드도 같은 모양이 되게)."""
+    done = [(f"trim {k}", (0, 0)) for k in trim_station_ends(ts)]
+    keys = [sk for sk, _, v in _entries() if sk and isinstance(v, dict) and v.get("shift")]
+    return done + [(f"ease {k}", (0, 0)) for k in ease_platform_ends(ts, keys)]
 
 
 if __name__ == "__main__":
