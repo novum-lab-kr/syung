@@ -61,18 +61,31 @@ const edgeCoords=(line,lo,hi)=>{const k=`${line}:${lo}:${hi}`;if(!shapes[k])retu
 // Where a station's label sits: its point on the selected line, else the middle of its per-line points.
 function labelPos(s){if(selected!=='all'&&s.lines.some(x=>x.name===selected))return stopPos(selected,s);const p=s.lines.map(x=>stopPos(x.name,s));return [p.reduce((a,c)=>a+c[0],0)/p.length,p.reduce((a,c)=>a+c[1],0)/p.length]}
 const basicRouteCache=new Map();
-const terminalStops=new Set();{
-  const links=new Map();for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++)for(const [a,b] of [[ids[i-1],ids[i]],[ids[i],ids[i-1]]]){const k=`${line}:${a}`;if(!links.has(k))links.set(k,new Set());links.get(k).add(b)}
-  for(const [key,set] of links)if(set.size===1)terminalStops.add(key);
+const terminalStops=new Set(),stopLinks=new Map();{   // stopLinks: line:역 → 그 노선의 이웃 역들
+  for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++)for(const [a,b] of [[ids[i-1],ids[i]],[ids[i],ids[i-1]]]){const k=`${line}:${a}`;if(!stopLinks.has(k))stopLinks.set(k,new Set());stopLinks.get(k).add(b)}
+  for(const [key,set] of stopLinks)if(set.size===1)terminalStops.add(key);
+}
+// 공유 선로 칸이 역 앞뒤로 바뀌는 역(청량리 1호선: 제기동 쪽은 혼자, 회기 쪽은 경의중앙·경춘과 셋)은 승강장 안을 한 칸에 두고
+// 승강장 밖 SLOT_EASE_M 동안 구간의 칸으로 옮겨 가요. 역의 칸은 함께 쓰는 노선이 가장 많은 이웃 구간의 칸(lo→hi 방향 기준).
+const SLOT_EASE_M=80;
+function stopSlot(line,id,lo,hi){
+  let best=null;
+  for(const n of stopLinks.get(`${line}:${id}`)||[]){
+    const a=Math.min(id,n),b=Math.max(id,n),size=edgeLines.get(edgeKey(a,b))?.size||1,o=a===lo&&b===hi?edgeOffset(line,a,b):edgeOffset(line,a,b)*((id===hi)===(id===a)?1:-1);
+    if(!best||size>best.size||size===best.size&&Math.abs(o)<Math.abs(best.o))best={size,o};
+  }
+  return best?best.o:edgeOffset(line,lo,hi);
 }
 function basicTrack(line,lo,hi){
-  const key=`${line}:${lo}:${hi}`,offset=edgeOffset(line,lo,hi),zoom=offset?map.getZoom():0;
+  const key=`${line}:${lo}:${hi}`,mid=edgeOffset(line,lo,hi),sLo=stopSlot(line,lo,lo,hi),sHi=stopSlot(line,hi,lo,hi),shifted=Boolean(mid||sLo||sHi),zoom=shifted?map.getZoom():0;
   let cached=basicRouteCache.get(key);if(cached?.zoom===zoom)return cached;
-  const train=offsetCoords(cityCoords(line,lo,hi),offset,map.getZoom()),coords=[...train];
+  const hLo=(platformHalf[`${line}:${lo}`]||PLATFORM_HALF)+5,hHi=(platformHalf[`${line}:${hi}`]||PLATFORM_HALF)+5,ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)};
+  const slot=(d,total)=>{const a=1-ease((d-hLo)/SLOT_EASE_M),b=1-ease((total-d-hHi)/SLOT_EASE_M);return (sLo*a+sHi*b+mid*Math.max(0,1-a-b))/Math.max(1,a+b)};
+  const train=offsetCoords(cityCoords(line,lo,hi),sLo===mid&&sHi===mid?mid:slot,map.getZoom()),coords=[...train];
   const terminal=id=>terminalStops.has(`${line}:${id}`);
   if(terminal(lo))coords.unshift(extendStart(train,platformHalf[`${line}:${lo}`]||PLATFORM_HALF));
   if(terminal(hi))coords.push(extendStart([...train].reverse(),platformHalf[`${line}:${hi}`]||PLATFORM_HALF));
-  cached={zoom,train,coords};basicRouteCache.set(key,cached);return cached;
+  cached={zoom,train,coords,shifted};basicRouteCache.set(key,cached);return cached;
 }
 function buildLineFeatures(){
   const features=[],drawn=new Set();
@@ -92,8 +105,8 @@ function geom(line,a,b){return coaster?coasterPath(line,a,b):cityGeom(line,a,b)}
 const cityCoords=(line,lo,hi)=>(!coaster&&cityViaduct.snapped(line,lo,hi))||edgeCoords(line,lo,hi);
 function cityGeom(line,a,b){const lo=Math.min(a,b),hi=Math.max(a,b),sn=cityViaduct.snapped(line,lo,hi);if(!sn)return realGeom(line,a,b);const id=`s:${line}:${lo}:${hi}`;let g=edgeGeom.get(id);if(g)return g;g=withCum(sn.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));edgeGeom.set(id,g);return g}
 function basicDrawGeom(line,a,b){
-  const lo=Math.min(a,b),hi=Math.max(a,b);if(!edgeOffset(line,lo,hi))return cityGeom(line,a,b);
-  const track=basicTrack(line,lo,hi),key=`b:${line}:${lo}:${hi}`;
+  const lo=Math.min(a,b),hi=Math.max(a,b),track=basicTrack(line,lo,hi);if(!track.shifted)return cityGeom(line,a,b);
+  const key=`b:${line}:${lo}:${hi}`;
   let g=edgeGeom.get(key);if(g?.track===track)return g;
   g=withCum(track.train.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));g.track=track;edgeGeom.set(key,g);return g;
 }

@@ -1,10 +1,16 @@
 // 공유 선로의 기존 픽셀 간격만 좌표에 반영해요. 선로를 승강장 쪽으로 휘지 않아요.
+// offset이 함수면 꼭짓점마다 (구간 시작에서 m, 구간 길이 m) → px. 꼭짓점은 더하지 않아요(원본 꼭짓점 수·순서 그대로).
 export function offsetCoords(coords,offset,zoom){
   if(!offset)return coords;
   const merc=p=>[(p[0]+180)/360,(1-Math.log(Math.tan(Math.PI/4+p[1]*Math.PI/360))/Math.PI)/2];
   const ll=p=>[p[0]*360-180,Math.atan(Math.sinh(Math.PI*(1-2*p[1])))*180/Math.PI];
-  const pts=coords.map(merc),unit=offset/(512*2**zoom);
-  return pts.map((p,i)=>{let a=i,b=i;while(a>0&&Math.hypot(pts[a][0]-p[0],pts[a][1]-p[1])<1e-12)a--;while(b<pts.length-1&&Math.hypot(pts[b][0]-p[0],pts[b][1]-p[1])<1e-12)b++;const dx=pts[b][0]-pts[a][0],dy=pts[b][1]-pts[a][1],d=Math.hypot(dx,dy)||1;return ll([p[0]-dy/d*unit,p[1]+dx/d*unit])});
+  let at=()=>offset;
+  if(typeof offset==='function'){
+    const cum=[0];for(let i=1;i<coords.length;i++)cum.push(cum[i-1]+metres(coords[i-1],coords[i]));
+    const fn=offset;at=i=>fn(cum[i],cum.at(-1));
+  }
+  const pts=coords.map(merc),scale=1/(512*2**zoom);
+  return pts.map((p,i)=>{let a=i,b=i;while(a>0&&Math.hypot(pts[a][0]-p[0],pts[a][1]-p[1])<1e-12)a--;while(b<pts.length-1&&Math.hypot(pts[b][0]-p[0],pts[b][1]-p[1])<1e-12)b++;const dx=pts[b][0]-pts[a][0],dy=pts[b][1]-pts[a][1],d=Math.hypot(dx,dy)||1,unit=at(i)*scale;return ll([p[0]-dy/d*unit,p[1]+dx/d*unit])});
 }
 export const metres=(a,b)=>Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320;
 export function trackStart(coords,dist){

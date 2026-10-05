@@ -15,7 +15,7 @@
 //    is under it; up to maxOffsetM (150 m) when crossBlocks (2026-10-05 행님: 블록을 가로지르는 지하 구간도 도로로), else only
 //    over a short run (farRunM). 선분 끝 너머로 내린 점은 쓰지 않는다(모퉁이로 몰림 · 되돌아감)
 //  · 역: 승강장과 섞는 구간(platformHalf + blendM)까지 모두 지하인 역은 역 점을 stationM 안 같은 방향 도로 중심선에 내린다
-//    (export stops — stops · stop_overrides 원본은 그대로; keepStations 는 옮기지 않음). 도로가 승강장 길이만큼 곧고(볼록
+//    (export stops — stops · stop_overrides 원본은 그대로; keepStations 는 옮기지 않음; skipEdges 구간은 옮기지 않음). 도로가 승강장 길이만큼 곧고(볼록
 //    straightM 안) 승강장 끝 둘레 선로가 도로 방향에서 endTurnDeg 안이면 그 방향으로 곧은 승강장, 아니면 원래 선로 모양 그대로
 //    역 점까지 평행 이동. 옮기지 않은 역(지상 · 고가 · 도로 없음)은 승강장 길이만큼 원래 선로 그대로
 //  · 승강장(platformHalf + 5 m)은 고정, 그 밖은 도로 맞춤 경로로: 고정 구간을 늘인 값에서 smoothstep 으로 섞고(blendM 이상,
@@ -36,7 +36,7 @@ const tileJSONFile = opt('--tilejson'), offline = args.includes('--offline');
 if (offline && !tileJSONFile) throw new Error('--offline에서는 --tilejson 캐시 파일이 필요해요.');
 mkdirSync(REPORT, { recursive: true }); mkdirSync(TILES, { recursive: true });
 const pack = (await import('../web/lib/city_style_seoul.mjs')).default, SN = pack.viaduct.snap, NEAR_M = SN.nearM ?? 60, FAR_M = SN.maxOffsetM ?? 150, HOLD_M = SN.holdM ?? 40;
-const DEV_MAX_M = SN.devMaxM ?? Infinity, SLOPE_MAX = SN.slopeMax ?? 0.3, CROSS_BLOCKS = SN.crossBlocks ?? false, STATION_M = SN.stationM ?? NEAR_M, BLEND_M = SN.blendM ?? 60, STRAIGHT_M = SN.straightM ?? 4, END_TURN = Math.cos((SN.endTurnDeg ?? 35) * Math.PI / 180), KEEP_STATIONS = new Set(SN.keepStations || []);
+const DEV_MAX_M = SN.devMaxM ?? Infinity, SLOPE_MAX = SN.slopeMax ?? 0.3, CROSS_BLOCKS = SN.crossBlocks ?? false, STATION_M = SN.stationM ?? NEAR_M, BLEND_M = SN.blendM ?? 60, STRAIGHT_M = SN.straightM ?? 4, END_TURN = Math.cos((SN.endTurnDeg ?? 35) * Math.PI / 180), KEEP_STATIONS = new Set(SN.keepStations || []), SKIP_EDGES = new Set(SN.skipEdges || []);
 const TRACE_TURN = (SN.traceTurnDeg ?? 2.5) * Math.PI / 180;
 const SAMPLE_M = 6, NEAR_WAY_M = 60, MIN_RUN_M = 60, FAR_RUN_M = SN.farRunM ?? 500, GRID = 100, CLASSES = { motorway: 0, trunk: 0, primary: 0, secondary: 4, tertiary: 10, minor: 22 }, BIG = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
 
@@ -307,6 +307,7 @@ for (const e of edges) {
     i = Math.max(j, i + 1);
   }
   if (moved < 2 && !sts[0] && !sts[1]) continue;
+  if (SKIP_EDGES.has(e.id)) continue;   // skipEdges: 도로 맞춤이 원래 선로보다 나쁜 구간(청량리–회기 1호선: 교차로에서 S자로 18 m 벗어남)은 원래 선로 그대로
   // the moved path: the samples moved, the ends exact (옮긴 역 점 또는 원래 끝), simplified (Douglas–Peucker 0.3 m)
   // 마지막 1 m 미만 잔여 구간은 샘플이 생략될 수 있어 끝 좌표를 직접 넣는다.
   const P = T; P[0] = sts[0] ? sts[0].p.slice() : e.pts[0].slice(); P[n - 1] = sts[1] ? sts[1].p.slice() : e.pts[e.pts.length - 1].slice();
