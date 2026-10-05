@@ -308,7 +308,7 @@ for (const e of edges) {
     i = Math.max(j, i + 1);
   }
   if (moved < 2 && !sts[0] && !sts[1]) continue;
-  if (SKIP_EDGES.has(e.id)) continue;   // skipEdges: 도로 맞춤이 원래 선로보다 나쁜 구간(청량리–회기 1호선: 교차로에서 S자로 18 m 벗어남)은 원래 선로 그대로
+  if (SKIP_EDGES.has(e.id)) continue;   // skipEdges: 도로 맞춤이 원래 선로보다 나쁜 구간(청량리–회기 1호선: 교차로에서 S자로 18 m 벗어남 · 잠실–몽촌토성 8호선: 승강장 끝에서 반지름 15 m로 70° 꺾여 올림픽로로)은 원래 선로 그대로
   // the moved path: the samples moved, the ends exact (옮긴 역 점 또는 원래 끝), simplified (Douglas–Peucker 0.3 m)
   // 마지막 1 m 미만 잔여 구간은 샘플이 생략될 수 있어 끝 좌표를 직접 넣는다.
   const P = T; P[0] = sts[0] ? sts[0].p.slice() : e.pts[0].slice(); P[n - 1] = sts[1] ? sts[1].p.slice() : e.pts[e.pts.length - 1].slice();

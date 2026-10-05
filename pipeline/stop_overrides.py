@@ -185,6 +185,87 @@ def _trim_end(pts: list) -> list:
     return pts
 
 
+EASE_JOIN_M, EASE_MAX_OFF_M = 120, 25
+
+
+def _at(xy: list, cum: list, s: float) -> tuple:
+    """(x, y, 방향) — 지나온 길 s m 지점."""
+    i = next((k for k in range(1, len(cum)) if cum[k] >= s), len(cum) - 1)
+    t = (s - cum[i - 1]) / ((cum[i] - cum[i - 1]) or 1)
+    (ax, ay), (bx, by) = xy[i - 1], xy[i]
+    l = math.hypot(bx - ax, by - ay) or 1
+    return ax + (bx - ax) * t, ay + (by - ay) * t, ((bx - ax) / l, (by - ay) / l)
+
+
+def _ease_end(pts: list, half: float) -> list:
+    """승강장 끝(half m)에서 EASE_JOIN_M 앞까지 선로가 승강장 줄에서 비켜 S자로 꺾여 들면(1호선 온수: 띠 끝 27 m 안에서
+    39° 꺾였다 되돌아감 — 승강장을 OSM 승강장 쪽으로 옮긴 만큼 선로와 어긋남) 승강장 방향에서 출발해 그 지점 선로 방향으로
+    들어가는 3차 Hermite 곡선으로 바꾼다. 새 곡선이 원래 선로에서 EASE_MAX_OFF_M 넘게 벗어나면 그대로 둔다."""
+    o = pts[0]
+    xy = [_xy(q, o) for q in pts]
+    cum = [0.0]
+    for a, b in zip(xy, xy[1:]):
+        cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    s0, s1 = half, half + EASE_JOIN_M
+    if cum[-1] < s1 + 60 or half < 20:
+        return pts
+    x0, y0, _ = _at(xy, cum, s0)
+    bx, by, _ = _at(xy, cum, s0 - 20)
+    l = math.hypot(x0 - bx, y0 - by) or 1
+    t0 = ((x0 - bx) / l, (y0 - by) / l)
+    x1, y1, _ = _at(xy, cum, s1)
+    fx, fy, _ = _at(xy, cum, s1 + 20)
+    l = math.hypot(fx - x1, fy - y1) or 1
+    t1 = ((fx - x1) / l, (fy - y1) / l)
+    # 원래 길의 S자 정도: 방향 변화 합 − 알짜 변화(°)
+    heads = []
+    for k in range(int(s0) - 20, int(s1), 5):   # 승강장 끝 20 m 안쪽부터(꺾임이 끝에서 바로 시작하는 역)
+        ax, ay, _ = _at(xy, cum, k)
+        cx, cy, _ = _at(xy, cum, k + 5)
+        heads.append(math.atan2(cx - ax, cy - ay))
+    turns = [((b - a + math.pi) % (2 * math.pi)) - math.pi for a, b in zip(heads, heads[1:])]
+    if math.degrees(sum(map(abs, turns)) - abs(sum(turns))) < 30:
+        return pts
+    L = math.hypot(x1 - x0, y1 - y0)
+    curve = []
+    for k in range(1, 12):
+        t = k / 12
+        h00, h10, h01, h11 = 2 * t ** 3 - 3 * t * t + 1, t ** 3 - 2 * t * t + t, -2 * t ** 3 + 3 * t * t, t ** 3 - t * t
+        curve.append((h00 * x0 + h10 * L * t0[0] + h01 * x1 + h11 * L * t1[0], h00 * y0 + h10 * L * t0[1] + h01 * y1 + h11 * L * t1[1]))
+    def off(q):
+        best = 1e9
+        for a, b in zip(xy, xy[1:]):
+            vx, vy = b[0] - a[0], b[1] - a[1]
+            l2 = vx * vx + vy * vy
+            t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / l2))
+            best = min(best, math.hypot(q[0] - a[0] - vx * t, q[1] - a[1] - vy * t))
+        return best
+    if max(off(q) for q in curve) > EASE_MAX_OFF_M:
+        return pts
+    k = math.cos(math.radians(o[1]))
+    ll = lambda q: [round(o[0] + q[0] / (k * 111320), 6), round(o[1] + q[1] / 111320, 6)]
+    head = [pts[i] for i in range(len(pts)) if cum[i] < s0]
+    tail = [pts[i] for i in range(len(pts)) if cum[i] > s1]
+    return head + [ll((x0, y0))] + [ll(q) for q in curve] + [ll((x1, y1))] + tail
+
+
+def ease_platform_ends(ts: dict, keys) -> list:
+    """stop_overrides 로 옮긴 역(keys: "<line>:<id>")의 양쪽 구간에 _ease_end — 고친 "구간 @ 역" 목록."""
+    fixed = []
+    half = ts.get("platformHalf", {})
+    for sk in keys:
+        line, sid = sk.rsplit(":", 1)
+        for k, e in ts["edges"].items():
+            _, lo, hi = k.rsplit(":", 2)
+            if not k.startswith(line + ":") or sid not in (lo, hi) or sk not in half:
+                continue
+            new = _ease_end(e, half[sk]) if lo == sid else _ease_end(e[::-1], half[sk])[::-1]
+            if new != e:
+                ts["edges"][k] = new
+                fixed.append(f"{k} @ {sk}")
+    return fixed
+
+
 def trim_station_ends(ts: dict) -> list:
     """모든 구간의 양 끝에 _trim_end — 고친 구간 키 목록."""
     fixed = []
@@ -213,6 +294,8 @@ def apply(ts: dict) -> list:
         done.append((k, None if r is None else (round(r[0]), round(r[1]))))
     for k in trim_station_ends(ts):
         done.append((f"trim {k}", (0, 0)))
+    for k in ease_platform_ends(ts, [sk for sk, _, v in _entries() if sk and isinstance(v, dict) and v.get("shift")]):
+        done.append((f"ease {k}", (0, 0)))
     return done
 
 
