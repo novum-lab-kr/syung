@@ -149,6 +149,56 @@ def apply_extras(ts: dict, sk: str, v: dict) -> None:
         ts.setdefault("stopReach", {})[sk] = v["reach"]
 
 
+def _trim_end(pts: list) -> list:
+    """역 쪽 끝(pts[0] = 역 점)의 두 가지 찌꺼기를 걷어 낸다(2026-10-05 노선 검수).
+    · 꼬리: 역 점을 승강장으로 옮긴 뒤(분기역은 끝만 평행 이동) 옛 역 점 너머 선로가 남아 갔다가 되돌아오는 것
+      (1호선 구로–가산: 115 m 나갔다 돌아옴) — 뒤 선로가 역 점 곁(30 m 안, 지나온 길의 35 % 안)을 다시 지나면 그 앞을 잘라 잇는다
+    · 말림: 역 30 m 안 선분이 그 너머로 가는 방향과 60° 넘게 어긋나는 것(1호선 화서–수원: 13 m 나갔다 감겨 돎) — 30 m 너머 첫 점에 바로 잇는다"""
+    o = pts[0]
+    xy = [_xy(q, o) for q in pts]
+    length, best = 0.0, None
+    for i in range(1, len(xy)):
+        (ax, ay), (bx, by) = xy[i - 1], xy[i]
+        vx, vy = bx - ax, by - ay
+        seg = math.hypot(vx, vy)
+        if length > 500:
+            break
+        t = max(0.0, min(1.0, -(ax * vx + ay * vy) / (seg * seg))) if seg else 0.0
+        d, along = math.hypot(ax + vx * t, ay + vy * t), length + seg * t
+        if i >= 2 and along > 15 and d < 30 and d < .35 * along and (best is None or along - d > best[1] - best[2]):
+            best = (i, along, d, [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t])
+        length += seg
+    if best:
+        i, _, d, q = best
+        pts = [o] + ([] if d < 10 else [[round(q[0], 6), round(q[1], 6)]]) + pts[i:]
+        xy = [_xy(q, o) for q in pts]
+    j = next((k for k, q in enumerate(xy) if math.hypot(*q) > 30), None)
+    if j and j >= 2:
+        head = math.atan2(*xy[j])
+        for k in range(1, j + 1):
+            (ax, ay), (bx, by) = xy[k - 1], xy[k]
+            if math.hypot(bx - ax, by - ay) < .3 or math.hypot(ax, ay) >= 30:
+                continue
+            dev = abs((math.atan2(bx - ax, by - ay) - head + math.pi) % (2 * math.pi) - math.pi)
+            if math.degrees(dev) > 60:
+                return [o] + pts[j:]
+    return pts
+
+
+def trim_station_ends(ts: dict) -> list:
+    """모든 구간의 양 끝에 _trim_end — 고친 구간 키 목록."""
+    fixed = []
+    for k, e in ts["edges"].items():
+        if len(e) < 3:
+            continue
+        new = _trim_end(e)
+        new = _trim_end(new[::-1])[::-1] if len(new) >= 3 else new
+        if new != e:
+            ts["edges"][k] = new
+            fixed.append(k)
+    return fixed
+
+
 def apply(ts: dict) -> list:
     done = []
     for sk, k, anchor in _entries():
@@ -161,6 +211,8 @@ def apply(ts: dict) -> list:
         if r is not None:
             apply_extras(ts, sk, extra)
         done.append((k, None if r is None else (round(r[0]), round(r[1]))))
+    for k in trim_station_ends(ts):
+        done.append((f"trim {k}", (0, 0)))
     return done
 
 
