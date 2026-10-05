@@ -1,12 +1,17 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used).",
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used). 2026-10-05 (all-station Kakao check, stage 0): optional \"dir\" [east, north] platform direction (stopDirs; orient_stations keeps it on a full rebuild), \"half\" platform half length m from the OSM platform areas (platformHalf), \"reach\" [lng, lat] end of the passage where all the line's exits sit past one platform end (stopReach) — written by pipeline/fit_line_platforms.py.",
  "7호선|고속터미널": {
   "at": [
    127.0050068,
    37.5033871
   ],
   "shift": true,
-  "from": "kakao"
+  "from": "kakao",
+  "dir": [
+   -0.88032,
+   -0.47437
+  ],
+  "half": 85
  },
  "5호선|동대문역사문화공원": {
   "at": [
@@ -14,7 +19,12 @@
    37.5643047
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   0.90725,
+   -0.4206
+  ],
+  "half": 85
  },
  "6호선|태릉입구": {
   "at": [
@@ -25,172 +35,318 @@
  },
  "1호선|송탄": {
   "at": [
-   127.0543201,
-   37.0759581
+   127.05425,
+   37.075934
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.06607,
+   -0.99782
+  ],
+  "half": 57,
+  "reach": [
+   127.054354,
+   37.074677
+  ]
  },
  "1호선|천안": {
   "at": [
-   127.1465664,
-   36.8109339
+   127.146668,
+   36.810496
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.15097,
+   0.98854
+  ],
+  "half": 117
  },
  "1호선|서동탄": {
   "at": [
-   127.0518808,
-   37.1957231
+   127.051884,
+   37.195806
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.84468,
+   0.53527
+  ],
+  "half": 105
  },
  "1호선|인천": {
   "at": [
-   126.6168243,
-   37.4769389
+   126.617076,
+   37.476771
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.12462,
+   0.9922
+  ],
+  "half": 146
  },
  "2호선|을지로입구": {
   "at": [
-   126.9826054,
-   37.5659508
+   126.982181,
+   37.565943
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99974,
+   0.023
+  ],
+  "half": 105
  },
  "2호선|을지로4가": {
   "at": [
-   126.9980017,
-   37.5666307
+   126.998061,
+   37.566634
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99814,
+   0.061
+  ],
+  "half": 105
  },
  "2호선|동대문역사문화공원": {
   "at": [
-   127.008157,
-   37.5658765
+   127.008969,
+   37.565653
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.94457,
+   -0.3283
+  ],
+  "half": 105
  },
  "2호선|신당": {
   "at": [
    127.0198127,
    37.5656319
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.99999,
+   0.0052
+  ],
+  "half": 105
  },
  "2호선|상왕십리": {
   "at": [
-   127.0292055,
-   37.5644092
+   127.029623,
+   37.564265
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.91696,
+   -0.39899
+  ],
+  "half": 105
  },
  "2호선|역삼": {
   "at": [
-   127.0369064,
-   37.5008064
+   127.036247,
+   37.500608
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.93544,
+   -0.35349
+  ],
+  "half": 105
  },
  "2호선|교대": {
   "at": [
-   127.0146024,
-   37.4939554
+   127.014272,
+   37.493858
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.93797,
+   -0.34672
+  ],
+  "half": 105
  },
  "2호선|봉천": {
   "at": [
-   126.9419898,
-   37.4823702
+   126.94169,
+   37.48243
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.97007,
+   0.24281
+  ],
+  "half": 105
  },
  "2호선|신대방": {
   "at": [
-   126.9134111,
-   37.4876135
+   126.913298,
+   37.487571
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.79401,
+   -0.60791
+  ],
+  "half": 108
  },
  "2호선|신도림": {
   "at": [
-   126.8912363,
-   37.5089695
+   126.891415,
+   37.508689
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.45178,
+   0.89213
+  ],
+  "half": 105
  },
  "2호선|문래": {
   "at": [
-   126.8948697,
-   37.5184029
+   126.894792,
+   37.518055
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.17541,
+   0.9845
+  ],
+  "half": 105
  },
  "2호선|홍대입구": {
   "at": [
-   126.9234895,
-   37.5566512
+   126.924251,
+   37.55722
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.72741,
+   0.68621
+  ],
+  "half": 105
  },
  "2호선|충정로": {
   "at": [
-   126.9636819,
-   37.5593423
+   126.964333,
+   37.559736
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.79434,
+   -0.60747
+  ],
+  "half": 105
  },
  "3호선|종로3가": {
   "at": [
-   126.9917492,
-   37.5720182
+   126.991892,
+   37.57158
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.24985,
+   0.96829
+  ],
+  "half": 105
  },
  "3호선|교대": {
   "at": [
-   127.013841,
-   37.4928802
+   127.0138,
+   37.49309
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.15206,
+   -0.98837
+  ],
+  "half": 105
  },
  "3호선|연신내": {
   "at": [
-   126.9208841,
-   37.6194684
+   126.92114,
+   37.619143
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.52869,
+   -0.84881
+  ],
+  "half": 105
  },
  "3호선|불광": {
   "at": [
-   126.9304356,
-   37.6099009
+   126.930265,
+   37.610096
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.56961,
+   -0.82192
+  ],
+  "half": 105
  },
  "3호선|경복궁": {
   "at": [
-   126.9735724,
-   37.5757892
+   126.973772,
+   37.575769
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99238,
+   -0.12318
+  ],
+  "half": 105
  },
  "3호선|안국": {
   "at": [
-   126.9862111,
-   37.5768519
+   126.985288,
+   37.576445
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.87394,
+   -0.48603
+  ],
+  "half": 105
  },
  "3호선|약수": {
   "at": [
-   127.0105779,
-   37.5548592
+   127.011011,
+   37.554299
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.52281,
+   -0.85245
+  ],
+  "half": 105
  },
  "3호선|금호": {
   "at": [
@@ -201,31 +357,55 @@
  },
  "3호선|압구정": {
   "at": [
-   127.0284903,
-   37.5261341
+   127.028496,
+   37.526577
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.01114,
+   -0.99994
+  ],
+  "half": 105
  },
  "3호선|신사": {
   "at": [
-   127.0196362,
-   37.5161555
+   127.020117,
+   37.516335
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.90585,
+   -0.4236
+  ],
+  "half": 105
  },
  "3호선|고속터미널": {
   "at": [
-   127.0049216,
-   37.5050436
+   127.005032,
+   37.504824
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.36926,
+   0.92933
+  ],
+  "half": 105
  },
  "3호선|남부터미널": {
   "at": [
-   127.0163088,
-   37.4849787
+   127.016825,
+   37.484156
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.44546,
+   -0.8953
+  ],
+  "half": 105
  },
  "3호선|매봉": {
   "at": [
@@ -236,31 +416,55 @@
  },
  "3호선|수서": {
   "at": [
-   127.1019639,
-   37.4874601
+   127.101582,
+   37.487349
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.93922,
+   0.34332
+  ],
+  "half": 105
  },
  "3호선|경찰병원": {
   "at": [
-   127.1238075,
-   37.4953299
+   127.124028,
+   37.495513
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.69255,
+   0.72137
+  ],
+  "half": 105
  },
  "3호선|원흥": {
   "at": [
-   126.8737509,
-   37.6505087
+   126.873241,
+   37.65063
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.95801,
+   0.28675
+  ],
+  "half": 105
  },
  "3호선|삼송": {
   "at": [
-   126.8954745,
-   37.6531272
+   126.895789,
+   37.65315
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.99591,
+   -0.09039
+  ],
+  "half": 105
  },
  "4호선|동대문역사문화공원": {
   "at": [
@@ -272,17 +476,29 @@
  },
  "4호선|과천": {
   "at": [
-   126.996832,
-   37.4330653
+   126.996519,
+   37.432992
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.95993,
+   -0.28024
+  ],
+  "half": 105
  },
  "4호선|정부과천청사": {
   "at": [
-   126.9897244,
-   37.426449
+   126.990117,
+   37.426794
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.6707,
+   -0.74173
+  ],
+  "half": 105
  },
  "4호선|인덕원": {
   "at": [
@@ -294,52 +510,94 @@
  },
  "4호선|평촌": {
   "at": [
-   126.9638778,
-   37.3942891
+   126.964253,
+   37.394416
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.92016,
+   -0.39155
+  ],
+  "half": 105
  },
  "4호선|수유(강북구청)": {
   "at": [
-   127.0257139,
-   37.637979
+   127.025459,
+   37.637743
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.64944,
+   -0.76041
+  ],
+  "half": 105
  },
  "4호선|혜화": {
   "at": [
-   127.0019555,
-   37.5821447
+   127.001904,
+   37.582491
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.11592,
+   0.99326
+  ],
+  "half": 105
  },
  "4호선|숙대입구": {
   "at": [
-   126.9719473,
-   37.5451398
+   126.972035,
+   37.544596
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.12708,
+   -0.99189
+  ],
+  "half": 105
  },
  "4호선|삼각지": {
   "at": [
-   126.9729267,
-   37.5344483
+   126.973197,
+   37.534743
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.58723,
+   -0.80942
+  ],
+  "half": 105
  },
  "4호선|총신대입구": {
   "at": [
-   126.9822299,
-   37.487025
+   126.982193,
+   37.486507
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.05668,
+   0.99839
+  ],
+  "half": 105
  },
  "5호선|종로3가": {
   "at": [
-   126.9908037,
-   37.5725523
+   126.990323,
+   37.572562
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.99964,
+   0.02687
+  ],
+  "half": 85
  },
  "5호선|광나루": {
   "at": [
@@ -350,10 +608,16 @@
  },
  "5호선|천호": {
   "at": [
-   127.1234195,
-   37.5385933
+   127.123908,
+   37.538429
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.92132,
+   -0.38881
+  ],
+  "half": 85
  },
  "5호선|신길": {
   "at": [
@@ -361,7 +625,12 @@
    37.517587
   ],
   "shift": true,
-  "from": "osm-platform"
+  "from": "osm-platform",
+  "dir": [
+   0.99226,
+   -0.12415
+  ],
+  "half": 85
  },
  "5호선|길동": {
   "at": [
@@ -386,10 +655,16 @@
  },
  "5호선|거여": {
   "at": [
-   127.1437489,
-   37.4933553
+   127.144104,
+   37.493189
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.86135,
+   -0.50802
+  ],
+  "half": 85
  },
  "5호선|왕십리": {
   "at": [
@@ -431,28 +706,54 @@
    126.9621444,
    37.5594717
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.66862,
+   0.7436
+  ],
+  "half": 85
  },
  "5호선|강일": {
   "at": [
-   127.1761181,
-   37.5575379
+   127.175528,
+   37.557404
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.96154,
+   0.27466
+  ],
+  "half": 85
  },
  "5호선|김포공항": {
   "at": [
-   126.8013281,
-   37.5621224
+   126.801232,
+   37.562539
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.17903,
+   -0.98384
+  ],
+  "half": 85
  },
  "5호선|개화산": {
   "at": [
    126.8081634,
    37.5728549
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.96816,
+   0.25033
+  ],
+  "half": 85,
+  "reach": [
+   126.806091,
+   37.57243
+  ]
  },
  "5호선|송정": {
   "at": [
@@ -478,10 +779,16 @@
  },
  "5호선|광화문": {
   "at": [
-   126.9769134,
-   37.5716126
+   126.976231,
+   37.571614
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -1.0,
+   0.00213
+  ],
+  "half": 85
  },
  "5호선|신금호": {
   "at": [
@@ -506,17 +813,28 @@
  },
  "6호선|신당": {
   "at": [
-   127.0161954,
-   37.5664047
+   127.016222,
+   37.566029
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.05663,
+   -0.9984
+  ],
+  "half": 85
  },
  "6호선|응암": {
   "at": [
    126.9155872,
    37.5986062
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.34429,
+   0.93886
+  ],
+  "half": 85
  },
  "6호선|월드컵경기장": {
   "at": [
@@ -538,21 +856,37 @@
    126.9865113,
    37.5347517
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.93763,
+   -0.34763
+  ],
+  "half": 85
  },
  "6호선|효창공원앞": {
   "at": [
    126.9613771,
    37.5393244
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   -0.91863,
+   0.39512
+  ],
+  "half": 85
  },
  "6호선|공덕": {
   "at": [
-   126.9515337,
-   37.5436629
+   126.951663,
+   37.543606
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.87269,
+   0.48828
+  ],
+  "half": 85
  },
  "6호선|버티고개": {
   "at": [
@@ -564,10 +898,16 @@
  },
  "6호선|디지털미디어시티": {
   "at": [
-   126.901459,
-   37.5762024
+   126.901616,
+   37.576349
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.64761,
+   -0.76197
+  ],
+  "half": 85
  },
  "6호선|이태원": {
   "at": [
@@ -578,17 +918,29 @@
  },
  "6호선|월곡": {
   "at": [
-   127.0414675,
-   37.6019369
+   127.041656,
+   37.602204
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.48827,
+   0.87269
+  ],
+  "half": 85
  },
  "6호선|상월곡": {
   "at": [
-   127.0482444,
-   37.606223
+   127.048938,
+   37.606587
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.83408,
+   0.55165
+  ],
+  "half": 85
  },
  "6호선|돌곶이": {
   "at": [
@@ -606,10 +958,16 @@
  },
  "6호선|봉화산": {
   "at": [
-   127.0910906,
-   37.6174169
+   127.091535,
+   37.617221
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.87367,
+   0.48652
+  ],
+  "half": 85
  },
  "6호선|한강진": {
   "at": [
@@ -624,91 +982,167 @@
    37.5493191
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   0.64533,
+   -0.7639
+  ],
+  "half": 85
  },
  "6호선|삼각지": {
   "at": [
-   126.9739195,
-   37.5356084
+   126.974146,
+   37.535504
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.86554,
+   -0.50084
+  ],
+  "half": 85
  },
  "6호선|석계": {
   "at": [
-   127.0657628,
-   37.6148967
+   127.066319,
+   37.615017
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.96477,
+   0.2631
+  ],
+  "half": 85
  },
  "7호선|삼산체육관": {
   "at": [
-   126.7423046,
-   37.5064953
+   126.741906,
+   37.506504
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.99962,
+   0.02745
+  ],
+  "half": 85
  },
  "7호선|대림": {
   "at": [
-   126.8962674,
-   37.4925027
+   126.896944,
+   37.492931
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.78162,
+   -0.62375
+  ],
+  "half": 85
  },
  "7호선|중계": {
   "at": [
-   127.0638733,
-   37.6455284
+   127.06416,
+   37.644937
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.35839,
+   -0.93357
+  ],
+  "half": 85
  },
  "7호선|하계": {
   "at": [
-   127.0682254,
-   37.6359805
+   127.067982,
+   37.636525
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.33323,
+   -0.94285
+  ],
+  "half": 85
  },
  "7호선|공릉": {
   "at": [
-   127.0730058,
-   37.6256111
+   127.073259,
+   37.624992
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.30812,
+   0.95135
+  ],
+  "half": 85
  },
  "7호선|먹골": {
   "at": [
-   127.0776062,
-   37.6114388
+   127.077779,
+   37.610724
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.18853,
+   -0.98207
+  ],
+  "half": 85
  },
  "7호선|중화": {
   "at": [
    127.0794696,
    37.601632
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   -0.23116,
+   0.97292
+  ],
+  "half": 85
  },
  "7호선|면목": {
   "at": [
-   127.0875651,
-   37.5883829
+   127.087434,
+   37.588865
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.21021,
+   -0.97766
+  ],
+  "half": 85
  },
  "7호선|사가정": {
   "at": [
-   127.0884154,
-   37.5807183
+   127.088501,
+   37.581067
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.19166,
+   -0.98146
+  ],
+  "half": 85
  },
  "7호선|어린이대공원": {
   "at": [
-   127.0744032,
-   37.5476204
+   127.074604,
+   37.547946
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.43993,
+   0.89803
+  ],
+  "half": 85
  },
  "7호선|학동": {
   "at": [
@@ -719,24 +1153,42 @@
  },
  "7호선|반포": {
   "at": [
-   127.0116271,
-   37.5081687
+   127.011118,
+   37.508014
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.93386,
+   0.35763
+  ],
+  "half": 85
  },
  "7호선|장승배기": {
   "at": [
-   126.9392081,
-   37.5049779
+   126.938893,
+   37.50478
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.7842,
+   -0.62051
+  ],
+  "half": 85
  },
  "7호선|신풍": {
   "at": [
-   126.9089354,
-   37.5001283
+   126.909795,
+   37.500104
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99939,
+   -0.03494
+  ],
+  "half": 85
  },
  "7호선|남구로": {
   "at": [
@@ -747,10 +1199,16 @@
  },
  "7호선|천왕": {
   "at": [
-   126.8389309,
-   37.4863455
+   126.838782,
+   37.486585
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.44372,
+   -0.89617
+  ],
+  "half": 85
  },
  "8호선|천호": {
   "at": [
@@ -811,10 +1269,16 @@
  },
  "9호선|공항시장": {
   "at": [
-   126.8103837,
-   37.5634681
+   126.810605,
+   37.563652
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.68918,
+   0.72459
+  ],
+  "half": 64
  },
  "9호선|마곡나루": {
   "at": [
@@ -835,7 +1299,12 @@
    126.8645983,
    37.5512139
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.7875,
+   -0.61631
+  ],
+  "half": 64
  },
  "9호선|염창": {
   "at": [
@@ -864,28 +1333,51 @@
    37.5084721
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   -0.6978,
+   0.7163
+  ],
+  "half": 64
  },
  "9호선|구반포": {
   "at": [
-   126.9867825,
-   37.5012919
+   126.986842,
+   37.501304
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.96882,
+   0.24778
+  ],
+  "half": 64
  },
  "9호선|언주": {
   "at": [
-   127.0338747,
-   37.507321
+   127.033615,
+   37.507243
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.93489,
+   -0.35494
+  ],
+  "half": 64
  },
  "9호선|종합운동장": {
   "at": [
-   127.0763156,
-   37.5113554
+   127.076756,
+   37.511174
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.9769,
+   0.21369
+  ],
+  "half": 64
  },
  "9호선|삼전": {
   "at": [
@@ -906,28 +1398,54 @@
    127.1128063,
    37.5112663
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.44393,
+   0.89606
+  ],
+  "half": 64,
+  "reach": [
+   127.112089,
+   37.510119
+  ]
  },
  "9호선|올림픽공원": {
   "at": [
    127.1302801,
    37.5160904
   ],
-  "shift": true
+  "shift": true,
+  "dir": [
+   0.47114,
+   0.88206
+  ],
+  "half": 64
  },
  "9호선|석촌": {
   "at": [
-   127.1068451,
-   37.5050632
+   127.107166,
+   37.505215
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.85885,
+   0.51222
+  ],
+  "half": 64
  },
  "9호선|노량진": {
   "at": [
-   126.9418681,
-   37.5136293
+   126.941136,
+   37.513587
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99735,
+   0.07281
+  ],
+  "half": 107
  },
  "GTX-A|킨텍스": {
   "at": [
@@ -1596,7 +2114,12 @@
    37.5126742
   ],
   "shift": true,
-  "from": "kakao"
+  "from": "kakao",
+  "dir": [
+   0.99398,
+   0.10957
+  ],
+  "half": 64
  },
  "9호선|둔촌오륜": {
   "at": [
@@ -1632,75 +2155,124 @@
  },
  "1호선|제기동": {
   "at": [
-   127.0347415,
-   37.578171
+   127.034735,
+   37.578399
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.99835,
+   -0.05739
+  ],
+  "half": 109
  },
  "1호선|신도림": {
   "at": [
-   126.8914559,
-   37.5089686
+   126.891876,
+   37.509126
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.86851,
+   -0.49568
+  ],
+  "half": 173
  },
  "1호선|서울": {
   "at": [
-   126.9720963,
-   37.5559844
+   126.972416,
+   37.556041
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.19281,
+   -0.98124
+  ],
+  "half": 142
  },
  "1호선|용산": {
   "at": [
-   126.9643537,
-   37.5295709
+   126.964658,
+   37.529739
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.73868,
+   -0.67405
+  ],
+  "half": 175
  },
  "1호선|영등포": {
   "at": [
-   126.907305,
-   37.515563
+   126.907388,
+   37.515597
   ],
   "shift": true,
-  "from": "osm-platform"
+  "from": "osm-platform",
+  "dir": [
+   0.88919,
+   0.45754
+  ],
+  "half": 137
  },
  "1호선|광운대": {
   "at": [
-   127.0618897,
-   37.6233859
+   127.061832,
+   37.623745
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.3288,
+   0.9444
+  ],
+  "half": 108
  },
  "1호선|신길": {
   "at": [
-   126.91882,
-   37.516603
+   126.918813,
+   37.516606
   ],
   "shift": true,
-  "from": "osm-platform"
+  "from": "osm-platform",
+  "dir": [
+   0.91027,
+   -0.41402
+  ],
+  "half": 109,
+  "reach": [
+   126.917011,
+   37.517256
+  ]
  },
  "1호선|아산": {
   "at": [
-   127.1044389,
-   36.7921683
+   127.104499,
+   36.791935
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.98044,
+   -0.1968
+  ],
+  "half": 124
  },
  "1호선|배방": {
   "at": [
-   127.0529544,
-   36.7777612
+   127.052754,
+   36.777717
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.89404,
+   -0.44798
+  ],
+  "half": 104
  },
  "1호선|금정": {
   "at": [
@@ -1712,11 +2284,16 @@
  },
  "1호선|금천구청": {
   "at": [
-   126.8937982,
-   37.4557893
+   126.894022,
+   37.455602
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.33102,
+   0.94362
+  ],
+  "half": 110
  },
  "1호선|의왕": {
   "at": [
@@ -1728,107 +2305,172 @@
  },
  "1호선|성균관대": {
   "at": [
-   126.971771,
-   37.3002344
+   126.970887,
+   37.30034
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.9903,
+   -0.13898
+  ],
+  "half": 112
  },
  "1호선|수원": {
   "at": [
-   126.9997641,
-   37.2661531
+   127.000548,
+   37.265452
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.41696,
+   -0.90892
+  ],
+  "half": 99
  },
  "1호선|병점": {
   "at": [
-   127.0331935,
-   37.2067694
+   127.033279,
+   37.206726
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.38068,
+   -0.92471
+  ],
+  "half": 106
  },
  "1호선|오산": {
   "at": [
-   127.0667496,
-   37.145684
+   127.066536,
+   37.144799
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.10064,
+   -0.99492
+  ],
+  "half": 120
  },
  "1호선|평택지제": {
   "at": [
-   127.0705188,
-   37.0189167
+   127.0705,
+   37.01896
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.09166,
+   -0.99579
+  ],
+  "half": 106
  },
  "1호선|두정": {
   "at": [
-   127.1489734,
-   36.8336533
+   127.149139,
+   36.834136
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.06472,
+   -0.9979
+  ],
+  "half": 107
  },
  "1호선|광명": {
   "at": [
-   126.8847571,
-   37.4163596
+   126.885081,
+   37.416299
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.39717,
+   0.91774
+  ],
+  "half": 223
  },
  "1호선|개봉": {
   "at": [
-   126.859115,
-   37.4945643
+   126.859384,
+   37.494608
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.97044,
+   -0.24135
+  ],
+  "half": 110
  },
  "1호선|송내": {
   "at": [
-   126.7529236,
-   37.4876571
+   126.752664,
+   37.487536
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.99688,
+   -0.07898
+  ],
+  "half": 110
  },
  "1호선|동인천": {
   "at": [
-   126.6323667,
-   37.4756339
+   126.633226,
+   37.475145
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.6596,
+   -0.75162
+  ],
+  "half": 109
  },
  "1호선|동두천": {
   "at": [
-   127.0549247,
-   37.9276259
+   127.05479,
+   37.927636
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.14864,
+   0.98889
+  ],
+  "half": 104
  },
  "1호선|소요산": {
   "at": [
-   127.0610101,
-   37.9479852
+   127.060796,
+   37.948028
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.09987,
+   0.995
+  ],
+  "half": 102
  },
  "1호선|연천": {
   "at": [
-   127.0736476,
-   38.1004938
+   127.073863,
+   38.100461
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.13508,
+   -0.99083
+  ],
+  "half": 74
  },
  "2호선|시청": {
   "at": [
@@ -1856,11 +2498,16 @@
  },
  "2호선|양천구청": {
   "at": [
-   126.8658201,
-   37.5124213
+   126.865972,
+   37.51232
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.91867,
+   -0.39503
+  ],
+  "half": 39
  },
  "3호선|충무로": {
   "at": [
@@ -1908,7 +2555,12 @@
    37.4517042
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   0.64588,
+   -0.76344
+  ],
+  "half": 105
  },
  "4호선|길음": {
   "at": [
@@ -1924,23 +2576,38 @@
    37.5587495
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   -0.72493,
+   -0.68882
+  ],
+  "half": 105
  },
  "4호선|서울": {
   "at": [
-   126.9730651,
-   37.555792
+   126.972737,
+   37.5532
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.141,
+   -0.99001
+  ],
+  "half": 80
  },
  "4호선|남태령": {
   "at": [
-   126.988969,
-   37.4648953
+   126.988423,
+   37.465075
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   0.34503,
+   -0.93859
+  ],
+  "half": 137
  },
  "5호선|여의도": {
   "at": [
@@ -1988,7 +2655,12 @@
    37.491882
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-lateral",
+  "dir": [
+   -0.91215,
+   -0.40986
+  ],
+  "half": 85
  },
  "7호선|상도": {
   "at": [
@@ -2032,11 +2704,20 @@
  },
  "9호선|개화": {
   "at": [
-   126.7968941,
-   37.5783452
+   126.796636,
+   37.578233
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform",
+  "dir": [
+   -0.94364,
+   -0.33098
+  ],
+  "half": 84,
+  "reach": [
+   126.797645,
+   37.578514
+  ]
  },
  "GTX-A|성남": {
   "at": [
@@ -2269,5 +2950,1876 @@
   ],
   "shift": true,
   "from": "kakao-lateral"
+ },
+ "1호선|종각": {
+  "at": [
+   126.983154,
+   37.570138
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.99992,
+   0.01283
+  ],
+  "half": 100
+ },
+ "1호선|종로3가": {
+  "at": [
+   126.992106,
+   37.570414
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.99787,
+   0.06518
+  ],
+  "half": 115
+ },
+ "1호선|종로5가": {
+  "at": [
+   127.002113,
+   37.571009
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.99897,
+   0.0454
+  ],
+  "half": 87
+ },
+ "1호선|동대문": {
+  "at": [
+   127.011036,
+   37.571786
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.96052,
+   0.27822
+  ],
+  "half": 105
+ },
+ "1호선|신설동": {
+  "at": [
+   127.024629,
+   37.576019
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.93015,
+   -0.36718
+  ],
+  "half": 113
+ },
+ "1호선|청량리": {
+  "at": [
+   127.044881,
+   37.580112
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.9153,
+   0.40278
+  ],
+  "half": 131
+ },
+ "1호선|동묘앞": {
+  "at": [
+   127.017185,
+   37.573401
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.94347,
+   0.33146
+  ],
+  "half": 101
+ },
+ "1호선|창동": {
+  "at": [
+   127.047744,
+   37.653197
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.33144,
+   0.94348
+  ],
+  "half": 121
+ },
+ "1호선|남영": {
+  "at": [
+   126.971267,
+   37.540499
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.00233,
+   -1.0
+  ],
+  "half": 121
+ },
+ "1호선|노량진": {
+  "at": [
+   126.94142,
+   37.514159
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99118,
+   -0.13255
+  ],
+  "half": 111
+ },
+ "1호선|대방": {
+  "at": [
+   126.926465,
+   37.513299
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99985,
+   -0.01752
+  ],
+  "half": 108
+ },
+ "1호선|회기": {
+  "at": [
+   127.057399,
+   37.589553
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.83335,
+   0.55274
+  ],
+  "half": 106
+ },
+ "1호선|외대앞": {
+  "at": [
+   127.063773,
+   37.596368
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.48012,
+   0.8772
+  ],
+  "half": 114
+ },
+ "1호선|신이문": {
+  "at": [
+   127.067306,
+   37.601748
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.304,
+   0.95267
+  ],
+  "half": 113
+ },
+ "1호선|석계": {
+  "at": [
+   127.065828,
+   37.614953
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.32132,
+   0.94697
+  ],
+  "half": 117
+ },
+ "1호선|월계": {
+  "at": [
+   127.058835,
+   37.632961
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.03513,
+   0.99938
+  ],
+  "half": 90
+ },
+ "1호선|녹천": {
+  "at": [
+   127.051372,
+   37.644616
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.32038,
+   -0.94729
+  ],
+  "half": 93
+ },
+ "1호선|봉명": {
+  "at": [
+   127.13604,
+   36.801407
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.83372,
+   0.55218
+  ],
+  "half": 104
+ },
+ "1호선|쌍용": {
+  "at": [
+   127.121345,
+   36.793766
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.84565,
+   -0.53374
+  ],
+  "half": 102
+ },
+ "1호선|탕정": {
+  "at": [
+   127.084565,
+   36.788192
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.9346,
+   -0.35569
+  ],
+  "half": 105
+ },
+ "1호선|온양온천": {
+  "at": [
+   127.003151,
+   36.780525
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.97942,
+   0.20183
+  ],
+  "half": 100
+ },
+ "1호선|신창": {
+  "at": [
+   126.951838,
+   36.769778
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.91938,
+   0.39337
+  ],
+  "half": 115
+ },
+ "1호선|구로": {
+  "at": [
+   126.882148,
+   37.503507
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.66887,
+   -0.74338
+  ],
+  "half": 122
+ },
+ "1호선|가산디지털단지": {
+  "at": [
+   126.882525,
+   37.481564
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.32583,
+   -0.94543
+  ],
+  "half": 115
+ },
+ "1호선|석수": {
+  "at": [
+   126.902383,
+   37.435473
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.15205,
+   -0.98837
+  ],
+  "half": 110,
+  "reach": [
+   126.902603,
+   37.434335
+  ]
+ },
+ "1호선|관악": {
+  "at": [
+   126.908412,
+   37.419848
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.5443,
+   -0.83889
+  ],
+  "half": 110,
+  "reach": [
+   126.909314,
+   37.418744
+  ]
+ },
+ "1호선|안양": {
+  "at": [
+   126.922502,
+   37.401931
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.54095,
+   -0.84105
+  ],
+  "half": 114
+ },
+ "1호선|명학": {
+  "at": [
+   126.935523,
+   37.384232
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.28136,
+   0.9596
+  ],
+  "half": 83,
+  "reach": [
+   126.935065,
+   37.385474
+  ]
+ },
+ "1호선|군포": {
+  "at": [
+   126.948309,
+   37.353617
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.02275,
+   -0.99974
+  ],
+  "half": 105
+ },
+ "1호선|화서": {
+  "at": [
+   126.989544,
+   37.283856
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.40726,
+   -0.91331
+  ],
+  "half": 110
+ },
+ "1호선|독산": {
+  "at": [
+   126.88948,
+   37.466022
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.33195,
+   -0.9433
+  ],
+  "half": 109
+ },
+ "1호선|세류": {
+  "at": [
+   127.013631,
+   37.244125
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.38509,
+   -0.92288
+  ],
+  "half": 110
+ },
+ "1호선|세마": {
+  "at": [
+   127.043342,
+   37.187144
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.45397,
+   -0.89102
+  ],
+  "half": 99
+ },
+ "1호선|오산대": {
+  "at": [
+   127.063024,
+   37.169348
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.19624,
+   -0.98056
+  ],
+  "half": 103
+ },
+ "1호선|진위": {
+  "at": [
+   127.062485,
+   37.110071
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.10094,
+   -0.99489
+  ],
+  "half": 105
+ },
+ "1호선|서정리": {
+  "at": [
+   127.053005,
+   37.056561
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.09021,
+   -0.99592
+  ],
+  "half": 129
+ },
+ "1호선|평택": {
+  "at": [
+   127.085649,
+   36.990277
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.60765,
+   -0.79421
+  ],
+  "half": 181
+ },
+ "1호선|성환": {
+  "at": [
+   127.126732,
+   36.916167
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.05781,
+   -0.99833
+  ],
+  "half": 115
+ },
+ "1호선|직산": {
+  "at": [
+   127.143684,
+   36.870886
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.3546,
+   -0.93502
+  ],
+  "half": 108
+ },
+ "1호선|당정": {
+  "at": [
+   126.948445,
+   37.343333
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.0024,
+   -1.0
+  ],
+  "half": 105
+ },
+ "1호선|오류동": {
+  "at": [
+   126.844581,
+   37.494235
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.96353,
+   -0.26762
+  ],
+  "half": 126
+ },
+ "1호선|역곡": {
+  "at": [
+   126.81198,
+   37.48542
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.9241,
+   0.38216
+  ],
+  "half": 109
+ },
+ "1호선|부천": {
+  "at": [
+   126.782769,
+   37.484219
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.98297,
+   0.18376
+  ],
+  "half": 142
+ },
+ "1호선|부평": {
+  "at": [
+   126.724535,
+   37.48933
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.99705,
+   -0.07675
+  ],
+  "half": 110
+ },
+ "1호선|백운": {
+  "at": [
+   126.707142,
+   37.48299
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.71507,
+   -0.69905
+  ],
+  "half": 111
+ },
+ "1호선|동암": {
+  "at": [
+   126.7027,
+   37.470695
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.03875,
+   -0.99925
+  ],
+  "half": 110
+ },
+ "1호선|주안": {
+  "at": [
+   126.679321,
+   37.465154
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99358,
+   0.1131
+  ],
+  "half": 103
+ },
+ "1호선|제물포": {
+  "at": [
+   126.657679,
+   37.466935
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   1.0,
+   0.00014
+  ],
+  "half": 110
+ },
+ "1호선|구일(동양미래대학)": {
+  "at": [
+   126.869541,
+   37.496219
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.86393,
+   -0.50362
+  ],
+  "half": 111
+ },
+ "1호선|소사": {
+  "at": [
+   126.795688,
+   37.4829
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.9992,
+   -0.04002
+  ],
+  "half": 109
+ },
+ "1호선|부개": {
+  "at": [
+   126.740817,
+   37.488457
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99685,
+   0.07927
+  ],
+  "half": 110
+ },
+ "1호선|간석": {
+  "at": [
+   126.693395,
+   37.464861
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99883,
+   -0.04844
+  ],
+  "half": 104
+ },
+ "1호선|도원": {
+  "at": [
+   126.642622,
+   37.468872
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.85104,
+   0.52511
+  ],
+  "half": 112
+ },
+ "1호선|온수": {
+  "at": [
+   126.823984,
+   37.492282
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.9409,
+   -0.33869
+  ],
+  "half": 108
+ },
+ "1호선|중동": {
+  "at": [
+   126.764127,
+   37.486578
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.98261,
+   0.18568
+  ],
+  "half": 110
+ },
+ "1호선|도화": {
+  "at": [
+   126.668624,
+   37.466078
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99327,
+   0.11586
+  ],
+  "half": 110
+ },
+ "1호선|방학": {
+  "at": [
+   127.044356,
+   37.667389
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.06199,
+   0.99808
+  ],
+  "half": 130
+ },
+ "1호선|도봉": {
+  "at": [
+   127.045528,
+   37.678992
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.13678,
+   0.9906
+  ],
+  "half": 111
+ },
+ "1호선|도봉산": {
+  "at": [
+   127.04607,
+   37.68964
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.06682,
+   0.99777
+  ],
+  "half": 101
+ },
+ "1호선|망월사": {
+  "at": [
+   127.047422,
+   37.710276
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.15105,
+   0.98853
+  ],
+  "half": 144
+ },
+ "1호선|회룡": {
+  "at": [
+   127.047238,
+   37.723851
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.07635,
+   0.99708
+  ],
+  "half": 104
+ },
+ "1호선|의정부": {
+  "at": [
+   127.046085,
+   37.737676
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.10152,
+   0.99483
+  ],
+  "half": 138
+ },
+ "1호선|가능": {
+  "at": [
+   127.044432,
+   37.74841
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.28609,
+   0.9582
+  ],
+  "half": 102
+ },
+ "1호선|녹양": {
+  "at": [
+   127.042359,
+   37.759401
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.02814,
+   0.9996
+  ],
+  "half": 105
+ },
+ "1호선|양주": {
+  "at": [
+   127.044778,
+   37.774189
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.06514,
+   0.99788
+  ],
+  "half": 102
+ },
+ "1호선|덕계": {
+  "at": [
+   127.056723,
+   37.818771
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.30276,
+   0.95307
+  ],
+  "half": 104
+ },
+ "1호선|덕정": {
+  "at": [
+   127.061538,
+   37.843251
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.08896,
+   0.99604
+  ],
+  "half": 103
+ },
+ "1호선|지행": {
+  "at": [
+   127.055837,
+   37.892342
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.06104,
+   0.99814
+  ],
+  "half": 103
+ },
+ "1호선|동두천중앙": {
+  "at": [
+   127.056505,
+   37.901721
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.05392,
+   0.99855
+  ],
+  "half": 102
+ },
+ "1호선|보산": {
+  "at": [
+   127.057227,
+   37.914121
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.08607,
+   0.99629
+  ],
+  "half": 98
+ },
+ "1호선|초성리": {
+  "at": [
+   127.074251,
+   37.995078
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.52132,
+   0.85336
+  ],
+  "half": 102
+ },
+ "1호선|전곡": {
+  "at": [
+   127.071858,
+   38.024527
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.38965,
+   0.92096
+  ],
+  "half": 103
+ },
+ "2호선|신설동": {
+  "at": [
+   127.025384,
+   37.57456
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.8698,
+   -0.49341
+  ],
+  "half": 107
+ },
+ "2호선|한양대": {
+  "at": [
+   127.043644,
+   37.555723
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.12536,
+   -0.99211
+  ],
+  "half": 101
+ },
+ "2호선|뚝섬": {
+  "at": [
+   127.047406,
+   37.547254
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.922,
+   -0.3872
+  ],
+  "half": 98
+ },
+ "2호선|성수": {
+  "at": [
+   127.056107,
+   37.544587
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.93531,
+   -0.35383
+  ],
+  "half": 100
+ },
+ "2호선|건대입구": {
+  "at": [
+   127.069231,
+   37.540434
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.92207,
+   -0.38701
+  ],
+  "half": 105
+ },
+ "2호선|구의(광진구청)": {
+  "at": [
+   127.086189,
+   37.537138
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.9529,
+   0.30328
+  ],
+  "half": 103
+ },
+ "2호선|강변": {
+  "at": [
+   127.094708,
+   37.535129
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.45147,
+   -0.89228
+  ],
+  "half": 104
+ },
+ "2호선|잠실나루": {
+  "at": [
+   127.103818,
+   37.520664
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.40776,
+   -0.91309
+  ],
+  "half": 102
+ },
+ "2호선|잠실": {
+  "at": [
+   127.101558,
+   37.513699
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.91406,
+   -0.40558
+  ],
+  "half": 105
+ },
+ "2호선|잠실새내": {
+  "at": [
+   127.085515,
+   37.511618
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.9995,
+   0.03176
+  ],
+  "half": 91
+ },
+ "2호선|종합운동장(잠실)": {
+  "at": [
+   127.073916,
+   37.511068
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.98057,
+   -0.19617
+  ],
+  "half": 135
+ },
+ "2호선|삼성": {
+  "at": [
+   127.063212,
+   37.508798
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.9323,
+   -0.36168
+  ],
+  "half": 105
+ },
+ "2호선|서울대입구": {
+  "at": [
+   126.952701,
+   37.481235
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.95747,
+   0.28853
+  ],
+  "half": 105
+ },
+ "2호선|구로디지털단지": {
+  "at": [
+   126.901646,
+   37.485279
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.93733,
+   0.34844
+  ],
+  "half": 89
+ },
+ "2호선|당산": {
+  "at": [
+   126.902709,
+   37.534864
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.52774,
+   0.84941
+  ],
+  "half": 101
+ },
+ "2호선|신촌": {
+  "at": [
+   126.93686,
+   37.555149
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99824,
+   -0.05923
+  ],
+  "half": 105
+ },
+ "2호선|아현": {
+  "at": [
+   126.956178,
+   37.5574
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   1.0,
+   -7e-05
+  ],
+  "half": 105
+ },
+ "2호선|용답": {
+  "at": [
+   127.050827,
+   37.562113
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.34398,
+   0.93898
+  ],
+  "half": 49
+ },
+ "2호선|신답": {
+  "at": [
+   127.047053,
+   37.56978
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.54585,
+   0.83788
+  ],
+  "half": 31
+ },
+ "2호선|도림천": {
+  "at": [
+   126.882667,
+   37.514482
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.84637,
+   0.53259
+  ],
+  "half": 25
+ },
+ "2호선|용두": {
+  "at": [
+   127.038192,
+   37.574073
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.98418,
+   -0.17718
+  ],
+  "half": 105
+ },
+ "2호선|까치산": {
+  "at": [
+   126.846698,
+   37.531368
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.43409,
+   -0.90087
+  ],
+  "half": 105
+ },
+ "3호선|대곡": {
+  "at": [
+   126.811012,
+   37.631717
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.98687,
+   0.16149
+  ],
+  "half": 124
+ },
+ "3호선|지축": {
+  "at": [
+   126.913714,
+   37.648095
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.98558,
+   0.16919
+  ],
+  "half": 107
+ },
+ "3호선|동대입구": {
+  "at": [
+   127.005809,
+   37.559073
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99064,
+   -0.13647
+  ],
+  "half": 105
+ },
+ "3호선|옥수": {
+  "at": [
+   127.017283,
+   37.5418
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.36672,
+   -0.93033
+  ],
+  "half": 105
+ },
+ "3호선|원당": {
+  "at": [
+   126.842897,
+   37.653119
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.44995,
+   -0.89305
+  ],
+  "half": 93
+ },
+ "4호선|산본": {
+  "at": [
+   126.933023,
+   37.358051
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.82961,
+   -0.55834
+  ],
+  "half": 111
+ },
+ "4호선|대야미": {
+  "at": [
+   126.91688,
+   37.327979
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.55907,
+   0.82912
+  ],
+  "half": 110
+ },
+ "4호선|반월": {
+  "at": [
+   126.903823,
+   37.312438
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.5585,
+   -0.82951
+  ],
+  "half": 111
+ },
+ "4호선|상록수": {
+  "at": [
+   126.866614,
+   37.302844
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99487,
+   0.10112
+  ],
+  "half": 103
+ },
+ "4호선|한대앞": {
+  "at": [
+   126.853605,
+   37.309713
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.61518,
+   0.78838
+  ],
+  "half": 110
+ },
+ "4호선|중앙": {
+  "at": [
+   126.83848,
+   37.316011
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99783,
+   0.0659
+  ],
+  "half": 105
+ },
+ "4호선|동대문": {
+  "at": [
+   127.009638,
+   37.570309
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.40149,
+   0.91586
+  ],
+  "half": 105
+ },
+ "4호선|고잔": {
+  "at": [
+   126.823049,
+   37.316876
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.99775,
+   0.06701
+  ],
+  "half": 100
+ },
+ "4호선|초지": {
+  "at": [
+   126.805955,
+   37.320711
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.86621,
+   0.49967
+  ],
+  "half": 107
+ },
+ "4호선|신길온천": {
+  "at": [
+   126.767104,
+   37.337623
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.83038,
+   0.55719
+  ],
+  "half": 104
+ },
+ "4호선|정왕": {
+  "at": [
+   126.74301,
+   37.351761
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.93986,
+   0.34155
+  ],
+  "half": 101
+ },
+ "4호선|오이도": {
+  "at": [
+   126.738362,
+   37.361976
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.3234,
+   -0.94626
+  ],
+  "half": 102
+ },
+ "4호선|수리산": {
+  "at": [
+   126.925621,
+   37.350533
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.24356,
+   -0.96988
+  ],
+  "half": 103
+ },
+ "4호선|안산": {
+  "at": [
+   126.78891,
+   37.32701
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.87071,
+   0.4918
+  ],
+  "half": 109
+ },
+ "4호선|사당": {
+  "at": [
+   126.981774,
+   37.477338
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.03149,
+   -0.9995
+  ],
+  "half": 124
+ },
+ "4호선|경마공원": {
+  "at": [
+   127.007851,
+   37.443951
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.27861,
+   -0.9604
+  ],
+  "half": 105
+ },
+ "4호선|금정": {
+  "at": [
+   126.9432,
+   37.372222
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.34742,
+   -0.93771
+  ],
+  "half": 111
+ },
+ "4호선|당고개": {
+  "at": [
+   127.079102,
+   37.670257
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.58853,
+   0.80848
+  ],
+  "half": 100
+ },
+ "4호선|상계": {
+  "at": [
+   127.073379,
+   37.660724
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.63008,
+   -0.77653
+  ],
+  "half": 104
+ },
+ "4호선|노원": {
+  "at": [
+   127.063431,
+   37.656369
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.96075,
+   -0.27741
+  ],
+  "half": 102
+ },
+ "4호선|창동": {
+  "at": [
+   127.047745,
+   37.653184
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.95751,
+   -0.28838
+  ],
+  "half": 101
+ },
+ "4호선|성신여대입구": {
+  "at": [
+   127.016417,
+   37.592667
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.92238,
+   -0.38629
+  ],
+  "half": 105
+ },
+ "5호선|목동": {
+  "at": [
+   126.86425,
+   37.526075
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.99998,
+   0.00672
+  ],
+  "half": 85
+ },
+ "5호선|오목교": {
+  "at": [
+   126.875093,
+   37.52454
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.98312,
+   -0.18296
+  ],
+  "half": 85
+ },
+ "6호선|구산": {
+  "at": [
+   126.917187,
+   37.61134
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.20237,
+   -0.97931
+  ],
+  "half": 85
+ },
+ "6호선|고려대": {
+  "at": [
+   127.035968,
+   37.589924
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.23069,
+   0.97303
+  ],
+  "half": 85
+ },
+ "6호선|신내": {
+  "at": [
+   127.104366,
+   37.61249
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.92491,
+   0.38018
+  ],
+  "half": 86
+ },
+ "7호선|건대입구": {
+  "at": [
+   127.071137,
+   37.540995
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.35259,
+   -0.93578
+  ],
+  "half": 103
+ },
+ "7호선|태릉입구": {
+  "at": [
+   127.07531,
+   37.61856
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.2507,
+   -0.96807
+  ],
+  "half": 55
+ },
+ "7호선|장암": {
+  "at": [
+   127.053075,
+   37.70018
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.63926,
+   -0.76899
+  ],
+  "half": 83
+ },
+ "7호선|수락산": {
+  "at": [
+   127.055258,
+   37.677857
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.02648,
+   -0.99965
+  ],
+  "half": 85
+ },
+ "7호선|뚝섬유원지": {
+  "at": [
+   127.066725,
+   37.531557
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.34734,
+   -0.93774
+  ],
+  "half": 82
+ },
+ "7호선|청담": {
+  "at": [
+   127.051171,
+   37.519063
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.97529,
+   0.22093
+  ],
+  "half": 103
+ },
+ "7호선|내방": {
+  "at": [
+   126.993206,
+   37.48752
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.93064,
+   -0.36593
+  ],
+  "half": 103
+ },
+ "7호선|남성": {
+  "at": [
+   126.971665,
+   37.484461
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.85989,
+   0.51048
+  ],
+  "half": 85
+ },
+ "7호선|광명사거리": {
+  "at": [
+   126.854334,
+   37.479471
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   -0.94032,
+   0.34029
+  ],
+  "half": 50
+ },
+ "7호선|도봉산": {
+  "at": [
+   127.046413,
+   37.68955
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.18995,
+   -0.98179
+  ],
+  "half": 82
+ },
+ "8호선|모란": {
+  "at": [
+   127.130334,
+   37.433962
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.97908,
+   0.2035
+  ],
+  "half": 59
+ },
+ "8호선|별내": {
+  "at": [
+   127.127386,
+   37.642431
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.68882,
+   -0.72493
+  ],
+  "half": 59
+ },
+ "8호선|단대오거리": {
+  "at": [
+   127.15668,
+   37.445139
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.60368,
+   -0.79723
+  ],
+  "half": 59
+ },
+ "8호선|남위례": {
+  "at": [
+   127.139255,
+   37.462772
+  ],
+  "shift": true,
+  "from": "osm-platform",
+  "dir": [
+   0.84634,
+   -0.53264
+  ],
+  "half": 62
+ },
+ "9호선|사평": {
+  "at": [
+   127.015248,
+   37.504359
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.8609,
+   -0.50878
+  ],
+  "half": 64
+ },
+ "9호선|당산": {
+  "at": [
+   126.902666,
+   37.533477
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   0.84068,
+   -0.54153
+  ],
+  "half": 64
+ },
+ "9호선|중앙보훈병원": {
+  "at": [
+   127.14828,
+   37.52839
+  ],
+  "shift": true,
+  "from": "osm-track",
+  "dir": [
+   -0.31874,
+   -0.94784
+  ],
+  "half": 64
  }
 }

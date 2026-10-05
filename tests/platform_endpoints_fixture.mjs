@@ -6,7 +6,7 @@ import {stations,paths} from './fixtures.mjs';
 export function platformRuntime(source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8'),zoom=16,helpers={}){
   const data=JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json',import.meta.url),'utf8'));
   const slice=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
-  const context=vm.createContext({stations,paths,byId:new Map(stations.map(s=>[s.id,s])),colors:{},map:{getZoom:()=>zoom},offsetCoords,trackStart,extendStart,closestPlatformPoint,coaster:false,simcity:false,cityViaduct:{snapped:(l,a,b)=>SNAP[`${l}:${a}:${b}`]||null},snapStops,...data,shapes:data.edges,Map,Math,...helpers});
+  const context=vm.createContext({stations,paths,byId:new Map(stations.map(s=>[s.id,s])),colors:{},map:{getZoom:()=>zoom},offsetCoords,trackStart,extendStart,closestPlatformPoint,coaster:false,simcity:false,cityViaduct:{snapped:(l,a,b)=>SNAP[`${l}:${a}:${b}`]||null},snapStops,stopReach:{},...data,shapes:data.edges,Map,Math,...helpers});
   vm.runInContext([
     'const LINE_GAP=5;const edgeKey=(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`;',
     slice('const edgeLines=new Map();','// Real track geometry'),

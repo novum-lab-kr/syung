@@ -9,6 +9,10 @@ their middle is the platform's middle), projected onto the line's track, and the
 are cut and joined again at that point.
 stop_overrides.json: {"<line>|<station name>": [lng, lat]} (the anchor; projected here), or
 {"at": [lng, lat], "shift": true} to also slide the track under the station over to the anchor.
+선택 칸(2026-10-05, 전 역 카카오 맞춤 0단계 · pipeline/fit_line_platforms.py 가 씀):
+  "dir": [동, 북] 승강장 방향 단위 벡터 — stopDirs 에 넣고, build_track_shapes.orient_stations 가 거리 방향 대신 이 값을 따른다
+  "half": 승강장 반 길이 m (OSM 승강장 면) — platformHalf, 그리고 stopHalf 가 이보다 짧으면 stopHalf
+  "reach": [lng, lat] 출구가 승강장 한쪽 끝 밖에 몰린 역에서 그 끝을 늘린 통로 끝 — stopReach
 Run after build_track_shapes.py (it calls apply() itself), or alone to patch track_shapes.json.
 """
 
@@ -110,20 +114,52 @@ def _shifted(q, p, o, full=SHIFT_FULL, fade=SHIFT_FADE):
     return [q[0] + o[0] * w / (k * 111320), q[1] + o[1] * w / 111320]
 
 
-def apply(ts: dict) -> list:
+def _entries():
+    """(stop key "<line>:<id>", 원래 키 "<line>|<name>", 항목) — 역 이름을 못 찾으면 stop key 는 None."""
     if not OVERRIDES.exists():
         return []
     metro = json.loads(METRO.read_text(encoding="utf-8"))
     by_name = {(line, n["name"]): n["id"] for n in metro["nodes"] for line in n["lines"]}
-    done = []
-    for k, anchor in json.loads(OVERRIDES.read_text(encoding="utf-8")).items():
+    out = []
+    for k, v in json.loads(OVERRIDES.read_text(encoding="utf-8")).items():
         if k.startswith("_"):
             continue
         line, name = k.split("|")
         sid = by_name.get((line, name))
+        out.append((None if sid is None else f"{line}:{sid}", k, v))
+    return out
+
+
+def fixed_dirs() -> dict:
+    """{"<line>:<id>": [동, 북]} — "dir" 칸이 있는 역. orient_stations 가 이 방향을 그대로 쓴다."""
+    return {sk: v["dir"] for sk, _, v in _entries() if sk and isinstance(v, dict) and v.get("dir")}
+
+
+def apply_extras(ts: dict, sk: str, v: dict) -> None:
+    """"dir" · "half" · "reach" 칸을 track_shapes 의 stopDirs · platformHalf · stopHalf · stopReach 에 넣는다."""
+    if v.get("dir"):
+        ts.setdefault("stopDirs", {})[sk] = v["dir"]
+    if v.get("half"):
+        ph, sh = ts.setdefault("platformHalf", {}), ts.setdefault("stopHalf", {})
+        # 출구로 늘어난 역 길이(stopHalf > platformHalf)는 남기고, 승강장 길이만큼은 보장
+        exits_half = sh.get(sk, 0) if sh.get(sk, 0) > ph.get(sk, 0) else 0
+        ph[sk] = v["half"]
+        sh[sk] = max(v["half"], exits_half)
+    if v.get("reach"):
+        ts.setdefault("stopReach", {})[sk] = v["reach"]
+
+
+def apply(ts: dict) -> list:
+    done = []
+    for sk, k, anchor in _entries():
+        line = k.split("|")[0]
+        sid = None if sk is None else int(sk.rsplit(":", 1)[1])
         shift = isinstance(anchor, dict) and anchor.get("shift")
+        extra = anchor if isinstance(anchor, dict) else {}
         anchor = anchor["at"] if isinstance(anchor, dict) else anchor
         r = move_stop(ts, line, sid, anchor, bool(shift)) if sid is not None and f"{line}:{sid}" in ts["stops"] else None
+        if r is not None:
+            apply_extras(ts, sk, extra)
         done.append((k, None if r is None else (round(r[0]), round(r[1]))))
     return done
 

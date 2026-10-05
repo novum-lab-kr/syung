@@ -326,7 +326,9 @@ _platform_file = Path(__file__).resolve().parent.parent / "data" / "osm-tracks" 
 PLATFORM_AREAS = []   # (centre, unit axis, length)
 if _platform_file.exists():
     for _w in json.loads(_platform_file.read_text(encoding="utf-8"))["elements"]:
-        _g = [(p["lon"], p["lat"]) for p in _w.get("geometry", [])]
+        # relation(멀티폴리곤 승강장, pipeline/fetch_platforms.py)은 바깥 고리 way 들의 점을 모두 쓴다
+        _g = [(p["lon"], p["lat"]) for p in _w.get("geometry", [])] or [
+            (p["lon"], p["lat"]) for m in _w.get("members", []) if m.get("role") in ("outer", "") for p in m.get("geometry") or [] if p]
         if len(_g) < 4:
             continue
         _c = (sum(x for x, _ in _g) / len(_g), sum(y for _, y in _g) / len(_g))
@@ -519,8 +521,11 @@ def station_roads(points: list[tuple[float, float]], radius: int = 300):
     return graph
 
 
-def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> dict:
+def orient_stations(shapes: dict, stops: dict, halves: dict | None = None, fixed: dict | None = None) -> dict:
+    """역마다 승강장 방향(stopDirs)을 정하고 노선을 승강장 양 끝으로 다시 잇는다.
+    fixed: stop_overrides.json 의 "dir" 칸 — 있으면 거리 방향 대신 그 방향을 쓴다(OSM 승강장으로 맞춘 역)."""
     halves = halves or {}
+    fixed = fixed or {}
     # track direction at each stop, from the edges that touch it
     touching = defaultdict(list)
     for k, pts in shapes.items():
@@ -579,7 +584,7 @@ def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> di
                             best = (score, rx, ry)
         if best:
             dx, dy = best[1], best[2]
-        dirs[sk] = [round(dx, 5), round(dy, 5)]
+        dirs[sk] = list(fixed[sk]) if sk in fixed else [round(dx, 5), round(dy, 5)]
     # re-thread each edge: centre → platform end → (track beyond the platform) → platform end → centre
     for k, pts in list(shapes.items()):
         line, lo, hi = k.rsplit(":", 2)
@@ -885,13 +890,14 @@ def main(out_paths: list[Path]) -> None:
                 if new != stop_half.get(k):
                     reassigned += 1
                 stop_half[k] = new
-    # stations put back on their platform by hand (stop_overrides.json)
-    from stop_overrides import apply as apply_stop_overrides
-    for k, r in apply_stop_overrides({"edges": shapes, "stops": stops}):
+    # stations put back on their platform by hand (stop_overrides.json); "dir" · "half" · "reach" 칸도 여기서 들어간다
+    from stop_overrides import apply as apply_stop_overrides, fixed_dirs
+    stop_reach: dict[str, list] = {}
+    for k, r in apply_stop_overrides({"edges": shapes, "stops": stops, "stopHalf": stop_half, "platformHalf": plat_half, "stopReach": stop_reach}):
         print(f"stop override {k}: {'skipped' if r is None else f'moved {r[0]} m'}", file=sys.stderr)
-    stop_dirs = orient_stations(shapes, stops, stop_half)
+    stop_dirs = orient_stations(shapes, stops, stop_half, fixed_dirs())
     clean_track_shapes(shapes)
-    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width, "stopReach": stop_reach}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
     print(json.dumps({"transfer_extent_updates": reassigned, "osm_platform_areas": platform_matched, "exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
