@@ -18,7 +18,7 @@ function platformRenderer() {
     return /^[A-Z_0-9]+$/.test(key) ? key : () => {};
   } });
   const context = vm.createContext({ Map, Float32Array, Math, coaster: true, selected: 'all', stationAlpha: 1,
-    stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600,
+    stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
     exits: {}, exitCol: new Map(), colors: { '2호선': '#00ff00' }, hexRGB3: () => [0, 1, 0],
     stationRects: new Map([['2호선:1', { coords: [[.5, .5], [.5001, .5]], offset: 0 }]]),
     map: { getZoom: () => 17, getCenter: () => [.5, .5],

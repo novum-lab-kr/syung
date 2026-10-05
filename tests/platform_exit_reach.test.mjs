@@ -15,7 +15,7 @@ function renderExits(reach) {
   const gl = new Proxy({}, { get(_, key) { return /^[A-Z_0-9]+$/.test(key) ? key : () => {}; } });
   const exitCol = new Map();
   const context = vm.createContext({ Map, Float32Array, Math, coaster: false, selected: 'all', stationAlpha: 1,
-    stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600,
+    stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
     exits: { 1: [[...EXIT, '2']] }, exitCol, colors: { A: '#ff0000', B: '#0000ff' }, hexRGB3: c => c === '#ff0000' ? [1, 0, 0] : [0, 0, 1],
     closestPlatformPoint, platformStroke: () => ({ vertices: [], length: 0 }),
     stationRects: new Map([

@@ -334,6 +334,7 @@ const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whos
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
 let exits={};const exitCol=new Map();   // exit "lon,lat" → the colour of the line its passage joins
 const EXIT_MINZOOM=16,EXIT_MAX_M=350;   // exits (and their passages) from this zoom; farther than this from every platform: no passage
+const EXIT_PASSAGES=false;   // 2026-10-05: 승강장 → 출구 통로 선은 그리지 않는다(출구 번호를 이어지는 노선색으로 칠해 대신함)
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
 const smooth=x=>x*x*(3-2*x);
@@ -1573,12 +1574,20 @@ void main(){
     const pointsOnly=z<=(matchMedia('(max-width:720px),(pointer:coarse)').matches?12:13),dot=Math.max(7,Math.min(10,hgt*.55));
     const b=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),pad=(hi.x-lo.x)*.2;
     const geo=new Map();   // rect key → ground placement, reused for its name
+    // 화면에 걸리는 역: 막대 전체 범위로 보고(긴 막대는 가운데가 밖이어도 보임), 그 역의 다른 노선 막대도 함께 둔다 —
+    // 출구가 어느 노선 막대에 붙을지가 화면 범위(회전 · 이동)에 따라 바뀌지 않게(잠실 2호선 · 8호선)
+    const shown=new Set();
     for(const [k,r] of stationRects){
       const line=k.slice(0,k.lastIndexOf(':'));if(selected!=='all'&&line!==selected)continue;
+      if(!r.box){let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const c of r.coords){const m=maplibregl.MercatorCoordinate.fromLngLat(c);x0=Math.min(x0,m.x);x1=Math.max(x1,m.x);y0=Math.min(y0,m.y);y1=Math.max(y1,m.y)}r.box=[x0,y0,x1,y1]}
+      const [x0,y0,x1,y1]=r.box;if(!(x1<lo.x-pad||x0>hi.x+pad||y0>lo.y+pad||y1<hi.y-pad))shown.add(k.slice(k.lastIndexOf(':')+1));
+    }
+    for(const [k,r] of stationRects){
+      const line=k.slice(0,k.lastIndexOf(':'));if(selected!=='all'&&line!==selected)continue;
+      if(!shown.has(k.slice(k.lastIndexOf(':')+1)))continue;
       const m0=maplibregl.MercatorCoordinate.fromLngLat(r.coords[0]),m1=maplibregl.MercatorCoordinate.fromLngLat(r.coords[r.coords.length-1]);
       let ax=m1.x-m0.x,ay=m1.y-m0.y;const lenU=Math.hypot(ax,ay)||1e-12;ax/=lenU;ay/=lenU;
       const mid=r.center?maplibregl.MercatorCoordinate.fromLngLat(r.center):null,cx=(mid?.x??(m0.x+m1.x)/2)-ay*r.offset*unit,cy=(mid?.y??(m0.y+m1.y)/2)+ax*r.offset*unit;   // line-offset: right of drawing direction
-      if(cx<lo.x-pad||cx>hi.x+pad||cy>lo.y+pad||cy<hi.y-pad)continue;
       const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt)*PLATFORM_SCALE,len=lenU/unit;
       // names read left→right on screen: flip the axis when it points leftward
       const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
@@ -1617,8 +1626,10 @@ void main(){
         pass.unshift([a.x+ux*m*unit,a.y+uy*m*unit,ux,uy,g.reachUsed+w,w,g.col]);delete g.reachUsed}   // 막대 끝에서 늘린 통로(출구가 붙은 데까지)
       for(const g of geo.values())for(const [side,far] of Object.entries(g.trunk||{})){const half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),m=(half+far)/2*side;
         pass.unshift([g.cx+g.ax*m*unit,g.cy+g.ay*m*unit,g.ax*side,g.ay*side,far-half+w,w,g.col]);delete g.trunk}   // the concourse the exits share
+      if(EXIT_PASSAGES){
       for(const [cx,cy,ux,uy,l,ww,col] of pass)quad(cx,cy,ux,uy,l+3,ww+3,[0,0,0,0],col,-3,0);   // white casing
       for(const [cx,cy,ux,uy,l,ww,col] of pass)quad(cx,cy,ux,uy,l,ww,[0,0,0,0],col,-1,0);       // passage: a thin line in the station's line colour
+      }
     }
     for(const g of geo.values()){
       if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}
@@ -1645,11 +1656,11 @@ void main(){
 // painted grey with a band of its line's colour round the top and the exit number in yellow, like real entrance pillars.
 // The box is built in map space, so it leans with the tilt and turns with the bearing; only the sides facing
 // the viewer are drawn, lit from the south-west. Seen from straight above, the number moves onto the cap.
-const PILLAR_PX=[[16,7,20],[18,12,36]];   // [zoom, side, height] in screen px
+const PILLAR_PX=[[16,11,22],[18,17,38]];   // [zoom, side, height] in screen px — 2026-10-05: 통로 선을 없애고 번호를 크게
 // segs: [from, to (share of the height), colour (an [r,g,b], or 1: the line's), number on it]
 // segs: [from, to (share of the height), colour (an [r,g,b], 1: the line's, 'grey': the theme's), number on it]
 // grey: a slightly dark grey by day; lighter at night so the pillar stands off the dark map
-const PILLAR_STYLE={ink:[1,.83,0],cap:1,grey:{light:[.4,.42,.44],dark:[.56,.59,.62]},segs:[[0,.46,'grey'],[.46,.84,'grey',1],[.84,1,1]]};
+const PILLAR_STYLE={ink:[1,1,1],inkOnLight:[.08,.08,.08],cap:1,grey:{light:[.4,.42,.44],dark:[.56,.59,.62]},segs:[[0,.38,'grey'],[.38,1,1,1]]};   // 노선색 면에 흰 번호(밝은 노선색이면 검은 번호), 아래만 회색 기둥
 class ExitPillars{
   init(gl){
     const vs=`#version 300 es
@@ -1706,7 +1717,7 @@ void main(){
     items.sort((a,b)=>a[1][1]-b[1][1]);   // far (higher on screen) first, near ones drawn over them
     const Ld=[-.6,.8];   // light from the south-west (map y runs south)
     for(const [m,b,ref,lc] of items){
-      const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y;
+      const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,ink=.299*lc[0]+.587*lc[1]+.114*lc[2]>.62?St.inkOnLight:St.ink;
       quad([[b[0]-sPx*1.1,b[1]-sPx*.55,b[2]],[b[0]+sPx*1.3,b[1]-sPx*.55,b[2]],[b[0]+sPx*1.3,b[1]+sPx*.65,b[2]],[b[0]-sPx*1.1,b[1]+sPx*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
       const C=[[x-half,y-half,0,-1],[x+half,y-half,1,0],[x+half,y+half,0,1],[x-half,y+half,-1,0]];   // NW,NE,SE,SW and the normal of the side that starts there
       for(let i=0;i<4;i++){
@@ -1716,13 +1727,13 @@ void main(){
         for(const [t0,t1,tone,num] of St.segs){
           const P=[proj(bx,by,hgt*t0),proj(ax,ay,hgt*t0),proj(ax,ay,hgt*t1),proj(bx,by,hgt*t1)];if(P.some(p=>!p))continue;   // b→a reads left→right from outside
           const fh=Math.hypot(P[3][0]-P[0][0],P[3][1]-P[0][1]),col=mul(tone===1?lc:tone==='grey'?grey:tone,k),text=num&&!onTop&&fw>sPx*.55;
-          quad(P,LOC,col,St.ink,text?glyph(uv,fw,fh):NO,guv,text?2:1);
+          quad(P,LOC,col,ink,text?glyph(uv,fw,fh):NO,guv,text?2:1);
         }
       }
       const T=C.map(([cx,cy])=>proj(cx,cy,hgt));if(T.some(p=>!p))continue;
       const xs=T.map(p=>p[0]),ys=T.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
       const TL=T.map(p=>[(p[0]-x0)/Math.max(1e-3,x1-x0),(y1-p[1])/Math.max(1e-3,y1-y0)]);   // screen-upright, so the number reads from above
-      quad(T,TL,onTop?grey:St.cap===1?lc:St.cap,St.ink,onTop?glyph(uv,x1-x0,y1-y0,.72):NO,guv,onTop?2:1);   // the cap
+      quad(T,TL,St.cap===1?lc:St.cap,ink,onTop?glyph(uv,x1-x0,y1-y0,.78):NO,guv,onTop?2:1);   // the cap: 노선색, 위에서 볼 때 번호
     }
     if(!data.length)return;
     gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
