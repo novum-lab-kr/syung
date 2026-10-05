@@ -357,7 +357,9 @@ def fit(net: Network, line: str, only: set | None, matched: dict):
         if od and d[0] * od[0] + d[1] * od[1] < 0:
             d = [-d[0], -d[1]]
         d = [round(d[0], 5), round(d[1], 5)]
-        if not use and od and (turn_between(od, d) or 0) >= NO_AREA_MAX_TURN:
+        if forced and (ent.get("dir") or od):
+            d = list(ent.get("dir") or od)   # 카카오 눈 비교로 정한 역: 방향도 그 칸(운영 값) 그대로, OSM 방향 계산은 쓰지 않음
+        elif not use and od and (turn_between(od, d) or 0) >= NO_AREA_MAX_TURN:
             # 지하 터널 OSM 선은 거칠어 굽은 곳에서 현 방향이 크게 틀어진다: 지금 방향(거리 방향) 유지
             holds.append(f"OSM 선로 방향과 {turn_between(od, d):.0f}° 달라 지금 방향 유지")
             d = list(od)
@@ -524,9 +526,29 @@ def write(net: Network, line: str, new: dict, new_edges: dict, new_reach: dict, 
             if sid in (int(lo), int(hi)):
                 ts["edges"][ek] = pts
         applied.append(k)
+    sync_edge_ends(ts, line, {ek for ek in new_edges if ts["edges"].get(ek) is new_edges[ek]})
     OVERRIDES.write_text(json.dumps(ovr, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     SHAPES.write_text(json.dumps(ts, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return applied
+
+
+def sync_edge_ends(ts: dict, line: str, keys) -> list:
+    """구간 끝을 그 역 stops 에 맞춘다(0.5 m 넘게 어긋난 끝만). fit() 은 바뀌지 않은 옆 역도 새 점으로 구간을 잇는데,
+    write() 는 바뀐 역의 stops 만 쓰므로 그 옆 역 쪽 끝이 1~5 m 떨어졌다(검토 112312). 고친 구간 키 목록을 돌려준다."""
+    fixed = []
+    for ek in keys:
+        pts = ts["edges"].get(ek)
+        if not pts:
+            continue
+        _, lo, hi = ek.rsplit(":", 2)
+        a, b = ts["stops"][f"{line}:{lo}"], ts["stops"][f"{line}:{hi}"]
+        if metres(pts[0], a) <= 0.5 and metres(pts[-1], b) <= 0.5:
+            continue
+        pts = [list(p) for p in pts]
+        pts[0], pts[-1] = rnd(a), rnd(b)
+        ts["edges"][ek] = clean_track_shape(pts)
+        fixed.append(ek)
+    return fixed
 
 
 STYLE = ROOT / "web" / "lib" / "city_style_seoul.mjs"

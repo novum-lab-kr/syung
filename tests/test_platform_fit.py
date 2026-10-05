@@ -140,5 +140,66 @@ class SnapAppliedTest(unittest.TestCase):
         self.assertIn("8호선:24", keep)
 
 
+class EdgeEndTest(unittest.TestCase):
+    def test_sync_edge_ends_puts_edge_ends_on_stops(self):
+        from fit_line_platforms import sync_edge_ends
+        k = 111320 * math.cos(math.radians(37.5))
+        ts = {"stops": {"L:1": [126.9, 37.5], "L:2": [126.9 + 300 / k, 37.5]},
+              "edges": {"L:1:2": [[126.9, 37.5 + 4 / 111320], [126.9 + 150 / k, 37.5], [126.9 + 300 / k, 37.5]]}}
+        self.assertEqual(sync_edge_ends(ts, "L", ["L:1:2"]), ["L:1:2"])
+        self.assertLess(osm_platforms.metres(ts["edges"]["L:1:2"][0], ts["stops"]["L:1"]), 0.5)
+        self.assertEqual(sync_edge_ends(ts, "L", ["L:1:2"]), [])   # 이미 맞으면 손대지 않음
+
+    def test_every_edge_end_is_its_stop(self):
+        """track_shapes 와 기본 지도(도로 맞춤 우선) 모두: 구간 끝 = 그 역 점(0.5 m 안). 운영 eccc0e7 은 0곳(검토 112312)."""
+        import re
+        ts = json.loads((ROOT / "data" / "osm-tracks" / "track_shapes.json").read_text(encoding="utf-8"))
+        text = (ROOT / "web" / "lib" / "city_viaduct_snap.mjs").read_text(encoding="utf-8")
+        se = json.loads(re.search(r"export default (\{.*?\});\n", text).group(1))
+        ss = json.loads(re.search(r"export const stops = (\{.*?\});", text).group(1))
+        bad = []
+        for ek, pts in ts["edges"].items():
+            line, lo, hi = ek.rsplit(":", 2)
+            for basic in (False, True):
+                g = (se.get(ek) or pts) if basic else pts
+                for p, sk in ((g[0], f"{line}:{lo}"), (g[-1], f"{line}:{hi}")):
+                    stop = (ss.get(sk) or ts["stops"][sk])[:2] if basic else ts["stops"][sk]
+                    if osm_platforms.metres(p, stop) > 0.5:
+                        bad.append((ek, sk, basic))
+        self.assertEqual(bad, [])
+
+
+@unittest.skipUnless((ROOT / "data" / "osm-tracks" / "line-4호선.json").exists()
+                     and (ROOT / "data" / "osm-tracks" / "platforms-raw.json").exists(), "OSM 캐시 없음(.gitignore)")
+class FitRulesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import fit_line_platforms as F
+        cls.F = F
+        cls.ts = json.loads(F.SHAPES.read_text(encoding="utf-8"))
+        cls.net = F.Network(cls.ts)
+        cls.matched = osm_platforms.match(cls.ts["stops"])
+
+    def one(self, line, name):
+        results, *_ = self.F.fit(self.net, line, {name}, self.matched)
+        return results[0]
+
+    def test_kakao_check_station_keeps_point_and_direction(self):
+        r = self.one("4호선", "삼각지")   # from: kakao-check(운영 점 · 방향으로 되돌린 역), OSM 면 · 선로 방향을 쓰지 않음
+        self.assertEqual(r["movedM"], 0.0)
+        self.assertEqual(r["turnDeg"], 0.0)
+        self.assertEqual(r["after"]["dirDeg"], r["before"]["dirDeg"])
+
+    def test_no_area_station_is_not_pulled_onto_a_far_track(self):
+        r = self.one("공항철도", "인천공항1터미널")   # 이웃 사이 OSM 경로가 2 km 떨어져 지나감(NO_AREA_MAX_SNAP_M)
+        self.assertEqual(r["movedM"], 0.0)
+        self.assertTrue(any("이웃 사이 OSM 경로" in h for h in r["holds"]))
+
+    def test_large_turn_on_no_area_station_is_held(self):
+        r = self.one("8호선", "잠실")   # OSM 선로 방향과 49° — NO_AREA_MAX_TURN(15°) 넘어 지금 방향 유지
+        self.assertEqual(r["turnDeg"], 0.0)
+        self.assertTrue(any("OSM 선로 방향과" in h for h in r["holds"]))
+
+
 if __name__ == "__main__":
     unittest.main()
