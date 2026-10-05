@@ -1082,7 +1082,8 @@ function rideCoords(line,ids){
   for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=cityCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}   // 여정도 선택한 노선 경로를 따라가요.
   return out;
 }
-function showRoute(plan,busSelection=false){   // bus: a stop's number uses the same fit, focus and journey styles
+function showRoute(plan,busSelection=false,refit=true){   // bus: a stop's number uses the same fit, focus and journey styles
+  displayedRoute={plan,busSelection};
   busRouteFocus=busSelection;if(!busSelection)busLayer?.setJourney(plan.legs);   // bus: keep the stop sheet's selection intact
   const feats=[],pts=[];
   plan.legs.forEach((l,i)=>{
@@ -1122,11 +1123,12 @@ function showRoute(plan,busSelection=false){   // bus: a stop's number uses the 
   const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
   all.push(...plan.legs.filter(l=>l.type==='bus').flatMap(l=>l.path));   // bus: retain journey fitting without a duplicate line
   routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
-  fitRoute(sheetPad()+30);
+  if(refit)fitRoute(sheetPad()+30);
 }
+let displayedRoute=null;   // 모드 전환 때 표시 중인 여정만 다시 그려요.
 let routeBounds=null,busRouteFocus=false;   // bus: route-number focus is released with its detail sheet
 function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
-function clearRoute(){busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
+function clearRoute(){displayedRoute=null;busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
 const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
 const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
 // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
@@ -1930,7 +1932,7 @@ map.on('load',()=>{
     return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     if(leg)showRoute({legs:[leg]},true);
-    else if(busRouteFocus){busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
+    else if(busRouteFocus){displayedRoute=null;busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   // exits: yellow number discs (like station exit signs) from zoom 16
@@ -2244,6 +2246,8 @@ function setCoaster(on,speed=coasterSpeed){
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
   if(was!==on){setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+    if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
+    if(displayedRoute)showRoute(displayedRoute.plan,displayedRoute.busSelection,false);
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
     applyTheme();updateSun();wallsNow()}   // the park colours, and the towers out of the shadows and walls
   map.triggerRepaint();
