@@ -755,10 +755,15 @@ const lastPose=new Map(),BLEND_MS=1200;
 
 // Train body width and lane offset in screen px, shared by the train layer, roof numbers,
 // destination tags and click picking.
-const bodyWidthPx=z=>15+13*smooth(Math.max(0,Math.min(1,(z-13)/4))),TRAIN_MIN_PX=36;   // min on-screen length when zoomed out
+// 가까이(z16→17) 볼 때는 화면 폭 대신 실제에 가까운 폭(TRAIN_CLOSE_M, 실제 약 3.1 m 의 1.5배)으로 줄여 간다 — 모든 모드 공통.
+// 크게 그린 열차(z17 에서 13 m)가 출구 · 보도를 덮던 문제(중화 7호선, 2026-10-05). z16 이하는 그대로.
+const TRAIN_CLOSE_M=4.6,TRAIN_CLOSE_ZOOM=[16,17],pxPerMetre=z=>512*2**z/(40075016.686*Math.cos(37.5*Math.PI/180));
+const farBodyPx=z=>15+13*smooth(Math.max(0,Math.min(1,(z-13)/4)));
+const bodyWidthPx=z=>{const far=farBodyPx(z),k=smooth(Math.max(0,Math.min(1,(z-TRAIN_CLOSE_ZOOM[0])/(TRAIN_CLOSE_ZOOM[1]-TRAIN_CLOSE_ZOOM[0]))));
+  return k<=0?far:Math.min(far,far*(TRAIN_CLOSE_M*pxPerMetre(z)/far)**k)},TRAIN_MIN_PX=36;   // min on-screen length when zoomed out; 줄어드는 구간은 비율로 이어서 매끄럽게
 const laneOffsetPx=(z,body=bodyWidthPx(z))=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+body/2;
 // on the coaster (always car by car) zoomed out: a slimmer body, so a 20 m car stays longer than wide (≥ 7 px across)
-const coasterBodyPx=z=>Math.min(bodyWidthPx(z),Math.max(7,20*512*2**z/(40075016.686*Math.cos(37.5*Math.PI/180))/1.6));
+const coasterBodyPx=z=>Math.min(bodyWidthPx(z),Math.max(7,20*pxPerMetre(z)/1.6));
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
