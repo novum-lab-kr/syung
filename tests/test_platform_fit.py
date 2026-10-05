@@ -196,7 +196,7 @@ class FitRulesTest(unittest.TestCase):
         self.assertTrue(any("이웃 사이 OSM 경로" in h for h in r["holds"]))
 
     def test_large_turn_on_no_area_station_is_held(self):
-        r = self.one("8호선", "잠실")   # OSM 선로 방향과 49° — NO_AREA_MAX_TURN(15°) 넘어 지금 방향 유지
+        r = self.one("3호선", "일원")   # OSM 선로 방향과 51° — NO_AREA_MAX_TURN(15°) 넘어 지금 방향 유지(잠실 8호선은 2026-10-05 카카오대로 맞춤)
         self.assertEqual(r["turnDeg"], 0.0)
         self.assertTrue(any("OSM 선로 방향과" in h for h in r["holds"]))
 

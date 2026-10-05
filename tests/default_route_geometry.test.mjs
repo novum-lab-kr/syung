@@ -17,5 +17,7 @@ test('롤코 경로와 심시티 승강장은 기본 승강장 단축과 독립�
  assert.equal(r.geom('6호선',425,426),sentinel);
  r.context.coaster=false;r.context.simcity=true;vm.runInContext('buildStationFeatures()',r.context);
  assert.ok(r.rects.get('8호선:24').coords.length===2);
- assert.ok(r.rects.get('8호선:24').coords[0][1]>37.516);
+ // 심시티 승강장은 출구까지의 역 길이(stopHalf)로 길게 남아요(기본 단축 platformHalf 와 독립)
+ const [a,b]=r.rects.get('8호선:24').coords,m=Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320;
+ assert.ok(m>2*r.context.platformHalf['8호선:24']+20,String(m));
 });
