@@ -5,6 +5,7 @@
 // city builders: scratchpad …/city/life/through-buildings.json.
 //
 //   node pipeline/build_viaduct_snap.mjs [--report DIR] [--only 9호선] [--cache DIR]
+// 부분 갱신: --edges 키목록.json --tilejson 캐시.json --offline [--output 검증파일.mjs]
 //
 // Roads and buildings come from the OpenFreeMap z14 tiles the app itself draws (so the deck lands exactly on the drawn
 // street); tunnel/bridge from the cached OSM line-*.json (as build_viaduct_flags.py reads them). Rules (pack.viaduct.snap):
@@ -19,10 +20,14 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { decodeTile } from '../web/lib/city_mvt.mjs';
 import { CityViaduct } from '../web/lib/city_viaduct.mjs';
+import ORIGINAL_SNAP from '../web/lib/city_viaduct_snap.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), CACHE = path.join(ROOT, 'data', 'osm-tracks');
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null };
 const REPORT = opt('--report') || path.join(ROOT, 'scratchpad-snap-report'), ONLY = opt('--only'), TILES = opt('--cache') || path.join(REPORT, 'tiles14');
+const selectedFile = opt('--edges'), selected = selectedFile ? new Set(JSON.parse(readFileSync(selectedFile, 'utf8'))) : null;
+const tileJSONFile = opt('--tilejson'), offline = args.includes('--offline');
+if (offline && !tileJSONFile) throw new Error('--offline에서는 --tilejson 캐시 파일이 필요해요.');
 mkdirSync(REPORT, { recursive: true }); mkdirSync(TILES, { recursive: true });
 const pack = (await import('../web/lib/city_style_seoul.mjs')).default, SN = pack.viaduct.snap, NEAR_M = SN.nearM ?? 60, FAR_M = SN.maxOffsetM ?? 150, HOLD_M = SN.holdM ?? 40;
 const SAMPLE_M = 6, NEAR_WAY_M = 60, MIN_RUN_M = 60, FAR_RUN_M = SN.farRunM ?? 500, GRID = 100, CLASSES = { motorway: 0, trunk: 0, primary: 0, secondary: 4, tertiary: 10, minor: 22 }, BIG = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
@@ -47,9 +52,10 @@ const pip = (x, y, r) => { let c = false; for (let i = 0, j = r.length - 1; i < 
 
 // ── the track ──
 const TS = JSON.parse(readFileSync(path.join(CACHE, 'track_shapes.json'), 'utf8')), shapes = TS.edges;
+if (selected) for (const id of selected) if (!shapes[id]) throw new Error(`알 수 없는 구간: ${id}`);
 const html = readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8'), block = id => JSON.parse(html.match(new RegExp(`<script id="${id}" type="application/json">([\\s\\S]*?)</script>`))[1]);
 const stations = block('stationData'), paths = block('linePaths'), byId = new Map(stations.map(q => [q.id, q])), nameOf = id => byId.get(+id)?.name ?? String(id);
-const edges = Object.entries(shapes).filter(([k]) => !ONLY || k.startsWith(ONLY + ':')).map(([id, coords]) => {
+const edges = Object.entries(shapes).filter(([k]) => (!ONLY || k.startsWith(ONLY + ':')) && (!selected || selected.has(k))).map(([id, coords]) => {
   const pts = chaikin(coords.map(c => c.slice())).map(toM), cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
   const total = cum[cum.length - 1], S = [];
   for (let s = 0, i = 1; s <= total && pts.length > 1; s += SAMPLE_M) { while (i < pts.length - 1 && cum[i] < s) i++; const u = (s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1); S.push({ s, x: pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, y: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u }) }
@@ -62,6 +68,7 @@ console.log(`edges ${edges.length}`);
 const wayGrids = new Map();
 function waysOf(line) {
   if (wayGrids.has(line)) return wayGrids.get(line); const f = path.join(CACHE, `line-${line}.json`), out = { tunnel: new Grid(), bridge: new Grid() };
+  if (!existsSync(f) && (selected || offline)) throw new Error(`OSM 캐시가 없어요: ${f}`);
   if (existsSync(f)) { const d = JSON.parse(readFileSync(f, 'utf8')), nodes = new Map(); for (const e of d.elements) if (e.type === 'node') nodes.set(e.id, toM([e.lon, e.lat]));
     for (const w of d.elements) { if (w.type !== 'way') continue; const t = w.tags || {}, kind = t.tunnel && t.tunnel !== 'no' ? 'tunnel' : t.bridge && t.bridge !== 'no' ? 'bridge' : null; if (!kind) continue;
       const ids = w.nodes.filter(i => nodes.has(i)); for (let i = 1; i < ids.length; i++) { const A = nodes.get(ids[i - 1]), B = nodes.get(ids[i]); const x0 = Math.min(A[0], B[0]), x1 = Math.max(A[0], B[0]), y0 = Math.min(A[1], B[1]), y1 = Math.max(A[1], B[1]); for (let gx = Math.floor(x0 / GRID); gx <= Math.floor(x1 / GRID); gx++) for (let gy = Math.floor(y0 / GRID); gy <= Math.floor(y1 / GRID); gy++) out[kind].add(`${gx},${gy}`, [A, B]) } } }
@@ -78,10 +85,12 @@ const nearTrack = (x, y, r) => sampleGrid.near(x, y, r).some(q => Math.hypot(q.x
 const boxNearTrack = (b, pad) => { const x0 = b[0] - pad, y0 = b[1] - pad, x1 = b[2] + pad, y1 = b[3] + pad; for (let gx = Math.floor(x0 / GRID); gx <= Math.floor(x1 / GRID); gx++) for (let gy = Math.floor(y0 / GRID); gy <= Math.floor(y1 / GRID); gy++) for (const q of sampleGrid.m.get(`${gx},${gy}`) || []) if (q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1) return true; return false };
 const need = new Set();
 for (const e of edges) for (const q of e.S) { const [lon, lat] = toLL([q.x, q.y]); for (const [dx, dy] of [[0, 0], [FAR_M, 0], [-FAR_M, 0], [0, FAR_M], [0, -FAR_M]]) { const [tx, ty] = tileOf(...toLL([q.x + dx, q.y + dy])); need.add(`${tx},${ty}`) } }
-const tj = await (await fetch('https://tiles.openfreemap.org/planet')).json(), tpl = tj.tiles[0];
+// 캐시 옵션이 없을 때는 기존 온라인 동작을 유지한다.
+const tj = tileJSONFile ? JSON.parse(readFileSync(tileJSONFile, 'utf8')) : await (await fetch('https://tiles.openfreemap.org/planet')).json(), tpl = tj.tiles[0];
 console.log(`tiles needed ${need.size} (${tpl})`);
 async function tile(x, y) {
   const f = path.join(TILES, `14-${x}-${y}.pbf`); if (existsSync(f)) return readFileSync(f);
+  if (offline) throw new Error(`지도 타일 캐시가 없어요: ${f}`);
   for (let a = 0; a < 3; a++) { try { const r = await fetch(tpl.replace('{z}', '14').replace('{x}', x).replace('{y}', y), { headers: { 'User-Agent': 'subway-live-map viaduct pipeline (syung.novum-lab.com)' } }); if (r.status === 204 || r.status === 404) { writeFileSync(f, new Uint8Array(0)); return new Uint8Array(0) } if (!r.ok) throw Error('HTTP ' + r.status); const b = new Uint8Array(await r.arrayBuffer()); writeFileSync(f, b); return b } catch (err) { if (a === 2) throw err; await new Promise(r => setTimeout(r, 800 * (a + 1))) } }
 }
 const roadGrid = new Grid(), bldGrid = new Grid(), buildings = []; let roads = 0;
@@ -151,11 +160,18 @@ for (const e of edges) {
   }
   if (moved < 2) continue;
   // the moved path: the samples moved, the ends exact, simplified (Douglas–Peucker 0.3 m)
-  const P = S.map((q, i) => [q.x + DX[i], q.y + DY[i]]); P[0] = [S[0].x, S[0].y]; P[n - 1] = [S[n - 1].x, S[n - 1].y];
+  const P = S.map((q, i) => [q.x + DX[i], q.y + DY[i]]);
+  // 마지막 1 m 미만 잔여 구간은 샘플이 생략될 수 있어 원본 끝 좌표를 사용한다.
+  P[0] = e.pts[0].slice(); P[n - 1] = e.pts[e.pts.length - 1].slice();
   const keep = new Array(n).fill(false); keep[0] = keep[n - 1] = true; const stack = [[0, n - 1]];
   while (stack.length) { const [a, b] = stack.pop(); let far = 0, idx = -1; for (let k = a + 1; k < b; k++) { const d = segDist(P[k], P[a], P[b]); if (d > far) { far = d; idx = k } } if (far > .3) { keep[idx] = true; stack.push([a, idx], [idx, b]) } }
   result[e.id] = P.filter((p, i) => keep[i]).map(p => toLL(p).map(v => +v.toFixed(6)));
   report.push({ edge: e.id, movedM: +moved.toFixed(1), points: result[e.id].length, runs: notes.filter(x => x.ok), rejected: notes.filter(x => !x.ok) });
+}
+// 부분 생성에서는 계산하지 않은 항목을 보존하고 더는 스냅되지 않는 대상만 제거한다.
+const outputResult = selected ? { ...ORIGINAL_SNAP } : result;
+if (selected) for (const { id } of edges) {
+  if (result[id]) outputResult[id] = result[id]; else delete outputResult[id];
 }
 // ── the rail height at each stretch, exactly as the runtime lifts the deck there: the stations' levels (transfer platforms
 // overlapping in plan take different levels) and the ramps between, computed with the same code on the same station rectangles
@@ -168,19 +184,19 @@ function runtimeViaduct() {
     rects.set(k, { coords: [toLL(-d[0] * h, -d[1] * h), toLL(d[0] * h, d[1] * h)], offset: 0, plat: ph ? Math.min(1, ph / h) : 1 });
   }
   const merc = ([lon, lat]) => ({ x: lon / 360 + .5, y: .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI) }), gcache = new Map();
-  const geom = (line, lo, hi) => { const id = `${line}:${lo}:${hi}`; let g = gcache.get(id); if (g) return g; const c = result[id] || (shapes[id] ? chaikin(shapes[id].map(q => q.slice())) : null) || [stops[`${line}:${lo}`] || [byId.get(lo).lon, byId.get(lo).lat], stops[`${line}:${hi}`] || [byId.get(hi).lon, byId.get(hi).lat]]; g = { pts: c.map(merc) }; gcache.set(id, g); return g };
+  const geom = (line, lo, hi) => { const id = `${line}:${lo}:${hi}`; let g = gcache.get(id); if (g) return g; const c = outputResult[id] || (shapes[id] ? chaikin(shapes[id].map(q => q.slice())) : null) || [stops[`${line}:${lo}`] || [byId.get(lo).lon, byId.get(lo).lat], stops[`${line}:${hi}`] || [byId.get(hi).lon, byId.get(hi).lat]]; g = { pts: c.map(merc) }; gcache.set(id, g); return g };
   return new CityViaduct({ pack, net: { paths, byId, colors: {}, geom, offset: () => 0, rects, exits: {}, bodyPx: () => 13 } });
 }
 const viaduct = runtimeViaduct(), heightsAt = (edgeId, sFrom, sTo, total) => { const [line, lo, hi] = edgeId.split(':'); const H = []; for (let i = 0; i <= 4; i++) H.push(viaduct.heightAt(line, +lo, +hi, Math.max(0, Math.min(1, (sFrom + (sTo - sFrom) * i / 4) / total)))); return H };
 for (const t of through) { const e = edges.find(x => x.id === t.edge), H = heightsAt(t.edge, t.sFrom, t.sTo, e.total); t.railM = +H[2].toFixed(2); t.railMRange = [+Math.min(...H).toFixed(2), +Math.max(...H).toFixed(2)]; t.deckBottomM = +(Math.min(...H) - pack.viaduct.deckThicknessM).toFixed(2); const [, lo, hi] = t.edge.split(':'); t.stations = `${nameOf(lo)}–${nameOf(hi)}`; t.levels = [viaduct.levelOf(t.line, +lo), viaduct.levelOf(t.line, +hi)]; delete t.sFrom; delete t.sTo }
 through.sort((a, b) => b.lengthM - a.lengthM);
-const OUT = path.join(ROOT, 'web', 'lib', 'city_viaduct_snap.mjs');
-writeFileSync(OUT, '// 심시티 고가: real-tunnel stretches of the track moved onto the street they run under, as the simcity mode draws and drives\n// them (CityViaduct.snapped) — the whole edge, lo → hi, replacing track_shapes.json\'s smoothed path there. Generated by\n// pipeline/build_viaduct_snap.mjs from the OpenFreeMap z14 tiles (© OpenMapTiles © OpenStreetMap contributors); do not edit by hand.\n' + `export default ${JSON.stringify(result)};\n`);
-writeFileSync(path.join(REPORT, 'snap-report.json'), JSON.stringify({ edges: edges.length, moved: Object.keys(result).length, report }, null, 1));
+const OUT = opt('--output') || path.join(ROOT, 'web', 'lib', 'city_viaduct_snap.mjs');
+writeFileSync(OUT, '// 심시티 고가: real-tunnel stretches of the track moved onto the street they run under, as the simcity mode draws and drives\n// them (CityViaduct.snapped) — the whole edge, lo → hi, replacing track_shapes.json\'s smoothed path there. Generated by\n// pipeline/build_viaduct_snap.mjs from the OpenFreeMap z14 tiles (© OpenMapTiles © OpenStreetMap contributors); do not edit by hand.\n' + `export default ${JSON.stringify(outputResult)};\n`);
+writeFileSync(path.join(REPORT, 'snap-report.json'), JSON.stringify({ edges: edges.length, moved: Object.keys(result).length, report, ...(selected ? { selectedEdges: edges.map(e => e.id) } : {}) }, null, 1));
 const levelsUp = viaduct.debugLevels().map(([k, L]) => ({ key: k, station: nameOf(k.slice(k.lastIndexOf(':') + 1)), level: L, railM: +viaduct.stationH(k.slice(0, k.lastIndexOf(':')), +k.slice(k.lastIndexOf(':') + 1)).toFixed(2) }));
 writeFileSync(path.join(REPORT, 'through-buildings.json'), JSON.stringify({
   note: '심시티 고가가 (도로 스냅 후에도) 건물을 지나는 구간 — 따라갈 도로가 없어 옮기지 않은 곳; city-build가 이 건물들을 통과(역) 건물로 바꾼다. 좌표 lon,lat. kind: tunnel = 실제 지하(OSM tunnel), bridge = 실제 고가(OSM 선형과 건물 폴리곤 불일치), surface = 지상. railM: 그 구간 한가운데의 레일(상판 윗면) 높이 m — 노선별 기본 11 m + 환승역 층 분리(18/25 m…)와 그 앞뒤 경사 반영, 런타임(CityViaduct.heightAt)과 같은 계산; railMRange: 구간 양끝까지의 범위; deckBottomM: 상판 아랫면; levels: 이 구간 양쪽 역의 층. buildings: OFM z14 building 레이어의 폴리곤 (tile z/x/y, feature index, ring index, id when the tile has one, centre, bbox, render_height). 생성: pipeline/build_viaduct_snap.mjs',
   generated: new Date().toISOString(), summary: { stretches: through.length, totalM: through.reduce((t, x) => t + x.lengthM, 0), byKind: { tunnel: through.filter(x => x.kind === 'tunnel').length, bridge: through.filter(x => x.kind === 'bridge').length, surface: through.filter(x => x.kind === 'surface').length }, over40m: through.filter(x => x.lengthM >= 40).length, raisedStations: levelsUp.length },
   raisedStations: levelsUp, stretches: through }, null, 1));
 const km = report.reduce((t, r) => t + r.runs.reduce((a, x) => a + x.len, 0), 0) / 1000;
-console.log(`moved ${Object.keys(result).length} edges (${km.toFixed(1)} km of track), ${through.length} stretches still through buildings → ${path.relative(ROOT, OUT)} (${JSON.stringify(result).length} bytes), ${REPORT}`);
+console.log(`moved ${Object.keys(result).length} edges (${km.toFixed(1)} km of track), ${through.length} stretches still through buildings → ${path.relative(ROOT, OUT)} (${JSON.stringify(outputResult).length} bytes), ${REPORT}`);

@@ -12,6 +12,7 @@ Track data © OpenStreetMap contributors (ODbL).
 from __future__ import annotations
 
 import heapq
+import argparse
 import os
 import json
 import math
@@ -354,12 +355,11 @@ def _lonlat(xy, origin):
 
 
 def remove_spikes(pts: list, min_leg: float = 25.0) -> list:
-    """Drop the vertices where a shape doubles back on itself.
+    """120° 넘게 되돌아가는 정점을 반복 제거하며 양 끝 역 좌표는 유지한다.
 
-    A stop off the routed track was bridged to from the route's own end, so the shape ran on past
-    the station and came back (1호선 영등포–신길 193 m, 5호선 강동–둔촌동 200 m, 경의중앙선 용산–이촌):
-    a vertex whose two legs point the same way (within ~30°), one of them min_leg or longer, is
-    removed, until none is left. Real track never turns that sharply."""
+    구로처럼 한쪽 변이 짧은 되돌아감도 잡되, 1 m 미만 중복점과 양쪽 모두
+    min_leg보다 짧은 요철은 제외한다. 승강장 재연결 이후에도 적용해야 한다.
+    """
     pts = list(pts)
     changed = True
     while changed and len(pts) > 2:
@@ -369,27 +369,139 @@ def remove_spikes(pts: list, min_leg: float = 25.0) -> list:
             la, lb = math.hypot(ax, ay), math.hypot(bx, by)
             if la < 1 or lb < 1 or max(la, lb) < min_leg:
                 continue
-            if (ax * bx + ay * by) / (la * lb) > 0.85:
+            if (ax * bx + ay * by) / (la * lb) > 0.5:
                 del pts[i]
                 changed = True
                 break
     return pts
 
-    def near(p, a, b):
-        ax, ay = _local(a, p); bx, by = _local(b, p); vx, vy = bx - ax, by - ay
-        l2 = vx * vx + vy * vy
-        t = 0.0 if l2 == 0 else max(0.0, min(1.0, -(ax * vx + ay * vy) / l2))
-        return math.hypot(ax + vx * t, ay + vy * t), _lonlat((ax + vx * t, ay + vy * t), p)
 
-    half = len(pts) // 2
-    start = max((i for i in range(1, half) if near(pts[0], pts[i], pts[i + 1])[0] <= tolerance), default=None)
-    if start is not None:
-        pts = [pts[0], near(pts[0], pts[start], pts[start + 1])[1], *pts[start + 1:]]
-    half = len(pts) // 2
-    end = min((i for i in range(half, len(pts) - 2) if near(pts[-1], pts[i], pts[i + 1])[0] <= tolerance), default=None)
-    if end is not None:
-        pts = [*pts[:end + 1], near(pts[-1], pts[end], pts[end + 1])[1], pts[-1]]
-    return pts
+MAX_TRACK_TURN = 50.0
+CORNER_OFFSET_METRES = 20.0
+
+
+def _distinct_points(pts: list) -> list:
+    """1 m 미만 연속 중복점을 제외하되 양 끝 좌표는 그대로 둔다."""
+    if len(pts) < 2:
+        return list(pts)
+    out = [pts[0]]
+    for p in pts[1:-1]:
+        if metres(out[-1], p) >= 1:
+            out.append(p)
+    if len(out) > 1 and metres(out[-1], pts[-1]) < 1:
+        out.pop()
+    out.append(pts[-1])
+    return out
+
+
+def _turn(a, b, c) -> tuple[float, float, float]:
+    ax, ay = _local(a, b)
+    bx, by = _local(c, b)
+    la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+    if min(la, lb) < 1:
+        return 0.0, la, lb
+    cosine = max(-1.0, min(1.0, -(ax * bx + ay * by) / (la * lb)))
+    return math.degrees(math.acos(cosine)), la, lb
+
+
+def sharp_turns(pts: list) -> list[dict]:
+    """cos 위도 거리 보정, 두 변 8 m 초과 기준의 급한 꺾임 목록."""
+    points = _distinct_points(pts)
+    hits = []
+    for i in range(1, len(points) - 1):
+        angle, la, lb = _turn(*points[i - 1:i + 2])
+        if min(la, lb) > 8 and angle > MAX_TRACK_TURN:
+            hits.append({"vertex": i, "angle": round(angle, 3),
+                         "legs_m": [round(la, 2), round(lb, 2)], "coordinate": points[i]})
+    return hits
+
+
+def _remove_short_jogs(pts: list) -> list:
+    """짧은 도로 우회의 반대 방향 연속 꺾임만 제거한다.
+
+    두 변이 각각 150 m 이하, 직결보다 45% 이상 우회, 이탈 75 m 이하인
+    90° 이상 모서리만 후보로 삼는다. 이웃도 반대로 30° 이상 꺾이고 제거 후
+    양쪽 연결이 모두 50° 이하여야 한다. 실제 큰 굽이는 곡선 연결로 남긴다.
+    """
+    points = list(pts)
+    changed = True
+    while changed:
+        changed = False
+        for i in range(1, len(points) - 1):
+            a, b, c = points[i - 1:i + 2]
+            angle, la, lb = _turn(a, b, c)
+            chord = metres(a, c)
+            if angle < 90 or min(la, lb) <= 8 or max(la, lb) > 150 or (la + lb) < chord * 1.45:
+                continue
+            ax, ay = _local(a, b)
+            bx, by = _local(c, b)
+            vx, vy = bx - ax, by - ay
+            t = max(0.0, min(1.0, -(ax * vx + ay * vy) / (vx * vx + vy * vy or 1)))
+            if math.hypot(ax + vx * t, ay + vy * t) > 75:
+                continue
+            cross = ax * by - ay * bx
+            opposite = False
+            for j in (i - 1, i + 1):
+                if not 1 <= j < len(points) - 1 or _turn(*points[j - 1:j + 2])[0] < 30:
+                    continue
+                ux, uy = _local(points[j - 1], points[j])
+                wx, wy = _local(points[j + 1], points[j])
+                opposite |= cross * (ux * wy - uy * wx) < 0
+            if not opposite:
+                continue
+            candidate = points[:i] + points[i + 1:]
+            if any(_turn(*candidate[j - 1:j + 2])[0] > MAX_TRACK_TURN
+                   for j in (i - 1, i) if 1 <= j < len(candidate) - 1):
+                continue
+            points = candidate
+            changed = True
+            break
+    return points
+
+
+def clean_track_shape(pts: list) -> list:
+    """되돌아감과 짧은 우회 제거 후 급한 모서리만 이차 곡선으로 연결한다.
+
+    양 끝 역 좌표와 완만한 구간은 보존한다. 모서리 앞뒤 각 변의 최대 30%만
+    사용하고, 곡선 중점의 원래 모서리로부터 이탈은 최대 20 m로 제한한다.
+    점을 촘촘히 넣어 각도 측정을 피하지 않고 곡선 자체의 방향을 바꾼다.
+    """
+    points = _distinct_points(pts)
+    unlooped = _remove_short_jogs(remove_spikes(points))
+    if unlooped == points and not sharp_turns(points):
+        return list(pts)
+    points = unlooped
+    out = [points[0]]
+    for i in range(1, len(points) - 1):
+        a, b, c = points[i - 1:i + 2]
+        angle, la, lb = _turn(a, b, c)
+        if min(la, lb) <= 8 or angle <= MAX_TRACK_TURN:
+            out.append(b)
+            continue
+        trim = min(la * 0.3, lb * 0.3,
+                   2 * CORNER_OFFSET_METRES / math.sin(math.radians(angle / 2)))
+        ax, ay = _local(a, b)
+        bx, by = _local(c, b)
+        start, end = (ax * trim / la, ay * trim / la), (bx * trim / lb, by * trim / lb)
+        steps = max(3, math.ceil(angle / 15))
+        for j in range(steps + 1):
+            t = j / steps
+            xy = ((1 - t) ** 2 * start[0] + t * t * end[0],
+                  (1 - t) ** 2 * start[1] + t * t * end[1])
+            out.append([round(v, 6) for v in _lonlat(xy, b)])
+    out.append(points[-1])
+    return out
+
+
+def clean_track_shapes(shapes: dict) -> list[str]:
+    """생성 경로와 오프라인 후처리가 같은 정리를 쓰고 변경된 edges 키를 반환한다."""
+    changed = []
+    for key, pts in list(shapes.items()):
+        cleaned = clean_track_shape(pts)
+        if cleaned != pts:
+            shapes[key] = cleaned
+            changed.append(key)
+    return changed
 
 
 def station_roads(points: list[tuple[float, float]], radius: int = 300):
@@ -485,7 +597,16 @@ def orient_stations(shapes: dict, stops: dict, halves: dict | None = None) -> di
                 if metres(p, ca) > ha + PLATFORM_JOIN_METRES and metres(p, cb) > hb + PLATFORM_JOIN_METRES]
         if metres(ca, cb) < ha + hb + 20:
             continue   # stations too close for full platforms: leave the track as it is
-        shapes[k] = [[round(x, 6), round(y, 6)] for x, y in [ca, ea, *keep, eb, cb]]
+        candidate = [[round(x, 6), round(y, 6)] for x, y in [ca, ea, *keep, eb, cb]]
+        distinct = _distinct_points(candidate)
+        # 도로가 양쪽 선로의 평균 방향에는 맞아도 한쪽 연결부에는 어긋날 수 있다.
+        # 승강장 끝에서 급히 꺾이는 재연결은 채택하지 않고 원래 선로를 유지한다.
+        if len(distinct) >= 3 and (
+            _turn(*distinct[:3])[0] > MAX_TRACK_TURN
+            or _turn(*distinct[-3:])[0] > MAX_TRACK_TURN
+        ):
+            continue
+        shapes[k] = candidate
     return dirs
 
 
@@ -769,11 +890,44 @@ def main(out_paths: list[Path]) -> None:
     for k, r in apply_stop_overrides({"edges": shapes, "stops": stops}):
         print(f"stop override {k}: {'skipped' if r is None else f'moved {r[0]} m'}", file=sys.stderr)
     stop_dirs = orient_stations(shapes, stops, stop_half)
+    clean_track_shapes(shapes)
     payload = json.dumps({"edges": shapes, "stops": stops, "stopDirs": stop_dirs, "stopHalf": stop_half, "platformHalf": plat_half, "stopWidth": stop_width}, ensure_ascii=False, separators=(",", ":"))
     for out in out_paths:
         out.write_text(payload, encoding="utf-8")
     print(json.dumps({"transfer_extent_updates": reassigned, "osm_platform_areas": platform_matched, "exit_anchored_stops": exit_anchored, "coarse_tunnel_pieces": len(pieces), "road_matched_tunnel_pieces": ROADS.replaced, "road_requests": len(ROADS.tiles), "osm_station_anchors": osm_used, "shapes": len(shapes), "stops": len(stops), "bytes": len(payload), "lines": report}, ensure_ascii=False, indent=1))
 
 
+def postprocess_track_shapes(source: Path, output: Path, report: Path | None = None) -> dict:
+    """OSM 조회 없이 기존 JSON의 edges만 정리하고 전후 측정 결과를 반환한다."""
+    data = json.loads(source.read_text(encoding="utf-8"))
+    measure = lambda: [{"edge": key, **hit} for key, pts in data["edges"].items()
+                       for hit in sharp_turns(pts)]
+    before = measure()
+    changed = clean_track_shapes(data["edges"])
+    after = measure()
+    summary = {"edge_count": len(data["edges"]), "before_count": len(before),
+               "after_count": len(after), "changed_edges": changed, "remaining": after,
+               "measurement": {"angle_degrees": MAX_TRACK_TURN, "both_legs_over_m": 8,
+                               "deduplicate_under_m": 1, "longitude_scale": "cos(vertex latitude)"}}
+    output.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    if report is not None:
+        report.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return summary
+
+
 if __name__ == "__main__":
-    main([Path(p) for p in sys.argv[1:]] or [ROOT / "data" / "osm-tracks" / "track_shapes.json"])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("paths", nargs="*", type=Path, help="전체 생성 결과 파일")
+    parser.add_argument("--postprocess", type=Path, metavar="PATH", help="기존 JSON의 edges만 오프라인 정리")
+    parser.add_argument("--output", type=Path, metavar="PATH", help="후처리 결과 경로 (기본: 입력 파일)")
+    parser.add_argument("--report", type=Path, metavar="PATH", help="후처리 전후 측정 JSON 경로")
+    args = parser.parse_args()
+    if args.postprocess:
+        if args.paths:
+            parser.error("--postprocess와 전체 생성 paths는 함께 쓸 수 없어요.")
+        print(json.dumps(postprocess_track_shapes(args.postprocess, args.output or args.postprocess,
+                                                args.report), ensure_ascii=False, indent=2))
+    else:
+        if args.output or args.report:
+            parser.error("--output과 --report는 --postprocess에만 쓸 수 있어요.")
+        main(args.paths or [ROOT / "data" / "osm-tracks" / "track_shapes.json"])

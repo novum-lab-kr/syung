@@ -6,9 +6,11 @@
 // lie in or at the footprint; a merged tile feature carries many outlines under one id). railM picks the pack level
 // (throughBuildings.levelsM) of the glass band; the viaduct's base level when the list gives none.
 //   node pipeline/build_through_buildings.mjs <list.json> [--note "where the list came from"]
+// 검증용 출력 파일은 --output 경로로 지정하며 기본 출력 경로는 유지한다.
 import { readFileSync, writeFileSync } from 'node:fs';
 const [src, ...rest] = process.argv.slice(2); if (!src) { console.error('usage: node pipeline/build_through_buildings.mjs <list.json> [--note text]'); process.exit(2) }
 const note = rest.includes('--note') ? rest[rest.indexOf('--note') + 1] : src;
+const output = rest.includes('--output') ? rest[rest.indexOf('--output') + 1] : new URL('../web/lib/city_through_buildings.mjs', import.meta.url);
 const j = JSON.parse(readFileSync(src, 'utf8')), flat = [];
 // the real track (data/osm-tracks/track_shapes.json edges, lng/lat polylines): the part of the stretch's edge near each building
 let EDGES = null; try { EDGES = JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json', import.meta.url), 'utf8')).edges } catch { console.warn('no track_shapes.json: paths from the stretches\' from/to only') }
@@ -32,7 +34,7 @@ for (const e of flat) {
   out.push(o); if (e.kind) kinds[e.kind] = (kinds[e.kind] || 0) + 1;
 }
 out.sort((a, b) => a.id - b.id || a.lng - b.lng);
-writeFileSync(new URL('../web/lib/city_through_buildings.mjs', import.meta.url), `// 심시티 고가가 관통하는 건물 — the buildings the simcity viaduct passes through: at the deck's level they become a glass station hall
+writeFileSync(output, `// 심시티 고가가 관통하는 건물 — the buildings the simcity viaduct passes through: at the deck's level they become a glass station hall
 // (web/lib/city_buildings.mjs, pack.throughBuildings). One entry a crossed footprint: the OSM id, a point in it, the line, the rail
 // height there when it is not the base level, the deck's path through it (the walls it crosses open; the others stay) and the exact
 // ring in the tile version the list was made from.
@@ -41,4 +43,4 @@ export default [
 ${out.map(e => `  ${JSON.stringify(e)}`).join(',\n')}
 ];
 `);
-console.log('web/lib/city_through_buildings.mjs:', out.length, 'buildings', JSON.stringify(kinds));
+console.log(String(output), out.length, 'buildings', JSON.stringify(kinds));
