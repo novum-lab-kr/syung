@@ -46,6 +46,7 @@ METRO = ROOT / "data" / "ktdb-gtfs-2025" / "capital-metro.json"
 SNAP = ROOT / "web" / "lib" / "city_viaduct_snap.mjs"
 MOVE_M, TURN_DEG, LENGTH_M = 5.0, 3.0, 5.0          # 바뀐 역 기준(계획서: 5 m · 3°)
 NO_AREA_SNAP_M = 15.0                               # 승강장 면 없는 역: 이보다 멀면 OSM 선로 위로(카카오 확인 점은 빼고)
+NO_AREA_MAX_SNAP_M = 40.0                           # 승강장 면 없는 역: OSM 경로가 이보다 멀면(다른 선로) 끌지 않음
 NO_AREA_MAX_TURN = 15.0                             # 승강장 면 없는 역: OSM 선로 방향이 이만큼 넘게 다르면 지금 방향 유지
 EXIT_TRACK_M, EXIT_OTHER_M, REACH_MIN_M = 150.0, 10.0, 10.0
 CHECK_CENTRE_M, CHECK_LENGTH, CHECK_ON_TRACK_M, VERIFY_MOVE_M = 5.0, 0.10, 5.0, 20.0   # 정확도 판정 · 검증 대상 기준(계획서)
@@ -298,6 +299,10 @@ def fit(net: Network, line: str, only: set | None, matched: dict):
             areas = [a for a in areas if a["id"] not in far_areas]
         short = [a for a in areas if a["length"] <= LONG_PLATFORM * train_m + 10]
         use = short or areas
+        ent = net.overrides.get(f"{line}|{net.names.get(sid)}")
+        forced = isinstance(ent, dict) and str(ent.get("from", "")).startswith("kakao-check")
+        if forced:   # 카카오 눈 비교로 정한 점(되돌림 · 고침): OSM 면 대신 이 점을 지키고 구간 · 도로 맞춤만 다시 잇는다
+            use = []
         if use:
             c = (statistics.fmean(a["centre"][0] for a in use), statistics.fmean(a["centre"][1] for a in use))
             half = round(statistics.median(a["length"] for a in use) / 2)
@@ -320,11 +325,14 @@ def fit(net: Network, line: str, only: set | None, matched: dict):
         src = (net.overrides.get(f"{line}|{net.names.get(sid)}") or {})
         src = src.get("from", "") if isinstance(src, dict) else ""
         holds = []   # 면 없는 역: OSM 이 맞다고 볼 근거가 약해 그대로 둔 것(예외 목록)
-        if use or (metres(cur, foot) > NO_AREA_SNAP_M and not src.startswith("kakao")):
+        far_track = not use and metres(cur, foot) > NO_AREA_MAX_SNAP_M   # 이웃 사이 최단 경로가 이 역을 지나지 않음(인천공항1터미널)
+        if use or (NO_AREA_SNAP_M < metres(cur, foot) and not far_track and not src.startswith("kakao")):
             point = rnd(foot)
         else:
             point = list(cur)
-            if not use and metres(cur, foot) > NO_AREA_SNAP_M:
+            if far_track:
+                holds.append(f"이웃 사이 OSM 경로가 {metres(cur, foot):.0f} m 떨어져 지나감 — 선로로 끌지 않음")
+            elif not use and metres(cur, foot) > NO_AREA_SNAP_M:
                 holds.append(f"카카오 확인 점이 OSM 선로에서 {metres(cur, foot):.0f} m — 선로로 끌지 않음")
         cand = (tracks.candidates(point) or [None])[0]
         # 승강장 방향: 면이 있으면 면들의 긴 축 평균, 없으면 선로를 따라 ±half 지점의 현
@@ -375,7 +383,7 @@ def fit(net: Network, line: str, only: set | None, matched: dict):
                         point = rnd(hit[1]) if hit and hit[0] > NO_AREA_SNAP_M else rnd(q)
                         note = f"출구 가운데로 {mid:+.0f} m"
         new[k] = {"point": point, "dir": d, "half": half, "areas": use, "farAreas": far_areas, "cand": cand, "sid": sid, "note": note,
-                  "centre": c if use else None, "holds": holds}
+                  "centre": c if use else None, "holds": holds, "forced": forced}
     # 앞뒤 구간 다시 잇기(새 값으로) → 출구 · 통로
     new_stops = dict(stops); new_dirs = dict(dirs); new_halves = dict(halves)
     for k, v in new.items():
@@ -452,7 +460,7 @@ def fit(net: Network, line: str, only: set | None, matched: dict):
                         if before_links.get(r) != after_links.get(r)}
         reach_changed = (reach_old.get(k) is None) != (v["reach"] is None) or (
             v["reach"] is not None and metres(reach_old[k], v["reach"]) >= MOVE_M)
-        changed = moved >= MOVE_M or (dturn or 0) >= TURN_DEG or abs(dlen) >= LENGTH_M or bool(link_changes) or reach_changed
+        changed = moved >= MOVE_M or (dturn or 0) >= TURN_DEG or abs(dlen) >= LENGTH_M or bool(link_changes) or reach_changed or v["forced"]
         verdict = "승강장 면 없음" if not v["areas"] else "바뀜" if changed else "OSM 과 맞음"
         edges_here = {ek: edge_notes.get(ek) for ek in sorted(touched) if str(sid) in ek.rsplit(":", 2)[1:]}
         results.append({

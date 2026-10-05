@@ -15,7 +15,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d };
 const REPORT = opt('--report'), OUT = path.resolve(opt('--out', path.join(ROOT, '.nhm', 'captures')));
 const BEFORE = opt('--before-url', 'https://syung.novum-lab.com/'), PORT = +opt('--port', '8097'), ZOOM = +opt('--zoom', '16');
-const KAKAO_STEPS = +opt('--kakao-steps', '0'), ONLY = opt('--only') ? new Set(opt('--only').split(',')) : null;
+const SKIP_BEFORE = args.includes('--skip-before'), KAKAO_STEPS = +opt('--kakao-steps', '0'), ONLY = opt('--only') ? new Set(opt('--only').split(',')) : null;
 const CAPD = 'http://127.0.0.1:8095', JOB = path.join(ROOT, 'pipeline', 'capd_platform_job.mjs'), MIN_FREE_MB = 1536;
 if (!REPORT) { console.error('--report 가 필요해요 (pipeline/fit_line_platforms.py --report 결과)'); process.exit(2) }
 
@@ -45,7 +45,7 @@ try {
     mkdirSync(dir, { recursive: true });
     const views = [
       { kind: 'kakao', label: `${s.station}역`, lat: +c[1].toFixed(6), lon: +c[0].toFixed(6), steps: KAKAO_STEPS, file: `${base}-kakao.jpg` },
-      { kind: 'syung', url: BEFORE, center: c, zoom: ZOOM, file: `${base}-before.jpg` },
+      ...(SKIP_BEFORE ? [] : [{ kind: 'syung', url: BEFORE, center: c, zoom: ZOOM, file: `${base}-before.jpg` }]),
       { kind: 'syung', url: `http://localhost:${PORT}/`, center: c, zoom: ZOOM, file: `${base}-after.jpg` },
     ];
     await waitMemory();
