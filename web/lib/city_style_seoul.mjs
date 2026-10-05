@@ -502,7 +502,7 @@ export const SEOUL_CITY_STYLE = {
     "train": {"laneGapPx": 1.5},
     "performance": {"bytes": 64e6, "phoneBytes": 24e6, "buildMs": 6, "buildMsMoving": 3},
     "levels": {"stepM": 7, "overlapM": 40, "crossM": 24, "crossAngleDeg": 25, "grade": 0.02, "humpGrade": 0.03, "humpPadM": 12, "holdM": 2600, "marginM": 30},
-    "exits": {"minZoom": 16, "stepsZoom": 17.5, "maxM": 350, "nearGapM": 1, "farExtraM": 2, "checkStepM": 2.5, "clearanceM": 2.5, "farZoom": 16, "checkZoom": 18, "levelPenaltyM": 40,
+    "exits": {"enabled": false, "minZoom": 16, "stepsZoom": 17.5, "maxM": 350, "nearGapM": 1, "farExtraM": 2, "checkStepM": 2.5, "clearanceM": 2.5, "farZoom": 16, "checkZoom": 18, "levelPenaltyM": 40,
       "stair": {"widthM": 3.2, "minPx": 2, "riseRun": 0.8, "landingM": 2.4, "landingDropM": 5.6, "slabM": 0.45, "wallM": 1.0, "wallPx": 0.8,
         "roofClearM": 2.7, "roofM": 0.25, "roofOverhangM": 0.35, "stepRiseM": 0.3, "postM": 0.25, "postPx": 1, "footClearM": 12},
       "walk": {"widthM": 3.2, "minPx": 2, "slabM": 0.4, "wallM": 1.0, "wallPx": 0.8, "postEveryM": 14, "postM": 0.6, "postPx": 1.2, "maxAlongM": 60}

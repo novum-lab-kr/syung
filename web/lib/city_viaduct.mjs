@@ -384,7 +384,8 @@ export class CityViaduct {
       }
       draw.push(it);
     }
-    const wantExits = zoom >= V.lodExits.stairs && !!life && this.net.exits, exitDetail = zoom >= V.lodExits.steps; let exitsOut = 0, exitsSkipped = 0, exitsOpen = 0;
+    const wantExits = V.exits.enabled !== false && zoom >= V.lodExits.stairs && !!life && this.net.exits,   // exits.enabled: false — 출구 계단 · 통로를 만들지 않음(2026-10-05, 출구는 노선색 기둥만)
+    exitDetail = zoom >= V.lodExits.steps; let exitsOut = 0, exitsSkipped = 0, exitsOpen = 0;
     if (zoom >= V.lod.platforms && this.net.rects) for (const [key, rect] of this.net.rects) {
       const i = key.lastIndexOf(':'), line = key.slice(0, i), id = key.slice(i + 1); if (solo && line !== selected) continue;
       let p = this.plats.get(key); if (!p || p.rect !== rect) { if (p) this.levelsDirty = true; p = this.platGeom(rect); this.plats.set(key, p); this.del('plat:' + key); this.del('plat:' + key + ':d'); this.exitLayouts.delete(key) }
