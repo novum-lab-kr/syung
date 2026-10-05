@@ -1018,15 +1018,18 @@ class TrainLayer{
       const ratio=car/unit/bodyPx,separate=coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
       const unfold=coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
       const start=P(tail),finish=P(tail+total);
-      // At the LOD boundary, car chords coincide with the compact icon's chord.
-      // Articulation and physical gaps then grow continuously, including on curves.
+      // 심시티: at the LOD boundary, car chords coincide with the compact icon's chord, then articulate.
+      // 기본 모드: 칸 끝은 늘 선로 위 점(P(d))에 둔다 — 곡선에서 곧은 막대로 모으지 않는다. 틈 · 지붕 이음만 unfold 로 자란다.
+      const follow=simcity?unfold:1;
       const articulated=(d)=>{
         const q=P(d),t=(d-tail)/total;
-        q.x=(start.x+(finish.x-start.x)*t)*(1-unfold)+q.x*unfold;
-        q.y=(start.y+(finish.y-start.y)*t)*(1-unfold)+q.y*unfold;
-        q.h=(start.h+(finish.h-start.h)*t)*(1-unfold)+q.h*unfold;
+        q.x=(start.x+(finish.x-start.x)*t)*(1-follow)+q.x*follow;
+        q.y=(start.y+(finish.y-start.y)*t)*(1-follow)+q.y*follow;
+        q.h=(start.h+(finish.h-start.h)*t)*(1-follow)+q.h*follow;
         return q;
       };
+      // 기본 모드 낮은 줌: 칸이 짧으면 몇 칸을 한 마디(몸 폭 0.8배 이상)로 묶어 휘게 그린다
+      const bends=coaster||simcity?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
       if(separate){
         // Painter order follows camera ground direction; no hidden back wall can bleed through.
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
@@ -1058,6 +1061,38 @@ class TrainLayer{
           this.roof(a,b,H,H,w);
           if(back)this.roof(0,a,low,H,w);
           if(front){this.roof(b,L,H,NOSE_Z,w);this.beam(L,w)}
+        }
+      }else if(bends>1){
+        // 기본 모드, 칸이 몸 폭 1.5배보다 짧을 때: 곧은 아이콘과 같은 모양 · 셰이더 칸 줄(carPx)을 마디마다 나눠 그려 선로를 따라 휜다.
+        // 마디 끝은 그 점의 선로 법선으로 차선만큼 띄워, 이웃 마디와 같은 점에서 만난다. 틈 · 지붕 이음은 없다(한 몸).
+        const w=bodyPx/2,nose=bodyPx*.48,low=H*.44,Wm=w+MARGIN,cut=[],dir=[];
+        for(let i=0;i<=bends;i++){const q=P(tail+Math.round(i*n/bends)*car),o=(q.off+lanePx)*unit;q.x+=q.r[0]*o;q.y+=q.r[1]*o;cut.push(q)}
+        for(let i=0;i<bends;i++){const dx=cut[i+1].x-cut[i].x,dy=cut[i+1].y-cut[i].y,len=Math.hypot(dx,dy)||1e-30;dir.push([dx/len,dy/len,len])}
+        // 이음매는 두 마디 방향의 이등분선으로 비스듬히 자른다(마이터): 겹침도 틈도 없어 반투명(건물 뒤) · 그림자에 이음 줄이 안 생긴다.
+        // 기울기 = 가로 1 당 세로 끝이 밀리는 양, 꺾임 반각 60° 까지
+        const slope=(t,u)=>{const s=(-t[1]*u[0]+t[0]*u[1])/(1+t[0]*u[0]+t[1]*u[1]);return Math.max(-1.73,Math.min(1.73,s||0))};
+        const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
+        for(let k=0;k<bends;k++){
+          const j=forward?k:bends-1-k,A=cut[j],[tx,ty,len]=dir[j];if(len<unit*.1)continue;
+          const back=j===0,front=j===bends-1,cars=Math.round((j+1)*n/bends)-Math.round(j*n/bends),S=len/unit,carPx=S/cars;
+          let sA=back?0:slope(dir[j],dir[j-1]),sB=front?0:slope(dir[j],dir[j+1]);
+          const squeeze=Wm*(Math.abs(sA)+Math.abs(sB))/(S*.9);if(squeeze>1){sA/=squeeze;sB/=squeeze}   // 아주 짧은 마디: 안쪽 모서리가 엇갈리지 않게
+          // 셰이더 x 원점을 칸 길이의 배수만큼 앞에 둬 칸 줄 · 해치가 마디를 넘어 이어진다. 앞머리 아닌 마디는 길이를 넉넉히 줘 끝 칸 줄도 그린다
+          const c=back?0:carPx*Math.ceil((Math.max(Math.abs(sA)*Wm,nose+1)+.01)/carPx),L=front?c+S:c+S+Math.abs(sB)*Wm+nose+2;
+          this.cx=A.x-tx*c*unit;this.cy=A.y-ty*c*unit;this.tx=tx;this.ty=ty;
+          this.kind=(front?1:0)+(back?2:0);this.length=L;this.carPx=carPx;
+          const X0=y=>back?nose:c-y*sA,X1=y=>front?L-nose:c+S-y*sB,side=(-ty*camX+tx*camY)>=0?1:-1;
+          if(pitched){
+            if(back&&tx*camX+ty*camY<0)this.end(0,w-bodyPx*.36,low,3);
+            this.wall(X0(side*w),X1(side*w),H,H,side*w);
+            if(back)this.cabWall(false,side,H);
+            if(front)this.cabWall(true,side,H,NOSE_Z);
+          }
+          const a0=X0(-Wm),a1=X0(Wm),b0=X1(-Wm),b1=X1(Wm);
+          this.corner(a0,-Wm,H,a0,-Wm,0);this.corner(a1,Wm,H,a1,Wm,0);this.corner(b1,Wm,H,b1,Wm,0);
+          this.corner(a0,-Wm,H,a0,-Wm,0);this.corner(b1,Wm,H,b1,Wm,0);this.corner(b0,-Wm,H,b0,-Wm,0);
+          if(back){this.roof(0,nose,low,H,Wm);this.roof(-MARGIN,0,low,low,Wm)}
+          if(front){this.roof(L-nose,L,H,NOSE_Z,Wm);this.roof(L,L+MARGIN,NOSE_Z,NOSE_Z,Wm);this.beam(L,w)}
         }
       }else{
         // One rigid, rounded icon. Detail uses true consist spacing, but tiny cars
