@@ -12,7 +12,7 @@ export function trainRuntime(source,zoom=16,helpers={}){
  r.context.maplibregl={MercatorCoordinate};
  vm.runInContext([
    slice('const edgeGeom=new Map();','// 기본·심시티'),
-   slice('function cityGeom(', '// 롤러코스터: the trains only'),
+   slice('function cityGeom(', '// 롤러코스터 경로:'),
    slice('function along(', '// Stations are drawn'),
    'const mercStop=(line,s)=>maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));',
    slice('function trackPoint(', 'let plans=[];'),

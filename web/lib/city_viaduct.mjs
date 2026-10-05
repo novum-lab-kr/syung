@@ -98,6 +98,13 @@ export function pierSpots(total, every, search, phase, ok) {
   }
   return { spots, unknown };
 }
+// 상판을 끊는 구간(gaps: [[f0, f1]…], 가장자리 길이의 몫)을 뺀 나머지 rows 조각들 — 롤코에서 레일이 고가를 떠난 곳은 상판이 없다
+export function rowsBetweenGaps(rows, gaps) {
+  const total = rows.length ? rows[rows.length - 1].s : 0, cuts = (gaps || []).map(([a, b]) => [Math.max(0, a * total), Math.min(total, b * total)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
+  if (!cuts.length) return [rows]; const keep = []; let at = 0;
+  for (const [a, b] of cuts) { if (a > at) keep.push([at, a]); at = Math.max(at, b) } if (at < total) keep.push([at, total]);
+  return keep.filter(([a, b]) => b - a > .5).map(([a, b]) => [rowAt(rows, a), ...rows.filter(r => r.s > a && r.s < b), rowAt(rows, b)]);
+}
 // is the point at fraction t of the edge on a real bridge (ranges from city_viaduct_flags.mjs)
 export function elevatedAt(ranges, t) { if (ranges) for (const [a, b] of ranges) if (t >= a && t <= b) return true; return false }
 // the ground route line's opacity in this mode: it fades out as the deck takes over
@@ -215,6 +222,14 @@ export class CityViaduct {
     this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map();
   }
   get railM() { return this.V.railHeightM }
+  // 상판을 끊을 구간 (line, lo, hi) → [[f0, f1]…] | null (롤코 모드에서만): 바뀌면 상판 · 레일 · 교각을 다시 짓는다
+  setGaps(fn) { this.gapFn = fn || null; this.gapV = (this.gapV || 0) + 1; for (const k of [...this.cache.keys()]) if (/^(deck|det|pier):/.test(k)) this.del(k) }
+  gapsOf(e) { return this.gapFn ? this.gapFn(e.line, e.lo, e.hi) : null }
+  deckMesh(e, rows, detail, H) {
+    const gaps = this.gapsOf(e); if (!gaps || !gaps.length) return buildDeck(rows, e.eo, this.V, e.flags, detail, H);
+    const parts = rowsBetweenGaps(rows, gaps).filter(p => p.length >= 2).map(p => buildDeck(p, e.eo, this.V, e.flags, detail, H));
+    let n = 0; for (const q of parts) n += q.length; const out = new Float32Array(Math.max(n, STRIDE)); n = 0; for (const q of parts) { out.set(q, n); n += q.length } return out.subarray(0, n);
+  }
   // this line's rail height at level 1: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
   // (each line its own step, by its place in the fixed line order: lines side by side share a level as one merged deck, and their tops never share a plane)
   railFor(line) {
@@ -303,11 +318,13 @@ export class CityViaduct {
     return { rect, row: { x: cx, y: cy, fx, fy, rx: -fy, ry: fx }, L, H: d / 2, box: [cx - h, cy - h, cx + h, cy + h] };
   }
   spots(e, life) {
-    const rows = e.rows, P = this.V.pier, H = this.profileOf(e), obs = this.pierObstacles(e);
-    return pierSpots(rows[rows.length - 1].s, P.everyM, P.searchM, hashi(e.lo, e.hi, 7), s => {
+    const rows = e.rows, P = this.V.pier, H = this.profileOf(e), obs = this.pierObstacles(e), total = rows[rows.length - 1].s, gaps = (this.gapsOf(e) || []).map(([a, b]) => [a * total - 4, b * total + 4]);
+    const sp = pierSpots(rows[rows.length - 1].s, P.everyM, P.searchM, hashi(e.lo, e.hi, 7), s => {
       const q = rowAt(rows, s);
       if (obs.length) { const h = H(s); for (const o of obs) if (h > o.h + 1 && pointSegmentDistance([q.x, q.y], o.seg[0], o.seg[1]) < o.half) return false }   // no pier of an upper deck down through a lower line's station
       const r = life.inBuilding(q.x, q.y); return r === undefined ? undefined : !r });
+    if (gaps.length) sp.spots = sp.spots.filter(x => !gaps.some(([a, b]) => x >= a && x <= b));   // 상판이 끊긴 곳(롤코 레일이 떠난 곳)엔 교각 없음
+    return sp;
   }
   // the other lines' station structures at this edge's two stations: an upper deck's piers keep out of them
   pierObstacles(e) {
@@ -374,8 +391,8 @@ export class CityViaduct {
     for (const e of this.edgeList()) {
       if (solo && e.line !== selected) continue; const rows = this.rowsOf(e); if (rows.length < 2 || !inView(e.box)) continue;
       const it = { e, deck: this.get('deck:' + e.id), det: null, pier: null }, H = this.profileOf(e), dr = this.deckRows(e); if (e.ramp) levelsOn++;
-      if (!it.deck) { if (time()) it.deck = this.put('deck:' + e.id, buildDeck(dr, e.eo, V, e.flags, false, H)); else pending = true }
-      if (wantDet) { it.det = this.get('det:' + e.id); if (!it.det) { if (time()) it.det = this.put('det:' + e.id, buildDeck(dr, e.eo, V, e.flags, true, H)); else pending = true } }
+      if (!it.deck) { if (time()) it.deck = this.put('deck:' + e.id, this.deckMesh(e, dr, false, H)); else pending = true }
+      if (wantDet) { it.det = this.get('det:' + e.id); if (!it.det) { if (time()) it.det = this.put('det:' + e.id, this.deckMesh(e, dr, true, H)); else pending = true } }
       if (wantPiers) {
         const k = 'pier:' + e.id; let c = this.get(k);
         if (c && c.partial && now - c.at > 1500 * 2 ** Math.min(c.tries || 0, 5) && time()) { this.pierTries = (c.tries || 0) + 1; this.del(k); c = null }   // a tile has had time to come: place the piers it was waiting for (again more and more rarely)

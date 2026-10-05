@@ -1,21 +1,23 @@
-import { SEOUL_COASTER_STYLE as STYLE, distanceGrid } from './coaster_style_seoul.mjs';
+import { SEOUL_COASTER_STYLE as STYLE } from './coaster_style_seoul.mjs';
 
 // Existing 22-float track format. Negative red selects a uniform material:
-// 1 supports, 2 ties, 3 spine, 4 V brackets, 5 concrete feet. Green holds stable tie ID.
+// 1 supports, 2 ties, 3 spine, 4 V brackets, 5 concrete feet, 6 girder sides (green: the line colour packed 0xRRGGBB),
+// 7 girder top. Green holds stable tie ID.
 export function coasterTrackVertexShader(heart) { return `#version 300 es
 in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;
-uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body;uniform vec3 u_post,u_spine,u_concrete,u_detail;uniform vec4 u_size;
+uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body,u_girder;uniform vec3 u_post,u_spine,u_concrete,u_detail;uniform vec4 u_size;
 out vec3 v_c;out float v_alpha;
 void main(){
   float kind=max(0.,-a_c.r),lane=(a_o.x+a_o.y*u_lane)*u_unit;
   float width=kind<.5?u_size.x:kind<1.5?u_size.w:kind<2.5?1.:kind<3.5?u_size.y:1.;
   float across=(a_o.z*u_body+a_o.w*width)*u_unit;
   float along=a_z.x*(kind>1.5&&kind<2.5?u_detail.x:kind>.5&&kind<1.5?u_size.w:1.);
-  float up=a_z.y*(kind<.5||kind>1.5&&kind<2.5?u_size.x:u_size.z);
+  float up=a_z.y*(kind>5.5?u_girder:kind<.5||kind>1.5&&kind<2.5?u_size.x:u_size.z);
   vec3 r=vec3(a_r,0.),p=r-dot(r,a_f)*a_f;float pl=length(p);vec3 U0=pl>1e-6?cross(a_f,p/pl):a_u;
   gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lane,a_p.z*a_p.w)+cross(a_u,a_f)*across+(a_f*along+a_u*up)*u_unit+(U0-a_u)*(${heart}*u_body*u_unit),1.);
-  v_c=(kind<.5?a_c.rgb:kind<2.5?u_post:kind<4.5?u_spine:u_concrete)*a_c.a;
-  v_alpha=kind>3.5?u_detail.z:kind>1.5&&kind<2.5&&mod(a_c.g,2.)>.5?u_detail.y:1.;
+  float pk=a_c.g;vec3 line=vec3(floor(pk/65536.),mod(floor(pk/256.),256.),mod(pk,256.))/255.;
+  v_c=(kind<.5?a_c.rgb:kind<2.5?u_post:kind<4.5?u_spine:kind<5.5?u_concrete:kind<6.5?line:u_post)*a_c.a;
+  v_alpha=kind>3.5&&kind<5.5?u_detail.z:kind>1.5&&kind<2.5&&mod(a_c.g,2.)>.5?u_detail.y:1.;
 }`; }
 export const COASTER_TRACK_FS = `#version 300 es
 precision highp float;in vec3 v_c;in float v_alpha;uniform float u_alpha;out vec4 o;
@@ -26,8 +28,8 @@ const srgb = x=>x<=.0031308?x*12.92:1.055*x**(1/2.4)-.055;
 export function buildCoasterTrackMesh({points:P,at,columns,s0,s1,mu,offset,lvl,color,pack=STYLE}) {
   const T=pack.track,S=pack.supports, every=Math.max(1,Math.round(lvl*3/80));
   const cols=columns.filter((s,i)=>i%every===0&&s>=s0&&s<s1);
-  const ties=lvl<=16?distanceGrid(s0/mu,s1/mu,T.tieEveryM,lvl===8?1:2):[];
-  const out=new Float32Array(22*(160*P.length+180*cols.length+40*ties.length+32));let o=0;
+  const out=new Float32Array(22*(160*P.length+180*cols.length+32));let o=0;
+  const lineHex=color.reduce((n,c)=>n*256+Math.round(Math.max(0,Math.min(1,c))*255),0);   // the line colour for the girder, exact in a float
   const UP=[0,0,1], railColors=[1,T.railSideLight,.9,.65].map(sh=>color.map(c=>srgb(linear(c)*sh)));
   const v=(q,hf,side,kb,kp,kf,zp,part,shade=1,post=false,index=0)=>{
     const F=post?q.G:q.F,U=post?UP:q.U,c=part?[-part,index,0]:railColors[shade];
@@ -74,16 +76,10 @@ export function buildCoasterTrackMesh({points:P,at,columns,s0,s1,mu,offset,lvl,c
           [B,1,side,kb,kp1,0,z1,0,shade],[A,1,side,kb,kp1,0,z1,0,shade]);
         face(-.5,.4,.5,.4,0);face(-.5,-.6,-.5,.4,1);face(.5,.4,.5,-.6,2);face(.5,-.6,-.5,-.6,3);
       }
-      // A single narrow teal spine leaves open air between the coloured rails.
-      for(const [kp0,z0,kp1,z1,sh] of [[-.5,-.25,.5,-.25,1],[-.5,-1,-.5,-.25,.8],[.5,-.25,.5,-1,.9],[.5,-1,-.5,-1,.7]])
-        quad([A,1,side,0,kp0,0,z0,3,sh],[B,1,side,0,kp0,0,z0,3,sh],[B,1,side,0,kp1,0,z1,3,sh],[A,1,side,0,kp1,0,z1,3,sh]);
-    }
-    for(const s of ties){
-      const q=at(s*mu),w=T.tieBodyWidth/2,id=Math.round(s/T.tieEveryM);
-      quad([q,1,side,-w,0,-.5,-.25,2,1,false,id],[q,1,side,w,0,-.5,-.25,2,1,false,id],
-        [q,1,side,w,0,.5,-.25,2,1,false,id],[q,1,side,-w,0,.5,-.25,2,1,false,id]);
-      if(lvl===8)for(const sign of [-1,1])quad([q,1,side,0,0,-.35,-1,4,.9],[q,1,side,sign*.3,0,-.35,-.25,4,.9],
-        [q,1,side,sign*.3,0,.35,-.25,4,.9],[q,1,side,0,0,.35,-1,4,.9]);
+      // 노선색 상자 거더(2026-10-05 덕배): 차선마다 열차 폭, 위는 밝은 상판(7), 옆 · 아래는 노선색 띠(6) — 가는 레일만으론 노선색이 안 보였다
+      const g=T.girderBody;
+      for(const [kb0,z0,kb1,z1,part,sh] of [[-g,0,g,0,7,1],[-g,-1,-g,0,6,.92],[g,0,g,-1,6,.8],[g,-1,-g,-1,6,.6]])
+        quad([A,1,side,kb0,0,0,z0,part,sh,false,lineHex],[B,1,side,kb0,0,0,z0,part,sh,false,lineHex],[B,1,side,kb1,0,0,z1,part,sh,false,lineHex],[A,1,side,kb1,0,0,z1,part,sh,false,lineHex]);
     }
   }
   if(o>out.length)throw Error('coaster track mesh capacity exceeded');

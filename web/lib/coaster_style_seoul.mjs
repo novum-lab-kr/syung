@@ -8,6 +8,7 @@ export const SEOUL_COASTER_STYLE = {
   },
   track: { railBodyOffset:.30, railDiameterM:.32, railDiameterPx:[1,1.7], railSideLight:.80,
     spineWidthM:.55, spineDepthM:1.2, spineWidthPx:[.65,1.5], spineDepthPx:[1.2,2.6],
+    girderDepthM:1.8, girderDepthPx:[3,7], girderBody:.5,   // 2026-10-05 덕배: 고가에서 솟는 레일 — 차선마다 노선색 상자 거더(폭 = 열차 폭, 위는 밝게), 두 차선이 붙어 넓은 상판처럼
     tieEveryM:7.5, tieBodyWidth:.78, tieThicknessM:.22, tieThicknessPx:[.7,1.2] },
   supports: { minHeightM:3, yHeightM:30, yBranchM:6, aHeightM:80, spanM:[60,80,100], clearM:15,
     diameterM:1.25, diameterPx:[1.1,2.8], aDiameterM:1.5, aSpread:.18, aMaxSpreadM:28, beamHeightM:1,
@@ -36,7 +37,7 @@ export const metresPerPixel = (zoom, lat=37.55) => 40075016.685578488*Math.cos(l
 export function trackMetrics(zoom, lat=37.55, pack=SEOUL_COASTER_STYLE) {
   const mpp=metresPerPixel(zoom,lat), T=pack.track, S=pack.supports, px=(m,range)=>clamp(m/mpp,...range);
   return { mpp, rail:px(T.railDiameterM,T.railDiameterPx), spineWidth:px(T.spineWidthM,T.spineWidthPx),
-    spineDepth:px(T.spineDepthM,T.spineDepthPx), tie:px(T.tieThicknessM,T.tieThicknessPx), post:px(S.diameterM,S.diameterPx) };
+    spineDepth:px(T.spineDepthM,T.spineDepthPx), girder:px(T.girderDepthM,T.girderDepthPx), tie:px(T.tieThicknessM,T.tieThicknessPx), post:px(S.diameterM,S.diameterPx) };
 }
 // A half-open edge grid: neighbouring chunks own each tie once; LOD only drops stable indices.
 export function distanceGrid(startM, endM, everyM, stride=1) {

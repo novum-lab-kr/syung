@@ -15,7 +15,7 @@ function setup(){
   const context=vm.createContext({Map,Math,coaster:false,simcity:false,coasterBld:true,coasterWant:false,coasterSpeed:1,warp:0,warpAt:0,
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},stopReach:{},
-    cityViaduct:{snapped:()=>snapped},edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
+    cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,focusRoute(){},sheetPad:()=>0,
     $:()=>({setAttribute(){}}),document:{querySelectorAll:()=>[]},cityMap(){},setRouteOpacity(){},
@@ -38,11 +38,11 @@ function setup(){
 
 test('기본→롤코→기본 전환이 실제 승강장 데이터와 stationRects를 갱신해요',()=>{
   const r=setup(),initial=r.sources.get('stations').data,rect=r.rect();
+  const city=setup();city.run("simcity=true;stationRects.clear();buildStationFeatures()");   // 롤코도 심시티 고가와 같은 도로 맞춤 경로 위의 승강장
   r.run('setCoaster(true)');
   assert.notDeepEqual(r.sources.get('stations').data,initial);
   assert.notDeepEqual(r.rect(),rect);
-  assert.equal(r.rect().coords[0][1],37);
-  assert.equal(r.rect().coords[1][1],37);
+  assert.deepEqual(r.rect(),city.rect());
   assert.equal(r.labels(),1);
   r.run('setCoaster(false)');
   assert.deepEqual(r.sources.get('stations').data,initial);
@@ -53,7 +53,7 @@ test('기본→롤코→기본 전환이 실제 승강장 데이터와 stationRe
 test('표시 중인 여정도 기본→롤코→기본 경로를 따르고 전환이 지도를 다시 맞추지 않아요',()=>{
   const r=setup(),ride=()=>r.sources.get('journey').data.features.find(f=>f.properties.kind==='ride').geometry.coordinates;
   assert.deepEqual(ride(),r.snapped);
-  r.run('setCoaster(true)');assert.deepEqual(ride(),r.base);
+  r.run('setCoaster(true)');assert.deepEqual(ride(),r.snapped);   // 롤코도 고가(도로 맞춤 경로) 위를 달려요
   r.run('setCoaster(false)');assert.deepEqual(ride(),r.snapped);
   assert.equal(r.fits(),1);
   r.run('clearRoute();setCoaster(true)');

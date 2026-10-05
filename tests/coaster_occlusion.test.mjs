@@ -49,7 +49,7 @@ test('coaster platforms test building depth while the ordinary map preserves its
   assert.ok(scene.draws.length > 0 && scene.draws.every(d => !d.depth), 'ordinary-map platform visibility is preserved');
 });
 
-test('only station names stay above coaster buildings and the full labels return outside coaster mode', () => {
+test('station labels keep their route names in every mode (the coaster rides the viaduct; no ground route signs to stand in for them)', () => {
   const layers = new Map(), updates = [];
   const context = vm.createContext({ Map, ready: true, coaster: false, simcity: false, PHONE: false, RIDE_H: 200,
     effectiveTheme: () => 'light', CityBuildings: class { set() {} },
@@ -67,13 +67,8 @@ test('only station names stay above coaster buildings and the full labels return
   const sync = coaster => { context.coaster = coaster; vm.runInContext('syncCity()', context); };
   sync(false);
   sync(true);
-  for (const id of original.keys()) assert.deepEqual(plain(layers.get(id).layout['text-field']), ['get', 'text'], 'coaster top labels contain only station names');
-  const afterEntering = updates.length;
-  sync(true);
-  assert.equal(updates.length, afterEntering, 'theme-only sync does not repeat symbol layout work');
+  for (const [id, field] of original) assert.deepEqual(plain(layers.get(id).layout['text-field']), field, 'coaster labels keep the route names');
+  assert.equal(updates.length, 0, 'mode changes do no symbol layout work');
   sync(false);
-  for (const [id, field] of original) assert.deepEqual(plain(layers.get(id).layout['text-field']), field, 'restore all existing route-name formatting');
-  sync(true);
-  sync(false);
-  for (const [id, field] of original) assert.deepEqual(plain(layers.get(id).layout['text-field']), field, 'repeated mode changes preserve the original expressions');
+  for (const [id, field] of original) assert.deepEqual(plain(layers.get(id).layout['text-field']), field, 'the ordinary map keeps them too');
 });
