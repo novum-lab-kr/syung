@@ -16,6 +16,7 @@ import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
+import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
 import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
@@ -680,16 +681,17 @@ function rawPose(p){
     let at=p.hold,creeping=false;
     if(p.creep){const w=(performance.now()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
     if(dist<p.hold)return {dist:at,moving:creeping};
-    if(creeping&&at<dist)p.glide={from:at,at:performance.now(),ms:1500};
+    if(creeping&&at<dist)p.glide={c:catchup((dist-at)/mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),at:performance.now()};
     p.hold=null;p.creep=null;
   }
-  if(p.glide){const w=(performance.now()-p.glide.at)/p.glide.ms;if(w<1)return {dist:p.glide.from+(dist-p.glide.from)*smooth(w),moving:true};p.glide=null}
+  // 따라잡는 중: 예측보다 남은 차이(m)만큼 뒤에 그려요. 차이는 원래 주행 위에 더한 속도(상한 CATCHUP_MPS)로 줄어요.
+  if(p.glide){const g=catchupAt(p.glide.c,(performance.now()-p.glide.at)/1000);if(!g.done)return {dist:Math.max(0,dist-g.left*mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),moving:true};p.glide=null}
   // stand: at a stop — s into it, how long it lasts and which station
   return {dist,moving,stand:!moving&&ph.dur!==Infinity?{t:el,dur:ph.dur,st:ph.k0===0?ph.from:ph.to}:null};
 }
 // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
-// A forward correction is run over 10 ms per metre (1.5–8 s), so a big one is not a dash.
-const PREDICT_STOPS=3,GLIDE_MAX_M=2500,HOLD_MAX_M=3000;   // bigger corrections than these still jump
+// 앞으로의 보정은 원래 주행 위에 최대 CATCHUP_MPS 를 더해 메워요(질주하지 않게). 따라잡는 도중 새 자료가 오면 그때 더하던 속도에서 이어 가요.
+const PREDICT_STOPS=3,GLIDE_MAX_M=1000,HOLD_MAX_M=3000;   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
 function replacePlans(next){
   const old=new Map(plans.map(p=>[p.id,p]));
   for(const p of next){
@@ -706,7 +708,7 @@ function replacePlans(next){
       const k=p.cum.findIndex(c=>c>=from-1e-9),st=k>=0?p.cum[k]:from;p.hold=st;
       if(st>from)p.creep={from,at:performance.now(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
     }}
-    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M)p.glide={from,at:performance.now(),ms:Math.max(1500,Math.min(8000,(to-from)/m*10))};
+    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M){const v0=o.glide?catchupAt(o.glide.c,(performance.now()-o.glide.at)/1000).v:0;p.glide={c:catchup((to-from)/m,v0),at:performance.now()}}
   }
   plans=next;
 }
