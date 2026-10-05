@@ -328,6 +328,9 @@ const resultStops = {}; for (const [k, st] of stationPts) resultStops[k] = st.or
 for (const id of Object.keys(result)) { const r = result[id], e = edges.find(x => x.id === id), o = shapes[id]; r[0] = resultStops[e.lo] ? resultStops[e.lo].slice(0, 2) : o[0].slice(); r[r.length - 1] = resultStops[e.hi] ? resultStops[e.hi].slice(0, 2) : o[o.length - 1].slice() }   // 옮기지 않은 끝은 원래 좌표 그대로(반올림 차 없이)
 // 승강장 밖 S자 흔들림을 편다(smooth_viaduct_snap.mjs) — 새로 만든 구간만, 부분 생성에서 보존하는 원래 구간은 이미 편 것
 for (const id of Object.keys(result)) result[id] = smoothSnapPath(result[id], ...holdsFor(id, TS.platformHalf || {}), { tubeM: SN.smoothTubeM, iter: SN.smoothIter });
+// smoothMore: 한 번 편 뒤에도 S자가 남는 구간(도로 맞춤 경로가 짧게 여러 번 흔들리는 길)은 좁은 관(tubeM) 안에서 더 오래 한 번 더 편다
+const MORE = SN.smoothMore || { edges: [] };
+for (const id of Object.keys(result)) if (MORE.edges.includes(id)) result[id] = smoothSnapPath(result[id], ...holdsFor(id, TS.platformHalf || {}), { tubeM: MORE.tubeM, iter: MORE.iter });
 // 부분 생성에서는 계산하지 않은 항목을 보존하고 더는 스냅되지 않는 대상만 제거한다.
 const outputResult = selected ? { ...ORIGINAL_SNAP } : result, outputStops = selected || ONLY ? { ...ORIGINAL_STOPS } : resultStops;
 if (selected) for (const { id } of edges) {
