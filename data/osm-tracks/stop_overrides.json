@@ -1,5 +1,5 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used).",
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used).",
  "7호선|고속터미널": {
   "at": [
    127.0050068,
@@ -357,10 +357,11 @@
  },
  "5호선|신길": {
   "at": [
-   126.9166014,
-   37.5175335
+   126.915449,
+   37.517587
   ],
-  "shift": true
+  "shift": true,
+  "from": "osm-platform"
  },
  "5호선|길동": {
   "at": [
@@ -1663,11 +1664,11 @@
  },
  "1호선|영등포": {
   "at": [
-   126.9071937,
-   37.5156915
+   126.907305,
+   37.515563
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform"
  },
  "1호선|광운대": {
   "at": [
@@ -1679,11 +1680,11 @@
  },
  "1호선|신길": {
   "at": [
-   126.9162176,
-   37.5175425
+   126.91882,
+   37.516603
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "osm-platform"
  },
  "1호선|아산": {
   "at": [
