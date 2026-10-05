@@ -1,5 +1,5 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used). 2026-10-05 (all-station Kakao check, stage 0): optional \"dir\" [east, north] platform direction (stopDirs; orient_stations keeps it on a full rebuild), \"half\" platform half length m from the OSM platform areas (platformHalf), \"reach\" [lng, lat] end of the passage where all the line's exits sit past one platform end (stopReach) — written by pipeline/fit_line_platforms.py. \"kakao-check\": kept or set after an eye comparison with Kakao Map screenshots (no Kakao data taken); fit_line_platforms.py keeps this point instead of the OSM platform areas (2026-10-05 verify). 2026-10-05 잠실 2호선 · 8호선: 카카오 화면(출구 12곳으로 맞춘 0.51 m/px)대로 두 승강장이 올림픽로 밑 한 줄 — 2호선은 출구 1~8 가운데로 125 m 서쪽, 8호선은 송파대로(남북) 대신 올림픽로(동북동) 방향 · 반 길이 180 m(카카오 띠 380 m), 선로는 OSM 두 선로 가운데 줄(manual_routes).",
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used). 2026-10-05 (all-station Kakao check, stage 0): optional \"dir\" [east, north] platform direction (stopDirs; orient_stations keeps it on a full rebuild), \"half\" platform half length m from the OSM platform areas (platformHalf), \"reach\" [lng, lat] end of the passage where all the line's exits sit past one platform end (stopReach) — written by pipeline/fit_line_platforms.py. \"kakao-check\": kept or set after an eye comparison with Kakao Map screenshots (no Kakao data taken); fit_line_platforms.py keeps this point instead of the OSM platform areas (2026-10-05 verify). 2026-10-05 잠실 2호선 · 8호선: 카카오 화면(출구 12곳으로 맞춘 0.51 m/px)대로 두 승강장이 올림픽로 밑 한 줄 — 2호선은 출구 1~8 가운데로 125 m 서쪽, 8호선은 송파대로(남북) 대신 올림픽로(동북동) 방향, 카카오처럼 2호선 띠 동쪽 끝(잠실사거리)에서 곧게 이어지는 한 줄 · 반 길이 191 m, 석촌 쪽은 띠 끝에서 반지름 50 m로 꺾여 송파대로로(manual_routes).",
  "7호선|고속터미널": {
   "at": [
    127.0050068,
@@ -1227,16 +1227,16 @@
  },
  "8호선|잠실": {
   "at": [
-   127.103399,
-   37.514255
+   127.103322,
+   37.51435
   ],
   "shift": true,
   "from": "kakao-check",
   "dir": [
-   0.91173,
-   0.41078
+   0.91442,
+   0.40476
   ],
-  "half": 180
+  "half": 191
  },
  "8호선|송파": {
   "at": [
