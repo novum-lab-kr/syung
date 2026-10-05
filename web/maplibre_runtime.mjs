@@ -60,17 +60,17 @@ function buildLineFeatures(){
   Object.entries(paths).forEach(([line,chunks])=>chunks.forEach(ids=>ids.slice(1).forEach((b,i)=>{
     const lo=Math.min(ids[i],b),hi=Math.max(ids[i],b),id=`${line}:${lo}:${hi}`;
     if(drawn.has(id)||!byId.has(lo)||!byId.has(hi))return;drawn.add(id);
-    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):cityCoords(line,lo,hi);   // on the 롤러코스터: its own path   // city-life: 심시티 — the moved path, where there is one
+    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):cityCoords(line,lo,hi);   // 롤코는 고유 경로, 기본·심시티는 도로 맞춤 경로를 우선해요.
     features.push({type:'Feature',properties:{line,color:colors[line],offset:edgeOffset(line,lo,hi)},geometry:{type:'LineString',coordinates:coords}});
   })));
   return features;
 }
 const edgeGeom=new Map();
-// The track between two stations: the real one, or on the 롤러코스터 its own wandering path (coasterPath).
-function geom(line,a,b){return coaster?coasterPath(line,a,b):simcity?cityGeom(line,a,b):realGeom(line,a,b)}   // city-life: 심시티 — the viaduct's path (a tunnel stretch moved onto its street), else the real one
-// city-life: 심시티 — an edge's path moved onto the street it really runs under (web/lib/city_viaduct_snap.mjs, built offline), else the real track;
-// the trains, the platforms (trackFrom), the route line and a journey's ride follow it, so the deck, its trains and its stations agree
-const cityCoords=(line,lo,hi)=>(simcity&&cityViaduct.snapped(line,lo,hi))||edgeCoords(line,lo,hi);
+// 역 사이 열차 경로는 도로 맞춤 경로를 우선하고, 롤코는 coasterPath를 유지해요.
+function geom(line,a,b){return coaster?coasterPath(line,a,b):cityGeom(line,a,b)}
+// 기본·심시티에서 스냅이 있으면 노선·열차·승강장·여정이 같은 도로 맞춤 경로를 따라가요.
+// 스냅이 없거나 롤코의 승강장·여정이면 기존 선로 경로를 써요.
+const cityCoords=(line,lo,hi)=>(!coaster&&cityViaduct.snapped(line,lo,hi))||edgeCoords(line,lo,hi);
 function cityGeom(line,a,b){const lo=Math.min(a,b),hi=Math.max(a,b),sn=cityViaduct.snapped(line,lo,hi);if(!sn)return realGeom(line,a,b);const id=`s:${line}:${lo}:${hi}`;let g=edgeGeom.get(id);if(g)return g;g=withCum(sn.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));edgeGeom.set(id,g);return g}
 const withCum=pts=>{const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));return {pts,cum,total:cum[cum.length-1]}};
 function realGeom(line,a,b){
@@ -162,7 +162,7 @@ const PLATFORM_HALF=90;
 function metresBetween(a,b){return Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320}
 // First `dist` metres of the track from station s toward neighbour n, starting at s.
 function trackFrom(line,s,n,dist){
-  const c=cityCoords(line,Math.min(s.id,n.id),Math.max(s.id,n.id)),pts=s.id<n.id?c:[...c].reverse(),out=[pts[0]];   // city-life: 심시티 — the platform sits on the moved path
+  const c=cityCoords(line,Math.min(s.id,n.id),Math.max(s.id,n.id)),pts=s.id<n.id?c:[...c].reverse(),out=[pts[0]];   // 승강장도 선택한 노선 경로를 따라가요.
   let left=dist;
   for(let i=1;i<pts.length&&left>0;i++){const d=metresBetween(pts[i-1],pts[i]);if(d>=left){const u=left/d;out.push([pts[i-1][0]+(pts[i][0]-pts[i-1][0])*u,pts[i-1][1]+(pts[i][1]-pts[i-1][1])*u]);left=0}else{out.push(pts[i]);left-=d}}
   return out;
@@ -1079,7 +1079,7 @@ function openSheet(html,source='subway'){if(source!=='bus')busLayer?.clearSelect
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
   const out=[];
-  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=cityCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}   // city-life: 심시티 — the ride drawn where the trains run
+  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=cityCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}   // 여정도 선택한 노선 경로를 따라가요.
   return out;
 }
 function showRoute(plan,busSelection=false){   // bus: a stop's number uses the same fit, focus and journey styles
@@ -2249,7 +2249,7 @@ function setCoaster(on,speed=coasterSpeed){
   map.triggerRepaint();
 }
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
-function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // city-life: setRouteOpacity — the ground line gives way to the viaduct; the plans, route line and platforms follow the mode's track (a tunnel stretch moved onto its street)
+function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!simcity);
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
