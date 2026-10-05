@@ -1,5 +1,5 @@
 {
- "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used). 2026-10-05 (all-station Kakao check, stage 0): optional \"dir\" [east, north] platform direction (stopDirs; orient_stations keeps it on a full rebuild), \"half\" platform half length m from the OSM platform areas (platformHalf), \"reach\" [lng, lat] end of the passage where all the line's exits sit past one platform end (stopReach) — written by pipeline/fit_line_platforms.py. \"kakao-check\": kept or set after an eye comparison with Kakao Map screenshots (no Kakao data taken); fit_line_platforms.py keeps this point instead of the OSM platform areas (2026-10-05 verify). 2026-10-05 잠실 2호선 · 8호선: 카카오 화면(출구 12곳으로 맞춘 0.51 m/px)대로 두 승강장이 올림픽로 밑 한 줄 — 2호선은 출구 1~8 가운데로 125 m 서쪽, 8호선은 송파대로(남북) 대신 올림픽로(동북동) 방향, 카카오처럼 2호선 띠 동쪽 끝(잠실사거리)에서 곧게 이어지는 한 줄 · 반 길이 191 m, 석촌 쪽은 띠 끝에서 반지름 50 m로 꺾여 송파대로로(manual_routes). 2026-10-05 방향 검수 1(fit_line_platforms 의 'OSM 선로 방향과 N° 달라 지금 방향 유지' 역, 카카오 화면 눈 비교 — 핀 좌표는 화면 (494, 358) px · 1 m/px, 출구로 확인): 3호선 일원(곡선 승강장, 방향 80° → 131°) · 7호선 온수(66° → 108°, OSM 가운데 줄) · 수인분당선 구룡 · 오목천 · 5호선 발산(카카오 띠대로 사거리 대각선 142°) — 카카오 띠 양 끝을 선로에 내려 가운데 · 반 길이. 방향 검수 2: 4호선 길음(230° → 202°, OSM 가운데 줄) · 3호선 삼송(카카오 띠 101°, 곧게) · 서해선 초지(카카오 띠 28°, 반 길이 111 m) · 2호선 시청(역 점을 서소문로 카카오 띠 가운데로 112 m 서쪽, 반 길이 132 m, 곧게) · GTX-A 연신내(카카오 띠 91°, 반 길이 60 m).",
+ "_comment": "Stations whose stop build_track_shapes.py placed off the platform: anchor [lng, lat] from OSM stop_position nodes of that line, kept only where it is nearer both the station's exits' centre and its KTDB point (2026-09-30). Applied by pipeline/stop_overrides.py. 2026-10-01: + every station whose stop sat ≥25 m from the middle of its line's OSM stop_position nodes (≥2 of them, ≤60 m apart), with the track slid over (shift). Checked against Kakao Map station by station; left out where OSM's stop positions sit ≥40 m off the platform (7호선 용마산, 9호선 노들·둔촌오륜·한성백제, 인천1호선 문학경기장·동춘). Entries marked \"from\": \"kakao\" take Kakao Map's station point (its search API, converted back to WGS84) where OSM is off (2026-10-01). \"osm-platform\": the middle of the line's OSM railway=platform areas, put on its OSM track (2026-10-05 trial: 1호선 영등포 · 신길, 5호선 신길 — replaces their Kakao-based points). \"kakao-lateral\": moved sideways only, onto Kakao Map's station line where the platform sat >15 m beside it (Kakao's station point is not the platform's middle along the line, so only the across-track offset is used). 2026-10-05 (all-station Kakao check, stage 0): optional \"dir\" [east, north] platform direction (stopDirs; orient_stations keeps it on a full rebuild), \"half\" platform half length m from the OSM platform areas (platformHalf), \"reach\" [lng, lat] end of the passage where all the line's exits sit past one platform end (stopReach) — written by pipeline/fit_line_platforms.py. \"kakao-check\": kept or set after an eye comparison with Kakao Map screenshots (no Kakao data taken); fit_line_platforms.py keeps this point instead of the OSM platform areas (2026-10-05 verify). 2026-10-05 잠실 2호선 · 8호선: 카카오 화면(출구 12곳으로 맞춘 0.51 m/px)대로 두 승강장이 올림픽로 밑 한 줄 — 2호선은 출구 1~8 가운데로 125 m 서쪽, 8호선은 송파대로(남북) 대신 올림픽로(동북동) 방향, 카카오처럼 2호선 띠 동쪽 끝(잠실사거리)에서 곧게 이어지는 한 줄 · 반 길이 191 m, 석촌 쪽은 띠 끝에서 반지름 50 m로 꺾여 송파대로로(manual_routes). 2026-10-05 방향 검수 1(fit_line_platforms 의 'OSM 선로 방향과 N° 달라 지금 방향 유지' 역, 카카오 화면 눈 비교 — 핀 좌표는 화면 (494, 358) px · 1 m/px, 출구로 확인): 3호선 일원(곡선 승강장, 방향 80° → 131°) · 7호선 온수(66° → 108°, OSM 가운데 줄) · 수인분당선 구룡 · 오목천 · 5호선 발산(카카오 띠대로 사거리 대각선 142°) — 카카오 띠 양 끝을 선로에 내려 가운데 · 반 길이. 방향 검수 2: 4호선 길음(230° → 202°, OSM 가운데 줄) · 3호선 삼송(카카오 띠 101°, 곧게) · 서해선 초지(카카오 띠 28°, 반 길이 111 m) · 2호선 시청(역 점을 서소문로 카카오 띠 가운데로 112 m 서쪽, 반 길이 132 m, 곧게) · GTX-A 연신내(카카오 띠 91°, 반 길이 60 m). 방향 검수 3: 8호선 몽촌토성(올림픽로 → 위례성대로 굽은 띠, 반 길이 124 m) · 7호선 용마산(방향은 이미 카카오와 같음 — OSM 선이 남북으로 틀림; 역 점 11 m · 반 길이 74 m만) · 5호선 신금호(82° → 102°, OSM 가운데 줄) · 8호선 산성(OSM 가운데 줄) · 9호선 한성백제(굽은 띠, 이 역만 카카오 지도가 출구 · 선로 모두 15 m 남쪽으로 어긋나 출구 3곳으로 맞춤: 핀 (502, 375) px).",
  "7호선|고속터미널": {
   "at": [
    127.0050068,
@@ -803,10 +803,16 @@
  },
  "5호선|신금호": {
   "at": [
-   127.0202612,
-   37.5544298
+   127.020519,
+   37.55438
   ],
-  "shift": true
+  "shift": true,
+  "from": "kakao-check",
+  "dir": [
+   0.9774,
+   -0.21139
+  ],
+  "half": 72
  },
  "5호선|행당": {
   "at": [
@@ -2506,11 +2512,16 @@
  },
  "7호선|용마산": {
   "at": [
-   127.0867166,
-   37.573671
+   127.086791,
+   37.57375
   ],
   "shift": true,
-  "from": "kakao"
+  "from": "kakao-check",
+  "dir": [
+   -0.57767,
+   -0.81627
+  ],
+  "half": 74
  },
  "9호선|노들": {
   "at": [
@@ -2535,11 +2546,16 @@
  },
  "9호선|한성백제": {
   "at": [
-   127.116449,
-   37.5165354
+   127.116374,
+   37.516725
   ],
   "shift": true,
-  "from": "kakao"
+  "from": "kakao-check",
+  "dir": [
+   0.76182,
+   0.64778
+  ],
+  "half": 99
  },
  "인천1호선|문학경기장": {
   "at": [
@@ -3118,11 +3134,16 @@
  },
  "8호선|몽촌토성": {
   "at": [
-   127.112604,
-   37.517748
+   127.112899,
+   37.517788
   ],
   "shift": true,
-  "from": "kakao-lateral"
+  "from": "kakao-check",
+  "dir": [
+   0.65229,
+   0.75797
+  ],
+  "half": 124
  },
  "9호선|개화": {
   "at": [
@@ -6939,5 +6960,18 @@
    -0.60999
   ],
   "half": 73
+ },
+ "8호선|산성": {
+  "at": [
+   127.149936,
+   37.45687
+  ],
+  "shift": true,
+  "from": "kakao-check",
+  "dir": [
+   -0.98977,
+   0.14265
+  ],
+  "half": 58
  }
 }
