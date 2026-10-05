@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {platformRoute} from '../web/lib/platform_route.mjs';
 import SNAP from '../web/lib/city_viaduct_snap.mjs';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
@@ -21,6 +22,8 @@ function runtime({ simcity = false, coaster = false, line, lo, hi }) {
   const base = shapes[`${line}:${lo}:${hi}`];
   const coasterGeometry = { pts: [new MercatorCoordinate(1, 2), new MercatorCoordinate(3, 4)], total: 10 };
   const context = vm.createContext({ simcity, coaster, Map, Math,
+    // 이 단위 검사는 승강장 자료가 없을 때 원본 경로를 유지하는지도 확인해요.
+    map:{getZoom:()=>16},platformRoute,stationRects:new Map(),buildStationFeatures:()=>{},
     paths: { [line]: [[lo, hi]] }, byId: new Map([[lo, { id: lo }], [hi, { id: hi }]]),
     colors: { [line]: '#123456' }, edgeOffset: () => 0,
     cityViaduct: { snapped: (l, a, b) => SNAP[`${l}:${a}:${b}`] || null },
@@ -28,7 +31,7 @@ function runtime({ simcity = false, coaster = false, line, lo, hi }) {
     maplibregl: { MercatorCoordinate },
   });
   vm.runInContext([
-    slice('function buildLineFeatures()', '// 롤러코스터: the trains only'),
+    slice('const platformRouteFeatures=', '// 롤러코스터: the trains only'),
     slice('function metresBetween(', 'function neighbours('),
     slice('function rideCoords(', 'function showRoute('),
   ].join('\n'), context);

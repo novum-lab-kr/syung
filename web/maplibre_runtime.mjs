@@ -15,6 +15,7 @@ import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';  
 import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
+import {platformRoute} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
@@ -55,15 +56,22 @@ const smoothCache=new Map();
 const edgeCoords=(line,lo,hi)=>{const k=`${line}:${lo}:${hi}`;if(!shapes[k])return [stopPos(line,byId.get(lo)),stopPos(line,byId.get(hi))];let c=smoothCache.get(k);if(!c){c=chaikin(shapes[k]);smoothCache.set(k,c)}return c};
 // Where a station's label sits: its point on the selected line, else the middle of its per-line points.
 function labelPos(s){if(selected!=='all'&&s.lines.some(x=>x.name===selected))return stopPos(selected,s);const p=s.lines.map(x=>stopPos(x.name,s));return [p.reduce((a,c)=>a+c[0],0)/p.length,p.reduce((a,c)=>a+c[1],0)/p.length]}
+const platformRouteFeatures=[];let routeFeatures=[];
 function buildLineFeatures(){
+  platformRouteFeatures.length=0;
+  if(!coaster&&!simcity)buildStationFeatures();   // 보정 전에 현재 자료로 막대 위치를 계산해요.
   const features=[],drawn=new Set();
   Object.entries(paths).forEach(([line,chunks])=>chunks.forEach(ids=>ids.slice(1).forEach((b,i)=>{
     const lo=Math.min(ids[i],b),hi=Math.max(ids[i],b),id=`${line}:${lo}:${hi}`;
     if(drawn.has(id)||!byId.has(lo)||!byId.has(hi))return;drawn.add(id);
     const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):cityCoords(line,lo,hi);   // 롤코는 고유 경로, 기본·심시티는 도로 맞춤 경로를 우선해요.
-    features.push({type:'Feature',properties:{line,color:colors[line],offset:edgeOffset(line,lo,hi)},geometry:{type:'LineString',coordinates:coords}});
+    const offset=edgeOffset(line,lo,hi),start=stationRects.get(`${line}:${lo}`),end=stationRects.get(`${line}:${hi}`),aligned=!coaster&&!simcity;
+    const feature={type:'Feature',properties:{line,color:colors[line],offset:aligned?0:offset},geometry:{type:'LineString',coordinates:aligned?platformRoute(coords,start,end,offset,map.getZoom()):coords}};
+    features.push(feature);
+    // 공유 선로의 픽셀 오프셋은 줌에 따라 미터 거리가 달라져요. 해당 구간만 다시 계산해요.
+    if(aligned&&(offset||start?.offset||end?.offset))platformRouteFeatures.push({feature,coords,start,end,offset});
   })));
-  return features;
+  routeFeatures=features;return features;
 }
 const edgeGeom=new Map();
 // 역 사이 열차 경로는 도로 맞춤 경로를 우선하고, 롤코는 coasterPath를 유지해요.
@@ -1832,6 +1840,7 @@ async function refreshLive(force=false){
 map.on('load',()=>{
   map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:buildLineFeatures()}});
   shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
+  map.on('zoom',()=>{if(coaster||simcity||!platformRouteFeatures.length)return;for(const r of platformRouteFeatures)r.feature.geometry.coordinates=platformRoute(r.coords,r.start,r.end,r.offset,map.getZoom());map.getSource('routes').setData({type:'FeatureCollection',features:routeFeatures})});
   map.addLayer({id:'routes',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],8,1.5,15,4],'line-offset':['get','offset'],'line-opacity':.9}});
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:buildStationFeatures()}});
   // Stations: square-ended platform rectangles filled with the line colour (no outline), widths shared with the name boxes.
