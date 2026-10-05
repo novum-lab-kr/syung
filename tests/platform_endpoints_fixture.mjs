@@ -1,18 +1,18 @@
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {platformRoute} from '../web/lib/platform_route.mjs';
+import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mjs';
 import SNAP from '../web/lib/city_viaduct_snap.mjs';
 import {stations,paths} from './fixtures.mjs';
-export function platformRuntime(source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8'),zoom=16){
+export function platformRuntime(source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8'),zoom=16,helpers={}){
   const data=JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json',import.meta.url),'utf8'));
   const slice=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
-  const context=vm.createContext({stations,paths,byId:new Map(stations.map(s=>[s.id,s])),colors:{},map:{getZoom:()=>zoom},platformRoute,coaster:false,simcity:false,cityViaduct:{snapped:(l,a,b)=>SNAP[`${l}:${a}:${b}`]||null},...data,shapes:data.edges,Map,Math});
+  const context=vm.createContext({stations,paths,byId:new Map(stations.map(s=>[s.id,s])),colors:{},map:{getZoom:()=>zoom},offsetCoords,trackStart,extendStart,closestPlatformPoint,coaster:false,simcity:false,cityViaduct:{snapped:(l,a,b)=>SNAP[`${l}:${a}:${b}`]||null},...data,shapes:data.edges,Map,Math,...helpers});
   vm.runInContext([
     'const LINE_GAP=5;const edgeKey=(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`;',
     slice('const edgeLines=new Map();','// Real track geometry'),
     'const stopPos=(line,s)=>stops[`${line}:${s.id}`]||[s.lon,s.lat];',
     slice('function chaikin(', '// Where a station'),
-    slice(source.includes('const platformRouteFeatures=')?'const platformRouteFeatures=':'function buildLineFeatures()', 'const edgeGeom=new Map();'),
+    slice(source.includes('const basicRouteCache=')?'const basicRouteCache=':source.includes('const platformRouteFeatures=')?'const platformRouteFeatures=':'function buildLineFeatures()', 'const edgeGeom=new Map();'),
     slice('const cityCoords=', 'function cityGeom('),
     slice('const PLATFORM_HALF=', 'const shapesReady='),
   ].join('\n'),context);
@@ -35,5 +35,5 @@ export function shifted(coords,offset,zoom){
 export function measurements(r){
   const keys=Object.keys(r.raw),byStation=new Map();
   r.lines.forEach((f,i)=>{const parts=keys[i].split(':');for(const id of parts.slice(-2)){const key=parts.slice(0,-2).join(':')+':'+id;if(!byStation.has(key))byStation.set(key,[]);byStation.get(key).push(shifted(f.geometry.coordinates,f.properties.offset,r.zoom))}});
-  return [...r.rects].flatMap(([key,rect])=>{const id=+key.slice(key.lastIndexOf(':')+1),s=stations.find(s=>s.id===id),coords=byStation.get(key)||[];return shifted(rect.coords,rect.offset,r.zoom).map((p,end)=>({key,name:s.name,end,distance:Math.min(...coords.map(c=>distance(p,c)))}))});
+  return [...r.rects].flatMap(([key,rect])=>{const id=+key.slice(key.lastIndexOf(':')+1),s=stations.find(s=>s.id===id),coords=byStation.get(key)||[];return shifted([rect.coords[0],rect.coords.at(-1)],rect.offset,r.zoom).map((p,end)=>({key,name:s.name,end,distance:Math.min(...coords.map(c=>distance(p,c)))}))});
 }

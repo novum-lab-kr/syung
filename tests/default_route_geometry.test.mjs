@@ -1,68 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import {platformRoute} from '../web/lib/platform_route.mjs';
+import {trainRuntime} from './platform_trains_fixture.mjs';
 import SNAP from '../web/lib/city_viaduct_snap.mjs';
-
-const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
-const slice = (start, end) => {
-  const a = source.indexOf(start), b = source.indexOf(end, a);
-  assert.ok(a >= 0 && b > a, `${start} 구현을 찾았어요`);
-  return source.slice(a, b);
-};
-const shapes = JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json', import.meta.url), 'utf8')).edges;
-
-function runtime({ simcity = false, coaster = false, line, lo, hi }) {
-  class MercatorCoordinate {
-    constructor(x, y) { this.x = x; this.y = y; }
-    static fromLngLat(c) { return new this(...c); }
-    toLngLat() { return { toArray: () => [this.x, this.y] }; }
-  }
-  const base = shapes[`${line}:${lo}:${hi}`];
-  const coasterGeometry = { pts: [new MercatorCoordinate(1, 2), new MercatorCoordinate(3, 4)], total: 10 };
-  const context = vm.createContext({ simcity, coaster, Map, Math,
-    // 이 단위 검사는 승강장 자료가 없을 때 원본 경로를 유지하는지도 확인해요.
-    map:{getZoom:()=>16},platformRoute,stationRects:new Map(),buildStationFeatures:()=>{},
-    paths: { [line]: [[lo, hi]] }, byId: new Map([[lo, { id: lo }], [hi, { id: hi }]]),
-    colors: { [line]: '#123456' }, edgeOffset: () => 0,
-    cityViaduct: { snapped: (l, a, b) => SNAP[`${l}:${a}:${b}`] || null },
-    edgeCoords: () => base, coasterPath: () => coasterGeometry,
-    maplibregl: { MercatorCoordinate },
-  });
-  vm.runInContext([
-    slice('const platformRouteFeatures=', '// 롤러코스터: the trains only'),
-    slice('function metresBetween(', 'function neighbours('),
-    slice('function rideCoords(', 'function showRoute('),
-  ].join('\n'), context);
-  return {
-    coords: vm.runInContext(`cityCoords(${JSON.stringify(line)},${lo},${hi})`, context),
-    geom: vm.runInContext(`geom(${JSON.stringify(line)},${hi},${lo})`, context),
-    line: vm.runInContext('buildLineFeatures()[0].geometry.coordinates', context),
-    platform: vm.runInContext(`trackFrom(${JSON.stringify(line)},{id:${lo}},{id:${hi}},1e9)`, context),
-    ride: vm.runInContext(`rideCoords(${JSON.stringify(line)},[${hi},${lo}])`, context),
-    base, coasterGeometry,
-  };
-}
-const plain = value => JSON.parse(JSON.stringify(value));
-
-for (const simcity of [false, true]) {
-  for (const [line, lo, hi, snapped] of [['6호선', 425, 426, true], ['5호선', 366, 367, false]]) {
-    test(`${simcity ? '심시티' : '기본'} 모드의 노선·열차·승강장·여정이 ${snapped ? '스냅' : '선로'} 경로를 함께 써요`, () => {
-      const r = runtime({ simcity, line, lo, hi });
-      assert.equal(Boolean(SNAP[`${line}:${lo}:${hi}`]), snapped);
-      const expected = snapped ? SNAP[`${line}:${lo}:${hi}`] : r.base;
-      for (const coords of [r.coords, r.line, r.platform]) assert.deepEqual(plain(coords), expected);
-      assert.deepEqual(plain(r.geom.pts.map(p => [p.x, p.y])), expected);
-      assert.deepEqual(plain(r.ride), [...expected].reverse());
-    });
-  }
-}
-
-test('롤코 모드는 스냅이 있어도 기존 열차·노선 경로와 선로 기준 승강장·여정을 유지해요', () => {
-  const r = runtime({ coaster: true, line: '6호선', lo: 425, hi: 426 });
-  assert.equal(r.geom, r.coasterGeometry);
-  assert.deepEqual(plain(r.line), [[1, 2], [3, 4]]);
-  for (const coords of [r.coords, r.platform]) assert.deepEqual(plain(coords), r.base);
-  assert.deepEqual(plain(r.ride), [...r.base].reverse());
+const plain=x=>JSON.parse(JSON.stringify(x));
+for(const simcity of [false,true])for(const [line,lo,hi,snapped] of [['6호선',425,426,true],['5호선',366,367,false]])test(`${simcity?'심시티':'기본'} 노선·열차가 ${snapped?'스냅':'선로'} 원본 경로를 사용해요`,()=>{
+ const r=trainRuntime();r.context.simcity=simcity;
+ const g=r.geom(line,lo,hi),expected=r.raw[`${line}:${lo}:${hi}`];
+ assert.equal(Boolean(SNAP[`${line}:${lo}:${hi}`]),snapped);
+ const coords=vm.runInContext('buildLineFeatures()',r.context)[Object.keys(r.raw).indexOf(`${line}:${lo}:${hi}`)].geometry.coordinates;
+ assert.deepEqual(plain(coords),plain(expected));
+ g.pts.forEach((p,i)=>assert.ok(Math.hypot(...r.toLL(p).map((v,j)=>v-expected[i][j]))<1e-10));
+});
+test('롤코 경로와 심시티 승강장은 기본 승강장 단축과 독립적이에요',()=>{
+ const r=trainRuntime(),sentinel={pts:[],total:123};r.context.coasterPath=()=>sentinel;r.context.coaster=true;
+ assert.equal(r.geom('6호선',425,426),sentinel);
+ r.context.coaster=false;r.context.simcity=true;vm.runInContext('buildStationFeatures()',r.context);
+ assert.ok(r.rects.get('8호선:24').coords.length===2);
+ assert.ok(r.rects.get('8호선:24').coords[0][1]>37.516);
 });

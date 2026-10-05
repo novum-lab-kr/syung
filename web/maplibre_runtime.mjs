@@ -15,7 +15,8 @@ import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';  
 import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
-import {platformRoute} from './lib/platform_route.mjs';
+import {platformStroke} from './lib/platform_stroke.mjs';
+import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
@@ -56,22 +57,29 @@ const smoothCache=new Map();
 const edgeCoords=(line,lo,hi)=>{const k=`${line}:${lo}:${hi}`;if(!shapes[k])return [stopPos(line,byId.get(lo)),stopPos(line,byId.get(hi))];let c=smoothCache.get(k);if(!c){c=chaikin(shapes[k]);smoothCache.set(k,c)}return c};
 // Where a station's label sits: its point on the selected line, else the middle of its per-line points.
 function labelPos(s){if(selected!=='all'&&s.lines.some(x=>x.name===selected))return stopPos(selected,s);const p=s.lines.map(x=>stopPos(x.name,s));return [p.reduce((a,c)=>a+c[0],0)/p.length,p.reduce((a,c)=>a+c[1],0)/p.length]}
-const platformRouteFeatures=[];let routeFeatures=[];
+const basicRouteCache=new Map();
+const terminalStops=new Set();{
+  const links=new Map();for(const [line,chunks] of Object.entries(paths))for(const ids of chunks)for(let i=1;i<ids.length;i++)for(const [a,b] of [[ids[i-1],ids[i]],[ids[i],ids[i-1]]]){const k=`${line}:${a}`;if(!links.has(k))links.set(k,new Set());links.get(k).add(b)}
+  for(const [key,set] of links)if(set.size===1)terminalStops.add(key);
+}
+function basicTrack(line,lo,hi){
+  const key=`${line}:${lo}:${hi}`,offset=edgeOffset(line,lo,hi),zoom=offset?map.getZoom():0;
+  let cached=basicRouteCache.get(key);if(cached?.zoom===zoom)return cached;
+  const train=offsetCoords(cityCoords(line,lo,hi),offset,map.getZoom()),coords=[...train];
+  const terminal=id=>terminalStops.has(`${line}:${id}`);
+  if(terminal(lo))coords.unshift(extendStart(train,platformHalf[`${line}:${lo}`]||PLATFORM_HALF));
+  if(terminal(hi))coords.push(extendStart([...train].reverse(),platformHalf[`${line}:${hi}`]||PLATFORM_HALF));
+  cached={zoom,train,coords};basicRouteCache.set(key,cached);return cached;
+}
 function buildLineFeatures(){
-  platformRouteFeatures.length=0;
-  if(!coaster&&!simcity)buildStationFeatures();   // 보정 전에 현재 자료로 막대 위치를 계산해요.
   const features=[],drawn=new Set();
   Object.entries(paths).forEach(([line,chunks])=>chunks.forEach(ids=>ids.slice(1).forEach((b,i)=>{
     const lo=Math.min(ids[i],b),hi=Math.max(ids[i],b),id=`${line}:${lo}:${hi}`;
     if(drawn.has(id)||!byId.has(lo)||!byId.has(hi))return;drawn.add(id);
-    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):cityCoords(line,lo,hi);   // 롤코는 고유 경로, 기본·심시티는 도로 맞춤 경로를 우선해요.
-    const offset=edgeOffset(line,lo,hi),start=stationRects.get(`${line}:${lo}`),end=stationRects.get(`${line}:${hi}`),aligned=!coaster&&!simcity;
-    const feature={type:'Feature',properties:{line,color:colors[line],offset:aligned?0:offset},geometry:{type:'LineString',coordinates:aligned?platformRoute(coords,start,end,offset,map.getZoom()):coords}};
-    features.push(feature);
-    // 공유 선로의 픽셀 오프셋은 줌에 따라 미터 거리가 달라져요. 해당 구간만 다시 계산해요.
-    if(aligned&&(offset||start?.offset||end?.offset))platformRouteFeatures.push({feature,coords,start,end,offset});
+    const coords=coaster?coasterPath(line,lo,hi).pts.map(q=>new maplibregl.MercatorCoordinate(q.x,q.y).toLngLat().toArray()):simcity?cityCoords(line,lo,hi):basicTrack(line,lo,hi).coords;   // 롤코는 고유 경로, 기본·심시티는 도로 맞춤 경로를 우선해요.
+    features.push({type:'Feature',properties:{line,color:colors[line],offset:!coaster&&!simcity?0:edgeOffset(line,lo,hi)},geometry:{type:'LineString',coordinates:coords}});
   })));
-  routeFeatures=features;return features;
+  return features;
 }
 const edgeGeom=new Map();
 // 역 사이 열차 경로는 도로 맞춤 경로를 우선하고, 롤코는 coasterPath를 유지해요.
@@ -80,6 +88,12 @@ function geom(line,a,b){return coaster?coasterPath(line,a,b):cityGeom(line,a,b)}
 // 스냅이 없거나 롤코의 승강장·여정이면 기존 선로 경로를 써요.
 const cityCoords=(line,lo,hi)=>(!coaster&&cityViaduct.snapped(line,lo,hi))||edgeCoords(line,lo,hi);
 function cityGeom(line,a,b){const lo=Math.min(a,b),hi=Math.max(a,b),sn=cityViaduct.snapped(line,lo,hi);if(!sn)return realGeom(line,a,b);const id=`s:${line}:${lo}:${hi}`;let g=edgeGeom.get(id);if(g)return g;g=withCum(sn.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));edgeGeom.set(id,g);return g}
+function basicDrawGeom(line,a,b){
+  const lo=Math.min(a,b),hi=Math.max(a,b);if(!edgeOffset(line,lo,hi))return cityGeom(line,a,b);
+  const track=basicTrack(line,lo,hi),key=`b:${line}:${lo}:${hi}`;
+  let g=edgeGeom.get(key);if(g?.track===track)return g;
+  g=withCum(track.train.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)));g.track=track;edgeGeom.set(key,g);return g;
+}
 const withCum=pts=>{const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));return {pts,cum,total:cum[cum.length-1]}};
 function realGeom(line,a,b){
   const lo=Math.min(a,b),hi=Math.max(a,b),id=`${line}:${lo}:${hi}`;
@@ -158,7 +172,7 @@ function followCorridor(line,lo,hi,g0,pts,mu){
 // Point and heading at fraction k of the way from station `from` to station `to` along the track.
 function along(line,from,to,k){
   if(from===to){const m=mercStop(line,from);return {x:m.x,y:m.y,f:[0,-1]}}
-  const g=geom(line,from.id,to.id),rev=from.id>to.id,d=(rev?1-k:k)*g.total;
+  const g=!coaster&&!simcity?basicDrawGeom(line,from.id,to.id):geom(line,from.id,to.id),rev=from.id>to.id,d=(rev?1-k:k)*g.total;
   let i=1;while(i<g.pts.length-1&&g.cum[i]<d)i++;
   const A=g.pts[i-1],B=g.pts[i],seg=(g.cum[i]-g.cum[i-1])||1,u=Math.max(0,Math.min(1,(d-g.cum[i-1])/seg));
   const len=Math.hypot(B.x-A.x,B.y-A.y)||1,sign=rev?-1:1;
@@ -176,6 +190,12 @@ function trackFrom(line,s,n,dist){
   return out;
 }
 function neighbours(line,s){for(const ids of paths[line]||[]){const i=ids.indexOf(s.id);if(i>=0)return {prev:byId.get(ids[i-1]),next:byId.get(ids[i+1])}}return {}}
+function platformNeighbours(line,s){
+  const result=neighbours(line,s);
+  // 지선이 여러 chunk에 나뉜 역도 실제 인접 역을 찾아요.
+  for(const ids of paths[line]||[]){const i=ids.indexOf(s.id);if(i<0)continue;const p=byId.get(ids[i-1]),n=byId.get(ids[i+1]);if(!result.prev&&p&&p!==result.next)result.prev=p;if(!result.next&&n&&n!==result.prev)result.next=n}
+  return result;
+}
 const STATION_WIDTH_STOPS=[[8,6],[12,11],[14,16],[16,24],[18,28]];   // [zoom, outline width px]
 const stationWidthPx=z=>{const S=STATION_WIDTH_STOPS;if(z<=S[0][0])return S[0][1];for(let i=1;i<S.length;i++)if(z<=S[i][0]){const [z0,w0]=S[i-1],[z1,w1]=S[i];return w0+(w1-w0)*(z-z0)/(z1-z0)}return S[S.length-1][1]};
 const stationRects=new Map(),PLATFORM_SCALE=.3;   // platform bars: a third of the old outline width (names sit beside them now)
@@ -184,6 +204,17 @@ function buildStationFeatures(){
   return stations.flatMap(s=>s.lines.map(x=>{
     const line=x.name,{prev,next}=neighbours(line,s);
     const back=prev?trackFrom(line,s,prev,PLATFORM_HALF).reverse():[stopPos(line,s)],ahead=next?trackFrom(line,s,next,PLATFORM_HALF):[stopPos(line,s)];
+    if(!coaster&&!simcity){
+      const {prev,next}=platformNeighbours(line,s);
+      const half=platformHalf[`${line}:${s.id}`]||PLATFORM_HALF;
+      const from=n=>{const t=basicTrack(line,Math.min(s.id,n.id),Math.max(s.id,n.id)).train;return s.id<n.id?t:[...t].reverse()};
+      const incoming=prev?from(prev):null,outgoing=next?from(next):null;
+      const bk=incoming?trackStart(incoming,half).reverse():outgoing?[extendStart(outgoing,half),outgoing[0]]:[stopPos(line,s)];
+      const ah=outgoing?trackStart(outgoing,half):incoming?[incoming[0],extendStart(incoming,half)]:[stopPos(line,s)];
+      const coords=[...bk,...(metresBetween(bk.at(-1),ah[0])<.01?ah.slice(1):ah)],center=(outgoing||incoming)?.[0]||stopPos(line,s);
+      stationRects.set(`${line}:${s.id}`,{coords,center,offset:0,widthM:stopWidth[`${line}:${s.id}`]||0,plat:1,half});
+      return {type:'Feature',properties:{id:s.id,name:s.name,line,lines:s.lines.map(y=>y.name).join('|'),color:colors[line],transfer:s.lines.length>1?1:0,offset:0},geometry:{type:'LineString',coordinates:coords}};
+    }
     // A straight platform laid on the straight line that best fits the track through the station
     // (least squares), so the track runs through its middle. Where the track bends inside the
     // platform length, the rectangle is shortened (down to 60 m) until the track stays within
@@ -218,7 +249,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
@@ -682,6 +713,10 @@ function replacePlans(next){
 // the 상행 direction, 상행 trains are right of the line and 하행 trains left of it.
 function trackPoint(p,dist){
   const {seq,cum}=p,line=p.t.line;
+  if(seq.length<2&&!coaster&&!simcity){
+    const s=seq[0],{prev,next}=platformNeighbours(line,s),n=next||prev;
+    if(n){const q=next?along(line,s,n,0):along(line,n,s,1);return {...q,r:[-q.f[1],q.f[0]],off:0,h:0,roll:0}}
+  }
   if(seq.length<2){const m=mercStop(line,seq[0]);return {x:m.x,y:m.y,f:[0,-1],r:[1,0],off:0,h:simcity?cityViaduct.stationH(line,seq[0].id)*m.meterInMercatorCoordinateUnits():0}}   // city-life: 심시티 — on the viaduct, at this station's level
   const end=cum[cum.length-1],d=Math.max(0,Math.min(end,dist)),over=dist-d; // beyond either end: extend straight
   let i=0;while(i<seq.length-2&&cum[i+1]<d)i++;
@@ -693,6 +728,7 @@ function trackPoint(p,dist){
   let off=o(i);
   if(i>0&&d-cum[i]<B)off+=(o(i-1)-off)*.5*(1-(d-cum[i])/B);
   else if(i<seq.length-2&&cum[i+1]-d<B)off+=(o(i+1)-off)*.5*(1-(cum[i+1]-d)/B);
+  if(!coaster&&!simcity)off=0;   // 기본 화면 경로에 기존 공유 선로 간격이 들어 있어요.
   if(simcity)h=cityViaduct.heightAt(line,a.id,b.id,k)*p.m;   // city-life: 심시티 — the trains run on the viaduct's deck: its rail height here (the station's level, or the ramp between two), in mercator units
   return {x,y,f,r,off,h,roll};
 }
@@ -1433,6 +1469,10 @@ void main(){v_local=a_local;v_size=a_size;v_uv=a_uv;v_color=a_color;v_tw=a_tw;gl
     const fs=`#version 300 es
 precision highp float;in vec2 v_local;in vec2 v_size;in vec4 v_uv;in vec3 v_color;in vec2 v_tw;uniform sampler2D u_tex;uniform float u_dpr;uniform float u_dark;uniform float u_alpha;out vec4 o;
 void main(){
+  // 연결된 승강장 리본: 누적 거리와 폭으로 바깥 가장자리만 부드럽게 처리해요.
+  if(v_tw.x<-3.5){float r=min(v_size.y*.12,v_size.x*.5);vec2 q=abs(v_local)-(v_size*.5-r);
+    float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-r,aa=max(fwidth(sd),1e-3),c=clamp(.5-sd/aa,0.,1.);
+    if(c<=0.)discard;o=vec4(v_color*c,c)*u_alpha;return;}
   // v_tw.x: >0 name cell, 0 box, -1 exit passage (solid line colour), -3 its white casing, -2 soft shadow (size includes 6px blur)
   if(v_tw.x<-1.5){vec2 hs=v_size*.5-6.,q=abs(v_local)-(hs-min(hs.y,hs.x));float sd=length(max(q,0.))+min(max(q.x,q.y),0.)-min(hs.y,hs.x);
     float a=(1.-smoothstep(-2.,6.,sd))*mix(.16,.4,u_dark);if(a<=0.)discard;o=vec4(0.,0.,0.,a)*u_alpha;return;}
@@ -1485,12 +1525,12 @@ void main(){
       const line=k.slice(0,k.lastIndexOf(':'));if(selected!=='all'&&line!==selected)continue;
       const m0=maplibregl.MercatorCoordinate.fromLngLat(r.coords[0]),m1=maplibregl.MercatorCoordinate.fromLngLat(r.coords[r.coords.length-1]);
       let ax=m1.x-m0.x,ay=m1.y-m0.y;const lenU=Math.hypot(ax,ay)||1e-12;ax/=lenU;ay/=lenU;
-      const cx=(m0.x+m1.x)/2-ay*r.offset*unit,cy=(m0.y+m1.y)/2+ax*r.offset*unit;   // line-offset: right of drawing direction
+      const mid=r.center?maplibregl.MercatorCoordinate.fromLngLat(r.center):null,cx=(mid?.x??(m0.x+m1.x)/2)-ay*r.offset*unit,cy=(mid?.y??(m0.y+m1.y)/2)+ax*r.offset*unit;   // line-offset: right of drawing direction
       if(cx<lo.x-pad||cx>hi.x+pad||cy>lo.y+pad||cy<hi.y-pad)continue;
       const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt)*PLATFORM_SCALE,len=lenU/unit;
       // names read left→right on screen: flip the axis when it points leftward
       const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
-      geo.set(k,{cx,cy,ax:ax*flip,ay:ay*flip,len,h,col,id:k.slice(k.lastIndexOf(':')+1)});
+      geo.set(k,{points:r.center?r.coords.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)):null,cx,cy,ax:ax*flip,ay:ay*flip,len,h,col,id:k.slice(k.lastIndexOf(':')+1)});
     }
     // zoom 16+: each exit hangs off its station by a short passage (drawn first, so the box covers its root)
     if(!pointsOnly&&z>=EXIT_MINZOOM){
@@ -1500,11 +1540,16 @@ void main(){
         if(this.cityOn?.()&&cityViaduct.hasStair(id,lon,lat))continue;   // city-life: 심시티 — an exit with a stair down from the platform needs no flat passage line; the ones without keep it
         const e=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]);let best=null;
         for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
+          if(g.points){const foot=closestPlatformPoint(e,g.points);if(foot&&(!best||foot.distance/unit<best.d))best={sx:foot.x,sy:foot.y,d:foot.distance/unit,g};continue}
           const rx=(e.x-g.cx)/unit,ry=(e.y-g.cy)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2),t=Math.max(-half,Math.min(half,rx*g.ax+ry*g.ay));
           const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(!best||d<best.d)best={sx,sy,d,g}}
         if(best)exitCol.set(lon+','+lat,best.g.col);
         if(!best||best.d*unit*40075016.686*Math.cos(lat*Math.PI/180)>EXIT_MAX_M||best.d<best.g.h/2)continue;   // too far to be this station's, or inside the box
         // past the box's end: the concourse runs on along the box's axis and the exit branches off it square
+        if(best.g.points){
+          const foot=closestPlatformPoint(e,best.g.points),d=foot?.distance/unit;if(!foot||d<best.g.h/2)continue;
+          pass.push([(foot.x+e.x)/2,(foot.y+e.y)/2,(e.x-foot.x)/unit/d,(e.y-foot.y)/unit/d,d+w,w,best.g.col]);continue;
+        }
         const g=best.g,t=((e.x-g.cx)*g.ax+(e.y-g.cy)*g.ay)/unit,half=Math.max(0,(Math.max(g.len,g.h)-g.h)/2);
         if(Math.abs(t)>half){const side=t>0?1:-1;g.trunk=g.trunk||{};g.trunk[side]=Math.max(g.trunk[side]||half,Math.abs(t))}
         const sx=g.cx+g.ax*t*unit,sy=g.cy+g.ay*t*unit,d=Math.hypot(e.x-sx,e.y-sy)/unit;if(d<g.h/2)continue;
@@ -1517,6 +1562,11 @@ void main(){
     }
     for(const g of geo.values()){
       if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}
+      if(g.points){
+        const stroke=platformStroke(g.points,unit,g.h);
+        for(const v of stroke.vertices)data.push(v.x-ox,v.y-oy,v.s,v.t,stroke.length,g.h,0,0,0,0,...g.col,-4,0);
+        continue;
+      }
       quad(g.cx,g.cy,g.ax,g.ay,Math.max(g.len,g.h),g.h,[0,0,0,0],g.col,0,0);   // one bar: platform and passages out to the exits
     }
     if(!data.length)return;
@@ -1840,7 +1890,7 @@ async function refreshLive(force=false){
 map.on('load',()=>{
   map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:buildLineFeatures()}});
   shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
-  map.on('zoom',()=>{if(coaster||simcity||!platformRouteFeatures.length)return;for(const r of platformRouteFeatures)r.feature.geometry.coordinates=platformRoute(r.coords,r.start,r.end,r.offset,map.getZoom());map.getSource('routes').setData({type:'FeatureCollection',features:routeFeatures})});
+  map.on('zoom',()=>{if(coaster||simcity)return;let changed=false;for(const [key,t] of basicRouteCache){const [line,a,b]=key.split(':');if(t.zoom&&t.zoom!==map.getZoom()){changed=true;break}}if(!changed)return;map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()})});
   map.addLayer({id:'routes',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],8,1.5,15,4],'line-offset':['get','offset'],'line-opacity':.9}});
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:buildStationFeatures()}});
   // Stations: square-ended platform rectangles filled with the line colour (no outline), widths shared with the name boxes.

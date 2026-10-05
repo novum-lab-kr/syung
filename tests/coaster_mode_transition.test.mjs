@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mjs';
 const source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8');
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start);return source.slice(start,end)};
 const plain=x=>JSON.parse(JSON.stringify(x));
@@ -12,6 +13,7 @@ function setup(){
   let labels=0,fits=0;
   class Bounds{extend(){return this}}
   const context=vm.createContext({Map,Math,coaster:false,simcity:false,coasterBld:true,coasterWant:false,coasterSpeed:1,warp:0,warpAt:0,
+    offsetCoords,trackStart,extendStart,closestPlatformPoint,
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},
     cityViaduct:{snapped:()=>snapped},edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
@@ -20,7 +22,9 @@ function setup(){
     buildLineFeatures:()=>[],trains:[],planTrain(){},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
-    'const PLATFORM_HALF=90;const stationRects=new Map();',
+    part('const PLATFORM_HALF=', 'function metresBetween('),
+    'const stationRects=new Map();',
+    part('const basicRouteCache=', 'function buildLineFeatures()'),
     part('const cityCoords=', 'function cityGeom('),
     part('function metresBetween(', 'const STATION_WIDTH_STOPS='),
     part('function buildStationFeatures()', 'const shapesReady='),
