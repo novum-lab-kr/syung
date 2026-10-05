@@ -507,7 +507,7 @@ export const SEOUL_CITY_STYLE = {
         "roofClearM": 2.7, "roofM": 0.25, "roofOverhangM": 0.35, "stepRiseM": 0.3, "postM": 0.25, "postPx": 1, "footClearM": 12},
       "walk": {"widthM": 3.2, "minPx": 2, "slabM": 0.4, "wallM": 1.0, "wallPx": 0.8, "postEveryM": 14, "postM": 0.6, "postPx": 1.2, "maxAlongM": 60}
     },
-    "snap": {"nearM": 45, "maxOffsetM": 150, "farRunM": 0, "holdM": 40},
+    "snap": {"nearM": 40, "maxOffsetM": 40, "devMaxM": 40, "farRunM": 0, "holdM": 40, "crossBlocks": true, "stationM": 40, "blendM": 60, "straightM": 6, "endTurnDeg": 60, "slopeMax": 0.3, "keepStations": ["8호선:24"]},
     "lodExits": {"stairs": 16, "steps": 17.5}
   },
   "styleRevision": "2026-10-03-QA1",

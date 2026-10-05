@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { CityViaduct, toLL } from '../web/lib/city_viaduct.mjs';
-import SNAP from '../web/lib/city_viaduct_snap.mjs';
+import SNAP, { stops as SNAP_STOPS } from '../web/lib/city_viaduct_snap.mjs';
 import pack from '../web/lib/city_style_seoul.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), args = process.argv.slice(2), OUT = args[args.indexOf('--out') + 1] || null;
@@ -16,7 +16,8 @@ const html = readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8'), block =
 const stations = block('stationData'), paths = block('linePaths'), byId = new Map(stations.map(q => [q.id, q])), nameOf = id => byId.get(+id)?.name ?? String(id);
 function chaikin(pts, rounds = 3) { for (let r = 0; r < rounds && pts.length > 2; r++) { const out = [pts[0]]; for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1]; if (i > 0) out.push([a[0] * .75 + b[0] * .25, a[1] * .75 + b[1] * .25]); if (i < pts.length - 2) out.push([a[0] * .25 + b[0] * .75, a[1] * .25 + b[1] * .75]) } out.push(pts[pts.length - 1]); pts = out } return pts }
 export function offlineViaduct() {
-  const stops = TS.stops || {}, dirs = TS.stopDirs || {}, halfs = TS.stopHalf || {}, phalf = TS.platformHalf || {}, rects = new Map(), M = 111320;
+  // 런타임(심시티)처럼 도로 위로 옮긴 역 점 · 곧은 승강장 방향을 먼저 쓴다
+  const stops = { ...(TS.stops || {}), ...Object.fromEntries(Object.entries(SNAP_STOPS).map(([k, v]) => [k, v.slice(0, 2)])) }, dirs = { ...(TS.stopDirs || {}), ...Object.fromEntries(Object.entries(SNAP_STOPS).filter(([, v]) => v.length > 3).map(([k, v]) => [k, v.slice(2)])) }, halfs = TS.stopHalf || {}, phalf = TS.platformHalf || {}, rects = new Map(), M = 111320;
   for (const st of stations) for (const { name: line } of st.lines) {
     const k = `${line}:${st.id}`, c = stops[k] || [st.lon, st.lat], kx = Math.cos(c[1] * Math.PI / 180), h = halfs[k] || 90; let d = dirs[k];
     if (!d) { const e = Object.keys(shapes).find(x => x.startsWith(line + ':') && x.split(':').slice(1).includes(String(st.id))); if (!e) continue; const P = shapes[e], a = P[0], b = P[P.length - 1], dx = (b[0] - a[0]) * kx * M, dy = (b[1] - a[1]) * M, l = Math.hypot(dx, dy) || 1; d = [dx / l, dy / l] }

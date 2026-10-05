@@ -15,7 +15,7 @@ function setup(){
   const context=vm.createContext({Map,Math,coaster:false,simcity:false,coasterBld:true,coasterWant:false,coasterSpeed:1,warp:0,warpAt:0,
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},
-    cityViaduct:{snapped:()=>snapped},edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,
+    cityViaduct:{snapped:()=>snapped},edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,focusRoute(){},sheetPad:()=>0,
     $:()=>({setAttribute(){}}),document:{querySelectorAll:()=>[]},cityMap(){},setRouteOpacity(){},

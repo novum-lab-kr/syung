@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import SNAP from '../web/lib/city_viaduct_snap.mjs';
+import SNAP, { stops as SNAP_STOPS } from '../web/lib/city_viaduct_snap.mjs';
 
 const shapes = JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json', import.meta.url), 'utf8'));
 const local = (p, origin) => [(p[0] - origin[0]) * 111320 * Math.cos(origin[1] * Math.PI / 180), (p[1] - origin[1]) * 111320];
@@ -36,9 +36,22 @@ test('심시티 스냅 결과에도 같은 기준의 급한 꺾임이 없어요'
   assert.deepEqual(remaining, []);
 });
 
-test('스냅 끝에 남는 1 m 미만 구간도 원래 역 좌표에서 끝나요', () => {
-  for (const key of ['2호선:14:15', '5호선:365:366']) {
-    assert.deepEqual(SNAP[key][0], shapes.edges[key][0], key);
-    assert.deepEqual(SNAP[key].at(-1), shapes.edges[key].at(-1), key);
+test('스냅 끝은 도로 위로 옮긴 역 점, 옮기지 않은 역은 원래 역 좌표에서 끝나요', () => {
+  for (const [key, points] of Object.entries(SNAP)) {
+    const [line, lo, hi] = [key.slice(0, key.indexOf(':')), ...key.split(':').slice(-2)];
+    // 옮기지 않은 끝은 원래 선로 끝 좌표 그대로(선로 끝과 stops 가 1e-6° 다른 구간이 원래 72개 있어 선로 끝 기준)
+    const edge = shapes.edges[key], end = (id, fallback) => SNAP_STOPS[`${line}:${id}`]?.slice(0, 2) ?? fallback;
+    assert.deepEqual(points[0], end(lo, edge[0]), key);
+    assert.deepEqual(points.at(-1), end(hi, edge.at(-1)), key);
   }
+});
+
+test('옮긴 역 점은 원래 역 점에서 45 m 안이고, 잠실 8호선은 옮기지 않아요', () => {
+  const M = 111320;
+  for (const [key, p] of Object.entries(SNAP_STOPS)) {
+    const o = shapes.stops[key], d = Math.hypot((p[0] - o[0]) * M * Math.cos(o[1] * Math.PI / 180), (p[1] - o[1]) * M);
+    assert.ok(d <= 46, `${key} ${d.toFixed(1)} m`);
+    if (p.length > 2) assert.ok(Math.abs(Math.hypot(p[2], p[3]) - 1) < 1e-3, key);
+  }
+  assert.equal(SNAP_STOPS['8호선:24'], undefined);
 });

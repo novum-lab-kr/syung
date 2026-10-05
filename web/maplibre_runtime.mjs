@@ -17,7 +17,8 @@ import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the cit
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
-import {CityViaduct} from './lib/city_viaduct.mjs';   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
+import {CityViaduct} from './lib/city_viaduct.mjs';
+import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -39,7 +40,8 @@ const edgeOffset=(line,a,b)=>{const shared=[...(edgeLines.get(edgeKey(a,b))||[li
 // Edges without a shape fall back to a straight station-to-station segment.
 // Stops are each station projected onto that line's track, so a transfer station has one on-track point per line.
 let shapes={},stops={},stopDirs={},stopHalf={},platformHalf={},stopWidth={};   // stopDirs: platform direction (east, north) per line:stop, along its street
-const stopPos=(line,s)=>stops[`${line}:${s.id}`]||[s.lon,s.lat];
+// 기본·심시티는 도로 맞춤 경로 끝과 같은 옮긴 역 점을, 롤코는 원래 역 점(stops)을 써요. 원본 stops는 바꾸지 않아요.
+const stopPos=(line,s)=>{const k=`${line}:${s.id}`,m=!coaster&&snapStops[k];return m?[m[0],m[1]]:stops[k]||[s.lon,s.lat]};
 const stopMerc=new Map(),mercStop=(line,s)=>{const k=`${line}:${s.id}`;let m=stopMerc.get(k);if(!m){m=maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));stopMerc.set(k,m)}return m};
 // OSM track polylines are simplified to a few metres, which reads as kinks when zoomed in;
 // round them with Chaikin corner-cutting (endpoints stay put so edges still meet at the stop).
@@ -232,7 +234,7 @@ function buildStationFeatures(){
       const t0=-mx*dx-my*dy;return {dx,dy,cx:mx+dx*t0,cy:my+dy*t0,dev};   // centre: the stop's foot on the fitted line
     };
     let h=stopHalf[`${line}:${s.id}`]||PLATFORM_HALF,f;   // half length from the exits' spread, when known
-    const sd=stopDirs[`${line}:${s.id}`];
+    const sm=!coaster&&snapStops[`${line}:${s.id}`],sd=sm?.length>3?[sm[2],sm[3]]:stopDirs[`${line}:${s.id}`];   // 곧은 승강장으로 옮긴 역은 그 도로 방향
     if(sd){   // built along the station's street; the route line is threaded to its two ends
       let [ex,ey]=sd;const t=next||prev;
       if(t){const tx=(t.lon-c[0])*kx*M,ty=(t.lat-c[1])*M,sg=next?1:-1;if((ex*tx+ey*ty)*sg<0){ex=-ex;ey=-ey}}
@@ -2304,7 +2306,7 @@ function setCoaster(on,speed=coasterSpeed){
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
-  if(was!==on){setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+  if(was!==on){stopMerc.clear();setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
     if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
     if(displayedRoute)showRoute(displayedRoute.plan,displayedRoute.busSelection,false);
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
