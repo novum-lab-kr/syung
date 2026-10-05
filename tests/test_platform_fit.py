@@ -196,7 +196,17 @@ class FitRulesTest(unittest.TestCase):
         self.assertTrue(any("이웃 사이 OSM 경로" in h for h in r["holds"]))
 
     def test_large_turn_on_no_area_station_is_held(self):
-        r = self.one("3호선", "일원")   # OSM 선로 방향과 51° — NO_AREA_MAX_TURN(15°) 넘어 지금 방향 유지(잠실 8호선은 2026-10-05 카카오대로 맞춤)
+        # 면 없는 역의 지금 방향이 OSM 선로 방향과 NO_AREA_MAX_TURN(15°) 넘게 다르면 지금 방향 유지 + holds.
+        # 실제 예(일원 3호선 51° 등 19역)는 2026-10-05 카카오대로 고쳐 남지 않아서, 일원 방향만 50° 돌린 복사본으로 만든다
+        import copy
+        ts = copy.deepcopy(self.ts)
+        k, a = "3호선:85", math.radians(50)
+        d = ts["stopDirs"][k]
+        ts["stopDirs"][k] = [d[0] * math.cos(a) - d[1] * math.sin(a), d[0] * math.sin(a) + d[1] * math.cos(a)]
+        net = self.F.Network(ts)
+        net.overrides.pop("3호선|일원", None)   # kakao-check 역은 방향 계산을 건너뛰므로 뺀다
+        results, *_ = self.F.fit(net, "3호선", {"일원"}, self.matched)
+        r = results[0]
         self.assertEqual(r["turnDeg"], 0.0)
         self.assertTrue(any("OSM 선로 방향과" in h for h in r["holds"]))
 
