@@ -307,7 +307,13 @@ export const SEOUL_CITY_STYLE = {
       "sidewalk": "#3D4543",
       "ballast": "#364146"
     },
-    "waterReflectionMaxOpacity": 0.06
+    "waterReflectionMaxOpacity": 0.06,
+    // 롤코 1인칭으로 탈 때만(2026-10-06 덕배): 눈높이에선 땅이 화면 아래 대부분이라, 용도 없는 땅(base)이 하얗게 비어 보였다 —
+    // 포장된 바닥처럼 조금 진하고 따뜻하게. 인도(sidewalk)는 그대로라 길가가 드러난다. 평소 지도는 위 색 그대로
+    "ride": {
+      "light": {"base": "#C9C7BC", "residential": "#CACDBF", "commercial": "#C6CAC4", "retail": "#CEC6B3", "industrial": "#BCC2BF", "civic": "#D0C8B3", "hospital": "#CBD1C5"},
+      "dark": {"base": "#273034", "residential": "#2B3633", "commercial": "#30373A", "retail": "#373832", "industrial": "#2D393C", "civic": "#373F37", "hospital": "#32403C"}
+    }
   },
   "roads": {
     "aliases": {"trunk": "motorway"},

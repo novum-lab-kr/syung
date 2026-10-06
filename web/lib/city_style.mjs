@@ -44,15 +44,15 @@ const LANDUSE_KEY = {
   school: 'school', university: 'university', college: 'college', hospital: 'hospital', civic: 'civic', public: 'public', stadium: 'civic',
   cemetery: 'park', theme_park: 'park', zoo: 'park', pitch: 'grass', playground: 'grass', track: 'grass',
 };
-export function groundHex(pack, theme, key) {
-  const G = pack.ground, a = G.aliases || {}, T = G[theme] || G.light, k = a[key] ?? key;
-  return T[k] ?? T[a.unknown ?? 'base'] ?? T.base;
+export function groundHex(pack, theme, key, ride = false) {   // ride: 롤코 1인칭으로 타는 중 — pack.ground.ride 의 색이 있으면 그것
+  const G = pack.ground, a = G.aliases || {}, T = G[theme] || G.light, k = a[key] ?? key, R = ride ? G.ride?.[theme] || {} : {};
+  return R[k] ?? T[k] ?? R[a.unknown ?? 'base'] ?? T[a.unknown ?? 'base'] ?? T.base;
 }
 // ['match', class, …] with one entry per distinct colour
-function landuseColor(pack, theme, mode) {
+function landuseColor(pack, theme, mode, ride = false) {
   const by = new Map();
-  for (const [cls, key] of Object.entries(LANDUSE_KEY)) { const c = tone(groundHex(pack, theme, key), pack, mode, theme); if (!by.has(c)) by.set(c, []); by.get(c).push(cls) }
-  const base = tone(groundHex(pack, theme, 'unknown'), pack, mode, theme), out = ['match', ['get', 'class']];
+  for (const [cls, key] of Object.entries(LANDUSE_KEY)) { const c = tone(groundHex(pack, theme, key, ride), pack, mode, theme); if (!by.has(c)) by.set(c, []); by.get(c).push(cls) }
+  const base = tone(groundHex(pack, theme, 'unknown', ride), pack, mode, theme), out = ['match', ['get', 'class']];
   for (const [c, cls] of by) if (c !== base) out.push(cls, c);
   out.push(base); return out;
 }
@@ -87,7 +87,7 @@ function laneDash(pack) {
 
 // Every city layer, with its paint for a theme and mode, and where it goes in the basemap stack.
 // `before`: candidates, the first that exists wins (the sun shadows are a custom layer that may be replaced).
-export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity' } = {}) {
+export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity', ride = false } = {}) {
   const t = h => tone(h, pack, mode, theme), G = pack.ground[theme] || pack.ground.light, R = pack.roads, tr = { duration: pack.modes?.transitionMs ?? 180 };
   const sidewalk = t(G.sidewalk), kerb = t(mixHex(roadSpec(pack, 'motorway').colors[theme], theme === 'dark' ? '#000000' : '#1a1a1a', .3));
   const hidden = { visibility: 'none' }, L = (id, before, def) => ({ before, layer: { id, source: 'ofm', ...def, layout: { ...(def.layout || {}), ...hidden } } });
@@ -105,7 +105,7 @@ export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity' } =
   };
   const list = [
     // zone floors, under everything the basemap paints
-    L('city-landuse', BOTTOM, { type: 'fill', 'source-layer': 'landuse', paint: { 'fill-color': landuseColor(pack, theme, mode), 'fill-antialias': false, 'fill-color-transition': tr } }),
+    L('city-landuse', BOTTOM, { type: 'fill', 'source-layer': 'landuse', paint: { 'fill-color': landuseColor(pack, theme, mode, ride), 'fill-antialias': false, 'fill-color-transition': tr } }),
     // plazas and pedestrian areas, rail ballast: over the green, under the roads
     L('city-plaza', UNDER, { type: 'fill', 'source-layer': 'transportation', minzoom: 15, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': sidewalk, 'fill-antialias': false, 'fill-color-transition': tr } }),
     L('city-rail-bed', UNDER, { type: 'line', 'source-layer': 'transportation', minzoom: 15, filter: ['all', ['in', ['get', 'class'], ['literal', ['rail', 'transit']]], onGround],
@@ -142,10 +142,10 @@ export function addCityLayers(map, { pack = SEOUL } = {}) {
 // Show the city ground (on && mapOn) in this theme and mode, or hide it and give the stock roads back.
 // The stock road layers stay 'visible' at opacity 0 while the city is on: other code reads their
 // visibility as "the background map is on".
-export function applyCityStyle(map, { on = false, theme = 'light', coaster = false, mapOn = true, pack = SEOUL } = {}) {
+export function applyCityStyle(map, { on = false, theme = 'light', coaster = false, mapOn = true, pack = SEOUL, ride = false } = {}) {
   if (!map.getLayer || !map.getLayer(CITY_LAYER_IDS[0])) return false;
   const show = on && mapOn, mode = coaster ? 'coaster' : 'simcity';
-  for (const { layer } of cityLayers({ pack, theme, mode })) {
+  for (const { layer } of cityLayers({ pack, theme, mode, ride })) {
     if (!map.getLayer(layer.id)) continue;
     map.setLayoutProperty(layer.id, 'visibility', show ? 'visible' : 'none');
     if (show) for (const [k, v] of Object.entries(layer.paint)) if (!k.endsWith('-transition')) map.setPaintProperty(layer.id, k, v);
@@ -157,8 +157,8 @@ export function applyCityStyle(map, { on = false, theme = 'light', coaster = fal
 
 // The palette keys the runtime's mapPalette() hands to its stock layers, from the pack: the background,
 // water, parks, the landcover (wood and grass apart), footprints, rails, and the shadow / light values.
-export function cityPalette(theme = 'light', { pack = SEOUL, coaster = false } = {}) {
-  const mode = coaster ? 'coaster' : 'simcity', t = h => tone(h, pack, mode, theme), G = pack.ground[theme] || pack.ground.light, R = pack.roads.classes;
+export function cityPalette(theme = 'light', { pack = SEOUL, coaster = false, ride = false } = {}) {
+  const mode = coaster ? 'coaster' : 'simcity', t = h => tone(h, pack, mode, theme), G = { ...(pack.ground[theme] || pack.ground.light), ...(ride ? pack.ground.ride?.[theme] : null) }, R = pack.roads.classes;
   const ink = theme === 'dark' ? '#ffffff' : '#000000';
   return {
     bg: t(G.base), water: t(G.water), park: t(G.park),

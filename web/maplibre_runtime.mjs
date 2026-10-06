@@ -1346,12 +1346,12 @@ function startRide(id){
   map.setMaxPitch(180);map.setCenterClampedToGround(false);map.setVerticalFieldOfView(rideFov(map.getContainer().clientWidth,map.getContainer().clientHeight));   // 루프에서는 위를 보고 뒤집혀요
   const S=COASTER_STYLE.sky[effectiveTheme()==='dark'?'dark':'light'];back.sky=map.getSky();   // 수평선 위: 지도 바탕 대신 하늘
   map.setSky({'sky-color':S.sky,'horizon-color':S.horizon,'fog-color':S.horizon,'sky-horizon-blend':.45,'horizon-fog-blend':.7,'fog-ground-blend':.9,'atmosphere-blend':0});
-  rideBarText(plan);rideBar.hidden=false;document.body.classList.add('riding');
+  rideBarText(plan);rideBar.hidden=false;document.body.classList.add('riding');applyTheme();   // 땅: 탈 때의 색(pack.ground.ride)
   ride.timer=setInterval(()=>{const pl=ride&&plans.find(p=>p.id===ride.id);if(pl)rideBarText(pl)},1000);
   rideFrame();map.triggerRepaint();
 }
 function stopRide(reopen){
-  if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');
+  if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');applyTheme();
   map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky);
   const plan=plans.find(p=>p.id===r.id);
   map.jumpTo({center:plan?trainLngLat(plan):r.back.center,zoom:r.back.zoom,bearing:r.back.bearing,pitch:r.back.pitch,roll:0,elevation:r.back.elevation});
@@ -2213,7 +2213,7 @@ const THEME_KEY='subway-theme';
 const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return simcity?{...P,...cityPalette(t,{pack:CITY_STYLE})}:P;   // city-life: 심시티 — the ground from the style pack
   const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
   const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
-  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
+  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true,ride:!!ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -2243,7 +2243,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   for(const id of ['station-labels','station-labels-more']){set(id,'text-color',P.stationText);set(id,'text-halo-color',P.halo)}
-  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:CITY_STYLE});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:CITY_STYLE,ride:!!ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
   syncCity();   // city-build: the buildings follow the mode and theme
 }
 document.head.insertAdjacentHTML('beforeend',`<style>
