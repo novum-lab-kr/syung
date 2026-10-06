@@ -504,15 +504,28 @@ function coasterFresh(){
   cityViaduct.levelsOf();const v=cityViaduct.levelsVersion;if(v===coasterLevels)return;coasterLevels=v;
   for(const k of [...edgeGeom.keys()])if(k.startsWith('h:'))edgeGeom.delete(k);rideClocks.clear();edgeArcs.clear();riseCache.clear();coasterTrack.stale=true;
 }
+// 2026-10-06 덕배(롤코 더 활발하게 2단계): 고가를 떠나 솟은 구간에서는 옆으로도 크게 휘고 출렁인다 — 고가화 전 롤코 길(4899978 에서 뺀
+// 굽이 · 출렁임)을 솟은 곳에만 되살린 것. 모양은 역 사이마다 고정(줄 · 역 해시): 3차 곡선 한 굽이(역 사이의 SWAY_BEND[0] 몫,
+// 최대 SWAY_BEND[1] m — 넷 중 하나는 거의 곧게) 위에 1~3번 출렁임(SWAY_WAVE, SWAY_WAVE_M m 마다 하나까지). 실제 비킴은 profile 의 sw
+// (덧높이 SWAY_UP m 에서 다 비킴, 역 · 다른 노선과 엇갈리는 곳 · 고가 위로 SWAY_EASE m 에 걸쳐 0 으로)를 곱한 값. 타워 코스는 빼요.
+const SWAY_BEND=[.15,100],SWAY_WAVE=[.07,35],SWAY_WAVE_M=450,SWAY_UP=20,SWAY_EASE=120;
+function swayOf(line,lo,hi,L){
+  let ls=0;for(const ch of line)ls=Math.imul(ls,31)+ch.charCodeAt(0)|0;const r=i=>hash(lo^ls,hi,100+i);
+  const amp=Math.min(SWAY_BEND[0]*L,SWAY_BEND[1])*(r(0)<.25?.25:.5+.5*r(1)),o1=(r(2)*2-1)*amp,o2=(r(3)<.5?-1:1)*(.3+.7*r(4))*amp*(r(5)<.5?1:-Math.sign(o1)||1);
+  const sway=Math.min(SWAY_WAVE[0]*L,SWAY_WAVE[1])*r(6),waves=Math.max(1,Math.min(1+(r(7)*3|0),Math.floor(L/SWAY_WAVE_M))),ph=r(8)*6.283;
+  return m=>{const u=Math.max(0,Math.min(1,m/L)),v=1-u;return 3*v*v*u*o1+3*v*u*u*o2+sway*Math.sin(2*Math.PI*waves*u+ph)*Math.sin(Math.PI*u)};   // m 옆(lo→hi 오른쪽 +), m 은 lo 에서 m
+}
 function coasterProfile(line,lo,hi){
   coasterFresh();const id=`h:${line}:${lo}:${hi}`;let P=edgeGeom.get(id);if(P)return P;
   const g=geom(line,lo,hi),mu=g.pts[0].meterInMercatorCoordinateUnits(),L=g.total/mu,n=Math.max(2,Math.ceil(L/10)),st=L/n,base=new Float32Array(n+1),ex=new Float32Array(n+1),rise=riseEdge(line,lo,hi,L);
   for(let i=0;i<=n;i++)base[i]=cityViaduct.heightAt(line,lo,hi,i/n);
+  const SW=rise&&!g.spiral?swayOf(line,lo,hi,L):null;let sw=null;
   if(rise){
     const need=new Float32Array(n+1),h=new Float32Array(n+1);
     let j=1;for(let i=0;i<=n;i++){const s=g.total*i/n;while(j<g.pts.length-1&&g.cum[j]<s)j++;const A=g.pts[j-1],B=g.pts[j],u=Math.max(0,Math.min(1,(s-g.cum[j-1])/((g.cum[j]-g.cum[j-1])||1)));
       // (a tower course does not count its own tower)
-      const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:buildingNear(X,Y);need[i]=b?Math.max(0,b+COASTER_CLEAR-base[i]):0;h[i]=hillsAt(lo,hi,L,i/n)}
+      const X=A.x+(B.x-A.x)*u,Y=A.y+(B.y-A.y)*u,S=g.spiral,sl=Math.hypot(B.x-A.x,B.y-A.y)||1,sw=SW?SW(i*st)*mu:0,bx=-(B.y-A.y)/sl*sw,by=(B.x-A.x)/sl*sw;   // 옆으로 비키는 자리(다 비킨 곳과 그 중간)의 건물도
+      const b=S&&Math.hypot(X-S.T.x,Y-S.T.y)<(S.tower+40)*mu?0:Math.max(buildingNear(X,Y),SW?buildingNear(X+bx,Y+by):0,SW?buildingNear(X+bx/2,Y+by/2):0);need[i]=b?Math.max(0,b+COASTER_CLEAR-base[i]):0;h[i]=hillsAt(lo,hi,L,i/n)}
     // crossing lines: down on the deck (ceiling 0) within CROSS_NEAR m of each
     const ceil=new Float32Array(n+1).fill(Infinity);
     for(const m of crossings().get(`${line}:${lo}:${hi}`)||[]){const a=Math.max(0,Math.floor((m-CROSS_NEAR)/st)),b=Math.min(n,Math.ceil((m+CROSS_NEAR)/st));for(let i=a;i<=b;i++){ceil[i]=0;need[i]=0}}
@@ -540,9 +553,14 @@ function coasterProfile(line,lo,hi){
       const E=u=>{u=Math.max(0,Math.min(1,u));return u*u*u*(10-15*u+6*u*u)},h0=30,end=g.total-COASTER_FLAT*mu;
       for(let i=0;i<=n;i++){const s=g.total*i/n;let v=s<=S.r0?h0*E((s-COASTER_FLAT*mu)/(S.r0-COASTER_FLAT*mu)):s<=S.r1?h0+(S.top-h0)*(s-S.r0)/(S.r1-S.r0):S.top*(1-E((s-S.r1)/(end-S.r1)));
         ex[i]=Math.max(v,s>S.r1?need[i]:0)}}
+    if(SW){   // 옆으로 비키는 몫: 덧높이로 0..1, 0 인 곳(역 · 엇갈리는 곳)을 SWAY_EASE/2 m 넓히고 ±SWAY_EASE/2 m 로 두 번 고르게(S 자로 서서히)
+      sw=new Float32Array(n+1);for(let i=0;i<=n;i++)sw[i]=smooth(Math.max(0,Math.min(1,ex[i]/SWAY_UP)));
+      const k=Math.max(1,Math.round(SWAY_EASE/2/st));{const c=sw.slice();for(let i=0;i<=n;i++){let m=1;for(let j=Math.max(0,i-k);j<=Math.min(n,i+k);j++)m=Math.min(m,c[j]);sw[i]=m}}
+      for(let pass=0;pass<2;pass++){const c=sw.slice(),at=i=>c[Math.max(0,Math.min(n,i))];let sum=0;for(let i=-k;i<=k;i++)sum+=at(i);for(let i=0;i<=n;i++){if(i)sum+=at(i+k)-at(i-k-1);sw[i]=sum/(2*k+1)}}
+      sw[0]=sw[n]=0}
   }
   const h=new Float32Array(n+1);for(let i=0;i<=n;i++)h[i]=base[i]+ex[i];
-  P={h,ex,n,st,mu,rise};edgeGeom.set(id,P);return P;
+  P={h,ex,n,st,mu,rise,sw,SW};edgeGeom.set(id,P);return P;
 }
 // [ground distance, height, lateral, roll, height over the deck] (mercator units, lo→hi) where the track is at distance s along that line's edge
 function coasterAt(line,lo,hi,s){
@@ -555,7 +573,10 @@ function coasterAt(line,lo,hi,s){
     if(u>0&&u<1){const t=2*Math.PI*u,r=D/LOOP_DR,dh=r*(1-Math.cos(t));sg=s0+D*u+r*Math.sin(t);h+=dh;up+=dh}}
   const C=corkOf(L,lo,hi,line);let lat=0,roll=0;
   if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1)roll=corkTheta(u,C[2])}
-  return [sg,h,lat,roll,up];   // lat: across (+ to the right going lo→hi; none now), roll: about the way lo→hi
+  if(P.sw){   // 옆으로 비킴: 루프 · 코르크스크루 안에서는 들어가는 자리 값 그대로(고리가 비틀리지 않게)
+    let m=s/mu;if(LD&&Math.abs(m-L/2)<LD/2)m=L/2-LD/2;if(C&&m>C[0]&&m<C[0]+C[1])m=C[0];
+    const y=Math.max(0,Math.min(P.n,m/L*P.n)),j=Math.min(P.n-1,Math.floor(y));lat=P.SW(m)*(P.sw[j]+(P.sw[j+1]-P.sw[j])*(y-j))*mu}
+  return [sg,h,lat,roll,up];   // lat: across (+ to the right going lo→hi; 솟은 구간의 굽이 · 출렁임), roll: about the way lo→hi
 }
 // 고가 상판을 끊는 구간(가장자리 길이의 몫): 레일이 떠난 곳
 const coasterGaps=(line,lo,hi)=>{const P=coasterProfile(line,lo,hi),L=P.n*P.st;return coasterRises(line,lo,hi).map(([a,b])=>[a/L,b/L])};
