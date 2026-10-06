@@ -1,7 +1,7 @@
 // 롤코 1인칭: 탄 열차 앞뒤 수백 m 만 실제 크기 레일 · 침목을 따로 그린다.
 // 지도에서 보는 레일은 몇 px 짜리 납작한 띠라, 눈높이에서 보면 판 위에 줄만 그어 놓은 것처럼 보였다(2026-10-06 덕배).
 //   frames: [{p:[x,y,z], F, R, U, end?}…] — 레일 중심(차선 가운데, 상판 높이)의 메르카토르 좌표와 틀, 진행 방향 순서로 SLEEPER_M 간격.
-//   end: 그 선로의 마지막 틀(다음 틀은 다른 선로)
+//   end: 그 선로의 마지막 틀(다음 틀은 다른 선로), d: 탄 열차 앞에서부터 거리(m, 침목을 어디까지 놓을지)
 //   mpu: 1 m 의 메르카토르 길이, origin: [ox, oy] — 좌표는 여기서 뺀 값으로 담는다(float 정밀도)
 import { SEOUL_COASTER_STYLE as STYLE } from './coaster_style_seoul.mjs';
 
@@ -20,8 +20,11 @@ export function buildRideTrack(frames, { mpu, origin, pack = STYLE }) {
   const vtx = (p, c, fade) => { out[o++] = p[0]; out[o++] = p[1]; out[o++] = p[2]; out[o++] = c[0]; out[o++] = c[1]; out[o++] = c[2]; out[o++] = fade };
   const quad = (a, b, c, d, col, fade) => { for (const p of [a, b, c, a, c, d]) vtx(p, col, fade) };
   const steel = hex(T.rail), head = hex(T.railHead), conc = hex(T.sleeper);
+  // 침목은 sleeperM 안(그 밖은 셰이더에서 사라진다)만, 레일은 railEvery 틀마다 이어(2.4 m — 곡선도 매끈) 정점을 줄인다
+  const near = T.sleeperM ?? 1e9, every = Math.max(1, T.railEvery ?? 1);
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
+    if (f.d == null || f.d <= near) {
     // 침목: 위 · 앞뒤 · 양 끝(밑은 안 보인다)
     const S = (a, u, h) => at(f, a, u, h);
     quad(S(-sl, -sw, sTop), S(sl, -sw, sTop), S(sl, sw, sTop), S(-sl, sw, sTop), lit(f, [0, 0, 1], conc, 1), 1);
@@ -29,9 +32,12 @@ export function buildRideTrack(frames, { mpu, origin, pack = STYLE }) {
       quad(S(-sl, e * sw, sBot), S(sl, e * sw, sBot), S(sl, e * sw, sTop), S(-sl, e * sw, sTop), lit(f, [0, e, 0], conc, .9), 1);
       quad(S(e * sl, -sw, sBot), S(e * sl, sw, sBot), S(e * sl, sw, sTop), S(e * sl, -sw, sTop), lit(f, [e, 0, 0], conc, .85), 1);
     }
-    if (i + 1 >= frames.length || f.end) continue;
-    // 레일 두 줄: 이 틀에서 다음 틀까지, 윗면(밝게 닳은 머리) · 양 옆
-    const n = frames[i + 1];
+    }
+    if (f.end || i % every && !frames[i + 1]?.end) continue;
+    // 레일 두 줄: 이 틀에서 다음 레일 틀(every 개 뒤, 선로 끝은 끝 틀)까지, 윗면(밝게 닳은 머리) · 양 옆
+    let j = i + 1; while (j < frames.length && j < i + every && !frames[j].end) j++;
+    if (j >= frames.length) continue;
+    const n = frames[j];
     for (const e of [-1, 1]) {
       const A = (a, h) => at(f, e * g + a, 0, h), B = (a, h) => at(n, e * g + a, 0, h);
       quad(A(-rw, rTop), B(-rw, rTop), B(rw, rTop), A(rw, rTop), lit(f, [0, 0, 1], head, 1), 0);

@@ -372,7 +372,7 @@ const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(co
 // Loops and corkscrews are landmarks, not the rule (on half the edges each they all looked alike): along each line, in
 // order, an edge may take one (not both) once INV_GAP m have passed since the last — a loop by chance INV_LOOP, else a
 // corkscrew by INV_CORK. Chosen once per edge, the first line through it deciding; 'loop', 'cork' or ''.
-const INV_GAP=8000,INV_LOOP=.3,INV_CORK=.25;   // 2026-10-05: 고가 위 롤코에선 솟는 곳이 드물게(2500 → 8000 m)
+const INV_GAP=2500,INV_LOOP=.3,INV_CORK=.25;   // 2026-10-05: 고가 위 롤코에선 솟는 곳이 드물게(2500 → 8000 m) · 2026-10-06 덕배: 더 활발하게 다시 2500 m
 let invMap=null;
 function inversion(lo,hi){
   if(!invMap){invMap=new Map();
@@ -470,7 +470,7 @@ function buildingNear(x,y){
 // at most. Where it crosses another line it comes back down to the deck (the viaduct's levels keep the two apart). Metres.
 const COASTER_GRADE=.7,COASTER_DROP=2.2,COASTER_CLEAR=8;
 // 덧높이가 붙는(고가를 떠나는) 역 사이: RISE_MIN m 이상인 것 가운데 RISE_SHARE 몫과 루프 · 코르크스크루가 뽑힌 곳, 타워 코스
-const RISE_MIN=600,RISE_SHARE=.1,RISE_EPS=.4;
+const RISE_MIN=600,RISE_SHARE=.35,RISE_EPS=.4;   // 2026-10-06 덕배: 더 활발하게(10 → 35 %)
 const riseEdge=(line,lo,hi,L)=>!!towerCourse(line,lo,hi)||L>=RISE_MIN&&(hash(lo,hi,20)<RISE_SHARE||!!inversion(lo,hi));
 // Lines crossing on the coaster: where two lines' tracks cross (within CROSS_NEAR m, not side by side), both stay on the
 // deck there (no hill, loop or corkscrew within CROSS_NEAR m and the ramps either side).
@@ -730,12 +730,12 @@ function coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap){
   return {fr:[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc,F[0],F[1],F[2],R[0],R[1],R[2],U[0],U[1],U[2]],L:len/unit};
 }
 // 1인칭 레일 · 침목의 틀: d0..d1(탄 길이, step 간격)마다 차선 가운데의 레일 중심과 틀 — 칸과 같은 식(coasterCarFrame), 코르크스크루에선 같은 축을 돈다
-function coasterRailFrames(P,d0,d1,step,unit,bodyPx,lanePx){   // (마지막 틀에 end: 레일이 다음 틀로 이어지지 않는다)
+function coasterRailFrames(P,d0,d1,step,unit,bodyPx,lanePx,front=d0,m=1){   // (front · m: 열차 앞 끝의 탄 길이와 1 m — 틀마다 앞 끝에서의 거리 d m)   // (마지막 틀에 end: 레일이 다음 틀로 이어지지 않는다)
   const on=d=>{const q=P(d),o=(q.off+lanePx)*unit;q.x+=q.r[0]*o;q.y+=q.r[1]*o;return q},hc=CORK_HEART*bodyPx*unit,out=[];
   let A=on(d0);
   for(let d=d0;d<=d1+1e-12;d+=step){
     const B=on(d+step),dx=B.x-A.x,dy=B.y-A.y,dz=B.h-A.h,len=Math.hypot(dx,dy,dz);
-    if(len>unit*.01){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,A.roll||0),[,U0]=rolled(A.r,F,0);out.push({p:[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc],F,R,U})}
+    if(len>unit*.01){const F=[dx/len,dy/len,dz/len],[R,U]=rolled(A.r,F,A.roll||0),[,U0]=rolled(A.r,F,0);out.push({p:[A.x+(U0[0]-U[0])*hc,A.y+(U0[1]-U[1])*hc,A.h+(U0[2]-U[2])*hc],F,R,U,d:(d-front)/m})}
     A=B;
   }
   if(out.length)out[out.length-1].end=true;
@@ -1307,7 +1307,7 @@ sheetBody.addEventListener('click',e=>{const b=e.target.closest('.st-journey [da
 const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
 function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
 function followLoop(ts){followRaf=0;if(!(following||ride)||easing)return;
-  if(ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS
+  if(!ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
   followLast=ts;for(const f of animFrame)f();map.triggerRepaint()}
 animFrame.push(()=>{
   const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
@@ -1375,7 +1375,7 @@ function rideFrame(){
   const {E,F,U}=seatEye(c.fr,c.L,bodyPx,unit,rows,i,side),mpu=new maplibregl.MercatorCoordinate(E[0],E[1]).meterInMercatorCoordinateUnits();
   // 레일 · 침목: 침목은 땅에 박혀 있게 간격의 격자에 맞추고, 열차가 rebuildM 을 가면(또는 새 자료 · 옮겨 그리는 중이면) 다시 짓는다
   const RT=COASTER_STYLE.rideTrack,step=SLEEPER_M*m,d0=Math.floor((tail-RT.behindM*m)/step)*step;
-  if(!ride.rail||ride.rail.plan!==plan||shift||Math.abs(d0-ride.rail.d0)>RT.rebuildM*m)ride.rail={plan,d0,frames:[lanePx,-lanePx].flatMap(l=>coasterRailFrames(P,d0,tail+total+RT.aheadM*m,step,unit,bodyPx,l)),mpu:m,dirty:true};   // 내 선로와 옆(맞은편) 선로
+  if(!ride.rail||ride.rail.plan!==plan||shift||Math.abs(d0-ride.rail.d0)>RT.rebuildM*m)ride.rail={plan,d0,frames:[lanePx,-lanePx].flatMap(l=>coasterRailFrames(P,d0,tail+total+RT.aheadM*m,step,unit,bodyPx,l,tail+total,m)),mpu:m,dirty:true};   // 내 선로와 옆(맞은편) 선로
   ride.eye=E;
   const box=map.getContainer(),fov=rideFov(box.clientWidth,box.clientHeight);if(Math.abs(map.getVerticalFieldOfView()-fov)>.01)map.setVerticalFieldOfView(fov);   // 화면을 돌리거나 크기가 바뀌면 시야각도
   const cam=ride.cam=rideCamera(E,F,U,{ctcd:.5/Math.tan(fov*Math.PI/360)*box.clientHeight,mpu});   // 카메라–center 거리(px): maplibre 와 같은 식
