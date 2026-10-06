@@ -459,6 +459,19 @@ export const SEOUL_CITY_STYLE = {
       "civic": {"abutting": "blank", "near": "full", "open": "full", "shortFaces": "sparse"}
     }
   },
+  // 2026-10-06 덕배: 간판 — 1인칭(눈높이)에서 건물이 밋밋했다. 상가(shop 이거나 1층이 상가인 땅) 건물의 긴 바깥 벽에
+  // 1층 위 가로 간판(가게 1~3칸), 2층부터 창 간판, 벽 끝에 길 쪽으로 튀어나온 세로 돌출 간판. 글자는 셰이더의 무늬(city_buildings.mjs),
+  // 밤에는 스스로 빛난다. 브랜드 노랑(#FFD400)은 쓰지 않는다. web/lib/city_mesh.mjs signs() 가 읽는다
+  "signs": {
+    "types": ["shop"], "minHeightM": 4, "maxHeightM": 32, "probability": 0.8, "maxWalls": 2, "minWallM": 4,
+    "fascia": {"heightM": 0.9, "depthM": 0.22, "belowM": 0.1, "gapM": 0.35, "shopM": 7, "maxShops": 3},
+    "upper": {"probability": 0.55, "maxFloors": 3, "heightM": 0.8, "depthM": 0.1, "offsetM": 0.15, "frontage": [0.45, 0.85]},
+    "blade": {"probability": 0.6, "minHeightM": 8, "widthM": 0.3, "outM": 1.0, "insetM": 0.5, "baseAboveM": 0.6, "heightM": [3, 9]},
+    "colors": ["#C8372D", "#2B5DB0", "#F1EFE8", "#E6962A", "#2F8A55", "#24282B", "#E4612B", "#22406B"],
+    "weights": [0.18, 0.18, 0.16, 0.1, 0.12, 0.1, 0.08, 0.08],
+    "ink": {"light": "#F7F5EE", "dark": "#1E2326"},
+    "nightEmission": 0.95
+  },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
   // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
   "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/lib/city_buildings.mjs xray)

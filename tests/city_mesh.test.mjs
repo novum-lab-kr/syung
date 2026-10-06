@@ -2,7 +2,7 @@
 // viaduct passes through carries its level in the vertex bytes (web/lib/city_mesh.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TileBuilder, resolvePack, OVERLAP, STRIDE } from '../web/lib/city_mesh.mjs';
+import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND } from '../web/lib/city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../web/lib/city_style_seoul.mjs';
 
 const P = resolvePack(SEOUL_CITY_STYLE), Z = 14, TX = 13975, TY = 6346, E = 4096, N = 2 ** Z;
@@ -47,4 +47,14 @@ test('a building the viaduct passes through opens only the walls its path crosse
   assert.equal(hall, 8, 'two portal pieces (24 m of each 60 m wall the path crosses), four vertices each; the walls along the path, 30 m off, stay walls'); assert.deepEqual([...hallRail], [18], 'the hall pieces carry the rail height');
   const noPath = build(feats, { through: new Map([[7, [{ lng, lat, railM: 18 }]]]) }).result(); let h2 = 0; for (let v = 0; v < noPath.verts.byteLength / STRIDE; v++) if (new Int8Array(noPath.verts.buffer, noPath.verts.byteOffset)[v * STRIDE + 15] === 6) h2++; assert.equal(h2, 0, 'no path, no portal');
   const none = build(feats).result(); for (let v = 0; v < none.verts.byteLength / STRIDE; v++) assert.equal((none.verts[v * STRIDE + 26] >> 6) & 3, 0);
+});
+
+test('간판: 상가 건물에만, 휴대폰에서는 창 간판 없이 줄어든다', () => {
+  const signVerts = (props, opts) => {
+    const hx = 10 * UPM, hy = 6 * UPM, ring = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([i, j]) => ({ x: 2000 + i * hx, y: 2000 + j * hy })), r = build([{ id: 1, props, rings: [ring] }], opts).result(), dv = new DataView(r.verts.buffer, r.verts.byteOffset, r.verts.byteLength);
+    let n = 0; for (let o = 0; o < r.verts.byteLength; o += STRIDE) if (dv.getInt8(o + 15) === KIND.SIGN) n++; return n;
+  };
+  const shop = signVerts({ render_height: 20, class: 'commercial' }), phone = signVerts({ render_height: 20, class: 'commercial' }, { phone: true });
+  assert.ok(shop > 0, 'a shop gets signs'); assert.ok(phone > 0 && phone < shop, `phone ${phone} < ${shop}`);
+  assert.equal(signVerts({ render_height: 12 }), 0, 'a house gets none');
 });

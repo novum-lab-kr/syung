@@ -36,6 +36,7 @@ void main(){
   float kind=floor(a_nk.w*127.0+0.5),H=(a_misc.z+a_misc.w*256.0)*0.1,z=a_z;
   if(kind==3.0)z=a_u+(a_z-a_u)*u_detail.x;   // roof plant grows out of the roof as the view comes closer
   if(kind==5.0)z=a_u+(a_z-a_u)*u_detail.y;   // awnings likewise
+  if(kind==7.0){float z0=a_misc.y*0.2;z=z0+(a_z-z0)*u_detail.y;}   // 간판도(밑면 z0 에서 자라난다)
   z*=u_grow;
   vec4 pos=u_matrix*vec4(a_xy,z*u_mpu,1.0);
   if(H>=u_maxH)pos=vec4(0.0,0.0,2.0,1.0);   // the towers that are rides on the coaster: not drawn
@@ -68,7 +69,7 @@ precision highp float;
 in vec3 v_n;in float v_z;in float v_u;in vec2 v_wm;flat in vec4 v_wall;flat in vec4 v_bld;flat in vec4 v_misc;flat in float v_kind;
 uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD[6];uniform vec4 u_tE[6];uniform vec4 u_tF[6];uniform vec4 u_tG[6];
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
-uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
+uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_sign[8];uniform vec3 u_signInk[2];uniform float u_signNight;uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
 ${XR_GLSL}
 uniform vec4 u_xa;   // the glass pass: opacity, outline opacity, outline width (px)
@@ -112,6 +113,27 @@ void shade(){
   }else if(kind==3){col=u_equip*light;}
   else if(kind==4){col=u_pitched[slot]*light;}
   else if(kind==5){col=u_awning[slot]*light;}
+  else if(kind==7){   // 간판: 바탕색, 긴 면엔 글자 무늬(axis 1 가로 글줄 · 2 세로 글줄)와 어두운 테두리. 밤에는 스스로 빛난다
+    vec3 bg=u_sign[slot&7],inkC=lum(bg)>0.3?u_signInk[1]:u_signInk[0];int ax=int(v_wall.x+0.5);
+    float len=(v_wall.y+v_wall.z*256.0)*0.05,h=max(v_wall.w*0.05,0.05),z0=v_misc.y*0.2,t=v_z-z0,ink=0.0,rim=0.0;
+    if(ax>0){
+      float A=ax==1?v_u:t,Bv=ax==1?t:v_u,LA=ax==1?len:h,LB=ax==1?h:len;   // A: 글줄 방향, B: 그 가로(m)
+      float gh=LB*0.56,gw=gh*0.92,pit=gw*1.2,nC=max(1.0,floor((LA-LB*0.6)/pit)),a0=(LA-nC*pit)*0.5+(pit-gw)*0.5;
+      float ga=(A-a0)/pit,ci=floor(ga),gx=fract(ga)*pit/gw,gy=(Bv-(LB-gh)*0.5)/gh;
+      bool band=ci>=0.0&&ci<nC&&gy>0.0&&gy<1.0;
+      if(band&&gx<1.0){   // 글자 하나 = 한글처럼 획 몇 개: 왼쪽 자음(가로획 셋 · 세로획 둘 중 몇) + 오른쪽 모음(세로획, 곁가지)
+        float g=seed+z0*13.0+float(slot)*7.0+len;bool b0=hash(vec3(g,ci,1.0))<0.6,b1=hash(vec3(g,ci,2.0))<0.5,b2=hash(vec3(g,ci,3.0))<0.6,b3=hash(vec3(g,ci,4.0))<0.55,b4=hash(vec3(g,ci,5.0))<0.4,b5=hash(vec3(g,ci,6.0))<0.5;
+        float X=gx,Y=gy,w=0.14;bool L=X<0.6;
+        bool on=L&&(b0&&Y>0.84-w&&Y<0.84+w*0.5||b1&&Y>0.5-w*0.5&&Y<0.5+w*0.5||b2&&Y>0.12-w*0.5&&Y<0.12+w||b3&&X>0.04&&X<0.04+w*1.1&&Y>0.1&&Y<0.9||b4&&X>0.46&&X<0.46+w*1.1&&Y>0.1&&Y<0.9);
+        on=on&&(b0||b1||b2)||L&&b3&&X>0.04&&X<0.04+w*1.1&&Y>0.1&&Y<0.9;   // 가로획 없이 세로획만 남지 않게
+        on=on||X>0.72&&X<0.72+w*1.1&&Y>0.04&&Y<0.96||b5&&X>0.72&&X<0.97&&Y>0.46&&Y<0.46+w;   // 모음: 세로획(ㅏ · ㅣ), 곁가지
+        ink=on?1.0:0.0;}
+      float px=gw/3.0/max(fwidth(A),1e-5);ink=mix(band?0.35:0.0,ink,smoothstep(1.2,3.0,px));   // 멀면 평균(물결무늬 없이)
+      float e=min(min(v_u,len-v_u),min(t,h-t));rim=1.0-smoothstep(0.05,0.09,e);
+    }
+    vec3 c=mix(mix(bg,inkC,ink),bg*0.45,rim);if(ax==0)c=bg*0.8;
+    col=night?c*u_signNight*(ax>0?1.0:0.5):c*light;
+  }
   else{   // walls (0) and the parapet's inner faces (2): the material slot's wall and glass
     vec4 tA=u_tA[type],tB=u_tB[type],tC=u_tC[type],tD=u_tD[type],tE=u_tE[type],tF=u_tF[type],tG=u_tG[type],F=u_mfac[slot];
     vec3 wall=u_mwall[slot],glass=u_mglass[slot];
@@ -388,6 +410,7 @@ export class CityBuildings {
     const house = P.types[0], shop = P.types[2], office = P.types[P.byKey.office] || P.types[3];
     const pitched = (pick(house.pitched?.colors) || ['#855B49', '#656F68', '#9D7658']).flatMap(L);
     const awning = (pick(shop.awning?.colors) || ['#9C614D', '#667C6B', '#C2AC76']).flatMap(L);
+    const SG = P.signs || {}, sign = Array.from({ length: 8 }, (_, i) => L((SG.colors || ['#C8372D'])[i % (SG.colors || ['#C8372D']).length])).flat(), signInk = [L(SG.ink?.light || '#F7F5EE'), L(SG.ink?.dark || '#1E2326')].flat(), signNight = num(SG.nightEmission, .95);   // 간판
     const light = th === 'dark' ? P.dark : P.light, lc = hexRGB(light.color || '#ffffff').map(v => v ** 2.2), mx = Math.max(...lc), lightCol = lc.map(v => v / mx);
     const sideDark = th === 'dark' ? num(light.maxSideDarken, .15) : num(light.maxSideDarken, .2), roofBright = num(light.maxRoofBrighten, th === 'dark' ? .05 : .08);
     // glass by day (QA1 dayReflection): diffuse range, the sky mixed in over a height range by face strength up to a cap, the broad band's ΔL*
@@ -404,7 +427,7 @@ export class CityBuildings {
     // buildings the viaduct passes through: the rail-height code, the band, its glass / posts / lit hall (linear), the mixes and the night brightness
     const TH = P.through, thGlass = L(pick(TH.glass) || '#A9CBD8'), thFrame = L(pick(TH.frame) || '#55626A'), thInside = L(typeof TH.inside === 'string' ? TH.inside : pick(TH.inside) || '#F3ECDA');
     const through = [RAIL_Q.base, RAIL_Q.step, 0, TH.depthOpen ? 1 : 0], thBand = [TH.below, TH.above, TH.mull, TH.mullEvery], thMix = [TH.skyMix, TH.insideMix, TH.nightEmission];   // (night: × the type's lit-window emission, which already carries the mode's windowEmission)
-    return { through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    return { through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -479,7 +502,7 @@ export class CityBuildings {
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
-      gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
+      gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_sign, K.sign); gl.uniform3fv(u.u_signInk, K.signInk); gl.uniform1f(u.u_signNight, K.signNight); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
     }

@@ -10,7 +10,7 @@ const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (window
 export const G = [CITY_LNG / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + CITY_LAT * RAD / 2)) / (2 * Math.PI)], S = EARTH * Math.cos(CITY_LAT * RAD);   // mercator → metres
 const TYPES = ['house', 'apartment', 'shop', 'office', 'industrial', 'civic'];
 const PATTERNS = { punched: 0, 'vertical-balconies': 1, 'horizontal-bands': 2, 'curtain-wall': 3, clerestory: 4, 'regular-grid': 5 };
-export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5, HALL: 6 };   // HALL: the piece of a wall the viaduct passes through — the shader opens the glass band there, nowhere else
+export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5, HALL: 6, SIGN: 7 };   // HALL: the piece of a wall the viaduct passes through — the shader opens the glass band there, nowhere else; SIGN: 간판(signs())
 export const RAIL_Q = { base: 10, step: .25 };   // a HALL piece carries the deck's rail height there in 6 bits (a_bld.z bits 6–7 high, a_bld.w bits 4–7 low): base + code × step, 10–25.75 m
 const FLAG = { ABS_U: 1, MERGED: 2, STOREFRONT: 4, NO_AO: 8 };
 export const CHUNKS = 4;   // sub-chunks a tile side
@@ -115,6 +115,7 @@ export function resolvePack(pack) {
     wallWeights, parapetT: num(D.parapetThicknessM, .18), edgeClear: num(D.roofEquipmentEdgeClearanceM, .6), glass: D.glass || { light: '#52696C', dark: '#1B2B33' },
     lit: { colors: (lit.colors || ['#FFD59A', '#FFE7BD', '#DDEAF0']).map(hexRGB), emission: num(lit.emission, .7), groundEmission: num(lit.groundFloorEmission, .9), floorMul: lit.floorProbabilityMultiplier || [.65, 1.2] },
     equip: { minZoom: num(eq.minZoom, 16), minH: num(eq.minHeightM, 12), minA: num(eq.minAreaM2, 120), penthouseArea: eq.penthouseAreaRatio || [.04, .07], penthouseH: num(eq.penthouseHeightM, 1.8), hvacCount: eq.hvacCount || [1, 3], hvacSize: eq.hvacSizeM || [1.6, 1, .9], colors: eq.colors || { light: '#A7ADA5', dark: '#4D5C59' } },
+    signs: pack.signs || null,   // 간판(signs())
     waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
     light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
@@ -409,6 +410,7 @@ export class TileBuilder {
     this.cutWalls(ctx);
     this.plant(ctx);
     this.awning(ctx);
+    this.signs(ctx);
   }
   // the viaduct passes through this footprint (this.through: osm id → [{lng, lat, railM, path}], a point inside each crossed
   // footprint): {railM: the deck's rail height there, segs: its path in tile units}, or 0 when it is not crossed. Matched by the
@@ -708,6 +710,66 @@ export class TileBuilder {
     const [f0, f1] = a.frontageRatio || [.5, .7], frac = f0 + (f1 - f0) * unit(ctx.seed, 13), span = l * frac, s0 = (l - span) / 2, depth = num(a.depthM, .8) / mpu, z0 = num(a.baseM, 3.1), z1 = z0 + num(a.heightM, .25);
     const cx = ax + ex * (s0 + span / 2) + nx * depth / 2, cy = ay + ey * (s0 + span / 2) + ny * depth / 2;
     this.box(ctx.chunk, cx, cy, ex, ey, span / 2, depth / 2, z0, z1, KIND.AWNING, pick(a.weights || [.45, .35, .2], unit(ctx.seed, 14)), ctx.chunk.hi);
+  }
+  // 간판 상자 하나: (cx, cy) 가운데, (ux, uy) 방향으로 길이 2hx, 그 가로로 두께 2hy(타일 단위), z0~z1 m. 긴 두 면(±v)에 글자 무늬 —
+  // axis 1 가로 글줄, 2 세로 글줄(돌출 간판). 면마다 u = 그 면의 길이 방향 m(0..len), wall = [axis | 0, len lo/hi (5 cm), 높이 (5 cm)], misc.y = z0 (20 cm)
+  signBox(ch, cx, cy, ux, uy, hx, hy, z0, z1, slot, axis, list) {
+    const W = this.W, u = this.unit, mpu = this.mPerUnit, vx = -uy, vy = ux, m0 = W.m[0], m1 = W.m[1], flags = W.b[3];
+    W.kind = KIND.SIGN; W.m[0] = slot; W.m[1] = Math.min(255, Math.round(z0 / .2)); W.b[3] = flags | FLAG.NO_AO;
+    const c = (i, j) => [(cx + ux * hx * i + vx * hy * j) * u, (cy + uy * hx * i + vy * hy * j) * u], hq = Math.min(255, Math.round((z1 - z0) / .05));
+    const side = (p, q, nx, ny, len, text) => {
+      const lq = Math.min(65535, Math.round(len / .05)); W.w = [text ? axis : 0, lq & 255, lq >> 8, hq]; W.normal(nx, ny, 0);
+      const a0 = W.v(p[0], p[1], z0, 0), b0 = W.v(q[0], q[1], z0, len), b1 = W.v(q[0], q[1], z1, len), a1 = W.v(p[0], p[1], z1, 0); list.push(a0, b0, b1, a0, b1, a1);
+    };
+    const L = 2 * hx * mpu, D = 2 * hy * mpu, p00 = c(-1, -1), p10 = c(1, -1), p11 = c(1, 1), p01 = c(-1, 1);
+    // 벽에 붙은 면은 안 보여 빼요: 가로 간판(axis 1)은 +v 면, 돌출 간판(2)은 −u 끝면(at() 의 밖 방향 = −v · +u)
+    side(p00, p10, -vx, -vy, L, true); side(p10, p11, ux, uy, D, false); if (axis !== 1) side(p11, p01, vx, vy, L, true); if (axis !== 2) side(p01, p00, -ux, -uy, D, false);
+    W.w = [0, 0, 0, hq]; const cz = (p10[0] - p00[0]) * (p11[1] - p00[1]) - (p10[1] - p00[1]) * (p11[0] - p00[0]);
+    for (const [z, nz] of [[z1, 1], [z0, -1]]) {   // 위 · 아래(눈높이에선 간판 밑면이 보인다)
+      W.normal(0, 0, nz); const t0 = W.v(p00[0], p00[1], z, 0), t1 = W.v(p10[0], p10[1], z, 0), t2 = W.v(p11[0], p11[1], z, 0), t3 = W.v(p01[0], p01[1], z, 0);
+      if ((cz > 0) === (nz > 0)) list.push(t0, t1, t2, t0, t2, t3); else list.push(t0, t2, t1, t0, t3, t2);
+    }
+    W.m[0] = m0; W.m[1] = m1; W.b[3] = flags; W.w = [0, 0, 0, 0];
+    for (const p of [p00, p10, p11, p01]) this.extend(ch, p[0], p[1], p[0], p[1], z1);
+  }
+  // 간판(2026-10-06 덕배): 상가 건물의 긴 바깥 벽(타일 안, 최대 maxWalls 개)에 1층 위 가로 간판(가게 칸마다 색), 가장 긴 벽의 2층부터 창 간판,
+  // 벽 끝에 세로 돌출 간판. 층 높이는 셰이더와 같은 식(1층 groundM, 나머지 층은 높이에 맞춰 나눔)
+  signs(ctx) {
+    const S = this.P.signs, T = ctx.T; if (!S || ctx.H < num(S.minHeightM, 4) || ctx.H > num(S.maxHeightM, 32)) return;
+    if (!ctx.storefront && !(S.types || []).includes(T.key)) return;
+    if (unit(ctx.seed, 20) >= num(S.probability, .8)) return;
+    const r = ctx.outer, n = r.length / 2, E = this.E, mpu = this.mPerUnit, edges = [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, ax = r[i * 2], ay = r[i * 2 + 1], bx = r[j * 2], by = r[j * 2 + 1];
+      if (ax <= 0 || ax >= E || ay <= 0 || ay >= E || bx <= 0 || bx >= E || by <= 0 || by >= E) continue;
+      const l = Math.hypot(bx - ax, by - ay); if (l * mpu >= num(S.minWallM, 4)) edges.push([i, l]);
+    }
+    if (!edges.length) return; edges.sort((a, b) => b[1] - a[1]);
+    const F = S.fascia || {}, U = S.upper || {}, B = S.blade || {}, wts = S.weights || [1], H = ctx.H;
+    const gEff = Math.min(T.groundM, H), up = H - gEff, nUp = up < T.floorM * .6 ? 0 : Math.max(1, Math.round(up / T.floorM)), fM = nUp ? up / nUp : T.floorM;
+    let k = 0; const rnd = () => unit(ctx.seed, 21 + k++), col = () => pick(wts, rnd()), list = ctx.chunk.hi, ch = ctx.chunk;
+    for (const [w, [i, l]] of edges.slice(0, num(S.maxWalls, 2)).entries()) {
+      const j = (i + 1) % n, ax = r[i * 2], ay = r[i * 2 + 1], ex = (r[j * 2] - ax) / l, ey = (r[j * 2 + 1] - ay) / l, nx = ey, ny = -ex, lm = l * mpu;
+      const at = (a, out) => [ax + ex * a + nx * out, ay + ey * a + ny * out];   // 벽을 따라 a, 밖으로 out(타일 단위)
+      // 1층 위 가로 간판: 가게 칸마다 하나
+      let z1 = nUp ? gEff - num(F.belowM, .1) + num(F.heightM, .9) : H - .25, z0 = z1 - num(F.heightM, .9);
+      if (z0 > 2.2) {
+        const shops = Math.max(1, Math.min(num(F.maxShops, 3), Math.round(lm / num(F.shopM, 7)))), gap = num(F.gapM, .35) / mpu, seg = (l - gap * (shops + 1)) / shops, d = num(F.depthM, .22) / mpu;
+        if (seg * mpu > 1.5) for (let s = 0; s < shops; s++) { const [cx, cy] = at(gap + seg / 2 + s * (seg + gap), d / 2); this.signBox(ch, cx, cy, ex, ey, seg / 2, d / 2, z0, z1, col(), 1, list) }
+      }
+      // 2층부터 창 간판(층의 아래쪽, 벽 일부)
+      for (let f = 1; f <= (this.opts.phone || w ? 0 : Math.min(nUp, num(U.maxFloors, 3))); f++) {   // 가장 긴 벽에만, 휴대폰은 빼요(정점)
+        if (rnd() >= num(U.probability, .55)) continue;
+        z0 = gEff + (f - 1) * fM + num(U.offsetM, .15); z1 = z0 + num(U.heightM, .8); if (z1 > H - .3) break;
+        const [f0, f1] = U.frontage || [.45, .85], span = l * (f0 + (f1 - f0) * rnd()), a = (l - span) * rnd() + span / 2, d = num(U.depthM, .1) / mpu, [cx, cy] = at(a, d / 2);
+        this.signBox(ch, cx, cy, ex, ey, span / 2, d / 2, z0, z1, col(), 1, list);
+      }
+      // 세로 돌출 간판: 벽 한쪽 끝에서 길 쪽으로
+      if (H >= num(B.minHeightM, 8) && rnd() < num(B.probability, .6)) {
+        const [h0, h1] = B.heightM || [3, 9]; z0 = gEff + num(B.baseAboveM, .6); z1 = Math.min(H - .4, z0 + h0 + (h1 - h0) * rnd());
+        if (z1 - z0 >= 2) { const a = rnd() < .5 ? num(B.insetM, .5) / mpu : l - num(B.insetM, .5) / mpu, out = num(B.outM, 1) / mpu, [cx, cy] = at(a, out / 2 + .05 / mpu); this.signBox(ch, cx, cy, nx, ny, out / 2, num(B.widthM, .3) / 2 / mpu, z0, z1, col(), 2, list) }
+      }
+    }
   }
   // pack the result: one vertex buffer, one index buffer in chunk order [lo][walls][hi]
   result() {
