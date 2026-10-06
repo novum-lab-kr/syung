@@ -220,6 +220,23 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 .sheet .kv dt{color:var(--muted);font-weight:600;white-space:nowrap}
 .sheet .kv dd{margin:0;font-weight:600;overflow-wrap:anywhere}
 .sheet .kv .muted{color:var(--muted);font-weight:500}
+.sheet .sec .muted{color:var(--muted);font-weight:500}
+/* 롤코 1인칭: 자리 고르기(칸마다 위가 진행 방향) · 타는 동안 위의 띠 */
+.ride-pick{display:flex;flex-wrap:wrap;gap:8px 6px;margin:10px 0 2px}
+.ride-car{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ride-car .n{font-size:10.5px;font-weight:700;color:var(--muted)}
+.ride-car .seats{display:grid;grid-template-columns:repeat(2,20px);gap:4px;padding:6px 5px 5px;border-radius:9px 9px 5px 5px;background:var(--rule)}
+.ride-car.lead .seats{border-radius:18px 18px 5px 5px;padding-top:12px}
+.ride-pick .seat{width:20px;height:20px;padding:0;border:0;border-radius:5px;background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--muted);cursor:pointer}
+.ride-pick .seat.on{background:var(--c);box-shadow:inset 0 0 0 2px var(--ink)}
+.ride-pick .seat:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.ride-go{margin-top:10px;width:100%;height:42px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:16px;cursor:pointer;box-shadow:0 2px 0 rgba(20,20,20,.15)}
+.ride-bar{position:absolute;z-index:21;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 24px);padding:5px 5px 5px 12px;border-radius:999px;background:rgba(20,20,20,.86);color:#fff;font-size:13px;font-weight:600;box-shadow:var(--shadow)}
+.ride-bar[hidden]{display:none}
+body.riding .map-search,body.riding .route-cta{display:none} /* 타는 동안: 화면은 앞 풍경, 위에는 탄 자리 띠만 */
+.ride-bar .dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--c)}
+.ride-bar .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ride-bar .ride-off{flex:none;height:32px;padding:0 14px;border:0;border-radius:999px;background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:14px;cursor:pointer}
 .sheet .station-pop table{font-size:13px}
 html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}

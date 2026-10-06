@@ -165,6 +165,8 @@ float hash1(float n){return fract(sin(n*12.9898)*43758.5453);}
 void main(){
   bool front=mod(i_flag,2.)>.5,back=mod(floor(i_flag/2.),2.)>.5,shadow=u_pass>.5;
   bool hide=(a_vis==1.&&!front)||(a_vis==2.&&front)||(a_vis==3.&&!back)||((a_part==5.)!=shadow);
+  float mine=floor(i_flag/4.)-1.;   // 1인칭으로 탄 칸: 내 자리 번호(아니면 −1) — 내 자리 사람과 눈앞을 가리는 행선판은 그리지 않는다
+  if(mine>-.5&&(abs(a_slot-mine)<.5&&a_part>7.5||a_part==4.&&a_vis==1.))hide=true;
   v_col=vec3(0.);
   if(a_part>7.5){   // a rider: 70–90 % of a car's seats are taken, fixed by the car's seed and the seat (nothing flickers or changes), each in their own shirt and hair; the arms only on a drop
     float seat=a_slot,occ=.7+.2*hash1(i_seed*5.3+.7),h=hash1(seat*7.31+i_seed*53.17+.5);
@@ -287,7 +289,7 @@ export class CoasterTrain {
   begin(ox, oy) { this.ox = ox; this.oy = oy; this.n = 0 }
   // a car: its frame on the track (base, F, R, U in mercator), L and W in px, the line's colour, whether it leads or trails,
   // its train's id and car number (the stable rider seed), and the full route name for the front/tail badge
-  car(fr, L, W, rgb, front, back, key, j = 0, line = '') {
+  car(fr, L, W, rgb, front, back, key, j = 0, line = '', seat = -1) {   // seat: 1인칭으로 탄 자리 번호(이 칸이면)
     if ((this.n + 1) * INST > this.inst.length) { const g = new Float32Array(this.inst.length * 2); g.set(this.inst); this.inst = g }
     const d = this.inst, i = this.n * INST;
     for (let k = 0; k < 12; k++) if (!Number.isFinite(fr[k])) { CoasterTrain.dropped++; return }   // (a NaN frame would rasterize anywhere)
@@ -298,7 +300,7 @@ export class CoasterTrain {
       const U = [F[1] * R[2] - F[2] * R[1], F[2] * R[0] - F[0] * R[2], F[0] * R[1] - F[1] * R[0]];
       d[i + 6] = R[0]; d[i + 7] = R[1]; d[i + 8] = R[2]; d[i + 9] = U[0]; d[i + 10] = U[1]; d[i + 11] = U[2]; CoasterTrain.repaired++;
     }
-    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = (front ? 1 : 0) + (back ? 2 : 0);
+    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = (front ? 1 : 0) + (back ? 2 : 0) + 4 * (seat + 1);
     let s = this.seeds.get(key); if (s == null) { s = fnv1a(String(key)) / 4294967296; if (this.seeds.size > 4096) this.seeds.clear(); this.seeds.set(key, s) }
     d[i + 18] = (s + j * .6180339887) % 1;
     d[i + 19] = routeBadgeId(line);
@@ -313,7 +315,7 @@ export class CoasterTrain {
     }
   }
   // o: zoom, unit (mercator a px), walls (depth in the buffer: test against it), occlude (alpha behind the walls),
-  //    dark, shadow ([dx, dy] px the sun throws the shadow), pixelRatio
+  //    dark, shadow ([dx, dy] px the sun throws the shadow), pixelRatio, lod (1인칭: 화면 폭과 상관없이 이 단계로)
   draw(gl, M, ox, oy, o) {
     if (!this.n || !this.p) return;
     const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r] * ox + M[4 + r] * oy + M[12 + r];   // M · translate(origin), in double precision
@@ -321,7 +323,7 @@ export class CoasterTrain {
     if (this.cap < this.inst.length) { gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW); this.cap = this.inst.length;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip ^ 1]); gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]) }
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, this.n * INST);
-    const W = this.inst[13], L = this.inst[12], lod = W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2, rows = Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
+    const W = this.inst[13], L = this.inst[12], lod = o.lod ?? (W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2), rows = Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
     const m = this.meshes.get(lod + ':' + rows), livery = CoasterTrain.livery;
     CoasterTrain.last = { n: this.n, lod, rows, W, L, zoom: o.zoom, badgeText: o.zoom >= 16.5, dropped: CoasterTrain.dropped, repaired: CoasterTrain.repaired };
     const z = o.zoom, lineMix = livery === 'C' ? 1 - Math.min(1, Math.max(0, (z - LINE_MIX[0]) / (LINE_MIX[1] - LINE_MIX[0]))) : 0;
@@ -344,7 +346,7 @@ export class CoasterTrain {
     gl.depthMask(true); pass(m, 0, 1); gl.depthMask(false);   // the cars, writing their depth: the seats sit inside the tub, the bulbs on its sides
     gl.bindVertexArray(null);
     gl.bindTexture(gl.TEXTURE_2D, oldTex); gl.activeTexture(oldActive);
-    if (o.dark && W >= LOD_MID) {   // the night: bulbs along the belt, warm; the tail lamps red
+    if (o.dark && (W >= LOD_MID || lod)) {   // the night: bulbs along the belt, warm; the tail lamps red
       const b = this.meshes.get('bulbs'), s = bulbSize(z, o.pixelRatio || 1, .5), UB = this.uniB;
       gl.useProgram(this.pb); gl.bindVertexArray(b.va); this.instancePointers(gl, this.attrB); lightsOn(gl);
       gl.uniformMatrix4fv(UB.u_matrix, false, MT); gl.uniform1f(UB.u_unit, o.unit); gl.uniform1f(UB.u_size, s.point); gl.uniform1f(UB.u_core, s.coreFrac);

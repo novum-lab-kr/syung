@@ -20,6 +20,7 @@ export const SEOUL_COASTER_STYLE = {
   rides: { detailZoom:14.5, crownHeightM:12, crownHeightRatio:.05, rimM:[.7,1.2],
     spokes:12, cabins:12, swingSides:8, saucerThicknessM:[5,10], saucerThicknessRatio:.035 },
   props: { flags:false, balloons:false },
+  sky: { light:{ sky:'#A9D6EE', horizon:'#E3F0F1' }, dark:{ sky:'#101B2C', horizon:'#2B3550' } },   // 1인칭으로 탈 때 수평선 위(그 밖에서는 하늘이 안 보여요)
   night: { bulbEveryM:18, bulbDropM:3, corePx:[1.4,1.8,2.2], haloPx:[4,5.5,7],
     warmShare:.8, trackEmission:.65, rideEmission:.55, stationEmission:.9,
     rideAmbient:.50, rideDirectional:.18,
