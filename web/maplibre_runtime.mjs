@@ -247,7 +247,11 @@ const liveState=document.querySelector('#liveState span');   // the line filter 
 
 // ---- live train routing -------------------------------------------------------------
 function kstMs(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]):NaN}
-function age(v){const t=kstMs(v);return t===t?Math.max(0,(Date.now()-t)/1000):0}
+function age(v){const t=kstMs(v);return t===t?Math.max(0,((clock()===frameClock?frameEpoch:Date.now())-t)/1000):0}
+// 열차 위치를 정하는 시계. 1인칭으로 탈 때는 그 화면 프레임의 시각(rAF): 부르는 순간의 시각을 쓰면 프레임마다 몇 ms 씩 들쭉날쭉하고,
+// 120 Hz 화면에서는 10 ms 묶음(trainPose) 때문에 두 프레임에 한 번만 움직였다(탈 때 끊겨 보인다 — 2026-10-06 덕배). 프레임이 멈추면(250 ms — 역에 서 있을 때 등) 지금 시각.
+let frameClock=-1e9,frameEpoch=0;
+function clock(){const t=performance.now();return ride&&t-frameClock<250?frameClock:t}
 // Run time between adjacent stations: the GTFS timetable's median (edge_times.json, built by
 // build_edge_times.py); failing that, track length at the timetable's typical 12.4 m/s.
 let edgeTimes={},lineDwell={};
@@ -368,7 +372,7 @@ const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b
 const rolled=(r,F,roll)=>{const d=r[0]*F[0]+r[1]*F[1];let R=[r[0]-d*F[0],r[1]-d*F[1],-d*F[2]];const l=Math.hypot(...R)||1;R=R.map(c=>c/l);
   const U=[F[1]*R[2]-F[2]*R[1],F[2]*R[0]-F[0]*R[2],F[0]*R[1]-F[1]*R[0]];if(!roll)return [R,U];const c=Math.cos(roll),s=Math.sin(roll);
   return [[c*R[0]-s*U[0],c*R[1]-s*U[1],c*R[2]-s*U[2]],[c*U[0]+s*R[0],c*U[1]+s*R[1],c*U[2]+s*R[2]]]};
-const warpNow=()=>{const t=performance.now();if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
+const warpNow=()=>{const t=clock();if(t<warpAt)return warp;if(warpAt)warp+=(t-warpAt)/1000*(coasterSpeed-1);warpAt=t;return warp};
 // Loops and corkscrews are landmarks, not the rule (on half the edges each they all looked alike): along each line, in
 // order, an edge may take one (not both) once INV_GAP m have passed since the last — a loop by chance INV_LOOP, else a
 // corkscrew by INV_CORK. Chosen once per edge, the first line through it deciding; 'loop', 'cork' or ''.
@@ -646,7 +650,7 @@ function fromRide(p,a){
 // one standing there): the one behind waits TRAIN_GAP_M back, as at a signal. Same line, direction and express or not
 // (an express passes a local at a station). Worked out for all the trains at once, at most every 10 ms.
 const TRAIN_GAP_M=20,spaced=new Map();let spacedAt=-1e9,spacedFor=null;
-function trainPose(p){const now=performance.now();if(now-spacedAt>10||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
+function trainPose(p){const now=clock();if((now===frameClock?now!==spacedAt:now-spacedAt>10)||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
 function spaceTrains(){
   spaced.clear();const groups=new Map(),at=e=>{const q=trackPoint(e.p,e.pose.dist);e.x=q.x;e.y=q.y;e.f=q.f};
   for(const p of plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2)continue;
@@ -669,13 +673,13 @@ function rawPose(p){
     // ahead of fresh data: run on to the station it was heading for and wait at the platform there
     // (standing still between stations looked broken), then go on once the prediction catches up
     let at=p.hold,creeping=false;
-    if(p.creep){const w=(performance.now()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
+    if(p.creep){const w=(clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
     if(dist<p.hold)return {dist:at,moving:creeping};
-    if(creeping&&at<dist)p.glide={c:catchup((dist-at)/mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),at:performance.now()};
+    if(creeping&&at<dist)p.glide={c:catchup((dist-at)/mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),at:clock()};
     p.hold=null;p.creep=null;
   }
   // 따라잡는 중: 예측보다 남은 차이(m)만큼 뒤에 그려요. 차이는 원래 주행 위에 더한 속도(상한 CATCHUP_MPS)로 줄어요.
-  if(p.glide){const g=catchupAt(p.glide.c,(performance.now()-p.glide.at)/1000);if(!g.done)return {dist:Math.max(0,dist-g.left*mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),moving:true};p.glide=null}
+  if(p.glide){const g=catchupAt(p.glide.c,(clock()-p.glide.at)/1000);if(!g.done)return {dist:Math.max(0,dist-g.left*mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),moving:true};p.glide=null}
   // stand: at a stop — s into it, how long it lasts and which station
   return {dist,moving,stand:!moving&&ph.dur!==Infinity?{t:el,dur:ph.dur,st:ph.k0===0?ph.from:ph.to}:null};
 }
@@ -696,9 +700,9 @@ function replacePlans(next){
     if(from>to){if((from-to)/m<HOLD_MAX_M){
       // hold at the next station along (not where it happens to be drawn), reached at ~10 m/s
       const k=p.cum.findIndex(c=>c>=from-1e-9),st=k>=0?p.cum[k]:from;p.hold=st;
-      if(st>from)p.creep={from,at:performance.now(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
+      if(st>from)p.creep={from,at:clock(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
     }}
-    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M){const v0=o.glide?catchupAt(o.glide.c,(performance.now()-o.glide.at)/1000).v:0;p.glide={c:catchup((to-from)/m,v0),at:performance.now()}}
+    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M){const v0=o.glide?catchupAt(o.glide.c,(clock()-o.glide.at)/1000).v:0;p.glide={c:catchup((to-from)/m,v0),at:clock()}}
   }
   plans=next;
 }
@@ -763,7 +767,7 @@ function coasterRailFrames(P,d0,d1,step,unit,bodyPx,lanePx,front=d0,m=1){   // (
   return out;
 }
 // 새 자료로 옮겨 그리는 중: 예전 자리에서 미끄러져 오는 양(메르카토르), 끝났으면 null
-function blendShift(plan,mid){if(!plan.blend)return null;const w=(performance.now()-plan.blend.at)/BLEND_MS;if(w>=1){plan.blend=null;return null}const e=1-smooth(w);return [(plan.blend.x-mid.x)*e,(plan.blend.y-mid.y)*e]}
+function blendShift(plan,mid){if(!plan.blend)return null;const w=(clock()-plan.blend.at)/BLEND_MS;if(w>=1){plan.blend=null;return null}const e=1-smooth(w);return [(plan.blend.x-mid.x)*e,(plan.blend.y-mid.y)*e]}
 const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.test(d)?`${d.replace(/순환$/,'')} 방면(순환)`:`${d}행`};
 
 // ---- train model --------------------------------------------------------------------
@@ -1329,7 +1333,7 @@ const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
 function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
 function followLoop(ts){followRaf=0;if(!(following||ride)||easing)return;
   if(!ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-  followLast=ts;for(const f of animFrame)f();map.triggerRepaint()}
+  followLast=ts;if(ride){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}for(const f of animFrame)f();map.triggerRepaint()}
 animFrame.push(()=>{
   const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
   const c=trainLngLat(sel),now=performance.now();
@@ -1404,6 +1408,15 @@ function rideFrame(){
   const ppm=512*2**RIDE_ZOOM*mpu;map._camera.transform.overrideNearFarZ(RIDE_NEAR_M*ppm,RIDE_FAR_M*ppm);   // px(공개 API 없음 — maplibre 6.11 transform): 가까운 칸이 잘리지 않게(기본 가까운 면은 줌 18 에서 7 m)
 }
 animFrame.push(rideFrame);
+// #fps: 실제 기기에서 지도 프레임 — 초당 프레임, 늦은 프레임(20 · 34 ms 넘게) 수, 가장 긴 간격, 지도 한 프레임 · 1인칭 카메라 JS 시간(ms). 서버 캡처로는 잴 수 없어서(2026-10-06 덕배)
+if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.cssText='position:fixed;z-index:99;left:4px;bottom:4px;margin:0;padding:6px 8px;font:11px/1.35 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#fff;border-radius:8px;pointer-events:none;white-space:pre';document.body.append(o);
+  const iv=[],js=[],cam=[],r=map._render.bind(map);let last=0,shown=0;
+  map._render=(...a)=>{const t=performance.now();if(last)iv.push(t-last);last=t;const x=r(...a);js.push(performance.now()-t);return x};
+  animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(ride)cam.push(performance.now()-t)};
+  const ms=a=>a.length?Math.max(...a).toFixed(0):'-',avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):'-';
+  setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;
+    o.textContent=`${ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}`;
+    iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
 // ---- train inspector ----------------------------------------------------------------------
