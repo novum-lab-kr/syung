@@ -7,11 +7,30 @@
 // (maplibre 의 calculateCameraOptionsFromCameraLngLatAltRotation 은 수평 시선에서 거리를 1만 m 로 바꿔 줌이 12 대로 떨어진다)
 
 export const RIDE_ZOOM = 18;      // 1인칭 동안의 줌(지도 최대 줌): 열차 몸 폭이 실제 4.6 m
-export const RIDE_FOV = 60;       // 세로 시야각(°): 기본 36.87° 는 1인칭에 좁다
-export const RIDE_NEAR_M = .15;   // 가까운 면(m): 내 칸 · 앞 칸이 잘리지 않게(기본은 화면 높이/50 px — 줌 18 에서 7 m)
+export const RIDE_HFOV = 90;      // 가로 시야각(°): 롤코 POV 영상(액션캠)쯤. 세로 60° 고정이던 때는 세로 휴대폰에서 가로 30° 라 망원처럼 확대돼 보였다(2026-10-06 덕배)
+export const RIDE_VFOV = [55, 105];   // 세로 시야각의 범위(°): 가로 화면에서 너무 납작하지 않게, 세로 휴대폰에서 위아래가 너무 휘지 않게
+export const RIDE_NEAR_M = 2;     // 지도의 가까운 면(m): maplibre 기본(화면 높이/50 px — 줌 18 에서 3~4 m)에 가깝게. 그림자 · 장식의 깊이 보정(clip z 를 w 의 몇 배만큼)이
+                                  // 이 기준이라, 0.15 m 로 줄였을 때 1 km 밖 그림자가 수십 m 앞으로 당겨져 앞 건물 위에 검은 얼룩으로 덧칠됐다(2026-10-06). 앞 칸의 뒤 끝(눈에서 2.8 m~)보다는 가깝게
+export const COCKPIT_NEAR_M = .1; // 내 칸의 가까운 면(m): 내 칸만 맨 마지막에 깊이를 비우고 따로 그린다(nearMatrix)
 export const RIDE_FAR_M = 4000;   // 먼 면(m): 깊이 정밀도(가까운 면이 0.15 m) — 받는 타일 수는 maplibre 가 시선 각도로 정해 이걸로 줄지 않는다(실측 94개 그대로)
 export const EYE_Z = .72;         // 눈 높이(× 몸 폭 W): 통 테두리(.56) 위, 앞 사람 머리(.6) 너머로 — 앞 벽이 화면 아래 1/5 쯤
 export const LOOK_DOWN = 3 * Math.PI / 180;   // 진행 방향보다 살짝 아래로 본다(앞 선로가 화면 가운데 조금 아래)
+
+// 화면 크기(w × h px)에 맞는 세로 시야각(°, maplibre 의 fov): 가로가 RIDE_HFOV 가 되게, 범위 안에서
+export function rideFov(w, h) {
+  const v = 2 * Math.atan(Math.tan(RIDE_HFOV * Math.PI / 360) * h / Math.max(1, w)) * 180 / Math.PI;
+  return Math.max(RIDE_VFOV[0], Math.min(RIDE_VFOV[1], v));
+}
+
+// 같은 카메라에서 가까운 면만 nearPx 로 바꾼 행렬. M: maplibre 의 mainMatrix(투영 · 뷰, 열 우선, 단위 px).
+// 원근 투영의 z 행 = −A·(w 행) + B·e4 이므로 M 에서 A · B 를 읽어 먼 면 f = B/(A+1) 은 그대로 두고 가까운 면만 바꾼다.
+export function nearMatrix(M, nearPx) {
+  const w = [M[3], M[7], M[11], M[15]], z = [M[2], M[6], M[10], M[14]];
+  const A = -(z[0] * w[0] + z[1] * w[1] + z[2] * w[2]) / (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]), B = z[3] + A * w[3], far = B / (A + 1);
+  const A2 = -(far + nearPx) / (far - nearPx), B2 = -2 * far * nearPx / (far - nearPx), out = Array.from(M);
+  for (let c = 0; c < 4; c++) out[c * 4 + 2] = -A2 * w[c] + (c === 3 ? B2 : 0);
+  return out;
+}
 
 // 칸 하나의 줄 수: coaster_train.mjs draw() 와 같은 식
 export const seatRows = (L, W) => Math.max(2, Math.min(4, Math.round(L / W * 1.3)));

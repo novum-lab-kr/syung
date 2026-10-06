@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { orientation, rideCamera, seatEye, seatIndex, seatRows, seatNumber, seatPickerHTML, RIDE_ZOOM } from '../web/lib/coaster_first_person.mjs';
+import { nearMatrix, orientation, rideCamera, seatEye, seatIndex, seatRows, seatNumber, seatPickerHTML, RIDE_ZOOM } from '../web/lib/coaster_first_person.mjs';
 
 // maplibre 6 의 뷰 회전(_calcMatrices): scale(1,−1,1) · rotateZ(−roll) · rotateX(pitch) · rotateZ(−bearing) — 세계(x 동 · y 남 · z 위)를 눈 좌표로
 const rz = (v, a) => [Math.cos(a) * v[0] - Math.sin(a) * v[1], Math.sin(a) * v[0] + Math.cos(a) * v[1], v[2]];
@@ -57,4 +57,13 @@ test('배치도: 칸 × 줄 × 좌우 버튼, 고른 자리 하나만 눌림', (
   assert.equal(h.match(/class="seat( on)?"/g).length, 3 * 4 * 2);
   assert.equal(h.match(/aria-pressed="true"/g).length, 1);
   assert.match(h, /data-car="2" data-row="1" data-side="1" aria-pressed="true"/);
+});
+
+test('nearMatrix: 같은 카메라 · 먼 면은 그대로, 가까운 면만 바꾼다', () => {
+  // 원근 투영(n 5, f 900) · 임의의 뷰(돌리고 옮김), 열 우선
+  const persp = (n, f) => { const t = 1 / Math.tan(.6); return [t, 0, 0, 0, 0, t * 1.3, 0, 0, 0, 0, -(f + n) / (f - n), -1, 0, 0, -2 * f * n / (f - n), 0] };
+  const mul = (a, b) => { const o = new Array(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o };
+  const a = .7, b = -.4, view = mul([Math.cos(a), Math.sin(a), 0, 0, -Math.sin(a), Math.cos(a), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, Math.cos(b), Math.sin(b), 0, 0, -Math.sin(b), Math.cos(b), 0, 30, -20, -400, 1]);
+  const got = nearMatrix(mul(persp(5, 900), view), .2), want = mul(persp(.2, 900), view);
+  for (let i = 0; i < 16; i++) assert.ok(Math.abs(got[i] - want[i]) < 1e-9 * Math.max(1, Math.abs(want[i])), `${i}: ${got[i]} ≠ ${want[i]}`);
 });

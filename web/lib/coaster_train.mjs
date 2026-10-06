@@ -16,7 +16,7 @@
 // and write their own, so the seats sit inside the tub at any angle.
 //
 //   const c88=new CoasterTrain(SEOUL_CITY_STYLE.train.coaster88); c88.init(gl);
-//   c88.begin(ox,oy); c88.car(frame,L,W,rgb,front,back)…; c88.draw(gl,M,ox,oy,{zoom,unit,walls,occlude,dark,shadow,pixelRatio}); c88.dispose(gl)
+//   c88.begin(ox,oy); c88.car(frame,L,W,rgb,front,back)…; c88.draw(gl,M,ox,oy,{zoom,unit,walls,occlude,dark,shadow,pixelRatio,lod?,part?}); c88.dispose(gl)   (part: 'foot' 땅 그림자만 · 'body' 칸만)
 
 import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './park_night.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
@@ -339,9 +339,10 @@ export class CoasterTrain {
     const pass = (mesh, p, alpha) => { gl.uniform1f(U.u_pass, p); gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, this.n) };
     // behind the building walls: faint, before the cars have any depth of their own (no ghost of their hidden faces)
     gl.depthMask(false);
-    if (o.walls && o.occlude) { gl.depthFunc(gl.GREATER); pass(m, 0, o.occlude) }
+    if (o.walls && o.occlude && o.part !== 'body') { gl.depthFunc(gl.GREATER); pass(m, 0, o.occlude) }
     gl.depthFunc(gl.LEQUAL);
-    const foot = this.meshes.get('foot'); gl.bindVertexArray(foot.va); this.instancePointers(gl, this.attr); pass(foot, 1, 1);   // the ground shadow
+    const foot = this.meshes.get('foot'); if (o.part !== 'body') { gl.bindVertexArray(foot.va); this.instancePointers(gl, this.attr); pass(foot, 1, 1) }   // the ground shadow
+    if (o.part === 'foot') { gl.bindVertexArray(null); gl.bindTexture(gl.TEXTURE_2D, oldTex); gl.activeTexture(oldActive); return }   // part: 'foot' 땅 그림자만 · 'body' 그림자 없이 칸만(1인칭으로 탄 열차 — 깊이를 비운 맨 위에서 그린다)
     gl.bindVertexArray(m.va); this.instancePointers(gl, this.attr);
     gl.depthMask(true); pass(m, 0, 1); gl.depthMask(false);   // the cars, writing their depth: the seats sit inside the tub, the bulbs on its sides
     gl.bindVertexArray(null);

@@ -20,6 +20,9 @@ export const SEOUL_COASTER_STYLE = {
   rides: { detailZoom:14.5, crownHeightM:12, crownHeightRatio:.05, rimM:[.7,1.2],
     spokes:12, cabins:12, swingSides:8, saucerThicknessM:[5,10], saucerThicknessRatio:.035 },
   props: { flags:false, balloons:false },
+  // 1인칭으로 탈 때만 그리는 실제 크기 레일 · 침목(m, 상판 위 높이). 침목은 sleeperFadeM 사이에서 사라진다
+  rideTrack: { gaugeM:1.435, railHeadM:.07, railTopM:.34, sleeperTopM:.18, sleeperBottomM:.02, sleeperLengthM:2.4, sleeperWidthM:.26,
+    aheadM:320, behindM:30, rebuildM:80, sleeperFadeM:[70,150], rail:'#5D6263', railHead:'#D3D7D6', sleeper:'#B9B6AD', darkTint:.55 },
   sky: { light:{ sky:'#A9D6EE', horizon:'#E3F0F1' }, dark:{ sky:'#101B2C', horizon:'#2B3550' } },   // 1인칭으로 탈 때 수평선 위(그 밖에서는 하늘이 안 보여요)
   night: { bulbEveryM:18, bulbDropM:3, corePx:[1.4,1.8,2.2], haloPx:[4,5.5,7],
     warmShare:.8, trackEmission:.65, rideEmission:.55, stationEmission:.9,
