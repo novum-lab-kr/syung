@@ -10,8 +10,8 @@
   on yesterday, then learn again with yesterday included.
 - latest: the live-timing.json the map uses now, plus every line's stations in route order with
   their names, and per station how often its stand (도착→출발) was timed over the days that timing
-  learned from and the harmonic mean, and how many 도착 → next 도착 runs left it (stands: {line: {id:
-  [n, s, runs]}}, before STOP_MIN_N/STOP_DIFF/clamp; runs are what build_live_timing.onward_stops uses)
+  learned from and the median, and how many 도착 → next 도착 runs left it (stands: {line: {id:
+  [n, s, runs]}}, before STOP_MIN_N/clamp). latest.lines leaves out the per-edge runs (a count instead).
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).
 Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.py [web folder]
 """
@@ -27,14 +27,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyse_live_samples import metro, times  # noqa: E402
-from build_live_timing import OUT as REPO_TIMING, evaluate, learn, load, pairs  # noqa: E402
+from build_live_timing import OUT as REPO_TIMING, WINDOW, brief, day_pairs, evaluate, learn, load  # noqa: E402
 from sample_files import all_days, day_files, lines  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 STATE = Path("/var/lib/subway-live")
 DAYS_CACHE = STATE / "learning-days.json"
 HISTORY_CACHE = STATE / "learning-history.json"
-WINDOW = 7   # days of samples a retrain learns from (retrain_live_timing.DAYS)
 
 
 
@@ -53,7 +52,7 @@ def line_stations() -> dict:
 def station_stands(paths: list[str]) -> dict:
     """Timed stands and onward runs per station, the way build_live_timing.learn collects them."""
     at, runs = defaultdict(list), defaultdict(int)
-    for line, e1, e2, a, b, dt in pairs(load(paths)):
+    for line, e1, e2, a, b, dt in day_pairs(paths):
         if not (e1["event"] and e2["event"]):
             continue
         if a == b and (e1["status"], e2["status"]) == ("도착", "출발") and dt < 300:
@@ -64,7 +63,7 @@ def station_stands(paths: list[str]) -> dict:
     out = defaultdict(dict)
     for line, a in sorted(set(at) | set(runs)):
         v = at.get((line, a), [])
-        out[line][str(a)] = [len(v), round(statistics.harmonic_mean(v)) if v else None, runs.get((line, a), 0)]
+        out[line][str(a)] = [len(v), round(statistics.median(v)) if v else None, runs.get((line, a), 0)]
     return dict(out)
 
 
@@ -95,7 +94,7 @@ def backfill(d: date, have: set[date]) -> dict | None:
     candidate = learn(train)
     final = learn(train + holdout)
     return {"date": d.isoformat(), "source": "backfill", "candidate": evaluate(candidate, holdout),
-            "result": "backfill", "lines": final["lines"], "n": final.get("n"), "train_files": len(train)}
+            "result": "backfill", "lines": brief(final["lines"]), "n": final.get("n"), "train_files": len(train)}
 
 
 def main(web: Path) -> None:
@@ -135,7 +134,7 @@ def main(web: Path) -> None:
            "retrainAt": "매일 03:10", "window": WINDOW,
            "days": [{k: v for k, v in s.items() if k != "stamp"} for s in stats],
            "history": [history[k] for k in sorted(history)],
-           "latest": {"lines": latest.get("lines"), "default": latest.get("default"), "n": latest.get("n"),
+           "latest": {"lines": brief(latest.get("lines") or {}), "default": latest.get("default"), "n": latest.get("n"),
                       "stations": stations, "stands": station_stands(learned_from),
                       "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}}}
     target = web / "learning.json"

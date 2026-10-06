@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Nightly: relearn live-timing.json from the last week of samples, and publish it only if it
+"""Nightly: relearn live-timing.json from the last two weeks of samples, and publish it only if it
 predicts yesterday at least as well as the one in use.
 
-- candidate: learned from the 7 days before yesterday (samples + position bursts)
+- candidate: learned from the WINDOW (14) days before yesterday (samples + position bursts); the
+  per-edge runs need more than a week for the rarer edges, and a day is read at a time
 - both it and the current file are scored on yesterday (build_live_timing.evaluate: median error
   in seconds of the next event, event-stamped records)
-- candidate no worse (≤ current + 0.5 s): relearn with yesterday included, write it to
+- candidate no worse: median and mean error no higher, and no kind of event more than SLACK s
+  worse (until 2026-10-07 the rule was median ≤ current + 0.5 s, and 10/6 published a timing whose
+  도착→출발 went 7.0 → 8.0 s): relearn with yesterday included, write it to
   /var/lib/subway-live/live-timing.json and the web folder; otherwise keep the current one
 - first, the finished days' record files are gzipped (sample_files.compress_old)
-- every run appends one JSON line to /var/lib/subway-live/retrain.log
+- every run appends one JSON line to /var/lib/subway-live/retrain.log (the learned values without the
+  per-edge runs, only their count: they would add ~20 kB a night)
 deploy/deploy.sh publishes /var/lib/subway-live/live-timing.json when it exists, so a deploy does
 not roll a retrained file back to the repository's copy.
 Usage: retrain_live_timing.py [web folder, default /var/www/syung]
@@ -22,13 +26,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_live_timing import OUT as REPO_TIMING, evaluate, learn  # noqa: E402
+from build_live_timing import OUT as REPO_TIMING, WINDOW, brief, evaluate, learn  # noqa: E402
 from sample_files import compress_old, day_files  # noqa: E402
 
 STATE = Path("/var/lib/subway-live")
 TIMING = STATE / "live-timing.json"
 LOG = STATE / "retrain.log"
-DAYS, SLACK = 7, 0.5
+DAYS, SLACK = WINDOW, 0.5
+KINDS = ("도착→출발", "출발→다음 도착", "도착→다음 도착")
+
+
+def no_worse(candidate: dict, current: dict) -> bool:
+    if candidate["all"] is None or current["all"] is None or candidate["all"] > current["all"]:
+        return False
+    if current.get("mean") is not None and candidate["mean"] > current["mean"]:
+        return False
+    return all(candidate.get(k) is None or current.get(k) is None or candidate[k] <= current[k] + SLACK for k in KINDS)
 
 
 def files(day: datetime) -> list[str]:
@@ -60,11 +73,10 @@ def main() -> None:
         current = json.loads((TIMING if TIMING.exists() else REPO_TIMING).read_text(encoding="utf-8"))
         candidate = learn(train)
         entry["current"], entry["candidate"] = evaluate(current, holdout), evaluate(candidate, holdout)
-        if entry["candidate"]["all"] is not None and entry["current"]["all"] is not None \
-                and entry["candidate"]["all"] <= entry["current"]["all"] + SLACK:
+        if no_worse(entry["candidate"], entry["current"]):
             final = learn(train + holdout)
             publish(final, web)
-            entry["result"], entry["lines"], entry["n"] = "published", final["lines"], final.get("n")
+            entry["result"], entry["lines"], entry["n"] = "published", brief(final["lines"]), final.get("n")
         else:
             entry["result"] = "kept current"
     with LOG.open("a", encoding="utf-8") as log:

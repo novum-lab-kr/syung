@@ -15,17 +15,18 @@ Output (data/live-timing.json), read by the map runtime:
   slower (7호선 1.045 against 0.927 the rest of the day, 2026-09-24–30); the map uses it then.
   Only for lines with RUSH_MIN_N spans; else the map keeps pace.
 - zone: seconds from 도착 to 출발 at one station (the train inside the station section).
-- stops: {station id: zone} where a station's own zone (STOP_MIN_N spans or more) is STOP_DIFF s or
-  more off the line's: busy stations stand longer (2호선 강남 83 s against the line's 75; 3370 내선
-  stood 93 s there at 18:38 on 2026-10-01 and the map had it leave ~25 s early).
-  A station whose feed never says 출발 (코레일 sections: 1호선 off 서울역–청량리, 경의중앙선,
-  수인분당선, 경춘선, 서해선, 경강선) gets one from its 도착 → next 도착 runs instead (STOP_MIN_N of
-  them): the median of how much later than the line's pace and zone predict the next 도착 came. It
-  also takes up the timetable's error on the runs out of it, so it is not a pure stand time (it
-  agrees poorly with measured stands), but learned on 2026-09-25–30 it cut the next-도착 error on the
-  following day: 1호선 14.0 → 12.0 s, 경의중앙선 18.6 → 13.5, 수인분당선 13.0 → 11.0, 경춘선
-  19.9 → 15.7, no line worse (holdout 2026-10-01; 2026-09-30 alike). Chaining A→B against B→A
-  differences instead drifted along the line and made it worse.
+- stops: {station id: zone} for every station with STOP_MIN_N timed stands whose own zone differs
+  from the line's: the median 도착→출발 + 5 (the map has 출발 come zone − 5 s after 도착).
+- runs: {"a:b": seconds} per direction of every edge: the median 출발 at a → 도착 at b (RUN_MIN_N of
+  them), or for stations whose feed never says 출발 (코레일 sections) the median 도착 → next 도착
+  less a's stand. The timetable × pace is only the fallback.
+  Why (2026-10-07): the per-line constants stopped improving at a median error of 9–10 s, while the
+  feed itself is steady per place: fitting each edge's own median on the same day leaves 1 s on
+  출발→다음 도착 (the line constants 15 s) and 5 s overall. Learned on the 7 days before and scored on
+  the next (10/4, 10/5, 10/6 each) the error went 9.0–9.9 → 5.0 s (출발→다음 도착 10 → 1,
+  도착→다음 도착 11 → 7, 도착→출발 7 → 6), 2호선 7 → 2, 1호선 11 → 8, 3호선 14 → 12; hour of day,
+  rush hour and weekday/weekend per edge did not help out of sample — what is left is how long
+  each train happens to stand.
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
@@ -34,6 +35,7 @@ it lasts, so the plain mean would overweight long ones.
 Files under a "position" directory are position-feed bursts (the proxy's BURST_* settings):
 every record there carries its own event time, which gives zone and approach on the lines whose
 all-stations records are all snapshot-stamped (2·5·6·7·9호선).
+Records are read one day at a time (all days at once took 4.9 GB and was killed once, 2026-10-03).
 Usage: build_live_timing.py <samples.jsonl | position/*.jsonl> [...]
 """
 
@@ -47,7 +49,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyse_live_samples import key, node_of, scheduled, times, ts  # noqa: E402
-from sample_files import lines  # noqa: E402
+from sample_files import day_of, lines  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "live-timing.json"
@@ -55,7 +57,8 @@ OUT = ROOT / "data" / "live-timing.json"
 # 7호선 position feed's own event times 67 s (2026-09-28, 45 stops) — 40 s had 7호선 trains leave
 # ~30 s early
 DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
-STOP_MIN_N, STOP_DIFF, STOP_CLAMP = 30, 5, (30, 180)
+STOP_MIN_N, STOP_CLAMP, RUN_MIN_N = 30, (30, 180), 15
+WINDOW = 14   # days a nightly retrain learns from (retrain_live_timing.py)
 MIN_N = {"pace": 200, "zone": 100, "approach": 100, "rushPace": 60}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85), "rushPace": (0.95, 1.12)}
 # weekday rush hours, KST minutes of the day [start, end) — maplibre_runtime.mjs RUSH is the same
@@ -109,23 +112,24 @@ def pairs(trains: dict):
                 yield line, e1, e2, a, b, dt
 
 
-def onward_stops(line: str, learned: dict, onward: list, zone_at: dict) -> dict:
-    """{station id: zone} from 도착 → next 도착 runs, for stations without STOP_MIN_N timed stands."""
-    tm = {**DEFAULT, **learned}
-    late = defaultdict(list)
-    for l, a, run, dt, in_rush in onward:
-        if l != line or len(zone_at.get((l, a), ())) >= STOP_MIN_N:
-            continue
-        pace = tm.get("rushPace", tm["pace"]) if in_rush else tm["pace"]
-        late[a].append(dt - (max(15, tm["zone"] - 10) + max(0.5 * run, pace * (run + 30) - tm["zone"]) + 10))   # as evaluate
-    return {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], tm["zone"] + statistics.median(v))))
-            for a, v in late.items() if len(v) >= STOP_MIN_N}
+def day_pairs(paths: list[str]):
+    """pairs() one day at a time (a train running past midnight loses that one pair)."""
+    days = defaultdict(list)
+    for p in paths:
+        days[day_of(Path(p)) or p].append(p)
+    for group in days.values():
+        yield from pairs(load(group))
+
+
+def stand(tm: dict, a) -> float:
+    """Seconds from 도착 until the train pulls out at station a (출발 comes 15 s later)."""
+    return max(15, tm.get("stops", {}).get(str(a), tm["zone"]) - 10)
 
 
 def learn(paths: list[str], verbose: bool = False) -> dict:
     pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
-    zone_at, onward = defaultdict(list), []   # onward: 도착 → next station's 도착 runs
-    for line, e1, e2, a, b, dt in pairs(load(paths)):
+    zone_at, leave, onward = defaultdict(list), defaultdict(list), defaultdict(list)   # (line, a, b): 출발 → 도착, 도착 → 도착
+    for line, e1, e2, a, b, dt in day_pairs(paths):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
             if both and (s1, s2) == ("도착", "출발") and dt < 300:
@@ -134,9 +138,11 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
             if both and (s1, s2) == ("진입", "도착") and dt < 180:
                 approach[line].append(dt)
             continue
-        if both and (s1, s2) == ("도착", "도착") and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")) \
-                and 0.5 * run < dt < run + 300:
-            onward.append((line, a, run, dt, rush(e1["receivedAt"])))
+        if both and s2 == "도착" and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")):
+            if s1 == "출발" and dt < run + 300:
+                leave[(line, a, b)].append(dt)
+            elif s1 == "도착" and 0.5 * run < dt < run + 300:
+                onward[(line, a, b)].append(dt)
         sched = scheduled(line, a, b)
         if sched and s1 == s2 and s1 in ("도착", "출발") and both:
             hops, run = sched
@@ -158,49 +164,66 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
         if abs(out.get("rushPace", 0) - out.get("pace", DEFAULT["pace"])) < 0.02:
             out.pop("rushPace", None)   # no different at rush hour
         base = out.get("zone", DEFAULT["zone"])
-        stops = {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], statistics.harmonic_mean(v))))
+        stops = {str(a): round(min(STOP_CLAMP[1], max(STOP_CLAMP[0], statistics.median(v) + 5)))
                  for (l, a), v in sorted(zone_at.items()) if l == line and len(v) >= STOP_MIN_N}
-        stops = {a: v for a, v in stops.items() if abs(v - base) >= STOP_DIFF}
-        lines[line] = out   # for onward_stops below
-        for a, v in onward_stops(line, out, onward, zone_at).items():
-            if abs(v - base) >= STOP_DIFF:
-                stops[a] = v
+        stops = {a: v for a, v in stops.items() if v != base}
         if stops:
             out["stops"] = stops
+        tm, runs = {**DEFAULT, **out}, {}
+        for (l, a, b) in sorted(set(leave) | set(onward)):
+            if l != line:
+                continue
+            if len(leave[(l, a, b)]) >= RUN_MIN_N:
+                runs[f"{a}:{b}"] = round(statistics.median(leave[(l, a, b)]))
+            elif len(onward[(l, a, b)]) >= RUN_MIN_N:   # no 출발 here: the stand is the line's, the rest is the run
+                runs[f"{a}:{b}"] = max(5, round(statistics.median(onward[(l, a, b)]) - stand(tm, a) - 5))
+        if runs:
+            out["runs"] = runs
+        lines[line] = out
         if not out:
             lines.pop(line)
         if verbose and out:
-            print(f"{line:6} {out}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
+            print(f"{line:6} {({k: v for k, v in out.items() if k not in ('stops', 'runs')})} stops {len(out.get('stops', {}))} runs {len(out.get('runs', {}))}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
     counts = {line: {k: n for k, n in (("pace", len(pace[line])), ("rushPace", len(rush_pace[line])),
-                                       ("zone", len(zone[line])), ("approach", len(approach[line]))) if n}
+                                       ("zone", len(zone[line])), ("approach", len(approach[line])),
+                                       ("runs", sum(len(v) for (l, _, _), v in leave.items() if l == line))) if n}
               for line in sorted(set(pace) | set(zone) | set(approach))}
     return {"lines": lines, "default": DEFAULT, "from": [Path(p).name for p in paths], "n": counts}
+
+
+def brief(lines: dict) -> dict:
+    """Learned values for the log and the learning page: the per-edge runs as a count."""
+    return {line: {k: (len(v) if k == "runs" else v) for k, v in out.items()} for line, out in lines.items()}
 
 
 def evaluate(timing: dict, paths: list[str]) -> dict:
     """Median |predicted − observed| seconds for the next event, as the map rolls trains
     (maplibre_runtime.mjs planTrain: a 도착 record's train leaves zone − 20 s later and is 15 s into
-    its run at 출발, so 출발 comes zone − 5 s after 도착; the next 도착 comes pace × (run + 30) −
-    zone + 5 s after 출발), over event-stamped records."""
+    its run at 출발, so 출발 comes zone − 5 s after 도착; the next 도착 comes the edge's learned run
+    (runs), else pace × (run + 30) − zone + 5 s, after 출발), over event-stamped records.
+    mean: the mean error, to tell apart timings whose medians tie at whole seconds."""
     errors = defaultdict(list)
-    for line, e1, e2, a, b, dt in pairs(load(paths)):
+    for line, e1, e2, a, b, dt in day_pairs(paths):
         if not (e1["event"] and e2["event"]):
             continue
         tm = {**timing["default"], **timing["lines"].get(line, {})}
         if "rushPace" in tm and rush(e1["receivedAt"]):
             tm["pace"] = tm["rushPace"]
-        stand = max(15, tm.get("stops", {}).get(str(a), tm["zone"]) - 10)   # the zone of the station it stands at
+        leave = stand(tm, a) + 5   # 도착 → 출발 at the station it stands at
         s1, s2 = e1["status"], e2["status"]
         if a == b and (s1, s2) == ("도착", "출발"):
-            kind, predicted = "도착→출발", stand + 5
+            kind, predicted = "도착→출발", leave
         elif a != b and s2 == "도착" and s1 in ("도착", "출발") and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")):
-            moving = max(0.5 * run, tm["pace"] * (run + 30) - tm["zone"]) + 10
-            kind, predicted = (f"{s1}→다음 도착", stand + moving if s1 == "도착" else moving - 5)
+            moving = tm.get("runs", {}).get(f"{a}:{b}")   # 출발 → 도착
+            if moving is None:
+                moving = max(0.5 * run, tm["pace"] * (run + 30) - tm["zone"]) + 5
+            kind, predicted = (f"{s1}→다음 도착", leave + moving if s1 == "도착" else moving)
         else:
             continue
         errors[kind].append(abs(predicted - dt))
     every = [x for v in errors.values() for x in v]
     return {"all": round(statistics.median(every), 1) if every else None, "n": len(every),
+            "mean": round(statistics.mean(every), 2) if every else None,
             **{k: round(statistics.median(v), 1) for k, v in errors.items()}}
 
 

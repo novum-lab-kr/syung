@@ -258,6 +258,7 @@ let edgeTimes={},lineDwell={};
 // Per-line timing learned from the live feed (live-timing.json, built by build_live_timing.py):
 // pace = observed ÷ timetable over several stations; zone = 도착→출발 (the feed marks a train
 // entering and leaving the station section, not stopping and starting); approach = 진입→도착.
+// stops = a station's own zone, runs = an edge's own 출발→도착 seconds per direction (planTrain).
 let liveTiming={lines:{},default:{pace:1,zone:62,approach:40}};
 fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
 // weekday rush hours (KST minutes of the day; pipeline/build_live_timing.py RUSH): lines that run
@@ -308,7 +309,8 @@ function planTrain(t){
   const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,tm.stand||30),BRAKE=DWELL-STAND;
   // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
   const more=st=>(tm.stops?.[st.id]??tm.zone)-tm.zone,stand=st=>Math.max(5,STAND+more(st));
-  const paced=(from,to)=>{const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
+  // 구간마다 배운 출발→도착 초(live-timing runs, 방향별): 출발은 달리기 시작 15 s 뒤, 도착은 서기 BRAKE s 전이라 달리는 시간은 그만큼 더 길다. 없으면 시간표 × pace
+  const paced=(from,to)=>{const D=tm.runs?.[`${from.id}:${to.id}`];if(D!=null)return Math.max(10,D+15+BRAKE);const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
   // ease: slow at a stop, full speed through a station the train passes
   const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
     phases.push({from,to,k0,k1,dur:dur*(a&&b?1:a||b?.9:.8),ease:a&&b?'both':a?'in':b?'out':'none'})};
