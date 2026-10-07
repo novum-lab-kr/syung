@@ -33,6 +33,22 @@ const boundsOf = points => points.reduce((b, p) => [Math.min(b[0], p[0]), Math.m
 const color = (route, theme) => (BUS_TYPES[route.type] || BUS_TYPES.other)[theme];
 const typeName = route => (BUS_TYPES[route.type] || BUS_TYPES.other).name;
 const ARRIVAL_POLL_MS = 30000, ARRIVAL_POLLS = 10;   // 정류장을 연 동안 30초마다, 5분까지
+// 서울시 도착 문구 '6분후[3번째 전]' · '[막차] 10분후[6번째 전]' · '운행종료' → 크게 쓸 때 · 작게 쓸 덧말
+export function arrivalParts(bus) {
+  let message = String(bus?.message || '').trim(), last = !!bus?.last;
+  if (message.includes('[막차]')) { last = true; message = message.replace(/\[막차\]\s*/g, ''); }
+  const where = message.match(/\[([^\]]+)\]\s*$/);
+  const when = (where ? message.slice(0, where.index) : message).trim()
+    .replace(/^(\d+)분(\d+초)?\s*후$/, '$1분 후').replace(/^\d+초\s*후$/, '곧 도착') || '도착 정보 없음';
+  return {when, detail: [where?.[1], last && '막차'].filter(Boolean).join(' · ')};
+}
+// 곧 오는 순서: 남은 초, 그다음 출발 · 회차 대기, 운행 종료 · 정보 없음은 맨 뒤
+function arrivalRank(row) {
+  const first = row?.buses?.[0], message = String(first?.message || '');
+  if (!first || /운행종료/.test(message)) return 3e6;
+  if (/곧 도착/.test(message)) return 0;
+  return Number.isFinite(first.seconds) && first.seconds > 0 && /분|초/.test(message) ? first.seconds : 2e6;
+}
 const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
 
 export function prepareBusData(routes, stops) {
@@ -593,30 +609,41 @@ class BusLayer {
     const controller = this.arrivalController; this.arrivalController = null; controller?.abort();
     this.arrivals = null;
   }
-  arrivalHTML(stop, routes) {
+  // 정류장 팝업: 지하철역 팝업(station-sheet)과 같은 짜임 — 칩 · 이름 · 기준 시각 · '곧 오는 버스' 카드
+  stopHTML(stop, routes, mock) {
     const a = this.arrivals?.stopId === stop.id ? this.arrivals : null;
     const rows = new Map((a?.rows || []).map(row => [row.routeId, row])), known = new Set(routes.map(r => r.id));
     const answered = a && ['fresh', 'cached', 'stale', 'mock'].includes(a.state);
-    const time = row => {
-      if (!a || a.state === 'none' || a.state === 'unavailable') return '';
-      if (!row) return `<span class="bus-arrival">${a.state === 'loading' ? '…' : answered ? '<small>도착 정보 없음</small>' : ''}</span>`;
-      const [first, next] = row.buses || [], second = next?.message !== first?.message ? next : null;   // '운행종료'가 두 번 나오지 않게
-      const last = bus => bus?.last && !String(bus.message).includes('막차');   // API 문구에 '[막차]'가 이미 붙어 오기도 한다
-      return `<span class="bus-arrival">${text(first?.message || '도착 정보 없음')}${last(first) ? ' <em class="bus-last">막차</em>' : ''}` +
-        `${second ? `<small>다음 ${text(second.message)}${last(second) ? ' · 막차' : ''}</small>` : ''}${row.direction ? `<small>${text(row.direction)} 방면</small>` : ''}</span>`;
-    };
-    const items = routes.map(r => `<li><button type="button" data-bus-route="${text(r.id)}" aria-pressed="${r.id===this.selectedRoute}" style="--bus-color:${color(r, this.theme)}">${text(typeName(r))} <b>${text(r.name)}</b></button>${time(rows.get(r.id))}</li>`);
-    // 우리 노선 자료에 없는 노선(공항버스 등): 도착 정보만, 눌러도 지도에 그릴 경로가 없다
-    const extra = [...rows.values()].filter(row => !known.has(row.routeId));
-    for (const row of extra) items.push(`<li><span class="bus-route-tag" style="--bus-color:${color(row, this.theme)}">${text(typeName(row))} <b>${text(row.name)}</b></span>${time(row)}</li>`);
-    const clock = a?.fetchedAt == null ? '' : new Date(a.fetchedAt).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul'});
-    const state = !a ? '' : a.state === 'none' ? '이 정류장은 도착 정보가 없어요.' : a.state === 'loading' ? '도착 정보를 불러오는 중이에요.'
-      : a.state === 'unavailable' ? '지금은 도착 정보를 쓸 수 없어요.' : a.mode === 'mock' ? '예시 데이터 · 실제 운행 정보 아님'
+    const clock = a?.fetchedAt == null ? '' : new Date(a.fetchedAt).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul'});
+    const sub = !a || a.state === 'loading' ? '도착 정보 불러오는 중…' : a.state === 'none' ? '이 정류장은 도착 정보가 없어요'
+      : a.state === 'unavailable' ? '지금은 도착 정보를 쓸 수 없어요' : a.mode === 'mock' ? '예시 데이터 · 실제 운행 정보 아님'
       : a.state === 'stale' ? `도착 정보 갱신 지연${clock ? ` · ${clock} 기준` : ''}`
-      : answered ? `${clock} 기준 도착 정보${a.count >= ARRIVAL_POLLS && !this.arrivalTimer ? ' · 정류장을 다시 누르면 새로 받아요' : ''}`
-      : a.code === 'daily_limit' ? '오늘 도착 정보 조회 한도를 다 썼어요.' : '도착 정보를 불러오지 못했어요.';
-    return `<ul class="bus-route-list bus-arrival-list">${items.join('')}</ul>${extra.length ? '<p class="bus-detail-note">노선 자료가 없는 번호는 도착 정보만 보여요.</p>' : ''}${state ? `<p class="bus-detail-note">${state}</p>` : ''}`;
+      : answered ? `서울시 버스 도착정보 · ${clock} 기준${a.count >= ARRIVAL_POLLS && !this.arrivalTimer ? ' · 다시 누르면 새로 받아요' : ''}`
+      : a.code === 'daily_limit' ? '오늘 도착 정보 조회 한도를 다 썼어요' : '도착 정보를 불러오지 못했어요';
+    // 우리 노선 자료에 없는 번호(공항버스 등)도 도착 정보는 보여 주되, 지도에 그릴 경로가 없어 누를 수 없다
+    const cards = [...routes.map(route => ({route, row: rows.get(route.id), live: true})),
+      ...[...rows.values()].filter(row => !known.has(row.routeId)).map(row => ({route: {...row, id: row.routeId}, row, live: false}))];
+    cards.sort((x, y) => arrivalRank(x.row) - arrivalRank(y.row));
+    const times = row => {
+      if (!row) return answered ? '<span class="arr-t"><span class="muted">도착 정보 없음</span></span>'
+        : !a || a.state === 'loading' ? '<span class="arr-t bus-arr-wait" aria-hidden="true"><i></i></span>' : '';   // 오는 동안: 시간 자리만 비워 두고 번호는 바로 누를 수 있게
+      const buses = (row.buses || []).map(arrivalParts).filter((b, i, all) => !i || b.when !== all[0].when || b.detail);
+      return buses.map(b => `<span class="arr-t"><b>${text(b.when)}</b>${b.detail ? `<span class="muted">${text(b.detail)}</span>` : ''}</span>`).join('');
+    };
+    const card = ({route, row, live}) => {
+      const pressed = live && route.id === this.selectedRoute;
+      const head = `<span class="arr-h"><span class="dot"></span>${text(route.name)}<span class="muted">${text(typeName(route))}${row?.direction ? ` · ${text(row.direction)} 방면` : ''}</span>` +
+        `<span class="bus-arr-go">${live ? pressed ? '지도에 표시 중' : '지도에서 보기' : '노선 정보 없음'}</span></span>`;
+      return live ? `<button type="button" class="arr bus-arr" data-bus-route="${text(route.id)}" aria-pressed="${pressed}" style="--c:${color(route, this.theme)}">${head}${times(row)}</button>`
+        : `<div class="arr bus-arr" style="--c:${color(route, this.theme)}">${head}${times(row)}</div>`;
+    };
+    const list = `<div class="arrs bus-arrs">${cards.map(card).join('')}</div>`;
+    return `<div class="tp-line"><span class="chip" style="--c:var(--muted)"><span class="dot"></span>버스 정류장${stop.arsId ? ` ${text(stop.arsId)}` : ''}</span></div>` +
+      `<h3 class="tp-dest" tabindex="-1">${text(stop.name)}</h3><div class="tp-now">${sub}</div>` +
+      `${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
+      `<div class="sec">곧 오는 버스 <span class="muted">· 누르면 지도에 노선과 버스</span></div>${list}`;
   }
+
 
   detailHTML() {
     const selection = this.selection; if (!selection) return '';
@@ -626,7 +653,7 @@ class BusLayer {
       const routes = this.data.routesByStop.get(stop.id) || [];
       const chosen=this.data.routeById.get(this.selectedRoute);
       const mock=chosen&&(this.mode==='mock'||[...this.fleet.values()].some(b=>b.route.id===chosen.id&&b.mock));
-      return wrap(`<h3 tabindex="-1">${text(stop.name)}</h3><p class="bus-detail-note">버스 정류장${stop.arsId ? ` · ${text(stop.arsId)}` : ''}</p><p class="bus-detail-note">${chosen?`${text(chosen.name)}번 노선과 버스 표시 중`:'번호를 누르면 노선과 버스를 볼 수 있어요.'}</p>${mock?'<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>':''}${this.arrivalHTML(stop, routes)}`);
+      return `<div class="bus-detail train-inspect station-sheet">${this.stopHTML(stop, routes, mock)}</div>`;
     }
     const bus = selection.kind === 'bus' ? this.fleet.get(selection.id) : null;
     const route = bus?.route || this.data.routeById.get(this.selectedRoute); if (!route) return '';

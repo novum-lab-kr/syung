@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds} from '../web/lib/bus_layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts} from '../web/lib/bus_layer.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
@@ -206,23 +206,36 @@ test('처음부터 화면 근처 버스를 받지 않는다: 정적 노선 · �
   assert.equal(requested.filter(url => url.startsWith('/api/bus/live')).length, 0);
 }, null));
 
-test('정류장 팝업: 도착 문구 · 다음 버스 · 막차 · 방면, 노선 자료에 없는 번호는 누를 수 없는 이름표', () => withLayerFixture(async (layer, requested) => {
+test('정류장 팝업: 지하철역 팝업 짜임, 곧 오는 순서 카드, 노선 자료에 없는 번호는 누를 수 없는 카드', () => withLayerFixture(async (layer, requested) => {
   layer.select({kind: 'stop', id: '01'}, null);
-  assert.match(layer.detailHTML(), /도착 정보를 불러오는 중/);
+  assert.match(layer.detailHTML(), /도착 정보 불러오는 중/);
+  assert.match(layer.detailHTML(), /data-bus-route="100000001"[^>]*>.*<span class="arr-t bus-arr-wait" aria-hidden="true"><i><\/i><\/span><\/button>/, '오는 동안에도 번호는 누를 수 있고 시간 자리만 빈 막대');
   await new Promise(resolve => setImmediate(resolve));
   const html = layer.detailHTML();
-  assert.match(html, /data-bus-route="100000001"[^>]*>간선 <b>100<\/b><\/button><span class="bus-arrival">곧 도착<small>다음 8분후\[5번째 전\] · 막차<\/small><small>회차 방면<\/small>/);
-  assert.match(html, /<span class="bus-route-tag"[^>]*>공항 <b>6100<\/b><\/span>/);
+  assert.match(html, /class="bus-detail train-inspect station-sheet"/);
+  assert.match(html, /<span class="chip"[^>]*><span class="dot"><\/span>버스 정류장 00123<\/span>/);
+  assert.match(html, /<h3 class="tp-dest" tabindex="-1">출발<\/h3><div class="tp-now">서울시 버스 도착정보 · 14:05 기준<\/div>/);
+  assert.match(html, /<button type="button" class="arr bus-arr" data-bus-route="100000001" aria-pressed="false"[^>]*><span class="arr-h"><span class="dot"><\/span>100<span class="muted">간선 · 회차 방면<\/span><span class="bus-arr-go">지도에서 보기<\/span><\/span><span class="arr-t"><b>곧 도착<\/b><\/span><span class="arr-t"><b>8분 후<\/b><span class="muted">5번째 전 · 막차<\/span><\/span><\/button>/);
+  assert.match(html, /<div class="arr bus-arr"[^>]*><span class="arr-h"><span class="dot"><\/span>6100<span class="muted">공항<\/span><span class="bus-arr-go">노선 정보 없음<\/span>/);
   assert.doesNotMatch(html, /data-bus-route="100100513"/);
-  assert.match(html, /05:20 기준 도착 정보/);
-  layer.arrivals.rows[0].buses[1].message = '[막차] 14분후[9번째 전]'; layer.arrivals.rows[0].buses[0].last = true;
-  assert.match(layer.detailHTML(), /곧 도착 <em class="bus-last">막차<\/em><small>다음 \[막차\] 14분후\[9번째 전\]<\/small>/, '문구에 이미 있으면 막차를 덧붙이지 않는다');
+  assert.ok(html.indexOf('>100<') < html.indexOf('>6100<'), '곧 도착이 3분 뒤보다 먼저');
+  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  assert.match(layer.detailHTML(), /aria-pressed="true"[^>]*><span class="arr-h"><span class="dot"><\/span>100<span class="muted">[^<]*<\/span><span class="bus-arr-go">지도에 표시 중/);
   assert.ok(layer.arrivalTimer, '열려 있는 동안 다시 받는다');
   layer.clearSelection();
   assert.equal(layer.arrivalTimer, 0, '닫으면 멈춘다');
   assert.equal(layer.arrivals, null);
   assert.equal(requested.filter(url => url.includes('stop=')).length, 1);
 }, false));
+
+test('서울시 도착 문구를 시간과 덧말로: 막차는 한 번만', () => {
+  assert.deepEqual(arrivalParts({message: '6분후[3번째 전]', last: false}), {when: '6분 후', detail: '3번째 전'});
+  assert.deepEqual(arrivalParts({message: '[막차] 14분후[9번째 전]', last: true}), {when: '14분 후', detail: '9번째 전 · 막차'});
+  assert.deepEqual(arrivalParts({message: '2분12초후[1번째 전]'}), {when: '2분 후', detail: '1번째 전'});
+  assert.deepEqual(arrivalParts({message: '40초후[1번째 전]'}), {when: '곧 도착', detail: '1번째 전'});
+  assert.deepEqual(arrivalParts({message: '운행종료'}), {when: '운행종료', detail: ''});
+  assert.deepEqual(arrivalParts({message: '곧 도착', last: true}), {when: '곧 도착', detail: '막차'});
+});
 
 test('번호 없는 가상 정류장은 도착 정보를 부르지 않는다', () => withLayerFixture(async (layer, requested) => {
   layer.select({kind: 'stop', id: '02'}, null);

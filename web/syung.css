@@ -77,14 +77,24 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .bus-route-list button[aria-pressed=true]{background:var(--selected);border-color:var(--bus-color)}
 .bus-route-list button:active{background:var(--control)}
 .bus-route-list button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
-/* 정류장 팝업: 노선 번호 | 도착 안내(다음 버스 · 방면) */
-.bus-arrival-list{display:grid;gap:8px;padding:0;list-style:none}
-.bus-arrival-list li{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:12px}
-.bus-arrival-list button{width:100%}
-.bus-route-tag{display:flex;align-items:center;justify-content:center;gap:4px;box-sizing:border-box;min-height:44px;padding:8px 12px;border:1px dashed var(--rule);border-radius:12px;color:var(--bus-color)}
-.bus-arrival{font-size:14px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
-.bus-arrival small{display:block;font-size:12px;font-weight:400;color:var(--secondary)}
-.bus-last{font-style:normal;font-size:12px;color:var(--secondary)}
+/* 버스 정류장 팝업: 지하철역 팝업의 '곧 오는 열차' 카드(.arr)를 그대로 쓰고, 카드 전체가 노선 보기 버튼.
+   글은 제목 줄에 맞추고, 눌림 배경만 좌우 10px 밖으로 나간다(.sheet .arr 보다 앞에 있어 .arr.bus-arr 로 높인다) */
+.sheet-body:has(.bus-arrs){margin:0 -12px;padding:0 12px}   /* 그 10px 이 잘리지 않게(.journey 와 같은 방법) */
+.sheet .bus-arrs{column-gap:24px}
+.sheet .arr.bus-arr{position:relative;width:auto;margin:0 -10px;padding:10px;border:0;border-radius:12px;background:none;color:var(--ink);font:inherit;text-align:left}
+.sheet .arr.bus-arr::after{content:"";position:absolute;left:10px;right:10px;bottom:0;border-bottom:1px dashed var(--rule)}   /* 점선은 글 너비만큼 */
+.sheet button.bus-arr{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sheet button.bus-arr:hover{background:var(--control)}
+.sheet button.bus-arr[aria-pressed=true]{background:var(--selected)}
+.sheet button.bus-arr:is(:hover,[aria-pressed=true])::after,.sheet .bus-arr:has(+ button.bus-arr:is(:hover,[aria-pressed=true]))::after{display:none}
+.sheet button.bus-arr:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.sheet .bus-arr .arr-h{min-width:0}
+.sheet .bus-arr .arr-h .muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet .bus-arr-go{flex:none;margin-left:auto;padding-left:8px;font-size:12px;font-weight:600;color:var(--muted)}
+.sheet button.bus-arr .bus-arr-go::after{content:" ›"}
+.sheet button.bus-arr[aria-pressed=true] .bus-arr-go{color:var(--ink)}
+.sheet button.bus-arr[aria-pressed=true] .bus-arr-go::after{content:""}
+.sheet .bus-arr-wait i{display:block;width:52%;height:15px;border-radius:6px;background:var(--control)}   /* .st-sk 와 같은 빈 막대 */
 .setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
 .segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
