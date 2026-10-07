@@ -4,7 +4,11 @@
 python3 server/bus_live_proxy.py                 # loopback :3114
 BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py
 GET /api/bus/live?routes=<standard IDs>&focus=<one of those IDs>
-No key means unavailable, never an implicit simulation. No background polling.
+No key means unavailable, never an implicit simulation.
+Background polling only for learning (sample_loop, started by subway_live_proxy.py): BUS_LIVE_SAMPLE_ROUTES
+in turn, 05:00–24:00 KST, spread so it never uses the last BUS_LIVE_SAMPLE_RESERVE calls of the day (the
+map's), and never while someone is watching buses (SAMPLE_QUIET s since the last map request) — on
+2026-10-06 the map made 2 calls of 950, too few to learn from. Its answers also refresh the cache.
 Every successful upstream answer is also appended to <BUS_LIVE_RECORD_DIR>/YYYYMMDD.jsonl (KST day,
 default /var/lib/subway-live/bus; empty disables) for learning bus timing later: one row per
 vehicle with the route, when we fetched it and the feed's own fields (RECORD_FIELDS).
@@ -32,6 +36,8 @@ KST = timezone(timedelta(hours=9))
 # The official service documents HTTP; HTTPS timed out in the 2026-10-03 probe.
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 MAX_ROUTES = 8
+SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
+SAMPLE_QUIET = 300   # 지도에서 버스를 본 뒤 이만큼(초)은 모으기를 쉰다(호출 간격을 보는 사람에게 양보)
 # 학습용으로 남기는 API 항목(차량 번호판 plainNo 는 남기지 않는다): 구간 순번 · 구간 안 거리 · 정류장 정차 · 측정 시각 등
 RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
                  "nextStId", "nextStTm", "gpsX", "gpsY", "isrunyn", "islastyn", "busType", "isFullFlag", "congetion",
@@ -82,6 +88,8 @@ class Config:
     quota_file: Path = Path("/var/lib/subway-live/bus-quota.json")
     routes_file: Path = ROOT / "data" / "bus" / "routes.json"
     record_dir: Path | None = None   # 받은 위치를 날마다 저장할 폴더(없으면 저장 안 함)
+    sample_routes: tuple = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름)
+    sample_reserve: int = 250   # 하루 호출 중 지도 보는 사람 몫으로 남길 수
 
     def __post_init__(self):
         if self.mode not in ("auto", "live", "mock", "disabled"):
@@ -104,7 +112,10 @@ class Config:
                    timeout=float(os.environ.get("BUS_LIVE_TIMEOUT", "8")),
                    quota_file=Path(os.environ.get("BUS_LIVE_QUOTA_FILE", "/var/lib/subway-live/bus-quota.json")),
                    routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))),
-                   record_dir=Path(d) if (d := os.environ.get("BUS_LIVE_RECORD_DIR", "/var/lib/subway-live/bus")) else None)
+                   record_dir=Path(d) if (d := os.environ.get("BUS_LIVE_RECORD_DIR", "/var/lib/subway-live/bus")) else None,
+                   # 472(개포동–신촌로타리) · 143(정릉–개포동): 많이 타는 간선 둘
+                   sample_routes=tuple(r.strip() for r in os.environ.get("BUS_LIVE_SAMPLE_ROUTES", "100100075,100100022").split(",") if r.strip()),
+                   sample_reserve=int(os.environ.get("BUS_LIVE_SAMPLE_RESERVE", "250")))
 
 
 class QuotaLedger:
@@ -310,6 +321,7 @@ class BusProxy:
         self.backoff_until = 0
         self.next_at = 0
         self.last_block = "paced"
+        self.last_view = -math.inf   # 지도가 마지막으로 버스를 물은 때
 
     @property
     def mode(self):
@@ -336,6 +348,8 @@ class BusProxy:
             ids, focus = self.validate(query)
         except ValueError as error:
             return {"schemaVersion": 1, "ok": False, "error": "invalid_request", "message": str(error)}, 400
+        if ids:
+            self.last_view = now
         if self.mode == "unavailable":
             code = "disabled" if self.config.mode == "disabled" else "missing_key"
             statuses = {rid: self._status("unavailable", None, now, [], 60) for rid in ids}
@@ -363,23 +377,7 @@ class BusProxy:
                 except BusError as error:
                     storage_error = error.code
         if chosen:
-            try:
-                items = self.fetch(chosen, self.config)
-                buses = normalize_positions(items, chosen)
-                record(items, chosen, self.clock(), self.config.record_dir)
-                with self.lock:
-                    self.cache[chosen] = (self.clock(), buses)
-                    self.failures.pop(chosen, None)
-            except Exception as error:
-                # Never expose urllib exceptions: they may contain a key-bearing URL.
-                code = error.code if isinstance(error, BusError) else "upstream_error"
-                with self.lock:
-                    self.failures[chosen] = (self.clock() + 60, code)
-                    if code in ("upstream_auth", "upstream_quota"):
-                        self.backoff_until = self.clock() + 300
-            finally:
-                with self.lock:
-                    self.pending.discard(chosen)
+            self._fetch(chosen)
         now = self.clock()
         buses, statuses, errors = [], {}, []
         with self.lock:
@@ -408,6 +406,57 @@ class BusProxy:
         if storage_error:
             errors.append(self._error(None, storage_error))
         return self._body(ids, now, buses=buses, statuses=statuses, errors=errors), 200
+
+    def _fetch(self, rid):
+        """One reserved upstream call (rid already in pending): cache, record, or note the failure."""
+        try:
+            items = self.fetch(rid, self.config)
+            buses = normalize_positions(items, rid)
+            record(items, rid, self.clock(), self.config.record_dir)
+            with self.lock:
+                self.cache[rid] = (self.clock(), buses)
+                self.failures.pop(rid, None)
+            return True
+        except Exception as error:
+            # Never expose urllib exceptions: they may contain a key-bearing URL.
+            code = error.code if isinstance(error, BusError) else "upstream_error"
+            with self.lock:
+                self.failures[rid] = (self.clock() + 60, code)
+                if code in ("upstream_auth", "upstream_quota"):
+                    self.backoff_until = self.clock() + 300
+            return False
+        finally:
+            with self.lock:
+                self.pending.discard(rid)
+
+    def sample_once(self, rid) -> tuple[float, bool]:
+        """One learning call if it is due: (seconds to wait before the next try, whether it called)."""
+        now, config = self.clock(), self.config
+        if self.mode != "live" or rid not in self.routes:
+            return 3600, False
+        local = datetime.fromtimestamp(now, KST)
+        minute = local.hour * 60 + local.minute
+        if not SAMPLE_HOURS[0] <= minute < SAMPLE_HOURS[1]:
+            return 600, False
+        if now - self.last_view < SAMPLE_QUIET:
+            return 60, False
+        if now < self.backoff_until:
+            return self.backoff_until - now, False
+        try:
+            left = config.daily_limit - config.sample_reserve - self.ledger.view(now)["used"]
+            if left <= 0:
+                return 600, False
+            allowed, _, next_at = self.ledger.reserve(now, reserve_calls=config.sample_reserve)
+        except BusError:
+            return 600, False
+        if not allowed:
+            return max(1, next_at - now), False
+        with self.lock:
+            self.pending.add(rid)
+        self._fetch(rid)
+        # 남은 몫을 오늘 모으는 시간 끝까지 고르게
+        end = local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=SAMPLE_HOURS[1])
+        return max(config.min_interval, (end.timestamp() - now) / left), True
 
     @staticmethod
     def _error(route_id, code):
@@ -460,6 +509,17 @@ def get_proxy() -> BusProxy:
         if _proxy is None:
             _proxy = BusProxy()
         return _proxy
+
+
+def sample_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
+    """Learning collection (subway_live_proxy.py starts it): the sample routes in turn, forever."""
+    proxy = proxy or get_proxy()
+    routes = [rid for rid in proxy.config.sample_routes if rid in proxy.routes]
+    turn = 0
+    while routes and proxy.mode == "live":
+        wait, called = proxy.sample_once(routes[turn % len(routes)])
+        turn += called
+        sleep(wait)
 
 
 def snapshot(query: dict) -> tuple[dict, int]:

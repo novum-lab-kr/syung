@@ -167,6 +167,44 @@ class ProxyTest(unittest.TestCase):
         body = self.get(self.proxy(record_dir=blocker / "bus"), R1)
         self.assertEqual(body["busCount"], 1)
 
+    def test_sampler_only_in_service_hours_and_not_while_someone_watches(self):
+        proxy = self.proxy()   # self.now = KST 00:00
+        self.assertEqual(proxy.sample_once(R1), (600, False))
+        self.now += 6 * 3600   # 06:00
+        self.get(proxy, R2)
+        self.calls.clear()
+        self.now += 100
+        self.assertEqual(proxy.sample_once(R1), (60, False))
+        self.now += bus.SAMPLE_QUIET
+        wait, called = proxy.sample_once(R1)
+        self.assertTrue(called)
+        self.assertEqual(self.calls, [R1])
+        # 남은 몫(950 − 250 − 지도 1번)을 24시까지 고르게
+        self.assertAlmostEqual(wait, (18 * 3600 - 100 - bus.SAMPLE_QUIET) / 699, places=3)
+        self.assertEqual(self.get(proxy, R1)["routes"][R1]["status"], "cached")
+
+    def test_sampler_keeps_the_reserve_for_the_map(self):
+        self.now += 6 * 3600
+        proxy = self.proxy(daily_limit=5, sample_reserve=3, min_interval=1)
+        called = []
+        for _ in range(6):
+            self.now += 10000
+            called.append(proxy.sample_once(R1)[1])
+        self.assertEqual(called.count(True), 2)
+        self.now += 10000
+        self.assertEqual(self.get(proxy, R1)["routes"][R1]["status"], "fresh")   # 지도 몫은 남아 있다
+
+    def test_sample_loop_takes_routes_in_turn(self):
+        self.now += 6 * 3600
+        proxy = self.proxy(sample_routes=(R1, R2, "999999999"))
+        def sleep(t):
+            self.now += t
+            if len(self.calls) >= 3:
+                raise StopIteration
+        with self.assertRaises(StopIteration):
+            bus.sample_loop(proxy, sleep=sleep)
+        self.assertEqual(self.calls, [R1, R2, R1])   # 모르는 노선은 빼고 번갈아
+
     def test_round_robin_does_not_starve_visible_routes(self):
         proxy = self.proxy()
         for _ in range(4):

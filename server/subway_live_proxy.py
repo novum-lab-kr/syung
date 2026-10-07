@@ -798,6 +798,14 @@ def _burst_loop() -> None:
             time.sleep(BURST_GAP)
 
 
+def _bus_samples() -> None:
+    try:
+        import bus_live_proxy
+        bus_live_proxy.sample_loop()   # 버스 시각 학습용 기록(하루 몫 일부만, 지도 보는 사람 우선)
+    except Exception as e:  # noqa: BLE001 — the map's bus requests still work
+        print(f"bus samples stopped: {e}", flush=True)
+
+
 def _warm_journey() -> None:
     try:
         import journey
@@ -811,4 +819,5 @@ if __name__ == "__main__":
     threading.Thread(target=_warm_journey, daemon=True).start()
     if BURST_EVERY > 0:
         threading.Thread(target=_burst_loop, daemon=True).start()
+    threading.Thread(target=_bus_samples, daemon=True).start()
     Server((HOST, PORT), Handler).serve_forever()
