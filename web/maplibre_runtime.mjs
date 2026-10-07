@@ -17,6 +17,7 @@ import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
+import {drawStationSigns,signRows,signTextSize,perspectiveRatio} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 그리는 기둥 표지판
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
@@ -1249,7 +1250,6 @@ function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   routeFocus=on;setRouteOpacity();
   stationAlpha=on?.35:1;map.triggerRepaint();
-  for(const id of ['station-labels','station-labels-more'])if(map.getLayer(id))map.setPaintProperty(id,'text-opacity',on?.35:1);
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.chosenIds().length&&!busLayer?.journeyLegs.length?'.3':'';   // bus: either entry point keeps its selected vehicles legible
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
@@ -2064,15 +2064,44 @@ map.on('load',()=>{
   map.addLayer({id:'stations-casing',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.flat()]}});
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
   map.addLayer(stationNames);   // platforms under the trains
-  // station names: flat on the map beside the platform, dark with a halo (like Kakao); dots only when zoomed out
   map.addSource('station-labels',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',filter:['==',['get','primary'],1],minzoom:PHONE?12.01:13.01,layout:{'text-field':['step',['zoom'],['format',['get','l0'],{'text-color':['get','c0'],'font-scale':.78},['get','l1'],{'text-color':['get','c1'],'font-scale':.78},['get','l2'],{'text-color':['get','c2'],'font-scale':.78},['get','l3'],{'text-color':['get','c3'],'font-scale':.78},'\n',{},['get','text'],{}],16,['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}]],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
-  map.addLayer({id:'station-labels-more',type:'symbol',source:'station-labels',filter:['==',['get','primary'],0],minzoom:16,layout:{'text-field':['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,11,16,13,18,14],'symbol-sort-key':['get','rank'],'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':['interpolate',['linear'],['zoom'],13,.6,16,.9,18,1.1],'text-justify':'auto','text-padding':3},paint:{'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':1.6}});
+  // 역 이름표: 버스 정류장처럼 둥근 판 + 짧은 기둥(끝이 승강장 가운데). 이 두 레이어는 투명한 자리잡이예요. 놓인 것만
+  // 열차 · 고가 · 출구 기둥 위 캔버스에 그려요(lib/station_signs.mjs, drawTrains 끝). 지도 캔버스에 그리면 3D 가 덮어요
+  // 자리잡이 그림: 판(이름에 맞춰 늘어남) + 그 아래 기둥 자리. 칸 치수는 station_signs.mjs 의 SIGN 과 같아요
+  {const R=2,W=40,PH=28,L=11;   // 늘어나는 칸을 기둥 양옆에 같은 폭으로 둬서 기둥이 늘 판 가운데에 와요
+   map.addImage('station-sign',{width:W*R,height:(PH+L+3)*R,data:new Uint8Array(W*R*(PH+L+3)*R*4)},{pixelRatio:R,stretchX:[[9*R,17*R],[23*R,31*R]],stretchY:[[9*R,19*R]],content:[7*R,5*R,(W-7)*R,(PH-5)*R]})}
+  // 글자 아래 → 기둥 끝까지 18px(판 안쪽 여백 2 + 판 · 기둥 16): 글자 크기(em)로 나눠 위로 올려요
+  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,14,16,17,18,19],'symbol-sort-key':['get','rank'],'text-anchor':'bottom','text-offset':['interpolate',['linear'],['zoom'],13,['literal',[0,-18/14]],16,['literal',[0,-18/17]],18,['literal',[0,-18/19]]],'text-justify':'center','text-padding':3,'icon-image':'station-sign','icon-text-fit':'both','icon-text-fit-padding':[2,5,2,5]};
+  const SIGN_PAINT={'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':0,'text-opacity':0,'icon-opacity':0};
+  map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',filter:['==',['get','primary'],1],minzoom:PHONE?12.01:13.01,layout:{'text-field':['step',['zoom'],['format',['get','l0'],{'text-color':['get','c0'],'font-scale':.78},['get','l1'],{'text-color':['get','c1'],'font-scale':.78},['get','l2'],{'text-color':['get','c2'],'font-scale':.78},['get','l3'],{'text-color':['get','c3'],'font-scale':.78},'\n',{},['get','text'],{}],16,['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}]],...SIGN_LAYOUT},paint:SIGN_PAINT});
+  map.addLayer({id:'station-labels-more',type:'symbol',source:'station-labels',filter:['==',['get','primary'],0],minzoom:16,layout:{'text-field':['format',['get','m0'],{'text-color':['get','mc'],'font-scale':.78},'\n',{},['get','text'],{}],...SIGN_LAYOUT},paint:SIGN_PAINT});
   // trains: their own canvas over the map (see TRAIN_FPS)
   {
     const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
     c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
     const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
+    // 역 이름표 캔버스: 열차 캔버스 바로 위(마커 · 팝업 아래)
+    const sc=document.createElement('canvas');sc.className='station-signs';c.after(sc);sc.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
+    const sctx=sc.getContext('2d');let signFeatures=[],signAt=0,signMatrix=null;
+    const drawSigns=M=>{
+      const m=map.getCanvas(),W=m.clientWidth,H=m.clientHeight;signMatrix=M;
+      if(sc.width!==m.width||sc.height!==m.height){sc.width=m.width;sc.height=m.height}
+      sc.style.width=m.style.width;sc.style.height=m.style.height;sctx.clearRect(0,0,sc.width,sc.height);
+      const now=performance.now();   // 놓인 이름표 목록은 가끔만 다시 받아요(배치도 그 정도 간격으로 바뀌어요). 위치는 매 프레임 투영
+      if(now-signAt>150){signAt=now;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels','station-labels-more']}):[]}
+      if(!signFeatures.length)return;
+      const clip=(x,y)=>[M[0]*x+M[4]*y+M[12],M[1]*x+M[5]*y+M[13],M[3]*x+M[7]*y+M[15]];
+      const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set(),items=[];
+      for(const f of signFeatures){
+        const [lng,lat]=f.geometry.coordinates,k=`${lng},${lat},${f.properties.m0}`;if(seen.has(k))continue;seen.add(k);
+        const q=maplibregl.MercatorCoordinate.fromLngLat([lng,lat]),[x,y,w]=clip(q.x,q.y);if(!(w>0))continue;
+        const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
+        items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties,z),rank:+f.properties.rank||0});
+      }
+      items.sort((a,b)=>b.rank-a.rank);   // 앞선 이름표(작은 rank)를 맨 위에
+      drawStationSigns(sctx,items,{dpr:m.width/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:stationAlpha});
+    };
+    map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
     const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,ridePlacement=null;   // coaster: checked ride sites; cityLife: city-life's props
     drawTrains=()=>{
       const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -2116,6 +2145,7 @@ map.on('load',()=>{
       if(ride&&coaster&&layer.c88ride.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
         const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
+      drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
     };
     map.on('render',()=>drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
     // walls: again when new building tiles arrive or the view settles somewhere new
@@ -2164,6 +2194,7 @@ map.on('load',()=>{
    x.beginPath();x.roundRect(2.2*R,2.2*R,S-4.4*R,S-4.4*R,3*R);x.fillStyle='#ffd400';x.fill();   // flat: thin ink rim, no drop shadow
    map.addImage('exit-sign',x.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
   map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'text-allow-overlap':true},paint:{'text-color':'#141414','text-opacity':0,'icon-opacity':0}});   // invisible: holds the exits' room so station names make way (the pillars are drawn with the trains)
+  map.moveLayer('exit-refs','station-labels');   // 역 이름표가 먼저 자리를 잡아요: 표지판은 역 바로 위에만 서서, 출구 자리를 비키면 기울인 화면에선 설 곳이 없어요(이름표가 기둥 위에 그려져요)
   exitsReady.then(()=>map.getSource('exits').setData({type:'FeatureCollection',features:exitFeatures()}));
   $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
