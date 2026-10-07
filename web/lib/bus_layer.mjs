@@ -20,6 +20,9 @@ export const BUS_TYPES = {
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const STALE_MS = 120000, EXPIRE_MS = 600000;
+// #buslines: 노선 점검용. 서울 버스 노선 전체(공식 경로)를 종류 색으로, z14 부터 번호 · 정류장까지 그린다.
+// 선을 누르면 그 노선만 골라 도로에 맞춘 선 · 버스 · 정류장을 위에 겹쳐 본다(어긋난 곳 찾기).
+const SOURCE_CHECK = 'bus-check', CHECK_LAYERS = ['bus-check-line','bus-check-stop','bus-check-label'];
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
 const text = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -130,7 +133,7 @@ class BusLayer {
     this.nearby = document.getElementById('inspectNearbyBus');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
     this.notice.setAttribute('role', 'status'); map.getContainer().append(this.notice);
-    this.installLayers();
+    this.check = /buslines/.test(globalThis.location?.hash || ''); this.installLayers();
     this.move = () => { clearTimeout(this.viewTimer); this.viewTimer = setTimeout(() => this.refreshView(), 200); };
     this.visibility = () => {
       this.stopLive();
@@ -156,6 +159,7 @@ class BusLayer {
     this.nearby?.addEventListener('click', this.inspect);
     // 화면 근처 버스를 늘 받지 않는다: 정류장을 누르면 도착 정보, 노선 번호를 누르면 그 노선 버스만 실시간(2026-10-07 행님)
     this.setEnabled(false);
+    if (this.check) this.loadStatic();
   }
 
   installLayers() {
@@ -169,12 +173,35 @@ class BusLayer {
       paint: {...journeyRidePaint(), ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
     map.addLayer({id:LAYERS[3],type:'circle',source:SOURCE_ROUTES,filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});
     this.raiseRoute();
+    if (this.check) this.installCheckLayers();
+  }
+
+  installCheckLayers() {
+    const map = this.map, before = map.getLayer(this.beforeId) ? this.beforeId : undefined;
+    map.addSource(SOURCE_CHECK, {type: 'geojson', data: collection([]), tolerance: 0});
+    const line = ['==', ['geometry-type'], 'LineString'];
+    map.addLayer({id: CHECK_LAYERS[0], type: 'line', source: SOURCE_CHECK, filter: line, layout: {'line-cap': 'round', 'line-join': 'round'},
+      paint: {'line-color': ['get', 'color'], 'line-opacity': .75, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, .8, 14, 1.6, 17, 3]}}, before);
+    map.addLayer({id: CHECK_LAYERS[1], type: 'circle', source: SOURCE_CHECK, minzoom: 14, filter: ['!', line],
+      paint: {'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2, 17, 4], 'circle-color': '#ffffff',
+        'circle-stroke-color': '#141414', 'circle-stroke-width': 1}}, before);
+    map.addLayer({id: CHECK_LAYERS[2], type: 'symbol', source: SOURCE_CHECK, minzoom: 14, filter: line,
+      layout: {'symbol-placement': 'line', 'symbol-spacing': 260, 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11},
+      paint: {'text-color': ['get', 'color'], 'text-halo-color': '#ffffff', 'text-halo-width': 1.6}}, before);
+  }
+
+  renderCheck() {
+    if (!this.check || !this.data) return;
+    const features = [...this.data.routeById.values()].map(route =>
+      feature('LineString', route.path, {routeId: route.id, name: route.name, color: color(route, this.theme)}));
+    for (const stop of this.data.stopById.values()) features.push(feature('Point', [stop.lng, stop.lat], {id: stop.id}));
+    this.map.getSource(SOURCE_CHECK)?.setData(collection(features));
   }
 
   setTheme(theme) {
     if (this.disposed) return;
     this.theme = theme === 'dark' ? 'dark' : 'light';
-    this.renderStatic(); this.draw(); this.refreshDetail();
+    this.renderStatic(); this.renderCheck(); this.draw(); this.refreshDetail();
   }
 
   setEnabled(enabled) {
@@ -194,7 +221,7 @@ class BusLayer {
       if (controller.signal.aborted || this.disposed) return;
       this.data = prepareBusData(...results); this.loading = false;
       this.journeyIds=journeyBusRouteIds(this.data,this.journeyLegs);
-      this.refreshView();
+      this.renderCheck(); this.refreshView();
     } catch (error) {
       if (!controller.signal.aborted) { this.loading = false; this.status = '버스 노선을 불러오지 못했어요 · 새로고침해 주세요'; this.updateStatus(); }
     } finally { if (this.staticController === controller) this.staticController = null; }
@@ -485,7 +512,7 @@ class BusLayer {
     if (this.map.getZoom() < BUS_ZOOM.stops) return false;
     const stop=this.stopHits.filter(h=>contains(h.bounds,[point.x,point.y])).sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0];
     if(stop){this.select({kind:'stop',id:stop.id},null);return true;}
-    const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: LAYERS.slice(0, 2)});
+    const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: [...LAYERS.slice(0, 2), ...(this.check ? CHECK_LAYERS.slice(0, 1) : [])]});
     if (routes.length) { const id = routes[0].properties.routeId; this.select({kind: 'route', id}, id); return true; }
     return false;
   }
