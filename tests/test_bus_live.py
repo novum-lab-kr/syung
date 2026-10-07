@@ -149,6 +149,24 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.calls, [R2, R1])
         self.assertEqual(body["routes"][R2]["status"], "stale")
 
+    def test_answers_are_recorded_per_kst_day_without_plate_numbers(self):
+        folder = Path(self.directory.name) / "bus"
+        self.fetch = lambda rid, config: (self.calls.append(rid), [{**ROW, "plainNo": "서울70사1234", "sectDist": "120"}])[1]
+        self.get(self.proxy(record_dir=folder), R1)
+        rows = [json.loads(x) for x in (folder / "20261003.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["routeId"], R1)
+        self.assertEqual(rows[0]["sectOrd"], "4")
+        self.assertEqual(rows[0]["sectDist"], "120")
+        self.assertNotIn("plainNo", rows[0])
+        self.assertEqual(rows[0]["fetchedAt"], bus.iso(self.now))
+
+    def test_unwritable_record_folder_still_serves_buses(self):
+        blocker = Path(self.directory.name) / "file"
+        blocker.write_text("x")
+        body = self.get(self.proxy(record_dir=blocker / "bus"), R1)
+        self.assertEqual(body["busCount"], 1)
+
     def test_round_robin_does_not_starve_visible_routes(self):
         proxy = self.proxy()
         for _ in range(4):

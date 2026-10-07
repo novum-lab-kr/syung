@@ -2,6 +2,7 @@
 
 /var/lib/subway-live/samples/YYYYMMDD.jsonl[.gz]    all-stations feed (sample_live_positions.py)
 /var/lib/subway-live/position/YYYYMMDD.jsonl[.gz]   position feed (the proxy's bursts and overlay)
+/var/lib/subway-live/bus/YYYYMMDD.jsonl[.gz]        bus positions the bus proxy fetched (compressed only)
 The day being written stays plain; compress_old() gzips the earlier ones (~18× smaller) and every
 reader goes through lines(), which reads either.
 """
@@ -16,6 +17,7 @@ from typing import Iterator
 
 STATE = Path("/var/lib/subway-live")
 SOURCES = ("samples", "position")
+BUS = "bus"   # 버스 위치(server/bus_live_proxy.py record) — 지하철 학습(day_files)에는 넣지 않고 압축만 같이 한다
 
 
 def lines(path: str | Path) -> Iterator[str]:
@@ -49,7 +51,7 @@ def all_days(state: Path = STATE) -> list[date]:
 def compress_old(today: date, state: Path = STATE) -> list[str]:
     """gzip every plain day file before `today`; the original goes only once the copy reads back whole."""
     done = []
-    for sub in SOURCES:
+    for sub in (*SOURCES, BUS):
         for p in sorted((state / sub).glob("*.jsonl")):
             d = day_of(p)
             if d is None or d >= today:

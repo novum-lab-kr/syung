@@ -5,6 +5,9 @@ python3 server/bus_live_proxy.py                 # loopback :3114
 BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py
 GET /api/bus/live?routes=<standard IDs>&focus=<one of those IDs>
 No key means unavailable, never an implicit simulation. No background polling.
+Every successful upstream answer is also appended to <BUS_LIVE_RECORD_DIR>/YYYYMMDD.jsonl (KST day,
+default /var/lib/subway-live/bus; empty disables) for learning bus timing later: one row per
+vehicle with the route, when we fetched it and the feed's own fields (RECORD_FIELDS).
 """
 from __future__ import annotations
 
@@ -29,6 +32,10 @@ KST = timezone(timedelta(hours=9))
 # The official service documents HTTP; HTTPS timed out in the 2026-10-03 probe.
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 MAX_ROUTES = 8
+# 학습용으로 남기는 API 항목(차량 번호판 plainNo 는 남기지 않는다): 구간 순번 · 구간 안 거리 · 정류장 정차 · 측정 시각 등
+RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
+                 "nextStId", "nextStTm", "gpsX", "gpsY", "isrunyn", "islastyn", "busType", "isFullFlag", "congetion",
+                 "rtDist", "stopId", "trnstnid")
 MESSAGES = {
     "missing_key": "버스 위치 API 서비스키가 설정되지 않았습니다.",
     "disabled": "버스 실시간 위치 수집이 비활성화되어 있습니다.",
@@ -74,6 +81,7 @@ class Config:
     timeout: float = 8
     quota_file: Path = Path("/var/lib/subway-live/bus-quota.json")
     routes_file: Path = ROOT / "data" / "bus" / "routes.json"
+    record_dir: Path | None = None   # 받은 위치를 날마다 저장할 폴더(없으면 저장 안 함)
 
     def __post_init__(self):
         if self.mode not in ("auto", "live", "mock", "disabled"):
@@ -95,7 +103,8 @@ class Config:
                    min_interval=float(os.environ.get("BUS_LIVE_MIN_INTERVAL", "1")),
                    timeout=float(os.environ.get("BUS_LIVE_TIMEOUT", "8")),
                    quota_file=Path(os.environ.get("BUS_LIVE_QUOTA_FILE", "/var/lib/subway-live/bus-quota.json")),
-                   routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))))
+                   routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))),
+                   record_dir=Path(d) if (d := os.environ.get("BUS_LIVE_RECORD_DIR", "/var/lib/subway-live/bus")) else None)
 
 
 class QuotaLedger:
@@ -211,6 +220,24 @@ def fetch_positions(route_id: str, config: Config) -> list[dict]:
     except (OSError, urllib.error.URLError, ValueError):
         raise BusError("upstream_error") from None
     return parse_payload(raw)
+
+
+def record(items: list[dict], route_id: str, now: float, directory: Path | None) -> None:
+    """Append one upstream answer to that KST day's file; a failed write never fails the request."""
+    if not directory:
+        return
+    fetched = iso(now)
+    rows = "".join(json.dumps({"routeId": route_id, "fetchedAt": fetched,
+                               **{k: row[k] for k in RECORD_FIELDS if row.get(k) not in (None, "")}},
+                              ensure_ascii=False, separators=(",", ":")) + "\n" for row in items)
+    if not rows:
+        return
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / f"{datetime.fromtimestamp(now, KST):%Y%m%d}.jsonl").open("a", encoding="utf-8") as out:
+            out.write(rows)
+    except OSError:
+        pass
 
 
 def number(value):
@@ -337,7 +364,9 @@ class BusProxy:
                     storage_error = error.code
         if chosen:
             try:
-                buses = normalize_positions(self.fetch(chosen, self.config), chosen)
+                items = self.fetch(chosen, self.config)
+                buses = normalize_positions(items, chosen)
+                record(items, chosen, self.clock(), self.config.record_dir)
                 with self.lock:
                     self.cache[chosen] = (self.clock(), buses)
                     self.failures.pop(chosen, None)
