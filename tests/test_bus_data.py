@@ -84,6 +84,9 @@ class StaticBuildTest(unittest.TestCase):
             for sid in route["stopIds"]:
                 self.assertIn(sid, by_stop)
                 self.assertTrue(west <= by_stop[sid]["lng"] <= east and south <= by_stop[sid]["lat"] <= north)
+            # 표시선(pipeline/bus_match_lines.py)은 공식 경로 곁(OFF 45 m)에만 있다.
+            for point in route.get("line", []):
+                self.assertTrue(west - .002 <= point[0] <= east + .002 and south - .002 <= point[1] <= north + .002)
             if route["pathSource"] == "stops":
                 self.assertEqual(len(route["path"]), len(route["stopIds"]))
                 for sid, point in zip(route["stopIds"], route["path"]):

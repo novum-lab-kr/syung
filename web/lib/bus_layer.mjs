@@ -1,6 +1,6 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
-import {buildBusPath, snapBusToPath, nextBusMotion, busMotionDistance,
+import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance,
   validCoordinate, intersects, contains} from './bus_motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './bus_mesh.mjs';
 import {BusRoadNetwork,busRoadPointAt,busMetresPerPixel} from './bus_roads.mjs';
@@ -221,23 +221,13 @@ class BusLayer {
     for (const {route} of this.visible) for (const id of route.stopIds) stopIds.add(id);
     const drawRoute=(route,markers)=>{
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
-      const path=this.geometry(route),matched=this.matchedPath(route),overview=this.map.getZoom()<BUS_ZOOM.buses;
-      // At overview scales use the official route. Detailed views show only connected,
-      // road-matched portions, never a provisional shortcut through buildings.
-      if(overview||!this.map.querySourceFeatures)features.push(feature('LineString',route.path,properties));
-      else for(const chunk of matched.chunks){
-        let part=[],laneWidth=chunk[0].laneWidth;
-        const flush=()=>{if(part.length>1)features.push(feature('LineString',part,{...properties,laneWidth}));};
-        for(const p of chunk){
-          if(Math.abs(laneWidth-p.laneWidth)>.01){flush();part=part.length?[part.at(-1)]:[];laneWidth=p.laneWidth;}
-          part.push(p.coordinate);
-        }flush();
-      }
+      // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
+      // 없으면 공식 경로. 화면 타일로 차로를 맞추던 조각선은 끊기고 갈고리가 생겨 쓰지 않는다.
+      const line=this.lineGeometry(route);
+      features.push(feature('LineString',line?.points||route.path,properties));
       for(const marker of markers){
-        const snap=snapBusToPath(path,marker.coordinate,{maxError:1000,hint:marker.distance??null});
-        const pose=snap&&busRoadPointAt(matched,snap.distance);
-        if(!overview&&!pose&&this.map.querySourceFeatures)continue;
-        features.push(feature('Point',pose?.coordinate||marker.coordinate,{...properties,kind:'stop'}));
+        const snap=line&&snapBusToPath(line,marker.coordinate,{maxError:80});
+        features.push(feature('Point',snap?busPointAt(line,snap.distance).coordinate:marker.coordinate,{...properties,kind:'stop'}));
       }
     };
     for(const id of chosen){
@@ -287,6 +277,10 @@ class BusLayer {
     }
   }
 
+  lineGeometry(route) {
+    if (route.lineGeometry === undefined) route.lineGeometry = buildBusPath(route.line) || buildBusPath(route.path);
+    return route.lineGeometry;
+  }
   geometry(route) {
     if (route.geometry) return route.geometry;
     const path = buildBusPath(route.path); if (!path) return null;
