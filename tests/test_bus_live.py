@@ -463,6 +463,15 @@ class ArrivalTest(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertEqual(bus.QuotaLedger(proxy.config).view(self.now)["used"], 2, "버스 위치와 다른 장부")
 
+    def test_refresh_asks_again_after_five_seconds_only(self):
+        proxy = self.proxy()
+        proxy.snapshot({"stop": ["07103"]})
+        self.now += 3
+        self.assertEqual(proxy.snapshot({"stop": ["07103"], "fresh": ["1"]})[0]["status"], "cached", "연타는 받아 둔 것")
+        self.now += 3
+        self.assertEqual(proxy.snapshot({"stop": ["07103"], "fresh": ["1"]})[0]["status"], "fresh")
+        self.assertEqual(len(self.calls), 2)
+
     def test_unknown_or_malformed_stops_never_spend_quota(self):
         proxy = self.proxy()
         for query in ({"stop": ["99999"]}, {"stop": ["0710"]}, {"stop": ["07103", "07103"]},

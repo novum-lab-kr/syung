@@ -49,6 +49,7 @@ MAX_ROUTES = 8
 # 401 은 5초 뒤 다시 묻고, 연속 AUTH_STRIKES 번이면서 AUTH_SILENT_SECONDS 동안 한 번도 못 받았을 때만
 # 진짜 인증 문제로 보고 5분 쉰다(키가 막혔다면 성공이 아예 없다)
 AUTH_RETRY_SECONDS, AUTH_STRIKES, AUTH_SILENT_SECONDS = 5, 5, 600
+FRESH_SECONDS = 5   # 정류장 팝업의 새로고침이 서울시에 새로 묻는 최소 간격
 SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
 NIGHT_END, NIGHT_WEIGHT = 5 * 60, 0.25   # KST 00~05시는 버스가 거의 없다: 호출 간격을 4배로 두고 아낀 몫을 낮에 쓴다
 WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수집보다 먼저 새로 받아 둔다
@@ -700,6 +701,8 @@ class ArrivalProxy:
         if not re.fullmatch(r"\d{5}", stop) or stop not in self.stops or query.get("routes"):
             return {"schemaVersion": 1, "ok": False, "error": "invalid_request",
                     "message": "stop must be one known 5-digit stop number"}, 400
+        # 새로고침(fresh=1): 받은 지 FRESH_SECONDS 가 지났으면 새로 묻는다. 연타로 하루 한도를 쓰지 않게 그보다 짧으면 받아 둔 것
+        window = min(self.config.cache_seconds, FRESH_SECONDS) if query.get("fresh", [""])[0] == "1" else self.config.cache_seconds
         if self.mode == "unavailable":
             code = "disabled" if self.config.mode == "disabled" else "missing_key"
             return self._body(stop, now, "unavailable", None, [], [BusProxy._error(None, code)]), 200
@@ -709,7 +712,7 @@ class ArrivalProxy:
         call, waiting, block = False, None, ""
         with self.lock:
             stamp = self.cache.get(stop, (None, []))[0]
-            if stamp is None or now - stamp >= self.config.cache_seconds:
+            if stamp is None or now - stamp >= window:
                 waiting = self.pending.get(stop)
                 failure = self.failures.get(stop, (0, ""))
                 if waiting:

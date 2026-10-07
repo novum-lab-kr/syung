@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts} from '../web/lib/bus_layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText} from '../web/lib/bus_layer.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
@@ -43,7 +43,7 @@ test('broken coordinates and unknown stop references never reach the map source'
   assert.deepEqual(data.routeById.get(route.id).stopIds, ['01', '02']);
 });
 
-let arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', arrivals: [
+let arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', ageSeconds: 0, arrivals: [
   {routeId: route.id, name: '100', type: 'trunk', direction: '회차', buses: [{message: '곧 도착', seconds: 40, last: false}, {message: '8분후[5번째 전]', seconds: 480, last: true}]},
   {routeId: '100100513', name: '6100', type: 'airport', direction: null, buses: [{message: '3분후[1번째 전]', seconds: 197, last: false}]},
 ], errors: []};
@@ -206,27 +206,49 @@ test('처음부터 화면 근처 버스를 받지 않는다: 정적 노선 · �
   assert.equal(requested.filter(url => url.startsWith('/api/bus/live')).length, 0);
 }, null));
 
-test('정류장 팝업: 지하철역 팝업 짜임, 곧 오는 순서 카드, 노선 자료에 없는 번호는 누를 수 없는 카드', () => withLayerFixture(async (layer, requested) => {
+test('정류장 팝업: 번호 배지 · 새로고침 / 곧 도착 1대 카드(다음 버스 · 앞뒤 정류장) / 한 줄 목록과 흐르는 남은 시간', () => withLayerFixture(async (layer, requested) => {
   layer.select({kind: 'stop', id: '01'}, null);
-  assert.match(layer.detailHTML(), /도착 정보 불러오는 중/);
-  assert.match(layer.detailHTML(), /data-bus-route="100000001"[^>]*>.*<span class="arr-t bus-arr-wait" aria-hidden="true"><i><\/i><\/span><\/button>/, '오는 동안에도 번호는 누를 수 있고 시간 자리만 빈 막대');
+  assert.match(layer.detailHTML(), /data-bus-route="100000001"[^>]*>.*<i class="bus-wait"><\/i>/, '오는 동안에도 번호는 누를 수 있고 시간 자리만 빈 막대');
   await new Promise(resolve => setImmediate(resolve));
   const html = layer.detailHTML();
-  assert.match(html, /class="bus-detail train-inspect station-sheet"/);
-  assert.match(html, /<span class="chip"[^>]*><span class="dot"><\/span>버스 정류장 00123<\/span>/);
-  assert.match(html, /<h3 class="tp-dest" tabindex="-1">출발<\/h3><div class="tp-now">서울시 버스 도착정보 · 14:05 기준<\/div>/);
-  assert.match(html, /<button type="button" class="arr bus-arr" data-bus-route="100000001" aria-pressed="false"[^>]*><span class="arr-h"><span class="dot"><\/span>100<span class="muted">간선 · 회차 방면<\/span><span class="bus-arr-go">지도에서 보기<\/span><\/span><span class="arr-t"><b>곧 도착<\/b><\/span><span class="arr-t"><b>8분 후<\/b><span class="muted">5번째 전 · 막차<\/span><\/span><\/button>/);
-  assert.match(html, /<div class="arr bus-arr"[^>]*><span class="arr-h"><span class="dot"><\/span>6100<span class="muted">공항<\/span><span class="bus-arr-go">노선 정보 없음<\/span>/);
-  assert.doesNotMatch(html, /data-bus-route="100100513"/);
+  assert.match(html, /<span class="bus-stop-no">.*00123<\/span><h3 tabindex="-1">출발<\/h3>/);
+  assert.match(html, /<button type="button" class="bus-refresh" data-bus-refresh aria-label="도착 정보 새로 받기 · 14:05:20 기준"><span>14:05:20<\/span>/);
+  assert.match(html, /<button type="button" class="bus-hero" data-bus-route="100000001" aria-pressed="false">.*회차 방면.*<span class="bus-hero-soon">곧 도착<\/span><span class="bus-hero-next">다음 8분<\/span>/);
+  assert.match(html, /<span class="bus-track-names"><span>회차<\/span><b>출발<\/b><span><\/span><\/span>/, '같은 정류장을 두 번 지나는 노선은 앞 정류장이 있는 쪽');
+  assert.match(html, /class="bus-row" data-bus-route="100000001"[^>]*>.*<span class="bus-soon">곧 도착<\/span>/, '곧 도착은 초 없이');
+  assert.match(html, /<div class="bus-row">.*>6100<.*<span class="bus-tag">지도 없음<\/span>.*<span class="bus-away">1번째 전<\/span><span class="bus-eta" data-eta="\d+">3분 1\d초<\/span>/);
   assert.ok(html.indexOf('>100<') < html.indexOf('>6100<'), '곧 도착이 3분 뒤보다 먼저');
-  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
-  assert.match(layer.detailHTML(), /aria-pressed="true"[^>]*><span class="arr-h"><span class="dot"><\/span>100<span class="muted">[^<]*<\/span><span class="bus-arr-go">지도에 표시 중/);
-  assert.ok(layer.arrivalTimer, '열려 있는 동안 다시 받는다');
+  layer.refreshArrivals();
+  assert.match(requested.at(-1), /stop=00123&fresh=1$/, '새로고침은 서버에 새로 묻는다');
   layer.clearSelection();
-  assert.equal(layer.arrivalTimer, 0, '닫으면 멈춘다');
+  assert.equal(layer.arrivalTick, 0, '닫으면 1초 시계도 멈춘다');
   assert.equal(layer.arrivals, null);
-  assert.equal(requested.filter(url => url.includes('stop=')).length, 1);
 }, false));
+
+test('곧 도착이 여러 대면 카드에는 번호만: 6대까지 다, 7대부터 5대 + 남은 수', () => withLayerFixture(async layer => {
+  const saved = arrivalBody;
+  const soon = n => Array.from({length: n}, (_, i) => ({routeId: String(100100100 + i), name: String(200 + i), type: 'trunk', direction: '종점',
+    buses: [{message: '곧 도착', seconds: 30 + i, last: false}]}));
+  try {
+    for (const [n, shown, more] of [[6, 6, ''], [8, 5, '+3']]) {
+      arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', ageSeconds: 0, arrivals: soon(n), errors: []};
+      layer.select({kind: 'stop', id: '01'}, null);
+      await new Promise(resolve => setImmediate(resolve));
+      const head = layer.detailHTML().match(/<span class="bus-hero-head">(.*?)<\/span><span class="bus-hero-now">/)[1];
+      assert.equal((head.match(/class="bus-num"/g) || []).length, shown, `${n}대`);
+      assert.equal(head.includes(`bus-num-more">${more}<`), !!more);
+      assert.doesNotMatch(head, /방면|지도에 표시 중/, '여러 대면 방면 · 지도 표시는 뺀다');
+      assert.match(layer.detailHTML(), /<div class="bus-hero">/, '여러 대 카드는 누르는 버튼이 아니다');
+    }
+  } finally { arrivalBody = saved; }
+}, false));
+
+test('남은 시간 표기: 분 초, 1분 안은 초, 0이면 도착 중', () => {
+  assert.equal(countdownText(432), '7분 12초');
+  assert.equal(countdownText(65), '1분 05초');
+  assert.equal(countdownText(48.4), '48초');
+  assert.equal(countdownText(-3), '도착 중');
+});
 
 test('서울시 도착 문구를 시간과 덧말로: 막차는 한 번만', () => {
   assert.deepEqual(arrivalParts({message: '6분후[3번째 전]', last: false}), {when: '6분 후', detail: '3번째 전'});
@@ -263,4 +285,15 @@ test('정류장에서 고른 노선은 노선 전체가 보이게 멀리 빼도 
   assert.deepEqual(layer.requested, [route.id]);
   layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 다시 누르면 해제
   assert.equal(layer.active(), false, '고른 노선이 없으면 멀리서는 받지 않는다');
+}, false));
+
+test('곧 도착 카드의 버스 아이콘: 지도에 띄운 노선이면 지도 위 버스가 구간의 어디쯤인지, 아니면 가운데쯤', () => withLayerFixture(layer => {
+  const r = layer.data.routeById.get(route.id), path = layer.geometry(r);
+  const from = path.stops[1].distance, to = path.stops[2].distance;
+  assert.equal(layer.approach(r, '01').ratio, .52, '노선을 안 띄웠으면 위치를 모른다');
+  layer.selectedRoute = route.id;
+  layer.fleet.set('b', {route: r, stale: false, motion: {from: from + (to - from) * .75, to: from + (to - from) * .75, startedAt: 0, duration: 0}});
+  const near = layer.approach(r, '01');
+  assert.ok(Math.abs(near.ratio - .75) < .01, `구간의 3/4: ${near.ratio}`);
+  assert.equal(near.prev, '회차');
 }, false));

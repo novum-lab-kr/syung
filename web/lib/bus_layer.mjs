@@ -43,13 +43,22 @@ export function arrivalParts(bus) {
     .replace(/^(\d+)분(\d+초)?\s*후$/, '$1분 후').replace(/^\d+초\s*후$/, '곧 도착') || '도착 정보 없음';
   return {when, detail: [where?.[1], last && '막차'].filter(Boolean).join(' · ')};
 }
-// 곧 오는 순서: 남은 초, 그다음 출발 · 회차 대기, 운행 종료 · 정보 없음은 맨 뒤
+// 곧 오는 순서: 곧 도착(그 안에서는 남은 초), 남은 초, 출발 · 회차 대기, 운행 종료 · 정보 없음은 맨 뒤
 function arrivalRank(row) {
-  const first = row?.buses?.[0], message = String(first?.message || '');
+  const first = row?.buses?.[0], message = String(first?.message || ''), seconds = Number.isFinite(first?.seconds) ? first.seconds : 0;
   if (!first || /운행종료/.test(message)) return 3e6;
-  if (/곧 도착/.test(message)) return 0;
-  return Number.isFinite(first.seconds) && first.seconds > 0 && /분|초/.test(message) ? first.seconds : 2e6;
+  if (/곧 도착/.test(message)) return Math.min(999, Math.max(0, seconds)) / 1000;
+  return seconds > 0 && /분|초/.test(message) ? seconds : 2e6;
 }
+const isSoon = row => /곧 도착/.test(String(row?.buses?.[0]?.message || ''));
+const isEnded = row => /운행종료/.test(String(row?.buses?.[0]?.message || ''));
+// 남은 초 → '7분 12초' · '48초' · '도착 중'(0이 되면 새 정보가 올 때까지)
+export function countdownText(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return s <= 0 ? '도착 중' : s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${String(s % 60).padStart(2, '0')}초`;
+}
+const BUS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M7 21v-3M17 21v-3"/></svg>';
+const REFRESH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>';
 const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
 
 export function prepareBusData(routes, stops) {
@@ -160,7 +169,8 @@ class BusLayer {
     this.zoom = () => { if (!this.active()) this.stopLive(); this.draw(); this.updateStatus(); };
     this.inspect = () => this.inspectNearby();
     this.routeClick = event => {
-      const button=event.target.closest?.('.bus-detail [data-bus-route]');if(!button)return;
+      const button=event.target.closest?.('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh]');if(!button)return;
+      if(button.dataset.busRefresh!==undefined){this.refreshArrivals();return;}
       const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
       this.selectedRoute=this.selectedRoute===id?null:id;this.journeyLegs=[];this.journeyIds=[];
       this.refreshView();this.refreshDetail();
@@ -555,7 +565,8 @@ class BusLayer {
   select(selection, routeId) {
     this.journeyLegs=[];this.journeyIds=[];
     this.selection = selection; this.selectedRoute = routeId;
-    this.stopArrivals(); if (selection?.kind === 'stop') this.loadArrivals();
+    this.stopArrivals();
+    if (selection?.kind === 'stop') { this.loadArrivals(); this.arrivalTick = setInterval(() => this.tickArrivals(), 1000); }
     this.updateDetail = this.onSelect(this.detailHTML()) || null;
     this.refreshView();
     this.onRouteSelect(this.selectedLeg());
@@ -577,7 +588,7 @@ class BusLayer {
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
 
   // 정류장 도착 정보: 정류장 하나 = 서버 호출 1번(같은 정류장은 서버가 20초 동안 함께 쓴다)
-  async loadArrivals() {
+  async loadArrivals(fresh = false) {
     clearTimeout(this.arrivalTimer); this.arrivalTimer = 0;
     const stop = this.selection?.kind === 'stop' ? this.data?.stopById.get(this.selection.id) : null; if (!stop) return;
     if (!stop.arsId) { this.arrivals = {stopId: stop.id, state: 'none', rows: [], count: 0}; return; }   // 번호 없는 가상 정류장
@@ -592,12 +603,15 @@ class BusLayer {
     this.arrivalController?.abort();
     const controller = this.arrivalController = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const r = await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(stop.arsId)}`, {cache: 'no-store', signal: controller.signal});
+      const r = await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(stop.arsId)}${fresh ? '&fresh=1' : ''}`, {cache: 'no-store', signal: controller.signal});
       const body = await r.json();
       if (controller !== this.arrivalController) return;
       if (body?.schemaVersion !== 1 || !Array.isArray(body.arrivals)) throw new Error('Unsupported bus arrival data');
-      this.arrivals = {...this.arrivals, state: body.status, mode: body.mode, rows: body.arrivals.filter(a => a && typeof a.routeId === 'string'),
-        fetchedAt: timestamp(body.fetchedAt), code: body.errors?.[0]?.code || ''};
+      // 남은 초는 서버가 받은 때 기준: 서버 캐시에 있던 시간(ageSeconds)만큼 빼서 이 기기 시계로 도착 시각을 잡는다
+      const got = Date.now(), age = Number(body.ageSeconds) || 0;
+      const rows = body.arrivals.filter(a => a && typeof a.routeId === 'string').map(a => ({...a, buses: (a.buses || []).map(b =>
+        ({...b, etaAt: Number.isFinite(b?.seconds) && b.seconds > 0 ? got + (b.seconds - age) * 1000 : null}))}));
+      this.arrivals = {...this.arrivals, state: body.status, mode: body.mode, rows, fetchedAt: timestamp(body.fetchedAt), code: body.errors?.[0]?.code || ''};
     } catch {
       if (controller !== this.arrivalController) return;
       this.arrivals = {...this.arrivals, state: this.arrivals.rows.length ? 'stale' : 'error', code: ''};
@@ -607,46 +621,96 @@ class BusLayer {
     }
     this.refreshDetail();
   }
+  refreshArrivals() {
+    if (!this.arrivals || this.arrivals.state === 'none') return;
+    this.arrivals.count = 0;   // 새로고침하면 30초마다 다시 받기도 처음부터
+    this.loadArrivals(true); this.refreshDetail();
+  }
+  // 1초마다: 남은 시간 글자와 곧 도착 카드의 버스 아이콘만 고친다(팝업을 다시 그리지 않아 누르던 버튼 포커스가 그대로)
+  tickArrivals() {
+    const sheet = document.querySelector?.('.bus-detail .bus-stop'); if (!sheet) return;
+    for (const el of sheet.querySelectorAll('[data-eta]')) {
+      const left = countdownText((Number(el.dataset.eta) - Date.now()) / 1000);
+      if (el.textContent !== left) el.textContent = left;
+    }
+    const icon = sheet.querySelector('[data-track-route]'), stop = this.selection?.kind === 'stop' ? this.selection.id : null;
+    const route = icon && this.data?.routeById.get(icon.dataset.trackRoute);
+    if (route && stop) icon.style.left = `${this.approach(route, stop).ratio * 50}%`;
+  }
   stopArrivals() {
+    clearInterval(this.arrivalTick); this.arrivalTick = 0;
     clearTimeout(this.arrivalTimer); this.arrivalTimer = 0;
     const controller = this.arrivalController; this.arrivalController = null; controller?.abort();
     this.arrivals = null;
   }
-  // 정류장 팝업: 지하철역 팝업(station-sheet)과 같은 짜임 — 칩 · 이름 · 기준 시각 · '곧 오는 버스' 카드
+  // 이 정류장으로 오는 구간: 이전 · 다음 정류장 이름과, 그 노선을 지도에 띄웠다면 지도 위 버스가 구간의 어디쯤인지(0 이전 정류장 ~ 1 이 정류장)
+  approach(route, stopId) {
+    const path = route?.stopIds ? this.geometry(route) : null, stops = path?.stops || [];
+    const now = performance.now(), found = [];
+    stops.forEach((s, i) => { if (i > 0 && s.stop.id === stopId) found.push(i); });
+    let best = {i: found[0], ratio: null};
+    if (route?.id === this.selectedRoute) for (const i of found) {
+      const from = stops[i - 1].distance, to = stops[i].distance; if (!(to > from)) continue;
+      for (const bus of this.fleet.values()) {
+        if (bus.route.id !== route.id || bus.stale) continue;
+        const d = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now);
+        if (d >= from - 20 && d <= to + 5 && (best.ratio == null || (d - from) / (to - from) > best.ratio)) best = {i, ratio: (d - from) / (to - from)};
+      }
+    }
+    return {prev: best.i ? stops[best.i - 1]?.stop.name : '', next: best.i ? stops[best.i + 1]?.stop.name : '',
+      ratio: best.ratio == null ? .52 : Math.max(.06, Math.min(.96, best.ratio))};   // 모르면 구간 가운데쯤
+  }
+  // 정류장 팝업(2026-10-07 행님 시안): 번호 배지 · 이름 · 새로고침 / 곧 도착 카드 / 한 줄 목록 / 운행 종료
   stopHTML(stop, routes, mock) {
     const a = this.arrivals?.stopId === stop.id ? this.arrivals : null;
     const rows = new Map((a?.rows || []).map(row => [row.routeId, row])), known = new Set(routes.map(r => r.id));
-    const answered = a && ['fresh', 'cached', 'stale', 'mock'].includes(a.state);
-    const clock = a?.fetchedAt == null ? '' : new Date(a.fetchedAt).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul'});
-    const sub = !a || a.state === 'loading' ? '도착 정보 불러오는 중…' : a.state === 'none' ? '이 정류장은 도착 정보가 없어요'
-      : a.state === 'unavailable' ? '지금은 도착 정보를 쓸 수 없어요' : a.mode === 'mock' ? '예시 데이터 · 실제 운행 정보 아님'
-      : a.state === 'stale' ? `도착 정보 갱신 지연${clock ? ` · ${clock} 기준` : ''}`
-      : answered ? `서울시 버스 도착정보 · ${clock} 기준${a.count >= ARRIVAL_POLLS && !this.arrivalTimer ? ' · 다시 누르면 새로 받아요' : ''}`
-      : a.code === 'daily_limit' ? '오늘 도착 정보 조회 한도를 다 썼어요' : '도착 정보를 불러오지 못했어요';
+    const answered = a && ['fresh', 'cached', 'stale', 'mock'].includes(a.state), waiting = !a || a.state === 'loading';
+    const clock = a?.fetchedAt == null ? '' : new Date(a.fetchedAt).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul'});
+    const note = !a || waiting ? '' : a.state === 'none' ? '이 정류장은 도착 정보가 없어요.' : a.state === 'unavailable' ? '지금은 도착 정보를 쓸 수 없어요.'
+      : a.mode === 'mock' ? '예시 데이터 · 실제 운행 정보 아님' : a.state === 'stale' ? '도착 정보 갱신 지연 · 마지막으로 받은 정보예요.'
+      : answered ? '' : a.code === 'daily_limit' ? '오늘 도착 정보 조회 한도를 다 썼어요.' : '도착 정보를 불러오지 못했어요.';
     // 우리 노선 자료에 없는 번호(공항버스 등)도 도착 정보는 보여 주되, 지도에 그릴 경로가 없어 누를 수 없다
-    const cards = [...routes.map(route => ({route, row: rows.get(route.id), live: true})),
-      ...[...rows.values()].filter(row => !known.has(row.routeId)).map(row => ({route: {...row, id: row.routeId}, row, live: false}))];
-    cards.sort((x, y) => arrivalRank(x.row) - arrivalRank(y.row));
-    const times = row => {
-      if (!row) return answered ? '<span class="arr-t"><span class="muted">도착 정보 없음</span></span>'
-        : !a || a.state === 'loading' ? '<span class="arr-t bus-arr-wait" aria-hidden="true"><i></i></span>' : '';   // 오는 동안: 시간 자리만 비워 두고 번호는 바로 누를 수 있게
-      const buses = (row.buses || []).map(arrivalParts).filter((b, i, all) => !i || b.when !== all[0].when || b.detail);
-      return buses.map(b => `<span class="arr-t"><b>${text(b.when)}</b>${b.detail ? `<span class="muted">${text(b.detail)}</span>` : ''}</span>`).join('');
+    const items = [...routes.map(route => ({route, row: rows.get(route.id), live: true})),
+      ...[...rows.values()].filter(row => !known.has(row.routeId)).map(row => ({route: {id: row.routeId, name: row.name, type: row.type}, row, live: false}))];
+    items.sort((x, y) => arrivalRank(x.row) - arrivalRank(y.row));
+    const badge = route => `<span class="bus-num" style="--c:${color(route, 'light')}">${text(route.name)}</span>`;   // 흰 글자라 밝은 쪽 색
+    const soon = items.filter(i => isSoon(i.row)), ended = items.filter(i => isEnded(i.row)), list = items.filter(i => !isEnded(i.row));
+    // 곧 도착 카드: 1대면 번호 · 방면 · 다음 버스, 여러 대면 번호만(6대까지, 7대부터 5대 + '+N')
+    let hero = '';
+    if (soon.length) {
+      const lead = soon[0], near = this.approach(lead.live ? lead.route : null, stop.id), one = soon.length === 1;
+      const nextBus = one && lead.row.buses?.[1] ? arrivalParts(lead.row.buses[1]).when : '';
+      const shown = soon.length <= 6 ? soon : soon.slice(0, 5);
+      const head = one
+        ? `${badge(lead.route)}<span class="bus-hero-dir">${text(lead.row.direction ? `${lead.row.direction} 방면` : typeName(lead.route))}</span>${lead.live && lead.route.id === this.selectedRoute ? '<span class="bus-hero-on">지도에 표시 중</span>' : ''}`
+        : `${shown.map(i => badge(i.route)).join('')}${soon.length > shown.length ? `<span class="bus-num bus-num-more">+${soon.length - shown.length}</span>` : ''}`;
+      const next = nextBus === '곧 도착' ? '다음 버스도 곧 도착' : /분 후$/.test(nextBus) ? `다음 ${nextBus.replace(/ 후$/, '')}` : '';
+      const body = `<span class="bus-hero-head">${head}</span><span class="bus-hero-now"><span class="bus-hero-soon">곧 도착</span>${next ? `<span class="bus-hero-next">${text(next)}</span>` : ''}</span>` +
+        `<span class="bus-track" aria-hidden="true"><span class="bus-track-from"></span><span class="bus-track-bus"${lead.live ? ` data-track-route="${text(lead.route.id)}"` : ''} style="left:${near.ratio * 50}%">${BUS_ICON}</span><span class="bus-track-here"></span><span class="bus-track-to"></span></span>` +
+        `<span class="bus-track-names"><span>${text(near.prev || '')}</span><b>${text(stop.name)}</b><span>${text(near.next || '')}</span></span>`;
+      hero = one && lead.live
+        ? `<button type="button" class="bus-hero" data-bus-route="${text(lead.route.id)}" aria-pressed="${lead.route.id === this.selectedRoute}">${body}</button>`
+        : `<div class="bus-hero">${body}</div>`;
+    }
+    const row = ({route, row, live}) => {
+      const first = row?.buses?.[0], parts = first ? arrivalParts(first) : null;
+      const where = parts?.detail.split(' · ').filter(t => t !== '막차').join(' · ') || '';
+      const tag = parts?.detail.includes('막차') ? '막차' : live ? '' : '지도 없음';
+      const time = waiting && !row ? '<i class="bus-wait"></i>'
+        : !row ? '<span class="bus-away">도착 정보 없음</span>'
+        : isSoon(row) ? '<span class="bus-soon">곧 도착</span>'
+        : first?.etaAt ? `${where ? `<span class="bus-away">${text(where)}</span>` : ''}<span class="bus-eta" data-eta="${Math.round(first.etaAt)}">${countdownText((first.etaAt - Date.now()) / 1000)}</span>`
+        : `<span class="bus-away">${text(parts.when)}</span>`;
+      const inner = `${badge(route)}<span class="bus-row-dir"><span>${text(row?.direction ? `${row.direction} 방면` : typeName(route))}</span>${tag ? `<span class="bus-tag">${tag}</span>` : ''}</span><span class="bus-row-time">${time}</span>`;
+      return live ? `<button type="button" class="bus-row" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${inner}</button>` : `<div class="bus-row">${inner}</div>`;
     };
-    const card = ({route, row, live}) => {
-      const pressed = live && route.id === this.selectedRoute;
-      const head = `<span class="arr-h"><span class="dot"></span>${text(route.name)}<span class="muted">${text(typeName(route))}${row?.direction ? ` · ${text(row.direction)} 방면` : ''}</span>` +
-        `<span class="bus-arr-go">${live ? pressed ? '지도에 표시 중' : '지도에서 보기' : '노선 정보 없음'}</span></span>`;
-      return live ? `<button type="button" class="arr bus-arr" data-bus-route="${text(route.id)}" aria-pressed="${pressed}" style="--c:${color(route, this.theme)}">${head}${times(row)}</button>`
-        : `<div class="arr bus-arr" style="--c:${color(route, this.theme)}">${head}${times(row)}</div>`;
-    };
-    const list = `<div class="arrs bus-arrs">${cards.map(card).join('')}</div>`;
-    return `<div class="tp-line"><span class="chip" style="--c:var(--muted)"><span class="dot"></span>버스 정류장${stop.arsId ? ` ${text(stop.arsId)}` : ''}</span></div>` +
-      `<h3 class="tp-dest" tabindex="-1">${text(stop.name)}</h3><div class="tp-now">${sub}</div>` +
-      `${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
-      `<div class="sec">곧 오는 버스 <span class="muted">· 누르면 지도에 노선과 버스</span></div>${list}`;
+    const endedLine = ended.length ? `<div class="bus-ended"><span>운행 종료</span>${ended.map(({route, live}) => live
+      ? `<button type="button" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${text(route.name)}</button>` : `<span>${text(route.name)}</span>`).join('')}</div>` : '';
+    const refresh = stop.arsId ? `<button type="button" class="bus-refresh${this.arrivalController ? ' is-loading' : ''}" data-bus-refresh aria-label="도착 정보 새로 받기${clock ? ` · ${clock} 기준` : ''}"><span>${clock}</span>${REFRESH_ICON}</button>` : '';
+    return `<div class="bus-stop"><div class="bus-stop-head"><div class="bus-stop-title">${stop.arsId ? `<span class="bus-stop-no">${BUS_ICON}${text(stop.arsId)}</span>` : ''}<h3 tabindex="-1">${text(stop.name)}</h3></div>${refresh}</div>` +
+      `${note ? `<p class="bus-detail-note">${note}</p>` : ''}${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
+      `${hero}<div class="bus-rows">${list.map(row).join('')}</div>${endedLine}</div>`;
   }
-
 
   detailHTML() {
     const selection = this.selection; if (!selection) return '';
@@ -656,7 +720,7 @@ class BusLayer {
       const routes = this.data.routesByStop.get(stop.id) || [];
       const chosen=this.data.routeById.get(this.selectedRoute);
       const mock=chosen&&(this.mode==='mock'||[...this.fleet.values()].some(b=>b.route.id===chosen.id&&b.mock));
-      return `<div class="bus-detail train-inspect station-sheet">${this.stopHTML(stop, routes, mock)}</div>`;
+      return `<div class="bus-detail">${this.stopHTML(stop, routes, mock)}</div>`;
     }
     const bus = selection.kind === 'bus' ? this.fleet.get(selection.id) : null;
     const route = bus?.route || this.data.routeById.get(this.selectedRoute); if (!route) return '';
