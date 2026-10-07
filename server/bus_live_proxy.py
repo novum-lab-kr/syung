@@ -45,6 +45,9 @@ ARRIVAL_URL = "http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid"
 # 도착정보의 routeType → 지도 버스 종류. 우리 노선 자료에 없는 노선(공항버스 등)의 이름표에만 쓴다
 ARRIVAL_ROUTE_TYPES = {"1": "airport", "2": "village", "3": "trunk", "4": "branch", "5": "circular", "6": "express"}
 MAX_ROUTES = 8
+# 서울시 서버는 같은 키 · 같은 요청에 401 을 가끔 섞어 돌려준다(2026-10-07 운영 서버에서 8번 중 3번).
+# 401 은 5초 뒤 다시 묻고, 연속 AUTH_STRIKES 번일 때만 진짜 인증 문제로 보고 5분 쉰다
+AUTH_RETRY_SECONDS, AUTH_STRIKES = 5, 5
 SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
 NIGHT_END, NIGHT_WEIGHT = 5 * 60, 0.25   # KST 00~05시는 버스가 거의 없다: 호출 간격을 4배로 두고 아낀 몫을 낮에 쓴다
 WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수집보다 먼저 새로 받아 둔다
@@ -192,6 +195,19 @@ class QuotaLedger:
                 return True, "", saved["nextAt"]
         except OSError:
             raise BusError("quota_storage") from None
+
+
+def note_failure(proxy, key, code: str, retry: float) -> None:
+    """실패 기록. proxy.lock 안에서 부른다. 한도 초과는 바로, 401 은 연속일 때만 전체를 쉰다."""
+    now = proxy.clock()
+    if code == "upstream_auth":
+        proxy.auth_strikes += 1
+        if proxy.auth_strikes < AUTH_STRIKES:
+            proxy.failures[key] = (now + AUTH_RETRY_SECONDS, code)
+            return
+    proxy.failures[key] = (now + retry, code)
+    if code in ("upstream_auth", "upstream_quota"):
+        proxy.backoff_until = now + 300
 
 
 def parse_payload(raw: bytes) -> list[dict]:
@@ -346,6 +362,7 @@ class BusProxy:
         self.pending = set()
         self.lock = threading.Lock()
         self.backoff_until = 0
+        self.auth_strikes = 0   # 연속 401 수
         self.next_at = 0
         self.last_block = "paced"
         self.watched = {}   # 노선 → 지도가 마지막으로 물은 때
@@ -445,14 +462,13 @@ class BusProxy:
             with self.lock:
                 self.cache[rid] = (self.clock(), buses)
                 self.failures.pop(rid, None)
+                self.auth_strikes = 0
             return True
         except Exception as error:
             # Never expose urllib exceptions: they may contain a key-bearing URL.
             code = error.code if isinstance(error, BusError) else "upstream_error"
             with self.lock:
-                self.failures[rid] = (self.clock() + 60, code)
-                if code in ("upstream_auth", "upstream_quota"):
-                    self.backoff_until = self.clock() + 300
+                note_failure(self, rid, code, 60)
             return False
         finally:
             with self.lock:
@@ -532,7 +548,7 @@ class BusProxy:
                 errors.append(self._error(None, "quota_storage"))
         ready = all(statuses.get(rid, {}).get("status") in ("fresh", "cached", "mock") for rid in ids)
         return {"schemaVersion": 1, "ok": ready and not errors, "mode": self.mode,
-                "fetchedAt": iso(now), "pollAfterSeconds": 15 if self.mode == "mock" else 30,
+                "fetchedAt": iso(now), "pollAfterSeconds": 15 if self.mode == "mock" or not ready else 30,   # 못 받은 노선은 15초 뒤 다시
                 "busCount": len(buses), "buses": buses, "routes": statuses, "quota": quota, "errors": errors}
 
     def _mock(self, rid, now):
@@ -631,6 +647,7 @@ class ArrivalProxy:
         self.lock = threading.Lock()
         self.next_at = 0
         self.backoff_until = 0
+        self.auth_strikes = 0   # 연속 401 수
         self.mock_routes = None
 
     @property
@@ -705,6 +722,7 @@ class ArrivalProxy:
             with self.lock:
                 self.cache[stop] = (self.clock(), rows)
                 self.failures.pop(stop, None)
+                self.auth_strikes = 0
                 if len(self.cache) > 5000:   # 정류장 8천여 곳: 오래된 것부터 버린다
                     for old in sorted(self.cache, key=lambda k: self.cache[k][0])[:1000]:
                         del self.cache[old]
@@ -712,9 +730,7 @@ class ArrivalProxy:
             # urllib 예외에는 키가 든 주소가 있을 수 있다: 코드만 남긴다
             code = error.code if isinstance(error, BusError) else "upstream_error"
             with self.lock:
-                self.failures[stop] = (self.clock() + 30, code)
-                if code in ("upstream_auth", "upstream_quota"):
-                    self.backoff_until = self.clock() + 300
+                note_failure(self, stop, code, 30)
         finally:
             with self.lock:
                 self.pending.pop(stop, None)

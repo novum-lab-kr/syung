@@ -536,7 +536,11 @@ class BusLayer {
     const stop = this.selection?.kind === 'stop' ? this.data?.stopById.get(this.selection.id) : null; if (!stop) return;
     if (!stop.arsId) { this.arrivals = {stopId: stop.id, state: 'none', rows: [], count: 0}; return; }   // 번호 없는 가상 정류장
     const previous = this.arrivals?.stopId === stop.id ? this.arrivals : null;
-    const schedule = () => { if (this.selection?.kind === 'stop' && this.selection.id === stop.id && this.arrivals.count < ARRIVAL_POLLS) this.arrivalTimer = setTimeout(() => this.loadArrivals(), ARRIVAL_POLL_MS); };
+    const schedule = () => {
+      // 못 받았으면(서울시 서버가 401 을 가끔 섞어 준다) 6초 뒤 다시, 받았으면 30초 뒤
+      const wait = ['error', 'stale'].includes(this.arrivals.state) ? 6000 : ARRIVAL_POLL_MS;
+      if (this.selection?.kind === 'stop' && this.selection.id === stop.id && this.arrivals.count < ARRIVAL_POLLS) this.arrivalTimer = setTimeout(() => this.loadArrivals(), wait);
+    };
     if (previous && document.hidden) { schedule(); return; }   // 안 보는 동안은 부르지 않는다
     this.arrivals = {...previous, stopId: stop.id, rows: previous?.rows || [], state: previous?.state || 'loading', count: (previous?.count || 0) + 1};
     this.arrivalController?.abort();

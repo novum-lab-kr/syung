@@ -273,6 +273,22 @@ class ProxyTest(unittest.TestCase):
         self.assertIsNone(body["quota"]["used"])
         self.assertIn("quota_storage", [e["code"] for e in body["errors"]])
 
+    def test_route_positions_retry_an_occasional_401_in_seconds(self):
+        results = [bus.BusError("upstream_auth"), [ROW]]
+        def fetch(rid, config):
+            self.calls.append(rid)
+            result = results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        # 운영처럼 하루 예산이 넉넉해 호출 간격이 1초일 때
+        proxy = bus.BusProxy(self.config(daily_limit=100000), routes=ROUTES, fetch=fetch, clock=lambda: self.now)
+        body = self.get(proxy, R1, focus=R1)
+        self.assertEqual((body["routes"][R1]["status"], body["pollAfterSeconds"]), ("error", 15))
+        self.assertEqual(proxy.backoff_until, 0, "401 하나로 버스 위치 전체를 멈추지 않는다")
+        self.now += bus.AUTH_RETRY_SECONDS
+        self.assertEqual(self.get(proxy, R1, focus=R1)["routes"][R1]["status"], "fresh")
+
     def test_stale_fallback_expires(self):
         proxy = self.proxy()
         self.get(proxy, R1)
@@ -415,15 +431,26 @@ class ArrivalTest(unittest.TestCase):
         self.assertEqual((body["status"], body["arrivals"]), ("error", []))
         self.assertEqual(self.calls, ["07103"])
 
-    def test_upstream_auth_failure_backs_off_without_leaking(self):
+    def test_occasional_401_retries_soon_and_only_a_run_of_them_backs_off(self):
         self.result = bus.BusError("upstream_auth")
         proxy = self.proxy()
         body = proxy.snapshot({"stop": ["07103"]})[0]
         self.assertEqual((body["status"], body["errors"][0]["code"]), ("error", "upstream_auth"))
-        self.now += 40
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth", "5분 쉬는 동안 다시 안 부른다")
-        self.assertEqual(len(self.calls), 1)
         self.assertNotIn("test-secret", json.dumps(body))
+        self.now += 2
+        proxy.snapshot({"stop": ["07103"]})
+        self.assertEqual(len(self.calls), 1, "5초 안에는 다시 안 부른다")
+        self.now += 4
+        self.result = [ARRIVAL]
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "fresh", "섞여 나온 401 하나로 5분 쉬지 않는다")
+        self.result = bus.BusError("upstream_auth")
+        for _ in range(bus.AUTH_STRIKES):
+            self.now += 30
+            proxy.snapshot({"stop": ["07103"]})
+        calls = len(self.calls)
+        self.now += 60
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth")
+        self.assertEqual(len(self.calls), calls, "연속 401 이면 5분 쉰다")
 
     def test_missing_key_and_mock(self):
         proxy = bus.ArrivalProxy(bus.ArrivalConfig(quota_file=self.path), stops=STOPS, fetch=self.fetch)
