@@ -20,8 +20,9 @@ export const BUS_TYPES = {
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const STALE_MS = 120000, EXPIRE_MS = 600000;
-// #buslines: 노선 점검용. 서울 버스 노선 전체(공식 경로)를 종류 색으로, z14 부터 번호 · 정류장까지 그린다.
-// 선을 누르면 그 노선만 골라 도로에 맞춘 선 · 버스 · 정류장을 위에 겹쳐 본다(어긋난 곳 찾기).
+// #buslines: 노선 점검용. 서울 버스 노선 전체를 종류 색으로, z14 부터 번호 · 정류장까지 그린다.
+// 실제 화면과 같은 선: 도로에 맞춘 표시선, z15 부터는 화면 안을 심시티 도로 중심선에 붙이고 정류장은 인도로.
+// 선을 누르면 그 노선만 골라 버스 · 정류장을 위에 겹쳐 본다.
 const SOURCE_CHECK = 'bus-check', CHECK_LAYERS = ['bus-check-line','bus-check-stop','bus-check-label'];
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
@@ -208,16 +209,32 @@ class BusLayer {
 
   renderCheck() {
     if (!this.check || !this.data) return;
-    const features = [...this.data.routeById.values()].map(route =>
-      feature('LineString', route.path, {routeId: route.id, name: route.name, color: color(route, this.theme)}));
-    for (const stop of this.data.stopById.values()) features.push(feature('Point', [stop.lng, stop.lat], {id: stop.id}));
+    // 공식 경로는 도로 중심선에서 중간값 6.5 m(10 m 넘게 22 %) 비껴 있어 점검 화면에서도 쓰지 않는다.
+    const box = this.box, detail = !!box && this.map.getZoom() >= BUS_ZOOM.buses && !!this.map.querySourceFeatures;
+    if (!detail && this.checkDetail === false) return; // 멀리서는 한 번 그린 전체 선 그대로
+    this.checkDetail = detail;
+    const features = [];
+    for (const route of this.data.routeById.values()) {
+      const properties = {routeId: route.id, name: route.name, color: color(route, this.theme)}, line = this.lineGeometry(route);
+      if (!detail || !line) { features.push(feature('LineString', line?.points || route.path, properties)); continue; }
+      if (!intersects(route.bbox, box)) continue;
+      // 화면 안 구간만 도로에 붙여 그린다(전 노선 전체를 6 m 간격으로 보내지 않게).
+      let part = [];
+      const flush = () => { if (part.length > 1) features.push(feature('LineString', part, properties)); part = []; };
+      for (const p of this.roads.snapLine(line, box).samples) { if (contains(box, p.coordinate)) part.push(p.coordinate); else flush(); }
+      flush();
+    }
+    for (const stop of this.data.stopById.values()) {
+      if (detail && !contains(box, [stop.lng, stop.lat])) continue;
+      features.push(feature('Point', detail ? this.kerbside(stop) : [stop.lng, stop.lat], {id: stop.id}));
+    }
     this.map.getSource(SOURCE_CHECK)?.setData(collection(features));
   }
 
   setTheme(theme) {
     if (this.disposed) return;
     this.theme = theme === 'dark' ? 'dark' : 'light';
-    this.renderStatic(); this.renderCheck(); this.draw(); this.refreshDetail();
+    this.checkDetail = null; this.renderStatic(); this.renderCheck(); this.draw(); this.refreshDetail();
   }
 
   setEnabled(enabled) {
@@ -249,13 +266,13 @@ class BusLayer {
     if (!this.data) { if(this.map.getZoom()>=BUS_ZOOM.stops||this.journeyLegs.length)this.loadStatic(); return; }
     this.box = padded(boundsArray(this.map.getBounds()));
     this.visible = visibleBusRoutes(this.data, this.box, this.selectedRoute);
-    if(this.map.getZoom()>=BUS_ZOOM.buses&&(this.enabled||this.chosenIds().length)){
+    if(this.map.getZoom()>=BUS_ZOOM.buses&&(this.enabled||this.check||this.chosenIds().length)){
       try{this.roads.update(this.map.querySourceFeatures?.('ofm',{sourceLayer:'transportation'})||[]);}catch{/* Tiles may still be loading. */}
     }
     this.exitCoordinates=this.getExitCoordinates().filter(p=>contains(this.box,p));
     const canvas=this.map.getCanvas(),screen=this.map.project?{project:p=>this.map.project(p),width:canvas.clientWidth,height:canvas.clientHeight}:null;
     this.requested=this.enabled||this.chosenIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.chosenIds(),screen):[];
-    this.renderStatic(); this.draw(); this.updateStatus();
+    this.renderStatic(); this.renderCheck(); this.draw(); this.updateStatus();
     const ids = this.requested, key = `${ids.join(',')}|${this.selectedRoute || this.journeyIds[0] || ''}`;
     if (!this.active() || !ids.length) { this.stopLive(); return; }
     if (key !== this.requestKey) { this.stopLive(); this.requestKey = key; this.pollLive(); }
