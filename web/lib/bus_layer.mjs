@@ -570,8 +570,9 @@ class BusLayer {
       if (!a || a.state === 'none' || a.state === 'unavailable') return '';
       if (!row) return `<span class="bus-arrival">${a.state === 'loading' ? '…' : answered ? '<small>도착 정보 없음</small>' : ''}</span>`;
       const [first, next] = row.buses || [], second = next?.message !== first?.message ? next : null;   // '운행종료'가 두 번 나오지 않게
-      return `<span class="bus-arrival">${text(first?.message || '도착 정보 없음')}${first?.last ? ' <em class="bus-last">막차</em>' : ''}` +
-        `${second ? `<small>다음 ${text(second.message)}${second.last ? ' · 막차' : ''}</small>` : ''}${row.direction ? `<small>${text(row.direction)} 방면</small>` : ''}</span>`;
+      const last = bus => bus?.last && !String(bus.message).includes('막차');   // API 문구에 '[막차]'가 이미 붙어 오기도 한다
+      return `<span class="bus-arrival">${text(first?.message || '도착 정보 없음')}${last(first) ? ' <em class="bus-last">막차</em>' : ''}` +
+        `${second ? `<small>다음 ${text(second.message)}${last(second) ? ' · 막차' : ''}</small>` : ''}${row.direction ? `<small>${text(row.direction)} 방면</small>` : ''}</span>`;
     };
     const items = routes.map(r => `<li><button type="button" data-bus-route="${text(r.id)}" aria-pressed="${r.id===this.selectedRoute}" style="--bus-color:${color(r, this.theme)}">${text(typeName(r))} <b>${text(r.name)}</b></button>${time(rows.get(r.id))}</li>`);
     // 우리 노선 자료에 없는 노선(공항버스 등): 도착 정보만, 눌러도 지도에 그릴 경로가 없다

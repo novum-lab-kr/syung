@@ -215,6 +215,8 @@ test('정류장 팝업: 도착 문구 · 다음 버스 · 막차 · 방면, 노�
   assert.match(html, /<span class="bus-route-tag"[^>]*>공항 <b>6100<\/b><\/span>/);
   assert.doesNotMatch(html, /data-bus-route="100100513"/);
   assert.match(html, /05:20 기준 도착 정보/);
+  layer.arrivals.rows[0].buses[1].message = '[막차] 14분후[9번째 전]'; layer.arrivals.rows[0].buses[0].last = true;
+  assert.match(layer.detailHTML(), /곧 도착 <em class="bus-last">막차<\/em><small>다음 \[막차\] 14분후\[9번째 전\]<\/small>/, '문구에 이미 있으면 막차를 덧붙이지 않는다');
   assert.ok(layer.arrivalTimer, '열려 있는 동안 다시 받는다');
   layer.clearSelection();
   assert.equal(layer.arrivalTimer, 0, '닫으면 멈춘다');
