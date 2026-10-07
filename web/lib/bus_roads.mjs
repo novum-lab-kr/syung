@@ -137,13 +137,17 @@ export class BusRoadNetwork {
     const samples=[];let previous=null;
     const inside=p=>!box||(p[0]>=box[0]&&p[0]<=box[2]&&p[1]>=box[1]&&p[1]<=box[3]);
     for(let s=0;;s=Math.min(path.total,s+step)){
-      const pose=busPointAt(path,s);let point={distance:s,coordinate:pose.coordinate,width:null};
+      const pose=busPointAt(path,s);let point={distance:s,coordinate:pose.coordinate,lane:pose.coordinate,laneWidth:3,width:null};
       if(inside(pose.coordinate)){
         const found=this.candidates(pose.coordinate,pose.heading).filter(c=>c.error<=25&&c.e.cls!=='service');
         // 앞 점과 같은 도로가 거의 비슷하게 가까우면 그대로 간다(교차로에서 옆길로 튀지 않게).
         const keep=previous&&found.find(c=>c.e===previous.e&&c.dir===previous.dir&&c.error<=found[0].error+4);
         const c=keep||found[0];
-        if(c){const p=this.graph.poseAt(c.e,c.s,0,c.dir);point={distance:s,coordinate:coordinate([p.x,p.y]),width:c.e.width};}
+        if(c){
+          // 선은 도로 중심선, 버스는 같은 자리에서 진행 방향 오른쪽 바깥 차로(lane)로.
+          const {offset,laneWidth}=busRoadLane(c.e),p=this.graph.poseAt(c.e,c.s,0,c.dir),q=this.graph.poseAt(c.e,c.s,offset,c.dir);
+          point={distance:s,coordinate:coordinate([p.x,p.y]),lane:coordinate([q.x,q.y]),laneWidth,width:c.e.width};
+        }
         previous=c||null;
       }else previous=null;
       samples.push(point);
@@ -215,6 +219,17 @@ export class BusRoadNetwork {
     }
     return {chunks:chunks.filter(c=>c.length>1),matched,total,version:this.version};
   }
+}
+
+// 노선 선(snapLine) 위 distance 지점의 버스 자리: 그 도로의 진행 방향 오른쪽 차로. 선이 끊기지 않으므로 늘 있다.
+export function busLinePointAt(snapped,distance){
+  const S=snapped.samples,i=clamp(Math.floor(distance/snapped.step),0,Math.max(0,S.length-2)),a=S[i],b=S[Math.min(S.length-1,i+1)];
+  const t=clamp((distance-a.distance)/((b.distance-a.distance)||1),0,1),A=metric(a.lane),B=metric(b.lane);
+  // 같은 점 두 개면 앞뒤 샘플로 방향을 잡는다.
+  let H=[B[0]-A[0],B[1]-A[1]];
+  if(Math.hypot(...H)<.01){const P=metric(S[Math.max(0,i-1)].lane),Q=metric(S[Math.min(S.length-1,i+2)].lane);H=[Q[0]-P[0],Q[1]-P[1]];}
+  return {coordinate:a.lane.map((v,k)=>v+(b.lane[k]-v)*t),heading:(Math.atan2(H[0],-H[1])*180/Math.PI+360)%360,
+    laneWidth:Math.min(a.laneWidth,b.laneWidth),width:Math.min(a.width??6,b.width??6),distance};
 }
 
 export function busRoadPointAt(matched,distance){

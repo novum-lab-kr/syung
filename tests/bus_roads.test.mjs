@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BusRoadNetwork,busRoadProfile,busRoadLane,busRoadPointAt} from '../web/lib/bus_roads.mjs';
+import {BusRoadNetwork,busRoadProfile,busRoadLane,busRoadPointAt,busLinePointAt} from '../web/lib/bus_roads.mjs';
 import {buildBusPath} from '../web/lib/bus_motion.mjs';
 
 const K=111320*Math.cos(37.5*Math.PI/180),M=111320;
@@ -102,4 +102,16 @@ test('a stop pinned inside the carriageway moves to the pavement on its own side
     road([[-150,6],[150,6]],{class:'trunk',oneway:1,brunnel:'bridge'}),road([[150,14.5],[-150,14.5]],{class:'trunk',oneway:1,brunnel:'bridge'})]);
   const under=xy(deck.kerbside(coord(0,0)));
   assert.ok(under[1]>14.5+26*.72/2+1.5,'past both decks, the shorter way out');
+});
+
+test('a bus rides the route line in the right-hand lane of its road, and never vanishes off the road graph',()=>{
+  const n=network([road([[-150,0],[150,0]])]),lane=busRoadLane(busRoadProfile({class:'primary'}));
+  const east=path([[-100,8],[100,8]]),west=path([[100,8],[-100,8]]);
+  const e=busLinePointAt(n.snapLine(east),east.total/2),w=busLinePointAt(n.snapLine(west),west.total/2);
+  assert.ok(Math.abs(xy(e.coordinate)[1]+lane.offset)<.05&&Math.abs(e.heading-90)<1,'eastbound: south (right) lane');
+  assert.ok(Math.abs(xy(w.coordinate)[1]-lane.offset)<.05&&Math.abs(w.heading-270)<1,'westbound: north (right) lane');
+  assert.equal(e.laneWidth,lane.laneWidth);
+  // 도로를 못 찾은 구간도 노선 선 위에 그대로 있다(예전엔 사라졌다).
+  const far=path([[-100,200],[100,200]]),f=busLinePointAt(n.snapLine(far),far.total/2);
+  assert.ok(Math.abs(xy(f.coordinate)[1]-200)<.05);
 });

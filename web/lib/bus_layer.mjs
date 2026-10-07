@@ -3,7 +3,7 @@
 import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance,
   validCoordinate, intersects, contains} from './bus_motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './bus_mesh.mjs';
-import {BusRoadNetwork,busRoadPointAt,busMetresPerPixel} from './bus_roads.mjs';
+import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './bus_roads.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './journey_map_style.mjs';
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
@@ -184,10 +184,10 @@ class BusLayer {
     map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 0, maxzoom: 18,
       attribution: '버스 노선·정류장 <a href="https://data.seoul.go.kr/dataList/OA-1095/F/1/datasetView.do" target="_blank" rel="noopener">서울특별시 열린데이터광장</a>'});
     const layout={'line-cap':'round','line-join':'round'},ride=['==',['get','kind'],'ride'];
-    map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:journeyCasingPaint()});
+    map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:journeyCasingPaint({thin:true})});
     for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[2] : LAYERS[1], type: 'line', source: SOURCE_ROUTES,
       filter: ['all',ride,['==', ['get', 'approximate'], approximate]], layout,
-      paint: {...journeyRidePaint(), ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
+      paint: {...journeyRidePaint({thin:true}), ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
     map.addLayer({id:LAYERS[3],type:'circle',source:SOURCE_ROUTES,filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});
     this.raiseRoute();
     if (this.check) this.installCheckLayers();
@@ -308,9 +308,8 @@ class BusLayer {
     for(const id of chosen){
       const route=this.data?.routeById.get(id);if(!route)continue;
       const path=this.geometry(route),legs=this.journeyLegs.filter(l=>journeyBusRouteIds(this.data,[l]).includes(id));
-      const markers=legs.length?legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate}))):
-        path.stops.filter((s,i)=>this.map.getZoom()>=14||s.stop.id===this.selection?.id||i===0||i===path.stops.length-1)
-          .map(s=>({coordinate:[s.stop.lng,s.stop.lat],distance:s.distance}));
+      // 노선 위 정류장 동그라미는 그리지 않는다(정류장은 BUS 기둥으로). 길찾기의 타는 곳 · 내리는 곳만 남긴다.
+      const markers=legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate})));
       drawRoute(route,markers);
     }
     for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){
@@ -361,13 +360,11 @@ class BusLayer {
     if(route.snapped?.version!==this.roads.version)route.snapped=this.roads.snapLine(line);
     return route.snapped;
   }
-  lineGeometry(route) {
-    if (route.lineGeometry === undefined) route.lineGeometry = buildBusPath(route.line) || buildBusPath(route.path);
-    return route.lineGeometry;
-  }
+  lineGeometry(route) { return this.geometry(route); }
   geometry(route) {
+    // 노선 선 · 정류장 거리 · 버스 위치가 모두 같은 도로에 맞춘 선(line) 위에서 정해진다(없으면 공식 경로).
     if (route.geometry) return route.geometry;
-    const path = buildBusPath(route.path); if (!path) return null;
+    const path = buildBusPath(route.line) || buildBusPath(route.path); if (!path) return null;
     let previous = 0;
     path.stops = route.stopIds.map(id => {
       const stop = this.data.stopById.get(id);
@@ -446,10 +443,6 @@ class BusLayer {
   }
   clearScene() { this.hits=[];this.stopHits=[]; }
 
-  matchedPath(route) {
-    if(route.matched?.version!==this.roads.version)route.matched=this.roads.match(this.geometry(route));
-    return route.matched;
-  }
   selectedLeg(){
     const r=this.data?.routeById.get(this.selectedRoute);
     return r?{type:'bus',routeId:r.id,route:r.name,path:r.path,color:color(r,this.theme)}:null;
@@ -487,8 +480,8 @@ class BusLayer {
       if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
       if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
       const distance=this.reduced.matches?bus.motion.to:busMotionDistance(bus.motion,now);
-      // 멀리서(줌 15 미만)는 도로 맞춤 없이 공식 경로 위에: 표시선(line)과 몇 m 차이라 이 줌에선 안 보인다
-      const overview=zoom<BUS_ZOOM.buses,pose=overview?busPointAt(bus.path,distance):busRoadPointAt(this.matchedPath(bus.route),distance);
+      // API 좌표는 노선 선 위 지점(distance)으로만 쓴다. 멀리서는 그 선 위, 줌 15 부터는 심시티 도로의 진행 방향 오른쪽 차로.
+      const overview=zoom<BUS_ZOOM.buses||!this.map.querySourceFeatures,pose=overview?busPointAt(bus.path,distance):busLinePointAt(this.snappedLine(bus.route,bus.path),distance);
       if(!pose||!contains(this.box||box,pose.coordinate))continue;
       // Keep the entire toy bus inside its lane, including wheels, at every zoom.
       const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1])));

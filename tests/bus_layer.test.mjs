@@ -97,7 +97,7 @@ test('a stop number selects its route with the switch off; closing returns to st
   assert.deepEqual(layer.requested,[route.id]);
   assert.equal(layer.enabled,false,'selection does not change the always-show preference');
   assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1);
-  assert.ok(layer.map.getSource('bus-routes').data.features.some(f=>f.properties.kind==='stop'));
+  assert.ok(!layer.map.getSource('bus-routes').data.features.some(f=>f.properties.kind==='stop'),'고른 노선 위에는 정류장 동그라미가 없다');
   assert.equal(layer.active(),true);
   layer.clearSelection();
   assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
