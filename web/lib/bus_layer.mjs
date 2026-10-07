@@ -223,11 +223,21 @@ class BusLayer {
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
       // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
       // 없으면 공식 경로. 화면 타일로 차로를 맞추던 조각선은 끊기고 갈고리가 생겨 쓰지 않는다.
-      const line=this.lineGeometry(route);
-      features.push(feature('LineString',line?.points||route.path,properties));
+      // 줌 15 이상은 그 선을 심시티가 그리는 도로 중심선에 다시 붙이고, 굵기는 도로 폭 안(laneWidth)으로.
+      const line=this.lineGeometry(route),snapped=line&&this.map.getZoom()>=BUS_ZOOM.buses&&this.map.querySourceFeatures?this.snappedLine(route,line):null;
+      if(!snapped)features.push(feature('LineString',line?.points||route.path,properties));
+      else{
+        let part=[],width=snapped.samples[0].width;
+        const flush=()=>{if(part.length>1)features.push(feature('LineString',part,width?{...properties,laneWidth:width}:properties));};
+        for(const p of snapped.samples){
+          if(p.width!==width){flush();part=part.length?[part.at(-1)]:[];width=p.width;}
+          part.push(p.coordinate);
+        }flush();
+      }
       for(const marker of markers){
         const snap=line&&snapBusToPath(line,marker.coordinate,{maxError:80});
-        features.push(feature('Point',snap?busPointAt(line,snap.distance).coordinate:marker.coordinate,{...properties,kind:'stop'}));
+        const at=snap&&(snapped?snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))].coordinate:busPointAt(line,snap.distance).coordinate);
+        features.push(feature('Point',at||marker.coordinate,{...properties,kind:'stop'}));
       }
     };
     for(const id of chosen){
@@ -244,7 +254,7 @@ class BusLayer {
     }
     if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const id of stopIds) {
       const stop = this.data.stopById.get(id);
-      if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', [stop.lng, stop.lat], {id, name: stop.name}));
+      if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name}));
       if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
     }
     this.map.getSource(SOURCE_ROUTES)?.setData(collection(features));
@@ -277,6 +287,15 @@ class BusLayer {
     }
   }
 
+  kerbside(stop) {
+    // 차도 안에 찍힌 정류장 기둥은 심시티 도로 기준 인도로(도로를 불러온 줌에서만).
+    if(stop.kerb?.version!==this.roads.version)stop.kerb={version:this.roads.version,coordinate:this.roads.kerbside([stop.lng,stop.lat])};
+    return stop.kerb.coordinate;
+  }
+  snappedLine(route,line) {
+    if(route.snapped?.version!==this.roads.version)route.snapped=this.roads.snapLine(line);
+    return route.snapped;
+  }
   lineGeometry(route) {
     if (route.lineGeometry === undefined) route.lineGeometry = buildBusPath(route.line) || buildBusPath(route.path);
     return route.lineGeometry;

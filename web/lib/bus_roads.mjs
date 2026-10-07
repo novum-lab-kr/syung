@@ -130,6 +130,49 @@ export class BusRoadNetwork {
     }
     return points;
   }
+  // 노선 표시선을 심시티가 그리는 도로(같은 OFM 중심선 · 폭) 안으로: STEP m 마다 진행 방향이 맞는
+  // 도로 중심선에 내리고, 맞는 도로가 없으면 원래 점을 둔다(선이 끊기지 않게). 차로 쪽으로 밀지 않는다.
+  // 분리 차도는 진행 방향으로 자기 차도를 고르므로, 한 줄로 모아 둔 상하행이 각자 차도로 갈라진다.
+  snapLine(path,box=null,step=6){
+    const samples=[];let previous=null;
+    const inside=p=>!box||(p[0]>=box[0]&&p[0]<=box[2]&&p[1]>=box[1]&&p[1]<=box[3]);
+    for(let s=0;;s=Math.min(path.total,s+step)){
+      const pose=busPointAt(path,s);let point={distance:s,coordinate:pose.coordinate,width:null};
+      if(inside(pose.coordinate)){
+        const found=this.candidates(pose.coordinate,pose.heading).filter(c=>c.error<=25&&c.e.cls!=='service');
+        // 앞 점과 같은 도로가 거의 비슷하게 가까우면 그대로 간다(교차로에서 옆길로 튀지 않게).
+        const keep=previous&&found.find(c=>c.e===previous.e&&c.dir===previous.dir&&c.error<=found[0].error+4);
+        const c=keep||found[0];
+        if(c){const p=this.graph.poseAt(c.e,c.s,0,c.dir);point={distance:s,coordinate:coordinate([p.x,p.y]),width:c.e.width};}
+        previous=c||null;
+      }else previous=null;
+      samples.push(point);
+      if(s>=path.total)break;
+    }
+    return {samples,step,version:this.version};
+  }
+  // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 가까운 쪽 차도 끝 너머 인도로 옮긴다.
+  // 한 번 정한 방향으로 계속 밀어서, 분리 차도 사이에 있으면 바깥 차도까지 넘어간다. 다리 · 고가는 지상이 아니라 뺀다.
+  // 차도 끝 1.5 m 안(좁은 중앙 틈)도 도로 위로 본다.
+  kerbside(p){
+    let [x,y]=metric(p),push=null;
+    for(let round=0;round<4;round++){
+      let hit=null;
+      for(let gx=-1;gx<=1;gx++)for(let gy=-1;gy<=1;gy++)for(const seg of this.grid.get(gridKey(x+gx*CELL,y+gy*CELL))||[]){
+        if(seg.e.level!==0||seg.e.cls==='service')continue;
+        const dx=(seg.b[0]-seg.a[0])/seg.len,dy=(seg.b[1]-seg.a[1])/seg.len,t=(x-seg.a[0])*dx+(y-seg.a[1])*dy;
+        if(t<0||t>seg.len)continue;
+        const d=(x-seg.a[0])*-dy+(y-seg.a[1])*dx,half=seg.e.width/2;
+        if(Math.abs(d)<half+1.5&&(!hit||Math.abs(d)<Math.abs(hit.d)))hit={d,nx:-dy,ny:dx,half,walk:seg.e.sidewalk||3};
+      }
+      if(!hit)break;
+      if(!push){const side=hit.d>=0?1:-1;push=[hit.nx*side,hit.ny*side];}
+      const along=hit.nx*push[0]+hit.ny*push[1];if(Math.abs(along)<.3)break;
+      const target=(along>0?1:-1)*(hit.half+Math.max(2,Math.min(hit.walk,4)/2));
+      const move=(target-hit.d)/along;x+=push[0]*move;y+=push[1]*move;
+    }
+    return push?coordinate([x,y]):p;
+  }
   match(path){
     const chunks=[];let previous=null,chunk=null,matched=0,total=0;
     for(let i=1;i<path.points.length;i++){

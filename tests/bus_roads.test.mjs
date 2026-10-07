@@ -72,3 +72,30 @@ test('unchanged OFM tiles reuse the graph; overview tiles cannot replace detaile
   assert.equal(n.update([{...roads[0],tile:{z:12,x:0,y:0}}]),false);
   assert.equal(n.version,version);
 });
+
+test('route display line sits on the CityLife road centre, keeping its own carriageway and continuity',()=>{
+  const two=network([road([[-150,0],[150,0]])]);
+  const on=two.snapLine(path([[-100,8],[100,8]]));
+  assert.ok(on.samples.every(p=>Math.abs(xy(p.coordinate)[1])<.01&&p.width===22));
+  // 상하행 분리 차도: 가운데로 모아 둔 선도 진행 방향대로 자기 차도에 붙는다.
+  const split=network([road([[-8,-150],[-8,150]],{oneway:1}),road([[8,150],[8,-150]],{oneway:1})]);
+  const north=split.snapLine(path([[0,-100],[0,100]])),south=split.snapLine(path([[0,100],[0,-100]]));
+  assert.ok(north.samples.every(p=>Math.abs(xy(p.coordinate)[0]+8)<.01));
+  assert.ok(south.samples.every(p=>Math.abs(xy(p.coordinate)[0]-8)<.01));
+  // 맞는 도로가 없으면 원래 자리에 남아 선이 끊기지 않는다.
+  const far=two.snapLine(path([[-100,200],[100,200]]));
+  assert.ok(far.samples.length>2&&far.samples.every(p=>p.width===null&&Math.abs(xy(p.coordinate)[1]-200)<.01));
+});
+
+test('a stop pinned inside the carriageway moves to the pavement on its own side, across a split road',()=>{
+  const two=network([road([[-150,0],[150,0]])]);
+  const north=xy(two.kerbside(coord(0,4))),south=xy(two.kerbside(coord(0,-4)));
+  assert.ok(north[1]>12.5&&north[1]<14&&Math.abs(north[0])<.01);
+  assert.ok(south[1]<-11&&south[1]>-14);
+  const pavement=coord(0,30);assert.deepEqual(two.kerbside(pavement),pavement);
+  // 분리 차도 사이(중앙)에 찍힌 정류장은 바깥 차도를 넘어 인도까지 간다.
+  const split=network([road([[-150,-9],[150,-9]],{oneway:1}),road([[150,9],[-150,9]],{oneway:1})]);
+  const out=xy(split.kerbside(coord(0,2)));
+  assert.ok(Math.abs(out[1])>9+22*.72/2+1.5,'beyond the outer carriageway');
+  assert.deepEqual(network([road([[-150,0],[150,0]],{brunnel:'bridge'})]).kerbside(coord(0,4)),coord(0,4));
+});
