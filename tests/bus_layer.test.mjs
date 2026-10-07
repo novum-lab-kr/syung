@@ -184,3 +184,12 @@ test('the selected next stop refreshes at motion completion within the one-secon
   layer.draw();
   assert.match(shown, /<dd>출발<small>/);
 }));
+
+test('한 대의 오래된 위치는 지도 전체 지연 알림을 켜지 않고, 노선을 못 받으면 켠다', () => withLayerFixture(layer => {
+  layer.fleet.set('old', {stale: true, mock: false, route}); layer.routeStates = {[route.id]: {status: 'cached'}};
+  layer.updateStatus();
+  assert.equal(layer.notice.textContent, '', '그 버스만 흐리게 그린다');
+  layer.routeStates = {[route.id]: {status: 'stale'}};
+  layer.updateStatus();
+  assert.equal(layer.notice.textContent, '버스 위치 갱신 지연');
+}));

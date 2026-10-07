@@ -533,7 +533,8 @@ class BusLayer {
   updateStatus() {
     if (this.disposed) return;
     const zoom = this.map.getZoom();
-    const delayed = this.mode === 'error' || [...this.fleet.values()].some(b => b.stale) ||
+    // 지연 알림은 우리 쪽(노선을 못 받았거나 늦음)만. 버스 한 대의 위치가 오래된 건(차고지 대기 등, 2026-10-07 149대 중 2대) 그 버스만 흐리게
+    const delayed = this.mode === 'error' ||
       Object.values(this.routeStates || {}).some(s => ['stale', 'deferred', 'error'].includes(s.status));
     if (this.nearby) { this.nearby.hidden = false; this.nearby.disabled = !this.stopFeatures?.length || zoom < BUS_ZOOM.stops; }
     const chosen=new Set(this.chosenIds()),approximate=this.visible.some(v=>chosen.has(v.route.id)&&v.route.approximate),mock=this.mode==='mock'||[...this.fleet.values()].some(b=>b.mock);
