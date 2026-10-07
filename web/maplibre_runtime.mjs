@@ -17,7 +17,7 @@ import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
-import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
+import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
@@ -2065,13 +2065,11 @@ map.on('load',()=>{
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
   map.addLayer(stationNames);   // platforms under the trains
   map.addSource('station-labels',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  // 역 이름표: 역마다 떠 있는 팻말 하나(노선 칩 + 역 이름, 아래 뾰족한 꼬리). 이 레이어는 투명한 자리잡이예요. 놓인 것만
-  // 열차 · 고가 · 출구 기둥 위 캔버스에 그려요(lib/station_signs.mjs, drawTrains 끝). 지도 캔버스에 그리면 3D 가 덮어요
-  // 자리잡이 그림: 판(이름에 맞춰 늘어남) + 그 아래 떠 있는 틈. 치수는 station_signs.mjs 의 SIGN 과 맞춰요
-  {const R=2,W=40,PH=26,G=14;   // 늘어나는 칸을 가운데 양옆에 같은 폭으로 둬서 꼬리 자리가 늘 판 가운데에 와요
-   map.addImage('station-sign',{width:W*R,height:(PH+G)*R,data:new Uint8Array(W*R*(PH+G)*R*4)},{pixelRatio:R,stretchX:[[9*R,17*R],[23*R,31*R]],stretchY:[[9*R,15*R]],content:[6*R,5*R,(W-6)*R,(PH-8)*R]})}
-  // 글자 아래 → 승강장까지 23px(여백 1 + 판 안쪽 5 + 회색 두께 3 + 떠 있는 높이 14): 글자 크기(em)로 나눠 위로 올려요
-  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,14,16,17,18,19],'symbol-sort-key':['get','rank'],'text-anchor':'bottom','text-offset':['interpolate',['linear'],['zoom'],13,['literal',[0,-23/14]],16,['literal',[0,-23/17]],18,['literal',[0,-23/19]]],'text-padding':3,'icon-image':'station-sign','icon-text-fit':'both','icon-text-fit-padding':[1,2,1,2]};
+  // 역마다 위치 핀 하나와 위쪽 이름을 놓고, 놓인 것만 열차 · 고가 위 캔버스에 그려요.
+  // 투명 아이콘은 전체 영역을 예약해요. 치수는 SIGN 과 맞춰요(lib/station_signs.mjs).
+  {const R=2,W=32,H=32;
+   map.addImage('station-sign',{width:W*R,height:H*R,data:new Uint8Array(W*R*H*R*4)},{pixelRatio:R,stretchX:[[0,W*R]],stretchY:[[0,H*R]],content:[0,0,W*R,H*R]})}
+  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,14,16,17,18,19],'symbol-sort-key':['get','rank'],...signCollisionLayout()};
   const SIGN_PAINT={'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':0,'text-opacity':0,'icon-opacity':0};
   map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','ph'],...SIGN_LAYOUT},paint:SIGN_PAINT});
   // trains: their own canvas over the map (see TRAIN_FPS)

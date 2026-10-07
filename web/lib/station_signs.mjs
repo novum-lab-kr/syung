@@ -1,16 +1,12 @@
-// 역 이름표(떠 있는 팻말): 지도의 station-labels 심볼 레이어가 투명한 채로 자리를 잡고(겹침 · 우선순위 · 줌 규칙),
-// 놓인 이름표만 이 모듈이 열차 · 고가 · 출구 기둥 위 2D 캔버스에 그려요. 역마다 하나: [6][7] 태릉입구.
-// 모양은 출구 기둥 · 버스 표지판과 한 식구예요: 노선색 칩에 흰 번호(출구 번호처럼), 흰 판에 먹색 테두리(버스 원판처럼),
-// 판 아래 회색 두께(출구 기둥 아랫부분처럼), 땅에 옅은 그림자(출구 그림자처럼).
+// 역 위치 핀: 투명한 station-labels 레이어가 자리를 잡고, 캔버스가 놓인 표지만 그려요.
+// 노선색 머리와 뾰족한 끝, 위쪽 역 이름, 땅 그림자가 한 표지로 천천히 떠 있어요.
 
 export const SIGN_FONT = '"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
-// px(글자 크기 비율이 아닌 것은 원근 비율 s 를 곱해요): gap = 판 아래 → 승강장(떠 있는 높이), slab = 회색 두께,
-// tail = 판 아래 뾰족한 꼬리(지도 핀처럼 승강장을 가리켜요)
-export const SIGN = {padX: 6, padY: 5, gap: 14, slab: 3, radius: 6, rim: 1.6, tail: 6, tailW: 7, chip: 1.12, chipGap: 3, nameGap: 6, bob: 2, bobPeriod: 3200};
+// px 치수는 원근 비율을 곱하고, 머리와 글자는 줌별 글자 크기에 맞춰요.
+export const SIGN = {gap: 14, tail: 10, head: 1.65, chip: 1.12, chipFont: .65, chipGap: 3, padX: 5, rim: 1.2, nameGap: 2.5, chipRim: .7, halo: 3, bob: 2, bobPeriod: 3200};
 const THEMES = {
-  // 회색 두께는 출구 기둥 아래 회색(PILLAR_STYLE.grey)과 같은 값
-  light: {fill: '#ffffff', rim: '#141414', slab: '#666b70', ink: '#141414', shadow: 'rgba(0,0,0,.28)'},
-  dark: {fill: '#1f2b33', rim: '#8fa3aa', slab: '#8f979e', ink: '#eef3f4', shadow: 'rgba(0,0,0,.45)'},
+  light: {fill: '#141414', rim: '#ffffff', ink: '#141414', halo: '#ffffff', shadow: 'rgba(0,0,0,.28)'},
+  dark: {fill: '#26343c', rim: '#b4c3c9', ink: '#eef3f4', halo: '#172229', shadow: 'rgba(0,0,0,.45)'},
 };
 
 // 글자 크기: 지도 레이어의 text-size 와 같은 줌 보간(13 → 14, 16 → 17, 18 → 19)
@@ -37,17 +33,43 @@ export function lineChip(name) {
   return s.replace(/호선$/, '').replace(/(경전철|철도|라인|선)$/, '') || s;
 }
 
-// 판 + 아래 가운데 뾰족한 꼬리를 한 길로(지도 핀처럼)
-function pinPath(ctx, left, top, w, h, r, tw, th) {
-  const x = left + w / 2, b = top + h;
+// 둥근 머리에서 승강장을 향한 끝으로 부드럽게 좁아져요.
+function pinPath(ctx, x, top, w, h, tail) {
+  const r = w / 2, cy = top + h / 2, tip = top + h + tail;
+  ctx.beginPath();
+  ctx.moveTo(x, top);
+  ctx.bezierCurveTo(x + r * 1.33, top, x + r * 1.33, cy + h * .2, x + r * .62, top + h * .83);
+  ctx.bezierCurveTo(x + r * .32, top + h, x + r * .13, tip - tail * .25, x, tip);
+  ctx.bezierCurveTo(x - r * .13, tip - tail * .25, x - r * .32, top + h, x - r * .62, top + h * .83);
+  ctx.bezierCurveTo(x - r * 1.33, cy + h * .2, x - r * 1.33, top, x, top);
+  ctx.closePath();
+}
+
+// 환승 머리는 양끝이 완전히 둥근 캡슐이고, 아래 중앙에만 꼬리를 붙여요.
+function transferPinPath(ctx, x, top, w, h, tail) {
+  const left = x - w / 2, right = x + w / 2, bottom = top + h, r = h / 2;
+  const neck = r * .62, tip = bottom + tail;
   ctx.beginPath();
   ctx.moveTo(left + r, top);
-  ctx.arcTo(left + w, top, left + w, b, r);
-  ctx.arcTo(left + w, b, x + tw / 2, b, r);
-  ctx.lineTo(x + tw / 2, b); ctx.lineTo(x, b + th); ctx.lineTo(x - tw / 2, b);
-  ctx.arcTo(left, b, left, top, r);
-  ctx.arcTo(left, top, left + w, top, r);
+  ctx.lineTo(right - r, top);
+  ctx.arcTo(right, top, right, top + r, r);
+  ctx.arcTo(right, bottom, right - r, bottom, r);
+  ctx.lineTo(x + neck, bottom);
+  ctx.bezierCurveTo(x + r * .32, bottom, x + r * .13, tip - tail * .25, x, tip);
+  ctx.bezierCurveTo(x - r * .13, tip - tail * .25, x - r * .32, bottom, x - neck, bottom);
+  ctx.lineTo(left + r, bottom);
+  ctx.arcTo(left, bottom, left, top + r, r);
+  ctx.arcTo(left, top, left + r, top, r);
   ctx.closePath();
+}
+
+// 이름의 실제 잉크와 할로 아래 끝을 머리 테두리에서 2.5px 띄워요.
+export function signNameBaseline(top, descent, scale = 1) {
+  return top - (SIGN.rim / 2 + SIGN.nameGap + SIGN.halo) * scale - descent;
+}
+
+export function signNameRise(size) {
+  return (SIGN.head + 1) / 2 + (SIGN.rim / 2 + SIGN.nameGap + SIGN.halo) / size;
 }
 
 // 칩 순서: 번호 노선(1, 2, …)을 번호대로 먼저, 나머지는 원래 순서
@@ -62,12 +84,24 @@ export function chipInk(hex) {
   return .299 * r + .587 * g + .114 * b > .62 ? '#141414' : '#ffffff';
 }
 
-// 자리잡이 레이어가 쓸 글자: 칩 자리만큼 넓게(칩 하나 ≈ 글자 + 양옆 여백)
+// 이름 위줄 + 핀 안 노선 아래줄: 글자 폭에 머리 여백을 더해 충돌 영역을 잡아요.
 export function placeholderText(lines, name) {
-  return lines.map(l => ` ${lineChip(l)} `).join('') + (lines.length ? ' ' : '') + name;
+  return `${name}\n${lines.length ? lines.map(l => ` ${lineChip(l)} `).join('') : ' '}`;
 }
 
-// 판에 쓸 것: 노선 칩들(속성 ln · lc 는 '|' 로 이은 노선 이름 · 색)과 역 이름
+// 치수는 SIGN 과 맞춰요. 떠 있는 틈과 뾰족한 끝까지 투명 아이콘이 예약해요.
+export function signCollisionLayout() {
+  const offset = size => [0, -(SIGN.gap + SIGN.tail + (SIGN.head - 1) * size / 2) / size];
+  return {
+    'text-anchor': 'bottom', 'text-line-height': ['interpolate', ['linear'], ['zoom'], 13, signNameRise(14), 16, signNameRise(17), 18, signNameRise(19)], 'text-max-width': 100,
+    'text-offset': ['interpolate', ['linear'], ['zoom'], 13, ['literal', offset(14)], 16, ['literal', offset(17)], 18, ['literal', offset(19)]],
+    'text-padding': SIGN.halo + SIGN.bob,
+    'icon-image': 'station-sign', 'icon-text-fit': 'both',
+    'icon-text-fit-padding': [SIGN.halo + SIGN.bob, SIGN.padX + SIGN.rim, SIGN.gap + SIGN.tail + 8 + SIGN.bob, SIGN.padX + SIGN.rim],
+  };
+}
+
+// 핀에 쓸 것: 노선 칩들(속성 ln · lc 는 '|' 로 이은 노선 이름 · 색)과 역 이름
 export function signRows(p) {
   const names = String(p.ln || '').split('|').filter(Boolean), cols = String(p.lc || '').split('|');
   return {chips: names.map((n, i) => ({text: lineChip(n), color: cols[i] || '#52646a'})), name: String(p.text || '')};
@@ -82,45 +116,45 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   for (const {x, y, scale: s, size, rows, phase = 0} of signs) {
-    const S = size * s, chipH = S * SIGN.chip, chipF = S * .78;
+    const S = size * s, headH = S * SIGN.head, chipH = S * SIGN.chip, chipF = S * SIGN.chipFont;
     ctx.font = `800 ${chipF}px ${SIGN_FONT}`;
-    const chipW = rows.chips.map(c => Math.max(chipH, ctx.measureText(c.text).width + chipH * .55));
+    const chipW = rows.chips.map(c => Math.max(chipH, ctx.measureText(c.text).width + 8 * s));
     const chipsW = chipW.reduce((a, w) => a + w, 0) + SIGN.chipGap * s * Math.max(0, chipW.length - 1);
-    ctx.font = `700 ${S}px ${SIGN_FONT}`;
-    const nameW = ctx.measureText(rows.name).width;
-    const innerW = chipsW + (chipsW ? SIGN.nameGap * s : 0) + nameW, innerH = Math.max(chipH, S * 1.2);
-    const w = innerW + 2 * SIGN.padX * s, h = innerH + 2 * SIGN.padY * s;
-    const lift = still ? 0 : Math.sin(now / SIGN.bobPeriod * Math.PI * 2 + phase) * SIGN.bob * s;   // 둥둥: 천천히 오르내려요
-    const bottom = y - SIGN.gap * s - lift, top = bottom - h - SIGN.slab * s, left = x - w / 2;
-    // 땅 그림자: 팻말이 오르면 조금 작고 옅어져요
+    const w = Math.max(headH, chipsW + (rows.chips.length > 1 ? 2 * SIGN.padX * s : 4 * s));
+    const lift = still ? 0 : Math.sin(now / SIGN.bobPeriod * Math.PI * 2 + phase) * SIGN.bob * s;
+    const top = y - SIGN.gap * s - SIGN.tail * s - headH - lift, cy = top + headH / 2;
     const k = 1 - lift / (SIGN.gap * s) * .25;
     ctx.fillStyle = T.shadow;
     ctx.globalAlpha = alpha * k;
-    ctx.beginPath(); ctx.ellipse(x, y, Math.min(w * .32, 18 * s) * k, 3.2 * s * k, 0, 0, Math.PI * 2); ctx.fill();   // 긴 팻말도 그림자는 동그랗게
+    ctx.beginPath(); ctx.ellipse(x, y, Math.min(w * .32, 18 * s) * k, 3.2 * s * k, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = alpha;
-    // 회색 두께(판 아래로 비치는 옆면) → 먹색 테두리 → 흰 앞면
-    const R = SIGN.radius * s, tw = SIGN.tailW * s, th = SIGN.tail * s, r = SIGN.rim * s;
-    ctx.fillStyle = T.slab;
-    pinPath(ctx, left, top + SIGN.slab * s, w, h, R, tw, th); ctx.fill();
-    ctx.fillStyle = T.rim;
-    pinPath(ctx, left, top, w, h, R, tw, th); ctx.fill();
-    ctx.fillStyle = T.fill;
-    pinPath(ctx, left + r, top + r, w - 2 * r, h - 2 * r, Math.max(0, R - r), tw - 2 * r, th - 1.6 * r); ctx.fill();
-    // 노선 칩: 노선색 둥근 네모에 흰 번호(출구 기둥 번호처럼)
-    const cy = top + h / 2;
-    let cx = left + SIGN.padX * s;
+    // 단일 노선은 머리 전체에 노선색, 환승역은 중립 머리 안에 노선색 칩을 넣어요.
+    const single = rows.chips.length === 1;
+    ctx.fillStyle = single ? rows.chips[0].color : T.fill;
+    ctx.strokeStyle = T.rim; ctx.lineWidth = SIGN.rim * s; ctx.lineJoin = 'round';
+    (single ? pinPath : transferPinPath)(ctx, x, top, w, headH, SIGN.tail * s); ctx.fill(); ctx.stroke();
+    let cx = x - chipsW / 2;
     ctx.font = `800 ${chipF}px ${SIGN_FONT}`;
     rows.chips.forEach((c, i) => {
-      ctx.fillStyle = c.color;
-      ctx.beginPath(); ctx.roundRect(cx, cy - chipH / 2, chipW[i], chipH, chipH * .28); ctx.fill();
+      if (!single) {
+        ctx.fillStyle = c.color;
+        ctx.beginPath(); ctx.roundRect(cx, cy - chipH / 2, chipW[i], chipH, chipH / 2); ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = SIGN.chipRim * s; ctx.stroke();
+      }
       ctx.fillStyle = chipInk(c.color);
-      ctx.fillText(c.text, cx + chipW[i] / 2, cy + chipH * .03);
+      ctx.fillText(c.text, cx + chipW[i] / 2, cy);
       cx += chipW[i] + SIGN.chipGap * s;
     });
-    if (chipsW) cx += SIGN.nameGap * s - SIGN.chipGap * s;
+    // 박스 없이 이름만 할로로 지도와 분리해요.
     ctx.font = `700 ${S}px ${SIGN_FONT}`;
+    ctx.strokeStyle = T.halo; ctx.lineWidth = SIGN.halo * s * 2;
+    ctx.textBaseline = 'alphabetic';
+    const metrics = ctx.measureText(rows.name);
+    const baseline = signNameBaseline(top, metrics.actualBoundingBoxDescent ?? S * .12, s);
+    ctx.strokeText(rows.name, x, baseline);
     ctx.fillStyle = T.ink;
-    ctx.fillText(rows.name, cx + nameW / 2, cy + S * .03);
+    ctx.fillText(rows.name, x, baseline);
+    ctx.textBaseline = 'middle';
   }
   ctx.restore();
 }

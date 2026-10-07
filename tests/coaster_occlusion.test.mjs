@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { signCollisionLayout } from '../web/lib/station_signs.mjs';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -51,7 +52,7 @@ test('coaster platforms test building depth while the ordinary map preserves its
 
 test('station labels keep their route names in every mode (the coaster rides the viaduct; no ground route signs to stand in for them)', () => {
   const layers = new Map(), updates = [];
-  const context = vm.createContext({ Map, ready: true, coaster: false, simcity: false, PHONE: false, RIDE_H: 200,
+  const context = vm.createContext({ Map, signCollisionLayout, ready: true, coaster: false, simcity: false, PHONE: false, RIDE_H: 200,
     effectiveTheme: () => 'light', CityBuildings: class { set() {} },
     map: { addLayer: layer => layers.set(layer.id, layer), getLayer: id => layers.get(id),
       getLayoutProperty: (id, key) => layers.get(id).layout[key],
