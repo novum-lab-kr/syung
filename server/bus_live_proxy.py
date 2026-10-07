@@ -51,7 +51,6 @@ MESSAGES = {
     "disabled": "버스 실시간 위치 수집이 비활성화되어 있습니다.",
     "upstream_auth": "버스 위치 API 인증 또는 활용신청 승인을 확인해 주세요.",
     "upstream_quota": "버스 위치 API 호출 한도에 도달했습니다.",
-    "upstream_route": "버스 위치 API에서 해당 노선을 찾을 수 없습니다.",
     "upstream_error": "버스 위치 API를 일시적으로 조회할 수 없습니다.",
     "invalid_payload": "버스 위치 API 응답 형식을 확인할 수 없습니다.",
     "quota_storage": "버스 호출량 기록을 읽거나 저장할 수 없어 수집을 중단했습니다.",
@@ -218,11 +217,13 @@ def parse_payload(raw: bytes) -> list[dict]:
                 raise BusError("upstream_auth" if reason in ("20", "30", "31")
                                else "upstream_quota" if reason == "22" else "invalid_payload")
             items = [{child.tag: child.text or "" for child in item} for item in root.findall(".//itemList")]
-        if code == "8":  # official guide: service has ended; clear old vehicles
+        # 8: service has ended (official guide); 4: "결과가 없습니다" — no bus on the route right now (a
+        # night route in the daytime, 2026-10-07 N62). Both clear old vehicles; 4 was an error, which
+        # kept the map's "갱신 지연" notice on and retried every minute
+        if code in ("4", "8"):
             return []
         if code != "0":
-            raise BusError("upstream_route" if code == "4" else
-                           "upstream_quota" if code == "22" else "upstream_error")
+            raise BusError("upstream_quota" if code == "22" else "upstream_error")
         if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
             raise BusError("invalid_payload")
         return items

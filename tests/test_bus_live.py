@@ -28,9 +28,8 @@ class PayloadTest(unittest.TestCase):
 
     def test_empty_is_success_but_auth_and_malformed_are_not(self):
         self.assertEqual(bus.parse_payload(b'<ServiceResult><msgHeader><headerCd>8</headerCd></msgHeader></ServiceResult>'), [])
-        with self.assertRaises(bus.BusError) as route_error:
-            bus.parse_payload(b'<ServiceResult><msgHeader><headerCd>4</headerCd></msgHeader></ServiceResult>')
-        self.assertEqual(route_error.exception.code, "upstream_route")
+        # 4 "결과가 없습니다": 지금 다니는 버스가 없다(낮의 심야 노선) — 오류가 아니다
+        self.assertEqual(bus.parse_payload('{"msgHeader":{"headerCd":"4","headerMsg":"결과가 없습니다."},"msgBody":{"itemList":null}}'.encode()), [])
         for raw in (b"<html>upstream down</html>", b"{}", b"garbage", b'{"msgHeader":{"headerCd":0},"msgBody":[]}',
                     b'<!DOCTYPE x [<!ENTITY secret "x">]><x/>'):
             with self.subTest(raw=raw), self.assertRaises(bus.BusError):
