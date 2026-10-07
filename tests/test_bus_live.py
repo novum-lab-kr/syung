@@ -329,6 +329,16 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual((body["routes"][R1]["status"], body["busCount"], len(self.calls)), ("fresh", 1, 2))
         self.assertEqual(body["quota"]["used"], 2, "다시 부른 것도 센다")
 
+    def test_a_newly_tapped_route_is_fetched_at_once_but_others_wait_for_the_gate(self):
+        proxy = self.proxy()   # 하루 950번: 간격이 1분이 넘는다
+        self.assertEqual(self.get(proxy, R1, focus=R1)["routes"][R1]["status"], "fresh")
+        self.now += 2
+        self.assertEqual(self.get(proxy, R2, focus=R2)["routes"][R2]["status"], "fresh", "방금 고른 다른 노선도 바로")
+        self.now += 40
+        body = self.get(proxy, R1, R2, focus=R1)
+        self.assertEqual(body["routes"][R1]["status"], "stale", "이미 받아 둔 노선은 간격을 지킨다")
+        self.assertEqual(len(self.calls), 2)
+
     def test_stale_fallback_expires(self):
         proxy = self.proxy()
         self.get(proxy, R1)

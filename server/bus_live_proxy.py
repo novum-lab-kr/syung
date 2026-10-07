@@ -450,8 +450,11 @@ class BusProxy:
             # Unknown/oldest first prevents the first visible route starving its neighbours.
             due.sort(key=lambda rid: (0 if rid == focus else 1, self.cache.get(rid, (-math.inf, []))[0], ids.index(rid)))
             if due and now >= self.backoff_until:
+                # 사람이 방금 고른 노선(focus)을 처음(또는 오래 안 받다가) 물으면 하루치를 나눠 쓰는 간격을 기다리지 않는다:
+                # 기다리면 지도가 다시 물을 때(15초, 밤엔 40초 넘게)까지 버스가 0대였다(2026-10-08 덕배). 하루 상한은 그대로
+                cold = due[0] == focus and now - self.cache.get(focus, (-math.inf, []))[0] > self.config.stale_seconds
                 try:
-                    allowed, self.last_block, self.next_at = self.ledger.reserve(now)
+                    allowed, self.last_block, self.next_at = self.ledger.reserve(now, paced=not cold)
                     if allowed:
                         chosen = due[0]
                         self.pending.add(chosen)
