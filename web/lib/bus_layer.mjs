@@ -20,10 +20,10 @@ export const BUS_TYPES = {
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const STALE_MS = 120000, EXPIRE_MS = 600000;
-// #buslines: 노선 점검용. 서울 버스 노선 전체를 종류 색으로, z14 부터 번호 · 정류장까지 그린다.
-// 실제 화면과 같은 선: 도로에 맞춘 표시선, z15 부터는 화면 안을 심시티 도로 중심선에 붙이고 정류장은 인도로.
+// #buslines: 노선 점검용. 서울 버스 노선 전체를 종류 색으로, z14 부터 번호까지 그린다(정류장은 BUS 간판이 있어 점을 찍지 않는다).
+// 실제 화면과 같은 선: 도로에 맞춘 표시선, z15 부터는 화면 안을 심시티 도로 중심선에 붙인다.
 // 선을 누르면 그 노선만 골라 버스 · 정류장을 위에 겹쳐 본다.
-const SOURCE_CHECK = 'bus-check', CHECK_LAYERS = ['bus-check-line','bus-check-stop','bus-check-label'];
+const SOURCE_CHECK = 'bus-check', CHECK_LAYERS = ['bus-check-line','bus-check-label'];
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
 const text = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -199,10 +199,7 @@ class BusLayer {
     const line = ['==', ['geometry-type'], 'LineString'];
     map.addLayer({id: CHECK_LAYERS[0], type: 'line', source: SOURCE_CHECK, filter: line, layout: {'line-cap': 'round', 'line-join': 'round'},
       paint: {'line-color': ['get', 'color'], 'line-opacity': .75, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, .8, 14, 1.6, 17, 3]}}, before);
-    map.addLayer({id: CHECK_LAYERS[1], type: 'circle', source: SOURCE_CHECK, minzoom: 14, filter: ['!', line],
-      paint: {'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2, 17, 4], 'circle-color': '#ffffff',
-        'circle-stroke-color': '#141414', 'circle-stroke-width': 1}}, before);
-    map.addLayer({id: CHECK_LAYERS[2], type: 'symbol', source: SOURCE_CHECK, minzoom: 14, filter: line,
+    map.addLayer({id: CHECK_LAYERS[1], type: 'symbol', source: SOURCE_CHECK, minzoom: 14, filter: line,
       layout: {'symbol-placement': 'line', 'symbol-spacing': 260, 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11},
       paint: {'text-color': ['get', 'color'], 'text-halo-color': '#ffffff', 'text-halo-width': 1.6}}, before);
   }
@@ -223,10 +220,6 @@ class BusLayer {
       const flush = () => { if (part.length > 1) features.push(feature('LineString', part, properties)); part = []; };
       for (const p of this.roads.snapLine(line, box).samples) { if (contains(box, p.coordinate)) part.push(p.coordinate); else flush(); }
       flush();
-    }
-    for (const stop of this.data.stopById.values()) {
-      if (detail && !contains(box, [stop.lng, stop.lat])) continue;
-      features.push(feature('Point', detail ? this.kerbside(stop) : [stop.lng, stop.lat], {id: stop.id}));
     }
     this.map.getSource(SOURCE_CHECK)?.setData(collection(features));
   }
