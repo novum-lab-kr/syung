@@ -77,6 +77,33 @@ class PayloadTest(unittest.TestCase):
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(urls[0]).query)["serviceKey"], ["secret+/="])
 
 
+class HttpErrorTest(unittest.TestCase):
+    def error(self, code, body):
+        return urllib.error.HTTPError("http://x", code, "x", {}, io.BytesIO(body.encode()))
+
+    def test_401_with_limit_message_is_quota_not_auth(self):
+        # 2026-10-07 버스 위치 API 가 한도를 넘겼을 때 실제 본문
+        quota = '{"error":"Unauthorized","message":"유효하지 않은 서비스키입니다: 서비스 요청제한 횟수 초과 에러","status":401}'
+        self.assertEqual(bus.http_error_code(self.error(401, quota)), "upstream_quota")
+        self.assertEqual(bus.http_error_code(self.error(401, '{"message":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR"}')), "upstream_auth")
+        self.assertEqual(bus.http_error_code(self.error(429, "")), "upstream_quota")
+        self.assertEqual(bus.http_error_code(self.error(500, "")), "upstream_error")
+
+    def test_quota_401_backs_off_at_once_and_is_not_retried(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        calls = []
+        def fetch(rid, config):
+            calls.append(rid)
+            raise bus.BusError("upstream_quota")
+        now = datetime(2026, 10, 7, 5, tzinfo=timezone.utc).timestamp()
+        proxy = bus.BusProxy(bus.Config(key="k", quota_file=Path(directory.name) / "q.json", daily_limit=100000),
+                             routes=ROUTES, fetch=fetch, clock=lambda: now)
+        proxy.snapshot({"routes": [R1]})
+        self.assertEqual(len(calls), 1, "한도 초과는 그 자리에서 다시 부르지 않는다")
+        self.assertGreater(proxy.backoff_until, now)
+
+
 class ProxyTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

@@ -281,6 +281,20 @@ def fetch_arrivals(ars_id: str, config) -> list[dict]:
     return fetch_upstream(ARRIVAL_URL, {"arsId": ars_id}, config)
 
 
+def http_error_code(error) -> str:
+    """하루 한도를 넘기면 서울시는 401 에 '서비스 요청제한 횟수 초과 에러'를 담아 준다(2026-10-07 확인).
+    처음엔 서버마다 넘는 때가 달라 401 이 섞여 오다가 모두 401 이 된다: 인증 오류가 아니라 한도 초과로 본다."""
+    if error.code == 429:
+        return "upstream_quota"
+    if error.code not in (401, 403):
+        return "upstream_error"
+    try:
+        body = error.read(4000).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — 본문을 못 읽어도 상태 코드로 판단한다
+        body = ""
+    return "upstream_quota" if "횟수 초과" in body or "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in body else "upstream_auth"
+
+
 def fetch_upstream(url: str, params: dict, config) -> list[dict]:
     # unquote (NOT unquote_plus) supports either portal encoding of the same key.
     query = urllib.parse.urlencode({"serviceKey": urllib.parse.unquote(config.key), **params, "resultType": "json"})
@@ -289,8 +303,7 @@ def fetch_upstream(url: str, params: dict, config) -> list[dict]:
         with urllib.request.urlopen(request, timeout=config.timeout) as response:
             raw = response.read(2_000_001)
     except urllib.error.HTTPError as error:
-        raise BusError("upstream_auth" if error.code in (401, 403)
-                       else "upstream_quota" if error.code == 429 else "upstream_error") from None
+        raise BusError(http_error_code(error)) from None
     except (OSError, urllib.error.URLError, ValueError):
         raise BusError("upstream_error") from None
     return parse_payload(raw)
