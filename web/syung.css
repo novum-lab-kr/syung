@@ -92,6 +92,8 @@ html[data-theme=dark] .bus-stop{--hero:#26282c;--hero-line:#5a5b57;--hero-dim:#3
 .bus-refresh:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
 .bus-num{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:24px;padding:0 8px;border-radius:7px;background:var(--c);color:#fff;font-family:var(--round);font-size:16px;line-height:1;white-space:nowrap}
 .bus-num-more{background:none;border:1px solid #6b6a62;color:#fffdf6}
+.bus-num.bus-num-long{padding:0 4px;font-size:12px;letter-spacing:-.02em}
+.bus-hero-head .bus-num.bus-num-long{font-size:14px}
 .bus-hero{display:block;width:100%;box-sizing:border-box;margin-top:10px;padding:16px;border:0;border-radius:20px;background:var(--hero);color:#fffdf6;font:inherit;text-align:left}
 button.bus-hero{cursor:pointer}
 button.bus-hero:focus-visible{outline:3px solid var(--syung);outline-offset:2px}
@@ -122,7 +124,7 @@ button.bus-hero:focus-visible{outline:3px solid var(--syung);outline-offset:2px}
 /* 한 줄 목록: 번호 · 방면(막차 꼬리표) · N번째 전 · 흐르는 남은 시간 */
 .sheet-body:has(.bus-rows){margin:0 -12px;padding:0 12px}   /* 눌림 배경이 좌우 8px 밖으로 나가도 잘리지 않게(.journey 와 같은 방법) */
 .bus-rows{margin-top:6px}
-.bus-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:10px;width:calc(100% + 16px);box-sizing:border-box;min-height:48px;margin:0 -8px;padding:6px 8px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left}
+.bus-row{display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:center;gap:10px;width:calc(100% + 16px);box-sizing:border-box;min-height:48px;margin:0 -8px;padding:6px 8px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left}
 .bus-row .bus-num{height:28px}
 button.bus-row{cursor:pointer;-webkit-tap-highlight-color:transparent}
 button.bus-row:hover{background:var(--control)}

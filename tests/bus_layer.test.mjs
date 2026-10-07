@@ -216,6 +216,7 @@ test('정류장 팝업: 번호 배지 · 새로고침 / 곧 도착 1대 카드(�
   assert.match(html, /<button type="button" class="bus-hero" data-bus-route="100000001" aria-pressed="false">.*회차 방면.*<span class="bus-hero-soon">곧 도착<\/span><span class="bus-hero-next">다음 8분<\/span>/);
   assert.match(html, /<span class="bus-track-names"><span>회차<\/span><b>출발<\/b><span><\/span><\/span>/, '같은 정류장을 두 번 지나는 노선은 앞 정류장이 있는 쪽');
   assert.match(html, /class="bus-row" data-bus-route="100000001"[^>]*>.*<span class="bus-soon">곧 도착<\/span>/, '곧 도착은 초 없이');
+  assert.match(html, /<span class="bus-num" style="--c:#3567C8">100<\/span>/);
   assert.match(html, /<div class="bus-row">.*>6100<.*<span class="bus-tag">지도 없음<\/span>.*<span class="bus-away">1번째 전<\/span><span class="bus-eta" data-eta="\d+">3분 1\d초<\/span>/);
   assert.ok(html.indexOf('>100<') < html.indexOf('>6100<'), '곧 도착이 3분 뒤보다 먼저');
   layer.refreshArrivals();
@@ -296,4 +297,14 @@ test('곧 도착 카드의 버스 아이콘: 지도에 띄운 노선이면 지�
   const near = layer.approach(r, '01');
   assert.ok(Math.abs(near.ratio - .75) < .01, `구간의 3/4: ${near.ratio}`);
   assert.equal(near.prev, '회차');
+}, false));
+
+test('긴 버스 번호(5글자 이상)는 배지 글자를 줄인다', () => withLayerFixture(async layer => {
+  const saved = arrivalBody;
+  arrivalBody = {...saved, arrivals: [{routeId: '234000001', name: '7101파주', type: 'other', direction: '파주', buses: [{message: '4분후[1번째 전]', seconds: 240, last: false}]}]};
+  try {
+    layer.select({kind: 'stop', id: '01'}, null);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(layer.detailHTML(), /<span class="bus-num bus-num-long"[^>]*>7101파주<\/span>/);
+  } finally { arrivalBody = saved; }
 }, false));

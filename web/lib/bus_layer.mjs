@@ -673,7 +673,8 @@ class BusLayer {
     const items = [...routes.map(route => ({route, row: rows.get(route.id), live: true})),
       ...[...rows.values()].filter(row => !known.has(row.routeId)).map(row => ({route: {id: row.routeId, name: row.name, type: row.type}, row, live: false}))];
     items.sort((x, y) => arrivalRank(x.row) - arrivalRank(y.row));
-    const badge = route => `<span class="bus-num" style="--c:${color(route, 'light')}">${text(route.name)}</span>`;   // 흰 글자라 밝은 쪽 색
+    // 흰 글자라 밝은 쪽 색. '7101파주' · '새벽A148' 같은 긴 번호(5글자 이상)는 글자를 줄여 칸 안에
+    const badge = route => `<span class="bus-num${[...String(route.name)].length > 4 ? ' bus-num-long' : ''}" style="--c:${color(route, 'light')}">${text(route.name)}</span>`;
     const soon = items.filter(i => isSoon(i.row)), ended = items.filter(i => isEnded(i.row)), list = items.filter(i => !isEnded(i.row));
     // 곧 도착 카드: 1대면 번호 · 방면 · 다음 버스, 여러 대면 번호만(6대까지, 7대부터 5대 + '+N')
     let hero = '';
@@ -694,7 +695,7 @@ class BusLayer {
     }
     const row = ({route, row, live}) => {
       const first = row?.buses?.[0], parts = first ? arrivalParts(first) : null;
-      const where = parts?.detail.split(' · ').filter(t => t !== '막차').join(' · ') || '';
+      const where = parts?.detail.split(' · ').filter(t => t !== '막차' && t !== '0번째 전').join(' · ') || '';   // 서울시가 가끔 주는 '0번째 전'은 뺀다
       const tag = parts?.detail.includes('막차') ? '막차' : live ? '' : '지도 없음';
       const time = waiting && !row ? '<i class="bus-wait"></i>'
         : !row ? '<span class="bus-away">도착 정보 없음</span>'
