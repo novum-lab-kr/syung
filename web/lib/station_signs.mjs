@@ -92,8 +92,17 @@ export function borderSegments(x, width, count, rim, dpr = 1) {
   return Array.from({length: count}, (_, i) => ({left: edges[i], right: edges[i + 1]}));
 }
 
+// 이름표에서만 괄호 설명을 빼고, 이름이 비면 원래 표기를 유지해요.
+export function stationLabelName(name) {
+  const original = String(name ?? '').trim();
+  let text = original;
+  while (/\([^()]*\)/.test(text)) text = text.replace(/\([^()]*\)/g, '');
+  return text.replace(/\s+/g, ' ').trim() || original;
+}
+
 // 짧은 이름에서도 점 줄이 충돌 영역 밖으로 나가지 않게 빈칸으로 폭을 확보해요.
 export function placeholderText(lines, name) {
+  name = stationLabelName(name);
   const extra = Math.max(0, dotLayout(lines.length).width - Array.from(name).length * 10 - 2 * SIGN.padX * 10);
   const pad = ' '.repeat(Math.ceil(extra / 10));
   return pad + name + pad;
@@ -116,7 +125,7 @@ export function signCollisionLayout() {
 // 노선색 순서는 자리잡이 데이터의 ln · lc 순서를 그대로 써요.
 export function signRows(p) {
   const names = String(p.ln || '').split('|').filter(Boolean), cols = String(p.lc || '').split('|');
-  return {dots: names.map((_, i) => ({color: cols[i] || '#52646a'})), name: String(p.text || '')};
+  return {dots: names.map((_, i) => ({color: cols[i] || '#52646a'})), name: stationLabelName(p.text)};
 }
 
 // 꼬리 없이 양끝이 완전히 둥근 알약만 그려요.
@@ -130,9 +139,9 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
   ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = alpha;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   for (const {x, y, scale: s, size, rows, phase = 0} of signs) {
-    const S = size * s;
+    const S = size * s, name = stationLabelName(rows.name);
     ctx.font = `700 ${S}px ${SIGN_FONT}`;
-    const metrics = ctx.measureText(rows.name), box = signDimensions(metrics.width, size, rows.dots.length, s);
+    const metrics = ctx.measureText(name), box = signDimensions(metrics.width, size, rows.dots.length, s);
     const lift = still ? 0 : Math.sin(now / SIGN.bobPeriod * Math.PI * 2 + phase) * SIGN.bob * s;
     const top = y - SIGN.gap * s - box.height - lift;
     const k = 1 - lift / (SIGN.gap * s) * .25;
@@ -155,7 +164,7 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
     }
     const ascent = metrics.actualBoundingBoxAscent ?? S * .8, descent = metrics.actualBoundingBoxDescent ?? S * .2;
     ctx.fillStyle = routeTextColor(color);
-    ctx.fillText(rows.name, x, top + box.height / 2 + (ascent - descent) / 2);
+    ctx.fillText(name, x, top + box.height / 2 + (ascent - descent) / 2);
     const dotY = top - (SIGN.rim / 2 + SIGN.dotRise) * s - (SIGN.dot + SIGN.dotRim) * s / 2;
     rows.dots.forEach((dot, i) => {
       ctx.fillStyle = dot.color; ctx.strokeStyle = T.dotRim; ctx.lineWidth = SIGN.dotRim * s;

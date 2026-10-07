@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor} from '../web/lib/station_signs.mjs';
+import {platformRuntime, local as localMeters} from './platform_endpoints_fixture.mjs';
+import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mjs';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
   const entries = [
@@ -267,4 +268,55 @@ test('끝에서 300m를 넘어야 만나는 교차점은 쓰지 않아요', () =
   assertAnchor([[[-500, 0], [-310, 0]], [[0, 50], [0, 100]]], [-202.5, 37.5]);
   // 한쪽만 300m를 넘어도 연장 교차에서 제외해요.
   assertAnchor([[[-100, 0], [-50, 0]], [[0, 310], [0, 500]]], [-37.5, 202.5]);
+});
+
+
+test('줌 10에서 16으로 옮겨도 상봉 이름표는 새로 그릴 승강장 좌표와 같아요', () => {
+  let zoom = 10, labelData;
+  const r = platformRuntime(undefined, zoom, {map: {getZoom: () => zoom}}), source = r.source;
+  const sources = {
+    routes: {setData: () => {}}, stations: {setData: () => {}},
+    'station-labels': {setData: data => {labelData = data;}},
+  };
+  Object.assign(r.context, {selected: 'all', labels: [], stations: r.context.stations.filter(s => s.id === 135),
+    signAnchor, sortLines, placeholderText, scheduleLabels: () => {}});
+  r.context.map.getSource = id => sources[id];
+  const on = {};
+  r.context.map.on = (event, fn) => {on[event] = fn;};
+  r.context.labelsStale = false;
+  const start = source.indexOf('function rebuildLabels(){'), end = source.indexOf('function filterLine(', start);
+  vm.runInContext(source.slice(start, end) + 'rebuildLabels();', r.context);
+  const old = [...labelData.features[0].geometry.coordinates];
+  const initial = r.rects.get('경춘선:135').coords[0];
+  assert.ok(Math.abs(localMeters(initial, [127.0856, 37.5965])[1] + 123) < 1);
+  const lines = source.split('\n');
+  vm.runInContext([lines.find(line => line.includes("map.on('zoom',()=>{if(coaster||simcity)return;")), lines.find(line => line.includes("map.on('zoomend',"))].join('\n'), r.context);
+  zoom = 16; on.zoom(); on.zoomend();
+  const rects = [...r.rects].filter(([key]) => key.endsWith(':135')).map(([, rect]) => rect.coords);
+  assert.ok(localMeters(r.rects.get('경춘선:135').coords[0], [127.0856, 37.5965])[1] > 0);
+  const expected = signAnchor(rects);
+  assert.ok(Math.hypot(...localMeters(expected, old)) > 100);
+  assert.deepEqual([...labelData.features[0].geometry.coordinates], expected);
+});
+
+
+test('이름표 이름에서 여러 괄호를 빼고 공백을 정리해요', () => {
+  assert.equal(stationLabelName(' 신촌(경의중앙선) '), '신촌');
+  assert.equal(stationLabelName('양평(경의중앙선)(별칭)'), '양평');
+  assert.equal(stationLabelName(' 역 (별칭) 이름 (노선) '), '역 이름');
+  assert.equal(stationLabelName('역(별칭(설명))'), '역');
+  assert.equal(stationLabelName(' 강남 '), '강남');
+  assert.equal(stationLabelName('(노선)(별칭)'), '(노선)(별칭)');
+  assert.equal(stationLabelName(''), '');
+});
+
+test('괄호 제거는 이름표 데이터와 실제 글자, 충돌 글자에만 적용해요', () => {
+  const props = {text: '신촌(경의중앙선)', ln: '경의중앙선', lc: '#77C4A3'};
+  assert.equal(signRows(props).name, '신촌');
+  assert.equal(props.text, '신촌(경의중앙선)');
+  assert.equal(placeholderText(['경의중앙선'], props.text), '신촌');
+  const ctx = recordingContext();
+  drawStationSigns(ctx, [{x: 100, y: 200, scale: 1, size: 14, rows: {name: props.text, dots: [{color: props.lc}]}}], {still: true});
+  assert.equal(ctx.calls.find(c => c.method === 'fillText').args[0], '신촌');
+  assert.equal(ctx.calls.find(c => c.method === 'roundRect').args[2], 2 * 14 + 14);
 });

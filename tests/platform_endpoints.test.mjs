@@ -33,9 +33,12 @@ for(const zoom of [14,16,18,20])test(`줌 ${zoom}: 일원 포함 전 구간 급�
 });
 
 test('줌 변경은 공유 선로 간격과 승강장을 함께 갱신하고 반복 줌은 갱신하지 않아요',()=>{
- const r=platformRuntime(),expected=platformRuntime(undefined,18);let handler;const updates=[];
- r.context.map={getZoom:()=>18,on:(event,fn)=>{handler=fn},getSource:id=>({setData:d=>updates.push({id,data:JSON.stringify(d)})})};
- const hook=r.source.split('\n').find(line=>line.includes("map.on('zoom',()=>{if(coaster||simcity)return;"));assert.ok(hook);vm.runInContext(hook,r.context);handler();
+ const r=platformRuntime(),expected=platformRuntime(undefined,18);const on={};let labelUpdates=0;const updates=[];
+ r.context.rebuildLabels=()=>{labelUpdates++};r.context.labelsStale=false;
+ r.context.map={getZoom:()=>18,on:(event,fn)=>{on[event]=fn},getSource:id=>({setData:d=>updates.push({id,data:JSON.stringify(d)})})};
+ const lines=r.source.split('\n'),hook=lines.find(line=>line.includes("map.on('zoom',()=>{if(coaster||simcity)return;")),end=lines.find(line=>line.includes("map.on('zoomend',"));
+ assert.ok(hook&&end);vm.runInContext(hook+'\n'+end,r.context);on.zoom();
  assert.equal(updates[0].id,'routes');assert.equal(updates[0].data,JSON.stringify({type:'FeatureCollection',features:expected.lines}));assert.equal(updates[1].id,'stations');
- handler();assert.equal(updates.length,2);
+ assert.equal(labelUpdates,0);on.zoomend();assert.equal(labelUpdates,1);   // 이름표는 줌이 끝난 뒤 한 번만
+ on.zoom();on.zoomend();assert.equal(updates.length,2);assert.equal(labelUpdates,1);
 });

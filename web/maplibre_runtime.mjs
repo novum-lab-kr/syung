@@ -2054,9 +2054,11 @@ async function refreshLive(force=false){
 }
 
 map.on('load',()=>{
+  let labelsStale=false;
   map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:buildLineFeatures()}});
   shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
-  map.on('zoom',()=>{if(coaster||simcity)return;let changed=false;for(const [key,t] of basicRouteCache){const [line,a,b]=key.split(':');if(t.zoom&&t.zoom!==map.getZoom()){changed=true;break}}if(!changed)return;map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()})});
+  map.on('zoom',()=>{if(coaster||simcity)return;let changed=false;for(const [key,t] of basicRouteCache){const [line,a,b]=key.split(':');if(t.zoom&&t.zoom!==map.getZoom()){changed=true;break}}if(!changed)return;map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});labelsStale=true});
+  map.on('zoomend',()=>{if(labelsStale){labelsStale=false;rebuildLabels()}});   // 승강장 좌표가 줌마다 바뀌어요. 이름표 자리는 줌이 끝난 뒤 한 번만 다시(줌 중 매 프레임 setData 하면 깜빡여요)
   map.addLayer({id:'routes',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],8,1.5,15,4],'line-offset':['get','offset'],'line-opacity':.9}});
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:buildStationFeatures()}});
   // Stations: square-ended platform rectangles filled with the line colour (no outline), widths shared with the name boxes.
