@@ -1015,7 +1015,7 @@ class TrainLayer{
   }
   render(gl,options){
     if(!myLocation&&(!trainsEnabled||!plans.length))return;
-    const drawTrainsToo=trainsEnabled;
+    const drawTrainsToo=trainsEnabled&&!subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
     const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=coaster||simcity?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;   // city-life: 심시티 — the slim body too (the viaduct's deck is cut to it)
     // Lane: clear of the route line (its drawn width) by a visible gap, then half a car body.
     const lanePx=simcity||coaster?cityViaduct.train(zoom,bodyPx).lanePx:laneOffsetPx(zoom,bodyPx);   // city-life: 심시티 — no route line on the ground to keep clear of: the two lanes close up on the deck
@@ -1194,7 +1194,7 @@ function rideCoords(line,ids){
 }
 function showRoute(plan,busSelection=false,refit=true){   // bus: a stop's number uses the same fit, focus and journey styles
   displayedRoute={plan,busSelection};
-  busRouteFocus=busSelection;if(!busSelection)busLayer?.setJourney(plan.legs);   // bus: keep the stop sheet's selection intact
+  busRouteFocus=busSelection;if(!busSelection){setSubwayOff(false);busLayer?.setJourney(plan.legs)}   // bus: 길찾기 경로는 지하철을 다시 보인다   // bus: keep the stop sheet's selection intact
   const feats=[],pts=[];
   plan.legs.forEach((l,i)=>{
     if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
@@ -1244,12 +1244,19 @@ const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#
 // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
 // is not drawn zoomed out below 12.5: there they come back in full)
 let routeFocus=false;
+// bus: 버스 노선을 고르면(정류장 팝업의 번호 · 지도 위 버스) 지하철 — 노선 · 승강장 · 이름표 · 열차 · 출구 — 을 감추고, 놓으면 다시(2026-10-08 덕배)
+let subwayOff=false;
+function setSubwayOff(on){
+  if(subwayOff===on)return;subwayOff=on;
+  for(const id of ['routes','stations-casing','stations','station-names','station-labels','exit-refs'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');   // 감춘 역은 눌리지도 않게
+  stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
+}
 const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',simcity||coaster?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
 // route focus: veil on, trains faded, my location kept above the veil
 function focusRoute(on){
   if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
   routeFocus=on;setRouteOpacity();
-  stationAlpha=on?.35:1;map.triggerRepaint();
+  stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
   const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.chosenIds().length&&!busLayer?.journeyLegs.length?'.3':'';   // bus: either entry point keeps its selected vehicles legible
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
@@ -1475,7 +1482,7 @@ function showTrainPopup(plan){
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
 // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
 function pickTrain(point){
-  if(!trainsEnabled||!liveOn)return null;
+  if(!trainsEnabled||!liveOn||subwayOff)return null;
   const unit=1/(512*2**map.getZoom());let best=null;
   for(const plan of plans){
     const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
@@ -2141,7 +2148,7 @@ map.on('load',()=>{
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
       if(simcity)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
-      exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
+      if(!subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
       if(ride&&coaster&&layer.c88ride.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
         const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
@@ -2182,6 +2189,7 @@ map.on('load',()=>{
     following=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
     return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
+    setSubwayOff(!!leg);
     if(leg)showRoute({legs:[leg]},true);
     else if(busRouteFocus){displayedRoute=null;busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
