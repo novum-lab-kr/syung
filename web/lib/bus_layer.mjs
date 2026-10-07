@@ -486,8 +486,10 @@ class BusLayer {
       // API 좌표는 노선 선 위 지점(distance)으로만 쓴다. 멀리서는 그 선 위, 줌 15 부터는 심시티 도로의 진행 방향 오른쪽 차로.
       const overview=zoom<BUS_ZOOM.buses||!this.map.querySourceFeatures,pose=overview?busPointAt(bus.path,distance):busLinePointAt(this.snappedLine(bus.route,bus.path),distance);
       if(!pose||!contains(this.box||box,pose.coordinate))continue;
-      // Keep the entire toy bus inside its lane, including wheels, at every zoom.
-      const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1])));
+      // 차로가 충분히 넓은 줌(18쯤)에서는 바퀴까지 차로 안에. 그보다 멀면 아래처럼 최소 크기를 지킨다
+      // 차로 폭에 맞추면 줌 15에서 4px · 16에서 8px 로 줄어 사라진 것처럼 보였다(2026-10-08 덕배): 멀리서 보던 크기 밑으로는 줄이지 않는다
+      const fit=pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1]));
+      const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),Math.max(busModelScale(BUS_ZOOM.buses-1),fit));
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-.56,.56])for(const z of [0,1.32]){
