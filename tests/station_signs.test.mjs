@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments} from '../web/lib/station_signs.mjs';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor} from '../web/lib/station_signs.mjs';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
   const entries = [
@@ -178,4 +180,91 @@ test('세 노선 환승 테두리는 세로 clip으로 점과 같은 순서로 �
   assert.equal(ctx.calls.filter(c => c.method === 'clip').length, 3);
   for (let i = 0; i < 2; i++) assert.equal(rects[i].args[0] + rects[i].args[2], rects[i + 1].args[0]);
   assert.ok(rects.every(c => c.args[1] === rects[0].args[1] && c.args[3] === rects[0].args[3]));
+});
+
+
+// 서울 부근 좌표로 바꿔 경도 보정까지 확인해요.
+const anchorMeters = 6371008.8 * Math.PI / 180;
+const toLngLat = ([x, y]) => [127 + x / (anchorMeters * Math.cos(37.5 * Math.PI / 180)), 37.5 + y / anchorMeters];
+function assertAnchor(platforms, expected, tolerance = .002) {
+  const actual = signAnchor(platforms.map(path => path.map(toLngLat))), target = toLngLat(expected);
+  assert.ok(Math.abs(actual[0] - target[0]) * anchorMeters < tolerance, `경도: ${actual[0]} != ${target[0]}`);
+  assert.ok(Math.abs(actual[1] - target[1]) * anchorMeters < tolerance, `위도: ${actual[1]} != ${target[1]}`);
+}
+
+test('단일 승강장은 직선과 휜 폴리라인 모두 호 길이 절반에 놓아요', () => {
+  assertAnchor([[[0, 0], [100, 0]]], [50, 0]);
+  assertAnchor([[[0, 0], [20, 0], [20, 80]]], [20, 30]);
+  assertAnchor([[[20, 80], [20, 0], [0, 0]]], [20, 30]);
+  assertAnchor([[[5, 7], [5, 7]]], [5, 7]);
+  assertAnchor([[[5, 7]]], [5, 7]);
+  assert.equal(signAnchor([]), null);
+  assert.equal(signAnchor([[], [[NaN, 37]]]), null);
+});
+
+test('환승역은 노선별 가운데 평균 대신 실제 십자 교차점에 놓아요', () => {
+  assertAnchor([[[0, 0], [200, 0]], [[30, -20], [30, 120]]], [30, 0]);
+  assertAnchor([[[0, 0], [30, 0], [200, 0]], [[30, -20], [30, 0], [30, 120]]], [30, 0]);
+  assertAnchor([[[0, 0], [100, 0]], [[20, -10], [20, 10]], [[80, -10], [80, 10]]], [50, 0]);
+});
+
+test('나란한 승강장은 붙어 있는 겹침 구간 가운데에 놓아요', () => {
+  assertAnchor([[[0, 0], [200, 0]], [[60, 20], [120, 20]]], [90, 10]);
+  assertAnchor([[[0, 0], [80, 0], [200, 0]], [[120, 20], [60, 20]]], [90, 10]);
+  assertAnchor([[[0, 0], [200, 0]], [[60, 0], [120, 0]]], [90, 0]);
+});
+
+test('연장 교차가 없는 가까운 승강장은 최근접점 쌍의 가운데에 놓아요', () => {
+  assertAnchor([[[0, 0], [100, 0]], [[120, 20], [220, 20]]], [110, 10]);
+});
+
+test('멀리 떨어진 승강장은 각 폴리라인 호 길이 가운데의 평균에 놓아요', () => {
+  assertAnchor([[[0, 0], [20, 0], [20, 80]], [[500, 0], [600, 0]]], [285, 15]);
+  assertAnchor([[[0, 0], [200, 0]], [[60, 100], [120, 100]]], [95, 50]);
+});
+
+
+test('rebuildLabels는 보이는 승강장 coords만 사용하고 픽셀 offset은 무시해요', () => {
+  const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('function rebuildLabels(){'), end = source.indexOf('function filterLine(', start);
+  let data;
+  const context = vm.createContext({
+    selected: 'all', labels: [], stations: [{id: 1, name: '환승역', lines: [{name: '1호선'}, {name: '2호선'}]}],
+    stationRects: new Map([
+      ['1호선:1', {coords: [[0, 0], [200, 0]].map(toLngLat), offset: 12}],
+      ['2호선:1', {coords: [[30, -20], [30, 120]].map(toLngLat), offset: -12}],
+    ]),
+    map: {getSource: () => ({setData: value => { data = value; }})},
+    colors: {'1호선': '#0052A4', '2호선': '#00A84D'}, signAnchor, sortLines, placeholderText, scheduleLabels: () => {},
+  });
+  vm.runInContext(source.slice(start, end) + 'rebuildLabels();', context);
+  const near = (actual, expected) => expected.forEach((v, i) => assert.ok(Math.abs(actual[i] - v) < 1e-8));
+  near(data.features[0].geometry.coordinates, toLngLat([30, 0]));
+  context.selected = '1호선';
+  vm.runInContext('rebuildLabels();', context);
+  near(data.features[0].geometry.coordinates, toLngLat([100, 0]));
+  assert.equal(data.features[0].properties.ln, '1호선');
+});
+
+
+test('교차점 앞에서 끝나는 십자 승강장은 양 끝 연장 교차점에 놓아요', () => {
+  assertAnchor([[[-200, 0], [-50, 0]], [[0, 60], [0, 180]]], [0, 0]);
+  assertAnchor([[[-50, 0], [-200, 0]], [[0, 180], [0, 60]]], [0, 0]);
+  assertAnchor([[[-200, 0], [-50, 0], [-50, 0]], [[0, 60], [0, 60], [0, 180]]], [0, 0]);
+  // 연장선과 다른 승강장 자체의 교차도 허용해요.
+  assertAnchor([[[-200, 0], [-50, 0]], [[0, -80], [0, 80]]], [0, 0]);
+  // 여러 연장 교차점은 중복 없이 가운데에 놓아요.
+  assertAnchor([[[-100, 0], [-50, 0]], [[0, 50], [0, 100]], [[60, 50], [60, 100]]], [30, 0]);
+});
+
+test('20도 미만으로 거의 평행한 쌍은 연장 교차 대신 기존 가까운 구간을 써요', () => {
+  // 두 직선은 약 11.3도로 만나지만 실제 승강장은 떨어져 있어요.
+  assertAnchor([[[0, 0], [100, 0]], [[0, 20], [100, 40]]], [0, 10]);
+  assertAnchor([[[100, 0], [0, 0]], [[100, 40], [0, 20]]], [0, 10]);
+});
+
+test('끝에서 300m를 넘어야 만나는 교차점은 쓰지 않아요', () => {
+  assertAnchor([[[-500, 0], [-310, 0]], [[0, 50], [0, 100]]], [-202.5, 37.5]);
+  // 한쪽만 300m를 넘어도 연장 교차에서 제외해요.
+  assertAnchor([[[-100, 0], [-50, 0]], [[0, 310], [0, 500]]], [-37.5, 202.5]);
 });

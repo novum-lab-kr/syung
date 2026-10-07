@@ -164,3 +164,103 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
   }
   ctx.restore();
 }
+
+// 역 근처 미터 평면에서 교차점 · 근접 구간 · 호 길이의 가운데를 찾아요.
+export function signAnchor(platforms) {
+  const paths = platforms.map(path => path.filter(p => Array.isArray(p) && p.length >= 2 && p.every(Number.isFinite))).filter(path => path.length);
+  if (!paths.length) return null;
+  const points = paths.flat();
+  const origin = points.reduce((sum, p) => [sum[0] + p[0] / points.length, sum[1] + p[1] / points.length], [0, 0]);
+  const meters = 6371008.8 * Math.PI / 180, longitude = meters * Math.cos(origin[1] * Math.PI / 180);
+  const local = paths.map(path => path.map(p => [(p[0] - origin[0]) * longitude, (p[1] - origin[1]) * meters]));
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
+  const length = a => Math.hypot(...a);
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const mean = ps => ps.reduce((sum, p) => [sum[0] + p[0] / ps.length, sum[1] + p[1] / ps.length], [0, 0]);
+  const project = (p, a, b) => {
+    const v = sub(b, a), norm = dot(v, v);
+    return mix(a, b, norm ? Math.max(0, Math.min(1, dot(sub(p, a), v) / norm)) : 0);
+  };
+  const segments = path => path.length === 1 ? [[path[0], path[0]]] : path.slice(1).map((p, i) => [path[i], p]);
+  const midpoint = path => {
+    const parts = segments(path), lengths = parts.map(([a, b]) => length(sub(b, a)));
+    let remaining = lengths.reduce((a, b) => a + b, 0) / 2;
+    for (let i = 0; i < parts.length; i++) {
+      if (remaining <= lengths[i]) return mix(...parts[i], lengths[i] ? remaining / lengths[i] : 0);
+      remaining -= lengths[i];
+    }
+    return path[0];
+  };
+  const intersections = [], overlaps = [], nearest = [];
+  const nearby = 40, epsilon = 1e-7;
+  for (let i = 0; i < local.length; i++) for (let j = i + 1; j < local.length; j++) {
+    let closest = null;
+    for (const [a, b] of segments(local[i])) for (const [c, d] of segments(local[j])) {
+      const u = sub(b, a), v = sub(d, c), lu = length(u), lv = length(v), determinant = cross(u, v);
+      // 일반 교차점은 중복을 빼서 여러 구간에 걸친 꼭짓점도 한 번만 세어요.
+      if (Math.abs(determinant) > epsilon * lu * lv) {
+        const t = cross(sub(c, a), v) / determinant, q = cross(sub(c, a), u) / determinant;
+        if (t >= -epsilon && t <= 1 + epsilon && q >= -epsilon && q <= 1 + epsilon) {
+          const p = mix(a, b, Math.max(0, Math.min(1, t)));
+          if (!intersections.some(other => length(sub(p, other)) < .01)) intersections.push(p);
+        }
+      }
+      // 나란한 구간은 투영된 겹침 길이로 가중해, 점 개수에 따라 중심이 움직이지 않게 해요.
+      if (lu > epsilon && lv > epsilon && Math.abs(determinant) / (lu * lv) < .02) {
+        const tc = dot(sub(c, a), u) / (lu * lu), td = dot(sub(d, a), u) / (lu * lu);
+        const lo = Math.max(0, Math.min(tc, td)), hi = Math.min(1, Math.max(tc, td));
+        if (hi > lo) {
+          const start = mix(a, b, lo), end = mix(a, b, hi);
+          if (length(sub(start, project(start, c, d))) <= nearby && length(sub(end, project(end, c, d))) <= nearby) {
+            const p = mix(start, end, .5);
+            overlaps.push({point: mix(p, project(p, c, d), .5), weight: (hi - lo) * lu});
+          }
+        }
+      }
+      // 교차나 나란한 겹침이 없으면 선분 끝에서 상대 선분으로 내린 최근접점을 써요.
+      for (const [p, q] of [[a, project(a, c, d)], [b, project(b, c, d)], [project(c, a, b), c], [project(d, a, b), d]]) {
+        const distance = length(sub(p, q));
+        if (!closest || distance < closest.distance) closest = {point: mix(p, q, .5), distance};
+      }
+    }
+    if (closest && closest.distance <= nearby) nearest.push(closest.point);
+  }
+  const extendedIntersections = [];
+  if (!intersections.length && local.length > 1) {
+    // 중복 끝점을 건너뛰고 양 끝의 실제 진행 방향으로 각각 300m만 연장해요.
+    const extendedSegments = path => {
+      const parts = segments(path).map(coords => ({coords, extended: false}));
+      for (const points of [path, [...path].reverse()]) {
+        const end = points[0], next = points.find(p => length(sub(p, end)) > epsilon);
+        if (!next) continue;
+        const direction = sub(end, next), distance = length(direction);
+        parts.push({coords: [end, [end[0] + direction[0] * 300 / distance, end[1] + direction[1] * 300 / distance]], extended: true});
+      }
+      return parts;
+    };
+    const extended = local.map(extendedSegments), minAngle = Math.sin(20 * Math.PI / 180);
+    for (let i = 0; i < extended.length; i++) for (let j = i + 1; j < extended.length; j++) {
+      for (const first of extended[i]) for (const second of extended[j]) {
+        if (!first.extended && !second.extended) continue;
+        const [a, b] = first.coords, [c, d] = second.coords;
+        const u = sub(b, a), v = sub(d, c), product = length(u) * length(v), determinant = cross(u, v);
+        // 방향이 반대여도 거의 평행한 쌍은 교차를 만들지 않아요.
+        if (!product || Math.abs(determinant) / product < minAngle) continue;
+        const t = cross(sub(c, a), v) / determinant, q = cross(sub(c, a), u) / determinant;
+        if (t < -epsilon || t > 1 + epsilon || q < -epsilon || q > 1 + epsilon) continue;
+        const p = mix(a, b, Math.max(0, Math.min(1, t)));
+        if (!extendedIntersections.some(other => length(sub(p, other)) < .01)) extendedIntersections.push(p);
+      }
+    }
+  }
+  let anchor;
+  if (intersections.length) anchor = mean(intersections);
+  else if (extendedIntersections.length) anchor = mean(extendedIntersections);
+  else if (overlaps.length) {
+    const total = overlaps.reduce((sum, p) => sum + p.weight, 0);
+    anchor = overlaps.reduce((sum, p) => [sum[0] + p.point[0] * p.weight / total, sum[1] + p.point[1] * p.weight / total], [0, 0]);
+  } else anchor = nearest.length ? mean(nearest) : mean(local.map(midpoint));
+  return [origin[0] + anchor[0] / longitude, origin[1] + anchor[1] / meters];
+}

@@ -17,7 +17,7 @@ import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
-import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
+import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
@@ -1981,13 +1981,13 @@ function rebuildLabels(){
     const line=selected!=='all'&&s.lines.some(x=>x.name===selected)?selected:s.lines[0].name;
     labels.push({station:s,line,text:s.name});
   }
-  // 역마다 이름표 하나: [6][7] 태릉입구. 보이는 노선 승강장들의 가운데 위에 떠요
+  // 보이는 승강장의 교차 · 근접 구간을 우선하고, 한 노선이면 호 길이의 가운데에 놓아요
   const src=map.getSource('station-labels');
   if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text})=>{
-    const shown=s.lines.filter(x=>selected==='all'||x.name===selected),mids=shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean)
-      .map(r=>[(r.coords[0][0]+r.coords[r.coords.length-1][0])/2,(r.coords[0][1]+r.coords[r.coords.length-1][1])/2]);
-    if(!mids.length)return [];
-    const c=[mids.reduce((a,m)=>a+m[0],0)/mids.length,mids.reduce((a,m)=>a+m[1],0)/mids.length],names=sortLines(shown.map(x=>x.name));
+    const shown=s.lines.filter(x=>selected==='all'||x.name===selected);
+    const c=signAnchor(shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean).map(r=>r.coords));
+    if(!c)return [];
+    const names=sortLines(shown.map(x=>x.name));
     return [{type:'Feature',properties:{text,rank:-s.lines.length,ln:names.join('|'),lc:names.map(n=>colors[n]||'#52646a').join('|'),ph:placeholderText(names,text)},geometry:{type:'Point',coordinates:c}}];
   })});
   scheduleLabels();
