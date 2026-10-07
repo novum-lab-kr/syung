@@ -56,9 +56,9 @@ test('station labels keep their route names in every mode (the coaster rides the
     map: { addLayer: layer => layers.set(layer.id, layer), getLayer: id => layers.get(id),
       getLayoutProperty: (id, key) => layers.get(id).layout[key],
       setLayoutProperty: (id, key, value) => { layers.get(id).layout[key] = value; updates.push(id); } } });
-  const definitions = source.split('\n').filter(line => /map\.addLayer\(\{id:'station-labels(?:-more)?'|const SIGN_(?:LAYOUT|PAINT)=/.test(line)).join('\n');
+  const definitions = source.split('\n').filter(line => /map\.addLayer\(\{id:'station-labels'|const SIGN_(?:LAYOUT|PAINT)=/.test(line)).join('\n');
   vm.runInContext(definitions, context);
-  assert.equal(layers.size, 2, 'exercise both actual name symbol layers');
+  assert.equal(layers.size, 1, 'exercise the actual name symbol layer (one sign per station)');
   const plain = value => JSON.parse(JSON.stringify(value));
   const original = new Map([...layers].map(([id, layer]) => [id, plain(layer.layout['text-field'])]));
   // Exercise the actual label synchronization without constructing adjacent city renderers.
