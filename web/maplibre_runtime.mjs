@@ -2153,7 +2153,7 @@ map.on('load',()=>{
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
         cityLife.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
         if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
-      busLayer?.render(gl,pd.mainMatrix);   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode
+      busLayer?.render(gl,pd.mainMatrix,behind);   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
       if(simcity||coaster){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
         if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}

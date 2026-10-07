@@ -467,7 +467,7 @@ class BusLayer {
   draw(){if(this.disposed)return;this.refreshAnimatedDetail(performance.now());this.requestRender();}
 
   // Called from drawTrains, after its building depth pass. Never creates another canvas.
-  render(gl,matrix) {
+  render(gl,matrix,occlude=0) {   // occlude: 건물 뒤를 비치게 그릴 불투명도(열차와 같은 값)
     this.clearScene();
     if(this.disposed||document.hidden||!this.data||this.map.getZoom()<BUS_ZOOM.stops&&!this.active()){this.renderer.stats={vehicles:0,stops:0,drawCalls:0};return;}
     const now=performance.now(),wall=Date.now(),zoom=this.map.getZoom(),canvas=this.map.getCanvas();
@@ -528,7 +528,7 @@ class BusLayer {
       this.stopHits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:rectangle});
       if(posts.length>=(this.phone?700:1400))break;
     }
-    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts});
+    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
       this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));

@@ -108,7 +108,7 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
   v_uv=a_uv;v_color=i_color;v_material=a_material;v_info=i_info;}`;
 const FS=`#version 300 es
 precision highp float; in vec3 v_normal; in vec2 v_uv; in vec4 v_color; flat in float v_material; flat in vec2 v_info;
-uniform float u_dark,u_rows; uniform sampler2D u_atlas; out vec4 outColor;
+uniform float u_dark,u_rows,u_fade; uniform sampler2D u_atlas; out vec4 outColor;
 float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
 float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
@@ -145,7 +145,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2)col*=lit;
     if(v_info.y>.5&&m<.5)col=mix(col,vec3(1.),.2);
   }
-  if(alpha<.005)discard;outColor=vec4(col*alpha,alpha);
+  alpha*=u_fade;if(alpha<.005)discard;outColor=vec4(col*alpha,alpha);
 }`;
 
 function program(gl) {
@@ -170,7 +170,7 @@ export class BusRenderer {
   init(gl){
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
-    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
+    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
     this.batches=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)].map(data=>{
       const vao=gl.createVertexArray(),mesh=gl.createBuffer(),instances=gl.createBuffer();gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER,mesh);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
@@ -192,7 +192,8 @@ export class BusRenderer {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops}){
+  // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차와 같은 값 — 1 - 건물 불투명도, 심시티 · 롤코의 꽉 찬 건물이면 0)
+  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0}){
     this.stats={vehicles:vehicles.length,stops:stops.length,drawCalls:0};
     if(!vehicles.length&&!stops.length)return;
     this.init(gl);this.atlas(vehicles.map(v=>v.label));
@@ -201,6 +202,7 @@ export class BusRenderer {
     gl.uniform1f(this.u.pitch,pitch);
     gl.uniform1f(this.u.rows,this.rows);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.u.atlas,0);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(this.u.fade,1);
     const draw=(batch,items,writeDepth)=>{
       if(!items.length)return;
       if(batch.staging.length<items.length*10)batch.staging=new Float32Array(2**Math.ceil(Math.log2(items.length*10)));
@@ -211,6 +213,9 @@ export class BusRenderer {
       gl.bufferSubData(gl.ARRAY_BUFFER,0,data,0,items.length*10);gl.depthMask(writeDepth);
       gl.drawArraysInstanced(gl.TRIANGLES,0,batch.count,items.length);this.stats.drawCalls++;
     };
+    // 열차처럼: 먼저 건물 뒤(GREATER)만 흐리게 — 깊이를 쓰기 전이라 버스 자기 면끼리는 걸리지 않는다 — 그다음 앞을 그대로
+    if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(this.batches[0],vehicles,false);draw(this.batches[1],stops,false);
+      gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.u.fade,1);}
     draw(this.batches[2],vehicles,false);draw(this.batches[0],vehicles,true);draw(this.batches[1],stops,true);
     if(dark)draw(this.batches[3],vehicles,false);
     // Isolate divisors in our VAOs; TrainLayer/ExitPillars use the default VAO.
