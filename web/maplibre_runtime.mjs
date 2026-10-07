@@ -1185,6 +1185,7 @@ const sheet=document.createElement('section');sheet.className='sheet';sheet.hidd
 sheet.innerHTML='<button type="button" class="sheet-grab" aria-label="닫기" title="끌어내리거나 눌러서 닫기"></button><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
 const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
 let sheetToken=0,sheetTrain=null,following=null,easing=false;
+let followBus=null;   // bus: 지도에서 누른 버스를 카메라가 따라간다(2026-10-08 덕배). 끌면 멈추고 '이 버스 따라가기'로 다시
 function openSheet(html,source='subway'){if(source!=='bus')busLayer?.clearSelection();sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
@@ -1266,7 +1267,7 @@ function closeSheet(){
   if(sheet.hidden)return;
   // a field still focused keeps the keyboard up: let both go down together
   if(sheet.contains(document.activeElement))document.activeElement.blur();
-  sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBtn.hidden=true;
+  sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBus=null;followBtn.hidden=true;
   // a chosen route stays on the map, with a bar to bring the results back (journey-ui)
   if(routeBounds&&journey.sheetClosed())fitRoute(110);
   else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
@@ -1326,10 +1327,16 @@ function trainLngLat(plan){
   const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
   return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
 }
-function follow(id){following=id;followBtn.hidden=true;const plan=plans.find(p=>p.id===id);if(!plan)return;
+function follow(id){following=id;followBus=null;followBtn.hidden=true;followBtn.textContent='이 열차 따라가기';const plan=plans.find(p=>p.id===id);if(!plan)return;
   easing=true;cam=null;map.once('moveend',()=>{easing=false;map.triggerRepaint()});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
-followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain)};
+// bus: 그 버스로 옮겨 가 따라간다. 멀리 있었으면 줌 16 으로(가까이 볼 때 버스가 보이는 크기)
+function followBusStart(id){
+  following=null;followBus=id;followBtn.hidden=true;const c=busLayer?.vehiclePosition(id);if(!c){followBus=null;return}
+  easing=true;cam=null;map.once('moveend',()=>{easing=false;followSoon()});
+  map.easeTo({center:c,zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700});
+}
+followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain);else if(busLayer?.selection?.kind==='bus')followBusStart(busLayer.selection.id)};
 // station sheet → 길찾기 from or to this station
 let sheetStation=null;
 sheetBody.addEventListener('click',e=>{const b=e.target.closest('.st-journey [data-end]');if(!b||!sheetStation)return;
@@ -1340,9 +1347,10 @@ sheetBody.addEventListener('click',e=>{const b=e.target.closest('.st-journey [da
 // (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
 const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
 function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
-function followLoop(ts){followRaf=0;if(!(following||ride)||easing)return;
+function followLoop(ts){followRaf=0;if(!(following||ride||followBus)||easing)return;
   if(!ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-  followLast=ts;if(ride){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}for(const f of animFrame)f();map.triggerRepaint()}
+  followLast=ts;if(ride){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}for(const f of animFrame)f();map.triggerRepaint();
+  if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
 animFrame.push(()=>{
   const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
   const c=trainLngLat(sel),now=performance.now();
@@ -1352,7 +1360,19 @@ animFrame.push(()=>{
   const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
   map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
 });
-map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}});
+animFrame.push(()=>{   // bus: 따라가는 버스 — 열차와 같은 방식으로 카메라가 부드럽게 따라붙는다
+  if(!followBus||easing)return;
+  const p=busLayer?.selection?.kind==='bus'&&busLayer.selection.id===followBus?busLayer.vehiclePosition(followBus):null;
+  if(!p){followBus=null;return}   // 다른 걸 골랐거나 버스가 사라졌으면 그만
+  const now=performance.now();
+  if(!cam||now-camAt>1000)cam={lng:p[0],lat:p[1]};
+  else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(p[0]-cam.lng)*a,lat:cam.lat+(p[1]-cam.lat)*a}}
+  camAt=now;
+  const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
+  map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
+});
+map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
+  if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=busLayer?.selection?.kind!=='bus'}});
 
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
@@ -2171,7 +2191,7 @@ map.on('load',()=>{
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
     });
   }
-  map.on('click',e=>{if(ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(!busLayer?.selectAt(e.point))closeSheet()});   // bus: subway picking keeps priority
+  map.on('click',e=>{if(ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else closeSheet()});   // bus: 누른 버스는 따라간다   // bus: subway picking keeps priority
   map.on('click','stations',e=>{if(ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
@@ -2186,11 +2206,11 @@ map.on('load',()=>{
   addBasemap();
   // bus: below subway lines, using the existing detail sheet and settings controls.
   busLayer=createBusLayer({map,phone:PHONE,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat(),onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
-    following=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
+    following=null;followBus=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
     return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
-    if(leg)showRoute({legs:[leg]},true);
+    if(leg)showRoute({legs:[leg]},true,busLayer?.selection?.kind!=='bus');   // 버스를 눌렀으면 노선 전체로 멀어지지 않고 그 버스를 따라간다
     else if(busRouteFocus){displayedRoute=null;busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;

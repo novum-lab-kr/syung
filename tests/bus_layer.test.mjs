@@ -308,3 +308,14 @@ test('긴 버스 번호(5글자 이상)는 배지 글자를 줄인다', () => wi
     assert.match(layer.detailHTML(), /<span class="bus-num bus-num-long"[^>]*>7101파주<\/span>/);
   } finally { arrivalBody = saved; }
 }, false));
+
+test('따라가기 카메라용 버스 위치: 그려지는 노선 선 위 지금 자리, 없거나 안 보이는 버스는 null', () => withLayerFixture(layer => {
+  const r = layer.data.routeById.get(route.id), path = layer.geometry(r), half = path.total / 4;
+  layer.selectedRoute = route.id;
+  layer.fleet.set('b', {route: r, path, stale: false, motion: {from: half, to: half, startedAt: 0, duration: 0}});
+  const p = layer.vehiclePosition('b');
+  assert.ok(Math.abs(p[0] - 127.005) < 1e-4 && Math.abs(p[1] - 37.505) < 1e-4, `노선 첫 구간 가운데: ${p}`);
+  assert.equal(layer.vehiclePosition('없는 버스'), null);
+  layer.selectedRoute = null;
+  assert.equal(layer.vehiclePosition('b'), null, '버스를 안 그리는 동안은 따라갈 자리도 없다');
+}, false));

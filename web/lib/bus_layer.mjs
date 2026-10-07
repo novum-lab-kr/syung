@@ -535,6 +535,13 @@ class BusLayer {
     }
   }
 
+  // 따라가기(지도 쪽 카메라): 그 버스가 지금 그려지는 자리 — render 와 같은 계산(멀리서는 노선 선, 줌 15 부터는 차로)
+  vehiclePosition(id) {
+    const bus = this.fleet.get(id); if (!bus || !this.active()) return null;
+    const zoom = this.map.getZoom(), distance = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, performance.now());
+    const pose = zoom < BUS_ZOOM.buses || !this.map.querySourceFeatures ? busPointAt(bus.path, distance) : busLinePointAt(this.snappedLine(bus.route, bus.path), distance);
+    return pose?.coordinate || null;
+  }
   selectAt(point) {
     if (!this.data) return false;
     let nearest = null, distance = Infinity;
