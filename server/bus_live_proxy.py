@@ -40,6 +40,7 @@ KST = timezone(timedelta(hours=9))
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 MAX_ROUTES = 8
 SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
+NIGHT_END, NIGHT_WEIGHT = 5 * 60, 0.25   # KST 00~05시는 버스가 거의 없다: 호출 간격을 4배로 두고 아낀 몫을 낮에 쓴다
 WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수집보다 먼저 새로 받아 둔다
 # 학습용으로 남기는 API 항목(차량 번호판 plainNo 는 남기지 않는다): 구간 순번 · 구간 안 거리 · 정류장 정차 · 측정 시각 등
 RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
@@ -70,6 +71,15 @@ def day_bounds(now: float) -> tuple[str, float]:
     local = datetime.fromtimestamp(now, KST)
     midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     return local.date().isoformat(), midnight.timestamp()
+
+
+def pacing(now: float, midnight: float, left: int) -> float:
+    """Seconds between calls so `left` calls last until midnight: the night (00–05 KST) counts
+    NIGHT_WEIGHT of its length, so a night call comes 1/NIGHT_WEIGHT times as far apart."""
+    night_end = midnight - 86400 + NIGHT_END * 60
+    night = max(0.0, night_end - now)
+    weighted = NIGHT_WEIGHT * night + (midnight - max(now, night_end))
+    return weighted / max(1, left) / (NIGHT_WEIGHT if night else 1)
 
 
 class BusError(Exception):
@@ -166,7 +176,7 @@ class QuotaLedger:
                 if paced and now < saved["nextAt"]:
                     return False, "paced", saved["nextAt"]
                 # GLOBAL spacing, not an independent allowance for each route/viewer.
-                interval = max(self.min_interval, (midnight - now) / (self.limit - saved["used"]))
+                interval = max(self.min_interval, pacing(now, midnight, self.limit - saved["used"]))
                 saved.update(used=saved["used"] + 1, nextAt=max(saved["nextAt"], now + interval))
                 temporary = self.path.with_suffix(".tmp")
                 with temporary.open("w") as output:

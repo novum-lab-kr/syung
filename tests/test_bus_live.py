@@ -135,6 +135,7 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_focus_cache_and_global_pacing(self):
+        self.now += 6 * 3600   # 낮(밤에는 간격이 4배)
         proxy = self.proxy()
         body = self.get(proxy, R1, R2, focus=R2)
         self.assertEqual(self.calls, [R2])
@@ -167,12 +168,21 @@ class ProxyTest(unittest.TestCase):
         body = self.get(self.proxy(record_dir=blocker / "bus"), R1)
         self.assertEqual(body["busCount"], 1)
 
+    def test_night_calls_are_spaced_out_for_the_day(self):
+        midnight = self.now + 86400   # self.now = KST 00:00
+        night, day = bus.pacing(self.now, midnight, 9500), bus.pacing(self.now + 5 * 3600, midnight, 9500)
+        weighted = bus.NIGHT_WEIGHT * 5 * 3600 + 19 * 3600   # 밤 5시간은 그 몫만큼만 센다
+        self.assertAlmostEqual(night, weighted / 9500 / bus.NIGHT_WEIGHT, places=6)
+        self.assertLess(day, 86400 / 9500)   # 낮 간격은 하루를 똑같이 나눈 것보다 짧다
+        self.assertAlmostEqual(day, 19 * 3600 / 9500, places=6)   # 05시부터는 남은 낮 시간만
+
     def test_watched_route_is_refreshed_first_at_any_hour(self):
         proxy = self.proxy()   # self.now = KST 00:00, 수집 시간 밖
         self.get(proxy, R2)
-        self.now += 60
-        self.get(proxy, R2)   # 지도는 30초마다 다시 묻는다(아직 호출 간격 전이라 못 부름)
-        self.now += 40   # 호출 간격(약 91초)이 지났다
+        for _ in range(5):
+            self.now += 60
+            self.get(proxy, R2)   # 지도는 계속 다시 묻는다(밤 호출 간격 약 307초 전이라 못 부름)
+        self.now += 10   # 호출 간격이 지났다
         self.assertEqual(proxy.background_once(R1), (0.5, False))
         self.assertEqual(self.calls, [R2, R2])
         self.assertEqual(self.get(proxy, R2)["routes"][R2]["status"], "cached")   # 지도가 다시 물을 땐 이미 새것
@@ -216,6 +226,7 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.calls, [R1, R2, R1])   # 모르는 노선은 빼고 번갈아
 
     def test_round_robin_does_not_starve_visible_routes(self):
+        self.now += 6 * 3600   # 낮(밤에는 간격이 4배)
         proxy = self.proxy()
         for _ in range(4):
             self.get(proxy, R1, R2)
@@ -223,6 +234,7 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.calls, [R1, R2, R1, R2])
 
     def test_restart_does_not_reset_quota_or_pacing(self):
+        self.now += 6 * 3600   # 낮(밤에는 간격이 4배)
         self.get(self.proxy(), R1)
         restarted = self.proxy()
         self.assertEqual(self.get(restarted, R1)["quota"]["used"], 1)
