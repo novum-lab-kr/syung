@@ -347,5 +347,101 @@ class ProxyTest(unittest.TestCase):
                 thread.join(2)
 
 
+# 정류장 도착 정보(getStationByUid) 한 줄: 2026-10-07 07103 응답 모양
+ARRIVAL = {"busRouteId": "100100025", "rtNm": "146", "routeType": "3", "adirection": "강남역",
+           "arrmsg1": "곧 도착", "traTime1": "40", "isLast1": "0",
+           "arrmsg2": "8분후[5번째 전]", "traTime2": "480", "isLast2": "1", "vehId1": "111", "plainNo1": "서울74사1234"}
+STOPS = {"07103": {"id": "106000009", "arsId": "07103", "name": "묵동삼거리.먹골역"}}
+
+
+class ArrivalTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.now = datetime(2026, 10, 7, 5, tzinfo=timezone.utc).timestamp()   # KST 14시
+        self.path = Path(self.directory.name) / "arrival-quota.json"
+        self.calls, self.result = [], [ARRIVAL]
+
+    def fetch(self, stop, config):
+        self.calls.append(stop)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+    def proxy(self, **kwargs):
+        config = bus.ArrivalConfig(key="test-secret", quota_file=self.path, **kwargs)
+        return bus.ArrivalProxy(config, stops=STOPS, fetch=self.fetch, clock=lambda: self.now)
+
+    def test_rows_keep_messages_and_never_plate_numbers(self):
+        rows = bus.normalize_arrivals([ARRIVAL, {**ARRIVAL}, {"busRouteId": "x", "rtNm": "1"},
+                                       {"busRouteId": "100100513", "rtNm": "6100", "routeType": "1", "arrmsg1": "운행종료", "traTime1": "0"}])
+        self.assertEqual(rows[0], {"routeId": "100100025", "name": "146", "type": "trunk", "direction": "강남역",
+                                   "buses": [{"message": "곧 도착", "seconds": 40, "last": False},
+                                             {"message": "8분후[5번째 전]", "seconds": 480, "last": True}]})
+        self.assertEqual(rows[1]["type"], "airport")
+        self.assertEqual(len(rows), 2, "같은 노선 두 줄 · 번호 없는 줄은 버린다")
+        self.assertNotIn("서울74사", json.dumps(rows, ensure_ascii=False))
+
+    def test_one_call_per_stop_shared_for_the_cache_window(self):
+        proxy = self.proxy()
+        body, status = proxy.snapshot({"stop": ["07103"]})
+        self.assertEqual((status, body["status"], body["ok"]), (200, "fresh", True))
+        self.assertEqual(body["arrivals"][0]["name"], "146")
+        self.now += 10
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "cached")
+        self.assertEqual(self.calls, ["07103"])
+        self.now += 11
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "fresh")
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(bus.QuotaLedger(proxy.config).view(self.now)["used"], 2, "버스 위치와 다른 장부")
+
+    def test_unknown_or_malformed_stops_never_spend_quota(self):
+        proxy = self.proxy()
+        for query in ({"stop": ["99999"]}, {"stop": ["0710"]}, {"stop": ["07103", "07103"]},
+                      {"stop": ["07103"], "routes": ["100100025"]}, {"stop": [""]}):
+            with self.subTest(query=query):
+                self.assertEqual(proxy.snapshot(query)[1], 400)
+        self.assertEqual(self.calls, [])
+
+    def test_daily_limit_and_failures_show_stale_then_error(self):
+        proxy = self.proxy(daily_limit=1)
+        proxy.snapshot({"stop": ["07103"]})
+        self.now += 30
+        body = proxy.snapshot({"stop": ["07103"]})[0]
+        self.assertEqual((body["status"], body["errors"][0]["code"]), ("stale", "daily_limit"))
+        self.assertEqual(len(body["arrivals"]), 1, "2분 안의 지난 값은 지연으로 보여 준다")
+        self.now += 120
+        body = proxy.snapshot({"stop": ["07103"]})[0]
+        self.assertEqual((body["status"], body["arrivals"]), ("error", []))
+        self.assertEqual(self.calls, ["07103"])
+
+    def test_upstream_auth_failure_backs_off_without_leaking(self):
+        self.result = bus.BusError("upstream_auth")
+        proxy = self.proxy()
+        body = proxy.snapshot({"stop": ["07103"]})[0]
+        self.assertEqual((body["status"], body["errors"][0]["code"]), ("error", "upstream_auth"))
+        self.now += 40
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth", "5분 쉬는 동안 다시 안 부른다")
+        self.assertEqual(len(self.calls), 1)
+        self.assertNotIn("test-secret", json.dumps(body))
+
+    def test_missing_key_and_mock(self):
+        proxy = bus.ArrivalProxy(bus.ArrivalConfig(quota_file=self.path), stops=STOPS, fetch=self.fetch)
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "missing_key")
+        self.assertEqual(self.calls, [])
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as routes:
+            json.dump({"routes": [{"id": "100100025", "name": "146", "type": "trunk", "stopIds": ["106000009"]}]}, routes)
+        self.addCleanup(Path(routes.name).unlink)
+        mock = self.proxy(mode="mock", routes_file=Path(routes.name))
+        body = mock.snapshot({"stop": ["07103"]})[0]
+        self.assertEqual((body["mode"], body["arrivals"][0]["routeId"]), ("mock", "100100025"))
+        self.assertEqual(self.calls, [])
+
+    def test_module_snapshot_routes_stop_queries_to_arrivals(self):
+        with patch.object(bus, "_arrivals", self.proxy()):
+            body, status = bus.snapshot({"stop": ["07103"]})
+        self.assertEqual((status, body["stop"]), (200, "07103"))
+
+
 if __name__ == "__main__":
     unittest.main()

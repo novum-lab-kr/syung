@@ -77,6 +77,14 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .bus-route-list button[aria-pressed=true]{background:var(--selected);border-color:var(--bus-color)}
 .bus-route-list button:active{background:var(--control)}
 .bus-route-list button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+/* 정류장 팝업: 노선 번호 | 도착 안내(다음 버스 · 방면) */
+.bus-arrival-list{display:grid;gap:8px;padding:0;list-style:none}
+.bus-arrival-list li{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:12px}
+.bus-arrival-list button{width:100%}
+.bus-route-tag{display:flex;align-items:center;justify-content:center;gap:4px;box-sizing:border-box;min-height:44px;padding:8px 12px;border:1px dashed var(--rule);border-radius:12px;color:var(--bus-color)}
+.bus-arrival{font-size:14px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.bus-arrival small{display:block;font-size:12px;font-weight:400;color:var(--secondary)}
+.bus-last{font-style:normal;font-size:12px;color:var(--secondary)}
 .setting-value{min-width:34px;padding:3px 10px;border-radius:999px;background:var(--control);font-family:var(--round);font-weight:400;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
 .segmented{flex:none;display:flex;padding:3px;border-radius:999px;background:var(--control)}
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}

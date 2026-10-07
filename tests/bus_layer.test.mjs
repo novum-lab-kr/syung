@@ -43,6 +43,11 @@ test('broken coordinates and unknown stop references never reach the map source'
   assert.deepEqual(data.routeById.get(route.id).stopIds, ['01', '02']);
 });
 
+let arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', arrivals: [
+  {routeId: route.id, name: '100', type: 'trunk', direction: '회차', buses: [{message: '곧 도착', seconds: 40, last: false}, {message: '8분후[5번째 전]', seconds: 480, last: true}]},
+  {routeId: '100100513', name: '6100', type: 'airport', direction: null, buses: [{message: '3분후[1번째 전]', seconds: 197, last: false}]},
+], errors: []};
+
 async function withLayerFixture(run, enabled=true) {
   const originals = Object.fromEntries(['document', 'localStorage', 'matchMedia', 'devicePixelRatio', 'cancelAnimationFrame'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
   const node = () => ({style: {}, setAttribute() {}, addEventListener() {}, removeEventListener() {}, after() {}, append() {}, remove() {}, clientWidth: 400, clientHeight: 300,
@@ -59,9 +64,10 @@ async function withLayerFixture(run, enabled=true) {
       // Window.fetch rejects non-Window receivers. Node's fetch alone cannot catch this regression.
       if (this !== undefined) throw new TypeError('Illegal invocation');
       requested.push(url);
-      return {ok: true, json: async () => url.includes('routes.json') ? {schemaVersion: 1, routes: [route]} : url.includes('stops.json') ? stops : {schemaVersion: 1, mode: 'unavailable', buses: [], routes: {}}};
+      return {ok: true, json: async () => url.includes('routes.json') ? {schemaVersion: 1, routes: [route]} : url.includes('stops.json') ? stops
+        : url.includes('stop=') ? arrivalBody : {schemaVersion: 1, mode: 'unavailable', buses: [], routes: {}}};
     }});
-    layer.setEnabled(enabled);
+    if (enabled !== null) layer.setEnabled(enabled);
     await new Promise(resolve => setImmediate(resolve));
     await run(layer, requested);
   } finally {
@@ -86,7 +92,7 @@ test('stops load with nearby buses off, without any live request or default rout
 test('a stop number selects its route with the switch off; closing returns to static stops', () => withLayerFixture((layer,requested) => {
   layer.select({kind:'stop',id:'01'},null);
   assert.match(layer.detailHTML(),/data-bus-route="100000001"/);
-  assert.equal(requested.length,2,'opening a stop is a static action');
+  assert.deepEqual(requested.slice(2),['/api/bus/live?stop=00123'],'opening a stop asks only for its arrivals, never bus positions');
   layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
   assert.deepEqual(layer.requested,[route.id]);
   assert.equal(layer.enabled,false,'selection does not change the always-show preference');
@@ -193,3 +199,53 @@ test('한 대의 오래된 위치는 지도 전체 지연 알림을 켜지 않�
   layer.updateStatus();
   assert.equal(layer.notice.textContent, '버스 위치 갱신 지연');
 }));
+
+test('처음부터 화면 근처 버스를 받지 않는다: 정적 노선 · 정류장만', () => withLayerFixture((layer, requested) => {
+  assert.equal(layer.enabled, false);
+  assert.equal(layer.active(), false);
+  assert.equal(requested.filter(url => url.startsWith('/api/bus/live')).length, 0);
+}, null));
+
+test('정류장 팝업: 도착 문구 · 다음 버스 · 막차 · 방면, 노선 자료에 없는 번호는 누를 수 없는 이름표', () => withLayerFixture(async (layer, requested) => {
+  layer.select({kind: 'stop', id: '01'}, null);
+  assert.match(layer.detailHTML(), /도착 정보를 불러오는 중/);
+  await new Promise(resolve => setImmediate(resolve));
+  const html = layer.detailHTML();
+  assert.match(html, /data-bus-route="100000001"[^>]*>간선 <b>100<\/b><\/button><span class="bus-arrival">곧 도착<small>다음 8분후\[5번째 전\] · 막차<\/small><small>회차 방면<\/small>/);
+  assert.match(html, /<span class="bus-route-tag"[^>]*>공항 <b>6100<\/b><\/span>/);
+  assert.doesNotMatch(html, /data-bus-route="100100513"/);
+  assert.match(html, /05:20 기준 도착 정보/);
+  assert.ok(layer.arrivalTimer, '열려 있는 동안 다시 받는다');
+  layer.clearSelection();
+  assert.equal(layer.arrivalTimer, 0, '닫으면 멈춘다');
+  assert.equal(layer.arrivals, null);
+  assert.equal(requested.filter(url => url.includes('stop=')).length, 1);
+}, false));
+
+test('번호 없는 가상 정류장은 도착 정보를 부르지 않는다', () => withLayerFixture(async (layer, requested) => {
+  layer.select({kind: 'stop', id: '02'}, null);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(layer.detailHTML(), /이 정류장은 도착 정보가 없어요/);
+  assert.equal(requested.filter(url => url.includes('stop=')).length, 0);
+}, false));
+
+test('도착 정보 한도 소진은 그대로 알린다', () => withLayerFixture(async layer => {
+  const saved = arrivalBody;
+  arrivalBody = {schemaVersion: 1, mode: 'live', status: 'error', fetchedAt: null, arrivals: [], errors: [{code: 'daily_limit'}]};
+  try {
+    layer.select({kind: 'stop', id: '01'}, null);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(layer.detailHTML(), /오늘 도착 정보 조회 한도를 다 썼어요/);
+  } finally { arrivalBody = saved; }
+}, false));
+
+test('정류장에서 고른 노선은 노선 전체가 보이게 멀리 빼도 그 노선 버스만 계속 받는다', () => withLayerFixture(layer => {
+  layer.select({kind: 'stop', id: '01'}, null);
+  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  layer.map.getZoom = () => 10;
+  assert.equal(layer.active(), true);
+  layer.refreshView();
+  assert.deepEqual(layer.requested, [route.id]);
+  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 다시 누르면 해제
+  assert.equal(layer.active(), false, '고른 노선이 없으면 멀리서는 받지 않는다');
+}, false));

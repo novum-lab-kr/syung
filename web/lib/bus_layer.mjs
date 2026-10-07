@@ -13,6 +13,8 @@ export const BUS_TYPES = {
   express: {name: '광역', light: '#C74744', dark: '#FA9991'},
   circular: {name: '순환', light: '#916900', dark: '#E8C455'},
   night: {name: '심야', light: '#3567C8', dark: '#7FAAFF'},
+  airport: {name: '공항', light: '#63747B', dark: '#A4B5BB'},
+  village: {name: '마을', light: '#328044', dark: '#7AC98C'},
   other: {name: '버스', light: '#63747B', dark: '#A4B5BB'},
 };
 const SOURCE_ROUTES = 'bus-routes';
@@ -26,6 +28,8 @@ const boundsArray = bounds => [bounds.getWest(), bounds.getSouth(), bounds.getEa
 const padded = b => { const x = (b[2] - b[0]) * .12, y = (b[3] - b[1]) * .12; return [b[0] - x, b[1] - y, b[2] + x, b[3] + y]; };
 const boundsOf = points => points.reduce((b, p) => [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])], [Infinity, Infinity, -Infinity, -Infinity]);
 const color = (route, theme) => (BUS_TYPES[route.type] || BUS_TYPES.other)[theme];
+const typeName = route => (BUS_TYPES[route.type] || BUS_TYPES.other).name;
+const ARRIVAL_POLL_MS = 30000, ARRIVAL_POLLS = 10;   // 정류장을 연 동안 30초마다, 5분까지
 const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
 
 export function prepareBusData(routes, stops) {
@@ -133,7 +137,7 @@ class BusLayer {
       if (!document.hidden) this.refreshView(); else this.clearScene();
     };
     this.motionChanged = () => { this.stopAnimation(); this.draw(); };
-    this.zoom = () => { if (map.getZoom() < BUS_ZOOM.buses) this.stopLive(); this.draw(); this.updateStatus(); };
+    this.zoom = () => { if (!this.active()) this.stopLive(); this.draw(); this.updateStatus(); };
     this.inspect = () => this.inspectNearby();
     this.routeClick = event => {
       const button=event.target.closest?.('.bus-detail [data-bus-route]');if(!button)return;
@@ -150,7 +154,8 @@ class BusLayer {
     document.addEventListener('visibilitychange', this.visibility); this.reduced.addEventListener('change', this.motionChanged);
     document.addEventListener('click',this.routeClick);
     this.nearby?.addEventListener('click', this.inspect);
-    this.setEnabled(true);   // 주변 버스는 늘 보인다(설정 스위치 없앰, 2026-10-07 덕배)
+    // 화면 근처 버스를 늘 받지 않는다: 정류장을 누르면 도착 정보, 노선 번호를 누르면 그 노선 버스만 실시간(2026-10-07 행님)
+    this.setEnabled(false);
   }
 
   installLayers() {
@@ -209,7 +214,7 @@ class BusLayer {
     this.requested=this.enabled||this.chosenIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.chosenIds(),screen):[];
     this.renderStatic(); this.draw(); this.updateStatus();
     const ids = this.requested, key = `${ids.join(',')}|${this.selectedRoute || this.journeyIds[0] || ''}`;
-    if (this.map.getZoom() < BUS_ZOOM.buses || !ids.length) { this.stopLive(); return; }
+    if (!this.active() || !ids.length) { this.stopLive(); return; }
     if (key !== this.requestKey) { this.stopLive(); this.requestKey = key; this.pollLive(); }
     else if (!this.liveController && !this.pollTimer) this.pollLive();
     if (!this.freshnessTimer) this.freshnessTimer = setInterval(() => this.checkFreshness(), 30000);
@@ -371,7 +376,8 @@ class BusLayer {
     this.updateStatus(); this.refreshDetail(); this.draw();
   }
   chosenIds(){return this.selectedRoute?[this.selectedRoute]:this.journeyIds;}
-  active() { return !this.disposed && (this.enabled||this.chosenIds().length>0) && !document.hidden && this.map.getZoom() >= BUS_ZOOM.buses; }
+  // 정류장 팝업에서 고른 노선 하나는 노선 전체가 보이게 멀리 빼도 그 노선 버스를 계속 받는다(호출은 노선 1개)
+  active() { return !this.disposed && !document.hidden && (!!this.selectedRoute || (this.enabled||this.chosenIds().length>0) && this.map.getZoom() >= BUS_ZOOM.buses); }
   stopAnimation() { clearTimeout(this.frameTimer); cancelAnimationFrame(this.frame); this.frameTimer = 0; this.frame = 0; }
   stopLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0; this.stopAnimation();
@@ -407,7 +413,7 @@ class BusLayer {
   // Called from drawTrains, after its building depth pass. Never creates another canvas.
   render(gl,matrix) {
     this.clearScene();
-    if(this.disposed||document.hidden||!this.data||this.map.getZoom()<BUS_ZOOM.stops){this.renderer.stats={vehicles:0,stops:0,drawCalls:0};return;}
+    if(this.disposed||document.hidden||!this.data||this.map.getZoom()<BUS_ZOOM.stops&&!this.active()){this.renderer.stats={vehicles:0,stops:0,drawCalls:0};return;}
     const now=performance.now(),wall=Date.now(),zoom=this.map.getZoom(),canvas=this.map.getCanvas();
     const width=canvas.clientWidth,height=canvas.clientHeight,unit=1/(512*2**zoom),box=boundsArray(this.map.getBounds());
     const origin=busMercator([(box[0]+box[2])/2,(box[1]+box[3])/2]),vehicles=[],posts=[];
@@ -421,10 +427,11 @@ class BusLayer {
       if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
       if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
       const distance=this.reduced.matches?bus.motion.to:busMotionDistance(bus.motion,now);
-      const pose=busRoadPointAt(this.matchedPath(bus.route),distance);
+      // 멀리서(줌 15 미만)는 도로 맞춤 없이 공식 경로 위에: 표시선(line)과 몇 m 차이라 이 줌에선 안 보인다
+      const overview=zoom<BUS_ZOOM.buses,pose=overview?busPointAt(bus.path,distance):busRoadPointAt(this.matchedPath(bus.route),distance);
       if(!pose||!contains(this.box||box,pose.coordinate))continue;
       // Keep the entire toy bus inside its lane, including wheels, at every zoom.
-      const scale=Math.min(busModelScale(zoom),pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1])));
+      const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1])));
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-.56,.56])for(const z of [0,1.32]){
@@ -445,7 +452,7 @@ class BusLayer {
       if(base&&top)occupied.push(pad(bounds([base,top]),this.phone?14:10,5));
     }
     const bearing=(this.map.getBearing?.()||0)*Math.PI/180,scale=busPostScale(zoom),c=Math.cos(bearing),s=Math.sin(bearing);
-    const candidates=(this.stopFeatures||[]).map(f=>({f,world:busMercator(f.geometry.coordinates)}));
+    const candidates=zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]).map(f=>({f,world:busMercator(f.geometry.coordinates)}));
     // Deterministic centre-first placement; a selected stop remains at the head of the list.
     candidates.sort((a,b)=>Number(b.f.properties.id===this.selection?.id)-Number(a.f.properties.id===this.selection?.id)||
       ((a.world[0]-origin[0])**2+(a.world[1]-origin[1])**2)-((b.world[0]-origin[0])**2+(b.world[1]-origin[1])**2));
@@ -471,10 +478,11 @@ class BusLayer {
   }
 
   selectAt(point) {
-    if (!this.data || this.map.getZoom() < BUS_ZOOM.stops) return false;
+    if (!this.data) return false;
     let nearest = null, distance = Infinity;
     for (const hit of this.hits) { const d = Math.hypot(hit.x - point.x, hit.y - point.y); if (contains(hit.bounds,[point.x,point.y])&&d<distance) { nearest=hit;distance=d; } }
     if (nearest) { this.select({kind: 'bus', id: nearest.bus.row.id}, nearest.bus.route.id); return true; }
+    if (this.map.getZoom() < BUS_ZOOM.stops) return false;
     const stop=this.stopHits.filter(h=>contains(h.bounds,[point.x,point.y])).sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0];
     if(stop){this.select({kind:'stop',id:stop.id},null);return true;}
     const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: LAYERS.slice(0, 2)});
@@ -501,6 +509,7 @@ class BusLayer {
   select(selection, routeId) {
     this.journeyLegs=[];this.journeyIds=[];
     this.selection = selection; this.selectedRoute = routeId;
+    this.stopArrivals(); if (selection?.kind === 'stop') this.loadArrivals();
     this.updateDetail = this.onSelect(this.detailHTML()) || null;
     this.refreshView();
     this.onRouteSelect(this.selectedLeg());
@@ -509,16 +518,73 @@ class BusLayer {
     if (!this.selection&&!this.journeyLegs.length&&!this.selectedRoute) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
     this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.journeyLegs=[];this.journeyIds=[];
+    this.stopArrivals();
     if(!this.enabled){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
     this.onRouteSelect(null);
   }
   setJourney(legs){
-    this.selection=null;this.selectedRoute=null;this.updateDetail=null;
+    this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopArrivals();
     this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
+
+  // 정류장 도착 정보: 정류장 하나 = 서버 호출 1번(같은 정류장은 서버가 20초 동안 함께 쓴다)
+  async loadArrivals() {
+    clearTimeout(this.arrivalTimer); this.arrivalTimer = 0;
+    const stop = this.selection?.kind === 'stop' ? this.data?.stopById.get(this.selection.id) : null; if (!stop) return;
+    if (!stop.arsId) { this.arrivals = {stopId: stop.id, state: 'none', rows: [], count: 0}; return; }   // 번호 없는 가상 정류장
+    const previous = this.arrivals?.stopId === stop.id ? this.arrivals : null;
+    const schedule = () => { if (this.selection?.kind === 'stop' && this.selection.id === stop.id && this.arrivals.count < ARRIVAL_POLLS) this.arrivalTimer = setTimeout(() => this.loadArrivals(), ARRIVAL_POLL_MS); };
+    if (previous && document.hidden) { schedule(); return; }   // 안 보는 동안은 부르지 않는다
+    this.arrivals = {...previous, stopId: stop.id, rows: previous?.rows || [], state: previous?.state || 'loading', count: (previous?.count || 0) + 1};
+    this.arrivalController?.abort();
+    const controller = this.arrivalController = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const r = await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(stop.arsId)}`, {cache: 'no-store', signal: controller.signal});
+      const body = await r.json();
+      if (controller !== this.arrivalController) return;
+      if (body?.schemaVersion !== 1 || !Array.isArray(body.arrivals)) throw new Error('Unsupported bus arrival data');
+      this.arrivals = {...this.arrivals, state: body.status, mode: body.mode, rows: body.arrivals.filter(a => a && typeof a.routeId === 'string'),
+        fetchedAt: timestamp(body.fetchedAt), code: body.errors?.[0]?.code || ''};
+    } catch {
+      if (controller !== this.arrivalController) return;
+      this.arrivals = {...this.arrivals, state: this.arrivals.rows.length ? 'stale' : 'error', code: ''};
+    } finally {
+      clearTimeout(timeout);
+      if (controller === this.arrivalController) { this.arrivalController = null; schedule(); }
+    }
+    this.refreshDetail();
+  }
+  stopArrivals() {
+    clearTimeout(this.arrivalTimer); this.arrivalTimer = 0;
+    const controller = this.arrivalController; this.arrivalController = null; controller?.abort();
+    this.arrivals = null;
+  }
+  arrivalHTML(stop, routes) {
+    const a = this.arrivals?.stopId === stop.id ? this.arrivals : null;
+    const rows = new Map((a?.rows || []).map(row => [row.routeId, row])), known = new Set(routes.map(r => r.id));
+    const answered = a && ['fresh', 'cached', 'stale', 'mock'].includes(a.state);
+    const time = row => {
+      if (!a || a.state === 'none' || a.state === 'unavailable') return '';
+      if (!row) return `<span class="bus-arrival">${a.state === 'loading' ? '…' : answered ? '<small>도착 정보 없음</small>' : ''}</span>`;
+      const [first, next] = row.buses || [], second = next?.message !== first?.message ? next : null;   // '운행종료'가 두 번 나오지 않게
+      return `<span class="bus-arrival">${text(first?.message || '도착 정보 없음')}${first?.last ? ' <em class="bus-last">막차</em>' : ''}` +
+        `${second ? `<small>다음 ${text(second.message)}${second.last ? ' · 막차' : ''}</small>` : ''}${row.direction ? `<small>${text(row.direction)} 방면</small>` : ''}</span>`;
+    };
+    const items = routes.map(r => `<li><button type="button" data-bus-route="${text(r.id)}" aria-pressed="${r.id===this.selectedRoute}" style="--bus-color:${color(r, this.theme)}">${text(typeName(r))} <b>${text(r.name)}</b></button>${time(rows.get(r.id))}</li>`);
+    // 우리 노선 자료에 없는 노선(공항버스 등): 도착 정보만, 눌러도 지도에 그릴 경로가 없다
+    const extra = [...rows.values()].filter(row => !known.has(row.routeId));
+    for (const row of extra) items.push(`<li><span class="bus-route-tag" style="--bus-color:${color(row, this.theme)}">${text(typeName(row))} <b>${text(row.name)}</b></span>${time(row)}</li>`);
+    const clock = a?.fetchedAt == null ? '' : new Date(a.fetchedAt).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul'});
+    const state = !a ? '' : a.state === 'none' ? '이 정류장은 도착 정보가 없어요.' : a.state === 'loading' ? '도착 정보를 불러오는 중이에요.'
+      : a.state === 'unavailable' ? '지금은 도착 정보를 쓸 수 없어요.' : a.mode === 'mock' ? '예시 데이터 · 실제 운행 정보 아님'
+      : a.state === 'stale' ? `도착 정보 갱신 지연${clock ? ` · ${clock} 기준` : ''}`
+      : answered ? `${clock} 기준 도착 정보${a.count >= ARRIVAL_POLLS && !this.arrivalTimer ? ' · 정류장을 다시 누르면 새로 받아요' : ''}`
+      : a.code === 'daily_limit' ? '오늘 도착 정보 조회 한도를 다 썼어요.' : '도착 정보를 불러오지 못했어요.';
+    return `<ul class="bus-route-list bus-arrival-list">${items.join('')}</ul>${extra.length ? '<p class="bus-detail-note">노선 자료가 없는 번호는 도착 정보만 보여요.</p>' : ''}${state ? `<p class="bus-detail-note">${state}</p>` : ''}`;
+  }
 
   detailHTML() {
     const selection = this.selection; if (!selection) return '';
@@ -528,7 +594,7 @@ class BusLayer {
       const routes = this.data.routesByStop.get(stop.id) || [];
       const chosen=this.data.routeById.get(this.selectedRoute);
       const mock=chosen&&(this.mode==='mock'||[...this.fleet.values()].some(b=>b.route.id===chosen.id&&b.mock));
-      return wrap(`<h3 tabindex="-1">${text(stop.name)}</h3><p class="bus-detail-note">버스 정류장${stop.arsId ? ` · ${text(stop.arsId)}` : ''}</p><p class="bus-detail-note">${chosen?`${text(chosen.name)}번 노선과 버스 표시 중`:'번호를 누르면 노선과 버스를 볼 수 있어요.'}</p>${mock?'<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>':''}<div class="bus-route-list">${routes.map(r => `<button type="button" data-bus-route="${text(r.id)}" aria-pressed="${r.id===this.selectedRoute}" style="--bus-color:${color(r, this.theme)}">${text(BUS_TYPES[r.type].name)} <b>${text(r.name)}</b></button>`).join('')}</div>`);
+      return wrap(`<h3 tabindex="-1">${text(stop.name)}</h3><p class="bus-detail-note">버스 정류장${stop.arsId ? ` · ${text(stop.arsId)}` : ''}</p><p class="bus-detail-note">${chosen?`${text(chosen.name)}번 노선과 버스 표시 중`:'번호를 누르면 노선과 버스를 볼 수 있어요.'}</p>${mock?'<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>':''}${this.arrivalHTML(stop, routes)}`);
     }
     const bus = selection.kind === 'bus' ? this.fleet.get(selection.id) : null;
     const route = bus?.route || this.data.routeById.get(this.selectedRoute); if (!route) return '';
@@ -553,12 +619,12 @@ class BusLayer {
     const chosen=new Set(this.chosenIds()),approximate=this.visible.some(v=>chosen.has(v.route.id)&&v.route.approximate),mock=this.mode==='mock'||[...this.fleet.values()].some(b=>b.mock);
     const notice = this.status || (mock ? '버스 예시 데이터 · 실제 운행 정보 아님' : delayed ? '버스 위치 갱신 지연' : '');   // 스위치 설명이 없어져 불러오기 실패도 지도 알림으로
     this.notice.textContent = [notice, approximate ? `${notice ? '' : '버스 · '}정류장 연결선` : ''].filter(Boolean).join(' · ');
-    this.notice.hidden = !(this.enabled||chosen.size||this.journeyLegs.length) || zoom < BUS_ZOOM.buses || !this.notice.textContent;
+    this.notice.hidden = !(this.enabled||chosen.size||this.journeyLegs.length) || !this.active() || !this.notice.textContent;
   }
 
   destroy() {
     if (this.disposed) return;
-    this.stopLive(); clearTimeout(this.viewTimer);clearTimeout(this.roadTimer); this.staticController?.abort(); this.disposed = true;
+    this.stopLive(); this.stopArrivals(); clearTimeout(this.viewTimer);clearTimeout(this.roadTimer); this.staticController?.abort(); this.disposed = true;
     this.map.off('moveend', this.move); this.map.off('zoom', this.zoom); this.map.off('remove', this.remove);
     this.map.off('sourcedata',this.roadData);
     document.removeEventListener('visibilitychange', this.visibility); this.reduced.removeEventListener('change', this.motionChanged);

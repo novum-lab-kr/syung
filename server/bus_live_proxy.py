@@ -4,6 +4,8 @@
 python3 server/bus_live_proxy.py                 # loopback :3114
 BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py
 GET /api/bus/live?routes=<standard IDs>&focus=<one of those IDs>
+GET /api/bus/live?stop=<arsId>   정류장 도착 정보(ArrivalProxy): 같은 주소라 Caddy 설정을 바꾸지 않는다.
+  도착정보 API 는 따로 하루 한도를 받아서 장부도 따로 쓴다(BUS_ARRIVAL_*).
 No key means unavailable, never an implicit simulation.
 Background polling (background_loop, started by subway_live_proxy.py), one call per turn of the shared
 gate: first the routes someone is watching (asked in the last WATCH_SECONDS) whose cache is stale, so a
@@ -38,6 +40,10 @@ ROOT = Path(__file__).resolve().parent.parent
 KST = timezone(timedelta(hours=9))
 # The official service documents HTTP; HTTPS timed out in the 2026-10-03 probe.
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
+# 정류소정보조회: 정류장 번호(arsId) 하나로 그 정류장의 모든 노선 도착 예정을 한 번에 준다(2026-10-07 승인)
+ARRIVAL_URL = "http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid"
+# 도착정보의 routeType → 지도 버스 종류. 우리 노선 자료에 없는 노선(공항버스 등)의 이름표에만 쓴다
+ARRIVAL_ROUTE_TYPES = {"1": "airport", "2": "village", "3": "trunk", "4": "branch", "5": "circular", "6": "express"}
 MAX_ROUTES = 8
 SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
 NIGHT_END, NIGHT_WEIGHT = 5 * 60, 0.25   # KST 00~05시는 버스가 거의 없다: 호출 간격을 4배로 두고 아낀 몫을 낮에 쓴다
@@ -232,10 +238,17 @@ def parse_payload(raw: bytes) -> list[dict]:
 
 
 def fetch_positions(route_id: str, config: Config) -> list[dict]:
+    return fetch_upstream(API_URL, {"busRouteId": route_id}, config)
+
+
+def fetch_arrivals(ars_id: str, config) -> list[dict]:
+    return fetch_upstream(ARRIVAL_URL, {"arsId": ars_id}, config)
+
+
+def fetch_upstream(url: str, params: dict, config) -> list[dict]:
     # unquote (NOT unquote_plus) supports either portal encoding of the same key.
-    query = urllib.parse.urlencode({"serviceKey": urllib.parse.unquote(config.key),
-                                   "busRouteId": route_id, "resultType": "json"})
-    request = urllib.request.Request(API_URL + "?" + query, headers={"User-Agent": "syung-bus/1.0"})
+    query = urllib.parse.urlencode({"serviceKey": urllib.parse.unquote(config.key), **params, "resultType": "json"})
+    request = urllib.request.Request(url + "?" + query, headers={"User-Agent": "syung-bus/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=config.timeout) as response:
             raw = response.read(2_000_001)
@@ -540,8 +553,200 @@ class BusProxy:
                  "receivedAt": iso(now), "mock": True}]
 
 
+@dataclass
+class ArrivalConfig:
+    """정류장 도착 정보. 버스 위치와 같은 키를 쓰지만 한도 · 장부는 따로다(개발계정 하루 1,000번)."""
+    key: str = field(default="", repr=False)
+    mode: str = "auto"
+    cache_seconds: float = 20   # 같은 정류장은 20초 동안 여러 사람이 함께 쓴다
+    stale_seconds: float = 120   # 다시 못 받으면 2분까지는 지난 값을 '지연'으로 보여 준다
+    daily_limit: int = 950
+    min_interval: float = 1   # 정류장이 달라도 1초에 한 번만 부른다
+    timeout: float = 8
+    quota_file: Path = Path("/var/lib/subway-live/bus-arrival-quota.json")
+    stops_file: Path = ROOT / "data" / "bus" / "stops.json"
+    routes_file: Path = ROOT / "data" / "bus" / "routes.json"   # 예시(mock) 도착 정보에만 쓴다
+
+    def __post_init__(self):
+        if self.mode not in ("auto", "live", "mock", "disabled"):
+            raise ValueError("BUS_LIVE_MODE must be auto, live, mock or disabled")
+        self.key = self.key.strip()
+        self.cache_seconds = max(5, self.cache_seconds)
+        self.stale_seconds = max(self.cache_seconds, self.stale_seconds)
+        self.daily_limit = max(1, self.daily_limit)
+        self.min_interval = max(1, self.min_interval)
+        self.timeout = min(30, max(1, self.timeout))
+
+    @classmethod
+    def from_env(cls):
+        return cls(key=os.environ.get("SEOUL_BUS_SERVICE_KEY", ""),
+                   mode=os.environ.get("BUS_LIVE_MODE", "auto"),
+                   cache_seconds=float(os.environ.get("BUS_ARRIVAL_CACHE_SECONDS", "20")),
+                   daily_limit=int(os.environ.get("BUS_ARRIVAL_DAILY_LIMIT", "950")),
+                   timeout=float(os.environ.get("BUS_LIVE_TIMEOUT", "8")),
+                   quota_file=Path(os.environ.get("BUS_ARRIVAL_QUOTA_FILE", "/var/lib/subway-live/bus-arrival-quota.json")),
+                   stops_file=Path(os.environ.get("BUS_LIVE_STOPS_FILE", str(ROOT / "data/bus/stops.json"))),
+                   routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))))
+
+
+def normalize_arrivals(items: list[dict]) -> list[dict]:
+    """노선마다 다가오는 버스 두 대의 안내 문구 · 남은 초 · 막차 여부. 차량 번호는 내보내지 않는다."""
+    rows = {}
+    for item in items:
+        rid, name = str(item.get("busRouteId") or "").strip(), str(item.get("rtNm") or "").strip()
+        if not re.fullmatch(r"\d{9}", rid) or not name or rid in rows:
+            continue
+        buses = []
+        for n in ("1", "2"):
+            message = str(item.get(f"arrmsg{n}") or "").strip()
+            if not message:
+                continue
+            seconds = number(item.get(f"traTime{n}"))
+            buses.append({"message": message[:40], "seconds": int(seconds) if seconds is not None and seconds >= 0 else None,
+                          "last": str(item.get(f"isLast{n}", "0")).upper() in ("1", "Y")})
+        rows[rid] = {"routeId": rid, "name": name[:20], "type": ARRIVAL_ROUTE_TYPES.get(str(item.get("routeType")), "other"),
+                     "direction": str(item.get("adirection") or "").strip()[:30] or None, "buses": buses}
+    return list(rows.values())
+
+
+class ArrivalProxy:
+    """정류장을 누른 사람이 있을 때만 그 정류장 하나를 부른다(정류장 하나 = 호출 1번)."""
+    def __init__(self, config: ArrivalConfig | None = None, *, stops: dict | None = None, fetch=None, clock=None):
+        self.config = config or ArrivalConfig.from_env()
+        self.clock, self.fetch = clock or time.time, fetch or fetch_arrivals
+        self.ledger = QuotaLedger(self.config)
+        self.data_error = False
+        if stops is None:
+            try:
+                payload = json.loads(self.config.stops_file.read_text())
+                if payload["schemaVersion"] != 1:
+                    raise ValueError("schema")
+                stops = {stop["arsId"]: stop for stop in payload["stops"] if stop.get("arsId")}
+            except (OSError, ValueError, KeyError, TypeError):
+                self.data_error, stops = True, {}
+        self.stops = stops   # arsId → 정류장
+        self.cache = {}   # arsId → (받은 때, 줄)
+        self.failures = {}   # arsId → (다시 물어도 되는 때, 코드)
+        self.pending = {}   # arsId → Event: 같은 정류장을 동시에 물으면 한 번만 부르고 함께 기다린다
+        self.lock = threading.Lock()
+        self.next_at = 0
+        self.backoff_until = 0
+        self.mock_routes = None
+
+    @property
+    def mode(self):
+        if self.config.mode == "mock":
+            return "mock"
+        return "live" if self.config.key and self.config.mode != "disabled" else "unavailable"
+
+    def snapshot(self, query: dict) -> tuple[dict, int]:
+        now = self.clock()
+        if self.data_error:
+            return self._body("", now, "error", None, [], [BusProxy._error(None, "data_unavailable")]), 503
+        values = query.get("stop", [])
+        stop = values[0].strip() if len(values) == 1 else ""
+        if not re.fullmatch(r"\d{5}", stop) or stop not in self.stops or query.get("routes"):
+            return {"schemaVersion": 1, "ok": False, "error": "invalid_request",
+                    "message": "stop must be one known 5-digit stop number"}, 400
+        if self.mode == "unavailable":
+            code = "disabled" if self.config.mode == "disabled" else "missing_key"
+            return self._body(stop, now, "unavailable", None, [], [BusProxy._error(None, code)]), 200
+        if self.mode == "mock":
+            return self._body(stop, now, "mock", now, self._mock(stop, now), []), 200
+
+        call, waiting, block = False, None, ""
+        with self.lock:
+            stamp = self.cache.get(stop, (None, []))[0]
+            if stamp is None or now - stamp >= self.config.cache_seconds:
+                waiting = self.pending.get(stop)
+                failure = self.failures.get(stop, (0, ""))
+                if waiting:
+                    pass
+                elif now < failure[0]:
+                    block = failure[1]
+                elif now < self.backoff_until:
+                    block = "backoff"
+                elif now < self.next_at:
+                    block = "paced"
+                else:
+                    try:
+                        # 누른 만큼만 부르니 하루치를 나눠 쓰는 간격은 두지 않는다. 하루 상한은 그대로 지킨다
+                        allowed, reason, _ = self.ledger.reserve(now, paced=False)
+                    except BusError as error:
+                        allowed, reason = False, error.code
+                    if allowed:
+                        call, self.next_at = True, now + self.config.min_interval
+                        waiting = self.pending[stop] = threading.Event()
+                    else:
+                        block = reason
+        if call:
+            self._fetch(stop, waiting)
+        elif waiting:
+            waiting.wait(self.config.timeout + 1)
+        now = self.clock()
+        with self.lock:
+            stamp, rows = self.cache.get(stop, (None, []))
+            failure = self.failures.get(stop)
+        age = now - stamp if stamp is not None else None
+        if age is not None and age < self.config.cache_seconds:
+            status = "fresh" if call else "cached"
+        elif age is not None and age <= self.config.stale_seconds:
+            status = "stale"
+        else:
+            status, rows = "error", []
+        code = (failure[1] if failure else block) if status in ("stale", "error") else ""
+        if status == "error" and not code:
+            code = "in_flight" if waiting else "upstream_error"
+        return self._body(stop, now, status, stamp, rows, [BusProxy._error(None, code)] if code else []), 200
+
+    def _fetch(self, stop, done):
+        try:
+            rows = normalize_arrivals(self.fetch(stop, self.config))
+            with self.lock:
+                self.cache[stop] = (self.clock(), rows)
+                self.failures.pop(stop, None)
+                if len(self.cache) > 5000:   # 정류장 8천여 곳: 오래된 것부터 버린다
+                    for old in sorted(self.cache, key=lambda k: self.cache[k][0])[:1000]:
+                        del self.cache[old]
+        except Exception as error:
+            # urllib 예외에는 키가 든 주소가 있을 수 있다: 코드만 남긴다
+            code = error.code if isinstance(error, BusError) else "upstream_error"
+            with self.lock:
+                self.failures[stop] = (self.clock() + 30, code)
+                if code in ("upstream_auth", "upstream_quota"):
+                    self.backoff_until = self.clock() + 300
+        finally:
+            with self.lock:
+                self.pending.pop(stop, None)
+            done.set()
+
+    def _mock(self, stop, now):
+        if self.mock_routes is None:
+            try:
+                self.mock_routes = json.loads(self.config.routes_file.read_text())["routes"]
+            except (OSError, ValueError, KeyError, TypeError):
+                self.mock_routes = []
+        sid, rows = self.stops[stop].get("id"), []
+        for i, route in enumerate(r for r in self.mock_routes if sid in r.get("stopIds", [])):
+            wait = int((now / 7 + i * 97) % 900)
+            rows.append({"routeId": route["id"], "name": route["name"], "type": route.get("type", "other"), "direction": None,
+                         "buses": [{"message": f"{wait // 60}분후[예시]", "seconds": wait, "last": False}]})
+        return rows
+
+    def _body(self, stop, now, status, stamp, rows, errors):
+        try:
+            quota = self.ledger.view(now)
+        except BusError:
+            quota = {"day": day_bounds(now)[0], "used": None, "limit": self.config.daily_limit, "remaining": None}
+        return {"schemaVersion": 1, "ok": status in ("fresh", "cached", "mock") and not errors, "mode": self.mode,
+                "stop": stop, "status": status, "fetchedAt": iso(stamp) if stamp is not None else None,
+                "ageSeconds": max(0, round(now - stamp, 1)) if stamp is not None else None,
+                "pollAfterSeconds": 30, "arrivals": rows, "quota": quota, "errors": errors}
+
+
 _proxy = None
 _proxy_lock = threading.Lock()
+_arrivals = None
 
 
 def get_proxy() -> BusProxy:
@@ -550,6 +755,14 @@ def get_proxy() -> BusProxy:
         if _proxy is None:
             _proxy = BusProxy()
         return _proxy
+
+
+def get_arrivals() -> ArrivalProxy:
+    global _arrivals
+    with _proxy_lock:
+        if _arrivals is None:
+            _arrivals = ArrivalProxy()
+        return _arrivals
 
 
 def background_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
@@ -565,6 +778,8 @@ def background_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
 
 def snapshot(query: dict) -> tuple[dict, int]:
     """Small integration surface for the existing subway HTTP handler."""
+    if "stop" in query:   # 정류장 도착 정보
+        return get_arrivals().snapshot(query)
     return get_proxy().snapshot(query)
 
 
