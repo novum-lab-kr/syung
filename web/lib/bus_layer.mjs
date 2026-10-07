@@ -17,7 +17,7 @@ export const BUS_TYPES = {
 };
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
-const SETTING_KEY = 'subway-buses', STALE_MS = 120000, EXPIRE_MS = 600000;
+const STALE_MS = 120000, EXPIRE_MS = 600000;
 const collection = features => ({type: 'FeatureCollection', features});
 const feature = (type, coordinates, properties) => ({type: 'Feature', geometry: {type, coordinates}, properties});
 const text = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -123,7 +123,6 @@ class BusLayer {
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
     this.pollMs = 30000; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.freshnessTimer = 0; this.detailAt = 0;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
-    this.button = document.getElementById('toggleBuses'); this.note = document.getElementById('busSettingNote');
     this.nearby = document.getElementById('inspectNearbyBus');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
     this.notice.setAttribute('role', 'status'); map.getContainer().append(this.notice);
@@ -135,7 +134,6 @@ class BusLayer {
     };
     this.motionChanged = () => { this.stopAnimation(); this.draw(); };
     this.zoom = () => { if (map.getZoom() < BUS_ZOOM.buses) this.stopLive(); this.draw(); this.updateStatus(); };
-    this.toggle = () => this.setEnabled(!this.enabled);
     this.inspect = () => this.inspectNearby();
     this.routeClick = event => {
       const button=event.target.closest?.('.bus-detail [data-bus-route]');if(!button)return;
@@ -151,9 +149,8 @@ class BusLayer {
     map.on('sourcedata',this.roadData);
     document.addEventListener('visibilitychange', this.visibility); this.reduced.addEventListener('change', this.motionChanged);
     document.addEventListener('click',this.routeClick);
-    this.button?.addEventListener('click', this.toggle); this.nearby?.addEventListener('click', this.inspect);
-    let saved = false; try { saved = localStorage.getItem(SETTING_KEY) === '1'; } catch {}
-    this.setEnabled(saved);
+    this.nearby?.addEventListener('click', this.inspect);
+    this.setEnabled(true);   // 주변 버스는 늘 보인다(설정 스위치 없앰, 2026-10-07 덕배)
   }
 
   installLayers() {
@@ -178,8 +175,6 @@ class BusLayer {
   setEnabled(enabled) {
     if (this.disposed) return;
     this.enabled = !!enabled;
-    try { localStorage.setItem(SETTING_KEY, this.enabled ? '1' : '0'); } catch {}
-    this.button?.setAttribute('aria-pressed', String(this.enabled));
     if (!this.enabled && !this.chosenIds().length) {this.stopLive();this.fleet.clear();this.hits=[];}
     this.refreshView();this.draw();
     this.updateStatus();
@@ -196,7 +191,7 @@ class BusLayer {
       this.journeyIds=journeyBusRouteIds(this.data,this.journeyLegs);
       this.refreshView();
     } catch (error) {
-      if (!controller.signal.aborted) { this.loading = false; this.status = '노선을 불러오지 못했어요 · 껐다 켜서 재시도'; this.updateStatus(); }
+      if (!controller.signal.aborted) { this.loading = false; this.status = '버스 노선을 불러오지 못했어요 · 새로고침해 주세요'; this.updateStatus(); }
     } finally { if (this.staticController === controller) this.staticController = null; }
   }
 
@@ -540,22 +535,9 @@ class BusLayer {
     const zoom = this.map.getZoom();
     const delayed = this.mode === 'error' || [...this.fleet.values()].some(b => b.stale) ||
       Object.values(this.routeStates || {}).some(s => ['stale', 'deferred', 'error'].includes(s.status));
-    let message = '정류장을 눌러 원하는 노선을 볼 수 있어요';
-    if (this.enabled) {
-      if (zoom < BUS_ZOOM.buses) message = '확대하면 주변 버스가 보여요';
-      else if (this.loading) message = '버스 노선 불러오는 중…';
-      else if (this.status) message = this.status;
-      else if (!this.requested.length) message = '이 화면에는 서울 버스 정류장이 없어요';
-      else if (this.mode === 'mock' || [...this.fleet.values()].some(b => b.mock)) message = '예시 데이터 · 실제 운행 정보 아님';
-      else if (this.mode === 'unavailable') message = '실시간 버스 준비 중';
-      else if (delayed) message = '주변 버스 · 위치 갱신 지연';
-      else if (!this.fleet.size) message = '수신된 버스가 없어요';
-      else message = `주변 정류장의 ${this.requested.length}개 노선`;
-    }
-    if (this.note) this.note.textContent = message;
     if (this.nearby) { this.nearby.hidden = false; this.nearby.disabled = !this.stopFeatures?.length || zoom < BUS_ZOOM.stops; }
     const chosen=new Set(this.chosenIds()),approximate=this.visible.some(v=>chosen.has(v.route.id)&&v.route.approximate),mock=this.mode==='mock'||[...this.fleet.values()].some(b=>b.mock);
-    const notice = mock ? '버스 예시 데이터 · 실제 운행 정보 아님' : delayed ? '버스 위치 갱신 지연' : '';
+    const notice = this.status || (mock ? '버스 예시 데이터 · 실제 운행 정보 아님' : delayed ? '버스 위치 갱신 지연' : '');   // 스위치 설명이 없어져 불러오기 실패도 지도 알림으로
     this.notice.textContent = [notice, approximate ? `${notice ? '' : '버스 · '}정류장 연결선` : ''].filter(Boolean).join(' · ');
     this.notice.hidden = !(this.enabled||chosen.size||this.journeyLegs.length) || zoom < BUS_ZOOM.buses || !this.notice.textContent;
   }
@@ -567,7 +549,7 @@ class BusLayer {
     this.map.off('sourcedata',this.roadData);
     document.removeEventListener('visibilitychange', this.visibility); this.reduced.removeEventListener('change', this.motionChanged);
     document.removeEventListener('click',this.routeClick);
-    this.button?.removeEventListener('click', this.toggle); this.nearby?.removeEventListener('click', this.inspect);
+    this.nearby?.removeEventListener('click', this.inspect);
     this.renderer.dispose();this.notice.remove();this.fleet.clear();
   }
 }

@@ -56,9 +56,6 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .setting-row[hidden]{display:none}   /* 열차 속도: only while 롤러코스터 is on (display:flex above beat the hidden attribute) */
 .setting-name small{display:block;white-space:pre-line;margin-top:1px;font-size:11px;font-weight:500;color:var(--muted)}
 /* bus: the existing switch, map notice and shared detail sheet use the same theme. */
-#toggleBuses{padding-block:8px;min-height:56px}
-#toggleBuses .setting-icon{flex:none}
-#busSettingNote{font-size:12px;line-height:1.5;color:var(--secondary)}
 .bus-nearby{display:block;width:100%;min-height:44px;margin:4px 0;padding:8px 12px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font-size:13px;font-weight:600;text-align:left;cursor:pointer}
 .bus-nearby[hidden]{display:none}
 .bus-nearby:hover{background:var(--selected)}
