@@ -12,6 +12,9 @@
   their names, and per station how often its stand (도착→출발) was timed over the days that timing
   learned from and the median, and how many 도착 → next 도착 runs left it (stands: {line: {id:
   [n, s, runs]}}, before STOP_MIN_N/clamp). latest.lines leaves out the per-edge runs (a count instead).
+- bus: the bus positions the bus proxy recorded (server/bus_live_proxy.py, bus/YYYYMMDD.jsonl): per day
+  the upstream answers (calls), vehicle rows, distinct buses and routes, and per route over all days
+  the calls and buses with its name and colour. Not learned from yet.
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).
 Run by retrain_live_timing.py after each retrain; by hand: build_learning_stats.py [web folder]
 """
@@ -33,6 +36,8 @@ from sample_files import all_days, day_files, lines  # noqa: E402
 KST = timezone(timedelta(hours=9))
 STATE = Path("/var/lib/subway-live")
 DAYS_CACHE = STATE / "learning-days.json"
+BUS_CACHE = STATE / "learning-bus-days.json"
+BUS_ROUTES = Path(__file__).resolve().parent.parent / "data" / "bus" / "routes.json"
 HISTORY_CACHE = STATE / "learning-history.json"
 
 
@@ -83,6 +88,50 @@ def day_stats(d: date, cache: dict) -> dict:
         out[src] = {"records": rows, "sightings": firsts, "event": events, "trains": len(trains)}
     cache[key] = out
     return out
+
+
+def bus_day_stats(p: Path, cache: dict) -> dict:
+    """One day of recorded bus answers: calls, rows, buses, and per route [calls, buses]."""
+    stamp = [p.name, p.stat().st_size]
+    key = p.name.split(".", 1)[0]
+    if cache.get(key, {}).get("stamp") == stamp:
+        return cache[key]
+    calls, buses, routes = set(), set(), defaultdict(lambda: [set(), set()])
+    rows = 0
+    for row in lines(p):
+        e = json.loads(row)
+        rows += 1
+        rid, call = e.get("routeId"), (e.get("routeId"), e.get("fetchedAt"))
+        calls.add(call)
+        buses.add((rid, e.get("vehId")))
+        routes[rid][0].add(call)
+        routes[rid][1].add(e.get("vehId"))
+    d = f"{key[:4]}-{key[4:6]}-{key[6:8]}"
+    out = {"date": d, "stamp": stamp, "calls": len(calls), "rows": rows, "buses": len(buses), "routes": len(routes),
+           "byRoute": {rid: [len(c), len(v)] for rid, (c, v) in routes.items()}}
+    cache[key] = out
+    return out
+
+
+def bus_stats() -> dict:
+    cache = json.loads(BUS_CACHE.read_text(encoding="utf-8")) if BUS_CACHE.exists() else {}
+    days = [bus_day_stats(p, cache) for p in sorted((STATE / "bus").glob("*.jsonl*"))]
+    BUS_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    try:
+        known = {r["id"]: r for r in json.loads(BUS_ROUTES.read_text(encoding="utf-8"))["routes"]}
+    except (OSError, ValueError, KeyError):
+        known = {}
+    total = defaultdict(lambda: [0, 0, 0])   # 부른 횟수(모든 날), 버스 수(가장 많이 본 날), 모은 날
+    for d in days:
+        for rid, (c, v) in d["byRoute"].items():
+            t = total[rid]
+            t[0] += c
+            t[1] = max(t[1], v)
+            t[2] += 1
+    routes = [{"id": rid, "name": known.get(rid, {}).get("name", rid), "color": known.get(rid, {}).get("color"),
+               "type": known.get(rid, {}).get("type"), "calls": c, "buses": v, "days": n}
+              for rid, (c, v, n) in sorted(total.items(), key=lambda x: -x[1][0])]
+    return {"days": [{k: v for k, v in d.items() if k not in ("stamp", "byRoute")} for d in days], "routes": routes}
 
 
 def backfill(d: date, have: set[date]) -> dict | None:
@@ -136,7 +185,8 @@ def main(web: Path) -> None:
            "history": [history[k] for k in sorted(history)],
            "latest": {"lines": brief(latest.get("lines") or {}), "default": latest.get("default"), "n": latest.get("n"),
                       "stations": stations, "stands": station_stands(learned_from),
-                      "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}}}
+                      "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}},
+           "bus": bus_stats()}
     target = web / "learning.json"
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

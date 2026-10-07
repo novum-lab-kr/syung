@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>슝 학습 현황</title>
-<meta name="description" content="슝이 실시간 열차 기록으로 열차 움직임을 배우는 현황">
+<meta name="description" content="슝이 실시간 지하철 · 버스 기록으로 움직임을 배우는 현황">
 <link rel="icon" href="./brand/favicon.ico" sizes="48x48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
@@ -111,6 +111,17 @@ td.l,th.l{text-align:left}
 .def{color:var(--muted)}
 .up{color:var(--mid);font-weight:700}.dn{color:var(--good);font-weight:700}
 tr.sep td{border-top:1.5px solid var(--rule)}
+
+/* 0. 지하철 · 버스 탭 */
+.tabs{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--control);justify-self:start}
+.tabs button{height:36px;padding:0 20px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font-family:var(--round);font-size:16px;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--syung);color:var(--syung-ink);box-shadow:0 1px 0 rgba(20,20,20,.08)}
+.tabs button:focus-visible,.chips button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.panel{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.panel[hidden]{display:none}
+.hero .big b.word{font-size:40px}
+.steps li.now{background:var(--syung-soft);color:var(--ink)}
+.steps li b{font-size:14px}
 @media (max-width:720px){
   .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
   table{font-size:12.5px}td,th{padding:7px 5px}#stopTable td{white-space:nowrap}#stopTable td:nth-child(4){white-space:normal;line-height:1.3}#stopTable .full{display:none}#stopTable .short{display:inline}#stopTable .badge::before{display:none}#stopTable .badge{padding:3px 8px;font-size:11.5px}
@@ -128,6 +139,11 @@ tr.sep td{border-top:1.5px solid var(--rule)}
   <form method="post" action="/api/logout" style="margin:0"><button class="pill-btn" type="submit">로그아웃</button></form>
 </div></header>
 <main>
+  <div class="tabs" role="tablist" aria-label="무엇을 배우나">
+    <button type="button" role="tab" id="tabSubway" aria-controls="panelSubway" aria-selected="true">지하철</button>
+    <button type="button" role="tab" id="tabBus" aria-controls="panelBus" aria-selected="false" tabindex="-1">버스</button>
+  </div>
+  <div class="panel" id="panelSubway" role="tabpanel" aria-labelledby="tabSubway">
   <section class="box hero" aria-label="지금 정확도">
     <div>
       <small>지도의 예측 오차 · 중앙값</small>
@@ -187,6 +203,37 @@ tr.sep td{border-top:1.5px solid var(--rule)}
     <h2>날짜별 자세한 기록</h2>
     <div class="tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>이 날로 채점<br>쓰던 값 → 새 값</th><th>결과</th></tr></thead><tbody></tbody></table></div>
   </section>
+  </div>
+
+  <div class="panel" id="panelBus" role="tabpanel" aria-labelledby="tabBus" hidden>
+  <section class="box hero" aria-label="버스 학습 상태">
+    <div>
+      <small>버스 도착 시각 예측</small>
+      <div class="big"><b class="word" id="bState">모으는 중</b></div>
+      <span class="delta same" id="bDelta">불러오는 중</span>
+      <p id="bText"></p>
+    </div>
+    <ul class="kinds steps" id="bSteps"></ul>
+  </section>
+  <section class="stats" aria-label="모은 버스 기록">
+    <div class="stat"><small id="bDayLabel">하루 모은 기록</small><b id="bToday">–</b><span id="bTodaySub"></span></div>
+    <div class="stat"><small>지금까지</small><b id="bTotal">–</b><span id="bTotalSub"></span></div>
+    <div class="stat"><small>모은 노선</small><b id="bRoutes">–</b><span id="bRoutesSub"></span></div>
+  </section>
+  <section class="box growth">
+    <h2>버스 기록이 쌓이는 중</h2>
+    <div id="bGrowth"></div>
+  </section>
+  <section class="box">
+    <h2>노선별 수집</h2>
+    <div class="tw"><table><thead><tr><th class="l">노선</th><th class="l">종류</th><th>부른 횟수</th><th>본 버스</th><th>모은 날</th></tr></thead><tbody id="bRouteTable"></tbody></table></div>
+    <p class="note">서버가 낮(05~24시) 동안 이 노선들을 번갈아 불러 기록해요. 지도에서 누가 버스를 보고 있으면 잠깐 쉬어요.</p>
+  </section>
+  <section class="box">
+    <h2>날짜별 수집</h2>
+    <div class="tw"><table><thead><tr><th>날짜</th><th>부른 횟수</th><th>받은 기록</th><th>본 버스</th><th>노선</th></tr></thead><tbody id="bDayTable"></tbody></table></div>
+  </section>
+  </div>
   <p class="muted" id="updated" style="margin:0;font-size:12px;text-align:center"></p>
 </main>
 <script>
@@ -218,9 +265,9 @@ function scoreChart(sc){
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="날마다 채점한 오차">${g}</svg>`;
 }
 
-function growth(days){
+function growth(days,val=events,note='학습에 쓸 수 있는 기록을 날마다 더한 값이에요. 기울기가 가파를수록 그날 많이 모았어요.'){
   if(!days.length)return '<p class="muted">아직 기록이 없어요.</p>';
-  let acc=0;const pts=days.map(d=>({date:d.date,v:(acc+=events(d))}));
+  let acc=0;const pts=days.map(d=>({date:d.date,v:(acc+=val(d))}));
   const W=560,H=220,L=12,R=12,T=28,B=26,max=acc*1.1;
   const x=i=>pts.length===1?W/2:L+20+i*(W-L-R-40)/(pts.length-1),y=v=>T+(H-T-B)*(1-v/max);
   const line=pts.map((p,i)=>`${x(i)},${y(p.v)}`).join(' ');
@@ -230,7 +277,7 @@ function growth(days){
   g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
   pts.forEach((p,i)=>{g+=`<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--paper)" stroke="var(--syung-deep)" stroke-width="2.5"/><text x="${x(i)}" y="${H-8}" text-anchor="middle">${md(p.date)}</text>`;
     if(i===pts.length-1||i===0)g+=`<text class="val" x="${x(i)}" y="${y(p.v)-10}" text-anchor="${i===0?'start':'end'}">${fmt(p.v)}</text>`});
-  return `<div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="학습용 기록 누적 ${fmt(acc)}">${g}</svg></div><p class="muted" style="margin:6px 0 0;font-size:12.5px">학습에 쓸 수 있는 기록을 날마다 더한 값이에요. 기울기가 가파를수록 그날 많이 모았어요.</p>`;
+  return `<div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="학습용 기록 누적 ${fmt(acc)}">${g}</svg></div><p class="muted" style="margin:6px 0 0;font-size:12.5px">${note}</p>`;
 }
 
 const pct=p=>Math.round((p-1)*100);
@@ -248,8 +295,37 @@ function groups(latest,hist){
       return `<div class="lc" style="--c:${COLORS[l]||'#888'}"><b>${esc(l)}</b><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul><div class="meter" title="${k.toLocaleString('ko-KR')}구간"><i style="width:${Math.min(100,k/ENOUGH*100)}%"></i></div></div>`}).join('')}</div></div>`}).join('');
 }
 
+// 지하철 · 버스 탭(#bus 로 버스 탭을 바로 연다)
+const TABS=[['tabSubway','panelSubway',''],['tabBus','panelBus','#bus']];
+function showTab(i,focus){TABS.forEach(([t,p],k)=>{const on=k===i;$(t).setAttribute('aria-selected',on);$(t).tabIndex=on?0:-1;$(p).hidden=!on});
+  if(focus)$(TABS[i][0]).focus();history.replaceState(null,'',TABS[i][2]||location.pathname+location.search)}
+TABS.forEach(([t],i)=>{$(t).onclick=()=>showTab(i);$(t).onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();showTab((i+1)%TABS.length,true)}}});
+if(location.hash==='#bus')showTab(1);
+
+// 버스: 아직 배우기 전, 모으는 현황만(learning.json bus — build_learning_stats.bus_stats)
+const BUS_TYPES={trunk:'간선',branch:'지선',circular:'순환',express:'광역',night:'심야'},BUS_DAYS=7;
+function showBus(bus,genDay){
+  const days=(bus?.days||[]).filter(x=>x.date<genDay),routes=bus?.routes||[],n=days.length,last=days.at(-1);
+  const rows=days.reduce((a,x)=>a+x.rows,0),calls=days.reduce((a,x)=>a+x.calls,0);
+  $('bDelta').textContent=n>=BUS_DAYS?'기록이 다 모였어요 · 오차를 잴 차례예요':`${n}/${BUS_DAYS}일 모았어요`;
+  $('bText').textContent=n?`${md(days[0].date)}부터 ${n}일 동안 버스 위치 ${fmt(rows)}건을 모았어요. 일주일쯤 모이면 지하철처럼 오차부터 재고, 정류장 사이 달리는 시간을 구간마다 배워요.`
+    :'버스 위치를 모으기 시작했어요. 오늘 모은 기록은 내일 새벽 03:10에 여기 나타나요.';
+  const step=n<BUS_DAYS?0:1;
+  $('bSteps').innerHTML='<h3>배우는 순서</h3>'+[['기록 모으기',`${Math.min(n,BUS_DAYS)}/${BUS_DAYS}일`],['오차 재기','모은 뒤'],['구간마다 배우기','그다음']]
+    .map(([t,v],i)=>`<li${i===step?' class="now"':''}>${i+1}. ${t}<b>${v}</b></li>`).join('');
+  if(last){$('bDayLabel').textContent=`${md(last.date)} 하루 모은 기록`;$('bToday').textContent=fmt(last.rows);$('bTodaySub').textContent=`${fmt(last.calls)}번 불러서`}
+  $('bTotal').textContent=fmt(rows);$('bTotalSub').textContent=`${n}일 · ${fmt(calls)}번 불러서`;
+  $('bRoutes').textContent=routes.length?routes.length+'개':'–';$('bRoutesSub').textContent=routes.slice(0,3).map(r=>r.name).join(' · ');
+  $('bGrowth').innerHTML=growth(days,x=>x.rows,'모은 버스 위치를 날마다 더한 값이에요. 버스 한 대가 한 번 찍힐 때마다 한 건이에요.');
+  $('bRouteTable').innerHTML=routes.length?routes.map(r=>`<tr><td class="l"><span class="dot" style="--c:${esc(r.color||'#888')}"></span>${esc(r.name)}</td><td class="l">${esc(BUS_TYPES[r.type]||'–')}</td><td>${fmt(r.calls)}</td><td>${fmt(r.buses)}대</td><td>${r.days}일</td></tr>`).join('')
+    :'<tr><td class="l muted" colspan="5">아직 모은 노선이 없어요.</td></tr>';
+  $('bDayTable').innerHTML=days.length?[...days].reverse().map(x=>`<tr><td>${md(x.date)}</td><td>${fmt(x.calls)}</td><td>${fmt(x.rows)}</td><td>${fmt(x.buses)}대</td><td>${x.routes}</td></tr>`).join('')
+    :'<tr><td class="muted" colspan="5">아직 없어요.</td></tr>';
+}
+
 fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/login.html?next=/learning';throw 0}return r.json()}).then(d=>{
   const hist=d.history||[],genDay=(d.generatedAt||'').slice(0,10);
+  showBus(d.bus,genDay);
   const days=(d.days||[]).filter(x=>x.date<genDay);   // the stats are built at 03:10: the new day has barely begun
   const sc=hist.filter(h=>h.candidate?.all!=null).map(h=>({day:addDay(h.date,-1),cand:h.candidate.all,cur:h.current?.all??null,n:h.candidate.n,result:h.result,kinds:h.candidate}));
   const last=sc.at(-1);
