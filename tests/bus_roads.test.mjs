@@ -97,5 +97,9 @@ test('a stop pinned inside the carriageway moves to the pavement on its own side
   const split=network([road([[-150,-9],[150,-9]],{oneway:1}),road([[150,9],[-150,9]],{oneway:1})]);
   const out=xy(split.kerbside(coord(0,2)));
   assert.ok(Math.abs(out[1])>9+22*.72/2+1.5,'beyond the outer carriageway');
-  assert.deepEqual(network([road([[-150,0],[150,0]],{brunnel:'bridge'})]).kerbside(coord(0,4)),coord(0,4));
+  // 고가 도로 밑(화랑대역 · 북부간선)도 위에서 보면 도로라서, 지상 차도와 고가를 다 넘어 덜 움직이는 쪽 인도로.
+  const deck=network([road([[-150,-19.2],[150,-19.2]],{oneway:1}),road([[150,-5.6],[-150,-5.6]],{oneway:1}),
+    road([[-150,6],[150,6]],{class:'trunk',oneway:1,brunnel:'bridge'}),road([[150,14.5],[-150,14.5]],{class:'trunk',oneway:1,brunnel:'bridge'})]);
+  const under=xy(deck.kerbside(coord(0,0)));
+  assert.ok(under[1]>14.5+26*.72/2+1.5,'past both decks, the shorter way out');
 });

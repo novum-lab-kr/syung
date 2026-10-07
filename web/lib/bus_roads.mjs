@@ -151,27 +151,40 @@ export class BusRoadNetwork {
     }
     return {samples,step,version:this.version};
   }
-  // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 가까운 쪽 차도 끝 너머 인도로 옮긴다.
-  // 한 번 정한 방향으로 계속 밀어서, 분리 차도 사이에 있으면 바깥 차도까지 넘어간다. 다리 · 고가는 지상이 아니라 뺀다.
-  // 차도 끝 1.5 m 안(좁은 중앙 틈)도 도로 위로 본다.
-  kerbside(p){
-    let [x,y]=metric(p),push=null;
-    for(let round=0;round<4;round++){
-      let hit=null;
-      for(let gx=-1;gx<=1;gx++)for(let gy=-1;gy<=1;gy++)for(const seg of this.grid.get(gridKey(x+gx*CELL,y+gy*CELL))||[]){
-        if(seg.e.level!==0||seg.e.cls==='service')continue;
-        const dx=(seg.b[0]-seg.a[0])/seg.len,dy=(seg.b[1]-seg.a[1])/seg.len,t=(x-seg.a[0])*dx+(y-seg.a[1])*dy;
-        if(t<0||t>seg.len)continue;
-        const d=(x-seg.a[0])*-dy+(y-seg.a[1])*dx,half=seg.e.width/2;
-        if(Math.abs(d)<half+1.5&&(!hit||Math.abs(d)<Math.abs(hit.d)))hit={d,nx:-dy,ny:dx,half,walk:seg.e.sidewalk||3};
-      }
-      if(!hit)break;
-      if(!push){const side=hit.d>=0?1:-1;push=[hit.nx*side,hit.ny*side];}
-      const along=hit.nx*push[0]+hit.ny*push[1];if(Math.abs(along)<.3)break;
-      const target=(along>0?1:-1)*(hit.half+Math.max(2,Math.min(hit.walk,4)/2));
-      const move=(target-hit.d)/along;x+=push[0]*move;y+=push[1]*move;
+  // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 차도 끝 너머 인도로 옮긴다. 고가 도로도 위에서 보면 정류장을
+  // 덮으므로 함께 피한다(화랑대역: 북부간선 고가 밑). 양쪽으로 밀어 보고 덜 움직이는 쪽을 고른다.
+  // 한 방향으로 계속 밀어서 분리 차도 · 고가가 이어지면 그 너머까지 간다. 차도 끝 1.5 m 안(좁은 틈)도 도로 위로 본다.
+  roadAt(x,y,decks=true){
+    let hit=null;
+    for(let gx=-1;gx<=1;gx++)for(let gy=-1;gy<=1;gy++)for(const seg of this.grid.get(gridKey(x+gx*CELL,y+gy*CELL))||[]){
+      if(seg.e.cls==='service'||(!decks&&seg.e.level!==0))continue;
+      const dx=(seg.b[0]-seg.a[0])/seg.len,dy=(seg.b[1]-seg.a[1])/seg.len,t=(x-seg.a[0])*dx+(y-seg.a[1])*dy;
+      if(t<0||t>seg.len)continue;
+      const d=(x-seg.a[0])*-dy+(y-seg.a[1])*dx,half=seg.e.width/2;
+      if(Math.abs(d)<half+1.5&&(!hit||Math.abs(d)<Math.abs(hit.d)))hit={d,nx:-dy,ny:dx,half,walk:seg.e.sidewalk||3};
     }
-    return push?coordinate([x,y]):p;
+    return hit;
+  }
+  kerbside(p){
+    // 고가까지 넘으면 30 m 넘게 멀어지는 곳은 지상 차도 끝까지만 옮긴다(정류장이 버스 길에서 너무 멀어지지 않게).
+    const [x0,y0]=metric(p),far=this.kerbMove(x0,y0,true),best=far&&far.moved<=30?far:this.kerbMove(x0,y0,false);
+    return best?coordinate([best.x,best.y]):p;
+  }
+  kerbMove(x0,y0,decks){
+    const first=this.roadAt(x0,y0,decks);if(!first)return null;
+    let best=null;
+    for(const side of [1,-1]){
+      const push=[first.nx*side,first.ny*side];let x=x0,y=y0,hit=first,ok=false;
+      for(let round=0;round<8;round++){
+        const along=hit.nx*push[0]+hit.ny*push[1];if(Math.abs(along)<.3)break;
+        const target=(along>0?1:-1)*(hit.half+Math.max(2,Math.min(hit.walk,4)/2));
+        const move=(target-hit.d)/along;x+=push[0]*move;y+=push[1]*move;
+        hit=this.roadAt(x,y,decks);if(!hit){ok=true;break;}
+      }
+      const moved=Math.hypot(x-x0,y-y0);
+      if(ok&&(!best||moved<best.moved))best={x,y,moved};
+    }
+    return best;
   }
   match(path){
     const chunks=[];let previous=null,chunk=null,matched=0,total=0;
