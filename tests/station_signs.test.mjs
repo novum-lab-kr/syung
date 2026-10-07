@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions} from '../web/lib/station_signs.mjs';
+import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments} from '../web/lib/station_signs.mjs';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
   const entries = [
@@ -33,13 +33,13 @@ test('점 줄은 테두리까지 포함해 가운데 정렬되고 3px 간격을 
   assert.deepEqual(dotLayout(2, 2), {width: 42, centers: [-12, 12]});
 });
 
-test('말풍선은 이름에 좌우 7px 상하 4px 여백을 더하고 점 줄의 영역도 확보해요', () => {
+test('이름표은 이름에 좌우 7px 상하 4px 여백을 더하고 점 줄의 영역도 확보해요', () => {
   const box = signDimensions(56, 14, 3);
   assert.equal(box.width, 70);
   assert.equal(box.height, 22);
-  assert.equal(box.above, 11);
+  assert.equal(box.above, 11.875);
   assert.equal(signDimensions(12, 12, 9).boundsWidth, dotLayout(9).width);
-  assert.equal(signDimensions(0, 12, 0).width, 20);
+  assert.equal(signDimensions(0, 14, 0).width, 22);
   assert.equal(placeholderText(['6호선', '7호선'], '태릉입구'), '태릉입구');
   assert.ok(placeholderText(Array(9).fill('1호선'), '역').length > 1);
   assert.equal(placeholderText([], '역'), '역');
@@ -49,7 +49,7 @@ test('말풍선은 이름에 좌우 7px 상하 4px 여백을 더하고 점 줄�
 function recordingContext() {
   const calls = [];
   const ctx = {calls, measureText: text => ({width: text.length * 14, actualBoundingBoxAscent: 11, actualBoundingBoxDescent: 3})};
-  for (const method of ['save', 'restore', 'setTransform', 'beginPath', 'moveTo', 'lineTo', 'arcTo', 'closePath', 'fill', 'stroke', 'ellipse', 'arc', 'fillText']) {
+  for (const method of ['save', 'restore', 'setTransform', 'beginPath', 'moveTo', 'lineTo', 'arcTo', 'closePath', 'fill', 'stroke', 'ellipse', 'arc', 'roundRect', 'rect', 'clip', 'fillText']) {
     ctx[method] = (...args) => calls.push({method, args, fill: ctx.fillStyle, stroke: ctx.strokeStyle, lineWidth: ctx.lineWidth});
   }
   return ctx;
@@ -62,32 +62,36 @@ function render({dark = false, now = 0, still = true, scale = 1} = {}) {
   return ctx.calls;
 }
 
-test('테마별 말풍선과 이름 색이 반전되고 번호 없이 노선 점만 그려요', () => {
+test('양 테마에 흰 이름표와 먹색 환승 이름을 쓰고 번호 없이 노선 점만 그려요', () => {
   for (const dark of [false, true]) {
     const calls = render({dark});
     const fills = calls.filter(c => c.method === 'fill');
-    assert.equal(fills[1].fill, dark ? '#eef3f4' : '#141414');
+    assert.equal(fills[1].fill, '#ffffff');
     const text = calls.filter(c => c.method === 'fillText');
     assert.equal(text.length, 1);
     assert.equal(text[0].args[0], '태릉입구');
-    assert.equal(text[0].fill, dark ? '#141414' : '#ffffff');
+    assert.equal(text[0].fill, '#141414');
     assert.deepEqual(fills.slice(2).map(c => c.fill), ['#CD7C2F', '#747F00']);
     const strokes = calls.filter(c => c.method === 'stroke');
-    assert.equal(strokes.length, 2);
-    assert.ok(strokes.every(c => c.stroke === (dark ? '#172229' : '#ffffff') && c.lineWidth === 1));
-    const top = calls.find(c => c.method === 'moveTo').args[1];
+    assert.equal(strokes.length, 4);
+    assert.ok(strokes.slice(2).every(c => c.stroke === (dark ? '#172229' : '#ffffff') && c.lineWidth === 1));
+    const top = calls.find(c => c.method === 'roundRect').args[1];
     for (const c of calls.filter(c => c.method === 'arc')) {
       assert.equal(c.args[2], 4);
-      assert.equal(top - (c.args[1] + c.args[2] + .5), 2);
+      assert.equal(top - SIGN.rim / 2 - (c.args[1] + c.args[2] + .5), 2);
     }
-    assert.ok(calls.some(c => c.method === 'lineTo' && c.args[0] === 100 && c.args[1] === 186));
+    const pill = calls.find(c => c.method === 'roundRect');
+    assert.equal(pill.args[1] + pill.args[3], 200 - SIGN.gap);
+    assert.deepEqual(strokes.slice(0, 2).map(c => c.stroke), ['#CD7C2F', '#747F00']);
+    assert.equal(strokes[0].lineWidth, 1.75);
+    assert.equal(calls.filter(c => c.method === 'lineTo').length, 0);
   }
 });
 
-test('둥둥 움직임은 말풍선과 점을 같이 올리고 땅 그림자는 고정해요', () => {
+test('둥둥 움직임은 이름표과 점을 같이 올리고 땅 그림자는 고정해요', () => {
   assert.deepEqual(render({now: 0}), render({now: SIGN.bobPeriod / 4}));
   const a = render({still: false}), b = render({still: false, now: SIGN.bobPeriod / 4});
-  for (const method of ['moveTo', 'arc', 'fillText']) {
+  for (const method of ['roundRect', 'arc', 'fillText']) {
     const index = method === 'fillText' ? 2 : 1;
     assert.equal(a.find(c => c.method === method).args[index] - b.find(c => c.method === method).args[index], SIGN.bob);
   }
@@ -95,14 +99,83 @@ test('둥둥 움직임은 말풍선과 점을 같이 올리고 땅 그림자는 
   assert.ok(b.find(c => c.method === 'ellipse').args[2] < a.find(c => c.method === 'ellipse').args[2]);
 });
 
-test('작은 이름 크기와 새 충돌 영역이 점 줄과 말풍선, 꼬리와 틈을 예약해요', () => {
-  assert.deepEqual([13, 16, 18].map(signTextSize), [12, 14, 15]);
-  assert.equal(signTextSize(17), 14.5);
+test('작은 이름 크기와 새 충돌 영역이 점 줄과 이름표, 테두리와 틈을 예약해요', () => {
+  assert.deepEqual([13, 16, 18].map(signTextSize), [10, 12.5, 14]);
+  assert.equal(signTextSize(17), 13.25);
   assert.equal(perspectiveRatio(100, 100), 1);
   assert.equal(perspectiveRatio(100, 10), 4);
   const layout = signCollisionLayout();
   for (const [index, zoom] of [[4, 13], [6, 16], [8, 18]]) {
-    assert.equal(-layout['text-offset'][index][1][1] * signTextSize(zoom), SIGN.gap + SIGN.tail + SIGN.padY);
+    assert.equal(-layout['text-offset'][index][1][1] * signTextSize(zoom), SIGN.gap + SIGN.padY * signTextSize(zoom));
   }
-  assert.deepEqual(layout['icon-text-fit-padding'], [17, 7, 26, 7]);
+  assert.deepEqual(layout['icon-text-fit-padding'][8][1], [17.875, 7.875, 20.875, 7.875]);
+});
+
+
+test('노선 글자색은 흰 바탕 대비 4.5를 만족하고 원래 색상을 유지해요', () => {
+  assert.equal(routeTextColor('#0052A4'), '#0052A4');
+  assert.equal(routeTextColor('#141414'), '#141414');
+  for (const color of ['#F5A200', '#FDA600', '#AD8605', '#00A84D', '#FFFFFF', '#EF7C1C', '#A17800']) {
+    const result = routeTextColor(color);
+    assert.ok(whiteContrast(result) >= 4.5, `${color}: ${result}`);
+    assert.equal(routeTextColor(result), result);
+    const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    const original = rgb(color), adjusted = rgb(result);
+    const max = Math.max(...original), factor = adjusted[original.indexOf(max)] / max;
+    original.forEach((value, i) => assert.ok(Math.abs(adjusted[i] - value * factor) <= 1));
+  }
+  assert.equal(whiteContrast('#000000'), 21);
+  assert.equal(whiteContrast('#ffffff'), 1);
+});
+
+test('단일 노선의 테두리는 원색이고 글자만 대비를 보정해요', () => {
+  for (const dark of [false, true]) {
+    const ctx = recordingContext();
+    drawStationSigns(ctx, [{x: 100, y: 200, scale: 1, size: 10,
+      rows: signRows({text: '수인분당', ln: '수인분당선', lc: '#F5A200'})}], {dark, still: true});
+    assert.equal(ctx.calls.find(c => c.method === 'stroke').stroke, '#F5A200');
+    assert.equal(ctx.calls.find(c => c.method === 'fillText').fill, routeTextColor('#F5A200'));
+    assert.equal(ctx.calls.find(c => c.method === 'arc').args[2], 4);
+  }
+});
+
+test('여백은 이름 크기에 비례하고 점의 크기는 유지해요', () => {
+  for (const size of [10, 12.5, 14]) {
+    const box = signDimensions(50, size, 2);
+    assert.equal(box.width, 50 + size);
+    assert.equal(box.height, size * (1 + 2 * SIGN.padY));
+    assert.deepEqual(box.dots, dotLayout(2));
+  }
+});
+
+
+test('테두리 구간은 같은 폭으로 나누고 인접한 픽셀 경계를 공유해요', () => {
+  assert.deepEqual(borderSegments(100, 60, 2, 2), [{left: 69, right: 100}, {left: 100, right: 131}]);
+  assert.deepEqual(borderSegments(100, 60, 3, 2), [{left: 69, right: 90}, {left: 90, right: 110}, {left: 110, right: 131}]);
+  assert.deepEqual(borderSegments(100, 60, 0, 2), []);
+  for (const dpr of [1, 1.25, 2, 3]) {
+    const x = 100.17, width = 65.33, parts = borderSegments(x, width, 3, 1.75, dpr);
+    assert.equal(parts[0].left, x - width / 2 - .875);
+    assert.ok(Math.abs(parts[2].right - (x + width / 2 + .875)) < 1e-10);
+    for (let i = 0; i < 2; i++) {
+      assert.equal(parts[i].right, parts[i + 1].left);
+      assert.ok(Math.abs(parts[i].right - (x - width / 2 + width * (i + 1) / 3)) <= .5 / dpr);
+      assert.ok(Math.abs(parts[i].right * dpr - Math.round(parts[i].right * dpr)) < 1e-10);
+    }
+  }
+});
+
+test('세 노선 환승 테두리는 세로 clip으로 점과 같은 순서로 칠해요', () => {
+  const ctx = recordingContext();
+  const colors = ['#0052A4', '#EF7C1C', '#996CAC'];
+  drawStationSigns(ctx, [{x: 100, y: 200, scale: 1, size: 14,
+    rows: signRows({text: '종로3가', ln: '1호선|3호선|5호선', lc: colors.join('|')})}], {still: true});
+  const strokes = ctx.calls.filter(c => c.method === 'stroke');
+  assert.deepEqual(strokes.slice(0, 3).map(c => c.stroke), colors);
+  assert.deepEqual(ctx.calls.filter(c => c.method === 'fill').slice(2).map(c => c.fill), colors);
+  assert.equal(ctx.calls.find(c => c.method === 'fillText').fill, '#141414');
+  const rects = ctx.calls.filter(c => c.method === 'rect');
+  assert.equal(ctx.calls.filter(c => c.method === 'clip').length, 3);
+  for (let i = 0; i < 2; i++) assert.equal(rects[i].args[0] + rects[i].args[2], rects[i + 1].args[0]);
+  assert.ok(rects.every(c => c.args[1] === rects[0].args[1] && c.args[3] === rects[0].args[3]));
 });

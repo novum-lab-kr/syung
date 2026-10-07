@@ -2065,11 +2065,11 @@ map.on('load',()=>{
   map.addLayer({id:'stations',type:'line',source:'stations',layout:{'line-cap':'butt','line-join':'miter'},paint:{'line-opacity':0,'line-color':['get','color'],'line-offset':['get','offset'],'line-width':['interpolate',['linear'],['zoom'],...STATION_WIDTH_STOPS.map(([z,w])=>[z,Math.max(1,w-4)]).flat()]}});
   map.addLayer(stationNames);   // platforms under the trains
   map.addSource('station-labels',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  // 역마다 작은 이름 말풍선과 위쪽 노선 점을 놓고, 놓인 것만 열차 · 고가 위에 그려요.
+  // 역마다 작은 알약 이름표과 위쪽 노선 점을 놓고, 놓인 것만 열차 · 고가 위에 그려요.
   // 투명 아이콘은 전체 영역을 예약해요. 치수는 SIGN 과 맞춰요(lib/station_signs.mjs).
   {const R=2,W=32,H=32;
    map.addImage('station-sign',{width:W*R,height:H*R,data:new Uint8Array(W*R*H*R*4)},{pixelRatio:R,stretchX:[[0,W*R]],stretchY:[[0,H*R]],content:[0,0,W*R,H*R]})}
-  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,12,16,14,18,15],'symbol-sort-key':['get','rank'],...signCollisionLayout()};
+  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,10,16,12.5,18,14],'symbol-sort-key':['get','rank'],...signCollisionLayout()};
   const SIGN_PAINT={'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':0,'text-opacity':0,'icon-opacity':0};
   map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','ph'],...SIGN_LAYOUT},paint:SIGN_PAINT});
   // trains: their own canvas over the map (see TRAIN_FPS)
