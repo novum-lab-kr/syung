@@ -226,16 +226,16 @@ test('정류장 팝업: 번호 배지 · 새로고침 / 곧 도착 1대 카드(�
   assert.equal(layer.arrivals, null);
 }, false));
 
-test('곧 도착이 여러 대면 카드에는 번호만: 6대까지 다, 7대부터 5대 + 남은 수', () => withLayerFixture(async layer => {
+test('곧 도착이 여러 대면 카드에는 번호만: 한 줄에 들어가는 만큼, 넘치면 + 남은 수', () => withLayerFixture(async layer => {
   const saved = arrivalBody;
   const soon = n => Array.from({length: n}, (_, i) => ({routeId: String(100100100 + i), name: String(200 + i), type: 'trunk', direction: '종점',
     buses: [{message: '곧 도착', seconds: 30 + i, last: false}]}));
   try {
-    for (const [n, shown, more] of [[6, 6, ''], [8, 5, '+3']]) {
+    for (const [n, shown, more] of [[5, 5, ''], [8, 5, '+3']]) {   // '200'~'207': 한 배지 약 48px, 300px 에 6개는 넘친다
       arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', ageSeconds: 0, arrivals: soon(n), errors: []};
       layer.select({kind: 'stop', id: '01'}, null);
       await new Promise(resolve => setImmediate(resolve));
-      const head = layer.detailHTML().match(/<span class="bus-hero-head">(.*?)<\/span><span class="bus-hero-now">/)[1];
+      const head = layer.detailHTML().match(/<span class="bus-hero-head is-many">(.*?)<\/span><span class="bus-hero-now">/)[1];
       assert.equal((head.match(/class="bus-num"/g) || []).length, shown, `${n}대`);
       assert.equal(head.includes(`bus-num-more">${more}<`), !!more);
       assert.doesNotMatch(head, /방면|지도에 표시 중/, '여러 대면 방면 · 지도 표시는 뺀다');

@@ -99,6 +99,9 @@ button.bus-hero{cursor:pointer}
 button.bus-hero:focus-visible{outline:3px solid var(--syung);outline-offset:2px}
 .bus-hero-head{display:flex;align-items:center;gap:5px 8px;overflow:hidden}
 .bus-hero-head .bus-num{flex:none;height:26px;font-size:18px;padding:0 10px}
+.bus-hero-head.is-many{gap:5px}
+.bus-hero-head.is-many .bus-num{height:24px;font-size:16px;padding:0 8px}   /* 여러 대: 시안처럼 작게, 들어가는 만큼만(bus_layer 의 폭 계산과 맞춤) */
+.bus-hero-head.is-many .bus-num.bus-num-long{font-size:13px;padding:0 6px}
 .bus-hero-dir{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:var(--hero-text)}
 .bus-hero-on{flex:none;margin-left:auto;font-size:12px;font-weight:700;color:var(--syung)}
 .bus-hero-now{display:flex;align-items:baseline;gap:10px;margin-top:10px}

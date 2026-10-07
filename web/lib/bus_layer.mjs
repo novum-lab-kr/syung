@@ -681,14 +681,20 @@ class BusLayer {
     if (soon.length) {
       const lead = soon[0], near = this.approach(lead.live ? lead.route : null, stop.id), one = soon.length === 1;
       const nextBus = one && lead.row.buses?.[1] ? arrivalParts(lead.row.buses[1]).when : '';
-      const shown = soon.length <= 6 ? soon : soon.slice(0, 5);
+      // 여러 대: 한 줄에 들어가는 만큼만(휴대폰 카드 안쪽 약 300px, 배지 16px 글씨), 넘치면 '+N' 칩 자리를 남긴다
+      const width = name => { const chars = [...String(name)], long = chars.length > 4;   // 긴 번호는 13px(.is-many .bus-num-long)
+        return (long ? 12 : 16) + chars.reduce((w, c) => w + (c.charCodeAt(0) < 128 ? 9 : 15), 0) * (long ? 13 / 16 : 1) + 5; };
+      const fits = list => list.reduce((w, i) => w + width(i.route.name), 0) <= 300;
+      let shown = soon;
+      if (!fits(soon)) { shown = []; for (const i of soon) { if (!fits([...shown, i]) || shown.reduce((w, x) => w + width(x.route.name), 0) + width(i.route.name) > 300 - 44) break; shown.push(i); } }
       const head = one
         ? `${badge(lead.route)}<span class="bus-hero-dir">${text(lead.row.direction ? `${lead.row.direction} 방면` : typeName(lead.route))}</span>${lead.live && lead.route.id === this.selectedRoute ? '<span class="bus-hero-on">지도에 표시 중</span>' : ''}`
         : `${shown.map(i => badge(i.route)).join('')}${soon.length > shown.length ? `<span class="bus-num bus-num-more">+${soon.length - shown.length}</span>` : ''}`;
       const next = nextBus === '곧 도착' ? '다음 버스도 곧 도착' : /분 후$/.test(nextBus) ? `다음 ${nextBus.replace(/ 후$/, '')}` : '';
-      const body = `<span class="bus-hero-head">${head}</span><span class="bus-hero-now"><span class="bus-hero-soon">곧 도착</span>${next ? `<span class="bus-hero-next">${text(next)}</span>` : ''}</span>` +
+      let body = `<span class="bus-hero-head">${head}</span><span class="bus-hero-now"><span class="bus-hero-soon">곧 도착</span>${next ? `<span class="bus-hero-next">${text(next)}</span>` : ''}</span>` +
         `<span class="bus-track" aria-hidden="true"><span class="bus-track-from"></span><span class="bus-track-bus"${lead.live ? ` data-track-route="${text(lead.route.id)}"` : ''} style="left:${near.ratio * 50}%">${BUS_ICON}</span><span class="bus-track-here"></span><span class="bus-track-to"></span></span>` +
         `<span class="bus-track-names"><span>${text(near.prev || '')}</span><b>${text(stop.name)}</b><span>${text(near.next || '')}</span></span>`;
+      if (!one) body = body.replace('<span class="bus-hero-head">', '<span class="bus-hero-head is-many">');
       hero = one && lead.live
         ? `<button type="button" class="bus-hero" data-bus-route="${text(lead.route.id)}" aria-pressed="${lead.route.id === this.selectedRoute}">${body}</button>`
         : `<div class="bus-hero">${body}</div>`;
