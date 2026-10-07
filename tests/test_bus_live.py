@@ -447,10 +447,13 @@ class ArrivalTest(unittest.TestCase):
         for _ in range(bus.AUTH_STRIKES):
             self.now += 30
             proxy.snapshot({"stop": ["07103"]})
+        self.assertEqual(proxy.backoff_until, 0, "10분 안에 받은 적이 있으면 연속 401 이어도 쉬지 않는다")
+        self.now += bus.AUTH_SILENT_SECONDS
+        proxy.snapshot({"stop": ["07103"]})
         calls = len(self.calls)
         self.now += 60
         self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth")
-        self.assertEqual(len(self.calls), calls, "연속 401 이면 5분 쉰다")
+        self.assertEqual(len(self.calls), calls, "10분 넘게 401 만 오면 5분 쉰다")
 
     def test_missing_key_and_mock(self):
         proxy = bus.ArrivalProxy(bus.ArrivalConfig(quota_file=self.path), stops=STOPS, fetch=self.fetch)
