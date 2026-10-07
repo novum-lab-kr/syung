@@ -211,6 +211,25 @@ def note_failure(proxy, key, code: str, retry: float) -> None:
         proxy.backoff_until = now + 300
 
 
+def retry_reserve(proxy, key) -> bool:
+    """방금 부른 게 섞여 온 401 이면 바로 한 번 더 부를 자리를 잡는다(장부에 센다).
+    사람이 누른 그 응답에서 바로 보이게: 안 그러면 지도가 다시 물을 때(15초)까지 비어 있다."""
+    with proxy.lock:
+        failure = proxy.failures.get(key)
+        if not failure or failure[1] != "upstream_auth" or proxy.backoff_until > proxy.clock() or key in proxy.pending:
+            return False
+        try:
+            allowed, _, _ = proxy.ledger.reserve(proxy.clock(), paced=False)
+        except BusError:
+            return False
+        if allowed:
+            if isinstance(proxy.pending, dict):
+                proxy.pending[key] = threading.Event()
+            else:
+                proxy.pending.add(key)
+        return allowed
+
+
 def parse_payload(raw: bytes) -> list[dict]:
     """Both the bus XML envelope and resultType=json envelope; never echo errors."""
     if len(raw) > 2_000_000 or b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
@@ -424,7 +443,7 @@ class BusProxy:
                         self.pending.add(chosen)
                 except BusError as error:
                     storage_error = error.code
-        if chosen:
+        if chosen and not self._fetch(chosen) and retry_reserve(self, chosen):
             self._fetch(chosen)
         now = self.clock()
         buses, statuses, errors = [], {}, []
@@ -701,6 +720,8 @@ class ArrivalProxy:
                         block = reason
         if call:
             self._fetch(stop, waiting)
+            if retry_reserve(self, stop):
+                self._fetch(stop, self.pending[stop])
         elif waiting:
             waiting.wait(self.config.timeout + 1)
         now = self.clock()

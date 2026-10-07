@@ -274,7 +274,7 @@ class ProxyTest(unittest.TestCase):
         self.assertIn("quota_storage", [e["code"] for e in body["errors"]])
 
     def test_route_positions_retry_an_occasional_401_in_seconds(self):
-        results = [bus.BusError("upstream_auth"), [ROW]]
+        results = [bus.BusError("upstream_auth"), bus.BusError("upstream_auth"), [ROW]]   # 바로 다시 부른 것까지 401
         def fetch(rid, config):
             self.calls.append(rid)
             result = results.pop(0)
@@ -288,6 +288,19 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(proxy.backoff_until, 0, "401 하나로 버스 위치 전체를 멈추지 않는다")
         self.now += bus.AUTH_RETRY_SECONDS
         self.assertEqual(self.get(proxy, R1, focus=R1)["routes"][R1]["status"], "fresh")
+
+    def test_a_401_on_the_tapped_route_is_retried_in_the_same_answer(self):
+        results = [bus.BusError("upstream_auth"), [ROW]]
+        def fetch(rid, config):
+            self.calls.append(rid)
+            result = results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        proxy = bus.BusProxy(self.config(daily_limit=100000), routes=ROUTES, fetch=fetch, clock=lambda: self.now)
+        body = self.get(proxy, R1, focus=R1)
+        self.assertEqual((body["routes"][R1]["status"], body["busCount"], len(self.calls)), ("fresh", 1, 2))
+        self.assertEqual(body["quota"]["used"], 2, "다시 부른 것도 센다")
 
     def test_stale_fallback_expires(self):
         proxy = self.proxy()
@@ -388,6 +401,18 @@ class ArrivalTest(unittest.TestCase):
         config = bus.ArrivalConfig(key="test-secret", quota_file=self.path, **kwargs)
         return bus.ArrivalProxy(config, stops=STOPS, fetch=self.fetch, clock=lambda: self.now)
 
+    def test_a_401_on_the_tapped_stop_is_retried_in_the_same_answer(self):
+        results = [bus.BusError("upstream_auth"), [ARRIVAL]]
+        def fetch(stop, config):
+            self.calls.append(stop)
+            result = results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        self.fetch = fetch
+        body = self.proxy().snapshot({"stop": ["07103"]})[0]
+        self.assertEqual((body["status"], len(body["arrivals"]), len(self.calls), body["quota"]["used"]), ("fresh", 1, 2, 2))
+
     def test_rows_keep_messages_and_never_plate_numbers(self):
         rows = bus.normalize_arrivals([ARRIVAL, {**ARRIVAL}, {"busRouteId": "x", "rtNm": "1"},
                                        {"busRouteId": "100100513", "rtNm": "6100", "routeType": "1", "arrmsg1": "운행종료", "traTime1": "0"}])
@@ -437,9 +462,10 @@ class ArrivalTest(unittest.TestCase):
         body = proxy.snapshot({"stop": ["07103"]})[0]
         self.assertEqual((body["status"], body["errors"][0]["code"]), ("error", "upstream_auth"))
         self.assertNotIn("test-secret", json.dumps(body))
+        self.assertEqual(len(self.calls), 2, "누른 그 응답에서 한 번 더 불렀다")
         self.now += 2
         proxy.snapshot({"stop": ["07103"]})
-        self.assertEqual(len(self.calls), 1, "5초 안에는 다시 안 부른다")
+        self.assertEqual(len(self.calls), 2, "5초 안에는 다시 안 부른다")
         self.now += 4
         self.result = [ARRIVAL]
         self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "fresh", "섞여 나온 401 하나로 5분 쉬지 않는다")
