@@ -10,7 +10,9 @@ export function projectBusPoint(matrix, x, y, z, width, height) {
   return {x: (1 + (matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12]) / w) * width / 2,
     y: (1 - (matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13]) / w) * height / 2};
 }
-export function busModelScale(zoom) { return 8 + Math.max(0, Math.min(3, zoom - 15)); }
+// 버스 크기(길이 = 3.1 × scale px): 멀리서(줌 15 미만)는 작게(약 19px) — 노선 위에서 서로 덜 겹치게,
+// 가까이서는 줌 15 에서 약 37px 부터 18 에서 약 51px 까지(2026-10-08 덕배: 확대해도 너무 작았다)
+export function busModelScale(zoom) { return zoom < 15 ? 6 : 12 + Math.max(0, Math.min(3, zoom - 15)) * 1.5; }
 export function busPostScale(zoom) { return .8 + Math.max(0, Math.min(3, zoom - 15)) * .1; }
 
 function meshBuilder() {
@@ -113,7 +115,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
   else if(m>12.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
   else {
-    if(m>.5&&m<1.5)col=mix(v_color.rgb,vec3(.94,.95,.91),.82);
+    if(m>.5&&m<1.5)col=mix(v_color.rgb,vec3(.94,.95,.91),.18);
     else if(m<2.5&&m>1.5)col=vec3(.075,.09,.095);
     else if(m<3.5&&m>2.5)col=vec3(.53,.57,.57);
     else if(m<4.5&&m>3.5)col=mix(vec3(.14,.29,.35),vec3(.18,.29,.32),u_dark)+vec3(.09)*smoothstep(.30,.90,v_uv.y);
@@ -137,7 +139,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
       float index=v_info.x;vec2 cell=vec2(mod(index,4.),floor(index/4.));
       vec2 uv=(cell+vec2(v_uv.x,1.-v_uv.y))/vec2(4.,u_rows);
       float ink=texture(u_atlas,uv).a;
-      col=mix(vec3(.91,.93,.89),vec3(.10,.17,.20),ink);
+      col=mix(v_color.rgb*.92,vec3(1.),ink);
     }
     float lit=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);
     if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2)col*=lit;
