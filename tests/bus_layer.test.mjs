@@ -89,6 +89,13 @@ test('stops load with nearby buses off, without any live request or default rout
   assert.equal(layer.map.getSource('bus-stops'),undefined,'no text/dot stop source remains');
 },false));
 
+test('a stop no drawn route serves (마을버스 · 경기 버스만) is still on the map', () => withLayerFixture(layer => {
+  const lone = {id: '09', name: '마을버스만', arsId: '22532', lng: 127.005, lat: 37.505};
+  layer.data = prepareBusData({schemaVersion: 1, routes: [route]}, {...stops, stops: [...stops.stops, lone]});
+  layer.refreshView();
+  assert.ok(layer.stopFeatures.some(f => f.properties.id === '09'));
+}, false));
+
 test('a stop number selects its route with the switch off; closing returns to static stops', () => withLayerFixture((layer,requested) => {
   layer.select({kind:'stop',id:'01'},null);
   assert.match(layer.detailHTML(),/data-bus-route="100000001"/);

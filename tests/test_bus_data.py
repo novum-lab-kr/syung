@@ -30,6 +30,17 @@ class StaticBuildTest(unittest.TestCase):
         self.assertEqual(stats["servedStopsOutsideMaster"], 1)
         self.assertEqual(stats["routesWithSequenceGaps"], ["100100001"])
 
+    def test_stops_without_our_routes_are_kept_but_river_piers_are_not(self):
+        services = [{"노선번호": "100", "유형": "간선"}, {"노선번호": "강남01", "유형": "마을"}]
+        master = [stop(), {**stop("100000003", "마을버스만"), "정류소타입": "마을버스"},
+                  {**stop("100000004", "선착장"), "정류소타입": "한강선착장"}]
+        sequences = [seq(1), seq(2, "100000002"),
+                     {**seq(1, "100000003", "강남01", "100900001")}, {**seq(2, "100000004", "강남01", "100900001")}]
+        routes, stops, stats = build(services, master, sequences)
+        self.assertEqual([r["name"] for r in routes], ["100"])
+        self.assertEqual([s["id"] for s in stops], ["100000001", "100000002", "100000003"])
+        self.assertEqual((stats["stops"], stats["servedStops"]), (3, 2))
+
     def test_missing_route_and_duplicate_sequence_fail(self):
         with self.assertRaises(ValueError):
             build([{"노선번호": "100", "유형": "간선"}], [], [])

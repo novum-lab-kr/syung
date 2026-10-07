@@ -539,6 +539,19 @@ class ArrivalTest(unittest.TestCase):
         self.assertEqual((body["mode"], body["arrivals"][0]["routeId"]), ("mock", "100100025"))
         self.assertEqual(self.calls, [])
 
+    def test_stops_file_is_read_again_when_a_deploy_changes_it(self):
+        stops_file = Path(self.directory.name) / "stops.json"
+        write = lambda ids: stops_file.write_text(json.dumps({"schemaVersion": 1, "stops": [
+            {"id": f"1000000{i}", "arsId": ars, "name": "정류장"} for i, ars in enumerate(ids, 10)]}))
+        write(["07103"])
+        config = bus.ArrivalConfig(key="test-secret", quota_file=self.path, stops_file=stops_file)
+        proxy = bus.ArrivalProxy(config, fetch=self.fetch, clock=lambda: self.now)
+        self.assertEqual(proxy.snapshot({"stop": ["22532"]})[1], 400)
+        write(["07103", "22532"])   # 크기가 달라져 수정 시각이 같아도 알아챈다
+        self.assertEqual(proxy.snapshot({"stop": ["22532"]})[1], 200)
+        stops_file.write_text("{")   # 반쯤 쓴 파일: 읽던 목록을 그대로 쓴다
+        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[1], 200)
+
     def test_module_snapshot_routes_stop_queries_to_arrivals(self):
         with patch.object(bus, "_arrivals", self.proxy()):
             body, status = bus.snapshot({"stop": ["07103"]})

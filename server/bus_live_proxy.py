@@ -670,15 +670,10 @@ class ArrivalProxy:
         self.clock, self.fetch = clock or time.time, fetch or fetch_arrivals
         self.ledger = QuotaLedger(self.config)
         self.data_error = False
+        self.stops_stamp = None   # 파일에서 읽었으면 그 파일의 (수정 시각, 크기): 배포로 바뀌면 다시 읽는다
+        self.stops = stops or {}   # arsId → 정류장
         if stops is None:
-            try:
-                payload = json.loads(self.config.stops_file.read_text())
-                if payload["schemaVersion"] != 1:
-                    raise ValueError("schema")
-                stops = {stop["arsId"]: stop for stop in payload["stops"] if stop.get("arsId")}
-            except (OSError, ValueError, KeyError, TypeError):
-                self.data_error, stops = True, {}
-        self.stops = stops   # arsId → 정류장
+            self._load_stops()
         self.cache = {}   # arsId → (받은 때, 줄)
         self.failures = {}   # arsId → (다시 물어도 되는 때, 코드)
         self.pending = {}   # arsId → Event: 같은 정류장을 동시에 물으면 한 번만 부르고 함께 기다린다
@@ -695,8 +690,25 @@ class ArrivalProxy:
             return "mock"
         return "live" if self.config.key and self.config.mode != "disabled" else "unavailable"
 
+    def _load_stops(self):
+        try:
+            info = self.config.stops_file.stat()
+            stamp = (info.st_mtime_ns, info.st_size)
+            if stamp == self.stops_stamp:
+                return
+            payload = json.loads(self.config.stops_file.read_text())
+            if payload["schemaVersion"] != 1:
+                raise ValueError("schema")
+            self.stops = {stop["arsId"]: stop for stop in payload["stops"] if stop.get("arsId")}
+            self.stops_stamp, self.data_error = stamp, False
+        except (OSError, ValueError, KeyError, TypeError):
+            # 읽던 목록이 있으면 그대로 쓴다(배포 중 반쯤 쓴 파일 등). 처음부터 못 읽었을 때만 오류
+            self.data_error = not self.stops
+
     def snapshot(self, query: dict) -> tuple[dict, int]:
         now = self.clock()
+        if self.stops_stamp is not None or self.data_error:
+            self._load_stops()
         if self.data_error:
             return self._body("", now, "error", None, [], [BusProxy._error(None, "data_unavailable")]), 503
         values = query.get("stop", [])

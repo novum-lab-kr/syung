@@ -136,7 +136,10 @@ def build(services, stop_rows, sequences) -> tuple[list[dict], list[dict], dict]
                 raise ValueError("conflicting official route types")
             services_by_name[name] = row
     # Sequence rows include Seoul routes' stops outside Seoul; keep those too.
+    # 한강선착장(한강버스 배 타는 곳)은 버스 정류장이 아니다.
+    stop_rows = list(stop_rows)
     stop_master = {stop["id"]: stop for stop in map(stop_from_row, stop_rows)}
+    piers = {row["NODE_ID"] for row in stop_rows if row.get("정류소타입") == "한강선착장"}
     grouped = defaultdict(list)
     excluded = set()
     unknown = set()
@@ -180,7 +183,11 @@ def build(services, stop_rows, sequences) -> tuple[list[dict], list[dict], dict]
         included_names.add(name)
     missing = sorted(name for name, row in services_by_name.items()
                      if route_type(row) is not None and name not in included_names)
-    stats = {"routes": len(routes), "stops": len(used_stops), "routeStops": sum(len(r["stopIds"]) for r in routes),
+    served = len(used_stops)
+    # 마을버스 · 공항버스만 서는 정류장, 서울에 있지만 경기 · 인천 버스만 서는 정류장(잠실광역환승센터 등)도
+    # 실제로 있는 정류장이다. 노선을 그리지 않아도 정류장은 다 찍고, 도착 정보는 정류장 번호로 받는다.
+    unserved = {sid: stop for sid, stop in stop_master.items() if sid not in used_stops and sid not in piers}
+    stats = {"routes": len(routes), "stops": served + len(unserved), "servedStops": served, "routeStops": sum(len(r["stopIds"]) for r in routes),
              "types": dict(sorted(Counter(r["type"] for r in routes).items())),
              "sourceRouteCount": len(source_routes), "sourceStopCount": len(stop_master),
              "sourceServiceCount": len(services_by_name), "excludedRouteCount": len(excluded),
@@ -190,7 +197,7 @@ def build(services, stop_rows, sequences) -> tuple[list[dict], list[dict], dict]
                                        if r["stopSequences"] != list(range(1, len(r["stopIds"]) + 1))]
     if not routes or missing:
         raise ValueError(f"incomplete route build: {missing}")
-    return routes, sorted(used_stops.values(), key=lambda stop: stop["id"]), stats
+    return routes, sorted([*used_stops.values(), *unserved.values()], key=lambda stop: stop["id"]), stats
 
 
 def write_json(path: Path, value: dict) -> dict:

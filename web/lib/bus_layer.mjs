@@ -285,8 +285,7 @@ class BusLayer {
 
   renderStatic() {
     if (this.disposed) return;
-    const features = [], stopFeatures = [], stopIds = new Set(), chosen=new Set(this.chosenIds());
-    for (const {route} of this.visible) for (const id of route.stopIds) stopIds.add(id);
+    const features = [], stopFeatures = [], chosen=new Set(this.chosenIds());
     const drawRoute=(route,markers)=>{
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
       // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
@@ -319,8 +318,8 @@ class BusLayer {
       leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:true,stopIds:[]};
       drawRoute(leg.displayRoute,[leg.path[0],leg.path.at(-1)].map(coordinate=>({coordinate})));
     }
-    if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const id of stopIds) {
-      const stop = this.data.stopById.get(id);
+    // 정류장은 우리가 그리는 노선과 상관없이 화면 안의 것을 다 찍는다(마을버스 · 경기 버스만 서는 정류장도)
+    if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const [id, stop] of this.data.stopById) {
       if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name}));
       if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
     }
