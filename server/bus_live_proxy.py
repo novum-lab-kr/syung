@@ -5,10 +5,13 @@ python3 server/bus_live_proxy.py                 # loopback :3114
 BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py
 GET /api/bus/live?routes=<standard IDs>&focus=<one of those IDs>
 No key means unavailable, never an implicit simulation.
-Background polling only for learning (sample_loop, started by subway_live_proxy.py): BUS_LIVE_SAMPLE_ROUTES
-in turn, 05:00–24:00 KST, spread so it never uses the last BUS_LIVE_SAMPLE_RESERVE calls of the day (the
-map's), and never while someone is watching buses (SAMPLE_QUIET s since the last map request) — on
-2026-10-06 the map made 2 calls of 950, too few to learn from. Its answers also refresh the cache.
+Background polling (background_loop, started by subway_live_proxy.py), one call per turn of the shared
+gate: first the routes someone is watching (asked in the last WATCH_SECONDS) whose cache is stale, so a
+watched route is fresh before the map asks again; only when none is due, the learning routes
+BUS_LIVE_SAMPLE_ROUTES in turn, 05:00–24:00 KST, spread so they never use the last
+BUS_LIVE_SAMPLE_RESERVE calls of the day (the map's). On 2026-10-06 the map made 2 calls of 950, too few
+to learn from; 2026-10-07 the watchers came first instead of the collection pausing while anyone
+watched (행님 · 덕배: 정확도가 먼저).
 Every successful upstream answer is also appended to <BUS_LIVE_RECORD_DIR>/YYYYMMDD.jsonl (KST day,
 default /var/lib/subway-live/bus; empty disables) for learning bus timing later: one row per
 vehicle with the route, when we fetched it and the feed's own fields (RECORD_FIELDS).
@@ -37,7 +40,7 @@ KST = timezone(timedelta(hours=9))
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 MAX_ROUTES = 8
 SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모은다
-SAMPLE_QUIET = 300   # 지도에서 버스를 본 뒤 이만큼(초)은 모으기를 쉰다(호출 간격을 보는 사람에게 양보)
+WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수집보다 먼저 새로 받아 둔다
 # 학습용으로 남기는 API 항목(차량 번호판 plainNo 는 남기지 않는다): 구간 순번 · 구간 안 거리 · 정류장 정차 · 측정 시각 등
 RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
                  "nextStId", "nextStTm", "gpsX", "gpsY", "isrunyn", "islastyn", "busType", "isFullFlag", "congetion",
@@ -321,7 +324,8 @@ class BusProxy:
         self.backoff_until = 0
         self.next_at = 0
         self.last_block = "paced"
-        self.last_view = -math.inf   # 지도가 마지막으로 버스를 물은 때
+        self.watched = {}   # 노선 → 지도가 마지막으로 물은 때
+        self.sample_at = 0   # 다음 수집 호출을 해도 되는 때
 
     @property
     def mode(self):
@@ -348,8 +352,9 @@ class BusProxy:
             ids, focus = self.validate(query)
         except ValueError as error:
             return {"schemaVersion": 1, "ok": False, "error": "invalid_request", "message": str(error)}, 400
-        if ids:
-            self.last_view = now
+        with self.lock:
+            for rid in ids:
+                self.watched[rid] = now
         if self.mode == "unavailable":
             code = "disabled" if self.config.mode == "disabled" else "missing_key"
             statuses = {rid: self._status("unavailable", None, now, [], 60) for rid in ids}
@@ -429,34 +434,59 @@ class BusProxy:
             with self.lock:
                 self.pending.discard(rid)
 
-    def sample_once(self, rid) -> tuple[float, bool]:
-        """One learning call if it is due: (seconds to wait before the next try, whether it called)."""
+    def _watched_due(self, now):
+        """보는 중인 노선 중 캐시가 지난 것, 가장 오래된 것부터."""
+        with self.lock:
+            for rid, at in list(self.watched.items()):
+                if now - at >= WATCH_SECONDS:
+                    del self.watched[rid]
+            return [rid for _, rid in sorted(
+                (self.cache.get(rid, (-math.inf, []))[0], rid) for rid in self.watched
+                if rid not in self.pending and now - self.cache.get(rid, (-math.inf, []))[0] >= self.config.cache_seconds
+                and now >= self.failures.get(rid, (0, ""))[0])]
+
+    def background_once(self, sample_rid) -> tuple[float, bool]:
+        """One background turn: (seconds to wait, whether the learning route sample_rid was called).
+        A route someone watches comes first at any hour; the learning call only when none is due."""
         now, config = self.clock(), self.config
-        if self.mode != "live" or rid not in self.routes:
+        if self.mode != "live":
             return 3600, False
-        local = datetime.fromtimestamp(now, KST)
-        minute = local.hour * 60 + local.minute
-        if not SAMPLE_HOURS[0] <= minute < SAMPLE_HOURS[1]:
-            return 600, False
-        if now - self.last_view < SAMPLE_QUIET:
-            return 60, False
         if now < self.backoff_until:
             return self.backoff_until - now, False
+        due = self._watched_due(now)
+        if due:
+            try:
+                allowed, _, next_at = self.ledger.reserve(now)
+            except BusError:
+                return 60, False
+            if not allowed:
+                return max(0.5, min(5, next_at - now)), False
+            with self.lock:
+                self.pending.add(due[0])
+            self._fetch(due[0])
+            return 0.5, False
+        local = datetime.fromtimestamp(now, KST)
+        minute = local.hour * 60 + local.minute
+        if sample_rid not in self.routes or not SAMPLE_HOURS[0] <= minute < SAMPLE_HOURS[1]:
+            return 5, False   # 밤에도 보는 중인 노선은 5초마다 살핀다
+        if now < self.sample_at:
+            return max(0.5, min(1, self.sample_at - now)), False   # 그 사이 보는 노선이 생기면 먼저
         try:
             left = config.daily_limit - config.sample_reserve - self.ledger.view(now)["used"]
             if left <= 0:
-                return 600, False
+                return 5, False
             allowed, _, next_at = self.ledger.reserve(now, reserve_calls=config.sample_reserve)
         except BusError:
-            return 600, False
+            return 60, False
         if not allowed:
-            return max(1, next_at - now), False
+            return max(0.5, min(5, next_at - now)), False
         with self.lock:
-            self.pending.add(rid)
-        self._fetch(rid)
-        # 남은 몫을 오늘 모으는 시간 끝까지 고르게
+            self.pending.add(sample_rid)
+        self._fetch(sample_rid)
+        # 남은 수집 몫을 오늘 모으는 시간 끝까지 고르게
         end = local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=SAMPLE_HOURS[1])
-        return max(config.min_interval, (end.timestamp() - now) / left), True
+        self.sample_at = now + max(config.min_interval, (end.timestamp() - now) / left)
+        return 0.5, True
 
     @staticmethod
     def _error(route_id, code):
@@ -511,13 +541,13 @@ def get_proxy() -> BusProxy:
         return _proxy
 
 
-def sample_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
-    """Learning collection (subway_live_proxy.py starts it): the sample routes in turn, forever."""
+def background_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
+    """subway_live_proxy.py starts it: watched routes first, then the learning routes in turn, forever."""
     proxy = proxy or get_proxy()
-    routes = [rid for rid in proxy.config.sample_routes if rid in proxy.routes]
+    routes = [rid for rid in proxy.config.sample_routes if rid in proxy.routes] or [None]
     turn = 0
-    while routes and proxy.mode == "live":
-        wait, called = proxy.sample_once(routes[turn % len(routes)])
+    while proxy.mode == "live":
+        wait, called = proxy.background_once(routes[turn % len(routes)])
         turn += called
         sleep(wait)
 

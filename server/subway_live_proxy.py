@@ -801,7 +801,7 @@ def _burst_loop() -> None:
 def _bus_samples() -> None:
     try:
         import bus_live_proxy
-        bus_live_proxy.sample_loop()   # 버스 시각 학습용 기록(하루 몫 일부만, 지도 보는 사람 우선)
+        bus_live_proxy.background_loop()   # 보는 중인 버스 노선을 먼저 새로, 남는 차례에 학습용 수집
     except Exception as e:  # noqa: BLE001 — the map's bus requests still work
         print(f"bus samples stopped: {e}", flush=True)
 

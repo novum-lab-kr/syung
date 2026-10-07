@@ -167,21 +167,31 @@ class ProxyTest(unittest.TestCase):
         body = self.get(self.proxy(record_dir=blocker / "bus"), R1)
         self.assertEqual(body["busCount"], 1)
 
-    def test_sampler_only_in_service_hours_and_not_while_someone_watches(self):
-        proxy = self.proxy()   # self.now = KST 00:00
-        self.assertEqual(proxy.sample_once(R1), (600, False))
-        self.now += 6 * 3600   # 06:00
+    def test_watched_route_is_refreshed_first_at_any_hour(self):
+        proxy = self.proxy()   # self.now = KST 00:00, 수집 시간 밖
         self.get(proxy, R2)
-        self.calls.clear()
-        self.now += 100
-        self.assertEqual(proxy.sample_once(R1), (60, False))
-        self.now += bus.SAMPLE_QUIET
-        wait, called = proxy.sample_once(R1)
-        self.assertTrue(called)
-        self.assertEqual(self.calls, [R1])
-        # 남은 몫(950 − 250 − 지도 1번)을 24시까지 고르게
-        self.assertAlmostEqual(wait, (18 * 3600 - 100 - bus.SAMPLE_QUIET) / 699, places=3)
-        self.assertEqual(self.get(proxy, R1)["routes"][R1]["status"], "cached")
+        self.now += 60
+        self.get(proxy, R2)   # 지도는 30초마다 다시 묻는다(아직 호출 간격 전이라 못 부름)
+        self.now += 40   # 호출 간격(약 91초)이 지났다
+        self.assertEqual(proxy.background_once(R1), (0.5, False))
+        self.assertEqual(self.calls, [R2, R2])
+        self.assertEqual(self.get(proxy, R2)["routes"][R2]["status"], "cached")   # 지도가 다시 물을 땐 이미 새것
+
+    def test_learning_calls_only_when_no_watched_route_is_due(self):
+        self.now += 6 * 3600   # 06:00
+        proxy = self.proxy()
+        self.get(proxy, R2)
+        self.now += 60
+        self.get(proxy, R2)
+        self.now += 40
+        self.assertEqual(proxy.background_once(R1), (0.5, False))   # 보는 노선 먼저
+        self.assertEqual(self.calls, [R2, R2])
+        self.now += 100   # R2 를 더 안 묻는다: 보는 중이 아니다
+        self.assertEqual(proxy.background_once(R1), (0.5, True))
+        self.assertEqual(self.calls, [R2, R2, R1])
+        # 남은 수집 몫(950 − 250 − 2)을 24시까지 고르게: 그 전엔 부르지 않는다
+        self.assertAlmostEqual(proxy.sample_at - self.now, (18 * 3600 - 200) / 698, places=3)
+        self.assertFalse(proxy.background_once(R2)[1])
 
     def test_sampler_keeps_the_reserve_for_the_map(self):
         self.now += 6 * 3600
@@ -189,20 +199,20 @@ class ProxyTest(unittest.TestCase):
         called = []
         for _ in range(6):
             self.now += 10000
-            called.append(proxy.sample_once(R1)[1])
+            called.append(proxy.background_once(R1)[1])
         self.assertEqual(called.count(True), 2)
         self.now += 10000
         self.assertEqual(self.get(proxy, R1)["routes"][R1]["status"], "fresh")   # 지도 몫은 남아 있다
 
-    def test_sample_loop_takes_routes_in_turn(self):
+    def test_background_loop_takes_learning_routes_in_turn(self):
         self.now += 6 * 3600
         proxy = self.proxy(sample_routes=(R1, R2, "999999999"))
         def sleep(t):
-            self.now += t
+            self.now += max(t, proxy.sample_at - self.now)
             if len(self.calls) >= 3:
                 raise StopIteration
         with self.assertRaises(StopIteration):
-            bus.sample_loop(proxy, sleep=sleep)
+            bus.background_loop(proxy, sleep=sleep)
         self.assertEqual(self.calls, [R1, R2, R1])   # 모르는 노선은 빼고 번갈아
 
     def test_round_robin_does_not_starve_visible_routes(self):
