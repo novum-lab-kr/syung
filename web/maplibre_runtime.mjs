@@ -17,7 +17,7 @@ import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import {platformStroke} from './lib/platform_stroke.mjs';
-import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
+import {drawStationSigns,signRows,signTextSize,signPinSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
@@ -2069,7 +2069,7 @@ map.on('load',()=>{
   // 투명 아이콘은 전체 영역을 예약해요. 치수는 SIGN 과 맞춰요(lib/station_signs.mjs).
   {const R=2,W=32,H=32;
    map.addImage('station-sign',{width:W*R,height:H*R,data:new Uint8Array(W*R*H*R*4)},{pixelRatio:R,stretchX:[[0,W*R]],stretchY:[[0,H*R]],content:[0,0,W*R,H*R]})}
-  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,14,16,17,18,19],'symbol-sort-key':['get','rank'],...signCollisionLayout()};
+  const SIGN_LAYOUT={'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],13,12,16,14,18,15],'symbol-sort-key':['get','rank'],...signCollisionLayout()};
   const SIGN_PAINT={'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':0,'text-opacity':0,'icon-opacity':0};
   map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','ph'],...SIGN_LAYOUT},paint:SIGN_PAINT});
   // trains: their own canvas over the map (see TRAIN_FPS)
@@ -2088,15 +2088,15 @@ map.on('load',()=>{
       if(now-signAt>150){signAt=now;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels']}):[]}
       if(!signFeatures.length)return;
       const clip=(x,y)=>[M[0]*x+M[4]*y+M[12],M[1]*x+M[5]*y+M[13],M[3]*x+M[7]*y+M[15]];
-      const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set(),items=[];
+      const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),pinSize=signPinSize(z),seen=new Set(),items=[];
       for(const f of signFeatures){
         const [lng,lat]=f.geometry.coordinates,k=`${lng},${lat}`;if(seen.has(k))continue;seen.add(k);
         const q=maplibregl.MercatorCoordinate.fromLngLat([lng,lat]),[x,y,w]=clip(q.x,q.y);if(!(w>0))continue;
         const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
-        items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
+        items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,pinSize,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
       }
       items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
-      drawStationSigns(sctx,items,{dpr:m.width/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:stationAlpha,now,still:REDUCED.matches});
+      drawStationSigns(sctx,items,{dpr:m.width/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:stationAlpha,now,still:REDUCED.matches,pitch:map.getPitch()});
       if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
     };
     map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로

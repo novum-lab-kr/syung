@@ -3,15 +3,22 @@
 
 export const SIGN_FONT = '"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
 // px 치수는 원근 비율을 곱하고, 머리와 글자는 줌별 글자 크기에 맞춰요.
-export const SIGN = {gap: 14, tail: 10, head: 1.65, chip: 1.12, chipFont: .65, chipGap: 3, padX: 5, rim: 1.2, nameGap: 2.5, chipRim: .7, halo: 3, bob: 2, bobPeriod: 3200};
+export const SIGN = {gap: 14, tail: 10, head: 1.65, chip: 1.12, chipFont: .65, chipGap: 3, padX: 5, rim: 1.2, nameGap: 2.5, chipRim: .7, halo: 3, depth: 1.5, depthPitch: 2.5, bob: 2, bobPeriod: 3200};
 const THEMES = {
   light: {fill: '#141414', rim: '#ffffff', ink: '#141414', halo: '#ffffff', shadow: 'rgba(0,0,0,.28)'},
   dark: {fill: '#26343c', rim: '#b4c3c9', ink: '#eef3f4', halo: '#172229', shadow: 'rgba(0,0,0,.45)'},
 };
 
-// 글자 크기: 지도 레이어의 text-size 와 같은 줌 보간(13 → 14, 16 → 17, 18 → 19)
+// 이름은 작게, 머리와 칩은 기존 크기로 따로 보간해요.
 export function signTextSize(zoom) {
-  const S = [[13, 14], [16, 17], [18, 19]];
+  return interpolateSize(zoom, [[13, 12], [16, 14], [18, 15]]);
+}
+
+export function signPinSize(zoom) {
+  return interpolateSize(zoom, [[13, 14], [16, 17], [18, 19]]);
+}
+
+function interpolateSize(zoom, S) {
   if (zoom <= S[0][0]) return S[0][1];
   for (let i = 1; i < S.length; i++) if (zoom <= S[i][0]) {
     const [z0, s0] = S[i - 1], [z1, s1] = S[i];
@@ -25,12 +32,24 @@ export function perspectiveRatio(centerW, anchorW) {
   return Math.min(4, Math.max(0, .5 + .5 * centerW / anchorW));
 }
 
-// 칩에 쓸 짧은 노선 이름: 6호선 → 6, 인천1호선 → 인천1, 신분당선 → 신분당, 공항철도 → 공항, GTX-A 그대로
+// 한 글자 약자로 구분하고, 인천 두 노선만 두 글자를 써요.
+const LINE_CHIPS = {'GTX-A': 'A', '경의중앙선': '경', '경강선': '강', '경춘선': '춘', '공항철도': '공', '김포골드라인': '김', '서해선': '서', '수인분당선': '수', '신분당선': '신', '신림선': '림', '에버라인선': '에', '우이신설선': '우', '의정부선': '의', '인천1호선': '인1', '인천2호선': '인2'};
 export function lineChip(name) {
   const s = String(name || '');
-  const n = s.match(/^(\d+)호선$/);
-  if (n) return n[1];
-  return s.replace(/호선$/, '').replace(/(경전철|철도|라인|선)$/, '') || s;
+  return s.match(/^([1-9])호선$/)?.[1] || LINE_CHIPS[s] || Array.from(s)[0] || '';
+}
+
+// 앞면의 노선색을 기준으로 빛과 옆면 색을 만들어요.
+export function shadeColor(hex, amount) {
+  const rgb = /^#[0-9a-f]{6}$/i.test(hex) ? hex : '#52646a';
+  return '#' + [1, 3, 5].map(i => {
+    const c = parseInt(rgb.slice(i, i + 2), 16);
+    return Math.round(amount > 0 ? c + (255 - c) * amount : c * (1 + amount)).toString(16).padStart(2, '0');
+  }).join('');
+}
+
+export function signDepth(pitch = 0) {
+  return SIGN.depth + SIGN.depthPitch * Math.sin(Math.max(0, Math.min(85, pitch)) * Math.PI / 180);
 }
 
 // 둥근 머리에서 승강장을 향한 끝으로 부드럽게 좁아져요.
@@ -68,8 +87,8 @@ export function signNameBaseline(top, descent, scale = 1) {
   return top - (SIGN.rim / 2 + SIGN.nameGap + SIGN.halo) * scale - descent;
 }
 
-export function signNameRise(size) {
-  return (SIGN.head + 1) / 2 + (SIGN.rim / 2 + SIGN.nameGap + SIGN.halo) / size;
+export function signNameRise(size, pinSize = size) {
+  return (SIGN.head * pinSize / size + 1) / 2 + (SIGN.rim / 2 + SIGN.nameGap + SIGN.halo) / size;
 }
 
 // 칩 순서: 번호 노선(1, 2, …)을 번호대로 먼저, 나머지는 원래 순서
@@ -91,10 +110,10 @@ export function placeholderText(lines, name) {
 
 // 치수는 SIGN 과 맞춰요. 떠 있는 틈과 뾰족한 끝까지 투명 아이콘이 예약해요.
 export function signCollisionLayout() {
-  const offset = size => [0, -(SIGN.gap + SIGN.tail + (SIGN.head - 1) * size / 2) / size];
+  const offset = (size, pinSize) => [0, -(SIGN.gap + SIGN.tail + (SIGN.head * pinSize - size) / 2) / size];
   return {
-    'text-anchor': 'bottom', 'text-line-height': ['interpolate', ['linear'], ['zoom'], 13, signNameRise(14), 16, signNameRise(17), 18, signNameRise(19)], 'text-max-width': 100,
-    'text-offset': ['interpolate', ['linear'], ['zoom'], 13, ['literal', offset(14)], 16, ['literal', offset(17)], 18, ['literal', offset(19)]],
+    'text-anchor': 'bottom', 'text-line-height': ['interpolate', ['linear'], ['zoom'], 13, signNameRise(12, 14), 16, signNameRise(14, 17), 18, signNameRise(15, 19)], 'text-max-width': 100,
+    'text-offset': ['interpolate', ['linear'], ['zoom'], 13, ['literal', offset(12, 14)], 16, ['literal', offset(14, 17)], 18, ['literal', offset(15, 19)]],
     'text-padding': SIGN.halo + SIGN.bob,
     'icon-image': 'station-sign', 'icon-text-fit': 'both',
     'icon-text-fit-padding': [SIGN.halo + SIGN.bob, SIGN.padX + SIGN.rim, SIGN.gap + SIGN.tail + 8 + SIGN.bob, SIGN.padX + SIGN.rim],
@@ -108,17 +127,17 @@ export function signRows(p) {
 }
 
 // signs: [{x, y, scale, size, rows, phase}] — (x, y) 는 승강장 가운데(그림자 자리). 뒤에 올수록 위에 그려요
-export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, now = 0, still = false} = {}) {
+export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, now = 0, still = false, pitch = 0} = {}) {
   const T = THEMES[dark ? 'dark' : 'light'];
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = alpha;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  for (const {x, y, scale: s, size, rows, phase = 0} of signs) {
-    const S = size * s, headH = S * SIGN.head, chipH = S * SIGN.chip, chipF = S * SIGN.chipFont;
+  for (const {x, y, scale: s, size, pinSize = size, rows, phase = 0} of signs) {
+    const S = size * s, P = pinSize * s, headH = P * SIGN.head, chipH = P * SIGN.chip, chipF = P * SIGN.chipFont;
     ctx.font = `800 ${chipF}px ${SIGN_FONT}`;
-    const chipW = rows.chips.map(c => Math.max(chipH, ctx.measureText(c.text).width + 8 * s));
+    const chipW = rows.chips.map(c => Array.from(c.text).length === 1 ? chipH : Math.max(chipH, ctx.measureText(c.text).width + 8 * s));
     const chipsW = chipW.reduce((a, w) => a + w, 0) + SIGN.chipGap * s * Math.max(0, chipW.length - 1);
     const w = Math.max(headH, chipsW + (rows.chips.length > 1 ? 2 * SIGN.padX * s : 4 * s));
     const lift = still ? 0 : Math.sin(now / SIGN.bobPeriod * Math.PI * 2 + phase) * SIGN.bob * s;
@@ -130,9 +149,22 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
     ctx.globalAlpha = alpha;
     // 단일 노선은 머리 전체에 노선색, 환승역은 중립 머리 안에 노선색 칩을 넣어요.
     const single = rows.chips.length === 1;
-    ctx.fillStyle = single ? rows.chips[0].color : T.fill;
+    const color = single ? rows.chips[0].color : T.fill, path = single ? pinPath : transferPinPath;
+    const depth = signDepth(pitch) * s;
+    // 옆면은 아래에 비치되 꼬리 끝은 앞면과 같은 자리에 고정해요.
+    ctx.fillStyle = shadeColor(color, -.35);
+    path(ctx, x, top + depth, w, headH, SIGN.tail * s - depth); ctx.fill();
+    const gradient = ctx.createLinearGradient(x, top, x, top + headH + SIGN.tail * s);
+    gradient.addColorStop(0, shadeColor(color, .12));
+    gradient.addColorStop(.45, color);
+    gradient.addColorStop(1, shadeColor(color, -.18));
+    ctx.fillStyle = gradient;
     ctx.strokeStyle = T.rim; ctx.lineWidth = SIGN.rim * s; ctx.lineJoin = 'round';
-    (single ? pinPath : transferPinPath)(ctx, x, top, w, headH, SIGN.tail * s); ctx.fill(); ctx.stroke();
+    path(ctx, x, top, w, headH, SIGN.tail * s); ctx.fill(); ctx.stroke();
+    // 머리 왼쪽 위에 짧고 옅은 반사광만 얹어요.
+    ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1.2 * s; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - w / 2 + headH * .3, top + headH * .23);
+    ctx.lineTo(x - w / 2 + headH * .5, top + headH * .17); ctx.stroke();
     let cx = x - chipsW / 2;
     ctx.font = `800 ${chipF}px ${SIGN_FONT}`;
     rows.chips.forEach((c, i) => {
