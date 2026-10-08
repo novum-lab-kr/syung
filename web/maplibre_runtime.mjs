@@ -688,7 +688,7 @@ function rawPose(p){
 }
 // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
 // 앞으로의 보정은 원래 주행 위에 최대 CATCHUP_MPS 를 더해 메워요(질주하지 않게). 따라잡는 도중 새 자료가 오면 그때 더하던 속도에서 이어 가요.
-const PREDICT_STOPS=3,GLIDE_MAX_M=1000,HOLD_MAX_M=3000;   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
+const PREDICT_STOPS=3,GLIDE_MAX_M=1000,HOLD_MAX_M=3000,STOP_M=40,NEAR_PLATFORM_M=150;   // STOP_M: 앞선 열차가 서는 거리(약 4초) · NEAR_PLATFORM_M: 이만큼 안이면 승강장까지 가서 선다   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
 function replacePlans(next){
   const old=new Map(plans.map(p=>[p.id,p]));
   for(const p of next){
@@ -701,8 +701,11 @@ function replacePlans(next){
     else{const k=p.seq.findIndex(s=>s.id===b);if(k<0)continue;from=Math.max(0,p.cum[k]-(1-f)*(o.cum[i+1]-o.cum[i]))}   // different route: nothing to carry over
     const to=trainPose(p).dist,m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits();
     if(from>to){if((from-to)/m<HOLD_MAX_M){
-      // hold at the next station along (not where it happens to be drawn), reached at ~10 m/s
-      const k=p.cum.findIndex(c=>c>=from-1e-9),st=k>=0?p.cum[k]:from;p.hold=st;
+      // 자료보다 앞서 있으면 그 자리에서 부드럽게 서서(STOP_M 안) 예측이 지나가길 기다린다. 승강장에 거의 다 왔으면(NEAR_PLATFORM_M) 승강장에 선다.
+      // 다음 역까지 달려가 기다리던 것은 실제 열차보다 한 역 앞서 갔다(7277 천왕 → 온수 1 km, 7호선 강남구청 → 청담, 2026-10-08).
+      // 이미 서 있던 열차는 더 가지 않고, 서는 중이던 열차는 남은 만큼만 간다.
+      const k=p.cum.findIndex(c=>c>=from-1e-9),next=k>=0?p.cum[k]:from,left=o.hold!=null?Math.max(0,o.hold-d):null;
+      const st=left!=null?Math.min(next,from+left):(next-from)/m<=NEAR_PLATFORM_M?next:Math.min(next,from+STOP_M*m);p.hold=st;
       if(st>from)p.creep={from,at:clock(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
     }}
     else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M){const v0=o.glide?catchupAt(o.glide.c,(clock()-o.glide.at)/1000).v:0;p.glide={c:catchup((to-from)/m,v0),at:clock()}}
