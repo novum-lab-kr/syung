@@ -3,6 +3,7 @@
 // ordered [far-LOD roofs][walls][near-LOD roofs, parapets, roof plant, awnings]. Every look value comes from the style
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
+import { hanokBuilding, HANOK_KIND } from './city_hanok.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok`
 import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './city_geom.mjs';
 
 export const EARTH = 40075016.685578488, RAD = Math.PI / 180;
@@ -10,7 +11,7 @@ const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (window
 export const G = [CITY_LNG / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + CITY_LAT * RAD / 2)) / (2 * Math.PI)], S = EARTH * Math.cos(CITY_LAT * RAD);   // mercator → metres
 const TYPES = ['house', 'apartment', 'shop', 'office', 'industrial', 'civic'];
 const PATTERNS = { punched: 0, 'vertical-balconies': 1, 'horizontal-bands': 2, 'curtain-wall': 3, clerestory: 4, 'regular-grid': 5 };
-export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5, HALL: 6, SIGN: 7 };   // HALL: the piece of a wall the viaduct passes through — the shader opens the glass band there, nowhere else; SIGN: 간판(signs())
+export const KIND = { WALL: 0, ROOF: 1, PARAPET: 2, EQUIP: 3, PITCHED: 4, AWNING: 5, HALL: 6, SIGN: 7, GIWA: HANOK_KIND.ROOF, HANOK: HANOK_KIND.WALL, DAM: HANOK_KIND.DAM };   // HALL: the piece of a wall the viaduct passes through — the shader opens the glass band there, nowhere else; SIGN: 간판(signs())
 export const RAIL_Q = { base: 10, step: .25 };   // a HALL piece carries the deck's rail height there in 6 bits (a_bld.z bits 6–7 high, a_bld.w bits 4–7 low): base + code × step, 10–25.75 m
 const FLAG = { ABS_U: 1, MERGED: 2, STOREFRONT: 4, NO_AO: 8 };
 export const CHUNKS = 4;   // sub-chunks a tile side
@@ -116,6 +117,7 @@ export function resolvePack(pack) {
     lit: { colors: (lit.colors || ['#FFD59A', '#FFE7BD', '#DDEAF0']).map(hexRGB), emission: num(lit.emission, .7), groundEmission: num(lit.groundFloorEmission, .9), floorMul: lit.floorProbabilityMultiplier || [.65, 1.2] },
     equip: { minZoom: num(eq.minZoom, 16), minH: num(eq.minHeightM, 12), minA: num(eq.minAreaM2, 120), penthouseArea: eq.penthouseAreaRatio || [.04, .07], penthouseH: num(eq.penthouseHeightM, 1.8), hvacCount: eq.hvacCount || [1, 3], hvacSize: eq.hvacSizeM || [1.6, 1, .9], colors: eq.colors || { light: '#A7ADA5', dark: '#4D5C59' } },
     signs: pack.signs || null,   // 간판(signs())
+    hanok: pack.hanok || null,   // 조선 모드(city_hanok.mjs)
     waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
     light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
@@ -361,6 +363,7 @@ export class TileBuilder {
   }
   // phase 2, one building's meshes
   building(it) {
+    if (this.P.hanok) return hanokBuilding(this, it, unit);   // 조선 모드: 기와집 instead of the city's buildings
     const E = this.E, P = this.P, { outer, holes, clipped, A, H, minH, landuse, seed, ix, iy } = it;
     const info = { heightM: H, areaM2: A, landuse, id: it.idLo + it.idHi * 4294967296, props: null };
     let est = classifyBuilding(info, P);

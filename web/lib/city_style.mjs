@@ -126,7 +126,7 @@ export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity', ri
     // lane marks: dividers between lanes going the same way (white dashes), the centre line (yellow, two-way roads)
     laneK(1, 1), laneK(1, -1), laneK(2, 1), laneK(2, -1),
     L('city-lane-center', UNDER, { type: 'line', 'source-layer': 'transportation', minzoom: R.lane.minZoom, filter: roadFilter(R.lane.classes, ['!', ['has', 'oneway']], ['!=', ['get', 'ramp'], 1]),
-      paint: { 'line-color': t(R.centerLine.colors[theme]), 'line-width': ['step', ['zoom'], .8, 17, 1, 18, 1.4], 'line-color-transition': tr } }),
+      paint: { 'line-color': t(R.centerLine.colors[theme]), 'line-opacity': R.centerLine.opacity?.[theme] ?? 1, 'line-width': ['step', ['zoom'], .8, 17, 1, 18, 1.4], 'line-color-transition': tr } }),
     L('city-lane-center-1way', UNDER, { type: 'line', 'source-layer': 'transportation', minzoom: R.lane.minZoom, filter: roadFilter(R.lane.classes.filter(c => onewayLanes(roadSpec(pack, c).widthM * ONEWAY_K) >= 2), ['has', 'oneway'], ['!=', ['get', 'ramp'], 1]),
       paint: { 'line-color': t(R.lane.colors[theme]), 'line-opacity': R.lane.opacity[theme], 'line-width': laneWidthPx, 'line-dasharray': laneDash(pack), 'line-color-transition': tr } }),
   ];

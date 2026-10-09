@@ -16,6 +16,7 @@ import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';  
 import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
+import JOSEON_STYLE from './lib/city_style_joseon.mjs';   // 조선 모드: the same city in packed earth and 기와집 (cityPack())
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
@@ -344,6 +345,8 @@ function planTrain(t){
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
 let simcity=false;   // 심시티 모드: the miniature city (its own look; the coaster mode keeps its rides on the same city)
+let joseon=false;   // 조선 모드: 심시티 (simcity stays true: the viaduct, the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집
+const cityPack=()=>joseon?JOSEON_STYLE:CITY_STYLE;   // the pack the ground, the buildings and their shadows read
 // city-build: the miniature city's buildings (web/lib/city_buildings.mjs): a custom layer under the station names (so names and
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
@@ -364,7 +367,7 @@ function cityXrayTargets(){
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
 function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
-  cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9});
+  cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9,pack:cityPack()});
 }
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
 const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>coasterBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
@@ -2309,7 +2312,7 @@ let wallsNow=()=>{};   // the train canvas's building walls, again (set up with 
 const mixHex=(a,b,t)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
 const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
 const THEME_KEY='subway-theme';
-const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return simcity?{...P,...cityPalette(t,{pack:CITY_STYLE})}:P;   // city-life: 심시티 — the ground from the style pack
+const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return simcity?{...P,...cityPalette(t,{pack:cityPack()})}:P;   // city-life: 심시티 — the ground from the style pack
   const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
   const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
   Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true,ride:!!ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
@@ -2342,7 +2345,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
-  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:CITY_STYLE,ride:!!ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:cityPack(),ride:!!ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
   syncCity();   // city-build: the buildings follow the mode and theme
 }
 document.head.insertAdjacentHTML('beforeend',`<style>
@@ -2441,6 +2444,7 @@ precision mediump float;in vec2 uv;uniform sampler2D t;uniform vec4 c;out vec4 o
   }
 }
 const sunShadows=new SunShadowLayer();
+const JOSEON_SHADOW_H=5;   // m: the shadow a 기와집 casts (its eaves and roof, a little under the ridge)
 function updateSun(){
   if(!ready)return;
   const {elevation:el,azimuth:az}=sunPosition(),up=el>1,dark=effectiveTheme()==='dark';
@@ -2455,13 +2459,13 @@ function updateSun(){
   const k=1/Math.tan(el*Math.PI/180),ux=Math.sin(away),uy=Math.cos(away),seen=new Set(),tris=[];
   const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
   for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-    const h=+(f.properties.render_height??10),g=f.geometry;if(!h||!g||coaster&&h>=RIDE_H)continue;
+    const h=joseon?JOSEON_SHADOW_H:+(f.properties.render_height??10),g=f.geometry;   // 조선: every building a low 기와집if(!h||!g||coaster&&h>=RIDE_H)continue;
     const rings=g.type==='Polygon'?[g.coordinates[0]]:g.type==='MultiPolygon'?g.coordinates.map(p=>p[0]):[];
     for(const ring of rings){
       if(!ring||ring.length<3)continue;
       const key=ring[0][0].toFixed(6)+ring[0][1].toFixed(6)+h;if(seen.has(key))continue;seen.add(key);
       // real low-sun shadows run ~10× the height; on a map that blankets whole blocks, so cap at 3.5× height / 250 m
-      const len=Math.min(cityOn()?+(CITY_STYLE.lighting?.shadow?.maxLengthM??80):250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
+      const len=Math.min(cityOn()?+(cityPack().lighting?.shadow?.maxLengthM??80):250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
       const pts=[];for(const [x,y] of ring){pts.push([x,y]);pts.push([x+dx,y+dy])}
       const hp=hull(pts).map(q=>{const m=maplibregl.MercatorCoordinate.fromLngLat(q);return [m.x-O.x,m.y-O.y]});
       for(let i=1;i<hp.length-1;i++)tris.push(...hp[0],...hp[i],...hp[i+1]);   // convex hull → triangle fan
@@ -2471,8 +2475,8 @@ function updateSun(){
   const fade=Math.max(0,Math.min(1,(el-2)/13));   // fade in over the first ~15° after sunrise, out before sunset
   // phones: small bright screens make the same shade read much darker, so lighten it there
   const phone=matchMedia('(max-width:720px),(pointer:coarse)').matches?.35:1;
-  const cityA=cityOn()?+(CITY_STYLE.modes?.[simcity?'simcity':'coaster']?.shadowOpacity?.[dark?'dark':'light']??.14):null;   // city-build: the city's shadow strength and colour from the style pack
-  sunShadows.color=cityA!=null?hexRGB3(CITY_STYLE.lighting?.shadow?.color||'#394D4B'):null;
+  const cityA=cityOn()?+(cityPack().modes?.[simcity?'simcity':'coaster']?.shadowOpacity?.[dark?'dark':'light']??.14):null;   // city-build: the city's shadow strength and colour from the style pack
+  sunShadows.color=cityA!=null?hexRGB3(cityPack().lighting?.shadow?.color||'#394D4B'):null;
   sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},cityA!=null?cityA*fade*phone:Math.min(coaster?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
   map.triggerRepaint();
 }
@@ -2523,7 +2527,7 @@ $('toggleMap').onclick=e=>{
 function setCoaster(on,speed=coasterSpeed){
   if(!on)stopRide(false);   // 롤코를 끄면 1인칭에서도 내려요
   if(on&&!coasterBld){coasterWant=true;$('toggleCoaster').setAttribute('aria-pressed','true');loadCoasterBuildings().then(()=>{if(coasterWant)setCoaster(true,speed)});return}   // its courses need the buildings: wait for them
-  coasterWant=on;if(on&&simcity){simcity=false;$('toggleSimcity')?.setAttribute('aria-pressed','false')}
+  coasterWant=on;if(on&&simcity){simcity=false;joseon=false;$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}
   if(on)cityMap();
   const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
@@ -2537,8 +2541,13 @@ function setCoaster(on,speed=coasterSpeed){
   map.triggerRepaint();
 }
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
-function setSimcity(on){$('toggleSimcity')?.setAttribute('aria-pressed',String(on));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
-if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!simcity);
+// 조선 모드 is 심시티 in another pack (asJoseon): switching between the two changes only the look
+function setSimcity(on,asJoseon=false){const J=!!(on&&asJoseon);$('toggleSimcity')?.setAttribute('aria-pressed',String(on&&!J));$('toggleJoseon')?.setAttribute('aria-pressed',String(J));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();
+  if(joseon!==J){joseon=J;if(simcity===on){applyTheme();updateSun();map.triggerRepaint();return}}
+  if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
+if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!(simcity&&!joseon));
+if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(!joseon,true);
+const setJoseon=on=>setSimcity(on,true);
 $('toggleCoaster').onclick=()=>setCoaster(!coaster);
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
@@ -2563,4 +2572,4 @@ map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,cityBuildings,cityViaduct,setSimcity,setCoaster,get simcity(){return simcity},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},rideFrame,set rideSeat(v){rideSeat=v}};
+window.__subwayWebGL={map,cityBuildings,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},rideFrame,set rideSeat(v){rideSeat=v}};

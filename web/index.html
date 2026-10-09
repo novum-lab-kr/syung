@@ -41,13 +41,18 @@
     <span class="setting-name"><span id="simcityName">심시티</span><small id="simcityDescription">작은 서울을 거닐어요</small></span>
     <i class="switch" aria-hidden="true"></i>
   </button>
+  <button id="toggleJoseon" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="joseonName" aria-describedby="joseonDescription cityModeHelp">
+    <span class="setting-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10.5c3.5.3 6.5-1.8 10-5.5 3.5 3.7 6.5 5.8 10 5.5M5 9.5V20M19 9.5V20M3 20h18M9.5 20v-5h5v5"/></svg></span>
+    <span class="setting-name"><span id="joseonName">조선</span><small id="joseonDescription">한양 기와집 사이를 거닐어요</small></span>
+    <i class="switch" aria-hidden="true"></i>
+  </button>
   <button id="toggleCoaster" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="coasterName" aria-describedby="coasterDescription cityModeHelp" aria-controls="coasterSpeed">
     <span class="setting-icon" aria-hidden="true"></span>
     <span class="setting-name"><span id="coasterName">롤러코스터</span><small id="coasterDescription">도시 위를 달려요</small></span>
     <i class="switch" aria-hidden="true"></i>
   </button>
   <div id="coasterSpeed" class="setting-row" hidden><span class="setting-icon" aria-hidden="true"></span><span class="setting-name">열차 속도<small id="speedNote">실시간</small></span><div class="segmented" role="group" aria-label="열차 속도"><button type="button" data-speed="1">1배</button><button type="button" data-speed="5">5배</button><button type="button" data-speed="20">20배</button></div></div>
-  <p id="cityModeHelp" class="setting-help">한 번에 하나만 켤 수 있어요.<br>둘 다 끄면 기본 지도예요.</p>
+  <p id="cityModeHelp" class="setting-help">한 번에 하나만 켤 수 있어요.<br>모두 끄면 기본 지도예요.</p>
 </div>
 <div class="setting-row"><span id="mapColorIcon" class="setting-icon" aria-hidden="true"></span><span class="setting-name">지도 색</span><div class="segmented" role="group" aria-label="지도 색"><button type="button" data-map-color="calm">차분</button><button type="button" data-map-color="color">컬러</button></div></div><div class="setting-row"><span id="themeIcon" class="setting-icon" aria-hidden="true"></span><span class="setting-name">테마<small id="themeNote"></small></span><div class="segmented" role="group" aria-label="테마"><button type="button" data-theme-choice="auto">자동</button><button type="button" data-theme-choice="light">라이트</button><button type="button" data-theme-choice="dark">다크</button></div></div></div></header>
   <div class="layout">
