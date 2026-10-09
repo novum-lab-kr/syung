@@ -47,12 +47,12 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
   },
   lighting: { shadow: { color: '#5A4630' } },
   // 공중 수로: 심시티 고가와 같은 치수에 물을 채운다(city_viaduct.mjs — aqueduct 가 있으면 윗면은 물결, 침목 · 레일 없음,
-  // 난간은 돌에 윗면만 노선 색). 화강암 수로와 교각, 승강장은 나무 마루에 기와 지붕
+  // 난간은 돌에 윗면만 노선 색). 화강암 수로를 팔각 통나무 기둥(밧줄 묶음)이 받치고, 승강장은 나무 마루에 기와 지붕
   viaduct: {
     aqueduct: { water: { light: '#5E93A0', dark: '#1D3C48' } },
     colors: {
-      light: { concrete: '#B7AE9C', under: '#8E8574', pier: '#ACA390', platform: '#9C7A57', roof: '#4E585C', roofUnder: '#6B4F3A', post: '#5E4532', stair: '#B1A893', stairWall: '#A39A87', walk: '#9C7A57', walkWall: '#A39A87' },
-      dark: { concrete: '#5C574D', under: '#3E3A33', pier: '#524D44', platform: '#4E3D2C', roof: '#2E3537', roofUnder: '#3F2F23', post: '#3A2A20', stair: '#5A554B', stairWall: '#4F4A42', walk: '#4E3D2C', walkWall: '#4F4A42' },
+      light: { concrete: '#B7AE9C', under: '#8E8574', pier: '#7E5D41', platform: '#9C7A57', roof: '#4E585C', roofUnder: '#6B4F3A', post: '#5E4532', stair: '#B1A893', stairWall: '#A39A87', walk: '#9C7A57', walkWall: '#A39A87' },
+      dark: { concrete: '#5C574D', under: '#3E3A33', pier: '#4A3727', platform: '#4E3D2C', roof: '#2E3537', roofUnder: '#3F2F23', post: '#3A2A20', stair: '#5A554B', stairWall: '#4F4A42', walk: '#4E3D2C', walkWall: '#4F4A42' },
     },
   },
   // 거북선: 조선 모드의 열차(web/lib/city_turtle_ship.mjs)
