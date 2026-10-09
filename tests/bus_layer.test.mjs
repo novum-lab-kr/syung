@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText} from '../web/lib/bus_layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText, placeStopPosts} from '../web/lib/bus_layer.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
@@ -326,3 +326,27 @@ test('따라가기 카메라용 버스 위치: 그려지는 노선 선 위 지�
   layer.selectedRoute = null;
   assert.equal(layer.vehiclePosition('b'), null, '버스를 안 그리는 동안은 따라갈 자리도 없다');
 }, false));
+
+// 위에서 내려다보는 휴대폰 화면(390×844): 화면 가운데 = origin
+function topDownView(zoom, center) {
+  const K = 512 * 2 ** zoom, ox = center[0] / 360 + .5, oy = .5 - Math.log(Math.tan(Math.PI / 4 + center[1] * Math.PI / 360)) / (2 * Math.PI);
+  return {width: 390, height: 844, zoom, unit: 1 / K, origin: [ox, oy], phone: true,
+    project: w => ({x: 195 + (w[0] - ox) * K, y: 422 + (w[1] - oy) * K})};
+}
+const stopPoint = (id, lng, lat) => ({type: 'Feature', geometry: {type: 'Point', coordinates: [lng, lat]}, properties: {id, name: id}});
+
+test('a stop standing on an exit pillar is moved beside it, not dropped (청담역 11번 출구 · 진흥아파트)', () => {
+  const exit = [127.052099, 37.519287], stop = stopPoint('진흥아파트', 127.05209, 37.519291);
+  for (const zoom of [16, 17, 18]) {
+    const {hits} = placeStopPosts([stop], [exit], topDownView(zoom, exit));
+    assert.equal(hits.length, 1, `zoom ${zoom}`);
+    const [left, , right] = hits[0].visualBounds;   // 출구 기둥은 화면 가운데(x 195)
+    assert.ok(left > 195 + 5 || right < 195 - 5, `zoom ${zoom}: post ${left}–${right} is clear of the pillar`);
+  }
+});
+
+test('two stops on the same spot both get a post from zoom 16 (석계역1번출구.A · B)', () => {
+  const a = stopPoint('A', 127.0656, 37.6149), b = stopPoint('B', 127.06561, 37.61490);
+  for (const zoom of [16, 17, 18]) assert.equal(placeStopPosts([a, b], [], topDownView(zoom, [127.0656, 37.6149])).hits.length, 2, `zoom ${zoom}`);
+  assert.equal(placeStopPosts([a, b], [], topDownView(15, [127.0656, 37.6149])).hits.length, 1, 'zoom 15 keeps one post per spot');
+});

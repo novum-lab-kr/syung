@@ -141,6 +141,64 @@ export function journeyBusRouteIds(data, legs) {
   return [...new Set(ids)].slice(0,8);
 }
 
+// 정류장 기둥(BUS 표지판)을 화면에 놓는다. features: 정류장 Point, exits: 출구 [lng,lat],
+// view: {project(world,z), width, height, zoom, unit, origin, bearing, phone, selected}. → {posts, hits}
+export function placeStopPosts(features, exits, view) {
+  const {project,width,height,zoom,unit,origin,bearing=0,phone=false,selected=null}=view,posts=[],hits=[];
+  const bounds=points=>[Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y))];
+  const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
+  const hitBox=(r,minimum)=>{const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2,w=Math.max(minimum,r[2]-r[0]+6),h=Math.max(minimum,r[3]-r[1]+6);return[cx-w/2,cy-h/2,cx+w/2,cy+h/2];};
+  // Reserve the full screen silhouettes of nearby exit pillars before placing BUS signs.
+  // 출구 기둥 폭은 화면 px 로 줌 16 에서 11 · 18 에서 17(maplibre_runtime PILLAR_PX): 그 절반 + 2px 만 비운다(손가락 칸 크기로 비우면 출구 옆 정류장이 빠졌다)
+  const occupied=[],exitHeight=20+Math.max(0,Math.min(2,zoom-16))*8,exitHalf=(11+6*Math.max(0,Math.min(1,(zoom-16)/2)))/2+2;
+  for(const coordinate of exits){
+    const world=busMercator(coordinate),base=project(world,0),top=project(world,exitHeight*unit);
+    if(base&&top)occupied.push(pad(bounds([base,top]),exitHalf,5));
+  }
+  const scale=busPostScale(zoom),c=Math.cos(bearing),s=Math.sin(bearing);
+  const candidates=features.map(f=>({f,world:busMercator(f.geometry.coordinates)}));
+  // Deterministic centre-first placement; a selected stop remains at the head of the list.
+  candidates.sort((a,b)=>Number(b.f.properties.id===selected)-Number(a.f.properties.id===selected)||
+    ((a.world[0]-origin[0])**2+(a.world[1]-origin[1])**2)-((b.world[0]-origin[0])**2+(b.world[1]-origin[1])**2));
+  const placed=[];
+  // 겹침은 보이는 기둥끼리만 본다. 손가락 칸(44px)으로 보면 붙어 있는 정류장을 빼서 강남역 줌 16 에서 24곳 중 13곳이 안 보였다(2026-10-08 덕배).
+  // 손가락 칸은 겹쳐도 된다: 누르면 가운데가 가장 가까운 정류장이 골라진다
+  // 줌 16 부터는 기둥이 반쯤 겹치는 것까지 그린다: 기둥이 실제 크기(약 15 m)로 커져 13 m 떨어진 정류장(강남역7번출구 · 강남역.삼성전자)은 어느 줌에서도 하나만 보였다
+  const fits=world=>{
+    const points=[];
+    for(const x of [-7.5,7.5])for(const y of [-7.5,7.5])for(const z of [0,25.5]){
+      const p=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(p)points.push(p);
+    }
+    if(points.length!==8)return null;const rectangle=bounds(points);
+    if(!intersects(rectangle,[0,0,width,height]))return null;
+    const spacing=pad(rectangle,2),base=project(world,0),postWidth=rectangle[2]-rectangle[0];
+    const exit=occupied.find(r=>intersects(spacing,r));
+    const crowded=zoom<16?placed.some(q=>intersects(spacing,q.spacing)):placed.some(q=>Math.hypot(q.base.x-base.x,q.base.y-base.y)<postWidth/2);
+    return {world,rectangle,spacing,base,exit,crowded};
+  };
+  for(const {f,world} of candidates){
+    let spot=fits(world);
+    // 출구 기둥 자리에 찍힌 정류장(청담역 11번 출구 = 진흥아파트, 1 m)은 빼지 않고 기둥 옆으로 비켜 세운다(2026-10-09 덕배)
+    // 줌 16 부터는 다른 정류장과 같은 자리(1~3 m, 석계역1번출구.A · B 등 서울 29쌍)여도 옆에 나란히 세운다
+    if(spot&&(spot.exit||spot.crowded&&zoom>=16)){
+      const block=spot.exit||placed.find(q=>Math.hypot(q.base.x-spot.base.x,q.base.y-spot.base.y)<(spot.rectangle[2]-spot.rectangle[0])/2)?.rectangle;
+      const away=Math.sign((spot.rectangle[0]+spot.rectangle[2])-(block[0]+block[2]))||1;
+      nudge:for(const k of [1,1.5,2,2.5])for(const side of [away,-away]){
+        const d=15*k*side*scale*unit,moved=fits([world[0]+c*d,world[1]+s*d]);
+        if(moved&&!moved.exit&&!moved.crowded){spot=moved;break nudge;}
+      }
+      if(spot.exit||spot.crowded)spot=null;
+    }
+    if(!spot||spot.exit||spot.crowded)continue;
+    const touch=hitBox(spot.rectangle,phone?44:28);
+    placed.push(spot);
+    posts.push({world:spot.world,yaw:bearing,scale,rgb:[.25,.29,.30],selected:selected===f.properties.id});
+    hits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:spot.rectangle});
+    if(posts.length>=(phone?700:1400))break;
+  }
+  return {posts,hits};
+}
+
 export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
@@ -502,37 +560,9 @@ class BusLayer {
       if(!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration)moving=true;
       if(vehicles.length>=(this.phone?160:320))break;
     }
-    // Reserve the full screen silhouettes of nearby exit pillars before placing BUS signs.
-    // 출구 기둥 폭은 화면 px 로 줌 16 에서 11 · 18 에서 17(maplibre_runtime PILLAR_PX): 그 절반 + 2px 만 비운다(손가락 칸 크기로 비우면 출구 옆 정류장이 빠졌다)
-    const occupied=[],exitHeight=20+Math.max(0,Math.min(2,zoom-16))*8,exitHalf=(11+6*Math.max(0,Math.min(1,(zoom-16)/2)))/2+2;
-    for(const coordinate of this.exitCoordinates||[]){
-      const world=busMercator(coordinate),base=project(world,0),top=project(world,exitHeight*unit);
-      if(base&&top)occupied.push(pad(bounds([base,top]),exitHalf,5));
-    }
-    const bearing=(this.map.getBearing?.()||0)*Math.PI/180,scale=busPostScale(zoom),c=Math.cos(bearing),s=Math.sin(bearing);
-    const candidates=zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]).map(f=>({f,world:busMercator(f.geometry.coordinates)}));
-    // Deterministic centre-first placement; a selected stop remains at the head of the list.
-    candidates.sort((a,b)=>Number(b.f.properties.id===this.selection?.id)-Number(a.f.properties.id===this.selection?.id)||
-      ((a.world[0]-origin[0])**2+(a.world[1]-origin[1])**2)-((b.world[0]-origin[0])**2+(b.world[1]-origin[1])**2));
-    const placed=[];
-    for(const {f,world} of candidates){
-      const points=[];
-      for(const x of [-7.5,7.5])for(const y of [-7.5,7.5])for(const z of [0,25.5]){
-        const p=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(p)points.push(p);
-      }
-      if(points.length!==8)continue;const rectangle=bounds(points);
-      if(!intersects(rectangle,[0,0,width,height]))continue;
-      // 겹침은 보이는 기둥끼리만 본다. 손가락 칸(44px)으로 보면 붙어 있는 정류장을 빼서 강남역 줌 16 에서 24곳 중 13곳이 안 보였다(2026-10-08 덕배).
-      // 손가락 칸은 겹쳐도 된다: 누르면 가운데가 가장 가까운 정류장이 골라진다
-      // 줌 16 부터는 기둥이 반쯤 겹치는 것까지 그린다: 기둥이 실제 크기(약 15 m)로 커져 13 m 떨어진 정류장(강남역7번출구 · 강남역.삼성전자)은 어느 줌에서도 하나만 보였다
-      const touch=hitBox(rectangle,this.phone?44:28),spacing=pad(rectangle,2),base=project(world,0),postWidth=rectangle[2]-rectangle[0];
-      if(occupied.some(r=>intersects(spacing,r)))continue;
-      if(zoom<16?placed.some(q=>intersects(spacing,q.spacing)):placed.some(q=>Math.hypot(q.base.x-base.x,q.base.y-base.y)<postWidth/2))continue;
-      placed.push({spacing,base});
-      posts.push({world,yaw:bearing,scale,rgb:[.25,.29,.30],selected:this.selection?.id===f.properties.id});
-      this.stopHits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:rectangle});
-      if(posts.length>=(this.phone?700:1400))break;
-    }
+    const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
+      {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id});
+    posts.push(...placement.posts);this.stopHits.push(...placement.hits);
     this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
