@@ -139,7 +139,9 @@ export class BusRoadNetwork {
     for(let s=0;;s=Math.min(path.total,s+step)){
       const pose=busPointAt(path,s);let point={distance:s,coordinate:pose.coordinate,lane:pose.coordinate,laneWidth:3,width:null};
       if(inside(pose.coordinate)){
-        const found=this.candidates(pose.coordinate,pose.heading).filter(c=>c.error<=25&&c.e.cls!=='service');
+        // 진행 방향은 앞뒤 CHORD m 를 이은 방향: 선에 남은 몇 m 짜리 되돌이 꺾임에서 방향이 뒤집혀
+        // 반대 차도로 건너가지 않게.
+        const found=this.candidates(pose.coordinate,chordHeading(path,s)).filter(c=>c.error<=25&&c.e.cls!=='service');
         // 앞 점과 같은 도로가 거의 비슷하게 가까우면 그대로 간다(교차로에서 옆길로 튀지 않게).
         const keep=previous&&found.find(c=>c.e===previous.e&&c.dir===previous.dir&&c.error<=found[0].error+4);
         const c=keep||found[0];
@@ -153,6 +155,7 @@ export class BusRoadNetwork {
       samples.push(point);
       if(s>=path.total)break;
     }
+    straightenHops(samples,path,step);
     return {samples,step,version:this.version};
   }
   // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 차도 끝 너머 인도로 옮긴다. 고가 도로도 위에서 보면 정류장을
@@ -218,6 +221,34 @@ export class BusRoadNetwork {
       }
     }
     return {chunks:chunks.filter(c=>c.length>1),matched,total,version:this.version};
+  }
+}
+
+const CHORD=12,HOP_RUN=6;
+function chordHeading(path,s){
+  const A=metric(busPointAt(path,Math.max(0,s-CHORD)).coordinate),B=metric(busPointAt(path,Math.min(path.total,s+CHORD)).coordinate);
+  const dx=B[0]-A[0],dy=B[1]-A[1];
+  return Math.hypot(dx,dy)<1?busPointAt(path,s).heading:(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
+}
+// 곧은 길에서 앞뒤 샘플은 같은 처지(둘 다 도로에 붙음 · 둘 다 도로 못 찾음)인데 그 사이 HOP_RUN 개(36 m) 이하만
+// 옆 도로 · 반대 차도 · 원래 선으로 튀었다 돌아오면(지그재그 · 가로 막대) 그 조각을 앞뒤 샘플 사이 곧은 선으로
+// 바꾼다. 도로 타일이 덜 들어온 가장자리에서 샘플 하나만 옆 골목에 붙는 것도 같다.
+// 꺾이는 길(교차로 회전)은 건드리지 않는다. 길게 못 찾은 구간(지하차도 등)도 그대로 둔다.
+function straightenHops(S,path,step){
+  const jump=step*1.5,dist=(p,q)=>{const a=metric(p.coordinate),b=metric(q.coordinate);return Math.hypot(a[0]-b[0],a[1]-b[1]);};
+  const turn=(a,b)=>{const d=Math.abs(chordHeading(path,a.distance)-chordHeading(path,b.distance))%360;return Math.min(d,360-d);};
+  const hop=(p,q)=>!p.width!==!q.width||dist(p,q)>jump;
+  for(let i=1;i<S.length-1;i++){
+    const a=S[i-1];if(!hop(a,S[i]))continue;
+    for(let j=i;j<Math.min(S.length-1,i+HOP_RUN);j++){
+      const b=S[j+1];if(!a.width!==!b.width||!hop(S[j],b))continue;
+      if(dist(a,b)>(b.distance-a.distance)*1.3+8||turn(a,b)>30)continue;
+      for(let k=i;k<=j;k++){
+        const t=(S[k].distance-a.distance)/(b.distance-a.distance),mix=(p,q)=>p.map((v,n)=>v+(q[n]-v)*t);
+        S[k]={distance:S[k].distance,coordinate:mix(a.coordinate,b.coordinate),lane:mix(a.lane,b.lane),laneWidth:a.laneWidth,width:a.width};
+      }
+      i=j;break;
+    }
   }
 }
 

@@ -87,6 +87,25 @@ test('route display line sits on the CityLife road centre, keeping its own carri
   assert.ok(far.samples.length>2&&far.samples.every(p=>p.width===null&&Math.abs(xy(p.coordinate)[1]-200)<.01));
 });
 
+test('route display line does not zigzag across a split road or jog off a short gap in the roads',()=>{
+  // 미리 맞춘 선에 남은 6 m 되돌이 꺾임: 그 자리만 방향이 뒤집혀 반대 차도로 건너가는 가로 막대가 생겼다.
+  const split=network([road([[-8,-150],[-8,150]],{oneway:1}),road([[8,150],[8,-150]],{oneway:1})]);
+  const spike=split.snapLine(path([[0,-100],[0,0],[0,-6],[0,100]]));
+  assert.ok(spike.samples.every(p=>Math.abs(xy(p.coordinate)[0]+8)<.01),'stays on its own carriageway');
+  // 도로가 잠깐(24 m) 끊긴 곳: 샘플 몇 개가 원래 선(24 m 옆)으로 튀었다 돌아오던 계단 꺾임.
+  const gap=network([road([[-150,0],[-12,0]]),road([[12,0],[150,0]])]);
+  const hop=gap.snapLine(path([[-100,24],[100,24]]));
+  assert.ok(hop.samples.every(p=>Math.abs(xy(p.coordinate)[1])<.01&&p.width===22),'bridges the gap on the road');
+  // 도로 타일이 덜 들어온 가장자리: 큰길은 아직 없고 샘플 하나만 24 m 옆 골목에 붙던 가로 막대.
+  const edge=network([road([[-4,23],[4,23]],{class:'minor'})]);
+  const lone=edge.snapLine(path([[-100,0],[100,0]]));
+  assert.ok(lone.samples.every(p=>Math.abs(xy(p.coordinate)[1])<.01),'stays on the route line');
+  // 교차로에서 꺾는 길은 곧게 펴지 않는다.
+  const corner=network([road([[-150,0],[0,0]]),road([[0,0],[0,150]])]);
+  const turn=corner.snapLine(path([[-100,0],[0,0],[0,100]]));
+  assert.ok(turn.samples.some(p=>Math.hypot(...xy(p.coordinate))<1),'still passes the corner');
+});
+
 test('a stop pinned inside the carriageway moves to the pavement on its own side, across a split road',()=>{
   const two=network([road([[-150,0],[150,0]])]);
   const north=xy(two.kerbside(coord(0,4))),south=xy(two.kerbside(coord(0,-4)));
