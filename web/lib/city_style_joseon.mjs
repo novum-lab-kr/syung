@@ -46,6 +46,17 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
   },
   lighting: { shadow: { color: '#5A4630' } },
+  // 공중 수로: 심시티 고가와 같은 치수에 물을 채운다(city_viaduct.mjs — aqueduct 가 있으면 윗면은 물결, 침목 · 레일 없음,
+  // 난간은 돌에 윗면만 노선 색). 화강암 수로와 교각, 승강장은 나무 마루에 기와 지붕
+  viaduct: {
+    aqueduct: { water: { light: '#5E93A0', dark: '#1D3C48' } },
+    colors: {
+      light: { concrete: '#B7AE9C', under: '#8E8574', pier: '#ACA390', platform: '#9C7A57', roof: '#4E585C', roofUnder: '#6B4F3A', post: '#5E4532', stair: '#B1A893', stairWall: '#A39A87', walk: '#9C7A57', walkWall: '#A39A87' },
+      dark: { concrete: '#5C574D', under: '#3E3A33', pier: '#524D44', platform: '#4E3D2C', roof: '#2E3537', roofUnder: '#3F2F23', post: '#3A2A20', stair: '#5A554B', stairWall: '#4F4A42', walk: '#4E3D2C', walkWall: '#4F4A42' },
+    },
+  },
+  // 거북선: 조선 모드의 열차(web/lib/city_turtle_ship.mjs)
+  train: { turtleShip: { wood: '#5A3E2B', woodDark: '#3B2A1E', shell: '#4E5B4A', shellEdge: '#2F3A31', spike: '#C9C3B0', red: '#B23A2A', gold: '#D9A43A', white: '#F2EBDC', ink: '#17120E', oar: '#8A6A4A', lamp: '#FFC874' } },
   modes: { simcity: { shadowOpacity: { light: 0.2, dark: 0.08 } } },
   // web/lib/city_hanok.mjs: every footprint fitted with an oriented rectangle of its own area, then a type (초가 · 기와 ·
   // 중층 전각 · 한옥 고층 · 목탑), a plan and a wall. Metres

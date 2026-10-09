@@ -189,8 +189,8 @@ export function buildPlatform(p, eo, V, detail, hT = V.railHeightM) {
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec2 a_r; layout(location=2) in vec2 a_f; layout(location=3) in vec2 a_px; layout(location=4) in vec2 a_k;
 layout(location=5) in vec2 a_m; layout(location=6) in vec2 a_sz; layout(location=7) in vec2 a_min; layout(location=8) in vec2 a_mat; layout(location=9) in float a_n;
-uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow, u_railH; uniform vec2 u_shift, u_lit; uniform vec4 u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade; uniform vec3 u_col[16];
-out vec3 v_col; out float v_a;
+uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow, u_railH, u_water; uniform vec2 u_shift, u_lit; uniform vec4 u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade, u_wcol; uniform vec3 u_col[16];
+out vec3 v_col; out float v_a; out vec2 v_w; flat out float v_wat;
 float lit(vec3 n, vec3 L, vec2 k){ float d = max(dot(n, L), 0.); return k.x + k.y * (.5 + .5 * d); }
 float sz(float m, float p){ float a = m * u_mu, b = p * u_unit; return abs(b) > abs(a) ? b : a; }   // a size in metres, never under its px floor
 void main(){
@@ -201,8 +201,10 @@ void main(){
   vec3 p = vec3(a_pos.xy * u_mu + R * lat + F * alo, a_pos.z * u_mu);
   if (u_shadow > .5) { p.xy += u_shift * clamp(a_pos.z / u_railH, 0., 4.); p.z = .05 * u_mu; gl_Position = u_matrix * vec4(p, 1.); gl_Position.z -= 1.5e-5 * gl_Position.w; v_col = u_shade; v_a = u_alpha; return; }   // on the ground, away from the sun by its height
   gl_Position = u_matrix * vec4(p, 1.);
+  v_w = p.xy / u_mu; v_wat = u_water > .5 && m == 0 ? 1. : 0.;   // 조선 수로: 상판 윗면은 물(물결은 FS 가 지역 미터로 그린다)
   vec3 n = a_n == 0. ? vec3(0., 0., 1.) : abs(a_n) < 1.5 ? vec3(normalize(R) * sign(a_n), 0.) : abs(a_n) < 2.5 ? vec3(F * sign(a_n), 0.) : vec3(0., 0., -1.);
-  vec3 c = (m == 3 || m == 11) ? u_line : u_col[m];
+  vec3 c = (m == 3 && !(u_water > .5 && a_n != 0.) || m == 11) ? u_line : u_col[m];   // 조선 수로: 난간은 돌, 윗면만 노선 색
+  if (u_water > .5 && m == 0) c = u_wcol;
   c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;
   if (m == 2) c = mix(c, u_glow, u_night * u_glowK.x);                       // under the deck: lit softly at night
   if (m == 9 || m == 7) c = mix(c, u_glow, u_night * u_glowK.y * (m == 7 ? .6 : 1.));   // the platforms and under their roofs (the stairs' roofs too)
@@ -211,9 +213,17 @@ void main(){
   v_col = c; v_a = u_alpha;
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_col; in float v_a; out vec4 o;
-void main(){ o = vec4(clamp(v_col, 0., 1.) * v_a, v_a); }`;
-const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_railH', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col'];
+precision highp float; in vec3 v_col; in float v_a; in vec2 v_w; flat in float v_wat; uniform float u_time; out vec4 o;
+void main(){
+  vec3 c = v_col;
+  if (v_wat > .5) {   // 물결: 두 갈래 사인 물결이 흐르고, 마루에 흰 반짝임. 멀리서(px 이 물결보다 크면) 잔잔하게
+    float k = 1. - smoothstep(.6, 1.6, max(fwidth(v_w.x), fwidth(v_w.y))), t = u_time;
+    float r = sin(dot(v_w, vec2(.83, .55)) * 1.9 + t * 1.6) * .5 + sin(dot(v_w, vec2(-.47, .88)) * 2.7 - t * 1.2) * .35 + sin(dot(v_w, vec2(.2, -.98)) * 4.1 + t * 2.3) * .15;
+    c *= 1. + .07 * r * k; c = mix(c, vec3(1.), smoothstep(.62, .9, r) * .22 * k);
+  }
+  o = vec4(clamp(c, 0., 1.) * v_a, v_a);
+}`;
+const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_railH', 'u_water', 'u_wcol', 'u_time', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col'];
 const ATTRS = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 2, 7], [4, 2, 9], [5, 2, 11], [6, 2, 13], [7, 2, 15], [8, 2, 17], [9, 1, 19]];
 
 export class CityViaduct {
@@ -222,6 +232,9 @@ export class CityViaduct {
     this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map();
   }
   get railM() { return this.V.railHeightM }
+  // 조선 모드 ↔ 심시티: 팩만 바꾼다. 두 팩의 치수가 같아서(조선 팩은 색 · aqueduct 만 덧쓴다) 지은 조각은 그대로 쓰고 색만 새로
+  setPack(pack) { if (!pack || pack === this.pack) return; this.pack = pack; this.V = V_OF(pack); this.rgb.clear() }
+  get aqueduct() { return !!this.V.aqueduct }
   // 상판을 끊을 구간 (line, lo, hi) → [[f0, f1]…] | null (롤코 모드에서만): 바뀌면 상판 · 레일 · 교각을 다시 짓는다
   setGaps(fn) { this.gapFn = fn || null; this.gapV = (this.gapV || 0) + 1; for (const k of [...this.cache.keys()]) if (/^(deck|det|pier):/.test(k)) this.del(k) }
   gapsOf(e) { return this.gapFn ? this.gapFn(e.line, e.lo, e.hi) : null }
@@ -385,7 +398,7 @@ export class CityViaduct {
     const box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU], pad = (halfPx * 2 + V.pier.capOverhangPx) * mpp + 40;
     const inView = (b, extra = 0) => !(b[2] < box[0] - pad - extra || b[0] > box[2] + pad + extra || b[3] < box[1] - pad - extra || b[1] > box[3] + pad + extra);
     const budget = moving ? V.performance.buildMsMoving : V.performance.buildMs, time = () => performance.now() - t0 < budget;
-    const wantDet = zoom >= V.lod.beds, wantPiers = zoom >= V.lod.piers && !!life, solo = selected !== 'all', draw = [], plats = [], exitsDraw = [];
+    const wantDet = zoom >= V.lod.beds && !V.aqueduct, wantPiers = zoom >= V.lod.piers && !!life, solo = selected !== 'all', draw = [], plats = [], exitsDraw = [];
     let pending = false, piers = 0, open = 0, levelsOn = 0;
     this.levelsOf();   // the stations' levels, before anything is built on them
     for (const e of this.edgeList()) {
@@ -435,6 +448,7 @@ export class CityViaduct {
     gl.uniform3f(u.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2f(u.u_lit, Lg.ambient ?? .64, Lg.directional ?? .36); gl.uniform3fv(u.u_tint, hexRgb(Lg.color || '#ffffff'));
     gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform3fv(u.u_glow, col(N.glow)); gl.uniform4f(u.u_glowK, N.underK, N.platformK, N.stairK ?? .5, N.walkK ?? .35); gl.uniform3fv(u.u_shade, hexRgb(pack.lighting?.shadow?.color || '#394D4B'));
     gl.uniform3fv(u.u_col, new Float32Array(COLOR_KEYS.flatMap(k => col(C[k] || C.concrete)))); gl.uniform1f(u.u_alpha, 1); gl.uniform1f(u.u_shadow, 0); gl.uniform2f(u.u_shift, 0, 0);
+    const Q = V.aqueduct; gl.uniform1f(u.u_water, Q ? 1 : 0); gl.uniform3fv(u.u_wcol, col(Q ? Q.water[theme] || Q.water.light : '#000000')); gl.uniform1f(u.u_time, (now % 1e6) / 1000);   // 조선 수로: 물 색 · 물결 시각
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     const one = a => { if (!a.n) return; gl.bindVertexArray(a.vao); gl.drawArrays(gl.TRIANGLES, 0, a.n) };
     // 1) its shadow on the streets (each thing's height, away from the sun), under whatever stands on them
