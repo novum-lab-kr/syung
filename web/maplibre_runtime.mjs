@@ -23,6 +23,7 @@ import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
+import {CityLandmarks} from './lib/city_landmarks.mjs';   // 랜드마크 전용 모델(롯데월드타워): 지도 조각 건물 대신
 import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
@@ -372,6 +373,7 @@ function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'
 }
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
 const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>coasterBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
+const cityLandmarks=new CityLandmarks();   // 롯데월드타워 등: 심시티 · 조선 · 롤코에서 고가와 같은 캔버스에
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
@@ -2170,7 +2172,8 @@ map.on('load',()=>{
       if(simcity||coaster){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
         cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
-        if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}
+        if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50);
+        if(!coaster)cityLandmarks.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다(롤코에선 그 자리가 놀이기구 — 150 m 넘는 건물은 원래 안 그린다)
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth

@@ -3,6 +3,7 @@
 // ordered [far-LOD roofs][walls][near-LOD roofs, parapets, roof plant, awnings]. Every look value comes from the style
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
+import { LANDMARKS, landmarkMerc } from './city_landmarks_data.mjs';
 import { hanokBuilding, HANOK_KIND } from './city_hanok.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok`
 import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './city_geom.mjs';
 
@@ -186,7 +187,17 @@ export class TileBuilder {
     this.wox = (this.ox - G[0]) * S; this.woy = (this.oy - G[1]) * S;   // and in city metres
     this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
     this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
-    this.items = []; this.blockers = []; this.ei = 0; this.grid = null;   // phase 1 reads every footprint (items; blockers = raw outlines, also those in the tile's buffer), phase 2 writes the meshes
+    this.items = []; this.blockers = []; this.ei = 0; this.grid = null;
+    // 랜드마크 자리(타일 단위): 그 안에 중심이 있는 높은 조각 건물은 빼고 전용 모델(city_landmarks.mjs)이 그린다
+    this.marks = LANDMARKS.map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH } })
+      .filter(m => m.x > -m.r - this.E && m.x < 2 * this.E + m.r && m.y > -m.r - this.E && m.y < 2 * this.E + m.r);   // phase 1 reads every footprint (items; blockers = raw outlines, also those in the tile's buffer), phase 2 writes the meshes
+  }
+  // 랜드마크 자리의 조각 건물인가: 외곽 전체의 가운데가 그 반경 안이고 높이가 minH 이상
+  landmarkPart(flat, H) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const a of flat) for (let i = 0; i < a.length; i += 2) { if (a[i] < x0) x0 = a[i]; if (a[i] > x1) x1 = a[i]; if (a[i + 1] < y0) y0 = a[i + 1]; if (a[i + 1] > y1) y1 = a[i + 1] }
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    return this.marks.some(m => H >= m.minH && Math.hypot(cx - m.x, cy - m.y) < m.r && Math.max(x1 - x0, y1 - y0) < 2.5 * m.r);
   }
   // run until the budget (ms) is spent; true when the tile is finished. Two phases: every footprint is read first (and all
   // outlines indexed, so each wall can look for the building across from it), then the meshes are written
@@ -200,6 +211,7 @@ export class TileBuilder {
         if (p.hide_3d === true || p.hide_3d === 'true') { this.fi++; continue }
         let rings; try { rings = f.loadGeometry() } catch { this.fi++; continue }
         const flat = rings.map(r => { const a = new Array(r.length * 2); for (let i = 0; i < r.length; i++) { a[i * 2] = r[i].x; a[i * 2 + 1] = r[i].y } return a });
+        if (this.marks.length && this.landmarkPart(flat, num(p.render_height, 0))) { this.fi++; continue }
         this.polys = classifyRings(flat); this.pi = 0;
         const id = f.id ?? 0; this.cur = { idLo: id >>> 0, idHi: Math.floor(id / 4294967296) >>> 0, H: num(p.render_height, NaN), minH: Math.max(0, num(p.render_min_height, 0)) };
       }
