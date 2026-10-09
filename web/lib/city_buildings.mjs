@@ -291,6 +291,9 @@ function compile(gl, vs, fs) {
   return { p, u };
 }
 
+// a built tile's size in memory (one copy): its vertex and index bytes
+const meshBytes = m => m.verts.byteLength + m.idx.byteLength;
+
 // the through list (web/lib/city_through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
 function throughIndex(list) {
   const byId = new Map(), byRing = new Map();
@@ -310,7 +313,7 @@ export class CityBuildings {
     this.opts = opts; this.phone = !!opts.phone; this.P = resolvePack(opts.stylePack || SEOUL_CITY_STYLE);
     this.on = false; this.mode = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
-    this.maxTiles = this.phone ? 18 : 40; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
+    this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
     this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/lib/city_worker.mjs (a classify function cannot cross into one: main thread then)
     this.debug = 0; this.lodHi = LOD_HI; this.cull = 'cw'; this.noCull = false; this.skipDraw = false;   // dev knobs: kind colours, culling, LOD, draw calls off (JS cost alone)
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
@@ -363,9 +366,15 @@ export class CityBuildings {
       if (e.state === 'ready') this.visible.push(e); else queued = true;
     }
     if (queued) this.schedule();
-    if (this.tiles.size > this.maxTiles) {   // least recently seen first
+    // least recently seen first, down to maxTiles and (phones) maxBytes of mesh: a 조선 tile is ~4× a 심시티 one, and the
+    // phone tab was killed (reloaded) holding 18 of them on two canvases (2026-10-09)
+    let bytes = 0; for (const e of this.tiles.values()) bytes += e.bytes || 0;
+    if (this.tiles.size > this.maxTiles || bytes > this.maxBytes) {
       const old = [...this.tiles.values()].filter(e => e.used !== this.frame).sort((a, b) => a.used - b.used);
-      for (const e of old.slice(0, this.tiles.size - this.maxTiles)) { for (const gl of this.ctx.keys()) this.free(gl, e); this.tiles.delete(e.key) }
+      for (const e of old) {
+        if (this.tiles.size <= this.maxTiles && bytes <= this.maxBytes) break;
+        for (const gl of this.ctx.keys()) this.free(gl, e); this.tiles.delete(e.key); bytes -= e.bytes || 0;
+      }
     }
   }
   schedule() { if (!this.timer) this.timer = setTimeout(() => this.work(), 1) }
@@ -387,7 +396,7 @@ export class CityBuildings {
   onWorker(w, m) {
     const e = w.busy; w.busy = null;
     if (e && m.key === e.key && this.tiles.get(m.key) === e) {
-      if (m.type === 'done') { e.mesh = m.mesh; e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += m.mesh.verts.byteLength / STRIDE; this.map?.triggerRepaint() }
+      if (m.type === 'done') { e.mesh = m.mesh; e.bytes = meshBytes(m.mesh); e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += m.mesh.verts.byteLength / STRIDE; this.map?.triggerRepaint() }
       else { console.warn('city-build: a tile failed in the worker', m.error); this.tiles.delete(e.key) }
     }
     this.schedule();
@@ -420,7 +429,7 @@ export class CityBuildings {
       }
       const left = budget - (performance.now() - t0), ts = performance.now(), done = e.builder.step(Math.max(1, left)); this.stats.mainBuildMs = (this.stats.mainBuildMs || 0) + performance.now() - ts;   // main-thread time spent in slices (0 with workers)
       if (done) {
-        e.mesh = e.builder.result(); e.builder = null; e.state = 'ready'; e.readyAt = performance.now();
+        e.mesh = e.builder.result(); e.bytes = meshBytes(e.mesh); e.builder = null; e.state = 'ready'; e.readyAt = performance.now();
         this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += e.mesh.verts.byteLength / STRIDE;
         map.triggerRepaint();
       }
@@ -586,7 +595,13 @@ export class CityBuildings {
     let uploaded = false;
     for (const e of this.visible) {
       let g = e.gpu.get(gl);
-      if (!g) { if (uploaded) { growing = true; continue } g = this.upload(gl, e); uploaded = true }   // one tile's upload a frame: the rest next frame (growing: a repaint follows)
+      if (!g) {
+        if (uploaded) { growing = true; continue }   // one tile's upload a frame: the rest next frame (growing: a repaint follows)
+        if (!e.mesh.verts) { this.tiles.delete(e.key); for (const g2 of this.ctx.keys()) this.free(g2, e); this.schedule(); continue }   // its bytes already let go (phones): built again
+        g = this.upload(gl, e); uploaded = true;
+        // phones: once both canvases (the map's and the trains') hold it, the JS copy is let go — a third copy of the city
+        if (this.phone && e.gpu.size >= 2) { e.mesh.verts = null; e.mesh.idx = null }
+      }
       const m = e.mesh;
       const t = Math.min(1, (now - e.readyAt) / GROW_MS), grow = zoomGrow * (t < 1 ? (growing = true, t * t * (3 - 2 * t)) : 1);
       if (grow <= 0) continue;
@@ -639,5 +654,5 @@ export class CityBuildings {
     return behind === 8 ? false : behind > 0 ? true : out === 0;
   }
   // for the report / tests
-  info() { const t = [...this.tiles.values()]; return { workers: this.workers ? this.workers.length : null, through: this.through.size, tiles: t.length, ready: t.filter(e => e.state === 'ready').length, visible: this.visible.length, buildings: t.reduce((s, e) => s + (e.mesh?.count || 0), 0), verts: t.reduce((s, e) => s + (e.mesh ? e.mesh.verts.byteLength / STRIDE : 0), 0), ...this.stats } }
+  info() { const t = [...this.tiles.values()]; return { workers: this.workers ? this.workers.length : null, through: this.through.size, tiles: t.length, ready: t.filter(e => e.state === 'ready').length, visible: this.visible.length, buildings: t.reduce((s, e) => s + (e.mesh?.count || 0), 0), bytes: t.reduce((s, e) => s + (e.bytes || 0), 0), ...this.stats } }
 }

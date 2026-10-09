@@ -166,7 +166,8 @@ function frame(tb, c, ux, uy) {
     v(p, n, uu) { W.normal(n[0] * ux + n[1] * vx, n[0] * uy + n[1] * vy, n[2]); const x = (c[0] + (p[0] * ux + p[1] * vx) / mpu) * u, y = (c[1] + (p[0] * uy + p[1] * vy) / mpu) * u; tb.extend(ch, x, y, x, y, p[2]); return W.v(x, y, p[2], uu) },
     quad(P, n, U = [0, 0, 0, 0], list = 'walls') { const i = P.map((p, j) => F.v(p, n, U[j])); push(ch[list], i, P, n) },
     // triangles of point indices into P, each point with its own normal (N) and u (U); `out` orients them
-    mesh(P, N, U, tris, out, list = 'walls') { const i = P.map((p, j) => F.v(p, N[j], U[j])); for (let t = 0; t < tris.length; t += 3) tri(ch[list], i, P, tris[t], tris[t + 1], tris[t + 2], out) },
+    // lists: {list: tris, …} — the same points shared by several lists (a roof's near and far faces)
+    mesh(P, N, U, lists, out) { const i = P.map((p, j) => F.v(p, N[j], U[j])); for (const [list, tris] of Object.entries(lists)) for (let t = 0; t < tris.length; t += 3) tri(ch[list], i, P, tris[t], tris[t + 1], tris[t + 2], out) },
     shift(dx, dy) { return frame(tb, [c[0] + (dx * ux + dy * vx) / mpu, c[1] + (dx * uy + dy * vy) / mpu], ux, uy) },   // the same axes, centred dx, dy metres away
   };
   return F;
@@ -175,9 +176,10 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
+// out: the side the face looks to — a vector, or a function of the triangle's points giving one
 function tri(list, i, P, a, b, c, out) {
   const n = cross(sub(P[b], P[a]), sub(P[c], P[a])); if (Math.hypot(n[0], n[1], n[2]) < 1e-9) return;   // degenerate (a hip's apex)
-  if (dot(n, out) >= 0) list.push(i[a], i[b], i[c]); else list.push(i[a], i[c], i[b]);
+  if (dot(n, typeof out === 'function' ? out(P[a], P[b], P[c]) : out) >= 0) list.push(i[a], i[b], i[c]); else list.push(i[a], i[c], i[b]);
 }
 function push(list, i, P, n) { tri(list, i, P, 0, 1, 2, n); tri(list, i, P, 0, 2, 3, n) }
 
@@ -222,15 +224,16 @@ function hipRoof(F, a, b, o, ze, rise, ar, { prof, lift = 0, kick = 0, t1 = 1, e
       if (corner) { ex += Math.sign(ex) * kick; ey += Math.sign(ey) * kick }
       return [lerp(ex, lerp(r0[0], r1[0], s), t), lerp(ey, lerp(r0[1], r1[1], s), t), ze + rise * prof(t) + (corner ? lift * (1 - t) * (1 - t) : 0)];
     };
-    for (const [rows, cols, list] of [[[0, t1 / 2, t1], axis ? [0, 1] : [0, .5, 1], 'hi'], [[0, t1], [0, 1], 'lo']]) {   // (a hip face needs no middle column: only its corners are lifted)
-      const P = [], U = [], nc = cols.length;
-      for (const t of rows) for (const s of cols) { const p = pt(s, t, s === 0 || s === 1); P.push(p); U.push(axis ? p[1] : p[0]) }
-      const tris = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < nc - 1; si++) { const q = ti * nc + si; tris.push(q, q + 1, q + nc + 1, q, q + nc + 1, q + nc) }
-      F.mesh(P, smoothNormals(P, tris), U, tris, out, list);
-      if (edge > 0 && list === 'hi') {   // a thick cut edge below the eave (초가): its outer face
-        const E0 = pt(0, 0, true), E1 = pt(1, 0, true), n = norm([out[0], out[1], 0]);
-        F.quad([[E0[0], E0[1], E0[2] - edge], [E1[0], E1[1], E1[2] - edge], E1, E0], n, [U[0], U[nc - 1], U[nc - 1], U[0]], 'hi');
-      }
+    // near ('hi'): a 3 × 3 grid (a hip face needs no middle column: only its corners are lifted); far ('lo'): one quad on
+    // the grid's four corners, the same vertices (2026-10-09: separate ones cost a fifth of the 조선 mesh, and phones ran out)
+    const rows = [0, t1 / 2, t1], cols = axis ? [0, 1] : [0, .5, 1], P = [], U = [], nc = cols.length;
+    for (const t of rows) for (const s of cols) { const p = pt(s, t, s === 0 || s === 1); P.push(p); U.push(axis ? p[1] : p[0]) }
+    const hi = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < nc - 1; si++) { const q = ti * nc + si; hi.push(q, q + 1, q + nc + 1, q, q + nc + 1, q + nc) }
+    const c0 = 0, c1 = nc - 1, c2 = P.length - 1, c3 = P.length - nc;
+    F.mesh(P, smoothNormals(P, hi), U, { hi, lo: [c0, c1, c2, c0, c2, c3] }, out);
+    if (edge > 0) {   // a thick cut edge below the eave (초가): its outer face, near only
+      const E0 = pt(0, 0, true), E1 = pt(1, 0, true), n = norm([out[0], out[1], 0]);
+      F.quad([[E0[0], E0[1], E0[2] - edge], [E1[0], E1[1], E1[2] - edge], E1, E0], n, [U[0], U[nc - 1], U[nc - 1], U[0]], 'hi');
     }
   }
 }
@@ -315,16 +318,20 @@ function tower(tb, F, a, b, H, K, r) {
   W.kind = HANOK_KIND.ROOF; W.w = [0, 0, 0, 0];
   for (let f = step; f < floors; f += step) {
     const z = T.podiumM + f * st, zi = z + .15, zo = z - T.skirtRiseM, list = (f / step) % 3 === 0 ? 'walls' : 'hi';   // far away every third skirt
-
     W.m = [slot, 0, Hq & 255, Hq >>> 8];
-    const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-    for (let i = 0; i < 4; i++) {
-      const p = C[i], q = C[(i + 1) % 4], inner = c => [c[0] * a, c[1] * b, zi], outer = c => [c[0] * (a + o + k), c[1] * (b + o + k), zo + lift];
-      const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, out = norm([mx * T.skirtRiseM, my * T.skirtRiseM, o]);
-      const U = [p[0] * a + p[1] * b, q[0] * a + q[1] * b, q[0] * a + q[1] * b, p[0] * a + p[1] * b], P0 = outer(p), P1 = outer(q);
-      F.quad([inner(p), inner(q), P1, P0], out, U, list);
-      F.quad([[P0[0], P0[1], P0[2] - T.skirtEdgeM], [P1[0], P1[1], P1[2] - T.skirtEdgeM], P1, P0], norm([mx, my, 0]), U, list);   // its edge
+    // one ring a floor: the slope (inner → outer corners) and its edge (outer → below it), the corners shared by the two
+    // sides that meet there (u runs on round the corner; 2026-10-09: four quads a side were 44 % of the 조선 mesh)
+    const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]], P = [], N = [], U = [], slope = [], rim = [];
+    for (const c of C) {
+      const u = c[0] * a + c[1] * b, po = [c[0] * (a + o + k), c[1] * (b + o + k), zo + lift], nh = norm([c[0], c[1], 0]);
+      P.push([c[0] * a, c[1] * b, zi], po, po, [po[0], po[1], po[2] - T.skirtEdgeM]);
+      N.push(norm([c[0] * T.skirtRiseM, c[1] * T.skirtRiseM, o * 1.4]), norm([c[0] * T.skirtRiseM, c[1] * T.skirtRiseM, o * 1.4]), nh, nh); U.push(u, u, u, u);
     }
+    for (let i = 0; i < 4; i++) {
+      const p = i * 4, q = (i + 1) % 4 * 4;
+      slope.push(p, q, q + 1, p, q + 1, p + 1); rim.push(p + 3, q + 3, q + 2, p + 3, q + 2, p + 2);
+    }
+    F.mesh(P, N, U, { [list]: [...slope, ...rim] }, (p, q, r) => [p[0] + q[0] + r[0], p[1] + q[1] + r[1], 0]);   // outward, away from the body
   }
   // the roofs on top
   if (a / b >= T.triRoofAspect) {
