@@ -52,8 +52,10 @@ function treeMesh(lod) {
 // lamp: part 0 the pole and the arm, part 2 the head, part 1 the head's underside (the lamp, lit at night). The arm
 // points +x. Vertices carry the centre-line point and the offset from it separately, so the shader can thicken a
 // post that would otherwise be thinner than a pixel. 10 floats a vertex.
-function lampMesh(pack) {
-  const L = pack.props.lamps, H = L.heightM, A = L.armM, r = L.poleDiameterM / 2, d = [];
+// A lantern post (L.lantern, 조선 모드): a wooden post, a short arm on top and a paper 초롱 hanging from it, all lit at night,
+// its middle at (armM, heightM − 0.2) where the night's bulb and pool are drawn.
+function lampMesh(L) {
+  const H = L.heightM, A = L.armM, r = L.poleDiameterM / 2, d = [];
   const quad = (P, n, part) => { for (const p of [P[0], P[1], P[2], P[0], P[2], P[3]]) d.push(p[0], p[1], p[2], p[3], p[4], p[5], n[0], n[1], n[2], part) };
   // a box about a centre line: c(x,y,z) is the point on the line, the rest the offset; the line runs along `axis`
   const box = (c0, c1, hy, hz, part, bottom = part) => {   // from c0 to c1 (centre points), half extents across (y) and up (z)
@@ -65,6 +67,17 @@ function lampMesh(pack) {
   { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];
     quad([V(0, 1, -1), V(0, 1, 1), V(H - .25, 1, 1), V(H - .25, 1, -1)], [1, 0, 0], 0); quad([V(0, -1, 1), V(0, -1, -1), V(H - .25, -1, -1), V(H - .25, -1, 1)], [-1, 0, 0], 0);
     quad([V(0, 1, 1), V(0, -1, 1), V(H - .25, -1, 1), V(H - .25, 1, 1)], [0, 1, 0], 0); quad([V(0, -1, -1), V(0, 1, -1), V(H - .25, 1, -1), V(H - .25, -1, -1)], [0, -1, 0], 0) }
+  if (L.lantern) {
+    const top = H + .25, lw = L.lantern.widthM / 2, lh = L.lantern.heightM / 2, zc = H - .2;
+    { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];   // the post's top above the pole drawn above (to the arm)
+      quad([V(H - .25, 1, -1), V(H - .25, 1, 1), V(top, 1, 1), V(top, 1, -1)], [1, 0, 0], 0); quad([V(H - .25, -1, 1), V(H - .25, -1, -1), V(top, -1, -1), V(top, -1, 1)], [-1, 0, 0], 0);
+      quad([V(H - .25, 1, 1), V(H - .25, -1, 1), V(top, -1, 1), V(top, 1, 1)], [0, 1, 0], 0); quad([V(H - .25, -1, -1), V(H - .25, 1, -1), V(top, 1, -1), V(top, -1, -1)], [0, -1, 0], 0) }
+    box([-r, 0, top], [A + .05, 0, top], r * .8, r * .8, 0);                  // the arm
+    box([A, 0, zc + lh], [A, 0, top], .02, .02, 0);                            // the cord
+    box([A - lw, 0, zc], [A + lw, 0, zc], lw, lh, 1, 1);                       // the 초롱: the paper body, lit at night
+    box([A - lw * .7, 0, zc + lh + .04], [A + lw * .7, 0, zc + lh + .04], lw * .7, .04, 0);   // its wooden cap
+    return new Float32Array(d);
+  }
   box([-r, 0, H - .3 + r * .8], [A, 0, H - .3 + r * .8], r * .8, r * .8, 0);   // the arm, out over the road
   box([A - .3, 0, H - .23], [A + .25, 0, H - .23], .14, .11, 2, 1);          // the head: a box, its underside the lamp
   return new Float32Array(d);
@@ -213,6 +226,10 @@ export class CityLife {
     if (this.gl || this.broken) return; this.map = map;
     try { this._init(gl) ; this.gl = gl } catch (e) { this.broken = true; console.error('city-life: off —', e) }
   }
+  // a lamp mesh's vertex array (the instances are bound per draw)
+  lampVA(gl, mesh) { const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.b); for (const [loc, k, off] of [[0, 3, 0], [1, 3, 12], [2, 3, 24], [6, 1, 36]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 40, off) } return va }
+  // the posts for a look's lamps (the 조선 pack's lanterns), built on first use
+  lampFor(gl, LM) { let e = this.lamps.get(LM); if (!e) { const m = lampMesh(LM), b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m, gl.STATIC_DRAW); const mesh = { b, n: m.length / 10 }; e = { va: this.lampVA(gl, mesh), mesh }; this.lamps.set(LM, e) } return e }
   _init(gl) {
     const U = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
     this.pT = compileProgram(gl, TREE_VS, FLAT_FS); this.uT = U(this.pT, ['u_matrix', 'u_mu', 'u_keep', 'u_trunkR', 'u_shadow', 'u_fade', 'u_lit', 'u_pal', 'u_trunk', 'u_light', 'u_shade', 'u_alpha']);
@@ -223,7 +240,7 @@ export class CityLife {
     this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha']);
     const vbo = data => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b };
     this.meshT = [0, 1].map(lod => { const m = treeMesh(lod); return { b: vbo(m), n: m.length / 7 } });
-    { const m = lampMesh(this.pack); this.meshL = { b: vbo(m), n: m.length / 10 } }
+    { const m = lampMesh(this.pack.props.lamps); this.meshL = { b: vbo(m), n: m.length / 10 } }
     { const m = personMesh(); this.meshH = { b: vbo(m), n: m.length / 4 } }
     this.quad = vbo(new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]));
     this.vehicles = new VehicleRenderer(this.pack); this.vehicles.init(gl);
@@ -231,7 +248,7 @@ export class CityLife {
     this.peopleInst = [gl.createBuffer(), gl.createBuffer()]; this.ping = 0;
     this.vaH = gl.createVertexArray(); gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, this.meshH.b); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
     this.vaQ = gl.createVertexArray(); gl.bindVertexArray(this.vaQ); gl.bindBuffer(gl.ARRAY_BUFFER, this.quad); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
-    this.vaL = gl.createVertexArray(); gl.bindVertexArray(this.vaL); gl.bindBuffer(gl.ARRAY_BUFFER, this.meshL.b); for (const [loc, k, off] of [[0, 3, 0], [1, 3, 12], [2, 3, 24], [6, 1, 36]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 40, off) }
+    this.vaL = this.lampVA(gl, this.meshL); this.lamps = new Map([[this.pack.props.lamps, { va: this.vaL, mesh: this.meshL }]]);
     this.vaT = this.meshT.map(m => { const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, m.b); this.meshPtr(gl); return va });
     this.vaP = gl.createVertexArray(); gl.bindVertexArray(this.vaP); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -407,6 +424,7 @@ export class CityLife {
   }
   _render(gl, matrix, opts) {
     const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, coaster = false, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
+    const look = opts.look || this.pack, era = !!look.hanok;   // look: the mode's pack for the lamps' look; 조선 (its hanok): lanterns, no cars, no zebra crossings
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
     const pad = Math.min(400, (box[2] - box[0]) * .15), vbox = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
@@ -464,15 +482,15 @@ export class CityLife {
     }
     // ── lamps: the posts by day, glowing heads, pools and bulbs after dark ──
     const lampDraws = []; if (fadeLamp > 0) {
-      const LM = pack.props.lamps; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'lamps', vbox)) { lampDraws.push([c, a, n]); total += n }
+      const LM = look.props.lamps, LP = this.lampFor(gl, LM); let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'lamps', vbox)) { lampDraws.push([c, a, n]); total += n }
       const keep = phone ? .5 : 1.01; stats.lamps = Math.round(total * Math.min(1, keep));
       const inst = (c, a) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
       gl.useProgram(this.pL); gl.uniformMatrix4fv(this.uL.u_matrix, false, MT); gl.uniform1f(this.uL.u_mu, MU); gl.uniform1f(this.uL.u_fade, fadeLamp); gl.uniform1f(this.uL.u_keep, keep); gl.uniform1f(this.uL.u_night, dark ? 1 : 0); gl.uniform1f(this.uL.u_thick, Math.max(1, .55 * MPP(zoom) / (LM.poleDiameterM / 2)));   // never thinner than about half a pixel
       gl.uniform2fv(this.uL.u_lit, lit); gl.uniform3fv(this.uL.u_pole, col(LM.pole[theme])); gl.uniform3fv(this.uL.u_glow, hexRgb(LM.light)); gl.uniform3fv(this.uL.u_light, light); gl.uniform1f(this.uL.u_alpha, 1);
-      gl.bindVertexArray(this.vaL); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshL.n, n) }
+      gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) }
     }
     // ── cars: the simulation, then the instanced boxes ──
-    if (fadeCar > 0 && !(phone && zoom < 16.3)) {
+    if (fadeCar > 0 && !era && !(phone && zoom < 16.3)) {
       const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
       this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= 16.5, pixelRatio });
@@ -481,7 +499,7 @@ export class CityLife {
     this.tick = now;
     // ── people on the pavements ──
     if (people && fadePeople > 0) { const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion); stats.people = n;
-      if (n) { const PP = pack.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
+      if (n) { const PP = look.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
         const buf = this.peopleInst[this.ping ^= 1]; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, this.people.poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.people.poses, 0, n * 14);
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
         gl.useProgram(this.pH); gl.uniformMatrix4fv(this.uH.u_matrix, false, MT); gl.uniform1f(this.uH.u_mu, MU); gl.uniform1f(this.uH.u_time, reducedMotion ? 0 : now / 1000); gl.uniform1f(this.uH.u_unit, unit);
@@ -491,14 +509,14 @@ export class CityLife {
     else this.people.list.length = 0;
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    if (fadeCross > 0) {
+    if (fadeCross > 0 && !era) {
       const X = pack.roads.crossing, draws = []; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'cross', vbox)) { draws.push([c, a, n]); total += n } stats.cross = total;
       if (total) { gl.useProgram(this.pX); gl.uniformMatrix4fv(this.uX.u_matrix, false, MT); gl.uniform1f(this.uX.u_mu, MU); gl.uniform1f(this.uX.u_fade, fadeCross); gl.uniform1f(this.uX.u_depth, X.depthM);
         gl.uniform3fv(this.uX.u_rgb, col(pack.roads.lane.colors[theme])); gl.uniform1f(this.uX.u_alpha, (dark ? .55 : .9) * fadeCross); gl.uniform1f(this.uX.u_stripe, X.stripeM); gl.uniform1f(this.uX.u_gap, X.gapM);
         gl.bindVertexArray(this.vaQ); for (const [c, a, n] of draws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.cross.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) } }
     }
     if (dark && lampDraws.length) {
-      const LM = pack.props.lamps, keep = phone ? .5 : 1.01, pool = Math.min(LM.poolOpacity * (coaster ? pack.modes.coaster.lampPool : 1.4), LM.simcityPoolMaxOpacity), glow = hexRgb(LM.light);
+      const LM = look.props.lamps, keep = phone ? .5 : 1.01, pool = Math.min(LM.poolOpacity * (coaster ? pack.modes.coaster.lampPool : 1.4), LM.simcityPoolMaxOpacity), glow = hexRgb(LM.light);
       gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadeLamp); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * 1.6);
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
       gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
@@ -566,7 +584,7 @@ export class CityLife {
   dispose(gl) {
     if (!this.gl) return; for (const c of [...this.cells.values()]) this.dropCell(c);
     for (const p of [this.pT, this.pL, this.pP, this.pB, this.pX, this.pH]) gl.deleteProgram(p);
-    for (const m of [...this.meshT, this.meshL, this.meshH]) gl.deleteBuffer(m.b); gl.deleteBuffer(this.quad); for (const b of this.peopleInst) gl.deleteBuffer(b);
+    for (const m of [...this.meshT, ...[...this.lamps.values()].map(e => e.mesh), this.meshH]) gl.deleteBuffer(m.b); for (const e of this.lamps.values()) if (e.va !== this.vaL) gl.deleteVertexArray(e.va); gl.deleteBuffer(this.quad); for (const b of this.peopleInst) gl.deleteBuffer(b);
     for (const va of [this.vaH, this.vaQ, this.vaL, this.vaP, ...this.vaT]) gl.deleteVertexArray(va);
     this.vehicles.dispose(gl); this.gl = null;
   }

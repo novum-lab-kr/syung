@@ -43,6 +43,8 @@ export function arrivalParts(bus) {
     .replace(/^(\d+)분(\d+초)?\s*후$/, '$1분 후').replace(/^\d+초\s*후$/, '곧 도착') || '도착 정보 없음';
   return {when, detail: [where?.[1], last && '막차'].filter(Boolean).join(' · ')};
 }
+// 가마꾼의 걸음 위상(0..1): 버스마다 고정, 한 줄로 달리는 가마들이 발을 맞추지 않게
+function stepPhase(id) { let h = 2166136261; for (const c of String(id)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; }
 // 곧 오는 순서: 곧 도착(그 안에서는 남은 초), 남은 초, 출발 · 회차 대기, 운행 종료 · 정보 없음은 맨 뒤
 function arrivalRank(row) {
   const first = row?.buses?.[0], message = String(first?.message || ''), seconds = Number.isFinite(first?.seconds) ? first.seconds : 0;
@@ -545,25 +547,26 @@ class BusLayer {
       if(!pose||!contains(this.box||box,pose.coordinate))continue;
       // 차로가 충분히 넓은 줌(18쯤)에서는 바퀴까지 차로 안에. 그보다 멀면 아래처럼 최소 크기를 지킨다
       // 차로 폭에 맞추면 줌 15에서 4px · 16에서 8px 로 줄어 사라진 것처럼 보였다(2026-10-08 덕배): 줌 15 크기 밑으로는 줄이지 않는다
-      const fit=pose.laneWidth*.88/(1.12*busMetresPerPixel(zoom,pose.coordinate[1]));
+      const fit=pose.laneWidth*.88/((this.joseon?1.3:1.12)*busMetresPerPixel(zoom,pose.coordinate[1]));   // 조선 모드의 가마는 장대까지 폭이 1.3
       const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),Math.max(busModelScale(BUS_ZOOM.buses),fit));
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
-      for(const x of [-1.55,1.55])for(const y of [-.56,.56])for(const z of [0,1.32]){
+      for(const x of [-1.55,1.55])for(const y of this.joseon?[-.65,.65]:[-.56,.56])for(const z of [0,1.35]){
         const q=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(q)corners.push(q);
       }
       if(corners.length!==8)continue;const rectangle=bounds(corners);
       if(!intersects(rectangle,[0,0,width,height]))continue;
       const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id;
-      vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected});
+      const run=!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration;   // 조선 모드의 가마꾼은 이 동안 달린다
+      vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected,moving:run,phase:stepPhase(bus.row.id)});
       this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading,laneWidth:pose.laneWidth,scale});
-      if(!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration)moving=true;
+      if(run)moving=true;
       if(vehicles.length>=(this.phone?160:320))break;
     }
     const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
       {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id});
     posts.push(...placement.posts);this.stopHits.push(...placement.hits);
-    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude});
+    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,joseon:this.joseon,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
       this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));

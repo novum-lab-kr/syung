@@ -1,7 +1,9 @@
-// 조선 모드 — the Seoul pack (city_style_seoul.mjs) with the ground turned to packed earth and every building a 기와집.
+// 조선 모드 — the Seoul pack (city_style_seoul.mjs) with the ground turned to packed earth and every building Joseon.
 // Data only, like the Seoul pack: city_style.mjs paints the ground from `ground` / `roads`, and city_mesh.mjs builds
-// a footprint as hanok (web/lib/city_hanok.mjs) whenever the pack carries `hanok`. Everything not listed here (lighting,
+// a footprint with web/lib/city_hanok.mjs whenever the pack carries `hanok`. Everything not listed here (lighting,
 // props, viaduct, x-ray …) is the Seoul pack's.
+// 2026-10-09 (with Codex's review of the first captures): earth less yellow, light main roads / mid yards / darker lanes;
+// thinner ridges, gentler corners; fewer and dimmer lit 창호; 초가 villages, plans, 돌담; tall buildings kept tall.
 import SEOUL from './city_style_seoul.mjs';
 
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
@@ -10,58 +12,91 @@ const merge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entrie
 export const JOSEON_CITY_STYLE = merge(SEOUL, {
   id: 'joseon',
   label: '한양 / 조선',
-  // 흙바닥: 마당과 골목은 다진 흙, 큰길은 조금 더 밝은 마른 흙, 풀밭과 숲은 그대로 푸르게
+  // 흙바닥: 다진 흙 마당, 밝은 마른 흙 큰길, 조금 어두운 골목. 노란 필터가 아니라 회갈색 흙
   ground: {
+    // 흙 질감 (city_style.mjs applyGroundTexture): a size-px tile at pixelRatio — blotches ±blotch, grain ±grain, crumbs, pebbles
+    texture: { size: 256, pixelRatio: 2, blotch: 0.06, grain: 0.03, crumbs: 1400, pebbles: 26 },
     light: {
-      base: '#D2BC94', residential: '#D0B88E', commercial: '#D6BF95', retail: '#D9C29A', industrial: '#C9B48D',
-      civic: '#DCC9A3', hospital: '#D3C09A', park: '#A3B57A', grass: '#B3C185', forest: '#71935A',
-      water: '#7FA9B4', sidewalk: '#DCCAA5', ballast: '#B5A182',
+      base: '#C8BDA4', residential: '#C5B69A', commercial: '#CBBEA3', retail: '#CDBFA2', industrial: '#C1B59C',
+      civic: '#D8CEB8', hospital: '#CFC4AC', park: '#8E9D73', grass: '#A2AE83', forest: '#637E59',
+      water: '#73969B', sidewalk: '#D5C9AF', ballast: '#ADA38C',
     },
     dark: {
-      base: '#2E2A22', residential: '#302B22', commercial: '#322D24', retail: '#352F25', industrial: '#2C2821',
-      civic: '#363127', hospital: '#322E26', park: '#2A3A26', grass: '#2F3E28', forest: '#21311F',
-      water: '#1A3540', sidewalk: '#3A3429', ballast: '#3A342B',
+      base: '#32352F', residential: '#33352E', commercial: '#35372F', retail: '#373830', industrial: '#30332D',
+      civic: '#3A3B33', hospital: '#35372F', park: '#2A3A26', grass: '#2F3E28', forest: '#21311F',
+      water: '#1A3540', sidewalk: '#3C3E35', ballast: '#3A3B33',
     },
   },
   roads: {
     classes: {
-      motorway: { colors: { light: '#E0CDA6', dark: '#433C2F' } },
-      primary: { colors: { light: '#E0CDA6', dark: '#433C2F' } },
-      secondary: { colors: { light: '#DDC9A1', dark: '#403A2D' } },
-      tertiary: { colors: { light: '#D9C49B', dark: '#3D372B' } },
-      minor: { colors: { light: '#D6C098', dark: '#3A3429' } },
-      service: { colors: { light: '#D4BE96', dark: '#383228' } },
+      motorway: { colors: { light: '#DFD2B6', dark: '#41443A' } },
+      primary: { colors: { light: '#DFD2B6', dark: '#41443A' } },
+      secondary: { colors: { light: '#D8C8AB', dark: '#3E4137' } },
+      tertiary: { colors: { light: '#D1C2A5', dark: '#3B3E35' } },
+      minor: { colors: { light: '#CBB999', dark: '#383B33' } },
+      service: { colors: { light: '#C7B597', dark: '#363931' } },
     },
     lane: { opacity: { light: 0, dark: 0 } },                                     // 흙길에는 차선이 없다
     centerLine: { opacity: { light: 0, dark: 0 } },
   },
+  // 거리: 가로등 대신 나무 기둥에 매단 초롱(몸체는 크게, 바닥 빛은 작게), 사람들은 흰 옷 · 쪽빛 · 흙빛 한복
+  // (자동차와 횡단보도는 city_life 가 조선 모드에서 그리지 않는다)
+  props: {
+    lamps: { heightM: 2.6, armM: 0.6, poleDiameterM: 0.14, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFD39A', poolRadiusM: 2.0, poolOpacity: 0.08, simcityPoolMaxOpacity: 0.1, lantern: { widthM: 0.46, heightM: 0.62 } },
+    people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
+  },
   lighting: { shadow: { color: '#5A4630' } },
   modes: { simcity: { shadowOpacity: { light: 0.2, dark: 0.08 } } },
-  // 기와집 (web/lib/city_hanok.mjs): every footprint fitted with an oriented rectangle of its own area; a small one is one
-  // house (채), a big one a walled compound (담장) of houses in rows with yards between. Metres
+  // web/lib/city_hanok.mjs: every footprint fitted with an oriented rectangle of its own area, then a type (초가 · 기와 ·
+  // 중층 전각 · 한옥 고층 · 목탑), a plan and a wall. Metres
   hanok: {
     fitK: 0.94,                       // the rectangle a little inside the footprint's own area, so neighbours' eaves seldom meet
-    single: { maxLengthM: 22, maxDepthM: 12 },
-    houseDepthM: [5.5, 9],            // wall to wall across one 채
-    houseLengthM: 15,                 // the target length of one 채 in a compound (rows split into this)
-    maxLengthM: 20,
-    yardM: 6, gapM: 2.5,              // between rows of houses / between houses in a row
+    single: { maxLengthM: 24, maxDepthM: 20 },  // one house (ㅡ · ㄱ · ㄷ · ㅁ as the lot allows); larger lots become compounds (rows of houses)
+    houseDepthM: [5.5, 7.5],          // wall to wall across one 채 in a compound
+    houseLengthM: 11,                 // the target length of one 채 in a compound
+    maxLengthM: 16,
+    yardM: 7.5, gapM: 3.5,            // between rows of houses / between houses in a row (wall to wall)
     emptyShare: 0.15,                 // cells of a big compound left as open yards
     maxHouses: 48,
-    baseM: 0.55, baseOutM: 0.6,       // 기단: the stone platform the house stands on, and how far it reaches past the walls
-    wallM: [2.5, 3.2],                // 기둥 높이 (base to eave), small house to big hall
+    baseM: 0.55,                      // 기단: the stone band at the foot of the walls (drawn by the shader)
+    wallM: [2.5, 3.2],                // 기둥 높이 (ground to eave), small house to big hall
     eaveOutM: 1.15,                   // 처마: past the walls
     riseK: 0.62, riseM: [1.4, 4.4],   // the roof's rise over the eaves: × (half depth + eave), clamped
     hipK: 0.6,                        // 우진각: the ridge is shorter than the eaves by this × the half depth at each end
-    cornerLiftM: 0.8, cornerKickM: 0.45,   // 추녀: the eave corners lifted and pushed out
+    cornerLiftM: 0.5, cornerKickM: 0.3,   // 추녀: the eave corners lifted and pushed out
+    ridge: { halfWidthM: 0.14, upM: 0.22, downM: 0.08 },   // 용마루
     postM: 0.24, bayM: 2.4,           // 기둥 width and spacing (칸)
     paperShare: 0.55,                 // bays with 창호 (the rest 회벽)
-    compound: { minAreaM2: 260, wallM: 1.9, wallThickM: 0.45, insetM: 0.3, gateM: 3.2 },
-    colors: {
-      light: { giwa: ['#666D73', '#596066', '#73777A'], wood: '#7A5236', plaster: '#ECE6D6', paper: '#F3EBD3', stone: '#B9B2A3', dam: '#DCCFB4', soffit: '#6E4B33', ridge: '#3D4246' },
-      dark: { giwa: ['#3A3F44', '#33383C', '#424546'], wood: '#4A3224', plaster: '#8E897C', paper: '#9C927A', stone: '#6F6A60', dam: '#80776A', soffit: '#3B2A1F', ridge: '#25292C' },
+    // plans: shares of ㅡ, ㄱ, ㄷ, ㅁ (a plan the lot cannot hold falls back to a simpler one)
+    plans: { giwa: [0.3, 0.35, 0.22, 0.13], thatch: [0.6, 0.4, 0, 0] },
+    // 초가: thatched houses by land use (× the district noise), never on big lots or public land
+    thatch: {
+      byLanduse: { residential: 0.55, unknown: 0.5, industrial: 0.5, commercial: 0.25, retail: 0.3 },
+      districtM: 240, maxAreaM2: 420,
+      baseM: 0.3, wallM: 2.2, eaveOutM: 0.55, riseK: 0.72, riseM: [1.3, 2.5], hipK: 0.95, edgeM: 0.32,
     },
-    night: { paper: '#FFC774', litShare: 0.6, emission: 0.85 },   // 창호지 너머 등잔불
+    // a small lot walled now and then: the house set back behind a front yard; 돌담 round 초가, either round 기와
+    lot: { minAreaM2: 95, thatchShare: 0.55, giwaShare: 0.4, stoneShareGiwa: 0.45, wallThickM: 0.55, stoneWallM: 1.35, yardM: 3.5 },
+    compound: { minAreaM2: 260, wallM: 1.6, wallThickM: 0.38, insetM: 0.3, gateM: 3.2, stoneShare: 0.25, gateRoof: { widthM: 3.6, depthM: 1.1, heightM: 2.3 } },
+    // tall buildings keep their height (the user's references: a 9층 목탑, a hanok high-rise with an eave round every floor)
+    tall: {
+      towerMinH: 15,                  // 한옥 고층: real height, a 기와 skirt round the floors, a hanok podium, roofs on top
+      storeyM: 3.2, skirtStep: [[10, 1], [24, 2], [999, 3]],   // a skirt every floor up to 10 floors, every 2nd up to 24, else every 3rd
+      skirtOutM: 1.8, skirtRiseM: 0.8, skirtEdgeM: 0.22,   // the floors' eaves: deep, sloped, a visible edge (2026-10-09: 0.95 / 0.55 read as thin stripes)
+       podiumM: 4.2, podiumOutM: 1.6, triRoofAspect: 2.1,
+      towerMaxHalfM: [22, 14],        // a broader tall lot (a mall, a hotel) becomes a palace court: the tower this big in the middle, 전각 either side
+      pagodaMinH: 100, pagodaMaxAspect: 1.6, pagodaShare: 0.85,   // 목탑: tall and squarish
+      pagodaStoreyMinM: 7, pagodaShrink: 0.07, pagodaEaveM: 1.6, spireM: 9,
+      hallMinH: 8, hallMinAreaM2: 150, hallShare: 0.5, hallShareResidential: 0.12,   // 중층 전각: two storeys
+      hallStoreyM: [3.4, 3.0], hallSetM: 1.4, hallHalfM: [14, 8],
+    },
+    colors: {
+      light: { giwa: ['#535E62', '#465257', '#687274'], wood: '#654A36', plaster: '#E7DFCC', paper: '#F3EBD3', stone: '#A5A397', dam: '#D8D0BD', soffit: '#5A4130', ridge: '#414C50',
+        thatch: ['#C3A05E', '#B08F55', '#A08660'], mud: '#C4AA83', field: ['#9C978B', '#857F74'], spire: '#C99B3A' },
+      dark: { giwa: ['#424B4D', '#384143', '#4B5251'], wood: '#4A3224', plaster: '#8E897C', paper: '#9C927A', stone: '#6F6A60', dam: '#80776A', soffit: '#3B2A1F', ridge: '#2A3134',
+        thatch: ['#6E5B39', '#625233', '#5A4D37'], mud: '#6B5C46', field: ['#5B5851', '#4D4A44'], spire: '#7A6024' },
+    },
+    night: { paper: '#EBC58A', litShare: 0.24, emission: 0.45 },   // 창호지 너머 등잔불: 몇 집, 한쪽 면 한두 칸
   },
 });
 

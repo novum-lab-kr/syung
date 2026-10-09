@@ -12,7 +12,7 @@ import {CoasterRidePlacement,sampleRideTracks} from './lib/coaster_ride_placemen
 import {NightLayer} from './lib/park_night.mjs';
 import {CoasterTrain} from './lib/coaster_train.mjs';   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './lib/coaster_first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
-import {addCityLayers,applyCityStyle,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
+import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './lib/city_life.mjs';
 import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
@@ -2157,9 +2157,9 @@ map.on('load',()=>{
       if(simcity||coaster){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
         if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-        cityLife.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
+        cityLife.render(gl,pd.mainMatrix,{look:cityPack(),now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
         if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
-      busLayer?.render(gl,pd.mainMatrix,behind);   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
+      if(busLayer)busLayer.joseon=joseon;busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
       if(simcity||coaster){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
         if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50)}
@@ -2346,6 +2346,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
   applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:cityPack(),ride:!!ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+  applyGroundTexture(map,{on:joseon&&$('toggleMap').getAttribute('aria-pressed')==='true',theme:t,pack:cityPack()});   // 조선: 흙 질감 (packed earth instead of a flat floor)
   syncCity();   // city-build: the buildings follow the mode and theme
 }
 document.head.insertAdjacentHTML('beforeend',`<style>
@@ -2459,7 +2460,7 @@ function updateSun(){
   const k=1/Math.tan(el*Math.PI/180),ux=Math.sin(away),uy=Math.cos(away),seen=new Set(),tris=[];
   const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
   for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-    const h=joseon?JOSEON_SHADOW_H:+(f.properties.render_height??10),g=f.geometry;   // 조선: every building a low 기와집if(!h||!g||coaster&&h>=RIDE_H)continue;
+    const h0=+(f.properties.render_height??10),h=joseon&&h0<JOSEON_STYLE.hanok.tall.towerMinH?JOSEON_SHADOW_H:h0,g=f.geometry;   // 조선: a low building is a low house; a tall one keeps its height (한옥 고층 · 목탑)if(!h||!g||coaster&&h>=RIDE_H)continue;
     const rings=g.type==='Polygon'?[g.coordinates[0]]:g.type==='MultiPolygon'?g.coordinates.map(p=>p[0]):[];
     for(const ring of rings){
       if(!ring||ring.length<3)continue;

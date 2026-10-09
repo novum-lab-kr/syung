@@ -155,6 +155,51 @@ export function applyCityStyle(map, { on = false, theme = 'light', coaster = fal
   return show;
 }
 
+// ── 흙 질감 (조선 모드: pack.ground.texture) ─────────────────────────────────────────────────────────
+// The ground as packed earth instead of a flat colour: for each ground colour a tileable pattern — broad blotches of damper and
+// drier earth, a fine grain, darker and lighter crumbs and a few small pebbles with their shadows — set as the landuse fill's and
+// the background's pattern. Deterministic (a seeded hash), built once per colour and theme.
+const H32 = (a, b, c) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 2246822519); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 };
+export function dirtPattern(hex, T, dark = false) {
+  const n = T.size, [r0, g0, b0] = hexRgb(hex), px = new Float32Array(n * n), k = dark ? .6 : 1;
+  const vn = (x, y, cell, seed) => {   // tileable value noise: the lattice wraps every n px
+    const m = n / cell, fx = x / cell, fy = y / cell, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const h = (i, j) => H32(((i % m) + m) % m, ((j % m) + m) % m, seed);
+    return (h(ix, iy) * (1 - sx) + h(ix + 1, iy) * sx) * (1 - sy) + (h(ix, iy + 1) * (1 - sx) + h(ix + 1, iy + 1) * sx) * sy;
+  };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++)
+    px[y * n + x] = 1 + k * (T.blotch * (vn(x, y, n / 4, 1) - .5) * 2 + T.blotch * .6 * (vn(x, y, n / 16, 2) - .5) * 2 + T.grain * (H32(x, y, 3) - .5) * 2);
+  const data = new Uint8ClampedArray(n * n * 4), warm = [1.02, 1, .96];
+  for (let i = 0; i < n * n; i++) { const v = px[i]; data[i * 4] = Math.round(r0 * v * 255); data[i * 4 + 1] = Math.round(g0 * v * 255); data[i * 4 + 2] = Math.round(b0 * v * 255); data[i * 4 + 3] = 255 }
+  const dot = (cx, cy, rad, mul, tint = [1, 1, 1]) => {   // a soft disc, wrapped round the tile's edges
+    for (let y = Math.floor(cy - rad - 1); y <= cy + rad + 1; y++) for (let x = Math.floor(cx - rad - 1); x <= cx + rad + 1; x++) {
+      const d = Math.hypot(x + .5 - cx, y + .5 - cy), a = Math.max(0, Math.min(1, rad + .5 - d)); if (a <= 0) continue;
+      const i = ((((y % n) + n) % n) * n + (((x % n) + n) % n)) * 4;
+      for (let c = 0; c < 3; c++) data[i + c] = data[i + c] * (1 - a) + Math.min(255, data[i + c] * mul * tint[c]) * a;
+    }
+  };
+  for (let i = 0; i < T.crumbs; i++) { const lighter = H32(i, 7, 4) < .4; dot(H32(i, 1, 4) * n, H32(i, 2, 4) * n, .5 + H32(i, 3, 4) * .9, lighter ? 1 + .14 * k : 1 - .2 * k, lighter ? warm : [1, 1, 1]) }
+  for (let i = 0; i < T.pebbles; i++) {   // 자갈: its shadow down-right, then the stone, lighter and a little grey
+    const x = H32(i, 1, 5) * n, y = H32(i, 2, 5) * n, rad = 1.2 + H32(i, 3, 5) * 1.6;
+    dot(x + .8, y + .9, rad, 1 - .22 * k); dot(x, y, rad, 1 + .16 * k, [.97, .98, 1.01]);
+  }
+  return { width: n, height: n, data };
+}
+// set (on) or clear the earth patterns on the city's landuse floor and the background
+export function applyGroundTexture(map, { on = false, theme = 'light', pack = SEOUL } = {}) {
+  const T = pack.ground?.texture, layers = [['city-landuse', 'fill-pattern'], ['background', 'background-pattern']];
+  if (!on || !T) { for (const [id, prop] of layers) if (map.getLayer?.(id) && map.getPaintProperty(id, prop) != null) map.setPaintProperty(id, prop, undefined); return false }
+  const name = hex => `city-dirt-${theme}-${hex.replace('#', '')}`, need = hex => { const id = name(hex); if (!map.hasImage(id)) map.addImage(id, dirtPattern(hex, T, theme === 'dark'), { pixelRatio: T.pixelRatio }); return id };
+  const by = new Map();
+  for (const [cls, key] of Object.entries(LANDUSE_KEY)) { const id = need(tone(groundHex(pack, theme, key), pack, 'simcity', theme)); if (!by.has(id)) by.set(id, []); by.get(id).push(cls) }
+  const base = need(tone(groundHex(pack, theme, 'unknown'), pack, 'simcity', theme)), expr = ['match', ['get', 'class']];
+  for (const [id, cls] of by) if (id !== base) expr.push(cls, id);
+  expr.push(base);
+  if (map.getLayer('city-landuse')) map.setPaintProperty('city-landuse', 'fill-pattern', expr);
+  if (map.getLayer('background')) map.setPaintProperty('background', 'background-pattern', base);
+  return true;
+}
+
 // The palette keys the runtime's mapPalette() hands to its stock layers, from the pack: the background,
 // water, parks, the landcover (wood and grass apart), footprints, rails, and the shadow / light values.
 export function cityPalette(theme = 'light', { pack = SEOUL, coaster = false, ride = false } = {}) {
@@ -171,4 +216,4 @@ export function cityPalette(theme = 'light', { pack = SEOUL, coaster = false, ri
   };
 }
 
-export default { cityLayers, addCityLayers, applyCityStyle, cityPalette, tone, toneRGB, groundHex, MPP };
+export default { cityLayers, addCityLayers, applyCityStyle, applyGroundTexture, dirtPattern, cityPalette, tone, toneRGB, groundHex, MPP };

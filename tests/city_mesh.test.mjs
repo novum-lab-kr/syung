@@ -60,31 +60,37 @@ test('간판: 상가 건물에만, 휴대폰에서는 창 간판 없이 줄어�
 });
 
 // 조선 모드 (web/lib/city_hanok.mjs): the Joseon pack builds every footprint as 기와집
-test('조선: 작은 건물은 기와집 한 채, 큰 건물은 담장 두른 여러 채 — 모든 면이 바깥을 향한다', async () => {
+test('조선: 낮은 건물은 초가 · 기와집, 높은 건물은 높이 그대로 한옥 고층, 큰 땅은 담장 두른 단지 — 모든 면이 바깥을 향한다', async () => {
   const { JOSEON_CITY_STYLE } = await import('../web/lib/city_style_joseon.mjs');
-  const { hanokLayout } = await import('../web/lib/city_hanok.mjs');
+  const { hanokLayout, houseWings } = await import('../web/lib/city_hanok.mjs');
   const J = resolvePack(JOSEON_CITY_STYLE), K = J.hanok;
   const rect = (cx, cy, hx, hy) => [{ x: cx - hx, y: cy - hy }, { x: cx + hx, y: cy - hy }, { x: cx + hx, y: cy + hy }, { x: cx - hx, y: cy + hy }, { x: cx - hx, y: cy - hy }];
   const run = feats => { const tb = new TileBuilder({ z: Z, x: TX, y: TY, extent: E, buildings: layer(feats), landuse: null }, J, {}); while (!tb.step(1e9)); return tb.result() };
   const kinds = r => { const i8 = new Int8Array(r.verts.buffer, r.verts.byteOffset), c = {}; for (let v = 0; v < r.verts.byteLength / STRIDE; v++) { const k = i8[v * STRIDE + 15]; c[k] = (c[k] || 0) + 1 } return c };
-  assert.equal(hanokLayout(12, 8, K).houses.length, 1); assert.equal(hanokLayout(12, 8, K).dam, null);
-  const big = hanokLayout(80, 50, K); assert.ok(big.houses.length >= 4, `${big.houses.length} houses`); assert.ok(big.dam);
-  const one = run([{ id: 1, props: { render_height: 40 }, rings: [rect(2000, 2000, 6 * UPM, 4 * UPM)] }]), k1 = kinds(one);
-  assert.ok(k1[KIND.GIWA] && k1[KIND.HANOK] && !k1[KIND.DAM] && !k1[KIND.WALL], JSON.stringify(k1));
-  assert.ok(one.zmax < 9, `a 40 m tower becomes a low house (ridge ${one.zmax.toFixed(1)} m)`);
-  const r = run([{ id: 2, props: { render_height: 60 }, rings: [rect(1000, 1000, 40 * UPM, 25 * UPM)] }]); assert.ok(kinds(r)[KIND.DAM] > 0, '담장');
+  assert.equal(hanokLayout(12, 8, K).houses.length, 1); assert.equal(hanokLayout(12, 8, K).wall, null);
+  const big = hanokLayout(80, 50, K); assert.ok(big.houses.length >= 4, `${big.houses.length} houses`); assert.ok(big.wall);
+  // plans: a deep lot can take wings (ㄱ, ㄷ, ㅁ); every wing stays inside the lot
+  const plans = new Set(); for (let i = 0; i < 40; i++) { const w = houseWings(16, 14, K, k => ((i * 7919 + k * 104729) % 1000) / 1000, false); plans.add(w.length); for (const h of w) { const [hx, hy] = h.turn ? [h.hd, h.hl] : [h.hl, h.hd]; assert.ok(Math.abs(h.x) + hx <= 8.01 && Math.abs(h.y) + hy <= 7.01) } }
+  assert.ok(plans.size >= 3, `plans with ${[...plans]} wings`);
+  const low = run([{ id: 1, props: { render_height: 6 }, rings: [rect(2000, 2000, 6 * UPM, 4 * UPM)] }]), kl = kinds(low);
+  assert.ok((kl[KIND.GIWA] || kl[11]) && kl[KIND.HANOK] && !kl[KIND.WALL], JSON.stringify(kl)); assert.ok(low.zmax < 9, `a low house (ridge ${low.zmax.toFixed(1)} m)`);
+  const tall = run([{ id: 4, props: { render_height: 40 }, rings: [rect(2000, 2000, 14 * UPM, 9 * UPM)] }]);
+  assert.ok(tall.zmax > 36 && tall.zmax < 46, `a 40 m building keeps its height (${tall.zmax.toFixed(1)} m)`); assert.ok(kinds(tall)[KIND.GIWA] > 0);
+  const r = run([{ id: 2, props: { render_height: 8 }, rings: [rect(1000, 1000, 40 * UPM, 25 * UPM)] }]), kr = kinds(r); assert.ok(kr[KIND.DAM] > 0 || kr[12] > 0, '담장 or 돌담');
   // winding: every triangle faces along its vertices' normal (the culled side is the inside)
-  const f = new Float32Array(r.verts.buffer, r.verts.byteOffset, r.verts.byteLength / 4), i8 = new Int8Array(r.verts.buffer, r.verts.byteOffset), p = i => [f[i * 8] * N * E / UPM, f[i * 8 + 1] * N * E / UPM, f[i * 8 + 2]];
-  let bad = 0; for (let t = 0; t < r.idx.length; t += 3) { const [A, B, C] = [0, 1, 2].map(j => p(r.idx[t + j])), u = B.map((v, j) => v - A[j]), w = C.map((v, j) => v - A[j]), n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], o = r.idx[t] * STRIDE; if (n[0] * i8[o + 12] + n[1] * i8[o + 13] + n[2] * i8[o + 14] < 0) bad++ }
-  assert.equal(bad, 0, 'triangles wound against their normal');
+  for (const m of [low, tall, r]) {
+    const f = new Float32Array(m.verts.buffer, m.verts.byteOffset, m.verts.byteLength / 4), i8 = new Int8Array(m.verts.buffer, m.verts.byteOffset), p = i => [f[i * 8] * N * E / UPM, f[i * 8 + 1] * N * E / UPM, f[i * 8 + 2]];
+    let bad = 0; for (let t = 0; t < m.idx.length; t += 3) { const [A, B, C] = [0, 1, 2].map(j => p(m.idx[t + j])), u = B.map((v, j) => v - A[j]), w = C.map((v, j) => v - A[j]), n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], o = m.idx[t] * STRIDE; if (n[0] * i8[o + 12] + n[1] * i8[o + 13] + n[2] * i8[o + 14] < 0) bad++ }
+    assert.equal(bad, 0, 'triangles wound against their normal');
+  }
 });
 
 test('조선: 타일 경계에 걸친 건물의 집은 중심이 든 타일 한 곳에서만 그린다', async () => {
   const { JOSEON_CITY_STYLE } = await import('../web/lib/city_style_joseon.mjs');
-  const J = resolvePack({ ...JOSEON_CITY_STYLE, hanok: { ...JOSEON_CITY_STYLE.hanok, emptyShare: 0 } }), half = 30 * UPM;   // no open yards: the whole block's seed (its own lowest vertex) differs from the cut halves'
+  const H0 = JOSEON_CITY_STYLE.hanok, J = resolvePack({ ...JOSEON_CITY_STYLE, hanok: { ...H0, emptyShare: 0, compound: { ...H0.compound, stoneShare: 0 }, thatch: { ...H0.thatch, byLanduse: { unknown: 0 } } } }), half = 30 * UPM;   // nothing left to chance (open yards, 돌담, 초가): the whole block's seed (its own lowest vertex) differs from the cut halves'
   // the same 60 × 40 m block in two neighbouring tiles' coordinates (straddling x = E), as both tiles hold it
   const ring = ox => [{ x: E - half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 - 20 * UPM }];
-  const roofs = (x, ox) => { const tb = new TileBuilder({ z: Z, x, y: TY, extent: E, buildings: layer([{ id: 3, props: { render_height: 20 }, rings: [ring(ox)] }]), landuse: null }, J, {}); while (!tb.step(1e9)); const r = tb.result(), i8 = new Int8Array(r.verts.buffer, r.verts.byteOffset); let n = 0; for (let v = 0; v < r.verts.byteLength / STRIDE; v++) if (i8[v * STRIDE + 15] === KIND.HANOK) n++; return n };
+  const roofs = (x, ox) => { const tb = new TileBuilder({ z: Z, x, y: TY, extent: E, buildings: layer([{ id: 3, props: { render_height: 6 }, rings: [ring(ox)] }]), landuse: null }, J, {}); while (!tb.step(1e9)); const r = tb.result(), i8 = new Int8Array(r.verts.buffer, r.verts.byteOffset); let n = 0; for (let v = 0; v < r.verts.byteLength / STRIDE; v++) if (i8[v * STRIDE + 15] === KIND.HANOK) n++; return n };
   const a = roofs(TX, 0), b = roofs(TX + 1, -E), whole = roofs(TX, -E / 2);
   assert.ok(a > 0 && b > 0, `both tiles draw some (${a}, ${b})`); assert.equal(a + b, whole, 'together exactly the houses of the whole block');
 });

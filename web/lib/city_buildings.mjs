@@ -69,7 +69,7 @@ precision highp float;
 in vec3 v_n;in float v_z;in float v_u;in vec2 v_wm;flat in vec4 v_wall;flat in vec4 v_bld;flat in vec4 v_misc;flat in float v_kind;
 uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD[6];uniform vec4 u_tE[6];uniform vec4 u_tF[6];uniform vec4 u_tG[6];
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
-uniform vec3 u_hk[8];uniform vec3 u_giwa[3];uniform vec4 u_hkP;uniform vec2 u_hkE;   // 조선 모드: wood, plaster, paper, stone, 담장, the eave's underside, lit paper, ridge; 기와 ×3; platform height, post width, 창호 share, lit share; lit paper's emission
+uniform vec3 u_hk[8];uniform vec3 u_hk2[6];uniform vec3 u_giwa[4];uniform vec4 u_hkP;uniform vec2 u_hkE;   // 조선 모드: wood, plaster, paper, stone, 담장, the eave's underside, lit paper, ridge; 기와 ×3; platform height, post width, 창호 share, lit share; lit paper's emission
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_sign[8];uniform vec3 u_signInk[2];uniform float u_signNight;uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
 ${XR_GLSL}
@@ -114,29 +114,51 @@ void shade(){
   }else if(kind==3){col=u_equip*light;}
   else if(kind==4){col=u_pitched[slot]*light;}
   else if(kind==5){col=u_awning[slot]*light;}
-  else if(kind==8){   // 조선: 기와 — the joints between the tile rows down the slope (v_u: along the eave, m), the ridge dark; underneath, the eave's rafters
-    if(n.z<-0.2)col=u_hk[5]*u_lightCol*(0.55+0.2*k);
+  else if(kind==8){   // 조선: 기와 — the joints between the tile rows down the slope (v_u: along the eave, m), the ridge dark; underneath, the eave's rafters. slot 3: the 목탑's golden 상륜
+    if(slot==3)col=u_giwa[3]*u_lightCol*(0.7+0.45*clamp(dot(n,u_sun),0.0,1.0));
+    else if(n.z<-0.2)col=u_hk[5]*u_lightCol*(0.55+0.2*k);
     else{
-      vec3 g=u_giwa[slot<3?slot:0];float p=v_u/0.3;g*=1.0-0.28*pulse(p,0.0,0.38,fwidth(p));
-      if(v_z>H-0.62)g=u_hk[7];   // 용마루 (H: its top)
+      vec3 g=u_giwa[slot<3?slot:0];float p=v_u/0.3;g*=1.0-0.16*pulse(p,0.0,0.38,fwidth(p));
+      if(v_z>H-0.30)g=u_hk[7];   // 용마루 (H: its top; a skirt carries none)
       else if(v_z<v_misc.y*0.05-0.03)g=mix(g,u_hk[1],0.8);   // 와구토: the white line along the eave (below the wall's top: the eave's edge, thinning up the lifted corners)
       col=g*u_lightCol*(0.62+0.5*clamp(dot(n,u_sun),0.0,1.0));
     }
   }
-  else if(kind==9){   // 조선: 한옥 — the stone platform (기단); above it 기둥 on the bay lines, 하인방 · 상인방, and 회벽 or 창호 between them; 창호 lit by night
-    if(n.z>0.5||v_z<u_hkP.x+0.01){
+  else if(kind==11){   // 조선: 초가 — straw streaks down the slope (fading out where they would shimmer), the thick cut edge darker, the 용마름 at the top
+    vec3 g=u_hk2[slot<3?slot:0];float sw=0.14/max(fwidth(v_u),1e-4);
+    g*=mix(1.0,0.88+0.2*hash(vec3(floor(v_u/0.14),seed,3.0)),smoothstep(1.0,3.0,sw));
+    if(n.z<0.3)g*=0.72;
+    if(v_z>H-0.35)g*=0.8;
+    col=g*u_lightCol*(0.62+0.5*clamp(dot(n,u_sun),0.0,1.0));
+  }
+  else if(kind==12){   // 조선: 돌담 — fieldstones of uneven size in staggered courses, dark joints (the top: stones seen from above)
+    vec2 q=n.z>0.5?v_wm/vec2(0.5,0.4):vec2(v_u/0.5,v_z/0.32);float row=floor(q.y);q.x+=hash(vec3(row,seed,7.0));
+    vec2 c=floor(q);float j=max(pulse(q.x,0.0,0.1,fwidth(q.x)),pulse(q.y,0.0,0.12,fwidth(q.y)));
+    col=mix(u_hk2[4],u_hk2[5],hash(vec3(c,seed)))*(0.88+0.2*hash(vec3(c,seed+1.0)))*(1.0-0.35*j)*light;
+  }
+  else if(kind==9){   // 조선: 한옥 — the stone band at the foot (기단); above it 기둥 on the bay lines, 하인방 · 상인방, and 회벽 or 창호 between them; 창호 lit by night.
+    // a_bld.z type: 0 a house, 1 a mud-walled 초가, 2 a tall body of storeys (a_wall.w: the storey, ×0.05 m), 3 one upper storey; H: the wall's top
+    int wt=type;float st=v_wall.w*0.05;
+    if(n.z>0.5||(wt!=3&&v_z<u_hkP.x+0.01)){
       vec2 q=n.z>0.5?v_wm/vec2(0.9,0.45):vec2(v_u/0.9,v_z/0.28);q.x+=0.5*floor(q.y);
       float j=max(pulse(q.x,0.0,0.06,fwidth(q.x)),pulse(q.y,0.0,0.08,fwidth(q.y)));
       col=u_hk[3]*(0.92+0.1*hash(vec3(floor(q),seed)))*(1.0-0.2*j)*light;
     }else{
-      float zt=v_misc.y*0.05,len=(v_wall.y+v_wall.z*256.0)*0.05,bay=len/max(v_wall.x,1.0),tx=v_u/bay,bI=floor(tx),wx=fwidth(tx);
-      float pw=0.5*u_hkP.y/bay,post=pulse(tx+0.5,0.5-pw,0.5+pw,wx);
-      float hgt=max(zt-u_hkP.x,0.5),zr=(v_z-u_hkP.x)/hgt,wz=fwidth(zr);
-      float beam=max(1.0-smoothstep(0.08,0.08+wz,zr),smoothstep(0.84-wz,0.84,zr));
-      bool paper=hash(vec3(seed,bI,v_wall.w))<u_hkP.z;
+      float len=(v_wall.y+v_wall.z*256.0)*0.05,bay=len/max(v_wall.x,1.0),tx=v_u/bay,bI=floor(tx),wx=fwidth(tx);
+      float pw=0.5*u_hkP.y/bay*(wt==2?0.7:1.0),post=pulse(tx+0.5,0.5-pw,0.5+pw,wx);   // (a tall body: slimmer posts, so its walls read white)
+      float hgt,zr,fl=0.0;
+      if(wt==2){hgt=st;float f=max(v_z-u_hkP.x,0.0)/st;fl=floor(f);zr=fract(f);}
+      else if(wt==3){hgt=st;zr=(v_z-(H-st))/st;}
+      else{hgt=max(H-u_hkP.x,0.5);zr=(v_z-u_hkP.x)/hgt;}
+      float wz=fwidth(zr),beam=wt==2?smoothstep(0.9-wz,0.9,zr):max(1.0-smoothstep(0.08,0.08+wz,zr),smoothstep(0.84-wz,0.84,zr));   // a tall body: one beam a floor, under its eave
+      float face=wt>=2?fl*7.0+v_wall.x+len:v_wall.w;   // (types 2–3: a_wall.w is the storey; the face seed from the floor and the face's length)
+      bool paper=hash(vec3(seed,bI,face))<u_hkP.z*(wt==1?0.6:1.0);
       vec2 g=vec2(fract(tx)*bay/0.32,zr*hgt/0.32);float lat=paper?max(pulse(g.x,0.0,0.12,fwidth(g.x)),pulse(g.y,0.0,0.12,fwidth(g.y))):0.0;   // 창살
-      bool lit=night&&paper&&hash(vec3(seed,bI,v_wall.w+5.0))<u_hkP.w;
-      vec3 pc=lit?u_hk[6]*u_hkE.x*(1.0-0.45*lat):mix(paper?u_hk[2]:u_hk[1],u_hk[0],0.55*lat)*light;
+      // by night a few faces light one or two neighbouring bays, in the middle of the bay only (an oil lamp behind the paper, not a lit wall)
+      float fh=hash(vec3(seed,face,11.0)),run=floor(fh*max(v_wall.x-1.0,1.0));
+      bool lit=night&&paper&&fh<u_hkP.w&&bI>=run&&bI<=run+1.0&&fract(tx)>0.18&&fract(tx)<0.82&&zr>0.28&&zr<0.76;
+      vec3 wallC=wt==1?u_hk2[3]:u_hk[1];
+      vec3 pc=lit?u_hk[6]*u_hkE.x*(1.0-0.45*lat):mix(paper?u_hk[2]:wallC,u_hk[0],0.55*lat)*light;
       col=mix(pc,u_hk[0]*light,max(post,beam));
     }
   }
@@ -470,9 +492,10 @@ export class CityBuildings {
     // 조선 모드 (pack.hanok): the house's materials, the 기와, the platform and posts, the lit paper
     const HK = P.hanok, hc = HK ? (HK.colors?.[th] || HK.colors?.light) : null;
     const hk = (hc ? [hc.wood, hc.plaster, hc.paper, hc.stone, hc.dam, hc.soffit, HK.night?.paper || '#FFC774', hc.ridge] : new Array(8).fill('#888888')).flatMap(L);
-    const giwa = [0, 1, 2].flatMap(i => L(hc ? hc.giwa[i % hc.giwa.length] : '#555555'));
+    const giwa = [0, 1, 2].flatMap(i => L(hc ? hc.giwa[i % hc.giwa.length] : '#555555')).concat(L(hc?.spire || '#C99B3A'));
+    const hk2 = (hc ? [...[0, 1, 2].map(i => (hc.thatch || ['#C3A05E'])[i % (hc.thatch || [1]).length]), hc.mud || '#C4AA83', ...[0, 1].map(i => (hc.field || ['#9C978B'])[i % (hc.field || [1]).length])] : new Array(6).fill('#888888')).flatMap(L);
     const hkP = HK ? [num(HK.baseM, .55), num(HK.postM, .24), num(HK.paperShare, .55), num(HK.night?.litShare, .6)] : [0, 0, 0, 0], hkE = [HK ? num(HK.night?.emission, .85) : 0, 0];
-    return { hk, giwa, hkP, hkE, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    return { hk, hk2, giwa, hkP, hkE, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -547,7 +570,7 @@ export class CityBuildings {
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
-      gl.uniform3fv(u.u_hk, K.hk); gl.uniform3fv(u.u_giwa, K.giwa); gl.uniform4fv(u.u_hkP, K.hkP); gl.uniform2fv(u.u_hkE, K.hkE);
+      gl.uniform3fv(u.u_hk, K.hk); gl.uniform3fv(u.u_hk2, K.hk2); gl.uniform3fv(u.u_giwa, K.giwa); gl.uniform4fv(u.u_hkP, K.hkP); gl.uniform2fv(u.u_hkE, K.hkE);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_sign, K.sign); gl.uniform3fv(u.u_signInk, K.signInk); gl.uniform1f(u.u_signNight, K.signNight); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
