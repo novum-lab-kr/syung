@@ -11,6 +11,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const metric=p=>{const w=busMercator(p);return[(w[0]-ORIGIN[0])/MU,(w[1]-ORIGIN[1])/MU];};
 const coordinate=([x,y])=>[(ORIGIN[0]+x*MU-.5)*360,Math.atan(Math.sinh(Math.PI*(1-2*(ORIGIN[1]+y*MU))))*180/Math.PI];
 const gridKey=(x,y)=>`${Math.floor(x/CELL)},${Math.floor(y/CELL)}`;
+const cellId=(cx,cy)=>(cx+1e6)*2e6+(cy+1e6); // 문자열 없이 칸을 찾는 숫자 키(서울 반경 수백 km 안에서 겹치지 않는다)
 export const busMetresPerPixel=(zoom,lat=37.5)=>EARTH*Math.cos(lat*Math.PI/180)/(512*2**zoom);
 
 export function busRoadProfile(p,pack=SEOUL){
@@ -28,7 +29,7 @@ export function busRoadLane(road){
 }
 
 export class BusRoadNetwork {
-  constructor(){this.graph=new RoadGraph();this.tiles=new Map();this.grid=new Map();this.version=0;}
+  constructor(){this.graph=new RoadGraph();this.tiles=new Map();this.grid=new Map();this.cells=new Set();this.version=0;}
   update(features){
     const groups=new Map();
     for(const f of features){
@@ -54,16 +55,21 @@ export class BusRoadNetwork {
     }
     while(this.tiles.size>32){const key=this.tiles.keys().next().value;this.tiles.delete(key);this.graph.removeCell(key);changed=true;}
     if(!changed)return false;
-    this.grid.clear();
+    this.grid.clear();this.cells.clear();
     for(const e of this.graph.edges)for(let i=1;i<e.xs.length;i++){
       const a=[e.xs[i-1],e.ys[i-1]],b=[e.xs[i],e.ys[i]],len=e.cum[i]-e.cum[i-1];if(len<.01)continue;
       const seg={e,a,b,len,s:e.cum[i-1]};
       for(let x=Math.floor(Math.min(a[0],b[0])/CELL);x<=Math.floor(Math.max(a[0],b[0])/CELL);x++)
         for(let y=Math.floor(Math.min(a[1],b[1])/CELL);y<=Math.floor(Math.max(a[1],b[1])/CELL);y++){
-          const key=`${x},${y}`;if(!this.grid.has(key))this.grid.set(key,[]);this.grid.get(key).push(seg);
+          const key=`${x},${y}`;if(!this.grid.has(key))this.grid.set(key,[]);this.grid.get(key).push(seg);this.cells.add(cellId(x,y));
         }
     }
     this.version++;return true;
+  }
+  near(x,y){
+    const cx=Math.floor(x/CELL),cy=Math.floor(y/CELL);
+    for(let gx=-1;gx<=1;gx++)for(let gy=-1;gy<=1;gy++)if(this.cells.has(cellId(cx+gx,cy+gy)))return true;
+    return false;
   }
   candidates(p,heading){
     const [x,y]=metric(p),h=heading*Math.PI/180,hx=Math.sin(h),hy=-Math.cos(h),found=[],seen=new Set();
@@ -73,7 +79,7 @@ export class BusRoadNetwork {
       if(dot*dir<.15)continue;
       const along=clamp((x-a[0])*dx+(y-a[1])*dy,0,len),error=Math.hypot(x-a[0]-along*dx,y-a[1]-along*dy);
       if(error>45)continue;
-      found.push({e,s:seg.s+along,dir,error,score:error+(1-dot*dir)*22+(e.cls==='service'?5:0)});
+      found.push({e,s:seg.s+along,dir,error,score:error+(1-dot*dir)*22+(e.cls==='service'?5:0),x:a[0]+along*dx,y:a[1]+along*dy});
     }
     return found.sort((a,b)=>a.score-b.score).filter((a,i,all)=>all.findIndex(b=>b.e===a.e&&b.dir===a.dir)===i).slice(0,5);
   }
@@ -138,15 +144,18 @@ export class BusRoadNetwork {
   // 분리 차도는 진행 방향으로 자기 차도를 고르므로, 한 줄로 모아 둔 상하행이 각자 차도로 갈라진다.
   snapLine(path,box=null,step=6){
     const inside=p=>!box||(p[0]>=box[0]&&p[0]<=box[2]&&p[1]>=box[1]&&p[1]<=box[3]),layers=[];
-    for(let s=0;;s=Math.min(path.total,s+step)){
-      const pose=busPointAt(path,s),[x,y]=metric(pose.coordinate),states=[{c:null,x,y,emit:SNAP_NONE}];
+    const poses=[];for(let s=0;;s=Math.min(path.total,s+step)){poses.push(busPointAt(path,s));if(s>=path.total)break;}
+    const at=poses.map(p=>metric(p.coordinate)),headings=chordHeadings(at,poses,step);
+    for(let i=0;i<poses.length;i++){
+      const s=Math.min(path.total,i*step),pose=poses[i],[x,y]=at[i],states=[{c:null,x,y,emit:SNAP_NONE}];
       // 진행 방향은 앞뒤 CHORD m 를 이은 방향: 선에 남은 몇 m 짜리 되돌이 꺾임에서 방향이 뒤집혀
       // 반대 차도로 건너가지 않게.
-      const heading=chordHeading(path,s),h=heading*Math.PI/180,hx=Math.sin(h),hy=-Math.cos(h);
-      if(inside(pose.coordinate)){
+      const heading=headings[i],h=heading*Math.PI/180,hx=Math.sin(h),hy=-Math.cos(h);
+      // 근처에 불러온 도로 칸이 없으면(화면 밖 대부분) 후보를 찾지 않는다 — 타일이 들어올 때마다 노선 전체를 다시 붙인다.
+      if(inside(pose.coordinate)&&this.near(x,y)){
         for(const c of this.candidates(pose.coordinate,heading)){
           if(c.error>25||c.e.cls==='service')continue;
-          const p=this.graph.poseAt(c.e,c.s,0,c.dir);states.push({c,x:p.x,y:p.y,emit:c.score});
+          states.push({c,x:c.x,y:c.y,emit:c.score}); // 후보를 찾을 때 내린 도로 중심선 위 자리
         }
       }
       const previous=layers.at(-1),gap=previous?s-previous.s:0;
@@ -154,23 +163,24 @@ export class BusRoadNetwork {
         st.cost=st.emit;st.back=-1;
         if(!previous)continue;
         let best=Infinity;
-        previous.states.forEach((q,k)=>{
+        for(let k=0;k<previous.states.length;k++){
+          const q=previous.states[k];
           // 옆으로(진행 방향에 수직) 건너뛴 만큼과, 앞으로 간 거리가 샘플 간격과 다른 만큼
           const dx=st.x-q.x,dy=st.y-q.y,along=dx*hx+dy*hy,side=Math.abs(dx*hy-dy*hx);
           let move=Math.max(0,side-1)*SNAP_HOP+Math.max(0,Math.abs(along-gap)-2)*SNAP_HOP/3;
           if(q.c&&st.c&&q.c.e===st.c.e&&q.c.dir!==st.c.dir)move+=SNAP_HOP*10; // 같은 도로에서 방향만 뒤집기
           else if(q.c&&st.c&&q.c.e!==st.c.e)move+=.5;                        // 비슷하면 가던 도로
           if(q.cost+move<best){best=q.cost+move;st.back=k;}
-        });
+        }
         st.cost+=best;
       }
       layers.push({s,pose,states});
-      if(s>=path.total)break;
     }
-    const samples=new Array(layers.length);
+    const samples=new Array(layers.length),xy=new Float64Array(layers.length*2);
     let k=layers.at(-1).states.reduce((m,st,i,all)=>st.cost<all[m].cost?i:m,0);
     for(let i=layers.length-1;i>=0;i--){
       const {s,pose,states}=layers[i],c=states[k].c;
+      xy[i*2]=states[k].x;xy[i*2+1]=states[k].y;
       if(c){
         // 선은 도로 중심선, 버스는 같은 자리에서 진행 방향 오른쪽 바깥 차로(lane)로.
         const {offset,laneWidth}=busRoadLane(c.e),q=this.graph.poseAt(c.e,c.s,offset,c.dir);
@@ -178,8 +188,8 @@ export class BusRoadNetwork {
       }else samples[i]={distance:s,coordinate:pose.coordinate,lane:pose.coordinate,laneWidth:3,width:null};
       k=states[k].back;
     }
-    straightenHops(samples,path,step);
-    easeSwitches(samples,path);
+    straightenHops(samples,headings,step,xy);
+    easeSwitches(samples,headings,xy);
     return {samples,step,version:this.version};
   }
   // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 차도 끝 너머 인도로 옮긴다. 고가 도로도 위에서 보면 정류장을
@@ -250,27 +260,32 @@ export class BusRoadNetwork {
 
 // SNAP_NONE: 도로를 못 찾은 점의 값(어떤 후보보다 비싸게) · SNAP_HOP: 옆 도로로 건너뛴 1 m 의 값
 const CHORD=12,HOP_RUN=6,SNAP_NONE=45,SNAP_HOP=6;
-function chordHeading(path,s){
-  const A=metric(busPointAt(path,Math.max(0,s-CHORD)).coordinate),B=metric(busPointAt(path,Math.min(path.total,s+CHORD)).coordinate);
-  const dx=B[0]-A[0],dy=B[1]-A[1];
-  return Math.hypot(dx,dy)<1?busPointAt(path,s).heading:(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
+// 샘플마다 앞뒤 CHORD m(샘플 몇 개) 를 이은 방향(도, 북쪽에서 시계 방향)
+function chordHeadings(at,poses,step){
+  const n=Math.max(1,Math.round(CHORD/step));
+  return at.map((p,i)=>{
+    const A=at[Math.max(0,i-n)],B=at[Math.min(at.length-1,i+n)],dx=B[0]-A[0],dy=B[1]-A[1];
+    return Math.hypot(dx,dy)<1?poses[i].heading:(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
+  });
 }
 // 곧은 길에서 앞뒤 샘플은 같은 처지(둘 다 도로에 붙음 · 둘 다 도로 못 찾음)인데 그 사이 HOP_RUN 개(36 m) 이하만
 // 옆 도로 · 반대 차도 · 원래 선으로 튀었다 돌아오면(지그재그 · 가로 막대) 그 조각을 앞뒤 샘플 사이 곧은 선으로
 // 바꾼다. 도로 타일이 덜 들어온 가장자리에서 샘플 하나만 옆 골목에 붙는 것도 같다.
 // 꺾이는 길(교차로 회전)은 건드리지 않는다. 길게 못 찾은 구간(지하차도 등)도 그대로 둔다.
-function straightenHops(S,path,step){
-  const jump=step*1.5,dist=(p,q)=>{const a=metric(p.coordinate),b=metric(q.coordinate);return Math.hypot(a[0]-b[0],a[1]-b[1]);};
-  const turn=(a,b)=>{const d=Math.abs(chordHeading(path,a.distance)-chordHeading(path,b.distance))%360;return Math.min(d,360-d);};
-  const hop=(p,q)=>!p.width!==!q.width||dist(p,q)>jump;
+// xy: 샘플 중심선 자리(m) — 샘플마다 좌표를 다시 바꾸지 않게 같이 고친다.
+function straightenHops(S,H,step,xy){
+  const jump=step*1.5,dist=(i,j)=>Math.hypot(xy[i*2]-xy[j*2],xy[i*2+1]-xy[j*2+1]);
+  const turn=(i,j)=>{const d=Math.abs(H[i]-H[j])%360;return Math.min(d,360-d);};
+  const hop=(i,j)=>!S[i].width!==!S[j].width||dist(i,j)>jump;
   for(let i=1;i<S.length-1;i++){
-    const a=S[i-1];if(!hop(a,S[i]))continue;
+    const a=S[i-1];if(!hop(i-1,i))continue;
     for(let j=i;j<Math.min(S.length-1,i+HOP_RUN);j++){
-      const b=S[j+1];if(!a.width!==!b.width||!hop(S[j],b))continue;
-      if(dist(a,b)>(b.distance-a.distance)*1.3+8||turn(a,b)>30)continue;
+      const b=S[j+1];if(!a.width!==!b.width||!hop(j,j+1))continue;
+      if(dist(i-1,j+1)>(b.distance-a.distance)*1.3+8||turn(i-1,j+1)>30)continue;
       for(let k=i;k<=j;k++){
         const t=(S[k].distance-a.distance)/(b.distance-a.distance),mix=(p,q)=>p.map((v,n)=>v+(q[n]-v)*t);
         S[k]={distance:S[k].distance,coordinate:mix(a.coordinate,b.coordinate),lane:mix(a.lane,b.lane),laneWidth:a.laneWidth,width:a.width};
+        for(const n of [0,1])xy[k*2+n]=xy[(i-1)*2+n]+(xy[(j+1)*2+n]-xy[(i-1)*2+n])*t;
       }
       i=j;break;
     }
@@ -279,13 +294,13 @@ function straightenHops(S,path,step){
 
 // 정말 다른 도로로 옮겨 가는 곳(램프 → 간선처럼 중심선이 옆으로 몇 m 떨어진 곳)은 한 샘플에서 꺾지 않고
 // 앞뒤 두 샘플씩(24 m)에 걸쳐 1-2-3-2-1 로 섞어 부드럽게 옮긴다. 교차로 회전은 둥글리지 않는다.
-function easeSwitches(S,path){
-  const W=[1,2,3,2,1],old=S.map(p=>({coordinate:p.coordinate,lane:p.lane})),m=p=>metric(p.coordinate);
-  const turn=(a,b)=>{const d=Math.abs(chordHeading(path,a.distance)-chordHeading(path,b.distance))%360;return Math.min(d,360-d);};
+function easeSwitches(S,H,xy){
+  const W=[1,2,3,2,1],old=S.map(p=>({coordinate:p.coordinate,lane:p.lane})),m=p=>[xy[p*2],xy[p*2+1]];
+  const turn=(i,j)=>{const d=Math.abs(H[i]-H[j])%360;return Math.min(d,360-d);};
   for(let i=3;i<S.length-3;i++){
     if(!S[i-1].width||!S[i].width)continue;
-    const a=m(S[i-1]),b=m(S[i]),A=m(S[i-2]),dx=a[0]-A[0],dy=a[1]-A[1],l=Math.hypot(dx,dy);
-    if(l<.5||Math.abs((b[0]-a[0])*dy-(b[1]-a[1])*dx)/l<2||turn(S[i-3],S[i+2])>30)continue;
+    const a=m(i-1),b=m(i),A=m(i-2),dx=a[0]-A[0],dy=a[1]-A[1],l=Math.hypot(dx,dy);
+    if(l<.5||Math.abs((b[0]-a[0])*dy-(b[1]-a[1])*dx)/l<2||turn(i-3,i+2)>30)continue;
     for(let k=Math.max(2,i-2);k<=Math.min(S.length-3,i+1);k++){
       if(!S[k].width)continue;
       const mix=key=>[0,1].map(n=>W.reduce((sum,w,j)=>sum+w*old[k-2+j][key][n],0)/9);
