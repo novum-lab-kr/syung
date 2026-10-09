@@ -100,10 +100,15 @@ test('route display line does not zigzag across a split road or jog off a short 
   const edge=network([road([[-4,23],[4,23]],{class:'minor'})]);
   const lone=edge.snapLine(path([[-100,0],[100,0]]));
   assert.ok(lone.samples.every(p=>Math.abs(xy(p.coordinate)[1])<.01),'stays on the route line');
+  // 나란한 두 길(서부간선 · 안양천로) 사이를 흔들리며 지나는 선: 점마다 가까운 쪽으로 옮겨 다니던 지그재그.
+  const pair=network([road([[-150,0],[150,0]],{oneway:1}),road([[-150,14],[150,14]],{oneway:1})]);
+  const wobble=pair.snapLine(path(Array.from({length:17},(_,i)=>[-96+i*12,i%2?10:4])));
+  const ys=new Set(wobble.samples.map(p=>Math.round(xy(p.coordinate)[1])));
+  assert.equal(ys.size,1,'one road the whole way');
   // 교차로에서 꺾는 길은 곧게 펴지 않는다.
   const corner=network([road([[-150,0],[0,0]]),road([[0,0],[0,150]])]);
   const turn=corner.snapLine(path([[-100,0],[0,0],[0,100]]));
-  assert.ok(turn.samples.some(p=>Math.hypot(...xy(p.coordinate))<1),'still passes the corner');
+  assert.ok(turn.samples.every(p=>{const [x,y]=xy(p.coordinate);return Math.abs(x)<.01||Math.abs(y)<.01;}),'never cuts the corner diagonally');
 });
 
 test('a stop pinned inside the carriageway moves to the pavement on its own side, across a split road',()=>{
@@ -133,4 +138,15 @@ test('a bus rides the route line in the right-hand lane of its road, and never v
   // 도로를 못 찾은 구간도 노선 선 위에 그대로 있다(예전엔 사라졌다).
   const far=path([[-100,200],[100,200]]),f=busLinePointAt(n.snapLine(far),far.total/2);
   assert.ok(Math.abs(xy(f.coordinate)[1]-200)<.05);
+});
+
+test('route display line keeps its carriageway past a side road or slip road crossing the median (청담역 2415)',()=>{
+  // 노선 선은 분리 차도 가운데(중앙분리대)에 있다. 교차로에서 그 선을 비스듬히 지나는 골목, 선 바로 옆을 지나는 진출로가
+  // 자기 차도(7 · 14 m 옆)보다 가까워서, 선이 몇 샘플 동안 그쪽으로 붙었다 돌아오던 지그재그(2026-10-09 덕배, 청담역 2415).
+  const side=network([road([[-150,-7],[150,-7]],{class:'secondary',oneway:1}),road([[-40,-28],[40,28]],{class:'minor'})]);
+  const a=side.snapLine(path([[-100,0],[100,0]]));
+  assert.ok(a.samples.every(p=>Math.abs(xy(p.coordinate)[1]+7)<.01),'stays on its carriageway through the junction');
+  const slip=network([road([[-150,-14],[150,-14]],{oneway:1}),road([[-30,-10],[30,3]],{oneway:1,ramp:1})]);
+  const b=slip.snapLine(path([[-100,0],[100,0]]));
+  assert.ok(b.samples.every(p=>Math.abs(xy(p.coordinate)[1]+14)<.01),'never runs along the slip road beside the line');
 });

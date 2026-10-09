@@ -130,32 +130,56 @@ export class BusRoadNetwork {
     }
     return points;
   }
-  // 노선 표시선을 심시티가 그리는 도로(같은 OFM 중심선 · 폭) 안으로: STEP m 마다 진행 방향이 맞는
-  // 도로 중심선에 내리고, 맞는 도로가 없으면 원래 점을 둔다(선이 끊기지 않게). 차로 쪽으로 밀지 않는다.
+  // 노선 표시선을 심시티가 그리는 도로(같은 OFM 중심선 · 폭) 안으로: STEP m 마다 진행 방향이 맞는 도로 후보를
+  // 찾고, 노선 전체에서 한 번에 고른다(비터비). 점마다 따로 가장 가까운 도로를 고르면 나란한 길(서부간선 ·
+  // 안양천로)이나 분리 차도 사이를 지나는 곳에서 선이 이 길 저 길로 옮겨 다니며 지그재그가 됐다. 그래서
+  // 도로에서 조금 먼 것(error)보다 옆 도로로 건너뛰는 것(앞 점과의 거리가 STEP 보다 긴 만큼)을 더 비싸게 친다.
+  // 맞는 도로가 없으면 원래 점을 둔다(선이 끊기지 않게). 차로 쪽으로 밀지 않는다.
   // 분리 차도는 진행 방향으로 자기 차도를 고르므로, 한 줄로 모아 둔 상하행이 각자 차도로 갈라진다.
   snapLine(path,box=null,step=6){
-    const samples=[];let previous=null;
-    const inside=p=>!box||(p[0]>=box[0]&&p[0]<=box[2]&&p[1]>=box[1]&&p[1]<=box[3]);
+    const inside=p=>!box||(p[0]>=box[0]&&p[0]<=box[2]&&p[1]>=box[1]&&p[1]<=box[3]),layers=[];
     for(let s=0;;s=Math.min(path.total,s+step)){
-      const pose=busPointAt(path,s);let point={distance:s,coordinate:pose.coordinate,lane:pose.coordinate,laneWidth:3,width:null};
+      const pose=busPointAt(path,s),[x,y]=metric(pose.coordinate),states=[{c:null,x,y,emit:SNAP_NONE}];
+      // 진행 방향은 앞뒤 CHORD m 를 이은 방향: 선에 남은 몇 m 짜리 되돌이 꺾임에서 방향이 뒤집혀
+      // 반대 차도로 건너가지 않게.
+      const heading=chordHeading(path,s),h=heading*Math.PI/180,hx=Math.sin(h),hy=-Math.cos(h);
       if(inside(pose.coordinate)){
-        // 진행 방향은 앞뒤 CHORD m 를 이은 방향: 선에 남은 몇 m 짜리 되돌이 꺾임에서 방향이 뒤집혀
-        // 반대 차도로 건너가지 않게.
-        const found=this.candidates(pose.coordinate,chordHeading(path,s)).filter(c=>c.error<=25&&c.e.cls!=='service');
-        // 앞 점과 같은 도로가 거의 비슷하게 가까우면 그대로 간다(교차로에서 옆길로 튀지 않게).
-        const keep=previous&&found.find(c=>c.e===previous.e&&c.dir===previous.dir&&c.error<=found[0].error+4);
-        const c=keep||found[0];
-        if(c){
-          // 선은 도로 중심선, 버스는 같은 자리에서 진행 방향 오른쪽 바깥 차로(lane)로.
-          const {offset,laneWidth}=busRoadLane(c.e),p=this.graph.poseAt(c.e,c.s,0,c.dir),q=this.graph.poseAt(c.e,c.s,offset,c.dir);
-          point={distance:s,coordinate:coordinate([p.x,p.y]),lane:coordinate([q.x,q.y]),laneWidth,width:c.e.width};
+        for(const c of this.candidates(pose.coordinate,heading)){
+          if(c.error>25||c.e.cls==='service')continue;
+          const p=this.graph.poseAt(c.e,c.s,0,c.dir);states.push({c,x:p.x,y:p.y,emit:c.score});
         }
-        previous=c||null;
-      }else previous=null;
-      samples.push(point);
+      }
+      const previous=layers.at(-1),gap=previous?s-previous.s:0;
+      for(const st of states){
+        st.cost=st.emit;st.back=-1;
+        if(!previous)continue;
+        let best=Infinity;
+        previous.states.forEach((q,k)=>{
+          // 옆으로(진행 방향에 수직) 건너뛴 만큼과, 앞으로 간 거리가 샘플 간격과 다른 만큼
+          const dx=st.x-q.x,dy=st.y-q.y,along=dx*hx+dy*hy,side=Math.abs(dx*hy-dy*hx);
+          let move=Math.max(0,side-1)*SNAP_HOP+Math.max(0,Math.abs(along-gap)-2)*SNAP_HOP/3;
+          if(q.c&&st.c&&q.c.e===st.c.e&&q.c.dir!==st.c.dir)move+=SNAP_HOP*10; // 같은 도로에서 방향만 뒤집기
+          else if(q.c&&st.c&&q.c.e!==st.c.e)move+=.5;                        // 비슷하면 가던 도로
+          if(q.cost+move<best){best=q.cost+move;st.back=k;}
+        });
+        st.cost+=best;
+      }
+      layers.push({s,pose,states});
       if(s>=path.total)break;
     }
+    const samples=new Array(layers.length);
+    let k=layers.at(-1).states.reduce((m,st,i,all)=>st.cost<all[m].cost?i:m,0);
+    for(let i=layers.length-1;i>=0;i--){
+      const {s,pose,states}=layers[i],c=states[k].c;
+      if(c){
+        // 선은 도로 중심선, 버스는 같은 자리에서 진행 방향 오른쪽 바깥 차로(lane)로.
+        const {offset,laneWidth}=busRoadLane(c.e),q=this.graph.poseAt(c.e,c.s,offset,c.dir);
+        samples[i]={distance:s,coordinate:coordinate([states[k].x,states[k].y]),lane:coordinate([q.x,q.y]),laneWidth,width:c.e.width};
+      }else samples[i]={distance:s,coordinate:pose.coordinate,lane:pose.coordinate,laneWidth:3,width:null};
+      k=states[k].back;
+    }
     straightenHops(samples,path,step);
+    easeSwitches(samples,path);
     return {samples,step,version:this.version};
   }
   // 심시티 차도(중심선 ± 폭/2) 안에 찍힌 정류장을 차도 끝 너머 인도로 옮긴다. 고가 도로도 위에서 보면 정류장을
@@ -224,7 +248,8 @@ export class BusRoadNetwork {
   }
 }
 
-const CHORD=12,HOP_RUN=6;
+// SNAP_NONE: 도로를 못 찾은 점의 값(어떤 후보보다 비싸게) · SNAP_HOP: 옆 도로로 건너뛴 1 m 의 값
+const CHORD=12,HOP_RUN=6,SNAP_NONE=45,SNAP_HOP=6;
 function chordHeading(path,s){
   const A=metric(busPointAt(path,Math.max(0,s-CHORD)).coordinate),B=metric(busPointAt(path,Math.min(path.total,s+CHORD)).coordinate);
   const dx=B[0]-A[0],dy=B[1]-A[1];
@@ -248,6 +273,23 @@ function straightenHops(S,path,step){
         S[k]={distance:S[k].distance,coordinate:mix(a.coordinate,b.coordinate),lane:mix(a.lane,b.lane),laneWidth:a.laneWidth,width:a.width};
       }
       i=j;break;
+    }
+  }
+}
+
+// 정말 다른 도로로 옮겨 가는 곳(램프 → 간선처럼 중심선이 옆으로 몇 m 떨어진 곳)은 한 샘플에서 꺾지 않고
+// 앞뒤 두 샘플씩(24 m)에 걸쳐 1-2-3-2-1 로 섞어 부드럽게 옮긴다. 교차로 회전은 둥글리지 않는다.
+function easeSwitches(S,path){
+  const W=[1,2,3,2,1],old=S.map(p=>({coordinate:p.coordinate,lane:p.lane})),m=p=>metric(p.coordinate);
+  const turn=(a,b)=>{const d=Math.abs(chordHeading(path,a.distance)-chordHeading(path,b.distance))%360;return Math.min(d,360-d);};
+  for(let i=3;i<S.length-3;i++){
+    if(!S[i-1].width||!S[i].width)continue;
+    const a=m(S[i-1]),b=m(S[i]),A=m(S[i-2]),dx=a[0]-A[0],dy=a[1]-A[1],l=Math.hypot(dx,dy);
+    if(l<.5||Math.abs((b[0]-a[0])*dy-(b[1]-a[1])*dx)/l<2||turn(S[i-3],S[i+2])>30)continue;
+    for(let k=Math.max(2,i-2);k<=Math.min(S.length-3,i+1);k++){
+      if(!S[k].width)continue;
+      const mix=key=>[0,1].map(n=>W.reduce((sum,w,j)=>sum+w*old[k-2+j][key][n],0)/9);
+      S[k]={...S[k],coordinate:mix('coordinate'),lane:mix('lane')};
     }
   }
 }
