@@ -52,8 +52,10 @@ function treeMesh(lod) {
 // lamp: part 0 the pole and the arm, part 2 the head, part 1 the head's underside (the lamp, lit at night). The arm
 // points +x. Vertices carry the centre-line point and the offset from it separately, so the shader can thicken a
 // post that would otherwise be thinner than a pixel. 10 floats a vertex.
-// A lantern post (L.lantern, 조선 모드): a wooden post, a short arm on top and a paper 초롱 hanging from it, all lit at night,
+// A lantern post (L.lantern): a wooden post, a short arm on top and a paper 초롱 hanging from it, all lit at night,
 // its middle at (armM, heightM − 0.2) where the night's bulb and pool are drawn.
+// 횃불 (L.torch, 조선 모드): 나무 기둥 위 쇠 화로(part 2)에 불꽃(part 3). 불꽃은 셰이더가 흔들고(밤낮 모두 타오름), a_nrm.x 에
+// 불꽃 안의 높이 몫(0 아래 주황 … 1 끝 노랑)을 싣는다. 밤의 불빛 · 바닥 빛은 기둥 위(armM 0, heightM − 0.2)에.
 function lampMesh(L) {
   const H = L.heightM, A = L.armM, r = L.poleDiameterM / 2, d = [];
   const quad = (P, n, part) => { for (const p of [P[0], P[1], P[2], P[0], P[2], P[3]]) d.push(p[0], p[1], p[2], p[3], p[4], p[5], n[0], n[1], n[2], part) };
@@ -67,6 +69,18 @@ function lampMesh(L) {
   { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];
     quad([V(0, 1, -1), V(0, 1, 1), V(H - .25, 1, 1), V(H - .25, 1, -1)], [1, 0, 0], 0); quad([V(0, -1, 1), V(0, -1, -1), V(H - .25, -1, -1), V(H - .25, -1, 1)], [-1, 0, 0], 0);
     quad([V(0, 1, 1), V(0, -1, 1), V(H - .25, -1, 1), V(H - .25, 1, 1)], [0, 1, 0], 0); quad([V(0, -1, -1), V(0, 1, -1), V(H - .25, 1, -1), V(H - .25, -1, -1)], [0, -1, 0], 0) }
+  if (L.torch) {
+    const F = L.torch, b0 = H + .05, b1 = b0 + F.basketM, fr = F.flameWidthM / 2, fz = b1 - .05, ft = fz + F.flameM;
+    box([-F.basketWidthM / 2, 0, b0 + F.basketM / 2], [F.basketWidthM / 2, 0, b0 + F.basketM / 2], F.basketWidthM / 2, F.basketM / 2, 2);   // 화로
+    { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];   // 기둥 윗부분(화로까지)
+      quad([V(H - .25, 1, -1), V(H - .25, 1, 1), V(b0, 1, 1), V(b0, 1, -1)], [1, 0, 0], 0); quad([V(H - .25, -1, 1), V(H - .25, -1, -1), V(b0, -1, -1), V(b0, -1, 1)], [-1, 0, 0], 0);
+      quad([V(H - .25, 1, 1), V(H - .25, -1, 1), V(b0, -1, 1), V(b0, 1, 1)], [0, 1, 0], 0); quad([V(H - .25, -1, -1), V(H - .25, 1, -1), V(b0, 1, -1), V(b0, -1, -1)], [0, -1, 0], 0) }
+    // 불꽃: 아래가 둥글고 위가 뾰족한 팔면체 꼴(가로 고리 4점 · 끝 · 밑). 고리는 밑에서 0.3 높이
+    const ring = [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + Math.PI / 4; return [Math.cos(a) * fr, Math.sin(a) * fr, fz + .3 * F.flameM] });
+    const fv = (p, m) => d.push(p[0], p[1], p[2], 0, 0, 0, m, 0, 0, 3);
+    for (let k = 0; k < 4; k++) { const a = ring[k], c = ring[(k + 1) % 4]; fv(a, .3); fv(c, .3); fv([0, 0, ft], 1); fv(c, .3); fv(a, .3); fv([0, 0, fz], 0) }
+    return new Float32Array(d);
+  }
   if (L.lantern) {
     const top = H + .25, lw = L.lantern.widthM / 2, lh = L.lantern.heightM / 2, zc = H - .2;
     { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];   // the post's top above the pole drawn above (to the arm)
@@ -134,14 +148,23 @@ void main(){ float a = v_a * u_alpha; o = vec4(clamp(v_col, 0., 1.) * a, a); }`;
 const LAMP_VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_off; layout(location=2) in vec3 a_nrm; layout(location=6) in float a_part;
 layout(location=3) in vec4 i_a;   // x, y, yaw, rank
-uniform mat4 u_matrix; uniform float u_mu, u_fade, u_keep, u_night, u_thick; uniform vec2 u_lit; uniform vec3 u_pole, u_glow, u_light;
+uniform mat4 u_matrix; uniform float u_mu, u_fade, u_keep, u_night, u_thick, u_time; uniform vec2 u_lit; uniform vec3 u_pole, u_glow, u_light, u_flame[2];
 out vec3 v_col; out float v_a;
 ${LIT}
 void main(){
   float s = u_fade * (1. - smoothstep(u_keep - .03, u_keep + .03, i_a.w));
   if (s <= .002) { gl_Position = vec4(2., 2., 2., 1.); return; }
   float c = cos(i_a.z), sn = sin(i_a.z);
-  vec3 p = a_pos + a_off * (a_part < .5 ? u_thick : sqrt(u_thick)); p.z *= s; p.xy = vec2(p.x * c - p.y * sn, p.x * sn + p.y * c);
+  vec3 p = a_pos + a_off * (a_part < .5 ? u_thick : sqrt(u_thick));
+  if (a_part > 2.5) {   // 횃불의 불꽃: 기둥마다 다른 박자로 키가 들썩이고 끝이 흔들린다. 불꽃은 스스로 빛나서 조명을 받지 않는다
+    float h = a_nrm.x, ph = i_a.w * 61.7, t = u_time;
+    float f = 1. + .2 * sin(t * 9.3 + ph) + .12 * sin(t * 15.1 + ph * 1.7) + .06 * sin(t * 23.7 + ph * .6);
+    p.z = mix(p.z, p.z + (f - 1.) * .35, h); p.xy *= mix(1.1 - .1 * f, 1., h); p.x += h * h * .05 * sin(t * 6.1 + ph); p.y += h * h * .04 * sin(t * 7.9 + ph * 1.3);
+    p.z *= s; p.xy = vec2(p.x * c - p.y * sn, p.x * sn + p.y * c);
+    gl_Position = u_matrix * vec4((i_a.xy + p.xy) * u_mu, p.z * u_mu, 1.);
+    v_col = mix(u_flame[0], u_flame[1], h) * (u_night > .5 ? 1.25 : 1.); v_a = 1.; return;
+  }
+  p.z *= s; p.xy = vec2(p.x * c - p.y * sn, p.x * sn + p.y * c);
   vec3 n = vec3(a_nrm.x * c - a_nrm.y * sn, a_nrm.x * sn + a_nrm.y * c, a_nrm.z);
   gl_Position = u_matrix * vec4((i_a.xy + p.xy) * u_mu, p.z * u_mu, 1.);
   bool glass = a_part > .5 && a_part < 1.5;
@@ -228,12 +251,12 @@ export class CityLife {
   }
   // a lamp mesh's vertex array (the instances are bound per draw)
   lampVA(gl, mesh) { const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.b); for (const [loc, k, off] of [[0, 3, 0], [1, 3, 12], [2, 3, 24], [6, 1, 36]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 40, off) } return va }
-  // the posts for a look's lamps (the 조선 pack's lanterns), built on first use
+  // the posts for a look's lamps (the 조선 pack's torches), built on first use
   lampFor(gl, LM) { let e = this.lamps.get(LM); if (!e) { const m = lampMesh(LM), b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m, gl.STATIC_DRAW); const mesh = { b, n: m.length / 10 }; e = { va: this.lampVA(gl, mesh), mesh }; this.lamps.set(LM, e) } return e }
   _init(gl) {
     const U = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
     this.pT = compileProgram(gl, TREE_VS, FLAT_FS); this.uT = U(this.pT, ['u_matrix', 'u_mu', 'u_keep', 'u_trunkR', 'u_shadow', 'u_fade', 'u_lit', 'u_pal', 'u_trunk', 'u_light', 'u_shade', 'u_alpha']);
-    this.pL = compileProgram(gl, LAMP_VS, FLAT_FS); this.uL = U(this.pL, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_night', 'u_thick', 'u_lit', 'u_pole', 'u_glow', 'u_light', 'u_alpha']);
+    this.pL = compileProgram(gl, LAMP_VS, FLAT_FS); this.uL = U(this.pL, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_night', 'u_thick', 'u_time', 'u_lit', 'u_pole', 'u_glow', 'u_light', 'u_flame', 'u_alpha']);
     this.pP = compileProgram(gl, POOL_VS, POOL_FS); this.uP = U(this.pP, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_radius', 'u_rgb', 'u_alpha']);
     this.pB = compileProgram(gl, BULB_VS, BULB_FS); this.uB = U(this.pB, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_h', 'u_size', 'u_core', 'u_rgb', 'u_wt']);
     this.pX = compileProgram(gl, CROSS_VS, CROSS_FS); this.uX = U(this.pX, ['u_matrix', 'u_mu', 'u_fade', 'u_depth', 'u_rgb', 'u_alpha', 'u_stripe', 'u_gap']);
@@ -424,7 +447,7 @@ export class CityLife {
   }
   _render(gl, matrix, opts) {
     const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, coaster = false, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
-    const look = opts.look || this.pack, era = !!look.hanok;   // look: the mode's pack for the lamps' look; 조선 (its hanok): lanterns, no cars, no zebra crossings
+    const look = opts.look || this.pack, era = !!look.hanok;   // look: the mode's pack for the lamps' look; 조선 (its hanok): torches, no cars, no zebra crossings
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
     const pad = Math.min(400, (box[2] - box[0]) * .15), vbox = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
@@ -487,6 +510,7 @@ export class CityLife {
       const inst = (c, a) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
       gl.useProgram(this.pL); gl.uniformMatrix4fv(this.uL.u_matrix, false, MT); gl.uniform1f(this.uL.u_mu, MU); gl.uniform1f(this.uL.u_fade, fadeLamp); gl.uniform1f(this.uL.u_keep, keep); gl.uniform1f(this.uL.u_night, dark ? 1 : 0); gl.uniform1f(this.uL.u_thick, Math.max(1, .55 * MPP(zoom) / (LM.poleDiameterM / 2)));   // never thinner than about half a pixel
       gl.uniform2fv(this.uL.u_lit, lit); gl.uniform3fv(this.uL.u_pole, col(LM.pole[theme])); gl.uniform3fv(this.uL.u_glow, hexRgb(LM.light)); gl.uniform3fv(this.uL.u_light, light); gl.uniform1f(this.uL.u_alpha, 1);
+      if (LM.torch) { gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : (now % 1e6) / 1000); gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]); if (!reducedMotion && lampDraws.length) this._anim = true }   // 횃불은 계속 흔들린다
       gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) }
     }
     // ── cars: the simulation, then the instanced boxes ──
@@ -521,7 +545,7 @@ export class CityLife {
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
       gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
       const sz = bulbSize(zoom, pixelRatio, .9);
-      gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadeLamp); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM);
+      gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadeLamp); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
       gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
       gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
     }

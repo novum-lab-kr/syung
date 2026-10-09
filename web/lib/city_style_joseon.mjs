@@ -39,10 +39,11 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     lane: { opacity: { light: 0, dark: 0 } },                                     // 흙길에는 차선이 없다
     centerLine: { opacity: { light: 0, dark: 0 } },
   },
-  // 거리: 가로등 대신 나무 기둥에 매단 초롱(몸체는 크게, 바닥 빛은 작게), 사람들은 흰 옷 · 쪽빛 · 흙빛 한복
+  // 거리: 가로등 대신 나무 기둥 위 화로에 타는 횃불(2026-10-09 덕배: 전등 → 횃불), 사람들은 흰 옷 · 쪽빛 · 흙빛 한복
   // (자동차와 횡단보도는 city_life 가 조선 모드에서 그리지 않는다)
   props: {
-    lamps: { heightM: 2.6, armM: 0.6, poleDiameterM: 0.14, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFD39A', poolRadiusM: 2.0, poolOpacity: 0.08, simcityPoolMaxOpacity: 0.1, lantern: { widthM: 0.46, heightM: 0.62 } },
+    lamps: { heightM: 2.4, armM: 0, poleDiameterM: 0.14, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFB15E', poolRadiusM: 2.4, poolOpacity: 0.1, simcityPoolMaxOpacity: 0.13,
+      torch: { basketM: 0.2, basketWidthM: 0.34, flameM: 0.55, flameWidthM: 0.3, flame: ['#F06A1E', '#FFD25A'] } },
     people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
   },
   lighting: { shadow: { color: '#5A4630' } },
