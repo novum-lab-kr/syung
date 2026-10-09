@@ -225,8 +225,26 @@ def centre(line: list[list[float]], step: float = 8) -> list[list[float]]:
     return out
 
 
-def despike(line: list[list[float]], short: float = 30) -> list[list[float]]:
-    """교차로 안으로 잠깐 들어갔다 되돌아 나오는 뾰족한 점(30 m 이하, 150° 넘게 꺾임)을 지운다."""
+def turns_back(path: list[list[float]], cum: list[float], p: list[float], reach: float) -> bool:
+    """공식 경로가 p 에 가장 가까운 자리 앞뒤 reach m 안에서 되돌아가는지(120° 넘게 꺾이는 회차가 있는지)."""
+    _, at = project(p, path, cum, 0, cum[-1])
+    segs = []
+    for i in range(1, len(path)):
+        if cum[i] < at - reach or cum[i - 1] > at + reach or cum[i] - cum[i - 1] < 0.5:
+            continue
+        kx = math.cos(math.radians(path[i][1]))
+        d = ((path[i][0] - path[i - 1][0]) * kx, path[i][1] - path[i - 1][1])
+        segs.append((d[0] / math.hypot(*d), d[1] / math.hypot(*d)))
+    return any(u[0] * v[0] + u[1] * v[1] < -0.5 for k, u in enumerate(segs) for v in segs[k + 1:])
+
+
+def despike(line: list[list[float]], path: list[list[float]] | None = None, short: float = 30) -> list[list[float]]:
+    """되돌아 나오는 뾰족한 점을 지운다: 교차로 안으로 잠깐 들어갔다 나온 점(30 m 이하, 150° 넘게 꺾임)과,
+    공식 경로는 그 근처에서 곧게 가는데 선만 120° 넘게 되돌아가는 점(옆길로 들어갔다 나온 꼬리 ·
+    상하행을 모으며 생긴 지그재그). 공식 경로도 되돌아가는 곳은 진짜 회차라서 둔다."""
+    cum = [0.0]
+    for a, b in zip(path or [], (path or [])[1:]):
+        cum.append(cum[-1] + metres(a, b))
     out = list(line)
     changed = True
     while changed:
@@ -238,7 +256,10 @@ def despike(line: list[list[float]], short: float = 30) -> list[list[float]]:
             u = ((b[0] - a[0]) * kx, b[1] - a[1])
             v = ((c[0] - b[0]) * kx, c[1] - b[1])
             lu, lv = math.hypot(*u), math.hypot(*v)
-            if lu and lv and (u[0] * v[0] + u[1] * v[1]) / (lu * lv) < -0.866 and min(metres(a, b), metres(b, c)) <= short:
+            cos = (u[0] * v[0] + u[1] * v[1]) / (lu * lv) if lu and lv else 1
+            legs = metres(a, b), metres(b, c)
+            if (cos < -0.866 and min(legs) <= short) or (
+                    cos < -0.5 and path and len(path) > 1 and not turns_back(path, cum, b, max(legs) + 40)):
                 del out[i]
                 changed = True
             else:
@@ -306,7 +327,7 @@ def road_line(path: list[list[float]]) -> tuple[list[list[float]], dict]:
         longest = max(longest, run)
     stats["maxOff"], stats["offRun"] = round(max(offs), 1), longest
     stats["maxLineOff"] = round(max(nearest(p, path) for p in line[::5] + [line[-1]]), 1)
-    return despike(simplify(centre(line))), stats
+    return despike(simplify(centre(line)), path), stats
 
 
 def main() -> None:
@@ -314,10 +335,24 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=ROOT / "data" / "bus")
     parser.add_argument("--routes", help="쉼표로 나눈 노선 id(시험용)")
     parser.add_argument("--dry-run", action="store_true", help="파일을 쓰지 않고 통계만 낸다")
+    parser.add_argument("--despike", action="store_true", help="OSRM 없이 이미 만든 line 의 뾰족한 점만 다시 지운다")
     args = parser.parse_args()
     payload = json.loads((args.data / "routes.json").read_text())
     wanted = set(args.routes.split(",")) if args.routes else None
     todo = [r for r in payload["routes"] if wanted is None or r["id"] in wanted]
+    if args.despike:
+        removed = 0
+        for route in todo:
+            if "line" in route:
+                line = despike(route["line"], route["path"])
+                removed += len(route["line"]) - len(line)
+                route["line"] = line
+        print(f"뾰족한 점 {removed}개 지움")
+        if not args.dry_run:
+            manifest = json.loads((args.data / "manifest.json").read_text())
+            manifest["files"]["routes.json"] = write_json(args.data / "routes.json", payload)
+            write_json(args.data / "manifest.json", manifest)
+        return
 
     def one(route: dict) -> tuple[dict, list, dict]:
         return route, *road_line(route["path"])

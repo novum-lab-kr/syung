@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pipeline.bus_build_static import ROOT, build, route_type, stop_from_row, xlsx_rows
 from pipeline.bus_fetch_paths import geometry, route_signature
+from pipeline.bus_match_lines import despike
 from server.bus_live_proxy import BusError
 
 
@@ -130,6 +131,25 @@ class OfficialGeometryTest(unittest.TestCase):
     def test_stop_sequence_change_invalidates_cache_signature(self):
         route = {"id": "100100001", "stopIds": ["100000001", "100000002"], "stopSequences": [1, 2]}
         self.assertNotEqual(route_signature(route), route_signature({**route, "stopSequences": [1, 3]}))
+
+
+class DisplayLineTest(unittest.TestCase):
+    # 동서로 곧은 공식 경로 위 x(m) · y(m) 점
+    @staticmethod
+    def at(x, y):
+        return [127 + x / 88300, 37.5 + y / 110540]
+
+    def test_side_road_tail_and_zigzag_are_removed_but_real_turnaround_stays(self):
+        path = [self.at(-300, 0), self.at(300, 0)]
+        # 옆길로 40 m 들어갔다 그대로 나온 꼬리(6647 외발산): 공식 경로는 곧게 간다.
+        tail = [self.at(-200, 0), self.at(0, 0), self.at(30, 25), self.at(5, 2), self.at(200, 0)]
+        self.assertNotIn(self.at(30, 25), despike(tail, path))
+        # 상하행을 모으며 생긴 10 m 되돌이 지그재그
+        zig = [self.at(-200, 0), self.at(0, 0), self.at(-8, 3), self.at(200, 0)]
+        self.assertEqual(len(despike(zig, path)), 3)  # 되돌이 꼭짓점 하나가 빠져 곧게 간다
+        # 공식 경로도 되돌아 나오는 진짜 회차(차고지 · 회차 꼬리)는 그대로 둔다.
+        spur = [self.at(-200, 0), self.at(0, 0), self.at(0, 80), self.at(4, 0), self.at(200, 0)]
+        self.assertEqual(despike(spur, [self.at(-300, 0), self.at(0, 0), self.at(0, 80), self.at(4, 0), self.at(300, 0)]), spur)
 
 
 if __name__ == "__main__":
