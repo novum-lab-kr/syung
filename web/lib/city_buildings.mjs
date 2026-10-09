@@ -80,6 +80,8 @@ float hash(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);retu
 // coverage of {fract(x) in [a,b]} box-filtered over a pixel w wide (cell units): windows never alias or moiré
 float pint(float x,float a,float b){float f=floor(x),r=x-f;return f*(b-a)+clamp(r-a,0.0,b-a);}
 float pulse(float x,float a,float b,float w){w=max(w,1e-4);return (pint(x+w*.5,a,b)-pint(x-w*.5,a,b))/w;}
+// 되풀이 없는 한 구간 [a,b] 의 덮임(픽셀 폭 w 로 거른 값)
+float seg(float x,float a,float b,float w){w=max(w,1e-4);return (clamp(x+w*.5,a,b)-clamp(x-w*.5,a,b))/w;}
 vec3 toSrgb(vec3 c){return pow(max(c,0.0),vec3(1.0/2.2));}
 float lum(vec3 c){return dot(c,vec3(0.2126,0.7152,0.0722));}
 // CIE L* of a linear luminance, and the factor that moves a colour's L* by dL: the pack's ΔL* values land on the screen as written
@@ -153,7 +155,26 @@ void shade(){
       float wz=fwidth(zr),beam=wt==2?smoothstep(0.9-wz,0.9,zr):max(1.0-smoothstep(0.08,0.08+wz,zr),smoothstep(0.84-wz,0.84,zr));   // a tall body: one beam a floor, under its eave
       float face=wt>=2?fl*7.0+v_wall.x+len:v_wall.w;   // (types 2–3: a_wall.w is the storey; the face seed from the floor and the face's length)
       bool paper=hash(vec3(seed,bI,face))<u_hkP.z*(wt==1?0.6:1.0);
-      vec2 g=vec2(fract(tx)*bay/0.32,zr*hgt/0.32);float lat=paper?max(pulse(g.x,0.0,0.12,fwidth(g.x)),pulse(g.y,0.0,0.12,fwidth(g.y))):0.0;   // 창살
+      // 창살: 칸을 문짝(약 0.75 m)으로 나누고 울거미(테두리) 안에 띠살(촘촘한 세로살 + 위 · 가운데 · 아래 가로살 띠) 또는
+      // 용자살(가운데 세로살 하나 + 가로살 셋). 면마다 한 가지. 셰이더 무늬라 정점 · 메모리는 그대로 (2026-10-09 덕배: 네모로만 보임)
+      float lat=0.0;
+      if(paper){
+        float pwm=u_hkP.y*(wt==2?0.7:1.0),x0=0.5*pwm,x1=bay-0.5*pwm,z0=wt==2?0.0:0.08*hgt,lh=(wt==2?0.9:0.84)*hgt-z0;
+        float xm=fract(tx)*bay,dx=fwidth(xm),dz=fwidth(zr)*hgt,nl=max(1.0,floor((x1-x0)/0.75+0.5)),lw=(x1-x0)/nl;
+        float fx=fract((xm-x0)/lw)*lw,fz=zr*hgt-z0;
+        float frame=max(max(seg(fx,0.0,0.05,dx),seg(fx,lw-0.05,lw,dx)),max(seg(fz,0.0,0.06,dz),seg(fz,lh-0.06,lh,dz)));
+        float sal;
+        if(hash(vec3(seed,face,5.0))<0.6){   // 띠살
+          float v=pulse(fx/0.09,0.0,0.22,dx/0.09),hb=0.0;
+          for(int i=0;i<3;i++){float c=lh*(0.17+0.33*float(i));hb=max(hb,seg(fz,c-0.07,c+0.07,dz)*pulse(fz/0.035,0.0,0.45,dz/0.035));}
+          sal=max(v,hb);
+        }else{   // 용자살
+          float v=seg(fx,0.5*lw-0.015,0.5*lw+0.015,dx),hb=0.0;
+          for(int i=1;i<4;i++){float c=lh*0.25*float(i);hb=max(hb,seg(fz,c-0.015,c+0.015,dz));}
+          sal=max(v,hb);
+        }
+        lat=max(frame,0.75*sal);
+      }
       // by night a few faces light one or two neighbouring bays, in the middle of the bay only (an oil lamp behind the paper, not a lit wall)
       float fh=hash(vec3(seed,face,11.0)),run=floor(fh*max(v_wall.x-1.0,1.0));
       bool lit=night&&paper&&fh<u_hkP.w&&bI>=run&&bI<=run+1.0&&fract(tx)>0.18&&fract(tx)<0.82&&zr>0.28&&zr<0.76;
