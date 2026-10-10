@@ -66,8 +66,11 @@ test('station labels keep their route names in every mode (the coaster rides the
   const plain = value => JSON.parse(JSON.stringify(value));
   const original = new Map(symbols.map(([id, layer]) => [id, plain(layer.layout['text-field'])]));
   // Exercise the actual label synchronization without constructing adjacent city renderers.
-  const start = source.indexOf('function syncCity(){'), end = source.indexOf('let coaster=false', start);
-  vm.runInContext('const cityBuildings=new CityBuildings();const cityOn=()=>simcity||coaster;\n'+source.slice(start, end), context);
+  // 모드 값은 본체처럼 modeOn(모드 상태의 flags)으로 읽는다
+  const start = source.indexOf('function syncCity(){'), end = source.indexOf('const cityViaduct=new CityViaduct(', start);
+  assert.ok(start >= 0 && end > start);
+  context.modeOn = { get coaster() { return context.coaster; }, get simcity() { return context.simcity; }, joseon: false };
+  vm.runInContext('const cityBuildings=new CityBuildings();const cityOn=()=>modeOn.simcity||modeOn.coaster;\n'+source.slice(start, end), context);
   const sync = coaster => { context.coaster = coaster; vm.runInContext('syncCity()', context); };
   sync(false);
   sync(true);
