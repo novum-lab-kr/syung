@@ -12,7 +12,7 @@ function setup(){
   const sources=new Map(['stations','journey','routes'].map(id=>[id,{data:null,setData(data){this.data=plain(data)}}]));
   let labels=0,fits=0;
   class Bounds{extend(){return this}}
-  const context=vm.createContext({Map,Math,coaster:false,simcity:false,coasterBld:true,kitReady:true,loadModeKit:()=>Promise.resolve(),coasterWant:false,coasterSpeed:1,warp:0,warpAt:0,
+  const context=vm.createContext({Map,Math,coaster:false,simcity:false,coasterGeo:{bld:true},kitReady:true,loadModeKit:()=>Promise.resolve(),coasterWant:false,coasterSpeed:1,warp:0,warpAt:0,
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},stopReach:{},
     cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
