@@ -12,6 +12,8 @@ for d in "${TARGETS[@]}"; do
   mkdir -p "$d/brand" && cp "$ROOT"/web/brand/* "$d/brand/"
   cp "$ROOT"/web/vendor/* "$d/vendor/"
   mkdir -p "$d/lib" && cp "$ROOT"/web/lib/*.mjs "$d/lib/"
+  # 본체에서 나눈 화면 코드 폴더
+  for sub in trains; do mkdir -p "$d/$sub" && cp "$ROOT/web/$sub/"*.mjs "$d/$sub/"; done
   # bus: keep the v1 static URLs separate from the journey planner's bus.json.
   if [ -f "$ROOT/data/bus/routes.json" ]; then
     mkdir -p "$d/data/bus"

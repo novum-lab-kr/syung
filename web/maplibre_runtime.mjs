@@ -2,6 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
+import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import {SEOUL_COASTER_STYLE as COASTER_STYLE,trackMetrics,zoomFade} from './lib/coaster_style_seoul.mjs';   // coaster: shared park palette and metre/pixel dimensions
@@ -202,7 +203,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();riseCache.clear();coasterLevels=-1;crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();riseCache.clear();coasterLevels=-1;crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=feed.trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
@@ -238,7 +239,7 @@ map.once('load',()=>{
 geolocate.on('geolocate',()=>{
   autoLocating=false;
 });
-let selected='all',trains=[],trainsEnabled=true,labels=[],liveRequest=0,ready=false,pendingLine=null;
+let selected='all',trainsEnabled=true,labels=[],ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
 
@@ -257,13 +258,13 @@ let edgeTimes={},lineDwell={};
 // entering and leaving the station section, not stopping and starting); approach = 진입→도착.
 // stops = a station's own zone, runs = an edge's own 출발→도착 seconds per direction (planTrain).
 let liveTiming={lines:{},default:{pace:1,zone:62,approach:40}};
-fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
+fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(feed.trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
 // weekday rush hours (KST minutes of the day; pipeline/build_live_timing.py RUSH): lines that run
 // slower then have their own pace (rushPace)
 const RUSH=[[420,570],[1050,1200]];
 const rushNow=()=>{const k=new Date(Date.now()+9*3600e3),d=k.getUTCDay(),m=k.getUTCHours()*60+k.getUTCMinutes();return d>0&&d<6&&RUSH.some(([a,b])=>m>=a&&m<b)};
 const timingFor=line=>{const tm={...liveTiming.default,...liveTiming.lines[line]};if(tm.rushPace&&rushNow())tm.pace=tm.rushPace;return tm};
-fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=feed.trains.map(planTrain).filter(Boolean)}).catch(()=>{});
 function segmentSeconds(a,b,line){
   const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
   const A=merc(a),B=merc(b),chord=Math.hypot(B.x-A.x,B.y-A.y),track=line?realGeom(line,a.id,b.id).total:chord,metres=Math.max(chord,track)/A.meterInMercatorCoordinateUnits();
@@ -1514,7 +1515,7 @@ function trainSheetHTML(plan){
 function rawFeedHTML(t){
   const a=Math.round(age(t.receivedAt)),kst=v=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-',kv=(k,v)=>`<dt>${k}</dt><dd>${v}</dd>`;
   return `${kv('역',esc(t.station))}${kv('상태',esc(t.status))}${kv('방향',esc(t.direction))}${kv('행선지',esc(t.destination||'-'))}
-  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(liveFetchedAt))}`;
+  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(feed.fetchedAt))}`;
 }
 function showTrainPopup(plan){
   const token=openSheet(trainSheetHTML(plan));sheetTrain=plan.id;
@@ -1532,7 +1533,7 @@ function showTrainPopup(plan){
 document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
 // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
 function pickTrain(point){
-  if(!trainsEnabled||!liveOn||subwayOff)return null;
+  if(!trainsEnabled||!feed.on||subwayOff)return null;
   const unit=1/(512*2**map.getZoom());let best=null;
   for(const plan of plans){
     const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
@@ -1549,8 +1550,8 @@ const liveNotice=document.createElement('div');liveNotice.className='live-notice
 document.head.insertAdjacentHTML('beforeend','<style>.live-notice{position:absolute;z-index:6;left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 120px);padding:8px 12px;border-radius:8px;background:#fff6e0;color:#6b4a00;border:1px solid #f0cf7a;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12)}html[data-theme=dark] .live-notice{background:#3a2f12;color:#f4dc9a;border-color:#6d5620}</style>');
 function updateLiveNotice(msg){
   // also flag data that stopped updating (no fresh fetch for 3 minutes while trains are shown)
-  if(!msg&&liveFetchedAt&&liveOn&&Date.now()-new Date(liveFetchedAt).getTime()>180000)msg=`실시간 정보가 ${new Date(liveFetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 이후 갱신되지 않았어요.`;
-  liveNotice.textContent=msg||'';liveNotice.hidden=!msg||!liveOn;
+  if(!msg&&feed.fetchedAt&&feed.on&&Date.now()-new Date(feed.fetchedAt).getTime()>180000)msg=`실시간 정보가 ${new Date(feed.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 이후 갱신되지 않았어요.`;
+  liveNotice.textContent=msg||'';liveNotice.hidden=!msg||!feed.on;
 }
 setInterval(()=>updateLiveNotice(liveNotice.hidden?null:liveNotice.textContent),30000);
 
@@ -2060,56 +2061,16 @@ function filterLine(line){
   const visible=stations.filter(s=>line==='all'||s.lines.some(x=>x.name===line));
   $('mapTitle').textContent=line==='all'?`${stations.length}개 역 노드 전체 보기`:`${line} · ${visible.length}개 역`;
   $('status').textContent=`${line==='all'?'전체 노선':line} · ${visible.length}개 역 위치와 역명을 표시합니다.`;
-  liveRequest++;trains=[];plans=[];lastPose.clear();liveKey='';map.triggerRepaint();
+  feed.reset();plans=[];lastPose.clear();map.triggerRepaint();
   if(line==='all')map.jumpTo(HOME);
   else{const b=new maplibregl.LngLatBounds();visible.forEach(s=>b.extend([s.lon,s.lat]));map.fitBounds(b,{padding:60,maxZoom:13})}
   refreshLive(true);
 }
-// Live trains show from zoom 13 for every line on screen (or just the selected line). The proxy
-// serves all lines from one cached upstream call, so the number of lines requested is free.
-const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
-let liveOn=false,liveFailures=0,liveKey='',liveAt=0,liveFetchedAt=null;
-function liveLines(){
-  // hysteresis: trains appear at zoom 13 but only disappear below 12.5, so pinching around 13 doesn't blink them
-  liveOn=map.getZoom()>=LIVE_ZOOM||(liveOn&&map.getZoom()>=LIVE_ZOOM-.5);
-  if(!liveOn)return [];
-  if(selected!=='all')return [selected];
-  const b=map.getBounds(),n={};
-  for(const s of stations)if(b.contains([s.lon,s.lat]))for(const x of s.lines)n[x.name]=(n[x.name]||0)+1;
-  // also lines merely passing through the view (no station inside it)
-  const c=map.getCenter();
-  // lines passing through the view: stations within 0.75 view or at least ~1.5 km of the centre (zoomed in the view is tiny)
-  const w=Math.max((b.getEast()-b.getWest())*.75,.019),h=Math.max((b.getNorth()-b.getSouth())*.75,.0135);
-  for(const s of stations)if(Math.abs(s.lon-c.lng)<w&&Math.abs(s.lat-c.lat)<h)for(const x of s.lines)n[x.name]??=.5;
-  return Object.keys(n).sort((x,y)=>n[y]-n[x]).slice(0,LIVE_MAX_LINES);
-}
-async function refreshLive(force=false){
-  const lines=liveLines();
-  if(!lines.length){
-    liveRequest++;liveKey='';if(plans.length){trains=[];plans=[];lastPose.clear();map.triggerRepaint()}
-    liveState.parentElement.dataset.state='idle';liveState.textContent=!liveOn?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
-    return;
-  }
-  // the line of the train whose sheet is open: the proxy reads it from the per-line position feed when that is on
-  const focus=sheetTrain?sheetTrain.split(':')[0]:'';
-  const key=lines.join(',')+(focus?'|'+focus:'');
-  if(!force&&key===liveKey&&Date.now()-liveAt<30000)return; // same lines, fetched recently
-  const request=++liveRequest;liveKey=key;liveAt=Date.now();
-  if(!plans.length)liveState.parentElement.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
-  try{
-    const r=await fetch(`./api/live?lines=${encodeURIComponent(lines.join(','))}${focus?`&focus=${encodeURIComponent(focus)}`:''}`,{cache:'no-store'}),d=await r.json();
-    if(request!==liveRequest)return; // a newer view or selection superseded this response
-    if(!r.ok||!d.ok)throw Error(d.error||r.status);
-    // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
-    // service); extrapolating it would park a ghost train somewhere down the line.
-    const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=STALE_SECONDS);const stale=all.length-trains.length;
-    // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
-    liveFetchedAt=d.fetchedAt;liveFailures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();
-    const unplaced=trains.length-plans.length,shown=d.lines||lines;
-    liveState.parentElement.dataset.state='ok';liveState.textContent=`추정 위치 ${plans.length}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
-    map.triggerRepaint();
-  }catch{if(request===liveRequest){liveKey='';liveFailures++;liveState.parentElement.dataset.state='error';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';if(liveFailures>=2||!plans.length)updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
-}
+// 실시간 열차(trains/live_feed.mjs): 받은 기록으로 예측만 다시 세운다
+const feed=createLiveFeed({map,stations,liveState,getSelected:()=>selected,getSheetTrain:()=>sheetTrain,hasPlans:()=>plans.length>0,age,updateLiveNotice,
+  onTrains:trains=>{learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();return plans.length},
+  onClear:()=>{plans=[];lastPose.clear();map.triggerRepaint()}});
+function refreshLive(force=false){return feed.refresh(force)}
 
 map.on('load',()=>{
   let labelsStale=false;
@@ -2568,7 +2529,7 @@ function setCoaster(on,speed=coasterSpeed){
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
-  if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=trains.map(planTrain).filter(Boolean);lastPose.clear();
+  if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=feed.trains.map(planTrain).filter(Boolean);lastPose.clear();
     if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
     if(displayedRoute)showRoute(displayedRoute.plan,displayedRoute.busSelection,false);
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
@@ -2581,7 +2542,7 @@ function setSimcity(on,asJoseon=false){const J=!!(on&&asJoseon),ask=++modeAsk;$(
   if(on&&!kitReady){loadModeKit().then(()=>{if(ask===modeAsk)setSimcity(on,asJoseon)},()=>{if(ask===modeAsk){$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}});return}   // 모드 코드가 오면 켠다(그사이 다른 걸 누르면 그쪽)
   if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();
   if(joseon!==J){joseon=J;if(simcity===on){applyTheme();updateSun();map.triggerRepaint();return}}
-  if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
+  if(simcity===on)return;simcity=on;setRouteOpacity();plans=feed.trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!(simcity&&!joseon));
 if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(!joseon,true);
 const setJoseon=on=>setSimcity(on,true);
@@ -2601,12 +2562,5 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){setOpen(false);btn.focus()}});
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
-// Server caches ~90s and the upstream key has a daily quota: don't poll from background tabs.
-// The proxy refreshes upstream every 90 s and serves its cache in between, so polling it often is
-// free and picks up each upstream refresh within ~20 s.
-// one timer: every 20 s, or every 10 s while a train's sheet is open (served from the proxy's cache).
-// Two separate 20 s / 10 s timers fired together every 20 s and sent the same request twice.
-setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
-let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
+feed.start();
 window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};
