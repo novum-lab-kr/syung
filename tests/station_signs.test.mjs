@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {platformRuntime, local as localMeters} from './platform_endpoints_fixture.mjs';
+import {createStationLabels} from '../web/map/labels.mjs';
 import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mjs';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
@@ -225,24 +225,25 @@ test('멀리 떨어진 승강장은 각 폴리라인 호 길이 가운데의 평
 });
 
 
-test('rebuildLabels는 보이는 승강장 coords만 사용하고 픽셀 offset은 무시해요', () => {
-  const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
-  const start = source.indexOf('function rebuildLabels(){'), end = source.indexOf('function filterLine(', start);
-  let data;
-  const context = vm.createContext({
-    selected: 'all', labels: [], stations: [{id: 1, name: '환승역', lines: [{name: '1호선'}, {name: '2호선'}]}],
+test('rebuildLabels는 보이는 승강장 coords만 사용하고 픽셀 offset은 무시해요', t => {
+  let data, selected = 'all';
+  const raf = globalThis.requestAnimationFrame;   // 다시 그리기 예약만(node 에는 없다): 끝나면 되돌린다
+  globalThis.requestAnimationFrame = () => 1;
+  t.after(() => { globalThis.requestAnimationFrame = raf; });
+  const labels = createStationLabels({
+    stations: [{id: 1, name: '환승역', lines: [{name: '1호선'}, {name: '2호선'}]}],
     stationRects: new Map([
       ['1호선:1', {coords: [[0, 0], [200, 0]].map(toLngLat), offset: 12}],
       ['2호선:1', {coords: [[30, -20], [30, 120]].map(toLngLat), offset: -12}],
     ]),
-    map: {getSource: () => ({setData: value => { data = value; }})},
-    colors: {'1호선': '#0052A4', '2호선': '#00A84D'}, signAnchor, sortLines, placeholderText, scheduleLabels: () => {},
+    map: {getSource: () => ({setData: value => { data = value; }}), triggerRepaint() {}},
+    colors: {'1호선': '#0052A4', '2호선': '#00A84D'}, getSelected: () => selected,
   });
-  vm.runInContext(source.slice(start, end) + 'rebuildLabels();', context);
+  labels.rebuild();
   const near = (actual, expected) => expected.forEach((v, i) => assert.ok(Math.abs(actual[i] - v) < 1e-8));
   near(data.features[0].geometry.coordinates, toLngLat([30, 0]));
-  context.selected = '1호선';
-  vm.runInContext('rebuildLabels();', context);
+  selected = '1호선';
+  labels.rebuild();
   near(data.features[0].geometry.coordinates, toLngLat([100, 0]));
   assert.equal(data.features[0].properties.ln, '1호선');
 });
@@ -271,21 +272,25 @@ test('끝에서 300m를 넘어야 만나는 교차점은 쓰지 않아요', () =
 });
 
 
-test('줌 10에서 16으로 옮겨도 상봉 이름표는 새로 그릴 승강장 좌표와 같아요', () => {
+test('줌 10에서 16으로 옮겨도 상봉 이름표는 새로 그릴 승강장 좌표와 같아요', t => {
   let zoom = 10, labelData;
   const r = platformRuntime(undefined, zoom, {map: {getZoom: () => zoom}}), source = r.source;
   const sources = {
     routes: {setData: () => {}}, stations: {setData: () => {}},
     'station-labels': {setData: data => {labelData = data;}},
   };
-  Object.assign(r.context, {selected: 'all', labels: [], stations: r.context.stations.filter(s => s.id === 135),
-    signAnchor, sortLines, placeholderText, scheduleLabels: () => {}});
+  Object.assign(r.context, {selected: 'all', stations: r.context.stations.filter(s => s.id === 135)});
   r.context.map.getSource = id => sources[id];
+  r.context.map.triggerRepaint = () => {};
   const on = {};
   r.context.map.on = (event, fn) => {on[event] = fn;};
   r.context.labelsStale = false;
-  const start = source.indexOf('function rebuildLabels(){'), end = source.indexOf('function filterLine(', start);
-  vm.runInContext(source.slice(start, end) + 'rebuildLabels();', r.context);
+  const raf = globalThis.requestAnimationFrame;   // 다시 그리기 예약만(node 에는 없다): 끝나면 되돌린다
+  globalThis.requestAnimationFrame = () => 1;
+  t.after(() => { globalThis.requestAnimationFrame = raf; });
+  const labels = createStationLabels({map: r.context.map, stations: r.context.stations, stationRects: r.rects, colors: r.context.colors, getSelected: () => 'all'});
+  r.context.rebuildLabels = () => labels.rebuild();   // 본체의 줌 핸들러가 부르는 이름
+  labels.rebuild();
   const old = [...labelData.features[0].geometry.coordinates];
   const initial = r.rects.get('경춘선:135').coords[0];
   assert.ok(Math.abs(localMeters(initial, [127.0856, 37.5965])[1] + 123) < 1);

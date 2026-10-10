@@ -2,6 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
+import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
 import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
@@ -241,7 +242,7 @@ map.once('load',()=>{
 geolocate.on('geolocate',()=>{
   autoLocating=false;
 });
-let selected='all',trainsEnabled=true,labels=[],ready=false,pendingLine=null;
+let selected='all',trainsEnabled=true,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
 
@@ -1501,7 +1502,6 @@ let stationSeq=0;
 document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
 // ---- station labels (DOM markers with box collision) --------------------------------
-let labelFrame=0;
 // Station names sit inside the platform rectangle, turned along it. Where the name is longer than
 // the platform on screen, its box (same outline and fill) extends past it so the text still fits.
 // They are drawn by a WebGL layer placed *below* the trains, so a train at a station stays visible.
@@ -1687,27 +1687,11 @@ class CoasterTrack{
 const coasterTrack=new CoasterTrack();
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer({map,maplibregl,stationRects,exitCol,cityViaduct,colors,hexRGB3,stationWidthPx,platformPx,PLATFORM_SCALE,closestPlatformPoint,platformStroke,EXIT_MINZOOM,EXIT_MAX_M,EXIT_PASSAGES,document,matchMedia:q=>matchMedia(q),
-  getLabels:()=>labels,getSelected:()=>selected,getExits:()=>exits,getStationAlpha:()=>stationAlpha,isCoaster:()=>coaster,isSimcity:()=>simcity});   // city-life: 심시티 — the bars take the buildings' depth there too (see its render)
-function updateLabelVisibility(){labelFrame=0;map.triggerRepaint()}
-const scheduleLabels=()=>{if(!labelFrame)labelFrame=requestAnimationFrame(updateLabelVisibility)};
-function rebuildLabels(){
-  labels=[];
-  const visible=stations.filter(s=>selected==='all'||s.lines.some(x=>x.name===selected)).sort((a,b)=>b.lines.length-a.lines.length);
-  for(const s of visible){
-    const line=selected!=='all'&&s.lines.some(x=>x.name===selected)?selected:s.lines[0].name;
-    labels.push({station:s,line,text:s.name});
-  }
-  // 보이는 승강장의 교차 · 근접 구간을 우선하고, 한 노선이면 호 길이의 가운데에 놓아요
-  const src=map.getSource('station-labels');
-  if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text})=>{
-    const shown=s.lines.filter(x=>selected==='all'||x.name===selected);
-    const c=signAnchor(shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean).map(r=>r.coords));
-    if(!c)return [];
-    const names=sortLines(shown.map(x=>x.name));
-    return [{type:'Feature',properties:{text,rank:-s.lines.length,ln:names.join('|'),lc:names.map(n=>colors[n]||'#52646a').join('|'),ph:placeholderText(names,text)},geometry:{type:'Point',coordinates:c}}];
-  })});
-  scheduleLabels();
-}
+  getLabels:()=>stationLabels.list,getSelected:()=>selected,getExits:()=>exits,getStationAlpha:()=>stationAlpha,isCoaster:()=>coaster,isSimcity:()=>simcity});   // city-life: 심시티 — the bars take the buildings' depth there too (see its render)
+// 역 이름표(map/labels.mjs): 보이는 역의 이름표 자료와 그 자리. labels 의 주인
+const stationLabels=createStationLabels({map,stations,stationRects,colors,getSelected:()=>selected});
+const scheduleLabels=stationLabels.schedule;
+function rebuildLabels(){stationLabels.rebuild()}
 
 function filterLine(line){
   if(!ready){pendingLine=line;return}
