@@ -19,7 +19,7 @@ function setup(){
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,focusRoute(){},setSubwayOff(){},sheetPad:()=>0,stopRide(){},
     $:()=>({setAttribute(){}}),document:{querySelectorAll:()=>[]},cityMap(){},setRouteOpacity(){},
-    buildLineFeatures:()=>[],feed:{trains:[]},planTrain(){},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
+    buildLineFeatures:()=>[],planner:{rebuild(){}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
     part('const PLATFORM_HALF=', 'function metresBetween('),

@@ -2,6 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
+import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
@@ -203,7 +204,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();riseCache.clear();coasterLevels=-1;crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');plans=feed.trains.map(planTrain).filter(Boolean)}).catch(()=>{});
+const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();edgeArcs.clear();rideClocks.clear();riseCache.clear();coasterLevels=-1;crossIdx=null;stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
@@ -244,36 +245,10 @@ const $=id=>document.getElementById(id);
 const liveState=document.querySelector('#liveState span');   // the line filter panel is gone: every line is always shown
 
 // ---- live train routing -------------------------------------------------------------
-function kstMs(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]):NaN}
-function age(v){const t=kstMs(v);return t===t?Math.max(0,((clock()===frameClock?frameEpoch:Date.now())-t)/1000):0}
-// 열차 위치를 정하는 시계. 1인칭으로 탈 때는 그 화면 프레임의 시각(rAF): 부르는 순간의 시각을 쓰면 프레임마다 몇 ms 씩 들쭉날쭉하고,
-// 120 Hz 화면에서는 10 ms 묶음(trainPose) 때문에 두 프레임에 한 번만 움직였다(탈 때 끊겨 보인다 — 2026-10-06 덕배). 프레임이 멈추면(250 ms — 역에 서 있을 때 등) 지금 시각.
-let frameClock=-1e9,frameEpoch=0;
-function clock(){const t=performance.now();return ride&&t-frameClock<250?frameClock:t}
-// Run time between adjacent stations: the GTFS timetable's median (edge_times.json, built by
-// build_edge_times.py); failing that, track length at the timetable's typical 12.4 m/s.
-let edgeTimes={},lineDwell={};
-// Per-line timing learned from the live feed (live-timing.json, built by build_live_timing.py):
-// pace = observed ÷ timetable over several stations; zone = 도착→출발 (the feed marks a train
-// entering and leaving the station section, not stopping and starting); approach = 진입→도착.
-// stops = a station's own zone, runs = an edge's own 출발→도착 seconds per direction (planTrain).
-let liveTiming={lines:{},default:{pace:1,zone:62,approach:40}};
-fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(feed.trains.map(planTrain).filter(Boolean))}}).catch(()=>{});
-// weekday rush hours (KST minutes of the day; pipeline/build_live_timing.py RUSH): lines that run
-// slower then have their own pace (rushPace)
-const RUSH=[[420,570],[1050,1200]];
-const rushNow=()=>{const k=new Date(Date.now()+9*3600e3),d=k.getUTCDay(),m=k.getUTCHours()*60+k.getUTCMinutes();return d>0&&d<6&&RUSH.some(([a,b])=>m>=a&&m<b)};
-const timingFor=line=>{const tm={...liveTiming.default,...liveTiming.lines[line]};if(tm.rushPace&&rushNow())tm.pace=tm.rushPace;return tm};
-fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=feed.trains.map(planTrain).filter(Boolean)}).catch(()=>{});
-function segmentSeconds(a,b,line){
-  const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
-  const A=merc(a),B=merc(b),chord=Math.hypot(B.x-A.x,B.y-A.y),track=line?realGeom(line,a.id,b.id).total:chord,metres=Math.max(chord,track)/A.meterInMercatorCoordinateUnits();
-  return Math.max(30,Math.min(180,metres/12.4));
-}
-// Dead reckoning: the API only reports the last event (진입/도착/출발/전역출발) and when it happened.
-// Roll the train forward from that moment: approach → dwell → run → dwell … along its route,
-// so a train that "arrived 90s ago" is drawn already heading to the next stop.
-const EXPRESS_LINES=new Set(stations.flatMap(s=>s.express||[]));   // lines whose express stops the GTFS lists
+// 열차 예측(trains/plan.mjs): plans · 시계 · 시간표와 학습 자료의 주인. 본체는 planner.plans 로 읽는다
+const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,
+  isCoaster:()=>coaster,isRide:()=>ride,getTrains:()=>feed.trains});
+const {age,clock}=planner;
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
 let exits={};const exitCol=new Map();   // exit "lon,lat" → the colour of the line its passage joins
 const EXIT_MINZOOM=16,EXIT_MAX_M=350;   // exits (and their passages) from this zoom; farther than this from every platform: no passage
@@ -281,61 +256,6 @@ const EXIT_PASSAGES=false;   // 2026-10-05: 승강장 → 출구 통로 선은 �
 const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc])=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
 const smooth=x=>x*x*(3-2*x);
-// Typical consist per line: [cars, metres per car]. Drawn at true length along the track.
-const CONSIST={'1호선':[10,20],'2호선':[10,20],'3호선':[10,20],'4호선':[10,20],'5호선':[8,20],'6호선':[8,20],'7호선':[8,20],'8호선':[6,18],'9호선':[6,19.5],'GTX-A':[8,23.5],'경강선':[4,20],'경의중앙선':[8,20],'경춘선':[8,20],'공항철도':[6,22],'김포골드라인':[2,13],'서해선':[4,20],'수인분당선':[6,20],'신림선':[3,13],'신분당선':[6,19.5],'에버라인선':[1,12],'우이신설선':[2,13],'의정부선':[2,13],'인천1호선':[8,18],'인천2호선':[2,18]};
-function planTrain(t){
-  const s=stationByLine.get(`${t.line}:${key(t.station)}`);if(!s)return null;
-  // Only move as far as the feed implies: the reported station may be left (after its dwell),
-  // but the next station is only reached, never departed, until fresh data says so.
-  // Express trains (1·9호선, whose express stops are in the GTFS) only stop at express stations and run
-  // straight through the others; "the next station" for them means the next express stop.
-  const expressLine=t.express&&EXPRESS_LINES.has(t.line),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
-  const stops=st=>!expressLine||(st.express||[]).includes(t.line)||st===dest;
-  const r=route(t,s),previous=r.previous,status=normStatus(t.status),phases=[];
-  // Roll on through PREDICT_STOPS stops (dwelling at each) before waiting for data: waiting at the
-  // very next stop left trains standing there while they had long left; replacePlans keeps an
-  // over-prediction from jumping back.
-  let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===(coaster?99:PREDICT_STOPS)){upto=j;break}
-  const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
-  // Stop to stop takes pace × (timetable run + 30 s dwell). The feed's 도착→출발 (the station section,
-  // zone ~64 s) is not all standing: 도착 comes as the train enters the section and brakes along the
-  // platform, it stands ~STAND s, and pulls out ~20 s before 출발. Standing the whole zone − 10 s had
-  // trains stop early and leave late (7071 하행 면목·사가정·어린이대공원, 2026-09-30 ride). So a
-  // predicted stop stands STAND and the run takes the rest; at the station of a 도착 record the train
-  // brakes in over the last stretch (BRAKE s) and leaves zone − 20 s after the record. The times the
-  // feed's next events are expected at are unchanged (build_live_timing.evaluate).
-  const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,tm.stand||30),BRAKE=DWELL-STAND;
-  // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
-  const more=st=>(tm.stops?.[st.id]??tm.zone)-tm.zone,stand=st=>Math.max(5,STAND+more(st));
-  // 구간마다 배운 출발→도착 초(live-timing runs, 방향별): 출발은 달리기 시작 15 s 뒤, 도착은 서기 BRAKE s 전이라 달리는 시간은 그만큼 더 길다. 없으면 시간표 × pace
-  const paced=(from,to)=>{const D=tm.runs?.[`${from.id}:${to.id}`];if(D!=null)return Math.max(10,D+15+BRAKE);const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
-  // ease: slow at a stop, full speed through a station the train passes
-  const run=(from,to,k0=0,k1=1,dur=paced(from,to))=>{const a=k0===0&&stops(from),b=k1===1&&stops(to);
-    phases.push({from,to,k0,k1,dur:dur*(a&&b?1:a||b?.9:.8),ease:a&&b?'both':a?'in':b?'out':'none'})};
-  const dwell=(at,i,dur=STAND)=>{const nx=ahead[i+1];phases.push(nx?{from:at,to:nx,k0:0,k1:0,dur}:{from:previous&&i===0?previous:ahead[i-1]||at,to:at,k0:1,k1:1,dur})};
-  // the reported station: 진입 → the approach (the line's 진입→도착 time) → 도착 → braking to the
-  // platform (BRAKE) → standing; it leaves DWELL after 도착 as before
-  const brakes=previous&&BRAKE>0&&(status==='진입'||status==='도착');
-  if(status==='진입'&&previous)run(previous,s,.75,brakes?.85:1,tm.approach);
-  if(status==='전역출발'&&previous)run(previous,s);
-  if(brakes)phases.push({from:previous,to:s,k0:.85,k1:1,dur:BRAKE,ease:'out'});
-  // a train standing at the terminus it starts from, minutes before leaving (proxy: departsAt)
-  const wait=t.departsAt?(kstMs(t.departsAt)-kstMs(t.receivedAt))/1000:0;
-  if(status!=='출발'&&(stops(s)||status==='도착'))dwell(s,0,Math.max((brakes?STAND:DWELL)+more(s),wait||0));
-  for(let i=0;i<ahead.length-1;i++){run(ahead[i],ahead[i+1]);if(i+1<ahead.length-1&&stops(ahead[i+1]))dwell(ahead[i+1],i+1,stand(ahead[i+1]))}
-  // Hold at the last station we are willing to predict (destination or MAX hops) until fresh data arrives.
-  const last=ahead[ahead.length-1],before=ahead.length>1?ahead[ahead.length-2]:previous;
-  phases.push(before?{from:before,to:last,k0:1,k1:1,dur:Infinity}:{from:last,to:last,k0:0,k1:0,dur:Infinity});
-  // Stations the train runs through, in travel order; every phase goes from seq[i] to seq[i+1].
-  // The geometry runs past where motion stops so a train held at a station keeps its full length.
-  const seq=previous?[previous,...r.ahead]:[...r.ahead],cum=[0];
-  for(let i=1;i<seq.length;i++)cum.push(cum[i-1]+geom(t.line,seq[i-1].id,seq[i].id).total);
-  let [cars,carMetres]=CONSIST[t.line]||[8,20];
-  // 2호선 branches run short trains: 성수지선 4 cars, 신정지선 6 cars (Seoul Metro)
-  if(t.line==='2호선'){const where=`${t.station} ${t.destination}`;if(/신설동|용두|신답|용답|성수지선/.test(where))cars=4;else if(/까치산|신정네거리|양천구청|도림천|신도림지선/.test(where))cars=6}
-  // 출발 is sent as the train leaves the station section, ~15 s into its run
-  return {t,id:`${t.line}:${t.trainNo}`,phases,seq,cum,cars,carMetres,lead:status==='출발'?15:0};
-}
 // 롤러코스터 (settings): between stations the lines rise off the ground like a coaster track and the
 // trains ride on it; its clock can run faster (×coasterSpeed): the trains then run ahead of the feed
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
@@ -370,7 +290,7 @@ function cityXrayTargets(){
     const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2,h=cityViaduct.stationH(line,id)*m;
     out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m})}
   if(X.trains&&trainsEnabled){const bodyPx=coasterBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
-    for(const plan of plans){const pose=trainPose(plan),q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;
+    for(const plan of planner.plans){const pose=trainPose(plan),q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
@@ -667,10 +587,10 @@ function fromRide(p,a){
 // one standing there): the one behind waits TRAIN_GAP_M back, as at a signal. Same line, direction and express or not
 // (an express passes a local at a station). Worked out for all the trains at once, at most every 10 ms.
 const TRAIN_GAP_M=20,spaced=new Map();let spacedAt=-1e9,spacedFor=null;
-function trainPose(p){const now=clock();if((now===frameClock?now!==spacedAt:now-spacedAt>10)||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
+function trainPose(p){const now=clock(),plans=planner.plans;if((now===planner.frameClock?now!==spacedAt:now-spacedAt>10)||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
 function spaceTrains(){
   spaced.clear();const groups=new Map(),at=e=>{const q=trackPoint(e.p,e.pose.dist);e.x=q.x;e.y=q.y;e.f=q.f};
-  for(const p of plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2)continue;
+  for(const p of planner.plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2)continue;
     const m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits(),k=`${p.t.line}|${p.t.direction}|${p.t.express?1:0}`,e={p,pose,half:p.cars*p.carMetres*m/2,m};at(e);
     if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e)}
   for(const g of groups.values())if(g.length>1)for(let pass=0;pass<2;pass++)for(const a of g)for(const b of g){if(a===b)continue;
@@ -700,32 +620,6 @@ function rawPose(p){
   // stand: at a stop — s into it, how long it lasts and which station
   return {dist,moving,stand:!moving&&ph.dur!==Infinity?{t:el,dur:ph.dur,st:ph.k0===0?ph.from:ph.to}:null};
 }
-// Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
-// 앞으로의 보정은 원래 주행 위에 최대 CATCHUP_MPS 를 더해 메워요(질주하지 않게). 따라잡는 도중 새 자료가 오면 그때 더하던 속도에서 이어 가요.
-const PREDICT_STOPS=3,GLIDE_MAX_M=1000,HOLD_MAX_M=3000,STOP_M=40,NEAR_PLATFORM_M=150;   // STOP_M: 앞선 열차가 서는 거리(약 4초) · NEAR_PLATFORM_M: 이만큼 안이면 승강장까지 가서 선다   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
-function replacePlans(next){
-  const old=new Map(plans.map(p=>[p.id,p]));
-  for(const p of next){
-    const o=old.get(p.id);if(!o||o.seq.length<2)continue;
-    const d=trainPose(o).dist;let i=0;while(i<o.seq.length-2&&o.cum[i+1]<d)i++;
-    const a=o.seq[i].id,b=o.seq[i+1].id,f=(d-o.cum[i])/((o.cum[i+1]-o.cum[i])||1);
-    // the same stretch of track in the new route, or else the station it was heading to
-    let from;const j=p.seq.findIndex((s,k)=>s.id===a&&p.seq[k+1]?.id===b);
-    if(j>=0)from=p.cum[j]+(p.cum[j+1]-p.cum[j])*f;
-    else{const k=p.seq.findIndex(s=>s.id===b);if(k<0)continue;from=Math.max(0,p.cum[k]-(1-f)*(o.cum[i+1]-o.cum[i]))}   // different route: nothing to carry over
-    const to=trainPose(p).dist,m=mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits();
-    if(from>to){if((from-to)/m<HOLD_MAX_M){
-      // 자료보다 앞서 있으면 그 자리에서 부드럽게 서서(STOP_M 안) 예측이 지나가길 기다린다. 승강장에 거의 다 왔으면(NEAR_PLATFORM_M) 승강장에 선다.
-      // 다음 역까지 달려가 기다리던 것은 실제 열차보다 한 역 앞서 갔다(7277 천왕 → 온수 1 km, 7호선 강남구청 → 청담, 2026-10-08).
-      // 이미 서 있던 열차는 더 가지 않고, 서는 중이던 열차는 남은 만큼만 간다.
-      const k=p.cum.findIndex(c=>c>=from-1e-9),next=k>=0?p.cum[k]:from,left=o.hold!=null?Math.max(0,o.hold-d):null;
-      const st=left!=null?Math.min(next,from+left):(next-from)/m<=NEAR_PLATFORM_M?next:Math.min(next,from+STOP_M*m);p.hold=st;
-      if(st>from)p.creep={from,at:clock(),ms:Math.max(2000,Math.min(60000,(st-from)/m*100))};
-    }}
-    else if((to-from)/m>1&&(to-from)/m<GLIDE_MAX_M){const v0=o.glide?catchupAt(o.glide.c,(clock()-o.glide.at)/1000).v:0;p.glide={c:catchup((to-from)/m,v0),at:clock()}}
-  }
-  plans=next;
-}
 // Point on the track `dist` along plan.seq (clamped to its ends), with heading and lateral offset.
 // Trains keep to the right of their travel direction (Korean right-hand running): looking along
 // the 상행 direction, 상행 trains are right of the line and 하행 trains left of it.
@@ -750,7 +644,6 @@ function trackPoint(p,dist){
   if(simcity)h=cityViaduct.heightAt(line,a.id,b.id,k)*p.m;   // city-life: 심시티 — the trains run on the viaduct's deck: its rail height here (the station's level, or the ramp between two), in mercator units
   return {x,y,f,r,off,h,roll};
 }
-let plans=[];
 const lastPose=new Map(),BLEND_MS=1200;
 
 // Train body width and lane offset in screen px, shared by the train layer, roof numbers,
@@ -1038,7 +931,7 @@ class TrainLayer{
     this.corner(x,-w,.65,-w,.65,face);this.corner(x,w,z,w,z,face);this.corner(x,-w,z,-w,z,face);
   }
   render(gl,options){
-    if(!myLocation&&(!trainsEnabled||!plans.length))return;
+    if(!myLocation&&(!trainsEnabled||!planner.plans.length))return;
     const drawTrainsToo=trainsEnabled&&!subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
     const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=coaster||simcity?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;   // city-life: 심시티 — the slim body too (the viaduct's deck is cut to it)
     // Lane: clear of the route line (its drawn width) by a visible gap, then half a car body.
@@ -1051,7 +944,7 @@ class TrainLayer{
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
     if(myLocation&&map.getBounds().contains(myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
-    for(const plan of drawTrainsToo?plans:[]){
+    for(const plan of drawTrainsToo?planner.plans:[]){
       const snap=riding(plan),pose=snap?snap.pose:trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
       this.h0=simcity?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
       // Fresh data: glide from where the old prediction had the train instead of teleporting.
@@ -1358,7 +1251,7 @@ function trainLngLat(plan){
   const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
   return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
 }
-function follow(id){following=id;followBus=null;followBtn.hidden=true;followBtn.textContent='이 열차 따라가기';const plan=plans.find(p=>p.id===id);if(!plan)return;
+function follow(id){following=id;followBus=null;followBtn.hidden=true;followBtn.textContent='이 열차 따라가기';const plan=planner.plans.find(p=>p.id===id);if(!plan)return;
   easing=true;cam=null;map.once('moveend',()=>{easing=false;map.triggerRepaint()});
   map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
 // bus: 그 버스로 옮겨 가 따라간다. 멀리 있었으면 줌 16 으로(가까이 볼 때 버스가 보이는 크기)
@@ -1380,10 +1273,10 @@ const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
 function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
 function followLoop(ts){followRaf=0;if(!(following||ride||followBus)||easing)return;
   if(!ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-  followLast=ts;if(ride){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}for(const f of animFrame)f();map.triggerRepaint();
+  followLast=ts;if(ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
   if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
 animFrame.push(()=>{
-  const sel=following&&!easing&&sheetTrain&&plans.find(p=>p.id===sheetTrain);if(!sel)return;
+  const sel=following&&!easing&&sheetTrain&&planner.plans.find(p=>p.id===sheetTrain);if(!sel)return;
   const c=trainLngLat(sel),now=performance.now();
   if(!cam||now-camAt>1000)cam={lng:c.lng,lat:c.lat};
   else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(c.lng-cam.lng)*a,lat:cam.lat+(c.lat-cam.lat)*a}}
@@ -1424,7 +1317,7 @@ sheetBody.addEventListener('click',e=>{
   if(e.target.closest('.ride-go')&&sheetTrain)startRide(sheetTrain)});
 function rideBarText(plan){rideBar.style.setProperty('--c',colors[plan.t.line]||'#52646a');rideBar.querySelector('.txt').textContent=`${plan.t.line} ${seatLabel(ride.seat)} · ${riderState(plan)}`}
 function startRide(id){
-  const plan=plans.find(p=>p.id===id);if(!plan||!coaster||ride)return;
+  const plan=planner.plans.find(p=>p.id===id);if(!plan||!coaster||ride)return;
   const back={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),elevation:map.getCenterElevation(),maxPitch:map.getMaxPitch(),fov:map.getVerticalFieldOfView(),clamp:map.getCenterClampedToGround()};
   closeSheet();map.stop();easing=false;following=null;
   ride={id,seat:{...rideSeat},snap:null,seen:performance.now(),back};
@@ -1433,13 +1326,13 @@ function startRide(id){
   map.setSky({'sky-color':S.sky,'horizon-color':S.horizon,'fog-color':S.horizon,'sky-horizon-blend':.45,'horizon-fog-blend':.7,'fog-ground-blend':.9,'atmosphere-blend':0});
   map.getContainer().style.setProperty('--ride-ground',S.ground);   // 타일이 끝난 땅: 바탕 격자 대신 먼 땅빛(syung.css body.riding .map)
   rideBarText(plan);rideBar.hidden=false;document.body.classList.add('riding');applyTheme();   // 땅: 탈 때의 색(pack.ground.ride)
-  ride.timer=setInterval(()=>{const pl=ride&&plans.find(p=>p.id===ride.id);if(pl)rideBarText(pl)},1000);
+  ride.timer=setInterval(()=>{const pl=ride&&planner.plans.find(p=>p.id===ride.id);if(pl)rideBarText(pl)},1000);
   rideFrame();map.triggerRepaint();
 }
 function stopRide(reopen){
   if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');applyTheme();
   map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky);
-  const plan=plans.find(p=>p.id===r.id);
+  const plan=planner.plans.find(p=>p.id===r.id);
   map.jumpTo({center:plan?trainLngLat(plan):r.back.center,zoom:r.back.zoom,bearing:r.back.bearing,pitch:r.back.pitch,roll:0,elevation:r.back.elevation});
   map.setMaxPitch(r.back.maxPitch);map.setCenterClampedToGround(r.back.clamp);
   if(reopen&&plan&&coaster)showTrainPopup(plan);   // '내리기': 그 열차 정보창으로(위에서 따라가기)
@@ -1447,7 +1340,7 @@ function stopRide(reopen){
 }
 // 한 프레임: 탄 열차의 자리를 이 순간으로 정해 두고(ride.snap — drawTrains 가 같은 자리에 그려요) 내 칸의 틀에서 눈 · 시선을 구해 카메라를 놓아요
 function rideFrame(){
-  if(!ride)return;const plan=plans.find(p=>p.id===ride.id),now=performance.now();
+  if(!ride)return;const plan=planner.plans.find(p=>p.id===ride.id),now=performance.now();
   if(!plan){if(now-ride.seen>5000)stopRide(false);return}   // 새 자료로 계획이 바뀌는 사이(같은 id 로 돌아와요)
   ride.seen=now;
   const unit=1/(512*2**RIDE_ZOOM),bodyPx=coasterBodyPx(RIDE_ZOOM),lanePx=cityViaduct.train(RIDE_ZOOM,bodyPx).lanePx,n=plan.cars;
@@ -1523,7 +1416,7 @@ function showTrainPopup(plan){
   // keep the status line current while this train's sheet is open (plans are rebuilt on each feed update)
   const timer=setInterval(()=>{
     if(token!==sheetToken)return clearInterval(timer);
-    const pl=plans.find(p=>p.id===sheetTrain);if(!pl)return;
+    const pl=planner.plans.find(p=>p.id===sheetTrain);if(!pl)return;
     const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest');
     if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';
     // the raw record too: plan.t is replaced on every feed update, and the "N초 전" age ticks
@@ -1535,7 +1428,7 @@ document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:19
 function pickTrain(point){
   if(!trainsEnabled||!feed.on||subwayOff)return null;
   const unit=1/(512*2**map.getZoom());let best=null;
-  for(const plan of plans){
+  for(const plan of planner.plans){
     const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
     const Z=map.getZoom(),lane=simcity||coaster?cityViaduct.train(Z,coasterBodyPx(Z)).lanePx:laneOffsetPx(Z),P=d=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return simcity||coaster?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
     const A=P(pose.dist-half),B=P(pose.dist+half),dx=B.x-A.x,dy=B.y-A.y,l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((point.x-A.x)*dx+(point.y-A.y)*dy)/l2));
@@ -2061,15 +1954,15 @@ function filterLine(line){
   const visible=stations.filter(s=>line==='all'||s.lines.some(x=>x.name===line));
   $('mapTitle').textContent=line==='all'?`${stations.length}개 역 노드 전체 보기`:`${line} · ${visible.length}개 역`;
   $('status').textContent=`${line==='all'?'전체 노선':line} · ${visible.length}개 역 위치와 역명을 표시합니다.`;
-  feed.reset();plans=[];lastPose.clear();map.triggerRepaint();
+  feed.reset();planner.clear();lastPose.clear();map.triggerRepaint();
   if(line==='all')map.jumpTo(HOME);
   else{const b=new maplibregl.LngLatBounds();visible.forEach(s=>b.extend([s.lon,s.lat]));map.fitBounds(b,{padding:60,maxZoom:13})}
   refreshLive(true);
 }
 // 실시간 열차(trains/live_feed.mjs): 받은 기록으로 예측만 다시 세운다
-const feed=createLiveFeed({map,stations,liveState,getSelected:()=>selected,getSheetTrain:()=>sheetTrain,hasPlans:()=>plans.length>0,age,updateLiveNotice,
-  onTrains:trains=>{learnDirections(trains);replacePlans(trains.map(planTrain).filter(Boolean));lastPose.clear();return plans.length},
-  onClear:()=>{plans=[];lastPose.clear();map.triggerRepaint()}});
+const feed=createLiveFeed({map,stations,liveState,getSelected:()=>selected,getSheetTrain:()=>sheetTrain,hasPlans:()=>planner.plans.length>0,age,updateLiveNotice,
+  onTrains:trains=>{learnDirections(trains);planner.replacePlans(trains.map(planner.planTrain).filter(Boolean));lastPose.clear();return planner.plans.length},
+  onClear:()=>{planner.clear();lastPose.clear();map.triggerRepaint()}});
 function refreshLive(force=false){return feed.refresh(force)}
 
 map.on('load',()=>{
@@ -2529,7 +2422,7 @@ function setCoaster(on,speed=coasterSpeed){
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===coasterSpeed));
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
-  if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});plans=feed.trains.map(planTrain).filter(Boolean);lastPose.clear();
+  if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});planner.rebuild();lastPose.clear();
     if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
     if(displayedRoute)showRoute(displayedRoute.plan,displayedRoute.busSelection,false);
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
@@ -2542,7 +2435,7 @@ function setSimcity(on,asJoseon=false){const J=!!(on&&asJoseon),ask=++modeAsk;$(
   if(on&&!kitReady){loadModeKit().then(()=>{if(ask===modeAsk)setSimcity(on,asJoseon)},()=>{if(ask===modeAsk){$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}});return}   // 모드 코드가 오면 켠다(그사이 다른 걸 누르면 그쪽)
   if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();
   if(joseon!==J){joseon=J;if(simcity===on){applyTheme();updateSun();map.triggerRepaint();return}}
-  if(simcity===on)return;simcity=on;setRouteOpacity();plans=feed.trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
+  if(simcity===on)return;simcity=on;setRouteOpacity();planner.rebuild();lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!(simcity&&!joseon));
 if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(!joseon,true);
 const setJoseon=on=>setSimcity(on,true);
@@ -2563,4 +2456,4 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
-window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};
+window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};

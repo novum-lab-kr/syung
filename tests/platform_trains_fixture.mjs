@@ -15,7 +15,7 @@ export function trainRuntime(source,zoom=16,helpers={}){
    slice('function cityGeom(', '// 롤러코스터 경로:'),
    slice('function along(', '// Stations are drawn'),
    'const mercStop=(line,s)=>maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));',
-   slice('function trackPoint(', 'let plans=[];'),
+   slice('function trackPoint(', 'const lastPose='),
  ].join('\n'),r.context);
  r.geom=(line,a,b)=>{Object.assign(r.context,{testLine:line,testA:a,testB:b});return vm.runInContext('geom(testLine,testA,testB)',r.context)};
  r.point=(line,a,b,k)=>{const g=r.geom(line,a,b);Object.assign(r.context,{testPlan:{seq:[r.context.byId.get(a),r.context.byId.get(b)],cum:[0,g.total],t:{line}},testDistance:g.total*k});return vm.runInContext('trackPoint(testPlan,testDistance)',r.context)};
