@@ -4,18 +4,12 @@ import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
-import {RideLayer} from './lib/park_rides.mjs';
 import {SEOUL_COASTER_STYLE as COASTER_STYLE,trackMetrics,zoomFade} from './lib/coaster_style_seoul.mjs';   // coaster: shared park palette and metre/pixel dimensions
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './lib/coaster_track_mesh.mjs';
-import {RideTrack,SLEEPER_M} from './lib/coaster_ride_track.mjs';   // 롤코 1인칭: 탄 열차 앞뒤의 실제 크기 레일 · 침목
-import {CoasterRidePlacement,sampleRideTracks} from './lib/coaster_ride_placement.mjs';   // coaster: stable sites clear of city footprints and swept rail corridors
 import {NightLayer} from './lib/park_night.mjs';
-import {CoasterTrain} from './lib/coaster_train.mjs';
-import {TurtleShips} from './lib/city_turtle_ship.mjs';   // 조선 모드: 열차 대신 거북선 선단   // coaster-train: the 88열차 cars the coaster mode draws its trains as
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './lib/coaster_first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
 import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './lib/city_life.mjs';
-import {CityBuildings} from './lib/city_buildings.mjs';   // city-build: the city's buildings (meshes under the labels; their depth for the train canvas)   // city-life: trees, lamps, cars and people on the train canvas
 import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
 import JOSEON_STYLE from './lib/city_style_joseon.mjs';   // 조선 모드: the same city in packed earth and 기와집 (cityPack())
 import {platformStroke} from './lib/platform_stroke.mjs';
@@ -23,7 +17,6 @@ import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
 import {CityViaduct} from './lib/city_viaduct.mjs';
-import {CityLandmarks} from './lib/city_landmarks.mjs';   // 랜드마크 전용 모델(롯데월드타워): 지도 조각 건물 대신
 import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 const json=id=>JSON.parse(document.getElementById(id).textContent);
@@ -352,7 +345,16 @@ const cityPack=()=>joseon?JOSEON_STYLE:CITY_STYLE;   // the pack the ground, the
 // city-build: the miniature city's buildings (web/lib/city_buildings.mjs): a custom layer under the station names (so names and
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
-const cityBuildings=new CityBuildings({phone:PHONE});const cityOn=()=>simcity||coaster;
+// 모드 코드: 심시티 · 조선 · 롤코에서만 쓰는 건물(city_buildings → city_mesh · city_hanok …) · 랜드마크 · 거북선 · 88열차 · 놀이기구는
+// 첫 화면에서 받지 않는다 — 모드를 켤 때, 그리고 지도가 뜬 뒤 쉬는 틈에 받는다(2026-10-10 덕배: 첫 접속이 느리다, 첫 화면 JS 의 약 1/5).
+// 모드는 이것이 다 온 뒤에야 켜진다(setSimcity · setCoaster 가 기다린다): 켜져 있으면 cityBuildings 등은 늘 있다
+let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null,modeAsk=0;
+let cityBuildings=null,cityLandmarks=null;const cityOn=()=>simcity||coaster;
+function loadModeKit(){
+  return kitLoad??=Promise.all([import('./lib/city_buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs')])
+    .then(([b,l,t,c,r,p,q])=>{({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
+      cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
+    .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}
 // city-build: 심시티 x-ray — the station platforms and running trains near the view, as boxes in mercator for cityBuildings: the
 // buildings hiding them turn to glass there (pack.xray). Platforms: the station rect at its viaduct level; trains: tail to head on the deck
 function cityXrayTargets(){
@@ -368,12 +370,11 @@ function cityXrayTargets(){
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
-function syncCity(){if(!ready)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
+function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),mode:simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:coaster?RIDE_H:1e9,pack:cityPack()});
 }
 let coaster=false,coasterWant=false,coasterSpeed=1,warp=0,warpAt=0;
 const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>coasterBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
-const cityLandmarks=new CityLandmarks();   // 롯데월드타워 등: 심시티 · 조선 · 롤코에서 고가와 같은 캔버스에
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
 const hash=(a,b,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
@@ -960,10 +961,14 @@ class TrainLayer{
     this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
     // Reuse the staging array and matrix: no JS vertex arrays or per-vertex objects each frame.
     this.data=new Float32Array(131072);this.matrix=new Float32Array(16);this.rgb=new Map();
-    this.rideTrack=new RideTrack();   // 롤코 1인칭: 레일 · 침목
-    this.c88ride=new CoasterTrain();   // 롤코 1인칭: 내가 탄 칸만(맨 마지막에 깊이를 비우고 따로 그린다 — drawTrains 끝)
-    this.c88=new CoasterTrain();   // coaster-train: the 88열차 (its livery from the Seoul style pack's train.coaster88)
-    this.ships=new TurtleShips(JOSEON_STYLE.train?.turtleShip);   // 조선 모드: 열차 한 대 = 거북선 몇 척(공중 수로 위)
+    this.rideTrack=this.c88ride=this.c88=this.ships=null;   // 모드 코드가 오면 kit() 가 만든다
+  }
+  // 모드 코드가 온 뒤 처음 그릴 때: 롤코 1인칭 레일 · 침목, 내가 탄 칸(맨 마지막에 깊이를 비우고 따로 — drawTrains 끝), 88열차(서울 팩의
+  // train.coaster88), 조선 모드의 배 선단(열차 한 대 = 배 몇 척, 공중 수로 위)
+  kit(){
+    if(this.ships||!kitReady||!this.gl)return;
+    this.rideTrack=new RideTrack();this.c88ride=new CoasterTrain();this.c88=new CoasterTrain();this.ships=new TurtleShips(JOSEON_STYLE.train?.turtleShip);
+    this.c88.init(this.gl);this.c88ride.init(this.gl);this.ships.init(this.gl);
   }
   onAdd(map,gl){
     this.map=map;
@@ -974,7 +979,7 @@ class TrainLayer{
     this.b=gl.createBuffer();
     this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
     this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
-    this.c88.init(gl);this.c88ride.init(gl);this.ships.init(gl);   // coaster-train:
+    this.gl=gl;this.kit();   // coaster-train: (모드 코드가 왔으면)
   }
   vertex(x,y,z,u,v,face){
     if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
@@ -1034,7 +1039,7 @@ class TrainLayer{
     const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
     // Keep world coordinates in double precision until subtracting the view-centre origin.
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88.begin(ox,oy);this.c88ride.begin(ox,oy);this.ships.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
+    this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.kit();if(this.ships){this.c88.begin(ox,oy);this.c88ride.begin(ox,oy);this.ships.begin(ox,oy)}   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
     const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
     let animating=false,waiting=false,rippling=false;
     // my-location pulse: the ripple, in 슝 yellow, under the trains
@@ -1059,7 +1064,7 @@ class TrainLayer{
         // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞에만 (2026-10-10 덕배)
         const k=Math.max(1,Math.min(n,Math.round(total/unit/(bodyPx*3.6)))),span=total/k;
         for(let j=0;j<k;j++){const c=coasterCarFrame(P,tail,span,j,k,unit,bodyPx,lanePx,span*.32);if(!c)continue;const lead=j===k-1;
-          this.ships.ship(c.fr,lead?c.L*1.25:c.L,lead?bodyPx*1.3:bodyPx,color,pose.moving,plan.id,{kind:lead?'turtle':'boat',flag:lead,line:plan.t.line})}   // 깃발은 맨 앞 거북선 꼬리에만(2026-10-10 덕배)
+          this.ships?.ship(c.fr,lead?c.L*1.25:c.L,lead?bodyPx*1.3:bodyPx,color,pose.moving,plan.id,{kind:lead?'turtle':'boat',flag:lead,line:plan.t.line})}   // 깃발은 맨 앞 거북선 꼬리에만(2026-10-10 덕배)
         continue}
       const ratio=car/unit/bodyPx,separate=coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
       const unfold=coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
@@ -1081,7 +1086,7 @@ class TrainLayer{
         const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
         for(let k=0;k<n;k++){
           const j=forward?k:n-1-k;
-          if(coaster){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88).car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
+          if(coaster){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88)?.car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
           const A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(simcity)this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
           const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy);if(len<unit*.1)continue;
           const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
@@ -1164,9 +1169,9 @@ class TrainLayer{
     }
     // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
     const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
-    if(simcity&&joseon)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
-    if(coaster){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
-    if(coaster&&ride?.rail?.frames.length&&ride.eye){const r=ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,ride.eye,document.documentElement.dataset.theme==='dark')}
+    if(simcity&&joseon&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
+    if(coaster&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
+    if(coaster&&this.rideTrack&&ride?.rail?.frames.length&&ride.eye){const r=ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,ride.eye,document.documentElement.dataset.theme==='dark')}
     if(this.used){
       gl.useProgram(this.p);
       const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
@@ -1196,7 +1201,7 @@ class TrainLayer{
     if(animating&&(following||ride)&&!easing)followSoon();
     else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
   }
-  onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88.dispose(gl);this.c88ride.dispose(gl);this.ships.dispose(gl);this.rideTrack.dispose(gl)}   // coaster-train: and the 88열차's
+  onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
 }
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
@@ -2159,9 +2164,9 @@ map.on('load',()=>{
       c.style.width=m.style.width;c.style.height=m.style.height;
       gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
       const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
-      if(cityOn())cityBuildings.setXray(simcity?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
-      const drawn=cityOn()?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
-      if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
+      if(cityOn()&&cityBuildings)cityBuildings.setXray(simcity?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
+      const drawn=cityOn()&&cityBuildings?cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
+      if(coaster&&kitReady&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
           rides=new RideLayer(coasterBld.towers,{deferPlacement:true});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
           ridePlacement=new CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte),{   // 롯데월드타워 자리는 놀이기구 대신 전용 모델(cityLandmarks)
@@ -2183,7 +2188,7 @@ map.on('load',()=>{
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
         cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
         if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50);
-        cityLandmarks.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
+        cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -2194,9 +2199,9 @@ map.on('load',()=>{
         night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
-      if(simcity)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
+      if(simcity&&cityBuildings)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
       if(!subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
-      if(ride&&coaster&&layer.c88ride.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
+      if(ride&&coaster&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
         const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
       drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
@@ -2223,6 +2228,8 @@ map.on('load',()=>{
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
+  // 모드 코드는 첫 화면이 다 뜬 뒤 쉬는 틈에 미리 받아 둔다(모드를 누르면 바로 켜지게)
+  map.once('idle',()=>{const go=()=>loadModeKit().catch(()=>{});'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500)});
   map.on('rotate',()=>{if(themeChoice==='auto'){const b=$('themeIcon');if(b)b.innerHTML=sunArcIcon().svg}});
   map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
@@ -2548,7 +2555,7 @@ $('toggleMap').onclick=e=>{
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function setCoaster(on,speed=coasterSpeed){
   if(!on)stopRide(false);   // 롤코를 끄면 1인칭에서도 내려요
-  if(on&&!coasterBld){coasterWant=true;$('toggleCoaster').setAttribute('aria-pressed','true');loadCoasterBuildings().then(()=>{if(coasterWant)setCoaster(true,speed)});return}   // its courses need the buildings: wait for them
+  if(on&&(!coasterBld||!kitReady)){coasterWant=true;$('toggleCoaster').setAttribute('aria-pressed','true');Promise.all([loadCoasterBuildings(),loadModeKit()]).then(()=>{if(coasterWant)setCoaster(true,speed)});return}   // (모드 코드도: 첫 화면에서는 받지 않았다)   // its courses need the buildings: wait for them
   coasterWant=on;if(on&&simcity){simcity=false;joseon=false;$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}
   if(on)cityMap();
   const was=coaster;coaster=on;coasterSpeed=on?speed:1;if(coasterSpeed===1){warp=0;warpAt=0}else warpNow();
@@ -2564,7 +2571,9 @@ function setCoaster(on,speed=coasterSpeed){
 }
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
 // 조선 모드 is 심시티 in another pack (asJoseon): switching between the two changes only the look
-function setSimcity(on,asJoseon=false){const J=!!(on&&asJoseon);$('toggleSimcity')?.setAttribute('aria-pressed',String(on&&!J));$('toggleJoseon')?.setAttribute('aria-pressed',String(J));if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();
+function setSimcity(on,asJoseon=false){const J=!!(on&&asJoseon),ask=++modeAsk;$('toggleSimcity')?.setAttribute('aria-pressed',String(on&&!J));$('toggleJoseon')?.setAttribute('aria-pressed',String(J));
+  if(on&&!kitReady){loadModeKit().then(()=>{if(ask===modeAsk)setSimcity(on,asJoseon)},()=>{if(ask===modeAsk){$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}});return}   // 모드 코드가 오면 켠다(그사이 다른 걸 누르면 그쪽)
+  if(on&&(coaster||coasterWant))setCoaster(false);if(on)cityMap();
   if(joseon!==J){joseon=J;if(simcity===on){applyTheme();updateSun();map.triggerRepaint();return}}
   if(simcity===on)return;simcity=on;setRouteOpacity();plans=trains.map(planTrain).filter(Boolean);lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(!(simcity&&!joseon));
@@ -2594,4 +2603,4 @@ map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 setInterval(()=>{if(!document.hidden&&(sheetTrain||Date.now()-liveAt>=19000))refreshLive(true)},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLive(true)});
 let liveMoveTimer=0;map.on('moveend',()=>{clearTimeout(liveMoveTimer);liveMoveTimer=setTimeout(()=>refreshLive(),600)});
-window.__subwayWebGL={map,cityBuildings,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};
+window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};
