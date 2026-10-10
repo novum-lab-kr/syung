@@ -2,7 +2,7 @@
 """옛 버스 프록시 진입점 — 이제 새 층을 부르는 얇은 껍데기다(상태는 server/services/runtime.py 가 가진다).
 
 python3 server/bus_live_proxy.py                 # loopback :3114 (버스만)
-BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py
+BUS_LIVE_MODE=mock python3 server/bus_live_proxy.py   (server/app.py 의 main_bus)
 import bus_live_proxy; bus_live_proxy.snapshot(parse_qs(...)) → (body, status)   # deploy/dev_server.py
 from server.bus_live_proxy import BusError, Config, QuotaLedger, iso, parse_payload   # pipeline/bus_fetch_paths.py
 실제 코드: sources/seoul_bus.py · store/bus_quota.py · store/records.py · services/bus.py · routes/bus.py · jobs/bus_samples.py
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import sys
 import time
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 _ROOT = str(Path(__file__).resolve().parent.parent)   # import bus_live_proxy(deploy/dev_server.py) 로 불러도 server 패키지를 찾게
@@ -19,7 +18,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from server.clock import KST, day_bounds, iso  # noqa: E402,F401
-from server.config import ROOT, ArrivalConfig, BusConfig as Config, BusServerConfig  # noqa: E402,F401
+from server.config import ROOT, ArrivalConfig, BusConfig as Config  # noqa: E402,F401
 from server.errors import MESSAGES, BusError  # noqa: E402,F401
 from server.jobs import bus_samples  # noqa: E402
 from server.routes import bus as bus_routes  # noqa: E402
@@ -50,7 +49,5 @@ def snapshot(query: dict) -> tuple[dict, int]:
 
 
 if __name__ == "__main__":
-    services = default_services()
-    services.bus   # 띄울 때 노선 자료를 읽어 둔다(옛 코드와 같게)
-    server_config = BusServerConfig.from_env()
-    ThreadingHTTPServer((server_config.host, server_config.port), bus_routes.make_handler(services)).serve_forever()
+    from server.app import main_bus
+    main_bus()

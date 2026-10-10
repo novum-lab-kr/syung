@@ -1,161 +1,18 @@
 #!/usr/bin/env python3
-"""Quota-aware, per-line proxy for Seoul realtime subway positions."""
+"""Quota-aware proxy for Seoul realtime subway positions — 옛 진입점(subway-live.service 의 ExecStart · 배포 재시작이 이 경로).
+
+이제 server/app.py 의 main() 을 부르는 얇은 껍데기다: 서비스 · 주소 표 · 배경 작업(길찾기 미리 준비 · burst · 버스 수집)은 app 이 조립한다.
+"""
 
 from __future__ import annotations
 
-import json
 import sys
-import threading
-import time
-import urllib.error
-import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 _ROOT = str(Path(__file__).resolve().parent.parent)   # python3 server/subway_live_proxy.py 로 띄워도 server 패키지를 찾게
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from server.config import SubwayConfig  # noqa: E402
-from server.routes import journey as journey_routes  # noqa: E402
-from server.routes import live as live_routes  # noqa: E402
-from server.routes import owner as owner_routes  # noqa: E402
-from server.routes.response import Response  # noqa: E402
-from server.services.runtime import default_services  # noqa: E402
-
-CONFIG = SubwayConfig.from_env()
-HOST, PORT = CONFIG.host, CONFIG.port
-# Position bursts: the per-line position feed stamps each train with its own event time, which the
-# all-stations feed does not on the Seoul Metro lines. Every BURST_EVERY seconds one of these lines
-# is read BURST_CALLS times, BURST_GAP apart, and saved for build_live_timing.py (dwell/approach).
-BURST_LINES = CONFIG.burst_lines
-BURST_EVERY = CONFIG.burst_every
-BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
-RESPONSE_SECONDS = CONFIG.response_seconds
-
-_response_lock = threading.Lock()
-_responses: dict[str, tuple[float, int, bytes]] = {}
-
-
-class Server(ThreadingHTTPServer):
-    daemon_threads = True
-    request_queue_size = 256   # the default 5 made bursts of connections wait for SYN retries (1–2.5 s)
-
-
-class Handler(BaseHTTPRequestHandler):
-    # ---- owner login for the private pages (routes/owner.py; Caddy forward_auth → /auth) ----
-    def _write(self, response: Response) -> None:
-        if response.kind == "json":
-            return self._send(response.status, response.body)
-        self.send_response(response.status)
-        if response.kind == "redirect":
-            self.send_header("Location", response.location)
-            if response.cookie:
-                self.send_header("Set-Cookie", response.cookie)
-        self.send_header("Cache-Control", "no-store")
-        if response.kind == "redirect":
-            self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def do_POST(self) -> None:
-        path = self.path.split("?", 1)[0]
-        if path == "/logout":
-            return self._write(owner_routes.logout())
-        if path != "/login":
-            return self.send_error(404)
-        size = min(int(self.headers.get("Content-Length") or 0), 4096)
-        form = self.rfile.read(size)
-        address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
-        self._write(owner_routes.login(default_services().auth, form, address))
-
-    def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] == "/auth":
-            return self._write(owner_routes.auth(default_services().auth, self.headers.get("Cookie"),
-                                                 self.headers.get("X-Forwarded-Uri", "/learning")))
-        # bus: separate cache/quota; the same process can serve the new endpoint.
-        if self.path.split("?", 1)[0] in ("/bus/live", "/api/bus/live"):
-            from server import bus_live_proxy
-            if len(self.path) > 2048:
-                return self._send(400, b'{"ok":false,"error":"invalid_request"}')
-            body, status = bus_live_proxy.snapshot(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
-            return self._send(status, json.dumps(body, ensure_ascii=False, allow_nan=False).encode())
-        if self.path.split("?", 1)[0] not in ("/live", "/health", "/route", "/place"):
-            self.send_error(404)
-            return
-        if RESPONSE_SECONDS and self.path.startswith("/live"):
-            with _response_lock:
-                hit = _responses.get(self.path)
-            if hit and time.time() < hit[0]:
-                return self._send(hit[1], hit[2])
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        if self.path.startswith("/route"):
-            body, status = journey_routes.route(default_services(), query)
-        elif self.path.startswith("/place"):
-            body, status = journey_routes.place(default_services(), query)
-        elif not self.path.startswith("/live"):
-            body, status = {"ok": True}, 200
-        else:
-            body, status = live_routes.live(default_services().live, query)
-        data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
-        if RESPONSE_SECONDS and self.path.startswith("/live"):
-            with _response_lock:
-                if len(_responses) > 2000:
-                    _responses.clear()
-                _responses[self.path] = (time.time() + RESPONSE_SECONDS, status, data)
-        self._send(status, data)
-
-    def _send(self, status: int, data: bytes) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/")) else "public, max-age=30")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def log_message(self, format: str, *args: object) -> None:
-        return
-
-
-def _burst_loop() -> None:
-    live = default_services().live
-    turn = 0
-    while True:
-        time.sleep(BURST_EVERY)
-        if live.quiet() or not BURST_LINES:
-            continue
-        if live.calls_left() < BURST_RESERVE:   # keep the rest of the day's calls for the map
-            continue
-        line = BURST_LINES[turn % len(BURST_LINES)]
-        turn += 1
-        for _ in range(BURST_CALLS):
-            try:
-                data = live.fetch_line(line)   # counts against the daily quota; raises at the limit
-            except (OSError, ValueError, RuntimeError, urllib.error.URLError):
-                break
-            live.save_positions(data)
-            time.sleep(BURST_GAP)
-
-
-def _bus_samples() -> None:
-    try:
-        from server import bus_live_proxy
-        bus_live_proxy.background_loop()   # 보는 중인 버스 노선을 먼저 새로, 남는 차례에 학습용 수집
-    except Exception as e:  # noqa: BLE001 — the map's bus requests still work
-        print(f"bus samples stopped: {e}", flush=True)
-
-
-def _warm_journey() -> None:
-    try:
-        default_services().journey.warm()   # route search workers up before the first 길찾기
-    except Exception as e:  # noqa: BLE001 — routing falls back to searching in-process
-        print(f"journey warm-up failed: {e}", flush=True)
-
-
-if __name__ == "__main__":
-    default_services().live.load_quota()
-    threading.Thread(target=_warm_journey, daemon=True).start()
-    if BURST_EVERY > 0:
-        threading.Thread(target=_burst_loop, daemon=True).start()
-    threading.Thread(target=_bus_samples, daemon=True).start()
-    Server((HOST, PORT), Handler).serve_forever()
+if __name__ == "__main__":   # forkserver 가 이 파일을 __mp_main__ 으로 다시 읽어도 서버는 다시 뜨지 않는다
+    from server.app import main
+    main()
