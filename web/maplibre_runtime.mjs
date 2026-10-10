@@ -2,7 +2,7 @@ import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
 import {initJourney} from './lib/journey-ui.mjs';
-import {StationNameLayer} from './map/platform.mjs';   // 승강장 막대 · 출구 통로
+import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
 import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
@@ -1548,102 +1548,7 @@ class BuildingDepth{
     return true;
   }
 }
-// Exit pillars (zoom 16+), drawn on the train canvas above the trains: a square column standing on the exit,
-// painted grey with a band of its line's colour round the top and the exit number in yellow, like real entrance pillars.
-// The box is built in map space, so it leans with the tilt and turns with the bearing; only the sides facing
-// the viewer are drawn, lit from the south-west. Seen from straight above, the number moves onto the cap.
-const PILLAR_PX=[[16,11,22],[18,17,38]];   // [zoom, side, height] in screen px — 2026-10-05: 통로 선을 없애고 번호를 크게
-// segs: [from, to (share of the height), colour (an [r,g,b], or 1: the line's), number on it]
-// segs: [from, to (share of the height), colour (an [r,g,b], 1: the line's, 'grey': the theme's), number on it]
-// grey: a slightly dark grey by day; lighter at night so the pillar stands off the dark map
-const PILLAR_STYLE={ink:[1,1,1],inkOnLight:[.08,.08,.08],cap:1,grey:{light:[.4,.42,.44],dark:[.56,.59,.62]},segs:[[0,.38,'grey'],[.38,1,1,1]]};   // 노선색 면에 흰 번호(밝은 노선색이면 검은 번호), 아래만 회색 기둥
-class ExitPillars{
-  init(gl){
-    const vs=`#version 300 es
-in vec3 a_pos;in vec2 a_local;in vec3 a_col;in vec3 a_ink;in vec4 a_glyph;in vec4 a_guv;in float a_mode;uniform vec2 u_view;
-out vec2 v_local;out vec3 v_col;out vec3 v_ink;flat out vec4 v_glyph;flat out vec4 v_guv;out float v_mode;
-void main(){v_local=a_local;v_col=a_col;v_ink=a_ink;v_glyph=a_glyph;v_guv=a_guv;v_mode=a_mode;gl_Position=vec4(a_pos.xy/u_view*vec2(2.,-2.)+vec2(-1.,1.),a_pos.z,1.);}`;   // z: its depth, for the solid park buildings
-    const fs=`#version 300 es
-precision highp float;in vec2 v_local;in vec3 v_col;in vec3 v_ink;flat in vec4 v_glyph;flat in vec4 v_guv;in float v_mode;uniform sampler2D u_tex;out vec4 o;
-void main(){
-  if(v_mode<.5){float d=length(v_local);float a=(1.-smoothstep(.15,1.,d))*.3;if(a<=0.)discard;o=vec4(0.,0.,0.,a);return;}   // ground shadow
-  vec3 col=v_col;
-  if(v_mode>1.5){vec2 q=(v_local-v_glyph.xy)/(v_glyph.zw-v_glyph.xy);   // the number, printed on this face
-    if(all(greaterThanEqual(q,vec2(0.)))&&all(lessThanEqual(q,vec2(1.)))){float a=texture(u_tex,mix(v_guv.xy,v_guv.zw,vec2(q.x,1.-q.y))).a;col=mix(col,v_ink,a);}}
-  o=vec4(col,1.);
-}`;
-    const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
-    this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
-    this.attr=Object.fromEntries(['a_pos','a_local','a_col','a_ink','a_glyph','a_guv','a_mode'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uView=gl.getUniformLocation(this.p,'u_view');this.uTex=gl.getUniformLocation(this.p,'u_tex');
-    this.b=gl.createBuffer();this.tex=gl.createTexture();this.gl=gl;this.key='';
-  }
-  // number atlas: each exit ref once, bold, on a row of the texture
-  atlas(){
-    const refs=[...new Set(Object.values(exits).flatMap(l=>l.map(e=>String(e[2]))))].sort(),key=refs.join('|');if(key===this.key)return;this.key=key;
-    const F=26,ROW=30,W=1024,c=document.createElement('canvas'),x=c.getContext('2d');x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;
-    let px=0,py=0;const pos=new Map();
-    for(const r of refs){const w=Math.ceil(x.measureText(r).width)+4;if(px+w>W){px=0;py+=ROW}pos.set(r,[px,py,w]);px+=w}
-    c.width=W;c.height=py+ROW;x.font=`800 ${F}px "Noto Sans KR",system-ui,sans-serif`;x.textBaseline='middle';x.textAlign='center';x.fillStyle='#000';
-    for(const [r,[a,b,w]] of pos)x.fillText(r,a+w/2,b+ROW/2+1);
-    this.uv=new Map([...pos].map(([r,[a,b,w]])=>[r,[a/W,b/c.height,(a+w)/W,(b+ROW)/c.height,w/ROW]]));
-    const gl=this.gl;gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);   // no mipmaps: they blur the digits' strokes into outlines
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  }
-  render(gl,M,W,H,dpr,solid=false){
-    const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
-    if(!this.p)this.init(gl);this.atlas();
-    const unit=1/(512*2**z),f=Math.max(0,Math.min(1,(z-PILLAR_PX[0][0])/(PILLAR_PX[1][0]-PILLAR_PX[0][0]))),lerp=i=>PILLAR_PX[0][i]+(PILLAR_PX[1][i]-PILLAR_PX[0][i])*f;
-    const sPx=lerp(1),half=sPx/2*unit,hgt=lerp(2)*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
-    const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Z=M[2]*x+M[6]*y+M[10]*zz+M[14],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H,Z/Wc]};
-    const data=[],NO=[0,0,0,0],vert=(p,l,col,ink,g,guv,mode)=>data.push(p[0],p[1],p[2]??0,l[0],l[1],...col,...ink,...g,...guv,mode);
-    const quad=(P,Lc,col,ink,g,guv,mode)=>{for(const i of [0,1,2,0,2,3])vert(P[i],Lc[i],col,ink,g,guv,mode)};
-    const LOC=[[0,0],[1,0],[1,1],[0,1]],mul=(c,k)=>c.map(v=>v*k);
-    // where the number sits on a face of w×h screen px (local 0..1 across, 0..1 up)
-    const glyph=(uv,w,h,fill=.8)=>{let gh=h*fill,gw=gh*uv[4];if(gw>w*.92){gh*=w*.92/gw;gw=w*.92}return [.5-gw/w/2,.5-gh/h/2,.5+gw/w/2,.5+gh/h/2]};
-    const ids=new Set(selected==='all'?Object.keys(exits):stations.filter(s=>s.lines.some(x=>x.name===selected)).map(s=>String(s.id)));
-    const items=[];
-    for(const id of ids)for(const [lon,lat,ref] of exits[id]||[]){
-      const m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=proj(m.x,m.y,0);if(!b||b[0]<-40||b[0]>W+40||b[1]<-60||b[1]>H+40)continue;
-      const st=stations.find(s=>String(s.id)===id);
-      items.push([m,b,String(ref),exitCol.get(lon+','+lat)||hexRGB3(colors[st?.lines[0]?.name]||'#52646a')]);
-    }
-    items.sort((a,b)=>a[1][1]-b[1][1]);   // far (higher on screen) first, near ones drawn over them
-    const Ld=[-.6,.8];   // light from the south-west (map y runs south)
-    for(const [m,b,ref,lc] of items){
-      const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,ink=.299*lc[0]+.587*lc[1]+.114*lc[2]>.62?St.inkOnLight:St.ink;
-      const ex=proj(x+half,y,0),ey=proj(x,y+half,0),sh=Math.min(sPx,ex&&ey?2*Math.max(Math.hypot(ex[0]-b[0],ex[1]-b[1]),Math.hypot(ey[0]-b[0],ey[1]-b[1])):0);   // 그림자는 기둥이 화면에 보이는 크기로: 고정 px 이던 때 1인칭(눈높이)에서 수 km 밖 기둥 그림자가 수평선에 검은 얼룩으로 쌓였다
-      if(sh>.5)quad([[b[0]-sh*1.1,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]+sh*.65,b[2]],[b[0]-sh*1.1,b[1]+sh*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
-      const C=[[x-half,y-half,0,-1],[x+half,y-half,1,0],[x+half,y+half,0,1],[x-half,y+half,-1,0]];   // NW,NE,SE,SW and the normal of the side that starts there
-      for(let i=0;i<4;i++){
-        const [ax,ay,nx,ny]=C[i],[bx,by]=C[(i+1)%4],A0=proj(ax,ay,0),B0=proj(bx,by,0),A1=proj(ax,ay,hgt);if(!A0||!B0||!A1)continue;
-        if((B0[0]-A0[0])*(A1[1]-A0[1])-(B0[1]-A0[1])*(A1[0]-A0[0])<=0)continue;   // faces away
-        const k=.9+.1*(nx*Ld[0]+ny*Ld[1]),fw=Math.hypot(B0[0]-A0[0],B0[1]-A0[1]);
-        for(const [t0,t1,tone,num] of St.segs){
-          const P=[proj(bx,by,hgt*t0),proj(ax,ay,hgt*t0),proj(ax,ay,hgt*t1),proj(bx,by,hgt*t1)];if(P.some(p=>!p))continue;   // b→a reads left→right from outside
-          const fh=Math.hypot(P[3][0]-P[0][0],P[3][1]-P[0][1]),col=mul(tone===1?lc:tone==='grey'?grey:tone,k),text=num&&!onTop&&fw>sPx*.55;
-          quad(P,LOC,col,ink,text?glyph(uv,fw,fh):NO,guv,text?2:1);
-        }
-      }
-      const T=C.map(([cx,cy])=>proj(cx,cy,hgt));if(T.some(p=>!p))continue;
-      const xs=T.map(p=>p[0]),ys=T.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
-      const TL=T.map(p=>[(p[0]-x0)/Math.max(1e-3,x1-x0),(y1-p[1])/Math.max(1e-3,y1-y0)]);   // screen-upright, so the number reads from above
-      quad(T,TL,St.cap===1?lc:St.cap,ink,onTop?glyph(uv,x1-x0,y1-y0,.78):NO,guv,onTop?2:1);   // the cap: 노선색, 위에서 볼 때 번호
-    }
-    if(!data.length)return;
-    gl.useProgram(this.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
-    const st=20*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
-    ptr('a_pos',3,0);ptr('a_local',2,3);ptr('a_col',3,5);ptr('a_ink',3,8);ptr('a_glyph',4,11);ptr('a_guv',4,15);ptr('a_mode',1,19);
-    gl.uniform2f(this.uView,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uTex,0);
-    if(solid){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // solid park buildings hide them; through see-through ones they show
-    gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.TRIANGLES,0,data.length/20);
-    for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
-  }
-}
-const exitPillars=new ExitPillars();
+const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected});
 // 롤러코스터 track (see coasterAt), drawn on the train canvas under the trains: per direction a pair of
 // rails in the line's colour on a box girder, sleepers, and white columns down to the ground.
 // Built per edge in map space once (lane offsets in px are applied in the shader, so zoom needs no rebuild).
