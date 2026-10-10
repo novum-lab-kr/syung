@@ -1,5 +1,5 @@
 // Placement is a world-space decision, independent of camera, visible-instance order and animation.
-import { pointInPolygon, edgeDistance, bbox } from '../city/geom.mjs';
+import { pointInPolygon, edgeDistance, bbox } from '../../city/geom.mjs';
 export const RIDE_SITE_RULES=Object.freeze({gapM:24,sameKindM:{ferris:600,drop:380,swing:350,saucer:350},compactSameKindM:140,moveM:500,clearanceM:6,buildingRoofM:12});
 
 export function withRideKind(site,kind){

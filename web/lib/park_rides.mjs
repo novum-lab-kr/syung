@@ -13,7 +13,7 @@
 
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './park_night.mjs';
 import { SEOUL_COASTER_STYLE as STYLE, ridePalette } from './coaster_style_seoul.mjs';
-import { selectRideSites } from './coaster_ride_sites.mjs';
+import { selectRideSites } from '../modes/coaster/ride_sites.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;

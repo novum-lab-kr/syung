@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RideLayer } from '../web/lib/park_rides.mjs';
-import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites } from '../web/lib/coaster_ride_sites.mjs';
-import { CoasterRidePlacement } from '../web/lib/coaster_ride_placement.mjs';
+import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites } from '../web/modes/coaster/ride_sites.mjs';
+import { CoasterRidePlacement } from '../web/modes/coaster/ride_placement.mjs';
 
 const closeWheels=[[127.060816,37.510319,54,229],[127.06122,37.509602,70,183]];
 test('neighbouring tower sites cannot place two ferris wheels 87 metres apart',()=>{
@@ -31,7 +31,7 @@ test('a high canopy may clear a low roof but cannot pass through a tall neighbou
 });
 
 test('a site stays hidden until its whole building neighbourhood has been checked',async()=>{
-  const module=await import('../web/lib/coaster_ride_placement.mjs').catch(()=>({}));
+  const module=await import('../web/modes/coaster/ride_placement.mjs').catch(()=>({}));
   assert.equal(typeof module.CoasterRidePlacement,'function','placement must wait for authoritative footprint coverage');
   const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates,s=candidates[0];
   let release;const ready=new Promise(resolve=>{release=resolve});

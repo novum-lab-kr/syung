@@ -3,7 +3,7 @@
 //   frames: [{p:[x,y,z], F, R, U, end?}…] — 레일 중심(차선 가운데, 상판 높이)의 메르카토르 좌표와 틀, 진행 방향 순서로 SLEEPER_M 간격.
 //   end: 그 선로의 마지막 틀(다음 틀은 다른 선로), d: 탄 열차 앞에서부터 거리(m, 침목을 어디까지 놓을지)
 //   mpu: 1 m 의 메르카토르 길이, origin: [ox, oy] — 좌표는 여기서 뺀 값으로 담는다(float 정밀도)
-import { SEOUL_COASTER_STYLE as STYLE } from './coaster_style_seoul.mjs';
+import { SEOUL_COASTER_STYLE as STYLE } from '../../lib/coaster_style_seoul.mjs';
 
 export const SLEEPER_M = .6;   // 침목 간격(한국 일반 선로 1 km 에 약 1,667개)
 const STRIDE = 7;   // x y z · r g b · 침목이면 1(멀어지면 사라짐)
