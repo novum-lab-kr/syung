@@ -2,10 +2,10 @@ import { SEOUL_COASTER_STYLE as STYLE } from './coaster_style_seoul.mjs';
 
 // Existing 22-float track format. Negative red selects a uniform material:
 // 1 supports, 2 ties, 3 spine, 4 V brackets, 5 concrete feet, 6 girder sides (green: the line colour packed 0xRRGGBB),
-// 7 girder top. Green holds stable tie ID.
+// 7 girder top. Green holds stable tie ID. 레일(0)의 rgb 는 면 밝기만 — 색은 u_rail(고가 레일 색), 침목 · 거더 윗면은 u_bed.
 export function coasterTrackVertexShader(heart) { return `#version 300 es
 in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;
-uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body,u_girder;uniform vec3 u_post,u_spine,u_concrete,u_detail;uniform vec4 u_size;
+uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body,u_girder;uniform vec3 u_post,u_spine,u_concrete,u_detail,u_rail,u_bed;uniform vec4 u_size;
 out vec3 v_c;out float v_alpha;
 void main(){
   float kind=max(0.,-a_c.r),lane=(a_o.x+a_o.y*u_lane)*u_unit;
@@ -16,21 +16,20 @@ void main(){
   vec3 r=vec3(a_r,0.),p=r-dot(r,a_f)*a_f;float pl=length(p);vec3 U0=pl>1e-6?cross(a_f,p/pl):a_u;
   gl_Position=u_matrix*vec4(vec3(a_p.xy+a_r*lane,a_p.z*a_p.w)+cross(a_u,a_f)*across+(a_f*along+a_u*up)*u_unit+(U0-a_u)*(${heart}*u_body*u_unit),1.);
   float pk=a_c.g;vec3 line=vec3(floor(pk/65536.),mod(floor(pk/256.),256.),mod(pk,256.))/255.;
-  v_c=(kind<.5?a_c.rgb:kind<2.5?u_post:kind<4.5?u_spine:kind<5.5?u_concrete:kind<6.5?line:u_post)*a_c.a;
+  // 레일 · 침목 · 거더 윗면은 심시티 고가와 같은 레일 · 자갈 바닥 색(2026-10-10 행님: 롤코 코스 레일도 기본 고가 레일로 통일)
+  v_c=(kind<.5?u_rail*a_c.rgb:kind<1.5?u_post:kind<2.5?u_bed:kind<4.5?u_spine:kind<5.5?u_concrete:kind<6.5?line:u_bed)*a_c.a;
   v_alpha=kind>3.5&&kind<5.5?u_detail.z:kind>1.5&&kind<2.5&&mod(a_c.g,2.)>.5?u_detail.y:1.;
 }`; }
 export const COASTER_TRACK_FS = `#version 300 es
 precision highp float;in vec3 v_c;in float v_alpha;uniform float u_alpha;out vec4 o;
 void main(){float a=u_alpha*v_alpha;if(a<.005)discard;o=vec4(v_c*a,a);}`;
 
-const linear = x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4;
-const srgb = x=>x<=.0031308?x*12.92:1.055*x**(1/2.4)-.055;
 export function buildCoasterTrackMesh({points:P,at,columns,s0,s1,mu,offset,lvl,color,pack=STYLE}) {
   const T=pack.track,S=pack.supports, every=Math.max(1,Math.round(lvl*3/80));
   const cols=columns.filter((s,i)=>i%every===0&&s>=s0&&s<s1);
   const out=new Float32Array(22*(160*P.length+180*cols.length+32));let o=0;
   const lineHex=color.reduce((n,c)=>n*256+Math.round(Math.max(0,Math.min(1,c))*255),0);   // the line colour for the girder, exact in a float
-  const UP=[0,0,1], railColors=[1,T.railSideLight,.9,.65].map(sh=>color.map(c=>srgb(linear(c)*sh)));
+  const UP=[0,0,1], railColors=[1,T.railSideLight,.9,.65].map(sh=>[sh,sh,sh]);   // 면 밝기(색은 셰이더의 u_rail)
   const v=(q,hf,side,kb,kp,kf,zp,part,shade=1,post=false,index=0)=>{
     const F=post?q.G:q.F,U=post?UP:q.U,c=part?[-part,index,0]:railColors[shade];
     out[o++]=q.x;out[o++]=q.y;out[o++]=q.h;out[o++]=hf;out[o++]=q.R[0];out[o++]=q.R[1];

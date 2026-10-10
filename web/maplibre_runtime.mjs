@@ -1888,7 +1888,7 @@ class CoasterTrack{
     const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
     this.attr=Object.fromEntries(['a_p','a_r','a_o','a_z','a_f','a_u','a_c'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_girder','u_post','u_spine','u_concrete','u_size','u_detail','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+    this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_girder','u_post','u_spine','u_concrete','u_rail','u_bed','u_size','u_detail','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
     this.gl=gl;this.M=new Float32Array(16);this.cache=new Map();
     this.O=maplibregl.MercatorCoordinate.fromLngLat(HOME.center);
     const seen=new Set();this.edges=[];
@@ -1975,6 +1975,7 @@ class CoasterTrack{
     gl.uniform1f(this.uni.u_unit,1/(512*2**z));gl.uniform1f(this.uni.u_lane,cityViaduct.train(z,coasterBodyPx(z)).lanePx);gl.uniform1f(this.uni.u_body,coasterBodyPx(z));
     const pal=COASTER_STYLE.palette[document.documentElement.dataset.theme==='dark'?'dark':'light'],dims=trackMetrics(z);   // coaster: palette uniforms need no geometry rebuild on theme change
     gl.uniform3fv(this.uni.u_post,hexRGB(pal.ivory));gl.uniform3fv(this.uni.u_spine,hexRGB(pal.teal));gl.uniform3fv(this.uni.u_concrete,hexRGB(pal.concrete));
+    const vc=CITY_STYLE.viaduct.colors[document.documentElement.dataset.theme==='dark'?'dark':'light'];gl.uniform3fv(this.uni.u_rail,hexRGB(vc.rail));gl.uniform3fv(this.uni.u_bed,hexRGB(vc.bed));   // 롤코 코스 레일 = 고가 레일
     gl.uniform4f(this.uni.u_size,dims.rail,dims.spineWidth,dims.spineDepth,dims.post);gl.uniform1f(this.uni.u_girder,dims.girder);gl.uniform3f(this.uni.u_detail,dims.tie,zoomFade(z,COASTER_STYLE.lod.ties),zoomFade(z,COASTER_STYLE.lod.detail));
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
   }
