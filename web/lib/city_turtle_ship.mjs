@@ -24,8 +24,8 @@ const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / 
 const P_FLAT = 0, P_HULL = 1, P_SHELL = 2, P_LINE = 3, P_HEAD = 4, P_BOW = 5, P_FLAG = 6, P_OAR = 7, P_DECK = 8, P_OPEN = 9, P_BADGE = 10;
 // 팔레트 자리(u_pal)
 const S_WOOD = 0, S_WOOD_DARK = 1, S_SHELL = 2, S_SHELL_EDGE = 3, S_SPIKE = 4, S_RED = 5, S_GOLD = 6, S_WHITE = 7, S_INK = 8, S_OAR = 9, S_LAMP = 10, S_HEAD = 11, S_DECK = 12, S_PATH = 13, PAL = 14;
-// 깃대: 배 길이의 몇 분의 몇 자리(t), 뿌리 높이 · 깃대 길이(W) — 거북선은 등딱지 뒤쪽, 일반 배는 고물
-export const POLE = { turtle: { t: .22, z: .66, h: 1.25 }, boat: { t: .07, z: .36, h: 1.35 } };
+// 깃대: 배 길이의 몇 분의 몇 자리(t), 뿌리 높이 · 깃대 길이(W) — 거북선은 꼬리(고물) 갑판, 일반 배는 고물
+export const POLE = { turtle: { t: .035, z: .37, h: 1.4 }, boat: { t: .07, z: .36, h: 1.35 } };   // 거북선: 꼬리(고물) 갑판에 (2026-10-10 덕배)
 // 깃발(천): 폭 · 높이(W), 화염각 길이(W) · 수(위아래, 끝; 작을 때), 천 높이 화면 목표(px)와 키움 상한, 펄럭임(끝 · 가운데 진폭, 처짐 W, 주기 s)
 // (Codex 2026-10-10: 1.0 × 0.65 W, 화염각 위아래 5 · 끝 3 — 천이 24 px 아래면 3 · 2, 목표 22 px · 1.6배까지, 가운데는 숫자가 접히지 않게 ±0.02 W)
 export const FLAG = { w: 1, h: .65, flame: .07, n: [6, 3], nSmall: [3, 2], minPx: 22, maxScale: 1.6, amp: [.07, .02], droop: .04, period: 2.4, badge: [18, 14, 26, 15] };
@@ -91,6 +91,23 @@ function shell(M, rings, arcs) {
     M.quad([a, [0, -w, shellRise(a) + gunwale(a) + .012]], [b, [0, -w, shellRise(b) + gunwale(b) + .012]], [b, [0, w, shellRise(b) + gunwale(b) + .012]], [a, [0, w, shellRise(a) + gunwale(a) + .012]], { ...ridge, out: [m * 4, 0, rr - 5] });
   }
 }
+// 등딱지의 칼끝: 선조실록 — 지붕에 열 십자 모양의 길을 내고 나머지에 칼 · 송곳을 꽂았다 (2026-10-10 덕배: 뾰족뾰족하지 않나?).
+// 십자 길(가운데 가로 · 꼭대기 세로)은 비우고, 등딱지 면에서 바깥으로 선 네모뿔
+function spikes(M, rows, arcs) {
+  const o = { part: P_FLAT, slot: S_SPIKE }, dk = { part: P_FLAT, slot: S_SHELL_EDGE }, b = .0175, hgt = .095;   // (Codex: 밑변 0.035 W, 옆면 반은 어둡게 — 자갈이 아니라 칼끝으로)
+  for (let i = 0; i < rows; i++) {
+    const t = SHELL_T[0] + (SHELL_T[1] - SHELL_T[0]) * (i + .5) / rows; if (Math.abs(t - .5) < .045) continue;   // 가로 길
+    const h = hullHalf(t) * .97, g = gunwale(t), r = shellRise(t);
+    for (let k = 1; k < arcs; k++) {
+      const th = Math.PI * k / arcs; if (Math.abs(th - Math.PI / 2) < .2) continue;   // 꼭대기 세로 길
+      const y = -Math.cos(th) * h, z = g + Math.pow(Math.sin(th), .7) * r;
+      let ny = -Math.cos(th) / Math.max(h, .1), nz = Math.sin(th) / Math.max(r, .1); const l = Math.hypot(ny, nz); ny /= l; nz /= l;   // 단면의 바깥 법선
+      const ty = nz, tz = -ny, A = [t, [0, y + ny * hgt, z + nz * hgt]], out = [t * 4, y - ny * .2, z - nz * .2];
+      const C = [[-b, -b], [b, -b], [b, b], [-b, b]].map(([dx, dt]) => [t, [dx, y + ty * dt, z + tz * dt]]);
+      for (let q = 0; q < 4; q++) M.tri(C[q], C[(q + 1) % 4], A, { ...(q % 2 ? dk : o), out });
+    }
+  }
+}
 // 이물의 큰 용머리 (Codex 2026-10-10: 머리 길이 1.1 W · 폭 0.6 W · 높이 0.55 W, 목 0.45 W, 입 0.2 W 벌림): 앞 위로 오르는 목,
 // 위턱이 있는 머리와 따로 떨어진 아래턱, 입 안 깊숙이 검은 포구, 금빛 뿔 둘, 흰 눈(가까이선 검은 눈동자), 이빨
 function dragon(M, lod) {
@@ -146,6 +163,7 @@ function oars(M, n) {
 export function buildShip(lod) {
   const M = new Mesh();
   hull(M, lod ? 12 : 6); shell(M, lod ? 10 : 5, lod > 1 ? 8 : lod ? 6 : 4); dragon(M, lod);
+  if (lod) spikes(M, lod > 1 ? 15 : 9, lod > 1 ? 9 : 6);
   if (lod) oars(M, lod > 1 ? 8 : 5);
   return M.buffer();
 }
