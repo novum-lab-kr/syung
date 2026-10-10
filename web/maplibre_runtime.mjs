@@ -7,6 +7,7 @@ import {createCoasterGeometry} from './modes/coaster/geometry.mjs';   // 롤코 
 import {createCoasterMotion} from './modes/coaster/motion.mjs';   // 롤코 주행 속도 · 탄 거리
 import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 타기
 import {createStationSearch} from './ui/search.mjs';   // 역 검색
+import {createBottomSheet} from './ui/sheet.mjs';   // 아래 시트 · 따라가기
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
@@ -415,12 +416,9 @@ const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.tes
 const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
-const sheet=document.createElement('section');sheet.className='sheet';sheet.hidden=true;sheet.setAttribute('aria-label','상세 정보');
-sheet.innerHTML='<button type="button" class="sheet-grab" aria-label="닫기" title="끌어내리거나 눌러서 닫기"></button><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
-const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
-let sheetToken=0,sheetTrain=null,following=null,easing=false;
-let followBus=null;   // bus: 지도에서 누른 버스를 카메라가 따라간다(2026-10-08 덕배). 끌면 멈추고 '이 버스 따라가기'로 다시
-function openSheet(html,source='subway'){if(source!=='bus')busLayer?.clearSelection();sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
+const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute,
+  live:{get journey(){return journey},get routeBounds(){return routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
+const {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
 // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
 function rideCoords(line,ids){
   const out=[];
@@ -496,124 +494,12 @@ function focusRoute(on){
   if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
 }
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
-function closeSheet(){
-  busLayer?.clearSelection();   // bus: release the highlighted bus route with the shared sheet
-  if(sheet.hidden)return;
-  // a field still focused keeps the keyboard up: let both go down together
-  if(sheet.contains(document.activeElement))document.activeElement.blur();
-  sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBus=null;followBtn.hidden=true;
-  // a chosen route stays on the map, with a bar to bring the results back (journey-ui)
-  if(routeBounds&&journey.sheetClosed())fitRoute(110);
-  else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
-  setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
-}
-sheet.querySelector('.sheet-close').onclick=closeSheet;
-// The handle: drag the sheet down to close it (far or fast enough), or just tap it.
-{const grab=sheet.querySelector('.sheet-grab');let y0=0,t0=0,dy=0,drag=false,moved=false;
-  grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
-  grab.addEventListener('pointermove',e=>{if(!drag)return;dy=Math.max(0,e.clientY-y0);if(dy>4)moved=true;sheet.style.transform=`translateY(${dy}px)`});
-  const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
-    const fast=dy/Math.max(1,performance.now()-t0)>.6;
-    if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeSheet()}
-    else sheet.style.transform=''};
-  grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
-  grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeSheet()})}
-// Phone keyboard: only the sheet rises above it. iOS scrolls or pans the page to show a focused field
-// (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
-// iOS reports the keyboard late or only once (and not at all when a still-focused field is tapped again
-// after the keyboard was folded away), so while it moves the height is re-read every frame for a second.
-if(window.visualViewport){const vv=visualViewport;let dropTimer=0;
-  const fitKeyboard=()=>{const H=document.documentElement.clientHeight||innerHeight;   // the layout height: the keyboard does not change it
-    const kb=vv.scale>1.01?0:Math.max(0,Math.round(H-vv.height-vv.offsetTop));   // pinch-zoomed is not a keyboard
-    if(!sheet.classList.contains('open'))return;   // closing: keep the lift until it is gone, or it jumps as the keyboard drops
-    const now=parseInt(sheet.style.getPropertyValue('--kb'))||0,put=v=>{sheet.style.setProperty('--kb',v+'px');sheet.classList.toggle('kb',v>40)};
-    // up at once; down only once it holds for 250 ms — moving between 출발 and 도착 makes iOS report "no keyboard"
-    // for a frame or two, and following that dropped the sheet and brought it back up from the bottom
-    if(kb>=now){clearTimeout(dropTimer);dropTimer=0;if(kb!==now)put(kb)}
-    else if(!dropTimer)dropTimer=setTimeout(()=>{dropTimer=0;const H2=document.documentElement.clientHeight||innerHeight;
-      const k2=vv.scale>1.01?0:Math.max(0,Math.round(H2-vv.height-vv.offsetTop));if(k2<(parseInt(sheet.style.getPropertyValue('--kb'))||0))put(k2)},250);
-    if(scrollY||document.documentElement.scrollTop||document.body.scrollTop){scrollTo(0,0);document.body.scrollTop=0}};
-  let until=0;const settle=()=>{fitKeyboard();if(performance.now()<until)requestAnimationFrame(settle)};
-  const watch=()=>{const run=performance.now()>=until;until=performance.now()+1100;if(run)requestAnimationFrame(settle)};
-  vv.addEventListener('resize',watch);vv.addEventListener('scroll',watch);
-  for(const ev of ['focusin','focusout','pointerup'])sheet.addEventListener(ev,e=>{if(ev!=='pointerup'||e.target.closest('input,select,textarea'))watch()});
-  addEventListener('scroll',()=>{if(sheet.classList.contains('kb'))fitKeyboard()},{passive:true});
-  // Tapping another field: iOS focuses it by scrolling the page to it (then the page is put back: a jump).
-  // Take the tap and focus without scrolling; the sheet already sits above the keyboard, so the field is in view.
-  // (Not the time chip: its tap must reach the field for the phone's clock to open.)
-  let tx=0,ty=0;
-  sheet.addEventListener('touchstart',e=>{const t=e.touches[0];tx=t.clientX;ty=t.clientY},{passive:true});
-  sheet.addEventListener('touchend',e=>{const f=e.target.closest?.('input[type=text],input[type=search],input:not([type])');const t=e.changedTouches[0];
-    if(!f||document.activeElement===f||Math.hypot(t.clientX-tx,t.clientY-ty)>10)return;
-    e.preventDefault();f.focus({preventScroll:true});const n=f.value.length;try{f.setSelectionRange(n,n)}catch{};watch()},{passive:false});
-  // #kbdebug: the numbers behind the keyboard lift, live, for chasing a jump on a real phone
-  if(location.hash.includes('kbdebug')){const o=document.createElement('pre');o.style.cssText='position:fixed;z-index:99;left:4px;top:4px;margin:0;padding:6px 8px;font:11px/1.35 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#ffd400;border-radius:8px;pointer-events:none;white-space:pre';document.body.append(o);
-    const log=[];const snap=()=>`H ${document.documentElement.clientHeight} iH ${innerHeight}\nvv ${Math.round(vv.height)} top ${Math.round(vv.offsetTop)} s ${vv.scale.toFixed(2)}\nscrollY ${Math.round(scrollY)} kb ${sheet.style.getPropertyValue('--kb')||'-'}\nfocus ${document.activeElement?.id||document.activeElement?.tagName}`;
-    const tick=()=>{o.textContent=snap()+'\n'+log.slice(-6).join('\n');requestAnimationFrame(tick)};tick();
-    for(const ev of ['resize','scroll'])vv.addEventListener(ev,()=>log.push(`${(performance.now()/1e3).toFixed(2)} vv.${ev} ${Math.round(vv.height)}/${Math.round(vv.offsetTop)}`));
-    addEventListener('scroll',()=>log.push(`${(performance.now()/1e3).toFixed(2)} win.scroll ${Math.round(scrollY)}`),{passive:true});
-    document.addEventListener('focusin',e=>log.push(`${(performance.now()/1e3).toFixed(2)} focus ${e.target.id||e.target.tagName}`))}}
-addEventListener('keydown',e=>{if(e.key==='Escape'){if(rider.ride)stopRide(true);else closeSheet()}});
-// Following: the camera keeps the chosen train in the middle of the map above the sheet.
-// Dragging the map stops it; the button in the sheet starts it again.
-const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);   // the 길찾기 sheet grows to 72%
-function trainLngLat(plan){
-  const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
-  return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
-}
-function follow(id){following=id;followBus=null;followBtn.hidden=true;followBtn.textContent='이 열차 따라가기';const plan=planner.plans.find(p=>p.id===id);if(!plan)return;
-  easing=true;cam=null;map.once('moveend',()=>{easing=false;map.triggerRepaint()});
-  map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
-// bus: 그 버스로 옮겨 가 따라간다. 멀리 있었으면 줌 16 으로(가까이 볼 때 버스가 보이는 크기)
-function followBusStart(id){
-  following=null;followBus=id;followBtn.hidden=true;const c=busLayer?.vehiclePosition(id);if(!c){followBus=null;return}
-  easing=true;cam=null;map.once('moveend',()=>{easing=false;followSoon()});
-  map.easeTo({center:c,zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700});
-}
-followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain);else if(busLayer?.selection?.kind==='bus')followBusStart(busLayer.selection.id)};
-// station sheet → 길찾기 from or to this station
-let sheetStation=null;
-sheetBody.addEventListener('click',e=>{const b=e.target.closest('.st-journey [data-end]');if(!b||!sheetStation)return;
-  const st=sheetStation;journey.openWith(b.dataset.end,{name:/역$/.test(st.name)?st.name:st.name+'역',lat:st.lat,lng:st.lon})});
-// Keep a followed train centred at FOLLOW_FPS (every display frame redrew the whole map at 60–120 Hz,
-// hot phones), on display frames (requestAnimationFrame, not timers: even steps), camera first and
-// the map with its trains drawn right after in one render. The camera eases toward the train
-// (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
-const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
-function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
-function followLoop(ts){followRaf=0;if(!(following||rider.ride||followBus)||easing)return;
-  if(!rider.ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-  followLast=ts;if(rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
-  if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
-animFrame.push(()=>{
-  const sel=following&&!easing&&sheetTrain&&planner.plans.find(p=>p.id===sheetTrain);if(!sel)return;
-  const c=trainLngLat(sel),now=performance.now();
-  if(!cam||now-camAt>1000)cam={lng:c.lng,lat:c.lat};
-  else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(c.lng-cam.lng)*a,lat:cam.lat+(c.lat-cam.lat)*a}}
-  camAt=now;
-  const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
-  map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
-});
-animFrame.push(()=>{   // bus: 따라가는 버스 — 열차와 같은 방식으로 카메라가 부드럽게 따라붙는다
-  if(!followBus||easing)return;
-  const p=busLayer?.selection?.kind==='bus'&&busLayer.selection.id===followBus?busLayer.vehiclePosition(followBus):null;
-  if(!p){followBus=null;return}   // 다른 걸 골랐거나 버스가 사라졌으면 그만
-  const now=performance.now();
-  if(!cam||now-camAt>1000)cam={lng:p[0],lat:p[1]};
-  else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(p[0]-cam.lng)*a,lat:cam.lat+(p[1]-cam.lat)*a}}
-  camAt=now;
-  const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
-  map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
-});
-map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
-  if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=busLayer?.selection?.kind!=='bus'}});
-
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
 // 지도를 끌거나 확대하면 · '내리기' · Esc · 롤코 끄기로 내려서 타기 전 카메라로 돌아가요.
 const rider=createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,
-  stopFollowing:()=>{easing=false;following=null},isCoaster:()=>coaster,getSheetTrain:()=>sheetTrain,getSleeperM:()=>SLEEPER_M});
+  stopFollowing:()=>{sheetUI.easing=false;sheetUI.following=null},isCoaster:()=>coaster,getSheetTrain:()=>sheetUI.sheetTrain,getSleeperM:()=>SLEEPER_M});
 const {riding,rideRows,startRide,stopRide,rideFrame,rideBar}=rider;
 animFrame.push(rideFrame);
 // #fps: 실제 기기에서 지도 프레임 — 초당 프레임, 늦은 프레임(20 · 34 ms 넘게) 수, 가장 긴 간격, 지도 한 프레임 · 1인칭 카메라 JS 시간(ms). 서버 캡처로는 잴 수 없어서(2026-10-06 덕배)
@@ -666,12 +552,12 @@ function rawFeedHTML(t){
   ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(feed.fetchedAt))}`;
 }
 function showTrainPopup(plan){
-  const token=openSheet(trainSheetHTML(plan));sheetTrain=plan.id;
+  const token=openSheet(trainSheetHTML(plan));sheetUI.sheetTrain=plan.id;
   requestAnimationFrame(()=>follow(plan.id));
   // keep the status line current while this train's sheet is open (plans are rebuilt on each feed update)
   const timer=setInterval(()=>{
-    if(token!==sheetToken)return clearInterval(timer);
-    const pl=planner.plans.find(p=>p.id===sheetTrain);if(!pl)return;
+    if(token!==sheetUI.sheetToken)return clearInterval(timer);
+    const pl=planner.plans.find(p=>p.id===sheetUI.sheetTrain);if(!pl)return;
     const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest');
     if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';
     // the raw record too: plan.t is replaced on every feed update, and the "N초 전" age ticks
@@ -718,9 +604,9 @@ function exitList(st){
 }
 async function showStationPopup(st,lngLat){
   if(!st)return;
-  following=null;sheetTrain=null;followBtn.hidden=true;
+  sheetUI.following=null;sheetUI.sheetTrain=null;followBtn.hidden=true;
   const lineChips=st.lines.map(x=>`<span class="chip" style="--c:${colors[x.name]||'#52646a'}"><span class="dot"></span>${esc(x.name)}</span>`).join('');
-  sheetStation=st;
+  sheetUI.sheetStation=st;
   const journeyHere='<div class="st-journey"><button type="button" data-end="from">여기서 출발</button><button type="button" data-end="to">여기로 도착</button></div>';
   const head=sub=>`<div class="tp-line">${lineChips}</div><div class="tp-dest">${esc(st.name)}</div><div class="tp-now">${sub}</div>${journeyHere}`;
   const html=d=>{
@@ -747,9 +633,9 @@ async function showStationPopup(st,lngLat){
   if(seq!==stationSeq)return;   // another station was tapped meanwhile
   const skeleton=`<div class="train-inspect station-sheet">${head('도착 정보 불러오는 중…')}<div class="sec">곧 오는 열차</div><div class="arrs st-sk" aria-hidden="true">${'<div class="arr"><i></i><i></i><i></i></div>'.repeat(Math.min(4,Math.max(2,st.lines.length*2)))}</div></div>`;
   const token=openSheet(d?html(d):err?failed:skeleton);
-  const put=h=>{if(token===sheetToken)sheetBody.innerHTML=h};
+  const put=h=>{if(token===sheetUI.sheetToken)sheetBody.innerHTML=h};
   if(!d&&!err){await settled;put(d?html(d):failed)}
-  if(d){const timer=setInterval(()=>{if(token!==sheetToken)return clearInterval(timer);put(html(d))},15000)}
+  if(d){const timer=setInterval(()=>{if(token!==sheetUI.sheetToken)return clearInterval(timer);put(html(d))},15000)}
 }
 let stationSeq=0;
 document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
@@ -766,7 +652,7 @@ const hexRGB3=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,pa
 // footprints (a ray through a building always crosses one); walls along tile edges lie inside
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
-const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return subwayOff},get coaster(){return coaster},get simcity(){return simcity},get joseon(){return joseon},get sheetTrain(){return sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return following},get easing(){return easing},get rider(){return rider},get riding(){return riding},get RIDE_H(){return RIDE_H}};
+const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return subwayOff},get coaster(){return coaster},get simcity(){return simcity},get joseon(){return joseon},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding},get RIDE_H(){return RIDE_H}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected});
@@ -795,7 +681,7 @@ function filterLine(line){
   refreshLive(true);
 }
 // 실시간 열차(trains/live_feed.mjs): 받은 기록으로 예측만 다시 세운다
-const feed=createLiveFeed({map,stations,liveState,getSelected:()=>selected,getSheetTrain:()=>sheetTrain,hasPlans:()=>planner.plans.length>0,age,updateLiveNotice,
+const feed=createLiveFeed({map,stations,liveState,getSelected:()=>selected,getSheetTrain:()=>sheetUI.sheetTrain,hasPlans:()=>planner.plans.length>0,age,updateLiveNotice,
   onTrains:trains=>{learnDirections(trains);planner.replacePlans(trains.map(planner.planTrain).filter(Boolean));lastPose.clear();return planner.plans.length},
   onClear:()=>{planner.clear();lastPose.clear();map.triggerRepaint()}});
 function refreshLive(force=false){return feed.refresh(force)}
@@ -935,8 +821,8 @@ map.on('load',()=>{
   addBasemap();
   // bus: below subway lines, using the existing detail sheet and settings controls.
   busLayer=createBusLayer({map,phone:PHONE,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat(),onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
-    following=null;followBus=null;sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
-    return next=>{if(sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
+    sheetUI.following=null;sheetUI.followBus=null;sheetUI.sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
+    return next=>{if(sheetUI.sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
     if(leg)showRoute({legs:[leg]},true,busLayer?.selection?.kind!=='bus');   // 버스를 눌렀으면 노선 전체로 멀어지지 않고 그 버스를 따라간다
