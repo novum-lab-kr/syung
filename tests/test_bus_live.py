@@ -7,10 +7,14 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
 from server import bus_live_proxy as bus
+from server.routes import bus as bus_routes
+from server.services.runtime import Services
+from server.sources import seoul_bus
 
 R1, R2 = "100100001", "100100002"
 ROUTES = {rid: {"id": rid, "path": [[126.98, 37.57], [126.99, 37.58]], "stopIds": []} for rid in (R1, R2)}
@@ -68,7 +72,7 @@ class PayloadTest(unittest.TestCase):
         def opener(request, timeout):
             urls.append(request.full_url)
             return Response(b'{"msgHeader":{"headerCd":"0"},"msgBody":{"itemList":[]}}')
-        with patch.object(bus.urllib.request, "urlopen", side_effect=opener):
+        with patch.object(seoul_bus.urllib.request, "urlopen", side_effect=opener):
             for key in ("secret+/=", "secret%2B%2F%3D"):
                 config = bus.Config(key=key)
                 self.assertNotIn("secret", repr(config))
@@ -99,7 +103,7 @@ class HttpErrorTest(unittest.TestCase):
         now = datetime(2026, 10, 7, 5, tzinfo=timezone.utc).timestamp()
         proxy = bus.BusProxy(bus.Config(key="k", quota_file=Path(directory.name) / "q.json", daily_limit=100000),
                              routes=ROUTES, fetch=fetch, clock=lambda: now)
-        proxy.snapshot({"routes": [R1]})
+        bus_routes.positions(proxy, {"routes": [R1]})
         self.assertEqual(len(calls), 1, "한도 초과는 그 자리에서 다시 부르지 않는다")
         self.assertGreater(proxy.backoff_until, now)
 
@@ -126,7 +130,7 @@ class ProxyTest(unittest.TestCase):
         query = {"routes": [",".join(ids)]}
         if focus:
             query["focus"] = [focus]
-        body, status = proxy.snapshot(query)
+        body, status = bus_routes.positions(proxy, query)
         self.assertEqual(status, 200)
         return body
 
@@ -157,7 +161,7 @@ class ProxyTest(unittest.TestCase):
                       {"routes": [R1], "focus": [R1, R1]},
                       {"routes": [",".join(str(100100000+i) for i in range(10))]}):
             with self.subTest(query=query):
-                self.assertEqual(proxy.snapshot(query)[1], 400)
+                self.assertEqual(bus_routes.positions(proxy, query)[1], 400)
         self.assertEqual(self.calls, [])
 
     def test_focus_cache_and_global_pacing(self):
@@ -395,22 +399,21 @@ class ProxyTest(unittest.TestCase):
 
     def test_http_mock_contract_and_input_error(self):
         proxy = self.proxy(mode="mock")
-        server = bus.ThreadingHTTPServer(("127.0.0.1", 0), bus.Handler)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), bus_routes.make_handler(Services(bus=proxy)))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
-        with patch.object(bus, "_proxy", proxy):
-            thread.start()
-            try:
-                base = f"http://127.0.0.1:{server.server_port}"
-                with urllib.request.urlopen(f"{base}/api/bus/live?routes={R1}") as response:
-                    self.assertEqual(response.headers["Cache-Control"], "no-store")
-                    self.assertEqual(json.load(response)["mode"], "mock")
-                with self.assertRaises(urllib.error.HTTPError) as caught:
-                    urllib.request.urlopen(f"{base}/api/bus/live?routes=wrong")
-                self.assertEqual(caught.exception.code, 400)
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(2)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            with urllib.request.urlopen(f"{base}/api/bus/live?routes={R1}") as response:
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertEqual(json.load(response)["mode"], "mock")
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(f"{base}/api/bus/live?routes=wrong")
+            self.assertEqual(caught.exception.code, 400)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
 
 
 # 정류장 도착 정보(getStationByUid) 한 줄: 2026-10-07 07103 응답 모양
@@ -447,7 +450,7 @@ class ArrivalTest(unittest.TestCase):
                 raise result
             return result
         self.fetch = fetch
-        body = self.proxy().snapshot({"stop": ["07103"]})[0]
+        body = bus_routes.arrivals(self.proxy(), {"stop": ["07103"]})[0]
         self.assertEqual((body["status"], len(body["arrivals"]), len(self.calls), body["quota"]["used"]), ("fresh", 1, 2, 2))
 
     def test_rows_keep_messages_and_never_plate_numbers(self):
@@ -462,24 +465,24 @@ class ArrivalTest(unittest.TestCase):
 
     def test_one_call_per_stop_shared_for_the_cache_window(self):
         proxy = self.proxy()
-        body, status = proxy.snapshot({"stop": ["07103"]})
+        body, status = bus_routes.arrivals(proxy, {"stop": ["07103"]})
         self.assertEqual((status, body["status"], body["ok"]), (200, "fresh", True))
         self.assertEqual(body["arrivals"][0]["name"], "146")
         self.now += 10
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "cached")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]["status"], "cached")
         self.assertEqual(self.calls, ["07103"])
         self.now += 11
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "fresh")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]["status"], "fresh")
         self.assertEqual(len(self.calls), 2)
         self.assertEqual(bus.QuotaLedger(proxy.config).view(self.now)["used"], 2, "버스 위치와 다른 장부")
 
     def test_refresh_asks_again_after_five_seconds_only(self):
         proxy = self.proxy()
-        proxy.snapshot({"stop": ["07103"]})
+        bus_routes.arrivals(proxy, {"stop": ["07103"]})
         self.now += 3
-        self.assertEqual(proxy.snapshot({"stop": ["07103"], "fresh": ["1"]})[0]["status"], "cached", "연타는 받아 둔 것")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"], "fresh": ["1"]})[0]["status"], "cached", "연타는 받아 둔 것")
         self.now += 3
-        self.assertEqual(proxy.snapshot({"stop": ["07103"], "fresh": ["1"]})[0]["status"], "fresh")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"], "fresh": ["1"]})[0]["status"], "fresh")
         self.assertEqual(len(self.calls), 2)
 
     def test_unknown_or_malformed_stops_never_spend_quota(self):
@@ -487,55 +490,55 @@ class ArrivalTest(unittest.TestCase):
         for query in ({"stop": ["99999"]}, {"stop": ["0710"]}, {"stop": ["07103", "07103"]},
                       {"stop": ["07103"], "routes": ["100100025"]}, {"stop": [""]}):
             with self.subTest(query=query):
-                self.assertEqual(proxy.snapshot(query)[1], 400)
+                self.assertEqual(bus_routes.arrivals(proxy, query)[1], 400)
         self.assertEqual(self.calls, [])
 
     def test_daily_limit_and_failures_show_stale_then_error(self):
         proxy = self.proxy(daily_limit=1)
-        proxy.snapshot({"stop": ["07103"]})
+        bus_routes.arrivals(proxy, {"stop": ["07103"]})
         self.now += 30
-        body = proxy.snapshot({"stop": ["07103"]})[0]
+        body = bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]
         self.assertEqual((body["status"], body["errors"][0]["code"]), ("stale", "daily_limit"))
         self.assertEqual(len(body["arrivals"]), 1, "2분 안의 지난 값은 지연으로 보여 준다")
         self.now += 120
-        body = proxy.snapshot({"stop": ["07103"]})[0]
+        body = bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]
         self.assertEqual((body["status"], body["arrivals"]), ("error", []))
         self.assertEqual(self.calls, ["07103"])
 
     def test_occasional_401_retries_soon_and_only_a_run_of_them_backs_off(self):
         self.result = bus.BusError("upstream_auth")
         proxy = self.proxy()
-        body = proxy.snapshot({"stop": ["07103"]})[0]
+        body = bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]
         self.assertEqual((body["status"], body["errors"][0]["code"]), ("error", "upstream_auth"))
         self.assertNotIn("test-secret", json.dumps(body))
         self.assertEqual(len(self.calls), 2, "누른 그 응답에서 한 번 더 불렀다")
         self.now += 2
-        proxy.snapshot({"stop": ["07103"]})
+        bus_routes.arrivals(proxy, {"stop": ["07103"]})
         self.assertEqual(len(self.calls), 2, "5초 안에는 다시 안 부른다")
         self.now += 4
         self.result = [ARRIVAL]
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["status"], "fresh", "섞여 나온 401 하나로 5분 쉬지 않는다")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]["status"], "fresh", "섞여 나온 401 하나로 5분 쉬지 않는다")
         self.result = bus.BusError("upstream_auth")
         for _ in range(bus.AUTH_STRIKES):
             self.now += 30
-            proxy.snapshot({"stop": ["07103"]})
+            bus_routes.arrivals(proxy, {"stop": ["07103"]})
         self.assertEqual(proxy.backoff_until, 0, "10분 안에 받은 적이 있으면 연속 401 이어도 쉬지 않는다")
         self.now += bus.AUTH_SILENT_SECONDS
-        proxy.snapshot({"stop": ["07103"]})
+        bus_routes.arrivals(proxy, {"stop": ["07103"]})
         calls = len(self.calls)
         self.now += 60
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]["errors"][0]["code"], "upstream_auth")
         self.assertEqual(len(self.calls), calls, "10분 넘게 401 만 오면 5분 쉰다")
 
     def test_missing_key_and_mock(self):
         proxy = bus.ArrivalProxy(bus.ArrivalConfig(quota_file=self.path), stops=STOPS, fetch=self.fetch)
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[0]["errors"][0]["code"], "missing_key")
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[0]["errors"][0]["code"], "missing_key")
         self.assertEqual(self.calls, [])
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as routes:
             json.dump({"routes": [{"id": "100100025", "name": "146", "type": "trunk", "stopIds": ["106000009"]}]}, routes)
         self.addCleanup(Path(routes.name).unlink)
         mock = self.proxy(mode="mock", routes_file=Path(routes.name))
-        body = mock.snapshot({"stop": ["07103"]})[0]
+        body = bus_routes.arrivals(mock, {"stop": ["07103"]})[0]
         self.assertEqual((body["mode"], body["arrivals"][0]["routeId"]), ("mock", "100100025"))
         self.assertEqual(self.calls, [])
 
@@ -546,15 +549,14 @@ class ArrivalTest(unittest.TestCase):
         write(["07103"])
         config = bus.ArrivalConfig(key="test-secret", quota_file=self.path, stops_file=stops_file)
         proxy = bus.ArrivalProxy(config, fetch=self.fetch, clock=lambda: self.now)
-        self.assertEqual(proxy.snapshot({"stop": ["22532"]})[1], 400)
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["22532"]})[1], 400)
         write(["07103", "22532"])   # 크기가 달라져 수정 시각이 같아도 알아챈다
-        self.assertEqual(proxy.snapshot({"stop": ["22532"]})[1], 200)
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["22532"]})[1], 200)
         stops_file.write_text("{")   # 반쯤 쓴 파일: 읽던 목록을 그대로 쓴다
-        self.assertEqual(proxy.snapshot({"stop": ["07103"]})[1], 200)
+        self.assertEqual(bus_routes.arrivals(proxy, {"stop": ["07103"]})[1], 200)
 
     def test_module_snapshot_routes_stop_queries_to_arrivals(self):
-        with patch.object(bus, "_arrivals", self.proxy()):
-            body, status = bus.snapshot({"stop": ["07103"]})
+        body, status = bus_routes.snapshot(Services(arrivals=self.proxy()), {"stop": ["07103"]})
         self.assertEqual((status, body["stop"]), (200, "07103"))
 
 

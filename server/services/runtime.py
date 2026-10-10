@@ -1,0 +1,42 @@
+"""한 프로세스의 서비스 인스턴스 주인(캐시 · 장부 · 잠금이 두 벌 생기지 않게).
+
+처음 쓸 때 만든다: 버스만 쓰는 deploy/dev_server.py 가 다른 서비스 자료까지 읽지 않게.
+진입점(app · 옛 껍데기)은 default_services() 하나를 같이 쓰고, 테스트는 Services(...) 를 따로 만들어 넣는다.
+"""
+from __future__ import annotations
+
+import threading
+
+from server.services.bus import BusArrivalService, BusLiveService
+
+
+class Services:
+    def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None):
+        self._lock = threading.Lock()
+        self._bus, self._arrivals = bus, arrivals
+
+    @property
+    def bus(self) -> BusLiveService:
+        with self._lock:
+            if self._bus is None:
+                self._bus = BusLiveService()
+            return self._bus
+
+    @property
+    def arrivals(self) -> BusArrivalService:
+        with self._lock:
+            if self._arrivals is None:
+                self._arrivals = BusArrivalService()
+            return self._arrivals
+
+
+_default: Services | None = None
+_default_lock = threading.Lock()
+
+
+def default_services() -> Services:
+    global _default
+    with _default_lock:
+        if _default is None:
+            _default = Services()
+        return _default
