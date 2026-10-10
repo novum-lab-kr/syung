@@ -5,23 +5,23 @@ import { mergeSettings, freezeSettings, validateSettings, validateModeDefinition
 
 // 내 설정으로 바꿀 수 있는 것: 테마 · 지도 색만. 모드 고르기 · 배속은 전환 명령이지 설정 덧쓰기가 아니다.
 const COLOR = /^(#[0-9a-fA-F]{6}|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\))$/;   // #rrggbb · rgba(r,g,b,a)
-// 도시 팩 검사(도시 엔진이 읽는 모양): '#' 로 시작하거나 color 로 끝나는 키의 글자는 #rrggbb, 수는 0 이상,
+// 도시 팩 · 공원 자료 검사(엔진이 읽는 모양): '#' 로 시작하거나 color 로 끝나는 키, palette · sky · light · dark · colors 묶음 안의 글자는 #rrggbb, 수는 0 이상,
 // 줌(키가 zoom 으로 끝나거나 lod 묶음 안)은 0~24, lod 의 [시작, 끝] 은 두 개에 시작 ≤ 끝. 이름 값(pattern · fade …)의 목록 검사는 아직 없다.
-const HEX6 = /^#[0-9a-fA-F]{6}$/;
-function checkCityPack(pack, where) {
-  const walk = (v, path, key, inLod) => {
+const HEX6 = /^#[0-9a-fA-F]{6}$/, COLOR_GROUP = /^(palette|sky|light|dark|colou?rs?)$/i;   // 이 이름의 묶음 안 글자는 모두 색
+function checkPack(pack, where) {
+  const walk = (v, path, key, inLod, inColor) => {
     if (Array.isArray(v)) {
-      if (inLod && v.length && v.every(x => typeof x === 'number') && (v.length !== 2 || v[0] > v[1])) throw new Error(`${path}: lod 는 [시작, 끝] 두 개, 시작 ≤ 끝`);
-      v.forEach((x, i) => walk(x, `${path}[${i}]`, key, inLod)); return;
+      if (inLod && !(v.length === 2 && v.every(x => typeof x === 'number') && v[0] <= v[1])) throw new Error(`${path}: lod 는 [시작, 끝] 두 개, 시작 ≤ 끝`);
+      v.forEach((x, i) => walk(x, `${path}[${i}]`, key, inLod, inColor)); return;
     }
-    if (v && typeof v === 'object') { for (const k of Object.keys(v)) walk(v[k], `${path}.${k}`, k, inLod || k === 'lod'); return }
-    if (typeof v === 'string') { if ((v.startsWith('#') || /colou?r$/i.test(key)) && !HEX6.test(v)) throw new Error(`${path}: 색이 아님 (${v})`); return }
+    if (v && typeof v === 'object') { for (const k of Object.keys(v)) walk(v[k], `${path}.${k}`, k, inLod || k === 'lod', inColor || COLOR_GROUP.test(k)); return }
+    if (typeof v === 'string') { if ((inColor || v.startsWith('#') || /colou?r$/i.test(key)) && !HEX6.test(v)) throw new Error(`${path}: 색이 아님 (${v})`); return }
     if (typeof v === 'number') {
       if (v < 0) throw new Error(`${path}: 음수 (${v})`);
       if ((inLod || /zoom$/i.test(key)) && v > 24) throw new Error(`${path}: 줌 범위 밖 (${v})`);
     }
   };
-  walk(pack, where, '', false);
+  walk(pack, where, '', false, false);
 }
 export const USER_PREFERENCES = Object.freeze({ themeChoice: Object.freeze(['auto', 'light', 'dark']), mapColor: Object.freeze(['calm', 'color']) });
 
@@ -49,7 +49,10 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
       else if (v && typeof v === 'object') for (const k of Object.keys(v)) colors(v[k], Array.isArray(v) ? `${path}[${k}]` : `${path}.${k}`);
     };
     if (S.map != null) colors(S.map, `${id}.map`);
-    if (S.city?.pack) checkCityPack(S.city.pack, `${id}.city.pack`);
+    if (S.city?.pack) checkPack(S.city.pack, `${id}.city.pack`);
+    if (S.park?.style) checkPack(S.park.style, `${id}.park.style`);
+    if (S.park && 'towerM' in S.park && !(typeof S.park.towerM === 'number' && S.park.towerM > 0)) throw new Error(`${id}.park.towerM: 0 보다 큰 수`);
+    for (const g of ['city', 'park']) if (S[g] && 'enabled' in S[g] && typeof S[g].enabled !== 'boolean') throw new Error(`${id}.${g}.enabled: 참 · 거짓`);
     return S;
   }
   for (const id of byId.keys()) modeSettings(id);   // 잘못된 정의는 쓰기 전에(시작할 때) 알린다

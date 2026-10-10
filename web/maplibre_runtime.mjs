@@ -31,7 +31,9 @@ import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
-import {SEOUL_COASTER_STYLE as COASTER_STYLE} from './lib/coaster_style_seoul.mjs';   // coaster: shared park palette and metre/pixel dimensions
+import './lib/coaster_style_seoul.mjs';   // (공원 자료 호환 이름: 롤코 · 공원 코드가 부른다 — 같은 단계에서 요청)
+import './modes/basic/park.mjs';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
+import './modes/coaster/metrics.mjs';   // (공원 치수 계산: 같은 단계에서 요청)
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './lib/coaster_track_mesh.mjs';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
 import {NightLayer} from './lib/park_night.mjs';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './lib/coaster_first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
@@ -576,7 +578,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 </style>`);
 
 // ---- light / dark theme (web/map/theme.mjs) ---------------------------------------------------
-const RIDE_H=150;
+const RIDE_H=modes.settings('coaster').park.towerM;   // m: 롤코에서 이 높이 이상 건물은 놀이기구(그림자 · 벽 · 건물에서 빠진다)
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,CITY_STYLE,cityPalette,cityPack,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,cityOn,RIDE_H,palette:modes.settings('basic').map,live:{get coaster(){return coaster},get simcity(){return simcity},get joseon(){return joseon},get busLayer(){return busLayer},get ready(){return ready}}});
 const {PARK_COLORS}=theme;

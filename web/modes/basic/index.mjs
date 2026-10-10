@@ -3,6 +3,7 @@
 // (옆 파일은 본체도 직접 import 한다: 자식만 부르는 import 는 첫 화면 요청을 한 단계 늦춘다)
 import { MAP_THEMES, MAP_COLORS, PARK_COLORS } from './palette.mjs';
 import CITY_PACK from './city.mjs';
+import PARK_DEFAULTS from './park.mjs';
 
 export default {
   id: 'basic',
@@ -11,6 +12,7 @@ export default {
     themeChoice: 'auto',   // 내 설정(테마): auto · light · dark — 저장 이름 subway-theme
     mapColor: 'calm',      // 내 설정(지도 색): calm · color — 저장 이름 subway-map-color
     map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS },   // 지도 색: 테마별 바탕 · '컬러' 덧칠 · 공원(롤코)
-    city: { pack: CITY_PACK },   // 미니어처 도시 팩(색 · 치수 · 줌): 심시티 · 롤코는 이것 그대로(같은 참조), 조선은 덧쓴다
+    city: { pack: CITY_PACK },
+    park: { enabled: false, towerM: 150, style: PARK_DEFAULTS },   // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료, towerM 이상 건물은 놀이기구   // 미니어처 도시 팩(색 · 치수 · 줌): 심시티 · 롤코는 이것 그대로(같은 참조), 조선은 덧쓴다
   },
 };

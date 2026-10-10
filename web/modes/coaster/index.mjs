@@ -3,5 +3,7 @@ export default {
   id: 'coaster',
   from: 'simcity',
   label: '롤러코스터',
-  settings: {},
+  settings: {
+    park: { enabled: true },   // 공원 켜기(자료는 기본 모드 park.style)
+  },
 };

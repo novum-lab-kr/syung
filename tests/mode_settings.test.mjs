@@ -158,3 +158,21 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
   assert.throws(()=>bad({roads:{lane:{minZoom:40}}}),/줌 범위/);
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{pack:CITY}}},{id:'j',settings:{city:{pack:{ground:{light:{base:'#12'}}}}}}]),/색이 아님/,'모드 덧쓰기도 합친 뒤 검사');
 });
+
+test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켜고, 호환 이름 · 계산 함수는 같은 것', async () => {
+  const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mjs');
+  assert.equal(sha(PARK),'31c26c9c23d4bc944e8b81a65e082b85aea67ed6cc00c58247f2748dc70512aa');
+  const old=await import('../web/lib/coaster_style_seoul.mjs'),M=await import('../web/modes/coaster/metrics.mjs');
+  assert.equal(old.SEOUL_COASTER_STYLE,PARK);assert.equal(old.trackMetrics,M.trackMetrics);assert.equal(old.ridePalette,M.ridePalette);
+  for(const id of ['basic','simcity','joseon'])assert.equal(R.settings(id).park.enabled,false,id);
+  assert.equal(R.settings('coaster').park.enabled,true);assert.equal(R.settings('coaster').park.style,PARK);assert.equal(R.settings('coaster').park.towerM,150);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:0,style:{}}}}]),/towerM/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:true}}}]),/towerM/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:'150'}}}]),/towerM/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{enabled:'false'}}}]),/참 · 거짓/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{style:{palette:{light:{red:'oops'}}}}}}]),/색이 아님/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{style:{lod:{canopy:[]}}}}}]),/두 개/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:1,style:{palette:{light:{red:'#c94'}}}}}}]),/색이 아님/);
+});
