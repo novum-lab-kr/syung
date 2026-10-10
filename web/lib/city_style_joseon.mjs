@@ -58,7 +58,7 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     },
   },
   // 거북선: 조선 모드의 열차(web/lib/city_turtle_ship.mjs)
-  train: { turtleShip: { wood: '#5A3E2B', woodDark: '#3B2A1E', shell: '#4E5B4A', shellEdge: '#2F3A31', spike: '#C9C3B0', red: '#B23A2A', gold: '#D9A43A', white: '#F2EBDC', ink: '#17120E', oar: '#8A6A4A', lamp: '#FFC874' } },
+  train: { turtleShip: { wood: '#5A3E2B', woodDark: '#3B2A1E', shell: '#3E4A3B', shellEdge: '#263027', spike: '#C9C3B0', red: '#B23A2A', gold: '#D9A43A', white: '#F2EBDC', ink: '#17120E', oar: '#8A6A4A', lamp: '#FFC874', head: '#8A3324', deck: '#B08A5E', path: '#A99C7C' } },   // (Codex 2026-10-10: 등딱지는 어둡게, 십자 길은 밝게, 용머리는 짙은 적갈색, 일반 배 갑판은 밝은 나무)
   modes: { simcity: { shadowOpacity: { light: 0.2, dark: 0.08 } } },
   // web/lib/city_hanok.mjs: every footprint fitted with an oriented rectangle of its own area, then a type (초가 · 기와 ·
   // 중층 전각 · 한옥 고층 · 목탑), a plan and a wall. Metres

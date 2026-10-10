@@ -1053,9 +1053,11 @@ class TrainLayer{
       let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
       if(plan.id===sheetTrain){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
       const P=d=>{const q=trackPoint(plan,coaster?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
-      if(simcity&&joseon){   // 조선 모드: 거북선 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
+      if(simcity&&joseon){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
+        // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞 · 맨 뒤에만 (2026-10-10 덕배)
         const k=Math.max(1,Math.min(n,Math.round(total/unit/(bodyPx*3.6)))),span=total/k;
-        for(let j=0;j<k;j++){const c=coasterCarFrame(P,tail,span,j,k,unit,bodyPx,lanePx,span*.32);if(c)this.ships.ship(c.fr,c.L,bodyPx,color,pose.moving,plan.id)}
+        for(let j=0;j<k;j++){const c=coasterCarFrame(P,tail,span,j,k,unit,bodyPx,lanePx,span*.32);if(!c)continue;const lead=j===k-1;
+          this.ships.ship(c.fr,lead?c.L*1.25:c.L,lead?bodyPx*1.3:bodyPx,color,pose.moving,plan.id,{kind:lead?'turtle':'boat',flag:lead||j===0,line:plan.t.line})}
         continue}
       const ratio=car/unit/bodyPx,separate=coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
       const unfold=coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShip, hullHalf, gunwale } from '../web/lib/city_turtle_ship.mjs';
+import { buildShip, buildBoat, buildFlag, lineLabel, hullHalf, gunwale } from '../web/lib/city_turtle_ship.mjs';
 import JOSEON from '../web/lib/city_style_joseon.mjs';
 import SEOUL from '../web/lib/city_style_seoul.mjs';
 
@@ -19,4 +19,9 @@ test('조선 팩의 수로: 고가 치수는 서울 팩 그대로(지은 조각�
   assert.ok(JOSEON.viaduct.aqueduct?.water?.light && !SEOUL.viaduct.aqueduct);
   assert.notEqual(JOSEON.viaduct.colors.light.concrete, SEOUL.viaduct.colors.light.concrete);
   assert.ok(JOSEON.train.coaster88, '서울 팩의 88열차 설정은 그대로 이어받는다');
+});
+test('배 선단: 일반 배 · 깃발 메시도 유한하고 삼각형 단위, 깃발 글자는 번호선 번호 · 이름선 두 글자', () => {
+  for (const d of [buildBoat(0), buildBoat(2), buildFlag()]) { assert.ok(d.every(Number.isFinite)); assert.equal(d.length % 27, 0) }
+  assert.ok(buildBoat(2).length < buildShip(2).length, '일반 배는 거북선보다 가볍다');
+  assert.equal(lineLabel('2호선'), '2'); assert.equal(lineLabel('경의중앙선'), '경의'); assert.equal(lineLabel('GTX-A'), 'A'); assert.equal(lineLabel('신분당선'), '신분');
 });
