@@ -48,7 +48,13 @@ node --test tests/*.test.mjs
 
 `server/subway_live_proxy.py` — 서울시 `realtimeStationArrival/ALL`을 90초마다 한 번만 불러
 캐시하고, `/live?lines=2호선,5호선`처럼 노선을 골라 돌려줍니다. 하루 호출 한도(기본 950) 안에서
-동작하며, 실패하면 노선별 `realtimePosition` API로 전환합니다.
+동작하며, 실패하면 노선별 `realtimePosition` API로 전환합니다. 같은 프로세스가 버스(`/bus/live`) · 길찾기(`/route` · `/place`) ·
+학습 페이지 로그인(`/auth` · `/login`)도 받습니다.
+
+서버 코드는 층으로 나뉘어 한 방향으로만 부릅니다(`tests/test_server_layers.py`가 import 방향을 검사):
+`server/app.py`(조립 · 배경 작업 시작) → `routes/`(입력 검사 · 응답 모양) → `services/`(실제 일, HTTP 모름) →
+`sources/`(바깥 API: 서울 지하철 · 버스 · 카카오 · OSRM) · `store/`(호출 한도 · 기록 파일). 배경 작업은 `jobs/`, 환경 변수는
+`server/config.py`만 읽습니다(따로 도는 `healthcheck.py`는 예외). `subway_live_proxy.py` · `bus_live_proxy.py` · `owner_auth.py`는 옛 실행 경로를 잇는 얇은 진입점입니다.
 
 ```bash
 cp server/subway-live.env.example /etc/subway-live.env   # 키 입력

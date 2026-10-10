@@ -7,10 +7,9 @@ from pathlib import Path
 
 
 COMMON = {"server.config", "server.errors", "server.clock"}
-# journey는 이동 전까지만 예외이며, 삭제 뒤에는 목록에 있어도 파일을 만들지 않는다.
 LEGACY = {
     "server.subway_live_proxy", "server.bus_live_proxy", "server.owner_auth",
-    "server.healthcheck", "server.journey",
+    "server.healthcheck",
 }
 ALLOWED = {
     "routes": {"routes", "services"},
@@ -244,6 +243,7 @@ class LayerCheckerFixtureTest(unittest.TestCase):
 
     def test_unclassified_files_and_targets_fail(self):
         self.assert_rejected({"helper.py": ""}, "분류되지 않은 서버 파일")
+        self.assert_rejected({"journey.py": ""}, "분류되지 않은 서버 파일")
         self.assert_rejected({"extra/worker.py": ""}, "분류되지 않은 서버 파일")
         self.assert_rejected({"services/live.py": "from server import helper"}, "분류되지 않은 내부 대상")
 

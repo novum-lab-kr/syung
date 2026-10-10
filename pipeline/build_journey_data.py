@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Data for the journey planner (server/journey.py) → data/journey.json.
+"""Data for the journey planner (server/services/journey_graph.py) → data/journey.json.
 
 - hops: "<line>|<a>|<b>" → seconds from leaving station a to leaving the next station b (run +
   stop), from the KTDB timetable run times and the learned live timing (pace, zone), both ways

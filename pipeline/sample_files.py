@@ -17,7 +17,7 @@ from typing import Iterator
 
 STATE = Path("/var/lib/subway-live")
 SOURCES = ("samples", "position")
-BUS = "bus"   # 버스 위치(server/bus_live_proxy.py record) — 지하철 학습(day_files)에는 넣지 않고 압축만 같이 한다
+BUS = "bus"   # 버스 위치(server/store/records.py record_bus) — 지하철 학습(day_files)에는 넣지 않고 압축만 같이 한다
 
 
 def lines(path: str | Path) -> Iterator[str]:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""수도권 city buses for the journey planner (server/journey.py) → data/bus.json.
+"""수도권 city buses for the journey planner (server/services/journey_graph.py) → data/bus.json.
 
 From the KTDB GTFS, the 서울 (SEB), 경기 (GGB) and 인천 (ICB) city bus routes:
 - stops: [[name, lat, lng], ...]

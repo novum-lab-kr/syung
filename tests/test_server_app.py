@@ -12,6 +12,7 @@ from server import app
 from server.config import SubwayConfig
 from server.jobs import burst
 from server.jobs.warm_journey import warm_journey
+from server.routes.errors import api_error
 from server.routes import http as http_routes
 
 
@@ -263,6 +264,10 @@ class AppTest(unittest.TestCase):
 
 
 class ResponseCacheTest(unittest.TestCase):
+    def test_new_api_error_has_only_code_and_message_in_error_object(self):
+        self.assertEqual(api_error("invalid_request", "요청을 확인해 주세요"),
+                         {"error": {"code": "invalid_request", "message": "요청을 확인해 주세요"}})
+
     def test_cache_keeps_503_bytes_until_exact_expiry(self):
         cache = http_routes.ResponseCache(2)
         with patch.object(http_routes.time, "time", return_value=1000):

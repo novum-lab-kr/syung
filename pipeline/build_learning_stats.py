@@ -12,7 +12,7 @@
   their names, and per station how often its stand (도착→출발) was timed over the days that timing
   learned from and the median, and how many 도착 → next 도착 runs left it (stands: {line: {id:
   [n, s, runs]}}, before STOP_MIN_N/clamp). latest.lines leaves out the per-edge runs (a count instead).
-- bus: the bus positions the bus proxy recorded (server/bus_live_proxy.py, bus/YYYYMMDD.jsonl): per day
+- bus: the bus positions the bus proxy recorded (server/store/records.py record_bus, bus/YYYYMMDD.jsonl): per day
   the upstream answers (calls), vehicle rows, distinct buses and routes, and per route over all days
   the calls and buses with its name and colour. Not learned from yet.
 Per-day numbers are cached in /var/lib/subway-live (a day's file is read again only when it grew).

@@ -44,7 +44,8 @@ class ResponseCache:
             self._responses[key] = (time.time() + self.seconds, status, data)
 
 
-# GET 주소 → route(services, query) → (body, status). /bus 는 따로(직렬화 · 길이 제한이 다르다)
+# GET 주소 → route(services, query) → (body, status). /bus 는 따로(직렬화 · 길이 제한이 다르다).
+# 새 주소는 /api/… 로 만들고 오류는 routes/errors.py 의 api_error 모양 하나로(옛 주소의 응답 모양은 바꾸지 않는다)
 GET_JSON = {
     "/live": lambda services, query: live_routes.live(services.live, query),
     "/health": lambda services, query: ({"ok": True}, 200),
