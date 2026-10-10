@@ -1,7 +1,7 @@
 // 롤코 선로 GL 층(열차 캔버스, 열차 아래): 방향마다 노선색 레일 두 줄 · 상자 거더 · 침목 · 흰 기둥. 조각은 지도 좌표로 한 번 짓고 줌마다 다시 짓지 않는다.
 // 다른 화면 파일을 import 하지 않는다: 언덕 계산(coasterAt · coasterProfile …) · 지도 · 노선 자료는 본체가 넘기고, 바뀌는 값은 isCoaster · getSelected 로 읽는다.
-import {SEOUL_COASTER_STYLE as COASTER_STYLE,trackMetrics,zoomFade} from '../../lib/coaster_style_seoul.mjs';
-import CITY_STYLE from '../../lib/city_style_seoul.mjs';
+import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mjs'; import { trackMetrics, zoomFade } from './metrics.mjs';
+import CITY_STYLE from '../basic/city.mjs';
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 // 메시 · 셰이더(coaster_track_mesh)는 본체가 직접 import 해서 넘긴다: 여기서 import 하면 이 파일을 받은 뒤에야 요청해 첫 화면 요청이 한 단계 늦어진다
 export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS,map,maplibregl,HOME,paths,byId,colors,geom,coasterProfile,coasterAt,coasterRises,loopD,corkOf,rolled,CORK_HEART,edgeOffset,hexRGB,coasterBodyPx,cityViaduct,PHONE,trainFrameSoon,isCoaster,getSelected}){

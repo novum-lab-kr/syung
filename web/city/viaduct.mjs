@@ -27,7 +27,7 @@
 // footprints in metres with a px floor so they never vanish. Zoomed out, where no cars drive, the deck is slimmer than
 // the trains, which overhang it as they overhang the route line in the other modes.
 
-import SEOUL from '../lib/city_style_seoul.mjs';
+import SEOUL from '../modes/basic/city.mjs';
 import FLAGS from './viaduct_flags.mjs';
 import SNAP from './viaduct_snap.mjs';
 import { toneRGB, hexRgb, MPP } from './style.mjs';

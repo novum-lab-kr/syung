@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND, INST_STRIDES } from '../web/city/mesh.mjs';
-import { SEOUL_CITY_STYLE } from '../web/lib/city_style_seoul.mjs';
+import { SEOUL_CITY_STYLE } from '../web/modes/basic/city.mjs';
 
 const P = resolvePack(SEOUL_CITY_STYLE), Z = 14, TX = 13975, TY = 6346, E = 4096, N = 2 ** Z;
 const UPM = E * N / (40075016.685578488 * Math.cos(37.54 * Math.PI / 180));   // tile units a metre here
@@ -61,7 +61,7 @@ test('간판: 상가 건물에만, 휴대폰에서는 창 간판 없이 줄어�
 
 // 조선 모드 (web/modes/joseon/hanok.mjs): the Joseon pack builds every footprint as 기와집
 test('조선: 낮은 건물은 초가 · 기와집, 높은 건물은 높이 그대로 한옥 고층, 큰 땅은 담장 두른 단지 — 모든 면이 바깥을 향한다', async () => {
-  const { JOSEON_CITY_STYLE } = await import('../web/lib/city_style_joseon.mjs');
+  const { JOSEON_CITY_STYLE } = await import('./joseon_pack.mjs');
   const { hanokLayout, houseWings } = await import('../web/modes/joseon/hanok.mjs');
   const J = resolvePack(JOSEON_CITY_STYLE), K = J.hanok;
   const rect = (cx, cy, hx, hy) => [{ x: cx - hx, y: cy - hy }, { x: cx + hx, y: cy - hy }, { x: cx + hx, y: cy + hy }, { x: cx - hx, y: cy + hy }, { x: cx - hx, y: cy - hy }];
@@ -87,7 +87,7 @@ test('조선: 낮은 건물은 초가 · 기와집, 높은 건물은 높이 그�
 });
 
 test('조선: 타일 경계에 걸친 건물의 집은 중심이 든 타일 한 곳에서만 그린다', async () => {
-  const { JOSEON_CITY_STYLE } = await import('../web/lib/city_style_joseon.mjs');
+  const { JOSEON_CITY_STYLE } = await import('./joseon_pack.mjs');
   const H0 = JOSEON_CITY_STYLE.hanok, J = resolvePack({ ...JOSEON_CITY_STYLE, hanok: { ...H0, emptyShare: 0, compound: { ...H0.compound, stoneShare: 0 }, thatch: { ...H0.thatch, byLanduse: { unknown: 0 } } } }), half = 30 * UPM;   // nothing left to chance (open yards, 돌담, 초가): the whole block's seed (its own lowest vertex) differs from the cut halves'
   // the same 60 × 40 m block in two neighbouring tiles' coordinates (straddling x = E), as both tiles hold it
   const ring = ox => [{ x: E - half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 - 20 * UPM }];

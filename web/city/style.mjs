@@ -1,7 +1,7 @@
 // 심시티 지면 — the miniature city's ground, on the MapLibre basemap: zone floors by landuse class, roads
 // by class with pavements, lane marks and centre lines close up, rail ballast, paths and plazas.
 //
-// Everything that is a colour, a width or a zoom comes from a style pack (city_style_seoul.mjs is the
+// Everything that is a colour, a width or a zoom comes from a style pack (web/modes/basic/city.mjs is the
 // one pack for now); this module turns the pack into MapLibre layer definitions, paint and a palette,
 // and the runtime applies them where it already builds its basemap:
 //
@@ -13,7 +13,7 @@
 // In coaster mode the ground is the same city, toned down (spec §7: luma mix in linear light, then a
 // touch darker) so the rides and the trains stand out against it.
 
-import SEOUL from '../lib/city_style_seoul.mjs';
+import SEOUL from '../modes/basic/city.mjs';
 
 const EARTH = 40075016.685578488, LAT = 37.5;   // the map is Seoul: one latitude for the metre→pixel scale of the whole style
 export const MPP = z => EARTH * Math.cos(LAT * Math.PI / 180) / (512 * 2 ** z);   // metres a CSS px at zoom z (512 px tiles, as MapLibre counts zoom)

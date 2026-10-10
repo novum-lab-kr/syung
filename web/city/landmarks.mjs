@@ -32,7 +32,7 @@ function planPoint(L, r, k, phi) {
 
 // 탑 하나의 메시(지역 미터, 탑 가운데 기준 · 회전 전): Float32Array. look: 'tower'(유리 탑) · 'wood-tower'(나무 · 회벽 · 기와 처마 — 모드 설정 city.landmarks)
 export function buildTower(L, { look = 'tower' } = {}) {
-  const joseon = look === 'wood-tower';
+  const wood = look === 'wood-tower';   // 나무 탑(조선): 나무 기둥 · 회벽 · 기와 처마
   const d = [], H = L.height, C = L.crown, P = L.profile;
   const push = (p, n, s, kind, w = 0) => d.push(p[0], p[1], p[2], n[0], n[1], n[2], s, kind, w);
   const quad = (a, b, c, e, n, s, kind) => { for (const [p, q] of [[a, s[0]], [b, s[1]], [c, s[2]], [a, s[0]], [c, s[2]], [e, s[3]]]) push(p, n, q, kind) };
@@ -77,7 +77,7 @@ export function buildTower(L, { look = 'tower' } = {}) {
     for (let i = 0; i < top.length; i++) { const a = top[i], b = top[(i + 1) % top.length]; push([cx, cy, H], [0, 0, 1], 0, 2); push(a, [0, 0, 1], 0, 2); push(b, [0, 0, 1], 0, 2) }
   }
   // 조선: 다섯 층(약 21 m)마다 기와 처마. 벽에서 밖으로 내밀며 내려가고, 모서리(솔기 · 다른 대각)는 들린다
-  if (joseon) {
+  if (wood) {
     for (let h = 34; h < C.splitM - 20; h += 42) {   // 열 층(약 42 m)마다, 위로 갈수록 짧게(촘촘한 고리는 훌라후프처럼 보였다: Codex 검토)
       const [r] = profileAt(P, h), out = Math.max(1.8, r * .1) * (1 - .45 * h / H), drop = out * .6, lo = ring(h, 0);
       const outer = lo.map(p => { const l = Math.hypot(p[0], p[1]) || 1, corner = Math.abs(Math.cos(2 * p[3] * 2 * Math.PI)) ** 8; return [p[0] + p[0] / l * out * (1 + .5 * corner), p[1] + p[1] / l * out * (1 + .5 * corner), h - drop + corner * drop * 1.6, p[3]] });
@@ -103,7 +103,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu, 1.);
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_n; in vec3 v_p; in vec3 v_m; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night, u_joseon, u_split, u_lattice, u_H;
+precision highp float; in vec3 v_n; in vec3 v_p; in vec3 v_m; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night, u_woodTower, u_split, u_lattice, u_H;
 uniform vec3 u_glass, u_frame, u_seamC, u_crownC, u_wood, u_plaster, u_giwa, u_gold, u_win;
 out vec4 o;
 float pint(float x,float a,float b){float f=floor(x),r=x-f;return f*(b-a)+clamp(r-a,0.0,b-a);}
@@ -118,8 +118,8 @@ void main(){
     float g = pulse(s * 220., 0., .35, ws * 220.);
     col = u_giwa * (1. - .25 * g) * light; if (v_m.z > .9) col = mix(col, vec3(.9, .88, .82) * light, .7);
   } else if (kind > 1.5) {   // 윗면
-    col = (u_joseon > .5 ? u_gold : u_frame * .9) * light;
-  } else if (u_joseon > .5) {   // 조선 몸: 나무 기둥(둘레 몫 1/48) · 층 보(4.2 m) · 회벽, 창호 불빛(밤)
+    col = (u_woodTower > .5 ? u_gold : u_frame * .9) * light;
+  } else if (u_woodTower > .5) {   // 조선 몸: 나무 기둥(둘레 몫 1/48) · 층 보(4.2 m) · 회벽, 창호 불빛(밤)
     float post = pulse(s * 48., 0., .14, ws * 48.), beam = pulse(z / 4.2, 0., .12, wz / 4.2);
     vec2 cell = vec2(floor(s * 48.), floor(z / 4.2));
     bool lit = u_night > .5 && hash(cell) < .35;
@@ -144,7 +144,7 @@ void main(){
       col = mix(col, c2, cr);
     }
   }
-  if (kind > .5 && kind < 1.5) col = (u_joseon > .5 ? u_wood * .5 : u_crownC * .55) * light * (u_night > .5 && u_joseon < .5 ? 2.2 : 1.);   // 두 갈래 사이 안쪽 면
+  if (kind > .5 && kind < 1.5) col = (u_woodTower > .5 ? u_wood * .5 : u_crownC * .55) * light * (u_night > .5 && u_woodTower < .5 ? 2.2 : 1.);   // 두 갈래 사이 안쪽 면
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 const hex = h => { const v = parseInt(h.slice(1), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
@@ -157,7 +157,7 @@ export class CityLandmarks {
   constructor() { this.gl = null; this.items = null; this.broken = false; this.MT = new Float32Array(16) }
   init(gl) {
     this.gl = gl; this.p = compileProgram(gl, VS, FS);
-    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_joseon', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_woodTower', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.items = LANDMARKS.map(L => { const [x, y] = toM(L.lngLat[0], L.lngLat[1]), a = L.seamDeg * Math.PI / 180; return { L, x, y, rot: [Math.cos(a), Math.sin(a)], meshes: {} } });
   }
   mesh(it, look) {
@@ -173,13 +173,13 @@ export class CityLandmarks {
     catch (e) { this.broken = true; console.error('city-landmarks: off —', e) }
   }
   _render(gl, matrix, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36] }) {
-    const joseon = look === 'wood-tower';
+    const wood = look === 'wood-tower';   // 나무 탑(조선): 나무 기둥 · 회벽 · 기와 처마
     if (zoom < 11) return;
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const az = (sun?.azimuth ?? 225) * Math.PI / 180, el = Math.max(sun?.elevation ?? 42, 12) * Math.PI / 180, C = LOOK[dark ? 'dark' : 'light'], u = this.u;
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix, false, MT); gl.uniform1f(u.u_mu, MU);
     gl.uniform3f(u.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2fv(u.u_lit, lit);
-    gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform1f(u.u_joseon, joseon ? 1 : 0);
+    gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform1f(u.u_woodTower, wood ? 1 : 0);
     for (const k of ['glass', 'frame', 'seamC', 'crownC', 'win', 'wood', 'plaster', 'giwa', 'gold']) gl.uniform3fv(u['u_' + k], hex(C[k]));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     for (const it of this.items) {

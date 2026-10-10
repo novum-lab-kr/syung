@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { CityViaduct, toLL } from '../web/city/viaduct.mjs';
 import SNAP, { stops as SNAP_STOPS } from '../web/city/viaduct_snap.mjs';
-import pack from '../web/lib/city_style_seoul.mjs';
+import pack from '../web/modes/basic/city.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), args = process.argv.slice(2), OUT = args[args.indexOf('--out') + 1] || null;
 const TS = JSON.parse(readFileSync(path.join(ROOT, 'data', 'osm-tracks', 'track_shapes.json'), 'utf8')), shapes = TS.edges;

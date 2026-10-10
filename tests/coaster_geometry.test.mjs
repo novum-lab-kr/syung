@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { distanceGrid, trackMetrics } from '../web/lib/coaster_style_seoul.mjs';
+import { distanceGrid, trackMetrics } from '../web/modes/coaster/metrics.mjs';
 import { buildCoasterTrackMesh } from '../web/modes/coaster/track_mesh.mjs';
 
 test('track ties stay on the same edge grid across chunk and LOD boundaries',()=>{

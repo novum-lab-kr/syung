@@ -1,4 +1,4 @@
-import { SEOUL_COASTER_STYLE as STYLE } from '../../lib/coaster_style_seoul.mjs';
+import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs';
 
 // Existing 22-float track format. Negative red selects a uniform material:
 // 1 supports, 2 ties, 3 spine, 4 V brackets, 5 concrete feet, 6 girder sides (green: the line colour packed 0xRRGGBB),

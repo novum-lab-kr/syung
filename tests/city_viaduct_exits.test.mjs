@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stairProfile, stairHeightAt, layoutExits, buildExits, exitSamples } from '../web/city/viaduct_exits.mjs';
 import { STRIDE, MAT, platformEdgeM } from '../web/city/viaduct.mjs';
-import SEOUL from '../web/lib/city_style_seoul.mjs';
+import SEOUL from '../web/modes/basic/city.mjs';
 
 const V = SEOUL.viaduct, X = V.exits, P = { L: 160, H: 190, eoM: 0, Wfar: 23.4, W: 11.4, W2: 10.9, top: 11.3 };
 const mats = d => { const s = new Set(); for (let i = 17; i < d.length; i += STRIDE) s.add(d[i]); return s };

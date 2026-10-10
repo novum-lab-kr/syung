@@ -8,7 +8,7 @@ import {TileBuilder,resolvePack} from '../web/city/mesh.mjs';
 test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 다른 것은 거부', async () => {
   assert.equal(hasCityPart('hanok'),false);
   assert.throws(()=>cityPart('hanok'),/hanok 없음/);
-  const {JOSEON_CITY_STYLE}=await import('../web/lib/city_style_joseon.mjs');
+  const {JOSEON_CITY_STYLE}=await import('./joseon_pack.mjs');
   // (tests/city_mesh.test.mjs 와 같은 타일 · 도우미)
   const Z=14,TX=13975,TY=6346,E=4096,N=2**Z,UPM=E*N/(40075016.685578488*Math.cos(37.54*Math.PI/180));
   const r=(cx,cy,hx,hy)=>[{x:cx-hx,y:cy-hy},{x:cx+hx,y:cy-hy},{x:cx+hx,y:cy+hy},{x:cx-hx,y:cy+hy},{x:cx-hx,y:cy-hy}];

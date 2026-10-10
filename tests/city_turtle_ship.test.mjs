@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildShip, buildBoat, buildFlag, lineLabel, hullHalf, gunwale } from '../web/modes/joseon/turtle_ship.mjs';
-import JOSEON from '../web/lib/city_style_joseon.mjs';
-import SEOUL from '../web/lib/city_style_seoul.mjs';
+import JOSEON from './joseon_pack.mjs';
+import SEOUL from '../web/modes/basic/city.mjs';
 
 test('거북선 메시: 단계마다 유한한 꼭짓점, 자세할수록 많고, 삼각형 단위', () => {
   const n = [0, 1, 2].map(l => { const d = buildShip(l); assert.ok(d.every(Number.isFinite)); assert.equal(d.length % 27, 0); return d.length / 9 });

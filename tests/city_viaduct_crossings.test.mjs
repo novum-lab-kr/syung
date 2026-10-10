@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CityViaduct, toLL, ribbonRows } from '../web/city/viaduct.mjs';
 import { edgeOverlaps, edgeProfile, levelHeight } from '../web/city/viaduct_levels.mjs';
 import { MU, MERC_ORIGIN as O } from '../web/city/life.mjs';
-import SEOUL from '../web/lib/city_style_seoul.mjs';
+import SEOUL from '../web/modes/basic/city.mjs';
 
 const Lv = SEOUL.viaduct.levels, step = Lv.stepM;
 const merc = (x, y) => ({ x: O.x + x * MU, y: O.y + y * MU });   // local metres → mercator, as the runtime's geometry

@@ -22,10 +22,10 @@ test('합치기: 묶음은 안쪽까지, 값 · 목록은 통째로, null 은 �
   assert.deepEqual(Object.keys(mergeSettings({x:1,y:2},{z:3,x:4})),['x','y','z'],'키 차례: 기본 차례 그대로, 새 키는 뒤에');
 });
 
-test('합치기 결과가 옛 city_style_joseon 의 merge 와 같다', async () => {
+test('합치기 결과가 옛 city_style_joseon(3529628)의 merge 와 같다', async () => {
   const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v);
   const old=(a,b)=>{const o={...a};for(const [k,v] of Object.entries(b))o[k]=isObj(v)&&isObj(a?.[k])?old(a[k],v):v;return o};
-  const {default:SEOUL}=await import('../web/lib/city_style_seoul.mjs');
+  const {default:SEOUL}=await import('../web/modes/basic/city.mjs');
   const delta={id:'j',ground:{light:{base:'#000'}},hanok:{tall:{towerMinH:15}},xray:null,roads:{widths:[1,2]}};
   assert.equal(JSON.stringify(mergeSettings(SEOUL,delta)),JSON.stringify(old(SEOUL,delta)));
 });
@@ -176,9 +176,7 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
   // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준
   assert.equal(sha(CITY),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
   assert.equal(sha(R.settings('joseon').city.pack),'bfff1bde33e8bdc34ac76e34f626baba8488e7c15b808a3e32559fcd35393c2f');
-  const {default:OLD_NAME}=await import('../web/lib/city_style_seoul.mjs'),{default:J_COMPAT}=await import('../web/lib/city_style_joseon.mjs');
-  assert.equal(OLD_NAME,CITY,'호환 이름은 같은 객체');
-  assert.equal(sha(J_COMPAT),sha(R.settings('joseon').city.pack));
+  const {JOSEON_CITY_STYLE:J_TEST}=await import('./joseon_pack.mjs');assert.equal(sha(J_TEST),sha(R.settings('joseon').city.pack),'시험용 조선 팩도 같은 값');
   for(const id of ['basic','simcity','coaster'])assert.equal(R.settings(id).city.pack,CITY,`${id} 도시 팩 = 원본 그대로`);
   assert.equal(R.settings('joseon',{themeChoice:'dark'}).city.pack,R.settings('joseon').city.pack,'테마가 바뀌어도 조선 팩 참조 그대로');
   assert.ok(Object.isFrozen(CITY.viaduct));
@@ -192,13 +190,12 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{pack:CITY}}},{id:'j',settings:{city:{pack:{ground:{light:{base:'#12'}}}}}}]),/색이 아님/,'모드 덧쓰기도 합친 뒤 검사');
 });
 
-test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켜고, 호환 이름 · 계산 함수는 같은 것', async () => {
+test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켠다', async () => {
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
   const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
   const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mjs');
   assert.equal(sha(PARK),'31c26c9c23d4bc944e8b81a65e082b85aea67ed6cc00c58247f2748dc70512aa');
-  const old=await import('../web/lib/coaster_style_seoul.mjs'),M=await import('../web/modes/coaster/metrics.mjs');
-  assert.equal(old.SEOUL_COASTER_STYLE,PARK);assert.equal(old.trackMetrics,M.trackMetrics);assert.equal(old.ridePalette,M.ridePalette);
+  const M=await import('../web/modes/coaster/metrics.mjs');assert.equal(typeof M.trackMetrics,'function');assert.deepEqual(M.ridePalette(false),M.ridePalette(false,PARK),'계산 함수의 기본 자료 = 기본 공원 자료');
   for(const id of ['basic','simcity','joseon'])assert.equal(R.settings(id).park.enabled,false,id);
   assert.equal(R.settings('coaster').park.enabled,true);assert.equal(R.settings('coaster').park.style,PARK);assert.equal(R.settings('coaster').park.towerM,150);
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:0,style:{}}}}]),/towerM/);

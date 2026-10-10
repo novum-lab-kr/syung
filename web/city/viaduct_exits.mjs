@@ -9,7 +9,7 @@
 // Geometry is laid out in the platform's frame (t along its axis from its centre, u across; metres), with the ends
 // that hang off the platform anchored to its px-sized edge (the shader adds the px parts), so the stairs stay attached
 // at every zoom. Pure functions; the tests use them.
-import SEOUL from '../lib/city_style_seoul.mjs';
+import SEOUL from '../modes/basic/city.mjs';
 import { pointSegmentDistance } from './viaduct_levels.mjs';
 import { Mesh, MAT } from './viaduct_mesh.mjs';
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CityViaduct, trainMetrics, deckWidths, ribbonRows, rowAt, pierSpots, elevatedAt, routeOpacityExpr, buildDeck, buildPiers, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mjs';
 import FLAGS from '../web/city/viaduct_flags.mjs';
-import SEOUL from '../web/lib/city_style_seoul.mjs';
+import SEOUL from '../web/modes/basic/city.mjs';
 
 const V = SEOUL.viaduct;
 test('shared map picking projects elevated points in CSS pixels without map.transform',()=>{

@@ -1,5 +1,5 @@
 // 기본 모드의 공원 자료(롤코가 켠다 — web/modes/coaster/index.mjs). 데이터뿐: 계산 함수는 web/modes/coaster/metrics.mjs.
-// 옛 경로 web/lib/coaster_style_seoul.mjs 는 호환 이름(값 · 키 차례 그대로 옮김).
+// (옛 web/lib/coaster_style_seoul.mjs 에서 값 · 키 차례 그대로 옮김)
 // 서울 하늘 유원지. M = map metres; Px = CSS pixels before device pixel ratio.
 // Route colours stay in the live network's colors[line], never in this pack.
 export const PARK_DEFAULTS = {

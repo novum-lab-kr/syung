@@ -1,4 +1,4 @@
-// 기본 모드의 도시 팩(모든 모드의 원본, 심시티 · 롤코가 그대로 쓰고 조선은 다른 것만 덧쓴다 — web/modes/joseon/style.mjs). 옛 경로 web/lib/city_style_seoul.mjs 는 호환 이름.
+// 기본 모드의 도시 팩(모든 모드의 원본, 심시티 · 롤코가 그대로 쓰고 조선은 다른 것만 덧쓴다 — web/modes/joseon/style.mjs). (옛 web/lib/city_style_seoul.mjs)
 // Seoul miniature-city art direction. All dimensions are world metres unless suffixed Px.
 // 2026-10-03 QA1: SC4 material families, daylight contrast, roof mosaics and office emission contract.
 // Data only. Existing fields remain compatible; implementationContract lists NEW fields needing renderer binding.

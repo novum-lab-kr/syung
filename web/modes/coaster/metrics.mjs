@@ -1,5 +1,5 @@
 // 롤코 공원 치수 계산(줌 → 픽셀 굵기, 줌 사이 흐려짐, 침목 격자, 놀이기구 색 차례). 자료는 기본 공원 자료(web/modes/basic/park.mjs).
-// (web/lib/coaster_style_seoul.mjs 에서 그대로 옮김)
+// (옛 web/lib/coaster_style_seoul.mjs 에서 그대로 옮김)
 import { PARK_DEFAULTS } from '../basic/park.mjs';
 
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

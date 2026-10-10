@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assignLevels, stationLevels, holdLevels, edgeProfile, levelHeight, compareLines, segmentDistance } from '../web/city/viaduct_levels.mjs';
 import { CityViaduct, densify, ribbonRows } from '../web/city/viaduct.mjs';
-import SEOUL from '../web/lib/city_style_seoul.mjs';
+import SEOUL from '../web/modes/basic/city.mjs';
 
 const V = SEOUL.viaduct, Lv = V.levels;
 test('lines in a fixed order: numbered by number, the rest by name after them', () => {

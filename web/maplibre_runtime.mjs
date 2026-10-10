@@ -19,7 +19,6 @@ import './modes/merge.mjs';   // (모드 목록이 부르는 합치기: 같은 �
 import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mjs';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
 import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
-import './lib/city_style_seoul.mjs';   // (도시 팩 호환 이름: 공용 도시 · 버스 코드가 부른다 — 같은 단계에서 요청)
 import SIMCITY_MODE from './modes/simcity/index.mjs';
 import JOSEON_MODE from './modes/joseon/index.mjs';
 import './modes/joseon/style.mjs';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
@@ -34,7 +33,6 @@ import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes,
 import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
 import {buildPalanquinMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
-import './lib/coaster_style_seoul.mjs';   // (공원 자료 호환 이름: 롤코 · 공원 코드가 부른다 — 같은 단계에서 요청)
 import './modes/basic/park.mjs';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
 import './modes/coaster/metrics.mjs';   // (공원 치수 계산: 같은 단계에서 요청)
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './modes/coaster/track_mesh.mjs';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
@@ -285,10 +283,11 @@ const smooth=x=>x*x*(3-2*x);
 // trains ride on it; its clock can run faster (×modeCtl.speed): the trains then run ahead of the feed
 // (warp s), a show rather than where they are. Flat at each platform, a climb, then hills of ~380 m,
 // each its own height (COASTER_LOW..COASTER_H) and spacing.
-// 모드 상태(web/modes/transition.mjs): 지금 · 원하는 모드, 마지막 요청 번호, 롤코 배속 · 앞서 달린 시간의 주인. 본체는 modeOn.simcity · modeOn.joseon · modeOn.coaster 로 읽는다
+// 모드 상태(web/modes/transition.mjs): 지금 · 원하는 모드, 마지막 요청 번호, 롤코 배속 · 앞서 달린 시간의 주인. 본체는 모드 이름 대신 지금 모드 설정(modeCtl.settings())을 묻는다 — modeOn 은 점검 창구(window.__subwayWebGL)의 simcity · joseon · coaster 용
 // (심시티 모드: the miniature city — the coaster mode keeps its rides on the same city; 조선 모드: 심시티 (modeOn.simcity stays true: the viaduct,
 // the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집). 전환은 아래 '모드 전환'(prepareMode · commitMode).
-const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),commit:(prev,next,o)=>commitMode(prev,next,o),onRequest:showModeButtons,onFail:showModeButtons});
+const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:showModeButtons,onFail:showModeButtons,
+  commit:(prev,next,o)=>{commitMode(prev,next,o);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}});   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
 // city-build: the miniature city's buildings (web/city/buildings.mjs): a custom layer under the station names (so names and
@@ -525,7 +524,7 @@ map.on('load',()=>{
   registerTransitLayers({map,shapesReady,buildLineFeatures,buildStationFeatures,basicRouteCache,rebuildLabels,stationNames,STATION_WIDTH_STOPS,PHONE,signCollisionLayout,live:{get track(){return modeCtl.settings().track}}});   // 노선 · 승강장 · 역 이름표 자리(web/map/layers.mjs)
   // trains: their own canvas over the map (see TRAIN_FPS) — web/map/overlay.mjs
   createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,RIDE_H,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,
-    live:{get CoasterRidePlacement(){return CoasterRidePlacement},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get joseon(){return modeOn.joseon},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
+    live:{get CoasterRidePlacement(){return CoasterRidePlacement},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
   registerLocationLayers({map,geolocate,live:{get myLocation(){return myLocation},set myLocation(v){myLocation=v}}});   // 내 위치 점
   map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else closeSheet()});   // bus: 누른 버스는 따라간다   // bus: subway picking keeps priority
   map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
@@ -674,9 +673,9 @@ function commitMode(prev,next,{speed}={}){
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function applyCoaster(on,speed){
   if(!on)stopRide(false);   // 롤코를 끄면 1인칭에서도 내려요(옛 상태를 읽을 수 있는 동안)
-  if(on&&modeOn.simcity){modeCtl.enter('basic');$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}
+  if(on&&modeCtl.current!=='basic'&&modeCtl.current!=='coaster'){modeCtl.enter('basic');$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false')}
   if(on)cityMap();
-  const was=modeOn.coaster;modeCtl.enter(on?'coaster':'basic');modeCtl.setSpeed(on?speed:1);
+  const was=modeCtl.current==='coaster';modeCtl.enter(on?'coaster':'basic');modeCtl.setSpeed(on?speed:1);
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===modeCtl.speed));
   $('speedNote').textContent=modeCtl.speed>1?'실제보다 앞서 달려요':'실시간';
