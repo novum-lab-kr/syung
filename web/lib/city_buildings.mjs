@@ -16,7 +16,7 @@
 // landuse); pass opts.classify to override it when real use data arrives.
 //
 //   const city=new CityBuildings({phone});  map.addLayer(city,'station-names');
-//   city.set({on:true,mode:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});
+//   city.set({on:true,tone:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});   // tone: 팩의 modes 항목(모드 설정 city.tone)
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
 import { skirtTemplate, roofTemplate, boxTemplate, POSTS } from './city_hanok.mjs';
@@ -540,7 +540,7 @@ export class CityBuildings {
   constructor(opts = {}) {
     this.id = 'city-buildings'; this.type = 'custom'; this.renderingMode = '3d';
     this.opts = opts; this.phone = !!opts.phone; this.P = resolvePack(opts.stylePack || SEOUL_CITY_STYLE);
-    this.on = false; this.mode = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
+    this.on = false; this.tone = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
     this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
     this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/lib/city_worker.mjs (a classify function cannot cross into one: main thread then)
@@ -550,10 +550,10 @@ export class CityBuildings {
   }
   onAdd(map, gl) { this.map = map; this.gl = gl }   // (programs compiled on first draw: the city may never be switched on — 2026-10-10 첫 화면이 늦게 떴다)
   onRemove(map, gl) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
-  // on/off, 'simcity' | 'coaster', 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
+  // on/off, tone 'simcity' | 'coaster'(팩의 modes 항목), 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
   set(o) {
     if (o.pack && o.pack !== this.P.pack) this.setPack(o.pack);
-    if (o.on != null) this.on = o.on; if (o.mode) this.mode = o.mode; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight;
+    if (o.on != null) this.on = o.on; if (o.tone) this.tone = o.tone; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight;
     this.palette = null; this.map?.triggerRepaint();
   }
   // another style pack (조선 모드 ↔ 심시티): every tile built again with it; a build already in a worker comes back to no tile and is dropped
@@ -723,7 +723,7 @@ export class CityBuildings {
   free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   paletteFor() {
-    const P = this.P, th = this.theme, mode = P.modes[this.mode] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
+    const P = this.P, th = this.theme, mode = P.modes[this.tone] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
     const L = h => { const c = hexRGB(h).map(v => v ** 2.2), Y = c[0] * lw[0] + c[1] * lw[1] + c[2] * lw[2]; return c.map(v => (Y + (v - Y) * sat) * bri) };
     const pick = o => o && (o[th] || o.light);
     // material slots: wall, glass (the family's; a legacy type slot takes the type's glass, else the default), facade

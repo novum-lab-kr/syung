@@ -7,8 +7,8 @@
 //
 //   import {addCityLayers, applyCityStyle, cityPalette} from './lib/city_style.mjs';
 //   addCityLayers(map, {pack});                                   // once, at the end of addBasemap()
-//   Object.assign(palette, cityPalette(theme, {pack, coaster}));  // in mapPalette(), simcity or coaster
-//   applyCityStyle(map, {on, theme, coaster, mapOn, pack});       // in applyTheme() and the map toggle
+//   Object.assign(palette, cityPalette(theme, {pack, tone}));  // in mapPalette() — tone: 팩의 modes 항목 이름(모드 설정 city.tone: simcity · coaster)
+//   applyCityStyle(map, {on, theme, tone, mapOn, pack});       // in applyTheme() and the map toggle
 //
 // In coaster mode the ground is the same city, toned down (spec §7: luma mix in linear light, then a
 // touch darker) so the rides and the trains stand out against it.
@@ -142,9 +142,9 @@ export function addCityLayers(map, { pack = SEOUL } = {}) {
 // Show the city ground (on && mapOn) in this theme and mode, or hide it and give the stock roads back.
 // The stock road layers stay 'visible' at opacity 0 while the city is on: other code reads their
 // visibility as "the background map is on".
-export function applyCityStyle(map, { on = false, theme = 'light', coaster = false, mapOn = true, pack = SEOUL, ride = false } = {}) {
+export function applyCityStyle(map, { on = false, theme = 'light', tone = 'simcity', mapOn = true, pack = SEOUL, ride = false } = {}) {
   if (!map.getLayer || !map.getLayer(CITY_LAYER_IDS[0])) return false;
-  const show = on && mapOn, mode = coaster ? 'coaster' : 'simcity';
+  const show = on && mapOn, mode = tone;
   for (const { layer } of cityLayers({ pack, theme, mode, ride })) {
     if (!map.getLayer(layer.id)) continue;
     map.setLayoutProperty(layer.id, 'visibility', show ? 'visible' : 'none');
@@ -202,8 +202,8 @@ export function applyGroundTexture(map, { on = false, theme = 'light', pack = SE
 
 // The palette keys the runtime's mapPalette() hands to its stock layers, from the pack: the background,
 // water, parks, the landcover (wood and grass apart), footprints, rails, and the shadow / light values.
-export function cityPalette(theme = 'light', { pack = SEOUL, coaster = false, ride = false } = {}) {
-  const mode = coaster ? 'coaster' : 'simcity', t = h => tone(h, pack, mode, theme), G = { ...(pack.ground[theme] || pack.ground.light), ...(ride ? pack.ground.ride?.[theme] : null) }, R = pack.roads.classes;
+export function cityPalette(theme = 'light', { pack = SEOUL, tone: mode = 'simcity', ride = false } = {}) {
+  const t = h => tone(h, pack, mode, theme), G = { ...(pack.ground[theme] || pack.ground.light), ...(ride ? pack.ground.ride?.[theme] : null) }, R = pack.roads.classes;
   const ink = theme === 'dark' ? '#ffffff' : '#000000';
   return {
     bg: t(G.base), water: t(G.water), park: t(G.park),

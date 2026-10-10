@@ -16,7 +16,8 @@ export default {
     map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', towersAsRides: false, verticalGradient: true },
     // 미니어처 도시(색 · 치수 · 줌 팩): 심시티 · 롤코는 이 팩 그대로(같은 참조), 조선은 덧쓴다. groundTexture: 땅에 흙 질감(팩의 ground.texture)
     // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
-    city: { enabled: false, groundTexture: false, xray: false, pack: CITY_PACK },
+    // tone: 팩의 modes 항목 이름(땅 · 건물 · 사람의 채도 · 밝기 · 그림자), lampPool: 가로등 빛 웅덩이 배수(null 이면 그 tone 의 lampPool)
+    city: { enabled: false, groundTexture: false, xray: false, tone: 'simcity', lampPool: 1.4, pack: CITY_PACK },
     // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료, towerM 이상 건물은 놀이기구
     park: { enabled: false, towerM: 150, style: PARK_DEFAULTS },
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),

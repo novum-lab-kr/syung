@@ -10,7 +10,8 @@
 // hash of its rounded position decides its look. Every colour, metre and zoom comes from the style pack.
 //
 //   const life = new CityLife({pack}); life.init(gl, maplibregl, map);
-//   life.render(gl, matrix, {now, zoom, pitch, bearing, dark, coaster, people, phone, reducedMotion, pixelRatio, bounds, mapOn, moving, sun});
+//   life.render(gl, matrix, {now, zoom, pitch, bearing, dark, tone, lampPool, people, phone, reducedMotion, pixelRatio, bounds, mapOn, moving, sun});
+//   tone: 팩의 modes 항목(모드 설정 city.tone), lampPool: 가로등 빛 웅덩이 배수(모드 설정 city.lampPool, null 이면 그 tone 의 lampPool)
 //   life.animating(); life.dispose(gl);
 //   people: both city modes draw them (the same figures on the same pavements; the mode only tones their colours); false hides them.
 
@@ -446,7 +447,7 @@ export class CityLife {
     try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
   }
   _render(gl, matrix, opts) {
-    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, coaster = false, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
+    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
     const look = opts.look || this.pack, era = !!look.hanok;   // look: the mode's pack for the lamps' look; 조선 (its hanok): torches, no cars, no zebra crossings
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
@@ -472,7 +473,7 @@ export class CityLife {
     const stillBuilding = [...this.cells.values()].some(c => c.state === 'building' || (c.state === 'pending' && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3]))), waiting = [...this.cells.values()].filter(c => c.state === 'pending').length;   // building: the view still lacks props (being built, or its tile not here yet); waiting: cells (in view or not) without their tile
     // the frame's matrix (the local origin folded in, in double precision) and lighting
     const MT = this.M; MT.set(matrix); for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
-    const theme = dark ? 'dark' : 'light', mode = coaster ? 'coaster' : 'simcity', Lg = pack.lighting[theme], ref = pack.lighting.referenceSun;
+    const theme = dark ? 'dark' : 'light', mode = pack.modes[tone] ? tone : 'simcity', Lg = pack.lighting[theme], ref = pack.lighting.referenceSun;
     const az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
     const light = [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit = [Lg.ambient, Lg.directional], tint = hexRgb(Lg.color);
     const col = h => { const c = toneRGB(hexRgb(h), pack, mode, theme); return [c[0] * tint[0], c[1] * tint[1], c[2] * tint[2]] };
@@ -540,7 +541,7 @@ export class CityLife {
         gl.bindVertexArray(this.vaQ); for (const [c, a, n] of draws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.cross.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) } }
     }
     if (dark && lampDraws.length) {
-      const LM = look.props.lamps, keep = phone ? .5 : 1.01, pool = Math.min(LM.poolOpacity * (coaster ? pack.modes.coaster.lampPool : 1.4), LM.simcityPoolMaxOpacity), glow = hexRgb(LM.light);
+      const LM = look.props.lamps, keep = phone ? .5 : 1.01, pool = Math.min(LM.poolOpacity * (lampPool ?? pack.modes[mode].lampPool), LM.simcityPoolMaxOpacity), glow = hexRgb(LM.light);
       gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadeLamp); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * 1.6);
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
       gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }

@@ -52,6 +52,12 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     const oneOf = (v, list, path) => { if (v !== undefined && !list.includes(v)) throw new Error(`${path}: 허용되지 않는 값 ${v}`) };
     oneOf(S.map?.paletteKind, ['base', 'city', 'park-city'], `${id}.map.paletteKind`); oneOf(S.sun?.light, ['map', 'park'], `${id}.sun.light`);
     oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.trains?.look, ['commuter', 'fleet', 'coaster88'], `${id}.trains.look`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
+    if (S.city && 'tone' in S.city) {   // 톤: 팩 modes 의 진짜 톤 항목(채도 · 밝기가 있는 묶음 — colorMath · transitionMs 는 아님)
+      const T = S.city.tone, M = S.city.pack?.modes, e = typeof T === 'string' && M && Object.hasOwn(M, T) ? M[T] : null;
+      if (!e || typeof e !== 'object' || Array.isArray(e) || !('saturation' in e || 'brightness' in e)) throw new Error(`${id}.city.tone: 팩 modes 에 없는 톤 ${T}`);
+      if (S.city.lampPool == null && !(typeof e.lampPool === 'number' && e.lampPool > 0)) throw new Error(`${id}.city.lampPool: null 이면 톤의 lampPool 이 0 보다 큰 수여야 — ${e.lampPool}`);
+    }
+    if (S.city && S.city.lampPool != null && !(typeof S.city.lampPool === 'number' && S.city.lampPool > 0)) throw new Error(`${id}.city.lampPool: 0 보다 큰 수 또는 null — ${S.city.lampPool}`);
     if (S.trains && 'predictStops' in S.trains && !(Number.isInteger(S.trains.predictStops) && S.trains.predictStops >= 1)) throw new Error(`${id}.trains.predictStops: 1 이상 정수`);
     for (const [g, k] of [['map', 'towersAsRides'], ['map', 'verticalGradient'], ['city', 'groundTexture'], ['city', 'xray'], ['trains', 'timeWarp']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
     if (S.sun && S.sun.lowHouseM != null && !(typeof S.sun.lowHouseM === 'number' && S.sun.lowHouseM > 0)) throw new Error(`${id}.sun.lowHouseM: 0 보다 큰 수 또는 null`);

@@ -9,10 +9,10 @@ export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,app
   const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
   const THEME_KEY='subway-theme';
   // 섞는 차례는 지금 모드 설정의 map.paletteKind: base(바탕) · city(+도시 땅) · park-city(+공원 색, 마지막에 도시 땅)
-  const mapPalette=(t=effectiveTheme())=>{const S=live.settings,P={...S.map.themes[t],...(mapColor==='color'?S.map.colors[t]:{})};if(S.map.paletteKind!=='park-city')return S.map.paletteKind==='city'?{...P,...cityPalette(t,{pack:S.city.pack})}:P;   // city-life: 심시티 — the ground from the style pack
+  const mapPalette=(t=effectiveTheme())=>{const S=live.settings,P={...S.map.themes[t],...(mapColor==='color'?S.map.colors[t]:{})};if(S.map.paletteKind!=='park-city')return S.map.paletteKind==='city'?{...P,...cityPalette(t,{pack:S.city.pack,tone:S.city.tone})}:P;   // city-life: 심시티 — the ground from the style pack
     const K=S.map.park[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
     const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
-    Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:S.city.pack,coaster:true,ride:!!rider.ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
+    Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:S.city.pack,tone:S.city.tone,ride:!!rider.ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
   let themeChoice='auto';
   try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
   // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -42,7 +42,7 @@ export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,app
     set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
     for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
     set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
-    applyCityStyle(map,{on:S.city.enabled,theme:t,coaster:live.coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:S.city.pack,ride:!!rider.ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+    applyCityStyle(map,{on:S.city.enabled,theme:t,tone:S.city.tone,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:S.city.pack,ride:!!rider.ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
     applyGroundTexture(map,{on:S.city.groundTexture&&$('toggleMap').getAttribute('aria-pressed')==='true',theme:t,pack:S.city.pack});   // 조선: 흙 질감 (packed earth instead of a flat floor)
     syncCity();   // city-build: the buildings follow the mode and theme
   }

@@ -142,6 +142,14 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   assert.deepEqual(tr('joseon'),['viaduct','straight','fleet','slim',3,false]);
   assert.deepEqual(tr('coaster'),['coaster','straight','coaster88','slim',99,true]);
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>R.settings(id).city.xray),[false,true,true,false],'x-ray: 심시티 · 조선만');
+  assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>[R.settings(id).city.tone,R.settings(id).city.lampPool]),[['simcity',1.4],['simcity',1.4],['simcity',1.4],['coaster',null]],'도시 톤 · 가로등 웅덩이(롤코는 팩 modes.coaster.lampPool)');
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{tone:'neon',pack:R.settings('basic').city.pack}}}]),/modes 에 없는/);
+  const P0=R.settings('basic').city.pack,city=c=>()=>createModeRegistry([{id:'basic',settings:{city:{tone:'simcity',lampPool:1.4,pack:P0,...c}}}]);
+  for(const t of [null,'toString','colorMath',['coaster']])assert.throws(city({tone:t}),/톤/,String(t));
+  assert.throws(city({lampPool:0}),/lampPool/);
+  assert.throws(city({tone:'coaster',lampPool:null,pack:mergeSettings(P0,{modes:{coaster:{lampPool:0}}})}),/lampPool/,'톤의 lampPool 도 검사');
+  assert.doesNotThrow(city({tone:'coaster',lampPool:null}));
+  for(const v of [0,-1,'bad',false])assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{lampPool:v}}}]),/lampPool/,`톤 없이도 ${v}`);
   assert.throws(badS({trains:{look:'tram'}}),/허용되지 않는/);assert.throws(badS({trains:{predictStops:0}}),/predictStops/);assert.throws(badS({track:{kind:'air'}}),/허용되지 않는/);
   const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mjs');
   assert.equal(B.map.themes,MAP_THEMES);assert.equal(B.map.colors,MAP_COLORS);assert.equal(B.map.park,PARK_COLORS);
