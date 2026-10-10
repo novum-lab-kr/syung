@@ -133,6 +133,25 @@ const CREAM = { slot: 2 }, SHADE = { slot: 3 }, A = { slot: 0 }, B = { slot: 1 }
 const RED={slot:4},GOLD_TONE={slot:5},CREAM_TONE={slot:6},IVORY={slot:7},TEAL={slot:8};
 const mast = s => ({ ...s, sel: 1 });
 
+// 기둥 디테일(가까이서만, lod 1): 민무늬 원통이던 기둥에 이음매 띠 · 점검 발판과 난간 · 사다리 통로를 붙인다(2026-10-10 행님).
+// top 은 기둥 꼭대기 높이(높이 단위), skip 은 다른 부품(캐노피 · 원반)이 차지해 띠 · 발판을 두지 않을 높이 [z0, z1],
+// decks 가 false 면 이음매 띠만(자이로드롭: 좌석 고리가 기둥을 타고 오르내린다).
+function mastDetail(M, top, seg, skip = [2, 2], decks = true) {
+  const free = z => z < skip[0] - .03 || z > skip[1] + .03;
+  for (let i = 1; i < 12; i++) {                                           // 이음매: 기둥 토막마다 살짝 도드라진 띠
+    const z = i / 12 * top; if (free(z)) band(M, STILL, z - .002, z + .002, .9, 1.1, seg, mast(SHADE));
+  }
+  for (const f of [.3, .58]) {                                             // 점검 발판 두 층과 그 난간
+    const z = f * top; if (!decks || !free(z)) continue;
+    band(M, STILL, z - .0015, z + .0015, .9, 1.45, seg * 2, mast(SHADE));
+    band(M, STILL, z + .0015, z + .008, 1.41, 1.45, seg * 2, mast(CREAM));
+    for (let k = 0; k < 6; k++) {                                          // 발판 밑 받침대
+      const t = (k + .5) / 6 * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+      tube(M, STILL, [c, s, z - .015], [c * 1.35, s * 1.35, z - .0015], .04, 3, mast(SHADE), false, false);
+    }
+  }
+  if (decks) box(M, STILL, [-1.03, 0, top / 2], .05, .1, top / 2, 0, mast(SHADE));   // 사다리 · 전선 통로(기둥 한쪽 세로 띠)
+}
 // Drop tower — mast H, a seat ring that rises to 0.82H and falls, a small cone crown.
 function buildDrop(lod) {
   const M = new Mesh(), seg = lod ? 12 : 7, rs = lod ? 24 : 12, seats = lod ? 12 : 6, nb = lod ? 8 : 4;
@@ -144,6 +163,7 @@ function buildDrop(lod) {
     const t = i / 3 * 2 * Math.PI;
     tube(M, STILL, [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .02], [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .97], .17, 4, mast(SHADE));
   }
+  if (lod) mastDetail(M, .985, seg, [2, 2], false);                        // 좌석 고리가 오르내리는 기둥이라 발판 · 통로 없이
   cone(M, STILL, .985, 1.9, 1.0, 1.8, seg, mast(SHADE));                   // the crown
   cone(M, STILL, 1.0, 1.8, 1.05, 0, seg, mast(GOLD_TONE));
   band(M, LIFT, 0, .025, .62, 1, rs, A, 1, 8);                             // the seat ring, in eight broad blocks
@@ -183,6 +203,7 @@ function buildSwing(lod) {
   tube(M, STILL, [0, 0, 0], [0, 0, .9], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
   cone(M, STILL, .9, 1.2, .93, 0, seg, mast(B));
+  if (lod) mastDetail(M, .9, seg, [.63, .82]);                                // 캐노피 · 그네 자리에는 발판 없이
   cone(M, SPIN, .775, 1, .818, .13, cs, CREAM_TONE);                              // the canopy, in alternating wedges
   disc(M, SPIN, .818, .13, cs, CREAM_TONE);
   disc(M, SPIN, .772, 1, cs, SHADE, -1);
@@ -200,6 +221,7 @@ function buildSaucer(lod) {
   const M = new Mesh(), seg = lod ? 10 : 6, ds = lod ? 20 : 10, n = 8;
   tube(M, STILL, [0, 0, 0], [0, 0, .95], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
+  if (lod) mastDetail(M, .95, seg, [.78, .95]);
   disc(M, STILL, .8, .72, ds, TEAL, -1);                                       // the saucer: under, rim, over
   cone(M, STILL, .8, .72, .8275, 1, ds, TEAL);
   cone(M, STILL, .8275, 1, .855, .8, ds, CREAM_TONE);
