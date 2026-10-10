@@ -42,6 +42,12 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
   };
   // 아는 키의 값 검사(키가 생기는 커밋마다 여기에 더한다): 테마 · 지도 색은 허용 값만, 지도 색 자료(map.themes · colors · park)의 글자는 색, 수는 0 이상, 이름 값은 목록 안
   function checkKnown(S, id) {
+    // 아는 묶음은 평범한 객체여야(null · 참거짓 · 배열 · 수로 통째로 바꾸면 엔진이 그 안을 읽다 멈춘다)
+    const plainGroup = v => v && typeof v === 'object' && !Array.isArray(v);
+    for (const [g, k] of [['map'], ['city'], ['city', 'life'], ['park'], ['track'], ['trains'], ['sun']]) {
+      const v = k ? S[g]?.[k] : S[g], present = k ? (S[g] && k in S[g]) : g in S;
+      if (present && !plainGroup(v)) throw new Error(`${id}.${k ? g + '.' + k : g}: 묶음(객체)이어야 — ${JSON.stringify(v)}`);
+    }
     for (const k of Object.keys(preferences)) if (k in S && !preferences[k].includes(S[k])) throw new Error(`${id}.${k}: 허용되지 않는 값 ${S[k]}`);
     const colors = (v, path) => {
       if (typeof v === 'string') { if (!COLOR.test(v)) throw new Error(`${path}: 색이 아님 (${v})`) }
@@ -51,7 +57,8 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     for (const k of ['themes', 'colors', 'park']) if (S.map?.[k] != null) colors(S.map[k], `${id}.map.${k}`);
     const oneOf = (v, list, path) => { if (v !== undefined && !list.includes(v)) throw new Error(`${path}: 허용되지 않는 값 ${v}`) };
     oneOf(S.map?.paletteKind, ['base', 'city', 'park-city'], `${id}.map.paletteKind`); oneOf(S.sun?.light, ['map', 'park'], `${id}.sun.light`);
-    oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.trains?.look, ['commuter', 'fleet', 'coaster88'], `${id}.trains.look`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
+    oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.trains?.look, ['commuter', 'fleet', 'coaster88'], `${id}.trains.look`); oneOf(S.city?.landmarks, ['tower', 'wood-tower'], `${id}.city.landmarks`);
+    for (const k of ['cars', 'crossings']) if (S.city?.life && k in S.city.life && typeof S.city.life[k] !== 'boolean') throw new Error(`${id}.city.life.${k}: 참 · 거짓`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
     if (S.city && 'tone' in S.city) {   // 톤: 팩 modes 의 진짜 톤 항목(채도 · 밝기가 있는 묶음 — colorMath · transitionMs 는 아님)
       const T = S.city.tone, M = S.city.pack?.modes, e = typeof T === 'string' && M && Object.hasOwn(M, T) ? M[T] : null;
       if (!e || typeof e !== 'object' || Array.isArray(e) || !('saturation' in e || 'brightness' in e)) throw new Error(`${id}.city.tone: 팩 modes 에 없는 톤 ${T}`);

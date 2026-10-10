@@ -7,8 +7,8 @@ const L = LANDMARKS.find(l => l.id === 'lotte');
 const verts = d => { const out = []; for (let i = 0; i < d.length; i += 9) out.push([d[i], d[i + 1], d[i + 2], d[i + 7]]); return out };
 
 test('롯데월드타워: 555 m, 위로 갈수록 가늘고, 꼭대기는 솔기 선에서 두 갈래', () => {
-  for (const joseon of [false, true]) {
-    const V = verts(buildTower(L, { joseon }));
+  for (const look of ['tower', 'wood-tower']) {
+    const V = verts(buildTower(L, { look }));
     assert.ok(V.every(v => v.every(Number.isFinite)), 'no NaN');
     assert.equal(Math.max(...V.map(v => v[2])), 555);
     const widthAt = h => Math.max(...V.filter(v => Math.abs(v[2] - h) < 4 && v[3] === 0).map(v => Math.hypot(v[0], v[1])));

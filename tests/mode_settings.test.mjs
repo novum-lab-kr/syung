@@ -5,10 +5,10 @@ import {createModeRegistry} from '../web/modes/index.mjs';
 
 // 시험용 정의: 실제 basic · simcity · joseon · coaster 와 같은 모양(조선 · 롤코는 simcity 에서)
 const defs=()=>[
-  {id:'basic',settings:{themeChoice:'auto',mapColor:'calm',city:{enabled:false,pack:{floor:{light:'#eeeeee',dark:'#222222'},lod:[14,16]},life:{cars:true}},track:{kind:'ground'},park:null}},
+  {id:'basic',settings:{themeChoice:'auto',mapColor:'calm',city:{enabled:false,pack:{floor:{light:'#eeeeee',dark:'#222222'},lod:[14,16]},life:{cars:true}},track:{kind:'ground'},show:null}},
   {id:'simcity',from:'basic',settings:{city:{enabled:true},track:{kind:'viaduct'}}},
   {id:'joseon',from:'simcity',label:'조선',settings:{city:{pack:{floor:{light:'#ccbb99'}},life:{cars:false}},buses:{look:'palanquin'}}},
-  {id:'coaster',from:'simcity',settings:{track:{kind:'coaster'},park:{enabled:true,lights:[1,2]}}},
+  {id:'coaster',from:'simcity',settings:{track:{kind:'coaster'},show:{enabled:true,lights:[1,2]}}},
 ];
 
 test('합치기: 묶음은 안쪽까지, 값 · 목록은 통째로, null 은 끄기, 안 적으면 물려받기', () => {
@@ -74,7 +74,7 @@ test('상속: 조선 · 롤코는 심시티에서, from 생략은 basic, 기본�
   const R=createModeRegistry(defs());
   const J=R.settings('joseon'),C=R.settings('coaster'),S=R.settings('simcity');
   assert.equal(J.city.enabled,true);assert.equal(J.track.kind,'viaduct');assert.equal(J.city.pack.floor.light,'#ccbb99');assert.equal(J.city.pack.floor.dark,'#222222');
-  assert.equal(C.track.kind,'coaster');assert.deepEqual(C.park,{enabled:true,lights:[1,2]});assert.equal(R.settings('basic').park,null);
+  assert.equal(C.track.kind,'coaster');assert.deepEqual(C.show,{enabled:true,lights:[1,2]});assert.equal(R.settings('basic').show,null);
   assert.equal(C.city.pack,S.city.pack,'롤코 · 심시티 도시 팩은 같은 참조');
   assert.notEqual(J.city.pack,S.city.pack);
   assert.equal(R.settings('simcity'),S,'같은 모드는 같은 결과(캐시)');
@@ -116,8 +116,8 @@ test('출처 보기: 키마다 마지막으로 적은 모드', () => {
   const e=R.explain('joseon');
   assert.deepEqual(e.chain,['basic','simcity','joseon']);
   assert.equal(e.sources['city.enabled'],'simcity');assert.equal(e.sources['city.pack.floor.light'],'joseon');assert.equal(e.sources['city.pack.floor.dark'],'basic');
-  assert.equal(e.sources['park'],'basic');
-  const c=R.explain('coaster');assert.equal(c.sources['park.enabled'],'coaster');assert.equal(c.sources['park'],undefined);
+  assert.equal(e.sources['show'],'basic');
+  const c=R.explain('coaster');assert.equal(c.sources['show.enabled'],'coaster');assert.equal(c.sources['show'],undefined);
 });
 
 test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 하나를 같이 쓴다', async () => {
@@ -142,6 +142,12 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   assert.deepEqual(tr('joseon'),['viaduct','straight','fleet','slim',3,false]);
   assert.deepEqual(tr('coaster'),['coaster','straight','coaster88','slim',99,true]);
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>R.settings(id).city.xray),[false,true,true,false],'x-ray: 심시티 · 조선만');
+  assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>[R.settings(id).city.life.cars,R.settings(id).city.life.crossings,R.settings(id).city.landmarks]),
+    [[true,true,'tower'],[true,true,'tower'],[false,false,'wood-tower'],[true,true,'tower']],'조선: 차 · 횡단보도 없음, 나무 탑');
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{landmarks:'pagoda'}}}]),/허용되지 않는/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{life:{cars:'no'}}}}]),/참 · 거짓/);
+  for(const v of [null,false,[],0])assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{life:v}}}]),/묶음/,`city.life ${JSON.stringify(v)}`);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{trains:null}}]),/묶음/);
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>[R.settings(id).city.tone,R.settings(id).city.lampPool]),[['simcity',1.4],['simcity',1.4],['simcity',1.4],['coaster',null]],'도시 톤 · 가로등 웅덩이(롤코는 팩 modes.coaster.lampPool)');
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{tone:'neon',pack:R.settings('basic').city.pack}}}]),/modes 에 없는/);
   const P0=R.settings('basic').city.pack,city=c=>()=>createModeRegistry([{id:'basic',settings:{city:{tone:'simcity',lampPool:1.4,pack:P0,...c}}}]);

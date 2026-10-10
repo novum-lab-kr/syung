@@ -30,8 +30,9 @@ function planPoint(L, r, k, phi) {
   return [u, v];
 }
 
-// 탑 하나의 메시(지역 미터, 탑 가운데 기준 · 회전 전): Float32Array
-export function buildTower(L, { joseon = false } = {}) {
+// 탑 하나의 메시(지역 미터, 탑 가운데 기준 · 회전 전): Float32Array. look: 'tower'(유리 탑) · 'wood-tower'(나무 · 회벽 · 기와 처마 — 모드 설정 city.landmarks)
+export function buildTower(L, { look = 'tower' } = {}) {
+  const joseon = look === 'wood-tower';
   const d = [], H = L.height, C = L.crown, P = L.profile;
   const push = (p, n, s, kind, w = 0) => d.push(p[0], p[1], p[2], n[0], n[1], n[2], s, kind, w);
   const quad = (a, b, c, e, n, s, kind) => { for (const [p, q] of [[a, s[0]], [b, s[1]], [c, s[2]], [a, s[0]], [c, s[2]], [e, s[3]]]) push(p, n, q, kind) };
@@ -159,9 +160,9 @@ export class CityLandmarks {
     this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_joseon', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.items = LANDMARKS.map(L => { const [x, y] = toM(L.lngLat[0], L.lngLat[1]), a = L.seamDeg * Math.PI / 180; return { L, x, y, rot: [Math.cos(a), Math.sin(a)], meshes: {} } });
   }
-  mesh(it, joseon) {
-    const k = joseon ? 'j' : 's'; if (it.meshes[k]) return it.meshes[k];
-    const gl = this.gl, data = buildTower(it.L, { joseon }), va = gl.createVertexArray(), b = gl.createBuffer();
+  mesh(it, look) {
+    const k = look; if (it.meshes[k]) return it.meshes[k];
+    const gl = this.gl, data = buildTower(it.L, { look }), va = gl.createVertexArray(), b = gl.createBuffer();
     gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     for (const [loc, n, off] of [[0, 3, 0], [1, 3, 3], [2, 3, 6]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, STRIDE * 4, off * 4) }
     gl.bindVertexArray(null); return (it.meshes[k] = { va, b, n: data.length / STRIDE });
@@ -171,7 +172,8 @@ export class CityLandmarks {
     try { if (!this.gl) this.init(gl); this._render(gl, matrix, opts) }
     catch (e) { this.broken = true; console.error('city-landmarks: off —', e) }
   }
-  _render(gl, matrix, { zoom = 15, dark = false, joseon = false, sun = null, lit = [.64, .36] }) {
+  _render(gl, matrix, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36] }) {
+    const joseon = look === 'wood-tower';
     if (zoom < 11) return;
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const az = (sun?.azimuth ?? 225) * Math.PI / 180, el = Math.max(sun?.elevation ?? 42, 12) * Math.PI / 180, C = LOOK[dark ? 'dark' : 'light'], u = this.u;
@@ -181,7 +183,7 @@ export class CityLandmarks {
     for (const k of ['glass', 'frame', 'seamC', 'crownC', 'win', 'wood', 'plaster', 'giwa', 'gold']) gl.uniform3fv(u['u_' + k], hex(C[k]));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     for (const it of this.items) {
-      const m = this.mesh(it, joseon), L = it.L;
+      const m = this.mesh(it, look), L = it.L;
       gl.uniform2f(u.u_at, it.x, it.y); gl.uniform2fv(u.u_rot, it.rot); gl.uniform1f(u.u_split, L.crown.splitM); gl.uniform1f(u.u_lattice, L.crown.latticeFromM); gl.uniform1f(u.u_H, L.height);
       gl.bindVertexArray(m.va); gl.drawArrays(gl.TRIANGLES, 0, m.n);
     }

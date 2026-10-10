@@ -10,7 +10,7 @@
 // hash of its rounded position decides its look. Every colour, metre and zoom comes from the style pack.
 //
 //   const life = new CityLife({pack}); life.init(gl, maplibregl, map);
-//   life.render(gl, matrix, {now, zoom, pitch, bearing, dark, tone, lampPool, people, phone, reducedMotion, pixelRatio, bounds, mapOn, moving, sun});
+//   life.render(gl, matrix, {now, zoom, pitch, bearing, dark, tone, lampPool, cars, crossings, people, phone, reducedMotion, pixelRatio, bounds, mapOn, moving, sun});
 //   tone: 팩의 modes 항목(모드 설정 city.tone), lampPool: 가로등 빛 웅덩이 배수(모드 설정 city.lampPool, null 이면 그 tone 의 lampPool)
 //   life.animating(); life.dispose(gl);
 //   people: both city modes draw them (the same figures on the same pavements; the mode only tones their colours); false hides them.
@@ -447,8 +447,8 @@ export class CityLife {
     try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
   }
   _render(gl, matrix, opts) {
-    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
-    const look = opts.look || this.pack, era = !!look.hanok;   // look: the mode's pack for the lamps' look; 조선 (its hanok): torches, no cars, no zebra crossings
+    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
+    const look = opts.look || this.pack;   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
     const pad = Math.min(400, (box[2] - box[0]) * .15), vbox = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
@@ -515,7 +515,7 @@ export class CityLife {
       gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) }
     }
     // ── cars: the simulation, then the instanced boxes ──
-    if (fadeCar > 0 && !era && !(phone && zoom < 16.3)) {
+    if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
       const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
       this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= 16.5, pixelRatio });
@@ -534,7 +534,7 @@ export class CityLife {
     else this.people.list.length = 0;
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    if (fadeCross > 0 && !era) {
+    if (fadeCross > 0 && crossings) {
       const X = pack.roads.crossing, draws = []; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'cross', vbox)) { draws.push([c, a, n]); total += n } stats.cross = total;
       if (total) { gl.useProgram(this.pX); gl.uniformMatrix4fv(this.uX.u_matrix, false, MT); gl.uniform1f(this.uX.u_mu, MU); gl.uniform1f(this.uX.u_fade, fadeCross); gl.uniform1f(this.uX.u_depth, X.depthM);
         gl.uniform3fv(this.uX.u_rgb, col(pack.roads.lane.colors[theme])); gl.uniform1f(this.uX.u_alpha, (dark ? .55 : .9) * fadeCross); gl.uniform1f(this.uX.u_stripe, X.stripeM); gl.uniform1f(this.uX.u_gap, X.gapM);
