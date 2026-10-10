@@ -78,6 +78,8 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     cornerLiftM: 0.6, cornerKickM: 0.3,   // 추녀: the eave corners lifted and pushed out
     ridge: { halfWidthM: 0.11, upM: 0.18, downM: 0.08 },   // 용마루 (Codex 2차: 굵기 · 높이 20% 줄임)
     // 지붕 모양 몫 [팔작, 맞배, 우진각]: 좁은 채(반폭 narrowHalfM 이하)는 맞배가 많다. 맞배 지붕은 박공벽 밖으로 gableEndM 나온다
+    // 가까이(줌 18~): 기와 처마 끝 두께, 기단이 벽 밖으로 나온 폭, 돌계단 폭, 기둥 폭 · 돌출, 받침목 폭 · 돌출, 추녀마루 폭 (Codex 3차)
+    detail: { fasciaM: 0.16, platformOutM: 0.45, stepWidthM: 1.8, postM: 0.22, postOutM: 0.1, bracketM: 0.14, bracketOutM: 0.32, hipRidgeM: 0.14 },
     roofStyles: { narrowHalfM: 2.6, narrow: [0.25, 0.55, 0.2], wide: [0.6, 0.12, 0.28] }, gableEndM: 0.6,
     postM: 0.24, bayM: 2.4,           // 기둥 width and spacing (칸)
     paperShare: 0.55,                 // bays with 창호 (the rest 회벽)
@@ -110,7 +112,7 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     colors: {
       // (Codex 2026-10-10, 레퍼런스 사진: 나무는 더 붉은 갈색, 회벽은 조금 어둡고 따뜻하게, 기와는 청록기 없는 중성 회색, 고층 유리창은 탁한 청회색)
       light: { giwa: ['#484C4B', '#3F4342', '#535857'], wood: '#7B513A', plaster: '#DED1B6', paper: '#F3EBD3', stone: '#A5A397', dam: '#D8CDB5', soffit: '#302B24', ridge: '#3E4241', glass: '#718887',
-        thatch: ['#C3A05E', '#B08F55', '#A08660'], mud: '#C4AA83', field: ['#9C978B', '#857F74'], spire: '#C99B3A' },
+        thatch: ['#A88D55', '#9C8350', '#B39A62'], mud: '#C4AA83', field: ['#9C978B', '#857F74'], spire: '#C99B3A' },
       dark: { giwa: ['#424645', '#3A3D3C', '#4B4F4E'], wood: '#5A3824', plaster: '#8E877A', paper: '#9C927A', stone: '#6F6A60', dam: '#80776A', soffit: '#1F1B17', ridge: '#2A2D2C', glass: '#34403F',
         thatch: ['#6E5B39', '#625233', '#5A4D37'], mud: '#6B5C46', field: ['#5B5851', '#4D4A44'], spire: '#7A6024' },
     },

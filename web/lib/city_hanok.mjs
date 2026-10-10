@@ -212,7 +212,8 @@ export function boxInst(xy, angle, a, b, z0, zt, storey, w, seed) {
 }
 // the points every roof instance draws: (part, i, j) — parts 0–1 the long faces (toward ±y; i 0..2 along, j 0..3 rows),
 // 2–3 the short faces (toward ±x; i 0..1, j 0..2), 4–5 the 합각 / gable walls (i 0..6), 6 the 용마루 (i 0..11), 7 the 초가's
-// cut edge (i 0..15). The shader folds away what a roof does not have. Index ranges: far, near
+// cut edge (i 0..15); close up only (DETAIL_Z) 8 the eaves' underside (서까래), 9 the 기와 eave's edge (와구토), 10 the 망와 at
+// the ridge's ends, 11 the 추녀마루 up the four hips. The shader folds away what a roof does not have. Index ranges: far, near, detail (near and the rest)
 export function roofTemplate() {
   const v = [], P = [];
   const add = (part, n, f) => { const b = v.length / 3; P[part] = b; for (let k = 0; k < n; k++) { const [i, j] = f(k); v.push(part, i, j) } };
@@ -220,19 +221,35 @@ export function roofTemplate() {
   for (const part of [2, 3]) add(part, 6, k => [k % 2, Math.floor(k / 2)]);
   for (const part of [4, 5]) add(part, 7, k => [k, 0]);
   add(6, 12, k => [k, 0]); add(7, 16, k => [k, 0]);
-  const far = [], near = [], gable = [5, 6, 1, 5, 1, 0, 0, 1, 3, 0, 3, 2, 2, 3, 4];
+  add(8, 20, k => [k, 0]); add(9, 20, k => [k, 0]); add(10, 8, k => [k, 0]);   // 가까이(DETAIL_Z): 처마 밑면, 처마 끝 두께, 망와
+  add(11, 36, k => [k, 0]);   // 추녀마루: 네 귀의 사선 마루(마루 h × 마디 3 × 왼 · 등 · 오른)
+  const far = [], near = [], detail = [], gable = [5, 6, 1, 5, 1, 0, 0, 1, 3, 0, 3, 2, 2, 3, 4];
   for (const part of [0, 1]) { const b = P[part]; far.push(b, b + 2, b + 11, b, b + 11, b + 9); for (let j = 0; j < 3; j++) for (let i = 0; i < 2; i++) { const q = b + j * 3 + i; near.push(q, q + 1, q + 4, q, q + 4, q + 3) } }
   for (const part of [2, 3]) { const b = P[part]; far.push(b, b + 1, b + 5, b, b + 5, b + 4); for (let j = 0; j < 2; j++) { const q = b + j * 2; near.push(q, q + 1, q + 3, q, q + 3, q + 2) } }
   for (const part of [4, 5]) for (const i of gable) { far.push(P[part] + i); near.push(P[part] + i) }
   for (let q = 0; q < 3; q++) { const b = P[6] + q * 4; near.push(b, b + 1, b + 2, b, b + 2, b + 3) }
   for (let f = 0; f < 4; f++) { const b = P[7] + f * 4; near.push(b + 1, b + 3, b + 2, b + 1, b + 2, b) }
-  return { verts: new Float32Array(v), idx: new Uint16Array([...far, ...near]), far: [0, far.length], near: [far.length, near.length] };
+  // 처마 밑면 · 끝 두께: a face's points [0..n) along the wall (or the eave's top), [n..2n) along the eave (or its foot); n 3 on a long face, 2 on a short one
+  for (const part of [8, 9]) for (let f = 0, b = P[part]; f < 4; f++) { const n = f < 2 ? 3 : 2; for (let i = 0; i < n - 1; i++) detail.push(b + i, b + i + 1, b + n + i + 1, b + i, b + n + i + 1, b + n + i); b += 2 * n }
+  for (const e of [0, 4]) { const b = P[10] + e; detail.push(b, b + 1, b + 2, b, b + 2, b + 3) }
+  for (let h = 0; h < 4; h++) for (let q = 0; q < 2; q++) for (let c = 0; c < 2; c++) { const a = P[11] + h * 9 + q * 3 + c, b = a + 3; detail.push(a, a + 1, b + 1, a, b + 1, b) }
+  return { verts: new Float32Array(v), idx: new Uint16Array([...far, ...near, ...detail]), far: [0, far.length], near: [far.length, near.length], detail: [far.length, near.length + detail.length] };
 }
 // the points every wall box draws: (side 0..3, end 0..1, top 0..1)
+// close up only (DETAIL_Z): (4, i, 0) the 기단 round a house's foot — its four sides (i 0..15) and top (16..19); (5, i, 0) two
+// stone steps up to it on one long side (i: step × 16 + face (front, left, right, top) × 4 + corner)
+export const POSTS = 12;   // 벽 한 면에 세울 수 있는 기둥 수(칸 + 1): 이보다 칸이 많으면 그 면은 기둥 없이
 export function boxTemplate() {
   const v = [], idx = [];
   for (let s = 0; s < 4; s++) { for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 1]]) v.push(s, e, t); const b = s * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3) }
-  return { verts: new Float32Array(v), idx: new Uint16Array(idx), far: [0, 24], near: [0, 24] };
+  const b4 = v.length / 3; for (let i = 0; i < 20; i++) v.push(4, i, 0);
+  const b5 = v.length / 3; for (let i = 0; i < 32; i++) v.push(5, i, 0);
+  for (let q = 0; q < 5; q++) { const b = b4 + q * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3) }
+  for (let q = 0; q < 8; q++) { const b = b5 + q * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3) }
+  // (6 + side, post, corner): a post standing out of the wall on every bay line, a bracket (받침목) under the eave on top of
+  // it (Codex 3차: 기둥과 지붕이 이어져 보이게) — post faces front · left · right (corners 0..11), bracket front · left · right · bottom (12..27)
+  for (let sd = 0; sd < 4; sd++) for (let k = 0; k < POSTS; k++) { const b = v.length / 3; for (let c = 0; c < 28; c++) v.push(6 + sd, k, c); for (let q = 0; q < 7; q++) idx.push(b + q * 4, b + q * 4 + 1, b + q * 4 + 2, b + q * 4, b + q * 4 + 2, b + q * 4 + 3) }
+  return { verts: new Float32Array(v), idx: new Uint16Array(idx), far: [0, 24], near: [0, 24], detail: [0, idx.length] };
 }
 
 // a local frame on the house: x along (ux, uy), y across, z up, metres → the writer's tile-mercator units; triangles wound

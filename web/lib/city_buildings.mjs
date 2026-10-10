@@ -19,7 +19,7 @@
 //   city.set({on:true,mode:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { skirtTemplate, roofTemplate, boxTemplate } from './city_hanok.mjs';
+import { skirtTemplate, roofTemplate, boxTemplate, POSTS } from './city_hanok.mjs';
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
 import { sunPosition } from './sun.mjs';
@@ -78,7 +78,7 @@ void main(){
 const VS_ROOF = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 a_t;layout(location=1) in vec4 a_p;layout(location=2) in vec4 a_q;layout(location=3) in vec4 a_r;layout(location=4) in vec2 a_h;layout(location=5) in vec4 a_s;layout(location=6) in vec4 a_d;
-uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec4 u_rf;uniform vec4 u_rd;   // u_rf: 팔작 tg, 맞배 끝 내밀기, 초가 끝 두께; u_rd: 용마루 반폭 · 위 · 아래
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec4 u_rf;uniform vec4 u_rd;   // u_rf: 팔작 tg, 맞배 끝 내밀기, 초가 끝 두께, 기와 처마 끝 두께; u_rd: 용마루 반폭 · 위 · 아래, 추녀마루 폭
 out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
 float A,B,O,ZE,RI,AR,LI,KI,T1,AE,BE,XG,TG;int STY;bool TH;
 float prof(float t){return TH?1.0-(1.0-t)*(1.0-t)*0.9-0.1*(1.0-t):0.45*t+0.55*t*t;}
@@ -115,9 +115,31 @@ void main(){
     if(q<1.5){float sy=q<0.5?-1.0:1.0;p=vec3(x,sy*w,c<1.5?z0:z1);n=vec3(0.0,sy,0.0);}
     else{p=vec3(x,c<1.5?-w:w,z1);n=vec3(0.0,0.0,1.0);}
     U=x;
-  }else{   // 초가 끝 두께
+  }else if(part==7){   // 초가 끝 두께
     off=!TH;int f=int(i/4.0);float e=mod(floor(i/2.0),2.0);p=face(f,e,0.0);if(mod(i,2.0)>0.5)p.z-=u_rf.z;
     n=f<2?vec3(0.0,f==0?1.0:-1.0,0.0):vec3(f==2?1.0:-1.0,0.0,0.0);U=f<2?p.x:p.y;
+  }else if(part<10){   // 가까이: 8 처마 밑면(벽 위 → 처마 끝 아래, 서까래는 FS), 9 기와 처마 끝 두께(와구토)
+    float k=i;int f=0;float nn=3.0;
+    if(k>=6.0){k-=6.0;f=1;if(k>=6.0){k-=6.0;f=2;nn=2.0;if(k>=4.0){k-=4.0;f=3;}}}
+    bool second=k>=nn;float s=(second?k-nn:k)/(nn-1.0);
+    off=(f>=2&&STY==2)||(part==9&&TH)||T1<0.999&&part==9;
+    vec3 e0=face(f,s,0.0);float drop=TH?u_rf.z:u_rf.w;
+    vec2 ow=f<2?vec2(0.0,f==0?1.0:-1.0):vec2(f==2?1.0:-1.0,0.0);
+    if(part==8){
+      vec2 w=f<2?vec2(mix(-1.0,1.0,f==0?s:1.0-s)*A,ow.y*B):vec2(ow.x*A,mix(1.0,-1.0,f==2?s:1.0-s)*B);
+      p=second?vec3(e0.xy,e0.z-drop):vec3(w,a_h.x);n=normalize(vec3(ow*0.35,-1.0));
+    }else{p=second?vec3(e0.xy,e0.z-drop):e0;n=vec3(ow,0.0);}
+    U=f<2?p.x:p.y;
+  }else if(part==11){   // 추녀마루: 네 귀의 사선 마루 — 귀에서 우진각은 용마루까지, 팔작은 합각 아래까지. 등이 솟은 띠
+    int h=int(i/9.0);float q=floor(mod(i,9.0)/3.0),cc=mod(i,3.0);
+    off=STY==2||TH;float tTop=STY==1?TG:T1,t=tTop*q*0.5,ss=(h==0||h==2)?0.0:1.0;int f=h<2?0:1;
+    vec3 L0=face(f,ss,t),L1=face(f,ss,min(t+0.02,tTop)),L2=face(f,ss,max(t-0.02,0.0));vec2 dir=normalize((L1-L2).xy+vec2(1e-6));vec2 pp=vec2(-dir.y,dir.x);
+    float w=u_rd.w*0.5;p=cc<0.5?L0+vec3(pp*w,0.02):cc<1.5?L0+vec3(0.0,0.0,u_rd.w*0.75):L0+vec3(-pp*w,0.02);
+    n=normalize(cc<0.5?vec3(pp*0.7,1.0):cc<1.5?vec3(0.0,0.0,1.0):vec3(-pp*0.7,1.0));U=t*10.0;mx=4.0;
+  }else{   // 10 망와: 용마루 양 끝에 선 막새
+    float R=STY==1?max(0.35*AE,AE-BE*0.5):STY==2?A+u_rf.y:AR,L=R+(STY==0?0.3:0.15),w=u_rd.x+0.06,z1=ZE+RI+u_rd.y;
+    off=T1<0.999||TH||R<=0.2;float e=i<3.5?-1.0:1.0,c=mod(i,4.0);
+    p=vec3(e*L,(c==0.0||c==3.0)?-w:w,c<1.5?z1-0.08:z1+0.32);n=vec3(e,0.0,0.0);U=p.y;
   }
   float c=cos(a_p.z),sn=sin(a_p.z);mat2 R=mat2(c,sn,-sn,c);
   vec2 xy=a_p.xy+R*p.xy*u_mpu;float z=p.z*u_grow;
@@ -128,20 +150,52 @@ void main(){
 // 조선 한옥 벽 상자, 인스턴스로 (city_hanok.mjs boxInst · boxTemplate): 네 면(side, end, top), 면마다 칸 수 · 길이 · 층 높이나 씨앗을
 // 원래 정점이 들던 대로 v_wall 에 — FS kind 9 그대로
 const VS_BOX = `#version 300 es
+// (POSTS: city_hanok.mjs boxTemplate)
 precision highp float;
 layout(location=0) in vec3 a_t;layout(location=1) in vec4 a_p;layout(location=2) in vec4 a_q;layout(location=3) in vec4 a_w;layout(location=4) in vec4 a_d;
-uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform float u_bay;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform float u_bay;uniform vec4 u_base;uniform vec4 u_post;   // u_base: 기단 높이(기와 · 초가), 기단이 벽 밖으로 나온 폭, 계단 폭; u_post: 기둥 폭 · 돌출, 받침목 폭 · 돌출
 out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
 void main(){
-  int s=int(a_t.x+0.5);float e=a_t.y,A=a_p.w,B=a_q.x;
-  vec2 C0=s==0?vec2(-A,-B):s==1?vec2(A,-B):s==2?vec2(A,B):vec2(-A,B),C1=s==0?vec2(A,-B):s==1?vec2(A,B):s==2?vec2(-A,B):vec2(-A,-B);
-  float l=length(C1-C0);vec2 d=(C1-C0)/l;
+  int s=int(a_t.x+0.5);float e=a_t.y,A=a_p.w,B=a_q.x;bool off=false,solid=false;
+  vec3 p,n;float l,U;float bh=a_w.x>0.5?u_base.y:u_base.x;
+  if(s<4){
+    vec2 C0=s==0?vec2(-A,-B):s==1?vec2(A,-B):s==2?vec2(A,B):vec2(-A,B),C1=s==0?vec2(A,-B):s==1?vec2(A,B):s==2?vec2(-A,B):vec2(-A,-B);
+    l=length(C1-C0);vec2 d=(C1-C0)/l;p=vec3(mix(C0,C1,e),a_t.z>0.5?a_q.z:a_q.y);n=vec3(d.y,-d.x,0.0);U=e*l;
+  }else{   // 가까이: 기단(집 둘레 돌 단)과 긴 면 하나의 돌계단 두 단 — 집(종류 0 · 1)의 바닥에만
+    off=a_w.x>1.5||a_q.y>0.01;float pa=A+u_base.z,pb=B+u_base.z,k=e,c=mod(k,4.0);
+    if(s==4){
+      if(k<15.5){int q=int(k/4.0);vec2 C0=q==0?vec2(-pa,-pb):q==1?vec2(pa,-pb):q==2?vec2(pa,pb):vec2(-pa,pb),C1=q==0?vec2(pa,-pb):q==1?vec2(pa,pb):q==2?vec2(-pa,pb):vec2(-pa,-pb);
+        l=length(C1-C0);vec2 d=(C1-C0)/l;float ee=(c==1.0||c==2.0)?1.0:0.0;p=vec3(mix(C0,C1,ee),c<1.5?0.0:bh);n=vec3(d.y,-d.x,0.0);U=ee*l;}
+      else{p=vec3((c==0.0||c==3.0)?-pa:pa,c<1.5?-pb:pb,bh);n=vec3(0.0,0.0,1.0);U=p.x;l=2.0*pa;}
+    }else if(s==5){
+      float st=floor(k/16.0),fc=floor(mod(k,16.0)/4.0),sy=mod(a_w.w,2.0)<0.5?-1.0:1.0,hw=min(u_base.w,A)*0.5,z1=bh*(st+1.0)/3.0,y0=sy*pb,y1=sy*(pb+u_base.z*(2.0-st));
+      off=off||A<1.2;
+      if(fc<0.5){p=vec3((c==0.0||c==3.0)?-hw:hw,y1,c<1.5?0.0:z1);n=vec3(0.0,sy,0.0);}
+      else if(fc<2.5){float x=fc<1.5?-hw:hw;p=vec3(x,(c==0.0||c==3.0)?y0:y1,c<1.5?0.0:z1);n=vec3(fc<1.5?-1.0:1.0,0.0,0.0);}
+      else{p=vec3((c==0.0||c==3.0)?-hw:hw,(c<1.5)?y0:y1,z1);n=vec3(0.0,0.0,1.0);}
+      U=p.x+hw;l=2.0*hw;
+    }else{   // 기둥 · 받침목: 벽 한 면(s-6)의 칸 줄마다, 집(종류 0 · 1)과 위층(3)만
+      int sd=s-6;float kk=e,c2=a_t.z;
+      vec2 C0=sd==0?vec2(-A,-B):sd==1?vec2(A,-B):sd==2?vec2(A,B):vec2(-A,B),C1=sd==0?vec2(A,-B):sd==1?vec2(A,B):sd==2?vec2(-A,B):vec2(-A,-B);
+      l=length(C1-C0);vec2 d=(C1-C0)/l,nn=vec2(d.y,-d.x);float bays=max(1.0,floor(l/u_bay+0.5));
+      off=a_w.x>1.5&&a_w.x<2.5||kk>bays||bays>float(${POSTS - 1});
+      vec2 at=C0+d*(l*kk/bays);float zb=a_q.y+(a_w.x<1.5?bh:0.0),zt=a_q.z;
+      float fc=floor(c2/4.0),cc=mod(c2,4.0),sx=(cc==0.0||cc==3.0)?-1.0:1.0,up=cc<1.5?0.0:1.0;
+      float w=fc<3.0?u_post.x*0.5:u_post.z*0.5,po=fc<3.0?u_post.y:u_post.w,z0=fc<3.0?zb:zt-0.26,z1=fc<3.0?zt-0.05:zt-0.12;
+      float fq=fc<3.0?fc:fc-3.0;
+      if(fq<0.5){p=vec3(at+d*(sx*w)+nn*po,mix(z0,z1,up));n=vec3(nn,0.0);}
+      else if(fq<2.5){float sg=fq<1.5?-1.0:1.0;p=vec3(at+d*(sg*w)+nn*(sx<0.0?0.0:po),mix(z0,z1,up));n=vec3(d*sg,0.0);}
+      else{p=vec3(at+d*(sx*w)+nn*(up<0.5?0.0:po),z0);n=vec3(0.0,0.0,-1.0);}
+      U=0.0;solid=true;
+    }
+  }
   float c=cos(a_p.z),sn=sin(a_p.z);mat2 R=mat2(c,sn,-sn,c);
-  vec2 xy=a_p.xy+R*mix(C0,C1,e)*u_mpu;float z=(a_t.z>0.5?a_q.z:a_q.y)*u_grow;
-  gl_Position=u_matrix*vec4(xy,z*u_mpu,1.0);
+  vec2 xy=a_p.xy+R*p.xy*u_mpu;float z=p.z*u_grow;
+  gl_Position=off?vec4(0.0,0.0,2.0,1.0):u_matrix*vec4(xy,z*u_mpu,1.0);
   float lq=min(65535.0,floor(l*20.0+0.5)),w3=a_w.x>=2.0?clamp(floor(a_q.w*20.0+0.5),1.0,255.0):mod(float(s)*5.0+a_w.w,16.0),Hq=min(65535.0,floor(a_q.z*10.0+0.5));
-  v_n=vec3(R*vec2(d.y,-d.x),0.0);v_z=z;v_u=e*l;v_wm=u_wo+xy*u_S;
-  v_wall=vec4(max(1.0,floor(l/u_bay+0.5)),mod(lq,256.0),floor(lq/256.0),w3);v_bld=vec4(a_d.x,a_d.y,a_w.x,0.0);v_misc=vec4(a_w.y,a_w.z,mod(Hq,256.0),floor(Hq/256.0));v_kind=9.0;
+  v_n=vec3(R*n.xy,n.z);v_z=z;v_u=U;v_wm=u_wo+xy*u_S;
+  v_wall=vec4(max(1.0,floor(l/u_bay+0.5)),mod(lq,256.0),floor(lq/256.0),w3);float door=(s==(mod(a_w.w,2.0)<0.5?0:2)&&a_w.x<1.5&&a_q.y<0.01&&A>=1.2)?1.0:0.0;   // 계단 앞 칸은 문
+  v_bld=vec4(a_d.x,a_d.y,a_w.x,solid?2.0:door);v_misc=vec4(a_w.y,a_w.z,mod(Hq,256.0),floor(Hq/256.0));v_kind=9.0;
 }`;
 // x-ray (심시티): the screen boxes of the station platforms and running trains this frame (NDC x0,y0,x1,y1; their farthest window
 // depth and fade weight): a building fragment inside one (feathered by u_xv.z px) and nearer than the target turns to glass
@@ -218,12 +272,12 @@ void shade(){
   else if(kind==5){col=u_awning[slot]*light;}
   else if(kind==8){   // 조선: 기와 — the joints between the tile rows down the slope (v_u: along the eave, m), the ridge dark; underneath, the eave's rafters. slot 3: the 목탑's golden 상륜
     if(slot==3)col=u_giwa[3]*u_lightCol*(0.7+0.45*clamp(dot(n,u_sun),0.0,1.0));
-    else if(n.z<-0.2)col=u_hk[5]*u_lightCol*(0.55+0.2*k);
+    else if(n.z<-0.2){float p=v_u/0.32;col=u_hk[5]*u_lightCol*(0.55+0.2*k)*mix(1.0,1.9,pulse(p,0.0,0.45,fwidth(p)));}   // 처마 밑: 어두운 바탕에 서까래 줄
     else if(abs(n.z)<0.3){   // 처마 끝 두께(고층 처마): 기와 끝의 와구토 — 어두운 바탕에 흰 점줄
-      float p=v_u/0.3;col=mix(u_giwa[slot<3?slot:0]*0.7,u_hk[1],0.55*pulse(p,0.12,0.5,fwidth(p)))*light;
+      float p=v_u/0.3;col=mix(u_giwa[slot<3?slot:0]*0.7,u_hk[1]*0.85,0.38*pulse(p,0.12,0.5,fwidth(p)))*light;   // (Codex 3차: 흰 점이 빗살처럼 튀지 않게)
     }
     else{
-      vec3 g=u_giwa[slot<3?slot:0];float p=v_u/0.3;g*=1.0-0.08*pulse(p,0.0,0.38,fwidth(p));   // (Codex 2차: 골 명암 5~8 %)
+      vec3 g=slot==4?u_hk[7]:u_giwa[slot<3?slot:0];float p=v_u/0.3;if(slot!=4)g*=1.0-0.08*pulse(p,0.0,0.38,fwidth(p));   // (Codex 2차: 골 명암 5~8 %; slot 4: 추녀마루)
       if(v_z>H-0.30)g=u_hk[7];   // 용마루 (H: its top; a skirt carries none)
       else if(v_z<v_misc.y*0.05-0.03)g=mix(g,u_hk[1],0.8);   // 와구토: the white line along the eave (below the wall's top: the eave's edge, thinning up the lifted corners)
       col=g*u_lightCol*(0.62+0.5*clamp(dot(n,u_sun),0.0,1.0));
@@ -231,7 +285,7 @@ void shade(){
   }
   else if(kind==11){   // 조선: 초가 — straw streaks down the slope (fading out where they would shimmer), the thick cut edge darker, the 용마름 at the top
     vec3 g=u_hk2[slot<3?slot:0];float sw=0.14/max(fwidth(v_u),1e-4);
-    g*=mix(1.0,0.88+0.2*hash(vec3(floor(v_u/0.14),seed,3.0)),smoothstep(1.0,3.0,sw));
+    g*=mix(1.0,0.94+0.1*hash(vec3(floor(v_u/0.14),seed,3.0)),smoothstep(1.0,3.0,sw));   // (Codex 3차: 줄무늬 대비 절반 — 나무판처럼 보이지 않게)
     if(n.z<0.3)g*=0.72;
     if(v_z>H-0.35)g*=0.8;
     col=g*u_lightCol*(0.62+0.5*clamp(dot(n,u_sun),0.0,1.0));
@@ -244,7 +298,8 @@ void shade(){
   else if(kind==9){   // 조선: 한옥 — the stone band at the foot (기단); above it 기둥 on the bay lines, 하인방 · 상인방, and 회벽 or 창호 between them; 창호 lit by night.
     // a_bld.z type: 0 a house, 1 a mud-walled 초가, 2 a tall body of storeys (a_wall.w: the storey, ×0.05 m), 3 one upper storey; H: the wall's top
     int wt=type;float st=v_wall.w*0.05;
-    if(n.z>0.5||(wt!=3&&v_z<u_hkP.x+0.01)){
+    if((flags&2)!=0){col=u_hk[0]*light*(n.z<-0.5?0.62:1.0);}   // 입체 기둥 · 받침목(가까이)
+    else if(n.z>0.5||(wt!=3&&v_z<u_hkP.x+0.01)){
       vec2 q=n.z>0.5?v_wm/vec2(0.9,0.45):vec2(v_u/0.9,v_z/0.28);q.x+=0.5*floor(q.y);
       float j=max(pulse(q.x,0.0,0.06,fwidth(q.x)),pulse(q.y,0.0,0.08,fwidth(q.y)));
       col=u_hk[3]*(0.92+0.1*hash(vec3(floor(q),seed)))*(1.0-0.2*j)*light;
@@ -293,7 +348,7 @@ void shade(){
       bool paper=hash(vec3(seed,bI,face))<u_hkP.z*(wt==1?0.6:1.0);
       // 창살: 칸을 문짝(약 0.75 m)으로 나누고 울거미(테두리) 안에 띠살(촘촘한 세로살 + 위 · 가운데 · 아래 가로살 띠) 또는
       // 용자살(가운데 세로살 하나 + 가로살 셋). 면마다 한 가지. 셰이더 무늬라 정점 · 메모리는 그대로 (2026-10-09 덕배: 네모로만 보임)
-      float lat=0.0;
+      float lat=0.0,shd=0.0;
       if(paper){
         float pwm=u_hkP.y*(wt==2?0.7:1.0),x0=0.5*pwm,x1=bay-0.5*pwm,z0=wt==2?0.0:0.08*hgt,lh=(wt==2?0.9:0.84)*hgt-z0;
         float xm=fract(tx)*bay,dx=fwidth(xm),dz=fwidth(zr)*hgt,nl=max(1.0,floor((x1-x0)/0.75+0.5)),lw=(x1-x0)/nl;
@@ -310,12 +365,14 @@ void shade(){
           sal=max(v,hb);
         }
         lat=max(frame,0.75*sal);
+        shd=max(seg(fz,lh-0.13,lh-0.06,dz),seg(fx,0.05,0.11,dx));   // 창호가 벽보다 들어간 깊이: 위 · 왼쪽 안 그림자 (Codex 3차)
       }
       // by night a few faces light one or two neighbouring bays, in the middle of the bay only (an oil lamp behind the paper, not a lit wall)
       float fh=hash(vec3(seed,face,11.0)),run=floor(fh*max(v_wall.x-1.0,1.0));
       bool lit=night&&paper&&fh<u_hkP.w&&bI>=run&&bI<=run+1.0&&fract(tx)>0.18&&fract(tx)<0.82&&zr>0.28&&zr<0.76;
       vec3 wallC=wt==1?u_hk2[3]:u_hk[1];
-      vec3 pc=lit?u_hk[6]*u_hkE.x*(1.0-0.45*lat):mix(paper?u_hk[2]:wallC,u_hk[0],0.55*lat)*light;
+      vec3 pc=lit?u_hk[6]*u_hkE.x*(1.0-0.45*lat):mix(mix(paper?u_hk[2]:wallC,u_hk[0],0.55*lat),u_hk[0]*0.62,0.5*shd)*light;
+      if((flags&1)!=0&&abs(v_u-len*0.5)<0.75&&zr>0.08&&zr<0.84){float dl=seg(v_u,len*0.5-0.03,len*0.5+0.03,fwidth(v_u))+seg(abs(v_u-len*0.5),0.69,0.75,fwidth(v_u));pc=mix(u_hk[0]*1.18,u_hk[0]*0.55,min(dl,1.0))*light;}   // 계단 앞 칸: 나무 두 짝 문
       col=mix(pc,u_hk[0]*light,max(post,beam));
       if(wt!=2)col*=1.0-0.38*smoothstep(0.62,1.0,zr);   // 처마 밑 그늘 (Codex 2026-10-10: 얇은 판이 아닌 목조로 읽히게)
     }
@@ -470,6 +527,7 @@ function throughIndex(list) {
   return { byId, byRing, size: byId.size + byRing.size };
 }
 
+const DETAIL_Z = 18;   // 조선 인스턴스의 가까이 디테일(처마 밑면 · 끝 두께 · 망와 · 기단 · 계단): 이 줌부터. 템플릿에 들어 있어 타일 메모리는 그대로
 // 조선의 인스턴스 종류 (city_hanok.mjs): 정점 셰이더, 템플릿(far · near 색인 범위), 기록의 속성 [위치, 개수, 형식(0 f32 · 1 u8), 바이트 위치]
 const INST = {
   skirt: { vs: VS_SKIRT, tpl: P => { const T = skirtTemplate(P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
@@ -524,7 +582,7 @@ export class CityBuildings {
     const vbo = gl.createBuffer(), ibo = gl.createBuffer();
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, T.verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, T.idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    return (C.tpl[kind] = { key, vbo, ibo, far: T.far, near: T.near, nearPhone: T.nearPhone || T.near });
+    return (C.tpl[kind] = { key, vbo, ibo, far: T.far, near: T.near, nearPhone: T.nearPhone || T.near, detail: T.detail || T.near });
   }
   // ── tiles ──
   // the canonical z14 tiles the map is showing: meshes for those we have, builds queued for the rest
@@ -871,9 +929,11 @@ export class CityBuildings {
         if (!used) {
           used = true; gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S);
           gl.uniform4f(u.u_sk, num(T.skirtRiseM, 1), num(G.upK, .15), num(T.skirtEdgeM, .12), 0);
-          gl.uniform4f(u.u_rf, .5, num(H.gableEndM, .6), num(H.thatch?.edgeM, .32), 0); gl.uniform4f(u.u_rd, num(R.halfWidthM, .11), num(R.upM, .18), num(R.downM, .08), 0); gl.uniform1f(u.u_bay, num(H.bayM, 2.4));
+          gl.uniform4f(u.u_rf, .5, num(H.gableEndM, .6), num(H.thatch?.edgeM, .32), num(H.detail?.fasciaM, .16)); gl.uniform4f(u.u_rd, num(R.halfWidthM, .11), num(R.upM, .18), num(R.downM, .08), num(H.detail?.hipRidgeM, .14)); gl.uniform1f(u.u_bay, num(H.bayM, 2.4));
+          gl.uniform4f(u.u_base, num(H.baseM, .55), num(H.thatch?.baseM, .3), num(H.detail?.platformOutM, .45), num(H.detail?.stepWidthM, 1.8));
+          const D = H.detail || {}; gl.uniform4f(u.u_post, num(D.postM, .22), num(D.postOutM, .1), num(D.bracketM, .14), num(D.bracketOutM, .32));
         }
-        const tpl = gi.tpl, [i0, n] = hi ? (this.phone ? tpl.nearPhone : tpl.near) : tpl.far;
+        const tpl = gi.tpl, [i0, n] = !hi ? tpl.far : zoom >= DETAIL_Z ? tpl.detail : this.phone ? tpl.nearPhone : tpl.near;
         gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy);
         gl.bindVertexArray(gi.vao); gl.bindBuffer(gl.ARRAY_BUFFER, gi.vbo);
         let run = null;
