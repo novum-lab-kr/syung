@@ -3,5 +3,8 @@ export default {
   id: 'simcity',
   from: 'basic',
   label: '심시티',
-  settings: {},
+  settings: {
+    map: { paletteKind: 'city' },   // 지도 색 위에 도시 땅 색
+    city: { enabled: true },
+  },
 };

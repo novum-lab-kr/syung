@@ -286,7 +286,7 @@ const smooth=x=>x*x*(3-2*x);
 // the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집). 전환은 아래 '모드 전환'(prepareMode · commitMode).
 const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),commit:(prev,next,o)=>commitMode(prev,next,o),onRequest:showModeButtons,onFail:showModeButtons});
 const modeOn=modeCtl.flags;
-const cityPack=()=>modeOn.joseon?JOSEON_STYLE:CITY_STYLE;   // the pack the ground, the buildings and their shadows read
+const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
 // city-build: the miniature city's buildings (web/lib/city_buildings.mjs): a custom layer under the station names (so names and
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
@@ -294,7 +294,7 @@ const cityPack=()=>modeOn.joseon?JOSEON_STYLE:CITY_STYLE;   // the pack the grou
 // 첫 화면에서 받지 않는다 — 모드를 켤 때, 그리고 지도가 뜬 뒤 쉬는 틈에 받는다(2026-10-10 덕배: 첫 접속이 느리다, 첫 화면 JS 의 약 1/5).
 // 모드는 이것이 다 온 뒤에야 켜진다(setSimcity · setCoaster 가 기다린다): 켜져 있으면 cityBuildings 등은 늘 있다
 let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null;
-let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeOn.simcity||modeOn.coaster;
+let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
 const MODE_KIT_DEPS=['city_mesh','city_hanok','city_geom','city_mvt','city_through_buildings','city_landmarks_data','coaster_badges','coaster_ride_sites'];
 function loadModeKit(){
@@ -319,7 +319,7 @@ function cityXrayTargets(){
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
-  cityBuildings.set({on:cityOn(),mode:modeOn.simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:modeOn.coaster?RIDE_H:1e9,pack:cityPack()});
+  cityBuildings.set({on:cityOn(),mode:modeOn.simcity?'simcity':'coaster',theme:effectiveTheme(),maxHeight:modeCtl.settings().map.towersAsRides?RIDE_H:1e9,pack:cityPack()});
 }
 const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>coasterBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
 const coasterGeo=createCoasterGeometry({maplibregl,paths,byId,cityViaduct,edgeGeom,geom,cityGeom,withCum,metresBetween,smooth,onFresh:()=>{coasterMotion.clear();coasterTrack.stale=true}});   // 롤코 길 · 언덕 · 건물 높이(높이가 바뀌면 주행 시간 · 선로도 다시)
@@ -583,8 +583,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 // ---- light / dark theme (web/map/theme.mjs) ---------------------------------------------------
 const RIDE_H=modes.settings('coaster').park.towerM;   // m: 롤코에서 이 높이 이상 건물은 놀이기구(그림자 · 벽 · 건물에서 빠진다)
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
-const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,CITY_STYLE,cityPalette,cityPack,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,cityOn,RIDE_H,palette:modes.settings('basic').map,live:{get coaster(){return modeOn.coaster},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get busLayer(){return busLayer},get ready(){return ready}}});
-const {PARK_COLORS}=theme;
+const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,live:{get settings(){return modeCtl.settings()},get coaster(){return modeOn.coaster},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
@@ -597,12 +596,11 @@ function sunArcIcon(){return theme.sunArcIcon()}
 // on the ground under the lines. Trains cast their shadow the same way. No shadows after sunset.
 let sunTrainShadow=[1.1,1.5];
 const sunShadows=new SunShadowLayer();
-const JOSEON_SHADOW_H=5;   // m: the shadow a 기와집 casts (its eaves and roof, a little under the ridge)
 function updateSun(){
   if(!ready)return;
-  const {elevation:el,azimuth:az}=sunPosition(),up=el>1,dark=effectiveTheme()==='dark';
+  const {elevation:el,azimuth:az}=sunPosition(),up=el>1,dark=effectiveTheme()==='dark',S=modeCtl.settings();
   // face lighting: light comes from the sun (polar = 90° − elevation); a soft overhead light at night
-  const K=modeOn.coaster&&PARK_COLORS[dark?'dark':'light'];   // the park: a warm light, softer (no blue cast at night)
+  const K=S.sun.light==='park'&&S.map.park[dark?'dark':'light'];   // the park: a warm light, softer (no blue cast at night)
   try{map.setLight({anchor:'map',position:[1.4,up?az:0,up?Math.max(10,90-el):20],intensity:K?K.lightK:up?.55:.3,color:K?K.light:dark?'#9fb4c8':'#ffffff'})}catch{}
   // trains: shadow away from the sun, longer when it is low
   const sh=up?Math.min(7,1.6/Math.tan(el*Math.PI/180)):1.2,away=(az+180)*Math.PI/180;
@@ -612,13 +610,13 @@ function updateSun(){
   const k=1/Math.tan(el*Math.PI/180),ux=Math.sin(away),uy=Math.cos(away),seen=new Set(),tris=[];
   const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
   for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-    const h0=+(f.properties.render_height??10),h=modeOn.joseon&&h0<JOSEON_STYLE.hanok.tall.towerMinH?JOSEON_SHADOW_H:h0,g=f.geometry;   // 조선: a low building is a low house; a tall one keeps its height (한옥 고층 · 목탑)if(!h||!g||coaster&&h>=RIDE_H)continue;
+    const h0=+(f.properties.render_height??10),h=S.sun.lowHouseM!=null&&h0<S.city.pack.hanok.tall.towerMinH?S.sun.lowHouseM:h0,g=f.geometry;   // 조선: a low building is a low house; a tall one keeps its height (한옥 고층 · 목탑)if(!h||!g||coaster&&h>=RIDE_H)continue;
     const rings=g.type==='Polygon'?[g.coordinates[0]]:g.type==='MultiPolygon'?g.coordinates.map(p=>p[0]):[];
     for(const ring of rings){
       if(!ring||ring.length<3)continue;
       const key=ring[0][0].toFixed(6)+ring[0][1].toFixed(6)+h;if(seen.has(key))continue;seen.add(key);
       // real low-sun shadows run ~10× the height; on a map that blankets whole blocks, so cap at 3.5× height / 250 m
-      const len=Math.min(cityOn()?+(cityPack().lighting?.shadow?.maxLengthM??80):250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
+      const len=Math.min(S.city.enabled?+(S.city.pack.lighting?.shadow?.maxLengthM??80):250,h*Math.min(k,3.5)),kx=Math.cos(ring[0][1]*Math.PI/180),dx=ux*len/(111320*kx),dy=uy*len/111320;
       const pts=[];for(const [x,y] of ring){pts.push([x,y]);pts.push([x+dx,y+dy])}
       const hp=hull(pts).map(q=>{const m=maplibregl.MercatorCoordinate.fromLngLat(q);return [m.x-O.x,m.y-O.y]});
       for(let i=1;i<hp.length-1;i++)tris.push(...hp[0],...hp[i],...hp[i+1]);   // convex hull → triangle fan
@@ -630,7 +628,7 @@ function updateSun(){
   const phone=matchMedia('(max-width:720px),(pointer:coarse)').matches?.35:1;
   const cityA=cityOn()?+(cityPack().modes?.[modeOn.simcity?'simcity':'coaster']?.shadowOpacity?.[dark?'dark':'light']??.14):null;   // city-build: the city's shadow strength and colour from the style pack
   sunShadows.color=cityA!=null?hexRGB3(cityPack().lighting?.shadow?.color||'#394D4B'):null;
-  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},cityA!=null?cityA*fade*phone:Math.min(modeOn.coaster?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
+  sunShadows.set({data:new Float32Array(tris),ox:O.x,oy:O.y},cityA!=null?cityA*fade*phone:Math.min(S.map.paletteKind==='park-city'?mapPalette().shadow:.34,.14+el/150)*fade*(dark?.55:1)*phone);
   map.triggerRepaint();
 }
 

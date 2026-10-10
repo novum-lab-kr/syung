@@ -40,7 +40,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     S = up == null ? (d.settings || {}) : mergeSettings(modeSettings(up), d.settings || {});
     freezeSettings(checkKnown(validateSettings(S, `${id}`), id)); base.set(id, S); return S;
   };
-  // 아는 키의 값 검사(키가 생기는 커밋마다 여기에 더한다): 테마 · 지도 색은 허용 값만, 지도 색(map)의 글자는 색, 수는 0 이상
+  // 아는 키의 값 검사(키가 생기는 커밋마다 여기에 더한다): 테마 · 지도 색은 허용 값만, 지도 색 자료(map.themes · colors · park)의 글자는 색, 수는 0 이상, 이름 값은 목록 안
   function checkKnown(S, id) {
     for (const k of Object.keys(preferences)) if (k in S && !preferences[k].includes(S[k])) throw new Error(`${id}.${k}: 허용되지 않는 값 ${S[k]}`);
     const colors = (v, path) => {
@@ -48,7 +48,11 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
       else if (typeof v === 'number') { if (v < 0) throw new Error(`${path}: 음수 (${v})`) }
       else if (v && typeof v === 'object') for (const k of Object.keys(v)) colors(v[k], Array.isArray(v) ? `${path}[${k}]` : `${path}.${k}`);
     };
-    if (S.map != null) colors(S.map, `${id}.map`);
+    for (const k of ['themes', 'colors', 'park']) if (S.map?.[k] != null) colors(S.map[k], `${id}.map.${k}`);
+    const oneOf = (v, list, path) => { if (v !== undefined && !list.includes(v)) throw new Error(`${path}: 허용되지 않는 값 ${v}`) };
+    oneOf(S.map?.paletteKind, ['base', 'city', 'park-city'], `${id}.map.paletteKind`); oneOf(S.sun?.light, ['map', 'park'], `${id}.sun.light`);
+    for (const [g, k] of [['map', 'towersAsRides'], ['map', 'verticalGradient'], ['city', 'groundTexture']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
+    if (S.sun && S.sun.lowHouseM != null && !(typeof S.sun.lowHouseM === 'number' && S.sun.lowHouseM > 0)) throw new Error(`${id}.sun.lowHouseM: 0 보다 큰 수 또는 null`);
     if (S.city?.pack) checkPack(S.city.pack, `${id}.city.pack`);
     if (S.park?.style) checkPack(S.park.style, `${id}.park.style`);
     if (S.park && 'towerM' in S.park && !(typeof S.park.towerM === 'number' && S.park.towerM > 0)) throw new Error(`${id}.park.towerM: 0 보다 큰 수`);

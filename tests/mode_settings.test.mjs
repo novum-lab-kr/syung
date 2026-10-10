@@ -125,7 +125,16 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   const R=createModeRegistry(defs);
   assert.deepEqual(R.list().map(m=>[m.id,m.from]),[['basic',null],['simcity','basic'],['joseon','simcity'],['coaster','simcity']]);
   const B=R.settings('basic');
-  for(const id of ['simcity','joseon','coaster'])assert.equal(R.settings(id).map,B.map,`${id} 지도 색 = 기본`);
+  for(const id of ['simcity','joseon','coaster'])for(const k of ['themes','colors','park'])assert.equal(R.settings(id).map[k],B.map[k],`${id} 지도 색 = 기본`);
+  // 모드가 묻는 설정(4-6): 지도 색 종류 · 도시 켜짐 · 고층 자르기 · 흙 질감 · 해
+  const q=id=>{const S=R.settings(id);return [S.map.paletteKind,S.city.enabled,S.map.towersAsRides,S.map.verticalGradient,S.city.groundTexture,S.sun.light,S.sun.lowHouseM,S.park.enabled]};
+  assert.deepEqual(q('basic'),['base',false,false,true,false,'map',null,false]);
+  assert.deepEqual(q('simcity'),['city',true,false,true,false,'map',null,false]);
+  assert.deepEqual(q('joseon'),['city',true,false,true,true,'map',5,false]);
+  assert.deepEqual(q('coaster'),['park-city',true,true,false,false,'park',null,true]);
+  const badS=S=>()=>createModeRegistry([{id:'basic',settings:S}]);
+  assert.throws(badS({map:{paletteKind:'neon'}}),/허용되지 않는/);assert.throws(badS({sun:{light:'moon'}}),/허용되지 않는/);
+  assert.throws(badS({map:{towersAsRides:1}}),/참 · 거짓/);assert.throws(badS({sun:{lowHouseM:0}}),/lowHouseM/);
   const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mjs');
   assert.equal(B.map.themes,MAP_THEMES);assert.equal(B.map.colors,MAP_COLORS);assert.equal(B.map.park,PARK_COLORS);
   assert.equal(B.themeChoice,'auto');assert.equal(B.mapColor,'calm');

@@ -6,6 +6,7 @@ export default {
   from: 'simcity',
   label: '조선',
   settings: {
-    city: { pack: JOSEON_DELTA },   // 도시 팩에서 조선만 다른 것(흙바닥 · 한옥 · 수로 …)
+    city: { pack: JOSEON_DELTA, groundTexture: true },   // 도시 팩에서 조선만 다른 것(흙바닥 · 한옥 · 수로 …), 땅에 흙 질감
+    sun: { lowHouseM: 5 },   // 기와집 그림자(처마 · 지붕, 용마루 조금 아래). 한옥 고층 · 목탑은 실제 높이
   },
 };
