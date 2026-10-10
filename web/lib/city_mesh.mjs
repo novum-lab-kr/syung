@@ -156,6 +156,7 @@ export function classifyBuilding(info, P) {
 //  roof: its axis angle; plant/awning: base height) · 20 wall u8×4 (bays (0 = no windows), length lo/hi in 5 cm, edge seed (4 bits) | faceClass<<4 (0 all bays, 1 every other, 2 one narrow column) | corner-at-start<<6 | corner-at-end<<7)
 //  · 24 building u8×4 (seed lo/hi, type|crown<<3|famFacade<<5, flags | cornerWidthShare<<4) · 28 misc u8×4 (colour pick, lit override, H lo/hi in 10 cm)
 export const STRIDE = 32;
+export const INST_STRIDE = 32;   // 인스턴스 하나(조선 고층 처마 조각): city_hanok.mjs skirtInst 가 채운다 — Float32 8개
 class Writer {
   constructor() { this.cap = 1 << 15; this.buf = new ArrayBuffer(this.cap * STRIDE); this.view(); this.n = 0; this.kind = 0; this.nx = 0; this.ny = 0; this.nz = 1; this.w = [0, 0, 0, 0]; this.b = [0, 0, 0, 0]; this.m = [0, 0, 0, 0] }
   view() { this.f = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); this.i8 = new Int8Array(this.buf) }
@@ -185,7 +186,7 @@ export class TileBuilder {
     this.mPerUnit = this.unit / this.mpu;              // metres a tile unit (latitude corrected)
     this.ox = src.x / n; this.oy = src.y / n;          // the tile's origin in mercator
     this.wox = (this.ox - G[0]) * S; this.woy = (this.oy - G[1]) * S;   // and in city metres
-    this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
+    this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], inst: [], instFar: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
     this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
     this.items = []; this.blockers = []; this.ei = 0; this.grid = null;
     // 랜드마크 자리(타일 단위): 그 안에 중심이 있는 높은 조각 건물은 빼고 전용 모델(city_landmarks.mjs)이 그린다
@@ -786,15 +787,19 @@ export class TileBuilder {
       }
     }
   }
-  // pack the result: one vertex buffer, one index buffer in chunk order [lo][walls][hi]
+  // pack the result: one vertex buffer, one index buffer in chunk order [lo][walls][hi]; the instances (조선 고층 처마 조각,
+  // city_hanok.mjs SKIRT_INST) in one buffer in chunk order, each chunk's far ones first: [k0, kF) far, [kF, k1) near only
   result() {
-    const chunks = [], idx = []; let off = 0;
+    const chunks = [], idx = []; let off = 0, nInst = 0;
+    for (const c of this.chunks) nInst += c.instFar.length + c.inst.length;
+    const ib = new ArrayBuffer(nInst * INST_STRIDE), iv = new Float32Array(ib); let k = 0;
     for (const c of this.chunks) {
       if (!c.n) continue;
       const i0 = off; for (const v of c.lo) idx.push(v); const iLo = idx.length; for (const v of c.walls) idx.push(v); const iW = idx.length; for (const v of c.hi) idx.push(v); off = idx.length;
-      chunks.push({ i0, iLo, iW, i1: off, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, zmax: c.zmax });
+      const k0 = k; for (const r of c.instFar) iv.set(r, (k++) * INST_STRIDE / 4); const kF = k; for (const r of c.inst) iv.set(r, (k++) * INST_STRIDE / 4);
+      chunks.push({ i0, iLo, iW, i1: off, k0, kF, k1: k, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, zmax: c.zmax });
     }
-    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
+    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), inst: new Uint8Array(ib), chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
   }
 }
 

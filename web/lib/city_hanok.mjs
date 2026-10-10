@@ -170,6 +170,28 @@ export function skirtGroups(len, G) {
   return out;
 }
 
+// 처마 조각 하나 (32 bytes, city_mesh.mjs INST_STRIDE): f32 the wall start x, y (the tile's mercator), z (the slope's top, m),
+// the wall's angle on the tile, its length (m), u at its start (m); then bytes ×0.01 m: out · back at the first end, out ·
+// along at the last (the eave's ends from the wall's), the two ends' lifts, the depth o; the 기와 colour slot.
+// Read by city_buildings.mjs VS_SKIRT — change both together
+export function skirtInst(xy, z, angle, L, u0, ends, l0, l1, o, slot) {
+  const f = new Float32Array(8), b = new Uint8Array(f.buffer), q = v => clamp(Math.round(v * 100), 0, 255);
+  f[0] = xy[0]; f[1] = xy[1]; f[2] = z; f[3] = angle; f[4] = L; f[5] = u0;
+  b[24] = q(ends[0]); b[25] = q(ends[1]); b[26] = q(ends[2]); b[27] = q(ends[3]); b[28] = q(l0); b[29] = q(l1); b[30] = q(o); b[31] = slot;
+  return f;
+}
+// the piece every 처마 instance draws: points (column 0 · .5 · 1, row t, part 0 the slope · 1 the edge's top · 2 its foot);
+// index ranges: lo (one quad on the grid's corners), grid, edge
+export function skirtTemplate(rows) {
+  const v = [], idx = [], R = rows.length;
+  for (const t of rows) for (const sc of [0, .5, 1]) v.push(sc, t, 0);
+  for (const sc of [0, .5, 1]) v.push(sc, 1, 1, sc, 1, 2);
+  const last = R * 3 - 1; idx.push(0, 2, last, 0, last, last - 2);
+  for (let ti = 0; ti < R - 1; ti++) for (let si = 0; si < 2; si++) { const q = ti * 3 + si; idx.push(q, q + 1, q + 4, q, q + 4, q + 3) }
+  const e = R * 3; for (let i = 0; i < 2; i++) { const a = e + 2 * i, b = a + 2; idx.push(a, b, b + 1, a, b + 1, a + 1) }
+  return { verts: new Float32Array(v), idx: new Uint16Array(idx), lo: [0, 6], grid: [6, (R - 1) * 12], edge: [6 + (R - 1) * 12, 12] };
+}
+
 // a local frame on the house: x along (ux, uy), y across, z up, metres → the writer's tile-mercator units; triangles wound
 // so their face points along the normal given (front = counter-clockwise seen from outside, as city_mesh's walls). list:
 // 'walls' (every zoom), 'lo' (below LOD_HI), 'hi' (from LOD_HI)
@@ -185,6 +207,10 @@ function frame(tb, c, ux, uy) {
     // lists: {list: tris, …} — the same points shared by several lists (a roof's near and far faces)
     mesh(P, N, U, lists, out) { const i = P.map((p, j) => F.v(p, N[j], U[j])); for (const [list, tris] of Object.entries(lists)) for (let t = 0; t < tris.length; t += 3) tri(ch[list], i, P, tris[t], tris[t + 1], tris[t + 2], out) },
     shift(dx, dy) { return frame(tb, [c[0] + (dx * ux + dy * vx) / mpu, c[1] + (dx * uy + dy * vy) / mpu], ux, uy) },   // the same axes, centred dx, dy metres away
+    at(p) { return [(c[0] + (p[0] * ux + p[1] * vx) / mpu) * u, (c[1] + (p[0] * uy + p[1] * vy) / mpu) * u] },   // local metres → the tile's mercator (nothing written)
+    angle(d) { return Math.atan2(d[0] * uy + d[1] * vy, d[0] * ux + d[1] * vx) },   // a local direction's angle on the tile
+    // an instance record into this chunk (far: drawn from afar too); pts: local points it reaches, for the chunk's bounds
+    inst(rec, far, pts) { (far ? ch.instFar : ch.inst).push(rec); for (const p of pts) { const q = F.at(p); tb.extend(ch, q[0], q[1], q[0], q[1], p[2]) } },
   };
   return F;
 }
@@ -347,7 +373,7 @@ function pagoda(tb, F, s, H, K, r) {
 // (wall type STOREYS); a podium a little wider round its foot with a tiled skirt; a 기와 skirt round every floor (every 2nd
 // or 3rd on a tall one: K.tall.skirtStep); on top one roof, or on a long slab three — the middle one larger and higher
 function tower(tb, F, a, b, H, K, r) {
-  const T = K.tall, W = tb.W, slot = Math.floor(r(3) * 3) % 3, top = Math.max(T.podiumM + 2 * T.storeyM, H - 2.5);
+  const T = K.tall, slot = Math.floor(r(3) * 3) % 3, top = Math.max(T.podiumM + 2 * T.storeyM, H - 2.5);
   const floors = Math.max(2, Math.round((top - T.podiumM) / T.storeyM)), st = (top - T.podiumM) / floors;
   houseWalls(tb, F, a, b, 0, top, WALL.STOREYS, K, r(2), st, [T.skirtStep.find(([n]) => floors <= n)[1], Math.round(T.podiumM * 20)]);   // (the shader: the eaves' step and the floors' origin)
   // the podium: one storey round the foot, its skirt reaching in to the body
@@ -358,36 +384,24 @@ function tower(tb, F, a, b, H, K, r) {
   // the floors' eaves (Codex 검토 2026-10-10, 레퍼런스: 창 두세 칸을 묶은 지붕이 따로따로, 모서리는 더 큰 지붕이 감싼다): on each
   // face the roofs skirtGroups lays out, the same on every tier so they line up, every `step` floors. A corner roof is the
   // two faces' end pieces meeting on the diagonal, kicked out and lifted; a middle one flares a little at its lifted ends.
-  // The slopes at every zoom, their edges near only
-  const G = T.skirtGroup, step = T.skirtStep.find(([n]) => floors <= n)[1], k = K.cornerKickM * .7, lift = K.cornerLiftM * .6, Hq = 65535, rise = T.skirtRiseM;
+  const G = T.skirtGroup, step = T.skirtStep.find(([n]) => floors <= n)[1], k = K.cornerKickM * .7, rise = T.skirtRiseM;
   const C = [[-a, -b], [a, -b], [a, b], [-a, b]], sides = C.map((p, s) => {
     const q = C[(s + 1) % 4], len = Math.hypot(q[0] - p[0], q[1] - p[1]), d = [(q[0] - p[0]) / len, (q[1] - p[1]) / len];
     return { p, d, n: [d[1], -d[0]], len, groups: skirtGroups(len, G) };
   });
-  W.kind = HANOK_KIND.ROOF; W.w = [0, 0, 0, 0]; W.m = [slot, 0, Hq & 255, Hq >>> 8];
-  // one roof (Codex 2차 검토: 판이 아니라 기와지붕으로): a grid of 3 columns along the eave × rows wall → eave, the slope
-  // steep at the wall and flattening out to an eave turned up a little (G.upK × its depth), the ends lifted more (G.liftM:
-  // a corner end, another end); far ('lo') one quad on the grid's corners, the same vertices
-  const rows = G.rows, drop = t => 1.6 * t - .6 * t * t, cols = [0, .5, 1];
-  const grid = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < 2; si++) { const q = ti * 3 + si; grid.push(q, q + 1, q + 4, q, q + 4, q + 3) }
-  const lo = [0, 2, rows.length * 3 - 1, 0, rows.length * 3 - 1, rows.length * 3 - 3];
+  // one roof (Codex 2차 검토: 판이 아니라 기와지붕으로): drawn instanced (2026-10-10 덕배: 미리 만든 모양을 위치에 놓기) — the
+  // renderer holds one piece (skirtTemplate: 3 columns along the eave × G.rows wall → eave, and the eave's edge) and each
+  // roof is a record of 32 bytes (skirtInst); the vertex shader (city_buildings.mjs VS_SKIRT) lays it out: the slope steep at
+  // the wall, flattening out to an eave turned up a little (G.upK × its depth), the ends lifted more (G.liftM: a corner end,
+  // another end). A corner end runs out along the diagonal, another flares past the wall line. Far: every third tier
   for (let f = step; f < floors; f += step) {
-    const zi = T.podiumM + f * st + .15, far = (f / step) % 3 === 0;   // 멀리서(lo)는 세 단에 하나만 (2026-10-10 덕배: 줌 축소가 끊긴다 — 단마다 그리니 먼 삼각형이 두 배)
+    const zi = T.podiumM + f * st + .15, far = (f / step) % 3 === 0;   // 멀리서는 세 단에 하나만 (2026-10-10 덕배: 줌 축소가 끊긴다)
     for (const { p, d, n, len, groups } of sides) for (const [x0, x1] of groups) {
-      const c0 = x0 <= 1e-6, c1 = x1 >= len - 1e-6, o = c0 || c1 ? G.cornerOutM : G.outM;
-      // the eave's two ends: on a corner out along the diagonal, else flared past the wall line
-      const eave = (x, corner, sgn) => corner ? [p[0] + d[0] * x + (n[0] + sgn * d[0]) * (o + k), p[1] + d[1] * x + (n[1] + sgn * d[1]) * (o + k)] : [p[0] + d[0] * (x + sgn * G.flareM) + n[0] * o, p[1] + d[1] * (x + sgn * G.flareM) + n[1] * o];
-      const e0 = eave(x0, c0, -1), e1 = eave(x1, c1, 1), u0 = x0 - (c0 ? o + k : G.flareM), u1 = x1 + (c1 ? o + k : G.flareM), l0 = c0 ? G.liftM[0] : G.liftM[1], l1 = c1 ? G.liftM[0] : G.liftM[1];
-      const P = [], U = [];
-      for (const t of rows) for (const sc of cols) {
-        const wx = lerp(x0, x1, sc), up = (G.upK * o + (sc === 0 ? l0 : sc === 1 ? l1 : 0)) * t * t;
-        P.push([lerp(p[0] + d[0] * wx, lerp(e0[0], e1[0], sc), t), lerp(p[1] + d[1] * wx, lerp(e0[1], e1[1], sc), t), zi - rise * drop(t) + up]); U.push(lerp(wx, lerp(u0, u1, sc), t));
-      }
-      F.mesh(P, smoothNormals(P, grid), U, far ? { hi: grid, lo } : { hi: grid }, [n[0], n[1], 1]);
-      if (!tb.opts.phone) {   // the eave's edge (휴대폰은 빼요 — 정점)
-        const E = P.slice(-3), R = [...E, ...E.map(q => [q[0], q[1], q[2] - T.skirtEdgeM])], nn = [n[0], n[1], 0];
-        F.mesh(R, R.map(() => nn), [...U.slice(-3), ...U.slice(-3)], { hi: [0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4] }, nn);
-      }
+      const c0 = x0 <= 1e-6, c1 = x1 >= len - 1e-6, o = c0 || c1 ? G.cornerOutM : G.outM, ck = o + k;
+      const on0 = c0 ? ck : o, al0 = c0 ? ck : G.flareM, on1 = c1 ? ck : o, al1 = c1 ? ck : G.flareM;
+      const w0 = [p[0] + d[0] * x0, p[1] + d[1] * x0, zi], w1 = [p[0] + d[0] * x1, p[1] + d[1] * x1, zi];
+      const e0 = [w0[0] + n[0] * on0 - d[0] * al0, w0[1] + n[1] * on0 - d[1] * al0, zi - rise], e1 = [w1[0] + n[0] * on1 + d[0] * al1, w1[1] + n[1] * on1 + d[1] * al1, zi - rise];
+      F.inst(skirtInst(F.at(w0), zi, F.angle(d), x1 - x0, x0, [on0, al0, on1, al1], c0 ? G.liftM[0] : G.liftM[1], c1 ? G.liftM[0] : G.liftM[1], o, slot), far, [w0, w1, e0, e1]);
     }
   }
   // the roofs on top

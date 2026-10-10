@@ -19,7 +19,8 @@
 //   city.set({on:true,mode:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { TileBuilder, resolvePack, classifyBuilding, STRIDE, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
+import { skirtTemplate } from './city_hanok.mjs';
+import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDE, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
 import { sunPosition } from './sun.mjs';
 import THROUGH_LIST from './city_through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
@@ -42,6 +43,34 @@ void main(){
   if(H>=u_maxH)pos=vec4(0.0,0.0,2.0,1.0);   // the towers that are rides on the coaster: not drawn
   gl_Position=pos;
   v_n=a_nk.xyz;v_z=z;v_u=a_u;v_wm=u_wo+a_xy*u_S;v_wall=a_wall;v_bld=a_bld;v_misc=a_misc;v_kind=kind;
+}`;
+// 조선 고층의 처마 조각, 인스턴스로 (city_hanok.mjs skirtTemplate · skirtInst — 바꾸면 셋 다): 조각 하나의 점(열 sc 0 · .5 · 1,
+// 행 t 벽 → 처마 끝, part 0 경사 · 1 끝 두께 위 · 2 아래)을 기록(a_p: 벽 시작 xy · 윗면 z · 각도, a_l: 길이 · u 시작, a_e: 처마
+// 양 끝이 벽에서 나간 거리(×0.01 m) 밖 · 뒤 · 밖 · 앞, a_f: 양 끝 들림 · 내밀기(×0.01 m) · 기와 색)대로 펼친다.
+// 같은 FS 를 쓴다: kind 8(기와), 법선은 격자 이웃의 차이로
+const VS_SKIRT = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 a_t;layout(location=1) in vec4 a_p;layout(location=2) in vec2 a_l;layout(location=3) in vec4 a_e;layout(location=4) in vec4 a_f;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec4 u_sk;   // 처마: 높이(벽 → 끝), 끝 들림(내밀기 ×), 끝 두께
+out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
+vec2 D,N;
+vec3 at(float sc,float t){
+  float L=a_l.x,o=a_f.z*0.01;
+  vec2 w=D*(sc*L),e=mix(N*(a_e.x*0.01)-D*(a_e.y*0.01),D*L+N*(a_e.z*0.01)+D*(a_e.w*0.01),sc);
+  float lift=sc<0.5?mix(a_f.x,0.0,sc*2.0):mix(0.0,a_f.y,sc*2.0-1.0);
+  return vec3(mix(w,e,t),-u_sk.x*(1.6*t-0.6*t*t)+(u_sk.y*o+lift*0.01)*t*t);
+}
+void main(){
+  D=vec2(cos(a_p.w),sin(a_p.w));N=vec2(D.y,-D.x);
+  float sc=a_t.x,t=a_t.y;int part=int(a_t.z+0.5);
+  vec3 q=at(sc,t),n;
+  if(part==0){float hs=sc<0.75?0.05:-0.05,ht=t<0.75?0.05:-0.05;vec3 a=(at(sc+hs,t)-q)*sign(hs),b=(at(sc,t+ht)-q)*sign(ht);n=normalize(cross(a,b));if(n.z<0.0)n=-n;}
+  else{n=vec3(N,0.0);if(part==2)q.z-=u_sk.z;}
+  float z=(a_p.z+q.z)*u_grow;vec2 xy=a_p.xy+q.xy*u_mpu;
+  gl_Position=u_matrix*vec4(xy,z*u_mpu,1.0);
+  float L=a_l.x;
+  v_n=n;v_z=z;v_u=mix(a_l.y+sc*L,mix(a_l.y-a_e.y*0.01,a_l.y+L+a_e.w*0.01,sc),t);v_wm=u_wo+xy*u_S;
+  v_wall=vec4(0.0);v_bld=vec4(0.0);v_misc=vec4(a_f.w,0.0,255.0,255.0);v_kind=8.0;
 }`;
 // x-ray (심시티): the screen boxes of the station platforms and running trains this frame (NDC x0,y0,x1,y1; their farthest window
 // depth and fade weight): a building fragment inside one (feathered by u_xv.z px) and nearer than the target turns to glass
@@ -356,7 +385,7 @@ function compile(gl, vs, fs) {
 }
 
 // a built tile's size in memory (one copy): its vertex and index bytes
-const meshBytes = m => m.verts.byteLength + m.idx.byteLength;
+const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? m.inst.byteLength : 0);
 
 // the through list (web/lib/city_through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
 function throughIndex(list) {
@@ -404,7 +433,17 @@ export class CityBuildings {
     return !this.map.getLayer('bm-bld') || this.map.getLayoutProperty('bm-bld', 'visibility') !== 'none';
   }
   animating() { return this.growing }
-  context(gl) { let c = this.ctx.get(gl); if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH) }; this.ctx.set(gl, c) } return c }
+  context(gl) { let c = this.ctx.get(gl); if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), skColor: compile(gl, VS_SKIRT, FS), skDepth: compile(gl, VS_SKIRT, FS_DEPTH), tpl: null }; this.ctx.set(gl, c) } return c }
+  // the 처마 piece every instance draws (one a context; again when the pack's rows change)
+  template(gl, C) {
+    const rows = this.P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1], key = rows.join(',');
+    if (C.tpl?.key === key) return C.tpl;
+    if (C.tpl) { gl.deleteBuffer(C.tpl.vbo); gl.deleteBuffer(C.tpl.ibo) }
+    const T = skirtTemplate(rows), vbo = gl.createBuffer(), ibo = gl.createBuffer();
+    gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, T.verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, T.idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return (C.tpl = { key, vbo, ibo, lo: T.lo, grid: T.grid, edge: T.edge });
+  }
   // ── tiles ──
   // the canonical z14 tiles the map is showing: meshes for those we have, builds queued for the rest
   collect() {
@@ -511,7 +550,16 @@ export class CityBuildings {
     A(0, 2, gl.FLOAT, false, 0); A(1, 1, gl.FLOAT, false, 8); A(2, 4, gl.BYTE, true, 12); A(3, 1, gl.FLOAT, false, 16); A(4, 4, gl.UNSIGNED_BYTE, false, 20); A(5, 4, gl.UNSIGNED_BYTE, false, 24); A(6, 4, gl.UNSIGNED_BYTE, false, 28);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx.byteLength, gl.STATIC_DRAW);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false }; e.gpu.set(gl, g); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
+    const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false }; e.gpu.set(gl, g);
+    if (m.inst && m.inst.byteLength) {   // 처마 조각: the template's points + the tile's records (their pointers moved to each chunk's first record when drawn)
+      const C = this.context(gl), tpl = this.template(gl, C), ivao = gl.createVertexArray(), ivbo = gl.createBuffer();
+      gl.bindVertexArray(ivao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, ivbo); gl.bufferData(gl.ARRAY_BUFFER, m.inst, gl.STATIC_DRAW);
+      for (let i = 1; i <= 4; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribDivisor(i, 1) }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tpl.ibo);
+      gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      g.ivao = ivao; g.ivbo = ivbo; g.tpl = tpl;
+    } this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
   }
   // fill the buffers on: at most `budget` bytes; the bytes put up
   feed(gl, g, m, budget) {
@@ -530,7 +578,7 @@ export class CityBuildings {
     const st = this.stats, dt = performance.now() - t0; st.uploadMs = (st.uploadMs || 0) + dt; st.feedMaxMs = Math.max(st.feedMaxMs || 0, dt);
     return used;
   }
-  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); e.gpu.delete(gl) }
+  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.ivao) { gl.deleteVertexArray(g.ivao); gl.deleteBuffer(g.ivbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   paletteFor() {
     const P = this.P, th = this.theme, mode = P.modes[this.mode] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
@@ -652,12 +700,9 @@ export class CityBuildings {
     if (!this.xr || !this.shown() || !this.visible.length) return false;
     return this.draw(gl, M, false, true);
   }
-  draw(gl, M, depthOnly, glass = false) {
-    const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
-    gl.useProgram(prog.p);
-    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
-    if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
-    const K = this.palette || (this.palette = this.paletteFor());
+  // the uniforms both programs read (the buildings' and the 처마 instances'): the palette, light, x-ray, detail by zoom
+  uniforms(gl, u, depthOnly, glass, zoom) {
+    const K = this.palette || (this.palette = this.paletteFor()), sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     gl.uniform4fv(u.u_through, K.through); gl.uniform4fv(u.u_thBand, K.thBand);   // both passes: the depth pass leaves the band open
     if (!depthOnly) {
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
@@ -668,13 +713,21 @@ export class CityBuildings {
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
     }
-    const lodE = this.P.lod.equipment, sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
+    const lodE = this.P.lod.equipment;
     gl.uniform2f(u.u_detail, sm(lodE[0], lodE[1], zoom), sm(lodE[1], lodE[1] + .5, zoom)); gl.uniform1f(u.u_maxH, this.maxHeight); gl.uniform1f(u.u_S, S);
     if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
     this.xrayUniforms(gl, u, glass);   // x-ray boxes: the depth pass and the glass pass on the train canvas; none in the map's own pass (it has no boxes then)
+  }
+  draw(gl, M, depthOnly, glass = false) {
+    const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
+    gl.useProgram(prog.p);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
+    if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
+    this.uniforms(gl, u, depthOnly, glass, zoom);
+    const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
-    const M64 = this.M64, M32 = this.M32; let growing = false, drawn = false, draws = 0;
+    const M64 = this.M64, M32 = this.M32, skirts = []; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
     let budget = this.phone ? 1.5e6 : 3e6;   // bytes put up to the GPU this pass; the rest next frame (growing: a repaint follows)
     for (const e of this.visible) {
@@ -686,7 +739,7 @@ export class CityBuildings {
         budget -= this.feed(gl, g, e.mesh, budget);
         if (!g.done) { growing = true; continue }
         // phones: once both canvases (the map's and the trains') hold it, the JS copy is let go — a third copy of the city
-        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null }
+        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null; e.mesh.inst = null }
       }
       const m = e.mesh;
       const t = Math.min(1, (now - e.readyAt) / GROW_MS), grow = zoomGrow * (t < 1 ? (growing = true, t * t * (3 - 2 * t)) : 1);
@@ -697,22 +750,51 @@ export class CityBuildings {
       M32.set(M64);
       gl.uniformMatrix4fv(u.u_matrix, false, M32); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
       gl.bindVertexArray(g.vao);
+      const sk = g.ivao ? { g, m, M: Float32Array.from(M32), chunks: [] } : null;   // 처마 instances: drawn after, by their own program
       for (const c of m.chunks) {
         if (!this.noCull && !this.inView(M64, c, m.mpu * grow)) continue;
         if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr.U)) continue;   // the glass pass: only chunks under an x-ray box
-        const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW; if (b <= a) continue;
+        const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW, nk = hi ? c.k1 - c.k0 : c.kF - c.k0; if (b <= a && !(sk && nk > 0)) continue;
+        let f = 1;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
-          const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu, f = 1 - sm(far[0], far[1], d);
+          const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu; f = 1 - sm(far[0], far[1], d);
           if (f <= 0) continue; gl.uniform1f(u.u_grow, grow * f);
         }
-        if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++;
+        if (sk && nk > 0) sk.chunks.push(c, grow * f);
+        if (b > a) { if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++ }
       }
+      if (sk && sk.chunks.length) skirts.push(sk);
     }
+    if (skirts.length) draws += this.drawSkirts(gl, C, depthOnly, glass, zoom, hi, skirts), drawn = true;
     gl.bindVertexArray(null); gl.colorMask(true, true, true, true); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW); if (depthOnly) gl.depthFunc(gl.LESS);   // the train canvas's renderers expect culling off (as BuildingDepth left it)
     if (glass) { gl.disable(gl.BLEND); gl.depthMask(true); this.stats.glassDraws = draws; return drawn }
     this.growing = growing; if (growing && !depthOnly) map.triggerRepaint();
     const st = this.stats; st[depthOnly ? 'depthMs' : 'renderMs'] = (st[depthOnly ? 'depthMs' : 'renderMs'] || 0) + performance.now() - t0; st[depthOnly ? 'depthFrames' : 'frames'] = (st[depthOnly ? 'depthFrames' : 'frames'] || 0) + 1; st.draws = draws;
     return drawn;
+  }
+  // 조선 고층의 처마 조각: the template drawn once per record of each visible chunk (from afar the far records, one quad each;
+  // near all of them, the grid and — not on phones — the eave's edge). Both sides drawn: a piece is an open surface
+  drawSkirts(gl, C, depthOnly, glass, zoom, hi, list) {
+    const prog = depthOnly ? C.skDepth : C.skColor, u = prog.u, G = this.P.hanok?.tall?.skirtGroup || {}, T = this.P.hanok?.tall || {};
+    gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom);
+    gl.uniform4f(u.u_sk, num(T.skirtRiseM, 1), num(G.upK, .15), num(T.skirtEdgeM, .12), 0); gl.uniform1f(u.u_S, S);
+    const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
+    let draws = 0;
+    for (const { g, m, M, chunks } of list) {
+      const tpl = g.tpl, [i0, n] = hi ? [tpl.grid[0], tpl.grid[1] + (this.phone ? 0 : tpl.edge[1])] : tpl.lo;
+      gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy);
+      gl.bindVertexArray(g.ivao); gl.bindBuffer(gl.ARRAY_BUFFER, g.ivbo);
+      for (let k = 0; k < chunks.length; k += 2) {
+        const c = chunks[k], cnt = hi ? c.k1 - c.k0 : c.kF - c.k0, o = c.k0 * INST_STRIDE;
+        gl.uniform1f(u.u_grow, chunks[k + 1]);
+        gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INST_STRIDE, o); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, INST_STRIDE, o + 16);
+        gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, false, INST_STRIDE, o + 24); gl.vertexAttribPointer(4, 4, gl.UNSIGNED_BYTE, false, INST_STRIDE, o + 28);
+        if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, n, gl.UNSIGNED_SHORT, i0 * 2, cnt); draws++;
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindVertexArray(null); if (cull) gl.enable(gl.CULL_FACE);
+    const P = depthOnly ? C.depth : C.color; gl.useProgram(P.p);
+    return draws;
   }
   // the chunk's screen box against a box in NDC (x0,y0,x1,y1): false only when every corner is in front of the camera and the boxes miss
   hitsBox(M, c, zs, U) {
