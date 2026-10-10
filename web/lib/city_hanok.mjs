@@ -415,8 +415,8 @@ function tower(tb, F, a, b, H, K, r) {
     }
   }
   // the roofs on top
-  if (a / b >= T.triRoofAspect) {
-    const am = Math.max(2, a * .34), ae = Math.max(2, a * .26), xe = a - ae;
+  if (a / b >= T.triRoofAspect) {   // 양 끝 지붕은 아래 모서리 처마 무리 위에(Codex 1차: 꼭대기 세 채를 아래 지붕 무리와 맞추기), 가운데는 그 사이
+    const leg = clamp(G.cornerK * 2 * a, G.cornerM[0], G.cornerM[1]), ae = Math.max(2, leg / 2), xe = a - ae, am = Math.max(2, Math.min(a * .34, xe - ae - 1));
     giwaRoof(tb, F.shift(-xe, 0), ae, b, top, K, slot, { style: 'paljak' });
     giwaRoof(tb, F.shift(xe, 0), ae, b, top, K, slot, { style: 'paljak' });
     houseWalls(tb, F, am, b * .92, top - .2, top + 2.2, WALL.STOREY, K, r(6), 2.4);
