@@ -5,9 +5,9 @@ import {createModeRegistry} from '../web/modes/index.mjs';
 
 // 시험용 정의: 실제 basic · simcity · joseon · coaster 와 같은 모양(조선 · 롤코는 simcity 에서)
 const defs=()=>[
-  {id:'basic',settings:{themeChoice:'auto',mapColor:'calm',city:{enabled:false,pack:{floor:{light:'#eee',dark:'#222'},lod:[14,16]},life:{cars:true}},track:{kind:'ground'},park:null}},
+  {id:'basic',settings:{themeChoice:'auto',mapColor:'calm',city:{enabled:false,pack:{floor:{light:'#eeeeee',dark:'#222222'},lod:[14,16]},life:{cars:true}},track:{kind:'ground'},park:null}},
   {id:'simcity',from:'basic',settings:{city:{enabled:true},track:{kind:'viaduct'}}},
-  {id:'joseon',from:'simcity',label:'조선',settings:{city:{pack:{floor:{light:'#cb9'}},life:{cars:false}},buses:{look:'palanquin'}}},
+  {id:'joseon',from:'simcity',label:'조선',settings:{city:{pack:{floor:{light:'#ccbb99'}},life:{cars:false}},buses:{look:'palanquin'}}},
   {id:'coaster',from:'simcity',settings:{track:{kind:'coaster'},park:{enabled:true,lights:[1,2]}}},
 ];
 
@@ -73,7 +73,7 @@ test('정의 검사: 없는 부모 · 순환 · 깊이 · 중복 · 기본 없�
 test('상속: 조선 · 롤코는 심시티에서, from 생략은 basic, 기본을 고치면 안 적은 모든 모드에 간다', () => {
   const R=createModeRegistry(defs());
   const J=R.settings('joseon'),C=R.settings('coaster'),S=R.settings('simcity');
-  assert.equal(J.city.enabled,true);assert.equal(J.track.kind,'viaduct');assert.equal(J.city.pack.floor.light,'#cb9');assert.equal(J.city.pack.floor.dark,'#222');
+  assert.equal(J.city.enabled,true);assert.equal(J.track.kind,'viaduct');assert.equal(J.city.pack.floor.light,'#ccbb99');assert.equal(J.city.pack.floor.dark,'#222222');
   assert.equal(C.track.kind,'coaster');assert.deepEqual(C.park,{enabled:true,lights:[1,2]});assert.equal(R.settings('basic').park,null);
   assert.equal(C.city.pack,S.city.pack,'롤코 · 심시티 도시 팩은 같은 참조');
   assert.notEqual(J.city.pack,S.city.pack);
@@ -84,7 +84,7 @@ test('상속: 조선 · 롤코는 심시티에서, from 생략은 basic, 기본�
   const d=defs();d[0].settings.city.pack.lod=[13,15];d[0].settings.newThing={on:true};
   const R2=createModeRegistry(d);
   for(const id of ['simcity','joseon','coaster']){assert.deepEqual(R2.settings(id).city.pack.lod,[13,15]);assert.equal(R2.settings(id).newThing.on,true)}
-  assert.equal(R2.settings('joseon').city.pack.floor.light,'#cb9','모드가 적은 값은 그대로');
+  assert.equal(R2.settings('joseon').city.pack.floor.light,'#ccbb99','모드가 적은 값은 그대로');
 });
 
 test('내 설정: 테마 · 지도 색만, 허용된 값만, 도시 팩 참조는 그대로', () => {
@@ -134,4 +134,27 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   assert.throws(()=>bad({park:{light:{blocks:['#fff']}}}),/색이 아님/,'짧은 #fff 는 지금 섞는 식(mixHex)이 못 읽는다');
   assert.throws(()=>bad({themes:{light:{bld3dOpacity:-1}}}),/음수/);
   assert.doesNotThrow(()=>bad({themes:{light:{halo:'rgba(255,255,255,.9)',bld3dOpacity:.5}}}));
+});
+
+test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 같고, 심시티 · 롤코는 같은 참조', async () => {
+  const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const R=createModeRegistry(defs),{default:CITY}=await import('../web/modes/basic/city.mjs');
+  // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준
+  assert.equal(sha(CITY),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
+  assert.equal(sha(R.settings('joseon').city.pack),'bfff1bde33e8bdc34ac76e34f626baba8488e7c15b808a3e32559fcd35393c2f');
+  const {default:OLD_NAME}=await import('../web/lib/city_style_seoul.mjs'),{default:J_COMPAT}=await import('../web/lib/city_style_joseon.mjs');
+  assert.equal(OLD_NAME,CITY,'호환 이름은 같은 객체');
+  assert.equal(sha(J_COMPAT),sha(R.settings('joseon').city.pack));
+  for(const id of ['basic','simcity','coaster'])assert.equal(R.settings(id).city.pack,CITY,`${id} 도시 팩 = 원본 그대로`);
+  assert.equal(R.settings('joseon',{themeChoice:'dark'}).city.pack,R.settings('joseon').city.pack,'테마가 바뀌어도 조선 팩 참조 그대로');
+  assert.ok(Object.isFrozen(CITY.viaduct));
+  const bad=pack=>createModeRegistry([{id:'basic',settings:{city:{pack}}}]);
+  assert.throws(()=>bad({buildings:{floorM:-1}}),/음수/);
+  assert.throws(()=>bad({ground:{light:{base:'oops#'}},x:{color:'red'}}),/색이 아님/);
+  assert.throws(()=>bad({ground:{light:{base:'#fff'}}}),/색이 아님/);
+  assert.throws(()=>bad({lod:{windows:[15]}}),/두 개/);
+  assert.throws(()=>bad({viaduct:{lod:{deck:[14.2,13.6]}}}),/시작 ≤ 끝/);
+  assert.throws(()=>bad({roads:{lane:{minZoom:40}}}),/줌 범위/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{pack:CITY}}},{id:'j',settings:{city:{pack:{ground:{light:{base:'#12'}}}}}}]),/색이 아님/,'모드 덧쓰기도 합친 뒤 검사');
 });

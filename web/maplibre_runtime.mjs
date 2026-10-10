@@ -17,8 +17,11 @@ import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설�
 import './modes/merge.mjs';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mjs';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
+import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
+import './lib/city_style_seoul.mjs';   // (도시 팩 호환 이름: 공용 도시 · 버스 코드가 부른다 — 같은 단계에서 요청)
 import SIMCITY_MODE from './modes/simcity/index.mjs';
 import JOSEON_MODE from './modes/joseon/index.mjs';
+import './modes/joseon/style.mjs';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
 import COASTER_MODE from './modes/coaster/index.mjs';
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
@@ -34,8 +37,6 @@ import {NightLayer} from './lib/park_night.mjs';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './lib/coaster_first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
 import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './lib/city_life.mjs';
-import CITY_STYLE from './lib/city_style_seoul.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads
-import JOSEON_STYLE from './lib/city_style_joseon.mjs';   // 조선 모드: the same city in packed earth and 기와집 (cityPack())
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
@@ -45,6 +46,7 @@ import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE]);
+const JOSEON_STYLE=modes.settings('joseon').city.pack;   // 조선 모드: the same city in packed earth and 기와집 (cityPack()) — 기본 팩 + 조선 덧쓰기, 한 번 합쳐 얼린 것
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
 const colors={'1호선':'#0052A4','2호선':'#00A84D','3호선':'#EF7C1C','4호선':'#00A5DE','5호선':'#996CAC','6호선':'#CD7C2F','7호선':'#747F00','8호선':'#E6186C','9호선':'#BDB092','GTX-A':'#9A6292','경강선':'#0054A6','경의중앙선':'#77C4A3','경춘선':'#178C72','공항철도':'#0090D2','김포골드라인':'#AD8605','서해선':'#8FC31F','수인분당선':'#F5A200','신림선':'#6789CA','신분당선':'#D4003B','에버라인선':'#6FB245','우이신설선':'#B7C452','의정부선':'#FDA600','인천1호선':'#7CA8D5','인천2호선':'#ED8B00'};
