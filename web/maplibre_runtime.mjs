@@ -5,6 +5,7 @@ import {initJourney} from './lib/journey-ui.mjs';
 import {createCoasterTrack} from './modes/coaster/track.mjs';   // 롤코 선로 층
 import {createCoasterGeometry} from './modes/coaster/geometry.mjs';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mjs';   // 롤코 주행 속도 · 탄 거리
+import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 타기
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
@@ -245,7 +246,7 @@ const liveState=document.querySelector('#liveState span');   // the line filter 
 // ---- live train routing -------------------------------------------------------------
 // 열차 예측(trains/plan.mjs): plans · 시계 · 시간표와 학습 자료의 주인. 본체는 planner.plans 로 읽는다
 const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,
-  isCoaster:()=>coaster,isRide:()=>ride,getTrains:()=>feed.trains});
+  isCoaster:()=>coaster,isRide:()=>rider.ride,getTrains:()=>feed.trains});
 const {age,clock}=planner;
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
 let exits={};const exitCol=new Map();   // exit "lon,lat" → the colour of the line its passage joins
@@ -791,10 +792,10 @@ class TrainLayer{
       }
     }
     // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
-    const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
+    const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
     if(simcity&&joseon&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
     if(coaster&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
-    if(coaster&&this.rideTrack&&ride?.rail?.frames.length&&ride.eye){const r=ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,ride.eye,document.documentElement.dataset.theme==='dark')}
+    if(coaster&&this.rideTrack&&rider.ride?.rail?.frames.length&&rider.ride.eye){const r=rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,rider.ride.eye,document.documentElement.dataset.theme==='dark')}
     if(this.used){
       gl.useProgram(this.p);
       const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
@@ -821,7 +822,7 @@ class TrainLayer{
     // FOLLOW_FPS); trains standing at a station: once a second, to see them set off
     // following a moving train: camera, map and trains step together (followSoon), and no extra
     // train-only frames in between — they drew the train ahead of the map it sits on (jitter)
-    if(animating&&(following||ride)&&!easing)followSoon();
+    if(animating&&(following||rider.ride)&&!easing)followSoon();
     else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
   }
   onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
@@ -966,7 +967,7 @@ if(window.visualViewport){const vv=visualViewport;let dropTimer=0;
     for(const ev of ['resize','scroll'])vv.addEventListener(ev,()=>log.push(`${(performance.now()/1e3).toFixed(2)} vv.${ev} ${Math.round(vv.height)}/${Math.round(vv.offsetTop)}`));
     addEventListener('scroll',()=>log.push(`${(performance.now()/1e3).toFixed(2)} win.scroll ${Math.round(scrollY)}`),{passive:true});
     document.addEventListener('focusin',e=>log.push(`${(performance.now()/1e3).toFixed(2)} focus ${e.target.id||e.target.tagName}`))}}
-addEventListener('keydown',e=>{if(e.key==='Escape'){if(ride)stopRide(true);else closeSheet()}});
+addEventListener('keydown',e=>{if(e.key==='Escape'){if(rider.ride)stopRide(true);else closeSheet()}});
 // Following: the camera keeps the chosen train in the middle of the map above the sheet.
 // Dragging the map stops it; the button in the sheet starts it again.
 const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);   // the 길찾기 sheet grows to 72%
@@ -994,9 +995,9 @@ sheetBody.addEventListener('click',e=>{const b=e.target.closest('.st-journey [da
 // (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
 const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam=null,camAt=0;
 function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
-function followLoop(ts){followRaf=0;if(!(following||ride||followBus)||easing)return;
-  if(!ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-  followLast=ts;if(ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
+function followLoop(ts){followRaf=0;if(!(following||rider.ride||followBus)||easing)return;
+  if(!rider.ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
+  followLast=ts;if(rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
   if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
 animFrame.push(()=>{
   const sel=following&&!easing&&sheetTrain&&planner.plans.find(p=>p.id===sheetTrain);if(!sel)return;
@@ -1025,75 +1026,20 @@ map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrai
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
 // 지도를 끌거나 확대하면 · '내리기' · Esc · 롤코 끄기로 내려서 타기 전 카메라로 돌아가요.
-let ride=null,rideSeat={car:1,row:1,side:-1};
-const riding=plan=>ride&&ride.id===plan.id?ride.snap:null;   // 탄 열차는 늘 카메라를 놓은 순간에 그려요(느린 프레임에도 카메라와 어긋나지 않게)
-const rideRows=plan=>{const unit=1/(512*2**RIDE_ZOOM),body=coasterBodyPx(RIDE_ZOOM),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),n=plan.cars;
-  return seatRows(Math.max(n*plan.carMetres*m,TRAIN_MIN_PX*unit,n*body*1.6*unit)/n/unit-1.4,body)};   // 1인칭 줌에서 칸마다 줄 수(drawTrains 와 같은 칸 길이)
-const rideBar=document.createElement('div');rideBar.className='ride-bar';rideBar.hidden=true;rideBar.setAttribute('role','status');
-rideBar.innerHTML='<span class="dot"></span><span class="txt"></span><button type="button" class="ride-off">내리기</button>';
-rideBar.querySelector('.ride-off').onclick=()=>stopRide(true);
-sheetBody.addEventListener('click',e=>{
-  const b=e.target.closest('.ride-pick .seat');
-  if(b){rideSeat={car:+b.dataset.car,row:+b.dataset.row,side:+b.dataset.side};
-    for(const x of sheetBody.querySelectorAll('.ride-pick .seat')){const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on))}
-    const go=sheetBody.querySelector('.ride-go');if(go)go.textContent=`${seatLabel(rideSeat)}에 타기`;return}
-  if(e.target.closest('.ride-go')&&sheetTrain)startRide(sheetTrain)});
-function rideBarText(plan){rideBar.style.setProperty('--c',colors[plan.t.line]||'#52646a');rideBar.querySelector('.txt').textContent=`${plan.t.line} ${seatLabel(ride.seat)} · ${riderState(plan)}`}
-function startRide(id){
-  const plan=planner.plans.find(p=>p.id===id);if(!plan||!coaster||ride)return;
-  const back={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),elevation:map.getCenterElevation(),maxPitch:map.getMaxPitch(),fov:map.getVerticalFieldOfView(),clamp:map.getCenterClampedToGround()};
-  closeSheet();map.stop();easing=false;following=null;
-  ride={id,seat:{...rideSeat},snap:null,seen:performance.now(),back};
-  map.setMaxPitch(180);map.setCenterClampedToGround(false);map.setVerticalFieldOfView(rideFov(map.getContainer().clientWidth,map.getContainer().clientHeight));   // 루프에서는 위를 보고 뒤집혀요
-  const S=COASTER_STYLE.sky[effectiveTheme()==='dark'?'dark':'light'];back.sky=map.getSky();   // 수평선 위: 지도 바탕 대신 하늘
-  map.setSky({'sky-color':S.sky,'horizon-color':S.horizon,'fog-color':S.horizon,'sky-horizon-blend':.45,'horizon-fog-blend':.7,'fog-ground-blend':.9,'atmosphere-blend':0});
-  map.getContainer().style.setProperty('--ride-ground',S.ground);   // 타일이 끝난 땅: 바탕 격자 대신 먼 땅빛(syung.css body.riding .map)
-  rideBarText(plan);rideBar.hidden=false;document.body.classList.add('riding');applyTheme();   // 땅: 탈 때의 색(pack.ground.ride)
-  ride.timer=setInterval(()=>{const pl=ride&&planner.plans.find(p=>p.id===ride.id);if(pl)rideBarText(pl)},1000);
-  rideFrame();map.triggerRepaint();
-}
-function stopRide(reopen){
-  if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');applyTheme();
-  map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky);
-  const plan=planner.plans.find(p=>p.id===r.id);
-  map.jumpTo({center:plan?trainLngLat(plan):r.back.center,zoom:r.back.zoom,bearing:r.back.bearing,pitch:r.back.pitch,roll:0,elevation:r.back.elevation});
-  map.setMaxPitch(r.back.maxPitch);map.setCenterClampedToGround(r.back.clamp);
-  if(reopen&&plan&&coaster)showTrainPopup(plan);   // '내리기': 그 열차 정보창으로(위에서 따라가기)
-  map.triggerRepaint();
-}
-// 한 프레임: 탄 열차의 자리를 이 순간으로 정해 두고(ride.snap — drawTrains 가 같은 자리에 그려요) 내 칸의 틀에서 눈 · 시선을 구해 카메라를 놓아요
-function rideFrame(){
-  if(!ride)return;const plan=planner.plans.find(p=>p.id===ride.id),now=performance.now();
-  if(!plan){if(now-ride.seen>5000)stopRide(false);return}   // 새 자료로 계획이 바뀌는 사이(같은 id 로 돌아와요)
-  ride.seen=now;
-  const unit=1/(512*2**RIDE_ZOOM),bodyPx=coasterBodyPx(RIDE_ZOOM),lanePx=cityViaduct.train(RIDE_ZOOM,bodyPx).lanePx,n=plan.cars;
-  const pose=trainPose(plan),mid=trackPoint(plan,pose.dist),shift=blendShift(plan,mid),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();
-  const total=Math.max(n*plan.carMetres*m,TRAIN_MIN_PX*unit,n*bodyPx*1.6*unit),car=total/n,tail=toRide(plan,pose.dist)-total/2;
-  const P=d=>{const q=trackPoint(plan,fromRide(plan,d));if(shift){q.x+=shift[0];q.y+=shift[1]}return q};
-  const {j}=seatIndex(ride.seat,n,4),c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,1.4*unit);if(!c)return;
-  const rows=seatRows(c.L,bodyPx),{i,side}=seatIndex(ride.seat,n,rows);
-  ride.snap={pose,shift,j,k:seatNumber(i,side)};
-  const {E,F,U}=seatEye(c.fr,c.L,bodyPx,unit,rows,i,side),mpu=new maplibregl.MercatorCoordinate(E[0],E[1]).meterInMercatorCoordinateUnits();
-  // 레일 · 침목: 침목은 땅에 박혀 있게 간격의 격자에 맞추고, 열차가 rebuildM 을 가면(또는 새 자료 · 옮겨 그리는 중이면) 다시 짓는다
-  const RT=COASTER_STYLE.rideTrack,step=SLEEPER_M*m,d0=Math.floor((tail-RT.behindM*m)/step)*step;
-  if(!ride.rail||ride.rail.plan!==plan||shift||Math.abs(d0-ride.rail.d0)>RT.rebuildM*m)ride.rail={plan,d0,frames:[lanePx,-lanePx].flatMap(l=>coasterRailFrames(P,d0,tail+total+RT.aheadM*m,step,unit,bodyPx,l,tail+total,m)),mpu:m,dirty:true};   // 내 선로와 옆(맞은편) 선로
-  ride.eye=E;
-  const box=map.getContainer(),fov=rideFov(box.clientWidth,box.clientHeight);if(Math.abs(map.getVerticalFieldOfView()-fov)>.01)map.setVerticalFieldOfView(fov);   // 화면을 돌리거나 크기가 바뀌면 시야각도
-  const cam=ride.cam=rideCamera(E,F,U,{ctcd:.5/Math.tan(fov*Math.PI/360)*box.clientHeight,mpu});   // 카메라–center 거리(px): maplibre 와 같은 식
-  map.jumpTo({center:new maplibregl.MercatorCoordinate(cam.x,cam.y).toLngLat(),zoom:cam.zoom,elevation:cam.elevation,bearing:cam.bearing,pitch:cam.pitch,roll:cam.roll,padding:{top:0,bottom:0,left:0,right:0}});
-  const ppm=512*2**RIDE_ZOOM*mpu;map._camera.transform.overrideNearFarZ(RIDE_NEAR_M*ppm,RIDE_FAR_M*ppm);   // px(공개 API 없음 — maplibre 6.11 transform): 가까운 칸이 잘리지 않게(기본 가까운 면은 줌 18 에서 7 m)
-}
+const rider=createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,
+  stopFollowing:()=>{easing=false;following=null},isCoaster:()=>coaster,getSheetTrain:()=>sheetTrain,getSleeperM:()=>SLEEPER_M});
+const {riding,rideRows,startRide,stopRide,rideFrame,rideBar}=rider;
 animFrame.push(rideFrame);
 // #fps: 실제 기기에서 지도 프레임 — 초당 프레임, 늦은 프레임(20 · 34 ms 넘게) 수, 가장 긴 간격, 지도 한 프레임 · 1인칭 카메라 JS 시간(ms). 서버 캡처로는 잴 수 없어서(2026-10-06 덕배)
 if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.cssText='position:fixed;z-index:99;left:4px;bottom:4px;margin:0;padding:6px 8px;font:11px/1.35 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#fff;border-radius:8px;pointer-events:none;white-space:pre';document.body.append(o);
   const iv=[],js=[],cam=[],r=map._render.bind(map);let last=0,shown=0;
   map._render=(...a)=>{const t=performance.now();if(last)iv.push(t-last);last=t;const x=r(...a);js.push(performance.now()-t);return x};
-  animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(ride)cam.push(performance.now()-t)};
+  animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(rider.ride)cam.push(performance.now()-t)};
   const ms=a=>a.length?Math.max(...a).toFixed(0):'-',avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):'-';
   setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;
-    o.textContent=`${ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}`;
+    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}`;
     iv.length=js.length=cam.length=0},1000)}
-map.on('movestart',e=>{if(ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
+map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
 // ---- train inspector ----------------------------------------------------------------------
 // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
@@ -1124,7 +1070,7 @@ function trainSheetHTML(plan){
   <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
   <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
   <div class="tp-now">${esc(riderState(plan))}</div>
-  ${coaster?`<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars,rideRows(plan),rideSeat)}</div><button type="button" class="ride-go">${seatLabel(rideSeat)}에 타기</button>`:''}
+  ${coaster?`<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars,rideRows(plan),rider.seat)}</div><button type="button" class="ride-go">${seatLabel(rider.seat)}에 타기</button>`:''}
   <div class="sec">서울시 실시간 원본</div>
   <dl class="kv">${rawFeedHTML(t)}</dl></div>`;
 }
@@ -1344,7 +1290,7 @@ map.on('load',()=>{
       for(const f of signFeatures){
         const [lng,lat]=f.geometry.coordinates,k=`${lng},${lat}`;if(seen.has(k))continue;seen.add(k);
         const q=maplibregl.MercatorCoordinate.fromLngLat([lng,lat]),[x,y,w]=clip(q.x,q.y);if(!(w>0))continue;
-        const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
+        const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(rider.ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
         items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
       }
       items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
@@ -1396,7 +1342,7 @@ map.on('load',()=>{
       else if(night){night.dispose(gl);night=null}
       if(simcity&&cityBuildings)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
       if(!subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
-      if(ride&&coaster&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
+      if(rider.ride&&coaster&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
         const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
       drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
@@ -1418,8 +1364,8 @@ map.on('load',()=>{
       map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});
     });
   }
-  map.on('click',e=>{if(ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else closeSheet()});   // bus: 누른 버스는 따라간다   // bus: subway picking keeps priority
-  map.on('click','stations',e=>{if(ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
+  map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else closeSheet()});   // bus: 누른 버스는 따라간다   // bus: subway picking keeps priority
+  map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
@@ -1538,7 +1484,7 @@ const THEME_KEY='subway-theme';
 const mapPalette=(t=effectiveTheme())=>{const P={...MAP_THEMES[t],...(mapColor==='color'?MAP_COLORS[t]:{})};if(!coaster)return simcity?{...P,...cityPalette(t,{pack:cityPack()})}:P;   // city-life: 심시티 — the ground from the style pack
   const K=PARK_COLORS[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
   const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
-  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true,ride:!!ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
+  Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:CITY_STYLE,coaster:true,ride:!!rider.ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
 let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
@@ -1568,7 +1514,7 @@ function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focu
   set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
   for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
   set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
-  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:cityPack(),ride:!!ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
+  applyCityStyle(map,{on:simcity||coaster,theme:t,coaster,mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',pack:cityPack(),ride:!!rider.ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
   applyGroundTexture(map,{on:joseon&&$('toggleMap').getAttribute('aria-pressed')==='true',theme:t,pack:cityPack()});   // 조선: 흙 질감 (packed earth instead of a flat floor)
   syncCity();   // city-build: the buildings follow the mode and theme
 }
@@ -1744,4 +1690,4 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
-window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rideSeat=v}};
+window.__subwayWebGL={map,get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return simcity},get joseon(){return joseon},get coaster(){return coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rider.seat=v}};
