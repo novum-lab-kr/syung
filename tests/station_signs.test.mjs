@@ -300,7 +300,7 @@ test('줌 10에서 16으로 옮겨도 상봉 이름표는 새로 그릴 승강�
   registerTransitLayers({map: r.context.map, shapesReady: new Promise(() => {}), basicRouteCache: vm.runInContext('basicRouteCache', r.context),
     buildLineFeatures: () => vm.runInContext('buildLineFeatures()', r.context), buildStationFeatures: () => vm.runInContext('buildStationFeatures()', r.context),
     rebuildLabels: () => labels.rebuild(), stationNames: {id: 'station-names', type: 'custom'}, STATION_WIDTH_STOPS: vm.runInContext("typeof STATION_WIDTH_STOPS==='undefined'?[]:STATION_WIDTH_STOPS", r.context),
-    PHONE: false, signCollisionLayout, live: {get coaster() { return vm.runInContext('coaster', r.context); }, get simcity() { return vm.runInContext('simcity', r.context); }}});
+    PHONE: false, signCollisionLayout, live: {get track() { return r.context.modeCtl.settings().track; }}});
   zoom = 16; on.zoom(); on.zoomend();
   const rects = [...r.rects].filter(([key]) => key.endsWith(':135')).map(([, rect]) => rect.coords);
   assert.ok(localMeters(r.rects.get('경춘선:135').coords[0], [127.0856, 37.5965])[1] > 0);

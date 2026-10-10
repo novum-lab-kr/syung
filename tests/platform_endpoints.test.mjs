@@ -37,7 +37,7 @@ for(const zoom of [14,16,18,20])test(`줌 ${zoom}: 일원 포함 전 구간 급�
 const transitDeps=(r,rebuildLabels)=>({map:r.context.map,shapesReady:new Promise(()=>{}),basicRouteCache:vm.runInContext('basicRouteCache',r.context),
  buildLineFeatures:()=>vm.runInContext('buildLineFeatures()',r.context),buildStationFeatures:()=>vm.runInContext('buildStationFeatures()',r.context),rebuildLabels,
  stationNames:{id:'station-names',type:'custom'},STATION_WIDTH_STOPS:vm.runInContext("typeof STATION_WIDTH_STOPS==='undefined'?[]:STATION_WIDTH_STOPS",r.context),PHONE:false,signCollisionLayout:()=>({}),
- live:{get coaster(){return vm.runInContext('coaster',r.context)},get simcity(){return vm.runInContext('simcity',r.context)}}});
+ live:{get track(){return r.context.modeCtl.settings().track}}});
 
 test('줌 변경은 공유 선로 간격과 승강장을 함께 갱신하고 반복 줌은 갱신하지 않아요',()=>{
  const r=platformRuntime(),expected=platformRuntime(undefined,18);const on={};let labelUpdates=0;const updates=[];

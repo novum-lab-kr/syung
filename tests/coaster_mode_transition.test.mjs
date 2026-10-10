@@ -11,7 +11,7 @@ const modeDefs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>i
 const source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8');
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start);return source.slice(start,end)};
 const plain=x=>JSON.parse(JSON.stringify(x));
-function setup(){
+function setup(defs=modeDefs){
   const snapped=[[127,37],[127.001,37.001]],base=[[127,37],[127.001,37]];
   const stations=[{id:1,name:'출발',lon:127,lat:37,lines:[{name:'L'}]},{id:2,name:'도착',lon:127.001,lat:37,lines:[{name:'L'}]}];
   const sources=new Map(['stations','journey','routes'].map(id=>[id,{data:null,setData(data){this.data=plain(data)}}]));
@@ -37,7 +37,7 @@ function setup(){
   ].join('\n'),context);
   // 모드 상태 · 전환은 실제 컨트롤러(web/modes/transition.mjs)에 본체의 준비 · 바꾸기 · 버튼 함수를 붙인다(본체가 하는 조립과 같게)
   const fn=name=>vm.runInContext(name,context);
-  context.modeCtl=createModeController({registry:createModeRegistry(modeDefs),clock:()=>0,prepare:id=>fn('prepareMode')(id),commit:(a,b,o)=>fn('commitMode')(a,b,o),onRequest:w=>fn('showModeButtons')(w),onFail:w=>fn('showModeButtons')(w)});
+  context.modeCtl=createModeController({registry:createModeRegistry(defs),clock:()=>0,prepare:id=>fn('prepareMode')(id),commit:(a,b,o)=>fn('commitMode')(a,b,o),onRequest:w=>fn('showModeButtons')(w),onFail:w=>fn('showModeButtons')(w)});
   context.modeOn=context.modeCtl.flags;
   globalThis.document??={querySelector:()=>null,documentElement:{dataset:{}}};   // 여정 모듈의 focusRoute 가 열차 캔버스 · 테마를 찾는다(node 에는 DOM 이 없다)
   // 여정 지도 표시는 실제 export(web/ui/journey.mjs)를 같은 지도 · 원본 stub 에 붙인다(본체가 하는 조립과 같게)
@@ -98,4 +98,12 @@ test('심시티에서 롤코를 받는 중 다시 누르면(끄기) 받기만 �
   r.run('coasterGeo.bld=true;__done()');assert.equal(await p,false);assert.equal(r.run('modeCtl.current'),'simcity');
   r.run('setCoaster(true)');const n=r.rides();r.run('setCoaster(false)');
   assert.equal(r.rides()-n,1);assert.equal(r.run('modeCtl.current'),'basic');
+});
+
+test('심시티 ↔ 조선: 선로 설정이 같으면 승강장을 다시 만들지 않고, 조선이 선로를 덧쓰면 다시 만든다',()=>{
+  const r=setup();r.run('setSimcity(true)');const n=r.labels();r.run('setSimcity(true,true)');assert.equal(r.labels(),n,'같은 선로: 그대로');
+  const defs=modeDefs.map(d=>d.id==='joseon'?{...d,settings:{...d.settings,track:{kind:'ground',platform:'ribbon'}}}:d);
+  const g=setup(defs),base=g.rect();g.run('setSimcity(true)');const city=g.rect(),m=g.labels();
+  assert.notDeepEqual(city,base);
+  g.run('setSimcity(true,true)');assert.equal(g.labels(),m+1,'선로가 바뀌면 다시');assert.deepEqual(g.rect(),base,'조선이 땅 위 선로면 기본 승강장');
 });

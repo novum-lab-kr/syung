@@ -6,5 +6,6 @@ export default {
   settings: {
     map: { paletteKind: 'city' },   // 지도 색 위에 도시 땅 색
     city: { enabled: true },
+    track: { kind: 'viaduct', platform: 'straight' },   // 고가 위, 곧은 승강장
   },
 };

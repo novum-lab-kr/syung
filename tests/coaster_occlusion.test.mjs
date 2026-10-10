@@ -20,7 +20,7 @@ function platformRenderer() {
     return /^[A-Z_0-9]+$/.test(key) ? key : () => {};
   } });
   const mode = { coaster: true };
-  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], isCoaster: () => mode.coaster, isSimcity: () => false,
+  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], getTrack: () => ({ kind: mode.coaster ? 'coaster' : 'ground' }),
     stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
     getExits: () => ({}), exitCol: new Map(), colors: { '2호선': '#00ff00' }, hexRGB3: () => [0, 1, 0],
     stationRects: new Map([['2호선:1', { coords: [[.5, .5], [.5001, .5]], offset: 0 }]]),
@@ -61,7 +61,7 @@ test('station labels keep their route names in every mode (the coaster rides the
   Object.assign(context.map, { addSource() {}, addImage() {}, on() {}, getSource: () => ({ setData() {} }) });
   registerTransitLayers({ map: context.map, shapesReady: new Promise(() => {}), basicRouteCache: new Map(), buildLineFeatures: () => [], buildStationFeatures: () => [],
     rebuildLabels() {}, stationNames: { id: 'station-names', type: 'custom' }, STATION_WIDTH_STOPS: [[8, 2], [15, 6]], PHONE: false, signCollisionLayout,
-    live: { get coaster() { return context.coaster; }, get simcity() { return context.simcity; } } });
+    live: { get track() { return { kind: context.coaster ? 'coaster' : context.simcity ? 'viaduct' : 'ground' }; } } });
   const symbols = [...layers].filter(([, layer]) => layer.type === 'symbol');
   assert.deepEqual(symbols.map(([id]) => id), ['station-labels'], 'exercise the actual name symbol layer (one sign per station)');
   const plain = value => JSON.parse(JSON.stringify(value));

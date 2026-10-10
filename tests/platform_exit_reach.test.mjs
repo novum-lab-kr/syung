@@ -11,7 +11,7 @@ const EXIT = [.4999975, .5000008];
 function renderExits(reach) {
   const gl = new Proxy({}, { get(_, key) { return /^[A-Z_0-9]+$/.test(key) ? key : () => {}; } });
   const exitCol = new Map();
-  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], isCoaster: () => false, isSimcity: () => false,
+  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], getTrack: () => ({ kind: 'ground' }),
     stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
     getExits: () => ({ 1: [[...EXIT, '2']] }), exitCol, colors: { A: '#ff0000', B: '#0000ff' }, hexRGB3: c => c === '#ff0000' ? [1, 0, 0] : [0, 0, 1],
     closestPlatformPoint, platformStroke: () => ({ vertices: [], length: 0 }),

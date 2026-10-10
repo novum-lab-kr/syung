@@ -1,12 +1,12 @@
 // 지도 위 정적 층 등록(지도 load 때 한 번, 같은 차례로): 노선 · 승강장 · 역 이름표 자리(투명 글자), 내 위치 점, 출구 번호판, 바탕 지도(OpenFreeMap).
-// 다른 화면 파일을 import 하지 않는다: 자료 · 만드는 함수는 본체가 넘기고, 바뀌는 값(모드 · 내 위치)은 live.<이름> 으로 읽고 쓴다. 모두 동기로 등록하고 자료 Promise 는 지금처럼 나중에 채운다.
+// 다른 화면 파일을 import 하지 않는다: 자료 · 만드는 함수는 본체가 넘기고, 바뀌는 값(지금 모드의 선로 live.track · 내 위치)은 live.<이름> 으로 읽고 쓴다. 모두 동기로 등록하고 자료 Promise 는 지금처럼 나중에 채운다.
 
 // 노선 · 승강장(클릭용 투명 선 + 그리는 층 stationNames) · 역 이름표 자리. 줌마다 공유 선로 간격과 승강장을 다시, 이름표 자리는 줌이 끝난 뒤 한 번만(labelsStale 의 주인)
 export function registerTransitLayers({map,shapesReady,buildLineFeatures,buildStationFeatures,basicRouteCache,rebuildLabels,stationNames,STATION_WIDTH_STOPS,PHONE,signCollisionLayout,live}){
   let labelsStale=false;
   map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:buildLineFeatures()}});
   shapesReady.then(()=>{map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels();map.triggerRepaint()});
-  map.on('zoom',()=>{if(live.coaster||live.simcity)return;let changed=false;for(const [key,t] of basicRouteCache){const [line,a,b]=key.split(':');if(t.zoom&&t.zoom!==map.getZoom()){changed=true;break}}if(!changed)return;map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});labelsStale=true});
+  map.on('zoom',()=>{if(live.track.kind!=='ground')return;let changed=false;for(const [key,t] of basicRouteCache){const [line,a,b]=key.split(':');if(t.zoom&&t.zoom!==map.getZoom()){changed=true;break}}if(!changed)return;map.getSource('routes').setData({type:'FeatureCollection',features:buildLineFeatures()});map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});labelsStale=true});
   map.on('zoomend',()=>{if(labelsStale){labelsStale=false;rebuildLabels()}});   // 승강장 좌표가 줌마다 바뀌어요. 이름표 자리는 줌이 끝난 뒤 한 번만 다시(줌 중 매 프레임 setData 하면 깜빡여요)
   map.addLayer({id:'routes',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':['interpolate',['linear'],['zoom'],8,1.5,15,4],'line-offset':['get','offset'],'line-opacity':.9}});
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:buildStationFeatures()}});

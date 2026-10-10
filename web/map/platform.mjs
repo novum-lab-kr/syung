@@ -55,7 +55,7 @@ void main(){
   }
   render(gl,options){
     const {map,maplibregl,stationRects,exitCol,cityViaduct,colors,hexRGB3,stationWidthPx,platformPx,PLATFORM_SCALE,closestPlatformPoint,platformStroke,EXIT_MINZOOM,EXIT_MAX_M,EXIT_PASSAGES,document,matchMedia}=this.d;
-    const selected=this.d.getSelected(),exits=this.d.getExits(),stationAlpha=this.d.getStationAlpha(),coaster=this.d.isCoaster(),simcity=this.d.isSimcity();
+    const selected=this.d.getSelected(),exits=this.d.getExits(),stationAlpha=this.d.getStationAlpha(),kind=this.d.getTrack().kind;   // 선로 종류(지금 모드 설정)
     if(!stationRects.size)return;
     this.buildAtlas(gl);
     const z=map.getZoom(),unit=1/(512*2**z),data=[],hgt=stationWidthPx(z);
@@ -95,7 +95,7 @@ void main(){
       const byStation=new Map();for(const g of geo.values()){if(!byStation.has(g.id))byStation.set(g.id,[]);byStation.get(g.id).push(g)}
       const w=Math.max(3,Math.min(5,hgt*.18)),pass=[];
       for(const [id,boxes] of byStation)for(const [lon,lat] of exits[id]||[]){
-        if(simcity&&cityViaduct.hasStair(id,lon,lat))continue;   // city-life: 심시티 — an exit with a stair down from the platform needs no flat passage line; the ones without keep it
+        if(kind==='viaduct'&&cityViaduct.hasStair(id,lon,lat))continue;   // city-life: 심시티 — an exit with a stair down from the platform needs no flat passage line; the ones without keep it
         const e=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]);let best=null;
         for(const g of boxes){   // nearest point on the box's centre line (its rounded ends excluded)
           if(g.points){const foot=closestPlatformPoint(e,g.points);if(foot&&(!best||foot.distance/unit<best.d))best={sx:foot.x,sy:foot.y,d:foot.distance/unit,g};
@@ -141,7 +141,7 @@ void main(){
     ptr('a_px',2,0);ptr('a_local',2,2);ptr('a_size',2,4);ptr('a_uv',4,6);ptr('a_color',3,10);ptr('a_tw',2,13);
     gl.uniformMatrix4fv(this.uni.u_matrix,false,new Float32Array(MT));gl.uniform1f(this.uni.u_dpr,1);gl.uniform1f(this.uni.u_dark,document.documentElement.dataset.theme==='dark'?1:0);gl.uniform1f(this.uni.u_alpha,stationAlpha);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uni.u_tex,0);
-    if(coaster||simcity){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // coaster: platforms and exit passages follow the exit pillars' building occlusion   // city-life: cityOn — 심시티 too (its buildings are opaque; the bars floated over them, and over the viaduct)
+    if(kind!=='ground'){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // coaster: platforms and exit passages follow the exit pillars' building occlusion   // city-life: cityOn — 심시티 too (its buildings are opaque; the bars floated over them, and over the viaduct)
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,data.length/15);
   }

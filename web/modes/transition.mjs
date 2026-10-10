@@ -4,13 +4,13 @@
 // 준비 실패는 처리되지 않은 rejection 을 남기지 않는다(마지막 요청이면 onFail 로 버튼을 지금 모드로 되돌린다).
 // 다른 화면 파일을 import 하지 않는다: 준비 · 바꾸기 · 버튼은 본체가 넘긴다.
 export function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = 'basic' }) {
-  let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0;
+  let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0, S = registry.settings(root);   // S: 지금 모드의 설정(자주 묻는다 — 바뀔 때만 고른다)
 
   // 모드 요청. 준비가 이미 끝났으면 지금 바로(동기) 바꾸고 true, 기다려야 하면 Promise(바꿨으면 true, 늦었거나 실패면 false — reject 하지 않는다).
   function request(id, { speed: sp } = {}) {
     if (!registry.has(id)) throw new Error(`${id}: 없는 모드`);
     const my = ++seq; desired = id; onRequest(id, current);
-    const go = () => { if (my !== seq) return false; commit(current, id, { speed: sp }); current = id; desired = id; return true };
+    const go = () => { if (my !== seq) return false; commit(current, id, { speed: sp }); current = id; S = registry.settings(id); desired = id; return true };
     let ready; try { ready = prepare(id, current) } catch (e) { ready = Promise.reject(e) }
     if (ready === true) return go();
     return Promise.resolve(ready).then(go, e => { if (my === seq) { desired = current; onFail(current, e) } return false })
@@ -19,7 +19,7 @@ export function createModeController({ registry, prepare, commit, onRequest = ()
   // 받는 중인 요청만 거두기: 지금 모드는 그대로(바꾸기 없음), 늦게 온 준비는 버린다
   function cancel() { seq++; desired = current; onRequest(current, current) }
   // 바꾸기(commit) 안에서만: 지금 모드를 옮긴다. 옛 코드가 거치던 중간 상태(롤코 → 기본 → 심시티)도 그대로 거친다(그사이 그리기는 없다 — 동기)
-  function enter(id) { if (!registry.has(id)) throw new Error(`${id}: 없는 모드`); current = id }
+  function enter(id) { if (!registry.has(id)) throw new Error(`${id}: 없는 모드`); current = id; S = registry.settings(id) }
   // 롤코 배속(1 · 5 · 20): 1 이면 앞서 달린 시간을 지우고, 아니면 지금까지를 새 배속으로 셈한다(옛 식 그대로 — 바꾼 순간까지의 몫도 새 배속)
   function setSpeed(s) { speed = s; if (speed === 1) { warp = 0; warpAt = 0 } else warpNow() }
   function warpNow() { const t = clock(); if (t < warpAt) return warp; if (warpAt) warp += (t - warpAt) / 1000 * (speed - 1); warpAt = t; return warp }
@@ -32,6 +32,6 @@ export function createModeController({ registry, prepare, commit, onRequest = ()
   return {
     request, cancel, enter, setSpeed, warpNow, flags,
     get current() { return current }, get desired() { return desired }, get speed() { return speed }, get seq() { return seq },
-    settings: (user) => registry.settings(current, user),
+    settings: (user) => user == null ? S : registry.settings(current, user),
   };
 }
