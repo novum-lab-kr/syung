@@ -25,3 +25,10 @@ test('줌 19.5 이상에서는 선로 · 기둥을 실제 굵기로 그린다(�
   assert.ok(Math.abs(m.post-1.25/mpp)<1e-9&&Math.abs(m.rail-.32/mpp)<1e-9&&Math.abs(m.spineDepth-1.2/mpp)<1e-9);
   assert.ok(trackMetrics(19).post>trackMetrics(18).post);
 });
+
+test('관형 선로: 멀리서는 등뼈만 굵히고(줌 16 아래 +1 px) 레일 아래 등뼈 중심 깊이는 그대로',()=>{
+  const far=trackMetrics(15),near=trackMetrics(17.5);
+  assert.ok(far.spine>=3.5&&near.spine>=2.5&&near.spine<3.5);
+  assert.ok(Math.abs(far.spineDrop/2.5-1/.85)<1e-9,'줌 15 등뼈 중심 깊이 = 하한 2.5 px 기준 1 m');
+  const m=trackMetrics(20);assert.ok(Math.abs(m.spine-.85/m.mpp)<1e-9&&Math.abs(m.spineDrop-1/m.mpp)<1e-9);
+});
