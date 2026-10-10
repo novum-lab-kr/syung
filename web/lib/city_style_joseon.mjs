@@ -75,8 +75,10 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     eaveOutM: 1.15,                   // 처마: past the walls
     riseK: 0.62, riseM: [1.4, 4.4],   // the roof's rise over the eaves: × (half depth + eave), clamped
     hipK: 0.6,                        // 우진각: the ridge is shorter than the eaves by this × the half depth at each end
-    cornerLiftM: 0.5, cornerKickM: 0.3,   // 추녀: the eave corners lifted and pushed out
-    ridge: { halfWidthM: 0.14, upM: 0.22, downM: 0.08 },   // 용마루
+    cornerLiftM: 0.6, cornerKickM: 0.3,   // 추녀: the eave corners lifted and pushed out
+    ridge: { halfWidthM: 0.11, upM: 0.18, downM: 0.08 },   // 용마루 (Codex 2차: 굵기 · 높이 20% 줄임)
+    // 지붕 모양 몫 [팔작, 맞배, 우진각]: 좁은 채(반폭 narrowHalfM 이하)는 맞배가 많다. 맞배 지붕은 박공벽 밖으로 gableEndM 나온다
+    roofStyles: { narrowHalfM: 2.6, narrow: [0.25, 0.55, 0.2], wide: [0.6, 0.12, 0.28] }, gableEndM: 0.6,
     postM: 0.24, bayM: 2.4,           // 기둥 width and spacing (칸)
     paperShare: 0.55,                 // bays with 창호 (the rest 회벽)
     // plans: shares of ㅡ, ㄱ, ㄷ, ㅁ (a plan the lot cannot hold falls back to a simpler one)
@@ -93,8 +95,11 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
     // tall buildings keep their height (the user's references: a 9층 목탑, a hanok high-rise with an eave round every floor)
     tall: {
       towerMinH: 15,                  // 한옥 고층: real height, a 기와 skirt round the floors, a hanok podium, roofs on top
-      storeyM: 3.2, skirtStep: [[10, 1], [24, 2], [999, 3]],   // a skirt every floor up to 10 floors, every 2nd up to 24, else every 3rd
-      skirtOutM: 1.8, skirtRiseM: 0.8, skirtEdgeM: 0.22,   // the floors' eaves: deep, sloped, a visible edge (2026-10-09: 0.95 / 0.55 read as thin stripes)
+      storeyM: 3.2, skirtStep: [[9, 1], [20, 2], [999, 3]],   // 처마: 9층까지 층마다, 20층까지 2층마다, 그 위 3층마다 (Codex 2026-10-10: 7~10단)
+      skirtRiseM: 1.0, skirtEdgeM: 0.12,   // 처마 높이 · 끝 두께
+      // 처마 지붕 무리 (city_hanok.mjs skirtGroups, 셰이더도 같은 셈): 가운데 지붕 폭 · 사이 · 내밀기 · 끝 벌림, 모서리 지붕 길이(면 × cornerK, cornerM 범위) · 내밀기
+      // rows: 벽 → 처마 끝 경사 마디, upK: 처마 끝이 들리는 높이(내밀기 ×), liftM: 양 끝이 더 들리는 높이
+      skirtGroup: { widthM: 9, gapM: 2.2, minM: 4.5, outM: 1.5, flareM: 0.35, cornerK: 0.24, cornerM: [4, 7.5], cornerOutM: 1.9, rows: [0, 0.55, 1], upK: 0.15, liftM: [0.75, 0.4] },   // liftM: 끝 들림 — 모서리 끝, 다른 끝 (Codex 3차: 실루엣에서 읽히게)
        podiumM: 4.2, podiumOutM: 1.6, triRoofAspect: 2.1,
       towerMaxHalfM: [22, 14],        // a broader tall lot (a mall, a hotel) becomes a palace court: the tower this big in the middle, 전각 either side
       pagodaMinH: 100, pagodaMaxAspect: 1.6, pagodaShare: 0.85,   // 목탑: tall and squarish
@@ -103,9 +108,10 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
       hallStoreyM: [3.4, 3.0], hallSetM: 1.4, hallHalfM: [14, 8],
     },
     colors: {
-      light: { giwa: ['#535E62', '#465257', '#687274'], wood: '#654A36', plaster: '#E7DFCC', paper: '#F3EBD3', stone: '#A5A397', dam: '#D8D0BD', soffit: '#5A4130', ridge: '#414C50',
+      // (Codex 2026-10-10, 레퍼런스 사진: 나무는 더 붉은 갈색, 회벽은 조금 어둡고 따뜻하게, 기와는 청록기 없는 중성 회색, 고층 유리창은 탁한 청회색)
+      light: { giwa: ['#484C4B', '#3F4342', '#535857'], wood: '#7B513A', plaster: '#DED1B6', paper: '#F3EBD3', stone: '#A5A397', dam: '#D8CDB5', soffit: '#302B24', ridge: '#3E4241', glass: '#718887',
         thatch: ['#C3A05E', '#B08F55', '#A08660'], mud: '#C4AA83', field: ['#9C978B', '#857F74'], spire: '#C99B3A' },
-      dark: { giwa: ['#424B4D', '#384143', '#4B5251'], wood: '#4A3224', plaster: '#8E897C', paper: '#9C927A', stone: '#6F6A60', dam: '#80776A', soffit: '#3B2A1F', ridge: '#2A3134',
+      dark: { giwa: ['#424645', '#3A3D3C', '#4B4F4E'], wood: '#5A3824', plaster: '#8E877A', paper: '#9C927A', stone: '#6F6A60', dam: '#80776A', soffit: '#1F1B17', ridge: '#2A2D2C', glass: '#34403F',
         thatch: ['#6E5B39', '#625233', '#5A4D37'], mud: '#6B5C46', field: ['#5B5851', '#4D4A44'], spire: '#7A6024' },
     },
     night: { paper: '#EBC58A', litShare: 0.24, emission: 0.45 },   // 창호지 너머 등잔불: 몇 집, 한쪽 면 한두 칸

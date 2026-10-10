@@ -154,6 +154,22 @@ export function hanokBuilding(tb, it, unit) {
   if (drawn) tb.count++;
 }
 
+// 한옥 고층의 처마 지붕들 (Codex 검토 2026-10-10): a face `len` m long → [[from, to], …] (m from the face's first corner).
+// The first and the last are corner roofs (they run on round the corner into the next face); between them roofs about
+// G.widthM wide, G.gapM apart. A short face is one roof corner to corner. The shader (city_buildings.mjs FS kind 9, wall
+// type 2) lays out the same groups to put the windows and the eave's shadow under them — change both together
+export function skirtGroups(len, G) {
+  const leg = clamp(G.cornerK * len, G.cornerM[0], G.cornerM[1]);
+  if (len <= 2 * leg + G.gapM) return [[0, len]];
+  const span = len - 2 * leg - 2 * G.gapM, out = [[0, leg]];
+  if (span >= G.minM) {
+    const n = Math.max(1, Math.round((span + G.gapM) / (G.widthM + G.gapM))), w = (span - (n - 1) * G.gapM) / n;
+    for (let i = 0; i < n; i++) { const x = leg + G.gapM + i * (w + G.gapM); out.push([x, x + w]) }
+  }
+  out.push([len - leg, len]);
+  return out;
+}
+
 // a local frame on the house: x along (ux, uy), y across, z up, metres → the writer's tile-mercator units; triangles wound
 // so their face points along the normal given (front = counter-clockwise seen from outside, as city_mesh's walls). list:
 // 'walls' (every zoom), 'lo' (below LOD_HI), 'hi' (from LOD_HI)
@@ -162,7 +178,7 @@ function frame(tb, c, ux, uy) {
   const ch = tb.chunks[clamp(Math.floor(c[0] / E * CH), 0, CH - 1) + CH * clamp(Math.floor(c[1] / E * CH), 0, CH - 1)];
   ch.n++;   // (result() keeps only the chunks that hold something)
   const F = {
-    ch,
+    ch, W,
     v(p, n, uu) { W.normal(n[0] * ux + n[1] * vx, n[0] * uy + n[1] * vy, n[2]); const x = (c[0] + (p[0] * ux + p[1] * vx) / mpu) * u, y = (c[1] + (p[0] * uy + p[1] * vy) / mpu) * u; tb.extend(ch, x, y, x, y, p[2]); return W.v(x, y, p[2], uu) },
     quad(P, n, U = [0, 0, 0, 0], list = 'walls') { const i = P.map((p, j) => F.v(p, n, U[j])); push(ch[list], i, P, n) },
     // triangles of point indices into P, each point with its own normal (N) and u (U); `out` orients them
@@ -204,10 +220,10 @@ function ridgeBox(F, a, w, z0, z1) {
 // a house's walls from z0 to zt. type (a_bld.z, read by the shader): 0 a house (the stone band below K.baseM, then one
 // storey of posts, beams, 회벽 and 창호), 1 the same in mud (초가), 2 a tall body of storeys `storey` m high (the stone band
 // at its foot), 3 one upper storey `storey` high. H (a_misc.zw) carries zt; a_wall.w the storey height (types 2–3) or the
-// face's seed
+// face's seed; mx (a_misc.xy) for type 2: the eaves' step (floors) and where the floors start (× 5 cm)
 const WALL = { HOUSE: 0, MUD: 1, STOREYS: 2, STOREY: 3 };
-function houseWalls(tb, F, a, b, z0, zt, type, K, r, storey = 0) {
-  const W = tb.W, Hq = Math.min(65535, Math.round(zt * 10)); W.kind = HANOK_KIND.WALL; W.b[2] = type; W.m = [0, 0, Hq & 255, Hq >>> 8];
+function houseWalls(tb, F, a, b, z0, zt, type, K, r, storey = 0, mx = [0, 0]) {
+  const W = tb.W, Hq = Math.min(65535, Math.round(zt * 10)); W.kind = HANOK_KIND.WALL; W.b[2] = type; W.m = [mx[0], mx[1], Hq & 255, Hq >>> 8];
   box(F, a, b, z0, zt, false, (l, s) => { const lq = Math.min(65535, Math.round(l * 20)); W.w = [Math.max(1, Math.round(l / K.bayM)), lq & 255, lq >>> 8, type >= 2 ? clamp(Math.round(storey * 20), 1, 255) : (s * 5 + Math.floor(r * 16)) & 15] });
   W.b[2] = 0;
 }
@@ -215,18 +231,23 @@ function houseWalls(tb, F, a, b, z0, zt, type, K, r, storey = 0) {
 // a hip roof over walls ±a × ±b: eaves `o` out at ze, rising `rise` to a ridge `ar` long (0: a pyramid). prof(t): the
 // height share at t (0 eave … 1 ridge); lift / kick: the corners raised and pushed out (추녀); t1 < 1: only the lower part
 // (a skirt roof round an upper storey). The curved roof (3 × 3 grid a face) goes to 'hi', a plain one to 'lo'
-function hipRoof(F, a, b, o, ze, rise, ar, { prof, lift = 0, kick = 0, t1 = 1, edge = 0 }) {
-  const ae = a + o, be = b + o, faces = [[[-ae, be], [ae, be], [-ar, 0], [ar, 0], 0], [[ae, -be], [-ae, -be], [ar, 0], [-ar, 0], 0], [[ae, be], [ae, -be], [ar, 0], [ar, 0], 1], [[-ae, -be], [-ae, be], [-ar, 0], [-ar, 0], 1]];
-  for (const [e0, e1, r0, r1, axis] of faces) {
-    const out = norm([(e0[0] + e1[0]) / 2, (e0[1] + e1[1]) / 2, Math.hypot((e0[0] + e1[0]) / 2, (e0[1] + e1[1]) / 2)]);
-    const pt = (s, t, corner) => {
-      let ex = lerp(e0[0], e1[0], s), ey = lerp(e0[1], e1[1], s);
-      if (corner) { ex += Math.sign(ex) * kick; ey += Math.sign(ey) * kick }
-      return [lerp(ex, lerp(r0[0], r1[0], s), t), lerp(ey, lerp(r0[1], r1[1], s), t), ze + rise * prof(t) + (corner ? lift * (1 - t) * (1 - t) : 0)];
-    };
-    // near ('hi'): a 3 × 3 grid (a hip face needs no middle column: only its corners are lifted); far ('lo'): one quad on
-    // the grid's four corners, the same vertices (2026-10-09: separate ones cost a fifth of the 조선 mesh, and phones ran out)
-    const rows = [0, t1 / 2, t1], cols = axis ? [0, 1] : [0, .5, 1], P = [], U = [], nc = cols.length;
+// style: 'hip' 우진각 · 'paljak' 팔작 (the hip faces stop at tg, a 합각 triangle stands above them and the ridge runs out
+// to it) · 'gable' 맞배 (no hip faces: the long faces run out past the end walls by endO, a gable wall under each end).
+// The 합각 and the gable walls are plaster (kind DAM), drawn at every zoom; `gableTop`: the gable wall's foot (the wall top)
+function hipRoof(F, a, b, o, ze, rise, ar, { prof, lift = 0, kick = 0, t1 = 1, edge = 0, style = 'hip', tg = .5, endO = o, gableTop = ze }) {
+  const be = b + o, ae = style === 'gable' ? a + endO : a + o, xg = Math.max(.35 * ae, ae - be * tg);   // 팔작: the 합각 set in as far as the hip face rose (45°)
+  const X = t => style === 'hip' ? lerp(ae, ar, t) : style === 'paljak' ? (t < tg ? lerp(ae, xg, t / tg) : xg) : ae;   // the roof's half length at t
+  const zOf = t => ze + rise * prof(t);
+  const longRows = style === 'paljak' ? [0, tg / 2, tg, 1] : [0, t1 / 2, t1], shortRows = style === 'paljak' ? [0, tg / 2, tg] : [0, t1 / 2, t1];
+  const cl = style === 'gable' ? .4 : 1;   // 맞배: the eave's ends only a little lifted
+  // the long faces (along x, toward ±y) and the short ones (toward ±x; none on a 맞배): pt(s, t, corner) on the face
+  const faces = [[1, 0], [-1, 0]].map(([sy]) => ({ axis: 0, out: [0, sy, 1], rows: longRows, cols: [0, .5, 1], pt: (s, t, c) => { const x = lerp(-sy, sy, s) * X(t), k = c ? kick : 0; return [x + Math.sign(x) * k * (1 - t), sy * (be + k) * (1 - t), zOf(t) + (c ? cl * lift * (1 - t) * (1 - t) : 0)] } }));
+  if (style !== 'gable') for (const sx of [1, -1]) faces.push({ axis: 1, out: [sx, 0, 1], rows: shortRows, cols: [0, 1], pt: (s, t, c) => { const y = lerp(sx, -sx, s) * be * (1 - t), k = c ? kick : 0; return [sx * (X(t) + k * (1 - t)), y + Math.sign(y) * k * (1 - t), zOf(t) + (c ? lift * (1 - t) * (1 - t) : 0)] } });
+  for (const { axis, out: o3, rows, cols, pt } of faces) {
+    const out = norm(o3);
+    // near ('hi'): a grid (a hip face needs no middle column: only its corners are lifted); far ('lo'): one quad on the
+    // grid's four corners, the same vertices (2026-10-09: separate ones cost a fifth of the 조선 mesh, and phones ran out)
+    const P = [], U = [], nc = cols.length;
     for (const t of rows) for (const s of cols) { const p = pt(s, t, s === 0 || s === 1); P.push(p); U.push(axis ? p[1] : p[0]) }
     const hi = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < nc - 1; si++) { const q = ti * nc + si; hi.push(q, q + 1, q + nc + 1, q, q + nc + 1, q + nc) }
     const c0 = 0, c1 = nc - 1, c2 = P.length - 1, c3 = P.length - nc;
@@ -236,6 +257,20 @@ function hipRoof(F, a, b, o, ze, rise, ar, { prof, lift = 0, kick = 0, t1 = 1, e
       F.quad([[E0[0], E0[1], E0[2] - edge], [E1[0], E1[1], E1[2] - edge], E1, E0], n, [U[0], U[nc - 1], U[nc - 1], U[0]], 'hi');
     }
   }
+  if (style === 'hip') return;
+  // 합각 (팔작) · 박공벽 (맞배): plaster triangles under the roof's ends, following its curve
+  // (the shader: H = the apex, a_misc.x = the triangle's height × 5 cm — a darker warm plaster, a beam at its foot, shade
+  // under the roof at its top; Codex 2차: the bright 합각 read as holes in the roof). 팔작: set in under the roof, a little narrower
+  const W = F.W, kind = W.kind, m = W.m, zA = zOf(1) - .12, zB = style === 'paljak' ? zOf(tg) - .12 : gableTop, Hq = Math.min(65535, Math.round(zA * 10));
+  W.kind = HANOK_KIND.DAM; W.m = [clamp(Math.round((zA - zB) * 20), 1, 255), 1, Hq & 255, Hq >>> 8];
+  for (const sx of [1, -1]) {
+    const x = sx * (style === 'paljak' ? xg - .3 : a), P = [], ts = style === 'paljak' ? [tg, (tg + 1) / 2, 1] : [Math.max(0, 1 - b / be), (1 - b / be + 1) / 2, 1], wk = style === 'paljak' ? .87 : 1;
+    for (const t of ts) { const y = be * (1 - t) * wk, z = zOf(t) - .12; P.push([x, -y, z]); if (t < 1) P.push([x, y, z]) }
+    if (style === 'gable') P.push([x, -b, gableTop], [x, b, gableTop]);
+    const n = P.length, tris = style === 'paljak' ? [0, 1, 3, 0, 3, 2, 2, 3, 4] : [n - 2, n - 1, 1, n - 2, 1, 0, 0, 1, 3, 0, 3, 2, 2, 3, 4];
+    F.mesh(P, P.map(() => [sx, 0, 0]), P.map(p => p[1]), { walls: tris }, [sx, 0, 0]);
+  }
+  W.kind = kind; W.m = m;
 }
 // the vertex normals of a grid: the faces round each point, by area (a hip's zero triangles add nothing)
 function smoothNormals(P, tris) {
@@ -253,17 +288,24 @@ const thatchProf = t => 1 - (1 - t) * (1 - t) * .9 - .1 * (1 - t);   // a rounde
 function giwaRoof(tb, F, a, b, zt, K, slot, opts = {}) {
   const W = tb.W, o = opts.eave ?? K.eaveOutM, be = b + o, ae = a + o, ze = zt - .15, rise = clamp(K.riseK * be, K.riseM[0], K.riseM[1]);
   const R = K.ridge, ar = opts.pyramid ? 0 : Math.max(.3 * ae, ae - K.hipK * be), zr = ze + rise, top = opts.t1 ? ze + rise * giwaProf(opts.t1) : zr + R.upM;
+  const style = opts.t1 || opts.pyramid ? 'hip' : opts.style || 'hip', endO = K.gableEndM;
+  const ridge = style === 'paljak' ? Math.max(.35 * ae, ae - be * .5) : style === 'gable' ? a + endO : ar;   // 팔작: out to the 합각, 맞배: to the verge
   const Hq = opts.t1 ? 65535 : Math.min(65535, Math.round(top * 10));   // H: the ridge's top (a skirt has no ridge band)
   W.kind = HANOK_KIND.ROOF; W.w = [0, 0, 0, 0]; W.m = [slot, clamp(Math.round(zt * 20), 0, 255), Hq & 255, Hq >>> 8];
-  hipRoof(F, a, b, o, ze, rise, ar, { prof: giwaProf, lift: K.cornerLiftM, kick: K.cornerKickM * .7, t1: opts.t1 ?? 1 });
-  if (!opts.t1 && ar > .2) ridgeBox(F, ar + .3, R.halfWidthM, zr - R.downM, top);
+  hipRoof(F, a, b, o, ze, rise, ar, { prof: giwaProf, lift: K.cornerLiftM, kick: K.cornerKickM * .7, t1: opts.t1 ?? 1, style, endO, gableTop: zt });
+  if (!opts.t1 && ridge > .2) { W.kind = HANOK_KIND.ROOF; W.m = [slot, clamp(Math.round(zt * 20), 0, 255), Hq & 255, Hq >>> 8]; ridgeBox(F, ridge + (style === 'hip' ? .3 : .15), R.halfWidthM, zr - R.downM, top) }
   return { ze, rise, zr, top };
 }
 
+// the roof's form (Codex 검토 2026-10-10: not every house 팔작 — a narrow wing 맞배, a plain house 우진각 now and then)
+function roofStyle(b, K, u) {
+  const S = K.roofStyles, w = b <= S.narrowHalfM ? S.narrow : S.wide;
+  return u < w[0] ? 'paljak' : u < w[0] + w[1] ? 'gable' : 'hip';
+}
 function giwaHouse(tb, F, a, b, K, r) {
   const zt = K.baseM + lerp(K.wallM[0], K.wallM[1], clamp((b * 2 - 5) / 5, 0, 1)) * (.92 + .16 * r(1));
   houseWalls(tb, F, a, b, 0, zt, WALL.HOUSE, K, r(2));
-  giwaRoof(tb, F, a, b, zt, K, Math.floor(r(3) * 3) % 3);
+  giwaRoof(tb, F, a, b, zt, K, Math.floor(r(3) * 3) % 3, { style: roofStyle(b, K, r(5)) });
 }
 
 // 초가: low mud walls on a low stone footing, a rounded thatch with a thick cut edge, no corner lift (kind THATCH; H = the
@@ -283,7 +325,7 @@ function hall(tb, F, a, b, K, r) {
   const be = b + K.eaveOutM, t1 = clamp(1 - (b2 - .3) / be, .3, .8), skirt = giwaRoof(tb, F, a, b, z1, K, slot, { t1 });
   const z2 = skirt.top - .3 + T.hallStoreyM[1];
   houseWalls(tb, F, a2, b2, skirt.top - .3, z2, WALL.STOREY, K, r(4), T.hallStoreyM[1]);
-  giwaRoof(tb, F, a2, b2, z2, K, slot);
+  giwaRoof(tb, F, a2, b2, z2, K, slot, { style: 'paljak' });
 }
 
 // 목탑 (the owner's reference: 황룡사 9층 목탑): square storeys getting smaller, a deep roof round each, a pyramid on top
@@ -307,40 +349,55 @@ function pagoda(tb, F, s, H, K, r) {
 function tower(tb, F, a, b, H, K, r) {
   const T = K.tall, W = tb.W, slot = Math.floor(r(3) * 3) % 3, top = Math.max(T.podiumM + 2 * T.storeyM, H - 2.5);
   const floors = Math.max(2, Math.round((top - T.podiumM) / T.storeyM)), st = (top - T.podiumM) / floors;
-  houseWalls(tb, F, a, b, 0, top, WALL.STOREYS, K, r(2), st);
+  houseWalls(tb, F, a, b, 0, top, WALL.STOREYS, K, r(2), st, [T.skirtStep.find(([n]) => floors <= n)[1], Math.round(T.podiumM * 20)]);   // (the shader: the eaves' step and the floors' origin)
   // the podium: one storey round the foot, its skirt reaching in to the body
   const pa = a + T.podiumOutM, pb = b + T.podiumOutM;
   houseWalls(tb, F, pa, pb, 0, T.podiumM, WALL.HOUSE, K, r(4));
   const be = pb + K.eaveOutM, t1 = clamp(1 - (b - .2) / be, .2, .7);
   giwaRoof(tb, F, pa, pb, T.podiumM, K, slot, { t1 });
-  // the floors' skirts: a sloped ring from the wall out to the eave, corners lifted
-  const step = T.skirtStep.find(([n]) => floors <= n)[1], o = T.skirtOutM, k = K.cornerKickM * .7, lift = K.cornerLiftM * .6, Hq = 65535;
-  W.kind = HANOK_KIND.ROOF; W.w = [0, 0, 0, 0];
+  // the floors' eaves (Codex 검토 2026-10-10, 레퍼런스: 창 두세 칸을 묶은 지붕이 따로따로, 모서리는 더 큰 지붕이 감싼다): on each
+  // face the roofs skirtGroups lays out, the same on every tier so they line up, every `step` floors. A corner roof is the
+  // two faces' end pieces meeting on the diagonal, kicked out and lifted; a middle one flares a little at its lifted ends.
+  // The slopes at every zoom, their edges near only
+  const G = T.skirtGroup, step = T.skirtStep.find(([n]) => floors <= n)[1], k = K.cornerKickM * .7, lift = K.cornerLiftM * .6, Hq = 65535, rise = T.skirtRiseM;
+  const C = [[-a, -b], [a, -b], [a, b], [-a, b]], sides = C.map((p, s) => {
+    const q = C[(s + 1) % 4], len = Math.hypot(q[0] - p[0], q[1] - p[1]), d = [(q[0] - p[0]) / len, (q[1] - p[1]) / len];
+    return { p, d, n: [d[1], -d[0]], len, groups: skirtGroups(len, G) };
+  });
+  W.kind = HANOK_KIND.ROOF; W.w = [0, 0, 0, 0]; W.m = [slot, 0, Hq & 255, Hq >>> 8];
+  // one roof (Codex 2차 검토: 판이 아니라 기와지붕으로): a grid of 3 columns along the eave × rows wall → eave, the slope
+  // steep at the wall and flattening out to an eave turned up a little (G.upK × its depth), the ends lifted more (G.liftM:
+  // a corner end, another end); far ('lo') one quad on the grid's corners, the same vertices
+  const rows = G.rows, drop = t => 1.6 * t - .6 * t * t, cols = [0, .5, 1];
+  const grid = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < 2; si++) { const q = ti * 3 + si; grid.push(q, q + 1, q + 4, q, q + 4, q + 3) }
+  const lo = [0, 2, rows.length * 3 - 1, 0, rows.length * 3 - 1, rows.length * 3 - 3];
   for (let f = step; f < floors; f += step) {
-    const z = T.podiumM + f * st, zi = z + .15, zo = z - T.skirtRiseM, list = (f / step) % 3 === 0 ? 'walls' : 'hi';   // far away every third skirt
-    W.m = [slot, 0, Hq & 255, Hq >>> 8];
-    // one ring a floor: the slope (inner → outer corners) and its edge (outer → below it), the corners shared by the two
-    // sides that meet there (u runs on round the corner; 2026-10-09: four quads a side were 44 % of the 조선 mesh)
-    const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]], P = [], N = [], U = [], slope = [], rim = [];
-    for (const c of C) {
-      const u = c[0] * a + c[1] * b, po = [c[0] * (a + o + k), c[1] * (b + o + k), zo + lift], nh = norm([c[0], c[1], 0]);
-      P.push([c[0] * a, c[1] * b, zi], po, po, [po[0], po[1], po[2] - T.skirtEdgeM]);
-      N.push(norm([c[0] * T.skirtRiseM, c[1] * T.skirtRiseM, o * 1.4]), norm([c[0] * T.skirtRiseM, c[1] * T.skirtRiseM, o * 1.4]), nh, nh); U.push(u, u, u, u);
+    const zi = T.podiumM + f * st + .15;
+    for (const { p, d, n, len, groups } of sides) for (const [x0, x1] of groups) {
+      const c0 = x0 <= 1e-6, c1 = x1 >= len - 1e-6, o = c0 || c1 ? G.cornerOutM : G.outM;
+      // the eave's two ends: on a corner out along the diagonal, else flared past the wall line
+      const eave = (x, corner, sgn) => corner ? [p[0] + d[0] * x + (n[0] + sgn * d[0]) * (o + k), p[1] + d[1] * x + (n[1] + sgn * d[1]) * (o + k)] : [p[0] + d[0] * (x + sgn * G.flareM) + n[0] * o, p[1] + d[1] * (x + sgn * G.flareM) + n[1] * o];
+      const e0 = eave(x0, c0, -1), e1 = eave(x1, c1, 1), u0 = x0 - (c0 ? o + k : G.flareM), u1 = x1 + (c1 ? o + k : G.flareM), l0 = c0 ? G.liftM[0] : G.liftM[1], l1 = c1 ? G.liftM[0] : G.liftM[1];
+      const P = [], U = [];
+      for (const t of rows) for (const sc of cols) {
+        const wx = lerp(x0, x1, sc), up = (G.upK * o + (sc === 0 ? l0 : sc === 1 ? l1 : 0)) * t * t;
+        P.push([lerp(p[0] + d[0] * wx, lerp(e0[0], e1[0], sc), t), lerp(p[1] + d[1] * wx, lerp(e0[1], e1[1], sc), t), zi - rise * drop(t) + up]); U.push(lerp(wx, lerp(u0, u1, sc), t));
+      }
+      F.mesh(P, smoothNormals(P, grid), U, { hi: grid, lo }, [n[0], n[1], 1]);
+      if (!tb.opts.phone) {   // the eave's edge (휴대폰은 빼요 — 정점)
+        const E = P.slice(-3), R = [...E, ...E.map(q => [q[0], q[1], q[2] - T.skirtEdgeM])], nn = [n[0], n[1], 0];
+        F.mesh(R, R.map(() => nn), [...U.slice(-3), ...U.slice(-3)], { hi: [0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4] }, nn);
+      }
     }
-    for (let i = 0; i < 4; i++) {
-      const p = i * 4, q = (i + 1) % 4 * 4;
-      slope.push(p, q, q + 1, p, q + 1, p + 1); rim.push(p + 3, q + 3, q + 2, p + 3, q + 2, p + 2);
-    }
-    F.mesh(P, N, U, { [list]: [...slope, ...rim] }, (p, q, r) => [p[0] + q[0] + r[0], p[1] + q[1] + r[1], 0]);   // outward, away from the body
   }
   // the roofs on top
   if (a / b >= T.triRoofAspect) {
     const am = Math.max(2, a * .34), ae = Math.max(2, a * .26), xe = a - ae;
-    giwaRoof(tb, F.shift(-xe, 0), ae, b, top, K, slot);
-    giwaRoof(tb, F.shift(xe, 0), ae, b, top, K, slot);
+    giwaRoof(tb, F.shift(-xe, 0), ae, b, top, K, slot, { style: 'paljak' });
+    giwaRoof(tb, F.shift(xe, 0), ae, b, top, K, slot, { style: 'paljak' });
     houseWalls(tb, F, am, b * .92, top - .2, top + 2.2, WALL.STOREY, K, r(6), 2.4);
-    giwaRoof(tb, F, am, b * .92, top + 2.2, K, slot);
-  } else giwaRoof(tb, F, a, b, top, K, slot);
+    giwaRoof(tb, F, am, b * .92, top + 2.2, K, slot, { style: 'paljak' });
+  } else giwaRoof(tb, F, a, b, top, K, slot, { style: 'paljak' });
 }
 
 // the wall round a court or a lot, a gate in the middle of the side `w.gate` (±y); each stretch drawn by the tile holding its
