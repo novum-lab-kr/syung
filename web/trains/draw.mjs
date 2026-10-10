@@ -249,9 +249,11 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
     render(gl,options){
       if(!live.myLocation&&(!live.trainsEnabled||!planner.plans.length))return;
       const drawTrainsToo=live.trainsEnabled&&!live.subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
-      const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=live.coaster||live.simcity?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;   // city-life: 심시티 — the slim body too (the viaduct's deck is cut to it)
+      // 지금 모드 설정: 열차 모양(look) · 굵기(body), 선로 종류(K — 고가 · 롤코 길)
+      const S=live.settings,K=S.track.kind,look=S.trains.look,c88=look==='coaster88';
+      const zoom=map.getZoom(),unit=1/(512*2**zoom),bodyPx=S.trains.body==='slim'?coasterBodyPx(zoom):bodyWidthPx(zoom),MIN_PX=TRAIN_MIN_PX,MARGIN=3;   // city-life: 심시티 — the slim body too (the viaduct's deck is cut to it)
       // Lane: clear of the route line (its drawn width) by a visible gap, then half a car body.
-      const lanePx=live.simcity||live.coaster?cityViaduct.train(zoom,bodyPx).lanePx:laneOffsetPx(zoom,bodyPx);   // city-life: 심시티 — no route line on the ground to keep clear of: the two lanes close up on the deck
+      const lanePx=K!=='ground'?cityViaduct.train(zoom,bodyPx).lanePx:laneOffsetPx(zoom,bodyPx);   // city-life: 심시티 — no route line on the ground to keep clear of: the two lanes close up on the deck
       const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
       // Keep world coordinates in double precision until subtracting the view-centre origin.
       const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
@@ -262,7 +264,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(live.myLocation&&map.getBounds().contains(live.myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(live.myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
       for(const plan of drawTrainsToo?planner.plans:[]){
         const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
-        this.h0=live.simcity?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
+        this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
         let shiftX=0,shiftY=0;
         const shift=snap?snap.shift:blendShift(plan,mid);if(shift){shiftX=shift[0];shiftY=shift[1];animating=true}
@@ -272,22 +274,22 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit)/2+lanePx*unit;
         if(!snap&&(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach))continue;
         if(pose.moving||snap&&trainPose(plan).moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
-        const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,live.coaster?n*bodyPx*1.6*unit:0),car=total/n,tail=(live.coaster?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
+        const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
         let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
         if(plan.id===live.sheetTrain){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
-        const P=d=>{const q=trackPoint(plan,live.coaster?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
-        if(live.simcity&&live.joseon){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
+        const P=d=>{const q=trackPoint(plan,K==='coaster'?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
+        if(look==='fleet'){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
           // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞에만 (2026-10-10 덕배)
           const k=Math.max(1,Math.min(n,Math.round(total/unit/(bodyPx*3.6)))),span=total/k;
           for(let j=0;j<k;j++){const c=coasterCarFrame(P,tail,span,j,k,unit,bodyPx,lanePx,span*.32);if(!c)continue;const lead=j===k-1;
             this.ships?.ship(c.fr,lead?c.L*1.25:c.L,lead?bodyPx*1.3:bodyPx,color,pose.moving,plan.id,{kind:lead?'turtle':'boat',flag:lead,line:plan.t.line})}   // 깃발은 맨 앞 거북선 꼬리에만(2026-10-10 덕배)
           continue}
-        const ratio=car/unit/bodyPx,separate=live.coaster||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
-        const unfold=live.coaster?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
+        const ratio=car/unit/bodyPx,separate=c88||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
+        const unfold=c88?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
         const start=P(tail),finish=P(tail+total);
         // 심시티: at the LOD boundary, car chords coincide with the compact icon's chord, then articulate.
         // 기본 모드: 칸 끝은 늘 선로 위 점(P(d))에 둔다 — 곡선에서 곧은 막대로 모으지 않는다. 틈 · 지붕 이음만 unfold 로 자란다.
-        const follow=live.simcity?unfold:1;
+        const follow=K==='viaduct'?unfold:1;
         const articulated=(d)=>{
           const q=P(d),t=(d-tail)/total;
           q.x=(start.x+(finish.x-start.x)*t)*(1-follow)+q.x*follow;
@@ -296,14 +298,14 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
           return q;
         };
         // 기본 모드 낮은 줌: 칸이 짧으면 몇 칸을 한 마디(몸 폭 0.8배 이상)로 묶어 휘게 그린다
-        const bends=live.coaster||live.simcity?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
+        const bends=K!=='ground'?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
         if(separate){
           // Painter order follows camera ground direction; no hidden back wall can bleed through.
           const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
           for(let k=0;k<n;k++){
             const j=forward?k:n-1-k;
-            if(live.coaster){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88)?.car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
-            const A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(live.simcity)this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
+            if(c88){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88)?.car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
+            const A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(K==='viaduct')this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
             const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy);if(len<unit*.1)continue;
             const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
             this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
@@ -385,9 +387,9 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       }
       // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
       const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:live.sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:live.rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
-      if(live.simcity&&live.joseon&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
-      if(live.coaster&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
-      if(live.coaster&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
+      if(look==='fleet'&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
+      if(c88&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
+      if(c88&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
       if(this.used){
         gl.useProgram(this.p);
         const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
@@ -403,7 +405,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         const S=52,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
         ptr('a_pos',3,0);ptr('a_local',2,12);ptr('a_info',4,20);ptr('a_color',3,36);ptr('a_face',1,48);
         gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);
-        const SS=live.simcity?cityViaduct.shadowShift(sunPosition()):[0,0];   // city-life: 심시티 — a train up on the viaduct casts its shadow where the deck casts its own
+        const SS=K==='viaduct'?cityViaduct.shadowShift(sunPosition()):[0,0];   // city-life: 심시티 — a train up on the viaduct casts its shadow where the deck casts its own
         const pass=alpha=>{gl.uniform1f(this.uni.u_alpha,alpha);
           gl.uniform2f(this.uni.u_offset,live.sunTrainShadow[0]*unit+SS[0],live.sunTrainShadow[1]*unit+SS[1]);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
           gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13)};
@@ -441,7 +443,7 @@ export function buildingDepthClass({cityOn,map,PHONE,maplibregl,live}){
       const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out=[];this.ox=O.x;this.oy=O.y;
       const X=l=>(l+180)/360-O.x,Y=a=>(180-180/Math.PI*Math.log(Math.tan(Math.PI/4+a*Math.PI/360)))/360-O.y;
       for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
-        const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base||live.coaster&&top>=live.RIDE_H*mpu)continue;
+        const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base||live.settings.map.towersAsRides&&top>=live.settings.park.towerM*mpu)continue;
         for(const poly of g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[])for(const ring of poly)
           for(let i=0;i+1<ring.length;i++){const x0=X(ring[i][0]),y0=Y(ring[i][1]),x1=X(ring[i+1][0]),y1=Y(ring[i+1][1]);
             out.push(x0,y0,base,x1,y1,base,x1,y1,top,x0,y0,base,x1,y1,top,x0,y0,top)}

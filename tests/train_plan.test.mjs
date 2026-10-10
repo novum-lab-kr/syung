@@ -21,7 +21,7 @@ async function setup(t){
   });
   const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,geom,realGeom:geom,
     trainPose:p=>{assert.ok(poses.has(p),'보정할 계획의 자세가 준비되어 있음');return {dist:poses.get(p)}},
-    mercStop:(_line,s)=>merc(s),catchup,catchupAt,isCoaster:()=>false,isRide:()=>ride,getTrains:()=>trains});
+    mercStop:(_line,s)=>merc(s),catchup,catchupAt,predictStops:()=>3,isRide:()=>ride,getTrains:()=>trains});   // 기본 모드 설정 trains.predictStops
   // 두 비동기 초기화를 끝낸 뒤 계획을 바꿔야 늦게 온 자료가 테스트 배열을 덮지 않는다.
   await setImmediate();
   assert.deepEqual(requests,['./live-timing.json','./edge_times.json']);

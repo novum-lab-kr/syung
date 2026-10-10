@@ -51,8 +51,9 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     for (const k of ['themes', 'colors', 'park']) if (S.map?.[k] != null) colors(S.map[k], `${id}.map.${k}`);
     const oneOf = (v, list, path) => { if (v !== undefined && !list.includes(v)) throw new Error(`${path}: 허용되지 않는 값 ${v}`) };
     oneOf(S.map?.paletteKind, ['base', 'city', 'park-city'], `${id}.map.paletteKind`); oneOf(S.sun?.light, ['map', 'park'], `${id}.sun.light`);
-    oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
-    for (const [g, k] of [['map', 'towersAsRides'], ['map', 'verticalGradient'], ['city', 'groundTexture']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
+    oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.trains?.look, ['commuter', 'fleet', 'coaster88'], `${id}.trains.look`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
+    if (S.trains && 'predictStops' in S.trains && !(Number.isInteger(S.trains.predictStops) && S.trains.predictStops >= 1)) throw new Error(`${id}.trains.predictStops: 1 이상 정수`);
+    for (const [g, k] of [['map', 'towersAsRides'], ['map', 'verticalGradient'], ['city', 'groundTexture'], ['trains', 'timeWarp']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
     if (S.sun && S.sun.lowHouseM != null && !(typeof S.sun.lowHouseM === 'number' && S.sun.lowHouseM > 0)) throw new Error(`${id}.sun.lowHouseM: 0 보다 큰 수 또는 null`);
     if (S.city?.pack) checkPack(S.city.pack, `${id}.city.pack`);
     if (S.park?.style) checkPack(S.park.style, `${id}.park.style`);

@@ -21,6 +21,9 @@ export default {
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),
     // coaster(롤코 언덕 길). platform 은 승강장 모양 — ribbon(노선을 따라 휘는 띠), straight(선로에 맞춘 곧은 상자)
     track: { kind: 'ground', platform: 'ribbon' },
+    // 열차: look 은 모양 — commuter(전동차) · fleet(배 선단, 맨 앞 거북선) · coaster88(88열차 칸), body 는 굵기 — wide(지도 위) · slim(고가 · 공원),
+    // predictStops 는 새 자료 없이 미리 달려 갈 정차 역 수, timeWarp 는 배속으로 앞서 달리기(롤코 배속 버튼)
+    trains: { look: 'commuter', body: 'wide', predictStops: 3, timeWarp: false },
     // 해: light 는 지도 빛(map: 해 따라 · park: 공원의 따뜻한 빛 PARK_COLORS), lowHouseM 은 그 팩의 hanok.tall.towerMinH 보다 낮은 건물 그림자 높이(m, 없으면 실제 높이)
     sun: { light: 'map', lowHouseM: null },
   },

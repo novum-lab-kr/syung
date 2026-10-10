@@ -15,7 +15,7 @@ function setup(defs=modeDefs){
   const snapped=[[127,37],[127.001,37.001]],base=[[127,37],[127.001,37]];
   const stations=[{id:1,name:'출발',lon:127,lat:37,lines:[{name:'L'}]},{id:2,name:'도착',lon:127.001,lat:37,lines:[{name:'L'}]}];
   const sources=new Map(['stations','journey','routes'].map(id=>[id,{data:null,setData(data){this.data=plain(data)}}]));
-  let labels=0,fits=0,rides=0;const buttons={};
+  let labels=0,fits=0,rides=0,rebuilds=0;const buttons={};
   class Bounds{extend(){return this}}
   const context=vm.createContext({Map,Math,coasterGeo:{bld:true},kitReady:true,loadModeKit:()=>Promise.resolve(),loadCoasterBuildings:()=>Promise.resolve(),
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
@@ -24,7 +24,7 @@ function setup(defs=modeDefs){
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,sheetPad:()=>0,stopRide(){rides++},
     $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:()=>[]},cityMap(){},setRouteOpacity(){},
-    buildLineFeatures:()=>[],planner:{rebuild(){}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
+    buildLineFeatures:()=>[],planner:{rebuild(){rebuilds++}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
     part('const PLATFORM_HALF=', 'function metresBetween('),
@@ -47,7 +47,7 @@ function setup(defs=modeDefs){
   Object.assign(context,{journeyMap,showRoute:journeyMap.showRoute,clearRoute:journeyMap.clearRoute,setRouteOpacity:journeyMap.setRouteOpacity,focusRoute:journeyMap.focusRoute,setSubwayOff:journeyMap.setSubwayOff});
   const run=code=>vm.runInContext(code,context);
   run("map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});showRoute({legs:[{type:'ride',line:'L',stations:[1,2]}]})");
-  return {run,sources,base,snapped,rect:()=>plain(run("stationRects.get('L:1')")),labels:()=>labels,fits:()=>fits,rides:()=>rides,
+  return {run,sources,base,snapped,rect:()=>plain(run("stationRects.get('L:1')")),labels:()=>labels,fits:()=>fits,rides:()=>rides,rebuilds:()=>rebuilds,
     pressed:()=>Object.fromEntries(['toggleSimcity','toggleJoseon','toggleCoaster'].map(id=>[id,buttons[id]?.pressed]))};
 }
 
@@ -106,4 +106,13 @@ test('심시티 ↔ 조선: 선로 설정이 같으면 승강장을 다시 만�
   const g=setup(defs),base=g.rect();g.run('setSimcity(true)');const city=g.rect(),m=g.labels();
   assert.notDeepEqual(city,base);
   g.run('setSimcity(true,true)');assert.equal(g.labels(),m+1,'선로가 바뀌면 다시');assert.deepEqual(g.rect(),base,'조선이 땅 위 선로면 기본 승강장');
+});
+
+test('심시티 ↔ 조선: 선로가 같아도 예측 정차 수가 다르면 예측만 다시 세운다',()=>{
+  const plain=setup();plain.run('setSimcity(true)');const p0=plain.rebuilds(),l0=plain.labels();plain.run('setSimcity(true,true)');
+  assert.equal(plain.rebuilds(),p0,'같으면 그대로');
+  const defs=modeDefs.map(d=>d.id==='joseon'?{...d,settings:{...d.settings,trains:{...d.settings.trains,predictStops:1}}}:d);
+  const r=setup(defs);r.run('setSimcity(true)');const n=r.rebuilds(),l=r.labels();r.run('setSimcity(true,true)');
+  assert.equal(r.rebuilds(),n+1);assert.equal(r.labels(),l,'승강장은 그대로');
+  r.run('setSimcity(true)');assert.equal(r.rebuilds(),n+2,'돌아올 때도');
 });

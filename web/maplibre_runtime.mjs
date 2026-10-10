@@ -269,7 +269,7 @@ const liveState=document.querySelector('#liveState span');   // the line filter 
 // ---- live train routing -------------------------------------------------------------
 // 열차 예측(trains/plan.mjs): plans · 시계 · 시간표와 학습 자료의 주인. 본체는 planner.plans 로 읽는다
 const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,
-  isCoaster:()=>modeOn.coaster,isRide:()=>rider.ride,getTrains:()=>feed.trains});
+  predictStops:()=>modeCtl.settings().trains.predictStops,isRide:()=>rider.ride,getTrains:()=>feed.trains});
 const {age,clock}=planner;
 // Station exits (OSM subway_entrance, built by pipeline/build_entrances.py): {station id: [[lon,lat,ref,wheelchair]]}
 let exits={};const exitCol=new Map();   // exit "lon,lat" → the colour of the line its passage joins
@@ -329,7 +329,7 @@ const warpNow=()=>modeCtl.warpNow();   // 롤코 배속으로 앞서 달린 시�
 // Loops and corkscrews are landmarks, not the rule (on half the edges each they all looked alike): along each line, in
 // order, an edge may take one (not both) once INV_GAP m have passed since the last — a loop by chance INV_LOOP, else a
 // corkscrew by INV_CORK. Chosen once per edge, the first line through it deciding; 'loop', 'cork' or ''.
-const coasterMotion=createCoasterMotion({geom,coasterAt,isCoaster:()=>modeOn.coaster});const {ridePace,toRide,fromRide}=coasterMotion;   // 롤코 주행 속도 · 탄 거리
+const coasterMotion=createCoasterMotion({geom,coasterAt,isCoaster:()=>modeCtl.settings().track.kind==='coaster'});const {ridePace,toRide,fromRide}=coasterMotion;   // 롤코 주행 속도 · 탄 거리
 // Where the middle of the train is, as a distance (mercator units) along plan.seq: the feed's prediction (rawPose), but
 // never into the train ahead on the same track. Two reports a moment apart put trains on top of each other (2호선 2083
 // leaving 잠실나루 and 6085 coming in 2 s later, 2026-10-03; a train held at its next platform after fresh data meets the
@@ -348,9 +348,9 @@ function spaceTrains(){
     a.pose={...a.pose,dist:Math.max(0,a.pose.dist-(need-d))};at(a);spaced.set(a.p,a.pose)}
 }
 function rawPose(p){
-  let el=age(p.t.receivedAt)+p.lead+(modeOn.coaster?warpNow():0),ph=p.phases[p.phases.length-1];
+  const S=modeCtl.settings();let el=age(p.t.receivedAt)+p.lead+(S.trains.timeWarp?warpNow():0),ph=p.phases[p.phases.length-1];
   for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
-  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=modeOn.coaster&&ph.from!==ph.to?ridePace(p.t.line,ph.from.id,ph.to.id,ph.k0,ph.k1,e):ph.k0+(ph.k1-ph.k0)*e;
+  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=S.track.kind==='coaster'&&ph.from!==ph.to?ridePace(p.t.line,ph.from.id,ph.to.id,ph.k0,ph.k1,e):ph.k0+(ph.k1-ph.k0)*e;
   const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
   const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
   // After fresh data (see replacePlans): never back up — wait where the train was drawn until the
@@ -450,7 +450,7 @@ const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLo
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
 // 지도를 끌거나 확대하면 · '내리기' · Esc · 롤코 끄기로 내려서 타기 전 카메라로 돌아가요.
 const rider=createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup:plan=>showTrainPopup(plan),applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState:plan=>riderState(plan),trainLngLat,
-  stopFollowing:()=>{sheetUI.easing=false;sheetUI.following=null},isCoaster:()=>modeOn.coaster,getSheetTrain:()=>sheetUI.sheetTrain,getSleeperM:()=>SLEEPER_M});
+  stopFollowing:()=>{sheetUI.easing=false;sheetUI.following=null},isCoaster:()=>modeCtl.settings().track.kind==='coaster',getSheetTrain:()=>sheetUI.sheetTrain,getSleeperM:()=>SLEEPER_M});
 const {riding,rideRows,startRide,stopRide,rideFrame,rideBar}=rider;
 animFrame.push(rideFrame);
 // #fps: 실제 기기에서 지도 프레임 — 초당 프레임, 늦은 프레임(20 · 34 ms 넘게) 수, 가장 긴 간격, 지도 한 프레임 · 1인칭 카메라 JS 시간(ms). 서버 캡처로는 잴 수 없어서(2026-10-06 덕배)
@@ -480,12 +480,12 @@ const hexRGB3=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,pa
 // footprints (a ray through a building always crosses one); walls along tile edges lie inside
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
-const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get coaster(){return modeOn.coaster},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding},get RIDE_H(){return RIDE_H}};
+const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected});
 // 롤코 선로(modes/coaster/track.mjs)
-const coasterTrack=createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS,map,maplibregl,HOME,paths,byId,colors,geom,coasterProfile,coasterAt,coasterRises,loopD,corkOf,rolled,CORK_HEART,edgeOffset,hexRGB,coasterBodyPx,cityViaduct,PHONE,trainFrameSoon,isCoaster:()=>modeOn.coaster,getSelected:()=>selected});
+const coasterTrack=createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS,map,maplibregl,HOME,paths,byId,colors,geom,coasterProfile,coasterAt,coasterRises,loopD,corkOf,rolled,CORK_HEART,edgeOffset,hexRGB,coasterBodyPx,cityViaduct,PHONE,trainFrameSoon,isCoaster:()=>modeCtl.settings().track.kind==='coaster',getSelected:()=>selected});
 let stationAlpha=1;   // station platforms and names: faded behind a 길찾기 route (focusRoute)
 const stationNames=new StationNameLayer({map,maplibregl,stationRects,exitCol,cityViaduct,colors,hexRGB3,stationWidthPx,platformPx,PLATFORM_SCALE,closestPlatformPoint,platformStroke,EXIT_MINZOOM,EXIT_MAX_M,EXIT_PASSAGES,document,matchMedia:q=>matchMedia(q),
   getLabels:()=>stationLabels.list,getSelected:()=>selected,getExits:()=>exits,getStationAlpha:()=>stationAlpha,getTrack:()=>modeCtl.settings().track});   // city-life: 심시티 — the bars take the buildings' depth there too (see its render)
@@ -680,11 +680,12 @@ function applyCoaster(on,speed){
     applyTheme();updateSun();wallsNow()}   // the park colours, and the towers out of the shadows and walls
   map.triggerRepaint();
 }
-// 조선 모드 is 심시티 in another pack (J): switching between the two changes only the look — 선로 설정(track)이 같으면(같은 참조) 경로 · 승강장 · 예측은 그대로
+// 조선 모드 is 심시티 in another pack (J): switching between the two changes only the look — 선로 설정(track)이 같으면(같은 참조) 경로 · 승강장은 그대로,
+// 예측 정차 수(trains.predictStops)만 다르면 예측만 다시
 function applySimcity(on,J){
   if(on)cityMap();
-  const wasTrack=modeCtl.settings().track,next=on?(J?'joseon':'simcity'):'basic',same=modeCtl.current===next;modeCtl.enter(next);
-  if(modeCtl.settings().track===wasTrack){if(!same){applyTheme();updateSun();map.triggerRepaint()}return}
+  const was=modeCtl.settings(),next=on?(J?'joseon':'simcity'):'basic',same=modeCtl.current===next;modeCtl.enter(next);const now=modeCtl.settings();
+  if(now.track===was.track){if(now.trains.predictStops!==was.trains.predictStops){planner.rebuild();lastPose.clear()}if(!same){applyTheme();updateSun();map.triggerRepaint()}return}
   setRouteOpacity();planner.rebuild();lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
 // 요청(버튼 · 창구). 끄기: 그 가족이 켜져 있으면 기본으로(롤코를 끄면 1인칭에서도 내려요 — 바꾸기 안에서 한 번), 받는 중이기만 하면 그 요청만 거둔다(지금 모드 그대로),
 // 다른 가족만 켜져 있거나 받는 중이면 그대로 둔다

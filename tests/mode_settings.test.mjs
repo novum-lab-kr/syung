@@ -135,6 +135,13 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   const badS=S=>()=>createModeRegistry([{id:'basic',settings:S}]);
   assert.throws(badS({map:{paletteKind:'neon'}}),/허용되지 않는/);assert.throws(badS({sun:{light:'moon'}}),/허용되지 않는/);
   assert.throws(badS({map:{towersAsRides:1}}),/참 · 거짓/);assert.throws(badS({sun:{lowHouseM:0}}),/lowHouseM/);
+  // 선로 · 열차(4-7 · 4-8)
+  const tr=id=>{const S=R.settings(id);return [S.track.kind,S.track.platform,S.trains.look,S.trains.body,S.trains.predictStops,S.trains.timeWarp]};
+  assert.deepEqual(tr('basic'),['ground','ribbon','commuter','wide',3,false]);
+  assert.deepEqual(tr('simcity'),['viaduct','straight','commuter','slim',3,false]);
+  assert.deepEqual(tr('joseon'),['viaduct','straight','fleet','slim',3,false]);
+  assert.deepEqual(tr('coaster'),['coaster','straight','coaster88','slim',99,true]);
+  assert.throws(badS({trains:{look:'tram'}}),/허용되지 않는/);assert.throws(badS({trains:{predictStops:0}}),/predictStops/);assert.throws(badS({track:{kind:'air'}}),/허용되지 않는/);
   const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mjs');
   assert.equal(B.map.themes,MAP_THEMES);assert.equal(B.map.colors,MAP_COLORS);assert.equal(B.map.park,PARK_COLORS);
   assert.equal(B.themeChoice,'auto');assert.equal(B.mapColor,'calm');

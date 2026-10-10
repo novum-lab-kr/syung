@@ -1,6 +1,6 @@
 // 열차 예측: 실시간 기록(마지막 사건과 그 시각)마다 앞으로의 주행 단계(phases)를 세운다. plans · 시계 · 시간표와 학습 자료의 주인.
 // 다른 화면 파일을 import 하지 않는다: 선로 · 역 · 자세 함수와 지금 모드는 본체가 넘긴다.
-export function createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,isCoaster,isRide,getTrains}){
+export function createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,predictStops,isRide,getTrains}){
   function kstMs(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]):NaN}
   function age(v){const t=kstMs(v);return t===t?Math.max(0,((clock()===frameClock?frameEpoch:Date.now())-t)/1000):0}
   // 열차 위치를 정하는 시계. 1인칭으로 탈 때는 그 화면 프레임의 시각(rAF): 부르는 순간의 시각을 쓰면 프레임마다 몇 ms 씩 들쭉날쭉하고,
@@ -42,10 +42,10 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     const expressLine=t.express&&EXPRESS_LINES.has(t.line),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
     const stops=st=>!expressLine||(st.express||[]).includes(t.line)||st===dest;
     const r=route(t,s),previous=r.previous,status=normStatus(t.status),phases=[];
-    // Roll on through PREDICT_STOPS stops (dwelling at each) before waiting for data: waiting at the
+    // Roll on through predictStops() stops (모드 설정 trains.predictStops — 기본 3, 롤코 99) (dwelling at each) before waiting for data: waiting at the
     // very next stop left trains standing there while they had long left; replacePlans keeps an
     // over-prediction from jumping back.
-    let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===(isCoaster()?99:PREDICT_STOPS)){upto=j;break}
+    let upto=r.ahead.length-1;for(let j=1,n=0;j<r.ahead.length;j++)if(stops(r.ahead[j])&&++n===predictStops()){upto=j;break}
     const ahead=r.ahead.slice(0,Math.max(1,upto)+1);
     // Stop to stop takes pace × (timetable run + 30 s dwell). The feed's 도착→출발 (the station section,
     // zone ~64 s) is not all standing: 도착 comes as the train enters the section and brakes along the
@@ -89,7 +89,7 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
   let plans=[];
   // Swap in plans from fresh data, carrying each train's drawn position over so it moves on continuously.
   // 앞으로의 보정은 원래 주행 위에 최대 CATCHUP_MPS 를 더해 메워요(질주하지 않게). 따라잡는 도중 새 자료가 오면 그때 더하던 속도에서 이어 가요.
-  const PREDICT_STOPS=3,GLIDE_MAX_M=1000,HOLD_MAX_M=3000,STOP_M=40,NEAR_PLATFORM_M=150;   // STOP_M: 앞선 열차가 서는 거리(약 4초) · NEAR_PLATFORM_M: 이만큼 안이면 승강장까지 가서 선다   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
+  const GLIDE_MAX_M=1000,HOLD_MAX_M=3000,STOP_M=40,NEAR_PLATFORM_M=150;   // STOP_M: 앞선 열차가 서는 거리(약 4초) · NEAR_PLATFORM_M: 이만큼 안이면 승강장까지 가서 선다   // bigger corrections than these still jump (GLIDE_MAX_M: 상한 속도로 1 km 를 메우는 데 약 110초 — 그보다 멀면 바로 옮겨요)
   function replacePlans(next){
     const old=new Map(plans.map(p=>[p.id,p]));
     for(const p of next){
