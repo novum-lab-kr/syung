@@ -10,16 +10,17 @@ import threading
 from server.services.bus import BusArrivalService, BusLiveService
 from server.services.journey import JourneyPlanner
 from server.services.live import SubwayLiveService
+from server.services.owner_auth import OwnerAuth
 from server.services.places import PlaceSearch
 
 
 class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
                  live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
-                 places: PlaceSearch | None = None):
+                 places: PlaceSearch | None = None, auth: OwnerAuth | None = None):
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
-        self._journey, self._places = journey, places
+        self._journey, self._places, self._auth = journey, places, auth
 
     @property
     def live(self) -> SubwayLiveService:
@@ -56,6 +57,13 @@ class Services:
             if self._places is None:
                 self._places = PlaceSearch()
             return self._places
+
+    @property
+    def auth(self) -> OwnerAuth:
+        with self._lock:
+            if self._auth is None:
+                self._auth = OwnerAuth()
+            return self._auth
 
 
 _default: Services | None = None

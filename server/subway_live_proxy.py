@@ -19,6 +19,8 @@ if _ROOT not in sys.path:
 from server.config import SubwayConfig  # noqa: E402
 from server.routes import journey as journey_routes  # noqa: E402
 from server.routes import live as live_routes  # noqa: E402
+from server.routes import owner as owner_routes  # noqa: E402
+from server.routes.response import Response  # noqa: E402
 from server.services.runtime import default_services  # noqa: E402
 
 CONFIG = SubwayConfig.from_env()
@@ -41,48 +43,35 @@ class Server(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    # ---- owner login for the private pages (owner_auth.py; Caddy forward_auth → /auth) ----
-    def _redirect(self, status: int, location: str, cookie: str | None = None) -> None:
-        self.send_response(status)
-        self.send_header("Location", location)
-        if cookie:
-            self.send_header("Set-Cookie", cookie)
+    # ---- owner login for the private pages (routes/owner.py; Caddy forward_auth → /auth) ----
+    def _write(self, response: Response) -> None:
+        if response.kind == "json":
+            return self._send(response.status, response.body)
+        self.send_response(response.status)
+        if response.kind == "redirect":
+            self.send_header("Location", response.location)
+            if response.cookie:
+                self.send_header("Set-Cookie", response.cookie)
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", "0")
+        if response.kind == "redirect":
+            self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _auth(self) -> None:
-        from server import owner_auth
-        if owner_auth.valid(self.headers.get("Cookie")):
-            self.send_response(204)
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            return
-        uri = self.headers.get("X-Forwarded-Uri", "/learning")
-        if uri.split("?", 1)[0].endswith(".json"):
-            return self._send(401, b'{"ok":false,"error":"login"}')
-        self._redirect(302, "/login.html?next=" + urllib.parse.quote(owner_auth.safe_next(uri), safe=""))
-
     def do_POST(self) -> None:
-        from server import owner_auth
         path = self.path.split("?", 1)[0]
         if path == "/logout":
-            return self._redirect(303, "/login.html", owner_auth.clear_cookie())
+            return self._write(owner_routes.logout())
         if path != "/login":
             return self.send_error(404)
         size = min(int(self.headers.get("Content-Length") or 0), 4096)
-        form = urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"))
-        user, password = form.get("user", [""])[0], form.get("password", [""])[0]
-        nxt = owner_auth.safe_next(form.get("next", ["/learning"])[0])
+        form = self.rfile.read(size)
         address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
-        if owner_auth.check_password(user, password, address):
-            return self._redirect(303, nxt, owner_auth.make_cookie())
-        error = "wait" if owner_auth.blocked(address) else "1"
-        self._redirect(303, f"/login.html?e={error}&next=" + urllib.parse.quote(nxt, safe=""))
+        self._write(owner_routes.login(default_services().auth, form, address))
 
     def do_GET(self) -> None:
         if self.path.split("?", 1)[0] == "/auth":
-            return self._auth()
+            return self._write(owner_routes.auth(default_services().auth, self.headers.get("Cookie"),
+                                                 self.headers.get("X-Forwarded-Uri", "/learning")))
         # bus: separate cache/quota; the same process can serve the new endpoint.
         if self.path.split("?", 1)[0] in ("/bus/live", "/api/bus/live"):
             from server import bus_live_proxy
