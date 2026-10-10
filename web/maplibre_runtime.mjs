@@ -9,6 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mjs';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mjs';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mjs';   // 열차 · 역 정보창
+import {createJourneyMap} from './ui/journey.mjs';   // 여정 지도 표시
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
@@ -417,83 +418,12 @@ const destLabel=t=>{const d=String(t.destination||'');return !d?'':/순환$/.tes
 const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
-const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute,
-  live:{get journey(){return journey},get routeBounds(){return routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
+const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
+  live:{get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
 const {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
-// 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
-function rideCoords(line,ids){
-  const out=[];
-  for(let i=1;i<ids.length;i++){const a=ids[i-1],b=ids[i];let c=cityCoords(line,Math.min(a,b),Math.max(a,b));if(a>b)c=c.slice().reverse();out.push(...(out.length?c.slice(1):c))}   // 여정도 선택한 노선 경로를 따라가요.
-  return out;
-}
-function showRoute(plan,busSelection=false,refit=true){   // bus: a stop's number uses the same fit, focus and journey styles
-  displayedRoute={plan,busSelection};
-  busRouteFocus=busSelection;if(!busSelection){setSubwayOff(false);busLayer?.setJourney(plan.legs)}   // bus: 길찾기 경로는 지하철을 다시 보인다   // bus: keep the stop sheet's selection intact
-  const feats=[],pts=[];
-  plan.legs.forEach((l,i)=>{
-    if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path}});
-    else if(l.type==='bus'){}   // bus: road-matched line and boarding markers share busLayer's journey styles
-    else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
-      // boarding and alighting where the ride is drawn from (the platform on the track), not the
-      // station's centre point, which sat 50–270 m off both the ride and the exit the walk reached
-      const s0=byId.get(l.stations[0]),s1=byId.get(l.stations[l.stations.length-1]);
-      for(const s of [s0,s1])if(s)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:stopPos(l.line,s)}});
-      // the walk ends at an exit: join it to the platform, fainter (inside the station)
-      const prev=plan.legs[i-1],next=plan.legs[i+1];
-      if(prev&&prev.type==='walk'&&prev.path&&s0)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[prev.path[prev.path.length-1],stopPos(l.line,s0)]}});
-      if(next&&next.type==='walk'&&next.path&&s1)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[stopPos(l.line,s1),next.path[0]]}})}
-
-  });
-  const first=plan.legs[0],last=plan.legs[plan.legs.length-1];
-  if(first.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]}});   // bus: a route number has stops, not journey origin/destination pins
-  if(last.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]}});   // bus
-  const data={type:'FeatureCollection',features:[...feats,...pts]};
-  if(!map.getSource('journey')){
-    // veil: everything under the route (base map, other lines, station names) fades back
-    map.addSource('journey-veil',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]]]}}});
-    // under the base map's labels: the ground fades back, street and place names stay readable
-    // (over everything at .68 the map around a route was too dim to read); the other lines fade
-    // by their own opacity in focusRoute
-    map.addLayer({id:'journey-veil',type:'fill',source:'journey-veil',paint:{'fill-color':veilColor(),'fill-opacity':.45,'fill-opacity-transition':{duration:300}}},map.getLayer('bm-label-water')?'bm-label-water':undefined);
-    map.addSource('journey',{type:'geojson',data});
-    map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyCasingPaint()});   // bus: shared casing
-    map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyRidePaint()});   // bus: shared stroke
-    map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});
-    map.addLayer({id:'journey-inside',type:'line',source:'journey',filter:['==',['get','kind'],'inside'],layout:{'line-cap':'round'},paint:{'line-color':walkColor(),'line-opacity':.45,'line-width':['interpolate',['linear'],['zoom'],10,2,16,4],'line-dasharray':[0.1,2.2]}});
-    map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});   // bus: shared stop marker
-    map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
-  }else map.getSource('journey').setData(data);
-  busLayer?.raiseRoute();focusRoute(true);   // bus: keep selected lanes above the lazily created veil
-  const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates);
-  all.push(...plan.legs.filter(l=>l.type==='bus').flatMap(l=>l.path));   // bus: retain journey fitting without a duplicate line
-  routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
-  if(refit)fitRoute(sheetPad()+30);
-}
-let displayedRoute=null;   // 모드 전환 때 표시 중인 여정만 다시 그려요.
-let routeBounds=null,busRouteFocus=false;   // bus: route-number focus is released with its detail sheet
-function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
-function clearRoute(){displayedRoute=null;busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
-const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
-const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
-// The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
-// is not drawn zoomed out below 12.5: there they come back in full)
-let routeFocus=false;
-// bus: 버스 노선을 고르면(정류장 팝업의 번호 · 지도 위 버스) 지하철 — 노선 · 승강장 · 이름표 · 열차 · 출구 — 을 감추고, 놓으면 다시(2026-10-08 덕배)
-let subwayOff=false;
-function setSubwayOff(on){
-  if(subwayOff===on)return;subwayOff=on;
-  for(const id of ['routes','stations-casing','stations','station-names','station-labels','exit-refs'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');   // 감춘 역은 눌리지도 않게
-  stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
-}
-const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',simcity||coaster?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
-// route focus: veil on, trains faded, my location kept above the veil
-function focusRoute(on){
-  if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
-  routeFocus=on;setRouteOpacity();
-  stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
-  const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!busLayer?.chosenIds().length&&!busLayer?.journeyLegs.length?'.3':'';   // bus: either entry point keeps its selected vehicles legible
-  if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
-}
+const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
+  live:{get busLayer(){return busLayer},get simcity(){return simcity},get coaster(){return coaster},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
+const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute,clearRoute});
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
@@ -515,7 +445,7 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
 const popups=createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,coasterBodyPx,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,follow,sheetUI,sheetBody,followBtn,
-  live:{get coaster(){return coaster},get simcity(){return simcity},get trainsEnabled(){return trainsEnabled},get subwayOff(){return subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
+  live:{get coaster(){return coaster},get simcity(){return simcity},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,trainSheetHTML,rawFeedHTML,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,exitList,showStationPopup}=popups;
 
 // ---- station labels (DOM markers with box collision) --------------------------------
@@ -530,7 +460,7 @@ const hexRGB3=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,pa
 // footprints (a ray through a building always crosses one); walls along tile edges lie inside
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
-const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return subwayOff},get coaster(){return coaster},get simcity(){return simcity},get joseon(){return joseon},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding},get RIDE_H(){return RIDE_H}};
+const trainLive={get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain},get TurtleShips(){return TurtleShips},get myLocation(){return myLocation},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get coaster(){return coaster},get simcity(){return simcity},get joseon(){return joseon},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding},get RIDE_H(){return RIDE_H}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected});
@@ -659,7 +589,7 @@ map.on('load',()=>{
         if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
       else if(night){night.dispose(gl);night=null}
       if(simcity&&cityBuildings)cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
-      if(!subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
+      if(!journeyMap.subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
       if(rider.ride&&coaster&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
         const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
@@ -704,7 +634,7 @@ map.on('load',()=>{
   },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
     if(leg)showRoute({legs:[leg]},true,busLayer?.selection?.kind!=='bus');   // 버스를 눌렀으면 노선 전체로 멀어지지 않고 그 버스를 따라간다
-    else if(busRouteFocus){displayedRoute=null;busRouteFocus=false;routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
+    else if(journeyMap.busRouteFocus){journeyMap.displayedRoute=null;journeyMap.busRouteFocus=false;journeyMap.routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   // exits: yellow number discs (like station exit signs) from zoom 16
@@ -785,7 +715,7 @@ let themeChoice='auto';
 try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
 // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
 function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
-function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focusRoute(!!routeBounds)});
+function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focusRoute(!!journeyMap.routeBounds)});
   const t=effectiveTheme(),P=mapPalette();
   busLayer?.setTheme(t);   // bus: the same light/dark setting as the map
   for(const b of document.querySelectorAll('[data-map-color]'))b.setAttribute('aria-pressed',String(b.dataset.mapColor===mapColor));
@@ -954,7 +884,7 @@ function setCoaster(on,speed=coasterSpeed){
   $('speedNote').textContent=coasterSpeed>1?'실제보다 앞서 달려요':'실시간';
   if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});planner.rebuild();lastPose.clear();
     if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
-    if(displayedRoute)showRoute(displayedRoute.plan,displayedRoute.busSelection,false);
+    if(journeyMap.displayedRoute)showRoute(journeyMap.displayedRoute.plan,journeyMap.displayedRoute.busSelection,false);
     if(on&&map.getPitch()<40)map.easeTo({pitch:60,zoom:Math.max(map.getZoom(),14.5),duration:900});
     applyTheme();updateSun();wallsNow()}   // the park colours, and the towers out of the shadows and walls
   map.triggerRepaint();
