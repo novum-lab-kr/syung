@@ -5,6 +5,9 @@ import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistanc
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './bus_mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './bus_roads.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './journey_map_style.mjs';
+// 차 모양마다 크기 규칙(모델의 몫): widthK 모델 폭(차로에 맞출 때), halfWidth 클릭 상자 반폭, growFrom 이 줌 위로는 지도와 같이 커짐(없으면 화면 크기 상한)
+// 가마(조선): 장대까지 폭 1.3, 줌 17 위로는 지도와 같이 커진다(2026-10-10 덕배: 확대할수록 작아 보여 안 보였다)
+const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:null},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17}};
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
 export const BUS_TYPES = {
@@ -547,14 +550,15 @@ class BusLayer {
       if(!pose||!contains(this.box||box,pose.coordinate))continue;
       // 차로가 충분히 넓은 줌(18쯤)에서는 바퀴까지 차로 안에. 그보다 멀면 아래처럼 최소 크기를 지킨다
       // 차로 폭에 맞추면 줌 15에서 4px · 16에서 8px 로 줄어 사라진 것처럼 보였다(2026-10-08 덕배): 줌 15 크기 밑으로는 줄이지 않는다
-      const fit=pose.laneWidth*.88/((this.joseon?1.3:1.12)*busMetresPerPixel(zoom,pose.coordinate[1]));   // 조선 모드의 가마는 장대까지 폭이 1.3
+      const L=BUS_LOOKS[this.look]||BUS_LOOKS.bus;   // 모양(모드 설정 buses.look): 버스 · 가마
+      const fit=pose.laneWidth*.88/(L.widthK*busMetresPerPixel(zoom,pose.coordinate[1]));   // 가마는 장대까지 폭이 1.3
       // 조선 모드의 가마: 줌 17 위로는 지도와 같이 커진다 — 줌 17 에서 보이는 크기(땅 위 약 18 m)를 그대로 (2026-10-10 덕배: 확대할수록
       // 작아 보여 안 보인다. 화면 크기를 12~16.5 px 로 묶어 줌 20 에서는 땅 위 3 m 로 줄었다)
       const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-17);   // (fit 은 줌마다 2배: 줌 17 의 값은 fit/grow)
-      const scale=overview?busModelScale(zoom):this.joseon&&zoom>17?near(17,fit/grow)*grow:near(zoom,fit);
+      const scale=overview?busModelScale(zoom):L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit);
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
-      for(const x of [-1.55,1.55])for(const y of this.joseon?[-.65,.65]:[-.56,.56])for(const z of [0,1.35]){
+      for(const x of [-1.55,1.55])for(const y of [-L.halfWidth,L.halfWidth])for(const z of [0,1.35]){
         const q=project([world[0]+(c*x-s*y)*scale*unit,world[1]+(s*x+c*y)*scale*unit],z*scale*unit);if(q)corners.push(q);
       }
       if(corners.length!==8)continue;const rectangle=bounds(corners);
@@ -569,7 +573,7 @@ class BusLayer {
     const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
       {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id});
     posts.push(...placement.posts);this.stopHits.push(...placement.hits);
-    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,joseon:this.joseon,time:now/1000});
+    this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,look:this.look,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
       this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));

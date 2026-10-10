@@ -35,3 +35,22 @@ test('picking projects the same elevated point as the WebGL camera and rejects b
   assert.ok(projectBusPoint(m,0,0,1,400,300).y<150);
   m[15]=-1;assert.equal(projectBusPoint(m,0,0,0,400,300),null);
 });
+
+// 모양(모드 설정 buses.look): 버스는 몸 묶음 0 · 밤 전조등, 가마는 몸 묶음 4 · 움직이는 동안 가마꾼 걸음 · 전조등 없음(4-12)
+test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
+  const {BusRenderer}=await import('../web/lib/bus_mesh.mjs');
+  const run=(look,dark)=>{
+    const r=new BusRenderer(),calls=[];let vao=null,last=null;
+    r.init=()=>{};r.atlas=()=>{};r.labels=new Map();r.rows=1;r.u={};r.matrix=new Float32Array(16);
+    r.batches=[0,1,2,3,4].map(i=>({vao:i,instances:{},count:3,staging:new Float32Array(0),capacity:0}));
+    const gl=new Proxy({bindVertexArray:v=>{vao=v},bufferSubData:(_t,_o,d)=>{last=Array.from(d.slice(0,12))},drawArraysInstanced:()=>calls.push({vao,moving:last[11]})},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_]+$/.test(k)?0:()=>{}});
+    r.render(gl,new Float32Array(16),{origin:[0,0],unit:1,dark,vehicles:[{world:[0,0],yaw:0,scale:1,rgb:[1,1,1],label:'1',moving:true}],stops:[],look});
+    return calls;
+  };
+  assert.deepEqual(run('bus',false).map(c=>c.vao),[2,0]);
+  assert.deepEqual(run('bus',true).map(c=>c.vao),[2,0,3],'밤 버스: 전조등');
+  const p=run('palanquin',true);
+  assert.deepEqual(p.map(c=>c.vao),[2,4],'가마: 몸 묶음 4, 전조등 없음');
+  assert.ok(p.every(c=>c.moving===1),'움직이는 가마: 가마꾼 걸음');
+  assert.ok(run('bus',false).every(c=>c.moving===0));
+});

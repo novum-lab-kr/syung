@@ -252,8 +252,9 @@ export class BusRenderer {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
   // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차와 같은 값 — 1 - 건물 불투명도, 심시티 · 롤코의 꽉 찬 건물이면 0)
-  // joseon: 조선 모드 — 버스 대신 가마(가마꾼은 v.moving 인 동안 달린다, v.phase 로 저마다 다른 걸음), 밤의 전조등 대신 초롱
-  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0,joseon=false,time=0}){
+  // look: 'bus' · 'palanquin'(모드 설정 buses.look — 조선: 버스 대신 가마, 가마꾼은 v.moving 인 동안 달린다, v.phase 로 저마다 다른 걸음, 밤의 전조등 대신 초롱)
+  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0,look='bus',time=0}){
+    const palanquin=look==='palanquin';
     this.stats={vehicles:vehicles.length,stops:stops.length,drawCalls:0};
     if(!vehicles.length&&!stops.length)return;
     this.init(gl);this.atlas(vehicles.map(v=>v.label));
@@ -267,18 +268,18 @@ export class BusRenderer {
       if(!items.length)return;
       if(batch.staging.length<items.length*12)batch.staging=new Float32Array(2**Math.ceil(Math.log2(items.length*12)));
       const data=batch.staging;
-      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,v.selected?1:0,v.phase||0,joseon&&v.moving?1:0],i*12));
+      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,v.selected?1:0,v.phase||0,palanquin&&v.moving?1:0],i*12));
       gl.bindVertexArray(batch.vao);gl.bindBuffer(gl.ARRAY_BUFFER,batch.instances);
       if(batch.capacity!==data.length){gl.bufferData(gl.ARRAY_BUFFER,data.byteLength,gl.DYNAMIC_DRAW);batch.capacity=data.length;}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,data,0,items.length*12);gl.depthMask(writeDepth);
       gl.drawArraysInstanced(gl.TRIANGLES,0,batch.count,items.length);this.stats.drawCalls++;
     };
     // 열차처럼: 먼저 건물 뒤(GREATER)만 흐리게 — 깊이를 쓰기 전이라 버스 자기 면끼리는 걸리지 않는다 — 그다음 앞을 그대로
-    const body=this.batches[joseon?4:0];
+    const body=this.batches[palanquin?4:0];
     if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(body,vehicles,false);draw(this.batches[1],stops,false);
       gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.u.fade,1);}
     draw(this.batches[2],vehicles,false);draw(body,vehicles,true);draw(this.batches[1],stops,true);
-    if(dark&&!joseon)draw(this.batches[3],vehicles,false);
+    if(dark&&!palanquin)draw(this.batches[3],vehicles,false);
     // Isolate divisors in our VAOs; TrainLayer/ExitPillars use the default VAO.
     gl.bindVertexArray(null);gl.depthMask(false);gl.depthFunc(gl.LEQUAL);
   }

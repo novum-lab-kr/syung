@@ -7,7 +7,8 @@ export default {
   label: '조선',
   settings: {
     city: { pack: JOSEON_DELTA, groundTexture: true, life: { cars: false, crossings: false }, landmarks: 'wood-tower' },   // 도시 팩에서 조선만 다른 것(흙바닥 · 한옥 · 수로 …), 흙 질감, 차 · 횡단보도 없음, 나무 탑
-    trains: { look: 'fleet' },   // 열차 대신 배 선단(맨 앞 거북선)
+    trains: { look: 'fleet' },
+    buses: { look: 'palanquin' },   // 버스 대신 가마   // 열차 대신 배 선단(맨 앞 거북선)
     sun: { lowHouseM: 5 },   // 기와집 그림자(처마 · 지붕, 용마루 조금 아래). 한옥 고층 · 목탑은 실제 높이
   },
 };

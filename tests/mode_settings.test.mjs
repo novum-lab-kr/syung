@@ -148,6 +148,8 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{life:{cars:'no'}}}}]),/참 · 거짓/);
   for(const v of [null,false,[],0])assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{life:v}}}]),/묶음/,`city.life ${JSON.stringify(v)}`);
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{trains:null}}]),/묶음/);
+  assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>R.settings(id).buses.look),['bus','bus','palanquin','bus'],'조선: 가마');
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{buses:{look:'tram'}}}]),/허용되지 않는/);
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>[R.settings(id).city.tone,R.settings(id).city.lampPool]),[['simcity',1.4],['simcity',1.4],['simcity',1.4],['coaster',null]],'도시 톤 · 가로등 웅덩이(롤코는 팩 modes.coaster.lampPool)');
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{tone:'neon',pack:R.settings('basic').city.pack}}}]),/modes 에 없는/);
   const P0=R.settings('basic').city.pack,city=c=>()=>createModeRegistry([{id:'basic',settings:{city:{tone:'simcity',lampPool:1.4,pack:P0,...c}}}]);
