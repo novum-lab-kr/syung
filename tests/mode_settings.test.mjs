@@ -119,3 +119,19 @@ test('출처 보기: 키마다 마지막으로 적은 모드', () => {
   assert.equal(e.sources['park'],'basic');
   const c=R.explain('coaster');assert.equal(c.sources['park.enabled'],'coaster');assert.equal(c.sources['park'],undefined);
 });
+
+test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 하나를 같이 쓴다', async () => {
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const R=createModeRegistry(defs);
+  assert.deepEqual(R.list().map(m=>[m.id,m.from]),[['basic',null],['simcity','basic'],['joseon','simcity'],['coaster','simcity']]);
+  const B=R.settings('basic');
+  for(const id of ['simcity','joseon','coaster'])assert.equal(R.settings(id).map,B.map,`${id} 지도 색 = 기본`);
+  const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mjs');
+  assert.equal(B.map.themes,MAP_THEMES);assert.equal(B.map.colors,MAP_COLORS);assert.equal(B.map.park,PARK_COLORS);
+  assert.equal(B.themeChoice,'auto');assert.equal(B.mapColor,'calm');
+  const bad=(map)=>createModeRegistry([{id:'basic',settings:{map}}]);
+  assert.throws(()=>bad({themes:{light:{bg:'not-a-color'}}}),/색이 아님/);
+  assert.throws(()=>bad({park:{light:{blocks:['#fff']}}}),/색이 아님/,'짧은 #fff 는 지금 섞는 식(mixHex)이 못 읽는다');
+  assert.throws(()=>bad({themes:{light:{bld3dOpacity:-1}}}),/음수/);
+  assert.doesNotThrow(()=>bad({themes:{light:{halo:'rgba(255,255,255,.9)',bld3dOpacity:.5}}}));
+});

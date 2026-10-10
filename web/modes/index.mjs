@@ -4,6 +4,7 @@
 import { mergeSettings, freezeSettings, validateSettings, validateModeDefinitions } from './merge.mjs';
 
 // 내 설정으로 바꿀 수 있는 것: 테마 · 지도 색만. 모드 고르기 · 배속은 전환 명령이지 설정 덧쓰기가 아니다.
+const COLOR = /^(#[0-9a-fA-F]{6}|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\))$/;   // #rrggbb · rgba(r,g,b,a)
 export const USER_PREFERENCES = Object.freeze({ themeChoice: Object.freeze(['auto', 'light', 'dark']), mapColor: Object.freeze(['calm', 'color']) });
 
 export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, preferences = USER_PREFERENCES } = {}) {
@@ -19,11 +20,17 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     let S = base.get(id); if (S) return S;
     const d = byId.get(id), up = parent(id);
     S = up == null ? (d.settings || {}) : mergeSettings(modeSettings(up), d.settings || {});
-    freezeSettings(checkPreferences(validateSettings(S, `${id}`), id)); base.set(id, S); return S;
+    freezeSettings(checkKnown(validateSettings(S, `${id}`), id)); base.set(id, S); return S;
   };
-  // 테마 · 지도 색은 정의에 적어도 허용된 값만(기본값이 잘못 적히는 것 막기). 치수 · 색 · LOD 검사는 그 설정 키가 생기는 커밋에서 더한다
-  function checkPreferences(S, id) {
+  // 아는 키의 값 검사(키가 생기는 커밋마다 여기에 더한다): 테마 · 지도 색은 허용 값만, 지도 색(map)의 글자는 색, 수는 0 이상
+  function checkKnown(S, id) {
     for (const k of Object.keys(preferences)) if (k in S && !preferences[k].includes(S[k])) throw new Error(`${id}.${k}: 허용되지 않는 값 ${S[k]}`);
+    const colors = (v, path) => {
+      if (typeof v === 'string') { if (!COLOR.test(v)) throw new Error(`${path}: 색이 아님 (${v})`) }
+      else if (typeof v === 'number') { if (v < 0) throw new Error(`${path}: 음수 (${v})`) }
+      else if (v && typeof v === 'object') for (const k of Object.keys(v)) colors(v[k], Array.isArray(v) ? `${path}[${k}]` : `${path}.${k}`);
+    };
+    if (S.map != null) colors(S.map, `${id}.map`);
     return S;
   }
   for (const id of byId.keys()) modeSettings(id);   // 잘못된 정의는 쓰기 전에(시작할 때) 알린다
