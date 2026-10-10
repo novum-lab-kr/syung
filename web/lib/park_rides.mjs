@@ -226,15 +226,29 @@ function buildSwing(lod) {
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
   cone(M, STILL, .9, 1.2, .93, 0, seg, mast(B));
   if (lod) mastDetail(M, .9, seg, [.63, .82]);                                // 캐노피 · 그네 자리에는 발판 없이
-  cone(M, SPIN, .775, 1, .818, .13, cs, CREAM_TONE);                              // the canopy, in alternating wedges
+  cone(M, SPIN, .775, 1, .818, .13, cs, A, 1, cs);                                // 캐노피: 놀이기구 두 색 줄무늬(서커스 천막처럼, 2026-10-10)
   disc(M, SPIN, .818, .13, cs, CREAM_TONE);
   disc(M, SPIN, .772, 1, cs, SHADE, -1);
   cone(M, SPIN, .765, .98, .775, 1, cs, GOLD_TONE);                             // its rim
+  if (lod) {                                                                   // 가까이서: 캐노피 둘레 장식 천(뾰족한 술, 놀이기구 두 색 번갈아) · 꼭대기 장식
+    const k = cs * 2;
+    for (let i = 0; i < k; i++) {
+      const t0 = i / k * 2 * Math.PI, t1 = (i + 1) / k * 2 * Math.PI, tm = (t0 + t1) / 2, n0 = [Math.cos(tm), Math.sin(tm), 0];
+      M.tri(SPIN, [Math.cos(t0), Math.sin(t0), .765], [Math.cos(t1), Math.sin(t1), .765], [Math.cos(tm) * .995, Math.sin(tm) * .995, .712], n0, n0, n0, i % 2 ? A : B);
+      M.tri(SPIN, [Math.cos(t1) * .99, Math.sin(t1) * .99, .765], [Math.cos(t0) * .99, Math.sin(t0) * .99, .765], [Math.cos(tm) * .985, Math.sin(tm) * .985, .712], mul(n0, -1), mul(n0, -1), mul(n0, -1), SHADE);
+    }
+    cone(M, SPIN, .818, .16, .826, .12, cs, GOLD_TONE);                       // 꼭대기 장식: 받침 · 뾰족 탑
+    cone(M, SPIN, .826, .12, .862, 0, cs, GOLD_TONE);
+  }
   for (let i = 0; i < n; i++) {
-    const t = i / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
-    tube(M, SPIN, [c * .9, s * .9, .768], [c * 1.06, s * 1.06, .636], .006, 4, TEAL, false, false);
+    const t = i / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t), sx = -s, sy = c;
+    if (lod) for (const e of [-1, 1])                                           // 가까이서: 의자 양끝으로 내려오는 두 줄
+      tube(M, SPIN, [c * .9 + sx * e * .05, s * .9 + sy * e * .05, .768], [c * 1.06 + sx * e * .07, s * 1.06 + sy * e * .07, .636], .005, 3, TEAL, false, false);
+    else tube(M, SPIN, [c * .9, s * .9, .768], [c * 1.06, s * 1.06, .636], .006, 4, TEAL, false, false);
     box(M, SPIN, [c * 1.06, s * 1.06, .618], .085, .075, .016, t, RED);
     box(M, SPIN, [c * 1.115, s * 1.115, .646], .014, .07, .03, t, RED);   // the backrest
+    if (lod) for (const e of [-1, 1])                                           // 팔걸이
+      box(M, SPIN, [c * 1.065 + sx * e * .07, s * 1.065 + sy * e * .07, .632], .06, .006, .012, t, GOLD_TONE);
   }
   return M;
 }
