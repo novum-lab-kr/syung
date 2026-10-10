@@ -6,6 +6,7 @@ import {createCoasterTrack} from './modes/coaster/track.mjs';   // 롤코 선로
 import {createCoasterGeometry} from './modes/coaster/geometry.mjs';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mjs';   // 롤코 주행 속도 · 탄 거리
 import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 타기
+import {createStationSearch} from './ui/search.mjs';   // 역 검색
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
@@ -1405,29 +1406,7 @@ map.on('load',()=>{
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
 });
 
-let searchTimer=0;
-// search: matching stations in a list; picking one flies there and opens its arrivals
-const searchIn=$('search'),searchList=$('searchList');let searchHits=[],searchAt=-1;
-function searchShow(open){searchList.hidden=!open;searchIn.setAttribute('aria-expanded',String(open));if(!open){searchAt=-1;searchIn.removeAttribute('aria-activedescendant')}}
-function searchMark(i){searchAt=i;[...searchList.children].forEach((li,k)=>li.setAttribute('aria-selected',String(k===i)));if(i>=0)searchIn.setAttribute('aria-activedescendant','sr-'+i)}
-function searchPick(st){if(!st)return;searchShow(false);searchIn.value=st.name;searchIn.blur();
-  map.flyTo({center:[st.lon,st.lat],zoom:Math.max(map.getZoom(),15),duration:900});showStationPopup(st)}
-searchIn.oninput=()=>{clearTimeout(searchTimer);searchHits=[];searchMark(-1);searchIn.removeAttribute('aria-activedescendant');searchTimer=setTimeout(()=>{
-  const q=searchIn.value.trim().replace(/역$/,'');if(!q){searchShow(false);return}
-  const ok=x=>selected==='all'||x.lines.some(l=>l.name===selected);
-  const rank=x=>x.name===q?0:x.name.startsWith(q)?1:2;   // 서울 → 서울역 before 서울대입구
-  searchHits=stations.filter(x=>ok(x)&&x.name.includes(q)).sort((a,b)=>rank(a)-rank(b)||a.name.length-b.name.length).slice(0,8);
-  searchList.innerHTML=searchHits.length?searchHits.map((x,k)=>`<li id="sr-${k}" role="option" aria-selected="false" data-k="${k}"><b>${esc(x.name)}</b><span>${x.lines.map(l=>`<i style="--c:${colors[l.name]||'#52646a'}">${esc(l.name)}</i>`).join('')}</span></li>`).join(''):'<li class="search-empty" role="option" aria-disabled="true">찾는 역이 없어요</li>';
-  searchShow(true)},120)};
-searchList.addEventListener('pointerdown',e=>e.preventDefault());   // keep focus so the tap lands
-searchList.addEventListener('click',e=>{const li=e.target.closest('li[data-k]');if(li)searchPick(searchHits[+li.dataset.k])});
-searchIn.addEventListener('keydown',e=>{if(e.isComposing||e.keyCode===229)return;   // 한글 조합 중인 Enter는 글자 입력
-  if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!searchHits.length)return;e.preventDefault();searchShow(true);searchMark((searchAt+(e.key==='ArrowDown'?1:searchHits.length-1))%searchHits.length)}
-  else if(e.key==='Enter'){e.preventDefault();searchPick(searchHits[Math.max(searchAt,0)])}
-  else if(e.key==='Escape')searchShow(false)});
-searchIn.addEventListener('focus',()=>{if(searchIn.value.trim()&&searchHits.length)searchShow(true)});
-searchIn.addEventListener('blur',()=>setTimeout(()=>searchShow(false),150));
-searchIn.addEventListener('search',()=>{if(!searchIn.value)searchShow(false)});
+const stationSearch=createStationSearch({map,stations,colors,esc,input:$('search'),list:$('searchList'),getSelected:()=>selected,showStationPopup});   // 역 검색
 // ---- icon buttons ----------------------------------------------------------------------------
 const svg=d=>`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS={
