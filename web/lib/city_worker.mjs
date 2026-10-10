@@ -1,7 +1,7 @@
 // The city's build worker (web/lib/city_buildings.mjs posts the work): a tile's raw vector-tile bytes in, its
-// building meshes out — read by web/lib/city_mvt.mjs, built by web/lib/city_mesh.mjs — so panning never waits
+// building meshes out — read by web/city/mvt.mjs, built by web/lib/city_mesh.mjs — so panning never waits
 // on a build. One tile at a time, in the order asked; the vertex and index buffers go back transferred.
-import { decodeTile } from './city_mvt.mjs';
+import { decodeTile } from '../city/mvt.mjs';
 import { TileBuilder, resolvePack } from './city_mesh.mjs';
 import './city_hanok.mjs';   // 도시 부품 'hanok' 을 이 Worker 에도 등록(조선 팩이면 한옥으로 짓는다 — 코드는 메시지로 받지 않는다)
 

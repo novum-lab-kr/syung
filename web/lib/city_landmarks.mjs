@@ -7,7 +7,7 @@
 // 지역 미터 좌표(city_life 의 MERC_ORIGIN · MU)에 짓고, 고가와 같은 캔버스 · 깊이에 그린다.
 import { LANDMARKS } from './city_landmarks_data.mjs';
 import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
-import { compileProgram } from './city_traffic.mjs';
+import { compileProgram } from '../city/traffic.mjs';
 
 const N = 56;              // 평면 둘레 점 수(솔기 홈 점 제외)
 const STRIDE = 9;          // x y z · 법선 xyz · 둘레 몫 s(0…1, 솔기 0 · .5) · 종류(0 몸 · 1 갈라진 안쪽 면 · 2 윗면 · 3 기와 처마) · 처마 안 몫

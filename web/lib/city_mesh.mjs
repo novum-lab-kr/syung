@@ -9,7 +9,7 @@ import { cityPart } from '../city/parts.mjs';   // 조선 모드: every footprin
 // 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone) — 메시 형식의 몫이라 여기에 둔다
 export const HANOK_KIND = { ROOF: 8, WALL: 9, DAM: 10, THATCH: 11, STONE: 12 };
 export const POSTS = 12;   // (조선) 벽 한 면에 세울 수 있는 기둥 수(칸 + 1): 이보다 칸이 많으면 그 면은 기둥 없이 — 한옥 상자 템플릿 · 셰이더가 같이 쓴다
-import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './city_geom.mjs';
+import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from '../city/geom.mjs';
 
 export const EARTH = 40075016.685578488, RAD = Math.PI / 180;
 const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (windows are placed in world metres, kept small for float precision)

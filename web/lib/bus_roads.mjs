@@ -1,7 +1,7 @@
 // Bus display geometry uses the same OFM centre lines, road profiles and connected
 // graph as CityLife. Feed distances remain untouched: they index this display path.
 import SEOUL from './city_style_seoul.mjs';
-import {RoadGraph} from './city_traffic.mjs';
+import {RoadGraph} from '../city/traffic.mjs';
 import {busMercator} from './bus_mesh.mjs';
 import {busPointAt} from './bus_motion.mjs';
 

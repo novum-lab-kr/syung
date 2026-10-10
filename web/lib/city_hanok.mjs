@@ -16,7 +16,7 @@
 // Tiles: a footprint cut by the tile edge is laid out on its whole outline, which both tiles hold, and each house (each
 // wall stretch) is drawn by the tile its centre falls in, so the halves never draw the same house twice. An outline the
 // tile's buffer also cut (each tile then holds a different piece of it) falls back to the part inside the tile.
-import { area as ringArea, simplifyRing, orientedBox } from './city_geom.mjs';
+import { area as ringArea, simplifyRing, orientedBox } from '../city/geom.mjs';
 import { HANOK_KIND, POSTS } from './city_mesh.mjs';   // (메시 형식의 몫: 꼭짓점 종류 · 기둥 수)
 import { registerCityPart } from '../city/parts.mjs';
 export { HANOK_KIND, POSTS };

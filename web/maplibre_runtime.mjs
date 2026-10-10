@@ -297,7 +297,7 @@ const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the b
 let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
-const MODE_KIT_DEPS=['lib/city_mesh','city/parts','lib/city_geom','lib/city_mvt','lib/city_through_buildings','lib/city_landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
+const MODE_KIT_DEPS=['lib/city_mesh','city/parts','city/geom','city/mvt','lib/city_through_buildings','lib/city_landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
   return kitLoad??=Promise.all([import('./lib/city_buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)

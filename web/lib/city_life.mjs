@@ -18,7 +18,7 @@
 import SEOUL from './city_style_seoul.mjs';
 import { BULB_FS, bulbSize } from './park_night.mjs';
 import { toneRGB, hexRgb, MPP } from './city_style.mjs';
-import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './city_traffic.mjs';
+import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from '../city/traffic.mjs';
 
 const EARTH = 40075016.685578488, ORIGIN = [126.978, 37.5665];
 const mercX = lon => lon / 360 + .5, mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
