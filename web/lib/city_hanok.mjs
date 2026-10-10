@@ -372,7 +372,7 @@ function tower(tb, F, a, b, H, K, r) {
   const grid = []; for (let ti = 0; ti < rows.length - 1; ti++) for (let si = 0; si < 2; si++) { const q = ti * 3 + si; grid.push(q, q + 1, q + 4, q, q + 4, q + 3) }
   const lo = [0, 2, rows.length * 3 - 1, 0, rows.length * 3 - 1, rows.length * 3 - 3];
   for (let f = step; f < floors; f += step) {
-    const zi = T.podiumM + f * st + .15;
+    const zi = T.podiumM + f * st + .15, far = (f / step) % 3 === 0;   // 멀리서(lo)는 세 단에 하나만 (2026-10-10 덕배: 줌 축소가 끊긴다 — 단마다 그리니 먼 삼각형이 두 배)
     for (const { p, d, n, len, groups } of sides) for (const [x0, x1] of groups) {
       const c0 = x0 <= 1e-6, c1 = x1 >= len - 1e-6, o = c0 || c1 ? G.cornerOutM : G.outM;
       // the eave's two ends: on a corner out along the diagonal, else flared past the wall line
@@ -383,7 +383,7 @@ function tower(tb, F, a, b, H, K, r) {
         const wx = lerp(x0, x1, sc), up = (G.upK * o + (sc === 0 ? l0 : sc === 1 ? l1 : 0)) * t * t;
         P.push([lerp(p[0] + d[0] * wx, lerp(e0[0], e1[0], sc), t), lerp(p[1] + d[1] * wx, lerp(e0[1], e1[1], sc), t), zi - rise * drop(t) + up]); U.push(lerp(wx, lerp(u0, u1, sc), t));
       }
-      F.mesh(P, smoothNormals(P, grid), U, { hi: grid, lo }, [n[0], n[1], 1]);
+      F.mesh(P, smoothNormals(P, grid), U, far ? { hi: grid, lo } : { hi: grid }, [n[0], n[1], 1]);
       if (!tb.opts.phone) {   // the eave's edge (휴대폰은 빼요 — 정점)
         const E = P.slice(-3), R = [...E, ...E.map(q => [q[0], q[1], q[2] - T.skirtEdgeM])], nn = [n[0], n[1], 0];
         F.mesh(R, R.map(() => nn), [...U.slice(-3), ...U.slice(-3)], { hi: [0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4] }, nn);

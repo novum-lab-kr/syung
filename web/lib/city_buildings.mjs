@@ -502,14 +502,33 @@ export class CityBuildings {
   }
   // phones: the far field fades into the ground beyond this distance (m) from the view centre — [start, end] by zoom
   farLimit(zoom) { const d1 = Math.min(2600, 1200 * 2 ** ((zoom - 15) * .5)); return [d1 * .7, d1] }
+  // a tile's buffers: made at their full size, then filled a few MB a frame (feed) — a 조선 tile is 10–20 MB, and putting it
+  // up whole in one frame (twice: the map's canvas and the trains') stalled zooming out (2026-10-10)
   upload(gl, e) {
     const t0 = performance.now(), m = e.mesh, vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
-    gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts, gl.STATIC_DRAW);
+    gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts.byteLength, gl.STATIC_DRAW);
     const A = (i, n, type, norm, off) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, type, norm, STRIDE, off) };
     A(0, 2, gl.FLOAT, false, 0); A(1, 1, gl.FLOAT, false, 8); A(2, 4, gl.BYTE, true, 12); A(3, 1, gl.FLOAT, false, 16); A(4, 4, gl.UNSIGNED_BYTE, false, 20); A(5, 4, gl.UNSIGNED_BYTE, false, 24); A(6, 4, gl.UNSIGNED_BYTE, false, 28);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx.byteLength, gl.STATIC_DRAW);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    const g = { vao, vbo, ibo }; e.gpu.set(gl, g); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
+    const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false }; e.gpu.set(gl, g); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
+  }
+  // fill the buffers on: at most `budget` bytes; the bytes put up
+  feed(gl, g, m, budget) {
+    const t0 = performance.now(); let used = 0;
+    if (g.vOff < m.verts.byteLength) {
+      const n = Math.min(budget, m.verts.byteLength - g.vOff);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo); gl.bufferSubData(gl.ARRAY_BUFFER, g.vOff, m.verts, g.vOff, n); gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      g.vOff += n; used += n;
+    }
+    if (used < budget && g.vOff >= m.verts.byteLength && g.iOff < m.idx.length) {
+      const n = Math.min(Math.max(1, (budget - used) >> 2), m.idx.length - g.iOff);
+      gl.bindVertexArray(null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo); gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, g.iOff * 4, m.idx, g.iOff, n); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      g.iOff += n; used += n * 4;
+    }
+    g.done = g.vOff >= m.verts.byteLength && g.iOff >= m.idx.length;
+    const st = this.stats, dt = performance.now() - t0; st.uploadMs = (st.uploadMs || 0) + dt; st.feedMaxMs = Math.max(st.feedMaxMs || 0, dt);
+    return used;
   }
   free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
@@ -657,15 +676,17 @@ export class CityBuildings {
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
     const M64 = this.M64, M32 = this.M32; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
-    let uploaded = false;
+    let budget = this.phone ? 1.5e6 : 3e6;   // bytes put up to the GPU this pass; the rest next frame (growing: a repaint follows)
     for (const e of this.visible) {
       let g = e.gpu.get(gl);
-      if (!g) {
-        if (uploaded) { growing = true; continue }   // one tile's upload a frame: the rest next frame (growing: a repaint follows)
+      if (!g || !g.done) {
+        if (budget <= 0) { growing = true; continue }
         if (!e.mesh.verts) { this.tiles.delete(e.key); for (const g2 of this.ctx.keys()) this.free(g2, e); this.schedule(); continue }   // its bytes already let go (phones): built again
-        g = this.upload(gl, e); uploaded = true;
+        if (!g) g = this.upload(gl, e);
+        budget -= this.feed(gl, g, e.mesh, budget);
+        if (!g.done) { growing = true; continue }
         // phones: once both canvases (the map's and the trains') hold it, the JS copy is let go — a third copy of the city
-        if (this.phone && e.gpu.size >= 2) { e.mesh.verts = null; e.mesh.idx = null }
+        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null }
       }
       const m = e.mesh;
       const t = Math.min(1, (now - e.readyAt) / GROW_MS), grow = zoomGrow * (t < 1 ? (growing = true, t * t * (3 - 2 * t)) : 1);
