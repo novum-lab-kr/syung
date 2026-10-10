@@ -30,8 +30,8 @@ import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 
 import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
-import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
-import {registerBusLook} from './lib/bus_mesh.mjs';   // 버스 모양 등록(조선 가마)
+import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
+import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
 import {buildPalanquinMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import './lib/coaster_style_seoul.mjs';   // (공원 자료 호환 이름: 롤코 · 공원 코드가 부른다 — 같은 단계에서 요청)

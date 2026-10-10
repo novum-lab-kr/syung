@@ -1,7 +1,7 @@
-// 조선 모드의 버스 모양 '가마'(모드 설정 buses.look = 'palanquin'): 메시만 여기, 그리기 · 셰이더(재료 20~29)는 web/lib/bus_mesh.mjs.
+// 조선 모드의 버스 모양 '가마'(모드 설정 buses.look = 'palanquin'): 메시만 여기, 그리기 · 셰이더(재료 20~29)는 web/bus/mesh.mjs.
 // 본체가 첫 화면에서 registerBusLook('palanquin', …) 으로 버스 렌더러에 등록한다(지금처럼 첫 화면 코드 — 모드 코드 받기로 옮기지 않는다).
-// (web/lib/bus_mesh.mjs 에서 그대로 옮김)
-import { meshBuilder } from '../../lib/bus_mesh.mjs';
+// (web/bus/mesh.mjs 에서 그대로 옮김)
+import { meshBuilder } from '../../bus/mesh.mjs';
 
 // 조선 모드의 버스: 가마꾼 넷이 멘 가마. 버스와 같은 자리(길이 3.1 · 폭 1)를 차지하고, 지붕은 노선 색, 지붕 위에 노선 번호.
 // 가마꾼의 다리(재료 20)는 엉덩이(z .45, uv.x = 그 x)를 축으로 셰이더가 흔든다: uv.y 의 부호가 왼발 · 오른발, |uv.y| − 1 이

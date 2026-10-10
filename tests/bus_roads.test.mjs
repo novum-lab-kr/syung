@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BusRoadNetwork,busRoadProfile,busRoadLane,busRoadPointAt,busLinePointAt} from '../web/lib/bus_roads.mjs';
-import {buildBusPath} from '../web/lib/bus_motion.mjs';
+import {BusRoadNetwork,busRoadProfile,busRoadLane,busRoadPointAt,busLinePointAt} from '../web/bus/roads.mjs';
+import {buildBusPath} from '../web/bus/motion.mjs';
 
 const K=111320*Math.cos(37.5*Math.PI/180),M=111320;
 const coord=(x,y)=>[127+x/K,37.5+y/M];

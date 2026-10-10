@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance} from '../web/lib/bus_motion.mjs';
+import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
 
 const corner = buildBusPath([[127, 37.5], [127.001, 37.5], [127.001, 37.501]]);
 

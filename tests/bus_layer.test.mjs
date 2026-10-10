@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText, placeStopPosts} from '../web/lib/bus_layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
