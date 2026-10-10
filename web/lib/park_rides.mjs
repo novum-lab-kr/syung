@@ -115,6 +115,15 @@ function box3(M, C, c, X, Y, Z, hx, hy, hz, o) {
   face(Z, P(-1, -1, 1), P(1, -1, 1), P(1, 1, 1), P(-1, 1, 1));
   face(mul(Z, -1), P(-1, 1, -1), P(1, 1, -1), P(1, -1, -1), P(-1, -1, -1));
 }
+// 격자 기둥(트러스): p0 → p1 을 세 가닥 현재와 지그재그 빗재로. w 는 현재 사이 반지름, n 은 마디 수(2026-10-10 대관람차 다리).
+function truss(M, C, p0, p1, w, n, rad, o) {
+  const u = norm(sub(p1, p0)), up = Math.abs(u[2]) < .9 ? [0, 0, 1] : [1, 0, 0], a = norm(cross(u, up)), b = cross(u, a);
+  const off = k => { const t = k / 3 * 2 * Math.PI; return add(mul(a, Math.cos(t) * w), mul(b, Math.sin(t) * w)) };
+  const at = (k, f) => add(add(p0, mul(sub(p1, p0), f)), off(k));
+  for (let k = 0; k < 3; k++) tube(M, C, at(k, 0), at(k, 1), rad, 4, o, false, false);
+  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++)
+    tube(M, C, at(k, i / n), at((k + 1) % 3, (i + 1) / n), rad * .55, 3, o, false, false);
+}
 // a torus in the XZ plane (the wheel's rim), axis along Y
 function torusY(M, C, c, R, t, nMaj, nMin, o) {
   const pt = (i, j) => {
@@ -178,12 +187,17 @@ function buildDrop(lod) {
 function buildFerris(lod) {
   const M = new Mesh(), hub = [0, 0, .58], maj = lod ? 32 : 16, min = lod ? 4 : 3, cab = lod ? 12 : 8, lg = lod ? 6 : 4, sp = lod ? 12 : 8;
   for (const y of [-.085, .085]) {                                         // two open A-frames
-    for (const x of [-.34, .34]) tube(M, STILL, [x, y, 0], [0, y, .575], .018, lg, TEAL, false, lod === 1);
+    for (const x of [-.34, .34]) lod ? truss(M, STILL, [x, y, 0], [0, y, .575], .016, 14, .0045, TEAL)   // 가까이서는 격자 다리
+                                      : tube(M, STILL, [x, y, 0], [0, y, .575], .018, lg, TEAL, false, false);
     box(M, STILL, [0, y, .21], .19, .011, .011, 0, TEAL);                  // the brace across each A
   }
   box(M, STILL, [0, 0, .5], .014, .085, .014, 0, TEAL);                   // the tie between them
   tube(M, STILL, [0, -.105, .58], [0, .105, .58], .03, lod ? 10 : 6, SHADE, true, lod === 1);
   for (const y of (lod ? [-.058, .058] : [0])) torusY(M, wheel(hub), [0, y, .58], .5, .005, maj, min, {...IVORY,sel:2});
+  if (lod) for (let i = 0; i < maj; i++) {                                 // 두 겹 테 사이 빗재(테가 한 장의 띠가 아니라 트러스로)
+    const t0 = i / maj * 2 * Math.PI, t1 = (i + 1) / maj * 2 * Math.PI;
+    tube(M, wheel(hub), [Math.cos(t0) * .5, -.058, .58 + Math.sin(t0) * .5], [Math.cos(t1) * .5, .058, .58 + Math.sin(t1) * .5], .0035, 3, {...IVORY,sel:2}, false, false);
+  }
   for (let i = 0; i < sp; i++) {                                           // slender spokes, in the wheel's plane
     const t = i / sp * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
     tube(M, wheel(hub), [0, 0, .58], [c * .49, 0, .58 + s * .49], lod ? .009 : .013, 4, CREAM, false, false);
@@ -191,9 +205,17 @@ function buildFerris(lod) {
   }
   for (let i = 0; i < cab; i++) {                                          // upright gondolas: .065D across, .08D tall
     const t = i / cab * 2 * Math.PI, arm = [Math.cos(t) * .5, 0, Math.sin(t) * .5], C = orbit(hub, arm);
-    box(M, C, [0, 0, -.072], .0275, .0325, .04, 0, i/cab < .5 ? CREAM_TONE : i/cab < 10/12 ? RED : GOLD_TONE);
-    if (lod) { box(M, C, [0, 0, -.018], .007, .007, .018, 0, SHADE);       // the hanger and the footboard
-               box(M, C, [0, 0, -.115], .024, .03, .005, 0, SHADE) }
+    const col = i/cab < .5 ? CREAM_TONE : i/cab < 10/12 ? RED : GOLD_TONE;
+    if (!lod) box(M, C, [0, 0, -.072], .0275, .0325, .04, 0, col);
+    else {                                                                  // 가까이서: 아래 몸통 · 유리 띠 · 모서리 기둥 · 네모뿔 지붕
+      box(M, C, [0, 0, -.094], .0275, .0325, .018, 0, col);
+      box(M, C, [0, 0, -.06], .0255, .0305, .016, 0, SHADE);                 // 유리(어두운 띠)
+      for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) box(M, C, [x * .0262, y * .0312, -.06], .0018, .0018, .016, 0, col);
+      box(M, C, [0, 0, -.042], .029, .034, .0025, 0, col);                   // 지붕 처마
+      cone(M, C, -.0395, .044, -.026, 0, 4, col);                            // 네모뿔 지붕(4쪽 원뿔)
+      box(M, C, [0, 0, -.018], .007, .007, .012, 0, SHADE);                  // 매달개
+      box(M, C, [0, 0, -.115], .024, .03, .004, 0, SHADE);                   // 바닥판
+    }
   }
   return M;
 }
@@ -373,7 +395,7 @@ layout(location=5) in vec4 i_s;      // Sxy, Sz, Smast (metres), mercator units 
 layout(location=6) in vec4 i_a;      // phase s, rate (0 frozen), period s, yaw
 layout(location=7) in vec4 i_c;      // palette index: ride A, ride B, structure, structure shade
 uniform mat4 u_matrix; uniform float u_time; uniform vec3 u_pal[10]; uniform vec3 u_light; uniform vec2 u_lit;
-out vec3 v_col;
+out vec3 v_col; out vec3 v_n; out vec3 v_wp; out vec3 v_obj; flat out vec2 v_part;
 ${RIDE_PROJECT}
 ${RIDE_DIMENSIONS}
 void main(){
@@ -403,11 +425,40 @@ void main(){
   gl_Position = rideProject(p);
   int ci = int(a_k.x >= 4. ? a_k.x - 4. : a_k.x < .5 ? i_c.x : a_k.x < 1.5 ? i_c.y : a_k.x < 2.5 ? i_c.z : i_c.w);
   float nl = length(n);
-  float d = nl > 1e-20 ? max(dot(n / nl, u_light), 0.) : 0.;   // never normalize a zero: a NaN colour rasterizes differently every frame
-  v_col = clamp(u_pal[ci]*(u_lit.x + u_lit.y*d + a_k.w), 0., 1.);
+  v_n = nl > 1e-20 ? n / nl : vec3(0., 0., 1.);   // never normalize a zero: a NaN colour rasterizes differently every frame
+  v_col = u_pal[ci] * (1. + a_k.w);
+  v_wp = i_org + p * i_s.w;                       // 조각의 자리(메르카토르, 기준점 O 를 뺀 값): 보는 방향 계산용
+  v_obj = v + w;                                  // 움직이기 전 미터 좌표: 무늬가 부품과 함께 돈다
+  v_part = vec2(a_k.x < 1.5 || abs(a_k.x - 4.) < .5 || abs(a_k.x - 6.) < .5 ? 0. : 1., a_k.z);   // 0 칠한 판(놀이기구 색 · 빨강 · 크림) · 1 쇠 구조; 기둥(1) · 바퀴 테(2)
 }`;
+// 칠하기(2026-10-10 행님 "네모 색 끝"): 부품마다 단색 × 햇빛이던 것을 조각마다 — 하늘 · 땅 반사 빛, 쇠는 반짝임(블린-퐁)과
+// 비스듬한 면의 하늘빛, 기둥은 철판 이음매(가로 4 m · 세로 8쪽)와 볼트 줄, 땅 가까이는 어둡게.
 const FS = `#version 300 es
-precision highp float; in vec3 v_col; out vec4 o; void main(){ o = vec4(v_col, 1.); }`;
+precision highp float;
+in vec3 v_col; in vec3 v_n; in vec3 v_wp; in vec3 v_obj; flat in vec2 v_part;
+uniform vec3 u_light; uniform vec2 u_lit; uniform vec3 u_eye;
+out vec4 o;
+float seam(float x, float period, float width){ float f = abs(fract(x / period + .5) - .5) * period, w = fwidth(x); return 1. - smoothstep(width, width + w * 1.5, f); }
+void main(){
+  vec3 n = normalize(v_n);
+  vec3 V = normalize(u_eye - v_wp), L = u_light, H = normalize(L + V);
+  float metal = v_part.x, dif = max(dot(n, L), 0.), day = u_lit.y / .22;
+  float sky = mix(.82, 1.06, n.z * .5 + .5);                                  // 위를 보는 면은 하늘빛, 아래는 땅 반사
+  vec3 c = v_col * (u_lit.x * sky + u_lit.y * dif);
+  float pat = 0.;
+  if(v_part.y > .5 && v_part.y < 1.5){                                        // 기둥: 철판 이음매 · 볼트 줄
+    float ang = atan(v_obj.y, v_obj.x) * 1.2732395;                            // 8쪽(한 바퀴 = 8)
+    pat = max(seam(v_obj.z, 4., .06), seam(ang, 1., .012)) * .16;
+    pat += seam(v_obj.z + 2., 4., .03) * seam(ang * 6., 1., .06) * .1;
+  }                                                                           // 칠한 판에는 무늬 없이(이음매를 넣으면 벽돌처럼 보였다)
+  c *= 1. - pat;
+  c *= mix(.72, 1., smoothstep(0., 5., v_obj.z));                             // 땅 가까이 그늘
+  float sh = metal > .5 ? 48. : 22., ks = (metal > .5 ? .38 : .16) * day;      // 반짝임: 쇠는 좁고 세게, 칠한 판은 넓고 약하게
+  c += vec3(1., .97, .9) * ks * pow(max(dot(n, H), 0.), sh) * step(0., dot(n, L));
+  float fr = pow(1. - max(dot(n, V), 0.), 4.);                                 // 비스듬한 면에 비치는 하늘
+  c = mix(c, vec3(.78, .86, .95) * (u_lit.x + u_lit.y), fr * (metal > .5 ? .22 : .1) * day);
+  o = vec4(clamp(c, 0., 1.), 1.);
+}`;
 
 // the festoon lights: one sprite a bulb, instanced over the rides, carried by the same animation
 const BULB_VS = `#version 300 es
@@ -506,6 +557,28 @@ void main(){ o = vec4(u_wire.rgb * u_wire.a, u_wire.a); }`;
 
 const SUN = norm([-.30, .46, .84]);   // +x east, +y south (mercator), +z up: a high south-western sun
 // The rides do not borrow the building palette: they need to separate from the blocks they replace.
+// 카메라 자리(MT 의 좌표, 곧 기준점 O 를 뺀 메르카토르): 눈은 화면 어디로도 비치지 않는 점이라 MT·E = (0,0,c,0) — E = MT⁻¹·(0,0,1,0).
+function eyeOf(m) {
+  const a = Array.from(m), inv = new Array(16);
+  inv[0] = a[5]*a[10]*a[15]-a[5]*a[11]*a[14]-a[9]*a[6]*a[15]+a[9]*a[7]*a[14]+a[13]*a[6]*a[11]-a[13]*a[7]*a[10];
+  inv[4] = -a[4]*a[10]*a[15]+a[4]*a[11]*a[14]+a[8]*a[6]*a[15]-a[8]*a[7]*a[14]-a[12]*a[6]*a[11]+a[12]*a[7]*a[10];
+  inv[8] = a[4]*a[9]*a[15]-a[4]*a[11]*a[13]-a[8]*a[5]*a[15]+a[8]*a[7]*a[13]+a[12]*a[5]*a[11]-a[12]*a[7]*a[9];
+  inv[12] = -a[4]*a[9]*a[14]+a[4]*a[10]*a[13]+a[8]*a[5]*a[14]-a[8]*a[6]*a[13]-a[12]*a[5]*a[10]+a[12]*a[6]*a[9];
+  inv[1] = -a[1]*a[10]*a[15]+a[1]*a[11]*a[14]+a[9]*a[2]*a[15]-a[9]*a[3]*a[14]-a[13]*a[2]*a[11]+a[13]*a[3]*a[10];
+  inv[5] = a[0]*a[10]*a[15]-a[0]*a[11]*a[14]-a[8]*a[2]*a[15]+a[8]*a[3]*a[14]+a[12]*a[2]*a[11]-a[12]*a[3]*a[10];
+  inv[9] = -a[0]*a[9]*a[15]+a[0]*a[11]*a[13]+a[8]*a[1]*a[15]-a[8]*a[3]*a[13]-a[12]*a[1]*a[11]+a[12]*a[3]*a[9];
+  inv[13] = a[0]*a[9]*a[14]-a[0]*a[10]*a[13]-a[8]*a[1]*a[14]+a[8]*a[2]*a[13]+a[12]*a[1]*a[10]-a[12]*a[2]*a[9];
+  inv[2] = a[1]*a[6]*a[15]-a[1]*a[7]*a[14]-a[5]*a[2]*a[15]+a[5]*a[3]*a[14]+a[13]*a[2]*a[7]-a[13]*a[3]*a[6];
+  inv[6] = -a[0]*a[6]*a[15]+a[0]*a[7]*a[14]+a[4]*a[2]*a[15]-a[4]*a[3]*a[14]-a[12]*a[2]*a[7]+a[12]*a[3]*a[6];
+  inv[10] = a[0]*a[5]*a[15]-a[0]*a[7]*a[13]-a[4]*a[1]*a[15]+a[4]*a[3]*a[13]+a[12]*a[1]*a[7]-a[12]*a[3]*a[5];
+  inv[14] = -a[0]*a[5]*a[14]+a[0]*a[6]*a[13]+a[4]*a[1]*a[14]-a[4]*a[2]*a[13]-a[12]*a[1]*a[6]+a[12]*a[2]*a[5];
+  inv[3] = -a[1]*a[6]*a[11]+a[1]*a[7]*a[10]+a[5]*a[2]*a[11]-a[5]*a[3]*a[10]-a[9]*a[2]*a[7]+a[9]*a[3]*a[6];
+  inv[7] = a[0]*a[6]*a[11]-a[0]*a[7]*a[10]-a[4]*a[2]*a[11]+a[4]*a[3]*a[10]+a[8]*a[2]*a[7]-a[8]*a[3]*a[6];
+  inv[11] = -a[0]*a[5]*a[11]+a[0]*a[7]*a[9]+a[4]*a[1]*a[11]-a[4]*a[3]*a[9]-a[8]*a[1]*a[7]+a[8]*a[3]*a[5];
+  inv[15] = a[0]*a[5]*a[10]-a[0]*a[6]*a[9]-a[4]*a[1]*a[10]+a[4]*a[2]*a[9]+a[8]*a[1]*a[6]-a[8]*a[2]*a[5];
+  // 열 우선 행렬: MT⁻¹·(0,0,1,0) 은 역행렬의 셋째 열
+  const w = inv[11]; return w ? [inv[8] / w, inv[9] / w, inv[10] / w] : [0, 0, 1];
+}
 const RIDE_LIGHT = ridePalette(false), RIDE_DARK = ridePalette(true);
 const GOLD = 8, RING = 9, STRUCT = 6, SHADE_I = 7;
 // the ride grows toward the viewer as the map pulls back, or a 200 m tower is three pixels of stalk
@@ -562,7 +635,7 @@ export class RideLayer {
       for (const s of this._sites) { const m = maplibregl.MercatorCoordinate.fromLngLat([s.lon, s.lat]); s.x = m.x; s.y = m.y; s.mu = m.meterInMercatorCoordinateUnits() }
     }
     this.p = compile(gl, VS, FS);
-    this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit', 'u_eye'].map(n => [n, gl.getUniformLocation(this.p, n)]));
 
     this.pB = compile(gl, BULB_VS, BULB_FS);
     this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn'].map(n => [n, gl.getUniformLocation(this.pB, n)]));
@@ -670,6 +743,7 @@ export class RideLayer {
     gl.uniform1f(this.uni.u_time, ts);
     gl.uniform3fv(this.uni.u_pal, rgb);
     gl.uniform3fv(this.uni.u_light, SUN);
+    gl.uniform3fv(this.uni.u_eye, eyeOf(MT));
     gl.uniform2fv(this.uni.u_lit, dark ? [STYLE.night.rideAmbient, STYLE.night.rideDirectional] : [.78, .22]);
     // Opaque, depth on. State is set and put back blind, never read: gl.getParameter/isEnabled here forces a
     // sync with the GPU process and swallowed a whole map frame (100-400 ms) when measured.
