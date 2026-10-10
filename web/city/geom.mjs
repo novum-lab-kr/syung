@@ -1,4 +1,4 @@
-// Plane geometry for the miniature city (web/lib/city_buildings.mjs): rings are flat arrays [x0,y0,x1,y1,…]
+// Plane geometry for the miniature city (web/city/buildings.mjs): rings are flat arrays [x0,y0,x1,y1,…]
 // (no repeated closing point). Pure functions, no GL, no map: tested on their own with node.
 
 // ── rings ────────────────────────────────────────────────────────────────────────────────────────

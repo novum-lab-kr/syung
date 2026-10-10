@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { skirtTemplate, skirtInst, skirtGroups } from '../web/lib/city_hanok.mjs';
-import { INST_STRIDES } from '../web/lib/city_mesh.mjs';
+import { INST_STRIDES } from '../web/city/mesh.mjs';
 
 test('템플릿: 먼 사각형 하나, 격자, 끝 두께가 이어진 범위', () => {
   const T = skirtTemplate([0, .55, 1]);

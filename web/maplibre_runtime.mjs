@@ -288,7 +288,7 @@ const smooth=x=>x*x*(3-2*x);
 const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),commit:(prev,next,o)=>commitMode(prev,next,o),onRequest:showModeButtons,onFail:showModeButtons});
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
-// city-build: the miniature city's buildings (web/lib/city_buildings.mjs): a custom layer under the station names (so names and
+// city-build: the miniature city's buildings (web/city/buildings.mjs): a custom layer under the station names (so names and
 // labels stay readable over the city), and the same walls' depth for the train canvas; BuildingDepth and the map's own boxes
 // stand down while a city mode is on. syncCity runs from applyTheme (mode, theme and the coaster's tower cut-off).
 // 모드 코드: 심시티 · 조선 · 롤코에서만 쓰는 건물(city_buildings → city_mesh · city_hanok …) · 랜드마크 · 거북선 · 88열차 · 놀이기구는
@@ -297,10 +297,10 @@ const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the b
 let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
-const MODE_KIT_DEPS=['lib/city_mesh','city/parts','city/geom','city/mvt','lib/city_through_buildings','lib/city_landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
+const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','lib/city_landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./lib/city_buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
     .then(([b,l,t,c,r,p,q])=>{({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}

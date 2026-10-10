@@ -1,8 +1,8 @@
 // city-build: the mesh builder on synthetic tiles — footprints over one another never share a plane, and a building the
-// viaduct passes through carries its level in the vertex bytes (web/lib/city_mesh.mjs)
+// viaduct passes through carries its level in the vertex bytes (web/city/mesh.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND, INST_STRIDES } from '../web/lib/city_mesh.mjs';
+import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND, INST_STRIDES } from '../web/city/mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../web/lib/city_style_seoul.mjs';
 
 const P = resolvePack(SEOUL_CITY_STYLE), Z = 14, TX = 13975, TY = 6346, E = 4096, N = 2 ** Z;

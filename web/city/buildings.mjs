@@ -19,11 +19,11 @@
 //   city.set({on:true,tone:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});   // tone: 팩의 modes 항목(모드 설정 city.tone)
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { cityPart } from '../city/parts.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/lib/city_hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
-import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './city_mesh.mjs';
-import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
-import { sunPosition } from './sun.mjs';
-import THROUGH_LIST from './city_through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
+import { cityPart } from './parts.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/lib/city_hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
+import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mjs';
+import { SEOUL_CITY_STYLE } from '../lib/city_style_seoul.mjs';
+import { sunPosition } from '../lib/sun.mjs';
+import THROUGH_LIST from './through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
 export { TileBuilder, classifyBuilding };
 
 // ── shaders ──────────────────────────────────────────────────────────────────────────────────────
@@ -515,7 +515,7 @@ function compile(gl, vs, fs) {
 // a built tile's size in memory (one copy): its vertex and index bytes
 const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0);
 
-// the through list (web/lib/city_through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
+// the through list (web/city/through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
 function throughIndex(list) {
   const byId = new Map(), byRing = new Map();
   for (const e of list || []) {
@@ -543,7 +543,7 @@ export class CityBuildings {
     this.on = false; this.tone = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
     this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
-    this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/lib/city_worker.mjs (a classify function cannot cross into one: main thread then)
+    this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/city/worker.mjs (a classify function cannot cross into one: main thread then)
     this.debug = 0; this.lodHi = LOD_HI; this.cull = 'cw'; this.noCull = false; this.skipDraw = false;   // dev knobs: kind colours, culling, LOD, draw calls off (JS cost alone)
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
     this.through = throughIndex(opts.through || THROUGH_LIST);   // osm id → the points where the viaduct crosses it (opts.through overrides the shipped list)
@@ -628,7 +628,7 @@ export class CityBuildings {
     const n = !this.phone && typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 6 ? 2 : 1;
     try {
       for (let i = 0; i < n; i++) {
-        const w = new Worker(new URL('./city_worker.mjs', import.meta.url), { type: 'module' });
+        const w = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
         w.busy = null; w.onmessage = ev => this.onWorker(w, ev.data); w.onerror = ev => { console.warn('city-build: worker failed, building on the main thread', ev.message || ev); this.dropWorkers() };
         w.postMessage({ type: 'pack', pack: this.P.pack, through: this.through }); this.workers.push(w);
       }

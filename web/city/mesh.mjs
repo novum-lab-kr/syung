@@ -1,15 +1,15 @@
-// The miniature city's building meshes (web/lib/city_buildings.mjs draws them; web/lib/city_worker.mjs builds them off the
+// The miniature city's building meshes (web/city/buildings.mjs draws them; web/city/worker.mjs builds them off the
 // main thread). One canonical z14 tile in → one vertex buffer, one index buffer in 4×4 chunks, each chunk's indices
 // ordered [far-LOD roofs][walls][near-LOD roofs, parapets, roof plant, awnings]. Every look value comes from the style
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
-import { LANDMARKS, landmarkMerc } from './city_landmarks_data.mjs';
-import { cityPart } from '../city/parts.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/lib/city_hanok.mjs 가 등록)
+import { LANDMARKS, landmarkMerc } from '../lib/city_landmarks_data.mjs';
+import { cityPart } from './parts.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/lib/city_hanok.mjs 가 등록)
 // vertex kinds after the city's (0–7), for the 조선 pieces (web/lib/city_hanok.mjs): 기와 (roofs, ridges, wall caps), a house's walls (a_bld.z type 1: mud walls of a
 // 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone) — 메시 형식의 몫이라 여기에 둔다
 export const HANOK_KIND = { ROOF: 8, WALL: 9, DAM: 10, THATCH: 11, STONE: 12 };
 export const POSTS = 12;   // (조선) 벽 한 면에 세울 수 있는 기둥 수(칸 + 1): 이보다 칸이 많으면 그 면은 기둥 없이 — 한옥 상자 템플릿 · 셰이더가 같이 쓴다
-import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from '../city/geom.mjs';
+import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './geom.mjs';
 
 export const EARTH = 40075016.685578488, RAD = Math.PI / 180;
 const CITY_LNG = 126.98, CITY_LAT = 37.53;   // the metre frame's origin (windows are placed in world metres, kept small for float precision)
@@ -183,7 +183,7 @@ class Writer {
 // src: {z,x,y,extent,buildings:VectorTileLayer,landuse:VectorTileLayer|null}
 export class TileBuilder {
   constructor(src, P, opts) {
-    this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096; this.through = opts.through || null;   // through: Map osm id → [{lng, lat, railM}] (web/lib/city_through_buildings.mjs), the buildings the viaduct passes through
+    this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096; this.through = opts.through || null;   // through: Map osm id → [{lng, lat, railM}] (web/city/through_buildings.mjs), the buildings the viaduct passes through
     const n = 2 ** src.z, latN = Math.atan(Math.sinh(Math.PI * (1 - 2 * src.y / n))), latS = Math.atan(Math.sinh(Math.PI * (1 - 2 * (src.y + 1) / n))), lat = (latN + latS) / 2;
     this.unit = 1 / n / this.E;                        // mercator units a tile unit
     this.mpu = 1 / (EARTH * Math.cos(lat));            // mercator units a metre at this tile (as MercatorCoordinate.meterInMercatorCoordinateUnits)

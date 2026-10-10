@@ -468,7 +468,7 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-06 덕배: 간판 — 1인칭(눈높이)에서 건물이 밋밋했다. 상가(shop 이거나 1층이 상가인 땅) 건물의 긴 바깥 벽에
   // 1층 위 가로 간판(가게 1~3칸), 2층부터 창 간판, 벽 끝에 길 쪽으로 튀어나온 세로 돌출 간판. 글자는 셰이더의 무늬(city_buildings.mjs),
-  // 밤에는 스스로 빛난다. 브랜드 노랑(#FFD400)은 쓰지 않는다. web/lib/city_mesh.mjs signs() 가 읽는다
+  // 밤에는 스스로 빛난다. 브랜드 노랑(#FFD400)은 쓰지 않는다. web/city/mesh.mjs signs() 가 읽는다
   "signs": {
     "types": ["shop"], "minHeightM": 4, "maxHeightM": 32, "probability": 0.8, "maxWalls": 2, "minWallM": 4,
     "fascia": {"heightM": 0.9, "depthM": 0.22, "belowM": 0.1, "gapM": 0.35, "shopM": 7, "maxShops": 3},
@@ -481,7 +481,7 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
   // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
-  "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/lib/city_buildings.mjs xray)
+  "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/city/buildings.mjs xray)
     "alpha": 0.3,                                  // the building's opacity where it hides a target
     "edgeAlpha": 0.75, "edgePx": 1.5,              // its outline (wall corners, the roof line, the parapet) stays nearly solid, so the building keeps its shape
     "featherPx": 24,                               // the glass fades out over this many px around each target's screen box
@@ -491,7 +491,7 @@ export const SEOUL_CITY_STYLE = {
     "trainHalfWidthM": 3, "trainBelowM": 1, "trainAboveM": 4.5,
     "trains": true
   },
-  "throughBuildings": {   // city-build: buildings the simcity viaduct passes through read as station buildings — the floor the deck crosses becomes a glass hall (list: web/lib/city_through_buildings.mjs)
+  "throughBuildings": {   // city-build: buildings the simcity viaduct passes through read as station buildings — the floor the deck crosses becomes a glass hall (list: web/city/through_buildings.mjs)
     "railHeightM": 11,                             // the deck's rail height where the list names none (city-life's list gives each building its own, ramps and levels included)
     "bandBelowM": 2.0, "bandAboveM": 4.6,          // the glass band around the rail height: from under the deck to over the trains' roofs
     "glass": {"light": "#A9CBD8", "dark": "#2C414C"},
