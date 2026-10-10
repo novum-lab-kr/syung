@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { signCollisionLayout } from '../web/lib/station_signs.mjs';
 import { StationNameLayer } from '../web/map/platform.mjs';
+import { registerTransitLayers } from '../web/map/layers.mjs';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -55,11 +56,15 @@ test('station labels keep their route names in every mode (the coaster rides the
     map: { addLayer: layer => layers.set(layer.id, layer), getLayer: id => layers.get(id),
       getLayoutProperty: (id, key) => layers.get(id).layout[key],
       setLayoutProperty: (id, key, value) => { layers.get(id).layout[key] = value; updates.push(id); } } });
-  const definitions = source.split('\n').filter(line => /map\.addLayer\(\{id:'station-labels'|const SIGN_(?:LAYOUT|PAINT)=/.test(line)).join('\n');
-  vm.runInContext(definitions, context);
-  assert.equal(layers.size, 1, 'exercise the actual name symbol layer (one sign per station)');
+  // 본체가 load 때 부르는 실제 등록 함수(web/map/layers.mjs)가 만든 층
+  Object.assign(context.map, { addSource() {}, addImage() {}, on() {}, getSource: () => ({ setData() {} }) });
+  registerTransitLayers({ map: context.map, shapesReady: new Promise(() => {}), basicRouteCache: new Map(), buildLineFeatures: () => [], buildStationFeatures: () => [],
+    rebuildLabels() {}, stationNames: { id: 'station-names', type: 'custom' }, STATION_WIDTH_STOPS: [[8, 2], [15, 6]], PHONE: false, signCollisionLayout,
+    live: { get coaster() { return context.coaster; }, get simcity() { return context.simcity; } } });
+  const symbols = [...layers].filter(([, layer]) => layer.type === 'symbol');
+  assert.deepEqual(symbols.map(([id]) => id), ['station-labels'], 'exercise the actual name symbol layer (one sign per station)');
   const plain = value => JSON.parse(JSON.stringify(value));
-  const original = new Map([...layers].map(([id, layer]) => [id, plain(layer.layout['text-field'])]));
+  const original = new Map(symbols.map(([id, layer]) => [id, plain(layer.layout['text-field'])]));
   // Exercise the actual label synchronization without constructing adjacent city renderers.
   const start = source.indexOf('function syncCity(){'), end = source.indexOf('let coaster=false', start);
   vm.runInContext('const cityBuildings=new CityBuildings();const cityOn=()=>simcity||coaster;\n'+source.slice(start, end), context);

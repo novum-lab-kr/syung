@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {platformRuntime,measurements,distance,local} from './platform_endpoints_fixture.mjs';
+import {registerTransitLayers} from '../web/map/layers.mjs';
 
 for(const zoom of [14,16,18,20])test(`줌 ${zoom}: 전 역 승강장 양 끝과 중심선이 표시 노선 0.1m 이내에 있어요`,()=>{
  const r=platformRuntime(undefined,zoom),m=measurements(r);
@@ -32,12 +33,18 @@ for(const zoom of [14,16,18,20])test(`줌 ${zoom}: 일원 포함 전 구간 급�
  assert.ok(!sampled.some(t=>t.key==='3호선:84:85'));
 });
 
+// 본체가 load 때 부르는 실제 등록 함수(web/map/layers.mjs)를 fixture 의 본체 조각에 붙인다
+const transitDeps=(r,rebuildLabels)=>({map:r.context.map,shapesReady:new Promise(()=>{}),basicRouteCache:vm.runInContext('basicRouteCache',r.context),
+ buildLineFeatures:()=>vm.runInContext('buildLineFeatures()',r.context),buildStationFeatures:()=>vm.runInContext('buildStationFeatures()',r.context),rebuildLabels,
+ stationNames:{id:'station-names',type:'custom'},STATION_WIDTH_STOPS:vm.runInContext("typeof STATION_WIDTH_STOPS==='undefined'?[]:STATION_WIDTH_STOPS",r.context),PHONE:false,signCollisionLayout:()=>({}),
+ live:{get coaster(){return vm.runInContext('coaster',r.context)},get simcity(){return vm.runInContext('simcity',r.context)}}});
+
 test('줌 변경은 공유 선로 간격과 승강장을 함께 갱신하고 반복 줌은 갱신하지 않아요',()=>{
  const r=platformRuntime(),expected=platformRuntime(undefined,18);const on={};let labelUpdates=0;const updates=[];
- r.context.rebuildLabels=()=>{labelUpdates++};r.context.labelsStale=false;
- r.context.map={getZoom:()=>18,on:(event,fn)=>{on[event]=fn},getSource:id=>({setData:d=>updates.push({id,data:JSON.stringify(d)})})};
- const lines=r.source.split('\n'),hook=lines.find(line=>line.includes("map.on('zoom',()=>{if(coaster||simcity)return;")),end=lines.find(line=>line.includes("map.on('zoomend',"));
- assert.ok(hook&&end);vm.runInContext(hook+'\n'+end,r.context);on.zoom();
+ let zoom=r.zoom;   // 등록은 처음 그린 줌에서(본체 load 때와 같게), 그다음 18 로 확대
+ r.context.map={getZoom:()=>zoom,on:(event,fn)=>{on[event]=fn},getSource:id=>({setData:d=>updates.push({id,data:JSON.stringify(d)})}),addSource(){},addLayer(){},addImage(){}};
+ registerTransitLayers(transitDeps(r,()=>{labelUpdates++}));
+ zoom=18;on.zoom();
  assert.equal(updates[0].id,'routes');assert.equal(updates[0].data,JSON.stringify({type:'FeatureCollection',features:expected.lines}));assert.equal(updates[1].id,'stations');
  assert.equal(labelUpdates,0);on.zoomend();assert.equal(labelUpdates,1);   // 이름표는 줌이 끝난 뒤 한 번만
  on.zoom();on.zoomend();assert.equal(updates.length,2);assert.equal(labelUpdates,1);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {platformRuntime, local as localMeters} from './platform_endpoints_fixture.mjs';
 import {createStationLabels} from '../web/map/labels.mjs';
+import {registerTransitLayers} from '../web/map/layers.mjs';
 import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mjs';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
@@ -294,8 +295,12 @@ test('줌 10에서 16으로 옮겨도 상봉 이름표는 새로 그릴 승강�
   const old = [...labelData.features[0].geometry.coordinates];
   const initial = r.rects.get('경춘선:135').coords[0];
   assert.ok(Math.abs(localMeters(initial, [127.0856, 37.5965])[1] + 123) < 1);
-  const lines = source.split('\n');
-  vm.runInContext([lines.find(line => line.includes("map.on('zoom',()=>{if(coaster||simcity)return;")), lines.find(line => line.includes("map.on('zoomend',"))].join('\n'), r.context);
+  // 본체가 load 때 부르는 실제 등록 함수(web/map/layers.mjs): 줌 · 줌 끝 핸들러를 이 지도에 붙인다
+  Object.assign(r.context.map, {addSource() {}, addLayer() {}, addImage() {}});
+  registerTransitLayers({map: r.context.map, shapesReady: new Promise(() => {}), basicRouteCache: vm.runInContext('basicRouteCache', r.context),
+    buildLineFeatures: () => vm.runInContext('buildLineFeatures()', r.context), buildStationFeatures: () => vm.runInContext('buildStationFeatures()', r.context),
+    rebuildLabels: () => labels.rebuild(), stationNames: {id: 'station-names', type: 'custom'}, STATION_WIDTH_STOPS: vm.runInContext("typeof STATION_WIDTH_STOPS==='undefined'?[]:STATION_WIDTH_STOPS", r.context),
+    PHONE: false, signCollisionLayout, live: {get coaster() { return vm.runInContext('coaster', r.context); }, get simcity() { return vm.runInContext('simcity', r.context); }}});
   zoom = 16; on.zoom(); on.zoomend();
   const rects = [...r.rects].filter(([key]) => key.endsWith(':135')).map(([, rect]) => rect.coords);
   assert.ok(localMeters(r.rects.get('경춘선:135').coords[0], [127.0856, 37.5965])[1] > 0);
