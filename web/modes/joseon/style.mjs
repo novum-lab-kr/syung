@@ -1,7 +1,7 @@
 // 조선 모드의 도시 팩: 기본 도시 팩(web/modes/basic/city.mjs)에서 다른 것만. 데이터뿐 — 합치기는 모드 목록(web/modes/index.mjs)이 한다.
 // 조선 모드 — the Seoul pack (web/modes/basic/city.mjs) with the ground turned to packed earth and every building Joseon.
 // Data only, like the Seoul pack: city_style.mjs paints the ground from `ground` / `roads`, and city_mesh.mjs builds
-// a footprint with web/lib/city_hanok.mjs whenever the pack carries `hanok`. Everything not listed here (lighting,
+// a footprint with web/modes/joseon/hanok.mjs whenever the pack carries `hanok`. Everything not listed here (lighting,
 // props, viaduct, x-ray …) is the Seoul pack's.
 // 2026-10-09 (with Codex's review of the first captures): earth less yellow, light main roads / mid yards / darker lanes;
 // thinner ridges, gentler corners; fewer and dimmer lit 창호; 초가 villages, plans, 돌담; tall buildings kept tall.
@@ -53,10 +53,10 @@ export const JOSEON_DELTA = {
       dark: { concrete: '#5C574D', under: '#3E3A33', pier: '#4A3727', platform: '#4E3D2C', roof: '#2E3537', roofUnder: '#3F2F23', post: '#3A2A20', stair: '#5A554B', stairWall: '#4F4A42', walk: '#4E3D2C', walkWall: '#4F4A42' },
     },
   },
-  // 거북선: 조선 모드의 열차(web/lib/city_turtle_ship.mjs)
+  // 거북선: 조선 모드의 열차(web/modes/joseon/turtle_ship.mjs)
   train: { turtleShip: { wood: '#5A3E2B', woodDark: '#3B2A1E', shell: '#3E4A3B', shellEdge: '#263027', spike: '#C9C3B0', red: '#B23A2A', gold: '#D9A43A', white: '#F2EBDC', ink: '#17120E', oar: '#8A6A4A', lamp: '#FFC874', head: '#8A3324', deck: '#B08A5E', path: '#A99C7C' } },   // (Codex 2026-10-10: 등딱지는 어둡게, 십자 길은 밝게, 용머리는 짙은 적갈색, 일반 배 갑판은 밝은 나무)
   modes: { simcity: { shadowOpacity: { light: 0.2, dark: 0.08 } } },
-  // web/lib/city_hanok.mjs: every footprint fitted with an oriented rectangle of its own area, then a type (초가 · 기와 ·
+  // web/modes/joseon/hanok.mjs: every footprint fitted with an oriented rectangle of its own area, then a type (초가 · 기와 ·
   // 중층 전각 · 한옥 고층 · 목탑), a plan and a wall. Metres
   hanok: {
     fitK: 0.94,                       // the rectangle a little inside the footprint's own area, so neighbours' eaves seldom meet

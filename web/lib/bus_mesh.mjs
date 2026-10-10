@@ -15,7 +15,8 @@ export function projectBusPoint(matrix, x, y, z, width, height) {
 export function busModelScale(zoom) { return zoom < 15 ? 6 : 12 + Math.max(0, Math.min(3, zoom - 15)) * 1.5; }
 export function busPostScale(zoom) { return .8 + Math.max(0, Math.min(3, zoom - 15)) * .1; }
 
-function meshBuilder() {
+// 메시 만들기 도우미(버스 · 버스 표지판, 그리고 등록한 다른 모양 — 조선 가마 web/modes/joseon/palanquin.mjs)
+export function meshBuilder() {
   const data = [];
   const quad = (a, b, c, d, n, material, uv = [[0,0],[1,0],[1,1],[0,1]]) => {
     const p = [a,b,c,d]; for (const i of [0,1,2,0,2,3]) data.push(...p[i], ...n, ...uv[i], material);
@@ -72,46 +73,6 @@ export function buildBusMesh() {
         [x+Math.cos(b)*h,outer+side*.002,z+Math.sin(b)*h],[x+Math.cos(b)*h,outer+side*.002,z+Math.sin(b)*h],[0,side,0],3);
     }
   }
-  return new Float32Array(data);
-}
-
-// 조선 모드의 버스: 가마꾼 넷이 멘 가마. 버스와 같은 자리(길이 3.1 · 폭 1)를 차지하고, 지붕은 노선 색, 지붕 위에 노선 번호.
-// 가마꾼의 다리(재료 20)는 엉덩이(z .45, uv.x = 그 x)를 축으로 셰이더가 흔든다: uv.y 의 부호가 왼발 · 오른발, |uv.y| − 1 이
-// 그 사람의 걸음 위상(앞 둘 0, 뒤 둘 반 박자). 밤에는 앞 채 끝의 초롱(재료 29)이 빛난다
-export function buildPalanquinMesh() {
-  const {data, quad, box} = meshBuilder();
-  const legBox = (x0, y0, z0, x1, y1, z1, uv) => {
-    const U = [uv, uv, uv, uv];
-    quad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0],20,U); quad([x1,y1,z0],[x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[0,1,0],20,U);
-    quad([x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],[1,0,0],20,U); quad([x0,y1,z0],[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[-1,0,0],20,U);
-    quad([x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[0,0,-1],20,U);
-  };
-  // 2026-10-09 (Codex 리뷰): 객실을 키우고, 장대를 바깥으로, 가마꾼 넷을 앞뒤 · 좌우로 떨어뜨려 '네 사람이 상자를 멘' 실루엣으로
-  // 가마채: 두 장대, 가마꾼 바깥 어깨 높이
-  for (const y of [-.58, .58]) box(-1.55, y-.045, .78, 1.55, y+.045, .87, 27);
-  // 가마: 밑틀, 붉은 몸체, 옆 · 앞의 발, 노선 색 지붕(재료 26)과 그 위 한지색 현판의 번호(재료 28)
-  box(-.66, -.5, .36, .66, .5, .42, 27);
-  box(-.62, -.46, .42, .62, .46, 1.06, 24);
-  for (const side of [-1, 1]) quad([-.4,side*.462,.58],[.4,side*.462,.58],[.4,side*.462,.96],[-.4,side*.462,.96],[0,side,0],25);
-  quad([.622,-.3,.5],[.622,.3,.5],[.622,.3,.98],[.622,-.3,.98],[1,0,0],25);
-  const E = [[-.72,-.58],[.72,-.58],[.72,.58],[-.72,.58]], T = [[-.57,-.26],[.57,-.26],[.57,.26],[-.57,.26]];
-  for (let i = 0; i < 4; i++) {
-    const j = (i + 1) % 4, a = E[i], b = E[j], c = T[j], d = T[i], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, l = Math.hypot(mx, my);
-    quad([...a, 1.06], [...b, 1.06], [...c, 1.34], [...d, 1.34], [mx / l * .7, my / l * .7, .72], 26);
-  }
-  quad([-.72,-.58,1.06],[-.72,.58,1.06],[.72,.58,1.06],[.72,-.58,1.06],[0,0,-1],24);
-  quad([-.57,.26,1.341],[.57,.26,1.341],[.57,-.26,1.341],[-.57,-.26,1.341],[0,0,1],26);
-  quad([-.55,.24,1.343],[.55,.24,1.343],[.55,-.24,1.343],[-.55,-.24,1.343],[0,0,1],28);
-  // 가마꾼 넷: 흰 바지 · 저고리, 밝은 패랭이(위에서 보면 작은 밝은 원). 바깥 팔은 장대를 받친다
-  [[1.22, .5, 0], [1.22, -.5, 0], [-1.22, .5, .5], [-1.22, -.5, .5]].forEach(([x, y, k]) => {
-    for (const s of [-1, 1]) legBox(x - .05, y + s * .07 - .045, 0, x + .05, y + s * .07 + .045, .46, [x, s * (1 + k)]);
-    box(x - .1, y - .14, .45, x + .1, y + .14, .78, 21);
-    const out = Math.sign(y); box(x - .035, y + out * .12, .55, x + .035, y + out * .19, .84, 21);
-    box(x - .07, y - .07, .78, x + .07, y + .07, .92, 22);
-    box(x - .13, y - .13, .92, x + .13, y + .13, .94, 23); box(x - .065, y - .065, .94, x + .065, y + .065, 1.01, 23);
-  });
-  box(1.42, .51, .56, 1.56, .65, .76, 29);   // 초롱, 앞 채 끝에 매달려
-  box(1.485, .575, .76, 1.495, .585, .8, 27);
   return new Float32Array(data);
 }
 
@@ -224,13 +185,20 @@ function effectMesh(beam) {
   return new Float32Array(data);
 }
 
+// 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 걸음, headlights: 밤 전조등}. 'bus' 는 기본.
+// 다른 모양(조선 가마)은 본체가 첫 화면에서 등록한다(렌더러가 처음 그리기 전에 — 셰이더의 재료 번호는 이 파일에 있다)
+const BUS_LOOKS = new Map([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
+export function registerBusLook(name, { build, carriers = false, headlights = false }) { BUS_LOOKS.set(name, { build, carriers, headlights }) }
+
 export class BusRenderer {
   constructor(){this.matrix=new Float32Array(16);this.stats={vehicles:0,stops:0,drawCalls:0};}
   init(gl){
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
     this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
-    this.batches=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true),buildPalanquinMesh()].map(data=>{
+    // 배치: 0 버스 몸 · 1 표지판 · 2 · 3 효과(낮 · 밤 전조등), 4 부터 그때 등록된 다른 모양(조선 가마 …)
+    const extra=[...BUS_LOOKS].filter(([name])=>name!=='bus');this.looks=new Map([['bus',{...BUS_LOOKS.get('bus'),batch:0}],...extra.map(([name,L],i)=>[name,{...L,batch:4+i}])]);
+    this.batches=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true),...extra.map(([,L])=>L.build())].map(data=>{
       const vao=gl.createVertexArray(),mesh=gl.createBuffer(),instances=gl.createBuffer();gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER,mesh);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
       for(const [loc,n,offset] of [[0,3,0],[1,3,3],[2,2,6],[3,1,8]]){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,36,offset*4);}
@@ -254,10 +222,10 @@ export class BusRenderer {
   // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차와 같은 값 — 1 - 건물 불투명도, 심시티 · 롤코의 꽉 찬 건물이면 0)
   // look: 'bus' · 'palanquin'(모드 설정 buses.look — 조선: 버스 대신 가마, 가마꾼은 v.moving 인 동안 달린다, v.phase 로 저마다 다른 걸음, 밤의 전조등 대신 초롱)
   render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0,look='bus',time=0}){
-    const palanquin=look==='palanquin';
     this.stats={vehicles:vehicles.length,stops:stops.length,drawCalls:0};
     if(!vehicles.length&&!stops.length)return;
     this.init(gl);this.atlas(vehicles.map(v=>v.label));
+    const L=this.looks.get(look)||this.looks.get('bus');   // 이 모양의 배치 · 가마꾼 걸음 · 전조등(등록 안 된 이름이면 버스)
     this.matrix.set(matrix);for(let i=0;i<4;i++)this.matrix[12+i]=matrix[i]*origin[0]+matrix[4+i]*origin[1]+matrix[12+i];
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.u.matrix,false,this.matrix);gl.uniform1f(this.u.unit,unit);gl.uniform1f(this.u.dark,dark?1:0);
     gl.uniform1f(this.u.pitch,pitch);gl.uniform1f(this.u.time,time);
@@ -268,18 +236,18 @@ export class BusRenderer {
       if(!items.length)return;
       if(batch.staging.length<items.length*12)batch.staging=new Float32Array(2**Math.ceil(Math.log2(items.length*12)));
       const data=batch.staging;
-      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,v.selected?1:0,v.phase||0,palanquin&&v.moving?1:0],i*12));
+      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,v.selected?1:0,v.phase||0,L.carriers&&v.moving?1:0],i*12));
       gl.bindVertexArray(batch.vao);gl.bindBuffer(gl.ARRAY_BUFFER,batch.instances);
       if(batch.capacity!==data.length){gl.bufferData(gl.ARRAY_BUFFER,data.byteLength,gl.DYNAMIC_DRAW);batch.capacity=data.length;}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,data,0,items.length*12);gl.depthMask(writeDepth);
       gl.drawArraysInstanced(gl.TRIANGLES,0,batch.count,items.length);this.stats.drawCalls++;
     };
     // 열차처럼: 먼저 건물 뒤(GREATER)만 흐리게 — 깊이를 쓰기 전이라 버스 자기 면끼리는 걸리지 않는다 — 그다음 앞을 그대로
-    const body=this.batches[palanquin?4:0];
+    const body=this.batches[L.batch];
     if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(body,vehicles,false);draw(this.batches[1],stops,false);
       gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.u.fade,1);}
     draw(this.batches[2],vehicles,false);draw(body,vehicles,true);draw(this.batches[1],stops,true);
-    if(dark&&!palanquin)draw(this.batches[3],vehicles,false);
+    if(dark&&L.headlights)draw(this.batches[3],vehicles,false);
     // Isolate divisors in our VAOs; TrainLayer/ExitPillars use the default VAO.
     gl.bindVertexArray(null);gl.depthMask(false);gl.depthFunc(gl.LEQUAL);
   }

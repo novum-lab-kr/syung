@@ -12,7 +12,7 @@
 //   const s=new TurtleShips(style); s.init(gl);
 //   s.begin(ox,oy); s.ship(frame,L,W,rgb,moving,key,{kind,line,flag})…; s.draw(gl,M,ox,oy,{zoom,unit,walls,occlude,dark,time}); s.dispose(gl)
 
-import { compile, hexRGB } from './park_night.mjs';
+import { compile, hexRGB } from '../../lib/park_night.mjs';
 
 const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // coaster_train 과 같은 해
 const LOD_MID = 9, LOD_HI = 20;   // W px: 노는 LOD_MID 부터, 용 눈 · 노 여덟 쌍은 LOD_HI 부터

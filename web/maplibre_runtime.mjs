@@ -31,6 +31,8 @@ import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './lib/bus_layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
+import {registerBusLook} from './lib/bus_mesh.mjs';   // 버스 모양 등록(조선 가마)
+import {buildPalanquinMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import './lib/coaster_style_seoul.mjs';   // (공원 자료 호환 이름: 롤코 · 공원 코드가 부른다 — 같은 단계에서 요청)
 import './modes/basic/park.mjs';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
@@ -49,6 +51,7 @@ import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시�
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE]);
+registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안)
 const JOSEON_STYLE=modes.settings('joseon').city.pack;   // 조선 모드: the same city in packed earth and 기와집 (cityPack()) — 기본 팩 + 조선 덧쓰기, 한 번 합쳐 얼린 것
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');
@@ -300,7 +303,7 @@ let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().ci
 const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./modes/joseon/hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
     .then(([b,l,t,c,r,p,q])=>{({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}

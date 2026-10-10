@@ -43,6 +43,7 @@ test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
     const r=new BusRenderer(),calls=[];let vao=null,last=null;
     r.init=()=>{};r.atlas=()=>{};r.labels=new Map();r.rows=1;r.u={};r.matrix=new Float32Array(16);
     r.batches=[0,1,2,3,4].map(i=>({vao:i,instances:{},count:3,staging:new Float32Array(0),capacity:0}));
+    r.looks=new Map([['bus',{batch:0,carriers:false,headlights:true}],['palanquin',{batch:4,carriers:true,headlights:false}]]);
     const gl=new Proxy({bindVertexArray:v=>{vao=v},bufferSubData:(_t,_o,d)=>{last=Array.from(d.slice(0,12))},drawArraysInstanced:()=>calls.push({vao,moving:last[11]})},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_]+$/.test(k)?0:()=>{}});
     r.render(gl,new Float32Array(16),{origin:[0,0],unit:1,dark,vehicles:[{world:[0,0],yaw:0,scale:1,rgb:[1,1,1],label:'1',moving:true}],stops:[],look});
     return calls;
@@ -53,4 +54,15 @@ test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
   assert.deepEqual(p.map(c=>c.vao),[2,4],'가마: 몸 묶음 4, 전조등 없음');
   assert.ok(p.every(c=>c.moving===1),'움직이는 가마: 가마꾼 걸음');
   assert.ok(run('bus',false).every(c=>c.moving===0));
+});
+
+test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부터, 가마 메시는 web/modes/joseon/palanquin.mjs',async()=>{
+  const {BusRenderer,registerBusLook}=await import('../web/lib/bus_mesh.mjs');
+  const {buildPalanquinMesh}=await import('../web/modes/joseon/palanquin.mjs');
+  const P=buildPalanquinMesh();assert.equal(P.length%9,0);assert.ok(P.every(Number.isFinite));assert.ok(Array.from(P).some((v,i)=>i%9===8&&v===20),'가마꾼 다리 재료');
+  registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false});
+  const gl=new Proxy({getShaderParameter:()=>true,getProgramParameter:()=>true},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_0-9]+$/.test(k)?0:()=>({})});
+  const r=new BusRenderer();r.init(gl);
+  assert.equal(r.batches.length,5);assert.deepEqual([...r.looks].map(([n,L])=>[n,L.batch,L.carriers,L.headlights]),[['bus',0,false,true],['palanquin',4,true,false]]);
+  assert.equal(r.batches[4].count,P.length/9);
 });
