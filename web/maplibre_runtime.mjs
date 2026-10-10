@@ -590,9 +590,12 @@ function coasterAt(line,lo,hi,s){
     if(u>0&&u<1){const t=2*Math.PI*u,r=D/LOOP_DR,dh=r*(1-Math.cos(t));sg=s0+D*u+r*Math.sin(t);h+=dh;up+=dh}}
   const C=corkOf(L,lo,hi,line);let lat=0,roll=0;
   if(C){const u=(s/mu-C[0])/C[1];if(u>0&&u<1)roll=corkTheta(u,C[2])}
-  if(P.sw){   // 옆으로 비킴: 루프 · 코르크스크루 안에서는 들어가는 자리 값 그대로(고리가 비틀리지 않게)
-    let m=s/mu;if(LD&&Math.abs(m-L/2)<LD/2)m=L/2-LD/2;if(C&&m>C[0]&&m<C[0]+C[1])m=C[0];
-    const y=Math.max(0,Math.min(P.n,m/L*P.n)),j=Math.min(P.n-1,Math.floor(y));lat=P.SW(m)*(P.sw[j]+(P.sw[j+1]-P.sw[j])*(y-j))*mu}
+  if(P.sw){   // 옆으로 비킴: 루프 · 코르크스크루 안에서는 들어가는 자리 값에서 나오는 자리 값으로 3차 곡선(양 끝 기울기 맞춤)으로 옮겨 간다
+    // (2026-10-10 덕배: 들어가는 자리 값에 묶어 두었더니 나오는 순간 옆으로 최대 62 m 건너뛰어 "한 바퀴 돌고 뚝 떨어지게" 이어졌다 — 군자→아차산 27 m)
+    const latAt=m=>{const y=Math.max(0,Math.min(P.n,m/L*P.n)),j=Math.min(P.n-1,Math.floor(y));return P.SW(m)*(P.sw[j]+(P.sw[j+1]-P.sw[j])*(y-j))};
+    const across=(a,D,m)=>{const u=(m-a)/D,A=latAt(a),B=latAt(a+D),dA=(A-latAt(a-1))*D,dB=(latAt(a+D+1)-B)*D,u2=u*u,u3=u2*u;
+      return (2*u3-3*u2+1)*A+(u3-2*u2+u)*dA+(-2*u3+3*u2)*B+(u3-u2)*dB};
+    const m=s/mu;lat=(LD&&Math.abs(m-L/2)<LD/2?across(L/2-LD/2,LD,m):C&&m>C[0]&&m<C[0]+C[1]?across(C[0],C[1],m):latAt(m))*mu}
   return [sg,h,lat,roll,up];   // lat: across (+ to the right going lo→hi; 솟은 구간의 굽이 · 출렁임), roll: about the way lo→hi
 }
 // 고가 상판을 끊는 구간(가장자리 길이의 몫): 레일이 떠난 곳
