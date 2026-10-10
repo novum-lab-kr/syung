@@ -548,7 +548,10 @@ class BusLayer {
       // 차로가 충분히 넓은 줌(18쯤)에서는 바퀴까지 차로 안에. 그보다 멀면 아래처럼 최소 크기를 지킨다
       // 차로 폭에 맞추면 줌 15에서 4px · 16에서 8px 로 줄어 사라진 것처럼 보였다(2026-10-08 덕배): 줌 15 크기 밑으로는 줄이지 않는다
       const fit=pose.laneWidth*.88/((this.joseon?1.3:1.12)*busMetresPerPixel(zoom,pose.coordinate[1]));   // 조선 모드의 가마는 장대까지 폭이 1.3
-      const scale=overview?busModelScale(zoom):Math.min(busModelScale(zoom),Math.max(busModelScale(BUS_ZOOM.buses),fit));
+      // 조선 모드의 가마: 줌 17 위로는 지도와 같이 커진다 — 줌 17 에서 보이는 크기(땅 위 약 18 m)를 그대로 (2026-10-10 덕배: 확대할수록
+      // 작아 보여 안 보인다. 화면 크기를 12~16.5 px 로 묶어 줌 20 에서는 땅 위 3 m 로 줄었다)
+      const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-17);   // (fit 은 줌마다 2배: 줌 17 의 값은 fit/grow)
+      const scale=overview?busModelScale(zoom):this.joseon&&zoom>17?near(17,fit/grow)*grow:near(zoom,fit);
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of this.joseon?[-.65,.65]:[-.56,.56])for(const z of [0,1.35]){
