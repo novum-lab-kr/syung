@@ -65,7 +65,7 @@ cp server/subway-live.service /etc/systemd/system/ && systemctl enable --now sub
 python3 pipeline/extract_ktdb_capital_metro.py   # GTFS → capital-metro.json
 python3 pipeline/build_edge_times.py             # 역간 운행 시간
 python3 pipeline/build_track_shapes.py           # OSM 선로 형태 (처음엔 Overpass 조회로 오래 걸림)
-python3 pipeline/build_ktdb_gtfs_preview.py      # build/index.html 재생성 → web/index.html과 비교 후 반영
+python3 pipeline/build_stations.py              # web/index.html 안 역 데이터 칸만 교체 (--check: 최신인지 확인)
 ```
 `ROAD_MATCH=1`을 주면 지하 구간을 도로에 맞추는 실험 기능이 켜집니다(기본 꺼짐).
 
