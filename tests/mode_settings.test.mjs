@@ -1,0 +1,121 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mergeSettings,freezeSettings,validateSettings,validateModeDefinitions} from '../web/modes/merge.mjs';
+import {createModeRegistry} from '../web/modes/index.mjs';
+
+// 시험용 정의: 실제 basic · simcity · joseon · coaster 와 같은 모양(조선 · 롤코는 simcity 에서)
+const defs=()=>[
+  {id:'basic',settings:{themeChoice:'auto',mapColor:'calm',city:{enabled:false,pack:{floor:{light:'#eee',dark:'#222'},lod:[14,16]},life:{cars:true}},track:{kind:'ground'},park:null}},
+  {id:'simcity',from:'basic',settings:{city:{enabled:true},track:{kind:'viaduct'}}},
+  {id:'joseon',from:'simcity',label:'조선',settings:{city:{pack:{floor:{light:'#cb9'}},life:{cars:false}},buses:{look:'palanquin'}}},
+  {id:'coaster',from:'simcity',settings:{track:{kind:'coaster'},park:{enabled:true,lights:[1,2]}}},
+];
+
+test('합치기: 묶음은 안쪽까지, 값 · 목록은 통째로, null 은 끄기, 안 적으면 물려받기', () => {
+  const base={a:{b:1,c:[1,2,3],d:{e:'x'}},f:true,g:{h:1}};
+  const out=mergeSettings(base,{a:{c:[9],d:{z:2}},f:null,n:{m:1}});
+  assert.deepEqual(out,{a:{b:1,c:[9],d:{e:'x',z:2}},f:null,g:{h:1},n:{m:1}});
+  assert.equal(out.g,base.g,'안 바뀐 묶음은 같은 참조');
+  assert.deepEqual(base,{a:{b:1,c:[1,2,3],d:{e:'x'}},f:true,g:{h:1}},'입력은 그대로');
+  assert.equal(mergeSettings(base,{a:{b:1}}),base,'같은 값만 적으면 바뀐 게 없다');
+  assert.equal(mergeSettings(base,undefined),base);
+  assert.deepEqual(Object.keys(mergeSettings({x:1,y:2},{z:3,x:4})),['x','y','z'],'키 차례: 기본 차례 그대로, 새 키는 뒤에');
+});
+
+test('합치기 결과가 옛 city_style_joseon 의 merge 와 같다', async () => {
+  const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+  const old=(a,b)=>{const o={...a};for(const [k,v] of Object.entries(b))o[k]=isObj(v)&&isObj(a?.[k])?old(a[k],v):v;return o};
+  const {default:SEOUL}=await import('../web/lib/city_style_seoul.mjs');
+  const delta={id:'j',ground:{light:{base:'#000'}},hanok:{tall:{towerMinH:15}},xray:null,roads:{widths:[1,2]}};
+  assert.equal(JSON.stringify(mergeSettings(SEOUL,delta)),JSON.stringify(old(SEOUL,delta)));
+});
+
+test('검사: 함수 · getter · 클래스 객체 · 나쁜 키 · 무한대는 설정에 못 넣는다', () => {
+  assert.throws(()=>validateSettings({a:()=>1}),/데이터가 아님/);
+  assert.throws(()=>validateSettings({a:{get b(){return 1}}}),/getter/);
+  assert.throws(()=>validateSettings({a:new Map()}),/평범한 객체가 아님/);
+  assert.throws(()=>validateSettings(JSON.parse('{"__proto__":{"x":1}}')),/쓸 수 없는 키/);
+  assert.throws(()=>validateSettings({a:[1,Infinity]}),/유한한 수/);
+  assert.throws(()=>validateSettings(Object.defineProperty({},'city',{value:{on:true},enumerable:false})),/숨은/);
+  assert.throws(()=>mergeSettings({a:1},JSON.parse('{"__proto__":{"x":1}}')),/쓸 수 없는 키/);
+  assert.doesNotThrow(()=>validateSettings({a:null,b:[{c:'#fff'}],d:Object.create(null)}));
+});
+
+test('얼리기: 안쪽까지 — 겉만 얼린 묶음도 안쪽까지', () => {
+  const shallow=Object.freeze({x:{y:1}});
+  const S=freezeSettings({a:{b:[1]},s:shallow});
+  assert.ok(Object.isFrozen(S.a.b));
+  assert.ok(Object.isFrozen(shallow.x),'겉만 얼린 묶음의 안쪽도 얼린다');
+  assert.equal(freezeSettings(S),S);
+});
+
+test('검사: 같이 쓰는 묶음은 되고 순환은 안 된다', () => {
+  const shared={c:1};
+  assert.doesNotThrow(()=>validateSettings({a:shared,b:shared,l:[shared,shared]}));
+  const loop={a:{}};loop.a.back=loop;
+  assert.throws(()=>validateSettings(loop),/순환/);
+  const arr=[];arr.push(arr);
+  assert.throws(()=>validateSettings({arr}),/순환/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:loop}]),/순환/);
+});
+
+test('정의 검사: 없는 부모 · 순환 · 깊이 · 중복 · 기본 없음은 시작할 때 알린다', () => {
+  assert.throws(()=>validateModeDefinitions([{id:'basic'},{id:'a',from:'zz'}]),/없는 부모/);
+  assert.throws(()=>validateModeDefinitions([{id:'basic'},{id:'a',from:'b'},{id:'b',from:'a'}]),/순환/);
+  assert.throws(()=>validateModeDefinitions([{id:'basic'},{id:'a'},{id:'b',from:'a'},{id:'c',from:'b'}]),/너무 깊음/);
+  assert.throws(()=>validateModeDefinitions([{id:'basic'},{id:'basic'}]),/중복/);
+  assert.throws(()=>validateModeDefinitions([{id:'a'}]),/기본 모드가 없음/);
+  assert.throws(()=>validateModeDefinitions([{id:'basic',from:'a'},{id:'a'}]),/부모가 없음/);
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{f:()=>1}}]),/데이터가 아님/);
+  assert.doesNotThrow(()=>validateModeDefinitions(defs()));
+});
+
+test('상속: 조선 · 롤코는 심시티에서, from 생략은 basic, 기본을 고치면 안 적은 모든 모드에 간다', () => {
+  const R=createModeRegistry(defs());
+  const J=R.settings('joseon'),C=R.settings('coaster'),S=R.settings('simcity');
+  assert.equal(J.city.enabled,true);assert.equal(J.track.kind,'viaduct');assert.equal(J.city.pack.floor.light,'#cb9');assert.equal(J.city.pack.floor.dark,'#222');
+  assert.equal(C.track.kind,'coaster');assert.deepEqual(C.park,{enabled:true,lights:[1,2]});assert.equal(R.settings('basic').park,null);
+  assert.equal(C.city.pack,S.city.pack,'롤코 · 심시티 도시 팩은 같은 참조');
+  assert.notEqual(J.city.pack,S.city.pack);
+  assert.equal(R.settings('simcity'),S,'같은 모드는 같은 결과(캐시)');
+  assert.ok(Object.isFrozen(J.city.pack.floor));
+  assert.deepEqual(R.chain('joseon'),['basic','simcity','joseon']);
+  assert.deepEqual(R.list().map(m=>[m.id,m.from]),[['basic',null],['simcity','basic'],['joseon','simcity'],['coaster','simcity']]);
+  const d=defs();d[0].settings.city.pack.lod=[13,15];d[0].settings.newThing={on:true};
+  const R2=createModeRegistry(d);
+  for(const id of ['simcity','joseon','coaster']){assert.deepEqual(R2.settings(id).city.pack.lod,[13,15]);assert.equal(R2.settings(id).newThing.on,true)}
+  assert.equal(R2.settings('joseon').city.pack.floor.light,'#cb9','모드가 적은 값은 그대로');
+});
+
+test('내 설정: 테마 · 지도 색만, 허용된 값만, 도시 팩 참조는 그대로', () => {
+  const R=createModeRegistry(defs());
+  const A=R.settings('coaster',{themeChoice:'dark',mapColor:'color'});
+  assert.equal(A.themeChoice,'dark');assert.equal(A.mapColor,'color');
+  assert.equal(A.city.pack,R.settings('simcity').city.pack,'테마가 바뀌어도 도시 팩은 같은 참조(건물 타일을 다시 짓지 않게)');
+  assert.equal(R.settings('coaster',{mapColor:'color',themeChoice:'dark'}),A,'같은 값이면 같은 결과');
+  assert.equal(R.settings('coaster',{}),R.settings('coaster'));
+  assert.throws(()=>R.settings('coaster',{city:{enabled:false}}),/못 바꾸는/);
+  assert.throws(()=>R.settings('coaster',{themeChoice:'sepia'}),/허용되지 않는/);
+  assert.throws(()=>R.settings('nope'),/없는 모드/);
+  let reads=0;const tricky={get themeChoice(){return ++reads<3?'dark':'sepia'}};
+  assert.throws(()=>R.settings('coaster',tricky),/getter/,'getter 로 값 바꿔치기 막기');
+  assert.throws(()=>createModeRegistry([{id:'basic',settings:{themeChoice:'sepia'}}]),/허용되지 않는/,'정의의 기본값도 허용 값만');
+});
+
+test('만든 뒤 정의를 바꿔도 레지스트리는 그대로', () => {
+  const d=defs(),R=createModeRegistry(d),J=R.settings('joseon');
+  d[2].from='basic';d.push({id:'late',settings:{}});
+  assert.throws(()=>{d[1].settings.city.enabled=false},TypeError,'정의 설정은 얼려 둔다');
+  assert.deepEqual(R.chain('joseon'),['basic','simcity','joseon']);
+  assert.equal(R.settings('joseon'),J);assert.equal(R.explain('joseon').sources['city.enabled'],'simcity');
+  assert.equal(R.has('late'),false);assert.equal(R.list().length,4);
+});
+
+test('출처 보기: 키마다 마지막으로 적은 모드', () => {
+  const R=createModeRegistry(defs());
+  const e=R.explain('joseon');
+  assert.deepEqual(e.chain,['basic','simcity','joseon']);
+  assert.equal(e.sources['city.enabled'],'simcity');assert.equal(e.sources['city.pack.floor.light'],'joseon');assert.equal(e.sources['city.pack.floor.dark'],'basic');
+  assert.equal(e.sources['park'],'basic');
+  const c=R.explain('coaster');assert.equal(c.sources['park.enabled'],'coaster');assert.equal(c.sources['park'],undefined);
+});
