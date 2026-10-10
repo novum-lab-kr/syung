@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTower } from '../web/lib/city_landmarks.mjs';
-import { LANDMARKS } from '../web/lib/city_landmarks_data.mjs';
+import { buildTower } from '../web/city/landmarks.mjs';
+import { LANDMARKS } from '../web/city/landmarks_data.mjs';
 
 const L = LANDMARKS.find(l => l.id === 'lotte');
 const verts = d => { const out = []; for (let i = 0; i < d.length; i += 9) out.push([d[i], d[i + 1], d[i + 2], d[i + 7]]); return out };

@@ -1,13 +1,13 @@
-// 랜드마크 전용 모델 (데이터: web/lib/city_landmarks_data.mjs). 지금은 롯데월드타워 하나.
+// 랜드마크 전용 모델 (데이터: web/city/landmarks_data.mjs). 지금은 롯데월드타워 하나.
 //
 // 심시티 · 조선 모드에서만 그린다(롤코에선 이 자리가 놀이기구 탑: coaster_towers.json).
 // 심시티: 은청색 유리에 흰 금속 세로줄, 솔기 모서리는 어두운 홈, 꼭대기는 솔기 선에서 두 갈래로 갈라진 격자 왕관(밤에 빛남).
 // 조선: 같은 몸에 나무 기둥 · 보와 회벽, 다섯 층마다 기와 처마를 두른 거대한 목탑. 두 갈래 꼭대기는 금색.
 // 멀리서도 롯데타워로 읽히게 윤곽(가는 몸 · 볼록한 테이퍼 · 갈라진 꼭대기)을 지키고, 세로줄은 성기고 진하게(Codex 검토, 2026-10-09).
 // 지역 미터 좌표(city_life 의 MERC_ORIGIN · MU)에 짓고, 고가와 같은 캔버스 · 깊이에 그린다.
-import { LANDMARKS } from './city_landmarks_data.mjs';
-import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
-import { compileProgram } from '../city/traffic.mjs';
+import { LANDMARKS } from './landmarks_data.mjs';
+import { MU, MERC_ORIGIN as O, toM } from './life.mjs';
+import { compileProgram } from './traffic.mjs';
 
 const N = 56;              // 평면 둘레 점 수(솔기 홈 점 제외)
 const STRIDE = 9;          // x y z · 법선 xyz · 둘레 몫 s(0…1, 솔기 0 · .5) · 종류(0 몸 · 1 갈라진 안쪽 면 · 2 윗면 · 3 기와 처마) · 처마 안 몫

@@ -3,7 +3,7 @@
 // ordered [far-LOD roofs][walls][near-LOD roofs, parapets, roof plant, awnings]. Every look value comes from the style
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
-import { LANDMARKS, landmarkMerc } from '../lib/city_landmarks_data.mjs';
+import { LANDMARKS, landmarkMerc } from './landmarks_data.mjs';
 import { cityPart } from './parts.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/lib/city_hanok.mjs 가 등록)
 // vertex kinds after the city's (0–7), for the 조선 pieces (web/lib/city_hanok.mjs): 기와 (roofs, ridges, wall caps), a house's walls (a_bld.z type 1: mud walls of a
 // 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone) — 메시 형식의 몫이라 여기에 둔다

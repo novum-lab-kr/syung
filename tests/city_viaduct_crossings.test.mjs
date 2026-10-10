@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CityViaduct, toLL, ribbonRows } from '../web/city/viaduct.mjs';
 import { edgeOverlaps, edgeProfile, levelHeight } from '../web/city/viaduct_levels.mjs';
-import { MU, MERC_ORIGIN as O } from '../web/lib/city_life.mjs';
+import { MU, MERC_ORIGIN as O } from '../web/city/life.mjs';
 import SEOUL from '../web/lib/city_style_seoul.mjs';
 
 const Lv = SEOUL.viaduct.levels, step = Lv.stepM;

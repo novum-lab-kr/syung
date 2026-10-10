@@ -38,8 +38,8 @@ import './modes/coaster/metrics.mjs';   // (공원 치수 계산: 같은 단계�
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './lib/coaster_track_mesh.mjs';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
 import {NightLayer} from './lib/park_night.mjs';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './lib/coaster_first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
-import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './lib/city_style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
-import {CityLife} from './lib/city_life.mjs';
+import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './city/style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
+import {CityLife} from './city/life.mjs';
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
@@ -297,10 +297,10 @@ const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the b
 let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
-const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','lib/city_landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
+const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','lib/coaster_badges','lib/coaster_ride_sites'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs'),import('./lib/city_hanok.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에)
     .then(([b,l,t,c,r,p,q])=>{({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}

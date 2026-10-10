@@ -15,10 +15,10 @@
 //   life.animating(); life.dispose(gl);
 //   people: both city modes draw them (the same figures on the same pavements; the mode only tones their colours); false hides them.
 
-import SEOUL from './city_style_seoul.mjs';
-import { BULB_FS, bulbSize } from './park_night.mjs';
-import { toneRGB, hexRgb, MPP } from './city_style.mjs';
-import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from '../city/traffic.mjs';
+import SEOUL from '../lib/city_style_seoul.mjs';
+import { BULB_FS, bulbSize } from '../lib/park_night.mjs';
+import { toneRGB, hexRgb, MPP } from './style.mjs';
+import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './traffic.mjs';
 
 const EARTH = 40075016.685578488, ORIGIN = [126.978, 37.5665];
 const mercX = lon => lon / 360 + .5, mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);

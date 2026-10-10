@@ -30,9 +30,9 @@
 import SEOUL from '../lib/city_style_seoul.mjs';
 import FLAGS from './viaduct_flags.mjs';
 import SNAP from './viaduct_snap.mjs';
-import { toneRGB, hexRgb, MPP } from '../lib/city_style.mjs';
+import { toneRGB, hexRgb, MPP } from './style.mjs';
 import { compileProgram, hashi } from './traffic.mjs';
-import { MU, MERC_ORIGIN as O, toM } from '../lib/city_life.mjs';
+import { MU, MERC_ORIGIN as O, toM } from './life.mjs';
 import { STRIDE, MAT, COLOR_KEYS, Mesh } from './viaduct_mesh.mjs';
 import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './viaduct_levels.mjs';
 import { layoutExits, buildExits, exitSamples } from './viaduct_exits.mjs';
