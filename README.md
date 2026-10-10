@@ -35,6 +35,14 @@ python3 deploy/dev_server.py        # http://localhost:8080
 돌리고, 통과하면 서버에 SSH로 접속해 `deploy/remote_deploy.sh`를 실행해요(최신 코드 받기 → 테스트 → 배포,
 `server/`가 바뀌었으면 프록시 재시작). 배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요.
 PR에는 테스트만 돌아요. 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
+
+`remote_deploy.sh` 순서: `origin/main` 커밋 하나를 정해 임시 폴더에 꺼내 테스트 → 통과해야 merge → `deploy/deploy.sh`가
+그 커밋의 `web/` 전체와 자료 파일로 새 릴리스(`/var/www/syung-releases/<시각>-<커밋>`)를 만들고 `/var/www/syung` 링크를 한 번에
+바꿔 끼움 → `server/`가 마지막 성공 배포(`/var/lib/subway-live/deployed-commit`)와 다르면 프록시 재시작 → `deploy/check_site.sh`가
+화면이 부르는 주소(정적 파일 전부, `/api/route`, `/api/live`)를 확인 → 실패하면 정적 파일을 직전 릴리스로 되돌림(서버는 클론에서
+돌아서 코드는 그대로). 커밋 안 된 파일은 릴리스에 섞이지 않고, `web/` 아래 새 폴더는 저절로 따라가요. 손으로 둔 옛 파일은
+`/var/www/syung-keep/`에 두면 릴리스마다 링크돼요. 손으로 되돌리기: `deploy/deploy.sh --rollback`(한 번 더 하면 그 앞으로).
+처음 한 번(진짜 폴더 → 링크): `deploy/deploy.sh --adopt`.
 데이터 다시 만들기(pipeline/)는 GTFS 원본과 OSM 캐시가 있는 서버에서 하는 게 편합니다.
 
 ## 테스트

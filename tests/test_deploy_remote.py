@@ -1,0 +1,399 @@
+"""로컬 가짜 서버와 임시 origin으로 원격 배포·배포 확인을 검증한다."""
+
+import json
+import os
+import signal
+import shutil
+import subprocess
+import threading
+import time
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
+
+from test_deploy_release import DATA, ReleaseFixture, TOOLS as RELEASE_TOOLS
+
+
+class LocalSite:
+    """정적 파일은 임시 웹 링크에서 읽고 API는 지정한 응답만 돌려준다."""
+
+    def __init__(self, web):
+        self.web = web
+        self.responses = {}
+        self.requests = []
+        self.holds = {}
+        site = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                path = urlsplit(self.path).path
+                site.requests.append(self.path)
+                if path in site.holds:
+                    entered, resume = site.holds[path]
+                    entered.set()
+                    if not resume.wait(timeout=10):
+                        self.send_error(504)
+                        return
+                if path in site.responses:
+                    status, content_type, body = site.responses[path]
+                elif path in ("/api/live", "/api/route"):
+                    status, content_type, body = 200, "application/json", b'{"ok":true}'
+                elif path.startswith("/api/"):
+                    status, content_type, body = 404, "text/plain", b"no such API"
+                elif path.startswith("/learning"):
+                    status, content_type, body = 401, "text/plain", b"owner only"
+                else:
+                    target = site.web / ("index.html" if path == "/" else path.lstrip("/"))
+                    try:
+                        body = target.read_bytes()
+                        status = 200
+                        content_type = "text/javascript" if path.endswith(".mjs") else "application/octet-stream"
+                    except (OSError, ValueError):
+                        status, content_type, body = 404, "text/plain", b"not found"
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.worker = threading.Thread(target=self.server.serve_forever,
+                                       kwargs={"poll_interval": 0.01}, daemon=True)
+        self.worker.start()
+        self.base = "http://127.0.0.1:%d" % self.server.server_port
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.worker.join(timeout=2)
+
+
+@unittest.skipUnless(all(shutil.which(name) for name in (*RELEASE_TOOLS, "node", "curl")), "원격 배포 스크립트 도구가 필요합니다")
+class RemoteFixture(ReleaseFixture):
+    scripts = ("deploy.sh", "check_site.sh", "remote_deploy.sh")
+
+    def seed_repo(self):
+        self.env.update({
+            "SYUNG_CLONE": str(self.repo), "SYUNG_DEPLOY_LOG": str(self.base / "deploy.log"),
+            "SYUNG_CHECK_RESOLVE": "", "SYUNG_CHECK_WAIT": "0",
+        })
+        # 주소 설정 실수가 생겨도 운영 주소로 요청이 나가지 않게 curl을 감싼다.
+        real_curl = shutil.which("curl")
+        self.command("curl", f"""
+import os, sys
+from urllib.parse import urlsplit
+urls = [arg for arg in sys.argv[1:] if arg.startswith(('http://', 'https://'))]
+expected = urlsplit(os.environ['SYUNG_CHECK_BASE'])
+if len(urls) != 1 or '--resolve' in sys.argv or urlsplit(urls[0]).hostname != '127.0.0.1' or urlsplit(urls[0]).netloc != expected.netloc:
+    raise SystemExit('임시 로컬 서버 외의 curl 호출은 금지')
+os.execv({real_curl!r}, [{real_curl!r}] + sys.argv[1:])
+""")
+        self.write("server/subway_live_proxy.py", "VERSION = 1\n")
+        self.write("tests/tiny.test.mjs", "import test from 'node:test'; test('fixture', () => {});\n")
+        self.write("tests/test_tiny.py", "import unittest\nclass Tiny(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n")
+
+    def restart_calls(self):
+        return self.systemctl_log.read_text().splitlines() if self.systemctl_log.exists() else []
+
+    def start_site(self):
+        self.site = LocalSite(self.web)
+        self.addCleanup(self.site.close)
+        self.env["SYUNG_CHECK_BASE"] = self.site.base
+
+    def setup_origin(self):
+        self.origin = self.base / "origin.git"
+        self.producer = self.base / "producer"
+        self.git("init", "--bare", "-q", "-b", "main", str(self.origin))
+        self.git("remote", "add", "origin", str(self.origin))
+        self.git("push", "-q", "-u", "origin", "main")
+        self.git("clone", "-q", str(self.origin), str(self.producer))
+        self.git("config", "user.name", "Deploy fixture", cwd=self.producer)
+        self.git("config", "user.email", "fixture@example.invalid", cwd=self.producer)
+
+    def candidate(self, changes):
+        for path, content in changes.items():
+            self.write(path, content, repo=self.producer)
+        sha = self.commit("candidate", repo=self.producer)
+        self.git("push", "-q", "origin", "main", cwd=self.producer)
+        return sha
+
+    def remote(self, check=True):
+        return self.run_command(["bash", str(self.repo / "deploy/remote_deploy.sh")], check=check)
+
+    def deployed(self):
+        path = self.state / "deployed-commit"
+        return path.read_text().strip() if path.exists() else None
+
+    @staticmethod
+    def stop_process(process):
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.communicate(timeout=3)
+
+
+class SiteCheckTest(RemoteFixture):
+    def setUp(self):
+        super().setUp()
+        self.adopt()
+        self.deploy()
+        self.start_site()
+
+    def check_site(self, check=True):
+        return self.run_command(["bash", str(self.repo / "deploy/check_site.sh"),
+                                 str(self.web.resolve())], check=check)
+
+    def test_checks_all_modules_data_and_legacy_links_but_skips_owner_pages(self):
+        self.check_site()
+        paths = {urlsplit(path).path for path in self.site.requests}
+        self.assertIn("/", paths)
+        self.assertIn("/city/new/deep/module.mjs", paths)
+        self.assertIn("/gallery/picture.txt", paths)
+        for name in DATA.values():
+            self.assertIn("/" + name, paths)
+        self.assertIn("/data/bus/routes.json", paths)
+        self.assertIn("/live-timing.json", paths)
+        self.assertIn("/api/route", paths)
+        self.assertIn("/api/live", paths)
+        self.assertFalse(any(path.startswith("/learning") for path in paths))
+        route = next(path for path in self.site.requests if path.startswith("/api/route?"))
+        self.assertIn("from=", route)
+        self.assertIn("&to=", route)
+
+    def test_live_503_json_warns_and_passes(self):
+        self.site.responses["/api/live"] = (503, "application/json; charset=utf-8", b'{"ok":false,"error":"fixture upstream"}')
+        result = self.check_site()
+        self.assertIn("경고", result.stdout)
+        self.assertIn("503", result.stdout)
+
+    def test_live_500_or_non_json_fails(self):
+        for status, content_type, body in ((500, "application/json", b'{}'),
+                                          (503, "text/html", b'<html>unavailable</html>'),
+                                          (503, "application/json", b'not-json'),
+                                          (200, "application/json", b'not-json')):
+            with self.subTest(status=status, content_type=content_type, body=body):
+                self.site.responses["/api/live"] = (status, content_type, body)
+                self.assertNotEqual(self.check_site(check=False).returncode, 0)
+
+    def test_route_503_or_non_json_fails(self):
+        for status, body in ((503, b'{}'), (200, b'not-json')):
+            with self.subTest(status=status):
+                self.site.responses["/api/route"] = (status, "application/json", body)
+                self.assertNotEqual(self.check_site(check=False).returncode, 0)
+
+    def test_missing_nested_module_fails_check(self):
+        self.site.responses["/city/new/deep/module.mjs"] = (404, "text/plain", b"missing")
+        result = self.check_site(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/city/new/deep/module.mjs", result.stdout)
+
+    def test_error_bodies_do_not_expose_synthetic_key_in_warning_or_failure(self):
+        marker = "fixture-key-never-real"
+        for status in (503, 500):
+            with self.subTest(status=status):
+                body = json.dumps({"ok": False, "error": "https://api.invalid/" + marker}).encode()
+                self.site.responses["/api/live"] = (status, "application/json", body)
+                result = self.check_site(check=False)
+                self.assertEqual(result.returncode, 0 if status == 503 else 1)
+                self.assertIn(str(status), result.stdout)
+                self.assertNotIn(marker, result.stdout)
+
+    def test_missing_or_empty_release_directory_fails_before_http_requests(self):
+        empty = self.base / "empty-release"
+        empty.mkdir()
+        for directory in (self.base / "missing-release", empty):
+            with self.subTest(directory=directory.name):
+                self.site.requests.clear()
+                result = self.run_command(["bash", str(self.repo / "deploy/check_site.sh"),
+                                           str(directory)], check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("실패", result.stdout)
+                self.assertEqual(self.site.requests, [])
+
+
+class RemoteDeployTest(RemoteFixture):
+    def setUp(self):
+        super().setUp()
+        self.adopt()
+        self.setup_origin()
+        self.start_site()
+
+    def test_failed_candidate_tests_preserve_head_link_history_and_record(self):
+        self.remote()
+        old_head = self.git("rev-parse", "HEAD")
+        old_link, old_history, old_record = self.web.resolve(), self.history(), self.deployed()
+        self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n",
+                        "tests/test_tiny.py": "import unittest\nclass Tiny(unittest.TestCase):\n    def test_fail(self):\n        self.fail('candidate failure')\n"})
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tests failed", result.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD"), old_head)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.history(), old_history)
+        self.assertEqual(self.deployed(), old_record)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+
+    def test_missing_record_restarts_once_then_same_commit_does_not(self):
+        self.remote()
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+        self.remote()
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+
+    def test_only_server_changes_restart_after_successful_baseline(self):
+        self.remote()
+        web_sha = self.candidate({"web/index.html": "new web"})
+        self.remote()
+        self.assertEqual(self.deployed(), web_sha)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+        server_sha = self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n"})
+        self.remote()
+        self.assertEqual(self.deployed(), server_sha)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"] * 2)
+        self.assertEqual(self.git("rev-parse", "HEAD"), server_sha)
+
+    def test_head_already_advanced_still_compares_last_successful_record(self):
+        self.remote()
+        old_link = self.web.resolve()
+        target = self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n"})
+        self.git("fetch", "-q", "origin", "main")
+        self.git("merge", "--ff-only", "-q", target)
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.remote()
+        self.assertEqual(self.deployed(), target)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"] * 2)
+
+    def test_unknown_record_restarts_and_replaces_record_on_success(self):
+        (self.state / "deployed-commit").write_text("0" * 40 + "\n")
+        self.remote()
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+
+    def test_failed_health_check_rolls_back_static_and_keeps_record_for_retry(self):
+        self.remote()
+        old_link, old_history = self.web.resolve(), self.history()
+        target = self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n",
+                                 "web/index.html": "bad release"})
+        self.site.responses["/api/live"] = (500, "application/json", b'{"ok":false}')
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.history(), old_history)
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.git("rev-parse", "HEAD"), target)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"] * 2)
+        del self.site.responses["/api/live"]
+        self.remote()
+        self.assertEqual(self.deployed(), target)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"] * 3)
+
+    def test_failed_restart_rolls_back_before_health_check_and_keeps_record(self):
+        self.remote()
+        old_link = self.web.resolve()
+        self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n"})
+        self.site.requests.clear()
+        self.env["FIXTURE_SYSTEMCTL_FAIL"] = "1"
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.site.requests, [])
+
+    def test_live_503_json_is_success_and_updates_record(self):
+        self.remote()
+        target = self.candidate({"web/index.html": "new web"})
+        self.site.responses["/api/live"] = (503, "application/json", b'{"ok":false}')
+        result = self.remote()
+        self.assertIn("경고", result.stdout)
+        self.assertEqual(self.deployed(), target)
+        self.assertEqual((self.web / "index.html").read_text(), "new web")
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+
+    def test_local_tracked_edits_refuse_deployment_before_tests(self):
+        old_link, old_history = self.web.resolve(), self.history()
+        self.write("web/index.html", "local tracked edit")
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("local uncommitted changes", result.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.initial)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.history(), old_history)
+        self.assertIsNone(self.deployed())
+        self.assertEqual(self.restart_calls(), [])
+
+    def test_head_ahead_of_candidate_refuses_without_changing_deployment(self):
+        self.remote()
+        self.write("server/subway_live_proxy.py", "VERSION = 999\n")
+        local_sha = self.commit("local commit outside origin")
+        old_link, old_history, old_record = self.web.resolve(), self.history(), self.deployed()
+        self.site.requests.clear()
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not deploying", result.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD"), local_sha)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.history(), old_history)
+        self.assertEqual(self.deployed(), old_record)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+        self.assertEqual(self.site.requests, [])
+
+    def test_api_error_synthetic_key_is_absent_from_remote_deploy_log(self):
+        marker = "fixture-key-never-real"
+        body = json.dumps({"ok": False, "error": "https://api.invalid/" + marker}).encode()
+        self.site.responses["/api/live"] = (503, "application/json", body)
+        result = self.remote()
+        self.assertIn("경고", result.stdout)
+        self.assertNotIn(marker, result.stdout)
+        self.assertNotIn(marker, (self.base / "deploy.log").read_text())
+
+    def test_manual_rollback_waits_until_remote_finishes_health_check(self):
+        self.remote()
+        old_link = self.web.resolve()
+        self.candidate({"web/index.html": "new web while remote holds lock"})
+        entered, resume = threading.Event(), threading.Event()
+        self.site.holds["/api/route"] = (entered, resume)
+        marker = self.base / "manual-flock-entered"
+        real_flock = shutil.which("flock")
+        self.command("flock", f"""
+import os, sys
+from pathlib import Path
+if sys.argv[1:] == ['9']:
+    Path({str(marker)!r}).touch()
+os.execv({real_flock!r}, [{real_flock!r}] + sys.argv[1:])
+""")
+        remote = subprocess.Popen(["bash", str(self.repo / "deploy/remote_deploy.sh")],
+                                  cwd=self.repo, env=self.env, text=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, start_new_session=True)
+        self.addCleanup(self.stop_process, remote)
+        self.addCleanup(resume.set)
+        try:
+            self.assertTrue(entered.wait(timeout=5), "remote가 건강 확인에 도달하지 못했습니다")
+            new_link = self.web.resolve()
+            self.assertNotEqual(new_link, old_link)
+            manual = subprocess.Popen(["bash", str(self.repo / "deploy/deploy.sh"), "--rollback"],
+                                      cwd=self.repo, env=self.env, text=True, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT, start_new_session=True)
+            self.addCleanup(self.stop_process, manual)
+            deadline = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists(), "수동 되돌리기가 잠금 단계에 도달하지 못했습니다")
+            with self.assertRaises(subprocess.TimeoutExpired):
+                manual.communicate(timeout=0.15)
+            self.assertEqual(self.web.resolve(), new_link)
+        finally:
+            resume.set()
+        remote_output, _ = remote.communicate(timeout=10)
+        manual_output, _ = manual.communicate(timeout=5)
+        self.assertEqual(remote.returncode, 0, remote_output)
+        self.assertEqual(manual.returncode, 0, manual_output)
+        self.assertEqual(self.web.resolve(), old_link)
+
+
+
+if __name__ == "__main__":
+    unittest.main()
