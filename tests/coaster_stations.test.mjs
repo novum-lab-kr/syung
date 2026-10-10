@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planStationFurniture, orientedOverlap } from '../web/lib/coaster_stations.mjs';
+import { planStationFurniture, orientedOverlap } from '../web/modes/coaster/stations.mjs';
 
 const site=(id,x=0,y=0,ax=1,ay=0)=>({key:`${id}:1`,id:'1',line:id,x,y,ax,ay,length:180,mu:1,offset:0,plat:1});
 test('boarding canopies leave the complete train envelope open',()=>{

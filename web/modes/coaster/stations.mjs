@@ -1,7 +1,7 @@
 // Shared, instanced boarding furniture; station names remain with the map's label/collision engine.
-import { SEOUL_COASTER_STYLE as STYLE, zoomFade, metresPerPixel } from './coaster_style_seoul.mjs';
-import { compile, hexRGB } from './park_night.mjs';
-import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './coaster_badges.mjs';
+import { SEOUL_COASTER_STYLE as STYLE, zoomFade, metresPerPixel } from '../../lib/coaster_style_seoul.mjs';
+import { compile, hexRGB } from '../../lib/park_night.mjs';
+import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mjs';
 
 const EARTH=40075016.685578488;
 const mx=lon=>lon/360+.5, my=lat=>.5-Math.log(Math.tan(Math.PI/4+lat*Math.PI/360))/(2*Math.PI);

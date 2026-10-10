@@ -2,7 +2,7 @@
 // import 는 본체도 import 하는 lib 만(coaster_first_person · coaster_style_seoul): 아니면 첫 화면 요청이 한 단계 늦어진다.
 // 열차 자리 · 화면 함수는 본체가 넘기고, 바뀌는 값은 isCoaster · getSheetTrain · getSleeperM(모드 코드를 받은 뒤 채워짐)으로 읽는다.
 // 프레임 순서(planner.setFrame → rideFrame → 그리기) · 내리기 줄(rideBar) 붙이기 · 이벤트 연결은 본체가 한다.
-import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatLabel} from '../../lib/coaster_first_person.mjs';
+import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatLabel} from './first_person.mjs';
 import {SEOUL_COASTER_STYLE as COASTER_STYLE} from '../../lib/coaster_style_seoul.mjs';
 export function createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM}){
   let ride=null,rideSeat={car:1,row:1,side:-1};
