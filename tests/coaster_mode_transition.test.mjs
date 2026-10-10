@@ -43,7 +43,7 @@ function setup(defs=modeDefs){
   // 여정 지도 표시는 실제 export(web/ui/journey.mjs)를 같은 지도 · 원본 stub 에 붙인다(본체가 하는 조립과 같게)
   const journeyMap=createJourneyMap({map:{...context.map,getLayer:()=>undefined},maplibregl:context.maplibregl,colors:context.colors,byId:context.byId,cityCoords:(...a)=>vm.runInContext('cityCoords',context)(...a),stopPos:context.stopPos,
     cityViaduct:context.cityViaduct,sheetPad:context.sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
-    live:{get busLayer(){return context.busLayer},get simcity(){return context.modeOn.simcity},get coaster(){return context.modeOn.coaster},stationAlpha:1}});
+    live:{get busLayer(){return context.busLayer},get settings(){return context.modeCtl.settings()},stationAlpha:1}});
   Object.assign(context,{journeyMap,showRoute:journeyMap.showRoute,clearRoute:journeyMap.clearRoute,setRouteOpacity:journeyMap.setRouteOpacity,focusRoute:journeyMap.focusRoute,setSubwayOff:journeyMap.setSubwayOff});
   const run=code=>vm.runInContext(code,context);
   run("map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});showRoute({legs:[{type:'ride',line:'L',stations:[1,2]}]})");

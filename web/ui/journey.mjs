@@ -1,6 +1,6 @@
 // 여정 지도 표시: 길찾기 결과 · 버스 노선 번호를 지도에 그린다(걷기 점선 · 탄 구간은 노선 경로 · 타고 내리는 점 · 출발/도착), 둘레를 흐리게(veil), 맞춰 보기.
 // 여정 상태(displayedRoute · routeBounds · busRouteFocus · routeFocus · subwayOff)의 주인 — 바깥은 같은 이름의 getter · setter. 길찾기 입력 화면(lib/journey-ui)은 본체가 그대로 부른다.
-// 다른 화면 파일을 import 하지 않는다: 바뀌는 값(버스 층 · 모드 · 역 흐림 stationAlpha)은 live.<이름> 으로 그때그때 읽고 쓴다.
+// 다른 화면 파일을 import 하지 않는다: 바뀌는 값(버스 층 · 지금 모드 설정 settings · 역 흐림 stationAlpha)은 live.<이름> 으로 그때그때 읽고 쓴다.
 export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}){
   // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
   function rideCoords(line,ids){
@@ -67,7 +67,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     for(const id of ['routes','stations-casing','stations','station-names','station-labels','exit-refs'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');   // 감춘 역은 눌리지도 않게
     live.stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
   }
-  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.simcity||live.coaster?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
+  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
   // route focus: veil on, trains faded, my location kept above the veil
   function focusRoute(on){
     if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}

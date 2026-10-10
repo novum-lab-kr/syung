@@ -1,7 +1,7 @@
 // 정보창: 열차 정보창(지금 상태 · 원본 기록 · 롤코면 자리 고르기), 지도에서 열차 고르기(pickTrain), 실시간 끊김 알림 줄, 역 도착 정보창(곧 오는 열차 · 출구).
 // 역 요청 번호(stationSeq) · 알림 줄 DOM 의 주인. 시트 상태는 sheetUI(시트가 주인), 자리는 rider.seat(1인칭이 주인).
-// 다른 화면 파일을 import 하지 않는다: 바뀌는 값(모드 · 열차 켬 · 노선 끔 · 출구 자료 · 실시간 받기 feed)은 live.<이름> 으로 그때그때 읽는다.
-export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,coasterBodyPx,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,follow,sheetUI,sheetBody,followBtn,live}){
+// 다른 화면 파일을 import 하지 않는다: 바뀌는 값(지금 모드 설정 settings · 열차 켬 · 노선 끔 · 출구 자료 · 실시간 받기 feed)은 live.<이름> 으로 그때그때 읽는다.
+export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,follow,sheetUI,sheetBody,followBtn,live}){
   // ---- train inspector ----------------------------------------------------------------------
   // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
   function trainState(plan){
@@ -31,7 +31,7 @@ export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,tr
   <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
   <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
   <div class="tp-now">${esc(riderState(plan))}</div>
-  ${live.coaster?`<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars,rideRows(plan),rider.seat)}</div><button type="button" class="ride-go">${seatLabel(rider.seat)}에 타기</button>`:''}
+  ${canRide()?`<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars,rideRows(plan),rider.seat)}</div><button type="button" class="ride-go">${seatLabel(rider.seat)}에 타기</button>`:''}
   <div class="sec">서울시 실시간 원본</div>
   <dl class="kv">${rawFeedHTML(t)}</dl></div>`;
   }
@@ -60,7 +60,7 @@ export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,tr
     const unit=1/(512*2**map.getZoom());let best=null;
     for(const plan of planner.plans){
       const pose=trainPose(plan),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
-      const Z=map.getZoom(),lane=live.simcity||live.coaster?cityViaduct.train(Z,coasterBodyPx(Z)).lanePx:laneOffsetPx(Z),P=d=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return live.simcity||live.coaster?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
+      const Z=map.getZoom(),lane=live.settings.track.kind!=='ground'?cityViaduct.train(Z,trainBodyPx(Z)).lanePx:laneOffsetPx(Z,trainBodyPx(Z)),P=d=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return live.settings.track.kind!=='ground'?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
       const A=P(pose.dist-half),B=P(pose.dist+half),dx=B.x-A.x,dy=B.y-A.y,l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((point.x-A.x)*dx+(point.y-A.y)*dy)/l2));
       const d=Math.hypot(point.x-(A.x+dx*u),point.y-(A.y+dy*u));
       if(d<14&&(!best||d<best.d))best={plan,d};

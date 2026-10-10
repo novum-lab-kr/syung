@@ -15,7 +15,8 @@ export default {
     // towersAsRides: park.towerM 이상 건물을 지도 · 도시 · 그림자에서 빼고 놀이기구로. verticalGradient: 지도 3D 건물 위아래 명암
     map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', towersAsRides: false, verticalGradient: true },
     // 미니어처 도시(색 · 치수 · 줌 팩): 심시티 · 롤코는 이 팩 그대로(같은 참조), 조선은 덧쓴다. groundTexture: 땅에 흙 질감(팩의 ground.texture)
-    city: { enabled: false, groundTexture: false, pack: CITY_PACK },
+    // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
+    city: { enabled: false, groundTexture: false, xray: false, pack: CITY_PACK },
     // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료, towerM 이상 건물은 놀이기구
     park: { enabled: false, towerM: 150, style: PARK_DEFAULTS },
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),

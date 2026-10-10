@@ -2,7 +2,7 @@
 // → 롤코 선로 → 열차 → 밤 공원 → 유리 건물 → 출구 기둥 → 1인칭 내 칸 → 역 이름표. 지도 load 안에서 한 번 만들고, render · idle · moveend · sourcedata 에 붙는다.
 // 캔버스 · 이름표 배치 · 놀이기구 · 도시 생활 · 밤 공원 · 벽 타이머의 주인. 본체의 drawTrains · wallsNow 를 live setter 로 채운다(그 전엔 빈 함수).
 // 다른 화면 파일을 import 하지 않는다: 열차 · 건물 깊이 클래스(trains/draw.mjs)와 lib 클래스는 본체가 넘기고, 바뀌는 값은 live.<이름> 으로 그때그때 읽는다.
-export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,RIDE_H,coasterTrack,geom,edgeOffset,coasterBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,live}){
+export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,RIDE_H,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,live}){
   const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
   c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
@@ -35,13 +35,14 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
   const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,ridePlacement=null;   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
+    const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
     c.style.width=m.style.width;c.style.height=m.style.height;
     gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
     const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
-    if(cityOn()&&live.cityBuildings)live.cityBuildings.setXray(live.simcity?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
+    if(cityOn()&&live.cityBuildings)live.cityBuildings.setXray(S.city.xray?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
     const drawn=cityOn()&&live.cityBuildings?live.cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
-    if(live.coaster&&live.kitReady&&coasterGeo.bld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
+    if(park&&live.kitReady&&coasterGeo.bld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
       if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
         rides=new live.RideLayer(coasterGeo.bld.towers,{deferPlacement:true});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
         ridePlacement=new live.CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte),{   // 롯데월드타워 자리는 놀이기구 대신 전용 모델(cityLandmarks)
@@ -53,30 +54,30 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       if(coasterTrack.edges)ridePlacement.update([A.x,B.y,B.x,A.y]);   // coaster: tile loading is asynchronous; pending sites stay hidden
       rides.render(gl,pd.mainMatrix,{now:performance.now(),dark:effectiveTheme()==='dark',night:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y]});
       if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
-    if(live.simcity||live.coaster){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
+    if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
       if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
       cityLife.render(gl,pd.mainMatrix,{look:cityPack(),now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',coaster:live.coaster,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
       if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
     if(live.busLayer)live.busLayer.joseon=live.joseon;live.busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
-    if(live.simcity||live.coaster){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
+    if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
       cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
-      if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50);
+      if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:trainBodyPx(zoom)}))trainFrameSoon(50);
       live.cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon:live.joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
     coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
-    layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&live.coaster,occlude:behind});
+    layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&park,occlude:behind});
     // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
-    if(live.coaster&&effectiveTheme()==='dark'&&coasterTrack.edges){   // (edges: once the track has been set up)
+    if(park&&effectiveTheme()==='dark'&&coasterTrack.edges){   // (edges: once the track has been set up)
       if(!night){night=new NightLayer();night.init(gl)}
       {const bp=coasterTrack.bulbs();if(night.trackSrc!==bp){night.setTrackBulbs(bp,coasterTrack.bulbRgb);night.trackSrc=bp}}   // 레일이 고가를 떠난 곳 아래 전구(다시 지으면 다시); 승강장 불빛은 고가 승강장의 밤 조명이 맡는다
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
       night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
       if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
     else if(night){night.dispose(gl);night=null}
-    if(live.simcity&&live.cityBuildings)live.cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
+    if(S.city.xray&&live.cityBuildings)live.cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
     if(!journeyMap.subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
-    if(rider.ride&&live.coaster&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
+    if(rider.ride&&park&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
       const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
       gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
