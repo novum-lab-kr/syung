@@ -21,13 +21,14 @@ const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++
 const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
 
 // 칠하는 방식(a_part)
-const P_FLAT = 0, P_HULL = 1, P_SHELL = 2, P_LINE = 3, P_HEAD = 4, P_BOW = 5, P_FLAG = 6, P_OAR = 7, P_DECK = 8, P_OPEN = 9;
+const P_FLAT = 0, P_HULL = 1, P_SHELL = 2, P_LINE = 3, P_HEAD = 4, P_BOW = 5, P_FLAG = 6, P_OAR = 7, P_DECK = 8, P_OPEN = 9, P_BADGE = 10;
 // 팔레트 자리(u_pal)
 const S_WOOD = 0, S_WOOD_DARK = 1, S_SHELL = 2, S_SHELL_EDGE = 3, S_SPIKE = 4, S_RED = 5, S_GOLD = 6, S_WHITE = 7, S_INK = 8, S_OAR = 9, S_LAMP = 10, S_HEAD = 11, S_DECK = 12, S_PATH = 13, PAL = 14;
 // 깃대: 배 길이의 몇 분의 몇 자리(t), 뿌리 높이 · 깃대 길이(W) — 거북선은 등딱지 뒤쪽, 일반 배는 고물
-export const POLE = { turtle: { t: .22, z: .66, h: 1.05 }, boat: { t: .07, z: .36, h: 1.15 } };
-// 깃발 크기: 몸 폭의 몇 배, 화면 하한(px) — 한 글자 · 두 글자 (Codex: 줌 17 에서 읽히게)
-export const FLAG = { w: .95, h: .58, min1: [22, 18], min2: [34, 20] };
+export const POLE = { turtle: { t: .22, z: .66, h: 1.25 }, boat: { t: .07, z: .36, h: 1.35 } };
+// 깃발(천): 폭 · 높이(W), 화염각 길이(W) · 수(위아래, 끝; 작을 때), 천 높이 화면 목표(px)와 키움 상한, 펄럭임(끝 · 가운데 진폭, 처짐 W, 주기 s)
+// (Codex 2026-10-10: 1.0 × 0.65 W, 화염각 위아래 5 · 끝 3 — 천이 24 px 아래면 3 · 2, 목표 22 px · 1.6배까지, 가운데는 숫자가 접히지 않게 ±0.02 W)
+export const FLAG = { w: 1, h: .65, flame: .07, n: [6, 3], nSmall: [3, 2], minPx: 22, maxScale: 1.6, amp: [.07, .02], droop: .04, period: 2.4, badge: [18, 14, 26, 15] };
 // 깃발 글자: 번호선은 번호, 이름선은 두 글자
 const LABELS = { 'GTX-A': 'A', '경강선': '경강', '경의중앙선': '경의', '경춘선': '경춘', '공항철도': '공항', '김포골드라인': '김포', '서해선': '서해', '수인분당선': '수인', '신림선': '신림', '신분당선': '신분', '에버라인선': '에버', '우이신설선': '우이', '의정부선': '의정', '인천1호선': '인1', '인천2호선': '인2' };
 export const lineLabel = line => { const m = /^(\d+)호선$/.exec(line || ''); return m ? m[1] : LABELS[line] || String(line || '').replace(/선$/, '').slice(0, 2) };
@@ -108,11 +109,16 @@ function dragon(M, lod) {
   }
   M.box(1, [.66, 0, .935], [.26, .2, .012], gold);     // 금 눈썹 · 정수리 띠
 }
-// 깃발: 깃대(배에 선다)와 깃발 면(셰이더가 깃대 꼭대기에 화면을 보게 펼친다: a_p 는 깃발 안 자리 u · v)
+// 깃발: 깃대(배에 선다, 꼭대기에 붉은 술과 금빛 창날), 천(깃대에 매단 격자 — 셰이더가 배 뒤쪽으로 날리며 펄럭이게 펼치고 화염각을
+// 오려 낸다: a_p 는 천 위 자리 u · v), 번호 표(천이 옆으로 서서 번호가 안 보일 때만 깃대 옆에 화면을 보고 뜬다)
 export function buildFlag() {
   const M = new Mesh();
-  M.box(0, [0, 0, .5], [.028, .028, .5], { part: P_FLAT, slot: S_WOOD_DARK });   // (깃대: 셰이더가 길이 · 뿌리를 배 종류대로)
-  const f = { part: P_FLAG, slot: 0 }; for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) M.v(0, [u, v, 0], [0, 0, 1], f.part, f.slot);
+  M.box(0, [0, 0, .5], [.028, .028, .5], { part: P_FLAT, slot: S_WOOD_DARK });   // 깃대 (높이 1: 셰이더가 배 종류대로 늘인다)
+  M.box(0, [0, 0, .955], [.06, .06, .045], { part: P_FLAT, slot: S_RED });        // 술(상모)
+  M.box(0, [0, 0, 1.06], [.022, .022, .06], { part: P_FLAT, slot: S_GOLD });     // 창날
+  const nu = 12, nv = 4, q = (u, v) => M.v(0, [u, v, 0], [0, 1, 0], P_FLAG, 0);
+  for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv; q(u0, v0); q(u1, v0); q(u1, v1); q(u0, v0); q(u1, v1); q(u0, v1) }
+  for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) M.v(0, [u, v, 0], [0, 0, 1], P_BADGE, 0);
   return M.buffer();
 }
 // 일반 배의 열린 갑판(밝은 나무, 널판 줄은 셰이더)과 가로대
@@ -157,24 +163,33 @@ precision highp float;
 in float a_x;in vec3 a_p;in vec3 a_n;in float a_part;in float a_slot;
 in vec3 i_o;in vec3 i_F;in vec3 i_R;in vec3 i_U;in vec2 i_LW;in vec3 i_rgb;in float i_flag;in float i_seed;in float i_label;
 uniform mat4 u_matrix;uniform float u_unit,u_time,u_flagPass;uniform vec2 u_vp;
-uniform vec3 u_pole[2];uniform vec4 u_flag;   // 깃대 (t, 뿌리 z, 길이) 거북선 · 일반 배; 깃발 (폭 · 높이 × W, 한 글자 · 두 글자 하한 px 는 u_flagMin)
-uniform vec4 u_flagMin;
-out vec3 v_loc;out vec3 v_n;flat out vec3 v_rgb;flat out float v_part;flat out float v_slot;flat out vec2 v_LW;flat out float v_seed;flat out float v_label;
+uniform vec3 u_pole[2];uniform vec4 u_flag,u_fl,u_fl2,u_badge;   // 깃대 (t, 뿌리 z, 길이) 거북선 · 일반 배; 깃발 FLAG: (폭, 높이, 키움 상한, 천 높이 목표 px), (화염각, 주기, 끝 · 가운데 진폭), (처짐), 번호 표 크기 px
+out vec3 v_loc;out vec3 v_n;out float v_fold;flat out vec3 v_rgb;flat out float v_part;flat out float v_slot;flat out vec2 v_LW;flat out float v_seed;flat out float v_label;
 void main(){
   float L=i_LW.x,W=i_LW.y;vec3 p=a_p;vec3 nn=a_n;float x=a_x*L;
   bool moving=mod(floor(i_flag/4.),2.)>.5;
-  v_rgb=i_rgb;v_part=a_part;v_slot=a_slot;v_LW=i_LW;v_seed=i_seed;v_label=i_label;
+  v_rgb=i_rgb;v_part=a_part;v_slot=a_slot;v_LW=i_LW;v_seed=i_seed;v_label=i_label;v_fold=0.;
   if(u_flagPass>.5){   // 깃대 · 깃발: 배 종류의 깃대 자리에
     int kind=int(mod(floor(i_flag/64.),2.)+.5);vec3 po=u_pole[kind];
-    if(a_part==${P_FLAG}.){   // 깃발 면: 깃대 꼭대기에서 화면 옆으로(배 뒤쪽 편) 펼치고, 화면 크기 하한
-      vec3 A=i_o+(i_F*(po.x*L)+i_U*((po.y+po.z)*W))*u_unit;vec4 ca=u_matrix*vec4(A,1.),cb=u_matrix*vec4(A-i_F*W*u_unit,1.);
-      float dir=(cb.x/cb.w-ca.x/ca.w)>=0.?1.:-1.,chars=mod(floor(i_flag/8.),8.);
-      vec2 mn=chars<1.5?u_flagMin.xy:u_flagMin.zw,sz=max(vec2(u_flag.x,u_flag.y)*W,mn);
-      vec2 off=vec2(dir*p.x*sz.x,-p.y*sz.y)*2./u_vp;
-      gl_Position=vec4((ca.xy/ca.w+off)*ca.w,ca.z,ca.w);
-      v_loc=vec3(dir>0.?p.x:1.-p.x,p.y,0.);v_n=vec3(0.);return;
+    float sf=clamp(u_flag.w/(u_flag.y*W),1.,u_flag.z),top=po.y+po.z*sf;   // 작을 때 깃발 · 깃대를 함께 키운다(천 높이 목표 px, 상한)
+    vec3 A=i_o+(i_F*(po.x*L)+i_U*(top*W))*u_unit;
+    if(a_part==${P_BADGE}.){   // 번호 표: 천이 화면에서 납작할수록(옆으로 설수록) 또렷하게, 깃대 옆에 화면을 보고
+      vec4 ca=u_matrix*vec4(A,1.),cb=u_matrix*vec4(A-i_F*W*u_unit,1.);
+      float wide=length((cb.xy/cb.w-ca.xy/ca.w)*u_vp*.5)/max(W,1.),chars=mod(floor(i_flag/8.),8.);
+      vec2 sz=chars<1.5?u_badge.xy:u_badge.zw;
+      gl_Position=vec4((ca.xy/ca.w+vec2(.5*sz.x*(p.x*2.-1.)+sz.x*.15,-sz.y*(p.y+.15))*2./u_vp)*ca.w,ca.z,ca.w);
+      v_loc=vec3(p.x,p.y,1.-smoothstep(.42,.57,wide));v_n=vec3(0.);return;
     }
-    vec3 loc=vec3(po.x*L+p.x*W,p.y*W,(po.y+p.z*po.z)*W);
+    if(a_part==${P_FLAG}.){   // 천: 깃대 꼭대기에 한 변, 배 뒤쪽으로 날리고 끝으로 갈수록 크게 펄럭 · 처짐 (가운데 번호 쪽은 거의 가만히)
+      float fl=u_fl.x,X=p.x*(u_flag.x+fl),Y=p.y*(u_flag.y+2.*fl)-fl,ph=u_time*6.2832/u_fl.y+i_seed*20.,k=7.5,mv=moving?1.:.6;
+      float amp=(u_fl.z*smoothstep(.5,1.,p.x)+u_fl.w*p.x)*mv,off=sin(X*k-ph)*amp,dOff=cos(X*k-ph)*k*amp,sag=u_fl2.x*p.x*p.x;
+      vec3 loc=vec3(po.x*L-X*W*sf,off*W*sf,(top-.06-(Y+sag)*sf)*W);
+      gl_Position=u_matrix*vec4(i_o+(i_F*loc.x+i_R*loc.y+i_U*loc.z)*u_unit,1.);
+      vec2 tn=normalize(vec2(-dOff,-1.));v_n=i_F*tn.x+i_R*tn.y;
+      v_fold=cos(X*k-ph)*smoothstep(.15,.7,p.x);   // 천의 접힘: 물결 골은 어둡고 마루는 밝게(Codex: 판처럼 보이지 않게)
+      v_loc=vec3(X,Y,u_flag.y*W*sf);return;   // (z: 천 높이 px — 작으면 화염각을 줄인다)
+    }
+    vec3 loc=vec3(po.x*L+p.x*W*sf,p.y*W*sf,(po.y+p.z*po.z*sf)*W);
     gl_Position=u_matrix*vec4(i_o+(i_F*loc.x+i_R*loc.y+i_U*loc.z)*u_unit,1.);
     v_loc=vec3(po.x,p.y,po.y+p.z*po.z);v_n=i_F*nn.x+i_R*nn.y+i_U*nn.z;return;
   }
@@ -190,19 +205,37 @@ void main(){
 }`;
 const FS = `#version 300 es
 precision highp float;
-in vec3 v_loc;in vec3 v_n;flat in vec3 v_rgb;flat in float v_part;flat in float v_slot;flat in vec2 v_LW;flat in float v_seed;flat in float v_label;
-uniform float u_alpha,u_amb,u_dif,u_dark,u_rows;uniform vec3 u_pal[${PAL}];uniform vec3 u_light;uniform sampler2D u_atlas;
+in vec3 v_loc;in vec3 v_n;in float v_fold;flat in vec3 v_rgb;flat in float v_part;flat in float v_slot;flat in vec2 v_LW;flat in float v_seed;flat in float v_label;
+uniform float u_alpha,u_amb,u_dif,u_dark,u_rows;uniform vec3 u_pal[${PAL}];uniform vec3 u_light;uniform sampler2D u_atlas;uniform vec4 u_fl,u_fn;
 out vec4 o;
 float ink(float d){float a=max(.02,fwidth(d)*.7);return 1.-smoothstep(-a,a,d);}
 void main(){
   int part=int(v_part+.5);float L=v_LW.x,W=v_LW.y,ax=v_loc.x*L/W;   // ax: 고물에서 앞으로, W 단위
   vec3 col=u_pal[int(v_slot+.5)];float glow=0.;
   float detail=smoothstep(7.,16.,W);
-  if(part==${P_FLAG}){   // 깃발: 노선 색 바탕에 흰 글자(어두운 테두리), 가장자리 어두운 선 — 빛을 받지 않는다
-    vec4 t=texture(u_atlas,vec2(v_loc.x,(v_label+v_loc.y)/u_rows));
-    vec3 c=mix(v_rgb,t.rgb,t.a);float e=min(min(v_loc.x,1.-v_loc.x),min(v_loc.y,1.-v_loc.y));
-    c=mix(c,u_pal[${S_INK}]*.9+v_rgb*.1,1.-smoothstep(0.,max(fwidth(e)*1.5,.02),e));
-    o=vec4(c*(u_dark>.5?.85:1.),1.)*u_alpha;return;
+  if(part==${P_BADGE}){   // 번호 표(천이 옆으로 설 때만): 노선 색 바탕 흰 번호, 어두운 테
+    if(v_loc.z<.01)discard;
+    vec4 t=texture(u_atlas,vec2(v_loc.x,(v_label+v_loc.y)/u_rows));vec3 c=mix(v_rgb,t.rgb,t.a);float e=min(min(v_loc.x,1.-v_loc.x),min(v_loc.y,1.-v_loc.y));
+    c=mix(c,u_pal[${S_INK}],1.-smoothstep(0.,max(fwidth(e)*1.5,.03),e));
+    o=vec4(c,1.)*u_alpha*v_loc.z;return;
+  }
+  if(part==${P_FLAG}){   // 천: 노선 색 바탕, 가운데 흰 번호, 위 · 아래 · 끝 세 변에 불꽃 모양 테(화염각: 짙은 적색, 붉은 노선이면 금색)
+    float fw=u_fl.x,X=v_loc.x,Y=v_loc.y,FW=${FLAG.w.toFixed(3)},FH=${FLAG.h.toFixed(3)};bool small=v_loc.z<24.;
+    float n=small?u_fn.z:u_fn.x,ne=small?u_fn.w:u_fn.y;
+    bool field=X<=FW&&Y>=0.&&Y<=FH;
+    if(!field){   // 화염각: 혀마다 가운데가 길고 끝이 뾰족
+      float d,h;
+      if(X>FW&&Y>=0.&&Y<=FH){float t=fract(Y/FH*ne);h=fw*(1.-abs(2.*t-1.));d=X-FW;}   // (Codex 2차: 가늘고 고른 세모 혀)
+      else if(X<=FW){float t=fract(X/FW*n);h=fw*(1.-abs(2.*t-1.));d=Y<0.?-Y:Y-FH;}
+      else discard;
+      if(d>h)discard;
+      vec3 fc=(v_rgb.r>.55&&v_rgb.g<.45)?u_pal[${S_GOLD}]:u_pal[${S_RED}]*.78;
+      float nl=length(v_n),dd=nl>1e-6?abs(dot(v_n/nl,u_light)):0.;o=vec4(fc*(u_amb+u_dif*dd)*(1.+.14*v_fold),1.)*u_alpha;return;
+    }
+    vec2 uv=vec2(X/FW,Y/FH);if(gl_FrontFacing)uv.x=1.-uv.x;   // 어느 면에서 봐도 번호가 바로 읽히게(천은 깃대에서 배 뒤쪽으로 날린다: 앞면에서는 좌우를 뒤집어 읽는다)
+    vec4 t=texture(u_atlas,vec2(uv.x,(v_label+uv.y)/u_rows));
+    vec3 c=mix(v_rgb,t.rgb,t.a);float nl=length(v_n),dd=nl>1e-6?abs(dot(v_n/nl,u_light)):0.;
+    o=vec4(c*(u_amb+.08+u_dif*dd)*(1.+.14*v_fold),1.)*u_alpha;return;
   }
   if(part==${P_HULL}){   // 몸통: 널판 줄, 뱃전 위 짙은 테, 그 밑 노선 색 띠, 그 밑 총통 구멍(거북선만: 일반 배는 slot 이 어두운 나무)
     float z=v_loc.z,g=.3+.1*pow(abs(2.*v_loc.x-1.),2.);
@@ -248,7 +281,7 @@ export class TurtleShips {
     this.p = compile(gl, VS, FS);
     const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_label'];
     this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', ...inst].map(n => [n, gl.getAttribLocation(this.p, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_dark', 'u_pal', 'u_light', 'u_flagPass', 'u_vp', 'u_pole', 'u_flag', 'u_flagMin', 'u_rows', 'u_atlas'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_dark', 'u_pal', 'u_light', 'u_flagPass', 'u_vp', 'u_pole', 'u_flag', 'u_fl', 'u_fl2', 'u_fn', 'u_badge', 'u_rows', 'u_atlas'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.meshes = new Map(); const A = this.attr, ptrs = [[A.a_x, 1, 0], [A.a_p, 3, 4], [A.a_n, 3, 16], [A.a_part, 1, 28], [A.a_slot, 1, 32]];
     const add = (key, data) => {
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -269,8 +302,8 @@ export class TurtleShips {
     const c = this.canvas || (this.canvas = document.createElement('canvas')); c.width = ATLAS.w; c.height = ATLAS.h * ATLAS.rows;
     const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
     for (const [line, r] of this.rows) {
-      const t = lineLabel(line), px = t.length > 1 ? 40 : 48; g.font = `900 ${px}px Jua, "Noto Sans KR", sans-serif`;
-      const y = r * ATLAS.h + ATLAS.h * .54; g.lineWidth = 7; g.strokeStyle = 'rgba(20,16,12,.9)'; g.strokeText(t, ATLAS.w / 2, y); g.fillStyle = '#FFFFFF'; g.fillText(t, ATLAS.w / 2, y);
+      const t = lineLabel(line), px = t.length > 1 ? 38 : 48; g.font = `900 ${px}px Jua, "Noto Sans KR", sans-serif`;   // 번호는 천 높이의 70 % 남짓, 두 글자는 60 % (작은 화면에서 읽히게)
+      const y = r * ATLAS.h + ATLAS.h * .54; g.lineWidth = 4; g.strokeStyle = 'rgba(20,16,12,.75)'; g.strokeText(t, ATLAS.w / 2, y); g.fillStyle = '#FFFFFF'; g.fillText(t, ATLAS.w / 2, y);
     }
     gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
@@ -299,16 +332,16 @@ export class TurtleShips {
     const T = this.lists, total = T.turtle.n + T.boat.n;
     if (!total || !this.p) { TurtleShips.last = { n: 0 }; return }
     const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r] * ox + M[4 + r] * oy + M[12 + r];
-    const at = []; for (const l of [T.turtle, T.boat]) for (let k = 0; k < Math.min(l.n, 40); k++) at.push([l.inst[k * INST] + ox, l.inst[k * INST + 1] + oy, l.inst[k * INST + 2], l.inst[k * INST + 17] >= 4 ? 1 : 0]);   // 배 자리(메르카토르) · 가는 중: 캡처가 배를 찾아 간다
+    const at = []; for (const l of [T.turtle, T.boat]) for (let k = 0; k < Math.min(l.n, 40); k++) at.push([l.inst[k * INST] + ox, l.inst[k * INST + 1] + oy, l.inst[k * INST + 2], l.inst[k * INST + 17] >= 4 ? 1 : 0, Math.atan2(l.inst[k * INST + 4], l.inst[k * INST + 3])]);   // 배 자리(메르카토르) · 가는 중 · 앞 방향: 캡처가 배를 찾아 간다
     const W0 = (T.turtle.n ? T.turtle : T.boat).inst[13];
-    TurtleShips.last = { n: total, turtles: T.turtle.n, boats: T.boat.n, flags: T.flag.n, lod: W0 < LOD_MID ? 0 : W0 < LOD_HI ? 1 : 2, W: W0, L: (T.turtle.n ? T.turtle : T.boat).inst[12], zoom: o.zoom, at };
+    TurtleShips.last = { atlas: this.canvas || null, n: total, turtles: T.turtle.n, boats: T.boat.n, flags: T.flag.n, lod: W0 < LOD_MID ? 0 : W0 < LOD_HI ? 1 : 2, W: W0, L: (T.turtle.n ? T.turtle : T.boat).inst[12], zoom: o.zoom, at };
     this.atlas(gl);
     const U = this.uni; gl.useProgram(this.p);
     gl.uniformMatrix4fv(U.u_matrix, false, MT); gl.uniform1f(U.u_unit, o.unit); gl.uniform1f(U.u_time, o.time ?? performance.now() / 1000);
     gl.uniform1f(U.u_amb, o.dark ? .5 : .62); gl.uniform1f(U.u_dif, o.dark ? .22 : .42); gl.uniform1f(U.u_dark, o.dark ? 1 : 0); gl.uniform3fv(U.u_pal, this.pal); gl.uniform3fv(U.u_light, SUN);
     gl.uniform2f(U.u_vp, gl.canvas.clientWidth || gl.drawingBufferWidth, gl.canvas.clientHeight || gl.drawingBufferHeight);
     gl.uniform3fv(U.u_pole, [POLE.turtle.t, POLE.turtle.z, POLE.turtle.h, POLE.boat.t, POLE.boat.z, POLE.boat.h]);
-    gl.uniform4f(U.u_flag, FLAG.w, FLAG.h, 0, 0); gl.uniform4f(U.u_flagMin, ...FLAG.min1, ...FLAG.min2); gl.uniform1f(U.u_rows, ATLAS.rows);
+    gl.uniform4f(U.u_flag, FLAG.w, FLAG.h, FLAG.maxScale, FLAG.minPx); gl.uniform4f(U.u_fl, FLAG.flame, FLAG.period, ...FLAG.amp); gl.uniform4f(U.u_fl2, FLAG.droop, ...FLAG.n, 0); gl.uniform4f(U.u_fn, ...FLAG.n, ...FLAG.nSmall); gl.uniform4f(U.u_badge, ...FLAG.badge); gl.uniform1f(U.u_rows, ATLAS.rows);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.uniform1i(U.u_atlas, 0);
     gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.DEPTH_TEST);
     // 한 버퍼에 세 목록을 이어 올리고, 목록마다 그 자리부터 그린다
