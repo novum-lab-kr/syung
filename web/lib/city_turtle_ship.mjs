@@ -4,7 +4,7 @@
 // 배 한 척은 단위 공간의 고정 메시다(a_x: 배 길이 L 의 몇 분의 몇, 0 고물 · 1 이물, a_p: 몸 폭 W 단위의 앞뒤 덧붙임 · 옆 · 위,
 // 물높이 z = 0). 화면의 배마다 인스턴스 하나: TrainLayer 가 주는 선로 위 틀(밑 가운데 점, F 앞, R 옆, U 위), L · W(px),
 // 노선 색, 움직이는지. 거북선: 판옥선 몸통(널판 · 총통 구멍 · 노선 색 뱃전 띠), 육각 철갑 · 쇠못과 십자 길을 그린 둥근
-// 등딱지(세로 길은 노선 색), 이물의 큰 용머리(벌린 입 안에 포구 — 이순신 장계: "이물에 용머리를 달고 그 아가리로 대포를
+// 등딱지(십자 길은 밝게), 이물의 큰 용머리(벌린 입 안에 포구 — 이순신 장계: "이물에 용머리를 달고 그 아가리로 대포를
 // 쏘았다")와 귀면, 양옆의 노. 일반 배: 밝은 나무 열린 갑판(널판 줄 · 가로대), 짙은 뱃전과 노선 색 띠, 노. 깃발: 깃대는 배에
 // 서고, 천은 깃대에 매달려 배 뒤쪽으로 펄럭이며 작을 때 함께 커진다(줌 17에서도 번호가 읽히게, Codex 2026-10-10) — 노선 색 바탕에 흰 글자.
 // 깊이: 건물 벽 깊이와 맞대어 가려지고(가려진 몫은 occlude 만큼 비친다), 제 깊이를 써서 등딱지가 노 위에 선다.
@@ -80,7 +80,7 @@ function hull(M, rings, face = true) {
       M.quad([a, [0, -hullHalf(a), gunwale(a)]], [b, [0, -hullHalf(b), gunwale(b)]], [b, [0, hullHalf(b), gunwale(b)]], [a, [0, hullHalf(a), gunwale(a)]], { ...deck, out: [0, 0, -5] }) }
   }
 }
-// 등딱지: 뱃전 안쪽에서 솟는 아치를 앞뒤로 이어 붙인다. 맨 위 띠는 노선 색 용마루
+// 등딱지: 뱃전 안쪽에서 솟는 아치를 앞뒤로 이어 붙인다. 맨 위 띠는 용마루(세로 길)
 function shell(M, rings, arcs) {
   const o = { part: P_SHELL, slot: S_SHELL }, ridge = { part: P_LINE, slot: S_SHELL_EDGE };
   const at = (t, k) => { const h = hullHalf(t) * .97, g = gunwale(t), th = Math.PI * k / arcs, r = shellRise(t); return [t, [0, -Math.cos(th) * h, g + Math.pow(Math.sin(th), .7) * r]] };
@@ -247,14 +247,14 @@ void main(){
     col=mix(col,v_rgb,ink(abs(z-(g-.065))-.034));
     if(int(v_slot+.5)==${S_WOOD}){float cell=fract(ax/.36)-.5,port=ink(max(abs(cell)*.36-.045,abs(z-.17)-.035))*step(.12,v_loc.x)*step(v_loc.x,.88);
       col=mix(col,mix(u_pal[${S_INK}],u_pal[${S_LAMP}],u_dark),port*detail);glow=port*detail*u_dark;}
-  }else if(part==${P_SHELL}){   // 등딱지: 육각 철갑, 이음마다 쇠못(가까이서), 가운데 가로 길(밝게; 세로 길은 노선 색 용마루)
+  }else if(part==${P_SHELL}){   // 등딱지: 육각 철갑, 이음마다 쇠못(가까이서), 가운데 가로 길(밝게; 세로 길은 용마루)
     vec2 q=vec2(ax,v_loc.y*1.15+v_loc.z*.6)/.16;
     vec2 r=vec2(1.,1.732),h=r*.5,a=mod(q,r)-h,b=mod(q-h,r)-h,gv=dot(a,a)<dot(b,b)?a:b;
     float e=max(abs(gv.x)*.866+abs(gv.y)*.5,abs(gv.y));   // 육각 칸 안에서 가장자리까지
     col=mix(col,u_pal[${S_SHELL_EDGE}],ink(.47-e)*.85*detail);
     col=mix(col,u_pal[${S_SPIKE}],ink(length(gv)-.13)*detail*smoothstep(12.,22.,W));
     col=mix(col,u_pal[${S_PATH}],ink(abs(ax-L/W*.5)-.045));
-  }else if(part==${P_LINE})col=v_rgb;
+  }else if(part==${P_LINE})col=u_pal[${S_PATH}];   // 용마루(세로 길): 가로 길과 같은 밝은 길 — 노선은 깃발이 알린다(2026-10-10 행님)
   else if(part==${P_OPEN}){col=mix(col,u_pal[${S_WOOD_DARK}],ink(abs(fract(v_loc.y/.21+.5)-.5)*.21-.007)*.6*detail);}   // 일반 배 갑판: 앞뒤로 가는 널판 줄
   else if(part==${P_BOW}){   // 이물판의 귀면: 붉은 얼굴에 흰 눈 · 이빨
     vec2 f=vec2(v_loc.y,v_loc.z-.17);
