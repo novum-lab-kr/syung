@@ -12,7 +12,7 @@
 //   const night=new NightLayer(); night.init(gl); night.setTrackBulbs(coasterTrack.bulbs());
 //   night.render(gl,matrix,{now,zoom,phone,reducedMotion,bounds,pixelRatio}); night.animating(); night.dispose(gl);
 
-import { SEOUL_COASTER_STYLE as STYLE, metresPerPixel } from './coaster_style_seoul.mjs';
+import { SEOUL_COASTER_STYLE as STYLE, metresPerPixel } from '../../lib/coaster_style_seoul.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;

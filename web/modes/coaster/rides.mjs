@@ -11,9 +11,9 @@
 //   rides.init(gl,maplibregl); rides.render(gl,matrix,opts); rides.sites(); rides.dispose(gl);
 // opts.bearing is no longer read: a wheel keeps the yaw its hash gave it at every zoom.
 
-import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './park_night.mjs';
-import { SEOUL_COASTER_STYLE as STYLE, ridePalette } from './coaster_style_seoul.mjs';
-import { selectRideSites } from '../modes/coaster/ride_sites.mjs';
+import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './night.mjs';
+import { SEOUL_COASTER_STYLE as STYLE, ridePalette } from '../../lib/coaster_style_seoul.mjs';
+import { selectRideSites } from './ride_sites.mjs';
 
 const EARTH = 40075016.685578488;
 const mercX = lon => lon / 360 + .5;

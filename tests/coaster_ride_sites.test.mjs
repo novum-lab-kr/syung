@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RideLayer } from '../web/lib/park_rides.mjs';
+import { RideLayer } from '../web/modes/coaster/rides.mjs';
 import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites } from '../web/modes/coaster/ride_sites.mjs';
 import { CoasterRidePlacement } from '../web/modes/coaster/ride_placement.mjs';
 
