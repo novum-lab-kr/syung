@@ -177,14 +177,16 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
       // Reuse the staging array and matrix: no JS vertex arrays or per-vertex objects each frame.
       this.data=new Float32Array(131072);this.matrix=new Float32Array(16);this.rgb=new Map();
-      this.rideTrack=this.c88ride=this.c88=this.ships=null;   // 모드 코드가 오면 kit() 가 만든다
+      this.rideTrack=this.c88ride=this.c88=this.ships=null;   // 모드 코드가 오면 kit(look) 이 지금 모양에 쓰는 것만 만든다
     }
-    // 모드 코드가 온 뒤 처음 그릴 때: 롤코 1인칭 레일 · 침목, 내가 탄 칸(맨 마지막에 깊이를 비우고 따로 — drawTrains 끝), 88열차(서울 팩의
-    // train.coaster88), 조선 모드의 배 선단(열차 한 대 = 배 몇 척, 공중 수로 위)
-    kit(){
-      if(this.ships||!live.kitReady||!this.gl)return;
-      this.rideTrack=new live.RideTrack();this.c88ride=new live.CoasterTrain();this.c88=new live.CoasterTrain();this.ships=new live.TurtleShips(JOSEON_STYLE.train?.turtleShip);
-      this.c88.init(this.gl);this.c88ride.init(this.gl);this.ships.init(this.gl);
+    // 모드 코드가 온 뒤, 지금 열차 모양(trains.look)에 쓰는 것만: coaster88 — 롤코 1인칭 레일 · 침목, 내가 탄 칸(맨 마지막에 깊이를 비우고 따로 —
+    // drawTrains 끝), 88열차(서울 팩의 train.coaster88) / fleet — 조선 모드의 배 선단(열차 한 대 = 배 몇 척, 공중 수로 위). 안 쓰는 모양의 GL 은 치운다
+    kit(look){
+      if(!live.kitReady||!this.gl)return;const gl=this.gl;
+      if(look==='coaster88'&&!this.c88){this.rideTrack=new live.RideTrack();this.c88ride=new live.CoasterTrain();this.c88=new live.CoasterTrain();this.c88.init(gl);this.c88ride.init(gl)}
+      if(look!=='coaster88'&&this.c88){this.c88.dispose(gl);this.c88ride.dispose(gl);this.rideTrack.dispose(gl);this.c88=this.c88ride=this.rideTrack=null;live.CoasterTrain.last=null}
+      if(look==='fleet'&&!this.ships){this.ships=new live.TurtleShips(JOSEON_STYLE.train?.turtleShip);this.ships.init(gl)}
+      if(look!=='fleet'&&this.ships){this.ships.dispose(gl);this.ships=null;live.TurtleShips.last=null}
     }
     onAdd(map,gl){
       this.map=map;
@@ -195,7 +197,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       this.b=gl.createBuffer();
       this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
       this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
-      this.gl=gl;this.kit();   // coaster-train: (모드 코드가 왔으면)
+      this.gl=gl;this.kit(live.settings.trains.look);   // coaster-train: (모드 코드가 왔으면)
     }
     vertex(x,y,z,u,v,face){
       if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
@@ -247,6 +249,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       this.corner(x,-w,.65,-w,.65,face);this.corner(x,w,z,w,z,face);this.corner(x,-w,z,-w,z,face);
     }
     render(gl,options){
+      this.kit(live.settings.trains.look);   // 안 쓰는 모양의 GL 은 그릴 열차가 없어도 치운다(모드를 나간 뒤)
       if(!live.myLocation&&(!live.trainsEnabled||!planner.plans.length))return;
       const drawTrainsToo=live.trainsEnabled&&!live.subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
       // 지금 모드 설정: 열차 모양(look) · 굵기(body), 선로 종류(K — 고가 · 롤코 길)
@@ -257,7 +260,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
       // Keep world coordinates in double precision until subtracting the view-centre origin.
       const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-      this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.kit();if(this.ships){this.c88.begin(ox,oy);this.c88ride.begin(ox,oy);this.ships.begin(ox,oy)}   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
+      this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88?.begin(ox,oy);this.c88ride?.begin(ox,oy);this.ships?.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
       const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
       let animating=false,waiting=false,rippling=false;
       // my-location pulse: the ripple, in 슝 yellow, under the trains

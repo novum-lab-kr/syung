@@ -45,15 +45,17 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(park&&live.kitReady&&coasterGeo.bld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
       if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
         rides=new live.RideLayer(coasterGeo.bld.towers,{deferPlacement:true});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
-        ridePlacement=new live.CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte),{   // 롯데월드타워 자리는 놀이기구 대신 전용 모델(cityLandmarks)
+        if(ridePlacement)rides.setSites(ridePlacement.sites);   // 다시 들어왔을 때: 자리 계산(CPU)은 남겨 두었다
+        else ridePlacement=new live.CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte),{   // 롯데월드타워 자리는 놀이기구 대신 전용 모델(cityLandmarks)
           map,minH:live.cityBuildings.P.minH,missingH:live.cityBuildings.P.missingH,maxH:RIDE_H,
           getTracks:bounds=>live.sampleRideTracks(coasterTrack,bounds,{geometry:e=>geom(e.line,e.lo,e.hi),offset:e=>edgeOffset(e.line,e.lo,e.hi),bodyPx:coasterBodyPx(14),lanePx:cityViaduct.train(14,coasterBodyPx(14)).lanePx,heart:CORK_HEART}),
-          onChange:sites=>{rides.setSites(sites);map.triggerRepaint()}});window.__subwayWebGL.ridePlacement=ridePlacement;
+          onChange:sites=>{rides?.setSites(sites);map.triggerRepaint()}});window.__subwayWebGL.ridePlacement=ridePlacement;   // (공원을 나간 뒤 늦게 온 자리는 다음에 들어올 때 받는다)
       }
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
       if(coasterTrack.edges)ridePlacement.update([A.x,B.y,B.x,A.y]);   // coaster: tile loading is asynchronous; pending sites stay hidden
       rides.render(gl,pd.mainMatrix,{now:performance.now(),dark:effectiveTheme()==='dark',night:effectiveTheme()==='dark',pixelRatio:c.width/Math.max(1,m.clientWidth),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y]});
       if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
+    else if(!park&&rides){rides.dispose(gl);rides=null;if(window.__subwayWebGL)delete window.__subwayWebGL.rides}   // 공원을 나가면 놀이기구 GL 을 치운다(자리 계산 ridePlacement 은 남긴다)
     if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
       if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());

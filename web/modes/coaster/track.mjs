@@ -110,8 +110,10 @@ export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShad
     ptrs(gl){const S=88,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off*4)};
       ptr('a_p',4,0);ptr('a_r',2,4);ptr('a_o',4,6);ptr('a_z',2,10);ptr('a_f',3,12);ptr('a_u',3,15);ptr('a_c',4,18)}
     // city-life: the little people on the streets are city_life.mjs's now, in both city modes (the same figures in the same places, only toned by the mode); the walkers that strolled here (streets/snap/spawn/place/people) went with them.
+    // 지은 선로 버퍼만 치운다(길 · 전구 자리 같은 CPU 자료와 셰이더는 그대로)
+    free(gl){for(const a of this.cache.values())if(a.b)gl.deleteBuffer(a.b);this.cache.clear();this.bytes=0}
     render(gl,M,occlude){
-      const z=map.getZoom();if(!isCoaster()||z<12.5)return;if(!this.p)this.init(gl);
+      const z=map.getZoom();if(!isCoaster()){if(this.cache?.size)this.free(gl);return}if(z<12.5)return;if(!this.p)this.init(gl);   // 롤코를 나가면 지은 선로 버퍼(GPU, 폰 96 MB 까지)를 치운다 — 다시 오면 보이는 곳부터 다시 짓는다
       if(this.stale){for(const a of this.cache.values())if(a.b)gl.deleteBuffer(a.b);this.cache.clear();this.bytes=0;this.list=null;this.cols=null;this.bulbPts=null;this.stale=false}   // 고가 높이가 바뀌면(역 승강장이 들어오면) 다시 짓는다
       const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),w=hi.x-lo.x;
       const inside=(c,pad)=>{const [x0,y0,x1,y1]=c.box;return !(x1<lo.x-pad||x0>hi.x+pad||y0>lo.y+pad||y1<hi.y-pad)};
