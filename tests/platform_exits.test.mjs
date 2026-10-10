@@ -15,6 +15,7 @@ test('전 역 출구의 실제 막대 접점은 막대 위에 있고 렌더러�
  let count=0;
  for(const [key,rect] of r.rects){const id=key.slice(key.lastIndexOf(':')+1),coords=rect.coords;for(const p of exits[id]||[]){const foot=closestPlatformPoint(xy(p),coords.map(xy));assert.ok(foot);assert.ok(distance([foot.x,foot.y],coords)<.1,key);count++}}
  assert.ok(count>1000);
- assert.ok(r.source.includes('if(g.points){const foot=closestPlatformPoint(e,g.points)'));
- assert.ok(r.source.includes('pass.push([(foot.x+e.x)/2,(foot.y+e.y)/2'));
+ const layer=readFileSync(new URL('../web/map/platform.mjs',import.meta.url),'utf8');   // 승강장 · 출구 그리기
+ assert.ok(layer.includes('if(g.points){const foot=closestPlatformPoint(e,g.points)'));
+ assert.ok(layer.includes('pass.push([(foot.x+e.x)/2,(foot.y+e.y)/2'));
 });

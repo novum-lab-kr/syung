@@ -1,22 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
 import { closestPlatformPoint } from '../web/lib/platform_route.mjs';
+import { StationNameLayer } from '../web/map/platform.mjs';
 
 // 출구가 승강장 한쪽 끝 밖에 몰린 역(stopReach): 그 끝을 늘린 통로에 출구가 붙어, 더 가까운 다른 노선 막대 끝으로 가지 않아요.
-const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const EXIT = [.4999975, .5000008];
 
 function renderExits(reach) {
-  const start = source.indexOf('class StationNameLayer{');
-  const end = source.indexOf('// Exit pillars (zoom 16+)', start);
   const gl = new Proxy({}, { get(_, key) { return /^[A-Z_0-9]+$/.test(key) ? key : () => {}; } });
   const exitCol = new Map();
-  const context = vm.createContext({ Map, Float32Array, Math, coaster: false, selected: 'all', stationAlpha: 1,
+  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], isCoaster: () => false, isSimcity: () => false,
     stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
-    exits: { 1: [[...EXIT, '2']] }, exitCol, colors: { A: '#ff0000', B: '#0000ff' }, hexRGB3: c => c === '#ff0000' ? [1, 0, 0] : [0, 0, 1],
+    getExits: () => ({ 1: [[...EXIT, '2']] }), exitCol, colors: { A: '#ff0000', B: '#0000ff' }, hexRGB3: c => c === '#ff0000' ? [1, 0, 0] : [0, 0, 1],
     closestPlatformPoint, platformStroke: () => ({ vertices: [], length: 0 }),
     stationRects: new Map([
       // A: 동서 막대(160 m 남짓), 통로 끝은 서쪽으로 늘림 · B: 북서쪽 다른 노선 막대
@@ -28,8 +25,6 @@ function renderExits(reach) {
       project: p => ({ x: p[0], y: p[1] }) },
     maplibregl: { MercatorCoordinate: { fromLngLat: p => ({ x: p[0], y: p[1] }) } },
     matchMedia: () => ({ matches: false }), document: { documentElement: { dataset: { theme: 'light' } } } });
-  vm.runInContext(source.slice(start, end) + ';globalThis.Layer=StationNameLayer;', context);
-  const layer = new context.Layer();
   layer.buildAtlas = () => {};
   layer.attr = Object.fromEntries(['a_px', 'a_local', 'a_size', 'a_uv', 'a_color', 'a_tw'].map(x => [x, x]));
   layer.uni = {};

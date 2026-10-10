@@ -27,7 +27,7 @@ test('곡선과 전 역 승강장의 모든 이음매는 같은 정점을 공유
 });
 
 test('기본 지도는 리본 하나를 그리고 다른 모드는 기존 막대를 그려요',()=>{
- const src=fs.readFileSync('web/maplibre_runtime.mjs','utf8');
+ const src=fs.readFileSync('web/map/platform.mjs','utf8');
  assert.ok(src.includes('const stroke=platformStroke(g.points,unit,g.h)'));
  assert.ok(src.includes('if(v_tw.x<-3.5)'));
  assert.ok(!src.includes('Math.max(d/unit,g.h)'));

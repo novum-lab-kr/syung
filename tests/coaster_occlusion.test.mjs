@@ -3,13 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { signCollisionLayout } from '../web/lib/station_signs.mjs';
+import { StationNameLayer } from '../web/map/platform.mjs';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function platformRenderer() {
-  const start = source.indexOf('class StationNameLayer{');
-  const end = source.indexOf('// Exit pillars (zoom 16+)', start);
   const draws = [], state = { depth: true, func: 'LESS', mask: true };
   const gl = new Proxy({}, { get(_, key) {
     if (key === 'enable' || key === 'disable') return cap => { if (cap === 'DEPTH_TEST') state.depth = key === 'enable'; };
@@ -18,22 +17,21 @@ function platformRenderer() {
     if (key === 'drawArrays') return (_mode, _first, vertices) => draws.push({ ...state, vertices });
     return /^[A-Z_0-9]+$/.test(key) ? key : () => {};
   } });
-  const context = vm.createContext({ Map, Float32Array, Math, coaster: true, selected: 'all', stationAlpha: 1,
+  const mode = { coaster: true };
+  const layer = new StationNameLayer({ getSelected: () => 'all', getStationAlpha: () => 1, getLabels: () => [], isCoaster: () => mode.coaster, isSimcity: () => false,
     stationWidthPx: () => 12, platformPx: () => 12, PLATFORM_SCALE: 1, EXIT_MINZOOM: 16, EXIT_MAX_M: 600, EXIT_PASSAGES: true,
-    exits: {}, exitCol: new Map(), colors: { '2호선': '#00ff00' }, hexRGB3: () => [0, 1, 0],
+    getExits: () => ({}), exitCol: new Map(), colors: { '2호선': '#00ff00' }, hexRGB3: () => [0, 1, 0],
     stationRects: new Map([['2호선:1', { coords: [[.5, .5], [.5001, .5]], offset: 0 }]]),
     map: { getZoom: () => 17, getCenter: () => [.5, .5],
       getBounds: () => ({ getSouthWest: () => [.49, .51], getNorthEast: () => [.51, .49] }),
       project: p => ({ x: p[0], y: p[1] }) },
     maplibregl: { MercatorCoordinate: { fromLngLat: p => ({ x: p[0], y: p[1] }) } },
     matchMedia: () => ({ matches: false }), document: { documentElement: { dataset: { theme: 'light' } } } });
-  vm.runInContext(source.slice(start, end) + ';globalThis.Layer=StationNameLayer;', context);
-  const layer = new context.Layer();
   layer.buildAtlas = () => {};
   layer.attr = Object.fromEntries(['a_px', 'a_local', 'a_size', 'a_uv', 'a_color', 'a_tw'].map(x => [x, x]));
   layer.uni = {};
   return { layer, draws, render(coaster) {
-    context.coaster = coaster;
+    mode.coaster = coaster;
     layer.render(gl, { defaultProjectionData: { mainMatrix: matrix } });
   } };
 }
