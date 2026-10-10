@@ -22,19 +22,20 @@ export const JOSEON_CITY_STYLE = merge(SEOUL, {
       water: '#73969B', sidewalk: '#D5C9AF', ballast: '#ADA38C',
     },
     dark: {
-      base: '#32352F', residential: '#33352E', commercial: '#35372F', retail: '#373830', industrial: '#30332D',
-      civic: '#3A3B33', hospital: '#35372F', park: '#2A3A26', grass: '#2F3E28', forest: '#21311F',
-      water: '#1A3540', sidewalk: '#3C3E35', ballast: '#3A3B33',
+      // (Codex 2026-10-10: 밤에 땅과 길이 한 덩어리로 어둡다 — 달빛 받은 흙으로 조금 밝고 따뜻하게, 큰길은 더 밝게)
+      base: '#3B3931', residential: '#3C3A31', commercial: '#3E3B32', retail: '#3F3C33', industrial: '#393730',
+      civic: '#423F35', hospital: '#3E3B32', park: '#2A3A26', grass: '#2F3E28', forest: '#21311F',
+      water: '#1A3540', sidewalk: '#48443A', ballast: '#3F3C33',
     },
   },
   roads: {
     classes: {
-      motorway: { colors: { light: '#DFD2B6', dark: '#41443A' } },
-      primary: { colors: { light: '#DFD2B6', dark: '#41443A' } },
-      secondary: { colors: { light: '#D8C8AB', dark: '#3E4137' } },
-      tertiary: { colors: { light: '#D1C2A5', dark: '#3B3E35' } },
-      minor: { colors: { light: '#CBB999', dark: '#383B33' } },
-      service: { colors: { light: '#C7B597', dark: '#363931' } },
+      motorway: { colors: { light: '#DFD2B6', dark: '#5C5647' } },
+      primary: { colors: { light: '#DFD2B6', dark: '#5C5647' } },
+      secondary: { colors: { light: '#D8C8AB', dark: '#554F41' } },
+      tertiary: { colors: { light: '#D1C2A5', dark: '#4F4A3D' } },
+      minor: { colors: { light: '#CBB999', dark: '#504A3E' } },
+      service: { colors: { light: '#C7B597', dark: '#454137' } },
     },
     lane: { opacity: { light: 0, dark: 0 } },                                     // 흙길에는 차선이 없다
     centerLine: { opacity: { light: 0, dark: 0 } },
