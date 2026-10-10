@@ -480,7 +480,7 @@ export const SEOUL_CITY_STYLE = {
     "nightEmission": 0.95
   },
   // 2026-10-04 심시티 고가 (city-life): the viaduct every line rides in the simcity mode — its metres, px floors, concrete and
-  // platform colours, night glow and zooms. Data only; web/lib/city_viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
+  // platform colours, night glow and zooms. Data only; web/city/viaduct.mjs reads it. Real bridge stretches: city_viaduct_flags.mjs.
   "xray": {   // city-build: 심시티 — buildings standing between the camera and a station platform or a running train turn to glass there (web/city/buildings.mjs xray)
     "alpha": 0.3,                                  // the building's opacity where it hides a target
     "edgeAlpha": 0.75, "edgePx": 1.5,              // its outline (wall corners, the roof line, the parapet) stays nearly solid, so the building keeps its shape

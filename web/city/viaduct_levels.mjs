@@ -5,7 +5,7 @@
 // never changes between frames or sessions. Between stations the deck ramps gently (levels.grade) from one level to
 // the other, next to the higher station's platform; single stations between two raised transfer stations close by
 // keep the raised level rather than dipping and climbing again. All of it in pure functions (the tests use them).
-import SEOUL from './city_style_seoul.mjs';
+import SEOUL from '../lib/city_style_seoul.mjs';
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
 export const smooth01 = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t) };

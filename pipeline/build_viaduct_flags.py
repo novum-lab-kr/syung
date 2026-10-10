@@ -4,7 +4,7 @@
 In the simcity mode every line is drawn on a viaduct; the stretches that really are elevated (OSM
 bridge=yes/viaduct on the line's railway ways) get a slightly darker concrete. This marks them.
 
-Output: web/lib/city_viaduct_flags.mjs — {"<line>:<lo id>:<hi id>": [[t0, t1], ...]}: fractions of the
+Output: web/city/viaduct_flags.mjs — {"<line>:<lo id>:<hi id>": [[t0, t1], ...]}: fractions of the
 edge's length (lo→hi, as track_shapes.json draws it) that lie within NEAR_M of a bridge way, merged, runs
 shorter than MIN_RUN_M dropped. Reads data/osm-tracks/track_shapes.json and the cached Overpass answers
 data/osm-tracks/line-*.json (build_track_shapes.py fetched them). Track data © OpenStreetMap contributors (ODbL).
@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "data" / "osm-tracks"
-OUT = ROOT / "web" / "lib" / "city_viaduct_flags.mjs"
+OUT = ROOT / "web" / "city" / "viaduct_flags.mjs"
 SAMPLE_M, NEAR_M, MIN_RUN_M, GRID_M = 8.0, 25.0, 40.0, 120.0
 
 
@@ -153,6 +153,6 @@ def main(selected: set[str] | None = None, output: Path | None = None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--edges", type=Path, help="부분 갱신할 edges 키의 JSON 배열")
-    parser.add_argument("--output", type=Path, help="검증용 출력 경로 (기본: web/lib/city_viaduct_flags.mjs)")
+    parser.add_argument("--output", type=Path, help="검증용 출력 경로 (기본: web/city/viaduct_flags.mjs)")
     args = parser.parse_args()
     main(set(json.loads(args.edges.read_text())) if args.edges else None, args.output)

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {trainRuntime} from './platform_trains_fixture.mjs';
-import SNAP from '../web/lib/city_viaduct_snap.mjs';
+import SNAP from '../web/city/viaduct_snap.mjs';
 const plain=x=>JSON.parse(JSON.stringify(x));
 for(const simcity of [false,true])for(const [line,lo,hi,snapped] of [['6호선',425,426,true],['1호선',226,227,false]])test(`${simcity?'심시티':'기본'} 노선·열차가 ${snapped?'스냅':'선로'} 원본 경로를 사용해요`,()=>{
  const r=trainRuntime();r.context.simcity=simcity;

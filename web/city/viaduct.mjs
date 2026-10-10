@@ -8,7 +8,7 @@
 // be moved onto that street (city_viaduct_snap.mjs, built offline; the runtime draws and drives on the moved path).
 // Drawn on the train overlay canvas after the buildings have written their depth, so a tall building hides the deck
 // behind it and a low one passes under it, exactly as with the trains. Stretches that really are elevated (OSM
-// bridge=*, web/lib/city_viaduct_flags.mjs) get a slightly darker concrete; the rest looks the same, only lifted.
+// bridge=*, web/city/viaduct_flags.mjs) get a slightly darker concrete; the rest looks the same, only lifted.
 // Every colour, metre and zoom comes from the style pack (pack.viaduct).
 //
 //   const v = new CityViaduct({pack, net});
@@ -27,15 +27,15 @@
 // footprints in metres with a px floor so they never vanish. Zoomed out, where no cars drive, the deck is slimmer than
 // the trains, which overhang it as they overhang the route line in the other modes.
 
-import SEOUL from './city_style_seoul.mjs';
-import FLAGS from './city_viaduct_flags.mjs';
-import SNAP from './city_viaduct_snap.mjs';
-import { toneRGB, hexRgb, MPP } from './city_style.mjs';
-import { compileProgram, hashi } from '../city/traffic.mjs';
-import { MU, MERC_ORIGIN as O, toM } from './city_life.mjs';
-import { STRIDE, MAT, COLOR_KEYS, Mesh } from './city_viaduct_mesh.mjs';
-import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './city_viaduct_levels.mjs';
-import { layoutExits, buildExits, exitSamples } from './city_viaduct_exits.mjs';
+import SEOUL from '../lib/city_style_seoul.mjs';
+import FLAGS from './viaduct_flags.mjs';
+import SNAP from './viaduct_snap.mjs';
+import { toneRGB, hexRgb, MPP } from '../lib/city_style.mjs';
+import { compileProgram, hashi } from './traffic.mjs';
+import { MU, MERC_ORIGIN as O, toM } from '../lib/city_life.mjs';
+import { STRIDE, MAT, COLOR_KEYS, Mesh } from './viaduct_mesh.mjs';
+import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './viaduct_levels.mjs';
+import { layoutExits, buildExits, exitSamples } from './viaduct_exits.mjs';
 export { STRIDE, MAT };
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;

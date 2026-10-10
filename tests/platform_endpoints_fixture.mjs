@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mjs';
-import SNAP,{stops as snapStops} from '../web/lib/city_viaduct_snap.mjs';
+import SNAP,{stops as snapStops} from '../web/city/viaduct_snap.mjs';
 import {stations,paths} from './fixtures.mjs';
 import {createModeRegistry} from '../web/modes/index.mjs';
 const MODES=createModeRegistry(await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default))));

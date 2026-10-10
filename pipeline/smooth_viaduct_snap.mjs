@@ -5,7 +5,7 @@
 // 옮기고, 승강장 끝 joinM(40 m)은 승강장 방향에서 이어지는 Hermite 곡선으로 바꾼 뒤 Douglas–Peucker 0.3 m 로 줄인다.
 // 양 끝 역 점 · 승강장(platformHalf + 1 m) 꼭짓점은 그대로.
 //
-//   node pipeline/smooth_viaduct_snap.mjs            # web/lib/city_viaduct_snap.mjs 를 한 번 편다(이미 편 파일이면 멈춤)
+//   node pipeline/smooth_viaduct_snap.mjs            # web/city/viaduct_snap.mjs 를 한 번 편다(이미 편 파일이면 멈춤)
 //
 // build_viaduct_snap.mjs 는 새로 만든 구간에 smoothSnapPath 를 바로 쓴다(값: pack.viaduct.snap.smoothTubeM · smoothIter).
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -61,7 +61,7 @@ export function smoothSnapPath(coords, holdLo, holdHi, { tubeM = 8, iter = 300, 
 export const holdsFor = (id, platformHalf) => { const [line, lo, hi] = id.split(':'); return [(platformHalf[`${line}:${lo}`] || 90) + 1, (platformHalf[`${line}:${hi}`] || 90) + 1] };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), FILE = path.join(ROOT, 'web', 'lib', 'city_viaduct_snap.mjs');
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), FILE = path.join(ROOT, 'web', 'city', 'viaduct_snap.mjs');
   const src = readFileSync(FILE, 'utf8');
   if (src.includes(SMOOTHED_MARK)) { console.error('이미 편 파일이에요. build_viaduct_snap.mjs 로 새로 만든 뒤에만 다시 펴요.'); process.exit(1) }
   const { default: SNAP, stops } = await import(FILE), pack = (await import('../web/lib/city_style_seoul.mjs')).default, SN = pack.viaduct.snap;

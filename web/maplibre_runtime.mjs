@@ -44,8 +44,8 @@ import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
-import {CityViaduct} from './lib/city_viaduct.mjs';
-import {stops as snapStops} from './lib/city_viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
+import {CityViaduct} from './city/viaduct.mjs';
+import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE]);

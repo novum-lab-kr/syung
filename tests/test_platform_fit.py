@@ -120,7 +120,7 @@ class SnapAppliedTest(unittest.TestCase):
         """--snap 적용 노선: 바뀐 역은 도로 맞춤 stops 에 없거나 같은 점이라, 기본 지도가 OSM 결과 역 점을 쓴다."""
         import re
         ts = json.loads((ROOT / "data" / "osm-tracks" / "track_shapes.json").read_text(encoding="utf-8"))
-        text = (ROOT / "web" / "lib" / "city_viaduct_snap.mjs").read_text(encoding="utf-8")
+        text = (ROOT / "web" / "city" / "viaduct_snap.mjs").read_text(encoding="utf-8")
         snap = json.loads(re.search(r"export const stops = (\{.*?\});", text).group(1))
         style = (ROOT / "web" / "modes" / "basic" / "city.mjs").read_text(encoding="utf-8")
         keep = json.loads(re.search(r'"keepStations": (\[[^\]]*\])', style).group(1))
@@ -154,7 +154,7 @@ class EdgeEndTest(unittest.TestCase):
         """track_shapes 와 기본 지도(도로 맞춤 우선) 모두: 구간 끝 = 그 역 점(0.5 m 안). 운영 eccc0e7 은 0곳(검토 112312)."""
         import re
         ts = json.loads((ROOT / "data" / "osm-tracks" / "track_shapes.json").read_text(encoding="utf-8"))
-        text = (ROOT / "web" / "lib" / "city_viaduct_snap.mjs").read_text(encoding="utf-8")
+        text = (ROOT / "web" / "city" / "viaduct_snap.mjs").read_text(encoding="utf-8")
         se = json.loads(re.search(r"export default (\{.*?\});\n", text).group(1))
         ss = json.loads(re.search(r"export const stops = (\{.*?\});", text).group(1))
         bad = []

@@ -6,8 +6,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { CityViaduct, toLL } from '../web/lib/city_viaduct.mjs';
-import SNAP, { stops as SNAP_STOPS } from '../web/lib/city_viaduct_snap.mjs';
+import { CityViaduct, toLL } from '../web/city/viaduct.mjs';
+import SNAP, { stops as SNAP_STOPS } from '../web/city/viaduct_snap.mjs';
 import pack from '../web/lib/city_style_seoul.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), args = process.argv.slice(2), OUT = args[args.indexOf('--out') + 1] || null;

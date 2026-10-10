@@ -9,9 +9,9 @@
 // Geometry is laid out in the platform's frame (t along its axis from its centre, u across; metres), with the ends
 // that hang off the platform anchored to its px-sized edge (the shader adds the px parts), so the stairs stay attached
 // at every zoom. Pure functions; the tests use them.
-import SEOUL from './city_style_seoul.mjs';
-import { pointSegmentDistance } from './city_viaduct_levels.mjs';
-import { Mesh, MAT } from './city_viaduct_mesh.mjs';
+import SEOUL from '../lib/city_style_seoul.mjs';
+import { pointSegmentDistance } from './viaduct_levels.mjs';
+import { Mesh, MAT } from './viaduct_mesh.mjs';
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
 

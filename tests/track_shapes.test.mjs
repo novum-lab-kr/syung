@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import SNAP, { stops as SNAP_STOPS } from '../web/lib/city_viaduct_snap.mjs';
+import SNAP, { stops as SNAP_STOPS } from '../web/city/viaduct_snap.mjs';
 
 const shapes = JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json', import.meta.url), 'utf8'));
 const local = (p, origin) => [(p[0] - origin[0]) * 111320 * Math.cos(origin[1] * Math.PI / 180), (p[1] - origin[1]) * 111320];

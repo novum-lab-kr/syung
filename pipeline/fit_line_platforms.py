@@ -14,7 +14,7 @@
 판정: 바뀜(역 점 MOVE_M 이상 · 방향 TURN_DEG 이상 · 막대 길이 LENGTH_M 이상 · 출구 연결 · 통로가 바뀜) / 승강장 면 없음 / OSM 과 맞음.
 --write: 바뀜 · (바뀐 게 있는) 승강장 면 없음 역을 stop_overrides.json(at · shift · dir · half · reach · from)과
 track_shapes.json(stops · stopDirs · platformHalf · stopHalf · stopReach, 앞뒤 구간을 [역, 막대 끝, OSM 선로, 막대 끝, 역]으로)에 쓴다.
---snap(--write 와 같이, 2026-10-05 단계 3): 바뀐 역을 도로 맞춤(web/lib/city_viaduct_snap.mjs) stops 에서 빼고
+--snap(--write 와 같이, 2026-10-05 단계 3): 바뀐 역을 도로 맞춤(web/city/viaduct_snap.mjs) stops 에서 빼고
 web/modes/basic/city.mjs keepStations 에 넣은 뒤, 그 역에 닿은 도로 맞춤 구간만 build_viaduct_snap.mjs --edges 로 다시 만든다
 (기본 지도는 그 파일을 먼저 쓰므로). 끝나면 기본 지도가 쓰는 역 점 · 구간 끝 · 막대 끝을 데이터로 확인(snapCheck).
 역마다 정확도 판정 ⓐ~ⓓ(checks) · 카카오 검증 대상(verify: 20 m 이상 이동 · 갈림 역 · 면 없음인데 값 바뀜 · 환승역)을 내고,
@@ -43,7 +43,7 @@ OVERRIDES = ROOT / "data" / "osm-tracks" / "stop_overrides.json"
 EXITS = ROOT / "data" / "osm-tracks" / "exits.json"
 MANUAL = ROOT / "data" / "osm-tracks" / "manual_routes.json"
 METRO = ROOT / "data" / "ktdb-gtfs-2025" / "capital-metro.json"
-SNAP = ROOT / "web" / "lib" / "city_viaduct_snap.mjs"
+SNAP = ROOT / "web" / "city" / "viaduct_snap.mjs"
 MOVE_M, TURN_DEG, LENGTH_M = 5.0, 3.0, 5.0          # 바뀐 역 기준(계획서: 5 m · 3°)
 NO_AREA_SNAP_M = 15.0                               # 승강장 면 없는 역: 이보다 멀면 OSM 선로 위로(카카오 확인 점은 빼고)
 NO_AREA_MAX_SNAP_M = 40.0                           # 승강장 면 없는 역: OSM 경로가 이보다 멀면(다른 선로) 끌지 않음
