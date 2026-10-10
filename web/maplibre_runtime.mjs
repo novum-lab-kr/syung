@@ -2156,7 +2156,8 @@ map.on('load',()=>{
       if(coaster&&coasterBld?.towers?.length){   // the rides where the towers were (their buildings are filtered out): first, so the track and trains depth-test against them
         if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
           rides=new RideLayer(coasterBld.towers,{deferPlacement:true});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
-          ridePlacement=new CoasterRidePlacement(rides.candidates,{map,minH:cityBuildings.P.minH,missingH:cityBuildings.P.missingH,maxH:RIDE_H,
+          ridePlacement=new CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte),{   // 롯데월드타워 자리는 놀이기구 대신 전용 모델(cityLandmarks)
+            map,minH:cityBuildings.P.minH,missingH:cityBuildings.P.missingH,maxH:RIDE_H,
             getTracks:bounds=>sampleRideTracks(coasterTrack,bounds,{geometry:e=>geom(e.line,e.lo,e.hi),offset:e=>edgeOffset(e.line,e.lo,e.hi),bodyPx:coasterBodyPx(14),lanePx:cityViaduct.train(14,coasterBodyPx(14)).lanePx,heart:CORK_HEART}),
             onChange:sites=>{rides.setSites(sites);map.triggerRepaint()}});window.__subwayWebGL.ridePlacement=ridePlacement;
         }
@@ -2174,7 +2175,7 @@ map.on('load',()=>{
         const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
         cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
         if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected,moving:map.isMoving(),bodyPx:coasterBodyPx(zoom)}))trainFrameSoon(50);
-        if(!coaster)cityLandmarks.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다(롤코에선 그 자리가 놀이기구 — 150 m 넘는 건물은 원래 안 그린다)
+        cityLandmarks.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',joseon,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
       coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
       layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&coaster,occlude:behind});
       // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
