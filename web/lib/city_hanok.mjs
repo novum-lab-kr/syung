@@ -17,10 +17,10 @@
 // wall stretch) is drawn by the tile its centre falls in, so the halves never draw the same house twice. An outline the
 // tile's buffer also cut (each tile then holds a different piece of it) falls back to the part inside the tile.
 import { area as ringArea, simplifyRing, orientedBox } from './city_geom.mjs';
+import { HANOK_KIND, POSTS } from './city_mesh.mjs';   // (메시 형식의 몫: 꼭짓점 종류 · 기둥 수)
+import { registerCityPart } from '../city/parts.mjs';
+export { HANOK_KIND, POSTS };
 
-// vertex kinds after city_mesh's (0–7): 기와 (roofs, ridges, wall caps), a house's walls (a_bld.z type 1: mud walls of a
-// 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone)
-export const HANOK_KIND = { ROOF: 8, WALL: 9, DAM: 10, THATCH: 11, STONE: 12 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -238,7 +238,6 @@ export function roofTemplate() {
 // the points every wall box draws: (side 0..3, end 0..1, top 0..1)
 // close up only (DETAIL_Z): (4, i, 0) the 기단 round a house's foot — its four sides (i 0..15) and top (16..19); (5, i, 0) two
 // stone steps up to it on one long side (i: step × 16 + face (front, left, right, top) × 4 + corner)
-export const POSTS = 12;   // 벽 한 면에 세울 수 있는 기둥 수(칸 + 1): 이보다 칸이 많으면 그 면은 기둥 없이
 export function boxTemplate() {
   const v = [], idx = [];
   for (let s = 0; s < 4; s++) { for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 1]]) v.push(s, e, t); const b = s * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3) }
@@ -465,3 +464,6 @@ function walls(tb, at, mine, ux, uy, w, K) {
   }
   return n;
 }
+
+// 도시 엔진 부품 'hanok'(web/city/parts.mjs): 엔진은 이름으로 받는다 — 이 모듈을 부르면(메인: 모드 코드 받기, Worker: 정적 import) 등록된다
+registerCityPart('hanok', { building: hanokBuilding, skirtTemplate, roofTemplate, boxTemplate });

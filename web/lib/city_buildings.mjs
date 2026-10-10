@@ -19,8 +19,8 @@
 //   city.set({on:true,tone:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});   // tone: 팩의 modes 항목(모드 설정 city.tone)
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { skirtTemplate, roofTemplate, boxTemplate, POSTS } from './city_hanok.mjs';
-import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
+import { cityPart } from '../city/parts.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/lib/city_hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
+import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
 import { sunPosition } from './sun.mjs';
 import THROUGH_LIST from './city_through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
@@ -530,9 +530,9 @@ function throughIndex(list) {
 const DETAIL_Z = 18;   // 조선 인스턴스의 가까이 디테일(처마 밑면 · 끝 두께 · 망와 · 기단 · 계단): 이 줌부터. 템플릿에 들어 있어 타일 메모리는 그대로
 // 조선의 인스턴스 종류 (city_hanok.mjs): 정점 셰이더, 템플릿(far · near 색인 범위), 기록의 속성 [위치, 개수, 형식(0 f32 · 1 u8), 바이트 위치]
 const INST = {
-  skirt: { vs: VS_SKIRT, tpl: P => { const T = skirtTemplate(P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
-  roof: { vs: VS_ROOF, tpl: () => roofTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 0, 32], [4, 2, 0, 48], [5, 4, 1, 56], [6, 4, 1, 60]] },
-  box: { vs: VS_BOX, tpl: () => boxTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 1, 32], [4, 4, 1, 36]] },
+  skirt: { vs: VS_SKIRT, tpl: P => { const T = cityPart('hanok').skirtTemplate(P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
+  roof: { vs: VS_ROOF, tpl: () => cityPart('hanok').roofTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 0, 32], [4, 2, 0, 48], [5, 4, 1, 56], [6, 4, 1, 60]] },
+  box: { vs: VS_BOX, tpl: () => cityPart('hanok').boxTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 1, 32], [4, 4, 1, 36]] },
 };
 
 // ── the layer ────────────────────────────────────────────────────────────────────────────────────

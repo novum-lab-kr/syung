@@ -4,7 +4,11 @@
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
 import { LANDMARKS, landmarkMerc } from './city_landmarks_data.mjs';
-import { hanokBuilding, HANOK_KIND } from './city_hanok.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok`
+import { cityPart } from '../city/parts.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/lib/city_hanok.mjs 가 등록)
+// vertex kinds after the city's (0–7), for the 조선 pieces (web/lib/city_hanok.mjs): 기와 (roofs, ridges, wall caps), a house's walls (a_bld.z type 1: mud walls of a
+// 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone) — 메시 형식의 몫이라 여기에 둔다
+export const HANOK_KIND = { ROOF: 8, WALL: 9, DAM: 10, THATCH: 11, STONE: 12 };
+export const POSTS = 12;   // (조선) 벽 한 면에 세울 수 있는 기둥 수(칸 + 1): 이보다 칸이 많으면 그 면은 기둥 없이 — 한옥 상자 템플릿 · 셰이더가 같이 쓴다
 import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDistance, interiorPoint, simplifyRing, classifyRings, clipRing, ringInBox, insetRing, orientedBox, deepestPoint, triangulate } from './city_geom.mjs';
 
 export const EARTH = 40075016.685578488, RAD = Math.PI / 180;
@@ -376,7 +380,7 @@ export class TileBuilder {
   }
   // phase 2, one building's meshes
   building(it) {
-    if (this.P.hanok) return hanokBuilding(this, it, unit);   // 조선 모드: 기와집 instead of the city's buildings
+    if (this.P.hanok) return cityPart('hanok').building(this, it, unit);   // 조선 모드: 기와집 instead of the city's buildings
     const E = this.E, P = this.P, { outer, holes, clipped, A, H, minH, landuse, seed, ix, iy } = it;
     const info = { heightM: H, areaM2: A, landuse, id: it.idLo + it.idHi * 4294967296, props: null };
     let est = classifyBuilding(info, P);
