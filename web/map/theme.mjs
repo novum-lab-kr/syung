@@ -1,26 +1,24 @@
 // 밝은 · 어두운 테마와 지도 색(차분 · 컬러), 롤코 공원 색, 설정 버튼 · 5분마다 자동 테마, 해 위치 아이콘(자동일 때 테마 버튼).
-// themeChoice · mapColor 의 주인(바깥은 getter). 저장 이름(subway-theme · subway-map-color)과 값 · 섞는 식은 그대로 — 저장 창구는 5단계.
+// themeChoice · mapColor 의 주인(바깥은 getter). 기기 저장은 내 설정 창구(prefs — web/user/prefs.mjs), 고른 값이 없으면 지금 모드 설정의 기본값.
 // 색 자료는 지금 모드 설정의 map.themes · colors · park(원본 web/modes/basic/palette.mjs, 모드가 덧쓸 수 있다).
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(지금 모드의 설정 live.settings · 버스 층 · 지도 준비)은 live.<이름> 으로 읽는다. applyTheme 를 만들 때 부르지 않는다(본체가 부른다).
-export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,live}){
+export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live}){
   // ---- light / dark theme --------------------------------------------------------------------
   // 자동 (default): light from sunrise to sunset in Seoul, dark at night; 라이트 / 다크: fixed by the viewer.
   const mixHex=(a,b,t)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
-  const MAP_COLOR_KEY='subway-map-color';let mapColor='calm';try{mapColor=localStorage.getItem(MAP_COLOR_KEY)||'calm'}catch{}
-  const THEME_KEY='subway-theme';
+  // 고른 값이 없으면 지금 모드 설정의 기본값을 그때그때(모드가 바뀌면 그 모드의 기본값)
+  const cur={get mapColor(){return prefs.get('mapColor')??live.settings.mapColor},get themeChoice(){return prefs.get('themeChoice')??live.settings.themeChoice}};
   // 섞는 차례는 지금 모드 설정의 map.paletteKind: base(바탕) · city(+도시 땅) · park-city(+공원 색, 마지막에 도시 땅)
-  const mapPalette=(t=effectiveTheme())=>{const S=live.settings,P={...S.map.themes[t],...(mapColor==='color'?S.map.colors[t]:{})};if(S.map.paletteKind!=='park-city')return S.map.paletteKind==='city'?{...P,...cityPalette(t,{pack:S.city.pack,tone:S.city.tone})}:P;   // city-life: 심시티 — the ground from the style pack
-    const K=S.map.park[t],m=mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
+  const mapPalette=(t=effectiveTheme())=>{const S=live.settings,P={...S.map.themes[t],...(cur.mapColor==='color'?S.map.colors[t]:{})};if(S.map.paletteKind!=='park-city')return S.map.paletteKind==='city'?{...P,...cityPalette(t,{pack:S.city.pack,tone:S.city.tone})}:P;   // city-life: 심시티 — the ground from the style pack
+    const K=S.map.park[t],m=cur.mapColor==='color'?0:.15,Q={...P,...K,bld3dOpacity:1};for(const k of ['bg','park','land','water','bld'])Q[k]=mixHex(K[k],K.bg,m);
     const id=['abs',['to-number',['id'],0]];   // ids run in tens and hundreds (osm id × 10…): two residues multiplied mix them
     Q.bld3d=['match',['%',['floor',['/',['*',['%',id,9973],['%',id,9967]],7]],6],...K.blocks.slice(0,5).flatMap((v,i)=>[i,v]),K.blocks[5]];return {...Q,...cityPalette(t,{pack:S.city.pack,tone:S.city.tone,ride:!!rider.ride})}};   // city-life: the park sits on the same city ground, toned down (spec §7)
-  let themeChoice='auto';
-  try{themeChoice=localStorage.getItem(THEME_KEY)||'auto'}catch{}
   // Sunrise / sunset for Seoul (sunrise equation; accurate to a few minutes)
-  function effectiveTheme(){if(themeChoice!=='auto')return themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
+  function effectiveTheme(){if(cur.themeChoice!=='auto')return cur.themeChoice;const now=new Date(),{rise,set}=seoulSun(now);return now>=rise&&now<set?'light':'dark'}
   function applyTheme(){queueMicrotask(()=>{if(map.getLayer?.('journey-veil'))focusRoute(!!journeyMap.routeBounds)});
     const t=effectiveTheme(),P=mapPalette(),S=live.settings;
     live.busLayer?.setTheme(t);   // bus: the same light/dark setting as the map
-    for(const b of document.querySelectorAll('[data-map-color]'))b.setAttribute('aria-pressed',String(b.dataset.mapColor===mapColor));
+    for(const b of document.querySelectorAll('[data-map-color]'))b.setAttribute('aria-pressed',String(b.dataset.mapColor===cur.mapColor));
     document.documentElement.dataset.theme=t;
     // favicon follows the map theme (the <link media> pair only knows the OS setting)
     for(const l of document.querySelectorAll('link[data-theme-icon]'))l.href=`./brand/favicon-${t}.svg`;
@@ -28,10 +26,10 @@ export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,app
     // header logo: black tile on the yellow bar, yellow tile on the dark bar
     const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
     // settings row: 자동 / 라이트 / 다크; in 자동 the icon is the sun over the map and the note gives sunrise / sunset
-    for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===themeChoice));
+    for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===cur.themeChoice));
     const ti=$('themeIcon'),tn=$('themeNote');
     if(ti&&tn){
-      if(themeChoice==='auto'){const sa=sunArcIcon();ti.innerHTML=sa.svg;tn.textContent=`일출 ${sa.rise}\n일몰 ${sa.set}`}
+      if(cur.themeChoice==='auto'){const sa=sunArcIcon();ti.innerHTML=sa.svg;tn.textContent=`일출 ${sa.rise}\n일몰 ${sa.set}`}
       else{ti.innerHTML=ICONS[t==='dark'?'moon':'sun'];tn.textContent=''}
     }
     if(!live.ready)return;
@@ -61,10 +59,10 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
-  for(const b of document.querySelectorAll('[data-map-color]'))b.onclick=()=>{mapColor=b.dataset.mapColor;try{localStorage.setItem(MAP_COLOR_KEY,mapColor)}catch{}applyTheme()};
-  for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{themeChoice=b.dataset.themeChoice;try{localStorage.setItem(THEME_KEY,themeChoice)}catch{}applyTheme()};
+  for(const b of document.querySelectorAll('[data-map-color]'))b.onclick=()=>{prefs.set('mapColor',b.dataset.mapColor);applyTheme()};
+  for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{prefs.set('themeChoice',b.dataset.themeChoice);applyTheme()};
   $('themeNote').closest('.setting-row').title='자동은 해 뜨면 라이트, 해 지면 다크.';
-  setInterval(()=>{if(themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
+  setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
   // ---- sun position icon (theme button in 자동) -------------------------------------------------
   // Horizon, the day's arc filled up to the sun's place (moon + night progress after sunset).
@@ -89,5 +87,5 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
     return {svg,rise:hm(rise),set:hm(set),day};
   }
 
-  return {effectiveTheme,mapPalette,applyTheme,sunArcIcon,get themeChoice(){return themeChoice},get mapColor(){return mapColor}};
+  return {effectiveTheme,mapPalette,applyTheme,sunArcIcon,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
 }

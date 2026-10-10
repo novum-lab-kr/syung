@@ -13,6 +13,7 @@ import {createJourneyMap} from './ui/journey.mjs';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mjs';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mjs';   // 테마 · 지도 색 · 해 위치 아이콘
+import {createUserPrefs} from './user/prefs.mjs';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
 import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
 import {createModeController} from './modes/transition.mjs';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
 import './modes/merge.mjs';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
@@ -590,7 +591,8 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 // ---- light / dark theme (web/map/theme.mjs) ---------------------------------------------------
 const RIDE_H=modes.settings('coaster').park.towerM;   // m: 롤코에서 이 높이 이상 건물은 놀이기구(그림자 · 벽 · 건물에서 빠진다)
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
-const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
+const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
