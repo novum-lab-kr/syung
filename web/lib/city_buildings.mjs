@@ -548,7 +548,7 @@ export class CityBuildings {
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
     this.through = throughIndex(opts.through || THROUGH_LIST);   // osm id → the points where the viaduct crosses it (opts.through overrides the shipped list)
   }
-  onAdd(map, gl) { this.map = map; this.gl = gl; this.context(gl) }
+  onAdd(map, gl) { this.map = map; this.gl = gl }   // (programs compiled on first draw: the city may never be switched on — 2026-10-10 첫 화면이 늦게 떴다)
   onRemove(map, gl) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
   // on/off, 'simcity' | 'coaster', 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
   set(o) {
@@ -571,7 +571,7 @@ export class CityBuildings {
   animating() { return this.growing }
   context(gl) {
     let c = this.ctx.get(gl);
-    if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), inst: {}, tpl: {} }; for (const [k, I] of Object.entries(INST)) c.inst[k] = { color: compile(gl, I.vs, FS), depth: compile(gl, I.vs, FS_DEPTH) }; this.ctx.set(gl, c) }
+    if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), inst: {}, tpl: {} }; this.ctx.set(gl, c) }
     return c;
   }
   // an instance kind's template in this context (again when the pack's shape of it changes)
@@ -922,7 +922,8 @@ export class CityBuildings {
     const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
     let draws = 0;
     for (const [kind, I] of Object.entries(INST)) {
-      const C2 = C.inst[kind], prog = depthOnly ? C2.depth : C2.color, u = prog.u, stride = INST_STRIDES[kind];
+      if (!list.some(t => t.g.inst[kind])) continue;
+      const C2 = C.inst[kind] || (C.inst[kind] = {}), prog = depthOnly ? (C2.depth ||= compile(gl, I.vs, FS_DEPTH)) : (C2.color ||= compile(gl, I.vs, FS)), u = prog.u, stride = INST_STRIDES[kind];   // (each compiled when first drawn: the big FS takes long to compile on some GPUs)
       let used = false;
       for (const { g, m, M, chunks } of list) {
         const gi = g.inst[kind]; if (!gi) continue;

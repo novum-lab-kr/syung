@@ -14,6 +14,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <link rel="stylesheet" href="./vendor/maplibre-gl.css">
+<!-- 지도 엔진은 runtime → maplibre-gl → shared 차례로 불러와 하나가 끝나야 다음을 받았다: 처음부터 같이 받는다 (2026-10-10 덕배: 첫 화면이 늦다) -->
+<link rel="modulepreload" href="./vendor/maplibre-gl.mjs"><link rel="modulepreload" href="./vendor/maplibre-gl-shared.mjs">
 <style>
 :root{--board:#f3f6f7;--paper:#fff;--ink:#172429;--secondary:#52646a;--muted:#6b7b80;--rule:#cbd5d8;--navy:#102f3d;--orange:#f35b38;--focus:#ffb000;--control:#eef2f3;--selected:#dbe8ec}
 *{box-sizing:border-box}html,body{height:100%;margin:0;color:var(--ink);background:var(--board);font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}body{overflow:hidden}button,input{font:inherit}button{color:inherit}::selection{background:#ffd76a;color:#10252d}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
