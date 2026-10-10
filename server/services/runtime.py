@@ -8,14 +8,18 @@ from __future__ import annotations
 import threading
 
 from server.services.bus import BusArrivalService, BusLiveService
+from server.services.journey import JourneyPlanner
 from server.services.live import SubwayLiveService
+from server.services.places import PlaceSearch
 
 
 class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
-                 live: SubwayLiveService | None = None):
-        self._lock = threading.Lock()
+                 live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
+                 places: PlaceSearch | None = None):
+        self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
+        self._journey, self._places = journey, places
 
     @property
     def live(self) -> SubwayLiveService:
@@ -37,6 +41,21 @@ class Services:
             if self._arrivals is None:
                 self._arrivals = BusArrivalService()
             return self._arrivals
+
+    @property
+    def journey(self) -> JourneyPlanner:
+        """길찾기(탐색 자료는 warm() 이나 첫 길찾기 때 읽는다)."""
+        with self._lock:
+            if self._journey is None:
+                self._journey = JourneyPlanner(live=self.live)
+            return self._journey
+
+    @property
+    def places(self) -> PlaceSearch:
+        with self._lock:
+            if self._places is None:
+                self._places = PlaceSearch()
+            return self._places
 
 
 _default: Services | None = None

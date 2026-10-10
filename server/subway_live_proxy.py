@@ -9,7 +9,6 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -18,6 +17,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from server.config import SubwayConfig  # noqa: E402
+from server.routes import journey as journey_routes  # noqa: E402
 from server.routes import live as live_routes  # noqa: E402
 from server.services.runtime import default_services  # noqa: E402
 
@@ -30,57 +30,6 @@ BURST_LINES = CONFIG.burst_lines
 BURST_EVERY = CONFIG.burst_every
 BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
 RESPONSE_SECONDS = CONFIG.response_seconds
-
-KST = timezone(timedelta(hours=9))
-
-
-_place_cache: dict[str, tuple[float, list]] = {}
-
-
-def route_snapshot(query: dict) -> tuple[dict, int]:
-    """/route?from=lat,lng&to=lat,lng[&at=YYYY-MM-DDTHH:MM] — see journey.plan."""
-    from server import journey
-    try:
-        o = tuple(float(x) for x in query.get("from", [""])[0].split(","))
-        d = tuple(float(x) for x in query.get("to", [""])[0].split(","))
-        if len(o) != 2 or len(d) != 2:
-            raise ValueError
-    except ValueError:
-        return {"ok": False, "error": "출발지와 도착지 좌표가 필요해요 (from=위도,경도&to=위도,경도)"}, 400
-    at = query.get("at", [""])[0].strip()
-    try:
-        when = datetime.strptime(at, "%Y-%m-%dT%H:%M").replace(tzinfo=KST) if at else datetime.now(KST)
-    except ValueError:
-        return {"ok": False, "error": "시각은 YYYY-MM-DDTHH:MM 형식이에요"}, 400
-    lines = default_services().live.all_lines()   # refreshes the shared cache if due (one upstream call at most)
-    live = lines if abs((when - datetime.now(KST)).total_seconds()) < 3600 else {}
-    return journey.plan(o, d, when, live), 200
-
-
-def place_snapshot(query: dict) -> tuple[dict, int]:
-    """/place?q=...[&near=lat,lng] — Kakao Local search, cached 10 minutes per query."""
-    from server import journey
-    q = query.get("q", [""])[0].strip()[:80]
-    if not q:
-        return {"ok": False, "error": "검색어가 필요해요"}, 400
-    near = None
-    try:
-        near = tuple(float(x) for x in query.get("near", [""])[0].split(",")) or None
-    except ValueError:
-        pass
-    k, now = f"{q}|{near}", time.time()
-    hit = _place_cache.get(k)
-    if hit and now - hit[0] < 600:
-        return {"ok": True, "places": hit[1]}, 200
-    try:
-        places = journey.search_places(q, near if near and len(near) == 2 else None)
-    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
-        return {"ok": False, "error": f"장소 검색 실패: {exc}"}, 503
-    if len(_place_cache) > 5000:
-        _place_cache.clear()
-    _place_cache[k] = (now, places)
-    return {"ok": True, "places": places}, 200
-
 
 _response_lock = threading.Lock()
 _responses: dict[str, tuple[float, int, bytes]] = {}
@@ -151,9 +100,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(hit[1], hit[2])
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if self.path.startswith("/route"):
-            body, status = route_snapshot(query)
+            body, status = journey_routes.route(default_services(), query)
         elif self.path.startswith("/place"):
-            body, status = place_snapshot(query)
+            body, status = journey_routes.place(default_services(), query)
         elif not self.path.startswith("/live"):
             body, status = {"ok": True}, 200
         else:
@@ -209,8 +158,7 @@ def _bus_samples() -> None:
 
 def _warm_journey() -> None:
     try:
-        from server import journey
-        journey.warm()   # route search workers up before the first 길찾기
+        default_services().journey.warm()   # route search workers up before the first 길찾기
     except Exception as e:  # noqa: BLE001 — routing falls back to searching in-process
         print(f"journey warm-up failed: {e}", flush=True)
 

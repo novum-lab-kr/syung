@@ -1,6 +1,5 @@
 """Journey planner: from a place to a place at a time, by walking and the 수도권 subway.
 
-- places: Kakao Local (KAKAO_REST_KEY) turns a query into coordinates (search_places)
 - walking: OSRM foot routing on OpenStreetMap (OSRM_URL, default http://127.0.0.1:5000), to and
   from each station's exits (exits.json), so a result names the exit
 - riding: stations and line order from the KTDB network (capital-metro.json), stop-to-stop times
@@ -9,26 +8,26 @@
 - the first train at a boarding station comes from the live feed when one is on its way; otherwise
   (and for later legs) the wait is half the line's headway at that hour
 plan(...) returns the earliest arrival and, when different, the one with fewest transfers.
+
+탐색 자료는 이 모듈을 import 할 때 한 번 읽는 읽기 전용 자료다(파일은 store/journey_data.py, 걷기는 sources/osrm.py).
+탐색 일꾼 풀 · 실시간 열차 붙이기는 services/journey.py 의 JourneyPlanner 가 맡는다(장소 검색은 services/places.py).
 """
 
 from __future__ import annotations
 
 import bisect
 import heapq
-import json
 import math
 import time
-import urllib.parse
-import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 
 from server.clock import KST
-from server.config import ROOT, JourneyConfig
+from server.config import JourneyConfig
+from server.sources.osrm import OsrmSource
+from server.store import journey_data
 
-CONFIG = JourneyConfig.from_env()
-KAKAO_REST_KEY = CONFIG.kakao_key
-OSRM_URL = CONFIG.osrm_url
+OSRM = OsrmSource(JourneyConfig.from_env().osrm_url)
 WALK_RADIUS_M = 1600          # stations considered at either end
 MAX_STATIONS = 6
 TRANSFER_PENALTY = 8 * 60     # "fewest transfers" plan: each change weighs as 8 extra minutes
@@ -48,10 +47,10 @@ DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept i
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
               "maeul": "#7bc043", "night": "#4a4f8c"}
 
-_metro = json.loads((ROOT / "data/ktdb-gtfs-2025/capital-metro.json").read_text(encoding="utf-8"))
-_data = json.loads((ROOT / "data/journey.json").read_text(encoding="utf-8"))
-_timing = json.loads((ROOT / "data/live-timing.json").read_text(encoding="utf-8"))
-_exits = json.loads((ROOT / "data/osm-tracks/exits.json").read_text(encoding="utf-8"))
+_metro = journey_data.read(journey_data.METRO)
+_data = journey_data.read(journey_data.JOURNEY)
+_timing = journey_data.read(journey_data.TIMING)
+_exits = journey_data.read(journey_data.EXITS)
 STATIONS = {n["id"]: n for n in _metro["nodes"]}
 ADJ: dict[str, dict[int, set[int]]] = defaultdict(lambda: defaultdict(set))
 for key in _data["hops"]:
@@ -81,15 +80,13 @@ BY_NAME = {(line, _key(n["name"])): n["id"] for n in _metro["nodes"] for line in
 
 # ---- buses (data/bus.json, pipeline/build_bus_data.py; optional) ---------------------------
 
-_bus_file = ROOT / "data/bus.json"
-BUS = json.loads(_bus_file.read_text(encoding="utf-8")) if _bus_file.exists() else None
+BUS = journey_data.read_optional(journey_data.BUS)
 BSTOPS = BUS["stops"] if BUS else []
 BROUTES = BUS["routes"] if BUS else []
 BPATS = BUS["patterns"] if BUS else []
 BUS_WALK = BUS["walk"] if BUS else []
 # stops whose KTDB coordinates are rounded, put on their OSM stop (pipeline/fix_bus_stops.py)
-_fix_file = ROOT / "data/bus-stop-fix.json"
-for _i, (_la, _lo) in (json.loads(_fix_file.read_text(encoding="utf-8")).items() if BUS and _fix_file.exists() else ()):
+for _i, (_la, _lo) in (journey_data.read_optional(journey_data.BUS_STOP_FIX, {}).items() if BUS else ()):
     if int(_i) < len(BSTOPS):
         BSTOPS[int(_i)] = [BSTOPS[int(_i)][0], _la, _lo]
 BUS_AT: dict[int, list[tuple[int, int]]] = defaultdict(list)   # stop → [(pattern, position)]
@@ -102,8 +99,7 @@ for _i, (_, _la, _lo) in enumerate(BSTOPS):
     _bgrid[(int(_la / 0.0027), int(_lo / 0.0034))].append(_i)
 
 
-_shapes_file = ROOT / "data/bus-shapes.json"   # pipeline/build_bus_shapes.py; optional
-BUS_SHAPES = json.loads(_shapes_file.read_text(encoding="utf-8")) if BUS and _shapes_file.exists() else {}
+BUS_SHAPES = journey_data.read_optional(journey_data.BUS_SHAPES, {}) if BUS else {}   # pipeline/build_bus_shapes.py; optional
 
 
 def _decode(s: str) -> list[list[float]]:
@@ -212,30 +208,6 @@ def _meters(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 6371000 * math.hypot(x, math.radians(lat2 - lat1))
 
 
-# ---- places --------------------------------------------------------------------------------
-
-def search_places(query: str, near: tuple[float, float] | None = None) -> list[dict]:
-    """Kakao keyword search, then address search: [{name, address, lat, lng}]."""
-    if not KAKAO_REST_KEY:
-        raise RuntimeError("KAKAO_REST_KEY 가 설정되지 않았어요")
-    out = []
-    for kind in ("keyword", "address"):
-        params = {"query": query, "size": 8}
-        if near and kind == "keyword":
-            params.update(y=near[0], x=near[1], sort="accuracy")
-        req = urllib.request.Request(f"https://dapi.kakao.com/v2/local/search/{kind}.json?{urllib.parse.urlencode(params)}",
-                                     headers={"Authorization": f"KakaoAK {KAKAO_REST_KEY}"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            docs = json.load(r).get("documents") or []
-        for d in docs:
-            out.append({"name": d.get("place_name") or d.get("address_name"),
-                        "address": d.get("road_address_name") or d.get("address_name") or "",
-                        "lat": float(d["y"]), "lng": float(d["x"])})
-        if out:
-            break
-    return out
-
-
 # ---- walking -------------------------------------------------------------------------------
 
 def _points(sid: int) -> list[tuple[float, float, str]]:
@@ -280,10 +252,8 @@ def _walk_table(origin: tuple[float, float], nodes: list[tuple], reverse: bool =
     coords = [f"{origin[1]:.6f},{origin[0]:.6f}"] + [f"{p[1]:.6f},{p[0]:.6f}" for _, p in pts]
     q = ("sources=" + ";".join(str(i) for i in range(1, len(coords))) + "&destinations=0") if reverse else \
         ("sources=0&destinations=" + ";".join(str(i) for i in range(1, len(coords))))
-    url = f"{OSRM_URL}/table/v1/foot/{';'.join(coords)}?{q}&annotations=duration,distance"
     try:
-        with urllib.request.urlopen(url, timeout=6) as r:
-            res = json.load(r)
+        res = OSRM.table(coords, q)
         dur = [row[0] for row in res["durations"]] if reverse else res["durations"][0]
         dist = [row[0] for row in res["distances"]] if reverse else res["distances"][0]
     except (OSError, ValueError, KeyError):
@@ -377,9 +347,7 @@ def _unhook(pts: list, min_leg: float = 12.0) -> list:
 def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list, int, int]:
     """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres); a straight line when unavailable."""
     try:
-        url = f"{OSRM_URL}/route/v1/foot/{a[1]:.6f},{a[0]:.6f};{b[1]:.6f},{b[0]:.6f}?overview=full&geometries=geojson"
-        with urllib.request.urlopen(url, timeout=6) as r:
-            route = json.load(r)["routes"][0]
+        route = OSRM.route(a, b)
         # from the very point to the very point (OSRM starts and ends where it snapped them onto a
         # footway), without the hook where it ran past an exit or stop and came back to it
         pts = [[a[1], a[0]], *route["geometry"]["coordinates"], [b[1], b[0]]]
@@ -592,53 +560,9 @@ def _signature(r: dict) -> tuple:
     return tuple((l.get("line") or l.get("route"), l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
 
 
-# searches run side by side in worker processes (each loads the network once); inline when that fails
-SEARCH_WORKERS = CONFIG.workers
-_pool = None
-
-
 def _search_job(args: tuple) -> dict | None:
+    """일꾼 프로세스가 부르는 탐색 하나(모듈 함수라야 forkserver 로 피클된다)."""
     return _search(*args)
-
-
-def _executor():
-    global _pool
-    if _pool is None and SEARCH_WORKERS:
-        import multiprocessing
-        from concurrent.futures import ProcessPoolExecutor
-        # forkserver: a clean process to fork workers from (the proxy is threaded; forking it is not safe)
-        _pool = ProcessPoolExecutor(SEARCH_WORKERS, mp_context=multiprocessing.get_context("forkserver"))
-    return _pool
-
-
-def warm() -> None:
-    """Start the workers and have each load the network (the first request would wait ~2 s)."""
-    ex = _executor()
-    if ex:
-        for f in [ex.submit(time.sleep, 0.5) for _ in range(SEARCH_WORKERS * 2)]:
-            f.result()
-
-
-def _run_batch(jobs: list[tuple], seconds: float) -> list[dict | None]:
-    global _pool
-    ex = _executor()
-    if ex and len(jobs) > 1:
-        try:
-            futs = [ex.submit(_search_job, j) for j in jobs]
-            end, out = time.monotonic() + seconds, []
-            for f in futs:
-                try:
-                    out.append(f.result(timeout=max(0.01, end - time.monotonic())))
-                except TimeoutError:
-                    f.cancel()
-                    out.append(None)
-            return out
-        except Exception:   # a broken pool: drop it, search here
-            _pool = None
-    out, end = [], time.monotonic() + seconds
-    for j in jobs:
-        out.append(_search_job(j) if time.monotonic() < end else None)
-    return out
 
 
 def _kind(r: dict) -> str:
@@ -647,7 +571,9 @@ def _kind(r: dict) -> str:
     return "mixed" if len(ks) > 1 else "bus" if ks == {"bus"} else "subway"
 
 
-def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: dict) -> dict:
+def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: dict,
+         run_batch, workers: int) -> dict:
+    """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
     start = _walk_table(origin, _near_nodes(origin))
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     straight = _meters(origin, dest)
@@ -670,7 +596,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
             break
         # a batch: the searches known so far, run side by side (_run_batch)
         batch = []
-        while queue and len(batch) < SEARCH_WORKERS * 2 and searches + len(batch) < MAX_SEARCHES:
+        while queue and len(batch) < workers * 2 and searches + len(batch) < MAX_SEARCHES:
             item = queue.pop(0)
             if item not in tried:
                 tried.add(item)
@@ -678,7 +604,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
         searches += len(batch)
         ceiling = best_arrive + ROUTE_SLACK + 2 * TRANSFER_PENALTY
         jobs = [(when, start, goal, live, pen, banned, modes, ceiling, dest) for modes, banned, pen in batch]
-        for (modes, banned, pen), r in zip(batch, _run_batch(jobs, left)):
+        for (modes, banned, pen), r in zip(batch, run_batch(jobs, left)):
             if not r or r["arrive"] > best_arrive + ROUTE_SLACK:
                 continue
             best_arrive = min(best_arrive, r["arrive"])
