@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from server.clock import KST, iso
+from server.clock import KST, iso, kst_today
 
 # 학습용으로 남기는 API 항목(차량 번호판 plainNo 는 남기지 않는다): 구간 순번 · 구간 안 거리 · 정류장 정차 · 측정 시각 등
 RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
@@ -27,5 +27,16 @@ def record_bus(items: list[dict], route_id: str, now: float, directory: Path | N
         directory.mkdir(parents=True, exist_ok=True)
         with (directory / f"{datetime.fromtimestamp(now, KST):%Y%m%d}.jsonl").open("a", encoding="utf-8") as out:
             out.write(rows)
+    except OSError:
+        pass
+
+
+def record_positions(data: dict, directory: Path) -> None:
+    """지하철 위치 피드 한 번(열차마다 한 줄, 받은 때 fetchedAt): build_live_timing.py 가 배운다."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / f"{kst_today().replace('-', '')}.jsonl").open("a", encoding="utf-8") as sink:
+            for t in data["trains"]:
+                sink.write(json.dumps({**t, "fetchedAt": data["fetchedAt"]}, ensure_ascii=False) + "\n")
     except OSError:
         pass

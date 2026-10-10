@@ -8,12 +8,21 @@ from __future__ import annotations
 import threading
 
 from server.services.bus import BusArrivalService, BusLiveService
+from server.services.live import SubwayLiveService
 
 
 class Services:
-    def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None):
+    def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
+                 live: SubwayLiveService | None = None):
         self._lock = threading.Lock()
-        self._bus, self._arrivals = bus, arrivals
+        self._bus, self._arrivals, self._live = bus, arrivals, live
+
+    @property
+    def live(self) -> SubwayLiveService:
+        with self._lock:
+            if self._live is None:
+                self._live = SubwayLiveService()
+            return self._live
 
     @property
     def bus(self) -> BusLiveService:
