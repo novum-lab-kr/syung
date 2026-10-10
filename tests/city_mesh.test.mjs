@@ -2,7 +2,7 @@
 // viaduct passes through carries its level in the vertex bytes (web/lib/city_mesh.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND } from '../web/lib/city_mesh.mjs';
+import { TileBuilder, resolvePack, OVERLAP, STRIDE, KIND, INST_STRIDES } from '../web/lib/city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../web/lib/city_style_seoul.mjs';
 
 const P = resolvePack(SEOUL_CITY_STYLE), Z = 14, TX = 13975, TY = 6346, E = 4096, N = 2 ** Z;
@@ -73,9 +73,10 @@ test('조선: 낮은 건물은 초가 · 기와집, 높은 건물은 높이 그�
   const plans = new Set(); for (let i = 0; i < 40; i++) { const w = houseWings(16, 14, K, k => ((i * 7919 + k * 104729) % 1000) / 1000, false); plans.add(w.length); for (const h of w) { const [hx, hy] = h.turn ? [h.hd, h.hl] : [h.hl, h.hd]; assert.ok(Math.abs(h.x) + hx <= 8.01 && Math.abs(h.y) + hy <= 7.01) } }
   assert.ok(plans.size >= 3, `plans with ${[...plans]} wings`);
   const low = run([{ id: 1, props: { render_height: 6 }, rings: [rect(2000, 2000, 6 * UPM, 4 * UPM)] }]), kl = kinds(low);
-  assert.ok((kl[KIND.GIWA] || kl[11]) && kl[KIND.HANOK] && !kl[KIND.WALL], JSON.stringify(kl)); assert.ok(low.zmax < 9, `a low house (ridge ${low.zmax.toFixed(1)} m)`);
+  const insts = (m, kind) => m.inst[kind].byteLength / INST_STRIDES[kind];   // 지붕 · 벽은 인스턴스(city_hanok.mjs roofInst · boxInst)
+  assert.ok(insts(low, 'roof') && insts(low, 'box') && !kl[KIND.WALL], JSON.stringify(kl)); assert.ok(low.zmax < 9, `a low house (ridge ${low.zmax.toFixed(1)} m)`);
   const tall = run([{ id: 4, props: { render_height: 40 }, rings: [rect(2000, 2000, 14 * UPM, 9 * UPM)] }]);
-  assert.ok(tall.zmax > 36 && tall.zmax < 46, `a 40 m building keeps its height (${tall.zmax.toFixed(1)} m)`); assert.ok(kinds(tall)[KIND.GIWA] > 0);
+  assert.ok(tall.zmax > 36 && tall.zmax < 46, `a 40 m building keeps its height (${tall.zmax.toFixed(1)} m)`); assert.ok(insts(tall, 'roof') > 0 && insts(tall, 'skirt') > 0);
   const r = run([{ id: 2, props: { render_height: 8 }, rings: [rect(1000, 1000, 40 * UPM, 25 * UPM)] }]), kr = kinds(r); assert.ok(kr[KIND.DAM] > 0 || kr[12] > 0, '담장 or 돌담');
   // winding: every triangle faces along its vertices' normal (the culled side is the inside)
   for (const m of [low, tall, r]) {
@@ -90,7 +91,7 @@ test('조선: 타일 경계에 걸친 건물의 집은 중심이 든 타일 한 
   const H0 = JOSEON_CITY_STYLE.hanok, J = resolvePack({ ...JOSEON_CITY_STYLE, hanok: { ...H0, emptyShare: 0, compound: { ...H0.compound, stoneShare: 0 }, thatch: { ...H0.thatch, byLanduse: { unknown: 0 } } } }), half = 30 * UPM;   // nothing left to chance (open yards, 돌담, 초가): the whole block's seed (its own lowest vertex) differs from the cut halves'
   // the same 60 × 40 m block in two neighbouring tiles' coordinates (straddling x = E), as both tiles hold it
   const ring = ox => [{ x: E - half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 - 20 * UPM }, { x: E + half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 + 20 * UPM }, { x: E - half + ox, y: 2000 - 20 * UPM }];
-  const roofs = (x, ox) => { const tb = new TileBuilder({ z: Z, x, y: TY, extent: E, buildings: layer([{ id: 3, props: { render_height: 6 }, rings: [ring(ox)] }]), landuse: null }, J, {}); while (!tb.step(1e9)); const r = tb.result(), i8 = new Int8Array(r.verts.buffer, r.verts.byteOffset); let n = 0; for (let v = 0; v < r.verts.byteLength / STRIDE; v++) if (i8[v * STRIDE + 15] === KIND.HANOK) n++; return n };
+  const roofs = (x, ox) => { const tb = new TileBuilder({ z: Z, x, y: TY, extent: E, buildings: layer([{ id: 3, props: { render_height: 6 }, rings: [ring(ox)] }]), landuse: null }, J, {}); while (!tb.step(1e9)); return tb.result().inst.box.byteLength / INST_STRIDES.box };   // 집마다 벽 상자 하나(인스턴스)
   const a = roofs(TX, 0), b = roofs(TX + 1, -E), whole = roofs(TX, -E / 2);
   assert.ok(a > 0 && b > 0, `both tiles draw some (${a}, ${b})`); assert.equal(a + b, whole, 'together exactly the houses of the whole block');
 });

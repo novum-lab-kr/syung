@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { skirtTemplate, skirtInst, skirtGroups } from '../web/lib/city_hanok.mjs';
-import { INST_STRIDE } from '../web/lib/city_mesh.mjs';
+import { INST_STRIDES } from '../web/lib/city_mesh.mjs';
 
 test('템플릿: 먼 사각형 하나, 격자, 끝 두께가 이어진 범위', () => {
   const T = skirtTemplate([0, .55, 1]);
@@ -16,7 +16,7 @@ test('템플릿: 먼 사각형 하나, 격자, 끝 두께가 이어진 범위', 
 
 test('기록: 32바이트, 길이 · 끝 거리 · 들림 · 색', () => {
   const r = skirtInst([.25, .5], 12.3, 1, 8, 4, [2.11, 2.11, 1.5, .35], .75, .4, 1.9, 2);
-  assert.equal(r.byteLength, INST_STRIDE);
+  assert.equal(r.byteLength, INST_STRIDES.skirt);
   const b = new Uint8Array(r.buffer);
   assert.deepEqual([...r.slice(0, 6)].map(v => +v.toFixed(3)), [.25, .5, 12.3, 1, 8, 4]);
   assert.deepEqual([...b.slice(24)], [211, 211, 150, 35, 75, 40, 190, 2]);

@@ -19,8 +19,8 @@
 //   city.set({on:true,mode:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { skirtTemplate } from './city_hanok.mjs';
-import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDE, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
+import { skirtTemplate, roofTemplate, boxTemplate } from './city_hanok.mjs';
+import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB } from './city_mesh.mjs';
 import { SEOUL_CITY_STYLE } from './city_style_seoul.mjs';
 import { sunPosition } from './sun.mjs';
 import THROUGH_LIST from './city_through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
@@ -71,6 +71,77 @@ void main(){
   float L=a_l.x;
   v_n=n;v_z=z;v_u=mix(a_l.y+sc*L,mix(a_l.y-a_e.y*0.01,a_l.y+L+a_e.w*0.01,sc),t);v_wm=u_wo+xy*u_S;
   v_wall=vec4(0.0);v_bld=vec4(0.0);v_misc=vec4(a_f.w,0.0,255.0,255.0);v_kind=8.0;
+}`;
+// 조선 한옥 지붕, 인스턴스로 (city_hanok.mjs roofInst · roofTemplate — 바꾸면 셋 다): 템플릿 점 (part, i, j)를 기록(a_p 중심
+// xy · 각도 · a, a_q b · o · ze · rise, a_r ar · lift · kick · t1, a_h 벽 위 zt · 용마루 꼭대기 H, a_s 모양 · 초가 · 색, a_d 씨앗)대로
+// 펼친다: 면 0–1 긴 면(±y), 2–3 짧은 면(±x), 4–5 합각 · 박공벽, 6 용마루, 7 초가 끝 두께. 그 지붕에 없는 부분은 화면 밖으로
+const VS_ROOF = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 a_t;layout(location=1) in vec4 a_p;layout(location=2) in vec4 a_q;layout(location=3) in vec4 a_r;layout(location=4) in vec2 a_h;layout(location=5) in vec4 a_s;layout(location=6) in vec4 a_d;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec4 u_rf;uniform vec4 u_rd;   // u_rf: 팔작 tg, 맞배 끝 내밀기, 초가 끝 두께; u_rd: 용마루 반폭 · 위 · 아래
+out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
+float A,B,O,ZE,RI,AR,LI,KI,T1,AE,BE,XG,TG;int STY;bool TH;
+float prof(float t){return TH?1.0-(1.0-t)*(1.0-t)*0.9-0.1*(1.0-t):0.45*t+0.55*t*t;}
+float zOf(float t){return ZE+RI*prof(t);}
+float X(float t){return STY==0?mix(AE,AR,t):STY==1?(t<TG?mix(AE,XG,t/TG):XG):AE;}
+vec3 face(int f,float s,float t){   // 면 f 위 s(처마 따라 0..1), t(처마 0 … 용마루 1)
+  float u=1.0-t;
+  if(f<2){float sy=f==0?1.0:-1.0,c=abs(2.0*s-1.0),cl=STY==2?0.4:1.0;return vec3(mix(-sy,sy,s)*(X(t)+KI*u),sy*(BE+KI*c)*u,zOf(t)+cl*LI*c*u*u);}
+  float sx=f==2?1.0:-1.0;return vec3(sx*(X(t)+KI*u),mix(sx,-sx,s)*(BE+KI)*u,zOf(t)+LI*u*u);
+}
+float rowT(int f,float j){if(STY==1)return j<0.5?0.0:j<1.5?TG*0.5:j<2.5?TG:1.0;return j<0.5?0.0:j<1.5?T1*0.5:T1;}
+void main(){
+  A=a_p.w;B=a_q.x;O=a_q.y;ZE=a_q.z;RI=a_q.w;AR=a_r.x;LI=a_r.y;KI=a_r.z;T1=a_r.w;TG=u_rf.x;
+  STY=int(a_s.x+0.5);TH=a_s.y>0.5;AE=STY==2?A+u_rf.y:A+O;BE=B+O;XG=max(0.35*AE,AE-BE*TG);
+  int part=int(a_t.x+0.5);float i=a_t.y,j=a_t.z;
+  vec3 p=vec3(0.0),n=vec3(0.0,0.0,1.0);float U=0.0,kind=TH?11.0:8.0,H=a_h.y,mx=a_s.z,my=clamp(floor(a_h.x*20.0+0.5),0.0,255.0);bool off=false;
+  if(part<4){
+    off=part>=2&&STY==2;
+    float s=part<2?i*0.5:i,t=rowT(part,j);p=face(part,s,t);U=part<2?p.x:p.y;
+    float h=0.02,s0=max(s-h,0.0),s1=min(s+h,1.0),tt=min(t,0.96),t0=max(tt-h,0.0),t1=tt+h;
+    n=normalize(cross(face(part,s1,tt)-face(part,s0,tt),face(part,s,t1)-face(part,s,t0)));if(n.z<0.0)n=-n;
+  }else if(part<6){   // 합각(팔작) · 박공벽(맞배): 회벽 삼각, 지붕 곡선을 따라
+    off=STY==0;float sx=part==4?1.0:-1.0,x,t0,wk;
+    if(STY==1){x=sx*(XG-0.3);t0=TG;wk=0.87;}else{x=sx*A;t0=max(0.0,1.0-B/BE);wk=1.0;}
+    float ts=i<1.5?t0:i<3.5?(t0+1.0)*0.5:1.0,y=BE*(1.0-ts)*wk*(mod(i,2.0)<0.5?-1.0:1.0);
+    p=vec3(x,i>3.5&&i<4.5?0.0:y,zOf(ts)-0.12);
+    if(i>4.5){if(STY==2)p=vec3(x,i<5.5?-B:B,a_h.x);else p=vec3(x,BE*(1.0-t0)*wk*(i<5.5?-1.0:1.0),zOf(t0)-0.12);}
+    n=vec3(sx,0.0,0.0);U=p.y;kind=10.0;
+    float zA=zOf(1.0)-0.12,zB=STY==1?zOf(TG)-0.12:a_h.x;H=zA;mx=clamp(floor((zA-zB)*20.0+0.5),1.0,255.0);my=1.0;
+  }else if(part==6){   // 용마루
+    float R=STY==1?max(0.35*AE,AE-BE*0.5):STY==2?A+u_rf.y:AR,L=R+(STY==0?0.3:0.15),w=u_rd.x,zr=ZE+RI,z0=zr-u_rd.z,z1=zr+u_rd.y;
+    off=T1<0.999||TH||R<=0.2;
+    float q=floor(i/4.0),c=mod(i,4.0),x=(c==0.0||c==3.0)?-L:L;
+    if(q<1.5){float sy=q<0.5?-1.0:1.0;p=vec3(x,sy*w,c<1.5?z0:z1);n=vec3(0.0,sy,0.0);}
+    else{p=vec3(x,c<1.5?-w:w,z1);n=vec3(0.0,0.0,1.0);}
+    U=x;
+  }else{   // 초가 끝 두께
+    off=!TH;int f=int(i/4.0);float e=mod(floor(i/2.0),2.0);p=face(f,e,0.0);if(mod(i,2.0)>0.5)p.z-=u_rf.z;
+    n=f<2?vec3(0.0,f==0?1.0:-1.0,0.0):vec3(f==2?1.0:-1.0,0.0,0.0);U=f<2?p.x:p.y;
+  }
+  float c=cos(a_p.z),sn=sin(a_p.z);mat2 R=mat2(c,sn,-sn,c);
+  vec2 xy=a_p.xy+R*p.xy*u_mpu;float z=p.z*u_grow;
+  gl_Position=off?vec4(0.0,0.0,2.0,1.0):u_matrix*vec4(xy,z*u_mpu,1.0);
+  float Hq=min(65535.0,floor(H*10.0+0.5));
+  v_n=vec3(R*n.xy,n.z);v_z=z;v_u=U;v_wm=u_wo+xy*u_S;v_wall=vec4(0.0);v_bld=vec4(a_d.x,a_d.y,0.0,0.0);v_misc=vec4(mx,my,mod(Hq,256.0),floor(Hq/256.0));v_kind=kind;
+}`;
+// 조선 한옥 벽 상자, 인스턴스로 (city_hanok.mjs boxInst · boxTemplate): 네 면(side, end, top), 면마다 칸 수 · 길이 · 층 높이나 씨앗을
+// 원래 정점이 들던 대로 v_wall 에 — FS kind 9 그대로
+const VS_BOX = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 a_t;layout(location=1) in vec4 a_p;layout(location=2) in vec4 a_q;layout(location=3) in vec4 a_w;layout(location=4) in vec4 a_d;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform float u_bay;
+out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
+void main(){
+  int s=int(a_t.x+0.5);float e=a_t.y,A=a_p.w,B=a_q.x;
+  vec2 C0=s==0?vec2(-A,-B):s==1?vec2(A,-B):s==2?vec2(A,B):vec2(-A,B),C1=s==0?vec2(A,-B):s==1?vec2(A,B):s==2?vec2(-A,B):vec2(-A,-B);
+  float l=length(C1-C0);vec2 d=(C1-C0)/l;
+  float c=cos(a_p.z),sn=sin(a_p.z);mat2 R=mat2(c,sn,-sn,c);
+  vec2 xy=a_p.xy+R*mix(C0,C1,e)*u_mpu;float z=(a_t.z>0.5?a_q.z:a_q.y)*u_grow;
+  gl_Position=u_matrix*vec4(xy,z*u_mpu,1.0);
+  float lq=min(65535.0,floor(l*20.0+0.5)),w3=a_w.x>=2.0?clamp(floor(a_q.w*20.0+0.5),1.0,255.0):mod(float(s)*5.0+a_w.w,16.0),Hq=min(65535.0,floor(a_q.z*10.0+0.5));
+  v_n=vec3(R*vec2(d.y,-d.x),0.0);v_z=z;v_u=e*l;v_wm=u_wo+xy*u_S;
+  v_wall=vec4(max(1.0,floor(l/u_bay+0.5)),mod(lq,256.0),floor(lq/256.0),w3);v_bld=vec4(a_d.x,a_d.y,a_w.x,0.0);v_misc=vec4(a_w.y,a_w.z,mod(Hq,256.0),floor(Hq/256.0));v_kind=9.0;
 }`;
 // x-ray (심시티): the screen boxes of the station platforms and running trains this frame (NDC x0,y0,x1,y1; their farthest window
 // depth and fade weight): a building fragment inside one (feathered by u_xv.z px) and nearer than the target turns to glass
@@ -385,7 +456,7 @@ function compile(gl, vs, fs) {
 }
 
 // a built tile's size in memory (one copy): its vertex and index bytes
-const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? m.inst.byteLength : 0);
+const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0);
 
 // the through list (web/lib/city_through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
 function throughIndex(list) {
@@ -398,6 +469,13 @@ function throughIndex(list) {
   }
   return { byId, byRing, size: byId.size + byRing.size };
 }
+
+// 조선의 인스턴스 종류 (city_hanok.mjs): 정점 셰이더, 템플릿(far · near 색인 범위), 기록의 속성 [위치, 개수, 형식(0 f32 · 1 u8), 바이트 위치]
+const INST = {
+  skirt: { vs: VS_SKIRT, tpl: P => { const T = skirtTemplate(P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
+  roof: { vs: VS_ROOF, tpl: () => roofTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 0, 32], [4, 2, 0, 48], [5, 4, 1, 56], [6, 4, 1, 60]] },
+  box: { vs: VS_BOX, tpl: () => boxTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 1, 32], [4, 4, 1, 36]] },
+};
 
 // ── the layer ────────────────────────────────────────────────────────────────────────────────────
 export class CityBuildings {
@@ -433,16 +511,20 @@ export class CityBuildings {
     return !this.map.getLayer('bm-bld') || this.map.getLayoutProperty('bm-bld', 'visibility') !== 'none';
   }
   animating() { return this.growing }
-  context(gl) { let c = this.ctx.get(gl); if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), skColor: compile(gl, VS_SKIRT, FS), skDepth: compile(gl, VS_SKIRT, FS_DEPTH), tpl: null }; this.ctx.set(gl, c) } return c }
-  // the 처마 piece every instance draws (one a context; again when the pack's rows change)
-  template(gl, C) {
-    const rows = this.P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1], key = rows.join(',');
-    if (C.tpl?.key === key) return C.tpl;
-    if (C.tpl) { gl.deleteBuffer(C.tpl.vbo); gl.deleteBuffer(C.tpl.ibo) }
-    const T = skirtTemplate(rows), vbo = gl.createBuffer(), ibo = gl.createBuffer();
+  context(gl) {
+    let c = this.ctx.get(gl);
+    if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), inst: {}, tpl: {} }; for (const [k, I] of Object.entries(INST)) c.inst[k] = { color: compile(gl, I.vs, FS), depth: compile(gl, I.vs, FS_DEPTH) }; this.ctx.set(gl, c) }
+    return c;
+  }
+  // an instance kind's template in this context (again when the pack's shape of it changes)
+  template(gl, C, kind) {
+    const T = INST[kind].tpl(this.P), key = Array.from(T.verts).join(',');
+    if (C.tpl[kind]?.key === key) return C.tpl[kind];
+    if (C.tpl[kind]) { gl.deleteBuffer(C.tpl[kind].vbo); gl.deleteBuffer(C.tpl[kind].ibo) }
+    const vbo = gl.createBuffer(), ibo = gl.createBuffer();
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, T.verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, T.idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    return (C.tpl = { key, vbo, ibo, lo: T.lo, grid: T.grid, edge: T.edge });
+    return (C.tpl[kind] = { key, vbo, ibo, far: T.far, near: T.near, nearPhone: T.nearPhone || T.near });
   }
   // ── tiles ──
   // the canonical z14 tiles the map is showing: meshes for those we have, builds queued for the rest
@@ -551,14 +633,16 @@ export class CityBuildings {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx.byteLength, gl.STATIC_DRAW);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false }; e.gpu.set(gl, g);
-    if (m.inst && m.inst.byteLength) {   // 처마 조각: the template's points + the tile's records (their pointers moved to each chunk's first record when drawn)
-      const C = this.context(gl), tpl = this.template(gl, C), ivao = gl.createVertexArray(), ivbo = gl.createBuffer();
-      gl.bindVertexArray(ivao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, ivbo); gl.bufferData(gl.ARRAY_BUFFER, m.inst, gl.STATIC_DRAW);
-      for (let i = 1; i <= 4; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribDivisor(i, 1) }
+    g.inst = {};   // 조선 인스턴스: the template's points + the tile's records (their pointers moved to each run's first record when drawn)
+    for (const kind of Object.keys(INST)) {
+      const buf = m.inst?.[kind]; if (!buf || !buf.byteLength) continue;
+      const C = this.context(gl), tpl = this.template(gl, C, kind), vao = gl.createVertexArray(), vbo = gl.createBuffer();
+      gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
+      for (const [loc] of INST[kind].attrs) { gl.enableVertexAttribArray(loc); gl.vertexAttribDivisor(loc, 1) }
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tpl.ibo);
       gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-      g.ivao = ivao; g.ivbo = ivbo; g.tpl = tpl;
+      g.inst[kind] = { vao, vbo, tpl };
     } this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
   }
   // fill the buffers on: at most `budget` bytes; the bytes put up
@@ -578,7 +662,7 @@ export class CityBuildings {
     const st = this.stats, dt = performance.now() - t0; st.uploadMs = (st.uploadMs || 0) + dt; st.feedMaxMs = Math.max(st.feedMaxMs || 0, dt);
     return used;
   }
-  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.ivao) { gl.deleteVertexArray(g.ivao); gl.deleteBuffer(g.ivbo) } e.gpu.delete(gl) }
+  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   paletteFor() {
     const P = this.P, th = this.theme, mode = P.modes[this.mode] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
@@ -750,46 +834,61 @@ export class CityBuildings {
       M32.set(M64);
       gl.uniformMatrix4fv(u.u_matrix, false, M32); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
       gl.bindVertexArray(g.vao);
-      const sk = g.ivao ? { g, m, M: Float32Array.from(M32), chunks: [] } : null;   // 처마 instances: drawn after, by their own program
+      const sk = Object.keys(g.inst || {}).length ? { g, m, M: Float32Array.from(M32), chunks: [] } : null;   // 조선 instances: drawn after, by their own programs
       for (const c of m.chunks) {
         if (!this.noCull && !this.inView(M64, c, m.mpu * grow)) continue;
         if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr.U)) continue;   // the glass pass: only chunks under an x-ray box
-        const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW, nk = hi ? c.k1 - c.k0 : c.kF - c.k0; if (b <= a && !(sk && nk > 0)) continue;
+        const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW, nk = sk ? Object.values(c.k).some(([k0, kF, k1]) => (hi ? k1 : kF) > k0) : false; if (b <= a && !nk) continue;
         let f = 1;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
           const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu; f = 1 - sm(far[0], far[1], d);
           if (f <= 0) continue; gl.uniform1f(u.u_grow, grow * f);
         }
-        if (sk && nk > 0) sk.chunks.push(c, grow * f);
+        if (nk) sk.chunks.push(c, grow * f);
         if (b > a) { if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++ }
       }
       if (sk && sk.chunks.length) skirts.push(sk);
     }
-    if (skirts.length) draws += this.drawSkirts(gl, C, depthOnly, glass, zoom, hi, skirts), drawn = true;
+    if (skirts.length) draws += this.drawInst(gl, C, depthOnly, glass, zoom, hi, skirts), drawn = true;
     gl.bindVertexArray(null); gl.colorMask(true, true, true, true); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW); if (depthOnly) gl.depthFunc(gl.LESS);   // the train canvas's renderers expect culling off (as BuildingDepth left it)
     if (glass) { gl.disable(gl.BLEND); gl.depthMask(true); this.stats.glassDraws = draws; return drawn }
     this.growing = growing; if (growing && !depthOnly) map.triggerRepaint();
     const st = this.stats; st[depthOnly ? 'depthMs' : 'renderMs'] = (st[depthOnly ? 'depthMs' : 'renderMs'] || 0) + performance.now() - t0; st[depthOnly ? 'depthFrames' : 'frames'] = (st[depthOnly ? 'depthFrames' : 'frames'] || 0) + 1; st.draws = draws;
     return drawn;
   }
-  // 조선 고층의 처마 조각: the template drawn once per record of each visible chunk (from afar the far records, one quad each;
-  // near all of them, the grid and — not on phones — the eave's edge). Both sides drawn: a piece is an open surface
-  drawSkirts(gl, C, depthOnly, glass, zoom, hi, list) {
-    const prog = depthOnly ? C.skDepth : C.skColor, u = prog.u, G = this.P.hanok?.tall?.skirtGroup || {}, T = this.P.hanok?.tall || {};
-    gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom);
-    gl.uniform4f(u.u_sk, num(T.skirtRiseM, 1), num(G.upK, .15), num(T.skirtEdgeM, .12), 0); gl.uniform1f(u.u_S, S);
+  // 조선 instances (처마 조각 · 지붕 · 벽 상자): each kind's template drawn once per record of the visible chunks — far its far
+  // records and far range, near all of them (phones: the 처마 without its edge); neighbouring chunks' runs drawn as one.
+  // Both sides drawn: a roof is an open surface
+  drawInst(gl, C, depthOnly, glass, zoom, hi, list) {
+    const H = this.P.hanok || {}, T = H.tall || {}, G = T.skirtGroup || {}, R = H.ridge || {};
     const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
     let draws = 0;
-    for (const { g, m, M, chunks } of list) {
-      const tpl = g.tpl, [i0, n] = hi ? [tpl.grid[0], tpl.grid[1] + (this.phone ? 0 : tpl.edge[1])] : tpl.lo;
-      gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy);
-      gl.bindVertexArray(g.ivao); gl.bindBuffer(gl.ARRAY_BUFFER, g.ivbo);
-      for (let k = 0; k < chunks.length; k += 2) {
-        const c = chunks[k], cnt = hi ? c.k1 - c.k0 : c.kF - c.k0, o = c.k0 * INST_STRIDE;
-        gl.uniform1f(u.u_grow, chunks[k + 1]);
-        gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INST_STRIDE, o); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, INST_STRIDE, o + 16);
-        gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, false, INST_STRIDE, o + 24); gl.vertexAttribPointer(4, 4, gl.UNSIGNED_BYTE, false, INST_STRIDE, o + 28);
-        if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, n, gl.UNSIGNED_SHORT, i0 * 2, cnt); draws++;
+    for (const [kind, I] of Object.entries(INST)) {
+      const C2 = C.inst[kind], prog = depthOnly ? C2.depth : C2.color, u = prog.u, stride = INST_STRIDES[kind];
+      let used = false;
+      for (const { g, m, M, chunks } of list) {
+        const gi = g.inst[kind]; if (!gi) continue;
+        if (!used) {
+          used = true; gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S);
+          gl.uniform4f(u.u_sk, num(T.skirtRiseM, 1), num(G.upK, .15), num(T.skirtEdgeM, .12), 0);
+          gl.uniform4f(u.u_rf, .5, num(H.gableEndM, .6), num(H.thatch?.edgeM, .32), 0); gl.uniform4f(u.u_rd, num(R.halfWidthM, .11), num(R.upM, .18), num(R.downM, .08), 0); gl.uniform1f(u.u_bay, num(H.bayM, 2.4));
+        }
+        const tpl = gi.tpl, [i0, n] = hi ? (this.phone ? tpl.nearPhone : tpl.near) : tpl.far;
+        gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy);
+        gl.bindVertexArray(gi.vao); gl.bindBuffer(gl.ARRAY_BUFFER, gi.vbo);
+        let run = null;
+        const flush = () => {
+          if (!run || run.b <= run.a) return;
+          gl.uniform1f(u.u_grow, run.grow); const o = run.a * stride;
+          for (const [loc, size, type, off] of I.attrs) gl.vertexAttribPointer(loc, size, type ? gl.UNSIGNED_BYTE : gl.FLOAT, false, stride, o + off);
+          if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, n, gl.UNSIGNED_SHORT, i0 * 2, run.b - run.a); draws++;
+        };
+        for (let k = 0; k < chunks.length; k += 2) {
+          const [k0, kF, k1] = chunks[k].k[kind], a = k0, b = hi ? k1 : kF, grow = chunks[k + 1]; if (b <= a) continue;
+          if (run && run.b === a && run.grow === grow) { run.b = b; continue }   // (from afar a run joins only where no near-only records lie between: b === a)
+          flush(); run = { a, b, grow };
+        }
+        flush();
       }
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindVertexArray(null); if (cull) gl.enable(gl.CULL_FACE);
