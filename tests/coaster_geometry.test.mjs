@@ -19,3 +19,9 @@ test('coaster mesh stays finite through an inversion and keeps a bounded footpri
   assert.equal(mesh.length%22,0);assert.ok(mesh.length>0);assert.ok(mesh.every(Number.isFinite));
   assert.ok(mesh.byteLength<300000,'one 100 m chunk stays small');
 });
+
+test('줌 19.5 이상에서는 선로 · 기둥을 실제 굵기로 그린다(픽셀 상한에 묶여 납작해지지 않게)',()=>{
+  const m=trackMetrics(20),mpp=m.mpp;
+  assert.ok(Math.abs(m.post-1.25/mpp)<1e-9&&Math.abs(m.rail-.32/mpp)<1e-9&&Math.abs(m.spineDepth-1.2/mpp)<1e-9);
+  assert.ok(trackMetrics(19).post>trackMetrics(18).post);
+});
