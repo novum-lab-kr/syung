@@ -9,10 +9,6 @@ export const SEOUL_COASTER_STYLE = {
   track: { railBodyOffset:.30, railDiameterM:.32, railDiameterPx:[1,1.7], railSideLight:.80,
     spineWidthM:.55, spineDepthM:1.2, spineWidthPx:[.65,1.5], spineDepthPx:[1.2,2.6],
     girderDepthM:1.8, girderDepthPx:[3,7], girderBody:.5,   // 2026-10-05 덕배: 고가에서 솟는 레일 — 차선마다 노선색 상자 거더(폭 = 열차 폭, 위는 밝게), 두 차선이 붙어 넓은 상판처럼
-    // 2026-10-10 행님: 관형 강철 코스(인타민 등뼈 선로처럼) — 둥근 레일 두 줄 아래 노선색 등뼈 관, 레일 밑 가로대와 V 버팀대로 잇는다(거더 없앰).
-    // 등뼈 중심은 레일 중심 아래 spineDropM, 버팀대는 bracketEveryM 마다(굵기는 침목 tieThickness, 가까이서만 서서히 — lod.detail)
-    // 멀리(줌 16 아래)는 등뼈 하한을 spineFarBoostPx 더 굵게(줌 16 → 17 에 걸쳐 원래대로) — 거더가 없어져 노선색이 가늘어졌다. 중심 깊이(spineDrop)는 그대로
-    spineDiameterM:.85, spineDiameterPx:[2.5,6], spineFarBoostPx:1, spineFarZoom:[16,17], spineDropM:1, bracketEveryM:4,
     tieEveryM:7.5, tieBodyWidth:.78, tieThicknessM:.22, tieThicknessPx:[.7,1.2] },
   supports: { minHeightM:3, yHeightM:30, yBranchM:6, aHeightM:80, spanM:[60,80,100], clearM:15,
     diameterM:1.25, diameterPx:[1.1,2.8], aDiameterM:1.5, aSpread:.18, aMaxSpreadM:28, beamHeightM:1,
@@ -48,8 +44,7 @@ export function trackMetrics(zoom, lat=37.55, pack=SEOUL_COASTER_STYLE) {
   // 상한에 묶이면 줌 20에서 기둥(1.25 m)이 2.8 px 막대 · 레일이 1.7 px 선이 되어 납작해 보였다(2026-10-10 행님 "네모 색 끝").
   const mpp=metresPerPixel(zoom,lat), T=pack.track, S=pack.supports, real=clamp((zoom-18)/1.5,0,1), px=(m,range)=>Math.max(clamp(m/mpp,...range),m/mpp*real);
   return { mpp, rail:px(T.railDiameterM,T.railDiameterPx), spineWidth:px(T.spineWidthM,T.spineWidthPx),
-    spineDepth:px(T.spineDepthM,T.spineDepthPx), spine:px(T.spineDiameterM,[T.spineDiameterPx[0]+T.spineFarBoostPx*(1-zoomFade(zoom,T.spineFarZoom)),T.spineDiameterPx[1]]),
-    spineDrop:px(T.spineDiameterM,T.spineDiameterPx)*T.spineDropM/T.spineDiameterM, girder:px(T.girderDepthM,T.girderDepthPx), tie:px(T.tieThicknessM,T.tieThicknessPx), post:px(S.diameterM,S.diameterPx) };
+    spineDepth:px(T.spineDepthM,T.spineDepthPx), girder:px(T.girderDepthM,T.girderDepthPx), tie:px(T.tieThicknessM,T.tieThicknessPx), post:px(S.diameterM,S.diameterPx) };
 }
 // A half-open edge grid: neighbouring chunks own each tie once; LOD only drops stable indices.
 export function distanceGrid(startM, endM, everyM, stride=1) {
