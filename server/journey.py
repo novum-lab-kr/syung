@@ -17,18 +17,18 @@ import bisect
 import heapq
 import json
 import math
-import os
 import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timedelta
 
-ROOT = Path(__file__).resolve().parent.parent
-KST = timezone(timedelta(hours=9))
-KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "").strip()
-OSRM_URL = os.environ.get("OSRM_URL", "http://127.0.0.1:5000").rstrip("/")
+from server.clock import KST
+from server.config import ROOT, JourneyConfig
+
+CONFIG = JourneyConfig.from_env()
+KAKAO_REST_KEY = CONFIG.kakao_key
+OSRM_URL = CONFIG.osrm_url
 WALK_RADIUS_M = 1600          # stations considered at either end
 MAX_STATIONS = 6
 TRANSFER_PENALTY = 8 * 60     # "fewest transfers" plan: each change weighs as 8 extra minutes
@@ -593,7 +593,7 @@ def _signature(r: dict) -> tuple:
 
 
 # searches run side by side in worker processes (each loads the network once); inline when that fails
-SEARCH_WORKERS = max(0, int(os.environ.get("JOURNEY_WORKERS", "3")))
+SEARCH_WORKERS = CONFIG.workers
 _pool = None
 
 

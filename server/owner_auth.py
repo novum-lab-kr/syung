@@ -21,7 +21,13 @@ import threading
 import time
 from pathlib import Path
 
-AUTH_FILE = Path(os.environ.get("SYUNG_AUTH_FILE", "/etc/subway-live-auth.json"))
+_ROOT = str(Path(__file__).resolve().parent.parent)   # cd server; python3 owner_auth.py set … 로 불러도 server 패키지를 찾게
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from server.config import AuthConfig  # noqa: E402
+
+AUTH_FILE = AuthConfig.from_env().auth_file
 COOKIE = "syung_owner"
 MAX_AGE = 30 * 24 * 3600
 ITERATIONS = 240_000

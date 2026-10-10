@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import json
-import os
 import re
+import sys
 import threading
 import time
 import urllib.error
@@ -16,46 +16,46 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-HOST = os.environ.get("SUBWAY_LIVE_HOST", "127.0.0.1")
-PORT = int(os.environ.get("SUBWAY_LIVE_PORT", "3113"))
-CACHE_SECONDS = max(15, int(os.environ.get("SUBWAY_LIVE_CACHE_SECONDS", "90")))   # 60+ while the key had 1000 calls a day
-FOCUSED_CACHE_SECONDS = max(5, min(CACHE_SECONDS, int(os.environ.get("SUBWAY_LIVE_FOCUSED_CACHE_SECONDS", "15"))))
-DAILY_LIMIT = max(1, int(os.environ.get("SUBWAY_LIVE_DAILY_LIMIT", "950")))   # raise it when the key's quota is raised
-# No upstream calls while no trains run (KST, "HH:MM-HH:MM", may wrap midnight; empty = always call).
-QUIET_HOURS = os.environ.get("SUBWAY_LIVE_QUIET_HOURS", "01:40-04:25").strip()   # no trains then: the last run till ~01:30, the first from ~04:30
-API_KEY = os.environ.get("SEOUL_SUBWAY_API_KEY", "sample").strip() or "sample"
+_ROOT = str(Path(__file__).resolve().parent.parent)   # python3 server/subway_live_proxy.py 로 띄워도 server 패키지를 찾게
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from server.config import SubwayConfig  # noqa: E402
+
+CONFIG = SubwayConfig.from_env()
+HOST, PORT = CONFIG.host, CONFIG.port
+CACHE_SECONDS = CONFIG.cache_seconds
+FOCUSED_CACHE_SECONDS = CONFIG.focused_cache_seconds
+DAILY_LIMIT = CONFIG.daily_limit
+QUIET_HOURS = CONFIG.quiet_hours
+API_KEY = CONFIG.api_key
 API_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimePosition/0/1000/{}"
 # One call returns arrival rows for every station on every line (~3k rows); used as the primary
 # source so any number of lines costs one upstream call per CACHE_SECONDS.
 ALL_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimeStationArrival/ALL"
-SOURCE_MODE = os.environ.get("SUBWAY_LIVE_SOURCE", "all")
+SOURCE_MODE = CONFIG.source_mode
 # Position bursts: the per-line position feed stamps each train with its own event time, which the
 # all-stations feed does not on the Seoul Metro lines. Every BURST_EVERY seconds one of these lines
 # is read BURST_CALLS times, BURST_GAP apart, and saved for build_live_timing.py (dwell/approach).
-BURST_LINES = [l for l in os.environ.get("SUBWAY_LIVE_BURST_LINES", "2호선,5호선,6호선,7호선,9호선").split(",") if l.strip()]
-BURST_EVERY = int(os.environ.get("SUBWAY_LIVE_BURST_EVERY", "7200"))
+BURST_LINES = CONFIG.burst_lines
+BURST_EVERY = CONFIG.burst_every
 BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
-BURST_DIR = Path(os.environ.get("SUBWAY_LIVE_BURST_DIR", "/var/lib/subway-live/position"))
+BURST_DIR = CONFIG.burst_dir
 # Position overlay — off by default (SUBWAY_LIVE_POSITION_LINES=0); until the key's daily quota is
 # lifted it runs for one line in commuting hours only (SUBWAY_LIVE_POSITION_HOURS, _BUDGET).
 # The per-line position feed is ahead of the all-stations one at 3 of 4 moments, mostly by one
 # station; the all-stations feed caught up after a median 38 s at 60 s polling (2·5·6·7·9호선,
 # 3,158 moments, 2026-09-28–29). With it on, the first N lines a request names (the map sends
 # them most-visible first) and the line of a train being followed (focus=) are read from it too.
-POSITION_LINES = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_LINES", "0")))
-POSITION_SECONDS = max(10, int(os.environ.get("SUBWAY_LIVE_POSITION_SECONDS", "25")))
-FOCUS_SECONDS = max(5, int(os.environ.get("SUBWAY_LIVE_FOCUS_SECONDS", "15")))
-POSITION_RESERVE = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_RESERVE", "200")))   # calls kept for the map
-# only at these KST times ("07:00-09:30,17:30-20:00"; empty = all day) — while the quota is 1000 a
-# day, commuting hours are when being a station off matters most
-POSITION_HOURS = os.environ.get("SUBWAY_LIVE_POSITION_HOURS", "").strip()
-# however many people look at however many lines, the overlay makes at most this many calls a day
-POSITION_BUDGET = max(0, int(os.environ.get("SUBWAY_LIVE_POSITION_BUDGET", "3000")))
-# Identical requests within this many seconds get the same bytes (the map polls every 10–20 s; a
-# busy minute is many people asking for the same few line sets)
-RESPONSE_SECONDS = max(0.0, float(os.environ.get("SUBWAY_LIVE_RESPONSE_SECONDS", "2")))
+POSITION_LINES = CONFIG.position_lines
+POSITION_SECONDS = CONFIG.position_seconds
+FOCUS_SECONDS = CONFIG.focus_seconds
+POSITION_RESERVE = CONFIG.position_reserve
+POSITION_HOURS = CONFIG.position_hours
+POSITION_BUDGET = CONFIG.position_budget
+RESPONSE_SECONDS = CONFIG.response_seconds
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
-QUOTA_FILE = Path(os.environ.get("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json"))
+QUOTA_FILE = CONFIG.quota_file
 
 LINE_NAMES = {
     "1001": "1호선", "1002": "2호선", "1003": "3호선", "1004": "4호선",
@@ -623,7 +623,7 @@ _place_cache: dict[str, tuple[float, list]] = {}
 
 def route_snapshot(query: dict) -> tuple[dict, int]:
     """/route?from=lat,lng&to=lat,lng[&at=YYYY-MM-DDTHH:MM] — see journey.plan."""
-    import journey
+    from server import journey
     try:
         o = tuple(float(x) for x in query.get("from", [""])[0].split(","))
         d = tuple(float(x) for x in query.get("to", [""])[0].split(","))
@@ -643,7 +643,7 @@ def route_snapshot(query: dict) -> tuple[dict, int]:
 
 def place_snapshot(query: dict) -> tuple[dict, int]:
     """/place?q=...[&near=lat,lng] — Kakao Local search, cached 10 minutes per query."""
-    import journey
+    from server import journey
     q = query.get("q", [""])[0].strip()[:80]
     if not q:
         return {"ok": False, "error": "검색어가 필요해요"}, 400
@@ -687,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _auth(self) -> None:
-        import owner_auth
+        from server import owner_auth
         if owner_auth.valid(self.headers.get("Cookie")):
             self.send_response(204)
             self.send_header("Cache-Control", "no-store")
@@ -699,7 +699,7 @@ class Handler(BaseHTTPRequestHandler):
         self._redirect(302, "/login.html?next=" + urllib.parse.quote(owner_auth.safe_next(uri), safe=""))
 
     def do_POST(self) -> None:
-        import owner_auth
+        from server import owner_auth
         path = self.path.split("?", 1)[0]
         if path == "/logout":
             return self._redirect(303, "/login.html", owner_auth.clear_cookie())
@@ -720,7 +720,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth()
         # bus: separate cache/quota; the same process can serve the new endpoint.
         if self.path.split("?", 1)[0] in ("/bus/live", "/api/bus/live"):
-            import bus_live_proxy
+            from server import bus_live_proxy
             if len(self.path) > 2048:
                 return self._send(400, b'{"ok":false,"error":"invalid_request"}')
             body, status = bus_live_proxy.snapshot(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -800,7 +800,7 @@ def _burst_loop() -> None:
 
 def _bus_samples() -> None:
     try:
-        import bus_live_proxy
+        from server import bus_live_proxy
         bus_live_proxy.background_loop()   # 보는 중인 버스 노선을 먼저 새로, 남는 차례에 학습용 수집
     except Exception as e:  # noqa: BLE001 — the map's bus requests still work
         print(f"bus samples stopped: {e}", flush=True)
@@ -808,7 +808,7 @@ def _bus_samples() -> None:
 
 def _warm_journey() -> None:
     try:
-        import journey
+        from server import journey
         journey.warm()   # route search workers up before the first 길찾기
     except Exception as e:  # noqa: BLE001 — routing falls back to searching in-process
         print(f"journey warm-up failed: {e}", flush=True)

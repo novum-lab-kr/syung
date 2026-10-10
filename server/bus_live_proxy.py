@@ -25,19 +25,24 @@ import json
 import math
 import os
 import re
+import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-KST = timezone(timedelta(hours=9))
+_ROOT = str(Path(__file__).resolve().parent.parent)   # import bus_live_proxy(deploy/dev_server.py) 로 불러도 server 패키지를 찾게
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from server.clock import KST, day_bounds, iso  # noqa: E402,F401
+from server.config import ROOT, ArrivalConfig, BusConfig as Config, BusServerConfig  # noqa: E402,F401
+from server.errors import MESSAGES, BusError  # noqa: E402,F401
 # The official service documents HTTP; HTTPS timed out in the 2026-10-03 probe.
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 # 정류소정보조회: 정류장 번호(arsId) 하나로 그 정류장의 모든 노선 도착 예정을 한 번에 준다(2026-10-07 승인)
@@ -57,32 +62,6 @@ WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수�
 RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "dataTm", "sectionId", "lastStnId",
                  "nextStId", "nextStTm", "gpsX", "gpsY", "isrunyn", "islastyn", "busType", "isFullFlag", "congetion",
                  "rtDist", "stopId", "trnstnid")
-MESSAGES = {
-    "missing_key": "버스 위치 API 서비스키가 설정되지 않았습니다.",
-    "disabled": "버스 실시간 위치 수집이 비활성화되어 있습니다.",
-    "upstream_auth": "버스 위치 API 인증 또는 활용신청 승인을 확인해 주세요.",
-    "upstream_quota": "버스 위치 API 호출 한도에 도달했습니다.",
-    "upstream_error": "버스 위치 API를 일시적으로 조회할 수 없습니다.",
-    "invalid_payload": "버스 위치 API 응답 형식을 확인할 수 없습니다.",
-    "quota_storage": "버스 호출량 기록을 읽거나 저장할 수 없어 수집을 중단했습니다.",
-    "daily_limit": "오늘의 버스 위치 수집 예산을 모두 사용했습니다.",
-    "paced": "하루 호출 예산에 맞춰 다음 노선 조회를 기다립니다.",
-    "in_flight": "버스 위치 정보를 조회 중입니다.",
-    "backoff": "API 오류 후 재시도를 기다립니다.",
-    "data_unavailable": "버스 정적 노선 데이터를 불러올 수 없습니다.",
-}
-
-
-def iso(timestamp: float) -> str:
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
-
-
-def day_bounds(now: float) -> tuple[str, float]:
-    local = datetime.fromtimestamp(now, KST)
-    midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return local.date().isoformat(), midnight.timestamp()
-
-
 def pacing(now: float, midnight: float, left: int) -> float:
     """Seconds between calls so `left` calls last until midnight: the night (00–05 KST) counts
     NIGHT_WEIGHT of its length, so a night call comes 1/NIGHT_WEIGHT times as far apart."""
@@ -90,55 +69,6 @@ def pacing(now: float, midnight: float, left: int) -> float:
     night = max(0.0, night_end - now)
     weighted = NIGHT_WEIGHT * night + (midnight - max(now, night_end))
     return weighted / max(1, left) / (NIGHT_WEIGHT if night else 1)
-
-
-class BusError(Exception):
-    """Only fixed, safe codes/messages cross the HTTP boundary."""
-    def __init__(self, code: str):
-        self.code = code if code in MESSAGES else "upstream_error"
-        super().__init__(MESSAGES[self.code])
-
-
-@dataclass
-class Config:
-    key: str = field(default="", repr=False)
-    mode: str = "auto"
-    cache_seconds: float = 30
-    stale_seconds: float = 300
-    daily_limit: int = 950
-    min_interval: float = 1
-    timeout: float = 8
-    quota_file: Path = Path("/var/lib/subway-live/bus-quota.json")
-    routes_file: Path = ROOT / "data" / "bus" / "routes.json"
-    record_dir: Path | None = None   # 받은 위치를 날마다 저장할 폴더(없으면 저장 안 함)
-    sample_routes: tuple = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름)
-    sample_reserve: int = 250   # 하루 호출 중 지도 보는 사람 몫으로 남길 수
-
-    def __post_init__(self):
-        if self.mode not in ("auto", "live", "mock", "disabled"):
-            raise ValueError("BUS_LIVE_MODE must be auto, live, mock or disabled")
-        self.key = self.key.strip()
-        self.cache_seconds = max(5, self.cache_seconds)
-        self.stale_seconds = max(self.cache_seconds, self.stale_seconds)
-        self.daily_limit = max(1, self.daily_limit)
-        self.min_interval = max(1, self.min_interval)
-        self.timeout = min(30, max(1, self.timeout))
-
-    @classmethod
-    def from_env(cls):
-        return cls(key=os.environ.get("SEOUL_BUS_SERVICE_KEY", ""),
-                   mode=os.environ.get("BUS_LIVE_MODE", "auto"),
-                   cache_seconds=float(os.environ.get("BUS_LIVE_CACHE_SECONDS", "30")),
-                   stale_seconds=float(os.environ.get("BUS_LIVE_STALE_SECONDS", "300")),
-                   daily_limit=int(os.environ.get("BUS_LIVE_DAILY_LIMIT", "950")),
-                   min_interval=float(os.environ.get("BUS_LIVE_MIN_INTERVAL", "1")),
-                   timeout=float(os.environ.get("BUS_LIVE_TIMEOUT", "8")),
-                   quota_file=Path(os.environ.get("BUS_LIVE_QUOTA_FILE", "/var/lib/subway-live/bus-quota.json")),
-                   routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))),
-                   record_dir=Path(d) if (d := os.environ.get("BUS_LIVE_RECORD_DIR", "/var/lib/subway-live/bus")) else None,
-                   # 472(개포동–신촌로타리) · 143(정릉–개포동): 많이 타는 간선 둘
-                   sample_routes=tuple(r.strip() for r in os.environ.get("BUS_LIVE_SAMPLE_ROUTES", "100100075,100100022").split(",") if r.strip()),
-                   sample_reserve=int(os.environ.get("BUS_LIVE_SAMPLE_RESERVE", "250")))
 
 
 class QuotaLedger:
@@ -607,42 +537,6 @@ class BusProxy:
                  "receivedAt": iso(now), "mock": True}]
 
 
-@dataclass
-class ArrivalConfig:
-    """정류장 도착 정보. 버스 위치와 같은 키를 쓰지만 한도 · 장부는 따로다(개발계정 하루 1,000번)."""
-    key: str = field(default="", repr=False)
-    mode: str = "auto"
-    cache_seconds: float = 20   # 같은 정류장은 20초 동안 여러 사람이 함께 쓴다
-    stale_seconds: float = 120   # 다시 못 받으면 2분까지는 지난 값을 '지연'으로 보여 준다
-    daily_limit: int = 950
-    min_interval: float = 1   # 정류장이 달라도 1초에 한 번만 부른다
-    timeout: float = 8
-    quota_file: Path = Path("/var/lib/subway-live/bus-arrival-quota.json")
-    stops_file: Path = ROOT / "data" / "bus" / "stops.json"
-    routes_file: Path = ROOT / "data" / "bus" / "routes.json"   # 예시(mock) 도착 정보에만 쓴다
-
-    def __post_init__(self):
-        if self.mode not in ("auto", "live", "mock", "disabled"):
-            raise ValueError("BUS_LIVE_MODE must be auto, live, mock or disabled")
-        self.key = self.key.strip()
-        self.cache_seconds = max(5, self.cache_seconds)
-        self.stale_seconds = max(self.cache_seconds, self.stale_seconds)
-        self.daily_limit = max(1, self.daily_limit)
-        self.min_interval = max(1, self.min_interval)
-        self.timeout = min(30, max(1, self.timeout))
-
-    @classmethod
-    def from_env(cls):
-        return cls(key=os.environ.get("SEOUL_BUS_SERVICE_KEY", ""),
-                   mode=os.environ.get("BUS_LIVE_MODE", "auto"),
-                   cache_seconds=float(os.environ.get("BUS_ARRIVAL_CACHE_SECONDS", "20")),
-                   daily_limit=int(os.environ.get("BUS_ARRIVAL_DAILY_LIMIT", "950")),
-                   timeout=float(os.environ.get("BUS_LIVE_TIMEOUT", "8")),
-                   quota_file=Path(os.environ.get("BUS_ARRIVAL_QUOTA_FILE", "/var/lib/subway-live/bus-arrival-quota.json")),
-                   stops_file=Path(os.environ.get("BUS_LIVE_STOPS_FILE", str(ROOT / "data/bus/stops.json"))),
-                   routes_file=Path(os.environ.get("BUS_LIVE_ROUTES_FILE", str(ROOT / "data/bus/routes.json"))))
-
-
 def normalize_arrivals(items: list[dict]) -> list[dict]:
     """노선마다 다가오는 버스 두 대의 안내 문구 · 남은 초 · 막차 여부. 차량 번호는 내보내지 않는다."""
     rows = {}
@@ -882,5 +776,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     config = Config.from_env()
     _proxy = BusProxy(config)
-    address = (os.environ.get("BUS_LIVE_HOST", "127.0.0.1"), int(os.environ.get("BUS_LIVE_PORT", "3114")))
-    ThreadingHTTPServer(address, Handler).serve_forever()
+    server_config = BusServerConfig.from_env()
+    ThreadingHTTPServer((server_config.host, server_config.port), Handler).serve_forever()
