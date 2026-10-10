@@ -161,25 +161,56 @@ function mastDetail(M, top, seg, skip = [2, 2], decks = true) {
   }
   if (decks) box(M, STILL, [-1.03, 0, top / 2], .05, .1, top / 2, 0, mast(SHADE));   // 사다리 · 전선 통로(기둥 한쪽 세로 띠)
 }
+// 서로 다른 단위의 두 끝을 잇는 네모 보(바큇살): 안쪽 끝 a 는 기둥 단위(oa), 바깥 끝 b 는 놀이기구 반지름 단위(ob).
+// 끝마다 [가로 반폭 h, 위아래 z0 · z1](같은 단위), d 는 바닥에서 본 방향, e 는 그 직각.
+function spoke(M, C, d, ra, ha, rb, hb, z0, z1, oa, ob) {
+  const e = [-d[1], d[0]], P = (r, h, z) => [d[0] * r + e[0] * h, d[1] * r + e[1] * h, z];
+  const face = (n, q) => { for (const [i, j, k] of [[0, 1, 2], [0, 2, 3]]) for (const x of [i, j, k]) M.v(C, q[x][0], n, q[x][1]); M.tris += 2 };
+  face([0, 0, 1], [[P(ra, -ha, z1), oa], [P(rb, -hb, z1), ob], [P(rb, hb, z1), ob], [P(ra, ha, z1), oa]]);
+  face([0, 0, -1], [[P(ra, ha, z0), oa], [P(rb, hb, z0), ob], [P(rb, -hb, z0), ob], [P(ra, -ha, z0), oa]]);
+  face([e[0], e[1], 0], [[P(ra, ha, z1), oa], [P(rb, hb, z1), ob], [P(rb, hb, z0), ob], [P(ra, ha, z0), oa]]);
+  face([-e[0], -e[1], 0], [[P(ra, -ha, z0), oa], [P(rb, -hb, z0), ob], [P(rb, -hb, z1), ob], [P(ra, -ha, z1), oa]]);
+}
 // Drop tower — mast H, a seat ring that rises to 0.82H and falls, a small cone crown.
+// 2026-10-10 행님(자이로드롭이 기둥에 걸린 도넛): 고리는 기둥을 감싸는 짐칸 고리에서 바큇살로 이어진 좌석 고리 —
+// 바깥을 보는 좌석마다 등받이(두 색 번갈아) · 금색 어깨 안전바 · 매달린 다리, 꼭대기에는 기계실(두 색 벽 · 창 띠 · 지붕).
 function buildDrop(lod) {
-  const M = new Mesh(), seg = lod ? 12 : 7, rs = lod ? 24 : 12, seats = lod ? 12 : 6, nb = lod ? 8 : 4;
+  const M = new Mesh(), seg = lod ? 12 : 7, rs = lod ? 24 : 12, seats = lod ? 16 : 8, nb = lod ? 8 : 4;
   for (let i = 0; i < nb; i++)                                             // the mast, in broad alternating bands
     tube(M, STILL, [0, 0, i / nb], [0, 0, (i + 1) / nb], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.5, .022, 1.5, seg, mast(SHADE));                 // a low foot, not a slab
   disc(M, STILL, .022, 1.5, seg, mast(SHADE));
   if (lod) for (let i = 0; i < 3; i++) {                                   // three slim guide rails up the mast
     const t = i / 3 * 2 * Math.PI;
-    tube(M, STILL, [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .02], [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .97], .17, 4, mast(SHADE));
+    tube(M, STILL, [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .02], [Math.cos(t) * 1.25, Math.sin(t) * 1.25, .93], .17, 4, mast(SHADE));
   }
-  if (lod) mastDetail(M, .985, seg, [2, 2], false);                        // 좌석 고리가 오르내리는 기둥이라 발판 · 통로 없이
+  if (lod) mastDetail(M, .93, seg, [2, 2], false);                         // 좌석 고리가 오르내리는 기둥이라 발판 · 통로 없이
+  // 기계실: 기둥보다 넓은 원통 — 아래 받침 · 두 색 벽 · 어두운 창 띠 · 두 색 벽 · 지붕, 그 위에 원래 왕관
+  cone(M, STILL, .925, 1.1, .94, 2.6, seg * 2, mast(SHADE));
+  cone(M, STILL, .94, 2.6, .955, 2.6, seg * 2, mast(A), 1, 8);
+  cone(M, STILL, .955, 2.6, .966, 2.6, seg * 2, mast(SHADE));
+  cone(M, STILL, .966, 2.6, .975, 2.6, seg * 2, mast(B), 0, 8);
+  cone(M, STILL, .975, 2.75, .985, 1.9, seg * 2, mast(SHADE));
+  disc(M, STILL, .975, 2.75, seg * 2, mast(SHADE), -1);
   cone(M, STILL, .985, 1.9, 1.0, 1.8, seg, mast(SHADE));                   // the crown
   cone(M, STILL, 1.0, 1.8, 1.05, 0, seg, mast(GOLD_TONE));
-  band(M, LIFT, 0, .025, .62, 1, rs, A, 1, 8);                             // the seat ring, in eight broad blocks
-  for (let i = 0; i < seats; i++) {                                        // seats slung under its outer edge
-    const t = i / seats * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
-    box(M, LIFT, [c * .83, s * .83, -.016], .09, .08, .016, t, i % 2 ? B : A);
-    box(M, LIFT, [c * .905, s * .905, -.008], .02, .075, .024, t, SHADE);
+  // 좌석 고리(LIFT): 기둥을 감싸는 짐칸 고리(기둥 단위, 안내 레일 바깥) · 바큇살 · 얇은 안쪽 틀(두 색) · 좌석
+  band(M, LIFT, -.006, .03, 1.5, 1.95, seg * 2, mast(SHADE));
+  for (let i = 0, n = lod ? 8 : 4; i < n; i++) {
+    const t = (i + .5) / n * 2 * Math.PI;
+    spoke(M, LIFT, [Math.cos(t), Math.sin(t)], 1.9, .35, .66, .02, .006, .022, mast(SHADE), SHADE);
+  }
+  band(M, LIFT, 0, .026, .64, .7, rs, A, 1, 8);
+  const wt = Math.PI * .8 / seats * .55;                                   // 좌석 반폭(고리 단위): 좌석 사이로 하늘이 보이게(꽉 채우면 다시 도넛)
+  for (let i = 0; i < seats; i++) {
+    const t = (i + .5) / seats * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t), col = i % 2 ? B : A;
+    box(M, LIFT, [c * .79, s * .79, .002], .09, wt, .004, t, SHADE);         // 좌석판(바깥으로 내민)
+    box(M, LIFT, [c * .715, s * .715, .03], .016, wt, .03, t, col);          // 키 큰 등받이
+    if (!lod) continue;
+    box(M, LIFT, [c * .77, s * .77, .056], .05, wt * .55, .005, t, GOLD_TONE); // 어깨 안전바(머리 위에서 앞으로)
+    box(M, LIFT, [c * .815, s * .815, .036], .006, wt * .55, .018, t, GOLD_TONE);
+    for (const k of [-1, 1])                                                // 매달린 다리 두 개
+      box(M, LIFT, [c * .86 - s * k * wt * .35, s * .86 + c * k * wt * .35, -.016], .012, wt * .16, .016, t, SHADE);
   }
   return M;
 }
@@ -253,19 +284,29 @@ function buildSwing(lod) {
   return M;
 }
 // Observation saucer — mast .95H, a disc at .80H radius r thickness .055H, a cone cap reaching H.
+// 2026-10-10 행님(원반이 납작한 접시): 기둥 목에서 벌어지는 렌즈 밑면과 갈비, 테두리를 도는 어두운 유리 창 띠와 창살(전망 객실),
+// 윗면 가장자리에 놀이기구 색 띠, 테두리 안쪽 난간. 창 띠 가운데(.8275)가 밤 전구 · 네온 자리.
 function buildSaucer(lod) {
-  const M = new Mesh(), seg = lod ? 10 : 6, ds = lod ? 20 : 10, n = 8;
+  const M = new Mesh(), seg = lod ? 10 : 6, ds = lod ? 32 : 16, n = lod ? 24 : 12;
   tube(M, STILL, [0, 0, 0], [0, 0, .95], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
-  if (lod) mastDetail(M, .95, seg, [.78, .95]);
-  disc(M, STILL, .8, .72, ds, TEAL, -1);                                       // the saucer: under, rim, over
-  cone(M, STILL, .8, .72, .8275, 1, ds, TEAL);
-  cone(M, STILL, .8275, 1, .855, .8, ds, CREAM_TONE);
-  disc(M, STILL, .855, .8, ds, CREAM_TONE);
-  cone(M, STILL, .855, .55, .90, 0, lod ? 16 : 8, CREAM_TONE);                         // the cap, to the top of the tower
-  for (let i = 0; i < n; i++) {                                             // alternating rim panels
-    const t = (i + .5) / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
-    box(M, SPIN, [c * .995, s * .995, .8275 + (i % 2 ? .008 : -.008)], .015, .08, .006, t, GOLD_TONE);
+  if (lod) mastDetail(M, .95, seg, [.72, .95]);
+  cone(M, STILL, .735, .1, .8, .96, ds, TEAL);                                 // 렌즈 밑면: 기둥 목에서 테두리로
+  if (lod) for (let i = 0; i < 8; i++) {                                       // 밑면 갈비
+    const t = (i + .5) / 8 * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+    tube(M, STILL, [c * .12, s * .12, .733], [c * .95, s * .95, .7975], .012, 3, SHADE, false, false);
+  }
+  cone(M, STILL, .8, .96, .804, 1, ds, TEAL);                                  // 테두리 아래
+  cone(M, STILL, .804, 1, .84, 1, ds, SHADE);                                  // 유리 창 띠(객실 높이가 보이게 — Codex 검토)
+  cone(M, STILL, .84, 1, .843, 1.01, ds, GOLD_TONE);                           // 처마 띠
+  cone(M, STILL, .843, 1.01, .848, .94, ds, A);                                // 윗면 가장자리 띠(놀이기구 색) — 두 색 칸은 옆 스윙 캐노피와 똑같아 보였다
+  cone(M, STILL, .848, .94, .862, .8, ds, CREAM_TONE);
+  disc(M, STILL, .862, .8, ds, CREAM_TONE);
+  if (lod) band(M, STILL, .862, .869, .74, .755, ds, GOLD_TONE);               // 난간
+  cone(M, STILL, .862, .55, .905, 0, lod ? 16 : 8, CREAM_TONE);                 // the cap, to the top of the tower
+  for (let i = 0; i < n; i++) {                                                // 창살: 객실이 천천히 돈다
+    const t = i / n * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+    box(M, SPIN, [c * 1.004, s * 1.004, .822], .006, .012, .018, t, CREAM_TONE);
   }
   return M;
 }
@@ -464,6 +505,7 @@ void main(){
     float ang = atan(v_obj.y, v_obj.x) * 1.2732395;                            // 8쪽(한 바퀴 = 8)
     pat = max(seam(v_obj.z, 4., .06), seam(ang, 1., .012)) * .16;
     pat += seam(v_obj.z + 2., 4., .03) * seam(ang * 6., 1., .06) * .1;
+    pat *= 1. - smoothstep(.15, .35, fwidth(v_obj.z) / 4.);                    // 이음매가 화면에서 6 px 아래로 촘촘해지면 흐리게(멀리서 벽돌처럼 보였다)
   }                                                                           // 칠한 판에는 무늬 없이(이음매를 넣으면 벽돌처럼 보였다)
   c *= 1. - pat;
   c *= mix(.72, 1., smoothstep(0., 5., v_obj.z));                             // 땅 가까이 그늘

@@ -22,7 +22,7 @@ export const SEOUL_COASTER_STYLE = {
     canopyPostM:.25, routeBandM:.45, gateWidthM:3.2, gateHeightM:3, badgePx:16,
     maxCanopiesPerSide:12, bulbEveryM:4, queueSizeM:[6,3] },
   rides: { detailZoom:14.5, crownHeightM:12, crownHeightRatio:.05, rimM:[.7,1.2],
-    spokes:12, cabins:12, swingSides:8, saucerThicknessM:[5,10], saucerThicknessRatio:.035 },
+    spokes:12, cabins:12, swingSides:8, saucerThicknessM:[8,16], saucerThicknessRatio:.06 },   // 원반 .8H 위 두께(2026-10-10: 5~10 m · .035H 는 접시처럼 납작했다)
   props: { flags:false, balloons:false },
   // 1인칭으로 탈 때만 그리는 실제 크기 레일 · 침목(m, 상판 위 높이). 침목은 sleeperFadeM 사이에서 사라진다
   rideTrack: { gaugeM:1.435, railHeadM:.07, railTopM:.34, sleeperTopM:.18, sleeperBottomM:.02, sleeperLengthM:2.4, sleeperWidthM:.26,
