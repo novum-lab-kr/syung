@@ -1,0 +1,59 @@
+# 슝 (subway-live-map) — 에이전트 안내
+
+수도권 지하철 실시간 위치 지도(MapLibre + 직접 짠 WebGL). 모드: 기본 · 심시티 · 조선 · 롤코. 빌드 단계 없음(ES 모듈 그대로, Python 표준 라이브러리).
+
+## 어디서 무엇을 고치나
+| 경로 | 내용 |
+|---|---|
+| `web/maplibre_runtime.mjs` | 본체: 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
+| `web/modes/index.mjs` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
+| `web/modes/transition.mjs` | 모드 상태의 주인(지금 · 원하는 모드, 요청 번호, 롤코 배속) |
+| `web/modes/basic/` | 모든 설정의 원본: `index.mjs`(설정 묶음) · `palette.mjs`(지도 색) · `city.mjs`(도시 팩) · `park.mjs`(공원 자료) |
+| `web/modes/<모드>/` | 그 모드의 다른 값만(`index.mjs`) + 모드 전용 콘텐츠(조선: 한옥 · 거북선 · 가마, 롤코: 선로 · 88열차 · 1인칭 · 놀이기구 · 밤) |
+| `web/city/` | 공용 도시 엔진: 건물(`buildings` · `mesh` · `worker`) · 고가(`viaduct*`) · 땅(`style`) · 도시 생활(`life`) · 랜드마크 · 부품 등록(`parts`) |
+| `web/map/` | 지도 층: 승강장 · 이름표 · 해 그림자 · 테마 · 열차 캔버스 그리기 차례(`overlay`) · 정적 층 등록(`layers`) |
+| `web/trains/` | 실시간 받기(`live_feed`) · 예측(`plan`) · 열차 그리기(`draw`) |
+| `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시 |
+| `web/bus/` | 버스 층 · 도로 · 메시(모양 등록 `registerBusLook`) · 움직임 |
+| `web/user/prefs.mjs` | 내 설정 창구(지금은 기기 저장, 이름 `subway-theme` · `subway-map-color`) |
+| `web/lib/` | 남은 공용 도우미(routing · station_signs · sun · platform_* · journey-ui …) |
+| `web/index.html` | 역 데이터는 안에 둔다 — 손으로 고치지 말고 `python3 pipeline/build_stations.py` |
+| `server/` | `app.py`(주소 → 담당) → `routes/` → `services/` → `sources/`(바깥 API) · `store/`(파일), `jobs/` 배경 작업, `config.py` 환경 변수 · 비밀값 |
+| `pipeline/` | 자료 만들기(역 · 선로 · 고가 · 버스). 실행하면 바깥에서 받거나 web/ 의 생성 파일을 덮는다 — `--help` 도 그대로 도는 스크립트가 있다. 확인만 할 땐 `node --check` · `python3 -m py_compile` |
+
+## 실행 · 시험
+| 할 일 | 명령 |
+|---|---|
+| 로컬 화면 | `python3 deploy/dev_server.py [포트]`(기본 8080, `/api/live` 는 운영으로 넘김) |
+| JS 시험 | `node --test tests/*.test.mjs` |
+| Python 시험 | `python3 -m unittest discover -s tests`(OSM 캐시 없으면 일부 건너뜀) |
+| 배포 | main push → Actions → `deploy/remote_deploy.sh`(커밋된 파일로 릴리스 폴더 → 링크 바꿔 끼우기 · 되돌리기). 서버에서 직접 고치지 않는다 |
+
+## 모드 규칙
+- 기본이 원본, 모드는 **다른 것만** 적는다(`from` 생략 = basic, 상속 두 단계까지). 묶음은 안쪽까지 합치고 값 · 목록은 통째로, `null` 은 끄기 — 단 아는 묶음(map · city · city.life · park · track · trains · buses · sun)은 `null` 대신 그 키(`enabled:false` 등)로.
+- 본체 · 엔진은 모드 이름을 묻지 않는다: `modeCtl.settings()` 의 키(`track.kind` · `trains.look` · `city.enabled` · `city.tone` · `buses.look` · `park.enabled` …)를 묻는다. 새 키는 `basic/index.mjs` 에 기본값 + `modes/index.mjs` `checkKnown` 에 값 검사.
+- 설정은 데이터뿐(함수 · 클래스 · getter 금지). 모드 전용 코드는 이름으로 등록해 쓴다(`city/parts.mjs` · `bus/mesh.mjs registerBusLook`).
+- 도시 팩 참조가 바뀌면 건물 타일을 전부 다시 짓는다: 설정은 레지스트리가 한 번 합쳐 얼린 것을 쓰고, 테마 · 색마다 새 팩을 만들지 않는다.
+- 새 모드: `web/modes/<이름>/index.mjs`(id · from · label · settings) → 본체에서 import 해 `createModeRegistry([...])` 에 넣기 → 버튼 · `prepareMode` · `commitMode` 연결.
+- 모드 전용 GL 자원은 그 모드를 나가면 그리는 쪽이 치운다(`trains/draw.mjs kit(look)` · overlay 의 놀이기구 · 롤코 선로 버퍼).
+
+## 서버 층 규칙
+- 한 방향으로만: routes → services → sources · store(`tests/test_server_layers.py` 가 막는다). 환경 변수 · 비밀값은 `config.py` 에서만.
+- 지금 주소(`/live` · `/route` · `/bus/live` …)와 응답 모양은 바꾸지 않는다. 새 API 는 `/api/…`, 오류 모양 `{"error":{"code","message"}}`. 비밀값 · 개인정보는 로그에 안 찍는다.
+
+## 속도 기준(렌더링이 1초도 늦어지면 안 된다)
+- 첫 화면 정적 import 그래프의 **깊이**가 요청 시간을 정한다(4G rtt 150 ms 한 단계씩). 새 파일은 본체가 직접 import 하는 모듈만 import 한다 — 자식만 부르는 모듈은 한 단계 늦게 요청된다.
+- 모드의 큰 코드(도시 건물 · 랜드마크 · 한옥 · 거북선 · 88열차 · 1인칭 레일 · 놀이기구 · 놀이기구 자리)는 첫 화면에서 받지 않는다: `loadModeKit` 의 `import()` + `MODE_KIT_DEPS`(그 모듈들이 다시 부르는 것 — `tests/mode_kit_deps.test.mjs`). 가마 · 1인칭 카메라 · 밤 조명 · 롤코 선로는 첫 화면 코드.
+- `index.html` 의 modulepreload 는 vendor 둘뿐. 시험 통과 ≠ 속도 통과 — 4G 흉내로 기준(origin/main)과 같은 방식(두 쪽 모든 파일을 같은 경로로)으로 잰다.
+- 기준 숫자(4G rtt 150 ms · 4 Mbps, 맥): 첫 노선 약 5.0 s · 지도 다 뜸 약 9.5 s, 첫 화면 JS gzip 약 560 KB. 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
+
+## 함정
+- **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다.
+- **빠진 deps 는 node 시험이 못 잡는다**(그리기 경로). 나눈 파일은 범위 검사 · 실제 화면의 pageerror · 콘솔 오류로 확인.
+- 셰이더 uniform 이름이 겹치면 컴파일 오류(그 층만 꺼진다) — 이름을 바꿀 땐 같은 파일의 기존 uniform 을 먼저 찾는다.
+- 본체의 끌어올려지는 wrapper(`effectiveTheme` · `applyTheme` …)는 앞에서 만든 층이 값으로 받아 간 이름이다 — 지우지 않는다. 늦게 생기는 값은 `live:{get x(){…}}` getter 로 넘긴다(값 복사 금지).
+- `window.__subwayWebGL`(setSimcity · setCoaster · simcity · coaster · plans · cityBuildings …)은 점검 스크립트가 쓴다 — 이름 유지. 전환 함수는 준비됐으면 바로 true, 기다리면 Promise(바꿨으면 true), 할 일이 없으면 undefined.
+- Worker(`city/worker.mjs`)에는 데이터만 보낸다. 한옥 같은 코드는 Worker 가 정적 import 로 스스로 등록한다.
+- 휴대폰 메모리 한도: 도시 건물 캐시 18타일 · 56 MB(조선 타일로 탭이 죽은 적 있음). 엔진은 하나를 같이 쓴다.
+- 실시간 자료는 20초~1분 늦다. 시간표만으로 "N분 뒤" 안내를 하지 않는다. 위치 피드는 15~25초마다만 바뀐다(받기 주기: 보통 20초 · 열차 시트 10초).
+- 지도 위 노선 · 열차에 브랜드 노랑(#FFD400) 금지. 열차는 단색 금지(멀티톤 셰이더). 자산 URL 에 `?v=` 금지(no-store).
