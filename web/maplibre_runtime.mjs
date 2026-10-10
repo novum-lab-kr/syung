@@ -350,7 +350,10 @@ const cityPack=()=>joseon?JOSEON_STYLE:CITY_STYLE;   // the pack the ground, the
 // 모드는 이것이 다 온 뒤에야 켜진다(setSimcity · setCoaster 가 기다린다): 켜져 있으면 cityBuildings 등은 늘 있다
 let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,kitReady=false,kitLoad=null,modeAsk=0;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>simcity||coaster;
+// 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
+const MODE_KIT_DEPS=['city_mesh','city_hanok','city_geom','city_mvt','city_through_buildings','city_landmarks_data','coaster_badges','coaster_ride_sites'];
 function loadModeKit(){
+  if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./lib/${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
   return kitLoad??=Promise.all([import('./lib/city_buildings.mjs'),import('./lib/city_landmarks.mjs'),import('./lib/city_turtle_ship.mjs'),import('./lib/coaster_train.mjs'),import('./lib/coaster_ride_track.mjs'),import('./lib/park_rides.mjs'),import('./lib/coaster_ride_placement.mjs')])
     .then(([b,l,t,c,r,p,q])=>{({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
