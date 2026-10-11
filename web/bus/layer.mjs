@@ -625,12 +625,15 @@ class BusLayer {
     this.refreshView();
     this.onRouteSelect(this.selectedLeg());
   }
-  clearSelection() {
-    if (!this.selection&&!this.journeyLegs.length&&!this.selectedRoute) return;
+  // 시트를 닫거나 다른 시트를 열면 정류장 · 노선 번호 · 버스 선택만 놓는다. 길찾기 버스 구간은 여정과 함께 지도에 남고
+  // 여정을 지울 때(journey:true)만 지운다(2026-10-11 행님: 경로를 고르면 시트가 닫히며 버스 경로만 사라졌다)
+  clearSelection({journey=false}={}) {
+    if (!this.selection&&!this.selectedRoute&&!(journey&&this.journeyLegs.length)) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
-    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.journeyLegs=[];this.journeyIds=[];
+    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;
+    if(journey){this.journeyLegs=[];this.journeyIds=[];}
     this.stopArrivals();
-    if(!this.enabled){this.stopLive();this.fleet.clear();}
+    if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
     this.onRouteSelect(null);
   }

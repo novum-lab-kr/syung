@@ -54,7 +54,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   let displayedRoute=null;   // 모드 전환 때 표시 중인 여정만 다시 그려요.
   let routeBounds=null,busRouteFocus=false;   // bus: route-number focus is released with its detail sheet
   function fitRoute(bottom){if(routeBounds)map.fitBounds(routeBounds,{padding:{top:90,bottom,left:40,right:40},maxZoom:16,pitch:0,duration:800})}
-  function clearRoute(){displayedRoute=null;live.busLayer?.clearSelection();routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
+  function clearRoute(){displayedRoute=null;live.busLayer?.clearSelection({journey:true});routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
   const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
   const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
   // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself

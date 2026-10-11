@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
+import {createJourneyMap} from '../web/ui/journey.mjs';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
@@ -138,19 +139,37 @@ test('background polling is limited by actual stops in the viewport, while selec
   assert.deepEqual(busRoutesNearStops(data,[126.99,37.49,127.02,37.52],[route.id],screen),[route.id], 'an explicit route stays prioritized beyond the viewport');
 });
 
-test('legacy journey names need matching geometry and clear on sheet close', () => withLayerFixture(layer => {
+test('legacy journey names need matching geometry; sheet close keeps them, clearing the journey drops them', () => withLayerFixture(layer => {
   const leg={type:'bus',route:'100',path:route.path};
   assert.deepEqual(journeyBusRouteIds(null,[leg]),[], 'journey can begin before z15 has loaded static bus data');
   assert.deepEqual(journeyBusRouteIds(layer.data,[leg]),[route.id]);
   assert.deepEqual(journeyBusRouteIds(layer.data,[{...leg,path:[[126,36],[126.01,36.01]]}]),[]);
   layer.setJourney([leg]);assert.deepEqual(layer.chosenIds(),[route.id]);
   assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1);
-  layer.clearSelection();assert.deepEqual(layer.chosenIds(),[]);
+  layer.clearSelection();assert.deepEqual(layer.chosenIds(),[route.id],'시트 닫기 · 다른 시트 열기는 길찾기 버스 구간을 지우지 않는다');
+  assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1);
+  layer.clearSelection({journey:true});assert.deepEqual(layer.chosenIds(),[]);
   assert.equal(layer.map.getSource('bus-routes').data.features.length,0);
   layer.map.getZoom=()=>11;
   layer.setJourney([leg]);
   assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1,'selected journey routes stay visible when fitBounds zooms out');
   assert.equal(layer.active(),false,'low zoom must not poll or show bus vehicles');
+},false));
+
+// 2026-10-11 행님: 길찾기 결과에서 고른 경로 카드를 누르면 시트가 닫히며(closeSheet → clearSelection) 버스 경로만 사라졌다
+test('a journey bus leg stays on the map when its sheet closes, and goes with the route', () => withLayerFixture(layer => {
+  class Bounds{constructor(a){this.a=a}extend(){return this}}
+  const map={...layer.map,setPaintProperty(){},triggerRepaint(){},fitBounds(){},moveLayer(){}};
+  const journeyMap=createJourneyMap({map,maplibregl:{LngLatBounds:Bounds},colors:{},byId:new Map(),cityCoords:()=>[],stopPos:()=>[0,0],cityViaduct:null,sheetPad:()=>0,
+    journeyCasingPaint:()=>({}),journeyRidePaint:()=>({}),journeyStopPaint:()=>({}),live:{busLayer:layer,settings:{track:{kind:'ground'}},stationAlpha:1}});
+  const rides=()=>layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length;
+  journeyMap.showRoute({legs:[{type:'walk',path:[[126.999,37.5],route.path[0]]},{type:'bus',route:'100',path:route.path},{type:'walk',path:[route.path.at(-1),[127.001,37.5]]}]});
+  assert.equal(rides(),1);
+  layer.clearSelection();   // what closeSheet · openSheet(other) call
+  assert.equal(rides(),1,'the bus leg stays with the journey route and its bar');
+  assert.deepEqual(layer.chosenIds(),[route.id]);
+  journeyMap.clearRoute();   // the bar's ✕, or a new search from a station
+  assert.equal(rides(),0);assert.deepEqual(layer.chosenIds(),[]);
 },false));
 
 test('an older cached observation cannot move a bus behind a newer observation', () => withLayerFixture(layer => {

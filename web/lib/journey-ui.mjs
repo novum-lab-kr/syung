@@ -226,7 +226,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     if (kinds.length < 2) last.tab = 'all';   // one kind only: nothing to filter
     const tabs = kinds.length < 2 ? '' : `<div class="segmented jkinds" role="group" aria-label="경로 종류">${KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
       `<button type="button" data-k="${k}" aria-pressed="${(last.tab || 'all') === k}">${name}<b>${count(k)}</b></button>`).join('')}</div>`;
-    out.innerHTML = tabs + `<div class="jplans">${d.plans.map(planHTML).join('')}</div>` + `<p class="jp-note">경로를 누르면 지도에 보여요. ${d.plans.some(p=>p.legs.some(l=>l.type==='bus'))?'버스 노선은 창을 닫으면 숨겨요.':'창을 닫아도 경로는 남아 있어요.'} 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>`; // bus: closing the sheet releases bus route selection
+    out.innerHTML = tabs + `<div class="jplans">${d.plans.map(planHTML).join('')}</div>` + `<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>`; // bus: 버스 구간도 여정과 함께 남는다(지우기는 막대의 ✕)
     const cards = [...out.querySelectorAll('.jp')];
     const filter = k => {
       last.tab = k;
