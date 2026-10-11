@@ -361,7 +361,7 @@ export class VehicleRenderer {
   }
   instPtr(gl, b) { gl.bindBuffer(gl.ARRAY_BUFFER, b); for (const [loc, n, off] of [[3, 4, 0], [4, 4, 16], [5, 2, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 40, off); gl.vertexAttribDivisor(loc, 1) } }
   // MT: the matrix with the local origin folded in; mu: mercator units a metre; poses from TrafficSim (10 floats each)
-  draw(gl, MT, mu, poses, n, { light = [-.5, .5, .7], lit = [.64, .36], night = false, glass = [.32, .41, .42], dark = [.16, .18, .2], grow = 1, beams = false, pixelRatio = 1 } = {}) {
+  draw(gl, MT, mu, poses, n, { light = [-.5, .5, .7], lit = [.64, .36], night = false, glass = [.32, .41, .42], dark = [.16, .18, .2], grow = 1, beams = false, beamAlpha = null, pixelRatio = 1 } = {}) {   // beamAlpha: 앞불 줄기 진하기(밤 불빛, 없으면 팩 값)
     if (!this.p || !n) return;
     const b = this.inst[this.ping = this.ping ^ 1];   // never the store the last frame may still be drawing from
     gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, poses, 0, n * 10);
@@ -372,7 +372,7 @@ export class VehicleRenderer {
     gl.drawArraysInstanced(gl.TRIANGLES, 0, this.n, n);
     if (night && beams) {
       gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, mu); gl.uniform1f(this.uB.u_len, this.beamLen); gl.uniform1f(this.uB.u_grow, grow);
-      gl.uniform3fv(this.uB.u_dims, this.dims); gl.uniform3fv(this.uB.u_rgb, this.head); gl.uniform1f(this.uB.u_alpha, this.beamA);
+      gl.uniform3fv(this.uB.u_dims, this.dims); gl.uniform3fv(this.uB.u_rgb, this.head); gl.uniform1f(this.uB.u_alpha, beamAlpha ?? this.beamA);
       gl.bindVertexArray(this.vaB); this.instPtr(gl, b);
       gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);

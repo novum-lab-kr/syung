@@ -44,6 +44,18 @@ export const JOSEON_DELTA = {
     people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
   },
   lighting: { shadow: { color: '#5A4630' } },
+  // 밤 빛(기본 팩 night 에서 다른 것만, 2026-10-11): 전기 불빛이 아니라 횃불 · 등잔 — 더 따뜻하고 더 낮게. 벽 아래는 횃불 높이만큼, 길 빛은 흙길 위 주황,
+  // 저잣거리(가게 POI 가 모인 곳 — 종로 시전 자리)는 은은한 등불 빛. 창호지 불빛(hanok.night)은 그대로(몇 집, 한쪽 면 한두 칸)
+  night: {
+    lights: { street: { color: '#FFA65A', strength: 1.1, heightM: 2.5 }, lampPool: { opacity: 0.2, radiusMul: 1.6 } },
+    ground: {
+      // (Codex 2차: 길 전체에 황갈색을 깐 느낌 — 좁고 옅게, 가운데는 불꽃빛 #FFD39A, 번짐은 #E88A45. 밝은 곳 사이에 어둠을 남긴다)
+      roads: { colors: { motorway: '#FFD39A', primary: '#FFD39A', secondary: '#FFCB8C', tertiary: '#F7BD7E', minor: '#EFB273' }, core: { opacity: { motorway: 0.11, primary: 0.12, secondary: 0.09, tertiary: 0.06, minor: 0.03 } },
+        halo: { colors: { motorway: '#E88A45', primary: '#E88A45', secondary: '#E88A45', tertiary: '#E88A45', minor: '#E88A45' }, opacity: { motorway: 0.03, primary: 0.03, secondary: 0.02, tertiary: 0.01, minor: 0 } } },
+      downtown: { colors: ['#E8652A', '#FF9446', '#FFC98A'], opacity: 0.2, radiusM: 40 },
+    },
+    bloom: { tint: '#FFF2DE' },   // (문턱 · 세기는 기본 그대로 — 바탕 글자는 따뜻한 색 가중으로 빠진다)
+  },
   // 공중 수로: 심시티 고가와 같은 치수에 물을 채운다(city_viaduct.mjs — aqueduct 가 있으면 윗면은 물결, 침목 · 레일 없음,
   // 난간은 돌에 윗면만 노선 색). 화강암 수로를 팔각 통나무 기둥(밧줄 묶음)이 받치고, 승강장은 나무 마루에 기와 지붕
   viaduct: {

@@ -299,14 +299,14 @@ const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the b
 // 모드 코드: 심시티 · 조선 · 롤코에서만 쓰는 건물(city_buildings → city_mesh · city_hanok …) · 랜드마크 · 거북선 · 88열차 · 놀이기구는
 // 첫 화면에서 받지 않는다 — 모드를 켤 때, 그리고 지도가 뜬 뒤 쉬는 틈에 받는다(2026-10-10 덕배: 첫 접속이 느리다, 첫 화면 JS 의 약 1/5).
 // 모드는 이것이 다 온 뒤에야 켜진다(setSimcity · setCoaster 가 기다린다): 켜져 있으면 cityBuildings 등은 늘 있다
-let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,FestoonLayer,kitReady=false,kitLoad=null;
+let CityBuildings,CityLandmarks,TurtleShips,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,FestoonLayer,NightBloom,kitReady=false,kitLoad=null;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
 const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','modes/coaster/badges','modes/coaster/ride_sites'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
-    .then(([b,l,t,c,r,p,q,,f])=>{({FestoonLayer}=f);({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
+    .then(([b,l,t,c,r,p,q,,f,nb])=>{({FestoonLayer}=f);({NightBloom}=nb);({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}
 // city-build: 심시티 x-ray — the station platforms and running trains near the view, as boxes in mercator for cityBuildings: the
@@ -332,8 +332,21 @@ function cityXrayTargets(){
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
-  cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack()});
+  cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
+  syncNightBloom();
 }
+// 도시 모드 밤 빛(팩 night — web/modes/basic/city.mjs): ① 불빛 다시 맞추기(lights) ② 빛 번짐(bloom, 휴대폰은 팩 night.bloom.phone 일 때만) ③ 바닥 빛(ground).
+// 다크 테마 · 도시 모드에서만 켜진다. nightLook 은 점검 창구(window.__subwayWebGL.setNightLook)로 하나씩 끄고 켜는 스위치(시안 비교) — 평소엔 다 켬
+const nightLook={lights:true,bloom:true,ground:true,bloomTune:null};   // bloomTune: 점검용 번짐 값 덮어쓰기({strength, threshold …})
+function nightNow(){const N=cityPack()?.night,on=!!N&&cityOn()&&effectiveTheme()==='dark';return {lights:on&&nightLook.lights&&!!N.lights,ground:on&&nightLook.ground&&!!N.ground,bloom:on&&nightLook.bloom&&!!N.bloom&&(!PHONE||N.bloom.phone===true),N}}
+// 지도 캔버스의 빛 번짐: 도시 건물(창 · 간판)과 바닥 빛 위, 역 이름표 · 글자 아래의 custom layer. 열차 캔버스는 overlay 가 따로 번지게 한다
+const mapBloom={id:'city-night-bloom',type:'custom',renderingMode:'2d',fx:null,
+  onAdd(m,gl){this.gl=gl},onRemove(m,gl){this.fx?.dispose(gl);this.fx=null},
+  render(gl){const n=nightNow();if(!n.bloom||!NightBloom)return;if(!this.fx){this.fx=new NightBloom();this.fx.init(gl)}const B={...n.N.bloom,...nightLook.bloomTune};this.fx.render(gl,{strength:B.strength,threshold:B.threshold,knee:B.knee,levels:B.levels,tint:hexRgb01(B.tint||'#FFFFFF')})}};
+const hexRgb01=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
+function syncNightBloom(){if(!ready)return;const on=nightNow().bloom&&!!map.getLayer('city-buildings');
+  if(on&&!map.getLayer('city-night-bloom'))map.addLayer(mapBloom,map.getLayer('station-names')?'station-names':undefined);else if(!on&&map.getLayer('city-night-bloom'))map.removeLayer('city-night-bloom')}   // 나가면 GL 을 치운다(onRemove)
+function setNightLook(o){Object.assign(nightLook,o||{});applyTheme();map.triggerRepaint();return {...nightLook}}
 const cityViaduct=new CityViaduct({pack:CITY_STYLE,net:{paths,colors,geom,offset:edgeOffset,bodyPx:z=>trainBodyPx(z),get byId(){return byId},get rects(){return stationRects},get exits(){return exits}}});   // city-life: 심시티 고가 — on the mode's track (geom: the real one, or a tunnel stretch moved onto its street), drawn in drawTrains; trackPoint lifts the trains onto it (heightAt: the stations' levels and the ramps between); exits: the stairs down to them
 const coasterGeo=createCoasterGeometry({maplibregl,paths,byId,cityViaduct,edgeGeom,geom,cityGeom,withCum,metresBetween,smooth,onFresh:()=>{coasterMotion.clear();coasterTrack.stale=true}});   // 롤코 길 · 언덕 · 건물 높이(높이가 바뀌면 주행 시간 · 선로도 다시)
 const {coasterPath,rolled,CORK_HEART,coasterProfile,coasterAt,coasterGaps,coasterRises,inversion,loopD,corkOf,loadCoasterBuildings}=coasterGeo;
@@ -534,7 +547,7 @@ map.on('load',()=>{
   registerTransitLayers({map,shapesReady,buildLineFeatures,buildStationFeatures,basicRouteCache,rebuildLabels,stationNames,STATION_WIDTH_STOPS,PHONE,signCollisionLayout,live:{get track(){return modeCtl.settings().track}}});   // 노선 · 승강장 · 역 이름표 자리(web/map/layers.mjs)
   // trains: their own canvas over the map (see TRAIN_FPS) — web/map/overlay.mjs
   createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,
-    live:{get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
+    live:{get night(){return nightNow()},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
   registerLocationLayers({map,geolocate,live:{get myLocation(){return myLocation},set myLocation(v){myLocation=v}}});   // 내 위치 점
   map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else closeSheet()});   // bus: 누른 버스는 따라간다   // bus: subway picking keeps priority
   map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features[0].properties;showStationPopup(byId.get(+p.id),e.lngLat)});
@@ -600,7 +613,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 // ---- light / dark theme (web/map/theme.mjs) ---------------------------------------------------
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
-const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
@@ -730,4 +743,4 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
-window.__subwayWebGL={map,modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rider.seat=v}};
+window.__subwayWebGL={map,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setCoaster,get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},rideFrame,set rideSeat(v){rider.seat=v}};

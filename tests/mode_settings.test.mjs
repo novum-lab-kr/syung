@@ -173,9 +173,10 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
   const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
   const R=createModeRegistry(defs),{default:CITY}=await import('../web/modes/basic/city.mjs');
-  // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준
-  assert.equal(sha(CITY),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
-  assert.equal(sha(R.settings('joseon').city.pack),'bfff1bde33e8bdc34ac76e34f626baba8488e7c15b808a3e32559fcd35393c2f');
+  // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준. 그 뒤 더한 묶음(night: 2026-10-11 밤 빛)은 빼고 견준다
+  const before=({night,...o})=>o;
+  assert.equal(sha(before(CITY)),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
+  assert.equal(sha(before(R.settings('joseon').city.pack)),'bfff1bde33e8bdc34ac76e34f626baba8488e7c15b808a3e32559fcd35393c2f');
   const {JOSEON_CITY_STYLE:J_TEST}=await import('./joseon_pack.mjs');assert.equal(sha(J_TEST),sha(R.settings('joseon').city.pack),'시험용 조선 팩도 같은 값');
   for(const id of ['basic','simcity','coaster'])assert.equal(R.settings(id).city.pack,CITY,`${id} 도시 팩 = 원본 그대로`);
   assert.equal(R.settings('joseon',{themeChoice:'dark'}).city.pack,R.settings('joseon').city.pack,'테마가 바뀌어도 조선 팩 참조 그대로');

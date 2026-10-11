@@ -85,6 +85,32 @@ function laneDash(pack) {
   return out;
 }
 
+// 밤 바닥 빛: 길 폭의 몇 배로 흐리게 번지는 선(큰길일수록 진하게), 그리고 가게 · 식당 · 술집 POI 의 열지도(반지름은 미터 — 줌이 바뀌어도 같은 동네가 같은 만큼 빛난다).
+// 둘 다 숨긴 채 만들고 applyCityStyle 이 다크 · 켬일 때만 보인다. 팩에 night.ground 가 없으면 없다
+export const NIGHT_GROUND_IDS = ['city-night-roads', 'city-night-roads-core', 'city-night-downtown'];
+const SHOPS = ['shop', 'grocery', 'restaurant', 'fast_food', 'cafe', 'bar', 'beer', 'ice_cream', 'clothing_store', 'alcohol_shop', 'bakery', 'cinema', 'theatre', 'lodging', 'entertainment', 'music', 'jewelry', 'mobile_phone', 'shoe', 'gift', 'department_store', 'mall'];
+function nightGround(pack) {
+  const G = pack.night?.ground; if (!G) return [];
+  const hidden = { visibility: 'none' }, UNDER = ['sun-shadows', 'bm-rail', 'routes'], out = [];
+  const rgba = (hex, a) => { const [r, g, b] = hexRgb(hex); return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${a})` };
+  if (G.roads) {   // 두 겹: 길 밖까지 옅게 번지는 빛(halo), 그 위에 길 면을 밝히는 좁은 빛(core) — 넓은 한 겹은 안개처럼 흐렸다
+    const R = G.roads, classes = Object.keys(R.colors || {}).flatMap(c => c === 'motorway' ? ['motorway', 'trunk'] : [c]), K = c => c === 'trunk' ? 'motorway' : c;
+    const w = k => zoomCurve(z => ['*', matchClass(c => px(roadSpec(pack, c).widthM * k, z, floorFor(c) * k)), fac]);
+    const color = C => ['match', ['get', 'class'], ...classes.flatMap(c => [c, (C || R.colors)[K(c)] || R.colors[K(c)]]), '#FFD3A0'], op = o => ['match', ['get', 'class'], ...classes.flatMap(c => [c, o?.[K(c)] ?? 0]), 0];
+    for (const [id, L] of [['city-night-roads', R.halo], ['city-night-roads-core', R.core]]) if (L)
+      out.push({ before: UNDER, layer: { id, type: 'line', source: 'ofm', 'source-layer': 'transportation', minzoom: 13, filter: roadFilter(classes), layout: { 'line-cap': 'round', 'line-join': 'round', ...hidden },
+        paint: { 'line-color': color(L.colors), 'line-width': w(L.widthMul || 1), 'line-blur': w(L.blurMul || .3), 'line-opacity': op(L.opacity) } } });
+  }
+  if (G.downtown) {
+    const D = G.downtown, [c0, c1, c2] = D.colors;
+    out.push({ before: UNDER, layer: { id: 'city-night-downtown', type: 'heatmap', source: 'ofm', 'source-layer': 'poi', minzoom: D.minZoom ?? 13, filter: ['in', ['get', 'class'], ['literal', SHOPS]], layout: { ...hidden },
+      paint: { 'heatmap-weight': 1, 'heatmap-intensity': D.intensity ?? 1, 'heatmap-radius': zoomCurve(z => px(D.radiusM || 70, z, 2), [12, 14, 16, 18]),
+        'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, rgba(c0, 0), .12, rgba(c0, .16), .35, rgba(c1, .34), .7, rgba(c2, .5), 1, rgba(c2, .62)],
+        'heatmap-opacity': D.opacity ?? .7 } } });
+  }
+  return out;
+}
+
 // Every city layer, with its paint for a theme and mode, and where it goes in the basemap stack.
 // `before`: candidates, the first that exists wins (the sun shadows are a custom layer that may be replaced).
 export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity', ride = false } = {}) {
@@ -120,6 +146,8 @@ export function cityLayers({ pack = SEOUL, theme = 'light', mode = 'simcity', ri
       layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': kerb, 'line-width': caseWidth(pack), 'line-color-transition': tr } }),
     // carriageways, narrowest first: a wide road's surface runs over the end of the alley that meets it
     fill(['service']), fill(['minor']), fill(['tertiary']), fill(['secondary']), fill(['primary']), fill(['motorway', 'trunk']),
+    // 밤 바닥 빛(팩 night.ground, 다크에서만 보인다 — applyCityStyle): 큰길을 따라 길 밖까지 번지는 가로등 빛, 가게가 모인 곳의 따뜻한 빛 지도
+    ...nightGround(pack),
     // paths and tracks through the parks
     L('city-path', UNDER, { type: 'line', 'source-layer': 'transportation', minzoom: 16, filter: ['all', ['in', ['get', 'class'], ['literal', ['path', 'track']]], notTunnel, ['!=', ['geometry-type'], 'Polygon'], ['!=', ['get', 'subclass'], 'steps']],
       layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': sidewalk, 'line-opacity': .95, 'line-width': zoomCurve(z => px(1.6, z, 1), [16, 17, 18]), 'line-color-transition': tr } }),
@@ -142,14 +170,17 @@ export function addCityLayers(map, { pack = SEOUL } = {}) {
 // Show the city ground (on && mapOn) in this theme and mode, or hide it and give the stock roads back.
 // The stock road layers stay 'visible' at opacity 0 while the city is on: other code reads their
 // visibility as "the background map is on".
-export function applyCityStyle(map, { on = false, theme = 'light', tone = 'simcity', mapOn = true, pack = SEOUL, ride = false } = {}) {
+export function applyCityStyle(map, { on = false, theme = 'light', tone = 'simcity', mapOn = true, pack = SEOUL, ride = false, groundLight = false } = {}) {   // groundLight: 밤 바닥 빛 켬(다크일 때만 보인다)
   if (!map.getLayer || !map.getLayer(CITY_LAYER_IDS[0])) return false;
   const show = on && mapOn, mode = tone;
-  for (const { layer } of cityLayers({ pack, theme, mode, ride })) {
+  for (const { layer, before } of cityLayers({ pack, theme, mode, ride })) {
+    const night = NIGHT_GROUND_IDS.includes(layer.id), vis = show && (!night || (groundLight && theme === 'dark'));
+    if (night && vis && !map.getLayer(layer.id)) { const at = before.find(id => map.getLayer(id)); map.addLayer({ ...layer, layout: { ...layer.layout, visibility: 'visible' } }, at) }   // (조선 팩처럼 처음 만들 때 없던 팩: 그때 더한다)
     if (!map.getLayer(layer.id)) continue;
-    map.setLayoutProperty(layer.id, 'visibility', show ? 'visible' : 'none');
+    map.setLayoutProperty(layer.id, 'visibility', vis ? 'visible' : 'none');
     if (show) for (const [k, v] of Object.entries(layer.paint)) if (!k.endsWith('-transition')) map.setPaintProperty(layer.id, k, v);
   }
+  { const has = new Set(nightGround(pack).map(x => x.layer.id)); for (const id of NIGHT_GROUND_IDS) if (!has.has(id) && map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none') }   // 이 팩에 없는 밤 바닥 빛
   for (const [id, op] of [['bm-road-minor', .8], ['bm-road-major', 1]]) if (map.getLayer(id)) map.setPaintProperty(id, 'line-opacity', show ? 0 : op);
   for (const [id, op] of [['bm-landcover', .7], ['bm-park', .8]]) if (map.getLayer(id)) map.setPaintProperty(id, 'fill-opacity', show ? 1 : op);
   return show;

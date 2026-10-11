@@ -225,7 +225,7 @@ uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec3 u_hk[8];uniform vec3 u_hk2[7];uniform vec3 u_giwa[4];uniform vec4 u_hkP;uniform vec2 u_hkE;uniform vec4 u_hkG[2];   // 조선 모드: wood, plaster, paper, stone, 담장, the eave's underside, lit paper, ridge; 초가 ×3, 흙벽, 돌담 ×2, 고층 유리창; 기와 ×3; platform height, post width, 창호 share, lit share; lit paper's emission; 고층 처마 무리(city_hanok.mjs skirtGroups: 폭, 사이, 모서리 몫 · 최소 · 최대, 가운데 최소)
 uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_sign[8];uniform vec3 u_signInk[2];uniform float u_signNight;uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
-uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
+uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec4 u_nightUp;uniform vec4 u_nightK;uniform vec2 u_nightF;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
 ${XR_GLSL}
 uniform vec4 u_xa;   // the glass pass: opacity, outline opacity, outline width (px)
 uniform vec4 u_through;uniform vec4 u_thBand;uniform vec3 u_thGlass;uniform vec3 u_thFrame;uniform vec3 u_thInside;uniform vec3 u_thMix;   // buildings the viaduct passes through: rail height code base/step (m) + depth-open flag; band below/above, post width/spacing; glass, posts, the lit hall by day; sky mix, hall mix by day, night brightness relative to the type's lit windows
@@ -266,9 +266,9 @@ void shade(){
     vec3 mat=u_roofPal[slot];
     if((flags&2)!=0){vec2 c=floor(v_wm/10.0);mat*=0.965+0.07*hash(vec3(c,seed));}   // merged low-rise: roof panels
     if(type==4){float a=v_u;float p=dot(v_wm,vec2(cos(a),sin(a)))/4.0;mat*=1.0-0.08*pulse(p,0.0,0.5,fwidth(p));}   // industrial: panel lines
-    col=mat*light;
-  }else if(kind==3){col=u_equip*light;}
-  else if(kind==4){col=u_pitched[slot]*light;}
+    col=mat*light*u_nightF.y;   // (u_nightF.y: 밤 불빛의 지붕 빛 — 끄면 1)
+  }else if(kind==3){col=u_equip*light*u_nightF.y;}
+  else if(kind==4){col=u_pitched[slot]*light*u_nightF.y;}
   else if(kind==5){col=u_awning[slot]*light;}
   else if(kind==8){   // 조선: 기와 — the joints between the tile rows down the slope (v_u: along the eave, m), the ridge dark; underneath, the eave's rafters. slot 3: the 목탑's golden 상륜
     if(slot==3)col=u_giwa[3]*u_lightCol*(0.7+0.45*clamp(dot(n,u_sun),0.0,1.0));
@@ -454,7 +454,9 @@ void shade(){
     // ambient occlusion: the base, and the corners of fitted walls
     float ao=1.0;
     if(!noAO){ao-=u_ao.x*(1.0-smoothstep(0.0,u_ao.y,v_z));if(!absU&&bays>0.0){float d=min(cA?v_u:1e3,cB?len-v_u:1e3);ao-=0.6*u_ao.x*(1.0-smoothstep(0.0,u_ao.y*1.2,d));}}
-    vec3 wallC=wall*wallMul*light*ao;
+    float stK=storefront?1.0:fcls==0&&bays>0.5?0.45:0.0;   // 밤: 길 불빛(가로등 · 가게)이 벽 아래를 데운다 — 가게 벽은 다, 트인 면(길 쪽)은 반쯤, 옆 · 뒤 · 맞붙은 면은 안, 높이 오를수록 옅게
+    vec3 stUp=night?u_nightUp.rgb*(stK*exp(-v_z/max(u_nightUp.w,0.1))):vec3(0.0);
+    vec3 wallC=wall*wallMul*(light+stUp)*ao;
     // glass by day: its own diffuse range (linear), the sky mixed in by height and face, one broad fixed band a face; by night dark
     vec3 glassC;
     if(night)glassC=glass*(0.85+0.15*k)*u_lightCol;
@@ -472,7 +474,8 @@ void shade(){
     if(tF.x>0.0&&!(ground&&storefront)){lx0=max(x0,0.5-tF.x*0.5);lx1=min(x1,0.5+tF.x*0.5);ly0=max(y0,0.5-tF.y*0.5);ly1=min(y1,0.5+tF.y*0.5);}
     float covLit=(solid||lx1<=lx0||ly1<=ly0)?0.0:pulse(tx,lx0,lx1,wx)*pulse(ty,ly0,ly1,wy);
     float litRatio=ground?gLit:litR;if(v_misc.y>0.5)litRatio=v_misc.y/255.0;
-    float pr=litRatio*mix(tE.z,tE.w,hash(vec3(seed,fIdx,3.0)));
+    litRatio*=ground?u_nightK.z:u_nightK.x;   // 밤 불빛(팩 night.lights): 켜진 몫 ×
+    float pr=min(litRatio*mix(tE.z,tE.w,hash(vec3(seed,fIdx,3.0))),ground?u_nightK.w:u_nightK.y);   // (층마다 곱한 뒤의 상한: 끄면 1)
     float isLit=hash(vec3(seed,fIdx*131.0+bIdx,7.0))<pr?1.0:0.0;
     if(isLit>0.5&&tF.z>0.0){float run=0.0;for(float j=1.0;j<=3.0;j+=1.0)run+=hash(vec3(seed,fIdx*131.0+bIdx-j,7.0))<pr?1.0:0.0;if(run>=tF.z)isLit=0.0;}
     float litPx=(ly1-ly0)*cellH/max(fwidth(v_z),1e-5),litMix=smoothstep(u_lodPx.x,u_lodPx.y,litPx);
@@ -481,7 +484,7 @@ void shade(){
     float E=ground?tE.y:tE.x,h3=hash(vec3(seed,bIdx*13.0+fIdx,17.0));
     E*=tG.w>0.0?(h3<tG.w?tG.x:h3<tF.w?tG.y:tG.z):mix(0.72,1.08,h3);   // three tiers when the type has them, else each window its own
     col=mix(wallC,glassC,cov);
-    col=mix(col,litC*E,covLit*litV);
+    col=mix(col,litC*E,min(1.0,covLit*litV*(1.0+u_nightF.x*(1.0-litMix))));   // (밤 불빛: 멀리서 창 평균으로 섞일 때 그 몫을 키운다 — 넓게 본 동네도 켜진 것처럼)
   }
   if(u_debug>0.5){vec3 d=kind==0?vec3(0.6):kind==1?vec3(0.2,0.7,0.2):kind==2?vec3(0.9,0.1,0.1):kind==3?vec3(0.1,0.3,0.9):kind==4?vec3(1.0,0.6,0.1):vec3(0.9,0.1,0.9);col=d*(0.6+0.4*k);
     if(u_debug>1.5)col=vec3(max(0.0,-n.z),abs(n.x)*0.5+abs(n.y)*0.5,max(0.0,n.z));   // 2: the normal (blue up, green sideways, red down)
@@ -553,7 +556,7 @@ export class CityBuildings {
   // on/off, tone 'simcity' | 'coaster'(팩의 modes 항목), 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
   set(o) {
     if (o.pack && o.pack !== this.P.pack) this.setPack(o.pack);
-    if (o.on != null) this.on = o.on; if (o.tone) this.tone = o.tone; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight;
+    if (o.on != null) this.on = o.on; if (o.tone) this.tone = o.tone; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight; if (o.night) this.night = o.night;   // night: {lights} 밤 불빛 켬(팩 night.lights)
     this.palette = null; this.map?.triggerRepaint();
   }
   // another style pack (조선 모드 ↔ 심시티): every tile built again with it; a build already in a worker comes back to no tile and is dropped
@@ -737,7 +740,8 @@ export class CityBuildings {
     }
     const roofPal = []; for (let i = 0; i < 64; i++) { const r = P.roofs[i]; roofPal.push(...(r ? L(pick(r) || '#888888') : [.3, .3, .3])) }
     const ground = [], tA = [], tB = [], tC = [], tD = [], tE = [], tF = [], tG = [], litMean = [];
-    const litCols = P.lit.colors.map(c => c.map(v => v ** 2.2)), em = num(mode.windowEmission, 1);
+    const NL = th === 'dark' && this.night?.lights ? P.pack?.night?.lights : null;   // 밤 불빛 다시 맞추기(팩 night.lights): 다크 · 켰을 때만
+    const litCols = P.lit.colors.map(c => c.map(v => v ** 2.2)), em = num(mode.windowEmission, 1), emK = NL ? num(NL.emissionMul, 1) : 1, gemK = NL ? num(NL.groundEmissionMul, 1) : 1;
     for (const T of P.types) {
       const gc = pick(T.groundColor); ground.push(...(gc ? L(gc) : [0, 0, 0]), gc ? 1 : 0);
       tA.push(T.floorM, T.bayEff, T.winW, T.winH); tB.push(T.groundM, T.groundGlass, T.litRatio, T.groundLit);   // the bay as the mesh counted it (piers at least the pack's minimum)
@@ -746,7 +750,7 @@ export class CityBuildings {
       tC.push(pat, p1, p2, p3);
       const w = T.tempW; tD.push(w[0], w[0] + w[1], gc ? 1 : 0, 0);
       litMean.push(...[0, 1, 2].map(i => w[0] * litCols[0][i] + w[1] * litCols[1][i] + w[2] * litCols[2][i]));
-      const fm = T.nightFloorMul || P.lit.floorMul; tE.push((Number.isFinite(T.nightEmission) ? T.nightEmission : P.lit.emission) * em, (Number.isFinite(T.nightGroundEmission) ? T.nightGroundEmission : P.lit.groundEmission) * em, num(fm[0], .65), num(fm[1], 1.2));
+      const fm = T.nightFloorMul || P.lit.floorMul; tE.push((Number.isFinite(T.nightEmission) ? T.nightEmission : P.lit.emission) * em * emK, (Number.isFinite(T.nightGroundEmission) ? T.nightGroundEmission : P.lit.groundEmission) * em * gemK, num(fm[0], .65), num(fm[1], 1.2));
       const tiers = T.tiers, tm = tiers?.multipliers || [1, 1, 1], tw = tiers?.weights || [0, 0, 0];
       tF.push(num(T.nightWin?.[0], 0), num(T.nightWin?.[1], 0), T.maxContig, tiers ? num(tw[0], 0) + num(tw[1], 0) : 0);
       tG.push(num(tm[0], 1), num(tm[1], 1), num(tm[2], 1), tiers ? num(tw[0], 0) : 0);
@@ -754,8 +758,8 @@ export class CityBuildings {
     const house = P.types[0], shop = P.types[2], office = P.types[P.byKey.office] || P.types[3];
     const pitched = (pick(house.pitched?.colors) || ['#855B49', '#656F68', '#9D7658']).flatMap(L);
     const awning = (pick(shop.awning?.colors) || ['#9C614D', '#667C6B', '#C2AC76']).flatMap(L);
-    const SG = P.signs || {}, sign = Array.from({ length: 8 }, (_, i) => L((SG.colors || ['#C8372D'])[i % (SG.colors || ['#C8372D']).length])).flat(), signInk = [L(SG.ink?.light || '#F7F5EE'), L(SG.ink?.dark || '#1E2326')].flat(), signNight = num(SG.nightEmission, .95);   // 간판
-    const light = th === 'dark' ? P.dark : P.light, lc = hexRGB(light.color || '#ffffff').map(v => v ** 2.2), mx = Math.max(...lc), lightCol = lc.map(v => v / mx);
+    const SG = P.signs || {}, sign = Array.from({ length: 8 }, (_, i) => L((SG.colors || ['#C8372D'])[i % (SG.colors || ['#C8372D']).length])).flat(), signInk = [L(SG.ink?.light || '#F7F5EE'), L(SG.ink?.dark || '#1E2326')].flat(), signNight = num(SG.nightEmission, .95) * (NL ? num(NL.signMul, 1) : 1);   // 간판
+    const light = th === 'dark' ? P.dark : P.light, lc = hexRGB(light.color || '#ffffff').map(v => v ** 2.2), mx = Math.max(...lc), MN = NL?.moon, mc = MN ? hexRGB(MN.color || '#ffffff').map(v => v ** 2.2) : [1, 1, 1], mm = Math.max(...mc), lightCol = lc.map((v, i) => v / mx * (MN ? mc[i] / mm * num(MN.k, 1) : 1));   // (밤 불빛: 벽 · 지붕을 달빛처럼 어둡고 푸르게 — 켜진 창 · 간판이 그 위에서 빛나 보이게)
     const sideDark = th === 'dark' ? num(light.maxSideDarken, .15) : num(light.maxSideDarken, .2), roofBright = num(light.maxRoofBrighten, th === 'dark' ? .05 : .08);
     // glass by day (QA1 dayReflection): diffuse range, the sky mixed in over a height range by face strength up to a cap, the broad band's ΔL*
     const R = office.dayReflection || {}, on = R.enabled !== false, pair = (v, a, b) => Array.isArray(v) ? [num(v[0], a), num(v[1] ?? v[0], b)] : v != null && Number.isFinite(+v) ? [+v, +v] : [a, b];
@@ -778,7 +782,10 @@ export class CityBuildings {
     const hk2 = (hc ? [...[0, 1, 2].map(i => (hc.thatch || ['#C3A05E'])[i % (hc.thatch || [1]).length]), hc.mud || '#C4AA83', ...[0, 1].map(i => (hc.field || ['#9C978B'])[i % (hc.field || [1]).length]), hc.glass || '#718887'] : new Array(7).fill('#888888')).flatMap(L);
     const KG = HK?.tall?.skirtGroup || {}, hkG = [num(KG.widthM, 8), num(KG.gapM, 2.2), num(KG.cornerK, .2), num(KG.cornerM?.[0], 3.5), num(KG.cornerM?.[1], 6.5), num(KG.minM, 4.5), 0, 0];
     const hkP = HK ? [num(HK.baseM, .55), num(HK.postM, .24), num(HK.paperShare, .55), num(HK.night?.litShare, .6)] : [0, 0, 0, 0], hkE = [HK ? num(HK.night?.emission, .85) : 0, 0];
-    return { hk, hk2, hkG, giwa, hkP, hkE, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
+    const ST = NL?.street, upC = ST ? hexRGB(ST.color || '#FF9F52').map(v => v ** 2.2 * num(ST.strength, 0)) : [0, 0, 0];
+    const nightUp = [...upC, ST ? num(ST.heightM, 6) : 1], nightK = NL ? [num(NL.litRatioMul, 1), num(NL.litRatioMax, 1), num(NL.groundLitMul, 1), num(NL.groundLitMax, 1)] : [1, 1e3, 1, 1e3];
+    const nightF = NL ? [num(NL.farGlow, 0), num(MN?.roofK, 1)] : [0, 1];
+    return { nightUp, nightK, nightF, hk, hk2, hkG, giwa, hkP, hkE, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
     let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
@@ -852,7 +859,7 @@ export class CityBuildings {
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
       gl.uniform3fv(u.u_hk, K.hk); gl.uniform3fv(u.u_hk2, K.hk2); gl.uniform3fv(u.u_giwa, K.giwa); gl.uniform4fv(u.u_hkP, K.hkP); gl.uniform2fv(u.u_hkE, K.hkE); gl.uniform4fv(u.u_hkG, K.hkG);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_sign, K.sign); gl.uniform3fv(u.u_signInk, K.signInk); gl.uniform1f(u.u_signNight, K.signNight); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
-      gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform2fv(u.u_ao, K.ao);
+      gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform4fv(u.u_nightUp, K.nightUp); gl.uniform4fv(u.u_nightK, K.nightK); gl.uniform2fv(u.u_nightF, K.nightF); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
     }
     const lodE = this.P.lod.equipment;

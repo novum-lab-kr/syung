@@ -505,20 +505,22 @@ export class CityLife {
       pass(draws, keepS); pass(pdraws, keepP);
     }
     // ── lamps: the posts by day, glowing heads, pools and bulbs after dark ──
-    const lampDraws = []; if (fadeLamp > 0) {
+    // 밤 불빛(팩 night.lights, 다크 · 켰을 때): 웅덩이 · 전구는 기둥보다 먼 줌부터(lampPool.lod) 더 넓고 진하게, 차 앞불 줄기도 먼저 · 진하게
+    const NL = dark && opts.night?.lights ? (look.night || pack.night)?.lights : null, fadePool = NL?.lampPool ? smooth(NL.lampPool.lod[0], NL.lampPool.lod[1], zoom) : fadeLamp;
+    const lampDraws = []; if (fadeLamp > 0 || (dark && fadePool > 0)) {
       const LM = look.props.lamps, LP = this.lampFor(gl, LM); let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'lamps', vbox)) { lampDraws.push([c, a, n]); total += n }
       const keep = phone ? .5 : 1.01; stats.lamps = Math.round(total * Math.min(1, keep));
       const inst = (c, a) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
       gl.useProgram(this.pL); gl.uniformMatrix4fv(this.uL.u_matrix, false, MT); gl.uniform1f(this.uL.u_mu, MU); gl.uniform1f(this.uL.u_fade, fadeLamp); gl.uniform1f(this.uL.u_keep, keep); gl.uniform1f(this.uL.u_night, dark ? 1 : 0); gl.uniform1f(this.uL.u_thick, Math.max(1, .55 * MPP(zoom) / (LM.poleDiameterM / 2)));   // never thinner than about half a pixel
       gl.uniform2fv(this.uL.u_lit, lit); gl.uniform3fv(this.uL.u_pole, col(LM.pole[theme])); gl.uniform3fv(this.uL.u_glow, hexRgb(LM.light)); gl.uniform3fv(this.uL.u_light, light); gl.uniform1f(this.uL.u_alpha, 1);
       if (LM.torch) { gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : (now % 1e6) / 1000); gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]); if (!reducedMotion && lampDraws.length) this._anim = true }   // 횃불은 계속 흔들린다
-      gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) }
+      if (fadeLamp > 0) { gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) } }
     }
     // ── cars: the simulation, then the instanced boxes ──
     if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
       const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
-      this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= 16.5, pixelRatio });
+      this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= (NL?.carBeam?.minZoom ?? 16.5), beamAlpha: NL?.carBeam?.opacity, pixelRatio });
       stats.cars = this.traffic.count; stats.traffic = this.traffic.stats; if (!reducedMotion && this.traffic.count) this._anim = true;
     } else this.traffic.clear();
     this.tick = now;
@@ -541,12 +543,13 @@ export class CityLife {
         gl.bindVertexArray(this.vaQ); for (const [c, a, n] of draws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.cross.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) } }
     }
     if (dark && lampDraws.length) {
-      const LM = look.props.lamps, keep = phone ? .5 : 1.01, pool = Math.min(LM.poolOpacity * (lampPool ?? pack.modes[mode].lampPool), LM.simcityPoolMaxOpacity), glow = hexRgb(LM.light);
-      gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadeLamp); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * 1.6);
+      const LM = look.props.lamps, keep = phone ? .5 : 1.01, lp = lampPool ?? pack.modes[mode].lampPool, glow = hexRgb(LM.light), LPn = NL?.lampPool;
+      const pool = LPn ? LPn.opacity * Math.max(.5, Math.min(1, lp / 1.4)) : Math.min(LM.poolOpacity * lp, LM.simcityPoolMaxOpacity);   // (밤 불빛: 모드의 웅덩이 배수를 기본 1.4 에 견준 몫만큼, 반 아래로는 안 줄인다)
+      gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadePool); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
       gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
       const sz = bulbSize(zoom, pixelRatio, .9);
-      gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadeLamp); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
+      gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadePool); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
       gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
       gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
     }

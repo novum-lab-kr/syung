@@ -422,6 +422,32 @@ export const SEOUL_CITY_STYLE = {
     "colorMath": {"space": "linear-srgb", "lumaWeights": [0.2126, 0.7152, 0.0722]},
     "transitionMs": 180
   },
+  // 2026-10-11 행님: "다크 모드일 때 동네들이 너무 어둡게 느껴지는데, 빛을 실제 빛나는 것처럼 못 보여 주나?" — 도시 모드(심시티 · 조선 · 롤코) 밤 빛.
+  // lights: 불빛 다시 맞추기(창 켜진 몫 · 밝기, 1층 가게, 간판, 벽 아래를 데우는 길 불빛, 가로등 웅덩이, 차 불빛),
+  // ground: 바닥 빛(큰길을 따라 번지는 가로등 빛, 가게가 모인 번화가의 따뜻한 빛 지도), bloom: 빛 번짐(화면 후처리, web/city/bloom.mjs).
+  // 다크 테마 · 도시 모드에서만 읽는다. 조선은 팩 덧쓰기로 등잔 · 횃불 빛에 맞춘다(web/modes/joseon/style.mjs).
+  "night": {
+    "lights": {
+      "litRatioMul": 1.2, "litRatioMax": 0.8,             // 창 켜진 몫 ×, 층마다 곱한 뒤의 상한(켜진 수보다 켜진 창의 밝기를 올린다 — Codex)
+      "emissionMul": 1.5, "groundEmissionMul": 1.7,       // 켜진 창 · 1층 밝기 ×
+      "groundLitMul": 1.35, "groundLitMax": 0.9,          // 1층(가게 · 로비) 켜진 몫 ×, 상한
+      "signMul": 1.2,                                     // 간판 ×
+      "moon": {"color": "#AFC3E0", "k": 0.6, "roofK": 0.8},   // 지붕은 그보다 조금 더(×roofK)
+      "farGlow": 0.6,                                     // 멀리서(창이 평균으로 섞일 때) 켜진 창 몫 ×(1 + farGlow)             // 벽 · 지붕 빛: 달빛 색 · 세기(1 = 지금) — 벽이 중간 회색이면 켜진 창이 안 튄다
+      "street": {"color": "#FFC88E", "strength": 1.6, "heightM": 3.5},   // 길 불빛이 벽 아래를 데운다(가게 벽 전부, 길 쪽 트인 면은 반): 색 · 세기(벽 색에 곱하는 빛) · 높이(1/e)
+      "lampPool": {"opacity": 0.22, "radiusMul": 2.0, "lod": [15.3, 16]},   // 가로등 바닥 웅덩이: 진하기 · 반지름(팩 poolRadiusM ×) · 보이는 줌
+      "carBeam": {"opacity": 0.3, "minZoom": 16}           // 차 앞불 빛 줄기
+    },
+    "ground": {
+      // 큰길은 흰 LED(4000~5000K), 골목으로 갈수록 따뜻하게(서울시 야간경관 — 지역 · 길마다 다른 색온도). 강 · 산 · 공원 안 · 뒷골목은 어둡게 둔다
+      "roads": {"colors": {"motorway": "#FFE9CC", "primary": "#FFE2BC", "secondary": "#FFD3A0", "tertiary": "#F2C28C", "minor": "#E8B985"},
+        "core": {"widthMul": 1.0, "blurMul": 0.35, "opacity": {"motorway": 0.21, "primary": 0.26, "secondary": 0.21, "tertiary": 0.14, "minor": 0.06}},   // 길 면(가로등이 비춘 아스팔트)
+        "halo": {"widthMul": 2.6, "blurMul": 1.3, "opacity": {"motorway": 0.05, "primary": 0.07, "secondary": 0.05, "tertiary": 0.03, "minor": 0}}},       // 길 밖으로 번지는 빛
+      "downtown": {"colors": ["#FF8A3D", "#FFB070", "#FFDDB0"], "opacity": 0.35, "radiusM": 45, "intensity": 0.9, "minZoom": 13}   // 가게 · 식당 · 술집 POI 만
+    },
+    // 지도 캔버스(건물 창 · 간판 · 바닥 — 열차는 없다)는 낮은 문턱 · 센 세기, 열차 캔버스(가로등 · 차 불빛 · 전구 · 열차 몸)는 overlay 값(높은 문턱: 흰 열차 몸은 안 번지게)
+    "bloom": {"strength": 1.8, "threshold": 0.68, "knee": 0.06, "levels": 4, "tint": "#FFFFFF", "phone": false, "overlay": {"strength": 1.2, "threshold": 0.86}}
+  },
   "lod": {
     "windows": [15, 16],
     "roofEquipment": [16, 16.5],

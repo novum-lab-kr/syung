@@ -33,7 +33,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
-  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null;   // coaster: checked ride sites; cityLife: city-life's props
+  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -59,7 +59,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
       if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-      cityLife.render(gl,pd.mainMatrix,{look:cityPack(),now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
+      cityLife.render(gl,pd.mainMatrix,{look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
       if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
     if(live.busLayer)live.busLayer.look=S.buses.look;live.busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
     if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
@@ -82,6 +82,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       if(night.animating()||festoon?.animating()&&!REDUCED.matches)trainFrameSoon(1000/TRAIN_FPS)}
     else if(night||festoon){night?.dispose(gl);night=null;festoon?.dispose(gl);festoon=null;if(window.__subwayWebGL)delete window.__subwayWebGL.festoon}   // 낮 · 다른 모드: 밤 층 · 축제 전구 GL 을 치운다
     if(S.city.xray&&live.cityBuildings)live.cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
+    {const n=live.night;if(n.bloom&&live.NightBloom){if(!bloom){bloom=new live.NightBloom();bloom.init(gl)}const B={...n.N.bloom,...n.N.bloom.overlay,...live.bloomTune};bloom.render(gl,{strength:B.strength,threshold:B.threshold,knee:B.knee,levels:B.levels,tint:B.tint?[1,3,5].map(i=>parseInt(B.tint.slice(i,i+2),16)/255):[1,1,1]})}else if(bloom){bloom.dispose(gl);bloom=null}}   // 밤 빛 번짐(도시 모드 · 다크): 3D(가로등 · 차 불빛 · 고가 · 롤코 전구 · 불꽃)를 다 그린 뒤, 출구 기둥 · 이름표 전에. 지도 캔버스(건물 창)는 본체의 custom layer 가 따로   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
     if(!journeyMap.subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
     if(rider.ride&&park&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
       const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
