@@ -82,3 +82,9 @@ test('a journey ride lights its viaduct edges and the platforms it boards and le
   assert.equal(v.journeyFocus([]).edges.size, 0, 'a bus-only journey: every viaduct steps back');
   assert.deepEqual(v.deckFade(), ['interpolate', ['linear'], ['zoom'], ...v.V.lod.deck.flatMap((z, i) => [z, i ? 0 : 1])]);
 });
+
+test('the viaduct shader still lights every material after the journey tint (2026-10-11: the line was dropped once)', async () => {
+  const src = (await import('node:fs')).readFileSync(new URL('../web/city/viaduct.mjs', import.meta.url), 'utf8');
+  const tint = src.indexOf('if (u_route > .5 && u_route < 1.5)'), lit = src.indexOf('c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;'), dim = src.indexOf('if (u_route > 1.5) c = mix(c, u_veil');
+  assert.ok(tint > 0 && lit > tint && dim > lit, 'journey colour → lighting → veil, in that order');
+});

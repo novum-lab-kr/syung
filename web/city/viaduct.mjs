@@ -236,6 +236,7 @@ void main(){
     if (m == 1 || m == 3) c = u_line; else if (m == 0) c = mix(c, u_line, u_water > .5 ? .5 : .75);
     else if (m == 8) c = mix(c, u_line, .85); else if (m == 7) c = mix(c, u_line, .2);
   }
+  c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;
   if (m == 2) c = mix(c, u_glow, u_night * u_glowK.x);                       // under the deck: lit softly at night
   if (m == 9 || m == 7) c = mix(c, u_glow, u_night * u_glowK.y * (m == 7 ? .6 : 1.));   // the platforms and under their roofs (the stairs' roofs too)
   if (m == 12) c = mix(c, u_glow, u_night * u_glowK.z);                      // the stairs' treads
@@ -467,6 +468,7 @@ export class CityViaduct {
     const wantDet = zoom >= V.lod.beds && !V.aqueduct, wantPiers = zoom >= V.lod.piers && !!life, solo = selected !== 'all', draw = [], plats = [], exitsDraw = [];
     let pending = false, piers = 0, open = 0, levelsOn = 0;
     this.levelsOf();   // the stations' levels, before anything is built on them
+    const J = this.journeyFocus(journey);   // 길찾기로 탈 구간 · 타고 내리는 승강장(그 둘은 상판이 나오는 줌부터 그린다 — 땅 위 표시점이 상판과 함께 사라지므로)
     for (const e of this.edgeList()) {
       if (solo && e.line !== selected) continue; const rows = this.rowsOf(e); if (rows.length < 2 || !inView(e.box)) continue;
       const it = { e, deck: this.get('deck:' + e.id), det: null, pier: null }, H = this.profileOf(e), dr = this.deckRows(e); if (e.ramp) levelsOn++;
@@ -482,8 +484,9 @@ export class CityViaduct {
     }
     const wantExits = V.exits.enabled !== false && zoom >= V.lodExits.stairs && !!life && this.net.exits,   // exits.enabled: false — 출구 계단 · 통로를 만들지 않음(2026-10-05, 출구는 노선색 기둥만)
     exitDetail = zoom >= V.lodExits.steps; let exitsOut = 0, exitsSkipped = 0, exitsOpen = 0;
-    if (zoom >= V.lod.platforms && this.net.rects) for (const [key, rect] of this.net.rects) {
+    if ((zoom >= V.lod.platforms || J?.stops.size) && this.net.rects) for (const [key, rect] of this.net.rects) {
       const i = key.lastIndexOf(':'), line = key.slice(0, i), id = key.slice(i + 1); if (solo && line !== selected) continue;
+      if (zoom < V.lod.platforms && !J.stops.has(key)) continue;
       let p = this.plats.get(key); if (!p || p.rect !== rect) { if (p) this.levelsDirty = true; p = this.platGeom(rect); this.plats.set(key, p); this.del('plat:' + key); this.del('plat:' + key + ':d'); this.exitLayouts.delete(key) }
       if (!inView(p.box, wantExits ? V.exits.maxM : 0)) continue;
       const hT = this.stationH(line, id), detail = zoom >= V.lod.posts, k = 'plat:' + key + (detail ? ':d' : ''); let c = this.get(k);
@@ -506,7 +509,7 @@ export class CityViaduct {
     for (const [k, a] of this.cache) { if (this.bytes <= cap || a.f === this.frame) break; this.del(k) }
     this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1), levelsMs: this.levelsMs, crossings: this.regions?.length, sameLevel: this.sameLevel?.length };
     if (!draw.length && !plats.length) return pending;
-    const J = this.journeyFocus(journey), route = (k, set) => !J ? 0 : set.has(k) ? 1 : 2;   // 길찾기: 1 탄 구간 · 승강장, 2 나머지(흐리게)
+    const route = (k, set) => !J ? 0 : set.has(k) ? 1 : 2;   // 길찾기: 1 탄 구간 · 승강장, 2 나머지(흐리게)
     // ── draw ──
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const Lg = pack.lighting?.[theme] || {}, ref = pack.lighting?.referenceSun || { azimuthDeg: 225, elevationDeg: 42 }, az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
