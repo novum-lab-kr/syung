@@ -393,10 +393,12 @@ export class CityLife {
     }
     mark('park-trees'); yield;
     // lamps along the main streets: every 28 m, primaries both sides staggered, clear of the junctions
+    // 골목(minor)도 한쪽에 minorSpacingM 마다(팩에 있을 때, 2026-10-11 행님: 밤 길 빛은 이유 없이 밝지 말고 가로등이 비추게)
     const LM = P.lamps;
     for (const e of edges) {
-      if (e.level !== 0 || e.ramp || !SIDEWALK_TREES.has(e.cls)) continue; const off = e.width / 2 + .45, sides = e.cls === 'primary' ? [1, -1] : [1];
-      for (const side of sides) for (let s = (side > 0 ? LM.spacingM / 2 : LM.spacingM / 2 + LM.primaryStaggerM) % LM.spacingM; s < e.len; s += LM.spacingM) {
+      const minor = e.cls === 'minor' && LM.minorSpacingM > 0;
+      if (e.level !== 0 || e.ramp || !(SIDEWALK_TREES.has(e.cls) || minor)) continue; const off = e.width / 2 + .45, sides = e.cls === 'primary' ? [1, -1] : [1], step = minor ? LM.minorSpacingM : LM.spacingM;
+      for (const side of sides) for (let s = (side > 0 ? step / 2 : step / 2 + LM.primaryStaggerM) % step; s < e.len; s += step) {
         if (s < LM.intersectionClearanceM || e.len - s < LM.intersectionClearanceM) continue; const p = this.graph.poseAt(e, s, side * off, 1);
         if (p.x < bx0 || p.x >= bx1 || p.y < by0 || p.y >= by1 || (maskAt(p.x, p.y) & 1) || inBuilding(p.x, p.y, .5) || !roadClear(p.x, p.y, e, .3)) continue;
         lamps.push(p.x, p.y, Math.atan2(-side * p.fx, side * p.fy), hashi(Math.round(p.x), Math.round(p.y), 31)) }   // yaw: the arm toward the road (−side × right)

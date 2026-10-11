@@ -357,6 +357,7 @@ export const SEOUL_CITY_STYLE = {
     },
     "lamps": {
       "spacingM": 28,
+      "minorSpacingM": 42,          // 골목은 한쪽에만, 더 드문드문(2026-10-11 밤 길 빛 = 가로등)
       "primaryStaggerM": 14,
       "intersectionClearanceM": 6,
       "heightM": 7,
@@ -435,14 +436,11 @@ export const SEOUL_CITY_STYLE = {
       "moon": {"color": "#AFC3E0", "k": 0.6, "roofK": 0.8},   // 지붕은 그보다 조금 더(×roofK)
       "farGlow": 0.6,                                     // 멀리서(창이 평균으로 섞일 때) 켜진 창 몫 ×(1 + farGlow)             // 벽 · 지붕 빛: 달빛 색 · 세기(1 = 지금) — 벽이 중간 회색이면 켜진 창이 안 튄다
       "street": {"color": "#FFC88E", "strength": 1.6, "heightM": 3.5},   // 길 불빛이 벽 아래를 데운다(가게 벽 전부, 길 쪽 트인 면은 반): 색 · 세기(벽 색에 곱하는 빛) · 높이(1/e)
-      "lampPool": {"opacity": 0.22, "radiusMul": 2.0, "lod": [15.3, 16]},   // 가로등 바닥 웅덩이: 진하기 · 반지름(팩 poolRadiusM ×) · 보이는 줌
+      "lampPool": {"opacity": 0.3, "radiusMul": 2.6, "lod": [14.5, 15.1]},   // 가로등 바닥 웅덩이 · 전구: 진하기 · 반지름(팩 poolRadiusM ×) · 보이는 줌 — 길 빛은 이것만(멀리선 전구가 길 따라 점점이)
       "carBeam": {"opacity": 0.3, "minZoom": 16}           // 차 앞불 빛 줄기
     },
     "ground": {
-      // 큰길은 흰 LED(4000~5000K), 골목으로 갈수록 따뜻하게(서울시 야간경관 — 지역 · 길마다 다른 색온도). 강 · 산 · 공원 안 · 뒷골목은 어둡게 둔다
-      "roads": {"colors": {"motorway": "#FFE9CC", "primary": "#FFE2BC", "secondary": "#FFD3A0", "tertiary": "#F2C28C", "minor": "#E8B985"},
-        "core": {"widthMul": 1.0, "blurMul": 0.35, "opacity": {"motorway": 0.21, "primary": 0.26, "secondary": 0.21, "tertiary": 0.14, "minor": 0.06}},   // 길 면(가로등이 비춘 아스팔트)
-        "halo": {"widthMul": 2.6, "blurMul": 1.3, "opacity": {"motorway": 0.05, "primary": 0.07, "secondary": 0.05, "tertiary": 0.03, "minor": 0}}},       // 길 밖으로 번지는 빛
+      // (길을 따라 번지던 빛 roads 는 뺐다 — 2026-10-11 행님: 이유 없이 밝아서 이상하다, 가로등이 비추게 → lights.lampPool)
       "downtown": {"colors": ["#FF8A3D", "#FFB070", "#FFDDB0"], "opacity": 0.35, "radiusM": 45, "intensity": 0.9, "minZoom": 13}   // 가게 · 식당 · 술집 POI 만
     },
     // 지도 캔버스(건물 창 · 간판 · 바닥 — 열차는 없다)는 낮은 문턱 · 센 세기, 열차 캔버스(가로등 · 차 불빛 · 전구 · 열차 몸)는 overlay 값(높은 문턱: 흰 열차 몸은 안 번지게)

@@ -49,9 +49,6 @@ export const JOSEON_DELTA = {
   night: {
     lights: { street: { color: '#FFA65A', strength: 1.1, heightM: 2.5 }, lampPool: { opacity: 0.2, radiusMul: 1.6 } },
     ground: {
-      // (Codex 2차: 길 전체에 황갈색을 깐 느낌 — 좁고 옅게, 가운데는 불꽃빛 #FFD39A, 번짐은 #E88A45. 밝은 곳 사이에 어둠을 남긴다)
-      roads: { colors: { motorway: '#FFD39A', primary: '#FFD39A', secondary: '#FFCB8C', tertiary: '#F7BD7E', minor: '#EFB273' }, core: { opacity: { motorway: 0.11, primary: 0.12, secondary: 0.09, tertiary: 0.06, minor: 0.03 } },
-        halo: { colors: { motorway: '#E88A45', primary: '#E88A45', secondary: '#E88A45', tertiary: '#E88A45', minor: '#E88A45' }, opacity: { motorway: 0.03, primary: 0.03, secondary: 0.02, tertiary: 0.01, minor: 0 } } },
       downtown: { colors: ['#E8652A', '#FF9446', '#FFC98A'], opacity: 0.2, radiusM: 40 },
     },
     bloom: { tint: '#FFF2DE' },   // (문턱 · 세기는 기본 그대로 — 바탕 글자는 따뜻한 색 가중으로 빠진다)
