@@ -220,8 +220,10 @@ void main(){
     const {map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document}=this.d,exits=this.d.getExits(),selected=this.d.getSelected();
     const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
     if(!this.p)this.init(gl);this.atlas();const jang=this.d.getLook?.()==='jangseung';if(jang)this.faceAtlas();const night=document.documentElement.dataset.theme==='dark';
+
     const unit=1/(512*2**z),f=Math.max(0,Math.min(1,(z-PILLAR_PX[0][0])/(PILLAR_PX[1][0]-PILLAR_PX[0][0]))),lerp=i=>PILLAR_PX[0][i]+(PILLAR_PX[1][i]-PILLAR_PX[0][i])*f;
-    const sPx=lerp(1),half=sPx/2*unit,hgt=lerp(2)*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
+    const grow=jang?2**Math.max(0,z-PILLAR_PX[1][0]):1;   // 장승: 줌 18 위로는 화면 크기 고정을 풀고 지도와 같이 커진다(2026-10-11 행님: 18 부터 줄어들어 너무 작다)
+    const sPx=lerp(1)*grow,half=sPx/2*unit,hgt=lerp(2)*grow*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
     const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Z=M[2]*x+M[6]*y+M[10]*zz+M[14],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H,Z/Wc]};
     const data=[],NO=[0,0,0,0],vert=(p,l,col,ink,g,guv,mode)=>data.push(p[0],p[1],p[2]??0,l[0],l[1],...col,...ink,...g,...guv,mode);
     const quad=(P,Lc,col,ink,g,guv,mode)=>{for(const i of [0,1,2,0,2,3])vert(P[i],Lc[i],col,ink,g,guv,mode)};
