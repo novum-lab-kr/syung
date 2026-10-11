@@ -5,9 +5,11 @@
 export const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
 
 // onTrains(trains) → 자리 잡은 열차 수, onClear(): 예측 비우기
-export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,updateLiveNotice,onTrains,onClear}){
+export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,updateLiveNotice,onTrains,onClear,journeyLines=()=>null}){
   let trains=[],request=0,on=false,failures=0,key='',at=0,fetchedAt=null;
   function liveLines(){
+    // 길찾기 중: 줌과 상관없이 탈 노선만(경로 전체를 보는 줌 11~12 에도 내 열차가 보이게 — 다른 열차는 어차피 숨긴다, journey.mjs trainShown)
+    const journey=journeyLines();if(journey){on=true;return journey}
     // hysteresis: trains appear at zoom 13 but only disappear below 12.5, so pinching around 13 doesn't blink them
     on=map.getZoom()>=LIVE_ZOOM||(on&&map.getZoom()>=LIVE_ZOOM-.5);
     if(!on)return [];

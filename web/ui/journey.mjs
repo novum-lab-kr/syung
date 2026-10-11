@@ -68,13 +68,24 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     live.stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
   }
   const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
-  // route focus: veil on, trains faded, my location kept above the veil
+  // 길찾기 중에는 내가 가는 방향의 열차만(2026-10-11): 탈 노선에서, 지금 자리(dist — 그리는 거리)부터의 앞길(seq, 최대 8정거장)에
+  // 탈 구간의 두 역을 그 순서로 지나는 열차 — 탈 역으로 오는 것과 탄 구간 안의 것. 반대 방향 · 내릴 역을 지난 것 · 다른 노선은 숨긴다.
+  // (seq[0] 은 이미 떠난 역이고 '출발' 기록은 그 역을 지난 뒤라 지금 자리부터 센다.) 버스만 타는 경로면 열차는 없다.
+  // 길찾기가 알려 준 실시간 열차(trainNo)는 늘 보인다. 버스 노선 번호를 고른 동안(busSelection)은 따로(subwayOff)
+  let ridesOf=null,ridesList=null;   // 매 프레임 열차마다 묻는다: 여정이 바뀔 때만 다시 고른다
+  const rides=()=>{if(ridesOf!==displayedRoute){ridesOf=displayedRoute;ridesList=displayedRoute&&!displayedRoute.busSelection?displayedRoute.plan.legs.filter(l=>l.type==='ride').map(l=>({...l,ids:(l.stations||[]).map(String)})):null}return ridesList};
+  const passes=(seq,ids)=>{let k=-1;for(const s of seq){const i=ids.indexOf(String(s.id));if(i>=0){if(k>=0&&i>k)return true;k=k<0?i:Math.min(k,i)}}return false};   // 탈 구간의 두 역을 그 순서로
+  const ahead=(p,dist)=>{let i=0;while(i<p.seq.length-1&&p.cum[i+1]<dist)i++;return p.seq.slice(i)};   // 지금 달리는 칸의 앞 역부터
+  const isJourneyTrain=(p,l)=>!!l.trainNo&&p.id===`${l.line}:${l.trainNo}`;
+  function trainShown(p,dist){const R=rides();return !R||R.some(l=>l.line===p.t.line&&(isJourneyTrain(p,l)||passes(ahead(p,dist),l.ids)))}
+  function journeyTrain(p){return !!rides()?.some(l=>isJourneyTrain(p,l))}   // 탈 열차: 고른 열차처럼 둘레가 퍼진다
+  function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
+  // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)
   function focusRoute(on){
     if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
     routeFocus=on;setRouteOpacity();
     live.stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
-    const c=document.querySelector('.train-overlay');if(c)c.style.opacity=on&&!live.busLayer?.chosenIds().length&&!live.busLayer?.journeyLegs.length?'.3':'';   // bus: either entry point keeps its selected vehicles legible
     if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
   }
-  return {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute,get displayedRoute(){return displayedRoute},set displayedRoute(v){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v){subwayOff=v}};
+  return {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,get displayedRoute(){return displayedRoute},set displayedRoute(v){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v){subwayOff=v}};
 }

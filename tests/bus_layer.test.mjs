@@ -154,7 +154,8 @@ test('legacy journey names need matching geometry; sheet close keeps them, clear
   layer.map.getZoom=()=>11;
   layer.setJourney([leg]);
   assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1,'selected journey routes stay visible when fitBounds zooms out');
-  assert.equal(layer.active(),false,'low zoom must not poll or show bus vehicles');
+  assert.equal(layer.active(),true,'journey buses are polled zoomed out too, like a route chosen by number (2026-10-11)');
+  layer.clearSelection({journey:true});assert.equal(layer.active(),false,'low zoom without a journey or a chosen route must not poll');
 },false));
 
 // 2026-10-11 행님: 길찾기 버스는 탄 정류장 → 내릴 정류장 구간만(노선 전체가 보였다). 정류장 · 노선 번호로 고르면 전체.
@@ -196,6 +197,16 @@ test('a journey draws only the ridden part of its bus route; a route number draw
   layer.select({kind: 'stop', id: '01'}, null);
   layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
   assert.deepEqual(lines()[0], route.path, 'a route chosen by its number is drawn whole');
+}, false));
+
+test('journey buses past where I get off are left out; a route chosen by number keeps all its buses', () => withLayerFixture(layer => {
+  assert.equal(layer.journeyEnds(), null, 'no journey');
+  layer.setJourney([{type: 'bus', route: '100', path: [[127.002, 37.502], [127.008, 37.508]]}]);
+  const end = layer.journeyEnds().get(route.id), line = buildBusPath(route.path);
+  assert.ok(end > 0 && end < line.total / 2, `alighting on the way out: ${end}`);
+  assert.equal(layer.journeyEnds(), layer.journeyEnds(), 'kept until the journey changes');
+  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  assert.equal(layer.journeyEnds(), null);
 }, false));
 
 // 2026-10-11 행님: 길찾기 결과에서 고른 경로 카드를 누르면 시트가 닫히며(closeSheet → clearSelection) 버스 경로만 사라졌다

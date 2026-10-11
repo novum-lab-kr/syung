@@ -529,8 +529,22 @@ class BusLayer {
     this.updateStatus(); this.refreshDetail(); this.draw();
   }
   chosenIds(){return this.selectedRoute?[this.selectedRoute]:this.journeyIds;}
+  // 길찾기 버스 노선마다 내릴 곳의 선 위 거리(m) — 그보다 앞(선 순서상)의 차가 탈 곳으로 오는 차 · 탄 구간 안의 차다(2026-10-11: 내가 가는 방향만).
+  // 노선 번호 · 버스로 고른 동안은 null(그 노선 전체). 맞추지 못한 노선은 Infinity(다 보인다). 여정이 바뀔 때만 다시 계산한다.
+  journeyEnds(){
+    if(this.selectedRoute||!this.journeyLegs.length||!this.data)return null;
+    if(this.ends?.legs===this.journeyLegs&&this.ends.data===this.data)return this.ends.map;
+    const map=new Map();
+    for(const leg of this.journeyLegs)for(const id of journeyBusRouteIds(this.data,[leg])){
+      const range=journeyBusRange(this.geometry(this.data.routeById.get(id)),leg);
+      map.set(id,Math.max(map.get(id)??-Infinity,range?range[1]:Infinity));
+    }
+    this.ends={legs:this.journeyLegs,data:this.data,map};
+    return map;
+  }
   // 정류장 팝업에서 고른 노선 하나는 노선 전체가 보이게 멀리 빼도 그 노선 버스를 계속 받는다(호출은 노선 1개)
-  active() { return !this.disposed && !document.hidden && (!!this.selectedRoute || (this.enabled||this.chosenIds().length>0) && this.map.getZoom() >= BUS_ZOOM.buses); }
+  // 길찾기 버스 노선도 고른 노선처럼 멀리서도 받는다(경로 전체를 보는 줌에서 탈 버스가 보이게, 2026-10-11) — 1~2개 노선
+  active() { return !this.disposed && !document.hidden && (!!this.selectedRoute || this.journeyLegs.length>0 || (this.enabled||this.chosenIds().length>0) && this.map.getZoom() >= BUS_ZOOM.buses); }
   stopAnimation() { clearTimeout(this.frameTimer); cancelAnimationFrame(this.frame); this.frameTimer = 0; this.frame = 0; }
   stopLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0; this.stopAnimation();
@@ -571,11 +585,12 @@ class BusLayer {
     const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
     const hitBox=(r,minimum)=>{const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2,w=Math.max(minimum,r[2]-r[0]+6),h=Math.max(minimum,r[3]-r[1]+6);return[cx-w/2,cy-h/2,cx+w/2,cy+h/2];};
     let moving=false;
-    const allowed=new Set(this.chosenIds().length?this.chosenIds():this.requested);
+    const allowed=new Set(this.chosenIds().length?this.chosenIds():this.requested),ends=this.journeyEnds();
     if(this.active())for(const bus of [...this.fleet.values()].sort((a,b)=>Number(b.row.id===this.selection?.id)-Number(a.row.id===this.selection?.id))){
       if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
       if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
       const distance=this.reduced.matches?bus.motion.to:busMotionDistance(bus.motion,now);
+      if(ends&&distance>(ends.get(bus.route.id)??Infinity)+30)continue;   // 길찾기: 내릴 곳을 지난 차(반대 방향 포함)는 숨긴다
       // API 좌표는 노선 선 위 지점(distance)으로만 쓴다. 멀리서는 그 선 위, 줌 15 부터는 심시티 도로의 진행 방향 오른쪽 차로.
       const overview=zoom<BUS_ZOOM.buses||!this.map.querySourceFeatures,pose=overview?busPointAt(bus.path,distance):busLinePointAt(this.snappedLine(bus.route,bus.path),distance);
       if(!pose||!contains(this.box||box,pose.coordinate))continue;

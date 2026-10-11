@@ -266,7 +266,8 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       // my-location pulse: the ripple, in 슝 yellow, under the trains
       if(live.myLocation&&map.getBounds().contains(live.myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(live.myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
       for(const plan of drawTrainsToo?planner.plans:[]){
-        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan),mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
+        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!live.trainShown(plan,pose.dist))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown)
+        const mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
         this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
         let shiftX=0,shiftY=0;
@@ -279,7 +280,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         if(pose.moving||snap&&trainPose(plan).moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
         const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
         let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
-        if(plan.id===live.sheetTrain){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}
+        if(plan.id===live.sheetTrain||live.journeyTrain(plan)){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}   // 고른 열차 · 길찾기로 탈 열차
         const P=d=>{const q=trackPoint(plan,K==='coaster'?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
         if(look==='fleet'){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
           // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞에만 (2026-10-10 덕배)
