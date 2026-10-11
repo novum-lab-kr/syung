@@ -48,3 +48,23 @@ test('a ride through the same station twice (6호선 응암 loop) matches each s
   assert.equal(shown(j, train('a', '6호선', [15, 10, 16, 17])), true, 'on the last stretch 구산 → 응암 → 새절');
   assert.equal(shown(j, train('b', '6호선', [16, 10, 15])), false, 'the other way');
 });
+
+test('in a viaduct mode the ground journey line fades out where the decks come in; on the ground it stays', () => {
+  globalThis.document ??= {documentElement: {dataset: {}}, querySelector: () => null};
+  const paint = {}, settings = {track: {kind: 'viaduct'}};
+  class Bounds {extend() {return this}}
+  const map = {sources: {}, getSource(id) {return this.sources[id]}, addSource(id) {this.sources[id] = {setData() {}}}, addLayer() {}, getLayer: () => true, triggerRepaint() {}, fitBounds() {},
+    setLayoutProperty() {}, setPaintProperty: (id, k, v) => {paint[id + ' ' + k] = v}, moveLayer() {}};
+  const fade = ['interpolate', ['linear'], ['zoom'], 13.6, 1, 14.2, 0];
+  const j = createJourneyMap({map, maplibregl: {LngLatBounds: Bounds}, colors: {}, byId: new Map(), cityCoords: () => [[127, 37.5], [127.01, 37.5]], stopPos: () => [127, 37.5],
+    cityViaduct: {routeOpacity: () => 0, deckFade: () => fade}, sheetPad: () => 0, journeyCasingPaint: () => ({}), journeyRidePaint: () => ({}), journeyStopPaint: () => ({}),
+    live: {busLayer: null, get settings() {return settings}, stationAlpha: 1}});
+  const plan = {legs: [walk, {type: 'ride', line: '1호선', stations: [1, 2]}, walk]};
+  j.showRoute(plan);
+  for (const k of ['journey-ride line-opacity', 'journey-casing line-opacity', 'journey-stop circle-opacity', 'journey-stop circle-stroke-opacity']) assert.deepEqual(paint[k], fade, k);
+  assert.equal(j.journeyRides(), j.journeyRides(), 'the viaduct is handed the same rides until the journey changes');
+  assert.deepEqual(j.journeyRides().map(l => l.stations), [[1, 2]]);
+  settings.track.kind = 'ground'; j.setRouteOpacity();
+  assert.equal(paint['journey-ride line-opacity'], 1);
+  j.clearRoute(); assert.equal(j.journeyRides(), null, 'route cleared: the viaducts as they were');
+});

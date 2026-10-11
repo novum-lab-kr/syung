@@ -67,7 +67,9 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     for(const id of ['routes','stations-casing','stations','station-names','station-labels','exit-refs'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');   // 감춘 역은 눌리지도 않게
     live.stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
   }
-  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9)};   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
+  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9);   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
+    // 길찾기 탄 구간도 같다: 상판이 나오면 땅 위 선 · 타고 내리는 점은 사라지고 고가가 노선색으로 밝아진다(viaduct journeyFocus, 2026-10-11 행님)
+    if(map.getLayer('journey-ride')){const o=live.settings.track.kind!=='ground'?cityViaduct.deckFade():1;for(const id of ['journey-casing','journey-ride'])map.setPaintProperty(id,'line-opacity',o);for(const k of ['circle-opacity','circle-stroke-opacity'])map.setPaintProperty('journey-stop',k,o)}};
   // 길찾기 중에는 내가 가는 방향의 열차만(2026-10-11): 탈 노선에서, 지금 자리(dist — 그리는 거리)부터의 앞길(seq, 최대 8정거장)에
   // 탈 구간의 두 역을 그 순서로 지나는 열차 — 탈 역으로 오는 것과 탄 구간 안의 것. 반대 방향 · 내릴 역을 지난 것 · 다른 노선은 숨긴다.
   // (seq[0] 은 이미 떠난 역이고 '출발' 기록은 그 역을 지난 뒤라 지금 자리부터 센다.) 버스만 타는 경로면 열차는 없다.
@@ -81,6 +83,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   const isJourneyTrain=(p,l)=>!!l.trainNo&&p.id===`${l.line}:${l.trainNo}`;
   function trainShown(p,dist){const R=rides();return !R||R.some(l=>l.line===p.t.line&&(isJourneyTrain(p,l)||passes(ahead(p,dist),l.pairs)))}
   function journeyTrain(p){return !!rides()?.some(l=>isJourneyTrain(p,l))}   // 탈 열차: 고른 열차처럼 둘레가 퍼진다
+  function journeyRides(){return rides()}   // 고가(viaduct journeyFocus): 같은 여정이면 같은 배열 — 없으면 null, 버스만 타면 []
   function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
   // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)
   function focusRoute(on){
@@ -89,5 +92,5 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     live.stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
     if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
   }
-  return {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,get displayedRoute(){return displayedRoute},set displayedRoute(v){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v){subwayOff=v}};
+  return {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,journeyRides,get displayedRoute(){return displayedRoute},set displayedRoute(v){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v){subwayOff=v}};
 }

@@ -16,7 +16,8 @@
 //   v.heightAt(line, a, b, k) → metres            // the rail height k of the way from station a to b (the runtime lifts the trains by it)
 //   v.stationH(line, id) → metres                 // the rail height at a station (its level)
 //   v.snapped(line, lo, hi) → [[lon,lat]…] | null // the edge's path moved onto its street, when it was
-//   v.render(gl, matrix, {now, zoom, dark, phone, bounds, sun, life, selected, moving, bodyPx}) → true while still building
+//   v.render(gl, matrix, {now, zoom, dark, phone, bounds, sun, life, selected, moving, bodyPx, journey}) → true while still building
+//     journey: 길찾기로 탈 지하철 구간 [{line, stations}] (없으면 null, 버스만 타면 []) — 그 구간 · 타고 내리는 승강장은 노선색, 나머지 고가는 흐리게
 //   v.screen(map, x, y, h)   v.shadowShift(sun, hM)   v.routeOpacity(focus)   v.dispose(gl)
 //
 //   net: the runtime's network — {paths, byId, geom(line,lo,hi) → {pts: [MercatorCoordinate…]}, offset(line,lo,hi) → px,
@@ -211,7 +212,7 @@ export function buildPlatform(p, eo, V, detail, hT = V.railHeightM) {
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec2 a_r; layout(location=2) in vec2 a_f; layout(location=3) in vec2 a_px; layout(location=4) in vec2 a_k;
 layout(location=5) in vec2 a_m; layout(location=6) in vec2 a_sz; layout(location=7) in vec2 a_min; layout(location=8) in vec2 a_mat; layout(location=9) in float a_n; layout(location=10) in float a_s;
-uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow, u_railH, u_water; uniform vec2 u_shift, u_lit; uniform vec4 u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade, u_wcol; uniform vec3 u_col[16];
+uniform mat4 u_matrix; uniform float u_mu, u_unit, u_lane, u_body, u_night, u_alpha, u_shadow, u_railH, u_water; uniform vec2 u_shift, u_lit; uniform vec4 u_glowK; uniform vec3 u_line, u_light, u_tint, u_glow, u_shade, u_wcol; uniform vec3 u_col[16]; uniform float u_route; uniform vec3 u_veil;
 out vec3 v_col; out float v_a; out vec2 v_w; out vec3 v_q; flat out float v_wat; flat out float v_wood;
 float lit(vec3 n, vec3 L, vec2 k){ float d = max(dot(n, L), 0.); return k.x + k.y * (.5 + .5 * d); }
 float sz(float m, float p){ float a = m * u_mu, b = p * u_unit; return abs(b) > abs(a) ? b : a; }   // a size in metres, never under its px floor
@@ -230,11 +231,16 @@ void main(){
   v_q = m == 0 ? vec3(a_s, a_k.x, 0.) : vec3(dot(v_w, vec2(-n.y, n.x)), a_pos.z, 0.);
   vec3 c = (m == 3 && !(u_water > .5 && a_n != 0.) || m == 11) ? u_line : u_col[m];   // 조선 수로: 난간은 돌, 윗면만 노선 색
   if (u_water > .5 && m == 0) c = u_wcol;
-  c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;
+  // 길찾기(u_route 1): 탄 구간 · 타고 내리는 승강장을 노선색으로 — 상판 옆 · 난간(조선 돌 난간도) 노선색, 윗면 · 물은 노선색 쪽으로, 승강장 지붕 노선색 · 바닥 조금
+  if (u_route > .5 && u_route < 1.5) {
+    if (m == 1 || m == 3) c = u_line; else if (m == 0) c = mix(c, u_line, u_water > .5 ? .5 : .75);
+    else if (m == 8) c = mix(c, u_line, .85); else if (m == 7) c = mix(c, u_line, .2);
+  }
   if (m == 2) c = mix(c, u_glow, u_night * u_glowK.x);                       // under the deck: lit softly at night
   if (m == 9 || m == 7) c = mix(c, u_glow, u_night * u_glowK.y * (m == 7 ? .6 : 1.));   // the platforms and under their roofs (the stairs' roofs too)
   if (m == 12) c = mix(c, u_glow, u_night * u_glowK.z);                      // the stairs' treads
   if (m == 14) c = mix(c, u_glow, u_night * u_glowK.w);                      // the walkways
+  if (u_route > 1.5) c = mix(c, u_veil, .5);   // 길찾기(u_route 2): 다른 고가는 땅의 흐린 막(journey-veil)처럼 물러난다
   v_col = c; v_a = u_alpha;
 }`;
 const FS = `#version 300 es
@@ -261,7 +267,7 @@ void main(){
   }
   o = vec4(clamp(c, 0., 1.) * v_a, v_a);
 }`;
-const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_railH', 'u_water', 'u_wcol', 'u_time', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col'];
+const UNIFORMS = ['u_matrix', 'u_mu', 'u_unit', 'u_lane', 'u_body', 'u_night', 'u_alpha', 'u_shadow', 'u_railH', 'u_water', 'u_wcol', 'u_time', 'u_shift', 'u_lit', 'u_glowK', 'u_line', 'u_light', 'u_tint', 'u_glow', 'u_shade', 'u_col', 'u_route', 'u_veil'];
 const ATTRS = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 2, 7], [4, 2, 9], [5, 2, 11], [6, 2, 13], [7, 2, 15], [8, 2, 17], [9, 1, 19], [10, 1, 20]];
 
 export class CityViaduct {
@@ -301,6 +307,7 @@ export class CityViaduct {
   snapped(line, lo, hi) { return SNAP[`${line}:${lo}:${hi}`] || null }
   train(zoom, bodyPx) { return trainMetrics(zoom, bodyPx, this.pack) }
   routeOpacity(focus) { return routeOpacityExpr(focus, this.pack) }
+  deckFade() { const [z0, z1] = this.V.lod.deck; return ['interpolate', ['linear'], ['zoom'], z0, 1, z1, 0] }   // 길찾기 탄 구간의 땅 위 선: 상판이 나오면 사라진다
   // where a thing hM metres up casts its shadow: away from the sun by its height (mercator units; nothing when the sun is down)
   shadowShift(sun, hM = this.V.railHeightM) {
     const V = this.V; if (!sun || !(sun.elevation > 2)) return [0, 0];
@@ -322,6 +329,23 @@ export class CityViaduct {
     return this.edges = out;
   }
   edgeOf(line, a, b) { this.edgeList(); return this.edgeIndex.get(`${line}:${Math.min(a, b)}:${Math.max(a, b)}`) || null }
+  // 길찾기로 탈 구간 → 고가 구간 id · 타고 내리는 승강장 키(rects 의 line:id). 이웃한 두 역 사이(급행처럼 건너뛰면 그 노선 길을 따라 사이 구간까지).
+  // 같은 journey(배열)면 다시 세지 않는다. null → null(길찾기 없음)
+  journeyFocus(journey) {
+    if (!journey) return this.focus = null;
+    if (this.focus?.src === journey) return this.focus;
+    const edges = new Set(), stops = new Set();
+    for (const { line, stations = [] } of journey) {
+      if (stations.length < 2) continue;
+      stops.add(line + ':' + stations[0]); stops.add(line + ':' + stations.at(-1));
+      for (let k = 1; k < stations.length; k++) {
+        const a = +stations[k - 1], b = +stations[k], e = this.edgeOf(line, a, b); if (e) { edges.add(e.id); continue }
+        let best = null; for (const ids of this.net.paths?.[line] || []) { const i = ids.indexOf(a), j = ids.indexOf(b); if (i >= 0 && j >= 0 && (!best || Math.abs(i - j) < Math.abs(best[1] - best[2]))) best = [ids, i, j] }
+        if (best) { const [ids, i, j] = best; for (let x = Math.min(i, j); x < Math.max(i, j); x++) { const f = this.edgeOf(line, ids[x], ids[x + 1]); if (f) edges.add(f.id) } }
+      }
+    }
+    return this.focus = { src: journey, edges, stops };
+  }
   // the edge's rows in local metres — again when the runtime's geometry object changes (the track shapes arrive after the first frames; the simcity path differs)
   rowsOf(e) {
     const g = this.net.geom(e.line, e.lo, e.hi); if (e.g === g && e.rows) return e.rows;
@@ -433,7 +457,7 @@ export class CityViaduct {
     catch (e) { this.broken = true; console.error('city-viaduct: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE) } catch {} return false }
   }
   _render(gl, matrix, opts) {
-    const { now = performance.now(), zoom = 15, dark = false, phone = false, bounds, sun, life = null, selected = 'all', moving = false, bodyPx = 7 } = opts, V = this.V, pack = this.pack, theme = dark ? 'dark' : 'light';
+    const { now = performance.now(), zoom = 15, dark = false, phone = false, bounds, sun, life = null, selected = 'all', moving = false, bodyPx = 7, journey = null } = opts, V = this.V, pack = this.pack, theme = dark ? 'dark' : 'light';
     if (!bounds || zoom < V.lod.deck[0] || !this.net?.paths) { this.stats = { idle: true }; return false }
     const t0 = performance.now(); this.frame++;
     const mpp = MPP(zoom), unit = 1 / (512 * 2 ** zoom), W = deckWidths(zoom, bodyPx, pack), halfPx = W.lane + W.body * .5 + V.marginPx;
@@ -464,7 +488,7 @@ export class CityViaduct {
       if (!inView(p.box, wantExits ? V.exits.maxM : 0)) continue;
       const hT = this.stationH(line, id), detail = zoom >= V.lod.posts, k = 'plat:' + key + (detail ? ':d' : ''); let c = this.get(k);
       if (!c) { if (time()) c = this.put(k, buildPlatform(p, rect.offset || 0, V, detail, hT)); else pending = true }
-      if (c) plats.push([c, line]);
+      if (c) plats.push([c, line, key]);
       if (!wantExits) continue;
       const ek = 'ex:' + key + (solo ? ':s' : ':a') + (exitDetail ? ':d' : ''); let x = this.get(ek);
       if (x && x.partial && now - x.at > 1500 * 2 ** Math.min(x.tries || 0, 5) && time()) { const tries = (x.tries || 0) + 1; this.del(ek); this.exitLayouts.delete(key + (solo ? ':s' : ':a')); x = null; this.exitTries = tries }   // a tile may still come: built again, more and more rarely
@@ -482,6 +506,7 @@ export class CityViaduct {
     for (const [k, a] of this.cache) { if (this.bytes <= cap || a.f === this.frame) break; this.del(k) }
     this.stats = { edges: draw.length, ramps: levelsOn, platforms: plats.length, piers, open, exits: exitsOut, exitsSkipped, exitsOpen, pieces: this.cache.size, mb: +(this.bytes / 1e6).toFixed(1), pending, ms: +(performance.now() - t0).toFixed(1), levelsMs: this.levelsMs, crossings: this.regions?.length, sameLevel: this.sameLevel?.length };
     if (!draw.length && !plats.length) return pending;
+    const J = this.journeyFocus(journey), route = (k, set) => !J ? 0 : set.has(k) ? 1 : 2;   // 길찾기: 1 탄 구간 · 승강장, 2 나머지(흐리게)
     // ── draw ──
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
     const Lg = pack.lighting?.[theme] || {}, ref = pack.lighting?.referenceSun || { azimuthDeg: 225, elevationDeg: 42 }, az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
@@ -491,6 +516,7 @@ export class CityViaduct {
     gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform3fv(u.u_glow, col(N.glow)); gl.uniform4f(u.u_glowK, N.underK, N.platformK, N.stairK ?? .5, N.walkK ?? .35); gl.uniform3fv(u.u_shade, hexRgb(pack.lighting?.shadow?.color || '#394D4B'));
     gl.uniform3fv(u.u_col, new Float32Array(COLOR_KEYS.flatMap(k => col(C[k] || C.concrete)))); gl.uniform1f(u.u_alpha, 1); gl.uniform1f(u.u_shadow, 0); gl.uniform2f(u.u_shift, 0, 0);
     const Q = V.aqueduct; gl.uniform1f(u.u_water, Q ? 1 : 0); gl.uniform3fv(u.u_wcol, col(Q ? Q.water[theme] || Q.water.light : '#000000')); gl.uniform1f(u.u_time, (now % 1e6) / 1000);   // 조선 수로: 물 색 · 물결 시각
+    gl.uniform1f(u.u_route, 0); gl.uniform3fv(u.u_veil, dark ? [.043, .047, .055] : [.984, .98, .957]);   // journey-veil 의 색(#0b0c0e · #fbfaf4)
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     const one = a => { if (!a.n) return; gl.bindVertexArray(a.vao); gl.drawArrays(gl.TRIANGLES, 0, a.n) };
     // 1) its shadow on the streets (each thing's height, away from the sun), under whatever stands on them
@@ -501,10 +527,11 @@ export class CityViaduct {
       gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(u.u_shadow, 0); gl.uniform1f(u.u_alpha, 1);
     }
     // 2) the viaduct, each edge with its line's colour on the parapets; the platforms and stairs with theirs on the roof edges
-    for (const it of draw) { gl.uniform3fv(u.u_line, this.lineRGB(it.e.line, theme)); if (it.deck) one(it.deck); if (it.det) one(it.det); if (it.pier) one(it.pier) }
-    for (const [c, line] of plats) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
+    for (const it of draw) { gl.uniform3fv(u.u_line, this.lineRGB(it.e.line, theme)); gl.uniform1f(u.u_route, route(it.e.id, J?.edges)); if (it.deck) one(it.deck); if (it.det) one(it.det); if (it.pier) one(it.pier) }
+    for (const [c, line, key] of plats) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); gl.uniform1f(u.u_route, route(key, J?.stops)); one(c) }
+    gl.uniform1f(u.u_route, J ? 2 : 0);
     for (const [c, line] of exitsDraw) { gl.uniform3fv(u.u_line, this.lineRGB(line, theme)); one(c) }
-    gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
+    gl.uniform1f(u.u_route, 0); gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
     return pending;
   }
   // the piers now standing (local metres), for checks

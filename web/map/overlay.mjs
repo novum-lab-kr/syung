@@ -65,7 +65,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
       cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
-      if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:trainBodyPx(zoom)}))trainFrameSoon(50);
+      if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:trainBodyPx(zoom),journey:journeyMap.journeyRides()}))trainFrameSoon(50);
       live.cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',look:S.city.landmarks,sun:sunPosition()})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
     coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
     layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&park,occlude:behind});

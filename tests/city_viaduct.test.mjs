@@ -68,3 +68,17 @@ test('the ground route line fades out as the deck takes over', () => {
   const e = routeOpacityExpr(false); assert.equal(e[0], 'interpolate'); assert.equal(e[3], V.lod.deck[0]); assert.equal(e[5], V.lod.deck[1]); assert.equal(e[6], 0);
   assert.equal(routeOpacityExpr(true)[4], .25);
 });
+
+// 길찾기 탄 구간 고가 강조(2026-10-11 행님): 탈 구간 → 고가 구간 · 타고 내리는 승강장, 급행처럼 건너뛰면 사이 구간까지
+test('a journey ride lights its viaduct edges and the platforms it boards and leaves at', () => {
+  const byId = new Map([1, 2, 3, 4, 9].map(id => [id, {id}]));
+  const v = new CityViaduct({net: {paths: {'1호선': [[1, 2, 3, 4]], '2호선': [[9, 2]]}, byId}});
+  assert.equal(v.journeyFocus(null), null, 'no journey');
+  const ride = [{line: '1호선', stations: [1, 3, 4]}];   // 1 → 3 skips 2 (express)
+  const f = v.journeyFocus(ride);
+  assert.deepEqual([...f.edges].sort(), ['1호선:1:2', '1호선:2:3', '1호선:3:4']);
+  assert.deepEqual([...f.stops].sort(), ['1호선:1', '1호선:4']);
+  assert.equal(v.journeyFocus(ride), f, 'kept for the same journey');
+  assert.equal(v.journeyFocus([]).edges.size, 0, 'a bus-only journey: every viaduct steps back');
+  assert.deepEqual(v.deckFade(), ['interpolate', ['linear'], ['zoom'], ...v.V.lod.deck.flatMap((z, i) => [z, i ? 0 : 1])]);
+});
