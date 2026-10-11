@@ -32,7 +32,7 @@ import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
-import {buildPalanquinMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 메시
+import {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 · 청사초롱 정류장 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import './modes/basic/park.mjs';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
 import './modes/coaster/metrics.mjs';   // (공원 치수 계산: 같은 단계에서 요청)
@@ -50,7 +50,7 @@ import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시�
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE]);
-registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안)
+registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안) · 정류장은 청사초롱 장대(밤에 불)
 const JOSEON_STYLE=modes.settings('joseon').city.pack;   // 조선 모드: the same city in packed earth and 기와집 (cityPack()) — 기본 팩 + 조선 덧쓰기, 한 번 합쳐 얼린 것
 const json=id=>JSON.parse(document.getElementById(id).textContent);
 const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),counts=json('lineCounts'),paths=json('linePaths');

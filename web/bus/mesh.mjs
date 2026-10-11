@@ -100,7 +100,7 @@ out vec3 v_normal; out vec2 v_uv; out vec4 v_color; flat out float v_material; f
 void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal;
   // The raised disc faces the camera, like the exit signs. The post stays upright.
   // This also keeps the pictogram legible in journey's flat-camera fit.
-  if(abs(a_material-8.)<.2||abs(a_material-10.)<.2){float y=pos.y,z=pos.z-18.;
+  if(abs(a_material-8.)<.2||abs(a_material-10.)<.2||abs(a_material-36.)<.2){float y=pos.y,z=pos.z-18.;
     pos.y=sin(u_pitch)*y-cos(u_pitch)*z;pos.z=18.+cos(u_pitch)*y+sin(u_pitch)*z;
     normal.y=sin(u_pitch)*a_normal.y-cos(u_pitch)*a_normal.z;normal.z=cos(u_pitch)*a_normal.y+sin(u_pitch)*a_normal.z;}
   // 가마꾼(조선 모드): 달리는 동안(i_info.w) 다리가 엉덩이를 축으로 흔들리고, 가마와 사람이 걸음마다 살짝 들썩인다
@@ -118,7 +118,9 @@ uniform float u_dark,u_rows,u_fade; uniform sampler2D u_atlas; out vec4 outColor
 float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
 float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
-  if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
+  if(m>35.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
+    float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.78,.46),v_color.rgb,.25);alpha*=.5*g*g;}
+  else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
   else if(m>12.5&&m<13.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
   else {
     if(m>.5&&m<1.5)col=mix(v_color.rgb,vec3(.94,.95,.91),.18);
@@ -139,6 +141,17 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     else if(m>25.5&&m<26.5)col=v_color.rgb*.95;
     else if(m>26.5&&m<27.5)col=mix(vec3(.349,.263,.192),vec3(.541,.439,.314),u_dark);
     else if(m>28.5&&m<29.5)col=mix(vec3(.80,.32,.20),vec3(1.,.827,.604),u_dark);   // 초롱 #FFD39A: 밤에는 스스로 빛난다
+    // 청사초롱 장대(조선 정류장, palanquin.mjs): 나무 #887054 · 밤 #71624F, 걸이 끈 #6C5941, 받침돌 #A69B87 · 밤 #817C6C, 술 = 종류 색 × .66
+    else if(m>29.5&&m<30.5)col=mix(vec3(.533,.439,.329),vec3(.443,.384,.310),u_dark);
+    else if(m>32.5&&m<33.5)col=vec3(.424,.349,.255);
+    else if(m>33.5&&m<34.5)col=mix(vec3(.651,.608,.529),vec3(.506,.486,.424),u_dark);
+    else if(m>34.5&&m<35.5)col=v_color.rgb*.66;
+    else if(m>30.5&&m<32.5){   // 비단 = 버스 종류 색(아래 두 단은 × .91). 팔각 면 사이에 살
+      float f=fract(v_uv.x),rib=smoothstep(0.,.1,min(f,1.-f));col=v_color.rgb*(m>31.5?.91:1.);
+      // 밤: 안에 불을 켠 것처럼 — 따뜻한 빛이 비단을 지나 가운데가 가장 밝고 위아래 · 면 가장자리로 갈수록 어둡다, 살은 그림자로 비친다
+      float k=1.-abs(v_uv.y-.5)*2.,panel=sin(3.1416*f),glow=(.72+.5*k*k)*(.82+.18*panel);
+      col=mix(col*mix(.84,1.,rib),mix(col,vec3(1.,.86,.6),.42)*glow*mix(.5,1.,rib),u_dark);
+    }
     if(abs(m-8.)<.2){
       vec2 p=(v_uv-.5)*2.;float r=length(p);
       float ring=shape(abs(r-.82)-.025);
@@ -162,7 +175,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
       col=mix(v_color.rgb*.92,vec3(1.),ink);
     }
     float lit=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);
-    if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2&&!(abs(m-29.)<.2&&u_dark>.5))col*=lit;
+    if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2&&!((abs(m-29.)<.2||m>30.5&&m<32.5)&&u_dark>.5))col*=lit;
     if(v_info.y>.5&&(m<.5||abs(m-24.)<.2))col=mix(col,vec3(1.),.2);
   }
   alpha*=u_fade;if(alpha<.005)discard;outColor=vec4(col*alpha,alpha);
@@ -185,10 +198,11 @@ function effectMesh(beam) {
   return new Float32Array(data);
 }
 
-// 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 걸음, headlights: 밤 전조등}. 'bus' 는 기본.
+// 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 걸음, headlights: 밤 전조등,
+//   stop: 정류장 기둥 메시(없으면 BUS 기둥), stopGlow: 밤에 정류장 위에 깊이 없이 겹치는 불빛 메시}. 'bus' 는 기본.
 // 다른 모양(조선 가마)은 본체가 첫 화면에서 등록한다(렌더러가 처음 그리기 전에 — 셰이더의 재료 번호는 이 파일에 있다)
 const BUS_LOOKS = new Map([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
-export function registerBusLook(name, { build, carriers = false, headlights = false }) { BUS_LOOKS.set(name, { build, carriers, headlights }) }
+export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow }) }
 
 export class BusRenderer {
   constructor(){this.matrix=new Float32Array(16);this.stats={vehicles:0,stops:0,drawCalls:0};}
@@ -196,9 +210,11 @@ export class BusRenderer {
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
     this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
-    // 배치: 0 버스 몸 · 1 표지판 · 2 · 3 효과(낮 · 밤 전조등), 4 부터 그때 등록된 다른 모양(조선 가마 …)
-    const extra=[...BUS_LOOKS].filter(([name])=>name!=='bus');this.looks=new Map([['bus',{...BUS_LOOKS.get('bus'),batch:0}],...extra.map(([name,L],i)=>[name,{...L,batch:4+i}])]);
-    this.batches=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true),...extra.map(([,L])=>L.build())].map(data=>{
+    // 배치: 0 버스 몸 · 1 표지판 · 2 · 3 효과(낮 · 밤 전조등), 4 부터 그때 등록된 다른 모양(조선 가마 …)의 몸 · 정류장 · 밤 불빛 차례로
+    const meshes=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)],slot=build=>build?meshes.push(build())-1:null;
+    this.looks=new Map([...BUS_LOOKS].map(([name,L])=>[name,name==='bus'?{...L,batch:0,stopBatch:1,glowBatch:null}:
+      {...L,batch:slot(L.build),stopBatch:slot(L.stop)??1,glowBatch:slot(L.stopGlow)}]));
+    this.batches=meshes.map(data=>{
       const vao=gl.createVertexArray(),mesh=gl.createBuffer(),instances=gl.createBuffer();gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER,mesh);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
       for(const [loc,n,offset] of [[0,3,0],[1,3,3],[2,2,6],[3,1,8]]){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,36,offset*4);}
@@ -243,11 +259,12 @@ export class BusRenderer {
       gl.drawArraysInstanced(gl.TRIANGLES,0,batch.count,items.length);this.stats.drawCalls++;
     };
     // 열차처럼: 먼저 건물 뒤(GREATER)만 흐리게 — 깊이를 쓰기 전이라 버스 자기 면끼리는 걸리지 않는다 — 그다음 앞을 그대로
-    const body=this.batches[L.batch];
-    if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(body,vehicles,false);draw(this.batches[1],stops,false);
+    const body=this.batches[L.batch],post=this.batches[L.stopBatch??1];
+    if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(body,vehicles,false);draw(post,stops,false);
       gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.u.fade,1);}
-    draw(this.batches[2],vehicles,false);draw(body,vehicles,true);draw(this.batches[1],stops,true);
+    draw(this.batches[2],vehicles,false);draw(body,vehicles,true);draw(post,stops,true);
     if(dark&&L.headlights)draw(this.batches[3],vehicles,false);
+    if(dark&&L.glowBatch!=null)draw(this.batches[L.glowBatch],stops,false);   // 정류장 밤 불빛(조선 청사초롱): 기둥을 다 그린 뒤 깊이 없이
     // Isolate divisors in our VAOs; TrainLayer/ExitPillars use the default VAO.
     gl.bindVertexArray(null);gl.depthMask(false);gl.depthFunc(gl.LEQUAL);
   }

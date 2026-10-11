@@ -66,3 +66,31 @@ test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부�
   assert.equal(r.batches.length,5);assert.deepEqual([...r.looks].map(([n,L])=>[n,L.batch,L.carriers,L.headlights]),[['bus',0,false,true],['palanquin',4,true,false]]);
   assert.equal(r.batches[4].count,P.length/9);
 });
+
+// 조선 정류장(행님 2026-10-11): 가마 모양에 정류장 메시(청사초롱 장대)와 밤 불빛을 같이 등록 — 낮에는 장대만, 밤에는 불빛 묶음을 깊이 없이 하나 더
+test('조선 청사초롱 정류장: BUS 기둥과 같은 크기, 가마 모양이면 정류장 묶음 · 밤 불빛',async()=>{
+  const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mjs');
+  const {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh}=await import('../web/modes/joseon/palanquin.mjs');
+  const C=buildChorongPostMesh(),xs=[],zs=[],mats=new Set();
+  for(let i=0;i<C.length;i+=9){xs.push(C[i]);zs.push(C[i+2]);mats.add(C[i+8]);}
+  assert.ok(C.every(Number.isFinite)&&C.length/9<1500);
+  assert.ok(Math.max(...xs.map(Math.abs))<8.5,'가로 ±7.5 상자 안팎(BUS 판과 같은 자리)');
+  assert.ok(Math.min(...zs)>=0&&Math.max(...zs)<=25.6,'높이 0~25.5');
+  for(const m of [30,31,32,33,34,35])assert.ok(mats.has(m),`재료 ${m}`);
+  assert.equal(buildChorongGlowMesh()[8],36);
+  registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh});
+  const gl=new Proxy({getShaderParameter:()=>true,getProgramParameter:()=>true},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_0-9]+$/.test(k)?0:()=>({})});
+  const r=new BusRenderer();r.init(gl);
+  assert.deepEqual([...r.looks].map(([n,L])=>[n,L.batch,L.stopBatch,L.glowBatch]),[['bus',0,1,null],['palanquin',4,5,6]]);
+  const run=(look,dark)=>{
+    const calls=[];let vao=null;
+    const g=new Proxy({bindVertexArray:v=>{vao=v},drawArraysInstanced:()=>calls.push(vao)},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_]+$/.test(k)?0:()=>{}});
+    r.init=()=>{};r.atlas=()=>{};r.labels=new Map();r.rows=1;r.u={};
+    r.batches=r.batches.map((b,i)=>({...b,vao:i}));
+    r.render(g,new Float32Array(16),{origin:[0,0],unit:1,dark,vehicles:[],stops:[{world:[0,0],yaw:0,scale:1,rgb:[.2,.4,.8]}],look});
+    return calls;
+  };
+  assert.deepEqual(run('bus',true),[1],'버스: BUS 기둥, 정류장 불빛 없음');
+  assert.deepEqual(run('palanquin',false),[5],'조선 낮: 청사초롱 장대');
+  assert.deepEqual(run('palanquin',true),[5,6],'조선 밤: 장대 + 불빛');
+});

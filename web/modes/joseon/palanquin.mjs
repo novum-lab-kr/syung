@@ -42,3 +42,61 @@ export function buildPalanquinMesh() {
   box(1.485, .575, .76, 1.495, .585, .8, 27);
   return new Float32Array(data);
 }
+
+// 조선 모드의 버스 정류장: BUS 기둥 대신 청사초롱 장대(행님 2026-10-11, Codex 시안 A — 비단 전체가 버스 종류 색).
+// 크기 · 자리는 BUS 기둥과 같다(가로 ±8 · 높이 25.5, 줌별 크기는 busPostScale). 나무 장대가 오른쪽으로 내민 가지 끝에 팔각 초롱을 매단다.
+// 재료(그리기 web/bus/mesh.mjs): 30 나무, 31 비단(위 · 가운데 띠), 32 비단 아래(조금 어둡게), 33 걸이 끈, 34 받침돌, 35 술.
+// 비단의 uv: x 는 팔각 한 면 안에서 0~1(면 사이 살), y 는 초롱 전체 높이 0~1 — 밤에 안에서 불이 비치는 밝기를 셰이더가 여기서 잡는다.
+// 시안 좌표(three.js, y 위)를 그대로 옮기고 [x, y, z] → [x − .95, −z, y] 로 바꾼다(가로 가운데 맞추기)
+const CHORONG_X = .95, CHORONG_RINGS = [[12.9,5.25],[13.6,5.8],[16.5,6],[19.1,6],[22.1,5.8],[22.8,5.25]];
+export const CHORONG_CENTER = [3 - CHORONG_X, 0, (12.9 + 22.8) / 2];   // 초롱 가운데(엔진 좌표) — 밤 불빛 판의 가운데
+export function buildChorongPostMesh() {
+  const data = [];
+  const put = (p, n, t, m) => data.push(p[0] - CHORONG_X, -p[2], p[1], n[0], -n[2], n[1], t[0], t[1], m);
+  const tri = (a, b, c, m, ta = [0,0], tb = [1,0], tc = [1,1]) => {
+    const ab = b.map((v,i) => v - a[i]), ac = c.map((v,i) => v - a[i]);
+    const n = [ab[1]*ac[2]-ab[2]*ac[1], ab[2]*ac[0]-ab[0]*ac[2], ab[0]*ac[1]-ab[1]*ac[0]], len = Math.hypot(...n) || 1;
+    for (const [p, t] of [[a,ta],[b,tb],[c,tc]]) put(p, n.map(v => v / len), t, m);
+  };
+  const quad = (a, b, c, d, m, uv = [[0,0],[1,0],[1,1],[0,1]]) => { tri(a, b, c, m, uv[0], uv[1], uv[2]); tri(a, c, d, m, uv[0], uv[2], uv[3]); };
+  const tube = (a, b, r0, r1, m, n = 8, cap = true) => {
+    const v = b.map((x,i) => x - a[i]), len = Math.hypot(...v), axis = v.map(x => x / len);
+    const ref = Math.abs(axis[1]) > .9 ? [1,0,0] : [0,1,0];
+    const u = [axis[1]*ref[2]-axis[2]*ref[1], axis[2]*ref[0]-axis[0]*ref[2], axis[0]*ref[1]-axis[1]*ref[0]], ul = Math.hypot(...u);
+    for (let i = 0; i < 3; i++) u[i] /= ul;
+    const w = [axis[1]*u[2]-axis[2]*u[1], axis[2]*u[0]-axis[0]*u[2], axis[0]*u[1]-axis[1]*u[0]];
+    const point = (c, r, i) => { const t = i / n * Math.PI * 2; return c.map((x,j) => x + r * (u[j]*Math.cos(t) + w[j]*Math.sin(t))); };
+    for (let i = 0; i < n; i++) {
+      const p = point(a,r0,i), q = point(a,r0,i+1), r = point(b,r1,i+1), s = point(b,r1,i);
+      quad(p, q, r, s, m); if (cap) { tri(a, q, p, m); tri(b, s, r, m); }
+    }
+  };
+  tube([-4.8,.25,0], [-4.8,.9,0], 2.3, 1.8, 34, 8);   // 받침돌
+  const pole = [[-4.8,.7,0],[-4.55,9,0],[-4.1,17,0],[-3.8,25.15,0]];   // 살짝 휜 장대
+  for (let i = 0; i < 3; i++) tube(pole[i], pole[i+1], .43 - i*.03, .4 - i*.03, 30, 6);
+  tube([-3.8,25.15,0], [-3.8,25.5,0], .34, .28, 30, 6);
+  tube([-3.84,23.7,0], [3,24.55,0], .32, .24, 30, 6);   // 내민 가지
+  tube([3,24.55,0], [3,22.92,0], .1, .1, 33, 4);   // 걸이 끈
+  // 팔각 초롱: 둥근 어깨, 아래 두 단 · 가운데 띠 · 위 두 단, 위아래 나무 테
+  const R = CHORONG_RINGS, H0 = R[0][0], H1 = R[R.length-1][0], radial = 8;
+  for (let j = 0; j < R.length - 1; j++) {
+    const [y0,r0] = R[j], [y1,r1] = R[j+1], m = j < 2 ? 32 : 31, v0 = (y0 - H0) / (H1 - H0), v1 = (y1 - H0) / (H1 - H0);
+    for (let i = 0; i < radial; i++) {
+      const a = i / radial * Math.PI * 2 + Math.PI / 8, b = (i + 1) / radial * Math.PI * 2 + Math.PI / 8;
+      const p = (r, y, t) => [3 + r*Math.cos(t), y, r*Math.sin(t)];
+      quad(p(r0,y0,a), p(r1,y1,a), p(r1,y1,b), p(r0,y0,b), m, [[0,v0],[0,v1],[1,v1],[1,v0]]);
+    }
+  }
+  tube([3,12.62,0], [3,13.0,0], 5.36, 5.36, 30, radial);
+  tube([3,22.75,0], [3,23.12,0], 5.36, 5.36, 30, radial);
+  tube([3,12.58,.35], [3,11.85,.35], .17, .17, 33, 4);   // 술
+  tube([3,11.85,.35], [3,9.6,.35], .48, .22, 35, 6);
+  return new Float32Array(data);
+}
+// 밤: 초롱 둘레의 은은한 불빛(카메라를 보는 판, 재료 36 — 셰이더가 BUS 판처럼 기울기만큼 세운다). 깊이를 쓰지 않는 따로 묶음
+export function buildChorongGlowMesh() {
+  const [x, y, z] = CHORONG_CENTER, r = 13, data = [];
+  const P = [[x-r,y,z-r,0,0],[x+r,y,z-r,1,0],[x+r,y,z+r,1,1],[x-r,y,z+r,0,1]];
+  for (const i of [0,1,2,0,2,3]) data.push(P[i][0], P[i][1], P[i][2], 0, -1, 0, P[i][3], P[i][4], 36);
+  return new Float32Array(data);
+}

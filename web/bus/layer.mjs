@@ -74,6 +74,14 @@ export function countdownText(seconds) {
 const BUS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M7 21v-3M17 21v-3"/></svg>';
 const REFRESH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>';
 const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)/255);
+// 정류장의 버스 종류: 지나는 노선이 가장 많은 종류(같으면 BUS_TYPES 차례 — 간선 먼저). 조선 모드 청사초롱의 비단 색
+export function stopType(data, id) {
+  const count = new Map();
+  for (const route of data.routesByStop.get(id) || []) count.set(route.type, (count.get(route.type) || 0) + 1);
+  let best = 'other', most = 0;
+  for (const type of Object.keys(BUS_TYPES)) if ((count.get(type) || 0) > most) { best = type; most = count.get(type); }
+  return best;
+}
 
 export function prepareBusData(routes, stops) {
   if (routes?.schemaVersion !== 1 || stops?.schemaVersion !== 1 || !Array.isArray(routes.routes) || !Array.isArray(stops.stops)) {
@@ -197,7 +205,7 @@ export function journeyBusRange(line, leg) {
 // 정류장 기둥(BUS 표지판)을 화면에 놓는다. features: 정류장 Point, exits: 출구 [lng,lat],
 // view: {project(world,z), width, height, zoom, unit, origin, bearing, phone, selected}. → {posts, hits}
 export function placeStopPosts(features, exits, view) {
-  const {project,width,height,zoom,unit,origin,bearing=0,phone=false,selected=null}=view,posts=[],hits=[];
+  const {project,width,height,zoom,unit,origin,bearing=0,phone=false,selected=null,tint=null}=view,posts=[],hits=[];
   const bounds=points=>[Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y))];
   const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
   const hitBox=(r,minimum)=>{const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2,w=Math.max(minimum,r[2]-r[0]+6),h=Math.max(minimum,r[3]-r[1]+6);return[cx-w/2,cy-h/2,cx+w/2,cy+h/2];};
@@ -245,7 +253,7 @@ export function placeStopPosts(features, exits, view) {
     if(!spot||spot.exit||spot.crowded)continue;
     const touch=hitBox(spot.rectangle,phone?44:28);
     placed.push(spot);
-    posts.push({world:spot.world,yaw:bearing,scale,rgb:[.25,.29,.30],selected:selected===f.properties.id});
+    posts.push({world:spot.world,yaw:bearing,scale,rgb:tint?tint(f):[.25,.29,.30],selected:selected===f.properties.id});
     hits.push({id:f.properties.id,x:(touch[0]+touch[2])/2,y:(touch[1]+touch[3])/2,bounds:touch,visualBounds:spot.rectangle});
     if(posts.length>=(phone?700:1400))break;
   }
@@ -461,7 +469,7 @@ class BusLayer {
     }
     // 정류장은 우리가 그리는 노선과 상관없이 화면 안의 것을 다 찍는다(마을버스 · 경기 버스만 서는 정류장도)
     if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const [id, stop] of this.data.stopById) {
-      if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name}));
+      if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name, type: stopType(this.data, id)}));
       if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
     }
     this.map.getSource(SOURCE_ROUTES)?.setData(collection(features));
@@ -673,7 +681,8 @@ class BusLayer {
       if(vehicles.length>=(this.phone?160:320))break;
     }
     const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
-      {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id});
+      {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id,
+        tint:f=>rgb(color({type:f.properties.type},this.theme))});   // 정류장 색 = 버스 종류 색(BUS 기둥은 쓰지 않고, 조선 청사초롱 비단이 쓴다)
     posts.push(...placement.posts);this.stopHits.push(...placement.hits);
     this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,look:this.look,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;

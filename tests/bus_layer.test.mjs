@@ -534,3 +534,9 @@ test('two stops on the same spot both get a post from zoom 16 (석계역1번출�
   for (const zoom of [16, 17, 18]) assert.equal(placeStopPosts([a, b], [], topDownView(zoom, [127.0656, 37.6149])).hits.length, 2, `zoom ${zoom}`);
   assert.equal(placeStopPosts([a, b], [], topDownView(15, [127.0656, 37.6149])).hits.length, 1, 'zoom 15 keeps one post per spot');
 });
+
+test('정류장 버스 종류: 지나는 노선이 가장 많은 종류, 같으면 간선 먼저 · 정류장 기둥 색은 tint 로',async()=>{
+  const {stopType}=await import('../web/bus/layer.mjs');
+  const data={routesByStop:new Map([['a',[{type:'branch'},{type:'trunk'},{type:'branch'}]],['b',[{type:'branch'},{type:'trunk'}]]])};
+  assert.equal(stopType(data,'a'),'branch');assert.equal(stopType(data,'b'),'trunk');assert.equal(stopType(data,'z'),'other');
+});
