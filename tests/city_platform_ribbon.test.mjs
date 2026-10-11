@@ -39,3 +39,30 @@ test('고가 승강장 바닥 · 지붕은 휜 rows 를 따라 짓는다(곧은 
   const two = v.platGeom({ coords: [ll(arc[0]), ll(arc[20])], offset: 0, plat: .5 });
   assert.equal(two.rows.length, 2); assert.ok(Math.abs(two.L - Math.hypot(arc[20][0] - arc[0][0], arc[20][1] - arc[0][1]) / 2) < 1);
 });
+
+test('끝역: 고가 상판 · 교각을 승강장 끝까지 늘리고, 열차가 쓰는 구간(높이 · 길이)은 그대로', async () => {
+  const { MU, MERC_ORIGIN: O } = await import('../web/city/life.mjs'), { toLL, STRIDE: ST } = await import('../web/city/viaduct.mjs');
+  // 노선 X: 1 — 2 — 3 (1 · 3 끝역), 동쪽으로 곧게 200 m 씩. 승강장은 역에서 앞뒤 90 m(기본 모드 리본처럼 끝역에서는 선로 끝 너머로 곧게)
+  const at = m => ({ x: O.x + m * MU, y: O.y }), seg = { '1:2': [0, 200], '2:3': [200, 400] };
+  const rect = c => ({ coords: [toLL(c - 90, 0), toLL(c, 0), toLL(c + 90, 0)], center: toLL(c, 0), offset: 0, plat: 1 });
+  const rects = new Map([['X:1', rect(0)], ['X:2', rect(200)], ['X:3', rect(400)]]);
+  const net = { paths: { X: [[1, 2, 3]] }, byId: new Map([[1, {}], [2, {}], [3, {}]]), colors: { X: '#3366aa' }, rects, offset: () => 0,
+    geom: (l, lo, hi) => { const [a, b] = seg[`${lo}:${hi}`]; return { pts: [at(a), at(b)] } } };
+  const v = new CityViaduct({ pack: SEOUL, net });
+  const e12 = v.edgeOf('X', 1, 2), e23 = v.edgeOf('X', 2, 3); v.rowsOf(e12); v.rowsOf(e23);
+  const s12 = v.stubsOf(e12), s23 = v.stubsOf(e23);
+  assert.deepEqual(s12.map(s => s.end), ['lo']); assert.deepEqual(s23.map(s => s.end), ['hi'], '가운데 역(2) 쪽은 늘리지 않는다');
+  assert.ok(Math.abs(s12[0].ext - 90) < .5 && Math.abs(s23[0].ext - 90) < .5, String([s12[0].ext, s23[0].ext]));
+  assert.ok(e12.box[0] < -89 && e23.box[2] > 489, '보이는 범위도 늘린 끝까지');
+  const xs = d => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < d.length; i += ST) { lo = Math.min(lo, d[i]); hi = Math.max(hi, d[i]) } return [lo, hi] };
+  const H = v.profileOf(e12), [x0] = xs(v.deckMesh(e12, e12.rows, false, H)), [, x1] = xs(v.deckMesh(e23, e23.rows, true, v.profileOf(e23)));
+  assert.ok(Math.abs(x0 + 90) < .5 && Math.abs(x1 - 490) < .5, `상판 끝 ${x0} · ${x1}`);
+  assert.ok(Math.abs(e12.rows.at(-1).s - 200) < 1e-6, '열차가 쓰는 구간 길이 그대로');
+  assert.equal(v.heightAt('X', 1, 2, 0), v.stationH('X', 1)); assert.equal(v.heightAt('X', 1, 2, 1), v.stationH('X', 2));
+  const sp = v.spots(e12, { inBuilding: () => false }).spots;
+  assert.ok(sp.some(s => s < -8 && s > -90) && sp.every(s => s >= -82 && s <= 192), String(sp));
+  // 승강장이 바뀌면(모드 · 자료) 렌더가 구간마다 부르는 profileOf 에서 알아채고, 낡은 조각은 다음 프레임 첫머리에 지운다
+  rects.set('X:1', { ...rect(0), coords: [toLL(-120, 0), toLL(0, 0), toLL(120, 0)] }); v.frame++; v.profileOf(e12);
+  assert.ok(Math.abs(v.stubsOf(e12)[0].ext - 120) < .5); assert.equal(v.staleKeys.length, 3);
+  v.levelsOf(); assert.equal(v.staleKeys.length, 3, '같은 프레임(렌더 도중 stationH)에는 안 지운다'); v.frame++; v.levelsOf(); assert.equal(v.staleKeys.length, 0);
+});
