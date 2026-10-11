@@ -266,12 +266,13 @@ export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
-    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}}) {
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}}) {
     this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
     this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
-    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;
+    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;
+    this.routeStep=0;this.stopFollow=null;   // 정류장 시트에서 같은 번호를 누른 차례(1 노선 · 2 곧 올 버스 따라가기 · 3 다시 노선) · 따라가는 버스
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
@@ -305,9 +306,17 @@ class BusLayer {
       const button=event.target.closest?.('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh]');if(!button)return;
       if(button.dataset.busRefresh!==undefined){this.refreshArrivals();return;}
       const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
-      this.selectedRoute=this.selectedRoute===id?null:id;this.journeyLegs=[];this.journeyIds=[];
-      this.refreshView();this.refreshDetail();
-      this.onRouteSelect(this.selectedLeg());
+      // 정류장 시트에서 같은 번호를 누를 때마다: 노선 전체 → 이 정류장에 곧 올 버스 따라가기(확대) → 다시 노선 전체 → 선택 해제(2026-10-12 덕배)
+      const step=this.selectedRoute!==id?1:this.selection?.kind==='stop'?this.routeStep+1:4;
+      this.stopFollow=null;this.journeyLegs=[];this.journeyIds=[];
+      if(step===2){
+        this.routeStep=2;this.stopFollow=this.approachingBus(this.data.routeById.get(id),this.selection.id);
+        this.refreshDetail();this.draw();this.onFollow(this.stopFollow);   // 곧 올 버스가 없으면(아직 못 받음 · 다 지나감) 그대로 노선만
+      }else{
+        this.routeStep=step<4?step:0;this.selectedRoute=step<4?id:null;
+        this.onFollow(null);this.refreshView();this.refreshDetail();
+        this.onRouteSelect(this.selectedLeg());
+      }
       document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
     };
     this.remove = () => this.destroy();
@@ -675,7 +684,7 @@ class BusLayer {
       }
       if(corners.length!==8)continue;const rectangle=bounds(corners);
       if(!intersects(rectangle,[0,0,width,height]))continue;
-      const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id;
+      const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id||this.stopFollow===bus.row.id;
       const run=!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration;   // 조선 모드의 가마꾼은 이 동안 달린다
       vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected,moving:run,phase:stepPhase(bus.row.id)});
       this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading,laneWidth:pose.laneWidth,scale});
@@ -694,6 +703,17 @@ class BusLayer {
   }
 
   // 따라가기(지도 쪽 카메라): 그 버스가 지금 그려지는 자리 — render 와 같은 계산(멀리서는 노선 선, 줌 15 부터는 차로)
+  // 이 정류장에 곧 올 버스: 그 노선 버스 가운데 정류장 앞(지나친 지 15 m 안 포함)에서 가장 가까운 것. 도는 노선은 정류장이 두 번 나와도 가까운 쪽
+  approachingBus(route, stopId) {
+    const stops = route?.stopIds ? this.geometry(route)?.stops || [] : [], now = performance.now();
+    let best = null, gap = Infinity;
+    for (const bus of this.fleet.values()) {
+      if (bus.route.id !== route.id || bus.stale) continue;
+      const d = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now);
+      for (const s of stops) if (s.stop.id === stopId && s.distance - d >= -15 && s.distance - d < gap) { gap = s.distance - d; best = bus.row.id; }
+    }
+    return best;
+  }
   vehiclePosition(id) {
     const bus = this.fleet.get(id); if (!bus || !this.active()) return null;
     const zoom = this.map.getZoom(), distance = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, performance.now());
@@ -732,6 +752,7 @@ class BusLayer {
   }
 
   select(selection, routeId) {
+    this.routeStep=routeId?1:0;this.stopFollow=null;
     if(routeId){this.journeyLegs=[];this.journeyIds=[];}   // 노선 · 버스를 고르면 그 노선이 여정 표시를 대신한다. 정류장만 누르면 길찾기 버스 구간은 남는다
     this.selection = selection; this.selectedRoute = routeId;
     this.stopArrivals();
@@ -745,7 +766,7 @@ class BusLayer {
   clearSelection({journey=false}={}) {
     if (!this.selection&&!this.selectedRoute&&!(journey&&this.journeyLegs.length)) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
-    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;
+    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.routeStep=0;this.stopFollow=null;
     if(journey){this.journeyLegs=[];this.journeyIds=[];}
     this.stopArrivals();
     if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}

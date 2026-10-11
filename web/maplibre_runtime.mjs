@@ -572,7 +572,8 @@ map.on('load',()=>{
     setSubwayOff(!!leg);
     if(leg)showRoute({legs:[leg]},true,busLayer?.selection?.kind!=='bus');   // 버스를 눌렀으면 노선 전체로 멀어지지 않고 그 버스를 따라간다
     else if(journeyMap.busRouteFocus){journeyMap.displayedRoute=null;journeyMap.busRouteFocus=false;journeyMap.routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
-  },onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
+  },onFollow:id=>{if(id)followBusStart(id,{zoom:17});else sheetUI.followBus=null},   // 정류장 시트: 같은 번호를 두 번째 누르면 곧 올 버스를 따라간다
+  onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM});   // 출구 번호판
   $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default

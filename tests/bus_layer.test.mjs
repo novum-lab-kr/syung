@@ -444,7 +444,7 @@ test('정류장에서 고른 노선은 노선 전체가 보이게 멀리 빼도 
   assert.equal(layer.active(), true);
   layer.refreshView();
   assert.deepEqual(layer.requested, [route.id]);
-  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 다시 누르면 해제
+  for (let i = 0; i < 3; i++) layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 곧 올 버스 · 다시 노선 · 해제
   assert.equal(layer.active(), false, '고른 노선이 없으면 멀리서는 받지 않는다');
 }, false));
 
@@ -549,3 +549,25 @@ test('조선 청사초롱: 줌 18 위로는 지도와 같이 커진다(growFrom)
   assert.ok(Math.abs(w(at(17,18))-w(at(17,null)))<1e-6,'18 아래는 그대로');
   assert.deepEqual(at(20,18).posts[0].rgb,[.25,.29,.30],'tint 없으면 기본 색');
 });
+
+test('정류장 시트에서 같은 번호를 누를 때마다: 노선 → 곧 올 버스 따라가기 → 다시 노선 → 해제 (덕배 2026-10-12)', () => withLayerFixture(layer => {
+  const r = layer.data.routeById.get(route.id), path = layer.geometry(r), at = path.stops.find(s => s.stop.id === '01').distance;
+  const follows = [], legs = [], click = () => layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  layer.onFollow = id => follows.push(id); layer.onRouteSelect = leg => legs.push(leg?.routeId ?? null);
+  layer.select({kind: 'stop', id: '01'}, null);
+  click();
+  assert.equal(layer.selectedRoute, route.id); assert.equal(legs.at(-1), route.id);
+  const bus = (id, d, stale = false) => layer.fleet.set(id, {route: r, path, stale, row: {id}, motion: {from: d, to: d, startedAt: 0, duration: 0}});
+  bus('passed', at + 200); bus('far', at - 900); bus('near', at - 120); bus('old', at - 30, true);
+  const shown = legs.length;
+  click();
+  assert.equal(layer.stopFollow, 'near', '지나친 버스 · 위치가 오래된 버스는 빼고 정류장 앞 가장 가까운 버스');
+  assert.equal(follows.at(-1), 'near'); assert.equal(layer.selection.kind, 'stop', '정류장 시트는 그대로');
+  assert.equal(legs.length, shown, '따라가기에서는 노선 전체로 멀어지지 않는다');
+  click();
+  assert.equal(layer.stopFollow, null); assert.equal(follows.at(-1), null); assert.equal(legs.at(-1), route.id, '다시 노선 전체');
+  click();
+  assert.equal(layer.selectedRoute, null); assert.equal(legs.at(-1), null, '선택 해제');
+  click();
+  assert.equal(layer.selectedRoute, route.id, '다시 처음부터');
+}, false));

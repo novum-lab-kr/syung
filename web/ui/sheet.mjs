@@ -78,10 +78,11 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     easing=true;cam=null;map.once('moveend',()=>{easing=false;map.triggerRepaint()});
     map.easeTo({center:trainLngLat(plan),zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700})}
   // bus: 그 버스로 옮겨 가 따라간다. 멀리 있었으면 줌 16 으로(가까이 볼 때 버스가 보이는 크기)
-  function followBusStart(id){
+  // zoom: 정류장 시트에서 곧 올 버스를 따라갈 때는 그 버스로 더 가까이(17)
+  function followBusStart(id,{zoom=16}={}){
     following=null;followBus=id;followBtn.hidden=true;const c=live.busLayer?.vehiclePosition(id);if(!c){followBus=null;return}
     easing=true;cam=null;map.once('moveend',()=>{easing=false;followSoon()});
-    map.easeTo({center:c,zoom:Math.max(map.getZoom(),16),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700});
+    map.easeTo({center:c,zoom:Math.max(map.getZoom(),zoom),padding:{top:0,bottom:sheetPad(),left:0,right:0},duration:700});
   }
   followBtn.onclick=()=>{if(sheetTrain)follow(sheetTrain);else if(live.busLayer?.selection?.kind==='bus')followBusStart(live.busLayer.selection.id)};
   // station sheet → 길찾기 from or to this station
@@ -109,7 +110,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   });
   animFrame.push(()=>{   // bus: 따라가는 버스 — 열차와 같은 방식으로 카메라가 부드럽게 따라붙는다
     if(!followBus||easing)return;
-    const p=live.busLayer?.selection?.kind==='bus'&&live.busLayer.selection.id===followBus?live.busLayer.vehiclePosition(followBus):null;
+    const b=live.busLayer,p=b?.selection?.kind==='bus'&&b.selection.id===followBus||b?.stopFollow===followBus?b.vehiclePosition(followBus):null;   // 정류장 시트에서 고른 곧 올 버스(stopFollow)도
     if(!p){followBus=null;return}   // 다른 걸 골랐거나 버스가 사라졌으면 그만
     const now=performance.now();
     if(!cam||now-camAt>1000)cam={lng:p[0],lat:p[1]};
