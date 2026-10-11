@@ -31,7 +31,7 @@ class LocalSite:
                 if path in site.holds:
                     entered, resume = site.holds[path]
                     entered.set()
-                    if not resume.wait(timeout=10):
+                    if not resume.wait(timeout=60):
                         self.send_error(504)
                         return
                 if path in site.responses:
@@ -243,6 +243,14 @@ class RemoteDeployTest(RemoteFixture):
         self.assertEqual(self.deployed(), self.initial)
         self.assertEqual(self.restart_calls(), ["restart subway-live"])
 
+    def test_deploy_tests_skipped_only_when_deploy_tooling_unchanged(self):
+        skip = "배포 장치 시험은 건너뜀"
+        self.assertNotIn(skip, self.remote().stdout)   # 성공 기록이 없으면 모두 돈다
+        self.candidate({"web/index.html": "new web"})
+        self.assertIn(skip, self.remote().stdout)
+        self.candidate({"deploy/notes.txt": "deploy tooling changed\n"})
+        self.assertNotIn(skip, self.remote().stdout)
+
     def test_only_server_changes_restart_after_successful_baseline(self):
         self.remote()
         web_sha = self.candidate({"web/index.html": "new web"})
@@ -371,7 +379,7 @@ os.execv({real_flock!r}, [{real_flock!r}] + sys.argv[1:])
         self.addCleanup(self.stop_process, remote)
         self.addCleanup(resume.set)
         try:
-            self.assertTrue(entered.wait(timeout=5), "remote가 건강 확인에 도달하지 못했습니다")
+            self.assertTrue(entered.wait(timeout=30), "remote가 건강 확인에 도달하지 못했습니다")   # 서버가 CPU 제한으로 느려도(2026-10-11 5초를 못 맞춤) 넉넉히
             new_link = self.web.resolve()
             self.assertNotEqual(new_link, old_link)
             manual = subprocess.Popen(["bash", str(self.repo / "deploy/deploy.sh"), "--rollback"],
@@ -387,8 +395,8 @@ os.execv({real_flock!r}, [{real_flock!r}] + sys.argv[1:])
             self.assertEqual(self.web.resolve(), new_link)
         finally:
             resume.set()
-        remote_output, _ = remote.communicate(timeout=10)
-        manual_output, _ = manual.communicate(timeout=5)
+        remote_output, _ = remote.communicate(timeout=60)
+        manual_output, _ = manual.communicate(timeout=30)
         self.assertEqual(remote.returncode, 0, remote_output)
         self.assertEqual(manual.returncode, 0, manual_output)
         self.assertEqual(self.web.resolve(), old_link)

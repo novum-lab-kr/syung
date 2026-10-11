@@ -32,7 +32,14 @@ git archive "$target" | tar -x -C "$work"
 for f in data/bus.json data/bus-shapes.json data/bus-stop-fix.json data/osm-tracks/line-*.json; do
   if [ -f "$f" ] && [ ! -e "$work/$f" ]; then ln -s "$PWD/$f" "$work/$f"; fi
 done
-if ! (cd "$work" && node --test tests/*.test.mjs && python3 -m unittest discover -s tests); then
+# 배포 장치(deploy/ · 그 시험 · 워크플로)가 마지막 성공 배포와 같으면 배포 장치 시험은 건너뛴다: 대부분의 시간을 쓰고(가짜 배포를 여러 번),
+#   느린 서버에서는 시간 검사에 걸려 배포를 막았다(2026-10-11). GitHub Actions 는 늘 모든 시험을 돈다
+skip_deploy_tests=0
+if [ -n "$deployed" ] && git cat-file -e "$deployed^{commit}" 2>/dev/null \
+   && git diff --quiet "$deployed" "$target" -- deploy/ tests/test_deploy_release.py tests/test_deploy_remote.py .github/; then
+  skip_deploy_tests=1; echo "배포 장치가 마지막 성공 배포와 같음 — 배포 장치 시험은 건너뜀"
+fi
+if ! (cd "$work" && node --test tests/*.test.mjs && SYUNG_SKIP_DEPLOY_TESTS=$skip_deploy_tests python3 -m unittest discover -s tests); then
   echo "tests failed — HEAD · 링크 그대로"; exit 1
 fi
 

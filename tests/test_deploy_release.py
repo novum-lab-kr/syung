@@ -24,6 +24,8 @@ TOOLS = ("git", "bash", "flock", "tar", "date", "mv")
 
 
 @unittest.skipUnless(all(shutil.which(name) for name in TOOLS), "배포 스크립트 도구가 필요합니다")
+# 운영 서버 배포(remote_deploy.sh)는 배포 장치가 마지막 성공 배포와 같으면 이 묶음(배포 장치 시험)을 건너뛴다 — GitHub Actions 에서는 늘 돈다
+@unittest.skipIf(os.environ.get("SYUNG_SKIP_DEPLOY_TESTS") == "1", "배포 장치가 그대로라 건너뜀")
 class ReleaseFixture(unittest.TestCase):
     scripts = ("deploy.sh",)
 
