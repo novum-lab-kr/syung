@@ -44,7 +44,8 @@ export const JOSEON_DELTA = {
       torch: { basketM: 0.5, basketWidthM: 0.85, flameM: 1.4, flameWidthM: 0.8, glowMul: 2.2, flame: ['#F06A1E', '#FFD25A'] } },
     people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'],
       // 조선 옷차림(2026-10-11 행님): 양반(갓 · 흰 도포 · 세조대) · 평민(상투 · 바지저고리 · 대님) · 보부상(패랭이) · 부인(쪽 · 연두 저고리 · 남치마) · 처녀(댕기 · 노랑 저고리 · 다홍치마) · 아이(색동)
-      outfits: [{ shirt: '#EEEBE2', lower: '#E7E3D7' }, { shirt: '#E7DFCB', lower: '#D3C6A8' }, { shirt: '#B59A6E', lower: '#8C7350' },
+      // (흙바닥 #C8BDA4 · 길 #DFD2B6 과 섞이지 않게: 양반 도포는 옥색, 평민은 흰 저고리에 바랜 쪽빛 바지, 보부상은 짙은 갈색 — 2026-10-11 행님: 옷이 바닥에 묻혀 얼굴 · 손발만 움직였다)
+      outfits: [{ shirt: '#9FC3BE', lower: '#94B9B4' }, { shirt: '#F5F3EE', lower: '#56607A' }, { shirt: '#5E4B36', lower: '#3F3428' },
         { shirt: '#B9D38B', lower: '#2E3C66' }, { shirt: '#EBCB6B', lower: '#C0453B' }, { shirt: '#F1EBDD', lower: '#C9567A' }],
       outfitWeights: [3, 4, 2, 3, 2, 1] },
   },
