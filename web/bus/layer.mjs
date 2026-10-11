@@ -617,7 +617,7 @@ class BusLayer {
   }
 
   select(selection, routeId) {
-    this.journeyLegs=[];this.journeyIds=[];
+    if(routeId){this.journeyLegs=[];this.journeyIds=[];}   // 노선 · 버스를 고르면 그 노선이 여정 표시를 대신한다. 정류장만 누르면 길찾기 버스 구간은 남는다
     this.selection = selection; this.selectedRoute = routeId;
     this.stopArrivals();
     if (selection?.kind === 'stop') { this.loadArrivals(); this.arrivalTick = setInterval(() => this.tickArrivals(), 1000); }

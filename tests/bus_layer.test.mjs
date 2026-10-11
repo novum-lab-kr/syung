@@ -168,6 +168,8 @@ test('a journey bus leg stays on the map when its sheet closes, and goes with th
   layer.clearSelection();   // what closeSheet · openSheet(other) call
   assert.equal(rides(),1,'the bus leg stays with the journey route and its bar');
   assert.deepEqual(layer.chosenIds(),[route.id]);
+  layer.select({kind:'stop',id:'01'},null);layer.clearSelection();   // a stop tapped after the sheet closed, then its sheet closed
+  assert.equal(rides(),1,'a stop alone does not replace the journey bus leg');
   journeyMap.clearRoute();   // the bar's ✕, or a new search from a station
   assert.equal(rides(),0);assert.deepEqual(layer.chosenIds(),[]);
 },false));
