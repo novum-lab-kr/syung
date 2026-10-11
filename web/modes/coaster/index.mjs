@@ -6,7 +6,7 @@ export default {
   settings: {
     map: { paletteKind: 'park-city', towersAsRides: true, verticalGradient: false },   // 파스텔 공원 색, 고층은 놀이기구, 건물은 고른 색
     city: { xray: false, tone: 'coaster', lampPool: null },   // 공원에서는 건물을 유리로 안 바꾸고, 차분한 공원 톤(팩 modes.coaster)
-    track: { kind: 'coaster' },   // 언덕 길(승강장은 심시티처럼 곧게)
+    track: { kind: 'coaster' },   // 언덕 길(승강장은 기본 · 심시티처럼 선로를 따라)
     trains: { look: 'coaster88', predictStops: 99, timeWarp: true },   // 88열차 칸, 다음 자료까지 계속 달리고, 배속
     park: { enabled: true },   // 공원 켜기(자료는 기본 모드 park.style)
     sun: { light: 'park' },   // 공원의 따뜻한 빛(밤에 푸른 기 없이)

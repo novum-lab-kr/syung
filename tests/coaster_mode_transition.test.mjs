@@ -55,9 +55,7 @@ test('기본→롤코→기본 전환이 실제 승강장 데이터와 stationRe
   const r=setup(),initial=r.sources.get('stations').data,rect=r.rect();
   const city=setup();city.run("modeCtl.enter('simcity');stationRects.clear();buildStationFeatures()");   // 롤코도 심시티 고가와 같은 도로 맞춤 경로 위의 승강장
   r.run('setCoaster(true)');
-  assert.notDeepEqual(r.sources.get('stations').data,initial);
-  assert.notDeepEqual(r.rect(),rect);
-  assert.deepEqual(r.rect(),city.rect());
+  assert.deepEqual(r.rect(),city.rect());   // (이 곧은 선 한 줄 자료에서는 기본 승강장과도 같다: 모든 모드가 선로를 따라 그린다, 2026-10-11)
   assert.equal(r.labels(),1);
   r.run('setCoaster(false)');
   assert.deepEqual(r.sources.get('stations').data,initial);
@@ -103,8 +101,7 @@ test('심시티에서 롤코를 받는 중 다시 누르면(끄기) 받기만 �
 test('심시티 ↔ 조선: 선로 설정이 같으면 승강장을 다시 만들지 않고, 조선이 선로를 덧쓰면 다시 만든다',()=>{
   const r=setup();r.run('setSimcity(true)');const n=r.labels();r.run('setSimcity(true,true)');assert.equal(r.labels(),n,'같은 선로: 그대로');
   const defs=modeDefs.map(d=>d.id==='joseon'?{...d,settings:{...d.settings,track:{kind:'ground',platform:'ribbon'}}}:d);
-  const g=setup(defs),base=g.rect();g.run('setSimcity(true)');const city=g.rect(),m=g.labels();
-  assert.notDeepEqual(city,base);
+  const g=setup(defs),base=g.rect();g.run('setSimcity(true)');const m=g.labels();
   g.run('setSimcity(true,true)');assert.equal(g.labels(),m+1,'선로가 바뀌면 다시');assert.deepEqual(g.rect(),base,'조선이 땅 위 선로면 기본 승강장');
 });
 

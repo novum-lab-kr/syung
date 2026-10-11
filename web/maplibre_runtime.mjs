@@ -179,20 +179,22 @@ const stationWidthPx=z=>{const S=STATION_WIDTH_STOPS;if(z<=S[0][0])return S[0][1
 const stationRects=new Map(),PLATFORM_SCALE=.3;   // platform bars: a third of the old outline width (names sit beside them now)
 const platformPx=(r,base)=>{if(!r.widthM)return base;const lat=r.coords[0][1]*Math.PI/180,mpp=40075016.686*Math.cos(lat)/(512*2**map.getZoom());return Math.max(base,Math.min(base*2,r.widthM/mpp))};
 function buildStationFeatures(){
-  const ribbon=modeCtl.settings().track.platform==='ribbon';   // 기본: 노선을 따라 휘는 띠, 심시티 · 롤코: 곧은 상자
+  const {platform,kind}=modeCtl.settings().track,ribbon=platform==='ribbon',ground=kind==='ground';   // ribbon: 노선을 따라 휘는 띠(모든 모드), straight: 곧은 상자
   return stations.flatMap(s=>s.lines.map(x=>{
     const line=x.name,{prev,next}=neighbours(line,s);
     const back=prev?trackFrom(line,s,prev,PLATFORM_HALF).reverse():[stopPos(line,s)],ahead=next?trackFrom(line,s,next,PLATFORM_HALF):[stopPos(line,s)];
     if(ribbon){
       const {prev,next}=platformNeighbours(line,s);
       const half=platformHalf[`${line}:${s.id}`]||PLATFORM_HALF;
-      const from=n=>{const t=basicTrack(line,Math.min(s.id,n.id),Math.max(s.id,n.id)).train;return s.id<n.id?t:[...t].reverse()};
+      // 땅 위(기본): 공유 선로 칸을 넣은 열차 경로. 고가 · 롤코: 상판 중심선(cityCoords) — 칸은 상판처럼 px offset 으로 벌린다
+      const from=n=>{const lo=Math.min(s.id,n.id),hi=Math.max(s.id,n.id),t=ground?basicTrack(line,lo,hi).train:cityCoords(line,lo,hi);return s.id<n.id?t:[...t].reverse()};
       const incoming=prev?from(prev):null,outgoing=next?from(next):null;
       const bk=incoming?trackStart(incoming,half).reverse():outgoing?[extendStart(outgoing,half),outgoing[0]]:[stopPos(line,s)];
       const ah=outgoing?trackStart(outgoing,half):incoming?[incoming[0],extendStart(incoming,half)]:[stopPos(line,s)];
       const coords=[...bk,...(metresBetween(bk.at(-1),ah[0])<.01?ah.slice(1):ah)],center=(outgoing||incoming)?.[0]||stopPos(line,s);
-      stationRects.set(`${line}:${s.id}`,{coords,center,offset:0,widthM:stopWidth[`${line}:${s.id}`]||0,plat:1,half,reach:stopReach[`${line}:${s.id}`]||null});   // reach: 그쪽 끝에서 출구까지 늘린 통로 끝
-      return {type:'Feature',properties:{id:s.id,name:s.name,line,lines:s.lines.map(y=>y.name).join('|'),color:colors[line],transfer:s.lines.length>1?1:0,offset:0},geometry:{type:'LineString',coordinates:coords}};
+      const ref=next?[s,next]:prev?[prev,s]:null,offset=ground||!ref?0:edgeOffset(line,ref[0].id,ref[1].id)*(ref[0].id<ref[1].id?1:-1);   // 곧은 상자와 같은 칸(prev→next 오른쪽)
+      stationRects.set(`${line}:${s.id}`,{coords,center,offset,widthM:stopWidth[`${line}:${s.id}`]||0,plat:1,half,reach:stopReach[`${line}:${s.id}`]||null});   // reach: 그쪽 끝에서 출구까지 늘린 통로 끝
+      return {type:'Feature',properties:{id:s.id,name:s.name,line,lines:s.lines.map(y=>y.name).join('|'),color:colors[line],transfer:s.lines.length>1?1:0,offset},geometry:{type:'LineString',coordinates:coords}};
     }
     // A straight platform laid on the straight line that best fits the track through the station
     // (least squares), so the track runs through its middle. Where the track bends inside the
@@ -315,8 +317,13 @@ function cityXrayTargets(){
   const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x,y)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad,out=[];
   for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);
     const P=maplibregl.MercatorCoordinate.fromLngLat(c[0]),Q=maplibregl.MercatorCoordinate.fromLngLat(c[c.length-1]),cx=(P.x+Q.x)/2,cy=(P.y+Q.y)/2;if(!inV(cx,cy))continue;
-    const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2,h=cityViaduct.stationH(line,id)*m;
-    out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m})}
+    const h=cityViaduct.stationH(line,id)*m,box={z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m};
+    if(r.center&&c.length>2){   // 리본(선로 따라 휜 승강장): 휜 데를 따라 조각조각(조각마다 곧게 pieceM 안팎)
+      const M=c.map(q=>maplibregl.MercatorCoordinate.fromLngLat(q)),piece=(X.pieceM||30)*m;let a=M[0],n=0;
+      for(let j=1;j<M.length;j++){const b=M[j];if(j<M.length-1&&Math.hypot(b.x-a.x,b.y-a.y)<piece)continue;out.push({id:'s'+k+':'+n++,ax:a.x,ay:a.y,bx:b.x,by:b.y,...box});a=b}
+      continue}
+    const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2;
+    out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,...box})}
   if(X.trains&&trainsEnabled){const bodyPx=trainBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
     for(const plan of planner.plans){const pose=trainPose(plan);if(!journeyMap.trainShown(plan,pose.dist))continue;const q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;   // 길찾기에 숨긴 열차는 건물 뒤 비침도 없다
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);

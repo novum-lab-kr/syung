@@ -138,9 +138,9 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   // 선로 · 열차(4-7 · 4-8)
   const tr=id=>{const S=R.settings(id);return [S.track.kind,S.track.platform,S.trains.look,S.trains.body,S.trains.predictStops,S.trains.timeWarp]};
   assert.deepEqual(tr('basic'),['ground','ribbon','commuter','wide',3,false]);
-  assert.deepEqual(tr('simcity'),['viaduct','straight','commuter','slim',3,false]);
-  assert.deepEqual(tr('joseon'),['viaduct','straight','fleet','slim',3,false]);
-  assert.deepEqual(tr('coaster'),['coaster','straight','coaster88','slim',99,true]);
+  assert.deepEqual(tr('simcity'),['viaduct','ribbon','commuter','slim',3,false]);
+  assert.deepEqual(tr('joseon'),['viaduct','ribbon','fleet','slim',3,false]);
+  assert.deepEqual(tr('coaster'),['coaster','ribbon','coaster88','slim',99,true]);
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>R.settings(id).city.xray),[false,true,true,false],'x-ray: 심시티 · 조선만');
   assert.deepEqual(['basic','simcity','joseon','coaster'].map(id=>[R.settings(id).city.life.cars,R.settings(id).city.life.crossings,R.settings(id).city.landmarks]),
     [[true,true,'tower'],[true,true,'tower'],[false,false,'wood-tower'],[true,true,'tower']],'조선: 차 · 횡단보도 없음, 나무 탑');

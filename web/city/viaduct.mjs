@@ -76,6 +76,16 @@ export function rowAt(rows, s) {
   const A = rows[i - 1], B = rows[i], l = (B.s - A.s) || 1, u = Math.max(0, Math.min(1, (s - A.s) / l)), dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
   return { x: A.x + dx * u, y: A.y + dy * u, fx: dx / d, fy: dy / d, rx: -dy / d, ry: dx / d, s };
 }
+// the stretch s0…s1 of a ribbon's rows (its ends on the line, straight on past the line's own ends)
+export function sliceRows(rows, s0, s1) { return [rowAtX(rows, s0), ...rows.filter(r => r.s > s0 + 1e-6 && r.s < s1 - 1e-6), rowAtX(rows, s1)] }
+// rowAt, carried straight on past the rows' ends
+export function rowAtX(rows, s) { const c = Math.max(rows[0].s, Math.min(rows[rows.length - 1].s, s)), q = rowAt(rows, c), k = s - c; return { ...q, x: q.x + q.fx * k, y: q.y + q.fy * k, s } }
+// the point s along the rows with the frame blended between its two rows (mitred across, as the faces joining them are)
+function rowLerp(rows, s) {
+  let i = 1, j = rows.length - 1; while (i < j) { const m = (i + j) >> 1; if (rows[m].s < s) i = m + 1; else j = m }
+  const A = rows[i - 1], B = rows[i], u = Math.max(0, Math.min(1, (s - A.s) / ((B.s - A.s) || 1))), L = (a, b) => a + (b - a) * u, fx = L(A.fx, B.fx), fy = L(A.fy, B.fy), fl = Math.hypot(fx, fy) || 1;
+  return { x: L(A.x, B.x), y: L(A.y, B.y), fx: fx / fl, fy: fy / fl, rx: L(A.rx, B.rx), ry: L(A.ry, B.ry), s };
+}
 // a ribbon's rows cut so no segment is longer than `max` metres (a ramp needs rows to bend over)
 export function densify(rows, max) {
   if (!(max > 0)) return rows; const out = [];
@@ -161,27 +171,36 @@ export function buildPiers(rows, spots, eo, V, flags, hT = V.railHeightM) {
   return M.data();
 }
 // a station: a side platform either side of the deck, each under a flat canopy with the line's colour along its edge
-// (p: {row, L} — the platform's centre and frame, its length in metres)
+// (p: {rows, row, L} — the platform's stretch of the line (it bends with the deck), else its centre frame and length in metres)
 export function buildPlatform(p, eo, V, detail, hT = V.railHeightM) {
-  const S = V.station, M = new Mesh(400), r = p.row, L = p.L, mg = V.marginPx, fT = hT + S.platformRiseM, fB = fT - S.floorM, dep = S.platformDepthRatio;
-  const Lc = L - 2 * S.canopyInsetM, rT = fT + S.canopyHeightM + S.canopyThicknessM, rB = rT - S.canopyThicknessM;
-  const Q = (h, px, kl, kb, a, mat, n, szl = 0, sza = 0, lp = 0, ap = 0) => [r, h, px, kl, kb, 0, 0, a, szl, sza, lp, ap, mat, 1, n];
+  const S = V.station, M = new Mesh(400), L = p.L, mg = V.marginPx, fT = hT + S.platformRiseM, fB = fT - S.floorM, dep = S.platformDepthRatio;
+  const rows = p.rows || (r => [{ ...r, x: r.x - r.fx * L / 2, y: r.y - r.fy * L / 2, s: 0 }, { ...r, x: r.x + r.fx * L / 2, y: r.y + r.fy * L / 2, s: L }])(p.row);
+  const s0 = rows[0].s, s1 = rows[rows.length - 1].s, Lc = s1 - s0 - 2 * S.canopyInsetM, rT = fT + S.canopyHeightM + S.canopyThicknessM, rB = rT - S.canopyThicknessM;
+  const roofRows = Lc < 12 ? null : sliceRows(rows, s0 + S.canopyInsetM, s1 - S.canopyInsetM);
+  const Q = (r, h, px, kl, kb, mat, n) => [r, h, px, kl, kb, 0, 0, 0, 0, 0, 0, 0, mat, 1, n];
+  const ends = R => [[R[0], -1], [R[R.length - 1], 1]];
   for (const d of [-1, 1]) {
     const base = eo + d * (mg + S.gapPx), ki = d * .5, ko = d * (.5 + dep);   // inner edge (×body .5), outer edge (×body .5 + depth)
-    M.quad(Q(fT, base, d, ki, -L / 2, MAT.FLOOR, 0), Q(fT, base, d, ko, -L / 2, MAT.FLOOR, 0), Q(fT, base, d, ko, L / 2, MAT.FLOOR, 0), Q(fT, base, d, ki, L / 2, MAT.FLOOR, 0));
-    M.quad(Q(fB, base, d, ko, -L / 2, MAT.FLOOR, d), Q(fB, base, d, ko, L / 2, MAT.FLOOR, d), Q(fT, base, d, ko, L / 2, MAT.FLOOR, d), Q(fT, base, d, ko, -L / 2, MAT.FLOOR, d));
-    for (const e of [-1, 1]) M.quad(Q(fB, base, d, ki, e * L / 2, MAT.FLOOR, 2 * e), Q(fB, base, d, ko, e * L / 2, MAT.FLOOR, 2 * e), Q(fT, base, d, ko, e * L / 2, MAT.FLOOR, 2 * e), Q(fT, base, d, ki, e * L / 2, MAT.FLOOR, 2 * e));
-    if (Lc < 12) continue;
+    for (let i = 0; i + 1 < rows.length; i++) {
+      const a = rows[i], b = rows[i + 1];
+      M.quad(Q(a, fT, base, d, ki, MAT.FLOOR, 0), Q(a, fT, base, d, ko, MAT.FLOOR, 0), Q(b, fT, base, d, ko, MAT.FLOOR, 0), Q(b, fT, base, d, ki, MAT.FLOOR, 0));
+      M.quad(Q(a, fB, base, d, ko, MAT.FLOOR, d), Q(b, fB, base, d, ko, MAT.FLOOR, d), Q(b, fT, base, d, ko, MAT.FLOOR, d), Q(a, fT, base, d, ko, MAT.FLOOR, d));
+    }
+    for (const [r, e] of ends(rows)) M.quad(Q(r, fB, base, d, ki, MAT.FLOOR, 2 * e), Q(r, fB, base, d, ko, MAT.FLOOR, 2 * e), Q(r, fT, base, d, ko, MAT.FLOOR, 2 * e), Q(r, fT, base, d, ki, MAT.FLOOR, 2 * e));
+    if (!roofRows) continue;
     const cin = base - d * .3, cout = base + d * S.canopyOverhangPx;   // a little over the deck's edge; a little past the platform's
-    M.quad(Q(rT, cin, d, ki, -Lc / 2, MAT.ROOF, 0), Q(rT, cout, d, ko, -Lc / 2, MAT.ROOF, 0), Q(rT, cout, d, ko, Lc / 2, MAT.ROOF, 0), Q(rT, cin, d, ki, Lc / 2, MAT.ROOF, 0));
-    M.quad(Q(rB, cin, d, ki, -Lc / 2, MAT.ROOF_UNDER, 3), Q(rB, cout, d, ko, -Lc / 2, MAT.ROOF_UNDER, 3), Q(rB, cout, d, ko, Lc / 2, MAT.ROOF_UNDER, 3), Q(rB, cin, d, ki, Lc / 2, MAT.ROOF_UNDER, 3));
-    M.quad(Q(rB, cout, d, ko, -Lc / 2, MAT.FASCIA, d), Q(rB, cout, d, ko, Lc / 2, MAT.FASCIA, d), Q(rT, cout, d, ko, Lc / 2, MAT.FASCIA, d), Q(rT, cout, d, ko, -Lc / 2, MAT.FASCIA, d));
-    M.quad(Q(rB, cin, d, ki, -Lc / 2, MAT.ROOF, -d), Q(rB, cin, d, ki, Lc / 2, MAT.ROOF, -d), Q(rT, cin, d, ki, Lc / 2, MAT.ROOF, -d), Q(rT, cin, d, ki, -Lc / 2, MAT.ROOF, -d));
-    for (const e of [-1, 1]) M.quad(Q(rB, cin, d, ki, e * Lc / 2, MAT.ROOF, 2 * e), Q(rB, cout, d, ko, e * Lc / 2, MAT.ROOF, 2 * e), Q(rT, cout, d, ko, e * Lc / 2, MAT.ROOF, 2 * e), Q(rT, cin, d, ki, e * Lc / 2, MAT.ROOF, 2 * e));
+    for (let i = 0; i + 1 < roofRows.length; i++) {
+      const a = roofRows[i], b = roofRows[i + 1];
+      M.quad(Q(a, rT, cin, d, ki, MAT.ROOF, 0), Q(a, rT, cout, d, ko, MAT.ROOF, 0), Q(b, rT, cout, d, ko, MAT.ROOF, 0), Q(b, rT, cin, d, ki, MAT.ROOF, 0));
+      M.quad(Q(a, rB, cin, d, ki, MAT.ROOF_UNDER, 3), Q(a, rB, cout, d, ko, MAT.ROOF_UNDER, 3), Q(b, rB, cout, d, ko, MAT.ROOF_UNDER, 3), Q(b, rB, cin, d, ki, MAT.ROOF_UNDER, 3));
+      M.quad(Q(a, rB, cout, d, ko, MAT.FASCIA, d), Q(b, rB, cout, d, ko, MAT.FASCIA, d), Q(b, rT, cout, d, ko, MAT.FASCIA, d), Q(a, rT, cout, d, ko, MAT.FASCIA, d));
+      M.quad(Q(a, rB, cin, d, ki, MAT.ROOF, -d), Q(b, rB, cin, d, ki, MAT.ROOF, -d), Q(b, rT, cin, d, ki, MAT.ROOF, -d), Q(a, rT, cin, d, ki, MAT.ROOF, -d));
+    }
+    for (const [r, e] of ends(roofRows)) M.quad(Q(r, rB, cin, d, ki, MAT.ROOF, 2 * e), Q(r, rB, cout, d, ko, MAT.ROOF, 2 * e), Q(r, rT, cout, d, ko, MAT.ROOF, 2 * e), Q(r, rT, cin, d, ki, MAT.ROOF, 2 * e));
     if (!detail) continue;
-    const pc = base - d * S.postInsetPx, hp = S.postM / 2, pp = S.postPx / 2, n = Math.max(2, Math.floor(Lc / S.postEveryM) + 1);   // posts along the outer edge
+    const pc = base - d * S.postInsetPx, hp = S.postM / 2, pp = S.postPx / 2, c0 = roofRows[0].s, n = Math.max(2, Math.floor(Lc / S.postEveryM) + 1);   // posts along the outer edge
     for (let k = 0; k < n; k++) {
-      const a = -Lc / 2 + 2 + (Lc - 4) * k / (n - 1), T = (h, l, al, nn) => [r, h, pc, d, ko, 0, 0, a, l, al, Math.sign(l) * pp, Math.sign(al) * pp, MAT.POST, 1, nn];
+      const r = rowLerp(roofRows, c0 + 2 + (Lc - 4) * k / (n - 1)), T = (h, l, al, nn) => [r, h, pc, d, ko, 0, 0, 0, l, al, Math.sign(l) * pp, Math.sign(al) * pp, MAT.POST, 1, nn];
       for (const e of [-1, 1]) { M.quad(T(fT, e * hp, -hp, e), T(fT, e * hp, hp, e), T(rB, e * hp, hp, e), T(rB, e * hp, -hp, e)); M.quad(T(fT, -hp, e * hp, 2 * e), T(fT, hp, e * hp, 2 * e), T(rB, hp, e * hp, 2 * e), T(rB, -hp, e * hp, 2 * e)) }
     }
   }
@@ -344,10 +363,14 @@ export class CityViaduct {
     for (const k of [...this.cache.keys()]) this.del(k); this.plats.clear(); this.exitLayouts.clear();   // every height may have changed
     return this.levels;
   }
+  // the platform along the rect's line (the runtime's ribbon follows the deck through a bend; a straight rect is two points):
+  // rows — its own stretch of that line, plat of it about the middle; row — the frame at its middle (the exits are laid out in it)
   platGeom(rect) {
-    const c = rect.coords, A = toM(c[0][0], c[0][1]), B = toM(c[c.length - 1][0], c[c.length - 1][1]), dx = B[0] - A[0], dy = B[1] - A[1], d = Math.hypot(dx, dy) || 1, fx = dx / d, fy = dy / d;
-    const L = Math.max(20, d * Math.max(.1, Math.min(1, rect.plat || 1))), cx = (A[0] + B[0]) / 2, cy = (A[1] + B[1]) / 2, h = L / 2 + 30;
-    return { rect, row: { x: cx, y: cy, fx, fy, rx: -fy, ry: fx }, L, H: d / 2, box: [cx - h, cy - h, cx + h, cy + h] };
+    const all = ribbonRows(rect.coords.map(q => toM(q[0], q[1]))), total = all.length > 1 ? all[all.length - 1].s : 0;
+    if (total < 1e-6) { const q = toM(rect.coords[0][0], rect.coords[0][1]); all.splice(0, all.length, { x: q[0], y: q[1], fx: 1, fy: 0, rx: 0, ry: 1, s: 0 }, { x: q[0] + 1, y: q[1], fx: 1, fy: 0, rx: 0, ry: 1, s: 1 }) }
+    const d = all[all.length - 1].s, L = Math.max(20, d * Math.max(.1, Math.min(1, rect.plat || 1))), rows = sliceRows(all, d / 2 - L / 2, d / 2 + L / 2), m = rowAt(all, d / 2), row = { x: m.x, y: m.y, fx: m.fx, fy: m.fy, rx: m.rx, ry: m.ry };
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rows) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x); y1 = Math.max(y1, r.y) }
+    return { rect, row, rows, L, H: d / 2, box: [x0 - 30, y0 - 30, x1 + 30, y1 + 30] };
   }
   spots(e, life) {
     const rows = e.rows, P = this.V.pier, H = this.profileOf(e), obs = this.pierObstacles(e), total = rows[rows.length - 1].s, gaps = (this.gapsOf(e) || []).map(([a, b]) => [a * total - 4, b * total + 4]);
@@ -363,8 +386,8 @@ export class CityViaduct {
     const out = [], rects = this.net.rects; if (!rects) return out; const half = platformEdgeM(17, this.net.bodyPx ? this.net.bodyPx(17) : 26, this.pack) + 2;
     for (const id of [e.lo, e.hi]) for (const [k, rect] of rects) {
       const i = k.lastIndexOf(':'); if (k.slice(i + 1) !== String(id)) continue; const ln = k.slice(0, i); if (ln === e.line) continue;
-      const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect), c = g.row, hh = g.H;
-      out.push({ seg: [[c.x - c.fx * hh, c.y - c.fy * hh], [c.x + c.fx * hh, c.y + c.fy * hh]], half, h: this.stationH(ln, id) });
+      const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect), R = g.rows, h = this.stationH(ln, id);
+      for (let j = 1; j < R.length; j++) out.push({ seg: [[R[j - 1].x, R[j - 1].y], [R[j].x, R[j].y]], half, h });   // along the platform, through its bend
     }
     for (const hm of this.humps?.get(e.id) || []) {   // the deck this one crosses over: no pier down onto it
       const o = this.edgeIndex?.get(hm.over); if (!o || !o.rows) continue; const R = o.rows, s0 = Math.max(0, hm.so0 - 12), s1 = Math.min(R[R.length - 1].s, hm.so1 + 12), n = Math.max(1, Math.ceil((s1 - s0) / 10));

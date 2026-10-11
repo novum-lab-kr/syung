@@ -85,7 +85,8 @@ void main(){
       const col=hexRGB3(colors[line]||'#52646a'),h=platformPx(r,hgt)*PLATFORM_SCALE,len=lenU/unit;
       // names read left→right on screen: flip the axis when it points leftward
       const p0=map.project(r.coords[0]),p1=map.project(r.coords[r.coords.length-1]),flip=p1.x<p0.x?-1:1;
-      const points=r.center?r.coords.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)):null;
+      let points=r.center?r.coords.map(c=>maplibregl.MercatorCoordinate.fromLngLat(c)):null;
+      if(points&&r.offset){const P=points,o=r.offset*unit;points=P.map((p,i)=>{const a=P[Math.max(0,i-1)],b=P[Math.min(P.length-1,i+1)],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-12;return {x:p.x-dy/d*o,y:p.y+dx/d*o}})}   // 고가 모드 리본: 상판 중심선 → 이 노선의 칸(line-offset 처럼 그리는 방향 오른쪽)
       // 출구가 한쪽 끝 밖에 몰린 역: 가까운 막대 끝 → 통로 끝(stopReach)을 이 역 출구가 붙을 수 있는 통로로
       let reach=null;if(points&&r.reach){const q=maplibregl.MercatorCoordinate.fromLngLat(r.reach),a=points[0],b=points[points.length-1];reach=[Math.hypot(q.x-a.x,q.y-a.y)<Math.hypot(q.x-b.x,q.y-b.y)?a:b,q]}
       geo.set(k,{points,reach,cx,cy,ax:ax*flip,ay:ay*flip,len,h,col,id:k.slice(k.lastIndexOf(':')+1)});
