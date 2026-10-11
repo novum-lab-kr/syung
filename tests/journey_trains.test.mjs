@@ -41,3 +41,10 @@ test('a bus-only journey shows no trains; a bus route number leaves the trains t
   j.showRoute({legs: [{type: 'bus', route: '100', path: [[127, 37.5], [127.01, 37.5]]}]}, true);
   assert.equal(shown(j, train('a', '1호선', [1, 2])), true);
 });
+
+test('a ride through the same station twice (6호선 응암 loop) matches each stretch on its own', () => {
+  const j = journey();
+  j.showRoute({legs: [walk, {type: 'ride', line: '6호선', stations: [10, 11, 12, 13, 14, 15, 10, 16]}, walk]});   // 응암(10) → 고리 → 응암 → 새절(16)
+  assert.equal(shown(j, train('a', '6호선', [15, 10, 16, 17])), true, 'on the last stretch 구산 → 응암 → 새절');
+  assert.equal(shown(j, train('b', '6호선', [16, 10, 15])), false, 'the other way');
+});

@@ -202,8 +202,9 @@ test('a journey draws only the ridden part of its bus route; a route number draw
 test('journey buses past where I get off are left out; a route chosen by number keeps all its buses', () => withLayerFixture(layer => {
   assert.equal(layer.journeyEnds(), null, 'no journey');
   layer.setJourney([{type: 'bus', route: '100', path: [[127.002, 37.502], [127.008, 37.508]]}]);
-  const end = layer.journeyEnds().get(route.id), line = buildBusPath(route.path);
+  const [[from, end]] = layer.journeyEnds().get(route.id), line = buildBusPath(route.path);
   assert.ok(end > 0 && end < line.total / 2, `alighting on the way out: ${end}`);
+  assert.ok(from < 0, 'buses coming from the start of the line up to 5 km before boarding');
   assert.equal(layer.journeyEnds(), layer.journeyEnds(), 'kept until the journey changes');
   layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
   assert.equal(layer.journeyEnds(), null);

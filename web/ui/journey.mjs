@@ -73,11 +73,13 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   // (seq[0] 은 이미 떠난 역이고 '출발' 기록은 그 역을 지난 뒤라 지금 자리부터 센다.) 버스만 타는 경로면 열차는 없다.
   // 길찾기가 알려 준 실시간 열차(trainNo)는 늘 보인다. 버스 노선 번호를 고른 동안(busSelection)은 따로(subwayOff)
   let ridesOf=null,ridesList=null;   // 매 프레임 열차마다 묻는다: 여정이 바뀔 때만 다시 고른다
-  const rides=()=>{if(ridesOf!==displayedRoute){ridesOf=displayedRoute;ridesList=displayedRoute&&!displayedRoute.busSelection?displayedRoute.plan.legs.filter(l=>l.type==='ride').map(l=>({...l,ids:(l.stations||[]).map(String)})):null}return ridesList};
-  const passes=(seq,ids)=>{let k=-1;for(const s of seq){const i=ids.indexOf(String(s.id));if(i>=0){if(k>=0&&i>k)return true;k=k<0?i:Math.min(k,i)}}return false};   // 탈 구간의 두 역을 그 순서로
+  const rides=()=>{if(ridesOf!==displayedRoute){ridesOf=displayedRoute;ridesList=displayedRoute&&!displayedRoute.busSelection?displayedRoute.plan.legs.filter(l=>l.type==='ride').map(l=>({...l,pairs:ridePairs(l.stations||[])})):null}return ridesList};
+  // 탈 구간의 이웃한 두 역 짝: 뒤 역 → 앞 역들(같은 역을 두 번 지나는 6호선 응암 고리도 짝마다 따로)
+  const ridePairs=ids=>{const m=new Map();for(let k=1;k<ids.length;k++){const b=String(ids[k]);if(!m.has(b))m.set(b,new Set());m.get(b).add(String(ids[k-1]))}return m};
+  const passes=(seq,pairs)=>{const seen=new Set();for(const s of seq){const id=String(s.id),from=pairs.get(id);if(from)for(const a of from)if(seen.has(a))return true;seen.add(id)}return false};   // 탈 구간의 이웃한 두 역을 그 순서로
   const ahead=(p,dist)=>{let i=0;while(i<p.seq.length-1&&p.cum[i+1]<dist)i++;return p.seq.slice(i)};   // 지금 달리는 칸의 앞 역부터
   const isJourneyTrain=(p,l)=>!!l.trainNo&&p.id===`${l.line}:${l.trainNo}`;
-  function trainShown(p,dist){const R=rides();return !R||R.some(l=>l.line===p.t.line&&(isJourneyTrain(p,l)||passes(ahead(p,dist),l.ids)))}
+  function trainShown(p,dist){const R=rides();return !R||R.some(l=>l.line===p.t.line&&(isJourneyTrain(p,l)||passes(ahead(p,dist),l.pairs)))}
   function journeyTrain(p){return !!rides()?.some(l=>isJourneyTrain(p,l))}   // 탈 열차: 고른 열차처럼 둘레가 퍼진다
   function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
   // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)

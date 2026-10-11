@@ -266,7 +266,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       // my-location pulse: the ripple, in 슝 yellow, under the trains
       if(live.myLocation&&map.getBounds().contains(live.myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(live.myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
       for(const plan of drawTrainsToo?planner.plans:[]){
-        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!live.trainShown(plan,pose.dist))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown)
+        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!snap&&!live.trainShown(plan,pose.dist))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown) — 1인칭으로 탄 열차는 늘
         const mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
         this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
