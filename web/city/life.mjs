@@ -110,6 +110,32 @@ function personMesh() {
   const bw = .85, br = .55; bar(0, hip + br * .6, 0, top - br * .4, bw, 20); disc(0, hip + br * .6, bw, br, 20, Math.PI, 2 * Math.PI, 8); disc(0, top - br * .4, bw, br, 20, 0, Math.PI, 8);   // the body (20)
   for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1; bar(dd * .75, top - .45, dd * 1.15, hip + .75, .2, 30 + k); disc(dd * 1.15, hip + .75, .22, .22, 32 + k, 0, 2 * Math.PI, 8, 1) }   // arms (30, 31), hands (32, 33)
   disc(0, hz, hr, hr, 40); disc(0, hz + .12, hr * 1.03, hr * .95, 50, Math.PI * .05, Math.PI * .95, 10);   // head (40), hair (50)
+  // 머리 모양 · 조선 옷차림(2026-10-11 행님, 얼굴 없이): 모든 부위를 한 판에 넣고 셰이더가 사람마다(i_c.z) 고른 것만 남긴다 — PERSON_VS 의 보임 표
+  const poly = (pts, part, t = 0) => { for (let i = 1; i < pts.length - 1; i++) for (const q of [pts[0], pts[i], pts[i + 1]]) v(q[0], q[1], part, t) }, PI = Math.PI;
+  // 현대: 61 단발 · 62 긴 머리(뒤) · 63 포니테일(뒤) · 64 똥머리 · 65 야구 모자
+  for (const dd of [-1, 1]) poly([[dd * 1.02, hz + .1], [dd * 1.02, hz - .62], [dd * .72, hz - .62], [dd * .72, hz + .1]], 61);
+  disc(0, hz + .08, hr * 1.06, hr, 61, 0, PI, 10); bar(-.75, hz + .38, .75, hz + .38, .12, 61);
+  poly([[-1.02, hz + .2], [1.02, hz + .2], [1.08, 2.35], [-1.08, 2.35]], 62);
+  disc(-1.05, hz - .35, .32, .72, 63, 0, 2 * PI, 10);
+  disc(0, hz + 1.02, .38, .36, 64, 0, 2 * PI, 10);
+  disc(0, hz + .18, hr * 1.06, hr * .98, 65, PI * .02, PI * .98, 10); bar(.2, hz + .25, 1.55, hz + .25, .1, 65);
+  // 조선: 70 매끈한 머리 · 71 망건 · 72 상투 · 73 갓(갓끈) · 75 패랭이 · 76 목화송이 · 77 가르마 머리 · 78 쪽 · 79 비녀 · 80 댕기머리 · 81 댕기 · 82 · 83 아이 댕기
+  disc(0, hz + .15, hr * 1.02, hr * .9, 70, PI * .02, PI * .98, 10); bar(-.98, hz + .32, .98, hz + .32, .1, 71);
+  disc(0, hz + 1.02, .26, .3, 72, 0, 2 * PI, 8);
+  poly([[-.55, hz + .5], [.55, hz + .5], [.45, hz + 1.45], [-.45, hz + 1.45]], 73); disc(0, hz + .5, 1.75, .12, 73, 0, 2 * PI, 14); bar(.55, hz + .4, .62, hz - .75, .025, 73);
+  poly([[-.6, hz + .48], [.6, hz + .48], [.25, hz + 1.2], [-.25, hz + 1.2]], 75); disc(0, hz + .48, 1.3, .1, 75, 0, 2 * PI, 12); disc(.55, hz + .75, .2, .2, 76, 0, 2 * PI, 8);
+  disc(0, hz + .12, hr * 1.03, hr * .97, 77, 0, PI, 10);
+  disc(-.95, hz - .42, .42, .36, 78, 0, 2 * PI, 10); bar(-1.45, hz - .3, -.45, hz - .3, .05, 79);
+  bar(-.05, hz - .4, -.25, 1.75, .17, 80); poly([[-.48, 1.85], [-.02, 1.85], [.02, 1.45], [-.52, 1.45]], 81);
+  bar(-.1, hz - .4, -.2, 2.4, .13, 82); disc(-.2, 2.35, .2, .12, 83, 0, 2 * PI, 8);
+  // 84 도포 자락 · 89 치마(다리를 덮는다) · 85 세조대 · 86 고름 · 87 동정 · 14/15 대님(다리와 같이 흔들림) · 34/35 색동 소매(팔과 같이, t 로 띠 색)
+  poly([[-.85, 1.6], [.85, 1.6], [1.15, .32], [-1.15, .32]], 84); poly([[-.75, 2.3], [.75, 2.3], [1.25, .32], [-1.25, .32]], 89);
+  bar(-.85, 2, .85, 2, .07, 85); bar(.05, 2.42, .32, 1.95, .07, 86); bar(.05, 2.42, -.12, 1.98, .06, 86);
+  bar(-.35, 2.75, 0, 2.28, .06, 87); bar(.35, 2.75, 0, 2.28, .06, 87);
+  for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1, T = .6, x = dd * .38; poly([[x - .24, .61], [x + .24, .61], [x + .24, .49], [x - .24, .49]], 14 + k, T) }
+  for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1, A = [dd * .75, top - .45], H = [dd * 1.15, hip + .75], at = t => [A[0] + (H[0] - A[0]) * t, A[1] + (H[1] - A[1]) * t];
+    for (let b = 0; b < 4; b++) { const t0 = .35 + b * .15, a = at(t0), e = at(t0 + .08), w = .21, dx = e[0] - a[0], dz = e[1] - a[1], l = Math.hypot(dx, dz), nf = -dz / l * w, nz = dx / l * w;
+      poly([[a[0] - nf, a[1] - nz], [a[0] + nf, a[1] + nz], [e[0] + nf, e[1] + nz], [e[0] - nf, e[1] - nz]], 34 + k, t0 + .04) } }
   return new Float32Array(d);
 }
 const PERSON_UNITS = 2.7 + .75 + .95;   // the figure's height in its own units
@@ -218,23 +244,62 @@ const PERSON_VS = `#version 300 es
 layout(location=0) in vec4 a_v;   // f (across), z (up), part, t along the limb
 layout(location=3) in vec4 i_a;   // x, y, phase, walking (0..1)
 layout(location=4) in vec4 i_b;   // facing fx, fy, shirt index, scale
-layout(location=5) in vec2 i_c;   // pants index, hair index
-uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light;
+layout(location=5) in vec3 i_c;   // pants index, hair index, 모양 몫(0..1 — 현대: 머리 6가지, 조선: 옷차림 6가지)
+uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit, u_era; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light, u_jshirt[6], u_jlow[6]; uniform float u_jcum[6];
 out vec3 v_col; out float v_a;
+bool is(float st, float k) { return abs(st - k) < .5; }
 void main(){
-  float s = i_b.w; if (s <= .002) { gl_Position = vec4(2., 2., 2., 1.); return; }
-  float part = a_v.z, t = a_v.w, ph = i_a.z + u_time * 7.5, sw = i_a.w * sin(ph), bob = i_a.w * abs(sin(ph)) * .18;
+  // 모양: 현대(u_era 0)는 머리 6가지 고르게, 조선(1)은 옷차림 6가지를 팩의 비율(u_jcum 누적)대로 — 양반 · 평민 · 보부상 · 부인 · 처녀 · 아이
+  float r = i_c.z, J = u_era, st = 0.;
+  if (J < .5) st = min(5., floor(r * 6.)); else { for (int k = 0; k < 5; k++) if (r >= u_jcum[k]) st = float(k + 1); }
+  bool skirt = J > .5 && (is(st, 0.) || is(st, 3.) || is(st, 4.));
+  float part = a_v.z, t = a_v.w;
+  int k = int(part + .5); bool show = true; float layer = part;
+  if (k == 10 || k == 11) show = !skirt;                                                     // 다리: 치마 · 도포면 숨김(발만)
+  else if (k == 14 || k == 15) show = J > .5 && (is(st, 1.) || is(st, 2.) || is(st, 5.));    // 대님
+  else if (k == 34 || k == 35) show = J > .5 && is(st, 5.);                                  // 색동 소매
+  else if (k == 50) show = J < .5 && (is(st, 0.) || is(st, 2.) || is(st, 3.) || is(st, 4.));
+  else if (k >= 61 && k <= 65) show = J < .5 && is(st, float(k - 60));   // 61 단발 · 62 긴 머리 · 63 포니테일 · 64 똥머리 · 65 모자
+  else if (k == 70 || k == 71) show = J > .5 && st < 2.5;
+  else if (k == 72) show = J > .5 && st < 1.5;
+  else if (k == 73 || k == 85 || k == 84) show = J > .5 && is(st, 0.);
+  else if (k == 75 || k == 76) show = J > .5 && is(st, 2.);
+  else if (k == 77) show = J > .5 && st > 2.5;
+  else if (k == 78 || k == 79) show = J > .5 && is(st, 3.);
+  else if (k == 80 || k == 81) show = J > .5 && is(st, 4.);
+  else if (k == 82 || k == 83) show = J > .5 && is(st, 5.);
+  else if (k == 89 || k == 86) show = J > .5 && (is(st, 3.) || is(st, 4.));
+  else if (k == 87) show = J > .5;
+  if (k == 62 || k == 63 || k == 78 || k == 80 || k == 81 || k == 82 || k == 83) layer = 5.; else if (k == 79) layer = 6.;   // 뒤로 늘어진 머리 · 쪽 · 댕기는 머리 · 몸 뒤
+  else if (k == 84 || k == 89) layer = 18.; else if (k >= 85 && k <= 87) layer = 25. + float(k - 85);   // 자락은 다리 위 · 몸 아래, 세조대 · 고름 · 동정은 몸 위 · 팔 아래
+  float s = i_b.w * (J > .5 && is(st, 5.) ? .72 : 1.);   // 아이는 작게
+  if (s <= .002 || !show) { gl_Position = vec4(2., 2., 2., 1.); return; }
+  float ph = i_a.z + u_time * 7.5, sw = i_a.w * sin(ph), bob = i_a.w * abs(sin(ph)) * .18;
   float m = dot(vec2(i_b.x, i_b.y), u_right) >= 0. ? 1. : -1.;   // mirrored to the way it walks
   float f = a_v.x, z = a_v.y + bob;
-  if (part < 20.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f += d * sw * .35 * (part < 12. ? t : 1.); }          // legs swing, feet with them
-  else if (part >= 30. && part < 40.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f -= d * sw * .4 * (part < 32. ? t : 1.); }   // arms the other way
+  if (part < 20.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f += d * sw * .35 * (part < 12. || part >= 14. ? t : 1.); }          // legs swing, feet with them (대님은 다리 몫 t 만큼)
+  else if (part >= 30. && part < 40.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f -= d * sw * .4 * (part < 32. || part >= 34. ? t : 1.); }   // arms the other way (색동 띠도 팔 몫 t 만큼)
   f *= m;
   float u = u_unit * s;
   vec3 p = vec3(i_a.xy + u_right * f * u, z * u);
   gl_Position = u_matrix * vec4(p.xy * u_mu, p.z * u_mu, 1.);
-  gl_Position.z -= part * 3e-6 * gl_Position.w;   // 한 평면에 겹친 조각(머리 위 머리카락 · 몸 위 팔): 부위 번호가 클수록 조금 앞으로 — 같은 깊이라 머리카락이 깜빡였다(2026-10-11 행님)
-  int si = int(i_b.z + .5), pi = int(i_c.x + .5), hi = int(i_c.y + .5);
-  vec3 c = part < 12. ? u_pants[pi] : part < 20. ? u_pants[pi] * .45 : part < 32. ? u_shirt[si] : part < 40. ? u_skin : part < 50. ? u_skin : u_hair[hi];
+  gl_Position.z -= layer * 3e-6 * gl_Position.w;   // 한 평면에 겹친 조각(머리 위 머리카락 · 몸 위 팔): 층 번호가 클수록 조금 앞으로 — 같은 깊이라 머리카락이 깜빡였다(2026-10-11 행님)
+  int si = int(i_b.z + .5), pi = int(i_c.x + .5), hi = int(i_c.y + .5), sj = int(st + .5);
+  vec3 shirt = J > .5 ? u_jshirt[sj] : u_shirt[si], low = J > .5 ? u_jlow[sj] : u_pants[pi], hair = u_hair[hi];
+  vec3 shoe = J > .5 ? (is(st, 3.) || is(st, 4.) ? vec3(.93, .92, .89) : vec3(.29, .23, .17)) : low * .45;
+  vec3 c = part < 12. ? low : part < 14. ? shoe : part < 20. ? low * .5 : part < 32. ? shirt : part < 34. ? u_skin : part < 36. ? (t < .45 ? vec3(.85, .26, .23) : t < .6 ? vec3(.91, .72, .24) : t < .75 ? vec3(.24, .56, .37) : vec3(.23, .39, .66)) : part < 50. ? u_skin : hair;
+  if (k == 65) c = u_shirt[(si + 2) % 4];                          // 야구 모자
+  else if (k == 71) c = vec3(.08);                                 // 망건
+  else if (k == 73) c = vec3(.09, .09, .1);                        // 흑립 갓
+  else if (k == 75) c = vec3(.75, .63, .42);                       // 패랭이
+  else if (k == 76) c = vec3(.95, .94, .9);                        // 목화송이
+  else if (k == 79) c = vec3(.79, .64, .23);                       // 비녀
+  else if (k == 81 || k == 83) c = vec3(.78, .2, .18);             // 댕기
+  else if (k == 84) c = shirt * .96;                               // 도포 자락
+  else if (k == 89) c = low;                                       // 치마
+  else if (k == 85) c = vec3(.55, .18, .16);                       // 세조대
+  else if (k == 86) c = vec3(.7, .23, .23);                        // 고름
+  else if (k == 87) c = vec3(.95, .93, .89);                       // 동정
   v_col = c * (u_lit.x + u_lit.y * .8); v_a = 1.;
 }`;
 
@@ -262,7 +327,7 @@ export class CityLife {
     this.pP = compileProgram(gl, POOL_VS, POOL_FS); this.uP = U(this.pP, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_radius', 'u_rgb', 'u_alpha']);
     this.pB = compileProgram(gl, BULB_VS, BULB_FS); this.uB = U(this.pB, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_h', 'u_size', 'u_core', 'u_rgb', 'u_wt']);
     this.pX = compileProgram(gl, CROSS_VS, CROSS_FS); this.uX = U(this.pX, ['u_matrix', 'u_mu', 'u_fade', 'u_depth', 'u_rgb', 'u_alpha', 'u_stripe', 'u_gap']);
-    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha']);
+    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha', 'u_era', 'u_jshirt', 'u_jlow', 'u_jcum']);
     const vbo = data => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b };
     this.meshT = [0, 1].map(lod => { const m = treeMesh(lod); return { b: vbo(m), n: m.length / 7 } });
     { const m = lampMesh(this.pack.props.lamps); this.meshL = { b: vbo(m), n: m.length / 10 } }
@@ -534,7 +599,9 @@ export class CityLife {
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
         gl.useProgram(this.pH); gl.uniformMatrix4fv(this.uH.u_matrix, false, MT); gl.uniform1f(this.uH.u_mu, MU); gl.uniform1f(this.uH.u_time, reducedMotion ? 0 : now / 1000); gl.uniform1f(this.uH.u_unit, unit);
         gl.uniform2f(this.uH.u_right, Math.cos(b), Math.sin(b)); gl.uniform2fv(this.uH.u_lit, lit); gl.uniform3fv(this.uH.u_shirt, shirts.flat()); gl.uniform3fv(this.uH.u_pants, pants.flat()); gl.uniform3fv(this.uH.u_hair, hair.flat()); gl.uniform3fv(this.uH.u_skin, col(PP.skin[theme])); gl.uniform3fv(this.uH.u_light, light); gl.uniform1f(this.uH.u_alpha, 1);
-        gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 2, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
+        const OF = PP.outfits; gl.uniform1f(this.uH.u_era, OF ? 1 : 0);   // 조선 팩: 옷차림 6가지(팩 people.outfits · outfitWeights)
+        if (OF) { const w = PP.outfitWeights || OF.map(() => 1), tot = w.reduce((a, b) => a + b, 0); let acc = 0; gl.uniform3fv(this.uH.u_jshirt, OF.flatMap(o => col(o.shirt))); gl.uniform3fv(this.uH.u_jlow, OF.flatMap(o => col(o.lower))); gl.uniform1fv(this.uH.u_jcum, w.map(x => (acc += x) / tot)) }
+        gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
         gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._anim = true } }
     else this.people.list.length = 0;
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
@@ -564,7 +631,7 @@ export class CityLife {
   }
   // People: spawned on the pavements in view by zone (the pack's rate per 100 m) and how lively the place is
   // (POIs, stations), walking their side of the street, on to another street at the corner, a pause now and
-  // then. Poses: x, y, phase, walking, fx, fy, shirt, scale, pants, hair, … (14 floats).
+  // then. Poses: x, y, phase, walking, fx, fy, shirt, scale, pants, hair, look, … (14 floats).
   stepPeople(now, box, ready, fade, phone, reducedMotion) {
     const PP = this.pack.props.people, L = this.people.list, dt = Math.min(.1, (now - (this.ptick || now)) / 1000); this.ptick = now; if (!reducedMotion) this.people.simT += dt;
     const RATE = { 1: PP.per100M.residential, 2: PP.per100M.commercial, 3: PP.per100M.retail, 4: PP.per100M.industrial, 5: PP.per100M.residential, 6: 1, 7: PP.per100M.park, 0: 2 };
@@ -591,11 +658,11 @@ export class CityLife {
     let visible = 0; for (const p of L) if (!p.dying) visible++;
     if (vis.length && visible < target) for (let k = 0; k < 4 && visible < target && L.length < this.people.max; k++) {
       let r = Math.random() * want, pick = vis[0]; for (const v of vis) { r -= v[2].len / 100 * v[1]; if (r <= 0) { pick = v; break } }
-      const w = pick[0], p = { id: ++this.people.seq, w, s: sampleS(pick[2], Math.random()), dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, sc: 0, dying: false };
+      const w = pick[0], p = { id: ++this.people.seq, w, s: sampleS(pick[2], Math.random()), dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, look: Math.random() * .9999, sc: 0, dying: false };   // look: 머리 모양 · 조선 옷차림을 고르는 몫(셰이더)
       at(p); L.push(p); visible++;
     } else if (visible > target * 1.3) { let n = Math.min(3, visible - target); for (const p of L) { if (n <= 0) break; if (!p.dying) { p.dying = true; n-- } } }
     const P = this.people.poses; let n = 0;
-    for (const p of L) { if (n >= this.people.max) break; const o = n * 14; P[o] = p.x; P[o + 1] = p.y; P[o + 2] = p.ph; P[o + 3] = p.pause > 0 ? 0 : 1; P[o + 4] = p.fx * p.dir; P[o + 5] = p.fy * p.dir; P[o + 6] = p.shirt; P[o + 7] = p.sc * fade; P[o + 8] = p.pants; P[o + 9] = p.hair; n++ }
+    for (const p of L) { if (n >= this.people.max) break; const o = n * 14; P[o] = p.x; P[o + 1] = p.y; P[o + 2] = p.ph; P[o + 3] = p.pause > 0 ? 0 : 1; P[o + 4] = p.fx * p.dir; P[o + 5] = p.fy * p.dir; P[o + 6] = p.shirt; P[o + 7] = p.sc * fade; P[o + 8] = p.pants; P[o + 9] = p.hair; P[o + 10] = p.look; n++ }
     this.people.count = n; return n;
   }
   // Finish building every waiting cell right now, whatever it costs (for tests and screenshots, not for frames).

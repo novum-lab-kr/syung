@@ -42,7 +42,11 @@ export const JOSEON_DELTA = {
     // 횃불(2026-10-11 행님: 조선 밤이 너무 어둡다, 횃불을 더 넣고 많이 키워라): 기둥 · 화로 · 불꽃 약 2.5배, 큰길 20 m · 골목 28 m 마다, 밤 불빛 점 ×2.2
     lamps: { spacingM: 20, minorSpacingM: 28, heightM: 3.6, armM: 0, poleDiameterM: 0.24, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFB15E', poolRadiusM: 2.4, poolOpacity: 0.1, simcityPoolMaxOpacity: 0.13,
       torch: { basketM: 0.5, basketWidthM: 0.85, flameM: 1.4, flameWidthM: 0.8, glowMul: 2.2, flame: ['#F06A1E', '#FFD25A'] } },
-    people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
+    people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'],
+      // 조선 옷차림(2026-10-11 행님): 양반(갓 · 흰 도포 · 세조대) · 평민(상투 · 바지저고리 · 대님) · 보부상(패랭이) · 부인(쪽 · 연두 저고리 · 남치마) · 처녀(댕기 · 노랑 저고리 · 다홍치마) · 아이(색동)
+      outfits: [{ shirt: '#EEEBE2', lower: '#E7E3D7' }, { shirt: '#E7DFCB', lower: '#D3C6A8' }, { shirt: '#B59A6E', lower: '#8C7350' },
+        { shirt: '#B9D38B', lower: '#2E3C66' }, { shirt: '#EBCB6B', lower: '#C0453B' }, { shirt: '#F1EBDD', lower: '#C9567A' }],
+      outfitWeights: [3, 4, 2, 3, 2, 1] },
   },
   lighting: { shadow: { color: '#5A4630' } },
   // 밤 빛(기본 팩 night 에서 다른 것만, 2026-10-11): 전기 불빛이 아니라 횃불 · 등잔 — 더 따뜻하고 더 낮게. 벽 아래는 횃불 높이만큼, 길 빛은 흙길 위 주황,
