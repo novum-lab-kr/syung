@@ -400,7 +400,9 @@ export class CityViaduct {
   levelsOf() {
     if (this.staleKeys?.length) this.staleKeys = this.staleKeys.filter(([k, f]) => f >= this.frame || (this.del(k), false));   // stubsOf 가 낡았다고 한 조각: 지난 프레임 것만(렌더 도중 stationH 로 불려도 이 프레임 조각은 안 지운다)
     const rects = this.net.rects; if (!rects || !rects.size || this.resolving) return this.levels;
-    if (this.levels && this.levelRects === rects && this.levelCount === rects.size && !this.levelsDirty) return this.levels;
+    if (this.levelsDirty && this.dirtyAt == null) this.dirtyAt = this.frame;   // 렌더 승강장 루프가 켠 것: 다음 프레임 첫머리에 — 같은 프레임(stationH)에 캐시를 다 지우면 이미 draw 에 담은 상판 VAO 를 지운 채 그린다
+    if (this.levels && this.levelRects === rects && this.levelCount === rects.size && !(this.levelsDirty && this.frame > this.dirtyAt)) return this.levels;
+    this.dirtyAt = null;
     const t0 = performance.now(), Lv = this.V.levels, lines = new Map(); for (const k of rects.keys()) { const id = k.slice(k.lastIndexOf(':') + 1); lines.set(id, (lines.get(id) || 0) + 1) }
     const edgeLen = (line, a, b) => { const e = this.edgeOf(line, a, b); if (!e) return 1e9; const r = this.rowsOf(e); return r.length ? r[r.length - 1].s : 1e9 }, single = id => (lines.get(String(id)) || 0) <= 1;
     const build = floors => { const L = stationLevels(rects, toM, Lv.overlapM, floors, Lv.crossAngleDeg ?? 25); holdLevels(L, this.net.paths, edgeLen, Lv.holdM, single); return L };

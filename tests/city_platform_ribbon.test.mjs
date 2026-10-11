@@ -65,6 +65,9 @@ test('끝역: 고가 상판 · 교각을 승강장 끝까지 늘리고, 열차�
   rects.set('X:1', { ...rect(0), coords: [toLL(-120, 0), toLL(0, 0), toLL(120, 0)] }); v.frame++; v.profileOf(e12);
   assert.ok(Math.abs(v.stubsOf(e12)[0].ext - 120) < .5); assert.equal(v.staleKeys.length, 3);
   v.levelsOf(); assert.equal(v.staleKeys.length, 3, '같은 프레임(렌더 도중 stationH)에는 안 지운다'); v.frame++; v.levelsOf(); assert.equal(v.staleKeys.length, 0);
+  // 렌더 승강장 루프가 levelsDirty 를 켠 프레임에는 층을 다시 세우지 않는다(캐시를 지우면 그 프레임 draw 의 VAO 가 지워진 채 그려짐)
+  const ver = v.levelsVersion; v.levelsDirty = true; v.levelsOf(); assert.equal(v.levelsVersion, ver, '같은 프레임: 그대로');
+  v.frame++; v.levelsOf(); assert.ok(v.levelsVersion > ver && !v.levelsDirty, '다음 프레임 첫머리에 다시');
   // 롤코: gapFn(coasterGaps)이 heightAt → profileOf 를 부른다 — 끝역 조각이 gaps 를 물으면 끝없이 돈다(2026-10-11 운영 롤코 RangeError)
   v.setGaps((l, lo, hi) => { v.heightAt(l, lo, hi, .5); return lo === 1 ? [[0, .1]] : null });   // 1 쪽 끝은 레일이 고가를 떠남
   e12.prof = null; e23.prof = null;
