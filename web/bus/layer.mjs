@@ -698,7 +698,9 @@ class BusLayer {
     const stop=this.stopHits.filter(h=>contains(h.bounds,[point.x,point.y])).sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0];
     if(stop){this.select({kind:'stop',id:stop.id},null);return true;}
     const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: [...LAYERS.slice(0, 2), ...(this.check ? CHECK_LAYERS.slice(0, 1) : [])]});
-    if (routes.length) { const id = routes[0].properties.routeId; this.select({kind: 'route', id}, id); return true; }
+    // 짝이 있는 표시선(lod 'plan')은 이 줌(stops ≥ BUS_ROAD_LINE.to)에서 투명하다 — 조회는 투명도를 보지 않으므로 뺀다(Codex 검토)
+    const route = routes.find(f => f.properties.lod !== 'plan');
+    if (route) { const id = route.properties.routeId; this.select({kind: 'route', id}, id); return true; }
     return false;
   }
 

@@ -224,6 +224,14 @@ test('from zoom 14 a bus line carries its road-snapped twin, also when a pinch c
   assert.match(of('ride'), /^(road,)+plan$/, 'both lines, the display line on top (it fades out over the road one)');
   assert.equal(of('stop'), 'road,plan,road,plan');
   assert.equal(layer.roadLinesPending(), false);
+  zoom = 16; layer.hits = []; layer.stopHits = [];
+  const hidden = {properties: {routeId: route.id, lod: 'plan'}}, picked = [];
+  layer.select = (...a) => picked.push(a);
+  layer.map.queryRenderedFeatures = () => [hidden];
+  assert.equal(layer.selectAt({x: 10, y: 10}), false, 'a faded-out display line is not a click target');
+  layer.map.queryRenderedFeatures = () => [hidden, {properties: {routeId: route.id, lod: 'road'}}];
+  assert.equal(layer.selectAt({x: 10, y: 10}), true); assert.deepEqual(picked, [[{kind: 'route', id: route.id}, route.id]]);
+  delete layer.select; zoom = 14.3;
   layer.map.querySourceFeatures = () => [];
   layer.roads = new (layer.roads.constructor)(); layer.refreshView();
   assert.equal(of('ride'), '-', 'no road loaded yet: no twin, so the display line does not fade out');
