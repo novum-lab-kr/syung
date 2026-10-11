@@ -223,6 +223,7 @@ export class TileBuilder {
       }
       while (this.pi < this.polys.length) {
         const poly = this.polys[this.pi++];
+        if (this.marks.length && this.landmarkPart([poly.outer], num(this.cur.H, 0))) continue;   // 여러 건물을 한 feature 로 묶은 타일(OFM)도 그 자리 조각만 뺀다(2026-10-11 남산 광장)
         try { this.prepare(poly) } catch (e) { this.warn(e) }
         if (performance.now() - t0 > budget) return false;
       }

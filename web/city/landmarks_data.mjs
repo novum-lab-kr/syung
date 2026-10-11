@@ -24,8 +24,8 @@ export const LANDMARKS = [
 // replaces: 이 모양일 때 그 자리 탑 모델(LANDMARKS id)을 대신한다. 남산타워는 지도 건물이라 조선 팩 landmarkHide 가 그 조각을 뺀다.
 // minPx: 실제 크기면 너무 작을 때 화면에서 이만큼은 보이게 키운다(탑골공원 12 m). widthMul: 거대한 탑은 가로를 줄여 날씬하게(그대로 키우면 기단이 260 m).
 export const STUPAS = [
-  { id: 'namsan-stupa', kind: 'seokga', lngLat: [126.988227, 37.551169], height: 240, widthMul: .65, looks: ['wood-tower'], yawDeg: 0 },
-  { id: 'wongaksa', kind: 'wongaksa', lngLat: [126.98826, 37.57107], height: 12, looks: ['wood-tower'], minPx: 30, yawDeg: 0 },
+  { id: 'namsan-stupa', kind: 'seokga', lngLat: [126.988216, 37.551259], height: 240, widthMul: .65, looks: ['wood-tower'], yawDeg: 0 },   // 남산타워 아래 광장(72 × 75 m) 한가운데 — 기단(폭 약 71 m)이 광장에 앉게(2026-10-11 행님: 바닥 보고 자리 잡기)
+  { id: 'wongaksa', kind: 'wongaksa', lngLat: [126.98830, 37.57123], height: 12, looks: ['wood-tower'], minPx: 30, yawDeg: 0 },   // 탑골공원 팔각정 쪽으로 약 18 m(행님 2026-10-11: 집 쪽으로)
 ];
 
 const mercX = lng => (lng + 180) / 360;
