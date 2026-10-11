@@ -167,6 +167,23 @@ test('a journey bus ride matches its direction on an out-and-back line', () => {
   assert.equal(journeyBusRange(line, {path: [[126, 36], [126.01, 36.01]]}), null, 'far from the line: draw the whole route');
 });
 
+test('a ride just after the turn of an out-and-back line keeps its own pass (Codex: 0→1000→0 m, back 900→600 m)', () => {
+  const kx = 111320 * Math.cos(37.5 * Math.PI / 180), at = m => [127 + m / kx, 37.5];
+  for (const step of [1000, 100]) {   // 꼭짓점이 적을 때 · 100 m 마다일 때
+    const marks = []; for (let m = 0; m <= 1000; m += step) marks.push(m); for (let m = 1000 - step; m >= 0; m -= step) marks.push(m);
+    const range = journeyBusRange(buildBusPath(marks.map(at)), {path: [at(900), at(600)]});
+    assert.ok(range && Math.abs(range[0] - 1100) < 5 && Math.abs(range[1] - 1400) < 5, `step ${step}: got ${range}`);
+  }
+});
+
+test('between the same two stops, the ride takes the branch its shape follows', () => {
+  const A = [127, 37.5], U = [127.005, 37.503], B = [127.01, 37.5], L = [127.005, 37.497];
+  const line = buildBusPath([A, U, B, L, A, L, B]);   // 위로 한 바퀴 돌고, 다시 아래로 B 까지
+  const range = journeyBusRange(line, {path: [A, L, B]});
+  const lower = line.distances[4], end = line.total;
+  assert.ok(range && Math.abs(range[0] - lower) < 5 && Math.abs(range[1] - end) < 5, `got ${range}, lower branch ${lower}–${end}`);
+});
+
 test('a journey draws only the ridden part of its bus route; a route number draws all of it', () => withLayerFixture(layer => {
   const lines = () => layer.map.getSource('bus-routes').data.features.filter(f => f.properties.kind === 'ride').map(f => f.geometry.coordinates);
   const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-4;

@@ -132,6 +132,13 @@ export function busRoutesNearStops(data, box, chosen = [], screen = null) {
 
 // Legacy journey legs have names, not Seoul route IDs. Require a unique name AND
 // matching endpoint geometry before using an official ID for live requests.
+// 도로에 붙인 선(roads.snapLine)의 distance m 자리: 이웃 샘플 사이를 보간(굵기는 앞 샘플)
+function snappedAt(snapped, distance) {
+  const S = snapped.samples, i = Math.max(0, Math.min(S.length - 2, Math.floor(distance / snapped.step))), a = S[i], b = S[Math.min(S.length - 1, i + 1)];
+  const t = Math.max(0, Math.min(1, (distance - a.distance) / ((b.distance - a.distance) || 1)));
+  return {...a, distance, coordinate: a.coordinate.map((v, k) => v + (b.coordinate[k] - v) * t)};
+}
+
 export function journeyBusRouteIds(data, legs) {
   if(!data)return [];
   const ids=[];
@@ -147,16 +154,21 @@ export function journeyBusRouteIds(data, legs) {
 }
 
 // 길찾기 버스 구간이 노선 표시선(line)의 어디서 어디까지인지(m). 오가는 노선은 탄 곳 · 내릴 곳을 두 번씩 지나므로
-// 탄 곳이 앞이고 그 사이 길이가 탄 구간 길이에 가장 가까운 짝을 고른다(첫 조각의 방향은 정류장 → 도로 꺾임이라 믿지 않는다).
-// 못 맞추면 null — 그때는 노선 전체를 그린다.
+// 탄 곳이 앞인 짝 가운데 길이가 탄 구간에 가깝고, 탄 구간의 ¼ · ½ · ¾ 지점이 그 사이 선에 붙는 것(같은 두 정류장 사이 다른 가지 가르기)을 고른다.
+// 서버 구간의 첫 조각 방향은 정류장 → 도로 꺾임이라 쓰지 않는다. 못 맞추면 null — 그때는 노선 전체를 그린다.
+const journeyRanges=new WeakMap();   // leg → Map(line → range): 지도를 움직일 때마다 다시 맞추지 않는다
 export function journeyBusRange(line, leg) {
-  const ride = buildBusPath(leg?.path); if (!line || !ride) return null;
-  let best = null;
-  for (const a of busPathPasses(line, ride.points[0])) for (const b of busPathPasses(line, ride.points.at(-1))) {
+  if (!line || !leg) return null;
+  let cache = journeyRanges.get(leg); if (!cache) journeyRanges.set(leg, cache = new Map());
+  if (cache.has(line)) return cache.get(line);
+  const ride = buildBusPath(leg.path); let best = null;
+  if (ride) for (const a of busPathPasses(line, ride.points[0])) for (const b of busPathPasses(line, ride.points.at(-1))) {
     if (b.distance <= a.distance) continue;
-    const score = Math.abs(b.distance - a.distance - ride.total) + a.error + b.error;
+    let score = Math.abs(b.distance - a.distance - ride.total) + a.error + b.error;
+    for (const q of [.25, .5, .75]) score += snapBusToPath(line, busPointAt(ride, ride.total * q).coordinate, {min: a.distance, max: b.distance, maxError: Infinity})?.error ?? Infinity;
     if (!best || score < best.score) best = {score, range: [a.distance, b.distance]};
   }
+  cache.set(line, best?.range || null);
   return best?.range || null;
 }
 
@@ -372,7 +384,8 @@ class BusLayer {
       if(range&&!line)range=null;
       if(!snapped)features.push(feature('LineString',range?busPathSlice(line,...range):line?.points||route.path,properties));
       else{
-        const samples=range?snapped.samples.filter(p=>p.distance>=range[0]-snapped.step&&p.distance<=range[1]+snapped.step):snapped.samples;
+        // 구간이면 양 끝은 이웃 샘플 사이를 보간한 점(타고 내리는 표시점과 같은 자리)
+        const samples=range?[snappedAt(snapped,range[0]),...snapped.samples.filter(p=>p.distance>range[0]&&p.distance<range[1]),snappedAt(snapped,range[1])]:snapped.samples;
         let part=[],width=samples[0]?.width;
         const flush=()=>{if(part.length>1)features.push(feature('LineString',part,width?{...properties,laneWidth:width}:properties));};
         for(const p of samples){
@@ -382,7 +395,7 @@ class BusLayer {
       }
       for(const marker of markers){
         const snap=marker.distance!=null?{distance:marker.distance}:line&&snapBusToPath(line,marker.coordinate,{maxError:80});
-        const at=snap&&(snapped?snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))].coordinate:busPointAt(line,snap.distance).coordinate);
+        const at=snap&&(snapped?(marker.distance!=null?snappedAt(snapped,snap.distance):snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))]).coordinate:busPointAt(line,snap.distance).coordinate);
         features.push(feature('Point',at||marker.coordinate,{...properties,kind:'stop'}));
       }
     };
