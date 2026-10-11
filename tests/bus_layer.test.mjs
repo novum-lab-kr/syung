@@ -210,6 +210,26 @@ test('journey buses past where I get off are left out; a route chosen by number 
   assert.equal(layer.journeyEnds(), null);
 }, false));
 
+// 2026-10-11 행님: 버스 선이 줌 15 에서 툭 바뀌었다 → 줌 14 부터 도로에 붙인 선(lod road)을 짝으로 넣고 층 투명도가 14~15 사이에 엇갈려 바꾼다
+test('from zoom 14 a bus line carries its road-snapped twin, also when a pinch crosses 14 before the hand lifts', () => withLayerFixture(async layer => {
+  let zoom = 13.5;
+  Object.assign(layer.map, {getZoom: () => zoom, isMoving: () => true,
+    querySourceFeatures: () => [{type: 'Feature', properties: {class: 'primary'}, geometry: {type: 'LineString', coordinates: [[126.999, 37.499], [127.011, 37.511]]}}]});
+  const of = kind => layer.map.getSource('bus-routes').data.features.filter(f => f.properties.kind === kind).map(f => f.properties.lod ?? '-').join(',');
+  layer.setJourney([{type: 'bus', route: '100', path: [[127.002, 37.502], [127.008, 37.508]]}]);
+  assert.equal(of('ride'), '-', 'below 14: the matched display line alone, always opaque');
+  assert.equal(of('stop'), '-,-');
+  zoom = 14.3; layer.zoom();   // 핀치 중(moveend 없음)에 14 를 넘음
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.match(of('ride'), /^(road,)+plan$/, 'both lines, the display line on top (it fades out over the road one)');
+  assert.equal(of('stop'), 'road,plan,road,plan');
+  assert.equal(layer.roadLinesPending(), false);
+  layer.map.querySourceFeatures = () => [];
+  layer.roads = new (layer.roads.constructor)(); layer.refreshView();
+  assert.equal(of('ride'), '-', 'no road loaded yet: no twin, so the display line does not fade out');
+  assert.equal(layer.roadLinesPending(), true);
+}, false));
+
 // 2026-10-11 행님: 길찾기 결과에서 고른 경로 카드를 누르면 시트가 닫히며(closeSheet → clearSelection) 버스 경로만 사라졌다
 test('a journey bus leg stays on the map when its sheet closes, and goes with the route', () => withLayerFixture(layer => {
   class Bounds{constructor(a){this.a=a}extend(){return this}}

@@ -10,6 +10,12 @@ import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../lib/journ
 const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:null},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17}};
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
+// 노선 선은 줌 from~to 사이에서 미리 맞춘 표시선(lod 'plan') → 심시티 도로에 붙인 선(lod 'road')으로 엇갈려 바뀐다(2026-10-11 행님: 15 에서
+// 선이 툭 바뀜). 도로 선은 진하게 밑에 깔고 위의 표시선이 from → to 동안 사라진다 — 둘 다 반투명해 흐려지는 때가 없게. 도로 모으기도 from 부터.
+// 차량 차로 · BUS 기둥은 BUS_ZOOM 그대로. (속성 따라 다른 줌 식은 타일 줌 · 그 +1 에서만 값을 구하므로 멈춤점은 정수 줌 둘만)
+export const BUS_ROAD_LINE = {from: 14, to: 15};
+// 짝(도로에 붙인 선)이 없는 표시선(lod 없음)은 어느 줌에서나 그대로
+const lodOpacity = ['interpolate', ['linear'], ['zoom'], BUS_ROAD_LINE.from, 1, BUS_ROAD_LINE.to, ['match', ['get', 'lod'], 'plan', 0, 1]];
 const JOURNEY_APPROACH_M = 5000;   // 길찾기: 탈 곳까지 이만큼(선 따라) 안에서 오는 버스만 — 열차의 앞길 8정거장과 비슷하게(10~15분)
 export const BUS_TYPES = {
   trunk: {name: '간선', light: '#3567C8', dark: '#7FAAFF'},
@@ -278,7 +284,12 @@ class BusLayer {
       if (!document.hidden) this.refreshView(); else this.clearScene();
     };
     this.motionChanged = () => { this.stopAnimation(); this.draw(); };
-    this.zoom = () => { if (!this.active()) this.stopLive(); this.draw(); this.updateStatus(); };
+    this.zoom = () => {
+      if (!this.active()) this.stopLive();
+      // 핀치로 줌 from 을 넘는 중이면 손 떼기(moveend)를 기다리지 않고 도로에 붙인 선을 만든다 — 없으면 표시선만 남았다가 손 뗄 때 툭 바뀐다
+      if (this.lineZoom < BUS_ROAD_LINE.from && this.roadLinesPending()) this.roadSoon(0);
+      this.draw(); this.updateStatus();
+    };
     this.inspect = () => this.inspectNearby();
     this.routeClick = event => {
       const button=event.target.closest?.('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh]');if(!button)return;
@@ -290,7 +301,9 @@ class BusLayer {
       document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
     };
     this.remove = () => this.destroy();
-    this.roadData=e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded){clearTimeout(this.roadTimer);this.roadTimer=setTimeout(()=>{if(!map.isMoving?.())this.refreshView();},250);}};
+    // 도로 타일이 들어오면 새로 붙인다 — 움직이는 중에는 아직 도로에 붙인 선이 하나도 없을 때만(핀치로 막 줌 14 를 넘었을 때)
+    this.roadSoon=ms=>{clearTimeout(this.roadTimer);this.roadTimer=setTimeout(()=>{if(!map.isMoving?.()||this.roadLinesPending())this.refreshView();},ms);};
+    this.roadData=e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)this.roadSoon(250);};
     map.on('moveend', this.move); map.on('zoom', this.zoom); map.on('remove', this.remove);
     map.on('sourcedata',this.roadData);
     document.addEventListener('visibilitychange', this.visibility); this.reduced.addEventListener('change', this.motionChanged);
@@ -306,11 +319,12 @@ class BusLayer {
     map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 0, maxzoom: 18,
       attribution: '버스 노선·정류장 <a href="https://data.seoul.go.kr/dataList/OA-1095/F/1/datasetView.do" target="_blank" rel="noopener">서울특별시 열린데이터광장</a>'});
     const layout={'line-cap':'round','line-join':'round'},ride=['==',['get','kind'],'ride'];
-    map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:journeyCasingPaint({thin:true})});
+    map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:{...journeyCasingPaint({thin:true}),'line-opacity':lodOpacity}});
     for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[2] : LAYERS[1], type: 'line', source: SOURCE_ROUTES,
       filter: ['all',ride,['==', ['get', 'approximate'], approximate]], layout,
-      paint: {...journeyRidePaint({thin:true}), ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
-    map.addLayer({id:LAYERS[3],type:'circle',source:SOURCE_ROUTES,filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});
+      paint: {...journeyRidePaint({thin:true}), 'line-opacity': lodOpacity, ...(approximate ? {'line-dasharray': [2, 2]} : {})}});
+    map.addLayer({id:LAYERS[3],type:'circle',source:SOURCE_ROUTES,filter:['==',['get','kind'],'stop'],
+      paint:{...journeyStopPaint(),'circle-opacity':lodOpacity,'circle-stroke-opacity':lodOpacity}});
     this.raiseRoute();
     if (this.check) this.installCheckLayers();
   }
@@ -381,7 +395,7 @@ class BusLayer {
     if (!this.data) { if(this.map.getZoom()>=BUS_ZOOM.stops||this.journeyLegs.length)this.loadStatic(); return; }
     this.box = padded(boundsArray(this.map.getBounds()));
     this.visible = visibleBusRoutes(this.data, this.box, this.selectedRoute);
-    if(this.map.getZoom()>=BUS_ZOOM.buses&&(this.enabled||this.check||this.chosenIds().length)){
+    if(this.map.getZoom()>=Math.min(BUS_ZOOM.buses,BUS_ROAD_LINE.from)&&(this.enabled||this.check||this.chosenIds().length)){
       try{this.roads.update(this.map.querySourceFeatures?.('ofm',{sourceLayer:'transportation'})||[]);}catch{/* Tiles may still be loading. */}
     }
     this.exitCoordinates=this.getExitCoordinates().filter(p=>contains(this.box,p));
@@ -397,30 +411,40 @@ class BusLayer {
 
   renderStatic() {
     if (this.disposed) return;
-    const features = [], stopFeatures = [], chosen=new Set(this.chosenIds());
+    const features = [], stopFeatures = [], chosen=new Set(this.chosenIds()), zoom=this.map.getZoom();
+    this.lineZoom=zoom;this.roadLines=false;
     const drawRoute=(route,markers,range=null)=>{   // range: 그 선의 [from,to] m 만(길찾기 버스 구간)
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
       // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
       // 없으면 공식 경로. 화면 타일로 차로를 맞추던 조각선은 끊기고 갈고리가 생겨 쓰지 않는다.
-      // 줌 15 이상은 그 선을 심시티가 그리는 도로 중심선에 다시 붙이고, 굵기는 도로 폭 안(laneWidth)으로.
-      const line=this.lineGeometry(route),snapped=line&&this.map.getZoom()>=BUS_ZOOM.buses&&this.map.querySourceFeatures?this.snappedLine(route,line):null;
+      // 줌 BUS_ROAD_LINE.from 이상은 그 선을 심시티가 그리는 도로 중심선에 다시 붙인 선(굵기는 도로 폭 안 laneWidth)도 같이 넣고
+      // 층 투명도(lodOpacity)가 줌으로 둘을 엇갈려 바꾼다. 아직 붙은 도로가 없으면(타일 전) 짝 없이 표시선만.
+      const line=this.lineGeometry(route),road=line&&zoom>=BUS_ROAD_LINE.from&&this.map.querySourceFeatures?this.snappedLine(route,line):null;
+      const snapped=road?.samples.some(p=>p.width!=null)?road:null;
       if(range&&!line)range=null;
-      if(!snapped)features.push(feature('LineString',range?busPathSlice(line,...range):line?.points||route.path,properties));
-      else{
+      if(snapped)this.roadLines=true;
+      const plan=snapped?{...properties,lod:'plan'}:properties,ends=[];
+      if(snapped){
         // 구간이면 양 끝은 이웃 샘플 사이를 보간한 점(타고 내리는 표시점과 같은 자리)
         const samples=range?[snappedAt(snapped,range[0]),...snapped.samples.filter(p=>p.distance>range[0]&&p.distance<range[1]),snappedAt(snapped,range[1])]:snapped.samples;
         let part=[],width=samples[0]?.width;
-        const flush=()=>{if(part.length>1)features.push(feature('LineString',part,width?{...properties,laneWidth:width}:properties));};
+        const flush=()=>{if(part.length>1)features.push(feature('LineString',part,{...properties,lod:'road',...width?{laneWidth:width}:{}}));};
         for(const p of samples){
           if(p.width!==width){flush();part=part.length?[part.at(-1)]:[];width=p.width;}
           part.push(p.coordinate);
         }flush();
       }
+      features.push(feature('LineString',range?busPathSlice(line,...range):line?.points||route.path,plan));   // 표시선은 도로 선 위에
       for(const marker of markers){
         const snap=marker.distance!=null?{distance:marker.distance}:line&&snapBusToPath(line,marker.coordinate,{maxError:80});
-        const at=snap&&(snapped?(marker.distance!=null?snappedAt(snapped,snap.distance):snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))]).coordinate:busPointAt(line,snap.distance).coordinate);
-        features.push(feature('Point',at||marker.coordinate,{...properties,kind:'stop'}));
+        if(snapped){
+          const on=snap&&(marker.distance!=null?snappedAt(snapped,snap.distance):snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))]).coordinate;
+          ends.push(feature('Point',on||marker.coordinate,{...properties,lod:'road',kind:'stop'}));
+        }
+        const at=snap&&busPointAt(line,snap.distance).coordinate;
+        ends.push(feature('Point',at||marker.coordinate,{...plan,kind:'stop'}));
       }
+      features.push(...ends);
     };
     for(const id of chosen){
       const route=this.data?.routeById.get(id);if(!route)continue;
@@ -444,6 +468,8 @@ class BusLayer {
     this.raiseRoute();
     this.stopFeatures = stopFeatures;
   }
+  // 줌 BUS_ROAD_LINE.from 위인데 도로에 붙인 선이 아직 하나도 없다(고른 노선 · 길찾기 버스가 있을 때)
+  roadLinesPending(){return !this.disposed&&!!this.data&&this.map.getZoom()>=BUS_ROAD_LINE.from&&!this.roadLines&&this.chosenIds().length>0;}
 
   async pollLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0;
