@@ -164,9 +164,15 @@ in vec3 a_pos;in vec2 a_local;in vec3 a_col;in vec3 a_ink;in vec4 a_glyph;in vec
 out vec2 v_local;out vec3 v_col;out vec3 v_ink;flat out vec4 v_glyph;flat out vec4 v_guv;out float v_mode;
 void main(){v_local=a_local;v_col=a_col;v_ink=a_ink;v_glyph=a_glyph;v_guv=a_guv;v_mode=a_mode;gl_Position=vec4(a_pos.xy/u_view*vec2(2.,-2.)+vec2(-1.,1.),a_pos.z,1.);}`;   // z: its depth, for the solid park buildings
     const fs=`#version 300 es
-precision highp float;in vec2 v_local;in vec3 v_col;in vec3 v_ink;flat in vec4 v_glyph;flat in vec4 v_guv;in float v_mode;uniform sampler2D u_tex;out vec4 o;
+precision highp float;in vec2 v_local;in vec3 v_col;in vec3 v_ink;flat in vec4 v_glyph;flat in vec4 v_guv;in float v_mode;uniform sampler2D u_tex,u_face;uniform float u_time;out vec4 o;
 void main(){
   if(v_mode<.5){float d=length(v_local);float a=(1.-smoothstep(.15,1.,d))*.3;if(a<=0.)discard;o=vec4(0.,0.,0.,a);return;}   // ground shadow
+  if(v_mode>2.5&&v_mode<3.5){vec3 t=texture(u_face,mix(v_guv.xy,v_guv.zw,vec2(v_local.x,1.-v_local.y))).rgb;o=vec4(t*v_col,1.);return;}   // 장승 얼굴(아틀라스)
+  if(v_mode>3.5&&v_mode<4.5){   // 횃불 불꽃: 아래 둥글고 위로 뾰족, 흔들림(v_ink.x 위상)
+    float ph=u_time*7.+v_ink.x,y=v_local.y,x=v_local.x+.18*sin(ph+y*3.)*y,w=(1.-y)*.55+.45*sqrt(max(0.,y))*(1.-y)*1.6;
+    float a=1.-smoothstep(w*.75,w,abs(x));a*=smoothstep(0.,.08,y)*(1.-smoothstep(.82+.1*sin(ph*1.3),1.,y));if(a<=.01)discard;
+    vec3 c=mix(vec3(1.,.93,.62),vec3(.94,.4,.1),smoothstep(.15,.85,abs(x)/max(w,1e-3)*.6+y*.7));o=vec4(c*a,a);return;}
+  if(v_mode>4.5){float d=length(v_local),a=(1.-smoothstep(0.,1.,d))*.42*v_col.r*(.85+.15*sin(u_time*9.+v_ink.x));if(a<=.004)discard;o=vec4(vec3(1.,.62,.28)*a,a*.6);return;}   // 밤 불빛 번짐
   vec3 col=v_col;
   if(v_mode>1.5){vec2 q=(v_local-v_glyph.xy)/(v_glyph.zw-v_glyph.xy);   // the number, printed on this face
     if(all(greaterThanEqual(q,vec2(0.)))&&all(lessThanEqual(q,vec2(1.)))){float a=texture(u_tex,mix(v_guv.xy,v_guv.zw,vec2(q.x,1.-q.y))).a;col=mix(col,v_ink,a);}}
@@ -175,7 +181,7 @@ void main(){
     const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
     this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
     this.attr=Object.fromEntries(['a_pos','a_local','a_col','a_ink','a_glyph','a_guv','a_mode'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-    this.uView=gl.getUniformLocation(this.p,'u_view');this.uTex=gl.getUniformLocation(this.p,'u_tex');
+    this.uView=gl.getUniformLocation(this.p,'u_view');this.uTex=gl.getUniformLocation(this.p,'u_tex');this.uFace=gl.getUniformLocation(this.p,'u_face');this.uTime=gl.getUniformLocation(this.p,'u_time');
     this.b=gl.createBuffer();this.tex=gl.createTexture();this.gl=gl;this.key='';
   }
   // number atlas: each exit ref once, bold, on a row of the texture
@@ -193,10 +199,27 @@ void main(){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);   // no mipmaps: they blur the digits' strokes into outlines
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
+  // 장승 얼굴 아틀라스(조선 출구, 2026-10-11 행님): 천하대장군(0) · 지하여장군(1), 한 칸 128 px — 붉은 칠 얼굴에 먹 눈썹 · 부릅뜬 눈 · 주먹코 · 이빨 / 둥근 눈 · 연지
+  faceAtlas(){
+    if(this.faceTex)return;const {document}=this.d,c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');
+    const E=(cx,cy,rx,ry,col,r=0)=>{x.beginPath();x.ellipse(cx,cy,rx,ry,r,0,Math.PI*2);x.fillStyle=col;x.fill()},L=(pts,col,w)=>{x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.strokeStyle=col;x.lineWidth=w;x.lineCap='round';x.stroke()},P=(pts,col)=>{x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.closePath();x.fillStyle=col;x.fill()};
+    const ink='#221810',iv='#efe3c6';
+    for(const f of [0,1]){const o=f*128;x.save();x.translate(o,0);
+      x.fillStyle='#9b5a3f';x.fillRect(0,0,128,128);for(let i=0;i<9;i++){x.fillStyle=i%2?'rgba(60,30,15,.16)':'rgba(240,200,150,.10)';x.fillRect(6+i*14,0,3,128)}   // 붉은 칠 · 나뭇결
+      if(!f){L([[10,30],[34,18],[56,32]],ink,9);L([[72,32],[96,18],[118,30]],ink,9);E(36,48,15,13,iv);E(92,48,15,13,iv);E(38,50,7,9,ink);E(90,50,7,9,ink);
+        P([[56,52],[72,52],[80,84],[48,84]],'#c99567');L([[50,84],[64,90],[78,84]],'#5a3a22',3);
+        P([[20,94],[108,94],[100,116],[28,116]],ink);P([[30,95],[40,95],[35,110]],iv);P([[88,95],[98,95],[93,110]],iv);for(let i=0;i<4;i++)x.fillStyle=iv,x.fillRect(48+i*9,96,6,7);
+        L([[14,60],[8,100],[16,124]],ink,4);L([[114,60],[120,100],[112,124]],ink,4)}   // 천하대장군: 부릅뜬 눈 · 주먹코 · 송곳니 · 먹 수염
+      else{L([[16,32],[36,24],[54,32]],ink,5);L([[74,32],[92,24],[112,32]],ink,5);E(36,50,13,14,ink);E(92,50,13,14,ink);E(36,50,8,9,iv);E(92,50,8,9,iv);E(37,52,4,6,ink);E(91,52,4,6,ink);
+        E(22,82,12,9,'#c8382c');E(106,82,12,9,'#c8382c');P([[58,56],[70,56],[74,78],[54,78]],'#c48f63');E(64,100,14,7,'#7a2018');E(64,99,9,3,'#c8382c')}   // 지하여장군: 둥근 눈 · 연지
+      x.restore()}
+    const gl=this.gl;this.faceTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.faceTex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+    gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  }
   render(gl,M,W,H,dpr,solid=false){
     const {map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document}=this.d,exits=this.d.getExits(),selected=this.d.getSelected();
     const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
-    if(!this.p)this.init(gl);this.atlas();
+    if(!this.p)this.init(gl);this.atlas();const jang=this.d.getLook?.()==='jangseung';if(jang)this.faceAtlas();const night=document.documentElement.dataset.theme==='dark';
     const unit=1/(512*2**z),f=Math.max(0,Math.min(1,(z-PILLAR_PX[0][0])/(PILLAR_PX[1][0]-PILLAR_PX[0][0]))),lerp=i=>PILLAR_PX[0][i]+(PILLAR_PX[1][i]-PILLAR_PX[0][i])*f;
     const sPx=lerp(1),half=sPx/2*unit,hgt=lerp(2)*unit,St=PILLAR_STYLE,grey=St.grey[document.documentElement.dataset.theme==='dark'?'dark':'light'],onTop=map.getPitch()<30;
     const proj=(x,y,zz)=>{const X=M[0]*x+M[4]*y+M[8]*zz+M[12],Y=M[1]*x+M[5]*y+M[9]*zz+M[13],Z=M[2]*x+M[6]*y+M[10]*zz+M[14],Wc=M[3]*x+M[7]*y+M[11]*zz+M[15];return Wc<=0?null:[(X/Wc+1)/2*W,(1-Y/Wc)/2*H,Z/Wc]};
@@ -214,7 +237,8 @@ void main(){
     }
     items.sort((a,b)=>a[1][1]-b[1][1]);   // far (higher on screen) first, near ones drawn over them
     const Ld=[-.6,.8];   // light from the south-west (map y runs south)
-    for(const [m,b,ref,lc] of items){
+    if(jang)for(const [m,b,ref,lc] of items)this.jangseung(m,b,ref,lc,{proj,quad,LOC,glyph,unit,sPx,half,hgt,onTop,Ld,night,NO});
+    if(!jang)for(const [m,b,ref,lc] of items){
       const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,ink=.299*lc[0]+.587*lc[1]+.114*lc[2]>.62?St.inkOnLight:St.ink;
       const ex=proj(x+half,y,0),ey=proj(x,y+half,0),sh=Math.min(sPx,ex&&ey?2*Math.max(Math.hypot(ex[0]-b[0],ex[1]-b[1]),Math.hypot(ey[0]-b[0],ey[1]-b[1])):0);   // 그림자는 기둥이 화면에 보이는 크기로: 고정 px 이던 때 1인칭(눈높이)에서 수 km 밖 기둥 그림자가 수평선에 검은 얼룩으로 쌓였다
       if(sh>.5)quad([[b[0]-sh*1.1,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]+sh*.65,b[2]],[b[0]-sh*1.1,b[1]+sh*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],NO.slice(0,3),NO.slice(0,3),NO,NO,0);   // shadow on the ground
@@ -239,9 +263,44 @@ void main(){
     const st=20*4,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,st,off*4)};
     ptr('a_pos',3,0);ptr('a_local',2,3);ptr('a_col',3,5);ptr('a_ink',3,8);ptr('a_glyph',4,11);ptr('a_guv',4,15);ptr('a_mode',1,19);
     gl.uniform2f(this.uView,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uTex,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.faceTex||this.tex);gl.uniform1i(this.uFace,1);gl.activeTexture(gl.TEXTURE0);gl.uniform1f(this.uTime,(performance.now()%1e6)/1000);
     if(solid){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // solid park buildings hide them; through see-through ones they show
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,data.length/20);
     for(const n of Object.keys(this.attr))gl.disableVertexAttribArray(this.attr[n]);
+  }
+  // 조선 출구: 장승 한 기(기둥보다 25 % 높게) — 아래 몸통에 출구 번호(밝은 나무에 먹 글자), 위에 얼굴(홀수 번 천하대장군 · 짝수 지하여장군),
+  // 갓 테 · 관모(노선색 띠), 그 양쪽(동 · 서)에 횃불(밤엔 불빛 번짐). 기둥과 같은 화면 크기 규칙 · 같은 그리기 한 번
+  jangseung(m,b,ref,lc,{proj,quad,LOC,glyph,unit,sPx,half,hgt,onTop,Ld,night,NO}){
+    const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,Ht=hgt*1.25,male=(parseInt(ref,10)||1)%2===1,FU=male?[0,0,.5,1]:[.5,0,1,1];
+    const ink=[.13,.09,.06],woodL=[.86,.77,.62],wood=[.55,.39,.25],hatC=male?[.27,.19,.15]:[.34,.18,.16];
+    const ex=proj(x+half,y,0),ey=proj(x,y+half,0),sh=Math.min(sPx,ex&&ey?2*Math.max(Math.hypot(ex[0]-b[0],ex[1]-b[1]),Math.hypot(ey[0]-b[0],ey[1]-b[1])):0);
+    if(sh>.5)quad([[b[0]-sh*1.1,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]+sh*.65,b[2]],[b[0]-sh*1.1,b[1]+sh*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],[0,0,0],[0,0,0],NO,NO,0);
+    // 횃불: 장승 양쪽, 기둥 · 불꽃 · (밤) 불빛 — 뒤쪽 것을 먼저
+    const torch=(dx,phase)=>{const tx=x+dx,top=Ht*.78,B0=proj(tx,y,0),T0=proj(tx,y,top);if(!B0||!T0)return;const pw=Math.max(1.2,sPx*.11),fl=sPx*.85;
+      quad([[B0[0]-pw/2,B0[1],B0[2]],[B0[0]+pw/2,B0[1],B0[2]],[T0[0]+pw/2,T0[1],T0[2]],[T0[0]-pw/2,T0[1],T0[2]]],LOC,[.32,.22,.14],[0,0,0],NO,NO,1);   // 나무 기둥
+      quad([[T0[0]-pw*1.6,T0[1],T0[2]],[T0[0]+pw*1.6,T0[1],T0[2]],[T0[0]+pw*1.9,T0[1]-pw*1.4,T0[2]],[T0[0]-pw*1.9,T0[1]-pw*1.4,T0[2]]],LOC,[.18,.15,.13],[0,0,0],NO,NO,1);   // 쇠 화로
+      if(night){const g=fl*1.9,cy=T0[1]-pw*1.4-fl*.35;quad([[T0[0]-g,cy+g,T0[2]],[T0[0]+g,cy+g,T0[2]],[T0[0]+g,cy-g,T0[2]],[T0[0]-g,cy-g,T0[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],[1,1,1],[phase,0,0],NO,NO,5)}
+      const fy=T0[1]-pw*1.4;quad([[T0[0]-fl*.32,fy,T0[2]],[T0[0]+fl*.32,fy,T0[2]],[T0[0]+fl*.32,fy-fl,T0[2]],[T0[0]-fl*.32,fy-fl,T0[2]]],[[-1,0],[1,0],[1,1],[-1,1]],[1,1,1],[phase,0,0],NO,NO,4)};
+    const tsep=half*2.6,phase=(x*7919e3+y*104729e3)%6.283;
+    const order=[[-tsep,phase],[tsep,phase+2.1]].sort((a,c)=>{const pa=proj(x+a[0],y,0),pc=proj(x+c[0],y,0);return (pa?pa[1]:0)-(pc?pc[1]:0)});
+    torch(...order[0]);
+    // 몸통 · 갓: 높이에 따라 반폭이 달라지는 네모 기둥(t0 → t1, 반폭 r0 → r1 · 반폭 몫), 면마다 fill(P, 면 폭, 면 높이, 밝기)
+    const box=(t0,t1,r0,r1,fill)=>{const C=[[-1,-1,0,-1],[1,-1,1,0],[1,1,0,1],[-1,1,-1,0]];
+      for(let i=0;i<4;i++){const [ax,ay,nx,ny]=C[i],[bx,by]=C[(i+1)%4],A0=proj(x+ax*half*r0,y+ay*half*r0,Ht*t0),B0=proj(x+bx*half*r0,y+by*half*r0,Ht*t0),A1=proj(x+ax*half*r1,y+ay*half*r1,Ht*t1),B1=proj(x+bx*half*r1,y+by*half*r1,Ht*t1);if(!A0||!B0||!A1||!B1)continue;
+        if((B0[0]-A0[0])*(A1[1]-A0[1])-(B0[1]-A0[1])*(A1[0]-A0[0])<=0)continue;
+        const k=.88+.12*(nx*Ld[0]+ny*Ld[1]);fill([B0,A0,A1,B1],Math.hypot(B0[0]-A0[0],B0[1]-A0[1]),Math.hypot(B1[0]-B0[0],B1[1]-B0[1]),k)}
+      return [[-1,-1],[1,-1],[1,1],[-1,1]].map(([cx,cy])=>proj(x+cx*half*r1,y+cy*half*r1,Ht*t1))};
+    const wr=t=>.86+.2*t;   // 아래가 좁고 위가 넓은 통나무
+    box(0,.06,wr(0),wr(.06),(P,w,h,k)=>quad(P,LOC,wood.map(v=>v*k*.8),[0,0,0],NO,NO,1));
+    box(.06,.46,wr(.06),wr(.46),(P,w,h,k)=>{const text=!onTop&&w>sPx*.5;quad(P,LOC,woodL.map(v=>v*k),ink,text?glyph(uv,w,h,.86):NO,guv,text?2:1)});   // 출구 번호
+    box(.46,.82,wr(.46),wr(.82),(P,w,h,k)=>quad(P,LOC,[k,k,k],[0,0,0],NO,FU,3));   // 얼굴
+    box(.82,.86,1.28,1.28,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k*.85),[0,0,0],NO,NO,1));   // 갓 테
+    box(.86,.89,.92,.92,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
+    box(.89,.95,.92,.92,(P,w,h,k)=>quad(P,LOC,lc.map(v=>v*k),[0,0,0],NO,NO,1));   // 관모 노선색 띠
+    const T=box(.95,1,.92,male?.92:.7,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
+    if(T.every(p=>p)){const xs=T.map(p=>p[0]),ys=T.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+      const TL=T.map(p=>[(p[0]-x0)/Math.max(1e-3,x1-x0),(y1-p[1])/Math.max(1e-3,y1-y0)]);quad(T,TL,onTop?lc:hatC.map(v=>v*1.1),[1,1,1],onTop?glyph(uv,x1-x0,y1-y0,.78):NO,guv,onTop?2:1)}   // 위에서 보면 관모 윗면에 번호
+    torch(...order[1]);
   }
 }
