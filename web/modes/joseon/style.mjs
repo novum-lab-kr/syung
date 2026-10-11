@@ -39,15 +39,16 @@ export const JOSEON_DELTA = {
   // 거리: 가로등 대신 나무 기둥 위 화로에 타는 횃불(2026-10-09 덕배: 전등 → 횃불), 사람들은 흰 옷 · 쪽빛 · 흙빛 한복
   // (자동차와 횡단보도는 city_life 가 조선 모드에서 그리지 않는다)
   props: {
-    lamps: { heightM: 2.4, armM: 0, poleDiameterM: 0.14, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFB15E', poolRadiusM: 2.4, poolOpacity: 0.1, simcityPoolMaxOpacity: 0.13,
-      torch: { basketM: 0.2, basketWidthM: 0.34, flameM: 0.55, flameWidthM: 0.3, flame: ['#F06A1E', '#FFD25A'] } },
+    // 횃불(2026-10-11 행님: 조선 밤이 너무 어둡다, 횃불을 더 넣고 많이 키워라): 기둥 · 화로 · 불꽃 약 2.5배, 큰길 20 m · 골목 28 m 마다, 밤 불빛 점 ×2.2
+    lamps: { spacingM: 20, minorSpacingM: 28, heightM: 3.6, armM: 0, poleDiameterM: 0.24, pole: { light: '#5E4532', dark: '#3A2A20' }, light: '#FFB15E', poolRadiusM: 2.4, poolOpacity: 0.1, simcityPoolMaxOpacity: 0.13,
+      torch: { basketM: 0.5, basketWidthM: 0.85, flameM: 1.4, flameWidthM: 0.8, glowMul: 2.2, flame: ['#F06A1E', '#FFD25A'] } },
     people: { clothes: ['#EDE9DE', '#E2DACA', '#55688A', '#B59A6E'], hair: ['#141214', '#1A1614', '#141214', '#201A16'] },
   },
   lighting: { shadow: { color: '#5A4630' } },
   // 밤 빛(기본 팩 night 에서 다른 것만, 2026-10-11): 전기 불빛이 아니라 횃불 · 등잔 — 더 따뜻하고 더 낮게. 벽 아래는 횃불 높이만큼, 길 빛은 흙길 위 주황,
   // 저잣거리(가게 POI 가 모인 곳 — 종로 시전 자리)는 은은한 등불 빛. 창호지 불빛(hanok.night)은 그대로(몇 집, 한쪽 면 한두 칸)
   night: {
-    lights: { street: { color: '#FFA65A', strength: 1.1, heightM: 2.5 }, lampPool: { opacity: 0.2, radiusMul: 1.6 } },
+    lights: { street: { color: '#FFA65A', strength: 1.3, heightM: 3 }, lampPool: { opacity: 0.36, radiusMul: 3.4 }, moon: { k: 0.78, roofK: 0.9 } },   // 횃불 웅덩이 넓고 진하게, 달빛은 기본보다 덜 어둡게(한옥 벽 · 지붕이 묻혔다)
     ground: {
       downtown: { colors: ['#E8652A', '#FF9446', '#FFC98A'], opacity: 0.2, radiusM: 40 },
     },

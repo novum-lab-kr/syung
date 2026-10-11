@@ -550,7 +550,7 @@ export class CityLife {
       gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadePool); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
       gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
-      const sz = bulbSize(zoom, pixelRatio, .9);
+      const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));   // (횃불: 불빛 점을 더 크게)
       gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadePool); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
       gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
       gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
