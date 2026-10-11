@@ -50,8 +50,8 @@ export const JOSEON_DELTA = {
       outfitWeights: [3, 4, 2, 3, 2, 1] },
   },
   lighting: { shadow: { color: '#5A4630' } },
-  // 남산타워 자리는 거대한 삼층석탑, 롯데타워 자리는 십층석탑(web/city/landmarks_data.mjs STUPAS): 기단 둘레 지도 건물 조각을 뺀다
-  landmarkHide: [{ lngLat: [126.988227, 37.551169], radiusM: 40, minH: 0 }, { lngLat: [127.102655, 37.51254], radiusM: 80, minH: 0 }],   // 남산 · 롯데 자리 석탑 기단 둘레는 마당으로
+  // 남산타워 자리는 거대한 삼층석탑(web/city/landmarks_data.mjs STUPAS): 기단 둘레 지도 건물 조각을 뺀다
+  landmarkHide: [{ lngLat: [126.988227, 37.551169], radiusM: 40, minH: 0 }],   // 남산 자리 석탑 기단 둘레는 마당으로
   // 밤 빛(기본 팩 night 에서 다른 것만, 2026-10-11): 전기 불빛이 아니라 횃불 · 등잔 — 더 따뜻하고 더 낮게. 벽 아래는 횃불 높이만큼, 길 빛은 흙길 위 주황,
   // 저잣거리(가게 POI 가 모인 곳 — 종로 시전 자리)는 은은한 등불 빛. 창호지 불빛(hanok.night)은 그대로(몇 집, 한쪽 면 한두 칸)
   night: {

@@ -10,10 +10,11 @@ test('롯데월드타워: 555 m, 위로 갈수록 가늘고, 꼭대기는 솔기
   for (const look of ['tower', 'wood-tower']) {
     const V = verts(buildTower(L, { look }));
     assert.ok(V.every(v => v.every(Number.isFinite)), 'no NaN');
-    assert.equal(Math.max(...V.map(v => v[2])), 555);
+    assert.equal(Math.max(...V.filter(v => v[3] === 0).map(v => v[2])), 555);   // 몸 높이(조선 목탑은 그 위에 기와 지붕 · 찰주가 더 올라간다)
+    if (look === 'wood-tower') assert.ok(Math.max(...V.map(v => v[2])) > 575, '두 귀 위 찰주 · 보주');
     const widthAt = h => Math.max(...V.filter(v => Math.abs(v[2] - h) < 4 && v[3] === 0).map(v => Math.hypot(v[0], v[1])));
     assert.ok(widthAt(0) > 40 && widthAt(300) < widthAt(150) && widthAt(500) < widthAt(300), 'tapers');
-    const top = V.filter(v => v[2] > 554 && v[3] === 2);   // 윗면: 솔기 선(v = 0) 양쪽으로 떨어져 있다
+    const top = V.filter(v => v[2] > 554 && v[2] < 556 && v[3] === 2);   // 윗면: 솔기 선(v = 0) 양쪽으로 떨어져 있다
     assert.ok(top.every(v => Math.abs(v[1]) >= L.crown.gapTopM / 2 - 1e-3), 'a gap along the seam');
     assert.ok(top.some(v => v[1] > 0) && top.some(v => v[1] < 0), 'two ears');
   }

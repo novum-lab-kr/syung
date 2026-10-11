@@ -79,14 +79,28 @@ export function buildTower(L, { look = 'tower' } = {}) {
   // 조선: 다섯 층(약 21 m)마다 기와 처마. 벽에서 밖으로 내밀며 내려가고, 모서리(솔기 · 다른 대각)는 들린다
   if (wood) {
     for (let h = 34; h < C.splitM - 20; h += 42) {   // 열 층(약 42 m)마다, 위로 갈수록 짧게(촘촘한 고리는 훌라후프처럼 보였다: Codex 검토)
-      const [r] = profileAt(P, h), out = Math.max(1.8, r * .1) * (1 - .45 * h / H), drop = out * .6, lo = ring(h, 0);
-      const outer = lo.map(p => { const l = Math.hypot(p[0], p[1]) || 1, corner = Math.abs(Math.cos(2 * p[3] * 2 * Math.PI)) ** 8; return [p[0] + p[0] / l * out * (1 + .5 * corner), p[1] + p[1] / l * out * (1 + .5 * corner), h - drop + corner * drop * 1.6, p[3]] });
+      const [r] = profileAt(P, h), out = Math.max(2.6, r * .15) * (1 - .4 * h / H), drop = out * .55, lo = ring(h, 0);   // (2026-10-11 행님: 더 조선 건물답게 — 처마를 더 깊게, 귀를 더 들어 올린다)
+      const outer = lo.map(p => { const l = Math.hypot(p[0], p[1]) || 1, corner = Math.abs(Math.cos(2 * p[3] * 2 * Math.PI)) ** 6; return [p[0] + p[0] / l * out * (1 + .6 * corner), p[1] + p[1] / l * out * (1 + .6 * corner), h - drop + corner * drop * 2.4, p[3]] });
       for (let i = 0; i < N; i++) {
         const j = (i + 1) % N, a = lo[i], b = lo[j], c = outer[j], e = outer[i], sb = j === 0 ? 1 : b[3];
         const n = (() => { const ax = b[0] - a[0], ay = b[1] - a[1], bx = e[0] - a[0], by = e[1] - a[1], bz = e[2] - a[2]; let nx = ay * bz, ny = -ax * bz, nz = ax * by - ay * bx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l; return nz < 0 ? [-nx, -ny, -nz] : [nx, ny, nz] })();
         for (const [p, q, w] of [[a, a[3], 0], [b, sb, 0], [c, sb, 1], [a, a[3], 0], [c, sb, 1], [e, a[3], 1]]) push(p, n, q, 3, w);
         for (const [p, q, w] of [[a, a[3], 0], [c, sb, 1], [b, sb, 0], [a, a[3], 0], [e, a[3], 1], [c, sb, 1]]) push(p, n.map(x => -x), q, 3, w);   // 밑면(처마 안)
       }
+    }
+  }
+  if (wood) {   // 두 귀 꼭대기: 기와를 얹은 모임지붕, 그 위 금빛 찰주와 보주(넓은 금판 대신 — 목탑 상륜)
+    for (const half of [1, -1]) {
+      const top = ring(H, half), cx = top.reduce((s, p) => s + p[0], 0) / top.length, cy = top.reduce((s, p) => s + p[1], 0) / top.length;
+      const eave = top.map(p => [cx + (p[0] - cx) * 1.35, cy + (p[1] - cy) * 1.35, H - 2.5, p[3]]), apex = [cx, cy, H + 9];
+      for (let i = 0; i < eave.length; i++) { const a = eave[i], b = eave[(i + 1) % eave.length]; const n = (() => { const ux = b[0] - a[0], uy = b[1] - a[1], vx = apex[0] - a[0], vy = apex[1] - a[1], vz = apex[2] - a[2]; let nx = uy * vz, ny = -ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; return nz < 0 ? [-nx / l, -ny / l, -nz / l] : [nx / l, ny / l, nz / l] })();
+        push(a, n, a[3], 3, 1); push(b, n, b[3], 3, 1); push(apex, n, a[3], 3, 0);
+        for (const p of [a, top[(i + 1) % top.length], b]) push(p, [0, 0, -1], a[3], 3, 0); push(a, [0, 0, -1], a[3], 3, 0); push(top[i], [0, 0, -1], a[3], 3, 0); push(top[(i + 1) % top.length], [0, 0, -1], a[3], 3, 0) }   // 처마 밑
+      const R = 1.1; for (let k = 0; k < 8; k++) { const a0 = k / 8 * 2 * Math.PI, a1 = (k + 1) / 8 * 2 * Math.PI, A = [cx + R * Math.cos(a0), cy + R * Math.sin(a0)], B = [cx + R * Math.cos(a1), cy + R * Math.sin(a1)], n = [Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), 0];
+        quad([...A, H + 7], [...B, H + 7], [...B, H + 24], [...A, H + 24], n, [0, 0, 0, 0], 2) }   // 찰주
+      for (const [z0, z1, r0, r1] of [[H + 12, H + 13.5, 2.6, 2.6], [H + 16, H + 17.5, 2.2, 2.2], [H + 20, H + 21.2, 1.8, 1.8], [H + 24, H + 26.5, 1.6, 2.2], [H + 26.5, H + 30, 2.2, .3]])   // 보륜 셋 · 보주
+        for (let k = 0; k < 8; k++) { const a0 = k / 8 * 2 * Math.PI, a1 = (k + 1) / 8 * 2 * Math.PI, n = [Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), .3];
+          quad([cx + r0 * Math.cos(a0), cy + r0 * Math.sin(a0), z0], [cx + r0 * Math.cos(a1), cy + r0 * Math.sin(a1), z0], [cx + r1 * Math.cos(a1), cy + r1 * Math.sin(a1), z1], [cx + r1 * Math.cos(a0), cy + r1 * Math.sin(a0), z1], n, [0, 0, 0, 0], 2) }
     }
   }
   return new Float32Array(d);
@@ -228,7 +242,7 @@ void main(){
 }`;
 const FS = `#version 300 es
 precision highp float; in vec3 v_n; in vec3 v_p; in vec3 v_m; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night, u_woodTower, u_split, u_lattice, u_H;
-uniform vec3 u_glass, u_frame, u_seamC, u_crownC, u_wood, u_plaster, u_giwa, u_gold, u_win;
+uniform vec3 u_glass, u_frame, u_seamC, u_crownC, u_wood, u_plaster, u_giwa, u_gold, u_win, u_dan, u_green, u_blue, u_stoneB;
 out vec4 o;
 float pint(float x,float a,float b){float f=floor(x),r=x-f;return f*(b-a)+clamp(r-a,0.0,b-a);}
 float pulse(float x,float a,float b,float w){w=max(w,1e-4);return (pint(x+w*.5,a,b)-pint(x-w*.5,a,b))/w;}
@@ -243,14 +257,29 @@ void main(){
     col = u_giwa * (1. - .25 * g) * light; if (v_m.z > .9) col = mix(col, vec3(.9, .88, .82) * light, .7);
   } else if (kind > 1.5) {   // 윗면
     col = (u_woodTower > .5 ? u_gold : u_frame * .9) * light;
-  } else if (u_woodTower > .5) {   // 조선 몸: 나무 기둥(둘레 몫 1/48) · 층 보(4.2 m) · 회벽, 창호 불빛(밤)
-    float post = pulse(s * 48., 0., .14, ws * 48.), beam = pulse(z / 4.2, 0., .12, wz / 4.2);
-    vec2 cell = vec2(floor(s * 48.), floor(z / 4.2));
-    bool lit = u_night > .5 && hash(cell) < .35;
-    col = (lit ? u_win * 1.2 : u_plaster * light);
-    col = mix(col, u_wood * light, max(post, beam));
+  } else if (u_woodTower > .5) {   // 조선 몸: 붉은 기둥(주칠) · 층 보 · 회벽에 창호 살, 처마 밑 공포 · 단청 띠, 처마 위 난간, 돌 기단(2026-10-11 행님: 더 조선 건물답게)
+    float zz = mod(z - 34., 42.), top = u_split - 18.;
+    if (z < 12.) {   // 돌 기단: 다듬은 화강암 마름돌
+      vec2 st = vec2(s * 120. + floor(z / 1.5) * .5, z / 1.5); float j = max(pulse(st.x, 0., .06, ws * 120.), pulse(st.y, 0., .08, wz / 1.5));
+      col = u_stoneB * (.92 + .1 * hash(floor(st))) * light * (1. - .35 * j);
+    } else if (z > 20. && zz > 35.2 && z < top) {   // 처마 밑: 아래 창방(녹색 띠에 단청 머리초) · 위 공포(층층이 내민 나무 블록)
+      float t = (zz - 35.2) / 6.8;
+      if (t < .38) { float m = fract(s * 48.); col = u_green * light; col = mix(col, u_blue * light, step(.38, abs(m - .5)) * .8); col = mix(col, u_dan * light, pulse(s * 48., .1, .16, ws * 48.)); col = mix(col, vec3(.92, .9, .84) * light, pulse(s * 192., .45, .55, ws * 192.) * step(.15, t) * step(t, .25)); }
+      else { float blk = pulse(s * 144., 0., .55, ws * 144.), tier = pulse((t - .38) / .62 * 3., 0., .7, wz / 6.8 * 3. / .62); col = mix(u_green * .55, mix(u_green, u_dan, step(.5, fract(s * 72.))) * 1.05, blk * tier) * light; }
+    } else if (z > 34. && zz < 2.6 && z < top + 6.) {   // 처마 위 난간: 붉은 난간동자 · 위 난간대
+      float bal = pulse(s * 240., 0., .3, ws * 240.), rail = step(.78, zz / 2.6);
+      col = mix(u_wood * .45 * light, u_dan * light, max(bal, rail));
+    } else {   // 몸: 회벽 · 창호(살 무늬, 밤엔 몇 칸 창호지 불빛) · 붉은 기둥 · 짙은 보
+      float post = pulse(s * 48., 0., .14, ws * 48.), beam = pulse(z / 4.2, 0., .12, wz / 4.2);
+      vec2 cell = vec2(floor(s * 48.), floor(z / 4.2));
+      bool lit = u_night > .5 && hash(cell) < .35;
+      float lat = max(pulse(s * 48. * 4., 0., .12, ws * 192.), pulse(z / 4.2 * 3., 0., .12, wz / 1.4)) * step(.25, fract(z / 4.2)) * step(fract(z / 4.2), .9);   // 창호 살
+      col = (lit ? u_win * 1.2 : u_plaster * light);
+      col = mix(col, (lit ? u_win * .55 : u_wood * light), lat * .55);
+      col = mix(col, u_wood * light, beam);
+      col = mix(col, u_dan * light, post);
+    }
     col = mix(col, u_wood * .6 * light, seam);
-    col = mix(col, u_gold * light, smoothstep(u_H - 5., u_H - 1.5, z));   // 금빛은 두 귀 끝 테두리만(넓은 금판은 따로 놀았다: Codex 검토)
   } else {   // 심시티 몸: 은청색 유리, 흰 금속 세로줄(성기고 진하게), 옅은 층 줄, 솔기 홈은 어둡게
     float sky = .5 + .5 * n.z;
     col = u_glass * (light * .85 + .25 * sky);
@@ -273,15 +302,15 @@ void main(){
 }`;
 const hex = h => { const v = parseInt(h.slice(1), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
 const LOOK = {
-  light: { glass: '#C4D3DD', frame: '#F4F6F6', seamC: '#2E3A44', crownC: '#EEF5F8', win: '#FFE9B8', wood: '#6A4A33', plaster: '#ECE4D2', giwa: '#4D575C', gold: '#D9A43A' },
-  dark: { glass: '#3B4C5C', frame: '#C9D2D8', seamC: '#141B22', crownC: '#BFE3FF', win: '#FFD08A', wood: '#4A3224', plaster: '#8E897C', giwa: '#2E3537', gold: '#C08A2A' },
+  light: { glass: '#C4D3DD', frame: '#F4F6F6', seamC: '#2E3A44', crownC: '#EEF5F8', win: '#FFE9B8', wood: '#5A3E2B', plaster: '#ECE4D2', giwa: '#4A5459', gold: '#D9A43A', dan: '#9C3B2C', green: '#3E7A66', blue: '#2F5A86', stoneB: '#B9B2A4' },
+  dark: { glass: '#3B4C5C', frame: '#C9D2D8', seamC: '#141B22', crownC: '#BFE3FF', win: '#FFD08A', wood: '#3E2A1E', plaster: '#8E897C', giwa: '#2C3336', gold: '#C08A2A', dan: '#6E2A20', green: '#2A5446', blue: '#203E5C', stoneB: '#6E6A62' },   // dan 주칠 · green 뇌록 · blue 단청 청 · stoneB 기단 돌
 };
 
 export class CityLandmarks {
   constructor() { this.gl = null; this.items = null; this.broken = false; this.MT = new Float32Array(16) }
   init(gl) {
     this.gl = gl; this.p = compileProgram(gl, VS, FS);
-    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_woodTower', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_woodTower', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win', 'u_dan', 'u_green', 'u_blue', 'u_stoneB'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.items = LANDMARKS.map(L => { const [x, y] = toM(L.lngLat[0], L.lngLat[1]), a = L.seamDeg * Math.PI / 180; return { L, x, y, rot: [Math.cos(a), Math.sin(a)], meshes: {} } });
     this.pS = compileProgram(gl, STUPA_VS, STUPA_FS);
     this.uS = Object.fromEntries(['u_matrix', 'u_mu', 'u_scale', 'u_wmul', 'u_at', 'u_rot', 'u_light', 'u_stone', 'u_lit', 'u_night', 'u_H0', 'u_relief'].map(n => [n, gl.getUniformLocation(this.pS, n)]));
@@ -307,7 +336,7 @@ export class CityLandmarks {
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix, false, MT); gl.uniform1f(u.u_mu, MU);
     gl.uniform3f(u.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2fv(u.u_lit, lit);
     gl.uniform1f(u.u_night, dark ? 1 : 0); gl.uniform1f(u.u_woodTower, wood ? 1 : 0);
-    for (const k of ['glass', 'frame', 'seamC', 'crownC', 'win', 'wood', 'plaster', 'giwa', 'gold']) gl.uniform3fv(u['u_' + k], hex(C[k]));
+    for (const k of ['glass', 'frame', 'seamC', 'crownC', 'win', 'wood', 'plaster', 'giwa', 'gold', 'dan', 'green', 'blue', 'stoneB']) gl.uniform3fv(u['u_' + k], hex(C[k]));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     for (const it of this.items) {
       if (STUPAS.some(T => T.replaces === it.L.id && T.looks.includes(look))) continue;   // 조선: 롯데타워 자리는 거대한 석탑
