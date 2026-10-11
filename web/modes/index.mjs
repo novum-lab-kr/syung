@@ -71,6 +71,14 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     if (S.city?.pack) checkPack(S.city.pack, `${id}.city.pack`);
     if (S.park?.style) checkPack(S.park.style, `${id}.park.style`);
     if (S.park && 'towerM' in S.park && !(typeof S.park.towerM === 'number' && S.park.towerM > 0)) throw new Error(`${id}.park.towerM: 0 보다 큰 수`);
+    if (S.park && 'landmarkRides' in S.park) {   // 랜드마크 놀이기구: 목록, 줄마다 kind · lngLat(서울 둘레) · diameterM
+      if (!Array.isArray(S.park.landmarkRides)) throw new Error(`${id}.park.landmarkRides: 목록`);
+      S.park.landmarkRides.forEach((L, k) => { const at = `${id}.park.landmarkRides[${k}]`;
+        oneOf(L?.kind, ['ferris'], `${at}.kind`); if (L?.kind === undefined) throw new Error(`${at}.kind: 필요`);
+        if (!(Array.isArray(L.lngLat) && L.lngLat.length === 2 && L.lngLat[0] > 126 && L.lngLat[0] < 128 && L.lngLat[1] > 37 && L.lngLat[1] < 38)) throw new Error(`${at}.lngLat: 서울 둘레 [경도, 위도]`);
+        if (!(typeof L.diameterM === 'number' && L.diameterM > 0 && L.diameterM <= 400)) throw new Error(`${at}.diameterM: 0 ~ 400 m`);
+        if ('yawDeg' in L && typeof L.yawDeg !== 'number') throw new Error(`${at}.yawDeg: 수`) });
+    }
     for (const g of ['city', 'park']) if (S[g] && 'enabled' in S[g] && typeof S[g].enabled !== 'boolean') throw new Error(`${id}.${g}.enabled: 참 · 거짓`);
     return S;
   }

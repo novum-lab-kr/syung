@@ -642,6 +642,20 @@ const EXAG = [13.5, 14.5, 15.5], EXAG_H = [2.4, 1.6, 1], EXAG_V = [1.35, 1.15, 1
 const atZoom = (z, v) => z <= EXAG[0] ? v[0] : z >= EXAG[2] ? v[2]
   : z <= EXAG[1] ? v[0] + (v[1] - v[0]) * (z - EXAG[0]) : v[1] + (v[2] - v[1]) * (z - EXAG[1]);
 
+// 랜드마크 대관람차 한 대(설정 park.landmarkRides 의 한 줄 {kind:'ferris', lngLat, diameterM}): 보통 놀이기구와 같은 모양 · 그리기, 지름만 크게
+function landmarkSite(L, k) {
+  const [lon, lat] = L.lngLat, D = L.diameterM, q = fnv1a('landmark' + k);
+  return { i: -1 - k, lon, lat, x: mercX(lon), y: mercY(lat), mu: muOf(lat), radius_m: .3 * D, height_m: 1.1 * D, kind: 'ferris', lotte: false, landmark: true, q, R: .3 * D, r: .3 * D, mastR: 10,
+    colA: 0, colB: 1, struct: STRUCT, shade: SHADE_I, yaw: (L.yawDeg ?? 0) * Math.PI / 180, phase: 0, period: 150,   // 큰 바퀴는 천천히(한 바퀴 2분 반)
+    sxy: D, sz: D, top: 1.1 * D, wide: .55 * D, collar: 35, pole: 65, hue: 2, maxExagH: 1.15, maxExagV: 1.15 };   // (이미 커서 멀리서 키우지 않는다 — 가로만 키우면 바퀴가 찌그러진다)
+}
+// 자리 고르기가 준 놀이기구에 랜드마크를 더한다: 랜드마크 둘레(서로 몸통 폭만큼)에 겹치는 보통 놀이기구는 뺀다
+function withLandmarks(sites, landmarks) {
+  if (!landmarks?.length) return sites;
+  const keep = sites.filter(s => !s.landmark && landmarks.every(L => Math.hypot((s.lon - L.lon) * 88200, (s.lat - L.lat) * 111000) > L.wide + (s.wide || 60)));
+  return [...keep, ...landmarks];
+}
+
 export class RideLayer {
   constructor(towers,options={}) {
     this.towers = towers || [];
@@ -671,7 +685,9 @@ export class RideLayer {
       s.hue = (q >>> 3) % 7;                                                // where this ride starts in the accent colours
       return s;
     });
-    this._sites=options.deferPlacement?[]:selectRideSites(this.candidates,options).sites;
+    // 랜드마크 놀이기구(설정 park.landmarkRides — 롤코: 하늘공원 대관람차, 2026-10-11 행님): 자리 고르기와 상관없이 늘 그 자리에, 크기 그대로
+    this.landmarks = (options.landmarks || []).map((L, k) => landmarkSite(L, k));
+    this._sites=withLandmarks(options.deferPlacement?[]:selectRideSites(this.candidates,options).sites,this.landmarks);
     this.stats = { tris: 0, rides: 0, ms: 0 };
     this._moving = false; this.ping = 0;
   }
@@ -680,12 +696,15 @@ export class RideLayer {
   sites() { return this._sites.map(s => ({ lon: s.lon, lat: s.lat, x: s.x, y: s.y, radius_m: s.radius_m, height_m: s.height_m, kind: s.kind })) }
 
   setSites(sites){
+    sites=withLandmarks(sites,this.landmarks);
+    if(this.p&&this.mc)for(const s of this.landmarks){const m=this.mc.fromLngLat([s.lon,s.lat]);s.x=m.x;s.y=m.y;s.mu=m.meterInMercatorCoordinateUnits()}
     this._sites=sites;
     if(this.kind)for(const k of KINDS){const K=this.kind[k];K.order=sites.filter(s=>s.kind===k);K.data=new Float32Array(K.order.length*INSTANCE_FLOATS)}
   }
 
   init(gl, maplibregl) {
     if (this.p) return;
+    this.mc = maplibregl?.MercatorCoordinate;
     if (maplibregl?.MercatorCoordinate) {                                   // exactly the map's own numbers
       const O = maplibregl.MercatorCoordinate.fromLngLat([126.978, 37.5665]); this.O = { x: O.x, y: O.y };
       for (const s of this._sites) { const m = maplibregl.MercatorCoordinate.fromLngLat([s.lon, s.lat]); s.x = m.x; s.y = m.y; s.mu = m.meterInMercatorCoordinateUnits() }

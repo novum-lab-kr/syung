@@ -44,7 +44,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     const drawn=cityOn()&&live.cityBuildings?live.cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
     if(park&&live.kitReady&&coasterGeo.bld?.towers?.length){   // the rides: one for each tower, in the parks round it (the towers stay buildings) — first, so the track and trains depth-test against them
       if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
-        rides=new live.RideLayer(coasterGeo.bld.towers,{deferPlacement:true});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
+        rides=new live.RideLayer(coasterGeo.bld.towers,{deferPlacement:true,landmarks:S.park.landmarkRides});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
         if(ridePlacement)rides.setSites(ridePlacement.sites);   // 다시 들어왔을 때: 자리 계산(CPU)은 남겨 두었다
         else ridePlacement=new live.CoasterRidePlacement(rides.candidates.filter(c=>!c.lotte&&c.height_m>=S.park.towerM),{   // 놀이기구 씨앗: towerM 이상 탑(롯데월드타워는 8호선 코스가 감아 오르는 자리라 빼고), 자리는 공원 안(inPark)
           map,minH:live.cityBuildings.P.minH,missingH:live.cityBuildings.P.missingH,
