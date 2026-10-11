@@ -540,3 +540,12 @@ test('정류장 버스 종류: 지나는 노선이 가장 많은 종류, 같으�
   const data={routesByStop:new Map([['a',[{type:'branch'},{type:'trunk'},{type:'branch'}]],['b',[{type:'branch'},{type:'trunk'}]]])};
   assert.equal(stopType(data,'a'),'branch');assert.equal(stopType(data,'b'),'trunk');assert.equal(stopType(data,'z'),'other');
 });
+
+test('조선 청사초롱: 줌 18 위로는 지도와 같이 커진다(growFrom), 기본 BUS 기둥은 화면 크기 고정',()=>{
+  const c=[127.0656,37.6149],w=v=>{const r=v.posts.length?v.hits[0].visualBounds:null;return r[2]-r[0];};
+  const at=(zoom,growFrom)=>placeStopPosts([stopPoint('a',...c)],[],{...topDownView(zoom,c),growFrom});
+  assert.ok(Math.abs(w(at(20,null))-w(at(18,null)))<1e-6,'BUS 기둥: 18 위로 같은 px');
+  assert.ok(Math.abs(w(at(20,18))/w(at(18,18))-4)<1e-6,'청사초롱: 줌 2 단계에 4배');
+  assert.ok(Math.abs(w(at(17,18))-w(at(17,null)))<1e-6,'18 아래는 그대로');
+  assert.deepEqual(at(20,18).posts[0].rgb,[.25,.29,.30],'tint 없으면 기본 색');
+});

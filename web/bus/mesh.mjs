@@ -119,7 +119,7 @@ float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.
 float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   if(m>35.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
-    float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.78,.46),v_color.rgb,.25);alpha*=.5*g*g;}
+    float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.8,.5),v_color.rgb,.22);alpha*=.8*g*g;}
   else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
   else if(m>12.5&&m<13.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
   else {
@@ -149,8 +149,8 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     else if(m>30.5&&m<32.5){   // 비단 = 버스 종류 색(아래 두 단은 × .91). 팔각 면 사이에 살
       float f=fract(v_uv.x),rib=smoothstep(0.,.1,min(f,1.-f));col=v_color.rgb*(m>31.5?.91:1.);
       // 밤: 안에 불을 켠 것처럼 — 따뜻한 빛이 비단을 지나 가운데가 가장 밝고 위아래 · 면 가장자리로 갈수록 어둡다, 살은 그림자로 비친다
-      float k=1.-abs(v_uv.y-.5)*2.,panel=sin(3.1416*f),glow=(.72+.5*k*k)*(.82+.18*panel);
-      col=mix(col*mix(.84,1.,rib),mix(col,vec3(1.,.86,.6),.42)*glow*mix(.5,1.,rib),u_dark);
+      float k=1.-abs(v_uv.y-.5)*2.,panel=sin(3.1416*f),glow=(1.05+.6*k*k)*(.86+.14*panel);   // 덕배 2026-10-11: 더 밝게
+      col=mix(col*mix(.84,1.,rib),mix(col,vec3(1.,.88,.64),.5)*glow*mix(.62,1.,rib),u_dark);
     }
     if(abs(m-8.)<.2){
       vec2 p=(v_uv-.5)*2.;float r=length(p);
@@ -199,10 +199,12 @@ function effectMesh(beam) {
 }
 
 // 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 걸음, headlights: 밤 전조등,
-//   stop: 정류장 기둥 메시(없으면 BUS 기둥), stopGlow: 밤에 정류장 위에 깊이 없이 겹치는 불빛 메시}. 'bus' 는 기본.
+//   stop: 정류장 기둥 메시(없으면 BUS 기둥), stopGlow: 밤에 정류장 위에 깊이 없이 겹치는 불빛 메시,
+//   stopGrowFrom: 이 줌 위로는 정류장이 화면 크기 고정을 풀고 지도와 같이 커진다(없으면 고정)}. 'bus' 는 기본.
 // 다른 모양(조선 가마)은 본체가 첫 화면에서 등록한다(렌더러가 처음 그리기 전에 — 셰이더의 재료 번호는 이 파일에 있다)
 const BUS_LOOKS = new Map([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
-export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow }) }
+export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null, stopGrowFrom = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow, stopGrowFrom }) }
+export function busStopGrowFrom(look) { return BUS_LOOKS.get(look)?.stopGrowFrom ?? null }
 
 export class BusRenderer {
   constructor(){this.matrix=new Float32Array(16);this.stats={vehicles:0,stops:0,drawCalls:0};}

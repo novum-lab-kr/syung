@@ -95,7 +95,7 @@ export function buildChorongPostMesh() {
 }
 // 밤: 초롱 둘레의 은은한 불빛(카메라를 보는 판, 재료 36 — 셰이더가 BUS 판처럼 기울기만큼 세운다). 깊이를 쓰지 않는 따로 묶음
 export function buildChorongGlowMesh() {
-  const [x, y, z] = CHORONG_CENTER, r = 13, data = [];
+  const [x, y, z] = CHORONG_CENTER, r = 16, data = [];
   const P = [[x-r,y,z-r,0,0],[x+r,y,z-r,1,0],[x+r,y,z+r,1,1],[x-r,y,z+r,0,1]];
   for (const i of [0,1,2,0,2,3]) data.push(P[i][0], P[i][1], P[i][2], 0, -1, 0, P[i][3], P[i][4], 36);
   return new Float32Array(data);

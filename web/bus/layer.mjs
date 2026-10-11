@@ -2,7 +2,7 @@
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
 import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busMotionDistance,
   validCoordinate, intersects, contains} from './motion.mjs';
-import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './mesh.mjs';
+import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale, busStopGrowFrom} from './mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../lib/journey_map_style.mjs';
 // 차 모양마다 크기 규칙(모델의 몫): widthK 모델 폭(차로에 맞출 때), halfWidth 클릭 상자 반폭, growFrom 이 줌 위로는 지도와 같이 커짐(없으면 화면 크기 상한)
@@ -203,20 +203,22 @@ export function journeyBusRange(line, leg) {
 }
 
 // 정류장 기둥(BUS 표지판)을 화면에 놓는다. features: 정류장 Point, exits: 출구 [lng,lat],
-// view: {project(world,z), width, height, zoom, unit, origin, bearing, phone, selected}. → {posts, hits}
+// view: {project(world,z), width, height, zoom, unit, origin, bearing, phone, selected, tint(f) → rgb, growFrom}. → {posts, hits}
+// growFrom: 이 줌 위로는 기둥 · 출구 자리가 지도와 같이 커진다(조선 청사초롱 · 장승 — 줌 18 위에서 화면 크기 고정이면 너무 작았다, 덕배 2026-10-11)
 export function placeStopPosts(features, exits, view) {
-  const {project,width,height,zoom,unit,origin,bearing=0,phone=false,selected=null,tint=null}=view,posts=[],hits=[];
+  const {project,width,height,zoom,unit,origin,bearing=0,phone=false,selected=null,tint=null,growFrom=null}=view,posts=[],hits=[];
+  const grow=growFrom==null?1:2**Math.max(0,zoom-growFrom);
   const bounds=points=>[Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y))];
   const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
   const hitBox=(r,minimum)=>{const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2,w=Math.max(minimum,r[2]-r[0]+6),h=Math.max(minimum,r[3]-r[1]+6);return[cx-w/2,cy-h/2,cx+w/2,cy+h/2];};
   // Reserve the full screen silhouettes of nearby exit pillars before placing BUS signs.
   // 출구 기둥 폭은 화면 px 로 줌 16 에서 11 · 18 에서 17(maplibre_runtime PILLAR_PX): 그 절반 + 2px 만 비운다(손가락 칸 크기로 비우면 출구 옆 정류장이 빠졌다)
-  const occupied=[],exitHeight=20+Math.max(0,Math.min(2,zoom-16))*8,exitHalf=(11+6*Math.max(0,Math.min(1,(zoom-16)/2)))/2+2;
+  const occupied=[],exitHeight=(20+Math.max(0,Math.min(2,zoom-16))*8)*grow,exitHalf=(11+6*Math.max(0,Math.min(1,(zoom-16)/2)))*grow/2+2;
   for(const coordinate of exits){
     const world=busMercator(coordinate),base=project(world,0),top=project(world,exitHeight*unit);
     if(base&&top)occupied.push(pad(bounds([base,top]),exitHalf,5));
   }
-  const scale=busPostScale(zoom),c=Math.cos(bearing),s=Math.sin(bearing);
+  const scale=busPostScale(zoom)*grow,c=Math.cos(bearing),s=Math.sin(bearing);
   const candidates=features.map(f=>({f,world:busMercator(f.geometry.coordinates)}));
   // Deterministic centre-first placement; a selected stop remains at the head of the list.
   candidates.sort((a,b)=>Number(b.f.properties.id===selected)-Number(a.f.properties.id===selected)||
@@ -682,7 +684,7 @@ class BusLayer {
     }
     const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
       {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id,
-        tint:f=>rgb(color({type:f.properties.type},this.theme))});   // 정류장 색 = 버스 종류 색(BUS 기둥은 쓰지 않고, 조선 청사초롱 비단이 쓴다)
+        tint:f=>rgb(color({type:f.properties.type},this.theme)),growFrom:busStopGrowFrom(this.look)});   // 정류장 색 = 버스 종류 색(BUS 기둥은 쓰지 않고, 조선 청사초롱 비단이 쓴다)
     posts.push(...placement.posts);this.stopHits.push(...placement.hits);
     this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,look:this.look,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;
