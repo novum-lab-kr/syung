@@ -52,7 +52,7 @@ test('coaster platforms test building depth while the ordinary map preserves its
 
 test('station labels keep their route names in every mode (the coaster rides the viaduct; no ground route signs to stand in for them)', async () => {
   const layers = new Map(), updates = [];
-  const context = vm.createContext({ Map, signCollisionLayout, ready: true, coaster: false, simcity: false, PHONE: false, RIDE_H: 200,
+  const context = vm.createContext({ Map, signCollisionLayout, ready: true, coaster: false, simcity: false, PHONE: false,
     effectiveTheme: () => 'light', cityPack: () => null, CityBuildings: class { set() {} },
     map: { addLayer: layer => layers.set(layer.id, layer), getLayer: id => layers.get(id),
       getLayoutProperty: (id, key) => layers.get(id).layout[key],

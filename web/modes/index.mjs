@@ -66,7 +66,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     }
     if (S.city && S.city.lampPool != null && !(typeof S.city.lampPool === 'number' && S.city.lampPool > 0)) throw new Error(`${id}.city.lampPool: 0 보다 큰 수 또는 null — ${S.city.lampPool}`);
     if (S.trains && 'predictStops' in S.trains && !(Number.isInteger(S.trains.predictStops) && S.trains.predictStops >= 1)) throw new Error(`${id}.trains.predictStops: 1 이상 정수`);
-    for (const [g, k] of [['map', 'towersAsRides'], ['map', 'verticalGradient'], ['city', 'groundTexture'], ['city', 'xray'], ['trains', 'timeWarp']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
+    for (const [g, k] of [['map', 'verticalGradient'], ['city', 'groundTexture'], ['city', 'xray'], ['trains', 'timeWarp']]) if (S[g] && k in S[g] && typeof S[g][k] !== 'boolean') throw new Error(`${id}.${g}.${k}: 참 · 거짓`);
     if (S.sun && S.sun.lowHouseM != null && !(typeof S.sun.lowHouseM === 'number' && S.sun.lowHouseM > 0)) throw new Error(`${id}.sun.lowHouseM: 0 보다 큰 수 또는 null`);
     if (S.city?.pack) checkPack(S.city.pack, `${id}.city.pack`);
     if (S.park?.style) checkPack(S.park.style, `${id}.park.style`);

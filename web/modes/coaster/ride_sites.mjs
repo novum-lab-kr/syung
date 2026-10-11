@@ -1,6 +1,9 @@
 // Placement is a world-space decision, independent of camera, visible-instance order and animation.
 import { pointInPolygon, edgeDistance, bbox } from '../../city/geom.mjs';
-export const RIDE_SITE_RULES=Object.freeze({gapM:24,sameKindM:{ferris:600,drop:380,swing:350,saucer:350},compactSameKindM:140,moveM:500,clearanceM:6,buildingRoofM:12});
+// park: 놀이기구는 공원 안 빈 자리에만(2026-10-11 행님: 건물은 심시티 그대로, 기구들은 공원에) — 탑 자리에서 parkMoveM 안의 공원(풀밭 공원 · 놀이공원 땅),
+// 몸 반지름 × parkInsetK 둘레가 모두 공원 안, 높이는 parkMaxH 까지(탑 높이 그대로면 공원에 300 m 자이로드롭)
+export const RIDE_SITE_RULES=Object.freeze({gapM:24,sameKindM:{ferris:600,drop:380,swing:350,saucer:350},compactSameKindM:140,moveM:500,clearanceM:6,buildingRoofM:12,
+  parkMoveM:1000,parkStepM:25,parkInsetK:.8,parkMaxH:110});
 
 export function withRideKind(site,kind){
   const H=site.height_m,D=site.wheelD??Math.min(Math.max(Math.min(.85*H,2.8*site.R),90),170);
@@ -78,15 +81,49 @@ function circleHits(s,b,r){
   return !(s.x<box[0]-d||s.x>box[2]+d||s.y<box[1]-d||s.y>box[3]+d)&&
     (pointInPolygon(s.x,s.y,b.outer,b.holes)||edgeDistance(s.x,s.y,[b.outer,...(b.holes||[])])<=d);
 }
+const inAnyPark=(parks,p)=>parks(p,0).some(b=>pointInPolygon(p.x,p.y,b.outer,b.holes));
 function trialPositions(source,parks){
   const positions=[{x:source.x,y:source.y,d:0,score:-Infinity}],angle=source.yaw||0;
   for(let d=50;d<=RIDE_SITE_RULES.moveM;d+=50){const n=Math.ceil(2*Math.PI*d/55);
     for(let i=0;i<n;i++){
       const t=angle+i/n*Math.PI*2,p={x:source.x+Math.cos(t)*d*source.mu,y:source.y+Math.sin(t)*d*source.mu,d,mu:source.mu};
-      p.score=d-(parks(p,0).some(b=>pointInPolygon(p.x,p.y,b.outer,b.holes))?180:0);positions.push(p);
+      p.score=d-(inAnyPark(parks,p)?180:0);positions.push(p);
     }
   }
   return positions.sort((a,b)=>a.score-b.score||a.d-b.d||a.x-b.x||a.y-b.y);
+}
+// inPark: a world-aligned lattice (parkStepM) over the parks within parkMoveM, nearest first — the same points
+// whatever the tower, the camera or the order, and a small park between rings is not skipped
+function parkPositions(source,parks){
+  const R=RIDE_SITE_RULES.parkMoveM,mu=source.mu,step=RIDE_SITE_RULES.parkStepM/(40075016.685578488*Math.cos(37.5*Math.PI/180)),seen=new Set(),out=[];
+  for(const b of parks(source,R)){
+    const box=b.box||bbox(b.outer);
+    for(let i=Math.ceil(Math.max(box[0],source.x-R*mu)/step);i*step<=Math.min(box[2],source.x+R*mu);i++)
+      for(let j=Math.ceil(Math.max(box[1],source.y-R*mu)/step);j*step<=Math.min(box[3],source.y+R*mu);j++){
+        const k=i+','+j;if(seen.has(k))continue;
+        const x=i*step,y=j*step,d=Math.hypot(x-source.x,y-source.y)/mu;
+        if(d>R||!pointInPolygon(x,y,b.outer,b.holes))continue;
+        seen.add(k);out.push({x,y,d,mu});
+      }
+  }
+  return out.sort((a,b)=>a.d-b.d||a.x-b.x||a.y-b.y);
+}
+// the ride's own ground (its physical radius × parkInsetK, no zoom exaggeration) lies inside parks: the centre and
+// rings of points at most ~4 m apart, each in some park polygon and out of its holes (a park cut at a tile edge
+// continues in the next tile's polygon, so the union counts)
+export function rideInPark(s,parks,coarse=false){
+  const rho=s.wide*RIDE_SITE_RULES.parkInsetK,near=typeof parks==='function'?parks(s,s.wide):parks,inside=(x,y)=>near.some(b=>pointInPolygon(x,y,b.outer,b.holes));
+  if(!inside(s.x,s.y))return false;
+  for(let r=rho;r>1;r-=4){const n=coarse?8:Math.max(8,Math.ceil(2*Math.PI*r/4));
+    for(let i=0;i<n;i++){const t=i/n*Math.PI*2;if(!inside(s.x+Math.cos(t)*r*s.mu,s.y+Math.sin(t)*r*s.mu))return false}
+    if(coarse)break}
+  return true;
+}
+// a park ride is no taller than parkMaxH: mast, collar and garland pole follow the height
+function parkSized(s){
+  if(s.compact||s.height_m<=RIDE_SITE_RULES.parkMaxH)return s;
+  const H=RIDE_SITE_RULES.parkMaxH;
+  return {...s,height_m:H,mastR:Math.min(Math.max(.025*H,5),10),collar:Math.min(.25*H,35),wheelD:undefined};
 }
 function atPosition(source,p){
   const lon=(p.x-.5)*360,lat=Math.atan(Math.sinh(Math.PI*(1-2*p.y)))*180/Math.PI;
@@ -94,7 +131,7 @@ function atPosition(source,p){
     sourceLon:source.lon,sourceLat:source.lat,sourceKind:source.kind,move_m:p.d,base_m:0};
 }
 
-export function selectRideSites(candidates,{blocked=()=>false,buildings=[],tracks=[],parks=[],water=[],relocate=false}={}){
+export function selectRideSites(candidates,{blocked=()=>false,buildings=[],tracks=[],parks=[],water=[],relocate=false,inPark=false}={}){
   const sites=[],omitted=[];
   const nearbyBuildings=obstacleIndex(buildings,polygonBox),nearbyWater=obstacleIndex(water,polygonBox),nearbyParks=obstacleIndex(parks,polygonBox);
   const mu=1/(40075016.685578488*Math.cos(37.5*Math.PI/180));
@@ -102,17 +139,19 @@ export function selectRideSites(candidates,{blocked=()=>false,buildings=[],track
   const ordered=[...candidates].sort((a,b)=>Number(b.lotte)-Number(a.lotte)||b.height_m-a.height_m||a.lon-b.lon||a.lat-b.lat);
   for(const source of ordered){
     const smallKinds=[...(source.kind==='ferris'?['ferris']:[]),...(source.q%2?['saucer','swing']:['swing','saucer'])];
-    const stages=relocate?[{kinds:[source.kind]},
+    const stages=inPark?[{kinds:[source.kind]},{kinds:smallKinds,size:1},{kinds:smallKinds.filter(k=>k!=='ferris'),size:2}]:relocate?[{kinds:[source.kind]},
       {kinds:smallKinds,size:1},{kinds:smallKinds.filter(k=>k!=='ferris'),size:2},
       {kinds:smallKinds,size:1,air:true},{kinds:smallKinds.filter(k=>k!=='ferris'),size:2,air:true}]:
       [{kinds:source.lotte?['drop']:[source.kind,...['ferris','swing','saucer','drop'].filter(k=>k!==source.kind)]}];
-    const positions=relocate?trialPositions(source,nearbyParks):[{x:source.x,y:source.y,d:0}];
+    const positions=inPark?parkPositions(source,nearbyParks):relocate?trialPositions(source,nearbyParks):[{x:source.x,y:source.y,d:0}];
     let chosen=null;
     search:for(const stage of stages)for(const kind of stage.kinds)for(const p of positions){
       let s=atPosition(source,p);
       if(stage.size)s={...s,compact:true,lotte:false,height_m:stage.size===1?85:62,r:stage.size===1?16:11,mastR:stage.size===1?2.3:1.8,
         wheelD:70,maxExagH:1.6,maxExagV:1.15,collar:20,pole:22};
-      s=withRideKind(s,kind);const radius=rideRadius(s)+RIDE_SITE_RULES.clearanceM;
+      if(inPark)s=parkSized(s);
+      s=withRideKind(s,kind);if(inPark&&!s.compact)s.pole=Math.min(1.3*(kind==='ferris'?.5*s.sxy:s.r),65);
+      const radius=rideRadius(s)+RIDE_SITE_RULES.clearanceM;
       if(sites.some(a=>Math.hypot(s.x-a.x,s.y-a.y)/Math.max(s.mu,a.mu)<ridePairClearance(s,a)))continue;
       if(nearbyWater(s,radius).some(b=>circleHits(s,b,radius)))continue;
       const bs=nearbyBuildings(s,radius);
@@ -121,7 +160,9 @@ export function selectRideSites(candidates,{blocked=()=>false,buildings=[],track
         if(roof>60)continue; // Low-rise blocks only; never lift above a tall building to force a fit.
         s.base_m=Math.ceil((roof+RIDE_SITE_RULES.buildingRoofM+12)/5)*5;
       }
+      if(inPark&&!rideInPark(s,nearbyParks,true))continue;   // the cheap eight-point look first
       if(rideIntersectsBuildings(s,bs)||rideIntersectsTracks(s,nearbyTracks(s,radius))||blocked(s))continue;
+      if(inPark&&!rideInPark(s,nearbyParks))continue;
       chosen=s;sites.push(s);break search;
     }
     if(!chosen)omitted.push(source);

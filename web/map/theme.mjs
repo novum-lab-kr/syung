@@ -36,7 +36,7 @@ export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,app
     const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
     set('background','background-color',P.bg);map.triggerRepaint();
     set('bm-water','fill-color',P.water);set('bm-park','fill-color',P.park);set('bm-landcover','fill-color',P.land);set('bm-bld','fill-color',P.bld);
-    set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',S.city.enabled?0:P.bld3dOpacity);if(map.getLayer('bm-bld3d')){map.setFilter('bm-bld3d',S.map.towersAsRides?['<',['coalesce',['get','render_height'],10],S.park.towerM]:null);map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',S.map.verticalGradient)}   // the towers are rides on the coaster
+    set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',S.city.enabled?0:P.bld3dOpacity);if(map.getLayer('bm-bld3d'))map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',S.map.verticalGradient)
     set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
     for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
     set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);

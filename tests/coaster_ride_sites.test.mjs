@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RideLayer } from '../web/modes/coaster/rides.mjs';
-import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites } from '../web/modes/coaster/ride_sites.mjs';
+import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites,rideInPark,RIDE_SITE_RULES } from '../web/modes/coaster/ride_sites.mjs';
 import { CoasterRidePlacement } from '../web/modes/coaster/ride_placement.mjs';
 
+// a square park (mercator) of half-size m metres round s, optionally offset east by dx metres
+const square=(s,m,dx=0)=>{const r=m*s.mu,x=s.x+dx*s.mu;return {outer:[x-r,s.y-r,x+r,s.y-r,x+r,s.y+r,x-r,s.y+r],holes:[]}};
 const closeWheels=[[127.060816,37.510319,54,229],[127.06122,37.509602,70,183]];
 test('neighbouring tower sites cannot place two ferris wheels 87 metres apart',()=>{
   const a=new RideLayer(closeWheels).sites(),b=new RideLayer([...closeWheels].reverse()).sites();
@@ -35,7 +37,7 @@ test('a site stays hidden until its whole building neighbourhood has been checke
   assert.equal(typeof module.CoasterRidePlacement,'function','placement must wait for authoritative footprint coverage');
   const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates,s=candidates[0];
   let release;const ready=new Promise(resolve=>{release=resolve});
-  const p=new module.CoasterRidePlacement(candidates,{readTile:async()=>{await ready;return []},getTracks:()=>[]});
+  const p=new module.CoasterRidePlacement(candidates,{readTile:async()=>{await ready;return {buildings:[],parks:[square(s,600)],water:[]}},getTracks:()=>[]});
   const loading=p.update([s.x-.001,s.y-.001,s.x+.001,s.y+.001]);
   assert.equal(p.sites.length,0);release();await loading;
   assert.equal(p.sites.length,1);
@@ -45,9 +47,9 @@ test('a site stays hidden until its whole building neighbourhood has been checke
 });
 
 test('failed footprint coverage cannot admit a ride and a successful retry restores placement',async()=>{
-  const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates;
+  const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates,park=square(candidates[0],600);
   let failed=true;
-  const p=new CoasterRidePlacement(candidates,{readTile:async()=>{if(failed)throw Error('offline');return []}});
+  const p=new CoasterRidePlacement(candidates,{readTile:async()=>{if(failed)throw Error('offline');return {buildings:[],parks:[park],water:[]}}});
   await p.update([0,0,1,1]);
   assert.equal(p.stats.failed,1);assert.equal(p.sites.length,0);
   failed=false;p.groups[0].retryAt=0;
@@ -106,15 +108,49 @@ test('an elevated compact ride clears a low roof but still rejects a rail at its
   assert.equal(rideIntersectsTracks(s,[{a:[s.x-r,s.y,80],b:[s.x+r,s.y,80],radius:3}]),true);
 });
 
-test('the placement loader checks the relocation radius and actually moves a blocked original site',async()=>{
+test('the placement loader checks the park radius and moves the ride off the tower into a park in the next tile',async()=>{
   const lon=((13973+.7)/2**14-.5)*360;
   const candidates=new RideLayer([[lon,37.4979,40,180]]).candidates,s=candidates[0],r=30*s.mu,tiles=[];
-  const building={outer:[s.x-r,s.y-r,s.x+r,s.y-r,s.x+r,s.y+r,s.x-r,s.y+r],height:100};
-  const p=new CoasterRidePlacement(candidates,{readTile:async tile=>{tiles.push(tile);return [building]}});
+  const building={outer:[s.x-r,s.y-r,s.x+r,s.y-r,s.x+r,s.y+r,s.x-r,s.y+r],height:180};
+  const park=square(s,150,800);   // 650-950 m east: in tile 13974
+  const p=new CoasterRidePlacement(candidates,{readTile:async tile=>{tiles.push(tile);return {buildings:[building],parks:tile.x===13974?[park]:[],water:[]}}});
   await p.update([s.x-.0001,s.y-.0001,s.x+.0001,s.y+.0001]);
-  assert.equal(p.sites.length,1,'runtime placement must enable the relocation policy');
-  assert.ok(p.sites[0].move_m>0);
-  assert.ok(tiles.some(t=>t.x===13974),'tile beyond the original footprint is checked for a 500m move');
+  assert.equal(p.sites.length,1,'runtime placement puts the ride in the park');
+  assert.ok(p.sites[0].move_m>=600&&p.sites[0].move_m<=RIDE_SITE_RULES.parkMoveM);
+  assert.ok(rideInPark(p.sites[0],[park]));
+  assert.ok(tiles.some(t=>t.x===13974),'tile beyond the original footprint is checked for a park move');
+});
+
+test('park rides: no park in reach omits the ride; the tower stays a building and never becomes the site',()=>{
+  const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates,s=candidates[0];
+  assert.equal(selectRideSites(candidates,{inPark:true}).sites.length,0,'no park, no ride');
+  assert.equal(selectRideSites(candidates,{parks:[square(s,150,1400)],inPark:true}).sites.length,0,'a park beyond parkMoveM is out of reach');
+  const tower={outer:square(s,30).outer,height:180},{sites}=selectRideSites(candidates,{buildings:[tower],parks:[square(s,200,450)],inPark:true});
+  assert.equal(sites.length,1);assert.equal(rideIntersectsBuildings(sites[0],[tower]),false);
+});
+
+test('park rides stand wholly inside the park (a narrow strip is not enough) and no taller than parkMaxH',()=>{
+  const candidates=new RideLayer([[127.0276,37.4979,40,240]]).candidates,s=candidates[0];
+  const strip={outer:[s.x-600*s.mu,s.y-8*s.mu,s.x+600*s.mu,s.y-8*s.mu,s.x+600*s.mu,s.y+8*s.mu,s.x-600*s.mu,s.y+8*s.mu],holes:[]};
+  assert.equal(selectRideSites(candidates,{parks:[strip],inPark:true}).sites.length,0,'16 m wide verge holds no ride');
+  const park=square(s,250,300),{sites}=selectRideSites(candidates,{parks:[park],inPark:true});
+  assert.equal(sites.length,1);
+  assert.ok(rideInPark(sites[0],[park]));
+  assert.ok(sites[0].height_m<=RIDE_SITE_RULES.parkMaxH,`height ${sites[0].height_m}`);
+  assert.ok(sites[0].top<=1.12*Math.max(sites[0].sxy,RIDE_SITE_RULES.parkMaxH));
+  // a park cut at a tile edge is two polygons: the ride may straddle the cut
+  const [a,b]=[{outer:[park.outer[0],park.outer[1],s.x+300*s.mu,park.outer[3],s.x+300*s.mu,park.outer[5],park.outer[6],park.outer[7]],holes:[]},{outer:[s.x+300*s.mu,park.outer[1],park.outer[2],park.outer[3],park.outer[4],park.outer[5],s.x+300*s.mu,park.outer[7]],holes:[]}];
+  const split=selectRideSites(candidates,{parks:[a,b],inPark:true}).sites;
+  assert.equal(split.length,1);assert.deepEqual([split[0].x,split[0].y],[sites[0].x,sites[0].y]);
+});
+
+test('park placement does not depend on candidate order',()=>{
+  const towers=Array.from({length:6},(_,i)=>[127.0276+(i%3)*.002,37.4979+Math.floor(i/3)*.002,40,160+i*10]);
+  const candidates=new RideLayer(towers,{deferPlacement:true}).candidates,park=square(candidates[0],900,200);
+  const a=selectRideSites(candidates,{parks:[park],inPark:true,relocate:true}).sites,b=selectRideSites([...candidates].reverse(),{parks:[park],inPark:true,relocate:true}).sites;
+  assert.ok(a.length>=3,`placed ${a.length}`);
+  assert.deepEqual(a.map(s=>[s.x,s.y,s.kind]),b.map(s=>[s.x,s.y,s.kind]));
+  for(const s of a)assert.ok(rideInPark(s,[park]));
 });
 
 test('water is not treated as an empty park even when its buildings are absent',()=>{

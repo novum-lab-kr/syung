@@ -12,14 +12,14 @@ export default {
     themeChoice: 'auto',   // 내 설정(테마): auto · light · dark — 저장 이름 subway-theme
     mapColor: 'calm',      // 내 설정(지도 색): calm · color — 저장 이름 subway-map-color
     // 지도 색: 테마별 바탕 · '컬러' 덧칠 · 공원(롤코). paletteKind 는 섞는 차례 — base(바탕만) · city(+도시 땅) · park-city(+공원 색 · 도시 땅)
-    // towersAsRides: park.towerM 이상 건물을 지도 · 도시 · 그림자에서 빼고 놀이기구로. verticalGradient: 지도 3D 건물 위아래 명암
-    map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', towersAsRides: false, verticalGradient: true },
+    // verticalGradient: 지도 3D 건물 위아래 명암
+    map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', verticalGradient: true },
     // 미니어처 도시(색 · 치수 · 줌 팩): 심시티 · 롤코는 이 팩 그대로(같은 참조), 조선은 덧쓴다. groundTexture: 땅에 흙 질감(팩의 ground.texture)
     // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
     // tone: 팩의 modes 항목 이름(땅 · 건물 · 사람의 채도 · 밝기 · 그림자), lampPool: 가로등 빛 웅덩이 배수(null 이면 그 tone 의 lampPool)
     // life: 도시 생활(차 · 횡단보도), landmarks: 랜드마크 탑 모양(tower · wood-tower)
     city: { enabled: false, groundTexture: false, xray: false, tone: 'simcity', lampPool: 1.4, life: { cars: true, crossings: true }, landmarks: 'tower', pack: CITY_PACK },
-    // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료, towerM 이상 건물은 놀이기구
+    // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료. 놀이기구는 towerM 이상 탑마다 하나, 그 둘레 공원 안 빈 자리에(건물은 그대로)
     park: { enabled: false, towerM: 150, style: PARK_DEFAULTS },
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),
     // coaster(롤코 언덕 길). platform 은 승강장 모양 — ribbon(노선을 따라 휘는 띠, 모든 모드), straight(선로에 맞춘 곧은 상자, 지금 쓰는 모드 없음)

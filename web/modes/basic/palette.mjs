@@ -13,8 +13,8 @@ export const MAP_COLORS={
   dark:{water:'#1a4260',park:'#21452c',land:'#1e3a28',bld:'#262d38',bld3d:'#444a5c',bld3dOpacity:.78,bg:'#141c24',roadMinor:'#2a343c',roadMajor:'#3e4650',rail:'#4a4560',waterText:'#7fb4d8',parkText:'#7cbf74'},
 };
 // 롤러코스터: the city as a pastel amusement park (Codex design) — every building one of six pastels by its feature id, solid
-// (just for fun: a building may hide a train), the ground in park colours (차분: 15 % toward the background). The towers
-// (RIDE_H m and up) become rides.
+// (just for fun: a building may hide a train), the ground in park colours (차분: 15 % toward the background). The towers stay
+// buildings (the rides stand in the parks round them).
 export const PARK_COLORS={
   light:{blocks:['#eacb80','#e5ae91','#dca2b9','#baaad8','#96c5d8','#abd0ae'],bg:'#f5eedf',park:'#c5ddb3',land:'#d8e4c6',water:'#afd5de',bld:'#dfd2c0',shadow:.06,light:'#ffffff',lightK:.35},
   dark:{blocks:['#ad9159','#ab7864','#a46c89','#8977ad','#6597ad','#789d7d'],bg:'#242329',park:'#354a39',land:'#303d32',water:'#2b4c5b',bld:'#3b343e',shadow:.03,light:'#fff1de',lightK:.25},

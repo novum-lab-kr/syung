@@ -28,7 +28,7 @@ export function sampleRideTracks(track,bounds,{geometry,offset,bodyPx,lanePx,hea
   return out;
 }
 
-function buildingObstacles(layer,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=150}={}){
+function buildingObstacles(layer,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=Infinity}={}){
   const out=[];
   if(!layer)return out;
   const n=2**z,E=layer.extent,lat=Math.atan(Math.sinh(Math.PI*(1-2*(y+.5)/n))),mu=1/(EARTH*Math.cos(lat));
@@ -36,7 +36,7 @@ function buildingObstacles(layer,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=150}={}){
   for(let i=0;i<layer.length;i++){
     const f=layer.feature(i),p=f.properties||{};if(p.hide_3d===true||p.hide_3d==='true')continue;
     const H=Math.max(minH,Number.isFinite(+p.render_height)?+p.render_height:missingH);
-    if(H>=maxH)continue; // Same tower cut-off as the city meshes in coaster mode.
+    if(H>=maxH)continue;
     const base=Math.min(Math.max(0,+p.render_min_height||0),H-.5);
     const polys=classifyRings(f.loadGeometry().map(r=>r.flatMap(p=>[p.x,p.y])));
     for(const poly of polys){
@@ -52,10 +52,11 @@ export function rideBuildingObstacles(raw,options={}){
   return buildingObstacles(decodeTile(raw,new Set(['building'])).building,options);
 }
 
-// Parks are preferred destinations; water is excluded even if it has no building footprints.
+// Parks (urban parks: landcover grass/park and the like, theme parks and zoos from landuse) are where the rides go;
+// water is excluded even if it has no building footprints.
 export function rideTileObstacles(raw,options={}){
   const layers=decodeTile(raw,new Set(['building','landuse','landcover','water'])),{x,y,z=TILE_Z}=options,n=2**z;
-  const parks=[],water=[],parkKinds=new Set(['park','garden','grass','recreation_ground','pedestrian','square']);
+  const parks=[],water=[],parkKinds=new Set(['park','recreation_ground','village_green','theme_park','zoo']);
   for(const name of ['landuse','landcover','water']){
     const layer=layers[name];if(!layer)continue;
     const world=r=>r.map((v,i)=>(v/layer.extent+(i%2?y:x))/n);
@@ -71,18 +72,18 @@ export function rideTileObstacles(raw,options={}){
   return {buildings:buildingObstacles(layers.building,options),parks,water};
 }
 
-function neighbourhoods(candidates){
+function neighbourhoods(candidates,moveM){
   const remaining=new Set(candidates),groups=[];
   for(const seed of candidates){
     if(!remaining.delete(seed))continue;
     const sites=[seed];
     for(let i=0;i<sites.length;i++)for(const s of remaining){const a=sites[i];
-      // Two 500m moves plus the largest same-kind separation must settle together.
-      if(Math.hypot(a.x-s.x,a.y-s.y)<1650*Math.max(a.mu,s.mu)){remaining.delete(s);sites.push(s)}
+      // Two moves plus the largest same-kind separation must settle together.
+      if(Math.hypot(a.x-s.x,a.y-s.y)<(2*moveM+650)*Math.max(a.mu,s.mu)){remaining.delete(s);sites.push(s)}
     }
     const box=[Infinity,Infinity,-Infinity,-Infinity],tiles=new Map(),n=2**TILE_Z;
     for(const s of sites){
-      const r=(RIDE_SITE_RULES.moveM+Math.max(...['drop','ferris','swing','saucer'].map(k=>withRideKind(s,k).wide))*(s.lotte?1:2.4)+RIDE_SITE_RULES.clearanceM+4)*s.mu;
+      const r=(moveM+Math.max(...['drop','ferris','swing','saucer'].map(k=>withRideKind(s,k).wide))*(s.lotte?1:2.4)+RIDE_SITE_RULES.clearanceM+4)*s.mu;
       box[0]=Math.min(box[0],s.x-r);box[1]=Math.min(box[1],s.y-r);box[2]=Math.max(box[2],s.x+r);box[3]=Math.max(box[3],s.y+r);
       for(let x=Math.floor((s.x-r)*n);x<=Math.floor((s.x+r)*n);x++)for(let y=Math.floor((s.y-r)*n);y<=Math.floor((s.y+r)*n);y++)tiles.set(x+','+y,{x,y});
     }
@@ -92,8 +93,9 @@ function neighbourhoods(candidates){
 }
 
 export class CoasterRidePlacement {
-  constructor(candidates,{map,readTile,getTracks=()=>[],onChange=()=>{},minH=3,missingH=9,maxH=150}={}){
-    this.map=map;this.groups=neighbourhoods(candidates);this.tiles=new Map();this.sites=[];this.revision=0;
+  // inPark: rides only inside parks (the coaster today); false keeps the old rule (move at most moveM, parks preferred, small rides over low roofs)
+  constructor(candidates,{map,readTile,getTracks=()=>[],onChange=()=>{},minH=3,missingH=9,maxH=Infinity,inPark=true}={}){
+    this.inPark=inPark;this.map=map;this.groups=neighbourhoods(candidates,inPark?RIDE_SITE_RULES.parkMoveM:RIDE_SITE_RULES.moveM);this.tiles=new Map();this.sites=[];this.revision=0;
     this.getTracks=getTracks;this.onChange=onChange;this.heightPolicy={minH,missingH,maxH};
     this.readTile=readTile||((tile)=>this.mapTile(tile));this.stats={accepted:0,omitted:0,pending:0,failed:0,groups:this.groups.length};
   }
@@ -129,7 +131,7 @@ export class CoasterRidePlacement {
       }
       g.buildings=buildings;g.tracks=await this.getTracks(g.box);
       g.parks=parks;g.water=water;
-      const result=selectRideSites(g.candidates,{buildings,tracks:g.tracks,parks,water,relocate:true});
+      const result=selectRideSites(g.candidates,{buildings,tracks:g.tracks,parks,water,relocate:true,inPark:this.inPark});
       g.sites=result.sites;g.omitted=result.omitted;g.state='ready';delete g.error;
       this.sites=this.groups.flatMap(g=>g.sites).sort((a,b)=>a.lon-b.lon||a.lat-b.lat);this.revision++;
       this.count();this.onChange(this.sites);
