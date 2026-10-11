@@ -233,6 +233,18 @@ class ProxyTest(unittest.TestCase):
         self.assertAlmostEqual(proxy.sample_at - self.now, (18 * 3600 - 200) / 698, places=3)
         self.assertFalse(proxy.background_once(R2)[1])
 
+    def test_sampler_skips_a_learning_route_someone_just_refreshed(self):
+        self.now += 6 * 3600
+        proxy = self.proxy()
+        self.get(proxy, R1)   # 지도가 보는 중: 방금 새로 받았다
+        self.now += 10
+        used, sample_at = proxy.ledger.view(self.now)["used"], proxy.sample_at
+        self.assertEqual(proxy.background_once(R1), (0.5, True))   # 차례는 넘기고
+        self.assertEqual(proxy.ledger.view(self.now)["used"], used)   # 장부에 안 센다
+        self.assertEqual(proxy.sample_at, sample_at)   # 다음 학습 노선의 차례를 미루지 않는다
+        self.assertEqual(self.calls, [R1])   # 또 부르지 않는다
+        self.assertEqual(proxy.cache[R1][0], self.now - 10)   # 캐시 시각 그대로: 보는 지도의 다음 갱신 때가 안 밀린다
+
     def test_sampler_keeps_the_reserve_for_the_map(self):
         self.now += 6 * 3600
         proxy = self.proxy(daily_limit=5, sample_reserve=3, min_interval=1)

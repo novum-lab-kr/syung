@@ -282,7 +282,7 @@ class BusLiveService:
                 and now >= self.failures.get(rid, (0, ""))[0])]
 
     def background_once(self, sample_rid) -> tuple[float, bool]:
-        """One background turn: (seconds to wait, whether the learning route sample_rid was called).
+        """One background turn: (seconds to wait, whether the learning route sample_rid had its turn).
         A route someone watches comes first at any hour; the learning call only when none is due."""
         now, config = self.clock(), self.config
         if self.mode != "live":
@@ -307,6 +307,10 @@ class BusLiveService:
             return 5, False   # 밤에도 보는 중인 노선은 5초마다 살핀다
         if now < self.sample_at:
             return max(0.5, min(1, self.sample_at - now)), False   # 그 사이 보는 노선이 생기면 먼저
+        if now - self.cache.get(sample_rid, (-math.inf, []))[0] < config.cache_seconds:
+            # 누가 보고 있어 방금 받은 노선(그 응답도 기록돼 학습에 쓰인다): 또 부르면 호출만 쓰고 캐시 시각이 흔들려
+            # 그 노선을 보는 지도의 새 자리가 늦게 왔다(2026-10-11 143번, 76초마다 14초 만에 또 불러 다음 갱신이 44초 뒤로). 다음 노선 차례로
+            return 0.5, True
         try:
             left = config.daily_limit - config.sample_reserve - self.ledger.view(now)["used"]
             if left <= 0:
