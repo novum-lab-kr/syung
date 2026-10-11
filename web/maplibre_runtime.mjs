@@ -318,9 +318,11 @@ function cityXrayTargets(){
   for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);
     const P=maplibregl.MercatorCoordinate.fromLngLat(c[0]),Q=maplibregl.MercatorCoordinate.fromLngLat(c[c.length-1]),cx=(P.x+Q.x)/2,cy=(P.y+Q.y)/2;if(!inV(cx,cy))continue;
     const h=cityViaduct.stationH(line,id)*m,box={z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m};
-    if(r.center&&c.length>2){   // 리본(선로 따라 휜 승강장): 휜 데를 따라 조각조각(조각마다 곧게 pieceM 안팎)
-      const M=c.map(q=>maplibregl.MercatorCoordinate.fromLngLat(q)),piece=(X.pieceM||30)*m;let a=M[0],n=0;
-      for(let j=1;j<M.length;j++){const b=M[j];if(j<M.length-1&&Math.hypot(b.x-a.x,b.y-a.y)<piece)continue;out.push({id:'s'+k+':'+n++,ax:a.x,ay:a.y,bx:b.x,by:b.y,...box});a=b}
+    if(r.center&&c.length>2){   // 리본(선로 따라 휜 승강장): 호를 고르게 pieceM 이하 조각으로 — 건물 층이 조각을 다시 자르지 않게(곧은 막대와 같은 조각 수)
+      const M=c.map(q=>maplibregl.MercatorCoordinate.fromLngLat(q)),cum=[0];for(let j=1;j<M.length;j++)cum.push(cum[j-1]+Math.hypot(M[j].x-M[j-1].x,M[j].y-M[j-1].y));
+      const total=cum.at(-1),n=Math.max(1,Math.ceil(total/((X.pieceM||30)*m*.98)));let j=1;
+      const at=s=>{while(j<M.length-1&&cum[j]<s)j++;const A=M[j-1],B=M[j],u=Math.max(0,Math.min(1,(s-cum[j-1])/((cum[j]-cum[j-1])||1)));return [A.x+(B.x-A.x)*u,A.y+(B.y-A.y)*u]};
+      let a=at(0);for(let i=1;i<=n;i++){const b=at(total*i/n);out.push({id:'s'+k+':'+i,ax:a[0],ay:a[1],bx:b[0],by:b[1],...box});a=b}
       continue}
     const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2;
     out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,...box})}
