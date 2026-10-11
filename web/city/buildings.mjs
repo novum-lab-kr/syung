@@ -572,6 +572,12 @@ export class CityBuildings {
     return !this.map.getLayer('bm-bld') || this.map.getLayoutProperty('bm-bld', 'visibility') !== 'none';
   }
   animating() { return this.growing }
+  // 모드 바꾸는 중 게이지(본체): 지난 그리기에서 보인 z14 타일 중 다 지은 수 / 전체
+  progress() {
+    let ready = 0, total = 0;
+    for (const e of this.tiles.values()) if (e.used === this.frame) { total++; if (e.state === 'ready') ready++ }
+    return { ready, total };
+  }
   context(gl) {
     let c = this.ctx.get(gl);
     if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), inst: {}, tpl: {} }; this.ctx.set(gl, c) }

@@ -289,8 +289,8 @@ const smooth=x=>x*x*(3-2*x);
 // 모드 상태(web/modes/transition.mjs): 지금 · 원하는 모드, 마지막 요청 번호, 롤코 배속 · 앞서 달린 시간의 주인. 본체는 모드 이름 대신 지금 모드 설정(modeCtl.settings())을 묻는다 — modeOn 은 점검 창구(window.__subwayWebGL)의 simcity · joseon · coaster 용
 // (심시티 모드: the miniature city — the coaster mode keeps its rides on the same city; 조선 모드: 심시티 (modeOn.simcity stays true: the viaduct,
 // the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집). 전환은 아래 '모드 전환'(prepareMode · commitMode).
-const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:showModeButtons,onFail:showModeButtons,
-  commit:(prev,next,o)=>{commitMode(prev,next,o);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}});   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
+const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end()},
+  commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}});   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
 // city-build: the miniature city's buildings (web/city/buildings.mjs): a custom layer under the station names (so names and
@@ -684,6 +684,27 @@ function prepareMode(id){
   if(id==='coaster')return coasterGeo.bld&&kitReady?true:Promise.all([loadCoasterBuildings(),loadModeKit()]);   // its courses need the buildings: wait for them
   return kitReady?true:loadModeKit();
 }
+// 모드 바꾸는 중 게이지(행님 2026-10-11: 바꾸면 2~3초 아무 표시 없이 그대로라 고장 난 줄 알았다): 받는 중(모드 코드 · 롤코 건물 높이) →
+// 도시 모드면 지금 보이는 건물 타일을 다 지을 때까지 '건물 짓는 중 n/m'. 기본 모드 · 건물이 안 보이는 줌이면 바꾸자마자 닫는다
+const modeBusy=(()=>{
+  let el=null,bar=null,text=null,timer=0,t0=0,want=null,phase='';
+  const label=id=>modes.list().find(d=>d.id===id)?.label??id;
+  const ro=w=>{const c=w.charCodeAt(w.length-1)-0xAC00;return c>=0&&c<11172&&c%28&&c%28!==8?'으로':'로'};   // 받침(ㄹ 빼고) 있으면 '으로'
+  function show(sub,frac){
+    if(!el){el=document.createElement('div');el.className='mode-busy';el.setAttribute('role','status');el.innerHTML='<b></b><span></span><i><em></em></i>';document.body.append(el);text=el.querySelector('span');bar=el.querySelector('em')}
+    el.querySelector('b').textContent=`${label(want)}${ro(label(want))} 바꾸는 중`;text.textContent=sub;
+    el.classList.toggle('mode-busy--wait',frac==null);bar.style.width=frac==null?'':`${Math.round(Math.max(.06,frac)*100)}%`;el.hidden=false}
+  function end(){clearInterval(timer);timer=0;phase='';if(el)el.hidden=true}
+  function tick(){
+    if(phase==='prepare'){if(modeCtl.desired!==want)end();return}
+    const B=cityBuildings;if(!cityOn()||!B?.shown()||performance.now()-t0>20000)return end();
+    const {ready,total}=B.progress();if(total&&ready>=total)return end();
+    show(total?`건물 짓는 중 ${ready}/${total}`:'건물 짓는 중',total?ready/total:null)}
+  return {
+    request(id,now){want=id;if(id===now){end();return}phase='prepare';t0=performance.now();show(id==='coaster'&&!coasterGeo.bld?'롤코 자료 받는 중':'모드 자료 받는 중',null);clearInterval(timer);timer=setInterval(tick,200)},
+    committed(id){if(id!==want)return;phase='build';t0=performance.now();if(!timer)timer=setInterval(tick,200);tick()},
+    end};
+})();
 // 버튼: 원하는 모드(받는 중이면 그 모드)를 눌린 것으로, 준비가 실패하면 지금 모드로
 function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'))}
 // 바꾸기: 옛 setCoaster · setSimcity 가 하던 차례 그대로(롤코 → 심시티는 롤코를 끈 뒤 심시티를 켠다)
