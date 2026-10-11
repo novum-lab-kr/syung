@@ -19,6 +19,16 @@ export const LANDMARKS = [
   },
 ];
 
+// 석탑(조선 모드, 2026-10-11 행님): 원각사지 십층석탑(탑골공원, 1467, 대리석 약 12 m — 亞자 기단 3단 · 아래 세 층 亞자 · 위 일곱 층 네모)과
+// 불국사 삼층석탑(석가탑, 약 10.8 m — 2단 기단 · 세 층, 층급받침 지붕돌). looks: 그리는 랜드마크 모양(모드 설정 city.landmarks).
+// replaces: 이 모양일 때 그 자리 탑 모델(LANDMARKS id)을 대신한다. 남산타워는 지도 건물이라 조선 팩 landmarkHide 가 그 조각을 뺀다.
+// minPx: 실제 크기면 너무 작을 때 화면에서 이만큼은 보이게 키운다(탑골공원 12 m). widthMul: 거대한 탑은 가로를 줄여 날씬하게(그대로 키우면 기단이 260 m).
+export const STUPAS = [
+  { id: 'lotte-stupa', kind: 'wongaksa', lngLat: [127.102655, 37.51254], height: 555, widthMul: .6, looks: ['wood-tower'], replaces: 'lotte', yawDeg: 18 },
+  { id: 'namsan-stupa', kind: 'seokga', lngLat: [126.988227, 37.551169], height: 240, widthMul: .65, looks: ['wood-tower'], yawDeg: 0 },
+  { id: 'wongaksa', kind: 'wongaksa', lngLat: [126.98826, 37.57107], height: 12, looks: ['wood-tower'], minPx: 30, yawDeg: 0 },
+];
+
 const mercX = lng => (lng + 180) / 360;
 const mercY = lat => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;
 export const landmarkMerc = L => [mercX(L.lngLat[0]), mercY(L.lngLat[1])];

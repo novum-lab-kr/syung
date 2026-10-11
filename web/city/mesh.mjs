@@ -194,7 +194,8 @@ export class TileBuilder {
     this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
     this.items = []; this.blockers = []; this.ei = 0; this.grid = null;
     // 랜드마크 자리(타일 단위): 그 안에 중심이 있는 높은 조각 건물은 빼고 전용 모델(city_landmarks.mjs)이 그린다
-    this.marks = LANDMARKS.map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH } })
+    // (팩 landmarkHide: 그 팩에서만 빼는 자리 — 조선: 남산타워 자리에 석탑, 2026-10-11)
+    this.marks = [...LANDMARKS, ...(P.pack?.landmarkHide || []).map(h => ({ lngLat: h.lngLat, hide: h }))].map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH } })
       .filter(m => m.x > -m.r - this.E && m.x < 2 * this.E + m.r && m.y > -m.r - this.E && m.y < 2 * this.E + m.r);   // phase 1 reads every footprint (items; blockers = raw outlines, also those in the tile's buffer), phase 2 writes the meshes
   }
   // 랜드마크 자리의 조각 건물인가: 외곽 전체의 가운데가 그 반경 안이고 높이가 minH 이상

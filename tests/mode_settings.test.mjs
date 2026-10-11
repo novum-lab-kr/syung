@@ -176,8 +176,8 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
   // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준. 그 뒤 더한 것(night: 2026-10-11 밤 빛, 골목 가로등 lamps.minorSpacingM)은 빼고 견준다
   const before=({night,...o})=>{const {minorSpacingM,...lamps}=o.props.lamps;return {...o,props:{...o.props,lamps}}};
   assert.equal(sha(before(CITY)),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
-  // 조선 횃불(props.lamps) · 옷차림(props.people.outfits)은 2026-10-11 행님 요청으로 더했다 — 그것만 빼고 견준다(그 밖은 옮기기 전 그대로)
-  const noLamps=({night,...o})=>{const {lamps,...props}=o.props;const {outfits,outfitWeights,...people}=props.people;return {...o,props:{...props,people}}};   // (조선 옷차림 people.outfits 도 2026-10-11 더함)
+  // 조선 횃불(props.lamps) · 옷차림(props.people.outfits) · 석탑 자리(landmarkHide)는 2026-10-11 행님 요청으로 더했다 — 그것만 빼고 견준다(그 밖은 옮기기 전 그대로)
+  const noLamps=({night,landmarkHide,...o})=>{const {lamps,...props}=o.props;const {outfits,outfitWeights,...people}=props.people;return {...o,props:{...props,people}}};   // (조선 옷차림 people.outfits 도 2026-10-11 더함)
   assert.equal(sha(noLamps(R.settings('joseon').city.pack)),'1be56617e0779d5e4b38bc112a468eab92b3624bcd42a28ce69283a4b907f94c');
   const {JOSEON_CITY_STYLE:J_TEST}=await import('./joseon_pack.mjs');assert.equal(sha(J_TEST),sha(R.settings('joseon').city.pack),'시험용 조선 팩도 같은 값');
   for(const id of ['basic','simcity','coaster'])assert.equal(R.settings(id).city.pack,CITY,`${id} 도시 팩 = 원본 그대로`);

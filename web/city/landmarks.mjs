@@ -1,11 +1,11 @@
-// 랜드마크 전용 모델 (데이터: web/city/landmarks_data.mjs). 지금은 롯데월드타워 하나.
+// 랜드마크 전용 모델 (데이터: web/city/landmarks_data.mjs). 롯데월드타워, 그리고 조선 모드의 석탑(원각사지 십층석탑 · 불국사 삼층석탑).
 //
 // 심시티 · 조선 모드에서만 그린다(롤코에선 이 자리가 놀이기구 탑: coaster_towers.json).
 // 심시티: 은청색 유리에 흰 금속 세로줄, 솔기 모서리는 어두운 홈, 꼭대기는 솔기 선에서 두 갈래로 갈라진 격자 왕관(밤에 빛남).
 // 조선: 같은 몸에 나무 기둥 · 보와 회벽, 다섯 층마다 기와 처마를 두른 거대한 목탑. 두 갈래 꼭대기는 금색.
 // 멀리서도 롯데타워로 읽히게 윤곽(가는 몸 · 볼록한 테이퍼 · 갈라진 꼭대기)을 지키고, 세로줄은 성기고 진하게(Codex 검토, 2026-10-09).
 // 지역 미터 좌표(city_life 의 MERC_ORIGIN · MU)에 짓고, 고가와 같은 캔버스 · 깊이에 그린다.
-import { LANDMARKS } from './landmarks_data.mjs';
+import { LANDMARKS, STUPAS } from './landmarks_data.mjs';
 import { MU, MERC_ORIGIN as O, toM } from './life.mjs';
 import { compileProgram } from './traffic.mjs';
 
@@ -92,6 +92,92 @@ export function buildTower(L, { look = 'tower' } = {}) {
   return new Float32Array(d);
 }
 
+// ── 석탑(조선 모드): 원각사지 십층석탑 · 불국사 삼층석탑 ──────────────────────────────────────────────────────────────
+// 실제 치수(m)로 짓고 그릴 때 높이에 맞춰 키운다. 정점: x y z · 법선 xyz · 종류(0 몸돌 · 1 지붕돌 윗면 · 2 지붕돌 밑 · 층급받침 · 3 상륜 · 4 기단)
+const SQ = h => [[h, -h], [h, h], [-h, h], [-h, -h]];
+const AH = (h, n) => [[h, -h + n], [h, h - n], [h - n, h - n], [h - n, h], [-h + n, h], [-h + n, h - n], [-h, h - n], [-h, -h + n], [-h + n, -h + n], [-h + n, -h], [h - n, -h], [h - n, -h + n]];   // 亞자: 네모의 네 귀를 따낸 꼴
+const OCT = r => Array.from({ length: 8 }, (_, i) => { const a = (i + .5) / 8 * 2 * Math.PI; return [r * Math.cos(a), r * Math.sin(a)] });
+// 변을 m 조각으로 나누고, 꼭짓점에 가까울수록 1(지붕돌 귀를 들어 올릴 몫)
+function subdiv(poly, m) { const out = []; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; for (let k = 0; k < m; k++) { const t = k / m; out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, Math.abs(2 * t - 1) ** 3]) } } return out }
+export function buildStupa(kind) {
+  const d = [];
+  const put = (p, n, k) => d.push(p[0], p[1], p[2], n[0], n[1], n[2], k);
+  const tri = (a, b, c, k, up = null) => {   // 법선: 바깥(가운데 축에서 먼 쪽) 또는 위 · 아래로
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; const l = Math.hypot(...n) || 1; n = n.map(x => x / l);
+    if (up != null) { if (Math.sign(n[2] || up) !== up) n = n.map(x => -x) } else { const cx = (a[0] + b[0] + c[0]) / 3, cy = (a[1] + b[1] + c[1]) / 3; if (n[0] * cx + n[1] * cy < 0) n = n.map(x => -x) }
+    put(a, n, k); put(b, n, k); put(c, n, k);
+  };
+  const quad = (a, b, c, e, k, up) => { tri(a, b, c, k, up); tri(a, c, e, k, up) };
+  // 두 고리(같은 점 수) 사이 옆면 + (원하면) 윗면 · 밑면
+  const loft = (lo, hi, k, { top = null, bottom = null } = {}) => {
+    const m = lo.length;
+    for (let i = 0; i < m; i++) { const j = (i + 1) % m; quad(lo[i], lo[j], hi[j], hi[i], k) }
+    if (top != null) { const z = hi.reduce((s, p) => s + p[2], 0) / m; for (let i = 0; i < m; i++) tri([0, 0, z], hi[i], hi[(i + 1) % m], top, 1) }
+    if (bottom != null) { const z = lo.reduce((s, p) => s + p[2], 0) / m; for (let i = 0; i < m; i++) tri([0, 0, z], lo[(i + 1) % m], lo[i], bottom, -1) }
+  };
+  const ring = (poly, z) => poly.map(p => [p[0], p[1], z]);
+  const prism = (poly, z0, z1, k, caps = { top: k }) => loft(ring(poly, z0), ring(poly, z1), k, caps);
+  // 지붕돌: 귀가 들린 두툼한 판(옆 · 밑) + 위로 좁아지는 낙수면(윗면)
+  const roof = (poly, z, e, rise, topPoly, lift) => {
+    const sd = subdiv(poly, 4), up = q => q[2] * lift;
+    const lo = sd.map(q => [q[0], q[1], z + up(q)]), hi = sd.map(q => [q[0], q[1], z + e + up(q)]);
+    loft(lo, hi, 1, { bottom: 2 });
+    const tp = subdiv(topPoly, 4).map(q => [q[0], q[1], z + e + rise]);
+    loft(hi, tp, 1, { top: 1 });
+  };
+  let z = 0;
+  if (kind === 'wongaksa') {
+    for (const [h, t, n] of [[2.7, .5, .55], [2.35, .5, .48], [2, .5, .42]]) { prism(AH(h, n), z, z + t, 4); z += t; prism(AH(h + .15, n), z, z + .12, 4, { top: 1, bottom: 2 }); z += .12 }   // 亞자 기단 3단과 갑석
+    for (let i = 0; i < 10; i++) {
+      const b = 1.45 - i * .085, bh = .82 - i * .04, P = i < 3 ? (r => AH(r, r * .3)) : SQ;   // 아래 세 층은 亞자, 위 일곱 층은 네모
+      prism(P(b), z, z + bh, 0); z += bh;
+      const nb = 1.45 - (i + 1) * .085; roof(P(b * 1.38), z, .14, .22, P(i < 9 ? nb * .95 : b * .7), .1 * b * 1.38); z += .14 + .22;
+    }
+    for (const [r, t] of [[.35, .25], [.25, .3], [.3, .08], [.16, .15], [.3, .08], [.16, .15], [.3, .08]]) { prism(OCT(r), z, z + t, 3); z += t }   // 상륜: 받침 · 보륜
+    loft(ring(OCT(.2), z), ring(OCT(.05), z + .4), 3, { top: 3 }); z += .4;   // 보주
+  } else {   // 불국사 삼층석탑(석가탑)
+    prism(SQ(2.3), z, z + .9, 4); z += .9; loft(ring(SQ(2.45), z), ring(SQ(2.45), z + .15), 4, { bottom: 2 }); loft(ring(SQ(2.45), z + .15), ring(SQ(1.95), z + .26), 1, { top: 1 }); z += .26;   // 아래 기단
+    prism(SQ(1.75), z, z + 1.25, 4); z += 1.25; loft(ring(SQ(1.9), z), ring(SQ(1.9), z + .15), 4, { bottom: 2 }); loft(ring(SQ(1.9), z + .15), ring(SQ(1.25), z + .26), 1, { top: 1 }); z += .26;   // 위 기단
+    const B = [[1.08, 1.3], [.95, .62], [.84, .55]];
+    B.forEach(([b, bh], i) => {
+      prism(SQ(b), z, z + bh, 0); z += bh;
+      for (let k = 0; k < 4; k++) { const r = b * (1.06 + k * .12); prism(SQ(r), z, z + .07, 2, { bottom: 2 }); z += .07 }   // 층급받침 네 단
+      const R = b * 1.62, nb = i < 2 ? B[i + 1][0] : b * .55; roof(SQ(R), z, .16, .45, SQ(nb * .95), .08 * R); z += .16 + .45;
+    });
+    prism(SQ(.42), z, z + .25, 3); z += .25;                                                  // 노반
+    loft(ring(OCT(.38), z), ring(OCT(.3), z + .22), 3, { top: 3 }); z += .22;                 // 복발
+    loft(ring(OCT(.25), z), ring(OCT(.38), z + .2), 3, { top: 3 }); z += .2;                  // 앙화
+    for (let k = 0; k < 3; k++) { prism(OCT(.3), z, z + .06, 3); z += .06; prism(OCT(.12), z, z + .14, 3); z += .14 }   // 보륜
+    prism(OCT(.06), z, z + .6, 3); z += .6; loft(ring(OCT(.12), z), ring(OCT(.02), z + .25), 3, { top: 3 }); z += .25;   // 찰주 · 보주
+  }
+  return { data: new Float32Array(d), height: z };
+}
+const STUPA_VS = `#version 300 es
+layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in float a_kind;
+uniform mat4 u_matrix; uniform float u_mu, u_scale, u_wmul; uniform vec2 u_at, u_rot;
+out vec3 v_n; out float v_kind, v_h;
+void main(){
+  vec3 p = vec3(a_pos.xy * u_scale * u_wmul, a_pos.z * u_scale); vec2 q = vec2(p.x * u_rot.x - p.y * u_rot.y, -(p.x * u_rot.y + p.y * u_rot.x));
+  v_n = vec3(a_nrm.x * u_rot.x - a_nrm.y * u_rot.y, -(a_nrm.x * u_rot.y + a_nrm.y * u_rot.x), a_nrm.z); v_kind = a_kind; v_h = a_pos.z;
+  gl_Position = u_matrix * vec4((u_at + q) * u_mu, p.z * u_mu, 1.);
+}`;
+const STUPA_FS = `#version 300 es
+precision highp float; in vec3 v_n; in float v_kind, v_h; uniform vec3 u_light, u_stone; uniform vec2 u_lit; uniform float u_night, u_H0;
+out vec4 o;
+void main(){
+  vec3 n = normalize(v_n); float d = max(dot(n, u_light), 0.), sky = .5 + .5 * n.z;
+  vec3 c = u_stone * (v_kind > 3.5 ? .94 : v_kind > 2.5 ? .82 : v_kind > 1.5 ? .62 : v_kind > .5 ? .88 : 1.);   // 기단 · 상륜 · 지붕돌 밑(그늘) · 지붕돌 윗면 · 몸돌
+  float lt = u_lit.x * (.75 + .25 * sky) + u_lit.y * d;
+  vec3 col = c * lt;
+  if (u_night > .5) {   // 밤: 달빛에 어둡게, 아래에서 비추는 따뜻한 조명(문화재 야간 조명)이 위로 갈수록 옅게
+    float rel = clamp(v_h / u_H0, 0., 1.), side = 1. - abs(n.z);
+    col = c * lt * .45 + c * vec3(1., .8, .58) * (.55 * exp(-rel * 2.4) * (.35 + .65 * side) + (v_kind > 1.5 && v_kind < 2.5 ? .0 : .05));
+  }
+  o = vec4(clamp(col, 0., 1.), 1.);
+}`;
+const STONE = { wongaksa: { light: '#E6E3DB', dark: '#DCD7CC' }, seokga: { light: '#CFC6B5', dark: '#C8BFAE' } };   // 대리석 · 화강암
+
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in vec3 a_m;
 uniform mat4 u_matrix; uniform float u_mu; uniform vec2 u_at, u_rot;
@@ -159,6 +245,9 @@ export class CityLandmarks {
     this.gl = gl; this.p = compileProgram(gl, VS, FS);
     this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_woodTower', 'u_split', 'u_lattice', 'u_H', 'u_glass', 'u_frame', 'u_seamC', 'u_crownC', 'u_wood', 'u_plaster', 'u_giwa', 'u_gold', 'u_win'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.items = LANDMARKS.map(L => { const [x, y] = toM(L.lngLat[0], L.lngLat[1]), a = L.seamDeg * Math.PI / 180; return { L, x, y, rot: [Math.cos(a), Math.sin(a)], meshes: {} } });
+    this.pS = compileProgram(gl, STUPA_VS, STUPA_FS);
+    this.uS = Object.fromEntries(['u_matrix', 'u_mu', 'u_scale', 'u_wmul', 'u_at', 'u_rot', 'u_light', 'u_stone', 'u_lit', 'u_night', 'u_H0'].map(n => [n, gl.getUniformLocation(this.pS, n)]));
+    this.stupas = STUPAS.map(T => { const [x, y] = toM(T.lngLat[0], T.lngLat[1]), a = (T.yawDeg || 0) * Math.PI / 180; return { T, x, y, lat: T.lngLat[1], rot: [Math.cos(a), Math.sin(a)], mesh: null } });
   }
   mesh(it, look) {
     const k = look; if (it.meshes[k]) return it.meshes[k];
@@ -183,9 +272,23 @@ export class CityLandmarks {
     for (const k of ['glass', 'frame', 'seamC', 'crownC', 'win', 'wood', 'plaster', 'giwa', 'gold']) gl.uniform3fv(u['u_' + k], hex(C[k]));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     for (const it of this.items) {
+      if (STUPAS.some(T => T.replaces === it.L.id && T.looks.includes(look))) continue;   // 조선: 롯데타워 자리는 거대한 석탑
       const m = this.mesh(it, look), L = it.L;
       gl.uniform2f(u.u_at, it.x, it.y); gl.uniform2fv(u.u_rot, it.rot); gl.uniform1f(u.u_split, L.crown.splitM); gl.uniform1f(u.u_lattice, L.crown.latticeFromM); gl.uniform1f(u.u_H, L.height);
       gl.bindVertexArray(m.va); gl.drawArrays(gl.TRIANGLES, 0, m.n);
+    }
+    // 석탑(모양이 맞을 때만): 실제 치수 메시를 높이에 맞춰 키운다. minPx 가 있으면 화면에서 그만큼은 보이게
+    const S = this.stupas.filter(it => it.T.looks.includes(look));
+    if (S.length) {
+      const v = this.uS; gl.useProgram(this.pS); gl.uniformMatrix4fv(v.u_matrix, false, MT); gl.uniform1f(v.u_mu, MU);
+      gl.uniform3f(v.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2fv(v.u_lit, lit); gl.uniform1f(v.u_night, dark ? 1 : 0);
+      for (const it of S) {
+        if (!it.mesh) { const B = buildStupa(it.T.kind), va = gl.createVertexArray(), b = gl.createBuffer(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, B.data, gl.STATIC_DRAW);
+          for (const [loc, n, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 28, off * 4) } gl.bindVertexArray(null); it.mesh = { va, b, n: B.data.length / 7, h: B.height } }
+        const mpp = 40075016.686 * Math.cos(it.lat * Math.PI / 180) / (512 * 2 ** zoom), H = Math.max(it.T.height, (it.T.minPx || 0) * mpp);
+        gl.uniform1f(v.u_scale, H / it.mesh.h); gl.uniform1f(v.u_wmul, it.T.widthMul || 1); gl.uniform1f(v.u_H0, it.mesh.h); gl.uniform2f(v.u_at, it.x, it.y); gl.uniform2fv(v.u_rot, it.rot); gl.uniform3fv(v.u_stone, hex(STONE[it.T.kind][dark ? 'dark' : 'light']));
+        gl.bindVertexArray(it.mesh.va); gl.drawArrays(gl.TRIANGLES, 0, it.mesh.n);
+      }
     }
     gl.bindVertexArray(null); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
