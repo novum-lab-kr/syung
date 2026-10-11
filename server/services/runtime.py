@@ -8,19 +8,21 @@ from __future__ import annotations
 import threading
 
 from server.services.bus import BusArrivalService, BusLiveService
+from server.services.health import HealthService
 from server.services.journey import JourneyPlanner
 from server.services.live import SubwayLiveService
 from server.services.owner_auth import OwnerAuth
 from server.services.places import PlaceSearch
+from server.store.live_samples import LiveSamples
 
 
 class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
                  live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
-                 places: PlaceSearch | None = None, auth: OwnerAuth | None = None):
+                 places: PlaceSearch | None = None, auth: OwnerAuth | None = None, health: HealthService | None = None):
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
-        self._journey, self._places, self._auth = journey, places, auth
+        self._journey, self._places, self._auth, self._health = journey, places, auth, health
 
     @property
     def live(self) -> SubwayLiveService:
@@ -28,6 +30,15 @@ class Services:
             if self._live is None:
                 self._live = SubwayLiveService()
             return self._live
+
+    @property
+    def health(self) -> HealthService:
+        """이상 감지(/api/health): live 의 상태 + subway-sampler 기록(평소 기준은 jobs/health_baseline 이 만든다)."""
+        with self._lock:
+            if self._health is None:
+                config = self.live.config
+                self._health = HealthService(self.live, LiveSamples(config.samples_dir, config.health_dir))
+            return self._health
 
     @property
     def bus(self) -> BusLiveService:

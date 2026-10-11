@@ -1,6 +1,6 @@
 """통합 서버(:3113)의 HTTP 처리: 주소 → 담당 route, 응답 쓰기(옛 subway_live_proxy.Handler 와 같은 머리말 · 직렬화).
 
-GET  /live · /health · /route · /place · /auth · /bus/live · /api/bus/live
+GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live
 POST /login · /logout
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
 """
@@ -49,6 +49,8 @@ class ResponseCache:
 GET_JSON = {
     "/live": lambda services, query: live_routes.live(services.live, query),
     "/health": lambda services, query: ({"ok": True}, 200),
+    # 이상 감지(관제탑이 5분마다): 늘 200, 바깥 API 를 부르지 않는다
+    "/api/health": lambda services, query: (services.health.report(), 200),
     "/route": journey_routes.route,
     "/place": journey_routes.place,
 }

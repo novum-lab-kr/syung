@@ -19,6 +19,7 @@ from server.store.records import record_positions
 from server.store.subway_quota import SubwayQuotaFile
 
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
+PROBE_RESERVE = 100   # 이상 감지의 위치 피드 확인은 지도 몫(position_reserve)보다 이만큼 더 남았을 때만
 POSITION_PARTIAL_MIN = 9   # 전 역 도착에 이만큼 넘게 있는 노선만 위치 피드가 모자란지 본다(overlay_positions)
 
 LINE_NAMES = {
@@ -310,6 +311,10 @@ class SubwayLiveService:
         self.position_cache: dict[str, tuple[float, list[dict]]] = {}
         self.position_used = {"day": "", "calls": 0}
         self.position_seen: dict[str, float] = {}   # line -> last time a request asked for it (lines being watched now)
+        # 이상 감지(/api/health): 전 노선 받기의 마지막 성공 · 이어진 실패의 시작, 노선별 위치 피드 대수 대 전 역 도착 대수
+        self.all_ok_at: float | None = None
+        self.all_error_since: float | None = None
+        self.position_checks: dict[str, list[tuple[float, int, int]]] = {}   # line -> [(받은 때, 위치 대수, 도착 대수)] 최근 1시간
 
     # ---- 하루 호출 수 ----------------------------------------------------------------------
 
@@ -355,11 +360,16 @@ class SubwayLiveService:
     # ---- 전 노선(ALL) ------------------------------------------------------------------------
 
     def _fetch_all(self) -> dict:
-        self._count_call()
-        payload = self.source.fetch_all()
-        self.quota_used += 1
-        self._save_quota()
-        check_error(payload)
+        try:
+            self._count_call()
+            payload = self.source.fetch_all()
+            self.quota_used += 1
+            self._save_quota()
+            check_error(payload)
+        except Exception:
+            self.all_error_since = self.all_error_since or time.time()
+            raise
+        self.all_ok_at, self.all_error_since = time.time(), None
         fetched_at = datetime.now(timezone.utc).isoformat()
         lines, self.next_trips, self.idle = normalize_arrivals(payload)
         return {"fetchedAt": fetched_at, "lines": stabilize(lines, self.last_seen), "stations": index_arrivals(payload)}
@@ -521,6 +531,8 @@ class SubwayLiveService:
             # 위치 피드가 노선 일부만 줄 때가 있다(7호선 2026-10-12 출근 시간: 위치 3대 · 전 역 도착 51대, 평소 위치 약 30대).
             # 그대로 명단으로 쓰면 전 역 도착에만 있는 열차가 다 빠진다 — 전 역 도착의 3분의 1도 안 되면 그 노선은 위치 피드를 쓰지 않는다
             listed = sum(1 for t in trains if t["line"] == line)
+            if (c := self.position_cache.get(line)) and c[1] is pos:
+                self.note_position(line, c[0], len(pos), listed)
             if listed >= POSITION_PARTIAL_MIN and len(pos) * 3 < listed:
                 partial.append(line)
                 continue
@@ -549,6 +561,37 @@ class SubwayLiveService:
         return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used,
                 **({"positionPartial": partial} if partial else {}),
                 "positionBudget": {"used": self.position_used["calls"], "limit": self.config.position_budget}}
+
+    def note_position(self, line: str, at: float, count: int, listed: int) -> None:
+        """위치 피드 한 번의 대수와 그때 전 역 도착의 대수(같은 받기는 한 번만, 1시간치만 둔다)."""
+        rows = self.position_checks.setdefault(line, [])
+        if rows and rows[-1][0] == at:
+            return
+        rows.append((at, count, listed))
+        while rows and rows[0][0] < at - 3600:
+            rows.pop(0)
+
+    def last_position_read(self, line: str) -> float:
+        rows, cached = self.position_checks.get(line), self.position_cache.get(line)
+        return max(rows[-1][0] if rows else 0.0, cached[0] if cached else 0.0)
+
+    def probe_position(self, line: str) -> bool:
+        """이상 감지용 위치 피드 한 번(jobs/position_probe): 위치 피드 예산 · 하루 한도 안에서만, 지도의 위치 캐시는 건드리지 않는다."""
+        with self.position_lock:
+            if self.position_used["day"] != kst_today():
+                self.position_used.update(day=kst_today(), calls=0)
+            if (self.quiet() or self.position_used["calls"] >= self.config.position_budget
+                    or self.calls_left() < self.config.position_reserve + PROBE_RESERVE):
+                return False
+            self.position_used["calls"] += 1
+        listed = len(self.all_cache[1]["lines"].get(line, [])) if self.all_cache else 0
+        try:
+            data = self.fetch_line(line)
+        except (OSError, ValueError, RuntimeError, urllib.error.URLError):
+            return False
+        self.save_positions(data)
+        self.note_position(line, time.time(), len(data["trains"]), listed)
+        return True
 
     # ---- 지도가 묻는 것 ----------------------------------------------------------------------
 

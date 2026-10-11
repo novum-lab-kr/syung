@@ -155,7 +155,7 @@ class AppTest(unittest.TestCase):
         config = SubwayConfig(host="127.0.0.1", port=38199, burst_every=every, response_seconds=1.75)
         services = SimpleNamespace(
             live=SimpleNamespace(load_quota=Mock(side_effect=lambda: events.append("load"))),
-            journey=object(), bus=object(),
+            journey=object(), bus=object(), health=object(),
         )
         threads = []
 
@@ -188,21 +188,25 @@ class AppTest(unittest.TestCase):
 
     def test_main_loads_quota_then_starts_warm_burst_bus_then_server(self):
         events, threads, services = self.run_main(7200)
-        self.assertEqual(events, ["load", "thread", "start", "thread", "start", "thread", "start", "handler", "server", "serve"])
+        self.assertEqual(events, ["load"] + ["thread", "start"] * 5 + ["handler", "server", "serve"])
         self.assertEqual(threads, [(app.warm_journey, (services,), True),
                                    (app.burst_loop, (services.live,), True),
-                                   (app._bus_samples, (services,), True)])
+                                   (app._bus_samples, (services,), True),
+                                   (app.baseline_loop, (services.health,), True),
+                                   (app.probe_loop, (services.live, 60), True)])
 
     def test_main_without_burst_starts_only_warm_and_bus_threads(self):
         events, threads, services = self.run_main(0)
-        self.assertEqual(events, ["load", "thread", "start", "thread", "start", "handler", "server", "serve"])
-        self.assertEqual(threads, [(app.warm_journey, (services,), True), (app._bus_samples, (services,), True)])
+        self.assertEqual(events, ["load"] + ["thread", "start"] * 4 + ["handler", "server", "serve"])
+        self.assertEqual(threads, [(app.warm_journey, (services,), True), (app._bus_samples, (services,), True),
+                                   (app.baseline_loop, (services.health,), True), (app.probe_loop, (services.live, 60), True)])
 
     def test_main_continues_after_journey_creation_fails_in_warm_thread(self):
         events = []
 
         class BrokenServices:
             live = SimpleNamespace(load_quota=Mock(side_effect=lambda: events.append("load")))
+            health = object()
 
             @property
             def journey(self):
@@ -217,12 +221,14 @@ class AppTest(unittest.TestCase):
                     events.append("warm-start")
                     # 가짜 start 안에서 warm을 실행해, 잡은 예외가 main으로 새지 않는지 확인한다.
                     target(*args)
+                elif target in (app.baseline_loop, app.probe_loop):
+                    pass
                 else:
                     self.assertIs(target, app._bus_samples)
                     events.append("bus-start")
             return SimpleNamespace(start=start)
 
-        config = SubwayConfig(burst_every=0)
+        config = SubwayConfig(burst_every=0, probe_every=0)
         handler = object()
         with patch.object(app.SubwayConfig, "from_env", return_value=config), \
                 patch.object(app, "default_services", return_value=services), \
@@ -237,7 +243,8 @@ class AppTest(unittest.TestCase):
         output.assert_called_once_with("journey warm-up failed: invalid JOURNEY_WORKERS", flush=True)
         self.assertEqual(threads.call_args_list,
                          [call(target=app.warm_journey, args=(services,), daemon=True),
-                          call(target=app._bus_samples, args=(services,), daemon=True)])
+                          call(target=app._bus_samples, args=(services,), daemon=True),
+                          call(target=app.baseline_loop, args=(services.health,), daemon=True)])
         make_handler.assert_called_once_with(services, config.response_seconds)
         server.assert_called_once_with((config.host, config.port), handler)
         server.return_value.serve_forever.assert_called_once_with()

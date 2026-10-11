@@ -12,6 +12,7 @@ from http.server import ThreadingHTTPServer
 from server.config import BusServerConfig, SubwayConfig
 from server.jobs.burst import burst_loop
 from server.jobs.bus_samples import background_loop
+from server.jobs.health import baseline_loop, probe_loop
 from server.jobs.warm_journey import warm_journey
 from server.routes import bus as bus_routes
 from server.routes.http import Server, make_handler
@@ -33,6 +34,9 @@ def main() -> None:
     if config.burst_every > 0:
         threading.Thread(target=burst_loop, args=(services.live,), daemon=True).start()
     threading.Thread(target=_bus_samples, args=(services,), daemon=True).start()
+    threading.Thread(target=baseline_loop, args=(services.health,), daemon=True).start()   # 이상 감지: 평소 기준
+    if config.probe_every > 0:
+        threading.Thread(target=probe_loop, args=(services.live, config.probe_every), daemon=True).start()   # 이상 감지: 위치 피드 확인
     Server((config.host, config.port), make_handler(services, config.response_seconds)).serve_forever()
 
 
