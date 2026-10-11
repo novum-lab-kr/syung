@@ -329,6 +329,19 @@ class LiveServiceTest(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertTrue(all(row["fetchedAt"] == NOW.astimezone(live.timezone.utc).isoformat() for row in rows))
 
+    def test_overlay_skips_partial_position_feed(self):
+        # 7호선 2026-10-12 출근 시간: 위치 피드 3대 · 전 역 도착 51대 — 위치 피드를 명단으로 쓰면 48대가 빠졌다
+        source = FakeSource(line_result={"realtimePositionList": [position_row("p1"), position_row("p2")]})
+        service = self.service(source, position_lines=1)
+        original = [train_row(f"a{i}") for i in range(12)]
+        body = {"ok": True, "trains": copy.deepcopy(original), "trainCount": len(original)}
+        overlaid = service.overlay_positions(body, ["9호선"], "")
+        self.assertEqual([row["trainNo"] for row in overlaid["trains"]], [row["trainNo"] for row in original])
+        self.assertEqual((overlaid["positionLines"], overlaid["positionPartial"]), ([], ["9호선"]))
+        # 노선 열차가 적을 때(9대 미만)는 그대로 위치 피드가 명단
+        small = {"ok": True, "trains": [train_row(f"a{i}") for i in range(5)]}
+        self.assertEqual(service.overlay_positions(small, ["9호선"], "")["positionLines"], ["9호선"])
+
     def test_disabled_overlay_returns_same_body_without_calling_source(self):
         service = self.service(position_lines=0)
         body = {"ok": True, "trains": [train_row()]}

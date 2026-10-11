@@ -19,6 +19,7 @@ from server.store.records import record_positions
 from server.store.subway_quota import SubwayQuotaFile
 
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
+POSITION_PARTIAL_MIN = 9   # 전 역 도착에 이만큼 넘게 있는 노선만 위치 피드가 모자란지 본다(overlay_positions)
 
 LINE_NAMES = {
     "1001": "1호선", "1002": "2호선", "1003": "3호선", "1004": "4호선",
@@ -507,7 +508,7 @@ class SubwayLiveService:
             return body
         trains = list(body.get("trains") or [])
         at = {(t["line"], t["trainNo"]): i for i, t in enumerate(trains)}
-        used = []
+        used, partial = [], []
         # also the other requested lines whose position feed was read lately for someone else (no call):
         # a line dropping out of the first POSITION_LINES as the map moves no longer flips back to the
         # all-stations roster, ghosts and all (6308 at 봉화산 showing and going, 2026-09-30)
@@ -516,6 +517,12 @@ class SubwayLiveService:
         for line in picks + list(recent):
             pos = recent[line] if line in recent else self._positions(line, self.config.focus_seconds if line == focus else self.config.position_seconds)
             if pos is None:
+                continue
+            # 위치 피드가 노선 일부만 줄 때가 있다(7호선 2026-10-12 출근 시간: 위치 3대 · 전 역 도착 51대, 평소 위치 약 30대).
+            # 그대로 명단으로 쓰면 전 역 도착에만 있는 열차가 다 빠진다 — 전 역 도착의 3분의 1도 안 되면 그 노선은 위치 피드를 쓰지 않는다
+            listed = sum(1 for t in trains if t["line"] == line)
+            if listed >= POSITION_PARTIAL_MIN and len(pos) * 3 < listed:
+                partial.append(line)
                 continue
             used.append(line)
             for p in pos:
@@ -540,6 +547,7 @@ class SubwayLiveService:
         # Nor is one that feed has as not running yet (idle: 6312).
         trains = [t for t in trains if t["line"] not in used or (t.get("source") == "position" and (t["line"], t["trainNo"]) not in self.idle)]
         return {**body, "trains": trains, "trainCount": len(trains), "positionLines": used,
+                **({"positionPartial": partial} if partial else {}),
                 "positionBudget": {"used": self.position_used["calls"], "limit": self.config.position_budget}}
 
     # ---- 지도가 묻는 것 ----------------------------------------------------------------------
