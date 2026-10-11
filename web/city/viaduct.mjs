@@ -40,7 +40,6 @@ import { layoutExits, buildExits, exitSamples } from './viaduct_exits.mjs';
 export { STRIDE, MAT };
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
-const STUB_MAX_M = 300;   // 끝역에서 상판을 늘리는 가장 긴 길이(가장 긴 승강장 반길이 광명 223 m 보다 길게)
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
 // local metres back to lon/lat (the inverse of city_life's toM)
 export const toLL = (x, y) => { const mx = O.x + x * MU, my = O.y + y * MU; return [(mx - .5) * 360, Math.atan(Math.sinh(Math.PI * (1 - 2 * my))) * 180 / Math.PI] };
@@ -154,7 +153,7 @@ export function buildDeck(rows, eo, V, flags, detail, hT = V.railHeightM) {
 export function buildPiers(rows, spots, eo, V, flags, hT = V.railHeightM) {
   const H = fnOf(hT), M = new Mesh(spots.length * 54), half = V.pier.sideM / 2, mp = V.pier.minPx / 2, cl = V.pier.capLengthM / 2, total = rows[rows.length - 1].s || 1, K = V.elevatedConcreteK;
   for (const s of spots) {
-    const r = rowAtX(rows, s), sh = elevatedAt(flags, Math.max(0, Math.min(1, s / total))) ? K : 1, hB = H(s) - V.deckThicknessM, hC = hB - V.pier.capDepthM;   // s past the ends: under a terminal's stub (stubsOf)
+    const r = rowAt(rows, s), sh = elevatedAt(flags, s / total) ? K : 1, hB = H(s) - V.deckThicknessM, hC = hB - V.pier.capDepthM;
     const C = (h, l, a, n) => [r, h, eo, 0, 0, 0, 0, 0, l, a, Math.sign(l) * mp, Math.sign(a) * mp, MAT.PIER, sh, n];   // the column
     if (V.aqueduct) for (let k = 0; k < 8; k++) {   // 조선 수로: 팔각 통나무 기둥(면 k 의 법선 코드 4 + k)
       const p = (j, h) => { const t = (j - .5) * Math.PI / 4, c = Math.cos(t), s2 = Math.sin(t); return [r, h, eo, 0, 0, 0, 0, 0, .8 * half * c, .8 * half * s2, c * mp, s2 * mp, MAT.PIER, sh, 4 + k] };
@@ -285,9 +284,8 @@ export class CityViaduct {
   setGaps(fn) { this.gapFn = fn || null; this.gapV = (this.gapV || 0) + 1; for (const k of [...this.cache.keys()]) if (/^(deck|det|pier):/.test(k)) this.del(k) }
   gapsOf(e) { return this.gapFn ? this.gapFn(e.line, e.lo, e.hi) : null }
   deckMesh(e, rows, detail, H) {
-    const gaps = this.gapsOf(e), parts = !gaps || !gaps.length ? [buildDeck(rows, e.eo, this.V, e.flags, detail, H)] : rowsBetweenGaps(rows, gaps).filter(p => p.length >= 2).map(p => buildDeck(p, e.eo, this.V, e.flags, detail, H));
-    for (const st of this.stubsOf(e)) parts.push(buildDeck(st.rows, e.eo, this.V, st.elevated ? [[-Infinity, Infinity]] : null, detail, H));   // 끝역: 승강장 끝까지 늘린 상판
-    if (parts.length === 1) return parts[0];
+    const gaps = this.gapsOf(e); if (!gaps || !gaps.length) return buildDeck(rows, e.eo, this.V, e.flags, detail, H);
+    const parts = rowsBetweenGaps(rows, gaps).filter(p => p.length >= 2).map(p => buildDeck(p, e.eo, this.V, e.flags, detail, H));
     let n = 0; for (const q of parts) n += q.length; const out = new Float32Array(Math.max(n, STRIDE)); n = 0; for (const q of parts) { out.set(q, n); n += q.length } return out.subarray(0, n);
   }
   // this line's rail height at level 1: the pack's, plus a few centimetres by line so two lines crossing never share a plane (depth fighting in the overlap)
@@ -353,39 +351,12 @@ export class CityViaduct {
   rowsOf(e) {
     const g = this.net.geom(e.line, e.lo, e.hi); if (e.g === g && e.rows) return e.rows;
     e.g = g; e.rows = ribbonRows(g.pts.map(q => [(q.x - O.x) / MU, (q.y - O.y) / MU])); e.flags = FLAGS[e.id] || null; e.eo = this.net.offset(e.line, e.lo, e.hi); e.prof = null; e.dense = null;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of e.rows) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x); y1 = Math.max(y1, r.y) } e.box = [x0, y0, x1, y1]; e.stubKey = null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of e.rows) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x); y1 = Math.max(y1, r.y) } e.box = [x0, y0, x1, y1];
     for (const k of ['deck', 'det', 'pier']) this.del(k + ':' + e.id);
-    for (const end of this.terminalEnds(e)) { const A = end === 'lo' ? e.rows[0] : e.rows[e.rows.length - 1], k = (end === 'lo' ? -1 : 1) * STUB_MAX_M, x = A.x + A.fx * k, y = A.y + A.fy * k; e.box = [Math.min(e.box[0], x), Math.min(e.box[1], y), Math.max(e.box[2], x), Math.max(e.box[3], y)] }   // 끝역: 늘릴 수 있는 데까지 미리(조각은 승강장 · gaps 에 따라 deckMesh · spots 가 stubsOf 로)
     return e.rows;
-  }
-  // 끝역(그 노선 이웃이 하나인 역): 승강장이 상판 끝(역 점) 너머로 나간 만큼 상판을 곧게 늘린 조각 — 기본 모드 노선이 끝역 너머로
-  // 승강장 반길이만큼 곧게 나가는 것과 같은 자리. 열차가 달리는 구간(rows · 높이 profileOf · heightAt)은 그대로라 끝역 정차 자리는 안 바뀐다.
-  // [{end: 'lo'|'hi', ext (m), rows (s: lo 끝 −ext…0, hi 끝 total…total+ext), elevated}] — 롤코 상판이 그 끝에서 끊기면(gaps) 없음
-  stubsOf(e) {
-    const rows = e.rows, rects = this.net.rects; if (!rows || rows.length < 2 || !rects) return [];
-    const key = [e.lo, e.hi].map(id => rects.get(e.line + ':' + id)).concat(this.gapV || 0);
-    if (e.stubKey && e.stubKey.length === key.length && e.stubKey.every((k, i) => k === key[i])) return e.stubs;
-    const total = rows[rows.length - 1].s, gaps = this.gapsOf(e) || [], out = [];
-    for (const end of this.terminalEnds(e)) {
-      const id = e[end], rect = rects.get(e.line + ':' + id); if (!rect) continue;
-      const f = end === 'lo' ? 0 : 1; if (gaps.some(([a, b]) => f >= a && f <= b)) continue;
-      const A = end === 'lo' ? rows[0] : rows[rows.length - 1], ox = end === 'lo' ? -A.fx : A.fx, oy = end === 'lo' ? -A.fy : A.fy;   // outward along the deck's end
-      let ext = 0; for (const r of this.platGeom(rect).rows) ext = Math.max(ext, (r.x - A.x) * ox + (r.y - A.y) * oy);
-      ext = Math.min(ext, STUB_MAX_M); if (ext < 1) continue;
-      const st = end === 'lo' ? [rowAtX(rows, -ext), rowAtX(rows, 0)] : [rowAtX(rows, total), rowAtX(rows, total + ext)];
-      out.push({ end, ext, rows: st, elevated: elevatedAt(e.flags, f) });
-    }
-    if (e.stubKey) (this.staleKeys ||= []).push(...['deck', 'det', 'pier'].map(k => [k + ':' + e.id, this.frame]));   // 승강장이 바뀌었다: 다음 프레임 첫머리(levelsOf)에 지우고 다시 짓는다(이 프레임에 꺼낸 조각은 그대로 그린다)
-    e.stubs = out; e.stubKey = key; return out;
-  }
-  // 이 구간의 끝 중 그 노선의 끝역인 쪽('lo' · 'hi'): 그 노선 이웃이 하나뿐인 역(갈래 끝 포함, 기본 모드 terminalStops 와 같은 규칙)
-  terminalEnds(e) {
-    if (!this.nbr) { this.nbr = new Map(); for (const x of this.edgeList()) for (const id of [x.lo, x.hi]) { const k = x.line + ':' + id; this.nbr.set(k, (this.nbr.get(k) || 0) + 1) } }
-    return ['lo', 'hi'].filter(end => this.nbr.get(e.line + ':' + e[end]) === 1);
   }
   // the edge's height profile: flat at each station's level, one gentle ramp between when they differ
   profileOf(e) {
-    this.stubsOf(e);   // 끝역 조각이 승강장 · gaps 와 맞는지(키 비교만, 렌더가 구간마다 부른다)
     if (e.prof && e.profV === this.levelsVersion) return e.prof;
     const rows = this.rowsOf(e), total = rows.length ? rows[rows.length - 1].s : 0, hLo = this.stationH(e.line, e.lo), hHi = this.stationH(e.line, e.hi), humps = this.humps?.get(e.id) || null;
     e.prof = edgeProfile(hLo, hHi, total, this.platLength(e.line, e.lo) / 2, this.platLength(e.line, e.hi) / 2, this.pack, humps); e.profV = this.levelsVersion; e.ramp = Math.abs(hLo - hHi) > 1e-6 || !!(humps && humps.length);
@@ -396,7 +367,6 @@ export class CityViaduct {
   deckRows(e) { this.profileOf(e); if (!e.ramp) return e.rows; return e.dense || (e.dense = densify(e.rows, 12)) }
   // the levels of every line:station (city_viaduct_levels.mjs), from the station rectangles; again when they change
   levelsOf() {
-    if (this.staleKeys?.length) this.staleKeys = this.staleKeys.filter(([k, f]) => f >= this.frame || (this.del(k), false));   // stubsOf 가 낡았다고 한 조각: 지난 프레임 것만(렌더 도중 stationH 로 불려도 이 프레임 조각은 안 지운다)
     const rects = this.net.rects; if (!rects || !rects.size || this.resolving) return this.levels;
     if (this.levels && this.levelRects === rects && this.levelCount === rects.size && !this.levelsDirty) return this.levels;
     const t0 = performance.now(), Lv = this.V.levels, lines = new Map(); for (const k of rects.keys()) { const id = k.slice(k.lastIndexOf(':') + 1); lines.set(id, (lines.get(id) || 0) + 1) }
@@ -434,10 +404,6 @@ export class CityViaduct {
       if (obs.length) { const h = H(s); for (const o of obs) if (h > o.h + 1 && pointSegmentDistance([q.x, q.y], o.seg[0], o.seg[1]) < o.half) return false }   // no pier of an upper deck down through a lower line's station
       const r = life.inBuilding(q.x, q.y); return r === undefined ? undefined : !r });
     if (gaps.length) sp.spots = sp.spots.filter(x => !gaps.some(([a, b]) => x >= a && x <= b));   // 상판이 끊긴 곳(롤코 레일이 떠난 곳)엔 교각 없음
-    for (const st of this.stubsOf(e)) {   // 끝역에서 늘린 상판 밑: 같은 규칙으로(끝에서 8 m 안쪽, 건물 밖)
-      const at = t => st.end === 'lo' ? -st.ext + t : total + st.ext - t, ok = t => { const s = at(t), q = rowAtX(rows, s); if (obs.length) { const h = H(s); for (const o of obs) if (h > o.h + 1 && pointSegmentDistance([q.x, q.y], o.seg[0], o.seg[1]) < o.half) return false } const r = life.inBuilding(q.x, q.y); return r === undefined ? undefined : !r };
-      const more = pierSpots(st.ext, P.everyM, P.searchM, hashi(e.lo, e.hi, st.end === 'lo' ? 11 : 13), ok); sp.spots.push(...more.spots.map(at)); if (more.unknown) sp.unknown = true;
-    }
     return sp;
   }
   // the other lines' station structures at this edge's two stations: an upper deck's piers keep out of them
