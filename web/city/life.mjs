@@ -232,6 +232,7 @@ void main(){
   float u = u_unit * s;
   vec3 p = vec3(i_a.xy + u_right * f * u, z * u);
   gl_Position = u_matrix * vec4(p.xy * u_mu, p.z * u_mu, 1.);
+  gl_Position.z -= part * 3e-6 * gl_Position.w;   // 한 평면에 겹친 조각(머리 위 머리카락 · 몸 위 팔): 부위 번호가 클수록 조금 앞으로 — 같은 깊이라 머리카락이 깜빡였다(2026-10-11 행님)
   int si = int(i_b.z + .5), pi = int(i_c.x + .5), hi = int(i_c.y + .5);
   vec3 c = part < 12. ? u_pants[pi] : part < 20. ? u_pants[pi] * .45 : part < 32. ? u_shirt[si] : part < 40. ? u_skin : part < 50. ? u_skin : u_hair[hi];
   v_col = c * (u_lit.x + u_lit.y * .8); v_a = 1.;
