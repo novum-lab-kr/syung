@@ -65,4 +65,11 @@ test('끝역: 고가 상판 · 교각을 승강장 끝까지 늘리고, 열차�
   rects.set('X:1', { ...rect(0), coords: [toLL(-120, 0), toLL(0, 0), toLL(120, 0)] }); v.frame++; v.profileOf(e12);
   assert.ok(Math.abs(v.stubsOf(e12)[0].ext - 120) < .5); assert.equal(v.staleKeys.length, 3);
   v.levelsOf(); assert.equal(v.staleKeys.length, 3, '같은 프레임(렌더 도중 stationH)에는 안 지운다'); v.frame++; v.levelsOf(); assert.equal(v.staleKeys.length, 0);
+  // 롤코: gapFn(coasterGaps)이 heightAt → profileOf 를 부른다 — 끝역 조각이 gaps 를 물으면 끝없이 돈다(2026-10-11 운영 롤코 RangeError)
+  v.setGaps((l, lo, hi) => { v.heightAt(l, lo, hi, .5); return lo === 1 ? [[0, .1]] : null });   // 1 쪽 끝은 레일이 고가를 떠남
+  e12.prof = null; e23.prof = null;
+  const H12 = v.profileOf(e12), H23 = v.profileOf(e23);
+  const [g0] = xs(v.deckMesh(e12, e12.rows, false, H12)), [, g1] = xs(v.deckMesh(e23, e23.rows, false, H23));
+  assert.ok(g0 > 19 && Math.abs(g1 - 490) < .5, `끊긴 끝(1)은 안 늘리고, 3 쪽은 늘린다: ${g0} · ${g1}`);
+  assert.ok(v.spots(e12, { inBuilding: () => false }).spots.every(s => s > 0), '끊긴 끝 밑엔 교각 없음');
 });
