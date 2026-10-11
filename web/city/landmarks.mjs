@@ -328,7 +328,7 @@ export class CityLandmarks {
     try { if (!this.gl) this.init(gl); this._render(gl, matrix, opts) }
     catch (e) { this.broken = true; console.error('city-landmarks: off —', e) }
   }
-  _render(gl, matrix, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36] }) {
+  _render(gl, matrix, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36], phone = false }) {
     const wood = look === 'wood-tower';   // 나무 탑(조선): 나무 기둥 · 회벽 · 기와 처마
     if (zoom < 11) return;
     const MT = this.MT; for (let i = 0; i < 16; i++) MT[i] = matrix[i]; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
@@ -344,19 +344,45 @@ export class CityLandmarks {
       gl.uniform2f(u.u_at, it.x, it.y); gl.uniform2fv(u.u_rot, it.rot); gl.uniform1f(u.u_split, L.crown.splitM); gl.uniform1f(u.u_lattice, L.crown.latticeFromM); gl.uniform1f(u.u_H, L.height);
       gl.bindVertexArray(m.va); gl.drawArrays(gl.TRIANGLES, 0, m.n);
     }
-    // 석탑(모양이 맞을 때만): 실제 치수 메시를 높이에 맞춰 키운다. minPx 가 있으면 화면에서 그만큼은 보이게
-    const S = this.stupas.filter(it => it.T.looks.includes(look));
+    // 석탑(모양이 맞을 때만): 실제 치수 메시를 높이에 맞춰 키운다. minPx 가 있으면 화면에서 그만큼은 보이게.
+    // 데스크톱은 three.js 디테일 모델(web/city/stupa3d.mjs — 조선 모드에서만 받는다, 화면에 들어온 탑만 짓는다), 휴대폰 · 받는 중 · 실패면 아래 셰이더 탑
+    if (this.s3 && look !== 'wood-tower') { this.s3.dispose(); this.s3 = null; this.s3p = null }   // 조선을 나가면 three 자원을 치운다
+    const S0 = this.stupas.filter(it => it.T.looks.includes(look)), use3 = !phone && !this.s3fail && S0.length > 0, three = [];
+    if (use3 && !this.s3p) this.s3p = import('./stupa3d.mjs').then(m => { if (!this.gl) return; const s3 = new m.Stupa3D(); s3.init(this.gl); this.s3 = s3; repaint() }).catch(e => { this.s3fail = true; console.warn('city-landmarks: 3D 석탑 못 받음 —', e) });
+    let built = false;
+    const S = S0.filter(it => {
+      const mpp = 40075016.686 * Math.cos(it.lat * Math.PI / 180) / (512 * 2 ** zoom); it.H = Math.max(it.T.height, (it.T.minPx || 0) * mpp);
+      const X = it.x * MU, Y = it.y * MU, Z = it.H * .5 * MU, w = MT[3] * X + MT[7] * Y + MT[11] * Z + MT[15];   // 화면 밖이면 건너뛴다(그 탑 가운데가 넉넉한 화면 상자 밖)
+      if (w <= 0) return false; const cx = (MT[0] * X + MT[4] * Y + MT[8] * Z + MT[12]) / w, cy = (MT[1] * X + MT[5] * Y + MT[9] * Z + MT[13]) / w; if (Math.abs(cx) > 2.5 || Math.abs(cy) > 2.5) return false;
+      if (!use3 || !this.s3) return true;
+      if (!this.s3.has(it.T.kind)) { if (!built) { built = true; try { this.s3.build(it.T.kind) } catch (e) { this.s3fail = true; console.warn('city-landmarks: 3D 석탑 짓기 실패 —', e) } } return true }   // 한 프레임에 하나만 짓고, 다 지을 때까지는 셰이더 탑
+      three.push(it); return false;
+    });
+    if (built) repaint();
     if (S.length) {
       const v = this.uS; gl.useProgram(this.pS); gl.uniformMatrix4fv(v.u_matrix, false, MT); gl.uniform1f(v.u_mu, MU);
       gl.uniform3f(v.u_light, Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)); gl.uniform2fv(v.u_lit, lit); gl.uniform1f(v.u_night, dark ? 1 : 0);
       for (const it of S) {
         if (!it.mesh) { const B = buildStupa(it.T.kind), va = gl.createVertexArray(), b = gl.createBuffer(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, B.data, gl.STATIC_DRAW);
           for (const [loc, n, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6], [3, 3, 7]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 40, off * 4) } gl.bindVertexArray(null); it.mesh = { va, b, n: B.data.length / 10, h: B.height } }
-        const mpp = 40075016.686 * Math.cos(it.lat * Math.PI / 180) / (512 * 2 ** zoom), H = Math.max(it.T.height, (it.T.minPx || 0) * mpp);
-        gl.uniform1f(v.u_scale, H / it.mesh.h); gl.uniform1f(v.u_wmul, it.T.widthMul || 1); gl.uniform1f(v.u_relief, it.T.kind === 'wongaksa' ? 1 : 0); gl.uniform1f(v.u_H0, it.mesh.h); gl.uniform2f(v.u_at, it.x, it.y); gl.uniform2fv(v.u_rot, it.rot); gl.uniform3fv(v.u_stone, hex(STONE[it.T.kind][dark ? 'dark' : 'light']));
+        gl.uniform1f(v.u_scale, it.H / it.mesh.h); gl.uniform1f(v.u_wmul, it.T.widthMul || 1); gl.uniform1f(v.u_relief, it.T.kind === 'wongaksa' ? 1 : 0); gl.uniform1f(v.u_H0, it.mesh.h); gl.uniform2f(v.u_at, it.x, it.y); gl.uniform2fv(v.u_rot, it.rot); gl.uniform3fv(v.u_stone, hex(STONE[it.T.kind][dark ? 'dark' : 'light']));
         gl.bindVertexArray(it.mesh.va); gl.drawArrays(gl.TRIANGLES, 0, it.mesh.n);
       }
+    }
+    if (three.length) {   // three.js 석탑: 모델(m, Y 위 · Z 남) → 지역 미터(방위 · 가로 비) → 지도 행렬
+      const items = three.map(it => {
+        const m = this.s3.models[it.T.kind], k = it.H / m.userData.height, w = it.T.widthMul || 1, c = it.rot[0], s = it.rot[1];
+        const L = [c * w * k * MU, -s * w * k * MU, 0, 0, 0, 0, k * MU, 0, s * w * k * MU, c * w * k * MU, 0, 0, it.x * MU, it.y * MU, 0, 1];
+        return { kind: it.T.kind, M: mul4(MT, L) };
+      });
+      this.s3.render(gl, items, { light: [Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)], lit, dark });
+      gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.CULL_FACE);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);   // three 가 텍스처를 올리며 바꾼 것(다른 층의 글자 · 블룸 텍스처가 뒤집히지 않게)
     }
     gl.bindVertexArray(null); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 }
+// 지도를 한 번 더 그리게(3D 석탑을 받았거나 지었을 때 — 지도가 멈춰 있어도 바로 보이게)
+const repaint = () => globalThis.__subwayWebGL?.map?.triggerRepaint?.();
+// 4×4 열 우선 곱 a · b
+function mul4(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let v = 0; for (let k = 0; k < 4; k++) v += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = v } return o }
