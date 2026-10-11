@@ -95,12 +95,23 @@ export function busMotionDistance(motion, now) {
   return motion.from + (motion.to - motion.from) * t;
 }
 
+// interval: 이 관측에 닿을 때까지(ms) — 화면은 그 노선의 다음 새 응답이 올 때로 준다(layer busRouteRefreshMs + 왕복). 원자료 시각 차로 주면
+// 차례마다 15~45초로 들쭉날쭉해 받기 주기(30초)보다 짧은 차례엔 길 한가운데 서서 다음 응답을 기다렸다(2026-10-11).
 export function nextBusMotion(previous, distance, now, {interval = 15000, reduced = false, stale = false} = {}) {
   const from = previous ? busMotionDistance(previous, now) : distance;
-  const duration = clamp(interval, 1000, 30000), delta = distance - from;
+  const duration = clamp(interval, 1000, 90000), delta = distance - from;
   // One path contains its whole service order. A wrap/branch correction must not race backwards.
   const reset = !previous || reduced || stale || delta < -30 || Math.abs(delta) > Math.max(350, duration / 1000 * 28);
   return {from: reset ? distance : from, to: distance, startedAt: now, duration: reset ? 0 : duration};
+}
+
+// 새 관측이 없는 응답(그 차의 원자료가 안 바뀜 · 서버가 이번엔 못 받음): 가던 길은 이미 아는 목표까지만, 다음 새 응답 때 닿게 늦춘다.
+// 당기지는 않고(일찍 닿아 서지 않게) 이미 닿았으면 그대로 — 목표 너머로 지어내지 않는다.
+export function retimeBusMotion(motion, now, interval) {
+  if (!motion || motion.duration <= 0) return motion;
+  const left = motion.startedAt + motion.duration - now;
+  if (left <= 0 || left >= interval) return motion;
+  return {from: busMotionDistance(motion, now), to: motion.to, startedAt: now, duration: clamp(interval, 1000, 90000)};
 }
 
 // Conservative fallback only. Matched roads use busRoadLane's actual profile.

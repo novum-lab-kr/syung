@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
-import {buildBusPath} from '../web/bus/motion.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
+import {buildBusPath, busMotionDistance} from '../web/bus/motion.mjs';
 import {createJourneyMap} from '../web/ui/journey.mjs';
 
 const stops = {schemaVersion: 1, stops: [
@@ -242,6 +242,56 @@ test('an older cached observation cannot move a bus behind a newer observation',
     assert.equal(layer.fleet.get('vehicle-1').motion.to, latest.motion.to);
     assert.equal(layer.fleet.get('vehicle-1').stale, false);
   }
+}));
+
+// 2026-10-11 버스가 정류장도 아닌 데서 섬: 운영 470 · 143 재현(메모 20261011-버스-정확도-멈춤)
+test('the next poll follows the server refresh time, not a fixed 30 s after the last answer', () => {
+  const at = (status, retryAfterSeconds) => ({status, retryAfterSeconds});
+  const ids = ['100000001', '100000002'];
+  assert.equal(busPollDelay({pollAfterSeconds: 30, routes: {[ids[0]]: at('cached', 2)}}, ids.slice(0, 1)), 5000, 'a 28 s-old cache is asked again soon');
+  assert.equal(busPollDelay({pollAfterSeconds: 30, routes: {[ids[0]]: at('fresh', 30)}}, ids.slice(0, 1)), 32000, 'just after the server can refresh it');
+  assert.equal(busPollDelay({pollAfterSeconds: 15, routes: {[ids[0]]: at('fresh', 30), [ids[1]]: {status: 'deferred', retryAfterSeconds: 9}}}, ids), 15000);
+  assert.equal(busPollDelay({pollAfterSeconds: 30, routes: {[ids[0]]: at('cached', 20), [ids[1]]: at('cached', 9)}}, ids), 11000);
+  assert.equal(busPollDelay({pollAfterSeconds: 15, routes: {}}, []), 15000);
+});
+
+test('a bus keeps moving until the next fresh answer, even when its two GPS times were 15 s apart', () => withLayerFixture(layer => {
+  layer.setEnabled(false);
+  const t0 = Date.now() - 20000;
+  const feed = (lng, at) => ({schemaVersion: 1, mode: 'live', fetchedAt: new Date().toISOString(), pollAfterSeconds: 30,
+    buses: [{id: 'vehicle-1', routeId: route.id, lng, lat: 37.5 + lng - 127, receivedAt: new Date(at).toISOString()}],
+    routes: {[route.id]: {status: 'fresh', ageSeconds: 0, retryAfterSeconds: 30}}});
+  layer.setLiveData(feed(127.001, t0), [route.id]);
+  layer.setLiveData(feed(127.002, t0 + 15000), [route.id]);
+  const bus = layer.fleet.get('vehicle-1');
+  assert.ok(bus.motion.to > bus.motion.from + 100, 'it moves to the new position');
+  assert.ok(bus.motion.duration >= 32000, `it arrives when the next answer is due, not after the 15 s GPS gap (${bus.motion.duration} ms)`);
+  // 28초 뒤 같은 GPS 시각이 다시 온다(서버가 이번엔 못 받았거나 그 차의 원자료가 안 바뀜): 다음 응답 때까지 남은 길만 늘인다
+  const realNow = performance.now, later = bus.motion.startedAt + bus.motion.duration - 2000;
+  performance.now = () => later;
+  try {
+    const shown = busMotionDistance(bus.motion, later);
+    layer.setLiveData(feed(127.002, t0 + 15000), [route.id]);
+    const again = layer.fleet.get('vehicle-1').motion;
+    assert.equal(again.to, bus.motion.to, 'the same GPS time again is not a new position: no invented movement past it');
+    assert.ok(Math.abs(busMotionDistance(again, later) - shown) < 1e-6, 'no jump');
+    assert.ok(again.startedAt + again.duration >= later + 32000, 'it reaches the known position when the next answer is due, instead of standing');
+  } finally { performance.now = realNow; }
+  assert.equal(busPollDelay({pollAfterSeconds: 30, routes: {[route.id]: {status: 'stale', retryAfterSeconds: 300, reason: 'backoff'}}}, [route.id]), 60000,
+    'a long server back-off still asks within the 90 s watch window');
+}));
+
+test('a route the server could not refresh this time is not frozen while its positions are recent', () => withLayerFixture(layer => {
+  layer.setEnabled(false);
+  const at = Date.now() - 40000;
+  const feed = lng => ({schemaVersion: 1, mode: 'live', fetchedAt: new Date().toISOString(), pollAfterSeconds: 15,
+    buses: [{id: 'vehicle-1', routeId: route.id, lng, lat: 37.5 + lng - 127, receivedAt: new Date(at).toISOString()}],
+    routes: {[route.id]: {status: 'stale', ageSeconds: 31, retryAfterSeconds: 2, reason: 'paced'}}});
+  layer.setLiveData(feed(127.001), [route.id]);
+  assert.equal(layer.fleet.get('vehicle-1').stale, false, 'a 40 s-old position is drawn normally');
+  assert.equal(layer.pollMs, 5000, 'and asked again in a few seconds');
+  layer.setLiveData({...feed(127.001), buses: [{...feed(127.001).buses[0], id: 'vehicle-2', receivedAt: new Date(Date.now() - 180000).toISOString()}]}, [route.id]);
+  assert.equal(layer.fleet.get('vehicle-2').stale, true, 'a position older than two minutes is still shown as delayed');
 }));
 
 test('gapped original stop sequences select the return leg of an overlapping route', () => withLayerFixture(layer => {

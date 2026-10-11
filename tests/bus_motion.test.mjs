@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
 
 const corner = buildBusPath([[127, 37.5], [127.001, 37.5], [127.001, 37.501]]);
 
@@ -58,4 +58,17 @@ test('a stop on an out-and-back line is passed twice, even where the two passes 
   assert.equal(passes.length, 2);
   assert.ok(passes[0].distance < path.total / 2 && passes[1].distance > path.total / 2);
   assert.deepEqual(busPathPasses(path, [127.005, 37.6]), [], 'too far from the line');
+});
+
+test('an answer without a new position stretches the known remaining way to the next answer, never past it', () => {
+  const moving = {from: 0, to: 300, startedAt: 0, duration: 30000};
+  const later = retimeBusMotion(moving, 28000, 8000);
+  assert.equal(busMotionDistance(later, 28000), 280, 'no jump');
+  assert.equal(later.to, 300);
+  assert.equal(later.startedAt + later.duration, 36000, 'arrives when the next answer is due instead of standing for 6 s');
+  assert.equal(busMotionDistance(later, 60000), 300, 'and stops at the last known position');
+  assert.equal(retimeBusMotion(moving, 5000, 8000), moving, 'never hurried: 25 s left stays 25 s');
+  assert.equal(retimeBusMotion(moving, 31000, 8000), moving, 'already there: nothing to invent');
+  const parked = {from: 300, to: 300, startedAt: 0, duration: 0};
+  assert.equal(retimeBusMotion(parked, 1000, 8000), parked);
 });

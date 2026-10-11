@@ -1,6 +1,6 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, busMotionDistance,
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busMotionDistance,
   validCoordinate, intersects, contains} from './motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
@@ -24,6 +24,7 @@ export const BUS_TYPES = {
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const STALE_MS = 120000, EXPIRE_MS = 600000;
+const MOTION_SLACK_MS = 2000;   // 서버가 retryAfter 보다 조금 늦게 받는 차례(호출 간격 대기)에도 닿아서 서 있지 않게
 const VIEW_MAX_WAIT_MS = 1000;   // 카메라가 쉬지 않고 움직일 때(따라가기) 화면 상자 · 도로 · 정류장 · 노선 선을 새로 잡는 간격
 // #buslines: 노선 점검용. 서울 버스 노선 전체를 종류 색으로, z14 부터 번호까지 그린다(정류장은 BUS 간판이 있어 점을 찍지 않는다).
 // 실제 화면과 같은 선: 도로에 맞춘 표시선, z15 부터는 화면 안을 심시티 도로 중심선에 붙인다.
@@ -117,6 +118,19 @@ export function busRequestURL(routeIds, selected = null) {
   const query = new URLSearchParams({routes: ids.join(',')});
   if (selected && ids.includes(selected)) query.set('focus', selected);
   return `/api/bus/live?${query}`;
+}
+
+// 다음 받기까지(ms). 서버는 노선마다 캐시(30초)가 지나 새로 받을 수 있는 때(retryAfterSeconds)를 알려 준다: 그 바로 뒤에 물으면
+// 대개 막 받은 자리를 받는다(30초마다 따로 물으면 캐시 나이 0~30초가 그대로 늦음에 더해졌다 — 2026-10-11 143번 중앙 69초).
+// 고른 노선이 여럿이면 가장 먼저 새로워질 노선에 맞춘다. 서울시 호출은 서버가 노선마다 캐시 30초 · 하루 장부로 정해서
+// 화면이 더 자주 물어도 노선마다 30초에 한 번을 넘지 않는다. 상한 60초: 서버는 90초 안에 물은 노선만 '보는 중'으로 먼저 새로 받는다.
+const POLL_SLACK_MS = 2000, POLL_MIN_MS = 5000, POLL_MAX_MS = 60000;
+// 그 노선의 다음 새 자리가 서버에 생길 때까지(ms) — 모르면 null
+export const busRouteRefreshMs = state => state && ['fresh', 'cached', 'stale'].includes(state.status) && Number.isFinite(state.retryAfterSeconds)
+  ? Math.min(POLL_MAX_MS, Math.max(POLL_MIN_MS, state.retryAfterSeconds * 1000 + POLL_SLACK_MS)) : null;
+export function busPollDelay(payload, ids = []) {
+  const base = Math.min(POLL_MAX_MS, Math.max(15000, (Number(payload?.pollAfterSeconds) || 30) * 1000));   // 서버가 권하는 간격: 새 때를 모르는 노선(아직 못 받음 등)은 이대로
+  return ids.length ? Math.min(...ids.map(id => busRouteRefreshMs(payload?.routes?.[id]) ?? base)) : base;
 }
 
 export function busRoutesNearStops(data, box, chosen = [], screen = null) {
@@ -245,7 +259,7 @@ class BusLayer {
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
-    this.pollMs = 30000; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.moveSince = null; this.freshnessTimer = 0; this.detailAt = 0;
+    this.pollMs = 30000; this.rtt = 500; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.moveSince = null; this.freshnessTimer = 0; this.detailAt = 0;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.nearby = document.getElementById('inspectNearbyBus');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
@@ -436,15 +450,16 @@ class BusLayer {
     if (this.liveController || !this.active() || !this.requested.length) return;
     const ids = this.requested, controller = new AbortController();
     this.liveController = controller;
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 12000), started = performance.now();
     try {
       const r = await this.fetcher(busRequestURL(ids, this.selectedRoute||this.journeyIds[0]), {cache: 'no-store', signal: controller.signal});
       if (!r.ok) throw new Error('Bus live unavailable');
       const payload = await r.json();
+      this.rtt = this.rtt * .7 + Math.min(5000, performance.now() - started) * .3;   // 묻고 받기까지(서울시를 새로 부르면 그만큼 길다)
       if (!controller.signal.aborted && this.active()) this.setLiveData(payload, ids);
     } catch {
       if (this.liveController === controller && this.active()) {
-        this.mode = 'error'; for (const bus of this.fleet.values()) this.freeze(bus);
+        this.mode = 'error'; this.pollMs = 15000; for (const bus of this.fleet.values()) this.freeze(bus);   // 통신 오류는 지난 응답의 일정과 따로 15초 뒤 다시
         this.updateStatus(); this.refreshDetail(); this.draw();
       }
     } finally {
@@ -486,7 +501,7 @@ class BusLayer {
     const now = performance.now(), wall = Date.now(), seen = new Set(), allowed = new Set(requested);
     this.mode = ['live', 'mock', 'unavailable'].includes(payload.mode) ? payload.mode : 'unavailable';
     this.routeStates = payload.routes || {};
-    this.pollMs = Math.min(300000, Math.max(15000, (Number(payload.pollAfterSeconds) || 30) * 1000));
+    this.pollMs = busPollDelay(payload, requested);
     for (const row of payload.buses) {
       const route = this.data.routeById.get(row.routeId);
       if (!route || !allowed.has(row.routeId) || typeof row.id !== 'string' || !validCoordinate([row.lng, row.lat])) continue;
@@ -500,7 +515,9 @@ class BusLayer {
       }
       const age = Math.max(0, observed == null ? 0 : wall - observed, Number(state.ageSeconds || 0) * 1000);
       if (age > EXPIRE_MS) continue;
-      const stale = ['stale', 'error', 'deferred', 'unavailable'].includes(state.status) || age > STALE_MS || observed == null;
+      // 서버의 'stale' 은 "이번 응답에서 새로 못 받음"(캐시 30초 지남 · 호출 간격 대기)일 뿐 — 지난 것인지는 자료 나이로 본다.
+      // 상태로 얼리면 1분짜리 자리도 회색으로 길 위에 세웠다(2026-10-11 143번 첫 응답, 24대 15초)
+      const stale = ['error', 'deferred', 'unavailable'].includes(state.status) || age > STALE_MS || observed == null;
       let min = 0, max = path.total;
       // Original ordinals can have gaps. Only the explicit aligned mapping is a hint;
       // an absent/unmatched ordinal must never be treated as an array index.
@@ -513,8 +530,10 @@ class BusLayer {
       if (!snap) continue;
       seen.add(row.id);
       const same = previous && previous.observed === observed && Math.abs(previous.motion.to - snap.distance) < 1;
-      const interval = previous && observed > previous.observed ? observed - previous.observed : this.pollMs;
-      const motion = same ? previous.motion : nextBusMotion(previous?.motion, snap.distance, now, {interval, reduced: this.reduced.matches, stale});
+      // 그 노선의 다음 새 응답이 올 때(+ 왕복 + 여유) 이 자리에 닿는다: 일찍 닿아 길 위에 서는 것을 줄인다. 원자료가 안 바뀌었으면(same)
+      // 가던 길만 그때까지 늘인다(retimeBusMotion) — 아는 목표 너머로는 가지 않는다
+      const interval = (busRouteRefreshMs(state) ?? this.pollMs) + this.rtt + MOTION_SLACK_MS;
+      const motion = same ? retimeBusMotion(previous.motion, now, interval) : nextBusMotion(previous?.motion, snap.distance, now, {interval, reduced: this.reduced.matches, stale});
       const bus = {row, route, path, motion, observed, fetched, received, stale, receivedWall: wall,
         mock: payload.mode === 'mock' || row.mock === true || row.id.startsWith('mock:'), status: state.status};
       if (stale) this.freeze(bus);
