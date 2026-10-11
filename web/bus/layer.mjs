@@ -24,6 +24,7 @@ export const BUS_TYPES = {
 const SOURCE_ROUTES = 'bus-routes';
 const LAYERS = ['bus-route-casing','bus-route-road','bus-route-approx','bus-route-stop'];
 const STALE_MS = 120000, EXPIRE_MS = 600000;
+const VIEW_MAX_WAIT_MS = 1000;   // 카메라가 쉬지 않고 움직일 때(따라가기) 화면 상자 · 도로 · 정류장 · 노선 선을 새로 잡는 간격
 // #buslines: 노선 점검용. 서울 버스 노선 전체를 종류 색으로, z14 부터 번호까지 그린다(정류장은 BUS 간판이 있어 점을 찍지 않는다).
 // 실제 화면과 같은 선: 도로에 맞춘 표시선, z15 부터는 화면 안을 심시티 도로 중심선에 붙인다.
 // 선을 누르면 그 노선만 골라 버스 · 정류장을 위에 겹쳐 본다.
@@ -244,13 +245,20 @@ class BusLayer {
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
-    this.pollMs = 30000; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.freshnessTimer = 0; this.detailAt = 0;
+    this.pollMs = 30000; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.moveSince = null; this.freshnessTimer = 0; this.detailAt = 0;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.nearby = document.getElementById('inspectNearbyBus');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
     this.notice.setAttribute('role', 'status'); map.getContainer().append(this.notice);
     this.check = /buslines/.test(globalThis.location?.hash || ''); this.installLayers();
-    this.move = () => { clearTimeout(this.viewTimer); this.viewTimer = setTimeout(() => this.refreshView(), 200); };
+    // 멈춘 뒤 200 ms 에 화면 상자 · 도로 · 정류장을 새로 잡는다. 따라가기는 매 프레임 jumpTo → moveend 라 이 기다림이 끝나지 않아
+    // 상자가 시작 자리에 얼고 상자 밖으로 나간 버스를 render 가 뺐다(2026-10-11 행님: 따라가는데 버스가 안 보임) — 계속 움직여도 VIEW_MAX_WAIT_MS 마다는 새로.
+    // (버스 거르기는 render 가 지금 화면으로 한다. 이건 정류장 기둥 · 도로 차로 · 노선 선이 따라오게)
+    this.move = () => {
+      clearTimeout(this.viewTimer); const now = performance.now(); this.moveSince ??= now;
+      if (now - this.moveSince >= VIEW_MAX_WAIT_MS) { this.moveSince = null; this.refreshView(); return; }
+      this.viewTimer = setTimeout(() => { this.moveSince = null; this.refreshView(); }, 200);
+    };
     this.visibility = () => {
       this.stopLive();
       if (!document.hidden) this.refreshView(); else this.clearScene();
@@ -582,7 +590,7 @@ class BusLayer {
     if(this.disposed||document.hidden||!this.data||this.map.getZoom()<BUS_ZOOM.stops&&!this.active()){this.renderer.stats={vehicles:0,stops:0,drawCalls:0};return;}
     const now=performance.now(),wall=Date.now(),zoom=this.map.getZoom(),canvas=this.map.getCanvas();
     const width=canvas.clientWidth,height=canvas.clientHeight,unit=1/(512*2**zoom),box=boundsArray(this.map.getBounds());
-    const origin=busMercator([(box[0]+box[2])/2,(box[1]+box[3])/2]),vehicles=[],posts=[];
+    const origin=busMercator([(box[0]+box[2])/2,(box[1]+box[3])/2]),vehicles=[],posts=[],view=padded(box);
     const project=(world,z)=>projectBusPoint(matrix,world[0],world[1],z,width,height);
     const bounds=points=>[Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y))];
     const pad=(r,x,y=x)=>[r[0]-x,r[1]-y,r[2]+x,r[3]+y];
@@ -596,7 +604,7 @@ class BusLayer {
       if(ends&&!(ends.get(bus.route.id)||[[-Infinity,Infinity]]).some(([a,b])=>distance>=a&&distance<=b+30))continue;   // 길찾기: 탈 곳으로 오는 차 · 탄 구간 안의 차만
       // API 좌표는 노선 선 위 지점(distance)으로만 쓴다. 멀리서는 그 선 위, 줌 15 부터는 심시티 도로의 진행 방향 오른쪽 차로.
       const overview=zoom<BUS_ZOOM.buses||!this.map.querySourceFeatures,pose=overview?busPointAt(bus.path,distance):busLinePointAt(this.snappedLine(bus.route,bus.path),distance);
-      if(!pose||!contains(this.box||box,pose.coordinate))continue;
+      if(!pose||!contains(view,pose.coordinate))continue;   // 지금 화면으로(this.box 는 멈춘 뒤에야 새로 잡혀 따라가는 동안 낡는다)
       // 차로가 충분히 넓은 줌(18쯤)에서는 바퀴까지 차로 안에. 그보다 멀면 아래처럼 최소 크기를 지킨다
       // 차로 폭에 맞추면 줌 15에서 4px · 16에서 8px 로 줄어 사라진 것처럼 보였다(2026-10-08 덕배): 줌 15 크기 밑으로는 줄이지 않는다
       const L=BUS_LOOKS[this.look]||BUS_LOOKS.bus;   // 모양(모드 설정 buses.look): 버스 · 가마

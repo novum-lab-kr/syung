@@ -402,6 +402,37 @@ test('따라가기 카메라용 버스 위치: 그려지는 노선 선 위 지�
   assert.equal(layer.vehiclePosition('b'), null, '버스를 안 그리는 동안은 따라갈 자리도 없다');
 }, false));
 
+test('따라가는 동안(매 프레임 jumpTo → moveend) 화면 상자가 시작 자리에 얼지 않는다: 1초마다 새로, 멈추면 200 ms 뒤', t => withLayerFixture(layer => {
+  let now = 0, lng = 127; const realNow = performance.now;
+  t.mock.timers.enable({apis: ['setTimeout']}); performance.now = () => now;
+  layer.map.getBounds = () => ({getWest: () => lng - .002, getSouth: () => 37.499, getEast: () => lng + .002, getNorth: () => 37.501});
+  try {
+    let refreshed = 0; const at = [0], refresh = layer.refreshView.bind(layer); layer.refreshView = () => { refreshed++; at.push(now); refresh(); };
+    for (; now < 5000; now += 33) { lng += .00003; layer.move(); t.mock.timers.tick(33); }   // 30 fps 로 5초, 초속 약 80 m 로 동쪽
+    assert.ok(refreshed >= 4, `5초 내내 움직이는 동안 ${refreshed}번 새로 잡음`);
+    assert.ok(Math.max(...[...at, now].slice(1).map((x, i) => x - at[i])) <= 1000 + 2 * 33, `새로 잡은 때 ${at}: 1초(+ 앞뒤 한 프레임씩)보다 벌어지지 않는다`);
+    assert.ok(layer.box[0] < lng && lng < layer.box[2], `상자 ${layer.box} 가 지금 화면 가운데 ${lng} 를 담는다`);
+    refreshed = 0; t.mock.timers.tick(166); assert.equal(refreshed, 0);   // 마지막 moveend 뒤 이미 33 ms 지남
+    t.mock.timers.tick(1); assert.equal(refreshed, 1, '멈추면 200 ms 뒤 한 번');
+    refreshed = 0; now += 5000; layer.move(); t.mock.timers.tick(150); layer.move(); assert.equal(refreshed, 0, '한 번 움직이고 멈춘 지도는 예전처럼 기다린다');
+  } finally { performance.now = realNow; }
+}, false));
+
+test('따라가는 버스는 낡은 화면 상자(this.box) 밖이어도 지금 화면 안이면 그린다', () => withLayerFixture(layer => {
+  const r = layer.data.routeById.get(route.id), path = layer.geometry(r), bounds = c => () => ({getWest: () => c[0] - .001, getSouth: () => c[1] - .001, getEast: () => c[0] + .001, getNorth: () => c[1] + .001});
+  layer.selectedRoute = route.id;
+  layer.map.getBounds = bounds([127.001, 37.501]); layer.refreshView();   // 따라가기 시작 자리에서 잡은 상자
+  layer.map.getBounds = bounds([127.005, 37.505]);                         // 카메라는 버스와 함께 옮겨 왔고 moveend 기다림은 아직
+  layer.fleet.set('b', {row: {id: 'b'}, route: r, path, stale: false, receivedWall: Date.now(), observed: null, motion: {from: path.total / 4, to: path.total / 4, startedAt: 0, duration: 0}});
+  assert.ok(!(layer.box[2] >= 127.005), `버스가 낡은 상자 ${layer.box} 밖`);
+  const K = 512 * 2 ** 16, ox = 127.005 / 360 + .5, oy = .5 - Math.log(Math.tan(Math.PI / 4 + 37.505 * Math.PI / 360)) / (2 * Math.PI), sx = K * 2 / 400, sy = K * 2 / 300;
+  const matrix = [sx, 0, 0, 0, 0, -sy, 0, 0, 0, 0, 0, 0, -ox * sx, oy * sy, 0, 1];   // 위에서 내려다보는 400×300, 가운데 = 지금 화면 가운데
+  let drawn = null; layer.renderer.render = (gl, m, scene) => { drawn = scene.vehicles; };
+  layer.render({}, matrix);
+  assert.equal(drawn?.length, 1, '화면 가운데 버스를 그린다');
+  assert.equal(layer.hits.length, 1, '누를 자리도 있다');
+}, false));
+
 // 위에서 내려다보는 휴대폰 화면(390×844): 화면 가운데 = origin
 function topDownView(zoom, center) {
   const K = 512 * 2 ** zoom, ox = center[0] / 360 + .5, oy = .5 - Math.log(Math.tan(Math.PI / 4 + center[1] * Math.PI / 360)) / (2 * Math.PI);
