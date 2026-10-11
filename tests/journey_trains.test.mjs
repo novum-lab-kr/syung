@@ -68,3 +68,13 @@ test('in a viaduct mode the ground journey line fades out where the decks come i
   assert.equal(paint['journey-ride line-opacity'], 1);
   j.clearRoute(); assert.equal(j.journeyRides(), null, 'route cleared: the viaducts as they were');
 });
+
+test('the coaster track shader declares its journey uniforms once and tints before it steps back', async () => {
+  const {coasterTrackVertexShader} = await import('../web/modes/coaster/track_mesh.mjs');
+  const vs = coasterTrackVertexShader('1.'), names = vs.match(/uniform [^;]+;/g).flatMap(d => d.replace(/^uniform \w+ /, '').replace(';', '').split(',').map(n => n.trim()));
+  assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), [], 'no uniform declared twice');
+  for (const n of ['u_route', 'u_dim', 'u_veil']) assert.ok(names.includes(n), n);
+  assert.ok(vs.indexOf('if(u_route>.5&&u_route<1.5)') > vs.indexOf('v_c=(kind<.5') && vs.indexOf('if(u_route>1.5)') > vs.indexOf('if(u_route>.5&&u_route<1.5)'));
+  const src = (await import('node:fs')).readFileSync(new URL('../web/modes/coaster/track.mjs', import.meta.url), 'utf8');
+  for (const n of ['u_route', 'u_dim', 'u_veil']) assert.ok(src.includes(`'${n}'`), `track.mjs looks ${n} up`);
+});

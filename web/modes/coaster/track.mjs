@@ -4,7 +4,7 @@ import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mjs'; import { tra
 import CITY_STYLE from '../basic/city.mjs';
 const BULB_EVERY=COASTER_STYLE.night.bulbEveryM;const COL_SPAN=COASTER_STYLE.supports.spanM[0],COL_AFRAME=COASTER_STYLE.supports.aHeightM,COL_CLEAR=COASTER_STYLE.supports.clearM;   // supports (CoasterTrack.columns): m between them low down, A-frames from, clear of another line's
 // 메시 · 셰이더(coaster_track_mesh)는 본체가 직접 import 해서 넘긴다: 여기서 import 하면 이 파일을 받은 뒤에야 요청해 첫 화면 요청이 한 단계 늦어진다
-export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS,map,maplibregl,HOME,paths,byId,colors,geom,coasterProfile,coasterAt,coasterRises,loopD,corkOf,rolled,CORK_HEART,edgeOffset,hexRGB,coasterBodyPx,cityViaduct,PHONE,trainFrameSoon,isCoaster,getSelected}){
+export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS,map,maplibregl,HOME,paths,byId,colors,geom,coasterProfile,coasterAt,coasterRises,loopD,corkOf,rolled,CORK_HEART,edgeOffset,hexRGB,coasterBodyPx,cityViaduct,PHONE,trainFrameSoon,isCoaster,getSelected,getJourney=()=>null}){
   // 롤러코스터 track (see coasterAt), drawn on the train canvas under the trains: per direction a pair of
   // rails in the line's colour on a box girder, sleepers, and white columns down to the ground.
   // Built per edge in map space once (lane offsets in px are applied in the shader, so zoom needs no rebuild).
@@ -16,7 +16,7 @@ export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShad
       const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
       this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(this.p);
       this.attr=Object.fromEntries(['a_p','a_r','a_o','a_z','a_f','a_u','a_c'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-      this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_girder','u_post','u_spine','u_concrete','u_rail','u_bed','u_size','u_detail','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+      this.uni=Object.fromEntries(['u_matrix','u_unit','u_lane','u_body','u_girder','u_post','u_spine','u_concrete','u_rail','u_bed','u_size','u_detail','u_alpha','u_route','u_dim','u_veil'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
       this.gl=gl;this.M=new Float32Array(16);this.cache=new Map();
       this.O=maplibregl.MercatorCoordinate.fromLngLat(HOME.center);
       const seen=new Set();this.edges=[];
@@ -123,19 +123,23 @@ export function createCoasterTrack({buildCoasterTrackMesh,coasterTrackVertexShad
       // at once while zooming hitched and left gaps); spare time builds the next level out over a wider area, then in
       const t0=performance.now(),draw=[],LV=[8,16,32,64,128,256],near=[lvl*2,lvl/2,lvl*4,lvl/4,...LV];let pending=false;
       const frame=this.frame=(this.frame||0)+1,hit=k=>{const a=this.cache.get(k);if(a){this.cache.delete(k);this.cache.set(k,a);a.f=frame}return a};   // used: to the back of the queue
-      for(const c of vis){const a=hit(c.id+':'+lvl);if(a){draw.push(a);continue}
-        if(performance.now()-t0<4){draw.push(this.piece(c,lvl));continue}
+      for(const c of vis){const a=hit(c.id+':'+lvl);if(a){draw.push([a,c.e.id]);continue}
+        if(performance.now()-t0<4){draw.push([this.piece(c,lvl),c.e.id]);continue}
         pending=true;let b=null;for(const l of near)if((b=hit(c.id+':'+l)))break;
-        if(!b&&performance.now()-t0<12)b=this.piece(c,lvl);if(b)draw.push(b)}   // nothing built for it yet (newly on screen): up to 12 ms, rather than a gap
+        if(!b&&performance.now()-t0<12)b=this.piece(c,lvl);if(b)draw.push([b,c.e.id])}   // nothing built for it yet (newly on screen): up to 12 ms, rather than a gap
       if(!pending&&(this.bytes||0)<TRACK_BYTES*.8)for(const [l,pad] of [[lvl*2,w*.6],[lvl/2,0]])if(LV.includes(l))for(const c of mine){if(performance.now()-t0>=4){pending=true;break}if(inside(c,pad)&&!this.cache.has(c.id+':'+l))this.piece(c,l)}
       if(pending)trainFrameSoon(16);
-      for(const a of draw)a.f=frame;
+      for(const [a] of draw)a.f=frame;
       // least recently drawn out past TRACK_BYTES, never one drawn this frame (dropping the oldest built deleted pieces on screen:
       // with every line at z13+ the 3,500 pieces at two or three levels passed the old 4,000 cap, and the track flickered)
       for(const [k,a] of this.cache){if(this.bytes<=TRACK_BYTES||a.f===frame)break;if(a.b)gl.deleteBuffer(a.b);this.cache.delete(k);this.bytes-=a.n*88}
       if(!draw.length)return;
       this.use(gl,M,z);
-      const each=()=>{for(const a of draw){if(!a.n)continue;gl.bindBuffer(gl.ARRAY_BUFFER,a.b);this.ptrs(gl);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
+      // 길찾기(고가와 같은 탄 구간 목록 — cityViaduct.journeyFocus): 탄 구간은 노선색(1), 나머지는 흐린 막 색으로 물러난다(2) — 상판이 없는 낮은 줌(lod.deck 아래)에서는
+      // 더 물러나(75 %) 축소해도 탄 구간이 눈에 들어오고, 상판이 다 나오면 고가와 같은 50 %. 길찾기가 없으면 0(원래대로)
+      const J=cityViaduct.net?.paths?cityViaduct.journeyFocus(getJourney()):null,[d0,d1]=cityViaduct.V.lod.deck;
+      gl.uniform1f(this.uni.u_dim,.75-.25*Math.max(0,Math.min(1,(z-d0)/(d1-d0))));gl.uniform3fv(this.uni.u_veil,document.documentElement.dataset.theme==='dark'?[.043,.047,.055]:[.984,.98,.957]);   // journey-veil 의 색
+      let was=-1;const each=()=>{for(const [a,id] of draw){if(!a.n)continue;const r=!J?0:J.edges.has(id)?1:2;if(r!==was){gl.uniform1f(this.uni.u_route,r);was=r}gl.bindBuffer(gl.ARRAY_BUFFER,a.b);this.ptrs(gl);gl.drawArrays(gl.TRIANGLES,0,a.n)}};
       gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);
       if(occlude){gl.depthMask(false);gl.depthFunc(gl.GREATER);gl.uniform1f(this.uni.u_alpha,occlude);each()}   // behind building walls: faint
       gl.depthMask(true);gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.uni.u_alpha,1);each();gl.depthMask(false);

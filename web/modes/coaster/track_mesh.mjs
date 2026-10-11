@@ -5,7 +5,7 @@ import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs';
 // 7 girder top. Green holds stable tie ID. 레일(0)의 rgb 는 면 밝기만 — 색은 u_rail(고가 레일 색), 침목 · 거더 윗면은 u_bed.
 export function coasterTrackVertexShader(heart) { return `#version 300 es
 in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;
-uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body,u_girder;uniform vec3 u_post,u_spine,u_concrete,u_detail,u_rail,u_bed;uniform vec4 u_size;
+uniform mat4 u_matrix;uniform float u_unit,u_lane,u_body,u_girder,u_route,u_dim;uniform vec3 u_post,u_spine,u_concrete,u_detail,u_rail,u_bed,u_veil;uniform vec4 u_size;
 out vec3 v_c;out float v_alpha;
 void main(){
   float kind=max(0.,-a_c.r),lane=(a_o.x+a_o.y*u_lane)*u_unit;
@@ -18,6 +18,9 @@ void main(){
   float pk=a_c.g;vec3 line=vec3(floor(pk/65536.),mod(floor(pk/256.),256.),mod(pk,256.))/255.;
   // 레일 · 침목 · 거더 윗면은 심시티 고가와 같은 레일 · 자갈 바닥 색(2026-10-10 행님: 롤코 코스 레일도 기본 고가 레일로 통일)
   v_c=(kind<.5?u_rail*a_c.rgb:kind<1.5?u_post:kind<2.5?u_bed:kind<4.5?u_spine:kind<5.5?u_concrete:kind<6.5?line:u_bed)*a_c.a;
+  // 길찾기(u_route 1 탄 구간): 거더 윗면 · 등뼈를 노선색 쪽으로(루프 · 코르크스크루도) — 레일은 고가 레일 색 그대로. (2 나머지): 흐린 막 색으로 u_dim 만큼 물러난다
+  if(u_route>.5&&u_route<1.5){if(kind>6.5)v_c=mix(v_c,line*a_c.a,.75);else if(kind>2.5&&kind<4.5)v_c=mix(v_c,line*a_c.a,.5);}
+  if(u_route>1.5)v_c=mix(v_c,u_veil,u_dim);
   v_alpha=kind>3.5&&kind<5.5?u_detail.z:kind>1.5&&kind<2.5&&mod(a_c.g,2.)>.5?u_detail.y:1.;
 }`; }
 export const COASTER_TRACK_FS = `#version 300 es
