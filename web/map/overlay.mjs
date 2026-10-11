@@ -33,7 +33,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
-  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,cityLife=null,ridePlacement=null;   // coaster: checked ride sites; cityLife: city-life's props
+  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null;   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -75,8 +75,12 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       {const bp=coasterTrack.bulbs();if(night.trackSrc!==bp){night.setTrackBulbs(bp,coasterTrack.bulbRgb);night.trackSrc=bp}}   // 레일이 고가를 떠난 곳 아래 전구(다시 지으면 다시); 승강장 불빛은 고가 승강장의 밤 조명이 맡는다
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
       night.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)});
-      if(night.animating())trainFrameSoon(1000/TRAIN_FPS)}
-    else if(night){night.dispose(gl);night=null}
+      if(live.kitReady){   // 건물 축제 전구(modes/coaster/festoon.mjs): 지도가 받은 z14 건물 타일만(가까운 18장), 쉬는 틈에 한 타일씩 짓는다
+        if(!festoon){festoon=new live.FestoonLayer();festoon.init(gl);if(window.__subwayWebGL)window.__subwayWebGL.festoon=festoon}
+        festoon.update(map);festoon.pump(map,()=>map.triggerRepaint());
+        festoon.render(gl,pd.mainMatrix,{now:performance.now(),zoom:map.getZoom(),phone:PHONE,reducedMotion:REDUCED.matches,bounds:[A.x,B.y,B.x,A.y],pixelRatio:c.width/Math.max(1,m.clientWidth)})}
+      if(night.animating()||festoon?.animating()&&!REDUCED.matches)trainFrameSoon(1000/TRAIN_FPS)}
+    else if(night||festoon){night?.dispose(gl);night=null;festoon?.dispose(gl);festoon=null;if(window.__subwayWebGL)delete window.__subwayWebGL.festoon}   // 낮 · 다른 모드: 밤 층 · 축제 전구 GL 을 치운다
     if(S.city.xray&&live.cityBuildings)live.cityBuildings.drawGlass(gl,pd.mainMatrix);   // city-build: 심시티 x-ray — the buildings hiding a station or a train, as glass over what was drawn behind them
     if(!journeyMap.subwayOff)exitPillars.render(gl,pd.mainMatrix,m.clientWidth,m.clientHeight,c.width/Math.max(1,m.clientWidth),cityOn()&&drawn);   // above the trains   // city-life: 심시티 too: behind the (opaque) buildings and the viaduct
     if(rider.ride&&park&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
