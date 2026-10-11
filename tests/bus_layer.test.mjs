@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
+import {buildBusPath} from '../web/bus/motion.mjs';
 import {createJourneyMap} from '../web/ui/journey.mjs';
 
 const stops = {schemaVersion: 1, stops: [
@@ -155,6 +156,30 @@ test('legacy journey names need matching geometry; sheet close keeps them, clear
   assert.equal(layer.map.getSource('bus-routes').data.features.filter(f=>f.properties.kind==='ride').length,1,'selected journey routes stay visible when fitBounds zooms out');
   assert.equal(layer.active(),false,'low zoom must not poll or show bus vehicles');
 },false));
+
+// 2026-10-11 행님: 길찾기 버스는 탄 정류장 → 내릴 정류장 구간만(노선 전체가 보였다). 정류장 · 노선 번호로 고르면 전체.
+test('a journey bus ride matches its direction on an out-and-back line', () => {
+  const line = buildBusPath(route.path), half = line.total / 2;
+  const back = journeyBusRange(line, {path: [[127.008, 37.508], [127.002, 37.502]]});   // 회차 뒤 돌아오는 쪽을 탔다
+  assert.ok(back && back[0] > half && back[1] > back[0] && back[1] < line.total, `got ${back}`);
+  const out = journeyBusRange(line, {path: [[127.002, 37.502], [127.008, 37.508]]});
+  assert.ok(out && out[1] < half, `got ${out}`);
+  assert.equal(journeyBusRange(line, {path: [[126, 36], [126.01, 36.01]]}), null, 'far from the line: draw the whole route');
+});
+
+test('a journey draws only the ridden part of its bus route; a route number draws all of it', () => withLayerFixture(layer => {
+  const lines = () => layer.map.getSource('bus-routes').data.features.filter(f => f.properties.kind === 'ride').map(f => f.geometry.coordinates);
+  const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-4;
+  layer.setJourney([{type: 'bus', route: '100', path: [[127.002, 37.502], [127.008, 37.508]]}]);
+  const ride = lines();
+  assert.equal(ride.length, 1);
+  assert.ok(near(ride[0][0], [127.002, 37.502]) && near(ride[0].at(-1), [127.008, 37.508]), 'from boarding to alighting only');
+  const stops = layer.map.getSource('bus-routes').data.features.filter(f => f.properties.kind === 'stop').map(f => f.geometry.coordinates);
+  assert.ok(stops.length === 2 && near(stops[0], [127.002, 37.502]) && near(stops[1], [127.008, 37.508]), 'boarding and alighting markers at the cut ends');
+  layer.select({kind: 'stop', id: '01'}, null);
+  layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  assert.deepEqual(lines()[0], route.path, 'a route chosen by its number is drawn whole');
+}, false));
 
 // 2026-10-11 행님: 길찾기 결과에서 고른 경로 카드를 누르면 시트가 닫히며(closeSheet → clearSelection) 버스 경로만 사라졌다
 test('a journey bus leg stays on the map when its sheet closes, and goes with the route', () => withLayerFixture(layer => {

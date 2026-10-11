@@ -33,6 +33,30 @@ export function busPointAt(path, distance, direction = 1) {
     heading: (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360, distance: s};
 }
 
+// 선의 from ~ to(m) 구간만: 양 끝은 그 거리의 점, 가운데는 원래 꼭짓점
+export function busPathSlice(path, from, to) {
+  const a = clamp(from, 0, path.total), b = clamp(to, a, path.total), out = [busPointAt(path, a).coordinate];
+  for (let i = 0; i < path.points.length; i++) if (path.distances[i] > a && path.distances[i] < b) out.push(path.points[i]);
+  out.push(busPointAt(path, b).coordinate);
+  return out;
+}
+
+// 점이 선을 지나는 자리마다 가장 가까운 곳 하나씩(오가는 노선은 같은 정류장을 두 번 지난다): [{distance, error}]
+export function busPathPasses(path, coordinate, maxError = 250) {
+  if (!path || !validCoordinate(coordinate)) return [];
+  const x = (coordinate[0] - path.origin[0]) * path.kx, y = (coordinate[1] - path.origin[1]) * M, out = [];
+  let run = null;
+  for (let i = 1; i < path.xy.length; i++) {
+    const start = path.distances[i - 1], end = path.distances[i], a = path.xy[i - 1], b = path.xy[i], dx = b[0] - a[0], dy = b[1] - a[1];
+    const t = end > start ? clamp(((x - a[0]) * dx + (y - a[1]) * dy) / ((end - start) ** 2), 0, 1) : 0;
+    const error = Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t), distance = start + (end - start) * t;
+    if (error > maxError) { run = null; continue; }
+    // 회차해 같은 길을 되돌아오면 가까운 조각이 이어져도 다른 지남이다: 선을 따라 2 × maxError 넘게 가면 새로
+    if (!run || distance - run.from > 2 * maxError) out.push(run = {distance, error, from: distance}); else if (error < run.error) Object.assign(run, {distance, error});
+  }
+  return out.map(({distance, error}) => ({distance, error}));
+}
+
 export function snapBusToPath(path, coordinate, {hint = null, min = 0, max = path?.total, heading = null, maxError = 250} = {}) {
   if (!path || !validCoordinate(coordinate)) return null;
   const x = (coordinate[0] - path.origin[0]) * path.kx, y = (coordinate[1] - path.origin[1]) * M;

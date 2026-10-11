@@ -1,6 +1,6 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
-import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance,
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, busMotionDistance,
   validCoordinate, intersects, contains} from './motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale} from './mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
@@ -144,6 +144,20 @@ export function journeyBusRouteIds(data, legs) {
     if(path&&[leg.path[0],leg.path.at(-1)].every(p=>snapBusToPath(path,p,{maxError:350})))ids.push(matches[0].id);
   }
   return [...new Set(ids)].slice(0,8);
+}
+
+// 길찾기 버스 구간이 노선 표시선(line)의 어디서 어디까지인지(m). 오가는 노선은 탄 곳 · 내릴 곳을 두 번씩 지나므로
+// 탄 곳이 앞이고 그 사이 길이가 탄 구간 길이에 가장 가까운 짝을 고른다(첫 조각의 방향은 정류장 → 도로 꺾임이라 믿지 않는다).
+// 못 맞추면 null — 그때는 노선 전체를 그린다.
+export function journeyBusRange(line, leg) {
+  const ride = buildBusPath(leg?.path); if (!line || !ride) return null;
+  let best = null;
+  for (const a of busPathPasses(line, ride.points[0])) for (const b of busPathPasses(line, ride.points.at(-1))) {
+    if (b.distance <= a.distance) continue;
+    const score = Math.abs(b.distance - a.distance - ride.total) + a.error + b.error;
+    if (!best || score < best.score) best = {score, range: [a.distance, b.distance]};
+  }
+  return best?.range || null;
 }
 
 // 정류장 기둥(BUS 표지판)을 화면에 놓는다. features: 정류장 Point, exits: 출구 [lng,lat],
@@ -349,23 +363,25 @@ class BusLayer {
   renderStatic() {
     if (this.disposed) return;
     const features = [], stopFeatures = [], chosen=new Set(this.chosenIds());
-    const drawRoute=(route,markers)=>{
+    const drawRoute=(route,markers,range=null)=>{   // range: 그 선의 [from,to] m 만(길찾기 버스 구간)
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
       // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
       // 없으면 공식 경로. 화면 타일로 차로를 맞추던 조각선은 끊기고 갈고리가 생겨 쓰지 않는다.
       // 줌 15 이상은 그 선을 심시티가 그리는 도로 중심선에 다시 붙이고, 굵기는 도로 폭 안(laneWidth)으로.
       const line=this.lineGeometry(route),snapped=line&&this.map.getZoom()>=BUS_ZOOM.buses&&this.map.querySourceFeatures?this.snappedLine(route,line):null;
-      if(!snapped)features.push(feature('LineString',line?.points||route.path,properties));
+      if(range&&!line)range=null;
+      if(!snapped)features.push(feature('LineString',range?busPathSlice(line,...range):line?.points||route.path,properties));
       else{
-        let part=[],width=snapped.samples[0].width;
+        const samples=range?snapped.samples.filter(p=>p.distance>=range[0]-snapped.step&&p.distance<=range[1]+snapped.step):snapped.samples;
+        let part=[],width=samples[0]?.width;
         const flush=()=>{if(part.length>1)features.push(feature('LineString',part,width?{...properties,laneWidth:width}:properties));};
-        for(const p of snapped.samples){
+        for(const p of samples){
           if(p.width!==width){flush();part=part.length?[part.at(-1)]:[];width=p.width;}
           part.push(p.coordinate);
         }flush();
       }
       for(const marker of markers){
-        const snap=line&&snapBusToPath(line,marker.coordinate,{maxError:80});
+        const snap=marker.distance!=null?{distance:marker.distance}:line&&snapBusToPath(line,marker.coordinate,{maxError:80});
         const at=snap&&(snapped?snapped.samples[Math.min(snapped.samples.length-1,Math.round(snap.distance/snapped.step))].coordinate:busPointAt(line,snap.distance).coordinate);
         features.push(feature('Point',at||marker.coordinate,{...properties,kind:'stop'}));
       }
@@ -374,8 +390,10 @@ class BusLayer {
       const route=this.data?.routeById.get(id);if(!route)continue;
       const path=this.geometry(route),legs=this.journeyLegs.filter(l=>journeyBusRouteIds(this.data,[l]).includes(id));
       // 노선 위 정류장 동그라미는 그리지 않는다(정류장은 BUS 기둥으로). 길찾기의 타는 곳 · 내리는 곳만 남긴다.
-      const markers=legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate})));
-      drawRoute(route,markers);
+      // 길찾기는 탄 곳 → 내릴 곳 구간만(2026-10-11 행님: 노선 전체가 보였다). 정류장 · 노선 번호로 고른 노선은 전체.
+      const ranges=legs.map(l=>journeyBusRange(path,l));
+      if(legs.length&&ranges.every(Boolean))legs.forEach((l,i)=>drawRoute(route,ranges[i].map(distance=>({distance})),ranges[i]));
+      else drawRoute(route,legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate}))));
     }
     for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){
       leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:true,stopIds:[]};

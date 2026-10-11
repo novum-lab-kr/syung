@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath, busPointAt, snapBusToPath, nextBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
 
 const corner = buildBusPath([[127, 37.5], [127.001, 37.5], [127.001, 37.501]]);
 
@@ -42,4 +42,20 @@ test('stale/reduced motion and route-wrap corrections do not produce phantom mot
   }
   assert.equal(nextBusMotion(previous, 0, 10000).duration, 0);
   assert.equal(nextBusMotion(previous, 3000, 10000).duration, 0);
+});
+
+test('a path slice keeps the vertices between its ends and cuts the ends on the line', () => {
+  const path = buildBusPath([[127, 37.5], [127.01, 37.5], [127.02, 37.5]]), half = path.distances[1];
+  const part = busPathSlice(path, half / 2, half * 1.5);
+  assert.equal(part.length, 3);
+  assert.ok(Math.abs(part[0][0] - 127.005) < 1e-6 && Math.abs(part[2][0] - 127.015) < 1e-6);
+  assert.deepEqual(part[1], [127.01, 37.5]);
+});
+
+test('a stop on an out-and-back line is passed twice, even where the two passes join at the turn', () => {
+  const path = buildBusPath([[127, 37.5], [127.01, 37.5], [127, 37.5]]);
+  const passes = busPathPasses(path, [127.002, 37.5001]);
+  assert.equal(passes.length, 2);
+  assert.ok(passes[0].distance < path.total / 2 && passes[1].distance > path.total / 2);
+  assert.deepEqual(busPathPasses(path, [127.005, 37.6]), [], 'too far from the line');
 });
