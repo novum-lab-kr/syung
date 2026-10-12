@@ -301,7 +301,8 @@ void main(){
     box(0,.06,wr(0),wr(.06),(P,w,h,k)=>quad(P,LOC,wood.map(v=>v*k*.8),[0,0,0],NO,NO,1));
     box(.06,.46,wr(.06),wr(.46),(P,w,h,k)=>{const text=!onTop&&w>sPx*.5;quad(P,LOC,woodL.map(v=>v*k),ink,text?glyph(uv,w,h,.86):NO,guv,text?2:1)});   // 출구 번호
     box(.46,.82,wr(.46),wr(.82),(P,w,h,k,i)=>quad(P,LOC,[k,k,k],[0,0,0],NO,i%2?EAR[i>>1]:FU,3));   // 얼굴 — 횃불이 선 동 · 서 면(i 1 · 3)은 귀(서쪽은 좌우를 뒤집어 귓바퀴가 같은 쪽)
-    box(.82,.86,1.28,1.28,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k*.85),[0,0,0],NO,NO,1));   // 갓 테
+    const brim=box(.82,.86,1.28,1.28,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k*.85),[0,0,0],NO,NO,1));   // 갓 테
+    if(brim.every(p=>p))quad(brim,LOC,hatC.map(v=>v*.95),[0,0,0],NO,NO,1);   // 갓 테 윗면: 없으면 위에서 볼 때 테 안쪽으로 뒤 배경이 비쳐 갓이 깨져 보였다(2026-10-12 덕배 캡처)
     box(.86,.89,.92,.92,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
     box(.89,.95,.92,.92,(P,w,h,k)=>quad(P,LOC,lc.map(v=>v*k),[0,0,0],NO,NO,1));   // 관모 노선색 띠
     const T=box(.95,1,.92,male?.92:.7,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
