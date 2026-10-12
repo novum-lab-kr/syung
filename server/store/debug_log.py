@@ -50,6 +50,11 @@ class DebugStore:
                 continue
         return rows[::-1]
 
+    def ride_days(self) -> list[str]:
+        """기록이 있는 날(YYYYMMDD), 최근 날부터."""
+        folder = self.root / "rides"
+        return sorted((p.stem for p in folder.glob("*.jsonl") if p.stem.isdigit() and len(p.stem) == 8), reverse=True) if folder.exists() else []
+
     def recent_rides(self, day: str) -> list[dict]:
         path = self.root / "rides" / f"{day}.jsonl"
         if not path.exists():

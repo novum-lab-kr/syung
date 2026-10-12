@@ -58,6 +58,17 @@ class DebugPageTest(unittest.TestCase):
         self.assertEqual(body["rides"][0] | {}, {"ride": "r1", "mode": "bus", "line": "3011", "from": t, "to": t + 9000, "stops": 1, "gps": 1,
                                                  "taps": [{"kind": "arrive", "t": t + 9000, "station": "잠실역"}]})
 
+    def test_recent_can_show_a_past_day(self):
+        (self.root / "rides").mkdir()
+        (self.root / "rides" / "20261010.jsonl").write_text(json.dumps(
+            {"ride": "old", "kind": "arrive", "mode": "subway", "line": "7호선", "t": 1, "station": "청담"}) + "\n")
+        status, body = self.call("/admin/debug/recent")
+        self.assertEqual((body["day"], body["days"], body["rides"]), ("20261012", ["20261012", "20261010"], []), "오늘이 맨 위, 없어도 고를 수 있다")
+        status, body = self.call("/admin/debug/recent?day=20261010")
+        self.assertEqual([r["ride"] for r in body["rides"]], ["old"])
+        status, body = self.call("/admin/debug/recent?day=../../etc")
+        self.assertEqual(body["day"], "20261012", "날짜 꼴이 아니면 오늘")
+
     def test_bad_events_are_refused_whole(self):
         for events in [[], [{"ride": "r", "kind": "fly", "mode": "bus", "t": NOW * 1000}], [{"kind": "gps", "mode": "bus", "t": 1}]]:
             status, body = self.call("/admin/debug/ride", json.dumps({"events": events}).encode())

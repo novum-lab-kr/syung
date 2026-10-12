@@ -2,7 +2,7 @@
 
 POST /debug/ride  탑승 기록 사건 묶음(JSON {"events": […]})
 POST /debug/shot  캡처 파일 본문 그대로, ?note=…&state=…(JSON) — Content-Type 으로 종류를 안다
-GET  /debug/recent       오늘 탑승 기록 요약 · 최근 캡처 목록
+GET  /debug/recent       그날(?day=YYYYMMDD, 기본 오늘) 탑승 기록 요약 · 기록 있는 날 · 최근 캡처 목록
 GET  /debug/bus-route    ?name=3011 → 노선 id 후보
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ def shot(services, cookie_header, body: bytes, content_type: str, query: dict):
 
 
 def recent(services, cookie_header, query: dict):
-    return _guard(services, cookie_header, services.debug.recent)
+    return _guard(services, cookie_header, lambda: services.debug.recent((query.get("day") or [""])[0]))
 
 
 def bus_route(services, cookie_header, query: dict):

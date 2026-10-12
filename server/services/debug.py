@@ -90,11 +90,13 @@ class DebugService:
         name = self.store.save_shot(data, ext, meta, self.clock())
         return {"ok": True, "file": name}
 
-    def recent(self) -> dict:
+    def recent(self, day: str = "") -> dict:
+        """그날(YYYYMMDD, 없거나 이상하면 오늘)의 탑승 기록 요약 · 기록이 있는 날 목록 · 최근 캡처."""
         today = datetime.fromtimestamp(self.clock(), KST).strftime("%Y%m%d")
+        day = day if len(day) == 8 and day.isdigit() else today
         rides: dict[str, dict] = {}
         motions: dict[str, list[dict]] = {}
-        for e in self.store.recent_rides(today):
+        for e in self.store.recent_rides(day):
             if e["kind"] == "motion":
                 motions.setdefault(e["ride"], []).append(e)
             r = rides.setdefault(e["ride"], {"ride": e["ride"], "mode": e["mode"], "line": e.get("line") or e.get("routeName"),
@@ -109,7 +111,8 @@ class DebugService:
                 found = detect(motions[ride_id])
                 r["sensor"], r["series"] = found["events"], found["series"]
         shots = [{k: s.get(k) for k in ("at", "type", "bytes", "note", "file")} for s in self.store.recent_shots(20)]
-        return {"rides": sorted(rides.values(), key=lambda r: -r["from"]), "shots": shots}
+        days = sorted(set(self.store.ride_days()) | {today}, reverse=True)
+        return {"day": day, "days": days, "rides": sorted(rides.values(), key=lambda r: -r["from"]), "shots": shots}
 
     def find_bus_route(self, name: str) -> dict:
         name = (name or "").strip()[:20]

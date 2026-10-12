@@ -41,6 +41,7 @@ nav.tabs button[aria-selected=true]{background:var(--ink);color:var(--board)}
 main{max-width:960px;margin:0 auto;padding:14px 16px calc(48px + env(safe-area-inset-bottom));display:grid;gap:14px}
 .box{background:var(--paper);border-radius:20px;box-shadow:var(--shadow);padding:18px}
 h2{margin:0 0 10px;font-family:var(--round);font-weight:400;font-size:19px}
+.day-row{justify-content:space-between;margin-bottom:10px}.day-row h2{margin:0}.day-row select{width:auto;padding:7px 10px}
 p{margin:0}
 .muted{color:var(--muted);font-size:13px;line-height:1.55}
 label{display:block;font-weight:700;font-size:13px;margin:12px 0 6px;color:var(--secondary)}
@@ -156,7 +157,7 @@ textarea{min-height:80px;resize:vertical}
 
   <!-- 3. 올린 것 -->
   <section id="list" role="tabpanel" hidden>
-    <div class="box"><h2>오늘 탑승 기록</h2><ul class="list" id="rides"></ul></div>
+    <div class="box"><div class="row day-row"><h2>탑승 기록</h2><select id="ride-day" aria-label="날짜"></select></div><ul class="list" id="rides"></ul></div>
     <div class="box"><h2>최근 캡처</h2><ul class="list" id="shots"></ul></div>
   </section>
 </main>
@@ -172,6 +173,7 @@ const fmt = t => new Date(t).toLocaleTimeString('ko-KR', {hour: '2-digit', minut
 const showLogin = on => { $('login').hidden = !on; };
 
 // 탭
+$('ride-day').onchange = () => loadRecent();
 for (const [tab, panel] of [['tab-ride', 'ride'], ['tab-shot', 'shot'], ['tab-list', 'list']]) $(tab).onclick = () => {
   for (const [t, p] of [['tab-ride', 'ride'], ['tab-shot', 'shot'], ['tab-list', 'list']]) { $(t).setAttribute('aria-selected', t === tab); $(p).hidden = p !== panel; }
   if (panel === 'list') loadRecent();
@@ -472,10 +474,14 @@ function motionChart(x) {
   return [box];
 }
 async function loadRecent() {
-  const r = await fetch('/api/admin/debug/recent', {credentials: 'same-origin'});
+  const pick = $('ride-day').value;
+  const r = await fetch(`/api/admin/debug/recent${pick ? `?day=${pick}` : ''}`, {credentials: 'same-origin'});
   if (r.status === 401) return showLogin(true);
-  const {rides = [], shots = []} = await r.json();
-  $('rides').innerHTML = rides.length ? '' : '<li class="muted">오늘은 아직 없어요.</li>';
+  const {day = '', days = [], rides = [], shots = []} = await r.json();
+  // 날짜 고르기: 기록이 있는 날(맨 위 = 오늘)
+  const label = d => `${Number(d.slice(4, 6))}월 ${Number(d.slice(6))}일${d === days[0] ? ' (오늘)' : ''}`;
+  $('ride-day').innerHTML = ''; for (const d of days) $('ride-day').append(new Option(label(d), d, false, d === day));
+  $('rides').innerHTML = rides.length ? '' : `<li class="muted">${day === days[0] ? '오늘은' : '이날은'} 기록이 없어요.</li>`;
   for (const x of rides) { const li = document.createElement('li');
     li.innerHTML = `<b></b><br><small></small>`; li.querySelector('b').textContent = `${x.mode === 'bus' ? '버스' : '지하철'} ${x.line || ''}`;
     li.querySelector('small').textContent = `${fmt(x.from)}~${fmt(x.to)} · 도착 ${x.stops}번 · GPS ${x.gps}점${x.series ? ' · 센서 있음' : ''}`;
