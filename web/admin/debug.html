@@ -71,6 +71,12 @@ textarea{min-height:80px;resize:vertical}
 .list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .list li{background:var(--control);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.5}
 .list small{color:var(--muted)}
+.cmp{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.cmp th{font-size:11px;color:var(--muted);font-weight:700;text-align:left;padding:4px 2px}
+.cmp td{padding:4px 2px;border-top:1px solid var(--rule)}
+.cmp td.d{color:var(--secondary)}
+.chart{display:block;width:100%;height:120px;margin-top:8px}
+.legend{font-size:11px;color:var(--muted);margin-top:2px}
 .login{background:var(--bad-soft);color:var(--bad);border-radius:14px;padding:12px 14px;font-weight:700}
 .login a{color:inherit}
 [hidden]{display:none!important}
@@ -388,6 +394,41 @@ $('send').onclick = async () => {
 };
 
 // ---------- 올린 것 ----------
+// 누른 도착 · 출발과 센서가 잡은 것(서버 ride_motion, 시험판)을 나란히: 누름마다 90초 안의 같은 종류 센서 사건 하나
+function compareTable(x) {
+  const used = new Set(), rows = [], sec = v => v == null ? '' : `${v > 0 ? '+' : ''}${v}초`;
+  let stop = 0;
+  for (const tap of x.taps || []) {
+    let best = null; (x.sensor || []).forEach((e, i) => { if (!used.has(i) && e.kind === tap.kind && Math.abs(e.t - tap.t) <= 90000 && (best == null || Math.abs(e.t - tap.t) < Math.abs(x.sensor[best].t - tap.t))) best = i; });
+    if (best != null) used.add(best);
+    if (tap.kind === 'arrive') stop++;
+    const where = tap.station || (x.mode === 'bus' ? (tap.kind === 'depart' && !stop ? '처음' : `정류장 ${stop}`) : '');
+    rows.push({t: tap.t, where, kind: tap.kind, tap: tap.t, sensor: best != null ? x.sensor[best].t : null});
+  }
+  (x.sensor || []).forEach((e, i) => { if (!used.has(i)) rows.push({t: e.t, where: '(센서만)', kind: e.kind, tap: null, sensor: e.t}); });
+  rows.sort((a, b) => a.t - b.t);
+  const table = document.createElement('table'); table.className = 'cmp';
+  table.innerHTML = '<thead><tr><th>역</th><th></th><th>누름</th><th>센서</th><th>차이</th></tr></thead>';
+  const body = document.createElement('tbody');
+  for (const r of rows) { const tr = document.createElement('tr');
+    for (const [text, cls] of [[r.where, ''], [r.kind === 'arrive' ? '도착' : '출발', ''], [r.tap ? fmt(r.tap) : '—', ''], [r.sensor ? fmt(r.sensor) : (x.series ? '못 잡음' : '—'), ''],
+      [r.tap && r.sensor ? sec(Math.round((r.sensor - r.tap) / 1000)) : '', 'd']]) { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.append(td); }
+    body.append(tr); }
+  table.append(body); return table;
+}
+// 센서 그래프: 출발 방향 힘 +, 감속 −(2초 평균, m/s²). 실선 = 누름, 점선 = 센서가 잡은 것
+function motionChart(x) {
+  const W = 600, H = 120, pts = x.series, t0 = Math.min(x.from, pts[0][0]), t1 = Math.max(x.to, pts.at(-1)[0]), span = Math.max(1, t1 - t0);
+  const top = Math.max(1, ...pts.map(p => Math.abs(p[1]))), X = t => (t - t0) / span * W, Y = v => H / 2 - v / top * (H / 2 - 6);
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); svg.append(e); return e; };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('class', 'chart'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', '가속도 센서 그래프');
+  el('line', {x1: 0, x2: W, y1: H / 2, y2: H / 2, stroke: 'var(--rule)', 'stroke-width': 1});
+  for (const tap of x.taps || []) el('line', {x1: X(tap.t), x2: X(tap.t), y1: 0, y2: H, stroke: 'var(--ink)', 'stroke-width': 1.5, opacity: .5});
+  for (const e of x.sensor || []) el('line', {x1: X(e.t), x2: X(e.t), y1: 0, y2: H, stroke: 'var(--good)', 'stroke-width': 2, 'stroke-dasharray': '4 3'});
+  el('polyline', {points: pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' '), fill: 'none', stroke: 'var(--bad)', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke'});
+  const legend = document.createElement('div'); legend.className = 'legend'; legend.textContent = `빨강: 앞으로 미는 힘(+) · 감속(−), 최대 ${top.toFixed(1)} m/s² · 회색 실선: 누름 · 초록 점선: 센서`;
+  return [svg, legend];
+}
 async function loadRecent() {
   const r = await fetch('/api/admin/debug/recent', {credentials: 'same-origin'});
   if (r.status === 401) return showLogin(true);
@@ -395,7 +436,10 @@ async function loadRecent() {
   $('rides').innerHTML = rides.length ? '' : '<li class="muted">오늘은 아직 없어요.</li>';
   for (const x of rides) { const li = document.createElement('li');
     li.innerHTML = `<b></b><br><small></small>`; li.querySelector('b').textContent = `${x.mode === 'bus' ? '버스' : '지하철'} ${x.line || ''}`;
-    li.querySelector('small').textContent = `${fmt(x.from)}~${fmt(x.to)} · 도착 ${x.stops}번 · GPS ${x.gps}점`; $('rides').append(li); }
+    li.querySelector('small').textContent = `${fmt(x.from)}~${fmt(x.to)} · 도착 ${x.stops}번 · GPS ${x.gps}점${x.series ? ' · 센서 있음' : ''}`;
+    if ((x.taps || []).length || (x.sensor || []).length) li.append(compareTable(x));
+    if ((x.series || []).length) li.append(...motionChart(x));
+    $('rides').append(li); }
   $('shots').innerHTML = shots.length ? '' : '<li class="muted">아직 없어요.</li>';
   for (const s of shots) { const li = document.createElement('li');
     li.innerHTML = `<b></b><br><small></small>`; li.querySelector('b').textContent = s.note || '(메모 없음)';

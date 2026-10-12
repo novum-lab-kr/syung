@@ -55,7 +55,8 @@ class DebugPageTest(unittest.TestCase):
         self.assertEqual(rows[1]["lat"], 37.5); self.assertNotIn("secret", rows[1], "정해진 칸만 남긴다")
         self.assertEqual(rows[0]["receivedAt"], NOW * 1000)
         status, body = self.call("/admin/debug/recent")
-        self.assertEqual(body["rides"][0] | {}, {"ride": "r1", "mode": "bus", "line": "3011", "from": t, "to": t + 9000, "stops": 1, "gps": 1})
+        self.assertEqual(body["rides"][0] | {}, {"ride": "r1", "mode": "bus", "line": "3011", "from": t, "to": t + 9000, "stops": 1, "gps": 1,
+                                                 "taps": [{"kind": "arrive", "t": t + 9000, "station": "잠실역"}]})
 
     def test_bad_events_are_refused_whole(self):
         for events in [[], [{"ride": "r", "kind": "fly", "mode": "bus", "t": NOW * 1000}], [{"kind": "gps", "mode": "bus", "t": 1}]]:

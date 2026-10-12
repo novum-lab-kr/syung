@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 
 from server.clock import KST
+from server.services.ride_motion import detect
 from server.store.debug_log import DebugStore
 
 RIDE_KINDS = {"start", "gps", "arrive", "depart", "end", "mark", "motion"}
@@ -92,12 +93,21 @@ class DebugService:
     def recent(self) -> dict:
         today = datetime.fromtimestamp(self.clock(), KST).strftime("%Y%m%d")
         rides: dict[str, dict] = {}
+        motions: dict[str, list[dict]] = {}
         for e in self.store.recent_rides(today):
+            if e["kind"] == "motion":
+                motions.setdefault(e["ride"], []).append(e)
             r = rides.setdefault(e["ride"], {"ride": e["ride"], "mode": e["mode"], "line": e.get("line") or e.get("routeName"),
-                                             "from": e["t"], "to": e["t"], "stops": 0, "gps": 0})
+                                             "from": e["t"], "to": e["t"], "stops": 0, "gps": 0, "taps": []})
+            if e["kind"] in ("arrive", "depart"):
+                r["taps"].append({"kind": e["kind"], "t": e["t"], "station": e.get("station")})
             r["to"] = max(r["to"], e["t"])
             r["stops"] += e["kind"] == "arrive"
             r["gps"] += e["kind"] == "gps"
+        for ride_id, r in rides.items():   # 센서가 잡은 섰다 · 떠났다(시험판, ride_motion)
+            if ride_id in motions:
+                found = detect(motions[ride_id])
+                r["sensor"], r["series"] = found["events"], found["series"]
         shots = [{k: s.get(k) for k in ("at", "type", "bytes", "note", "file")} for s in self.store.recent_shots(20)]
         return {"rides": sorted(rides.values(), key=lambda r: -r["from"]), "shots": shots}
 
