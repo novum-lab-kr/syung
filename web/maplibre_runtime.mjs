@@ -331,7 +331,9 @@ function cityXrayTargets(){
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
-function prebuildCity(){if(cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
+// 휴대폰은 끈다(덕배 2026-10-12: 몇 분 쓰니 손가락이 뜨거울 만큼 발열 — 원인 확정 전). #prebuild: 휴대폰에서도 켜고, #noprebuild: 컴퓨터에서도 끄고 비교
+const PREBUILD=/(^|[^o])prebuild/.test(location.hash)||!PHONE&&!location.hash.includes('noprebuild');
+function prebuildCity(){if(PREBUILD&&cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
   syncNightBloom();
