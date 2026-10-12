@@ -331,6 +331,7 @@ function cityXrayTargets(){
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
+function prebuildCity(){if(cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
   syncNightBloom();
@@ -555,7 +556,10 @@ map.on('load',()=>{
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
   // 모드 코드는 첫 화면이 다 뜬 뒤 쉬는 틈에 미리 받아 둔다(모드를 누르면 바로 켜지게)
-  map.once('idle',()=>{const go=()=>loadModeKit().catch(()=>{});'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500)});
+  map.once('idle',()=>{const go=()=>loadModeKit().then(prebuildCity).catch(()=>{});'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500)});
+  // 도시 건물 미리 짓기(덕배 2026-10-12): 기본 모드에서 지도가 쉴 때마다 지금 보이는 곳의 심시티 · 롤코 건물(같은 팩)을 Worker 로 지어 둔다 —
+  // 모드를 누르면 '건물 짓는 중' 없이 바로 올린다. 조선은 다른 팩이라 누를 때 짓는다
+  map.on('idle',()=>{if(kitReady)('requestIdleCallback' in window?requestIdleCallback(prebuildCity,{timeout:3000}):setTimeout(prebuildCity,500))});
   map.on('rotate',()=>{if(theme.themeChoice==='auto'){const b=$('themeIcon');if(b)b.innerHTML=sunArcIcon().svg}});
   map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read

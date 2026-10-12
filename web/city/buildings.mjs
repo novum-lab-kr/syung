@@ -566,10 +566,20 @@ export class CityBuildings {
     this.tiles.clear(); this.visible = [];
     for (const w of this.workers || []) w.postMessage({ type: 'pack', pack, through: this.through });
   }
-  shown() {
-    if (!this.on || !this.map) return false;
+  shown() { return this.on && this.canShow() }
+  // 켜면 보일 줌 · 지도인가(켜짐은 묻지 않는다)
+  canShow() {
+    if (!this.map) return false;
     if (this.map.getZoom() < (this.phone ? 14.5 : 14)) return false;   // phones: a little later than the desktop (the far fade keeps it light)
     return !this.map.getLayer('bm-bld') || this.map.getLayoutProperty('bm-bld', 'visibility') !== 'none';
+  }
+  // 미리 짓기(꺼져 있을 때 · 본체가 지도가 쉴 때 부른다): 켜면 보일 타일을 그리지 않고 짓기만 해 둔다 — 모드를 누르면 다 지은 것을
+  // 올리기만 한다(덕배 2026-10-12: 전환 때 '건물 짓는 중' 2~3초). 한도(maxTiles · 휴대폰 maxBytes · 먼 타일 빼기)는 켜졌을 때와 같다
+  prebuild(map) {
+    if (this.on) return false;
+    this.map = map;   // (지도에 아직 안 올린 층: onAdd 전에도 타일 관리자를 읽는다)
+    if (!this.canShow()) return false;
+    this.frame++; this.collect(); return true;
   }
   animating() { return this.growing }
   // 모드 바꾸는 중 게이지(본체): 지난 그리기에서 보인 z14 타일 중 다 지은 수 / 전체
@@ -648,7 +658,7 @@ export class CityBuildings {
   onWorker(w, m) {
     const e = w.busy; w.busy = null;
     if (e && m.key === e.key && this.tiles.get(m.key) === e) {
-      if (m.type === 'done') { e.mesh = m.mesh; e.bytes = meshBytes(m.mesh); e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += m.mesh.verts.byteLength / STRIDE; this.map?.triggerRepaint() }
+      if (m.type === 'done') { e.mesh = m.mesh; e.bytes = meshBytes(m.mesh); e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += m.mesh.verts.byteLength / STRIDE; if (this.on) this.map?.triggerRepaint() }   // (미리 짓기: 그릴 것 없음)
       else { console.warn('city-build: a tile failed in the worker', m.error); this.tiles.delete(e.key) }
     }
     this.schedule();
