@@ -448,7 +448,10 @@ function motionChart(x) {
       const px = u.valToPos(t / 1000, 'x', true); if (px < u.bbox.left - 1 || px > u.bbox.left + u.bbox.width + 1) return;
       ctx.beginPath(); ctx.moveTo(px, u.bbox.top); ctx.lineTo(px, u.bbox.top + u.bbox.height); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad; ctx.stroke();
     };
-    ctx.save(); for (const e of x.taps || []) line(e.t, e.kind); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
+    ctx.save();
+    const zero = u.valToPos(0, 'y', true); ctx.beginPath(); ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.moveTo(u.bbox.left, zero); ctx.lineTo(u.bbox.left + u.bbox.width, zero);
+    ctx.lineWidth = dpr; ctx.strokeStyle = css('--secondary'); ctx.stroke(); ctx.setLineDash([]);   // 0 선(서 있음 · 일정하게 달림)
+    for (const e of x.taps || []) line(e.t, e.kind); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
   };
   const two = v => String(v).padStart(2, '0'), hms = s => { const d = new Date(s * 1000); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
   const build = () => {
@@ -458,8 +461,7 @@ function motionChart(x) {
       scales: {x: {time: false}, y: {range: [-top, top]}},
       axes: [
         {stroke: css('--secondary'), grid: {show: false}, ticks: {stroke: css('--rule')}, values: (_, vals) => vals.map(hms), space: 90, font: '11px system-ui'},
-        {stroke: css('--secondary'), grid: {stroke: css('--rule'), width: 1}, ticks: {show: false}, size: 44, font: '11px system-ui',
-          splits: () => [-top / 1.15, 0, top / 1.15], values: (_, vals) => vals.map(v => v > 0 ? '출발 ↑' : v < 0 ? '브레이크 ↓' : '')},
+        {show: false},   // 왼쪽 글자는 자리만 차지한다(덕배 2026-10-12) — 위 · 아래 뜻은 그래프 위 한 줄로
       ],
       series: [{}, {stroke: good, fill: good + '33', width: 2, fillTo: 0, points: {show: false}}, {stroke: bad, fill: bad + '33', width: 2, fillTo: 0, points: {show: false}}],
       hooks: {draw: [marks]},
