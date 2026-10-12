@@ -210,10 +210,7 @@ void main(){
         P([[56,52],[72,52],[80,84],[48,84]],'#c99567');L([[50,84],[64,90],[78,84]],'#5a3a22',3);
         P([[20,94],[108,94],[100,116],[28,116]],ink);P([[30,95],[40,95],[35,110]],iv);P([[88,95],[98,95],[93,110]],iv);for(let i=0;i<4;i++)x.fillStyle=iv,x.fillRect(48+i*9,96,6,7);
         L([[14,60],[8,100],[16,124]],ink,4);L([[114,60],[120,100],[112,124]],ink,4)}   // 천하대장군: 부릅뜬 눈 · 주먹코 · 송곳니 · 먹 수염
-      else if(f===2){const B=(p0,cs)=>{x.beginPath();x.moveTo(...p0);for(const c of cs)x.bezierCurveTo(...c)};   // 귀: 밝게 깎은 나무 속 · 굵은 먹 테, 왼쪽이 얼굴 앞쪽
-        B([42,44],[[42,20,83,18,95,36],[109,55,94,71,82,80],[76,85,80,98,66,98],[49,101,42,91,43,77],[37,66,37,55,42,44]]);x.closePath();x.fillStyle='#c99567';x.fill();x.strokeStyle=ink;x.lineWidth=10;x.lineJoin='round';x.stroke();
-        B([56,46],[[61,37,80,38,81,49],[83,60,69,59,62,69],[57,77,60,82,66,83]]);x.strokeStyle=ink;x.lineWidth=8;x.lineCap='round';x.stroke();   // 안쪽 테는 큰 갈고리 하나로, 둥근 귓불은 비운다
-        L([[44,60],[53,65],[48,74]],ink,8)}   // 앞쪽 귀구슬: 안쪽 테와 떨어뜨려 붉은 옆면에서도 귀로 읽히게
+      else if(f===2){}   // 옆면(횃불 쪽): 붉은 칠 · 나뭇결만 — 귀는 튀어나온 네모 블록으로 따로 깎는다(jangseung, 2026-10-12 덕배)
       else{L([[16,32],[36,24],[54,32]],ink,5);L([[74,32],[92,24],[112,32]],ink,5);E(36,50,13,14,ink);E(92,50,13,14,ink);E(36,50,8,9,iv);E(92,50,8,9,iv);E(37,52,4,6,ink);E(91,52,4,6,ink);
         E(22,82,12,9,'#c8382c');E(106,82,12,9,'#c8382c');P([[58,56],[70,56],[74,78],[54,78]],'#c48f63');E(64,100,14,7,'#7a2018');E(64,99,9,3,'#c8382c')}   // 지하여장군: 둥근 눈 · 연지
       x.restore()}
@@ -300,7 +297,20 @@ void main(){
     const wr=t=>.86+.2*t;   // 아래가 좁고 위가 넓은 통나무
     box(0,.06,wr(0),wr(.06),(P,w,h,k)=>quad(P,LOC,wood.map(v=>v*k*.8),[0,0,0],NO,NO,1));
     box(.06,.46,wr(.06),wr(.46),(P,w,h,k)=>{const text=!onTop&&w>sPx*.5;quad(P,LOC,woodL.map(v=>v*k),ink,text?glyph(uv,w,h,.86):NO,guv,text?2:1)});   // 출구 번호
-    box(.46,.82,wr(.46),wr(.82),(P,w,h,k,i)=>quad(P,LOC,[k,k,k],[0,0,0],NO,i%2?EAR[i>>1]:FU,3));   // 얼굴 — 횃불이 선 동 · 서 면(i 1 · 3)은 귀(서쪽은 좌우를 뒤집어 귓바퀴가 같은 쪽)
+    // 귀: 횃불이 선 동 · 서 옆면에서 네모로 깎아 튀어나온 나무 블록, 바깥 면에 짙은 네모 구멍(2026-10-12 덕배: 장승이 네모네모라 디테일 없이 입체로).
+    // 머리 앞에서 볼 때 뒤쪽 귀는 머리보다 먼저, 앞쪽 귀는 머리 다음에 그린다(깊이 z 로 고름)
+    const paint=[.57,.32,.22],block=(s)=>{const x0=x+Math.min(s*half*.9,s*half*1.5),x1=x+Math.max(s*half*.9,s*half*1.5),y0=y-half*.32,y1=y+half*.32,t0=Ht*.53,t1=Ht*.77;
+      const C=[[x0,y0,x1,y0,0,-1],[x1,y0,x1,y1,1,0],[x1,y1,x0,y1,0,1],[x0,y1,x0,y0,-1,0]];   // 면마다 [A, B, 바깥 방향](머리 상자와 같은 감기)
+      for(const [ax,ay,bx,by,nx,ny] of C){const A0=proj(ax,ay,t0),B0=proj(bx,by,t0),A1=proj(ax,ay,t1),B1=proj(bx,by,t1);if(!A0||!B0||!A1||!B1)continue;
+        if((B0[0]-A0[0])*(A1[1]-A0[1])-(B0[1]-A0[1])*(A1[0]-A0[0])<=0)continue;
+        const k=.88+.12*(nx*Ld[0]+ny*Ld[1]),P=[B0,A0,A1,B1];quad(P,LOC,paint.map(v=>v*k),[0,0,0],NO,NO,1);
+        if(nx===s){const at=(u,v)=>{const a=P[0].map((c,n)=>c+(P[1][n]-c)*u),b=P[3].map((c,n)=>c+(P[2][n]-c)*u);return a.map((c,n)=>c+(b[n]-c)*v)};   // 귓구멍
+          quad([at(.32,.28),at(.68,.28),at(.68,.72),at(.32,.72)],LOC,[.27,.14,.09],[0,0,0],NO,NO,1)}}
+      const T=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]].map(([a,b])=>proj(a,b,t1));if(T.every(p=>p))quad(T,LOC,paint.map(v=>v*1.04),[0,0,0],NO,NO,1)};
+    const ears=[-1,1].sort((a,c)=>(proj(x+c*half*1.1,y,Ht*.66)?.[2]??0)-(proj(x+a*half*1.1,y,Ht*.66)?.[2]??0));   // 먼 귀 먼저
+    block(ears[0]);
+    box(.46,.82,wr(.46),wr(.82),(P,w,h,k,i)=>quad(P,LOC,[k,k,k],[0,0,0],NO,i%2?EAR[i>>1]:FU,3));   // 얼굴 — 횃불이 선 동 · 서 면(i 1 · 3)은 귀 블록이 붙는 민 옆면
+    block(ears[1]);
     const brim=box(.82,.86,1.28,1.28,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k*.85),[0,0,0],NO,NO,1));   // 갓 테
     if(brim.every(p=>p))quad(brim,LOC,hatC.map(v=>v*.95),[0,0,0],NO,NO,1);   // 갓 테 윗면: 없으면 위에서 볼 때 테 안쪽으로 뒤 배경이 비쳐 갓이 깨져 보였다(2026-10-12 덕배 캡처)
     box(.86,.89,.92,.92,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
