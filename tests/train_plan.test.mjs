@@ -49,8 +49,9 @@ for(const [status,lead,first] of [
   assert.equal(p.phases.at(-1).dur,Infinity);
   if(status!=='출발'){
     const brake=p.phases.find(ph=>ph.k0===.85&&ph.k1===1);
-    assert.equal(brake.dur,12,'도착 뒤 감속 시간');
-    assert.equal(p.phases.find(ph=>ph.from.id===2&&ph.k0===ph.k1).dur,30,'감속 뒤 정차 시간');
+    // 기본 zone 62: 도착 뒤 42초 = 감속 20(이하로 줄이지 않는다) + 정차 22
+    assert.equal(brake.dur,20,'도착 뒤 감속 시간');
+    assert.equal(p.phases.find(ph=>ph.from.id===2&&ph.k0===ph.k1).dur,22,'감속 뒤 정차 시간');
   }
 });
 
