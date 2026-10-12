@@ -424,17 +424,17 @@ function compareTable(x) {
     body.append(tr); }
   table.append(body); return table;
 }
-// 센서 그래프(uPlot, vendor/uplot): 가운데 = 힘(위 초록 출발 가속 · 아래 빨강 브레이크), 위 가장자리 ▼ = 내가 누름, 아래 가장자리 △ = 센서가 잡은 것(초록 출발 · 빨강 도착)
+// 센서 그래프(uPlot, vendor/uplot): 가운데 = 힘(위 초록 출발 가속 · 아래 빨강 브레이크), 세로 실선 = 내가 누름, 아래 가장자리 △ = 센서가 잡은 것(초록 출발 · 빨강 도착)
 function motionChart(x) {
   const box = document.createElement('figure'); box.className = 'motion-chart';
   box.innerHTML = '<figcaption class="motion-chart__note">위로 솟으면 출발, 아래로 꺼지면 브레이크예요.</figcaption><div class="motion-chart__plot"></div>' +
-    '<p class="motion-chart__legend"><span><i>▼</i> 내가 누름</span><span><i>△</i> 센서</span><span><i style="color:var(--good)">●</i> 출발</span><span><i style="color:var(--bad)">●</i> 도착</span></p>';
+    '<p class="motion-chart__legend"><span><i>│</i> 내가 누름</span><span><i>△</i> 센서</span><span><i style="color:var(--good)">●</i> 출발</span><span><i style="color:var(--bad)">●</i> 도착</span></p>';
   const plot = box.querySelector('.motion-chart__plot'), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const pts = (x.series || []).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
   if (!pts.length || typeof uPlot === 'undefined') { plot.textContent = '센서 기록이 없어요.'; return [box]; }
   const ts = pts.map(p => p[0] / 1000), up = pts.map(p => Math.max(0, p[1])), down = pts.map(p => Math.min(0, p[1]));
   const top = Math.max(1, ...pts.map(p => Math.abs(p[1]))) * 1.15, good = css('--good'), bad = css('--bad'), ink = css('--ink');
-  // 누름 ▼(위) · 센서 △(아래): 시각 자리에 작은 삼각형만 — 이름 · 시각은 위 표에 있다
+  // 누름 = 위아래 끝까지 세로 실선(덕배 2026-10-12), 센서 = 아래 가장자리 △ — 이름 · 시각은 위 표에 있다
   const marks = u => {
     const {ctx} = u, dpr = devicePixelRatio || 1, r = 6 * dpr;
     const tri = (t, kind, below) => {
@@ -444,7 +444,11 @@ function motionChart(x) {
       ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad;
       if (below) ctx.stroke(); else { ctx.fillStyle = kind === 'depart' ? good : bad; ctx.fill(); }
     };
-    ctx.save(); for (const e of x.taps || []) tri(e.t, e.kind, false); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
+    const line = (t, kind) => {
+      const px = u.valToPos(t / 1000, 'x', true); if (px < u.bbox.left - 1 || px > u.bbox.left + u.bbox.width + 1) return;
+      ctx.beginPath(); ctx.moveTo(px, u.bbox.top); ctx.lineTo(px, u.bbox.top + u.bbox.height); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad; ctx.stroke();
+    };
+    ctx.save(); for (const e of x.taps || []) line(e.t, e.kind); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
   };
   const two = v => String(v).padStart(2, '0'), hms = s => { const d = new Date(s * 1000); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
   const build = () => {
