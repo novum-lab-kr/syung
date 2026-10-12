@@ -1,0 +1,97 @@
+"""디버깅 페이지(주인만): 탑승 기록 · 캡처 받기 · 노선 찾기 (덕배 2026-10-12)."""
+
+import json
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from pathlib import Path
+from types import SimpleNamespace
+
+from server.routes.http import Server, make_handler
+from server.routes.owner import safe_next
+from server.services.debug import DebugService
+from server.store.debug_log import DebugStore
+
+NOW = 1791800000.0   # 2026-10-12 KST 저녁
+GOOD = "good-token"
+
+
+class DebugPageTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        routes = {"100100438": {"id": "100100438", "name": "3011", "start": "장지공영차고지", "end": "한남동"},
+                  "1": {"id": "1", "name": "301", "start": "가", "end": "나"}, "2": {"id": "2", "name": "3012"}}
+        debug = DebugService(DebugStore(self.root), bus_routes=lambda: routes, clock=lambda: NOW)
+        services = SimpleNamespace(debug=debug, auth=SimpleNamespace(valid_token=lambda v: v == GOOD))
+        self.server = Server(("127.0.0.1", 0), make_handler(services, 0))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close(); self.temp.cleanup()
+
+    def call(self, path, body=None, cookie=GOOD, ctype="application/json"):
+        headers = {"Content-Type": ctype}
+        if cookie:
+            headers["Cookie"] = f"other=1; syung_owner={cookie}"
+        request = urllib.request.Request(self.base + path, data=body, headers=headers, method="POST" if body is not None else "GET")
+        try:
+            with urllib.request.urlopen(request) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_ride_events_are_cleaned_and_saved_per_day(self):
+        t = NOW * 1000
+        events = [{"ride": "r1", "kind": "start", "mode": "bus", "routeId": "100100438", "routeName": "3011", "t": t},
+                  {"ride": "r1", "kind": "gps", "mode": "bus", "t": t + 5000, "lat": 37.5, "lng": 127.1, "acc": 8, "secret": "x"},
+                  {"ride": "r1", "kind": "arrive", "mode": "bus", "t": t + 9000, "station": "잠실역"}]
+        status, body = self.call("/debug/ride", json.dumps({"events": events}).encode())
+        self.assertEqual((status, body), (200, {"ok": True, "saved": 3}))
+        rows = [json.loads(l) for l in (self.root / "rides" / "20261012.jsonl").read_text().splitlines()]
+        self.assertEqual(rows[1]["lat"], 37.5); self.assertNotIn("secret", rows[1], "정해진 칸만 남긴다")
+        self.assertEqual(rows[0]["receivedAt"], NOW * 1000)
+        status, body = self.call("/debug/recent")
+        self.assertEqual(body["rides"][0] | {}, {"ride": "r1", "mode": "bus", "line": "3011", "from": t, "to": t + 9000, "stops": 1, "gps": 1})
+
+    def test_bad_events_are_refused_whole(self):
+        for events in [[], [{"ride": "r", "kind": "fly", "mode": "bus", "t": NOW * 1000}], [{"kind": "gps", "mode": "bus", "t": 1}]]:
+            status, body = self.call("/debug/ride", json.dumps({"events": events}).encode())
+            self.assertEqual(status, 400); self.assertEqual(body["error"]["code"], "bad_request")
+        self.assertFalse((self.root / "rides").exists())
+
+    def test_only_the_owner(self):
+        for path, body in [("/debug/ride", b'{"events":[]}'), ("/debug/shot", b"png"), ("/debug/recent", None), ("/debug/bus-route?name=3011", None)]:
+            for cookie in (None, "wrong"):
+                status, answer = self.call(path, body, cookie=cookie)
+                self.assertEqual((status, answer["error"]["code"]), (401, "login"), path)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_shot_keeps_file_note_and_state(self):
+        from urllib.parse import quote
+        state = json.dumps({"ua": "iPhone", "w": 390})
+        status, body = self.call(f"/debug/shot?note={quote('7호선 중곡 도착')}&state={quote(state)}", b"\x89PNG....", ctype="image/png")
+        self.assertEqual(status, 200)
+        self.assertEqual((self.root / "shots" / body["file"]).read_bytes(), b"\x89PNG....")
+        status, recent = self.call("/debug/recent")
+        self.assertEqual(recent["shots"][0]["note"], "7호선 중곡 도착")
+        meta = json.loads((self.root / "shots.jsonl").read_text())
+        self.assertEqual(meta["state"], {"ua": "iPhone", "w": 390})
+        status, body = self.call("/debug/shot", b"MZ", ctype="application/x-msdownload")
+        self.assertEqual(status, 400)
+
+    def test_bus_route_search_exact_first(self):
+        status, body = self.call("/debug/bus-route?name=301")
+        self.assertEqual([r["name"] for r in body["routes"]], ["301", "3011", "3012"])
+        self.assertEqual(self.call("/debug/bus-route?name=3011")[1]["routes"][0]["id"], "100100438")
+
+    def test_login_returns_to_the_debug_page(self):
+        self.assertEqual(safe_next("/debug"), "/debug")
+        self.assertEqual(safe_next("//evil"), "/learning")
+
+
+if __name__ == "__main__":
+    unittest.main()

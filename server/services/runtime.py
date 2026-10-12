@@ -7,22 +7,26 @@ from __future__ import annotations
 
 import threading
 
+from server.config import DebugConfig
 from server.services.bus import BusArrivalService, BusLiveService
+from server.services.debug import DebugService
 from server.services.health import HealthService
 from server.services.journey import JourneyPlanner
 from server.services.live import SubwayLiveService
 from server.services.owner_auth import OwnerAuth
 from server.services.places import PlaceSearch
+from server.store.debug_log import DebugStore
 from server.store.live_samples import LiveSamples
 
 
 class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
                  live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
-                 places: PlaceSearch | None = None, auth: OwnerAuth | None = None, health: HealthService | None = None):
+                 places: PlaceSearch | None = None, auth: OwnerAuth | None = None, health: HealthService | None = None,
+                 debug: DebugService | None = None):
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
-        self._journey, self._places, self._auth, self._health = journey, places, auth, health
+        self._journey, self._places, self._auth, self._health, self._debug = journey, places, auth, health, debug
 
     @property
     def live(self) -> SubwayLiveService:
@@ -75,6 +79,13 @@ class Services:
             if self._auth is None:
                 self._auth = OwnerAuth()
             return self._auth
+
+    @property
+    def debug(self) -> DebugService:
+        with self._lock:
+            if self._debug is None:
+                self._debug = DebugService(DebugStore(DebugConfig.from_env().debug_dir), bus_routes=lambda: self.bus.routes)
+            return self._debug
 
 
 _default: Services | None = None

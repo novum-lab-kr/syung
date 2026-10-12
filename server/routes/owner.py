@@ -15,7 +15,7 @@ COOKIE = "syung_owner"
 
 def safe_next(path: str) -> str:
     """Only back to a private page of this site."""
-    return path if path.startswith("/learning") and "//" not in path and "\\" not in path else "/learning"
+    return path if path.startswith(("/learning", "/debug")) and "//" not in path and "\\" not in path else "/learning"
 
 
 def make_cookie(token: str) -> str:

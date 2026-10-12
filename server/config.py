@@ -188,3 +188,13 @@ class AuthConfig:
     @classmethod
     def from_env(cls):
         return cls(auth_file=Path(_env("SYUNG_AUTH_FILE", "/etc/subway-live-auth.json")))
+
+
+@dataclass
+class DebugConfig:
+    """디버깅 페이지(주인만): 탑승 기록 · 캡처를 남기는 곳(2026-10-12 덕배)."""
+    debug_dir: Path = Path("/var/lib/subway-live/debug")
+
+    @classmethod
+    def from_env(cls):
+        return cls(debug_dir=Path(_env("SYUNG_DEBUG_DIR", "/var/lib/subway-live/debug")))

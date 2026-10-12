@@ -1,7 +1,7 @@
 """통합 서버(:3113)의 HTTP 처리: 주소 → 담당 route, 응답 쓰기(옛 subway_live_proxy.Handler 와 같은 머리말 · 직렬화).
 
-GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live
-POST /login · /logout
+GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /debug/recent · /debug/bus-route
+POST /login · /logout · /debug/ride · /debug/shot
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
 """
 from __future__ import annotations
@@ -13,10 +13,13 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from server.routes import bus as bus_routes
+from server.routes import debug as debug_routes
 from server.routes import journey as journey_routes
 from server.routes import live as live_routes
 from server.routes import owner as owner_routes
+from server.routes.errors import api_error
 from server.routes.response import Response
+from server.services.debug import MAX_SHOT_BYTES
 
 
 class Server(ThreadingHTTPServer):
@@ -55,6 +58,9 @@ GET_JSON = {
     "/place": journey_routes.place,
 }
 
+# 디버깅 페이지(주인 쿠키만) — 쿠키를 받아야 해서 GET_JSON 과 따로
+DEBUG_GET = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
+
 
 def make_handler(services, response_seconds: float):
     cache = ResponseCache(response_seconds)
@@ -79,6 +85,8 @@ def make_handler(services, response_seconds: float):
             path = self.path.split("?", 1)[0]
             if path == "/logout":
                 return self._write(owner_routes.logout())
+            if path in ("/debug/ride", "/debug/shot"):
+                return self._debug_post(path)
             if path != "/login":
                 return self.send_error(404)
             size = min(int(self.headers.get("Content-Length") or 0), 4096)
@@ -86,8 +94,31 @@ def make_handler(services, response_seconds: float):
             address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
             self._write(owner_routes.login(services.auth, form, address))
 
+        def _debug_post(self, path: str) -> None:
+            # 로그인부터 보고 본문을 읽는다(남이 큰 파일을 보내도 읽지 않는다)
+            cookie = self.headers.get("Cookie")
+            if not debug_routes.allowed(services, cookie):
+                self.close_connection = True
+                return self._send_json(*debug_routes.LOGIN)
+            limit = debug_routes.RIDE_BYTES if path == "/debug/ride" else MAX_SHOT_BYTES
+            size = int(self.headers.get("Content-Length") or 0)
+            if size <= 0 or size > limit:
+                self.close_connection = True
+                return self._send_json(api_error("too_large", "본문이 없거나 너무 커요"), 413)
+            body = self.rfile.read(size)
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            if path == "/debug/ride":
+                return self._send_json(*debug_routes.ride(services, cookie, body))
+            self._send_json(*debug_routes.shot(services, cookie, body, self.headers.get("Content-Type", ""), query))
+
+        def _send_json(self, body, status: int) -> None:
+            self._send(status, json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode())
+
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
+            if path in DEBUG_GET:
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                return self._send_json(*DEBUG_GET[path](services, self.headers.get("Cookie"), query))
             if path == "/auth":
                 return self._write(owner_routes.auth(services.auth, self.headers.get("Cookie"),
                                                      self.headers.get("X-Forwarded-Uri", "/learning")))
@@ -113,7 +144,7 @@ def make_handler(services, response_seconds: float):
         def _send(self, status: int, data: bytes) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/")) else "public, max-age=30")
+            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/", "/debug/")) else "public, max-age=30")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
