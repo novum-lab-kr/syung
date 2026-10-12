@@ -72,13 +72,20 @@ if(!records.length){console.error(`${ymd} ${line} 원자료가 없어요`);proce
 // 열차 고르기: --train, 탑승 기록의 번호, 아니면 누른 역 · 시각에 원자료 사건이 가장 많이 맞는 열차
 let trains=(arg('train')||ride?.train||'').split(',').map(s=>s.trim()).filter(Boolean);
 if(!trains.length&&taps.length){
+  // 누른 역마다 150초 안에 그 역 기록이 있는 열차, 그 역들을 누른 차례대로 지나간 열차(반대 방향 열차는 순서가 거꾸로)
   const score=new Map();
-  for(const tap of taps){
-    const near=records.filter(r=>key(r.station)===key(tap.station)&&Math.abs(stampMs(r.receivedAt)-tap.t)<150e3);
-    for(const n of new Set(near.map(r=>r.trainNo)))score.set(n,(score.get(n)||0)+1);
+  for(const n of new Set(records.map(r=>r.trainNo))){
+    const mine=records.filter(r=>r.trainNo===n),times=[];
+    for(const tap of taps){
+      const hit=mine.filter(r=>key(r.station)===key(tap.station)&&Math.abs(stampMs(r.receivedAt)-tap.t)<150e3).sort((a,b)=>Math.abs(stampMs(a.receivedAt)-tap.t)-Math.abs(stampMs(b.receivedAt)-tap.t))[0];
+      if(hit)times.push(stampMs(hit.receivedAt));
+    }
+    let back=0;for(let i=1;i<times.length;i++)if(times[i]<times[i-1]-1e3)back++;
+    if(times.length)score.set(n,{hit:times.length,back,s:times.length-2*back});
   }
-  const best=[...score].sort((a,b)=>b[1]-a[1])[0];
-  if(best){trains=[best[0]];console.log(`열차 번호가 없어 원자료로 고름: ${best[0]} (누른 ${taps.length}번 중 ${best[1]}번 맞음)`)}
+  const best=[...score].sort((a,b)=>b[1].s-a[1].s)[0];
+  if(best&&best[1].s>0){trains=[best[0]];console.log(`열차 번호가 없어 원자료로 고름: ${best[0]} (누른 ${taps.length}번 중 ${best[1].hit}번 맞음, 순서 어긋남 ${best[1].back})`);
+    if(best[1].hit<taps.length/2)console.log('  맞는 누름이 절반이 안 돼요 — 확실하지 않으니 --train 으로 정해 주세요')}
 }
 if(trains[0]==='all')trains=[...new Set(records.filter(r=>r.seen>=from).map(r=>r.trainNo))];   // 그 시간의 모든 열차(요약만)
 const summaryOnly=arg('train')==='all';
