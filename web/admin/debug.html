@@ -9,6 +9,8 @@
 <link rel="icon" href="/brand/favicon.ico" sizes="48x48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="/vendor/uplot/uPlot.min.css">
+<script src="/vendor/uplot/uPlot.iife.min.js"></script>
 <script>
   // 지도와 같은 테마(localStorage subway-theme: auto | light | dark)
   (() => { let c = 'auto'; try { c = localStorage.getItem('subway-theme') || 'auto'; } catch {}
@@ -75,15 +77,12 @@ textarea{min-height:80px;resize:vertical}
 .cmp th{font-size:11px;color:var(--muted);font-weight:700;text-align:left;padding:4px 2px}
 .cmp td{padding:4px 2px;border-top:1px solid var(--rule)}
 .cmp td.d{color:var(--secondary)}
-.motion-chart{min-width:0;margin:16px 0 0;padding-top:12px;border-top:1px solid var(--rule);color:var(--ink)}
-.motion-chart__note{margin:0 0 12px;font-size:13px;line-height:1.6;color:var(--ink);word-break:keep-all;overflow-wrap:anywhere}
-.motion-chart__svg{display:block;width:100%;max-width:640px;height:auto;background:var(--paper);font-family:inherit}
-.motion-chart__heading{fill:var(--ink);font-size:13px;font-weight:700}
-.motion-chart__event{font-size:12px;font-weight:600}
-.motion-chart__graph-label{font-size:12px;font-weight:700;paint-order:stroke;stroke:var(--control);stroke-width:4px;stroke-linejoin:round}
-.motion-chart__time{fill:var(--secondary);font-size:11px;font-variant-numeric:tabular-nums}
-.motion-chart__empty-label{fill:var(--secondary);font-size:12px}
-.motion-chart__detail,.motion-chart__empty{margin:8px 0 0;color:var(--secondary);font-size:12px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
+.motion-chart{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);min-width:0}
+.motion-chart__note{margin:0 0 6px;font-size:13px;color:var(--ink)}
+.motion-chart__plot{width:100%;min-height:170px}
+.motion-chart__legend{margin:6px 0 0;font-size:12px;color:var(--secondary);display:flex;flex-wrap:wrap;gap:4px 12px}
+.motion-chart__legend i{font-style:normal;font-weight:700}
+.motion-chart .u-axis{color:var(--secondary)}
 .login{background:var(--bad-soft);color:var(--bad);border-radius:14px;padding:12px 14px;font-weight:700}
 .login a{color:inherit}
 [hidden]{display:none!important}
@@ -425,244 +424,45 @@ function compareTable(x) {
     body.append(tr); }
   table.append(body); return table;
 }
-// 센서 그래프(Codex 디자인, 2026-10-12): 같은 시간축에 위 = 내가 누른 것, 가운데 = 힘(위로 솟음 출발 가속 · 아래로 꺼짐 브레이크), 아래 = 센서가 잡은 것
+// 센서 그래프(uPlot, vendor/uplot): 가운데 = 힘(위 초록 출발 가속 · 아래 빨강 브레이크), 위 가장자리 ▼ = 내가 누름, 아래 가장자리 △ = 센서가 잡은 것(초록 출발 · 빨강 도착)
 function motionChart(x) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const box = document.createElement('figure');
-  box.className = 'motion-chart';
-
-  const note = document.createElement('figcaption');
-  note.className = 'motion-chart__note';
-  note.textContent = '위로 솟으면 출발 가속, 아래로 꺼지면 브레이크. 같은 세로 위치의 누름과 센서를 비교하세요.';
-  box.append(note);
-
-  // 누락되거나 잘못된 값은 그리지 않는다.
-  const pts = (x.series || [])
-    .filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
-    .slice().sort((a, b) => a[0] - b[0]);
-
-  const events = source => (source || [])
-    .filter(e => Number.isFinite(e.t) && ['arrive', 'depart'].includes(e.kind))
-    .slice().sort((a, b) => a.t - b.t);
-
-  const taps = events(x.taps), sensors = events(x.sensor);
-  const times = [
-    x.from, x.to, ...pts.map(p => p[0]),
-    ...taps.map(e => e.t), ...sensors.map(e => e.t)
-  ].filter(Number.isFinite);
-
-  if (!times.length) {
-    const empty = document.createElement('p');
-    empty.className = 'motion-chart__empty';
-    empty.textContent = '비교할 기록이 없어요.';
-    box.append(empty);
-    return [box];
-  }
-
-  let t0 = Math.min(...times), t1 = Math.max(...times);
-  if (t0 === t1) { t0 -= 1000; t1 += 1000; }
-
-  const W = 320, left = 12, right = W - 12;
-  const X = t => left + (t - t0) / (t1 - t0) * (right - left);
-  const word = e => e.kind === 'depart' ? '출발' : '도착';
-  const color = e => e.kind === 'depart' ? 'var(--good)' : 'var(--bad)';
-
-  // 가까운 사건의 글자는 다른 줄에 놓되, 표시점은 실제 시각을 유지한다.
-  function layout(list, stationNames) {
-    const ends = [];
-    const items = list.map(e => {
-      const station = stationNames ? String(e.station || '') : '';
-      const short = station.length > 7 ? `${station.slice(0, 6)}…` : station;
-      const width = Math.max(44, short.length * 12 + 8);
-      const px = X(e.t);
-      const cx = Math.max(left + width / 2, Math.min(right - width / 2, px));
-      const start = cx - width / 2;
-      let row = ends.findIndex(end => end + 8 <= start);
-      if (row < 0) row = ends.length;
-      ends[row] = cx + width / 2;
-      return {e, station, short, px, cx, row};
-    });
-    return {items, rows: Math.max(1, ends.length)};
-  }
-
-  const upper = layout(taps, true), lower = layout(sensors, false);
-  const graphTop = 38 + upper.rows * 42;
-  const graphH = 132, zero = graphTop + graphH / 2;
-  const graphBottom = graphTop + graphH;
-  const lowerTop = graphBottom + 32;
-  const tickY = lowerTop + lower.rows * 42 + 16;
-  const H = tickY + 14;
-
-  // 모든 기록에서 ±1을 기본 범위로 써 작은 흔들림이 크게 보이지 않게 한다.
-  const peak = Math.max(1, ...pts.map(p => Math.abs(p[1])));
-  const Y = v => zero - v / peak * (graphH / 2 - 12);
-
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('class', 'motion-chart__svg');
-  svg.setAttribute('role', 'img');
-
-  const add = (tag, attrs = {}, text, parent = svg) => {
-    const node = document.createElementNS(NS, tag);
-    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-    if (text != null) node.textContent = text;
-    parent.append(node);
-    return node;
+  const box = document.createElement('figure'); box.className = 'motion-chart';
+  box.innerHTML = '<figcaption class="motion-chart__note">위로 솟으면 출발, 아래로 꺼지면 브레이크예요.</figcaption><div class="motion-chart__plot"></div>' +
+    '<p class="motion-chart__legend"><span><i>▼</i> 내가 누름</span><span><i>△</i> 센서</span><span><i style="color:var(--good)">●</i> 출발</span><span><i style="color:var(--bad)">●</i> 도착</span></p>';
+  const plot = box.querySelector('.motion-chart__plot'), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const pts = (x.series || []).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (!pts.length || typeof uPlot === 'undefined') { plot.textContent = '센서 기록이 없어요.'; return [box]; }
+  const ts = pts.map(p => p[0] / 1000), up = pts.map(p => Math.max(0, p[1])), down = pts.map(p => Math.min(0, p[1]));
+  const top = Math.max(1, ...pts.map(p => Math.abs(p[1]))) * 1.15, good = css('--good'), bad = css('--bad'), ink = css('--ink');
+  // 누름 ▼(위) · 센서 △(아래): 시각 자리에 작은 삼각형만 — 이름 · 시각은 위 표에 있다
+  const marks = u => {
+    const {ctx} = u, dpr = devicePixelRatio || 1, r = 6 * dpr;
+    const tri = (t, kind, below) => {
+      const px = u.valToPos(t / 1000, 'x', true); if (px < u.bbox.left - 1 || px > u.bbox.left + u.bbox.width + 1) return;
+      const y = below ? u.bbox.top + u.bbox.height - r - 2 : u.bbox.top + r + 2, d = below ? -1 : 1;
+      ctx.beginPath(); ctx.moveTo(px - r, y - d * r); ctx.lineTo(px + r, y - d * r); ctx.lineTo(px, y + d * r * .8); ctx.closePath();
+      ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad;
+      if (below) ctx.stroke(); else { ctx.fillStyle = kind === 'depart' ? good : bad; ctx.fill(); }
+    };
+    ctx.save(); for (const e of x.taps || []) tri(e.t, e.kind, false); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
   };
-
-  add('title', {}, '누른 시각과 센서가 감지한 시각 비교');
-  add('desc', {}, [
-    '위쪽은 내가 누른 기록, 가운데는 힘의 변화, 아래쪽은 센서 감지 기록입니다.',
-    '위쪽 봉우리는 출발 가속, 아래쪽 골짜기는 브레이크입니다.',
-    '가운데 선 근처는 서 있거나 일정한 속도로 달리는 상태로, 정차 여부를 힘만으로 구분할 수 없습니다.',
-    ...taps.map(e => `누름: ${e.station || ''} ${word(e)} ${fmt(e.t)}.`),
-    ...sensors.map(e => `센서: ${word(e)} ${fmt(e.t)}.`),
-    !pts.length ? '힘 기록이 없습니다.' : ''
-  ].join(' '));
-
-  add('text', {x: left, y: 18, class: 'motion-chart__heading'}, '내가 누른 것');
-  add('text', {x: left, y: graphBottom + 22, class: 'motion-chart__heading'}, '센서가 잡은 것');
-
-  add('rect', {
-    x: left, y: graphTop, width: right - left, height: graphH,
-    fill: 'var(--control)', rx: 6
-  });
-
-  // 세 개의 시간 눈금을 모든 줄에 걸쳐 맞춘다.
-  for (const [i, t] of [t0, (t0 + t1) / 2, t1].entries()) {
-    const px = X(t);
-    add('line', {
-      x1: px, x2: px, y1: 26, y2: tickY - 14,
-      stroke: 'var(--rule)', 'stroke-width': 1
-    });
-    add('text', {
-      x: px, y: tickY, class: 'motion-chart__time',
-      'text-anchor': i === 0 ? 'start' : i === 2 ? 'end' : 'middle'
-    }, fmt(t));
-  }
-
-  add('line', {
-    x1: left, x2: right, y1: zero, y2: zero,
-    stroke: 'var(--secondary)', 'stroke-width': 1, 'stroke-dasharray': '3 4'
-  });
-
-  // 실선은 누름, 점선은 센서. 색 없이도 출처를 구분할 수 있다.
-  for (const [list, sensor] of [[taps, false], [sensors, true]]) {
-    for (const e of list) {
-      add('line', {
-        x1: X(e.t), x2: X(e.t), y1: graphTop, y2: graphBottom,
-        stroke: 'var(--secondary)', opacity: .45,
-        'stroke-width': 1, ...(sensor ? {'stroke-dasharray': '3 4'} : {})
-      });
-    }
-  }
-
-  // 0을 지나는 지점을 끼워 넣어 가속과 브레이크의 색을 정확히 나눈다.
-  // 긴 수집 공백은 연결하지 않는다.
-  const runs = [];
-  let run = [];
-  for (const p of pts) {
-    const prev = run.at(-1);
-    if (prev && p[0] - prev[0] > 5000) {
-      runs.push(run);
-      run = [];
-    } else if (prev && prev[1] * p[1] < 0) {
-      const ratio = Math.abs(prev[1]) / (Math.abs(prev[1]) + Math.abs(p[1]));
-      run.push([prev[0] + (p[0] - prev[0]) * ratio, 0]);
-    }
-    run.push(p);
-  }
-  if (run.length) runs.push(run);
-
-  for (const points of runs) {
-    if (points.length === 1) {
-      add('circle', {
-        cx: X(points[0][0]), cy: Y(points[0][1]), r: 2,
-        fill: points[0][1] >= 0 ? 'var(--good)' : 'var(--bad)'
-      });
-      continue;
-    }
-    for (const positive of [true, false]) {
-      const coords = points.map(([t, v]) =>
-        `${X(t).toFixed(2)},${Y(positive ? Math.max(0, v) : Math.min(0, v)).toFixed(2)}`
-      );
-      const stroke = positive ? 'var(--good)' : 'var(--bad)';
-      add('path', {
-        d: `M ${X(points[0][0])},${zero} L ${coords.join(' L ')} L ${X(points.at(-1)[0])},${zero} Z`,
-        fill: stroke, 'fill-opacity': .14
-      });
-      add('polyline', {
-        points: coords.join(' '), fill: 'none', stroke,
-        'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
-      });
-    }
-  }
-
-  // 가운데 선을 마지막에 다시 그려 색이 있는 바닥선이 두드러지지 않게 한다.
-  add('line', {
-    x1: left, x2: right, y1: zero, y2: zero,
-    stroke: 'var(--secondary)', 'stroke-width': 1, 'stroke-dasharray': '3 4'
-  });
-
-  for (const [label, y, fill] of [
-    ['출발 가속 ↑', graphTop + 18, 'var(--good)'],
-    ['브레이크 ↓', graphBottom - 10, 'var(--bad)']
-  ]) {
-    add('text', {x: left + 8, y, fill, class: 'motion-chart__graph-label'}, label);
-  }
-
-  // 누름과 센서의 글자를 표시점에 연결한다.
-  function drawLane(lane, sensor) {
-    if (!lane.items.length) {
-      add('text', {
-        x: left, y: sensor ? lowerTop + 16 : 49,
-        class: 'motion-chart__empty-label'
-      }, sensor ? '감지한 사건 없음' : '누른 기록 없음');
-      return;
-    }
-
-    for (const {e, station, short, px, cx, row} of lane.items) {
-      const y = sensor ? lowerTop + row * 42 + 14 : 42 + row * 42;
-      const dotY = sensor ? graphBottom + 7 : graphTop - 7;
-      const labelEdge = sensor ? y - 12 : y + (short ? 19 : 4);
-      const group = add('g');
-      add('title', {}, `${station ? `${station} · ` : ''}${word(e)} ${fmt(e.t)}`, group);
-      add('path', {
-        d: `M ${cx},${labelEdge} L ${px},${dotY}`,
-        fill: 'none', stroke: 'var(--secondary)', 'stroke-width': 1,
-        ...(sensor ? {'stroke-dasharray': '3 3'} : {})
-      }, null, group);
-
-      // 누름은 채운 원, 센서는 빈 원으로 구분한다.
-      add('circle', {
-        cx: px, cy: dotY, r: 3.5,
-        fill: sensor ? 'var(--paper)' : 'var(--ink)',
-        stroke: 'var(--ink)', 'stroke-width': 1.5
-      }, null, group);
-      add('text', {
-        x: cx, y, 'text-anchor': 'middle',
-        fill: short ? 'var(--ink)' : color(e),
-        class: 'motion-chart__event'
-      }, short || word(e), group);
-      if (short) {
-        add('text', {
-          x: cx, y: y + 16, 'text-anchor': 'middle',
-          fill: color(e), class: 'motion-chart__event'
-        }, word(e), group);
-      }
-    }
-  }
-
-  drawLane(upper, false);
-  drawLane(lower, true);
-  box.append(svg);
-
-  const detail = document.createElement('p');
-  detail.className = 'motion-chart__detail';
-  detail.textContent = pts.length
-    ? '가운데 선 근처 = 서 있거나 일정하게 달림 · 센서의 도착 표시는 추정이에요.'
-    : '힘 기록이 없어 누름과 센서가 잡은 시각만 표시했어요.';
-  box.append(detail);
+  const two = v => String(v).padStart(2, '0'), hms = s => { const d = new Date(s * 1000); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
+  const build = () => {
+    const width = Math.max(260, plot.clientWidth || 320);
+    const u = new uPlot({
+      width, height: 170, legend: {show: false}, cursor: {y: false, drag: {x: false, y: false}},
+      scales: {x: {time: false}, y: {range: [-top, top]}},
+      axes: [
+        {stroke: css('--secondary'), grid: {show: false}, ticks: {stroke: css('--rule')}, values: (_, vals) => vals.map(hms), space: 90, font: '11px system-ui'},
+        {stroke: css('--secondary'), grid: {stroke: css('--rule'), width: 1}, ticks: {show: false}, size: 44, font: '11px system-ui',
+          splits: () => [-top / 1.15, 0, top / 1.15], values: (_, vals) => vals.map(v => v > 0 ? '출발 ↑' : v < 0 ? '브레이크 ↓' : '')},
+      ],
+      series: [{}, {stroke: good, fill: good + '33', width: 2, fillTo: 0, points: {show: false}}, {stroke: bad, fill: bad + '33', width: 2, fillTo: 0, points: {show: false}}],
+      hooks: {draw: [marks]},
+    }, [ts, up, down], plot);
+    addEventListener('resize', () => u.setSize({width: Math.max(260, plot.clientWidth), height: 170}));
+  };
+  requestAnimationFrame(build);   // 화면에 붙은 뒤 폭을 재서 그린다
   return [box];
 }
 async function loadRecent() {
