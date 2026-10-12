@@ -199,17 +199,21 @@ void main(){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);   // no mipmaps: they blur the digits' strokes into outlines
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  // 장승 얼굴 아틀라스(조선 출구, 2026-10-11 행님): 천하대장군(0) · 지하여장군(1), 한 칸 128 px — 붉은 칠 얼굴에 먹 눈썹 · 부릅뜬 눈 · 주먹코 · 이빨 / 둥근 눈 · 연지
+  // 장승 얼굴 아틀라스(조선 출구, 2026-10-11 행님): 천하대장군(0) · 지하여장군(1) · 귀(2, 횃불 쪽 옆면 — 2026-10-12 덕배), 한 칸 128 px — 붉은 칠 얼굴에 먹 눈썹 · 부릅뜬 눈 · 주먹코 · 이빨 / 둥근 눈 · 연지
   faceAtlas(){
-    if(this.faceTex)return;const {document}=this.d,c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');
+    if(this.faceTex)return;const {document}=this.d,c=document.createElement('canvas');c.width=384;c.height=128;const x=c.getContext('2d');
     const E=(cx,cy,rx,ry,col,r=0)=>{x.beginPath();x.ellipse(cx,cy,rx,ry,r,0,Math.PI*2);x.fillStyle=col;x.fill()},L=(pts,col,w)=>{x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.strokeStyle=col;x.lineWidth=w;x.lineCap='round';x.stroke()},P=(pts,col)=>{x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.closePath();x.fillStyle=col;x.fill()};
     const ink='#221810',iv='#efe3c6';
-    for(const f of [0,1]){const o=f*128;x.save();x.translate(o,0);
+    for(const f of [0,1,2]){const o=f*128;x.save();x.translate(o,0);
       x.fillStyle='#9b5a3f';x.fillRect(0,0,128,128);for(let i=0;i<9;i++){x.fillStyle=i%2?'rgba(60,30,15,.16)':'rgba(240,200,150,.10)';x.fillRect(6+i*14,0,3,128)}   // 붉은 칠 · 나뭇결
       if(!f){L([[10,30],[34,18],[56,32]],ink,9);L([[72,32],[96,18],[118,30]],ink,9);E(36,48,15,13,iv);E(92,48,15,13,iv);E(38,50,7,9,ink);E(90,50,7,9,ink);
         P([[56,52],[72,52],[80,84],[48,84]],'#c99567');L([[50,84],[64,90],[78,84]],'#5a3a22',3);
         P([[20,94],[108,94],[100,116],[28,116]],ink);P([[30,95],[40,95],[35,110]],iv);P([[88,95],[98,95],[93,110]],iv);for(let i=0;i<4;i++)x.fillStyle=iv,x.fillRect(48+i*9,96,6,7);
         L([[14,60],[8,100],[16,124]],ink,4);L([[114,60],[120,100],[112,124]],ink,4)}   // 천하대장군: 부릅뜬 눈 · 주먹코 · 송곳니 · 먹 수염
+      else if(f===2){const B=(p0,cs)=>{x.beginPath();x.moveTo(...p0);for(const c of cs)x.bezierCurveTo(...c)};   // 귀: 눈 높이에서 턱 위까지 — 귓바퀴 · 안쪽 테 · 오목 · 귀구슬, 귓불은 아래로
+        B([50,40],[[58,22,92,20,94,50],[95,68,82,74,78,86],[74,100,58,104,54,92],[52,84,56,78,52,68],[50,60,47,50,50,40]]);x.fillStyle='#b06a48';x.fill();x.strokeStyle=ink;x.lineWidth=4;x.lineJoin='round';x.stroke();
+        B([58,40],[[68,30,86,34,84,52],[83,64,74,68,72,80]]);x.strokeStyle='#6a3522';x.lineWidth=5;x.lineCap='round';x.stroke();
+        E(68,62,8,11,'#5e2f1d');E(57,64,4,6,'#b06a48');x.strokeStyle='#6a3522';x.lineWidth=2;x.stroke()}
       else{L([[16,32],[36,24],[54,32]],ink,5);L([[74,32],[92,24],[112,32]],ink,5);E(36,50,13,14,ink);E(92,50,13,14,ink);E(36,50,8,9,iv);E(92,50,8,9,iv);E(37,52,4,6,ink);E(91,52,4,6,ink);
         E(22,82,12,9,'#c8382c');E(106,82,12,9,'#c8382c');P([[58,56],[70,56],[74,78],[54,78]],'#c48f63');E(64,100,14,7,'#7a2018');E(64,99,9,3,'#c8382c')}   // 지하여장군: 둥근 눈 · 연지
       x.restore()}
@@ -274,7 +278,7 @@ void main(){
   // 조선 출구: 장승 한 기(기둥보다 25 % 높게) — 아래 몸통에 출구 번호(밝은 나무에 먹 글자), 위에 얼굴(홀수 번 천하대장군 · 짝수 지하여장군),
   // 갓 테 · 관모(노선색 띠), 그 양쪽(동 · 서)에 횃불(밤엔 불빛 번짐). 기둥과 같은 화면 크기 규칙 · 같은 그리기 한 번
   jangseung(m,b,ref,lc,{proj,quad,LOC,glyph,unit,sPx,half,hgt,onTop,Ld,night,NO}){
-    const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,Ht=hgt*1.25,male=(parseInt(ref,10)||1)%2===1,FU=male?[0,0,.5,1]:[.5,0,1,1];
+    const uv=this.uv.get(ref)||[0,0,0,0,1],guv=uv.slice(0,4),x=m.x,y=m.y,Ht=hgt*1.25,male=(parseInt(ref,10)||1)%2===1,FU=male?[0,0,1/3,1]:[1/3,0,2/3,1],EAR=[[2/3,0,1,1],[1,0,2/3,1]];
     const ink=[.13,.09,.06],woodL=[.86,.77,.62],wood=[.55,.39,.25],hatC=male?[.27,.19,.15]:[.34,.18,.16];
     const ex=proj(x+half,y,0),ey=proj(x,y+half,0),sh=Math.min(sPx,ex&&ey?2*Math.max(Math.hypot(ex[0]-b[0],ex[1]-b[1]),Math.hypot(ey[0]-b[0],ey[1]-b[1])):0);
     if(sh>.5)quad([[b[0]-sh*1.1,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]-sh*.55,b[2]],[b[0]+sh*1.3,b[1]+sh*.65,b[2]],[b[0]-sh*1.1,b[1]+sh*.65,b[2]]],[[-1,-1],[1,-1],[1,1],[-1,1]],[0,0,0],[0,0,0],NO,NO,0);
@@ -291,12 +295,12 @@ void main(){
     const box=(t0,t1,r0,r1,fill)=>{const C=[[-1,-1,0,-1],[1,-1,1,0],[1,1,0,1],[-1,1,-1,0]];
       for(let i=0;i<4;i++){const [ax,ay,nx,ny]=C[i],[bx,by]=C[(i+1)%4],A0=proj(x+ax*half*r0,y+ay*half*r0,Ht*t0),B0=proj(x+bx*half*r0,y+by*half*r0,Ht*t0),A1=proj(x+ax*half*r1,y+ay*half*r1,Ht*t1),B1=proj(x+bx*half*r1,y+by*half*r1,Ht*t1);if(!A0||!B0||!A1||!B1)continue;
         if((B0[0]-A0[0])*(A1[1]-A0[1])-(B0[1]-A0[1])*(A1[0]-A0[0])<=0)continue;
-        const k=.88+.12*(nx*Ld[0]+ny*Ld[1]);fill([B0,A0,A1,B1],Math.hypot(B0[0]-A0[0],B0[1]-A0[1]),Math.hypot(B1[0]-B0[0],B1[1]-B0[1]),k)}
+        const k=.88+.12*(nx*Ld[0]+ny*Ld[1]);fill([B0,A0,A1,B1],Math.hypot(B0[0]-A0[0],B0[1]-A0[1]),Math.hypot(B1[0]-B0[0],B1[1]-B0[1]),k,i)}
       return [[-1,-1],[1,-1],[1,1],[-1,1]].map(([cx,cy])=>proj(x+cx*half*r1,y+cy*half*r1,Ht*t1))};
     const wr=t=>.86+.2*t;   // 아래가 좁고 위가 넓은 통나무
     box(0,.06,wr(0),wr(.06),(P,w,h,k)=>quad(P,LOC,wood.map(v=>v*k*.8),[0,0,0],NO,NO,1));
     box(.06,.46,wr(.06),wr(.46),(P,w,h,k)=>{const text=!onTop&&w>sPx*.5;quad(P,LOC,woodL.map(v=>v*k),ink,text?glyph(uv,w,h,.86):NO,guv,text?2:1)});   // 출구 번호
-    box(.46,.82,wr(.46),wr(.82),(P,w,h,k)=>quad(P,LOC,[k,k,k],[0,0,0],NO,FU,3));   // 얼굴
+    box(.46,.82,wr(.46),wr(.82),(P,w,h,k,i)=>quad(P,LOC,[k,k,k],[0,0,0],NO,i%2?EAR[i>>1]:FU,3));   // 얼굴 — 횃불이 선 동 · 서 면(i 1 · 3)은 귀(서쪽은 좌우를 뒤집어 귓바퀴가 같은 쪽)
     box(.82,.86,1.28,1.28,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k*.85),[0,0,0],NO,NO,1));   // 갓 테
     box(.86,.89,.92,.92,(P,w,h,k)=>quad(P,LOC,hatC.map(v=>v*k),[0,0,0],NO,NO,1));
     box(.89,.95,.92,.92,(P,w,h,k)=>quad(P,LOC,lc.map(v=>v*k),[0,0,0],NO,NO,1));   // 관모 노선색 띠
