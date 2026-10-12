@@ -22,6 +22,7 @@ class LocalSite:
         self.responses = {}
         self.requests = []
         self.holds = {}
+        self.open_admin = False   # True 면 /admin/* 을 로그인 없이 내준다(Caddy 보호가 빠진 경우)
         site = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -40,8 +41,8 @@ class LocalSite:
                     status, content_type, body = 200, "application/json", b'{"ok":true}'
                 elif path.startswith("/api/"):
                     status, content_type, body = 404, "text/plain", b"no such API"
-                elif path.startswith("/learning"):
-                    status, content_type, body = 401, "text/plain", b"owner only"
+                elif path.startswith("/admin/") and path != "/admin/login.html" and not site.open_admin:
+                    status, content_type, body = 302, "text/plain", b"owner only"
                 else:
                     target = site.web / ("index.html" if path == "/" else path.lstrip("/"))
                     try:
@@ -157,7 +158,14 @@ class SiteCheckTest(RemoteFixture):
         self.assertIn("/live-timing.json", paths)
         self.assertIn("/api/route", paths)
         self.assertIn("/api/live", paths)
-        self.assertFalse(any(path.startswith("/learning") for path in paths))
+        self.assertIn("/admin/login.html", paths)
+        self.assertIn("/admin/learning.html", paths, "주인 페이지는 막혀 있는지만 본다")
+
+    def test_owner_page_open_without_login_fails(self):
+        self.site.open_admin = True   # Caddy 보호 없이 올라간 경우
+        result = self.check_site(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("로그인 없이 열림", result.stdout)
         route = next(path for path in self.site.requests if path.startswith("/api/route?"))
         self.assertIn("from=", route)
         self.assertIn("&to=", route)

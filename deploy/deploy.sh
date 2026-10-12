@@ -16,7 +16,7 @@ STATE=${SYUNG_STATE:-/var/lib/subway-live}
 KEEP=${SYUNG_KEEP_COUNT:-5}
 HISTORY=$RELEASES/.history   # 링크가 가리킨 릴리스 이름, 한 줄에 하나(마지막 줄 = 지금)
 # 웹 폴더에 바로 쓰이는 파일(밤 재학습의 학습 현황 숫자): 지금 걸린 릴리스에서 이어 받는다
-CARRY=(learning.json)
+CARRY=(admin/learning.json)
 # 커밋에서 꺼내 릴리스 맨 위에 두는 자료 파일
 DATA=(data/osm-tracks/track_shapes.json data/osm-tracks/exits.json data/ktdb-gtfs-2025/edge_times.json
       data/osm-tracks/coaster_buildings.bin data/osm-tracks/coaster_towers.json)   # 롤러코스터: 노선 따라 건물 높이
@@ -111,13 +111,17 @@ paths=(web "${DATA[@]}" data/live-timing.json)
 if git -C "$ROOT" cat-file -e "$sha:data/bus/routes.json" 2>/dev/null; then paths+=(data/bus); fi
 git -C "$ROOT" archive "$sha" -- "${paths[@]}" | tar -x -C "$tmp"
 out=$tmp/web
-# learning.html (+ learning.json) 은 주인만: Caddy 가 서버의 /auth 로 묻는다
+# admin/ 아래(학습 · 디버깅 · learning.json)는 주인만: Caddy 가 서버의 /auth 로 묻는다(admin/login.html 만 열림)
 for f in "${DATA[@]}"; do mv "$tmp/$f" "$out/"; done
 # bus: v1 정적 주소(/data/bus/*.json)를 길찾기의 bus.json 과 따로 둔다
 if [ -d "$tmp/data/bus" ]; then mkdir -p "$out/data/bus" && mv "$tmp"/data/bus/*.json "$out/data/bus/"; fi
 # live timing: 밤마다 다시 배운 것(pipeline/retrain_live_timing.py)이 있으면 그것
 if [ -f "$STATE/live-timing.json" ]; then cp "$STATE/live-timing.json" "$out/"; else mv "$tmp/data/live-timing.json" "$out/"; fi
-for f in "${CARRY[@]}"; do if [ -f "$WEB/$f" ]; then cp -p "$WEB/$f" "$out/"; fi; done
+for f in "${CARRY[@]}"; do
+  from=$WEB/$f
+  if [ ! -f "$from" ] && [ -f "$WEB/$(basename "$f")" ]; then from=$WEB/$(basename "$f"); fi   # admin/ 로 옮기기 전 릴리스(2026-10-12)
+  if [ -f "$from" ]; then mkdir -p "$out/$(dirname "$f")" && cp -p "$from" "$out/$f"; fi
+done
 chmod -R u=rwX,go=rX "$out"   # 웹 서버(caddy 사용자)가 읽게
 if [ -d "$KEEP_DIR" ]; then   # 옛 파일: 고정 폴더에 있는 것만 링크, 커밋에 같은 이름이 있으면 커밋 것
   for f in "$KEEP_DIR"/*; do

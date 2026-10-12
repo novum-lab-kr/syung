@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>슝 디버깅</title>
 <meta name="description" content="탈 때 실제 도착 · 출발을 남기고 캡처를 올리는 슝 정확도 기록(주인만)">
-<link rel="icon" href="./brand/favicon.ico" sizes="48x48">
+<link rel="icon" href="/brand/favicon.ico" sizes="48x48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <script>
@@ -77,14 +77,14 @@ textarea{min-height:80px;resize:vertical}
 </style>
 </head>
 <body>
-<header class="mast"><div class="mast-in"><h1>슝 디버깅</h1><span class="sp"></span><a href="/learning">학습</a><a class="on" href="/debug" aria-current="page">디버깅</a><form method="post" action="/api/logout" style="margin:0"><button type="submit">로그아웃</button></form></div></header>
+<header class="mast"><div class="mast-in"><h1>슝 디버깅</h1><span class="sp"></span><a href="/admin/learning">학습</a><a class="on" href="/admin/debug" aria-current="page">디버깅</a><form method="post" action="/api/logout" style="margin:0"><button type="submit">로그아웃</button></form></div></header>
 <nav class="tabs" role="tablist">
   <button role="tab" id="tab-ride" aria-selected="true" aria-controls="ride">탑승 기록</button>
   <button role="tab" id="tab-shot" aria-selected="false" aria-controls="shot">캡처 올리기</button>
   <button role="tab" id="tab-list" aria-selected="false" aria-controls="list">올린 것</button>
 </nav>
 <main>
-  <p class="login" id="login" hidden>로그인이 풀렸어요. <a href="/login.html?next=%2Fdebug">다시 로그인</a>하면 쌓아 둔 기록을 이어서 보내요.</p>
+  <p class="login" id="login" hidden>로그인이 풀렸어요. <a href="/admin/login.html?next=%2Fadmin%2Fdebug">다시 로그인</a>하면 쌓아 둔 기록을 이어서 보내요.</p>
 
   <!-- 1. 탑승 기록 -->
   <section id="ride" role="tabpanel">
@@ -150,7 +150,7 @@ textarea{min-height:80px;resize:vertical}
 <script>
 'use strict';
 // 디버깅 페이지(주인만, 2026-10-12 덕배): 탈 때 실제 도착 · 출발(정답)과 GPS 를 남기고, 캡처를 올린다.
-// 기록은 기기(localStorage)에 먼저 쌓고 15초마다 /api/debug/ride 로 보낸다 — 지하 · 터널에서 끊겨도 잃지 않게.
+// 기록은 기기(localStorage)에 먼저 쌓고 15초마다 /api/admin/debug/ride 로 보낸다 — 지하 · 터널에서 끊겨도 잃지 않게.
 const $ = id => document.getElementById(id);
 const store = {get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }};
@@ -177,7 +177,7 @@ async function flush() {
   if (sending || !queue.length || !navigator.onLine) return;
   sending = true; const batch = queue.slice(0, 500);
   try {
-    const r = await fetch('/api/debug/ride', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({events: batch}), credentials: 'same-origin'});
+    const r = await fetch('/api/admin/debug/ride', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({events: batch}), credentials: 'same-origin'});
     if (r.status === 401) showLogin(true);
     else if (r.ok || r.status === 400) { showLogin(false); queue = queue.slice(batch.length); store.set(QUEUE, queue); }   // 400: 고칠 수 없는 묶음은 버린다
   } catch {} finally { sending = false; $('f-queue').textContent = queue.length; }
@@ -235,7 +235,7 @@ $('busno').oninput = () => { clearTimeout(busTimer); busTimer = setTimeout(findB
 async function findBus() {
   const name = $('busno').value.trim(); busPick = null; check();
   if (!name) { $('busroutes').innerHTML = ''; return; }
-  const r = await fetch(`/api/debug/bus-route?name=${encodeURIComponent(name)}`, {credentials: 'same-origin'});
+  const r = await fetch(`/api/admin/debug/bus-route?name=${encodeURIComponent(name)}`, {credentials: 'same-origin'});
   if (r.status === 401) return showLogin(true);
   const {routes = []} = await r.json();
   $('busroutes').innerHTML = '';
@@ -341,7 +341,7 @@ $('send').onclick = async () => {
   try {
     for (let i = 0; i < picked.length; i++) {
       status(`올리는 중… ${i + 1}/${picked.length}`);
-      const f = picked[i], r = await fetch(`/api/debug/shot?note=${encodeURIComponent(note)}&state=${encodeURIComponent(state)}`,
+      const f = picked[i], r = await fetch(`/api/admin/debug/shot?note=${encodeURIComponent(note)}&state=${encodeURIComponent(state)}`,
         {method: 'POST', headers: {'Content-Type': f.type || 'application/octet-stream'}, body: f, credentials: 'same-origin'});
       if (r.status === 401) { showLogin(true); throw new Error('로그인이 필요해요'); }
       if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message || `오류 ${r.status}`);
@@ -352,7 +352,7 @@ $('send').onclick = async () => {
 
 // ---------- 올린 것 ----------
 async function loadRecent() {
-  const r = await fetch('/api/debug/recent', {credentials: 'same-origin'});
+  const r = await fetch('/api/admin/debug/recent', {credentials: 'same-origin'});
   if (r.status === 401) return showLogin(true);
   const {rides = [], shots = []} = await r.json();
   $('rides').innerHTML = rides.length ? '' : '<li class="muted">오늘은 아직 없어요.</li>';
@@ -368,7 +368,7 @@ async function loadRecent() {
 // 시작: 지하철 자료 · 하던 탑승 이어서
 $('f-queue').textContent = queue.length;
 loadSubway().then(() => { if (ride.id) { $('log').innerHTML = ''; say('하던 탑승 이어서'); enterRiding(); } }).catch(() => { $('line').innerHTML = '<option>역 자료를 못 받았어요</option>'; });
-fetch('/api/debug/recent', {credentials: 'same-origin'}).then(r => showLogin(r.status === 401)).catch(() => {});
+fetch('/api/admin/debug/recent', {credentials: 'same-origin'}).then(r => showLogin(r.status === 401)).catch(() => {});
 flush();
 </script>
 </body>

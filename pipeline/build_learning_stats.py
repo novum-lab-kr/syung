@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Numbers for the learning page (web/learning.html) → <web folder>/learning.json.
+"""Numbers for the learning page (web/admin/learning.html) → <web folder>/admin/learning.json.
 
 - days: per collection day, the records kept (samples: the all-stations feed; position: the
   per-line position feed), how many of them carry their own event time (only those can time a
@@ -187,7 +187,8 @@ def main(web: Path) -> None:
                       "stations": stations, "stands": station_stands(learned_from),
                       "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}},
            "bus": bus_stats()}
-    target = web / "learning.json"
+    target = web / "admin" / "learning.json"   # 관리 페이지와 같은 폴더: Caddy 가 /admin/* 을 주인만 보여 준다
+    target.parent.mkdir(exist_ok=True)
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(target)

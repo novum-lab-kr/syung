@@ -77,8 +77,8 @@ else:
             shutil.copy2(ROOT / "deploy" / name, self.repo / "deploy" / name)
             (self.repo / "deploy" / name).chmod(0o755)
         self.write("web/index.html", "committed index")
-        self.write("web/learning.html", "owner page")
-        self.write("web/login.html", "login page")
+        self.write("web/admin/learning.html", "owner page")
+        self.write("web/admin/login.html", "login page")
         self.write("web/maplibre_runtime.mjs", "export const fixture = true;\n")
         self.write("web/city/new/deep/module.mjs", "export const city = true;\n")
         for source in DATA:
@@ -92,7 +92,7 @@ else:
         self.git("config", "user.email", "fixture@example.invalid")
         self.initial = self.commit("initial")
         (self.web / "index.html").write_text("old index", encoding="utf-8")
-        (self.web / "learning.json").write_text('{"learned":1}', encoding="utf-8")
+        (self.web / "learning.json").write_text('{"learned":1}', encoding="utf-8")   # admin/ 로 옮기기 전 자리
         for name in LEGACY:
             target = self.web / name
             if name == "gallery":
@@ -164,17 +164,18 @@ class StaticDeployTest(ReleaseFixture):
         for name in ("routes", "stops", "manifest"):
             self.assertEqual(json.loads((self.web / "data/bus" / (name + ".json")).read_text()), {"file": name})
         self.assertEqual(json.loads((self.web / "live-timing.json").read_text()), {"source": "commit"})
-        self.assertEqual(json.loads((self.web / "learning.json").read_text()), {"learned": 1})
+        self.assertEqual(json.loads((self.web / "admin/learning.json").read_text()), {"learned": 1})
+        self.assertFalse((self.web / "learning.json").exists(), "옛 자리에서 admin/ 으로 옮겨 온다")
         self.assertFalse((self.web / "osm-tracks").exists())
 
     def test_state_timing_wins_and_learning_is_carried_from_current_release(self):
         self.adopt()
         (self.state / "live-timing.json").write_text('{"source":"state"}')
         self.deploy()
-        (self.web / "learning.json").write_text('{"learned":2}')
+        (self.web / "admin/learning.json").write_text('{"learned":2}')
         self.deploy()
         self.assertEqual(json.loads((self.web / "live-timing.json").read_text()), {"source": "state"})
-        self.assertEqual(json.loads((self.web / "learning.json").read_text()), {"learned": 2})
+        self.assertEqual(json.loads((self.web / "admin/learning.json").read_text()), {"learned": 2})
 
     def test_optional_bus_data_can_be_absent(self):
         self.git("rm", "-qr", "data/bus")

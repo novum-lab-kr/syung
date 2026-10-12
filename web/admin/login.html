@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>슝 로그인</title>
-<link rel="icon" href="./brand/favicon.ico" sizes="48x48">
+<link rel="icon" href="/brand/favicon.ico" sizes="48x48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <script>(()=>{let c='auto';try{c=localStorage.getItem('subway-theme')||'auto'}catch{}document.documentElement.dataset.theme=c==='dark'||(c==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'})();</script>
@@ -35,10 +35,10 @@ a{color:var(--muted);font-size:13px;text-align:center}
   <p>한 번 로그인하면 이 기기에서 30일 동안 유지돼요.</p>
   <label>아이디<input name="user" autocomplete="username" required autofocus></label>
   <label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>
-  <input type="hidden" name="next" id="next" value="/learning">
+  <input type="hidden" name="next" id="next" value="/admin/learning">
   <div class="err" id="err" role="alert"></div>
   <button type="submit">로그인</button>
-  <a href="./">지도로 돌아가기</a>
+  <a href="/">지도로 돌아가기</a>
 </form>
 <script>
 const q=new URLSearchParams(location.search);

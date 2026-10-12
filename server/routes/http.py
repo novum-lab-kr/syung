@@ -1,7 +1,8 @@
 """통합 서버(:3113)의 HTTP 처리: 주소 → 담당 route, 응답 쓰기(옛 subway_live_proxy.Handler 와 같은 머리말 · 직렬화).
 
-GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /debug/recent · /debug/bus-route
-POST /login · /logout · /debug/ride · /debug/shot
+GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /admin/debug/recent · /admin/debug/bus-route
+POST /login · /logout · /admin/debug/ride · /admin/debug/shot
+/admin/… 는 주인 쿠키를 먼저 본다(없으면 401, POST 는 본문을 읽기 전에). Caddy 가 /api/admin/… 의 /api 를 떼고 넘긴다.
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
 """
 from __future__ import annotations
@@ -58,8 +59,10 @@ GET_JSON = {
     "/place": journey_routes.place,
 }
 
-# 디버깅 페이지(주인 쿠키만) — 쿠키를 받아야 해서 GET_JSON 과 따로
-DEBUG_GET = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
+# 관리 주소(주인 쿠키만, 앞의 /admin 을 뗀 이름) — 쿠키를 받아야 해서 GET_JSON 과 따로
+ADMIN = "/admin"
+ADMIN_GET = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
+ADMIN_POST = ("/debug/ride", "/debug/shot")
 
 
 def make_handler(services, response_seconds: float):
@@ -85,8 +88,8 @@ def make_handler(services, response_seconds: float):
             path = self.path.split("?", 1)[0]
             if path == "/logout":
                 return self._write(owner_routes.logout())
-            if path in ("/debug/ride", "/debug/shot"):
-                return self._debug_post(path)
+            if path.startswith(ADMIN + "/"):
+                return self._admin_post(path[len(ADMIN):])
             if path != "/login":
                 return self.send_error(404)
             size = min(int(self.headers.get("Content-Length") or 0), 4096)
@@ -94,12 +97,15 @@ def make_handler(services, response_seconds: float):
             address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
             self._write(owner_routes.login(services.auth, form, address))
 
-        def _debug_post(self, path: str) -> None:
+        def _admin_post(self, path: str) -> None:
             # 로그인부터 보고 본문을 읽는다(남이 큰 파일을 보내도 읽지 않는다)
             cookie = self.headers.get("Cookie")
             if not debug_routes.allowed(services, cookie):
                 self.close_connection = True
                 return self._send_json(*debug_routes.LOGIN)
+            if path not in ADMIN_POST:
+                self.close_connection = True
+                return self.send_error(404)
             limit = debug_routes.RIDE_BYTES if path == "/debug/ride" else MAX_SHOT_BYTES
             size = int(self.headers.get("Content-Length") or 0)
             if size <= 0 or size > limit:
@@ -116,12 +122,17 @@ def make_handler(services, response_seconds: float):
 
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
-            if path in DEBUG_GET:
+            if path.startswith(ADMIN + "/"):
+                cookie, path = self.headers.get("Cookie"), path[len(ADMIN):]
+                if not debug_routes.allowed(services, cookie):
+                    return self._send_json(*debug_routes.LOGIN)
+                if path not in ADMIN_GET:
+                    return self.send_error(404)
                 query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                return self._send_json(*DEBUG_GET[path](services, self.headers.get("Cookie"), query))
+                return self._send_json(*ADMIN_GET[path](services, cookie, query))
             if path == "/auth":
                 return self._write(owner_routes.auth(services.auth, self.headers.get("Cookie"),
-                                                     self.headers.get("X-Forwarded-Uri", "/learning")))
+                                                     self.headers.get("X-Forwarded-Uri", owner_routes.HOME)))
             # bus: separate cache/quota; the same process serves both paths.
             if path in ("/bus/live", "/api/bus/live"):
                 if len(self.path) > 2048:
@@ -144,7 +155,7 @@ def make_handler(services, response_seconds: float):
         def _send(self, status: int, data: bytes) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/", "/debug/")) else "public, max-age=30")
+            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/", ADMIN + "/")) else "public, max-age=30")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()

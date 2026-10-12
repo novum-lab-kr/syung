@@ -1,6 +1,6 @@
 // 내 설정 창구: 지금은 이 기기(localStorage), 로그인 단계에서 계정 서버와 맞춘다(그때도 첫 화면은 이 기기 값으로 먼저 그린다).
 // 허용 항목 · 값은 모드 목록의 USER_PREFERENCES(테마 auto · light · dark, 지도 색 calm · color) — 그 밖의 값은 읽어도 버리고 쓰지도 않는다.
-// 저장 이름은 그대로(subway-theme · subway-map-color): index.html · login.html · learning.html 의 첫 그리기 전 스크립트도 같은 이름을 읽는다.
+// 저장 이름은 그대로(subway-theme · subway-map-color): index.html · admin/login.html · admin/learning.html 의 첫 그리기 전 스크립트도 같은 이름을 읽는다.
 // 다른 화면 파일을 import 하지 않는다(본체가 만들어 테마에 넘긴다).
 import { USER_PREFERENCES } from '../modes/index.mjs';
 

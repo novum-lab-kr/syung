@@ -35,7 +35,7 @@ class OwnerAuthTest(unittest.TestCase):
         self.addCleanup(clock.stop)
         self.auth.set_password("owner", PASSWORD)
 
-    def login(self, *, user="owner", password=PASSWORD, nxt="/learning", address=ADDRESS):
+    def login(self, *, user="owner", password=PASSWORD, nxt="/admin/learning", address=ADDRESS):
         form = urllib.parse.urlencode({"user": user, "password": password, "next": nxt}).encode()
         return owner.login(self.auth, form, address)
 
@@ -46,16 +46,16 @@ class OwnerAuthTest(unittest.TestCase):
         return f"{user}.{expires}.{signature}"
 
     def test_correct_password_redirects_with_exact_cookie_attribute_order(self):
-        result = self.login(nxt="/learning/topic?x=1#part")
+        result = self.login(nxt="/admin/learning/topic?x=1#part")
         token = self.signed_token()
-        self.assertEqual(result, Response(303, "redirect", location="/learning/topic?x=1#part",
+        self.assertEqual(result, Response(303, "redirect", location="/admin/learning/topic?x=1#part",
                                           cookie="syung_owner=" + token + COOKIE_ATTRIBUTES))
         self.assertTrue(self.auth.valid_token(token))
 
     def test_wrong_password_redirects_with_original_error_and_quoted_next(self):
-        result = self.login(password="wrong", nxt="/learning?tab=a&b=1")
+        result = self.login(password="wrong", nxt="/admin/learning?tab=a&b=1")
         self.assertEqual(result, Response(303, "redirect",
-                                          location="/login.html?e=1&next=%2Flearning%3Ftab%3Da%26b%3D1"))
+                                          location="/admin/login.html?e=1&next=%2Fadmin%2Flearning%3Ftab%3Da%26b%3D1"))
         self.assertIsNone(result.cookie)
 
     def test_eighth_failure_blocks_even_correct_password_until_window_expires(self):
@@ -63,15 +63,15 @@ class OwnerAuthTest(unittest.TestCase):
             with self.subTest(attempt=attempt):
                 error = "wait" if attempt == 8 else "1"
                 self.assertEqual(self.login(password="wrong").location,
-                                 f"/login.html?e={error}&next=%2Flearning")
+                                 f"/admin/login.html?e={error}&next=%2Fadmin%2Flearning")
         self.assertTrue(self.auth.blocked(ADDRESS))
-        self.assertEqual(self.login().location, "/login.html?e=wait&next=%2Flearning")
+        self.assertEqual(self.login().location, "/admin/login.html?e=wait&next=%2Fadmin%2Flearning")
         self.now = NOW + 599.999
-        self.assertEqual(self.login().location, "/login.html?e=wait&next=%2Flearning")
+        self.assertEqual(self.login().location, "/admin/login.html?e=wait&next=%2Fadmin%2Flearning")
         # 600초 경계에서는 과거 실패가 제외되며, 막힌 요청은 창을 연장하지 않는다.
         self.now = NOW + 600
         self.assertFalse(self.auth.blocked(ADDRESS))
-        self.assertEqual(self.login().location, "/learning")
+        self.assertEqual(self.login().location, "/admin/learning")
         self.assertIsNotNone(self.login().cookie)
 
     def test_failure_history_is_per_address_and_service_instance(self):
@@ -86,11 +86,11 @@ class OwnerAuthTest(unittest.TestCase):
     def test_success_does_not_clear_previous_failures(self):
         for _ in range(7):
             self.login(password="wrong")
-        self.assertEqual(self.login().location, "/learning")
-        self.assertEqual(self.login(password="wrong").location, "/login.html?e=wait&next=%2Flearning")
+        self.assertEqual(self.login().location, "/admin/learning")
+        self.assertEqual(self.login(password="wrong").location, "/admin/login.html?e=wait&next=%2Fadmin%2Flearning")
 
     def test_wrong_user_counts_as_failure_even_with_correct_password(self):
-        self.assertEqual(self.login(user="another-owner").location, "/login.html?e=1&next=%2Flearning")
+        self.assertEqual(self.login(user="another-owner").location, "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
         self.assertFalse(self.auth.blocked(ADDRESS))
         self.assertEqual(len(self.auth._fails[ADDRESS]), 1)
 
@@ -99,16 +99,16 @@ class OwnerAuthTest(unittest.TestCase):
             ("user", "owner"), ("user", "wrong"), ("password", PASSWORD), ("password", "wrong"),
         ]).encode()
         result = owner.login(self.auth, form, ADDRESS)
-        self.assertEqual(result.location, "/learning")
+        self.assertEqual(result.location, "/admin/learning")
         self.assertIsNotNone(result.cookie)
-        self.assertEqual(owner.login(self.auth, b"", ADDRESS).location, "/login.html?e=1&next=%2Flearning")
+        self.assertEqual(owner.login(self.auth, b"", ADDRESS).location, "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
 
     def test_login_restricts_next_for_success_and_failure(self):
-        for nxt in ("//example.invalid/learning", "/learning//example", "/learning\\other", "/outside"):
+        for nxt in ("//example.invalid/admin/learning", "/admin/learning//example", "/admin/learning\\other", "/outside"):
             with self.subTest(nxt=nxt):
-                self.assertEqual(self.login(nxt=nxt).location, "/learning")
+                self.assertEqual(self.login(nxt=nxt).location, "/admin/learning")
                 self.assertEqual(self.login(password="wrong", nxt=nxt).location,
-                                 "/login.html?e=1&next=%2Flearning")
+                                 "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
 
     def test_token_expires_at_exact_timestamp(self):
         token = self.auth.issue_token()
@@ -137,7 +137,7 @@ class OwnerAuthTest(unittest.TestCase):
         token = owner.cookie_value(result.cookie)
         self.assertEqual(token, self.signed_token(user="owner.with.dots"))
         self.assertTrue(self.auth.valid_token(token))
-        self.assertEqual(owner.auth(self.auth, result.cookie, "/learning"), Response(204, "empty"))
+        self.assertEqual(owner.auth(self.auth, result.cookie, "/admin/learning"), Response(204, "empty"))
 
     def test_cookie_header_uses_first_owner_value_even_if_empty_or_malformed(self):
         token = self.auth.issue_token()
@@ -155,44 +155,45 @@ class OwnerAuthTest(unittest.TestCase):
         for header, expected, valid in cases:
             with self.subTest(header=header):
                 self.assertEqual(owner.cookie_value(header), expected)
-                self.assertEqual(owner.auth(self.auth, header, "/learning").status, 204 if valid else 302)
+                self.assertEqual(owner.auth(self.auth, header, "/admin/learning").status, 204 if valid else 302)
 
     def test_auth_valid_cookie_returns_empty_204_even_for_json(self):
         cookie = "syung_owner=" + self.auth.issue_token()
-        for uri in ("/learning", "/learning/data.json?x=1"):
+        for uri in ("/admin/learning", "/admin/learning/data.json?x=1"):
             with self.subTest(uri=uri):
                 self.assertEqual(owner.auth(self.auth, cookie, uri), Response(204, "empty"))
 
     def test_auth_json_checks_only_path_before_query(self):
-        for uri in ("/learning/data.json", "/learning/data.json?x=1", "/outside.json?x=1"):
+        for uri in ("/admin/learning/data.json", "/admin/learning/data.json?x=1", "/outside.json?x=1"):
             with self.subTest(uri=uri):
                 self.assertEqual(owner.auth(self.auth, None, uri),
                                  Response(401, body=b'{"ok":false,"error":"login"}'))
-        for uri in ("/learning?file=data.json", "/learning/data.JSON", "/learning/data.json/more"):
+        for uri in ("/admin/learning?file=data.json", "/admin/learning/data.JSON", "/admin/learning/data.json/more"):
             with self.subTest(uri=uri):
                 self.assertEqual(owner.auth(self.auth, None, uri),
-                                 Response(302, "redirect", location="/login.html?next=" + urllib.parse.quote(uri, safe="")))
+                                 Response(302, "redirect", location="/admin/login.html?next=" + urllib.parse.quote(uri, safe="")))
 
     def test_auth_redirects_to_safe_next(self):
-        for uri, expected in (("/learning?tab=one", "%2Flearning%3Ftab%3Done"),
-                              ("//example.invalid/learning", "%2Flearning"),
-                              ("/learning//other", "%2Flearning"),
-                              ("/learning\\other", "%2Flearning"),
-                              ("/outside", "%2Flearning")):
+        for uri, expected in (("/admin/learning?tab=one", "%2Fadmin%2Flearning%3Ftab%3Done"),
+                              ("//example.invalid/admin/learning", "%2Fadmin%2Flearning"),
+                              ("/admin/learning//other", "%2Fadmin%2Flearning"),
+                              ("/admin/learning\\other", "%2Fadmin%2Flearning"),
+                              ("/outside", "%2Fadmin%2Flearning")):
             with self.subTest(uri=uri):
                 self.assertEqual(owner.auth(self.auth, None, uri),
-                                 Response(302, "redirect", location="/login.html?next=" + expected))
+                                 Response(302, "redirect", location="/admin/login.html?next=" + expected))
 
-    def test_safe_next_preserves_existing_learning_prefix_rule(self):
-        for path in ("/learning", "/learning/topic", "/learning?tab=one", "/learning-other"):
+    def test_safe_next_only_admin_pages(self):
+        for path in ("/admin", "/admin?x=1", "/admin/learning", "/admin/learning/topic", "/admin/learning?tab=one", "/admin/debug"):
             with self.subTest(path=path):
                 self.assertEqual(owner.safe_next(path), path)
-        for path in ("", "learning", "/outside", "//learning", "/learning//x", "/learning\\x"):
+        for path in ("", "learning", "/outside", "//admin/learning", "/admin/learning//x", "/admin/learning\\x",
+                     "/learning", "/debug", "/administrator", "/admin.evil"):
             with self.subTest(path=path):
-                self.assertEqual(owner.safe_next(path), "/learning")
+                self.assertEqual(owner.safe_next(path), "/admin/learning")
 
     def test_logout_clears_cookie_with_exact_attribute_order(self):
-        self.assertEqual(owner.logout(), Response(303, "redirect", location="/login.html",
+        self.assertEqual(owner.logout(), Response(303, "redirect", location="/admin/login.html",
                                                   cookie="syung_owner=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"))
 
     def test_missing_or_corrupt_file_rejects_login_and_tokens(self):
@@ -205,7 +206,7 @@ class OwnerAuthTest(unittest.TestCase):
                 self.assertIsNone(self.auth.store.read())
                 self.assertFalse(self.auth.valid_token(token))
                 self.assertFalse(self.auth.check_password("owner", PASSWORD, ADDRESS))
-                self.assertEqual(self.login().location, "/login.html?e=1&next=%2Flearning")
+                self.assertEqual(self.login().location, "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
                 self.assertFalse(self.auth.blocked(ADDRESS))
                 with self.assertRaisesRegex(KeyError, "user"):
                     self.auth.issue_token()

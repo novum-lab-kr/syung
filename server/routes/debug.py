@@ -1,4 +1,4 @@
-"""디버깅 페이지 주소(주인 쿠키만, Caddy 가 /api/debug/… 의 /api 를 떼고 넘긴다).
+"""디버깅 페이지 주소(주인 쿠키만). 바깥 주소는 /api/admin/debug/… — Caddy 가 /api 를, http.py 가 /admin 을 뗀다.
 
 POST /debug/ride  탑승 기록 사건 묶음(JSON {"events": […]})
 POST /debug/shot  캡처 파일 본문 그대로, ?note=…&state=…(JSON) — Content-Type 으로 종류를 안다

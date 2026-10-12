@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>슝 학습 현황</title>
 <meta name="description" content="슝이 실시간 지하철 · 버스 기록으로 움직임을 배우는 현황">
-<link rel="icon" href="./brand/favicon.ico" sizes="48x48">
+<link rel="icon" href="/brand/favicon.ico" sizes="48x48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
 <script>
@@ -138,7 +138,7 @@ tr.sep td{border-top:1.5px solid var(--rule)}
 <body>
 <header class="mast"><div class="mast-in">
   <h1>슝 학습 현황</h1><span class="sp"></span>
-  <a class="pill-btn on" href="/learning" aria-current="page">학습</a><a class="pill-btn" href="/debug">디버깅</a>
+  <a class="pill-btn on" href="/admin/learning" aria-current="page">학습</a><a class="pill-btn" href="/admin/debug">디버깅</a>
   <form method="post" action="/api/logout" style="margin:0"><button class="pill-btn" type="submit">로그아웃</button></form>
 </div></header>
 <main>
@@ -326,7 +326,7 @@ function showBus(bus,genDay){
     :'<tr><td class="muted" colspan="5">아직 없어요.</td></tr>';
 }
 
-fetch('./learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/login.html?next=/learning';throw 0}return r.json()}).then(d=>{
+fetch('/admin/learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/admin/login.html?next=/admin/learning';throw 0}return r.json()}).then(d=>{
   const hist=d.history||[],genDay=(d.generatedAt||'').slice(0,10);
   showBus(d.bus,genDay);
   const days=(d.days||[]).filter(x=>x.date<genDay);   // the stats are built at 03:10: the new day has barely begun
