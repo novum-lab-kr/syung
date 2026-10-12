@@ -238,8 +238,10 @@ function closeBin() { const c = motion.cur; if (c) motion.bins.push([c.slot, ...
 function sendMotion(all = false) {
   if (all) closeBin();
   if (!ride.id || !motion.bins.length) return;
-  const base = Date.now(), m = motion.bins.flatMap(([slot, ...v]) => [slot - base, ...v]); motion.bins = [];
-  push({kind: 'motion', m});
+  // 한 사건에 140칸까지(서버 상한 150칸 = 1500개) — 넘는 묶음은 서버가 통째로 거절해 함께 보낸 도착 · 출발까지 버려진다
+  const base = Date.now();
+  for (let i = 0; i < motion.bins.length; i += 140) push({kind: 'motion', m: motion.bins.slice(i, i + 140).flatMap(([slot, ...v]) => [slot - base, ...v])});
+  motion.bins = [];
   setMotion(`${Math.round(motion.samples / Math.max(1, (Date.now() - motion.since) / 1000))}Hz`);
 }
 setInterval(sendMotion, 5000);
