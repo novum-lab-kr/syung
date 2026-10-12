@@ -213,6 +213,34 @@ def _kst(value: str) -> datetime | None:
         return None
 
 
+FORWARD_KEEP_SECONDS = 600   # 이보다 오래된 기억은 믿지 않는다(열차가 사라졌다 다시 나온 것)
+
+
+def forward_only(trains: list[dict], memory: dict[tuple[str, str], dict]) -> list[dict]:
+    """두 피드(전 역 도착 · 노선 위치)를 섞어도 열차마다 시간이 뒤로 가지 않게.
+
+    전 역 도착은 받을 때 이미 약 2분, 위치 피드는 약 1분 30초 지난 내용이고(2026-10-13 출근 시간), 둘이 번갈아 오면
+    - 이미 아는 것보다 옛날 기록이 새것처럼 온다: 위치로 '중곡 도착 07:59:45'를 안 뒤 전 역 도착의 '사가정 진입 07:55:59'
+      (5분 30초 늦게 옴) → 지도가 열차를 군자에 46초 더 붙잡았다
+    - 같은 사건이 다른 시각으로 다시 온다: '군자 도착' 위치 08:01:35 · 전 역 도착 08:02:31 → 선로 한가운데서 57초 섰다
+    (7077, 덕배 탑승 2026-10-13). 그래서 옛날 기록은 버리고(바로 전 것을 그대로), 같은 역 · 같은 상태면 처음 시각을 쓴다."""
+    out = []
+    for t in trains:
+        k, seen = (t["line"], t["trainNo"]), memory.get((t["line"], t["trainNo"]))
+        at = _kst(str(t.get("receivedAt") or ""))
+        if seen and at and seen["at"] and seen["record"].get("direction") == t.get("direction") \
+                and (at - seen["at"]).total_seconds() > -FORWARD_KEEP_SECONDS:
+            prev = seen["record"]
+            if (t["station"], t["status"]) == (prev["station"], prev["status"]):
+                t = {**t, "receivedAt": prev["receivedAt"]}
+                at = seen["at"]
+            elif at < seen["at"]:
+                t, at = prev, seen["at"]
+        memory[k] = {"record": t, "at": at}
+        out.append(t)
+    return out
+
+
 def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
     """Turn all-stations snapshots into a forward-only event per train.
 
@@ -307,6 +335,8 @@ class SubwayLiveService:
         self.next_trips: set[tuple[str, str]] = set()   # normalize_arrivals: overlay_positions 가 빼는 다음 운행
         self.idle: set[tuple[str, str]] = set()   # not running yet (normalize_arrivals); kept off position-feed lines
         self.last_seen: dict[tuple[str, str], dict] = {}   # stabilize 의 기억
+        self.forward_lock = threading.Lock()
+        self.forward_seen: dict[tuple[str, str], dict] = {}   # forward_only 의 기억(두 피드를 섞은 뒤)
         self.position_lock = threading.Lock()
         self.position_cache: dict[str, tuple[float, list[dict]]] = {}
         self.position_used = {"day": "", "calls": 0}
@@ -600,7 +630,11 @@ class SubwayLiveService:
         if self.config.source_mode == "all" and lines:
             body = self.snapshot_all(lines)
             if body:
-                return self.overlay_positions(body, lines, focus) if not body.get("quiet") else body
+                if body.get("quiet"):
+                    return body
+                body = self.overlay_positions(body, lines, focus)
+                with self.forward_lock:
+                    return {**body, "trains": forward_only(body["trains"], self.forward_seen)}
         now = time.time()
         selected = [line for line in dict.fromkeys(lines) if line in set(LINE_NAMES.values())][:5]
         if not selected:

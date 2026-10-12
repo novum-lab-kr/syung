@@ -121,13 +121,21 @@ const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,me
   mercStop:(_l,s)=>merc(s),catchup,catchupAt,predictStops:()=>3,isRide:()=>false,getTrains:()=>current});
 await new Promise(r=>setTimeout(r,50));   // live-timing · edge_times 읽기
 
+// 서버 forward_only(server/services/live.py)와 같게: 옛날 기록은 버리고 같은 역 · 같은 상태면 처음 시각. 2026-10-13 전의 샘플에는 이것이 없었다.
+// --raw 면 샘플 그대로(고치기 전 서버)
+const RAW=process.argv.includes('--raw');
+function forwardOnly(prev,r){
+  if(!prev||prev.direction!==r.direction||stampMs(r.receivedAt)-stampMs(prev.receivedAt)<=-600e3)return r;
+  if(prev.station===r.station&&prev.status===r.status)return {...r,receivedAt:prev.receivedAt};
+  return stampMs(r.receivedAt)<stampMs(prev.receivedAt)?prev:r;
+}
 // 열차마다 지금 기록(샘플러는 바뀐 것만 적는다) → 20초마다 지도가 받는 목록
 const latest=new Map(),want=new Set(trains);
 const log=new Map(trains.map(n=>[n,{stops:[],state:null}]));
 const STEP=250,POLL=20e3,AT_STATION_M=30;
 let ri=0,nextPoll=NOW;
 for(;NOW<=to;NOW+=STEP){
-  while(ri<records.length&&records[ri].seen<=NOW){const r=records[ri++];latest.set(r.trainNo,r)}
+  while(ri<records.length&&records[ri].seen<=NOW){const r=records[ri++];latest.set(r.trainNo,RAW?r:forwardOnly(latest.get(r.trainNo),r))}
   if(NOW>=nextPoll){
     nextPoll=NOW+POLL;
     current=[...latest.values()].filter(t=>planner.age(t.receivedAt)<=600);

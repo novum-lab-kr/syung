@@ -148,6 +148,20 @@ class LiveServiceTest(unittest.TestCase):
                 back = live.stabilize({"9호선": [train_row(station="선유도", stamp=stamp, status="진입")]}, memory)
                 self.assertEqual(back["9호선"][0], first)
 
+    def test_forward_only_across_feeds(self):
+        # 7077 덕배 탑승(2026-10-13): 위치 '중곡 도착' 뒤 늦게 온 전 역 도착 '사가정 진입', 같은 '군자 도착'의 두 시각
+        row = lambda station, status, at: {"line": "7호선", "trainNo": "7077", "direction": "하행", "station": station, "status": status,
+                                           "receivedAt": f"2026-10-13 {at}"}
+        memory, seen = {}, []
+        for r in (row("중곡", "도착", "07:59:45"), row("사가정", "진입", "07:55:59"), row("군자", "도착", "08:01:35"),
+                  row("군자", "도착", "08:02:31"), row("어린이대공원", "출발", "08:05:35")):
+            seen.append(live.forward_only([r], memory)[0])
+        self.assertEqual([(t["station"], t["receivedAt"][11:]) for t in seen],
+                         [("중곡", "07:59:45"), ("중곡", "07:59:45"), ("군자", "08:01:35"), ("군자", "08:01:35"), ("어린이대공원", "08:05:35")])
+        # 방향이 바뀌면(종착 뒤 돌아감) 새 기록을 그대로
+        turned = {**row("온수", "출발", "08:00:00"), "direction": "상행"}
+        self.assertEqual(live.forward_only([turned], memory)[0], turned)
+
     def test_call_count_is_saved_after_receiving_all_and_line(self):
         source = FakeSource()
         service = self.service(source)
