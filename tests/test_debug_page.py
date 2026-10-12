@@ -63,6 +63,19 @@ class DebugPageTest(unittest.TestCase):
             self.assertEqual(status, 400); self.assertEqual(body["error"]["code"], "bad_request")
         self.assertFalse((self.root / "rides").exists())
 
+    def test_motion_keeps_numbers_and_nulls_only(self):
+        t = NOW * 1000
+        m = [-4900, 0.123, 9.8, None, 0.01, None, None, 1.5, -2, 3]
+        status, body = self.call("/admin/debug/ride", json.dumps({"events": [
+            {"ride": "r1", "kind": "motion", "mode": "subway", "line": "7호선", "t": t, "m": m}]}).encode())
+        self.assertEqual((status, body), (200, {"ok": True, "saved": 1}))
+        row = json.loads((self.root / "rides" / "20261012.jsonl").read_text())
+        self.assertEqual(row["m"], [-4900, 0.12, 9.8, None, 0.01, None, None, 1.5, -2, 3])
+        for bad in ([], ["x"], [True], [1e9], list(range(1501)), "1,2"):
+            status, _ = self.call("/admin/debug/ride", json.dumps({"events": [
+                {"ride": "r1", "kind": "motion", "mode": "subway", "t": t, "m": bad}]}).encode())
+            self.assertEqual(status, 400, bad)
+
     def test_only_the_owner(self):
         for path, body in [("/admin/debug/ride", b'{"events":[]}'), ("/admin/debug/shot", b"png"), ("/admin/debug/recent", None),
                            ("/admin/debug/bus-route?name=3011", None), ("/admin/next-api", None), ("/admin/next-api", b"x")]:

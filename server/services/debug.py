@@ -13,13 +13,14 @@ from datetime import datetime
 from server.clock import KST
 from server.store.debug_log import DebugStore
 
-RIDE_KINDS = {"start", "gps", "arrive", "depart", "end", "mark"}
+RIDE_KINDS = {"start", "gps", "arrive", "depart", "end", "mark", "motion"}
 MODES = {"subway", "bus"}
 MAX_EVENTS = 1000
 SHOT_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/heic": "heic", "video/mp4": "mp4",
               "video/quicktime": "mov", "video/webm": "webm"}
 MAX_SHOT_BYTES = 40 * 1024 * 1024
 TEXT = {"ride": 40, "line": 40, "routeId": 20, "routeName": 20, "station": 60, "train": 20, "vehicle": 20, "note": 300}
+MOTION_VALUES = 1500   # motion 한 사건의 m 길이 상한(10 Hz × 5초 × 10칸 = 500)
 NUMBER = {"t": (1.6e12, 4.1e12), "lat": (33.0, 39.0), "lng": (124.0, 132.0), "acc": (0, 1e5), "speed": (0, 100), "heading": (0, 360)}
 
 
@@ -42,6 +43,15 @@ def clean_event(raw) -> dict:
         value = raw.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and lo <= value <= hi:
             event[key] = round(float(value), 7 if key in ("lat", "lng") else 1)
+    if kind == "motion":
+        # 가속도 센서 묶음: m = 0.1초 칸마다 [t 기준 ms, 중력 포함 가속 x y z, 중력 뺀 가속 x y z, 회전 α β γ] 를 이어 붙인 숫자(없는 값은 null)
+        m = raw.get("m")
+        if not isinstance(m, list) or not m or len(m) > MOTION_VALUES:
+            raise BadRequest(f"motion 의 m 은 1~{MOTION_VALUES}개예요")
+        event["m"] = [None if v is None else round(float(v), 2) for v in m
+                      if v is None or (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and abs(v) <= 1e5)]
+        if len(event["m"]) != len(m):
+            raise BadRequest("motion 의 m 은 숫자 · null 만 돼요")
     if "t" not in event or "ride" not in event:
         raise BadRequest("시각(t) · 탑승(ride) 이 없어요")
     return event

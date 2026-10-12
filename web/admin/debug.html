@@ -59,7 +59,7 @@ textarea{min-height:80px;resize:vertical}
 .now{display:grid;gap:4px;text-align:center;padding:6px 0}
 .now small{font-weight:700;color:var(--muted);font-size:13px}
 .now b{font-family:var(--round);font-weight:400;font-size:34px;line-height:1.15}
-.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
 .facts div{background:var(--control);border-radius:12px;padding:8px 10px;text-align:center}
 .facts small{display:block;font-size:11px;color:var(--muted);font-weight:700}
 .facts b{font-variant-numeric:tabular-nums;font-size:16px}
@@ -120,6 +120,7 @@ textarea{min-height:80px;resize:vertical}
         <div><small>탄 지</small><b id="f-time">0:00</b></div>
         <div><small>GPS</small><b id="f-gps">-</b></div>
         <div><small>보낼 것</small><b id="f-queue">0</b></div>
+        <div id="f-motion-box"><small>센서</small><b id="f-motion">-</b></div>
       </div>
       <ul class="log" id="log"></ul>
       <button class="btn ghost" id="end" style="margin-top:16px">내렸어요(끝내기)</button>
@@ -175,7 +176,10 @@ function push(event) {
 }
 async function flush() {
   if (sending || !queue.length || !navigator.onLine) return;
-  sending = true; const batch = queue.slice(0, 500);
+  sending = true;
+  // 센서 묶음(약 3KB)은 한 번에 40개까지 — 본문 1MB 상한 안에
+  const batch = []; let moves = 0;
+  for (const e of queue) { if (batch.length >= 500 || (e.kind === 'motion' && ++moves > 40)) break; batch.push(e); }
   try {
     const r = await fetch('/api/admin/debug/ride', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({events: batch}), credentials: 'same-origin'});
     if (r.status === 401) showLogin(true);
@@ -202,6 +206,38 @@ function startGps() {
 function stopGps() { if (gps.watch != null) navigator.geolocation.clearWatch(gps.watch); gps.watch = null; }
 let lock = null;
 async function keepAwake() { try { lock = await navigator.wakeLock?.request('screen'); } catch {} }
+
+// ---------- 가속도 센서: 0.1초 칸 평균을 5초마다 한 사건(motion)으로 — 누른 도착 · 출발과 센서가 잡은 섰다 · 떠났다를 맞춰 본다 ----------
+// 칸마다 [사건 t 기준 ms, 중력 포함 가속 x y z, 중력 뺀 가속 x y z, 회전 α β γ](m/s², °/s, 없는 값 null). 화면이 꺼지면 브라우저가 센서를 멈춘다.
+const motion = {on: false, bins: [], cur: null, samples: 0, since: 0};
+const setMotion = text => { $('f-motion').textContent = text; };
+async function startMotion() {
+  if (motion.on || motion.asking) return;
+  if (typeof DeviceMotionEvent === 'undefined') return setMotion('없음');
+  motion.asking = true;
+  try {   // 아이폰: 누르는 순간에만 물을 수 있다(탑승 시작 · 센서 칸)
+    if (typeof DeviceMotionEvent.requestPermission === 'function' && await DeviceMotionEvent.requestPermission() !== 'granted') return setMotion('거부');
+  } catch { return setMotion('눌러 켜기'); } finally { motion.asking = false; }
+  motion.on = true; motion.since = Date.now(); motion.samples = 0; addEventListener('devicemotion', onMotion); setMotion('대기');
+}
+function stopMotion() { if (!motion.on) return; removeEventListener('devicemotion', onMotion); motion.on = false; sendMotion(true); setMotion('-'); }
+function onMotion(e) {
+  const slot = Math.floor(Date.now() / 100) * 100, g = e.accelerationIncludingGravity || {}, a = e.acceleration || {}, r = e.rotationRate || {};
+  const v = [g.x, g.y, g.z, a.x, a.y, a.z, r.alpha, r.beta, r.gamma];
+  if (!motion.cur || motion.cur.slot !== slot) { closeBin(); motion.cur = {slot, sum: v.map(() => 0), n: v.map(() => 0)}; }
+  v.forEach((x, i) => { if (Number.isFinite(x)) { motion.cur.sum[i] += x; motion.cur.n[i]++; } });
+  motion.samples++;
+}
+function closeBin() { const c = motion.cur; if (c) motion.bins.push([c.slot, ...c.sum.map((s, i) => c.n[i] ? Math.round(s / c.n[i] * 100) / 100 : null)]); motion.cur = null; }
+function sendMotion(all = false) {
+  if (all) closeBin();
+  if (!ride.id || !motion.bins.length) return;
+  const base = Date.now(), m = motion.bins.flatMap(([slot, ...v]) => [slot - base, ...v]); motion.bins = [];
+  push({kind: 'motion', m});
+  setMotion(`${Math.round(motion.samples / Math.max(1, (Date.now() - motion.since) / 1000))}Hz`);
+}
+setInterval(sendMotion, 5000);
+$('f-motion-box').onclick = () => { if (ride.id) startMotion(); };
 
 // ---------- 지하철 자료: 역(index.html 안의 stationData) · 노선 이웃(edge_times.json) ----------
 let stations = new Map(), neighbors = new Map();   // id → 역, `${line}:${id}` → [이웃 id]
@@ -259,6 +295,7 @@ const save = () => store.set(RIDE, ride);
 const say = text => { const li = document.createElement('li'); li.textContent = `${fmt(Date.now())} ${text}`; $('log').prepend(li); };
 
 $('start').onclick = () => {
+  startMotion();   // 아이폰 센서 허락은 이 누름 안에서만 물을 수 있다
   Object.keys(ride).forEach(k => delete ride[k]);
   Object.assign(ride, {id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, mode, startedAt: Date.now(), moving: false});
   if (mode === 'subway') { const s = stationByName($('line').value, $('station').value);
@@ -267,7 +304,7 @@ $('start').onclick = () => {
   save(); $('log').innerHTML = ''; say('탑승 시작'); enterRiding(); flush();
 };
 function enterRiding() {
-  $('setup').hidden = true; $('riding').hidden = false; startGps(); keepAwake(); render();
+  $('setup').hidden = true; $('riding').hidden = false; startGps(); keepAwake(); startMotion(); render();
   if (ride.mode === 'bus') { pollBus(); clearInterval(pollTimer); pollTimer = setInterval(pollBus, 30000); }
 }
 // 탄 노선을 서버가 '보는 중'으로 두어 원자료 위치가 30초마다 기록되게(정답과 맞춰 볼 자료)
@@ -317,7 +354,7 @@ $('undo').onclick = () => {
 };
 $('end').onclick = async () => {
   if (!confirm('탑승 기록을 끝낼까요?')) return;
-  push({kind: 'end'}); clearInterval(pollTimer); stopGps(); lock?.release?.().catch(() => {});
+  stopMotion(); push({kind: 'end'}); clearInterval(pollTimer); stopGps(); lock?.release?.().catch(() => {});
   Object.keys(ride).forEach(k => delete ride[k]); save(); await flush();
   $('riding').hidden = true; $('setup').hidden = false;
 };
