@@ -1,6 +1,6 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busMotionDistance,
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busMotionDistance,
   validCoordinate, intersects, contains} from './motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale, busStopGrowFrom} from './mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
@@ -574,16 +574,20 @@ class BusLayer {
       if (seq >= 0 && path.stops[seq] && path.stops[seq + 1]) {
         min = Math.max(0, path.stops[seq].distance - 50); max = Math.min(path.total, path.stops[seq + 1].distance + 50);
       }
-      const options = {hint: previous?.motion.to ?? null, min, max, heading: row.heading, maxError: route.approximate ? 700 : 250};
+      const options = {hint: previous?.snapped ?? previous?.motion.to ?? null, min, max, heading: row.heading, maxError: route.approximate ? 700 : 250};
       const snap = snapBusToPath(path, [row.lng, row.lat], options);
       if (!snap) continue;
       seen.add(row.id);
-      const same = previous && previous.observed === observed && Math.abs(previous.motion.to - snap.distance) < 1;
-      // 그 노선의 다음 새 응답이 올 때(+ 왕복 + 여유) 이 자리에 닿는다: 일찍 닿아 길 위에 서는 것을 줄인다. 원자료가 안 바뀌었으면(same)
-      // 가던 길만 그때까지 늘인다(retimeBusMotion) — 아는 목표 너머로는 가지 않는다
+      const same = previous && previous.observed === observed && Math.abs((previous.snapped ?? previous.motion.to) - snap.distance) < 1;
+      // 그 노선의 다음 새 응답이 올 때(+ 왕복 + 여유) 닿는다: 일찍 닿아 길 위에 서는 것을 줄인다. 원자료가 안 바뀌었으면(same)
+      // 가던 길만 그때까지 늘인다(retimeBusMotion) — 목표 너머로는 가지 않는다
       const interval = (busRouteRefreshMs(state) ?? this.pollMs) + this.rtt + MOTION_SLACK_MS;
-      const motion = same ? retimeBusMotion(previous.motion, now, interval) : nextBusMotion(previous?.motion, snap.distance, now, {interval, reduced: this.reduced.matches, stale});
-      const bus = {row, route, path, motion, observed, fetched, received, stale, receivedWall: wall,
+      // 같은 운행의 최근 2분 관측(뒤로 30 m 넘게 가면 새 운행 · 회차로 보고 버린다)으로 닿을 때의 자리를 앞지른다
+      const history = same ? previous.history : previous?.snapped == null || observed == null || previous.observed == null ? []
+        : [...previous.history, {t: previous.observed, d: previous.snapped}].filter(h => observed - h.t <= 120000 && h.d <= snap.distance + 30);
+      const target = stale || observed == null ? snap.distance : busLeadDistance(history, snap.distance, observed, wall + interval, path.stops.map(s => s.distance));
+      const motion = same ? retimeBusMotion(previous.motion, now, interval) : nextBusMotion(previous?.motion, target, now, {interval, reduced: this.reduced.matches, stale, hold: true});   // 앞질렀던 자리에서 뒤로 끌려가지 않게
+      const bus = {row, route, path, motion, observed, fetched, received, stale, receivedWall: wall, snapped: snap.distance, history,
         mock: payload.mode === 'mock' || row.mock === true || row.id.startsWith('mock:'), status: state.status};
       if (stale) this.freeze(bus);
       this.fleet.set(row.id, bus);

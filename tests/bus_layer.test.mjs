@@ -309,6 +309,21 @@ test('a bus keeps moving until the next fresh answer, even when its two GPS time
     'a long server back-off still asks within the 90 s watch window');
 }));
 
+test('two recent observations: the bus is drawn ahead of the last GPS by its speed, capped at the next stop (덕배 2026-10-12)', () => withLayerFixture(layer => {
+  layer.setEnabled(false);
+  const t0 = Date.now() - 40000;
+  const feed = (lng, at) => ({schemaVersion: 1, mode: 'live', fetchedAt: new Date().toISOString(), pollAfterSeconds: 30,
+    buses: [{id: 'vehicle-1', routeId: route.id, lng, lat: 37.5 + lng - 127, receivedAt: new Date(at).toISOString()}],
+    routes: {[route.id]: {status: 'fresh', ageSeconds: 0, retryAfterSeconds: 30}}});
+  layer.setLiveData(feed(127.001, t0), [route.id]);
+  const first = layer.fleet.get('vehicle-1');
+  assert.equal(first.motion.to, first.snapped, 'one observation: no speed, no guess');
+  layer.setLiveData(feed(127.0015, t0 + 20000), [route.id]);
+  const bus = layer.fleet.get('vehicle-1'), next = bus.path.stops.map(s => s.distance).find(d => d > bus.snapped + 1);
+  assert.ok(bus.motion.to > bus.snapped + 50, `ahead of the GPS (${bus.snapped.toFixed(0)} → ${bus.motion.to.toFixed(0)} m)`);
+  assert.ok(bus.motion.to <= Math.min(next, bus.snapped + 400) + 1e-6, 'within the next stop and 400 m');
+}));
+
 test('a route the server could not refresh this time is not frozen while its positions are recent', () => withLayerFixture(layer => {
   layer.setEnabled(false);
   const at = Date.now() - 40000;

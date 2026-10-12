@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busMotionDistance} from '../web/bus/motion.mjs';
 
 const corner = buildBusPath([[127, 37.5], [127.001, 37.5], [127.001, 37.501]]);
 
@@ -71,4 +71,25 @@ test('an answer without a new position stretches the known remaining way to the 
   assert.equal(retimeBusMotion(moving, 31000, 8000), moving, 'already there: nothing to invent');
   const parked = {from: 300, to: 300, startedAt: 0, duration: 0};
   assert.equal(retimeBusMotion(parked, 1000, 8000), parked);
+});
+
+// 2026-10-12 덕배(3011 탑승): 원자료 15~40초 늦음 + 다음 응답 때 닿기 = 화면이 GPS 보다 약 50~70초 뒤
+test('a bus is drawn where it should be when the motion ends: recent speed ahead of the GPS time, never past the next stop', () => {
+  const history = [{t: 0, d: 0}, {t: 30000, d: 150}];
+  assert.equal(busLeadDistance(history, 300, 60000, 120000, [1000]), 600, '5 m/s for 60 s');
+  assert.equal(busLeadDistance(history, 300, 60000, 120000, [450, 1000]), 450, 'not past the next stop (it may stop there)');
+  assert.equal(busLeadDistance(history, 300, 60000, 400000, [5000]), 700, 'at most 400 m');
+  assert.equal(busLeadDistance([{t: 0, d: 0}], 3000, 60000, 400000, [9000]), 3400, 'at most 400 m even when fast');
+  assert.equal(busLeadDistance([{t: -200000, d: 0}], 300, 60000, 120000, [1000]), 300, 'no recent observation: no guess');
+  assert.equal(busLeadDistance([], 300, 60000, 120000, [1000]), 300);
+  assert.equal(busLeadDistance([{t: 0, d: 400}], 300, 60000, 120000, [1000]), 300, 'never behind the observation');
+});
+
+test('a guess that went ahead holds still instead of sliding back, but a real jump back still jumps', () => {
+  const ahead = {from: 500, to: 500, startedAt: 0, duration: 0};
+  const held = nextBusMotion(ahead, 420, 1000, {interval: 30000, hold: true});
+  assert.deepEqual([held.from, held.to, held.duration], [500, 500, 0]);
+  assert.equal(nextBusMotion(ahead, 420, 1000, {interval: 30000}).to, 420, 'without hold: as before');
+  assert.equal(nextBusMotion(ahead, 0, 1000, {interval: 30000, hold: true}).to, 0, 'a new trip (far back) is not held');
+  assert.equal(nextBusMotion(ahead, 700, 1000, {interval: 30000, hold: true}).duration, 30000, 'forward moves as before');
 });

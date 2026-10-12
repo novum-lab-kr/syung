@@ -97,12 +97,26 @@ export function busMotionDistance(motion, now) {
 
 // interval: 이 관측에 닿을 때까지(ms) — 화면은 그 노선의 다음 새 응답이 올 때로 준다(layer busRouteRefreshMs + 왕복). 원자료 시각 차로 주면
 // 차례마다 15~45초로 들쭉날쭉해 받기 주기(30초)보다 짧은 차례엔 길 한가운데 서서 다음 응답을 기다렸다(2026-10-11).
-export function nextBusMotion(previous, distance, now, {interval = 15000, reduced = false, stale = false} = {}) {
+// hold: 화면은 앞지른 자리(busLeadDistance)를 그리므로 새 목표가 그려진 자리보다 조금 뒤(350 m 안)면 뒤로 가지 않고 그 자리에 선다(신호 · 정류장에서 서듯이)
+export function nextBusMotion(previous, distance, now, {interval = 15000, reduced = false, stale = false, hold = false} = {}) {
   const from = previous ? busMotionDistance(previous, now) : distance;
   const duration = clamp(interval, 1000, 90000), delta = distance - from;
+  if (hold && previous && !reduced && !stale && delta < 0 && delta >= -350) return {from, to: from, startedAt: now, duration: 0};
   // One path contains its whole service order. A wrap/branch correction must not race backwards.
   const reset = !previous || reduced || stale || delta < -30 || Math.abs(delta) > Math.max(350, duration / 1000 * 28);
   return {from: reset ? distance : from, to: distance, startedAt: now, duration: reset ? 0 : duration};
+}
+
+// 화면이 이 자리에 닿을 때(at, ms) 버스가 있을 곳: 원자료 시각(observed) 뒤로 최근 2분 평균 속도만큼 앞지른다(2026-10-12 덕배: 3011 GPS 보다 많이 늦음).
+// 원자료가 15~40초 늦고 화면은 다음 응답 때 닿게 움직여서 그대로 두면 약 50~70초 뒤를 그렸다. 다음 정류장은 넘지 않고(서는지 모른다) 400 m · 90초까지만.
+// history: 같은 운행의 지난 관측 [{t, d}](오래된 것부터), stops: 노선 정류장 거리(오름차순)
+export function busLeadDistance(history, distance, observed, at, stops = [], {window = 120000, horizon = 90000, cap = 400} = {}) {
+  const base = history?.find(h => h.t < observed && observed - h.t <= window);
+  if (!base || !Number.isFinite(observed) || !Number.isFinite(at)) return distance;
+  const speed = Math.max(0, (distance - base.d) / (observed - base.t));
+  let target = distance + Math.min(cap, speed * clamp(at - observed, 0, horizon));
+  for (const s of stops) if (s > distance + 1) { target = Math.min(target, s); break; }
+  return target;
 }
 
 // 새 관측이 없는 응답(그 차의 원자료가 안 바뀜 · 서버가 이번엔 못 받음): 가던 길은 이미 아는 목표까지만, 다음 새 응답 때 닿게 늦춘다.
