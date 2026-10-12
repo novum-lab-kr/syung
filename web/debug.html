@@ -29,7 +29,10 @@ html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2
 .mast-in{max-width:640px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:10px}
 .mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:22px}
 .mast .sp{flex:1}
-.mast a{color:inherit;font-size:13px;font-weight:700;text-decoration:none;padding:7px 12px;border-radius:999px;background:rgba(20,20,20,.08)}
+.mast a,.mast button{border:0;font-family:inherit;cursor:pointer;color:inherit;font-size:13px;font-weight:700;text-decoration:none;padding:7px 12px;border-radius:999px;background:rgba(20,20,20,.08)}
+.mast a.on{background:var(--syung-ink);color:var(--syung)}
+html[data-theme=dark] .mast a.on{background:var(--syung);color:var(--syung-ink)}
+@media (max-width:400px){.mast-in{gap:6px}.mast h1{font-size:19px}.mast a,.mast button{padding:7px 10px}}
 nav.tabs{max-width:640px;margin:12px auto 0;padding:0 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 nav.tabs button{height:40px;border:0;border-radius:12px;background:var(--control);color:var(--secondary);font:700 14px inherit;cursor:pointer}
 nav.tabs button[aria-selected=true]{background:var(--ink);color:var(--board)}
@@ -74,7 +77,7 @@ textarea{min-height:80px;resize:vertical}
 </style>
 </head>
 <body>
-<header class="mast"><div class="mast-in"><h1>슝 디버깅</h1><span class="sp"></span><a href="/">지도로</a></div></header>
+<header class="mast"><div class="mast-in"><h1>슝 디버깅</h1><span class="sp"></span><a href="/learning">학습</a><a class="on" href="/debug" aria-current="page">디버깅</a><form method="post" action="/api/logout" style="margin:0"><button type="submit">로그아웃</button></form></div></header>
 <nav class="tabs" role="tablist">
   <button role="tab" id="tab-ride" aria-selected="true" aria-controls="ride">탑승 기록</button>
   <button role="tab" id="tab-shot" aria-selected="false" aria-controls="shot">캡처 올리기</button>
