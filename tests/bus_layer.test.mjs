@@ -444,7 +444,7 @@ test('정류장에서 고른 노선은 노선 전체가 보이게 멀리 빼도 
   assert.equal(layer.active(), true);
   layer.refreshView();
   assert.deepEqual(layer.requested, [route.id]);
-  for (let i = 0; i < 3; i++) layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 곧 올 버스 · 다시 노선 · 해제
+  for (let i = 0; i < 2; i++) layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 곧 올 버스 없음(알림) · 해제
   assert.equal(layer.active(), false, '고른 노선이 없으면 멀리서는 받지 않는다');
 }, false));
 
@@ -570,4 +570,9 @@ test('정류장 시트에서 같은 번호를 누를 때마다: 노선 → 곧 �
   assert.equal(layer.selectedRoute, null); assert.equal(legs.at(-1), null, '선택 해제');
   click();
   assert.equal(layer.selectedRoute, route.id, '다시 처음부터');
+  layer.fleet.clear(); click();
+  assert.equal(layer.stopFollow, null); assert.equal(follows.at(-1), null);
+  assert.match(layer.stopNote, /곧 올 버스 위치가 아직 없어요/, '곧 올 버스가 없으면 알린다');
+  click();
+  assert.equal(layer.selectedRoute, null, '알린 다음 클릭은 선택 해제'); assert.equal(layer.stopNote, '');
 }, false));

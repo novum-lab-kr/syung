@@ -308,10 +308,12 @@ class BusLayer {
       const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
       // 정류장 시트에서 같은 번호를 누를 때마다: 노선 전체 → 이 정류장에 곧 올 버스 따라가기(확대) → 다시 노선 전체 → 선택 해제(2026-10-12 덕배)
       const step=this.selectedRoute!==id?1:this.selection?.kind==='stop'?this.routeStep+1:4;
-      this.stopFollow=null;this.journeyLegs=[];this.journeyIds=[];
+      this.stopFollow=null;this.journeyLegs=[];this.journeyIds=[];this.followNote('');
       if(step===2){
-        this.routeStep=2;this.stopFollow=this.approachingBus(this.data.routeById.get(id),this.selection.id);
-        this.refreshDetail();this.draw();this.onFollow(this.stopFollow);   // 곧 올 버스가 없으면(아직 못 받음 · 다 지나감) 그대로 노선만
+        this.stopFollow=this.approachingBus(this.data.routeById.get(id),this.selection.id);
+        // 곧 올 버스가 없으면(아직 못 받음 · 다 지나감) 노선은 그대로 두고 잠깐 알린 뒤, 다음 클릭은 선택 해제(2026-10-12 덕배)
+        this.routeStep=this.stopFollow?2:3;this.followNote(this.stopFollow?'':'곧 올 버스 위치가 아직 없어요.');
+        this.refreshDetail();this.draw();this.onFollow(this.stopFollow);
       }else{
         this.routeStep=step<4?step:0;this.selectedRoute=step<4?id:null;
         this.onFollow(null);this.refreshView();this.refreshDetail();
@@ -319,6 +321,8 @@ class BusLayer {
       }
       document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
     };
+    this.stopNote='';
+    this.followNote=text=>{clearTimeout(this.stopNoteTimer);this.stopNote=text;if(text)this.stopNoteTimer=setTimeout(()=>{this.stopNote='';this.refreshDetail();},3000);};
     this.remove = () => this.destroy();
     // 도로 타일이 들어오면 새로 붙인다 — 움직이는 중에는 아직 도로에 붙인 선이 하나도 없을 때만(핀치로 막 줌 14 를 넘었을 때)
     this.roadSoon=ms=>{clearTimeout(this.roadTimer);this.roadTimer=setTimeout(()=>{if(!map.isMoving?.()||this.roadLinesPending())this.refreshView();},ms);};
@@ -752,7 +756,7 @@ class BusLayer {
   }
 
   select(selection, routeId) {
-    this.routeStep=routeId?1:0;this.stopFollow=null;
+    this.routeStep=routeId?1:0;this.stopFollow=null;this.followNote?.('');
     if(routeId){this.journeyLegs=[];this.journeyIds=[];}   // 노선 · 버스를 고르면 그 노선이 여정 표시를 대신한다. 정류장만 누르면 길찾기 버스 구간은 남는다
     this.selection = selection; this.selectedRoute = routeId;
     this.stopArrivals();
@@ -766,7 +770,7 @@ class BusLayer {
   clearSelection({journey=false}={}) {
     if (!this.selection&&!this.selectedRoute&&!(journey&&this.journeyLegs.length)) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
-    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.routeStep=0;this.stopFollow=null;
+    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.routeStep=0;this.stopFollow=null;this.followNote?.('');
     if(journey){this.journeyLegs=[];this.journeyIds=[];}
     this.stopArrivals();
     if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
@@ -908,7 +912,7 @@ class BusLayer {
       ? `<button type="button" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${text(route.name)}</button>` : `<span>${text(route.name)}</span>`).join('')}</div>` : '';
     const refresh = stop.arsId ? `<button type="button" class="bus-refresh${this.arrivalController ? ' is-loading' : ''}" data-bus-refresh aria-label="도착 정보 새로 받기${clock ? ` · ${clock} 기준` : ''}"><span>${clock}</span>${REFRESH_ICON}</button>` : '';
     return `<div class="bus-stop"><div class="bus-stop-head"><div class="bus-stop-title">${stop.arsId ? `<span class="bus-stop-no">${BUS_ICON}${text(stop.arsId)}</span>` : ''}<h3 tabindex="-1">${text(stop.name)}</h3></div>${refresh}</div>` +
-      `${note ? `<p class="bus-detail-note">${note}</p>` : ''}${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
+      `${note ? `<p class="bus-detail-note">${note}</p>` : ''}${this.stopNote ? `<p class="bus-detail-note" role="status">${this.stopNote}</p>` : ''}${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
       `${hero}<div class="bus-rows">${list.map(row).join('')}</div>${endedLine}</div>`;
   }
 
@@ -950,7 +954,7 @@ class BusLayer {
 
   destroy() {
     if (this.disposed) return;
-    this.stopLive(); this.stopArrivals(); clearTimeout(this.viewTimer);clearTimeout(this.roadTimer); this.staticController?.abort(); this.disposed = true;
+    this.stopLive(); this.stopArrivals(); clearTimeout(this.viewTimer);clearTimeout(this.roadTimer);clearTimeout(this.stopNoteTimer); this.staticController?.abort(); this.disposed = true;
     this.map.off('moveend', this.move); this.map.off('zoom', this.zoom); this.map.off('remove', this.remove);
     this.map.off('sourcedata',this.roadData);
     document.removeEventListener('visibilitychange', this.visibility); this.reduced.removeEventListener('change', this.motionChanged);
