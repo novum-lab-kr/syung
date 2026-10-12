@@ -331,9 +331,11 @@ function cityXrayTargets(){
       const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
-// 휴대폰은 끈다(덕배 2026-10-12: 몇 분 쓰니 손가락이 뜨거울 만큼 발열 — 원인 확정 전). #prebuild: 휴대폰에서도 켜고, #noprebuild: 컴퓨터에서도 끄고 비교
-const PREBUILD=/(^|[^o])prebuild/.test(location.hash)||!PHONE&&!location.hash.includes('noprebuild');
-function prebuildCity(){if(PREBUILD&&cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
+// 켬 · 끔: 설정 창 버튼(이 기기에 저장) — 처음 읽을 때 주소 #prebuild · #noprebuild 가 먼저, 아무것도 없으면 휴대폰 끔 · 컴퓨터 켬
+// (덕배 2026-10-12: 몇 분 쓰니 손가락이 뜨거울 만큼 발열 — 원인 확정 전, 버튼으로 껐다 켰다 비교)
+let prebuildOn=null;
+const prebuildWant=()=>prebuildOn??=/(^|[^o])prebuild/.test(location.hash)?true:location.hash.includes('noprebuild')?false:(v=>v?v==='on':!PHONE)(prefs.get('prebuild'));
+function prebuildCity(){if(prebuildWant()&&cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
   cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
   syncNightBloom();
@@ -492,7 +494,7 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
   animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(rider.ride)cam.push(performance.now()-t)};
   const ms=a=>a.length?Math.max(...a).toFixed(0):'-',avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):'-';
   setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;
-    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}`;
+    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}${cityBuildings?(i=>`\n건물 지음 ${i.built}개 · 짓기 ${(i.buildMs/1000).toFixed(1)} s · 들고 있는 것 ${i.ready}타일 ${(i.bytes/1e6).toFixed(0)} MB · 미리 짓기 ${prebuildWant()?'켬':'끔'}`)(cityBuildings.info()):''}`;   // (짓기: Worker 에 맡긴 때부터 받을 때까지의 합 — 발열 비교용, 덕배 2026-10-12)
     iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
@@ -756,6 +758,8 @@ if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(modeCtl.desired!==
 const setJoseon=on=>setSimcity(on,true);
 $('toggleCoaster').onclick=()=>setCoaster(modeCtl.desired!=='coaster');
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
+{const b=$('togglePrebuild'),show=()=>b?.setAttribute('aria-pressed',String(prebuildWant()));show();   // 건물 미리 짓기 버튼: 바꾸면 이 기기에 저장, 켜면 바로 한 번 짓는다(이미 지은 건 끌 때 그대로 — 비교는 바꾼 뒤 새로고침)
+  if(b)b.onclick=()=>{prebuildOn=!prebuildWant();prefs.set('prebuild',prebuildOn?'on':'off');show();if(prebuildOn)prebuildCity()}}
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
 // ---- settings (gear in the header): on/off switches ----
 {

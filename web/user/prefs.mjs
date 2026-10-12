@@ -4,10 +4,12 @@
 // 다른 화면 파일을 import 하지 않는다(본체가 만들어 테마에 넘긴다).
 import { USER_PREFERENCES } from '../modes/index.mjs';
 
-export const PREF_KEYS = Object.freeze({ themeChoice: 'subway-theme', mapColor: 'subway-map-color' });
+export const PREF_KEYS = Object.freeze({ themeChoice: 'subway-theme', mapColor: 'subway-map-color', prebuild: 'subway-prebuild' });
+// 이 기기에만 두는 항목(모드 설정과 섞지 않는다): 도시 건물 미리 짓기 켬 · 끔(덕배 2026-10-12: 휴대폰 발열 비교 버튼, 없으면 휴대폰 끔 · 컴퓨터 켬)
+export const DEVICE_PREFERENCES = Object.freeze({ prebuild: Object.freeze(['on', 'off']) });
 
 export function createUserPrefs(opts = {}) {
-  const allowed = opts.allowed || USER_PREFERENCES;
+  const allowed = opts.allowed || { ...USER_PREFERENCES, ...DEVICE_PREFERENCES };
   let storage = opts.storage; if (!('storage' in opts)) try { storage = globalThis.localStorage } catch { storage = null }   // localStorage 에 손대기만 해도 던지는 브라우저(막힌 사이트 자료)
   const ok = (k, v) => !!allowed[k] && allowed[k].includes(v);
   const values = {};
