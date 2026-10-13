@@ -322,8 +322,12 @@ $('start').onclick = () => {
 function enterRiding() {
   $('setup').hidden = true; $('riding').hidden = false; startGps(); keepAwake(); startMotion(); render();
   if (ride.mode === 'bus') { pollBus(); clearInterval(pollTimer); pollTimer = setInterval(pollBus, 30000); }
+  if (ride.mode === 'subway') { pollSubway(); clearInterval(pollTimer); pollTimer = setInterval(pollSubway, 20000); }
 }
 // 탄 노선을 서버가 '보는 중'으로 두어 원자료 위치가 30초마다 기록되게(정답과 맞춰 볼 자료)
+// 지하철: 지도에서 그 노선을 보는 사람처럼 20초마다 물어 서버가 노선 위치 피드도 받게 한다 — 그래야 학습 기록(샘플)에 남아
+// 실제 지도와 같은 자료로 슝을 재현할 수 있다(2026-10-14: 디버깅 페이지만 켜 둬 7호선은 늦은 전 역 도착 자료뿐이었다)
+function pollSubway() { if (ride.mode === 'subway' && ride.line && !document.hidden) fetch(`/api/live?lines=${encodeURIComponent(ride.line)}`, {cache: 'no-store'}).catch(() => {}); }
 function pollBus() { if (ride.mode === 'bus' && ride.routeId) fetch(`/api/bus/live?routes=${ride.routeId}&focus=${ride.routeId}`, {cache: 'no-store'}).catch(() => {}); }
 let nextPick = null, pollTimer = null;
 function render() {
