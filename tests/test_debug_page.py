@@ -69,6 +69,16 @@ class DebugPageTest(unittest.TestCase):
         status, body = self.call("/admin/debug/recent?day=../../etc")
         self.assertEqual(body["day"], "20261012", "날짜 꼴이 아니면 오늘")
 
+    def test_cancel_mark_drops_the_tap_before_it(self):
+        t = NOW * 1000
+        events = [{"ride": "r2", "kind": "arrive", "mode": "subway", "t": t, "station": "건대입구"},
+                  {"ride": "r2", "kind": "depart", "mode": "subway", "t": t + 40000, "station": "건대입구"},
+                  {"ride": "r2", "kind": "mark", "mode": "subway", "t": t + 47000, "note": "바로 앞 도착 · 출발 취소"},
+                  {"ride": "r2", "kind": "depart", "mode": "subway", "t": t + 49000, "station": "건대입구"}]
+        self.assertEqual(self.call("/admin/debug/ride", json.dumps({"events": events}).encode())[0], 200)
+        ride = self.call("/admin/debug/recent")[1]["rides"][0]
+        self.assertEqual([(x["kind"], x["t"] - t) for x in ride["taps"]], [("arrive", 0), ("depart", 49000)])
+
     def test_bad_events_are_refused_whole(self):
         for events in [[], [{"ride": "r", "kind": "fly", "mode": "bus", "t": NOW * 1000}], [{"kind": "gps", "mode": "bus", "t": 1}]]:
             status, body = self.call("/admin/debug/ride", json.dumps({"events": events}).encode())

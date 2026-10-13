@@ -34,7 +34,12 @@ if(ridesPath){
   const ids=[...new Set(all.map(e=>e.ride))],want=arg('ride')||ids.at(-1);
   if(!want){console.error('탑승 기록이 없어요');process.exit(2)}
   const ev=all.filter(e=>e.ride===want).sort((a,b)=>a.t-b.t);
-  ride={id:want,line:ev.find(e=>e.line)?.line,train:ev.find(e=>e.train)?.train,taps:ev.filter(e=>e.kind==='arrive'||e.kind==='depart'),marks:ev.filter(e=>e.kind==='mark')};
+  ride={id:want,line:ev.find(e=>e.line)?.line,train:ev.find(e=>e.train)?.train,taps:[],marks:ev.filter(e=>e.kind==='mark')};
+  // '방금 것 취소'(이미 보낸 누름): 그 앞 마지막 누름을 뺀다 — server/services/debug.py CANCEL_NOTE
+  for(const e of [...ev].sort((a,b)=>a.t-b.t)){
+    if(e.kind==='arrive'||e.kind==='depart')ride.taps.push(e);
+    else if(e.kind==='mark'&&e.note==='바로 앞 도착 · 출발 취소'){const i=ride.taps.findLastIndex(x=>x.t<=e.t);if(i>=0)ride.taps.splice(i,1)}
+  }
   if(ids.length>1&&!arg('ride'))console.log(`탑승 ${ids.length}개 중 마지막(${want}) — 다른 것은 --ride`);
 }
 const line=arg('line',ride?.line);if(!line){console.error('--line 이 필요해요');process.exit(2)}

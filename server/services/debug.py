@@ -15,6 +15,7 @@ from server.services.ride_motion import detect
 from server.store.debug_log import DebugStore
 
 RIDE_KINDS = {"start", "gps", "arrive", "depart", "end", "mark", "motion"}
+CANCEL_NOTE = "바로 앞 도착 · 출발 취소"   # 디버깅 페이지가 이미 보낸 누름을 취소할 때 남기는 표시(debug.html undo)
 MODES = {"subway", "bus"}
 MAX_EVENTS = 1000
 SHOT_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/heic": "heic", "video/mp4": "mp4",
@@ -103,8 +104,12 @@ class DebugService:
                                              "from": e["t"], "to": e["t"], "stops": 0, "gps": 0, "taps": []})
             if e["kind"] in ("arrive", "depart"):
                 r["taps"].append({"kind": e["kind"], "t": e["t"], "station": e.get("station")})
+                r["stops"] += e["kind"] == "arrive"
+            elif e["kind"] == "mark" and e.get("note") == CANCEL_NOTE:   # 이미 보낸 누름을 '방금 것 취소': 그 앞 마지막 누름을 뺀다
+                before = [i for i, tap in enumerate(r["taps"]) if tap["t"] <= e["t"]]
+                if before:
+                    r["stops"] -= r["taps"].pop(before[-1])["kind"] == "arrive"
             r["to"] = max(r["to"], e["t"])
-            r["stops"] += e["kind"] == "arrive"
             r["gps"] += e["kind"] == "gps"
         for ride_id, r in rides.items():   # 센서가 잡은 섰다 · 떠났다(시험판, ride_motion)
             if ride_id in motions:
