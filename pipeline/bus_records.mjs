@@ -206,9 +206,11 @@ export function leadWays(table) {
 }
 
 // 그 날 기록(rows)을 방식마다 화면처럼 다시 그려 거리 오차를 잰다. 견주기는 배운 노선만(못 배운 노선은 pace 도 recent 로 떨어져 차이를 흐린다)
-export function replayDay(rows, routes, table, {hours = [0, 24]} = {}) {
-  const truth = tracks(rows, routes), byRoute = new Map(), results = {};
-  for (const r of rows) if (table[r.routeId] && routes.has(r.routeId)) { if (!byRoute.has(r.routeId)) byRoute.set(r.routeId, []); byRoute.get(r.routeId).push(r); }
+// truth: 정답을 따로 줄 때('노선:차' → [{t, d}], 예: 탄 사람 휴대폰 GPS) — 그때는 배우지 않은 노선도 매긴다
+export function replayDay(rows, routes, table, {hours = [0, 24], truth = null} = {}) {
+  const given = !!truth, byRoute = new Map(), results = {};
+  truth ??= tracks(rows, routes);
+  for (const r of rows) if ((given || table[r.routeId]) && routes.has(r.routeId)) { if (!byRoute.has(r.routeId)) byRoute.set(r.routeId, []); byRoute.get(r.routeId).push(r); }
   for (const [name, lead] of Object.entries(leadWays(table))) {
     const sink = {'gap30': [], 'gap60+': []};
     for (const [rid, list] of byRoute) replayRoute(routes.get(rid), list, truth, lead, hours, sink);
