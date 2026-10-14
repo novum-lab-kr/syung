@@ -117,6 +117,8 @@ for f in "${DATA[@]}"; do mv "$tmp/$f" "$out/"; done
 if [ -d "$tmp/data/bus" ]; then mkdir -p "$out/data/bus" && mv "$tmp"/data/bus/*.json "$out/data/bus/"; fi
 # live timing: 밤마다 다시 배운 것(pipeline/retrain_live_timing.py)이 있으면 그것
 if [ -f "$STATE/live-timing.json" ]; then cp "$STATE/live-timing.json" "$out/"; else mv "$tmp/data/live-timing.json" "$out/"; fi
+# bus pace: 밤마다 배운 노선 구간 빠르기(pipeline/bus_pace.mjs)가 있으면 새 릴리스에도(/data/bus/pace/)
+if [ -d "$STATE/bus-pace/web" ]; then mkdir -p "$out/data/bus/pace" && cp -p "$STATE"/bus-pace/web/*.json "$out/data/bus/pace/" 2>/dev/null || true; fi
 for f in "${CARRY[@]}"; do
   from=$WEB/$f
   if [ ! -f "$from" ] && [ -f "$WEB/$(basename "$f")" ]; then from=$WEB/$(basename "$f"); fi   # admin/ 로 옮기기 전 릴리스(2026-10-12)

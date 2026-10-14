@@ -21,6 +21,8 @@ Usage: retrain_live_timing.py [web folder, default /var/www/syung]
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -82,6 +84,13 @@ def main() -> None:
     with LOG.open("a", encoding="utf-8") as log:
         log.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(json.dumps({k: v for k, v in entry.items() if k not in ("lines", "n")}, ensure_ascii=False))
+    try:   # 버스 구간 빠르기(pipeline/bus_pace.mjs): 지난 버스 기록으로 노선 · 시간대마다 배워 웹 폴더 data/bus/pace/ 에
+        node = shutil.which("node") or "/usr/bin/node"
+        done = subprocess.run([node, str(Path(__file__).with_name("bus_pace.mjs")), "--web", str(web)],
+                              capture_output=True, text=True, timeout=1800)
+        print(f"bus pace: {done.stdout.strip() or done.stderr.strip()[-300:]}")
+    except Exception as e:  # noqa: BLE001 — the retrain itself is done
+        print(f"bus pace failed: {e}")
     try:   # the learning page's numbers (pipeline/build_learning_stats.py)
         from build_learning_stats import main as stats
         stats(web)

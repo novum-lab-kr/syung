@@ -119,6 +119,24 @@ export function busLeadDistance(history, distance, observed, at, stops = [], {wi
   return target;
 }
 
+// 배운 구간 빠르기로 앞지르기(덕배 2026-10-14): pace = 그 노선 · 그 시간대(KST, 원자료 시각 기준)의 bin m 칸마다 1 m 에 걸린 ms
+// (밤마다 지난 버스 기록으로 배운 것, pipeline/bus_pace.mjs). 정류장 · 신호에서 선 시간도 그 칸에 들어 있어 다음 정류장에서 멈추지 않는다.
+// 기록 재생(pipeline/bus_replay.mjs, 10-12~14): 30초마다 받을 때 거리 오차 평균 119~138 → 100~124 m, 늘 40~60 m 뒤이던 치우침이 거의 0.
+// 모르면 null — 그땐 busLeadDistance.
+export const busKstHour = ms => new Date(ms + 9 * 3600000).getUTCHours();
+export function busPaceLead(pace, bin, distance, observed, at, {horizon = 90000, cap = 800} = {}) {
+  if (!Array.isArray(pace) || !pace.length || !(bin > 0) || !Number.isFinite(distance) || !Number.isFinite(observed) || !Number.isFinite(at)) return null;
+  let pos = distance, left = clamp(at - observed, 0, horizon);
+  while (left > 0 && pos - distance < cap) {
+    const k = Math.floor(pos / bin), p = pace[k];
+    if (!(p > 0)) break;   // 선 끝(또는 이상한 값)
+    const need = ((k + 1) * bin - pos) * p;
+    if (need >= left) { pos += left / p; break; }
+    pos = (k + 1) * bin; left -= need;
+  }
+  return Math.min(pos, distance + cap);
+}
+
 // 새 관측이 없는 응답(그 차의 원자료가 안 바뀜 · 서버가 이번엔 못 받음): 가던 길은 이미 아는 목표까지만, 다음 새 응답 때 닿게 늦춘다.
 // 당기지는 않고(일찍 닿아 서지 않게) 이미 닿았으면 그대로 — 목표 너머로 지어내지 않는다.
 export function retimeBusMotion(motion, now, interval) {

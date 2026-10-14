@@ -1,6 +1,6 @@
 // Seoul bus map contract v1: /data/bus/{routes,stops}.json and /api/bus/live.
 // Selected routes sit below the subway. Buses and BUS posts share the train WebGL overlay.
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busMotionDistance,
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busPaceLead, busKstHour, busMotionDistance,
   validCoordinate, intersects, contains} from './motion.mjs';
 import {BusRenderer, busMercator, projectBusPoint, busModelScale, busPostScale, busStopGrowFrom} from './mesh.mjs';
 import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
@@ -277,6 +277,7 @@ class BusLayer {
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
     this.pollMs = 30000; this.rtt = 500; this.frame = 0; this.frameTimer = 0; this.pollTimer = 0; this.viewTimer = 0; this.moveSince = null; this.freshnessTimer = 0; this.detailAt = 0;
+    this.paces = new Map(); this.paceIndex = null;   // 배운 구간 빠르기: 노선 → {bin, hours} · null(없음) · 받는 중(Promise)
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.nearby = document.getElementById('inspectNearbyBus');
     this.notice = document.createElement('p'); this.notice.className = 'bus-notice'; this.notice.hidden = true;
@@ -585,7 +586,10 @@ class BusLayer {
       // 같은 운행의 최근 2분 관측(뒤로 30 m 넘게 가면 새 운행 · 회차로 보고 버린다)으로 닿을 때의 자리를 앞지른다
       const history = same ? previous.history : previous?.snapped == null || observed == null || previous.observed == null ? []
         : [...previous.history, {t: previous.observed, d: previous.snapped}].filter(h => observed - h.t <= 120000 && h.d <= snap.distance + 30);
-      const target = stale || observed == null ? snap.distance : busLeadDistance(history, snap.distance, observed, wall + interval, path.stops.map(s => s.distance));
+      // 배운 구간 빠르기(그 노선 · 원자료 시각의 시간대)가 있으면 그것으로, 없으면 최근 2분 속도로 앞지른다
+      const pace = this.paceFor(row.routeId), hourPace = pace && observed != null ? pace.hours[busKstHour(observed)] : null;
+      const target = stale || observed == null ? snap.distance
+        : busPaceLead(hourPace, pace?.bin, snap.distance, observed, wall + interval) ?? busLeadDistance(history, snap.distance, observed, wall + interval, path.stops.map(s => s.distance));
       const motion = same ? retimeBusMotion(previous.motion, now, interval) : nextBusMotion(previous?.motion, target, now, {interval, reduced: this.reduced.matches, stale, hold: true});   // 앞질렀던 자리에서 뒤로 끌려가지 않게
       const bus = {row, route, path, motion, observed, fetched, received, stale, receivedWall: wall, snapped: snap.distance, history,
         mock: payload.mode === 'mock' || row.mock === true || row.id.startsWith('mock:'), status: state.status};
@@ -597,6 +601,20 @@ class BusLayer {
       else if (wall - bus.receivedWall > EXPIRE_MS) this.fleet.delete(id);
     }
     this.updateStatus(); this.refreshDetail(); this.draw();
+  }
+
+  // 밤마다 배운 노선 구간 빠르기(/data/bus/pace/<노선>.json · 배운 노선 목록 index.json, pipeline/bus_pace.mjs).
+  // 처음 물을 땐 받기만 시작하고 null(그 응답은 최근 2분 속도로). 없거나 못 받으면 이 화면에서는 다시 묻지 않는다.
+  paceFor(id) {
+    const known = this.paces.get(id);
+    if (known !== undefined) return known instanceof Promise ? null : known;
+    const json = url => Promise.resolve().then(() => this.fetcher(url, {cache: 'no-store'})).then(r => r?.ok ? r.json() : null);
+    this.paceIndex ??= json('/data/bus/pace/index.json').then(j => new Set(Array.isArray(j?.routes) ? j.routes : [])).catch(() => new Set());
+    const pending = this.paceIndex.then(ids => ids.has(id) ? json(`/data/bus/pace/${encodeURIComponent(id)}.json`) : null)
+      .then(j => j?.schemaVersion === 1 && j.bin > 0 && j.hours && typeof j.hours === 'object' ? {bin: j.bin, hours: j.hours} : null)
+      .catch(() => null).then(v => { this.paces.set(id, v); });
+    this.paces.set(id, pending);
+    return null;
   }
 
   freeze(bus) { bus.stale = true; bus.motion = {...bus.motion, from: bus.motion.to, duration: 0}; }

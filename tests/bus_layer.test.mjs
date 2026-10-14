@@ -324,6 +324,25 @@ test('two recent observations: the bus is drawn ahead of the last GPS by its spe
   assert.ok(bus.motion.to <= Math.min(next, bus.snapped + 400) + 1e-6, 'within the next stop and 400 m');
 }));
 
+test('learned pace: one observation is already drawn ahead, and the pace file is asked once (덕배 2026-10-14)', () => withLayerFixture(async layer => {
+  layer.setEnabled(false);
+  const asked = [], hours = Object.fromEntries(Array.from({length: 24}, (_, h) => [h, Array(80).fill(100)]));   // 10 m/s
+  layer.fetcher = async url => { asked.push(url); return {ok: true, json: async () => url.endsWith('index.json') ? {schemaVersion: 1, routes: [route.id]}
+    : {schemaVersion: 1, routeId: route.id, bin: 50, hours}}; };
+  const t0 = Date.now() - 40000;
+  const feed = at => ({schemaVersion: 1, mode: 'live', fetchedAt: new Date().toISOString(), pollAfterSeconds: 30,
+    buses: [{id: 'vehicle-1', routeId: route.id, lng: 127.001, lat: 37.501, receivedAt: new Date(at).toISOString()}],
+    routes: {[route.id]: {status: 'fresh', ageSeconds: 0, retryAfterSeconds: 30}}});
+  layer.setLiveData(feed(t0), [route.id]);
+  assert.equal(layer.fleet.get('vehicle-1').motion.to, layer.fleet.get('vehicle-1').snapped, 'pace not here yet: as before');
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+  layer.setLiveData(feed(t0 + 1000), [route.id]);
+  const bus = layer.fleet.get('vehicle-1');
+  assert.ok(bus.motion.to > bus.snapped + 500, `about 70 s at 10 m/s ahead, without two observations (${bus.snapped.toFixed(0)} → ${bus.motion.to.toFixed(0)} m)`);
+  assert.ok(bus.motion.to <= bus.snapped + 800 + 1e-6);
+  assert.deepEqual(asked, ['/data/bus/pace/index.json', `/data/bus/pace/${route.id}.json`]);
+}));
+
 test('a route the server could not refresh this time is not frozen while its positions are recent', () => withLayerFixture(layer => {
   layer.setEnabled(false);
   const at = Date.now() - 40000;

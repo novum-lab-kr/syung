@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busMotionDistance} from '../web/bus/motion.mjs';
+import {buildBusPath, busPointAt, busPathSlice, busPathPasses, snapBusToPath, nextBusMotion, retimeBusMotion, busLeadDistance, busPaceLead, busKstHour, busMotionDistance} from '../web/bus/motion.mjs';
 
 const corner = buildBusPath([[127, 37.5], [127.001, 37.5], [127.001, 37.501]]);
 
@@ -92,4 +92,16 @@ test('a guess that went ahead holds still instead of sliding back, but a real ju
   assert.equal(nextBusMotion(ahead, 420, 1000, {interval: 30000}).to, 420, 'without hold: as before');
   assert.equal(nextBusMotion(ahead, 0, 1000, {interval: 30000, hold: true}).to, 0, 'a new trip (far back) is not held');
   assert.equal(nextBusMotion(ahead, 700, 1000, {interval: 30000, hold: true}).duration, 30000, 'forward moves as before');
+});
+
+test('learned pace: the bus goes on by the time each 50 m piece took, slower where it stood (덕배 2026-10-14)', () => {
+  const pace = [100, 100, 1000, 100, 100];   // ms/m: 2번 칸(100~150 m)은 정류장 — 서 있던 시간이 들어 있다
+  assert.equal(busPaceLead(pace, 50, 0, 0, 5000), 50, '5 s at 10 m/s');
+  assert.equal(busPaceLead(pace, 50, 0, 0, 30000), 120, '10 s to the stop, then 20 s of its 50 s');
+  assert.equal(busPaceLead(pace, 50, 0, 0, 120000), 250, 'never past the end of the learned line');
+  assert.equal(busPaceLead(pace, 50, 0, 10000, 0), 0, 'an answer from the future does not move it back');
+  assert.equal(busPaceLead(Array(100).fill(10), 50, 0, 0, 60000), 800, 'at most 800 m ahead');
+  assert.equal(busPaceLead(Array(100).fill(200), 50, 0, 0, 200000), 450, 'at most 90 s ahead');
+  assert.equal(busPaceLead(undefined, 50, 0, 0, 5000), null, 'unknown hour → caller falls back');
+  assert.equal(busKstHour(Date.UTC(2026, 9, 13, 23, 30)), 8, 'hours are Korean');
 });
