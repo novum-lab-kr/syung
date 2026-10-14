@@ -24,7 +24,7 @@ docs/       열차 모델 설계 메모
 ## 로컬에서 작업하기
 
 ```bash
-git clone https://github.com/nol-meok/subway-live-map.git && cd subway-live-map
+git clone https://github.com/novum-lab-kr/subway-live-map.git && cd subway-live-map
 python3 deploy/dev_server.py        # http://localhost:8080
 ```
 `web/`과 `data/`를 그대로 띄우고(복사 단계 없음, 고치고 새로고침), 실시간 열차(`/api/live`)는 운영 서버
