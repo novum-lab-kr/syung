@@ -9,15 +9,19 @@ from server.services.ride_motion import detect
 T0 = 1791800000000
 
 
-def ride(profile, tilt=0.6, jitter=0.5, seed=1):
-    """profile: [(초, 진행 방향 가속 m/s²)] → motion 사건들. 휴대폰은 기울여 쥐고(tilt rad) 손이 떨린다(jitter m/s²)."""
-    rnd, events, bins, t = random.Random(seed), [], [], 0
+def ride(profile, tilt=0.6, jitter=0.5, seed=1, settle=8.0):
+    """profile: [(초, 진행 방향 가속 m/s²)] → motion 사건들. 휴대폰은 기울여 쥐고(tilt rad) 손이 떨린다(jitter m/s²).
+    휴대폰의 '중력 뺀 가속'은 중력을 settle 초쯤에 걸쳐 따라가며 추정한다: 오래 밀리면 그 밀림도 중력으로 잘못 알아
+    밀림이 끝나면 반대로 되튄다(실제 탑승 10-13 · 10-14 에서 역마다 보인 모양)."""
+    rnd, events, bins, t, low = random.Random(seed), [], [], 0, 0.0
     fwd = (0.0, math.cos(tilt), -math.sin(tilt))      # 열차 진행 방향(휴대폰 좌표)
     grav = (0.0, 9.81 * math.sin(tilt), 9.81 * math.cos(tilt))
     for seconds, acc in profile:
         for _ in range(int(seconds * 10)):
-            lin = tuple(acc * f + rnd.uniform(-jitter, jitter) for f in fwd)
-            g = tuple(a + x for a, x in zip(lin, grav))
+            low += (acc - low) * 0.1 / settle   # 기기가 중력으로 잘못 아는 몫
+            shake = tuple(rnd.uniform(-jitter, jitter) for _ in fwd)
+            g = tuple(acc * f + s + x for f, s, x in zip(fwd, shake, grav))
+            lin = tuple((acc - low) * f + s for f, s in zip(fwd, shake))
             bins.append((t, g, lin)); t += 100
     for i in range(0, len(bins), 50):   # 5초마다 한 사건
         chunk, base = bins[i:i + 50], T0 + bins[min(i + 49, len(bins) - 1)][0]
@@ -29,6 +33,13 @@ def ride(profile, tilt=0.6, jitter=0.5, seed=1):
 
 
 class RideMotionTest(unittest.TestCase):
+    def test_rebound_after_departing_is_not_a_stop(self):
+        # 가속 끝의 되튐(반대쪽)과 감속 끝의 되튐: 앞 것은 무시, 뒤 것이 섰다
+        found = detect(ride([(10, 0), (15, 0.8), (40, 0), (15, -0.8), (30, 0)]))
+        got = [(e["kind"], round((e["t"] - T0) / 1000)) for e in found["events"]]
+        self.assertEqual([k for k, _ in got], ["depart", "arrive"], got)
+        self.assertLess(abs(got[1][1] - 80), 3, got)
+
     def test_two_stops_with_shaky_hand(self):
         # 서 있음 10 → 가속 15 → 달림 30 → 감속 15 → 서 있음 20 → 가속 15 → 달림 20 → 감속 15 → 서 있음 10
         found = detect(ride([(10, 0), (15, 0.8), (30, 0), (15, -0.8), (20, 0), (15, 0.8), (20, 0), (15, -0.8), (10, 0)]))

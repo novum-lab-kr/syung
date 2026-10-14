@@ -3,9 +3,18 @@
 motion 사건의 m: 0.1초 칸마다 [사건 t 기준 ms, 중력 포함 가속 x y z, 중력 뺀 가속 x y z, 회전 α β γ] 를 이어 붙인 숫자.
 1. 칸마다 중력 방향(중력 포함 − 중력 뺀 가속)을 구해 가속에서 수평 성분만 남긴다(휴대폰을 어떻게 쥐어도 땅 기준).
 2. 2초 평균 벡터: 손 떨림은 방향이 들쭉날쭉해 상쇄되고, 열차의 출발 · 감속처럼 한 방향으로 이어지는 힘만 남는다.
-3. 그 크기가 ON 을 넘어 MIN_PULSE 초 이상 이어지면 한 번의 '밀림'. 처음 밀림 = 출발 방향, 같은 쪽이면 가속 · 반대쪽이면 감속.
-4. 감속이 끝난 때 = 섰다, 선 뒤 첫 가속이 시작한 때 = 떠났다. 서지 않고 다시 감속하면 마지막 감속을 쓴다.
-한계: 휴대폰을 크게 돌리면 방향이 틀릴 수 있다. 달리다 속도만 줄였다 다시 내면 섰다 · 떠났다로 잘못 잡을 수 있다.
+3. 그 크기가 ON 을 넘어 MIN_PULSE 초 이상 이어지고 PEAK 를 한 번 넘으면 한 번의 '밀림'.
+4. 밀림의 차례로 읽는다(방향은 앞 밀림과 같은 쪽인지만 본다 — 휴대폰을 돌려 쥐어도 된다):
+   - 섰다 = 감속 밀림 바로 뒤(HUMP_GAP 초 안)에 반대 방향 밀림이 생기고 그 뒤 STAND 초 넘게 조용할 때, 그 반대 밀림이 시작한 때.
+     휴대폰이 주는 '중력 뺀 가속'은 중력을 천천히 따라가며 추정해서, 긴 감속 동안 중력 추정이 기울었다가 열차가 서는 순간
+     반대쪽 가속처럼 보이며 10~20초에 걸쳐 사그라든다(되튐). 옛 규칙은 이 되튐을 출발로 읽어 첫 탑승에서 29개를 잡았다.
+   - 떠났다 = 그렇게 선 뒤 STAND 초 넘게 조용하다 처음 밀린 때(되튐과 같은 쪽). 탑승의 첫 밀림도 출발.
+   - 출발 가속이 끝날 때도 같은 되튐이 생긴다: 출발 바로 뒤 반대 밀림은 섰다가 아니다.
+   - 되튐 없이 '감속 → 조용 → 반대로 밀림'도 섰다로 읽게 해 봤더니 달리다 한 번 더 밀린 것을 역으로 잡아(청담 29초 일찍) 뺐다.
+     되튐은 중력을 추정하는 모든 기기에 생긴다(중력 뺀 값이 없는 기기는 _horizontal 이 같은 식으로 추정한다).
+   맞춘 근거: 7호선 두 번 탑승(10-13 · 10-14, 누름 40번)에서 센서 − 누름 가운데 도착 −1.1초 · 출발 −0.8초(사람이 1초쯤 늦게 누른다),
+   40번 중 37번이 5초 안, 누름 없는 센서 사건 0. 놓친 것: 끝 역 하나, 출발 하나, 출발 전에 한 번 더 밀린 역 하나(26초 일찍).
+한계: 같은 노선 두 번으로만 맞췄다 — 다른 노선 · 버스 · 다른 휴대폰은 탑승 기록으로 다시 본다.
 """
 from __future__ import annotations
 
@@ -14,8 +23,11 @@ import math
 BIN_MS = 100
 WINDOW = 20          # 2초 평균(칸)
 ON, OFF = 0.3, 0.15  # m/s² — 열차 출발 · 감속은 약 0.5~1.0, 서 있으면 0 가까이
-MIN_PULSE = 3.0      # 초 — 열차 가속 · 감속은 8초 넘게 이어진다, 손으로 흔든 것은 짧다
+MIN_PULSE = 2.0      # 초 — 열차 가속 · 감속은 8초 넘게 이어진다, 손으로 흔든 것은 짧다(되튐이 2~3초로 짧은 역도 있다)
 MERGE = 1.0          # 초 — 같은 방향 밀림 사이가 이보다 짧으면 한 번으로
+PEAK = 0.45          # m/s² — 이보다 약한 밀림은 버린다(폰 만짐 · 작은 흔들림)
+HUMP_GAP = 9.0       # 초 — 감속 끝에서 되튐 시작까지
+STAND = 6.0          # 초 — 역에 서 있다고 볼 조용한 시간(되튐이 끝난 뒤. 실제 두 탑승에선 13초 넘게, 6~10 은 결과가 같았다)
 
 
 def _bins(events: list[dict]) -> list[tuple[float, tuple, tuple]]:
@@ -93,22 +105,18 @@ def detect(events: list[dict]) -> dict:
     sm = _smooth(_horizontal(_bins(events)))
     if not sm:
         return {"events": [], "series": []}
-    pulses, out, ref, stopped = _pulses(sm), [], None, True
-    pending_arrive = None
-    for p in pulses:
-        if ref is None:
-            ref = p["dir"]   # 처음 밀림은 출발(역에 서 있다가 탑승 시작)
-        accel = sum(a * b for a, b in zip(p["dir"], ref)) > 0
-        ref = p["dir"] if accel else tuple(-x for x in p["dir"])   # 휴대폰이 천천히 돌아도 따라간다
-        if accel:
-            if pending_arrive is not None:
-                out.append({"kind": "arrive", "t": round(pending_arrive)}); pending_arrive = None; stopped = True
-            if stopped:
-                out.append({"kind": "depart", "t": round(p["start"])}); stopped = False
-        else:
-            pending_arrive = p["last"]   # 서지 않고 또 감속하면 마지막 것
-    if pending_arrive is not None:
-        out.append({"kind": "arrive", "t": round(pending_arrive)})
+    pulses = [p for p in _pulses(sm) if p["peak"] >= PEAK]
+    out, last_depart, hump = [], None, None
+    same = lambda a, b: sum(x * y for x, y in zip(a["dir"], b["dir"]))
+    for i, p in enumerate(pulses):
+        prev = pulses[i - 1] if i else None
+        nxt = pulses[i + 1] if i + 1 < len(pulses) else None
+        before = (p["start"] - prev["last"]) / 1000 if prev else math.inf
+        after = (nxt["start"] - p["last"]) / 1000 if nxt else math.inf
+        if prev is not None and prev is not last_depart and before <= HUMP_GAP and same(prev, p) < -0.5 and after >= STAND:
+            out.append({"kind": "arrive", "t": round(p["start"])}); hump = p   # 감속 → 되튐 → 조용
+        elif prev is None or (before >= STAND and (prev is hump and same(prev, p) > 0.3)):
+            out.append({"kind": "depart", "t": round(p["start"])}); last_depart = p
     # 1초마다 그래프 점(출발 방향 기준 부호)
     series, ref2, next_t, pi = [], None, sm[0][0], 0
     dirs = [(p["start"], p["dir"]) for p in pulses]
