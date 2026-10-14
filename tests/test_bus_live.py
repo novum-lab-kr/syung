@@ -22,6 +22,11 @@ ROW = {"vehId": "12345", "gpsX": "126.98", "gpsY": "37.57", "sectOrd": "4",
        "stopFlag": "1", "islastyn": "1", "dataTm": "20261003000000", "isrunyn": "1"}
 
 
+def bus_samples_kst():
+    from server.clock import KST
+    return KST
+
+
 class PayloadTest(unittest.TestCase):
     def test_xml_json_and_singleton(self):
         raw = b'<ServiceResult><msgHeader><headerCd>0</headerCd></msgHeader><msgBody><itemList><vehId>12345</vehId></itemList></msgBody></ServiceResult>'
@@ -266,6 +271,31 @@ class ProxyTest(unittest.TestCase):
         with self.assertRaises(StopIteration):
             bus.background_loop(proxy, sleep=sleep)
         self.assertEqual(self.calls, [R1, R2, R1])   # 모르는 노선은 빼고 번갈아
+
+    def test_learning_routes_rotate_every_day(self):
+        from server.jobs.bus_samples import day_routes
+        ids = [f"1001{i:05d}" for i in range(25)]
+        days = [day_routes(ids, d, 9400) for d in range(3)]
+        self.assertEqual([len(d) for d in days], [10, 10, 10], "하루 9,400번이면 노선 10개(하나에 약 900번)")
+        self.assertEqual(len(set(days[0]) | set(days[1])), 20, "다음 날은 다른 노선")
+        self.assertEqual(sorted(set(sum([day_routes(ids, d, 9400) for d in range(5)], []))), sorted(ids), "며칠이면 모든 노선을 돈다")
+        self.assertEqual(day_routes(ids, 0, 9400), days[0], "같은 날은 같은 노선(다시 띄워도)")
+        self.assertEqual(len(day_routes(ids, 0, 100)), 1)
+        self.assertEqual(day_routes([], 0, 9400), [])
+
+    def test_background_loop_takes_todays_rotated_routes(self):
+        from server.jobs.bus_samples import day_routes
+        self.now += 6 * 3600
+        proxy = self.proxy(sample_rotate=True, sample_routes=(R1,), daily_limit=950, sample_reserve=50)
+        today = datetime.fromtimestamp(self.now, bus_samples_kst()).date().toordinal()
+        expected = day_routes(ROUTES, today, 900)
+        def sleep(t):
+            self.now += max(t, proxy.sample_at - self.now)
+            if len(self.calls) >= 2:
+                raise StopIteration
+        with self.assertRaises(StopIteration):
+            bus.background_loop(proxy, sleep=sleep)
+        self.assertEqual(self.calls, [expected[0], expected[0]], "900번 몫이면 노선 하나 — 고정 목록(R1)은 안 쓴다")
 
     def test_round_robin_does_not_starve_visible_routes(self):
         self.now += 6 * 3600   # 낮(밤에는 간격이 4배)

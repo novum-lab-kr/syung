@@ -4,7 +4,7 @@ BUS_LIVE_MODE=mock: 예시 버스(정적 노선을 따라 오가는 한 대). No
 정류장 도착 정보(BusArrivalService)는 같은 키를 쓰지만 하루 한도를 따로 받아서 장부도 따로 쓴다(BUS_ARRIVAL_*).
 Background polling (jobs/bus_samples.py), one call per turn of the shared gate: first the routes someone
 is watching (asked in the last WATCH_SECONDS) whose cache is stale, so a watched route is fresh before the
-map asks again; only when none is due, the learning routes BUS_LIVE_SAMPLE_ROUTES in turn, 05:00–24:00
+map asks again; only when none is due, the learning routes (rotated daily, jobs/bus_samples.py) in turn, 05:00–24:00
 KST, spread so they never use the last BUS_LIVE_SAMPLE_RESERVE calls of the day (the map's). On
 2026-10-06 the map made 2 calls of 950, too few to learn from; 2026-10-07 the watchers came first
 instead of the collection pausing while anyone watched (행님 · 덕배: 정확도가 먼저).

@@ -89,7 +89,8 @@ class BusConfig:
     quota_file: Path = Path("/var/lib/subway-live/bus-quota.json")
     routes_file: Path = ROOT / "data" / "bus" / "routes.json"
     record_dir: Path | None = None   # 받은 위치를 날마다 저장할 폴더(없으면 저장 안 함)
-    sample_routes: tuple = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름)
+    sample_routes: tuple = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름) — sample_rotate 가 꺼졌을 때만
+    sample_rotate: bool = False   # 학습 노선을 날마다 돌린다(jobs/bus_samples.py). 운영 기본은 켬(from_env)
     sample_reserve: int = 250   # 하루 호출 중 지도 보는 사람 몫으로 남길 수
 
     def __post_init__(self):
@@ -116,6 +117,7 @@ class BusConfig:
                    record_dir=Path(d) if (d := _env("BUS_LIVE_RECORD_DIR", "/var/lib/subway-live/bus")) else None,
                    # 472(개포동–신촌로타리) · 143(정릉–개포동): 많이 타는 간선 둘
                    sample_routes=tuple(r.strip() for r in _env("BUS_LIVE_SAMPLE_ROUTES", "100100075,100100022").split(",") if r.strip()),
+                   sample_rotate=_env("BUS_LIVE_SAMPLE_ROTATE", "1") != "0",
                    sample_reserve=int(_env("BUS_LIVE_SAMPLE_RESERVE", "250")))
 
 
