@@ -27,6 +27,8 @@ Output (data/live-timing.json), read by the map runtime:
   도착→다음 도착 11 → 7, 도착→출발 7 → 6), 2호선 7 → 2, 1호선 11 → 8, 3호선 14 → 12; hour of day,
   rush hour and weekday/weekend per edge did not help out of sample — what is left is how long
   each train happens to stand.
+  역 정차(stops)를 시간대로 나눠도 같았다(2026-10-15, 10-13 채점 · 앞 14일 학습): 출퇴근 · 아침/저녁/낮 · 매시 모두
+  평균 15.36 → 15.28~15.33 s, 출퇴근 평균 17.6 → 17.3 s — 남은 오차는 열차마다 우연히 오래 서는 것이라 넣지 않았다.
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
