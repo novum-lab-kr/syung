@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {buildBusPath, snapBusToPath} from '../web/bus/motion.mjs';
+import {buildBusPath, snapBusToPath, busLeadDistance, busPaceLead, busKstHour, nextBusMotion, retimeBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const STATE = '/var/lib/subway-live';
@@ -134,4 +134,85 @@ export function paceTable(sums, {bin = PACE_BIN_M} = {}) {
     if (Object.keys(hours).length) out[rid] = {bin, hours};
   }
   return out;
+}
+
+// ── 기록 재생(bus_replay.mjs · 밤 학습 채점 bus_pace.mjs): 서버가 받은 응답을 화면처럼 차례로 받아 1초마다 (그린 자리 − 실제 자리)
+// 정답은 관측 사이를 거리로 이은 것이라 관측 사이에 신호 · 정류장에서 선 것은 정답에도 안 보인다 — 실제 오차는 이보다 크다. 방식끼리 견주는 데만 쓴다.
+// 결과는 받기 간격으로 나눈다: gap30 = 30초마다(지도가 보는 노선), gap60+ = 그보다 드물게(학습용 수집만).
+const STALE_MS = 120000, SLACK_MS = 2500, TRUTH_GAP_MS = 60000;
+
+// 실제 자리: 그 시각을 감싸는 두 관측을 거리로 잇는다(사이가 60초 넘거나 뒤로 가면 모름)
+function truthAt(list, t) {
+  let lo = 0, hi = list.length - 1;
+  if (!list.length || t < list[0].t || t > list[hi].t) return null;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (list[mid].t <= t) lo = mid; else hi = mid; }
+  const a = list[lo], b = list[hi];
+  if (b.t - a.t > TRUTH_GAP_MS || b.d < a.d - 30) return null;
+  return b.t === a.t ? a.d : a.d + (b.d - a.d) * (t - a.t) / (b.t - a.t);
+}
+
+// 한 노선의 응답들을 차례로 화면처럼 받아(layer.mjs setLiveData) 1초마다 (그린 자리 − 실제 자리)를 모은다
+function replayRoute(route, rows, truth, lead, hours, sink) {
+  const calls = new Map();
+  for (const r of rows) { if (!calls.has(r.fetchedAt)) calls.set(r.fetchedAt, []); calls.get(r.fetchedAt).push(r); }
+  const times = [...calls.keys()].sort();
+  const fleet = new Map();
+  times.forEach((stamp, i) => {
+    const wall = Date.parse(stamp), next = i + 1 < times.length ? Date.parse(times[i + 1]) : wall + 30000;
+    const interval = Math.min(60000, Math.max(5000, next - wall)) + SLACK_MS, seen = new Set();
+    for (const row of calls.get(stamp)) {
+      if (row.isrunyn === '0' || !row.dataTm) continue;
+      const id = row.vehId, previous = fleet.get(id), observed = kst(row.dataTm);
+      if (previous && observed < previous.observed) { seen.add(id); continue; }
+      const stale = wall - observed > STALE_MS;
+      const snap = snapRow(route, row, previous?.snapped ?? previous?.motion.to ?? null); if (!snap) continue;
+      seen.add(id);
+      const same = previous && previous.observed === observed && Math.abs(previous.snapped - snap.distance) < 1;
+      const history = same ? previous.history : previous?.snapped == null ? []
+        : [...previous.history, {t: previous.observed, d: previous.snapped}].filter(h => observed - h.t <= 120000 && h.d <= snap.distance + 30);
+      const target = stale ? snap.distance : lead({history, distance: snap.distance, observed, at: wall + interval, route});
+      const motion = same ? retimeBusMotion(previous.motion, wall, interval) : nextBusMotion(previous?.motion, target, wall, {interval, stale, hold: true});
+      fleet.set(id, {observed, snapped: snap.distance, history, motion, stale});
+    }
+    for (const id of fleet.keys()) if (!seen.has(id)) fleet.delete(id);
+    const hour = busKstHour(wall);
+    if (hour < hours[0] || hour >= hours[1]) return;
+    for (const [id, bus] of fleet) {
+      if (bus.stale) continue;
+      const list = truth.get(`${route.id}:${id}`); if (!list) continue;
+      for (let t = wall; t < Math.min(next, wall + 60000); t += 1000) {
+        const real = truthAt(list, t); if (real == null) continue;
+        sink[next - wall <= 40000 ? 'gap30' : 'gap60+'].push(busMotionDistance(bus.motion, t) - real);
+      }
+    }
+  });
+}
+
+const quant = (a, q) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : NaN; };
+export function summary(errors) {
+  const abs = errors.map(Math.abs);
+  return {n: errors.length, meanAbs: Math.round(abs.reduce((s, x) => s + x, 0) / (abs.length || 1)),
+    p50Abs: Math.round(quant(abs, .5)), p90Abs: Math.round(quant(abs, .9)), signedMedian: Math.round(quant(errors, .5))};
+}
+
+// 앞지르는 방식 셋: none(10-12 전) · recent(최근 2분 속도, 10-12 ~) · pace(배운 구간 빠르기, 모르면 recent — 화면 layer.mjs 와 같은 차례)
+export function leadWays(table) {
+  const ways = {
+    none: ({distance}) => distance,
+    recent: ({history, distance, observed, at, route}) => busLeadDistance(history, distance, observed, at, route.path.stops.map(s => s.distance)),
+    pace: a => busPaceLead(table[a.route.id]?.hours[busKstHour(a.observed)], table[a.route.id]?.bin, a.distance, a.observed, a.at) ?? ways.recent(a),
+  };
+  return ways;
+}
+
+// 그 날 기록(rows)을 방식마다 화면처럼 다시 그려 거리 오차를 잰다. 견주기는 배운 노선만(못 배운 노선은 pace 도 recent 로 떨어져 차이를 흐린다)
+export function replayDay(rows, routes, table, {hours = [0, 24]} = {}) {
+  const truth = tracks(rows, routes), byRoute = new Map(), results = {};
+  for (const r of rows) if (table[r.routeId] && routes.has(r.routeId)) { if (!byRoute.has(r.routeId)) byRoute.set(r.routeId, []); byRoute.get(r.routeId).push(r); }
+  for (const [name, lead] of Object.entries(leadWays(table))) {
+    const sink = {'gap30': [], 'gap60+': []};
+    for (const [rid, list] of byRoute) replayRoute(routes.get(rid), list, truth, lead, hours, sink);
+    results[name] = Object.fromEntries(Object.entries(sink).map(([k, v]) => [k, summary(v)]));
+  }
+  return {routes: new Set(rows.map(r => r.routeId)).size, trainedRoutes: byRoute.size, results};
 }

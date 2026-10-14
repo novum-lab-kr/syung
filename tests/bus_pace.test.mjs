@@ -26,3 +26,26 @@ test('an hour that never covered the route, gaps over 90 s and backward jumps ar
   const changed = new Map([['R', {path: {total: 1200}}]]);
   assert.deepEqual(addSums([paceSums(new Map([['R:1', [{t: t(0), d: 0}, {t: t(60), d: 1000}]]]), routes)], changed), {}, '노선 길이가 바뀌면 옛 합은 버린다');
 });
+
+test('replayDay scores a day against the observations: learned pace beats not leading on a bus that keeps moving', async () => {
+  const {replayDay} = await import('../pipeline/bus_records.mjs');
+  const {buildBusPath} = await import('../web/bus/motion.mjs');
+  const path = buildBusPath([[127.0, 37.5], [127.05, 37.5]]);   // 동쪽으로 약 4.4 km
+  path.stops = [];
+  const rmap = new Map([['R', {id: 'R', path, approximate: false, sequences: []}]]);
+  const stamp = ms => new Date(ms + 9 * 3600000).toISOString().replace(/\D/g, '').slice(0, 14);
+  const rows = [];
+  for (let s = 0; s <= 400; s += 30) {   // 10 m/s, 30초마다 받고 원자료는 15초 늦다
+    const seen = t(s) - 15000, d = 10 * (s - 15) + 150;
+    rows.push({routeId: 'R', vehId: '1', isrunyn: '1', sectOrd: '1', fetchedAt: new Date(t(s)).toISOString(), dataTm: stamp(seen),
+      gpsX: String(127.0 + 0.05 * d / path.total), gpsY: '37.5'});
+  }
+  const table = {R: {bin: 50, hours: {8: new Array(Math.ceil(path.total / 50) + 1).fill(100)}}};   // 100 ms/m = 10 m/s 로 배움
+  const out = replayDay(rows, rmap, table);
+  assert.equal(out.trainedRoutes, 1);
+  const none = out.results.none.gap30, pace = out.results.pace.gap30;
+  assert.ok(none.n > 100 && pace.n === none.n);
+  assert.ok(none.signedMedian < -100, `앞지르지 않으면 늘 뒤 (${none.signedMedian} m)`);
+  assert.ok(pace.meanAbs < none.meanAbs / 2, `배운 빠르기는 훨씬 가깝다 (${pace.meanAbs} vs ${none.meanAbs} m)`);
+  assert.equal(replayDay(rows, rmap, {}).trainedRoutes, 0, '배운 노선이 없으면 매기지 않는다');
+});

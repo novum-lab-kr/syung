@@ -38,6 +38,7 @@ STATE = Path("/var/lib/subway-live")
 DAYS_CACHE = STATE / "learning-days.json"
 BUS_CACHE = STATE / "learning-bus-days.json"
 BUS_ROUTES = Path(__file__).resolve().parent.parent / "data" / "bus" / "routes.json"
+BUS_PACE = STATE / "bus-pace"   # 밤 버스 학습(pipeline/bus_pace.mjs): web/index.json(배운 노선) · scores.json(날마다 기록 재생 채점)
 HISTORY_CACHE = STATE / "learning-history.json"
 
 
@@ -131,7 +132,30 @@ def bus_stats() -> dict:
     routes = [{"id": rid, "name": known.get(rid, {}).get("name", rid), "color": known.get(rid, {}).get("color"),
                "type": known.get(rid, {}).get("type"), "calls": c, "buses": v, "days": n}
               for rid, (c, v, n) in sorted(total.items(), key=lambda x: -x[1][0])]
-    return {"days": [{k: v for k, v in d.items() if k not in ("stamp", "byRoute")} for d in days], "routes": routes}
+    return {"days": [{k: v for k, v in d.items() if k not in ("stamp", "byRoute")} for d in days], "routes": routes,
+            **bus_pace_stats(known)}
+
+
+def bus_pace_stats(known: dict) -> dict:
+    """배운 노선(이름 · 배운 시간대 수)과 날마다 채점(방식별 거리 오차). 아직 안 돌았으면 빈 값."""
+    try:
+        index = json.loads((BUS_PACE / "web" / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"pace": None, "scores": []}
+    learned = []
+    for rid in index.get("routes", []):
+        try:
+            hours = len(json.loads((BUS_PACE / "web" / f"{rid}.json").read_text(encoding="utf-8"))["hours"])
+        except (OSError, ValueError, KeyError):
+            hours = 0
+        learned.append({"id": rid, "name": known.get(rid, {}).get("name", rid), "color": known.get(rid, {}).get("color"), "hours": hours})
+    try:
+        scored = json.loads((BUS_PACE / "scores.json").read_text(encoding="utf-8")).get("days", {})
+    except (OSError, ValueError):
+        scored = {}
+    scores = [{"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", "trainDays": v.get("trainDays"), "trainedRoutes": v.get("trainedRoutes"),
+               "results": v.get("results")} for d, v in sorted(scored.items())]
+    return {"pace": {"generatedAt": index.get("generatedAt"), "days": index.get("days"), "routes": learned}, "scores": scores}
 
 
 def backfill(d: date, have: set[date]) -> dict | None:

@@ -211,8 +211,8 @@ tr.sep td{border-top:1.5px solid var(--rule)}
   <div class="panel" id="panelBus" role="tabpanel" aria-labelledby="tabBus" hidden>
   <section class="box hero" aria-label="버스 학습 상태">
     <div>
-      <small>버스 도착 시각 예측</small>
-      <div class="big"><b class="word" id="bState">모으는 중</b></div>
+      <small id="bLabel">버스 도착 시각 예측</small>
+      <div class="big" id="bBig"><b class="word" id="bState">모으는 중</b></div>
       <span class="delta same" id="bDelta">불러오는 중</span>
       <p id="bText"></p>
     </div>
@@ -222,6 +222,16 @@ tr.sep td{border-top:1.5px solid var(--rule)}
     <div class="stat"><small id="bDayLabel">하루 모은 기록</small><b id="bToday">–</b><span id="bTodaySub"></span></div>
     <div class="stat"><small>지금까지</small><b id="bTotal">–</b><span id="bTotalSub"></span></div>
     <div class="stat"><small>모은 노선</small><b id="bRoutes">–</b><span id="bRoutesSub"></span></div>
+  </section>
+  <section class="box" id="bScoreBox" hidden>
+    <h2>날마다 채점한 거리 오차</h2>
+    <div class="tw"><table class="wide"><thead><tr><th>채점한 날</th><th>배운 노선</th><th>지도 볼 때<br>앞지르지 않음</th><th>지도 볼 때<br>최근 속도</th><th>지도 볼 때<br>배운 빠르기</th><th>드물게 받을 때<br>최근 속도 → 배운 빠르기</th></tr></thead><tbody id="bScoreTable"></tbody></table></div>
+    <p class="note">그 날 서버가 받은 버스 위치를 화면처럼 다시 그려, 1초마다 그린 자리와 실제 자리의 거리(평균, m)를 쟀어요. 배운 빠르기는 그 날 전 기록으로만 배운 값이에요. 지도 볼 때 = 30초마다 받는 노선, 드물게 = 학습용으로 1분 넘게 띄엄띄엄 받는 노선이에요. 실제 자리는 받은 위치 사이를 이은 값이라 신호 · 정류장에서 선 것이 빠져 있어 실제 오차는 조금 더 커요. 배운 노선이 그 날 다닌 노선과 겹친 만큼만 매겨요(학습 노선이 날마다 바뀌어서 겹치는 날이 적어요).</p>
+  </section>
+  <section class="box" id="bLearnBox" hidden>
+    <h2>배운 노선</h2>
+    <p class="note" id="bLearnNote" style="margin:0 0 8px"></p>
+    <div class="tw"><table><thead><tr><th class="l">노선</th><th>배운 시간대</th></tr></thead><tbody id="bLearnTable"></tbody></table></div>
   </section>
   <section class="box growth">
     <h2>버스 기록이 쌓이는 중</h2>
@@ -305,16 +315,27 @@ function showTab(i,focus){TABS.forEach(([t,p],k)=>{const on=k===i;$(t).setAttrib
 TABS.forEach(([t],i)=>{$(t).onclick=()=>showTab(i);$(t).onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();showTab((i+1)%TABS.length,true)}}});
 if(location.hash==='#bus')showTab(1);
 
-// 버스: 아직 배우기 전, 모으는 현황만(learning.json bus — build_learning_stats.bus_stats)
+// 버스: 모으는 현황 + 밤 학습(구간 빠르기, bus_pace.mjs)이 배운 노선 · 날마다 채점(learning.json bus — build_learning_stats.bus_stats)
 const BUS_TYPES={trunk:'간선',branch:'지선',circular:'순환',express:'광역',night:'심야'},BUS_DAYS=7;
 function showBus(bus,genDay){
   const days=(bus?.days||[]).filter(x=>x.date<genDay),routes=bus?.routes||[],n=days.length,last=days.at(-1);
   const rows=days.reduce((a,x)=>a+x.rows,0),calls=days.reduce((a,x)=>a+x.calls,0);
-  $('bDelta').textContent=n>=BUS_DAYS?'기록이 다 모였어요 · 오차를 잴 차례예요':`${n}/${BUS_DAYS}일 모았어요`;
-  $('bText').textContent=n?`${md(days[0].date)}부터 ${n}일 동안 버스 위치 ${fmt(rows)}건을 모았어요. 일주일쯤 모이면 지하철처럼 오차부터 재고, 정류장 사이 달리는 시간을 구간마다 배워요.`
+  const pace=bus?.pace,learned=pace?.routes||[],scores=(bus?.scores||[]).filter(x=>x.results?.pace);
+  // 큰 숫자: 지도 볼 때(30초마다) 거리가 1,000초 넘게 매겨진 마지막 날
+  const shown=[...scores].reverse().find(x=>x.results.pace.gap30?.n>=1000);
+  showBusLearning(learned,pace,scores,shown);
+  if(shown){const R=shown.results,m=R.pace.gap30.meanAbs,was=R.recent.gap30.meanAbs,rare=R.pace['gap60+'],rareWas=R.recent['gap60+'];
+    $('bLabel').textContent='버스 위치 오차 · 지도 볼 때 평균';
+    $('bBig').innerHTML=`<b id="bState">${m}</b><span>m</span>`;
+    const el=$('bDelta');el.className='delta '+(m<was?'down':'same');
+    el.textContent=m<was?`▼ 예전 방식(최근 속도, ${was}m)보다 ${was-m}m 줄었어요`:`예전 방식(최근 속도)도 ${was}m · 비슷해요`;
+    $('bText').textContent=`${md(shown.date)} 버스 기록을 화면처럼 다시 그려 보니, 배운 노선 ${shown.trainedRoutes}개에서 지도 볼 때 평균 ${m}m${rare?.n?`, 드물게 받을 때 ${rareWas.meanAbs}m → ${rare.meanAbs}m`:''} 어긋났어요. 노선 · 시간대 · 50m 구간마다 걸린 시간을 매일 새벽 배워요.`;
+  }else if(learned.length)$('bDelta').textContent=`${learned.length}개 노선을 배웠어요 · 채점은 기록이 더 쌓이면`;
+  else $('bDelta').textContent=n>=BUS_DAYS?'기록이 다 모였어요 · 오차를 잴 차례예요':`${n}/${BUS_DAYS}일 모았어요`;
+  if(!shown)$('bText').textContent=n?`${md(days[0].date)}부터 ${n}일 동안 버스 위치 ${fmt(rows)}건을 모았어요. 일주일쯤 모이면 지하철처럼 오차부터 재고, 정류장 사이 달리는 시간을 구간마다 배워요.`
     :'버스 위치를 모으기 시작했어요. 오늘 모은 기록은 내일 새벽 03:10에 여기 나타나요.';
-  const step=n<BUS_DAYS?0:1;
-  $('bSteps').innerHTML='<h3>배우는 순서</h3>'+[['기록 모으기',`${Math.min(n,BUS_DAYS)}/${BUS_DAYS}일`],['오차 재기','모은 뒤'],['구간마다 배우기','그다음']]
+  const step=scores.length?2:learned.length?1:0;
+  $('bSteps').innerHTML='<h3>배우는 순서</h3>'+[['기록 모으기',`${n}일`],['구간마다 배우기',learned.length?`${learned.length}개 노선`:'모은 뒤'],['날마다 채점',scores.length?`${scores.length}일`:'배운 뒤']]
     .map(([t,v],i)=>`<li${i===step?' class="now"':''}>${i+1}. ${t}<b>${v}</b></li>`).join('');
   if(last){$('bDayLabel').textContent=`${md(last.date)} 하루 모은 기록`;$('bToday').textContent=fmt(last.rows);$('bTodaySub').textContent=`${fmt(last.calls)}번 불러서`}
   $('bTotal').textContent=fmt(rows);$('bTotalSub').textContent=`${n}일 · ${fmt(calls)}번 불러서`;
@@ -324,6 +345,19 @@ function showBus(bus,genDay){
     :'<tr><td class="l muted" colspan="5">아직 모은 노선이 없어요.</td></tr>';
   $('bDayTable').innerHTML=days.length?[...days].reverse().map(x=>`<tr><td>${md(x.date)}</td><td>${fmt(x.calls)}</td><td>${fmt(x.rows)}</td><td>${fmt(x.buses)}대</td><td>${x.routes}</td></tr>`).join('')
     :'<tr><td class="muted" colspan="5">아직 없어요.</td></tr>';
+}
+
+function showBusLearning(learned,pace,scores,shown){
+  const km=v=>v==null?'–':`${v}m`;
+  $('bScoreBox').hidden=!scores.length;
+  $('bScoreTable').innerHTML=[...scores].reverse().map(x=>{const R=x.results,g=k=>R[k].gap30,rare=k=>R[k]['gap60+'];
+    const near=g('pace').n?[km(g('none').meanAbs),km(g('recent').meanAbs),`<b>${km(g('pace').meanAbs)}</b>`]:['–','–','–'];
+    return `<tr${x===shown?' class="sep"':''}><td>${md(x.date)}</td><td>${x.trainedRoutes}개</td>${near.map(v=>`<td>${v}</td>`).join('')}<td>${rare('pace').n?`${km(rare('recent').meanAbs)} → <b>${km(rare('pace').meanAbs)}</b>`:'–'}</td></tr>`}).join('');
+  $('bLearnBox').hidden=!learned.length;
+  if(learned.length){
+    $('bLearnNote').textContent=`${pace.days}일 기록으로 ${learned.length}개 노선을 배웠어요. 지도는 이 노선 버스를 그 시간대에 배운 빠르기로 앞질러 그리고, 나머지는 최근 2분 속도로 그려요.`;
+    $('bLearnTable').innerHTML=[...learned].sort((a,b)=>b.hours-a.hours).map(r=>`<tr><td class="l"><span class="dot" style="--c:${esc(r.color||'#888')}"></span>${esc(r.name)}</td><td>${r.hours}시간</td></tr>`).join('');
+  }
 }
 
 fetch('/admin/learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/admin/login.html?next=/admin/learning';throw 0}return r.json()}).then(d=>{
