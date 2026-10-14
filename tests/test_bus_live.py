@@ -283,6 +283,17 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(len(day_routes(ids, 0, 100)), 1)
         self.assertEqual(day_routes([], 0, 9400), [])
 
+    def test_learning_routes_skip_night_routes(self):
+        from server.jobs.bus_samples import is_night_route, sample_routes
+        self.assertTrue(all(is_night_route({"name": n}) for n in ("N30", "N16", "새벽A148", "심야A21")))
+        self.assertFalse(any(is_night_route({"name": n}) for n in ("400", "6411", "N", "남산01", "", None)))
+        routes = {f"1001{i:05d}": {"id": f"1001{i:05d}", "name": f"N{i}" if i % 2 else str(i)} for i in range(20)}
+        proxy = self.proxy(sample_rotate=True, daily_limit=20000, sample_reserve=0)
+        proxy.routes = routes
+        picked = sample_routes(proxy)
+        self.assertEqual(len(picked), 10)
+        self.assertFalse(any(is_night_route(routes[rid]) for rid in picked), "심야 노선은 학습 차례에 안 든다")
+
     def test_background_loop_takes_todays_rotated_routes(self):
         from server.jobs.bus_samples import day_routes
         self.now += 6 * 3600

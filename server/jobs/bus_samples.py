@@ -15,6 +15,12 @@ from server.clock import KST
 CALLS_PER_ROUTE_DAY = 900   # 노선 하나를 05~24시에 약 75초마다
 
 
+def is_night_route(route: dict) -> bool:
+    """심야(N · 심야A) · 새벽 노선: 학습 시간(05~24시)엔 거의 안 다녀 호출이 헛돈다(10-14 N30 · N31 · 새벽A148 0대, 덕배)."""
+    name = str(route.get("name") or "")
+    return name.startswith(("새벽", "심야")) or (name[:1] == "N" and name[1:2].isdigit())
+
+
 def day_routes(route_ids, day: int, budget: int) -> list[str]:
     """그 날(날짜 순번 day)의 학습 노선: 노선 번호의 해시 차례(유형이 섞이게)로 이어서 하루 budget 호출에 맞는 수만큼."""
     order = sorted(route_ids, key=lambda rid: hashlib.sha1(rid.encode()).hexdigest())
@@ -29,7 +35,8 @@ def sample_routes(proxy) -> list:
     config = proxy.config
     if config.sample_rotate:
         day = datetime.fromtimestamp(proxy.clock(), KST).date().toordinal()
-        return day_routes(proxy.routes, day, config.daily_limit - config.sample_reserve) or [None]
+        ids = [rid for rid, route in proxy.routes.items() if not is_night_route(route)]
+        return day_routes(ids, day, config.daily_limit - config.sample_reserve) or [None]
     return [rid for rid in config.sample_routes if rid in proxy.routes] or [None]
 
 
