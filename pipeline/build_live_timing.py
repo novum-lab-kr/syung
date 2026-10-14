@@ -201,7 +201,9 @@ def evaluate(timing: dict, paths: list[str]) -> dict:
     (maplibre_runtime.mjs planTrain: a 도착 record's train leaves zone − 20 s later and is 15 s into
     its run at 출발, so 출발 comes zone − 5 s after 도착; the next 도착 comes the edge's learned run
     (runs), else pace × (run + 30) − zone + 5 s, after 출발), over event-stamped records.
-    mean: the mean error, to tell apart timings whose medians tie at whole seconds."""
+    mean: the mean error, to tell apart timings whose medians tie at whole seconds.
+    p90 · means: 학습 현황 화면용 — 오차가 정수 초라 중앙값은 10-08 부터 늘 5초에 걸려 있었다(4초 이하 45 %, 5초 이하 50 %).
+    평균 · 90 % 는 꼬리(출퇴근에 오래 서는 열차)까지 보여 조금씩 나아지는 게 보인다(덕배 2026-10-15)."""
     errors = defaultdict(list)
     for line, e1, e2, a, b, dt in day_pairs(paths):
         if not (e1["event"] and e2["event"]):
@@ -222,8 +224,11 @@ def evaluate(timing: dict, paths: list[str]) -> dict:
             continue
         errors[kind].append(abs(predicted - dt))
     every = [x for v in errors.values() for x in v]
+    p90 = lambda v: sorted(v)[int(0.9 * len(v))]
     return {"all": round(statistics.median(every), 1) if every else None, "n": len(every),
             "mean": round(statistics.mean(every), 2) if every else None,
+            "p90": p90(every) if every else None,
+            "means": {k: round(statistics.mean(v), 1) for k, v in errors.items()},
             **{k: round(statistics.median(v), 1) for k, v in errors.items()}}
 
 
