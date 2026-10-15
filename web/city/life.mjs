@@ -9,7 +9,8 @@
 // GPU and culled by a sub-grid of each cell. A tree, a lamp or a crossing never moves once placed: the
 // hash of its rounded position decides its look. Every colour, metre and zoom comes from the style pack.
 //
-//   const life = new CityLife({pack}); life.init(gl, maplibregl, map);
+//   const life = new CityLife({pack, exits, deck}); life.init(gl, maplibregl, map);   exits: () => [[lon, lat], …] 지하철 출구(표지가 서는 자리),
+//   deck: (x, y, r) => ((px, py, m) => bool) | null 고가 상판 · 승강장 밑인지(CityViaduct.deckProbe, 출구를 옮길 때 피한다)
 //   life.render(gl, matrix, {now, zoom, pitch, bearing, dark, tone, lampPool, cars, crossings, people, phone, reducedMotion, pixelRatio, bounds, mapOn, moving, sun});
 //   tone: 팩의 modes 항목(모드 설정 city.tone), lampPool: 가로등 빛 웅덩이 배수(모드 설정 city.lampPool, null 이면 그 tone 의 lampPool)
 //   life.animating(); life.dispose(gl);
@@ -28,6 +29,19 @@ const CELL_Z = 14, MINZ = 14.5, RASTER = 4;   // cells are the source's z14 tile
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
 const ROAD = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']);
 const SIDEWALK_TREES = new Set(['primary', 'secondary', 'tertiary']);
+// 지하철 출구 표지(map/platform.mjs ExitPillars)가 건물 · 나무와 겹치지 않게(덕배 2026-10-15): 출구 점이 건물 외곽선 안이나 벽에
+// 붙어 있으면(OSM 출구는 건물 안 입구에 찍힌 게 많다) 가장 가까운 바깥으로 옮기고, 그 둘레엔 나무를 심지 않는다.
+// 표지는 화면 크기라 줌 18 기준으로 잰다: 기둥 한 변 약 4 m(반대각 2.8 m), 장승 양옆 횃불은 가운데서 약 5 m.
+export const EXIT_CLEAR = { wallM: 3, treeM: 7, maxMoveM: 25 };
+// (x, y) 가 blocked(x, y, 여유 m) 면 둘레를 1 m 씩 넓혀 가며(16방향) 처음 비는 곳. 못 찾으면 그대로
+export function clearSpot(x, y, blocked, { wallM = EXIT_CLEAR.wallM, maxMoveM = EXIT_CLEAR.maxMoveM } = {}) {
+  if (!blocked(x, y, wallM)) return [x, y];
+  for (let r = 1; r <= maxMoveM; r++) for (let k = 0; k < 16; k++) {
+    const a = k * Math.PI / 8, px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+    if (!blocked(px, py, wallM)) return [px, py];
+  }
+  return [x, y];
+}
 const PICK = (weights, r) => { let a = 0; for (let i = 0; i < weights.length; i++) { a += weights[i]; if (r < a) return i } return weights.length - 1 };
 
 // ── meshes ──────────────────────────────────────────────────────────────────────────────────────
@@ -312,8 +326,8 @@ void main(){
 
 // ── the layer ───────────────────────────────────────────────────────────────────────────────────
 export class CityLife {
-  constructor({ pack = SEOUL } = {}) {
-    this.pack = pack; this.cells = new Map(); this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
+  constructor({ pack = SEOUL, exits = () => [], deck = () => null } = {}) {
+    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
     this.M = new Float32Array(16);
     this.people = { list: [], poses: new Float32Array(400 * 14), count: 0, max: 400, seq: 0, simT: 0 };   // seq: ids; simT: walked time (s)
   }
@@ -412,6 +426,13 @@ export class CityLife {
     const edgeNear = (x, y, rings, m) => { for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = r[j][0], ay = r[j][1], dx = r[i][0] - ax, dy = r[i][1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < m) return true } return false };
     const inBuilding = (x, y, m) => { const a = BG.get(Math.floor(x / BC) + ',' + Math.floor(y / BC)); if (!a) return false; for (const id of a) { const P = polys[id], b = P.box; if (x < b[0] - m || x > b[2] + m || y < b[1] - m || y > b[3] + m) continue; if (pip(x, y, P.rings) || (m > 0 && edgeNear(x, y, P.rings, m))) return true } return false };
     cell.inBuilding = inBuilding;   // kept on the cell: the viaduct's piers ask it (CityLife.inBuilding)
+    // 지하철 출구: 건물 안 · 벽에 붙은 표지는 가장 가까운 바깥으로(EXIT_CLEAR), 옮긴 자리를 셀에 둔다(CityLife.exitSpot)
+    const exitSpots = new Map(), exitPts = [];
+    for (const [lon, lat] of this.exits() || []) { const [x, y] = toM(lon, lat); if (x < bx0 || x >= bx1 || y < by0 || y >= by1) continue;
+      const deck = this.deck(x, y, EXIT_CLEAR.maxMoveM + EXIT_CLEAR.wallM), q = clearSpot(x, y, deck ? (px, py, m) => inBuilding(px, py, m) || deck(px, py, m) : inBuilding);   // 고가(수로) 상판 · 승강장 밑도 피한다
+      exitSpots.set(lon + ',' + lat, q); exitPts.push(q) }
+    cell.exitSpots = exitSpots;
+    const exitClear = (x, y) => { for (const [ex, ey] of exitPts) if (Math.abs(ex - x) < EXIT_CLEAR.treeM && Math.abs(ey - y) < EXIT_CLEAR.treeM && Math.hypot(ex - x, ey - y) < EXIT_CLEAR.treeM) return false; return true };
     mark('buildings'); yield;
     // water, wood, park grass and lawns: a 4 m mask by scanline fill (even–odd); landuse zones on a 10 m grid
     const NW = Math.ceil((bx1 - bx0) / RASTER) + 1, NH = Math.ceil((by1 - by0) / RASTER) + 1, mask = new Uint8Array(NW * NH);
@@ -446,7 +467,7 @@ export class CityLife {
     const T = P.trees, trees = [], lamps = [], cross = [], walks = [];
     const hsh = (x, y, c) => hashi(Math.round(x * 2), Math.round(y * 2), c);
     const treeAt = (x, y, kind, hMin, hMax, cMin, cMax) => { const r = hsh(x, y, 1), up = hsh(x, y, 2) < T.shapeWeights.upright ? 1 : 0; trees.push(x, y, hMin + (hMax - hMin) * r, cMin + (cMax - cMin) * hsh(x, y, 3), up, PICK(T.weights, hsh(x, y, 4)), hsh(x, y, 5), hsh(x, y, 6) * 6.283, kind) };
-    const okTree = (x, y, self, margin, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail);
+    const okTree = (x, y, self, margin, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
     let n = 0;
     for (const e of edges) {
       if (e.level !== 0) continue; const sp = T.streetSpacingM[e.cls]; if (!sp || e.ramp) continue;
@@ -685,6 +706,10 @@ export class CityLife {
   }
   // Is (x, y) (local metres) inside a building footprint: true / false, or undefined where no cell is ready yet (the
   // viaduct's piers wait for that, so none stands in a building whose tile has not come).
+  // 출구 표지 자리(mercator): 건물을 피해 옮긴 곳. 그 셀이 아직 안 지어졌거나 그 출구를 모르면 null(원래 자리에 그린다)
+  exitSpot(lon, lat) { const [x, y] = toM(lon, lat);
+    for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; const q = c.state === 'ready' && c.exitSpots?.get(lon + ',' + lat); return q ? { x: q[0] * MU + O.x, y: q[1] * MU + O.y } : null }
+    return null }
   inBuilding(x, y) { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }
   animating() { return this._anim }
   dispose(gl) {

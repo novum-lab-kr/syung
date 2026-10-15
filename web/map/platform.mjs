@@ -217,7 +217,7 @@ void main(){
     const gl=this.gl;this.faceTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.faceTex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
     gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
-  render(gl,M,W,H,dpr,solid=false){
+  render(gl,M,W,H,dpr,solid=false,spot=null){   // spot(id, lon, lat): 도시 모드 — 건물 안 · 벽에 붙거나 고가 밑에 찍힌 출구를 옮긴 자리(CityLife.exitSpot, 고가 역 계단이 내려오는 출구는 null = 그대로)
     const {map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document}=this.d,exits=this.d.getExits(),selected=this.d.getSelected();
     const z=map.getZoom();if(z<EXIT_MINZOOM||!Object.keys(exits).length)return;
     if(!this.p)this.init(gl);this.atlas();const jang=this.d.getLook?.()==='jangseung';if(jang)this.faceAtlas();const night=document.documentElement.dataset.theme==='dark';
@@ -234,7 +234,7 @@ void main(){
     const ids=new Set(selected==='all'?Object.keys(exits):stations.filter(s=>s.lines.some(x=>x.name===selected)).map(s=>String(s.id)));
     const items=[];
     for(const id of ids)for(const [lon,lat,ref] of exits[id]||[]){
-      const m=maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=proj(m.x,m.y,0);if(!b||b[0]<-40||b[0]>W+40||b[1]<-60||b[1]>H+40)continue;
+      const m=spot?.(id,lon,lat)||maplibregl.MercatorCoordinate.fromLngLat([lon,lat]),b=proj(m.x,m.y,0);if(!b||b[0]<-40||b[0]>W+40||b[1]<-60||b[1]>H+40)continue;
       const st=stations.find(s=>String(s.id)===id);
       items.push([m,b,String(ref),exitCol.get(lon+','+lat)||hexRGB3(colors[st?.lines[0]?.name]||'#52646a')]);
     }

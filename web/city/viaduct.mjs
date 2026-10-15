@@ -589,6 +589,19 @@ export class CityViaduct {
     }
     return out;
   }
+  // (x, y) 둘레 r m 안의 상판 · 승강장 → (px, py, 여유 m) 가 그 밑인가(로컬 m). 출구 표지를 옮길 때 고가 밑에 숨지 않게(CityLife, 덕배 2026-10-15).
+  // 폭은 화면 px 라 출구 계단과 같은 줌(exits.checkZoom, 18)으로 잰다. 노선이 아직 안 왔으면 null
+  deckProbe(x, y, r) {
+    if (!this.net?.paths) return null;
+    const z = this.V.exits?.checkZoom ?? 18, bp = this.net.bodyPx ? this.net.bodyPx(z) : 26, W = deckWidths(z, bp, this.pack), mpp = MPP(z), segs = [];
+    const near = (b, pad) => !(b[2] < x - r - pad || b[0] > x + r + pad || b[3] < y - r - pad || b[1] > y + r + pad);
+    for (const e of this.edgeList()) { const rows = this.rowsOf(e), half = (W.lane + W.body * .5 + this.V.marginPx + Math.abs(e.eo || 0)) * mpp; if (rows.length < 2 || !near(e.box, half)) continue;
+      for (let i = 1; i < rows.length; i++) { const a = rows[i - 1], b = rows[i]; if (near([Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)], half)) segs.push([[a.x, a.y], [b.x, b.y], half]) } }
+    const plat = platformEdgeM(z, bp, this.pack);
+    for (const [k, rect] of this.net.rects || []) { const g = this.plats.get(k)?.rect === rect ? this.plats.get(k) : this.platGeom(rect); if (!near(g.box, plat)) continue;
+      for (let i = 1; i < g.rows.length; i++) segs.push([[g.rows[i - 1].x, g.rows[i - 1].y], [g.rows[i].x, g.rows[i].y], plat]) }
+    return (px, py, m = 0) => { for (const [a, b, h] of segs) if (pointSegmentDistance([px, py], a, b) < h + m) return true; return false };
+  }
   // does this exit (of station id, at lon/lat) have a stair standing? true / false (none placed, or blocked) / undefined (not laid out yet)
   hasStair(id, lon, lat) {
     let seen = false;
