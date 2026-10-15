@@ -12,6 +12,8 @@ API_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimePosition/0/10
 # One call returns arrival rows for every station on every line (~3k rows); used as the primary
 # source so any number of lines costs one upstream call per CACHE_SECONDS.
 ALL_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimeStationArrival/ALL"
+# 한 역의 도착 행(역 이름으로). ALL 과 같은 행 모양 — 더 빨리 바뀌는지는 jobs/station_probe.py 로 잰다
+STATION_URL = "http://swopenapi.seoul.go.kr/api/subway/{}/json/realtimeStationArrival/0/60/{}"
 
 
 class SeoulSubwaySource:
@@ -26,6 +28,10 @@ class SeoulSubwaySource:
     def fetch_all(self) -> dict:
         """전 노선 역 도착 행(realtimeArrivalList) 한 번."""
         return self._get(ALL_URL.format(urllib.parse.quote(self._key, safe="")), 20)
+
+    def fetch_station(self, name: str) -> dict:
+        """한 역의 도착 행(realtimeArrivalList)."""
+        return self._get(STATION_URL.format(urllib.parse.quote(self._key, safe=""), urllib.parse.quote(name, safe="")), 15)
 
     def fetch_line(self, line: str) -> dict:
         """한 노선의 열차 위치(realtimePositionList)."""

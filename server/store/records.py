@@ -40,3 +40,13 @@ def record_positions(data: dict, directory: Path) -> None:
                 sink.write(json.dumps({**t, "fetchedAt": data["fetchedAt"]}, ensure_ascii=False) + "\n")
     except OSError:
         pass
+
+
+def record_station_probe(record: dict, directory: Path) -> None:
+    """역 하나 도착 vs 전 역(ALL) 한 번(jobs/station_probe.py): 그 KST 날 파일에 한 줄."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / f"{kst_today().replace('-', '')}.jsonl").open("a", encoding="utf-8") as sink:
+            sink.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        pass

@@ -36,6 +36,11 @@ class SubwayConfig:
     position_reserve: int = 200
     position_hours: str = ""
     position_budget: int = 3000
+    # 역 하나 도착 자료(realtimeStationArrival/<역>)가 전 역(ALL)보다 빨리 오는지 재기(jobs/station_probe.py, 2026-10-16 덕배): 비면 끔
+    station_probe: list = field(default_factory=list)
+    station_probe_hours: str = "07:30-09:30"
+    station_probe_seconds: int = 30
+    station_probe_dir: Path = Path("/var/lib/subway-live/station-probe")
     response_seconds: float = 2.0
     quota_file: Path = Path("/var/lib/subway-live/quota.json")
     samples_dir: Path = Path("/var/lib/subway-live/samples")
@@ -66,6 +71,10 @@ class SubwayConfig:
             position_hours=_env("SUBWAY_LIVE_POSITION_HOURS", "").strip(),
             # however many people look at however many lines, the overlay makes at most this many calls a day
             position_budget=max(0, int(_env("SUBWAY_LIVE_POSITION_BUDGET", "3000"))),
+            station_probe=[s.strip() for s in _env("SUBWAY_LIVE_STATION_PROBE", "군자,건대입구,강남").split(",") if s.strip()],
+            station_probe_hours=_env("SUBWAY_LIVE_STATION_PROBE_HOURS", "07:30-09:30").strip(),
+            station_probe_seconds=max(15, int(_env("SUBWAY_LIVE_STATION_PROBE_SECONDS", "30"))),
+            station_probe_dir=Path(_env("SUBWAY_LIVE_STATION_PROBE_DIR", "/var/lib/subway-live/station-probe")),
             # Identical requests within this many seconds get the same bytes
             response_seconds=max(0.0, float(_env("SUBWAY_LIVE_RESPONSE_SECONDS", "2"))),
             quota_file=Path(_env("SUBWAY_LIVE_QUOTA_FILE", "/var/lib/subway-live/quota.json")),

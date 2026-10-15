@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from server.clock import KST, kst_today
 from server.config import SubwayConfig
 from server.sources.seoul_subway import SeoulSubwaySource, check_error
-from server.store.records import record_positions
+from server.store.records import record_positions, record_station_probe
 from server.store.subway_quota import SubwayQuotaFile
 
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
@@ -478,6 +478,26 @@ class SubwayLiveService:
             "quota": self.quota_view(),
             "trains": trains,
         }
+
+    def fetch_station(self, name: str) -> list[dict]:
+        """한 역의 도착 행 한 번(하루 호출 수에 센다; 한도면 RuntimeError) — index_arrivals 와 같은 모양으로."""
+        self._count_call()
+        payload = self.source.fetch_station(name)
+        self.quota_used += 1
+        self._save_quota()
+        check_error(payload)
+        return index_arrivals(payload).get(station_key(name), [])
+
+    def cached_station(self, name: str) -> tuple[str, list[dict]] | None:
+        """지금 들고 있는 전 역(ALL) 자료에서 그 역의 행(받은 때, 행들). 바깥을 부르지 않는다."""
+        with self.lock:
+            if self.all_cache is None:
+                return None
+            data = self.all_cache[1]
+            return data["fetchedAt"], data.get("stations", {}).get(station_key(name), [])
+
+    def save_station_probe(self, record: dict) -> None:
+        record_station_probe(record, self.config.station_probe_dir)
 
     def save_positions(self, data: dict) -> None:
         """event-stamped records: build_live_timing.py learns rush-hour pace from them."""

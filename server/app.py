@@ -12,6 +12,7 @@ from http.server import ThreadingHTTPServer
 from server.config import BusServerConfig, SubwayConfig
 from server.jobs.burst import burst_loop
 from server.jobs.bus_samples import background_loop
+from server.jobs.station_probe import station_probe_loop
 from server.jobs.health import baseline_loop, probe_loop
 from server.jobs.warm_journey import warm_journey
 from server.routes import bus as bus_routes
@@ -37,6 +38,8 @@ def main() -> None:
     threading.Thread(target=baseline_loop, args=(services.health,), daemon=True).start()   # 이상 감지: 평소 기준
     if config.probe_every > 0:
         threading.Thread(target=probe_loop, args=(services.live, config.probe_every), daemon=True).start()   # 이상 감지: 위치 피드 확인
+    if config.station_probe:
+        threading.Thread(target=station_probe_loop, args=(services.live,), daemon=True).start()   # 역 하나 도착 자료가 전 역보다 빠른지 재기
     Server((config.host, config.port), make_handler(services, config.response_seconds)).serve_forever()
 
 
