@@ -129,10 +129,13 @@ export class CoasterRidePlacement {
           parks.push(...(tile.parks||[]));water.push(...(tile.water||[]));
         }
       }
-      g.buildings=buildings;g.tracks=await this.getTracks(g.box);
-      g.parks=parks;g.water=water;
-      const result=selectRideSites(g.candidates,{buildings,tracks:g.tracks,parks,water,relocate:true,inPark:this.inPark});
+      const tracks=await this.getTracks(g.box);
+      const result=selectRideSites(g.candidates,{buildings,tracks,parks,water,relocate:true,inPark:this.inPark});
       g.sites=result.sites;g.omitted=result.omitted;g.state='ready';delete g.error;
+      // 자리를 다 골랐으면 받아 둔 건물 · 공원 · 물 자료는 버린다(한 번 정한 자리는 다시 안 고른다). 들고 있던 때는 롤코를 타고 달리면
+      // 지나는 동네마다 z14 타일(강남 1.4 MB · 구의 0.7 MB)이 쌓여, 아이폰 홈 화면 웹앱이 타고 좀 있다 새로고침됐다(덕배 2026-10-15, 추측 원인).
+      // 옆 동네가 같은 타일을 나중에 쓰면 지도 타일(없으면 받기)에서 다시 읽는다
+      for(const {x,y} of g.tiles)this.tiles.delete(`${TILE_Z}/${x}/${y}`);
       this.sites=this.groups.flatMap(g=>g.sites).sort((a,b)=>a.lon-b.lon||a.lat-b.lat);this.revision++;
       this.count();this.onChange(this.sites);
     }catch(e){g.state='failed';g.error=String(e);g.retryAt=Date.now()+15000;this.count()}

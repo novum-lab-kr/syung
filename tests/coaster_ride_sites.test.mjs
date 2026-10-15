@@ -165,3 +165,14 @@ test('ferris clearance includes the full rotation after different horizontal and
   const z=(.58*1.35+.5*2.4)*s.sz;
   assert.equal(rideIntersectsTracks(s,[{a:[s.x-2*s.mu,s.y,z],b:[s.x+2*s.mu,s.y,z],radius:0}]),true);
 });
+
+test('a settled neighbourhood lets go of the tiles it read (riding across the city kept every one, 2026-10-15)',async()=>{
+  const {CoasterRidePlacement}=await import('../web/modes/coaster/ride_placement.mjs');
+  const s={lon:127.0,lat:37.55,height_m:200,R:20,r:20,mastR:3,top:200,mu:1/(40075016.685578488*Math.cos(37.55*Math.PI/180))};
+  s.x=s.lon/360+.5;s.y=.5-Math.log(Math.tan(Math.PI/4+s.lat*Math.PI/360))/(2*Math.PI);
+  let reads=0;const p=new CoasterRidePlacement([s],{readTile:async()=>{reads++;return {buildings:[],parks:[],water:[]}},getTracks:()=>[]});
+  await p.update([0,0,1,1]);
+  assert.equal(p.groups[0].state,'ready');assert.ok(reads>0);
+  assert.equal(p.tiles.size,0,'받아 둔 타일을 버린다');
+  assert.equal(p.groups[0].buildings,undefined,'동네도 건물 자료를 안 든다');
+});
