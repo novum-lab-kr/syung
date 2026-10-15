@@ -20,6 +20,7 @@ from server.store.subway_quota import SubwayQuotaFile
 
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
 PROBE_RESERVE = 100   # 이상 감지의 위치 피드 확인은 지도 몫(position_reserve)보다 이만큼 더 남았을 때만
+PROBE_SHARE = .5   # 돌아가며 읽기(probe_interval)는 위치 피드 예산의 남은 몫 가운데 이만큼만 자정까지 고르게
 POSITION_PARTIAL_MIN = 9   # 전 역 도착에 이만큼 넘게 있는 노선만 위치 피드가 모자란지 본다(overlay_positions)
 
 LINE_NAMES = {
@@ -551,7 +552,7 @@ class SubwayLiveService:
             self.position_cache[line] = (now, trains)
             return trains
 
-    def overlay_positions(self, body: dict, lines: list[str], focus: str) -> dict:
+    def overlay_positions(self, body: dict, lines: list[str], focus: str, watch: bool = True) -> dict:
         """Replace the all-stations records of trains on the chosen lines with position-feed ones.
 
         Position overlay — off by default (SUBWAY_LIVE_POSITION_LINES=0); until the key's daily quota is
@@ -559,11 +560,15 @@ class SubwayLiveService:
         The per-line position feed is ahead of the all-stations one at 3 of 4 moments, mostly by one
         station; the all-stations feed caught up after a median 38 s at 60 s polling (2·5·6·7·9호선,
         3,158 moments, 2026-09-28–29). With it on, the first N lines a request names (the map sends
-        them most-visible first) and the line of a train being followed (focus=) are read from it too."""
+        them most-visible first) and the line of a train being followed (focus=) are read from it too.
+        watch=False(학습 기록기 sample_live_positions 의 watch=0): 보는 사람이 아니다 — 위치 피드를 부르지도, 보는 노선으로
+        세지도 않고(그 몫은 사람이 보는 노선과 돌아가며 읽기 probe_position 에) 이미 읽어 둔 것만 덧씌운다."""
         position_lines = self.config.position_lines
         names = set(LINE_NAMES.values())
         picks = [focus] if focus in names else []
         picks += [l for l in lines[:position_lines] if l not in picks]
+        if not watch:
+            picks = []
         if not position_lines or not (picks or self.position_cache):
             return body
         trains = list(body.get("trains") or [])
@@ -625,8 +630,17 @@ class SubwayLiveService:
         rows, cached = self.position_checks.get(line), self.position_cache.get(line)
         return max(rows[-1][0] if rows else 0.0, cached[0] if cached else 0.0)
 
+    def probe_interval(self, every: float, now: datetime | None = None) -> float:
+        """돌아가며 읽기(probe_loop)의 간격: every 초, 위치 피드 예산의 남은 몫 가운데 PROBE_SHARE 만으로 자정까지 가게 늘인다
+        (나머지는 사람이 보는 노선 몫 — 오전에 다 쓰지 않게, 2026-10-16 덕배)."""
+        t = now or datetime.now(KST)
+        to_midnight = (t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - t).total_seconds()
+        left = self.config.position_budget - self.position_used["calls"]
+        return max(every, min(MAX_PACE_SECONDS, to_midnight / max(1, left * PROBE_SHARE)))
+
     def probe_position(self, line: str) -> bool:
-        """이상 감지용 위치 피드 한 번(jobs/position_probe): 위치 피드 예산 · 하루 한도 안에서만, 지도의 위치 캐시는 건드리지 않는다."""
+        """돌아가며 읽는 위치 피드 한 번(jobs/health probe_loop): 위치 피드 예산 · 하루 한도 안에서만. 이상 감지(note_position)와
+        학습 기록에 쓰고, 지도의 위치 캐시에도 넣는다 — 그 노선을 보는 사람이 곧 오면 같은 자료를 받는다(따로 부르지 않음)."""
         with self.position_lock:
             if self.position_used["day"] != kst_today():
                 self.position_used.update(day=kst_today(), calls=0)
@@ -640,19 +654,24 @@ class SubwayLiveService:
         except (OSError, ValueError, RuntimeError, urllib.error.URLError):
             return False
         self.save_positions(data)
-        self.note_position(line, time.time(), len(data["trains"]), listed)
+        now = time.time()
+        self.note_position(line, now, len(data["trains"]), listed)
+        with self.position_lock:
+            cached = self.position_cache.get(line)
+            if not cached or cached[0] < now:
+                self.position_cache[line] = (now, data["trains"])
         return True
 
     # ---- 지도가 묻는 것 ----------------------------------------------------------------------
 
-    def snapshot(self, lines: list[str], focused: bool = False, focus: str = "") -> dict:
+    def snapshot(self, lines: list[str], focused: bool = False, focus: str = "", watch: bool = True) -> dict:
         """지도의 /live: 보이는 노선들의 열차. ok=False 면 보여 줄 것이 없다(routes 가 503 으로)."""
         if self.config.source_mode == "all" and lines:
             body = self.snapshot_all(lines)
             if body:
                 if body.get("quiet"):
                     return body
-                body = self.overlay_positions(body, lines, focus)
+                body = self.overlay_positions(body, lines, focus, watch)
                 with self.forward_lock:
                     return {**body, "trains": forward_only(body["trains"], self.forward_seen)}
         now = time.time()

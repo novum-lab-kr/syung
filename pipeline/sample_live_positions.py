@@ -2,7 +2,8 @@
 """Record live train events for calibrating the map's run/dwell timing.
 
 Polls the local subway_live_proxy (which caches the upstream all-lines call for 90 s, so polling
-more often costs no extra quota) and appends every *new* train event — (line, trainNo, station,
+more often costs no extra quota; watch=0 keeps it from counting as a map viewer — it used to make the proxy read
+1·2·3호선's position feed all day, 2026-10-16) and appends every *new* train event — (line, trainNo, station,
 status, receivedAt) — to a JSONL file. Analyse with analyse_live_samples.py.
 
 Usage: sample_live_positions.py [minutes=60] [out=data/live-samples/<timestamp>.jsonl]
@@ -20,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROXY = "http://127.0.0.1:3113/live?lines="
+PROXY = "http://127.0.0.1:3113/live?watch=0&lines="   # watch=0: 보는 사람으로 세지 않는다(위치 피드를 부르지 않고 읽어 둔 것만 받는다, 2026-10-16)
 LINES = ["1호선", "2호선", "3호선", "4호선", "5호선", "6호선", "7호선", "8호선", "9호선", "GTX-A", "경의중앙선",
          "공항철도", "경춘선", "수인분당선", "신분당선", "경강선", "우이신설선", "서해선", "신림선"]
 

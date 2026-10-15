@@ -193,13 +193,13 @@ class AppTest(unittest.TestCase):
                                    (app.burst_loop, (services.live,), True),
                                    (app._bus_samples, (services,), True),
                                    (app.baseline_loop, (services.health,), True),
-                                   (app.probe_loop, (services.live, 60), True)])
+                                   (app.probe_loop, (services.live, 30), True)])
 
     def test_main_without_burst_starts_only_warm_and_bus_threads(self):
         events, threads, services = self.run_main(0)
         self.assertEqual(events, ["load"] + ["thread", "start"] * 4 + ["handler", "server", "serve"])
         self.assertEqual(threads, [(app.warm_journey, (services,), True), (app._bus_samples, (services,), True),
-                                   (app.baseline_loop, (services.health,), True), (app.probe_loop, (services.live, 60), True)])
+                                   (app.baseline_loop, (services.health,), True), (app.probe_loop, (services.live, 30), True)])
 
     def test_main_continues_after_journey_creation_fails_in_warm_thread(self):
         events = []
@@ -360,7 +360,7 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(first[2], second[2])
         self.assertEqual(first[2], json.dumps(self.body, ensure_ascii=False, separators=(",", ":")).encode())
         self.assertEqual(dict(first[1])["Cache-Control"], "no-store")
-        self.services.live.snapshot.assert_called_once_with(["2"], focused=True, focus="9")
+        self.services.live.snapshot.assert_called_once_with(["2"], focused=True, focus="9", watch=True)
 
     def test_live_cache_key_includes_full_query_order(self):
         for path in ("/live?lines=2&focused=1", "/live?focused=1&lines=2", "/live?lines=9"):

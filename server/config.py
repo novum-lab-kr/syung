@@ -45,7 +45,7 @@ class SubwayConfig:
     quota_file: Path = Path("/var/lib/subway-live/quota.json")
     samples_dir: Path = Path("/var/lib/subway-live/samples")
     health_dir: Path = Path("/var/lib/subway-live/health-days")
-    probe_every: int = 60
+    probe_every: int = 30
 
     @classmethod
     def from_env(cls) -> "SubwayConfig":
@@ -81,7 +81,7 @@ class SubwayConfig:
             # 이상 감지(/api/health): subway-sampler 기록 · 하루 요약을 두는 곳, 사람이 안 보는 노선의 위치 피드 확인 간격(0 = 끔)
             samples_dir=Path(_env("SUBWAY_LIVE_SAMPLES_DIR", "/var/lib/subway-live/samples")),
             health_dir=Path(_env("SUBWAY_LIVE_HEALTH_DIR", "/var/lib/subway-live/health-days")),
-            probe_every=max(0, int(_env("SUBWAY_LIVE_PROBE_EVERY", "60"))),
+            probe_every=max(0, int(_env("SUBWAY_LIVE_PROBE_EVERY", "30"))),
         )
 
 

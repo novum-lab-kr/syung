@@ -362,16 +362,39 @@ class LiveServiceTest(unittest.TestCase):
         self.assertIs(service.overlay_positions(body, ["9호선"], "9호선"), body)
         self.assertEqual(service.source.calls, [])
 
+    def test_sampler_never_reads_the_position_feed_but_gets_what_the_rotation_read(self):
+        # 2026-10-16: 학습 기록기가 모든 노선을 1 · 2 · 3호선 순으로 물어 지도로 세였다 — 그 세 노선 위치 피드를 하루 약 3,700번
+        service = self.service(position_lines=3)
+        body = {"ok": True, "trains": [train_row("keep"), train_row("other", line="2호선")]}
+        self.assertEqual(service.overlay_positions(body, ["9호선", "2호선"], "", watch=False)["trains"], body["trains"])
+        self.assertEqual((service.source.calls, service.position_seen), ([], {}), "부르지도 보는 노선으로 세지도 않는다")
+        self.assertTrue(service.probe_position("9호선"))   # 돌아가며 읽기
+        overlaid = service.overlay_positions(body, ["9호선", "2호선"], "", watch=False)
+        self.assertEqual((overlaid["positionLines"], service.source.calls), (["9호선"], ["9호선"]), "읽어 둔 것은 덧씌운다")
+        self.assertEqual(service.overlay_positions(body, ["9호선"], "")["positionLines"], ["9호선"])
+        self.assertEqual(service.source.calls, ["9호선"], "지도를 보는 사람도 돌아가며 읽은 것을 그대로 받는다")
+
+    def test_probe_interval_keeps_half_the_position_budget_for_viewers(self):
+        service = self.service(position_budget=5500)
+        at = lambda h: live.datetime(2026, 10, 10, h, 0, tzinfo=live.KST)
+        self.assertEqual(service.probe_interval(30, at(4)), 30, "새벽: 20시간 / 2,750번 ≈ 26초 → 30초")
+        service.position_used["calls"] = 5000
+        self.assertAlmostEqual(service.probe_interval(30, at(12)), 12 * 3600 / 250)
+        service.position_used["calls"] = 5500
+        self.assertEqual(service.probe_interval(30, at(12)), live.MAX_PACE_SECONDS)
+
     def test_route_parses_lines_and_focus_and_arrivals_takes_precedence(self):
         service = Mock()
         service.snapshot.return_value = {"ok": True}
         self.assertEqual(live_routes.live(service, {"lines": [" 9호선, ,2호선", "6호선"], "focused": ["1"], "focus": [" 9호선 "]}),
                          ({"ok": True}, 200))
-        service.snapshot.assert_called_once_with(["9호선", "2호선", "6호선"], focused=True, focus="9호선")
+        service.snapshot.assert_called_once_with(["9호선", "2호선", "6호선"], focused=True, focus="9호선", watch=True)
+        live_routes.live(service, {"lines": ["9호선"], "watch": ["0"]})
+        self.assertEqual(service.snapshot.call_args.kwargs["watch"], False, "학습 기록기(watch=0)")
         service.snapshot_arrivals.return_value = {"ok": False, "error": "가짜 실패"}
         self.assertEqual(live_routes.live(service, {"lines": ["9호선"], "arrivals": [" 먹골 "]})[1], 503)
         service.snapshot_arrivals.assert_called_once_with("먹골")
-        self.assertEqual(service.snapshot.call_count, 1)
+        self.assertEqual(service.snapshot.call_count, 2)
 
 
 if __name__ == "__main__":
