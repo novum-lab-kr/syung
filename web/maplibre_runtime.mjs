@@ -576,11 +576,11 @@ map.on('load',()=>{
   busLayer=createBusLayer({map,phone:PHONE,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat(),onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
     sheetUI.following=null;sheetUI.followBus=null;sheetUI.sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
     return next=>{if(sheetUI.sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
-  },onRouteSelect:leg=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
+  },onRouteSelect:(leg,{fit}={})=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
-    if(leg)showRoute({legs:[leg]},true,busLayer?.selection?.kind!=='bus');   // 버스를 눌렀으면 노선 전체로 멀어지지 않고 그 버스를 따라간다
+    if(leg)showRoute({legs:[leg]},true,fit??busLayer?.selection?.kind!=='bus');   // 버스를 눌렀거나 정류장에서 곧 올 버스를 따라가면(fit:false) 노선 전체로 멀어지지 않는다
     else if(journeyMap.busRouteFocus){journeyMap.displayedRoute=null;journeyMap.busRouteFocus=false;journeyMap.routeBounds=null;map.getSource('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
-  },onFollow:id=>{if(id)followBusStart(id,{zoom:17});else sheetUI.followBus=null},   // 정류장 시트: 같은 번호를 두 번째 누르면 곧 올 버스를 따라간다
+  },onFollow:id=>{if(id)followBusStart(id,{zoom:17});else sheetUI.followBus=null},followedBus:()=>sheetUI.followBus,sheetPad,   // 정류장 시트: 같은 번호를 두 번째 누르면 곧 올 버스를 따라간다
   onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM});   // 출구 번호판

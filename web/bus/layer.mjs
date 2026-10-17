@@ -266,13 +266,13 @@ export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
-    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}}) {
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0}) {   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
     this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
     this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
-    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;
-    this.routeStep=0;this.stopFollow=null;   // 정류장 시트에서 같은 번호를 누른 차례(1 노선 · 2 곧 올 버스 따라가기 · 3 다시 노선) · 따라가는 버스
+    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;this.followedBus=followedBus;this.sheetPad=sheetPad;
+    this.stopView=null;this.stopFollow=null;this.stopCamera=null;   // 정류장 시트에서 고른 번호: 'follow'(곧 올 버스 따라가기) | 'route'(노선 전체) · 그 버스 · 번호를 누르기 전 카메라([정류장으로])
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
     this.selectedRoute = null; this.selection = null; this.updateDetail = null; this.mode = 'unavailable'; this.status = '';
@@ -304,23 +304,14 @@ class BusLayer {
     };
     this.inspect = () => this.inspectNearby();
     this.routeClick = event => {
-      const button=event.target.closest?.('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh]');if(!button)return;
+      const button=event.target.closest?.('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh], .bus-detail [data-bus-stop-view]');if(!button)return;
       if(button.dataset.busRefresh!==undefined){this.refreshArrivals();return;}
+      if(button.dataset.busStopView!==undefined){this.stopViewAction(button.dataset.busStopView);return;}
       const id=button.dataset.busRoute;if(!this.data?.routeById.has(id))return;
-      // 정류장 시트에서 같은 번호를 누를 때마다: 노선 전체 → 이 정류장에 곧 올 버스 따라가기(확대) → 다시 노선 전체 → 선택 해제(2026-10-12 덕배)
-      const step=this.selectedRoute!==id?1:this.selection?.kind==='stop'?this.routeStep+1:4;
-      this.stopFollow=null;this.journeyLegs=[];this.journeyIds=[];this.followNote('');
-      if(step===2){
-        this.stopFollow=this.approachingBus(this.data.routeById.get(id),this.selection.id);
-        // 곧 올 버스가 없으면(아직 못 받음 · 다 지나감) 노선은 그대로 두고 잠깐 알린 뒤, 다음 클릭은 선택 해제(2026-10-12 덕배)
-        this.routeStep=this.stopFollow?2:3;this.followNote(this.stopFollow?'':'곧 올 버스 위치가 아직 없어요.');
-        this.refreshDetail();this.draw();this.onFollow(this.stopFollow);
-      }else{
-        this.routeStep=step<4?step:0;this.selectedRoute=step<4?id:null;
-        this.onFollow(null);this.refreshView();this.refreshDetail();
-        this.onRouteSelect(this.selectedLeg());
-      }
-      document.querySelector(`.bus-detail [data-bus-route="${id}"]`)?.focus({preventScroll:true});
+      this.journeyLegs=[];this.journeyIds=[];
+      if(this.selection?.kind==='stop'){this.stopRoute(id);return;}
+      // 정류장 밖(노선 시트 등): 누르면 그 노선, 같은 번호 다시 누르면 해제
+      this.selectedRoute=this.selectedRoute===id?null:id;this.onFollow(null);this.refreshView();this.refreshDetail();this.onRouteSelect(this.selectedLeg());
     };
     this.stopNote='';
     this.followNote=text=>{clearTimeout(this.stopNoteTimer);this.stopNote=text;if(text)this.stopNoteTimer=setTimeout(()=>{this.stopNote='';this.refreshDetail();},3000);};
@@ -778,7 +769,7 @@ class BusLayer {
   }
 
   select(selection, routeId) {
-    this.routeStep=routeId?1:0;this.stopFollow=null;this.followNote?.('');
+    this.stopView=null;this.stopFollow=null;this.stopCamera=null;this.followNote?.('');
     if(routeId){this.journeyLegs=[];this.journeyIds=[];}   // 노선 · 버스를 고르면 그 노선이 여정 표시를 대신한다. 정류장만 누르면 길찾기 버스 구간은 남는다
     this.selection = selection; this.selectedRoute = routeId;
     this.stopArrivals();
@@ -792,7 +783,7 @@ class BusLayer {
   clearSelection({journey=false}={}) {
     if (!this.selection&&!this.selectedRoute&&!(journey&&this.journeyLegs.length)) return;
     if (document.activeElement?.closest?.('.bus-detail')) this.restoreFocus?.focus({preventScroll: true});
-    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.routeStep=0;this.stopFollow=null;this.followNote?.('');
+    this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopView=null;this.stopFollow=null;this.stopCamera=null;this.followNote?.('');
     if(journey){this.journeyLegs=[];this.journeyIds=[];}
     this.stopArrivals();
     if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
@@ -805,6 +796,42 @@ class BusLayer {
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
+  followChanged() { if (this.selection?.kind === 'stop') this.refreshDetail(); }   // 카메라가 따라가기를 시작 · 멈춤(끌기 · 버스 사라짐)
+  // 정류장 시트에서 번호를 누르면(2026-10-17 덕배 · Codex 상의): 숨은 단계 없이 곧 올 버스를 바로 따라가고, 그다음은 이름 있는 버튼으로만
+  // ([노선 전체] · [버스 따라가기] · [정류장으로]). 같은 번호를 다시 눌러도 꺼지지 않는다(곧 올 버스를 다시 찾아 따라간다).
+  stopRoute(id) {
+    if (!this.stopCamera && this.map.getCenter) { const m = this.map; this.stopCamera = {center: m.getCenter(), zoom: m.getZoom(), bearing: m.getBearing?.() ?? 0, pitch: m.getPitch?.() ?? 0}; }
+    const changed = this.selectedRoute !== id; this.selectedRoute = id;
+    this.stopFollow = this.approachingBus(this.data.routeById.get(id), this.selection.id);
+    this.stopView = this.stopFollow ? 'follow' : 'route';   // 곧 올 버스 위치가 없으면 노선 전체로(시트에 계속 알림)
+    if (changed) this.refreshView();
+    this.onRouteSelect(this.selectedLeg(), {fit: !this.stopFollow});   // 따라갈 버스가 있으면 노선 전체로 멀어졌다 오지 않는다
+    this.onFollow(this.stopFollow); this.refreshDetail(); this.draw();
+    document.querySelector('.bus-detail .bus-follow button')?.focus({preventScroll: true});
+  }
+  stopViewAction(what) {
+    if (!this.selectedRoute || this.selection?.kind !== 'stop') return;
+    if (what === 'follow') { this.stopRoute(this.selectedRoute); return; }
+    if (what === 'route') { this.stopView = 'route'; this.onFollow(null); this.onRouteSelect(this.selectedLeg(), {fit: true}); this.refreshDetail(); return; }
+    // 정류장으로: 번호 선택을 놓고 그 정류장이 시트 위 지도에 보이게(누르기 전 카메라의 방향 · 기울기, 줌은 16~18 — 멀리서 눌렀어도 정류장이 보이게, Codex 검토)
+    const cam = this.stopCamera, stop = this.data.stopById.get(this.selection.id); this.selectedRoute = null; this.stopFollow = null; this.stopView = null; this.stopCamera = null;
+    this.onFollow(null); this.refreshView(); this.onRouteSelect(null); this.refreshDetail(); this.draw();
+    if (stop) this.map.easeTo?.({center: [stop.lng, stop.lat], zoom: Math.min(18, Math.max(16, cam?.zoom ?? 16.5)), bearing: cam?.bearing ?? 0, pitch: cam?.pitch ?? 0,
+      padding: {top: 0, bottom: this.sheetPad(), left: 0, right: 0}, duration: 600});
+    document.querySelector('.bus-detail h3')?.focus({preventScroll: true});
+  }
+  // 정류장 시트 위쪽: 고른 번호의 지금 상태와 다음에 할 수 있는 것(접힌 시트에서도 보이게 맨 위)
+  followLine(rowOf, badge) {
+    const route = this.selectedRoute && this.data?.routeById.get(this.selectedRoute); if (!route || !this.stopView) return '';
+    const following = !!this.stopFollow && this.followedBus() === this.stopFollow, arr = rowOf(route.id);
+    const state = !this.stopFollow ? '곧 올 버스 위치를 아직 확인할 수 없어요'
+      : following ? '따라가는 중' : this.stopView === 'follow' ? '따라가기 멈춤' : '노선 전체';
+    const btn = (what, label, aria) => `<button type="button" data-bus-stop-view="${what}"${aria ? ` aria-label="${text(aria)}"` : ''}>${label}</button>`;
+    const paused = !following && this.stopView === 'follow' && !!this.stopFollow;   // 멈춘 뒤에도 노선 전체로 바로(Codex 검토)
+    const buttons = [following ? btn('route', '노선 전체') : btn('follow', paused ? '다시 따라가기' : '버스 따라가기', `${route.name}번 곧 올 버스 따라가기`), ...(paused ? [btn('route', '노선 전체')] : []), btn('stop', '정류장으로')];
+    return `<div class="bus-follow${following ? '' : ' is-off'}"><p class="bus-follow-state" role="status">${following ? '<span class="bus-follow-dot" aria-hidden="true"></span>' : ''}` +
+      `${badge(route)}<span class="bus-follow-text"><b>${text(state)}</b>${arr ? `<span>${arr}</span>` : ''}</span></p><div class="bus-follow-actions">${buttons.join('')}</div></div>`;
+  }
 
   // 정류장 도착 정보: 정류장 하나 = 서버 호출 1번(같은 정류장은 서버가 20초 동안 함께 쓴다)
   async loadArrivals(fresh = false) {
@@ -928,12 +955,15 @@ class BusLayer {
         : first?.etaAt ? `${where ? `<span class="bus-away">${text(where)}</span>` : ''}<span class="bus-eta" data-eta="${Math.round(first.etaAt)}">${countdownText((first.etaAt - Date.now()) / 1000)}</span>`
         : `<span class="bus-away">${text(parts.when)}</span>`;
       const inner = `${badge(route)}<span class="bus-row-dir"><span>${text(row?.direction ? `${row.direction} 방면` : typeName(route))}</span>${tag ? `<span class="bus-tag">${tag}</span>` : ''}</span><span class="bus-row-time">${time}</span>`;
-      return live ? `<button type="button" class="bus-row" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${inner}</button>` : `<div class="bus-row">${inner}</div>`;
+      return live ? `<button type="button" class="bus-row" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${inner}<span class="bus-sr">, 곧 올 버스 따라가기</span></button>` : `<div class="bus-row">${inner}</div>`;
     };
     const endedLine = ended.length ? `<div class="bus-ended"><span>운행 종료</span>${ended.map(({route, live}) => live
       ? `<button type="button" data-bus-route="${text(route.id)}" aria-pressed="${route.id === this.selectedRoute}">${text(route.name)}</button>` : `<span>${text(route.name)}</span>`).join('')}</div>` : '';
     const refresh = stop.arsId ? `<button type="button" class="bus-refresh${this.arrivalController ? ' is-loading' : ''}" data-bus-refresh aria-label="도착 정보 새로 받기${clock ? ` · ${clock} 기준` : ''}"><span>${clock}</span>${REFRESH_ICON}</button>` : '';
-    return `<div class="bus-stop"><div class="bus-stop-head"><div class="bus-stop-title">${stop.arsId ? `<span class="bus-stop-no">${BUS_ICON}${text(stop.arsId)}</span>` : ''}<h3 tabindex="-1">${text(stop.name)}</h3></div>${refresh}</div>` +
+    // 고른 번호의 상태 칸(맨 위): 그 노선의 첫 버스 도착 · 방면
+    const pickedLine = this.followLine(id => { const r = rows.get(id), first = r?.buses?.[0];
+      return [r?.direction ? `${r.direction} 방면` : '', isSoon(r) ? '곧 도착' : first ? arrivalParts(first).when : ''].filter(Boolean).map(text).join(' · ') }, badge);
+    return `<div class="bus-stop"><div class="bus-stop-head"><div class="bus-stop-title">${stop.arsId ? `<span class="bus-stop-no">${BUS_ICON}${text(stop.arsId)}</span>` : ''}<h3 tabindex="-1">${text(stop.name)}</h3></div>${refresh}</div>${pickedLine}` +
       `${note ? `<p class="bus-detail-note">${note}</p>` : ''}${this.stopNote ? `<p class="bus-detail-note" role="status">${this.stopNote}</p>` : ''}${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
       `${hero}<div class="bus-rows">${list.map(row).join('')}</div>${endedLine}</div>`;
   }

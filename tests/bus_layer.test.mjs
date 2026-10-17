@@ -478,7 +478,7 @@ test('정류장에서 고른 노선은 노선 전체가 보이게 멀리 빼도 
   assert.equal(layer.active(), true);
   layer.refreshView();
   assert.deepEqual(layer.requested, [route.id]);
-  for (let i = 0; i < 2; i++) layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});   // 곧 올 버스 없음(알림) · 해제
+  layer.routeClick({target: {closest: () => ({dataset: {busStopView: 'stop'}})}});   // [정류장으로]
   assert.equal(layer.active(), false, '고른 노선이 없으면 멀리서는 받지 않는다');
 }, false));
 
@@ -584,29 +584,33 @@ test('조선 청사초롱: 줌 18 위로는 지도와 같이 커진다(growFrom)
   assert.deepEqual(at(20,18).posts[0].rgb,[.25,.29,.30],'tint 없으면 기본 색');
 });
 
-test('정류장 시트에서 같은 번호를 누를 때마다: 노선 → 곧 올 버스 따라가기 → 다시 노선 → 해제 (덕배 2026-10-12)', () => withLayerFixture(layer => {
+test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라가고, 그다음은 이름 있는 버튼으로만 (덕배 · Codex 2026-10-17)', () => withLayerFixture(layer => {
   const r = layer.data.routeById.get(route.id), path = layer.geometry(r), at = path.stops.find(s => s.stop.id === '01').distance;
-  const follows = [], legs = [], click = () => layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
-  layer.onFollow = id => follows.push(id); layer.onRouteSelect = leg => legs.push(leg?.routeId ?? null);
+  let followed = null;
+  const follows = [], legs = [], tap = () => layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
+  const press = what => layer.routeClick({target: {closest: () => ({dataset: {busStopView: what}})}});
+  const panel = () => layer.detailHTML().match(/<div class="bus-follow[^]*?<\/div><\/div>/)?.[0] || '';
+  layer.onFollow = id => { follows.push(id); followed = id }; layer.followedBus = () => followed;
+  layer.onRouteSelect = (leg, {fit} = {}) => legs.push([leg?.routeId ?? null, fit]);
   layer.select({kind: 'stop', id: '01'}, null);
-  click();
-  assert.equal(layer.selectedRoute, route.id); assert.equal(legs.at(-1), route.id);
   const bus = (id, d, stale = false) => layer.fleet.set(id, {route: r, path, stale, row: {id}, motion: {from: d, to: d, startedAt: 0, duration: 0}});
   bus('passed', at + 200); bus('far', at - 900); bus('near', at - 120); bus('old', at - 30, true);
-  const shown = legs.length;
-  click();
+  tap();
   assert.equal(layer.stopFollow, 'near', '지나친 버스 · 위치가 오래된 버스는 빼고 정류장 앞 가장 가까운 버스');
-  assert.equal(follows.at(-1), 'near'); assert.equal(layer.selection.kind, 'stop', '정류장 시트는 그대로');
-  assert.equal(legs.length, shown, '따라가기에서는 노선 전체로 멀어지지 않는다');
-  click();
-  assert.equal(layer.stopFollow, null); assert.equal(follows.at(-1), null); assert.equal(legs.at(-1), route.id, '다시 노선 전체');
-  click();
-  assert.equal(layer.selectedRoute, null); assert.equal(legs.at(-1), null, '선택 해제');
-  click();
-  assert.equal(layer.selectedRoute, route.id, '다시 처음부터');
-  layer.fleet.clear(); click();
-  assert.equal(layer.stopFollow, null); assert.equal(follows.at(-1), null);
-  assert.match(layer.stopNote, /곧 올 버스 위치가 아직 없어요/, '곧 올 버스가 없으면 알린다');
-  click();
-  assert.equal(layer.selectedRoute, null, '알린 다음 클릭은 선택 해제'); assert.equal(layer.stopNote, '');
+  assert.deepEqual([follows.at(-1), legs.at(-1)], ['near', [route.id, false]], '한 번에 따라가기, 노선 전체로 멀어지지 않는다');
+  assert.equal(layer.selection.kind, 'stop', '정류장 시트는 그대로');
+  assert.match(panel(), /따라가는 중[^]*노선 전체[^]*정류장으로/);
+  tap();
+  assert.deepEqual([layer.selectedRoute, follows.at(-1)], [route.id, 'near'], '같은 번호를 다시 눌러도 꺼지지 않는다');
+  press('route');
+  assert.deepEqual([follows.at(-1), legs.at(-1), layer.stopView], [null, [route.id, true], 'route'], '[노선 전체]');
+  assert.match(panel(), /노선 전체[^]*버스 따라가기[^]*정류장으로/);
+  press('follow'); assert.equal(follows.at(-1), 'near', '[버스 따라가기]');
+  followed = null; assert.match(panel(), /따라가기 멈춤[^]*다시 따라가기[^]*노선 전체[^]*정류장으로/, '지도를 끌어 멈추면: 노선 전체로도 바로');
+  press('stop');
+  assert.deepEqual([layer.selectedRoute, layer.stopFollow, follows.at(-1), legs.at(-1)[0]], [null, null, null, null], '[정류장으로]: 선택을 놓는다');
+  assert.equal(panel(), '');
+  layer.fleet.clear(); tap();
+  assert.deepEqual([layer.stopFollow, layer.stopView, legs.at(-1)], [null, 'route', [route.id, true]], '곧 올 버스가 없으면 노선 전체로');
+  assert.match(panel(), /곧 올 버스 위치를 아직 확인할 수 없어요[^]*버스 따라가기/, '없다는 걸 계속 알린다');
 }, false));
