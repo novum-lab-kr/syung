@@ -233,6 +233,9 @@ function buildStationFeatures(){
 const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then(d=>{d=d||{};shapes=d.edges||(d.stops?{}:d);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();coasterMotion.clear();coasterGeo.reset();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
+// 롤코 1인칭 발열(덕배 2026-10-17): 휴대폰은 탈 때만 그리는 배율 1.5(점 수 약 44 % 줄임). 비교: 주소에 #ridepx=2(배율 그대로).
+// (탄 열차가 역에 서 있을 때는 이미 거의 안 그린다 — 맥 측정 0 fps — 그래서 따로 묶지 않는다)
+const RIDE_PX=(m=>m?+m[1]:PHONE?1.5:0)(location.hash.match(/ridepx=([\d.]+)/));
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 // Animation redraws (trains, my-location pulse) are capped: each one redraws the whole 3D map,
 // and at the display's 60–120 Hz that kept phones hot. Panning and zooming still render at full rate.
@@ -483,7 +486,7 @@ const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLo
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
 // 지도를 끌거나 확대하면 · '내리기' · Esc · 롤코 끄기로 내려서 타기 전 카메라로 돌아가요.
-const rider=createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup:plan=>showTrainPopup(plan),applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState:plan=>riderState(plan),trainLngLat,
+const rider=createCoasterRide({map,maplibregl,RIDE_PX,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup:plan=>showTrainPopup(plan),applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState:plan=>riderState(plan),trainLngLat,
   stopFollowing:()=>{sheetUI.easing=false;sheetUI.following=null},isCoaster:canRide,getSheetTrain:()=>sheetUI.sheetTrain,getSleeperM:()=>SLEEPER_M});
 const {riding,rideRows,startRide,stopRide,rideFrame,rideBar}=rider;
 animFrame.push(rideFrame);
@@ -494,7 +497,7 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
   animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(rider.ride)cam.push(performance.now()-t)};
   const ms=a=>a.length?Math.max(...a).toFixed(0):'-',avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):'-';
   setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;
-    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x ${innerWidth}×${innerHeight}${cityBuildings?(i=>`\n건물 지음 ${i.built}개 · 짓기 ${(i.buildMs/1000).toFixed(1)} s · 들고 있는 것 ${i.ready}타일 ${(i.bytes/1e6).toFixed(0)} MB · 미리 짓기 ${prebuildWant()?'켬':'끔'}`)(cityBuildings.info()):''}`;   // (짓기: Worker 에 맡긴 때부터 받을 때까지의 합 — 발열 비교용, 덕배 2026-10-12)
+    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x(그림 ${map.getPixelRatio()}x) ${innerWidth}×${innerHeight}${cityBuildings?(i=>`\n건물 지음 ${i.built}개 · 짓기 ${(i.buildMs/1000).toFixed(1)} s · 들고 있는 것 ${i.ready}타일 ${(i.bytes/1e6).toFixed(0)} MB · 미리 짓기 ${prebuildWant()?'켬':'끔'}`)(cityBuildings.info()):''}`;   // (짓기: Worker 에 맡긴 때부터 받을 때까지의 합 — 발열 비교용, 덕배 2026-10-12)
     iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 

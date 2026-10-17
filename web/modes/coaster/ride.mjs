@@ -4,7 +4,7 @@
 // 프레임 순서(planner.setFrame → rideFrame → 그리기) · 내리기 줄(rideBar) 붙이기 · 이벤트 연결은 본체가 한다.
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatLabel} from './first_person.mjs';
 import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mjs';
-export function createCoasterRide({map,maplibregl,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM}){
+export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM}){
   let ride=null,rideSeat={car:1,row:1,side:-1};
   const riding=plan=>ride&&ride.id===plan.id?ride.snap:null;   // 탄 열차는 늘 카메라를 놓은 순간에 그려요(느린 프레임에도 카메라와 어긋나지 않게)
   const rideRows=plan=>{const unit=1/(512*2**RIDE_ZOOM),body=coasterBodyPx(RIDE_ZOOM),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits(),n=plan.cars;
@@ -24,6 +24,7 @@ export function createCoasterRide({map,maplibregl,planner,colors,cityViaduct,she
     const back={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),elevation:map.getCenterElevation(),maxPitch:map.getMaxPitch(),fov:map.getVerticalFieldOfView(),clamp:map.getCenterClampedToGround()};
     closeSheet();map.stop();stopFollowing();
     ride={id,seat:{...rideSeat},snap:null,seen:performance.now(),back};
+    back.px=map.getPixelRatio();if(RIDE_PX&&RIDE_PX<back.px)map.setPixelRatio(RIDE_PX);   // 발열: 탈 때만 그리는 배율을 낮춘다(내리면 되돌림, 2026-10-17 덕배)
     map.setMaxPitch(180);map.setCenterClampedToGround(false);map.setVerticalFieldOfView(rideFov(map.getContainer().clientWidth,map.getContainer().clientHeight));   // 루프에서는 위를 보고 뒤집혀요
     const S=COASTER_STYLE.sky[effectiveTheme()==='dark'?'dark':'light'];back.sky=map.getSky();   // 수평선 위: 지도 바탕 대신 하늘
     map.setSky({'sky-color':S.sky,'horizon-color':S.horizon,'fog-color':S.horizon,'sky-horizon-blend':.45,'horizon-fog-blend':.7,'fog-ground-blend':.9,'atmosphere-blend':0});
@@ -34,7 +35,7 @@ export function createCoasterRide({map,maplibregl,planner,colors,cityViaduct,she
   }
   function stopRide(reopen){
     if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');applyTheme();
-    map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky);
+    map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky);if(map.getPixelRatio()!==r.back.px)map.setPixelRatio(r.back.px);
     const plan=planner.plans.find(p=>p.id===r.id);
     map.jumpTo({center:plan?trainLngLat(plan):r.back.center,zoom:r.back.zoom,bearing:r.back.bearing,pitch:r.back.pitch,roll:0,elevation:r.back.elevation});
     map.setMaxPitch(r.back.maxPitch);map.setCenterClampedToGround(r.back.clamp);
