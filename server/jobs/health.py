@@ -17,6 +17,9 @@ from server.services.live import LINE_NAMES, POSITION_PARTIAL_MIN
 
 PROBE_FRESH = 300
 BLOCK_READS = 20   # 한 노선을 이어 읽는 횟수(30초 간격이면 약 10분)
+# 고정 채점 창: 탑승 확인이 있는 7호선 · 서울교통공사 대표 2호선 · 다른 운영사(급행) 9호선, 출근 · 평시 · 퇴근 30분씩(하루 약 540번)
+EVAL_LINES = ("7호선", "2호선", "9호선")
+EVAL_WINDOWS = ((8 * 60, 8 * 60 + 30), (13 * 60, 13 * 60 + 30), (18 * 60, 18 * 60 + 30))   # KST 분 [시작, 끝)
 
 
 def baseline_loop(health, sleep=time.sleep) -> None:
@@ -42,13 +45,26 @@ def next_probe(live, now: float) -> str | None:
     return min(stale)[1] if stale else None
 
 
-def probe_loop(live, every: int, sleep=time.sleep, clock=time.time) -> None:
+def in_eval(t: datetime) -> bool:
+    """고정 채점 창(KST)인가."""
+    m = t.hour * 60 + t.minute
+    return any(a <= m < b for a, b in EVAL_WINDOWS)
+
+
+def probe_loop(live, every: int, sleep=time.sleep, clock=time.time, kst_now=lambda: datetime.now(KST)) -> None:
     """한 노선을 BLOCK_READS 번 이어 읽고(간격 probe_interval) 다음 노선으로. 노선마다 한 번씩 띄엄띄엄(약 7분에 한 번) 읽으면
-    열차의 다음 사건을 놓쳐 학습 · 채점에 못 쓴다(2026-10-18 덕배: 학습 오차가 커 보였다) — 같은 호출 수로 이어진 자료를 만든다."""
+    열차의 다음 사건을 놓쳐 학습 · 채점에 못 쓴다(2026-10-18 덕배: 학습 오차가 커 보였다) — 같은 호출 수로 이어진 자료를 만든다.
+    고정 채점 창(EVAL_WINDOWS)에는 EVAL_LINES 를 every 초마다 모두 읽는다: 날마다 같은 노선 · 같은 시간의 화면 재현 점수
+    (pipeline/replay_score.mjs)가 오픈 판단 숫자다(2026-10-19 덕배 · Codex 상의)."""
     line, left = None, 0
     while True:
-        sleep(live.probe_interval(every))
+        evaluating = in_eval(kst_now())
+        sleep(every if evaluating else live.probe_interval(every))
         try:
+            if evaluating:
+                for name in EVAL_LINES:
+                    live.probe_position(name)
+                continue
             if not left:
                 line, left = next_probe(live, clock()), BLOCK_READS
             if line and live.probe_position(line):

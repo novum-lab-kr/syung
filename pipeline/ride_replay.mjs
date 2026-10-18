@@ -9,22 +9,12 @@
 // 근사(2026-10-12): 선로 길이는 역 사이 직선, 열차끼리 겹침 피하기(spaceTrains) · 롤코 · timeWarp 는 없다,
 // 자료가 지도에 닿는 때는 샘플러가 처음 본 때(30초마다라 실제 화면보다 0~30초 늦을 수 있다 — 서는 시각은 기록 시각 기준이라 거의 영향 없음).
 import fs from 'node:fs';
-import zlib from 'node:zlib';
-import readline from 'node:readline';
-import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mjs';
-import {catchup,catchupAt} from '../web/lib/train_catchup.mjs';
-import {createTrainPlanner} from '../web/trains/plan.mjs';
+import {readSamples,replayMap,key,hms,stampMs,LIVE} from './map_replay.mjs';
 
-const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const LIVE='/var/lib/subway-live';
 const arg=(name,def)=>{const i=process.argv.indexOf(`--${name}`);return i>0?process.argv[i+1]:def};
 const day=arg('day');if(!/^\d{8}$/.test(day||'')){console.error('--day YYYYMMDD 가 필요해요');process.exit(2)}
 const ymd=`${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6)}`;
 const kst=hm=>Date.parse(`${ymd}T${hm.length===5?hm+':00':hm}+09:00`);
-const hms=ms=>ms==null?'—':new Date(ms+9*3600e3).toISOString().slice(11,19);
-const stampMs=v=>{const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]):NaN};
 
 // ---------- 탑승 기록(디버깅 페이지) ----------
 let ride=null;
@@ -47,31 +37,7 @@ const taps=ride?.taps||[];
 const from=arg('from')?kst(arg('from')):taps.length?taps[0].t-10*60e3:NaN,to=arg('to')?kst(arg('to')):taps.length?taps.at(-1).t+5*60e3:NaN;
 if(!(from<to)){console.error('--from · --to(KST HH:MM) 이 필요해요(탑승 기록이 있으면 저절로)');process.exit(2)}
 
-// ---------- 역 · 선로(지도와 같은 자료) ----------
-const html=fs.readFileSync(path.join(ROOT,'web/index.html'),'utf8');
-const json=id=>JSON.parse(html.match(new RegExp(`<script[^>]*id="${id}"[^>]*>([\\s\\S]*?)</script>`))[1]);
-const stations=json('stationData').map(s=>NEW_NAMES[s.name]?{...s,name:NEW_NAMES[s.name]}:s),paths=json('linePaths');
-const {stationByLine,route,learnDirections}=createRouter({stations,paths});
-const LAT0=37.55,M_LON=111320*Math.cos(LAT0*Math.PI/180),M_LAT=110540;
-const merc=s=>({x:s.lon*M_LON,y:-s.lat*M_LAT,meterInMercatorCoordinateUnits:()=>1});   // 1 단위 = 1 m
-const byId=new Map(stations.map(s=>[s.id,s]));
-const geom=(_line,a,b)=>{const A=merc(byId.get(a)),B=merc(byId.get(b));return {total:Math.hypot(B.x-A.x,B.y-A.y)}};
-
-// ---------- 원자료(샘플러가 /live 에서 본 사건) ----------
-async function readSamples(){
-  const base=path.join(LIVE,'samples',day),file=fs.existsSync(base+'.jsonl')?base+'.jsonl':base+'.jsonl.gz';
-  let stream=fs.createReadStream(file);if(file.endsWith('.gz'))stream=stream.pipe(zlib.createGunzip());
-  const out=[],needle=`"${line}"`;
-  for await(const row of readline.createInterface({input:stream,crlfDelay:Infinity})){
-    if(!row.includes(needle))continue;
-    let e;try{e=JSON.parse(row)}catch{continue}
-    if(e.line!==line)continue;
-    const seen=Date.parse(e.fetchedAt);if(!(seen>=from-20*60e3&&seen<=to))continue;
-    out.push({...e,seen});
-  }
-  return out.sort((a,b)=>a.seen-b.seen);
-}
-const records=await readSamples();
+const records=await readSamples(day,line,from,to);
 if(!records.length){console.error(`${ymd} ${line} 원자료가 없어요`);process.exit(1)}
 
 // 열차 고르기: --train, 탑승 기록의 번호, 아니면 누른 역 · 시각에 원자료 사건이 가장 많이 맞는 열차
@@ -96,74 +62,13 @@ if(trains[0]==='all')trains=[...new Set(records.filter(r=>r.seen>=from).map(r=>r
 const summaryOnly=arg('train')==='all';
 if(!trains.length){console.error('--train 이 필요해요');process.exit(2)}
 
-// ---------- 지도 예측을 가짜 시계로 다시 돌리기 ----------
-let NOW=from-20*60e3;const T0=NOW;
-Date.now=()=>NOW;
-Object.defineProperty(globalThis,'performance',{value:{now:()=>NOW-T0},configurable:true});
-const files={'./live-timing.json':arg('timing',path.join(LIVE,'live-timing.json')),'./edge_times.json':path.join(ROOT,'data/ktdb-gtfs-2025/edge_times.json')};
-globalThis.fetch=async url=>{const f=files[url];return f&&fs.existsSync(f)?{ok:true,json:async()=>JSON.parse(fs.readFileSync(f,'utf8'))}:{ok:false,json:async()=>null}};
-let current=[];
-const smooth=x=>x*x*(3-2*x);
-// 본체 rawPose 와 같은 계산(롤코 · timeWarp 빼고)
-function rawPose(p){
-  let el=planner.age(p.t.receivedAt)+p.lead,ph=p.phases[p.phases.length-1];
-  for(const x of p.phases){if(el<x.dur){ph=x;break}el-=x.dur}
-  const u=ph.dur===Infinity?1:Math.min(1,el/ph.dur),e=ph.ease==='both'||ph.ease===true?smooth(u):ph.ease==='in'?u*u:ph.ease==='out'?1-(1-u)*(1-u):u,k=ph.k0+(ph.k1-ph.k0)*e;
-  const i=Math.max(0,p.seq.indexOf(ph.from)),len=(p.cum[i+1]??p.cum[i])-p.cum[i];
-  const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
-  if(p.hold!=null){
-    let at=p.hold,creeping=false;
-    if(p.creep){const w=(planner.clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
-    if(dist<p.hold)return {dist:at,moving:creeping,held:true};
-    if(creeping&&at<dist)p.glide={c:catchup(dist-at),at:planner.clock()};
-    p.hold=null;p.creep=null;
-  }
-  if(p.glide){const g=catchupAt(p.glide.c,(planner.clock()-p.glide.at)/1000);if(!g.done)return {dist:Math.max(0,dist-g.left),moving:true};p.glide=null}
-  return {dist,moving};
-}
-const rawPoseFree=p=>{const {hold,creep,glide}=p;p.hold=null;p.creep=null;p.glide=null;const d=rawPose(p).dist;Object.assign(p,{hold,creep,glide});return d};
-const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom:geom,geom,trainPose:rawPose,
-  mercStop:(_l,s)=>merc(s),catchup,catchupAt,predictStops:()=>3,isRide:()=>false,getTrains:()=>current});
-await new Promise(r=>setTimeout(r,50));   // live-timing · edge_times 읽기
-
-// 서버 forward_only(server/services/live.py)와 같게: 옛날 기록은 버리고 같은 역 · 같은 상태면 처음 시각. 2026-10-13 전의 샘플에는 이것이 없었다.
+// ---------- 지도 예측을 가짜 시계로 다시 돌리기(map_replay) ----------
 // --raw 면 샘플 그대로(고치기 전 서버)
 const RAW=process.argv.includes('--raw');
-function forwardOnly(prev,r){
-  if(!prev||prev.direction!==r.direction||stampMs(r.receivedAt)-stampMs(prev.receivedAt)<=-600e3)return r;
-  if(prev.station===r.station&&prev.status===r.status)return {...r,receivedAt:prev.receivedAt};
-  return stampMs(r.receivedAt)<stampMs(prev.receivedAt)?prev:r;
-}
-// 열차마다 지금 기록(샘플러는 바뀐 것만 적는다) → 20초마다 지도가 받는 목록
-const latest=new Map(),want=new Set(trains);
-const log=new Map(trains.map(n=>[n,{stops:[],state:null}]));
-const STEP=250,POLL=20e3,AT_STATION_M=30;
-let ri=0,nextPoll=NOW;
-for(;NOW<=to;NOW+=STEP){
-  while(ri<records.length&&records[ri].seen<=NOW){const r=records[ri++];latest.set(r.trainNo,RAW?r:forwardOnly(latest.get(r.trainNo),r))}
-  if(NOW>=nextPoll){
-    nextPoll=NOW+POLL;
-    current=[...latest.values()].filter(t=>planner.age(t.receivedAt)<=600);
-    learnDirections(current);
-    const before=new Map(planner.plans.map(p=>[p.id,{t:p.t,held:p.hold!=null}]));
-    planner.replacePlans(current.filter(t=>want.has(t.trainNo)).map(planner.planTrain).filter(Boolean));
-    if(process.env.DEBUG)for(const p of planner.plans){const b=before.get(p.id);if(p.hold!=null&&b&&!b.held&&NOW>=from)
-      console.log(`${hms(NOW)} ${p.t.trainNo} 멈춤: ${b.t.station} ${b.t.status} ${String(b.t.receivedAt).slice(11)} → ${p.t.station} ${p.t.status} ${String(p.t.receivedAt).slice(11)}, 앞섬 ${Math.round(p.hold-p.creep?.from||0)}m 중 화면 ${Math.round((p.creep?.from??p.hold)-rawPoseFree(p))}m 앞`)}
-  }
-  if(NOW<from)continue;
-  for(const p of planner.plans){
-    const L=log.get(p.t.trainNo);if(!L)continue;
-    const pose=rawPose(p);
-    let at=null;for(let i=0;i<p.seq.length;i++)if(Math.abs(p.cum[i]-pose.dist)<AT_STATION_M){at=p.seq[i];break}
-    const state=pose.moving?'달림':at?`정차:${at.name}`:'선로 위 멈춤';
-    if(state!==L.state){
-      const prev=L.stops.at(-1);
-      if(prev&&!prev.leave)prev.leave=NOW;
-      if(!pose.moving)L.stops.push({where:at?at.name:'(역 사이)',stop:NOW,held:!!pose.held,record:`${p.t.station} ${p.t.status} ${String(p.t.receivedAt).slice(11)}`});
-      L.state=state;
-    }
-  }
-}
+const rawPoseFree=(rawPose,p)=>{const {hold,creep,glide}=p;p.hold=null;p.creep=null;p.glide=null;const d=rawPose(p).dist;Object.assign(p,{hold,creep,glide});return d};
+const onPoll=process.env.DEBUG?(planner,NOW,before,rawPose)=>{for(const p of planner.plans){const b=before.get(p.id);if(p.hold!=null&&b&&!b.held&&NOW>=from)
+  console.log(`${hms(NOW)} ${p.t.trainNo} 멈춤: ${b.t.station} ${b.t.status} ${String(b.t.receivedAt).slice(11)} → ${p.t.station} ${p.t.status} ${String(p.t.receivedAt).slice(11)}, 앞섬 ${Math.round(p.hold-p.creep?.from||0)}m 중 화면 ${Math.round((p.creep?.from??p.hold)-rawPoseFree(rawPose,p))}m 앞`)}}:null;
+const log=await replayMap({from,to,records,trains,timingPath:arg('timing',`${LIVE}/live-timing.json`),raw:RAW,onPoll});
 
 // ---------- 표 ----------
 const feedAt=(n,st,status)=>{const r=records.find(r=>r.trainNo===n&&key(r.station)===key(st)&&r.status===status);return r?{stamp:stampMs(r.receivedAt),seen:r.seen}:null};

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from server.clock import KST
 from server.config import SubwayConfig
-from server.jobs.health import BLOCK_READS, next_probe, probe_loop
+from server.jobs.health import BLOCK_READS, EVAL_LINES, next_probe, probe_loop
 from server.routes.http import GET_JSON
 from server.services import health as health_module
 from server.services.health import LINES, HealthService, day_kind
@@ -190,10 +190,33 @@ class HealthTest(unittest.TestCase):
             if len(read) >= n: raise Stop
         from unittest.mock import patch
         with patch("server.jobs.health.next_probe", lambda live, now: next(picks)), self.assertRaises(Stop):
-            probe_loop(Live(), 30, sleep=sleep, clock=lambda: 0)
+            probe_loop(Live(), 30, sleep=sleep, clock=lambda: 0, kst_now=lambda: datetime(2026, 10, 19, 11, 0, tzinfo=KST))
         self.assertEqual(read[:BLOCK_READS], ["7호선"] * BLOCK_READS)
         self.assertEqual(read[BLOCK_READS:2 * BLOCK_READS], ["2호선"] * BLOCK_READS)
         self.assertEqual(read[2 * BLOCK_READS], "9호선", "읽을 노선이 없으면(None) 다음 차례에 다시 고른다")
+
+
+    def test_eval_window_reads_the_fixed_lines_every_tick_and_keeps_the_block(self):
+        read, sleeps, clock = [], [], iter([datetime(2026, 10, 19, 7, 59, tzinfo=KST)] + [datetime(2026, 10, 19, 8, 0, tzinfo=KST)] * 2 + [datetime(2026, 10, 19, 8, 30, tzinfo=KST)] * 9)
+
+        class Live:
+            all_cache = (0, {"lines": {}})
+            def probe_interval(self, every): return 45
+            def probe_position(self, line):
+                read.append(line)
+                return True
+
+        class Stop(Exception):
+            pass
+
+        def sleep(s):
+            sleeps.append(s)
+            if len(sleeps) > 5: raise Stop
+        from unittest.mock import patch
+        with patch("server.jobs.health.next_probe", lambda live, now: "5호선"), self.assertRaises(Stop):
+            probe_loop(Live(), 30, sleep=sleep, clock=lambda: 0, kst_now=lambda: next(clock))
+        self.assertEqual(read, ["5호선", *EVAL_LINES, *EVAL_LINES, "5호선", "5호선"], "창 안에서는 고정 노선을 모두, 끝나면 하던 블록을 잇는다")
+        self.assertEqual(sleeps[:4], [45, 30, 30, 45], "창 안에서는 예산 늘이기 없이 30초")
 
 
 if __name__ == "__main__":

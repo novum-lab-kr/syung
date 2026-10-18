@@ -54,6 +54,7 @@ h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
 .hero .big span{font-size:24px}
 .delta{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700}
 .delta.down{background:var(--good-soft);color:var(--good)}
+.open td.ok,.open b.ok{color:var(--good)}.open td.no,.open b.no{color:var(--mid)}.open td.ok,.open td.no{font-weight:700;font-variant-numeric:tabular-nums}
 .delta.up{background:var(--mid-soft);color:var(--mid)}
 .delta.same{background:var(--low-soft);color:var(--low)}
 .hero p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--secondary)}
@@ -147,9 +148,17 @@ tr.sep td{border-top:1.5px solid var(--rule)}
     <button type="button" role="tab" id="tabBus" aria-controls="panelBus" aria-selected="false" tabindex="-1">버스</button>
   </div>
   <div class="panel" id="panelSubway" role="tabpanel" aria-labelledby="tabSubway">
-  <section class="box hero" aria-label="지금 정확도">
+  <section class="box open" aria-label="오픈 기준">
+    <h2>오픈 기준 · 지도 화면 다시 그리기</h2>
+    <p class="muted" id="openText" style="margin:0 0 12px;font-size:13.5px;line-height:1.6">불러오는 중</p>
+    <div class="tw"><table class="wide"><thead><tr><th>노선</th><th>시간</th><th>열차</th><th>도착 치우침</th><th>도착 가운데 · 90%</th><th>출발 치우침</th><th>출발 가운데 · 90%</th><th>역 사이 멈춤</th><th>맞춘 사건</th></tr></thead><tbody id="openTable"></tbody></table></div>
+    <p class="note">날마다 7 · 2 · 9호선을 출근 · 평시 · 퇴근 30분씩 그날 쓰던 학습 값으로 다시 그려, 위치 자료가 나중에 알려 준 열차 자신의 도착 · 출발 시각과 견줘요(초, + 는 슝이 늦음).
+    <b class="ok">초록</b>은 기준 안(치우침 ±10초 · 가운데 15초 · 90% 30초 · 역 사이 10초 넘는 멈춤 0), <b class="no">노랑</b>은 기준 밖. 위치 자료의 '도착'은 실제로 서는 때보다 조금 이를 수 있어 치우침은 실제 탑승 비교로 함께 봐요.</p>
+  </section>
+
+  <section class="box hero" aria-label="학습 값 채점">
     <div>
-      <small>지도의 예측 오차 · 평균</small>
+      <small>학습 값 채점 · 다음 사건까지 예측 오차 평균 (오픈 기준 아님)</small>
       <div class="big"><b id="err">–</b><span>초</span></div>
       <span class="delta same" id="delta">불러오는 중</span>
       <p id="heroText"></p>
@@ -360,8 +369,26 @@ function showBusLearning(learned,pace,scores,shown){
   }
 }
 
+// 오픈 기준(learning.json replay — retrain 이 replay_score.mjs 로 매긴 화면 재현 점수, 2026-10-19 덕배 · Codex 상의)
+function showOpen(rp){
+  const days=rp?.days||[],last=days.at(-1),C=rp?.criteria||{absMedian:15,p90:30,bias:10,stalls:0};
+  if(!last){$('openText').textContent='아직 다시 그린 날이 없어요. 고정 채점 창은 10/19 부터 모아요 — 다음 날 새벽 03:10 학습 때 처음 매겨요.';$('openTable').innerHTML='';return}
+  const day=`${last.day.slice(0,4)}-${last.day.slice(4,6)}-${last.day.slice(6)}`,ws=last.windows.filter(w=>w.events);
+  const cell=(v,ok,txt)=>v==null?'<td>—</td>':`<td class="${ok?'ok':'no'}">${txt}</td>`;
+  const sign=v=>(v>0?'+':'')+v+'초';
+  const row=w=>{const a=w.arrive||{},b=w.depart||{},st=w.stalls||{};
+    return `<tr><td>${esc(w.line)}</td><td>${esc(w.window)}</td><td>${w.trains??'—'}</td>`+
+      cell(a.signedMedian,Math.abs(a.signedMedian)<=C.bias,sign(a.signedMedian))+cell(a.absMedian,a.absMedian<=C.absMedian&&a.p90<=C.p90,`${a.absMedian} · ${a.p90}초`)+
+      cell(b.signedMedian,Math.abs(b.signedMedian)<=C.bias,sign(b.signedMedian))+cell(b.absMedian,b.absMedian<=C.absMedian&&b.p90<=C.p90,`${b.absMedian} · ${b.p90}초`)+
+      cell(st.n,st.n<=C.stalls,`${st.n}번 · 열차·시간당 ${st.perTrainHour}`)+`<td>${w.coverage!=null?Math.round(w.coverage*100)+'%':'—'}</td></tr>`};
+  $('openTable').innerHTML=ws.map(row).join('')||'<tr><td colspan="9" class="muted">그날 위치 자료가 없어요</td></tr>';
+  const pass=ws.filter(w=>Math.abs(w.arrive?.signedMedian)<=C.bias&&w.arrive?.absMedian<=C.absMedian&&w.arrive?.p90<=C.p90&&Math.abs(w.depart?.signedMedian)<=C.bias&&w.depart?.absMedian<=C.absMedian&&w.depart?.p90<=C.p90&&w.stalls?.n<=C.stalls).length;
+  $('openText').textContent=`${md(day)} 화면을 다시 그려 봤어요: ${ws.length}개 창 가운데 ${pass}개가 기준을 다 넘었어요.`+(days.length>1?` (${days.length}일치 기록)`:'');
+}
+
 fetch('/admin/learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/admin/login.html?next=/admin/learning';throw 0}return r.json()}).then(d=>{
   const hist=d.history||[],genDay=(d.generatedAt||'').slice(0,10);
+  showOpen(d.replay);
   showBus(d.bus,genDay);
   const days=(d.days||[]).filter(x=>x.date<genDay);   // the stats are built at 03:10: the new day has barely begun
   // 오차는 정수 초라 중앙값은 10-08 부터 늘 5초에 붙어 있었다: 큰 숫자 · 그래프는 평균(작은 개선 · 출퇴근 꼬리까지 보인다), 중앙값 · 90 % 는 곁에

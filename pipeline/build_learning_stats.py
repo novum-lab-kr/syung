@@ -170,6 +170,15 @@ def backfill(d: date, have: set[date]) -> dict | None:
             "result": "backfill", "lines": brief(final["lines"]), "n": final.get("n"), "train_files": len(train)}
 
 
+def replay_scores(keep: int = 28) -> dict:
+    """화면 재현 점수(retrain 이 replay_score.mjs 로 남긴 replay-scores.json): 날짜별 창마다 — 학습 현황 맨 위 '오픈 기준'.
+    기준(2026-10-19 Codex 초안): 도착 · 출발 |오차| 가운데 ≤ 15초 · 90 % ≤ 30초 · 치우침 ±10초, 역 사이 10초 넘는 멈춤 0."""
+    path = STATE / "replay-scores.json"
+    scores = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {"criteria": {"absMedian": 15, "p90": 30, "bias": 10, "stalls": 0},
+            "days": [{"day": d, "windows": scores[d]} for d in sorted(scores)[-keep:]]}
+
+
 def main(web: Path) -> None:
     days_cache = json.loads(DAYS_CACHE.read_text(encoding="utf-8")) if DAYS_CACHE.exists() else {}
     history = json.loads(HISTORY_CACHE.read_text(encoding="utf-8")) if HISTORY_CACHE.exists() else {}
@@ -210,6 +219,7 @@ def main(web: Path) -> None:
            "latest": {"lines": brief(latest.get("lines") or {}), "default": latest.get("default"), "n": latest.get("n"),
                       "stations": stations, "stands": station_stands(learned_from),
                       "names": {str(a): names[a] for ids in stations.values() for a in ids if a in names}},
+           "replay": replay_scores(),
            "bus": bus_stats()}
     target = web / "admin" / "learning.json"   # 관리 페이지와 같은 폴더: Caddy 가 /admin/* 을 주인만 보여 준다
     target.parent.mkdir(exist_ok=True)

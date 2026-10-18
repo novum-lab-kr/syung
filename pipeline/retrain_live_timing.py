@@ -34,6 +34,7 @@ from sample_files import compress_old, day_files  # noqa: E402
 STATE = Path("/var/lib/subway-live")
 TIMING = STATE / "live-timing.json"
 LOG = STATE / "retrain.log"
+REPLAY_SCORES = STATE / "replay-scores.json"   # 화면 재현 점수 {YYYYMMDD: [창마다]}
 DAYS, SLACK = WINDOW, 0.5
 KINDS = ("도착→출발", "출발→다음 도착", "도착→다음 도착")
 
@@ -48,6 +49,23 @@ def no_worse(candidate: dict, current: dict) -> bool:
 
 def files(day: datetime) -> list[str]:
     return [str(p) for p in day_files(day.date(), STATE)]
+
+
+def replay_score(day: datetime) -> None:
+    """화면 재현 점수(pipeline/replay_score.mjs, 오픈 판단 숫자 — 2026-10-19 덕배 · Codex): 그날 고정 채점 창을 그날 쓰던 학습 값으로
+    다시 그려 피드 사건과 견준 것을 REPLAY_SCORES 에 날짜별로 둔다. 실패해도 학습은 계속한다."""
+    ymd = day.strftime("%Y%m%d")
+    try:
+        node = shutil.which("node") or "/usr/bin/node"
+        done = subprocess.run([node, str(Path(__file__).with_name("replay_score.mjs")), "--day", ymd, "--timing", str(TIMING), "--json"],
+                              capture_output=True, text=True, timeout=1200)
+        result = json.loads(done.stdout)
+        scores = json.loads(REPLAY_SCORES.read_text(encoding="utf-8")) if REPLAY_SCORES.exists() else {}
+        scores[ymd] = result["windows"]
+        REPLAY_SCORES.write_text(json.dumps(scores, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"replay score {ymd}: {len(result['windows'])} windows")
+    except Exception as e:  # noqa: BLE001
+        print(f"replay score failed: {type(e).__name__}: {str(e)[:200]}")
 
 
 def publish(timing: dict, web: Path) -> None:
@@ -66,6 +84,7 @@ def main() -> None:
     except OSError as e:
         packed = [f"failed: {e}"]
     holdout = files(today - timedelta(days=1))
+    replay_score(today - timedelta(days=1))   # 새 학습 값을 올리기 전에: 어제 화면을 어제 쓰던 학습 값으로
     train = [f for d in range(2, DAYS + 2) for f in files(today - timedelta(days=d))]
     entry = {"at": today.isoformat(timespec="seconds"), "holdout": [Path(f).name for f in holdout], "train_files": len(train),
              "compressed": packed}
