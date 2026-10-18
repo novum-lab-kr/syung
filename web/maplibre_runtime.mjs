@@ -392,9 +392,9 @@ function rawPose(p){
     // ahead of fresh data: run on to the station it was heading for and wait at the platform there
     // (standing still between stations looked broken), then go on once the prediction catches up
     let at=p.hold,creeping=false;
-    if(p.creep){const w=(clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
-    if(dist<p.hold)return {dist:at,moving:creeping};
-    if(creeping&&at<dist)p.glide={c:catchup((dist-at)/mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),at:clock()};
+    if(p.creep){const w=(clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(p.creep.linear?w:1-(1-w)*(1-w));creeping=true}else p.creep=null}
+    if(dist<p.hold)return dist>at?{dist,moving}:{dist:at,moving:creeping};   // 느리게 가는 중에 예측이 앞지르면 예측을 탄다(replacePlans CREEP_MPS)
+    if(creeping&&at<dist&&!p.creep.linear)p.glide={c:catchup((dist-at)/mercStop(p.t.line,p.seq[0]).meterInMercatorCoordinateUnits()),at:clock()};
     p.hold=null;p.creep=null;
   }
   // 따라잡는 중: 예측보다 남은 차이(m)만큼 뒤에 그려요. 차이는 원래 주행 위에 더한 속도(상한 CATCHUP_MPS)로 줄어요.

@@ -76,9 +76,9 @@ export async function replayMap({from,to,records,trains,timingPath=path.join(LIV
       const dist=p.cum[i]+len*(ph.from===ph.to?0:k),moving=ph.k0!==ph.k1;
       if(p.hold!=null){
         let at=p.hold,creeping=false;
-        if(p.creep){const w=(planner.clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(1-(1-w)*(1-w));creeping=true}else p.creep=null}
-        if(dist<p.hold)return {dist:at,moving:creeping,held:true};
-        if(creeping&&at<dist)p.glide={c:catchup(dist-at),at:planner.clock()};
+        if(p.creep){const w=(planner.clock()-p.creep.at)/p.creep.ms;if(w<1){at=p.creep.from+(p.hold-p.creep.from)*(p.creep.linear?w:1-(1-w)*(1-w));creeping=true}else p.creep=null}
+        if(dist<p.hold)return dist>at?{dist,moving,held:true}:{dist:at,moving:creeping,held:true};
+        if(creeping&&at<dist&&!p.creep.linear)p.glide={c:catchup(dist-at),at:planner.clock()};
         p.hold=null;p.creep=null;
       }
       if(p.glide){const g=catchupAt(p.glide.c,(planner.clock()-p.glide.at)/1000);if(!g.done)return {dist:Math.max(0,dist-g.left),moving:true};p.glide=null}

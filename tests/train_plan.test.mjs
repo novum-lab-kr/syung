@@ -104,7 +104,7 @@ test('rebuild · clear · plans: 현재 배열 참조를 그대로 읽고 교체
   assert.equal(second[0].t,b);
 });
 
-test('replacePlans: 새 자료가 뒤로 가면 hold로 부드럽게 선다',async t=>{
+test('replacePlans: 새 자료가 뒤로 가면 역 사이에서 서지 않고 다음 역까지 느리게(4 m/s) 간다',async t=>{
   const {planner,poses}=await setup(t);
   const old=planner.planTrain(record()),next=planner.planTrain(record());
   poses.set(old,1200);poses.set(next,1100);
@@ -113,9 +113,11 @@ test('replacePlans: 새 자료가 뒤로 가면 hold로 부드럽게 선다',asy
   planner.replacePlans(array);
   assert.equal(planner.plans,array,'넘겨받은 배열을 복사하지 않는다');
   assert.equal(planner.plans[0],next);
-  assert.equal(next.hold,1240,'다음 역까지 가지 않고 기존 자리에서 40 m 안에 선다');
+  const station=next.cum.find(c=>c>=1200);
+  assert.equal(next.hold,station,'다음 역 승강장이 끝(역 사이 멈춤이 열차 한 시간에 3 ~ 8번이었다, 2026-10-19)');
   assert.equal(next.creep.from,1200);
-  assert.equal(next.creep.ms,4000);
+  assert.equal(next.creep.ms,Math.max(2000,(station-1200)/4*1000),'4 m/s 로');
+  assert.equal(next.creep.linear,true);
   assert.ok(Number.isFinite(next.creep.at));
   assert.equal(next.glide,undefined);
   assert.equal(old.hold,undefined,'옛 계획에는 보정을 쓰지 않는다');
