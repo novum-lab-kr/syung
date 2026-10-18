@@ -4,7 +4,7 @@
 - probe_loop: 노선을 돌아가며 위치 피드를 읽는다(2026-10-16 덕배: 학습용 읽기와 지도용 읽기를 한 줄로). 읽은 것은 전 역 도착과
   견주고(지도를 보는 사람이 없어도 위치 피드가 모자란 노선 — 7호선 2026-10-12), 학습 기록에 남고, 지도의 위치 캐시에도 들어가
   그 노선을 보는 사람에게 그대로 간다. 지금 도착 정보에 열차가 있는 노선 가운데 가장 오래 안 읽은 것, PROBE_FRESH 초 안에
-  누군가 읽은 노선은 건너뛴다. 간격은 probe_every 초에서 위치 피드 예산의 남은 몫 절반으로 자정까지 가게 늘인다(probe_interval) —
+  누군가 읽은 노선은 건너뛴다. 고른 노선은 BLOCK_READS 번 이어 읽는다(이어진 자료라야 학습에 쓴다, 2026-10-18). 간격은 probe_every 초에서 위치 피드 예산의 남은 몫 절반으로 자정까지 가게 늘인다(probe_interval) —
   나머지 절반은 사람이 보는 노선 몫.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ from server.clock import KST
 from server.services.live import LINE_NAMES, POSITION_PARTIAL_MIN
 
 PROBE_FRESH = 300
+BLOCK_READS = 20   # 한 노선을 이어 읽는 횟수(30초 간격이면 약 10분)
 
 
 def baseline_loop(health, sleep=time.sleep) -> None:
@@ -41,11 +42,19 @@ def next_probe(live, now: float) -> str | None:
     return min(stale)[1] if stale else None
 
 
-def probe_loop(live, every: int, sleep=time.sleep) -> None:
+def probe_loop(live, every: int, sleep=time.sleep, clock=time.time) -> None:
+    """한 노선을 BLOCK_READS 번 이어 읽고(간격 probe_interval) 다음 노선으로. 노선마다 한 번씩 띄엄띄엄(약 7분에 한 번) 읽으면
+    열차의 다음 사건을 놓쳐 학습 · 채점에 못 쓴다(2026-10-18 덕배: 학습 오차가 커 보였다) — 같은 호출 수로 이어진 자료를 만든다."""
+    line, left = None, 0
     while True:
         sleep(live.probe_interval(every))
         try:
-            if (line := next_probe(live, time.time())):
-                live.probe_position(line)
+            if not left:
+                line, left = next_probe(live, clock()), BLOCK_READS
+            if line and live.probe_position(line):
+                left -= 1
+            else:
+                left = 0   # 읽을 노선이 없거나 못 읽었으면(예산 · 한도 · 조용한 시간) 다음에 다시 고른다
         except Exception as e:  # noqa: BLE001 — 지도 요청은 계속된다
+            left = 0
             print(f"position probe failed: {type(e).__name__}", flush=True)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from server.clock import KST
 from server.config import SubwayConfig
-from server.jobs.health import next_probe
+from server.jobs.health import BLOCK_READS, next_probe, probe_loop
 from server.routes.http import GET_JSON
 from server.services import health as health_module
 from server.services.health import LINES, HealthService, day_kind
@@ -169,6 +169,31 @@ class HealthTest(unittest.TestCase):
         self.assertTrue(self.live.probe_position("7호선"))
         self.assertEqual(self.source.calls, ["7호선"])
         self.assertEqual(self.live.position_checks["7호선"][-1][1:], (1, 50))
+
+
+    def test_probe_loop_reads_one_line_in_a_block_then_moves_on(self):
+        # 2026-10-18: 노선마다 약 7분에 한 번씩 띄엄띄엄 읽으면 다음 사건을 놓친다 — 한 노선을 이어 읽고 다음 노선으로
+        picks, read, fail = iter(["7호선", "2호선", None, "9호선"]), [], set()
+
+        class Live:
+            all_cache = (0, {"lines": {}})
+            def probe_interval(self, every): return every
+            def probe_position(self, line):
+                read.append(line)
+                return line not in fail
+
+        class Stop(Exception):
+            pass
+
+        n = BLOCK_READS * 2 + 3
+        def sleep(_):
+            if len(read) >= n: raise Stop
+        from unittest.mock import patch
+        with patch("server.jobs.health.next_probe", lambda live, now: next(picks)), self.assertRaises(Stop):
+            probe_loop(Live(), 30, sleep=sleep, clock=lambda: 0)
+        self.assertEqual(read[:BLOCK_READS], ["7호선"] * BLOCK_READS)
+        self.assertEqual(read[BLOCK_READS:2 * BLOCK_READS], ["2호선"] * BLOCK_READS)
+        self.assertEqual(read[2 * BLOCK_READS], "9호선", "읽을 노선이 없으면(None) 다음 차례에 다시 고른다")
 
 
 if __name__ == "__main__":

@@ -46,7 +46,9 @@ from __future__ import annotations
 import json
 import statistics
 import sys
+from bisect import bisect_left
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -76,16 +78,34 @@ def rush(stamp: str) -> bool:
     return any(a <= m < b for a, b in RUSH)
 
 
+READ_GAP = 120   # 위치 피드: 앞 읽기와 이만큼(초) 안이어야 이어 본 것(pairs)
+
+
+class Trains(dict):
+    """load() 의 결과: 열차마다 기록 + 노선마다 위치 피드를 읽은 때(reads, 초)."""
+    reads: dict
+
+
+def read_at(fetched) -> float | None:
+    try:
+        return datetime.fromisoformat(fetched).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 def load(paths: list[str]) -> dict:
     """(source, line, trainNo) → that train's records, first sightings in time order, each marked
     event (own event time) or not (a snapshot stamp)."""
-    records, shared = [], Counter()
+    records, shared, reads = [], Counter(), defaultdict(set)
     for p in paths:
         position = Path(p).parent.name == "position"
         for row in lines(p):   # .jsonl or .jsonl.gz
             e = json.loads(row)
             e["source"] = "position" if position else "all"
             if position:
+                e["read"] = read_at(e.get("fetchedAt"))
+                if e["read"] is not None:
+                    reads[e["line"]].add(e["read"])
                 e["fetchedAt"] = f"position:{e.get('fetchedAt')}:{e['trainNo']}"   # never shared: event stamps
             if e.get("receivedAt") and e.get("status") in ("진입", "도착", "출발"):
                 records.append(e)
@@ -95,7 +115,8 @@ def load(paths: list[str]) -> dict:
     for e in records:
         e["event"] = shared[(e["fetchedAt"], e["line"], e["direction"], e.get("stampedAt") or e["receivedAt"])] < 3
         trains[(e["source"], e["line"], e["trainNo"])].setdefault((e["receivedAt"], e["station"], e["status"]), e)
-    out = {}
+    out = Trains()
+    out.reads = {line: sorted(v) for line, v in reads.items()}
     for k, evs in trains.items():
         seq = sorted(evs.values(), key=lambda e: e["receivedAt"])
         # the same station and status seen again later (every snapshot re-stamps it) is not a new
@@ -105,13 +126,22 @@ def load(paths: list[str]) -> dict:
 
 
 def pairs(trains: dict):
-    """Consecutive records of a train: (line, e1, e2, station a, station b, seconds apart)."""
-    for (_, line, _), seq in trains.items():
+    """Consecutive records of a train: (line, e1, e2, station a, station b, seconds apart).
+    위치 피드는 그 노선을 READ_GAP 초 안에 이어 읽었을 때만(e2 를 본 읽기의 바로 앞 읽기가 READ_GAP 안): 띄엄띄엄 읽으면 그 사이 사건을
+    놓쳐 '다음 사건' 짝이 아니다 — 2026-10-16 부터 노선마다 약 7분에 한 번 읽어 채점 평균이 15 → 30초로 커 보였다(덕배 2026-10-18)."""
+    reads = getattr(trains, "reads", {})
+    for (source, line, _), seq in trains.items():
+        times_read = reads.get(line, [])
         for e1, e2 in zip(seq, seq[1:]):
             a, b = node_of.get((line, key(e1["station"]))), node_of.get((line, key(e2["station"])))
             dt = ts(e2["receivedAt"]) - ts(e1["receivedAt"])
-            if a is not None and b is not None and 0 < dt <= 1500:
-                yield line, e1, e2, a, b, dt
+            if a is None or b is None or not 0 < dt <= 1500:
+                continue
+            if source == "position" and (r := e2.get("read")) is not None:
+                i = bisect_left(times_read, r)
+                if i == 0 or r - times_read[i - 1] > READ_GAP:
+                    continue
+            yield line, e1, e2, a, b, dt
 
 
 def day_pairs(paths: list[str]):
