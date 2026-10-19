@@ -600,13 +600,16 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.deepEqual([follows.at(-1), legs.at(-1)], ['near', [route.id, false]], '한 번에 따라가기, 노선 전체로 멀어지지 않는다');
   assert.equal(layer.selection.kind, 'stop', '정류장 시트는 그대로');
   assert.match(panel(), /따라가는 중[^]*노선 전체[^]*정류장으로/);
+  assert.doesNotMatch(layer.detailHTML(), /bus-rows|bus-hero/, '따라가는 동안은 상태 칸만(지도를 가리지 않게, 2026-10-19)');
   tap();
   assert.deepEqual([layer.selectedRoute, follows.at(-1)], [route.id, 'near'], '같은 번호를 다시 눌러도 꺼지지 않는다');
   press('route');
   assert.deepEqual([follows.at(-1), legs.at(-1), layer.stopView], [null, [route.id, true], 'route'], '[노선 전체]');
   assert.match(panel(), /노선 전체[^]*버스 따라가기[^]*정류장으로/);
+  assert.match(layer.detailHTML(), /bus-rows/, '노선 전체에서는 정류장 목록도');
   press('follow'); assert.equal(follows.at(-1), 'near', '[버스 따라가기]');
   followed = null; assert.match(panel(), /따라가기 멈춤[^]*다시 따라가기[^]*노선 전체[^]*정류장으로/, '지도를 끌어 멈추면: 노선 전체로도 바로');
+  assert.doesNotMatch(layer.detailHTML(), /bus-rows/, '멈춰도 따라가기 칸만');
   press('stop');
   assert.deepEqual([layer.selectedRoute, layer.stopFollow, follows.at(-1), legs.at(-1)[0]], [null, null, null, null], '[정류장으로]: 선택을 놓는다');
   assert.equal(panel(), '');

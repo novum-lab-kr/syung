@@ -963,6 +963,8 @@ class BusLayer {
     // 고른 번호의 상태 칸(맨 위): 그 노선의 첫 버스 도착 · 방면
     const pickedLine = this.followLine(id => { const r = rows.get(id), first = r?.buses?.[0];
       return [r?.direction ? `${r.direction} 방면` : '', isSoon(r) ? '곧 도착' : first ? arrivalParts(first).when : ''].filter(Boolean).map(text).join(' · ') }, badge);
+    // 따라가는 동안(멈춤 포함)은 시트에 상태 칸만: 지도를 가리지 않게(2026-10-19 덕배). 정류장 이름은 화면 읽기 · 포커스용으로만 둔다
+    if (this.stopView === 'follow' && pickedLine) return `<div class="bus-stop is-following"><h3 class="bus-sr" tabindex="-1">${text(stop.name)}</h3>${pickedLine}</div>`;
     return `<div class="bus-stop"><div class="bus-stop-head"><div class="bus-stop-title">${stop.arsId ? `<span class="bus-stop-no">${BUS_ICON}${text(stop.arsId)}</span>` : ''}<h3 tabindex="-1">${text(stop.name)}</h3></div>${refresh}</div>${pickedLine}` +
       `${note ? `<p class="bus-detail-note">${note}</p>` : ''}${this.stopNote ? `<p class="bus-detail-note" role="status">${this.stopNote}</p>` : ''}${mock ? '<p class="bus-detail-note">예시 데이터 · 실제 운행 정보 아님</p>' : ''}` +
       `${hero}<div class="bus-rows">${list.map(row).join('')}</div>${endedLine}</div>`;
