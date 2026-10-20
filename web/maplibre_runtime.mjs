@@ -477,8 +477,8 @@ const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,par
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
 const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
   live:{get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
-const {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
-const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
+const {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,topPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
+const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,topPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
 const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton'),showRoute:(...a)=>{showRoute(...a);refreshLive()},clearRoute:()=>{clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부

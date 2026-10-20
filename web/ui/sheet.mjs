@@ -69,8 +69,9 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeSheet()}});
   // Following: the camera keeps the chosen train in the middle of the map above the sheet.
   // Dragging the map stops it; the button in the sheet starts it again.
-  const sheetPad=()=>{if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector('.bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼
+  const sheetPad=()=>{if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector('.bus-follow-ui:not(.at-top) .bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼
   // 지도 우선 버스 따라가기(2026-10-20 덕배): 시트를 닫지 않고(정류장 선택은 그대로) 아래로 내려 둔다 — 카메라는 지도 전체 가운데에 버스를 둔다
+  const topPad=()=>{const p=map.getContainer().querySelector('.bus-follow-ui.at-top:not([hidden]) .bfu-panel');return p?p.offsetTop+p.offsetHeight+16:0};   // 오른쪽 위 노선 전체 칸만큼(노선 맞추기가 위를 비운다)
   function tuck(on){sheet.classList.toggle('tucked',!!on);sheet.inert=!!on}   // the 길찾기 sheet grows to 72%
   function trainLngLat(plan){
     const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
@@ -129,5 +130,5 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
     if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}});
 
-  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
+  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,topPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
 }

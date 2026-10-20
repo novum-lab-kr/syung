@@ -114,6 +114,10 @@ body.bus-following .route-cta,body.bus-following .map-search,body.bus-following 
 .bfu-controls button{flex:1;min-width:0;min-height:44px;padding:0 8px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .bfu-controls button.primary{background:var(--syung);color:var(--syung-ink)}
 .bfu-controls button.outline{background:none;box-shadow:inset 0 0 0 1px var(--rule)}
+.bus-follow-ui.at-top .bfu-panel{top:12px;bottom:auto;left:auto;right:max(12px,env(safe-area-inset-right,0px));width:min(360px,calc(100% - 24px));margin:0}
+@media (max-width:520px){.bus-follow-ui.at-top .bfu-panel{left:max(12px,env(safe-area-inset-left,0px));width:auto}}
+.bus-follow-ui.at-top .bfu-lead{margin-right:auto}
+.bfu-more.icon{width:44px;padding:0}
 .bfu-panel button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.bfu-state i{animation:none}.bfu-more svg{transition:none}}
 .bus-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

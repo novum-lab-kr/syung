@@ -52,7 +52,7 @@ let arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '
 
 async function withLayerFixture(run, enabled=true) {
   const originals = Object.fromEntries(['document', 'localStorage', 'matchMedia', 'devicePixelRatio', 'cancelAnimationFrame'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
-  const node = () => ({style: {}, setAttribute() {}, addEventListener() {}, removeEventListener() {}, after() {}, append() {}, remove() {}, clientWidth: 400, clientHeight: 300,
+  const node = () => ({style: {}, classList: {toggle() {}}, setAttribute() {}, addEventListener() {}, removeEventListener() {}, after() {}, append() {}, remove() {}, clientWidth: 400, clientHeight: 300,
     getContext: () => ({clearRect() {}, setTransform() {}})});
   const sources = new Map(), canvas = node(), container = node();
   const map = {getLayer: () => true, addLayer() {}, setLayoutProperty() {}, addSource: id => sources.set(id, {setData(data) {this.data=data;}}), getSource: id => sources.get(id),
@@ -619,7 +619,8 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.match(layer.followParts.summary.innerHTML, /노선 전체/, '기점 · 종점을 모르면 노선 전체');
   layer.data.routeById.get(route.id).start = '안골마을'; layer.data.routeById.get(route.id).end = '서울역'; layer.renderFollowUI();
   assert.match(layer.followParts.summary.innerHTML, /안골마을 ↔ 서울역/, '노선의 양 끝(덕배가 고른 시안 01)');
-  assert.match(layer.followParts.summary.innerHTML, /data-bfu-more[^]*자세히/, '둘째 줄 자세히 칩');
+  assert.match(layer.followParts.summary.innerHTML, /class="bfu-more icon" data-bfu-more[^>]*aria-label="[^"]*펼치기"><svg/, '자세히는 글자 없이 화살표만(행님 2026-10-20)');
+  assert.doesNotMatch(layer.followParts.summary.innerHTML, /노선만 표시|자세히/, "'노선만 표시' 는 지운다");
   assert.match(layer.followParts.controls.innerHTML, /버스 따라가기[^]*정류장으로/);
   assert.match(panel(), /노선 전체[^]*버스 따라가기[^]*정류장으로/);
 
@@ -635,6 +636,7 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.equal(layer.followUI.hidden, true);
   layer.fleet.clear(); tap();
   assert.deepEqual([layer.stopFollow, layer.stopView, legs.at(-1)], [null, 'route', [route.id, true]], '곧 올 버스가 없으면 노선 전체로');
-  assert.match(layer.followParts.summary.innerHTML, /위치 확인 불가[^]*노선만 표시/, '없다는 걸 아래 칸에 계속 알린다');
+  assert.match(layer.followParts.summary.innerHTML, /위치 확인 불가/, '없다는 걸 위 칸에 계속 알린다');
+  assert.doesNotMatch(layer.followParts.summary.innerHTML, /노선만 표시/, "'노선만 표시' 는 지운다(행님 2026-10-20)");
   assert.equal(layer.followUI.hidden, false);
 }, false));
