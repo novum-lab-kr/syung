@@ -109,22 +109,27 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
     vec2 d=vec2(pos.x-a_uv.x,pos.z-.45);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=.45+sa*d.x+ca*d.y;}
   pos.z+=run*.03*abs(sin(ph));
   // 노선 전체(i_info.y 2 · 곧 올 버스 3): 그림자 원반을 노선 선과 버스를 떼어 놓는 밝은 타원 바탕으로 — 몸 길이의 1.18 · 폭의 2배(곧 올 버스 1.22 · 2.2배)
-  if(abs(a_material-11.)<.2&&i_info.y>1.5)pos.xy*=i_info.y>2.5?vec2(1.112,1.76):vec2(1.076,1.6);
+  if(abs(a_material-11.)<.2&&i_info.y>1.5)pos.xy*=vec2(1.076,1.6);
+  // 파장(material 14): 고른 · 따라가는 · 곧 올 버스(i_info.y 1 · 3)에만 — 나머지는 화면 밖으로 접는다
+  if(abs(a_material-14.)<.2&&!(abs(i_info.y-1.)<.2||abs(i_info.y-3.)<.2)){gl_Position=vec4(2.,2.,2.,1.);return;}
   vec3 p=pos*i_pose.w*u_unit;
   p.xy=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+i_pose.xy;
   gl_Position=u_matrix*vec4(p,1.); v_normal=vec3(c*normal.x-s*normal.y,s*normal.x+c*normal.y,normal.z);
   v_uv=a_uv;v_color=i_color;v_material=a_material;v_info=i_info.xy;}`;
 const FS=`#version 300 es
 precision highp float; in vec3 v_normal; in vec2 v_uv; in vec4 v_color; flat in float v_material; flat in vec2 v_info;
-uniform float u_dark,u_rows,u_fade; uniform sampler2D u_atlas; out vec4 outColor;
+uniform float u_dark,u_rows,u_fade,u_time; uniform sampler2D u_atlas; out vec4 outColor;
 float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
 float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   if(m>35.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
     float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.8,.5),v_color.rgb,.22);alpha*=.8*g*g;}
   else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);
-    if(v_info.y>1.5){alpha*=(v_info.y>2.5?.98:.9)*(1.-smoothstep(.88,1.,d));col=vec3(1.,.992,.965);}   // 노선 전체: #FFFDF6 바탕, 가장자리 12 % 만 흐리게(Codex 2026-10-20)
+    if(v_info.y>1.5){alpha*=.9*(1.-smoothstep(.88,1.,d));col=vec3(1.,.992,.965);}   // 노선 전체: #FFFDF6 바탕, 가장자리 12 % 만 흐리게(Codex 2026-10-20) — 곧 올 버스도 같은 크기(덕배: 다 같은 크기로)
     else{alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}}
+  else if(m>13.5&&m<14.5){   // 고른 버스 파장: 지하철 고른 열차와 같은 잔잔한 고리(2.4초마다 몸 폭 0.7 → 3.4배로 퍼지며 옅어짐), 노선 색(2026-10-20 덕배)
+    float d=length((v_uv-.5)*2.),k=clamp(fract(u_time/2.4)/.75,0.,1.),r=mix(.2,1.,1.-(1.-k)*(1.-k)),fade=1.-k,w=fwidth(d);
+    alpha*=(1.-smoothstep(r-w*1.5,r+w*.5,d))*fade*.36+(1.-smoothstep(0.,w*1.5,abs(d-r)-.015))*fade*.22;col=v_color.rgb;}
   else if(m>12.5&&m<13.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
   else {
     if(m>.5&&m<1.5)col=mix(v_color.rgb,vec3(.94,.95,.91),.18);
@@ -198,7 +203,8 @@ function program(gl) {
 function effectMesh(beam) {
   const {data,quad}=meshBuilder();
   if(beam)quad([1.56,-.4,.04],[5.2,-1.25,.04],[5.2,1.25,.04],[1.56,.4,.04],[0,0,1],13);
-  else quad([-1.7,-.7,.02],[1.7,-.7,.02],[1.7,.7,.02],[-1.7,.7,.02],[0,0,1],11);
+  else{quad([-3.8,-3.8,.01],[3.8,-3.8,.01],[3.8,3.8,.01],[-3.8,3.8,.01],[0,0,1],14);   // 고른 버스 파장(반지름 = 몸 폭 약 3.4배)
+    quad([-1.7,-.7,.02],[1.7,-.7,.02],[1.7,.7,.02],[-1.7,.7,.02],[0,0,1],11);}
   return new Float32Array(data);
 }
 

@@ -696,13 +696,13 @@ class BusLayer {
       // 조선 모드의 가마: 줌 17 위로는 지도와 같이 커진다 — 줌 17 에서 보이는 크기(땅 위 약 18 m)를 그대로 (2026-10-10 덕배: 확대할수록
       // 작아 보여 안 보인다. 화면 크기를 12~16.5 px 로 묶어 줌 20 에서는 땅 위 3 m 로 줄었다)
       const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-17);   // (fit 은 줌마다 2배: 줌 17 의 값은 fit/grow)
-      // 고른 노선을 멀리서 볼 때(노선 전체): 노선 선과 같은 색 · 작은 크기라 버스가 선에 묻혔다(2026-10-20 덕배) — 1.5배, 이 정류장에 곧 올 버스는 1.35배 더.
+      // 고른 노선을 멀리서 볼 때(노선 전체): 노선 선과 같은 색 · 작은 크기라 버스가 선에 묻혔다(2026-10-20 덕배) — 1.5배. 버스는 모두 같은 크기,
+      // 고른 · 곧 올 버스는 키우지 않고 바닥 파장으로(덕배: 일부러 키우지 말자).
       // 색은 노선과 같은 계열을 조금 진하게(밝은 화면 × .88 · 다크 × .65) 하고 아래에 밝은 타원 바탕(mesh 의 그림자 원반, selected 2 · 3)으로 선과 떼어 놓는다
       // (흑백 몸은 '까매서 이상하다' — 덕배 · Codex 2026-10-20)
       const routeView=overview&&this.selectedRoute===bus.route.id;
-      const picked=this.selection?.kind==='bus'&&this.selection.id===bus.row.id||this.stopFollow===bus.row.id;   // 고른 · 따라가는 버스는 1.2배 더
-      const scale=routeView?busModelScale(zoom)*1.5*(this.stopFollow===bus.row.id?1.35:1):overview?busModelScale(zoom)
-        :(L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit))*(L.sizeK||1)*(picked?1.2:1);
+      const scale=routeView?busModelScale(zoom)*1.5:overview?busModelScale(zoom)
+        :(L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit))*(L.sizeK||1);
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-L.halfWidth,L.halfWidth])for(const z of [0,1.35]){
@@ -715,7 +715,7 @@ class BusLayer {
       const body=routeView?rgb(color(bus.route,this.theme)).map(v=>v*(this.theme==='dark'?.65:.88)):rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme));
       vehicles.push({world,yaw,scale,rgb:body,alpha:bus.stale?.55:1,label:bus.route.name,selected:routeView?(this.stopFollow===bus.row.id?3:2):selected,moving:run,phase:stepPhase(bus.row.id)});
       this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading,laneWidth:pose.laneWidth,scale});
-      if(run)moving=true;
+      if(run||selected)moving=true;   // 고른 버스의 바닥 파장도 움직이는 동안처럼 다시 그린다
       if(vehicles.length>=(this.phone?160:320))break;
     }
     const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
