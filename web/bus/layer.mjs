@@ -44,6 +44,8 @@ const boundsArray = bounds => [bounds.getWest(), bounds.getSouth(), bounds.getEa
 const padded = b => { const x = (b[2] - b[0]) * .12, y = (b[3] - b[1]) * .12; return [b[0] - x, b[1] - y, b[2] + x, b[3] + y]; };
 const boundsOf = points => points.reduce((b, p) => [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])], [Infinity, Infinity, -Infinity, -Infinity]);
 const color = (route, theme) => (BUS_TYPES[route.type] || BUS_TYPES.other)[theme];
+// 노선 번호 배지: 흰 글자라 밝은 쪽 색. '7101파주' · '새벽A148' 같은 긴 번호(5글자 이상)는 글자를 줄여 칸 안에
+const routeBadge = route => `<span class="bus-num${[...String(route.name)].length > 4 ? ' bus-num-long' : ''}" style="--c:${color(route, 'light')}">${text(route.name)}</span>`;
 const typeName = route => (BUS_TYPES[route.type] || BUS_TYPES.other).name;
 const ARRIVAL_POLL_MS = 30000, ARRIVAL_POLLS = 10;   // 정류장을 연 동안 30초마다, 5분까지
 // 서울시 도착 문구 '6분후[3번째 전]' · '[막차] 10분후[6번째 전]' · '운행종료' → 크게 쓸 때 · 작게 쓸 덧말
@@ -266,12 +268,12 @@ export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
-    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0}) {   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}}) {   // onFollowView(켬): 지도 우선 따라가기 화면 — 아래 시트를 내리고 올린다   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
     this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
     this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
-    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;this.followedBus=followedBus;this.sheetPad=sheetPad;
+    this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;this.followedBus=followedBus;this.sheetPad=sheetPad;this.onFollowView=onFollowView;this.followOn=false;this.followUI=null;this.followKeys={};
     this.stopView=null;this.stopFollow=null;this.stopCamera=null;   // 정류장 시트에서 고른 번호: 'follow'(곧 올 버스 따라가기) | 'route'(노선 전체) · 그 버스 · 번호를 누르기 전 카메라([정류장으로])
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     this.enabled = false; this.disposed = false; this.data = null; this.visible = []; this.fleet = new Map(); this.hits = [];
@@ -777,6 +779,7 @@ class BusLayer {
     this.updateDetail = this.onSelect(this.detailHTML()) || null;
     this.refreshView();
     this.onRouteSelect(this.selectedLeg());
+    this.renderFollowUI();
   }
   // 시트를 닫거나 다른 시트를 열면 정류장 · 노선 번호 · 버스 선택만 놓는다. 길찾기 버스 구간은 여정과 함께 지도에 남고
   // 여정을 지울 때(journey:true)만 지운다(2026-10-11 행님: 경로를 고르면 시트가 닫히며 버스 경로만 사라졌다)
@@ -788,15 +791,15 @@ class BusLayer {
     this.stopArrivals();
     if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
-    this.onRouteSelect(null);
+    this.onRouteSelect(null);this.renderFollowUI();
   }
   setJourney(legs){
     this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopArrivals();
     this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
-  refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); }
-  followChanged() { if (this.selection?.kind === 'stop') this.refreshDetail(); }   // 카메라가 따라가기를 시작 · 멈춤(끌기 · 버스 사라짐)
+  refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); this.renderFollowUI(); }
+  followChanged() { if (this.selection?.kind === 'stop') this.refreshDetail(); else this.renderFollowUI(); }   // 카메라가 따라가기를 시작 · 멈춤(끌기 · 버스 사라짐)
   // 정류장 시트에서 번호를 누르면(2026-10-17 덕배 · Codex 상의): 숨은 단계 없이 곧 올 버스를 바로 따라가고, 그다음은 이름 있는 버튼으로만
   // ([노선 전체] · [버스 따라가기] · [정류장으로]). 같은 번호를 다시 눌러도 꺼지지 않는다(곧 올 버스를 다시 찾아 따라간다).
   stopRoute(id) {
@@ -819,6 +822,44 @@ class BusLayer {
     if (stop) this.map.easeTo?.({center: [stop.lng, stop.lat], zoom: Math.min(18, Math.max(16, cam?.zoom ?? 16.5)), bearing: cam?.bearing ?? 0, pitch: cam?.pitch ?? 0,
       padding: {top: 0, bottom: this.sheetPad(), left: 0, right: 0}, duration: 600});
     document.querySelector('.bus-detail h3')?.focus({preventScroll: true});
+  }
+  // 지도 우선 따라가기 화면(2026-10-20 덕배 · Codex 시안 03 '지도 우선'): 정류장에서 고른 버스를 따라가는 동안(멈춤 포함) 아래 시트를 내리고,
+  // 지도 위에 위 정보 칸(노선 · 남은 시간 · 정거장 · 자료 나이) · 버스 옆 '다음은 …' 말풍선(따라가는 동안 카메라가 버스를 가운데에 둔다) · 아래 상태와 버튼만.
+  followView() { return this.selection?.kind === 'stop' && this.stopView === 'follow' && !!this.stopFollow && !!this.data?.routeById.get(this.selectedRoute); }
+  renderFollowUI() {
+    const on = this.followView();
+    if (on !== this.followOn) { this.followOn = on; this.onFollowView(on); }
+    if (!on) { if (this.followUI) this.followUI.hidden = true; this.followKeys = {}; return; }
+    if (!this.followUI) {
+      const make = (tag, cls, attrs = {}) => { const n = document.createElement(tag); n.className = cls; for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
+      const el = this.followUI = make('div', 'bus-follow-ui'), bottom = make('div', 'bfu-bottom');
+      const parts = this.followParts = {card: make('div', 'bfu-card', {role: 'status'}), bubble: make('div', 'bfu-bubble', {'aria-hidden': 'true'}),
+        state: make('p', 'bfu-state', {role: 'status'}), controls: make('div', 'bfu-controls')};
+      bottom.append(parts.state, parts.controls); el.append(parts.card, parts.bubble, bottom);
+      el.addEventListener('click', e => { const b = e.target.closest?.('[data-bus-stop-view]'); if (b) this.stopViewAction(b.dataset.busStopView); });
+      this.map.getContainer?.().append(el);
+    }
+    const el = this.followUI, parts = this.followParts; el.hidden = false;
+    const route = this.data.routeById.get(this.selectedRoute), stop = this.data.stopById.get(this.selection.id), bus = this.fleet.get(this.stopFollow);
+    const following = this.followedBus() === this.stopFollow, now = performance.now();
+    const stops = this.geometry(route)?.stops || [], d = bus ? (this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now)) : null;
+    const target = d == null ? null : stops.find(s => s.stop.id === stop.id && s.distance >= d - 15);
+    const ahead = target ? stops.filter(s => s.distance > d + 15 && s.distance <= target.distance) : [];
+    const row = this.arrivals?.stopId === stop.id ? this.arrivals.rows?.find(r => r.routeId === route.id) : null, first = row?.buses?.[0];
+    const secs = first?.etaAt ? (first.etaAt - Date.now()) / 1000 : null;
+    const eta = isSoon(row) || (secs != null && secs <= 45) ? '곧 도착' : secs != null ? `약 ${Math.max(1, Math.ceil(secs / 60))}분` : first ? arrivalParts(first).when : '';
+    const age = bus?.observed != null ? Math.max(0, Math.round((Date.now() - bus.observed) / 1000)) : null;
+    const set = (key, html) => { if (this.followKeys[key] !== html) { this.followKeys[key] = html; parts[key].innerHTML = html; } };   // 바뀐 칸만(버튼 포커스가 1초마다 날아가지 않게)
+    set('card', `<div class="bfu-head">${routeBadge(route)}<div class="bfu-eta">${eta ? `<b>${text(eta)}</b>` : ''}${ahead.length ? `<small>${ahead.length}정거장 전</small>` : ''}</div></div>` +
+      `<p class="bfu-target">${text(stop.name)} 정류장까지</p>${row?.direction ? `<p class="bfu-dir">${text(row.direction)} 방면</p>` : ''}` +
+      (age != null ? `<p class="bfu-fresh">위치 자료 ${age < 60 ? `${age}초` : `${Math.round(age / 60)}분`} 전 · 실제 위치와 차이가 있을 수 있어요</p>` : ''));
+    const next = ahead[0]?.stop.name;
+    set('bubble', following && next ? `다음은 ${text(next)}` : '');
+    parts.bubble.hidden = !(following && next);
+    set('state', following ? '<i aria-hidden="true"></i>따라가는 중' : '<i class="off" aria-hidden="true"></i>지도를 움직여 따라가기 멈춤');
+    const btn = (what, label, primary, aria) => `<button type="button" data-bus-stop-view="${what}"${primary ? ' class="primary"' : ''}${aria ? ` aria-label="${text(aria)}"` : ''}>${label}</button>`;
+    set('controls', following ? btn('route', '노선 전체', true) + btn('stop', '정류장으로')
+      : btn('follow', '다시 따라가기', true, `${route.name}번 다시 따라가기`) + btn('route', '노선 전체') + btn('stop', '정류장으로'));
   }
   // 정류장 시트 위쪽: 고른 번호의 지금 상태와 다음에 할 수 있는 것(접힌 시트에서도 보이게 맨 위)
   followLine(rowOf, badge) {
@@ -874,6 +915,7 @@ class BusLayer {
   }
   // 1초마다: 남은 시간 글자와 곧 도착 카드의 버스 아이콘만 고친다(팝업을 다시 그리지 않아 누르던 버튼 포커스가 그대로)
   tickArrivals() {
+    this.renderFollowUI();
     const sheet = document.querySelector?.('.bus-detail .bus-stop'); if (!sheet) return;
     for (const el of sheet.querySelectorAll('[data-eta]')) {
       const left = countdownText((Number(el.dataset.eta) - Date.now()) / 1000);
@@ -919,8 +961,7 @@ class BusLayer {
     const items = [...routes.map(route => ({route, row: rows.get(route.id), live: true})),
       ...[...rows.values()].filter(row => !known.has(row.routeId)).map(row => ({route: {id: row.routeId, name: row.name, type: row.type}, row, live: false}))];
     items.sort((x, y) => arrivalRank(x.row) - arrivalRank(y.row));
-    // 흰 글자라 밝은 쪽 색. '7101파주' · '새벽A148' 같은 긴 번호(5글자 이상)는 글자를 줄여 칸 안에
-    const badge = route => `<span class="bus-num${[...String(route.name)].length > 4 ? ' bus-num-long' : ''}" style="--c:${color(route, 'light')}">${text(route.name)}</span>`;
+    const badge = routeBadge;
     const soon = items.filter(i => isSoon(i.row)), ended = items.filter(i => isEnded(i.row)), list = items.filter(i => !isEnded(i.row));
     // 곧 도착 카드: 1대면 번호 · 방면 · 다음 버스, 여러 대면 번호만(6대까지, 7대부터 5대 + '+N')
     let hero = '';

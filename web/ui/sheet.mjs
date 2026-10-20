@@ -8,7 +8,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   const sheetBody=sheet.querySelector('.sheet-body'),followBtn=sheet.querySelector('.sheet-follow');
   let sheetToken=0,sheetTrain=null,following=null,easing=false;
   let followBus=null,busMiss=0;   // bus: 지도에서 누른 버스를 카메라가 따라간다(2026-10-08 덕배). 끌면 멈추고 '이 버스 따라가기'로 다시
-  function openSheet(html,source='subway'){if(source!=='bus')live.busLayer?.clearSelection();sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
+  function openSheet(html,source='subway'){tuck(false);if(source!=='bus')live.busLayer?.clearSelection();sheetBody.innerHTML=html;sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
   function closeSheet(){
     live.busLayer?.clearSelection();   // bus: release the highlighted bus route with the shared sheet
     if(sheet.hidden)return;
@@ -69,7 +69,9 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeSheet()}});
   // Following: the camera keeps the chosen train in the middle of the map above the sheet.
   // Dragging the map stops it; the button in the sheet starts it again.
-  const sheetPad=()=>sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);   // the 길찾기 sheet grows to 72%
+  const sheetPad=()=>sheet.hidden||sheet.classList.contains('tucked')?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);
+  // 지도 우선 버스 따라가기(2026-10-20 덕배): 시트를 닫지 않고(정류장 선택은 그대로) 아래로 내려 둔다 — 카메라는 지도 전체 가운데에 버스를 둔다
+  function tuck(on){sheet.classList.toggle('tucked',!!on);sheet.inert=!!on}   // the 길찾기 sheet grows to 72%
   function trainLngLat(plan){
     const z=map.getZoom(),unit=1/(512*2**z),q=trackPoint(plan,trainPose(plan).dist),o=(q.off+laneOffsetPx(z))*unit;
     return new maplibregl.MercatorCoordinate(q.x+q.r[0]*o,q.y+q.r[1]*o,0).toLngLat();
@@ -127,5 +129,5 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
     if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}});
 
-  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
+  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
 }
