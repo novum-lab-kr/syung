@@ -615,9 +615,11 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.deepEqual([layer.selectedRoute, follows.at(-1)], [route.id, 'near'], '같은 번호를 다시 눌러도 꺼지지 않는다');
   press('route');
   assert.deepEqual([follows.at(-1), legs.at(-1), layer.stopView], [null, [route.id, true], 'route'], '[노선 전체]');
-  assert.deepEqual([views.at(-1), layer.followUI.hidden], [false, true], '노선 전체에서는 시트를 다시 올린다');
+  assert.deepEqual([views.at(-1), layer.followUI.hidden], [true, false], '노선 전체도 시트를 내린 채 아래 칸만(2026-10-20 덕배)');
+  assert.match(layer.followParts.summary.innerHTML, /노선 전체/);
+  assert.match(layer.followParts.controls.innerHTML, /버스 따라가기[^]*정류장으로/);
   assert.match(panel(), /노선 전체[^]*버스 따라가기[^]*정류장으로/);
-  assert.match(layer.detailHTML(), /bus-rows/, '노선 전체에서는 정류장 목록도');
+
   press('follow'); assert.equal(follows.at(-1), 'near', '[버스 따라가기]');
   followed = null; assert.match(panel(), /따라가기 멈춤[^]*다시 따라가기[^]*노선 전체[^]*정류장으로/, '지도를 끌어 멈추면: 노선 전체로도 바로');
   assert.doesNotMatch(layer.detailHTML(), /bus-rows/, '멈춰도 따라가기 칸만');
@@ -630,5 +632,6 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.equal(layer.followUI.hidden, true);
   layer.fleet.clear(); tap();
   assert.deepEqual([layer.stopFollow, layer.stopView, legs.at(-1)], [null, 'route', [route.id, true]], '곧 올 버스가 없으면 노선 전체로');
-  assert.match(panel(), /곧 올 버스 위치를 아직 확인할 수 없어요[^]*버스 따라가기/, '없다는 걸 계속 알린다');
+  assert.match(layer.followParts.summary.innerHTML, /곧 올 버스 위치를 확인할 수 없어요/, '없다는 걸 아래 칸에 계속 알린다');
+  assert.equal(layer.followUI.hidden, false);
 }, false));

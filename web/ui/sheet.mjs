@@ -69,7 +69,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeSheet()}});
   // Following: the camera keeps the chosen train in the middle of the map above the sheet.
   // Dragging the map stops it; the button in the sheet starts it again.
-  const sheetPad=()=>sheet.hidden||sheet.classList.contains('tucked')?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75);
+  const sheetPad=()=>{if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector('.bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼
   // 지도 우선 버스 따라가기(2026-10-20 덕배): 시트를 닫지 않고(정류장 선택은 그대로) 아래로 내려 둔다 — 카메라는 지도 전체 가운데에 버스를 둔다
   function tuck(on){sheet.classList.toggle('tucked',!!on);sheet.inert=!!on}   // the 길찾기 sheet grows to 72%
   function trainLngLat(plan){

@@ -808,6 +808,7 @@ class BusLayer {
     this.stopFollow = this.approachingBus(this.data.routeById.get(id), this.selection.id);
     this.stopView = this.stopFollow ? 'follow' : 'route';   // 곧 올 버스 위치가 없으면 노선 전체로(시트에 계속 알림)
     if (changed) this.refreshView();
+    this.renderFollowUI();   // 시트를 먼저 내려야 노선 맞추기 · 카메라가 넓어진 지도를 쓴다
     this.onRouteSelect(this.selectedLeg(), {fit: !this.stopFollow});   // 따라갈 버스가 있으면 노선 전체로 멀어졌다 오지 않는다
     this.onFollow(this.stopFollow); this.refreshDetail(); this.draw();
     document.querySelector('.bus-detail .bus-follow button')?.focus({preventScroll: true});
@@ -815,7 +816,7 @@ class BusLayer {
   stopViewAction(what) {
     if (!this.selectedRoute || this.selection?.kind !== 'stop') return;
     if (what === 'follow') { this.stopRoute(this.selectedRoute); return; }
-    if (what === 'route') { this.stopView = 'route'; this.onFollow(null); this.onRouteSelect(this.selectedLeg(), {fit: true}); this.refreshDetail(); return; }
+    if (what === 'route') { this.stopView = 'route'; this.onFollow(null); this.renderFollowUI(); this.onRouteSelect(this.selectedLeg(), {fit: true}); this.refreshDetail(); return; }
     // 정류장으로: 번호 선택을 놓고 그 정류장이 시트 위 지도에 보이게(누르기 전 카메라의 방향 · 기울기, 줌은 16~18 — 멀리서 눌렀어도 정류장이 보이게, Codex 검토)
     const cam = this.stopCamera, stop = this.data.stopById.get(this.selection.id); this.selectedRoute = null; this.stopFollow = null; this.stopView = null; this.stopCamera = null;
     this.onFollow(null); this.refreshView(); this.onRouteSelect(null); this.refreshDetail(); this.draw();
@@ -825,7 +826,8 @@ class BusLayer {
   }
   // 따라가기 집중 화면(2026-10-20 덕배가 고른 Codex 2차 시안 02, 머리 띠는 그대로): 정류장에서 고른 버스를 따라가는 동안(멈춤 포함) 아래 시트를 내리고
   // 검색창 · 확대 버튼도 숨겨(body.bus-following) 지도를 넓게, 아래 한 칸에 '470 종로2가까지 약 3분 ⌄ / 3정거장 전 · 따라가는 중' 과 버튼만. ⌄ 는 방면 · 다음 정류장 · 자료 나이
-  followView() { return this.selection?.kind === 'stop' && this.stopView === 'follow' && !!this.stopFollow && !!this.data?.routeById.get(this.selectedRoute); }
+  // 노선 전체도 같은 칸(2026-10-20 덕배: 노선 전체를 볼 때 정류장 시트가 아래 60 % 를 덮어 노선이 위에 눌려 보였다) — 정류장 시트는 [정류장으로] 에서만
+  followView() { return this.selection?.kind === 'stop' && (this.stopView === 'follow' && !!this.stopFollow || this.stopView === 'route') && !!this.data?.routeById.get(this.selectedRoute); }
   renderFollowUI() {
     const on = this.followView();
     if (on !== this.followOn) { this.followOn = on; this.followExpanded = false; this.onFollowView(on); }
@@ -852,16 +854,20 @@ class BusLayer {
     const eta = isSoon(row) || (secs != null && secs <= 45) ? '곧 도착' : secs != null ? `약 ${Math.max(1, Math.ceil(secs / 60))}분` : first ? arrivalParts(first).when : '';
     const age = bus?.observed != null ? Math.max(0, Math.round((Date.now() - bus.observed) / 1000)) : null;
     const set = (key, html) => { if (this.followKeys[key] !== html) { this.followKeys[key] = html; parts[key].innerHTML = html; } };   // 바뀐 칸만(버튼 포커스가 1초마다 날아가지 않게)
-    const open = !!this.followExpanded;
-    set('summary', `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${text(stop.name)}</b><span class="bfu-to">까지</span>${eta ? `<b class="bfu-eta">${text(eta)}</b>` : ''}` +
-      `<button type="button" class="bfu-more" data-bfu-more aria-expanded="${open}" aria-label="방면 · 다음 정류장 · 위치 자료 ${open ? '접기' : '펼치기'}">${open ? '⌃' : '⌄'}</button></div>` +
-      `<div class="bfu-line2"><span>${ahead.length ? `${ahead.length}정거장 전` : ''}</span><span class="bfu-state${following ? '' : ' off'}"><i aria-hidden="true"></i>${following ? '따라가는 중' : '따라가기 멈춤'}</span></div>`);
+    const open = !!this.followExpanded, whole = this.stopView === 'route';
+    const more = `<button type="button" class="bfu-more" data-bfu-more aria-expanded="${open}" aria-label="방면 · 다음 정류장 · 위치 자료 ${open ? '접기' : '펼치기'}">${open ? '⌃' : '⌄'}</button>`;
+    set('summary', whole
+      ? `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">노선 전체</b>${more}</div>` +
+        `<div class="bfu-line2"><span>${text(stop.name)}${eta ? ` 도착 <b class="bfu-eta-s">${text(eta)}</b>` : ''}</span><span class="bfu-state off">${this.stopFollow ? `${ahead.length ? `${ahead.length}정거장 전` : ''}` : '곧 올 버스 위치를 확인할 수 없어요'}</span></div>`
+      : `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${text(stop.name)}</b><span class="bfu-to">까지</span>${eta ? `<b class="bfu-eta">${text(eta)}</b>` : ''}${more}</div>` +
+        `<div class="bfu-line2"><span>${ahead.length ? `${ahead.length}정거장 전` : ''}</span><span class="bfu-state${following ? '' : ' off'}"><i aria-hidden="true"></i>${following ? '따라가는 중' : '따라가기 멈춤'}</span></div>`);
     const next = ahead[0]?.stop.name;
     set('details', open ? `<p><b>${text(route.name)}번${row?.direction ? ` · ${text(row.direction)} 방면` : ''}</b></p>${next ? `<p>다음 정류장 · ${text(next)}</p>` : ''}` +
       `${age != null ? `<p>위치 자료 ${age < 60 ? `${age}초` : `${Math.round(age / 60)}분`} 전에 받음</p>` : ''}<p>실제 위치는 20~60초 늦을 수 있어요.</p>` : '');
     parts.details.hidden = !open;
     const btn = (what, label, cls, aria) => `<button type="button" data-bus-stop-view="${what}" class="${cls}"${aria ? ` aria-label="${text(aria)}"` : ''}>${label}</button>`;
-    set('controls', following ? btn('route', '노선 전체', 'primary') + btn('stop', '정류장으로', 'outline')
+    set('controls', whole ? btn('follow', '버스 따라가기', 'primary', `${route.name}번 곧 올 버스 따라가기`) + btn('stop', '정류장으로', 'outline')
+      : following ? btn('route', '노선 전체', 'primary') + btn('stop', '정류장으로', 'outline')
       : btn('follow', '다시 따라가기', 'primary', `${route.name}번 다시 따라가기`) + btn('route', '노선 전체', 'outline') + btn('stop', '정류장으로', 'outline'));
   }
   // 정류장 시트 위쪽: 고른 번호의 지금 상태와 다음에 할 수 있는 것(접힌 시트에서도 보이게 맨 위)
