@@ -108,6 +108,8 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
   if(a_material>19.5&&a_material<20.5){float k=abs(a_uv.y)-1.,a=run*.5*sin(ph+6.2832*k)*sign(a_uv.y),ca=cos(a),sa=sin(a);
     vec2 d=vec2(pos.x-a_uv.x,pos.z-.45);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=.45+sa*d.x+ca*d.y;}
   pos.z+=run*.03*abs(sin(ph));
+  // 노선 전체(i_info.y 2 · 곧 올 버스 3): 그림자 원반을 노선 선과 버스를 떼어 놓는 밝은 타원 바탕으로 — 몸 길이의 1.18 · 폭의 2배(곧 올 버스 1.22 · 2.2배)
+  if(abs(a_material-11.)<.2&&i_info.y>1.5)pos.xy*=i_info.y>2.5?vec2(1.112,1.76):vec2(1.076,1.6);
   vec3 p=pos*i_pose.w*u_unit;
   p.xy=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+i_pose.xy;
   gl_Position=u_matrix*vec4(p,1.); v_normal=vec3(c*normal.x-s*normal.y,s*normal.x+c*normal.y,normal.z);
@@ -120,7 +122,9 @@ float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   if(m>35.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
     float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.8,.5),v_color.rgb,.22);alpha*=.8*g*g;}
-  else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}
+  else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);
+    if(v_info.y>1.5){alpha*=(v_info.y>2.5?.98:.9)*(1.-smoothstep(.88,1.,d));col=vec3(1.,.992,.965);}   // 노선 전체: #FFFDF6 바탕, 가장자리 12 % 만 흐리게(Codex 2026-10-20)
+    else{alpha*=.22*(1.-smoothstep(.35,1.,d));col=vec3(.08,.10,.10);}}
   else if(m>12.5&&m<13.5){float t=v_uv.x;alpha*=u_dark*.42*(1.-t)*(1.-t)*(1.-abs(v_uv.y*2.-1.));col=vec3(1.,.94,.68);}
   else {
     if(m>.5&&m<1.5)col=mix(v_color.rgb,vec3(.94,.95,.91),.18);
@@ -176,7 +180,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     }
     float lit=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);
     if(abs(m-5.)>.2&&abs(m-6.)>.2&&abs(m-8.)>.2&&!((abs(m-29.)<.2||m>30.5&&m<32.5)&&u_dark>.5))col*=lit;
-    if(v_info.y>.5&&(m<.5||abs(m-24.)<.2))col=mix(col,vec3(1.),.2);
+    if(v_info.y>.5&&v_info.y<1.5&&(m<.5||abs(m-24.)<.2))col=mix(col,vec3(1.),.2);   // 고른 버스(노선 전체의 2 · 3 은 바탕으로 강조)
   }
   alpha*=u_fade;if(alpha<.005)discard;outColor=vec4(col*alpha,alpha);
 }`;
@@ -254,7 +258,7 @@ export class BusRenderer {
       if(!items.length)return;
       if(batch.staging.length<items.length*12)batch.staging=new Float32Array(2**Math.ceil(Math.log2(items.length*12)));
       const data=batch.staging;
-      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,v.selected?1:0,v.phase||0,L.carriers&&v.moving?1:0],i*12));
+      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,typeof v.selected==='number'?v.selected:v.selected?1:0,v.phase||0,L.carriers&&v.moving?1:0],i*12));
       gl.bindVertexArray(batch.vao);gl.bindBuffer(gl.ARRAY_BUFFER,batch.instances);
       if(batch.capacity!==data.length){gl.bufferData(gl.ARRAY_BUFFER,data.byteLength,gl.DYNAMIC_DRAW);batch.capacity=data.length;}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,data,0,items.length*12);gl.depthMask(writeDepth);
