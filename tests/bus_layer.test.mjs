@@ -616,7 +616,10 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   press('route');
   assert.deepEqual([follows.at(-1), legs.at(-1), layer.stopView], [null, [route.id, true], 'route'], '[노선 전체]');
   assert.deepEqual([views.at(-1), layer.followUI.hidden], [true, false], '노선 전체도 시트를 내린 채 아래 칸만(2026-10-20 덕배)');
-  assert.match(layer.followParts.summary.innerHTML, /노선 전체/);
+  assert.match(layer.followParts.summary.innerHTML, /노선 전체/, '기점 · 종점을 모르면 노선 전체');
+  layer.data.routeById.get(route.id).start = '안골마을'; layer.data.routeById.get(route.id).end = '서울역'; layer.renderFollowUI();
+  assert.match(layer.followParts.summary.innerHTML, /안골마을 ↔ 서울역/, '노선의 양 끝(덕배가 고른 시안 01)');
+  assert.match(layer.followParts.summary.innerHTML, /data-bfu-more[^]*자세히/, '둘째 줄 자세히 칩');
   assert.match(layer.followParts.controls.innerHTML, /버스 따라가기[^]*정류장으로/);
   assert.match(panel(), /노선 전체[^]*버스 따라가기[^]*정류장으로/);
 
@@ -632,6 +635,6 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.equal(layer.followUI.hidden, true);
   layer.fleet.clear(); tap();
   assert.deepEqual([layer.stopFollow, layer.stopView, legs.at(-1)], [null, 'route', [route.id, true]], '곧 올 버스가 없으면 노선 전체로');
-  assert.match(layer.followParts.summary.innerHTML, /곧 올 버스 위치를 확인할 수 없어요/, '없다는 걸 아래 칸에 계속 알린다');
+  assert.match(layer.followParts.summary.innerHTML, /위치 확인 불가[^]*노선만 표시/, '없다는 걸 아래 칸에 계속 알린다');
   assert.equal(layer.followUI.hidden, false);
 }, false));

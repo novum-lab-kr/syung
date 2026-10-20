@@ -99,19 +99,23 @@ body.bus-following .route-cta,body.bus-following .map-search,body.bus-following 
 .bfu-to{flex:none;font-size:12.5px;color:var(--secondary)}
 .bfu-eta-s{font-family:var(--round);font-weight:400;font-size:15px;color:var(--ink)}
 .bfu-eta{flex:none;font-family:var(--round);font-weight:400;font-size:22px;line-height:1;white-space:nowrap}
-.bfu-more{flex:none;margin-left:auto;width:44px;height:44px;margin-block:-7px;border:0;border-radius:12px;background:none;color:var(--secondary);font-size:18px;cursor:pointer}
-.bfu-line2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;font-size:12px;color:var(--secondary)}
+.bfu-more{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:44px;min-height:44px;margin-block:-8px;padding:0 10px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.bfu-more svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.bfu-more[aria-expanded=true] svg{transform:rotate(180deg)}
+.bfu-line2{display:flex;align-items:center;gap:8px;min-height:44px;margin-top:2px;font-size:12px;color:var(--secondary)}
+.bfu-lead{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bfu-lead b{color:var(--ink)}
+.bfu-state,.bfu-sub{margin-left:auto;white-space:nowrap}
 .bfu-state{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--ink)}
 .bfu-state i{width:9px;height:9px;box-sizing:border-box;border-radius:50%;background:var(--syung);border:2px solid var(--syung-ink);animation:syung-pulse 1.4s ease-in-out infinite}
 .bfu-state.off i{background:none;border-color:var(--secondary);animation:none}
 .bfu-details{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.75;color:var(--secondary)}
 .bfu-details p{margin:0}.bfu-details b{color:var(--ink);font-weight:700}
-.bfu-controls{display:flex;gap:7px;margin-top:10px}
+.bfu-controls{display:flex;gap:7px;margin-top:6px}
 .bfu-controls button{flex:1;min-width:0;min-height:44px;padding:0 8px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .bfu-controls button.primary{background:var(--syung);color:var(--syung-ink)}
 .bfu-controls button.outline{background:none;box-shadow:inset 0 0 0 1px var(--rule)}
 .bfu-panel button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){.bfu-state i{animation:none}}
+@media (prefers-reduced-motion:reduce){.bfu-state i{animation:none}.bfu-more svg{transition:none}}
 .bus-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.bus-follow-dot{animation:none}}
 .bus-route-list{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;font-size:13px;line-height:1.6}
