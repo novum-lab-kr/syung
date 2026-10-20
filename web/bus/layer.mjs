@@ -861,17 +861,16 @@ class BusLayer {
     const age = bus?.observed != null ? Math.max(0, Math.round((Date.now() - bus.observed) / 1000)) : null;
     const set = (key, html) => { if (this.followKeys[key] !== html) { this.followKeys[key] = html; parts[key].innerHTML = html; } };   // 바뀐 칸만(버튼 포커스가 1초마다 날아가지 않게)
     const open = !!this.followExpanded, whole = this.stopView === 'route';
-    el.classList.toggle('at-top', whole);   // 노선 전체 칸은 지도 오른쪽 위(행님 2026-10-20) — 따라가기 칸은 아래 그대로
     // 펼침: 둘째 줄 오른쪽 '자세히' 칩(덕배가 고른 Codex 시안 03 — 시간 옆 ⌄ 는 작고 시간에 붙어 보였다)
     const chev = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
-    // 노선 전체 칸은 글자 없이 화살표만(행님 2026-10-20) — 오른쪽 위로 올린 칸을 작게
+    // 노선 전체 칸은 글자 없이 화살표만, 칸 오른쪽 위에(행님 2026-10-20)
     const more = `<button type="button" class="bfu-more${whole ? ' icon' : ''}" data-bfu-more aria-expanded="${open}" aria-label="${text(route.name)}번 방면 · 다음 정류장 · 위치 자료 ${open ? '접기' : '펼치기'}">${whole ? '' : `<span>${open ? '접기' : '자세히'}</span>`}${chev}</button>`;
     const ends = route.start && route.end ? `${text(route.start)} ↔ ${text(route.end)}` : '노선 전체';
     set('summary', whole
       // 노선 전체(덕배가 고른 Codex 노선 시안 01 '노선의 양 끝'): 이 노선이 어디서 어디까지인지 + 내 정류장 도착
-      ? `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${ends}</b></div>` +
+      ? `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${ends}</b>${more}</div>` +
         `<div class="bfu-line2"><span class="bfu-lead"><b>${text(stop.name)}</b> ${this.stopFollow ? (eta ? `<b class="bfu-eta-s">${text(eta)}</b>` : '') : '· 위치 확인 불가'}</span>` +
-        `${this.stopFollow && ahead.length ? `<span class="bfu-sub">${ahead.length}정거장 전</span>` : ''}${more}</div>`
+        `${this.stopFollow && ahead.length ? `<span class="bfu-sub">${ahead.length}정거장 전</span>` : ''}</div>`
       : `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${text(stop.name)}</b><span class="bfu-to">까지</span>${eta ? `<b class="bfu-eta">${text(eta)}</b>` : ''}</div>` +
         `<div class="bfu-line2"><span class="bfu-lead">${ahead.length ? `${ahead.length}정거장 전` : ''}</span><span class="bfu-state${following ? '' : ' off'}"><i aria-hidden="true"></i>${following ? '따라가는 중' : '따라가기 멈춤'}</span>${more}</div>`);
     const next = ahead[0]?.stop.name, running = [...this.fleet.values()].filter(b => b.route.id === route.id && !b.stale).length;

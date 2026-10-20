@@ -1,7 +1,7 @@
 // 여정 지도 표시: 길찾기 결과 · 버스 노선 번호를 지도에 그린다(걷기 점선 · 탄 구간은 노선 경로 · 타고 내리는 점 · 출발/도착), 둘레를 흐리게(veil), 맞춰 보기.
 // 여정 상태(displayedRoute · routeBounds · busRouteFocus · routeFocus · subwayOff)의 주인 — 바깥은 같은 이름의 getter · setter. 길찾기 입력 화면(lib/journey-ui)은 본체가 그대로 부른다.
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(버스 층 · 지금 모드 설정 settings · 역 흐림 stationAlpha)은 live.<이름> 으로 그때그때 읽고 쓴다.
-export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,topPad=()=>0,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}){
+export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}){
   // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
   function rideCoords(line,ids){
     const out=[];
@@ -56,7 +56,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   // MapLibre 는 fitBounds 의 padding 에 지도에 남은 padding(따라가기 카메라가 jumpTo 로 둔 시트 높이)을 더한다 — 그대로 주면 시트 높이가
   // 두 번 빠져 높은 시트에서 '들어갈 자리 없음'으로 아무것도 안 했다(2026-10-12 덕배: 곧 올 버스 따라가기 뒤 노선 전체로 안 돌아옴). 남은 만큼 빼서 준다
   function fitRoute(bottom){if(!routeBounds)return;const p=map.getPadding?.()||{},less=(v,k)=>Math.max(0,v-(p[k]||0));
-    map.fitBounds(routeBounds,{padding:{top:less(Math.max(90,topPad()),'top'),bottom:less(bottom,'bottom'),left:less(40,'left'),right:less(40,'right')},maxZoom:16,pitch:0,duration:800})}
+    map.fitBounds(routeBounds,{padding:{top:less(90,'top'),bottom:less(bottom,'bottom'),left:less(40,'left'),right:less(40,'right')},maxZoom:16,pitch:0,duration:800})}
   function clearRoute(){displayedRoute=null;live.busLayer?.clearSelection({journey:true});routeBounds=null;if(map.getSource('journey'))map.getSource('journey').setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
   const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
   const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
