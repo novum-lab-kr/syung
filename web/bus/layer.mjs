@@ -7,7 +7,8 @@ import {BusRoadNetwork,busLinePointAt,busMetresPerPixel} from './roads.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../lib/journey_map_style.mjs';
 // 차 모양마다 크기 규칙(모델의 몫): widthK 모델 폭(차로에 맞출 때), halfWidth 클릭 상자 반폭, growFrom 이 줌 위로는 지도와 같이 커짐(없으면 화면 크기 상한)
 // 가마(조선): 장대까지 폭 1.3, 줌 17 위로는 지도와 같이 커진다(2026-10-10 덕배: 확대할수록 작아 보여 안 보였다)
-const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:null},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17}};
+// sizeK: 줌 15 부터 크기 배수 — 버스는 따라가기(줌 17)에서 화면 약 37 × 12 px 라 '쥐똥만' 했다(2026-10-20 덕배), 가마는 따로 맞춰 둔 크기 그대로
+const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:null,sizeK:1.6},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17,sizeK:1}};
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
 // 노선 선은 줌 from~to 사이에서 미리 맞춘 표시선(lod 'plan') → 심시티 도로에 붙인 선(lod 'road')으로 엇갈려 바뀐다(2026-10-11 행님: 15 에서
@@ -698,7 +699,9 @@ class BusLayer {
       // 고른 노선을 멀리서 볼 때(노선 전체): 노선 선과 같은 색 · 작은 크기라 버스가 선에 묻혔다(2026-10-20 덕배) — 몸을 지도와 대비되는 색으로, 1.5배,
       // 이 정류장에 곧 올 버스는 1.35배 더
       const routeView=overview&&this.selectedRoute===bus.route.id;
-      const scale=routeView?busModelScale(zoom)*1.5*(this.stopFollow===bus.row.id?1.35:1):overview?busModelScale(zoom):L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit);
+      const picked=this.selection?.kind==='bus'&&this.selection.id===bus.row.id||this.stopFollow===bus.row.id;   // 고른 · 따라가는 버스는 1.2배 더
+      const scale=routeView?busModelScale(zoom)*1.5*(this.stopFollow===bus.row.id?1.35:1):overview?busModelScale(zoom)
+        :(L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit))*(L.sizeK||1)*(picked?1.2:1);
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-L.halfWidth,L.halfWidth])for(const z of [0,1.35]){
