@@ -695,7 +695,10 @@ class BusLayer {
       // 조선 모드의 가마: 줌 17 위로는 지도와 같이 커진다 — 줌 17 에서 보이는 크기(땅 위 약 18 m)를 그대로 (2026-10-10 덕배: 확대할수록
       // 작아 보여 안 보인다. 화면 크기를 12~16.5 px 로 묶어 줌 20 에서는 땅 위 3 m 로 줄었다)
       const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-17);   // (fit 은 줌마다 2배: 줌 17 의 값은 fit/grow)
-      const scale=overview?busModelScale(zoom):L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit);
+      // 고른 노선을 멀리서 볼 때(노선 전체): 노선 선과 같은 색 · 작은 크기라 버스가 선에 묻혔다(2026-10-20 덕배) — 몸을 지도와 대비되는 색으로, 1.5배,
+      // 이 정류장에 곧 올 버스는 1.35배 더
+      const routeView=overview&&this.selectedRoute===bus.route.id;
+      const scale=routeView?busModelScale(zoom)*1.5*(this.stopFollow===bus.row.id?1.35:1):overview?busModelScale(zoom):L.growFrom&&zoom>L.growFrom?near(L.growFrom,fit/grow)*grow:near(zoom,fit);
       const world=busMercator(pose.coordinate),yaw=(pose.heading-90)*Math.PI/180;
       const c=Math.cos(yaw),s=Math.sin(yaw),corners=[];
       for(const x of [-1.55,1.55])for(const y of [-L.halfWidth,L.halfWidth])for(const z of [0,1.35]){
@@ -705,7 +708,7 @@ class BusLayer {
       if(!intersects(rectangle,[0,0,width,height]))continue;
       const p=project(world,.7*scale*unit),selected=this.selection?.kind==='bus'&&this.selection.id===bus.row.id||this.stopFollow===bus.row.id;
       const run=!this.reduced.matches&&!bus.stale&&now<bus.motion.startedAt+bus.motion.duration;   // 조선 모드의 가마꾼은 이 동안 달린다
-      vehicles.push({world,yaw,scale,rgb:rgb(bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected,moving:run,phase:stepPhase(bus.row.id)});
+      vehicles.push({world,yaw,scale,rgb:rgb(routeView?(this.theme==='dark'?'#F4F1E6':'#22262A'):bus.route.type==='circular'?'#EAB308':color(bus.route,this.theme)),alpha:bus.stale?.55:1,label:bus.route.name,selected,moving:run,phase:stepPhase(bus.row.id)});
       this.hits.push({x:p.x,y:p.y,bounds:hitBox(rectangle,this.phone?44:24),bus,coordinate:pose.coordinate,heading:pose.heading,laneWidth:pose.laneWidth,scale});
       if(run)moving=true;
       if(vehicles.length>=(this.phone?160:320))break;
