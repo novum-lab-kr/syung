@@ -637,6 +637,9 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   layer.fleet.clear(); tap();
   assert.deepEqual([layer.stopFollow, layer.stopView, legs.at(-1)], [null, 'route', [route.id, true]], '곧 올 버스가 없으면 노선 전체로');
   assert.match(layer.followParts.summary.innerHTML, /위치 확인 불가/, '없다는 걸 위 칸에 계속 알린다');
+  const legsBefore = legs.length; press('follow');
+  assert.equal(legs.length, legsBefore, '곧 올 버스가 없으면 노선을 다시 맞추지 않는다');
+  assert.match(layer.followParts.summary.innerHTML, /곧 올 버스 위치가 아직 없어요/, '누른 자리에서 왜 안 되는지 알린다(2026-10-20)');
   assert.doesNotMatch(layer.followParts.summary.innerHTML, /노선만 표시/, "'노선만 표시' 는 지운다(행님 2026-10-20)");
   assert.equal(layer.followUI.hidden, false);
 }, false));

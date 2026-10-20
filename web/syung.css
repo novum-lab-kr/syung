@@ -97,6 +97,7 @@ body.bus-following .route-cta,body.bus-following .map-search,body.bus-following 
 .bfu-line .bus-num{flex:none;height:30px;min-width:48px;padding:0 8px;font-size:19px;border-radius:8px}
 .bfu-stop{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:700}
 .bfu-to{flex:none;font-size:12.5px;color:var(--secondary)}
+.bfu-note{color:var(--ink);font-weight:700}
 .bfu-eta-s{font-family:var(--round);font-weight:400;font-size:15px;color:var(--ink)}
 .bfu-eta{flex:none;font-family:var(--round);font-weight:400;font-size:22px;line-height:1;white-space:nowrap}
 .bfu-more{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:44px;min-height:44px;margin-block:-8px;padding:0 10px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:12px;font-weight:700;cursor:pointer}

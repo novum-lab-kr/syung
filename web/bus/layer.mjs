@@ -317,7 +317,7 @@ class BusLayer {
       this.selectedRoute=this.selectedRoute===id?null:id;this.onFollow(null);this.refreshView();this.refreshDetail();this.onRouteSelect(this.selectedLeg());
     };
     this.stopNote='';
-    this.followNote=text=>{clearTimeout(this.stopNoteTimer);this.stopNote=text;if(text)this.stopNoteTimer=setTimeout(()=>{this.stopNote='';this.refreshDetail();},3000);};
+    this.followNote=text=>{clearTimeout(this.stopNoteTimer);this.stopNote=text;if(text)this.stopNoteTimer=setTimeout(()=>{this.stopNote='';this.refreshDetail();this.renderFollowUI();},3000);};
     this.remove = () => this.destroy();
     // 도로 타일이 들어오면 새로 붙인다 — 움직이는 중에는 아직 도로에 붙인 선이 하나도 없을 때만(핀치로 막 줌 14 를 넘었을 때)
     this.roadSoon=ms=>{clearTimeout(this.roadTimer);this.roadTimer=setTimeout(()=>{if(!map.isMoving?.()||this.roadLinesPending())this.refreshView();},ms);};
@@ -823,7 +823,11 @@ class BusLayer {
   }
   stopViewAction(what) {
     if (!this.selectedRoute || this.selection?.kind !== 'stop') return;
-    if (what === 'follow') { this.stopRoute(this.selectedRoute); return; }
+    if (what === 'follow') {
+      // 곧 올 버스가 지금 없으면(막 지나감 · 위치가 아직 안 옴) 노선을 다시 맞추지 않고 그 자리에서 알린다 — 아무 일도 안 일어나 여러 번 눌러야 하는 것처럼 보였다(2026-10-20 덕배)
+      if (!this.approachingBus(this.data.routeById.get(this.selectedRoute), this.selection.id)) { this.followNote('곧 올 버스 위치가 아직 없어요'); this.renderFollowUI(); return; }
+      this.stopRoute(this.selectedRoute); return;
+    }
     if (what === 'route') { this.stopView = 'route'; this.onFollow(null); this.renderFollowUI(); this.onRouteSelect(this.selectedLeg(), {fit: true}); this.refreshDetail(); return; }
     // 정류장으로: 번호 선택을 놓고 그 정류장이 시트 위 지도에 보이게(누르기 전 카메라의 방향 · 기울기, 줌은 16~18 — 멀리서 눌렀어도 정류장이 보이게, Codex 검토)
     const cam = this.stopCamera, stop = this.data.stopById.get(this.selection.id); this.selectedRoute = null; this.stopFollow = null; this.stopView = null; this.stopCamera = null;
@@ -872,7 +876,7 @@ class BusLayer {
       // 노선 전체(덕배가 고른 Codex 노선 시안 01 '노선의 양 끝'): 이 노선이 어디서 어디까지인지 + 내 정류장 도착
       ? `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${ends}</b>${more}</div>` +
         `<div class="bfu-line2"><span class="bfu-lead"><b>${text(stop.name)}</b> ${this.stopFollow ? (eta ? `<b class="bfu-eta-s">${text(eta)}</b>` : '') : '· 위치 확인 불가'}</span>` +
-        `${this.stopFollow && ahead.length ? `<span class="bfu-sub">${ahead.length}정거장 전</span>` : ''}</div>`
+        `${this.stopNote ? `<span class="bfu-sub"><b class="bfu-note">${text(this.stopNote)}</b></span>` : this.stopFollow && ahead.length ? `<span class="bfu-sub">${ahead.length}정거장 전</span>` : ''}</div>`
       : `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${text(stop.name)}</b><span class="bfu-to">까지</span>${eta ? `<b class="bfu-eta">${text(eta)}</b>` : ''}</div>` +
         `<div class="bfu-line2"><span class="bfu-lead">${ahead.length ? `${ahead.length}정거장 전` : ''}</span><span class="bfu-state${following ? '' : ' off'}"><i aria-hidden="true"></i>${following ? '따라가는 중' : '따라가기 멈춤'}</span>${more}</div>`);
     const next = ahead[0]?.stop.name, running = [...this.fleet.values()].filter(b => b.route.id === route.id && !b.stale).length;
