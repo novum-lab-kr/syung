@@ -20,6 +20,8 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
     setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
   }
+  // 하는 중인 시트(열차 · 버스 따라가기, 버스 노선 전체, 길찾기)는 지도 빈 곳을 눌러도 닫지 않는다 — ✕ · 끌어내리기 · Esc 로만(덕배 2026-10-20)
+  function sheetBusy(){const b=live.busLayer;return !sheet.hidden&&!!(following||followBus||b?.selection?.kind==='bus'||b?.followView?.()||sheetBody.querySelector('.journey'))}
   sheet.querySelector('.sheet-close').onclick=closeSheet;
   // The handle: drag the sheet down to close it (far or fast enough), or just tap it.
   {const grab=sheet.querySelector('.sheet-grab');let y0=0,t0=0,dy=0,drag=false,moved=false;
@@ -129,5 +131,5 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
     if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}});
 
-  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
+  return {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetBusy,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v){sheetTrain=v},get following(){return following},set following(v){following=v},get easing(){return easing},set easing(v){easing=v},get followBus(){return followBus},set followBus(v){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v){sheetStation=v},get sheetToken(){return sheetToken}};
 }
