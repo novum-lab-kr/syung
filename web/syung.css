@@ -114,7 +114,11 @@ body.bus-following .route-cta,body.bus-following .map-search,body.bus-following 
 .bfu-controls button{flex:1;min-width:0;min-height:44px;padding:0 8px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .bfu-controls button.primary{background:var(--syung);color:var(--syung-ink)}
 .bfu-controls button.outline{background:none;box-shadow:inset 0 0 0 1px var(--rule)}
-.bfu-more.icon{width:44px;padding:0;margin-left:auto}
+/* 노선 전체 칸: 배경 없는 화살표만, 카드 오른쪽 위 모서리에(누르는 자리는 44 px 그대로, 행님 2026-10-20) */
+.bfu-more.icon{position:absolute;top:2px;right:2px;width:44px;padding:0;margin:0;background:none;color:var(--secondary)}
+.bfu-more.icon:hover{color:var(--ink)}
+.bfu-more.icon svg{width:20px;height:20px}
+.bfu-line:has(>.bfu-more.icon){padding-right:30px}
 .bfu-panel button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.bfu-state i{animation:none}.bfu-more svg{transition:none}}
 .bus-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
