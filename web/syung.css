@@ -88,31 +88,28 @@ html[data-theme=dark] .switch{background:#3a3c40}
 html[data-theme=dark] .bus-follow{background:#2b2d30}
 html[data-theme=dark] .bus-follow.is-off .bus-follow-actions button:not([data-bus-stop-view=stop]){background:var(--syung);color:var(--syung-ink)}
 .bus-stop.is-following .bus-follow{margin-top:0}
-/* 버스 따라가기 · 지도 우선(2026-10-20 덕배, Codex 시안 03): 시트는 내리고 지도 위에 위 정보 칸 · 버스 옆 말풍선 · 아래 상태와 버튼 */
+/* 버스 따라가기 · 따라가기 집중(2026-10-20 덕배가 고른 Codex 2차 시안 02, 노란 머리 띠는 그대로): 시트 · 검색창 · 지도 버튼을 내리고 아래 한 칸만 */
 .sheet.open.tucked{transform:translateY(calc(105% + var(--kb,0px)))!important;pointer-events:none}
-body.bus-following .route-cta{display:none}
+body.bus-following .route-cta,body.bus-following .map-search,body.bus-following .maplibregl-ctrl-top-right{display:none}
 .bus-follow-ui{position:absolute;inset:0;z-index:7;pointer-events:none}
-.bfu-card{position:absolute;top:66px;left:10px;right:62px;max-width:360px;box-sizing:border-box;padding:12px 14px;border-radius:16px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto}
-@media(min-width:721px){.bfu-card{top:72px;left:14px;right:auto;width:340px}}
-.bfu-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.bfu-head .bus-num{height:32px;min-width:52px;padding:0 10px;font-size:20px;border-radius:9px}
-.bfu-eta{text-align:right;line-height:1.1}
-.bfu-eta b{display:block;font-family:var(--round);font-weight:400;font-size:26px;white-space:nowrap}
-.bfu-eta small{display:block;margin-top:3px;font-size:12px;color:var(--secondary)}
-.bfu-card p{margin:0}
-.bfu-target{margin-top:10px!important;font-size:16px;font-weight:700}
-.bfu-dir{margin-top:2px!important;font-size:12.5px;color:var(--secondary)}
-.bfu-fresh{margin-top:8px!important;padding-top:8px;border-top:1px solid var(--rule);font-size:11.5px;color:var(--muted)}
-.bfu-bubble{position:absolute;left:50%;top:50%;transform:translate(-50%,calc(-100% - 34px));padding:8px 12px;border-radius:12px;background:var(--ink);color:var(--paper);font-size:13px;font-weight:700;white-space:nowrap;box-shadow:var(--shadow)}
-.bfu-bubble::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-7px;border:7px solid transparent;border-bottom:0;border-top-color:var(--ink)}
-.bfu-bottom{position:absolute;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:8px}
-.bfu-state{display:flex;align-items:center;gap:8px;margin:0;padding:8px 14px;border-radius:999px;background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:700;box-shadow:var(--shadow);pointer-events:auto}
-.bfu-state i{width:10px;height:10px;box-sizing:border-box;border-radius:50%;background:var(--syung);border:2px solid var(--syung-ink);animation:syung-pulse 1.4s ease-in-out infinite}
-.bfu-state i.off{background:none;border-color:var(--secondary);animation:none}
-.bfu-controls{display:flex;gap:6px;width:100%;max-width:440px;box-sizing:border-box;padding:6px;border-radius:26px;background:var(--paper);box-shadow:var(--shadow);pointer-events:auto}
-.bfu-controls button{flex:1;min-width:0;min-height:46px;padding:0 8px;border:0;border-radius:20px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.bfu-panel{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:480px;margin:0 auto;box-sizing:border-box;padding:11px 12px 12px;border-radius:18px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto}
+.bfu-line{display:flex;align-items:center;gap:8px;min-width:0}
+.bfu-line .bus-num{flex:none;height:30px;min-width:48px;padding:0 8px;font-size:19px;border-radius:8px}
+.bfu-stop{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:700}
+.bfu-to{flex:none;font-size:12.5px;color:var(--secondary)}
+.bfu-eta{flex:none;font-family:var(--round);font-weight:400;font-size:22px;line-height:1;white-space:nowrap}
+.bfu-more{flex:none;margin-left:auto;width:44px;height:44px;margin-block:-7px;border:0;border-radius:12px;background:none;color:var(--secondary);font-size:18px;cursor:pointer}
+.bfu-line2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;font-size:12px;color:var(--secondary)}
+.bfu-state{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--ink)}
+.bfu-state i{width:9px;height:9px;box-sizing:border-box;border-radius:50%;background:var(--syung);border:2px solid var(--syung-ink);animation:syung-pulse 1.4s ease-in-out infinite}
+.bfu-state.off i{background:none;border-color:var(--secondary);animation:none}
+.bfu-details{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.75;color:var(--secondary)}
+.bfu-details p{margin:0}.bfu-details b{color:var(--ink);font-weight:700}
+.bfu-controls{display:flex;gap:7px;margin-top:10px}
+.bfu-controls button{flex:1;min-width:0;min-height:44px;padding:0 8px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .bfu-controls button.primary{background:var(--syung);color:var(--syung-ink)}
-.bfu-controls button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.bfu-controls button.outline{background:none;box-shadow:inset 0 0 0 1px var(--rule)}
+.bfu-panel button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.bfu-state i{animation:none}}
 .bus-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.bus-follow-dot{animation:none}}

@@ -823,20 +823,22 @@ class BusLayer {
       padding: {top: 0, bottom: this.sheetPad(), left: 0, right: 0}, duration: 600});
     document.querySelector('.bus-detail h3')?.focus({preventScroll: true});
   }
-  // 지도 우선 따라가기 화면(2026-10-20 덕배 · Codex 시안 03 '지도 우선'): 정류장에서 고른 버스를 따라가는 동안(멈춤 포함) 아래 시트를 내리고,
-  // 지도 위에 위 정보 칸(노선 · 남은 시간 · 정거장 · 자료 나이) · 버스 옆 '다음은 …' 말풍선(따라가는 동안 카메라가 버스를 가운데에 둔다) · 아래 상태와 버튼만.
+  // 따라가기 집중 화면(2026-10-20 덕배가 고른 Codex 2차 시안 02, 머리 띠는 그대로): 정류장에서 고른 버스를 따라가는 동안(멈춤 포함) 아래 시트를 내리고
+  // 검색창 · 확대 버튼도 숨겨(body.bus-following) 지도를 넓게, 아래 한 칸에 '470 종로2가까지 약 3분 ⌄ / 3정거장 전 · 따라가는 중' 과 버튼만. ⌄ 는 방면 · 다음 정류장 · 자료 나이
   followView() { return this.selection?.kind === 'stop' && this.stopView === 'follow' && !!this.stopFollow && !!this.data?.routeById.get(this.selectedRoute); }
   renderFollowUI() {
     const on = this.followView();
-    if (on !== this.followOn) { this.followOn = on; this.onFollowView(on); }
+    if (on !== this.followOn) { this.followOn = on; this.followExpanded = false; this.onFollowView(on); }
     if (!on) { if (this.followUI) this.followUI.hidden = true; this.followKeys = {}; return; }
     if (!this.followUI) {
       const make = (tag, cls, attrs = {}) => { const n = document.createElement(tag); n.className = cls; for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
-      const el = this.followUI = make('div', 'bus-follow-ui'), bottom = make('div', 'bfu-bottom');
-      const parts = this.followParts = {card: make('div', 'bfu-card', {role: 'status'}), bubble: make('div', 'bfu-bubble', {'aria-hidden': 'true'}),
-        state: make('p', 'bfu-state', {role: 'status'}), controls: make('div', 'bfu-controls')};
-      bottom.append(parts.state, parts.controls); el.append(parts.card, parts.bubble, bottom);
-      el.addEventListener('click', e => { const b = e.target.closest?.('[data-bus-stop-view]'); if (b) this.stopViewAction(b.dataset.busStopView); });
+      const el = this.followUI = make('div', 'bus-follow-ui'), panel = make('div', 'bfu-panel');
+      const parts = this.followParts = {summary: make('div', 'bfu-summary', {role: 'status'}), details: make('div', 'bfu-details'), controls: make('div', 'bfu-controls')};
+      panel.append(parts.summary, parts.details, parts.controls); el.append(panel);
+      el.addEventListener('click', e => {
+        if (e.target.closest?.('[data-bfu-more]')) { this.followExpanded = !this.followExpanded; this.renderFollowUI(); return; }
+        const b = e.target.closest?.('[data-bus-stop-view]'); if (b) this.stopViewAction(b.dataset.busStopView);
+      });
       this.map.getContainer?.().append(el);
     }
     const el = this.followUI, parts = this.followParts; el.hidden = false;
@@ -850,16 +852,17 @@ class BusLayer {
     const eta = isSoon(row) || (secs != null && secs <= 45) ? '곧 도착' : secs != null ? `약 ${Math.max(1, Math.ceil(secs / 60))}분` : first ? arrivalParts(first).when : '';
     const age = bus?.observed != null ? Math.max(0, Math.round((Date.now() - bus.observed) / 1000)) : null;
     const set = (key, html) => { if (this.followKeys[key] !== html) { this.followKeys[key] = html; parts[key].innerHTML = html; } };   // 바뀐 칸만(버튼 포커스가 1초마다 날아가지 않게)
-    set('card', `<div class="bfu-head">${routeBadge(route)}<div class="bfu-eta">${eta ? `<b>${text(eta)}</b>` : ''}${ahead.length ? `<small>${ahead.length}정거장 전</small>` : ''}</div></div>` +
-      `<p class="bfu-target">${text(stop.name)} 정류장까지</p>${row?.direction ? `<p class="bfu-dir">${text(row.direction)} 방면</p>` : ''}` +
-      (age != null ? `<p class="bfu-fresh">위치 자료 ${age < 60 ? `${age}초` : `${Math.round(age / 60)}분`} 전 · 실제 위치와 차이가 있을 수 있어요</p>` : ''));
+    const open = !!this.followExpanded;
+    set('summary', `<div class="bfu-line">${routeBadge(route)}<b class="bfu-stop">${text(stop.name)}</b><span class="bfu-to">까지</span>${eta ? `<b class="bfu-eta">${text(eta)}</b>` : ''}` +
+      `<button type="button" class="bfu-more" data-bfu-more aria-expanded="${open}" aria-label="방면 · 다음 정류장 · 위치 자료 ${open ? '접기' : '펼치기'}">${open ? '⌃' : '⌄'}</button></div>` +
+      `<div class="bfu-line2"><span>${ahead.length ? `${ahead.length}정거장 전` : ''}</span><span class="bfu-state${following ? '' : ' off'}"><i aria-hidden="true"></i>${following ? '따라가는 중' : '따라가기 멈춤'}</span></div>`);
     const next = ahead[0]?.stop.name;
-    set('bubble', following && next ? `다음은 ${text(next)}` : '');
-    parts.bubble.hidden = !(following && next);
-    set('state', following ? '<i aria-hidden="true"></i>따라가는 중' : '<i class="off" aria-hidden="true"></i>지도를 움직여 따라가기 멈춤');
-    const btn = (what, label, primary, aria) => `<button type="button" data-bus-stop-view="${what}"${primary ? ' class="primary"' : ''}${aria ? ` aria-label="${text(aria)}"` : ''}>${label}</button>`;
-    set('controls', following ? btn('route', '노선 전체', true) + btn('stop', '정류장으로')
-      : btn('follow', '다시 따라가기', true, `${route.name}번 다시 따라가기`) + btn('route', '노선 전체') + btn('stop', '정류장으로'));
+    set('details', open ? `<p><b>${text(route.name)}번${row?.direction ? ` · ${text(row.direction)} 방면` : ''}</b></p>${next ? `<p>다음 정류장 · ${text(next)}</p>` : ''}` +
+      `${age != null ? `<p>위치 자료 ${age < 60 ? `${age}초` : `${Math.round(age / 60)}분`} 전에 받음</p>` : ''}<p>실제 위치는 20~60초 늦을 수 있어요.</p>` : '');
+    parts.details.hidden = !open;
+    const btn = (what, label, cls, aria) => `<button type="button" data-bus-stop-view="${what}" class="${cls}"${aria ? ` aria-label="${text(aria)}"` : ''}>${label}</button>`;
+    set('controls', following ? btn('route', '노선 전체', 'primary') + btn('stop', '정류장으로', 'outline')
+      : btn('follow', '다시 따라가기', 'primary', `${route.name}번 다시 따라가기`) + btn('route', '노선 전체', 'outline') + btn('stop', '정류장으로', 'outline'));
   }
   // 정류장 시트 위쪽: 고른 번호의 지금 상태와 다음에 할 수 있는 것(접힌 시트에서도 보이게 맨 위)
   followLine(rowOf, badge) {

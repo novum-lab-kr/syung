@@ -604,8 +604,12 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.doesNotMatch(layer.detailHTML(), /bus-rows|bus-hero/, '따라가는 동안은 상태 칸만(지도를 가리지 않게, 2026-10-19)');
   // 지도 우선(2026-10-20): 시트를 내리고 지도 위 정보 칸 · 아래 버튼
   assert.deepEqual([views.at(-1), layer.followUI.hidden], [true, false], '시트를 내리고 지도 위 화면을 띄운다');
-  assert.match(layer.followParts.card.innerHTML, /정류장까지/);
-  assert.match(layer.followParts.state.innerHTML, /따라가는 중/);
+  assert.match(layer.followParts.summary.innerHTML, /까지[^]*따라가는 중/);
+  assert.equal(layer.followParts.details.hidden, true, '자세히는 접어 둔다');
+  layer.followExpanded = true; layer.renderFollowUI();
+  assert.equal(layer.followParts.details.hidden, false);
+  assert.match(layer.followParts.details.innerHTML, /실제 위치는 20~60초 늦을 수 있어요/);
+  layer.followExpanded = false; layer.renderFollowUI();
   assert.match(layer.followParts.controls.innerHTML, /노선 전체[^]*정류장으로/);
   tap();
   assert.deepEqual([layer.selectedRoute, follows.at(-1)], [route.id, 'near'], '같은 번호를 다시 눌러도 꺼지지 않는다');
@@ -619,7 +623,7 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.doesNotMatch(layer.detailHTML(), /bus-rows/, '멈춰도 따라가기 칸만');
   layer.renderFollowUI();
   assert.match(layer.followParts.controls.innerHTML, /다시 따라가기[^]*노선 전체[^]*정류장으로/, '멈추면 지도 위 버튼도');
-  assert.equal(layer.followParts.bubble.hidden, true, '멈추면 버스 옆 말풍선은 숨긴다(카메라가 버스를 가운데에 두지 않는다)');
+  assert.match(layer.followParts.summary.innerHTML, /따라가기 멈춤/);
   press('stop');
   assert.deepEqual([layer.selectedRoute, layer.stopFollow, follows.at(-1), legs.at(-1)[0]], [null, null, null, null], '[정류장으로]: 선택을 놓는다');
   assert.equal(panel(), '');
