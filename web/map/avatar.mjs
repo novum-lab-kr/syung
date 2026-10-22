@@ -7,7 +7,8 @@ export const AVATAR_MINZOOM = 15;   // 이 줌부터 캐릭터, 아래는 지금
 export function avatarScale(zoom) { return 34 + Math.max(0, Math.min(3, zoom - 15)) * 4 }
 
 // 모양 등록: {build({box, quad}), rig: {hip, shoulder}, name}. 좌표는 x = 앞(얼굴), y = 왼쪽, z = 위, 발바닥 0 · 키 1.
-// part: 'body'(머리 포함, 안 움직임) · 'legL' · 'legR'(z = rig.hip 을 축으로 흔듦) · 'armL' · 'armR'(z = rig.shoulder 축, 다리와 반대)
+// part: 'body'(머리 포함, 안 움직임) · 'legL' · 'legR'(z = rig.hip 을 축으로 흔듦) · 'armL' · 'armR'(z = rig.shoulder 축, 다리와 반대).
+// quad 는 꼭짓점마다 부위를 줄 수 있다(part 에 넷의 목록, pivot [x, z]): 손에 쥔 풍선 줄처럼 아래 끝만 팔을 따라가고 위 끝은 가만히
 const LOOKS = new Map();
 export function registerAvatar(id, look) { LOOKS.set(id, look) }
 export function avatarLooks() { return [...LOOKS.keys()] }
@@ -19,10 +20,11 @@ export function buildAvatarMesh({ build, rig }) {
   const data = [];
   const put = (p, n, rgb, part, pivot) => data.push(...p, ...n, ...rgb, part, ...pivot);
   const quad = (a, b, c, d, n, color, part = 'body', pivot = null) => {
-    const P = [a, b, c, d], k = PARTS[part] ?? 0, rgb = hex(color);
-    // 축: 다리 · 팔은 이 면들의 x 가운데(상자는 아래 box 가 상자 가운데를 넘긴다)
-    const pv = pivot || [(Math.min(a[0], b[0], c[0], d[0]) + Math.max(a[0], b[0], c[0], d[0])) / 2, k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
-    for (const i of [0, 1, 2, 0, 2, 3]) put(P[i], n, rgb, k, pv);
+    const P = [a, b, c, d], K = (Array.isArray(part) ? part : [part, part, part, part]).map(p => PARTS[p] ?? 0), rgb = hex(color);
+    // 축: 다리 · 팔은 이 면들의 x 가운데(상자는 아래 box 가 상자 가운데를 넘긴다), 높이는 그 꼭짓점 부위의 rig
+    const px = pivot ? pivot[0] : (Math.min(a[0], b[0], c[0], d[0]) + Math.max(a[0], b[0], c[0], d[0])) / 2;
+    const pv = k => [px, pivot && pivot[1] != null && k ? pivot[1] : k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
+    for (const i of [0, 1, 2, 0, 2, 3]) put(P[i], n, rgb, K[i], pv(K[i]));
   };
   const box = (x0, y0, z0, x1, y1, z1, color, part = 'body') => {
     const k = PARTS[part] ?? 0, pv = [(x0 + x1) / 2, k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];

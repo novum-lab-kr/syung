@@ -80,6 +80,14 @@ test('모양 메시: 12 float 꼭짓점, 다리 · 팔 축은 rig 높이, 그림
   assert.ok(zMax <= 1.001 && r <= .351, `${zMax} ${r}`);
 });
 
+test('quad 는 꼭짓점마다 부위: 풍선 줄은 손 쪽만 팔을 따라간다', async () => {
+  const visitor = await import('../web/map/avatars/visitor.mjs');
+  const { body } = buildAvatarMesh(visitor), str = new Map();
+  for (let i = 0; i < body.length; i += 12) if (Math.abs(body[i + 6] - 0xfa / 255) < 1e-3 && Math.abs(body[i + 8] - 0xef / 255) < 1e-3) str.set(body[i + 2].toFixed(2), [body[i + 9], body[i + 11]]);
+  assert.deepEqual(str.get('0.25'), [3, Math.fround(visitor.rig.shoulder)], '손 쪽: 왼팔, 어깨 축');
+  assert.equal(str.get('1.10')[0], 0, '매듭 쪽: 가만히');
+});
+
 test('등록한 이름으로 바꿔 쓴다', () => {
   registerAvatar('test-look', syung);
   assert.ok(avatarLooks().includes('test-look'));
