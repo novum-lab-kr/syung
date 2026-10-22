@@ -142,14 +142,14 @@ export const TERRAN_DELTA = {
         "pitched": {
           "colors": {
             "light": [
-              "#8299aa",
-              "#536d85",
-              "#b4bec5"
+              "#617f9b",
+              "#a7b5c0",
+              "#be8c46"
             ],
             "dark": [
-              "#41596c",
-              "#304459",
-              "#5c6e7a"
+              "#3e566d",
+              "#768997",
+              "#896635"
             ]
           }
         }
@@ -386,8 +386,8 @@ export const TERRAN_DELTA = {
     },
     "equipment": {
       "colors": {
-        "light": "#8299aa",
-        "dark": "#41596c"
+        "light": "#9aadb9",
+        "dark": "#596e7d"
       }
     },
     "waterproofRoof": {
@@ -814,6 +814,22 @@ export const TERRAN_DELTA = {
     "bloom": {
       "tint": "#e0edfa"
     }
+  },
+  "race": {
+    "kind": "terran"
+  },
+  "signs": {
+    "colors": [
+      "#ff9b45",
+      "#e9f4ff",
+      "#ffcb72",
+      "#afd8f2",
+      "#f06c35",
+      "#cde5f5",
+      "#e3b563",
+      "#92bddc"
+    ],
+    "nightEmission": 1.0
   }
 };
 
@@ -958,14 +974,14 @@ export const ZERG_DELTA = {
         "pitched": {
           "colors": {
             "light": [
-              "#765064",
-              "#9b6478",
-              "#b18481"
+              "#936078",
+              "#d0b18a",
+              "#73526c"
             ],
             "dark": [
-              "#4c3548",
-              "#674352",
-              "#805d5c"
+              "#674258",
+              "#9b8266",
+              "#503b4e"
             ]
           }
         }
@@ -1202,8 +1218,8 @@ export const ZERG_DELTA = {
     },
     "equipment": {
       "colors": {
-        "light": "#765064",
-        "dark": "#4c3548"
+        "light": "#ad8b91",
+        "dark": "#795b68"
       }
     },
     "waterproofRoof": {
@@ -1630,6 +1646,22 @@ export const ZERG_DELTA = {
     "bloom": {
       "tint": "#e7bddb"
     }
+  },
+  "race": {
+    "kind": "zerg"
+  },
+  "signs": {
+    "colors": [
+      "#b7eb7c",
+      "#ed8ab9",
+      "#91d966",
+      "#d6a0d4",
+      "#cae89a",
+      "#e573a1",
+      "#8fcf9c",
+      "#f2b6d0"
+    ],
+    "nightEmission": 1.0
   }
 };
 
@@ -1774,14 +1806,14 @@ export const PROTOSS_DELTA = {
         "pitched": {
           "colors": {
             "light": [
-              "#c1a25c",
-              "#e2ca8b",
-              "#a58648"
+              "#c5a358",
+              "#f1d99a",
+              "#9e7a39"
             ],
             "dark": [
-              "#78623c",
-              "#958052",
-              "#625030"
+              "#88703f",
+              "#b2a171",
+              "#705831"
             ]
           }
         }
@@ -2018,8 +2050,8 @@ export const PROTOSS_DELTA = {
     },
     "equipment": {
       "colors": {
-        "light": "#c1a25c",
-        "dark": "#78623c"
+        "light": "#d1ba7b",
+        "dark": "#968354"
       }
     },
     "waterproofRoof": {
@@ -2446,5 +2478,21 @@ export const PROTOSS_DELTA = {
     "bloom": {
       "tint": "#b6f2f4"
     }
+  },
+  "race": {
+    "kind": "protoss"
+  },
+  "signs": {
+    "colors": [
+      "#72eff0",
+      "#9cd8ff",
+      "#51cbdc",
+      "#c8fff2",
+      "#91c4fa",
+      "#a4f5e9",
+      "#64b6e3",
+      "#dbfff9"
+    ],
+    "nightEmission": 1.0
   }
 };

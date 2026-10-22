@@ -9,6 +9,7 @@ import { compile, hexRGB } from '../coaster/night.mjs';
 import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mjs';
 
 const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // 거북선 · 88열차와 같은 해
+export const FLY_W = 1.1;   // 나는 유닛(모양의 fly)이 고가 위로 뜨는 높이(몸 폭 단위)
 const VERT = 12, INST = 18;   // 꼭짓점: 자리 3 · 법선 3 · 색 3(노선 색 칸은 -1) · 다리 1 · 축 2 / 인스턴스: 틀 12 · L · W · 색 3 · 가는 중
 const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
 
@@ -25,7 +26,7 @@ const VS = `#version 300 es
 precision highp float;
 in vec3 a_p;in vec3 a_n;in vec3 a_c;in float a_leg;in vec2 a_pivot;
 in vec3 i_o;in vec3 i_F;in vec3 i_R;in vec3 i_U;in vec2 i_LW;in vec3 i_rgb;in float i_go;
-uniform mat4 u_matrix;uniform float u_unit,u_time;
+uniform mat4 u_matrix;uniform float u_unit,u_time,u_fly;   // u_fly: 나는 유닛이 고가 위로 뜨는 높이(폭 단위, 0 이면 땅 유닛)
 out vec3 v_n;flat out vec3 v_c;
 void main(){
   float L=i_LW.x,W=i_LW.y,go=mod(i_go,2.),seed=floor(i_go/2.)/997.;
@@ -35,6 +36,7 @@ void main(){
     p.x=a_pivot.x+c*d.x-s*d.y;p.z=a_pivot.y+s*d.x+c*d.y;n=vec3(c*n.x-s*n.z,n.y,s*n.x+c*n.z);
   }
   p.z+=go*.03*abs(sin(ph));
+  if(u_fly>0.)p.z+=u_fly+.06*sin(u_time*1.9+seed*6.2832);   // 나는 유닛: 떠서 천천히 오르내린다(서 있어도)
   vec3 loc=vec3(L*.5+p.x*W,p.y*W,p.z*W);
   gl_Position=u_matrix*vec4(i_o+(i_F*loc.x+i_R*loc.y+i_U*loc.z)*u_unit,1.);
   v_n=i_F*n.x+i_R*n.y+i_U*n.z;v_c=a_c.r<0.?i_rgb:a_c;
@@ -52,7 +54,7 @@ export class UnitConvoy {
     this.p = compile(gl, VS, FS);
     const names = ['a_p', 'a_n', 'a_c', 'a_leg', 'a_pivot', 'i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'];
     this.attr = Object.fromEntries(names.map(n => [n, gl.getAttribLocation(this.p, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_light'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_light', 'u_fly'].map(n => [n, gl.getUniformLocation(this.p, n)]));
     this.meshes = new Map(); this.ib = gl.createBuffer(); this.cap = 0;
   }
   // 모양마다 꼭짓점 버퍼(처음 쓸 때 만든다)
@@ -92,7 +94,7 @@ export class UnitConvoy {
     for (const [key, l] of runs) { gl.bufferSubData(gl.ARRAY_BUFFER, off * 4, l.inst, 0, l.n * INST); parts.push([key, l, off]); off += l.n * INST }
     const names = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'], sizes = [3, 3, 3, 3, 2, 3, 1];
     for (const [key, l, base] of parts) {
-      const m = this.mesh(gl, key); gl.bindVertexArray(m.va); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
+      const m = this.mesh(gl, key); gl.uniform1f(U.u_fly, UNIT_SHAPES[key]?.fly ? FLY_W : 0); gl.bindVertexArray(m.va); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
       let a = 0; names.forEach((n, k) => { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[k], gl.FLOAT, false, INST * 4, base * 4 + a * 4); gl.vertexAttribDivisor(loc, 1) } a += sizes[k] });
       const pass = alpha => { gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n) };
       gl.depthMask(false);

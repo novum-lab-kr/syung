@@ -3,7 +3,8 @@
 // on a build. One tile at a time, in the order asked; the vertex and index buffers go back transferred.
 import { decodeTile } from './mvt.mjs';
 import { TileBuilder, resolvePack } from './mesh.mjs';
-import '../modes/joseon/hanok.mjs';   // 도시 부품 'hanok' 을 이 Worker 에도 등록(조선 팩이면 한옥으로 짓는다 — 코드는 메시지로 받지 않는다)
+import '../modes/joseon/hanok.mjs';
+import '../modes/starcraft/race_buildings.mjs';   // 도시 부품 'race'(스타크래프트 종족 건물)도 이 Worker 에 등록   // 도시 부품 'hanok' 을 이 Worker 에도 등록(조선 팩이면 한옥으로 짓는다 — 코드는 메시지로 받지 않는다)
 
 let P = null, TH = null;   // the style pack and the through list (osm id → crossing points), both from the first message
 self.onmessage = e => {

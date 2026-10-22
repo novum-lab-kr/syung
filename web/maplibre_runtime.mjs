@@ -59,7 +59,7 @@ import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시�
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES]);
 registerAvatar('sprout',sproutAvatar);registerAvatar('builder',builderAvatar);registerAvatar('seonbi',seonbiAvatar);registerAvatar('visitor',visitorAvatar);registerAvatar('scv',scvAvatar);registerAvatar('drone',droneAvatar);registerAvatar('probe',probeAvatar);   // 내 위치 캐릭터 모양(이름 = 모드 설정 me.look)
-for(const k of ['vulture','zergling','dragoon'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 벌처 · 저글링 · 드라군
+for(const k of ['siegeTank','ultralisk','dragoon'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 시즈 탱크 · 울트라리스크 · 드라군
 registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh,stopGrowFrom:18});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안) · 정류장은 청사초롱 장대(밤에 불)
 const JOSEON_STYLE=modes.settings('joseon').city.pack;   // 조선 모드: the same city in packed earth and 기와집 (cityPack()) — 기본 팩 + 조선 덧쓰기, 한 번 합쳐 얼린 것
 const json=id=>JSON.parse(document.getElementById(id).textContent);
@@ -317,10 +317,10 @@ const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the b
 let CityBuildings,CityLandmarks,TurtleShips,UnitConvoy,CoasterTrain,RideTrack,SLEEPER_M,RideLayer,CoasterRidePlacement,sampleRideTracks,FestoonLayer,NightBloom,kitReady=false,kitLoad=null;
 let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().city.enabled;
 // 모드 코드가 다시 정적으로 부르는 모듈: 함께 바로 요청한다(안 그러면 city_buildings 를 다 받고 읽은 뒤에야 city_mesh 를 요청 — 맥 측정 1.8 s 차례 대기)
-const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','modes/coaster/badges','modes/coaster/ride_sites'];   // (web/ 기준 경로)
+const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','modes/coaster/badges','modes/coaster/ride_sites','modes/starcraft/race_shapes'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mjs'),import('./modes/starcraft/convoy.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mjs'),import('./modes/starcraft/convoy.mjs'),import('./modes/starcraft/race_buildings.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
     .then(([b,l,t,c,r,p,q,,f,nb,sc])=>{({UnitConvoy}=sc);({FestoonLayer}=f);({NightBloom}=nb);({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}

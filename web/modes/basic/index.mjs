@@ -28,7 +28,7 @@ export default {
     // predictStops 는 새 자료 없이 미리 달려 갈 정차 역 수, timeWarp 는 배속으로 앞서 달리기(롤코 배속 버튼)
     // units: look 이 units(스타크래프트 유닛 행렬)일 때 맨 앞 · 뒤 유닛 모양 이름(web/modes/starcraft/unit_shapes.mjs)
     trains: { look: 'commuter', body: 'wide', predictStops: 3, timeWarp: false, units: { lead: 'siegeTank', rest: 'siegeTank' } },
-    // 버스: look 은 모양 — bus · palanquin(가마) · vulture · zergling · dragoon(스타크래프트 유닛)
+    // 버스: look 은 모양 — bus · palanquin(가마) · siegeTank · ultralisk · dragoon(스타크래프트 유닛)
     buses: { look: 'bus' },
     // 내 위치 캐릭터(줌 15 부터 노란 점 대신, web/map/avatars/): sprout(새싹 볼빵 후디) · builder(꼬마 건설 반장) · seonbi(꼬마 선비) · visitor(놀이공원 아이) · scv · drone · probe(스타크래프트 종족 일꾼)
     me: { look: 'sprout' },
