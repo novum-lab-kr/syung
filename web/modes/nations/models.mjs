@@ -30,26 +30,39 @@ function facade(M, { zA = 0, zB, nL, nS, w = .5, rows = null, glass = A(2), wall
 
 // ── 그리스(산토리니): 흰 회벽 큐브 집 1~2층, 둥근 모서리 없이 낮고 하얗게, 파란 문 · 덧창, 옥상 난간, 가끔 파란 돔 예배당 · 계단
 const GREECE = [
-  { id: 'cube1', fit: fit(4), build(M) {
+  { id: 'cube1', floors: 1, fit: fit(4), build(M) {
     const h = F * 1.15; facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .3, rows: [[.1, .22]], glass: A(0) }); rim(M, h, .07, A(1));   // 파란 덧창
   } },
-  { id: 'cube2', fit: fit(3), build(M) {   // 아래 큐브 위에 한쪽으로 밀린 작은 큐브(2층) + 옥상 테라스 난간
-    const h = F * 1.1; facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .28, rows: [[.1, .21]], glass: A(0) }); M.box(-.35, .25, .6, .7, h, h + F, WALL);
-    rim(M, h, .07, A(1)); rim(M, h + F, .05, A(1));
+  { id: 'stair1', floors: 1, fit: fit(3), build(M) {   // 바깥 계단이 옥상 테라스로 오르는 집
+    const h = F * 1.1; facade(M, { zB: h, nL: bays(M, 1.5), nS: 1, w: .26, rows: [[.1, .22]], glass: A(0) }); rim(M, h, .08, A(1));
+    for (let k = 0; k < 6; k++) M.box(-.7 + k * .1, -1.06, .05, .06, 0, (k + 1) * h / 6, WALL);   // 벽에 붙은 흰 계단
   } },
-  { id: 'chapel', fit: fit(.5, { minArea: 80 }), build(M) {   // 작은 예배당: 흰 몸통, 파란 돔, 종 걸린 흰 벽(종탑 벽)
+  { id: 'chapel', floors: 1, fit: fit(.5, { minArea: 80 }), build(M) {   // 작은 예배당: 흰 몸통, 파란 돔, 종 걸린 흰 벽(종탑 벽)
     const h = F * 1.3; facade(M, { zB: h, nL: bays(M, 1.5), nS: 1, w: .3, rows: [[.12, .3]], glass: A(0) }); rim(M, h, .05, A(1));
     const r = Math.min(.75, .75 / Math.max(1, M.aspect * .6)); M.frustum(0, 0, r, r, h, h + .06, { n: 12, ...A(1) }); M.dome(0, 0, r, h + .06, .32, { n: 12, rings: 4, ...A(0) });
     M.box(.8, 0, .06 / M.aspect, .45, h, h + .42, A(1)); M.box(.8, 0, .07 / M.aspect, .14, h + .18, h + .3, A(0));   // 종탑 벽 + 종 자리
   } },
-  { id: 'terrace', fit: fit(2), build(M) {   // 계단처럼 물러나는 세 단(언덕 마을)
+  { id: 'cube2', floors: 2, fit: fit(3), build(M) {   // 아래 큐브 위에 한쪽으로 밀린 작은 큐브(2층) + 옥상 테라스 난간
+    const h = F * 1.1; facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .28, rows: [[.1, .21]], glass: A(0) }); M.box(-.35, .25, .6, .7, h, h + F, WALL);
+    rim(M, h, .07, A(1)); rim(M, h + F, .05, A(1));
+  } },
+  { id: 'twin2', floors: 2, fit: fit(3), build(M) {   // 높이가 다른 두 채가 붙은 집(2층 · 1층), 파란 문
+    const h = F * 2.1; facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .3, rows: [[.1, .22], [.1 + F, .22 + F]], glass: A(0) }); rim(M, h, .06, A(1));
+    M.box(.55, 0, .45, 1.01, 0, F * .7, A(1)); M.box(.55, 0, .43, .99, F * .7, F * .78, WALL);   // 낮은 흰 담 · 마당
+  } },
+  { id: 'terrace', floors: 2, fit: fit(2), build(M) {   // 계단처럼 물러나는 세 단(언덕 마을)
     for (let k = 0; k < 3; k++) { const x0 = -1 + k * .62, z = F * (k + 1) * .85; M.box((x0 + 1) / 2, 0, (1 - x0) / 2, 1, 0, z, WALL); rim(M, z, .05, A(1)) }
+  } },
+  { id: 'tower3', floors: 3, fit: fit(2), build(M) {   // 세 층 쌓인 큐브(위로 갈수록 작게) + 파란 지붕 작은 방
+    const h = F * 1.05; facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .3, rows: [[.1, .22]], glass: A(0) });
+    M.box(.15, -.1, .75, .75, h, h + F, WALL); M.box(.3, -.2, .45, .45, h + F, h + 2 * F, WALL); M.box(.3, -.2, .47, .47, h + 2 * F, h + 2 * F + .04, A(0));
+    rim(M, h, .06, A(1)); rim(M, h + F, .05, A(1));
   } },
 ];
 
 // ── 네덜란드(암스테르담): 좁고 깊은 벽돌집, 앞뒤 박공(계단 · 종 · 목 · 뾰족), 가파른 지붕, 층마다 큰 창(흰 테)
 function dutch(gable, floors) {
-  return { id: `${gable}${floors}`, fit: fit(gable === 'spout' ? 2 : 3), build(M) {
+  return { id: `${gable}${floors}`, floors, fit: fit(gable === 'spout' ? 2 : 3), build(M) {
     const h = F * floors + .05, rise = .55;
     facade(M, { zB: h, nL: bays(M, .8), nS: 2, w: .62, rows: Array.from({ length: floors }, (_, f) => [.06 + f * F, .06 + f * F + F * .62]) });
     M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], h, [[-.97, 0], [.97, 0], [.97, 0], [-.97, 0]], h + rise, { ...ROOF, top: false });   // 긴 축 용마루의 가파른 지붕
@@ -63,35 +76,45 @@ function dutch(gable, floors) {
     }
   } };
 }
-const NETHERLANDS = [dutch('step', 3), dutch('bell', 4), dutch('neck', 4), dutch('spout', 3)];
+const NETHERLANDS = [2, 3, 4, 5].flatMap(f => ['step', 'bell', 'neck', 'spout'].map(g => dutch(g, f)));
 
 // ── 파리(오스만): 크림 석조 5~7층, 1층 가게(어두운 유리 · 차양), 2층 · 꼭대기 아래층 철제 발코니 띠, 회청 아연 망사르드 + 지붕창 + 굴뚝
-function haussmann(floors, corner) {
-  return { id: `haus${floors}${corner ? 'c' : ''}`, fit: fit(corner ? 1 : 3, corner ? { minArea: 150 } : {}), build(M) {
-    const h = F * floors + .1, rise = .42, k = .86;
-    facade(M, { zB: h, nL: bays(M, 2.4), nS: 2, w: .5, rows: [[.04, .3], [.4, h - .08]] });   // 1층 가게 유리 + 층을 꿰는 키 큰 창(층은 발코니 띠로 — 층마다 창을 나누면 꼭짓점이 세 배)
-    for (const zb of [F + .06, h - F + .02]) { rim(M, zb, .035, A(1)) }   // 철제 발코니 띠(2층 · 꼭대기 아래층)
-    M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], h, [[-k, -k], [k, -k], [k, k], [-k, k]], h + rise, { ...A(0), top: true });   // 망사르드
-    const n = bays(M, 1.6); for (let i = 0; i < n; i++) for (const y of [-.93, .93]) M.box(-1 + (2 * i + 1) / n, y, .25 / n, .05, h + .06, h + .26, WALL);   // 지붕창
-    for (const x of [-.6, .6]) M.box(x, 0, .05, .12, h + rise, h + rise + .18, ROOF);   // 굴뚝
-    if (corner) { const r = .3; M.frustum(.82, -.7, r, r, h - F, h + .1, { n: 10, ...WALL }); M.dome(.82, -.7, r, h + .1, .3, { n: 10, rings: 3, ...A(0) }) }   // 모서리 돔 탑
+// 벽에서 바깥으로 나온 띠(처마 · 발코니): 벽 면과 같은 면에 겹치면 깜박이니 늘 벽 앞에(y 1.01~1.05)
+function band(M, z, h, out, o) { for (const y of [-1, 1]) M.box(0, y * (1 + out / 2), 1 + out / M.aspect, out / 2, z, z + h, o); for (const x of [-1, 1]) M.box(x * (1 + out / 2 / M.aspect), 0, out / 2 / M.aspect, 1, z, z + h, o) }
+// 행님 2026-10-22 "파리가 좀..": 칸이 떨어진 가는 탑 · 층을 꿰는 검은 줄 창(창살처럼) · 7층이 어색했다 — 이어진 블록 벽, 층마다 나뉜 프랑스 창, 5~6층 고른 높이, 처마 · 철제 발코니
+function haussmann(floors, corner, style = 'classic') {
+  return { id: `haus${floors}${style}${corner ? 'c' : ''}`, floors, fit: fit(corner ? .6 : 3, corner ? { minArea: 300 } : {}), build(M) {
+    const h = F * floors + .12, rise = .36, k = .88;
+    const rows = [[.03, .3], ...Array.from({ length: floors - 1 }, (_, f) => [.42 + f * F, .42 + f * F + .2])];   // 1층 가게 유리 + 층마다 키 큰 프랑스 창
+    facade(M, { zB: h, nL: bays(M, 1.8), nS: 2, w: .46, rows });
+    band(M, .34, .03, .03, WALL);   // 1층 위 돌 띠
+    if (style === 'classic') { band(M, .42 + .2, .015, .05, A(1)); band(M, .42 + (floors - 2) * F + .2, .015, .05, A(1)) }   // 철제 발코니(2층 · 꼭대기 아래층)
+    if (style === 'balcony') for (let f = 0; f < floors - 1; f++) band(M, .42 + f * F + .2, .012, .04, A(1));   // 층마다 철제 발코니
+    if (style === 'plain') band(M, .42 + F - .1, .03, .02, WALL);   // 수수한 꼴: 층 사이 돌 띠 하나
+    band(M, h - .03, .045, .05, WALL);   // 처마(코니스)
+    M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], h + .015, [[-k, -k], [k, -k], [k, k], [-k, k]], h + rise, { ...(style === 'plain' ? ROOF : A(0)), top: true });   // 망사르드(수수한 꼴은 건물마다 다른 지붕색)
+    const n = bays(M, 1.4); for (let i = 0; i < n; i++) for (const y of [-.95, .95]) M.box(-1 + (2 * i + 1) / n, y, .2 / n, .04, h + .08, h + .26, WALL);   // 지붕창
+    for (const x of [-.55, .1, .65]) M.box(x, 0, .04, .1, h + rise, h + rise + .16, ROOF);   // 굴뚝 줄
+    if (corner) { const r = .28; M.frustum(.8, -.72, r, r, h - F, h + .1, { n: 10, ...WALL }); M.dome(.8, -.72, r, h + .1, .3, { n: 10, rings: 3, ...A(0) }) }   // 모서리 돔 탑(드물게)
   } };
 }
-const PARIS = [haussmann(6, false), haussmann(5, false), haussmann(7, false), haussmann(6, true)];
+const PARIS = [...[4, 5, 6, 7].flatMap(f => ['classic', 'balcony', 'plain'].map(st => haussmann(f, false, st))), haussmann(6, true)];
 
 // ── 이집트(카이로): 사암 · 흙벽 3~5층 평지붕, 작은 창, 옥상 난간 · 검은 물탱크 · 흰 접시 · 덜 지은 층 철근, 가끔 돔 + 미나레트 모스크
 function cairo(floors, extra) {
-  return { id: `cairo${floors}${extra}`, fit: fit(extra === 'mosque' ? 1 : 3, extra === 'mosque' ? { minArea: 160 } : {}), build(M) {
+  return { id: `cairo${floors}${extra}`, floors, fit: fit(extra === 'mosque' ? 1 : 3, extra === 'mosque' ? { minArea: 160 } : {}), build(M) {
     const h = F * floors + .04;
     facade(M, { zB: h, nL: bays(M, 2), nS: 1, w: .3, rows: Array.from({ length: floors }, (_, f) => [.1 + f * F, .24 + f * F]) }); rim(M, h, .1, WALL);
     if (extra === 'tanks') { M.frustum(-.5, .3, .1, .1, h, h + .13, { n: 8, ...A(2) }); M.frustum(-.15, .3, .1, .1, h, h + .13, { n: 8, ...A(2) }); M.dome(.5, -.4, .14, h + .06, .05, { n: 8, rings: 2, ...A(1) }); M.box(.5, -.4, .02, .03, h, h + .06, A(1)) }
+    if (extra === 'plain') { M.box(-.3, 0, .5, .02, h + .12, h + .14, A(2)); for (let k = 0; k < 3; k++) M.box(-.6 + k * .3, 0, .06, .03, h + .04, h + .12, [A(0), A(1), A(2)][k]) }   // 빨랫줄 · 빨래
     if (extra === 'rebar') { for (const [x, y] of [[-.8, -.8], [.8, -.8], [-.8, .8], [.8, .8]]) M.box(x, y, .015, .015, h, h + .25, A(2)); M.frustum(.3, .3, .1, .1, h, h + .13, { n: 8, ...A(2) }) }
     if (extra === 'mosque') { const r = .55; M.frustum(0, 0, r, r, h, h + .06, { n: 12, ...WALL }); M.dome(0, 0, r, h + .06, .5, { n: 12, rings: 4, ...A(0) });
       M.frustum(.85, .75, .1, .08, h, h + 1.2, { n: 8, ...A(1) }); M.dome(.85, .75, .09, h + 1.2, .14, { n: 8, rings: 2, ...A(0) }) }
   } };
 }
-const EGYPT = [cairo(3, 'tanks'), cairo(4, 'tanks'), cairo(5, 'rebar'), cairo(4, 'rebar'), cairo(3, 'mosque')];
+const EGYPT = [...[2, 3, 4, 5, 6, 7].flatMap(f => ['tanks', 'rebar', 'plain'].map(x => cairo(f, x))), cairo(3, 'mosque'), cairo(4, 'mosque')];
 
 export const NATION_MODELS = { greece: GREECE, netherlands: NETHERLANDS, paris: PARIS, egypt: EGYPT };
 // 나라마다 칸 나누기: 긴 축 반 길이 목표(m) · 깊이 반 최대(m) · 이보다 높은 실제 건물은 보통 건물(도심 고층)
-export const NATION_CELLS = { greece: { halfM: 5.5, depthM: 6, maxH: 30 }, netherlands: { halfM: 3.6, depthM: 8, maxH: 30 }, paris: { halfM: 10, depthM: 10, maxH: 60 }, egypt: { halfM: 7, depthM: 7, maxH: 45 } };
+// floors: [최소, 최대] 층 — 실제 건물 높이(3.2 m 한 층)에 가까운 층수 모형을 고른다(같은 층수 안에서 여러 꼴). 행님 2026-10-22: 다양성이 사라졌다
+export const NATION_CELLS = { greece: { halfM: 5.5, depthM: 6, maxH: 30, floors: [1, 3] }, netherlands: { halfM: 3.6, depthM: 8, maxH: 30, floors: [2, 5] }, paris: { halfM: 13, depthM: 9, maxH: 60, gap: .985, floors: [4, 7] }, egypt: { halfM: 7, depthM: 7, maxH: 45, floors: [2, 7] } };

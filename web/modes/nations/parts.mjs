@@ -138,7 +138,7 @@ function modelBuilding(tb, ctx, unit) {
   if (keeps(tb, R).some(([x, y, r]) => pointInPolygon(x, y, ctx.outer, ctx.holes) || edgeDistance(x, y, [ctx.outer]) <= r)) return false;
   const rect = fitRect(ctx.outer, ctx.holes), mpu = tb.mPerUnit; if (!rect || rect.hy * mpu < NATION_LIMITS.minHalfM) return false;
   const u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []), W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
-  const nx = Math.max(1, Math.min(8, Math.round(rect.hx * mpu / C.halfM))), ny = Math.max(1, Math.min(3, Math.round(rect.hy * mpu / C.depthM))), vx = -rect.uy, vy = rect.ux, gap = .9;   // 칸끼리 · 옆 땅 건물과 벽이 같은 면에 겹치면 깜박였다(맥 캡처 — 점박이 줄): 늘 조금씩 띄운다
+  const nx = Math.max(1, Math.min(8, Math.round(rect.hx * mpu / C.halfM))), ny = Math.max(1, Math.min(3, Math.round(rect.hy * mpu / C.depthM))), vx = -rect.uy, vy = rect.ux, gap = C.gap ?? .9;   // (파리는 블록 벽이 이어져 보이게 거의 붙인다 — 칸끼리 마주 보는 벽은 안쪽이라 안 보인다)   // 칸끼리 · 옆 땅 건물과 벽이 같은 면에 겹치면 깜박였다(맥 캡처 — 점박이 줄): 늘 조금씩 띄운다
   let built = 0;
   for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
     const seed = (ctx.seed ^ Math.imul(i + 1, 73856093) ^ Math.imul(j + 1, 19349663)) >>> 0;
@@ -146,7 +146,10 @@ function modelBuilding(tb, ctx, unit) {
     const cell = { cx: rect.cx + rect.ux * ox + vx * oy, cy: rect.cy + rect.uy * ox + vy * oy, hx: rect.hx / nx * gap, hy: rect.hy / ny * gap, ux: rect.ux, uy: rect.uy };
     if (cell.hy > cell.hx) Object.assign(cell, { hx: cell.hy, hy: cell.hx, ux: vx, uy: vy });   // 긴 축을 x 로
     const area = 4 * cell.hx * cell.hy * mpu * mpu, aspect = cell.hx / cell.hy;
-    const model = pickModel(list, { area, aspect, tall: false, r: unit(seed, 611) }); if (!model) continue;
+    // 층수: 실제 건물 높이(한 층 3.2 m)에 칸마다 ±1 흔들어 나라 범위 안으로, 그 층수(없으면 가장 가까운) 모형 중에서
+    const [f0, f1] = C.floors || [1, 9], want = Math.max(f0, Math.min(f1, Math.round((ctx.H - ctx.minH) / 3.2 + (unit(seed, 612) - .5) * 2.2)));
+    const near = Math.min(...list.map(m => Math.abs((m.floors ?? want) - want))), pool = list.filter(m => Math.abs((m.floors ?? want) - want) === near);
+    const model = pickModel(pool, { area, aspect, tall: false, r: unit(seed, 611) }); if (!model) continue;
     const t = templateIndex(list.indexOf(model), aspect), s = 10;   // 높이 단위 10 m(모형 z 1 = 10 m)
     recs.push([t, cell.cx * u, cell.cy * u, ctx.minH, cell.ux, cell.uy, cell.hx * mpu, cell.hy * mpu, s, ctx.mat, ctx.roofSlot, Hq & 255, Hq >>> 8, seed & 255, (seed >>> 8) & 255, b[2], b[3] | NO_AO]);
     const top = ctx.minH + T.tops[t] * s, c = (a, d) => [(cell.cx + cell.ux * cell.hx * a + vx * cell.hy * d) * u, (cell.cy + cell.uy * cell.hx * a + vy * cell.hy * d) * u];
