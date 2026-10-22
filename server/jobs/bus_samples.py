@@ -3,6 +3,8 @@
 학습용 노선은 날마다 바뀐다(BUS_LIVE_SAMPLE_ROTATE, 덕배 2026-10-14): 모든 노선을 고정된 섞인 차례로 돌며 하루 학습 몫
 (BUS_LIVE_DAILY_LIMIT − BUS_LIVE_SAMPLE_RESERVE)에 맞는 수만큼. 노선 하나를 하루(05~24시, 약 75초마다) 받으면 구간 빠르기를
 배우기에 충분했다(pipeline/bus_replay.mjs: 하루치로 배운 것 ≈ 이레치). 끄면(0) 예전처럼 BUS_LIVE_SAMPLE_ROUTES 만.
+그 몫 가운데 한 노선은 전날 노선을 다시 받는다(행님 2026-10-22): 매일 새 노선만 받으면 전날까지 배운 노선이 그날 채점에
+거의 안 걸려(trainedRoutes 0~3) 학습이 나아지는지 잴 수 없었다 — 다음 날 같은 노선으로 진짜 채점이 생긴다.
 """
 from __future__ import annotations
 
@@ -22,13 +24,25 @@ def is_night_route(route: dict) -> bool:
 
 
 def day_routes(route_ids, day: int, budget: int) -> list[str]:
-    """그 날(날짜 순번 day)의 학습 노선: 노선 번호의 해시 차례(유형이 섞이게)로 이어서 하루 budget 호출에 맞는 수만큼."""
+    """하루 몫에서 전날 노선 하나를 재관측하고, 나머지는 해시 차례로 새로 배운다."""
     order = sorted(route_ids, key=lambda rid: hashlib.sha1(rid.encode()).hexdigest())
     if not order:
         return []
     count = min(len(order), max(1, round(budget / CALLS_PER_ROUTE_DAY)))
-    start = day * count % len(order)
-    return [order[(start + i) % len(order)] for i in range(count)]
+    # 같은 호출 몫 안에서 전날 학습 노선 하나를 다시 관측한다. 새 노선 순환은 계속한다.
+    # 한 노선 몫뿐이면 이틀씩 받아 둘째 날을 채점용으로 삼는다.
+    if count == 1:
+        return [order[(day // 2) % len(order)]]
+    fresh = count - 1
+    start = day * fresh % len(order)
+    selected = [order[(start + i) % len(order)] for i in range(fresh)]
+    repeat = order[((day - 1) * fresh) % len(order)]
+    if repeat not in selected:
+        selected.append(repeat)
+    else:
+        # 작은 노선 집합에서 중복되어도 하루 노선 수를 유지한다.
+        selected.append(next(rid for rid in order if rid not in selected))
+    return selected
 
 
 def sample_routes(proxy) -> list:
