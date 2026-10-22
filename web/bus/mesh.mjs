@@ -104,7 +104,10 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
     pos.y=sin(u_pitch)*y-cos(u_pitch)*z;pos.z=18.+cos(u_pitch)*y+sin(u_pitch)*z;
     normal.y=sin(u_pitch)*a_normal.y-cos(u_pitch)*a_normal.z;normal.z=cos(u_pitch)*a_normal.y+sin(u_pitch)*a_normal.z;}
   // 가마꾼(조선 모드): 달리는 동안(i_info.w) 다리가 엉덩이를 축으로 흔들리고, 가마와 사람이 걸음마다 살짝 들썩인다
-  float run=i_info.w,ph=6.2832*(u_time*1.7+i_info.z);
+  float run=i_info.w,ph=6.2832*(u_time*1.7+i_info.z),mat=a_material;
+  // 스타크래프트 유닛(web/modes/starcraft/units.mjs): 다리는 재료 + 100, 축 = (uv.x, |uv.y|), uv.y 부호가 박자(A · B 반대)
+  if(mat>99.5){mat-=100.;float a=run*.5*sin(ph)*sign(a_uv.y),ca=cos(a),sa=sin(a),hz=abs(a_uv.y);
+    vec2 d=vec2(pos.x-a_uv.x,pos.z-hz);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=hz+sa*d.x+ca*d.y;}
   if(a_material>19.5&&a_material<20.5){float k=abs(a_uv.y)-1.,a=run*.5*sin(ph+6.2832*k)*sign(a_uv.y),ca=cos(a),sa=sin(a);
     vec2 d=vec2(pos.x-a_uv.x,pos.z-.45);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=.45+sa*d.x+ca*d.y;}
   pos.z+=run*.03*abs(sin(ph));
@@ -115,14 +118,14 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
   vec3 p=pos*i_pose.w*u_unit;
   p.xy=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+i_pose.xy;
   gl_Position=u_matrix*vec4(p,1.); v_normal=vec3(c*normal.x-s*normal.y,s*normal.x+c*normal.y,normal.z);
-  v_uv=a_uv;v_color=i_color;v_material=a_material;v_info=i_info.xy;}`;
+  v_uv=a_uv;v_color=i_color;v_material=mat;v_info=i_info.xy;}`;
 const FS=`#version 300 es
 precision highp float; in vec3 v_normal; in vec2 v_uv; in vec4 v_color; flat in float v_material; flat in vec2 v_info;
-uniform float u_dark,u_rows,u_fade,u_time; uniform sampler2D u_atlas; out vec4 outColor;
+uniform float u_dark,u_rows,u_fade,u_time; uniform sampler2D u_atlas; uniform vec3 u_unitPal[16]; out vec4 outColor;
 float roundedBox(vec2 p,vec2 b,float r){vec2 q=abs(p)-b+r;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
 float shape(float d){return 1.-smoothstep(-fwidth(d),fwidth(d),d);}
 void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
-  if(m>35.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
+  if(m>35.5&&m<36.5){   // 청사초롱 밤 불빛(조선 정류장): 가운데가 짙은 둥근 빛, 비단 종류 색이 살짝 섞인 따뜻한 빛
     float d=length((v_uv-.5)*2.),g=1.-smoothstep(0.,1.,d);col=mix(vec3(1.,.8,.5),v_color.rgb,.22);alpha*=.8*g*g;}
   else if(m>10.5&&m<11.5){float d=length((v_uv-.5)*2.);
     if(v_info.y>1.5){alpha*=.9*(1.-smoothstep(.88,1.,d));col=vec3(1.,.992,.965);}   // 노선 전체: #FFFDF6 바탕, 가장자리 12 % 만 흐리게(Codex 2026-10-20) — 곧 올 버스도 같은 크기(덕배: 다 같은 크기로)
@@ -141,6 +144,8 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
     else if(m<7.5&&m>6.5)col=vec3(.9,.92,.86);
     else if(m<9.5&&m>8.5)col=mix(vec3(.22,.24,.25),vec3(.30,.32,.33),u_dark);
     else if(m<10.5&&m>9.5)col=vec3(.75,.59,.10);
+    else if(m>38.5&&m<39.5)col=v_color.rgb;   // 스타크래프트 유닛: 'line' 은 버스 종류 색, 40~55 는 그 모양의 palette(u_unitPal)
+    else if(m>39.5&&m<55.5)col=u_unitPal[int(m-39.5)];
     else if(m>19.5&&m<20.5)col=vec3(.843,.796,.698);   // 가마꾼: 바지 #D7CBB2, 저고리 #F1E7D3, 얼굴 #C99372, 패랭이 #C5AC79
     else if(m>20.5&&m<21.5)col=vec3(.945,.906,.827);
     else if(m>21.5&&m<22.5)col=vec3(.788,.576,.447);
@@ -208,12 +213,12 @@ function effectMesh(beam) {
   return new Float32Array(data);
 }
 
-// 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 걸음, headlights: 밤 전조등,
+// 차 모양 등록(모드 설정 buses.look): 이름 → {build: 메시, carriers: 움직이는 동안 가마꾼 · 유닛 다리 걸음, headlights: 밤 전조등, palette: 재료 40~55 의 색(스타크래프트 유닛),
 //   stop: 정류장 기둥 메시(없으면 BUS 기둥), stopGlow: 밤에 정류장 위에 깊이 없이 겹치는 불빛 메시,
 //   stopGrowFrom: 이 줌 위로는 정류장이 화면 크기 고정을 풀고 지도와 같이 커진다(없으면 고정)}. 'bus' 는 기본.
 // 다른 모양(조선 가마)은 본체가 첫 화면에서 등록한다(렌더러가 처음 그리기 전에 — 셰이더의 재료 번호는 이 파일에 있다)
 const BUS_LOOKS = new Map([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
-export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null, stopGrowFrom = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow, stopGrowFrom }) }
+export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null, stopGrowFrom = null, palette = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow, stopGrowFrom, palette }) }
 export function busStopGrowFrom(look) { return BUS_LOOKS.get(look)?.stopGrowFrom ?? null }
 
 export class BusRenderer {
@@ -221,7 +226,7 @@ export class BusRenderer {
   init(gl){
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
-    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
+    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time','unitPal'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
     // 배치: 0 버스 몸 · 1 표지판 · 2 · 3 효과(낮 · 밤 전조등), 4 부터 그때 등록된 다른 모양(조선 가마 …)의 몸 · 정류장 · 밤 불빛 차례로
     const meshes=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)],slot=build=>build?meshes.push(build())-1:null;
     this.looks=new Map([...BUS_LOOKS].map(([name,L])=>[name,name==='bus'?{...L,batch:0,stopBatch:1,glowBatch:null}:
@@ -257,6 +262,7 @@ export class BusRenderer {
     this.matrix.set(matrix);for(let i=0;i<4;i++)this.matrix[12+i]=matrix[i]*origin[0]+matrix[4+i]*origin[1]+matrix[12+i];
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.u.matrix,false,this.matrix);gl.uniform1f(this.u.unit,unit);gl.uniform1f(this.u.dark,dark?1:0);
     gl.uniform1f(this.u.pitch,pitch);gl.uniform1f(this.u.time,time);
+    if(L.palette){L.pal??=new Float32Array(48);L.palette.slice(0,16).forEach((h,i)=>L.pal.set([1,3,5].map(k=>parseInt(h.slice(k,k+2),16)/255),i*3));gl.uniform3fv(this.u.unitPal,L.pal)}   // 스타크래프트 유닛의 색
     gl.uniform1f(this.u.rows,this.rows);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.u.atlas,0);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1f(this.u.fade,1);

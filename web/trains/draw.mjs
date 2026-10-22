@@ -177,7 +177,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
       // Reuse the staging array and matrix: no JS vertex arrays or per-vertex objects each frame.
       this.data=new Float32Array(131072);this.matrix=new Float32Array(16);this.rgb=new Map();
-      this.rideTrack=this.c88ride=this.c88=this.ships=null;   // 모드 코드가 오면 kit(look) 이 지금 모양에 쓰는 것만 만든다
+      this.rideTrack=this.c88ride=this.c88=this.ships=this.units=null;   // 모드 코드가 오면 kit(look) 이 지금 모양에 쓰는 것만 만든다
     }
     // 모드 코드가 온 뒤, 지금 열차 모양(trains.look)에 쓰는 것만: coaster88 — 롤코 1인칭 레일 · 침목, 내가 탄 칸(맨 마지막에 깊이를 비우고 따로 —
     // drawTrains 끝), 88열차(서울 팩의 train.coaster88) / fleet — 조선 모드의 배 선단(열차 한 대 = 배 몇 척, 공중 수로 위). 안 쓰는 모양의 GL 은 치운다
@@ -187,6 +187,8 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(look!=='coaster88'&&this.c88){this.c88.dispose(gl);this.c88ride.dispose(gl);this.rideTrack.dispose(gl);this.c88=this.c88ride=this.rideTrack=null;live.CoasterTrain.last=null}
       if(look==='fleet'&&!this.ships){this.ships=new live.TurtleShips(JOSEON_STYLE.train?.turtleShip);this.ships.init(gl)}
       if(look!=='fleet'&&this.ships){this.ships.dispose(gl);this.ships=null;live.TurtleShips.last=null}
+      if(look==='units'&&!this.units){this.units=new live.UnitConvoy();this.units.init(gl)}   // 스타크래프트: 유닛 행렬
+      if(look!=='units'&&this.units){this.units.dispose(gl);this.units=null;live.UnitConvoy.last=null}
     }
     onAdd(map,gl){
       this.map=map;
@@ -260,7 +262,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       const view=map.getBounds(),lo=maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()),hi=maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()),pad=(hi.x-lo.x)*.1;
       // Keep world coordinates in double precision until subtracting the view-centre origin.
       const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),ox=O.x,oy=O.y;
-      this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88?.begin(ox,oy);this.c88ride?.begin(ox,oy);this.ships?.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
+      this.ox=ox;this.oy=oy;this.unit=unit;this.width=bodyPx;this.used=0;this.fr=null;this.h0=0;this.c88?.begin(ox,oy);this.c88ride?.begin(ox,oy);this.ships?.begin(ox,oy);this.units?.begin(ox,oy);   // city-life: h0 — the height the model stands at (the viaduct's deck in 심시티)   // coaster-train: this frame's 88열차 cars start empty
       const bearing=map.getBearing()*Math.PI/180,camX=-Math.sin(bearing),camY=Math.cos(bearing),pitched=map.getPitch()>.1,H=bodyPx*.68;
       let animating=false,waiting=false,rippling=false;
       // my-location pulse: the ripple, in 슝 yellow, under the trains
@@ -287,6 +289,13 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
           const k=Math.max(1,Math.min(n,Math.round(total/unit/(bodyPx*3.6)))),span=total/k;
           for(let j=0;j<k;j++){const c=coasterCarFrame(P,tail,span,j,k,unit,bodyPx,lanePx,span*.32);if(!c)continue;const lead=j===k-1;
             this.ships?.ship(c.fr,lead?c.L*1.25:c.L,lead?bodyPx*1.3:bodyPx,color,pose.moving,plan.id,{kind:lead?'turtle':'boat',flag:lead,line:plan.t.line})}   // 깃발은 맨 앞 거북선 꼬리에만(2026-10-10 덕배)
+          continue}
+        if(look==='units'){   // 스타크래프트: 유닛 행렬 — 맨 앞에 lead 한 마리(제 길이의 1.15배 칸), 남은 길이에 rest 를 제 길이의 1.25배 간격으로(많아야 12)
+          const U=S.trains.units,LW=bodyPx*unit,lead=live.unitLength(U.lead)*LW*1.15,step=live.unitLength(U.rest)*LW*1.25;
+          const r=Math.max(0,Math.min(12,Math.floor((total-lead)/step))),span=r?(total-lead)/r:0,head=tail+total-Math.min(total,lead);
+          const one=(d0,len,kind,j)=>{const c=coasterCarFrame(P,d0,len,0,1,unit,bodyPx,lanePx,0);if(c)this.units?.unit(c.fr,c.L,bodyPx,kind,color,pose.moving,plan.id+':'+j)};
+          one(head,Math.min(total,lead),U.lead,0);
+          for(let j=0;j<r;j++)one(tail+j*span,span,U.rest,j+1);
           continue}
         const ratio=car/unit/bodyPx,separate=c88||ratio>=1.5;   // on the coaster: always car by car, so the train bends over the hills
         const unfold=c88?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
@@ -392,6 +401,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
       const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:live.sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:live.rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
       if(look==='fleet'&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
+      if(look==='units'&&this.units)this.units.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 스타크래프트: 유닛 행렬
       if(c88&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
       if(c88&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
       if(this.used){
@@ -423,7 +433,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(animating&&(live.following||live.rider.ride)&&!live.easing)followSoon();
       else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
     }
-    onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
+    onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
   }
 
   return TrainLayer;

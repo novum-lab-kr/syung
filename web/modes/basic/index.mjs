@@ -24,10 +24,11 @@ export default {
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),
     // coaster(롤코 언덕 길). platform 은 승강장 모양 — ribbon(노선을 따라 휘는 띠, 모든 모드), straight(선로에 맞춘 곧은 상자, 지금 쓰는 모드 없음)
     track: { kind: 'ground', platform: 'ribbon' },
-    // 열차: look 은 모양 — commuter(전동차) · fleet(배 선단, 맨 앞 거북선) · coaster88(88열차 칸), body 는 굵기 — wide(지도 위) · slim(고가 · 공원),
+    // 열차: look 은 모양 — commuter(전동차) · fleet(배 선단, 맨 앞 거북선) · coaster88(88열차 칸) · units(스타크래프트 유닛 행렬), body 는 굵기 — wide(지도 위) · slim(고가 · 공원),
     // predictStops 는 새 자료 없이 미리 달려 갈 정차 역 수, timeWarp 는 배속으로 앞서 달리기(롤코 배속 버튼)
-    trains: { look: 'commuter', body: 'wide', predictStops: 3, timeWarp: false },
-    // 버스: look 은 모양 — bus · palanquin(가마)
+    // units: look 이 units(스타크래프트 유닛 행렬)일 때 맨 앞 · 뒤 유닛 모양 이름(web/modes/starcraft/unit_shapes.mjs)
+    trains: { look: 'commuter', body: 'wide', predictStops: 3, timeWarp: false, units: { lead: 'siegeTank', rest: 'siegeTank' } },
+    // 버스: look 은 모양 — bus · palanquin(가마) · vulture · zergling · dragoon(스타크래프트 유닛)
     buses: { look: 'bus' },
     // 내 위치 캐릭터(줌 15 부터 노란 점 대신, web/map/avatars/): sprout(새싹 볼빵 후디) · builder(꼬마 건설 반장) · seonbi(꼬마 선비) · visitor(놀이공원 아이) · scv · drone · probe(스타크래프트 종족 일꾼)
     me: { look: 'sprout' },
