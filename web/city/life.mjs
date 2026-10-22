@@ -544,7 +544,7 @@ export class CityLife {
   }
   _render(gl, matrix, opts) {
     const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
-    const look = opts.look || this.pack;   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
+    const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;   // LU: 사람 · 차 대신 유닛(스타크래프트)   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
     const pad = Math.min(400, (box[2] - box[0]) * .15), vbox = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
@@ -616,13 +616,13 @@ export class CityLife {
     if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
       const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
-      this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= (NL?.carBeam?.minZoom ?? 16.5), beamAlpha: NL?.carBeam?.opacity, pixelRatio });
+      if (!LU) this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= (NL?.carBeam?.minZoom ?? 16.5), beamAlpha: NL?.carBeam?.opacity, pixelRatio });
       stats.cars = this.traffic.count; stats.traffic = this.traffic.stats; if (!reducedMotion && this.traffic.count) this._anim = true;
     } else this.traffic.clear();
     this.tick = now;
     // ── people on the pavements ──
     if (people && fadePeople > 0) { const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion); stats.people = n;
-      if (n) { const PP = look.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
+      if (n && !LU) { const PP = look.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
         const buf = this.peopleInst[this.ping ^= 1]; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, this.people.poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.people.poses, 0, n * 14);
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
         gl.useProgram(this.pH); gl.uniformMatrix4fv(this.uH.u_matrix, false, MT); gl.uniform1f(this.uH.u_mu, MU); gl.uniform1f(this.uH.u_time, reducedMotion ? 0 : now / 1000); gl.uniform1f(this.uH.u_unit, unit);
@@ -633,6 +633,10 @@ export class CityLife {
         gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
         gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._anim = true } }
     else this.people.list.length = 0;
+    // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mjs)
+    if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
+      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), now: reducedMotion ? 0 : now, light, lit });
+      if (!reducedMotion && stats.units) this._anim = true }
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     if (fadeCross > 0 && crossings) {

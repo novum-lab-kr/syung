@@ -55,5 +55,6 @@
 - `window.__subwayWebGL`(setSimcity · setCoaster · simcity · coaster · plans · cityBuildings …)은 점검 스크립트가 쓴다 — 이름 유지. 전환 함수는 준비됐으면 바로 true, 기다리면 Promise(바꿨으면 true), 할 일이 없으면 undefined.
 - Worker(`city/worker.mjs`)에는 데이터만 보낸다. 한옥 같은 코드는 Worker 가 정적 import 로 스스로 등록한다.
 - 휴대폰 메모리 한도: 도시 건물 캐시 18타일 · 56 MB(조선 타일로 탭이 죽은 적 있음). 엔진은 하나를 같이 쓴다.
+- 모드 건물 모형을 건물마다 꼭짓점으로 짓지 않는다: 스타크래프트 모형을 그렇게 지었더니 휴대폰 화면 타일 2~3장에 110~231 MB(2026-10-22). 모양은 템플릿 하나를 같이 쓰고 건물마다 기록만(`race_buildings.mjs raceTemplates` · `mesh.mjs packModels` · `buildings.mjs drawModels` → 3.8~6.3 MB). 재기: `/var/lib/capd/work/syung-star/memory.mjs`(맥 capd, 390×844).
 - 실시간 자료는 20초~1분 늦다. 시간표만으로 "N분 뒤" 안내를 하지 않는다. 위치 피드는 15~25초마다만 바뀐다(받기 주기: 보통 20초 · 열차 시트 10초).
 - 지도 위 노선 · 열차에 브랜드 노랑(#FFD400) 금지. 열차는 단색 금지(멀티톤 셰이더). 자산 URL 에 `?v=` 금지(no-store).

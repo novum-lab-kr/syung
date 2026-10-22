@@ -2,7 +2,7 @@
 // web/city/mesh.mjs 가 건물마다 이 부품을 부르고, 여기서 네모 빌딩 대신 원작 건물 모형(building_models.mjs, Codex 시안)을 세운다
 // (행님 2026-10-22: 네모 건물에 색 · 뚜껑만 바꾸지 말고 진짜 스타크래프트 건물로). 못 지으면(타일에 잘린 건물, 고가가 지나는 건물,
 // 너무 작거나 좁은 땅) false 를 돌려 보통 건물로 짓는다.
-// 겹치지 않게: 땅(OSM 윤곽) 전체에는 낮은 기단만 깔고, 모형은 윤곽 안에 들어가는 가장 큰 직사각형(긴 축 기준) 안에서만 짓는다.
+// 겹치지 않게: 모형은 윤곽 안에 들어가는 가장 큰 직사각형(긴 축 기준) 안에서만 — 넓으면 그 직사각형을 칸으로 나눠 칸마다 한 채, 밑에 종족 원판(race.pad).
 // 모형 좌표: x ∈ [-1, 1](직사각형 긴 축), y ∈ [-1, 1](짧은 축), z 와 반지름은 s(직사각형 반 짧은 변, m) 단위.
 // 칠은 도시 셰이더의 종류를 그대로 쓴다 — wall(벽, 재질 색 · 창 없음), roof(지붕 색), accent(경사면 KIND.PITCHED, 팩 buildings.house.roof.pitched.colors 3색),
 // glow(KIND.SIGN, 팩 signs.colors 8색 — 밤에 스스로 빛남), metal(KIND.EQUIP 한 색, 가까이서만 자란다), trim(KIND.AWNING 3색, 가까이서만 자란다).
@@ -14,7 +14,8 @@ import { BUILDING_MODELS } from './building_models.mjs';
 
 const NO_AO = 8;   // (mesh.mjs FLAG.NO_AO)
 const LOOK = { wall: KIND.WALL, roof: KIND.ROOF, accent: KIND.PITCHED, glow: KIND.SIGN, metal: KIND.EQUIP, trim: KIND.AWNING };
-export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, baseM: .3 };   // 이보다 작은 땅 · 좁은 직사각형은 보통 건물로, 기단 높이
+// 이보다 작은 땅 · 좁은 직사각형은 보통 건물로, 모형 바닥 높이(m — 원판 두께), 칸 반 변 목표 · 작은 칸 · 큰 건물 칸 기준(m), 빈 칸 비율
+export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, baseM: .08, cellM: 16, smallHalfM: 7, bigHalfM: 11, emptyCell: .12 };
 
 // 윤곽 안에 드는 직사각형(긴 축 = 감싸는 상자의 긴 축): 보통 건물(거의 네모)은 상자 가운데에서 조금만 줄이면 끝나고,
 // 오목하거나 비뚠 땅은 가운데 몇 자리(상자 3×3 · 가장 깊은 점) × 가로세로 비 몇 가지에서 네 변의 점이 다 윤곽 안인 가장 큰 것
@@ -140,16 +141,69 @@ export function building(tb, ctx, unit) {
   if (ctx.clipped || ctx.th || ctx.A < RACE_LIMITS.minAreaM2) return false;   // 타일에 잘린 건물 · 고가가 지나는 건물 · 아주 작은 건물: 보통 건물
   if (keeps(tb, R).some(([x, y, r]) => pointInPolygon(x, y, ctx.outer, ctx.holes) || edgeDistance(x, y, [ctx.outer]) <= r)) return false;   // 서울을 대표하는 건물: 원래 모양에 종족 색만
   const rect = fitRect(ctx.outer, ctx.holes); if (!rect || rect.hy * tb.mPerUnit < RACE_LIMITS.minHalfM) return false;
-  // 높이는 따르지 않는다: 원작에는 고층 건물이 없다 — 높은 빌딩 자리도 원작 비율의 낮은 건물(행님 2026-10-22: 원작처럼 낮게)
-  const model = pickModel(list, { area: ctx.A, aspect: rect.hx / rect.hy, tall: false, r: unit(ctx.seed, 499) });
-  if (!model) return false;
-  const W = tb.W, keepM = W.m.slice(), keepB3 = W.b[3], ch = ctx.chunk, zb = ctx.minH + RACE_LIMITS.baseM;
-  // 기단: 윤곽 옆면(창 없음)과 윗면
-  tb.wallsOf(ctx, ctx.outer, ctx.minH, zb, true, true);
-  tb.cap(ch.lo, ctx.outer, ctx.holes, zb, KIND.ROOF, ctx.roofSlot, 0); tb.cap(ch.hi, ctx.outer, ctx.holes, zb, KIND.ROOF, ctx.roofSlot, 0);
-  model.build(modelBuilder(tb, ctx, unit, rect));
-  W.m = keepM; W.b[3] = keepB3; W.kind = KIND.WALL; W.w = [0, 0, 0, 0];
-  return true;
+  // 높이는 따르지 않는다: 원작에는 고층 건물이 없다 — 높은 빌딩 자리도 원작 비율의 낮은 건물(행님 2026-10-22: 원작처럼 낮게).
+  // 넓은 땅은 칸으로 나눠 건물 여러 채(행님 2026-10-22: 땅마다 건물 여러 채) — 칸 반 변이 약 cellM 이 되게, 많아야 4 × 3.
+  // 휴대폰 메모리(행님 2026-10-22): 모형은 건물마다 꼭짓점을 쓰지 않고 기록 하나(40 바이트)만 남긴다 — 모양은 종족 템플릿(raceTemplates)을 같이 쓴다
+  const mpu = tb.mPerUnit, u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []);
+  const HX = rect.hx * mpu, HY = rect.hy * mpu, nx = Math.max(1, Math.min(4, Math.round(HX / RACE_LIMITS.cellM))), ny = Math.max(1, Math.min(3, Math.round(HY / RACE_LIMITS.cellM)));
+  const vx = -rect.uy, vy = rect.ux, gap = nx * ny > 1 ? .84 : 1;   // 칸 사이 틈(한 채면 땅 전체)
+  const W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
+  let built = 0;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+    const seed = (ctx.seed ^ Math.imul(i + 1, 73856093) ^ Math.imul(j + 1, 19349663)) >>> 0;
+    if (nx * ny > 2 && unit(seed, 97) < RACE_LIMITS.emptyCell) continue;   // 가끔 빈 칸(마당)
+    const ox = (-1 + (2 * i + 1) / nx) * rect.hx, oy = (-1 + (2 * j + 1) / ny) * rect.hy;
+    const cell = { cx: rect.cx + rect.ux * ox + vx * oy, cy: rect.cy + rect.uy * ox + vy * oy, hx: rect.hx / nx * gap, hy: rect.hy / ny * gap, ux: rect.ux, uy: rect.uy };
+    if (cell.hy > cell.hx) Object.assign(cell, { hx: cell.hy, hy: cell.hx, ux: vx, uy: vy });   // 긴 축을 x 로
+    const area = 4 * cell.hx * cell.hy * mpu * mpu, half = cell.hy * mpu, aspect = cell.hx / cell.hy;
+    const pool = half < RACE_LIMITS.smallHalfM ? list.filter(m => m.fit?.small) : nx * ny > 1 ? list.filter(m => !m.fit?.big || half >= RACE_LIMITS.bigHalfM) : list;
+    const model = pickModel(pool.length ? pool : list, { area, aspect, tall: false, r: unit(seed, 499) }); if (!model) continue;
+    const t = templateIndex(list.indexOf(model), aspect), hx = cell.hx * mpu, hy = cell.hy * mpu;
+    // 기록: 템플릿 번호, 자리(타일 메르카토르) · 바닥 높이 · 긴 축, 반 길이 · 반 폭 · 높이 단위(m), 재질 · 지붕 색 · 높이(10 cm), 건물 바이트(씨앗 · 종류 · 그림자 없음)
+    recs.push([t, cell.cx * u, cell.cy * u, ctx.minH, cell.ux, cell.uy, hx, hy, hy, ctx.mat, ctx.roofSlot, Hq & 255, Hq >>> 8, seed & 255, (seed >>> 8) & 255, b[2], b[3] | NO_AO]);
+    const top = ctx.minH + T.tops[t] * hy, c = (a, d) => [(cell.cx + cell.ux * cell.hx * a + vx * cell.hy * d) * u, (cell.cy + cell.uy * cell.hx * a + vy * cell.hy * d) * u];
+    for (const [a, d] of [[-1, -1], [1, 1]]) { const p = c(a, d); tb.extend(ctx.chunk, p[0], p[1], p[0], p[1], top) }
+    built++;
+  }
+  return built > 0;
 }
 
-registerCityPart('race', { building });
+// 종족 템플릿: 모형마다 가로세로 비 BUCKETS 가지를 한 번만 지어 둔다(모형 좌표 — x · y 는 반 변으로 나눈 −1..1, z 와 바닥 높이는 높이 단위로 나눈 값).
+// 꼭짓점 8 float: 자리 3 · 법선 3(모형 좌표로 — 인스턴스가 늘린 만큼 셰이더가 되돌린다) · 조각 바닥 높이 · 종류 × 16 + 색 칸. 색인은 전체 꼭짓점 번호(Uint32).
+// 메인 스레드(그리기)와 Worker(기록 고르기)가 같은 목록 · 차례로 만들어 번호가 같다
+export const BUCKETS = [1, 1.7, 2.8];
+const TPL_S = 10, TEMPLATES = new Map();
+export const templateIndex = (mi, aspect) => { let bi = 0, bd = Infinity; BUCKETS.forEach((b, k) => { const d = Math.abs(Math.log(aspect / b)); if (d < bd) { bd = d; bi = k } }); return mi * BUCKETS.length + bi };
+const tplHash = (h, k) => ((Math.imul(h ^ Math.imul(k + 1, 0x9e3779b1), 0x85ebca6b) >>> 8) / 16777216);
+export function raceTemplates(R) {
+  const key = R.kind + '|' + JSON.stringify(R.pad || null); let T = TEMPLATES.get(key); if (T) return T;
+  const list = BUILDING_MODELS[R.kind] || [], verts = [], idx = [], ranges = [], tops = [];
+  list.forEach((model, mi) => BUCKETS.forEach((bk, bi) => {
+    const HX = bk * TPL_S, HY = TPL_S, V = [], nrm = [0, 0, 1];
+    const W = { n: 0, kind: 0, w: [0, 0, 0, 0], b: [0, 0, 0, 0], m: [0, 0, 0, 0], normal(x, y, z) { nrm[0] = x; nrm[1] = y; nrm[2] = z }, v(x, y, z, zb) { V.push([x, y, z, ...nrm, zb, this.kind, this.m[0]]); return this.n++ } };
+    const ch = { walls: [], lo: [], hi: [] }, tb = { mPerUnit: 1, unit: 1, W, extend() {} };
+    const ctx = { minH: -RACE_LIMITS.baseM, A: 4 * HX * HY, H: 10, seed: (0x5bd1e995 * (mi + 1) + bi * 977) >>> 0, chunk: ch, mat: 0, roofSlot: 0 };
+    const M = modelBuilder(tb, ctx, tplHash, { cx: 0, cy: 0, hx: HX, hy: HY, ux: 1, uy: 0 });
+    if (R.pad) padOf(M, R.pad, tplHash(ctx.seed, 498));
+    try { model.build(M) } catch (e) { console.warn('race template', R.kind, model.id, e) }
+    const base = verts.length / 8, i0 = idx.length; let zmax = 0;
+    for (const [x, y, z, nx, ny, nz, zb, kind, slot] of V) {
+      const nl = Math.hypot(nx * HX, ny * HY, nz * TPL_S) || 1;
+      verts.push(x / HX, y / HY, z / TPL_S, nx * HX / nl, ny * HY / nl, nz * TPL_S / nl, zb / TPL_S, kind * 16 + Math.min(15, slot)); zmax = Math.max(zmax, z);
+    }
+    for (const k of ch.walls) idx.push(base + k);
+    ranges.push([i0, idx.length - i0]); tops.push(zmax / TPL_S);
+  }));
+  T = { verts: new Float32Array(verts), idx: new Uint32Array(idx), ranges, tops, key };
+  TEMPLATES.set(key, T); return T;
+}
+
+// 건물 밑 원판: 칸을 거의 채우는 얇은 판(저그는 둥근 크립, 그 밖은 네모 판 · 팔각 판)
+function padOf(M, pad, r) {
+  const z1 = -RACE_LIMITS.baseM + .06 / M.s, o = { look: pad.look || 'accent', slot: pad.slot ?? 0 };
+  if (pad.shape === 'blob') M.frustum(0, 0, 1.3, 1.2, -RACE_LIMITS.baseM / M.s, z1, { n: 12, sx: Math.min(1.8, M.aspect), rot: r * Math.PI, ...o });
+  else if (pad.shape === 'octagon') M.frustum(0, 0, 1.25, 1.2, -RACE_LIMITS.baseM / M.s, z1, { n: 8, rot: Math.PI / 8, sx: Math.min(1.8, M.aspect), ...o });
+  else M.box(0, 0, .97, .97, -RACE_LIMITS.baseM / M.s, z1, o);
+}
+
+registerCityPart('race', { building, templates: raceTemplates });

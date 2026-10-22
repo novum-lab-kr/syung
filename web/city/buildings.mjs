@@ -19,7 +19,8 @@
 //   city.set({on:true,tone:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});   // tone: 팩의 modes 항목(모드 설정 city.tone)
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { cityPart } from './parts.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
+import { cityPart } from './parts.mjs';
+import { MODEL_STRIDE } from './mesh.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mjs';
 import { sunPosition } from '../lib/sun.mjs';
@@ -207,6 +208,26 @@ float xray(){
   for(int i=0;i<${XR_N};i++){if(i>=u_xn)break;if(gl_FragCoord.z>=u_xd[i].x)continue;vec4 r=u_xr[i];
     vec2 a=smoothstep(r.xy-fe,r.xy,p)*(1.0-smoothstep(r.zw,r.zw+fe,p));f=max(f,a.x*a.y*u_xd[i].y);}
   return f;
+}`;
+// 스타크래프트 종족 건물(부품 'race'), 인스턴스로: 종족 템플릿(모형 × 비율 — race_buildings.mjs raceTemplates)의 점을 기록대로 놓는다
+// (기록: mesh.mjs packModels — 자리 · 긴 축 · 반 길이 · 반 폭 · 높이 단위, 재질 · 지붕 색 · 높이, 건물 바이트). 같은 FS 를 쓴다(종류 · 색 칸은 템플릿 점마다)
+const VS_MODEL = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 a_t;layout(location=1) in vec3 a_tn;layout(location=2) in float a_tb;layout(location=3) in float a_ks;
+layout(location=4) in vec4 i_a;layout(location=5) in vec4 i_b;layout(location=6) in vec4 i_c;layout(location=7) in vec4 i_d;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec2 u_detail;
+out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
+void main(){
+  vec2 U=vec2(i_a.w,i_b.x),V=vec2(-U.y,U.x);float HX=i_b.y,HY=i_b.z,s=i_b.w;
+  float kind=floor(a_ks/16.0+0.001),slot=a_ks-kind*16.0,zb=i_a.z+a_tb*s,z=i_a.z+a_t.z*s;
+  if(kind==3.0)z=zb+(z-zb)*u_detail.x;   // 작은 기계 · 테두리 · 빛은 보통 건물처럼 가까이서 자란다
+  if(kind==5.0||kind==7.0)z=zb+(z-zb)*u_detail.y;
+  z*=u_grow;
+  vec2 xy=i_a.xy+(U*(a_t.x*HX)+V*(a_t.y*HY))*u_mpu;
+  gl_Position=u_matrix*vec4(xy,z*u_mpu,1.0);
+  vec3 n=normalize(vec3(a_tn.x/HX,a_tn.y/HY,a_tn.z/s));
+  v_n=vec3(U*n.x+V*n.y,n.z);v_z=z;v_u=kind==1.0?0.0:zb;v_wm=u_wo+xy*u_S;v_wall=vec4(0.0);v_bld=i_d;
+  v_misc=vec4(kind==0.0?i_c.x:kind==1.0?i_c.y:slot,kind==7.0?zb/0.2:0.0,i_c.z,i_c.w);v_kind=kind;
 }`;
 const FS_DEPTH = `#version 300 es
 precision highp float;in float v_z;flat in vec4 v_bld;flat in float v_kind;uniform vec4 u_through;uniform vec4 u_thBand;out vec4 o;
@@ -516,7 +537,7 @@ function compile(gl, vs, fs) {
 }
 
 // a built tile's size in memory (one copy): its vertex and index bytes
-const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0);
+const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0) + (m.models ? m.models.data.byteLength : 0);
 
 // the through list (web/city/through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
 function throughIndex(list) {
@@ -720,7 +741,8 @@ export class CityBuildings {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tpl.ibo);
       gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
       g.inst[kind] = { vao, vbo, tpl };
-    } this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
+    }
+    if (m.models?.data.byteLength) g.models = this.uploadModels(gl, this.context(gl), m.models); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
   }
   // fill the buffers on: at most `budget` bytes; the bytes put up
   feed(gl, g, m, budget) {
@@ -739,7 +761,7 @@ export class CityBuildings {
     const st = this.stats, dt = performance.now() - t0; st.uploadMs = (st.uploadMs || 0) + dt; st.feedMaxMs = Math.max(st.feedMaxMs || 0, dt);
     return used;
   }
-  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
+  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.models) { gl.deleteVertexArray(g.models.vao); gl.deleteBuffer(g.models.vbo) } for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   paletteFor() {
     const P = this.P, th = this.theme, mode = P.modes[this.tone] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
@@ -892,7 +914,7 @@ export class CityBuildings {
     const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
-    const M64 = this.M64, M32 = this.M32, skirts = []; let growing = false, drawn = false, draws = 0;
+    const M64 = this.M64, M32 = this.M32, skirts = [], models = []; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
     let budget = this.phone ? 1.5e6 : 3e6;   // bytes put up to the GPU this pass; the rest next frame (growing: a repaint follows)
     for (const e of this.visible) {
@@ -904,7 +926,7 @@ export class CityBuildings {
         budget -= this.feed(gl, g, e.mesh, budget);
         if (!g.done) { growing = true; continue }
         // phones: once both canvases (the map's and the trains') hold it, the JS copy is let go — a third copy of the city
-        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null; e.mesh.inst = null }
+        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null; e.mesh.inst = null; e.mesh.models = e.mesh.models && { groups: e.mesh.models.groups, data: { byteLength: e.mesh.models.data.byteLength } } }
       }
       const m = e.mesh;
       const t = Math.min(1, (now - e.readyAt) / GROW_MS), grow = zoomGrow * (t < 1 ? (growing = true, t * t * (3 - 2 * t)) : 1);
@@ -929,13 +951,57 @@ export class CityBuildings {
         if (b > a) { if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++ }
       }
       if (sk && sk.chunks.length) skirts.push(sk);
+      if (g.models && !glass) models.push({ g: g.models, m, M: Float32Array.from(M32), grow });   // 스타크래프트 모형: 타일째(칸 가리기 없이)
     }
     if (skirts.length) draws += this.drawInst(gl, C, depthOnly, glass, zoom, hi, skirts), drawn = true;
+    if (models.length) draws += this.drawModels(gl, C, depthOnly, glass, zoom, models), drawn = true;
     gl.bindVertexArray(null); gl.colorMask(true, true, true, true); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW); if (depthOnly) gl.depthFunc(gl.LESS);   // the train canvas's renderers expect culling off (as BuildingDepth left it)
     if (glass) { gl.disable(gl.BLEND); gl.depthMask(true); this.stats.glassDraws = draws; return drawn }
     this.growing = growing; if (growing && !depthOnly) map.triggerRepaint();
     const st = this.stats; st[depthOnly ? 'depthMs' : 'renderMs'] = (st[depthOnly ? 'depthMs' : 'renderMs'] || 0) + performance.now() - t0; st[depthOnly ? 'depthFrames' : 'frames'] = (st[depthOnly ? 'depthFrames' : 'frames'] || 0) + 1; st.draws = draws;
     return drawn;
+  }
+  // 스타크래프트 모형 템플릿(이 문맥에 한 번 — 종족이 바뀌면 다시): 꼭짓점 8 float · Uint32 색인
+  modelTemplate(gl, C) {
+    const T = cityPart('race').templates(this.P.race);
+    if (C.model?.key === T.key) return C.model;
+    if (C.model) { gl.deleteBuffer(C.model.vbo); gl.deleteBuffer(C.model.ibo) }
+    const vbo = gl.createBuffer(), ibo = gl.createBuffer();
+    gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, T.verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, T.idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return (C.model = { key: T.key, vbo, ibo, ranges: T.ranges, bytes: T.verts.byteLength + T.idx.byteLength });
+  }
+  // 한 타일의 모형 기록: 템플릿 점(0~3) + 기록(4~7, 한 기록에 한 번)
+  uploadModels(gl, C, mm) {
+    const tpl = this.modelTemplate(gl, C), vao = gl.createVertexArray(), vbo = gl.createBuffer();
+    gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo);
+    for (const [loc, n, off] of [[0, 3, 0], [1, 3, 12], [2, 1, 24], [3, 1, 28]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 32, off) }
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, mm.data, gl.STATIC_DRAW);
+    for (const loc of [4, 5, 6, 7]) { gl.enableVertexAttribArray(loc); gl.vertexAttribDivisor(loc, 1) }
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tpl.ibo);
+    gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return { vao, vbo, tpl, groups: mm.groups };
+  }
+  // 스타크래프트 모형: 타일마다 템플릿 하나에 그 기록들을 한 번에(같은 FS · 깊이 FS). 유리(x-ray) 칸에는 안 그린다
+  drawModels(gl, C, depthOnly, glass, zoom, list) {
+    const prog = depthOnly ? (C.modelDepth ||= compile(gl, VS_MODEL, FS_DEPTH)) : (C.modelColor ||= compile(gl, VS_MODEL, FS)), u = prog.u;
+    const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
+    gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S);
+    let draws = 0;
+    for (const { g, m, M, grow } of list) {
+      gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
+      gl.bindVertexArray(g.vao); gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo);
+      for (const [t, first, count] of g.groups) {
+        const r = g.tpl.ranges[t]; if (!r || !r[1]) continue; const o = first * MODEL_STRIDE;
+        gl.vertexAttribPointer(4, 4, gl.FLOAT, false, MODEL_STRIDE, o); gl.vertexAttribPointer(5, 4, gl.FLOAT, false, MODEL_STRIDE, o + 16);
+        gl.vertexAttribPointer(6, 4, gl.UNSIGNED_BYTE, false, MODEL_STRIDE, o + 32); gl.vertexAttribPointer(7, 4, gl.UNSIGNED_BYTE, false, MODEL_STRIDE, o + 36);
+        if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, r[1], gl.UNSIGNED_INT, r[0] * 4, count); draws++;
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindVertexArray(null); if (cull) gl.enable(gl.CULL_FACE);
+    const P = depthOnly ? C.depth : C.color; gl.useProgram(P.p);
+    this.stats.modelDraws = draws;
+    return draws;
   }
   // 조선 instances (처마 조각 · 지붕 · 벽 상자): each kind's template drawn once per record of the visible chunks — far its far
   // records and far range, near all of them (phones: the 처마 without its edge); neighbouring chunks' runs drawn as one.

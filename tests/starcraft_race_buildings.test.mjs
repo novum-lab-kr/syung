@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitRect, modelBuilder, pickModel, building } from '../web/modes/starcraft/race_buildings.mjs';
+import { fitRect, modelBuilder, pickModel, building, raceTemplates } from '../web/modes/starcraft/race_buildings.mjs';
 import { BUILDING_MODELS } from '../web/modes/starcraft/building_models.mjs';
 import { pointInPolygon } from '../web/city/geom.mjs';
 
@@ -23,12 +23,16 @@ test('종족 건물: 모형을 세우는 직사각형은 윤곽 안(오목한 L 
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) assert.ok(pointInPolygon(r.cx + r.ux * r.hx * a - r.uy * r.hy * b, r.cy + r.uy * r.hx * a + r.ux * r.hy * b, L, []));
 });
 
-test('종족 건물: 모든 모형이 여러 땅 · 높이에서 윤곽 안에만 짓는다(옆 건물과 겹치지 않게)', () => {
-  for (const kind of Object.keys(BUILDING_MODELS)) for (const [ring, H] of [[[0, 0, 40, 0, 40, 30, 0, 30], 8], [[0, 0, 160, 0, 160, 40, 0, 40], 12], [L, 20], [[0, 0, 30, 0, 30, 30, 0, 30], 80]]) {
-    const { tb, ctx, pts } = fakeTile(ring, H, kind); ctx.A = 400;
-    assert.doesNotThrow(() => building(tb, ctx, unit), `${kind} H ${H}`);
-    const out = pts.filter(p => !inside(ring, p));
-    assert.equal(out.length, 0, `${kind} ${ring.length / 2}각 H ${H}: 윤곽 밖 ${out.length}`);
+test('종족 건물: 모형 기록(칸)은 윤곽 안에만 — 옆 건물과 겹치지 않게, 템플릿 점은 칸(−1..1) 안', () => {
+  for (const kind of Object.keys(BUILDING_MODELS)) {
+    const T = raceTemplates({ kind, pad: { look: 'accent', slot: 0, shape: kind === 'zerg' ? 'blob' : null } });
+    for (let i = 0; i < T.verts.length; i += 8) assert.ok(Math.abs(T.verts[i]) <= 1.0001 && Math.abs(T.verts[i + 1]) <= 1.0001, `${kind} 템플릿 점 밖`);
+    for (const [ring, H] of [[[0, 0, 40, 0, 40, 30, 0, 30], 8], [[0, 0, 160, 0, 160, 40, 0, 40], 12], [L, 20], [[0, 0, 300, 0, 300, 200, 0, 200], 80]]) {
+      const { tb, ctx } = fakeTile(ring, H, kind); ctx.A = 400;
+      assert.doesNotThrow(() => building(tb, ctx, unit), `${kind} H ${H}`);
+      for (const r of tb.models || []) { const [, x, y, , ux, uy, hx, hy] = r, s = 1 / tb.mPerUnit;
+        for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) assert.ok(inside(ring, [x + (ux * hx * a - uy * hy * b) * s, y + (uy * hx * a + ux * hy * b) * s]), `${kind} 칸 모서리가 윤곽 밖`) }
+    }
   }
 });
 

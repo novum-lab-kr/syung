@@ -162,7 +162,18 @@ export function classifyBuilding(info, P) {
 //  roof: its axis angle; plant/awning: base height) · 20 wall u8×4 (bays (0 = no windows), length lo/hi in 5 cm, edge seed (4 bits) | faceClass<<4 (0 all bays, 1 every other, 2 one narrow column) | corner-at-start<<6 | corner-at-end<<7)
 //  · 24 building u8×4 (seed lo/hi, type|crown<<3|famFacade<<5, flags | cornerWidthShare<<4) · 28 misc u8×4 (colour pick, lit override, H lo/hi in 10 cm)
 export const STRIDE = 32;
-export const INST_STRIDES = { skirt: 32, roof: 64, box: 40 };   // 인스턴스 하나의 바이트(조선): city_hanok.mjs skirtInst · roofInst · boxInst 가 채운다
+export const INST_STRIDES = { skirt: 32, roof: 64, box: 40 };
+// 모형 기록(스타크래프트 종족 건물): 템플릿 번호 차례로 모아 한 판 — f32 x · y(타일 메르카토르) · 바닥 z(m) · 긴 축 ux, uy · 반 길이 · 반 폭 · 높이 단위(m),
+// u8 재질 · 지붕 색 · 높이(10 cm) 둘 · 건물 바이트 넷. groups: [템플릿, 첫 기록, 수]
+export const MODEL_STRIDE = 40;
+function packModels(recs) {
+  if (!recs || !recs.length) return null;
+  recs.sort((a, b) => a[0] - b[0]);
+  const buf = new ArrayBuffer(recs.length * MODEL_STRIDE), f = new Float32Array(buf), u8 = new Uint8Array(buf), groups = [];
+  recs.forEach((r, i) => { const o = i * MODEL_STRIDE; for (let k = 0; k < 8; k++) f[o / 4 + k] = r[1 + k]; for (let k = 0; k < 8; k++) u8[o + 32 + k] = r[9 + k];
+    if (!groups.length || groups[groups.length - 1][0] !== r[0]) groups.push([r[0], i, 0]); groups[groups.length - 1][2]++ });
+  return { data: u8, groups };
+}   // 인스턴스 하나의 바이트(조선): city_hanok.mjs skirtInst · roofInst · boxInst 가 채운다
 class Writer {
   constructor() { this.cap = 1 << 15; this.buf = new ArrayBuffer(this.cap * STRIDE); this.view(); this.n = 0; this.kind = 0; this.nx = 0; this.ny = 0; this.nz = 1; this.w = [0, 0, 0, 0]; this.b = [0, 0, 0, 0]; this.m = [0, 0, 0, 0] }
   view() { this.f = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); this.i8 = new Int8Array(this.buf) }
@@ -194,7 +205,7 @@ export class TileBuilder {
     this.wox = (this.ox - G[0]) * S; this.woy = (this.oy - G[1]) * S;   // and in city metres
     this.W = new Writer(); this.chunks = []; for (let i = 0; i < CHUNKS * CHUNKS; i++) this.chunks.push({ lo: [], walls: [], hi: [], inst: { skirt: [], roof: [], box: [] }, instFar: { skirt: [], roof: [], box: [] }, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, zmax: 0, n: 0 });
     this.zmax = 0; this.count = 0; this.fi = 0; this.polys = null; this.pi = 0; this.landuse = null; this.done = false; this.seen = new Set();
-    this.items = []; this.blockers = []; this.ei = 0; this.grid = null;
+    this.items = []; this.blockers = []; this.ei = 0; this.grid = null; this.models = null;   // models: 모형 기록(부품 'race' — 스타크래프트 종족 건물, 꼭짓점 대신 템플릿 번호 · 자리)
     // 랜드마크 자리(타일 단위): 그 안에 중심이 있는 높은 조각 건물은 빼고 전용 모델(city_landmarks.mjs)이 그린다
     // (팩 landmarkHide: 그 팩에서만 빼는 자리 — 조선: 남산타워 자리에 석탑, 2026-10-11)
     this.marks = [...LANDMARKS, ...(P.pack?.landmarkHide || []).map(h => ({ lngLat: h.lngLat, hide: h }))].map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH } })
@@ -818,7 +829,7 @@ export class TileBuilder {
       }
       chunks.push({ i0, iLo, iW, i1: off, k, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, zmax: c.zmax });
     }
-    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), inst, chunks, count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
+    return { verts: this.W.bytes().slice(), idx: new Uint32Array(idx), inst, chunks, models: packModels(this.models), count: this.count, zmax: this.zmax, ox: this.ox, oy: this.oy, mpu: this.mpu, wox: this.wox, woy: this.woy, z: this.src.z, x: this.src.x, y: this.src.y };
   }
 }
 

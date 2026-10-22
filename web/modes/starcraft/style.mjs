@@ -32,101 +32,101 @@ export const TERRAN_DELTA = {
   "label": "테란 / 황무지 강철 기지",
   "ground": {
     "light": {
-      "base": "#a69f90",
-      "residential": "#a29a88",
-      "commercial": "#a1a29b",
-      "retail": "#b0a08a",
-      "industrial": "#929a99",
-      "civic": "#b9b2a0",
-      "hospital": "#b5b9ac",
-      "park": "#85836a",
-      "grass": "#969477",
-      "forest": "#666d58",
-      "water": "#608699",
-      "sidewalk": "#c4bdab",
-      "ballast": "#797e7e"
+      "base": "#444f5b",
+      "residential": "#4b5661",
+      "commercial": "#3e4b58",
+      "retail": "#535b62",
+      "industrial": "#394650",
+      "civic": "#59626a",
+      "hospital": "#56646b",
+      "park": "#596047",
+      "grass": "#666b4d",
+      "forest": "#414d37",
+      "water": "#344e5c",
+      "sidewalk": "#7d898e",
+      "ballast": "#353f48"
     },
     "dark": {
-      "base": "#302f2d",
-      "residential": "#34312c",
-      "commercial": "#303539",
-      "retail": "#3c342b",
-      "industrial": "#2d3336",
-      "civic": "#403d34",
-      "hospital": "#3c413b",
-      "park": "#30362b",
-      "grass": "#383c2e",
-      "forest": "#252e25",
-      "water": "#1b3543",
-      "sidewalk": "#514d43",
-      "ballast": "#3c4448"
+      "base": "#222b35",
+      "residential": "#29323c",
+      "commercial": "#202b36",
+      "retail": "#30383e",
+      "industrial": "#1e2932",
+      "civic": "#333c44",
+      "hospital": "#303f46",
+      "park": "#30382a",
+      "grass": "#3a412f",
+      "forest": "#242f23",
+      "water": "#172f3d",
+      "sidewalk": "#4c5962",
+      "ballast": "#26323d"
     },
     "texture": {
       "size": 256,
       "pixelRatio": 2,
-      "blotch": 0.025,
+      "blotch": 0.018,
       "grain": 0.025,
-      "crumbs": 650,
-      "pebbles": 18
+      "crumbs": 160,
+      "pebbles": 0
     }
   },
   "roads": {
     "classes": {
       "motorway": {
         "colors": {
-          "light": "#626e77",
-          "dark": "#262f39"
+          "light": "#829098",
+          "dark": "#465561"
         }
       },
       "primary": {
         "colors": {
-          "light": "#6b7780",
-          "dark": "#2e3842"
+          "light": "#89969d",
+          "dark": "#4c5d68"
         }
       },
       "secondary": {
         "colors": {
-          "light": "#78818a",
-          "dark": "#35404a"
+          "light": "#919da2",
+          "dark": "#53646e"
         }
       },
       "tertiary": {
         "colors": {
-          "light": "#848b8d",
-          "dark": "#3d464d"
+          "light": "#9aa5a8",
+          "dark": "#5c6d75"
         }
       },
       "minor": {
         "colors": {
-          "light": "#90948e",
-          "dark": "#454d4e"
+          "light": "#a1abad",
+          "dark": "#65757c"
         }
       },
       "service": {
         "colors": {
-          "light": "#9b9d93",
-          "dark": "#4d5451"
+          "light": "#aab2b1",
+          "dark": "#6c7c80"
         }
       }
     },
     "lane": {
       "colors": {
-        "light": "#9aaab3",
-        "dark": "#566774"
+        "light": "#c0c9c9",
+        "dark": "#87989f"
       },
       "opacity": {
         "light": 0.45,
-        "dark": 0.3
+        "dark": 0.29250000000000004
       }
     },
     "centerLine": {
       "colors": {
-        "light": "#e6ab54",
-        "dark": "#e6ab54"
+        "light": "#c9aa67",
+        "dark": "#8c7a52"
       },
       "opacity": {
-        "light": 0.65,
-        "dark": 0.45
+        "light": 0.5,
+        "dark": 0.32
       }
     }
   },
@@ -843,6 +843,7 @@ export const TERRAN_DELTA = {
   },
   "race": {
     "kind": "terran",
+    "pad": { "look": "accent", "slot": 0 },
     "keep": SEOUL_KEEP
   },
   "signs": {
@@ -865,101 +866,101 @@ export const ZERG_DELTA = {
   "label": "저그 / 보랏빛 크립 군락",
   "ground": {
     "light": {
-      "base": "#402c49",
-      "residential": "#48304f",
-      "commercial": "#3c2b47",
-      "retail": "#4d314e",
-      "industrial": "#392b3f",
-      "civic": "#54384e",
-      "hospital": "#4b3b4a",
-      "park": "#45374e",
-      "grass": "#514156",
-      "forest": "#322d3e",
-      "water": "#394f60",
-      "sidewalk": "#725964",
-      "ballast": "#8e8073"
+      "base": "#897053",
+      "residential": "#947958",
+      "commercial": "#806c52",
+      "retail": "#a0845d",
+      "industrial": "#79644d",
+      "civic": "#ab916c",
+      "hospital": "#a18e6b",
+      "park": "#71734a",
+      "grass": "#858250",
+      "forest": "#565c39",
+      "water": "#456273",
+      "sidewalk": "#bea47c",
+      "ballast": "#6e6455"
     },
     "dark": {
-      "base": "#251d2e",
-      "residential": "#2d2134",
-      "commercial": "#241d2d",
-      "retail": "#322235",
-      "industrial": "#241e2b",
-      "civic": "#362639",
-      "hospital": "#302735",
-      "park": "#2b2733",
-      "grass": "#342c3b",
-      "forest": "#211f2b",
-      "water": "#1a303f",
-      "sidewalk": "#51404c",
-      "ballast": "#6c6259"
+      "base": "#3c3027",
+      "residential": "#44362a",
+      "commercial": "#383027",
+      "retail": "#4c3d2b",
+      "industrial": "#352b24",
+      "civic": "#544532",
+      "hospital": "#4c4130",
+      "park": "#343b28",
+      "grass": "#40452c",
+      "forest": "#272f22",
+      "water": "#1e3541",
+      "sidewalk": "#706044",
+      "ballast": "#37352d"
     },
     "texture": {
       "size": 256,
       "pixelRatio": 2,
-      "blotch": 0.14,
-      "grain": 0.025,
-      "crumbs": 950,
-      "pebbles": 8
+      "blotch": 0.065,
+      "grain": 0.045,
+      "crumbs": 1400,
+      "pebbles": 35
     }
   },
   "roads": {
     "classes": {
       "motorway": {
         "colors": {
-          "light": "#5c4943",
-          "dark": "#332a29"
+          "light": "#b9a17b",
+          "dark": "#66543c"
         }
       },
       "primary": {
         "colors": {
-          "light": "#665149",
-          "dark": "#3b2f2c"
+          "light": "#bfa780",
+          "dark": "#6c5a40"
         }
       },
       "secondary": {
         "colors": {
-          "light": "#715a50",
-          "dark": "#443630"
+          "light": "#c6ad85",
+          "dark": "#736046"
         }
       },
       "tertiary": {
         "colors": {
-          "light": "#796258",
-          "dark": "#4c3d36"
+          "light": "#ccb48c",
+          "dark": "#7a674b"
         }
       },
       "minor": {
         "colors": {
-          "light": "#826c5e",
-          "dark": "#54453b"
+          "light": "#d1ba94",
+          "dark": "#826f52"
         }
       },
       "service": {
         "colors": {
-          "light": "#8b7566",
-          "dark": "#5d4d41"
+          "light": "#d8c3a0",
+          "dark": "#8b795b"
         }
       }
     },
     "lane": {
       "colors": {
-        "light": "#b7818b",
-        "dark": "#805462"
+        "light": "#d5bd94",
+        "dark": "#99815e"
       },
       "opacity": {
-        "light": 0.08,
-        "dark": 0.04
+        "light": 0,
+        "dark": 0.0
       }
     },
     "centerLine": {
       "colors": {
-        "light": "#a9c788",
-        "dark": "#a9c788"
+        "light": "#c3a87d",
+        "dark": "#8e7553"
       },
       "opacity": {
-        "light": 0.12,
-        "dark": 0.08
+        "light": 0,
+        "dark": 0
       }
     }
   },
@@ -1003,12 +1004,12 @@ export const ZERG_DELTA = {
             "light": [
               "#936078",
               "#d0b18a",
-              "#73526c"
+              "#3d294b"
             ],
             "dark": [
               "#674258",
               "#9b8266",
-              "#503b4e"
+              "#291e34"
             ]
           }
         }
@@ -1676,6 +1677,7 @@ export const ZERG_DELTA = {
   },
   "race": {
     "kind": "zerg",
+    "pad": { "look": "accent", "slot": 2, "shape": "blob" },
     "keep": SEOUL_KEEP
   },
   "signs": {
@@ -1698,101 +1700,101 @@ export const PROTOSS_DELTA = {
   "label": "프로토스 / 상아와 수정의 도시",
   "ground": {
     "light": {
-      "base": "#d8ceae",
-      "residential": "#dfd5b8",
-      "commercial": "#d0d6c9",
-      "retail": "#e7d8b6",
-      "industrial": "#c7c6b2",
-      "civic": "#eee5cc",
-      "hospital": "#e1e5d7",
-      "park": "#a8b99a",
-      "grass": "#bdc8a8",
-      "forest": "#7b967e",
-      "water": "#6faebc",
-      "sidewalk": "#f0e9d5",
-      "ballast": "#aaa99a"
+      "base": "#cbb58c",
+      "residential": "#d1bd96",
+      "commercial": "#c2b391",
+      "retail": "#d9c29a",
+      "industrial": "#bbaa89",
+      "civic": "#e2cfaa",
+      "hospital": "#dad1b6",
+      "park": "#9b9e74",
+      "grass": "#aeb184",
+      "forest": "#777f5c",
+      "water": "#6b95a4",
+      "sidewalk": "#e9e4d2",
+      "ballast": "#a59982"
     },
     "dark": {
-      "base": "#383a36",
-      "residential": "#414138",
-      "commercial": "#303d3e",
-      "retail": "#484335",
-      "industrial": "#303936",
-      "civic": "#514e3e",
-      "hospital": "#424c44",
-      "park": "#2c3d35",
-      "grass": "#35473c",
-      "forest": "#22372f",
-      "water": "#1c3c4c",
-      "sidewalk": "#646250",
-      "ballast": "#4a514b"
+      "base": "#4b4235",
+      "residential": "#524936",
+      "commercial": "#454133",
+      "retail": "#5c503b",
+      "industrial": "#423c31",
+      "civic": "#655a42",
+      "hospital": "#605d48",
+      "park": "#3d432f",
+      "grass": "#4a5036",
+      "forest": "#2d3728",
+      "water": "#233e4b",
+      "sidewalk": "#888572",
+      "ballast": "#4d4d40"
     },
     "texture": {
       "size": 256,
       "pixelRatio": 2,
-      "blotch": 0.018,
-      "grain": 0.012,
-      "crumbs": 280,
-      "pebbles": 0
+      "blotch": 0.035,
+      "grain": 0.026,
+      "crumbs": 520,
+      "pebbles": 9
     }
   },
   "roads": {
     "classes": {
       "motorway": {
         "colors": {
-          "light": "#b3b9ad",
-          "dark": "#3e504f"
+          "light": "#c3c5bf",
+          "dark": "#646c68"
         }
       },
       "primary": {
         "colors": {
-          "light": "#bcc3b5",
-          "dark": "#465a57"
+          "light": "#cdd0c8",
+          "dark": "#6d7670"
         }
       },
       "secondary": {
         "colors": {
-          "light": "#c6ccbc",
-          "dark": "#50635d"
+          "light": "#d5d7cd",
+          "dark": "#767e76"
         }
       },
       "tertiary": {
         "colors": {
-          "light": "#d0d3c1",
-          "dark": "#5a6b62"
+          "light": "#dcddd2",
+          "dark": "#80877d"
         }
       },
       "minor": {
         "colors": {
-          "light": "#d9dccb",
-          "dark": "#64746b"
+          "light": "#e3e3d7",
+          "dark": "#8a9085"
         }
       },
       "service": {
         "colors": {
-          "light": "#e1e2d1",
-          "dark": "#6d7d72"
+          "light": "#eae9dd",
+          "dark": "#94988c"
         }
       }
     },
     "lane": {
       "colors": {
-        "light": "#f0e5c8",
-        "dark": "#a49a7d"
+        "light": "#e9e6d8",
+        "dark": "#9faaa0"
       },
       "opacity": {
-        "light": 0.45,
-        "dark": 0.3
+        "light": 0,
+        "dark": 0.0
       }
     },
     "centerLine": {
       "colors": {
-        "light": "#c6aa68",
-        "dark": "#c6aa68"
+        "light": "#b4ac91",
+        "dark": "#8e8a70"
       },
       "opacity": {
-        "light": 0.12,
-        "dark": 0.08
+        "light": 0,
+        "dark": 0
       }
     }
   },
@@ -1835,12 +1837,12 @@ export const PROTOSS_DELTA = {
           "colors": {
             "light": [
               "#c5a358",
-              "#f1d99a",
+              "#e3d9bf",
               "#9e7a39"
             ],
             "dark": [
               "#88703f",
-              "#b2a171",
+              "#958c74",
               "#705831"
             ]
           }
@@ -2509,6 +2511,7 @@ export const PROTOSS_DELTA = {
   },
   "race": {
     "kind": "protoss",
+    "pad": { "look": "accent", "slot": 1, "shape": "octagon" },
     "keep": SEOUL_KEEP
   },
   "signs": {

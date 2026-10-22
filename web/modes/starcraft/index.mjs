@@ -8,7 +8,7 @@ export const TERRAN = {
   from: 'simcity',
   label: '테란',
   settings: {
-    city: { pack: TERRAN_DELTA },   // 강철 기지
+    city: { pack: TERRAN_DELTA, life: { units: { people: ['marine', 'marine', 'firebat', 'medic', 'ghost'], cars: ['vulture', 'goliath'] } } },   // 강철 기지, 사람 · 차 대신 보병 · 벌처 · 골리앗
     trains: { look: 'units', units: { lead: 'dropship', rest: 'dropship' } },   // 드랍십 편대(2026-10-22 행님: 지하철은 수송선)
     buses: { look: 'siegeTank' },   // 시즈 탱크(2026-10-22 행님)
     me: { look: 'scv' },   // 내 위치: SCV
@@ -19,7 +19,7 @@ export const ZERG = {
   from: 'simcity',
   label: '저그',
   settings: {
-    city: { pack: ZERG_DELTA, groundTexture: true },   // 살덩이 건물, 땅은 크립(얼룩 질감)
+    city: { pack: ZERG_DELTA, groundTexture: true, life: { units: { people: ['zergling', 'zergling', 'hydralisk'], cars: ['lurker', 'defiler'] } } },   // 황무지 흙 위 크립 건물, 사람 · 차 대신 저글링 · 히드라 · 러커 · 디파일러
     trains: { look: 'units', units: { lead: 'overlord', rest: 'overlord' } },   // 오버로드 떼
     buses: { look: 'ultralisk' },   // 울트라리스크(2026-10-22 행님)
     me: { look: 'drone' },   // 내 위치: 드론
@@ -30,7 +30,7 @@ export const PROTOSS = {
   from: 'simcity',
   label: '프로토스',
   settings: {
-    city: { pack: PROTOSS_DELTA },   // 금빛 외벽 · 청록 수정
+    city: { pack: PROTOSS_DELTA, life: { units: { people: ['zealot', 'zealot', 'highTemplar', 'darkTemplar'], cars: ['dragoon', 'reaver', 'archon'] } } },   // 사막 위 금빛 건물, 사람 · 차 대신 질럿 · 템플러 · 드라군 · 리버 · 아콘
     trains: { look: 'units', units: { lead: 'shuttle', rest: 'shuttle' } },   // 셔틀 편대
     buses: { look: 'dragoon' },   // 드라군
     me: { look: 'probe' },   // 내 위치: 프로브

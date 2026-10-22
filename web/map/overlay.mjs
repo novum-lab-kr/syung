@@ -34,7 +34,10 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
-  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null,pixels=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
+  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let lifeUnits=null;
+  // 스타크래프트: 사람 · 차 대신 유닛(모드 설정 city.life.units — 모드 코드 받기의 LifeUnits). 그 모드를 나가면 GL 을 치운다
+  const lifeUnitsFor=(gl,S)=>{if(S.city.life.units&&live.LifeUnits)return lifeUnits??=new live.LifeUnits();if(lifeUnits){lifeUnits.dispose(gl);lifeUnits=null}return null};
+  let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null,pixels=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -60,7 +63,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
       if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE,exits:()=>Object.values(exitPillars.d.getExits()).flat(),deck:(x,y,r)=>cityViaduct.deckProbe(x,y,r)});cityLife.init(gl,maplibregl,map);window.__subwayWebGL.cityLife=cityLife}
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-      cityLife.render(gl,pd.mainMatrix,{look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
+      cityLife.render(gl,pd.mainMatrix,{look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,units:S.city.life.units,lifeUnits:lifeUnitsFor(gl,S),phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:$('toggleMap').getAttribute('aria-pressed')==='true',moving:map.isMoving(),sun:sunPosition()});
       if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
     if(live.busLayer)live.busLayer.look=S.buses.look;live.busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
     if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
