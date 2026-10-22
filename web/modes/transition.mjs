@@ -1,8 +1,10 @@
-// 모드 전환: 지금 모드 · 원하는 모드 · 마지막 요청 번호 · 롤코 배속과 앞서 달린 시간(warp)의 주인. 본체는 flags(simcity · joseon · coaster)로 읽는다.
+// 모드 전환: 지금 모드 · 원하는 모드 · 마지막 요청 번호 · 롤코 배속과 앞서 달린 시간(warp)의 주인. 본체는 flags(simcity · joseon · starcraft · coaster)로 읽는다.
 // 전환 순서 계약: ① 준비(prepare — 모드 코드 · 롤코 건물 받기, 이미 있으면 바로) → ② 아직 마지막 요청인지 확인 → ③ 바꾸기(commit, 동기)
 // → ④ 이전 모드 정리(commit 안, 옛 상태를 읽을 수 있는 동안). 준비만으로는 화면 · 상태를 바꾸지 않는다. 늦게 온 옛 요청의 성공 · 실패는 아무것도 바꾸지 않는다.
 // 준비 실패는 처리되지 않은 rejection 을 남기지 않는다(마지막 요청이면 onFail 로 버튼을 지금 모드로 되돌린다).
 // 다른 화면 파일을 import 하지 않는다: 준비 · 바꾸기 · 버튼은 본체가 넘긴다.
+export const STARCRAFT = Object.freeze(['terran', 'zerg', 'protoss']);   // 스타크래프트 종족 모드(web/modes/starcraft)
+export const CITY_FAMILY = Object.freeze(['simcity', 'joseon', ...STARCRAFT]);   // 심시티 도시 위의 모드(심시티 스위치 · 조선 · 종족) — 서로 바꿀 때 롤코처럼 끄고 켜지 않는다
 export function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = 'basic' }) {
   let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0, S = registry.settings(root);   // S: 지금 모드의 설정(자주 묻는다 — 바뀔 때만 고른다)
 
@@ -25,8 +27,9 @@ export function createModeController({ registry, prepare, commit, onRequest = ()
   function warpNow() { const t = clock(); if (t < warpAt) return warp; if (warpAt) warp += (t - warpAt) / 1000 * (speed - 1); warpAt = t; return warp }
 
   const flags = Object.freeze({
-    get simcity() { return current === 'simcity' || current === 'joseon' },   // 조선도 심시티(같은 도시 · 고가 · x-ray)
+    get simcity() { return CITY_FAMILY.includes(current) },   // 조선 · 스타크래프트 종족도 심시티(같은 도시 · 고가 · x-ray)
     get joseon() { return current === 'joseon' },
+    get starcraft() { return STARCRAFT.includes(current) },   // 스타크래프트(종족 셋 중 하나)
     get coaster() { return current === 'coaster' },
   });
   return {

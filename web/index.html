@@ -48,6 +48,12 @@
     <span class="setting-name"><span id="joseonName">조선</span><small id="joseonDescription">한양 기와집 사이를 거닐어요</small></span>
     <i class="switch" aria-hidden="true"></i>
   </button>
+  <button id="toggleStarcraft" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="starcraftName" aria-describedby="starcraftDescription cityModeHelp" aria-controls="starcraftRace">
+    <span class="setting-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></span>
+    <span class="setting-name"><span id="starcraftName">스타크래프트</span><small id="starcraftDescription">종족을 골라 서울을 거닐어요</small></span>
+    <i class="switch" aria-hidden="true"></i>
+  </button>
+  <div id="starcraftRace" class="setting-row" hidden><span class="setting-icon" aria-hidden="true"></span><span class="setting-name">종족</span><div class="segmented" role="group" aria-label="종족"><button type="button" data-race="terran">테란</button><button type="button" data-race="zerg">저그</button><button type="button" data-race="protoss">프로토스</button></div></div>
   <button id="toggleCoaster" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="coasterName" aria-describedby="coasterDescription cityModeHelp" aria-controls="coasterSpeed">
     <span class="setting-icon" aria-hidden="true"></span>
     <span class="setting-name"><span id="coasterName">롤러코스터</span><small id="coasterDescription">도시 위를 달려요</small></span>
