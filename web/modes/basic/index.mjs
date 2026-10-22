@@ -13,7 +13,9 @@ export default {
     mapColor: 'calm',      // 내 설정(지도 색): calm · color — 저장 이름 subway-map-color
     // 지도 색: 테마별 바탕 · '컬러' 덧칠 · 공원(롤코). paletteKind 는 섞는 차례 — base(바탕만) · city(+도시 땅) · park-city(+공원 색 · 도시 땅)
     // verticalGradient: 지도 3D 건물 위아래 명암
-    map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', verticalGradient: true, exitLook: 'pillar' },   // exitLook: 출구 표지 — pillar(노선색 기둥) · jangseung(장승 + 양쪽 횃불, 조선)
+    map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', verticalGradient: true, exitLook: 'pillar',
+      // pixel: 도트(레트로) — 지도 · 열차 캔버스를 size CSS px 한 칸의 도트로, palette 색표(none · endesga32), outline 앞 물체 가장자리 먹선. 역 이름표는 선명하게
+      pixel: { enabled: false, size: 3, palette: 'endesga32', outline: true } },   // exitLook: 출구 표지 — pillar(노선색 기둥) · jangseung(장승 + 양쪽 횃불, 조선)
     // 미니어처 도시(색 · 치수 · 줌 팩): 심시티 · 롤코는 이 팩 그대로(같은 참조), 조선은 덧쓴다. groundTexture: 땅에 흙 질감(팩의 ground.texture)
     // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
     // tone: 팩의 modes 항목 이름(땅 · 건물 · 사람의 채도 · 밝기 · 그림자), lampPool: 가로등 빛 웅덩이 배수(null 이면 그 tone 의 lampPool)

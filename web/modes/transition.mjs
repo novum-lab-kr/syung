@@ -4,7 +4,7 @@
 // 준비 실패는 처리되지 않은 rejection 을 남기지 않는다(마지막 요청이면 onFail 로 버튼을 지금 모드로 되돌린다).
 // 다른 화면 파일을 import 하지 않는다: 준비 · 바꾸기 · 버튼은 본체가 넘긴다.
 export const STARCRAFT = Object.freeze(['terran', 'zerg', 'protoss']);   // 스타크래프트 종족 모드(web/modes/starcraft)
-export const CITY_FAMILY = Object.freeze(['simcity', 'joseon', ...STARCRAFT]);   // 심시티 도시 위의 모드(심시티 스위치 · 조선 · 종족) — 서로 바꿀 때 롤코처럼 끄고 켜지 않는다
+export const CITY_FAMILY = Object.freeze(['simcity', 'joseon', 'retro', ...STARCRAFT]);   // 심시티 도시 위의 모드(심시티 스위치 · 조선 · 레트로 · 종족) — 서로 바꿀 때 롤코처럼 끄고 켜지 않는다
 export function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = 'basic' }) {
   let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0, S = registry.settings(root);   // S: 지금 모드의 설정(자주 묻는다 — 바뀔 때만 고른다)
 

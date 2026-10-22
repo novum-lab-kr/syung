@@ -8,13 +8,14 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
   // 역 이름표 캔버스: 열차 캔버스 바로 위(마커 · 팝업 아래)
   const sc=document.createElement('canvas');sc.className='station-signs';c.after(sc);sc.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
+  const SIGN_PR=Math.min(globalThis.devicePixelRatio||1,PHONE?2:3);   // 이름표 캔버스는 제 해상도(지도 캔버스가 도트로 낮아져도 글자는 선명하게)
   const sctx=sc.getContext('2d');let signFeatures=[],signAt=0,signMatrix=null,signTimer=0,signShown=false;
   // 그릴 이름표가 없으면 캔버스를 숨긴다: 다 지우고 아무것도 안 그리면 크롬이 직전 그림을 계속 띄웠다 — 크게 옮긴 뒤 전 자리의 역 이름이
   // 같은 화면 자리에 몇 초씩 남았다(2026-10-10 덕배, 잠실 → 여의도). 캔버스 픽셀은 비어 있었다
   const showSigns=on=>{if(on!==signShown){signShown=on;sc.style.visibility=on?'':'hidden'}};
   const drawSigns=M=>{
     const m=map.getCanvas(),W=m.clientWidth,H=m.clientHeight;signMatrix=M;
-    if(sc.width!==m.width||sc.height!==m.height){sc.width=m.width;sc.height=m.height}
+    const SW=Math.round(W*SIGN_PR),SH=Math.round(H*SIGN_PR);if(sc.width!==SW||sc.height!==SH){sc.width=SW;sc.height=SH}
     sc.style.width=m.style.width;sc.style.height=m.style.height;sctx.clearRect(0,0,sc.width,sc.height);
     const now=performance.now();   // 놓인 이름표 목록은 가끔만 다시 받아요(배치도 그 정도 간격으로 바뀌어요). 위치는 매 프레임 투영
     if(now-signAt>150){signAt=now;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels']}):[]}
@@ -29,7 +30,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     }
     items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
     showSigns(items.length>0);
-    drawStationSigns(sctx,items,{dpr:m.width/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
+    drawStationSigns(sctx,items,{dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로

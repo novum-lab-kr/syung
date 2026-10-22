@@ -44,7 +44,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
   function checkKnown(S, id) {
     // 아는 묶음은 평범한 객체여야(null · 참거짓 · 배열 · 수로 통째로 바꾸면 엔진이 그 안을 읽다 멈춘다)
     const plainGroup = v => v && typeof v === 'object' && !Array.isArray(v);
-    for (const [g, k] of [['map'], ['city'], ['city', 'life'], ['park'], ['track'], ['trains'], ['buses'], ['me'], ['sun']]) {
+    for (const [g, k] of [['map'], ['map', 'pixel'], ['city'], ['city', 'life'], ['park'], ['track'], ['trains'], ['buses'], ['me'], ['sun']]) {
       const v = k ? S[g]?.[k] : S[g], present = k ? (S[g] && k in S[g]) : g in S;
       if (present && !plainGroup(v)) throw new Error(`${id}.${k ? g + '.' + k : g}: 묶음(객체)이어야 — ${JSON.stringify(v)}`);
     }
@@ -81,6 +81,12 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
         if ('yawDeg' in L && typeof L.yawDeg !== 'number') throw new Error(`${at}.yawDeg: 수`) });
     }
     for (const g of ['city', 'park']) if (S[g] && 'enabled' in S[g] && typeof S[g].enabled !== 'boolean') throw new Error(`${id}.${g}.enabled: 참 · 거짓`);
+    if (S.map?.pixel) {   // 도트: 켜기 · 윤곽은 참거짓, 크기는 1~8 CSS px, 팔레트는 목록 안
+      const X = S.map.pixel;
+      for (const k of ['enabled', 'outline']) if (k in X && typeof X[k] !== 'boolean') throw new Error(`${id}.map.pixel.${k}: 참 · 거짓`);
+      if ('size' in X && !(typeof X.size === 'number' && X.size >= 1 && X.size <= 8)) throw new Error(`${id}.map.pixel.size: 1 ~ 8`);
+      oneOf(X.palette, ['none', 'endesga32'], `${id}.map.pixel.palette`);
+    }
     return S;
   }
   for (const id of byId.keys()) modeSettings(id);   // 잘못된 정의는 쓰기 전에(시작할 때) 알린다

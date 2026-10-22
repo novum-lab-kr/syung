@@ -25,6 +25,7 @@ import JOSEON_MODE from './modes/joseon/index.mjs';
 import './modes/joseon/style.mjs';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
 import COASTER_MODE from './modes/coaster/index.mjs';
 import STARCRAFT_MODES from './modes/starcraft/index.mjs';
+import RETRO_MODE from './modes/retro/index.mjs';   // 레트로: 심시티 도시를 도트로
 import './modes/starcraft/style.mjs';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
 import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mjs';   // 스타크래프트 유닛 모양(Codex 시안)
 import {unitBusLook} from './modes/starcraft/units.mjs';   // 스타크래프트 버스 모양 등록 자료(유닛 → 버스 메시)   // 스타크래프트: 종족 셋(테란 · 저그 · 프로토스), 모드 하나씩
@@ -57,7 +58,7 @@ import {CityViaduct} from './city/viaduct.mjs';
 import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
-const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES]);
+const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES,RETRO_MODE]);
 registerAvatar('sprout',sproutAvatar);registerAvatar('builder',builderAvatar);registerAvatar('seonbi',seonbiAvatar);registerAvatar('visitor',visitorAvatar);registerAvatar('scv',scvAvatar);registerAvatar('drone',droneAvatar);registerAvatar('probe',probeAvatar);   // 내 위치 캐릭터 모양(이름 = 모드 설정 me.look)
 for(const k of ['siegeTank','ultralisk','dragoon'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 시즈 탱크 · 울트라리스크 · 드라군
 registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh,stopGrowFrom:18});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안) · 정류장은 청사초롱 장대(밤에 불)
@@ -258,6 +259,7 @@ function trainFrameSoon(ms){const at=performance.now()+ms;if(trainTimer&&trainAt
 let repaintTimer=0,repaintAt=0;   // coaster: keep map repaint scheduling outside the train timer's comment
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:20,minZoom:7,zoomLevelsToOverscale:undefined,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false,canvasContextAttributes:{antialias:!location.hash.includes('noaa')}});   // 모서리 계단 현상: 지도 캔버스도 MSAA(기본 꺼짐 — 1인칭에서 건물 · 고가 모서리가 깨지고 움직이면 반짝였다, 2026-10-06 덕배). #noaa: 끄고 비교(끊김 원인 찾기)   // 줌 20까지: zoomLevelsToOverscale(기본 4)을 끈다 — 켜 두면 줌 상한 20에서 바탕 타일을 z16 조각으로 잘라 받아 z14 타일만 쓰는 건물 · 버스 도로가 비었다(2026-10-09)
+const BASE_PR=map.getPixelRatio();   // 지도 캔버스 픽셀 비율(레트로 도트일 때만 낮춘다 — syncPixels)
 let busLayer=null;   // bus: owns its loading, viewport culling and animation lifecycle
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
@@ -641,8 +643,12 @@ const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCi
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
-function applyTheme(){return theme.applyTheme()}
+function applyTheme(){syncPixels();return theme.applyTheme()}
 function sunArcIcon(){return theme.sunArcIcon()}
+// 도트(모드 설정 map.pixel — 레트로): 지도 캔버스를 size CSS px 한 칸으로 그리고(픽셀 비율 1/size) 브라우저가 이웃 픽셀 그대로 키운다(CSS pixelated).
+// 열차 캔버스는 지도 캔버스 크기를 따라가 같이 도트가 되고, 역 이름표 캔버스는 제 해상도라 글자는 선명하다(overlay). 모드가 바뀔 때마다 applyTheme 가 부른다
+let pixelSize=null;
+function syncPixels(){const X=modeCtl.settings().map.pixel,size=X.enabled?X.size:0;if(size===pixelSize)return;pixelSize=size;map.setPixelRatio(size?1/size:BASE_PR);map.getContainer().classList.toggle('pixel-art',!!size)}
 
 // ---- sun light and shadows ----------------------------------------------------------------
 // Real-time sun position over Seoul drives building face lighting (map light) and ground shadows:
@@ -730,7 +736,7 @@ const modeBusy=(()=>{
     end};
 })();
 // 버튼: 원하는 모드(받는 중이면 그 모드)를 눌린 것으로, 준비가 실패하면 지금 모드로
-function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'));showRace(want)}
+function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleRetro')?.setAttribute('aria-pressed',String(want==='retro'));$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'));showRace(want)}
 let lastRace='terran';   // 마지막에 고른 종족(처음엔 테란) — 스위치만 켜면 이 종족으로
 // 스타크래프트: 스위치는 종족 하나라도 켜져 있으면 눌림, 그 아래 종족 줄은 켜져 있을 때만(고른 종족이 눌림)
 function showRace(want){const on=STARCRAFT.includes(want);if(on)lastRace=want;$('toggleStarcraft')?.setAttribute('aria-pressed',String(on));if($('starcraftRace'))$('starcraftRace').hidden=!on;
@@ -773,11 +779,13 @@ function setCoaster(on,speed){return on?modeCtl.request('coaster',{speed}):offFa
 function setSimcity(on,asJoseon=false){return on?modeCtl.request(asJoseon?'joseon':'simcity'):offFamily(['simcity','joseon'])}
 // 스타크래프트: 종족(race)을 안 주면 마지막에 고른 종족(lastRace)
 function setStarcraft(on,race){return on?modeCtl.request(race??lastRace):offFamily(STARCRAFT)}
+function setRetro(on){return on?modeCtl.request('retro'):offFamily(['retro'])}
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(modeCtl.desired!=='simcity');   // 받는 중에 다시 누르면 취소
 if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(modeCtl.desired!=='joseon',true);
 const setJoseon=on=>setSimcity(on,true);
 if($('toggleStarcraft'))$('toggleStarcraft').onclick=()=>setStarcraft(!STARCRAFT.includes(modeCtl.desired));
+if($('toggleRetro'))$('toggleRetro').onclick=()=>setRetro(modeCtl.desired!=='retro');
 for(const b of document.querySelectorAll('[data-race]'))b.onclick=()=>setStarcraft(true,b.dataset.race);
 $('toggleCoaster').onclick=()=>setCoaster(modeCtl.desired!=='coaster');
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
@@ -798,4 +806,4 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
-window.__subwayWebGL={map,me,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setStarcraft,setCoaster,get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get starcraft(){return modeOn.starcraft?modeCtl.current:null},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},get convoy(){return UnitConvoy?.last??null},rideFrame,set rideSeat(v){rider.seat=v}};
+window.__subwayWebGL={map,me,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setStarcraft,setCoaster,setRetro,get retro(){return modeCtl.current==='retro'},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get starcraft(){return modeOn.starcraft?modeCtl.current:null},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},get convoy(){return UnitConvoy?.last??null},rideFrame,set rideSeat(v){rider.seat=v}};
