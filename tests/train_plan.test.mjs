@@ -7,7 +7,7 @@ import {createTrainPlanner} from '../web/trains/plan.mjs';
 
 const record=(extra={})=>({line:'9호선',trainNo:'9001',station:'나',destination:'라',direction:'하행',status:'출발',...extra});
 
-async function setup(t){
+async function setup(t,timing={}){
   // 가 → 나 → 다 → 라, 역 사이 1 km. 급행은 나를 통과한다.
   const stations=['가','나','다','라'].map((name,i)=>({id:i+1,name,lines:[{name:'9호선'}],express:i===1?[]:['9호선']}));
   const {stationByLine,route}=createRouter({stations,paths:{'9호선':[[1,2,3,4]]}});
@@ -17,7 +17,7 @@ async function setup(t){
   const poses=new WeakMap(),requests=[];
   t.mock.method(globalThis,'fetch',async url=>{
     requests.push(url);
-    return {ok:true,json:async()=>({})};
+    return {ok:true,json:async()=>url==='./live-timing.json'?timing:{}};
   });
   const planner=createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,geom,realGeom:geom,
     trainPose:p=>{assert.ok(poses.has(p),'보정할 계획의 자세가 준비되어 있음');return {dist:poses.get(p)}},
@@ -72,6 +72,23 @@ test('planTrain: 급행은 비정차역에서 서지 않는다',async t=>{
   assert.equal(into.ease,'in','비정차역으로 들어가며 감속하지 않는다');
   assert.equal(out.ease,'out','비정차역을 떠나며 정차부터 가속하지 않는다');
   assert.equal(express.phases.at(-1).dur,Infinity);
+});
+
+test('planTrain: 완행은 배운 대피 대기(waits — 역 · 방향 · 출퇴근)만큼 서고, 급행 · 다른 방향 · 다른 때는 그대로',async t=>{
+  // 수요일 13:00 KST(낮) · 08:00 KST(출퇴근)
+  const day=Date.parse('2026-10-21T13:00:00+09:00'),rushAt=Date.parse('2026-10-21T08:00:00+09:00');let now=day;
+  t.mock.method(Date,'now',()=>now);
+  const {planner}=await setup(t,{lines:{'9호선':{zone:60,waits:{'2:하행:day':200,'3:하행:rush':180}}},default:{pace:1,zone:62,approach:40}});
+  const train=record({station:'가'}),standAt=(p,id)=>p.phases.find(ph=>Number.isFinite(ph.dur)&&ph.k0===0&&ph.k1===0&&ph.from.id===id).dur;
+  // zone 60: 감속 20 · 정차 20, 대피 200 이면 정차 20 + (200 − 60)
+  assert.equal(standAt(planner.planTrain(train),2),160,'낮의 하행 완행은 나에서 대피');
+  assert.equal(standAt(planner.planTrain(train),3),20,'다는 낮에 대피하지 않는다');
+  assert.equal(standAt(planner.planTrain({...train,direction:'상행'}),2),20,'다른 방향은 그대로');
+  assert.equal(standAt(planner.planTrain({...train,express:true}),3),20,'급행은 대피하지 않는다');
+  now=rushAt;
+  const rush=planner.planTrain(train);
+  assert.equal(standAt(rush,2),20,'출퇴근에는 나에서 대피하지 않는다');
+  assert.equal(standAt(rush,3),140,'출퇴근에는 다에서 대피');
 });
 
 test('rebuild · clear · plans: 현재 배열 참조를 그대로 읽고 교체한다',async t=>{

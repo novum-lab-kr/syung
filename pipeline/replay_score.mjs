@@ -7,6 +7,7 @@
 //
 // 창마다: 도착 · 출발 각각 슝 − 피드(부호 가운데값 · |오차| 가운데값 · 90 % · 60초 넘는 몫 · 개수), 피드 사건 가운데 슝이 그 역에 서고 떠난 것으로
 // 맞춘 몫(coverage), 역 사이 10초 넘게 멈춘 횟수(열차 한 시간당).
+// 급행이 서지 않는 역의 피드 도착 · 출발은 슝이 그 역을 지나간 때와 견준다(passed: 그렇게 맞춘 수, 2026-10-22 — 전에는 못 맞춘 사건으로 셌다).
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import readline from 'node:readline';
@@ -41,13 +42,14 @@ async function feedEvents(day,line,from,to){
 
 // 한 창: 피드 사건마다 슝이 그 열차를 그 역에 세운 때(도착) · 떠나보낸 때(출발)
 export function scoreWindow(events,log,to){
-  const err={도착:[],출발:[]};let matched=0;
+  const err={도착:[],출발:[]};let matched=0,passed=0;
   for(const ev of events){
     const L=log.get(ev.train);if(!L)continue;
     const stops=L.stops.filter(s=>s.where!=='(역 사이)'&&key(s.where)===key(ev.station));
-    const near=stops.map(s=>({s,at:ev.status==='도착'?s.stop:s.leave})).filter(x=>x.at!=null&&Math.abs(x.at-ev.t)<MATCH_MS).sort((a,b)=>Math.abs(a.at-ev.t)-Math.abs(b.at-ev.t))[0];
+    const passes=(L.passes||[]).filter(x=>key(x.where)===key(ev.station)).map(x=>({at:x.at,pass:true}));
+    const near=[...stops.map(s=>({s,at:ev.status==='도착'?s.stop:s.leave})),...passes].filter(x=>x.at!=null&&Math.abs(x.at-ev.t)<MATCH_MS).sort((a,b)=>Math.abs(a.at-ev.t)-Math.abs(b.at-ev.t))[0];
     if(!near)continue;
-    matched++;err[ev.status].push(Math.round((near.at-ev.t)/1000));
+    matched++;if(near.pass)passed++;err[ev.status].push(Math.round((near.at-ev.t)/1000));
   }
   let stalls=0,trainMs=0;const stallSecs=[];
   for(const L of log.values()){
@@ -55,7 +57,7 @@ export function scoreWindow(events,log,to){
     trainMs+=Math.min(to,L.stops.at(-1).leave??to)-L.stops[0].stop;
     for(const s of L.stops)if(s.where==='(역 사이)'&&s.leave&&(s.leave-s.stop)/1000>=STALL_S){stalls++;stallSecs.push((s.leave-s.stop)/1000)}
   }
-  return {arrive:summary(err.도착),depart:summary(err.출발),events:events.length,coverage:events.length?+(matched/events.length).toFixed(3):null,
+  return {arrive:summary(err.도착),depart:summary(err.출발),events:events.length,coverage:events.length?+(matched/events.length).toFixed(3):null,passed,
     stalls:{n:stalls,perTrainHour:trainMs>0?+(stalls/(trainMs/3600e3)).toFixed(2):null,median:q(stallSecs,.5),p90:q(stallSecs,.9)}};
 }
 

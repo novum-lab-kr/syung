@@ -58,7 +58,10 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     // 감속이 10초뿐이라 실제보다 일찍 섰다(7호선 중곡 약 10초 빨리 도착, 2026-10-12 덕배 탑승). 출발 시각은 그대로다.
     const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,Math.max(20,Math.min(tm.stand||30,DWELL-20))),BRAKE=DWELL-STAND;
     // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
-    const more=st=>(tm.stops?.[st.id]??tm.zone)-tm.zone,stand=st=>Math.max(5,STAND+more(st));
+    // 완행은 급행을 보내려고 서는 역(대피)이 방향 · 출퇴근마다 따로 있다(live-timing waits — 9호선 가양 · 동작 · 샛강 · 사평 · 송파나루 약 200초).
+    // 역 하나로 섞어 배운 70~90초만 서면 대피 중인 열차를 2~3분 먼저 떠나보내 세 역 앞까지 갔다(화면 재현 9호선, 2026-10-22)
+    const period=rushNow()?'rush':'day',zoneAt=st=>(t.express?null:tm.waits?.[`${st.id}:${t.direction}:${period}`])??tm.stops?.[st.id]??tm.zone;
+    const more=st=>zoneAt(st)-tm.zone,stand=st=>Math.max(5,STAND+more(st));
     // 구간마다 배운 출발→도착 초(live-timing runs, 방향별): 출발은 달리기 시작 15 s 뒤, 도착은 서기 BRAKE s 전이라 달리는 시간은 그만큼 더 길다. 없으면 시간표 × pace
     const paced=(from,to)=>{const D=tm.runs?.[`${from.id}:${to.id}`];if(D!=null)return Math.max(10,D+15+BRAKE);const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
     // ease: slow at a stop, full speed through a station the train passes

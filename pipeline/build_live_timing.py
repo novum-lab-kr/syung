@@ -17,6 +17,11 @@ Output (data/live-timing.json), read by the map runtime:
 - zone: seconds from 도착 to 출발 at one station (the train inside the station section).
 - stops: {station id: zone} for every station with STOP_MIN_N timed stands whose own zone differs
   from the line's: the median 도착→출발 + 5 (the map has 출발 come zone − 5 s after 도착).
+- waits: {"<station id>:<direction>:rush|day": zone} for local (non-express) trains where their own 도착→출발 differs
+  from stops by WAIT_DIFF s or more: the median + 5, like stops. 9호선 완행 wait ~200 s at 가양 · 동작 · 샛강 · 사평 · 송파나루
+  for an express to pass (대피), by direction and rush hour (동작 in the day, 샛강 · 사평 하행 at rush), while stops mixed both
+  kinds into one 70–92 s — the map left waiting trains ~2–3 min early and ran them up to three stations ahead (화면 재현 9호선
+  p90 63–99 s against 7 · 2호선 24–37 s, 2026-10-22). Only position-feed records say express, so only they teach waits.
 - runs: {"a:b": seconds} per direction of every edge: the median 출발 at a → 도착 at b (RUN_MIN_N of
   them), or for stations whose feed never says 출발 (코레일 sections) the median 도착 → next 도착
   less a's stand. The timetable × pace is only the fallback.
@@ -62,6 +67,7 @@ OUT = ROOT / "data" / "live-timing.json"
 # ~30 s early
 DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
 STOP_MIN_N, STOP_CLAMP, RUN_MIN_N = 30, (30, 180), 15
+WAIT_MIN_N, WAIT_CLAMP, WAIT_DIFF, WAIT_MAX = 8, (30, 360), 30, 420   # 완행 대피: 기록 수 · 범위 · stops 와 이만큼 달라야 · 이보다 긴 도착→출발은 버림
 WINDOW = 14   # days a nightly retrain learns from (retrain_live_timing.py)
 MIN_N = {"pace": 200, "zone": 100, "approach": 100, "rushPace": 60}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85), "rushPace": (0.95, 1.12)}
@@ -153,20 +159,32 @@ def day_pairs(paths: list[str]):
         yield from pairs(load(group))
 
 
-def stand(tm: dict, a) -> float:
-    """Seconds from 도착 until the train pulls out at station a (출발 comes 15 s later)."""
-    return max(15, tm.get("stops", {}).get(str(a), tm["zone"]) - 10)
+def wait_key(a, e: dict) -> str | None:
+    """waits 의 열쇠(완행만 — 급행 여부를 모르는 기록은 None): 역 · 방향 · 출퇴근(rush)/그 밖(day)."""
+    if e.get("express") is not False:
+        return None
+    return f"{a}:{e.get('direction')}:{'rush' if rush(e['receivedAt']) else 'day'}"
+
+
+def stand(tm: dict, a, e: dict | None = None) -> float:
+    """Seconds from 도착 until the train pulls out at station a (출발 comes 15 s later); e: the 도착 record, for a local's wait."""
+    k = wait_key(a, e) if e else None
+    zone = tm.get("waits", {}).get(k) if k else None
+    return max(15, (zone or tm.get("stops", {}).get(str(a), tm["zone"])) - 10)
 
 
 def learn(paths: list[str], verbose: bool = False) -> dict:
     pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     zone_at, leave, onward = defaultdict(list), defaultdict(list), defaultdict(list)   # (line, a, b): 출발 → 도착, 도착 → 도착
+    wait_at = defaultdict(list)   # (line, wait_key): 완행의 도착 → 출발
     for line, e1, e2, a, b, dt in day_pairs(paths):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
             if both and (s1, s2) == ("도착", "출발") and dt < 300:
                 zone[line].append(dt)
                 zone_at[(line, a)].append(dt)
+            if both and (s1, s2) == ("도착", "출발") and dt < WAIT_MAX and (k := wait_key(a, e1)):
+                wait_at[(line, k)].append(dt)
             if both and (s1, s2) == ("진입", "도착") and dt < 180:
                 approach[line].append(dt)
             continue
@@ -201,6 +219,14 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
         stops = {a: v for a, v in stops.items() if v != base}
         if stops:
             out["stops"] = stops
+        waits = {}
+        for (l, k), v in sorted(wait_at.items()):
+            if l == line and len(v) >= WAIT_MIN_N:
+                w = round(min(WAIT_CLAMP[1], max(WAIT_CLAMP[0], statistics.median(v) + 5)))
+                if abs(w - stops.get(k.split(":")[0], base)) >= WAIT_DIFF:
+                    waits[k] = w
+        if waits:
+            out["waits"] = waits
         tm, runs = {**DEFAULT, **out}, {}
         for (l, a, b) in sorted(set(leave) | set(onward)):
             if l != line:
@@ -215,7 +241,7 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
         if not out:
             lines.pop(line)
         if verbose and out:
-            print(f"{line:6} {({k: v for k, v in out.items() if k not in ('stops', 'runs')})} stops {len(out.get('stops', {}))} runs {len(out.get('runs', {}))}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
+            print(f"{line:6} {({k: v for k, v in out.items() if k not in ('stops', 'runs', 'waits')})} stops {len(out.get('stops', {}))} waits {len(out.get('waits', {}))} runs {len(out.get('runs', {}))}  (n pace {len(pace[line])}, rush {len(rush_pace[line])}, zone {len(zone[line])}, approach {len(approach[line])})")
     counts = {line: {k: n for k, n in (("pace", len(pace[line])), ("rushPace", len(rush_pace[line])),
                                        ("zone", len(zone[line])), ("approach", len(approach[line])),
                                        ("runs", sum(len(v) for (l, _, _), v in leave.items() if l == line))) if n}
@@ -225,7 +251,7 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
 
 def brief(lines: dict) -> dict:
     """Learned values for the log and the learning page: the per-edge runs as a count."""
-    return {line: {k: (len(v) if k == "runs" else v) for k, v in out.items()} for line, out in lines.items()}
+    return {line: {k: (len(v) if k in ("runs", "waits") else v) for k, v in out.items()} for line, out in lines.items()}
 
 
 def evaluate(timing: dict, paths: list[str]) -> dict:
@@ -243,8 +269,8 @@ def evaluate(timing: dict, paths: list[str]) -> dict:
         tm = {**timing["default"], **timing["lines"].get(line, {})}
         if "rushPace" in tm and rush(e1["receivedAt"]):
             tm["pace"] = tm["rushPace"]
-        leave = stand(tm, a) + 5   # 도착 → 출발 at the station it stands at
         s1, s2 = e1["status"], e2["status"]
+        leave = stand(tm, a, e1 if s1 == "도착" else None) + 5   # 도착 → 출발 at the station it stands at
         if a == b and (s1, s2) == ("도착", "출발"):
             kind, predicted = "도착→출발", leave
         elif a != b and s2 == "도착" and s1 in ("도착", "출발") and (run := times["edges"].get(f"{line}:{min(a, b)}:{max(a, b)}")):

@@ -30,7 +30,27 @@ const merc=s=>({x:s.lon*M_LON,y:-s.lat*M_LAT,meterInMercatorCoordinateUnits:()=>
 const byId=new Map(stations.map(s=>[s.id,s]));
 const geom=(_line,a,b)=>{const A=merc(byId.get(a)),B=merc(byId.get(b));return {total:Math.hypot(B.x-A.x,B.y-A.y)}};
 
-// 한 노선의 그날 샘플러 기록(받은 때 seen 순서), from 20분 전부터 to 까지
+// 그날 위치 피드가 알려 준 급행 여부(열차 번호 → true/false, 하루 안에 둘 다 나온 번호는 뺀다).
+// 샘플러는 2026-10-22 까지 express 를 적지 않아 재현이 9호선 급행을 모두 완행으로 그렸다(지도는 /live 의 express 로 급행을 그린다)
+const expressCache=new Map();
+async function expressOf(day,line){
+  const k=`${day}|${line}`;if(expressCache.has(k))return expressCache.get(k);
+  const base=path.join(LIVE,'position',day),file=fs.existsSync(base+'.jsonl')?base+'.jsonl':base+'.jsonl.gz',out=new Map(),mixed=new Set();
+  if(fs.existsSync(file)){
+    let stream=fs.createReadStream(file);if(file.endsWith('.gz'))stream=stream.pipe(zlib.createGunzip());
+    const needle=`"${line}"`;
+    for await(const row of readline.createInterface({input:stream,crlfDelay:Infinity})){
+      if(!row.includes(needle))continue;
+      let e;try{e=JSON.parse(row)}catch{continue}
+      if(e.line!==line||typeof e.express!=='boolean')continue;
+      if(out.has(e.trainNo)&&out.get(e.trainNo)!==e.express)mixed.add(e.trainNo);out.set(e.trainNo,e.express);
+    }
+  }
+  for(const n of mixed)out.delete(n);
+  expressCache.set(k,out);return out;
+}
+
+// 한 노선의 그날 샘플러 기록(받은 때 seen 순서), from 20분 전부터 to 까지. express 가 없는 기록은 위치 피드로 채운다(expressOf)
 export async function readSamples(day,line,from,to){
   const base=path.join(LIVE,'samples',day),file=fs.existsSync(base+'.jsonl')?base+'.jsonl':base+'.jsonl.gz';
   if(!fs.existsSync(file))return [];
@@ -43,6 +63,7 @@ export async function readSamples(day,line,from,to){
     const seen=Date.parse(e.fetchedAt);if(!(seen>=from-20*60e3&&seen<=to))continue;
     out.push({...e,seen});
   }
+  if(out.some(e=>e.express==null)){const ex=await expressOf(day,line);for(const e of out)if(e.express==null&&ex.has(e.trainNo))e.express=ex.get(e.trainNo)}
   return out.sort((a,b)=>a.seen-b.seen);
 }
 
@@ -54,7 +75,8 @@ function forwardOnly(prev,r){
 }
 
 // records 를 가짜 시계로 from 20분 전부터 to 까지 흘려 trains(열차 번호들)의 기록을 돌려준다:
-// Map(열차 번호 → {stops: [{where: 역 이름 | '(역 사이)', stop, leave, held, record}]}) — stop · leave 는 ms
+// Map(열차 번호 → {stops: [{where: 역 이름 | '(역 사이)', stop, leave, held, record}], passes: [{where, at}]}) — stop · leave · at 은 ms
+// passes: 급행이 서지 않고 지나간 역과 그때(피드는 통과역에도 도착 · 출발을 찍는다 — 9호선 급행 10-21 하루 약 900건)
 // raw: 샘플 그대로(고치기 전 서버) · onPoll(planner, NOW, before): 디버그용
 export async function replayMap({from,to,records,trains,timingPath=path.join(LIVE,'live-timing.json'),raw=false,onPoll=null}){
   let NOW=from-20*60e3;const T0=NOW,realNow=Date.now,realPerf=globalThis.performance;
@@ -88,7 +110,7 @@ export async function replayMap({from,to,records,trains,timingPath=path.join(LIV
       mercStop:(_l,s)=>merc(s),catchup,catchupAt,predictStops:()=>3,isRide:()=>false,getTrains:()=>current});
     await new Promise(r=>setTimeout(r,50));   // live-timing · edge_times 읽기
     const latest=new Map(),want=new Set(trains);
-    const log=new Map(trains.map(n=>[n,{stops:[],state:null}]));
+    const log=new Map(trains.map(n=>[n,{stops:[],passes:[],state:null,plan:null,dist:0}]));
     const STEP=250,POLL=20e3,AT_STATION_M=30;
     let ri=0,nextPoll=NOW;
     for(;NOW<=to;NOW+=STEP){
@@ -105,6 +127,10 @@ export async function replayMap({from,to,records,trains,timingPath=path.join(LIV
       for(const p of planner.plans){
         const L=log.get(p.t.trainNo);if(!L)continue;
         const pose=rawPose(p);
+        if(p.t.express){   // 같은 계획에서 이번 걸음에 지나간 비정차역(계획이 바뀐 걸음은 거리 기준이 달라 건너뛴다)
+          if(L.plan===p)for(let i=0;i<p.seq.length;i++)if(p.cum[i]>L.dist&&p.cum[i]<=pose.dist&&!(p.seq[i].express||[]).includes(p.t.line))L.passes.push({where:p.seq[i].name,at:NOW});
+          L.plan=p;L.dist=pose.dist;
+        }
         let at=null;for(let i=0;i<p.seq.length;i++)if(Math.abs(p.cum[i]-pose.dist)<AT_STATION_M){at=p.seq[i];break}
         const state=pose.moving?'달림':at?`정차:${at.name}`:'선로 위 멈춤';
         if(state!==L.state){
