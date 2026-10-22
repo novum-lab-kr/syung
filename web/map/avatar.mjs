@@ -3,8 +3,9 @@
 // 다른 화면 파일을 import 하지 않는다: 본체가 위치를 넣고(createMyMotion) overlay 가 그린다(AvatarRenderer).
 const RAD = Math.PI / 180;
 export const AVATAR_MINZOOM = 15;   // 이 줌부터 캐릭터, 아래는 지금처럼 노란 점(map/layers.mjs 의 me 층 maxzoom)
-// 키(px): 줌 15 에서 40 px, 18 에서 60 px, 20 에서 73 px — 확대하는 동안 계속 커진다(18 에서 멈추면 지도만 커져 작아 보였다, 행님 2026-10-22)
-export function avatarScale(zoom) { return 40 + Math.max(0, Math.min(5, zoom - 15)) * 6.6 }
+// 키(px): 줌 15 에서 40 px → 18 에서 69 px, 18 부터는 지도와 같이 커진다(줌 하나에 2배 — 19 138 px · 20 276 px).
+// 화면 크기를 붙잡아 두면 확대할수록 지도에 비해 작아 보였다(행님 2026-10-22: 18 부터는 줄이지 말자)
+export function avatarScale(zoom) { const d = Math.max(0, Math.min(3, zoom - 15)); return (40 + d * 6 + d * d * 1.2) * 2 ** Math.max(0, zoom - 18) }
 
 // 모양 등록: {build({box, quad}), rig: {hip, shoulder}, name}. 좌표는 x = 앞(얼굴), y = 왼쪽, z = 위, 발바닥 0 · 키 1.
 // part: 'body'(머리 포함, 안 움직임) · 'legL' · 'legR'(z = rig.hip 을 축으로 흔듦) · 'armL' · 'armR'(z = rig.shoulder 축, 다리와 반대).
