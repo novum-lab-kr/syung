@@ -172,12 +172,15 @@ export function building(tb, ctx, unit) {
 // 꼭짓점 8 float: 자리 3 · 법선 3(모형 좌표로 — 인스턴스가 늘린 만큼 셰이더가 되돌린다) · 조각 바닥 높이 · 종류 × 16 + 색 칸. 색인은 전체 꼭짓점 번호(Uint32).
 // 메인 스레드(그리기)와 Worker(기록 고르기)가 같은 목록 · 차례로 만들어 번호가 같다
 export const BUCKETS = [1, 1.7, 2.8];
-const TPL_S = 10, TEMPLATES = new Map();
+const TPL_S = 10, TEMPLATES = new Map(), EXTRA_MODELS = new Map();
+// 다른 모드의 모형 목록도 같은 템플릿 · 인스턴스 그리기로(나라 모드 — web/modes/nations/models.mjs). 짓기(building)는 각자, 템플릿 번호는 같은 templateIndex
+export function registerBuildingModels(kind, list) { if (BUILDING_MODELS[kind]) throw new Error(`모형 ${kind}: 스타크래프트 종족 이름과 겹침`); EXTRA_MODELS.set(kind, list) }
+export const modelList = kind => BUILDING_MODELS[kind] || EXTRA_MODELS.get(kind) || [];
 export const templateIndex = (mi, aspect) => { let bi = 0, bd = Infinity; BUCKETS.forEach((b, k) => { const d = Math.abs(Math.log(aspect / b)); if (d < bd) { bd = d; bi = k } }); return mi * BUCKETS.length + bi };
 const tplHash = (h, k) => ((Math.imul(h ^ Math.imul(k + 1, 0x9e3779b1), 0x85ebca6b) >>> 8) / 16777216);
 export function raceTemplates(R) {
   const key = R.kind + '|' + JSON.stringify(R.pad || null); let T = TEMPLATES.get(key); if (T) return T;
-  const list = BUILDING_MODELS[R.kind] || [], verts = [], idx = [], ranges = [], tops = [];
+  const list = modelList(R.kind), verts = [], idx = [], ranges = [], tops = [];
   list.forEach((model, mi) => BUCKETS.forEach((bk, bi) => {
     const HX = bk * TPL_S, HY = TPL_S, V = [], nrm = [0, 0, 1];
     const W = { n: 0, kind: 0, w: [0, 0, 0, 0], b: [0, 0, 0, 0], m: [0, 0, 0, 0], normal(x, y, z) { nrm[0] = x; nrm[1] = y; nrm[2] = z }, v(x, y, z, zb) { V.push([x, y, z, ...nrm, zb, this.kind, this.m[0]]); return this.n++ } };

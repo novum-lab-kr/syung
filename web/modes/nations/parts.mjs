@@ -6,7 +6,10 @@
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다(행님 2026-10-22, 시안 look3d).
 import { registerCityPart } from '../../city/parts.mjs';
 import { KIND } from '../../city/mesh.mjs';
-import { fitRect, modelBuilder } from '../starcraft/race_buildings.mjs';
+import { fitRect, modelBuilder, raceTemplates, templateIndex, registerBuildingModels, modelList, pickModel } from '../starcraft/race_buildings.mjs';
+import { pointInPolygon, edgeDistance } from '../../city/geom.mjs';
+import { NATION_MODELS, NATION_CELLS } from './models.mjs';
+for (const [k, list] of Object.entries(NATION_MODELS)) registerBuildingModels(k, list);   // 스타 템플릿 · 인스턴스 그리기에 나라 모형도(메인 · Worker 각자)
 
 export const NATION_LIMITS = { minAreaM2: 40, phoneMinAreaM2: 120, minHalfM: 3 };   // 이보다 작은 땅(휴대폰은 더 큰 기준) · 좁은 직사각형은 보통 건물로
 const A = slot => ({ look: 'accent', slot });
@@ -120,7 +123,41 @@ const NATIONS = {
   },
 };
 
+// 나라 건물 통째로(행님 2026-10-22: 스타처럼 나라도 실제 모양으로): 땅에 드는 직사각형을 그 나라 칸 크기로 나눠 칸마다 모형 하나 — 건물마다 꼭짓점을 쓰지 않고
+// 기록 하나(40 바이트, 스타와 같은 tb.models)만. 높이 단위는 10 m 로 고정(모형의 층 높이가 실제 m). 서울 대표 건물 · 잘린 · 고가가 지나는 · 너무 높은 건물은 아래 장식 길로.
+const NO_AO = 8, MX = lng => lng / 360 + .5, MY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
+function keeps(tb, R) {
+  if (tb._natKeep && tb._natKeepOf === R.keep) return tb._natKeep;
+  const E = tb.E || 4096, out = [];
+  for (const [lng, lat, rM] of R.keep || []) { const x = (MX(lng) - tb.ox) / tb.unit, y = (MY(lat) - tb.oy) / tb.unit, r = rM / tb.mPerUnit; if (x > -r - E && x < 2 * E + r && y > -r - E && y < 2 * E + r) out.push([x, y, r]) }
+  tb._natKeep = out; tb._natKeepOf = R.keep; return out;
+}
+function modelBuilding(tb, ctx, unit) {
+  const R = tb.P.race, list = R && modelList(R.kind), C = R && NATION_CELLS[R.kind]; if (!list?.length || !C) return false;
+  if (ctx.clipped || ctx.th || ctx.A < NATION_LIMITS.minAreaM2 || ctx.H - ctx.minH > C.maxH) return false;
+  if (keeps(tb, R).some(([x, y, r]) => pointInPolygon(x, y, ctx.outer, ctx.holes) || edgeDistance(x, y, [ctx.outer]) <= r)) return false;
+  const rect = fitRect(ctx.outer, ctx.holes), mpu = tb.mPerUnit; if (!rect || rect.hy * mpu < NATION_LIMITS.minHalfM) return false;
+  const u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []), W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
+  const nx = Math.max(1, Math.min(8, Math.round(rect.hx * mpu / C.halfM))), ny = Math.max(1, Math.min(3, Math.round(rect.hy * mpu / C.depthM))), vx = -rect.uy, vy = rect.ux, gap = .9;   // 칸끼리 · 옆 땅 건물과 벽이 같은 면에 겹치면 깜박였다(맥 캡처 — 점박이 줄): 늘 조금씩 띄운다
+  let built = 0;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+    const seed = (ctx.seed ^ Math.imul(i + 1, 73856093) ^ Math.imul(j + 1, 19349663)) >>> 0;
+    const ox = (-1 + (2 * i + 1) / nx) * rect.hx, oy = (-1 + (2 * j + 1) / ny) * rect.hy;
+    const cell = { cx: rect.cx + rect.ux * ox + vx * oy, cy: rect.cy + rect.uy * ox + vy * oy, hx: rect.hx / nx * gap, hy: rect.hy / ny * gap, ux: rect.ux, uy: rect.uy };
+    if (cell.hy > cell.hx) Object.assign(cell, { hx: cell.hy, hy: cell.hx, ux: vx, uy: vy });   // 긴 축을 x 로
+    const area = 4 * cell.hx * cell.hy * mpu * mpu, aspect = cell.hx / cell.hy;
+    const model = pickModel(list, { area, aspect, tall: false, r: unit(seed, 611) }); if (!model) continue;
+    const t = templateIndex(list.indexOf(model), aspect), s = 10;   // 높이 단위 10 m(모형 z 1 = 10 m)
+    recs.push([t, cell.cx * u, cell.cy * u, ctx.minH, cell.ux, cell.uy, cell.hx * mpu, cell.hy * mpu, s, ctx.mat, ctx.roofSlot, Hq & 255, Hq >>> 8, seed & 255, (seed >>> 8) & 255, b[2], b[3] | NO_AO]);
+    const top = ctx.minH + T.tops[t] * s, c = (a, d) => [(cell.cx + cell.ux * cell.hx * a + vx * cell.hy * d) * u, (cell.cy + cell.uy * cell.hx * a + vy * cell.hy * d) * u];
+    for (const [a, d] of [[-1, -1], [1, 1]]) { const p = c(a, d); tb.extend(ctx.chunk, p[0], p[1], p[0], p[1], top) }
+    built++;
+  }
+  return built > 0;
+}
+
 export function building(tb, ctx, unit) {
+  if (modelBuilding(tb, ctx, unit)) return true;   // 그 나라 건물 통째로(못 지으면 아래: 실제 윤곽 + 지붕 장식)
   const P = tb.P.nation, N = P && NATIONS[P.kind]; if (!N) return false;
   const phone = !!tb.opts?.phone;
   if (ctx.clipped || ctx.th || ctx.A < (phone ? NATION_LIMITS.phoneMinAreaM2 : NATION_LIMITS.minAreaM2)) return false;   // 타일에 잘린 건물 · 고가가 지나는 건물 · 작은 건물: 보통 건물
