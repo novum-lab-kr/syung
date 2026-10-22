@@ -81,6 +81,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
         if ('yawDeg' in L && typeof L.yawDeg !== 'number') throw new Error(`${at}.yawDeg: 수`) });
     }
     for (const g of ['city', 'park']) if (S[g] && 'enabled' in S[g] && typeof S[g].enabled !== 'boolean') throw new Error(`${id}.${g}.enabled: 참 · 거짓`);
+    if (S.map && S.map.fov != null && !(typeof S.map.fov === 'number' && S.map.fov >= 5 && S.map.fov <= 60)) throw new Error(`${id}.map.fov: 5 ~ 60 또는 null`);
     if (S.map?.pixel) {   // 도트: 켜기 · 윤곽은 참거짓, 크기는 1~8 CSS px, 팔레트는 목록 안
       const X = S.map.pixel;
       for (const k of ['enabled', 'outline']) if (k in X && typeof X[k] !== 'boolean') throw new Error(`${id}.map.pixel.${k}: 참 · 거짓`);

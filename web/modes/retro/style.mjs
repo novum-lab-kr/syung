@@ -831,6 +831,79 @@ export const RETRO_DELTA = {
    }
   }
  },
+ "props": {
+  "trees": {
+   "streetSpacingM": {
+    "primary": 9,
+    "secondary": 8,
+    "tertiary": 8
+   },
+   "streetCrownDiameterM": [
+    4.5,
+    6.5
+   ],
+   "colors": {
+    "light": [
+     "#265C42",
+     "#3E8948",
+     "#63C74D"
+    ],
+    "dark": [
+     "#10271c",
+     "#1a3a1e",
+     "#2a5420"
+    ]
+   },
+   "weights": [
+    0.4,
+    0.4,
+    0.2
+   ],
+   "trunk": {
+    "light": "#733E39",
+    "dark": "#301a18"
+   },
+   "parkAreaPerTreeM2": 60,
+   "parkMinSpacingM": 5,
+   "parkCrownDiameterM": [
+    5,
+    7.5
+   ],
+   "maxVisible": {
+    "desktop": 1800,
+    "phone": 600
+   }
+  },
+  "vehicles": {
+   "colors": [
+    "#E43B44",
+    "#0099DB",
+    "#63C74D",
+    "#F77622",
+    "#B55088",
+    "#FFFFFF",
+    "#2CE8F5",
+    "#BE4A2F"
+   ],
+   "weights": [
+    0.15,
+    0.15,
+    0.13,
+    0.13,
+    0.11,
+    0.13,
+    0.1,
+    0.1
+   ],
+   "per100M": {
+    "primary": 5,
+    "secondary": 4,
+    "tertiary": 2.6,
+    "minor": 1.2,
+    "service": 0.4
+   }
+  }
+ },
  "buildingDefaults": {
   "windowBandMinPx": 1.6,
   "windowCellMinPx": 2.6,

@@ -260,7 +260,7 @@ function trainFrameSoon(ms){const at=performance.now()+ms;if(trainTimer&&trainAt
 let repaintTimer=0,repaintAt=0;   // coaster: keep map repaint scheduling outside the train timer's comment
 function repaintSoon(ms){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
 const map=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:20,minZoom:7,zoomLevelsToOverscale:undefined,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false,canvasContextAttributes:{antialias:!location.hash.includes('noaa')}});   // 모서리 계단 현상: 지도 캔버스도 MSAA(기본 꺼짐 — 1인칭에서 건물 · 고가 모서리가 깨지고 움직이면 반짝였다, 2026-10-06 덕배). #noaa: 끄고 비교(끊김 원인 찾기)   // 줌 20까지: zoomLevelsToOverscale(기본 4)을 끈다 — 켜 두면 줌 상한 20에서 바탕 타일을 z16 조각으로 잘라 받아 z14 타일만 쓰는 건물 · 버스 도로가 비었다(2026-10-09)
-const BASE_PR=map.getPixelRatio();   // 지도 캔버스 픽셀 비율(레트로 도트일 때만 낮춘다 — syncPixels)
+const BASE_PR=map.getPixelRatio(),BASE_FOV=map.getVerticalFieldOfView();   // 지도 캔버스 픽셀 비율 · 시야각(레트로일 때만 바꾼다 — syncPixels)
 let busLayer=null;   // bus: owns its loading, viewport culling and animation lifecycle
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
@@ -648,8 +648,10 @@ function applyTheme(){syncPixels();return theme.applyTheme()}
 function sunArcIcon(){return theme.sunArcIcon()}
 // 도트(모드 설정 map.pixel — 레트로): 지도 캔버스를 size CSS px 한 칸으로 그리고(픽셀 비율 1/size) 브라우저가 이웃 픽셀 그대로 키운다(CSS pixelated).
 // 열차 캔버스는 지도 캔버스 크기를 따라가 같이 도트가 되고, 역 이름표 캔버스는 제 해상도라 글자는 선명하다(overlay). 모드가 바뀔 때마다 applyTheme 가 부른다
-let pixelSize=null;
-function syncPixels(){const X=modeCtl.settings().map.pixel,size=X.enabled?X.size:0;if(size!==pixelSize){pixelSize=size;map.setPixelRatio(size?1/size:BASE_PR);map.getContainer().classList.toggle('pixel-art',!!size)}
+// 시야각(map.fov): 좁히면 원근이 거의 없는 아이소메트릭 시점 — 바뀌어 켤 때 45° 대각선 · 55° 기울기로 돌린다(16비트 거리처럼), 끄면 기본 시야각만 되돌린다
+let pixelSize=null,fovNow=null;
+function syncPixels(){const M=modeCtl.settings().map,X=M.pixel,size=X.enabled?X.size:0;if(size!==pixelSize){pixelSize=size;map.setPixelRatio(size?1/size:BASE_PR);map.getContainer().classList.toggle('pixel-art',!!size)}
+  const fov=M.fov??null;if(fov!==fovNow){const was=fovNow;fovNow=fov;map.setVerticalFieldOfView(fov??BASE_FOV);if(fov!=null&&was==null&&ready)map.easeTo({bearing:45,pitch:55,duration:700})}
   if(!ready)return;const want=!!size&&X.palette!=='none';   // 색표 · 윤곽 층: 지도 캔버스 맨 위(나중에 붙은 도시 층보다도 위로 다시 올린다)
   if(want){if(!map.getLayer('retro-pixels'))map.addLayer(mapPixels);else map.moveLayer('retro-pixels')}else if(map.getLayer('retro-pixels'))map.removeLayer('retro-pixels')}
 const mapPixels={id:'retro-pixels',type:'custom',renderingMode:'2d',fx:null,onAdd(){},onRemove(m,gl){this.fx?.dispose(gl);this.fx=null},   // 나가면 GL 을 치운다
