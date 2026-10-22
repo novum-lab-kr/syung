@@ -44,8 +44,11 @@
 ## 속도 기준(렌더링이 1초도 늦어지면 안 된다)
 - 첫 화면 정적 import 그래프의 **깊이**가 요청 시간을 정한다(4G rtt 150 ms 한 단계씩). 새 파일은 본체가 직접 import 하는 모듈만 import 한다 — 자식만 부르는 모듈은 한 단계 늦게 요청된다.
 - 모드의 큰 코드(도시 건물 · 랜드마크 · 한옥 · 거북선 · 88열차 · 1인칭 레일 · 놀이기구 · 놀이기구 자리)는 첫 화면에서 받지 않는다: `loadModeKit` 의 `import()` + `MODE_KIT_DEPS`(그 모듈들이 다시 부르는 것 — `tests/mode_kit_deps.test.mjs`). 가마 · 1인칭 카메라 · 밤 조명 · 롤코 선로는 첫 화면 코드.
-- `index.html` 의 modulepreload 는 vendor 둘뿐. 시험 통과 ≠ 속도 통과 — 4G 흉내로 기준(origin/main)과 같은 방식(두 쪽 모든 파일을 같은 경로로)으로 잰다.
-- 기준 숫자(4G rtt 150 ms · 4 Mbps, 맥): 첫 노선 약 5.0 s · 지도 다 뜸 약 9.5 s, 첫 화면 JS gzip 약 560 KB. 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
+- `index.html` 의 modulepreload 는 vendor 둘뿐. 시험 통과 ≠ 속도 통과 — 4G 흉내로 기준(origin/main)과 같은 방식(두 쪽 모든 파일을 같은 경로로)으로 잰다. 단 바꿔 끼운 파일은 대역폭을 나눠 쓰지 않아 큰 파일이 바뀌면 차이가 묻힌다 — 절대 숫자는 바꿔 끼우기 없이 운영 주소에 잰다(8093 은 압축이 없어 더 느리다).
+- 기준 숫자(2026-10-22 다시 정함 — 맥 capd, 4G rtt 150 ms · 4 Mbps, 1000×700, 파일 바꿔 끼우기 없이, 운영 659931f): 운영(gzip) 첫 노선 2.90~2.95 s · 지도 다 뜸 5.72~5.93 s · 받은 양 1449 KB(3회). 같은 잡을 개발 서버 8093(압축 없음)에 대면 7.09~7.34 s · 11.63 s · 3975 KB.
+  - 옛 숫자 첫 노선 약 5.0 s · 지도 약 9.5 s(2026-10-10)는 **일부 파일만 바꿔 낀 잡 값**이다(바꿔 낀 파일은 4 Mbps 를 나눠 쓰지 않아 빨리 온다). 같은 날 바꿔 끼우기 없이 8093 에 잰 값은 5.78 s · 10.15 s(`syung-struct/fair-slowload.json`).
+  - 지켜볼 것: 첫 화면 JS 가 2026-10-22 밤 gzip 약 +35 KB(스타 도시 팩 · 유닛 모양, 나라 팩 넷, 레트로 팩 — 지연 로드는 아직 안 함). 첫 노선을 막는 파일은 `city/viaduct_snap.mjs`(8093 353 KB · 운영 gzip 115 KB) — 첫 화면에 같이 받는 것이 늘면 이 파일이 늦게 끝난다.
+  - 첫 화면 JS gzip 약 560 KB(2026-10-10 값, 이후 다시 안 잼). 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
 
 ## 함정
 - **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다.
