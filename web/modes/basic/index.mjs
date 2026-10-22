@@ -15,7 +15,7 @@ export default {
     // verticalGradient: 지도 3D 건물 위아래 명암
     map: { themes: MAP_THEMES, colors: MAP_COLORS, park: PARK_COLORS, paletteKind: 'base', verticalGradient: true, exitLook: 'pillar',
       // pixel: 도트(레트로) — 지도 · 열차 캔버스를 size CSS px 한 칸의 도트로, palette 색표(none · endesga32), outline 앞 물체 가장자리 먹선. 역 이름표는 선명하게
-      pixel: { enabled: false, size: 3, palette: 'endesga32', outline: true },
+      pixel: { enabled: false, size: 2, palette: 'endesga32', outline: true },   // (size 3 은 휴대폰에서 너무 거칠었다 — 행님 2026-10-22)
       fov: null },   // fov: 카메라 세로 시야각(도) — null 이면 MapLibre 기본, 작을수록 원근이 없어 아이소메트릭에 가깝다(레트로)   // exitLook: 출구 표지 — pillar(노선색 기둥) · jangseung(장승 + 양쪽 횃불, 조선)
     // 미니어처 도시(색 · 치수 · 줌 팩): 심시티 · 롤코는 이 팩 그대로(같은 참조), 조선은 덧쓴다. groundTexture: 땅에 흙 질감(팩의 ground.texture)
     // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
