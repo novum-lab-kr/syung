@@ -8,7 +8,8 @@ import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../lib/journ
 // 차 모양마다 크기 규칙(모델의 몫): widthK 모델 폭(차로에 맞출 때), halfWidth 클릭 상자 반폭, growFrom 이 줌 위로는 지도와 같이 커짐(없으면 화면 크기 상한)
 // 가마(조선): 장대까지 폭 1.3, 줌 17 위로는 지도와 같이 커진다(2026-10-10 덕배: 확대할수록 작아 보여 안 보였다)
 // sizeK: 줌 15 부터 크기 배수 — 버스는 따라가기(줌 17)에서 화면 약 37 × 12 px 라 '쥐똥만' 했다(2026-10-20 덕배), 가마는 따로 맞춰 둔 크기 그대로
-const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:null,sizeK:1.6},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17,sizeK:1}};
+// growFrom: 이 줌 위로는 화면 크기 고정을 풀고 지도와 같이 커진다 — 버스 18(행님 2026-10-22: 18 이상에서 축소되지 않게, 스타크래프트 버스 유닛도 이 칸) · 가마 17
+const BUS_LOOKS={bus:{widthK:1.12,halfWidth:.56,growFrom:18,sizeK:1.6},palanquin:{widthK:1.3,halfWidth:.65,growFrom:17,sizeK:1}};
 
 export const BUS_ZOOM = {routes: 0, buses: 15, stops: 15, labels: 16};
 // 노선 선은 줌 from~to 사이에서 미리 맞춘 표시선(lod 'plan') → 심시티 도로에 붙인 선(lod 'road')으로 엇갈려 바뀐다(2026-10-11 행님: 15 에서
@@ -695,7 +696,7 @@ class BusLayer {
       const fit=pose.laneWidth*.88/(L.widthK*busMetresPerPixel(zoom,pose.coordinate[1]));   // 가마는 장대까지 폭이 1.3
       // 조선 모드의 가마: 줌 17 위로는 지도와 같이 커진다 — 줌 17 에서 보이는 크기(땅 위 약 18 m)를 그대로 (2026-10-10 덕배: 확대할수록
       // 작아 보여 안 보인다. 화면 크기를 12~16.5 px 로 묶어 줌 20 에서는 땅 위 3 m 로 줄었다)
-      const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-17);   // (fit 은 줌마다 2배: 줌 17 의 값은 fit/grow)
+      const near=(z,f)=>Math.min(busModelScale(z),Math.max(busModelScale(BUS_ZOOM.buses),f)),grow=2**(zoom-(L.growFrom??17));   // (fit 은 줌마다 2배: growFrom 줌의 값은 fit/grow)
       // 고른 노선을 멀리서 볼 때(노선 전체): 노선 선과 같은 색 · 작은 크기라 버스가 선에 묻혔다(2026-10-20 덕배) — 1.5배. 버스는 모두 같은 크기,
       // 고른 · 곧 올 버스는 키우지 않고 바닥 파장으로(덕배: 일부러 키우지 말자).
       // 색은 노선과 같은 계열을 조금 진하게(밝은 화면 × .88 · 다크 × .65) 하고 아래에 밝은 타원 바탕(mesh 의 그림자 원반, selected 2 · 3)으로 선과 떼어 놓는다
