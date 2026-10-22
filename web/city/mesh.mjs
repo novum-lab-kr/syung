@@ -124,6 +124,7 @@ export function resolvePack(pack) {
     signs: pack.signs || null,   // 간판(signs())
     hanok: pack.hanok || null,   // 조선 모드(city_hanok.mjs)
     race: pack.race || null,   // 스타크래프트 종족 건물(부품 'race' — web/modes/starcraft/race_buildings.mjs)
+    nation: pack.nation || null,   // 나라 모드 건물(부품 'nation' — web/modes/nations/parts.mjs: 몇 채만 그 나라 건물, 나머지는 보통)
     waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
     light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
@@ -425,6 +426,7 @@ export class TileBuilder {
     W.m = [mat, litOverride, Hq & 255, Hq >>> 8];
     this.count++; chunk.n++;
     if (P.race && cityPart('race').building(this, ctx, unit)) return;   // 스타크래프트: 종족 건물(못 지으면 아래 보통 건물)
+    if (P.nation && cityPart('nation').building(this, ctx, unit)) return;   // 나라 모드: 그 나라 건물(고른 몇 채만)
     // roofs: gabled small houses, crowned office tops, or the flat roof behind its parapet
     if (this.gable(ctx)) return;
     if (crownInsets) { const tz = art.topZoneHeightRatio || [.06, .1], r0 = num(tz[0], .06), r1 = num(tz[1], .1); this.crown(ctx, crownInsets, Math.min(H * (r0 + (r1 - r0) * ((seed & 0xffff) % 5) / 4), num(art.maxTopZoneHeightM, 4.5))); return }   // the top zone's height: the pack's ratio range, the same stable pick the shader makes from the 16-bit seed it sees

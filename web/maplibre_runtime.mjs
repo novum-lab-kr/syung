@@ -15,7 +15,7 @@ import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasem
 import {createMapTheme} from './map/theme.mjs';   // 테마 · 지도 색 · 해 위치 아이콘
 import {createUserPrefs} from './user/prefs.mjs';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
 import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
-import {createModeController,STARCRAFT,CITY_FAMILY} from './modes/transition.mjs';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
+import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mjs';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
 import './modes/merge.mjs';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mjs';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
@@ -27,6 +27,8 @@ import COASTER_MODE from './modes/coaster/index.mjs';
 import STARCRAFT_MODES from './modes/starcraft/index.mjs';
 import RETRO_MODE from './modes/retro/index.mjs';   // 레트로: 심시티 도시를 도트로
 import './modes/retro/style.mjs';   // (레트로 도시 팩 덧쓰기: 같은 단계에서 요청)
+import NATION_MODES from './modes/nations/index.mjs';   // 나라: 나라마다 모드 하나(그리스 …)
+import './modes/nations/greece.mjs';   // (나라 도시 팩: 같은 단계에서 요청)
 import './modes/starcraft/style.mjs';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
 import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mjs';   // 스타크래프트 유닛 모양(Codex 시안)
 import {unitBusLook} from './modes/starcraft/units.mjs';   // 스타크래프트 버스 모양 등록 자료(유닛 → 버스 메시)   // 스타크래프트: 종족 셋(테란 · 저그 · 프로토스), 모드 하나씩
@@ -59,7 +61,7 @@ import {CityViaduct} from './city/viaduct.mjs';
 import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
-const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES,RETRO_MODE]);
+const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES,RETRO_MODE,...NATION_MODES]);
 registerAvatar('sprout',sproutAvatar);registerAvatar('builder',builderAvatar);registerAvatar('seonbi',seonbiAvatar);registerAvatar('visitor',visitorAvatar);registerAvatar('scv',scvAvatar);registerAvatar('drone',droneAvatar);registerAvatar('probe',probeAvatar);   // 내 위치 캐릭터 모양(이름 = 모드 설정 me.look)
 for(const k of ['siegeTank','ultralisk','dragoon'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 시즈 탱크 · 울트라리스크 · 드라군
 registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh,stopGrowFrom:18});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안) · 정류장은 청사초롱 장대(밤에 불)
@@ -323,7 +325,7 @@ let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().ci
 const MODE_KIT_DEPS=['city/mesh','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','modes/coaster/badges','modes/coaster/ride_sites','modes/starcraft/building_models'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mjs'),import('./modes/starcraft/convoy.mjs'),import('./modes/starcraft/race_buildings.mjs'),import('./city/pixel_palette.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
+  return kitLoad??=Promise.all([import('./city/buildings.mjs'),import('./city/landmarks.mjs'),import('./modes/joseon/turtle_ship.mjs'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mjs'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mjs'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mjs'),import('./modes/starcraft/convoy.mjs'),import('./modes/starcraft/race_buildings.mjs'),import('./city/pixel_palette.mjs'),import('./modes/nations/parts.mjs')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
     .then(([b,l,t,c,r,p,q,,f,nb,sc,,pp])=>{({UnitConvoy}=sc);({PixelPalette}=pp);({FestoonLayer}=f);({NightBloom}=nb);({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}
@@ -744,7 +746,7 @@ const modeBusy=(()=>{
     end};
 })();
 // 버튼: 원하는 모드(받는 중이면 그 모드)를 눌린 것으로, 준비가 실패하면 지금 모드로
-function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleRetro')?.setAttribute('aria-pressed',String(want==='retro'));$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'));showRace(want)}
+function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleRetro')?.setAttribute('aria-pressed',String(want==='retro'));showNation(want);$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'));showRace(want)}
 let lastRace='terran';   // 마지막에 고른 종족(처음엔 테란) — 스위치만 켜면 이 종족으로
 // 스타크래프트: 스위치는 종족 하나라도 켜져 있으면 눌림, 그 아래 종족 줄은 켜져 있을 때만(고른 종족이 눌림)
 function showRace(want){const on=STARCRAFT.includes(want);if(on)lastRace=want;$('toggleStarcraft')?.setAttribute('aria-pressed',String(on));if($('starcraftRace'))$('starcraftRace').hidden=!on;
@@ -788,12 +790,19 @@ function setSimcity(on,asJoseon=false){return on?modeCtl.request(asJoseon?'joseo
 // 스타크래프트: 종족(race)을 안 주면 마지막에 고른 종족(lastRace)
 function setStarcraft(on,race){return on?modeCtl.request(race??lastRace):offFamily(STARCRAFT)}
 function setRetro(on){return on?modeCtl.request('retro'):offFamily(['retro'])}
+// 나라: 스위치는 나라 하나라도 켜져 있으면 눌림, 그 아래 나라 줄은 켜져 있을 때만. 나라를 안 주면 마지막에 고른 나라
+let lastNation=NATIONS[0];
+function showNation(want){const on=NATIONS.includes(want);if(on)lastNation=want;$('toggleNation')?.setAttribute('aria-pressed',String(on));if($('nationRow'))$('nationRow').hidden=!on;
+  for(const b of document.querySelectorAll('[data-nation]'))b.setAttribute('aria-pressed',String(b.dataset.nation===want))}
+function setNation(on,id){return on?modeCtl.request(id??lastNation):offFamily(NATIONS)}
 function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(modeCtl.desired!=='simcity');   // 받는 중에 다시 누르면 취소
 if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(modeCtl.desired!=='joseon',true);
 const setJoseon=on=>setSimcity(on,true);
 if($('toggleStarcraft'))$('toggleStarcraft').onclick=()=>setStarcraft(!STARCRAFT.includes(modeCtl.desired));
 if($('toggleRetro'))$('toggleRetro').onclick=()=>setRetro(modeCtl.desired!=='retro');
+if($('toggleNation'))$('toggleNation').onclick=()=>setNation(!NATIONS.includes(modeCtl.desired));
+for(const b of document.querySelectorAll('[data-nation]'))b.onclick=()=>setNation(true,b.dataset.nation);
 for(const b of document.querySelectorAll('[data-race]'))b.onclick=()=>setStarcraft(true,b.dataset.race);
 $('toggleCoaster').onclick=()=>setCoaster(modeCtl.desired!=='coaster');
 for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
@@ -814,4 +823,4 @@ $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-p
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
-window.__subwayWebGL={map,me,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setStarcraft,setCoaster,setRetro,get retro(){return modeCtl.current==='retro'},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get starcraft(){return modeOn.starcraft?modeCtl.current:null},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},get convoy(){return UnitConvoy?.last??null},rideFrame,set rideSeat(v){rider.seat=v}};
+window.__subwayWebGL={map,me,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setStarcraft,setCoaster,setRetro,get retro(){return modeCtl.current==='retro'},setNation,get nation(){return NATIONS.includes(modeCtl.current)?modeCtl.current:null},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get starcraft(){return modeOn.starcraft?modeCtl.current:null},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},get convoy(){return UnitConvoy?.last??null},rideFrame,set rideSeat(v){rider.seat=v}};

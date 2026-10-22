@@ -59,6 +59,12 @@
     <span class="setting-name"><span id="retroName">레트로</span><small id="retroDescription">도트 게임 속 서울을 거닐어요</small></span>
     <i class="switch" aria-hidden="true"></i>
   </button>
+  <button id="toggleNation" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="nationName" aria-describedby="nationDescription cityModeHelp" aria-controls="nationRow">
+    <span class="setting-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 3.9 5.7 3.9 9s-1.3 6.3-3.9 9c-2.6-2.7-3.9-5.7-3.9-9S9.4 5.7 12 3z"/></svg></span>
+    <span class="setting-name"><span id="nationName">세계 여행</span><small id="nationDescription">서울을 다른 나라 풍으로 거닐어요</small></span>
+    <i class="switch" aria-hidden="true"></i>
+  </button>
+  <div id="nationRow" class="setting-row" hidden><span class="setting-icon" aria-hidden="true"></span><span class="setting-name">나라</span><div class="segmented" role="group" aria-label="나라"><button type="button" data-nation="greece">그리스</button></div></div>
   <button id="toggleCoaster" class="setting-switch" type="button" aria-pressed="false" aria-labelledby="coasterName" aria-describedby="coasterDescription cityModeHelp" aria-controls="coasterSpeed">
     <span class="setting-icon" aria-hidden="true"></span>
     <span class="setting-name"><span id="coasterName">롤러코스터</span><small id="coasterDescription">도시 위를 달려요</small></span>

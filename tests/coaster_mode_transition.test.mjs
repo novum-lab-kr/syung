@@ -6,8 +6,8 @@ import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/l
 import {createJourneyMap} from '../web/ui/journey.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../web/lib/journey_map_style.mjs';
 import {createModeRegistry} from '../web/modes/index.mjs';
-import {createModeController,STARCRAFT,CITY_FAMILY} from '../web/modes/transition.mjs';
-const modeDefs=(await Promise.all(['basic','simcity','joseon','coaster','starcraft'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)))).flat();   // (스타크래프트는 종족 셋)
+import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from '../web/modes/transition.mjs';
+const modeDefs=(await Promise.all(['basic','simcity','joseon','coaster','starcraft','nations','retro'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)))).flat();   // (스타크래프트는 종족 셋)
 const source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8');
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start);return source.slice(start,end)};
 const plain=x=>JSON.parse(JSON.stringify(x));
@@ -17,14 +17,15 @@ function setup(defs=modeDefs){
   const sources=new Map(['stations','journey','routes'].map(id=>[id,{data:null,setData(data){this.data=plain(data)}}]));
   let labels=0,fits=0,rides=0,rebuilds=0;const buttons={};
   const races=STARCRAFT.map(race=>({dataset:{race},setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}));   // 종족 줄의 버튼
+  const nationBtns=NATIONS.map(nation=>({dataset:{nation},setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}));   // 나라 줄의 버튼
   class Bounds{extend(){return this}}
-  const context=vm.createContext({Map,Math,STARCRAFT,CITY_FAMILY,coasterGeo:{bld:true},kitReady:true,loadModeKit:()=>Promise.resolve(),loadCoasterBuildings:()=>Promise.resolve(),
+  const context=vm.createContext({Map,Math,STARCRAFT,NATIONS,CITY_FAMILY,coasterGeo:{bld:true},kitReady:true,loadModeKit:()=>Promise.resolve(),loadCoasterBuildings:()=>Promise.resolve(),
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},stopReach:{},
     cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,sheetPad:()=>0,stopRide(){rides++},
-    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:sel=>sel==='[data-race]'?races:[]},cityMap(){},setRouteOpacity(){},
+    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:sel=>sel==='[data-race]'?races:sel==='[data-nation]'?nationBtns:[]},cityMap(){},setRouteOpacity(){},
     buildLineFeatures:()=>[],planner:{rebuild(){rebuilds++}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
@@ -50,7 +51,8 @@ function setup(defs=modeDefs){
   run("map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});showRoute({legs:[{type:'ride',line:'L',stations:[1,2]}]})");
   return {run,sources,base,snapped,rect:()=>plain(run("stationRects.get('L:1')")),labels:()=>labels,fits:()=>fits,rides:()=>rides,rebuilds:()=>rebuilds,
     pressed:()=>Object.fromEntries(['toggleSimcity','toggleJoseon','toggleCoaster'].map(id=>[id,buttons[id]?.pressed])),
-    star:()=>({on:buttons.toggleStarcraft?.pressed,row:buttons.starcraftRace?.hidden,race:races.filter(b=>b.pressed==='true').map(b=>b.dataset.race)})};
+    star:()=>({on:buttons.toggleStarcraft?.pressed,row:buttons.starcraftRace?.hidden,race:races.filter(b=>b.pressed==='true').map(b=>b.dataset.race)}),
+    nation:()=>({on:buttons.toggleNation?.pressed,row:buttons.nationRow?.hidden,pick:nationBtns.filter(b=>b.pressed==='true').map(b=>b.dataset.nation)})};
 }
 
 test('기본→롤코→기본 전환이 실제 승강장 데이터와 stationRects를 갱신해요',()=>{
@@ -127,4 +129,15 @@ test('스타크래프트: 종족을 고르면 그 종족 모드(심시티 도시
   r.run('setStarcraft(false)');assert.equal(r.run('modeCtl.current'),'basic');assert.deepEqual(r.star(),{on:'false',row:true,race:[]});
   r.run('setStarcraft(true)');assert.equal(r.run('modeCtl.current'),'zerg','다시 켜면 마지막 종족');
   r.run('setCoaster(true)');assert.equal(r.run('modeCtl.current'),'coaster');assert.equal(r.star().on,'false','롤코를 켜면 스타 스위치는 꺼짐');
+});
+
+test('나라: 스위치를 켜면 마지막 나라(처음엔 그리스) — 심시티 도시 그대로(승강장 · 예측 그대로), 다른 모드를 켜면 나라 스위치는 꺼짐',()=>{
+  const r=setup();r.run('setSimcity(true)');const l=r.labels(),n=r.rebuilds();
+  assert.equal(r.run('setNation(true)'),true);assert.equal(r.run('modeCtl.current'),'greece','처음엔 그리스');
+  assert.deepEqual(r.nation(),{on:'true',row:false,pick:['greece']});assert.equal(r.pressed().toggleSimcity,'false');
+  assert.equal(r.run('modeOn.simcity'),true,'심시티 가족');assert.equal(r.run('modeCtl.settings().city.pack.nation.kind'),'greece');
+  assert.equal(r.labels(),l,'같은 선로: 승강장 그대로');assert.equal(r.rebuilds(),n,'예측 그대로');
+  r.run("setStarcraft(true,'terran')");assert.equal(r.run('modeCtl.current'),'terran');assert.deepEqual(r.nation(),{on:'false',row:true,pick:[]});
+  r.run('setNation(true)');assert.equal(r.run('modeCtl.current'),'greece','다시 켜면 마지막 나라');
+  r.run('setNation(false)');assert.equal(r.run('modeCtl.current'),'basic');
 });
