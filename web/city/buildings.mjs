@@ -24,6 +24,7 @@ import { MODEL_STRIDE } from './mesh.mjs';   // 조선 한옥 템플릿은 부�
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mjs';
 import { sunPosition } from '../lib/sun.mjs';
+import { buildSignAtlas, SIGN_ATLAS } from './sign_text.mjs';   // 간판 글자: 업종 이름을 쓴 글자 묶음 그림(한국 상가 간판처럼)
 import THROUGH_LIST from './through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
 export { TileBuilder, classifyBuilding };
 
@@ -245,7 +246,7 @@ in vec3 v_n;in float v_z;in float v_u;in vec2 v_wm;flat in vec4 v_wall;flat in v
 uniform vec4 u_tA[6];uniform vec4 u_tB[6];uniform vec4 u_tC[6];uniform vec4 u_tD[6];uniform vec4 u_tE[6];uniform vec4 u_tF[6];uniform vec4 u_tG[6];
 uniform vec3 u_mwall[32];uniform vec3 u_mglass[32];uniform vec4 u_mfac[32];uniform float u_mbay[32];uniform vec3 u_roofPal[64];
 uniform vec3 u_hk[8];uniform vec3 u_hk2[7];uniform vec3 u_giwa[4];uniform vec4 u_hkP;uniform vec2 u_hkE;uniform vec4 u_hkG[2];   // 조선 모드: wood, plaster, paper, stone, 담장, the eave's underside, lit paper, ridge; 초가 ×3, 흙벽, 돌담 ×2, 고층 유리창; 기와 ×3; platform height, post width, 창호 share, lit share; lit paper's emission; 고층 처마 무리(city_hanok.mjs skirtGroups: 폭, 사이, 모서리 몫 · 최소 · 최대, 가운데 최소)
-uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_sign[8];uniform vec3 u_signInk[2];uniform float u_signNight;uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
+uniform vec4 u_ground[6];uniform vec3 u_pitched[3];uniform vec3 u_awning[3];uniform vec3 u_sign[8];uniform vec3 u_signInk[2];uniform float u_signNight;uniform sampler2D u_signText;uniform float u_signHW[64];uniform float u_signVL[24];uniform float u_signOn;uniform vec3 u_equip;uniform vec3 u_lit[3];uniform vec3 u_litMean[6];
 uniform vec3 u_sun;uniform vec3 u_lightCol;uniform vec4 u_shade;uniform vec4 u_nightUp;uniform vec4 u_nightK;uniform vec2 u_nightF;uniform vec2 u_ao;uniform vec4 u_refl;uniform vec4 u_reflB;uniform vec3 u_sky[2];uniform vec4 u_art;uniform vec3 u_artTop;uniform vec4 u_artBelt;uniform vec4 u_artDim;uniform vec4 u_artDL;uniform vec4 u_reflH;uniform vec4 u_reflD;uniform vec2 u_lodPx;uniform float u_debug;
 ${XR_GLSL}
 uniform vec4 u_xa;   // the glass pass: opacity, outline opacity, outline width (px)
@@ -412,7 +413,20 @@ void shade(){
   else if(kind==7){   // 간판: 바탕색, 긴 면엔 글자 무늬(axis 1 가로 글줄 · 2 세로 글줄)와 어두운 테두리. 밤에는 스스로 빛난다
     vec3 bg=u_sign[slot&7],inkC=lum(bg)>0.3?u_signInk[1]:u_signInk[0];int ax=int(v_wall.x+0.5);
     float len=(v_wall.y+v_wall.z*256.0)*0.05,h=max(v_wall.w*0.05,0.05),z0=v_misc.y*0.2,t=v_z-z0,ink=0.0,rim=0.0;
-    if(ax>0){
+    if(ax>0&&u_signOn>0.5){   // 진짜 한글: 간판마다 업종 이름 하나(1층 가로 · 2층 창 · 세로 돌출 낱말 묶음에서), 간판 크기에 맞춰 가운데에(web/city/sign_text.mjs)
+      float A=ax==1?v_u:t,Bv=ax==1?t:v_u,LA=ax==1?len:h,LB=ax==1?h:len;
+      float hs=hash(vec3(seed+len*3.1+float(slot),z0,float(ax)));
+      int wi=ax==1?(z0>4.5?40+min(23,int(hs*24.0)):min(39,int(hs*40.0))):min(23,int(hs*24.0));   // 2층부터는 학원 · 병원 · 사무실 이름
+      float ww=ax==1?u_signHW[wi]:u_signVL[wi],aspect=ww*${SIGN_ATLAS.hW.toFixed(1)}/${SIGN_ATLAS.hH.toFixed(1)};   // 낱말 길이 ÷ 글자 높이
+      float gh=LB*0.68,gw=gh*aspect;if(gw>LA*0.92){gw=LA*0.92;gh=gw/aspect;}
+      float uA=(A-(LA-gw)*0.5)/gw,vB=(Bv-(LB-gh)*0.5)/gh;bool band=uA>0.0&&uA<1.0&&vB>0.0&&vB<1.0;
+      if(band){vec2 tc=ax==1?vec2((float(wi%${SIGN_ATLAS.hCols})*${SIGN_ATLAS.hW.toFixed(1)}+(1.0-uA)*ww*${SIGN_ATLAS.hW.toFixed(1)})/${SIGN_ATLAS.size.toFixed(1)},(float(wi/${SIGN_ATLAS.hCols})*${SIGN_ATLAS.hH.toFixed(1)}+(1.0-vB)*${SIGN_ATLAS.hH.toFixed(1)})/${SIGN_ATLAS.size.toFixed(1)})
+        :vec2((float(wi)*${SIGN_ATLAS.vW.toFixed(1)}+(1.0-vB)*${SIGN_ATLAS.vW.toFixed(1)})/${SIGN_ATLAS.size.toFixed(1)},(${SIGN_ATLAS.vY.toFixed(1)}+(1.0-uA)*ww*${SIGN_ATLAS.vH.toFixed(1)})/${SIGN_ATLAS.size.toFixed(1)});
+        ink=smoothstep(0.25,0.6,texture(u_signText,tc).r);}
+      float px=gh/max(fwidth(A),1e-5);ink=mix(band?0.3:0.0,ink,smoothstep(3.0,7.0,px));   // 멀면 평균(물결무늬 없이)
+      float e=min(min(v_u,len-v_u),min(t,h-t));rim=1.0-smoothstep(0.05,0.09,e);
+    }
+    else if(ax>0){
       float A=ax==1?v_u:t,Bv=ax==1?t:v_u,LA=ax==1?len:h,LB=ax==1?h:len;   // A: 글줄 방향, B: 그 가로(m)
       float gh=LB*0.56,gw=gh*0.92,pit=gw*1.2,nC=max(1.0,floor((LA-LB*0.6)/pit)),a0=(LA-nC*pit)*0.5+(pit-gw)*0.5;
       float ga=(A-a0)/pit,ci=floor(ga),gx=fract(ga)*pit/gw,gy=(Bv-(LB-gh)*0.5)/gh;
@@ -763,6 +777,23 @@ export class CityBuildings {
   }
   free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.models) { gl.deleteVertexArray(g.models.vao); gl.deleteBuffer(g.models.vbo) } for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
+  // 간판 글자 그림: 처음 쓸 때 한 번 만들고(메인 스레드 캔버스), GL 마다 R8 텍스처 한 장(밉맵 — 멀어도 반짝이지 않게)을 칸 14 에 묶는다.
+  // 지금 칸(ACTIVE_TEXTURE) · 풀기 설정은 되돌린다(MapLibre 가 기억한 상태와 어긋나지 않게). 캔버스가 없으면 예전 획 무늬
+  signText(gl, u) {
+    if (this.signAtlas === undefined) this.signAtlas = buildSignAtlas();
+    const A = this.signAtlas, unit = 14; let T = (this.signTex ||= new WeakMap()).get(gl);
+    if (A && !T) {
+      const t = gl.createTexture(), act = gl.getParameter(gl.ACTIVE_TEXTURE), fy = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL), al = gl.getParameter(gl.UNPACK_ALIGNMENT), pm = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL);
+      gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, SIGN_ATLAS.size, SIGN_ATLAS.size, 0, gl.RED, gl.UNSIGNED_BYTE, A.data); gl.generateMipmap(gl.TEXTURE_2D);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, fy); gl.pixelStorei(gl.UNPACK_ALIGNMENT, al); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pm); gl.activeTexture(act);
+      this.signTex.set(gl, T = t);
+    }
+    if (T) { const act = gl.getParameter(gl.ACTIVE_TEXTURE); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, T); gl.activeTexture(act); gl.uniform1fv(u.u_signHW, A.hWidth); gl.uniform1fv(u.u_signVL, A.vLen) }
+    gl.uniform1i(u.u_signText, unit); gl.uniform1f(u.u_signOn, T ? 1 : 0);
+  }
   paletteFor() {
     const P = this.P, th = this.theme, mode = P.modes[this.tone] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
     const L = h => { const c = hexRGB(h).map(v => v ** 2.2), Y = c[0] * lw[0] + c[1] * lw[1] + c[2] * lw[2]; return c.map(v => (Y + (v - Y) * sat) * bri) };
@@ -896,6 +927,7 @@ export class CityBuildings {
       gl.uniform4fv(u.u_tA, K.tA); gl.uniform4fv(u.u_tB, K.tB); gl.uniform4fv(u.u_tC, K.tC); gl.uniform4fv(u.u_tD, K.tD); gl.uniform4fv(u.u_tE, K.tE); gl.uniform4fv(u.u_tF, K.tF); gl.uniform4fv(u.u_tG, K.tG);
       gl.uniform3fv(u.u_mwall, K.mwall); gl.uniform3fv(u.u_mglass, K.mglass); gl.uniform4fv(u.u_mfac, K.mfac); gl.uniform1fv(u.u_mbay, K.mbay); gl.uniform3fv(u.u_roofPal, K.roofPal);
       gl.uniform3fv(u.u_hk, K.hk); gl.uniform3fv(u.u_hk2, K.hk2); gl.uniform3fv(u.u_giwa, K.giwa); gl.uniform4fv(u.u_hkP, K.hkP); gl.uniform2fv(u.u_hkE, K.hkE); gl.uniform4fv(u.u_hkG, K.hkG);
+      this.signText(gl, u);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_sign, K.sign); gl.uniform3fv(u.u_signInk, K.signInk); gl.uniform1f(u.u_signNight, K.signNight); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform4fv(u.u_nightUp, K.nightUp); gl.uniform4fv(u.u_nightK, K.nightK); gl.uniform2fv(u.u_nightF, K.nightF); gl.uniform2fv(u.u_ao, K.ao);
       gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
