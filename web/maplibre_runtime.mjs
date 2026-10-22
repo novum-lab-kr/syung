@@ -650,7 +650,8 @@ function sunArcIcon(){return theme.sunArcIcon()}
 // 열차 캔버스는 지도 캔버스 크기를 따라가 같이 도트가 되고, 역 이름표 캔버스는 제 해상도라 글자는 선명하다(overlay). 모드가 바뀔 때마다 applyTheme 가 부른다
 // 시야각(map.fov): 좁히면 원근이 거의 없는 아이소메트릭 시점 — 바뀌어 켤 때 45° 대각선 · 55° 기울기로 돌린다(16비트 거리처럼), 끄면 기본 시야각만 되돌린다
 let pixelSize=null,fovNow=null;
-function syncPixels(){const M=modeCtl.settings().map,X=M.pixel,size=X.enabled?X.size:0;if(size!==pixelSize){pixelSize=size;map.setPixelRatio(size?1/size:BASE_PR);map.getContainer().classList.toggle('pixel-art',!!size)}
+function syncPixels(){const M=modeCtl.settings().map,X=M.pixel,size=X.enabled?X.size:0;if(size!==pixelSize){pixelSize=size;const d=globalThis.devicePixelRatio||1;map.setPixelRatio(size?d/Math.max(1,Math.round(size*d)):BASE_PR);   // 도트 한 칸 = 기기 화소 정수 개(4 · 5 화소가 섞이면 흐릿하고 고르지 않다)
+  map.getContainer().classList.toggle('pixel-art',!!size)}
   const fov=M.fov??null;if(fov!==fovNow){const was=fovNow;fovNow=fov;map.setVerticalFieldOfView(fov??BASE_FOV);if(fov!=null&&was==null&&ready)map.easeTo({bearing:45,pitch:55,duration:700})}
   if(!ready)return;const want=!!size&&X.palette!=='none';   // 색표 · 윤곽 층: 지도 캔버스 맨 위(나중에 붙은 도시 층보다도 위로 다시 올린다)
   if(want){if(!map.getLayer('retro-pixels'))map.addLayer(mapPixels);else map.moveLayer('retro-pixels')}else if(map.getLayer('retro-pixels'))map.removeLayer('retro-pixels')}
