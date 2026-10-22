@@ -86,6 +86,11 @@ test('quad 는 꼭짓점마다 부위: 풍선 줄은 손 쪽만 팔을 따라간
   for (let i = 0; i < body.length; i += 12) if (Math.abs(body[i + 6] - 0xfa / 255) < 1e-3 && Math.abs(body[i + 8] - 0xef / 255) < 1e-3) str.set(body[i + 2].toFixed(2), [body[i + 9], body[i + 11]]);
   assert.deepEqual(str.get('0.25'), [3, Math.fround(visitor.rig.shoulder)], '손 쪽: 왼팔, 어깨 축');
   assert.equal(str.get('1.10')[0], 0, '매듭 쪽: 가만히');
+  // 줄이 머리를 뚫지 않는다: 머리 높이에서 줄의 y 가 머리 · 몸 상자의 가장 바깥보다 바깥(행님 2026-10-22)
+  const ys = [], lo = [.315, .25], hi = [.5, 1.1];
+  for (let i = 0; i < body.length; i += 12) if (body[i + 9] === 0 && body[i + 2] > .42 && body[i + 2] < 1.01 && Math.abs(body[i + 1]) < .34) ys.push(Math.abs(body[i + 1]));
+  const head = Math.max(...ys);
+  for (const z of [.43, .6, .84, 1]) assert.ok(lo[0] + (z - lo[1]) / (hi[1] - lo[1]) * (hi[0] - lo[0]) - .012 > head, `z ${z}`);
 });
 
 test('등록한 이름으로 바꿔 쓴다', () => {
