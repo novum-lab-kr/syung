@@ -28,7 +28,7 @@ import STARCRAFT_MODES from './modes/starcraft/index.mjs';
 import RETRO_MODE from './modes/retro/index.mjs';   // 레트로: 심시티 도시를 도트로
 import './modes/retro/style.mjs';   // (레트로 도시 팩 덧쓰기: 같은 단계에서 요청)
 import NATION_MODES from './modes/nations/index.mjs';   // 나라: 나라마다 모드 하나(그리스 …)
-import './modes/nations/greece.mjs';import './modes/nations/netherlands.mjs';   // (나라 도시 팩: 같은 단계에서 요청)
+import './modes/nations/greece.mjs';import './modes/nations/netherlands.mjs';import './modes/nations/paris.mjs';   // (나라 도시 팩: 같은 단계에서 요청)
 import './modes/starcraft/style.mjs';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
 import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mjs';   // 스타크래프트 유닛 모양(Codex 시안)
 import {unitBusLook} from './modes/starcraft/units.mjs';   // 스타크래프트 버스 모양 등록 자료(유닛 → 버스 메시)   // 스타크래프트: 종족 셋(테란 · 저그 · 프로토스), 모드 하나씩

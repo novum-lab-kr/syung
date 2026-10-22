@@ -3,6 +3,7 @@
 // 차례대로 더한다: 그리스 → 네덜란드 → 파리 → 이집트(행님 2026-10-22, 시안 look3d).
 import { GREECE_DELTA } from './greece.mjs';
 import { NETHERLANDS_DELTA } from './netherlands.mjs';
+import { PARIS_DELTA } from './paris.mjs';
 
 export const GREECE = {
   id: 'greece',
@@ -20,4 +21,12 @@ export const NETHERLANDS = {
     city: { pack: NETHERLANDS_DELTA },   // 벽돌 · 박공 · 가파른 지붕 · 운하 · 풍차
   },
 };
-export default [GREECE, NETHERLANDS];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)
+export const PARIS = {
+  id: 'paris',
+  from: 'simcity',
+  label: '파리',
+  settings: {
+    city: { pack: PARIS_DELTA },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
+  },
+};
+export default [GREECE, NETHERLANDS, PARIS];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)

@@ -61,6 +61,33 @@ const NATIONS = {
       spire(M) { const z = top(M); M.box(.5, 0, .2, .2, z, z + 1.6, { look: 'wall' }); M.frustum(.5, 0, .22, 0, z + 1.6, z + 3.6, { n: 8, ...A(0) }) },
     },
   },
+  paris: {
+    pick(r, c) {
+      const h = c.H - c.minH;
+      if (r < .0015 && c.A >= 1500 && h < 25) return 'eiffel';   // 작은 에펠탑 — 아주 드물게
+      if (r < .012 && c.A >= 400 && h < 35) return 'dome';   // 둥근 돔 기념관
+      if (h >= 8 && h < 45) return 'mansard';   // 오스만 블록: 망사르드 지붕 · 지붕창 · 굴뚝 · 철제 발코니 띠(거의 다)
+      return null;
+    },
+    build: {
+      mansard(M) {
+        const z = top(M), f = 3.2 / M.s, rise = Math.min(1.2, 4.6 / M.s), k = .84;
+        // 철제 발코니 띠 둘(2층 · 꼭대기 아래층) — 둘레 따라 얇은 띠
+        for (const zb of [z - (M.Hn > 4 * f ? M.Hn - 2 * f : 1.5 * f), z - f]) if (zb > .2) for (const [x, y, hx, hy] of [[0, -1, 1, .025], [0, 1, 1, .025], [-1, 0, .025, 1], [1, 0, .025, 1]]) M.box(x, y, hx, hy, zb, zb + .12 / M.s * 3, A(1));
+        M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], z, [[-k, -k], [k, -k], [k, k], [-k, k]], z + rise, { ...A(0), top: true });   // 가파른 아연 경사면 + 윗면
+        const n = Math.max(2, Math.min(7, Math.round(M.half[0] / 4.2)));   // 지붕창: 긴 변 따라 4 m 마다
+        for (let i = 0; i < n; i++) { const x = -.8 + 1.6 * (i + .5) / n; for (const y of [-.9, .9]) M.box(x, y, Math.min(.06, .5 / n), .07, z + rise * .2, z + rise * .75, { look: 'wall' }) }
+        for (let i = 0; i < 3; i++) if (M.rand(20 + i) < .7) M.box(-.6 + i * .6, 0, .05, .14, z + rise, z + rise + 1.1 / M.s * 2, A(2));   // 굴뚝
+      },
+      dome(M) { const z = top(M); M.frustum(0, 0, .6, .6, z, z + .5, { n: 12, look: 'wall' }); M.dome(0, 0, .6, z + .5, .7, { n: 12, rings: 4, ...A(0) }); M.frustum(0, 0, .1, .02, z + 1.2, z + 1.6, { n: 6, ...A(1) }) },
+      eiffel(M) {   // 넷으로 좁아지는 철탑(갈색 철) + 두 층 전망대
+        const z = top(M), c = { n: 4, rot: Math.PI / 4, ...A(1) };
+        M.frustum(0, 0, .95, .45, z, z + 2.2, c); M.box(0, 0, .5, .5, z + 2.2, z + 2.35, A(1));
+        M.frustum(0, 0, .4, .18, z + 2.35, z + 4.6, c); M.box(0, 0, .22, .22, z + 4.6, z + 4.72, A(1));
+        M.frustum(0, 0, .16, .03, z + 4.72, z + 8.4, c);
+      },
+    },
+  },
 };
 
 export function building(tb, ctx, unit) {
