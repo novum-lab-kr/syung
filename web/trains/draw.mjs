@@ -252,7 +252,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
     }
     render(gl,options){
       this.kit(live.settings.trains.look);   // 안 쓰는 모양의 GL 은 그릴 열차가 없어도 치운다(모드를 나간 뒤)
-      if(!live.myLocation&&(!live.trainsEnabled||!planner.plans.length))return;
+      if(!live.myLocation&&(!live.trainsEnabled||!planner.plans.length)&&!(live.settings.sky?.units?.length&&live.SkyUnits)){if(this.sky&&this.gl){this.sky.dispose(this.gl);this.sky=null}return}   // (스타크래프트 하늘은 열차가 없어도 — 밤에도 난다)
       const drawTrainsToo=live.trainsEnabled&&!live.subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
       // 지금 모드 설정: 열차 모양(look) · 굵기(body), 선로 종류(K — 고가 · 롤코 길)
       const S=live.settings,K=S.track.kind,look=S.trains.look,c88=look==='coaster88';
@@ -402,6 +402,8 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:live.sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:live.rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
       if(look==='fleet'&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
       if(look==='units'&&this.units)this.units.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 스타크래프트: 유닛 행렬
+      // 스타크래프트 하늘(모드 설정 sky.units): 가끔 비행 유닛이 화면을 가로지른다 — 나는 동안 계속 그리고, 없을 때도 1초마다 다음 비행을 본다. 모드를 나가면 GL 을 치운다
+      {const sky=S.sky;if(sky?.units?.length&&live.SkyUnits&&zoom>=13){this.sky??=new live.SkyUnits();if(this.sky.frame(gl,options.defaultProjectionData.mainMatrix,ox,oy,{sky,now:performance.now(),view:[lo.x,hi.y,hi.x,lo.y],mpm:O.meterInMercatorCoordinateUnits(),unit,dark:c88o.dark}))animating=true;else waiting=true}else if(this.sky){this.sky.dispose(gl);this.sky=null}}
       if(c88&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
       if(c88&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
       if(this.used){
@@ -433,7 +435,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(animating&&(live.following||live.rider.ride)&&!live.easing)followSoon();
       else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
     }
-    onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
+    onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.sky?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
   }
 
   return TrainLayer;

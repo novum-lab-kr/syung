@@ -44,7 +44,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
   function checkKnown(S, id) {
     // 아는 묶음은 평범한 객체여야(null · 참거짓 · 배열 · 수로 통째로 바꾸면 엔진이 그 안을 읽다 멈춘다)
     const plainGroup = v => v && typeof v === 'object' && !Array.isArray(v);
-    for (const [g, k] of [['map'], ['map', 'pixel'], ['city'], ['city', 'life'], ['park'], ['track'], ['trains'], ['buses'], ['me'], ['sun']]) {
+    for (const [g, k] of [['map'], ['map', 'pixel'], ['city'], ['city', 'life'], ['park'], ['track'], ['trains'], ['buses'], ['me'], ['sun'], ['sky']]) {
       const v = k ? S[g]?.[k] : S[g], present = k ? (S[g] && k in S[g]) : g in S;
       if (present && !plainGroup(v)) throw new Error(`${id}.${k ? g + '.' + k : g}: 묶음(객체)이어야 — ${JSON.stringify(v)}`);
     }
@@ -58,6 +58,7 @@ export function createModeRegistry(definitions, { root = 'basic', maxDepth = 2, 
     const oneOf = (v, list, path) => { if (v !== undefined && !list.includes(v)) throw new Error(`${path}: 허용되지 않는 값 ${v}`) };
     oneOf(S.map?.paletteKind, ['base', 'city', 'park-city'], `${id}.map.paletteKind`); oneOf(S.map?.exitLook, ['pillar', 'jangseung'], `${id}.map.exitLook`); oneOf(S.sun?.light, ['map', 'park'], `${id}.sun.light`);
     oneOf(S.track?.kind, ['ground', 'viaduct', 'coaster'], `${id}.track.kind`); oneOf(S.me?.look, ['sprout', 'builder', 'seonbi', 'visitor', 'scv', 'drone', 'probe'], `${id}.me.look`); oneOf(S.trains?.look, ['commuter', 'fleet', 'coaster88', 'units'], `${id}.trains.look`); oneOf(S.city?.landmarks, ['tower', 'wood-tower'], `${id}.city.landmarks`); oneOf(S.buses?.look, ['bus', 'palanquin', 'siegeTank', 'ultralisk', 'dragoon'], `${id}.buses.look`);
+    if (S.sky && !(Array.isArray(S.sky.units) && S.sky.units.every(v => typeof v === 'string'))) throw new Error(`${id}.sky.units: 유닛 모양 이름 목록이어야`);
     const LU = S.city?.life?.units; if (LU != null) for (const k of ['people', 'cars']) if (!Array.isArray(LU[k]) || !LU[k].every(v => typeof v === 'string')) throw new Error(`${id}.city.life.units.${k}: 유닛 모양 이름 목록이어야`);
     for (const k of ['lead', 'rest']) if (S.trains?.units && typeof S.trains.units[k] !== 'string') throw new Error(`${id}.trains.units.${k}: 유닛 모양 이름이어야`);   // (이름이 맞는지는 그리는 쪽 — 없는 모양은 안 그린다)
     for (const k of ['cars', 'crossings']) if (S.city?.life && k in S.city.life && typeof S.city.life[k] !== 'boolean') throw new Error(`${id}.city.life.${k}: 참 · 거짓`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);

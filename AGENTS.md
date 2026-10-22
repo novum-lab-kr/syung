@@ -30,7 +30,7 @@
 | 배포 | main push → Actions → `deploy/remote_deploy.sh`(커밋된 파일로 릴리스 폴더 → 링크 바꿔 끼우기 · 되돌리기). 서버에서 직접 고치지 않는다 |
 
 ## 모드 규칙
-- 기본이 원본, 모드는 **다른 것만** 적는다(`from` 생략 = basic, 상속 두 단계까지). 묶음은 안쪽까지 합치고 값 · 목록은 통째로, `null` 은 끄기 — 단 아는 묶음(map · city · city.life · park · track · trains · buses · sun)은 `null` 대신 그 키(`enabled:false` 등)로.
+- 기본이 원본, 모드는 **다른 것만** 적는다(`from` 생략 = basic, 상속 두 단계까지). 묶음은 안쪽까지 합치고 값 · 목록은 통째로, `null` 은 끄기 — 단 아는 묶음(map · city · city.life · park · track · trains · buses · sun · sky)은 `null` 대신 그 키(`enabled:false` 등)로.
 - 본체 · 엔진은 모드 이름을 묻지 않는다: `modeCtl.settings()` 의 키(`track.kind` · `trains.look` · `city.enabled` · `city.tone` · `buses.look` · `park.enabled` …)를 묻는다. 새 키는 `basic/index.mjs` 에 기본값 + `modes/index.mjs` `checkKnown` 에 값 검사.
 - 설정은 데이터뿐(함수 · 클래스 · getter 금지). 모드 전용 코드는 이름으로 등록해 쓴다(`city/parts.mjs` · `bus/mesh.mjs registerBusLook`).
 - 도시 팩 참조가 바뀌면 건물 타일을 전부 다시 짓는다: 설정은 레지스트리가 한 번 합쳐 얼린 것을 쓰고, 테마 · 색마다 새 팩을 만들지 않는다.
