@@ -32,10 +32,19 @@ test('종족 건물: 모든 모형이 여러 땅 · 높이에서 윤곽 안에�
   }
 });
 
-test('종족 건물: 높은 건물은 tall 모형, 낮은 건물은 낮은 모형', () => {
+test('종족 건물: 원작처럼 낮게 — 높은 빌딩 자리도 낮은 모형(tall 없음)', () => {
   for (const [kind, list] of Object.entries(BUILDING_MODELS)) {
-    assert.ok(list.some(m => m.fit?.tall) && list.some(m => !m.fit?.tall), kind);
-    assert.equal(!!pickModel(list, { area: 900, aspect: 1.2, tall: true, r: .5 })?.fit?.tall, true);
-    assert.equal(!!pickModel(list, { area: 900, aspect: 1.2, tall: false, r: .5 })?.fit?.tall, false);
+    assert.ok(list.length >= 8 && list.every(m => !m.fit?.tall), kind);
+    assert.ok(pickModel(list, { area: 900, aspect: 1.2, tall: false, r: .5 }));
   }
+});
+
+test('종족 건물: 서울을 대표하는 건물 자리(race.keep)는 스타 건물로 바꾸지 않는다(보통 건물로)', () => {
+  const ring = [100, 100, 140, 100, 140, 130, 100, 130], { tb, ctx } = fakeTile(ring, 60);
+  ctx.A = 300; Object.assign(tb, { E: 4096, ox: 0.5, oy: 0.5, unit: 1e-7 });
+  const lng = (0.5 + 120e-7 - .5) * 360, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (0.5 + 115e-7)))) * 180 / Math.PI;   // 윤곽 가운데 점
+  tb.P.race = { kind: 'terran', keep: [[lng, lat, 10]] };
+  assert.equal(building(tb, ctx, unit), false);
+  const far = fakeTile(ring, 60); far.ctx.A = 300; Object.assign(far.tb, { E: 4096, ox: 0.5, oy: 0.5, unit: 1e-7 }); far.tb.P.race = { kind: 'terran', keep: [[lng + 1, lat, 10]] };
+  assert.equal(building(far.tb, far.ctx, unit), true);
 });

@@ -9,12 +9,12 @@
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다.
 import { registerCityPart } from '../../city/parts.mjs';
 import { KIND } from '../../city/mesh.mjs';
-import { orientedBox, pointInPolygon, deepestPoint } from '../../city/geom.mjs';
+import { orientedBox, pointInPolygon, deepestPoint, edgeDistance } from '../../city/geom.mjs';
 import { BUILDING_MODELS } from './building_models.mjs';
 
 const NO_AO = 8;   // (mesh.mjs FLAG.NO_AO)
 const LOOK = { wall: KIND.WALL, roof: KIND.ROOF, accent: KIND.PITCHED, glow: KIND.SIGN, metal: KIND.EQUIP, trim: KIND.AWNING };
-export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, tallM: 30, baseM: .3 };   // 이보다 작은 땅 · 좁은 직사각형은 보통 건물로, 높은 건물의 기준, 기단 높이
+export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, baseM: .3 };   // 이보다 작은 땅 · 좁은 직사각형은 보통 건물로, 기단 높이
 
 // 윤곽 안에 드는 직사각형(긴 축 = 감싸는 상자의 긴 축): 보통 건물(거의 네모)은 상자 가운데에서 조금만 줄이면 끝나고,
 // 오목하거나 비뚠 땅은 가운데 몇 자리(상자 3×3 · 가장 깊은 점) × 가로세로 비 몇 가지에서 네 변의 점이 다 윤곽 안인 가장 큰 것
@@ -122,12 +122,26 @@ export function pickModel(list, { area, aspect, tall, r }) {
   return pool[pool.length - 1];
 }
 
+// 서울을 대표하는 건물 자리(팩 race.keep [경도, 위도, 반지름 m])를 이 타일 단위로: [x, y, 반지름] — 타일마다 한 번
+const MX = lng => lng / 360 + .5, MY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
+function keeps(tb, R) {
+  if (tb._raceKeep && tb._raceKeepOf === R.keep) return tb._raceKeep;
+  const E = tb.E || 4096, out = [];
+  for (const [lng, lat, rM] of R.keep || []) {
+    const x = (MX(lng) - tb.ox) / tb.unit, y = (MY(lat) - tb.oy) / tb.unit, r = rM / tb.mPerUnit;
+    if (x > -r - E && x < 2 * E + r && y > -r - E && y < 2 * E + r) out.push([x, y, r]);
+  }
+  tb._raceKeep = out; tb._raceKeepOf = R.keep; return out;
+}
+
 // 짓기: 땅 전체에 낮은 기단(지붕 색), 그 위 직사각형 안에 모형
 export function building(tb, ctx, unit) {
   const R = tb.P.race, list = R && BUILDING_MODELS[R.kind]; if (!list?.length) return false;
   if (ctx.clipped || ctx.th || ctx.A < RACE_LIMITS.minAreaM2) return false;   // 타일에 잘린 건물 · 고가가 지나는 건물 · 아주 작은 건물: 보통 건물
+  if (keeps(tb, R).some(([x, y, r]) => pointInPolygon(x, y, ctx.outer, ctx.holes) || edgeDistance(x, y, [ctx.outer]) <= r)) return false;   // 서울을 대표하는 건물: 원래 모양에 종족 색만
   const rect = fitRect(ctx.outer, ctx.holes); if (!rect || rect.hy * tb.mPerUnit < RACE_LIMITS.minHalfM) return false;
-  const tall = ctx.H - ctx.minH > RACE_LIMITS.tallM, model = pickModel(list, { area: ctx.A, aspect: rect.hx / rect.hy, tall, r: unit(ctx.seed, 499) });
+  // 높이는 따르지 않는다: 원작에는 고층 건물이 없다 — 높은 빌딩 자리도 원작 비율의 낮은 건물(행님 2026-10-22: 원작처럼 낮게)
+  const model = pickModel(list, { area: ctx.A, aspect: rect.hx / rect.hy, tall: false, r: unit(ctx.seed, 499) });
   if (!model) return false;
   const W = tb.W, keepM = W.m.slice(), keepB3 = W.b[3], ch = ctx.chunk, zb = ctx.minH + RACE_LIMITS.baseM;
   // 기단: 윤곽 옆면(창 없음)과 윗면
