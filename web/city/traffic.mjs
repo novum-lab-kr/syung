@@ -196,7 +196,7 @@ export class TrafficSim {
   spawn(e, s, dir) {
     const r = Math.random(), kind = r < this.suv ? 1 : 0, col = this.colors[this.pick(this.cw, Math.random())], len = kind ? this.pack.props.vehicles.suvSizeM[0] : this.pack.props.vehicles.carSizeM[0];
     const lanes = this.lanesOf(e), lane = Math.floor(Math.random() * lanes), vmax = (this.vmax[e.cls] || 7) * (.9 + .2 * Math.random());
-    const car = { e, s, dir, lane, v: vmax * (.5 + .5 * Math.random()), vmax, kmax: vmax / (this.vmax[e.cls] || 7), len, kind, col, sc: 0, dying: false, brake: 0, idle: 0 };
+    const car = { e, s, dir, lane, v: vmax * (.5 + .5 * Math.random()), vmax, kmax: vmax / (this.vmax[e.cls] || 7), len, kind, col, sc: 0, dying: false, brake: 0, idle: 0, seed: Math.random() };   // seed: 이 차의 고정 난수(스타크래프트: 어느 유닛 모양인지 — 달리는 동안 안 바뀌게)
     this.cars.push(car); return car;
   }
   // dt in s; box: the view in local metres; cap: cars allowed in view; fade: 0..1 (zoom); now: s

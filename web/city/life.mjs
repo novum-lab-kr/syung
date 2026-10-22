@@ -635,7 +635,7 @@ export class CityLife {
     else this.people.list.length = 0;
     // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mjs)
     if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
-      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), now: reducedMotion ? 0 : now, light, lit });
+      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), now: reducedMotion ? 0 : now, light, lit });
       if (!reducedMotion && stats.units) this._anim = true }
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -695,7 +695,7 @@ export class CityLife {
       at(p); L.push(p); visible++;
     } else if (visible > target * 1.3) { let n = Math.min(3, visible - target); for (const p of L) { if (n <= 0) break; if (!p.dying) { p.dying = true; n-- } } }
     const P = this.people.poses; let n = 0;
-    for (const p of L) { if (n >= this.people.max) break; const o = n * 14; P[o] = p.x; P[o + 1] = p.y; P[o + 2] = p.ph; P[o + 3] = p.pause > 0 ? 0 : 1; P[o + 4] = p.fx * p.dir; P[o + 5] = p.fy * p.dir; P[o + 6] = p.shirt; P[o + 7] = p.sc * fade; P[o + 8] = p.pants; P[o + 9] = p.hair; P[o + 10] = p.look; n++ }
+    for (const p of L) { if (n >= this.people.max) break; const o = n * 14; P[o] = p.x; P[o + 1] = p.y; P[o + 2] = p.ph; P[o + 3] = p.pause > 0 ? 0 : 1; P[o + 4] = p.fx * p.dir; P[o + 5] = p.fy * p.dir; P[o + 6] = p.shirt; P[o + 7] = p.sc * fade; P[o + 8] = p.pants; P[o + 9] = p.hair; P[o + 10] = p.look; P[o + 11] = p.dir; n++ }   // (11: 걷는 쪽 — 4 · 5 의 길 방향은 dir 을 두 번 곱해 길의 정방향이다. 사람 그림은 이것으로 뒤집고, 스타크래프트 유닛은 11 을 곱해 앞을 본다)
     this.people.count = n; return n;
   }
   // Finish building every waiting cell right now, whatever it costs (for tests and screenshots, not for frames).

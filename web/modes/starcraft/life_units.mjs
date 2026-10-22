@@ -1,7 +1,7 @@
 // 스타크래프트 도시 생활: 길을 걷는 사람과 달리는 차 자리에 원작 유닛을 세운다(행님 2026-10-22: 사람이랑 차도 유닛으로).
 // web/city/life.mjs 가 모드 설정 city.life.units 가 있으면 사람 · 차를 그리지 않고 이걸 부른다(본체가 모드 코드 받기로 받아 overlay 가 넘긴다).
 // 자리 · 방향 · 걷는지는 엔진의 것(사람 poses 14 칸, 차 TrafficSim poses 10 칸)을 그대로 쓰고, 모양은 unit_shapes.mjs(Codex 시안).
-// 사람은 그 사람의 look 번호로, 차는 차 종류(kind)와 자리로 모양 목록에서 고른다.
+// 사람은 그 사람의 look 번호로, 차는 그 차의 고정 난수(TrafficSim 의 car.seed)로 모양 목록에서 고른다 — 자리로 고르면 달리는 동안 모양이 바뀌었다(행님 2026-10-22).
 import { compile, hexRGB } from '../coaster/night.mjs';
 import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mjs';
 
@@ -48,16 +48,17 @@ export class LifeUnits {
     l.inst.set([x, y, yaw, s, go, seed, 0, 0], l.n++ * INST);
   }
   // 사람 · 차 자리에서 유닛 목록 만들고 그리기. U: 모드 설정 city.life.units {people: [이름…], cars: [이름…], personM, carM}
-  draw(gl, MT, mu, { people, peopleN = 0, cars, carsN = 0, units: U, personH = 1.7, carLenM = 4.3, now = 0, light = [-.5, .5, .7], lit = [.64, .36], line = [.5, .5, .5] }) {
+  draw(gl, MT, mu, { people, peopleN = 0, cars, carsN = 0, carList = null, units: U, personH = 1.7, carLenM = 4.3, now = 0, light = [-.5, .5, .7], lit = [.64, .36], line = [.5, .5, .5] }) {
     this.init(gl); for (const l of this.lists.values()) l.n = 0;
     const P = U.people || [], C = U.cars || [];
     if (P.length) for (let i = 0; i < peopleN; i++) {
       const o = i * 14, k = P[Math.abs(Math.round(people[o + 10] * 7 + people[o + 6] * 3)) % P.length], sh = UNIT_SHAPES[k]; if (!sh) continue;
       const s = people[o + 7] * personH * (U.personScale ?? 1) / 1.25;   // 유닛 키(z 약 1.25) = 사람 키
-      this.push(k, people[o], people[o + 1], Math.atan2(people[o + 5], people[o + 4]), s, people[o + 3], (i * .618) % 1);
+      const d = people[o + 11] || 1;   // 걷는 쪽(4 · 5 는 길의 정방향 — life.mjs stepPeople)
+      this.push(k, people[o], people[o + 1], Math.atan2(people[o + 5] * d, people[o + 4] * d), s, people[o + 3], (i * .618) % 1);
     }
     if (C.length) for (let i = 0; i < carsN; i++) {
-      const o = i * 10, k = C[(Math.abs(Math.round(cars[o] * .37 + cars[o + 1] * .53)) + cars[o + 3]) % C.length], sh = UNIT_SHAPES[k]; if (!sh) continue;
+      const o = i * 10, seed = carList?.[i]?.seed ?? ((i * .618) % 1), k = C[Math.min(C.length - 1, Math.floor(seed * C.length))], sh = UNIT_SHAPES[k]; if (!sh) continue;   // 차마다 고정(달리는 동안 모양이 안 바뀌게)
       const s = cars[o + 7] * carLenM * (U.carScale ?? 1) / sh.len;   // 유닛 길이 = 차 길이
       this.push(k, cars[o], cars[o + 1], cars[o + 2], s, 1, (i * .618) % 1);
     }
