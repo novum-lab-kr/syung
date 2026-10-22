@@ -18,3 +18,8 @@ test('스타크래프트 도시 생활: 차는 달리는 동안 같은 유닛(�
   assert.ok(Math.abs(Math.abs(yaw) - Math.PI) < 1e-5, `거꾸로 걷는 쪽: yaw ${yaw}`);
   P[11] = 1; L.draw(gl, null, 1, { people: P, peopleN: 1, units }); assert.ok(Math.abs(picked(L)[0].yaw) < 1e-5);
 });
+
+test('스타크래프트: 버스 유닛은 차 자리 유닛 목록에 없다(같은 모양이 버스 · 차로 겹치지 않게)', async () => {
+  const modes = (await import('../web/modes/starcraft/index.mjs')).default;
+  for (const m of modes) assert.ok(!m.settings.city.life.units.cars.includes(m.settings.buses.look), `${m.id}: 버스 ${m.settings.buses.look} 가 차에도 있음`);
+});

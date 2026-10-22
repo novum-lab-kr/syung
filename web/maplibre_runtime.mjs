@@ -63,7 +63,7 @@ import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시�
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES,RETRO_MODE,...NATION_MODES]);
 registerAvatar('sprout',sproutAvatar);registerAvatar('builder',builderAvatar);registerAvatar('seonbi',seonbiAvatar);registerAvatar('visitor',visitorAvatar);registerAvatar('scv',scvAvatar);registerAvatar('drone',droneAvatar);registerAvatar('probe',probeAvatar);   // 내 위치 캐릭터 모양(이름 = 모드 설정 me.look)
-for(const k of ['siegeTank','ultralisk','dragoon'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 시즈 탱크 · 울트라리스크 · 드라군
+for(const k of ['siegeTank','ultralisk','reaver'])registerBusLook(k,unitBusLook(k));   // 스타크래프트 버스: 시즈 탱크 · 울트라리스크 · 리버
 registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false,stop:buildChorongPostMesh,stopGlow:buildChorongGlowMesh,stopGrowFrom:18});   // 조선 모드의 버스 모양: 가마꾼은 움직이는 동안 걷고, 밤에 전조등 대신 초롱(메시 안) · 정류장은 청사초롱 장대(밤에 불)
 const JOSEON_STYLE=modes.settings('joseon').city.pack;   // 조선 모드: the same city in packed earth and 기와집 (cityPack()) — 기본 팩 + 조선 덧쓰기, 한 번 합쳐 얼린 것
 const json=id=>JSON.parse(document.getElementById(id).textContent);

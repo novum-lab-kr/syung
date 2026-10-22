@@ -32,9 +32,9 @@ export const PROTOSS = {
   from: 'simcity',
   label: '프로토스',
   settings: {
-    city: { pack: PROTOSS_DELTA, life: { units: { people: ['zealot', 'zealot', 'highTemplar', 'darkTemplar'], cars: ['dragoon', 'reaver', 'archon'] } } },   // 사막 위 금빛 건물, 사람 · 차 대신 질럿 · 템플러 · 드라군 · 리버 · 아콘
+    city: { pack: PROTOSS_DELTA, life: { units: { people: ['zealot', 'zealot', 'highTemplar', 'darkTemplar'], cars: ['dragoon', 'archon'] } } },   // 사막 위 금빛 건물, 사람 · 차 대신 질럿 · 템플러 · 드라군 · 아콘(리버는 버스라 차에서 뺌 — 행님 2026-10-22: 겹친다)
     trains: { look: 'units', units: { lead: 'shuttle', rest: 'shuttle' } },   // 셔틀 편대
-    buses: { look: 'dragoon' },   // 드라군
+    buses: { look: 'reaver' },   // 리버(행님 2026-10-22)
     sky: { units: ['scout', 'carrier', 'corsair', 'corsair', 'arbiter'] },   // 하늘: 스카우트 · 캐리어 · 커세어 · 아비터
     me: { look: 'probe' },   // 내 위치: 프로브
   },
