@@ -88,6 +88,33 @@ const NATIONS = {
       },
     },
   },
+  egypt: {
+    pick(r, c) {
+      const h = c.H - c.minH;
+      if (r < .002 && c.A >= 1500 && h < 20) return 'pyramid';   // 피라미드 — 아주 드물게
+      if (r < .016 && c.A >= 250 && h < 30) return 'mosque';   // 돔 + 미나레트
+      if (h < 40) return 'rooftop';   // 옥상 살림: 난간 · 물탱크 · 접시 · 철근 · 비둘기집 · 그늘막(거의 다)
+      return null;
+    },
+    build: {
+      rooftop(M) {
+        const z = top(M), u = 1 / M.s;
+        for (const [x, y, hx, hy] of [[0, -.98, 1, .02], [0, .98, 1, .02], [-.98, 0, .02, 1], [.98, 0, .02, 1]]) M.box(x, y, hx, hy, z, z + .9 * u, { look: 'wall' });   // 옥상 난간
+        const nT = 1 + Math.floor(M.rand(30) * 3);
+        for (let i = 0; i < nT; i++) { const x = -.6 + M.rand(31 + i) * 1.2, y = -.5 + M.rand(35 + i); M.frustum(x, y, .7 * u, .7 * u, z, z + 1.3 * u, { n: 8, ...A(1) }) }   // 검은 물탱크
+        if (M.rand(40) < .55) { const x = .5 - M.rand(41), y = -.6; M.box(x, y, .3 * u, .3 * u, z, z + .9 * u, A(1)); M.dome(x, y, .9 * u, z + .9 * u, .35 * u, { n: 8, rings: 2, ...A(2) }) }   // 위성 접시
+        if (M.rand(42) < .4) for (const [x, y] of [[-.85, -.85], [.85, -.85], [-.85, .85], [.85, .85]]) M.box(x, y, .08 * u, .08 * u, z, z + 2.2 * u, A(1));   // 덜 지은 층의 철근 기둥
+        if (M.rand(43) < .2) M.frustum(.55, .5, 1.3 * u, .9 * u, z, z + 3.2 * u, { n: 8, look: 'wall' });   // 비둘기집(흙 탑)
+        if (M.rand(44) < .3) M.box(-.35, .35, .45, .35, z + 2.4 * u, z + 2.55 * u, A(2));   // 흰 그늘막
+      },
+      mosque(M) {
+        const z = top(M), r = .55;
+        M.frustum(0, 0, r, r, z, z + .3, { n: 12, look: 'wall' }); M.dome(0, 0, r, z + .3, r * .95, { n: 12, rings: 4, ...A(0) });
+        const x = .78, y = .7; M.frustum(x, y, .13, .1, z, z + 3.2, { n: 8, ...A(2) }); M.frustum(x, y, .16, .16, z + 2.4, z + 2.55, { n: 8, ...A(2) }); M.dome(x, y, .1, z + 3.2, .2, { n: 8, rings: 2, ...A(0) });   // 미나레트
+      },
+      pyramid(M) { const z = top(M); M.frustum(0, 0, .97, 0, z, z + 1.9, { n: 4, rot: Math.PI / 4, look: 'wall' }) },
+    },
+  },
 };
 
 export function building(tb, ctx, unit) {

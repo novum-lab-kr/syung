@@ -4,6 +4,7 @@
 import { GREECE_DELTA } from './greece.mjs';
 import { NETHERLANDS_DELTA } from './netherlands.mjs';
 import { PARIS_DELTA } from './paris.mjs';
+import { EGYPT_DELTA } from './egypt.mjs';
 
 export const GREECE = {
   id: 'greece',
@@ -29,4 +30,12 @@ export const PARIS = {
     city: { pack: PARIS_DELTA },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
   },
 };
-export default [GREECE, NETHERLANDS, PARIS];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)
+export const EGYPT = {
+  id: 'egypt',
+  from: 'simcity',
+  label: '이집트',
+  settings: {
+    city: { pack: EGYPT_DELTA },   // 사암 · 옥상 살림 · 모스크 · 피라미드 · 나일
+  },
+};
+export default [GREECE, NETHERLANDS, PARIS, EGYPT];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)
