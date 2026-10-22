@@ -2,19 +2,20 @@
 // 여기서 몇 채만 그 나라 건물(그리스: 파란 돔 성당 · 종탑 · 어긋나게 쌓은 큐브 집)로 짓는다. 나머지는 false 를 돌려 보통 건물(팩 색 · 실제 윤곽)로.
 // 스타크래프트 종족 건물(race)과 달리 몸통은 실제 윤곽 그대로 짓고, 그 위에만 모형을 얹는다(모형 도구는 race_buildings.mjs 의 fitRect · modelBuilder).
 // 칠: wall(벽 재질 색) · roof(지붕 색) · accent(경사면 KIND.PITCHED — 팩 buildings.house.roof.pitched.colors 3색: 나라마다 [돔, 흰 칠, 장식]).
+// 휴대폰(엔진 opts.phone)은 정점을 아낀다: 작은 집은 보통 건물, 모형은 덩어리 몇 개만(행님 2026-10-22 밤: 휴대폰 메모리 — 맥 휴대폰 화면에서 이집트 4타일 85 MB 로 한도 56 MB 를 넘었다).
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다(행님 2026-10-22, 시안 look3d).
 import { registerCityPart } from '../../city/parts.mjs';
 import { KIND } from '../../city/mesh.mjs';
 import { fitRect, modelBuilder } from '../starcraft/race_buildings.mjs';
 
-export const NATION_LIMITS = { minAreaM2: 40, minHalfM: 3 };   // 이보다 작은 땅 · 좁은 직사각형은 보통 건물로
+export const NATION_LIMITS = { minAreaM2: 40, phoneMinAreaM2: 120, minHalfM: 3 };   // 이보다 작은 땅(휴대폰은 더 큰 기준) · 좁은 직사각형은 보통 건물로
 const A = slot => ({ look: 'accent', slot });
 const top = M => M.Hn - .3 / M.s;   // 지붕 높이(모형 좌표: 바닥 기단 0.3 m 위에서 s 단위)
 
 // 나라마다: pick(r, ctx) → 지을 모양 이름 또는 null(보통 건물), build[이름](M, ctx) → 지붕 위 모형(몸통은 이미 지음)
 const NATIONS = {
   greece: {
-    pick(r, c) {
+    pick(r, c, phone) {
       if (c.H - c.minH > 30) return null;   // 높은 건물은 보통(흰 회벽)
       if (r < .04 && c.A >= 120 && c.A <= 3000) return 'church';   // 파란 돔 성당 — 손에 꼽게
       if (r < .07 && c.A >= 60) return 'bell';   // 종탑
@@ -24,17 +25,18 @@ const NATIONS = {
     build: {
       church(M) { const z = top(M), r = .62; M.frustum(0, 0, r, r, z, z + .28, { n: 10, ...A(1) }); M.dome(0, 0, r, z + .28, r * 1.05, { n: 10, rings: 4, ...A(0) }); M.box(0, 0, .03, .03, z + .28 + r * 1.05, z + .28 + r * 1.05 + .32, A(1)); M.box(0, 0, .12, .03, z + .28 + r * 1.05 + .2, z + .28 + r * 1.05 + .25, A(1)) },
       bell(M) { const z = top(M), x = .6, y = 0; M.box(x, y, .16, .3, z, z + .9, A(1)); M.box(x, y, .1, .2, z + .45, z + .7, A(0)); M.dome(x, y, .22, z + .9, .28, { n: 8, rings: 3, ...A(0) }) },
-      cubes(M) {   // 위층 상자 한두 개를 한쪽으로 밀어 얹고, 옥상 가장자리에 낮은 흰 난간
+      cubes(M, c, phone) {   // 위층 상자 한두 개를 한쪽으로 밀어 얹고, 옥상 가장자리에 낮은 흰 난간(휴대폰은 난간 · 물탱크 없이)
         const z = top(M), f = 3.1 / M.s, sx = M.rand(1) < .5 ? -1 : 1;
         M.box(sx * .28, -.12, .62, .6, z, z + f, { look: 'wall' });
         if (M.rand(2) < .45) M.box(-sx * .3, .3, .45, .45, z + f, z + 2 * f, { look: 'wall' });
+        if (phone) return;
         if (M.rand(3) < .35) M.box(-sx * .55, -.4, .3, .3, z, z + .45 * f, A(0));   // 파란 물탱크 · 창고 지붕
         for (const [x, y, hx, hy] of [[0, -.97, 1, .03], [0, .97, 1, .03], [-.97, 0, .03, 1], [.97, 0, .03, 1]]) M.box(x, y, hx, hy, z, z + .32 / M.s * 2, A(1));
       },
     },
   },
   netherlands: {
-    pick(r, c) {
+    pick(r, c, phone) {
       const h = c.H - c.minH;
       if (r < .006 && c.A >= 120 && h < 20) return 'windmill';   // 풍차 — 아주 드물게
       if (r < .016 && c.A >= 200 && h < 30) return 'spire';   // 교회 첨탑
@@ -42,15 +44,15 @@ const NATIONS = {
       return null;
     },
     build: {
-      canal(M) {   // 긴 축을 따라 가파른 지붕(용마루), 앞(+x) 끝에 박공 4가지 중 하나 — 벽색 그대로
+      canal(M, c, phone) {   // 긴 축을 따라 가파른 지붕(용마루), 앞(+x) 끝에 박공 4가지 중 하나 — 벽색 그대로(휴대폰은 뾰족 박공 한 장만)
         const z = top(M), rise = Math.min(1.6, 5.5 / M.s), tile = M.rand(5) < .35 ? 2 : 0;
         M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], z, [[-.96, 0], [.96, 0], [.96, 0], [-.96, 0]], z + rise, { ...A(tile), top: false });
-        const kind = Math.floor(M.rand(6) * 4), w = .97, t = .04;
+        const kind = phone ? 3 : Math.floor(M.rand(6) * 4), w = .97, t = .04;
         if (kind === 0) for (let k = 0; k < 4; k++) M.box(w, 0, t, 1 - k * .24, z + k * rise / 4, z + (k + 1) * rise / 4 + .02, { look: 'wall' });   // 계단 박공
         else if (kind === 1) for (let k = 0; k < 6; k++) M.box(w, 0, t, .55 + .4 * Math.cos(k / 5 * Math.PI / 2) - k * .06, z + k * rise / 6, z + (k + 1) * rise / 6 + .02, { look: 'wall' });   // 종 박공
         else if (kind === 2) { M.box(w, 0, t, .95, z, z + rise * .35, { look: 'wall' }); M.box(w, 0, t, .4, z + rise * .35, z + rise * 1.05, { look: 'wall' }); M.box(w, 0, t + .01, .46, z + rise * 1.05, z + rise * 1.12, A(1)) }   // 목 박공 + 흰 처마
         else M.loft([[w - t, -1], [w + t, -1], [w + t, 1], [w - t, 1]], z, [[w - t, 0], [w + t, 0], [w + t, 0], [w - t, 0]], z + rise * 1.08, { look: 'wall', top: false });   // 뾰족 박공
-        M.box(w + .01, 0, t, .08, z + rise * .55, z + rise * .55 + .5 / M.s, A(1));   // 박공의 흰 들보(도르래 걸이)
+        if (!phone) M.box(w + .01, 0, t, .08, z + rise * .55, z + rise * .55 + .5 / M.s, A(1));   // 박공의 흰 들보(도르래 걸이)
       },
       windmill(M) {   // 팔각 몸통 · 모자 · 앞에 + 자 날개(길쭉한 판 둘)
         const z = top(M), x = 0, H = 4.2;
@@ -62,7 +64,7 @@ const NATIONS = {
     },
   },
   paris: {
-    pick(r, c) {
+    pick(r, c, phone) {
       const h = c.H - c.minH;
       if (r < .0015 && c.A >= 1500 && h < 25) return 'eiffel';   // 작은 에펠탑 — 아주 드물게
       if (r < .012 && c.A >= 400 && h < 35) return 'dome';   // 둥근 돔 기념관
@@ -70,14 +72,14 @@ const NATIONS = {
       return null;
     },
     build: {
-      mansard(M) {
+      mansard(M, c, phone) {
         const z = top(M), f = 3.2 / M.s, rise = Math.min(1.2, 4.6 / M.s), k = .84;
         // 철제 발코니 띠 둘(2층 · 꼭대기 아래층) — 둘레 따라 얇은 띠
-        for (const zb of [z - (M.Hn > 4 * f ? M.Hn - 2 * f : 1.5 * f), z - f]) if (zb > .2) for (const [x, y, hx, hy] of [[0, -1, 1, .025], [0, 1, 1, .025], [-1, 0, .025, 1], [1, 0, .025, 1]]) M.box(x, y, hx, hy, zb, zb + .12 / M.s * 3, A(1));
+        if (!phone) for (const zb of [z - (M.Hn > 4 * f ? M.Hn - 2 * f : 1.5 * f), z - f]) if (zb > .2) for (const [x, y, hx, hy] of [[0, -1, 1, .025], [0, 1, 1, .025], [-1, 0, .025, 1], [1, 0, .025, 1]]) M.box(x, y, hx, hy, zb, zb + .12 / M.s * 3, A(1));
         M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], z, [[-k, -k], [k, -k], [k, k], [-k, k]], z + rise, { ...A(0), top: true });   // 가파른 아연 경사면 + 윗면
-        const n = Math.max(2, Math.min(7, Math.round(M.half[0] / 4.2)));   // 지붕창: 긴 변 따라 4 m 마다
+        const n = phone ? 2 : Math.max(2, Math.min(7, Math.round(M.half[0] / 4.2)));   // 지붕창: 긴 변 따라 4 m 마다(휴대폰은 둘)
         for (let i = 0; i < n; i++) { const x = -.8 + 1.6 * (i + .5) / n; for (const y of [-.9, .9]) M.box(x, y, Math.min(.06, .5 / n), .07, z + rise * .2, z + rise * .75, { look: 'wall' }) }
-        for (let i = 0; i < 3; i++) if (M.rand(20 + i) < .7) M.box(-.6 + i * .6, 0, .05, .14, z + rise, z + rise + 1.1 / M.s * 2, A(2));   // 굴뚝
+        for (let i = 0; i < (phone ? 1 : 3); i++) if (M.rand(20 + i) < .7) M.box(-.6 + i * .6, 0, .05, .14, z + rise, z + rise + 1.1 / M.s * 2, A(2));   // 굴뚝
       },
       dome(M) { const z = top(M); M.frustum(0, 0, .6, .6, z, z + .5, { n: 12, look: 'wall' }); M.dome(0, 0, .6, z + .5, .7, { n: 12, rings: 4, ...A(0) }); M.frustum(0, 0, .1, .02, z + 1.2, z + 1.6, { n: 6, ...A(1) }) },
       eiffel(M) {   // 넷으로 좁아지는 철탑(갈색 철) + 두 층 전망대
@@ -89,19 +91,20 @@ const NATIONS = {
     },
   },
   egypt: {
-    pick(r, c) {
+    pick(r, c, phone) {
       const h = c.H - c.minH;
       if (r < .002 && c.A >= 1500 && h < 20) return 'pyramid';   // 피라미드 — 아주 드물게
       if (r < .016 && c.A >= 250 && h < 30) return 'mosque';   // 돔 + 미나레트
-      if (h < 40) return 'rooftop';   // 옥상 살림: 난간 · 물탱크 · 접시 · 철근 · 비둘기집 · 그늘막(거의 다)
+      if (h < 40 && (!phone || r < .5)) return 'rooftop';   // 옥상 살림: 난간 · 물탱크 · 접시 · 철근 · 비둘기집 · 그늘막(거의 다, 휴대폰은 절반)
       return null;
     },
     build: {
-      rooftop(M) {
+      rooftop(M, c, phone) {
         const z = top(M), u = 1 / M.s;
         for (const [x, y, hx, hy] of [[0, -.98, 1, .02], [0, .98, 1, .02], [-.98, 0, .02, 1], [.98, 0, .02, 1]]) M.box(x, y, hx, hy, z, z + .9 * u, { look: 'wall' });   // 옥상 난간
-        const nT = 1 + Math.floor(M.rand(30) * 3);
+        const nT = phone ? 1 : 1 + Math.floor(M.rand(30) * 3);
         for (let i = 0; i < nT; i++) { const x = -.6 + M.rand(31 + i) * 1.2, y = -.5 + M.rand(35 + i); M.frustum(x, y, .7 * u, .7 * u, z, z + 1.3 * u, { n: 8, ...A(1) }) }   // 검은 물탱크
+        if (phone) return;   // (휴대폰: 접시 · 철근 · 비둘기집 · 그늘막 없이)
         if (M.rand(40) < .55) { const x = .5 - M.rand(41), y = -.6; M.box(x, y, .3 * u, .3 * u, z, z + .9 * u, A(1)); M.dome(x, y, .9 * u, z + .9 * u, .35 * u, { n: 8, rings: 2, ...A(2) }) }   // 위성 접시
         if (M.rand(42) < .4) for (const [x, y] of [[-.85, -.85], [.85, -.85], [-.85, .85], [.85, .85]]) M.box(x, y, .08 * u, .08 * u, z, z + 2.2 * u, A(1));   // 덜 지은 층의 철근 기둥
         if (M.rand(43) < .2) M.frustum(.55, .5, 1.3 * u, .9 * u, z, z + 3.2 * u, { n: 8, look: 'wall' });   // 비둘기집(흙 탑)
@@ -119,15 +122,16 @@ const NATIONS = {
 
 export function building(tb, ctx, unit) {
   const P = tb.P.nation, N = P && NATIONS[P.kind]; if (!N) return false;
-  if (ctx.clipped || ctx.th || ctx.A < NATION_LIMITS.minAreaM2) return false;   // 타일에 잘린 건물 · 고가가 지나는 건물 · 아주 작은 건물: 보통 건물
-  const kind = N.pick(unit(ctx.seed, 610), ctx); if (!kind) return false;
+  const phone = !!tb.opts?.phone;
+  if (ctx.clipped || ctx.th || ctx.A < (phone ? NATION_LIMITS.phoneMinAreaM2 : NATION_LIMITS.minAreaM2)) return false;   // 타일에 잘린 건물 · 고가가 지나는 건물 · 작은 건물: 보통 건물
+  const kind = N.pick(unit(ctx.seed, 610), ctx, phone); if (!kind) return false;
   const rect = fitRect(ctx.outer, ctx.holes); if (!rect || rect.hy * tb.mPerUnit < NATION_LIMITS.minHalfM) return false;
   const W = tb.W, keepM = W.m.slice(), keepB3 = W.b[3];
   // 몸통: 보통 건물처럼 실제 윤곽의 벽(창) · 평지붕
   tb.wallsOf(ctx, ctx.outer, ctx.minH, ctx.H, true); for (const h of ctx.holes) tb.wallsOf(ctx, h, ctx.minH, ctx.H, false);
   tb.flatRoof(ctx, ctx.outer, ctx.holes, ctx.H, true);
   W.m = keepM.slice(); W.b[3] = keepB3;
-  N.build[kind](modelBuilder(tb, ctx, unit, rect), ctx);
+  N.build[kind](modelBuilder(tb, ctx, unit, rect), ctx, phone);
   W.m = keepM; W.b[3] = keepB3; W.kind = KIND.WALL; W.w = [0, 0, 0, 0];
   return true;
 }
