@@ -34,7 +34,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
-  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
+  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null,pixels=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -93,6 +93,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(rider.ride&&park&&layer.c88ride?.n){   // 롤코 1인칭: 내 칸은 맨 마지막에, 깊이를 비우고 눈앞 10 cm 까지 그린다(지도는 기본에 가까운 가까운 면 — RIDE_NEAR_M)
       const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
       gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
+    {const X=S.map.pixel;if(X.enabled&&X.palette!=='none'&&live.PixelPalette){if(!pixels){pixels=new live.PixelPalette();pixels.init(gl)}pixels.render(gl,{palette:X.palette,outline:X.outline,alpha:true})}else if(pixels){pixels.dispose(gl);pixels=null}}   // 레트로: 열차 캔버스도 색표 · 윤곽(투명 바탕은 그대로, 나가면 치운다)
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };
   map.on('render',()=>live.drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
