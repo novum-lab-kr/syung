@@ -33,6 +33,34 @@ const NATIONS = {
       },
     },
   },
+  netherlands: {
+    pick(r, c) {
+      const h = c.H - c.minH;
+      if (r < .006 && c.A >= 120 && h < 20) return 'windmill';   // 풍차 — 아주 드물게
+      if (r < .016 && c.A >= 200 && h < 30) return 'spire';   // 교회 첨탑
+      if (h < 24 && c.A < 900) return 'canal';   // 좁은 운하 집: 박공 + 가파른 지붕(거의 다)
+      return null;
+    },
+    build: {
+      canal(M) {   // 긴 축을 따라 가파른 지붕(용마루), 앞(+x) 끝에 박공 4가지 중 하나 — 벽색 그대로
+        const z = top(M), rise = Math.min(1.6, 5.5 / M.s), tile = M.rand(5) < .35 ? 2 : 0;
+        M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], z, [[-.96, 0], [.96, 0], [.96, 0], [-.96, 0]], z + rise, { ...A(tile), top: false });
+        const kind = Math.floor(M.rand(6) * 4), w = .97, t = .04;
+        if (kind === 0) for (let k = 0; k < 4; k++) M.box(w, 0, t, 1 - k * .24, z + k * rise / 4, z + (k + 1) * rise / 4 + .02, { look: 'wall' });   // 계단 박공
+        else if (kind === 1) for (let k = 0; k < 6; k++) M.box(w, 0, t, .55 + .4 * Math.cos(k / 5 * Math.PI / 2) - k * .06, z + k * rise / 6, z + (k + 1) * rise / 6 + .02, { look: 'wall' });   // 종 박공
+        else if (kind === 2) { M.box(w, 0, t, .95, z, z + rise * .35, { look: 'wall' }); M.box(w, 0, t, .4, z + rise * .35, z + rise * 1.05, { look: 'wall' }); M.box(w, 0, t + .01, .46, z + rise * 1.05, z + rise * 1.12, A(1)) }   // 목 박공 + 흰 처마
+        else M.loft([[w - t, -1], [w + t, -1], [w + t, 1], [w - t, 1]], z, [[w - t, 0], [w + t, 0], [w + t, 0], [w - t, 0]], z + rise * 1.08, { look: 'wall', top: false });   // 뾰족 박공
+        M.box(w + .01, 0, t, .08, z + rise * .55, z + rise * .55 + .5 / M.s, A(1));   // 박공의 흰 들보(도르래 걸이)
+      },
+      windmill(M) {   // 팔각 몸통 · 모자 · 앞에 + 자 날개(길쭉한 판 둘)
+        const z = top(M), x = 0, H = 4.2;
+        M.frustum(x, 0, .55, .38, z, z + H, { n: 8, ...A(0) }); M.frustum(x, 0, .42, 0, z + H, z + H + .55, { n: 8, ...A(2) });
+        const fz = z + H * .85, fx = .5;
+        M.box(fx, 0, .03, .05, fz - 2.1, fz + 2.1, A(1)); M.box(fx, 0, .03, .98, fz - .09, fz + .09, A(1));
+      },
+      spire(M) { const z = top(M); M.box(.5, 0, .2, .2, z, z + 1.6, { look: 'wall' }); M.frustum(.5, 0, .22, 0, z + 1.6, z + 3.6, { n: 8, ...A(0) }) },
+    },
+  },
 };
 
 export function building(tb, ctx, unit) {
