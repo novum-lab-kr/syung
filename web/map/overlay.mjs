@@ -2,7 +2,7 @@
 // → 롤코 선로 → 열차 → 밤 공원 → 유리 건물 → 출구 기둥 → 1인칭 내 칸 → 역 이름표. 지도 load 안에서 한 번 만들고, render · idle · moveend · sourcedata 에 붙는다.
 // 캔버스 · 이름표 배치 · 놀이기구 · 도시 생활 · 밤 공원 · 벽 타이머의 주인. 본체의 drawTrains · wallsNow 를 live setter 로 채운다(그 전엔 빈 함수).
 // 다른 화면 파일을 import 하지 않는다: 열차 · 건물 깊이 클래스(trains/draw.mjs)와 lib 클래스는 본체가 넘기고, 바뀌는 값은 live.<이름> 으로 그때그때 읽는다.
-export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,live}){
+export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,live}){
   const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
   c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true});
@@ -33,7 +33,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
-  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
+  const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
@@ -69,6 +69,11 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       live.cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',look:S.city.landmarks,sun:sunPosition(),phone:PHONE})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
     coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
     layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&park,occlude:behind});
+    {const me=live.me.at(),zoom=map.getZoom();   // 내 위치 캐릭터: 줌 15 부터 점 대신, 열차 위(파장은 발밑). 건물 뒤에 가려도 늘 비친다. 방향을 아직 모르면 화면 쪽을 본다
+      if(me&&zoom>=AVATAR_MINZOOM&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(me.lngLat),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),b=map.getBearing()*Math.PI/180;
+        if(!avatar)avatar=new AvatarRenderer();
+        avatar.render(gl,pd.mainMatrix,{look:S.me.look,world:[q.x,q.y],origin:[O.x,O.y],yaw:me.yaw??Math.atan2(Math.cos(b),-Math.sin(b)),scale:avatarScale(zoom),unit:1/(512*2**zoom),walk:REDUCED.matches?0:me.walk,phase:me.phase,dark:effectiveTheme()==='dark',occlude:Math.max(behind,.35)});
+        if(me.animating)trainFrameSoon(1000/TRAIN_FPS)}}
     // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
     if(park&&effectiveTheme()==='dark'&&coasterTrack.edges){   // (edges: once the track has been set up)
       if(!night){night=new NightLayer();night.init(gl)}

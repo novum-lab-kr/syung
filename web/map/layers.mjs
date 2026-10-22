@@ -24,14 +24,14 @@ export function registerTransitLayers({map,shapesReady,buildLineFeatures,buildSt
   const SIGN_PAINT={'text-color':'#141414','text-halo-color':'#ffffff','text-halo-width':0,'text-opacity':0,'icon-opacity':0};
   map.addLayer({id:'station-labels',type:'symbol',source:'station-labels',minzoom:PHONE?12.01:13.01,layout:{'text-field':['get','ph'],...SIGN_LAYOUT},paint:SIGN_PAINT});
 }
-// 내 위치: 열차 아래 땅에 그리는 점(위치를 받으면 본체 myLocation 을 먼저 바꾸고 점을 옮긴다)
-export function registerLocationLayers({map,geolocate,live}){
+// 내 위치: 열차 아래 땅에 그리는 점(위치를 받으면 본체 myLocation 을 먼저 바꾸고 점을 옮긴다). dotMaxzoom 부터는 점 대신 캐릭터(map/avatar.mjs)
+export function registerLocationLayers({map,geolocate,live,dotMaxzoom=24}){
   // My location, drawn on the ground under the trains (the control's own DOM dot is hidden in CSS).
   map.addSource('me',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   const pa={'circle-pitch-alignment':'map','circle-pitch-scale':'map'};
   // the pulse is drawn with the trains (their canvas), so it does not redraw the map
-  map.addLayer({id:'me-ring',type:'circle',source:'me',paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}});
-  map.addLayer({id:'me-dot',type:'circle',source:'me',paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}});
+  map.addLayer({id:'me-ring',type:'circle',source:'me',maxzoom:dotMaxzoom,paint:{...pa,'circle-radius':14,'circle-color':'#ffffff','circle-blur':.15}});
+  map.addLayer({id:'me-dot',type:'circle',source:'me',maxzoom:dotMaxzoom,paint:{...pa,'circle-radius':9,'circle-color':'#ffd400','circle-stroke-color':'#141414','circle-stroke-width':2.5}});
   geolocate.on('geolocate',e=>{
     const {longitude:x,latitude:y}=e.coords;live.myLocation=[x,y];
     map.getSource('me').setData({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{}});

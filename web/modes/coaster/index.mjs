@@ -11,6 +11,7 @@ export default {
     park: { enabled: true,   // 공원 켜기(자료는 기본 모드 park.style)
       // 랜드마크 대관람차(2026-10-11 행님: 롤코에 관람차 랜드마크처럼 엄청 큰 거 하나): 상암 하늘공원 — 서울시가 지름 180 m 대관람차 '서울링'을 세우려는 자리
       landmarkRides: [{ kind: 'ferris', lngLat: [126.8853, 37.5682], diameterM: 180, yawDeg: 20 }] },
+    me: { look: 'visitor' },   // 내 위치: 풍선 든 놀이공원 아이(2026-10-22 행님)
     sun: { light: 'park' },   // 공원의 따뜻한 빛(밤에 푸른 기 없이)
   },
 };

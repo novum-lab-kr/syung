@@ -8,5 +8,6 @@ export default {
     city: { enabled: true, xray: true },   // 역 · 열차를 가린 건물은 유리로
     track: { kind: 'viaduct' },   // 고가 위(승강장은 기본처럼 선로를 따라 휘는 띠 — 2026-10-11 행님 '기본 베이스에 맞춰져야')
     trains: { body: 'slim' },   // 고가 상판 폭에 맞춘 가는 몸
+    me: { look: 'builder' },   // 내 위치: 안전모 쓴 꼬마 건설 반장(2026-10-22 행님: 모드마다 다른 캐릭터)
   },
 };
