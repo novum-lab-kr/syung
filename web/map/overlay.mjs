@@ -9,16 +9,18 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   // 역 이름표 캔버스: 열차 캔버스 바로 위(마커 · 팝업 아래)
   const sc=document.createElement('canvas');sc.className='station-signs';c.after(sc);sc.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const SIGN_PR=Math.min(globalThis.devicePixelRatio||1,PHONE?2:3);   // 이름표 캔버스는 제 해상도(지도 캔버스가 도트로 낮아져도 글자는 선명하게)
-  const sctx=sc.getContext('2d');let signFeatures=[],signAt=0,signMatrix=null,signTimer=0,signShown=false;
+  const sctx=sc.getContext('2d');let signFeatures=[],signAt=0,signMatrix=null,signTimer=0,signShown=false,signQM=null;   // signQM: 이름표 목록을 받은 때의 카메라
   // 그릴 이름표가 없으면 캔버스를 숨긴다: 다 지우고 아무것도 안 그리면 크롬이 직전 그림을 계속 띄웠다 — 크게 옮긴 뒤 전 자리의 역 이름이
   // 같은 화면 자리에 몇 초씩 남았다(2026-10-10 덕배, 잠실 → 여의도). 캔버스 픽셀은 비어 있었다
   const showSigns=on=>{if(on!==signShown){signShown=on;sc.style.visibility=on?'':'hidden'}};
   const drawSigns=M=>{
-    const m=map.getCanvas(),W=m.clientWidth,H=m.clientHeight;signMatrix=M;
+    const m=map.getCanvas(),W=m.clientWidth,H=m.clientHeight;signMatrix=M;live.frameStats.signs++;
     const SW=Math.round(W*SIGN_PR),SH=Math.round(H*SIGN_PR);if(sc.width!==SW||sc.height!==SH){sc.width=SW;sc.height=SH}
     sc.style.width=m.style.width;sc.style.height=m.style.height;sctx.clearRect(0,0,sc.width,sc.height);
     const now=performance.now();   // 놓인 이름표 목록은 가끔만 다시 받아요(배치도 그 정도 간격으로 바뀌어요). 위치는 매 프레임 투영
-    if(now-signAt>150){signAt=now;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels']}):[]}
+    // 카메라가 그대로면 1초에 한 번만(멈춘 화면에서 0.15초마다 조회하던 것 — 2026-10-23 발열 · 배터리), 움직이면 지금처럼 0.15초마다
+    const moved=!signQM||signQM.length!==M.length||signQM.some((v,i)=>v!==M[i]);
+    if(now-signAt>(moved?150:1000)){signAt=now;signQM=Array.from(M);live.frameStats.signQueries++;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels']}):[]}
     if(!signFeatures.length){showSigns(false);return}
     const clip=(x,y)=>[M[0]*x+M[4]*y+M[12],M[1]*x+M[5]*y+M[13],M[3]*x+M[7]*y+M[15]];
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set(),items=[];
@@ -31,7 +33,8 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
     showSigns(items.length>0);
     drawStationSigns(sctx,items,{dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
-    if(!REDUCED.matches&&!signTimer)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix)drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
+    // 둥둥 타이머: 열차 층 프레임이 곧(40 ms 안) 그리면 그쪽이 이름표도 그리므로 건너뛴다 — 움직이는 동안 이름표를 1초 60번(열차 30 + 자기 30) 그리던 것. 숨긴 탭은 걸지 않는다
+    if(!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<40))drawSigns(signMatrix)},1000/TRAIN_FPS);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
   const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let lifeUnits=null;
@@ -39,6 +42,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   const lifeUnitsFor=(gl,S)=>{if(S.city.life.units&&live.LifeUnits)return lifeUnits??=new live.LifeUnits();if(lifeUnits){lifeUnits.dispose(gl);lifeUnits=null}return null};
   let avatar=null,rides=null,night=null,festoon=null,cityLife=null,ridePlacement=null,bloom=null,pixels=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
   live.drawTrains=()=>{
+    live.frameStats.trains++;
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
     const m=map.getCanvas();if(c.width!==m.width||c.height!==m.height){c.width=m.width;c.height=m.height}
     c.style.width=m.style.width;c.style.height=m.style.height;
@@ -99,7 +103,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     {const X=S.map.pixel;if(X.enabled&&X.palette!=='none'&&live.PixelPalette){if(!pixels){pixels=new live.PixelPalette();pixels.init(gl)}pixels.render(gl,{palette:X.palette,outline:X.outline,alpha:true})}else if(pixels){pixels.dispose(gl);pixels=null}}   // 레트로: 열차 캔버스도 색표 · 윤곽(투명 바탕은 그대로, 나가면 치운다)
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };
-  map.on('render',()=>live.drawTrains());   // the camera moved or the map redrew: trains follow in the same frame
+  map.on('render',()=>{live.frameStats.mapRenders++;live.drawTrains()});   // the camera moved or the map redrew: trains follow in the same frame
   // walls: again when new building tiles arrive or the view settles somewhere new
   let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();requestAnimationFrame(live.drawTrains)},250)};   // not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it   // city-life: the walkers' streets went with the walkers (city_life.mjs)
   live.wallsNow=()=>{walls.rebuild();requestAnimationFrame(live.drawTrains)};map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
