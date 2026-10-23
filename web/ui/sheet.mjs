@@ -110,7 +110,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   const handsOn=()=>{if(!(touching.size>0||map.isMoving()))return false;
     const m=map.getCenter();cam={lng:m.lng,lat:m.lat};camAt=performance.now();followAt='';return true};   // 놓으면 사람이 둔 자리에서 열차 · 버스로 미끄러져 돌아간다
   function followLoop(ts){followRaf=0;if(!(following||live.rider.ride||followBus)||easing)return;
-    if(!live.rider.ride&&ts-followLast<1000/FOLLOW_FPS-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
+    if(!live.rider.ride&&ts-followLast<Math.max(1000/FOLLOW_FPS,live.frameMs||0)-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
     followLast=ts;if(live.rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
     if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
   animFrame.push(()=>{

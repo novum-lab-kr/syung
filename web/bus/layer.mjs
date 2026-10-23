@@ -270,8 +270,8 @@ export function createBusLayer(options) { return new BusLayer(options); }
 
 class BusLayer {
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
-    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}}) {   // onFollowView(켬): 지도 우선 따라가기 화면 — 아래 시트를 내리고 올린다   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
-    this.map = map; this.phone = phone; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
+    requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}, frameMs = () => 0}) {   // frameMs: 절전일 때 움직임 간격(ms, 본체)   // onFollowView(켬): 지도 우선 따라가기 화면 — 아래 시트를 내리고 올린다   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
+    this.map = map; this.phone = phone; this.frameMs = frameMs; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
     this.fetcher = (...args) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
     this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
@@ -726,7 +726,7 @@ class BusLayer {
     this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,look:this.look,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;
     if(moving&&this.active()&&!this.frameTimer&&!this.frame){
-      this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},1000/(this.phone?24:30));
+      this.frameTimer=setTimeout(()=>{this.frameTimer=0;this.draw();},Math.max(1000/(this.phone?24:30),this.frameMs()||0));
     }
   }
 
