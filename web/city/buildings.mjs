@@ -995,7 +995,7 @@ export class CityBuildings {
   }
   // 스타크래프트 모형 템플릿(이 문맥에 한 번 — 종족이 바뀌면 다시): 꼭짓점 8 float · Uint32 색인
   modelTemplate(gl, C) {
-    const T = cityPart('race').templates(this.P.race);
+    const T = cityPart('race').templates(this.phone ? { ...this.P.race, lod: 'low' } : this.P.race);   // 휴대폰: 낮은 디테일 템플릿(같은 번호)
     if (C.model?.key === T.key) return C.model;
     if (C.model) { gl.deleteBuffer(C.model.vbo); gl.deleteBuffer(C.model.ibo) }
     const vbo = gl.createBuffer(), ibo = gl.createBuffer();

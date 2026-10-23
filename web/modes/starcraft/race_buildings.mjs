@@ -15,7 +15,19 @@ import { BUILDING_MODELS } from './building_models.mjs';
 const NO_AO = 8;   // (mesh.mjs FLAG.NO_AO)
 const LOOK = { wall: KIND.WALL, roof: KIND.ROOF, accent: KIND.PITCHED, glow: KIND.SIGN, metal: KIND.EQUIP, trim: KIND.AWNING };
 // 이보다 작은 땅 · 좁은 직사각형은 보통 건물로, 모형 바닥 높이(m — 원판 두께), 칸 반 변 목표 · 작은 칸 · 큰 건물 칸 기준(m), 빈 칸 비율
-export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, baseM: .08, cellM: 16, smallHalfM: 7, bigHalfM: 11, emptyCell: .12 };
+// 휴대폰(tb.opts.phone): 칸을 크게(cellMPhone — 한 땅에 짓는 채 수를 줄여 그리는 양을 줄인다, 2026-10-23 덕배: 휴대폰 버벅임)
+// tinyHalfM: 휴대폰에서 이보다 좁은 칸은 작은 모형(TINY — 화면에서 몇 픽셀이라 원작 모형 대신 조각 두셋)
+export const RACE_LIMITS = { minAreaM2: 30, minHalfM: 2.5, baseM: .08, cellM: 16, cellMPhone: 26, smallHalfM: 7, bigHalfM: 11, emptyCell: .12, tinyHalfM: 6 };
+
+// 휴대폰 작은 칸의 모형(종족마다 둘): 조각 두셋으로 실루엣만 — 삼각형 30 안팎. 템플릿 번호는 그 종족 모형 목록 뒤에 이어 붙는다(Worker · 메인 같게)
+export const TINY = {
+  terran: [{ id: 'tinyDepot', build(M) { M.box(0, 0, .9, .85, 0, .55, { look: 'accent', slot: 0 }); M.box(.15, 0, .55, .5, .55, .8, { look: 'accent', slot: 1 }) } },
+    { id: 'tinyBunker', build(M) { M.frustum(0, 0, .95, .6, 0, .6, { n: 6, sx: M.aspect, look: 'accent', slot: 0 }); M.box(0, 0, .25, .25, .6, .85, { look: 'accent', slot: 2 }) } }],
+  zerg: [{ id: 'tinyMound', build(M) { M.frustum(0, 0, .95, .45, 0, .7, { n: 6, sx: M.aspect, look: 'accent', slot: 0 }); M.frustum(0, 0, .45, 0, .7, 1.1, { n: 4, look: 'accent', slot: 1 }) } },
+    { id: 'tinyColony', build(M) { M.frustum(0, 0, .9, .7, 0, .35, { n: 6, sx: M.aspect, look: 'accent', slot: 2 }); M.frustum(0, 0, .55, 0, .35, .9, { n: 5, look: 'accent', slot: 0 }) } }],
+  protoss: [{ id: 'tinyPylon', build(M) { M.box(0, 0, .8, .7, 0, .3, { look: 'accent', slot: 0 }); M.frustum(0, 0, .35, 0, .3, 1.3, { n: 4, rot: Math.PI / 4, look: 'glow', slot: 0 }) } },
+    { id: 'tinyShrine', build(M) { M.frustum(0, 0, .9, .6, 0, .45, { n: 6, sx: M.aspect, look: 'accent', slot: 0 }); M.frustum(0, 0, .3, 0, .45, 1, { n: 4, look: 'glow', slot: 1 }) } }],
+};
 
 // 윤곽 안에 드는 직사각형(긴 축 = 감싸는 상자의 긴 축): 보통 건물(거의 네모)은 상자 가운데에서 조금만 줄이면 끝나고,
 // 오목하거나 비뚠 땅은 가운데 몇 자리(상자 3×3 · 가장 깊은 점) × 가로세로 비 몇 가지에서 네 변의 점이 다 윤곽 안인 가장 큰 것
@@ -145,7 +157,8 @@ export function building(tb, ctx, unit) {
   // 넓은 땅은 칸으로 나눠 건물 여러 채(행님 2026-10-22: 땅마다 건물 여러 채) — 칸 반 변이 약 cellM 이 되게, 많아야 4 × 3.
   // 휴대폰 메모리(행님 2026-10-22): 모형은 건물마다 꼭짓점을 쓰지 않고 기록 하나(40 바이트)만 남긴다 — 모양은 종족 템플릿(raceTemplates)을 같이 쓴다
   const mpu = tb.mPerUnit, u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []);
-  const HX = rect.hx * mpu, HY = rect.hy * mpu, nx = Math.max(1, Math.min(4, Math.round(HX / RACE_LIMITS.cellM))), ny = Math.max(1, Math.min(3, Math.round(HY / RACE_LIMITS.cellM)));
+  const cellM = tb.opts?.phone ? RACE_LIMITS.cellMPhone : RACE_LIMITS.cellM;
+  const HX = rect.hx * mpu, HY = rect.hy * mpu, nx = Math.max(1, Math.min(4, Math.round(HX / cellM))), ny = Math.max(1, Math.min(3, Math.round(HY / cellM)));
   const vx = -rect.uy, vy = rect.ux, gap = nx * ny > 1 ? .84 : 1;   // 칸 사이 틈(한 채면 땅 전체)
   const W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
   let built = 0;
@@ -157,8 +170,9 @@ export function building(tb, ctx, unit) {
     if (cell.hy > cell.hx) Object.assign(cell, { hx: cell.hy, hy: cell.hx, ux: vx, uy: vy });   // 긴 축을 x 로
     const area = 4 * cell.hx * cell.hy * mpu * mpu, half = cell.hy * mpu, aspect = cell.hx / cell.hy;
     const pool = half < RACE_LIMITS.smallHalfM ? list.filter(m => m.fit?.small) : nx * ny > 1 ? list.filter(m => !m.fit?.big || half >= RACE_LIMITS.bigHalfM) : list;
-    const model = pickModel(pool.length ? pool : list, { area, aspect, tall: false, r: unit(seed, 499) }); if (!model) continue;
-    const t = templateIndex(list.indexOf(model), aspect), hx = cell.hx * mpu, hy = cell.hy * mpu;
+    const tiny = tb.opts?.phone && half < RACE_LIMITS.tinyHalfM && TINY[R.kind]?.length;   // 휴대폰 작은 칸: 작은 모형(그리는 양 — 2026-10-23)
+    const model = tiny ? null : pickModel(pool.length ? pool : list, { area, aspect, tall: false, r: unit(seed, 499) }); if (!tiny && !model) continue;
+    const t = tiny ? templateIndex(list.length + Math.floor(unit(seed, 496) * TINY[R.kind].length), aspect) : templateIndex(list.indexOf(model), aspect), hx = cell.hx * mpu, hy = cell.hy * mpu;
     // 기록: 템플릿 번호, 자리(타일 메르카토르) · 바닥 높이 · 긴 축, 반 길이 · 반 폭 · 높이 단위(m), 재질 · 지붕 색 · 높이(10 cm), 건물 바이트(씨앗 · 종류 · 그림자 없음)
     recs.push([t, cell.cx * u, cell.cy * u, ctx.minH, cell.ux, cell.uy, hx, hy, hy, ctx.mat, ctx.roofSlot, Hq & 255, Hq >>> 8, seed & 255, (seed >>> 8) & 255, b[2], b[3] | NO_AO]);
     const top = ctx.minH + T.tops[t] * hy, c = (a, d) => [(cell.cx + cell.ux * cell.hx * a + vx * cell.hy * d) * u, (cell.cy + cell.uy * cell.hx * a + vy * cell.hy * d) * u];
@@ -179,14 +193,16 @@ export const modelList = kind => BUILDING_MODELS[kind] || EXTRA_MODELS.get(kind)
 export const templateIndex = (mi, aspect) => { let bi = 0, bd = Infinity; BUCKETS.forEach((b, k) => { const d = Math.abs(Math.log(aspect / b)); if (d < bd) { bd = d; bi = k } }); return mi * BUCKETS.length + bi };
 const tplHash = (h, k) => ((Math.imul(h ^ Math.imul(k + 1, 0x9e3779b1), 0x85ebca6b) >>> 8) / 16777216);
 export function raceTemplates(R) {
-  const key = R.kind + '|' + JSON.stringify(R.pad || null); let T = TEMPLATES.get(key); if (T) return T;
+  // R.lod 'low'(휴대폰 — buildings.mjs modelTemplate): 둥근 조각 면 6 · 돔 2단, 모형은 M.low 로 작은 장식을 뺄 수 있다. 템플릿 번호(모형 목록 · 차례)는 lod 와 상관없이 같다(Worker 기록이 맞게)
+  const key = R.kind + '|' + JSON.stringify(R.pad || null) + '|' + (R.lod || ''); let T = TEMPLATES.get(key); if (T) return T;
   const list = modelList(R.kind), verts = [], idx = [], ranges = [], tops = [];
-  list.forEach((model, mi) => BUCKETS.forEach((bk, bi) => {
+  [...list, ...(TINY[R.kind] || [])].forEach((model, mi) => BUCKETS.forEach((bk, bi) => {
     const HX = bk * TPL_S, HY = TPL_S, V = [], nrm = [0, 0, 1];
     const W = { n: 0, kind: 0, w: [0, 0, 0, 0], b: [0, 0, 0, 0], m: [0, 0, 0, 0], normal(x, y, z) { nrm[0] = x; nrm[1] = y; nrm[2] = z }, v(x, y, z, zb) { V.push([x, y, z, ...nrm, zb, this.kind, this.m[0]]); return this.n++ } };
     const ch = { walls: [], lo: [], hi: [] }, tb = { mPerUnit: 1, unit: 1, W, extend() {} };
     const ctx = { minH: -RACE_LIMITS.baseM, A: 4 * HX * HY, H: 10, seed: (0x5bd1e995 * (mi + 1) + bi * 977) >>> 0, chunk: ch, mat: 0, roofSlot: 0 };
     const M = modelBuilder(tb, ctx, tplHash, { cx: 0, cy: 0, hx: HX, hy: HY, ux: 1, uy: 0 });
+    if (R.lod === 'low') { M.low = true; const fr = M.frustum, dm = M.dome; M.frustum = (x, y, r0, r1, zA, zB, o = {}) => fr(x, y, r0, r1, zA, zB, { ...o, n: Math.min(o.n || 8, 6) }); M.dome = (x, y, r, zA, h, o = {}) => dm(x, y, r, zA, h, { ...o, n: Math.min(o.n || 10, 6), rings: Math.min(o.rings || 4, 2) }) }
     if (R.pad) padOf(M, R.pad, tplHash(ctx.seed, 498));
     try { model.build(M) } catch (e) { console.warn('race template', R.kind, model.id, e) }
     const base = verts.length / 8, i0 = idx.length; let zmax = 0;
