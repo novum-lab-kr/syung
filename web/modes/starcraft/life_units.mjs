@@ -24,6 +24,18 @@ const FS = `#version 300 es
 precision highp float;in vec3 v_n;flat in vec3 v_c;uniform vec3 u_light;uniform vec2 u_lit;out vec4 o;
 void main(){float l=length(v_n),d=l>1e-6?max(dot(v_n/l,u_light),0.):0.;o=vec4(clamp(v_c*(u_lit.x+u_lit.y*(.35+.65*d)),0.,1.),1.);}`;
 
+// 화면에서 이보다 작으면(사람 키 · 차 길이, px) 자세한 모양 대신 대표색 상자 하나(2026-10-23 덕배: 발열 · 배터리 — 몇 픽셀에 300~1,000 삼각형이던 것)
+export const TINY_PX = { person: 7, car: 15 };   // (사람은 최소 6 px · 차 14 px 로 그린다 — 그 최소 크기로 줄어든 먼 줌에서만 상자)
+const BOX = '#box';
+function boxTriangles(shape, top, low, out) {
+  const x = shape.len / 2 * .85, y = .38, z = 1.05, zm = z * .45;
+  const f = (a, b, c, d, n, rgb) => { for (const p of [a, b, c, a, c, d]) out.push(...p, ...n, ...rgb, 0, 0, 0) };
+  for (const [z0, z1, rgb] of [[0, zm, low], [zm, z, top]]) {   // 아래(다리 · 몸통 아래)와 위 두 색
+    f([-x, -y, z0], [x, -y, z0], [x, -y, z1], [-x, -y, z1], [0, -1, 0], rgb); f([x, y, z0], [-x, y, z0], [-x, y, z1], [x, y, z1], [0, 1, 0], rgb);
+    f([x, -y, z0], [x, y, z0], [x, y, z1], [x, -y, z1], [1, 0, 0], rgb); f([-x, y, z0], [-x, -y, z0], [-x, -y, z1], [-x, y, z1], [-1, 0, 0], rgb);
+  }
+  f([-x, -y, z], [x, -y, z], [x, y, z], [-x, y, z], [0, 0, 1], top);
+}
 export class LifeUnits {
   init(gl) {
     if (this.p) return;
@@ -34,33 +46,34 @@ export class LifeUnits {
   }
   mesh(gl, key) {
     let m = this.meshes.get(key); if (m) return m;
-    const shape = UNIT_SHAPES[key], pal = shape.palette.map(hexRGB), data = [];
-    for (const t of shapeTriangles(shape)) data.push(...t.p, ...t.n, ...(t.color === LINE ? [-1, -1, -1] : pal[t.color]), t.leg, ...t.pivot);
+    const box = key.endsWith(BOX), shape = UNIT_SHAPES[box ? key.slice(0, -BOX.length) : key], pal = shape.palette.map(hexRGB), data = [];
+    if (box) boxTriangles(shape, pal[0], pal[1] || pal[0], data);   // 아주 작게 보일 때: 위 · 아래 두 색 상자(18 삼각형)
+    else for (const t of shapeTriangles(shape)) data.push(...t.p, ...t.n, ...(t.color === LINE ? [-1, -1, -1] : pal[t.color]), t.leg, ...t.pivot);
     const f = new Float32Array(data), b = gl.createBuffer(), va = gl.createVertexArray(), A = this.attr;
     gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, f, gl.STATIC_DRAW); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b);
     for (const [loc, size, off] of [[A.a_p, 3, 0], [A.a_n, 3, 3], [A.a_c, 3, 6], [A.a_leg, 1, 9], [A.a_pivot, 2, 10]]) if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, VERT * 4, off * 4) }
     gl.bindVertexArray(null); m = { b, va, n: f.length / VERT }; this.meshes.set(key, m); return m;
   }
   push(key, x, y, yaw, s, go, seed) {
-    if (!UNIT_SHAPES[key]) return;
+    if (!UNIT_SHAPES[key.endsWith(BOX) ? key.slice(0, -BOX.length) : key]) return;
     let l = this.lists.get(key); if (!l) this.lists.set(key, l = { inst: new Float32Array(INST * 64), n: 0 });
     if ((l.n + 1) * INST > l.inst.length) { const g = new Float32Array(l.inst.length * 2); g.set(l.inst); l.inst = g }
     l.inst.set([x, y, yaw, s, go, seed, 0, 0], l.n++ * INST);
   }
   // 사람 · 차 자리에서 유닛 목록 만들고 그리기. U: 모드 설정 city.life.units {people: [이름…], cars: [이름…], personM, carM}
-  draw(gl, MT, mu, { people, peopleN = 0, cars, carsN = 0, carList = null, units: U, personH = 1.7, carLenM = 4.3, now = 0, light = [-.5, .5, .7], lit = [.64, .36], line = [.5, .5, .5] }) {
+  draw(gl, MT, mu, { people, peopleN = 0, cars, carsN = 0, carList = null, units: U, personH = 1.7, carLenM = 4.3, mpp = 0, now = 0, light = [-.5, .5, .7], lit = [.64, .36], line = [.5, .5, .5] }) {
     this.init(gl); for (const l of this.lists.values()) l.n = 0;
     const P = U.people || [], C = U.cars || [];
     if (P.length) for (let i = 0; i < peopleN; i++) {
       const o = i * 14, k = P[Math.abs(Math.round(people[o + 10] * 7 + people[o + 6] * 3)) % P.length], sh = UNIT_SHAPES[k]; if (!sh) continue;
       const s = people[o + 7] * personH * (U.personScale ?? 1) / 1.25;   // 유닛 키(z 약 1.25) = 사람 키
       const d = people[o + 11] || 1;   // 걷는 쪽(4 · 5 는 길의 정방향 — life.mjs stepPeople)
-      this.push(k, people[o], people[o + 1], Math.atan2(people[o + 5] * d, people[o + 4] * d), s, people[o + 3], (i * .618) % 1);
+      this.push(mpp && s * 1.25 / mpp < TINY_PX.person ? k + BOX : k, people[o], people[o + 1], Math.atan2(people[o + 5] * d, people[o + 4] * d), s, people[o + 3], (i * .618) % 1);
     }
     if (C.length) for (let i = 0; i < carsN; i++) {
       const o = i * 10, seed = carList?.[i]?.seed ?? ((i * .618) % 1), k = C[Math.min(C.length - 1, Math.floor(seed * C.length))], sh = UNIT_SHAPES[k]; if (!sh) continue;   // 차마다 고정(달리는 동안 모양이 안 바뀌게)
       const s = cars[o + 7] * carLenM * (U.carScale ?? 1) / sh.len;   // 유닛 길이 = 차 길이
-      this.push(k, cars[o], cars[o + 1], cars[o + 2], s, 1, (i * .618) % 1);
+      this.push(mpp && s * sh.len / mpp < TINY_PX.car ? k + BOX : k, cars[o], cars[o + 1], cars[o + 2], s, 1, (i * .618) % 1);
     }
     const runs = [...this.lists].filter(([, l]) => l.n); if (!runs.length) return 0;
     const Uu = this.uni; gl.useProgram(this.p);
@@ -73,7 +86,7 @@ export class LifeUnits {
       gl.bufferSubData(gl.ARRAY_BUFFER, off * 4, l.inst, 0, l.n * INST);
       const m = this.mesh(gl, key); gl.bindVertexArray(m.va); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
       for (const [n, k] of [['i_a', 0], ['i_b', 4]]) { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, INST * 4, (off + k) * 4); gl.vertexAttribDivisor(loc, 1) } }
-      gl.uniform1f(Uu.u_fly, UNIT_SHAPES[key].fly ? .9 : 0);
+      gl.uniform1f(Uu.u_fly, UNIT_SHAPES[key.endsWith(BOX) ? key.slice(0, -BOX.length) : key].fly ? .9 : 0);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n); drawn += l.n; off += l.n * INST;
       for (const n of ['i_a', 'i_b']) { const loc = this.attr[n]; if (loc >= 0) gl.vertexAttribDivisor(loc, 0) }
     }

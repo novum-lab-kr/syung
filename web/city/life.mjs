@@ -635,7 +635,7 @@ export class CityLife {
     else this.people.list.length = 0;
     // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mjs)
     if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
-      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), now: reducedMotion ? 0 : now, light, lit });
+      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), mpp: MPP(zoom), now: reducedMotion ? 0 : now, light, lit });
       if (!reducedMotion && stats.units) this._anim = true }
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

@@ -216,15 +216,16 @@ const VS_MODEL = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 a_t;layout(location=1) in vec3 a_tn;layout(location=2) in float a_tb;layout(location=3) in float a_ks;
 layout(location=4) in vec4 i_a;layout(location=5) in vec4 i_b;layout(location=6) in vec4 i_c;layout(location=7) in vec4 i_d;
-uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec2 u_detail;
+uniform mat4 u_matrix;uniform float u_mpu;uniform vec2 u_wo;uniform float u_S;uniform float u_grow;uniform vec2 u_detail;uniform float u_ztop;   // u_ztop > 0: 가림 상자(깊이 패스) — 상자 높이를 그 템플릿 꼭대기로
 out vec3 v_n;out float v_z;out float v_u;out vec2 v_wm;flat out vec4 v_wall;flat out vec4 v_bld;flat out vec4 v_misc;flat out float v_kind;
 void main(){
   vec2 U=vec2(i_a.w,i_b.x),V=vec2(-U.y,U.x);float HX=i_b.y,HY=i_b.z,s=i_b.w;
-  float kind=floor(a_ks/16.0+0.001),slot=a_ks-kind*16.0,zb=i_a.z+a_tb*s,z=i_a.z+a_t.z*s;
+  vec3 at=a_t;if(u_ztop>0.0)at.z*=u_ztop;
+  float kind=floor(a_ks/16.0+0.001),slot=a_ks-kind*16.0,zb=i_a.z+a_tb*s,z=i_a.z+at.z*s;
   if(kind==3.0)z=zb+(z-zb)*u_detail.x;   // 작은 기계 · 테두리 · 빛은 보통 건물처럼 가까이서 자란다
   if(kind==5.0||kind==7.0)z=zb+(z-zb)*u_detail.y;
   z*=u_grow;
-  vec2 xy=i_a.xy+(U*(a_t.x*HX)+V*(a_t.y*HY))*u_mpu;
+  vec2 xy=i_a.xy+(U*(at.x*HX)+V*(at.y*HY))*u_mpu;
   gl_Position=u_matrix*vec4(xy,z*u_mpu,1.0);
   vec3 n=normalize(vec3(a_tn.x/HX,a_tn.y/HY,a_tn.z/s));
   v_n=vec3(U*n.x+V*n.y,n.z);v_z=z;v_u=kind==1.0?0.0:zb;v_wm=u_wo+xy*u_S;v_wall=vec4(0.0);v_bld=i_d;
@@ -998,10 +999,17 @@ export class CityBuildings {
     const T = cityPart('race').templates(this.phone ? { ...this.P.race, lod: 'low' } : this.P.race);   // 휴대폰: 낮은 디테일 템플릿(같은 번호)
     if (C.model?.key === T.key) return C.model;
     if (C.model) { gl.deleteBuffer(C.model.vbo); gl.deleteBuffer(C.model.ibo) }
+    // 끝에 가림 상자 하나(깊이 패스 — 열차 층의 가림에만 쓰여 보이지 않는다): 칸 ±1, 높이 0..1(그리기 때 u_ztop 으로 그 템플릿 꼭대기까지). 옆 넷 + 윗면 10 삼각형
+    const nb = T.verts.length / 8, bv = [], bi = [], P4 = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    for (const z of [0, 1]) for (const [x, y] of P4) bv.push(x, y, z, 0, 0, 1, 0, 16);
+    for (let k = 0; k < 4; k++) { const a = k, b = (k + 1) % 4; bi.push(a, b, b + 4, a, b + 4, a + 4) }
+    bi.push(4, 5, 6, 4, 6, 7);
+    const verts = new Float32Array(T.verts.length + bv.length), idx = new Uint32Array(T.idx.length + bi.length);
+    verts.set(T.verts); verts.set(bv, T.verts.length); idx.set(T.idx); idx.set(bi.map(i => i + nb), T.idx.length);
     const vbo = gl.createBuffer(), ibo = gl.createBuffer();
-    gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, T.verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, T.idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    return (C.model = { key: T.key, vbo, ibo, ranges: T.ranges, bytes: T.verts.byteLength + T.idx.byteLength });
+    gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return (C.model = { key: T.key, vbo, ibo, ranges: T.ranges, tops: T.tops, box: [T.idx.length, bi.length], bytes: verts.byteLength + idx.byteLength });
   }
   // 한 타일의 모형 기록: 템플릿 점(0~3) + 기록(4~7, 한 기록에 한 번)
   uploadModels(gl, C, mm) {
@@ -1018,7 +1026,9 @@ export class CityBuildings {
   drawModels(gl, C, depthOnly, glass, zoom, list) {
     const prog = depthOnly ? (C.modelDepth ||= compile(gl, VS_MODEL, FS_DEPTH)) : (C.modelColor ||= compile(gl, VS_MODEL, FS)), u = prog.u;
     const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
-    gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S);
+    gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S); gl.uniform1f(u.u_ztop, 0);
+    // 깊이 패스(열차 층의 가림)는 자세한 모양 대신 칸을 감싸는 상자로(2026-10-23 덕배: 발열 · 배터리 — 휴대폰 스타는 1초 30번 약 70만 삼각형이던 것). 색 그리기는 그대로
+    const boxDepth = depthOnly && !!list[0]?.g.tpl.box;
     let draws = 0;
     for (const { g, m, M, grow } of list) {
       gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
@@ -1027,10 +1037,11 @@ export class CityBuildings {
         const r = g.tpl.ranges[t]; if (!r || !r[1]) continue; const o = first * MODEL_STRIDE;
         gl.vertexAttribPointer(4, 4, gl.FLOAT, false, MODEL_STRIDE, o); gl.vertexAttribPointer(5, 4, gl.FLOAT, false, MODEL_STRIDE, o + 16);
         gl.vertexAttribPointer(6, 4, gl.UNSIGNED_BYTE, false, MODEL_STRIDE, o + 32); gl.vertexAttribPointer(7, 4, gl.UNSIGNED_BYTE, false, MODEL_STRIDE, o + 36);
+        if (boxDepth) { gl.uniform1f(u.u_ztop, Math.max(.01, g.tpl.tops[t] || 1)); if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, g.tpl.box[1], gl.UNSIGNED_INT, g.tpl.box[0] * 4, count); draws++; continue }
         if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, r[1], gl.UNSIGNED_INT, r[0] * 4, count); draws++;
       }
     }
-    gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindVertexArray(null); if (cull) gl.enable(gl.CULL_FACE);
+    gl.uniform1f(u.u_ztop, 0); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindVertexArray(null); if (cull) gl.enable(gl.CULL_FACE);
     const P = depthOnly ? C.depth : C.color; gl.useProgram(P.p);
     this.stats.modelDraws = draws;
     return draws;
