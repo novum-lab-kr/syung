@@ -517,8 +517,9 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
   map._render=(...a)=>{const t=performance.now();if(last)iv.push(t-last);last=t;const x=r(...a);js.push(performance.now()-t);return x};
   animFrame[animFrame.indexOf(rideFrame)]=()=>{const t=performance.now();rideFrame();if(rider.ride)cam.push(performance.now()-t)};
   const ms=a=>a.length?Math.max(...a).toFixed(0):'-',avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):'-';
-  setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;
-    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x(그림 ${map.getPixelRatio()}x) ${innerWidth}×${innerHeight}${cityBuildings?(i=>`\n건물 지음 ${i.built}개 · 짓기 ${(i.buildMs/1000).toFixed(1)} s · 들고 있는 것 ${i.ready}타일 ${(i.bytes/1e6).toFixed(0)} MB · 미리 짓기 ${prebuildWant()?'켬':'끔'}`)(cityBuildings.info()):''}`;   // (짓기: Worker 에 맡긴 때부터 받을 때까지의 합 — 발열 비교용, 덕배 2026-10-12)
+  let f0={...frameStats};   // 열차 층 · 이름표 · 이름표 조회 1초당(2026-10-23 덕배: 폰에서 발열 · 배터리 점검)
+  setInterval(()=>{const now=performance.now(),s=now-shown;shown=now;const f1={...frameStats},per=k=>((f1[k]-f0[k])*1000/s).toFixed(0);f0=f1;
+    o.textContent=`${rider.ride?'탑승 중':'지도'} ${(iv.length*1000/s).toFixed(0)} fps · 늦은 프레임 ${iv.filter(x=>x>20).length} / ${iv.filter(x=>x>34).length} · 가장 긴 간격 ${ms(iv)} ms\n지도 JS 평균 ${avg(js)} · 최장 ${ms(js)} ms · 카메라 ${avg(cam)} / ${ms(cam)} ms · ${devicePixelRatio}x(그림 ${map.getPixelRatio()}x) ${innerWidth}×${innerHeight}${cityBuildings?(i=>`\n건물 지음 ${i.built}개 · 짓기 ${(i.buildMs/1000).toFixed(1)} s · 들고 있는 것 ${i.ready}타일 ${(i.bytes/1e6).toFixed(0)} MB · 미리 짓기 ${prebuildWant()?'켬':'끔'}`)(cityBuildings.info()):''}\n열차 층 ${per('trains')} · 이름표 ${per('signs')} · 이름표 조회 ${per('signQueries')} 번/초`;   // (짓기: Worker 에 맡긴 때부터 받을 때까지의 합 — 발열 비교용, 덕배 2026-10-12)
     iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
