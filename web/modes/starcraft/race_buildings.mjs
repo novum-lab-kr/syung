@@ -158,7 +158,9 @@ export function building(tb, ctx, unit) {
   // 휴대폰 메모리(행님 2026-10-22): 모형은 건물마다 꼭짓점을 쓰지 않고 기록 하나(40 바이트)만 남긴다 — 모양은 종족 템플릿(raceTemplates)을 같이 쓴다
   const mpu = tb.mPerUnit, u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []);
   const cellM = tb.opts?.phone ? RACE_LIMITS.cellMPhone : RACE_LIMITS.cellM;
-  const HX = rect.hx * mpu, HY = rect.hy * mpu, nx = Math.max(1, Math.min(4, Math.round(HX / cellM))), ny = Math.max(1, Math.min(3, Math.round(HY / cellM)));
+  const HX = rect.hx * mpu, HY = rect.hy * mpu, thin = tb.opts?.phone && HY < RACE_LIMITS.tinyHalfM && TINY[R.kind]?.length;
+  // 휴대폰의 좁은 땅(작은 모형): 길게 늘이지 않고 땅을 따라 나란히(칸 가로세로 비 약 1.6, 많아야 6) — 하나를 늘이면 긴 막대 · 마름모가 됐다
+  const nx = thin ? Math.max(1, Math.min(6, Math.round(HX / (HY * 1.6)))) : Math.max(1, Math.min(4, Math.round(HX / cellM))), ny = thin ? 1 : Math.max(1, Math.min(3, Math.round(HY / cellM)));
   const vx = -rect.uy, vy = rect.ux, gap = nx * ny > 1 ? .84 : 1;   // 칸 사이 틈(한 채면 땅 전체)
   const W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
   let built = 0;
