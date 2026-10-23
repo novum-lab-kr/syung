@@ -8,12 +8,19 @@ const WALL = { look: 'wall' }, ROOF = { look: 'roof' };
 const F = .32;   // 한 층 3.2 m
 const fit = (weight, o = {}) => ({ weight, tall: false, minArea: 0, maxArea: Infinity, maxAspect: Infinity, ...o });
 // 옥상 둘레 난간(얇은 띠 넷)
-function rim(M, z, h, o) { for (const [x, y, hx, hy] of [[0, -.985, 1, .015], [0, .985, 1, .015], [-.985, 0, .015 / M.aspect, 1], [.985, 0, .015 / M.aspect, 1]]) M.box(x, y, hx, hy, z, z + h, o) }
+function rim(M, z, h, o) { if (M.low) return; for (const [x, y, hx, hy] of [[0, -.985, 1, .015], [0, .985, 1, .015], [-.985, 0, .015 / M.aspect, 1], [.985, 0, .015 / M.aspect, 1]]) M.box(x, y, hx, hy, z, z + h, o) }
 const bays = (M, per) => Math.max(1, Math.round(M.aspect * per));
 // 창 난 벽: 벽 상자 앞에 창 상자를 덧대면 두 면이 가까워 멀리서 깊이가 깜박였다(맥 캡처 — 긁힌 점박이). 대신 안쪽에 유리 몸통을 두고
 // 바깥에 벽 기둥 · 층 띠만 세운다 — 창 자리에는 유리만, 벽 자리에는 벽만 보여 겹치는 면이 없다.
 // o: { zA, zB 벽 높이, nL 긴 면 창 수, nS 짧은 면 창 수, w 창 폭 비율, rows [[z0, z1] …] 창 높이(없으면 zA~zB 한 줄), sides 긴 면 [-1, 1] · ends 짧은 면 [-1, 1] }
 function facade(M, { zA = 0, zB, nL, nS, w = .5, rows = null, glass = A(2), wall = WALL, sides = [-1, 1], ends = [-1, 1] }) {
+  if (M.low) {   // 휴대폰(템플릿 lod low): 벽 상자 하나 + 면마다 창 기둥 몇 개(벽 앞으로 살짝, 층은 안 나눔) — 점이 열 배쯤 적다
+    M.box(0, 0, 1, 1, zA, zB, wall); const R0 = (rows || [[zA, zB]]), z0 = R0[R0.length > 1 ? 1 : 0][0], z1 = R0[R0.length - 1][1], o = .012;
+    const nl = Math.min(3, nL), ns = Math.min(1, nS);
+    for (const y of sides) for (let i = 0; i < nl; i++) M.box(-1 + (2 * i + 1) / nl, y * (1 + o), w / nl * .8, o, z0, z1, glass);
+    for (const x of ends) for (let i = 0; i < ns; i++) M.box(x * (1 + o / M.aspect), 0, o / M.aspect, w * .5, z0, z1, glass);
+    return;
+  }
   const tL = .1, tS = .1 / M.aspect;   // 벽 두께(긴 면은 y, 짧은 면은 x 로 — 같은 m)
   M.box(0, 0, 1 - tS * .5, 1 - tL * .5, zA, zB, glass);   // 유리 몸통
   const R = rows || [[zA, zB]], bands = [[zA, R[0][0]], ...R.slice(0, -1).map((r, i) => [r[1], R[i + 1][0]]), [R[R.length - 1][1], zB]].filter(([a, b]) => b - a > .003);
@@ -68,6 +75,7 @@ function dutch(gable, floors) {
     M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], h, [[-.97, 0], [.97, 0], [.97, 0], [-.97, 0]], h + rise, { ...ROOF, top: false });   // 긴 축 용마루의 가파른 지붕
     for (const sx of [-1, 1]) {   // 앞뒤 끝(짧은 면 x = ±1)의 박공: 벽색, 지붕보다 조금 높게
       const x = sx * .99, t = .02 / M.aspect;
+      if (M.low) { M.loft([[x - t, -1], [x + t, -1], [x + t, 1], [x - t, 1]], h, gable === 'spout' ? [[x - t, 0], [x + t, 0], [x + t, 0], [x - t, 0]] : [[x - t, -.4], [x + t, -.4], [x + t, .4], [x - t, .4]], h + rise * 1.05, { ...WALL, top: gable !== 'spout' }); continue }   // 휴대폰: 박공 한 장(뾰족 · 잘린 꼴만)
       if (gable === 'step') for (let k = 0; k < 4; k++) M.box(x, 0, t, 1 - k * .24, h + k * rise / 4, h + (k + 1) * rise / 4 + .03, WALL);
       else if (gable === 'bell') for (let k = 0; k < 6; k++) M.box(x, 0, t, .58 + .38 * Math.cos(k / 5 * Math.PI / 2) - k * .07, h + k * rise / 6, h + (k + 1) * rise / 6 + .03, WALL);
       else if (gable === 'neck') { M.box(x, 0, t, .95, h, h + rise * .35, WALL); M.box(x, 0, t, .4, h + rise * .35, h + rise * 1.08, WALL); M.box(x, 0, t * 1.4, .46, h + rise * 1.08, h + rise * 1.15, A(1)) }
@@ -80,21 +88,23 @@ const NETHERLANDS = [2, 3, 4, 5].flatMap(f => ['step', 'bell', 'neck', 'spout'].
 
 // ── 파리(오스만): 크림 석조 5~7층, 1층 가게(어두운 유리 · 차양), 2층 · 꼭대기 아래층 철제 발코니 띠, 회청 아연 망사르드 + 지붕창 + 굴뚝
 // 벽에서 바깥으로 나온 띠(처마 · 발코니): 벽 면과 같은 면에 겹치면 깜박이니 늘 벽 앞에(y 1.01~1.05)
-function band(M, z, h, out, o) { for (const y of [-1, 1]) M.box(0, y * (1 + out / 2), 1 + out / M.aspect, out / 2, z, z + h, o); for (const x of [-1, 1]) M.box(x * (1 + out / 2 / M.aspect), 0, out / 2 / M.aspect, 1, z, z + h, o) }
+function band(M, z, h, out, o) { if (M.low) return; for (const y of [-1, 1]) M.box(0, y * (1 + out / 2), 1 + out / M.aspect, out / 2, z, z + h, o); for (const x of [-1, 1]) M.box(x * (1 + out / 2 / M.aspect), 0, out / 2 / M.aspect, 1, z, z + h, o) }
 // 행님 2026-10-22 "파리가 좀..": 칸이 떨어진 가는 탑 · 층을 꿰는 검은 줄 창(창살처럼) · 7층이 어색했다 — 이어진 블록 벽, 층마다 나뉜 프랑스 창, 5~6층 고른 높이, 처마 · 철제 발코니
 function haussmann(floors, corner, style = 'classic') {
   return { id: `haus${floors}${style}${corner ? 'c' : ''}`, floors, fit: fit(corner ? .6 : 3, corner ? { minArea: 300 } : {}), build(M) {
     const h = F * floors + .12, rise = .36, k = .88;
-    const rows = [[.03, .3], ...Array.from({ length: floors - 1 }, (_, f) => [.42 + f * F, .42 + f * F + .2])];   // 1층 가게 유리 + 층마다 키 큰 프랑스 창
-    facade(M, { zB: h, nL: bays(M, 1.8), nS: 2, w: .46, rows });
+    const sill = f => .42 + f * F, nW = bays(M, 1.8);   // 위층 창 밑(층 f, 0 = 2층) · 창 칸 수(지붕창도 같은 칸에 — 어긋나 보였다, 맥 캡처)
+    const rows = [[.03, .3], ...Array.from({ length: floors - 1 }, (_, f) => [sill(f), sill(f) + .2])];   // 1층 가게 유리 + 층마다 키 큰 프랑스 창
+    facade(M, { zB: h, nL: nW, nS: 2, w: .46, rows });
     band(M, .34, .03, .03, WALL);   // 1층 위 돌 띠
-    if (style === 'classic') { band(M, .42 + .2, .015, .05, A(1)); band(M, .42 + (floors - 2) * F + .2, .015, .05, A(1)) }   // 철제 발코니(2층 · 꼭대기 아래층)
-    if (style === 'balcony') for (let f = 0; f < floors - 1; f++) band(M, .42 + f * F + .2, .012, .04, A(1));   // 층마다 철제 발코니
+    // 철제 발코니는 창 밑(창 머리에 두면 창 줄 사이를 가로질러 다음 층 창과 어긋나 보였다 — 맥 캡처)
+    if (style === 'classic') { band(M, sill(0) - .025, .02, .05, A(1)); band(M, sill(floors - 2) - .025, .02, .05, A(1)) }   // 2층 · 꼭대기층
+    if (style === 'balcony') for (let f = 0; f < floors - 1; f++) band(M, sill(f) - .022, .016, .04, A(1));   // 층마다
     if (style === 'plain') band(M, .42 + F - .1, .03, .02, WALL);   // 수수한 꼴: 층 사이 돌 띠 하나
     band(M, h - .03, .045, .05, WALL);   // 처마(코니스)
     M.loft([[-1, -1], [1, -1], [1, 1], [-1, 1]], h + .015, [[-k, -k], [k, -k], [k, k], [-k, k]], h + rise, { ...(style === 'plain' ? ROOF : A(0)), top: true });   // 망사르드(수수한 꼴은 건물마다 다른 지붕색)
-    const n = bays(M, 1.4); for (let i = 0; i < n; i++) for (const y of [-.95, .95]) M.box(-1 + (2 * i + 1) / n, y, .2 / n, .04, h + .08, h + .26, WALL);   // 지붕창
-    for (const x of [-.55, .1, .65]) M.box(x, 0, .04, .1, h + rise, h + rise + .16, ROOF);   // 굴뚝 줄
+    for (let i = 0; i < nW; i++) for (const y of M.low ? [-.955] : [-.955, .955]) M.box(-1 + (2 * i + 1) / nW, y, .2 / nW, .04, h + .08, h + .26, WALL);   // 지붕창: 아래 창 줄과 같은 칸(휴대폰은 앞쪽만)
+    for (const x of M.low ? [.1] : [-.55, .1, .65]) M.box(x, 0, .04, .1, h + rise, h + rise + .16, ROOF);   // 굴뚝 줄(휴대폰은 하나)
     if (corner) { const r = .28; M.frustum(.8, -.72, r, r, h - F, h + .1, { n: 10, ...WALL }); M.dome(.8, -.72, r, h + .1, .3, { n: 10, rings: 3, ...A(0) }) }   // 모서리 돔 탑(드물게)
   } };
 }
