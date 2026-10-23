@@ -1,4 +1,5 @@
 // 프랑스(파리) 도시 색 · 창 · 지붕 덧쓰기: 크림 · 꿀색 석회석 벽, 키 큰 창, 아연 회청 지붕, 1층 가게는 짙은 초록 · 와인, 연한 돌길 · 플라타너스 · 센강 물.
+// 벽색 팔레트 12가지 — 재질 묶음마다 다른 세 색, 건물 종류마다 다른 네 색(덕배 2026-10-23: 그 나라 건물색이 하나일 리 없다).
 // 건물 윤곽 · 높이는 기본 팩 그대로. 8~45 m 건물은 거의 다 망사르드 지붕 · 지붕창 · 굴뚝 · 철제 발코니 띠, 드물게 돔 기념관 · 작은 에펠탑(부품 'nation' — web/modes/nations/parts.mjs).
 // accent 3색 = 나라 모형의 [특색, 흰 칠 · 철, 유리 · 검은 것]. 밤은 같은 색 × 0.38. (만든 법: 기본 팩 구조를 따라 색만 바꾸는 생성기 — 2026-10-22, 시안 look3d '파리')
 export const PARIS_DELTA = {
@@ -96,15 +97,15 @@ export const PARIS_DELTA = {
    "wall": {
     "light": [
      "#E8DCC4",
-     "#DDD0B5",
-     "#F0E6D2",
-     "#CFC2A6"
+     "#BFB4A0",
+     "#CFC2A6",
+     "#C8BBA0"
     ],
     "dark": [
      "#58544A",
-     "#544F45",
-     "#5B5750",
-     "#4F4A3F"
+     "#49443D",
+     "#4F4A3F",
+     "#4C473D"
     ]
    },
    "roof": {
@@ -157,16 +158,16 @@ export const PARIS_DELTA = {
   "apartment": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#F0E6D2",
-     "#DDD0B5",
-     "#E3D3B6"
+     "#EDE4D1",
+     "#F2EADB",
+     "#D6CAB0",
+     "#F0E6D2"
     ],
     "dark": [
-     "#58544A",
-     "#5B5750",
-     "#544F45",
-     "#565045"
+     "#5A574F",
+     "#5C5953",
+     "#514D43",
+     "#5B5750"
     ]
    },
    "roof": {
@@ -217,24 +218,24 @@ export const PARIS_DELTA = {
    "bayM": 3.2,
    "groundFloor": {
     "colors": {
-     "light": "#E8DCC4",
-     "dark": "#58544A"
+     "light": "#EDE4D1",
+     "dark": "#5A574F"
     }
    }
   },
   "shop": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#2F4A3E",
-     "#6E2E36",
-     "#DDD0B5"
+     "#E3D3B6",
+     "#D9C9A6",
+     "#DDD0B5",
+     "#E6D8BC"
     ],
     "dark": [
-     "#58544A",
-     "#121C18",
-     "#2A1115",
-     "#544F45"
+     "#565045",
+     "#524C3F",
+     "#544F45",
+     "#575247"
     ]
    },
    "roof": {
@@ -287,16 +288,16 @@ export const PARIS_DELTA = {
   "office": {
    "wall": {
     "light": [
-     "#E3D8C2",
-     "#D6CAB0",
-     "#EDE4D1",
-     "#CFC2A6"
+     "#BFB4A0",
+     "#CFC2A6",
+     "#C8BBA0",
+     "#E8DCC4"
     ],
     "dark": [
-     "#56524A",
-     "#514D43",
-     "#5A574F",
-     "#4F4A3F"
+     "#49443D",
+     "#4F4A3F",
+     "#4C473D",
+     "#58544A"
     ]
    },
    "roof": {
@@ -349,16 +350,16 @@ export const PARIS_DELTA = {
   "industrial": {
    "wall": {
     "light": [
-     "#CFC4AE",
-     "#C2B79F",
-     "#D9CFBB",
-     "#BDB29B"
+     "#F2EADB",
+     "#D6CAB0",
+     "#F0E6D2",
+     "#EDE4D1"
     ],
     "dark": [
-     "#4F4A42",
-     "#4A463C",
-     "#524F47",
-     "#48443B"
+     "#5C5953",
+     "#514D43",
+     "#5B5750",
+     "#5A574F"
     ]
    },
    "roof": {
@@ -409,24 +410,24 @@ export const PARIS_DELTA = {
    "bayM": 3.2,
    "groundFloor": {
     "colors": {
-     "light": "#CFC4AE",
-     "dark": "#4F4A42"
+     "light": "#F2EADB",
+     "dark": "#5C5953"
     }
    }
   },
   "civic": {
    "wall": {
     "light": [
-     "#EFE6D3",
-     "#E3D7BE",
-     "#D8CBAF",
-     "#F4ECDC"
+     "#D9C9A6",
+     "#DDD0B5",
+     "#E6D8BC",
+     "#E3D3B6"
     ],
     "dark": [
-     "#5B5750",
-     "#565248",
-     "#524D43",
-     "#5D5A54"
+     "#524C3F",
+     "#544F45",
+     "#575247",
+     "#565045"
     ]
    },
    "roof": {
@@ -477,8 +478,8 @@ export const PARIS_DELTA = {
    "bayM": 3.2,
    "groundFloor": {
     "colors": {
-     "light": "#EFE6D3",
-     "dark": "#5B5750"
+     "light": "#D9C9A6",
+     "dark": "#524C3F"
     }
    }
   }
@@ -489,12 +490,12 @@ export const PARIS_DELTA = {
     "light": [
      "#E8DCC4",
      "#DDD0B5",
-     "#F0E6D2"
+     "#F2EADB"
     ],
     "dark": [
      "#58544A",
      "#544F45",
-     "#5B5750"
+     "#5C5953"
     ]
    },
    "glass": {
@@ -534,14 +535,14 @@ export const PARIS_DELTA = {
   "silverGlass": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
-     "#F0E6D2"
+     "#BFB4A0",
+     "#E6D8BC",
+     "#D6CAB0"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
-     "#5B5750"
+     "#49443D",
+     "#575247",
+     "#514D43"
     ]
    },
    "glass": {
@@ -581,13 +582,13 @@ export const PARIS_DELTA = {
   "blueGlass": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
+     "#CFC2A6",
+     "#E3D3B6",
      "#F0E6D2"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
+     "#4F4A3F",
+     "#565045",
      "#5B5750"
     ]
    },
@@ -628,14 +629,14 @@ export const PARIS_DELTA = {
   "ivoryStone": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
-     "#F0E6D2"
+     "#C8BBA0",
+     "#D9C9A6",
+     "#EDE4D1"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
-     "#5B5750"
+     "#4C473D",
+     "#524C3F",
+     "#5A574F"
     ]
    },
    "glass": {
@@ -677,12 +678,12 @@ export const PARIS_DELTA = {
     "light": [
      "#E8DCC4",
      "#DDD0B5",
-     "#F0E6D2"
+     "#F2EADB"
     ],
     "dark": [
      "#58544A",
      "#544F45",
-     "#5B5750"
+     "#5C5953"
     ]
    },
    "glass": {
@@ -722,14 +723,14 @@ export const PARIS_DELTA = {
   "redBrick": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
-     "#F0E6D2"
+     "#BFB4A0",
+     "#E6D8BC",
+     "#D6CAB0"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
-     "#5B5750"
+     "#49443D",
+     "#575247",
+     "#514D43"
     ]
    },
    "glass": {
@@ -769,13 +770,13 @@ export const PARIS_DELTA = {
   "paintedConcrete": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
+     "#CFC2A6",
+     "#E3D3B6",
      "#F0E6D2"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
+     "#4F4A3F",
+     "#565045",
      "#5B5750"
     ]
    },
@@ -816,14 +817,14 @@ export const PARIS_DELTA = {
   "plaster": {
    "wall": {
     "light": [
-     "#E8DCC4",
-     "#DDD0B5",
-     "#F0E6D2"
+     "#C8BBA0",
+     "#D9C9A6",
+     "#EDE4D1"
     ],
     "dark": [
-     "#58544A",
-     "#544F45",
-     "#5B5750"
+     "#4C473D",
+     "#524C3F",
+     "#5A574F"
     ]
    },
    "glass": {
@@ -865,12 +866,12 @@ export const PARIS_DELTA = {
     "light": [
      "#E8DCC4",
      "#DDD0B5",
-     "#F0E6D2"
+     "#F2EADB"
     ],
     "dark": [
      "#58544A",
      "#544F45",
-     "#5B5750"
+     "#5C5953"
     ]
    },
    "glass": {

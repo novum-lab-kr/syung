@@ -1,4 +1,5 @@
 // 네덜란드(암스테르담) 도시 색 · 창 · 지붕 덧쓰기: 벽돌색 벽(적갈 · 갈색 · 짙은 초록 가게 · 크림), 짙은 회색 · 붉은 기와 경사 지붕, 크고 촘촘한 창, 벽돌 포장 길 · 운하 물.
+// 벽색 팔레트 14가지 — 재질 묶음마다 다른 세 색, 건물 종류마다 다른 네 색(덕배 2026-10-23: 그 나라 건물색이 하나일 리 없다).
 // 건물 윤곽 · 높이는 기본 팩 그대로. 24 m 아래 좁은 집은 거의 다 박공(계단 · 종 · 목 · 뾰족) + 가파른 지붕, 가끔 풍차 · 첨탑(부품 'nation' — web/modes/nations/parts.mjs).
 // accent 3색 = 나라 모형의 [특색, 흰 칠 · 철, 유리 · 검은 것]. 밤은 같은 색 × 0.38. (만든 법: 기본 팩 구조를 따라 색만 바꾸는 생성기 — 2026-10-22, 시안 look3d '네덜란드')
 export const NETHERLANDS_DELTA = {
@@ -96,15 +97,15 @@ export const NETHERLANDS_DELTA = {
    "wall": {
     "light": [
      "#8E4A36",
-     "#A5583F",
-     "#6E3F33",
-     "#B9774F"
+     "#2F3B36",
+     "#5A3A30",
+     "#9C5A44"
     ],
     "dark": [
      "#361C15",
-     "#3F2118",
-     "#2A1813",
-     "#462D1E"
+     "#121615",
+     "#221612",
+     "#3B221A"
     ]
    },
    "roof": {
@@ -164,16 +165,16 @@ export const NETHERLANDS_DELTA = {
   "apartment": {
    "wall": {
     "light": [
-     "#9C5A44",
-     "#7C4A3C",
-     "#B0694A",
-     "#C9B79A"
+     "#E9E1CF",
+     "#3E4A44",
+     "#4A3A35",
+     "#8E4A36"
     ],
     "dark": [
-     "#3B221A",
-     "#2F1C17",
-     "#43281C",
-     "#4C463B"
+     "#59564F",
+     "#181C1A",
+     "#1C1614",
+     "#361C15"
     ]
    },
    "roof": {
@@ -231,23 +232,23 @@ export const NETHERLANDS_DELTA = {
    "bayM": 2.4,
    "groundFloor": {
     "colors": {
-     "light": "#9C5A44",
-     "dark": "#3B221A"
+     "light": "#E9E1CF",
+     "dark": "#59564F"
     }
    }
   },
   "shop": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#2F4F46",
-     "#A5583F",
+     "#D8C9A8",
+     "#7C4A3C",
+     "#6E3F33",
      "#E9E1CF"
     ],
     "dark": [
-     "#361C15",
-     "#121E1B",
-     "#3F2118",
+     "#524C40",
+     "#2F1C17",
+     "#2A1813",
      "#59564F"
     ]
    },
@@ -308,16 +309,16 @@ export const NETHERLANDS_DELTA = {
   "office": {
    "wall": {
     "light": [
-     "#7C4A3C",
-     "#9C5A44",
-     "#5A4A44",
-     "#B9774F"
+     "#C9B79A",
+     "#A5583F",
+     "#B9774F",
+     "#D8C9A8"
     ],
     "dark": [
-     "#2F1C17",
-     "#3B221A",
-     "#221C1A",
-     "#462D1E"
+     "#4C463B",
+     "#3F2118",
+     "#462D1E",
+     "#524C40"
     ]
    },
    "roof": {
@@ -377,16 +378,16 @@ export const NETHERLANDS_DELTA = {
   "industrial": {
    "wall": {
     "light": [
-     "#7A5446",
-     "#8E6A55",
-     "#6B5A50",
-     "#9C7A62"
+     "#5A3A30",
+     "#9C5A44",
+     "#B06B4A",
+     "#C9B79A"
     ],
     "dark": [
-     "#2E201B",
-     "#362820",
-     "#29221E",
-     "#3B2E25"
+     "#221612",
+     "#3B221A",
+     "#43291C",
+     "#4C463B"
     ]
    },
    "roof": {
@@ -444,24 +445,24 @@ export const NETHERLANDS_DELTA = {
    "bayM": 2.4,
    "groundFloor": {
     "colors": {
-     "light": "#7A5446",
-     "dark": "#2E201B"
+     "light": "#5A3A30",
+     "dark": "#221612"
     }
    }
   },
   "civic": {
    "wall": {
     "light": [
-     "#A5583F",
-     "#C9B79A",
+     "#4A3A35",
      "#8E4A36",
-     "#E9E1CF"
+     "#2F3B36",
+     "#5A3A30"
     ],
     "dark": [
-     "#3F2118",
-     "#4C463B",
+     "#1C1614",
      "#361C15",
-     "#59564F"
+     "#121615",
+     "#221612"
     ]
    },
    "roof": {
@@ -519,8 +520,8 @@ export const NETHERLANDS_DELTA = {
    "bayM": 2.4,
    "groundFloor": {
     "colors": {
-     "light": "#A5583F",
-     "dark": "#3F2118"
+     "light": "#4A3A35",
+     "dark": "#1C1614"
     }
    }
   }
@@ -531,12 +532,12 @@ export const NETHERLANDS_DELTA = {
     "light": [
      "#8E4A36",
      "#A5583F",
-     "#6E3F33"
+     "#3E4A44"
     ],
     "dark": [
      "#361C15",
      "#3F2118",
-     "#2A1813"
+     "#181C1A"
     ]
    },
    "glass": {
@@ -576,14 +577,14 @@ export const NETHERLANDS_DELTA = {
   "silverGlass": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#2F3B36",
+     "#B9774F",
+     "#4A3A35"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#121615",
+     "#462D1E",
+     "#1C1614"
     ]
    },
    "glass": {
@@ -623,14 +624,14 @@ export const NETHERLANDS_DELTA = {
   "blueGlass": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#5A3A30",
+     "#D8C9A8",
+     "#8E4A36"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#221612",
+     "#524C40",
+     "#361C15"
     ]
    },
    "glass": {
@@ -670,14 +671,14 @@ export const NETHERLANDS_DELTA = {
   "ivoryStone": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#9C5A44",
+     "#7C4A3C",
+     "#2F3B36"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#3B221A",
+     "#2F1C17",
+     "#121615"
     ]
    },
    "glass": {
@@ -717,14 +718,14 @@ export const NETHERLANDS_DELTA = {
   "warmStone": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#B06B4A",
+     "#6E3F33",
+     "#5A3A30"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#43291C",
+     "#2A1813",
+     "#221612"
     ]
    },
    "glass": {
@@ -764,14 +765,14 @@ export const NETHERLANDS_DELTA = {
   "redBrick": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#C9B79A",
+     "#E9E1CF",
+     "#9C5A44"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#4C463B",
+     "#59564F",
+     "#3B221A"
     ]
    },
    "glass": {
@@ -811,14 +812,14 @@ export const NETHERLANDS_DELTA = {
   "paintedConcrete": {
    "wall": {
     "light": [
-     "#8E4A36",
      "#A5583F",
-     "#6E3F33"
+     "#3E4A44",
+     "#B06B4A"
     ],
     "dark": [
-     "#361C15",
      "#3F2118",
-     "#2A1813"
+     "#181C1A",
+     "#43291C"
     ]
    },
    "glass": {
@@ -858,14 +859,14 @@ export const NETHERLANDS_DELTA = {
   "plaster": {
    "wall": {
     "light": [
-     "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#B9774F",
+     "#4A3A35",
+     "#C9B79A"
     ],
     "dark": [
-     "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#462D1E",
+     "#1C1614",
+     "#4C463B"
     ]
    },
    "glass": {
@@ -905,14 +906,14 @@ export const NETHERLANDS_DELTA = {
   "galvanizedMetal": {
    "wall": {
     "light": [
+     "#D8C9A8",
      "#8E4A36",
-     "#A5583F",
-     "#6E3F33"
+     "#A5583F"
     ],
     "dark": [
+     "#524C40",
      "#361C15",
-     "#3F2118",
-     "#2A1813"
+     "#3F2118"
     ]
    },
    "glass": {

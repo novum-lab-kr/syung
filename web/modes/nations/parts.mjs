@@ -138,7 +138,7 @@ function modelBuilding(tb, ctx, unit) {
   if (keeps(tb, R).some(([x, y, r]) => pointInPolygon(x, y, ctx.outer, ctx.holes) || edgeDistance(x, y, [ctx.outer]) <= r)) return false;
   const rect = fitRect(ctx.outer, ctx.holes), mpu = tb.mPerUnit; if (!rect || rect.hy * mpu < NATION_LIMITS.minHalfM) return false;
   const u = tb.unit, T = raceTemplates(R), recs = tb.models || (tb.models = []), W = tb.W, b = W.b, Hq = Math.min(65535, Math.round(ctx.H * 10));
-  const cs = tb.opts?.phone ? 1.7 : 1;   // 휴대폰: 칸을 크게(건물 수 약 1/3 — 덕배 2026-10-23: 휴대폰에서 버벅)
+  const cs = tb.opts?.phone ? 2.3 : 1;   // 휴대폰: 칸을 크게(건물 수 약 1/3 — 덕배 2026-10-23: 휴대폰에서 버벅)
   const nx = Math.max(1, Math.min(8, Math.round(rect.hx * mpu / (C.halfM * cs)))), ny = Math.max(1, Math.min(3, Math.round(rect.hy * mpu / (C.depthM * cs)))), vx = -rect.uy, vy = rect.ux, gap = C.gap ?? .9;   // (파리는 블록 벽이 이어져 보이게 거의 붙인다 — 칸끼리 마주 보는 벽은 안쪽이라 안 보인다)   // 칸끼리 · 옆 땅 건물과 벽이 같은 면에 겹치면 깜박였다(맥 캡처 — 점박이 줄): 늘 조금씩 띄운다
   let built = 0;
   for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {

@@ -1,4 +1,5 @@
 // 이집트(카이로) 도시 색 · 창 · 지붕 덧쓰기: 사암 · 오커 · 테라코타 · 빛바랜 분홍 · 시멘트 회색 · 하늘색 벽, 모래 땅 · 마른 풀 · 대추야자 초록 · 나일 물, 작은 창.
+// 벽색 팔레트 14가지 — 재질 묶음마다 다른 세 색, 건물 종류마다 다른 네 색(덕배 2026-10-23: 그 나라 건물색이 하나일 리 없다).
 // 건물 윤곽 · 높이는 기본 팩 그대로. 40 m 아래 건물은 거의 다 옥상 살림(난간 · 검은 물탱크 · 위성 접시 · 철근 · 비둘기집 · 그늘막), 드물게 모스크(돔 + 미나레트) · 아주 드물게 피라미드(부품 'nation' — web/modes/nations/parts.mjs).
 // accent 3색 = 나라 모형의 [특색, 흰 칠 · 철, 유리 · 검은 것]. 밤은 같은 색 × 0.36. (만든 법: 기본 팩 구조를 따라 색만 바꾸는 생성기 — 2026-10-22, 시안 look3d '이집트')
 export const EGYPT_DELTA = {
@@ -96,15 +97,15 @@ export const EGYPT_DELTA = {
    "wall": {
     "light": [
      "#D9B57E",
-     "#C99A6A",
-     "#CFA39B",
-     "#B9B4A8"
+     "#C8C2B2",
+     "#E3CDA2",
+     "#8FAFC2"
     ],
     "dark": [
      "#4E412D",
-     "#483726",
-     "#4B3B38",
-     "#43413C"
+     "#484640",
+     "#524A3A",
+     "#333F46"
     ]
    },
    "roof": {
@@ -157,16 +158,16 @@ export const EGYPT_DELTA = {
   "apartment": {
    "wall": {
     "light": [
-     "#D6B07A",
-     "#BE8F63",
-     "#C9A59C",
-     "#A9ABA4"
+     "#9FB8B0",
+     "#B9B4A8",
+     "#C78C5B",
+     "#D9B57E"
     ],
     "dark": [
-     "#4D3F2C",
-     "#443324",
-     "#483B38",
-     "#3D3E3B"
+     "#39423F",
+     "#43413C",
+     "#483221",
+     "#4E412D"
     ]
    },
    "roof": {
@@ -217,24 +218,24 @@ export const EGYPT_DELTA = {
    "bayM": 3.6,
    "groundFloor": {
     "colors": {
-     "light": "#D6B07A",
-     "dark": "#4D3F2C"
+     "light": "#9FB8B0",
+     "dark": "#39423F"
     }
    }
   },
   "shop": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#7FA8B5",
-     "#C99A6A",
-     "#E3CDA2"
+     "#E9E2D3",
+     "#D6BFA0",
+     "#CFA39B",
+     "#9FB8B0"
     ],
     "dark": [
-     "#4E412D",
-     "#2E3C41",
-     "#483726",
-     "#524A3A"
+     "#54514C",
+     "#4D453A",
+     "#4B3B38",
+     "#39423F"
     ]
    },
    "roof": {
@@ -287,16 +288,16 @@ export const EGYPT_DELTA = {
   "office": {
    "wall": {
     "light": [
-     "#CBB08A",
-     "#B7A58C",
-     "#A9ABA4",
-     "#D6B07A"
+     "#B5643F",
+     "#C99A6A",
+     "#A85A3C",
+     "#E9E2D3"
     ],
     "dark": [
-     "#493F32",
-     "#423B32",
-     "#3D3E3B",
-     "#4D3F2C"
+     "#412417",
+     "#483726",
+     "#3C2016",
+     "#54514C"
     ]
    },
    "roof": {
@@ -349,16 +350,16 @@ export const EGYPT_DELTA = {
   "industrial": {
    "wall": {
     "light": [
-     "#B7A28A",
-     "#A59580",
-     "#C2AE90",
-     "#9C9488"
+     "#E3CDA2",
+     "#8FAFC2",
+     "#A9ABA4",
+     "#B5643F"
     ],
     "dark": [
-     "#423A32",
-     "#3B362E",
-     "#463F34",
-     "#383531"
+     "#524A3A",
+     "#333F46",
+     "#3D3E3B",
+     "#412417"
     ]
    },
    "roof": {
@@ -409,24 +410,24 @@ export const EGYPT_DELTA = {
    "bayM": 3.6,
    "groundFloor": {
     "colors": {
-     "light": "#B7A28A",
-     "dark": "#423A32"
+     "light": "#E3CDA2",
+     "dark": "#524A3A"
     }
    }
   },
   "civic": {
    "wall": {
     "light": [
-     "#E3C995",
+     "#C78C5B",
      "#D9B57E",
-     "#EBD8B0",
-     "#C99A6A"
+     "#C8C2B2",
+     "#E3CDA2"
     ],
     "dark": [
-     "#524836",
+     "#483221",
      "#4E412D",
-     "#554E3F",
-     "#483726"
+     "#484640",
+     "#524A3A"
     ]
    },
    "roof": {
@@ -477,8 +478,8 @@ export const EGYPT_DELTA = {
    "bayM": 3.6,
    "groundFloor": {
     "colors": {
-     "light": "#E3C995",
-     "dark": "#524836"
+     "light": "#C78C5B",
+     "dark": "#483221"
     }
    }
   }
@@ -489,12 +490,12 @@ export const EGYPT_DELTA = {
     "light": [
      "#D9B57E",
      "#C99A6A",
-     "#CFA39B"
+     "#B9B4A8"
     ],
     "dark": [
      "#4E412D",
      "#483726",
-     "#4B3B38"
+     "#43413C"
     ]
    },
    "glass": {
@@ -534,14 +535,14 @@ export const EGYPT_DELTA = {
   "silverGlass": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#C8C2B2",
+     "#A85A3C",
+     "#C78C5B"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#484640",
+     "#3C2016",
+     "#483221"
     ]
    },
    "glass": {
@@ -581,14 +582,14 @@ export const EGYPT_DELTA = {
   "blueGlass": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#E3CDA2",
+     "#E9E2D3",
+     "#D9B57E"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#524A3A",
+     "#54514C",
+     "#4E412D"
     ]
    },
    "glass": {
@@ -628,14 +629,14 @@ export const EGYPT_DELTA = {
   "ivoryStone": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#8FAFC2",
+     "#D6BFA0",
+     "#C8C2B2"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#333F46",
+     "#4D453A",
+     "#484640"
     ]
    },
    "glass": {
@@ -675,14 +676,14 @@ export const EGYPT_DELTA = {
   "warmStone": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#A9ABA4",
+     "#CFA39B",
+     "#E3CDA2"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#3D3E3B",
+     "#4B3B38",
+     "#524A3A"
     ]
    },
    "glass": {
@@ -722,14 +723,14 @@ export const EGYPT_DELTA = {
   "redBrick": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#B5643F",
+     "#9FB8B0",
+     "#8FAFC2"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#412417",
+     "#39423F",
+     "#333F46"
     ]
    },
    "glass": {
@@ -769,14 +770,14 @@ export const EGYPT_DELTA = {
   "paintedConcrete": {
    "wall": {
     "light": [
-     "#D9B57E",
      "#C99A6A",
-     "#CFA39B"
+     "#B9B4A8",
+     "#A9ABA4"
     ],
     "dark": [
-     "#4E412D",
      "#483726",
-     "#4B3B38"
+     "#43413C",
+     "#3D3E3B"
     ]
    },
    "glass": {
@@ -816,14 +817,14 @@ export const EGYPT_DELTA = {
   "plaster": {
    "wall": {
     "light": [
-     "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#A85A3C",
+     "#C78C5B",
+     "#B5643F"
     ],
     "dark": [
-     "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#3C2016",
+     "#483221",
+     "#412417"
     ]
    },
    "glass": {
@@ -863,14 +864,14 @@ export const EGYPT_DELTA = {
   "galvanizedMetal": {
    "wall": {
     "light": [
+     "#E9E2D3",
      "#D9B57E",
-     "#C99A6A",
-     "#CFA39B"
+     "#C99A6A"
     ],
     "dark": [
+     "#54514C",
      "#4E412D",
-     "#483726",
-     "#4B3B38"
+     "#483726"
     ]
    },
    "glass": {
