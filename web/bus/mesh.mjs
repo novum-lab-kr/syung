@@ -106,7 +106,9 @@ void main(){float c=cos(i_pose.z),s=sin(i_pose.z);vec3 pos=a_pos,normal=a_normal
   // 가마꾼(조선 모드): 달리는 동안(i_info.w) 다리가 엉덩이를 축으로 흔들리고, 가마와 사람이 걸음마다 살짝 들썩인다
   float run=i_info.w,ph=6.2832*(u_time*1.7+i_info.z),mat=a_material;
   // 스타크래프트 유닛(web/modes/starcraft/units.mjs): 다리는 재료 + 100, 축 = (uv.x, |uv.y|), uv.y 부호가 박자(A · B 반대)
-  if(mat>99.5){mat-=100.;float a=run*.5*sin(ph)*sign(a_uv.y),ca=cos(a),sa=sin(a),hz=abs(a_uv.y);
+  // 기어가는 마디(재료 + 200, 리버): 가는 동안 마디 축 x(uv.x)에 따라 앞에서 뒤로 물결치며 들썩인다(굼벵이 — 행님 2026-10-22)
+  if(mat>199.5){mat-=200.;pos.z+=run*.07*(.5+.5*sin(ph*1.4-a_uv.x*2.4));}
+  else if(mat>99.5){mat-=100.;float a=run*.5*sin(ph)*sign(a_uv.y),ca=cos(a),sa=sin(a),hz=abs(a_uv.y);
     vec2 d=vec2(pos.x-a_uv.x,pos.z-hz);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=hz+sa*d.x+ca*d.y;}
   if(a_material>19.5&&a_material<20.5){float k=abs(a_uv.y)-1.,a=run*.5*sin(ph+6.2832*k)*sign(a_uv.y),ca=cos(a),sa=sin(a);
     vec2 d=vec2(pos.x-a_uv.x,pos.z-.45);pos.x=a_uv.x+ca*d.x-sa*d.y;pos.z=.45+sa*d.x+ca*d.y;}
