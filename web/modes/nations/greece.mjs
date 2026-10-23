@@ -1,5 +1,4 @@
 // 그리스(산토리니) 도시 색 · 창 · 지붕 덧쓰기: 흰 회벽에 오커 · 분홍 · 하늘색 집을 섞고, 돌길 · 마른 풀 · 올리브 나무 · 에게해 물. 창은 작고 드문드문(짙은 파랑) — 유리 고층도 구멍 창으로.
-// 벽색 팔레트 14가지 — 재질 묶음마다 다른 세 색, 건물 종류마다 다른 네 색(덕배 2026-10-23: 그 나라 건물색이 하나일 리 없다).
 // 건물 윤곽 · 높이는 기본 팩 그대로. 몇 채만 파란 돔 성당 · 종탑 · 어긋나게 쌓은 큐브 집(부품 'nation' — web/modes/nations/parts.mjs). 지붕은 흰색이 대부분, 파랑은 열에 하나.
 // accent 3색 = [파란 돔 · 덧창, 흰 칠, 오커]. 밤은 같은 색 × 0.38. (만든 법: 기본 팩 구조를 따라 색만 바꾸는 생성기 — 2026-10-22, 시안 look3d '그리스')
 export const GREECE_DELTA = {
@@ -97,15 +96,15 @@ export const GREECE_DELTA = {
    "wall": {
     "light": [
      "#FBF9F2",
-     "#E6C9C2",
-     "#EDE7DA",
-     "#D9B08C"
+     "#F4F0E6",
+     "#FFFFFF",
+     "#E9D6A8"
     ],
     "dark": [
      "#5F5F5C",
-     "#574C4A",
-     "#5A5853",
-     "#524335"
+     "#5D5B57",
+     "#616161",
+     "#595140"
     ]
    },
    "roof": {
@@ -158,16 +157,16 @@ export const GREECE_DELTA = {
   "apartment": {
    "wall": {
     "light": [
-     "#BFD9E3",
      "#FBF9F2",
-     "#C9D6C3",
-     "#FBF9F2"
+     "#F2EEE4",
+     "#FFFFFF",
+     "#E6C9C2"
     ],
     "dark": [
-     "#495256",
      "#5F5F5C",
-     "#4C514A",
-     "#5F5F5C"
+     "#5C5A57",
+     "#616161",
+     "#574C4A"
     ]
    },
    "roof": {
@@ -218,24 +217,24 @@ export const GREECE_DELTA = {
    "bayM": 4.2,
    "groundFloor": {
     "colors": {
-     "light": "#BFD9E3",
-     "dark": "#495256"
+     "light": "#FBF9F2",
+     "dark": "#5F5F5C"
     }
    }
   },
   "shop": {
    "wall": {
     "light": [
-     "#FFFFFF",
-     "#E8E4DC",
-     "#FFFFFF",
-     "#BFD9E3"
+     "#FBF9F2",
+     "#9CC9DA",
+     "#F2EEE4",
+     "#E9D6A8"
     ],
     "dark": [
-     "#616161",
-     "#585754",
-     "#616161",
-     "#495256"
+     "#5F5F5C",
+     "#3B4C53",
+     "#5C5A57",
+     "#595140"
     ]
    },
    "roof": {
@@ -288,16 +287,16 @@ export const GREECE_DELTA = {
   "office": {
    "wall": {
     "light": [
-     "#E9D6A8",
-     "#F4F0E6",
-     "#F2D7A0",
-     "#FFFFFF"
+     "#F7F5EE",
+     "#ECE8DE",
+     "#FFFFFF",
+     "#DCE6EA"
     ],
     "dark": [
-     "#595140",
-     "#5D5B57",
-     "#5C523D",
-     "#616161"
+     "#5E5D5A",
+     "#5A5854",
+     "#616161",
+     "#545759"
     ]
    },
    "roof": {
@@ -350,15 +349,83 @@ export const GREECE_DELTA = {
   "industrial": {
    "wall": {
     "light": [
-     "#EDE7DA",
-     "#D9B08C",
-     "#F6EBDD",
+     "#EDE9DF",
+     "#E2DDD2",
+     "#D8D2C5",
+     "#F4F0E6"
+    ],
+    "dark": [
+     "#5A5955",
+     "#565450",
+     "#52504B",
+     "#5D5B57"
+    ]
+   },
+   "roof": {
+    "flat": {
+     "light": "#F6F4EE",
+     "dark": "#5D5D5A"
+    },
+    "variants": {
+     "light": [
+      "#F6F4EE",
+      "#EFEBE2",
+      "#E8E2D2",
+      "#2F6FB0"
+     ],
+     "dark": [
+      "#5D5D5A",
+      "#5B5956",
+      "#585650",
+      "#122A43"
+     ]
+    },
+    "variantWeights": [
+     0.45,
+     0.3,
+     0.15,
+     0.1
+    ],
+    "pitched": {
+     "probability": 0,
+     "colors": {
+      "light": [
+       "#2F6FB0",
+       "#FBF9F2",
+       "#C9A46B"
+      ],
+      "dark": [
+       "#122A43",
+       "#5F5F5C",
+       "#4C3E29"
+      ]
+     }
+    }
+   },
+   "windowRatio": [
+    0.22,
+    0.3
+   ],
+   "bayM": 4.2,
+   "groundFloor": {
+    "colors": {
+     "light": "#EDE9DF",
+     "dark": "#5A5955"
+    }
+   }
+  },
+  "civic": {
+   "wall": {
+    "light": [
+     "#FFFFFF",
+     "#F7F2E6",
+     "#EEE6D4",
      "#E9D6A8"
     ],
     "dark": [
-     "#5A5853",
-     "#524335",
-     "#5D5954",
+     "#616161",
+     "#5E5C57",
+     "#5A5751",
      "#595140"
     ]
    },
@@ -410,76 +477,8 @@ export const GREECE_DELTA = {
    "bayM": 4.2,
    "groundFloor": {
     "colors": {
-     "light": "#EDE7DA",
-     "dark": "#5A5853"
-    }
-   }
-  },
-  "civic": {
-   "wall": {
-    "light": [
-     "#C9D6C3",
-     "#FBF9F2",
-     "#E6C9C2",
-     "#EDE7DA"
-    ],
-    "dark": [
-     "#4C514A",
-     "#5F5F5C",
-     "#574C4A",
-     "#5A5853"
-    ]
-   },
-   "roof": {
-    "flat": {
-     "light": "#F6F4EE",
-     "dark": "#5D5D5A"
-    },
-    "variants": {
-     "light": [
-      "#F6F4EE",
-      "#EFEBE2",
-      "#E8E2D2",
-      "#2F6FB0"
-     ],
-     "dark": [
-      "#5D5D5A",
-      "#5B5956",
-      "#585650",
-      "#122A43"
-     ]
-    },
-    "variantWeights": [
-     0.45,
-     0.3,
-     0.15,
-     0.1
-    ],
-    "pitched": {
-     "probability": 0,
-     "colors": {
-      "light": [
-       "#2F6FB0",
-       "#FBF9F2",
-       "#C9A46B"
-      ],
-      "dark": [
-       "#122A43",
-       "#5F5F5C",
-       "#4C3E29"
-      ]
-     }
-    }
-   },
-   "windowRatio": [
-    0.22,
-    0.3
-   ],
-   "bayM": 4.2,
-   "groundFloor": {
-    "colors": {
-     "light": "#C9D6C3",
-     "dark": "#4C514A"
+     "light": "#FFFFFF",
+     "dark": "#616161"
     }
    }
   }
@@ -490,12 +489,12 @@ export const GREECE_DELTA = {
     "light": [
      "#FBF9F2",
      "#F4F0E6",
-     "#FBF9F2"
+     "#FFFFFF"
     ],
     "dark": [
      "#5F5F5C",
      "#5D5B57",
-     "#5F5F5C"
+     "#616161"
     ]
    },
    "glass": {
@@ -535,14 +534,14 @@ export const GREECE_DELTA = {
   "silverGlass": {
    "wall": {
     "light": [
-     "#E6C9C2",
-     "#F2D7A0",
-     "#C9D6C3"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#574C4A",
-     "#5C523D",
-     "#4C514A"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -582,14 +581,14 @@ export const GREECE_DELTA = {
   "blueGlass": {
    "wall": {
     "light": [
-     "#EDE7DA",
-     "#FFFFFF",
-     "#FBF9F2"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#5A5853",
-     "#616161",
-     "#5F5F5C"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -629,14 +628,14 @@ export const GREECE_DELTA = {
   "ivoryStone": {
    "wall": {
     "light": [
-     "#D9B08C",
-     "#E8E4DC",
-     "#E6C9C2"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#524335",
-     "#585754",
-     "#574C4A"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -676,14 +675,14 @@ export const GREECE_DELTA = {
   "warmStone": {
    "wall": {
     "light": [
-     "#F6EBDD",
-     "#FFFFFF",
-     "#EDE7DA"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#5D5954",
-     "#616161",
-     "#5A5853"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -723,14 +722,14 @@ export const GREECE_DELTA = {
   "redBrick": {
    "wall": {
     "light": [
-     "#E9D6A8",
-     "#BFD9E3",
-     "#D9B08C"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#595140",
-     "#495256",
-     "#524335"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -770,14 +769,14 @@ export const GREECE_DELTA = {
   "paintedConcrete": {
    "wall": {
     "light": [
-     "#F4F0E6",
      "#FBF9F2",
-     "#F6EBDD"
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#5D5B57",
      "#5F5F5C",
-     "#5D5954"
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -817,14 +816,14 @@ export const GREECE_DELTA = {
   "plaster": {
    "wall": {
     "light": [
-     "#F2D7A0",
-     "#C9D6C3",
-     "#E9D6A8"
+     "#FBF9F2",
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#5C523D",
-     "#4C514A",
-     "#595140"
+     "#5F5F5C",
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
@@ -864,14 +863,14 @@ export const GREECE_DELTA = {
   "galvanizedMetal": {
    "wall": {
     "light": [
-     "#FFFFFF",
      "#FBF9F2",
-     "#F4F0E6"
+     "#F4F0E6",
+     "#FFFFFF"
     ],
     "dark": [
-     "#616161",
      "#5F5F5C",
-     "#5D5B57"
+     "#5D5B57",
+     "#616161"
     ]
    },
    "glass": {
