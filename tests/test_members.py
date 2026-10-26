@@ -278,6 +278,12 @@ class CleanCommuteTest(unittest.TestCase):
         self.assertEqual(clean_commute({"leave": "07:05"})["leave_at"], "07:05")
         self.assertIsNone(clean_commute({})["home_name"])
 
+    def test_times_must_be_exactly_hh_mm_in_ascii(self):
+        for value in ("08:10\n", "\n08:10", "０８:１０", "٠٨:١٠", "08:10 ", "8:10", "24:00"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                clean_commute({"leave": value})
+        self.assertEqual(clean_commute({"back": "23:59"})["back_at"], "23:59")
+
 
 if __name__ == "__main__":
     unittest.main()

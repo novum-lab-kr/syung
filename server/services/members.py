@@ -22,7 +22,7 @@ from server.store.members import MemberStore
 SESSION_AGE = 30 * 24 * 3600
 STATE_AGE = 600   # 제공자 화면에서 돌아올 때까지
 TRIES, TRY_WINDOW = 20, 600
-TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+TIME = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")   # ASCII 숫자만 · fullmatch 로 전체를 본다(끝 개행 · 유니코드 숫자 거부)
 # 한국 안 좌표만(장소는 카카오 장소 검색에서 고른다)
 LAT_RANGE, LNG_RANGE = (32.0, 39.5), (124.0, 132.0)
 
@@ -61,7 +61,7 @@ def clean_commute(body) -> dict:
     times = {}
     for key, label in (("leave", "나가는 시각"), ("back", "돌아오는 시각")):
         value = body.get(key)
-        if value is not None and (not isinstance(value, str) or not TIME.match(value)):
+        if value is not None and (not isinstance(value, str) or not TIME.fullmatch(value)):
             raise ValueError(f"{label}은 HH:MM 이에요")
         times[key] = value
     days = body.get("days", [])
