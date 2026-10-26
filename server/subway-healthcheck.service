@@ -4,4 +4,4 @@ Description=Nol-meok subway live proxy health check
 [Service]
 Type=oneshot
 EnvironmentFile=-/etc/subway-live.env
-ExecStart=/usr/bin/python3 /root/subway-live-map/server/healthcheck.py
+ExecStart=/usr/bin/python3 /root/syung/server/healthcheck.py

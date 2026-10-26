@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/root/subway-live-map
+WorkingDirectory=/root/syung
 EnvironmentFile=-/etc/subway-live.env
-ExecStart=/usr/bin/python3 /root/subway-live-map/server/subway_live_proxy.py
+ExecStart=/usr/bin/python3 /root/syung/server/subway_live_proxy.py
 Restart=on-failure
 RestartSec=3
 User=root

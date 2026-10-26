@@ -1,4 +1,4 @@
-# subway-live-map
+# syung
 
 수도권 전철 실시간 노선도. MapLibre GL(WebGL) 위에 KTDB GTFS 노선·역, OpenStreetMap 선로 형태,
 서울시 실시간 열차 정보를 올려 열차가 선로를 따라 움직이는 모습을 보여 줍니다.
@@ -24,7 +24,7 @@ docs/       열차 모델 설계 메모
 ## 로컬에서 작업하기
 
 ```bash
-git clone https://github.com/novum-lab-kr/subway-live-map.git && cd subway-live-map
+git clone https://github.com/novum-lab-kr/syung.git && cd syung
 python3 deploy/dev_server.py        # http://localhost:8080
 ```
 `web/`과 `data/`를 그대로 띄우고(복사 단계 없음, 고치고 새로고침), 실시간 열차(`/api/live`)는 운영 서버

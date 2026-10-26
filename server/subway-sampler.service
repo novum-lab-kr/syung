@@ -5,8 +5,8 @@ Wants=subway-live.service
 
 [Service]
 Type=simple
-WorkingDirectory=/root/subway-live-map
-ExecStart=/usr/bin/python3 /root/subway-live-map/pipeline/sample_live_positions.py 0 /var/lib/subway-live/samples
+WorkingDirectory=/root/syung
+ExecStart=/usr/bin/python3 /root/syung/pipeline/sample_live_positions.py 0 /var/lib/subway-live/samples
 Restart=on-failure
 RestartSec=30
 User=root
