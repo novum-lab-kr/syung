@@ -32,12 +32,13 @@ test('지도 색은 지금 모드 설정에서: 기본 · 심시티(도시 땅) 
   id2='basic';assert.equal(T2.mapPalette('light').stationText,'#141414');
 });
 
-test('테마 · 지도 색: 고른 값이 없으면 지금 모드의 기본값을 그때그때, 고르면 그 값', t => {
+test('테마: 고른 값이 없으면 지금 모드의 기본값을 그때그때, 고르면 그 값 · 지도 색: 메뉴에서 빠져 저장값은 안 읽고 늘 모드 기본값', t => {
   const d=defs.map(x=>x.id==='simcity'?{...x,settings:mergeSettings(x.settings,{themeChoice:'dark',mapColor:'color'})}:x);
   const R=createModeRegistry(d);let id='basic';const store={};const prefs={get:k=>store[k]??null,set:(k,v)=>(store[k]=v)};
   const T=theme(()=>R.settings(id),t,prefs);
   assert.deepEqual([T.themeChoice,T.mapColor],['auto','calm']);
   id='simcity';assert.deepEqual([T.themeChoice,T.mapColor,T.effectiveTheme()],['dark','color','dark'],'모드가 바뀌면 그 모드의 기본값');
-  prefs.set('mapColor','calm');assert.equal(T.mapColor,'calm','고른 값이 이긴다');
-  id='basic';assert.deepEqual([T.themeChoice,T.mapColor],['auto','calm']);
+  prefs.set('themeChoice','light');assert.equal(T.themeChoice,'light','고른 테마가 이긴다');
+  prefs.set('mapColor','calm');assert.equal(T.mapColor,'color','저장된 지도 색은 읽지 않는다(2026-10-26 메뉴에서 뺌)');
+  id='basic';assert.deepEqual([T.themeChoice,T.mapColor],['light','calm']);
 });

@@ -25,7 +25,7 @@ function setup(defs=modeDefs){
     cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,sheetPad:()=>0,stopRide(){rides++},
-    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:sel=>sel==='[data-race]'?races:sel==='[data-nation]'?nationBtns:[]},cityMap(){},setRouteOpacity(){},
+    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:sel=>sel==='[data-race]'?races:sel==='[data-nation]'?nationBtns:[]},setRouteOpacity(){},
     buildLineFeatures:()=>[],planner:{rebuild(){rebuilds++}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
@@ -35,7 +35,7 @@ function setup(defs=modeDefs){
     part('const cityCoords=', 'function cityGeom('),
     part('function metresBetween(', 'const STATION_WIDTH_STOPS='),
     part('function buildStationFeatures()', 'const shapesReady='),
-    part('function prepareMode(', 'function cityMap('),
+    part('function prepareMode(', "if($('toggleSimcity'))"),
   ].join('\n'),context);
   // 모드 상태 · 전환은 실제 컨트롤러(web/modes/transition.mjs)에 본체의 준비 · 바꾸기 · 버튼 함수를 붙인다(본체가 하는 조립과 같게)
   const fn=name=>vm.runInContext(name,context);
