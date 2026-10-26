@@ -35,7 +35,6 @@ export async function initAccount() {
     b.className = `login-button login-${p}`; b.href = `./api/auth/${p}/start`; b.textContent = PROVIDERS[p];
     return b;
   }));
-  $('accountWhat').textContent = providers.map(p => PROVIDER_NAMES[p]).filter(Boolean).join(' · ');
 
   function show() {
     item.hidden = false;
