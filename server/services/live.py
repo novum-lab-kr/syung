@@ -333,6 +333,9 @@ class SubwayLiveService:
         self.all_cache: tuple[float, dict] | None = None
         self.quota_day = ""
         self.quota_used = 0
+        # 하루 호출 수 · 저장 파일의 주인. 바깥을 부르는 곳이 여럿(지도 요청 · 위치 덧씌우기 · burst · 돌아가며 읽기 · 역 확인)이고
+        # 서로 다른 잠금이거나 잠금 없이 부른다 — 세기 · 저장만 이것으로 한 줄로 세운다(바깥 부르기는 잠그지 않는다)
+        self.quota_lock = threading.Lock()
         self.next_trips: set[tuple[str, str]] = set()   # normalize_arrivals: overlay_positions 가 빼는 다음 운행
         self.idle: set[tuple[str, str]] = set()   # not running yet (normalize_arrivals); kept off position-feed lines
         self.last_seen: dict[tuple[str, str], dict] = {}   # stabilize 의 기억
@@ -363,11 +366,19 @@ class SubwayLiveService:
         self.quota_file.write(self.quota_day, self.quota_used, self.position_used["calls"])
 
     def _count_call(self) -> None:
-        day = kst_today()
-        if day != self.quota_day:
-            self.quota_day, self.quota_used = day, 0
-        if self.config.api_key != "sample" and self.quota_used >= self.config.daily_limit:
-            raise RuntimeError("일일 안전 호출 한도에 도달했습니다.")
+        with self.quota_lock:
+            day = kst_today()
+            if day != self.quota_day:
+                self.quota_day, self.quota_used = day, 0
+            if self.config.api_key != "sample" and self.quota_used >= self.config.daily_limit:
+                raise RuntimeError("일일 안전 호출 한도에 도달했습니다.")
+
+    def _used_call(self) -> None:
+        """바깥 응답을 받은 뒤 한 번 세고 저장한다. 같은 .tmp 파일을 두 스레드가 동시에 쓰고 바꿔 끼우면
+        한쪽이 FileNotFoundError 로 실패해(받기는 성공했는데 실패로 처리) 잠금 안에서 한 번에 하나씩."""
+        with self.quota_lock:
+            self.quota_used += 1
+            self._save_quota()
 
     def quota_view(self) -> dict:
         return {"used": self.quota_used, "limit": self.config.daily_limit, "day": self.quota_day}
@@ -394,8 +405,7 @@ class SubwayLiveService:
         try:
             self._count_call()
             payload = self.source.fetch_all()
-            self.quota_used += 1
-            self._save_quota()
+            self._used_call()
             check_error(payload)
         except Exception:
             self.all_error_since = self.all_error_since or time.time()
@@ -464,8 +474,7 @@ class SubwayLiveService:
         """한 노선의 위치 피드 한 번(하루 호출 수에 센다; 한도면 RuntimeError). burst 도 이것을 부른다."""
         self._count_call()
         payload = self.source.fetch_line(line)
-        self.quota_used += 1
-        self._save_quota()
+        self._used_call()
         error = check_error(payload)
         trains = normalize_positions(payload, line)
         return {
@@ -484,8 +493,7 @@ class SubwayLiveService:
         """한 역의 도착 행 한 번(하루 호출 수에 센다; 한도면 RuntimeError) — index_arrivals 와 같은 모양으로."""
         self._count_call()
         payload = self.source.fetch_station(name)
-        self.quota_used += 1
-        self._save_quota()
+        self._used_call()
         check_error(payload)
         return index_arrivals(payload).get(station_key(name), [])
 

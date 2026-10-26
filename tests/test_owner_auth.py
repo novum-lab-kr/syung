@@ -3,15 +3,19 @@
 import hashlib
 import hmac
 import json
+import socket
 import stat
 import tempfile
+import threading
 import unittest
 import urllib.parse
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import call, patch
 
 from server.config import AuthConfig
 from server.routes import owner
+from server.routes.http import Server, make_handler
 from server.routes.response import Response
 from server.services import owner_auth
 
@@ -93,6 +97,23 @@ class OwnerAuthTest(unittest.TestCase):
         self.assertEqual(self.login(user="another-owner").location, "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
         self.assertFalse(self.auth.blocked(ADDRESS))
         self.assertEqual(len(self.auth._fails[ADDRESS]), 1)
+
+    def test_non_ascii_user_counts_as_failure_instead_of_raising(self):
+        self.assertEqual(self.login(user="주인").location, "/admin/login.html?e=1&next=%2Fadmin%2Flearning")
+        self.assertEqual(len(self.auth._fails[ADDRESS]), 1)
+        self.auth.set_password("주인", PASSWORD)
+        self.assertEqual(self.login(user="주인").location, "/admin/learning")
+
+    def test_failures_older_than_window_are_dropped(self):
+        for index in range(50):
+            self.login(password="wrong", address=f"198.51.100.{index}")
+        self.auth.blocked("203.0.113.1")
+        self.assertEqual(len(self.auth._fails), 50, "틀린 적 없는 주소는 키를 남기지 않는다")
+        self.now += owner_auth.TRY_WINDOW
+        self.login(password="wrong")
+        self.assertEqual(list(self.auth._fails), [ADDRESS])
+        self.assertFalse(self.auth.blocked("198.51.100.0"))
+        self.assertEqual(list(self.auth._fails), [ADDRESS])
 
     def test_login_uses_first_form_value_and_defaults_next(self):
         form = urllib.parse.urlencode([
@@ -239,6 +260,31 @@ class OwnerAuthTest(unittest.TestCase):
             self.assertEqual(salts.call_args_list, [call(16), call(16)])
             self.assertEqual(secrets.call_args_list, [call(32), call(32)])
 
+
+
+class LoginRequestSizeTest(unittest.TestCase):
+    """POST /login 의 Content-Length: 없거나 0 이하 · 숫자가 아니면 본문을 읽지 않고 413(요청 스레드가 묶이지 않게)."""
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="syung-auth-test-")
+        self.addCleanup(directory.cleanup)
+        self.auth = owner_auth.OwnerAuth(AuthConfig(auth_file=Path(directory.name) / "login.json"))
+        self.auth.set_password("owner", PASSWORD)
+        self.server = Server(("127.0.0.1", 0), make_handler(SimpleNamespace(auth=self.auth), 0))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def status(self, length):
+        with socket.create_connection(self.server.server_address, timeout=2) as connection:
+            connection.sendall(f"POST /login HTTP/1.1\r\nHost: x\r\nContent-Length: {length}\r\n\r\nuser=a".encode())
+            return connection.recv(64).split(b"\r\n", 1)[0]
+
+    def test_bad_length_is_refused_without_reading(self):
+        for length in ("-1", "0", "abc"):
+            with self.subTest(length=length):
+                self.assertEqual(self.status(length), b"HTTP/1.0 413 Content Too Large")
+        self.assertEqual(self.auth._fails, {}, "읽지 않았으니 틀린 횟수로도 세지 않는다")
+        self.assertEqual(self.status("6"), b"HTTP/1.0 303 See Other")
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,18 +34,29 @@ class OwnerAuth:
         now = time.time()
         with self._lock:
             recent = [t for t in self._fails.get(address, []) if now - t < TRY_WINDOW]
-            self._fails[address] = recent
+            if recent:
+                self._fails[address] = recent
+            else:
+                self._fails.pop(address, None)   # 틀린 적 없는 주소는 키를 남기지 않는다
             return len(recent) >= TRIES
+
+    def _note_failure(self, address: str) -> None:
+        now = time.time()
+        with self._lock:
+            # 창이 지난 주소는 지운다(주소를 바꿔 가며 틀려도 최근 10분 것만 남는다)
+            for old in [key for key, times in self._fails.items() if now - times[-1] >= TRY_WINDOW]:
+                del self._fails[old]
+            self._fails.setdefault(address, []).append(now)
 
     def check_password(self, user: str, password: str, address: str) -> bool:
         cfg = self.store.read()
         if not cfg or self.blocked(address):
             return False
         got = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(cfg["salt"]), cfg["iterations"]).hex()
-        ok = hmac.compare_digest(user, cfg["user"]) & hmac.compare_digest(got, cfg["hash"])
+        # bytes 로 비교한다 — str 끼리는 한글 같은 ASCII 밖 글자에서 TypeError(틀린 횟수로도 안 셌다)
+        ok = hmac.compare_digest(user.encode(), cfg["user"].encode()) & hmac.compare_digest(got, cfg["hash"])
         if not ok:
-            with self._lock:
-                self._fails.setdefault(address, []).append(time.time())
+            self._note_failure(address)
         return bool(ok)
 
     def issue_token(self) -> str:

@@ -3,6 +3,8 @@
 import copy
 import json
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -196,6 +198,26 @@ class LiveServiceTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "저장 실패"):
                 service._fetch_all()
         self.assertEqual(service.quota_used, 1)
+
+    def test_calls_from_many_threads_are_all_counted_and_saved(self):
+        # 지도 요청 · burst · 돌아가며 읽기가 잠금 없이(또는 다른 잠금으로) 동시에 부른다 — 저장이 서로 부딪쳐 실패하면 안 된다
+        source = FakeSource()
+        source.on_fetch = lambda operation: time.sleep(0.001)   # 받는 동안 다른 스레드가 끼어들게
+        service = self.service(source)
+        failures = []
+        def calls():
+            for _ in range(50):
+                try:
+                    service.fetch_line("9호선")
+                except OSError as exc:
+                    failures.append(exc)
+        workers = [threading.Thread(target=calls) for _ in range(8)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+        self.assertEqual(failures, [])
+        self.assertEqual((service.quota_used, self.saved()["used"]), (400, 400))
 
     def test_daily_limit_blocks_source_but_sample_key_ignores_limit(self):
         source = FakeSource()
