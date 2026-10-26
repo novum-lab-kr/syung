@@ -209,3 +209,34 @@ class DebugConfig:
     @classmethod
     def from_env(cls):
         return cls(debug_dir=Path(_env("SYUNG_DEBUG_DIR", "/var/lib/subway-live/debug")))
+
+
+@dataclass
+class MemberConfig:
+    """회원 로그인(카카오 · 구글 · Apple) · 출퇴근 설정(2026-10-26). 제공자 값이 하나도 없으면 회원 기능 전체가 꺼진다
+    (화면은 /api/auth/providers 가 빈 목록이면 로그인 줄을 숨긴다 — 설정 전 배포에도 지금 화면 그대로).
+
+    카카오: KAKAO_LOGIN=1 로 켠다(카카오 디벨로퍼스에서 카카오 로그인 · 리다이렉트 URI 를 켠 뒤). client_id 는 앱의 REST API 키라
+    따로 안 주면 장소 검색의 KAKAO_REST_KEY 를 쓴다. 시크릿은 REST API 키에 기본으로 켜져 있다(KAKAO_CLIENT_SECRET).
+    구글: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET. Apple: APPLE_CLIENT_ID(Services ID) + APPLE_CLIENT_SECRET(미리 만든 ES256 JWT, 6개월).
+    """
+    db_file: Path = Path("/var/lib/subway-live/members.sqlite3")
+    public_url: str = "https://syung.novum-lab.com"   # 리다이렉트 URI 의 앞부분(제공자 콘솔에 등록한 것과 같아야 한다)
+    kakao_client_id: str = field(default="", repr=False)
+    kakao_client_secret: str = field(default="", repr=False)
+    google_client_id: str = field(default="", repr=False)
+    google_client_secret: str = field(default="", repr=False)
+    apple_client_id: str = field(default="", repr=False)
+    apple_client_secret: str = field(default="", repr=False)
+
+    @classmethod
+    def from_env(cls) -> "MemberConfig":
+        kakao_on = _env("KAKAO_LOGIN", "0").strip() == "1"
+        return cls(db_file=Path(_env("SYUNG_MEMBER_DB", "/var/lib/subway-live/members.sqlite3")),
+                   public_url=_env("SYUNG_PUBLIC_URL", "https://syung.novum-lab.com").strip().rstrip("/"),
+                   kakao_client_id=(_env("KAKAO_LOGIN_CLIENT_ID", "") or _env("KAKAO_REST_KEY", "")).strip() if kakao_on else "",
+                   kakao_client_secret=_env("KAKAO_CLIENT_SECRET", "").strip() if kakao_on else "",
+                   google_client_id=_env("GOOGLE_CLIENT_ID", "").strip(),
+                   google_client_secret=_env("GOOGLE_CLIENT_SECRET", "").strip(),
+                   apple_client_id=_env("APPLE_CLIENT_ID", "").strip(),
+                   apple_client_secret=_env("APPLE_CLIENT_SECRET", "").strip())

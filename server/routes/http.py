@@ -2,6 +2,7 @@
 
 GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /admin/debug/recent · /admin/debug/bus-route
 POST /login · /logout · /admin/debug/ride · /admin/debug/shot
+회원(/auth/… · /me… — /api 가 붙어도 받는다, routes/members.py): GET · POST · PUT · DELETE
 /admin/… 는 주인 쿠키를 먼저 본다(없으면 401, POST 는 본문을 읽기 전에). Caddy 가 /api/admin/… 의 /api 를 떼고 넘긴다.
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
 """
@@ -17,6 +18,7 @@ from server.routes import bus as bus_routes
 from server.routes import debug as debug_routes
 from server.routes import journey as journey_routes
 from server.routes import live as live_routes
+from server.routes import members as member_routes
 from server.routes import owner as owner_routes
 from server.routes.errors import api_error
 from server.routes.response import Response
@@ -85,14 +87,39 @@ def make_handler(services, response_seconds: float):
             self.send_response(response.status)
             if response.kind == "redirect":
                 self.send_header("Location", response.location)
-                if response.cookie:
-                    self.send_header("Set-Cookie", response.cookie)
+            for cookie in ((response.cookie,) if response.cookie else ()) + tuple(response.cookies):
+                self.send_header("Set-Cookie", cookie)
             self.send_header("Cache-Control", "no-store")
             if response.kind == "redirect":
                 self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def _member(self, method: str) -> bool:
+            """회원 주소면 답하고 True(routes/members.py)."""
+            if member_routes.member_path(self.path.split("?", 1)[0]) is None:
+                return False
+
+            def read_body(limit: int) -> bytes | None:
+                size = _body_size(self.headers)
+                if size <= 0 or size > limit:
+                    self.close_connection = True
+                    return None
+                return self.rfile.read(size)
+            address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+            self._write(member_routes.handle(services.members, method, self.path, self.headers, read_body, address))
+            return True
+
+        def do_PUT(self) -> None:
+            if not self._member("PUT"):
+                self.send_error(404)
+
+        def do_DELETE(self) -> None:
+            if not self._member("DELETE"):
+                self.send_error(404)
+
         def do_POST(self) -> None:
+            if self._member("POST"):
+                return
             path = self.path.split("?", 1)[0]
             if path == "/logout":
                 return self._write(owner_routes.logout())
@@ -133,6 +160,8 @@ def make_handler(services, response_seconds: float):
             self._send(status, json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode())
 
         def do_GET(self) -> None:
+            if self._member("GET"):
+                return
             path = self.path.split("?", 1)[0]
             if path.startswith(ADMIN + "/"):
                 cookie, path = self.headers.get("Cookie"), path[len(ADMIN):]
@@ -167,7 +196,7 @@ def make_handler(services, response_seconds: float):
         def _send(self, status: int, data: bytes) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/", ADMIN + "/")) else "public, max-age=30")
+            self.send_header("Cache-Control", "no-store" if self.path.startswith(("/live", "/auth", "/bus/", "/api/bus/", ADMIN + "/", "/me", "/api/me", "/api/auth/")) else "public, max-age=30")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()

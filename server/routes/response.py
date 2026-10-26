@@ -6,9 +6,11 @@ from dataclasses import dataclass
 
 @dataclass
 class Response:
-    """kind: json(본문 바이트) · redirect(Location, 선택 Set-Cookie, 본문 없음) · empty(204, 길이 머리말 없음) · error(기본 HTML 오류)."""
+    """kind: json(본문 바이트) · redirect(Location, 선택 Set-Cookie, 본문 없음) · empty(204, 길이 머리말 없음) · error(기본 HTML 오류).
+    cookies: cookie 뒤에 더 보낼 Set-Cookie(회원 로그인 콜백이 세션을 주며 state 를 지울 때)."""
     status: int
     kind: str = "json"
     body: bytes = b""
     location: str = ""
     cookie: str | None = None
+    cookies: tuple = ()
