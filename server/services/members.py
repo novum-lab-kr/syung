@@ -42,7 +42,7 @@ def token_hash(token: str) -> str:
 
 def _place(value, label: str) -> dict:
     if not isinstance(value, dict):
-        raise ValueError(f"{label}를 골라 주세요")
+        raise ValueError(f"{label}지를 골라 주세요")
     name = value.get("name")
     lat, lng = value.get("lat"), value.get("lng")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
