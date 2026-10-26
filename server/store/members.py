@@ -1,4 +1,4 @@
-"""회원 DB(SQLite 파일 하나): 회원 · 로그인 제공자 연결 · 세션 · 출퇴근 설정. SQL 은 여기에만 둔다.
+"""회원 DB(SQLite 파일 하나): 회원 · 로그인 제공자 연결 · 세션 · 승차권. SQL 은 여기에만 둔다.
 
 표 설계 · 마이그레이션 차례는 계획서 3-1 과 같다. 새 칸 · 새 표는 MIGRATIONS 끝에 번호를 하나 더해 붙인다
 (지난 번호의 SQL 은 고치지 않는다 — 운영 DB 는 그 번호까지 이미 돌았다).
@@ -42,9 +42,32 @@ MIGRATIONS: list[tuple[int, str]] = [
             updated_at INTEGER NOT NULL
         );
     """),
+    # 2(2026-10-27): 출퇴근 한 줄(commute) → 승차권 여러 장(tickets). 한 장 = 출발지 → 도착지 · 출발 시각 · 타는 날.
+    # 옛 줄은 장소와 시각이 다 있을 때만 '출근'(집 → 회사) · '퇴근'(회사 → 집) 승차권으로 옮기고 commute 표는 지운다.
+    (2, """
+        CREATE TABLE tickets (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            from_name TEXT NOT NULL, from_lat REAL NOT NULL, from_lng REAL NOT NULL,
+            to_name TEXT NOT NULL, to_lat REAL NOT NULL, to_lng REAL NOT NULL,
+            depart_at TEXT NOT NULL,
+            days TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX tickets_user ON tickets(user_id);
+        INSERT INTO tickets (user_id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng, depart_at, days, created_at, updated_at)
+            SELECT user_id, '출근', home_name, home_lat, home_lng, work_name, work_lat, work_lng, leave_at, days, updated_at, updated_at
+            FROM commute WHERE home_name IS NOT NULL AND work_name IS NOT NULL AND leave_at IS NOT NULL;
+        INSERT INTO tickets (user_id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng, depart_at, days, created_at, updated_at)
+            SELECT user_id, '퇴근', work_name, work_lat, work_lng, home_name, home_lat, home_lng, back_at, days, updated_at, updated_at
+            FROM commute WHERE home_name IS NOT NULL AND work_name IS NOT NULL AND back_at IS NOT NULL;
+        DROP TABLE commute
+    """),
 ]
 
-COMMUTE_COLUMNS = ("home_name", "home_lat", "home_lng", "work_name", "work_lat", "work_lng", "leave_at", "back_at", "days")
+TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days")
 
 
 class MemberStore:
@@ -126,16 +149,16 @@ class MemberStore:
             conn.close()
 
     # ---- 회원 ----
-    def find_or_create_user(self, provider: str, subject: str, display_name: str, now: int) -> int:
-        """제공자 회원번호로 찾고, 없으면 회원 + 연결을 만든다. 이름은 처음 만들 때만 쓴다(1차)."""
+    def find_or_create_user(self, provider: str, subject: str, display_name: str, now: int) -> tuple[int, bool]:
+        """제공자 회원번호로 찾고, 없으면 회원 + 연결을 만든다 → (회원 번호, 새로 만들었나). 이름은 처음 만들 때만 쓴다."""
         def work(conn):
             row = conn.execute("SELECT user_id FROM identities WHERE provider=? AND subject=?", (provider, subject)).fetchone()
             if row:
-                return row["user_id"]
+                return row["user_id"], False
             user_id = conn.execute("INSERT INTO users (display_name, created_at) VALUES (?, ?)", (display_name, now)).lastrowid
             conn.execute("INSERT INTO identities (provider, subject, user_id, created_at) VALUES (?, ?, ?, ?)",
                          (provider, subject, user_id, now))
-            return user_id
+            return user_id, True
         return self._write(work)
 
     def user(self, user_id: int) -> dict | None:
@@ -144,7 +167,7 @@ class MemberStore:
         return dict(row) if row else None
 
     def delete_user(self, user_id: int) -> None:
-        """회원과 그 사람의 연결 · 세션 · 출퇴근 설정을 모두 지운다(ON DELETE CASCADE)."""
+        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지운다(ON DELETE CASCADE)."""
         self._write(lambda conn: conn.execute("DELETE FROM users WHERE id=?", (user_id,)))
 
     # ---- 세션 ----
@@ -162,17 +185,40 @@ class MemberStore:
     def delete_session(self, token_hash: str) -> None:
         self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,)))
 
-    # ---- 출퇴근 ----
-    def commute(self, user_id: int) -> dict | None:
-        row = self._read(f"SELECT {', '.join(COMMUTE_COLUMNS)} FROM commute WHERE user_id=?", (user_id,))
+    # ---- 승차권(출발지 → 도착지 · 출발 시각 · 타는 날) ----
+    def tickets(self, user_id: int) -> list[dict]:
+        self.open()
+        conn = self._connect()
+        try:
+            rows = conn.execute(f"SELECT id, {', '.join(TICKET_COLUMNS)} FROM tickets WHERE user_id=? ORDER BY created_at, id",
+                                (user_id,)).fetchall()
+        finally:
+            conn.close()
+        return [dict(row) for row in rows]
+
+    def ticket(self, user_id: int, ticket_id: int) -> dict | None:
+        row = self._read(f"SELECT id, {', '.join(TICKET_COLUMNS)} FROM tickets WHERE id=? AND user_id=?", (ticket_id, user_id))
         return dict(row) if row else None
 
-    def save_commute(self, user_id: int, values: dict, now: int) -> None:
-        """values: COMMUTE_COLUMNS 이름 → 값(검사는 services 가 마쳤다)."""
-        names = ", ".join(COMMUTE_COLUMNS)
-        marks = ", ".join("?" for _ in COMMUTE_COLUMNS)
-        updates = ", ".join(f"{name}=excluded.{name}" for name in COMMUTE_COLUMNS)
-        args = (user_id, *(values[name] for name in COMMUTE_COLUMNS), now)
-        self._write(lambda conn: conn.execute(
-            f"INSERT INTO commute (user_id, {names}, updated_at) VALUES (?, {marks}, ?) "
-            f"ON CONFLICT(user_id) DO UPDATE SET {updates}, updated_at=excluded.updated_at", args))
+    def add_ticket(self, user_id: int, values: dict, now: int, limit: int) -> int | None:
+        """새 승차권 번호. 이미 limit 장이면 None(만들지 않는다)."""
+        def work(conn):
+            count = conn.execute("SELECT count(*) FROM tickets WHERE user_id=?", (user_id,)).fetchone()[0]
+            if count >= limit:
+                return None
+            names = ", ".join(TICKET_COLUMNS)
+            marks = ", ".join("?" for _ in TICKET_COLUMNS)
+            return conn.execute(f"INSERT INTO tickets (user_id, {names}, created_at, updated_at) VALUES (?, {marks}, ?, ?)",
+                                (user_id, *(values[name] for name in TICKET_COLUMNS), now, now)).lastrowid
+        return self._write(work)
+
+    def update_ticket(self, user_id: int, ticket_id: int, values: dict, now: int) -> bool:
+        """그 사람의 승차권이 없으면 False."""
+        sets = ", ".join(f"{name}=?" for name in TICKET_COLUMNS)
+        return self._write(lambda conn: conn.execute(
+            f"UPDATE tickets SET {sets}, updated_at=? WHERE id=? AND user_id=?",
+            (*(values[name] for name in TICKET_COLUMNS), now, ticket_id, user_id)).rowcount > 0)
+
+    def delete_ticket(self, user_id: int, ticket_id: int) -> bool:
+        return self._write(lambda conn: conn.execute("DELETE FROM tickets WHERE id=? AND user_id=?",
+                                                     (ticket_id, user_id)).rowcount > 0)

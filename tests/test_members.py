@@ -17,11 +17,13 @@ from types import SimpleNamespace
 from server.config import MemberConfig
 from server.routes.http import Server, make_handler
 from server.services import login_providers
-from server.services.members import MemberService, TRIES, clean_commute
+from server.services.members import TICKET_LIMIT, MemberService, TRIES, clean_ticket
 from server.sources.oauth import ProviderError
 from server.store.members import MIGRATIONS, MemberStore
 
 NOW = 1_800_000_000
+TICKET = {"name": "출근", "from": {"name": "서울시청", "lat": 37.5663, "lng": 126.9779},
+          "to": {"name": "강남역", "lat": 37.4979, "lng": 127.0276}, "depart": "08:10", "days": [5, 1, 2, 4]}
 
 
 class FakeProvider:
@@ -82,7 +84,9 @@ class MemberHttpTest(unittest.TestCase):
         state = urllib.parse.parse_qs(urllib.parse.urlsplit(start.headers["Location"]).query)["state"][0]
         done = self.request("GET", f"{prefix}/auth/kakao/callback?code=who:{subject}:{urllib.parse.quote(name)}&state={state}",
                             cookie=state_cookie)
-        self.assertEqual((done.status, done.headers["Location"]), (302, "/#login=ok"))
+        self.assertEqual(done.status, 302)
+        self.assertIn(done.headers["Location"], ("/#login=new", "/#login=ok"))
+        self.last_location = done.headers["Location"]
         session = next(c for c in done.cookies if c.startswith("syung_session="))
         return session.split(";")[0]
 
@@ -101,29 +105,39 @@ class MemberHttpTest(unittest.TestCase):
         self.assertRegex(start.cookies[0], r"^syung_login=kakao\.[\w-]+; Max-Age=600; Path=/api/auth/; HttpOnly; Secure; SameSite=Lax$")
         self.assertEqual(start.headers["Cache-Control"], "no-store")
 
-    def test_signup_login_me_commute_logout_and_delete(self):
+    def test_signup_login_me_tickets_logout_and_delete(self):
         session = self.login()
+        self.assertEqual(self.last_location, "/#login=new", "처음 가입이면 발권 화면으로 이어 준다")
         self.assertEqual(self.provider.codes[-1][1], "https://syung.test/api/auth/kakao/callback")
         me = self.request("GET", "/api/me", cookie=session)
         self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao"}))
         self.assertEqual(me.headers["Cache-Control"], "no-store")
         # 같은 사람이 다시 로그인하면 같은 회원
         again = self.login(prefix="")   # Caddy 가 /api 를 뗀 주소
+        self.assertEqual(self.last_location, "/#login=ok")
         self.assertEqual(self.request("GET", "/me", cookie=again).json["id"], 1)
 
-        empty = self.request("GET", "/api/me/commute", cookie=session)
-        self.assertEqual(empty.json, {"home": None, "work": None, "leave": None, "back": None, "days": []})
-        setting = {"home": {"name": "우리 집", "lat": 37.5665, "lng": 126.978}, "work": {"name": "회사", "lat": 37.4979, "lng": 127.0276},
-                   "leave": "08:10", "back": "18:30", "days": [5, 1, 2, 3, 4, 1]}
-        saved = self.request("PUT", "/api/me/commute", cookie=session, body=setting)
-        self.assertEqual(saved.status, 200)
-        self.assertEqual(saved.json["days"], [1, 2, 3, 4, 5])
-        self.assertEqual(self.request("GET", "/api/me/commute", cookie=session).json, saved.json)
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json, {"tickets": []})
+        issued = self.request("POST", "/api/me/tickets", cookie=session, body=TICKET)
+        self.assertEqual(issued.status, 201)
+        self.assertEqual(issued.json, {"id": 1, "name": "출근", "from": TICKET["from"], "to": TICKET["to"], "depart": "08:10", "days": [1, 2, 4, 5]})
+        back = self.request("POST", "/api/me/tickets", cookie=session, body=dict(TICKET, name="퇴근", **{"from": TICKET["to"], "to": TICKET["from"]}, depart="18:30"))
+        self.assertEqual(back.status, 201, "같은 요일에 여러 장")
+        listed = self.request("GET", "/api/me/tickets", cookie=session).json["tickets"]
+        self.assertEqual([ticket["name"] for ticket in listed], ["출근", "퇴근"])
 
-        # 다른 사람은 남의 설정을 못 본다
+        fixed = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6]))
+        self.assertEqual((fixed.status, fixed.json["depart"], fixed.json["days"]), (200, "07:50", [6]))
+        self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 204)
+        self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 404)
+
+        # 다른 사람은 남의 승차권을 못 보고 못 고치고 못 지운다
         other = self.login(subject="77", name="준호")
         self.assertEqual(self.request("GET", "/api/me", cookie=other).json["id"], 2)
-        self.assertEqual(self.request("GET", "/api/me/commute", cookie=other).json["home"], None)
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie=other).json, {"tickets": []})
+        self.assertEqual(self.request("PUT", "/api/me/tickets/1", cookie=other, body=TICKET).status, 404)
+        self.assertEqual(self.request("DELETE", "/api/me/tickets/1", cookie=other).status, 404)
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json["tickets"][0]["depart"], "07:50")
 
         out = self.request("POST", "/api/auth/logout", cookie=session)
         self.assertEqual(out.status, 204)
@@ -136,13 +150,20 @@ class MemberHttpTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/me", cookie=again).status, 401)
         with contextlib.closing(sqlite3.connect(self.db)) as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM users WHERE id=1").fetchone()[0], 0)
-            for table in ("identities", "sessions", "commute"):
+            for table in ("identities", "sessions", "tickets"):
                 self.assertEqual(conn.execute(f"SELECT count(*) FROM {table} WHERE user_id=1").fetchone()[0], 0, table)
             self.assertEqual(conn.execute("SELECT count(*) FROM users").fetchone()[0], 1, "준호는 남는다")
             # 세션 쿠키 값은 저장하지 않는다(해시만)
             tokens = [row[0] for row in conn.execute("SELECT token_hash FROM sessions")]
             self.assertNotIn(other.split("=", 1)[1], tokens)
             self.assertTrue(all(len(token) == 64 for token in tokens))
+
+    def test_ticket_limit(self):
+        session = self.login()
+        for _ in range(TICKET_LIMIT):
+            self.assertEqual(self.request("POST", "/api/me/tickets", cookie=session, body=TICKET).status, 201)
+        over = self.request("POST", "/api/me/tickets", cookie=session, body=TICKET)
+        self.assertEqual((over.status, over.json["error"]["code"]), (409, "too_many"))
 
     def test_callback_rejects_missing_or_wrong_state_and_cancel(self):
         start = self.request("GET", "/api/auth/kakao/start")
@@ -164,27 +185,30 @@ class MemberHttpTest(unittest.TestCase):
 
     def test_changing_requests_need_the_header(self):
         session = self.login()
-        for method, path in (("POST", "/api/auth/logout"), ("DELETE", "/api/me"), ("PUT", "/api/me/commute")):
-            with self.subTest(method=method):
-                result = self.request(method, path, cookie=session, body={} if method == "PUT" else None, csrf=False)
+        for method, path in (("POST", "/api/auth/logout"), ("DELETE", "/api/me"), ("POST", "/api/me/tickets"),
+                             ("PUT", "/api/me/tickets/1"), ("DELETE", "/api/me/tickets/1")):
+            with self.subTest(method=method, path=path):
+                result = self.request(method, path, cookie=session, body=TICKET if path.startswith("/api/me/tickets") and method != "DELETE" else None, csrf=False)
                 self.assertEqual(result.status, 403)
                 self.assertEqual(result.json["error"]["code"], "forbidden")
         self.assertEqual(self.request("GET", "/api/me", cookie=session).status, 200, "막힌 요청은 아무것도 안 바꾼다")
 
-    def test_bad_commute_bodies(self):
+    def test_bad_ticket_bodies(self):
         session = self.login()
-        for body in (b"not json", {"home": {"name": "", "lat": 37.5, "lng": 127}}, {"home": {"name": "집", "lat": 0, "lng": 0}},
-                     {"leave": "8:10"}, {"back": "24:00"}, {"days": [0]}, {"days": [True]}, {"days": "1,2"}, []):
+        for body in (b"not json", [], dict(TICKET, name=""), dict(TICKET, name="가" * 13), {k: v for k, v in TICKET.items() if k != "from"},
+                     dict(TICKET, to={"name": "집", "lat": 0, "lng": 0}), dict(TICKET, depart="8:10"), dict(TICKET, depart=None),
+                     dict(TICKET, days=[0]), dict(TICKET, days=[True]), dict(TICKET, days="1,2")):
             with self.subTest(body=body):
-                result = self.request("PUT", "/api/me/commute", cookie=session, body=body)
+                result = self.request("POST", "/api/me/tickets", cookie=session, body=body)
                 self.assertEqual(result.status, 400)
                 self.assertEqual(result.json["error"]["code"], "bad_request")
-        big = self.request("PUT", "/api/me/commute", cookie=session, body=b"{" + b" " * 5000 + b"}")
+        big = self.request("POST", "/api/me/tickets", cookie=session, body=b"{" + b" " * 5000 + b"}")
         self.assertEqual(big.status, 413)
+        self.assertEqual(self.request("PUT", "/api/me/tickets/0", cookie=session, body=TICKET).status, 404, "번호 모양이 아니면 없는 주소")
 
     def test_unauthenticated_and_expired_sessions(self):
         self.assertEqual(self.request("GET", "/api/me").json, {"error": {"code": "login", "message": "로그인이 필요해요"}})
-        self.assertEqual(self.request("GET", "/api/me/commute", cookie="syung_session=made-up").status, 401)
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie="syung_session=made-up").status, 401)
         session = self.login()
         self.now = NOW + 30 * 24 * 3600
         self.assertEqual(self.request("GET", "/api/me", cookie=session).status, 401)
@@ -273,16 +297,40 @@ class ProviderTest(unittest.TestCase):
         self.assertNotIn("k", repr(config), "키는 repr 에 안 나온다")
 
 
-class CleanCommuteTest(unittest.TestCase):
-    def test_partial_setting_is_allowed(self):
-        self.assertEqual(clean_commute({"leave": "07:05"})["leave_at"], "07:05")
-        self.assertIsNone(clean_commute({})["home_name"])
+class CleanTicketTest(unittest.TestCase):
+    def test_days_are_sorted_and_unique(self):
+        self.assertEqual(clean_ticket(dict(TICKET, days=[5, 1, 1]))["days"], "1,5")
+        self.assertEqual(clean_ticket(dict(TICKET, days=[]))["days"], "")
 
     def test_times_must_be_exactly_hh_mm_in_ascii(self):
         for value in ("08:10\n", "\n08:10", "０８:１０", "٠٨:١٠", "08:10 ", "8:10", "24:00"):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                clean_commute({"leave": value})
-        self.assertEqual(clean_commute({"back": "23:59"})["back_at"], "23:59")
+                clean_ticket(dict(TICKET, depart=value))
+        self.assertEqual(clean_ticket(dict(TICKET, depart="23:59"))["depart_at"], "23:59")
+
+
+class MigrationTest(unittest.TestCase):
+    def test_version_one_commute_rows_become_tickets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "m.sqlite3"
+            with contextlib.closing(sqlite3.connect(path)) as conn:
+                conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+                conn.execute("INSERT INTO schema_version VALUES (1)")
+                for statement in (part.strip() for part in MIGRATIONS[0][1].split(";")):
+                    if statement:
+                        conn.execute(statement)
+                conn.execute("INSERT INTO users VALUES (1, '민지', 0), (2, '준호', 0)")
+                conn.execute("INSERT INTO commute VALUES (1, '집', 37.5, 127.0, '회사', 37.4, 127.1, '08:10', '18:30', '1,2,3', 5)")
+                conn.execute("INSERT INTO commute VALUES (2, '집', 37.5, 127.0, NULL, NULL, NULL, '09:00', NULL, '', 6)")
+                conn.commit()
+            store = MemberStore(path)
+            self.assertEqual(store.schema_version(), MIGRATIONS[-1][0])
+            tickets = store.tickets(1)
+            self.assertEqual([(t["name"], t["from_name"], t["to_name"], t["depart_at"], t["days"]) for t in tickets],
+                             [("출근", "집", "회사", "08:10", "1,2,3"), ("퇴근", "회사", "집", "18:30", "1,2,3")])
+            self.assertEqual(store.tickets(2), [], "장소가 빠진 줄은 옮기지 않는다")
+            with contextlib.closing(sqlite3.connect(path)) as conn:
+                self.assertIsNone(conn.execute("SELECT name FROM sqlite_master WHERE name='commute'").fetchone())
 
 
 if __name__ == "__main__":

@@ -704,37 +704,94 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 .st-sk i+i{height:15px;width:62%;margin-left:14px}
 .st-sk i+i+i{width:52%}
 
-/* 회원(web/user/account.mjs): 메뉴 맨 위 로그인 줄 · '내 정보' 쪽. 로그인 방법이 설정되지 않으면 줄 자체가 hidden */
-.menu-account{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
-.menu-account[hidden],#accountOut[hidden],#accountIn[hidden],.commute-found[hidden]{display:none}
-.account-page{padding:4px 10px}
-.account-who{margin:6px 0 14px;font-size:15px;line-height:1.5;font-weight:700;color:var(--ink)}
-.account-note{margin:14px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
-.account-note a{color:var(--secondary);text-underline-offset:2px}
-.account-msg{margin:12px 0 0;min-height:1.5em;font-size:13px;line-height:1.5;color:var(--secondary)}
-.login-list{display:flex;flex-direction:column;gap:8px}
-.login-button{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none}
-.login-kakao{background:#fee500;color:#191919}
-.login-google{background:#fff;color:#1f1f1f;box-shadow:inset 0 0 0 1px #747775}
-.login-apple{background:#000;color:#fff}
-html[data-theme=dark] .login-apple{box-shadow:inset 0 0 0 1px #5a5a5a}
-.commute-form{display:flex;flex-direction:column;gap:6px}
-.commute-form .menu-label{margin:0 0 2px}
-.commute-form label{font-size:13px;font-weight:700;color:var(--secondary)}
-.commute-form input{box-sizing:border-box;width:100%;min-height:44px;padding:0 12px;border:1px solid var(--rule);border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:16px}
-.commute-form input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
-.commute-found{margin:0;padding:4px;list-style:none;border:1px solid var(--rule);border-radius:12px;background:var(--paper);max-height:220px;overflow-y:auto}
-.commute-found button{display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.commute-found button:hover{background:var(--control)}
-.commute-found small{font-size:12px;color:var(--muted)}
-.commute-empty{padding:8px 10px;font-size:13px;color:var(--muted)}
-.commute-times{display:flex;gap:8px;margin-top:4px}
-.commute-times label{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.commute-days-row{display:flex;flex-direction:column;gap:6px;margin-top:4px;font-size:13px;font-weight:700;color:var(--secondary)}
-.commute-days{display:flex;gap:4px}
-.commute-days button{flex:1;min-width:0;min-height:40px;border:0;border-radius:10px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
-.commute-days button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
-.commute-save{margin-top:8px;min-height:48px;border:0;border-radius:12px;background:var(--ink);color:var(--paper);font:inherit;font-size:15px;font-weight:700;cursor:pointer}
-.account-actions{display:flex;flex-direction:column;gap:6px;margin-top:20px;padding-top:12px;border-top:1px solid var(--rule)}
-.account-actions button{min-height:44px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
-.account-actions .account-delete{background:transparent;color:#c2410c}
+/* 회원(web/user/account.mjs): 메뉴 맨 위 [로그인] · 로그인 팝업(서랍 안 아래에서) · 내 정보(승차권 목록) · 발권 화면.
+   로그인 방법이 설정되지 않으면 맨 위 칸 자체가 hidden. 승차권 모양은 2026-10-27 사용자와 정한 '슝 승차권'(옛 노란 보통권 + 슝 로고) */
+.menu-account{margin-bottom:8px;padding:2px 0 10px;border-bottom:1px solid var(--rule)}
+.menu-account[hidden],.menu-account [hidden],.login-sheet[hidden],.account-page [hidden],.ticket-page [hidden]{display:none}
+.login-open{display:flex;align-items:center;justify-content:center;width:100%;min-height:46px;border:0;border-radius:14px;background:var(--ink);color:var(--paper);font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.account-avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:11px;background:var(--syung);color:#141414;font-family:var(--round);font-size:16px}
+.account-avatar.big{width:44px;height:44px;border-radius:15px;font-size:21px}
+/* 로그인 팝업 */
+.login-sheet{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:flex-end}
+.login-scrim{position:absolute;inset:0;background:rgba(18,18,18,.4);opacity:0;transition:opacity .22s}
+.login-card{position:relative;padding:12px 24px calc(28px + env(safe-area-inset-bottom,0px));border-radius:27px 27px 0 0;background:var(--paper);color:var(--ink);box-shadow:0 -10px 30px rgba(23,30,24,.13);transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;align-items:center}
+.login-sheet.open .login-scrim{opacity:1}.login-sheet.open .login-card{transform:none}
+.login-grab{width:32px;height:4px;border-radius:5px;background:var(--rule);margin:0 0 23px}
+.login-brand{width:47px;height:47px;border-radius:15px;box-shadow:0 4px 0 #e9e5cd;margin:0 0 14px}
+.login-card h2{margin:0 0 23px;font-family:var(--round);font-weight:400;font-size:25px}
+.login-list{display:flex;flex-direction:column;gap:9px;width:100%}
+.social{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;font-size:13px;font-weight:600;text-decoration:none}
+.social svg{width:18px;height:18px;flex:none}
+.social.kakao{background:#fee500;color:#191919}
+.social.google{background:#fff;color:#1f1f1f;box-shadow:inset 0 0 0 1px #747775}
+.social.apple{background:#000;color:#fff}
+html[data-theme=dark] .social.apple{box-shadow:inset 0 0 0 1px #5a5a5a}
+.login-privacy{margin-top:14px;font-size:11px;color:var(--muted);text-underline-offset:2px}
+.login-msg{margin:10px 0 0;min-height:1.4em;font-size:12px;color:var(--secondary);text-align:center}
+@media (prefers-reduced-motion:reduce){.login-card,.login-scrim{transition:none}}
+/* 내 정보 */
+.account-page,.ticket-page{padding:4px 10px}
+.account-prof{display:flex;align-items:center;gap:12px;margin:4px 0 14px}
+.account-prof b{display:block;font-size:17px}.account-prof small{font-size:12px;color:var(--muted)}
+.ticket-list{display:flex;flex-direction:column;gap:12px}
+.ticket-new{margin-top:12px;width:100%;min-height:46px;border:0;border-radius:14px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.account-foot{display:flex;justify-content:center;gap:14px;margin-top:18px;font-size:12px}
+.account-foot a,.account-foot button{border:0;background:none;padding:4px 0;color:var(--muted);font:inherit;cursor:pointer;text-underline-offset:2px}
+.account-foot .account-delete{color:#c2410c}
+.account-confirm{margin-top:12px;padding:12px;border-radius:14px;background:var(--control)}
+.account-confirm p{margin:0 0 8px;font-size:14px;font-weight:700}
+.account-confirm div{display:flex;gap:8px}
+.account-confirm button{flex:1;min-height:42px;border:0;border-radius:10px;font:inherit;font-weight:700;cursor:pointer;background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule)}
+.account-confirm .danger{background:#c2410c;color:#fff;box-shadow:none}
+.account-msg{margin:12px 0 0;min-height:1.4em;font-size:13px;color:var(--secondary)}
+/* 승차권: 앞면 = 이름 · 출발 시각 · 점선 슝 로고 줄 · '○○권' 띠 · 일련번호 · 오늘, 누르면 뒤집혀 뒷면 = 갈아타는 곳 이어 쓰기 · 출발 시각 · 마그네틱 띠 · 타는 날 */
+.ticket{position:relative;flex:none;height:158px;perspective:900px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ticket-in{position:relative;height:100%;transition:transform .6s cubic-bezier(.3,.7,.2,1.1);transform-style:preserve-3d}
+.ticket.flipped .ticket-in{transform:rotateY(180deg)}
+.tk-face{position:absolute;inset:0;overflow:hidden;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:18px;background:#ffe14d;color:#655b24;box-shadow:0 3px 0 #e6c62f,0 7px 14px rgba(170,140,0,.09)}
+.tk-face:after{content:"";position:absolute;inset:6px;border:1px dashed rgba(111,100,32,.27);border-radius:13px;pointer-events:none}
+.tk-logos{position:absolute;inset:7px;border-radius:12px;overflow:hidden;pointer-events:none}
+.tk-logo-row{position:absolute;left:0;right:0;top:17px;display:flex;justify-content:center;gap:14px}
+.tk-logo-row svg{flex:none;width:124px;height:74px;transform:rotate(-20deg);color:#8a7a25;opacity:.7}
+.tk-top{position:absolute;left:18px;right:18px;top:14px;display:flex;justify-content:space-between;align-items:baseline}
+.tk-top b{font-family:var(--round);font-weight:400;font-size:24px;line-height:30px;color:#5d5418;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-top b+b{flex:none;font-size:29px;letter-spacing:-.5px;margin-left:10px}
+.tk-strip{position:absolute;left:7px;right:7px;top:94px;height:27px;display:flex;align-items:center;justify-content:center;gap:18px;overflow:hidden;white-space:nowrap;background:rgba(255,242,168,.79);border-top:1px solid rgba(135,121,39,.13);border-bottom:1px solid rgba(135,121,39,.13)}
+.tk-strip span{flex:none;display:inline-flex;align-items:center;gap:5px;font-family:var(--round);font-size:12px;color:#48546b}
+.tk-strip img{width:13px;height:13px;border-radius:4px}
+.tk-serial{position:absolute;left:18px;bottom:14px;font:500 10px/16px ui-monospace,Menlo,monospace;letter-spacing:1px;color:#766923}
+.tk-today{position:absolute;right:48px;bottom:12px;padding:2px 9px;border-radius:999px;background:#fffdf5;color:#b64b2e;font-family:var(--round);font-size:12px;line-height:18px;transform:rotate(-7deg);box-shadow:0 2px 0 rgba(0,0,0,.05)}
+.tk-flip{position:absolute;right:17px;bottom:12px;width:23px;height:23px;padding:0;border:0;border-radius:50%;background:rgba(111,100,32,.1);color:#655b24;font:900 14px/23px sans-serif;cursor:pointer}
+.tk-back{transform:rotateY(180deg);background:#ffe88a}
+.tk-chain{position:absolute;left:17px;right:17px;top:12px;margin:0;font-family:var(--round);font-size:13px;line-height:1.4;color:#3a3413;word-break:keep-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tk-chain span{white-space:nowrap}
+.tk-chain em{font-style:normal;color:#9a8b33;margin:0 4px}
+.tk-chain small{margin-left:6px;font:700 10px/14px "Noto Sans KR",sans-serif;color:#9a8b33;white-space:nowrap}
+.tk-chain.wait{color:#9a8b33}
+.tk-time{position:absolute;left:17px;right:17px;bottom:84px;display:flex;align-items:baseline;gap:7px;margin:0}
+.tk-time span{font-family:var(--round);font-size:11px;color:#786a2b}
+.tk-time b{font-family:var(--round);font-weight:400;font-size:16px;color:#51491f}
+.tk-mag{position:absolute;left:7px;right:7px;bottom:52px;height:24px;background:#665347;box-shadow:inset 0 2px 0 rgba(255,255,255,.07)}
+.tk-foot{position:absolute;left:17px;right:17px;bottom:14px;display:flex;justify-content:space-between;align-items:center;font-family:var(--round);font-size:11px;color:#786a2b}
+.tk-edit{border:0;padding:3px 10px;border-radius:999px;background:#655b24;color:#fff3b1;font-family:var(--round);font-size:11px;line-height:17px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.ticket-in{transition:none}}
+/* 발권 화면 */
+.ticket-form{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.tf-l{margin:6px 0 0;font-family:var(--round);font-size:13px;color:#9a8b33}
+.tf-in{box-sizing:border-box;width:100%;min-height:44px;padding:0 14px;border:2px solid #f3d64a;border-radius:14px;background:#fff7cc;color:#4b4316;font:inherit;font-size:16px;font-weight:700}
+.tf-days{display:flex;gap:4px}
+.tf-days button{flex:1;min-width:0;height:36px;border:0;border-radius:12px;background:#f4eed2;color:#b7ad80;font-family:var(--round);font-size:14px;cursor:pointer}
+.tf-days button[aria-pressed=true]{background:#ffe14d;color:#4b4316;box-shadow:0 3px 0 #e6c62f}
+.tf-box{border:2px solid #f3d64a;border-radius:14px;background:#fff7cc;overflow:hidden}
+.tf-r{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 14px;border-bottom:1.5px dashed #f0dc86}
+.tf-r:last-child{border-bottom:0}
+.tf-r span{flex:none;width:56px;font-size:12px;font-weight:700;color:#8f8236}
+.tf-r input{flex:1;min-width:0;border:0;background:transparent;color:#4b4316;font:inherit;font-size:15px;font-weight:700;text-align:right;padding:8px 0}
+.tf-r input:focus-visible,.tf-in:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.tf-found{margin:0;padding:4px;list-style:none;border-bottom:1.5px dashed #f0dc86;background:var(--paper);max-height:200px;overflow-y:auto}
+.tf-found button{display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:7px 10px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.tf-found button:hover{background:var(--control)}
+.tf-found small{font-size:12px;color:var(--muted)}
+.tf-found .empty{padding:7px 10px;font-size:13px;color:var(--muted)}
+.tf-save{margin-top:10px;min-height:50px;border:0;border-radius:16px;background:#ffe14d;color:#4b4316;font-family:var(--round);font-size:17px;letter-spacing:1px;box-shadow:0 4px 0 #e6c62f;cursor:pointer}
+.tf-del{margin-top:6px;border:0;background:none;color:#c2410c;font:inherit;font-size:13px;cursor:pointer}
