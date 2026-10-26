@@ -30,8 +30,9 @@ export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyG
     const tn=$('themeNote');
     if(tn){
       if(cur.themeChoice==='auto'){
-        const {rise,set}=seoulSun(new Date());
-        tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(rise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
+        // 다음에 바뀌는 때: 낮이면 오늘 일몰, 일출 전이면 오늘 일출, 일몰 뒤면 내일 일출(서울 날짜 기준 seoulSun 에 하루 뒤를 준다)
+        const now=new Date(),{rise,set}=seoulSun(now),nextRise=now>=set?seoulSun(new Date(now.getTime()+864e5)).rise:rise;
+        tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(nextRise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
       }else tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';
     }
     drawSky();
