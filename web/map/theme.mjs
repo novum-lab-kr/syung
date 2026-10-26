@@ -27,14 +27,14 @@ export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyG
     const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
     // 메뉴의 테마 카드(자동 · 라이트 · 다크) 아래 한 줄: 자동이면 지금 테마와 다음에 바뀌는 때(서울 해 뜨고 지는 시각), 고정이면 자동이 뭔지
     for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===cur.themeChoice));
-    const tn=$('themeNote'),sp=$('sunPath');
+    const tn=$('themeNote');
     if(tn){
       if(cur.themeChoice==='auto'){
-        const now=new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
+        const {rise,set}=seoulSun(new Date());
         tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(rise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
-        if(sp){sp.innerHTML=sunPathHTML(now,rise,set,hm);sp.classList.toggle('is-night',t==='dark');sp.hidden=false}
-      }else{tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';if(sp)sp.hidden=true}
+      }else tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';
     }
+    drawSky();
     if(!live.ready)return;
     const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
     set('background','background-color',P.bg);map.triggerRepaint();
@@ -63,12 +63,19 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
   for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{prefs.set('themeChoice',b.dataset.themeChoice);applyTheme()};
-  setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
+  setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();else drawSky();updateSun()},5*60*1000);   // 고정 테마여도 하늘 그림의 해 · 달은 움직인다
 
-  // ---- 하늘 띠(자동일 때 테마 세그먼트 아래) — 슝 그림: 산 · 서울 빌딩(남산타워 · 롯데타워) 앞 선로를 동글한 지하철이 달리고,
+  // ---- 하늘 띠(메뉴 맨 위 · 테마 세그먼트 위, 늘 보임) — 슝 그림: 산 · 서울 빌딩(남산타워 · 롯데타워) 앞 선로를 동글한 지하철이 달리고,
   // 낮엔 구름 하늘에 웃는 해가 지평선 위 호를 왼쪽(해 뜸) → 오른쪽(해 짐), 밤엔 별 하늘에 졸린 달이 오른쪽 → 왼쪽(해 진 뒤 → 다음 해 뜰 때). 밤엔 창문 · 전조등이 켜진다.
   // 호는 2차 베지어(양 끝 지평선 · 가운데 조절점) — 해 · 달은 그 곡선의 t=진행 자리. 밤 길이는 하루에서 낮을 뺀 값(다음 일출을 오늘 일출 시각으로 어림)
-  function sunPathHTML(now,rise,set,hm){
+  const hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
+  // 메뉴 맨 위 하늘 그림: 고른 테마와 상관없이 늘 지금 실제 하늘(낮 · 밤)
+  function drawSky(){
+    const sp=$('sunPath');if(!sp)return;
+    const now=new Date(),{rise,set}=seoulSun(now);
+    sp.innerHTML=sunPathHTML(now,rise,set);sp.classList.toggle('is-night',!(now>=rise&&now<set));
+  }
+  function sunPathHTML(now,rise,set){
     const W=320,H=110,left=30,right=290,base=84,arcBase=62,top=-22,dayLen=set-rise,day=now>=rise&&now<set,nightLen=864e5-dayLen;
     const clamp=v=>Math.min(1,Math.max(0,v));
     const night=clamp(now>=set?(now-set)/nightLen:1-(rise-now)/nightLen),t=day?clamp((now-rise)/dayLen):1-night,u=1-t;

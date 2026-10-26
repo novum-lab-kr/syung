@@ -60,7 +60,7 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .menu-head h2{flex:1;min-width:0}
 .menu-list,.menu-page{padding:4px 0}
 .menu-nav{margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}   /* 첫 화면: 위는 테마, 선 아래는 들어가는 목록 */
-/* 테마: 넓은 세그먼트(자동 · 라이트 · 다크, 아이콘 + 글, 고른 쪽 노랑 + ✓) → 자동일 때 하늘 띠 → 지금 상태 한 줄. 안 고른 글씨도 진하게 */
+/* 테마: 하늘 그림 띠(늘) → 넓은 세그먼트(자동 · 라이트 · 다크, 아이콘 + 글, 고른 쪽 노랑 + ✓) → 지금 상태 한 줄. 안 고른 글씨도 진하게 */
 .menu-label{margin:4px 10px 8px;font-size:12px;line-height:1.5;font-weight:700;color:var(--secondary)}
 .theme-seg{display:flex;margin:0 4px;padding:4px;border-radius:999px;background:var(--control)}
 .theme-seg button{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;border:0;border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-size:15px;font-weight:700;white-space:nowrap;cursor:pointer;transition:background .15s}
@@ -69,8 +69,7 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .theme-seg button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .theme-seg button[aria-pressed=true]:after{content:"✓";font-size:13px}
 @media(prefers-reduced-motion:reduce){.theme-seg button{transition:none}}
-.sun-path{position:relative;height:110px;margin:10px 4px 0;border-radius:14px;overflow:hidden}   /* 하늘 띠: 자동일 때만 */
-.sun-path[hidden]{display:none}
+.sun-path{position:relative;height:110px;margin:0 4px 10px;border-radius:14px;overflow:hidden}   /* 하늘 그림 띠: 테마 위, 늘 보임 */
 .sun-path svg{position:absolute;inset:0;width:100%;height:100%}
 .sun-times{position:absolute;left:12px;right:12px;bottom:5px;display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#4a3d00;font-variant-numeric:tabular-nums}
 .sun-path.is-night .sun-times{color:#e6edf5}
