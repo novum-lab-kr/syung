@@ -845,7 +845,7 @@ for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaste
     if(!isOpen())return;
     if(e.key==='Escape'){close();return}
     if(e.key!=='Tab')return;   // 서랍이 열려 있는 동안 Tab 은 서랍 안에서만 돈다
-    const items=[...panel.querySelectorAll('button:not([disabled]),a[href],input')].filter(el=>el.offsetParent);   // 내 정보 쪽의 링크 · 입력칸도 돈다if(!items.length)return;
+    const items=[...panel.querySelectorAll('button:not([disabled]),a[href],input')].filter(el=>el.offsetParent);if(!items.length)return;   // 내 정보 쪽의 링크 · 입력칸도 돈다
     const first=items[0],last=items[items.length-1];
     if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
