@@ -53,7 +53,7 @@ export function registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM}){
 
 export const BASEMAP_LAYERS=['bm-landcover','bm-park','bm-water','bm-bld','bm-bld3d','bm-road-minor','bm-road-major','bm-rail','bm-label-water','bm-label-park','bm-label-road','bm-label-poi','bm-label-place'];
 export function addBasemap({map,sunShadows,PHONE,CITY_STYLE,addCityLayers,applyTheme}){
-  map.addSource('ofm',{type:'vector',url:'https://tiles.openfreemap.org/planet',attribution:'© OpenMapTiles © OpenStreetMap contributors'});
+  map.addSource('ofm',{type:'vector',url:'https://tiles.openfreemap.org/planet',attribution:'<a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>'});
   const L=o=>map.addLayer(o,'routes');
   L({id:'bm-landcover',type:'fill',source:'ofm','source-layer':'landcover',filter:['in',['get','class'],['literal',['wood','grass']]],paint:{'fill-color':'#e1eadf','fill-opacity':.7}});
   L({id:'bm-park',type:'fill',source:'ofm','source-layer':'park',paint:{'fill-color':'#dde8da','fill-opacity':.8}});

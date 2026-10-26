@@ -335,8 +335,7 @@ class BusLayer {
 
   installLayers() {
     const map = this.map;
-    map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 0, maxzoom: 18,
-      attribution: '버스 노선·정류장 <a href="https://data.seoul.go.kr/dataList/OA-1095/F/1/datasetView.do" target="_blank" rel="noopener">서울특별시 열린데이터광장</a>'});
+    map.addSource(SOURCE_ROUTES, {type: 'geojson', data: collection([]), tolerance: 0, maxzoom: 18});   // 출처는 메뉴 '데이터 출처' 쪽에(지도 출처 칸은 지도 한 줄만)
     const layout={'line-cap':'round','line-join':'round'},ride=['==',['get','kind'],'ride'];
     map.addLayer({id:LAYERS[0],type:'line',source:SOURCE_ROUTES,filter:ride,layout,paint:{...journeyCasingPaint({thin:true}),'line-opacity':lodOpacity}});
     for (const approximate of [false, true]) map.addLayer({id: approximate ? LAYERS[2] : LAYERS[1], type: 'line', source: SOURCE_ROUTES,
