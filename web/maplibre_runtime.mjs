@@ -828,17 +828,35 @@ for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaste
 {const b=$('toggleSaver'),show=()=>b?.setAttribute('aria-pressed',String(saverOn));show();   // 절전 버튼: 바꾸면 이 기기에 저장, 바로 다음 프레임부터
   if(b)b.onclick=()=>{saverOn=!saverOn;prefs.set('saver',saverOn?'on':'off');show();trainFrameSoon(0)}}
 $('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
-// ---- settings (gear in the header): on/off switches ----
+// ---- settings (header hamburger → right drawer): on/off switches ----
 {
   {const z=$('zoomBadge'),show=()=>{z.textContent='z'+map.getZoom().toFixed(1)};map.on('zoom',show);show()}   // the zoom beside 새로고침, for checking views
   $('refreshButton').onclick=e=>{e.currentTarget.classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
   const btn=$('settingsButton'),panel=$('settingsPanel');
   $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;
   $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('mapColorIcon').innerHTML=ICONS.palette;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
-  const setOpen=o=>{panel.hidden=!o;btn.setAttribute('aria-expanded',String(o))};
-  btn.onclick=e=>{e.stopPropagation();setOpen(panel.hidden)};
-  document.addEventListener('click',e=>{if(!panel.hidden&&!panel.contains(e.target))setOpen(false)});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){setOpen(false);btn.focus()}});
+  // 설정 서랍(햄버거): 열 때 hidden 을 풀고 한 프레임 뒤 .open 으로 밀어 내고, 닫을 때 .open 을 떼고 밀려 들어간 뒤 hidden.
+  // 버스 층은 panel.hidden=true 로 바로 닫는다 — 그래서 '열림'은 hidden 이 아니고 .open 이 붙은 때다
+  const isOpen=()=>!panel.hidden&&panel.classList.contains('open');
+  const slideMs=matchMedia('(prefers-reduced-motion: reduce)').matches?0:260;let closeTimer=0;
+  const setOpen=o=>{
+    clearTimeout(closeTimer);btn.setAttribute('aria-expanded',String(o));
+    if(o){panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');$('settingsClose').focus({preventScroll:true});return}
+    panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
+  };
+  const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
+  btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
+  $('settingsClose').onclick=close;
+  document.addEventListener('click',e=>{if(isOpen()&&!panel.contains(e.target))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다
+  document.addEventListener('keydown',e=>{
+    if(!isOpen())return;
+    if(e.key==='Escape'){close();return}
+    if(e.key!=='Tab')return;   // 서랍이 열려 있는 동안 Tab 은 서랍 안에서만 돈다
+    const items=[...panel.querySelectorAll('button:not([disabled])')].filter(el=>el.offsetParent);if(!items.length)return;
+    const first=items[0],last=items[items.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+  });
 }
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();

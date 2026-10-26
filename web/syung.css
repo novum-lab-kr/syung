@@ -30,7 +30,6 @@ html[data-theme=dark]{
 .source-state[hidden]{display:none!important}
 .settings-button{flex:none;width:40px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer}
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
-.settings-button[aria-expanded=true] svg{transform:rotate(60deg)}
 .refresh-button{margin-left:auto}
 .zoom-badge{margin-left:auto;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,.55);font-variant-numeric:tabular-nums}   /* current map zoom, for checking views */
 html[data-theme=dark] .zoom-badge{background:rgba(255,212,0,.1)}
@@ -39,9 +38,23 @@ html[data-theme=dark] .zoom-badge{background:rgba(255,212,0,.1)}
 .refresh-button.spin svg{transform:rotate(360deg);transition:transform .6s}
 .settings-button:hover{background:rgba(20,20,20,.08)}
 html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
-.settings-panel{position:absolute;z-index:30;top:calc(100% + 8px);right:12px;width:min(304px,calc(100vw - 24px));padding:8px;border-radius:18px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+/* 설정 서랍: 오른쪽에서 밀려 나온다. hidden 이면 닫힘(버스 층도 hidden 으로 닫는다), .open 이 붙으면 다 나온 자리.
+   body 바로 아래라 지도 위 층(map-status 800 · error 1000)보다 위에 뜬다 */
+.settings-panel{position:fixed;z-index:1100;top:0;right:0;bottom:0;width:min(340px,86vw);display:flex;flex-direction:column;background:var(--paper);color:var(--ink);box-shadow:-6px 0 24px rgba(20,20,20,.18);border-radius:18px 0 0 18px;transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);padding-top:env(safe-area-inset-top,0px);padding-right:env(safe-area-inset-right,0px)}
+.settings-panel.open{transform:none}
 .settings-panel[hidden]{display:none}
-.settings-panel h2{margin:6px 10px 6px;font-family:var(--round);font-weight:400;font-size:15px;color:var(--secondary)}
+.menu-scrim{position:fixed;z-index:1099;inset:0;background:rgba(20,20,20,.32);opacity:0;pointer-events:none;transition:opacity .26s}
+.settings-panel.open+.menu-scrim{opacity:1;pointer-events:auto}
+.settings-panel[hidden]+.menu-scrim{display:none}
+.menu-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px;padding:8px 8px 4px 18px}
+.settings-panel h2{margin:0;font-family:var(--round);font-weight:400;font-size:20px;color:var(--ink)}
+.menu-close{flex:none;width:40px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;color:var(--secondary);cursor:pointer}
+.menu-close svg{width:22px;height:22px}
+.menu-close:hover{background:var(--control)}
+.menu-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent;padding:0 8px calc(16px + env(safe-area-inset-bottom,0px))}
+.menu-group{padding:10px 0}
+.menu-group+.menu-group{border-top:1px solid var(--rule)}
+@media(prefers-reduced-motion:reduce){.settings-panel,.menu-scrim{transition:none}}
 .setting-switch{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer}
 .setting-switch:hover{background:var(--control)}
 .setting-icon{display:grid;place-items:center;width:20px;height:20px;color:var(--secondary)}
@@ -204,8 +217,6 @@ button.bus-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .segmented button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink)}
 /* city-design: one optional city mode at a time, using the existing switch vocabulary. */
-.settings-panel{max-height:calc(100vh - 96px);max-height:calc(100dvh - 96px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent}
-.setting-modes{margin:8px 0;padding:8px 0;border-block:1px solid var(--rule)}
 .setting-group-title{margin:0 10px 4px;font-size:12px;line-height:1.5;font-weight:700;color:var(--secondary)}
 .setting-modes .setting-switch{min-height:56px;padding-block:8px}
 .setting-modes .setting-switch[aria-pressed=true]{background:var(--selected)}
