@@ -277,14 +277,14 @@ class LoginRequestSizeTest(unittest.TestCase):
     def status(self, length):
         with socket.create_connection(self.server.server_address, timeout=2) as connection:
             connection.sendall(f"POST /login HTTP/1.1\r\nHost: x\r\nContent-Length: {length}\r\n\r\nuser=a".encode())
-            return connection.recv(64).split(b"\r\n", 1)[0]
+            return connection.recv(64).split()[1]   # 상태 코드만(문구는 Python 버전마다 다르다 — 3.13 Content Too Large · 3.12 이하 Request Entity Too Large)
 
     def test_bad_length_is_refused_without_reading(self):
         for length in ("-1", "0", "abc"):
             with self.subTest(length=length):
-                self.assertEqual(self.status(length), b"HTTP/1.0 413 Content Too Large")
+                self.assertEqual(self.status(length), b"413")
         self.assertEqual(self.auth._fails, {}, "읽지 않았으니 틀린 횟수로도 세지 않는다")
-        self.assertEqual(self.status("6"), b"HTTP/1.0 303 See Other")
+        self.assertEqual(self.status("6"), b"303")
 
 if __name__ == "__main__":
     unittest.main()
