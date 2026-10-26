@@ -257,8 +257,9 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 // Trains, the selected-train ripple and the my-location pulse are drawn on their own canvas over
 // the map (drawTrains), at TRAIN_FPS while something there moves: a map redraw (3D buildings and
 // all) is only needed when the camera moves, and following a train moves it at FOLLOW_FPS.
-const TRAIN_FPS=30,FOLLOW_FPS=30,SAVER_FPS=20,animFrame=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation=null;
+const TRAIN_FPS=30,FOLLOW_FPS=30,SAVER_FPS=15,animFrame=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation=null;
 // 절전(설정 창 버튼, 이 기기에 저장): 움직임을 SAVER_FPS 로 — 30 fps 를 부르는 곳은 그대로 두고 예약 간격만 늘린다(이름표 · 따라가기 · 버스도 이 값)
+// (타이머 뒤 requestAnimationFrame 이 화면 한 번을 더 기다려 60 Hz 화면의 '30'은 실제 약 20번이다 — 맥 측정 2026-10-26: 20 으로 두니 18번, 거의 그대로. 15 → 실제 약 13~15번)
 let saverOn=false;const frameMs=()=>1000/(saverOn?SAVER_FPS:TRAIN_FPS);
 // 다시 그린 횟수(쌓임): 열차 층 프레임 · 이름표 · 이름표 조회 · 지도 프레임 — 발열 · 배터리 점검(2026-10-23 덕배)이 1초에 몇 번인지 잰다(__subwayWebGL.frames)
 const frameStats={trains:0,signs:0,signQueries:0,mapRenders:0};

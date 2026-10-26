@@ -34,7 +34,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     showSigns(items.length>0);
     drawStationSigns(sctx,items,{dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
     // 둥둥 타이머: 열차 층 프레임이 곧(40 ms 안) 그리면 그쪽이 이름표도 그리므로 건너뛴다 — 움직이는 동안 이름표를 1초 60번(열차 30 + 자기 30) 그리던 것. 숨긴 탭은 걸지 않는다
-    if(!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<40))drawSigns(signMatrix)},live.frameMs);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
+    if(!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<Math.max(40,live.frameMs)))drawSigns(signMatrix)},live.frameMs);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
   const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let lifeUnits=null;
