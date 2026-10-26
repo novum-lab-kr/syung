@@ -1,9 +1,9 @@
-"""회원: 소셜 로그인 흐름 · 세션 · 탈퇴 · 출퇴근 설정. HTTP 모양(쿠키 · 주소 · 상태 코드)은 routes/members.py 가 맡는다.
+"""회원: 소셜 로그인 흐름 · 세션 · 탈퇴 · 승차권(출발지 → 도착지 · 출발 시각 · 타는 날). HTTP 모양(쿠키 · 주소 · 상태 코드)은 routes/members.py 가 맡는다.
 
 - 로그인: start 가 state(무작위)를 만들고 → 제공자 → finish 가 쿠키의 state 와 맞춰 본 뒤 인가 코드로 회원번호를 받아
   회원을 찾거나 만들고 세션을 연다. 세션 쿠키 값은 DB 에 해시(SHA-256)로만 남는다.
 - 한도: 주소마다 10분에 로그인 마무리(콜백) 20번까지(제공자 토큰 주소를 대신 두드리지 못하게 · 주인 로그인과 같은 틀).
-- 탈퇴: 회원 행 하나를 지우면 연결 · 세션 · 출퇴근이 같이 지워진다.
+- 탈퇴: 회원 행 하나를 지우면 연결 · 세션 · 승차권이 같이 지워진다.
 """
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ TRIES, TRY_WINDOW = 20, 600
 TIME = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")   # ASCII 숫자만 · fullmatch 로 전체를 본다(끝 개행 · 유니코드 숫자 거부)
 # 한국 안 좌표만(장소는 카카오 장소 검색에서 고른다)
 LAT_RANGE, LNG_RANGE = (32.0, 39.5), (124.0, 132.0)
+TICKET_LIMIT = 20   # 사람당 승차권 수
+NAME_MAX = 12   # 승차권 이름(앞면 · '○○권' 띠에 들어간다)
 
 
 class LoginError(Exception):
@@ -38,11 +40,9 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _place(value, label: str) -> dict | None:
-    if value is None:
-        return None
+def _place(value, label: str) -> dict:
     if not isinstance(value, dict):
-        raise ValueError(f"{label} 장소 모양이 틀려요")
+        raise ValueError(f"{label}지를 골라 주세요")
     name = value.get("name")
     lat, lng = value.get("lat"), value.get("lng")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
@@ -53,37 +53,36 @@ def _place(value, label: str) -> dict | None:
     return {"name": name.strip(), "lat": round(float(lat), 6), "lng": round(float(lng), 6)}
 
 
-def clean_commute(body) -> dict:
-    """PUT /api/me/commute 본문 → 저장할 값. 틀리면 ValueError(사람이 읽을 문구)."""
+def clean_ticket(body) -> dict:
+    """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7]} → 저장할 값. 틀리면 ValueError."""
     if not isinstance(body, dict):
         raise ValueError("본문은 JSON 객체예요")
-    home, work = _place(body.get("home"), "집"), _place(body.get("work"), "회사")
-    times = {}
-    for key, label in (("leave", "나가는 시각"), ("back", "돌아오는 시각")):
-        value = body.get(key)
-        if value is not None and (not isinstance(value, str) or not TIME.fullmatch(value)):
-            raise ValueError(f"{label}은 HH:MM 이에요")
-        times[key] = value
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > NAME_MAX:
+        raise ValueError(f"승차권 이름은 1~{NAME_MAX}자예요")
+    origin, dest = _place(body.get("from"), "출발"), _place(body.get("to"), "도착")
+    depart = body.get("depart")
+    if not isinstance(depart, str) or not TIME.fullmatch(depart):
+        raise ValueError("출발 시각은 HH:MM 이에요")
     days = body.get("days", [])
     if (not isinstance(days, list) or len(days) > 7
             or any(isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 7 for day in days)):
-        raise ValueError("요일은 1(월)~7(일) 목록이에요")
-    return {"home_name": home and home["name"], "home_lat": home and home["lat"], "home_lng": home and home["lng"],
-            "work_name": work and work["name"], "work_lat": work and work["lat"], "work_lng": work and work["lng"],
-            "leave_at": times["leave"], "back_at": times["back"], "days": ",".join(str(day) for day in sorted(set(days)))}
+        raise ValueError("타는 날은 1(월)~7(일) 목록이에요")
+    return {"name": name.strip(), "from_name": origin["name"], "from_lat": origin["lat"], "from_lng": origin["lng"],
+            "to_name": dest["name"], "to_lat": dest["lat"], "to_lng": dest["lng"], "depart_at": depart,
+            "days": ",".join(str(day) for day in sorted(set(days)))}
 
 
-def commute_view(row: dict | None) -> dict:
-    """저장된 줄 → 응답 모양(없으면 빈 설정)."""
-    row = row or {}
+def ticket_view(row: dict) -> dict:
+    """저장된 줄 → 응답 모양."""
+    return {"id": row["id"], "name": row["name"],
+            "from": {"name": row["from_name"], "lat": row["from_lat"], "lng": row["from_lng"]},
+            "to": {"name": row["to_name"], "lat": row["to_lat"], "lng": row["to_lng"]},
+            "depart": row["depart_at"], "days": [int(day) for day in (row["days"] or "").split(",") if day]}
 
-    def place(prefix: str) -> dict | None:
-        if row.get(prefix + "_name") is None:
-            return None
-        return {"name": row[prefix + "_name"], "lat": row[prefix + "_lat"], "lng": row[prefix + "_lng"]}
-    days = row.get("days") or ""
-    return {"home": place("home"), "work": place("work"), "leave": row.get("leave_at"), "back": row.get("back_at"),
-            "days": [int(day) for day in days.split(",") if day]}
+
+class TicketLimit(Exception):
+    """승차권이 이미 TICKET_LIMIT 장."""
 
 
 class MemberService:
@@ -124,8 +123,8 @@ class MemberService:
             self._tries[address] = recent + [now]
             return True
 
-    def finish(self, provider: str, query: dict, expected_state: str | None, address: str) -> str:
-        """콜백 쿼리(code · state · error) → 새 세션 토큰(쿠키 값). 실패는 LoginError."""
+    def finish(self, provider: str, query: dict, expected_state: str | None, address: str) -> tuple[str, bool]:
+        """콜백 쿼리(code · state · error) → (새 세션 토큰(쿠키 값), 처음 가입했나). 실패는 LoginError."""
         if provider not in self.providers:
             raise LoginError("unknown")
         if not self._allow(address):
@@ -143,8 +142,8 @@ class MemberService:
         except ProviderError:
             raise LoginError("provider") from None
         now = int(self._clock())
-        user_id = self.store.find_or_create_user(provider, subject, name, now)
-        return self._new_session(user_id, now)
+        user_id, created = self.store.find_or_create_user(provider, subject, name, now)
+        return self._new_session(user_id, now), created
 
     def _new_session(self, user_id: int, now: int) -> str:
         token = secrets.token_urlsafe(32)
@@ -168,10 +167,23 @@ class MemberService:
     def delete(self, user_id: int) -> None:
         self.store.delete_user(user_id)
 
-    def commute(self, user_id: int) -> dict:
-        return commute_view(self.store.commute(user_id))
+    # ---- 승차권 ----
+    def tickets(self, user_id: int) -> list[dict]:
+        return [ticket_view(row) for row in self.store.tickets(user_id)]
 
-    def save_commute(self, user_id: int, body) -> dict:
-        """검사 → 저장 → 저장된 모양. 틀리면 ValueError."""
-        self.store.save_commute(user_id, clean_commute(body), int(self._clock()))
-        return self.commute(user_id)
+    def add_ticket(self, user_id: int, body) -> dict:
+        """발권: 검사 → 저장 → 저장된 모양. 틀리면 ValueError, 장수가 넘으면 TicketLimit."""
+        ticket_id = self.store.add_ticket(user_id, clean_ticket(body), int(self._clock()), TICKET_LIMIT)
+        if ticket_id is None:
+            raise TicketLimit()
+        return ticket_view(self.store.ticket(user_id, ticket_id))
+
+    def update_ticket(self, user_id: int, ticket_id: int, body) -> dict | None:
+        """그 사람의 승차권이 없으면 None. 틀리면 ValueError."""
+        values = clean_ticket(body)
+        if not self.store.update_ticket(user_id, ticket_id, values, int(self._clock())):
+            return None
+        return ticket_view(self.store.ticket(user_id, ticket_id))
+
+    def delete_ticket(self, user_id: int, ticket_id: int) -> bool:
+        return self.store.delete_ticket(user_id, ticket_id)

@@ -2,24 +2,27 @@
 
 GET    /api/auth/providers            → {"providers": ["kakao", …]}(설정이 없으면 빈 목록 — 화면은 로그인 줄을 숨긴다)
 GET    /api/auth/<제공자>/start         → 302 제공자 로그인(state 쿠키)
-GET    /api/auth/<제공자>/callback      → 302 /#login=ok(세션 쿠키) · 실패면 /#login=<코드>
+GET    /api/auth/<제공자>/callback      → 302 /#login=ok(처음 가입이면 =new, 세션 쿠키) · 실패면 /#login=<코드>
 POST   /api/auth/logout               → 204(세션 지움)
 GET    /api/me                        → {"id","name","provider"} · 401
 DELETE /api/me                        → 204(회원 · 설정 모두 지움)
-GET    /api/me/commute                → {"home","work","leave","back","days"} · 401
-PUT    /api/me/commute                → 같은 모양 · 400(검사 실패) · 401
+GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7]}]} · 401
+POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
+PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
+DELETE /api/me/tickets/<번호>          → 204 · 404
 바꾸는 요청(POST · PUT · DELETE)은 X-Requested-With: syung 머리말이 있어야 한다(다른 사이트의 폼 · 단순 요청을 막는다 —
 쿠키 SameSite=Lax 에 더해). 오류 모양은 api_error 하나. 쿠키는 주인 로그인(routes/owner.py)과 같은 속성.
 """
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import urllib.parse
 
 from server.routes.errors import api_error
 from server.routes.response import Response
-from server.services.members import SESSION_AGE, STATE_AGE, LoginError
+from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit
 
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
@@ -56,6 +59,7 @@ def _error(status: int, code: str, message: str) -> Response:
 
 
 LOGIN_NEEDED = ("login", "로그인이 필요해요")
+TICKET_PATH = re.compile(r"/me/tickets/([1-9][0-9]{0,9})")
 
 
 def handle(members, method: str, path: str, headers, read_body, address: str) -> Response | None:
@@ -84,7 +88,8 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
     if bare == "/auth/logout" and method == "POST":
         members.logout(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
         return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
-    if bare not in ("/me", "/me/commute"):
+    ticket = TICKET_PATH.fullmatch(bare)
+    if bare not in ("/me", "/me/tickets") and not ticket:
         return _error(404, "not_found", "없는 주소예요")
     user_id = members.user_id(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
     me = members.me(user_id) if user_id else None
@@ -96,19 +101,40 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
         if method == "DELETE":
             members.delete(user_id)
             return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
-    elif method == "GET":
-        return _json(members.commute(user_id))
-    elif method == "PUT":
-        raw = read_body(BODY_LIMIT)
-        if raw is None:
-            return _error(413, "too_large", "본문이 없거나 너무 커요")
-        try:
-            return _json(members.save_commute(user_id, json.loads(raw.decode("utf-8"))))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return _error(400, "bad_request", "본문은 JSON 이에요")
-        except ValueError as error:
-            return _error(400, "bad_request", str(error))
+    elif bare == "/me/tickets":
+        if method == "GET":
+            return _json({"tickets": members.tickets(user_id)})
+        if method == "POST":
+            return _with_body(read_body, lambda body: _json(members.add_ticket(user_id, body), 201))
+    else:
+        ticket_id = int(ticket.group(1))
+        if method == "PUT":
+            def save(body):
+                saved = members.update_ticket(user_id, ticket_id, body)
+                return _json(saved) if saved else _error(404, "not_found", "없는 승차권이에요")
+            return _with_body(read_body, save)
+        if method == "DELETE":
+            if members.delete_ticket(user_id, ticket_id):
+                return Response(204, "empty")
+            return _error(404, "not_found", "없는 승차권이에요")
     return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
+
+
+def _with_body(read_body, work) -> Response:
+    """JSON 본문을 읽어 work(본문) — 검사 실패 · 장수 한도는 400 · 409."""
+    raw = read_body(BODY_LIMIT)
+    if raw is None:
+        return _error(413, "too_large", "본문이 없거나 너무 커요")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _error(400, "bad_request", "본문은 JSON 이에요")
+    try:
+        return work(body)
+    except TicketLimit:
+        return _error(409, "too_many", f"승차권은 {TICKET_LIMIT}장까지예요")
+    except ValueError as error:
+        return _error(400, "bad_request", str(error))
 
 
 def _start(members, provider: str) -> Response:
@@ -125,8 +151,9 @@ def _callback(members, provider: str, query: dict, headers, address: str) -> Res
     held_provider, _, held_state = held.partition(".")
     clear_state = _cookie(STATE_COOKIE, "", 0, "/api/auth/")
     try:
-        token = members.finish(provider, query, held_state if held_provider == provider else None, address)
+        token, created = members.finish(provider, query, held_state if held_provider == provider else None, address)
     except LoginError as error:
         return Response(302, "redirect", location=f"/#login={error.code}", cookie=clear_state)
-    return Response(302, "redirect", location="/#login=ok",
+    # 처음 가입이면 화면이 발권 화면으로 바로 이어 준다
+    return Response(302, "redirect", location="/#login=new" if created else "/#login=ok",
                     cookie=_cookie(SESSION_COOKIE, token, SESSION_AGE, "/"), cookies=(clear_state,))
