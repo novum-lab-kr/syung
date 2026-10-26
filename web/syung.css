@@ -76,6 +76,12 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .theme-note{margin:10px 10px 2px;font-size:13px;line-height:1.5;color:var(--secondary)}
 .theme-note b{color:var(--ink)}
 .menu-list[hidden],.menu-page[hidden]{display:none}
+/* 데이터 출처 쪽: 무엇 · 어디서 · 링크를 줄마다 */
+.source-list{margin:0;padding:0 10px;list-style:none}
+.source-list li{display:flex;flex-direction:column;gap:2px;padding:12px 0;border-bottom:1px solid var(--rule);font-size:14px;line-height:1.5;color:var(--secondary)}
+.source-list li:last-child{border-bottom:0}
+.source-list b{font-size:15px;color:var(--ink)}
+.source-list a{color:var(--ink);text-underline-offset:2px}
 .menu-item{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:0 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:16px;font-weight:600;text-align:left;cursor:pointer}
 .menu-item:hover{background:var(--control)}
 .menu-item:active{background:var(--selected)}
@@ -264,8 +270,10 @@ html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
 .map-search{position:absolute;z-index:6;top:14px;left:14px;width:min(340px,calc(100% - 84px))}
 .map-search input{box-shadow:var(--shadow);border-color:transparent!important;background:var(--paper)!important}
 .map-search input:focus{border-color:var(--syung-deep)!important}
-.maplibregl-ctrl-attrib.maplibregl-compact{border-radius:999px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);margin:0 0 14px 12px!important}
-.maplibregl-ctrl-attrib.maplibregl-compact-show{border-radius:14px;padding:4px 30px 4px 10px;max-width:min(520px,calc(100vw - 110px))}
+/* 지도 출처: 늘 펼친 한 줄(© OpenMapTiles © OpenStreetMap) — 열차 · 버스 자료 출처는 메뉴 '데이터 출처' 쪽 */
+.maplibregl-ctrl.maplibregl-ctrl-attrib{border-radius:999px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);margin:0 0 14px 12px!important;padding:1px 9px;font-size:11px;line-height:18px;white-space:nowrap}
+/* 좁은 화면(780px 이하)은 가운데 '어디로 갈까요?' 버튼(아래 16px · 높이 52px)이 왼쪽 아래까지 닿아 그 위로 올린다 — 출처가 가려지지 않게 */
+@media(max-width:780px){.maplibregl-ctrl.maplibregl-ctrl-attrib{margin-bottom:calc(78px + env(safe-area-inset-bottom,0px))!important}}
 .maplibregl-ctrl-attrib a{color:inherit}
 html[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1)}
 

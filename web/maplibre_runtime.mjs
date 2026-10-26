@@ -600,9 +600,8 @@ map.on('load',()=>{
   // 도시 건물 미리 짓기(덕배 2026-10-12): 기본 모드에서 지도가 쉴 때마다 지금 보이는 곳의 심시티 · 롤코 건물(같은 팩)을 Worker 로 지어 둔다 —
   // 모드를 누르면 '건물 짓는 중' 없이 바로 올린다. 조선은 다른 팩이라 누를 때 짓는다
   map.on('idle',()=>{if(kitReady)('requestIdleCallback' in window?requestIdleCallback(prebuildCity,{timeout:3000}):setTimeout(prebuildCity,500))});
-  map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
-  // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
-  map.once('idle',()=>{const d=map.getContainer().querySelector('.maplibregl-ctrl-attrib');if(d){d.classList.remove('maplibregl-compact-show');d.removeAttribute('open')}});
+  // 지도 출처는 늘 펼친 한 줄('ofm' 소스의 © OpenMapTiles © OpenStreetMap)만 — 열차 · 버스 자료 출처는 메뉴 '데이터 출처' 쪽(2026-10-26)
+  map.addControl(new maplibregl.AttributionControl({compact:false}),'bottom-left');
   // recompute shadows when the view settles or building tiles arrive (debounced)
   let sunTimer=0;const sunSoon=()=>{clearTimeout(sunTimer);sunTimer=setTimeout(()=>{if(!map.isMoving())updateSun()},400)};   // not mid-pan (as the walls): moveend runs it
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
