@@ -619,7 +619,6 @@ map.on('load',()=>{
   onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
   window.__subwayWebGL.busLayer=busLayer;
   registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM});   // 출구 번호판
-  $('toggleMap').setAttribute('aria-pressed','true');   // background map on by default
   applyTheme();
   map.getContainer().append(liveNotice);map.getContainer().parentElement.append(sheet,rideBar);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
@@ -629,14 +628,9 @@ const stationSearch=createStationSearch({map,stations,colors,esc,input:$('search
 // ---- icon buttons ----------------------------------------------------------------------------
 const svg=d=>`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS={
-  map:svg('<path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>'),
-  train:svg('<rect x="5" y="3" width="14" height="14" rx="3.5"/><path d="M5 10h14M9 21l1.5-4M15 21l-1.5-4"/><circle cx="9" cy="13.5" r=".9" fill="currentColor"/><circle cx="15" cy="13.5" r=".9" fill="currentColor"/>'),
-  sun:svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/>'),
-  moon:svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   auto:svg('<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9"/>'),
   zoom:svg('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>'),
   coaster:svg('<path d="M2 18c3 0 4-11 7.5-11S12 14 15 14s3.5-6 7-6"/><path d="M5 21v-5M9.5 21V9M15 21v-5M20 21v-10"/>'),
-  palette:svg('<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.9-.7-1.2-.7-2.1 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.9-4-8.8-9-8.8z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15" cy="7.8" r="1.2" fill="currentColor"/>'),
   speed:svg('<path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/>'),
 };
 function iconButton(el,icon,label){el.innerHTML=ICONS[icon];el.setAttribute('aria-label',label);el.title=label}
@@ -658,7 +652,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
 saverOn=prefs.get('saver')==='on'||location.hash.includes('saver');   // 절전: 이 기기에 고른 값(주소 #saver 로도 — 폰 비교용)
-const theme=createMapTheme({map,$,ICONS,seoulSun,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const theme=createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
@@ -724,14 +718,6 @@ applyTheme();
 // streets and faint building footprints — no shops, stops or labels competing with the lines.
 // 바탕 지도: OpenFreeMap 벡터 타일(web/map/layers.mjs) — 처음 켤 때 한 번 등록
 function addBasemap(){addBasemapLayers({map,sunShadows,PHONE,CITY_STYLE,addCityLayers,applyTheme})}
-$('toggleMap').onclick=e=>{
-  if(!ready)return;
-  const on=e.currentTarget.getAttribute('aria-pressed')!=='true';
-  e.currentTarget.setAttribute('aria-pressed',String(on));
-  if(on&&!map.getSource('ofm'))addBasemap();
-  for(const id of BASEMAP_LAYERS)if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');
-  updateSun();applyTheme();   // city-life: the city layers follow the map toggle
-};
 // ---- 모드 전환 (상태의 주인: modeCtl — web/modes/transition.mjs) ----------------------------------------
 // 준비: 모드 코드(심시티 · 조선 · 롤코 — 첫 화면에서는 받지 않았다), 롤코는 언덕을 정할 건물 높이도. 이미 있으면 true(바로 바꾼다)
 function prepareMode(id){
@@ -778,7 +764,6 @@ function commitMode(prev,next,{speed}={}){
 function applyCoaster(on,speed){
   if(!on)stopRide(false);   // 롤코를 끄면 1인칭에서도 내려요(옛 상태를 읽을 수 있는 동안)
   if(on&&modeCtl.current!=='basic'&&modeCtl.current!=='coaster'){modeCtl.enter('basic');$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false');showRace('coaster')}
-  if(on)cityMap();
   const was=modeCtl.current==='coaster';modeCtl.enter(on?'coaster':'basic');modeCtl.setSpeed(on?speed:1);
   $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
   for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===modeCtl.speed));
@@ -793,7 +778,6 @@ function applyCoaster(on,speed){
 // 조선 · 스타크래프트 종족 are 심시티 in another pack or look (id: CITY_FAMILY 의 하나): switching between them changes only the look — 선로 설정(track)이 같으면(같은 참조) 경로 · 승강장은 그대로,
 // 예측 정차 수(trains.predictStops)만 다르면 예측만 다시
 function applySimcity(on,id='simcity'){
-  if(on)cityMap();
   const was=modeCtl.settings(),next=on?id:'basic',same=modeCtl.current===next;modeCtl.enter(next);const now=modeCtl.settings();
   if(now.track===was.track){if(now.trains.predictStops!==was.trains.predictStops){planner.rebuild();lastPose.clear()}if(!same){applyTheme();updateSun();map.triggerRepaint()}return}
   setRouteOpacity();planner.rebuild();lastPose.clear();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
@@ -810,7 +794,6 @@ let lastNation=NATIONS[0];
 function showNation(want){const on=NATIONS.includes(want);if(on)lastNation=want;$('toggleNation')?.setAttribute('aria-pressed',String(on));if($('nationRow'))$('nationRow').hidden=!on;
   for(const b of document.querySelectorAll('[data-nation]'))b.setAttribute('aria-pressed',String(b.dataset.nation===want))}
 function setNation(on,id){return on?modeCtl.request(id??lastNation):offFamily(NATIONS)}
-function cityMap(){if(ready&&$('toggleMap').getAttribute('aria-pressed')!=='true')$('toggleMap').click()}   // the city modes are drawn on the background map: switch it on with them
 if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(modeCtl.desired!=='simcity');   // 받는 중에 다시 누르면 취소
 if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(modeCtl.desired!=='joseon',true);
 const setJoseon=on=>setSimcity(on,true);
@@ -825,21 +808,34 @@ for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaste
   if(b)b.onclick=()=>{prebuildOn=!prebuildWant();prefs.set('prebuild',prebuildOn?'on':'off');show();if(prebuildOn)prebuildCity()}}
 {const b=$('toggleSaver'),show=()=>b?.setAttribute('aria-pressed',String(saverOn));show();   // 절전 버튼: 바꾸면 이 기기에 저장, 바로 다음 프레임부터
   if(b)b.onclick=()=>{saverOn=!saverOn;prefs.set('saver',saverOn?'on':'off');show();trainFrameSoon(0)}}
-$('toggleTrains').onclick=e=>{trainsEnabled=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',String(trainsEnabled));map.triggerRepaint()};
 // ---- settings (header hamburger → right drawer): on/off switches ----
 {
   {const z=$('zoomBadge'),show=()=>{z.textContent='z'+map.getZoom().toFixed(1)};map.on('zoom',show);show()}   // the zoom beside 새로고침, for checking views
   $('refreshButton').onclick=e=>{e.currentTarget.classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
   const btn=$('settingsButton'),panel=$('settingsPanel');
-  $('toggleMap').querySelector('.setting-icon').innerHTML=ICONS.map;$('toggleTrains').querySelector('.setting-icon').innerHTML=ICONS.train;
-  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('mapColorIcon').innerHTML=ICONS.palette;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
+  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
   // 설정 서랍(햄버거): 열 때 hidden 을 풀고 한 프레임 뒤 .open 으로 밀어 내고, 닫을 때 .open 을 떼고 밀려 들어간 뒤 hidden.
   // 버스 층은 panel.hidden=true 로 바로 닫는다 — 그래서 '열림'은 hidden 이 아니고 .open 이 붙은 때다
   const isOpen=()=>!panel.hidden&&panel.classList.contains('open');
+  // 두 단계: 목록(#menuRoot)의 항목을 누르면 그 쪽(.menu-page)만 보이고 머리 제목이 그 이름, ‹ 로 목록에 돌아온다. 다시 열면 늘 목록부터
+  const root=$('menuRoot'),back=$('menuBack'),title=$('settingsTitle'),pages=[...panel.querySelectorAll('.menu-page')];let pageFrom=null;
+  const slide=(el,cls)=>{el.classList.remove('menu-in','menu-out');if(!slideMs)return;void el.offsetWidth;el.classList.add(cls)};
+  const showPage=(id,animate=true)=>{
+    const page=id?$(id):null;
+    for(const p of pages)p.hidden=p!==page;
+    root.hidden=!!page;back.hidden=!page;
+    title.textContent=page?(page.getAttribute('aria-label')||page.querySelector('h3')?.textContent||''):'메뉴';
+    if(!animate)return;
+    if(page){slide(page,'menu-in');back.focus({preventScroll:true})}
+    else{slide(root,'menu-out');pageFrom?.focus({preventScroll:true})}
+    panel.querySelector('.menu-body').scrollTop=0;
+  };
+  for(const item of root.querySelectorAll('[data-menu-page]'))item.onclick=()=>{pageFrom=item;showPage(item.dataset.menuPage)};
+  back.onclick=()=>showPage(null);
   const slideMs=matchMedia('(prefers-reduced-motion: reduce)').matches?0:260;let closeTimer=0;
   const setOpen=o=>{
     clearTimeout(closeTimer);btn.setAttribute('aria-expanded',String(o));
-    if(o){panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');$('settingsClose').focus({preventScroll:true});return}
+    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');$('settingsClose').focus({preventScroll:true});return}
     panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
   };
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
