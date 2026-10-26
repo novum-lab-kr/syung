@@ -276,7 +276,15 @@ map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right'
 const me=createMyMotion();   // 내 위치 캐릭터의 걷기 · 서기 · 미끄러지듯 옮기기(위치마다 fix, 그릴 때 at)
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true,maximumAge:2000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'top-right');   // under +/−; alone on phones, where +/− are hidden   // 정확한 위치로 자주: 내 위치 캐릭터가 걷는지 알려면(배터리를 조금 더 쓴다, 2026-10-22 행님)
-let autoLocating=false;
+let autoLocating=false,lastFix=null;
+// 위치가 켜진 채(저절로 켜진 경우 포함) 버튼을 누르면 MapLibre 는 끈다 — 끄지 않고 내 위치로 지도를 옮긴다.
+// 켜지는 중이면 그대로 기다린다. 오류 상태 · 지도를 움직여 둔 상태(background)는 라이브러리 그대로.
+const geolocateButton=map.getContainer().querySelector('.maplibregl-ctrl-geolocate');
+geolocateButton?.addEventListener('click',ev=>{const cls=geolocateButton.classList;
+  if(!cls.contains('maplibregl-ctrl-geolocate-active')||cls.contains('maplibregl-ctrl-geolocate-active-error'))return;
+  ev.stopImmediatePropagation();if(cls.contains('maplibregl-ctrl-geolocate-waiting')||!lastFix)return;
+  map.fitBounds(maplibregl.LngLatBounds.fromLngLat(new maplibregl.LngLat(lastFix.longitude,lastFix.latitude),lastFix.accuracy),{maxZoom:16,bearing:map.getBearing()},{geolocateSource:true});   // 라이브러리가 위치를 받을 때 옮기는 것과 같게
+},true);
 geolocate.on('error',e=>{if(autoLocating){autoLocating=false;return}if(myLocation&&e.code!==1)return;   // 이미 위치를 받는 중의 일시 오류(정확한 위치로 계속 받으면 가끔 난다)는 알리지 않는다 — 권한 거부만
   updateLiveNotice('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.')});
 // First visit: fly to where the viewer is (inside the 수도권 only; elsewhere, or without permission,
@@ -291,7 +299,7 @@ map.once('load',()=>{
   },()=>{},{enableHighAccuracy:false,timeout:8000,maximumAge:300000});
 });
 geolocate.on('geolocate',e=>{
-  autoLocating=false;me.fix(e);
+  autoLocating=false;lastFix=e.coords;me.fix(e);
 });
 let selected='all',trainsEnabled=true,ready=false,pendingLine=null;
 const $=id=>document.getElementById(id);
