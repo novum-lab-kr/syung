@@ -52,9 +52,23 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .menu-close svg{width:22px;height:22px}
 .menu-close:hover{background:var(--control)}
 .menu-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent;padding:0 8px calc(16px + env(safe-area-inset-bottom,0px))}
-.menu-group{padding:10px 0}
-.menu-group+.menu-group{border-top:1px solid var(--rule)}
-@media(prefers-reduced-motion:reduce){.settings-panel,.menu-scrim{transition:none}}
+/* 두 단계: 첫 단계 목록(.menu-item) → 그 쪽(.menu-page). 들어가면 오른쪽에서, 돌아오면 왼쪽에서 살짝 밀려 온다 */
+.menu-back{flex:none;width:40px;height:40px;display:grid;place-items:center;padding:0;margin-left:-10px;border:0;border-radius:10px;background:transparent;color:var(--ink);cursor:pointer}
+.menu-back[hidden]{display:none}
+.menu-back svg{width:24px;height:24px}
+.menu-back:hover{background:var(--control)}
+.menu-head h2{flex:1;min-width:0}
+.menu-list,.menu-page{padding:4px 0}
+.menu-list[hidden],.menu-page[hidden]{display:none}
+.menu-item{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:0 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:16px;font-weight:600;text-align:left;cursor:pointer}
+.menu-item:hover{background:var(--control)}
+.menu-item:active{background:var(--selected)}
+.menu-chev{flex:none;width:20px;height:20px;color:var(--muted)}
+.menu-in{animation:menu-in .22s cubic-bezier(.2,.8,.2,1)}
+.menu-out{animation:menu-out .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes menu-in{from{transform:translateX(28px);opacity:0}}
+@keyframes menu-out{from{transform:translateX(-28px);opacity:0}}
+@media(prefers-reduced-motion:reduce){.settings-panel,.menu-scrim{transition:none}.menu-in,.menu-out{animation:none}}
 .setting-switch{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer}
 .setting-switch:hover{background:var(--control)}
 .setting-icon{display:grid;place-items:center;width:20px;height:20px;color:var(--secondary)}
@@ -69,11 +83,6 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .setting-row[hidden]{display:none}   /* 열차 속도: only while 롤러코스터 is on (display:flex above beat the hidden attribute) */
 .setting-name small{display:block;white-space:pre-line;margin-top:1px;font-size:11px;font-weight:500;color:var(--muted)}
 /* bus: the existing switch, map notice and shared detail sheet use the same theme. */
-.bus-nearby{display:block;width:100%;min-height:44px;margin:4px 0;padding:8px 12px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font-size:13px;font-weight:600;text-align:left;cursor:pointer}
-.bus-nearby[hidden]{display:none}
-.bus-nearby:hover{background:var(--selected)}
-.bus-nearby:active{background:var(--syung);color:var(--syung-ink)}
-.bus-nearby:disabled{color:var(--secondary);opacity:.6;cursor:default}
 .bus-notice{position:absolute;z-index:5;left:12px;bottom:calc(80px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 84px);margin:0;padding:8px 12px;border-radius:12px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);font-size:12px;line-height:1.5;pointer-events:none}
 .bus-notice[hidden]{display:none}
 .bus-detail{padding:0 0 4px;font-variant-numeric:tabular-nums}
@@ -217,7 +226,6 @@ button.bus-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;
 .segmented button{white-space:nowrap;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .segmented button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink)}
 /* city-design: one optional city mode at a time, using the existing switch vocabulary. */
-.setting-group-title{margin:0 10px 4px;font-size:12px;line-height:1.5;font-weight:700;color:var(--secondary)}
 .setting-modes .setting-switch{min-height:56px;padding-block:8px}
 .setting-modes .setting-switch[aria-pressed=true]{background:var(--selected)}
 .setting-modes .setting-switch:hover{background:var(--control)}
