@@ -60,6 +60,19 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .menu-head h2{flex:1;min-width:0}
 .menu-list,.menu-page{padding:4px 0}
 .menu-nav{margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}   /* 첫 화면: 위는 테마, 선 아래는 들어가는 목록 */
+/* 테마: 카드 셋(자동 · 라이트 · 다크) + 아래 한 줄(지금 테마 · 다음에 바뀌는 때). 고른 카드는 노란 테두리 */
+.menu-label{margin:4px 10px 8px;font-size:12px;line-height:1.5;font-weight:700;color:var(--secondary)}
+.theme-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 4px}
+.theme-card{min-height:84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 4px;border:1.5px solid var(--rule);border-radius:14px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:border-color .15s,background .15s}
+html[data-theme=dark] .theme-card{border-color:#383a3e;background:#232529}
+.theme-card svg{width:28px;height:28px;margin-bottom:2px}
+.theme-card small{font-size:11px;font-weight:600;color:var(--muted)}
+.theme-card:hover{background:var(--control)}
+.theme-card[aria-pressed=true],html[data-theme=dark] .theme-card[aria-pressed=true]{border:2px solid var(--syung);background:var(--selected)}
+.theme-card:active{transform:scale(.98)}
+.theme-note{margin:10px 10px 2px;font-size:13px;line-height:1.5;color:var(--secondary)}
+.theme-note b{color:var(--ink)}
+@media(prefers-reduced-motion:reduce){.theme-card{transition:none}.theme-card:active{transform:none}}
 .menu-list[hidden],.menu-page[hidden]{display:none}
 .menu-item{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:0 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:16px;font-weight:600;text-align:left;cursor:pointer}
 .menu-item:hover{background:var(--control)}

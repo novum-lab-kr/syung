@@ -1,9 +1,9 @@
-// 밝은 · 어두운 테마와 지도 색(차분 · 컬러), 롤코 공원 색, 설정 버튼 · 5분마다 자동 테마, 해 위치 아이콘(자동일 때 테마 버튼).
+// 밝은 · 어두운 테마와 지도 색(차분 · 컬러), 롤코 공원 색, 메뉴의 테마 카드 · 안내 한 줄 · 5분마다 자동 테마.
 // themeChoice · mapColor 의 주인(바깥은 getter). 테마는 기기 저장(prefs — web/user/prefs.mjs), 고른 값이 없으면 지금 모드 설정의 기본값.
 // 지도 색은 메뉴에서 뺐다(2026-10-26) — 저장된 값(subway-map-color)은 읽지 않고 늘 모드 설정의 기본값(basic: calm).
 // 색 자료는 지금 모드 설정의 map.themes · colors · park(원본 web/modes/basic/palette.mjs, 모드가 덧쓸 수 있다).
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(지금 모드의 설정 live.settings · 버스 층 · 지도 준비)은 live.<이름> 으로 읽는다. applyTheme 를 만들 때 부르지 않는다(본체가 부른다).
-export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live}){
+export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live}){
   // ---- light / dark theme --------------------------------------------------------------------
   // 자동 (default): light from sunrise to sunset in Seoul, dark at night; 라이트 / 다크: fixed by the viewer.
   const mixHex=(a,b,t)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
@@ -25,12 +25,14 @@ export function createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,app
     document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='dark'?'#1b1c1f':'#ffd400');
     // header logo: black tile on the yellow bar, yellow tile on the dark bar
     const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
-    // settings row: 자동 / 라이트 / 다크; in 자동 the icon is the sun over the map and the note gives sunrise / sunset
+    // 메뉴의 테마 카드(자동 · 라이트 · 다크) 아래 한 줄: 자동이면 지금 테마와 다음에 바뀌는 때(서울 해 뜨고 지는 시각), 고정이면 자동이 뭔지
     for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===cur.themeChoice));
-    const ti=$('themeIcon'),tn=$('themeNote');
-    if(ti&&tn){
-      if(cur.themeChoice==='auto'){const sa=sunArcIcon();ti.innerHTML=sa.svg;tn.textContent=`일출 ${sa.rise}\n일몰 ${sa.set}`}
-      else{ti.innerHTML=ICONS[t==='dark'?'moon':'sun'];tn.textContent=''}
+    const tn=$('themeNote');
+    if(tn){
+      if(cur.themeChoice==='auto'){
+        const {rise,set}=seoulSun(new Date()),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
+        tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(rise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
+      }else tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';
     }
     if(!live.ready)return;
     const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
@@ -60,31 +62,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
   for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{prefs.set('themeChoice',b.dataset.themeChoice);applyTheme()};
-  $('themeNote').closest('.setting-row').title='자동은 해 뜨면 라이트, 해 지면 다크.';
   setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
-  // ---- sun position icon (theme button in 자동) -------------------------------------------------
-  // Horizon, the day's arc filled up to the sun's place (moon + night progress after sunset).
-  function sunArcIcon(){
-    // Top-down: the ring is the horizon around "here"; the sun sits at its compass bearing as seen on the
-    // map (rotates with the map), nearer the centre the higher it is; the stub from the centre is the
-    // shadow, pointing the same way as the building shadows.
-    const now=window.__sunTime||new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
-    const {elevation:el,azimuth:az}=sunPosition(now),day=el>0,f=n=>n.toFixed(1);
-    const S=22,c=S/2,R=8.5,ang=(az-(live.ready?map.getBearing():0))*Math.PI/180,r=R*(1-Math.max(0,Math.min(90,el))/90*.75);
-    const sx=c+Math.sin(ang)*r,sy=c-Math.cos(ang)*r,len=day?Math.min(7,1.2/Math.tan(Math.max(4,el)*Math.PI/180)*3):0;
-    const hx=c-Math.sin(ang)*len,hy=c+Math.cos(ang)*len;
-    const svg=day
-      ?`<svg width="22" height="22" viewBox="0 0 ${S} ${S}" aria-hidden="true">
-       <circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.1" stroke-dasharray="2 1.6"/>
-       <line x1="${c}" y1="${c}" x2="${f(hx)}" y2="${f(hy)}" stroke="currentColor" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"/>
-       <circle cx="${c}" cy="${c}" r="1.4" fill="currentColor"/>
-       <circle cx="${f(sx)}" cy="${f(sy)}" r="3.2" fill="#f5a524" stroke="#d98a0b" stroke-width="1"/></svg>`
-      :`<svg width="22" height="22" viewBox="0 0 ${S} ${S}" aria-hidden="true">
-       <circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="1.1" stroke-dasharray="2 1.6"/>
-       <path d="M${c+1.8} ${c-5}a5 5 0 1 0 3.3 8.3a4 4 0 1 1-3.3-8.3z" fill="#b8c9da" stroke="#7f97b0" stroke-width=".7"/></svg>`;
-    return {svg,rise:hm(rise),set:hm(set),day};
-  }
 
-  return {effectiveTheme,mapPalette,applyTheme,sunArcIcon,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
+  return {effectiveTheme,mapPalette,applyTheme,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
 }

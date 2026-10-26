@@ -600,7 +600,6 @@ map.on('load',()=>{
   // 도시 건물 미리 짓기(덕배 2026-10-12): 기본 모드에서 지도가 쉴 때마다 지금 보이는 곳의 심시티 · 롤코 건물(같은 팩)을 Worker 로 지어 둔다 —
   // 모드를 누르면 '건물 짓는 중' 없이 바로 올린다. 조선은 다른 팩이라 누를 때 짓는다
   map.on('idle',()=>{if(kitReady)('requestIdleCallback' in window?requestIdleCallback(prebuildCity,{timeout:3000}):setTimeout(prebuildCity,500))});
-  map.on('rotate',()=>{if(theme.themeChoice==='auto'){const b=$('themeIcon');if(b)b.innerHTML=sunArcIcon().svg}});
   map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'노선·역·시간표 KTDB 대중교통 GTFS · 실시간 서울 열린데이터광장 · 선로 © OpenStreetMap contributors'}),'bottom-left');
   // start collapsed to the ⓘ button (MapLibre opens it on first load); tap to read
   map.once('idle',()=>{const d=map.getContainer().querySelector('.maplibregl-ctrl-attrib');if(d){d.classList.remove('maplibregl-compact-show');d.removeAttribute('open')}});
@@ -629,8 +628,6 @@ const stationSearch=createStationSearch({map,stations,colors,esc,input:$('search
 // ---- icon buttons ----------------------------------------------------------------------------
 const svg=d=>`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS={
-  sun:svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/>'),
-  moon:svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   auto:svg('<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9"/>'),
   zoom:svg('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>'),
   coaster:svg('<path d="M2 18c3 0 4-11 7.5-11S12 14 15 14s3.5-6 7-6"/><path d="M5 21v-5M9.5 21V9M15 21v-5M20 21v-10"/>'),
@@ -655,12 +652,11 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
 saverOn=prefs.get('saver')==='on'||location.hash.includes('saver');   // 절전: 이 기기에 고른 값(주소 #saver 로도 — 폰 비교용)
-const theme=createMapTheme({map,$,ICONS,seoulSun,sunPosition,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const theme=createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
 function applyTheme(){syncPixels();return theme.applyTheme()}
-function sunArcIcon(){return theme.sunArcIcon()}
 // 도트(모드 설정 map.pixel — 레트로): 지도 캔버스를 size CSS px 한 칸으로 그리고(픽셀 비율 1/size) 브라우저가 이웃 픽셀 그대로 키운다(CSS pixelated).
 // 열차 캔버스는 지도 캔버스 크기를 따라가 같이 도트가 되고, 역 이름표 캔버스는 제 해상도라 글자는 선명하다(overlay). 모드가 바뀔 때마다 applyTheme 가 부른다
 // 시야각(map.fov): 좁히면 원근이 거의 없는 아이소메트릭 시점 — 바뀌어 켤 때 45° 대각선 · 55° 기울기로 돌린다(16비트 거리처럼), 끄면 기본 시야각만 되돌린다
