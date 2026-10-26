@@ -69,10 +69,10 @@ html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
 .theme-seg button[aria-pressed=true]{background:var(--syung);color:var(--syung-ink);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .theme-seg button[aria-pressed=true]:after{content:"✓";font-size:13px}
 @media(prefers-reduced-motion:reduce){.theme-seg button{transition:none}}
-.sun-path{position:relative;height:96px;margin:10px 4px 0;border-radius:14px;overflow:hidden}   /* 하늘 띠: 자동일 때만 */
+.sun-path{position:relative;height:110px;margin:10px 4px 0;border-radius:14px;overflow:hidden}   /* 하늘 띠: 자동일 때만 */
 .sun-path[hidden]{display:none}
 .sun-path svg{position:absolute;inset:0;width:100%;height:100%}
-.sun-times{position:absolute;left:12px;right:12px;bottom:6px;display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#4a3d00;font-variant-numeric:tabular-nums}
+.sun-times{position:absolute;left:12px;right:12px;bottom:5px;display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#4a3d00;font-variant-numeric:tabular-nums}
 .sun-path.is-night .sun-times{color:#e6edf5}
 .theme-note{margin:10px 10px 2px;font-size:13px;line-height:1.5;color:var(--secondary)}
 .theme-note b{color:var(--ink)}
