@@ -27,12 +27,13 @@ export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyG
     const bi=document.querySelector('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
     // 메뉴의 테마 카드(자동 · 라이트 · 다크) 아래 한 줄: 자동이면 지금 테마와 다음에 바뀌는 때(서울 해 뜨고 지는 시각), 고정이면 자동이 뭔지
     for(const b of document.querySelectorAll('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===cur.themeChoice));
-    const tn=$('themeNote');
+    const tn=$('themeNote'),sp=$('sunPath');
     if(tn){
       if(cur.themeChoice==='auto'){
-        const {rise,set}=seoulSun(new Date()),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
+        const now=new Date(),{rise,set}=seoulSun(now),hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
         tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(rise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
-      }else tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';
+        if(sp){sp.innerHTML=sunPathHTML(now,rise,set,hm);sp.classList.toggle('is-night',t==='dark');sp.hidden=false}
+      }else{tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';if(sp)sp.hidden=true}
     }
     if(!live.ready)return;
     const set=(id,prop,v)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v)};
@@ -64,6 +65,24 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=()=>{prefs.set('themeChoice',b.dataset.themeChoice);applyTheme()};
   setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();updateSun()},5*60*1000);
 
-
+  // ---- 하늘 띠(자동일 때 테마 카드 아래): 낮엔 파란 하늘에 해가 지평선 위 호를 일출 → 일몰로, 밤엔 별 하늘에 달이 해 진 쪽(오른쪽)에서 해 뜰 쪽(왼쪽)으로 간다 ----
+  // 호는 2차 베지어(양 끝 지평선 · 가운데 조절점) — 해 · 달은 그 곡선의 t=진행 자리. 밤 길이는 하루에서 낮을 뺀 값(다음 일출을 오늘 일출 시각으로 어림)
+  function sunPathHTML(now,rise,set,hm){
+    const W=320,H=96,left=40,right=280,base=72,top=-24,dayLen=set-rise,day=now>=rise&&now<set,nightLen=864e5-dayLen;
+    const clamp=v=>Math.min(1,Math.max(0,v));
+    // 왼쪽 끝 = 해 뜸, 오른쪽 끝 = 해 짐: 해는 왼쪽 → 오른쪽, 달은 해 진 오른쪽에서 해 뜰 왼쪽으로
+    const night=clamp(now>=set?(now-set)/nightLen:1-(rise-now)/nightLen),t=day?clamp((now-rise)/dayLen):1-night,u=1-t;
+    const x=u*u*left+2*u*t*(W/2)+t*t*right,y=u*u*base+2*u*t*top+t*t*base,f=n=>n.toFixed(1);
+    const sky=day?['#8fd0ff','#fff1c2','#e8dcb4']:['#1c2540','#3a3f6a','#14182a'];
+    const stars=day?'':[[30,18],[78,34],[128,10],[205,26],[252,12],[296,38],[112,48],[170,30]].map(([sx,sy])=>`<circle cx="${sx}" cy="${sy}" r="1.3" fill="#fff" opacity=".8"/>`).join('');
+    const body=day
+      ?`<circle cx="${f(x)}" cy="${f(y)}" r="17" fill="#ffd76a" opacity=".45"/><circle cx="${f(x)}" cy="${f(y)}" r="11" fill="#ffb21a" stroke="#f08c00" stroke-width="2"/>`
+      :`<path transform="translate(${f(x-9)} ${f(y-10)})" d="M10 0a10 10 0 1 0 9 14 8 8 0 1 1-9-14z" fill="#e6edf5"/>`;
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/></linearGradient></defs>`
+      +`<rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${stars}`
+      +`<path d="M${left} ${base}Q${W/2} ${top} ${right} ${base}" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-dasharray="4 4"/>`
+      +`<rect y="${base}" width="${W}" height="${H-base}" fill="${sky[2]}"/>${body}</svg>`
+      +`<div class="sun-times"><span>${hm(rise)} 해 뜸</span><span>해 짐 ${hm(set)}</span></div>`;
+  }
   return {effectiveTheme,mapPalette,applyTheme,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
 }
