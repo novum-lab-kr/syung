@@ -98,11 +98,6 @@ html[data-theme=dark] .switch{background:#3a3c40}
 .setting-row{display:flex;align-items:center;gap:10px;min-height:48px;padding:0 10px;font-size:14px;font-weight:600}
 .setting-row[hidden]{display:none}   /* 열차 속도: only while 롤러코스터 is on (display:flex above beat the hidden attribute) */
 .setting-name small{display:block;white-space:pre-line;margin-top:1px;font-size:11px;font-weight:500;color:var(--muted)}
-/* 테마 자동: 해(밤엔 달) 궤적 띠 — 윗줄 아래에 창 폭으로, 양 끝에 시각 */
-.theme-arc{padding:0 10px 8px}
-.theme-arc[hidden]{display:none}
-.theme-arc svg{display:block;width:100%;height:auto;color:var(--secondary)}
-.theme-arc-times{display:flex;justify-content:space-between;margin-top:2px;font-size:11px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
 /* bus: the existing switch, map notice and shared detail sheet use the same theme. */
 .bus-notice{position:absolute;z-index:5;left:12px;bottom:calc(80px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 84px);margin:0;padding:8px 12px;border-radius:12px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);font-size:12px;line-height:1.5;pointer-events:none}
 .bus-notice[hidden]{display:none}
