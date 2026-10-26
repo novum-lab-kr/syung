@@ -65,6 +65,14 @@ ADMIN_GET = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_rou
 ADMIN_POST = ("/debug/ride", "/debug/shot")
 
 
+def _body_size(headers) -> int:
+    """Content-Length 숫자(없으면 0, 숫자가 아니면 -1) — 부르는 쪽이 0 이하를 막는다."""
+    try:
+        return int(headers.get("Content-Length") or 0)
+    except ValueError:
+        return -1
+
+
 def make_handler(services, response_seconds: float):
     cache = ResponseCache(response_seconds)
 
@@ -92,8 +100,12 @@ def make_handler(services, response_seconds: float):
                 return self._admin_post(path[len(ADMIN):])
             if path != "/login":
                 return self.send_error(404)
-            size = min(int(self.headers.get("Content-Length") or 0), 4096)
-            form = self.rfile.read(size)
+            # 길이가 없거나 0 이하 · 숫자가 아니면 읽지 않는다(-1 이면 read 가 연결이 닫힐 때까지 묶인다)
+            size = _body_size(self.headers)
+            if size <= 0:
+                self.close_connection = True
+                return self._send_json(api_error("too_large", "본문이 없거나 너무 커요"), 413)
+            form = self.rfile.read(min(size, 4096))
             address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
             self._write(owner_routes.login(services.auth, form, address))
 
@@ -107,7 +119,7 @@ def make_handler(services, response_seconds: float):
                 self.close_connection = True
                 return self.send_error(404)
             limit = debug_routes.RIDE_BYTES if path == "/debug/ride" else MAX_SHOT_BYTES
-            size = int(self.headers.get("Content-Length") or 0)
+            size = _body_size(self.headers)
             if size <= 0 or size > limit:
                 self.close_connection = True
                 return self._send_json(api_error("too_large", "본문이 없거나 너무 커요"), 413)
