@@ -13,6 +13,7 @@ from server.services.debug import DebugService
 from server.services.health import HealthService
 from server.services.journey import JourneyPlanner
 from server.services.live import SubwayLiveService
+from server.services.members import MemberService
 from server.services.owner_auth import OwnerAuth
 from server.services.places import PlaceSearch
 from server.store.debug_log import DebugStore
@@ -23,10 +24,11 @@ class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
                  live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
                  places: PlaceSearch | None = None, auth: OwnerAuth | None = None, health: HealthService | None = None,
-                 debug: DebugService | None = None):
+                 debug: DebugService | None = None, members: MemberService | None = None):
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
         self._journey, self._places, self._auth, self._health, self._debug = journey, places, auth, health, debug
+        self._members = members
 
     @property
     def live(self) -> SubwayLiveService:
@@ -86,6 +88,14 @@ class Services:
             if self._debug is None:
                 self._debug = DebugService(DebugStore(DebugConfig.from_env().debug_dir), bus_routes=lambda: self.bus.routes)
             return self._debug
+
+    @property
+    def members(self) -> MemberService:
+        """회원 로그인 · 출퇴근(제공자 설정이 없으면 꺼짐 — DB 파일도 열지 않는다)."""
+        with self._lock:
+            if self._members is None:
+                self._members = MemberService()
+            return self._members
 
 
 _default: Services | None = None
