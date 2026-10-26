@@ -7,7 +7,7 @@
 # 서버는 클론에서 돈다(2026-10-10 헤르메스 결정 A): 자동 되돌리기는 정적 파일만.
 # 경로(테스트는 임시 폴더로): SYUNG_CLONE · SYUNG_STATE · SYUNG_DEPLOY_LOG, deploy.sh · check_site.sh 의 SYUNG_* 도 그대로 넘어간다.
 set -euo pipefail
-cd "${SYUNG_CLONE:-/root/subway-live-map}"
+cd "${SYUNG_CLONE:-/root/syung}"
 STATE=${SYUNG_STATE:-/var/lib/subway-live}
 RELEASES=${SYUNG_RELEASES:-/var/www/syung-releases}   # deploy.sh 와 같은 기본값
 DEPLOYED=$STATE/deployed-commit   # 마지막으로 확인까지 성공한 배포의 커밋
