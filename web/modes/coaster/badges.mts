@@ -19,20 +19,20 @@ export const COASTER_BADGES = [
   { label: '에버', lines: ['에버라인선', '에버라인', '용인', '용인선', '용인경전철'] },
   { label: '경강', lines: ['경강선', '경강'] },
 ];
-const normalize = line => String(line ?? '').replace(/\s/g, '').toUpperCase();
+const normalize = (line:unknown) => String(line ?? '').replace(/\s/g, '').toUpperCase();
 const ids = new Map(COASTER_BADGES.flatMap((b, i) => b.lines.map(line => [normalize(line), i])));
-export const routeBadgeId = line => ids.get(normalize(line)) ?? 0;
+export const routeBadgeId = (line:unknown) => ids.get(normalize(line)) ?? 0;
 export const BADGE_COLS = 8, BADGE_ROWS = 4, BADGE_CELL = 128;
-let atlas;
+let atlas:HTMLCanvasElement|undefined;
 export function routeBadgeAtlas() {
   if (atlas) return atlas;
   const canvas = document.createElement('canvas');
   canvas.width = BADGE_COLS * BADGE_CELL; canvas.height = BADGE_ROWS * BADGE_CELL;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#152026'; ctx.lineJoin = 'round'; ctx.textAlign = 'center';
   // Use local Korean-capable fonts: no download, and no texture rebuild on each frame or theme change.
-  const font = size => `900 ${size}px "Noto Sans CJK KR", "Noto Sans KR", "Malgun Gothic", sans-serif`;
-  const text = (label, x, y, w, h) => {
+  const font = (size:number) => `900 ${size}px "Noto Sans CJK KR", "Noto Sans KR", "Malgun Gothic", sans-serif`;
+  const text = (label:string, x:number, y:number, w:number, h:number) => {
     ctx.font = font(100);
     const m = ctx.measureText(label), size = 100 * Math.min(w / Math.max(1, m.width), h / Math.max(1, m.actualBoundingBoxAscent + m.actualBoundingBoxDescent));
     ctx.font = font(size); ctx.lineWidth = Math.max(2, size * .045);
@@ -42,7 +42,7 @@ export function routeBadgeAtlas() {
   COASTER_BADGES.forEach(({ label }, i) => {
     if (!label) return;
     const x = (i % BADGE_COLS + .5) * BADGE_CELL, y = (Math.floor(i / BADGE_COLS) + .5) * BADGE_CELL;
-    if (label.includes('\n')) { const [top, bottom] = label.split('\n'); text(top, x, y - 34, 88, 28); text(bottom, x, y + 18, 84, 62) }
+    if (label.includes('\n')) { const [top, bottom] = label.split('\n'); text(top!, x, y - 34, 88, 28); text(bottom!, x, y + 18, 84, 62) }
     else text(label, x, y, label.length === 1 ? 88 : 108, label.length === 1 ? 94 : 78);
   });
   return atlas = canvas;

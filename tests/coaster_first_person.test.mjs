@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nearMatrix, orientation, rideCamera, seatEye, seatIndex, seatRows, seatNumber, seatPickerHTML, RIDE_ZOOM } from '../web/modes/coaster/first_person.mjs';
+import { nearMatrix, orientation, rideCamera, seatEye, seatIndex, seatRows, seatNumber, seatPickerHTML, RIDE_ZOOM } from '../web/modes/coaster/first_person.mts';
 
 // maplibre 6 의 뷰 회전(_calcMatrices): scale(1,−1,1) · rotateZ(−roll) · rotateX(pitch) · rotateZ(−bearing) — 세계(x 동 · y 남 · z 위)를 눈 좌표로
 const rz = (v, a) => [Math.cos(a) * v[0] - Math.sin(a) * v[1], Math.sin(a) * v[0] + Math.cos(a) * v[1], v[2]];

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {trainLayerClass} from '../web/trains/draw.mjs';
-import {createCoasterTrack} from '../web/modes/coaster/track.mjs';
+import {createCoasterTrack} from '../web/modes/coaster/track.mts';
 
 // 모드 전용 GL 자원(4-13②): 지금 모양에 쓰는 것만 만들고, 안 쓰는 모양으로 바뀌면 치운다. 같은 모양에서는 다시 만들지 않는다
 test('열차 층: 88열차 · 1인칭 레일은 coaster88 에서만, 배 선단은 fleet 에서만', () => {

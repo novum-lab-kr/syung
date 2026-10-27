@@ -8,7 +8,7 @@
 
 export const RIDE_ZOOM = 18;      // 1인칭 동안의 줌(지도 최대 줌): 열차 몸 폭이 실제 4.6 m
 export const RIDE_HFOV = 90;      // 가로 시야각(°): 롤코 POV 영상(액션캠)쯤. 세로 60° 고정이던 때는 세로 휴대폰에서 가로 30° 라 망원처럼 확대돼 보였다(2026-10-06 덕배)
-export const RIDE_VFOV = [55, 105];   // 세로 시야각의 범위(°): 가로 화면에서 너무 납작하지 않게, 세로 휴대폰에서 위아래가 너무 휘지 않게
+export const RIDE_VFOV:[number, number] = [55, 105];   // 세로 시야각의 범위(°): 가로 화면에서 너무 납작하지 않게, 세로 휴대폰에서 위아래가 너무 휘지 않게
 export const RIDE_NEAR_M = 2;     // 지도의 가까운 면(m): maplibre 기본(화면 높이/50 px — 줌 18 에서 3~4 m)에 가깝게. 그림자 · 장식의 깊이 보정(clip z 를 w 의 몇 배만큼)이
                                   // 이 기준이라, 0.15 m 로 줄였을 때 1 km 밖 그림자가 수십 m 앞으로 당겨져 앞 건물 위에 검은 얼룩으로 덧칠됐다(2026-10-06). 앞 칸의 뒤 끝(눈에서 2.8 m~)보다는 가깝게
 export const COCKPIT_NEAR_M = .1; // 내 칸의 가까운 면(m): 내 칸만 맨 마지막에 깊이를 비우고 따로 그린다(nearMatrix)
@@ -17,49 +17,52 @@ export const EYE_Z = .72;         // 눈 높이(× 몸 폭 W): 통 테두리(.56
 export const LOOK_DOWN = 3 * Math.PI / 180;   // 진행 방향보다 살짝 아래로 본다(앞 선로가 화면 가운데 조금 아래)
 
 // 화면 크기(w × h px)에 맞는 세로 시야각(°, maplibre 의 fov): 가로가 RIDE_HFOV 가 되게, 범위 안에서
-export function rideFov(w, h) {
+export function rideFov(w:number, h:number) {
   const v = 2 * Math.atan(Math.tan(RIDE_HFOV * Math.PI / 360) * h / Math.max(1, w)) * 180 / Math.PI;
   return Math.max(RIDE_VFOV[0], Math.min(RIDE_VFOV[1], v));
 }
 
 // 같은 카메라에서 가까운 면만 nearPx 로 바꾼 행렬. M: maplibre 의 mainMatrix(투영 · 뷰, 열 우선, 단위 px).
 // 원근 투영의 z 행 = −A·(w 행) + B·e4 이므로 M 에서 A · B 를 읽어 먼 면 f = B/(A+1) 은 그대로 두고 가까운 면만 바꾼다.
-export function nearMatrix(M, nearPx) {
+export function nearMatrix(M:ArrayLike<number>, nearPx:number) {
   const w = [M[3], M[7], M[11], M[15]], z = [M[2], M[6], M[10], M[14]];
-  const A = -(z[0] * w[0] + z[1] * w[1] + z[2] * w[2]) / (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]), B = z[3] + A * w[3], far = B / (A + 1);
+  const A = -(z[0]! * w[0]! + z[1]! * w[1]! + z[2]! * w[2]!) / (w[0]! * w[0]! + w[1]! * w[1]! + w[2]! * w[2]!), B = z[3]! + A * w[3]!, far = B / (A + 1);
   const A2 = -(far + nearPx) / (far - nearPx), B2 = -2 * far * nearPx / (far - nearPx), out = Array.from(M);
-  for (let c = 0; c < 4; c++) out[c * 4 + 2] = -A2 * w[c] + (c === 3 ? B2 : 0);
+  for (let c = 0; c < 4; c++) out[c * 4 + 2] = -A2 * w[c]! + (c === 3 ? B2 : 0);
   return out;
 }
 
 // 칸 하나의 줄 수: coaster_train.mjs draw() 와 같은 식
-export const seatRows = (L, W) => Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
+export const seatRows = (L:number, W:number) => Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
 // 자리 번호(라이더 해시 · 숨길 자리)
-export const seatNumber = (row, side) => row * 2 + (side > 0 ? 1 : 0);
+export const seatNumber = (row:number, side:number) => row * 2 + (side > 0 ? 1 : 0);
 
 // 사람이 고르는 자리(칸 1 = 맨 앞 칸, 줄 1 = 칸의 맨 앞 줄, side -1 왼쪽 · +1 오른쪽) → 그리는 쪽 번호(j: 0 = 맨 뒤 칸, i: 0 = 맨 뒤 줄)
-export function seatIndex(seat, cars, rows) {
+// 고른 자리(칸 · 줄 · 좌우)
+export interface Seat { car:number; row:number; side:number }
+export function seatIndex(seat:Seat, cars:number, rows:number) {
   const car = Math.max(1, Math.min(cars, seat.car | 0 || 1)), row = Math.max(1, Math.min(rows, seat.row | 0 || 1));
   return { j: cars - car, i: rows - row, side: seat.side > 0 ? 1 : -1 };
 }
 
 // 칸 틀 위 눈의 자리(메르카토르): x 는 줄 가운데 조금 뒤(얼굴 자리), y 는 좌석 가운데, z 는 EYE_Z
-export function seatEye(fr, L, W, unit, rows, i, side) {
+export function seatEye(fr:ArrayLike<number>, L:number, W:number, unit:number, rows:number, i:number, side:number) {
   const x = ((i + .5) / rows * L - .013 * W) * unit, y = side * .215 * W * unit, z = EYE_Z * W * unit;
-  const F = [fr[3], fr[4], fr[5]], R = [fr[6], fr[7], fr[8]], U = [fr[9], fr[10], fr[11]];
-  return { E: [0, 1, 2].map(c => fr[c] + F[c] * x + R[c] * y + U[c] * z), F, R, U };
+  const F = [fr[3]!, fr[4]!, fr[5]!], R = [fr[6]!, fr[7]!, fr[8]!], U = [fr[9]!, fr[10]!, fr[11]!];
+  return { E: [0, 1, 2].map(c => fr[c]! + F[c]! * x + R[c]! * y + U[c]! * z), F, R, U };
 }
 
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+type Vec = readonly number[];
+const dot = (a:Vec, b:Vec) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+const cross = (a:Vec, b:Vec) => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
 const DEG = 180 / Math.PI;
 
 // 시선 d(앞) · 화면 위 u(둘 다 단위, 메르카토르 x 동 · y 남 · z 위)를 maplibre 의 bearing · pitch · roll(°)로.
 // maplibre: pitch 0 = 똑바로 아래, 90 = 수평, 180 = 똑바로 위. roll 0 의 화면 위 u0 = (cos p sin b, −cos p cos b, sin p).
-export function orientation(d, u) {
-  const p = Math.acos(Math.max(-1, Math.min(1, -d[2])));
-  let b = Math.hypot(d[0], d[1]) > 1e-6 ? Math.atan2(d[0], -d[1])
-    : p < Math.PI / 2 ? Math.atan2(u[0], -u[1]) : Math.atan2(-u[0], u[1]);   // 똑바로 아래 · 위: 방위는 화면 위 쪽으로
+export function orientation(d:Vec, u:Vec) {
+  const p = Math.acos(Math.max(-1, Math.min(1, -d[2]!)));
+  let b = Math.hypot(d[0]!, d[1]!) > 1e-6 ? Math.atan2(d[0]!, -d[1]!)
+    : p < Math.PI / 2 ? Math.atan2(u[0]!, -u[1]!) : Math.atan2(-u[0]!, u[1]!);   // 똑바로 아래 · 위: 방위는 화면 위 쪽으로
   const u0 = [Math.cos(p) * Math.sin(b), -Math.cos(p) * Math.cos(b), Math.sin(p)];
   const roll = Math.atan2(dot(cross(u0, u), d), dot(u0, u));   // u0 에서 u 까지 d 를 축으로 돈 각
   return { bearing: b * DEG, pitch: p * DEG, roll: -roll * DEG };   // maplibre 의 roll 은 반대 방향(뷰 행렬 rotateZ(−roll))
@@ -67,17 +70,17 @@ export function orientation(d, u) {
 
 // 눈 E(메르카토르) · 칸 틀(F, U)에서 jumpTo 값. ctcd: 카메라–center 거리(px, transform.cameraToCenterDistance),
 // mpu: 1 m 의 메르카토르 길이(눈 위도), lookDown: 진행 방향보다 아래로 숙이는 각(rad).
-export function rideCamera(E, F, U, { ctcd, mpu, zoom = RIDE_ZOOM, lookDown = LOOK_DOWN }) {
+export function rideCamera(E:Vec, F:Vec, U:Vec, { ctcd, mpu, zoom = RIDE_ZOOM, lookDown = LOOK_DOWN }:{ ctcd:number; mpu:number; zoom?:number; lookDown?:number }) {
   const c = Math.cos(lookDown), s = Math.sin(lookDown);
-  const d = [0, 1, 2].map(k => F[k] * c - U[k] * s), u = [0, 1, 2].map(k => U[k] * c + F[k] * s);
+  const d = [0, 1, 2].map(k => F[k]! * c - U[k]! * s), u = [0, 1, 2].map(k => U[k]! * c + F[k]! * s);
   const D = ctcd / (512 * 2 ** zoom);   // center 까지(메르카토르)
   const o = orientation(d, u);
-  return { x: E[0] + d[0] * D, y: E[1] + d[1] * D, elevation: (E[2] + d[2] * D) / mpu, zoom, ...o };
+  return { x: E[0]! + d[0]! * D, y: E[1]! + d[1]! * D, elevation: (E[2]! + d[2]! * D) / mpu, zoom, ...o };
 }
 
 // 자리 고르기 배치도: 칸마다 위가 앞(진행 방향)인 작은 칸, 줄마다 왼쪽 · 오른쪽 자리. 고른 자리는 sel.
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-export function seatPickerHTML(cars, rows, sel) {
+const esc = (s:unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]!);
+export function seatPickerHTML(cars:number, rows:number, sel:Seat) {
   let h = '';
   for (let car = 1; car <= cars; car++) {
     let seats = '';
@@ -89,4 +92,4 @@ export function seatPickerHTML(cars, rows, sel) {
   }
   return h;
 }
-export const seatLabel = sel => `${sel.car}칸 ${sel.row}열 ${sel.side < 0 ? '왼쪽' : '오른쪽'}`;
+export const seatLabel = (sel:Seat) => `${sel.car}칸 ${sel.row}열 ${sel.side < 0 ? '왼쪽' : '오른쪽'}`;

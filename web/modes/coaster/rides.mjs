@@ -12,7 +12,7 @@
 // opts.bearing is no longer read: a wheel keeps the yaw its hash gave it at every zoom.
 
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './night.mjs';
-import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs'; import { ridePalette } from './metrics.mjs';
+import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs'; import { ridePalette } from './metrics.mts';
 import { selectRideSites } from './ride_sites.mjs';
 
 const EARTH = 40075016.685578488;
