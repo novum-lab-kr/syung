@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { signCollisionLayout } from '../web/lib/station_signs.mjs';
 import { StationNameLayer } from '../web/map/platform.mjs';
-import { registerTransitLayers } from '../web/map/layers.mjs';
+import { registerTransitLayers } from '../web/map/layers.mts';
 import { createModeRegistry } from '../web/modes/index.mjs';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');

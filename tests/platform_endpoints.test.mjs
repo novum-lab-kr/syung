@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {platformRuntime,measurements,distance,local} from './platform_endpoints_fixture.mjs';
-import {registerTransitLayers} from '../web/map/layers.mjs';
+import {registerTransitLayers} from '../web/map/layers.mts';
 
 for(const zoom of [14,16,18,20])test(`줌 ${zoom}: 전 역 승강장 양 끝과 중심선이 표시 노선 0.1m 이내에 있어요`,()=>{
  const r=platformRuntime(undefined,zoom),m=measurements(r);
