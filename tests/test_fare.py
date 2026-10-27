@@ -22,7 +22,10 @@ GRAPH = fare._Graph({"hops": [
     ["1호선", "평택", "성환", 300, 5.0, 1, 0]]})
 BUSES = {"routes": {"472": {"type": "trunk", "stops": [["앞", 0.0], ["가운데", 3.0], ["뒤", 9.0], ["앞", 18.0]]},
                     "9401": {"type": "express", "stops": [["서울역", 0.0], ["분당", 25.0]]},
-                    "심야": {"type": "night", "stops": [["앞", 0.0], ["뒤", 5.0]]}}}
+                    "심야": {"type": "night", "stops": [["앞", 0.0], ["뒤", 5.0]]},
+                    "702A": {"type": "trunk", "stops": [["앞", 0.0], ["뒤", 4.0]]},
+                    "새벽A160": {"type": "trunk", "stops": [["앞", 0.0], ["뒤", 4.0]]},
+                    "8442출근": {"type": "branch", "stops": [["앞", 0.0], ["뒤", 4.0]]}}}
 
 
 class FareTableTest(unittest.TestCase):
@@ -62,6 +65,9 @@ class FareTableTest(unittest.TestCase):
         self.assertEqual(fare.trip_fare({"legs": [bus("심야", "앞", "뒤")]}, GRAPH, BUSES)[2], "bus")
         self.assertEqual(fare.trip_fare({"legs": [bus("경기1", "앞", "뒤")]}, GRAPH, BUSES)[2], "bus")
         self.assertEqual(fare.trip_fare({"legs": [bus("472", "없는곳", "뒤")]}, GRAPH, BUSES)[2], "bus")
+        self.assertEqual(fare.trip_fare({"legs": [bus("702A", "앞", "뒤")]}, GRAPH, BUSES), (1500, 4.0, None), "번호 + 갈래는 보통 노선")
+        for special in ("새벽A160", "8442출근"):   # 서울시 자료가 간선 · 지선이라 적어도 요금 근거가 없는 특수 노선
+            self.assertEqual(fare.trip_fare({"legs": [bus(special, "앞", "뒤")]}, GRAPH, BUSES)[2], "bus", special)
 
     def test_month_rides_count_the_calendar(self):
         self.assertEqual(fare.month_rides([1, 2, 3, 4, 5], NOW), ("2027-01", 21))

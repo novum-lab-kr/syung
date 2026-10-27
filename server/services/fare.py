@@ -8,7 +8,8 @@
   (https://news.seoul.go.kr/traffic/archives/345, 교통정책과 · 2025-09-18 수정): 총 이용거리 10km 까지 기본요금(탄 수단 중 높은 쪽),
   넘으면 5km 까지마다 100원(서울광역버스는 30km 까지 기본 · 넘으면 5km 까지마다 100원). 각 수단 요금을 따로 낸 합보다 많지 않다.
 - 서울 시내버스 기본요금(서울시 대중교통요금 현황 · '23.8.12 조정): 도시형(간선 · 지선) 1,500원, 좌석(광역) 3,000원.
-  순환 · 심야 · 마을 · 경기 · 인천 버스는 위 자료에 지금 요금이 없거나 거리 자료가 없어 계산하지 않는다.
+  순환 · 심야 · 마을 · 경기 · 인천 버스와 특수 노선(새벽A · 자율주행 · 출퇴근 맞춤)은 위 자료에 지금 요금이 없거나
+  거리 자료가 없어 계산하지 않는다.
 거리: 전철은 공식 역간거리(data/fare/hop_km.json), 버스는 서울 버스 공식 노선 경로를 따라 잰 정류소 사이 거리(data/fare/bus_km.json).
 계산하지 않는 것(그 승차권은 '계산 못 함'으로 센다): 고른 경로가 없는 옛 승차권 · 공식 거리가 없는 구간(GTX-A · 김포골드라인 ·
 신림선 · 자료 기준일 뒤 개통 구간 등) · 수도권 밖 구간(평택~신창 · 가평~춘천 — 따로 붙는 운임) · 위의 계산하지 않는 버스.
@@ -30,6 +31,10 @@ from server.store import fare_data
 SUBWAY_BASE = 1550
 BUS_BASE = {"trunk": 1500, "branch": 1500, "express": 3000}   # 서울 간선 · 지선 · 광역
 WIDE_FREE_KM = 30   # 서울광역버스가 들어간 통합 요금의 기본 거리
+# 요금을 확인한 보통 노선 이름: 번호(3~4자리) + 갈래(-1 · A · B, 뒤에 행선지 글자) — 702A · 5522A난곡 · 9401-1.
+# 서울시 자료가 간선 · 지선으로 적었어도 새벽A160 · 동대문A01(자율주행) · 서울02출근 · 8442출근(출퇴근 맞춤) 같은
+# 특수 노선은 요금 근거가 없어 계산하지 않는다(PR #23 리뷰)
+PLAIN_BUS = re.compile(r"[0-9]{3,4}(?:-[0-9])?(?:[AB][가-힣]*)?")
 DETOUR = 1.25   # 공식 거리가 있는 쌍만으로 찾은 길이 이보다 오래 걸리면(돌아간 길) 계산하지 않는다
 
 
@@ -108,7 +113,7 @@ def _stop_key(name: str) -> str:
 
 def _bus_km(routes: dict, leg: dict) -> tuple[float | None, str | None]:
     route = routes.get(leg.get("route"))
-    if route is None or route["type"] not in BUS_BASE:
+    if route is None or route["type"] not in BUS_BASE or not PLAIN_BUS.fullmatch(leg.get("route") or ""):
         return None, "bus"
     stops = route["stops"]
     start, end = _stop_key(leg.get("from")), _stop_key(leg.get("to"))
