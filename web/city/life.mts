@@ -19,14 +19,94 @@
 import SEOUL from '../modes/basic/city.mjs';
 import { BULB_FS, bulbSize } from '../modes/coaster/night.mjs';
 import { toneRGB, hexRgb, MPP } from './style.mts';
+import type { CityStylePack } from './style.mts';
 import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './traffic.mts';
+import type { Box, Edge, RoadLine, TrafficPack, Visible } from './traffic.mts';
+import type { MapGeoJSONFeature } from 'maplibre-gl';
 
-const EARTH = 40075016.685578488, ORIGIN = [126.978, 37.5665];
-const mercX = lon => lon / 360 + .5, mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
+type Theme = 'light' | 'dark';
+type Hex = string;
+type XY = [number, number];
+type MinMax = [number, number];
+type Tri = [number[], number[], number[]];
+type V3 = [number, number, number];
+type V6 = [number, number, number, number, number, number];
+// 팩(modes/basic/city.mjs · 조선 web/modes/joseon/style.mjs 가 덧쓴 것)에서 이 파일이 읽는 칸
+interface TreesSpec {
+  streetSpacingM:Record<string, number | undefined>; streetHeightM:MinMax; streetCrownDiameterM:MinMax; trunkDiameterM:number; shapeWeights:{ upright:number };
+  colors:Record<Theme, Hex[]>; weights:number[]; trunk:Record<Theme, Hex>; parkAreaPerTreeM2:number; parkMinSpacingM:number; parkHeightM:MinMax; parkCrownDiameterM:MinMax;
+  maxVisible:{ desktop:number; phone:number };
+}
+// 가로등(조선: torch 횃불 · lantern 초롱은 팩에 있을 때만)
+interface LampSpec {
+  spacingM:number; minorSpacingM:number; primaryStaggerM:number; intersectionClearanceM:number; heightM:number; armM:number; poleDiameterM:number; pole:Record<Theme, Hex>;
+  light:Hex; poolRadiusM:number; poolOpacity:number; simcityPoolMaxOpacity:number;
+  torch?:{ basketM:number; basketWidthM:number; flameM:number; flameWidthM:number; glowMul?:number; flame:[Hex, Hex] };
+  lantern?:{ widthM:number; heightM:number };
+}
+interface PeopleSpec {
+  heightM:number; per100M:Record<'residential' | 'commercial' | 'retail' | 'industrial' | 'park', number>; clothes:Hex[]; hair?:Hex[]; skin:Record<Theme, Hex>;
+  maxVisible:{ desktop:number; phone:number }; speedMps:MinMax; outfits?:{ shirt:Hex; lower:Hex }[]; outfitWeights?:number[];
+}
+type VehiclesSpec = TrafficPack['props']['vehicles'] & { maxVisible:{ desktop:number; phone:number } };
+interface NightLights { lampPool?:{ opacity:number; radiusMul?:number; lod:MinMax }; carBeam?:{ opacity?:number; minZoom?:number } }
+// 모드마다 색 맞추기 칸(팩 modes.simcity · coaster) 중 이 파일이 읽는 것 — modes 는 이름 칸과 colorMath 가 섞여 읽는 자리에서만 이 모양으로(D-W11)
+interface LifeModeTone { lampPool:number; shadowOpacity:Record<Theme, number> }
+export interface LifePack extends CityStylePack {
+  props:{ trees:TreesSpec; lamps:LampSpec; people:PeopleSpec; vehicles:VehiclesSpec };
+  roads:CityStylePack['roads'] & { crossing:{ minZoom:number; stripeM:number; gapM:number; depthM:number; cornerSetbackM:number } };
+  lighting:Record<Theme, { ambient:number; directional:number; color:Hex }> & { referenceSun:{ azimuthDeg:number; elevationDeg:number }; shadow:{ color:Hex } };
+  lod:Record<'streetTrees' | 'parkTrees' | 'lamps' | 'vehicles' | 'people', MinMax>;
+  buildingDefaults:{ glass:Record<Theme, Hex> };
+  night?:CityStylePack['night'] & { lights?:NightLights };
+}
+// (팩 기본값 SEOUL 은 JSON 모양 그대로라 [최소, 최대] 칸이 number[] 로 추론된다 — constructor 에서 as unknown as LifePack)
+// 지도 피처(maplibre querySourceFeatures 'ofm' — tile: 그 피처가 온 타일) — 층마다 모은 것
+type Feature = MapGeoJSONFeature & { tile?:{ z:number; x:number; y:number } };
+type LayerName = 'transportation' | 'building' | 'water' | 'landcover' | 'landuse' | 'poi';
+type CellFeatures = Record<LayerName, Feature[]>;
+// 셀 하나의 소품을 8×8 칸으로 나눠 GPU 에 올린 것(start: 칸마다 처음 순번, 끝에 전체 수)
+interface Binned { b:WebGLBuffer; n:number; start:Int32Array; stride:number }
+type BinnedKey = 'trees' | 'ptrees' | 'lamps' | 'cross';
+// 사람이 걷는 길: 거리 한쪽 보도(e 는 길 그래프의 길) 또는 공원길(e 는 그 자리에서 만든 점 목록 — 마디 없음)
+interface PathEdge { xs:Float64Array; ys:Float64Array; cum:Float64Array; len:number; a:null; b:null; width:number; box:number[] }
+interface Walk { e:Edge | PathEdge; side:number; off:number; zone:number; live:number; len:number; path:boolean }
+// z14 타일 하나(셀): render 가 만들고 build(생성기)가 채운다
+interface LifeCell {
+  key:string; x:number; y:number; box:Box; state:'pending' | 'building' | 'ready'; tries:number; retryAt?:number; bare?:boolean;
+  gen?:Generator<undefined, void> | null; s0?:number; cur?:number; maxStep?:number; cpuMs?:number; phases?:[string, number][]; ms?:number;
+  counts?:Partial<Record<'trees' | 'street' | 'lamps' | 'cross' | 'edges' | 'walks', number>>;
+  inGraph?:boolean; inBuilding?:(x:number, y:number, m:number) => boolean; exitSpots?:Map<string, XY>;
+  trees?:Binned; ptrees?:Binned; lamps?:Binned; cross?:Binned; walks?:Walk[]; hot?:XY[]; sub?:{ SUB:number; sx:number; sy:number };
+}
+// 보도 위 사람 한 명(x · y · fx · fy 는 만들자마자 at(p) 가 넣는다 · hop: 길모퉁이를 돌아 다음 보도로 가는 중)
+interface Person {
+  id:number; w:Walk; s:number; dir:number; v:number; ph:number; pause:number; jit:number; shirt:number; pants:number; hair:number; look:number; sc:number; dying:boolean;
+  x:number; y:number; fx:number; fy:number; hop?:{ x0:number; y0:number; t:number; T:number } | null;
+}
+type ExitDeck = ((px:number, py:number, m:number) => boolean) | null;
+interface LifeOptions { pack?:LifePack; exits?:() => XY[]; deck?:(x:number, y:number, r:number) => ExitDeck }
+// 스타크래프트 유닛(web/modes/starcraft/life_units.mjs LifeUnits) — 이 파일이 부르는 draw 만
+interface LifeUnitsLayer { draw(gl:WebGL2RenderingContext, MT:Float32Array, mu:number, o:Record<string, unknown>):number }
+// render 가 받는 값(map/overlay.mjs 가 넘긴다)
+export interface LifeRenderOptions {
+  look?:LifePack; night?:{ lights?:unknown } | null; now?:number; zoom?:number; pitch?:number; bearing?:number; dark?:boolean; tone?:string; lampPool?:number | null;
+  cars?:boolean; crossings?:boolean; people?:boolean; units?:{ people?:string[]; cars?:string[] } | null; lifeUnits?:LifeUnitsLayer | null; phone?:boolean; reducedMotion?:boolean; pixelRatio?:number;
+  bounds?:number[]; mapOn?:boolean; moving?:boolean; sun?:{ azimuth:number; elevation:number } | null;
+}
+// 한 장면의 셈(점검 스크립트 · 화면 밖 확인용 — window.__subwayWebGL.cityLife.stats)
+interface LifeStats {
+  cells:number; ready:number; trees:number; lamps:number; cross:number; cars:number; people:number; building:boolean; waiting:number; buildMs:number; cpuMs:number; maxStep:number;
+  phases:LifeCell['phases'][]; counts:LifeCell['counts'][]; treeCand?:number; traffic?:TrafficSim['stats']; units?:number; ms?:number;
+}
+interface MapLike { querySourceFeatures(source:string, o:{ sourceLayer:string }):Feature[] }
+
+const EARTH = 40075016.685578488, ORIGIN:XY = [126.978, 37.5665];
+const mercX = (lon:number) => lon / 360 + .5, mercY = (lat:number) => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
 const O = { x: mercX(ORIGIN[0]), y: mercY(ORIGIN[1]) }, MU = 1 / (EARTH * Math.cos(ORIGIN[1] * Math.PI / 180));   // one local metre, in mercator units (a mercator metre: true metres × 0.3 % across Seoul)
-const toM = (lon, lat) => [(mercX(lon) - O.x) / MU, (mercY(lat) - O.y) / MU];
+const toM = (lon:number, lat:number):XY => [(mercX(lon) - O.x) / MU, (mercY(lat) - O.y) / MU];
 const CELL_Z = 14, MINZ = 14.5, RASTER = 4;   // cells are the source's z14 tiles; nothing below MINZ; the water / landcover mask's cell (m)
-const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
+const smooth = (a:number, b:number, x:number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
 const ROAD = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']);
 const SIDEWALK_TREES = new Set(['primary', 'secondary', 'tertiary']);
 // 지하철 출구 표지(map/platform.mjs ExitPillars)가 건물 · 나무와 겹치지 않게(덕배 2026-10-15): 출구 점이 건물 외곽선 안이나 벽에
@@ -34,7 +114,7 @@ const SIDEWALK_TREES = new Set(['primary', 'secondary', 'tertiary']);
 // 표지는 화면 크기라 줌 18 기준으로 잰다: 기둥 한 변 약 4 m(반대각 2.8 m), 장승 양옆 횃불은 가운데서 약 5 m.
 export const EXIT_CLEAR = { wallM: 3, treeM: 7, maxMoveM: 25 };
 // (x, y) 가 blocked(x, y, 여유 m) 면 둘레를 1 m 씩 넓혀 가며(16방향) 처음 비는 곳. 못 찾으면 그대로
-export function clearSpot(x, y, blocked, { wallM = EXIT_CLEAR.wallM, maxMoveM = EXIT_CLEAR.maxMoveM } = {}) {
+export function clearSpot(x:number, y:number, blocked:(x:number, y:number, m:number) => boolean, { wallM = EXIT_CLEAR.wallM, maxMoveM = EXIT_CLEAR.maxMoveM } = {}):XY {
   if (!blocked(x, y, wallM)) return [x, y];
   for (let r = 1; r <= maxMoveM; r++) for (let k = 0; k < 16; k++) {
     const a = k * Math.PI / 8, px = x + r * Math.cos(a), py = y + r * Math.sin(a);
@@ -42,26 +122,26 @@ export function clearSpot(x, y, blocked, { wallM = EXIT_CLEAR.wallM, maxMoveM = 
   }
   return [x, y];
 }
-const PICK = (weights, r) => { let a = 0; for (let i = 0; i < weights.length; i++) { a += weights[i]; if (r < a) return i } return weights.length - 1 };
+const PICK = (weights:number[], r:number) => { let a = 0; for (let i = 0; i < weights.length; i++) { a += weights[i]!; if (r < a) return i } return weights.length - 1 };
 
 // ── meshes ──────────────────────────────────────────────────────────────────────────────────────
 // a flat-shaded icosphere (every face its own vertices and normal): the toy tree's crown
-function icosphere(subdiv) {
-  const t = (1 + Math.sqrt(5)) / 2, V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => { const l = Math.hypot(...v); return v.map(c => c / l) });
-  let F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
-  const mid = (a, b) => { const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], l = Math.hypot(...m); return m.map(c => c / l) };
-  let tris = F.map(f => f.map(i => V[i]));
-  for (let s = 0; s < subdiv; s++) { const out = []; for (const [a, b, c] of tris) { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); out.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]) } tris = out }
+function icosphere(subdiv:number):Tri[] {
+  const t = (1 + Math.sqrt(5)) / 2, V:number[][] = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => { const l = Math.hypot(...v); return v.map(c => c / l) });
+  let F:number[][] = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+  const mid = (a:number[], b:number[]) => { const m = [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2, (a[2]! + b[2]!) / 2], l = Math.hypot(...m); return m.map(c => c / l) };
+  let tris = F.map(f => f.map(i => V[i]!) as Tri);
+  for (let s = 0; s < subdiv; s++) { const out:Tri[] = []; for (const [a, b, c] of tris) { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); out.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]) } tris = out }
   return tris;
 }
 // tree: part 0 the trunk (a prism, radius 1, z 0..1), part 1 the crown (a unit sphere about the origin). 7 floats a vertex.
-function treeMesh(lod) {
-  const d = [], push = (p, n, part) => d.push(p[0], p[1], p[2], n[0], n[1], n[2], part);
+function treeMesh(lod:number):Float32Array {
+  const d:number[] = [], push = (p:number[], n:number[], part:number) => d.push(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, part);
   const sides = lod ? 5 : 4;
-  for (let i = 0; i < sides; i++) { const a0 = i / sides * 2 * Math.PI, a1 = (i + 1) / sides * 2 * Math.PI, n = [Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), 0];
-    const A = [Math.cos(a0), Math.sin(a0), 0], B = [Math.cos(a1), Math.sin(a1), 0], C = [Math.cos(a1), Math.sin(a1), 1], D = [Math.cos(a0), Math.sin(a0), 1];
+  for (let i = 0; i < sides; i++) { const a0 = i / sides * 2 * Math.PI, a1 = (i + 1) / sides * 2 * Math.PI, n:V3 = [Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), 0];
+    const A:V3 = [Math.cos(a0), Math.sin(a0), 0], B:V3 = [Math.cos(a1), Math.sin(a1), 0], C:V3 = [Math.cos(a1), Math.sin(a1), 1], D:V3 = [Math.cos(a0), Math.sin(a0), 1];
     for (const p of [A, B, C, A, C, D]) push(p, n, 0) }
-  for (const tri of icosphere(lod ? 1 : 0)) { const n = tri[0].map((c, k) => (c + tri[1][k] + tri[2][k]) / 3), l = Math.hypot(...n); for (const p of tri) push(p, n.map(c => c / l), 1) }
+  for (const tri of icosphere(lod ? 1 : 0)) { const n = tri[0].map((c, k) => (c + tri[1][k]! + tri[2][k]!) / 3), l = Math.hypot(...n); for (const p of tri) push(p, n.map(c => c / l), 1) }
   return new Float32Array(d);
 }
 // lamp: part 0 the pole and the arm, part 2 the head, part 1 the head's underside (the lamp, lit at night). The arm
@@ -71,34 +151,34 @@ function treeMesh(lod) {
 // its middle at (armM, heightM − 0.2) where the night's bulb and pool are drawn.
 // 횃불 (L.torch, 조선 모드): 나무 기둥 위 쇠 화로(part 2)에 불꽃(part 3). 불꽃은 셰이더가 흔들고(밤낮 모두 타오름), a_nrm.x 에
 // 불꽃 안의 높이 몫(0 아래 주황 … 1 끝 노랑)을 싣는다. 밤의 불빛 · 바닥 빛은 기둥 위(armM 0, heightM − 0.2)에.
-function lampMesh(L) {
-  const H = L.heightM, A = L.armM, r = L.poleDiameterM / 2, d = [];
-  const quad = (P, n, part) => { for (const p of [P[0], P[1], P[2], P[0], P[2], P[3]]) d.push(p[0], p[1], p[2], p[3], p[4], p[5], n[0], n[1], n[2], part) };
+function lampMesh(L:LampSpec):Float32Array {
+  const H = L.heightM, A = L.armM, r = L.poleDiameterM / 2, d:number[] = [];
+  const quad = (P:[V6, V6, V6, V6], n:V3, part:number) => { for (const p of [P[0], P[1], P[2], P[0], P[2], P[3]]) d.push(p[0], p[1], p[2], p[3], p[4], p[5], n[0], n[1], n[2], part) };
   // a box about a centre line: c(x,y,z) is the point on the line, the rest the offset; the line runs along `axis`
-  const box = (c0, c1, hy, hz, part, bottom = part) => {   // from c0 to c1 (centre points), half extents across (y) and up (z)
-    const V = (c, sy, sz) => [c[0], c[1], c[2], 0, sy * hy, sz * hz];
+  const box = (c0:V3, c1:V3, hy:number, hz:number, part:number, bottom = part) => {   // from c0 to c1 (centre points), half extents across (y) and up (z)
+    const V = (c:V3, sy:number, sz:number):V6 => [c[0], c[1], c[2], 0, sy * hy, sz * hz];
     quad([V(c1, -1, -1), V(c1, 1, -1), V(c1, 1, 1), V(c1, -1, 1)], [1, 0, 0], part); quad([V(c0, 1, -1), V(c0, -1, -1), V(c0, -1, 1), V(c0, 1, 1)], [-1, 0, 0], part);
     quad([V(c1, 1, -1), V(c0, 1, -1), V(c0, 1, 1), V(c1, 1, 1)], [0, 1, 0], part); quad([V(c0, -1, -1), V(c1, -1, -1), V(c1, -1, 1), V(c0, -1, 1)], [0, -1, 0], part);
     quad([V(c0, -1, 1), V(c1, -1, 1), V(c1, 1, 1), V(c0, 1, 1)], [0, 0, 1], part); quad([V(c0, 1, -1), V(c1, 1, -1), V(c1, -1, -1), V(c0, -1, -1)], [0, 0, -1], bottom) };
   // the pole: a box standing up — centre line (0,0,z), offsets in x and y
-  { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];
+  { const V = (z:number, sx:number, sy:number):V6 => [0, 0, z, sx * r, sy * r, 0];
     quad([V(0, 1, -1), V(0, 1, 1), V(H - .25, 1, 1), V(H - .25, 1, -1)], [1, 0, 0], 0); quad([V(0, -1, 1), V(0, -1, -1), V(H - .25, -1, -1), V(H - .25, -1, 1)], [-1, 0, 0], 0);
     quad([V(0, 1, 1), V(0, -1, 1), V(H - .25, -1, 1), V(H - .25, 1, 1)], [0, 1, 0], 0); quad([V(0, -1, -1), V(0, 1, -1), V(H - .25, 1, -1), V(H - .25, -1, -1)], [0, -1, 0], 0) }
   if (L.torch) {
     const F = L.torch, b0 = H + .05, b1 = b0 + F.basketM, fr = F.flameWidthM / 2, fz = b1 - .05, ft = fz + F.flameM;
     box([-F.basketWidthM / 2, 0, b0 + F.basketM / 2], [F.basketWidthM / 2, 0, b0 + F.basketM / 2], F.basketWidthM / 2, F.basketM / 2, 2);   // 화로
-    { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];   // 기둥 윗부분(화로까지)
+    { const V = (z:number, sx:number, sy:number):V6 => [0, 0, z, sx * r, sy * r, 0];   // 기둥 윗부분(화로까지)
       quad([V(H - .25, 1, -1), V(H - .25, 1, 1), V(b0, 1, 1), V(b0, 1, -1)], [1, 0, 0], 0); quad([V(H - .25, -1, 1), V(H - .25, -1, -1), V(b0, -1, -1), V(b0, -1, 1)], [-1, 0, 0], 0);
       quad([V(H - .25, 1, 1), V(H - .25, -1, 1), V(b0, -1, 1), V(b0, 1, 1)], [0, 1, 0], 0); quad([V(H - .25, -1, -1), V(H - .25, 1, -1), V(b0, 1, -1), V(b0, -1, -1)], [0, -1, 0], 0) }
     // 불꽃: 아래가 둥글고 위가 뾰족한 팔면체 꼴(가로 고리 4점 · 끝 · 밑). 고리는 밑에서 0.3 높이
-    const ring = [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + Math.PI / 4; return [Math.cos(a) * fr, Math.sin(a) * fr, fz + .3 * F.flameM] });
-    const fv = (p, m) => d.push(p[0], p[1], p[2], 0, 0, 0, m, 0, 0, 3);
-    for (let k = 0; k < 4; k++) { const a = ring[k], c = ring[(k + 1) % 4]; fv(a, .3); fv(c, .3); fv([0, 0, ft], 1); fv(c, .3); fv(a, .3); fv([0, 0, fz], 0) }
+    const ring = [0, 1, 2, 3].map((k):V3 => { const a = k * Math.PI / 2 + Math.PI / 4; return [Math.cos(a) * fr, Math.sin(a) * fr, fz + .3 * F.flameM] });
+    const fv = (p:V3, m:number) => d.push(p[0], p[1], p[2], 0, 0, 0, m, 0, 0, 3);
+    for (let k = 0; k < 4; k++) { const a = ring[k]!, c = ring[(k + 1) % 4]!; fv(a, .3); fv(c, .3); fv([0, 0, ft], 1); fv(c, .3); fv(a, .3); fv([0, 0, fz], 0) }
     return new Float32Array(d);
   }
   if (L.lantern) {
     const top = H + .25, lw = L.lantern.widthM / 2, lh = L.lantern.heightM / 2, zc = H - .2;
-    { const V = (z, sx, sy) => [0, 0, z, sx * r, sy * r, 0];   // the post's top above the pole drawn above (to the arm)
+    { const V = (z:number, sx:number, sy:number):V6 => [0, 0, z, sx * r, sy * r, 0];   // the post's top above the pole drawn above (to the arm)
       quad([V(H - .25, 1, -1), V(H - .25, 1, 1), V(top, 1, 1), V(top, 1, -1)], [1, 0, 0], 0); quad([V(H - .25, -1, 1), V(H - .25, -1, -1), V(top, -1, -1), V(top, -1, 1)], [-1, 0, 0], 0);
       quad([V(H - .25, 1, 1), V(H - .25, -1, 1), V(top, -1, 1), V(top, 1, 1)], [0, 1, 0], 0); quad([V(H - .25, -1, -1), V(H - .25, 1, -1), V(top, 1, -1), V(top, -1, -1)], [0, -1, 0], 0) }
     box([-r, 0, top], [A + .05, 0, top], r * .8, r * .8, 0);                  // the arm
@@ -114,11 +194,11 @@ function lampMesh(L) {
 // a person, drawn face on to the camera: the round little figure the coaster's walkers once had (the runtime's former roundPerson) in
 // unit space (f across the screen, z up), each vertex with its part and how far along its limb it is (t), so the
 // shader can swing the legs and arms. 4 floats a vertex.
-function personMesh() {
-  const d = [], v = (f, z, part, t = 0) => d.push(f, z, part, t);
-  const disc = (cf, cz, rf, rz, part, a0 = 0, a1 = 2 * Math.PI, N = 12, t = 0) => { for (let i = 0; i < N; i++) { const t0 = a0 + (a1 - a0) * i / N, t1 = a0 + (a1 - a0) * (i + 1) / N; v(cf, cz, part, t); v(cf + rf * Math.cos(t0), cz + rz * Math.sin(t0), part, t); v(cf + rf * Math.cos(t1), cz + rz * Math.sin(t1), part, t) } };
-  const bar = (f0, z0, f1, z1, w, part) => { const dx = f1 - f0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nf = -dz / l * w, nz = dx / l * w;
-    for (const [f, z, t] of [[f0 - nf, z0 - nz, 0], [f0 + nf, z0 + nz, 0], [f1 + nf, z1 + nz, 1], [f0 - nf, z0 - nz, 0], [f1 + nf, z1 + nz, 1], [f1 - nf, z1 - nz, 1]]) v(f, z, part, t) };
+function personMesh():Float32Array {
+  const d:number[] = [], v = (f:number, z:number, part:number, t = 0) => d.push(f, z, part, t);
+  const disc = (cf:number, cz:number, rf:number, rz:number, part:number, a0 = 0, a1 = 2 * Math.PI, N = 12, t = 0) => { for (let i = 0; i < N; i++) { const t0 = a0 + (a1 - a0) * i / N, t1 = a0 + (a1 - a0) * (i + 1) / N; v(cf, cz, part, t); v(cf + rf * Math.cos(t0), cz + rz * Math.sin(t0), part, t); v(cf + rf * Math.cos(t1), cz + rz * Math.sin(t1), part, t) } };
+  const bar = (f0:number, z0:number, f1:number, z1:number, w:number, part:number) => { const dx = f1 - f0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nf = -dz / l * w, nz = dx / l * w;
+    for (const [f, z, t] of [[f0 - nf, z0 - nz, 0], [f0 + nf, z0 + nz, 0], [f1 + nf, z1 + nz, 1], [f0 - nf, z0 - nz, 0], [f1 + nf, z1 + nz, 1], [f1 - nf, z1 - nz, 1]] as const) v(f, z, part, t) };
   const hip = 1, top = 2.7, hr = .95, hz = top + .75;
   for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1; bar(dd * .38, hip, dd * .38, .25, .26, 10 + k); disc(dd * .38 + .08, .2, .3, .2, 12 + k, 0, 2 * Math.PI, 8, 1) }   // legs (parts 10, 11) and feet (12, 13)
   const bw = .85, br = .55; bar(0, hip + br * .6, 0, top - br * .4, bw, 20); disc(0, hip + br * .6, bw, br, 20, Math.PI, 2 * Math.PI, 8); disc(0, top - br * .4, bw, br, 20, 0, Math.PI, 8);   // the body (20)
@@ -128,7 +208,7 @@ function personMesh() {
   disc(-.32, hz - .04, .085, .12, 41, 0, 2 * Math.PI, 8); disc(.32, hz - .04, .085, .12, 41, 0, 2 * Math.PI, 8);
   disc(0, hz - .26, .06, .04, 42, 0, 2 * Math.PI, 6); bar(-.13, hz - .44, .13, hz - .44, .035, 43);
   // 머리 모양 · 조선 옷차림(2026-10-11 행님): 모든 부위를 한 판에 넣고 셰이더가 사람마다(i_c.z) 고른 것만 남긴다 — PERSON_VS 의 보임 표
-  const poly = (pts, part, t = 0) => { for (let i = 1; i < pts.length - 1; i++) for (const q of [pts[0], pts[i], pts[i + 1]]) v(q[0], q[1], part, t) }, PI = Math.PI;
+  const poly = (pts:number[][], part:number, t = 0) => { for (let i = 1; i < pts.length - 1; i++) for (const q of [pts[0]!, pts[i]!, pts[i + 1]!]) v(q[0]!, q[1]!, part, t) }, PI = Math.PI;
   // 현대: 61 단발 · 62 긴 머리(뒤) · 63 포니테일(뒤) · 64 똥머리 · 65 야구 모자
   for (const dd of [-1, 1]) poly([[dd * 1.02, hz + .1], [dd * 1.02, hz - .62], [dd * .72, hz - .62], [dd * .72, hz + .1]], 61);
   disc(0, hz + .08, hr * 1.06, hr, 61, 0, PI, 10); bar(-.75, hz + .38, .75, hz + .38, .12, 61);
@@ -150,9 +230,9 @@ function personMesh() {
   bar(-.85, 2, .85, 2, .07, 85); bar(.05, 2.42, .32, 1.95, .07, 86); bar(.05, 2.42, -.12, 1.98, .06, 86);
   bar(-.35, 2.75, 0, 2.28, .06, 87); bar(.35, 2.75, 0, 2.28, .06, 87);
   for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1, T = .6, x = dd * .38; poly([[x - .24, .61], [x + .24, .61], [x + .24, .49], [x - .24, .49]], 14 + k, T) }
-  for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1, A = [dd * .75, top - .45], H = [dd * 1.15, hip + .75], at = t => [A[0] + (H[0] - A[0]) * t, A[1] + (H[1] - A[1]) * t];
-    for (let b = 0; b < 4; b++) { const t0 = .35 + b * .15, a = at(t0), e = at(t0 + .08), w = .21, dx = e[0] - a[0], dz = e[1] - a[1], l = Math.hypot(dx, dz), nf = -dz / l * w, nz = dx / l * w;
-      poly([[a[0] - nf, a[1] - nz], [a[0] + nf, a[1] + nz], [e[0] + nf, e[1] + nz], [e[0] - nf, e[1] - nz]], 34 + k, t0 + .04) } }
+  for (const dd of [-1, 1]) { const k = dd < 0 ? 0 : 1, A = [dd * .75, top - .45], H = [dd * 1.15, hip + .75], at = (t:number) => [A[0]! + (H[0]! - A[0]!) * t, A[1]! + (H[1]! - A[1]!) * t];
+    for (let b = 0; b < 4; b++) { const t0 = .35 + b * .15, a = at(t0), e = at(t0 + .08), w = .21, dx = e[0]! - a[0]!, dz = e[1]! - a[1]!, l = Math.hypot(dx, dz), nf = -dz / l * w, nz = dx / l * w;
+      poly([[a[0]! - nf, a[1]! - nz], [a[0]! + nf, a[1]! + nz], [e[0]! + nf, e[1]! + nz], [e[0]! - nf, e[1]! - nz]], 34 + k, t0 + .04) } }
   return new Float32Array(d);
 }
 const PERSON_UNITS = 2.7 + .75 + .95;   // the figure's height in its own units
@@ -325,31 +405,51 @@ void main(){
 }`;
 
 // ── the layer ───────────────────────────────────────────────────────────────────────────────────
+type TreeUniform = 'u_matrix' | 'u_mu' | 'u_keep' | 'u_trunkR' | 'u_shadow' | 'u_fade' | 'u_lit' | 'u_pal' | 'u_trunk' | 'u_light' | 'u_shade' | 'u_alpha';
+type LampUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_night' | 'u_thick' | 'u_time' | 'u_lit' | 'u_pole' | 'u_glow' | 'u_light' | 'u_flame' | 'u_alpha';
+type PoolUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_arm' | 'u_radius' | 'u_rgb' | 'u_alpha';
+type BulbUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_arm' | 'u_h' | 'u_size' | 'u_core' | 'u_rgb' | 'u_wt';
+type CrossUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_depth' | 'u_rgb' | 'u_alpha' | 'u_stripe' | 'u_gap';
+type PersonUniform = 'u_matrix' | 'u_mu' | 'u_time' | 'u_unit' | 'u_right' | 'u_lit' | 'u_shirt' | 'u_pants' | 'u_hair' | 'u_skin' | 'u_light' | 'u_alpha' | 'u_era' | 'u_face' | 'u_jshirt' | 'u_jlow' | 'u_jcum';
+type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
+interface Mesh { b:WebGLBuffer; n:number }
+interface LampLook { va:WebGLVertexArrayObject; mesh:Mesh }
 export class CityLife {
-  constructor({ pack = SEOUL, exits = () => [], deck = () => null } = {}) {
+  // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · init · _init · render 가 넣는다)
+  declare pack:LifePack; declare exits:() => XY[]; declare deck:(x:number, y:number, r:number) => ExitDeck; declare cells:Map<string, LifeCell>; declare graph:RoadGraph;
+  declare stats:Partial<LifeStats> & { idle?:boolean }; declare _anim:boolean; declare lastQuery:number; declare building:LifeCell | null; declare M:Float32Array;
+  declare people:{ list:Person[]; poses:Float32Array; count:number; max:number; seq:number; simT:number };
+  declare map:MapLike; declare gl:WebGL2RenderingContext | null | undefined; declare broken:boolean | undefined;
+  declare pT:WebGLProgram; declare pL:WebGLProgram; declare pP:WebGLProgram; declare pB:WebGLProgram; declare pX:WebGLProgram; declare pH:WebGLProgram;
+  declare uT:Uniforms<TreeUniform>; declare uL:Uniforms<LampUniform>; declare uP:Uniforms<PoolUniform>; declare uB:Uniforms<BulbUniform>; declare uX:Uniforms<CrossUniform>; declare uH:Uniforms<PersonUniform>;
+  declare meshT:Mesh[]; declare meshL:Mesh; declare meshH:Mesh; declare quad:WebGLBuffer; declare vehicles:VehicleRenderer; declare traffic:TrafficSim;
+  declare peopleInst:WebGLBuffer[]; declare ping:number;
+  declare vaH:WebGLVertexArrayObject; declare vaQ:WebGLVertexArrayObject; declare vaL:WebGLVertexArrayObject; declare vaT:WebGLVertexArrayObject[]; declare vaP:WebGLVertexArrayObject;
+  declare lamps:Map<LampSpec, LampLook>; declare lastFrame:number | undefined; declare tick:number | undefined; declare ptick:number | undefined;
+  constructor({ pack = SEOUL as unknown as LifePack, exits = () => [], deck = () => null }:LifeOptions = {}) {
     this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
     this.M = new Float32Array(16);
     this.people = { list: [], poses: new Float32Array(400 * 14), count: 0, max: 400, seq: 0, simT: 0 };   // seq: ids; simT: walked time (s)
   }
   // A fault in the city must never take the trains with it: init and render catch their own errors and
   // the layer switches itself off (once, with the error in the console).
-  init(gl, maplibregl, map) {
+  init(gl:WebGL2RenderingContext, maplibregl:unknown, map:MapLike):void {
     if (this.gl || this.broken) return; this.map = map;
     try { this._init(gl) ; this.gl = gl } catch (e) { this.broken = true; console.error('city-life: off —', e) }
   }
   // a lamp mesh's vertex array (the instances are bound per draw)
-  lampVA(gl, mesh) { const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.b); for (const [loc, k, off] of [[0, 3, 0], [1, 3, 12], [2, 3, 24], [6, 1, 36]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 40, off) } return va }
+  lampVA(gl:WebGL2RenderingContext, mesh:Mesh):WebGLVertexArrayObject { const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.b); for (const [loc, k, off] of [[0, 3, 0], [1, 3, 12], [2, 3, 24], [6, 1, 36]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 40, off) } return va }
   // the posts for a look's lamps (the 조선 pack's torches), built on first use
-  lampFor(gl, LM) { let e = this.lamps.get(LM); if (!e) { const m = lampMesh(LM), b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m, gl.STATIC_DRAW); const mesh = { b, n: m.length / 10 }; e = { va: this.lampVA(gl, mesh), mesh }; this.lamps.set(LM, e) } return e }
-  _init(gl) {
-    const U = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
-    this.pT = compileProgram(gl, TREE_VS, FLAT_FS); this.uT = U(this.pT, ['u_matrix', 'u_mu', 'u_keep', 'u_trunkR', 'u_shadow', 'u_fade', 'u_lit', 'u_pal', 'u_trunk', 'u_light', 'u_shade', 'u_alpha']);
-    this.pL = compileProgram(gl, LAMP_VS, FLAT_FS); this.uL = U(this.pL, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_night', 'u_thick', 'u_time', 'u_lit', 'u_pole', 'u_glow', 'u_light', 'u_flame', 'u_alpha']);
-    this.pP = compileProgram(gl, POOL_VS, POOL_FS); this.uP = U(this.pP, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_radius', 'u_rgb', 'u_alpha']);
-    this.pB = compileProgram(gl, BULB_VS, BULB_FS); this.uB = U(this.pB, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_h', 'u_size', 'u_core', 'u_rgb', 'u_wt']);
-    this.pX = compileProgram(gl, CROSS_VS, CROSS_FS); this.uX = U(this.pX, ['u_matrix', 'u_mu', 'u_fade', 'u_depth', 'u_rgb', 'u_alpha', 'u_stripe', 'u_gap']);
-    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha', 'u_era', 'u_face', 'u_jshirt', 'u_jlow', 'u_jcum']);
-    const vbo = data => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b };
+  lampFor(gl:WebGL2RenderingContext, LM:LampSpec):LampLook { let e = this.lamps.get(LM); if (!e) { const m = lampMesh(LM), b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m, gl.STATIC_DRAW); const mesh = { b, n: m.length / 10 }; e = { va: this.lampVA(gl, mesh), mesh }; this.lamps.set(LM, e) } return e }
+  _init(gl:WebGL2RenderingContext):void {
+    const U = <K extends string>(p:WebGLProgram, names:readonly K[]) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)])) as Uniforms<K>;
+    this.pT = compileProgram(gl, TREE_VS, FLAT_FS); this.uT = U(this.pT, ['u_matrix', 'u_mu', 'u_keep', 'u_trunkR', 'u_shadow', 'u_fade', 'u_lit', 'u_pal', 'u_trunk', 'u_light', 'u_shade', 'u_alpha'] as const);
+    this.pL = compileProgram(gl, LAMP_VS, FLAT_FS); this.uL = U(this.pL, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_night', 'u_thick', 'u_time', 'u_lit', 'u_pole', 'u_glow', 'u_light', 'u_flame', 'u_alpha'] as const);
+    this.pP = compileProgram(gl, POOL_VS, POOL_FS); this.uP = U(this.pP, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_radius', 'u_rgb', 'u_alpha'] as const);
+    this.pB = compileProgram(gl, BULB_VS, BULB_FS); this.uB = U(this.pB, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_h', 'u_size', 'u_core', 'u_rgb', 'u_wt'] as const);
+    this.pX = compileProgram(gl, CROSS_VS, CROSS_FS); this.uX = U(this.pX, ['u_matrix', 'u_mu', 'u_fade', 'u_depth', 'u_rgb', 'u_alpha', 'u_stripe', 'u_gap'] as const);
+    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha', 'u_era', 'u_face', 'u_jshirt', 'u_jlow', 'u_jcum'] as const);
+    const vbo = (data:Float32Array) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b };
     this.meshT = [0, 1].map(lod => { const m = treeMesh(lod); return { b: vbo(m), n: m.length / 7 } });
     { const m = lampMesh(this.pack.props.lamps); this.meshL = { b: vbo(m), n: m.length / 10 } }
     { const m = personMesh(); this.meshH = { b: vbo(m), n: m.length / 4 } }
@@ -364,110 +464,110 @@ export class CityLife {
     this.vaP = gl.createVertexArray(); gl.bindVertexArray(this.vaP); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
-  meshPtr(gl) { gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24) }
+  meshPtr(gl:WebGL2RenderingContext):void { gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24) }
 
   // ── cells ───────────────────────────────────────────────────────────────────────────────────
-  cellBox(x, y, z = CELL_Z) { const n = 2 ** z; return [(x / n - O.x) / MU, (y / n - O.y) / MU, ((x + 1) / n - O.x) / MU, ((y + 1) / n - O.y) / MU] }
+  cellBox(x:number, y:number, z = CELL_Z):Box { const n = 2 ** z; return [(x / n - O.x) / MU, (y / n - O.y) / MU, ((x + 1) / n - O.x) / MU, ((y + 1) / n - O.y) / MU] }
   // which cells the view needs (local box → z14 tile range)
-  needed(box) {
-    const n = 2 ** CELL_Z, tx = v => Math.floor((v * MU + O.x) * n), ty = v => Math.floor((v * MU + O.y) * n), out = [];
-    for (let x = tx(box[0]); x <= tx(box[2]); x++) for (let y = ty(box[1]); y <= ty(box[3]); y++) out.push([`${CELL_Z}/${x}/${y}`, x, y]);
+  needed(box:number[]):[string, number, number][] {
+    const n = 2 ** CELL_Z, tx = (v:number) => Math.floor((v * MU + O.x) * n), ty = (v:number) => Math.floor((v * MU + O.y) * n), out:[string, number, number][] = [];
+    for (let x = tx(box[0]!); x <= tx(box[2]!); x++) for (let y = ty(box[1]!); y <= ty(box[3]!); y++) out.push([`${CELL_Z}/${x}/${y}`, x, y]);
     return out;
   }
   // the tiles' features by cell: queried for every source layer at once, at most every 400 ms, only while a cell waits
-  gather() {
-    const map = this.map, by = new Map(), key = f => { const t = f.tile; return t ? `${t.z}/${t.x}/${t.y}` : '' };
-    for (const layer of ['transportation', 'building', 'water', 'landcover', 'landuse', 'poi']) {
-      let fs = []; try { fs = map.querySourceFeatures('ofm', { sourceLayer: layer }) } catch { }
+  gather():Map<string, CellFeatures> {
+    const map = this.map, by = new Map<string, CellFeatures>(), key = (f:Feature) => { const t = f.tile; return t ? `${t.z}/${t.x}/${t.y}` : '' };
+    for (const layer of ['transportation', 'building', 'water', 'landcover', 'landuse', 'poi'] as const) {
+      let fs:Feature[] = []; try { fs = map.querySourceFeatures('ofm', { sourceLayer: layer }) } catch { }
       for (const f of fs) { const k = key(f); if (!k) continue; let g = by.get(k); if (!g) by.set(k, g = { transportation: [], building: [], water: [], landcover: [], landuse: [], poi: [] }); g[layer].push(f) }
     }
     return by;
   }
   // Build a cell from its features, in slices (a generator): streets → graph, then the buildings' and water's
   // masks, then the trees, lamps, crossings and the pavements people walk, then the GPU buffers.
-  *build(cell, F) {
+  *build(cell:LifeCell, F:CellFeatures):Generator<undefined, void> {
     const pack = this.pack, P = pack.props, R = pack.roads, box = cell.box, [bx0, by0, bx1, by1] = box, t0 = performance.now();
-    const spec = c => R.classes[R.aliases?.[c] ?? c] || R.classes.service, mark = n => { const t = performance.now(), cpu = (cell.cur || 0) + (t - (cell.s0 || t)); (cell.phases || (cell.phases = [])).push([n, Math.round(cpu)]); cell.cur = -(t - (cell.s0 || t)) };
-    const lanesPerDir = w => Math.max(1, Math.round(w / 3.5 / 2)), onewayLanes = w => w < 7 ? 1 : Math.max(2, 2 * Math.round(w / 6.6));
-    const lines = [], rails = [], paths = [];
+    const spec = (c:string) => R.classes[R.aliases?.[c] ?? c] || R.classes.service, mark = (n:string) => { const t = performance.now(), cpu = (cell.cur || 0) + (t - (cell.s0 || t)); (cell.phases || (cell.phases = [])).push([n, Math.round(cpu)]); cell.cur = -(t - (cell.s0 || t)) };
+    const lanesPerDir = (w:number) => Math.max(1, Math.round(w / 3.5 / 2)), onewayLanes = (w:number) => w < 7 ? 1 : Math.max(2, 2 * Math.round(w / 6.6));
+    const lines:RoadLine[] = [], rails:XY[][] = [], paths:{ pts:XY[]; sub:string }[] = [];
     for (const f of F.transportation) {
       const p = f.properties, cls = p.class, g = f.geometry; if (g.type !== 'LineString' && g.type !== 'MultiLineString') continue;
       const parts = g.type === 'LineString' ? [g.coordinates] : g.coordinates, level = p.brunnel === 'tunnel' ? -1 : p.brunnel === 'bridge' ? 1 : 0;
       if (ROAD.has(cls)) { if (level < 0) continue; const S = spec(cls), oneway = p.oneway === 1 ? 1 : p.oneway === -1 ? -1 : 0, ramp = p.ramp === 1, W = S.widthM * (oneway ? .72 : 1) * (ramp ? .55 : 1);
-        for (const cs of parts) lines.push({ pts: cs.map(c => toM(c[0], c[1])), cls, oneway, level, ramp, width: W, lanes: oneway ? onewayLanes(W) : lanesPerDir(W), sidewalk: ramp ? 0 : S.sidewalkM, speed: 8 }) }
-      else if ((cls === 'rail' || cls === 'transit') && level === 0) for (const cs of parts) rails.push(cs.map(c => toM(c[0], c[1])));
-      else if ((cls === 'path' || cls === 'track') && p.subclass !== 'steps' && level >= 0) for (const cs of parts) paths.push({ pts: cs.map(c => toM(c[0], c[1])), sub: p.subclass || cls });
+        for (const cs of parts) lines.push({ pts: cs.map(c => toM(c[0]!, c[1]!)), cls, oneway, level, ramp, width: W, lanes: oneway ? onewayLanes(W) : lanesPerDir(W), sidewalk: ramp ? 0 : S.sidewalkM, speed: 8 }) }
+      else if ((cls === 'rail' || cls === 'transit') && level === 0) for (const cs of parts) rails.push(cs.map(c => toM(c[0]!, c[1]!)));
+      else if ((cls === 'path' || cls === 'track') && p.subclass !== 'steps' && level >= 0) for (const cs of parts) paths.push({ pts: cs.map(c => toM(c[0]!, c[1]!)), sub: p.subclass || cls });
     }
     mark('parse-roads'); yield;
     // the street graph for this cell (edges, nodes, signals)
     const G = yield* this.graph.addCellGen(cell.key, lines, box), edges = G.edges; cell.inGraph = true;
     yield;
     // a grid of edge segments for "how close is the nearest street"
-    const SG = new Map(), SC = 20, sk = (x, y) => Math.floor(x / SC) + ',' + Math.floor(y / SC);
-    for (const e of edges) for (let i = 0; i + 1 < e.xs.length; i++) { const x0 = Math.min(e.xs[i], e.xs[i + 1]), x1 = Math.max(e.xs[i], e.xs[i + 1]), y0 = Math.min(e.ys[i], e.ys[i + 1]), y1 = Math.max(e.ys[i], e.ys[i + 1]);
+    const SG = new Map<string, [Edge, number][]>(), SC = 20, sk = (x:number, y:number) => Math.floor(x / SC) + ',' + Math.floor(y / SC);
+    for (const e of edges) for (let i = 0; i + 1 < e.xs.length; i++) { const x0 = Math.min(e.xs[i]!, e.xs[i + 1]!), x1 = Math.max(e.xs[i]!, e.xs[i + 1]!), y0 = Math.min(e.ys[i]!, e.ys[i + 1]!), y1 = Math.max(e.ys[i]!, e.ys[i + 1]!);
       for (let cx = Math.floor(x0 / SC); cx <= Math.floor(x1 / SC); cx++) for (let cy = Math.floor(y0 / SC); cy <= Math.floor(y1 / SC); cy++) { const k = cx + ',' + cy; let a = SG.get(k); if (!a) SG.set(k, a = []); a.push([e, i]) } }
     yield;
-    const segDist = (x, y, e, i) => { const ax = e.xs[i], ay = e.ys[i], dx = e.xs[i + 1] - ax, dy = e.ys[i + 1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); return Math.hypot(ax + dx * u - x, ay + dy * u - y) };
+    const segDist = (x:number, y:number, e:Edge, i:number) => { const ax = e.xs[i]!, ay = e.ys[i]!, dx = e.xs[i + 1]! - ax, dy = e.ys[i + 1]! - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); return Math.hypot(ax + dx * u - x, ay + dy * u - y) };
     // clear of every street but `self` by `margin` beyond its half width?
-    const roadClear = (x, y, self, margin) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC);
+    const roadClear = (x:number, y:number, self:Edge | null, margin:number) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC);
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const [e, i] of SG.get((cx + dx) + ',' + (cy + dy)) || []) { if (e === self) continue; if (segDist(x, y, e, i) < e.width / 2 + margin) return false } return true };
-    const railGrid = new Map(); for (const pts of rails) for (let i = 0; i + 1 < pts.length; i++) { const k = sk((pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2); let a = railGrid.get(k); if (!a) railGrid.set(k, a = []); a.push([pts[i], pts[i + 1]]) }
-    const railClear = (x, y, m) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC); for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (const [A, B] of railGrid.get((cx + dx) + ',' + (cy + dy)) || []) { const ex = B[0] - A[0], ey = B[1] - A[1], l2 = ex * ex + ey * ey || 1, u = Math.max(0, Math.min(1, ((x - A[0]) * ex + (y - A[1]) * ey) / l2)); if (Math.hypot(A[0] + ex * u - x, A[1] + ey * u - y) < m) return false } return true };
-    const pathGrid = new Map(); for (const pth of paths) for (let i = 0; i + 1 < pth.pts.length; i++) { const A = pth.pts[i], B = pth.pts[i + 1]; const k = sk((A[0] + B[0]) / 2, (A[1] + B[1]) / 2); let a = pathGrid.get(k); if (!a) pathGrid.set(k, a = []); a.push([A, B]) }
-    const pathClear = (x, y, m) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const [A, B] of pathGrid.get((cx + dx) + ',' + (cy + dy)) || []) { const ex = B[0] - A[0], ey = B[1] - A[1], l2 = ex * ex + ey * ey || 1, u = Math.max(0, Math.min(1, ((x - A[0]) * ex + (y - A[1]) * ey) / l2)); if (Math.hypot(A[0] + ex * u - x, A[1] + ey * u - y) < m) return false } return true };
+    const railGrid = new Map<string, [XY, XY][]>(); for (const pts of rails) for (let i = 0; i + 1 < pts.length; i++) { const k = sk((pts[i]![0] + pts[i + 1]![0]) / 2, (pts[i]![1] + pts[i + 1]![1]) / 2); let a = railGrid.get(k); if (!a) railGrid.set(k, a = []); a.push([pts[i]!, pts[i + 1]!]) }
+    const railClear = (x:number, y:number, m:number) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC); for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (const [A, B] of railGrid.get((cx + dx) + ',' + (cy + dy)) || []) { const ex = B[0] - A[0], ey = B[1] - A[1], l2 = ex * ex + ey * ey || 1, u = Math.max(0, Math.min(1, ((x - A[0]) * ex + (y - A[1]) * ey) / l2)); if (Math.hypot(A[0] + ex * u - x, A[1] + ey * u - y) < m) return false } return true };
+    const pathGrid = new Map<string, [XY, XY][]>(); for (const pth of paths) for (let i = 0; i + 1 < pth.pts.length; i++) { const A = pth.pts[i]!, B = pth.pts[i + 1]!; const k = sk((A[0]! + B[0]!) / 2, (A[1]! + B[1]!) / 2); let a = pathGrid.get(k); if (!a) pathGrid.set(k, a = []); a.push([A, B]) }
+    const pathClear = (x:number, y:number, m:number) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const [A, B] of pathGrid.get((cx + dx) + ',' + (cy + dy)) || []) { const ex = B[0] - A[0], ey = B[1] - A[1], l2 = ex * ex + ey * ey || 1, u = Math.max(0, Math.min(1, ((x - A[0]) * ex + (y - A[1]) * ey) / l2)); if (Math.hypot(A[0] + ex * u - x, A[1] + ey * u - y) < m) return false } return true };
     mark('graph+grids'); yield;
     // buildings: polygons on a grid, point-in-polygon with a margin to the walls
-    const polys = [], BG = new Map(), BC = 30;
-    const ringsOf = g => g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-    let nb = 0; for (const f of F.building) { if (++nb % 12 === 0) yield; for (const poly of ringsOf(f.geometry)) { const rings = poly.map(r => r.map(c => toM(c[0], c[1]))); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of rings[0]) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]) }
+    const polys:{ rings:XY[][]; box:number[] }[] = [], BG = new Map<string, number[]>(), BC = 30;
+    const ringsOf = (g:Feature['geometry']):number[][][][] => g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    let nb = 0; for (const f of F.building) { if (++nb % 12 === 0) yield; for (const poly of ringsOf(f.geometry)) { const rings = poly.map(r => r.map(c => toM(c[0]!, c[1]!))); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of rings[0]!) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]) }
       if (x1 < bx0 - 5 || x0 > bx1 + 5 || y1 < by0 - 5 || y0 > by1 + 5) continue; const id = polys.length; polys.push({ rings, box: [x0, y0, x1, y1] });
       for (let cx = Math.floor((x0 - 2) / BC); cx <= Math.floor((x1 + 2) / BC); cx++) for (let cy = Math.floor((y0 - 2) / BC); cy <= Math.floor((y1 + 2) / BC); cy++) { const k = cx + ',' + cy; let a = BG.get(k); if (!a) BG.set(k, a = []); a.push(id) } } }
-    const pip = (x, y, rings) => { let inside = false; for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const yi = r[i][1], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < (r[j][0] - r[i][0]) * (y - yi) / (yj - yi) + r[i][0]) inside = !inside } return inside };
-    const edgeNear = (x, y, rings, m) => { for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = r[j][0], ay = r[j][1], dx = r[i][0] - ax, dy = r[i][1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < m) return true } return false };
-    const inBuilding = (x, y, m) => { const a = BG.get(Math.floor(x / BC) + ',' + Math.floor(y / BC)); if (!a) return false; for (const id of a) { const P = polys[id], b = P.box; if (x < b[0] - m || x > b[2] + m || y < b[1] - m || y > b[3] + m) continue; if (pip(x, y, P.rings) || (m > 0 && edgeNear(x, y, P.rings, m))) return true } return false };
+    const pip = (x:number, y:number, rings:XY[][]) => { let inside = false; for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const yi = r[i]![1], yj = r[j]![1]; if ((yi > y) !== (yj > y) && x < (r[j]![0] - r[i]![0]) * (y - yi) / (yj - yi) + r[i]![0]) inside = !inside } return inside };
+    const edgeNear = (x:number, y:number, rings:XY[][], m:number) => { for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = r[j]![0], ay = r[j]![1], dx = r[i]![0] - ax, dy = r[i]![1] - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < m) return true } return false };
+    const inBuilding = (x:number, y:number, m:number) => { const a = BG.get(Math.floor(x / BC) + ',' + Math.floor(y / BC)); if (!a) return false; for (const id of a) { const P = polys[id]!, b = P.box; if (x < b[0]! - m || x > b[2]! + m || y < b[1]! - m || y > b[3]! + m) continue; if (pip(x, y, P.rings) || (m > 0 && edgeNear(x, y, P.rings, m))) return true } return false };
     cell.inBuilding = inBuilding;   // kept on the cell: the viaduct's piers ask it (CityLife.inBuilding)
     // 지하철 출구: 건물 안 · 벽에 붙은 표지는 가장 가까운 바깥으로(EXIT_CLEAR), 옮긴 자리를 셀에 둔다(CityLife.exitSpot)
-    const exitSpots = new Map(), exitPts = [];
+    const exitSpots = new Map<string, XY>(), exitPts:XY[] = [];
     for (const [lon, lat] of this.exits() || []) { const [x, y] = toM(lon, lat); if (x < bx0 || x >= bx1 || y < by0 || y >= by1) continue;
-      const deck = this.deck(x, y, EXIT_CLEAR.maxMoveM + EXIT_CLEAR.wallM), q = clearSpot(x, y, deck ? (px, py, m) => inBuilding(px, py, m) || deck(px, py, m) : inBuilding);   // 고가(수로) 상판 · 승강장 밑도 피한다
+      const deck = this.deck(x, y, EXIT_CLEAR.maxMoveM + EXIT_CLEAR.wallM), q = clearSpot(x, y, deck ? (px:number, py:number, m:number) => inBuilding(px, py, m) || deck(px, py, m) : inBuilding);   // 고가(수로) 상판 · 승강장 밑도 피한다
       exitSpots.set(lon + ',' + lat, q); exitPts.push(q) }
     cell.exitSpots = exitSpots;
-    const exitClear = (x, y) => { for (const [ex, ey] of exitPts) if (Math.abs(ex - x) < EXIT_CLEAR.treeM && Math.abs(ey - y) < EXIT_CLEAR.treeM && Math.hypot(ex - x, ey - y) < EXIT_CLEAR.treeM) return false; return true };
+    const exitClear = (x:number, y:number) => { for (const [ex, ey] of exitPts) if (Math.abs(ex - x) < EXIT_CLEAR.treeM && Math.abs(ey - y) < EXIT_CLEAR.treeM && Math.hypot(ex - x, ey - y) < EXIT_CLEAR.treeM) return false; return true };
     mark('buildings'); yield;
     // water, wood, park grass and lawns: a 4 m mask by scanline fill (even–odd); landuse zones on a 10 m grid
     const NW = Math.ceil((bx1 - bx0) / RASTER) + 1, NH = Math.ceil((by1 - by0) / RASTER) + 1, mask = new Uint8Array(NW * NH);
-    const rasterize = (rings, bit) => { const rows = new Map();
-      for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = (r[i][0] - bx0) / RASTER, ay = (r[i][1] - by0) / RASTER, bx = (r[j][0] - bx0) / RASTER, by = (r[j][1] - by0) / RASTER; if (ay === by) continue;
+    const rasterize = (rings:XY[][], bit:number) => { const rows = new Map<number, number[]>();
+      for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = (r[i]![0] - bx0) / RASTER, ay = (r[i]![1] - by0) / RASTER, bx = (r[j]![0] - bx0) / RASTER, by = (r[j]![1] - by0) / RASTER; if (ay === by) continue;
         const ylo = Math.max(0, Math.ceil(Math.min(ay, by) - .5)), yhi = Math.min(NH - 1, Math.floor(Math.max(ay, by) - .5));
         for (let y = ylo; y <= yhi; y++) { const yc = y + .5; if ((ay > yc) === (by > yc)) continue; const x = ax + (bx - ax) * (yc - ay) / (by - ay); let a = rows.get(y); if (!a) rows.set(y, a = []); a.push(x) } }
-      for (const [y, xs] of rows) { xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) { const x0 = Math.max(0, Math.ceil(xs[k] - .5)), x1 = Math.min(NW - 1, Math.floor(xs[k + 1] - .5)); for (let x = x0; x <= x1; x++) mask[y * NW + x] |= bit } } };
-    const maskAt = (x, y) => { const ix = Math.floor((x - bx0) / RASTER), iy = Math.floor((y - by0) / RASTER); return ix < 0 || iy < 0 || ix >= NW || iy >= NH ? 0 : mask[iy * NW + ix] };
-    for (const f of F.water) { for (const poly of ringsOf(f.geometry)) rasterize(poly.map(r => r.map(c => toM(c[0], c[1]))), 1); yield }
+      for (const [y, xs] of rows) { xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) { const x0 = Math.max(0, Math.ceil(xs[k]! - .5)), x1 = Math.min(NW - 1, Math.floor(xs[k + 1]! - .5)); for (let x = x0; x <= x1; x++) mask[y * NW + x]! |= bit } } };
+    const maskAt = (x:number, y:number) => { const ix = Math.floor((x - bx0) / RASTER), iy = Math.floor((y - by0) / RASTER); return ix < 0 || iy < 0 || ix >= NW || iy >= NH ? 0 : mask[iy * NW + ix]! };
+    for (const f of F.water) { for (const poly of ringsOf(f.geometry)) rasterize(poly.map(r => r.map(c => toM(c[0]!, c[1]!))), 1); yield }
     mark('water'); yield;
     const PARKISH = new Set(['park', 'garden', 'recreation_ground', 'village_green', 'golf_course', 'cemetery', 'zoo', 'theme_park']);
     for (const f of F.landcover) { const p = f.properties; if (p.class !== 'wood' && p.class !== 'grass') continue; const bit = p.class === 'wood' ? 2 : PARKISH.has(p.subclass) ? 4 : 8;
-      for (const poly of ringsOf(f.geometry)) rasterize(poly.map(r => r.map(c => toM(c[0], c[1]))), bit); if (++nb % 6 === 0) yield }
+      for (const poly of ringsOf(f.geometry)) rasterize(poly.map(r => r.map(c => toM(c[0]!, c[1]!))), bit); if (++nb % 6 === 0) yield }
     mark('landcover'); yield;
     // zones (for how many people walk where): landuse, the bigger first so the smaller win where they overlap
     const ZC = 10, ZW = Math.ceil((bx1 - bx0) / ZC) + 1, ZH = Math.ceil((by1 - by0) / ZC) + 1, zone = new Uint8Array(ZW * ZH);
-    const ZONE = { residential: 1, commercial: 2, retail: 3, industrial: 4, railway: 4, school: 5, university: 5, college: 5, hospital: 5, civic: 5, public: 5, cemetery: 6 }, lus = [];
-    for (const f of F.landuse) { const z = ZONE[f.properties.class]; if (!z) continue; for (const poly of ringsOf(f.geometry)) { const rings = poly.map(r => r.map(c => toM(c[0], c[1]))); let A = 0; const r = rings[0]; for (let i = 0, j = r.length - 1; i < r.length; j = i++) A += (r[j][0] + r[i][0]) * (r[j][1] - r[i][1]); lus.push({ rings, z, A: Math.abs(A) }) } }
+    const ZONE:Record<string, number | undefined> = { residential: 1, commercial: 2, retail: 3, industrial: 4, railway: 4, school: 5, university: 5, college: 5, hospital: 5, civic: 5, public: 5, cemetery: 6 }, lus:{ rings:XY[][]; z:number; A:number }[] = [];
+    for (const f of F.landuse) { const z = ZONE[f.properties.class]; if (!z) continue; for (const poly of ringsOf(f.geometry)) { const rings = poly.map(r => r.map(c => toM(c[0]!, c[1]!))); let A = 0; const r = rings[0]!; for (let i = 0, j = r.length - 1; i < r.length; j = i++) A += (r[j]![0] + r[i]![0]) * (r[j]![1] - r[i]![1]); lus.push({ rings, z, A: Math.abs(A) }) } }
     lus.sort((a, b) => b.A - a.A);
-    for (const L of lus) { if (++nb % 8 === 0) yield; const rows = new Map(); for (const r of L.rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = (r[i][0] - bx0) / ZC, ay = (r[i][1] - by0) / ZC, bx = (r[j][0] - bx0) / ZC, by = (r[j][1] - by0) / ZC; if (ay === by) continue;
+    for (const L of lus) { if (++nb % 8 === 0) yield; const rows = new Map<number, number[]>(); for (const r of L.rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const ax = (r[i]![0] - bx0) / ZC, ay = (r[i]![1] - by0) / ZC, bx = (r[j]![0] - bx0) / ZC, by = (r[j]![1] - by0) / ZC; if (ay === by) continue;
         for (let y = Math.max(0, Math.ceil(Math.min(ay, by) - .5)); y <= Math.min(ZH - 1, Math.floor(Math.max(ay, by) - .5)); y++) { const yc = y + .5; if ((ay > yc) === (by > yc)) continue; const x = ax + (bx - ax) * (yc - ay) / (by - ay); let a = rows.get(y); if (!a) rows.set(y, a = []); a.push(x) } }
-      for (const [y, xs] of rows) { xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) for (let x = Math.max(0, Math.ceil(xs[k] - .5)); x <= Math.min(ZW - 1, Math.floor(xs[k + 1] - .5)); x++) zone[y * ZW + x] = L.z } }
-    const zoneAt = (x, y) => { const m = maskAt(x, y); if (m & 14) return 7; const ix = Math.floor((x - bx0) / ZC), iy = Math.floor((y - by0) / ZC); return ix < 0 || iy < 0 || ix >= ZW || iy >= ZH ? 0 : zone[iy * ZW + ix] };   // 7: park / green
+      for (const [y, xs] of rows) { xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) for (let x = Math.max(0, Math.ceil(xs[k]! - .5)); x <= Math.min(ZW - 1, Math.floor(xs[k + 1]! - .5)); x++) zone[y * ZW + x] = L.z } }
+    const zoneAt = (x:number, y:number) => { const m = maskAt(x, y); if (m & 14) return 7; const ix = Math.floor((x - bx0) / ZC), iy = Math.floor((y - by0) / ZC); return ix < 0 || iy < 0 || ix >= ZW || iy >= ZH ? 0 : zone[iy * ZW + ix]! };   // 7: park / green
     // POIs: how lively a place is (shops, cafés…) on a 50 m grid; stations are hotspots
-    const PG = new Map(), PC = 50, hot = [];
-    for (const f of F.poi) { if (++nb % 1500 === 0) yield; const g = f.geometry; if (g.type !== 'Point') continue; const [x, y] = toM(g.coordinates[0], g.coordinates[1]), k = Math.floor(x / PC) + ',' + Math.floor(y / PC); PG.set(k, (PG.get(k) || 0) + 1);
+    const PG = new Map<string, number>(), PC = 50, hot:XY[] = [];
+    for (const f of F.poi) { if (++nb % 1500 === 0) yield; const g = f.geometry; if (g.type !== 'Point') continue; const [x, y] = toM(g.coordinates[0]!, g.coordinates[1]!), k = Math.floor(x / PC) + ',' + Math.floor(y / PC); PG.set(k, (PG.get(k) || 0) + 1);
       const c = f.properties.class; if (c === 'railway' || (c === 'bus' && f.properties.subclass === 'bus_station')) hot.push([x, y]) }
-    const liveliness = (x, y) => { let n = 0; const cx = Math.floor(x / PC), cy = Math.floor(y / PC); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) n += PG.get((cx + dx) + ',' + (cy + dy)) || 0; let h = 1; for (const [hx, hy] of hot) if (Math.hypot(hx - x, hy - y) < 160) { h = 2.5; break } return h * (1 + Math.min(2, n / 12)) };
+    const liveliness = (x:number, y:number) => { let n = 0; const cx = Math.floor(x / PC), cy = Math.floor(y / PC); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) n += PG.get((cx + dx) + ',' + (cy + dy)) || 0; let h = 1; for (const [hx, hy] of hot) if (Math.hypot(hx - x, hy - y) < 160) { h = 2.5; break } return h * (1 + Math.min(2, n / 12)) };
     mark('zones+poi'); yield;
     // street trees along the pavements: both sides, the pack's spacing by class, clear of junctions, buildings, water, other streets
-    const T = P.trees, trees = [], lamps = [], cross = [], walks = [];
-    const hsh = (x, y, c) => hashi(Math.round(x * 2), Math.round(y * 2), c);
-    const treeAt = (x, y, kind, hMin, hMax, cMin, cMax) => { const r = hsh(x, y, 1), up = hsh(x, y, 2) < T.shapeWeights.upright ? 1 : 0; trees.push(x, y, hMin + (hMax - hMin) * r, cMin + (cMax - cMin) * hsh(x, y, 3), up, PICK(T.weights, hsh(x, y, 4)), hsh(x, y, 5), hsh(x, y, 6) * 6.283, kind) };
-    const okTree = (x, y, self, margin, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
+    const T = P.trees, trees:number[] = [], lamps:number[] = [], cross:number[] = [], walks:Walk[] = [];
+    const hsh = (x:number, y:number, c:number) => hashi(Math.round(x * 2), Math.round(y * 2), c);
+    const treeAt = (x:number, y:number, kind:number, hMin:number, hMax:number, cMin:number, cMax:number) => { const r = hsh(x, y, 1), up = hsh(x, y, 2) < T.shapeWeights.upright ? 1 : 0; trees.push(x, y, hMin + (hMax - hMin) * r, cMin + (cMax - cMin) * hsh(x, y, 3), up, PICK(T.weights, hsh(x, y, 4)), hsh(x, y, 5), hsh(x, y, 6) * 6.283, kind) };
+    const okTree = (x:number, y:number, self:Edge | null, margin:number, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
     let n = 0;
     for (const e of edges) {
       if (e.level !== 0) continue; const sp = T.streetSpacingM[e.cls]; if (!sp || e.ramp) continue;
@@ -477,7 +577,7 @@ export class CityLife {
     }
     mark('street-trees'); yield;
     // park trees: a jittered lattice (world-aligned, so a park across two cells is one planting) over the wood / park / lawn mask
-    for (const [bit, area] of [[2, T.parkAreaPerTreeM2 * .7], [4, T.parkAreaPerTreeM2], [8, T.parkAreaPerTreeM2 * 3.2]]) {
+    for (const [bit, area] of [[2, T.parkAreaPerTreeM2 * .7], [4, T.parkAreaPerTreeM2], [8, T.parkAreaPerTreeM2 * 3.2]] as const) {
       const sp = Math.sqrt(area), minSp = T.parkMinSpacingM, j = Math.max(0, Math.min(.45, (sp - minSp) / (2 * sp)));   // the jitter keeps the pack's minimum spacing
       for (let gx = Math.floor(bx0 / sp); gx <= Math.floor(bx1 / sp); gx++) { for (let gy = Math.floor(by0 / sp); gy <= Math.floor(by1 / sp); gy++) {
         const x = (gx + .5 + (hashi(gx, gy, 21) - .5) * 2 * j) * sp, y = (gy + .5 + (hashi(gx, gy, 22) - .5) * 2 * j) * sp;
@@ -499,7 +599,7 @@ export class CityLife {
     }
     mark('lamps'); yield;
     // zebra crossings at the junctions of two or more real streets (no motorways), one band per arm, set back round the corner
-    const XW = R.crossing, seenN = new Set(), MAJORX = new Set(['primary', 'secondary', 'tertiary']);
+    const XW = R.crossing, seenN = new Set<Edge['a']>(), MAJORX = new Set(['primary', 'secondary', 'tertiary']);
     for (const e of edges) for (const node of [e.a, e.b]) {
       if (seenN.has(node) || node.boundary || node.x < bx0 || node.x >= bx1 || node.y < by0 || node.y >= by1) continue; seenN.add(node);
       if (node.out.length < 3 || node.out.some(o => o.e.cls === 'motorway' || o.e.cls === 'trunk' || o.e.level !== 0) || node.out.filter(o => MAJORX.has(o.e.cls)).length < 2) continue;
@@ -510,49 +610,49 @@ export class CityLife {
     for (const e of edges) { if (e.level !== 0 || e.cls === 'motorway' || e.cls === 'trunk' || e.ramp) continue; const p = this.graph.poseAt(e, e.len / 2, 0, 1), z = zoneAt(p.x, p.y), live = liveliness(p.x, p.y);
       for (const side of e.sidewalk ? [-1, 1] : [1]) walks.push({ e, side, off: e.sidewalk ? e.width / 2 + e.sidewalk * .5 : 0, zone: z, live, len: e.len, path: false }) }
     for (const pth of paths) { if (pth.pts.length < 2) continue; const xs = new Float64Array(pth.pts.length), ys = new Float64Array(pth.pts.length), cum = new Float64Array(pth.pts.length);
-      const bb = [Infinity, Infinity, -Infinity, -Infinity]; for (let i = 0; i < pth.pts.length; i++) { xs[i] = pth.pts[i][0]; ys[i] = pth.pts[i][1]; if (i) cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]); if (xs[i] < bb[0]) bb[0] = xs[i]; if (xs[i] > bb[2]) bb[2] = xs[i]; if (ys[i] < bb[1]) bb[1] = ys[i]; if (ys[i] > bb[3]) bb[3] = ys[i] }
-      const len = cum[cum.length - 1]; if (len < 10) continue; const mx = xs[xs.length >> 1], my = ys[ys.length >> 1]; if (mx < bx0 || mx >= bx1 || my < by0 || my >= by1) continue;
+      const bb:number[] = [Infinity, Infinity, -Infinity, -Infinity]; for (let i = 0; i < pth.pts.length; i++) { xs[i] = pth.pts[i]![0]; ys[i] = pth.pts[i]![1]; if (i) cum[i] = cum[i - 1]! + Math.hypot(xs[i]! - xs[i - 1]!, ys[i]! - ys[i - 1]!); if (xs[i]! < bb[0]!) bb[0] = xs[i]!; if (xs[i]! > bb[2]!) bb[2] = xs[i]!; if (ys[i]! < bb[1]!) bb[1] = ys[i]!; if (ys[i]! > bb[3]!) bb[3] = ys[i]! }
+      const len = cum[cum.length - 1]!; if (len < 10) continue; const mx = xs[xs.length >> 1]!, my = ys[ys.length >> 1]!; if (mx < bx0 || mx >= bx1 || my < by0 || my >= by1) continue;
       walks.push({ e: { xs, ys, cum, len, a: null, b: null, width: 0, box: bb }, side: 0, off: 0, zone: 7, live: liveliness(mx, my), len, path: true }) }
     mark('crossings+walks'); yield;
     // onto the GPU: each prop sorted into an 8×8 sub-grid of the cell, so the view draws only the rows and columns it covers
-    const gl = this.gl, SUB = 8, sx = (bx1 - bx0) / SUB, sy = (by1 - by0) / SUB;
-    const binned = (arr, stride) => { const n = arr.length / stride, idx = new Array(n); for (let i = 0; i < n; i++) idx[i] = i;
-      const sub = i => Math.min(SUB - 1, Math.max(0, Math.floor((arr[i * stride + 1] - by0) / sy))) * SUB + Math.min(SUB - 1, Math.max(0, Math.floor((arr[i * stride] - bx0) / sx)));
+    const gl = this.gl!, SUB = 8, sx = (bx1 - bx0) / SUB, sy = (by1 - by0) / SUB;
+    const binned = (arr:number[], stride:number):Binned => { const n = arr.length / stride, idx = new Array<number>(n); for (let i = 0; i < n; i++) idx[i] = i;
+      const sub = (i:number) => Math.min(SUB - 1, Math.max(0, Math.floor((arr[i * stride + 1]! - by0) / sy))) * SUB + Math.min(SUB - 1, Math.max(0, Math.floor((arr[i * stride]! - bx0) / sx)));
       idx.sort((a, b) => sub(a) - sub(b)); const data = new Float32Array(n * stride), start = new Int32Array(SUB * SUB + 1).fill(-1);
-      for (let k = 0; k < n; k++) { const i = idx[k]; for (let j = 0; j < stride; j++) data[k * stride + j] = arr[i * stride + j]; const s = sub(i); if (start[s] < 0) start[s] = k } start[SUB * SUB] = n;
-      for (let s = SUB * SUB - 1; s >= 0; s--) if (start[s] < 0) start[s] = start[s + 1];
+      for (let k = 0; k < n; k++) { const i = idx[k]!; for (let j = 0; j < stride; j++) data[k * stride + j] = arr[i * stride + j]!; const s = sub(i); if (start[s]! < 0) start[s] = k } start[SUB * SUB] = n;
+      for (let s = SUB * SUB - 1; s >= 0; s--) if (start[s]! < 0) start[s] = start[s + 1]!;
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return { b, n, start, stride } };
-    const street = [], park = []; for (let i = 0; i < trees.length; i += 9) (trees[i + 8] < .5 ? street : park).push(...trees.slice(i, i + 9));
+    const street:number[] = [], park:number[] = []; for (let i = 0; i < trees.length; i += 9) (trees[i + 8]! < .5 ? street : park).push(...trees.slice(i, i + 9));
     cell.trees = binned(street, 9); cell.ptrees = binned(park, 9); cell.lamps = binned(lamps, 4); cell.cross = binned(cross, 4); cell.walks = walks; cell.hot = hot;
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     cell.sub = { SUB, sx, sy }; cell.ms = performance.now() - t0; cell.counts = { trees: trees.length / 9, street: street.length / 9, lamps: lamps.length / 4, cross: cross.length / 4, edges: edges.length, walks: walks.length };
     mark('gpu'); cell.state = 'ready';
   }
-  dropCell(cell) { const gl = this.gl; for (const k of ['trees', 'ptrees', 'lamps', 'cross']) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); if (cell.inGraph) this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
+  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); if (cell.inGraph) this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
   // the sub-grid ranges of a cell the view box touches: [rowStart, rowEnd) as instance ranges
-  ranges(cell, prop, box) {
-    const B = cell[prop]; if (!B || !B.n) return []; const { SUB, sx, sy } = cell.sub, [bx0, by0] = cell.box, out = [];
-    const cx0 = Math.max(0, Math.floor((box[0] - bx0) / sx)), cx1 = Math.min(SUB - 1, Math.floor((box[2] - bx0) / sx)), cy0 = Math.max(0, Math.floor((box[1] - by0) / sy)), cy1 = Math.min(SUB - 1, Math.floor((box[3] - by0) / sy));
-    for (let cy = cy0; cy <= cy1; cy++) { const a = B.start[cy * SUB + cx0], b = B.start[cy * SUB + cx1 + 1]; if (b > a) out.push([a, b - a]) }
+  ranges(cell:LifeCell, prop:BinnedKey, box:number[]):[number, number][] {
+    const B = cell[prop]; if (!B || !B.n) return []; const { SUB, sx, sy } = cell.sub!, [bx0, by0] = cell.box, out:[number, number][] = [];
+    const cx0 = Math.max(0, Math.floor((box[0]! - bx0) / sx)), cx1 = Math.min(SUB - 1, Math.floor((box[2]! - bx0) / sx)), cy0 = Math.max(0, Math.floor((box[1]! - by0) / sy)), cy1 = Math.min(SUB - 1, Math.floor((box[3]! - by0) / sy));
+    for (let cy = cy0; cy <= cy1; cy++) { const a = B.start[cy * SUB + cx0]!, b = B.start[cy * SUB + cx1 + 1]!; if (b > a) out.push([a, b - a]) }
     return out;
   }
 
   // ── the frame ───────────────────────────────────────────────────────────────────────────────
-  render(gl, matrix, opts = {}) {
+  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:LifeRenderOptions = {}):void {
     if (this.broken || !this.gl) return;
     try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
   }
-  _render(gl, matrix, opts) {
+  _render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:LifeRenderOptions):void {
     const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
     const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;   // LU: 사람 · 차 대신 유닛(스타크래프트)   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
-    const pack = this.pack, box = [(bounds[0] - O.x) / MU, (bounds[1] - O.y) / MU, (bounds[2] - O.x) / MU, (bounds[3] - O.y) / MU];
-    const pad = Math.min(400, (box[2] - box[0]) * .15), vbox = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
+    const pack = this.pack, box:Box = [(bounds[0]! - O.x) / MU, (bounds[1]! - O.y) / MU, (bounds[2]! - O.x) / MU, (bounds[3]! - O.y) / MU];
+    const pad = Math.min(400, (box[2] - box[0]) * .15), vbox:Box = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
     // cells: wanted, waiting, being built
     const need = this.needed(vbox), wanted = new Set();
     for (const [key, x, y] of need) { wanted.add(key); if (!this.cells.has(key)) this.cells.set(key, { key, x, y, box: this.cellBox(x, y), state: 'pending', tries: 0 }) }
     const pending = [...this.cells.values()].filter(c => c.state === 'pending');
-    const due = pending.filter(c => !(c.retryAt > now));
+    const due = pending.filter(c => !(c.retryAt! > now));   // (retryAt 이 없으면 undefined > now 는 false — 바로 물을 셀)
     if (due.length && now - this.lastQuery > 400) {
       this.lastQuery = now; const by = this.gather();
       // a tile that is there but bare (water, say) is finished at once; one whose features have not come (not loaded yet, or
@@ -563,38 +663,38 @@ export class CityLife {
     // one cell at a time, nearest the centre first, within this frame's budget
     if (!this.building || this.building.state !== 'building') { const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2; this.building = [...this.cells.values()].filter(c => c.state === 'building').sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null }
     // (slow frames — a weak device, a software renderer — get a bigger slice: the city should not take a minute to appear)
-    if (this.building) { const deadline = t0 + (moving ? 4 : Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4))), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
+    if (this.building) { const deadline = t0 + (moving ? 4 : Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4))), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen!.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
     if (this.cells.size > 10) for (const c of [...this.cells.values()]) { if (this.cells.size <= 8) break; if (!wanted.has(c.key) && c.state !== 'building') this.dropCell(c) }
     this.lastFrame = now;
     const stillBuilding = [...this.cells.values()].some(c => c.state === 'building' || (c.state === 'pending' && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3]))), waiting = [...this.cells.values()].filter(c => c.state === 'pending').length;   // building: the view still lacks props (being built, or its tile not here yet); waiting: cells (in view or not) without their tile
     // the frame's matrix (the local origin folded in, in double precision) and lighting
-    const MT = this.M; MT.set(matrix); for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
-    const theme = dark ? 'dark' : 'light', mode = pack.modes[tone] ? tone : 'simcity', Lg = pack.lighting[theme], ref = pack.lighting.referenceSun;
+    const MT = this.M; MT.set(matrix); for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * O.x + matrix[4 + r]! * O.y + matrix[12 + r]!;
+    const theme = dark ? 'dark' : 'light', mode = pack.modes![tone] ? tone : 'simcity', Lg = pack.lighting[theme], ref = pack.lighting.referenceSun;
     const az = (sun?.azimuth ?? ref.azimuthDeg) * Math.PI / 180, el = Math.max(sun?.elevation ?? ref.elevationDeg, 12) * Math.PI / 180;
     const light = [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit = [Lg.ambient, Lg.directional], tint = hexRgb(Lg.color);
-    const col = h => { const c = toneRGB(hexRgb(h), pack, mode, theme); return [c[0] * tint[0], c[1] * tint[1], c[2] * tint[2]] };
+    const col = (h:Hex) => { const c = toneRGB(hexRgb(h), pack, mode, theme); return [c[0]! * tint[0]!, c[1]! * tint[1]!, c[2]! * tint[2]!] };
     const lod = pack.lod, fadeStreet = smooth(lod.streetTrees[0], lod.streetTrees[1], zoom), fadePark = smooth(lod.parkTrees[0], lod.parkTrees[1], zoom), fadeLamp = smooth(lod.lamps[0], lod.lamps[1], zoom), fadeCar = smooth(lod.vehicles[0], lod.vehicles[1], zoom), fadePeople = smooth(lod.people[0], lod.people[1], zoom), fadeCross = smooth(pack.roads.crossing.minZoom, pack.roads.crossing.minZoom + .5, zoom);
     const ready = [...this.cells.values()].filter(c => c.state === 'ready' && c.trees && !(c.box[2] < vbox[0] || c.box[0] > vbox[2] || c.box[3] < vbox[1] || c.box[1] > vbox[3]));
-    const stats = { cells: this.cells.size, ready: ready.length, trees: 0, lamps: 0, cross: 0, cars: 0, people: 0, building: stillBuilding, waiting, buildMs: Math.round(Math.max(0, ...ready.map(c => c.ms || 0))), cpuMs: Math.round(Math.max(0, ...ready.map(c => c.cpuMs || 0))), maxStep: Math.round(Math.max(0, ...ready.map(c => c.maxStep || 0))), phases: ready.map(c => c.phases), counts: ready.map(c => c.counts) };
+    const stats:LifeStats = { cells: this.cells.size, ready: ready.length, trees: 0, lamps: 0, cross: 0, cars: 0, people: 0, building: stillBuilding, waiting, buildMs: Math.round(Math.max(0, ...ready.map(c => c.ms || 0))), cpuMs: Math.round(Math.max(0, ...ready.map(c => c.cpuMs || 0))), maxStep: Math.round(Math.max(0, ...ready.map(c => c.maxStep || 0))), phases: ready.map(c => c.phases), counts: ready.map(c => c.counts) };
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     // ── trees (and their shadows by day): the view's sub-grid ranges of each cell, capped by rank ──
     if (fadePark > 0) {
-      const T = pack.props.trees, cap = T.maxVisible[phone ? 'phone' : 'desktop'], draws = [], pdraws = []; let nS = 0, nP = 0;
+      const T = pack.props.trees, cap = T.maxVisible[phone ? 'phone' : 'desktop'], draws:[LifeCell, Binned, number, number][] = [], pdraws:[LifeCell, Binned, number, number][] = []; let nS = 0, nP = 0;
       for (const c of ready) { for (const [a, n] of this.ranges(c, 'trees', box)) nS += n; for (const [a, n] of this.ranges(c, 'ptrees', box)) nP += n;
-        for (const r of this.ranges(c, 'trees', vbox)) draws.push([c, c.trees, ...r]); for (const r of this.ranges(c, 'ptrees', vbox)) pdraws.push([c, c.ptrees, ...r]) }
+        for (const r of this.ranges(c, 'trees', vbox)) draws.push([c, c.trees!, ...r]); for (const r of this.ranges(c, 'ptrees', vbox)) pdraws.push([c, c.ptrees!, ...r]) }
       // the cap (what is in frame): the street trees first, the park trees take what is left
       const keepS = nS * fadeStreet > cap ? cap / (nS * fadeStreet) : 1.01, keepP = nP * fadePark > Math.max(0, cap - nS * fadeStreet * Math.min(1, keepS)) ? Math.max(0, cap - nS * fadeStreet * Math.min(1, keepS)) / (nP * fadePark) : 1.01;
       stats.trees = Math.round(Math.min(nS * fadeStreet, cap) + Math.min(nP * fadePark, Math.max(0, cap - Math.min(nS * fadeStreet, cap)))); stats.treeCand = nS + nP;
-      const lodI = zoom >= 16 ? 1 : 0, va = this.vaT[lodI], mesh = this.meshT[lodI], pal = T.colors[theme].map(col);
+      const lodI = zoom >= 16 ? 1 : 0, va = this.vaT[lodI]!, mesh = this.meshT[lodI]!, pal = T.colors[theme].map(col);
       gl.useProgram(this.pT); gl.uniformMatrix4fv(this.uT.u_matrix, false, MT); gl.uniform1f(this.uT.u_mu, MU); gl.uniform1f(this.uT.u_trunkR, Math.max(T.trunkDiameterM / 2, .45 * MPP(zoom)));
       gl.uniform2f(this.uT.u_fade, fadeStreet, fadePark); gl.uniform2fv(this.uT.u_lit, lit); gl.uniform3fv(this.uT.u_pal, pal.flat()); gl.uniform3fv(this.uT.u_trunk, col(T.trunk[theme])); gl.uniform3fv(this.uT.u_light, light);
       gl.uniform3fv(this.uT.u_shade, hexRgb(pack.lighting.shadow.color)); gl.uniform1f(this.uT.u_alpha, 1);
       gl.bindVertexArray(va);
-      const inst = (B, a) => { gl.bindBuffer(gl.ARRAY_BUFFER, B.b); const o = a * 36; for (const [loc, n, off] of [[3, 4, 0], [4, 4, 16], [5, 1, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 36, o + off); gl.vertexAttribDivisor(loc, 1) } };
-      const pass = (list, keep) => { gl.uniform1f(this.uT.u_keep, keep); for (const [c, B, a, n] of list) { inst(B, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, n) } };
+      const inst = (B:Binned, a:number) => { gl.bindBuffer(gl.ARRAY_BUFFER, B.b); const o = a * 36; for (const [loc, n, off] of [[3, 4, 0], [4, 4, 16], [5, 1, 32]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 36, o + off); gl.vertexAttribDivisor(loc, 1) } };
+      const pass = (list:[LifeCell, Binned, number, number][], keep:number) => { gl.uniform1f(this.uT.u_keep, keep); for (const [c, B, a, n] of list) { inst(B, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, n) } };
       const shadows = !dark && (sun ? sun.elevation > 2 : true) && zoom >= 15.5;
       if (shadows) {   // the shadows first, blended onto the ground, no depth written
-        gl.uniform1f(this.uT.u_shadow, 1); gl.uniform1f(this.uT.u_alpha, pack.modes[mode].shadowOpacity[theme] * 1.4); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.uniform1f(this.uT.u_shadow, 1); gl.uniform1f(this.uT.u_alpha, (pack.modes![mode] as LifeModeTone).shadowOpacity[theme] * 1.4); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         pass(draws, keepS); pass(pdraws, keepP);
         gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(this.uT.u_alpha, 1) }
       gl.uniform1f(this.uT.u_shadow, 0);
@@ -603,10 +703,10 @@ export class CityLife {
     // ── lamps: the posts by day, glowing heads, pools and bulbs after dark ──
     // 밤 불빛(팩 night.lights, 다크 · 켰을 때): 웅덩이 · 전구는 기둥보다 먼 줌부터(lampPool.lod) 더 넓고 진하게, 차 앞불 줄기도 먼저 · 진하게
     const NL = dark && opts.night?.lights ? (look.night || pack.night)?.lights : null, fadePool = NL?.lampPool ? smooth(NL.lampPool.lod[0], NL.lampPool.lod[1], zoom) : fadeLamp;
-    const lampDraws = []; if (fadeLamp > 0 || (dark && fadePool > 0)) {
+    const lampDraws:[LifeCell, number, number][] = []; if (fadeLamp > 0 || (dark && fadePool > 0)) {
       const LM = look.props.lamps, LP = this.lampFor(gl, LM); let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'lamps', vbox)) { lampDraws.push([c, a, n]); total += n }
       const keep = phone ? .5 : 1.01; stats.lamps = Math.round(total * Math.min(1, keep));
-      const inst = (c, a) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
+      const inst = (c:LifeCell, a:number) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
       gl.useProgram(this.pL); gl.uniformMatrix4fv(this.uL.u_matrix, false, MT); gl.uniform1f(this.uL.u_mu, MU); gl.uniform1f(this.uL.u_fade, fadeLamp); gl.uniform1f(this.uL.u_keep, keep); gl.uniform1f(this.uL.u_night, dark ? 1 : 0); gl.uniform1f(this.uL.u_thick, Math.max(1, .55 * MPP(zoom) / (LM.poleDiameterM / 2)));   // never thinner than about half a pixel
       gl.uniform2fv(this.uL.u_lit, lit); gl.uniform3fv(this.uL.u_pole, col(LM.pole[theme])); gl.uniform3fv(this.uL.u_glow, hexRgb(LM.light)); gl.uniform3fv(this.uL.u_light, light); gl.uniform1f(this.uL.u_alpha, 1);
       if (LM.torch) { gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : (now % 1e6) / 1000); gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]); if (!reducedMotion && lampDraws.length) this._anim = true }   // 횃불은 계속 흔들린다
@@ -614,7 +714,7 @@ export class CityLife {
     }
     // ── cars: the simulation, then the instanced boxes ──
     if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
-      const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
+      const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]!);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
       if (!LU) this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= (NL?.carBeam?.minZoom ?? 16.5), beamAlpha: NL?.carBeam?.opacity, pixelRatio });
       stats.cars = this.traffic.count; stats.traffic = this.traffic.stats; if (!reducedMotion && this.traffic.count) this._anim = true;
@@ -623,38 +723,38 @@ export class CityLife {
     // ── people on the pavements ──
     if (people && fadePeople > 0) { const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion); stats.people = n;
       if (n && !LU) { const PP = look.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
-        const buf = this.peopleInst[this.ping ^= 1]; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, this.people.poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.people.poses, 0, n * 14);
+        const buf = this.peopleInst[this.ping ^= 1]!; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, this.people.poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.people.poses, 0, n * 14);
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
         gl.useProgram(this.pH); gl.uniformMatrix4fv(this.uH.u_matrix, false, MT); gl.uniform1f(this.uH.u_mu, MU); gl.uniform1f(this.uH.u_time, reducedMotion ? 0 : now / 1000); gl.uniform1f(this.uH.u_unit, unit);
         gl.uniform2f(this.uH.u_right, Math.cos(b), Math.sin(b)); gl.uniform2fv(this.uH.u_lit, lit); gl.uniform3fv(this.uH.u_shirt, shirts.flat()); gl.uniform3fv(this.uH.u_pants, pants.flat()); gl.uniform3fv(this.uH.u_hair, hair.flat()); gl.uniform3fv(this.uH.u_skin, col(PP.skin[theme])); gl.uniform3fv(this.uH.u_light, light); gl.uniform1f(this.uH.u_alpha, 1);
         gl.uniform1f(this.uH.u_face, unit * PERSON_UNITS / mpp >= 12 ? 1 : 0);   // 얼굴: 사람 키가 화면 12 px 넘을 때(작으면 점이 뭉친다)
         const OF = PP.outfits; gl.uniform1f(this.uH.u_era, OF ? 1 : 0);   // 조선 팩: 옷차림 6가지(팩 people.outfits · outfitWeights)
         if (OF) { const w = PP.outfitWeights || OF.map(() => 1), tot = w.reduce((a, b) => a + b, 0); let acc = 0; gl.uniform3fv(this.uH.u_jshirt, OF.flatMap(o => col(o.shirt))); gl.uniform3fv(this.uH.u_jlow, OF.flatMap(o => col(o.lower))); gl.uniform1fv(this.uH.u_jcum, w.map(x => (acc += x) / tot)) }
-        gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
+        gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
         gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._anim = true } }
     else this.people.list.length = 0;
     // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mjs)
     if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
-      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0], 14 * MPP(zoom)), mpp: MPP(zoom), now: reducedMotion ? 0 : now, light, lit });
+      stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0]!, 14 * MPP(zoom)), mpp: MPP(zoom), now: reducedMotion ? 0 : now, light, lit });
       if (!reducedMotion && stats.units) this._anim = true }
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     if (fadeCross > 0 && crossings) {
-      const X = pack.roads.crossing, draws = []; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'cross', vbox)) { draws.push([c, a, n]); total += n } stats.cross = total;
+      const X = pack.roads.crossing, draws:[LifeCell, number, number][] = []; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'cross', vbox)) { draws.push([c, a, n]); total += n } stats.cross = total;
       if (total) { gl.useProgram(this.pX); gl.uniformMatrix4fv(this.uX.u_matrix, false, MT); gl.uniform1f(this.uX.u_mu, MU); gl.uniform1f(this.uX.u_fade, fadeCross); gl.uniform1f(this.uX.u_depth, X.depthM);
         gl.uniform3fv(this.uX.u_rgb, col(pack.roads.lane.colors[theme])); gl.uniform1f(this.uX.u_alpha, (dark ? .55 : .9) * fadeCross); gl.uniform1f(this.uX.u_stripe, X.stripeM); gl.uniform1f(this.uX.u_gap, X.gapM);
-        gl.bindVertexArray(this.vaQ); for (const [c, a, n] of draws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.cross.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) } }
+        gl.bindVertexArray(this.vaQ); for (const [c, a, n] of draws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.cross!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) } }
     }
     if (dark && lampDraws.length) {
-      const LM = look.props.lamps, keep = phone ? .5 : 1.01, lp = lampPool ?? pack.modes[mode].lampPool, glow = hexRgb(LM.light), LPn = NL?.lampPool;
+      const LM = look.props.lamps, keep = phone ? .5 : 1.01, lp = lampPool ?? (pack.modes![mode] as LifeModeTone).lampPool, glow = hexRgb(LM.light), LPn = NL?.lampPool;
       const pool = LPn ? LPn.opacity * Math.max(.5, Math.min(1, lp / 1.4)) : Math.min(LM.poolOpacity * lp, LM.simcityPoolMaxOpacity);   // (밤 불빛: 모드의 웅덩이 배수를 기본 1.4 에 견준 몫만큼, 반 아래로는 안 줄인다)
       gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadePool); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
       gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
-      gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
+      gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
       const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));   // (횃불: 불빛 점을 더 크게)
       gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadePool); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
       gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
-      gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
+      gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
     }
     // back to what the track and the trains expect
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -665,23 +765,23 @@ export class CityLife {
   // People: spawned on the pavements in view by zone (the pack's rate per 100 m) and how lively the place is
   // (POIs, stations), walking their side of the street, on to another street at the corner, a pause now and
   // then. Poses: x, y, phase, walking, fx, fy, shirt, scale, pants, hair, look, … (14 floats).
-  stepPeople(now, box, ready, fade, phone, reducedMotion) {
+  stepPeople(now:number, box:Box, ready:LifeCell[], fade:number, phone:boolean, reducedMotion:boolean):number {
     const PP = this.pack.props.people, L = this.people.list, dt = Math.min(.1, (now - (this.ptick || now)) / 1000); this.ptick = now; if (!reducedMotion) this.people.simT += dt;
-    const RATE = { 1: PP.per100M.residential, 2: PP.per100M.commercial, 3: PP.per100M.retail, 4: PP.per100M.industrial, 5: PP.per100M.residential, 6: 1, 7: PP.per100M.park, 0: 2 };
-    const vis = []; let want = 0;
-    for (const c of ready) for (const w of c.walks) { const e = w.e, B = e.box; if (B && (B[2] < box[0] || B[0] > box[2] || B[3] < box[1] || B[1] > box[3])) continue; const V = visibleRanges(e, box); if (!V.len) continue; const r = (RATE[w.zone] ?? 2) * w.live * (w.path ? 1 : .5); vis.push([w, r, V]); want += V.len / 100 * r }   // the part of each pavement in view (a street's middle vertex was the test: long streets through the view got nobody)
+    const RATE:Record<number, number | undefined> = { 1: PP.per100M.residential, 2: PP.per100M.commercial, 3: PP.per100M.retail, 4: PP.per100M.industrial, 5: PP.per100M.residential, 6: 1, 7: PP.per100M.park, 0: 2 };
+    const vis:[Walk, number, Visible][] = []; let want = 0;
+    for (const c of ready) for (const w of c.walks!) { const e = w.e, B = e.box; if (B && (B[2] < box[0] || B[0] > box[2] || B[3] < box[1] || B[1] > box[3])) continue; const V = visibleRanges(e, box); if (!V.len) continue; const r = (RATE[w.zone] ?? 2) * w.live * (w.path ? 1 : .5); vis.push([w, r, V]); want += V.len / 100 * r }   // the part of each pavement in view (a street's middle vertex was the test: long streets through the view got nobody)
     const cap = PP.maxVisible[phone ? 'phone' : 'desktop'], target = Math.min(cap, Math.round(want * fade));
-    const G = this.graph, at = p => { const e = p.w.e, q = G.poseAt(e, p.s, p.w.side * p.w.off + p.jit, p.dir), h = p.hop; p.fx = q.fx; p.fy = q.fy;
+    const G = this.graph, at = (p:Person) => { const e = p.w.e, q = G.poseAt(e as Edge, p.s, p.w.side * p.w.off + p.jit, p.dir), h = p.hop; p.fx = q.fx; p.fy = q.fy;
       if (h) { if (!h.T) { h.T = Math.hypot(q.x - h.x0, q.y - h.y0) / p.v; if (h.T < .05) p.hop = null } if (p.hop) { const k = Math.min(1, h.t / h.T); p.x = h.x0 + (q.x - h.x0) * k; p.y = h.y0 + (q.y - h.y0) * k; return } }   // round the corner: from where they were to the next pavement, at walking pace
       p.x = q.x; p.y = q.y };
     for (let i = L.length - 1; i >= 0; i--) {
-      const p = L[i], e = p.w.e; if (!p.w.path && !G.edges.has(e)) { L.splice(i, 1); continue }
+      const p = L[i]!, e = p.w.e; if (!p.w.path && !G.edges.has(e as Edge)) { L.splice(i, 1); continue }
       if (!reducedMotion) {
         if (p.pause > 0) p.pause -= dt; else if (p.hop) { p.hop.t += dt; if (p.hop.t >= p.hop.T) p.hop = null } else p.s += p.v * dt * p.dir;
         if (Math.random() < dt * .02) p.pause = 1 + Math.random() * 3;
         if (p.s < 0 || p.s > e.len) {   // the end of the street: on to another one here, else back
           const node = p.s < 0 ? e.a : e.b, next = node ? node.out.filter(o => o.e !== e && o.e.level === 0 && (o.e.sidewalk || o.e.cls === 'minor' || o.e.cls === 'service')) : [];
-          if (next.length) { const o = next[Math.random() * next.length | 0], ne = o.e, dir = o.end === 0 ? 1 : -1; let w = null; for (const c of ready) for (const x of c.walks) if (x.e === ne && (w == null || Math.random() < .5)) w = x; if (w) { p.hop = { x0: p.x, y0: p.y, t: 0, T: 0 }; p.w = w; p.dir = dir; p.s = dir > 0 ? 0 : ne.len } else { p.dir = -p.dir; p.s = Math.max(0, Math.min(e.len, p.s)) } }
+          if (next.length) { const o = next[Math.random() * next.length | 0]!, ne = o.e, dir = o.end === 0 ? 1 : -1; let w:Walk | null = null; for (const c of ready) for (const x of c.walks!) if (x.e === ne && (w == null || Math.random() < .5)) w = x; if (w) { p.hop = { x0: p.x, y0: p.y, t: 0, T: 0 }; p.w = w; p.dir = dir; p.s = dir > 0 ? 0 : ne.len } else { p.dir = -p.dir; p.s = Math.max(0, Math.min(e.len, p.s)) } }
           else { p.dir = -p.dir; p.s = Math.max(0, Math.min(e.len, p.s)); p.pause = Math.random() * 2 }
         }
       }
@@ -690,8 +790,8 @@ export class CityLife {
     }
     let visible = 0; for (const p of L) if (!p.dying) visible++;
     if (vis.length && visible < target) for (let k = 0; k < 4 && visible < target && L.length < this.people.max; k++) {
-      let r = Math.random() * want, pick = vis[0]; for (const v of vis) { r -= v[2].len / 100 * v[1]; if (r <= 0) { pick = v; break } }
-      const w = pick[0], p = { id: ++this.people.seq, w, s: sampleS(pick[2], Math.random()), dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, look: Math.random() * .9999, sc: 0, dying: false };   // look: 머리 모양 · 조선 옷차림을 고르는 몫(셰이더)
+      let r = Math.random() * want, pick = vis[0]!; for (const v of vis) { r -= v[2].len / 100 * v[1]; if (r <= 0) { pick = v; break } }
+      const w = pick[0], p = { id: ++this.people.seq, w, s: sampleS(pick[2], Math.random()), dir: Math.random() < .5 ? 1 : -1, v: PP.speedMps[0] + Math.random() * (PP.speedMps[1] - PP.speedMps[0]), ph: Math.random() * 6.283, pause: 0, jit: (Math.random() - .5) * (w.path ? 1.2 : .6), shirt: Math.random() * 4 | 0, pants: Math.random() * 4 | 0, hair: Math.random() * 4 | 0, look: Math.random() * .9999, sc: 0, dying: false } as Person;   // look: 머리 모양 · 조선 옷차림을 고르는 몫(셰이더)
       at(p); L.push(p); visible++;
     } else if (visible > target * 1.3) { let n = Math.min(3, visible - target); for (const p of L) { if (n <= 0) break; if (!p.dying) { p.dying = true; n-- } } }
     const P = this.people.poses; let n = 0;
@@ -699,7 +799,7 @@ export class CityLife {
     this.people.count = n; return n;
   }
   // Finish building every waiting cell right now, whatever it costs (for tests and screenshots, not for frames).
-  flush() {
+  flush():number {
     if (!this.gl) return 0; let n = 0;
     for (let round = 0; round < 3; round++) {
       const by = this.gather(); for (const c of this.cells.values()) if (c.state === 'pending') { const F = by.get(c.key); if (F && (F.transportation.length || F.building.length || F.landcover.length)) { c.state = 'building'; c.gen = this.build(c, F) } }
@@ -711,12 +811,12 @@ export class CityLife {
   // Is (x, y) (local metres) inside a building footprint: true / false, or undefined where no cell is ready yet (the
   // viaduct's piers wait for that, so none stands in a building whose tile has not come).
   // 출구 표지 자리(mercator): 건물을 피해 옮긴 곳. 그 셀이 아직 안 지어졌거나 그 출구를 모르면 null(원래 자리에 그린다)
-  exitSpot(lon, lat) { const [x, y] = toM(lon, lat);
+  exitSpot(lon:number, lat:number):{ x:number; y:number } | null { const [x, y] = toM(lon, lat);
     for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; const q = c.state === 'ready' && c.exitSpots?.get(lon + ',' + lat); return q ? { x: q[0] * MU + O.x, y: q[1] * MU + O.y } : null }
     return null }
-  inBuilding(x, y) { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }
-  animating() { return this._anim }
-  dispose(gl) {
+  inBuilding(x:number, y:number):boolean | undefined { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }
+  animating():boolean { return this._anim }
+  dispose(gl:WebGL2RenderingContext):void {
     if (!this.gl) return; for (const c of [...this.cells.values()]) this.dropCell(c);
     for (const p of [this.pT, this.pL, this.pP, this.pB, this.pX, this.pH]) gl.deleteProgram(p);
     for (const m of [...this.meshT, ...[...this.lamps.values()].map(e => e.mesh), this.meshH]) gl.deleteBuffer(m.b); for (const e of this.lamps.values()) if (e.va !== this.vaL) gl.deleteVertexArray(e.va); gl.deleteBuffer(this.quad); for (const b of this.peopleInst) gl.deleteBuffer(b);
