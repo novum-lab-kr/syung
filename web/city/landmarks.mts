@@ -20,7 +20,7 @@ interface GLMesh { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number }
 // 그릴 탑 하나(meshes: 모양(look)마다 메시) · 석탑 하나(H: 이번 장면의 높이 · mesh: 셰이더 탑 메시)
 interface TowerItem { L:Landmark; x:number; y:number; rot:[number, number]; meshes:Record<string, GLMesh | undefined> }
 interface StupaItem { T:Stupa; x:number; y:number; lat:number; rot:[number, number]; mesh:(GLMesh & { h:number }) | null; H?:number }
-// three.js 석탑(web/city/stupa3d.mjs Stupa3D — 아직 JS 라 models 가 init 전 모양으로 추론된다, 받을 때 이 모양으로) — 이 파일이 부르는 것만
+// three.js 석탑(web/city/stupa3d.mts Stupa3D) — 이 파일이 부르는 것만
 interface Stupa3DLayer {
   models:Record<string, { userData:{ height:number } }>; init(gl:WebGL2RenderingContext):void; has(kind:string):boolean; build(kind:string):void;
   render(gl:WebGL2RenderingContext, items:{ kind:string; M:Float32Array }[], opts:{ light:number[]; lit:number[]; dark:boolean }):void; dispose():void;
@@ -368,10 +368,10 @@ export class CityLandmarks {
       gl.bindVertexArray(m.va); gl.drawArrays(gl.TRIANGLES, 0, m.n);
     }
     // 석탑(모양이 맞을 때만): 실제 치수 메시를 높이에 맞춰 키운다. minPx 가 있으면 화면에서 그만큼은 보이게.
-    // 데스크톱은 three.js 디테일 모델(web/city/stupa3d.mjs — 조선 모드에서만 받는다, 화면에 들어온 탑만 짓는다), 휴대폰 · 받는 중 · 실패면 아래 셰이더 탑
+    // 데스크톱은 three.js 디테일 모델(web/city/stupa3d.mts — 조선 모드에서만 받는다, 화면에 들어온 탑만 짓는다), 휴대폰 · 받는 중 · 실패면 아래 셰이더 탑
     if (this.s3 && look !== 'wood-tower') { this.s3.dispose(); this.s3 = null; this.s3p = null }   // 조선을 나가면 three 자원을 치운다
     const S0 = this.stupas.filter(it => it.T.looks.includes(look)), use3 = !phone && !this.s3fail && S0.length > 0, three:StupaItem[] = [];
-    if (use3 && !this.s3p) this.s3p = import('./stupa3d.mjs').then(m => { if (!this.gl) return; const s3 = new m.Stupa3D() as unknown as Stupa3DLayer; s3.init(this.gl); this.s3 = s3; repaint() }).catch(e => { this.s3fail = true; console.warn('city-landmarks: 3D 석탑 못 받음 —', e) });
+    if (use3 && !this.s3p) this.s3p = import('./stupa3d.mts').then(m => { if (!this.gl) return; const s3 = new m.Stupa3D() as unknown as Stupa3DLayer; s3.init(this.gl); this.s3 = s3; repaint() }).catch(e => { this.s3fail = true; console.warn('city-landmarks: 3D 석탑 못 받음 —', e) });
     let built = false;
     const S = S0.filter(it => {
       const mpp = 40075016.686 * Math.cos(it.lat * Math.PI / 180) / (512 * 2 ** zoom); it.H = Math.max(it.T.height, (it.T.minPx || 0) * mpp);

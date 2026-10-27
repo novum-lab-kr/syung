@@ -22,6 +22,8 @@ function staticFiles(dir: string = root): string[] {
   const files: string[] = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue   // .DS_Store · 도구 상태 폴더(git 에 점 파일은 없다)
+    if (entry.name.endsWith('.d.ts')) continue   // 타입만(vendor/three.module.d.ts) — 결과에 싣지 않는다
+
     const from = path.join(dir, entry.name)
     if (entry.isDirectory()) files.push(...staticFiles(from))
     else if (from.startsWith(vendor + path.sep) || !CODE.test(entry.name)) files.push(from)
