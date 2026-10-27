@@ -5,9 +5,13 @@ import fcntl
 import json
 import math
 import os
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import day_bounds
 from server.errors import BusError
+
+if TYPE_CHECKING:   # 타입만(실행 때 config 를 다시 부르지 않는다)
+    from server.config import ArrivalConfig, BusConfig
 
 NIGHT_END, NIGHT_WEIGHT = 5 * 60, 0.25   # KST 00~05시는 버스가 거의 없다: 호출 간격을 4배로 두고 아낀 몫을 낮에 쓴다
 
@@ -23,19 +27,20 @@ def pacing(now: float, midnight: float, left: int) -> float:
 
 class QuotaLedger:
     """Count BEFORE I/O, atomically, including failures and across restarts/processes."""
-    def __init__(self, config):
+    def __init__(self, config: BusConfig | ArrivalConfig):
         self.path, self.limit, self.min_interval = config.quota_file, config.daily_limit, config.min_interval
 
-    def _read(self, now: float) -> dict:
+    def _read(self, now: float) -> dict[str, Any]:
         day, _ = day_bounds(now)
         try:
-            saved = json.loads(self.path.read_text())
+            saved: object = json.loads(self.path.read_text())
         except FileNotFoundError:
             return {"day": day, "used": 0, "nextAt": 0}
         except (OSError, ValueError):
             raise BusError("quota_storage") from None
-        if not isinstance(saved, dict) or not isinstance(saved.get("day"), str):
+        if not isinstance(saved, dict) or not isinstance(cast("dict[str, Any]", saved).get("day"), str):
             raise BusError("quota_storage")
+        saved = cast("dict[str, Any]", saved)   # 위에서 dict 인 것을 봤다
         if saved["day"] != day:
             return {"day": day, "used": 0, "nextAt": 0}
         if (type(saved.get("used")) is not int or saved["used"] < 0
@@ -44,7 +49,7 @@ class QuotaLedger:
             raise BusError("quota_storage")
         return saved
 
-    def view(self, now: float) -> dict:
+    def view(self, now: float) -> dict[str, Any]:
         saved = self._read(now)
         return {"day": saved["day"], "used": saved["used"], "limit": self.limit,
                 "remaining": max(0, self.limit - saved["used"])}

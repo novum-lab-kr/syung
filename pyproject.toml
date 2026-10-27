@@ -24,3 +24,5 @@ ignore = ["E702", "E731", "E741", "B905"]
 include = ["server"]
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
+# 층마다 strict 로 올린다(계획서 4단계): 지금은 store 의 작은 파일들 — members.py 는 다음(오류 212개)
+strict = ["server/store/auth_file.py", "server/store/avatars.py", "server/store/bus_catalog.py", "server/store/bus_quota.py", "server/store/debug_log.py", "server/store/fare_data.py", "server/store/journey_data.py", "server/store/live_samples.py", "server/store/records.py", "server/store/subway_quota.py"]
