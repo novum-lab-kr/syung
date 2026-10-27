@@ -888,7 +888,7 @@ var CityBuildings = class {
 			for (let i = 0; i < n; i++) {
 				const w = new Worker(new URL(
 					/* @vite-ignore */
-					new URL("../assets/worker-BCpc0QDY.js", import.meta.url).href,
+					new URL("../assets/worker-BU3VmAxQ.js", import.meta.url).href,
 					"" + import.meta.url
 				), { type: "module" });
 				w.busy = null;

@@ -1,4 +1,4 @@
-// web/city/pixel_palette.mjs
+// web/city/pixel_palette.mts
 var PALETTES = { endesga32: [
 	"be4a2f",
 	"d77643",

@@ -1,4 +1,4 @@
-// web/city/parts.mjs
+// web/city/parts.mts
 var parts = /* @__PURE__ */ new Map();
 function registerCityPart(key, impl) {
 	if (parts.has(key) && parts.get(key).impl !== impl) throw new Error(`도시 부품 ${key}: 이미 다른 것이 등록됨`);

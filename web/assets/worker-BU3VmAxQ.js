@@ -1,4 +1,4 @@
-// web/city/mvt.mjs
+// web/city/mvt.mts
 const TD = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
 var Pbf = class {
 	constructor(buf) {
@@ -233,7 +233,7 @@ const LANDMARKS = [{
 const mercX = (lng) => (lng + 180) / 360;
 const mercY = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;
 const landmarkMerc = (L) => [mercX(L.lngLat[0]), mercY(L.lngLat[1])];
-// web/city/parts.mjs
+// web/city/parts.mts
 const parts = /* @__PURE__ */ new Map();
 function registerCityPart(key, impl) {
 	if (parts.has(key) && parts.get(key).impl !== impl) throw new Error(`도시 부품 ${key}: 이미 다른 것이 등록됨`);

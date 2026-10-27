@@ -1,4 +1,4 @@
-// web/city/sign_text.mjs
+// web/city/sign_text.mts
 var SIGN_WORDS = {
 	fascia: [
 		"치킨",

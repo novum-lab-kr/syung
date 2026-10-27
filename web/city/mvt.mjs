@@ -1,4 +1,4 @@
-// web/city/mvt.mjs
+// web/city/mvt.mts
 var TD = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
 var Pbf = class {
 	constructor(buf) {
