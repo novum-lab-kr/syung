@@ -62,19 +62,27 @@ if ! publish; then
 fi
 echo "$target" > "$DEPLOYED.new" && mv -T "$DEPLOYED.new" "$DEPLOYED"
 # 회원 DB 하루 백업 유닛(2026-10-27 사용자 결정 A): 이 둘만 배포가 깐다(retrain · healthcheck 등 다른 유닛은 손으로 — 건드리지 않는다).
-#   서버 사본과 다르거나 타이머가 아직 안 켜졌을 때만 복사 → daemon-reload → enable --now. 실패해도 배포는 성공(경고만, 다음 배포 때 다시)
+#   서버 사본과 다르거나 · 타이머가 enabled · active 가 아니거나 · 지난 설치가 끝나지 않았으면(재시도 표시가 남음) 복사 → daemon-reload →
+#   enable --now. 재시도 표시는 시작 전에 남기고 두 명령이 다 성공한 뒤에만 지운다(복사만 되고 reload · 시작이 실패해도 다음 배포가 다시 한다).
+#   실패해도 배포는 성공(경고만)
 BACKUP_UNITS=(subway-member-backup.service subway-member-backup.timer)
+BACKUP_PENDING=$STATE/backup-units-pending
 install_backup_units() {
-  local dir=${SYUNG_SYSTEMD_DIR:-/etc/systemd/system} unit changed=0
+  local dir=${SYUNG_SYSTEMD_DIR:-/etc/systemd/system} unit needed=0
+  [ -e "$BACKUP_PENDING" ] && needed=1
   for unit in "${BACKUP_UNITS[@]}"; do
-    if ! cmp -s "server/$unit" "$dir/$unit"; then
-      install -m 0644 "server/$unit" "$dir/$unit" || return 1
-      changed=1
-    fi
+    cmp -s "server/$unit" "$dir/$unit" || needed=1
   done
-  if [ "$changed" = 0 ] && systemctl is-enabled --quiet subway-member-backup.timer; then return 0; fi
+  systemctl is-enabled --quiet subway-member-backup.timer || needed=1
+  systemctl is-active --quiet subway-member-backup.timer || needed=1
+  [ "$needed" = 1 ] || return 0
+  touch "$BACKUP_PENDING" || return 1
+  for unit in "${BACKUP_UNITS[@]}"; do
+    cmp -s "server/$unit" "$dir/$unit" || install -m 0644 "server/$unit" "$dir/$unit" || return 1
+  done
   systemctl daemon-reload || return 1
   systemctl enable --now subway-member-backup.timer || return 1
+  rm -f "$BACKUP_PENDING"
   echo "회원 DB 백업 타이머 설치 · 켬"
 }
 if ! install_backup_units; then

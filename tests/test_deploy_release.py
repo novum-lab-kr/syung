@@ -64,15 +64,23 @@ import os, sys
 from pathlib import Path
 args = sys.argv[1:]
 enabled = Path(os.environ['SYUNG_SYSTEMD_DIR']) / '.enabled'
+active = Path(os.environ['SYUNG_SYSTEMD_DIR']) / '.active'
+fail = os.environ.get('FIXTURE_UNIT_FAIL', '')   # reload: daemon-reload 실패 · enable: 켜기 실패 · start: 켜졌지만 시작 실패
 if args == ['is-enabled', '--quiet', 'subway-member-backup.timer']:
     raise SystemExit(0 if enabled.exists() else 1)
+if args == ['is-active', '--quiet', 'subway-member-backup.timer']:
+    raise SystemExit(0 if active.exists() else 1)
 if args in (['daemon-reload'], ['enable', '--now', 'subway-member-backup.timer']):
     with open(os.environ['FIXTURE_UNIT_LOG'], 'a') as log:
         log.write(' '.join(args) + '\\n')
-    if args[0] == 'enable':
-        if os.environ.get('FIXTURE_UNIT_FAIL') == '1':
-            raise SystemExit(1)
-        enabled.touch()
+    if args[0] == 'daemon-reload':
+        raise SystemExit(1 if fail == 'reload' else 0)
+    if fail == 'enable':
+        raise SystemExit(1)
+    enabled.touch()
+    if fail == 'start':
+        raise SystemExit(1)
+    active.touch()
     raise SystemExit(0)
 if args != ['restart', 'subway-live']:
     raise SystemExit('허용하지 않은 가짜 systemctl 호출')
