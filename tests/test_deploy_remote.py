@@ -478,5 +478,82 @@ os.execv({real_flock!r}, [{real_flock!r}] + sys.argv[1:])
 
 
 
+class WebDistDeployTest(RemoteFixture):
+    """웹 빌드가 있는 커밋(vite.config.mts): CI 가 web-dist 브랜치에 올린 빌드 결과를 배포한다(서버는 빌드하지 않는다)."""
+    scripts = RemoteFixture.scripts + ("publish_web_dist.sh",)
+
+    def setUp(self):
+        super().setUp()
+        self.adopt()
+        self.setup_origin()
+        self.start_site()
+
+    def publish(self, files):
+        """CI build 잡 흉내: producer 의 HEAD 를 '빌드'한 dist/web 을 web-dist 에 올린다."""
+        dist = self.producer / "dist"
+        for path, content in files.items():
+            self.write("dist/web/" + path, content, repo=self.producer)
+        try:
+            self.run_command(["bash", str(self.producer / "deploy/publish_web_dist.sh")], cwd=self.producer)
+        finally:
+            shutil.rmtree(dist)
+        return self.git("rev-parse", "refs/heads/web-dist", cwd=self.origin)
+
+    def built_candidate(self, index):
+        return self.candidate({"vite.config.mts": "// fixture build\n", "web/index.html": "source " + index})
+
+    def test_built_commit_deploys_web_dist_and_data_from_the_commit(self):
+        sha = self.built_candidate("one")
+        dist = self.publish({"index.html": "built one", "maplibre_runtime.mjs": "export const built = 1;\n",
+                             "admin/login.html": "login page"})
+        self.assertEqual(self.git("log", "-1", "--format=%s", dist, cwd=self.origin), "web-dist " + sha)
+        self.assertEqual(self.git("ls-tree", "-r", "--name-only", dist, cwd=self.origin).splitlines(),
+                         ["web/admin/login.html", "web/index.html", "web/maplibre_runtime.mjs"])
+        result = self.remote()
+        self.assertIn("빌드 결과", result.stdout)
+        self.assertEqual(self.deployed(), sha)
+        self.assertEqual((self.web / "index.html").read_text(), "built one")
+        self.assertFalse((self.web / "city/new/deep/module.mjs").exists(), "소스 web/ 은 섞이지 않는다")
+        for source, published in DATA.items():
+            self.assertEqual((self.web / published).read_text(), "committed:" + source)
+
+    def test_publish_chains_on_previous_build(self):
+        self.built_candidate("one")
+        first = self.publish({"index.html": "built one"})
+        self.built_candidate("two")
+        second = self.publish({"index.html": "built two"})
+        self.assertEqual(self.git("rev-parse", second + "^", cwd=self.origin), first)
+
+    def test_built_commit_without_build_is_not_deployed(self):
+        self.remote()
+        old_link, old_history, old_record = self.web.resolve(), self.history(), self.deployed()
+        self.built_candidate("one")
+        result = self.remote(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("빌드 결과 없음", result.stdout)
+        self.assertEqual(self.web.resolve(), old_link)
+        self.assertEqual(self.history(), old_history)
+        self.assertEqual(self.deployed(), old_record)
+
+    def test_main_ahead_of_build_deploys_last_built_commit_then_the_next(self):
+        first = self.built_candidate("one")
+        self.publish({"index.html": "built one"})
+        second = self.built_candidate("two")   # CI 가 아직 빌드 중
+        result = self.remote()
+        self.assertIn("빌드 전", result.stdout)
+        self.assertEqual(self.deployed(), first)
+        self.assertEqual((self.web / "index.html").read_text(), "built one")
+        self.publish({"index.html": "built two"})
+        self.remote()
+        self.assertEqual(self.deployed(), second)
+        self.assertEqual((self.web / "index.html").read_text(), "built two")
+
+    def test_commit_before_build_era_still_deploys_source_web(self):
+        self.publish({"index.html": "unrelated build"})   # web-dist 가 있어도 빌드 없는 커밋은 소스 web/
+        self.remote()
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual((self.web / "index.html").read_text(), "committed index")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,9 @@
 #   deploy/deploy.sh --prune      # 최근 SYUNG_KEEP_COUNT 개 + 지금 · 직전 릴리스만 남긴다(배포 확인이 끝난 뒤에 부른다)
 #   deploy/deploy.sh --adopt      # 처음 한 번: 진짜 폴더인 웹 폴더를 <시각>-before-releases 릴리스로 옮기고 그 자리에 링크
 # 커밋 안 된 파일은 섞이지 않고(git archive), web/ 아래 새 폴더는 저절로 따라온다.
+# 웹 빌드(vite.config.mts)가 있는 커밋은 web/ 대신 그 커밋을 빌드한 결과를 올린다: CI(build 잡)가 빌드해 origin 의 web-dist 브랜치에
+#   커밋으로 쌓는다(트리 web/ = dist/web, 메시지 "web-dist <소스 커밋>"). 서버는 node 빌드를 하지 않는다. 빌드가 없으면 배포하지 않는다.
+#   빌드 도입 전 커밋(되돌리기 · 옛 커밋 배포)은 지금처럼 커밋의 web/ 그대로.
 # 경로(테스트는 임시 폴더로): SYUNG_WEB 링크(Caddy root) · SYUNG_RELEASES 릴리스들 · SYUNG_KEEP_DIR 옛 파일 고정 폴더 ·
 #   SYUNG_STATE 밤 재학습 자료 · SYUNG_KEEP_COUNT 남길 릴리스 수
 set -euo pipefail
@@ -15,6 +18,7 @@ KEEP_DIR=${SYUNG_KEEP_DIR:-/var/www/syung-keep}
 STATE=${SYUNG_STATE:-/var/lib/subway-live}
 KEEP=${SYUNG_KEEP_COUNT:-5}
 HISTORY=$RELEASES/.history   # 링크가 가리킨 릴리스 이름, 한 줄에 하나(마지막 줄 = 지금)
+DIST_BRANCH=${SYUNG_DIST_BRANCH:-web-dist}   # CI 가 빌드 결과를 쌓는 브랜치(origin)
 # 웹 폴더에 바로 쓰이는 파일(밤 재학습의 학습 현황 숫자): 지금 걸린 릴리스에서 이어 받는다
 CARRY=(admin/learning.json)
 # 커밋에서 꺼내 릴리스 맨 위에 두는 자료 파일
@@ -39,6 +43,11 @@ previous() {   # 기록에서 지금 것 바로 앞의, 아직 남아 있는 릴
   tac "$HISTORY" | awk -v now="$now" 'seen || $0 != now { seen = 1 } seen' | while read -r name; do
     if [ -d "$RELEASES/$name" ]; then echo "$name"; break; fi
   done || true
+}
+
+built_web() {   # 소스 커밋 → 그 커밋을 빌드한 web-dist 커밋(없으면 빈 값). 받기 실패(origin 없음 · 네트워크)는 받아 둔 것으로 찾는다
+  git -C "$ROOT" fetch --quiet origin "+refs/heads/$DIST_BRANCH:refs/remotes/origin/$DIST_BRANCH" 2>/dev/null || true
+  git -C "$ROOT" log -n 1 --format=%H --grep="^web-dist $1\$" "refs/remotes/origin/$DIST_BRANCH" -- 2>/dev/null || true
 }
 
 need_link() {
@@ -107,8 +116,16 @@ need_link
 sha=$(git -C "$ROOT" rev-parse --verify "${1:-HEAD}^{commit}")
 tmp=$(mktemp -d "$RELEASES/.new-XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
-paths=(web "${DATA[@]}" data/live-timing.json)
+paths=("${DATA[@]}" data/live-timing.json)
 if git -C "$ROOT" cat-file -e "$sha:data/bus/routes.json" 2>/dev/null; then paths+=(data/bus); fi
+if git -C "$ROOT" cat-file -e "$sha:vite.config.mts" 2>/dev/null; then   # 웹 빌드가 있는 커밋: CI 빌드 결과
+  dist=$(built_web "$sha")
+  if [ -z "$dist" ]; then echo "빌드 결과 없음: ${sha:0:12} 를 빌드한 $DIST_BRANCH 커밋이 없다(CI build 잡) — 배포 안 함"; exit 1; fi
+  git -C "$ROOT" archive "$dist" -- web | tar -x -C "$tmp"
+  echo "web ← $DIST_BRANCH ${dist:0:12}(${sha:0:12} 빌드 결과)"
+else
+  paths=(web "${paths[@]}")
+fi
 git -C "$ROOT" archive "$sha" -- "${paths[@]}" | tar -x -C "$tmp"
 out=$tmp/web
 # admin/ 아래(학습 · 디버깅 · learning.json)는 주인만: Caddy 가 서버의 /auth 로 묻는다(admin/login.html 만 열림)

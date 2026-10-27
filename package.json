@@ -1,0 +1,15 @@
+{
+  "name": "syung",
+  "private": true,
+  "description": "슝 — 웹(web/)을 dist/web/ 으로 빌드한다. 서버(server/)와 시험(node --test)은 설치 없이 돈다",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "node tools/dev.mjs"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}

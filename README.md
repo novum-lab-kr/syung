@@ -9,7 +9,7 @@
 ## 구성
 
 ```
-web/        정적 페이지 (index.html, maplibre_runtime.mjs, vendor/maplibre-gl)
+web/        정적 페이지 원본 (index.html, maplibre_runtime.mjs, vendor/maplibre-gl) — npm run build 가 dist/web 으로 빌드
 data/       빌드된 데이터 (git에 포함)
   ktdb-gtfs-2025/capital-metro.json   노선·역 (KTDB GTFS에서 추출)
   ktdb-gtfs-2025/edge_times.json      역간 시간표 운행 시간·정차 시간
@@ -25,19 +25,25 @@ docs/       열차 모델 설계 메모
 
 ```bash
 git clone https://github.com/novum-lab-kr/syung.git && cd syung
-python3 deploy/dev_server.py        # http://localhost:8080
+npm ci                              # 웹 빌드 도구(Vite)
+npm run dev                         # http://localhost:8080 — web/ 을 고칠 때마다 dist/web 으로 다시 빌드
 ```
-`web/`과 `data/`를 그대로 띄우고(복사 단계 없음, 고치고 새로고침), 실시간 열차(`/api/live`)는 운영 서버
-프록시로 넘겨서 로컬에 API 키가 필요 없습니다. 다른 프록시를 쓰려면 `SUBWAY_LIVE_UPSTREAM`을 지정하세요.
-필요한 것: Python 3.10+, 테스트용 Node 20+. 설치할 패키지는 없습니다.
+`npm run dev`는 `web/`을 `dist/web`으로 빌드하고(고치면 0.1초 안팎에 다시, 새로고침) `deploy/dev_server.py --dist`로 띄웁니다.
+`data/`는 그대로, 실시간 열차(`/api/live`)는 운영 서버 프록시로 넘겨서 로컬에 API 키가 필요 없습니다. 다른 프록시를 쓰려면
+`SUBWAY_LIVE_UPSTREAM`을 지정하세요. `python3 deploy/dev_server.py`(인자 없이)는 빌드 없이 `web/`을 그대로 띄웁니다.
+필요한 것: Python 3.10+, Node 22.18+. 시험(`node --test` · `unittest`)과 서버는 설치 없이 돌고, 웹 빌드에만 `npm ci`가 필요합니다.
+
+웹 빌드(`vite.config.mts`): 모듈 하나 = 파일 하나로 이름 · 폴더 그대로 옮기고(묶지 않는다 — 첫 화면 요청 차례가 그대로),
+HTML · CSS · 그림 · 자료 · `web/vendor/`는 그대로 복사합니다. 결과 `dist/`는 git에 넣지 않습니다.
 
 배포는 자동이에요. `main`에 푸시(또는 PR 머지)하면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트를
-돌리고, 통과하면 서버에 SSH로 접속해 `deploy/remote_deploy.sh`를 실행해요(최신 코드 받기 → 테스트 → 배포,
-`server/`가 바뀌었으면 프록시 재시작). 배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요.
-PR에는 테스트만 돌아요. 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
+돌리고, 통과하면 웹을 빌드해 `web-dist` 브랜치에 커밋으로 올린 뒤(`deploy/publish_web_dist.sh` — 트리 `web/` = `dist/web`,
+메시지 `web-dist <소스 커밋>`) 서버에 SSH로 접속해 `deploy/remote_deploy.sh`를 실행해요(최신 코드 받기 → 테스트 → 배포,
+`server/`가 바뀌었으면 프록시 재시작). 서버는 node 빌드를 하지 않고 `web-dist`에서 그 커밋의 빌드 결과를 꺼내요.
+배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요. PR에는 테스트와 빌드 확인만 돌아요. 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
 
-`remote_deploy.sh` 순서: `origin/main` 커밋 하나를 정해 임시 폴더에 꺼내 테스트 → 통과해야 merge → `deploy/deploy.sh`가
-그 커밋의 `web/` 전체와 자료 파일로 새 릴리스(`/var/www/syung-releases/<시각>-<커밋>`)를 만들고 `/var/www/syung` 링크를 한 번에
+`remote_deploy.sh` 순서: `origin/main` 커밋 하나를 정해(빌드가 아직이면 마지막으로 빌드된 커밋) 임시 폴더에 꺼내 테스트 → 통과해야 merge → `deploy/deploy.sh`가
+그 커밋의 빌드 결과(`web-dist` — 빌드 도입 전 커밋이면 커밋의 `web/` 그대로) 전체와 자료 파일로 새 릴리스(`/var/www/syung-releases/<시각>-<커밋>`)를 만들고 `/var/www/syung` 링크를 한 번에
 바꿔 끼움 → `server/`가 마지막 성공 배포(`/var/lib/subway-live/deployed-commit`)와 다르면 프록시 재시작 → `deploy/check_site.sh`가
 화면이 부르는 주소(정적 파일 전부, `/api/route`, `/api/live`)를 확인 → 실패하면 정적 파일을 직전 릴리스로 되돌림(서버는 클론에서
 돌아서 코드는 그대로). 커밋 안 된 파일은 릴리스에 섞이지 않고, `web/` 아래 새 폴더는 저절로 따라가요. 손으로 둔 옛 파일은

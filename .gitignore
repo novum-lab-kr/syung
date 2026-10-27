@@ -23,3 +23,5 @@ data/osm-tracks/platforms-raw.json
 data/bus.json
 data/bus-shapes.json
 data/bus-stop-fix.json
+node_modules/
+dist/
