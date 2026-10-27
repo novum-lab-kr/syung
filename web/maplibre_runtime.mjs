@@ -1,6 +1,6 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
-import {seoulSun,sunPosition as sunAt} from './lib/sun.mjs';
+import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
 import {initJourney} from './lib/journey-ui.mjs';
 import {createCoasterTrack} from './modes/coaster/track.mjs';   // 롤코 선로 층
 import {createCoasterGeometry} from './modes/coaster/geometry.mjs';   // 롤코 길 · 언덕 계산
@@ -13,10 +13,10 @@ import {createJourneyMap} from './ui/journey.mjs';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mjs';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mjs';   // 테마 · 지도 색 · 해 위치 아이콘
-import {createUserPrefs} from './user/prefs.mjs';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
+import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
 import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
-import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mjs';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
-import './modes/merge.mjs';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
+import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mts';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
+import './modes/merge.mts';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mjs';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
 import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본

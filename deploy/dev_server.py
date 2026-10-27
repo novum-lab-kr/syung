@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Local development server: the map straight from the repo, live trains from production.
 
-    python3 deploy/dev_server.py            # http://localhost:8080
+    python3 deploy/dev_server.py            # http://localhost:8080 — 빌드 결과(dist/web · npm run build)
     python3 deploy/dev_server.py 9000       # another port
-    python3 deploy/dev_server.py --dist     # 빌드 결과(dist/web — npm run build)를 보여 준다. npm run dev 가 이것으로 띄운다
+    npm run dev                             # 고칠 때마다 다시 빌드 + 이 서버(8080)
+    web/ 에 .mts(TypeScript)가 있어 원본 web/ 을 그대로는 못 띄운다 — 브라우저는 빌드 결과를 읽는다. --dist 는 옛 이름(같은 뜻)
 
-Serves web/ and the built data files at the same paths as the deployed site (no copy step: edit
-web/maplibre_runtime.mjs and reload). /api/live (and /api/route · /api/place) is forwarded to the production proxy, so no Seoul API
+Serves the built web (dist/web) and the data files at the same paths as the deployed site (npm run dev rebuilds on every
+edit — reload). /api/live (and /api/route · /api/place) is forwarded to the production proxy, so no Seoul API
 key is needed locally. Set SUBWAY_LIVE_UPSTREAM to use another proxy (e.g. http://127.0.0.1:3113/live).
 
 회원 주소(/api/auth/… · /api/me…)는 서버와 같은 코드(server/routes/members.py)로 여기서 답한다. DB 는 임시 폴더
@@ -33,8 +34,8 @@ UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.novum-lab.com/a
 # 길찾기 · 장소 검색(승차권 발권 화면이 부른다)도 운영으로 — 바깥 API 키 없이 로컬에서 시험한다
 JOURNEY_UPSTREAM = os.environ.get("SYUNG_JOURNEY_UPSTREAM", "https://syung.novum-lab.com/api")
 JOURNEY_PATHS = {"/api/route": "/route", "/api/place": "/place"}
-# 보여 줄 웹 폴더: 기본 web/(원본 그대로), --dist 면 빌드 결과 dist/web(운영에 올라가는 것과 같은 파일)
-WEB = ROOT / "web"
+# 보여 줄 웹 폴더: 빌드 결과 dist/web(운영에 올라가는 것과 같은 파일)
+WEB = ROOT / "dist" / "web"
 # published path → file in the repo
 DATA = {
     "/track_shapes.json": ROOT / "data" / "osm-tracks" / "track_shapes.json",
@@ -231,9 +232,8 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if "--dist" in args:
         args.remove("--dist")
-        WEB = ROOT / "dist" / "web"
-        if not (WEB / "index.html").is_file():
-            sys.exit("dist/web 이 없음 — 먼저 npm run build(또는 npm run dev)")
+    if not (WEB / "index.html").is_file():
+        sys.exit("dist/web 이 없음 — 먼저 npm ci && npm run build(또는 npm run dev)")
     port = int(args[0]) if args else 8080
     print(f"subway-live-map dev: http://localhost:{port}  ({WEB.relative_to(ROOT)} · live trains via {UPSTREAM})")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {seoulSun,sunPosition} from '../web/lib/sun.mjs';
+import {seoulSun,sunPosition} from '../web/lib/sun.mts';
 
 const hm=d=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
 const day=iso=>{const t=new Date(iso),{rise,set}=seoulSun(t);return {t,rise,set,light:t>=rise&&t<set}};
