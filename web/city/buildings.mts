@@ -69,7 +69,7 @@ interface TileEntry {
   gpu:Map<WebGL2RenderingContext, GpuTile>; readyAt:number; used:number; prio:number; bytes?:number; t0?:number;
 }
 type BuildWorker = Worker & { busy:TileEntry | null };
-type WorkerReply = { type:'done'; key:string; mesh:Built } | { type:'error'; key:string; error:unknown };
+type WorkerReply = { type:'done'; key:string; mesh:Built } | { type:'fail'; key:string; error:string };   // (worker.mts 가 보낸다)
 // 심시티 x-ray 대상(본체가 매 프레임): 메르카토르 선분 · 밑 · 위 높이 · 반폭, m = 1 m
 interface XrayTarget { id:string | number; ax:number; ay:number; bx:number; by:number; z0:number; z1:number; w:number; m:number }
 interface Xray { R:Float32Array; D:Float32Array; n:number; U:number[]; fading:boolean }
@@ -676,7 +676,7 @@ export class CityBuildings {
     this.on = false; this.tone = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
     this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
-    this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/city/worker.mjs (a classify function cannot cross into one: main thread then)
+    this.useWorker = opts.worker !== false && typeof Worker !== 'undefined' && !opts.classify; this.workers = null;   // builds run in web/city/worker.mts (a classify function cannot cross into one: main thread then)
     this.debug = 0; this.lodHi = LOD_HI; this.cull = 'cw'; this.noCull = false; this.skipDraw = false;   // dev knobs: kind colours, culling, LOD, draw calls off (JS cost alone)
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
     this.through = throughIndex(opts.through || THROUGH_LIST);   // osm id → the points where the viaduct crosses it (opts.through overrides the shipped list)
@@ -777,7 +777,7 @@ export class CityBuildings {
     const n = !this.phone && typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 6 ? 2 : 1;
     try {
       for (let i = 0; i < n; i++) {
-        const w = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' }) as BuildWorker;
+        const w = new Worker(new URL('./worker.mts', import.meta.url), { type: 'module' }) as BuildWorker;
         w.busy = null; w.onmessage = ev => this.onWorker(w, ev.data); w.onerror = ev => { console.warn('city-build: worker failed, building on the main thread', ev.message || ev); this.dropWorkers() };
         w.postMessage({ type: 'pack', pack: this.P.pack, through: this.through }); this.workers.push(w);
       }

@@ -58,7 +58,7 @@ export default defineConfig({
   base: './',
   publicDir: false,
   plugins: [copyStatic()],
-  // city/worker.mjs(도시 건물 Worker) — new Worker(new URL(…), { type: 'module' }) 그대로 모듈 Worker
+  // city/worker.mts(도시 건물 Worker) — new Worker(new URL(…), { type: 'module' }) 그대로 모듈 Worker
   worker: { format: 'es' },
   build: {
     outDir,
