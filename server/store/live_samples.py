@@ -10,6 +10,7 @@ import gzip
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from server.clock import KST
 
@@ -50,19 +51,19 @@ class LiveSamples:
             return gzip.open(packed, "rt", encoding="utf-8")
         return plain.open(encoding="utf-8")
 
-    def day_counts(self, day: str) -> dict:
+    def day_counts(self, day: str) -> dict[str, dict[str, list[int]]]:
         """하루 파일의 요약 {운행일: {노선: [10분 칸 144개의 열차 수]}} — 끝난 날이면 health_dir 에 남겨 다음에 다시 읽지 않는다."""
         saved = self.health_dir / f"{day}.json"
         try:
             return json.loads(saved.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             pass
-        seen: dict[str, dict[str, list[set]]] = {}
+        seen: dict[str, dict[str, list[set[str]]]] = {}
         try:
             with self._open(day) as rows:
                 for row in rows:
                     try:
-                        t = json.loads(row)
+                        t: dict[str, Any] = json.loads(row)
                     except ValueError:
                         continue
                     at = _stamp(t.get("fetchedAt"))
@@ -89,7 +90,7 @@ class LiveSamples:
         days = [local.strftime("%Y%m%d")]
         if local.hour * 3600 + local.minute * 60 < seconds + 60:
             days.insert(0, (local - timedelta(days=1)).strftime("%Y%m%d"))
-        events = []
+        events: list[tuple[float, str, str]] = []
         for day in days:
             path = self.samples_dir / f"{day}.jsonl"
             try:
@@ -106,7 +107,7 @@ class LiveSamples:
                 if not row:
                     continue
                 try:
-                    t = json.loads(row)
+                    t: dict[str, Any] = json.loads(row)
                 except ValueError:
                     continue
                 at = _stamp(t.get("fetchedAt"))

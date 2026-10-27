@@ -16,6 +16,7 @@ import re
 import secrets
 import shutil
 from pathlib import Path
+from collections.abc import Iterable
 
 NAME = re.compile(r"[A-Za-z0-9_-]{32}\.(?:webp|jpg)")
 EXTENSIONS = ("webp", "jpg")
@@ -25,7 +26,7 @@ class AvatarFiles:
     def __init__(self, folder: Path):
         self.folder = Path(folder)
 
-    def _path(self, name: str) -> Path | None:
+    def _path(self, name: object) -> Path | None:   # DB · 요청에서 온 값이라 글자가 아닐 수도 있다
         return self.folder / name if isinstance(name, str) and NAME.fullmatch(name) else None
 
     def save(self, data: bytes, extension: str) -> str:
@@ -80,12 +81,12 @@ class AvatarFiles:
             except FileNotFoundError:
                 return False
 
-    def stage(self, names, place: Path) -> list[str]:
+    def stage(self, names: Iterable[str], place: Path) -> list[str]:
         """names 사진을 place(이 폴더 안 숨은 폴더 — 같은 파일 시스템)에 하드 링크로 붙잡는다 → 붙잡은 이름.
         locked() 안에서 부른다. 이미 없는 사진은 건너뛴다."""
         shutil.rmtree(place, ignore_errors=True)
         place.mkdir(mode=0o700, parents=True)
-        kept = []
+        kept: list[str] = []
         for name in sorted(set(names)):
             path = self._path(name)
             if path is None:

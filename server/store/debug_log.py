@@ -9,6 +9,7 @@ import secrets
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from server.clock import KST
 
@@ -18,7 +19,7 @@ class DebugStore:
         self.root = Path(root)
         self.lock = threading.Lock()
 
-    def append_rides(self, events: list[dict], now: float) -> None:
+    def append_rides(self, events: list[dict[str, Any]], now: float) -> None:
         day = datetime.fromtimestamp(now, KST).strftime("%Y%m%d")
         folder = self.root / "rides"
         with self.lock:
@@ -27,7 +28,7 @@ class DebugStore:
                 for event in events:
                     f.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
 
-    def save_shot(self, data: bytes, ext: str, meta: dict, now: float) -> str:
+    def save_shot(self, data: bytes, ext: str, meta: dict[str, Any], now: float) -> str:
         """파일 이름(YYYYMMDD-HHMMSS-무작위.ext)을 돌려준다."""
         name = datetime.fromtimestamp(now, KST).strftime("%Y%m%d-%H%M%S") + f"-{secrets.token_hex(3)}.{ext}"
         folder = self.root / "shots"
@@ -38,11 +39,11 @@ class DebugStore:
                 f.write(json.dumps({**meta, "file": name}, ensure_ascii=False, separators=(",", ":")) + "\n")
         return name
 
-    def recent_shots(self, limit: int) -> list[dict]:
+    def recent_shots(self, limit: int) -> list[dict[str, Any]]:
         path = self.root / "shots.jsonl"
         if not path.exists():
             return []
-        rows = []
+        rows: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
             try:
                 rows.append(json.loads(line))
@@ -55,11 +56,11 @@ class DebugStore:
         folder = self.root / "rides"
         return sorted((p.stem for p in folder.glob("*.jsonl") if p.stem.isdigit() and len(p.stem) == 8), reverse=True) if folder.exists() else []
 
-    def recent_rides(self, day: str) -> list[dict]:
+    def recent_rides(self, day: str) -> list[dict[str, Any]]:
         path = self.root / "rides" / f"{day}.jsonl"
         if not path.exists():
             return []
-        rows = []
+        rows: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
                 rows.append(json.loads(line))

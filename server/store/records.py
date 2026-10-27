@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from server.clock import KST, iso, kst_today
 
@@ -13,7 +14,7 @@ RECORD_FIELDS = ("vehId", "sectOrd", "sectDist", "fullSectDist", "stopFlag", "da
                  "rtDist", "stopId", "trnstnid")
 
 
-def record_bus(items: list[dict], route_id: str, now: float, directory: Path | None) -> None:
+def record_bus(items: list[dict[str, Any]], route_id: str, now: float, directory: Path | None) -> None:
     """Append one upstream answer to that KST day's file; a failed write never fails the request."""
     if not directory:
         return
@@ -31,7 +32,7 @@ def record_bus(items: list[dict], route_id: str, now: float, directory: Path | N
         pass
 
 
-def record_positions(data: dict, directory: Path) -> None:
+def record_positions(data: dict[str, Any], directory: Path) -> None:
     """지하철 위치 피드 한 번(열차마다 한 줄, 받은 때 fetchedAt): build_live_timing.py 가 배운다."""
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ def record_positions(data: dict, directory: Path) -> None:
         pass
 
 
-def record_station_probe(record: dict, directory: Path) -> None:
+def record_station_probe(record: dict[str, Any], directory: Path) -> None:
     """역 하나 도착 vs 전 역(ALL) 한 번(jobs/station_probe.py): 그 KST 날 파일에 한 줄."""
     try:
         directory.mkdir(parents=True, exist_ok=True)
