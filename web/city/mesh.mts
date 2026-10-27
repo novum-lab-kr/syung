@@ -60,7 +60,7 @@ export interface MeshPack {
   };
   classification?:{ rules?:ClassRule[]; minimumHeightM?:number; missingHeightM?:number; mergedLowrise?:{ maxHeightM?:number; areaGreaterThanM2?:number }; equalAreaPriority?:string[]; landuseAliases?:Record<string, string> };
   lighting?:{ light?:LightSpec; dark?:LightSpec; ao?:{ opacity:number; widthM:number }; referenceSun?:{ azimuthDeg:number; elevationDeg:number } };
-  modes?:Record<string, unknown>;
+  modes?:{ colorMath?:{ lumaWeights?:readonly number[] }; [mode:string]:unknown };
   lod?:{ roofEquipment?:number[]; windows?:number[] };
   throughBuildings?:{
     railHeightM?:number; bandBelowM?:number; bandAboveM?:number; glass?:Record<string, unknown>; frame?:Record<string, unknown>; insideLight?:Record<string, unknown>;

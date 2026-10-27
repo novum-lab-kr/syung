@@ -25,8 +25,88 @@ import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_H
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mjs';
 import { sunPosition } from '../lib/sun.mts';
 import { buildSignAtlas, SIGN_ATLAS } from './sign_text.mts';   // 간판 글자: 업종 이름을 쓴 글자 묶음 그림(한국 상가 간판처럼)
+import type { Map as MapLibreMap, Tile, CustomRenderMethodInput } from 'maplibre-gl';
+import type { MeshPack, ResolvedPack, BuilderOptions, TileSource } from './mesh.mts';
 import THROUGH_LIST from './through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
 export { TileBuilder, classifyBuilding };
+
+// ── 타입(이 파일이 만들고 읽는 칸 그대로 — 실행 코드 없음) ─────────────────────────────────────────
+type Theme = 'light' | 'dark';
+type Range2 = [number, number];
+type ColorPick = { light?:string | null; dark?:string | null; [k:string]:unknown } | null | undefined;
+type Uniform = 'u_ao' | 'u_art' | 'u_artBelt' | 'u_artDim' | 'u_artDL' | 'u_artTop' | 'u_awning' | 'u_base' | 'u_bay' | 'u_debug' | 'u_detail' | 'u_equip' | 'u_giwa' | 'u_ground'
+  | 'u_grow' | 'u_hk' | 'u_hk2' | 'u_hkE' | 'u_hkG' | 'u_hkP' | 'u_lightCol' | 'u_lit' | 'u_litMean' | 'u_lodPx' | 'u_matrix' | 'u_maxH' | 'u_mbay' | 'u_mfac' | 'u_mglass' | 'u_mpu'
+  | 'u_mwall' | 'u_nightF' | 'u_nightK' | 'u_nightUp' | 'u_pitched' | 'u_post' | 'u_rd' | 'u_refl' | 'u_reflB' | 'u_reflD' | 'u_reflH' | 'u_rf' | 'u_roofPal' | 'u_S' | 'u_shade'
+  | 'u_sign' | 'u_signHW' | 'u_signInk' | 'u_signNight' | 'u_signOn' | 'u_signText' | 'u_signVL' | 'u_sk' | 'u_sky' | 'u_sun' | 'u_tA' | 'u_tB' | 'u_tC' | 'u_tD' | 'u_tE' | 'u_tF'
+  | 'u_tG' | 'u_thBand' | 'u_thFrame' | 'u_thGlass' | 'u_thInside' | 'u_thMix' | 'u_through' | 'u_wo' | 'u_xa' | 'u_xd' | 'u_xn' | 'u_xr' | 'u_xv' | 'u_ztop';
+type Uniforms = Record<Uniform, WebGLUniformLocation | null>;   // (compile 의 Proxy 가 처음 읽을 때 위치를 찾아 둔다)
+interface Prog { p:WebGLProgram; u:Uniforms }
+type InstKind = 'skirt' | 'roof' | 'box';
+// 조선 인스턴스 템플릿(hanok.mjs skirtTemplate · roofTemplate · boxTemplate): 점 · 색인 · [첫 색인, 개수] 범위들
+interface InstShape { verts:Float32Array; idx:Uint16Array; far:Range2; near:Range2; nearPhone?:Range2; detail?:Range2 }
+interface SkirtShape { verts:Float32Array; idx:Uint16Array; lo:Range2; grid:Range2; edge:Range2 }
+interface HanokPart { skirtTemplate(rows:number[]):SkirtShape; roofTemplate():InstShape; boxTemplate():InstShape }
+// 스타크래프트 모형 템플릿(race_buildings.mjs raceTemplates): 꼭짓점 8 float · 색인, 템플릿마다 [첫 색인, 개수] · 꼭대기 높이
+interface RaceShape { key:string; verts:Float32Array | number[]; idx:Uint32Array | number[]; ranges:(Range2 | undefined)[]; tops:number[] }
+interface RacePart { templates(R:unknown):RaceShape }
+interface GlTemplate { key:string; vbo:WebGLBuffer; ibo:WebGLBuffer; far:Range2; near:Range2; nearPhone:Range2; detail:Range2 }
+interface ModelTemplate { key:string; vbo:WebGLBuffer; ibo:WebGLBuffer; ranges:(Range2 | undefined)[]; tops:number[]; box:Range2; bytes:number }
+interface InstProgs { color?:Prog; depth?:Prog }
+interface GlCtx { color:Prog; depth:Prog; inst:Partial<Record<InstKind, InstProgs>>; tpl:Partial<Record<InstKind, GlTemplate>>; model?:ModelTemplate; modelColor?:Prog; modelDepth?:Prog }
+// 지은 타일(TileBuilder.result · Worker 가 돌려준 것) — 휴대폰은 두 캔버스에 다 올린 뒤 바이트를 놓는다(null · models 는 크기만)
+type Built = ReturnType<TileBuilder['result']>;
+type BuiltChunk = Built['chunks'][number];
+interface TileMesh extends Omit<Built, 'verts' | 'idx' | 'inst' | 'models'> {
+  verts:Built['verts'] | null; idx:Built['idx'] | null; inst:Built['inst'] | null;
+  models:NonNullable<Built['models']> | { groups:[number, number, number][]; data:{ byteLength:number } } | null;
+}
+interface GpuInst { vao:WebGLVertexArrayObject; vbo:WebGLBuffer; tpl:GlTemplate }
+interface GpuModels { vao:WebGLVertexArrayObject; vbo:WebGLBuffer; tpl:ModelTemplate; groups:[number, number, number][] }
+interface GpuTile { vao:WebGLVertexArrayObject; vbo:WebGLBuffer; ibo:WebGLBuffer; vOff:number; iOff:number; done:boolean; inst:Partial<Record<InstKind, GpuInst>>; models?:GpuModels }
+
+interface TileEntry {
+  key:string; z:number; x:number; y:number; state:'queued' | 'building' | 'ready'; tile:Tile | null; builder:TileBuilder | null; mesh:TileMesh | null;
+  gpu:Map<WebGL2RenderingContext, GpuTile>; readyAt:number; used:number; prio:number; bytes?:number; t0?:number;
+}
+type BuildWorker = Worker & { busy:TileEntry | null };
+type WorkerReply = { type:'done'; key:string; mesh:Built } | { type:'error'; key:string; error:unknown };
+// 심시티 x-ray 대상(본체가 매 프레임): 메르카토르 선분 · 밑 · 위 높이 · 반폭, m = 1 m
+interface XrayTarget { id:string | number; ax:number; ay:number; bx:number; by:number; z0:number; z1:number; w:number; m:number }
+interface Xray { R:Float32Array; D:Float32Array; n:number; U:number[]; fading:boolean }
+interface SkirtDraw { g:GpuTile; m:TileMesh; M:Float32Array; chunks:(BuiltChunk | number)[] }
+interface ModelDraw { g:GpuModels; m:TileMesh; M:Float32Array; grow:number }
+// 팩의 모드 칸(modes.simcity · coaster …) 중 색 · 밤 창 빛 — 읽는 자리에서만 이 모양으로(D-W11)
+interface BuildingsModeTone { saturation?:Partial<Record<Theme, number>>; brightness?:Partial<Record<Theme, number>>; windowEmission?:number }
+// 밤 불빛 다시 맞추기(팩 night.lights) 중 이 파일이 읽는 칸
+interface NightLights {
+  emissionMul?:number; groundEmissionMul?:number; signMul?:number; litRatioMul?:number; litRatioMax?:number; groundLitMul?:number; groundLitMax?:number; farGlow?:number;
+  moon?:{ color?:string; k?:number; roofK?:number }; street?:{ color?:string; strength?:number; heightM?:number };
+}
+// 조선 팩(pack.hanok) 중 이 파일이 읽는 칸
+interface HanokColors { wood:string; plaster:string; paper:string; stone:string; dam:string; soffit:string; ridge:string; giwa:string[]; spire?:string; thatch?:string[]; mud?:string; field?:string[]; glass?:string }
+interface HanokSpec {
+  colors?:Partial<Record<Theme, HanokColors>>; night?:{ paper?:string; emission?:number; litShare?:number }; baseM?:number; postM?:number; paperShare?:number; bayM?:number; gableEndM?:number;
+  tall?:{ skirtGroup?:{ rows?:number[]; widthM?:number; gapM?:number; cornerK?:number; cornerM?:number[]; minM?:number; upK?:number }; skirtRiseM?:number; skirtEdgeM?:number };
+  thatch?:{ edgeM?:number; baseM?:number }; ridge?:{ halfWidthM?:number; upM?:number; downM?:number };
+  detail?:{ fasciaM?:number; hipRidgeM?:number; platformOutM?:number; stepWidthM?:number; postM?:number; postOutM?:number; bracketM?:number; bracketOutM?:number };
+}
+// 오피스 유형의 낮 유리 반사 · 꾸밈(QA1) 중 이 파일이 읽는 칸 — 수 칸은 num · pair 가 거른다
+interface DayReflection { enabled?:boolean; diffuseRangeLinear?:unknown; mixByHeight?:unknown; bandWidthRatio?:unknown; heightRangeRatio?:unknown; faceStrengthRange?:unknown; bandDeltaLStar?:unknown; maxMix?:unknown; skyHorizon?:string; skyZenith?:string }
+interface Tiers { multipliers?:unknown[]; weights?:unknown[] }
+interface SignsLook { colors?:string[]; ink?:{ light?:string; dark?:string }; nightEmission?:number }
+export interface CityBuildingsOptions { phone?:boolean; stylePack?:MeshPack; worker?:boolean; classify?:BuilderOptions['classify']; through?:unknown[] }
+interface SetOptions { pack?:MeshPack; on?:boolean | null; tone?:string; theme?:Theme; maxHeight?:number | null; night?:{ lights?:boolean } }
+interface Stats { built:number; buildMs:number; verts:number; mainBuildMs?:number; uploadMs?:number; uploads?:number; feedMaxMs?:number; glassDraws?:number; modelDraws?:number; draws?:number; [k:string]:number | undefined }
+type SignAtlas = ReturnType<typeof buildSignAtlas>;
+type Palette = ReturnType<CityBuildings['paletteFor']>;
+type BuildingsPack = MeshPack & { night?:{ lights?:NightLights } };
+interface ArticulationLook { minHeightM?:unknown; minDetailZoom?:unknown; beltEveryFloors?:unknown; beltHeightM?:unknown; cornerWidthM?:unknown; cornerDeltaLStar?:unknown; crownDeltaLStar?:unknown; topZoneHeightRatio?:unknown; maxTopZoneHeightM?:unknown }
+type ColorsLook = { colors?:unknown } | null | undefined;
+
+// 고가가 지나는 건물 목록(through_buildings.mjs 또는 opts.through) 한 줄 · 빌더가 받는 점
+interface ThroughItem { id:number | string; lng:number | string; lat:number | string; railM:number | string; line?:string; path?:unknown; ring?:string | number }   // (수 칸은 +로 읽어 거른다)
+interface ThroughPoint { lng:number; lat:number; railM:number; line:string; path:[number, number][] | null }
+
 
 // ── shaders ──────────────────────────────────────────────────────────────────────────────────────
 const VS = `#version 300 es
@@ -543,23 +623,23 @@ void main(){
 }`;
 
 
-function compile(gl, vs, fs) {
-  const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error('city-build shader: ' + gl.getShaderInfoLog(x)); return x };
-  const p = gl.createProgram(); const a = sh(gl.VERTEX_SHADER, vs), b = sh(gl.FRAGMENT_SHADER, fs); gl.attachShader(p, a); gl.attachShader(p, b); gl.linkProgram(p); gl.deleteShader(a); gl.deleteShader(b);
+function compile(gl:WebGL2RenderingContext, vs:string, fs:string):Prog {
+  const sh = (t:number, src:string) => { const x = gl.createShader(t)!; gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error('city-build shader: ' + gl.getShaderInfoLog(x)); return x };
+  const p = gl.createProgram()!; const a = sh(gl.VERTEX_SHADER, vs), b = sh(gl.FRAGMENT_SHADER, fs); gl.attachShader(p, a); gl.attachShader(p, b); gl.linkProgram(p); gl.deleteShader(a); gl.deleteShader(b);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw Error('city-build link: ' + gl.getProgramInfoLog(p));
-  const u = new Proxy({}, { get: (o, k) => k in o ? o[k] : (o[k] = gl.getUniformLocation(p, k)) });
+  const u = new Proxy({} as Record<string, WebGLUniformLocation | null>, { get: (o, k:string) => k in o ? o[k] : (o[k] = gl.getUniformLocation(p, k)) }) as Uniforms;
   return { p, u };
 }
 
 // a built tile's size in memory (one copy): its vertex and index bytes
-const meshBytes = m => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0) + (m.models ? m.models.data.byteLength : 0);
+const meshBytes = (m:Built) => m.verts.byteLength + m.idx.byteLength + (m.inst ? Object.values(m.inst).reduce((n, b) => n + b.byteLength, 0) : 0) + (m.models ? m.models.data.byteLength : 0);
 
 // the through list (web/city/through_buildings.mjs, or opts.through: [{id, lng, lat, line, railM}]) as the builders want it: osm id → its crossing points
-function throughIndex(list) {
-  const byId = new Map(), byRing = new Map();
-  for (const e of list || []) {
+function throughIndex(list:unknown[] | null | undefined) {
+  const byId = new Map<number, ThroughPoint[]>(), byRing = new Map<string, ThroughPoint[]>();
+  for (const e of (list || []) as (ThroughItem | null)[]) {
     if (!e || !Number.isFinite(+e.lng) || !Number.isFinite(+e.lat)) continue;
-    const r = { lng: +e.lng, lat: +e.lat, railM: Number.isFinite(+e.railM) ? +e.railM : 11, line: e.line || '', path: Array.isArray(e.path) && e.path.length >= 2 ? e.path : null };   // path: the deck's way through it (lng/lat points) — only the walls it crosses open
+    const r:ThroughPoint = { lng: +e.lng, lat: +e.lat, railM: Number.isFinite(+e.railM) ? +e.railM : 11, line: e.line || '', path: Array.isArray(e.path) && e.path.length >= 2 ? e.path : null };   // path: the deck's way through it (lng/lat points) — only the walls it crosses open
     if (Number.isFinite(+e.id)) { let a = byId.get(+e.id); if (!a) byId.set(+e.id, a = []); a.push(r) }
     if (e.ring) { let a = byRing.get(String(e.ring)); if (!a) byRing.set(String(e.ring), a = []); a.push(r) }   // "z/x/y/feature/ring": the exact outline in the tile version the list was made from (several stretches can cross one outline)
   }
@@ -568,17 +648,31 @@ function throughIndex(list) {
 
 const DETAIL_Z = 18;   // 조선 인스턴스의 가까이 디테일(처마 밑면 · 끝 두께 · 망와 · 기단 · 계단): 이 줌부터. 템플릿에 들어 있어 타일 메모리는 그대로
 // 조선의 인스턴스 종류 (city_hanok.mjs): 정점 셰이더, 템플릿(far · near 색인 범위), 기록의 속성 [위치, 개수, 형식(0 f32 · 1 u8), 바이트 위치]
-const INST = {
-  skirt: { vs: VS_SKIRT, tpl: P => { const T = cityPart('hanok').skirtTemplate(P.hanok?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
-  roof: { vs: VS_ROOF, tpl: () => cityPart('hanok').roofTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 0, 32], [4, 2, 0, 48], [5, 4, 1, 56], [6, 4, 1, 60]] },
-  box: { vs: VS_BOX, tpl: () => cityPart('hanok').boxTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 1, 32], [4, 4, 1, 36]] },
+const INST:Record<InstKind, { vs:string; tpl:(P:ResolvedPack) => InstShape; attrs:[number, number, number, number][] }> = {
+  skirt: { vs: VS_SKIRT, tpl: P => { const T = (cityPart('hanok') as unknown as HanokPart).skirtTemplate((P.hanok as HanokSpec | null)?.tall?.skirtGroup?.rows || [0, .55, 1]); return { ...T, far: T.lo, near: [T.grid[0], T.grid[1] + T.edge[1]], nearPhone: T.grid } }, attrs: [[1, 4, 0, 0], [2, 2, 0, 16], [3, 4, 1, 24], [4, 4, 1, 28]] },
+  roof: { vs: VS_ROOF, tpl: () => (cityPart('hanok') as unknown as HanokPart).roofTemplate(), attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 0, 32], [4, 2, 0, 48], [5, 4, 1, 56], [6, 4, 1, 60]] },
+  box: { vs: VS_BOX, tpl: () => (cityPart('hanok') as unknown as HanokPart).boxTemplate(),
+ attrs: [[1, 4, 0, 0], [2, 4, 0, 16], [3, 4, 1, 32], [4, 4, 1, 36]] },
 };
 
 // ── the layer ────────────────────────────────────────────────────────────────────────────────────
 export class CityBuildings {
-  constructor(opts = {}) {
+  // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · 쓰는 곳이 넣는다)
+  declare id:string; declare type:'custom'; declare renderingMode:'3d';
+  declare opts:CityBuildingsOptions; declare phone:boolean; declare P:ResolvedPack;
+  declare on:boolean; declare tone:string; declare theme:Theme; declare maxHeight:number; declare night:{ lights?:boolean } | undefined;
+  declare tiles:Map<string, TileEntry>; declare visible:TileEntry[]; declare ctx:Map<WebGL2RenderingContext, GlCtx>; declare frame:number; declare now:number;
+  declare timer:ReturnType<typeof setTimeout> | 0; declare growing:boolean;
+  declare maxTiles:number; declare maxBytes:number; declare palette:Palette | null; declare stats:Stats;
+  declare useWorker:boolean; declare workers:BuildWorker[] | null;
+  declare debug:number; declare lodHi:number; declare cull:'cw' | 'ccw' | 'none'; declare noCull:boolean; declare skipDraw:boolean;
+  declare M64:Float64Array; declare M32:Float32Array; declare through:ReturnType<typeof throughIndex>;
+  declare map:MapLibreMap | null; declare gl:WebGL2RenderingContext | undefined;
+  declare signAtlas:SignAtlas | undefined; declare signTex:WeakMap<WebGL2RenderingContext, WebGLTexture> | undefined;
+  declare xrayIn:XrayTarget[] | null | undefined; declare xr:Xray | null | undefined; declare xrSeen:Map<string, number> | undefined;
+  constructor(opts:CityBuildingsOptions = {}) {
     this.id = 'city-buildings'; this.type = 'custom'; this.renderingMode = '3d';
-    this.opts = opts; this.phone = !!opts.phone; this.P = resolvePack(opts.stylePack || SEOUL_CITY_STYLE);
+    this.opts = opts; this.phone = !!opts.phone; this.P = resolvePack((opts.stylePack || SEOUL_CITY_STYLE) as MeshPack);
     this.on = false; this.tone = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
     this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
@@ -587,16 +681,16 @@ export class CityBuildings {
     this.M64 = new Float64Array(16); this.M32 = new Float32Array(16);
     this.through = throughIndex(opts.through || THROUGH_LIST);   // osm id → the points where the viaduct crosses it (opts.through overrides the shipped list)
   }
-  onAdd(map, gl) { this.map = map; this.gl = gl }   // (programs compiled on first draw: the city may never be switched on — 2026-10-10 첫 화면이 늦게 떴다)
-  onRemove(map, gl) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
+  onAdd(map:MapLibreMap, gl:WebGL2RenderingContext) { this.map = map; this.gl = gl }   // (programs compiled on first draw: the city may never be switched on — 2026-10-10 첫 화면이 늦게 떴다)
+  onRemove(map:MapLibreMap, gl:WebGL2RenderingContext) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
   // on/off, tone 'simcity' | 'coaster'(팩의 modes 항목), 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
-  set(o) {
+  set(o:SetOptions) {
     if (o.pack && o.pack !== this.P.pack) this.setPack(o.pack);
     if (o.on != null) this.on = o.on; if (o.tone) this.tone = o.tone; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight; if (o.night) this.night = o.night;   // night: {lights} 밤 불빛 켬(팩 night.lights)
     this.palette = null; this.map?.triggerRepaint();
   }
   // another style pack (조선 모드 ↔ 심시티): every tile built again with it; a build already in a worker comes back to no tile and is dropped
-  setPack(pack) {
+  setPack(pack:MeshPack) {
     this.P = resolvePack(pack); this.palette = null;
     for (const e of this.tiles.values()) for (const gl of this.ctx.keys()) this.free(gl, e);
     this.tiles.clear(); this.visible = [];
@@ -611,7 +705,7 @@ export class CityBuildings {
   }
   // 미리 짓기(꺼져 있을 때 · 본체가 지도가 쉴 때 부른다): 켜면 보일 타일을 그리지 않고 짓기만 해 둔다 — 모드를 누르면 다 지은 것을
   // 올리기만 한다(덕배 2026-10-12: 전환 때 '건물 짓는 중' 2~3초). 한도(maxTiles · 휴대폰 maxBytes · 먼 타일 빼기)는 켜졌을 때와 같다
-  prebuild(map) {
+  prebuild(map:MapLibreMap) {
     if (this.on) return false;
     this.map = map;   // (지도에 아직 안 올린 층: onAdd 전에도 타일 관리자를 읽는다)
     if (!this.canShow()) return false;
@@ -624,13 +718,13 @@ export class CityBuildings {
     for (const e of this.tiles.values()) if (e.used === this.frame) { total++; if (e.state === 'ready') ready++ }
     return { ready, total };
   }
-  context(gl) {
+  context(gl:WebGL2RenderingContext):GlCtx {
     let c = this.ctx.get(gl);
     if (!c) { c = { color: compile(gl, VS, FS), depth: compile(gl, VS, FS_DEPTH), inst: {}, tpl: {} }; this.ctx.set(gl, c) }
     return c;
   }
   // an instance kind's template in this context (again when the pack's shape of it changes)
-  template(gl, C, kind) {
+  template(gl:WebGL2RenderingContext, C:GlCtx, kind:InstKind):GlTemplate {
     const T = INST[kind].tpl(this.P), key = Array.from(T.verts).join(',');
     if (C.tpl[kind]?.key === key) return C.tpl[kind];
     if (C.tpl[kind]) { gl.deleteBuffer(C.tpl[kind].vbo); gl.deleteBuffer(C.tpl[kind].ibo) }
@@ -642,7 +736,7 @@ export class CityBuildings {
   // ── tiles ──
   // the canonical z14 tiles the map is showing: meshes for those we have, builds queued for the rest
   collect() {
-    const map = this.map, tm = map.style?.tileManagers?.ofm; this.visible = [];
+    const map = this.map!, tm = map.style?.tileManagers?.ofm; this.visible = [];
     if (!tm) return;
     const maxz = map.getSource('ofm')?.maxzoom ?? 14, seen = new Set(), c = map.getCenter(), cm = [c.lng / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + c.lat * RAD / 2)) / (2 * Math.PI)];
     const far = this.phone ? this.farLimit(map.getZoom())[1] / (EARTH * Math.cos(c.lat * RAD)) : Infinity;   // phones: tiles wholly beyond the far fade are not built
@@ -655,12 +749,12 @@ export class CityBuildings {
       let e = this.tiles.get(key);
       if (!e) {
         if (!tile.latestFeatureIndex?.rawTileData) continue;   // no data yet (or an empty tile)
-        if (far < Infinity) { const n = 2 ** cz.z, dx = Math.max(cz.x / n - cm[0], 0, cm[0] - (cz.x + 1) / n), dy = Math.max(cz.y / n - cm[1], 0, cm[1] - (cz.y + 1) / n); if (Math.hypot(dx, dy) > far) continue }
+        if (far < Infinity) { const n = 2 ** cz.z, dx = Math.max(cz.x / n - cm[0]!, 0, cm[0]! - (cz.x + 1) / n), dy = Math.max(cz.y / n - cm[1]!, 0, cm[1]! - (cz.y + 1) / n); if (Math.hypot(dx, dy) > far) continue }
         e = { key, z: cz.z, x: cz.x, y: cz.y, state: 'queued', tile, builder: null, mesh: null, gpu: new Map(), readyAt: 0, used: 0, prio: 0 };
         this.tiles.set(key, e); queued = true;
       }
       e.used = this.frame;
-      const n = 2 ** cz.z; e.prio = Math.hypot((cz.x + .5) / n - cm[0], (cz.y + .5) / n - cm[1]);
+      const n = 2 ** cz.z; e.prio = Math.hypot((cz.x + .5) / n - cm[0]!, (cz.y + .5) / n - cm[1]!);
       if (e.state === 'ready') this.visible.push(e); else queued = true;
     }
     if (queued) this.schedule();
@@ -683,7 +777,7 @@ export class CityBuildings {
     const n = !this.phone && typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 6 ? 2 : 1;
     try {
       for (let i = 0; i < n; i++) {
-        const w = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
+        const w = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' }) as BuildWorker;
         w.busy = null; w.onmessage = ev => this.onWorker(w, ev.data); w.onerror = ev => { console.warn('city-build: worker failed, building on the main thread', ev.message || ev); this.dropWorkers() };
         w.postMessage({ type: 'pack', pack: this.P.pack, through: this.through }); this.workers.push(w);
       }
@@ -691,10 +785,10 @@ export class CityBuildings {
     return this.workers.length > 0;
   }
   dropWorkers() { for (const w of this.workers || []) { try { w.terminate() } catch { } if (w.busy && this.tiles.get(w.busy.key) === w.busy) this.tiles.delete(w.busy.key) } this.workers = []; this.useWorker = false; this.schedule() }
-  onWorker(w, m) {
+  onWorker(w:BuildWorker, m:WorkerReply) {
     const e = w.busy; w.busy = null;
     if (e && m.key === e.key && this.tiles.get(m.key) === e) {
-      if (m.type === 'done') { e.mesh = m.mesh; e.bytes = meshBytes(m.mesh); e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += m.mesh.verts.byteLength / STRIDE; if (this.on) this.map?.triggerRepaint() }   // (미리 짓기: 그릴 것 없음)
+      if (m.type === 'done') { e.mesh = m.mesh; e.bytes = meshBytes(m.mesh); e.state = 'ready'; e.readyAt = performance.now(); this.stats.built++; this.stats.buildMs += e.readyAt - e.t0!; this.stats.verts += m.mesh.verts.byteLength / STRIDE; if (this.on) this.map?.triggerRepaint() }   // (미리 짓기: 그릴 것 없음)
       else { console.warn('city-build: a tile failed in the worker', m.error); this.tiles.delete(e.key) }
     }
     this.schedule();
@@ -705,7 +799,7 @@ export class CityBuildings {
     this.timer = 0; const map = this.map; if (!map) return;
     const pending = [...this.tiles.values()].filter(e => e.state !== 'ready').sort((a, b) => a.prio - b.prio);
     if (this.startWorkers()) {
-      for (const w of this.workers) {
+      for (const w of this.workers!) {
         while (!w.busy) {
           const e = pending.find(e => e.state === 'queued'); if (!e) break;
           const raw = e.tile?.latestFeatureIndex?.rawTileData;
@@ -722,32 +816,32 @@ export class CityBuildings {
       if (!e.builder) {
         const fi = e.tile?.latestFeatureIndex; let layers = null; try { layers = fi?.rawTileData ? fi.loadVTLayers() : null } catch { }
         if (!layers) { this.tiles.delete(e.key); continue }   // gone before we got to it: again when it is back
-        e.builder = new TileBuilder({ z: e.z, x: e.x, y: e.y, extent: layers.building?.extent || 4096, buildings: layers.building || null, landuse: layers.landuse || null }, this.P, { phone: this.phone, classify: this.opts.classify, through: this.through });
+        e.builder = new TileBuilder({ z: e.z, x: e.x, y: e.y, extent: layers.building?.extent || 4096, buildings: (layers.building || null) as TileSource['buildings'], landuse: (layers.landuse || null) as TileSource['landuse'] }, this.P, { phone: this.phone, classify: this.opts.classify, through: this.through });
         e.t0 = performance.now(); e.tile = null; e.state = 'building';
       }
       const left = budget - (performance.now() - t0), ts = performance.now(), done = e.builder.step(Math.max(1, left)); this.stats.mainBuildMs = (this.stats.mainBuildMs || 0) + performance.now() - ts;   // main-thread time spent in slices (0 with workers)
       if (done) {
-        e.mesh = e.builder.result(); e.bytes = meshBytes(e.mesh); e.builder = null; e.state = 'ready'; e.readyAt = performance.now();
-        this.stats.built++; this.stats.buildMs += e.readyAt - e.t0; this.stats.verts += e.mesh.verts.byteLength / STRIDE;
+        e.mesh = e.builder.result(); e.bytes = meshBytes(e.mesh as Built); e.builder = null; e.state = 'ready'; e.readyAt = performance.now();
+        this.stats.built++; this.stats.buildMs += e.readyAt - e.t0!; this.stats.verts += e.mesh.verts!.byteLength / STRIDE;
         map.triggerRepaint();
       }
     }
     if ([...this.tiles.values()].some(e => e.state !== 'ready')) this.timer = setTimeout(() => this.work(), 6);
   }
   // phones: the far field fades into the ground beyond this distance (m) from the view centre — [start, end] by zoom
-  farLimit(zoom) { const d1 = Math.min(2600, 1200 * 2 ** ((zoom - 15) * .5)); return [d1 * .7, d1] }
+  farLimit(zoom:number):Range2 { const d1 = Math.min(2600, 1200 * 2 ** ((zoom - 15) * .5)); return [d1 * .7, d1] }
   // a tile's buffers: made at their full size, then filled a few MB a frame (feed) — a 조선 tile is 10–20 MB, and putting it
   // up whole in one frame (twice: the map's canvas and the trains') stalled zooming out (2026-10-10)
-  upload(gl, e) {
-    const t0 = performance.now(), m = e.mesh, vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
+  upload(gl:WebGL2RenderingContext, e:TileEntry):GpuTile {
+    const t0 = performance.now(), m = e.mesh as Built, vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
     gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts.byteLength, gl.STATIC_DRAW);
-    const A = (i, n, type, norm, off) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, type, norm, STRIDE, off) };
+    const A = (i:number, n:number, type:number, norm:boolean, off:number) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, type, norm, STRIDE, off) };
     A(0, 2, gl.FLOAT, false, 0); A(1, 1, gl.FLOAT, false, 8); A(2, 4, gl.BYTE, true, 12); A(3, 1, gl.FLOAT, false, 16); A(4, 4, gl.UNSIGNED_BYTE, false, 20); A(5, 4, gl.UNSIGNED_BYTE, false, 24); A(6, 4, gl.UNSIGNED_BYTE, false, 28);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx.byteLength, gl.STATIC_DRAW);
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false }; e.gpu.set(gl, g);
+    const g = { vao, vbo, ibo, vOff: 0, iOff: 0, done: false } as GpuTile; e.gpu.set(gl, g);
     g.inst = {};   // 조선 인스턴스: the template's points + the tile's records (their pointers moved to each run's first record when drawn)
-    for (const kind of Object.keys(INST)) {
+    for (const kind of Object.keys(INST) as InstKind[]) {
       const buf = m.inst?.[kind]; if (!buf || !buf.byteLength) continue;
       const C = this.context(gl), tpl = this.template(gl, C, kind), vao = gl.createVertexArray(), vbo = gl.createBuffer();
       gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
@@ -760,7 +854,7 @@ export class CityBuildings {
     if (m.models?.data.byteLength) g.models = this.uploadModels(gl, this.context(gl), m.models); this.stats.uploadMs = (this.stats.uploadMs || 0) + performance.now() - t0; this.stats.uploads = (this.stats.uploads || 0) + 1; return g;
   }
   // fill the buffers on: at most `budget` bytes; the bytes put up
-  feed(gl, g, m, budget) {
+  feed(gl:WebGL2RenderingContext, g:GpuTile, m:Built, budget:number) {
     const t0 = performance.now(); let used = 0;
     if (g.vOff < m.verts.byteLength) {
       const n = Math.min(budget, m.verts.byteLength - g.vOff);
@@ -776,11 +870,11 @@ export class CityBuildings {
     const st = this.stats, dt = performance.now() - t0; st.uploadMs = (st.uploadMs || 0) + dt; st.feedMaxMs = Math.max(st.feedMaxMs || 0, dt);
     return used;
   }
-  free(gl, e) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.models) { gl.deleteVertexArray(g.models.vao); gl.deleteBuffer(g.models.vbo) } for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
+  free(gl:WebGL2RenderingContext, e:TileEntry) { const g = e.gpu.get(gl); if (!g) return; gl.deleteVertexArray(g.vao); gl.deleteBuffer(g.vbo); gl.deleteBuffer(g.ibo); if (g.models) { gl.deleteVertexArray(g.models.vao); gl.deleteBuffer(g.models.vbo) } for (const I of Object.values(g.inst || {})) { gl.deleteVertexArray(I.vao); gl.deleteBuffer(I.vbo) } e.gpu.delete(gl) }
   // ── the look: the pack's colours for this theme and mode, linear, as uniform tables ──
   // 간판 글자 그림: 처음 쓸 때 한 번 만들고(메인 스레드 캔버스), GL 마다 R8 텍스처 한 장(밉맵 — 멀어도 반짝이지 않게)을 칸 14 에 묶는다.
   // 지금 칸(ACTIVE_TEXTURE) · 풀기 설정은 되돌린다(MapLibre 가 기억한 상태와 어긋나지 않게). 캔버스가 없으면 예전 획 무늬
-  signText(gl, u) {
+  signText(gl:WebGL2RenderingContext, u:Uniforms) {
     if (this.signAtlas === undefined) this.signAtlas = buildSignAtlas();
     const A = this.signAtlas, unit = 14; let T = (this.signTex ||= new WeakMap()).get(gl);
     if (A && !T) {
@@ -788,66 +882,69 @@ export class CityBuildings {
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, SIGN_ATLAS.size, SIGN_ATLAS.size, 0, gl.RED, gl.UNSIGNED_BYTE, A.data); gl.generateMipmap(gl.TEXTURE_2D);
-      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]] as [number, number][]) gl.texParameteri
+(gl.TEXTURE_2D, k, v);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, fy); gl.pixelStorei(gl.UNPACK_ALIGNMENT, al); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pm); gl.activeTexture(act);
       this.signTex.set(gl, T = t);
     }
-    if (T) { const act = gl.getParameter(gl.ACTIVE_TEXTURE); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, T); gl.activeTexture(act); gl.uniform1fv(u.u_signHW, A.hWidth); gl.uniform1fv(u.u_signVL, A.vLen) }
+    if (T) { const act = gl.getParameter(gl.ACTIVE_TEXTURE); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, T); gl.activeTexture(act); gl.uniform1fv(u.u_signHW, A!.hWidth); gl.uniform1fv(u.u_signVL, A!.vLen) }
     gl.uniform1i(u.u_signText, unit); gl.uniform1f(u.u_signOn, T ? 1 : 0);
   }
   paletteFor() {
-    const P = this.P, th = this.theme, mode = P.modes[this.tone] || P.modes.simcity || {}, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
-    const L = h => { const c = hexRGB(h).map(v => v ** 2.2), Y = c[0] * lw[0] + c[1] * lw[1] + c[2] * lw[2]; return c.map(v => (Y + (v - Y) * sat) * bri) };
-    const pick = o => o && (o[th] || o.light);
+    const P = this.P, th = this.theme, mode = (P.modes[this.tone] || P.modes.simcity || {}) as BuildingsModeTone, sat = num(mode.saturation?.[th], 1), bri = num(mode.brightness?.[th], 1), lw = (P.modes.colorMath?.lumaWeights) || [.2126, .7152, .0722];
+    const L = (h:string | null | undefined) => { const c = hexRGB(h).map(v => v ** 2.2), Y = c[0]! * lw[0]! + c[1]! * lw[1]! + c[2]! * lw[2]!; return c.map(v => (Y + (v - Y) * sat) * bri) };
+    const pick = <V = string,>(o:unknown) => (o && ((o as Partial<Record<string, V>>)[th] || (o as Partial<Record<string, V>>).light)) as V | undefined;
     // material slots: wall, glass (the family's; a legacy type slot takes the type's glass, else the default), facade
     const mwall = [], mglass = [], mfac = [], mbay = [], defGlass = pick(P.glass) || '#52696C';
     for (let i = 0; i < 32; i++) {
       const m = P.materials[i]; if (!m) { mwall.push(0, 0, 0); mglass.push(0, 0, 0); mfac.push(-1, 0, 0, 0); mbay.push(0); continue }
       mbay.push(m.bayEff || 0);
       mwall.push(...L(pick(m.wall) || '#999999'));
-      let g = pick(m.glass); if (!g && m.family.startsWith('type-')) { const T = P.types[P.byKey[m.family.slice(5)]]; g = T && pick(T.glass) }
+      let g = pick(m.glass); if (!g && m.family.startsWith('type-')) { const T = P.types[P.byKey[m.family.slice(5)]!]; g = T && pick(T.glass) }
       mglass.push(...L(g || defGlass)); mfac.push(m.pattern, m.winW, m.winH, m.refl);
     }
     const roofPal = []; for (let i = 0; i < 64; i++) { const r = P.roofs[i]; roofPal.push(...(r ? L(pick(r) || '#888888') : [.3, .3, .3])) }
     const ground = [], tA = [], tB = [], tC = [], tD = [], tE = [], tF = [], tG = [], litMean = [];
-    const NL = th === 'dark' && this.night?.lights ? P.pack?.night?.lights : null;   // 밤 불빛 다시 맞추기(팩 night.lights): 다크 · 켰을 때만
+    const NL = th === 'dark' && this.night?.lights ? (P.pack as BuildingsPack | undefined)?.night?.lights : null;   // 밤 불빛 다시 맞추기(팩 night.lights): 다크 · 켰을 때만
     const litCols = P.lit.colors.map(c => c.map(v => v ** 2.2)), em = num(mode.windowEmission, 1), emK = NL ? num(NL.emissionMul, 1) : 1, gemK = NL ? num(NL.groundEmissionMul, 1) : 1;
     for (const T of P.types) {
       const gc = pick(T.groundColor); ground.push(...(gc ? L(gc) : [0, 0, 0]), gc ? 1 : 0);
       tA.push(T.floorM, T.bayEff, T.winW, T.winH); tB.push(T.groundM, T.groundGlass, T.litRatio, T.groundLit);   // the bay as the mesh counted it (piers at least the pack's minimum)
       const pat = T.pattern; let p1 = 0, p2 = 0, p3 = 0;
-      if (pat === 0) { p1 = T.baysPerGroup?.[0] ?? 2; p2 = T.baysPerGroup?.[1] ?? 4 } else if (pat === 1) { p1 = T.balconyEvery; p2 = T.balconyBright } else if (pat === 2) p1 = T.spandrelM; else if (pat === 3) { p1 = T.mullionM; p2 = T.beltEvery; p3 = T.beltM } else if (pat === 4) p1 = T.ribM ? .15 : 0;
+      if (pat === 0) { p1 = (T.baysPerGroup as number[] | null)?.[0] ?? 2; p2 = (T.baysPerGroup as number[] | null)?.[1] ?? 4 } else if (pat === 1) { p1 = T.balconyEvery; p2 = T.balconyBright } else if (pat === 2) p1 = T.spandrelM; else if (pat === 3) { p1 = T.mullionM; p2 = T.beltEvery; p3 = T.beltM } else if (pat === 4) p1 = T.ribM ? .15 : 0;
       tC.push(pat, p1, p2, p3);
-      const w = T.tempW; tD.push(w[0], w[0] + w[1], gc ? 1 : 0, 0);
-      litMean.push(...[0, 1, 2].map(i => w[0] * litCols[0][i] + w[1] * litCols[1][i] + w[2] * litCols[2][i]));
+      const w = T.tempW; tD.push(w[0]!, w[0]! + w[1]!, gc ? 1 : 0, 0);
+      litMean.push(...[0, 1, 2].map(i => w[0]! * litCols[0]![i]! + w[1]! * litCols[1]![i]! + w[2]! * litCols[2]![i]!));
       const fm = T.nightFloorMul || P.lit.floorMul; tE.push((Number.isFinite(T.nightEmission) ? T.nightEmission : P.lit.emission) * em * emK, (Number.isFinite(T.nightGroundEmission) ? T.nightGroundEmission : P.lit.groundEmission) * em * gemK, num(fm[0], .65), num(fm[1], 1.2));
-      const tiers = T.tiers, tm = tiers?.multipliers || [1, 1, 1], tw = tiers?.weights || [0, 0, 0];
-      tF.push(num(T.nightWin?.[0], 0), num(T.nightWin?.[1], 0), T.maxContig, tiers ? num(tw[0], 0) + num(tw[1], 0) : 0);
+      const tiers = T.tiers as Tiers | null, tm = tiers?.multipliers || [1, 1, 1], tw = tiers?.weights || [0, 0, 0];
+      tF.push(num((T.nightWin as unknown[] | null)?.[0], 0), num((T.nightWin as unknown[] | null)?.[1], 0), T.maxContig, tiers ? num(tw[0], 0) + num(tw[1], 0) : 0);
       tG.push(num(tm[0], 1), num(tm[1], 1), num(tm[2], 1), tiers ? num(tw[0], 0) : 0);
     }
-    const house = P.types[0], shop = P.types[2], office = P.types[P.byKey.office] || P.types[3];
-    const pitched = (pick(house.pitched?.colors) || ['#855B49', '#656F68', '#9D7658']).flatMap(L);
-    const awning = (pick(shop.awning?.colors) || ['#9C614D', '#667C6B', '#C2AC76']).flatMap(L);
-    const SG = P.signs || {}, sign = Array.from({ length: 8 }, (_, i) => L((SG.colors || ['#C8372D'])[i % (SG.colors || ['#C8372D']).length])).flat(), signInk = [L(SG.ink?.light || '#F7F5EE'), L(SG.ink?.dark || '#1E2326')].flat(), signNight = num(SG.nightEmission, .95) * (NL ? num(NL.signMul, 1) : 1);   // 간판
-    const light = th === 'dark' ? P.dark : P.light, lc = hexRGB(light.color || '#ffffff').map(v => v ** 2.2), mx = Math.max(...lc), MN = NL?.moon, mc = MN ? hexRGB(MN.color || '#ffffff').map(v => v ** 2.2) : [1, 1, 1], mm = Math.max(...mc), lightCol = lc.map((v, i) => v / mx * (MN ? mc[i] / mm * num(MN.k, 1) : 1));   // (밤 불빛: 벽 · 지붕을 달빛처럼 어둡고 푸르게 — 켜진 창 · 간판이 그 위에서 빛나 보이게)
+    const house = P.types[0]!, shop = P.types[2]!, office = P.types[P.byKey.office!] || P.types[3]!;
+    const pitched = (pick<string[]>((house.pitched as ColorsLook)?.colors) || ['#855B49', '#656F68', '#9D7658']).flatMap(L);
+    const awning = (pick<string[]>((shop.awning as ColorsLook)?.colors) || ['#9C614D', '#667C6B', '#C2AC76']).flatMap(L);
+    const SG = (P.signs || {}) as SignsLook, sign = Array.from({ length: 8 }, (_, i) => L((SG.colors || ['#C8372D'])[i % (SG.colors || ['#C8372D']).length])).flat(), signInk = [L(SG.ink?.light || '#F7F5EE'), L(SG.ink?.dark || '#1E2326')].flat(), signNight = num(SG.nightEmission, .95) * (NL ? num(NL.signMul, 1) : 1);   // 간판
+    const light = th === 'dark' ? P.dark : P.light, lc = hexRGB(light.color || '#ffffff').map(v => v ** 2.2), mx = Math.max(...lc), MN = NL?.moon, mc = MN ? hexRGB(MN.color || '#ffffff').map(v => v ** 2.2) : [1, 1, 1], mm = Math.max(...mc), lightCol = lc.map((v, i) => v / mx * (MN ? mc[i]! / mm * num(MN.k, 1) : 1));   // (밤 불빛: 벽 · 지붕을 달빛처럼 어둡고 푸르게 — 켜진 창 · 간판이 그 위에서 빛나 보이게)
     const sideDark = th === 'dark' ? num(light.maxSideDarken, .15) : num(light.maxSideDarken, .2), roofBright = num(light.maxRoofBrighten, th === 'dark' ? .05 : .08);
     // glass by day (QA1 dayReflection): diffuse range, the sky mixed in over a height range by face strength up to a cap, the broad band's ΔL*
-    const R = office.dayReflection || {}, on = R.enabled !== false, pair = (v, a, b) => Array.isArray(v) ? [num(v[0], a), num(v[1] ?? v[0], b)] : v != null && Number.isFinite(+v) ? [+v, +v] : [a, b];
+    const R = (office.dayReflection || {}) as DayReflection, on = R.enabled !== false, pair = (v:unknown, a:number, b:number):Range2 => Array.isArray(v) ? [num(v[0], a), num(v[1] ?? v[0], b)] : v != null && Number.isFinite(+v) ? [+v, +v] : [a, b];
     const dr = pair(R.diffuseRangeLinear, .66, 1.04), mh = pair(R.mixByHeight, .06, .2), bw = pair(R.bandWidthRatio, .2, .35), hr = pair(R.heightRangeRatio, .15, .95), fsr = pair(R.faceStrengthRange, .65, 1), bd = pair(R.bandDeltaLStar, 4, 7);
     const refl = [dr[0], dr[1], mh[0], mh[1]], reflB = [on ? num(R.maxMix, .24) : 0, bw[0], bw[1], 0], reflH = [hr[0], hr[1], fsr[0], fsr[1]], reflD = on ? [bd[0], bd[1], 0, 0] : [0, 0, 0, 0];
     const sky = [...L(R.skyHorizon || '#EEF3F1'), ...L(R.skyZenith || '#C5E4F7')];
     // the office's articulation (QA1): where it starts, the top zone, belt rhythms and thicknesses, corner widths, the ΔL* of corners and crown
-    const AR = office.articulation, be = AR?.beltEveryFloors, beArr = (Array.isArray(be) ? be : be != null ? [be] : [6, 8, 10]).map(v => num(v, 6)), tz = pair(AR?.topZoneHeightRatio, .06, .1);
+    const AR = office.articulation as ArticulationLook | null, be = AR?.beltEveryFloors, beArr = (Array.isArray(be) ? be : be != null ? [be] : [6, 8, 10]).map(v => num(v, 6)), tz = pair(AR?.topZoneHeightRatio, .06, .1);
     const art = AR ? [num(AR.minHeightM, 60), num(AR.minDetailZoom, 16.5), 0, 0] : [0, 99, 0, 0];   // (maxAccentFacadeAreaRatio is applied by the mesh: the corner width share a building)
-    const artTop = [tz[0], tz[1], num(AR?.maxTopZoneHeightM, 4.5)], artBelt = [beArr[0], beArr[1] ?? beArr[0], beArr[2] ?? beArr[beArr.length - 1], Math.min(3, beArr.length)];
+    const artTop = [tz[0], tz[1], num(AR?.maxTopZoneHeightM, 4.5)], artBelt = [beArr[0]!, beArr[1] ?? beArr[0]!, beArr[2] ?? beArr[beArr.length - 1]!, Math.min(3, beArr.length)];
     const bh = pair(AR?.beltHeightM, .35, .55), cw = pair(AR?.cornerWidthM, .35, .65), cd = pair(AR?.cornerDeltaLStar, 5, 9), kd = pair(AR?.crownDeltaLStar, 8, 14);
     const artDim = [bh[0], bh[1], cw[0], cw[1]], artDL = [cd[0], cd[1], kd[0], kd[1]];
     // buildings the viaduct passes through: the rail-height code, the band, its glass / posts / lit hall (linear), the mixes and the night brightness
     const TH = P.through, thGlass = L(pick(TH.glass) || '#A9CBD8'), thFrame = L(pick(TH.frame) || '#55626A'), thInside = L(typeof TH.inside === 'string' ? TH.inside : pick(TH.inside) || '#F3ECDA');
     const through = [RAIL_Q.base, RAIL_Q.step, 0, TH.depthOpen ? 1 : 0], thBand = [TH.below, TH.above, TH.mull, TH.mullEvery], thMix = [TH.skyMix, TH.insideMix, TH.nightEmission];   // (night: × the type's lit-window emission, which already carries the mode's windowEmission)
     // 조선 모드 (pack.hanok): the house's materials, the 기와, the platform and posts, the lit paper
-    const HK = P.hanok, hc = HK ? (HK.colors?.[th] || HK.colors?.light) : null;
-    const hk = (hc ? [hc.wood, hc.plaster, hc.paper, hc.stone, hc.dam, hc.soffit, HK.night?.paper || '#FFC774', hc.ridge] : new Array(8).fill('#888888')).flatMap(L);
+    const HK = P.hanok as HanokSpec | null, hc
+ = HK ? (HK.colors?.[th] || HK.colors?.light) : null;
+    const hk = (hc ? [hc.wood, hc.plaster, hc.paper, hc.stone, hc.dam, hc.soffit, HK!.night?.paper || '#FFC774'
+, hc.ridge] : new Array(8).fill('#888888')).flatMap(L);
     const giwa = [0, 1, 2].flatMap(i => L(hc ? hc.giwa[i % hc.giwa.length] : '#555555')).concat(L(hc?.spire || '#C99B3A'));
     const hk2 = (hc ? [...[0, 1, 2].map(i => (hc.thatch || ['#C3A05E'])[i % (hc.thatch || [1]).length]), hc.mud || '#C4AA83', ...[0, 1].map(i => (hc.field || ['#9C978B'])[i % (hc.field || [1]).length]), hc.glass || '#718887'] : new Array(7).fill('#888888')).flatMap(L);
     const KG = HK?.tall?.skirtGroup || {}, hkG = [num(KG.widthM, 8), num(KG.gapM, 2.2), num(KG.cornerK, .2), num(KG.cornerM?.[0], 3.5), num(KG.cornerM?.[1], 6.5), num(KG.minM, 4.5), 0, 0];
@@ -858,19 +955,19 @@ export class CityBuildings {
     return { nightUp, nightK, nightF, hk, hk2, hkG, giwa, hkP, hkE, through, thBand, thGlass, thFrame, thInside, thMix, mwall, mglass, mfac, mbay, roofPal, ground, tA, tB, tC, tD, tE, tF, tG, litMean, pitched, awning, sign, signInk, signNight, equip: L(pick(P.equip.colors)), lit: litCols.flat(), lightCol, shade: [sideDark, roofBright, th === 'dark' ? 1 : 0, 0], ao: [num(P.ao.opacity, .1), num(P.ao.widthM, .5)], refl, reflB, reflH, reflD, sky, art, artTop, artBelt, artDim, artDL, lodPx: P.lodPx };
   }
   sunDir() {
-    let az, el; try { const s = sunPosition(window.__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
+    let az, el; try { const s = sunPosition((window as Window & { __sunTime?:Date }).__sunTime || new Date()); az = s.azimuth; el = s.elevation } catch { el = -1 }
     if (!(el > 3) || this.theme === 'dark') { az = num(this.P.refSun.azimuthDeg, 225); el = num(this.P.refSun.elevationDeg, 42) }
-    const a = az * RAD, e = el * RAD; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)];   // toward the sun; mercator y points south
+    const a = az! * RAD, e = el * RAD; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)];   // toward the sun; mercator y points south
   }
   // ── drawing ──
-  render(gl, options) {
+  render(gl:WebGL2RenderingContext, options:CustomRenderMethodInput) {
     this.frame++; this.now = performance.now();
     if (!this.shown()) { this.visible = []; return }
     this.collect();
     this.draw(gl, options.defaultProjectionData.mainMatrix, false);
   }
   // the walls' depth into the train canvas (its own GL context); true when anything was drawn
-  drawDepth(gl, M) {
+  drawDepth(gl:WebGL2RenderingContext, M:ArrayLike<number>) {
     if (!this.shown() || !this.visible.length) { this.xr = null; return false }
     this.xrayFrame(gl, M);   // this frame's x-ray boxes (심시티): the depth pass leaves them open, drawGlass tints them after
     return this.draw(gl, M, true);
@@ -879,19 +976,19 @@ export class CityBuildings {
   // targets: [{id, ax, ay, bx, by, z0, z1, w, m}] in mercator units (a segment, its bottom/top height, half width; m = one metre),
   // from the runtime each frame (null: off). Cut into pieces, projected to screen boxes with their farthest depth, nearest the
   // view centre first, each fading in over the pack's fadeMs when it first shows
-  setXray(targets) { this.xrayIn = targets && targets.length ? targets : null }
-  xrayFrame(gl, M) {
+  setXray(targets:XrayTarget[] | null | undefined) { this.xrayIn = targets && targets.length ? targets : null }
+  xrayFrame(gl:WebGL2RenderingContext, M:ArrayLike<number>) {
     const X = this.P.xray; this.xr = null; if (!this.xrayIn || !X) { this.xrSeen?.clear(); return }
     const now = performance.now(), seen = this.xrSeen || (this.xrSeen = new Map()), cand = [], live = new Set(), c = [0, 0, 0, 0];
-    const proj = (x, y, z) => { c[3] = M[3] * x + M[7] * y + M[11] * z + M[15]; c[0] = M[0] * x + M[4] * y + M[8] * z + M[12]; c[1] = M[1] * x + M[5] * y + M[9] * z + M[13]; c[2] = M[2] * x + M[6] * y + M[10] * z + M[14] };
+    const proj = (x:number, y:number, z:number) => { c[3] = M[3]! * x + M[7]! * y + M[11]! * z + M[15]!; c[0] = M[0]! * x + M[4]! * y + M[8]! * z + M[12]!; c[1] = M[1]! * x + M[5]! * y + M[9]! * z + M[13]!; c[2] = M[2]! * x + M[6]! * y + M[10]! * z + M[14]! };
     for (const t of this.xrayIn) {
       const dx = t.bx - t.ax, dy = t.by - t.ay, L = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(L / (X.pieceM * t.m))), ux = L > 0 ? dx / L : 1, uy = L > 0 ? dy / L : 0, px = -uy * t.w, py = ux * t.w;
       for (let k = 0; k < n; k++) {
         const s0 = L * k / n, s1 = L * (k + 1) / n; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zf = -Infinity, behind = false;
         for (let q = 0; q < 8; q++) {
           const s = q & 1 ? s1 : s0, sd = q & 2 ? 1 : -1; proj(t.ax + ux * s + px * sd, t.ay + uy * s + py * sd, q & 4 ? t.z1 : t.z0);
-          if (c[3] <= 1e-9) { behind = true; break }
-          const nx = c[0] / c[3], ny = c[1] / c[3], nz = c[2] / c[3]; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny; if (nz > zf) zf = nz;
+          if (c[3]! <= 1e-9) { behind = true; break }
+          const nx = c[0]! / c[3]!, ny = c[1]! / c[3]!, nz = c[2]! / c[3]!; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny; if (nz > zf) zf = nz;
         }
         if (behind || x1 < -1.05 || x0 > 1.05 || y1 < -1.05 || y0 > 1.05 || zf > 1) continue;
         const id = t.id + '#' + k; live.add(id); if (!seen.has(id)) seen.set(id, now);
@@ -901,27 +998,27 @@ export class CityBuildings {
     for (const id of seen.keys()) if (!live.has(id)) seen.delete(id);   // gone (off screen, or out of the list): in again with a fresh fade
     if (!cand.length) return;
     cand.sort((a, b) => a.c - b.c); const n = Math.min(cand.length, X.maxTargets, XR_N), R = new Float32Array(XR_N * 4), D = new Float32Array(XR_N * 2); let fading = false;
-    const U = [Infinity, Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < n; i++) { const t = cand[i], w = Math.min(1, (now - seen.get(t.id)) / Math.max(1, X.fadeMs)); if (w < 1) fading = true; R.set(t.r, i * 4); D[i * 2] = t.d; D[i * 2 + 1] = w * w * (3 - 2 * w); U[0] = Math.min(U[0], t.r[0]); U[1] = Math.min(U[1], t.r[1]); U[2] = Math.max(U[2], t.r[2]); U[3] = Math.max(U[3], t.r[3]) }
+    const U:[number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < n; i++) { const t = cand[i]!, w = Math.min(1, (now - seen.get(t.id)) / Math.max(1, X.fadeMs)); if (w < 1) fading = true; R.set(t.r, i * 4); D[i * 2] = t.d; D[i * 2 + 1] = w * w * (3 - 2 * w); U[0] = Math.min(U[0]!, t.r[0]!); U[1] = Math.min(U[1]!, t.r[1]!); U[2] = Math.max(U[2]!, t.r[2]!); U[3] = Math.max(U[3]!, t.r[3]!) }
     const fe = X.featherPx * 2 / Math.max(1, Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight)); U[0] -= fe; U[1] -= fe; U[2] += fe; U[3] += fe;
     this.xr = { R, D, n, U, fading };
     if (fading) this.map?.triggerRepaint();   // the fade runs on the map's frames (the train canvas follows them)
   }
-  xrayUniforms(gl, u, glass) {
+  xrayUniforms(gl:WebGL2RenderingContext, u:Uniforms, glass:boolean) {
     const xr = this.xr, X = this.P.xray;
     if (!xr) { gl.uniform1i(u.u_xn, 0); gl.uniform4f(u.u_xv, 1, 1, 1, 0); return }
     gl.uniform4fv(u.u_xr, xr.R); gl.uniform2fv(u.u_xd, xr.D); gl.uniform1i(u.u_xn, xr.n);
-    gl.uniform4f(u.u_xv, gl.drawingBufferWidth, gl.drawingBufferHeight, X.featherPx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), glass ? 1 : 0);
-    if (glass) gl.uniform4f(u.u_xa, X.alpha, X.edgeAlpha, X.edgePx * (gl.drawingBufferWidth / Math.max(1, gl.canvas.clientWidth || gl.drawingBufferWidth)), 0);
+    gl.uniform4f(u.u_xv, gl.drawingBufferWidth, gl.drawingBufferHeight, X.featherPx * (gl.drawingBufferWidth / Math.max(1, (gl.canvas as HTMLCanvasElement).clientWidth || gl.drawingBufferWidth)), glass ? 1 : 0);
+    if (glass) gl.uniform4f(u.u_xa, X.alpha, X.edgeAlpha, X.edgePx * (gl.drawingBufferWidth / Math.max(1, (gl.canvas as HTMLCanvasElement).clientWidth || gl.drawingBufferWidth)), 0);
   }
   // after the train canvas has drawn the decks and trains: the hiding buildings again, at the pack's opacity, over them
-  drawGlass(gl, M) {
+  drawGlass(gl:WebGL2RenderingContext, M:ArrayLike<number>) {
     if (!this.xr || !this.shown() || !this.visible.length) return false;
     return this.draw(gl, M, false, true);
   }
   // the uniforms both programs read (the buildings' and the 처마 instances'): the palette, light, x-ray, detail by zoom
-  uniforms(gl, u, depthOnly, glass, zoom) {
-    const K = this.palette || (this.palette = this.paletteFor()), sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
+  uniforms(gl:WebGL2RenderingContext, u:Uniforms, depthOnly:boolean, glass:boolean, zoom:number) {
+    const K = this.palette || (this.palette = this.paletteFor()), sm = (a:number, b:number, x:number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     gl.uniform4fv(u.u_through, K.through); gl.uniform4fv(u.u_thBand, K.thBand);   // both passes: the depth pass leaves the band open
     if (!depthOnly) {
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
@@ -931,20 +1028,20 @@ export class CityBuildings {
       this.signText(gl, u);
       gl.uniform4fv(u.u_ground, K.ground); gl.uniform3fv(u.u_pitched, K.pitched); gl.uniform3fv(u.u_awning, K.awning); gl.uniform3fv(u.u_sign, K.sign); gl.uniform3fv(u.u_signInk, K.signInk); gl.uniform1f(u.u_signNight, K.signNight); gl.uniform3fv(u.u_equip, K.equip); gl.uniform3fv(u.u_lit, K.lit); gl.uniform3fv(u.u_litMean, K.litMean);
       gl.uniform3fv(u.u_sun, this.sunDir()); gl.uniform3fv(u.u_lightCol, K.lightCol); gl.uniform4fv(u.u_shade, K.shade); gl.uniform4fv(u.u_nightUp, K.nightUp); gl.uniform4fv(u.u_nightK, K.nightK); gl.uniform2fv(u.u_nightF, K.nightF); gl.uniform2fv(u.u_ao, K.ao);
-      gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0], K.art[1], zoom, K.art[3]); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
+      gl.uniform4fv(u.u_refl, K.refl); gl.uniform4fv(u.u_reflB, K.reflB); gl.uniform4fv(u.u_reflH, K.reflH); gl.uniform4fv(u.u_reflD, K.reflD); gl.uniform3fv(u.u_sky, K.sky); gl.uniform4f(u.u_art, K.art[0]!, K.art[1]!, zoom, K.art[3]!); gl.uniform3fv(u.u_artTop, K.artTop); gl.uniform4fv(u.u_artBelt, K.artBelt); gl.uniform4fv(u.u_artDim, K.artDim); gl.uniform4fv(u.u_artDL, K.artDL); gl.uniform2fv(u.u_lodPx, K.lodPx);
     }
     const lodE = this.P.lod.equipment;
-    gl.uniform2f(u.u_detail, sm(lodE[0], lodE[1], zoom), sm(lodE[1], lodE[1] + .5, zoom)); gl.uniform1f(u.u_maxH, this.maxHeight); gl.uniform1f(u.u_S, S);
+    gl.uniform2f(u.u_detail, sm(lodE[0]!, lodE[1]!, zoom), sm(lodE[1]!, lodE[1]! + .5, zoom)); gl.uniform1f(u.u_maxH, this.maxHeight); gl.uniform1f(u.u_S, S);
     if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
     this.xrayUniforms(gl, u, glass);   // x-ray boxes: the depth pass and the glass pass on the train canvas; none in the map's own pass (it has no boxes then)
   }
-  draw(gl, M, depthOnly, glass = false) {
-    const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
+  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, depthOnly:boolean, glass = false) {
+    const t0 = performance.now(), map = this.map!, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
     gl.useProgram(prog.p);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
     if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
     this.uniforms(gl, u, depthOnly, glass, zoom);
-    const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
+    const sm = (a:number, b:number, x:number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
     const M64 = this.M64, M32 = this.M32, skirts = [], models = []; let growing = false, drawn = false, draws = 0;
@@ -954,33 +1051,33 @@ export class CityBuildings {
       let g = e.gpu.get(gl);
       if (!g || !g.done) {
         if (budget <= 0) { growing = true; continue }
-        if (!e.mesh.verts) { this.tiles.delete(e.key); for (const g2 of this.ctx.keys()) this.free(g2, e); this.schedule(); continue }   // its bytes already let go (phones): built again
+        if (!e.mesh!.verts) { this.tiles.delete(e.key); for (const g2 of this.ctx.keys()) this.free(g2, e); this.schedule(); continue }   // its bytes already let go (phones): built again
         if (!g) g = this.upload(gl, e);
-        budget -= this.feed(gl, g, e.mesh, budget);
+        budget -= this.feed(gl, g, e.mesh as Built, budget);
         if (!g.done) { growing = true; continue }
         // phones: once both canvases (the map's and the trains') hold it, the JS copy is let go — a third copy of the city
-        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh.verts = null; e.mesh.idx = null; e.mesh.inst = null; e.mesh.models = e.mesh.models && { groups: e.mesh.models.groups, data: { byteLength: e.mesh.models.data.byteLength } } }
+        if (this.phone && e.gpu.size >= 2 && [...e.gpu.values()].every(x => x.done)) { e.mesh!.verts = null; e.mesh!.idx = null; e.mesh!.inst = null; e.mesh!.models = e.mesh!.models && { groups: e.mesh!.models.groups, data: { byteLength: e.mesh!.models.data.byteLength } } }
       }
-      const m = e.mesh;
+      const m = e.mesh!;
       const t = Math.min(1, (now - e.readyAt) / GROW_MS), grow = zoomGrow * (t < 1 ? (growing = true, t * t * (3 - 2 * t)) : 1);
       if (grow <= 0) continue;
       const tox = cmx - m.ox, toy = cmy - m.oy;   // the view centre in the tile's frame
-      for (let i = 0; i < 16; i++) M64[i] = M[i];
-      for (let r = 0; r < 4; r++) M64[12 + r] = M[r] * m.ox + M[4 + r] * m.oy + M[12 + r];   // M · translate(tile origin), in double
+      for (let i = 0; i < 16; i++) M64[i] = M[i]!;
+      for (let r = 0; r < 4; r++) M64[12 + r] = M[r]! * m.ox + M[4 + r]! * m.oy + M[12 + r]!;   // M · translate(tile origin), in double
       M32.set(M64);
       gl.uniformMatrix4fv(u.u_matrix, false, M32); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy); gl.uniform1f(u.u_grow, grow);
       gl.bindVertexArray(g.vao);
-      const sk = Object.keys(g.inst || {}).length ? { g, m, M: Float32Array.from(M32), chunks: [] } : null;   // 조선 instances: drawn after, by their own programs
+      const sk:SkirtDraw | null = Object.keys(g.inst || {}).length ? { g, m, M: Float32Array.from(M32), chunks: [] } : null;   // 조선 instances: drawn after, by their own programs
       for (const c of m.chunks) {
         if (!this.noCull && !this.inView(M64, c, m.mpu * grow)) continue;
-        if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr.U)) continue;   // the glass pass: only chunks under an x-ray box
+        if (glass && !this.hitsBox(M64, c, m.mpu * grow, this.xr!.U)) continue;   // the glass pass: only chunks under an x-ray box
         const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW, nk = sk ? Object.values(c.k).some(([k0, kF, k1]) => (hi ? k1 : kF) > k0) : false; if (b <= a && !nk) continue;
         let f = 1;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
           const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu; f = 1 - sm(far[0], far[1], d);
           if (f <= 0) continue; gl.uniform1f(u.u_grow, grow * f);
         }
-        if (nk) sk.chunks.push(c, grow * f);
+        if (nk) sk!.chunks.push(c, grow * f);
         if (b > a) { if (!this.skipDraw) gl.drawElements(gl.TRIANGLES, b - a, gl.UNSIGNED_INT, a * 4); drawn = true; draws++ }
       }
       if (sk && sk.chunks.length) skirts.push(sk);
@@ -995,12 +1092,12 @@ export class CityBuildings {
     return drawn;
   }
   // 스타크래프트 모형 템플릿(이 문맥에 한 번 — 종족이 바뀌면 다시): 꼭짓점 8 float · Uint32 색인
-  modelTemplate(gl, C) {
-    const T = cityPart('race').templates(this.phone ? { ...this.P.race, lod: 'low' } : this.P.race);   // 휴대폰: 낮은 디테일 템플릿(같은 번호)
+  modelTemplate(gl:WebGL2RenderingContext, C:GlCtx):ModelTemplate {
+    const T = (cityPart('race') as unknown as RacePart).templates(this.phone ? { ...this.P.race, lod: 'low' } : this.P.race);   // 휴대폰: 낮은 디테일 템플릿(같은 번호)
     if (C.model?.key === T.key) return C.model;
     if (C.model) { gl.deleteBuffer(C.model.vbo); gl.deleteBuffer(C.model.ibo) }
     // 끝에 가림 상자 하나(깊이 패스 — 열차 층의 가림에만 쓰여 보이지 않는다): 칸 ±1, 높이 0..1(그리기 때 u_ztop 으로 그 템플릿 꼭대기까지). 옆 넷 + 윗면 10 삼각형
-    const nb = T.verts.length / 8, bv = [], bi = [], P4 = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    const nb = T.verts.length / 8, bv = [], bi = [], P4:Range2[] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
     for (const z of [0, 1]) for (const [x, y] of P4) bv.push(x, y, z, 0, 0, 1, 0, 16);
     for (let k = 0; k < 4; k++) { const a = k, b = (k + 1) % 4; bi.push(a, b, b + 4, a, b + 4, a + 4) }
     bi.push(4, 5, 6, 4, 6, 7);
@@ -1012,10 +1109,10 @@ export class CityBuildings {
     return (C.model = { key: T.key, vbo, ibo, ranges: T.ranges, tops: T.tops, box: [T.idx.length, bi.length], bytes: verts.byteLength + idx.byteLength });
   }
   // 한 타일의 모형 기록: 템플릿 점(0~3) + 기록(4~7, 한 기록에 한 번)
-  uploadModels(gl, C, mm) {
+  uploadModels(gl:WebGL2RenderingContext, C:GlCtx, mm:NonNullable<Built['models']>):GpuModels {
     const tpl = this.modelTemplate(gl, C), vao = gl.createVertexArray(), vbo = gl.createBuffer();
     gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, tpl.vbo);
-    for (const [loc, n, off] of [[0, 3, 0], [1, 3, 12], [2, 1, 24], [3, 1, 28]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 32, off) }
+    for (const [loc, n, off] of [[0, 3, 0], [1, 3, 12], [2, 1, 24], [3, 1, 28]] as [number, number, number][]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 32, off) }
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, mm.data, gl.STATIC_DRAW);
     for (const loc of [4, 5, 6, 7]) { gl.enableVertexAttribArray(loc); gl.vertexAttribDivisor(loc, 1) }
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tpl.ibo);
@@ -1023,7 +1120,7 @@ export class CityBuildings {
     return { vao, vbo, tpl, groups: mm.groups };
   }
   // 스타크래프트 모형: 타일마다 템플릿 하나에 그 기록들을 한 번에(같은 FS · 깊이 FS). 유리(x-ray) 칸에는 안 그린다
-  drawModels(gl, C, depthOnly, glass, zoom, list) {
+  drawModels(gl:WebGL2RenderingContext, C:GlCtx, depthOnly:boolean, glass:boolean, zoom:number, list:ModelDraw[]) {
     const prog = depthOnly ? (C.modelDepth ||= compile(gl, VS_MODEL, FS_DEPTH)) : (C.modelColor ||= compile(gl, VS_MODEL, FS)), u = prog.u;
     const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
     gl.useProgram(prog.p); this.uniforms(gl, u, depthOnly, glass, zoom); gl.uniform1f(u.u_S, S); gl.uniform1f(u.u_ztop, 0);
@@ -1049,11 +1146,11 @@ export class CityBuildings {
   // 조선 instances (처마 조각 · 지붕 · 벽 상자): each kind's template drawn once per record of the visible chunks — far its far
   // records and far range, near all of them (phones: the 처마 without its edge); neighbouring chunks' runs drawn as one.
   // Both sides drawn: a roof is an open surface
-  drawInst(gl, C, depthOnly, glass, zoom, hi, list) {
-    const H = this.P.hanok || {}, T = H.tall || {}, G = T.skirtGroup || {}, R = H.ridge || {};
+  drawInst(gl:WebGL2RenderingContext, C:GlCtx, depthOnly:boolean, glass:boolean, zoom:number, hi:boolean, list:SkirtDraw[]) {
+    const H = (this.P.hanok || {}) as HanokSpec, T = H.tall || {}, G = T.skirtGroup || {}, R = H.ridge || {};
     const cull = gl.isEnabled(gl.CULL_FACE); gl.disable(gl.CULL_FACE);
     let draws = 0;
-    for (const [kind, I] of Object.entries(INST)) {
+    for (const [kind, I] of Object.entries(INST) as [InstKind, typeof INST[InstKind]][]) {
       if (!list.some(t => t.g.inst[kind])) continue;
       const C2 = C.inst[kind] || (C.inst[kind] = {}), prog = depthOnly ? (C2.depth ||= compile(gl, I.vs, FS_DEPTH)) : (C2.color ||= compile(gl, I.vs, FS)), u = prog.u, stride = INST_STRIDES[kind];   // (each compiled when first drawn: the big FS takes long to compile on some GPUs)
       let used = false;
@@ -1069,7 +1166,7 @@ export class CityBuildings {
         const tpl = gi.tpl, [i0, n] = !hi ? tpl.far : zoom >= DETAIL_Z ? tpl.detail : this.phone ? tpl.nearPhone : tpl.near;
         gl.uniformMatrix4fv(u.u_matrix, false, M); gl.uniform1f(u.u_mpu, m.mpu); gl.uniform2f(u.u_wo, m.wox, m.woy);
         gl.bindVertexArray(gi.vao); gl.bindBuffer(gl.ARRAY_BUFFER, gi.vbo);
-        let run = null;
+        let run:{ a:number; b:number; grow:number } | null = null;
         const flush = () => {
           if (!run || run.b <= run.a) return;
           gl.uniform1f(u.u_grow, run.grow); const o = run.a * stride;
@@ -1077,7 +1174,8 @@ export class CityBuildings {
           if (!this.skipDraw) gl.drawElementsInstanced(gl.TRIANGLES, n, gl.UNSIGNED_SHORT, i0 * 2, run.b - run.a); draws++;
         };
         for (let k = 0; k < chunks.length; k += 2) {
-          const [k0, kF, k1] = chunks[k].k[kind], a = k0, b = hi ? k1 : kF, grow = chunks[k + 1]; if (b <= a) continue;
+          const [k0, kF, k1] = (chunks[k] as BuiltChunk).k[kind]!, a = k0, b = hi ? k1 : kF, grow = chunks[k + 1] as number;
+ if (b <= a) continue;
           if (run && run.b === a && run.grow === grow) { run.b = b; continue }   // (from afar a run joins only where no near-only records lie between: b === a)
           flush(); run = { a, b, grow };
         }
@@ -1089,25 +1187,25 @@ export class CityBuildings {
     return draws;
   }
   // the chunk's screen box against a box in NDC (x0,y0,x1,y1): false only when every corner is in front of the camera and the boxes miss
-  hitsBox(M, c, zs, U) {
+  hitsBox(M:ArrayLike<number>, c:BuiltChunk, zs:number, U:number[]) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (let i = 0; i < 8; i++) {
-      const x = i & 1 ? c.x1 : c.x0, y = i & 2 ? c.y1 : c.y0, z = i & 4 ? c.zmax * zs : 0, w = M[3] * x + M[7] * y + M[11] * z + M[15];
+      const x = i & 1 ? c.x1 : c.x0, y = i & 2 ? c.y1 : c.y0, z = i & 4 ? c.zmax * zs : 0, w = M[3]! * x + M[7]! * y + M[11]! * z + M[15]!;
       if (w <= 1e-9) return true;
-      const nx = (M[0] * x + M[4] * y + M[8] * z + M[12]) / w, ny = (M[1] * x + M[5] * y + M[9] * z + M[13]) / w;
+      const nx = (M[0]! * x + M[4]! * y + M[8]! * z + M[12]!) / w, ny = (M[1]! * x + M[5]! * y + M[9]! * z + M[13]!) / w;
       if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny;
     }
-    return !(x1 < U[0] || x0 > U[2] || y1 < U[1] || y0 > U[3]);
+    return !(x1 < U[0]! || x0 > U[2]! || y1 < U[1]! || y0 > U[3]!);
   }
   // the chunk's box against the clip volume: out when all eight corners lie beyond one plane; a box with a
   // corner behind the camera is kept (its plane tests mean nothing there)
-  inView(M, c, zs) {
+  inView(M:ArrayLike<number>, c:BuiltChunk, zs:number) {
     let out = 31, behind = 0;
     for (let i = 0; i < 8; i++) {
       const x = i & 1 ? c.x1 : c.x0, y = i & 2 ? c.y1 : c.y0, z = i & 4 ? c.zmax * zs : 0;
-      const w = M[3] * x + M[7] * y + M[11] * z + M[15];
+      const w = M[3]! * x + M[7]! * y + M[11]! * z + M[15]!;
       if (w <= 0) { behind++; continue }
-      const cx = M[0] * x + M[4] * y + M[8] * z + M[12], cy = M[1] * x + M[5] * y + M[9] * z + M[13], cz = M[2] * x + M[6] * y + M[10] * z + M[14];
+      const cx = M[0]! * x + M[4]! * y + M[8]! * z + M[12]!, cy = M[1]! * x + M[5]! * y + M[9]! * z + M[13]!, cz = M[2]! * x + M[6]! * y + M[10]! * z + M[14]!;
       let o = 0; if (cx < -w) o |= 1; if (cx > w) o |= 2; if (cy < -w) o |= 4; if (cy > w) o |= 8; if (cz > w) o |= 16;
       out &= o;
     }
