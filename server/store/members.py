@@ -229,6 +229,15 @@ class MemberStore:
         """지금 회원이 쓰는 avatar 값 모두(남은 사진 파일 정리용)."""
         return {row["avatar"] for row in self._all("SELECT avatar FROM users WHERE avatar IS NOT NULL", ())}
 
+    @staticmethod
+    def avatars_in_file(path: Path) -> set[str]:
+        """다른 DB 파일(백업 사본)의 avatar 값 모두 — 읽기만(immutable: 잠금 · WAL 파일을 만들지 않는다)."""
+        conn = sqlite3.connect(f"file:{Path(path).resolve()}?immutable=1", uri=True)
+        try:
+            return {row[0] for row in conn.execute("SELECT avatar FROM users WHERE avatar IS NOT NULL")}
+        finally:
+            conn.close()
+
     def delete_user(self, user_id: int, now: int) -> dict | None:
         """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다
         → {'avatar': 지운 회원의 avatar 값}(사진 파일은 부르는 쪽이 지운다) · 없던 회원이면 None."""
@@ -425,6 +434,17 @@ class MemberStore:
             conn.execute("UPDATE users SET avatar=NULL WHERE id=?", (user_id,))
             _log(conn, at, "avatar", user_id, reason)
             return True, row["avatar"]
+        return self._write(work)
+
+    def admin_photo_seen(self, user_id: int, at: int) -> str | None:
+        """관리자가 회원 사진을 볼 때: 지금 avatar 값을 읽으며 같은 트랜잭션에 'avatar_view' 기록(이유 없이 — 사용자 결정 2026-10-27).
+        올린 사진이 없거나 회원이 없으면 None(기록 안 남김)."""
+        def work(conn):
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None or not (row["avatar"] or "").startswith("photo:"):
+                return None
+            _log(conn, at, "avatar_view", user_id, "")
+            return row["avatar"]
         return self._write(work)
 
     def admin_reset_name(self, user_id: int, name: str, at: int, reason: str) -> bool | None:

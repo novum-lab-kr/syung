@@ -257,26 +257,41 @@ class MemberService:
         return self._set_avatar(user_id, avatar_value("character", character))
 
     def upload_photo(self, user_id: int, data: bytes) -> dict | None:
-        """사진 바이트 → 바뀐 내 정보. 받을 수 없는 사진이면 PhotoError(ValueError). 새 파일을 쓴 뒤 DB 를 바꾸고 앞 사진을 지운다."""
+        """사진 바이트 → 바뀐 내 정보. 받을 수 없는 사진이면 PhotoError(ValueError).
+        새 파일을 쓴 뒤 DB 를 바꾸고, DB 가 새 사진을 가리키지 않게 끝난 경우(실패 · 그사이 탈퇴)에만 새 파일을 지운다."""
         name = self.avatars.save(data, check_photo(data))
         try:
-            return self._set_avatar(user_id, avatar_value("photo", name), new_photo=name)
+            found, before = self.store.set_avatar(user_id, avatar_value("photo", name))
         except BaseException:
-            self.avatars.remove(name)   # DB 를 못 바꿨다 — 주인 없는 사진을 남기지 않는다
+            self._forget_file(name)   # DB 를 못 바꿨다 — 주인 없는 사진을 남기지 않는다
             raise
+        if not found:
+            self._forget_file(name)   # 그사이 탈퇴했다
+            return None
+        # 여기부터는 DB 가 새 사진을 가리킨다 — 앞 사진 정리가 실패해도 새 사진은 건드리지 않는다
+        self._forget_file(photo_name(before))
+        return self.me(user_id)
 
     def reset_avatar(self, user_id: int) -> dict | None:
         """기본 캐릭터로(올린 사진 파일은 지운다)."""
         return self._set_avatar(user_id, None)
 
-    def _set_avatar(self, user_id: int, value: str | None, new_photo: str | None = None) -> dict | None:
+    def _set_avatar(self, user_id: int, value: str | None) -> dict | None:
         found, before = self.store.set_avatar(user_id, value)
         if not found:
-            self.avatars.remove(new_photo)   # 그사이 탈퇴했다
             return None
-        if photo_name(before) and photo_name(before) != new_photo:
-            self.avatars.remove(photo_name(before))
+        self._forget_file(photo_name(before))
         return self.me(user_id)
+
+    def _forget_file(self, name: str | None) -> None:
+        """더는 DB 가 가리키지 않는 사진 파일을 지운다. 지우다 실패해도(디스크 · 권한) 요청은 성공으로 두고
+        파일은 하루 백업 전 정리(sweep_photos)가 다시 지운다."""
+        if not name:
+            return
+        try:
+            self.avatars.remove(name)
+        except OSError:
+            pass
 
     def photo(self, user_id: int, name: str) -> tuple[bytes, str] | None:
         """내 사진 바이트와 형식(webp · jpg). 지금 내 사진 이름이 아니면 None(남의 사진 · 지난 사진은 안 준다)."""
@@ -285,6 +300,10 @@ class MemberService:
             return None
         data = self.avatars.read(name)
         return (data, name.rsplit(".", 1)[1]) if data is not None else None
+
+    def photos_in_copy(self, db_file) -> set[str]:
+        """회원 DB 사본(백업이 막 뜬 파일)이 가리키는 사진 이름들."""
+        return {name for name in map(photo_name, MemberStore.avatars_in_file(db_file)) if name}
 
     def sweep_photos(self) -> list[str]:
         """어느 회원도 쓰지 않는 사진 파일(지우다 멈춘 것 등)을 지운다 → 지운 이름. 갓 쓴 파일(ORPHAN_AGE 안)은 둔다.
@@ -305,7 +324,7 @@ class MemberService:
     def delete(self, user_id: int) -> None:
         removed = self.store.delete_user(user_id, int(self._clock()))
         if removed:
-            self.avatars.remove(photo_name(removed["avatar"]))
+            self._forget_file(photo_name(removed["avatar"]))
 
     # ---- 카카오 연결 해제 웹훅 ----
     def check_kakao_webhook(self, authorization: str | None) -> None:
@@ -332,7 +351,7 @@ class MemberService:
         removed = self.store.delete_identity_user("kakao", subject, int(self._clock()))
         if removed is None:
             return False
-        self.avatars.remove(photo_name(removed["avatar"]))
+        self._forget_file(photo_name(removed["avatar"]))
         return True
 
     # ---- 승차권 ----

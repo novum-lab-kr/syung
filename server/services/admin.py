@@ -135,13 +135,20 @@ class AdminService:
         if done is None:
             return None
         counts, avatar = done
-        counts["photo"] = int(self.avatars.remove(photo_name(avatar)))
+        counts["photo"] = int(self._forget_file(photo_name(avatar)))
         return counts
 
+    def _forget_file(self, name: str | None) -> bool:
+        """DB 가 더는 가리키지 않는 사진 파일을 지운다 → 지웠나. 실패해도 조치는 끝난 것으로(하루 백업 전 정리가 다시 지운다)."""
+        try:
+            return self.avatars.remove(name)
+        except OSError:
+            return False
+
     def photo(self, user_id: int) -> tuple[bytes, str] | None:
-        """그 회원이 올린 사진 바이트와 형식(webp · jpg). 없으면 None. 보기만은 기록하지 않는다(내리기는 기록)."""
-        row = self.store.user(user_id)
-        name = photo_name(row["avatar"]) if row else None
+        """그 회원이 올린 사진 바이트와 형식(webp · jpg). 없으면 None. 이유는 받지 않고 볼 때마다 'avatar_view' 로 기록한다
+        (사용자 결정 2026-10-27 — 관리 화면 흐름은 그대로)."""
+        name = photo_name(self.store.admin_photo_seen(user_id, int(self.clock())))
         data = self.avatars.read(name) if name else None
         return (data, name.rsplit(".", 1)[1]) if data is not None else None
 
@@ -153,7 +160,7 @@ class AdminService:
         cleared, avatar = done
         if not cleared:
             raise AdminError("올린 사진이 없어요")
-        self.avatars.remove(photo_name(avatar))
+        self._forget_file(photo_name(avatar))
         return True
 
     def reset_name(self, user_id: int, body) -> str | None:

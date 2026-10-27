@@ -6,7 +6,7 @@ GET    /members/stats                → {total, today, week, month, providers:[
 GET    /members?q=&page=             → {total, page, pageSize, members:[{id,name,createdAt,provider,tickets,lastLogin,sessions}]}
 GET    /members/<번호>                → 목록 칸 + avatar · identities · ticketList(장소 · 경로 빼고) · log · 404
                                        avatar: null(기본 캐릭터) · {type:'character', id} · {type:'photo'}
-GET    /members/<번호>/avatar         → 그 회원이 올린 사진(내리기 전에 보려고) · 404(올린 사진 없음)
+GET    /members/<번호>/avatar         → 그 회원이 올린 사진(내리기 전에 보려고 · 볼 때마다 avatar_view 기록) · 404(올린 사진 없음)
 POST   /members/<번호>/places         {reason}            → {places:[{id,name,from:{name,lat,lng},to:{…}}]} — 열람 기록을 남긴다
 POST   /members/<번호>/logout         {reason}            → {ok, sessions} — 그 회원 세션 모두 삭제 · 기록
 POST   /members/<번호>/avatar         {reason}            → {ok} — 올린 사진 내리기(기본 캐릭터로 · 파일 삭제) · 기록 · 400(올린 사진 없음)

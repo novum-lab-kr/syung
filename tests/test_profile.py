@@ -14,14 +14,17 @@ import struct
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
+from unittest import mock
 import urllib.parse
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
 from server.config import MemberConfig
-from server.jobs.member_backup import backup_photos, prune
+import server.jobs.member_backup as member_backup
+from server.jobs.member_backup import backup_all, backup_photos, prune
 from server.routes.http import Server, make_handler
 from server.services.admin import AdminService
 from server.services.members import MemberService
@@ -47,7 +50,7 @@ def vp8(width=256, height=256) -> bytes:
     return chunk(b"VP8 ", b"\x10\x02\x00\x9d\x01\x2a" + struct.pack("<HH", width, height) + bytes(range(40)))
 
 
-def vp8x(flags=0x10, width=256, height=256) -> bytes:
+def vp8x(flags=0x00, width=256, height=256) -> bytes:
     return chunk(b"VP8X", bytes([flags, 0, 0, 0]) + (width - 1).to_bytes(3, "little") + (height - 1).to_bytes(3, "little"))
 
 
@@ -60,14 +63,20 @@ def webp_lossless(width=256, height=256) -> bytes:
     return riff(chunk(b"VP8L", b"\x2f" + bits.to_bytes(4, "little") + bytes(30)))
 
 
-def jpeg(width=256, height=256, *, app1=False, tail=b"") -> bytes:
+SCAN = b"\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00"
+
+
+def jpeg(width=256, height=256, *, app1=False, tail=b"", scan=bytes(range(1, 200)), between=b"") -> bytes:
     parts = [b"\xff\xd8", b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"]
     if app1:   # 사진기가 넣는 Exif(위치 GPS 가 여기에 든다)
         exif = b"Exif\x00\x00MM\x00\x2a\x00\x00\x00\x08" + b"GPS" * 10
         parts.append(b"\xff\xe1" + struct.pack(">H", len(exif) + 2) + exif)
     parts.append(b"\xff\xc0\x00\x11\x08" + struct.pack(">HH", height, width) + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01")
-    parts.append(b"\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00" + bytes(range(1, 200)) + b"\xff\xd9")
+    parts.append(SCAN + scan + between + b"\xff\xd9")   # between: 두 번째 스캔 앞에 끼울 조각(+ SCAN …)
     return b"".join(parts) + tail
+
+
+EXIF_SEGMENT = b"\xff\xe1\x00\x10Exif\x00\x00MMGPS!!"
 
 
 class FakeProvider:
@@ -130,7 +139,7 @@ class ProfileHttpTest(unittest.TestCase):
         return self.request("PUT", "/api/me/avatar", cookie=session, body=data, kind=kind)
 
     def files(self):
-        return sorted(path.name for path in self.photos.iterdir()) if self.photos.exists() else []
+        return sorted(path.name for path in self.photos.iterdir() if not path.name.startswith(".")) if self.photos.exists() else []
 
     def rows(self, sql, args=()):
         with contextlib.closing(sqlite3.connect(self.db)) as conn:
@@ -214,6 +223,14 @@ class ProfileHttpTest(unittest.TestCase):
             "직사각": jpeg(256, 300),
             "JPEG Exif(GPS)": jpeg(app1=True),
             "JPEG 뒤에 붙인 파일": jpeg(tail=b"PK\x03\x04zip"),
+            "JPEG 스캔 사이 Exif": jpeg(between=EXIF_SEGMENT + SCAN + b"\x05\x06"),
+            "JPEG EOI 뒤 Exif + EOI": jpeg(tail=EXIF_SEGMENT + b"\xff\xd9"),
+            "JPEG SOF 없음": b"\xff\xd8" + SCAN + b"\x01\xff\xd9",
+            "WebP 프레임 크기가 캔버스와 다름": riff(vp8x(), vp8(128, 128)),
+            "WebP 그림 조각 없음": riff(vp8x()),
+            "WebP 그림 조각 둘": riff(vp8x(), vp8(), vp8()),
+            "WebP 단순형 뒤 조각": riff(vp8(), chunk(b"ICCP", bytes(4))),
+            "WebP 알파 표시 없이 ALPH": riff(vp8x(), chunk(b"ALPH", bytes(5)), vp8()),
             "WebP EXIF 조각": riff(vp8x(0x10), vp8(), chunk(b"EXIF", b"MM\x00\x2aGPS")),
             "WebP EXIF 표시": riff(vp8x(0x18), vp8()),
             "움직이는 WebP": riff(vp8x(0x12), chunk(b"ANIM", bytes(6))),
@@ -230,7 +247,11 @@ class ProfileHttpTest(unittest.TestCase):
         self.assertEqual(self.request("PUT", "/api/me/avatar", body=webp(), kind="image/webp").status, 401)
         self.assertEqual(self.files(), [], "받지 않은 사진은 파일로 남지 않는다")
         self.assertIsNone(self.request("GET", "/api/me", cookie=session).json["avatar"])
-        self.assertEqual(check_photo(riff(vp8x(0x10), vp8())), "webp", "알파 표시만 있는 VP8X 는 받는다")
+        self.assertEqual(check_photo(riff(vp8x(0x10), chunk(b"ALPH", bytes(5)), vp8())), "webp", "알파가 있는 손실 WebP")
+        self.assertEqual(check_photo(riff(vp8x(), vp8())), "webp")
+        self.assertEqual(check_photo(webp_lossless()), "webp")
+        self.assertEqual(check_photo(jpeg(scan=b"\x01\xff\x00\x02\xff\xd0\x03\xff\xff\xd1\x04")), "jpg", "채움 · 재시작 마커는 스캔 자료")
+        self.assertEqual(check_photo(jpeg(between=b"\xff\xc4\x00\x04\x00\x00" + SCAN + b"\x07")), "jpg", "여러 스캔(점진적 JPEG)")
         with self.assertRaises(PhotoError):
             check_photo(b"")
 
@@ -244,6 +265,24 @@ class ProfileHttpTest(unittest.TestCase):
         self.assertIsNone(files.read("../members.sqlite3"))
         self.assertFalse(files.remove("../members.sqlite3"))
         self.assertTrue(self.db.exists())
+
+    def test_cleanup_failures_never_remove_the_current_photo(self):
+        session = self.login()
+        first = self.upload(session, webp()).json["avatar"]["url"]
+
+        def broken(name):
+            raise OSError("디스크 오류")
+        with mock.patch.object(self.members.avatars, "remove", broken):
+            second = self.upload(session, jpeg(), "image/jpeg")
+        self.assertEqual(second.status, 200, "앞 사진을 못 지워도 바꾸기는 성공")
+        url = second.json["avatar"]["url"]
+        self.assertEqual(self.request("GET", url, cookie=session).status, 200, "DB 가 가리키는 새 사진은 남는다")
+        self.assertEqual(len(self.files()), 2, "못 지운 앞 사진은 나중 정리가 지운다")
+        self.assertNotEqual(first, url)
+        with mock.patch.object(self.members.store, "set_avatar", side_effect=sqlite3.OperationalError("locked")):
+            self.assertEqual(self.upload(session, webp()).status, 503)
+        self.assertEqual(len(self.files()), 2, "DB 를 못 바꾼 새 사진만 지운다")
+        self.assertEqual(self.request("GET", url, cookie=session).status, 200)
 
     # ---- 탈퇴 3경로 ----
     def test_leaving_removes_the_photo_file(self):
@@ -298,7 +337,8 @@ class ProfileHttpTest(unittest.TestCase):
         self.assertEqual(named.json, {"ok": True, "name": "카카오 사용자"})
         self.assertEqual(self.request("GET", "/api/me", cookie=session).json["name"], "카카오 사용자")
         self.assertEqual(self.rows("SELECT action, user_id, reason FROM admin_log ORDER BY id"),
-                         [("avatar", 1, "부적절한 사진 신고"), ("name", 1, "부적절한 닉네임")])
+                         [("avatar_view", 1, ""), ("avatar", 1, "부적절한 사진 신고"), ("name", 1, "부적절한 닉네임")],
+                         "사진은 이유 없이 보되 볼 때마다 기록(올린 사진이 없을 때의 404 는 기록 안 함)")
         self.assertEqual(self.owner("POST", "/admin/members/9/name", {"reason": "x"}).status, 404)
         self.assertEqual(self.owner("GET", "/admin/members/1/avatar/x").status, 404)
 
@@ -315,6 +355,41 @@ class ProfileHttpTest(unittest.TestCase):
         os.utime(self.photos / used, (NOW - 7200, NOW - 7200))
         self.assertEqual(self.members.sweep_photos(), [old])
         self.assertEqual(self.files(), sorted([used, fresh]))
+
+
+class BackupSyncTest(unittest.TestCase):
+    """백업이 DB 사본을 뜬 뒤 사진을 바꾸거나 탈퇴해도 그 사본이 가리키는 사진이 사진 백업에 들어간다."""
+    def test_photos_of_the_db_copy_survive_a_change_during_backup(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name)
+        config = MemberConfig(db_file=base / "members.sqlite3")
+        members = MemberService(config, providers={})
+        keep_id = members.store.find_or_create_user("kakao", "1", "가", NOW)[0]
+        leave_id = members.store.find_or_create_user("kakao", "2", "나", NOW)[0]
+        keep_name = members.upload_photo(keep_id, webp())["avatar"]["url"].rsplit("/", 1)[1]
+        leave_name = members.upload_photo(leave_id, jpeg())["avatar"]["url"].rsplit("/", 1)[1]
+        real_backup = member_backup.backup
+        changers = []
+
+        def backup_then_change(*args, **kwargs):
+            made = real_backup(*args, **kwargs)
+            # 사본을 뜬 바로 뒤 서버가 사진을 바꾸고 다른 회원이 탈퇴한다(잠금 때문에 파일 지우기는 기다린다)
+            for work in (lambda: members.reset_avatar(keep_id), lambda: members.delete(leave_id)):
+                thread = threading.Thread(target=work)
+                thread.start()
+                changers.append(thread)
+            time.sleep(0.3)
+            return made
+        with mock.patch.object(member_backup, "backup", backup_then_change):
+            lines = backup_all(config, base / "backups", date(2026, 10, 27))
+        for thread in changers:
+            thread.join(5)
+        self.assertTrue(any("사진 백업" in line for line in lines), lines)
+        with tarfile.open(base / "backups" / "avatars-20261027.tar.gz") as tar:
+            self.assertEqual(sorted(tar.getnames()), sorted([f"avatars/{keep_name}", f"avatars/{leave_name}"]))
+        self.assertEqual(AvatarFiles(config.avatar_dir).names(), [], "백업이 끝나면 바뀐 · 탈퇴한 사진은 지워진다")
+        self.assertFalse((config.avatar_dir / ".backup").exists(), "붙잡아 둔 폴더는 남기지 않는다")
 
 
 class PhotoBackupTest(unittest.TestCase):

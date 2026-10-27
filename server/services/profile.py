@@ -62,12 +62,15 @@ def check_photo(data: bytes) -> str:
     return extension
 
 
-def _webp_size(data: bytes) -> tuple[int, int]:
-    """RIFF 조각을 끝까지 걸어 본다: 크기가 파일과 맞고, 아는 조각만 있고, 움직이는 그림 · 메타데이터가 없어야 한다."""
-    bad = PhotoError("WebP 사진을 읽을 수 없어요")
-    if struct.unpack_from("<I", data, 4)[0] + 8 != len(data):
+META = PhotoError("사진 정보(위치 등)가 든 파일은 올릴 수 없어요")
+VP8X_ALLOWED = 0x10 | 0x20   # 알파 · ICC 색 정보만(0x08 EXIF · 0x04 XMP · 0x02 움직이는 그림 · 나머지 예약 비트는 거절)
+
+
+def _webp_chunks(data: bytes, bad: PhotoError) -> list[tuple[bytes, bytes]]:
+    """RIFF 조각 목록. RIFF 크기가 파일 길이와 맞고 조각이 파일 끝에 딱 맞아야 한다."""
+    if len(data) < 12 or struct.unpack_from("<I", data, 4)[0] + 8 != len(data):
         raise bad
-    size = None
+    chunks = []
     offset = 12
     while offset < len(data):
         if offset + 8 > len(data):
@@ -76,27 +79,53 @@ def _webp_size(data: bytes) -> tuple[int, int]:
         body = data[offset + 8:offset + 8 + length]
         if len(body) != length:
             raise bad
-        if kind in (b"EXIF", b"XMP "):
-            raise PhotoError("사진 정보(위치 등)가 든 파일은 올릴 수 없어요")
-        if kind not in (b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ICCP"):
-            raise bad   # ANIM · ANMF(움직이는 그림) · 모르는 조각
-        if size is None:
-            size = _webp_frame(kind, body, bad)
+        chunks.append((kind, body))
         offset += 8 + length + (length & 1)   # 홀수 길이는 1바이트 채움
-    if size is None:
+    if offset != len(data):
         raise bad
-    return size
+    return chunks
+
+
+def _webp_size(data: bytes) -> tuple[int, int]:
+    """WebP 구조를 끝까지 본다. 단순형 = 그림 조각(VP8 · VP8L) 하나뿐. 확장형 = VP8X → (ICCP) → (ALPH — VP8 앞에만) → 그림 조각 하나로
+    끝나야 하고, 그 밖의 조각(EXIF · XMP · ANIM · ANMF · 모르는 것)은 거절. 그림 조각의 실제 가로세로가 VP8X 캔버스와 같아야 한다."""
+    bad = PhotoError("WebP 사진을 읽을 수 없어요")
+    chunks = _webp_chunks(data, bad)
+    if any(kind in (b"EXIF", b"XMP ") for kind, _ in chunks):
+        raise META
+    if not chunks:
+        raise bad
+    if chunks[0][0] != b"VP8X":
+        if len(chunks) != 1:
+            raise bad
+        return _webp_frame(*chunks[0], bad)
+    head = chunks[0][1]
+    if len(head) != 10:
+        raise bad
+    flags = head[0]
+    if flags & 0x0E:
+        raise META
+    if flags & ~VP8X_ALLOWED or head[1:4] != b"\0\0\0":
+        raise bad
+    canvas = (int.from_bytes(head[4:7], "little") + 1, int.from_bytes(head[7:10], "little") + 1)
+    rest = [kind for kind, _ in chunks[1:]]
+    allowed = [[b"VP8 "], [b"VP8L"], [b"ALPH", b"VP8 "]]
+    if flags & 0x20:
+        allowed = [[b"ICCP"] + order for order in allowed]
+    if rest not in allowed:
+        raise bad   # 그림 조각이 없거나 둘 이상 · 순서가 틀림 · 알 수 없는 조각
+    if (b"ALPH" in rest) != bool(flags & 0x10) and rest[-1] == b"VP8 ":
+        raise bad   # 손실 압축의 알파는 ALPH 조각이 있을 때만
+    frame = _webp_frame(*chunks[-1], bad)
+    if frame != canvas:
+        raise bad
+    return frame
 
 
 def _webp_frame(kind: bytes, body: bytes, bad: PhotoError) -> tuple[int, int]:
-    if kind == b"VP8X":
-        if len(body) < 10:
-            raise bad
-        if body[0] & 0x0E:   # 0x08 EXIF · 0x04 XMP · 0x02 움직이는 그림
-            raise PhotoError("사진 정보(위치 등)가 든 파일은 올릴 수 없어요")
-        return (int.from_bytes(body[4:7], "little") + 1, int.from_bytes(body[7:10], "little") + 1)
+    """그림 조각(VP8 손실 · VP8L 무손실)의 실제 가로세로."""
     if kind == b"VP8 ":
-        if len(body) < 10 or body[3:6] != b"\x9d\x01\x2a":
+        if len(body) < 10 or body[0] & 1 or body[3:6] != b"\x9d\x01\x2a":   # 키프레임 · 시작 코드
             raise bad
         width, height = struct.unpack_from("<HH", body, 6)
         return width & 0x3FFF, height & 0x3FFF
@@ -105,43 +134,65 @@ def _webp_frame(kind: bytes, body: bytes, bad: PhotoError) -> tuple[int, int]:
             raise bad
         bits = int.from_bytes(body[1:5], "little")
         return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
-    raise bad   # 첫 조각이 그림이 아니다(ALPH · ICCP 는 VP8X 뒤에만 온다)
+    raise bad
 
 
 SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+RST = range(0xD0, 0xD8)
 
 
 def _jpeg_size(data: bytes) -> tuple[int, int]:
-    """SOS 전까지 마커를 걸어 가로세로를 읽는다. 위치 정보가 들 수 있는 APP1(Exif · XMP) · APP13 은 받지 않는다.
-    끝은 EOI(FF D9)여야 한다(뒤에 다른 파일을 붙인 것을 막는다)."""
+    """JPEG 를 EOI 까지 모두 걸어 본다. 마커 조각(SOS 뒤 · 여러 스캔 사이 포함)마다 APP1(Exif · XMP) · APP13 이면 거절하고,
+    스캔 자료 안의 FF 00(채움) · FF D0~D7(재시작)은 건너뛴다. 첫 EOI 가 파일 끝이어야 한다(뒤에 붙인 바이트 거절).
+    가로세로는 SOF 하나에서 읽는다(SOF 가 없거나 둘 이상이면 거절)."""
     bad = PhotoError("JPEG 사진을 읽을 수 없어요")
-    if not data.endswith(b"\xff\xd9"):
-        raise bad
     size = None
+    scanned = False
     offset = 2
+    end = len(data)
     while True:
-        if offset + 4 > len(data) or data[offset] != 0xFF:
+        if offset + 2 > end or data[offset] != 0xFF:
             raise bad
         marker = data[offset + 1]
-        if marker == 0xFF:   # 채움 바이트
+        if marker == 0xFF:   # 마커 앞 채움 바이트
             offset += 1
             continue
+        if marker == 0xD9:   # EOI
+            if offset + 2 != end or size is None or not scanned:
+                raise bad
+            return size
+        if marker in (0xD8, 0x01, 0x00) or marker in RST:
+            raise bad   # 두 번째 SOI · TEM · 스캔 밖의 재시작 마커
         if marker in (0xE1, 0xED):
-            raise PhotoError("사진 정보(위치 등)가 든 파일은 올릴 수 없어요")
+            raise META
+        if offset + 4 > end:
+            raise bad
         length = struct.unpack_from(">H", data, offset + 2)[0]
-        if length < 2 or offset + 2 + length > len(data):
+        if length < 2 or offset + 2 + length > end:
             raise bad
         if marker in SOF:
-            if length < 7:
+            if length < 8 or size is not None:
                 raise bad
             height, width = struct.unpack_from(">HH", data, offset + 5)
             size = (width, height)
-        if marker == 0xDA:   # SOS — 그림 자료가 시작된다
-            break
         offset += 2 + length
-    if size is None:
-        raise bad
-    return size
+        if marker == 0xDA:   # SOS — 스캔 자료를 다음 마커까지 건너뛴다
+            if size is None:
+                raise bad
+            scanned = True
+            while True:
+                found = data.find(b"\xff", offset)
+                if found < 0 or found + 1 >= end:
+                    raise bad
+                following = data[found + 1]
+                if following == 0x00 or following in RST:
+                    offset = found + 2
+                    continue
+                if following == 0xFF:
+                    offset = found + 1
+                    continue
+                offset = found
+                break
 
 
 def avatar_value(kind: str, value: str) -> str:

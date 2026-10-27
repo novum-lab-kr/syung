@@ -164,7 +164,7 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
   <section class="box" id="detail" aria-label="회원 상세" hidden>
     <h2 id="dTitle">회원</h2>
     <dl class="facts" id="dFacts"></dl>
-    <div id="dAvatar" class="avatar-view" hidden><img id="dAvatarImg" alt="회원이 올린 프로필 사진" width="96" height="96"><span>회원이 올린 프로필 사진</span></div>
+    <div id="dAvatar" class="avatar-view" hidden><img id="dAvatarImg" alt="회원이 올린 프로필 사진" width="96" height="96"><span>회원이 올린 프로필 사진 · 볼 때마다 관리 기록에 남아요</span></div>
 
     <h3>승차권</h3>
     <div class="tw"><table>
@@ -215,7 +215,7 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
 <script>
 const $ = id => document.getElementById(id);
 const PROVIDERS = {kakao: '카카오', google: '구글', apple: 'Apple'};
-const ACTIONS = {places: '장소 보기', logout: '강제 로그아웃', delete: '탈퇴 처리', avatar: '사진 내리기', name: '닉네임 초기화'};
+const ACTIONS = {places: '장소 보기', logout: '강제 로그아웃', delete: '탈퇴 처리', avatar: '사진 내리기', avatar_view: '사진 보기', name: '닉네임 초기화'};
 const CHARACTERS = {sprout: '새싹 볼빵 후디', builder: '꼬마 건설 반장', seonbi: '갓 쓴 꼬마 선비', visitor: '두근두근 나들이',
   scv: '테란 SCV', drone: '저그 드론', probe: '프로토스 프로브'};
 const avatarText = avatar => avatar?.type === 'photo' ? '올린 사진' : avatar?.type === 'character' ? `캐릭터 · ${CHARACTERS[avatar.id] || avatar.id}` : '기본 캐릭터';
@@ -336,7 +336,7 @@ function showMember(member) {
   $('dLog').replaceChildren(...(member.log.length ? member.log.map(item => {
     const li = document.createElement('li'), what = document.createElement('b');
     what.textContent = ACTIONS[item.action] || item.action;
-    li.append(when(item.at) + ' · ', what, ' · ' + item.reason); return li;
+    li.append(when(item.at) + ' · ', what, item.reason ? ' · ' + item.reason : ''); return li;
   }) : [Object.assign(document.createElement('li'), {textContent: '아직 기록이 없어요'})]));
 }
 
