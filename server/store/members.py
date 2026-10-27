@@ -11,7 +11,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 MIGRATIONS: list[tuple[int, str]] = [
     (1, """
@@ -207,7 +207,7 @@ class MemberStore:
             finally:
                 conn.close()
 
-    def _read(self, sql: str, args: tuple) -> sqlite3.Row | None:
+    def _read(self, sql: str, args: tuple[Any, ...]) -> sqlite3.Row | None:
         self.open()
         conn = self._connect()
         try:
@@ -218,7 +218,7 @@ class MemberStore:
     # ---- 회원 ----
     def find_or_create_user(self, provider: str, subject: str, display_name: str, now: int) -> tuple[int, bool]:
         """제공자 회원번호로 찾고, 없으면 회원 + 연결을 만든다 → (회원 번호, 새로 만들었나). 이름은 처음 만들 때만 쓴다."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> tuple[int, bool]:
             row = conn.execute("SELECT user_id FROM identities WHERE provider=? AND subject=?", (provider, subject)).fetchone()
             if row:
                 return row["user_id"], False
@@ -228,7 +228,7 @@ class MemberStore:
             return user_id, True
         return self._write(work)
 
-    def user(self, user_id: int) -> dict | None:
+    def user(self, user_id: int) -> dict[str, Any] | None:
         row = self._read("SELECT u.id, u.display_name, u.avatar, (SELECT provider FROM identities WHERE user_id=u.id "
                          "ORDER BY created_at LIMIT 1) AS provider FROM users u WHERE u.id=?", (user_id,))
         return dict(row) if row else None
@@ -239,7 +239,7 @@ class MemberStore:
 
     def set_avatar(self, user_id: int, value: str | None) -> tuple[bool, str | None]:
         """프로필 사진 · 캐릭터를 바꾼다 → (그 회원이 있었나, 바꾸기 전 값). 앞 사진 파일은 부르는 쪽이 지운다."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> tuple[bool, str | None]:
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
             if row is None:
                 return False, None
@@ -260,10 +260,10 @@ class MemberStore:
         finally:
             conn.close()
 
-    def delete_user(self, user_id: int, now: int) -> dict | None:
+    def delete_user(self, user_id: int, now: int) -> dict[str, Any] | None:
         """회원과 그 사람의 연결 · 세션 · 승차권 · 사용 횟수를 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다
         → {'avatar': 지운 회원의 avatar 값}(사진 파일은 부르는 쪽이 지운다) · 없던 회원이면 None."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> dict[str, Any] | None:
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
             if row is None:
                 return None
@@ -272,10 +272,10 @@ class MemberStore:
             return {"avatar": row["avatar"]}
         return self._write(work)
 
-    def delete_identity_user(self, provider: str, subject: str, now: int) -> dict | None:
+    def delete_identity_user(self, provider: str, subject: str, now: int) -> dict[str, Any] | None:
         """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권 · 사용 횟수는 ON DELETE CASCADE)
         → {'avatar': …} · 없던 회원이면 None. 지웠으면 오늘 카카오 연결 해제 탈퇴 수를 1 올린다(제공자는 카카오만 부른다)."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> dict[str, Any] | None:
             row = conn.execute("SELECT u.id, u.avatar FROM users u JOIN identities i ON i.user_id=u.id "
                                "WHERE i.provider=? AND i.subject=?", (provider, subject)).fetchone()
             if row is None:
@@ -287,7 +287,7 @@ class MemberStore:
 
     # ---- 세션 ----
     def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int, device: str = "") -> None:
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM sessions WHERE expires_at<=?", (now,))   # 끝난 것은 새로 만들 때 같이 치운다
             conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, device, used_at) VALUES (?, ?, ?, ?, ?, ?)",
                          (token_hash, user_id, now, expires_at, device, now))
@@ -306,7 +306,7 @@ class MemberStore:
     def delete_session(self, token_hash: str) -> None:
         self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,)))
 
-    def sessions(self, user_id: int, now: int) -> list[dict]:
+    def sessions(self, user_id: int, now: int) -> list[dict[str, Any]]:
         """그 회원의 살아 있는 세션(token_hash · device · created_at · used_at) — 최근에 쓴 차례."""
         return self._all("SELECT token_hash, device, created_at, used_at FROM sessions WHERE user_id=? AND expires_at>? "
                          "ORDER BY used_at DESC, created_at DESC", (user_id, now))
@@ -324,7 +324,7 @@ class MemberStore:
     # ---- 날짜별 사용 횟수(내 통계) ----
     def count_usage(self, user_id: int, now: int, kind: str, most: int) -> None:
         """그 회원 · 오늘(한국 날짜) · 종류의 횟수를 1 올린다(most 까지만). 회원이 없으면(그사이 탈퇴) 아무것도 안 한다."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> None:
             if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
                 return
             conn.execute("INSERT INTO usage_daily (user_id, day, kind, count) VALUES (?, date(?, 'unixepoch'), ?, 1) "
@@ -332,7 +332,7 @@ class MemberStore:
                          (user_id, now + KST_SECONDS, kind, most))
         self._write(work)
 
-    def usage(self, user_id: int, first_day: str) -> list[dict]:
+    def usage(self, user_id: int, first_day: str) -> list[dict[str, Any]]:
         """first_day('YYYY-MM-DD') 부터의 그 회원 사용 횟수 줄(day · kind · count) — 날짜 차례."""
         return self._all("SELECT day, kind, count FROM usage_daily WHERE user_id=? AND day>=? ORDER BY day, kind",
                          (user_id, first_day))
@@ -347,12 +347,12 @@ class MemberStore:
         row = self._read("SELECT created_at FROM users WHERE id=?", (user_id,))
         return row["created_at"] if row else None
 
-    def identities(self, user_id: int) -> list[dict]:
+    def identities(self, user_id: int) -> list[dict[str, Any]]:
         """연결된 로그인 방법(provider · created_at). 제공자 회원번호(subject)는 꺼내지 않는다."""
         return self._all("SELECT provider, created_at FROM identities WHERE user_id=? ORDER BY created_at", (user_id,))
 
     # ---- 승차권(출발지 → 도착지 · 출발 시각 · 타는 날 · 고른 경로) ----
-    def tickets(self, user_id: int) -> list[dict]:
+    def tickets(self, user_id: int) -> list[dict[str, Any]]:
         self.open()
         conn = self._connect()
         try:
@@ -362,13 +362,13 @@ class MemberStore:
             conn.close()
         return [dict(row) for row in rows]
 
-    def ticket(self, user_id: int, ticket_id: int) -> dict | None:
+    def ticket(self, user_id: int, ticket_id: int) -> dict[str, Any] | None:
         row = self._read(f"SELECT id, {', '.join(TICKET_COLUMNS)} FROM tickets WHERE id=? AND user_id=?", (ticket_id, user_id))
         return dict(row) if row else None
 
-    def add_ticket(self, user_id: int, values: dict, now: int, limit: int) -> int | None:
+    def add_ticket(self, user_id: int, values: dict[str, Any], now: int, limit: int) -> int | None:
         """새 승차권 번호. 이미 limit 장이면 None(만들지 않는다)."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> int | None:
             count = conn.execute("SELECT count(*) FROM tickets WHERE user_id=?", (user_id,)).fetchone()[0]
             if count >= limit:
                 return None
@@ -378,7 +378,7 @@ class MemberStore:
                                 (user_id, *(values[name] for name in TICKET_COLUMNS), now, now)).lastrowid
         return self._write(work)
 
-    def update_ticket(self, user_id: int, ticket_id: int, values: dict, now: int) -> bool:
+    def update_ticket(self, user_id: int, ticket_id: int, values: dict[str, Any], now: int) -> bool:
         """그 사람의 승차권이 없으면 False."""
         sets = ", ".join(f"{name}=?" for name in TICKET_COLUMNS)
         return self._write(lambda conn: conn.execute(
@@ -390,7 +390,7 @@ class MemberStore:
                                                      (ticket_id, user_id)).rowcount > 0)
 
     # ---- 관리(주인만 — routes/admin.py) ----
-    def _all(self, sql: str, args: tuple) -> list[dict]:
+    def _all(self, sql: str, args: tuple[Any, ...]) -> list[dict[str, Any]]:
         self.open()
         conn = self._connect()
         try:
@@ -398,7 +398,7 @@ class MemberStore:
         finally:
             conn.close()
 
-    def admin_stats(self, since: tuple[int, int, int], first_day: int) -> dict:
+    def admin_stats(self, since: tuple[int, int, int], first_day: int) -> dict[str, Any]:
         """since: (오늘 · 7일 · 30일 시작 시각), first_day: 날짜별 수를 셀 첫 시각 → 수만(이름 · 장소 없음)."""
         counts = self._read("SELECT count(*) AS total, sum(created_at>=?) AS today, sum(created_at>=?) AS week, "
                             "sum(created_at>=?) AS month FROM users", since)
@@ -411,7 +411,7 @@ class MemberStore:
         return {"total": counts["total"], "today": counts["today"] or 0, "week": counts["week"] or 0,
                 "month": counts["month"] or 0, "providers": providers, "daily": daily}
 
-    def withdraw_stats(self, since: tuple[str, str, str], first_day: str) -> dict:
+    def withdraw_stats(self, since: tuple[str, str, str], first_day: str) -> dict[str, Any]:
         """since: (오늘 · 7일 · 30일 시작 날짜 'YYYY-MM-DD'), first_day: 날짜별 수를 셀 첫 날짜 → 탈퇴 수만(누구인지 없음)."""
         counts = self._read("SELECT coalesce(sum(count), 0) AS total, coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS today, "
                             "coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS week, "
@@ -430,7 +430,7 @@ class MemberStore:
                    "(SELECT max(created_at) FROM sessions WHERE user_id=u.id) AS last_login, "
                    "(SELECT count(*) FROM sessions WHERE user_id=u.id AND expires_at>?) AS sessions FROM users u")
 
-    def admin_members(self, word: str, number: int | None, now: int, offset: int, limit: int) -> tuple[int, list[dict]]:
+    def admin_members(self, word: str, number: int | None, now: int, offset: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
         """닉네임에 word 가 든 회원 또는 회원번호 number(둘 다 없으면 모두), 새로 가입한 차례 → (모두 몇 명, 그 쪽 줄들)."""
         where, args = "", ()
         if word:
@@ -443,7 +443,7 @@ class MemberStore:
                          (now, *args, limit, offset))
         return total, rows
 
-    def admin_member(self, user_id: int, now: int) -> dict | None:
+    def admin_member(self, user_id: int, now: int) -> dict[str, Any] | None:
         """회원 한 명: 목록 칸 + 연결된 로그인 방법 + 승차권(장소 · 경로 빼고) + 관리 기록. 없으면 None."""
         row = self._read(self._MEMBER_ROW + " WHERE u.id=?", (now, user_id))
         if row is None:
@@ -461,9 +461,9 @@ class MemberStore:
         """1년 지난 관리 기록을 지운다 → 지운 수. 관리 화면을 열 때도 부른다(조치가 한동안 없어도 남지 않게)."""
         return self._write(lambda conn: conn.execute("DELETE FROM admin_log WHERE at<=?", (now - ADMIN_LOG_AGE,)).rowcount)
 
-    def admin_places(self, user_id: int, at: int, reason: str) -> list[dict] | None:
+    def admin_places(self, user_id: int, at: int, reason: str) -> list[dict[str, Any]] | None:
         """승차권 장소(이름 · 좌표)를 꺼내며 같은 트랜잭션에 열람 기록을 남긴다. 회원이 없으면 None(기록 안 남김)."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> list[dict[str, Any]] | None:
             if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
                 return None
             rows = conn.execute("SELECT id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng FROM tickets "
@@ -474,7 +474,7 @@ class MemberStore:
 
     def admin_logout(self, user_id: int, at: int, reason: str) -> int | None:
         """그 회원의 세션을 모두 지우고 기록 → 지운 세션 수. 회원이 없으면 None(기록 안 남김)."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> int | None:
             if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
                 return None
             removed = conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,)).rowcount
@@ -482,10 +482,10 @@ class MemberStore:
             return removed
         return self._write(work)
 
-    def admin_delete(self, user_id: int, at: int, reason: str) -> tuple[dict, str | None] | None:
+    def admin_delete(self, user_id: int, at: int, reason: str) -> tuple[dict[str, int], str | None] | None:
         """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권 · 사용 횟수는 ON DELETE CASCADE) + 기록 + 오늘 관리자 탈퇴 수 +1
         → (지운 수, 지운 회원의 avatar 값 — 사진 파일은 부르는 쪽이 지운다). 없으면 None."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> tuple[dict[str, int], str | None] | None:
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
             if row is None:
                 return None
@@ -500,7 +500,7 @@ class MemberStore:
     def admin_clear_avatar(self, user_id: int, at: int, reason: str) -> tuple[bool, str | None] | None:
         """사진 내리기: 올린 사진을 기본 캐릭터로 되돌리고 기록 → (내렸나, 내린 avatar 값). 올린 사진이 아니면 (False, 그 값) · 기록 안 남김.
         회원이 없으면 None."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> tuple[bool, str | None] | None:
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
             if row is None:
                 return None
@@ -514,7 +514,7 @@ class MemberStore:
     def admin_photo_seen(self, user_id: int, at: int) -> str | None:
         """관리자가 회원 사진을 볼 때: 지금 avatar 값을 읽으며 같은 트랜잭션에 'avatar_view' 기록(이유 없이 — 사용자 결정 2026-10-27).
         올린 사진이 없거나 회원이 없으면 None(기록 안 남김)."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> str | None:
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
             if row is None or not (row["avatar"] or "").startswith("photo:"):
                 return None
@@ -524,7 +524,7 @@ class MemberStore:
 
     def admin_reset_name(self, user_id: int, name: str, at: int, reason: str) -> bool | None:
         """닉네임 초기화(name 은 서비스가 정한 기본 이름) + 기록 → True. 회원이 없으면 None."""
-        def work(conn):
+        def work(conn: sqlite3.Connection) -> bool | None:
             if conn.execute("UPDATE users SET display_name=? WHERE id=?", (name, user_id)).rowcount == 0:
                 return None
             _log(conn, at, "name", user_id, reason)
