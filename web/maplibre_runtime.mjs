@@ -51,7 +51,7 @@ import './modes/coaster/metrics.mjs';   // (공원 치수 계산: 같은 단계�
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './modes/coaster/track_mesh.mjs';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
 import {NightLayer} from './modes/coaster/night.mjs';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './modes/coaster/first_person.mjs';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
-import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './city/style.mjs';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
+import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './city/style.mts';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './city/life.mjs';
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말

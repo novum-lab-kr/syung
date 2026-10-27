@@ -18,7 +18,7 @@
 
 import SEOUL from '../modes/basic/city.mjs';
 import { BULB_FS, bulbSize } from '../modes/coaster/night.mjs';
-import { toneRGB, hexRgb, MPP } from './style.mjs';
+import { toneRGB, hexRgb, MPP } from './style.mts';
 import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './traffic.mjs';
 
 const EARTH = 40075016.685578488, ORIGIN = [126.978, 37.5665];
