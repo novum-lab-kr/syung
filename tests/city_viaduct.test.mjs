@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CityViaduct, trainMetrics, deckWidths, ribbonRows, rowAt, pierSpots, elevatedAt, routeOpacityExpr, buildDeck, buildPiers, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mjs';
+import { CityViaduct, trainMetrics, deckWidths, ribbonRows, rowAt, pierSpots, elevatedAt, routeOpacityExpr, buildDeck, buildPiers, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mts';
 import FLAGS from '../web/city/viaduct_flags.mjs';
 import SEOUL from '../web/modes/basic/city.mjs';
 
@@ -84,7 +84,7 @@ test('a journey ride lights its viaduct edges and the platforms it boards and le
 });
 
 test('the viaduct shader still lights every material after the journey tint (2026-10-11: the line was dropped once)', async () => {
-  const src = (await import('node:fs')).readFileSync(new URL('../web/city/viaduct.mjs', import.meta.url), 'utf8');
+  const src = (await import('node:fs')).readFileSync(new URL('../web/city/viaduct.mts', import.meta.url), 'utf8');
   const tint = src.indexOf('if (u_route > .5 && u_route < 1.5)'), lit = src.indexOf('c = c * a_mat.y * lit(n, u_light, u_lit) * u_tint;'), dim = src.indexOf('if (u_route > 1.5) c = mix(c, u_veil');
   assert.ok(tint > 0 && lit > tint && dim > lit, 'journey colour → lighting → veil, in that order');
 });

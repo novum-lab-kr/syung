@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assignLevels, stationLevels, holdLevels, edgeProfile, levelHeight, compareLines, segmentDistance } from '../web/city/viaduct_levels.mts';
-import { CityViaduct, densify, ribbonRows } from '../web/city/viaduct.mjs';
+import { CityViaduct, densify, ribbonRows } from '../web/city/viaduct.mts';
 import SEOUL from '../web/modes/basic/city.mjs';
 
 const V = SEOUL.viaduct, Lv = V.levels;

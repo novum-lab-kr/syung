@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { CityViaduct, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mjs';
+import { CityViaduct, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mts';
 import SEOUL from '../web/modes/basic/city.mjs';
 import { toM } from '../web/city/life.mts';
 import { platformRuntime, local, distance } from './platform_endpoints_fixture.mjs';
@@ -41,7 +41,7 @@ test('고가 승강장 바닥 · 지붕은 휜 rows 를 따라 짓는다(곧은 
 });
 
 test('끝역: 고가 상판 · 교각을 승강장 끝까지 늘리고, 열차가 쓰는 구간(높이 · 길이)은 그대로', async () => {
-  const { MU, MERC_ORIGIN: O } = await import('../web/city/life.mts'), { toLL, STRIDE: ST } = await import('../web/city/viaduct.mjs');
+  const { MU, MERC_ORIGIN: O } = await import('../web/city/life.mts'), { toLL, STRIDE: ST } = await import('../web/city/viaduct.mts');
   // 노선 X: 1 — 2 — 3 (1 · 3 끝역), 동쪽으로 곧게 200 m 씩. 승강장은 역에서 앞뒤 90 m(기본 모드 리본처럼 끝역에서는 선로 끝 너머로 곧게)
   const at = m => ({ x: O.x + m * MU, y: O.y }), seg = { '1:2': [0, 200], '2:3': [200, 400] };
   const rect = c => ({ coords: [toLL(c - 90, 0), toLL(c, 0), toLL(c + 90, 0)], center: toLL(c, 0), offset: 0, plat: 1 });
