@@ -117,12 +117,15 @@ function placeSearch(input, found, onPick) {
 export async function initAccount({colors = {}} = {}) {   // colors: 노선 이름 → 색(본체)
   const item = $('accountItem'), sheet = $('loginSheet');
   if (!item || !sheet) return;
-  let providers = [];
-  try { const r = await getJson('./api/auth/providers'); providers = r.status === 200 ? r.body?.providers || [] : []; } catch { return; }
-  if (!providers.length) return;   // 설정 전: 맨 위 칸을 숨긴 채로
+  // 로그인 방법과 지금 로그인한 사람을 한 번에 받는다(/api/me 를 따로 물으면 메뉴 칸이 한 번 더 늦게 뜨고,
+  // 로그인이 꺼진 운영에서는 방문자마다 404 가 하나 더 찍힌다)
+  let answer = null;
+  try { answer = await getJson('./api/auth/providers'); } catch { return; }
+  const providers = answer.status === 200 ? answer.body?.providers || [] : [];
+  if (!providers.length) return;   // 설정 전: 메뉴 칸을 숨긴 채로
 
   const say = (id, text) => { $(id).textContent = text || ''; };
-  // 결과 · 연결 오류는 서랍 아래 토스트(잠깐 떴다 사라짐), 입력 확인은 그 칸 바로 아래 한 줄(사용자 결정 2026-10-27)
+  // 알림은 모두 서랍 아래 토스트(잠깐 떴다 사라짐) — 결과 · 연결 오류 · 입력 확인(사용자 결정 2026-10-27). 입력 확인은 그 칸으로 포커스도 옮긴다
   let toastTimer = 0;
   function toast(text, error = false) {
     const el = $('accountToast');
@@ -134,7 +137,6 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 200);
     }, error ? 3600 : 2400);
   }
-  const fieldErr = (id, text) => { $(id).textContent = text || ''; $(id).hidden = !text; };
   let me = null, tickets = [], editing = null;
 
   // ---- 로그인 팝업(서랍 밖 화면 전체 위 — 열 때 서랍은 닫는다) ----
@@ -227,7 +229,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('ticketPreview').innerHTML = `<div class="ticket"><div class="ticket-in">${frontHTML({id: editing?.id, name: $('ticketName').value.trim(),
       depart: $('ticketTime').value, days: pickedDays()})}</div></div>`;
   }
-  $('ticketName').addEventListener('input', () => { fieldErr('ticketNameErr', ''); $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`; preview(); });
+  $('ticketName').addEventListener('input', () => { $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`; preview(); });
 
   function showPlaces() {
     for (const [id, place, empty] of [['ticketFrom', form.from, '출발지 고르기'], ['ticketTo', form.to, '도착지 고르기']]) {
@@ -248,7 +250,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
   // 출발 · 도착 · 시각이 바뀌면 고른 경로는 풀린다(그 경로는 그 조건에서 찾은 것)
   function routeGone() {
-    if (form.route) fieldErr('ticketRouteWarn', '출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요');
+    if (form.route) toast('출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요', true);
     form.route = null; showRoute();
   }
 
@@ -269,7 +271,6 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     const before = form[placeFor];
     form[placeFor] = place;
     if (!before || before.lat !== place.lat || before.lng !== place.lng) routeGone();
-    if (form.from && form.to) fieldErr('ticketPlaceErr', '');
     showPlaces(); backToForm();
   });
   $('ticketSwap').onclick = () => {
@@ -315,7 +316,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
   async function openRoute() {
     lastField = $('ticketRoute');
-    if (!form.from || !form.to) { fieldErr('ticketPlaceErr', '출발지 · 도착지를 먼저 골라 주세요'); $(form.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
+    if (!form.from || !form.to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(form.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), pad = n => String(n).padStart(2, '0');
     $('routeTrip').textContent = `${form.from.name} → ${form.to.name}`;
     $('routeWhen').textContent = `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${$('ticketTimeText').textContent} 출발 기준`;
@@ -338,7 +339,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   $('ticketRoute').onclick = openRoute;
   $('routePick').onclick = () => {
     if (!plans[chosen]) return;
-    form.route = slimRoute(plans[chosen]); fieldErr('ticketRouteWarn', '');
+    form.route = slimRoute(plans[chosen]);
     showRoute(); backToForm();
   };
 
@@ -351,7 +352,6 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('ticketTime').value = t?.depart || '08:00';
     form.from = t?.from || null; form.to = t?.to || null; form.route = t?.route || null;
     for (const b of dayBox.children) b.setAttribute('aria-pressed', String(t ? t.days.includes(+b.dataset.day) : false));
-    for (const id of ['ticketPlaceErr', 'ticketRouteWarn', 'ticketNameErr']) fieldErr(id, '');
     $('ticketDelete').hidden = !t; $('ticketDelete').textContent = '이 승차권 지우기';
     showPlaces(); showTime(); showRoute(); daysChanged();
     $('ticketOpen').click();
@@ -360,9 +360,9 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   $('ticketForm').onsubmit = async e => {
     e.preventDefault();
     const body = {name: $('ticketName').value.trim(), from: form.from, to: form.to, depart: $('ticketTime').value, days: pickedDays(), route: form.route};
-    if (!body.from || !body.to) { fieldErr('ticketPlaceErr', '출발지 · 도착지를 골라 주세요'); $(body.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
-    if (!body.route) { fieldErr('ticketRouteWarn', '경로를 골라 주세요'); $('ticketRoute').focus(); return; }
-    if (!body.name) { fieldErr('ticketNameErr', '승차권 이름을 넣어 주세요'); $('ticketName').focus(); return; }
+    if (!body.from || !body.to) { toast('출발지 · 도착지를 골라 주세요', true); $(body.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
+    if (!body.route) { toast('경로를 골라 주세요', true); $('ticketRoute').focus(); return; }
+    if (!body.name) { toast('승차권 이름을 넣어 주세요', true); $('ticketName').focus(); return; }
     const save = $('ticketSave');
     save.disabled = true; save.textContent = '발권하는 중…';
     try {
@@ -404,7 +404,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     } catch { toast('탈퇴하지 못했어요. 연결을 확인해 주세요.', true); }
   };
 
-  try { const r = await getJson('./api/me'); me = r.status === 200 ? r.body : null; } catch { me = null; }
+  me = answer.body.me || null;
   show();
   if (me) await loadTickets();
 

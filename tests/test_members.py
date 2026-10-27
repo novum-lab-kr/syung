@@ -103,9 +103,9 @@ class MemberHttpTest(unittest.TestCase):
         return session.split(";")[0]
 
     def test_providers_list_and_disabled_service_hides_everything(self):
-        self.assertEqual(self.request("GET", "/api/auth/providers").json, {"providers": ["kakao"]})
+        self.assertEqual(self.request("GET", "/api/auth/providers").json, {"providers": ["kakao"], "me": None})
         self.members.providers = {}
-        self.assertEqual(self.request("GET", "/auth/providers").json, {"providers": []})
+        self.assertEqual(self.request("GET", "/auth/providers").json, {"providers": [], "me": None})
         self.assertEqual(self.request("GET", "/api/me").status, 404)
         self.assertEqual(self.request("GET", "/api/auth/kakao/start").status, 404)
         self.assertFalse(self.db.exists(), "꺼져 있으면 DB 파일을 만들지 않는다")
@@ -124,6 +124,10 @@ class MemberHttpTest(unittest.TestCase):
         me = self.request("GET", "/api/me", cookie=session)
         self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao"}))
         self.assertEqual(me.headers["Cache-Control"], "no-store")
+        listed = self.request("GET", "/api/auth/providers", cookie=session)
+        self.assertEqual(listed.json, {"providers": ["kakao"], "me": {"id": 1, "name": "민지", "provider": "kakao"}}, "메뉴는 요청 하나로 그린다")
+        self.assertEqual(listed.headers["Cache-Control"], "no-store")
+        self.assertIsNone(self.request("GET", "/api/auth/providers", cookie="syung_session=nope").json["me"])
         # 같은 사람이 다시 로그인하면 같은 회원
         again = self.login(prefix="")   # Caddy 가 /api 를 뗀 주소
         self.assertEqual(self.last_location, "/#login=ok")
