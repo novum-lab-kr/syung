@@ -41,7 +41,7 @@ const nameLength = text => [...text.trim()].length;
 const won = n => `${n.toLocaleString('ko-KR')}원`;
 const monthDay = seconds => { const d = new Date(seconds * 1000); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
 const FARE_REASONS = {route: '고른 경로가 없는 승차권', distance: '공식 거리 자료가 없는 노선', outside: '수도권 밖 구간',
-  bus: '요금 · 거리 자료가 없는 버스', none: '전철 · 버스를 타지 않는 승차권'};
+  extra: '추가 운임 노선(신분당선 · 의정부경전철 · 공항철도 영종 구간)', bus: '요금 · 거리 자료가 없는 버스', none: '전철 · 버스를 타지 않는 승차권'};
 
 // 칸(el)에 프로필을 그린다: 올린 사진이면 칸을 꽉 채우고(.photo), 아니면 캐릭터 얼굴(.face). big: 내 정보의 큰 칸(240 그림)
 function paintAvatar(el, avatar, big = false) {
@@ -680,7 +680,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       ? `<div class="st-fare"><div class="st-fare-top"><span>${month}월 예상 교통비</span><b>${won(f.total)}</b></div>`
         + `<p class="st-note">승차권대로 다 탄다고 가정한 예상이에요</p>${rows ? `<ul class="st-fare-list">${rows}</ul>` : ''}`
         + (f.skipped ? `<p class="st-skip">${f.skipped}장 계산 못 함${why ? ` — ${esc(why)}` : ''}</p>` : '')
-        + '<p class="st-note">교통카드 어른 요금 · 고른 경로 거리 기준이에요. 갈아타는 시간 · 정기권 · 공휴일 · 노선마다 따로 붙는 운임은 넣지 않았어요.</p></div>'
+        + '<p class="st-note">교통카드 어른 요금 · 고른 경로 거리 기준이에요. 갈아타는 시간 · 정기권 · 공휴일은 넣지 않았어요.</p></div>'
       : '';
     $('accountStatsBody').innerHTML = `<div class="st-grid">${cell(`${st.daysTogether}일`, '함께한 날')}${cell(`${st.tickets}장`, '승차권')}`
       + `${cell(`${st.recent.openDays}일`, `최근 ${st.recent.days}일 슝 연 날`)}${cell(`${st.recent.route}번`, `최근 ${st.recent.days}일 길찾기`)}</div>`

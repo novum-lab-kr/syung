@@ -17,9 +17,11 @@ def bus(route, start, end):
 
 # 거리를 정해 둔 가짜 자료(실제 자료가 바뀌어도 요금 규칙 시험은 그대로)
 GRAPH = fare._Graph({"hops": [
-    ["2호선", "가", "나", 120, 6.0, 0, 0], ["2호선", "나", "다", 120, 6.0, 0, 0], ["2호선", "다", "라", 120, None, 0, 0],
-    ["2호선", "가", "다", 200, None, 0, 1],   # 급행 쌍은 거리 계산에 안 쓴다
-    ["1호선", "평택", "성환", 300, 5.0, 1, 0]]})
+    ["2호선", "가", "나", 120, 6.0, 0, 0, 0], ["2호선", "나", "다", 120, 6.0, 0, 0, 0], ["2호선", "다", "라", 120, None, 0, 0, 0],
+    ["2호선", "가", "다", 200, None, 0, 1, 0],   # 급행 쌍은 거리 계산에 안 쓴다
+    ["1호선", "평택", "성환", 300, 5.0, 1, 0, 0],
+    ["공항철도", "서울", "공덕", 120, 3.3, 0, 0, 0], ["공항철도", "공덕", "청라", 600, 25.0, 0, 0, 0],
+    ["공항철도", "청라", "영종", 300, 10.2, 0, 0, 1]]})   # 추가 운임 구간
 BUSES = {"routes": {"472": {"type": "trunk", "stops": [["앞", 0.0], ["가운데", 3.0], ["뒤", 9.0], ["앞", 18.0]]},
                     "9401": {"type": "express", "stops": [["서울역", 0.0], ["분당", 25.0]]},
                     "심야": {"type": "night", "stops": [["앞", 0.0], ["뒤", 5.0]]},
@@ -42,6 +44,9 @@ class FareTableTest(unittest.TestCase):
                                                   ride("2호선", "나", "다")]}, GRAPH, BUSES)[0], 1650, "갈아타도 한 번 요금(거리 합)")
         self.assertEqual(fare.trip_fare({"legs": [ride("2호선", "가", "라")]}, GRAPH, BUSES), (None, None, "distance"))
         self.assertEqual(fare.trip_fare({"legs": [ride("1호선", "평택", "성환")]}, GRAPH, BUSES), (None, None, "outside"))
+        # 추가 운임 구간을 한 쌍이라도 지나면 계산하지 않는다(사용자 결정 2026-10-27 R1) — 그 앞까지는 계산
+        self.assertEqual(fare.trip_fare({"legs": [ride("공항철도", "서울", "영종")]}, GRAPH, BUSES), (None, None, "extra"))
+        self.assertEqual(fare.trip_fare({"legs": [ride("공항철도", "서울", "청라")]}, GRAPH, BUSES), (1950, 28.3, None))
         self.assertEqual(fare.trip_fare({"legs": [ride("신림선", "샛강", "대방")]}, GRAPH, BUSES), (None, None, "distance"))
         self.assertEqual(fare.trip_fare(None, GRAPH, BUSES), (None, None, "route"))
         self.assertEqual(fare.trip_fare({"legs": [{"type": "walk", "seconds": 60}]}, GRAPH, BUSES), (None, None, "none"))
@@ -88,6 +93,11 @@ class RealDataTest(unittest.TestCase):
             self.assertAlmostEqual(found, km, places=1, msg=(line, start, end))
         self.assertEqual(graph.ride_km("1호선", "평택", "천안"), (None, "outside"), "수도권 밖 구간은 계산하지 않는다")
         self.assertEqual(graph.ride_km("경춘선", "상봉", "춘천"), (None, "outside"))
+        # 추가 운임(서울시메트로9호선 운임안내): 신분당선 전 구간 · 의정부경전철 · 공항철도 청라국제도시~인천공항2터미널
+        self.assertEqual(graph.ride_km("신분당선", "강남", "양재"), (None, "extra"))
+        self.assertEqual(graph.ride_km("의정부선", "발곡", "탑석"), (None, "extra"))
+        self.assertEqual(graph.ride_km("공항철도", "서울", "인천공항2터미널"), (None, "extra"))
+        self.assertIsNone(graph.ride_km("공항철도", "서울", "청라국제도시")[1], "통합운임 구간은 계산")
         self.assertEqual(graph.ride_km("신림선", "샛강", "관악산"), (None, "distance"), "공식 자료가 없는 노선")
 
     def test_month_view(self):

@@ -12,8 +12,9 @@
   거리 자료가 없어 계산하지 않는다.
 거리: 전철은 공식 역간거리(data/fare/hop_km.json), 버스는 서울 버스 공식 노선 경로를 따라 잰 정류소 사이 거리(data/fare/bus_km.json).
 계산하지 않는 것(그 승차권은 '계산 못 함'으로 센다): 고른 경로가 없는 옛 승차권 · 공식 거리가 없는 구간(GTX-A · 김포골드라인 ·
-신림선 · 자료 기준일 뒤 개통 구간 등) · 수도권 밖 구간(평택~신창 · 가평~춘천 — 따로 붙는 운임) · 위의 계산하지 않는 버스.
-반영하지 않는 것(화면에 작게 안내): 환승 시간 조건 · 정기권 · 공휴일 · 조조할인 · 노선마다 따로 붙는 운임.
+신림선 · 자료 기준일 뒤 개통 구간 등) · 수도권 밖 구간(평택~신창 · 가평~춘천 — 따로 붙는 운임) · 추가 운임 구간(신분당선 전 구간 ·
+의정부경전철 · 공항철도 청라국제도시~인천공항2터미널 — 서울시메트로9호선 운임안내, 사용자 결정 2026-10-27) · 위의 계산하지 않는 버스.
+반영하지 않는 것(화면에 작게 안내): 환승 시간 조건 · 정기권 · 공휴일 · 조조할인.
 """
 from __future__ import annotations
 
@@ -53,29 +54,30 @@ def joint_fare(km: float, base: int, free_km: float) -> int:
 
 
 class _Graph:
-    """전철 이웃 쌍 자료 → 노선마다 {역 이름: [(이웃, 초, km|None, 수도권 밖)]}(급행 쌍 빼고)."""
+    """전철 이웃 쌍 자료 → 노선마다 {역 이름: [(이웃, 초, km|None, 'outside' | 'extra' | None)]}(급행 쌍 빼고)."""
     def __init__(self, data: dict):
         self.near: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
-        for line, left, right, seconds, km, outside, express in data["hops"]:
+        for line, left, right, seconds, km, outside, express, extra in data["hops"]:
             if express:   # 급행 쌍은 그 사이 완행 쌍들과 같은 선로 — 거리는 완행 쌍으로 잰다
                 continue
-            self.near[line][left].append((right, seconds, km, bool(outside)))
-            self.near[line][right].append((left, seconds, km, bool(outside)))
+            flag = "outside" if outside else "extra" if extra else None
+            self.near[line][left].append((right, seconds, km, flag))
+            self.near[line][right].append((left, seconds, km, flag))
 
     def _walk(self, line: str, start: str, end: str, known_only: bool):
-        best, queue = {start: (0, 0.0, False)}, [(0, 0.0, False, start)]
+        best, queue = {start: (0, 0.0, None)}, [(0, 0.0, "", start)]
         while queue:
-            seconds, km, outside, here = heapq.heappop(queue)
+            seconds, km, flag, here = heapq.heappop(queue)
             if here == end:
-                return seconds, km, outside
+                return seconds, km, flag or None
             if seconds > best[here][0]:
                 continue
-            for there, hop_seconds, hop_km, hop_outside in self.near[line].get(here, ()):
+            for there, hop_seconds, hop_km, hop_flag in self.near[line].get(here, ()):
                 if known_only and hop_km is None:
                     continue
                 cost = seconds + hop_seconds
                 if there not in best or cost < best[there][0]:
-                    best[there] = (cost, km + (hop_km or 0.0), outside or hop_outside)
+                    best[there] = (cost, km + (hop_km or 0.0), flag or hop_flag or "")
                     heapq.heappush(queue, (cost, best[there][1], best[there][2], there))
         return None
 
@@ -87,8 +89,8 @@ class _Graph:
         known = self._walk(line, start, end, True)
         if fastest is None or known is None or known[0] > fastest[0] * DETOUR + 120:
             return None, "distance"
-        if known[2]:
-            return None, "outside"
+        if known[2]:   # 수도권 밖 구간(따로 붙는 운임) · 추가 운임 구간(신분당선 · 의정부경전철 · 공항철도 청라국제도시~인천공항)
+            return None, known[2]
         return known[1], None
 
 

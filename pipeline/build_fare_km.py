@@ -65,6 +65,10 @@ LINE_NAMES = {"1호선": "1호선", "1호선(경인선)": "1호선", "1호선(�
 NEW_NAMES = {"당고개": "불암산", "초성리": "청산", "뚝섬유원지": "자양", "총신대입구": "이수", "화전": "한국항공대",
              "운동장·송담대": "용인중앙시장", "서구청": "서해구청"}
 OUTSIDE = (("1호선", "평택", "신창"), ("경춘선", "가평", "춘천"))   # (노선, 경계 역, 끝 역) — 두 역 사이 쌍이 수도권 밖
+# 추가 운임 구간(서울시메트로9호선 운임안내 https://www.metro9.co.kr/kor/sub01_05_01.do · 2026-10-27 확인):
+# 신분당선 전 구간 별도운임, 의정부경전철(발곡~탑석) 별도운임 200원, 공항철도 청라국제도시~인천공항2터미널 독립구간 운임.
+# (노선, 시작 역, 끝 역) — None 이면 그 노선 모든 쌍. 이 쌍을 지나는 승차권은 계산하지 않는다(사용자 결정 2026-10-27 R1)
+EXTRA = (("신분당선", None, None), ("의정부선", None, None), ("공항철도", "청라국제도시", "인천공항2터미널"))
 BUS_ROUTES = ROOT / "data" / "bus" / "routes.json"
 BUS_STOPS = ROOT / "data" / "bus" / "stops.json"
 BUS_OUT = ROOT / "data" / "fare" / "bus_km.json"
@@ -343,6 +347,15 @@ def build(raw: dict[str, bytes], sources: dict[str, dict], today: str) -> dict:
         if not path:
             raise SystemExit(f"수도권 밖 구간 {line} {start}~{end} 를 노선망에서 찾지 못했어요")
         outside.update((line, *sorted(pair)) for pair in zip(path, path[1:]))
+    extra = set()
+    for line, start, end in EXTRA:
+        if start is None:
+            extra.update(pair for pair in pairs if pair[0] == line)
+            continue
+        path = line_path(pairs, line, by_key.get((line, key(start))), by_key.get((line, key(end))), express)
+        if not path:
+            raise SystemExit(f"추가 운임 구간 {line} {start}~{end} 를 노선망에서 찾지 못했어요")
+        extra.update((line, *sorted(pair)) for pair in zip(path, path[1:]))
     lines = defaultdict(lambda: {"pairs": 0, "official": 0, "express": 0})
     out_hops = []
     shown = lambda node_id: NEW_NAMES.get(nodes[node_id]["name"], nodes[node_id]["name"])   # 길찾기 구간 글자와 같은 지금 이름
@@ -352,8 +365,8 @@ def build(raw: dict[str, bytes], sources: dict[str, dict], today: str) -> dict:
         lines[line]["official"] += value is not None
         lines[line]["express"] += (line, left, right) in express
         out_hops.append([line, shown(left), shown(right), seconds, value, 1 if (line, left, right) in outside else 0,
-                         1 if (line, left, right) in express else 0])
-    return {"note": "슝 노선망(data/journey.json)의 이웃 역 쌍마다 [노선, 역, 역, 걸리는 초, 공식 역간거리 km | null, 수도권 밖, 급행 쌍]. "
+                         1 if (line, left, right) in express else 0, 1 if (line, left, right) in extra else 0])
+    return {"note": "슝 노선망(data/journey.json)의 이웃 역 쌍마다 [노선, 역, 역, 걸리는 초, 공식 역간거리 km | null, 수도권 밖, 급행 쌍, 추가 운임]. "
                     "null = 공식 자료에서 찾지 못함 — 그 쌍을 지나는 승차권은 예상 교통비를 계산하지 않는다. "
                     "pipeline/build_fare_km.py 가 만든다.",
             "builtAt": today, "sources": [{"id": dataset, **sources.get(dataset, {}), "name": SOURCES.get(dataset)}
