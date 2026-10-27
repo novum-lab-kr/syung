@@ -1,5 +1,5 @@
 import * as THREE from "../vendor/three.module.js";
-// web/city/stupa3d.mjs
+// web/city/stupa3d.mts
 var PI = Math.PI;
 var TAU = PI * 2;
 var square = (r) => [
