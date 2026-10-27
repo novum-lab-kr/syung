@@ -1,4 +1,4 @@
-// web/trains/plan.mjs
+// web/trains/plan.mts
 function createTrainPlanner({ stations, stationByLine, key, normStatus, route, merc, realGeom, geom, trainPose, mercStop, catchup, catchupAt, predictStops, isRide, getTrains }) {
 	function kstMs(v) {
 		const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);

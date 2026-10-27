@@ -1,4 +1,4 @@
-// web/ui/popups.mjs
+// web/ui/popups.mts
 function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheet, follow, sheetUI, sheetBody, followBtn, live }) {
 	function trainState(plan) {
 		let el = age(plan.t.receivedAt) + plan.lead, ph = plan.phases[plan.phases.length - 1];
