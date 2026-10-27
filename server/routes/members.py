@@ -1,4 +1,5 @@
-"""회원 주소(/api/auth/… · /api/me…). 운영 Caddy 가 /api 를 떼고 넘기므로 떼인 주소(/auth/… · /me…)와 붙은 주소 둘 다 받는다.
+"""회원 주소(/api/auth/… · /api/me…). 운영 Caddy 는 /api 를 붙인 채 넘긴다(state 쿠키 경로가 /api/auth/ —
+server/Caddyfile.example @member). 떼인 주소(/auth/… · /me…)도 같이 받는다.
 
 GET    /api/auth/providers            → {"providers": ["kakao", …], "me": {"id","name","provider"} | null}(설정이 없으면 빈 목록 · me null — 화면은 로그인 줄을 숨긴다.
                                          me 를 같이 실어 화면이 요청 한 번으로 메뉴 칸을 그린다)
