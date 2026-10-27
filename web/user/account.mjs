@@ -129,18 +129,20 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   const say = (id, text) => { $(id).textContent = text || ''; };
   // 알림은 모두 서랍 아래 토스트(잠깐 떴다 사라짐) — 결과 · 연결 오류 · 입력 확인(사용자 결정 2026-10-27). 입력 확인은 그 칸으로 포커스도 옮긴다
   let toastTimer = 0;
-  const toastEl = $('accountToast');
-  toastEl.onclick = () => { clearTimeout(toastTimer); toastEl.classList.remove('show'); setTimeout(() => { if (!toastEl.classList.contains('show')) toastEl.hidden = true; }, 160); };   // 누르면 바로 닫힘
+  // 알림 상자(#accountToast, aria-live)는 늘 문서에 두고 카드만 넣고 뺀다 — 숨긴 상자에 글을 넣으면 화면 낭독기가 놓친다
+  const toastBox = $('accountToast');
+  function hideToast(card) {
+    card.classList.remove('show');
+    setTimeout(() => { if (toastBox.firstChild === card && !card.classList.contains('show')) toastBox.replaceChildren(); }, 200);
+  }
   function toast(text, error = false) {
-    const el = $('accountToast');
-    el.innerHTML = `<span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(text)}</span>`;
-    el.classList.toggle('is-error', error);   // '.error' 는 index.html 의 지도 오류 화면(inset:0)과 겹친다
-    el.classList.remove('show'); el.hidden = false; void el.offsetWidth; el.classList.add('show');   // 연달아 떠도 매번 슝~ 들어온다
+    const card = document.createElement('div');
+    card.className = error ? 'acct-toast is-error' : 'acct-toast';   // '.error' 는 index.html 의 지도 오류 화면(inset:0)과 겹친다
+    card.innerHTML = `<span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(text)}</span>`;
+    card.onclick = () => { clearTimeout(toastTimer); hideToast(card); };   // 누르면 바로 닫힘
+    toastBox.replaceChildren(card); void card.offsetWidth; card.classList.add('show');   // 연달아 떠도 매번 슝~ 들어온다
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      el.classList.remove('show');
-      setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 200);
-    }, error ? 3600 : 2400);
+    toastTimer = setTimeout(() => hideToast(card), error ? 3600 : 2400);
   }
   let me = null, tickets = [], editing = null;
 
