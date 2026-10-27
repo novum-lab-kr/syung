@@ -93,11 +93,16 @@ if len(urls) != 1 or '--resolve' in sys.argv or urlsplit(urls[0]).hostname != '1
 os.execv({real_curl!r}, [{real_curl!r}] + sys.argv[1:])
 """)
         self.write("server/subway_live_proxy.py", "VERSION = 1\n")
+        self.write("server/subway-member-backup.service", "[Service]\nExecStart=backup v1\n")
+        self.write("server/subway-member-backup.timer", "[Timer]\nOnCalendar=03:30\n")
         self.write("tests/tiny.test.mjs", "import test from 'node:test'; test('fixture', () => {});\n")
         self.write("tests/test_tiny.py", "import unittest\nclass Tiny(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n")
 
     def restart_calls(self):
         return self.systemctl_log.read_text().splitlines() if self.systemctl_log.exists() else []
+
+    def unit_calls(self):
+        return self.unit_log.read_text().splitlines() if self.unit_log.exists() else []
 
     def start_site(self):
         self.site = LocalSite(self.web)
@@ -328,6 +333,60 @@ class RemoteDeployTest(RemoteFixture):
         self.assertEqual(self.deployed(), target)
         self.assertEqual((self.web / "index.html").read_text(), "new web")
         self.assertEqual(self.restart_calls(), ["restart subway-live"])
+
+    def test_backup_units_installed_once_then_only_when_changed(self):
+        self.remote()
+        installed = ["daemon-reload", "enable --now subway-member-backup.timer"]
+        self.assertEqual(sorted(path.name for path in self.systemd.iterdir() if not path.name.startswith(".")),
+                         ["subway-member-backup.service", "subway-member-backup.timer"])
+        self.assertEqual((self.systemd / "subway-member-backup.service").read_text(), "[Service]\nExecStart=backup v1\n")
+        self.assertEqual(self.unit_calls(), installed)
+        self.candidate({"web/index.html": "new web"})
+        self.remote()
+        self.assertEqual(self.unit_calls(), installed)   # 같으면 다시 안 깐다
+        self.candidate({"server/subway-member-backup.service": "[Service]\nExecStart=backup v2\n"})
+        self.remote()
+        self.assertEqual((self.systemd / "subway-member-backup.service").read_text(), "[Service]\nExecStart=backup v2\n")
+        self.assertEqual(self.unit_calls(), installed * 2)
+
+    def test_backup_unit_failure_warns_but_deploy_succeeds_and_retries(self):
+        (self.systemd / "subway-retrain.timer").write_text("hand installed\n")   # 다른 유닛은 건드리지 않는다
+        self.env["FIXTURE_UNIT_FAIL"] = "enable"
+        result = self.remote()
+        self.assertIn("경고: 회원 DB 백업 유닛 설치 실패", result.stdout)
+        self.assertEqual(self.deployed(), self.initial)
+        self.assertEqual(self.restart_calls(), ["restart subway-live"])
+        del self.env["FIXTURE_UNIT_FAIL"]
+        self.remote()   # 파일은 같아도 지난 설치가 안 끝났으면 다시 한다
+        self.assertEqual(self.unit_calls()[-2:], ["daemon-reload", "enable --now subway-member-backup.timer"])
+        self.assertFalse((self.state / "backup-units-pending").exists())
+        self.assertEqual((self.systemd / "subway-retrain.timer").read_text(), "hand installed\n")
+
+    def test_failed_reload_after_copy_retries_next_deploy(self):
+        self.remote()   # 한 번 깔리고 켜진 뒤
+        self.candidate({"server/subway-member-backup.timer": "[Timer]\nOnCalendar=03:40\n"})
+        self.env["FIXTURE_UNIT_FAIL"] = "reload"
+        self.assertIn("경고: 회원 DB 백업 유닛 설치 실패", self.remote().stdout)
+        self.assertEqual((self.systemd / "subway-member-backup.timer").read_text(), "[Timer]\nOnCalendar=03:40\n")   # 복사는 됐고
+        self.assertTrue((self.state / "backup-units-pending").exists())   # 타이머는 그대로 enabled 지만 재시도 표시가 남는다
+        del self.env["FIXTURE_UNIT_FAIL"]
+        calls = len(self.unit_calls())
+        self.remote()
+        self.assertEqual(self.unit_calls()[calls:], ["daemon-reload", "enable --now subway-member-backup.timer"])
+        self.assertFalse((self.state / "backup-units-pending").exists())
+        self.remote()
+        self.assertEqual(len(self.unit_calls()), calls + 2)   # 다 끝난 뒤에는 다시 안 한다
+
+    def test_enabled_but_not_started_timer_retries_next_deploy(self):
+        self.env["FIXTURE_UNIT_FAIL"] = "start"
+        self.assertIn("경고: 회원 DB 백업 유닛 설치 실패", self.remote().stdout)
+        self.assertTrue((self.systemd / ".enabled").exists())
+        self.assertFalse((self.systemd / ".active").exists())
+        del self.env["FIXTURE_UNIT_FAIL"]
+        (self.state / "backup-units-pending").unlink()   # 표시가 없어도 enabled · active 가 아니면 다시 한다
+        self.remote()
+        self.assertEqual(self.unit_calls()[-2:], ["daemon-reload", "enable --now subway-member-backup.timer"])
+        self.assertTrue((self.systemd / ".active").exists())
 
     def test_local_tracked_edits_refuse_deployment_before_tests(self):
         old_link, old_history = self.web.resolve(), self.history()

@@ -1,0 +1,10 @@
+[Unit]
+Description=Syung member DB daily backup (/var/backups/syung, 14 days)
+
+[Service]
+Type=oneshot
+Nice=10
+UMask=0077
+WorkingDirectory=/root/syung
+EnvironmentFile=-/etc/subway-live.env
+ExecStart=/usr/bin/python3 -m server.jobs.member_backup

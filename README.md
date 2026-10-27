@@ -70,6 +70,10 @@ cp server/subway-live.service /etc/systemd/system/ && systemctl enable --now sub
 ```
 운영 설정 예시: Caddy 는 `server/Caddyfile.example`(운영 `/etc/caddy/Caddyfile` 의 슝 블록과 같게 둔다), 환경 변수(키 · 회원 로그인)는
 `server/subway-live.env.example`. 둘 다 서버에서 고쳤으면 예시도 같이 맞춘다.
+회원 DB 백업: `subway-member-backup.timer` 가 매일 03:30 `/var/backups/syung/members-YYYYMMDD.sqlite3.gz` 로 남기고 14일 보관한다
+(서버 밖 사본은 없음). 이 유닛 둘은 배포(`deploy/remote_deploy.sh`)가 깔고 켠다. 되살리기는 서버를 멈추고 옛 WAL 을 치운 뒤에(남은 `-wal` 이 새 파일에 덧씌워진다):
+`systemctl stop subway-live` → `/var/lib/subway-live/members.sqlite3-wal` · `-shm` 지우기 →
+`(umask 077; gunzip -c <사본> > /var/lib/subway-live/members.sqlite3)`(0600) → `systemctl start subway-live`.
 
 ## 데이터 다시 만들기
 
