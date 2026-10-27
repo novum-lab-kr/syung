@@ -188,7 +188,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
     if (!me) return;
     const initial = [...me.name][0] || '나';
-    $('accountAvatar').textContent = initial; $('accountAvatarBig').textContent = initial;
+    $('accountAvatarBig').textContent = initial;   // 내 정보 줄(#accountAvatar)은 캐릭터 얼굴 그림(CSS) — 큰 칸만 첫 글자
     $('accountItemName').textContent = me.name;
     $('accountName').textContent = me.name;
     $('accountProvider').textContent = PROVIDER_NAMES[me.provider] || me.provider;
