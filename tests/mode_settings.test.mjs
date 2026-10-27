@@ -201,7 +201,7 @@ test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켠
   const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
   const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mjs');
   assert.equal(sha(PARK),'31c26c9c23d4bc944e8b81a65e082b85aea67ed6cc00c58247f2748dc70512aa');
-  const M=await import('../web/modes/coaster/metrics.mjs');assert.equal(typeof M.trackMetrics,'function');assert.deepEqual(M.ridePalette(false),M.ridePalette(false,PARK),'계산 함수의 기본 자료 = 기본 공원 자료');
+  const M=await import('../web/modes/coaster/metrics.mts');assert.equal(typeof M.trackMetrics,'function');assert.deepEqual(M.ridePalette(false),M.ridePalette(false,PARK),'계산 함수의 기본 자료 = 기본 공원 자료');
   for(const id of ['basic','simcity','joseon'])assert.equal(R.settings(id).park.enabled,false,id);
   assert.equal(R.settings('coaster').park.enabled,true);assert.equal(R.settings('coaster').park.style,PARK);assert.equal(R.settings('coaster').park.towerM,150);
   assert.throws(()=>createModeRegistry([{id:'basic',settings:{park:{towerM:0,style:{}}}}]),/towerM/);
