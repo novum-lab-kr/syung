@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTower } from '../web/city/landmarks.mjs';
+import { buildTower } from '../web/city/landmarks.mts';
 import { LANDMARKS } from '../web/city/landmarks_data.mts';
 
 const L = LANDMARKS.find(l => l.id === 'lotte');
