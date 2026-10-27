@@ -5,7 +5,16 @@
 // 북서 · 남동 두 모서리를 따라 위아래로 이어지고, 꼭대기는 그 솔기 선에서 두 갈래('귀')로 갈라진다.
 // 치수는 OpenFreeMap z14 의 building:part 외곽(바닥부터 겹친 조각 147 · 154 · 183 · 290 · 312 · 392 · 432 · 440 · 520 · 555 m)에서
 // 잰 반대각선(솔기 방향 r, 다른 방향 r × k)이다 (2026-10-09). 참고: https://www.kpf.com/project/lotte-world-tower
-export const LANDMARKS = [
+type LngLat = [number, number];
+// 랜드마크 모델 하나(landmarks.mjs 가 그린다 · mesh.mjs 가 그 자리 조각 건물을 뺀다)
+export interface Landmark {
+  id:string; name:string; lngLat:LngLat; hide:{ radiusM:number; minH:number }; seamDeg:number;
+  profile:[number, number, number][]; roundness:number; seam:{ widthM:number; depthM:number };
+  crown:{ splitM:number; gapTopM:number; latticeFromM:number }; height:number;
+}
+// 석탑 하나(kind: 'seokga' · 'wongaksa')
+export interface Stupa { id:string; kind:string; lngLat:LngLat; height:number; widthMul?:number; looks:string[]; minPx?:number; yawDeg:number }
+export const LANDMARKS:Landmark[] = [
   {
     id: 'lotte', name: '롯데월드타워', lngLat: [127.102655, 37.51254],
     hide: { radiusM: 48, minH: 140 },   // 이 반경 안에 중심이 있고 이 높이 이상인 조각 건물은 그리지 않는다
@@ -23,11 +32,11 @@ export const LANDMARKS = [
 // 불국사 삼층석탑(석가탑, 약 10.8 m — 2단 기단 · 세 층, 층급받침 지붕돌). looks: 그리는 랜드마크 모양(모드 설정 city.landmarks).
 // replaces: 이 모양일 때 그 자리 탑 모델(LANDMARKS id)을 대신한다. 남산타워는 지도 건물이라 조선 팩 landmarkHide 가 그 조각을 뺀다.
 // minPx: 실제 크기면 너무 작을 때 화면에서 이만큼은 보이게 키운다(탑골공원 12 m). widthMul: 거대한 탑은 가로를 줄여 날씬하게(그대로 키우면 기단이 260 m).
-export const STUPAS = [
+export const STUPAS:Stupa[] = [
   { id: 'namsan-stupa', kind: 'seokga', lngLat: [126.988216, 37.551259], height: 240, widthMul: .65, looks: ['wood-tower'], yawDeg: 0 },   // 남산타워 아래 광장(72 × 75 m) 한가운데 — 기단(폭 약 71 m)이 광장에 앉게(2026-10-11 행님: 바닥 보고 자리 잡기)
   { id: 'wongaksa', kind: 'wongaksa', lngLat: [126.98830, 37.57123], height: 12, looks: ['wood-tower'], minPx: 30, yawDeg: 0 },   // 탑골공원 팔각정 쪽으로 약 18 m(행님 2026-10-11: 집 쪽으로)
 ];
 
-const mercX = lng => (lng + 180) / 360;
-const mercY = lat => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;
-export const landmarkMerc = L => [mercX(L.lngLat[0]), mercY(L.lngLat[1])];
+const mercX = (lng:number) => (lng + 180) / 360;
+const mercY = (lat:number) => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;
+export const landmarkMerc = (L:{ lngLat:LngLat }):[number, number] => [mercX(L.lngLat[0]), mercY(L.lngLat[1])];

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stairProfile, stairHeightAt, layoutExits, buildExits, exitSamples } from '../web/city/viaduct_exits.mjs';
+import { stairProfile, stairHeightAt, layoutExits, buildExits, exitSamples } from '../web/city/viaduct_exits.mts';
 import { STRIDE, MAT, platformEdgeM } from '../web/city/viaduct.mjs';
 import SEOUL from '../web/modes/basic/city.mjs';
 
