@@ -2,7 +2,7 @@
 // building meshes out — read by web/city/mvt.mjs, built by web/city/mesh.mjs — so panning never waits
 // on a build. One tile at a time, in the order asked; the vertex and index buffers go back transferred.
 import { decodeTile } from './mvt.mts';
-import { TileBuilder, resolvePack } from './mesh.mjs';
+import { TileBuilder, resolvePack } from './mesh.mts';
 import '../modes/joseon/hanok.mjs';
 import '../modes/starcraft/race_buildings.mjs';
 import '../modes/nations/parts.mjs';   // 도시 부품 'nation'(나라 모드 건물)도 이 Worker 에 등록   // 도시 부품 'race'(스타크래프트 종족 건물)도 이 Worker 에 등록   // 도시 부품 'hanok' 을 이 Worker 에도 등록(조선 팩이면 한옥으로 짓는다 — 코드는 메시지로 받지 않는다)

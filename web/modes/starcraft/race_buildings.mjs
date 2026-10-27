@@ -8,7 +8,7 @@
 // glow(KIND.SIGN, 팩 signs.colors 8색 — 밤에 스스로 빛남), metal(KIND.EQUIP 한 색, 가까이서만 자란다), trim(KIND.AWNING 3색, 가까이서만 자란다).
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다.
 import { registerCityPart } from '../../city/parts.mts';
-import { KIND } from '../../city/mesh.mjs';
+import { KIND } from '../../city/mesh.mts';
 import { orientedBox, pointInPolygon, deepestPoint, edgeDistance } from '../../city/geom.mts';
 import { BUILDING_MODELS } from './building_models.mjs';
 

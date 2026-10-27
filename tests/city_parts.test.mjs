@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {registerCityPart,cityPart,hasCityPart} from '../web/city/parts.mts';
-import {TileBuilder,resolvePack} from '../web/city/mesh.mjs';
+import {TileBuilder,resolvePack} from '../web/city/mesh.mts';
 
 // 도시 엔진 부품(4-13): 엔진은 한옥 코드를 import 하지 않고 이름으로 받는다. 등록 전에 조선 팩으로 지으면 분명한 오류, 등록하면 짓는다
 test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 다른 것은 거부', async () => {
@@ -29,5 +29,5 @@ test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 
 test('Worker 도 한옥 부품을 스스로 등록하고, 엔진 파일은 한옥을 import 하지 않는다', () => {
   const src=f=>readFileSync(new URL(`../web/${f}`,import.meta.url),'utf8');
   assert.match(src('city/worker.mjs'),/^import '\.\.\/modes\/joseon\/hanok\.mjs';/m);
-  for(const f of ['city/mesh.mjs','city/buildings.mjs'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mjs['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
+  for(const f of ['city/mesh.mts','city/buildings.mjs'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mjs['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
 });
