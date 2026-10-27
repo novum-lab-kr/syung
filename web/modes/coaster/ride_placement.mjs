@@ -1,7 +1,7 @@
 // Read the same z14 building footprints as CityBuildings, before admitting a ride to the renderer.
 // Neighbourhoods settle once in a stable order; camera movement never moves or changes a ride.
 import {decodeTile} from '../../city/mvt.mts';
-import {classifyRings,bbox} from '../../city/geom.mjs';
+import {classifyRings,bbox} from '../../city/geom.mts';
 import {selectRideSites,withRideKind,RIDE_SITE_RULES} from './ride_sites.mjs';
 
 const EARTH=40075016.685578488,TILE_Z=14;

@@ -9,7 +9,7 @@
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다.
 import { registerCityPart } from '../../city/parts.mts';
 import { KIND } from '../../city/mesh.mjs';
-import { orientedBox, pointInPolygon, deepestPoint, edgeDistance } from '../../city/geom.mjs';
+import { orientedBox, pointInPolygon, deepestPoint, edgeDistance } from '../../city/geom.mts';
 import { BUILDING_MODELS } from './building_models.mjs';
 
 const NO_AO = 8;   // (mesh.mjs FLAG.NO_AO)

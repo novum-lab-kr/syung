@@ -7,7 +7,7 @@
 import { registerCityPart } from '../../city/parts.mts';
 import { KIND } from '../../city/mesh.mjs';
 import { fitRect, modelBuilder, raceTemplates, templateIndex, registerBuildingModels, modelList, pickModel } from '../starcraft/race_buildings.mjs';
-import { pointInPolygon, edgeDistance } from '../../city/geom.mjs';
+import { pointInPolygon, edgeDistance } from '../../city/geom.mts';
 import { NATION_MODELS, NATION_CELLS } from './models.mjs';
 for (const [k, list] of Object.entries(NATION_MODELS)) registerBuildingModels(k, list);   // 스타 템플릿 · 인스턴스 그리기에 나라 모형도(메인 · Worker 각자)
 
