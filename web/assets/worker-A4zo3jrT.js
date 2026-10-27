@@ -760,7 +760,7 @@ function triangulate(outer, holes) {
 	earcutLinked(outerNode, tris, 0);
 	return tris;
 }
-// web/city/mesh.mjs
+// web/city/mesh.mts
 const HANOK_KIND = {
 	ROOF: 8,
 	WALL: 9,

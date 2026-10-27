@@ -1,7 +1,7 @@
 import { cityPart } from "./parts.mjs";
 import { LANDMARKS, landmarkMerc } from "./landmarks_data.mjs";
 import { area, bbox, classifyRings, clipRing, deepestPoint, edgeDistance, insetRing, interiorPoint, orientedBox, pointInPolygon, ringInBox, signedArea2, simplifyRing, triangulate } from "./geom.mjs";
-// web/city/mesh.mjs
+// web/city/mesh.mts
 var HANOK_KIND = {
 	ROOF: 8,
 	WALL: 9,
