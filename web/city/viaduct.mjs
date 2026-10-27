@@ -33,7 +33,7 @@ import FLAGS from './viaduct_flags.mjs';
 import SNAP from './viaduct_snap.mjs';
 import { toneRGB, hexRgb, MPP } from './style.mts';
 import { compileProgram, hashi } from './traffic.mts';
-import { MU, MERC_ORIGIN as O, toM } from './life.mjs';
+import { MU, MERC_ORIGIN as O, toM } from './life.mts';
 import { STRIDE, MAT, COLOR_KEYS, Mesh } from './viaduct_mesh.mts';
 import { stationLevels, holdLevels, edgeProfile, pointSegmentDistance, edgeOverlaps, resolveCrossings, sameLevelRegions, compareLines } from './viaduct_levels.mts';
 import { layoutExits, buildExits, exitSamples } from './viaduct_exits.mts';

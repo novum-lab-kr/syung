@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clearSpot, EXIT_CLEAR} from '../web/city/life.mjs';
+import {clearSpot, EXIT_CLEAR} from '../web/city/life.mts';
 
 // 지하철 출구 표지가 건물과 겹치지 않게(덕배 2026-10-15): 건물 안 · 벽 가까이 찍힌 출구는 가장 가까운 바깥으로
 const box = (x0, y0, x1, y1) => (x, y, m) => x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m;

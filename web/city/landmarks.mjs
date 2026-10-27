@@ -6,7 +6,7 @@
 // 멀리서도 롯데타워로 읽히게 윤곽(가는 몸 · 볼록한 테이퍼 · 갈라진 꼭대기)을 지키고, 세로줄은 성기고 진하게(Codex 검토, 2026-10-09).
 // 지역 미터 좌표(city_life 의 MERC_ORIGIN · MU)에 짓고, 고가와 같은 캔버스 · 깊이에 그린다.
 import { LANDMARKS, STUPAS } from './landmarks_data.mts';
-import { MU, MERC_ORIGIN as O, toM } from './life.mjs';
+import { MU, MERC_ORIGIN as O, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 
 const N = 56;              // 평면 둘레 점 수(솔기 홈 점 제외)
