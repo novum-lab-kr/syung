@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {platformRuntime,distance} from './platform_endpoints_fixture.mjs';
-import {closestPlatformPoint} from '../web/lib/platform_route.mjs';
+import {closestPlatformPoint} from '../web/lib/platform_route.mts';
 const xy=p=>({x:p[0],y:p[1]});
 
 test('출구 연결점은 곡선 승강장과 양 끝 중 가장 가까운 곳에 닿아요',()=>{

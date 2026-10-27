@@ -9,8 +9,8 @@ import zlib from 'node:zlib';
 import readline from 'node:readline';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mjs';
-import {catchup,catchupAt} from '../web/lib/train_catchup.mjs';
+import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
+import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
 import {createTrainPlanner} from '../web/trains/plan.mjs';
 
 export {key};

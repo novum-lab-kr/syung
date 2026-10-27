@@ -1,7 +1,7 @@
 // Cases taken from real bugs seen on the live map (2026-09-24/25).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRouter,key} from '../web/lib/routing.mjs';
+import {createRouter,key} from '../web/lib/routing.mts';
 import {stations,paths} from './fixtures.mjs';
 
 const R=createRouter({stations,paths});

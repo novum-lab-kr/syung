@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {catchup,catchupAt,CATCHUP_MPS} from '../web/lib/train_catchup.mjs';
+import {catchup,catchupAt,CATCHUP_MPS} from '../web/lib/train_catchup.mts';
 
 // 0.01초 간격으로 따라가며 더해지는 속도 · 남은 차이를 본다
 function trace(c,dt=.01){const out=[];for(let t=0;t<=c.T+dt;t+=dt)out.push({t,...catchupAt(c,t)});return out}
