@@ -173,6 +173,8 @@ class MemberHttpTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/me", cookie=again).status, 401)
         with contextlib.closing(sqlite3.connect(self.db)) as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM users WHERE id=1").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT * FROM withdraw_stats").fetchall(), [("2027-01-15", "self", 1)],
+                             "본인 탈퇴는 한국 날짜 · 사유 · 수만 남긴다")
             for table in ("identities", "sessions", "tickets"):
                 self.assertEqual(conn.execute(f"SELECT count(*) FROM {table} WHERE user_id=1").fetchone()[0], 0, table)
             self.assertEqual(conn.execute("SELECT count(*) FROM users").fetchone()[0], 1, "준호는 남는다")
@@ -295,10 +297,14 @@ class MemberHttpTest(unittest.TestCase):
             for table in ("users", "identities", "sessions", "tickets"):
                 self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0 if table == "tickets" else 1, table)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM admin_log").fetchone()[0], 0, "관리 기록은 남기지 않는다")
+            self.assertEqual(conn.execute("SELECT * FROM withdraw_stats").fetchall(), [("2027-01-15", "kakao_unlink", 1)],
+                             "탈퇴 수만 하나 오른다(회원번호 · 닉네임 없음)")
         self.assertEqual(self.request("GET", "/api/me", cookie=other).json["name"], "준호", "다른 회원은 그대로")
         # 같은 알림이 다시 와도(재전송) · 없는 회원이어도 200 — GET 도 받는다
         self.assertEqual(self.unlink("GET").status, 200)
         self.assertEqual(self.unlink(fields={"app_id": "1234", "user_id": "999", "referrer_type": "ACCOUNT_DELETE"}).status, 200)
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT count FROM withdraw_stats").fetchall(), [(1,)], "다시 온 알림 · 없는 회원은 안 센다")
         # 다시 카카오로 들어오면 새 회원
         self.login(subject="42")
         self.assertEqual(self.last_location, "/#login=new")

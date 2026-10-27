@@ -81,8 +81,18 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         CREATE INDEX admin_log_user ON admin_log(user_id, at)
     """),
+    # 5(2026-10-27): 날짜별 탈퇴 수(한국 날짜 · 사유별 수만). 누가 탈퇴했는지 알 수 있는 값(회원번호 · 닉네임 · 가입일)은 넣지 않는다.
+    # reason: self(본인 탈퇴) · kakao_unlink(카카오 연결 해제 웹훅) · admin(관리자 탈퇴 처리).
+    (5, """
+        CREATE TABLE withdraw_stats (
+            day TEXT NOT NULL,
+            reason TEXT NOT NULL CHECK (reason IN ('self', 'kakao_unlink', 'admin')),
+            count INTEGER NOT NULL,
+            PRIMARY KEY (day, reason)
+        )
+    """),
 ]
-KST_SECONDS = 9 * 3600   # 날짜별 가입 수는 한국 날짜로 센다
+KST_SECONDS = 9 * 3600   # 날짜별 가입 · 탈퇴 수는 한국 날짜로 센다
 ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
 
 TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
@@ -92,6 +102,12 @@ def _log(conn: sqlite3.Connection, at: int, action: str, user_id: int, reason: s
     """관리 기록 한 줄. 1년 지난 기록은 새로 쓸 때 같이 지운다(세션과 같은 틀)."""
     conn.execute("DELETE FROM admin_log WHERE at<=?", (at - ADMIN_LOG_AGE,))
     conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, ?, ?, ?)", (at, action, user_id, reason))
+
+
+def _count_withdraw(conn: sqlite3.Connection, at: int, reason: str) -> None:
+    """그 한국 날짜 · 사유의 탈퇴 수를 1 올린다. 회원을 지우는 같은 트랜잭션 안에서만 부른다."""
+    conn.execute("INSERT INTO withdraw_stats (day, reason, count) VALUES (date(?, 'unixepoch'), ?, 1) "
+                 "ON CONFLICT (day, reason) DO UPDATE SET count=count+1", (at + KST_SECONDS, reason))
 
 
 class MemberStore:
@@ -190,15 +206,25 @@ class MemberStore:
                          "ORDER BY created_at LIMIT 1) AS provider FROM users u WHERE u.id=?", (user_id,))
         return dict(row) if row else None
 
-    def delete_user(self, user_id: int) -> None:
-        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지운다(ON DELETE CASCADE)."""
-        self._write(lambda conn: conn.execute("DELETE FROM users WHERE id=?", (user_id,)))
+    def delete_user(self, user_id: int, now: int) -> bool:
+        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다 → 지웠나."""
+        def work(conn):
+            if conn.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount == 0:
+                return False
+            _count_withdraw(conn, now, "self")
+            return True
+        return self._write(work)
 
-    def delete_identity_user(self, provider: str, subject: str) -> bool:
-        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE) → 지웠나."""
-        return self._write(lambda conn: conn.execute(
-            "DELETE FROM users WHERE id=(SELECT user_id FROM identities WHERE provider=? AND subject=?)",
-            (provider, subject)).rowcount > 0)
+    def delete_identity_user(self, provider: str, subject: str, now: int) -> bool:
+        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE) → 지웠나.
+        지웠으면 오늘 카카오 연결 해제 탈퇴 수를 1 올린다(제공자는 카카오만 부른다)."""
+        def work(conn):
+            removed = conn.execute("DELETE FROM users WHERE id=(SELECT user_id FROM identities WHERE provider=? AND subject=?)",
+                                   (provider, subject)).rowcount > 0
+            if removed:
+                _count_withdraw(conn, now, f"{provider}_unlink")
+            return removed
+        return self._write(work)
 
     # ---- 세션 ----
     def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int) -> None:
@@ -274,6 +300,18 @@ class MemberStore:
         return {"total": counts["total"], "today": counts["today"] or 0, "week": counts["week"] or 0,
                 "month": counts["month"] or 0, "providers": providers, "daily": daily}
 
+    def withdraw_stats(self, since: tuple[str, str, str], first_day: str) -> dict:
+        """since: (오늘 · 7일 · 30일 시작 날짜 'YYYY-MM-DD'), first_day: 날짜별 수를 셀 첫 날짜 → 탈퇴 수만(누구인지 없음)."""
+        counts = self._read("SELECT coalesce(sum(count), 0) AS total, coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS today, "
+                            "coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS week, "
+                            "coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS month FROM withdraw_stats", since)
+        reasons = self._all("SELECT reason, sum(count) AS count FROM withdraw_stats GROUP BY reason "
+                            "ORDER BY count DESC, reason", ())
+        daily = self._all("SELECT day, sum(count) AS count FROM withdraw_stats WHERE day>=? GROUP BY day ORDER BY day",
+                          (first_day,))
+        return {"total": counts["total"], "today": counts["today"], "week": counts["week"], "month": counts["month"],
+                "reasons": reasons, "daily": daily}
+
     _MEMBER_ROW = ("SELECT u.id, u.display_name, u.created_at, "
                    "(SELECT provider FROM identities WHERE user_id=u.id ORDER BY created_at LIMIT 1) AS provider, "
                    "(SELECT count(*) FROM tickets WHERE user_id=u.id) AS tickets, "
@@ -333,7 +371,8 @@ class MemberStore:
         return self._write(work)
 
     def admin_delete(self, user_id: int, at: int, reason: str) -> dict | None:
-        """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권은 ON DELETE CASCADE) + 기록 → 지운 수. 없으면 None."""
+        """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권은 ON DELETE CASCADE) + 기록 + 오늘 관리자 탈퇴 수 +1
+        → 지운 수. 없으면 None."""
         def work(conn):
             if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
                 return None
@@ -341,5 +380,6 @@ class MemberStore:
                       for name in ("identities", "sessions", "tickets")}
             conn.execute("DELETE FROM users WHERE id=?", (user_id,))
             _log(conn, at, "delete", user_id, reason)
+            _count_withdraw(conn, at, "admin")
             return counts
         return self._write(work)

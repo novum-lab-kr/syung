@@ -61,6 +61,7 @@ h3{margin:16px 0 8px;font-size:14px}
 .trend text{fill:var(--muted);font-size:11px;font-family:inherit}
 .trend .val{fill:var(--ink);font-weight:700}
 .trend rect.bar{fill:var(--syung-deep)}
+.trend rect.bar.out{fill:var(--muted)}
 .kinds{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .kinds li{background:var(--control);border-radius:12px;padding:9px 12px;display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--secondary)}
 .kinds li b{margin-left:auto;font-family:var(--round);font-weight:400;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -129,6 +130,21 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
     </div>
   </section>
 
+  <section class="stats" aria-label="탈퇴 수">
+    <div class="stat"><small>모든 탈퇴</small><b id="wTotal">–</b></div>
+    <div class="stat"><small>오늘 탈퇴</small><b id="wToday">–</b></div>
+    <div class="stat"><small>최근 7일 탈퇴</small><b id="wWeek">–</b></div>
+    <div class="stat"><small>최근 30일 탈퇴</small><b id="wMonth">–</b></div>
+  </section>
+
+  <section class="box" aria-label="탈퇴 추이">
+    <h2>탈퇴 추이 · 최근 30일</h2>
+    <div class="trend">
+      <div id="outChart" class="muted">불러오는 중</div>
+      <div><h3 style="margin-top:0">탈퇴 사유</h3><ul class="kinds" id="outKinds"></ul></div>
+    </div>
+  </section>
+
   <section class="box" aria-label="회원 목록">
     <h2>회원 목록</h2>
     <form class="search" id="searchForm" role="search">
@@ -185,6 +201,7 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
 const $ = id => document.getElementById(id);
 const PROVIDERS = {kakao: '카카오', google: '구글', apple: 'Apple'};
 const ACTIONS = {places: '장소 보기', logout: '강제 로그아웃', delete: '탈퇴 처리'};
+const WITHDRAW_REASONS = {self: '본인 탈퇴', kakao_unlink: '카카오 연결 해제', admin: '관리자 탈퇴 처리'};
 const DAYS = ['', '월', '화', '수', '목', '금', '토', '일'];
 const provider = name => PROVIDERS[name] || name || '–';
 const when = (seconds, withTime = true) => seconds == null ? '–' : new Intl.DateTimeFormat('ko-KR', {timeZone: 'Asia/Seoul',
@@ -204,18 +221,25 @@ async function api(path, options = {}) {
   return body;
 }
 
-// ---- 회원 수 · 가입 추이 ----
-function drawChart(daily) {
+// ---- 회원 수 · 가입 · 탈퇴 추이 ----
+function drawChart(target, daily, label, barClass = 'bar') {
   const width = 600, height = 180, top = 22, bottom = 22, most = Math.max(1, ...daily.map(day => day.count));
-  const step = width / daily.length, svg = ['<svg viewBox="0 0 600 180" role="img" aria-label="날짜별 가입 수">'];
+  const step = width / daily.length, svg = [`<svg viewBox="0 0 600 180" role="img" aria-label="${label}">`];
   daily.forEach((day, index) => {
     const tall = (height - top - bottom) * day.count / most, x = index * step + 2, y = height - bottom - tall;
-    svg.push(`<rect class="bar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(step - 4).toFixed(1)}" height="${Math.max(day.count ? 2 : 0, tall).toFixed(1)}" rx="2"><title>${day.day} ${day.count}명</title></rect>`);
+    svg.push(`<rect class="${barClass}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(step - 4).toFixed(1)}" height="${Math.max(day.count ? 2 : 0, tall).toFixed(1)}" rx="2"><title>${day.day} ${day.count}명</title></rect>`);
     if (day.count) svg.push(`<text class="val" x="${(x + (step - 4) / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle">${day.count}</text>`);
     if ((daily.length - 1 - index) % 7 === 0) svg.push(`<text x="${(index === daily.length - 1 ? x + step - 4 : x + (step - 4) / 2).toFixed(1)}" y="${height - 5}" text-anchor="${index === daily.length - 1 ? 'end' : 'middle'}">${day.day.slice(5).replace('-', '.')}</text>`);
   });
-  $('chart').className = '';
-  $('chart').innerHTML = svg.join('') + '</svg>';
+  $(target).className = '';
+  $(target).innerHTML = svg.join('') + '</svg>';
+}
+
+function drawKinds(target, items, name, empty) {
+  $(target).replaceChildren(...(items.length ? items : [{name: empty, count: 0}]).map(item => {
+    const li = document.createElement('li'), count = document.createElement('b');
+    li.textContent = item.name ?? name(item); count.textContent = item.count; li.append(count); return li;
+  }));
 }
 
 async function loadStats() {
@@ -223,12 +247,14 @@ async function loadStats() {
     const stats = await api('/members/stats');
     $('sTotal').textContent = stats.total.toLocaleString('ko-KR');
     $('sToday').textContent = stats.today; $('sWeek').textContent = stats.week; $('sMonth').textContent = stats.month;
-    drawChart(stats.daily);
-    $('kinds').replaceChildren(...(stats.providers.length ? stats.providers : [{provider: '아직 회원 없음', count: 0}]).map(item => {
-      const li = document.createElement('li'), count = document.createElement('b');
-      li.textContent = provider(item.provider); count.textContent = item.count; li.append(count); return li;
-    }));
-  } catch (error) { $('chart').textContent = error.message; }
+    drawChart('chart', stats.daily, '날짜별 가입 수');
+    drawKinds('kinds', stats.providers, item => provider(item.provider), '아직 회원 없음');
+    const out = stats.withdraw;
+    $('wTotal').textContent = out.total.toLocaleString('ko-KR');
+    $('wToday').textContent = out.today; $('wWeek').textContent = out.week; $('wMonth').textContent = out.month;
+    drawChart('outChart', out.daily, '날짜별 탈퇴 수', 'bar out');
+    drawKinds('outKinds', out.reasons, item => WITHDRAW_REASONS[item.reason] || item.reason, '아직 탈퇴 없음');
+  } catch (error) { $('chart').textContent = error.message; $('outChart').textContent = error.message; }
 }
 
 // ---- 회원 목록 ----

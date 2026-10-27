@@ -1,6 +1,8 @@
 """관리 화면 주소(주인 쿠키만 — http.py 가 쿠키를 먼저 보고 /admin 을 뗀 주소로 부른다). 바깥 주소는 /api/admin/…
 
 GET    /members/stats                → {total, today, week, month, providers:[{provider,count}], daily:[{day,count}] 30일}
+                                       + withdraw:{total, today, week, month, reasons:[{reason,count}], daily:[{day,count}] 30일}
+                                         — 탈퇴 수만(reason: self · kakao_unlink · admin, 누구인지 없음)
 GET    /members?q=&page=             → {total, page, pageSize, members:[{id,name,createdAt,provider,tickets,lastLogin,sessions}]}
 GET    /members/<번호>                → 목록 칸 + identities · ticketList(장소 · 경로 빼고) · log · 404
 POST   /members/<번호>/places         {reason}            → {places:[{id,name,from:{name,lat,lng},to:{…}}]} — 열람 기록을 남긴다
