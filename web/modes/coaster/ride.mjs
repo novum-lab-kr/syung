@@ -1,6 +1,6 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
 import { RIDE_FAR_M, rideCamera, rideFov, seatEye, seatIndex, seatLabel, seatNumber, seatRows } from "./first_person.mjs";
-// web/modes/coaster/ride.mjs
+// web/modes/coaster/ride.mts
 function createCoasterRide({ map, maplibregl, RIDE_PX = 0, planner, colors, cityViaduct, sheetBody, closeSheet, showTrainPopup, applyTheme, effectiveTheme, coasterBodyPx, TRAIN_MIN_PX, mercStop, trainPose, trackPoint, blendShift, toRide, fromRide, coasterCarFrame, coasterRailFrames, riderState, trainLngLat, stopFollowing, isCoaster, getSheetTrain, getSleeperM }) {
 	let ride = null, rideSeat = {
 		car: 1,

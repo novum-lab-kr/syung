@@ -1,7 +1,7 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
 import { trackMetrics, zoomFade } from "./metrics.mjs";
 import { SEOUL_CITY_STYLE } from "../basic/city.mjs";
-// web/modes/coaster/track.mjs
+// web/modes/coaster/track.mts
 var BULB_EVERY = PARK_DEFAULTS.night.bulbEveryM;
 var COL_SPAN = PARK_DEFAULTS.supports.spanM[0];
 var COL_AFRAME = PARK_DEFAULTS.supports.aHeightM;

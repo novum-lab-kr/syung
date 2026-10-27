@@ -1,4 +1,4 @@
-// web/modes/coaster/geometry.mjs
+// web/modes/coaster/geometry.mts
 function createCoasterGeometry({ maplibregl, paths, byId, cityViaduct, edgeGeom, geom, cityGeom, withCum, metresBetween, smooth, onFresh }) {
 	function coasterPath(line, a, b) {
 		const lo = Math.min(a, b), hi = Math.max(a, b), T = towerCourse(line, lo, hi);

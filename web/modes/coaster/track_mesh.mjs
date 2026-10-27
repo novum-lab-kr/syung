@@ -1,5 +1,5 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
-// web/modes/coaster/track_mesh.mjs
+// web/modes/coaster/track_mesh.mts
 function coasterTrackVertexShader(heart) {
 	return `#version 300 es
 in vec4 a_p;in vec2 a_r;in vec4 a_o;in vec2 a_z;in vec3 a_f;in vec3 a_u;in vec4 a_c;

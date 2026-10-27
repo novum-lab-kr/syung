@@ -1,5 +1,5 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
-// web/modes/coaster/metrics.mjs
+// web/modes/coaster/metrics.mts
 var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 function zoomFade(zoom, range) {
 	const t = clamp((zoom - range[0]) / (range[1] - range[0]), 0, 1);

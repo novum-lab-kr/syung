@@ -1,4 +1,4 @@
-// web/modes/coaster/motion.mjs
+// web/modes/coaster/motion.mts
 function createCoasterMotion({ geom, coasterAt, isCoaster }) {
 	const RIDE_G = 9.81, RIDE_TRIM = 35, rideClocks = /* @__PURE__ */ new Map();
 	function rideClock(line, from, to) {

@@ -1,4 +1,4 @@
-// web/modes/coaster/badges.mjs
+// web/modes/coaster/badges.mts
 var COASTER_BADGES = [
 	{
 		label: "",

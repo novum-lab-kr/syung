@@ -1,5 +1,5 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
-// web/modes/coaster/ride_track.mjs
+// web/modes/coaster/ride_track.mts
 var SLEEPER_M = .6;
 var STRIDE = 7;
 var hex = (h) => [
