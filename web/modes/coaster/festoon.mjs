@@ -12,7 +12,7 @@
 
 import { decodeTile } from '../../city/mvt.mts';
 import { classifyRings } from '../../city/geom.mts';
-import { LANDMARKS, landmarkMerc } from '../../city/landmarks_data.mjs';
+import { LANDMARKS, landmarkMerc } from '../../city/landmarks_data.mts';
 import { BULB_FS, compile, lightsOn, lightsOff, bulbSize, hexRGB, ORIGIN } from './night.mjs';
 
 const EARTH = 40075016.685578488, TILE_Z = 14;
