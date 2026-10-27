@@ -1,4 +1,4 @@
-// web/city/landmarks_data.mjs
+// web/city/landmarks_data.mts
 var LANDMARKS = [{
 	id: "lotte",
 	name: "롯데월드타워",

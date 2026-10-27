@@ -1,4 +1,4 @@
-// web/city/bloom.mjs
+// web/city/bloom.mts
 var VS = `#version 300 es
 out vec2 v_uv;
 void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); v_uv = p; gl_Position = vec4(p * 2. - 1., 0., 1.); }`;
