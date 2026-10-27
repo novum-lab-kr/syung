@@ -1,4 +1,4 @@
-// web/city/traffic.mjs
+// web/city/traffic.mts
 var hashi = (a, b, c = 0) => {
 	let x = Math.imul(a | 0, 2246822507) ^ Math.imul((b | 0) + 1799596469, 3266489909) ^ Math.imul((c | 0) + 668265263, 374761393);
 	x ^= x >>> 15;
