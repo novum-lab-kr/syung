@@ -40,7 +40,9 @@ class ReleaseFixture(unittest.TestCase):
         self.state = self.base / "state"
         self.bin = self.base / "bin"
         self.systemctl_log = self.base / "systemctl.log"
-        for folder in (self.repo, self.web, self.state, self.bin, self.base / "tmp"):
+        self.unit_log = self.base / "systemctl-units.log"   # 백업 유닛 설치(daemon-reload · enable) — 재시작 기록과 따로
+        self.systemd = self.base / "systemd"
+        for folder in (self.repo, self.web, self.state, self.bin, self.base / "tmp", self.systemd):
             folder.mkdir(parents=True)
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith("SYUNG_") and key.lower() not in
@@ -53,12 +55,26 @@ class ReleaseFixture(unittest.TestCase):
             "TMPDIR": str(self.base / "tmp"), "PYTHONDONTWRITEBYTECODE": "1",
             "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
             "FIXTURE_SYSTEMCTL_LOG": str(self.systemctl_log),
+            "FIXTURE_UNIT_LOG": str(self.unit_log), "SYUNG_SYSTEMD_DIR": str(self.systemd),
             "PATH": str(self.bin) + os.pathsep + os.environ.get("PATH", os.defpath),
             "LC_ALL": "C.UTF-8",
         })
         self.command("systemctl", """
 import os, sys
-if sys.argv[1:] != ['restart', 'subway-live']:
+from pathlib import Path
+args = sys.argv[1:]
+enabled = Path(os.environ['SYUNG_SYSTEMD_DIR']) / '.enabled'
+if args == ['is-enabled', '--quiet', 'subway-member-backup.timer']:
+    raise SystemExit(0 if enabled.exists() else 1)
+if args in (['daemon-reload'], ['enable', '--now', 'subway-member-backup.timer']):
+    with open(os.environ['FIXTURE_UNIT_LOG'], 'a') as log:
+        log.write(' '.join(args) + '\\n')
+    if args[0] == 'enable':
+        if os.environ.get('FIXTURE_UNIT_FAIL') == '1':
+            raise SystemExit(1)
+        enabled.touch()
+    raise SystemExit(0)
+if args != ['restart', 'subway-live']:
     raise SystemExit('허용하지 않은 가짜 systemctl 호출')
 with open(os.environ['FIXTURE_SYSTEMCTL_LOG'], 'a') as log:
     log.write('restart subway-live\\n')

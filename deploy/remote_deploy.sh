@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Run by GitHub Actions over SSH (forced command for the deploy key). Refuses to deploy over local edits.
 # 순서: origin/main 커밋 하나를 정해 → 그 커밋을 임시 폴더에 꺼내 테스트 → 통과하면 merge · 정적 릴리스 바꿔 끼우기 →
-#   server/ 가 마지막 성공 배포와 달라졌으면 프록시 재시작 → 배포 뒤 확인(실패하면 직전 릴리스로) → 성공 기록 → 오래된 릴리스 정리.
+#   server/ 가 마지막 성공 배포와 달라졌으면 프록시 재시작 → 배포 뒤 확인(실패하면 직전 릴리스로) → 성공 기록 → 회원 DB 백업 유닛 설치(실패해도 경고만) → 오래된 릴리스 정리.
 # 테스트가 실패하면 HEAD 도 링크도 안 움직인다. 재시작은 HEAD 가 아니라 마지막 성공 기록(deployed-commit)과 비교해서
 #   정한다: 실패한 뒤 재시도나, 옛 방식으로 HEAD 만 앞서 나간 경우에도 재시작을 놓치지 않게(기록이 없으면 한 번 재시작).
 # 서버는 클론에서 돈다(2026-10-10 헤르메스 결정 A): 자동 되돌리기는 정적 파일만.
-# 경로(테스트는 임시 폴더로): SYUNG_CLONE · SYUNG_STATE · SYUNG_DEPLOY_LOG, deploy.sh · check_site.sh 의 SYUNG_* 도 그대로 넘어간다.
+# 경로(테스트는 임시 폴더로): SYUNG_CLONE · SYUNG_STATE · SYUNG_DEPLOY_LOG · SYUNG_SYSTEMD_DIR, deploy.sh · check_site.sh 의 SYUNG_* 도 그대로 넘어간다.
 set -euo pipefail
 cd "${SYUNG_CLONE:-/root/syung}"
 STATE=${SYUNG_STATE:-/var/lib/subway-live}
@@ -61,5 +61,24 @@ if ! publish; then
   echo "check failed — 정적 파일을 직전 릴리스로 되돌림(서버 코드는 그대로, 성공 기록 안 바뀜)"; exit 1
 fi
 echo "$target" > "$DEPLOYED.new" && mv -T "$DEPLOYED.new" "$DEPLOYED"
+# 회원 DB 하루 백업 유닛(2026-10-27 사용자 결정 A): 이 둘만 배포가 깐다(retrain · healthcheck 등 다른 유닛은 손으로 — 건드리지 않는다).
+#   서버 사본과 다르거나 타이머가 아직 안 켜졌을 때만 복사 → daemon-reload → enable --now. 실패해도 배포는 성공(경고만, 다음 배포 때 다시)
+BACKUP_UNITS=(subway-member-backup.service subway-member-backup.timer)
+install_backup_units() {
+  local dir=${SYUNG_SYSTEMD_DIR:-/etc/systemd/system} unit changed=0
+  for unit in "${BACKUP_UNITS[@]}"; do
+    if ! cmp -s "server/$unit" "$dir/$unit"; then
+      install -m 0644 "server/$unit" "$dir/$unit" || return 1
+      changed=1
+    fi
+  done
+  if [ "$changed" = 0 ] && systemctl is-enabled --quiet subway-member-backup.timer; then return 0; fi
+  systemctl daemon-reload || return 1
+  systemctl enable --now subway-member-backup.timer || return 1
+  echo "회원 DB 백업 타이머 설치 · 켬"
+}
+if ! install_backup_units; then
+  echo "경고: 회원 DB 백업 유닛 설치 실패 — 배포는 성공, 다음 배포 때 다시 시도"
+fi
 deploy/deploy.sh --prune
 echo "=== deployed $(git log --oneline -1)"
