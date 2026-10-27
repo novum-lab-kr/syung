@@ -29,5 +29,5 @@ test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 
 test('Worker 도 한옥 부품을 스스로 등록하고, 엔진 파일은 한옥을 import 하지 않는다', () => {
   const src=f=>readFileSync(new URL(`../web/${f}`,import.meta.url),'utf8');
   assert.match(src('city/worker.mjs'),/^import '\.\.\/modes\/joseon\/hanok\.mjs';/m);
-  for(const f of ['city/mesh.mts','city/buildings.mjs'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mjs['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
+  for(const f of ['city/mesh.mts','city/buildings.mts'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mjs['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
 });
