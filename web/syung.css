@@ -787,6 +787,31 @@ html[data-theme=dark] .pf-in input{color:var(--ink)}html[data-theme=dark] .pf-in
 .account-confirm div{display:flex;gap:8px}
 .account-confirm button{flex:1;min-height:42px;border:0;border-radius:10px;font:inherit;font-weight:700;cursor:pointer;background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule)}
 .account-confirm .danger{background:#c2410c;color:#fff;box-shadow:none}
+/* 내 정보: 내 통계 · 계정 칸(user/account.mjs 가 내 정보를 열 때 채운다) */
+.acct-sec{margin:0 0 14px;padding:12px;border-radius:18px;background:var(--control)}
+h4.pf-l{line-height:1.3}
+.st-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.st-cell{padding:10px 12px;border-radius:14px;background:var(--paper)}
+.st-cell b{display:block;font-size:18px;line-height:1.2}.st-cell small{font-size:11.5px;color:var(--muted)}
+.st-bars{display:flex;align-items:flex-end;gap:2px;height:44px;margin:10px 2px 0;border-bottom:1px solid var(--rule)}
+.st-bars i{flex:1;min-width:2px;border-radius:2px 2px 0 0;background:var(--syung-deep)}
+.st-note{margin:8px 2px 0;font-size:11px;line-height:1.45;color:var(--muted)}
+.st-fare{margin-top:12px;padding:12px;border-radius:14px;background:var(--paper)}
+.st-fare-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:13px;font-weight:700}
+.st-fare-top b{font-size:20px}
+.st-fare-list{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.st-fare-list li{display:flex;align-items:baseline;gap:8px}.st-fare-list li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-fare-list small{color:var(--muted)}
+.st-skip{margin:8px 2px 0;font-size:12px;font-weight:700;color:var(--secondary)}
+.acct-sub{margin:0 0 8px;font-size:13px;font-weight:700}
+.dv-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.dv-list li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;padding:10px 12px;border-radius:14px;background:var(--paper)}
+.dv-name{font-size:14px;font-weight:700}.dv-name em{margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--selected);font-size:11px;font-style:normal}
+.dv-list small{grid-column:1;font-size:11.5px;color:var(--muted)}
+.dv-out{grid-column:2;grid-row:1/3;min-height:36px;padding:0 12px;border:0;border-radius:10px;background:var(--control);color:var(--ink);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.dv-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.dv-actions button{flex:1 1 140px;min-height:42px;border:0;border-radius:12px;background:var(--paper);color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 1px var(--rule)}
+.dv-out[disabled],.dv-actions button[disabled]{opacity:.5;cursor:default}
 .account-msg{margin:12px 0 0;min-height:1.4em;font-size:13px;color:var(--secondary)}
 /* 승차권: 앞면 = 이름 · 출발 시각 · 점선 슝 로고 줄 · '○○권' 띠 · 일련번호 · 오늘, 누르면 뒤집혀 뒷면 = 갈아타는 곳 이어 쓰기 · 출발 시각 · 마그네틱 띠 · 타는 날 */
 .ticket{position:relative;flex:none;height:158px;perspective:900px;cursor:pointer;-webkit-tap-highlight-color:transparent}

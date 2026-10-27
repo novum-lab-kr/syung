@@ -11,6 +11,7 @@ python3 -m server.jobs.member_backup [--dest 폴더] [--keep-days 14]
   그사이 사진을 바꾸거나 탈퇴해도 사본 DB 와 사진 묶음이 서로 맞는다. 담은 뒤 어느 회원도 쓰지 않는 사진(지우다 멈춘 것)을 정리한다.
   올린 사진이 하나도 없으면 사진 사본은 만들지 않는다. 되살릴 땐 tar 를 회원 DB 옆에 풀면 avatars/ 가 된다.
 - 이름의 날짜가 keep_days 일보다 오래된 사본(회원 DB · 사진 둘 다)은 지운다. 이 모양이 아닌 파일은 건드리지 않는다.
+- 날짜별 사용 횟수(내 통계 · 2026-10-27 계획서 D4): 사본을 뜨기 전에 1년 지난 날짜 줄을 지운다 — 매일 도는 이 작업이 정리 담당.
 - 서버 밖 복사는 아직 없다(결정 A 범위 밖).
 """
 from __future__ import annotations
@@ -124,12 +125,15 @@ def backup_all(config: MemberConfig, dest: Path, today: date, keep_days: int = K
     if not config.db_file.is_file():
         return []
     members = MemberService(config, providers={})   # 로그인 제공자는 안 쓴다(사진 이름 · 정리만)
+    pruned = members.prune_usage()   # 1년 지난 날짜별 사용 횟수는 사본을 뜨기 전에 지운다(계획서 D4 — 매일)
     used: set[str] = set()
     stage = config.avatar_dir / ".backup"
     with members.avatars.locked():   # 이 안에서는 서버가 사진을 지우지 못한다
         made = backup(config.db_file, dest, today, keep_days, on_copy=lambda raw: used.update(members.photos_in_copy(raw)))
         kept = members.avatars.stage(used, stage)
     lines = [f"백업 {made} ({made.stat().st_size} B)"]
+    if pruned:
+        lines.append(f"1년 지난 사용 기록 {pruned}줄 정리")
     try:
         photos = backup_photos(stage, kept, dest, today)
         if photos is not None:

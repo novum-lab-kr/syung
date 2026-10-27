@@ -18,6 +18,13 @@ GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,ln
 POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
 PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
 DELETE /api/me/tickets/<번호>          → 204 · 404
+GET    /api/me/sessions               → {"sessions":[{id,device:"아이폰 · 사파리",createdAt,lastUsedAt,current}]}(지금 기기 먼저)
+DELETE /api/me/sessions?others=1      → 200 {"removed":N}(지금 기기만 남기고 내 다른 기기 모두 로그아웃) · 400(others=1 이 없음)
+DELETE /api/me/sessions/<번호>         → 204(내 기기 하나 로그아웃 — 지금 기기면 세션 쿠키도 지움) · 404(남의 것 · 없음)
+GET    /api/me/stats                  → 내 통계 {joinedAt,daysTogether,tickets,weeklyRides,recent:{days,openDays,route,ticket},
+                                         year:{openDays,route,ticket},daily:[{day,open,route,ticket}]}
+POST   /api/me/usage                  {kind: open|route|ticket} → 204(오늘 그 종류 +1) · 400
+GET    /api/me/export                 → 내 데이터 JSON 한 묶음(회원 정보 · 로그인 방법 · 기기 · 승차권 · 날짜별 사용 횟수 — 화면이 파일로 저장)
 GET · POST /api/auth/kakao/unlink     → 카카오 연결 해제 웹훅(카카오 서버가 부른다). Authorization: KakaoAK <대표 어드민 키>,
                                          app_id · user_id · referrer_type 은 GET 쿼리 · POST 폼으로. 200(본문 없음 · 그 회원이 없어도) ·
                                          401(키 · 앱 ID 가 다름) · 400(회원번호가 틀림) · 404(KAKAO_ADMIN_KEY 없음)
@@ -33,7 +40,8 @@ import urllib.parse
 
 from server.routes.errors import api_error
 from server.routes.response import Response
-from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError
+from server.services.members import (SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError,
+                                     token_hash)
 from server.services.profile import PHOTO_MAX_BYTES
 
 SESSION_COOKIE = "syung_session"
@@ -74,6 +82,7 @@ def _error(status: int, code: str, message: str) -> Response:
 
 LOGIN_NEEDED = ("login", "로그인이 필요해요")
 TICKET_PATH = re.compile(r"/me/tickets/([1-9][0-9]{0,9})")
+SESSION_PATH = re.compile(r"/me/sessions/([0-9a-f]{16})")
 PHOTO_PATH = re.compile(r"/me/avatar/([A-Za-z0-9_-]{32}\.(?:webp|jpg))")
 PHOTO_TYPES = {"image/webp": "webp", "image/jpeg": "jpg"}
 CONTENT_TYPES = {"webp": "image/webp", "jpg": "image/jpeg"}
@@ -124,12 +133,16 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
         return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
     ticket = TICKET_PATH.fullmatch(bare)
     photo = PHOTO_PATH.fullmatch(bare)
-    if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") and not ticket and not photo:
+    session = SESSION_PATH.fullmatch(bare)
+    if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") + ACCOUNT_PATHS and not ticket and not photo and not session:
         return _error(404, "not_found", "없는 주소예요")
-    user_id = members.user_id(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
+    token = cookie_value(headers.get("Cookie"), SESSION_COOKIE)
+    user_id = members.user_id(token)
     me = members.me(user_id) if user_id else None
     if me is None:
         return _error(401, *LOGIN_NEEDED)
+    if bare in ACCOUNT_PATHS or session:
+        return _account(members, method, bare, session, query, user_id, token, read_body)
     if bare == "/me":
         if method == "GET":
             return _json(me)
@@ -169,6 +182,43 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
             if members.delete_ticket(user_id, ticket_id):
                 return Response(204, "empty")
             return _error(404, "not_found", "없는 승차권이에요")
+    return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
+
+
+ACCOUNT_PATHS = ("/me/sessions", "/me/stats", "/me/usage", "/me/export")
+
+
+def _account(members, method, bare, session, query, user_id: int, token: str, read_body) -> Response:
+    """계정 칸 · 내 통계(로그인한 본인 것만 — 모두 user_id 로만 읽고 지운다)."""
+    if session:
+        if method == "DELETE":
+            removed = members.logout_session(user_id, session.group(1))
+            if removed is None:
+                return _error(404, "not_found", "없는 로그인 기기예요")
+            # 지금 기기를 골랐으면 이 브라우저의 쿠키도 지운다(로그아웃과 같게)
+            current = removed == token_hash(token)
+            return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/") if current else None)
+    elif bare == "/me/sessions":
+        if method == "GET":
+            return _json({"sessions": members.sessions(user_id, token)})
+        if method == "DELETE":
+            if query.get("others", [""])[0] != "1":
+                return _error(400, "bad_request", "다른 기기 모두 로그아웃은 others=1 이에요")
+            return _json({"removed": members.logout_others(user_id, token)})
+    elif bare == "/me/stats":
+        if method == "GET":
+            stats = members.stats(user_id)
+            return _json(stats) if stats else _error(401, *LOGIN_NEEDED)
+    elif bare == "/me/usage":
+        if method == "POST":
+            def count(body):
+                members.count_usage(user_id, body)
+                return Response(204, "empty")
+            return _with_body(read_body, count)
+    elif bare == "/me/export":
+        if method == "GET":
+            data = members.export(user_id, token)
+            return _json(data) if data else _error(401, *LOGIN_NEEDED)
     return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
 
 
@@ -248,7 +298,8 @@ def _callback(members, provider: str, query: dict, headers, address: str) -> Res
     held_provider, _, held_state = held.partition(".")
     clear_state = _cookie(STATE_COOKIE, "", 0, "/api/auth/")
     try:
-        token, created = members.finish(provider, query, held_state if held_provider == provider else None, address)
+        token, created = members.finish(provider, query, held_state if held_provider == provider else None, address,
+                                        headers.get("User-Agent"))
     except LoginError as error:
         return Response(302, "redirect", location=f"/#login={error.code}", cookie=clear_state)
     # 처음 가입이면 화면이 발권 화면으로 바로 이어 준다

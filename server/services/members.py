@@ -10,6 +10,8 @@
 - 카카오 연결 해제 웹훅: 사용자가 카카오 쪽(계정 관리 · 계정 탈퇴 · 고객센터)에서 슝 연결을 끊으면 카카오가 알려 온다.
   Authorization: KakaoAK <대표 어드민 키> 로 진짜인지 보고, 본문 user_id(카카오 회원번호)의 회원을 정리한다
   (카카오 문서 kakaologin/callback#unlink · getting-started/callback — 받은 뒤 3초 안에 200, 그 회원이 없어도 200).
+- 계정 · 내 통계(2026-10-27 계획서 D1~D4 — 모양은 services/account.py): 로그인 기기 목록 · 하나 / 다른 기기 모두 로그아웃,
+  내 데이터 내려받기(JSON), 날짜별 사용 횟수. 세션의 마지막 사용 시각은 TOUCH_EVERY 초가 지났을 때만 고쳐 쓴다(쓰기를 줄인다).
 """
 from __future__ import annotations
 
@@ -20,13 +22,17 @@ import re
 import secrets
 import threading
 import time
+from datetime import timedelta
 
 from server.config import MemberConfig, avatar_dir
+from server.services.account import (SESSION_ID, USAGE_KINDS, USAGE_MOST, device_of, session_id, session_view,
+                                     stats_view, today_kst)
+from server.services.fare import month_view
 from server.services.login_providers import providers_from_config
 from server.services.profile import (CHARACTERS, avatar_value, avatar_view, check_photo, clean_name, photo_name)
 from server.sources.oauth import ProviderError
 from server.store.avatars import AvatarFiles
-from server.store.members import MemberStore
+from server.store.members import USAGE_DAYS, MemberStore
 
 SESSION_AGE = 30 * 24 * 3600
 STATE_AGE = 600   # 제공자 화면에서 돌아올 때까지
@@ -41,6 +47,7 @@ COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 KAKAO_MEMBER = re.compile(r"[0-9]{1,20}")   # 카카오 회원번호(/v2/user/me 의 id 와 같은 수 — 저장은 str(id))
 PHOTO_URL = "/api/me/avatar/{name}"   # 로그인한 본인만 보는 사진 주소(routes/members.py)
 ORPHAN_AGE = 3600   # 정리할 때 이보다 갓 쓴 사진 파일은 건드리지 않는다(올리는 중일 수 있다)
+TOUCH_EVERY = 3600   # 세션 마지막 사용 시각을 고쳐 쓰는 가장 짧은 간격(화면에는 날짜 · 시각만 보인다)
 
 
 class LoginError(Exception):
@@ -205,8 +212,10 @@ class MemberService:
             self._tries[address] = recent + [now]
             return True
 
-    def finish(self, provider: str, query: dict, expected_state: str | None, address: str) -> tuple[str, bool]:
-        """콜백 쿼리(code · state · error) → (새 세션 토큰(쿠키 값), 처음 가입했나). 실패는 LoginError."""
+    def finish(self, provider: str, query: dict, expected_state: str | None, address: str,
+               user_agent: str | None = None) -> tuple[str, bool]:
+        """콜백 쿼리(code · state · error) → (새 세션 토큰(쿠키 값), 처음 가입했나). 실패는 LoginError.
+        user_agent: 기기 종류만 뽑아 세션에 남긴다(원문은 저장하지 않는다)."""
         if provider not in self.providers:
             raise LoginError("unknown")
         if not self._allow(address):
@@ -225,18 +234,26 @@ class MemberService:
             raise LoginError("provider") from None
         now = int(self._clock())
         user_id, created = self.store.find_or_create_user(provider, subject, name, now)
-        return self._new_session(user_id, now), created
+        return self._new_session(user_id, now, device_of(user_agent)), created
 
-    def _new_session(self, user_id: int, now: int) -> str:
+    def _new_session(self, user_id: int, now: int, device: str = "") -> str:
         token = secrets.token_urlsafe(32)
-        self.store.add_session(token_hash(token), user_id, now, now + SESSION_AGE)
+        self.store.add_session(token_hash(token), user_id, now, now + SESSION_AGE, device)
         return token
 
     # ---- 세션으로 ----
     def user_id(self, token: str | None) -> int | None:
+        """살아 있는 세션의 회원 번호. 마지막 사용이 TOUCH_EVERY 초보다 오래면 지금으로 고쳐 쓴다."""
         if not token or len(token) > 200:
             return None
-        return self.store.session_user(token_hash(token), int(self._clock()))
+        hashed, now = token_hash(token), int(self._clock())
+        found = self.store.session_user(hashed, now)
+        if found is None:
+            return None
+        user_id, used_at = found
+        if now - used_at >= TOUCH_EVERY:
+            self.store.touch_session(hashed, now)
+        return user_id
 
     def me(self, user_id: int) -> dict | None:
         user = self.store.user(user_id)
@@ -325,6 +342,68 @@ class MemberService:
         removed = self.store.delete_user(user_id, int(self._clock()))
         if removed:
             self._forget_file(photo_name(removed["avatar"]))
+
+    # ---- 계정: 로그인 기기 ----
+    def sessions(self, user_id: int, token: str | None) -> list[dict]:
+        """내 로그인 기기들(지금 기기 먼저, 그다음 최근에 쓴 차례). 지금 기기는 current: true."""
+        current = token_hash(token) if token else None
+        views = [session_view(row, current) for row in self.store.sessions(user_id, int(self._clock()))]
+        return sorted(views, key=lambda view: not view["current"])   # 안정 정렬 — 나머지는 최근 차례 그대로
+
+    def logout_session(self, user_id: int, public_id: str) -> str | None:
+        """내 세션 하나를 지운다 → 지운 세션의 해시(지금 기기인지 부르는 쪽이 본다) · 내 세션이 아니면 None."""
+        if not SESSION_ID.fullmatch(public_id or ""):
+            return None
+        for row in self.store.sessions(user_id, int(self._clock())):
+            if session_id(row["token_hash"]) == public_id and self.store.delete_user_session(user_id, row["token_hash"]):
+                return row["token_hash"]
+        return None
+
+    def logout_others(self, user_id: int, token: str) -> int:
+        """지금 기기만 남기고 내 다른 세션을 모두 지운다 → 지운 수."""
+        return self.store.delete_other_sessions(user_id, token_hash(token))
+
+    # ---- 내 통계 · 사용 횟수 ----
+    def count_usage(self, user_id: int, body) -> None:
+        """본문 {kind}(open · route · ticket) → 오늘 그 종류 +1. 틀리면 ValueError."""
+        kind = body.get("kind") if isinstance(body, dict) else None
+        if kind not in USAGE_KINDS:
+            raise ValueError("없는 사용 종류예요")
+        self.store.count_usage(user_id, int(self._clock()), kind, USAGE_MOST)
+
+    def _usage_rows(self, user_id: int) -> list[dict]:
+        first = (today_kst(self._clock()) - timedelta(days=USAGE_DAYS - 1)).strftime("%Y-%m-%d")
+        return self.store.usage(user_id, first)
+
+    def stats(self, user_id: int) -> dict | None:
+        joined = self.store.member_since(user_id)
+        if joined is None:
+            return None
+        tickets = self.tickets(user_id)
+        view = stats_view(self._clock(), joined, tickets, self._usage_rows(user_id))
+        view["fare"] = month_view(tickets, self._clock())   # 이번 달 예상 교통비(D5 · D6 — services/fare.py)
+        return view
+
+    def prune_usage(self) -> int:
+        """보관 기간(1년)이 지난 날짜별 사용 횟수를 지운다 → 지운 줄 수(하루 백업이 매일 부른다)."""
+        return self.store.prune_usage(int(self._clock()))
+
+    def export(self, user_id: int, token: str | None) -> dict | None:
+        """내 데이터 한 묶음(회원 정보 · 로그인 방법 · 로그인 기기 · 승차권 · 날짜별 사용 횟수). 남의 것은 없다 — 모두 user_id 로만 읽는다.
+        제공자 회원번호 · 세션 토큰(해시) · 사진 파일은 넣지 않는다(사진은 화면에서 따로 본다)."""
+        me = self.me(user_id)
+        joined = self.store.member_since(user_id)
+        if me is None or joined is None:
+            return None
+        avatar = me["avatar"]
+        return {"service": "슝", "exportedAt": int(self._clock()),
+                "member": {"id": me["id"], "name": me["name"], "joinedAt": joined,
+                           "avatar": None if avatar is None else {"type": avatar["type"], **({"id": avatar["id"]} if avatar["type"] == "character" else {})}},
+                "logins": [{"provider": row["provider"], "linkedAt": row["created_at"]} for row in self.store.identities(user_id)],
+                "devices": [{key: view[key] for key in ("device", "createdAt", "lastUsedAt", "current")}
+                            for view in self.sessions(user_id, token)],
+                "tickets": self.tickets(user_id),
+                "usage": self._usage_rows(user_id)}
 
     # ---- 카카오 연결 해제 웹훅 ----
     def check_kakao_webhook(self, authorization: str | None) -> None:

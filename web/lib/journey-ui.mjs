@@ -274,6 +274,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
       status.textContent = '';
       last = {d, sel: 0, from: trip.from, to: trip.to, at, when: {...when}, picked: trip.picked};
       render(d, 0);
+      dispatchEvent(new CustomEvent('syung:route'));   // 내 통계의 길찾기 횟수(user/account.mjs 가 로그인했을 때만 센다 · 장소 · 시각은 안 보낸다)
       fold(true);
       const sh = out.closest('.sheet-body'); if (sh) sh.scrollTop = 0;   // the trip line and the tabs first
     } catch { if (my === goSeq && out.isConnected) { failed(out, '연결이 불안정해요. 잠시 뒤 다시 찾아 주세요.'); } }
