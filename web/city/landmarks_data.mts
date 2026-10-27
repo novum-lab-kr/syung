@@ -13,7 +13,7 @@ export interface Landmark {
   crown:{ splitM:number; gapTopM:number; latticeFromM:number }; height:number;
 }
 // 석탑 하나(kind: 'seokga' · 'wongaksa')
-export interface Stupa { id:string; kind:string; lngLat:LngLat; height:number; widthMul?:number; looks:string[]; minPx?:number; yawDeg:number }
+export interface Stupa { id:string; kind:string; lngLat:LngLat; height:number; widthMul?:number; looks:string[]; minPx?:number; yawDeg:number; replaces?:string }
 export const LANDMARKS:Landmark[] = [
   {
     id: 'lotte', name: '롯데월드타워', lngLat: [127.102655, 37.51254],
