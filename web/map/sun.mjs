@@ -1,4 +1,4 @@
-// web/map/sun.mjs
+// web/map/sun.mts
 function hull(pts) {
 	pts = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 	const c = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];

@@ -1,5 +1,5 @@
 import { placeholderText, signAnchor, sortLines } from "../lib/station_signs.mjs";
-// web/map/labels.mjs
+// web/map/labels.mts
 function createStationLabels({ map, stations, stationRects, colors, getSelected }) {
 	let labels = [], frame = 0;
 	function updateLabelVisibility() {
