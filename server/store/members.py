@@ -1,4 +1,4 @@
-"""회원 DB(SQLite 파일 하나): 회원 · 로그인 제공자 연결 · 세션 · 승차권. SQL 은 여기에만 둔다.
+"""회원 DB(SQLite 파일 하나): 회원 · 로그인 제공자 연결 · 세션(기기 종류 · 마지막 사용) · 승차권 · 날짜별 사용 횟수. SQL 은 여기에만 둔다.
 
 표 설계 · 마이그레이션 차례는 계획서 3-1 과 같다. 새 칸 · 새 표는 MIGRATIONS 끝에 번호를 하나 더해 붙인다
 (지난 번호의 SQL 은 고치지 않는다 — 운영 DB 는 그 번호까지 이미 돌았다).
@@ -96,9 +96,27 @@ MIGRATIONS: list[tuple[int, str]] = [
     (6, """
         ALTER TABLE users ADD COLUMN avatar TEXT
     """),
+    # 7(2026-10-27): 로그인 기기 관리 · 내 통계(계획서 D2 · D3 · D4).
+    # sessions.device: 로그인할 때 브라우저 정보에서 뽑은 기기 종류 'iphone/safari' 처럼(원문 · IP 는 저장하지 않는다, 모르면 '').
+    # sessions.used_at: 마지막으로 쓴 시각(services 가 일정 간격 이상일 때만 고쳐 쓴다). 옛 세션은 만든 시각으로 채운다.
+    # usage_daily: 회원 · 한국 날짜 · 종류별 사용 횟수만(위치 · 검색어 · 시각 없음). 1년 지난 날짜 줄은 매일 지운다(prune_usage).
+    (7, """
+        ALTER TABLE sessions ADD COLUMN device TEXT NOT NULL DEFAULT '';
+        ALTER TABLE sessions ADD COLUMN used_at INTEGER NOT NULL DEFAULT 0;
+        UPDATE sessions SET used_at=created_at;
+        CREATE TABLE usage_daily (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            day TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('open', 'route', 'ticket')),
+            count INTEGER NOT NULL,
+            PRIMARY KEY (user_id, day, kind)
+        );
+        CREATE INDEX usage_daily_day ON usage_daily(day)
+    """),
 ]
 KST_SECONDS = 9 * 3600   # 날짜별 가입 · 탈퇴 수는 한국 날짜로 센다
 ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
+USAGE_DAYS = 365   # 날짜별 사용 횟수는 1년(오늘 포함 365일) 보관(계획서 D4)
 
 TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
 
@@ -239,7 +257,7 @@ class MemberStore:
             conn.close()
 
     def delete_user(self, user_id: int, now: int) -> dict | None:
-        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다
+        """회원과 그 사람의 연결 · 세션 · 승차권 · 사용 횟수를 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다
         → {'avatar': 지운 회원의 avatar 값}(사진 파일은 부르는 쪽이 지운다) · 없던 회원이면 None."""
         def work(conn):
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
@@ -251,7 +269,7 @@ class MemberStore:
         return self._write(work)
 
     def delete_identity_user(self, provider: str, subject: str, now: int) -> dict | None:
-        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE)
+        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권 · 사용 횟수는 ON DELETE CASCADE)
         → {'avatar': …} · 없던 회원이면 None. 지웠으면 오늘 카카오 연결 해제 탈퇴 수를 1 올린다(제공자는 카카오만 부른다)."""
         def work(conn):
             row = conn.execute("SELECT u.id, u.avatar FROM users u JOIN identities i ON i.user_id=u.id "
@@ -264,19 +282,70 @@ class MemberStore:
         return self._write(work)
 
     # ---- 세션 ----
-    def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int) -> None:
+    def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int, device: str = "") -> None:
         def work(conn):
             conn.execute("DELETE FROM sessions WHERE expires_at<=?", (now,))   # 끝난 것은 새로 만들 때 같이 치운다
-            conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                         (token_hash, user_id, now, expires_at))
+            conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, device, used_at) VALUES (?, ?, ?, ?, ?, ?)",
+                         (token_hash, user_id, now, expires_at, device, now))
         self._write(work)
 
-    def session_user(self, token_hash: str, now: int) -> int | None:
-        row = self._read("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?", (token_hash, now))
-        return row["user_id"] if row else None
+    def session_user(self, token_hash: str, now: int) -> tuple[int, int] | None:
+        """살아 있는 세션 → (회원 번호, 마지막 사용 시각). 없거나 끝났으면 None."""
+        row = self._read("SELECT user_id, used_at FROM sessions WHERE token_hash=? AND expires_at>?", (token_hash, now))
+        return (row["user_id"], row["used_at"]) if row else None
+
+    def touch_session(self, token_hash: str, now: int) -> None:
+        """마지막 사용 시각을 now 로(부르는 쪽이 간격을 보고 가끔만 부른다)."""
+        self._write(lambda conn: conn.execute("UPDATE sessions SET used_at=? WHERE token_hash=? AND used_at<?",
+                                              (now, token_hash, now)))
 
     def delete_session(self, token_hash: str) -> None:
         self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,)))
+
+    def sessions(self, user_id: int, now: int) -> list[dict]:
+        """그 회원의 살아 있는 세션(token_hash · device · created_at · used_at) — 최근에 쓴 차례."""
+        return self._all("SELECT token_hash, device, created_at, used_at FROM sessions WHERE user_id=? AND expires_at>? "
+                         "ORDER BY used_at DESC, created_at DESC", (user_id, now))
+
+    def delete_user_session(self, user_id: int, token_hash: str) -> bool:
+        """그 회원의 세션 하나를 지운다 → 지웠나(남의 세션 · 없는 세션이면 False)."""
+        return self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=? AND user_id=?",
+                                                     (token_hash, user_id)).rowcount > 0)
+
+    def delete_other_sessions(self, user_id: int, keep_hash: str) -> int:
+        """그 회원의 세션 중 keep_hash 아닌 것을 모두 지운다 → 지운 수."""
+        return self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE user_id=? AND token_hash<>?",
+                                                     (user_id, keep_hash)).rowcount)
+
+    # ---- 날짜별 사용 횟수(내 통계) ----
+    def count_usage(self, user_id: int, now: int, kind: str, most: int) -> None:
+        """그 회원 · 오늘(한국 날짜) · 종류의 횟수를 1 올린다(most 까지만). 회원이 없으면(그사이 탈퇴) 아무것도 안 한다."""
+        def work(conn):
+            if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
+                return
+            conn.execute("INSERT INTO usage_daily (user_id, day, kind, count) VALUES (?, date(?, 'unixepoch'), ?, 1) "
+                         "ON CONFLICT (user_id, day, kind) DO UPDATE SET count=count+1 WHERE count<?",
+                         (user_id, now + KST_SECONDS, kind, most))
+        self._write(work)
+
+    def usage(self, user_id: int, first_day: str) -> list[dict]:
+        """first_day('YYYY-MM-DD') 부터의 그 회원 사용 횟수 줄(day · kind · count) — 날짜 차례."""
+        return self._all("SELECT day, kind, count FROM usage_daily WHERE user_id=? AND day>=? ORDER BY day, kind",
+                         (user_id, first_day))
+
+    def prune_usage(self, now: int) -> int:
+        """보관 기간(USAGE_DAYS)이 지난 날짜 줄을 모두 지운다 → 지운 수. 하루 백업(jobs/member_backup.py)이 매일 부른다."""
+        return self._write(lambda conn: conn.execute(
+            "DELETE FROM usage_daily WHERE day<date(?, 'unixepoch', ?)",
+            (now + KST_SECONDS, f"-{USAGE_DAYS - 1} days")).rowcount)
+
+    def member_since(self, user_id: int) -> int | None:
+        row = self._read("SELECT created_at FROM users WHERE id=?", (user_id,))
+        return row["created_at"] if row else None
+
+    def identities(self, user_id: int) -> list[dict]:
+        """연결된 로그인 방법(provider · created_at). 제공자 회원번호(subject)는 꺼내지 않는다."""
+        return self._all("SELECT provider, created_at FROM identities WHERE user_id=? ORDER BY created_at", (user_id,))
 
     # ---- 승차권(출발지 → 도착지 · 출발 시각 · 타는 날 · 고른 경로) ----
     def tickets(self, user_id: int) -> list[dict]:
@@ -408,7 +477,7 @@ class MemberStore:
         return self._write(work)
 
     def admin_delete(self, user_id: int, at: int, reason: str) -> tuple[dict, str | None] | None:
-        """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권은 ON DELETE CASCADE) + 기록 + 오늘 관리자 탈퇴 수 +1
+        """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권 · 사용 횟수는 ON DELETE CASCADE) + 기록 + 오늘 관리자 탈퇴 수 +1
         → (지운 수, 지운 회원의 avatar 값 — 사진 파일은 부르는 쪽이 지운다). 없으면 None."""
         def work(conn):
             row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()

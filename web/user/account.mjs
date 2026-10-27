@@ -5,6 +5,11 @@
 // 발권 화면: 장소 칸 → 장소 고르기 쪽 · 경로 칸 → 경로 선택 쪽(/api/route 결과 · 기본은 가장 빠른 길).
 // 내 정보(2026-10-27): 닉네임 고치기 · 프로필 사진 올리기 · 캐릭터 고르기(server/routes/members.py /api/me/profile · /api/me/avatar).
 // 사진은 브라우저에서 가운데를 정사각 256×256 으로 잘라 다시 그려(WebP, 안 되면 JPEG) 올린다 — 다시 그리면 위치(GPS) 같은 사진 정보가 빠진다.
+// 내 정보 아래 내 통계 · 계정 칸(2026-10-27 계획서 D1~D6): 내 정보를 열 때만 /api/me/stats · /api/me/sessions 를 받는다.
+// 내 통계 = 함께한 날 · 승차권 · 최근 30일 사용(슝 연 날 · 길찾기 · 승차권 본 번) · 이번 달 예상 교통비(승차권대로 다 탄다고 가정).
+// 계정 = 로그인한 기기(종류 · 마지막 사용 · 하나씩 로그아웃 · 다른 기기 모두) · 내 데이터 내려받기(JSON 파일).
+// 사용 횟수는 로그인했을 때만 종류만 보낸다(장소 · 검색어 · 시각 없음): 슝을 열 때 open · 길찾기 결과(journey-ui 의 'syung:route') route ·
+// 승차권 뒷면을 볼 때 ticket.
 // 로그인 방법이 하나도 설정되지 않았으면(/api/auth/providers 빈 목록 · 실패) 아무것도 보이지 않는다 — 로그인 안 한 화면은 지금과 같다.
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mjs';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
@@ -33,6 +38,10 @@ const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가
 const PHOTO_SIDE = 256, PHOTO_MAX = 150 * 1024;   // 서버 한도(160 KB)보다 조금 작게
 const NAME_MAX = 12;
 const nameLength = text => [...text.trim()].length;
+const won = n => `${n.toLocaleString('ko-KR')}원`;
+const monthDay = seconds => { const d = new Date(seconds * 1000); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
+const FARE_REASONS = {route: '고른 경로가 없는 승차권', distance: '공식 거리 자료가 없는 노선', outside: '수도권 밖 구간',
+  bus: '요금 · 거리 자료가 없는 버스', none: '전철 · 버스를 타지 않는 승차권'};
 
 // 칸(el)에 프로필을 그린다: 올린 사진이면 칸을 꽉 채우고(.photo), 아니면 캐릭터 얼굴(.face). big: 내 정보의 큰 칸(240 그림)
 function paintAvatar(el, avatar, big = false) {
@@ -281,7 +290,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   function show() {
     item.hidden = false;
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
-    if (!me) { closeName(); closePick(); return; }
+    if (!me) { closeName(); closePick(); $('accountStats').hidden = true; $('accountSafe').hidden = true; accountSeq++; return; }
     paintAvatar($('accountAvatar'), me.avatar);   // 메뉴 내 정보 줄
     paintAvatar($('accountAvatarBig'), me.avatar, true);
     $('accountItemName').textContent = me.name;
@@ -383,7 +392,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       el.onclick = e => {
         if (e.target.closest('.tk-edit')) { e.stopPropagation(); openTicket(t); return; }
         el.classList.toggle('flipped');
-        if (el.classList.contains('flipped')) fillChain(t, el.querySelector('.tk-chain'));
+        if (el.classList.contains('flipped')) { fillChain(t, el.querySelector('.tk-chain')); countUse('ticket'); }
       };
       return el;
     }));
@@ -636,6 +645,97 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     } catch { toast('지우지 못했어요. 연결을 확인해 주세요.', true); }
   };
 
+  // ---- 사용 횟수(내 통계) ----
+  function countUse(kind) {
+    if (!me) return;
+    send('POST', './api/me/usage', {kind}).catch(() => {});   // 못 보내도 화면에는 아무 일 없다
+  }
+  addEventListener('syung:route', () => countUse('route'));
+
+  // ---- 내 정보: 내 통계 · 계정(내 정보를 열 때만 받는다) ----
+  let accountSeq = 0;
+  async function loadAccountPage() {
+    if (!me) return;
+    const my = ++accountSeq;
+    let stats, sessions;
+    try { [stats, sessions] = await Promise.all([getJson('./api/me/stats'), getJson('./api/me/sessions')]); } catch { return; }
+    if (my !== accountSeq || !me) return;
+    if (stats.status === 401 || sessions.status === 401) { me = null; show(); return; }
+    if (stats.status === 200) { renderStats(stats.body); $('accountStats').hidden = false; }
+    if (sessions.status === 200) { renderSafe(sessions.body.sessions); $('accountSafe').hidden = false; }
+  }
+  $('accountRow').addEventListener('click', loadAccountPage);   // 본체가 쪽을 여는 onclick 과 같이 돈다
+
+  function renderStats(st) {
+    const cell = (value, label) => `<div class="st-cell"><b>${esc(value)}</b><small>${esc(label)}</small></div>`;
+    const most = Math.max(1, ...st.daily.map(d => d.open + d.route + d.ticket));
+    const bars = st.daily.map(d => {
+      const n = d.open + d.route + d.ticket, [, m, day] = d.day.split('-').map(Number);
+      return `<i style="height:${n ? Math.max(8, Math.round(n / most * 100)) : 0}%" title="${m}월 ${day}일 · ${n}번"></i>`;
+    }).join('');
+    const f = st.fare, [, month] = f.month.split('-').map(Number);
+    const rows = f.tickets.map(t => `<li><span>${esc(t.name)}</span><small>${won(t.fare)} × ${t.rides}번</small><b>${won(t.monthly)}</b></li>`).join('');
+    const why = Object.entries(f.reasons).map(([key, n]) => `${FARE_REASONS[key] || key} ${n}장`).join(' · ');
+    const fare = st.tickets
+      ? `<div class="st-fare"><div class="st-fare-top"><span>${month}월 예상 교통비</span><b>${won(f.total)}</b></div>`
+        + `<p class="st-note">승차권대로 다 탄다고 가정한 예상이에요</p>${rows ? `<ul class="st-fare-list">${rows}</ul>` : ''}`
+        + (f.skipped ? `<p class="st-skip">${f.skipped}장 계산 못 함${why ? ` — ${esc(why)}` : ''}</p>` : '')
+        + '<p class="st-note">교통카드 어른 요금 · 고른 경로 거리 기준이에요. 갈아타는 시간 · 정기권 · 공휴일 · 노선마다 따로 붙는 운임은 넣지 않았어요.</p></div>'
+      : '';
+    $('accountStatsBody').innerHTML = `<div class="st-grid">${cell(`${st.daysTogether}일`, '함께한 날')}${cell(`${st.tickets}장`, '승차권')}`
+      + `${cell(`${st.recent.openDays}일`, `최근 ${st.recent.days}일 슝 연 날`)}${cell(`${st.recent.route}번`, `최근 ${st.recent.days}일 길찾기`)}</div>`
+      + `<div class="st-bars" role="img" aria-label="최근 ${st.recent.days}일 날짜별 사용 횟수">${bars}</div>`
+      + `<p class="st-note">한 주에 타는 횟수 ${st.weeklyRides}번 · 승차권 본 횟수 ${st.recent.ticket}번(최근 ${st.recent.days}일)</p>${fare}`;
+  }
+
+  function renderSafe(list) {
+    const body = $('accountSafeBody');
+    const items = list.map(item => `<li data-session="${esc(item.id)}"><span class="dv-name">${esc(item.device)}${item.current ? '<em>이 기기</em>' : ''}</span>`
+      + `<small>마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}</small>`
+      + (item.current ? '' : '<button type="button" class="dv-out">로그아웃</button>') + '</li>').join('');
+    body.innerHTML = `<p class="acct-sub">로그인한 기기 ${list.length}대</p><ul class="dv-list">${items}</ul>`
+      + `<div class="dv-actions">${list.length > 1 ? '<button type="button" id="deviceOthers">다른 기기 모두 로그아웃</button>' : ''}`
+      + '<button type="button" id="dataExport">내 데이터 내려받기</button></div>'
+      + '<p class="st-note">내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요.</p>';
+    for (const b of body.querySelectorAll('.dv-out')) b.onclick = () => logoutDevice(b.closest('li').dataset.session, b);
+    $('deviceOthers')?.addEventListener('click', logoutOthers);
+    $('dataExport').onclick = exportData;
+  }
+  async function logoutDevice(id, button) {
+    button.disabled = true;
+    try {
+      const r = await send('DELETE', `./api/me/sessions/${encodeURIComponent(id)}`);
+      if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
+      if (!r.ok && r.status !== 404) { toast('로그아웃하지 못했어요.', true); return; }
+      toast('그 기기에서 로그아웃했어요');
+      loadAccountPage();
+    } catch { toast('로그아웃하지 못했어요. 연결을 확인해 주세요.', true); }
+    finally { button.disabled = false; }
+  }
+  async function logoutOthers() {
+    try {
+      const r = await send('DELETE', './api/me/sessions?others=1');
+      if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
+      if (!r.ok) { toast('로그아웃하지 못했어요.', true); return; }
+      toast(`다른 기기 ${r.body?.removed ?? 0}대에서 로그아웃했어요`);
+      loadAccountPage();
+    } catch { toast('로그아웃하지 못했어요. 연결을 확인해 주세요.', true); }
+  }
+  async function exportData() {
+    try {
+      const r = await getJson('./api/me/export');
+      if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
+      if (r.status !== 200) { toast('내려받지 못했어요. 잠시 뒤 다시 해 주세요.', true); return; }
+      const now = new Date(), pad = n => String(n).padStart(2, '0');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(r.body, null, 2)], {type: 'application/json'}));
+      a.download = `syung-my-data-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}.json`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      toast('내 데이터를 내려받았어요');
+    } catch { toast('내려받지 못했어요. 연결을 확인해 주세요.', true); }
+  }
+
   // ---- 로그아웃 · 탈퇴 ----
   $('accountLogout').onclick = async () => {
     try { await send('POST', './api/auth/logout'); } catch { /* 쿠키는 서버가 지운다 */ }
@@ -653,7 +753,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
 
   me = answer.body.me || null;
   show();
-  if (me) await loadTickets();
+  if (me) { countUse('open'); await loadTickets(); }
 
   // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지운다. 성공(ok · new)이면 서랍 · 발권 화면을 열지 않고 지도 첫 화면 그대로 둔다.
   // 실패인데 이미 로그인돼 있으면 서랍 첫 화면, 로그인이 안 됐으면 서랍 없이 팝업 + 안내(오류 코드 원문은 보이지 않는다 · 취소는 오류 모양 아님)

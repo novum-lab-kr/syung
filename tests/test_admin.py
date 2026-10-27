@@ -15,7 +15,7 @@ from server.errors import BusError
 from server.routes.http import Server, make_handler
 from server.services.admin import AdminService
 from server.services.members import clean_ticket
-from server.store.members import MemberStore
+from server.store.members import MIGRATIONS, MemberStore
 
 NOW = 1_800_000_000   # 2027-01-15 17:00 KST
 DAY = 86400
@@ -217,7 +217,7 @@ class AdminHttpTest(unittest.TestCase):
         dump = "\n".join(self.rows("SELECT ? || group_concat(reason) FROM admin_log", ("",))[0])
         self.assertNotIn("203.0.113.9", dump)
         self.assertNotIn("비밀검색어", dump)
-        self.assertEqual(self.store.schema_version(), 6)
+        self.assertEqual(self.store.schema_version(), MIGRATIONS[-1][0])
 
     def test_log_is_kept_for_one_year(self):
         self.json("POST", f"/admin/members/{self.kim}/logout", {"reason": "오래된 조치"})
