@@ -4,7 +4,7 @@ import { cityPart } from "./parts.mjs";
 import { EARTH, INST_STRIDES, RAD, RAIL_Q, S, TileBuilder, classifyBuilding, hexRGB, num, resolvePack } from "./mesh.mjs";
 import { SIGN_ATLAS, buildSignAtlas } from "./sign_text.mjs";
 import through_buildings_default from "./through_buildings.mjs";
-// web/city/buildings.mjs
+// web/city/buildings.mts
 var VS = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 a_xy;layout(location=1) in float a_z;layout(location=2) in vec4 a_nk;layout(location=3) in float a_u;
