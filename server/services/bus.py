@@ -228,7 +228,7 @@ class BusLiveService:
                 age = now - stamp if stamp is not None else None
                 failure = self.failures.get(rid)
                 retry = max(self.next_at, self.backoff_until, failure[0] if failure else 0)
-                if stamp is not None and age < self.config.cache_seconds:
+                if stamp is not None and age is not None and age < self.config.cache_seconds:   # age 는 stamp 가 있을 때만 있다
                     status = "fresh" if rid == chosen else "cached"
                     retry = max(retry, stamp + self.config.cache_seconds)
                 elif stamp is not None:
@@ -238,7 +238,7 @@ class BusLiveService:
                 reason = storage_error or (failure[1] if failure else "in_flight" if rid in self.pending
                                           else "backoff" if now < self.backoff_until else self.last_block or "paced")
                 # Keep recent stale observations for display, but never resurrect old buses.
-                visible = cached if stamp is not None and age <= self.config.stale_seconds else []
+                visible = cached if stamp is not None and age is not None and age <= self.config.stale_seconds else []
                 buses.extend(visible)
                 statuses[rid] = status_entry(status, stamp, now, visible, max(1, math.ceil(retry - now)))
                 if status in ("stale", "deferred", "error"):

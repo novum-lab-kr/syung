@@ -65,7 +65,8 @@ class _Graph:
             self.near[line][right].append((left, seconds, km, flag))
 
     def _walk(self, line: str, start: str, end: str, known_only: bool):
-        best, queue = {start: (0, 0.0, None)}, [(0, 0.0, "", start)]
+        best: dict[str, tuple[float, float, str | None]] = {start: (0, 0.0, None)}
+        queue: list[tuple[float, float, str, str]] = [(0, 0.0, "", start)]
         while queue:
             seconds, km, flag, here = heapq.heappop(queue)
             if here == end:
@@ -77,8 +78,9 @@ class _Graph:
                     continue
                 cost = seconds + hop_seconds
                 if there not in best or cost < best[there][0]:
-                    best[there] = (cost, km + (hop_km or 0.0), flag or hop_flag or "")
-                    heapq.heappush(queue, (cost, best[there][1], best[there][2], there))
+                    reached = (cost, km + (hop_km or 0.0), flag or hop_flag or "")
+                    best[there] = reached
+                    heapq.heappush(queue, (cost, reached[1], reached[2], there))
         return None
 
     def ride_km(self, line: str, start: str, end: str) -> tuple[float | None, str | None]:
@@ -109,7 +111,7 @@ def _hop_graph() -> _Graph | None:
         return _graph[1]
 
 
-def _stop_key(name: str) -> str:
+def _stop_key(name: str | None) -> str:
     return re.sub(r"[\s.·]", "", name or "")
 
 

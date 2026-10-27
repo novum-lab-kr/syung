@@ -54,8 +54,8 @@ class HealthService:
     def __init__(self, live: SubwayLiveService, samples: LiveSamples, *, clock=time.time):
         self.live, self.samples, self.clock = live, samples, clock
         self.lock = threading.Lock()
-        self.usual: dict[tuple[str, str], list[float]] = {}   # (일 종류, 노선) → 10분 칸마다 평소 열차 수(None = 기록 부족)
-        self.covered: dict[str, list[float]] = {}   # 일 종류 → 칸마다 기록이 있던 날 수
+        self.usual: dict[tuple[str, str], list[float | None]] = {}   # (일 종류, 노선) → 10분 칸마다 평소 열차 수(None = 기록 부족)
+        self.covered: dict[str, list[int]] = {}   # 일 종류 → 칸마다 기록이 있던 날 수
         self.baseline_day = ""
         self.report_cache: tuple[float, dict] | None = None
 

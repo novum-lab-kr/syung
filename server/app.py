@@ -45,6 +45,6 @@ def main() -> None:
 
 def main_bus() -> None:
     services = default_services()
-    services.bus   # 띄울 때 노선 자료를 읽어 둔다(옛 코드와 같게)
+    services.bus  # noqa: B018 — 띄울 때 노선 자료를 읽어 둔다(옛 코드와 같게 · 속성을 읽는 것이 일)
     config = BusServerConfig.from_env()
     ThreadingHTTPServer((config.host, config.port), bus_routes.make_handler(services)).serve_forever()

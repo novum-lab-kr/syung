@@ -25,6 +25,7 @@ import sqlite3
 import tarfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from server.clock import KST
 from server.config import MemberConfig
@@ -131,6 +132,7 @@ def backup_all(config: MemberConfig, dest: Path, today: date, keep_days: int = K
     with members.avatars.locked():   # 이 안에서는 서버가 사진을 지우지 못한다
         made = backup(config.db_file, dest, today, keep_days, on_copy=lambda raw: used.update(members.photos_in_copy(raw)))
         kept = members.avatars.stage(used, stage)
+    made = cast("Path", made)   # 위에서 원본이 있는 것을 봤다(없으면 None)
     lines = [f"백업 {made} ({made.stat().st_size} B)"]
     if pruned:
         lines.append(f"1년 지난 사용 기록 {pruned}줄 정리")

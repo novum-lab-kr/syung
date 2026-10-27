@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from server.config import ROOT
 
@@ -15,10 +16,10 @@ BUS_STOP_FIX = ROOT / "data/bus-stop-fix.json"   # pipeline/fix_bus_stops.py; op
 BUS_SHAPES = ROOT / "data/bus-shapes.json"   # pipeline/build_bus_shapes.py; optional
 
 
-def read(path: Path):
+def read(path: Path) -> Any:   # JSON 그대로
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def read_optional(path: Path, default=None):
+def read_optional(path: Path, default: Any = None) -> Any:
     """없는 파일이면 default(있는데 깨졌으면 예외 — 옛 코드와 같다)."""
     return read(path) if path.exists() else default

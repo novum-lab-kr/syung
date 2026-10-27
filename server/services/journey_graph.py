@@ -604,7 +604,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
         searches += len(batch)
         ceiling = best_arrive + ROUTE_SLACK + 2 * TRANSFER_PENALTY
         jobs = [(when, start, goal, live, pen, banned, modes, ceiling, dest) for modes, banned, pen in batch]
-        for (modes, banned, pen), r in zip(batch, run_batch(jobs, left)):
+        for (modes, banned, _pen), r in zip(batch, run_batch(jobs, left)):
             if not r or r["arrive"] > best_arrive + ROUTE_SLACK:
                 continue
             best_arrive = min(best_arrive, r["arrive"])
@@ -640,15 +640,15 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     # tags: the fastest, the fewest changes, the least walking (each once)
     tags: dict[int, str] = {}
     if found:
-        for tag, key in (("가장 빠른 길", lambda r: (r["arrive"], transfers(r))),
+        for tag, rank in (("가장 빠른 길", lambda r: (r["arrive"], transfers(r))),
                          ("환승 적은 길", lambda r: (transfers(r), r["arrive"])),
                          ("덜 걷는 길", lambda r: (walking(r), r["arrive"]))):
-            k = min(range(len(found)), key=lambda i: key(found[i]))
+            k = min(range(len(found)), key=lambda i: rank(found[i]))
             tags.setdefault(k, tag)
-    found = [(tags.get(i, ""), r) for i, r in enumerate(found)]
+    tagged = [(tags.get(i, ""), r) for i, r in enumerate(found)]
 
     plans = []
-    for tag, r in found:
+    for tag, r in tagged:
         legs = r["legs"]
         for i, l in enumerate(legs):
             if l["type"] == "walk":   # walking geometry
@@ -665,7 +665,8 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                 l["path"], _, _ = walk_path(a, b)
                 l.pop("point", None)
             else:
-                l.pop("_dep"), l.pop("_ban")
+                l.pop("_dep")
+                l.pop("_ban")
         transit = [l for l in legs if l["type"] != "walk"]
         plans.append({"tag": tag, "kind": _kind(r), "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
                       "minutes": round((r["arrive"] - when.timestamp()) / 60), "transfers": max(0, len(transit) - 1),

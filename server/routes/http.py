@@ -15,6 +15,7 @@ import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import cast
 
 from server.routes import admin as admin_routes
 from server.routes import bus as bus_routes
@@ -122,7 +123,8 @@ def make_handler(services, response_seconds: float):
                     return None
                 return self.rfile.read(size)
             address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
-            self._write(member_routes.handle(services.members, method, self.path, self.headers, read_body, address))
+            # 위에서 회원 주소인 것을 봤다 — 회원 주소면 handle 은 늘 응답을 돌려준다
+            self._write(cast("Response", member_routes.handle(services.members, method, self.path, self.headers, read_body, address)))
             return True
 
         def do_PUT(self) -> None:
@@ -206,7 +208,7 @@ def make_handler(services, response_seconds: float):
                     return self._send_json(*debug_routes.LOGIN)
                 query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 if admin_routes.is_photo_path(path):   # 관리 서비스는 사진 주소일 때만 꺼낸다(디버그만 쓰는 서버 · 시험)
-                    return self._write(admin_routes.photo(services.admin, path))
+                    return self._write(cast("Response", admin_routes.photo(services.admin, path)))
                 if admin_routes.is_admin_path(path):
                     return self._send_json(*admin_routes.handle(services.admin, "GET", path, query, self.headers, None))
                 if path not in ADMIN_GET:

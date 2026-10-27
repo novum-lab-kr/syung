@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
+from typing import cast
 
 from server.clock import KST
 from server.config import avatar_dir
@@ -80,11 +81,11 @@ class AdminService:
         today = datetime.fromtimestamp(now, KST).replace(hour=0, minute=0, second=0, microsecond=0)
         starts = tuple(int((today - timedelta(days=back)).timestamp()) for back in (0, 6, 29))
         first = today - timedelta(days=DAILY_DAYS - 1)
-        saved = self.store.admin_stats(starts, int(first.timestamp()))
+        saved = self.store.admin_stats(cast("tuple[int, int, int]", starts), int(first.timestamp()))   # 셋(오늘 · 7일 · 30일)
         counted = {row["day"]: row["count"] for row in saved["daily"]}
         days = [(first + timedelta(days=step)).strftime("%Y-%m-%d") for step in range(DAILY_DAYS)]
         # 탈퇴 수는 한국 날짜 글자로 저장돼 있다(store withdraw_stats) — 같은 오늘 · 7일 · 30일 · 30일 칸으로 센다
-        out = self.store.withdraw_stats(tuple((today - timedelta(days=back)).strftime("%Y-%m-%d") for back in (0, 6, 29)),
+        out = self.store.withdraw_stats(cast("tuple[str, str, str]", tuple((today - timedelta(days=back)).strftime("%Y-%m-%d") for back in (0, 6, 29))),
                                         days[0])
         left = {row["day"]: row["count"] for row in out["daily"]}
         return {"total": saved["total"], "today": saved["today"], "week": saved["week"], "month": saved["month"],
@@ -150,7 +151,7 @@ class AdminService:
         (사용자 결정 2026-10-27 — 관리 화면 흐름은 그대로)."""
         name = photo_name(self.store.admin_photo_seen(user_id, int(self.clock())))
         data = self.avatars.read(name) if name else None
-        return (data, name.rsplit(".", 1)[1]) if data is not None else None
+        return (data, cast("str", name).rsplit(".", 1)[1]) if data is not None else None   # 사진을 읽었으면 이름이 있다
 
     def clear_avatar(self, user_id: int, body) -> bool | None:
         """사진 내리기: 기본 캐릭터로 되돌리고 파일을 지운다. 올린 사진이 없으면 AdminError, 회원이 없으면 None."""

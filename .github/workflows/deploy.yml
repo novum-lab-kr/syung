@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'   # 서버와 같은 버전
+      # 서버 검사(pyproject.toml): ruff 린트 · pyright 타입 검사 — 도구만 설치(서버는 표준 라이브러리만). pip 25.1+ 가 --group 을 안다
+      - run: python3 -m pip install --upgrade pip && python3 -m pip install --group dev
+      - run: ruff check
+      - run: pyright
       - run: node --test tests/*.test.mjs
       - run: python3 -m unittest discover -s tests
       - run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py

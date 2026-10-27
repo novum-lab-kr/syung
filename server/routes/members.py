@@ -37,6 +37,7 @@ import json
 import re
 import sqlite3
 import urllib.parse
+from typing import cast
 
 from server.routes.errors import api_error
 from server.routes.response import Response
@@ -142,7 +143,7 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
     if me is None:
         return _error(401, *LOGIN_NEEDED)
     if bare in ACCOUNT_PATHS or session:
-        return _account(members, method, bare, session, query, user_id, token, read_body)
+        return _account(members, method, bare, session, query, user_id, cast("str", token), read_body)   # 로그인했으면 쿠키가 있다
     if bare == "/me":
         if method == "GET":
             return _json(me)
@@ -172,7 +173,7 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
         if method == "POST":
             return _with_body(read_body, lambda body: _json(members.add_ticket(user_id, body), 201))
     else:
-        ticket_id = int(ticket.group(1))
+        ticket_id = int(cast("re.Match[str]", ticket).group(1))   # 위 갈래들이 아니면 승차권 주소
         if method == "PUT":
             def save(body):
                 saved = members.update_ticket(user_id, ticket_id, body)
