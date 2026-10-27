@@ -119,7 +119,7 @@ class MemberHttpTest(unittest.TestCase):
 
     def test_signup_login_me_tickets_logout_and_delete(self):
         session = self.login()
-        self.assertEqual(self.last_location, "/#login=new", "처음 가입이면 발권 화면으로 이어 준다")
+        self.assertEqual(self.last_location, "/#login=new", "처음 가입이면 #login=new 로 돌려보낸다")
         self.assertEqual(self.provider.codes[-1][1], "https://syung.test/api/auth/kakao/callback")
         me = self.request("GET", "/api/me", cookie=session)
         self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao"}))
