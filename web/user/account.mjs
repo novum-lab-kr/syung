@@ -281,9 +281,65 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if (form.from || form.to) routeGone();
     showPlaces();
   };
-  // 시각: 보이지 않는 입력칸이 위에 덮여 있다. 넓은 화면은 눌러도 창이 안 떠서 직접 연다
-  $('ticketTime').addEventListener('click', () => { try { $('ticketTime').showPicker?.(); } catch { /* 이미 열림 등 */ } });
-  $('ticketTime').addEventListener('change', () => { if (!$('ticketTime').value) $('ticketTime').value = '08:00'; showTime(); routeGone(); preview(); });
+  // 출발 시각 휠(사용자와 정한 시안 B): 오전/오후 · 시 · 분(5분 단위)을 돌려 가운데 띠에 맞춘다.
+  // 돌리는 동안은 칸 · 미리보기만 바꾸고, 접을 때 시각이 바뀌었으면 고른 경로를 푼다(돌리는 중에 토스트가 연달아 뜨지 않게)
+  const ROW = 40;   // 휠 한 칸 높이(syung.css .tw-col button)
+  const wheelBox = $('ticketTimePick');
+  const wheels = Object.fromEntries([...wheelBox.querySelectorAll('.tw-col')].map(el => [el.dataset.part, {el, values: [], label: String}]));
+  const pad2 = n => String(n).padStart(2, '0');
+  let timeAtOpen = '';
+  const wheelIndex = w => Math.max(0, Math.min(w.values.length - 1, Math.round(w.el.scrollTop / ROW)));
+  function markWheel(w) {
+    const at = wheelIndex(w);
+    [...w.el.children].forEach((b, index) => { b.className = index === at ? 'on' : Math.abs(index - at) === 1 ? 'near' : ''; });
+    w.el.setAttribute('aria-valuetext', w.label(w.values[at]));
+  }
+  function setWheel(part, values, label, current) {
+    const w = wheels[part];
+    w.values = values; w.label = label;
+    w.el.replaceChildren(...values.map((value, index) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.tabIndex = -1; b.textContent = label(value);
+      b.onclick = () => w.el.scrollTo({top: index * ROW, behavior: 'smooth'});
+      return b;
+    }));
+    w.el.scrollTop = Math.max(0, values.indexOf(current)) * ROW;
+    markWheel(w);
+  }
+  function wheelTime() {
+    const value = part => wheels[part].values[wheelIndex(wheels[part])];
+    return `${pad2(value('ampm') * 12 + value('hour') % 12)}:${pad2(value('minute'))}`;
+  }
+  for (const w of Object.values(wheels)) {
+    let frame = 0;
+    w.el.addEventListener('scroll', () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { markWheel(w); $('ticketTime').value = wheelTime(); showTime(); preview(); });
+    }, {passive: true});
+    w.el.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      w.el.scrollTo({top: (wheelIndex(w) + (e.key === 'ArrowDown' ? 1 : -1)) * ROW, behavior: 'smooth'});
+    });
+  }
+  function openWheel() {
+    const [h, m] = $('ticketTime').value.split(':').map(Number);
+    timeAtOpen = $('ticketTime').value;
+    wheelBox.hidden = false; $('ticketTimeBtn').setAttribute('aria-expanded', 'true');   // 보인 뒤에 스크롤 자리를 잡는다
+    const minutes = Array.from({length: 12}, (_, index) => index * 5);
+    if (!minutes.includes(m)) { minutes.push(m); minutes.sort((left, right) => left - right); }   // 예전 승차권의 08:13 같은 시각은 그대로 보여 준다
+    setWheel('ampm', [0, 1], value => value ? '오후' : '오전', h < 12 ? 0 : 1);
+    setWheel('hour', Array.from({length: 12}, (_, index) => index + 1), String, h % 12 || 12);
+    setWheel('minute', minutes, pad2, m);
+    wheels.hour.el.focus({preventScroll: true});
+  }
+  function closeWheel(changed = true) {
+    if (wheelBox.hidden) return;
+    wheelBox.hidden = true; $('ticketTimeBtn').setAttribute('aria-expanded', 'false');
+    if (changed && $('ticketTime').value !== timeAtOpen) routeGone();
+  }
+  $('ticketTimeBtn').onclick = () => { if (wheelBox.hidden) openWheel(); else closeWheel(); };
+  $('ticketTimeDone').onclick = () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); };
 
   // 경로 선택 쪽: 고른 요일 중 가장 가까운 날(없으면 오늘 · 시각이 지났으면 다음 날)의 그 시각으로 길찾기
   function nextRide() {
@@ -352,7 +408,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('menuTicket').setAttribute('aria-label', t ? '승차권 고치기' : '승차권 발권');
     $('ticketName').value = t?.name || '';
     $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`;
-    $('ticketTime').value = t?.depart || '08:00';
+    closeWheel(false); $('ticketTime').value = t?.depart || '08:00';
     form.from = t?.from || null; form.to = t?.to || null; form.route = t?.route || null;
     for (const b of dayBox.children) b.setAttribute('aria-pressed', String(t ? t.days.includes(+b.dataset.day) : false));
     $('ticketDelete').hidden = !t; $('ticketDelete').textContent = '이 승차권 지우기';
@@ -362,6 +418,8 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   $('ticketNew').onclick = () => openTicket(null);
   $('ticketForm').onsubmit = async e => {
     e.preventDefault();
+    closeWheel();
+    if (!form.route) return;   // 휠을 접으며 시각이 바뀌어 경로가 풀렸다(토스트로 알림)
     const body = {name: $('ticketName').value.trim(), from: form.from, to: form.to, depart: $('ticketTime').value, days: pickedDays(), route: form.route};
     if (!body.from || !body.to) { toast('출발지 · 도착지를 골라 주세요', true); $(body.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     if (!body.route) { toast('경로를 골라 주세요', true); $('ticketRoute').focus(); return; }
