@@ -6,10 +6,10 @@ import {createCoasterTrack} from './modes/coaster/track.mjs';   // 롤코 선로
 import {createCoasterGeometry} from './modes/coaster/geometry.mjs';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mjs';   // 롤코 주행 속도 · 탄 거리
 import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 타기
-import {createStationSearch} from './ui/search.mjs';   // 역 검색
-import {createBottomSheet} from './ui/sheet.mjs';   // 아래 시트 · 따라가기
+import {createStationSearch} from './ui/search.mts';   // 역 검색
+import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mjs';   // 열차 · 역 정보창
-import {createJourneyMap} from './ui/journey.mjs';   // 여정 지도 표시
+import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mjs';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mjs';   // 테마 · 지도 색 · 해 위치 아이콘

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
-import {createJourneyMap} from '../web/ui/journey.mjs';
+import {createJourneyMap} from '../web/ui/journey.mts';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../web/lib/journey_map_style.mjs';
 import {createModeRegistry} from '../web/modes/index.mjs';
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from '../web/modes/transition.mts';

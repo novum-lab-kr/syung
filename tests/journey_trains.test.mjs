@@ -1,7 +1,7 @@
 // 길찾기 중에는 내가 가는 방향의 열차만 보인다(2026-10-11): web/ui/journey.mjs trainShown · journeyTrain
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createJourneyMap} from '../web/ui/journey.mjs';
+import {createJourneyMap} from '../web/ui/journey.mts';
 
 function journey() {
   globalThis.document ??= {documentElement: {dataset: {}}, querySelector: () => null};
