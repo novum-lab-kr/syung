@@ -7,7 +7,7 @@ import viaduct_snap_default from "./viaduct_snap.mjs";
 import { COLOR_KEYS, MAT, Mesh } from "./viaduct_mesh.mjs";
 import { compareLines, edgeOverlaps, edgeProfile, holdLevels, pointSegmentDistance, resolveCrossings, sameLevelRegions, stationLevels } from "./viaduct_levels.mjs";
 import { buildExits, exitSamples, layoutExits } from "./viaduct_exits.mjs";
-// web/city/viaduct.mjs
+// web/city/viaduct.mts
 var V_OF = (pack) => pack.viaduct || SEOUL_CITY_STYLE.viaduct;
 var STUB_MAX_M = 300;
 var smooth = (a, b, x) => {
