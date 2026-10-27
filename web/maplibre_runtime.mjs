@@ -851,9 +851,11 @@ for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaste
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
   });
 }
-// 회원(로그인 줄 · 내 정보 · 출퇴근): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로
-{const go=()=>import('./user/account.mjs').then(m=>m.initAccount()).catch(()=>{});
-  if(location.hash.includes('login='))go();else map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500))}
+// 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
+// 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
+{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mjs').then(m=>m.initAccount({colors})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+  if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
+    for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();
 window.__subwayWebGL={map,me,setNightLook,get nightLook(){return {...nightLook}},get nightDebug(){return {night:nightNow(),mapLayer:!!map.getLayer('city-night-bloom'),mapFx:!!mapBloom.fx,mapErr:mapBloom.fx?map.painter.context.gl.getError():null,order:map.getStyle().layers.map(l=>l.id).slice(-12)}},modeSettings:(name)=>modes.settings(name),explainMode:(name)=>modes.explain(name),get cityBuildings(){return cityBuildings},loadModeKit,cityViaduct,setSimcity,setJoseon,setStarcraft,setCoaster,setRetro,get retro(){return modeCtl.current==='retro'},setNation,get nation(){return NATIONS.includes(modeCtl.current)?modeCtl.current:null},get simcity(){return modeOn.simcity},get joseon(){return modeOn.joseon},get starcraft(){return modeOn.starcraft?modeCtl.current:null},get coaster(){return modeOn.coaster},refreshLive,updateSun,applyTheme,sunPosition,trackPoint,edgeCoords,coasterRises,coasterProfile,inversion,loopD,get paths(){return paths},get byId(){return byId},get plans(){return planner.plans},get renderer(){return map.getCanvas().getContext('webgl2')?'webgl2':'none'},showTrainPopup,startRide,stopRide,get ride(){return rider.ride},get c88(){return CoasterTrain.last},get ships(){return TurtleShips.last},get convoy(){return UnitConvoy?.last??null},get frames(){return {...frameStats}},get sky(){return SkyUnits?.last??null},rideFrame,set rideSeat(v){rider.seat=v}};

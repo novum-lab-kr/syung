@@ -1,4 +1,4 @@
-"""회원: 소셜 로그인 흐름 · 세션 · 탈퇴 · 승차권(출발지 → 도착지 · 출발 시각 · 타는 날). HTTP 모양(쿠키 · 주소 · 상태 코드)은 routes/members.py 가 맡는다.
+"""회원: 소셜 로그인 흐름 · 세션 · 탈퇴 · 승차권(출발지 → 도착지 · 출발 시각 · 타는 날 · 고른 경로). HTTP 모양(쿠키 · 주소 · 상태 코드)은 routes/members.py 가 맡는다.
 
 - 로그인: start 가 state(무작위)를 만들고 → 제공자 → finish 가 쿠키의 state 와 맞춰 본 뒤 인가 코드로 회원번호를 받아
   회원을 찾거나 만들고 세션을 연다. 세션 쿠키 값은 DB 에 해시(SHA-256)로만 남는다.
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import threading
@@ -27,6 +28,8 @@ TIME = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")   # ASCII 숫자만 · ful
 LAT_RANGE, LNG_RANGE = (32.0, 39.5), (124.0, 132.0)
 TICKET_LIMIT = 20   # 사람당 승차권 수
 NAME_MAX = 12   # 승차권 이름(앞면 · '○○권' 띠에 들어간다)
+LEGS_MAX = 12   # 고른 경로의 구간 수(걷기 포함)
+COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 
 class LoginError(Exception):
@@ -53,8 +56,67 @@ def _place(value, label: str) -> dict:
     return {"name": name.strip(), "lat": round(float(lat), 6), "lng": round(float(lng), 6)}
 
 
+def _text(value, label: str, most: int = 40) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > most:
+        raise ValueError(f"경로의 {label}이 틀려요")
+    return value.strip()
+
+
+def _count(value, label: str, most: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= most:
+        raise ValueError(f"경로의 {label}이 틀려요")
+    return value
+
+
+def _clock(value, label: str) -> str:
+    if not isinstance(value, str) or not TIME.fullmatch(value):
+        raise ValueError(f"경로의 {label}이 틀려요")
+    return value
+
+
+def _leg(leg) -> dict:
+    """길찾기(/api/route) 구간 하나 → 그리는 데 쓰는 칸만."""
+    if not isinstance(leg, dict) or leg.get("type") not in ("walk", "ride", "bus"):
+        raise ValueError("경로 구간이 틀려요")
+    if leg["type"] == "walk":
+        return {"type": "walk", "seconds": _count(leg.get("seconds"), "걷는 시간", 6 * 3600)}
+    out = {"type": leg["type"]}
+    if leg["type"] == "ride":
+        out["line"] = _text(leg.get("line"), "노선", 20)
+    else:
+        out["route"] = _text(leg.get("route"), "버스 번호", 20)
+        color = leg.get("color")
+        if not isinstance(color, str) or not COLOR.fullmatch(color):
+            raise ValueError("경로의 버스 색이 틀려요")
+        out["color"] = color
+    out.update({"from": _text(leg.get("from"), "타는 곳"), "to": _text(leg.get("to"), "내리는 곳"),
+                "departs": _clock(leg.get("departs"), "출발 시각"), "arrives": _clock(leg.get("arrives"), "도착 시각"),
+                "wait": _count(leg.get("wait"), "기다리는 시간", 6 * 3600)})
+    return out
+
+
+def _route(value) -> str | None:
+    """발권할 때 고른 경로(길찾기 결과 한 개) → 저장할 JSON 글자. 없으면 None."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("경로가 틀려요")
+    legs = value.get("legs")
+    if not isinstance(legs, list) or not 1 <= len(legs) <= LEGS_MAX:
+        raise ValueError(f"경로 구간은 1~{LEGS_MAX}개예요")
+    tag = value.get("tag", "")
+    if not isinstance(tag, str) or len(tag) > 20:
+        raise ValueError("경로 이름표가 틀려요")
+    route = {"tag": tag, "minutes": _count(value.get("minutes"), "걸리는 시간", 24 * 60),
+             "leaveBy": _clock(value.get("leaveBy"), "출발 시각"), "arrives": _clock(value.get("arrives"), "도착 시각"),
+             "transfers": _count(value.get("transfers"), "환승 수", LEGS_MAX),
+             "walkMinutes": _count(value.get("walkMinutes"), "걷는 시간", 24 * 60),
+             "legs": [_leg(leg) for leg in legs]}
+    return json.dumps(route, ensure_ascii=False, separators=(",", ":"))
+
+
 def clean_ticket(body) -> dict:
-    """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7]} → 저장할 값. 틀리면 ValueError."""
+    """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7], route?:{…}} → 저장할 값. 틀리면 ValueError."""
     if not isinstance(body, dict):
         raise ValueError("본문은 JSON 객체예요")
     name = body.get("name")
@@ -70,7 +132,7 @@ def clean_ticket(body) -> dict:
         raise ValueError("타는 날은 1(월)~7(일) 목록이에요")
     return {"name": name.strip(), "from_name": origin["name"], "from_lat": origin["lat"], "from_lng": origin["lng"],
             "to_name": dest["name"], "to_lat": dest["lat"], "to_lng": dest["lng"], "depart_at": depart,
-            "days": ",".join(str(day) for day in sorted(set(days)))}
+            "days": ",".join(str(day) for day in sorted(set(days))), "route": _route(body.get("route"))}
 
 
 def ticket_view(row: dict) -> dict:
@@ -78,7 +140,8 @@ def ticket_view(row: dict) -> dict:
     return {"id": row["id"], "name": row["name"],
             "from": {"name": row["from_name"], "lat": row["from_lat"], "lng": row["from_lng"]},
             "to": {"name": row["to_name"], "lat": row["to_lat"], "lng": row["to_lng"]},
-            "depart": row["depart_at"], "days": [int(day) for day in (row["days"] or "").split(",") if day]}
+            "depart": row["depart_at"], "days": [int(day) for day in (row["days"] or "").split(",") if day],
+            "route": json.loads(row["route"]) if row.get("route") else None}
 
 
 class TicketLimit(Exception):

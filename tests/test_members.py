@@ -24,6 +24,18 @@ from server.store.members import MIGRATIONS, MemberStore
 NOW = 1_800_000_000
 TICKET = {"name": "출근", "from": {"name": "서울시청", "lat": 37.5663, "lng": 126.9779},
           "to": {"name": "강남역", "lat": 37.4979, "lng": 127.0276}, "depart": "08:10", "days": [5, 1, 2, 4]}
+# 길찾기(/api/route) 결과 한 개 — 그리는 데 안 쓰는 칸(path · stations · direction …)은 저장하지 않는다
+ROUTE = {"tag": "가장 빠른 길", "kind": "subway", "leaveBy": "08:11", "arrives": "08:41", "minutes": 31, "transfers": 0, "walkMinutes": 2,
+         "legs": [{"type": "walk", "seconds": 80, "metres": 112, "exit": "2-1", "to": "잠실", "path": [[127.1, 37.5]]},
+                  {"type": "ride", "line": "2호선", "from": "잠실", "to": "시청", "departs": "08:13", "arrives": "08:40", "wait": 106,
+                   "direction": "외선", "stations": [1, 2], "realtime": False},
+                  {"type": "bus", "route": "종로11", "color": "#7bc043", "from": "조선일보", "to": "시청역", "departs": "08:53",
+                   "arrives": "08:54", "wait": 49, "alts": ["01"]}]}
+SAVED_ROUTE = {"tag": "가장 빠른 길", "minutes": 31, "leaveBy": "08:11", "arrives": "08:41", "transfers": 0, "walkMinutes": 2,
+               "legs": [{"type": "walk", "seconds": 80},
+                        {"type": "ride", "line": "2호선", "from": "잠실", "to": "시청", "departs": "08:13", "arrives": "08:40", "wait": 106},
+                        {"type": "bus", "route": "종로11", "color": "#7bc043", "from": "조선일보", "to": "시청역", "departs": "08:53",
+                         "arrives": "08:54", "wait": 49}]}
 
 
 class FakeProvider:
@@ -91,9 +103,9 @@ class MemberHttpTest(unittest.TestCase):
         return session.split(";")[0]
 
     def test_providers_list_and_disabled_service_hides_everything(self):
-        self.assertEqual(self.request("GET", "/api/auth/providers").json, {"providers": ["kakao"]})
+        self.assertEqual(self.request("GET", "/api/auth/providers").json, {"providers": ["kakao"], "me": None})
         self.members.providers = {}
-        self.assertEqual(self.request("GET", "/auth/providers").json, {"providers": []})
+        self.assertEqual(self.request("GET", "/auth/providers").json, {"providers": [], "me": None})
         self.assertEqual(self.request("GET", "/api/me").status, 404)
         self.assertEqual(self.request("GET", "/api/auth/kakao/start").status, 404)
         self.assertFalse(self.db.exists(), "꺼져 있으면 DB 파일을 만들지 않는다")
@@ -112,6 +124,10 @@ class MemberHttpTest(unittest.TestCase):
         me = self.request("GET", "/api/me", cookie=session)
         self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao"}))
         self.assertEqual(me.headers["Cache-Control"], "no-store")
+        listed = self.request("GET", "/api/auth/providers", cookie=session)
+        self.assertEqual(listed.json, {"providers": ["kakao"], "me": {"id": 1, "name": "민지", "provider": "kakao"}}, "메뉴는 요청 하나로 그린다")
+        self.assertEqual(listed.headers["Cache-Control"], "no-store")
+        self.assertIsNone(self.request("GET", "/api/auth/providers", cookie="syung_session=nope").json["me"])
         # 같은 사람이 다시 로그인하면 같은 회원
         again = self.login(prefix="")   # Caddy 가 /api 를 뗀 주소
         self.assertEqual(self.last_location, "/#login=ok")
@@ -120,7 +136,8 @@ class MemberHttpTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json, {"tickets": []})
         issued = self.request("POST", "/api/me/tickets", cookie=session, body=TICKET)
         self.assertEqual(issued.status, 201)
-        self.assertEqual(issued.json, {"id": 1, "name": "출근", "from": TICKET["from"], "to": TICKET["to"], "depart": "08:10", "days": [1, 2, 4, 5]})
+        self.assertEqual(issued.json, {"id": 1, "name": "출근", "from": TICKET["from"], "to": TICKET["to"], "depart": "08:10", "days": [1, 2, 4, 5],
+                                       "route": None})
         back = self.request("POST", "/api/me/tickets", cookie=session, body=dict(TICKET, name="퇴근", **{"from": TICKET["to"], "to": TICKET["from"]}, depart="18:30"))
         self.assertEqual(back.status, 201, "같은 요일에 여러 장")
         listed = self.request("GET", "/api/me/tickets", cookie=session).json["tickets"]
@@ -128,6 +145,11 @@ class MemberHttpTest(unittest.TestCase):
 
         fixed = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6]))
         self.assertEqual((fixed.status, fixed.json["depart"], fixed.json["days"]), (200, "07:50", [6]))
+        routed = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, route=ROUTE))
+        self.assertEqual((routed.status, routed.json["route"]), (200, SAVED_ROUTE), "고른 경로는 그리는 칸만 남긴다")
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json["tickets"][0]["route"], SAVED_ROUTE)
+        cleared = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6]))
+        self.assertIsNone(cleared.json["route"], "route 를 빼고 고치면 지운다")
         self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 204)
         self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 404)
 
@@ -197,12 +219,14 @@ class MemberHttpTest(unittest.TestCase):
         session = self.login()
         for body in (b"not json", [], dict(TICKET, name=""), dict(TICKET, name="가" * 13), {k: v for k, v in TICKET.items() if k != "from"},
                      dict(TICKET, to={"name": "집", "lat": 0, "lng": 0}), dict(TICKET, depart="8:10"), dict(TICKET, depart=None),
-                     dict(TICKET, days=[0]), dict(TICKET, days=[True]), dict(TICKET, days="1,2")):
+                     dict(TICKET, days=[0]), dict(TICKET, days=[True]), dict(TICKET, days="1,2"),
+                     dict(TICKET, route="2호선"), dict(TICKET, route=dict(ROUTE, legs=[])),
+                     dict(TICKET, route=dict(ROUTE, legs=ROUTE["legs"] * 5))):
             with self.subTest(body=body):
                 result = self.request("POST", "/api/me/tickets", cookie=session, body=body)
                 self.assertEqual(result.status, 400)
                 self.assertEqual(result.json["error"]["code"], "bad_request")
-        big = self.request("POST", "/api/me/tickets", cookie=session, body=b"{" + b" " * 5000 + b"}")
+        big = self.request("POST", "/api/me/tickets", cookie=session, body=b"{" + b" " * 20000 + b"}")
         self.assertEqual(big.status, 413)
         self.assertEqual(self.request("PUT", "/api/me/tickets/0", cookie=session, body=TICKET).status, 404, "번호 모양이 아니면 없는 주소")
 
@@ -309,6 +333,25 @@ class CleanTicketTest(unittest.TestCase):
         self.assertEqual(clean_ticket(dict(TICKET, depart="23:59"))["depart_at"], "23:59")
 
 
+class CleanRouteTest(unittest.TestCase):
+    def test_bad_routes_are_refused(self):
+        ride, bus = ROUTE["legs"][1], ROUTE["legs"][2]
+        for route in (dict(ROUTE, minutes=-1), dict(ROUTE, minutes=True), dict(ROUTE, arrives="8:41"), dict(ROUTE, tag=1),
+                      dict(ROUTE, legs=[{"type": "plane"}]), dict(ROUTE, legs=[{"type": "walk", "seconds": "80"}]),
+                      dict(ROUTE, legs=[dict(ride, line="")]), dict(ROUTE, legs=[dict(ride, departs="08:13\n")]),
+                      dict(ROUTE, legs=[dict(ride, to="가" * 41)]), dict(ROUTE, legs=[dict(bus, color="red")]),
+                      dict(ROUTE, legs=[dict(bus, color="#7bc0431")]), dict(ROUTE, legs=[dict(ride, wait=None)])):
+            with self.subTest(route=route), self.assertRaises(ValueError):
+                clean_ticket(dict(TICKET, route=route))
+
+    def test_walk_only_route_and_no_route(self):
+        walk = {"tag": "걸어가기", "leaveBy": "08:10", "arrives": "08:30", "minutes": 20, "transfers": 0, "walkMinutes": 20,
+                "legs": [{"type": "walk", "seconds": 1200, "direct": True, "label": "목적지까지 걸어서"}]}
+        self.assertEqual(json.loads(clean_ticket(dict(TICKET, route=walk))["route"])["legs"], [{"type": "walk", "seconds": 1200}])
+        self.assertIsNone(clean_ticket(TICKET)["route"])
+        self.assertIsNone(clean_ticket(dict(TICKET, route=None))["route"])
+
+
 class MigrationTest(unittest.TestCase):
     def test_version_one_commute_rows_become_tickets(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -329,6 +372,7 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual([(t["name"], t["from_name"], t["to_name"], t["depart_at"], t["days"]) for t in tickets],
                              [("출근", "집", "회사", "08:10", "1,2,3"), ("퇴근", "회사", "집", "18:30", "1,2,3")])
             self.assertEqual(store.tickets(2), [], "장소가 빠진 줄은 옮기지 않는다")
+            self.assertEqual([t["route"] for t in tickets], [None, None], "옮긴 승차권은 고른 경로가 없다")
             with contextlib.closing(sqlite3.connect(path)) as conn:
                 self.assertIsNone(conn.execute("SELECT name FROM sqlite_master WHERE name='commute'").fetchone())
 

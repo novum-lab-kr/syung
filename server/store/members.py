@@ -65,9 +65,13 @@ MIGRATIONS: list[tuple[int, str]] = [
             FROM commute WHERE home_name IS NOT NULL AND work_name IS NOT NULL AND back_at IS NOT NULL;
         DROP TABLE commute
     """),
+    # 3(2026-10-27): 발권할 때 고른 경로(길찾기 결과 한 개를 줄인 JSON). 옛 승차권은 NULL — 뒷면은 그때 길을 찾는다.
+    (3, """
+        ALTER TABLE tickets ADD COLUMN route TEXT
+    """),
 ]
 
-TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days")
+TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
 
 
 class MemberStore:
@@ -185,7 +189,7 @@ class MemberStore:
     def delete_session(self, token_hash: str) -> None:
         self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,)))
 
-    # ---- 승차권(출발지 → 도착지 · 출발 시각 · 타는 날) ----
+    # ---- 승차권(출발지 → 도착지 · 출발 시각 · 타는 날 · 고른 경로) ----
     def tickets(self, user_id: int) -> list[dict]:
         self.open()
         conn = self._connect()

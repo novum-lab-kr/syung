@@ -1,12 +1,13 @@
 """회원 주소(/api/auth/… · /api/me…). 운영 Caddy 가 /api 를 떼고 넘기므로 떼인 주소(/auth/… · /me…)와 붙은 주소 둘 다 받는다.
 
-GET    /api/auth/providers            → {"providers": ["kakao", …]}(설정이 없으면 빈 목록 — 화면은 로그인 줄을 숨긴다)
+GET    /api/auth/providers            → {"providers": ["kakao", …], "me": {"id","name","provider"} | null}(설정이 없으면 빈 목록 · me null — 화면은 로그인 줄을 숨긴다.
+                                         me 를 같이 실어 화면이 요청 한 번으로 메뉴 칸을 그린다)
 GET    /api/auth/<제공자>/start         → 302 제공자 로그인(state 쿠키)
 GET    /api/auth/<제공자>/callback      → 302 /#login=ok(처음 가입이면 =new, 세션 쿠키) · 실패면 /#login=<코드>
 POST   /api/auth/logout               → 204(세션 지움)
 GET    /api/me                        → {"id","name","provider"} · 401
 DELETE /api/me                        → 204(회원 · 설정 모두 지움)
-GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7]}]} · 401
+GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7],route:{…}|null}]} · 401
 POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
 PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
 DELETE /api/me/tickets/<번호>          → 204 · 404
@@ -27,7 +28,7 @@ from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginE
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
 CSRF_HEADER, CSRF_VALUE = "X-Requested-With", "syung"
-BODY_LIMIT = 4096
+BODY_LIMIT = 16384   # 승차권 본문(고른 경로 구간 최대 12개 포함)
 
 
 def member_path(path: str) -> str | None:
@@ -77,9 +78,20 @@ def handle(members, method: str, path: str, headers, read_body, address: str) ->
         return _error(503, "unavailable", "회원 기능을 잠시 쓸 수 없어요")
 
 
+def _signed_in(members, headers) -> dict | None:
+    """지금 로그인한 사람(없으면 None). 꺼져 있으면 DB 를 열지 않고, DB 를 못 쓰면 로그인 안 한 것으로 본다(로그인 줄은 그대로 뜬다)."""
+    if not members.enabled:
+        return None
+    try:
+        user_id = members.user_id(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
+        return members.me(user_id) if user_id else None
+    except (OSError, sqlite3.Error):
+        return None
+
+
 def _route(members, method, bare, query, headers, read_body, address) -> Response:
     if bare == "/auth/providers" and method == "GET":
-        return _json({"providers": list(members.providers)})
+        return _json({"providers": list(members.providers), "me": _signed_in(members, headers)})
     if not members.enabled:
         return _error(404, "not_found", "회원 기능이 꺼져 있어요")
     parts = bare.split("/")   # ["", "auth", 제공자, 동작]
