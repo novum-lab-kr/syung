@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from server.config import DebugConfig
+from server.services.admin import AdminService
 from server.services.bus import BusArrivalService, BusLiveService
 from server.services.debug import DebugService
 from server.services.health import HealthService
@@ -28,7 +30,8 @@ class Services:
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
         self._journey, self._places, self._auth, self._health, self._debug = journey, places, auth, health, debug
-        self._members = members
+        self._members, self._admin = members, None
+        self.started_at = time.time()   # 관리 화면 '서버 시작 시각'
 
     @property
     def live(self) -> SubwayLiveService:
@@ -96,6 +99,16 @@ class Services:
             if self._members is None:
                 self._members = MemberService()
             return self._members
+
+
+    @property
+    def admin(self) -> AdminService:
+        """관리 화면(주인만): 회원 DB 는 members 의 것을 같이 쓰고, 서버 상태는 부를 때 각 서비스를 꺼낸다."""
+        with self._lock:
+            if self._admin is None:
+                self._admin = AdminService(self.members.store, live=lambda: self.live, health=lambda: self.health,
+                                           bus=lambda: self.bus, arrivals=lambda: self.arrivals, started_at=self.started_at)
+            return self._admin
 
 
 _default: Services | None = None

@@ -69,9 +69,29 @@ MIGRATIONS: list[tuple[int, str]] = [
     (3, """
         ALTER TABLE tickets ADD COLUMN route TEXT
     """),
+    # 4(2026-10-27): 관리자 열람 · 조치 기록(장소 보기 · 강제 로그아웃 · 탈퇴 처리). 회원을 지워도 기록은 남게 user_id 는 외래 키가 아니다.
+    # 관리자 IP · 검색어 · 토큰은 남기지 않는다(무엇을 · 언제 · 누구에게 · 왜만).
+    (4, """
+        CREATE TABLE admin_log (
+            id INTEGER PRIMARY KEY,
+            at INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            reason TEXT NOT NULL
+        );
+        CREATE INDEX admin_log_user ON admin_log(user_id, at)
+    """),
 ]
+KST_SECONDS = 9 * 3600   # 날짜별 가입 수는 한국 날짜로 센다
+ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
 
 TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
+
+
+def _log(conn: sqlite3.Connection, at: int, action: str, user_id: int, reason: str) -> None:
+    """관리 기록 한 줄. 1년 지난 기록은 새로 쓸 때 같이 지운다(세션과 같은 틀)."""
+    conn.execute("DELETE FROM admin_log WHERE at<=?", (at - ADMIN_LOG_AGE,))
+    conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, ?, ?, ?)", (at, action, user_id, reason))
 
 
 class MemberStore:
@@ -226,3 +246,94 @@ class MemberStore:
     def delete_ticket(self, user_id: int, ticket_id: int) -> bool:
         return self._write(lambda conn: conn.execute("DELETE FROM tickets WHERE id=? AND user_id=?",
                                                      (ticket_id, user_id)).rowcount > 0)
+
+    # ---- 관리(주인만 — routes/admin.py) ----
+    def _all(self, sql: str, args: tuple) -> list[dict]:
+        self.open()
+        conn = self._connect()
+        try:
+            return [dict(row) for row in conn.execute(sql, args).fetchall()]
+        finally:
+            conn.close()
+
+    def admin_stats(self, since: tuple[int, int, int], first_day: int) -> dict:
+        """since: (오늘 · 7일 · 30일 시작 시각), first_day: 날짜별 수를 셀 첫 시각 → 수만(이름 · 장소 없음)."""
+        counts = self._read("SELECT count(*) AS total, sum(created_at>=?) AS today, sum(created_at>=?) AS week, "
+                            "sum(created_at>=?) AS month FROM users", since)
+        providers = self._all("SELECT i.provider, count(*) AS count FROM users u JOIN identities i ON i.rowid="
+                              "(SELECT rowid FROM identities WHERE user_id=u.id ORDER BY created_at LIMIT 1) "
+                              "GROUP BY i.provider ORDER BY count DESC, i.provider", ())
+        daily = self._all("SELECT date(created_at+?, 'unixepoch') AS day, count(*) AS count FROM users "
+                          "WHERE created_at>=? GROUP BY day ORDER BY day", (KST_SECONDS, first_day))
+        return {"total": counts["total"], "today": counts["today"] or 0, "week": counts["week"] or 0,
+                "month": counts["month"] or 0, "providers": providers, "daily": daily}
+
+    _MEMBER_ROW = ("SELECT u.id, u.display_name, u.created_at, "
+                   "(SELECT provider FROM identities WHERE user_id=u.id ORDER BY created_at LIMIT 1) AS provider, "
+                   "(SELECT count(*) FROM tickets WHERE user_id=u.id) AS tickets, "
+                   "(SELECT max(created_at) FROM sessions WHERE user_id=u.id) AS last_login, "
+                   "(SELECT count(*) FROM sessions WHERE user_id=u.id AND expires_at>?) AS sessions FROM users u")
+
+    def admin_members(self, word: str, number: int | None, now: int, offset: int, limit: int) -> tuple[int, list[dict]]:
+        """닉네임에 word 가 든 회원 또는 회원번호 number(둘 다 없으면 모두), 새로 가입한 차례 → (모두 몇 명, 그 쪽 줄들)."""
+        where, args = "", ()
+        if word:
+            pattern = "%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where, args = " WHERE u.display_name LIKE ? ESCAPE '\\'", (pattern,)
+            if number is not None:
+                where, args = where + " OR u.id=?", args + (number,)
+        total = self._read("SELECT count(*) AS n FROM users u" + where, args)["n"]
+        rows = self._all(self._MEMBER_ROW + where + " ORDER BY u.created_at DESC, u.id DESC LIMIT ? OFFSET ?",
+                         (now, *args, limit, offset))
+        return total, rows
+
+    def admin_member(self, user_id: int, now: int) -> dict | None:
+        """회원 한 명: 목록 칸 + 연결된 로그인 방법 + 승차권(장소 · 경로 빼고) + 관리 기록. 없으면 None."""
+        row = self._read(self._MEMBER_ROW + " WHERE u.id=?", (now, user_id))
+        if row is None:
+            return None
+        member = dict(row)
+        member["identities"] = self._all("SELECT provider, created_at FROM identities WHERE user_id=? ORDER BY created_at",
+                                          (user_id,))
+        member["ticket_rows"] = self._all("SELECT id, name, depart_at, days, route IS NOT NULL AS has_route, created_at, "
+                                          "updated_at FROM tickets WHERE user_id=? ORDER BY created_at, id", (user_id,))
+        member["log"] = self._all("SELECT at, action, reason FROM admin_log WHERE user_id=? ORDER BY at DESC, id DESC LIMIT 50",
+                                  (user_id,))
+        return member
+
+    def prune_admin_log(self, now: int) -> int:
+        """1년 지난 관리 기록을 지운다 → 지운 수. 관리 화면을 열 때도 부른다(조치가 한동안 없어도 남지 않게)."""
+        return self._write(lambda conn: conn.execute("DELETE FROM admin_log WHERE at<=?", (now - ADMIN_LOG_AGE,)).rowcount)
+
+    def admin_places(self, user_id: int, at: int, reason: str) -> list[dict] | None:
+        """승차권 장소(이름 · 좌표)를 꺼내며 같은 트랜잭션에 열람 기록을 남긴다. 회원이 없으면 None(기록 안 남김)."""
+        def work(conn):
+            if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
+                return None
+            rows = conn.execute("SELECT id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng FROM tickets "
+                                "WHERE user_id=? ORDER BY created_at, id", (user_id,)).fetchall()
+            _log(conn, at, "places", user_id, reason)
+            return [dict(row) for row in rows]
+        return self._write(work)
+
+    def admin_logout(self, user_id: int, at: int, reason: str) -> int | None:
+        """그 회원의 세션을 모두 지우고 기록 → 지운 세션 수. 회원이 없으면 None(기록 안 남김)."""
+        def work(conn):
+            if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
+                return None
+            removed = conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,)).rowcount
+            _log(conn, at, "logout", user_id, reason)
+            return removed
+        return self._write(work)
+
+    def admin_delete(self, user_id: int, at: int, reason: str) -> dict | None:
+        """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권은 ON DELETE CASCADE) + 기록 → 지운 수. 없으면 None."""
+        def work(conn):
+            if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
+                return None
+            counts = {name: conn.execute(f"SELECT count(*) FROM {name} WHERE user_id=?", (user_id,)).fetchone()[0]
+                      for name in ("identities", "sessions", "tickets")}
+            conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+            _log(conn, at, "delete", user_id, reason)
+            return counts
+        return self._write(work)
