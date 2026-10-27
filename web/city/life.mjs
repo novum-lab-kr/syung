@@ -2,7 +2,7 @@ import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
 import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, sampleS, visibleRanges } from "./traffic.mjs";
 import { BULB_FS, bulbSize } from "../modes/coaster/night.mjs";
 import { MPP, hexRgb, toneRGB } from "./style.mjs";
-// web/city/life.mjs
+// web/city/life.mts
 var EARTH = 40075016.68557849;
 var ORIGIN = [126.978, 37.5665];
 var mercX = (lon) => lon / 360 + .5;
