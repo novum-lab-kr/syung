@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CityViaduct, toLL, ribbonRows } from '../web/city/viaduct.mjs';
+import { CityViaduct, toLL, ribbonRows } from '../web/city/viaduct.mts';
 import { edgeOverlaps, edgeProfile, levelHeight } from '../web/city/viaduct_levels.mts';
 import { MU, MERC_ORIGIN as O } from '../web/city/life.mts';
 import SEOUL from '../web/modes/basic/city.mjs';

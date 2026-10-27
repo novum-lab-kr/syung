@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { CityViaduct, toLL } from '../web/city/viaduct.mjs';
+import { CityViaduct, toLL } from '../web/city/viaduct.mts';
 import SNAP, { stops as SNAP_STOPS } from '../web/city/viaduct_snap.mjs';
 import pack from '../web/modes/basic/city.mjs';
 

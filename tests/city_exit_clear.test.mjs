@@ -27,7 +27,7 @@ test('an exit in the gap between two buildings goes out of the gap, not into the
 
 // 옮긴 출구가 고가(조선은 수로) 상판 밑에 숨지 않게(2026-10-15 조선 종각 9 · 10번): deckProbe 로 상판 둘레를 피한다
 test('the deck probe marks the strip under a viaduct, and an exit pushed off a building skips it', async () => {
-  const {CityViaduct, toLL} = await import('../web/city/viaduct.mjs');
+  const {CityViaduct, toLL} = await import('../web/city/viaduct.mts');
   const pt = (x, y) => { const [lon, lat] = toLL(x, y); const mx = lon / 360 + .5, my = .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI); return {x: mx, y: my} };
   const byId = new Map([1, 2].map(id => [id, {id}]));
   const v = new CityViaduct({net: {paths: {L: [[1, 2]]}, byId, geom: () => ({pts: [pt(0, 0), pt(200, 0)]}), offset: () => 0, bodyPx: () => 26, rects: new Map()}});
