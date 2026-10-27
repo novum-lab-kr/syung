@@ -1,5 +1,5 @@
 // Placement is a world-space decision, independent of camera, visible-instance order and animation.
-import { pointInPolygon, edgeDistance, bbox } from '../../city/geom.mjs';
+import { pointInPolygon, edgeDistance, bbox } from '../../city/geom.mts';
 // park: 놀이기구는 공원 안 빈 자리에만(2026-10-11 행님: 건물은 심시티 그대로, 기구들은 공원에) — 탑 자리에서 parkMoveM 안의 공원(풀밭 공원 · 놀이공원 땅),
 // 몸 반지름 × parkInsetK 둘레가 모두 공원 안, 높이는 parkMaxH 까지(탑 높이 그대로면 공원에 300 m 자이로드롭)
 export const RIDE_SITE_RULES=Object.freeze({gapM:24,sameKindM:{ferris:600,drop:380,swing:350,saucer:350},compactSameKindM:140,moveM:500,clearanceM:6,buildingRoofM:12,

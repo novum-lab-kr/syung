@@ -11,7 +11,7 @@
 //   const f=new FestoonLayer(); f.init(gl); f.update(map); f.pump(map,repaint); f.render(gl,matrix,{zoom,phone,reducedMotion,bounds,pixelRatio,now}); f.dispose(gl);
 
 import { decodeTile } from '../../city/mvt.mts';
-import { classifyRings } from '../../city/geom.mjs';
+import { classifyRings } from '../../city/geom.mts';
 import { LANDMARKS, landmarkMerc } from '../../city/landmarks_data.mjs';
 import { BULB_FS, compile, lightsOn, lightsOff, bulbSize, hexRGB, ORIGIN } from './night.mjs';
 
