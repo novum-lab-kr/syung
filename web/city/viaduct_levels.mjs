@@ -1,5 +1,5 @@
 import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
-// web/city/viaduct_levels.mjs
+// web/city/viaduct_levels.mts
 var V_OF = (pack) => pack.viaduct || SEOUL_CITY_STYLE.viaduct;
 var smooth01 = (t) => {
 	t = Math.max(0, Math.min(1, t));

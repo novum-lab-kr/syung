@@ -1,5 +1,5 @@
 import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
-// web/city/style.mjs
+// web/city/style.mts
 var EARTH = 40075016.68557849;
 var LAT = 37.5;
 var MPP = (z) => EARTH * Math.cos(LAT * Math.PI / 180) / (512 * 2 ** z);
@@ -766,7 +766,7 @@ function cityPalette(theme = "light", { pack = SEOUL_CITY_STYLE, tone: mode = "s
 		roadMinor: t(R.minor.colors[theme]),
 		roadMajor: t(R.primary.colors[theme]),
 		rail: t(mixHex(G.ballast, ink, .3)),
-		shadow: pack.modes?.[mode]?.shadowOpacity?.[theme] ?? .18,
+		shadow: (pack.modes?.[mode])?.shadowOpacity?.[theme] ?? .18,
 		light: pack.lighting?.[theme]?.color ?? "#ffffff",
 		lightK: pack.lighting?.[theme]?.directional ?? .36,
 		cityMode: mode
