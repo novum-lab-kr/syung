@@ -90,6 +90,8 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
 .facts dt{font-size:12px;color:var(--muted);font-weight:700}
 .facts dd{margin:2px 0 0;font-size:14px;font-weight:700;word-break:break-all}
 .hidden-place{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--control);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--secondary)}
+.avatar-view{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.avatar-view img{width:96px;height:96px;border-radius:24px;object-fit:cover;background:var(--rule)}
 .act{display:grid;gap:8px;border:1.5px solid var(--rule);border-radius:14px;padding:12px;margin-top:10px}
 .act.danger{border-color:var(--bad-soft)}
 .act b{font-size:14px}
@@ -162,6 +164,7 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
   <section class="box" id="detail" aria-label="회원 상세" hidden>
     <h2 id="dTitle">회원</h2>
     <dl class="facts" id="dFacts"></dl>
+    <div id="dAvatar" class="avatar-view" hidden><img id="dAvatarImg" alt="회원이 올린 프로필 사진" width="96" height="96"><span>회원이 올린 프로필 사진</span></div>
 
     <h3>승차권</h3>
     <div class="tw"><table>
@@ -186,9 +189,21 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
       <div class="row"><input id="outReason" maxlength="200" placeholder="이유(기록에 남아요)" aria-label="강제 로그아웃 이유"><button class="btn quiet" type="button" id="outBtn">강제 로그아웃</button></div>
       <div class="msg" id="outMsg" role="status"></div>
     </div>
+    <div class="act">
+      <b>프로필 사진 내리기</b>
+      <p>회원이 올린 사진을 지우고 기본 캐릭터로 되돌려요. 사진 파일도 지워져요.</p>
+      <div class="row"><input id="avatarReason" maxlength="200" placeholder="이유(기록에 남아요)" aria-label="프로필 사진 내리기 이유"><button class="btn quiet" type="button" id="avatarBtn">사진 내리기</button></div>
+      <div class="msg" id="avatarMsg" role="status"></div>
+    </div>
+    <div class="act">
+      <b>닉네임 초기화</b>
+      <p>닉네임을 로그인 방법의 기본 이름(카카오 사용자 등)으로 되돌려요.</p>
+      <div class="row"><input id="nameReason" maxlength="200" placeholder="이유(기록에 남아요)" aria-label="닉네임 초기화 이유"><button class="btn quiet" type="button" id="nameBtn">닉네임 초기화</button></div>
+      <div class="msg" id="nameMsg" role="status"></div>
+    </div>
     <div class="act danger">
       <b>탈퇴 처리</b>
-      <p>회원 정보 · 로그인 연결 · 로그인 기기 · 승차권이 모두 지워지고 되돌릴 수 없어요. 확인을 위해 회원번호를 한 번 더 적어 주세요.</p>
+      <p>회원 정보 · 로그인 연결 · 로그인 기기 · 승차권 · 올린 프로필 사진이 모두 지워지고 되돌릴 수 없어요. 확인을 위해 회원번호를 한 번 더 적어 주세요.</p>
       <div class="row"><input id="delReason" maxlength="200" placeholder="이유(기록에 남아요)" aria-label="탈퇴 처리 이유"><input id="delConfirm" inputmode="numeric" placeholder="회원번호 다시 입력" aria-label="확인용 회원번호" style="flex:0 1 160px"><button class="btn danger" type="button" id="delBtn">탈퇴 처리</button></div>
       <div class="msg" id="delMsg" role="status"></div>
     </div>
@@ -200,7 +215,10 @@ tbody.pick tr:hover td,tbody.pick tr.on td{background:var(--syung-soft)}
 <script>
 const $ = id => document.getElementById(id);
 const PROVIDERS = {kakao: '카카오', google: '구글', apple: 'Apple'};
-const ACTIONS = {places: '장소 보기', logout: '강제 로그아웃', delete: '탈퇴 처리'};
+const ACTIONS = {places: '장소 보기', logout: '강제 로그아웃', delete: '탈퇴 처리', avatar: '사진 내리기', name: '닉네임 초기화'};
+const CHARACTERS = {sprout: '새싹 볼빵 후디', builder: '꼬마 건설 반장', seonbi: '갓 쓴 꼬마 선비', visitor: '두근두근 나들이',
+  scv: '테란 SCV', drone: '저그 드론', probe: '프로토스 프로브'};
+const avatarText = avatar => avatar?.type === 'photo' ? '올린 사진' : avatar?.type === 'character' ? `캐릭터 · ${CHARACTERS[avatar.id] || avatar.id}` : '기본 캐릭터';
 const WITHDRAW_REASONS = {self: '본인 탈퇴', kakao_unlink: '카카오 연결 해제', admin: '관리자 탈퇴 처리'};
 const DAYS = ['', '월', '화', '수', '목', '금', '토', '일'];
 const provider = name => PROVIDERS[name] || name || '–';
@@ -283,13 +301,14 @@ $('list').addEventListener('keydown', event => { if (event.key === 'Enter') pick
 // ---- 회원 상세 · 조치 ----
 function say(id, text, ok) { $(id).textContent = text; $(id).className = 'msg ' + (ok ? 'ok' : 'err'); }
 
+const BUTTONS = ['placeBtn', 'outBtn', 'avatarBtn', 'nameBtn', 'delBtn'];
 async function openMember(id) {
   picked = id;
   for (const tr of $('list').children) tr.classList.toggle('on', Number(tr.dataset.id) === id);
-  for (const field of ['placeReason', 'outReason', 'delReason', 'delConfirm']) $(field).value = '';
-  for (const field of ['placeMsg', 'outMsg', 'delMsg']) $(field).textContent = '';
+  for (const field of ['placeReason', 'outReason', 'avatarReason', 'nameReason', 'delReason', 'delConfirm']) $(field).value = '';
+  for (const field of ['placeMsg', 'outMsg', 'avatarMsg', 'nameMsg', 'delMsg']) $(field).textContent = '';
   $('placeTable').hidden = true; $('dPlaces').replaceChildren();
-  for (const button of ['placeBtn', 'outBtn', 'delBtn']) $(button).disabled = false;
+  for (const button of BUTTONS) $(button).disabled = false;
   try { showMember(await api(`/members/${id}`)); } catch (error) { $('detail').hidden = false; $('dTitle').textContent = error.message; return; }
   $('detail').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
@@ -299,7 +318,8 @@ function showMember(member) {
   $('dTitle').textContent = `${member.name} · ${member.id}번`;
   const facts = [['회원번호', member.id], ['닉네임', member.name], ['가입', when(member.createdAt)],
     ['로그인 방법', member.identities.map(item => provider(item.provider)).join(' · ') || '–'],
-    ['최근 로그인', when(member.lastLogin)], ['로그인 중인 기기', `${member.sessions}대`], ['승차권', `${member.tickets}장`]];
+    ['최근 로그인', when(member.lastLogin)], ['로그인 중인 기기', `${member.sessions}대`], ['승차권', `${member.tickets}장`],
+    ['프로필', avatarText(member.avatar)]];
   $('dFacts').replaceChildren(...facts.map(([label, value]) => {
     const box = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd');
     dt.textContent = label; dd.textContent = value; box.append(dt, dd); return box;
@@ -308,6 +328,11 @@ function showMember(member) {
     cell(ticket.days.map(day => DAYS[day]).join(' ') || '–'), cell(ticket.hasRoute ? '있음' : '없음'), cell(when(ticket.createdAt, false))]))
     : [row([Object.assign(cell('승차권이 없어요'), {colSpan: 5})])]));
   $('placeBox').hidden = !member.ticketList.length;
+  // 올린 사진은 내리기 전에 볼 수 있게(주인 쿠키로만 받는 주소). 없으면 칸을 숨긴다
+  const photo = member.avatar?.type === 'photo';
+  $('dAvatar').hidden = !photo;
+  if (photo) $('dAvatarImg').src = `/api/admin/members/${member.id}/avatar`; else $('dAvatarImg').removeAttribute('src');
+  $('avatarBtn').disabled = !photo;
   $('dLog').replaceChildren(...(member.log.length ? member.log.map(item => {
     const li = document.createElement('li'), what = document.createElement('b');
     what.textContent = ACTIONS[item.action] || item.action;
@@ -339,6 +364,28 @@ $('outBtn').addEventListener('click', async () => {
   } catch (error) { say('outMsg', error.message); }
 });
 
+$('avatarBtn').addEventListener('click', async () => {
+  const reason = $('avatarReason').value.trim();
+  if (!reason) return say('avatarMsg', '이유를 적어 주세요');
+  try {
+    await api(`/members/${picked}/avatar`, {method: 'POST', body: JSON.stringify({reason})});
+    $('avatarReason').value = '';
+    say('avatarMsg', '사진을 내렸어요(기본 캐릭터로)', true);
+    showMember(await api(`/members/${picked}`));
+  } catch (error) { say('avatarMsg', error.message); }
+});
+
+$('nameBtn').addEventListener('click', async () => {
+  const reason = $('nameReason').value.trim();
+  if (!reason) return say('nameMsg', '이유를 적어 주세요');
+  try {
+    const body = await api(`/members/${picked}/name`, {method: 'POST', body: JSON.stringify({reason})});
+    $('nameReason').value = '';
+    say('nameMsg', `닉네임을 '${body.name}'(으)로 되돌렸어요`, true);
+    showMember(await api(`/members/${picked}`)); loadList();
+  } catch (error) { say('nameMsg', error.message); }
+});
+
 $('delBtn').addEventListener('click', async () => {
   const reason = $('delReason').value.trim(), confirm = $('delConfirm').value.trim();
   if (!reason) return say('delMsg', '이유를 적어 주세요');
@@ -347,7 +394,8 @@ $('delBtn').addEventListener('click', async () => {
     const body = await api(`/members/${picked}`, {method: 'DELETE', body: JSON.stringify({reason, confirm})});
     say('delMsg', `탈퇴 처리했어요(승차권 ${body.removed.tickets}장 · 로그인 기기 ${body.removed.sessions}대 삭제)`, true);
     $('dTitle').textContent = `${picked}번 회원 · 탈퇴 처리됨`;
-    for (const button of ['placeBtn', 'outBtn', 'delBtn']) $(button).disabled = true;
+    for (const button of BUTTONS) $(button).disabled = true;
+    $('dAvatar').hidden = true; $('dAvatarImg').removeAttribute('src');
     $('placeTable').hidden = true; $('dPlaces').replaceChildren();
     picked = null; loadStats(); loadList();
   } catch (error) { say('delMsg', error.message); }

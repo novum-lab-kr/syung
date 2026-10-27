@@ -211,6 +211,11 @@ class DebugConfig:
         return cls(debug_dir=Path(_env("SYUNG_DEBUG_DIR", "/var/lib/subway-live/debug")))
 
 
+def avatar_dir(db_file: Path) -> Path:
+    """프로필 사진 폴더 = 회원 DB 옆 avatars/(기본 /var/lib/subway-live/avatars). 서버 · 관리 · 백업이 모두 이 이름으로 찾는다."""
+    return Path(db_file).parent / "avatars"
+
+
 @dataclass
 class MemberConfig:
     """회원 로그인(카카오 · 구글 · Apple) · 출퇴근 설정(2026-10-26). 제공자 값이 하나도 없으면 회원 기능 전체가 꺼진다
@@ -233,6 +238,11 @@ class MemberConfig:
     google_client_secret: str = field(default="", repr=False)
     apple_client_id: str = field(default="", repr=False)
     apple_client_secret: str = field(default="", repr=False)
+
+    @property
+    def avatar_dir(self) -> Path:
+        """회원이 올린 프로필 사진 폴더(2026-10-27) — 회원 DB 파일 옆 avatars/. 탈퇴하면 그 사람 사진도 지우고, 하루 백업에 같이 담는다."""
+        return avatar_dir(self.db_file)
 
     @classmethod
     def from_env(cls) -> "MemberConfig":

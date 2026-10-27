@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Response:
-    """kind: json(본문 바이트) · redirect(Location, 선택 Set-Cookie, 본문 없음) · empty(204, 길이 머리말 없음) · error(기본 HTML 오류).
+    """kind: json(본문 바이트) · redirect(Location, 선택 Set-Cookie, 본문 없음) · empty(204, 길이 머리말 없음) · error(기본 HTML 오류)
+    · image(본문 바이트, Content-Type 은 content_type · Cache-Control 은 cache — 프로필 사진).
     cookies: cookie 뒤에 더 보낼 Set-Cookie(회원 로그인 콜백이 세션을 주며 state 를 지울 때)."""
     status: int
     kind: str = "json"
@@ -14,3 +15,5 @@ class Response:
     location: str = ""
     cookie: str | None = None
     cookies: tuple = ()
+    content_type: str = ""
+    cache: str = ""

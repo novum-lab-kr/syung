@@ -1,7 +1,8 @@
 """관리 화면(주인만): 회원 수 · 목록 · 상세 · 조치와 서버 상태. HTTP 모양(주소 · 상태 코드 · 쿠키 확인)은 routes/admin.py 가 맡는다.
 
 - 목록 · 상세에는 승차권 장소(이름 · 좌표)와 고른 경로를 넣지 않는다. 장소는 이유를 받는 places() 로만 주고 그때 기록을 남긴다.
-- 조치(강제 로그아웃 · 탈퇴 처리)는 이유가 있어야 하고, 탈퇴 처리는 회원번호를 한 번 더 받아 맞춰 본다. 모두 admin_log 에 남긴다.
+- 조치(강제 로그아웃 · 탈퇴 처리 · 사진 내리기 · 닉네임 초기화)는 이유가 있어야 하고, 탈퇴 처리는 회원번호를 한 번 더 받아 맞춰 본다.
+  모두 admin_log 에 남긴다. 탈퇴 처리 · 사진 내리기는 올린 사진 파일까지 지운다(2026-10-27 결정 D5).
 - 기록에는 언제 · 무엇을 · 누구에게 · 왜만 남긴다(관리자 IP · 검색어 · 토큰은 남기지 않는다). 1년 보관 후 지운다(store ADMIN_LOG_AGE).
 - 서버 상태는 이미 가진 값만 읽는다(바깥 API 를 부르지 않는다).
 """
@@ -11,7 +12,11 @@ import time
 from datetime import datetime, timedelta
 
 from server.clock import KST
+from server.config import avatar_dir
 from server.errors import BusError
+from server.services.login_providers import DEFAULT_NAMES
+from server.services.profile import photo_name
+from server.store.avatars import AvatarFiles
 from server.store.members import MemberStore
 
 PAGE_SIZE = 50
@@ -45,6 +50,18 @@ def _member_view(row: dict) -> dict:
             "tickets": row["tickets"], "lastLogin": row["last_login"], "sessions": row["sessions"]}
 
 
+def _avatar_view(stored: str | None) -> dict | None:
+    """관리 화면용 — 사진 주소는 /api/admin/members/<번호>/avatar(회원 쪽 주소는 주지 않는다)."""
+    if photo_name(stored):
+        return {"type": "photo"}
+    if stored and stored.startswith("character:"):
+        return {"type": "character", "id": stored[10:]}
+    return None
+
+
+RESET_NAME = "슝 회원"   # 로그인 방법을 모를 때(연결이 없는 회원)의 초기화 이름
+
+
 class AdminService:
     """store: 회원 DB(MemberService 의 것을 같이 쓴다). live · health · bus · arrivals: 서버 상태를 읽을 서비스를 꺼내는
     인자 없는 함수(없으면 그 칸을 빼고) — 회원 화면만 쓰는 시험 · 개발 서버가 지하철 · 버스 서비스를 만들지 않게 늦게 꺼낸다."""
@@ -52,6 +69,7 @@ class AdminService:
     def __init__(self, store: MemberStore, *, live=None, health=None, bus=None, arrivals=None,
                  started_at: float | None = None, clock=time.time):
         self.store, self.clock = store, clock
+        self.avatars = AvatarFiles(avatar_dir(store.path))   # 회원 서비스와 같은 사진 폴더(회원 DB 옆)
         self._live, self._health, self._bus, self._arrivals = live, health, bus, arrivals
         self.started_at = started_at if started_at is not None else clock()
 
@@ -87,6 +105,7 @@ class AdminService:
         if row is None:
             return None
         view = _member_view(row)
+        view["avatar"] = _avatar_view(row["avatar"])
         view["identities"] = [{"provider": item["provider"], "createdAt": item["created_at"]} for item in row["identities"]]
         view["ticketList"] = [{"id": ticket["id"], "name": ticket["name"], "depart": ticket["depart_at"], "days": _days(ticket["days"]),
                                "hasRoute": bool(ticket["has_route"]), "createdAt": ticket["created_at"], "updatedAt": ticket["updated_at"]}
@@ -108,11 +127,43 @@ class AdminService:
         return self.store.admin_logout(user_id, int(self.clock()), clean_reason(body))
 
     def delete(self, user_id: int, body) -> dict | None:
-        """탈퇴 처리: 본문 confirm 이 회원번호와 같아야 한다. 회원이 없으면 None."""
+        """탈퇴 처리: 본문 confirm 이 회원번호와 같아야 한다. 올린 사진 파일도 지운다. 회원이 없으면 None."""
         reason = clean_reason(body)
         if str(body.get("confirm", "")).strip() != str(user_id):
             raise AdminError("확인용 회원번호가 맞지 않아요")
-        return self.store.admin_delete(user_id, int(self.clock()), reason)
+        done = self.store.admin_delete(user_id, int(self.clock()), reason)
+        if done is None:
+            return None
+        counts, avatar = done
+        counts["photo"] = int(self.avatars.remove(photo_name(avatar)))
+        return counts
+
+    def photo(self, user_id: int) -> tuple[bytes, str] | None:
+        """그 회원이 올린 사진 바이트와 형식(webp · jpg). 없으면 None. 보기만은 기록하지 않는다(내리기는 기록)."""
+        row = self.store.user(user_id)
+        name = photo_name(row["avatar"]) if row else None
+        data = self.avatars.read(name) if name else None
+        return (data, name.rsplit(".", 1)[1]) if data is not None else None
+
+    def clear_avatar(self, user_id: int, body) -> bool | None:
+        """사진 내리기: 기본 캐릭터로 되돌리고 파일을 지운다. 올린 사진이 없으면 AdminError, 회원이 없으면 None."""
+        done = self.store.admin_clear_avatar(user_id, int(self.clock()), clean_reason(body))
+        if done is None:
+            return None
+        cleared, avatar = done
+        if not cleared:
+            raise AdminError("올린 사진이 없어요")
+        self.avatars.remove(photo_name(avatar))
+        return True
+
+    def reset_name(self, user_id: int, body) -> str | None:
+        """닉네임 초기화: 첫 로그인 방법의 기본 이름(카카오 사용자 · 구글 사용자 · Apple 사용자)으로. 회원이 없으면 None."""
+        reason = clean_reason(body)
+        row = self.store.user(user_id)
+        if row is None:
+            return None
+        name = DEFAULT_NAMES.get(row["provider"], RESET_NAME)
+        return name if self.store.admin_reset_name(user_id, name, int(self.clock()), reason) else None
 
     # ---- 서버 상태 ----
     def status(self) -> dict:

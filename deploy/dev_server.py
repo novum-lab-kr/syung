@@ -111,6 +111,10 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Set-Cookie", cookie)
         if response.kind == "json":
             self.send_header("Content-Type", "application/json; charset=utf-8")
+        if response.kind == "image":   # 프로필 사진(서버 routes/http.py _send_image 와 같은 머리말)
+            self.send_header("Content-Type", response.content_type)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         if response.kind != "empty":
             self.send_header("Content-Length", str(len(response.body)))
         self.end_headers()
@@ -124,6 +128,15 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if not path.startswith("/api/admin/") or not admin_routes.is_admin_path(path[len("/api/admin"):]):
             return False
+        photo = admin_routes.photo(services(self.server.server_address[1]).admin, path[len("/api/admin"):]) \
+            if method == "GET" and os.environ.get("SYUNG_DEV_LOGIN") == "1" and admin_routes.is_photo_path(path[len("/api/admin"):]) else None
+        if photo is not None:   # 회원이 올린 사진(관리 화면 상세)
+            self.send_response(photo.status)
+            self.send_header("Content-Type", photo.content_type or "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(photo.body)))
+            self.end_headers()
+            self.wfile.write(photo.body)
+            return True
         if os.environ.get("SYUNG_DEV_LOGIN") == "1":
             def read_body(limit):
                 size = int(self.headers.get("Content-Length") or 0)

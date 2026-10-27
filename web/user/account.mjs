@@ -3,6 +3,8 @@
 // 앞면: 이름 · 시각 · 점선 슝 로고 줄 · '○○권' 띠 · 일련번호 · 오늘 / 누르면 뒤집혀 뒷면: 갈아타는 곳 이어 쓰기(고른 경로 —
 // 없으면 뒤집을 때 /api/route 로 계산) · 출발 시각 · 마그네틱 띠 · 타는 날 · 고치기.
 // 발권 화면: 장소 칸 → 장소 고르기 쪽 · 경로 칸 → 경로 선택 쪽(/api/route 결과 · 기본은 가장 빠른 길).
+// 내 정보(2026-10-27): 닉네임 고치기 · 프로필 사진 올리기 · 캐릭터 고르기(server/routes/members.py /api/me/profile · /api/me/avatar).
+// 사진은 브라우저에서 가운데를 정사각 256×256 으로 잘라 다시 그려(WebP, 안 되면 JPEG) 올린다 — 다시 그리면 위치(GPS) 같은 사진 정보가 빠진다.
 // 로그인 방법이 하나도 설정되지 않았으면(/api/auth/providers 빈 목록 · 실패) 아무것도 보이지 않는다 — 로그인 안 한 화면은 지금과 같다.
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mjs';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
@@ -22,6 +24,53 @@ const APPLE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentCo
 const PROVIDERS = {kakao: ['카카오로 계속하기', KAKAO], google: ['구글로 계속하기', GOOGLE], apple: ['Apple로 계속하기', APPLE]};
 // 점선 슝 로고(속도선 + 기차, 노랑 네모 없이) — 앞면에 5개를 가로로, 가운데 하나가 정가운데
 const LOGO = '<svg viewBox="0 0 100 60"><g fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray=".3 2.3" stroke-linecap="round"><rect x="36" y="11" width="56" height="38" rx="19"/><rect x="40.5" y="15.5" width="47" height="29" rx="14.5"/><circle cx="74" cy="30" r="7.5"/><circle cx="74" cy="30" r="3.5"/><rect x="15" y="16" width="17" height="7" rx="3.5"/><rect x="8" y="26.5" width="24" height="7" rx="3.5"/><rect x="15" y="37" width="17" height="7" rx="3.5"/></g></svg>';
+
+// 프로필 캐릭터(내 위치 캐릭터 — web/map/avatars/). 얼굴 그림은 web/brand/faces/<이름>-84 · 240.png(tools/avatar_face/make.sh).
+// 첫째(새싹)가 기본 — 고르면 서버에는 '기본으로'(DELETE)를 보낸다
+const CHARACTERS = [['sprout', '새싹 볼빵 후디'], ['builder', '꼬마 건설 반장'], ['seonbi', '갓 쓴 꼬마 선비'], ['visitor', '두근두근 나들이'],
+  ['scv', '테란 SCV'], ['drone', '저그 드론'], ['probe', '프로토스 프로브']];
+const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가 주는 내 사진 주소 모양(그 밖은 그리지 않는다)
+const PHOTO_SIDE = 256, PHOTO_MAX = 150 * 1024;   // 서버 한도(160 KB)보다 조금 작게
+const NAME_MAX = 12;
+const nameLength = text => [...text.trim()].length;
+
+// 칸(el)에 프로필을 그린다: 올린 사진이면 칸을 꽉 채우고(.photo), 아니면 캐릭터 얼굴(.face). big: 내 정보의 큰 칸(240 그림)
+function paintAvatar(el, avatar, big = false) {
+  const photo = avatar?.type === 'photo' && PHOTO_URL.test(avatar.url);
+  const id = avatar?.type === 'character' && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id : 'sprout';
+  el.classList.toggle('photo', photo);
+  el.classList.toggle('face', !photo);
+  // 기본 새싹 · 작은 칸은 CSS 의 image-set(28 · 56 · 84) 그대로
+  el.style.backgroundImage = photo ? `url("${avatar.url}")` : (big || id !== 'sprout') ? `url("./brand/faces/${id}-${big ? 240 : 84}.png")` : '';
+}
+const toBlob = (canvas, type, quality) => new Promise(done => canvas.toBlob(done, type, quality));
+// 고른 사진 → 가운데 정사각 256×256 WebP(안 되는 브라우저는 JPEG) Blob. 다시 그리므로 원본의 사진 정보(Exif · 위치)는 따라가지 않는다
+async function shrinkPhoto(file) {
+  const image = await createImageBitmap(file, {imageOrientation: 'from-image'});   // 휴대폰 사진의 회전 정보는 그리기 전에 반영
+  const side = Math.min(image.width, image.height);
+  let source = image, sx = (image.width - side) / 2, sy = (image.height - side) / 2, from = side;
+  if (side > PHOTO_SIDE * 4) {   // 아주 큰 사진은 한 번 줄였다가 다시 줄인다(한 번에 줄이면 거칠어진다)
+    const step = document.createElement('canvas');
+    step.width = step.height = PHOTO_SIDE * 4;
+    const stepContext = step.getContext('2d');
+    stepContext.imageSmoothingQuality = 'high';
+    stepContext.drawImage(image, sx, sy, side, side, 0, 0, step.width, step.height);
+    source = step; sx = 0; sy = 0; from = step.width;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = PHOTO_SIDE;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff'; context.fillRect(0, 0, PHOTO_SIDE, PHOTO_SIDE);   // 투명한 곳은 흰 바탕(JPEG 는 투명이 없다)
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(source, sx, sy, from, from, 0, 0, PHOTO_SIDE, PHOTO_SIDE);
+  image.close?.();
+  for (const quality of [.86, .72, .55]) {
+    let blob = await toBlob(canvas, 'image/webp', quality);
+    if (blob?.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality);   // 사파리는 WebP 로 못 그린다(PNG 가 나온다)
+    if (blob && blob.size <= PHOTO_MAX && (blob.type === 'image/webp' || blob.type === 'image/jpeg')) return blob;
+  }
+  throw new Error('too big');
+}
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const todayDay = () => (new Date().getDay() + 6) % 7 + 1;   // 1(월) … 7(일)
@@ -227,13 +276,102 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   function show() {
     item.hidden = false;
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
-    if (!me) return;
-    const initial = [...me.name][0] || '나';
-    $('accountAvatarBig').textContent = initial;   // 내 정보 줄(#accountAvatar)은 캐릭터 얼굴 그림(CSS) — 큰 칸만 첫 글자
+    if (!me) { closeName(); closePick(); return; }
+    paintAvatar($('accountAvatar'), me.avatar);   // 메뉴 내 정보 줄
+    paintAvatar($('accountAvatarBig'), me.avatar, true);
     $('accountItemName').textContent = me.name;
     $('accountName').textContent = me.name;
     $('accountProvider').textContent = PROVIDER_NAMES[me.provider] || me.provider;
+    markChoice();
   }
+
+  // ---- 내 정보: 프로필 사진 · 캐릭터 고르기 ----
+  const choices = $('avatarChoices');
+  choices.append(...CHARACTERS.map(([id, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pf-choice'; b.dataset.character = id; b.setAttribute('aria-label', label); b.title = label;
+    b.onclick = () => pickCharacter(id);
+    return b;
+  }));
+  function markChoice() {
+    const avatar = me?.avatar;
+    const current = avatar?.type === 'photo' ? 'photo' : avatar?.type === 'character' ? avatar.id : 'sprout';
+    $('photoPick').setAttribute('aria-pressed', String(current === 'photo'));
+    // 올린 사진이 있으면 사진 칸에 그 사진, 없으면 사진기 그림
+    if (current === 'photo') paintAvatar($('photoPick'), avatar);
+    else { $('photoPick').classList.remove('photo', 'face'); $('photoPick').style.backgroundImage = ''; }
+    for (const b of choices.querySelectorAll('[data-character]')) b.setAttribute('aria-pressed', String(b.dataset.character === current));
+  }
+  function openPick() {
+    closeName();
+    for (const b of choices.querySelectorAll('[data-character]')) b.style.backgroundImage ||= `url("./brand/faces/${b.dataset.character}-240.png")`;   // 열 때만 받는다
+    $('avatarPick').hidden = false; $('accountAvatarBig').setAttribute('aria-expanded', 'true');
+    choices.querySelector('[aria-pressed=true]')?.focus({preventScroll: true});
+  }
+  function closePick() { $('avatarPick').hidden = true; $('accountAvatarBig').setAttribute('aria-expanded', 'false'); }
+  $('accountAvatarBig').onclick = () => { if ($('avatarPick').hidden) openPick(); else closePick(); };
+  let saving = false;
+  function busy(on) {
+    saving = on;
+    for (const b of choices.querySelectorAll('button')) b.disabled = on;
+  }
+  // 바꾸기 요청 공통: 401 이면 로그인 풀림, 실패면 서버 문구, 성공이면 내 정보를 다시 그린다
+  async function saveProfile(request, done) {
+    if (saving) return;
+    busy(true);
+    try {
+      const r = await request();
+      if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
+      if (!r.ok) { toast(r.body?.error?.message || '바꾸지 못했어요. 잠시 뒤 다시 해 주세요.', true); return; }
+      me = r.body; show(); toast(done);
+      return true;
+    } catch { toast('바꾸지 못했어요. 연결을 확인해 주세요.', true); }
+    finally { busy(false); }
+  }
+  function pickCharacter(id) {
+    const current = me?.avatar?.type === 'character' ? me.avatar.id : me?.avatar ? 'photo' : 'sprout';
+    if (id === current) return;
+    saveProfile(() => id === 'sprout' ? send('DELETE', './api/me/avatar') : send('PUT', './api/me/avatar', {character: id}), '프로필을 바꿨어요');
+  }
+  $('photoPick').onclick = () => { if (!saving) $('photoFile').click(); };
+  $('photoFile').onchange = async () => {
+    const file = $('photoFile').files[0];
+    $('photoFile').value = '';   // 같은 사진을 다시 골라도 change 가 오게
+    if (!file) return;
+    let blob;
+    try { blob = await shrinkPhoto(file); } catch { toast('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.', true); return; }
+    saveProfile(async () => {
+      const r = await fetch('./api/me/avatar', {method: 'PUT', credentials: 'same-origin', headers: {...CHANGE, 'Content-Type': blob.type}, body: blob});
+      return {status: r.status, ok: r.ok, body: r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => null) : null};
+    }, '프로필 사진을 바꿨어요');
+  };
+
+  // ---- 내 정보: 닉네임 고치기(1~12자 · 같은 이름 허용 — 다듬기 · 검사는 서버가 한 번 더) ----
+  function nameCount() {
+    const count = nameLength($('nameInput').value);
+    $('nameCount').textContent = `${count}/${NAME_MAX}`;
+    $('nameCount').classList.toggle('over', count > NAME_MAX);
+  }
+  function openName() {
+    closePick();
+    $('nameInput').value = me?.name || ''; nameCount();
+    $('nameForm').hidden = false; $('nameEdit').setAttribute('aria-expanded', 'true');
+    $('nameInput').focus({preventScroll: true}); $('nameInput').select();
+  }
+  function closeName() { $('nameForm').hidden = true; $('nameEdit').setAttribute('aria-expanded', 'false'); }
+  $('nameEdit').onclick = () => { if ($('nameForm').hidden) openName(); else closeName(); };
+  $('nameCancel').onclick = () => { closeName(); $('nameEdit').focus({preventScroll: true}); };
+  $('nameInput').addEventListener('input', nameCount);
+  $('nameForm').onsubmit = async e => {
+    e.preventDefault();
+    const name = $('nameInput').value.trim(), count = nameLength(name);
+    if (count < 1 || count > NAME_MAX) { toast(`닉네임은 1~${NAME_MAX}자예요`, true); $('nameInput').focus(); return; }
+    if (name === me?.name) { closeName(); return; }
+    $('nameSave').disabled = true;
+    try {
+      if (await saveProfile(() => send('PUT', './api/me/profile', {name}), '닉네임을 바꿨어요')) { closeName(); $('nameEdit').focus({preventScroll: true}); }
+    } finally { $('nameSave').disabled = false; }
+  };
   function renderTickets() {
     $('ticketList').replaceChildren(...tickets.map(t => {
       const el = ticketEl(t);

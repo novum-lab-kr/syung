@@ -746,8 +746,37 @@ html[data-theme=dark] .social.apple{box-shadow:inset 0 0 0 1px #5a5a5a}
 @media (prefers-reduced-motion:reduce){.login-card,.login-scrim{transition:none}}
 /* 내 정보 */
 .account-page,.ticket-page{padding:4px 10px}
-.account-prof{display:flex;align-items:center;gap:12px;margin:4px 0 14px}
+.account-prof{display:flex;align-items:center;gap:14px;margin:4px 0 14px}
 .account-prof b{display:block;font-size:17px}.account-prof small{font-size:12px;color:var(--muted)}
+/* 프로필 사진 · 캐릭터(2026-10-27): 기본은 새싹 얼굴(.face — 위 image-set), 다른 캐릭터는 account.mjs 가 faces/<이름>-*.png 를
+   background-image 로 넣고, 올린 사진(.photo)은 칸을 꽉 채운다. 그림은 칸이 보일 때만 받는다 */
+.account-avatar.photo{background:var(--control) center/cover no-repeat}
+.account-prof .account-avatar.big{position:relative;width:84px;height:84px;padding:0;border:0;border-radius:28px;background-size:72px 72px;cursor:pointer}
+.account-prof .account-avatar.big.photo{background-size:cover}
+.account-prof .account-avatar.big:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.pf-badge{position:absolute;right:-4px;bottom:-4px;width:28px;height:28px;padding:6px;box-sizing:border-box;border-radius:50%;background:var(--syung);color:var(--syung-ink);box-shadow:0 0 0 3px var(--paper)}
+.pf-who{flex:1;min-width:0}
+.pf-name{display:flex;align-items:center;gap:6px}.pf-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-link{flex:none;min-height:32px;padding:0 10px;border:0;border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.pf-form{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
+.pf-row{display:flex;gap:8px}
+.pf-row button{flex:1;min-height:44px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-weight:700;cursor:pointer}
+.pf-row .pf-ok{background:var(--syung);color:var(--syung-ink)}
+.pf-row button[disabled]{opacity:.5;cursor:default}
+html[data-theme=dark] .pf-in{border-color:var(--rule);background:var(--control)}
+html[data-theme=dark] .pf-in input{color:var(--ink)}html[data-theme=dark] .pf-in small{color:var(--muted)}
+.pf-pick{margin:0 0 14px;padding:12px;border-radius:18px;background:var(--control)}
+.pf-l{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--muted)}
+.pf-choices{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pf-choice{position:relative;aspect-ratio:1;min-height:56px;padding:0;border:0;border-radius:16px;background:var(--paper) center/78% no-repeat;color:var(--ink);font:inherit;cursor:pointer;box-shadow:inset 0 0 0 1.5px var(--rule)}
+.pf-choice[aria-pressed=true]{box-shadow:inset 0 0 0 3px var(--syung-deep)}
+.pf-choice:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.pf-choice[disabled]{opacity:.5;cursor:default}
+.pf-photo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:700}
+.pf-photo svg{width:24px;height:24px}
+.pf-photo.photo{background-size:cover;color:transparent}.pf-photo.photo svg{opacity:0}
+.pf-in small.over{color:#c2410c;font-weight:700}
+.pf-note{margin:8px 2px 0;font-size:11px;line-height:1.45;color:var(--muted)}
 .ticket-list{display:flex;flex-direction:column;gap:12px}
 .ticket-new{margin-top:12px;width:100%;min-height:46px;border:0;border-radius:14px;background:var(--control);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .account-foot{display:flex;justify-content:center;gap:14px;margin-top:18px;font-size:12px}
