@@ -1,4 +1,4 @@
-// web/map/theme.mjs
+// web/map/theme.mts
 function createMapTheme({ map, $, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live }) {
 	const mixHex = (a, b, t) => "#" + [
 		1,
@@ -183,9 +183,9 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		sp.classList.toggle("is-night", !(now >= rise && now < set));
 	}
 	function sunPathHTML(now, rise, set) {
-		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = set - rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;
+		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = +set - +rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;
 		const clamp = (v) => Math.min(1, Math.max(0, v));
-		const night = clamp(now >= set ? (now - set) / nightLen : 1 - (rise - now) / nightLen), t = day ? clamp((now - rise) / dayLen) : 1 - night, u = 1 - t;
+		const night = clamp(now >= set ? (+now - +set) / nightLen : 1 - (+rise - +now) / nightLen), t = day ? clamp((+now - +rise) / dayLen) : 1 - night, u = 1 - t;
 		const x = u * u * left + 2 * u * t * (W / 2) + t * t * right, y = u * u * arcBase + 2 * u * t * top + t * t * arcBase, f = (n) => n.toFixed(1);
 		const C = day ? {
 			sky: ["#7cc8ff", "#d8f0ff"],
