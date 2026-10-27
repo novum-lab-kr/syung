@@ -24,9 +24,29 @@ jobs:
       - run: node --test tests/*.test.mjs
       - run: python3 -m unittest discover -s tests
       - run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py
+      # 웹 빌드(web/ → dist/web)가 되는지 — PR 에도. 올리기는 아래 build 잡(main 만)
+      - run: npm ci
+      - run: npm run build
+
+  # main: 웹을 빌드해 web-dist 브랜치에 커밋으로 쌓는다(트리 web/ = dist/web, 메시지 "web-dist <소스 커밋>").
+  #   서버(deploy/deploy.sh)는 node 빌드 없이 이 커밋에서 web/ 을 꺼낸다. 앞 커밋을 부모로 이어 붙여 옛 커밋도 다시 배포할 수 있다
+  build:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: deploy/publish_web_dist.sh
 
   deploy:
-    needs: test
+    needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production

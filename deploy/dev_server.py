@@ -3,6 +3,7 @@
 
     python3 deploy/dev_server.py            # http://localhost:8080
     python3 deploy/dev_server.py 9000       # another port
+    python3 deploy/dev_server.py --dist     # 빌드 결과(dist/web — npm run build)를 보여 준다. npm run dev 가 이것으로 띄운다
 
 Serves web/ and the built data files at the same paths as the deployed site (no copy step: edit
 web/maplibre_runtime.mjs and reload). /api/live (and /api/route · /api/place) is forwarded to the production proxy, so no Seoul API
@@ -32,6 +33,8 @@ UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.novum-lab.com/a
 # 길찾기 · 장소 검색(승차권 발권 화면이 부른다)도 운영으로 — 바깥 API 키 없이 로컬에서 시험한다
 JOURNEY_UPSTREAM = os.environ.get("SYUNG_JOURNEY_UPSTREAM", "https://syung.novum-lab.com/api")
 JOURNEY_PATHS = {"/api/route": "/route", "/api/place": "/place"}
+# 보여 줄 웹 폴더: 기본 web/(원본 그대로), --dist 면 빌드 결과 dist/web(운영에 올라가는 것과 같은 파일)
+WEB = ROOT / "web"
 # published path → file in the repo
 DATA = {
     "/track_shapes.json": ROOT / "data" / "osm-tracks" / "track_shapes.json",
@@ -87,7 +90,7 @@ def services(port: int):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(ROOT / "web"), **kwargs)
+        super().__init__(*args, directory=str(WEB), **kwargs)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")   # always the file you just edited
@@ -171,7 +174,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         path = self.path.split("?", 1)[0]
         # 운영처럼 /admin/members → admin/members.html
-        if path.startswith("/admin/") and "." not in path.rsplit("/", 1)[-1] and (ROOT / "web" / (path[1:] + ".html")).is_file():
+        if path.startswith("/admin/") and "." not in path.rsplit("/", 1)[-1] and (WEB / (path[1:] + ".html")).is_file():
             self.path = path + ".html" + self.path[len(path):]
         # bus: local backend, explicit BUS_LIVE_MODE=mock for UI development.
         if path == "/api/bus/live":
@@ -225,6 +228,12 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
-    print(f"subway-live-map dev: http://localhost:{port}  (live trains via {UPSTREAM})")
+    args = sys.argv[1:]
+    if "--dist" in args:
+        args.remove("--dist")
+        WEB = ROOT / "dist" / "web"
+        if not (WEB / "index.html").is_file():
+            sys.exit("dist/web 이 없음 — 먼저 npm run build(또는 npm run dev)")
+    port = int(args[0]) if args else 8080
+    print(f"subway-live-map dev: http://localhost:{port}  ({WEB.relative_to(ROOT)} · live trains via {UPSTREAM})")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

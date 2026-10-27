@@ -24,6 +24,16 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 git fetch --quiet origin main
 target=$(git rev-parse origin/main)   # 테스트 · merge · 릴리스 모두 이 커밋 하나로
+# 웹 빌드가 있으면 빌드가 끝난 커밋까지만: 다음 push 의 CI 가 아직 빌드 중이면(main 이 web-dist 보다 앞섬) 마지막으로 빌드된 커밋을 올린다.
+#   그 push 의 CI 가 끝나면 다시 배포를 부른다. web-dist 를 받지 못하면 main 그대로(deploy.sh 가 빌드 결과를 다시 찾는다)
+if git cat-file -e "$target:vite.config.mts" 2>/dev/null \
+   && git fetch --quiet origin "+refs/heads/${SYUNG_DIST_BRANCH:-web-dist}:refs/remotes/origin/${SYUNG_DIST_BRANCH:-web-dist}" 2>/dev/null; then
+  built=$(git log -n 1 --format=%s "refs/remotes/origin/${SYUNG_DIST_BRANCH:-web-dist}" -- | sed -n 's/^web-dist \([0-9a-f]\{40\}\)$/\1/p')
+  if [ -n "$built" ] && [ "$built" != "$target" ] && git merge-base --is-ancestor "$built" "$target" 2>/dev/null \
+     && git cat-file -e "$built:vite.config.mts" 2>/dev/null; then
+    echo "main ${target:0:12} 은 아직 빌드 전 — 빌드된 ${built:0:12} 을 올린다"; target=$built
+  fi
+fi
 deployed=$(cat "$DEPLOYED" 2>/dev/null || true)
 echo "HEAD $(git rev-parse HEAD), 마지막 성공 ${deployed:-없음} -> $target"
 
