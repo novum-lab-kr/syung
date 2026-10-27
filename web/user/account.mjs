@@ -122,6 +122,19 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   if (!providers.length) return;   // 설정 전: 맨 위 칸을 숨긴 채로
 
   const say = (id, text) => { $(id).textContent = text || ''; };
+  // 결과 · 연결 오류는 서랍 아래 토스트(잠깐 떴다 사라짐), 입력 확인은 그 칸 바로 아래 한 줄(사용자 결정 2026-10-27)
+  let toastTimer = 0;
+  function toast(text, error = false) {
+    const el = $('accountToast');
+    el.textContent = text; el.classList.toggle('is-error', error);   // '.error' 는 index.html 의 지도 오류 화면(inset:0)과 겹친다
+    el.hidden = false; void el.offsetWidth; el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.classList.remove('show');
+      setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 200);
+    }, error ? 3600 : 2400);
+  }
+  const fieldErr = (id, text) => { $(id).textContent = text || ''; $(id).hidden = !text; };
   let me = null, tickets = [], editing = null;
 
   // ---- 로그인 팝업(서랍 밖 화면 전체 위 — 열 때 서랍은 닫는다) ----
@@ -214,7 +227,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('ticketPreview').innerHTML = `<div class="ticket"><div class="ticket-in">${frontHTML({id: editing?.id, name: $('ticketName').value.trim(),
       depart: $('ticketTime').value, days: pickedDays()})}</div></div>`;
   }
-  $('ticketName').addEventListener('input', () => { $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`; preview(); });
+  $('ticketName').addEventListener('input', () => { fieldErr('ticketNameErr', ''); $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`; preview(); });
 
   function showPlaces() {
     for (const [id, place, empty] of [['ticketFrom', form.from, '출발지 고르기'], ['ticketTo', form.to, '도착지 고르기']]) {
@@ -235,7 +248,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
   // 출발 · 도착 · 시각이 바뀌면 고른 경로는 풀린다(그 경로는 그 조건에서 찾은 것)
   function routeGone() {
-    if (form.route) $('ticketRouteWarn').hidden = false;
+    if (form.route) fieldErr('ticketRouteWarn', '출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요');
     form.route = null; showRoute();
   }
 
@@ -256,6 +269,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     const before = form[placeFor];
     form[placeFor] = place;
     if (!before || before.lat !== place.lat || before.lng !== place.lng) routeGone();
+    if (form.from && form.to) fieldErr('ticketPlaceErr', '');
     showPlaces(); backToForm();
   });
   $('ticketSwap').onclick = () => {
@@ -301,7 +315,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
   async function openRoute() {
     lastField = $('ticketRoute');
-    if (!form.from || !form.to) { say('ticketMsg', '출발지 · 도착지를 먼저 골라 주세요.'); return; }
+    if (!form.from || !form.to) { fieldErr('ticketPlaceErr', '출발지 · 도착지를 먼저 골라 주세요'); $(form.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), pad = n => String(n).padStart(2, '0');
     $('routeTrip').textContent = `${form.from.name} → ${form.to.name}`;
     $('routeWhen').textContent = `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${$('ticketTimeText').textContent} 출발 기준`;
@@ -324,7 +338,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   $('ticketRoute').onclick = openRoute;
   $('routePick').onclick = () => {
     if (!plans[chosen]) return;
-    form.route = slimRoute(plans[chosen]); $('ticketRouteWarn').hidden = true; say('ticketMsg', '');
+    form.route = slimRoute(plans[chosen]); fieldErr('ticketRouteWarn', '');
     showRoute(); backToForm();
   };
 
@@ -337,9 +351,8 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('ticketTime').value = t?.depart || '08:00';
     form.from = t?.from || null; form.to = t?.to || null; form.route = t?.route || null;
     for (const b of dayBox.children) b.setAttribute('aria-pressed', String(t ? t.days.includes(+b.dataset.day) : false));
-    $('ticketRouteWarn').hidden = true;
+    for (const id of ['ticketPlaceErr', 'ticketRouteWarn', 'ticketNameErr']) fieldErr(id, '');
     $('ticketDelete').hidden = !t; $('ticketDelete').textContent = '이 승차권 지우기';
-    say('ticketMsg', '');
     showPlaces(); showTime(); showRoute(); daysChanged();
     $('ticketOpen').click();
   }
@@ -347,19 +360,21 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   $('ticketForm').onsubmit = async e => {
     e.preventDefault();
     const body = {name: $('ticketName').value.trim(), from: form.from, to: form.to, depart: $('ticketTime').value, days: pickedDays(), route: form.route};
-    if (!body.from || !body.to) { say('ticketMsg', '출발지 · 도착지를 골라 주세요.'); return; }
-    if (!body.route) { say('ticketMsg', '경로를 골라 주세요.'); return; }
-    if (!body.name) { say('ticketMsg', '승차권 이름을 넣어 주세요.'); $('ticketName').focus(); return; }
-    say('ticketMsg', '발권하는 중…');
+    if (!body.from || !body.to) { fieldErr('ticketPlaceErr', '출발지 · 도착지를 골라 주세요'); $(body.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
+    if (!body.route) { fieldErr('ticketRouteWarn', '경로를 골라 주세요'); $('ticketRoute').focus(); return; }
+    if (!body.name) { fieldErr('ticketNameErr', '승차권 이름을 넣어 주세요'); $('ticketName').focus(); return; }
+    const save = $('ticketSave');
+    save.disabled = true; save.textContent = '발권하는 중…';
     try {
       const r = editing ? await send('PUT', `./api/me/tickets/${editing.id}`, body) : await send('POST', './api/me/tickets', body);
-      if (r.status === 401) { me = null; show(); say('ticketMsg', '로그인이 끝났어요. 다시 로그인해 주세요.'); return; }
-      if (!r.ok) { say('ticketMsg', r.body?.error?.message || '발권하지 못했어요.'); return; }
+      if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
+      if (!r.ok) { toast(r.body?.error?.message || '발권하지 못했어요.', true); return; }
       const fixed = !!editing;
       await loadTickets();
       $('ticketsRow').click();
-      say('ticketsMsg', fixed ? '승차권을 고쳤어요.' : '발권했어요.');
-    } catch { say('ticketMsg', '발권하지 못했어요. 연결을 확인해 주세요.'); }
+      toast(fixed ? '승차권을 고쳤어요' : '발권했어요');
+    } catch { toast('발권하지 못했어요. 연결을 확인해 주세요.', true); }
+    finally { save.textContent = '발권하기'; showRoute(); }   // showRoute 가 경로 유무로 버튼을 다시 연다
   };
 
   $('ticketDelete').onclick = async () => {
@@ -367,26 +382,26 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if (!deleteArmed) { deleteArmed = true; $('ticketDelete').textContent = '한 번 더 누르면 지워요'; return; }
     try {
       const r = await send('DELETE', `./api/me/tickets/${editing.id}`);
-      if (!r.ok && r.status !== 404) { say('ticketMsg', '지우지 못했어요.'); return; }
+      if (!r.ok && r.status !== 404) { toast('지우지 못했어요.', true); return; }
       await loadTickets();
       $('ticketsRow').click();
-      say('ticketsMsg', '승차권을 지웠어요.');
-    } catch { say('ticketMsg', '지우지 못했어요. 연결을 확인해 주세요.'); }
+      toast('승차권을 지웠어요');
+    } catch { toast('지우지 못했어요. 연결을 확인해 주세요.', true); }
   };
 
   // ---- 로그아웃 · 탈퇴 ----
   $('accountLogout').onclick = async () => {
     try { await send('POST', './api/auth/logout'); } catch { /* 쿠키는 서버가 지운다 */ }
-    me = null; tickets = []; show(); $('menuBack').click();
+    me = null; tickets = []; show(); $('menuBack').click(); toast('로그아웃했어요');
   };
   $('accountDelete').onclick = () => { $('accountConfirm').hidden = false; $('accountConfirmYes').focus({preventScroll: true}); };
   $('accountConfirmNo').onclick = () => { $('accountConfirm').hidden = true; };
   $('accountConfirmYes').onclick = async () => {
     try {
       const r = await send('DELETE', './api/me');
-      if (!r.ok && r.status !== 401) { say('accountMsg', '탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요.'); return; }
-      me = null; tickets = []; $('accountConfirm').hidden = true; show(); $('menuBack').click();
-    } catch { say('accountMsg', '탈퇴하지 못했어요. 연결을 확인해 주세요.'); }
+      if (!r.ok && r.status !== 401) { toast('탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요.', true); return; }
+      me = null; tickets = []; $('accountConfirm').hidden = true; show(); $('menuBack').click(); toast('탈퇴했어요');
+    } catch { toast('탈퇴하지 못했어요. 연결을 확인해 주세요.', true); }
   };
 
   try { const r = await getJson('./api/me'); me = r.status === 200 ? r.body : null; } catch { me = null; }
