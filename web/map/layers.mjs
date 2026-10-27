@@ -1,4 +1,4 @@
-// web/map/layers.mjs
+// web/map/layers.mts
 function registerTransitLayers({ map, shapesReady, buildLineFeatures, buildStationFeatures, basicRouteCache, rebuildLabels, stationNames, STATION_WIDTH_STOPS, PHONE, signCollisionLayout, live }) {
 	let labelsStale = false;
 	map.addSource("routes", {
