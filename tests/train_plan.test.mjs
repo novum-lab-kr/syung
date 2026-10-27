@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {setImmediate} from 'node:timers/promises';
 import {createRouter,key,normStatus} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
-import {createTrainPlanner} from '../web/trains/plan.mjs';
+import {createTrainPlanner} from '../web/trains/plan.mts';
 
 const record=(extra={})=>({line:'9호선',trainNo:'9001',station:'나',destination:'라',direction:'하행',status:'출발',...extra});
 

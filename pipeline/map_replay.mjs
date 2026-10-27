@@ -11,7 +11,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
-import {createTrainPlanner} from '../web/trains/plan.mjs';
+import {createTrainPlanner} from '../web/trains/plan.mts';
 
 export {key};
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
