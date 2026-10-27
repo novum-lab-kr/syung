@@ -101,6 +101,36 @@ class AdminHttpTest(unittest.TestCase):
         self.assertEqual(body["daily"][-6], {"day": "2027-01-10", "count": 1})
         self.assertEqual(sum(day["count"] for day in body["daily"]), 2, "40일 전 가입은 30일 칸 밖")
 
+    def test_stats_count_withdrawals_by_day_and_reason(self):
+        self.assertEqual(self.json("GET", "/admin/members/stats")[1]["withdraw"],
+                         {"total": 0, "today": 0, "week": 0, "month": 0, "reasons": [],
+                          "daily": [{"day": day["day"], "count": 0} for day in self.json("GET", "/admin/members/stats")[1]["daily"]]})
+        self.now = NOW - 3 * DAY   # 2027-01-12 — 7일 안
+        self.store.delete_user(self.old, int(self.now))
+        self.now = NOW - 40 * DAY   # 30일 밖은 모두 수에만
+        self.store.delete_identity_user("kakao", "subject-x", int(self.now))   # 없는 회원 — 안 센다
+        self.member("kakao", "subject-9", "옛 회원", self.now - DAY)
+        self.store.delete_identity_user("kakao", "subject-9", int(self.now))
+        self.now = NOW
+        self.json("DELETE", f"/admin/members/{self.kim}", {"reason": "본인 요청", "confirm": str(self.kim)})
+        self.store.delete_user(self.lee, int(self.now))
+        status, body = self.json("GET", "/admin/members/stats")
+        self.assertEqual(status, 200)
+        out = body["withdraw"]
+        self.assertEqual((out["total"], out["today"], out["week"], out["month"]), (4, 2, 3, 3))
+        self.assertEqual(out["reasons"], [{"reason": "self", "count": 2}, {"reason": "admin", "count": 1},
+                                          {"reason": "kakao_unlink", "count": 1}])
+        self.assertEqual([day["day"] for day in out["daily"]], [day["day"] for day in body["daily"]], "가입 추이와 같은 30일 칸")
+        self.assertEqual(out["daily"][-1], {"day": "2027-01-15", "count": 2}, "한국 날짜로 오늘이 맨 끝")
+        self.assertEqual(out["daily"][-4], {"day": "2027-01-12", "count": 1})
+        self.assertEqual(body["total"], 0, "회원 수는 지운 만큼 준다")
+        # 표에는 날짜 · 사유 · 수만 — 회원을 알아볼 칸이 없다
+        self.assertEqual([column[1] for column in self.rows("PRAGMA table_info(withdraw_stats)")], ["day", "reason", "count"])
+        dump = repr(self.rows("SELECT * FROM withdraw_stats"))
+        for word in ("김슝", "이슝", "오래된 회원", "옛 회원", "subject-", "본인 요청"):
+            self.assertNotIn(word, dump)
+        self.assertEqual({row[1] for row in self.rows("SELECT * FROM withdraw_stats")}, {"self", "kakao_unlink", "admin"})
+
     def test_list_has_no_places_and_searches_by_name_or_number(self):
         status, text = self.call("GET", "/admin/members")
         self.assertEqual(status, 200)
@@ -173,6 +203,8 @@ class AdminHttpTest(unittest.TestCase):
         self.assertEqual(self.rows("SELECT action, user_id, reason FROM admin_log"), [("delete", self.kim, "본인 요청(메일)")],
                          "회원이 지워져도 기록은 남는다")
         self.assertEqual(self.json("DELETE", f"/admin/members/{self.kim}", {"reason": "다시", "confirm": str(self.kim)})[0], 404)
+        self.assertEqual(self.rows("SELECT * FROM withdraw_stats"), [("2027-01-15", "admin", 1)],
+                         "탈퇴 수는 날짜 · 사유 · 수만(없는 회원을 다시 지우면 안 센다)")
         self.assertEqual(self.json("GET", "/admin/members/stats")[1]["total"], 2)
 
     def test_log_keeps_no_address_or_search_words(self):
@@ -185,7 +217,7 @@ class AdminHttpTest(unittest.TestCase):
         dump = "\n".join(self.rows("SELECT ? || group_concat(reason) FROM admin_log", ("",))[0])
         self.assertNotIn("203.0.113.9", dump)
         self.assertNotIn("비밀검색어", dump)
-        self.assertEqual(self.store.schema_version(), 4)
+        self.assertEqual(self.store.schema_version(), 5)
 
     def test_log_is_kept_for_one_year(self):
         self.json("POST", f"/admin/members/{self.kim}/logout", {"reason": "오래된 조치"})

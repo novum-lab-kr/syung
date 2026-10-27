@@ -239,7 +239,7 @@ class MemberService:
             self.store.delete_session(token_hash(token))
 
     def delete(self, user_id: int) -> None:
-        self.store.delete_user(user_id)
+        self.store.delete_user(user_id, int(self._clock()))
 
     # ---- 카카오 연결 해제 웹훅 ----
     def check_kakao_webhook(self, authorization: str | None) -> None:
@@ -263,7 +263,7 @@ class MemberService:
     def _forget_kakao(self, subject: str) -> bool:
         """카카오 연결이 끊긴 회원은 본인 탈퇴와 똑같이 지운다(사용자 결정 2026-10-27 — 슝 회원은 로그인 방법이 하나라
         다시 들어올 길이 없다. 관리 기록은 남기지 않는다). 없는 회원이면 False."""
-        return self.store.delete_identity_user("kakao", subject)
+        return self.store.delete_identity_user("kakao", subject, int(self._clock()))
 
     # ---- 승차권 ----
     def tickets(self, user_id: int) -> list[dict]:

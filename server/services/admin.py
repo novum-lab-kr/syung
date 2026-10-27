@@ -65,8 +65,14 @@ class AdminService:
         saved = self.store.admin_stats(starts, int(first.timestamp()))
         counted = {row["day"]: row["count"] for row in saved["daily"]}
         days = [(first + timedelta(days=step)).strftime("%Y-%m-%d") for step in range(DAILY_DAYS)]
+        # 탈퇴 수는 한국 날짜 글자로 저장돼 있다(store withdraw_stats) — 같은 오늘 · 7일 · 30일 · 30일 칸으로 센다
+        out = self.store.withdraw_stats(tuple((today - timedelta(days=back)).strftime("%Y-%m-%d") for back in (0, 6, 29)),
+                                        days[0])
+        left = {row["day"]: row["count"] for row in out["daily"]}
         return {"total": saved["total"], "today": saved["today"], "week": saved["week"], "month": saved["month"],
-                "providers": saved["providers"], "daily": [{"day": day, "count": counted.get(day, 0)} for day in days]}
+                "providers": saved["providers"], "daily": [{"day": day, "count": counted.get(day, 0)} for day in days],
+                "withdraw": {"total": out["total"], "today": out["today"], "week": out["week"], "month": out["month"],
+                             "reasons": out["reasons"], "daily": [{"day": day, "count": left.get(day, 0)} for day in days]}}
 
     def members(self, query: str, page: int) -> dict:
         word = " ".join((query or "").split())[:SEARCH_MAX]
