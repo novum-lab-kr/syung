@@ -1,4 +1,4 @@
-// web/ui/sheet.mjs
+// web/ui/sheet.mts
 function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, laneOffsetPx, animFrame, FOLLOW_FPS, fitRoute, live }) {
 	const sheet = document.createElement("section");
 	sheet.className = "sheet";

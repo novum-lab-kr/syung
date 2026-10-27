@@ -1,4 +1,4 @@
-// web/ui/search.mjs
+// web/ui/search.mts
 function createStationSearch({ map, stations, colors, esc, input, list, getSelected, showStationPopup }) {
 	let searchTimer = 0;
 	const searchIn = input, searchList = list;

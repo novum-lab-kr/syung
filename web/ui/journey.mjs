@@ -1,4 +1,4 @@
-// web/ui/journey.mjs
+// web/ui/journey.mts
 function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, cityViaduct, sheetPad, journeyCasingPaint, journeyRidePaint, journeyStopPaint, live }) {
 	function rideCoords(line, ids) {
 		const out = [];
