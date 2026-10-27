@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CityViaduct, toLL, ribbonRows } from '../web/city/viaduct.mjs';
-import { edgeOverlaps, edgeProfile, levelHeight } from '../web/city/viaduct_levels.mjs';
+import { edgeOverlaps, edgeProfile, levelHeight } from '../web/city/viaduct_levels.mts';
 import { MU, MERC_ORIGIN as O } from '../web/city/life.mjs';
 import SEOUL from '../web/modes/basic/city.mjs';
 

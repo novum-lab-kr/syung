@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cityLayers, applyCityStyle, NIGHT_GROUND_IDS } from '../web/city/style.mjs';
+import { cityLayers, applyCityStyle, NIGHT_GROUND_IDS } from '../web/city/style.mts';
 import { createModeRegistry } from '../web/modes/index.mjs';
 
 // 도시 모드 밤 빛(팩 night, 2026-10-11): 바닥 빛(번화가)은 다크 · 켬일 때만 보이고, 낮 · 꺼짐 · 도시 밖에서는 숨는다.

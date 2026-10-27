@@ -10,7 +10,7 @@
 // that hang off the platform anchored to its px-sized edge (the shader adds the px parts), so the stairs stay attached
 // at every zoom. Pure functions; the tests use them.
 import SEOUL from '../modes/basic/city.mjs';
-import { pointSegmentDistance } from './viaduct_levels.mjs';
+import { pointSegmentDistance } from './viaduct_levels.mts';
 import { Mesh, MAT } from './viaduct_mesh.mjs';
 
 const V_OF = pack => pack.viaduct || SEOUL.viaduct;
