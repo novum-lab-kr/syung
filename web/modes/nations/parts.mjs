@@ -4,7 +4,7 @@
 // 칠: wall(벽 재질 색) · roof(지붕 색) · accent(경사면 KIND.PITCHED — 팩 buildings.house.roof.pitched.colors 3색: 나라마다 [돔, 흰 칠, 장식]).
 // 휴대폰(엔진 opts.phone)은 정점을 아낀다: 작은 집은 보통 건물, 모형은 덩어리 몇 개만(행님 2026-10-22 밤: 휴대폰 메모리 — 맥 휴대폰 화면에서 이집트 4타일 85 MB 로 한도 56 MB 를 넘었다).
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다(행님 2026-10-22, 시안 look3d).
-import { registerCityPart } from '../../city/parts.mjs';
+import { registerCityPart } from '../../city/parts.mts';
 import { KIND } from '../../city/mesh.mjs';
 import { fitRect, modelBuilder, raceTemplates, templateIndex, registerBuildingModels, modelList, pickModel } from '../starcraft/race_buildings.mjs';
 import { pointInPolygon, edgeDistance } from '../../city/geom.mjs';

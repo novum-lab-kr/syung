@@ -8,7 +8,7 @@
 // GL 상태: 바꾼 것(프레임버퍼 · 뷰포트 · 프로그램 · VAO · 텍스처 · 섞기 · 깊이 · 스텐실 · 가위 · 색 마스크)을 끝에 되돌린다.
 // 색표는 이름으로 고른다(설정은 데이터만). 노선 · 열차에 브랜드 노랑을 쓰지 않으려 노랑(fee761)은 뺐다.
 
-export const PALETTES = {
+export const PALETTES:Record<string, string[]> = {
   // Endesga 32(Lospec) — 노랑 fee761 뺀 31색
   endesga32: ['be4a2f', 'd77643', 'ead4aa', 'e4a672', 'b86f50', '733e39', '3e2731', 'a22633', 'e43b44', 'f77622', 'feae34', '63c74d', '3e8948', '265c42', '193c3e', '124e89',
     '0099db', '2ce8f5', 'ffffff', 'c0cbdc', '8b9bb4', '5a6988', '3a4466', '262b44', '181425', 'ff0044', '68386c', 'b55088', 'f6757a', 'e8b796', 'c28569'],
@@ -38,26 +38,34 @@ void main(){
   o = vec4(best * a, a);
 }`;
 
+type Uniform = 'u_src' | 'u_pal' | 'u_n' | 'u_ink' | 'u_outline' | 'u_alpha';
+// render 가 바꾸고 끝에 되돌리는 GL 상태
+interface SavedGL {
+  fb:WebGLFramebuffer | null; rfb:WebGLFramebuffer | null; tex0:WebGLTexture | null; vp:Int32Array; prog:WebGLProgram | null; vao:WebGLVertexArrayObject | null; unit:number;
+  cm:[boolean, boolean, boolean, boolean]; dm:boolean; blend:boolean; depth:boolean; cull:boolean; scissor:boolean; stencil:boolean;
+}
 export class PixelPalette {
-  init(gl) {
+  declare gl:WebGL2RenderingContext; declare broken:boolean; declare tex:WebGLTexture | null; declare w:number; declare h:number;
+  declare p:WebGLProgram | null; declare u:Record<Uniform, WebGLUniformLocation | null>; declare vao:WebGLVertexArrayObject | null; declare palKey:string; declare pal:Float32Array;
+  init(gl:WebGL2RenderingContext):void {
     this.gl = gl; this.broken = false; this.tex = null; this.w = this.h = 0;
-    const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) { const m = gl.getShaderInfoLog(x); gl.deleteShader(x); throw Error('pixel-palette shader: ' + m) } return x };
+    const sh = (t:number, s:string) => { const x = gl.createShader(t)!; gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) { const m = gl.getShaderInfoLog(x); gl.deleteShader(x); throw Error('pixel-palette shader: ' + m) } return x };
     try {
       const p = gl.createProgram(), a = sh(gl.VERTEX_SHADER, VS), b = sh(gl.FRAGMENT_SHADER, FS);
       gl.attachShader(p, a); gl.attachShader(p, b); gl.linkProgram(p); gl.deleteShader(a); gl.deleteShader(b);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { const m = gl.getProgramInfoLog(p); gl.deleteProgram(p); throw Error('pixel-palette link: ' + m) }
-      this.p = p; this.u = {}; for (const k of ['u_src', 'u_pal', 'u_n', 'u_ink', 'u_outline', 'u_alpha']) this.u[k] = gl.getUniformLocation(p, k);
+      this.p = p; this.u = {} as Record<Uniform, WebGLUniformLocation | null>; for (const k of ['u_src', 'u_pal', 'u_n', 'u_ink', 'u_outline', 'u_alpha'] as const) this.u[k] = gl.getUniformLocation(p, k);
     } catch (e) { console.warn('pixel-palette: off', e); this.broken = true; return }   // 셰이더가 안 되면 도트만(색 그대로)
     this.vao = gl.createVertexArray(); this.palKey = '';
   }
-  render(gl, { palette = 'endesga32', outline = true, alpha = false } = {}) {
+  render(gl:WebGL2RenderingContext, { palette = 'endesga32', outline = true, alpha = false }:{ palette?:string; outline?:boolean; alpha?:boolean } = {}):void {
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, pal = PALETTES[palette]; if (this.broken || !pal || W < 2 || H < 2) return;
     const s = this.save(gl);
     gl.activeTexture(gl.TEXTURE0);
     if (W !== this.w || H !== this.h) {   // 화면 크기가 바뀌면 베낌 텍스처를 다시
       if (this.tex) gl.deleteTexture(this.tex);
       this.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]] as const) gl.texParameteri(gl.TEXTURE_2D, k, v);
       this.w = W; this.h = H;
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, s.fb);   // 그린 곳(기본 버퍼)에서 베낀다
@@ -70,18 +78,18 @@ export class PixelPalette {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.restore(gl, s);
   }
-  save(gl) {
-    const g = k => gl.getParameter(k), on = k => gl.isEnabled(k);
+  save(gl:WebGL2RenderingContext):SavedGL {
+    const g = (k:number) => gl.getParameter(k), on = (k:number) => gl.isEnabled(k);
     gl.activeTexture(gl.TEXTURE0); const tex0 = g(gl.TEXTURE_BINDING_2D);
     return { fb: g(gl.DRAW_FRAMEBUFFER_BINDING), rfb: g(gl.READ_FRAMEBUFFER_BINDING), tex0, vp: g(gl.VIEWPORT), prog: g(gl.CURRENT_PROGRAM), vao: g(gl.VERTEX_ARRAY_BINDING), unit: g(gl.ACTIVE_TEXTURE), cm: g(gl.COLOR_WRITEMASK), dm: g(gl.DEPTH_WRITEMASK),
       blend: on(gl.BLEND), depth: on(gl.DEPTH_TEST), cull: on(gl.CULL_FACE), scissor: on(gl.SCISSOR_TEST), stencil: on(gl.STENCIL_TEST) };
   }
-  restore(gl, s) {
-    const set = (k, v) => v ? gl.enable(k) : gl.disable(k);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, s.fb); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.rfb); gl.viewport(s.vp[0], s.vp[1], s.vp[2], s.vp[3]); gl.useProgram(s.prog); gl.bindVertexArray(s.vao);
+  restore(gl:WebGL2RenderingContext, s:SavedGL):void {
+    const set = (k:number, v:boolean) => v ? gl.enable(k) : gl.disable(k);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, s.fb); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.rfb); gl.viewport(s.vp[0]!, s.vp[1]!, s.vp[2]!, s.vp[3]!); gl.useProgram(s.prog); gl.bindVertexArray(s.vao);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, s.tex0); gl.activeTexture(s.unit);
     gl.colorMask(...s.cm); gl.depthMask(s.dm);
     set(gl.BLEND, s.blend); set(gl.DEPTH_TEST, s.depth); set(gl.CULL_FACE, s.cull); set(gl.SCISSOR_TEST, s.scissor); set(gl.STENCIL_TEST, s.stencil);
   }
-  dispose(gl) { if (this.tex) gl.deleteTexture(this.tex); if (this.p) gl.deleteProgram(this.p); if (this.vao) gl.deleteVertexArray(this.vao); this.tex = this.p = this.vao = null; this.w = this.h = 0 }
+  dispose(gl:WebGL2RenderingContext):void { if (this.tex) gl.deleteTexture(this.tex); if (this.p) gl.deleteProgram(this.p); if (this.vao) gl.deleteVertexArray(this.vao); this.tex = this.p = this.vao = null; this.w = this.h = 0 }
 }

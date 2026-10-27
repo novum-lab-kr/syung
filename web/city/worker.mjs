@@ -1,7 +1,7 @@
 // The city's build worker (web/city/buildings.mjs posts the work): a tile's raw vector-tile bytes in, its
 // building meshes out — read by web/city/mvt.mjs, built by web/city/mesh.mjs — so panning never waits
 // on a build. One tile at a time, in the order asked; the vertex and index buffers go back transferred.
-import { decodeTile } from './mvt.mjs';
+import { decodeTile } from './mvt.mts';
 import { TileBuilder, resolvePack } from './mesh.mjs';
 import '../modes/joseon/hanok.mjs';
 import '../modes/starcraft/race_buildings.mjs';

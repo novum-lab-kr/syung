@@ -19,12 +19,12 @@
 //   city.set({on:true,tone:'simcity'|'coaster',theme:'light'|'dark',maxHeight:150});   // tone: 팩의 modes 항목(모드 설정 city.tone)
 //   city.drawDepth(trainGl,matrix) → true when walls were drawn (trains then depth-test against them)
 
-import { cityPart } from './parts.mjs';
+import { cityPart } from './parts.mts';
 import { MODEL_STRIDE } from './mesh.mjs';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mjs';
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mjs';
 import { sunPosition } from '../lib/sun.mts';
-import { buildSignAtlas, SIGN_ATLAS } from './sign_text.mjs';   // 간판 글자: 업종 이름을 쓴 글자 묶음 그림(한국 상가 간판처럼)
+import { buildSignAtlas, SIGN_ATLAS } from './sign_text.mts';   // 간판 글자: 업종 이름을 쓴 글자 묶음 그림(한국 상가 간판처럼)
 import THROUGH_LIST from './through_buildings.mjs';   // the buildings the simcity viaduct passes through (a glass hall at the deck's level)
 export { TileBuilder, classifyBuilding };
 

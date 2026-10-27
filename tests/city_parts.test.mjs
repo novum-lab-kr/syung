@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {registerCityPart,cityPart,hasCityPart} from '../web/city/parts.mjs';
+import {registerCityPart,cityPart,hasCityPart} from '../web/city/parts.mts';
 import {TileBuilder,resolvePack} from '../web/city/mesh.mjs';
 
 // 도시 엔진 부품(4-13): 엔진은 한옥 코드를 import 하지 않고 이름으로 받는다. 등록 전에 조선 팩으로 지으면 분명한 오류, 등록하면 짓는다
