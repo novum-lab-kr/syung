@@ -247,7 +247,7 @@ function cityPart(key) {
 	if (!p) throw new Error(`도시 부품 ${key} 없음 — 그 콘텐츠 모듈을 먼저 불러야 한다`);
 	return p.part;
 }
-// web/city/geom.mjs
+// web/city/geom.mts
 function signedArea2(r) {
 	let a = 0;
 	for (let i = 0, n = r.length; i < n; i += 2) {

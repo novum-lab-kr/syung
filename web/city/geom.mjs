@@ -1,4 +1,4 @@
-// web/city/geom.mjs
+// web/city/geom.mts
 function signedArea2(r) {
 	let a = 0;
 	for (let i = 0, n = r.length; i < n; i += 2) {
