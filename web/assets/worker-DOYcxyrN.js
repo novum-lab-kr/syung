@@ -7145,7 +7145,7 @@ function building(tb, ctx, unit) {
 	return true;
 }
 registerCityPart("nation", { building });
-// web/city/worker.mjs
+// web/city/worker.mts
 let P = null;
 let TH = null;
 self.onmessage = (e) => {
