@@ -8,7 +8,7 @@ import {createCoasterMotion} from './modes/coaster/motion.mjs';   // 롤코 주�
 import {createCoasterRide} from './modes/coaster/ride.mjs';   // 롤코 1인칭 타기
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
-import {createPopups} from './ui/popups.mjs';   // 열차 · 역 정보창
+import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mjs';   // 정적 층 등록 · 바탕 지도
@@ -35,8 +35,8 @@ import {unitBusLook} from './modes/starcraft/units.mjs';   // 스타크래프트
 import {SunShadowLayer,hull} from './map/sun.mjs';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mjs';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
-import {createTrainPlanner} from './trains/plan.mjs';   // 열차 예측
-import {createLiveFeed} from './trains/live_feed.mjs';   // 실시간 열차 받기 · 기록
+import {createTrainPlanner} from './trains/plan.mts';   // 열차 예측
+import {createLiveFeed} from './trains/live_feed.mts';   // 실시간 열차 받기 · 기록
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
