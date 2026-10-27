@@ -276,11 +276,6 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if (!before || before.lat !== place.lat || before.lng !== place.lng) routeGone();
     showPlaces(); backToForm();
   });
-  $('ticketSwap').onclick = () => {
-    [form.from, form.to] = [form.to, form.from];
-    if (form.from || form.to) routeGone();
-    showPlaces();
-  };
   // 출발 시각 휠(사용자와 정한 시안 B): 오전/오후 · 시 · 분(5분 단위)을 돌려 가운데 띠에 맞춘다.
   // 돌리는 동안은 칸 · 미리보기만 바꾸고, 접을 때 시각이 바뀌었으면 고른 경로를 푼다(돌리는 중에 토스트가 연달아 뜨지 않게)
   const ROW = 40;   // 휠 한 칸 높이(syung.css .tw-col button)
