@@ -218,12 +218,17 @@ class MemberConfig:
 
     카카오: KAKAO_LOGIN=1 로 켠다(카카오 디벨로퍼스에서 카카오 로그인 · 리다이렉트 URI 를 켠 뒤). client_id 는 앱의 REST API 키라
     따로 안 주면 장소 검색의 KAKAO_REST_KEY 를 쓴다. 시크릿은 REST API 키에 기본으로 켜져 있다(KAKAO_CLIENT_SECRET).
+    카카오 연결 해제 웹훅(카카오 쪽에서 연결을 끊은 회원을 지운다): KAKAO_ADMIN_KEY(앱의 대표 어드민 키 — 카카오가 Authorization 에
+    실어 보낸다)가 있어야 받는다. KAKAO_APP_ID(앱 ID)를 주면 본문의 app_id 도 맞춰 본다. 로그인을 꺼도 이미 가입한 사람은 지워야 해서
+    KAKAO_LOGIN 과 따로 읽는다.
     구글: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET. Apple: APPLE_CLIENT_ID(Services ID) + APPLE_CLIENT_SECRET(미리 만든 ES256 JWT, 6개월).
     """
     db_file: Path = Path("/var/lib/subway-live/members.sqlite3")
     public_url: str = "https://syung.novum-lab.com"   # 리다이렉트 URI 의 앞부분(제공자 콘솔에 등록한 것과 같아야 한다)
     kakao_client_id: str = field(default="", repr=False)
     kakao_client_secret: str = field(default="", repr=False)
+    kakao_admin_key: str = field(default="", repr=False)
+    kakao_app_id: str = field(default="", repr=False)
     google_client_id: str = field(default="", repr=False)
     google_client_secret: str = field(default="", repr=False)
     apple_client_id: str = field(default="", repr=False)
@@ -236,6 +241,8 @@ class MemberConfig:
                    public_url=_env("SYUNG_PUBLIC_URL", "https://syung.novum-lab.com").strip().rstrip("/"),
                    kakao_client_id=(_env("KAKAO_LOGIN_CLIENT_ID", "") or _env("KAKAO_REST_KEY", "")).strip() if kakao_on else "",
                    kakao_client_secret=_env("KAKAO_CLIENT_SECRET", "").strip() if kakao_on else "",
+                   kakao_admin_key=_env("KAKAO_ADMIN_KEY", "").strip(),
+                   kakao_app_id=_env("KAKAO_APP_ID", "").strip(),
                    google_client_id=_env("GOOGLE_CLIENT_ID", "").strip(),
                    google_client_secret=_env("GOOGLE_CLIENT_SECRET", "").strip(),
                    apple_client_id=_env("APPLE_CLIENT_ID", "").strip(),
