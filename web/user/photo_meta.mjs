@@ -1,4 +1,4 @@
-// web/user/photo_meta.mjs
+// web/user/photo_meta.mts
 function stripJpegMeta(bytes) {
 	if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return bytes;
 	const parts = [bytes.subarray(0, 2)];

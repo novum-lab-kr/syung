@@ -1,4 +1,4 @@
-// web/modes/basic/palette.mjs
+// web/modes/basic/palette.mts
 var MAP_THEMES = {
 	light: {
 		bld3d: "#d9dde0",

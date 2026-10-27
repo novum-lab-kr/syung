@@ -1,9 +1,9 @@
-// web/lib/platform_route.mjs
+// web/lib/platform_route.mts
 function offsetCoords(coords, offset, zoom) {
 	if (!offset) return coords;
 	const merc = (p) => [(p[0] + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + p[1] * Math.PI / 360)) / Math.PI) / 2];
 	const ll = (p) => [p[0] * 360 - 180, Math.atan(Math.sinh(Math.PI * (1 - 2 * p[1]))) * 180 / Math.PI];
-	let at = () => offset;
+	let at = (_i) => offset;
 	if (typeof offset === "function") {
 		const cum = [0];
 		for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + metres(coords[i - 1], coords[i]));

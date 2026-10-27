@@ -1,4 +1,4 @@
-// web/lib/routing.mjs
+// web/lib/routing.mts
 var NEW_NAMES = {
 	"당고개": "불암산",
 	"초성리": "청산",
