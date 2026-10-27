@@ -10,8 +10,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from typing import TYPE_CHECKING, Any, cast
 
 from server.errors import BusError
+
+if TYPE_CHECKING:   # 타입만(실행 때 config 를 부르지 않는다)
+    from server.config import ArrivalConfig, BusConfig
 
 # The official service documents HTTP; HTTPS timed out in the 2026-10-03 probe.
 API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
@@ -19,7 +23,7 @@ API_URL = "http://ws.bus.go.kr/api/rest/buspos/getBusPosByRtid"
 ARRIVAL_URL = "http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid"
 
 
-def parse_payload(raw: bytes) -> list[dict]:
+def parse_payload(raw: bytes) -> list[dict[str, Any]]:
     """Both the bus XML envelope and resultType=json envelope; never echo errors."""
     if len(raw) > 2_000_000 or b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
         raise BusError("invalid_payload")
@@ -29,13 +33,13 @@ def parse_payload(raw: bytes) -> list[dict]:
             header = payload.get("msgHeader")
             if not isinstance(header, dict):
                 raise BusError("invalid_payload")
-            code = str(header.get("headerCd", ""))
+            code = str(cast("dict[str, Any]", header).get("headerCd", ""))
             body = payload.get("msgBody")
             if body is None or body == "":
                 body = {}
             if not isinstance(body, dict):
                 raise BusError("invalid_payload")
-            items = body.get("itemList")
+            items: Any = cast("dict[str, Any]", body).get("itemList")
             if items is None or items == "":
                 items = []
             if isinstance(items, dict):
@@ -55,22 +59,22 @@ def parse_payload(raw: bytes) -> list[dict]:
             return []
         if code != "0":
             raise BusError("upstream_quota" if code == "22" else "upstream_error")
-        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in cast("list[object]", items)):
             raise BusError("invalid_payload")
-        return items
+        return cast("list[dict[str, Any]]", items)   # 위에서 dict 만 든 list 인지 봤다
     except (ET.ParseError, ValueError, TypeError, AttributeError):
         raise BusError("invalid_payload") from None
 
 
-def fetch_positions(route_id: str, config) -> list[dict]:
+def fetch_positions(route_id: str, config: BusConfig) -> list[dict[str, Any]]:
     return fetch_upstream(API_URL, {"busRouteId": route_id}, config)
 
 
-def fetch_arrivals(ars_id: str, config) -> list[dict]:
+def fetch_arrivals(ars_id: str, config: ArrivalConfig) -> list[dict[str, Any]]:
     return fetch_upstream(ARRIVAL_URL, {"arsId": ars_id}, config)
 
 
-def http_error_code(error) -> str:
+def http_error_code(error: urllib.error.HTTPError) -> str:
     """하루 한도를 넘기면 서울시는 401 에 '서비스 요청제한 횟수 초과 에러'를 담아 준다(2026-10-07 확인).
     처음엔 서버마다 넘는 때가 달라 401 이 섞여 오다가 모두 401 이 된다: 인증 오류가 아니라 한도 초과로 본다."""
     if error.code == 429:
@@ -84,7 +88,7 @@ def http_error_code(error) -> str:
     return "upstream_quota" if "횟수 초과" in body or "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in body else "upstream_auth"
 
 
-def fetch_upstream(url: str, params: dict, config) -> list[dict]:
+def fetch_upstream(url: str, params: dict[str, str], config: BusConfig | ArrivalConfig) -> list[dict[str, Any]]:
     # unquote (NOT unquote_plus) supports either portal encoding of the same key.
     query = urllib.parse.urlencode({"serviceKey": urllib.parse.unquote(config.key), **params, "resultType": "json"})
     request = urllib.request.Request(url + "?" + query, headers={"User-Agent": "syung-bus/1.0"})
