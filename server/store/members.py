@@ -194,6 +194,12 @@ class MemberStore:
         """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지운다(ON DELETE CASCADE)."""
         self._write(lambda conn: conn.execute("DELETE FROM users WHERE id=?", (user_id,)))
 
+    def delete_identity_user(self, provider: str, subject: str) -> bool:
+        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE) → 지웠나."""
+        return self._write(lambda conn: conn.execute(
+            "DELETE FROM users WHERE id=(SELECT user_id FROM identities WHERE provider=? AND subject=?)",
+            (provider, subject)).rowcount > 0)
+
     # ---- 세션 ----
     def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int) -> None:
         def work(conn):

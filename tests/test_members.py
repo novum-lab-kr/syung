@@ -22,6 +22,7 @@ from server.sources.oauth import ProviderError
 from server.store.members import MIGRATIONS, MemberStore
 
 NOW = 1_800_000_000
+ADMIN_KEY = "test-admin-key"   # 시험용 가짜 대표 어드민 키
 TICKET = {"name": "출근", "from": {"name": "서울시청", "lat": 37.5663, "lng": 126.9779},
           "to": {"name": "강남역", "lat": 37.4979, "lng": 127.0276}, "depart": "08:10", "days": [5, 1, 2, 4]}
 # 길찾기(/api/route) 결과 한 개 — 그리는 데 안 쓰는 칸(path · stations · direction …)은 저장하지 않는다
@@ -246,6 +247,89 @@ class MemberHttpTest(unittest.TestCase):
         self.now = NOW + 600
         self.assertEqual(self.request("GET", "/api/auth/kakao/callback?code=x&state=y", forwarded="198.51.100.9").headers["Location"],
                          "/#login=state")
+
+    def unlink(self, method="POST", *, key=ADMIN_KEY, fields=None, raw=None):
+        """카카오 연결 해제 웹훅을 흉내 낸다(카카오 문서 예시와 같은 모양 — GET 은 쿼리, POST 는 폼). raw 는 POST 본문 그대로."""
+        fields = {"app_id": "1234", "user_id": "42", "referrer_type": "UNLINK_FROM_APPS"} if fields is None else fields
+        form = urllib.parse.urlencode(fields)
+        connection = http.client.HTTPConnection(*self.server.server_address, timeout=5)
+        headers = {"Authorization": f"KakaoAK {key}"} if key is not None else {}
+        path, body = "/api/auth/kakao/unlink", None
+        if method == "GET":
+            path += "?" + form
+        else:
+            body = (form.encode() if raw is None else raw)
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        connection.request(method, path, body=body, headers=headers)
+        response = connection.getresponse()
+        data = response.read()
+        connection.close()
+        return SimpleNamespace(status=response.status, raw=data,
+                               json=json.loads(data) if data and response.headers.get("Content-Type", "").startswith("application/json") else None)
+
+    def test_kakao_unlink_needs_the_admin_key(self):
+        self.assertEqual(self.unlink().status, 404, "KAKAO_ADMIN_KEY 가 없으면 받지 않는다")
+        self.members.config.kakao_admin_key = ADMIN_KEY
+        for key in (None, "", "other-key", ADMIN_KEY + "x"):
+            result = self.unlink(key=key)
+            self.assertEqual(result.status, 401)
+            self.assertEqual(result.json, {"error": {"code": "unauthorized", "message": "카카오가 보낸 요청이 아니에요"}})
+        connection = http.client.HTTPConnection(*self.server.server_address, timeout=5)
+        connection.request("POST", "/api/auth/kakao/unlink", body=b"user_id=42", headers={"Authorization": f"Bearer {ADMIN_KEY}"})
+        self.assertEqual(connection.getresponse().status, 401, "KakaoAK 방식만 받는다")
+        connection.close()
+        self.members.config.kakao_app_id = "1234"
+        self.assertEqual(self.unlink(fields={"app_id": "9999", "user_id": "42"}).status, 401, "앱 ID 를 주면 맞춰 본다")
+        self.assertFalse(self.db.exists(), "키가 틀리면 DB 를 열지 않는다")
+
+    def test_kakao_unlink_deletes_the_member_like_leaving(self):
+        self.members.config.kakao_admin_key = ADMIN_KEY
+        self.members.config.kakao_app_id = "1234"
+        session = self.login(subject="42")
+        self.assertEqual(self.request("POST", "/api/me/tickets", cookie=session, body=TICKET).status, 201)
+        other = self.login(subject="77", name="준호")
+        result = self.unlink()
+        self.assertEqual((result.status, result.raw), (200, b""), "본문 없이 200(카카오 문서)")
+        self.assertEqual(self.request("GET", "/api/me", cookie=session).status, 401, "세션도 지워진다")
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
+            for table in ("users", "identities", "sessions", "tickets"):
+                self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0 if table == "tickets" else 1, table)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM admin_log").fetchone()[0], 0, "관리 기록은 남기지 않는다")
+        self.assertEqual(self.request("GET", "/api/me", cookie=other).json["name"], "준호", "다른 회원은 그대로")
+        # 같은 알림이 다시 와도(재전송) · 없는 회원이어도 200 — GET 도 받는다
+        self.assertEqual(self.unlink("GET").status, 200)
+        self.assertEqual(self.unlink(fields={"app_id": "1234", "user_id": "999", "referrer_type": "ACCOUNT_DELETE"}).status, 200)
+        # 다시 카카오로 들어오면 새 회원
+        self.login(subject="42")
+        self.assertEqual(self.last_location, "/#login=new")
+
+    def test_kakao_unlink_only_touches_kakao_members(self):
+        self.members.config.kakao_admin_key = ADMIN_KEY
+        google = FakeProvider("google")
+        self.members.providers["google"] = google
+        start = self.request("GET", "/api/auth/google/start")
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(start.headers["Location"]).query)["state"][0]
+        done = self.request("GET", f"/api/auth/google/callback?code=who:42:g&state={state}", cookie=start.cookies[0].split(";")[0])
+        session = next(c for c in done.cookies if c.startswith("syung_session=")).split(";")[0]
+        self.assertEqual(self.unlink().status, 200)
+        self.assertEqual(self.request("GET", "/api/me", cookie=session).status, 200, "구글 회원번호 42 는 카카오 42 와 다른 사람")
+
+    def test_kakao_unlink_answers_503_when_the_db_is_missing(self):
+        self.members.config.kakao_admin_key = ADMIN_KEY
+        self.members.store = MemberStore(self.db.parent / "없는 폴더" / "members.sqlite3")
+        result = self.unlink()
+        self.assertEqual((result.status, result.json["error"]["code"]), (503, "unavailable"), "못 지웠으면 200 을 주지 않아 다시 받는다")
+
+    def test_kakao_unlink_refuses_bad_member_numbers_and_methods(self):
+        self.members.config.kakao_admin_key = ADMIN_KEY
+        for subject in ("", "abc", "42\n", "４２", "1" * 21):
+            self.assertEqual(self.unlink(fields={"app_id": "1234", "user_id": subject}).status, 400, subject)
+        self.assertEqual(self.unlink(raw=b"").status, 413)
+        self.assertEqual(self.unlink(raw=b"user_id=42&" + b"x" * 4096).status, 413)
+        self.assertEqual(self.unlink("PUT").status, 405)
+        # 회원 기능(로그인 제공자)이 꺼져 있어도 웹훅은 받는다 — 이미 가입한 사람은 지워야 한다
+        self.members.providers = {}
+        self.assertEqual(self.unlink().status, 200)
 
     def test_missing_db_folder_answers_503_without_details(self):
         self.members.store = MemberStore(self.db.parent / "없는 폴더" / "members.sqlite3")

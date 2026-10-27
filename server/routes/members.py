@@ -12,8 +12,11 @@ GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,ln
 POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
 PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
 DELETE /api/me/tickets/<번호>          → 204 · 404
+GET · POST /api/auth/kakao/unlink     → 카카오 연결 해제 웹훅(카카오 서버가 부른다). Authorization: KakaoAK <대표 어드민 키>,
+                                         app_id · user_id · referrer_type 은 GET 쿼리 · POST 폼으로. 200(본문 없음 · 그 회원이 없어도) ·
+                                         401(키 · 앱 ID 가 다름) · 400(회원번호가 틀림) · 404(KAKAO_ADMIN_KEY 없음)
 바꾸는 요청(POST · PUT · DELETE)은 X-Requested-With: syung 머리말이 있어야 한다(다른 사이트의 폼 · 단순 요청을 막는다 —
-쿠키 SameSite=Lax 에 더해). 오류 모양은 api_error 하나. 쿠키는 주인 로그인(routes/owner.py)과 같은 속성.
+쿠키 SameSite=Lax 에 더해). 웹훅만 예외 — 쿠키를 쓰지 않고 어드민 키로 확인한다. 오류 모양은 api_error 하나. 쿠키는 주인 로그인(routes/owner.py)과 같은 속성.
 """
 from __future__ import annotations
 
@@ -24,12 +27,14 @@ import urllib.parse
 
 from server.routes.errors import api_error
 from server.routes.response import Response
-from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit
+from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError
 
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
 CSRF_HEADER, CSRF_VALUE = "X-Requested-With", "syung"
 BODY_LIMIT = 16384   # 승차권 본문(고른 경로 구간 최대 12개 포함)
+UNLINK_PATH = "/auth/kakao/unlink"
+UNLINK_BODY_LIMIT = 2048   # 웹훅 폼(app_id · user_id · referrer_type · group_user_token)
 
 
 def member_path(path: str) -> str | None:
@@ -70,6 +75,12 @@ def handle(members, method: str, path: str, headers, read_body, address: str) ->
     bare = member_path(split.path)
     if bare is None:
         return None
+    if bare == UNLINK_PATH:
+        try:
+            return _kakao_unlink(members, method, split.query, headers, read_body)
+        except (OSError, sqlite3.Error):
+            # 못 지웠다 — 200 이 아니면 카카오가 다시 보낸다(5분 · 30분 · 60분)
+            return _error(503, "unavailable", "회원 기능을 잠시 쓸 수 없어요")
     if method in ("POST", "PUT", "DELETE") and headers.get(CSRF_HEADER) != CSRF_VALUE:
         return _error(403, "forbidden", "이 요청은 슝 화면에서만 할 수 있어요")
     try:
@@ -131,6 +142,30 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
                 return Response(204, "empty")
             return _error(404, "not_found", "없는 승차권이에요")
     return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
+
+
+WEBHOOK_ERRORS = {"off": (404, "not_found", "없는 주소예요"),
+                  "auth": (401, "unauthorized", "카카오가 보낸 요청이 아니에요"),
+                  "bad": (400, "bad_request", "회원번호가 없거나 틀려요")}
+
+
+def _kakao_unlink(members, method: str, query: str, headers, read_body) -> Response:
+    """카카오 연결 해제 웹훅. 키부터 보고 본문을 읽는다(남이 보낸 본문은 읽지 않는다). 회원번호는 응답 · 로그에 싣지 않는다."""
+    if method not in ("GET", "POST"):
+        return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
+    try:
+        members.check_kakao_webhook(headers.get("Authorization"))
+        if method == "GET":
+            fields = urllib.parse.parse_qs(query)
+        else:
+            raw = read_body(UNLINK_BODY_LIMIT)
+            if raw is None:
+                return _error(413, "too_large", "본문이 없거나 너무 커요")
+            fields = urllib.parse.parse_qs(raw.decode("utf-8", "replace"))
+        members.kakao_unlinked(fields)
+    except WebhookError as error:
+        return _error(*WEBHOOK_ERRORS[error.code])
+    return Response(200, body=b"")
 
 
 def _with_body(read_body, work) -> Response:

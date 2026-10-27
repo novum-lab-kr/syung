@@ -4,6 +4,9 @@
   회원을 찾거나 만들고 세션을 연다. 세션 쿠키 값은 DB 에 해시(SHA-256)로만 남는다.
 - 한도: 주소마다 10분에 로그인 마무리(콜백) 20번까지(제공자 토큰 주소를 대신 두드리지 못하게 · 주인 로그인과 같은 틀).
 - 탈퇴: 회원 행 하나를 지우면 연결 · 세션 · 승차권이 같이 지워진다.
+- 카카오 연결 해제 웹훅: 사용자가 카카오 쪽(계정 관리 · 계정 탈퇴 · 고객센터)에서 슝 연결을 끊으면 카카오가 알려 온다.
+  Authorization: KakaoAK <대표 어드민 키> 로 진짜인지 보고, 본문 user_id(카카오 회원번호)의 회원을 정리한다
+  (카카오 문서 kakaologin/callback#unlink · getting-started/callback — 받은 뒤 3초 안에 200, 그 회원이 없어도 200).
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ TICKET_LIMIT = 20   # 사람당 승차권 수
 NAME_MAX = 12   # 승차권 이름(앞면 · '○○권' 띠에 들어간다)
 LEGS_MAX = 12   # 고른 경로의 구간 수(걷기 포함)
 COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+KAKAO_MEMBER = re.compile(r"[0-9]{1,20}")   # 카카오 회원번호(/v2/user/me 의 id 와 같은 수 — 저장은 str(id))
 
 
 class LoginError(Exception):
@@ -144,6 +148,13 @@ def ticket_view(row: dict) -> dict:
             "route": json.loads(row["route"]) if row.get("route") else None}
 
 
+class WebhookError(Exception):
+    """code: off(웹훅 키가 설정에 없음) · auth(카카오가 보낸 것이 아님 — 키 · 앱 ID 가 다름) · bad(회원번호가 없거나 틀림)."""
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 class TicketLimit(Exception):
     """승차권이 이미 TICKET_LIMIT 장."""
 
@@ -229,6 +240,30 @@ class MemberService:
 
     def delete(self, user_id: int) -> None:
         self.store.delete_user(user_id)
+
+    # ---- 카카오 연결 해제 웹훅 ----
+    def check_kakao_webhook(self, authorization: str | None) -> None:
+        """Authorization 머리말이 'KakaoAK <대표 어드민 키>' 인지(본문을 읽기 전에). 아니면 WebhookError."""
+        key = self.config.kakao_admin_key
+        if not key:
+            raise WebhookError("off")
+        if not hmac.compare_digest((authorization or "").strip().encode(), f"KakaoAK {key}".encode()):
+            raise WebhookError("auth")
+
+    def kakao_unlinked(self, fields: dict) -> bool:
+        """웹훅 본문(app_id · user_id · referrer_type — 쿼리 · 폼을 parse_qs 한 것) → 지운 회원이 있었나. 틀리면 WebhookError."""
+        app_id = fields.get("app_id", [""])[0]
+        if self.config.kakao_app_id and not hmac.compare_digest(app_id.encode(), self.config.kakao_app_id.encode()):
+            raise WebhookError("auth")
+        subject = fields.get("user_id", [""])[0]
+        if not KAKAO_MEMBER.fullmatch(subject):
+            raise WebhookError("bad")
+        return self._forget_kakao(subject)
+
+    def _forget_kakao(self, subject: str) -> bool:
+        """카카오 연결이 끊긴 회원은 본인 탈퇴와 똑같이 지운다(사용자 결정 2026-10-27 — 슝 회원은 로그인 방법이 하나라
+        다시 들어올 길이 없다. 관리 기록은 남기지 않는다). 없는 회원이면 False."""
+        return self.store.delete_identity_user("kakao", subject)
 
     # ---- 승차권 ----
     def tickets(self, user_id: int) -> list[dict]:
