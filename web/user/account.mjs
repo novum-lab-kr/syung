@@ -153,8 +153,11 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     return a;
   }));
   const sheetOpen = () => !sheet.hidden;
-  function openSheet(message) {
-    say('loginMsg', message);
+  // 팝업 안 안내: 서랍 아래 토스트(#accountToast)는 팝업(화면 전체 위)에 가려서, 같은 토스트 모양 카드를 팝업 안에 둔다
+  function openSheet(message, error = false) {
+    const note = $('loginMsg');
+    if (message) note.innerHTML = `<span class="acct-toast show${error ? ' is-error' : ''}"><span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(message)}</span></span>`;
+    else note.replaceChildren();
     if ($('settingsPanel')?.classList.contains('open')) $('settingsClose').click();
     sheet.hidden = false; void sheet.offsetWidth; sheet.classList.add('open');
     sheet.querySelector('.social')?.focus({preventScroll: true});
@@ -468,12 +471,13 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   show();
   if (me) await loadTickets();
 
-  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지우고 서랍 첫 화면을 연다 — 처음 가입이면 발권 화면으로 바로. 실패면 서랍 없이 팝업만
+  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지운다. 성공(ok · new)이면 서랍 · 발권 화면을 열지 않고 지도 첫 화면 그대로 둔다.
+  // 실패인데 이미 로그인돼 있으면 서랍 첫 화면, 로그인이 안 됐으면 서랍 없이 팝업 + 안내(오류 코드 원문은 보이지 않는다 · 취소는 오류 모양 아님)
   const back = /(?:^#|&)login=(\w+)/.exec(location.hash);
   if (back) {
     history.replaceState(null, '', location.pathname + location.search);
-    if (me) $('settingsButton')?.click();
-    if (me && back[1] === 'new') openTicket(null);
-    else if (!me) openSheet(LOGIN_ERRORS[back[1]] || '로그인이 끝나지 않았어요. 다시 해 주세요.');
+    const succeeded = back[1] === 'ok' || back[1] === 'new';
+    if (!me) openSheet(LOGIN_ERRORS[back[1]] || '로그인하지 못했어요. 잠시 뒤 다시 해 주세요.', back[1] !== 'denied');
+    else if (!succeeded) $('settingsButton')?.click();
   }
 }
