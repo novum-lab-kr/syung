@@ -2,6 +2,7 @@
 
 GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /admin/debug/recent · /admin/debug/bus-route
 POST /login · /logout · /admin/debug/ride · /admin/debug/shot
+관리(routes/admin.py): GET /admin/status · /admin/members[/stats|/<번호>], POST /admin/members/<번호>/places|logout, DELETE /admin/members/<번호>
 회원(/auth/… · /me… — /api 가 붙어도 받는다, routes/members.py): GET · POST · PUT · DELETE
 /admin/… 는 주인 쿠키를 먼저 본다(없으면 401, POST 는 본문을 읽기 전에). Caddy 가 /api/admin/… 의 /api 를 떼고 넘긴다.
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
@@ -14,6 +15,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from server.routes import admin as admin_routes
 from server.routes import bus as bus_routes
 from server.routes import debug as debug_routes
 from server.routes import journey as journey_routes
@@ -113,9 +115,28 @@ def make_handler(services, response_seconds: float):
             if not self._member("PUT"):
                 self.send_error(404)
 
+        def _read_limited(self, limit: int) -> bytes | None:
+            """본문(limit 바이트까지). 없거나 너무 크면 읽지 않고 None(연결은 닫는다)."""
+            size = _body_size(self.headers)
+            if size <= 0 or size > limit:
+                self.close_connection = True
+                return None
+            return self.rfile.read(size)
+
         def do_DELETE(self) -> None:
-            if not self._member("DELETE"):
-                self.send_error(404)
+            if self._member("DELETE"):
+                return
+            path = self.path.split("?", 1)[0]
+            if not path.startswith(ADMIN + "/"):
+                return self.send_error(404)
+            if not debug_routes.allowed(services, self.headers.get("Cookie")):   # 본문을 읽기 전에
+                self.close_connection = True
+                return self._send_json(*debug_routes.LOGIN)
+            path = path[len(ADMIN):]
+            if not admin_routes.is_admin_path(path):
+                self.close_connection = True
+                return self.send_error(404)
+            self._send_json(*admin_routes.handle(services.admin, "DELETE", path, {}, self.headers, self._read_limited))
 
         def do_POST(self) -> None:
             if self._member("POST"):
@@ -142,6 +163,8 @@ def make_handler(services, response_seconds: float):
             if not debug_routes.allowed(services, cookie):
                 self.close_connection = True
                 return self._send_json(*debug_routes.LOGIN)
+            if admin_routes.is_admin_path(path):
+                return self._send_json(*admin_routes.handle(services.admin, "POST", path, {}, self.headers, self._read_limited))
             if path not in ADMIN_POST:
                 self.close_connection = True
                 return self.send_error(404)
@@ -167,9 +190,11 @@ def make_handler(services, response_seconds: float):
                 cookie, path = self.headers.get("Cookie"), path[len(ADMIN):]
                 if not debug_routes.allowed(services, cookie):
                     return self._send_json(*debug_routes.LOGIN)
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                if admin_routes.is_admin_path(path):
+                    return self._send_json(*admin_routes.handle(services.admin, "GET", path, query, self.headers, None))
                 if path not in ADMIN_GET:
                     return self.send_error(404)
-                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 return self._send_json(*ADMIN_GET[path](services, cookie, query))
             if path == "/auth":
                 return self._write(owner_routes.auth(services.auth, self.headers.get("Cookie"),

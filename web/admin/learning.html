@@ -33,7 +33,7 @@ html,body{margin:0;background:var(--board);color:var(--ink);font-family:"Noto Sa
 a{color:inherit}
 .mast{background:var(--syung);color:var(--syung-ink)}
 html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
-.mast-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:10px}
+.mast-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
 .mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:22px}
 .mast .sp{flex:1}
 .pill-btn{display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:999px;background:rgba(20,20,20,.08);text-decoration:none;font-weight:700;font-size:13px;border:0;color:inherit;cursor:pointer;font-family:inherit}
@@ -139,7 +139,7 @@ tr.sep td{border-top:1.5px solid var(--rule)}
 <body>
 <header class="mast"><div class="mast-in">
   <h1>슝 학습 현황</h1><span class="sp"></span>
-  <a class="pill-btn on" href="/admin/learning" aria-current="page">학습</a><a class="pill-btn" href="/admin/debug">디버깅</a>
+  <a class="pill-btn on" href="/admin/learning" aria-current="page">학습</a><a class="pill-btn" href="/admin/debug">디버깅</a><a class="pill-btn" href="/admin/members">회원</a><a class="pill-btn" href="/admin/status">서버 상태</a>
   <form method="post" action="/api/logout" style="margin:0"><button class="pill-btn" type="submit">로그아웃</button></form>
 </div></header>
 <main>

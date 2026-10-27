@@ -11,6 +11,8 @@ key is needed locally. Set SUBWAY_LIVE_UPSTREAM to use another proxy (e.g. http:
 회원 주소(/api/auth/… · /api/me…)는 서버와 같은 코드(server/routes/members.py)로 여기서 답한다. DB 는 임시 폴더
 (SYUNG_MEMBER_DB 로 바꿈). SYUNG_DEV_LOGIN=1 이면 카카오 자리에 가짜 제공자를 넣어 바로 '개발용 사용자'로 로그인된다
 (카카오 앱 없이 화면 확인용 — 운영 서버에는 이 제공자가 없다). 아니면 운영처럼 환경 변수의 제공자를 쓴다.
+관리 주소(/api/admin/members… · /api/admin/status)도 서버와 같은 코드(server/routes/admin.py)로 답한다. 주인 로그인은 없어서
+SYUNG_DEV_LOGIN=1 일 때만 주인으로 치고(아니면 401), /admin/<이름> 은 운영처럼 /admin/<이름>.html 을 준다.
 """
 
 from __future__ import annotations
@@ -56,6 +58,7 @@ class DevLogin:
 
 
 _members = None
+_services = None
 
 
 def members(port: int):
@@ -71,6 +74,15 @@ def members(port: int):
         dev = os.environ.get("SYUNG_DEV_LOGIN") == "1"
         _members = MemberService(config, providers={"kakao": DevLogin()} if dev else None)
     return _members
+
+
+def services(port: int):
+    """관리 화면용 서비스 묶음(회원 DB 는 위 members 와 같은 것, 지하철 · 버스는 상태 화면을 열 때 만든다 — 바깥 API 는 부르지 않는다)."""
+    global _services
+    if _services is None:
+        from server.services.runtime import Services
+        _services = Services(members=members(port))
+    return _services
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -105,8 +117,32 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(response.body)
         return True
 
+    def _admin(self, method):
+        """관리 주소면 서버와 같은 routes 로 답하고 True."""
+        from server.routes import admin as admin_routes
+        from server.routes.debug import LOGIN
+        path = self.path.split("?", 1)[0]
+        if not path.startswith("/api/admin/") or not admin_routes.is_admin_path(path[len("/api/admin"):]):
+            return False
+        if os.environ.get("SYUNG_DEV_LOGIN") == "1":
+            def read_body(limit):
+                size = int(self.headers.get("Content-Length") or 0)
+                return self.rfile.read(size) if 0 < size <= limit else None
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            payload, status = admin_routes.handle(services(self.server.server_address[1]).admin, method,
+                                                  path[len("/api/admin"):], query, self.headers, read_body)
+        else:
+            payload, status = LOGIN
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def do_POST(self):
-        if not self._member("POST"):
+        if not self._member("POST") and not self._admin("POST"):
             self.send_error(404)
 
     def do_PUT(self):
@@ -114,13 +150,16 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def do_DELETE(self):
-        if not self._member("DELETE"):
+        if not self._member("DELETE") and not self._admin("DELETE"):
             self.send_error(404)
 
     def do_GET(self):
-        if self._member("GET"):
+        if self._member("GET") or self._admin("GET"):
             return
         path = self.path.split("?", 1)[0]
+        # 운영처럼 /admin/members → admin/members.html
+        if path.startswith("/admin/") and "." not in path.rsplit("/", 1)[-1] and (ROOT / "web" / (path[1:] + ".html")).is_file():
+            self.path = path + ".html" + self.path[len(path):]
         # bus: local backend, explicit BUS_LIVE_MODE=mock for UI development.
         if path == "/api/bus/live":
             if str(ROOT / "server") not in sys.path:
