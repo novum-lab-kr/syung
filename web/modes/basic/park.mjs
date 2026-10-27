@@ -1,0 +1,180 @@
+// web/modes/basic/park.mjs
+var PARK_DEFAULTS = {
+	id: "seoul-coaster",
+	version: 1,
+	palette: {
+		light: {
+			cream: "#F4E4BC",
+			ivory: "#E7DFC9",
+			teal: "#244D56",
+			tealShade: "#183840",
+			red: "#C94235",
+			gold: "#E9AF32",
+			deck: "#D8CBB0",
+			concrete: "#B5BBB0",
+			ink: "#18343D",
+			bulbWarm: "#FFD27E",
+			bulbCore: "#FFF0CF"
+		},
+		dark: {
+			cream: "#C3B99C",
+			ivory: "#8F998E",
+			teal: "#24424B",
+			tealShade: "#152D35",
+			red: "#B7463D",
+			gold: "#C99941",
+			deck: "#606660",
+			concrete: "#495A59",
+			ink: "#F4E4BC",
+			bulbWarm: "#FFD27E",
+			bulbCore: "#FFF0CF"
+		}
+	},
+	track: {
+		railBodyOffset: .3,
+		railDiameterM: .32,
+		railDiameterPx: [1, 1.7],
+		railSideLight: .8,
+		spineWidthM: .55,
+		spineDepthM: 1.2,
+		spineWidthPx: [.65, 1.5],
+		spineDepthPx: [1.2, 2.6],
+		girderDepthM: 1.8,
+		girderDepthPx: [3, 7],
+		girderBody: .5,
+		tieEveryM: 7.5,
+		tieBodyWidth: .78,
+		tieThicknessM: .22,
+		tieThicknessPx: [.7, 1.2]
+	},
+	supports: {
+		minHeightM: 3,
+		yHeightM: 30,
+		yBranchM: 6,
+		aHeightM: 80,
+		spanM: [
+			60,
+			80,
+			100
+		],
+		clearM: 15,
+		diameterM: 1.25,
+		diameterPx: [1.1, 2.8],
+		aDiameterM: 1.5,
+		aSpread: .18,
+		aMaxSpreadM: 28,
+		beamHeightM: 1,
+		footSizeM: 3.2,
+		footHeightM: .6
+	},
+	station: {
+		deckThicknessM: .8,
+		walkClearM: 2.4,
+		curveClearM: 6,
+		safetyWidthM: .2,
+		canopyLengthM: 12,
+		canopyGapM: 3,
+		canopyDepthM: 4.2,
+		canopyEaveM: 4.2,
+		canopyRidgeM: 5.2,
+		canopyPostM: .25,
+		routeBandM: .45,
+		gateWidthM: 3.2,
+		gateHeightM: 3,
+		badgePx: 16,
+		maxCanopiesPerSide: 12,
+		bulbEveryM: 4,
+		queueSizeM: [6, 3]
+	},
+	rides: {
+		detailZoom: 14.5,
+		crownHeightM: 12,
+		crownHeightRatio: .05,
+		rimM: [.7, 1.2],
+		spokes: 12,
+		cabins: 12,
+		swingSides: 8,
+		saucerThicknessM: [8, 16],
+		saucerThicknessRatio: .06
+	},
+	props: {
+		flags: false,
+		balloons: false
+	},
+	rideTrack: {
+		gaugeM: 1.435,
+		railHeadM: .07,
+		railTopM: .34,
+		sleeperTopM: .18,
+		sleeperBottomM: .02,
+		sleeperLengthM: 2.4,
+		sleeperWidthM: .26,
+		aheadM: 320,
+		behindM: 30,
+		rebuildM: 80,
+		sleeperFadeM: [70, 150],
+		sleeperM: 240,
+		railEvery: 4,
+		rail: "#5D6263",
+		railHead: "#D3D7D6",
+		sleeper: "#B9B6AD",
+		darkTint: .55
+	},
+	sky: {
+		light: {
+			sky: "#A9D6EE",
+			horizon: "#E3F0F1",
+			ground: "#D3D6CC"
+		},
+		dark: {
+			sky: "#101B2C",
+			horizon: "#2B3550",
+			ground: "#232C31"
+		}
+	},
+	night: {
+		bulbEveryM: 18,
+		bulbDropM: 3,
+		corePx: [
+			1.4,
+			1.8,
+			2.2
+		],
+		haloPx: [
+			4,
+			5.5,
+			7
+		],
+		warmShare: .8,
+		trackEmission: .65,
+		rideEmission: .55,
+		stationEmission: .9,
+		rideAmbient: .5,
+		rideDirectional: .18,
+		chaseLengthM: 180,
+		chasePeriodS: 10,
+		chaseAmplitude: .15,
+		beamMinZoom: 15.5,
+		beamPeriodS: 24,
+		beamOpacity: .055,
+		beamCap: 2,
+		phoneBeamCap: 1,
+		fireworksPeriodS: 28,
+		phoneFireworks: false
+	},
+	lod: {
+		hysteresis: .15,
+		canopy: [15.5, 16.1],
+		gate: [16.5, 17.1],
+		ties: [16.6, 17.2],
+		detail: [17.2, 17.8]
+	},
+	performance: {
+		stationBytes: 16e6,
+		phoneStationBytes: 8e6,
+		stationDraws: 4,
+		trackBytes: 192e6,
+		phoneTrackBytes: 96e6
+	}
+};
+export { PARK_DEFAULTS, PARK_DEFAULTS as default };

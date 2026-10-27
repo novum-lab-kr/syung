@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>슝 학습 현황</title>
+<meta name="description" content="슝이 실시간 지하철 · 버스 기록으로 움직임을 배우는 현황">
+<link rel="icon" href="/brand/favicon.ico" sizes="48x48">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<script>
+  // same theme choice as the map (localStorage subway-theme: auto | light | dark)
+  (() => { let c = 'auto'; try { c = localStorage.getItem('subway-theme') || 'auto'; } catch {}
+    document.documentElement.dataset.theme = c === 'dark' || (c === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; })();
+</script>
+<style>
+:root{
+  --syung:#ffd400;--syung-deep:#c79a00;--syung-soft:#fff6c2;--syung-ink:#141414;
+  --board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#7d796a;--rule:#ece6cf;--control:#f5f1e1;
+  --good:#1f8f55;--good-soft:#e3f4ea;--est:#2f6fb5;--est-soft:#e4eefa;--mid:#b07a00;--mid-soft:#fdf1cc;--low:#8a8676;--low-soft:#efece2;
+  --shadow:0 3px 0 rgba(20,20,20,.05),0 8px 22px rgba(60,50,0,.08);
+  --round:"Jua","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
+}
+html[data-theme=dark]{
+  --board:#131416;--paper:#1c1e21;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2d2f33;--control:#25272b;
+  --syung-deep:#ffd400;--syung-soft:#2e2a14;
+  --good:#5fd394;--good-soft:#16301f;--est:#7fb2ee;--est-soft:#172638;--mid:#ffcf4a;--mid-soft:#332a10;--low:#9a968a;--low-soft:#26282c;
+  --shadow:0 8px 22px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--board);color:var(--ink);font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.mast{background:var(--syung);color:var(--syung-ink)}
+html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
+.mast-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:22px}
+.mast .sp{flex:1}
+.pill-btn{display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:999px;background:rgba(20,20,20,.08);text-decoration:none;font-weight:700;font-size:13px;border:0;color:inherit;cursor:pointer;font-family:inherit}
+html[data-theme=dark] .pill-btn{background:rgba(255,212,0,.12)}
+.pill-btn.on{background:var(--syung-ink);color:var(--syung)}
+html[data-theme=dark] .pill-btn.on{background:var(--syung);color:var(--syung-ink)}
+main{max-width:960px;margin:0 auto;padding:18px 16px 56px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+main>*{min-width:0}
+.box{background:var(--paper);border-radius:20px;box-shadow:var(--shadow);padding:20px}
+h2{margin:0 0 12px;font-family:var(--round);font-weight:400;font-size:19px}
+.muted{color:var(--muted)}
+
+/* 1. the answer */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;align-items:center}
+.hero small{font-size:13px;font-weight:700;color:var(--secondary)}
+.hero .big{display:flex;align-items:baseline;gap:6px;margin:6px 0 4px;font-family:var(--round);line-height:1}
+.hero .big b{font-weight:400;font-size:64px;font-variant-numeric:tabular-nums}
+.hero .big span{font-size:24px}
+.delta{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700}
+.delta.down{background:var(--good-soft);color:var(--good)}
+.open td.ok,.open b.ok{color:var(--good)}.open td.no,.open b.no{color:var(--mid)}.open td.ok,.open td.no{font-weight:700;font-variant-numeric:tabular-nums}
+.delta.up{background:var(--mid-soft);color:var(--mid)}
+.delta.same{background:var(--low-soft);color:var(--low)}
+.hero p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--secondary)}
+.kinds{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.kinds li{background:var(--control);border-radius:12px;padding:9px 12px;display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--secondary)}
+.kinds li b{margin-left:auto;font-family:var(--round);font-weight:400;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.kinds h3{margin:0 0 2px;font-size:12px;color:var(--muted)}
+
+/* 2. three numbers */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stat{background:var(--paper);border-radius:18px;box-shadow:var(--shadow);padding:14px 16px}
+.stat small{font-size:12px;font-weight:700;color:var(--muted)}
+.stat b{display:block;margin-top:4px;font-family:var(--round);font-weight:400;font-size:28px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--secondary)}
+
+/* 3. growth */
+.growth svg,.scores svg{width:100%;height:auto;display:block}
+.scores text{fill:var(--muted);font-size:11px;font-family:inherit}
+.scores .val{fill:var(--ink);font-weight:700;font-size:12px}
+.legend{display:flex;gap:14px;margin:0 0 6px;font-size:12px;color:var(--secondary)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.growth text{fill:var(--muted);font-size:11px;font-family:inherit}
+.growth .val{fill:var(--ink);font-weight:700;font-size:12px}
+
+/* 4. lines */
+.groups{display:grid;gap:18px}
+.group h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:14px}
+.group h3 i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-good{background:var(--good-soft);color:var(--good)}.b-est{background:var(--est-soft);color:var(--est)}.b-mid{background:var(--mid-soft);color:var(--mid)}.b-low{background:var(--low-soft);color:var(--low)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,calc(50% - 5px)),1fr));gap:10px}
+.lc{border-radius:14px;background:var(--control);padding:12px 12px 12px 14px;border-left:5px solid var(--c)}
+.lc b{font-size:14px}
+.lc ul{list-style:none;margin:6px 0 0;padding:0;font-size:12.5px;line-height:1.6;color:var(--secondary)}
+.lc .meter{height:4px;border-radius:2px;background:var(--rule);margin-top:8px;overflow:hidden}
+.lc .meter i{display:block;height:100%;background:var(--c)}
+.faster{color:var(--good);font-weight:700}.slower{color:var(--mid);font-weight:700}
+
+/* 5. table */
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:0 8px 8px;border-bottom:1.5px solid var(--rule)}
+th:first-child,td:first-child{text-align:left}
+td{text-align:right;padding:8px;border-bottom:1px solid var(--rule)}
+.tw{overflow-x:auto}
+.tw table.wide{min-width:560px}
+td.l,th.l{text-align:left}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--c)}
+.badge,th{white-space:nowrap}
+.badge .short{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.chips button{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;border:0;background:var(--control);color:var(--secondary);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.chips button[aria-selected=true]{background:var(--c);color:#fff}
+.chips button[aria-selected=true] .dot{background:#fff}
+.chips .dot{margin-right:5px}
+.note{margin:8px 0 0;font-size:12.5px;line-height:1.55;color:var(--muted)}
+.def{color:var(--muted)}
+.up{color:var(--mid);font-weight:700}.dn{color:var(--good);font-weight:700}
+tr.sep td{border-top:1.5px solid var(--rule)}
+
+/* 0. 지하철 · 버스 탭 */
+.tabs{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--control);justify-self:start}
+.tabs button{height:36px;padding:0 20px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font-family:var(--round);font-size:16px;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--syung);color:var(--syung-ink);box-shadow:0 1px 0 rgba(20,20,20,.08)}
+.tabs button:focus-visible,.chips button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.panel{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.panel[hidden]{display:none}
+.hero .big b.word{font-size:40px}
+.steps li.now{background:var(--syung-soft);color:var(--ink)}
+.steps li b{font-size:14px}
+@media (max-width:400px){.mast-in{gap:6px}.mast h1{font-size:19px}.pill-btn{padding:0 10px}}
+@media (max-width:720px){
+  .hero{grid-template-columns:1fr}.hero .big b{font-size:56px}
+  table{font-size:12.5px}td,th{padding:7px 5px}#stopTable td{white-space:nowrap}#stopTable td:nth-child(4){white-space:normal;line-height:1.3}#stopTable .full{display:none}#stopTable .short{display:inline}#stopTable .badge::before{display:none}#stopTable .badge{padding:3px 8px;font-size:11.5px}
+  .scores text{font-size:19px}.scores .val{font-size:20px}
+  .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}.stat{padding:12px}.stat b{font-size:22px}
+  .box{padding:16px}.lc{padding:10px 10px 10px 12px}.lc ul{font-size:12px}
+  .growth text{font-size:14px}.growth .val{font-size:15px}
+}
+</style>
+</head>
+<body>
+<header class="mast"><div class="mast-in">
+  <h1>슝 학습 현황</h1><span class="sp"></span>
+  <a class="pill-btn on" href="/admin/learning" aria-current="page">학습</a><a class="pill-btn" href="/admin/debug">디버깅</a><a class="pill-btn" href="/admin/members">회원</a><a class="pill-btn" href="/admin/status">서버 상태</a>
+  <form method="post" action="/api/logout" style="margin:0"><button class="pill-btn" type="submit">로그아웃</button></form>
+</div></header>
+<main>
+  <div class="tabs" role="tablist" aria-label="무엇을 배우나">
+    <button type="button" role="tab" id="tabSubway" aria-controls="panelSubway" aria-selected="true">지하철</button>
+    <button type="button" role="tab" id="tabBus" aria-controls="panelBus" aria-selected="false" tabindex="-1">버스</button>
+  </div>
+  <div class="panel" id="panelSubway" role="tabpanel" aria-labelledby="tabSubway">
+  <section class="box open" aria-label="오픈 기준">
+    <h2>오픈 기준 · 지도 화면 다시 그리기</h2>
+    <p class="muted" id="openText" style="margin:0 0 12px;font-size:13.5px;line-height:1.6">불러오는 중</p>
+    <div class="tw"><table class="wide"><thead><tr><th>노선</th><th>시간</th><th>열차</th><th>도착 치우침</th><th>도착 가운데 · 90%</th><th>출발 치우침</th><th>출발 가운데 · 90%</th><th>역 사이 멈춤</th><th>맞춘 사건</th></tr></thead><tbody id="openTable"></tbody></table></div>
+    <p class="note">날마다 7 · 2 · 9호선을 출근 · 평시 · 퇴근 30분씩 그날 쓰던 학습 값으로 다시 그려, 위치 자료가 나중에 알려 준 열차 자신의 도착 · 출발 시각과 견줘요(초, + 는 슝이 늦음).
+    <b class="ok">초록</b>은 기준 안(치우침 ±10초 · 가운데 15초 · 90% 30초 · 역 사이 10초 넘는 멈춤 0), <b class="no">노랑</b>은 기준 밖. 위치 자료의 '도착'은 실제로 서는 때보다 조금 이를 수 있어 치우침은 실제 탑승 비교로 함께 봐요.</p>
+  </section>
+
+  <section class="box hero" aria-label="학습 값 채점">
+    <div>
+      <small>학습 값 채점 · 다음 사건까지 예측 오차 평균 (오픈 기준 아님)</small>
+      <div class="big"><b id="err">–</b><span>초</span></div>
+      <span class="delta same" id="delta">불러오는 중</span>
+      <p id="heroText"></p>
+    </div>
+    <ul class="kinds" id="kinds"></ul>
+  </section>
+
+  <section class="stats" aria-label="모은 기록">
+    <div class="stat"><small id="sDayLabel">하루 모은 기록</small><b id="sToday">–</b><span id="sTodaySub"></span></div>
+    <div class="stat"><small>지금까지</small><b id="sTotal">–</b><span id="sTotalSub"></span></div>
+    <div class="stat"><small>학습에 쓰인 비율</small><b id="sShare">–</b><span>자체 시각이 있는 기록</span></div>
+  </section>
+
+  <section class="box scores">
+    <h2>날마다 채점한 오차</h2>
+    <div class="legend"><span><i style="background:var(--syung-deep)"></i>새로 배운 값</span><span><i style="border:2px solid var(--muted)"></i>쓰던 값</span></div>
+    <div id="scores"></div>
+    <div class="tw" style="margin-top:12px"><table class="wide"><thead><tr><th>채점한 날</th><th>채점 건수</th><th>역에 서 있는 시간</th><th>출발→다음 역 도착</th><th>도착→다음 역 도착</th><th>전체 중앙값</th><th>전체 평균</th></tr></thead><tbody id="kindTable"></tbody></table></div>
+    <p class="note">칸마다 쓰던 값 → 새로 배운 값(초)이에요. 칸별은 중앙값, 마지막 칸은 평균이에요. 그래프는 평균이라 평균을 재기 시작한 10/7부터 그려요.</p>
+    <p class="muted" style="margin:6px 0 0;font-size:12.5px;line-height:1.55">날마다 그날 열차 움직임으로 채점해서 시험지가 매일 달라요. 날짜끼리 오르내림엔 그날 난이도(채점 건수, 출퇴근 비중)도 섞여 있으니, 배운 게 좋아졌는지는 같은 날의 두 점을 비교해 보세요.</p>
+  </section>
+
+  <section class="box growth">
+    <h2>학습 데이터가 쌓이는 중</h2>
+    <div id="growth"></div>
+  </section>
+
+  <section class="box">
+    <h2>날짜별 수집 상세</h2>
+    <div class="tw"><table class="wide"><thead><tr><th>날짜</th><th class="l">피드</th><th>받은 기록</th><th>새로 본 움직임</th><th>학습용</th><th>열차 수</th></tr></thead><tbody id="collectTable"></tbody></table></div>
+    <p class="note">받은 기록: API에서 받은 줄 수 · 새로 본 움직임: 같은 열차의 같은 역·상태 반복을 뺀 것 · 학습용: 그중 자기 시각이 찍혀 있어 시간을 잴 수 있는 것.</p>
+  </section>
+
+  <section class="box">
+    <h2>노선별 학습 상태</h2>
+    <div class="groups" id="groups"></div>
+  </section>
+
+  <section class="box">
+    <h2>노선별 배운 값</h2>
+    <div class="tw"><table class="wide"><thead><tr><th class="l">노선</th><th>속도</th><th>출퇴근 속도</th><th>역에 머무는 시간</th><th>진입→도착</th><th>따로 배운 역</th><th>속도 학습 구간</th></tr></thead><tbody id="lineTable"></tbody></table></div>
+    <p class="note">속도는 시간표 대비(+는 느리게, −는 빠르게)예요. 회색은 데이터가 모자라 기본값을 쓰는 칸이에요.</p>
+  </section>
+
+  <section class="box">
+    <h2>역별 머무는 시간</h2>
+    <div class="chips" id="stopLines" role="tablist" aria-label="노선 고르기"></div>
+    <p class="note" id="stopSummary" style="margin:0 0 8px"></p>
+    <div class="tw"><table><thead><tr><th class="l">역</th><th>잰 횟수</th><th>잰 시간</th><th>지도 값</th><th class="l">상태</th></tr></thead><tbody id="stopTable"></tbody></table></div>
+    <p class="note">지난 8일 동안 역에 도착해서 출발할 때까지를 잰 값이에요. 30번 넘게 재고 노선 평균과 5초 넘게 다른 역만 따로 배우고, 나머지 역은 노선 평균을 써요. 출발 신호가 없는 역(코레일 구간)은 도착해서 다음 역에 도착하기까지가 예상보다 얼마나 늦는지로 추정해요(도착 n = 그 기록 수). 추정값엔 다음 구간 시간표 오차도 섞여 있어요. 지도 값은 30~180초 안으로 잘라요.</p>
+  </section>
+
+  <section class="box">
+    <h2>날짜별 자세한 기록</h2>
+    <div class="tw"><table id="daysTable"><thead><tr><th>날짜</th><th>도착정보</th><th>열차 위치</th><th>학습용</th><th>이 날로 채점(평균)<br>쓰던 값 → 새 값</th><th>결과</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  </div>
+
+  <div class="panel" id="panelBus" role="tabpanel" aria-labelledby="tabBus" hidden>
+  <section class="box hero" aria-label="버스 학습 상태">
+    <div>
+      <small id="bLabel">버스 도착 시각 예측</small>
+      <div class="big" id="bBig"><b class="word" id="bState">모으는 중</b></div>
+      <span class="delta same" id="bDelta">불러오는 중</span>
+      <p id="bText"></p>
+    </div>
+    <ul class="kinds steps" id="bSteps"></ul>
+  </section>
+  <section class="stats" aria-label="모은 버스 기록">
+    <div class="stat"><small id="bDayLabel">하루 모은 기록</small><b id="bToday">–</b><span id="bTodaySub"></span></div>
+    <div class="stat"><small>지금까지</small><b id="bTotal">–</b><span id="bTotalSub"></span></div>
+    <div class="stat"><small>모은 노선</small><b id="bRoutes">–</b><span id="bRoutesSub"></span></div>
+  </section>
+  <section class="box" id="bScoreBox" hidden>
+    <h2>날마다 채점한 거리 오차</h2>
+    <div class="tw"><table class="wide"><thead><tr><th>채점한 날</th><th>배운 노선</th><th>지도 볼 때<br>앞지르지 않음</th><th>지도 볼 때<br>최근 속도</th><th>지도 볼 때<br>배운 빠르기</th><th>드물게 받을 때<br>최근 속도 → 배운 빠르기</th></tr></thead><tbody id="bScoreTable"></tbody></table></div>
+    <p class="note">그 날 서버가 받은 버스 위치를 화면처럼 다시 그려, 1초마다 그린 자리와 실제 자리의 거리(평균, m)를 쟀어요. 배운 빠르기는 그 날 전 기록으로만 배운 값이에요. 지도 볼 때 = 30초마다 받는 노선, 드물게 = 학습용으로 1분 넘게 띄엄띄엄 받는 노선이에요. 실제 자리는 받은 위치 사이를 이은 값이라 신호 · 정류장에서 선 것이 빠져 있어 실제 오차는 조금 더 커요. 배운 노선이 그 날 다닌 노선과 겹친 만큼만 매겨요(학습 노선이 날마다 바뀌어서 겹치는 날이 적어요).</p>
+  </section>
+  <section class="box" id="bLearnBox" hidden>
+    <h2>배운 노선</h2>
+    <p class="note" id="bLearnNote" style="margin:0 0 8px"></p>
+    <div class="tw"><table><thead><tr><th class="l">노선</th><th>배운 시간대</th></tr></thead><tbody id="bLearnTable"></tbody></table></div>
+  </section>
+  <section class="box growth">
+    <h2>버스 기록이 쌓이는 중</h2>
+    <div id="bGrowth"></div>
+  </section>
+  <section class="box">
+    <h2>노선별 수집</h2>
+    <div class="tw"><table><thead><tr><th class="l">노선</th><th class="l">종류</th><th>부른 횟수</th><th>본 버스</th><th>모은 날</th></tr></thead><tbody id="bRouteTable"></tbody></table></div>
+    <p class="note">서버가 낮(05~24시) 동안 이 노선들을 번갈아 불러 기록해요. 지도에서 누가 버스를 보고 있으면 잠깐 쉬어요.</p>
+  </section>
+  <section class="box">
+    <h2>날짜별 수집</h2>
+    <div class="tw"><table><thead><tr><th>날짜</th><th>부른 횟수</th><th>받은 기록</th><th>본 버스</th><th>노선</th></tr></thead><tbody id="bDayTable"></tbody></table></div>
+  </section>
+  </div>
+  <p class="muted" id="updated" style="margin:0;font-size:12px;text-align:center"></p>
+</main>
+<script>
+const COLORS={'1호선':'#0052A4','2호선':'#00A84D','3호선':'#EF7C1C','4호선':'#00A5DE','5호선':'#996CAC','6호선':'#CD7C2F','7호선':'#747F00','8호선':'#E6186C','9호선':'#BDB092','GTX-A':'#9A6292','경강선':'#0054A6','경의중앙선':'#77C4A3','경춘선':'#178C72','공항철도':'#0090D2','김포골드라인':'#AD8605','서해선':'#8FC31F','수인분당선':'#F5A200','신림선':'#6789CA','신분당선':'#D4003B','에버라인선':'#6FB245','우이신설선':'#B7C452','의정부선':'#FDA600','인천1호선':'#7CA8D5','인천2호선':'#ED8B00'};
+const ORDER=Object.keys(COLORS);
+// how many timed runs a line needs before its values are trusted (pace spans)
+const ENOUGH=2000,SOME=300;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'백만':n>=1e4?(n/1e4).toFixed(1)+'만':Math.round(n).toLocaleString('ko-KR');
+const md=d=>{const [,m,dd]=d.split('-');return `${+m}/${+dd}`};
+const sightings=d=>(d.samples?.sightings||0)+(d.position?.sightings||0);
+const events=d=>(d.samples?.event||0)+(d.position?.event||0);
+
+const addDay=(d,k)=>{const t=new Date(d+'T00:00:00Z');t.setUTCDate(t.getUTCDate()+k);return t.toISOString().slice(0,10)};
+
+// a nightly run on day R scores the timing on day R − 1's trains: show it under that day
+function scoreChart(sc){
+  if(!sc.length)return '<p class="muted">아직 채점 기록이 없어요.</p>';
+  const W=560,H=190,L=16,R=16,T=26,B=34,vals=sc.flatMap(s=>[s.cand,s.cur].filter(v=>v!=null));
+  const lo=Math.floor(Math.min(...vals))-1,hi=Math.ceil(Math.max(...vals))+1;
+  const x=i=>sc.length===1?W/2:L+60+i*(W-L-R-84)/(sc.length-1),y=v=>T+(H-T-B)*(hi-v)/(hi-lo);
+  let g='';
+  for(let v=Math.ceil(lo);v<=hi;v+=hi-lo>8?4:2)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${L}" y="${y(v)-3}">${v}초</text>`;
+  sc.forEach((s,i)=>{const X=x(i);
+    if(s.cur!=null)g+=`<line x1="${X}" x2="${X}" y1="${y(s.cur)}" y2="${y(s.cand)}" stroke="var(--muted)" stroke-width="2"/><circle cx="${X}" cy="${y(s.cur)}" r="8" fill="var(--paper)" stroke="var(--muted)" stroke-width="2"/>`;
+    g+=`<circle cx="${X}" cy="${y(s.cand)}" r="5" fill="var(--syung-deep)"/><text class="val" x="${X+9}" y="${y(s.cand)+4}">${s.cand}</text>`;
+    g+=`<text x="${X}" y="${H-8}" text-anchor="middle">${md(s.day)}</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="날마다 채점한 오차">${g}</svg>`;
+}
+
+function growth(days,val=events,note='학습에 쓸 수 있는 기록을 날마다 더한 값이에요. 기울기가 가파를수록 그날 많이 모았어요.'){
+  if(!days.length)return '<p class="muted">아직 기록이 없어요.</p>';
+  let acc=0;const pts=days.map(d=>({date:d.date,v:(acc+=val(d))}));
+  const W=560,H=220,L=12,R=12,T=28,B=26,max=acc*1.1;
+  const x=i=>pts.length===1?W/2:L+20+i*(W-L-R-40)/(pts.length-1),y=v=>T+(H-T-B)*(1-v/max);
+  const line=pts.map((p,i)=>`${x(i)},${y(p.v)}`).join(' ');
+  let g=`<defs><linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--syung)" stop-opacity=".55"/><stop offset="1" stop-color="var(--syung)" stop-opacity=".05"/></linearGradient></defs>`;
+  g+=`<polygon points="${x(0)},${y(0)} ${line} ${x(pts.length-1)},${y(0)}" fill="url(#gf)"/>`;
+  g+=`<polyline points="${line}" fill="none" stroke="var(--syung-deep)" stroke-width="3" stroke-linejoin="round"/>`;
+  g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
+  pts.forEach((p,i)=>{g+=`<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--paper)" stroke="var(--syung-deep)" stroke-width="2.5"/><text x="${x(i)}" y="${H-8}" text-anchor="middle">${md(p.date)}</text>`;
+    if(i===pts.length-1||i===0)g+=`<text class="val" x="${x(i)}" y="${y(p.v)-10}" text-anchor="${i===0?'start':'end'}">${fmt(p.v)}</text>`});
+  return `<div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="학습용 기록 누적 ${fmt(acc)}">${g}</svg></div><p class="muted" style="margin:6px 0 0;font-size:12.5px">${note}</p>`;
+}
+
+const pct=p=>Math.round((p-1)*100);
+const paceWords=(p,rush)=>{if(p==null)return '시간표대로 달려요';const d=pct(p);
+  return d===0?'시간표대로 달려요':d<0?`시간표보다 <span class="faster">${-d}% 빠르게</span> 달려요`:`시간표보다 <span class="slower">${d}% 느리게</span> 달려요`};
+
+function groups(latest,hist){
+  const lines=latest.lines||{},n=latest.n||[...hist].reverse().find(h=>h.n)?.n||{};
+  const all=[...new Set([...Object.keys(lines),...Object.keys(n)])].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const tier=l=>{const k=n[l]?.pace||0;return k>=ENOUGH?0:k>=SOME?1:2};
+  const meta=[['충분히 배웠어요','b-good','값을 믿고 써요'],['배우는 중','b-mid','며칠 더 모으면 정확해져요'],['데이터 모으는 중','b-low','아직 대부분 기본값을 써요']];
+  return meta.map(([name,cls,hint],t)=>{const ls=all.filter(l=>tier(l)===t);if(!ls.length)return '';
+    return `<div class="group"><h3><span class="badge ${cls}">${name}</span><i>${ls.length}개 노선 · ${hint}</i></h3><div class="cards">${ls.map(l=>{const v=lines[l]||{},k=n[l]?.pace||0;
+      const items=[paceWords(v.pace),v.zone!=null?`역에서 약 ${v.zone}초 머물러요`:null,v.rushPace!=null?`출퇴근엔 ${pct(v.rushPace)>0?`<span class="slower">${pct(v.rushPace)}% 더 느려요</span>`:`<span class="faster">${-pct(v.rushPace)}% 빨라요</span>`}`:null].filter(Boolean);
+      return `<div class="lc" style="--c:${COLORS[l]||'#888'}"><b>${esc(l)}</b><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul><div class="meter" title="${k.toLocaleString('ko-KR')}구간"><i style="width:${Math.min(100,k/ENOUGH*100)}%"></i></div></div>`}).join('')}</div></div>`}).join('');
+}
+
+// 지하철 · 버스 탭(#bus 로 버스 탭을 바로 연다)
+const TABS=[['tabSubway','panelSubway',''],['tabBus','panelBus','#bus']];
+function showTab(i,focus){TABS.forEach(([t,p],k)=>{const on=k===i;$(t).setAttribute('aria-selected',on);$(t).tabIndex=on?0:-1;$(p).hidden=!on});
+  if(focus)$(TABS[i][0]).focus();history.replaceState(null,'',TABS[i][2]||location.pathname+location.search)}
+TABS.forEach(([t],i)=>{$(t).onclick=()=>showTab(i);$(t).onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();showTab((i+1)%TABS.length,true)}}});
+if(location.hash==='#bus')showTab(1);
+
+// 버스: 모으는 현황 + 밤 학습(구간 빠르기, bus_pace.mjs)이 배운 노선 · 날마다 채점(learning.json bus — build_learning_stats.bus_stats)
+const BUS_TYPES={trunk:'간선',branch:'지선',circular:'순환',express:'광역',night:'심야'},BUS_DAYS=7;
+function showBus(bus,genDay){
+  const days=(bus?.days||[]).filter(x=>x.date<genDay),routes=bus?.routes||[],n=days.length,last=days.at(-1);
+  const rows=days.reduce((a,x)=>a+x.rows,0),calls=days.reduce((a,x)=>a+x.calls,0);
+  const pace=bus?.pace,learned=pace?.routes||[],scores=(bus?.scores||[]).filter(x=>x.results?.pace);
+  // 큰 숫자: 지도 볼 때(30초마다) 거리가 1,000초 넘게 매겨진 마지막 날
+  const shown=[...scores].reverse().find(x=>x.results.pace.gap30?.n>=1000);
+  showBusLearning(learned,pace,scores,shown);
+  if(shown){const R=shown.results,m=R.pace.gap30.meanAbs,was=R.recent.gap30.meanAbs,rare=R.pace['gap60+'],rareWas=R.recent['gap60+'];
+    $('bLabel').textContent='버스 위치 오차 · 지도 볼 때 평균';
+    $('bBig').innerHTML=`<b id="bState">${m}</b><span>m</span>`;
+    const el=$('bDelta');el.className='delta '+(m<was?'down':'same');
+    el.textContent=m<was?`▼ 예전 방식(최근 속도, ${was}m)보다 ${was-m}m 줄었어요`:`예전 방식(최근 속도)도 ${was}m · 비슷해요`;
+    $('bText').textContent=`${md(shown.date)} 버스 기록을 화면처럼 다시 그려 보니, 배운 노선 ${shown.trainedRoutes}개에서 지도 볼 때 평균 ${m}m${rare?.n?`, 드물게 받을 때 ${rareWas.meanAbs}m → ${rare.meanAbs}m`:''} 어긋났어요. 노선 · 시간대 · 50m 구간마다 걸린 시간을 매일 새벽 배워요.`;
+  }else if(learned.length)$('bDelta').textContent=`${learned.length}개 노선을 배웠어요 · 채점은 기록이 더 쌓이면`;
+  else $('bDelta').textContent=n>=BUS_DAYS?'기록이 다 모였어요 · 오차를 잴 차례예요':`${n}/${BUS_DAYS}일 모았어요`;
+  if(!shown)$('bText').textContent=n?`${md(days[0].date)}부터 ${n}일 동안 버스 위치 ${fmt(rows)}건을 모았어요. 일주일쯤 모이면 지하철처럼 오차부터 재고, 정류장 사이 달리는 시간을 구간마다 배워요.`
+    :'버스 위치를 모으기 시작했어요. 오늘 모은 기록은 내일 새벽 03:10에 여기 나타나요.';
+  const step=scores.length?2:learned.length?1:0;
+  $('bSteps').innerHTML='<h3>배우는 순서</h3>'+[['기록 모으기',`${n}일`],['구간마다 배우기',learned.length?`${learned.length}개 노선`:'모은 뒤'],['날마다 채점',scores.length?`${scores.length}일`:'배운 뒤']]
+    .map(([t,v],i)=>`<li${i===step?' class="now"':''}>${i+1}. ${t}<b>${v}</b></li>`).join('');
+  if(last){$('bDayLabel').textContent=`${md(last.date)} 하루 모은 기록`;$('bToday').textContent=fmt(last.rows);$('bTodaySub').textContent=`${fmt(last.calls)}번 불러서`}
+  $('bTotal').textContent=fmt(rows);$('bTotalSub').textContent=`${n}일 · ${fmt(calls)}번 불러서`;
+  $('bRoutes').textContent=routes.length?routes.length+'개':'–';$('bRoutesSub').textContent=routes.slice(0,3).map(r=>r.name).join(' · ');
+  $('bGrowth').innerHTML=growth(days,x=>x.rows,'모은 버스 위치를 날마다 더한 값이에요. 버스 한 대가 한 번 찍힐 때마다 한 건이에요.');
+  $('bRouteTable').innerHTML=routes.length?routes.map(r=>`<tr><td class="l"><span class="dot" style="--c:${esc(r.color||'#888')}"></span>${esc(r.name)}</td><td class="l">${esc(BUS_TYPES[r.type]||'–')}</td><td>${fmt(r.calls)}</td><td>${fmt(r.buses)}대</td><td>${r.days}일</td></tr>`).join('')
+    :'<tr><td class="l muted" colspan="5">아직 모은 노선이 없어요.</td></tr>';
+  $('bDayTable').innerHTML=days.length?[...days].reverse().map(x=>`<tr><td>${md(x.date)}</td><td>${fmt(x.calls)}</td><td>${fmt(x.rows)}</td><td>${fmt(x.buses)}대</td><td>${x.routes}</td></tr>`).join('')
+    :'<tr><td class="muted" colspan="5">아직 없어요.</td></tr>';
+}
+
+function showBusLearning(learned,pace,scores,shown){
+  const km=v=>v==null?'–':`${v}m`;
+  $('bScoreBox').hidden=!scores.length;
+  $('bScoreTable').innerHTML=[...scores].reverse().map(x=>{const R=x.results,g=k=>R[k].gap30,rare=k=>R[k]['gap60+'];
+    const near=g('pace').n?[km(g('none').meanAbs),km(g('recent').meanAbs),`<b>${km(g('pace').meanAbs)}</b>`]:['–','–','–'];
+    return `<tr${x===shown?' class="sep"':''}><td>${md(x.date)}</td><td>${x.trainedRoutes}개</td>${near.map(v=>`<td>${v}</td>`).join('')}<td>${rare('pace').n?`${km(rare('recent').meanAbs)} → <b>${km(rare('pace').meanAbs)}</b>`:'–'}</td></tr>`}).join('');
+  $('bLearnBox').hidden=!learned.length;
+  if(learned.length){
+    $('bLearnNote').textContent=`${pace.days}일 기록으로 ${learned.length}개 노선을 배웠어요. 지도는 이 노선 버스를 그 시간대에 배운 빠르기로 앞질러 그리고, 나머지는 최근 2분 속도로 그려요.`;
+    $('bLearnTable').innerHTML=[...learned].sort((a,b)=>b.hours-a.hours).map(r=>`<tr><td class="l"><span class="dot" style="--c:${esc(r.color||'#888')}"></span>${esc(r.name)}</td><td>${r.hours}시간</td></tr>`).join('');
+  }
+}
+
+// 오픈 기준(learning.json replay — retrain 이 replay_score.mjs 로 매긴 화면 재현 점수, 2026-10-19 덕배 · Codex 상의)
+function showOpen(rp){
+  const days=rp?.days||[],last=days.at(-1),C=rp?.criteria||{absMedian:15,p90:30,bias:10,stalls:0};
+  if(!last){$('openText').textContent='아직 다시 그린 날이 없어요. 고정 채점 창은 10/19 부터 모아요 — 다음 날 새벽 03:10 학습 때 처음 매겨요.';$('openTable').innerHTML='';return}
+  const day=`${last.day.slice(0,4)}-${last.day.slice(4,6)}-${last.day.slice(6)}`,ws=last.windows.filter(w=>w.events);
+  const cell=(v,ok,txt)=>v==null?'<td>—</td>':`<td class="${ok?'ok':'no'}">${txt}</td>`;
+  const sign=v=>(v>0?'+':'')+v+'초';
+  const row=w=>{const a=w.arrive||{},b=w.depart||{},st=w.stalls||{};
+    return `<tr><td>${esc(w.line)}</td><td>${esc(w.window)}</td><td>${w.trains??'—'}</td>`+
+      cell(a.signedMedian,Math.abs(a.signedMedian)<=C.bias,sign(a.signedMedian))+cell(a.absMedian,a.absMedian<=C.absMedian&&a.p90<=C.p90,`${a.absMedian} · ${a.p90}초`)+
+      cell(b.signedMedian,Math.abs(b.signedMedian)<=C.bias,sign(b.signedMedian))+cell(b.absMedian,b.absMedian<=C.absMedian&&b.p90<=C.p90,`${b.absMedian} · ${b.p90}초`)+
+      cell(st.n,st.n<=C.stalls,`${st.n}번 · 열차·시간당 ${st.perTrainHour}`)+`<td>${w.coverage!=null?Math.round(w.coverage*100)+'%':'—'}</td></tr>`};
+  $('openTable').innerHTML=ws.map(row).join('')||'<tr><td colspan="9" class="muted">그날 위치 자료가 없어요</td></tr>';
+  const pass=ws.filter(w=>Math.abs(w.arrive?.signedMedian)<=C.bias&&w.arrive?.absMedian<=C.absMedian&&w.arrive?.p90<=C.p90&&Math.abs(w.depart?.signedMedian)<=C.bias&&w.depart?.absMedian<=C.absMedian&&w.depart?.p90<=C.p90&&w.stalls?.n<=C.stalls).length;
+  $('openText').textContent=`${md(day)} 화면을 다시 그려 봤어요: ${ws.length}개 창 가운데 ${pass}개가 기준을 다 넘었어요.`+(days.length>1?` (${days.length}일치 기록)`:'');
+}
+
+fetch('/admin/learning.json',{cache:'no-cache'}).then(r=>{if(r.status===401){location.href='/admin/login.html?next=/admin/learning';throw 0}return r.json()}).then(d=>{
+  const hist=d.history||[],genDay=(d.generatedAt||'').slice(0,10);
+  showOpen(d.replay);
+  showBus(d.bus,genDay);
+  const days=(d.days||[]).filter(x=>x.date<genDay);   // the stats are built at 03:10: the new day has barely begun
+  // 오차는 정수 초라 중앙값은 10-08 부터 늘 5초에 붙어 있었다: 큰 숫자 · 그래프는 평균(작은 개선 · 출퇴근 꼬리까지 보인다), 중앙값 · 90 % 는 곁에
+  const r1=v=>v==null?null:Math.round(v*10)/10;
+  const sc=hist.filter(h=>h.candidate?.mean!=null).map(h=>({day:addDay(h.date,-1),cand:r1(h.candidate.mean),cur:r1(h.current?.mean),n:h.candidate.n,result:h.result,kinds:h.candidate}));
+  const last=sc.at(-1);
+  if(last){
+    $('err').textContent=last.cand.toFixed(1);
+    const cur=last.cur,dd=cur!=null?+(last.cand-cur).toFixed(1):0,el=$('delta');
+    el.className='delta '+(cur==null?'same':last.result==='kept current'?'up':dd<0?'down':'same');
+    el.textContent=cur==null?'첫 채점':last.result==='kept current'?`쓰던 값(${cur}초)이 더 나아 그대로 써요`
+      :dd<0?`▼ 같은 날 쓰던 값(${cur}초)보다 ${-dd}초 좋아졌어요`:dd>0?`쓰던 값(${cur}초)과 거의 같아요`:`같은 날 쓰던 값도 ${cur}초 · 그대로예요`;
+    const p90=last.kinds.p90;
+    $('heroText').textContent=`${md(last.day)} 하루 열차 움직임 ${last.n?.toLocaleString('ko-KR')}건을 예측해 봤더니 평균 ${last.cand.toFixed(1)}초 틀렸어요. 절반은 ${last.kinds.all}초 안쪽${p90!=null?`, 10번 중 9번은 ${p90}초 안쪽`:''}으로 맞혔어요.`;
+    const K=[['도착→출발','역에 서 있는 시간'],['출발→다음 도착','출발해서 다음 역 도착'],['도착→다음 도착','도착해서 다음 역 도착']],means=last.kinds.means;
+    $('kinds').innerHTML=`<h3>어디서 틀리나요 · ${means?'평균':'중앙값'}</h3>`+K.filter(([k])=>last.kinds[k]!=null).map(([k,t])=>`<li>${t}<b>${means?.[k]??last.kinds[k]}초</b></li>`).join('');
+  }
+  $('scores').innerHTML=scoreChart(sc);
+  const lastDay=days.at(-1),tot=days.reduce((a,x)=>a+sightings(x),0),ev=days.reduce((a,x)=>a+events(x),0);
+  if(lastDay){$('sDayLabel').textContent=`${md(lastDay.date)} 하루 모은 기록`;$('sToday').textContent=fmt(sightings(lastDay));$('sTodaySub').textContent=`학습용 ${fmt(events(lastDay))}`}
+  $('sTotal').textContent=fmt(tot);$('sTotalSub').textContent=`${days.length}일 동안`;
+  $('sShare').textContent=tot?Math.round(ev/tot*100)+'%':'–';
+  $('growth').innerHTML=growth(days);
+  $('groups').innerHTML=groups(d.latest||{},hist);
+  const sgn=v=>v>0?`<span class="up">+${v}</span>`:v<0?`<span class="dn">−${-v}</span>`:'0';
+  const pair=(a,b)=>b==null?'–':a==null?`${b}`:`${a} → <b>${b}</b>`;
+  const scored=hist.filter(h=>h.candidate?.all!=null).map(h=>({day:addDay(h.date,-1),c:h.current||{},k:h.candidate}));
+  $('kindTable').innerHTML=[...scored].reverse().map(({day,c,k})=>
+    `<tr><td>${md(day)}</td><td>${fmt(k.n||0)}</td>${['도착→출발','출발→다음 도착','도착→다음 도착','all','mean'].map(f=>`<td>${pair(r1(c[f]),r1(k[f]))}</td>`).join('')}</tr>`).join('');
+  const FEEDS=[['samples','도착정보'],['position','열차 위치']];
+  $('collectTable').innerHTML=[...days].reverse().map(x=>FEEDS.map(([k,name],i)=>{const f=x[k]||{};
+    return `<tr${i===0?' class="sep"':''}><td>${i===0?md(x.date):''}</td><td class="l">${name}</td><td>${fmt(f.records||0)}</td><td>${fmt(f.sightings||0)}</td><td>${fmt(f.event||0)}</td><td>${fmt(f.trains||0)}</td></tr>`}).join('')).join('');
+  const L=d.latest||{},LL=L.lines||{},LN=L.n||{},DF=L.default||{},names=L.names||{};
+  const lineIds=[...new Set([...Object.keys(LL),...Object.keys(LN)])].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const pp=v=>{const q=pct(v);return q>0?`<span class="up">+${q}%</span>`:q<0?`<span class="dn">−${-q}%</span>`:'0%'};
+  const or=(v,f,dflt)=>v!=null?f(v):`<span class="def">${dflt!=null?f(dflt):'–'}</span>`;
+  $('lineTable').innerHTML=lineIds.map(l=>{const v=LL[l]||{};
+    return `<tr><td class="l"><span class="dot" style="--c:${COLORS[l]||'#888'}"></span>${esc(l)}</td><td>${or(v.pace,pp,DF.pace)}</td><td>${v.rushPace!=null?pp(v.rushPace):'<span class="def">평소와 같게</span>'}</td><td>${or(v.zone,x=>x+'초',DF.zone)}</td><td>${or(v.approach,x=>x+'초',DF.approach)}</td><td>${Object.keys(v.stops||{}).length||'–'}</td><td>${fmt(LN[l]?.pace||0)}</td></tr>`}).join('');
+  const ST=L.stations||{},SN=L.stands||{},MIN=30;
+  const stopLines=Object.keys(ST).filter(l=>ST[l].length).sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  const showStops=l=>{const v=LL[l]||{},base=v.zone??DF.zone,own=v.stops||{},got=SN[l]||{};
+    const rows=ST[l].map(id=>{const [n,sec,runs=0]=got[id]||[0,null,0],timed=n>=MIN,k=timed?n:runs;
+      const st=own[id]!=null?(timed?['b-good','따로 배움','따로']:['b-est','도착으로 추정','추정']):timed||runs>=MIN?['b-mid','평균과 비슷','비슷']:['b-low',`모으는 중 ${k}/${MIN}`,`${k}/${MIN}`];
+      const use=own[id]??base;
+      return {st,html:`<tr><td class="l">${esc(names[id]||'역 '+id)}</td><td>${n?n.toLocaleString('ko-KR'):runs?`<span class="def"><span class="full">도착 </span>${runs.toLocaleString('ko-KR')}</span>`:'–'}</td><td>${sec!=null?sec+'초':'–'}</td><td>${own[id]!=null?`<b>${use}초</b> ${sgn(use-base)}초`:`<span class="def">${use}초</span>`}</td><td class="l"><span class="badge ${st[0]}"><span class="full">${st[1]}</span><span class="short">${st[2]}</span></span></td></tr>`}});
+    const c=k=>rows.filter(r=>r.st[0]===k).length;
+    $('stopSummary').textContent=`${l} ${rows.length}개 역 · 따로 배움 ${c('b-good')}${c('b-est')?` · 도착으로 추정 ${c('b-est')}`:''} · 평균과 비슷 ${c('b-mid')} · 모으는 중 ${c('b-low')} · 노선 평균 ${base}초${v.zone==null?' (기본값)':''}`;
+    $('stopTable').innerHTML=rows.map(r=>r.html).join('');
+    document.querySelectorAll('#stopLines button').forEach(b=>b.setAttribute('aria-selected',b.dataset.l===l))};
+  $('stopLines').innerHTML=stopLines.map(l=>`<button type="button" role="tab" data-l="${esc(l)}" style="--c:${COLORS[l]||'#888'}"><span class="dot"></span>${esc(l)}</button>`).join('');
+  $('stopLines').onclick=e=>{const b=e.target.closest('button');if(b)showStops(b.dataset.l)};
+  const timed=l=>Object.values(SN[l]||{}).filter(([n])=>n>=MIN).length;   // open on the line with the most timed stations
+  if(stopLines.length)showStops(stopLines.reduce((a,b)=>timed(b)>timed(a)?b:a));
+  // 평균은 10-08 채점부터 있다: 그 전 날은 중앙값으로
+  const byDay=Object.fromEntries(hist.filter(h=>h.candidate?.all!=null).map(h=>{const m=h.candidate.mean!=null,f=m?'mean':'all';
+    return [addDay(h.date,-1),{cand:r1(h.candidate[f]),cur:r1(h.current?.[f]),result:h.result,note:m?'':' (중앙값)'}]}));
+  $('daysTable').querySelector('tbody').innerHTML=[...days].reverse().map(x=>{const s=byDay[x.date];
+    const res=!s?'':s.result==='published'?'적용':s.result==='kept current'?'유지':s.result==='backfill'?'나중에 계산':'';
+    return `<tr><td>${md(x.date)}</td><td>${fmt(x.samples?.sightings||0)}</td><td>${fmt(x.position?.sightings||0)}</td><td>${fmt(events(x))}</td><td>${!s?'–':(s.cur!=null?`${s.cur} → ${s.cand}초`:s.cand+'초')+s.note}</td><td>${res}</td></tr>`}).join('');
+  $('updated').textContent=`${new Date(d.generatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}에 갱신 · 숫자는 매일 03:10 재학습 때 한 번 바뀌고, 오늘 모으는 기록은 내일 새벽에 들어가요`;
+}).catch(e=>{if(e!==0)$('heroText').textContent='학습 기록을 불러오지 못했어요.'});
+</script>
+</body>
+</html>

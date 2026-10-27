@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>슝 디버깅</title>
+<meta name="description" content="탈 때 실제 도착 · 출발을 남기고 캡처를 올리는 슝 정확도 기록(주인만)">
+<link rel="icon" href="/brand/favicon.ico" sizes="48x48">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="/vendor/uplot/uPlot.min.css">
+<script src="/vendor/uplot/uPlot.iife.min.js"></script>
+<script>
+  // 지도와 같은 테마(localStorage subway-theme: auto | light | dark)
+  (() => { let c = 'auto'; try { c = localStorage.getItem('subway-theme') || 'auto'; } catch {}
+    document.documentElement.dataset.theme = c === 'dark' || (c === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; })();
+</script>
+<style>
+:root{
+  --syung:#ffd400;--syung-ink:#141414;--board:#fbfaf4;--paper:#fffdf6;--ink:#1d1f21;--secondary:#5d5a4e;--muted:#7d796a;--rule:#ece6cf;--control:#f5f1e1;
+  --good:#1f8f55;--good-soft:#e3f4ea;--bad:#b3261e;--bad-soft:#fbe6e3;--shadow:0 3px 0 rgba(20,20,20,.05),0 8px 22px rgba(60,50,0,.08);
+  --round:"Jua","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
+}
+html[data-theme=dark]{--board:#131416;--paper:#1c1e21;--ink:#f1efe6;--secondary:#b9b5a6;--muted:#8f8b7d;--rule:#2d2f33;--control:#25272b;
+  --good:#5fd394;--good-soft:#16301f;--bad:#f28b82;--bad-soft:#3a1d1a;--shadow:0 8px 22px rgba(0,0,0,.4)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--board);color:var(--ink);font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
+.mast{background:var(--syung);color:var(--syung-ink);padding-top:env(safe-area-inset-top)}
+html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
+.mast-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.mast h1{margin:0;font-family:var(--round);font-weight:400;font-size:22px}
+.mast .sp{flex:1}
+.mast a,.mast button{border:0;font-family:inherit;cursor:pointer;color:inherit;font-size:13px;font-weight:700;text-decoration:none;padding:7px 12px;border-radius:999px;background:rgba(20,20,20,.08)}
+.mast a.on{background:var(--syung-ink);color:var(--syung)}
+html[data-theme=dark] .mast a.on{background:var(--syung);color:var(--syung-ink)}
+@media (max-width:400px){.mast-in{gap:6px}.mast h1{font-size:19px}.mast a,.mast button{padding:7px 10px}}
+nav.tabs{max-width:960px;margin:12px auto 0;padding:0 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+nav.tabs button{height:40px;border:0;border-radius:12px;background:var(--control);color:var(--secondary);font:700 14px inherit;cursor:pointer}
+nav.tabs button[aria-selected=true]{background:var(--ink);color:var(--board)}
+main{max-width:960px;margin:0 auto;padding:14px 16px calc(48px + env(safe-area-inset-bottom));display:grid;gap:14px}
+.box{background:var(--paper);border-radius:20px;box-shadow:var(--shadow);padding:18px}
+h2{margin:0 0 10px;font-family:var(--round);font-weight:400;font-size:19px}
+.day-row{justify-content:space-between;margin-bottom:10px}.day-row h2{margin:0}.day-row select{width:auto;padding:7px 10px}
+p{margin:0}
+.muted{color:var(--muted);font-size:13px;line-height:1.55}
+label{display:block;font-weight:700;font-size:13px;margin:12px 0 6px;color:var(--secondary)}
+input,select,textarea{width:100%;font:16px inherit;color:var(--ink);background:var(--control);border:1px solid var(--rule);border-radius:12px;padding:11px 12px}
+textarea{min-height:80px;resize:vertical}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--control);border-radius:14px;padding:4px}
+.seg button{height:42px;border:0;border-radius:11px;background:transparent;color:var(--secondary);font:700 15px inherit;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:52px;border:0;border-radius:16px;background:var(--syung);color:var(--syung-ink);font:400 20px var(--round);cursor:pointer;margin-top:14px}
+.btn.ghost{background:var(--control);color:var(--ink);font:700 15px inherit;min-height:44px}
+.btn.huge{min-height:96px;font-size:30px;border-radius:22px}
+.btn:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chips button{border:1px solid var(--rule);background:var(--control);color:var(--ink);border-radius:999px;padding:9px 14px;font:700 15px inherit;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--ink);color:var(--board);border-color:var(--ink)}
+.now{display:grid;gap:4px;text-align:center;padding:6px 0}
+.now small{font-weight:700;color:var(--muted);font-size:13px}
+.now b{font-family:var(--round);font-weight:400;font-size:34px;line-height:1.15}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.facts div{background:var(--control);border-radius:12px;padding:8px 10px;text-align:center}
+.facts small{display:block;font-size:11px;color:var(--muted);font-weight:700}
+.facts b{font-variant-numeric:tabular-nums;font-size:16px}
+.log{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:4px;font-size:13px;color:var(--secondary);font-variant-numeric:tabular-nums}
+.status{min-height:1.4em;font-size:14px;margin-top:10px}
+.status.ok{color:var(--good)}.status.bad{color:var(--bad)}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.thumbs img,.thumbs span{width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--rule);display:grid;place-items:center;font-size:12px;color:var(--muted)}
+.list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.list li{background:var(--control);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.5}
+.list small{color:var(--muted)}
+.cmp{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.cmp th{font-size:11px;color:var(--muted);font-weight:700;text-align:left;padding:4px 2px}
+.cmp td{padding:4px 2px;border-top:1px solid var(--rule)}
+.cmp td.d{color:var(--secondary)}
+.motion-chart{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);min-width:0}
+.motion-chart__note{margin:0 0 6px;font-size:13px;color:var(--ink)}
+.motion-chart__plot{width:100%;min-height:170px}
+.motion-chart__legend{margin:6px 0 0;font-size:12px;color:var(--secondary);display:flex;flex-wrap:wrap;gap:4px 12px}
+.motion-chart__legend i{font-style:normal;font-weight:700}
+.motion-chart .u-axis{color:var(--secondary)}
+.login{background:var(--bad-soft);color:var(--bad);border-radius:14px;padding:12px 14px;font-weight:700}
+.login a{color:inherit}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header class="mast"><div class="mast-in"><h1>슝 디버깅</h1><span class="sp"></span><a href="/admin/learning">학습</a><a class="on" href="/admin/debug" aria-current="page">디버깅</a><a href="/admin/members">회원</a><a href="/admin/status">서버 상태</a><form method="post" action="/api/logout" style="margin:0"><button type="submit">로그아웃</button></form></div></header>
+<nav class="tabs" role="tablist">
+  <button role="tab" id="tab-ride" aria-selected="true" aria-controls="ride">탑승 기록</button>
+  <button role="tab" id="tab-shot" aria-selected="false" aria-controls="shot">캡처 올리기</button>
+  <button role="tab" id="tab-list" aria-selected="false" aria-controls="list">올린 것</button>
+</nav>
+<main>
+  <p class="login" id="login" hidden>로그인이 풀렸어요. <a href="/admin/login.html?next=%2Fadmin%2Fdebug">다시 로그인</a>하면 쌓아 둔 기록을 이어서 보내요.</p>
+
+  <!-- 1. 탑승 기록 -->
+  <section id="ride" role="tabpanel">
+    <div class="box" id="setup">
+      <h2>무엇을 타나요?</h2>
+      <div class="seg"><button id="m-subway" aria-pressed="true">지하철</button><button id="m-bus" aria-pressed="false">버스</button></div>
+      <div id="subway-setup">
+        <label for="line">노선</label>
+        <select id="line"></select>
+        <label for="station">지금 탄 역</label>
+        <div class="row"><input id="station" list="stations" placeholder="역 이름" autocomplete="off"><button class="btn ghost" id="near" style="margin:0;flex:0 0 auto;width:auto;padding:0 14px">가까운 역</button></div>
+        <datalist id="stations"></datalist>
+        <label for="train">열차 번호(모르면 비워 두세요)</label>
+        <input id="train" inputmode="numeric" placeholder="예: 7123">
+      </div>
+      <div id="bus-setup" hidden>
+        <label for="busno">버스 번호</label>
+        <input id="busno" inputmode="text" placeholder="예: 3011" autocomplete="off">
+        <div class="chips" id="busroutes"></div>
+        <label for="vehicle">차량 번호(모르면 비워 두세요)</label>
+        <input id="vehicle" placeholder="예: 서울70사1234 뒤 4자리">
+      </div>
+      <button class="btn" id="start" disabled>탑승 시작</button>
+      <p class="muted" style="margin-top:10px">탑승 중에는 화면을 켜 두세요(GPS가 꺼지지 않게). 지하에서 끊겨도 기기에 쌓았다가 다시 연결되면 보내요.</p>
+    </div>
+
+    <div class="box" id="riding" hidden>
+      <div class="now"><small id="ride-what"></small><b id="ride-where"></b><small id="ride-phase"></small></div>
+      <div class="chips" id="nexts" hidden></div>
+      <button class="btn huge" id="act"></button>
+      <div class="row"><button class="btn ghost" id="mark">이상한 순간 표시</button><button class="btn ghost" id="undo">방금 것 취소</button></div>
+      <div class="facts">
+        <div><small>탄 지</small><b id="f-time">0:00</b></div>
+        <div><small>GPS</small><b id="f-gps">-</b></div>
+        <div><small>보낼 것</small><b id="f-queue">0</b></div>
+        <div id="f-motion-box"><small>센서</small><b id="f-motion">-</b></div>
+      </div>
+      <ul class="log" id="log"></ul>
+      <button class="btn ghost" id="end" style="margin-top:16px">내렸어요(끝내기)</button>
+    </div>
+  </section>
+
+  <!-- 2. 캡처 올리기 -->
+  <section id="shot" role="tabpanel" hidden>
+    <div class="box">
+      <h2>캡처 올리기</h2>
+      <p class="muted">이상한 화면 · 동영상을 올려 주세요. 기기 정보와 지금 탑승 기록이 같이 붙어요.</p>
+      <button class="btn" id="pick">캡처 고르기</button>
+      <input id="files" type="file" accept="image/*,video/*" multiple hidden>
+      <div class="thumbs" id="thumbs"></div>
+      <label for="note">어떤 상황이었나요?</label>
+      <textarea id="note" placeholder="예: 조선 모드, 11번 출구 장승, 갓이 깨져 보임 / 3011 탑승 중, 지도 버스가 내 위치보다 한 정류장 뒤"></textarea>
+      <button class="btn" id="send" disabled>올리기</button>
+      <div class="status" id="shot-status" role="status"></div>
+    </div>
+  </section>
+
+  <!-- 3. 올린 것 -->
+  <section id="list" role="tabpanel" hidden>
+    <div class="box"><div class="row day-row"><h2>탑승 기록</h2><select id="ride-day" aria-label="날짜"></select></div><ul class="list" id="rides"></ul></div>
+    <div class="box"><h2>최근 캡처</h2><ul class="list" id="shots"></ul></div>
+  </section>
+</main>
+<script>
+'use strict';
+// 디버깅 페이지(주인만, 2026-10-12 덕배): 탈 때 실제 도착 · 출발(정답)과 GPS 를 남기고, 캡처를 올린다.
+// 기록은 기기(localStorage)에 먼저 쌓고 15초마다 /api/admin/debug/ride 로 보낸다 — 지하 · 터널에서 끊겨도 잃지 않게.
+const $ = id => document.getElementById(id);
+const store = {get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }};
+const QUEUE = 'syung-debug-queue', RIDE = 'syung-debug-ride';
+const fmt = t => new Date(t).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false});
+const showLogin = on => { $('login').hidden = !on; };
+
+// 탭
+$('ride-day').onchange = () => loadRecent();
+for (const [tab, panel] of [['tab-ride', 'ride'], ['tab-shot', 'shot'], ['tab-list', 'list']]) $(tab).onclick = () => {
+  for (const [t, p] of [['tab-ride', 'ride'], ['tab-shot', 'shot'], ['tab-list', 'list']]) { $(t).setAttribute('aria-selected', t === tab); $(p).hidden = p !== panel; }
+  if (panel === 'list') loadRecent();
+};
+
+// ---------- 보내기 줄 ----------
+let queue = store.get(QUEUE, []), sending = false;
+function push(event) {
+  const e = {...event, ride: ride.id, mode: ride.mode, t: Date.now()};
+  if (ride.mode === 'subway') Object.assign(e, {line: ride.line, train: ride.train || undefined});
+  else Object.assign(e, {routeId: ride.routeId, routeName: ride.routeName, vehicle: ride.vehicle || undefined});
+  if (gps.last && Date.now() - gps.last.t < 15000 && event.kind !== 'gps') Object.assign(e, {lat: gps.last.lat, lng: gps.last.lng, acc: gps.last.acc});
+  queue.push(e); store.set(QUEUE, queue); $('f-queue').textContent = queue.length; return e;
+}
+async function flush() {
+  if (sending || !queue.length || !navigator.onLine) return;
+  sending = true;
+  // 센서 묶음(약 3KB)은 한 번에 40개까지 — 본문 1MB 상한 안에
+  const batch = []; let moves = 0;
+  for (const e of queue) { if (batch.length >= 500 || (e.kind === 'motion' && ++moves > 40)) break; batch.push(e); }
+  try {
+    const r = await fetch('/api/admin/debug/ride', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({events: batch}), credentials: 'same-origin'});
+    if (r.status === 401) showLogin(true);
+    else if (r.ok || r.status === 400) { showLogin(false); queue = queue.slice(batch.length); store.set(QUEUE, queue); }   // 400: 고칠 수 없는 묶음은 버린다
+  } catch {} finally { sending = false; $('f-queue').textContent = queue.length; }
+}
+setInterval(flush, 15000);
+addEventListener('online', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); else if (ride.id) keepAwake(); });
+
+// ---------- GPS · 화면 켜 두기 ----------
+const gps = {watch: null, last: null, sentAt: 0, points: 0};
+function startGps() {
+  if (!navigator.geolocation || gps.watch != null) return;
+  gps.watch = navigator.geolocation.watchPosition(p => {
+    const c = p.coords; gps.last = {t: Date.now(), lat: c.latitude, lng: c.longitude, acc: c.accuracy};
+    $('f-gps').textContent = `${Math.round(c.accuracy)}m`;
+    if (ride.id && Date.now() - gps.sentAt >= 4500) {   // 5초에 한 점
+      gps.sentAt = Date.now(); gps.points++;
+      push({kind: 'gps', lat: c.latitude, lng: c.longitude, acc: c.accuracy, speed: c.speed ?? undefined, heading: Number.isFinite(c.heading) ? c.heading : undefined});
+    }
+  }, () => { $('f-gps').textContent = '없음'; }, {enableHighAccuracy: true, maximumAge: 2000, timeout: 20000});
+}
+function stopGps() { if (gps.watch != null) navigator.geolocation.clearWatch(gps.watch); gps.watch = null; }
+let lock = null;
+async function keepAwake() { try { lock = await navigator.wakeLock?.request('screen'); } catch {} }
+
+// ---------- 가속도 센서: 0.1초 칸 평균을 5초마다 한 사건(motion)으로 — 누른 도착 · 출발과 센서가 잡은 섰다 · 떠났다를 맞춰 본다 ----------
+// 칸마다 [사건 t 기준 ms, 중력 포함 가속 x y z, 중력 뺀 가속 x y z, 회전 α β γ](m/s², °/s, 없는 값 null). 화면이 꺼지면 브라우저가 센서를 멈춘다.
+const motion = {on: false, bins: [], cur: null, samples: 0, since: 0};
+const setMotion = text => { $('f-motion').textContent = text; };
+async function startMotion() {
+  if (motion.on || motion.asking) return;
+  if (typeof DeviceMotionEvent === 'undefined') return setMotion('없음');
+  motion.asking = true;
+  try {   // 아이폰: 누르는 순간에만 물을 수 있다(탑승 시작 · 센서 칸)
+    if (typeof DeviceMotionEvent.requestPermission === 'function' && await DeviceMotionEvent.requestPermission() !== 'granted') return setMotion('거부');
+  } catch { return setMotion('눌러 켜기'); } finally { motion.asking = false; }
+  motion.on = true; motion.since = Date.now(); motion.samples = 0; addEventListener('devicemotion', onMotion); setMotion('대기');
+}
+function stopMotion() { if (!motion.on) return; removeEventListener('devicemotion', onMotion); motion.on = false; sendMotion(true); setMotion('-'); }
+function onMotion(e) {
+  const slot = Math.floor(Date.now() / 100) * 100, g = e.accelerationIncludingGravity || {}, a = e.acceleration || {}, r = e.rotationRate || {};
+  const v = [g.x, g.y, g.z, a.x, a.y, a.z, r.alpha, r.beta, r.gamma];
+  if (!motion.cur || motion.cur.slot !== slot) { closeBin(); motion.cur = {slot, sum: v.map(() => 0), n: v.map(() => 0)}; }
+  v.forEach((x, i) => { if (Number.isFinite(x)) { motion.cur.sum[i] += x; motion.cur.n[i]++; } });
+  motion.samples++;
+}
+function closeBin() { const c = motion.cur; if (c) motion.bins.push([c.slot, ...c.sum.map((s, i) => c.n[i] ? Math.round(s / c.n[i] * 100) / 100 : null)]); motion.cur = null; }
+function sendMotion(all = false) {
+  if (all) closeBin();
+  if (!ride.id || !motion.bins.length) return;
+  // 한 사건에 140칸까지(서버 상한 150칸 = 1500개) — 넘는 묶음은 서버가 통째로 거절해 함께 보낸 도착 · 출발까지 버려진다
+  const base = Date.now();
+  for (let i = 0; i < motion.bins.length; i += 140) push({kind: 'motion', m: motion.bins.slice(i, i + 140).flatMap(([slot, ...v]) => [slot - base, ...v])});
+  motion.bins = [];
+  setMotion(`${Math.round(motion.samples / Math.max(1, (Date.now() - motion.since) / 1000))}Hz`);
+}
+setInterval(sendMotion, 5000);
+$('f-motion-box').onclick = () => { if (ride.id) startMotion(); };
+
+// ---------- 지하철 자료: 역(index.html 안의 stationData) · 노선 이웃(edge_times.json) ----------
+let stations = new Map(), neighbors = new Map();   // id → 역, `${line}:${id}` → [이웃 id]
+const lineStations = line => [...stations.values()].filter(s => neighbors.has(`${line}:${s.id}`)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+async function loadSubway() {
+  const [html, edges] = await Promise.all([fetch('/index.html').then(r => r.text()), fetch('/edge_times.json').then(r => r.json())]);
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  for (const s of JSON.parse(doc.getElementById('stationData').textContent)) stations.set(s.id, s);
+  const lines = new Set();
+  for (const key of Object.keys(edges.edges)) {
+    const [line, a, b] = key.split(':'); lines.add(line);
+    for (const [x, y] of [[a, b], [b, a]]) { const k = `${line}:${x}`; if (!neighbors.has(k)) neighbors.set(k, []); if (!neighbors.get(k).includes(+y)) neighbors.get(k).push(+y); }
+  }
+  const order = [...lines].sort((a, b) => (parseInt(a) || 99) - (parseInt(b) || 99) || a.localeCompare(b, 'ko'));
+  $('line').innerHTML = order.map(l => `<option>${l}</option>`).join('');
+  $('line').value = store.get('syung-debug-line', order[0]) || order[0];
+  fillStations(); check();
+}
+function fillStations() { $('stations').innerHTML = lineStations($('line').value).map(s => `<option value="${s.name}">`).join(''); }
+const stationByName = (line, name) => lineStations(line).find(s => s.name === name.trim());
+$('line').onchange = () => { store.set('syung-debug-line', $('line').value); fillStations(); check(); };
+$('station').oninput = check;
+$('near').onclick = () => navigator.geolocation?.getCurrentPosition(p => {
+  const {latitude: la, longitude: lo} = p.coords, d = s => (s.lat - la) ** 2 + ((s.lon - lo) * Math.cos(la * Math.PI / 180)) ** 2;
+  const best = lineStations($('line').value).sort((a, b) => d(a) - d(b))[0]; if (best) { $('station').value = best.name; check(); }
+}, () => alert('GPS 를 못 받았어요(지하일 수 있어요). 역 이름을 직접 골라 주세요.'), {enableHighAccuracy: true, timeout: 10000});
+
+// ---------- 버스: 번호 → 노선 ----------
+let busPick = null, busTimer = null;
+$('busno').oninput = () => { clearTimeout(busTimer); busTimer = setTimeout(findBus, 300); };
+async function findBus() {
+  const name = $('busno').value.trim(); busPick = null; check();
+  if (!name) { $('busroutes').innerHTML = ''; return; }
+  const r = await fetch(`/api/admin/debug/bus-route?name=${encodeURIComponent(name)}`, {credentials: 'same-origin'});
+  if (r.status === 401) return showLogin(true);
+  const {routes = []} = await r.json();
+  $('busroutes').innerHTML = '';
+  for (const route of routes) {
+    const b = document.createElement('button'); b.textContent = `${route.name}${route.start ? ` · ${route.start}→${route.end}` : ''}`;
+    b.setAttribute('aria-pressed', 'false');
+    b.onclick = () => { busPick = route; for (const x of $('busroutes').children) x.setAttribute('aria-pressed', x === b); check(); };
+    $('busroutes').append(b);
+  }
+  if (routes.length === 1) $('busroutes').firstChild.click();
+}
+
+// ---------- 탑승 ----------
+let mode = 'subway';
+const ride = store.get(RIDE, {});
+function setMode(m) { mode = m; $('m-subway').setAttribute('aria-pressed', m === 'subway'); $('m-bus').setAttribute('aria-pressed', m === 'bus');
+  $('subway-setup').hidden = m !== 'subway'; $('bus-setup').hidden = m !== 'bus'; check(); }
+$('m-subway').onclick = () => setMode('subway'); $('m-bus').onclick = () => setMode('bus');
+function check() { $('start').disabled = mode === 'subway' ? !stationByName($('line').value, $('station').value) : !busPick; }
+const save = () => store.set(RIDE, ride);
+const say = text => { const li = document.createElement('li'); li.textContent = `${fmt(Date.now())} ${text}`; $('log').prepend(li); };
+
+$('start').onclick = () => {
+  startMotion();   // 아이폰 센서 허락은 이 누름 안에서만 물을 수 있다
+  Object.keys(ride).forEach(k => delete ride[k]);
+  Object.assign(ride, {id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, mode, startedAt: Date.now(), moving: false});
+  if (mode === 'subway') { const s = stationByName($('line').value, $('station').value);
+    Object.assign(ride, {line: $('line').value, train: $('train').value.trim(), path: [s.id]}); push({kind: 'start', station: s.name}); }
+  else { Object.assign(ride, {routeId: busPick.id, routeName: busPick.name, vehicle: $('vehicle').value.trim(), stops: 0}); push({kind: 'start'}); }
+  save(); $('log').innerHTML = ''; say('탑승 시작'); enterRiding(); flush();
+};
+function enterRiding() {
+  $('setup').hidden = true; $('riding').hidden = false; startGps(); keepAwake(); startMotion(); render();
+  if (ride.mode === 'bus') { pollBus(); clearInterval(pollTimer); pollTimer = setInterval(pollBus, 30000); }
+  if (ride.mode === 'subway') { pollSubway(); clearInterval(pollTimer); pollTimer = setInterval(pollSubway, 20000); }
+}
+// 탄 노선을 서버가 '보는 중'으로 두어 원자료 위치가 30초마다 기록되게(정답과 맞춰 볼 자료)
+// 지하철: 지도에서 그 노선을 보는 사람처럼 20초마다 물어 서버가 노선 위치 피드도 받게 한다 — 그래야 학습 기록(샘플)에 남아
+// 실제 지도와 같은 자료로 슝을 재현할 수 있다(2026-10-14: 디버깅 페이지만 켜 둬 7호선은 늦은 전 역 도착 자료뿐이었다)
+function pollSubway() { if (ride.mode === 'subway' && ride.line && !document.hidden) fetch(`/api/live?lines=${encodeURIComponent(ride.line)}`, {cache: 'no-store'}).catch(() => {}); }
+function pollBus() { if (ride.mode === 'bus' && ride.routeId) fetch(`/api/bus/live?routes=${ride.routeId}&focus=${ride.routeId}`, {cache: 'no-store'}).catch(() => {}); }
+let nextPick = null, pollTimer = null;
+function render() {
+  if (!ride.id) return;
+  if (ride.mode === 'subway') {
+    const at = ride.path.at(-1), here = stations.get(at), options = (neighbors.get(`${ride.line}:${at}`) || []).filter(id => id !== ride.path.at(-2));   // 지나온 역 쪽은 빼고
+    if (!options.includes(nextPick)) nextPick = options[0] ?? null;
+    $('ride-what').textContent = `${ride.line}${ride.train ? ` · ${ride.train}열차` : ''}`;
+    $('ride-where').textContent = ride.moving ? `→ ${stations.get(nextPick)?.name || '?'}` : here?.name || '?';
+    $('ride-phase').textContent = ride.moving ? `${here?.name || ''} 출발함 · 역에 서면 누르세요` : '역에 서 있음 · 문 닫고 출발하면 누르세요';
+    $('nexts').hidden = !ride.moving || options.length < 2; $('nexts').innerHTML = '';
+    for (const id of options) { const b = document.createElement('button'); b.textContent = stations.get(id)?.name; b.setAttribute('aria-pressed', id === nextPick);
+      b.onclick = () => { nextPick = id; render(); }; $('nexts').append(b); }
+    $('act').textContent = ride.moving ? `${stations.get(nextPick)?.name || '다음 역'} 도착` : '출발';
+  } else {
+    $('ride-what').textContent = `${ride.routeName}번${ride.vehicle ? ` · ${ride.vehicle}` : ''}`;
+    $('ride-where').textContent = ride.moving ? '달리는 중' : '정류장에 섬';
+    $('ride-phase').textContent = `정류장 ${ride.stops || 0}곳 · GPS 는 5초마다 저절로`;
+    $('nexts').hidden = true;
+    $('act').textContent = ride.moving ? '정류장 도착' : '출발';
+  }
+}
+$('act').onclick = () => {
+  if (navigator.vibrate) navigator.vibrate(30);
+  if (ride.mode === 'subway') {
+    const here = stations.get(ride.path.at(-1))?.name;
+    if (ride.moving) { const s = stations.get(nextPick); push({kind: 'arrive', station: s?.name}); ride.path.push(nextPick); ride.moving = false; say(`${s?.name} 도착`); }
+    else { push({kind: 'depart', station: here}); ride.moving = true; say(`${here} 출발`); }
+  } else {
+    if (ride.moving) { ride.stops = (ride.stops || 0) + 1; push({kind: 'arrive'}); ride.moving = false; say('정류장 도착'); }
+    else { push({kind: 'depart'}); ride.moving = true; say('출발'); }
+  }
+  save(); render(); flush();
+};
+$('mark').onclick = () => { const note = prompt('무엇이 이상했나요? (비워도 돼요)') ?? null; if (note === null) return; push({kind: 'mark', note}); say(`표시${note ? `: ${note}` : ''}`); flush(); };
+$('undo').onclick = () => {
+  // 아직 안 보낸 마지막 도착 · 출발만 거둔다(보낸 것은 표시로 바로잡기)
+  const i = queue.findLastIndex(e => e.ride === ride.id && (e.kind === 'arrive' || e.kind === 'depart'));
+  if (i < 0) { push({kind: 'mark', note: '바로 앞 도착 · 출발 취소'}); say('이미 보낸 것 — 취소 표시를 남겼어요'); }
+  else { const e = queue.splice(i, 1)[0]; store.set(QUEUE, queue); $('f-queue').textContent = queue.length; say(`${e.kind === 'arrive' ? '도착' : '출발'} 취소`); }
+  if (ride.mode === 'subway') { if (ride.moving) ride.moving = false; else if (ride.path.length > 1) { nextPick = ride.path.pop(); ride.moving = true; } }
+  else ride.moving = !ride.moving;
+  save(); render();
+};
+$('end').onclick = async () => {
+  if (!confirm('탑승 기록을 끝낼까요?')) return;
+  stopMotion(); push({kind: 'end'}); clearInterval(pollTimer); stopGps(); lock?.release?.().catch(() => {});
+  Object.keys(ride).forEach(k => delete ride[k]); save(); await flush();
+  $('riding').hidden = true; $('setup').hidden = false;
+};
+setInterval(() => { if (ride.id) { const s = Math.floor((Date.now() - ride.startedAt) / 1000); $('f-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; } }, 1000);
+
+// ---------- 캡처 ----------
+let picked = [];
+$('pick').onclick = () => $('files').click();
+$('files').onchange = e => { picked = [...picked, ...e.target.files].slice(0, 8); e.target.value = ''; showPicked(); };
+function showPicked() {
+  $('thumbs').innerHTML = '';
+  for (const f of picked) { const el = f.type.startsWith('image/') ? Object.assign(document.createElement('img'), {src: URL.createObjectURL(f), alt: '고른 캡처'}) : Object.assign(document.createElement('span'), {textContent: '동영상'}); $('thumbs').append(el); }
+  $('send').disabled = !picked.length;
+}
+const deviceState = () => ({ua: navigator.userAgent, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, theme: document.documentElement.dataset.theme,
+  ride: ride.id ? {id: ride.id, mode: ride.mode, line: ride.line || ride.routeName, at: ride.mode === 'subway' ? stations.get(ride.path.at(-1))?.name : undefined} : undefined,
+  gps: gps.last ? {lat: +gps.last.lat.toFixed(5), lng: +gps.last.lng.toFixed(5), acc: Math.round(gps.last.acc)} : undefined, at: new Date().toISOString()});
+$('send').onclick = async () => {
+  $('send').disabled = true; const status = (t, k = '') => { $('shot-status').textContent = t; $('shot-status').className = `status ${k}`; };
+  const note = $('note').value.trim(), state = JSON.stringify(deviceState());
+  try {
+    for (let i = 0; i < picked.length; i++) {
+      status(`올리는 중… ${i + 1}/${picked.length}`);
+      const f = picked[i], r = await fetch(`/api/admin/debug/shot?note=${encodeURIComponent(note)}&state=${encodeURIComponent(state)}`,
+        {method: 'POST', headers: {'Content-Type': f.type || 'application/octet-stream'}, body: f, credentials: 'same-origin'});
+      if (r.status === 401) { showLogin(true); throw new Error('로그인이 필요해요'); }
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message || `오류 ${r.status}`);
+    }
+    picked = []; showPicked(); $('note').value = ''; status('올렸어요. 헤르메스 창에 "올렸어"라고 알려 주세요.', 'ok');
+  } catch (e) { status(`못 올렸어요: ${e.message}`, 'bad'); $('send').disabled = !picked.length; }
+};
+
+// ---------- 올린 것 ----------
+// 누른 도착 · 출발과 센서가 잡은 것(서버 ride_motion, 시험판)을 나란히: 누름마다 90초 안의 같은 종류 센서 사건 하나
+function compareTable(x) {
+  const used = new Set(), rows = [], sec = v => v == null ? '' : `${v > 0 ? '+' : ''}${v}초`;
+  let stop = 0;
+  for (const tap of x.taps || []) {
+    let best = null; (x.sensor || []).forEach((e, i) => { if (!used.has(i) && e.kind === tap.kind && Math.abs(e.t - tap.t) <= 90000 && (best == null || Math.abs(e.t - tap.t) < Math.abs(x.sensor[best].t - tap.t))) best = i; });
+    if (best != null) used.add(best);
+    if (tap.kind === 'arrive') stop++;
+    const where = tap.station || (x.mode === 'bus' ? (tap.kind === 'depart' && !stop ? '처음' : `정류장 ${stop}`) : '');
+    rows.push({t: tap.t, where, kind: tap.kind, tap: tap.t, sensor: best != null ? x.sensor[best].t : null});
+  }
+  (x.sensor || []).forEach((e, i) => { if (!used.has(i)) rows.push({t: e.t, where: '(센서만)', kind: e.kind, tap: null, sensor: e.t}); });
+  rows.sort((a, b) => a.t - b.t);
+  const table = document.createElement('table'); table.className = 'cmp';
+  table.innerHTML = '<thead><tr><th>역</th><th></th><th>누름</th><th>센서</th><th>차이</th></tr></thead>';
+  const body = document.createElement('tbody');
+  for (const r of rows) { const tr = document.createElement('tr');
+    for (const [text, cls] of [[r.where, ''], [r.kind === 'arrive' ? '도착' : '출발', ''], [r.tap ? fmt(r.tap) : '—', ''], [r.sensor ? fmt(r.sensor) : (x.series ? '못 잡음' : '—'), ''],
+      [r.tap && r.sensor ? sec(Math.round((r.sensor - r.tap) / 1000)) : '', 'd']]) { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.append(td); }
+    body.append(tr); }
+  table.append(body); return table;
+}
+// 센서 그래프(uPlot, vendor/uplot): 가운데 = 힘(위 초록 출발 가속 · 아래 빨강 브레이크), 세로 실선 = 내가 누름, 아래 가장자리 △ = 센서가 잡은 것(초록 출발 · 빨강 도착)
+function motionChart(x) {
+  const box = document.createElement('figure'); box.className = 'motion-chart';
+  box.innerHTML = '<figcaption class="motion-chart__note">위로 솟으면 출발, 아래로 꺼지면 브레이크예요.</figcaption><div class="motion-chart__plot"></div>' +
+    '<p class="motion-chart__legend"><span><i>│</i> 내가 누름</span><span><i>△</i> 센서</span><span><i style="color:var(--good)">●</i> 출발</span><span><i style="color:var(--bad)">●</i> 도착</span></p>';
+  const plot = box.querySelector('.motion-chart__plot'), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const pts = (x.series || []).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (!pts.length || typeof uPlot === 'undefined') { plot.textContent = '센서 기록이 없어요.'; return [box]; }
+  const ts = pts.map(p => p[0] / 1000), up = pts.map(p => Math.max(0, p[1])), down = pts.map(p => Math.min(0, p[1]));
+  const top = Math.max(1, ...pts.map(p => Math.abs(p[1]))) * 1.15, good = css('--good'), bad = css('--bad'), ink = css('--ink');
+  // 누름 = 위아래 끝까지 세로 실선(덕배 2026-10-12), 센서 = 아래 가장자리 △ — 이름 · 시각은 위 표에 있다
+  const marks = u => {
+    const {ctx} = u, dpr = devicePixelRatio || 1, r = 6 * dpr;
+    const tri = (t, kind, below) => {
+      const px = u.valToPos(t / 1000, 'x', true); if (px < u.bbox.left - 1 || px > u.bbox.left + u.bbox.width + 1) return;
+      const y = below ? u.bbox.top + u.bbox.height - r - 2 : u.bbox.top + r + 2, d = below ? -1 : 1;
+      ctx.beginPath(); ctx.moveTo(px - r, y - d * r); ctx.lineTo(px + r, y - d * r); ctx.lineTo(px, y + d * r * .8); ctx.closePath();
+      ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad;
+      if (below) ctx.stroke(); else { ctx.fillStyle = kind === 'depart' ? good : bad; ctx.fill(); }
+    };
+    const line = (t, kind) => {
+      const px = u.valToPos(t / 1000, 'x', true); if (px < u.bbox.left - 1 || px > u.bbox.left + u.bbox.width + 1) return;
+      ctx.beginPath(); ctx.moveTo(px, u.bbox.top); ctx.lineTo(px, u.bbox.top + u.bbox.height); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad; ctx.stroke();
+    };
+    ctx.save();
+    const zero = u.valToPos(0, 'y', true); ctx.beginPath(); ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.moveTo(u.bbox.left, zero); ctx.lineTo(u.bbox.left + u.bbox.width, zero);
+    ctx.lineWidth = dpr; ctx.strokeStyle = css('--secondary'); ctx.stroke(); ctx.setLineDash([]);   // 0 선(서 있음 · 일정하게 달림)
+    for (const e of x.taps || []) line(e.t, e.kind); for (const e of x.sensor || []) tri(e.t, e.kind, true); ctx.restore();
+  };
+  const two = v => String(v).padStart(2, '0'), hms = s => { const d = new Date(s * 1000); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
+  const build = () => {
+    const width = Math.max(260, plot.clientWidth || 320);
+    const u = new uPlot({
+      width, height: 170, legend: {show: false}, cursor: {y: false, drag: {x: false, y: false}},
+      scales: {x: {time: false}, y: {range: [-top, top]}},
+      axes: [
+        {stroke: css('--secondary'), grid: {show: false}, ticks: {stroke: css('--rule')}, values: (_, vals) => vals.map(hms), space: 90, font: '11px system-ui'},
+        {show: false},   // 왼쪽 글자는 자리만 차지한다(덕배 2026-10-12) — 위 · 아래 뜻은 그래프 위 한 줄로
+      ],
+      series: [{}, {stroke: good, fill: good + '33', width: 2, fillTo: 0, points: {show: false}}, {stroke: bad, fill: bad + '33', width: 2, fillTo: 0, points: {show: false}}],
+      hooks: {draw: [marks]},
+    }, [ts, up, down], plot);
+    addEventListener('resize', () => u.setSize({width: Math.max(260, plot.clientWidth), height: 170}));
+  };
+  requestAnimationFrame(build);   // 화면에 붙은 뒤 폭을 재서 그린다
+  return [box];
+}
+async function loadRecent() {
+  const pick = $('ride-day').value;
+  const r = await fetch(`/api/admin/debug/recent${pick ? `?day=${pick}` : ''}`, {credentials: 'same-origin'});
+  if (r.status === 401) return showLogin(true);
+  const {day = '', days = [], rides = [], shots = []} = await r.json();
+  // 날짜 고르기: 기록이 있는 날(맨 위 = 오늘)
+  const label = d => `${Number(d.slice(4, 6))}월 ${Number(d.slice(6))}일${d === days[0] ? ' (오늘)' : ''}`;
+  $('ride-day').innerHTML = ''; for (const d of days) $('ride-day').append(new Option(label(d), d, false, d === day));
+  $('rides').innerHTML = rides.length ? '' : `<li class="muted">${day === days[0] ? '오늘은' : '이날은'} 기록이 없어요.</li>`;
+  for (const x of rides) { const li = document.createElement('li');
+    li.innerHTML = `<b></b><br><small></small>`; li.querySelector('b').textContent = `${x.mode === 'bus' ? '버스' : '지하철'} ${x.line || ''}`;
+    li.querySelector('small').textContent = `${fmt(x.from)}~${fmt(x.to)} · 도착 ${x.stops}번 · GPS ${x.gps}점${x.series ? ' · 센서 있음' : ''}`;
+    if ((x.taps || []).length || (x.sensor || []).length) li.append(compareTable(x));
+    if ((x.series || []).length) li.append(...motionChart(x));
+    $('rides').append(li); }
+  $('shots').innerHTML = shots.length ? '' : '<li class="muted">아직 없어요.</li>';
+  for (const s of shots) { const li = document.createElement('li');
+    li.innerHTML = `<b></b><br><small></small>`; li.querySelector('b').textContent = s.note || '(메모 없음)';
+    li.querySelector('small').textContent = `${new Date(s.at).toLocaleString('ko-KR')} · ${s.type} · ${Math.round(s.bytes / 1024)}KB`; $('shots').append(li); }
+}
+
+// 시작: 지하철 자료 · 하던 탑승 이어서
+$('f-queue').textContent = queue.length;
+loadSubway().then(() => { if (ride.id) { $('log').innerHTML = ''; say('하던 탑승 이어서'); enterRiding(); } }).catch(() => { $('line').innerHTML = '<option>역 자료를 못 받았어요</option>'; });
+fetch('/api/admin/debug/recent', {credentials: 'same-origin'}).then(r => showLogin(r.status === 401)).catch(() => {});
+flush();
+</script>
+</body>
+</html>

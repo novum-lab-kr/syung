@@ -1,0 +1,311 @@
+import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
+// web/city/viaduct_levels.mjs
+var V_OF = (pack) => pack.viaduct || SEOUL_CITY_STYLE.viaduct;
+var smooth01 = (t) => {
+	t = Math.max(0, Math.min(1, t));
+	return t * t * (3 - 2 * t);
+};
+function lineRank(line) {
+	const m = /^(\d+)호선$/.exec(line);
+	return m ? +m[1] : null;
+}
+function compareLines(a, b) {
+	const ra = lineRank(a), rb = lineRank(b);
+	if (ra !== null && rb !== null) return ra - rb;
+	if (ra !== null) return -1;
+	if (rb !== null) return 1;
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+function pointSegmentDistance(p, a, b) {
+	const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+	return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+}
+var cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+function segmentsCross(a0, a1, b0, b1) {
+	const d1 = cross(b0, b1, a0), d2 = cross(b0, b1, a1), d3 = cross(a0, a1, b0), d4 = cross(a0, a1, b1);
+	return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) && (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0);
+}
+function segmentAngle(a0, a1, b0, b1) {
+	const ax = a1[0] - a0[0], ay = a1[1] - a0[1], bx = b1[0] - b0[0], by = b1[1] - b0[1], l = Math.hypot(ax, ay) * Math.hypot(bx, by) || 1;
+	return Math.acos(Math.min(1, Math.abs(ax * bx + ay * by) / l)) * 180 / Math.PI;
+}
+function segmentDistance(a0, a1, b0, b1) {
+	if (segmentsCross(a0, a1, b0, b1)) return 0;
+	return Math.min(pointSegmentDistance(a0, b0, b1), pointSegmentDistance(a1, b0, b1), pointSegmentDistance(b0, a0, a1), pointSegmentDistance(b1, a0, a1));
+}
+function assignLevels(items, overlapM, floors = null, crossAngle = 25) {
+	const sorted = [...items].sort((p, q) => compareLines(p.line, q.line)), out = /* @__PURE__ */ new Map();
+	for (let i = 0; i < sorted.length; i++) {
+		const used = /* @__PURE__ */ new Set();
+		for (let j = 0; j < i; j++) if (segmentDistance(sorted[i].seg[0], sorted[i].seg[1], sorted[j].seg[0], sorted[j].seg[1]) < overlapM && segmentAngle(sorted[i].seg[0], sorted[i].seg[1], sorted[j].seg[0], sorted[j].seg[1]) >= crossAngle) used.add(out.get(sorted[j].line));
+		let L = Math.max(1, floors?.get(sorted[i].line) ?? 1);
+		while (used.has(L)) L++;
+		out.set(sorted[i].line, L);
+	}
+	return out;
+}
+function stationLevels(rects, toM, overlapM, floors = null, crossAngle = 25) {
+	const byStation = /* @__PURE__ */ new Map();
+	for (const [k, r] of rects) {
+		const i = k.lastIndexOf(":"), line = k.slice(0, i), id = k.slice(i + 1), c = r.coords;
+		if (!c || c.length < 2) continue;
+		const seg = [toM(c[0][0], c[0][1]), toM(c[c.length - 1][0], c[c.length - 1][1])];
+		if (!byStation.has(id)) byStation.set(id, []);
+		byStation.get(id).push({
+			line,
+			seg
+		});
+	}
+	const out = /* @__PURE__ */ new Map();
+	for (const [id, items] of byStation) {
+		const fl = floors ? new Map(items.map((it) => [it.line, floors.get(it.line + ":" + id) ?? 1])) : null;
+		if (items.length < 2) {
+			out.set(items[0].line + ":" + id, Math.max(1, fl?.get(items[0].line) ?? 1));
+			continue;
+		}
+		for (const [line, L] of assignLevels(items, overlapM, fl, crossAngle)) out.set(line + ":" + id, L);
+	}
+	return out;
+}
+function holdLevels(levels, paths, edgeLength, holdM, single) {
+	for (const [line, chunks] of Object.entries(paths || {})) for (const ids of chunks) {
+		const L = ids.map((id) => levels.get(line + ":" + id) ?? 1);
+		let i = 0;
+		while (i < ids.length) {
+			if (L[i] <= 1) {
+				i++;
+				continue;
+			}
+			let j = i + 1;
+			while (j < ids.length && L[j] <= 1 && single(ids[j])) j++;
+			if (j < ids.length && L[j] > 1 && j > i + 1) {
+				let len = 0;
+				for (let k = i; k < j; k++) len += edgeLength(line, ids[k], ids[k + 1]);
+				if (len <= holdM) {
+					const lv = Math.min(L[i], L[j]);
+					for (let k = i + 1; k < j; k++) {
+						L[k] = lv;
+						levels.set(line + ":" + ids[k], lv);
+					}
+				}
+			}
+			i = j;
+		}
+	}
+	return levels;
+}
+function levelHeight(level, pack = SEOUL_CITY_STYLE) {
+	const V = V_OF(pack);
+	return V.railHeightM + (Math.max(1, level | 0) - 1) * V.levels.stepM;
+}
+function edgeProfile(hLo, hHi, total, platLo, platHi, pack = SEOUL_CITY_STYLE, humps = null) {
+	const V = V_OF(pack).levels, g = V.humpGrade ?? V.grade, H = (humps || []).filter((h) => h && h.h > Math.min(hLo, hHi) + 1e-6), ref = Math.min(hLo, hHi);
+	const tents = H.map((h) => {
+		const L = Math.max(1, (h.h - ref) / g);
+		return (s) => {
+			const d = s < h.s0 ? h.s0 - s : s > h.s1 ? s - h.s1 : 0;
+			return d >= L ? -Infinity : ref + (h.h - ref) * smooth01(1 - d / L);
+		};
+	});
+	let base;
+	if (Math.abs(hLo - hHi) < 1e-6 || !(total > 0)) base = () => hLo;
+	else {
+		const a = Math.min(total * .45, platLo + V.marginM), b = Math.min(total * .45, platHi + V.marginM), free = Math.max(1, total - a - b);
+		const ramp = Math.min(free, Math.abs(hHi - hLo) / V.grade), s0 = hLo > hHi ? a : total - b - ramp, s1 = s0 + ramp;
+		base = (s) => s <= s0 ? hLo : s >= s1 ? hHi : hLo + (hHi - hLo) * smooth01((s - s0) / ramp);
+	}
+	if (!tents.length) return base;
+	return (s) => {
+		let h = base(s);
+		for (const t of tents) {
+			const v = t(s);
+			if (v > h) h = v;
+		}
+		return h;
+	};
+}
+function edgeOverlaps(edges, nearM, step = 8) {
+	const CELL = 600, grid = /* @__PURE__ */ new Map(), out = [];
+	edges.forEach((e, i) => {
+		if (!e.rows || e.rows.length < 2) return;
+		const b = e.box;
+		for (let gx = Math.floor((b[0] - nearM) / CELL); gx <= Math.floor((b[2] + nearM) / CELL); gx++) for (let gy = Math.floor((b[1] - nearM) / CELL); gy <= Math.floor((b[3] + nearM) / CELL); gy++) {
+			const k = `${gx},${gy}`;
+			if (!grid.has(k)) grid.set(k, []);
+			grid.get(k).push(i);
+		}
+	});
+	const pairs = /* @__PURE__ */ new Set();
+	for (const list of grid.values()) for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+		const A = edges[list[i]], B = edges[list[j]];
+		if (A.line === B.line) continue;
+		const pk = list[i] < list[j] ? list[i] + ":" + list[j] : list[j] + ":" + list[i];
+		if (pairs.has(pk)) continue;
+		pairs.add(pk);
+		const ba = A.box, bb = B.box;
+		if (ba[2] < bb[0] - nearM || ba[0] > bb[2] + nearM || ba[3] < bb[1] - nearM || ba[1] > bb[3] + nearM) continue;
+		out.push(...overlapRegions(A, B, nearM, step));
+	}
+	return out;
+}
+function nearestOn(B, p) {
+	const R = B.rows;
+	let best = Infinity, bs = 0, dir = [1, 0];
+	for (let i = 0; i + 1 < R.length; i++) {
+		const a = R[i], b = R[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p[0] - a.x) * dx + (p[1] - a.y) * dy) / l2)), d = Math.hypot(p[0] - a.x - dx * t, p[1] - a.y - dy * t);
+		if (d < best) {
+			best = d;
+			bs = a.s + (b.s - a.s) * t;
+			dir = [dx, dy];
+		}
+	}
+	return {
+		d: best,
+		s: bs,
+		dir
+	};
+}
+function overlapRegions(A, B, nearM, step) {
+	const rows = A.rows, total = rows[rows.length - 1].s, out = [];
+	let run = null;
+	const flush = () => {
+		if (run) {
+			out.push({
+				a: A.id,
+				b: B.id,
+				sa0: run.sa0,
+				sa1: run.sa1,
+				sb0: Math.min(run.sb0, run.sb1),
+				sb1: Math.max(run.sb0, run.sb1),
+				d: run.d,
+				ang: run.ang
+			});
+			run = null;
+		}
+	};
+	for (let s = 0; s <= total + 1e-9; s += step) {
+		const q = rowAtRows(rows, Math.min(s, total)), n = nearestOn(B, [q.x, q.y]);
+		if (n.d < nearM) {
+			const q2 = rowAtRows(rows, Math.min(total, s + 4)), q1 = rowAtRows(rows, Math.max(0, s - 4)), ang = segmentAngle([q1.x, q1.y], [q2.x, q2.y], [0, 0], n.dir);
+			if (!run) run = {
+				sa0: s,
+				sa1: s,
+				sb0: n.s,
+				sb1: n.s,
+				d: n.d,
+				ang
+			};
+			else {
+				run.sa1 = s;
+				run.sb1 = n.s;
+				if (n.d < run.d) {
+					run.d = n.d;
+					run.ang = ang;
+				}
+			}
+		} else flush();
+	}
+	flush();
+	return out;
+}
+function rowAtRows(rows, s) {
+	let i = 1, j = rows.length - 1;
+	while (i < j) {
+		const m = i + j >> 1;
+		if (rows[m].s < s) i = m + 1;
+		else j = m;
+	}
+	const A = rows[i - 1], B = rows[i], l = B.s - A.s || 1, u = Math.max(0, Math.min(1, (s - A.s) / l));
+	return {
+		x: A.x + (B.x - A.x) * u,
+		y: A.y + (B.y - A.y) * u
+	};
+}
+function resolveCrossings(regions, env, pack = SEOUL_CITY_STYLE) {
+	const V = V_OF(pack).levels, g = V.humpGrade ?? V.grade, pad = V.humpPadM ?? 12, step = V.stepM, floors = /* @__PURE__ */ new Map(), humps = /* @__PURE__ */ new Map(), notes = [];
+	const sorted = [...regions].filter((r) => (r.ang ?? 90) >= (V.crossAngleDeg ?? 25)).sort((p, q) => (p.a + "|" + p.b).localeCompare(q.a + "|" + q.b));
+	const sampleMax = (f, s0, s1) => {
+		let m = -Infinity;
+		for (let k = 0; k <= 6; k++) m = Math.max(m, f(s0 + (s1 - s0) * k / 6));
+		return m;
+	};
+	for (let pass = 0; pass < 10; pass++) {
+		let changed = false;
+		for (const r of sorted) {
+			const A = env.edges.get(r.a), B = env.edges.get(r.b);
+			if (!A || !B) continue;
+			const up = compareLines(A.line, B.line) > 0 ? "a" : "b", U = up === "a" ? A : B, L = up === "a" ? B : A;
+			const su0 = up === "a" ? r.sa0 : r.sb0, su1 = up === "a" ? r.sa1 : r.sb1, sl0 = up === "a" ? r.sb0 : r.sa0, sl1 = up === "a" ? r.sb1 : r.sa1;
+			const fU = env.profile(U), fL = env.profile(L);
+			let gap = Infinity;
+			for (let k = 0; k <= 6; k++) gap = Math.min(gap, Math.abs(fU(su0 + (su1 - su0) * k / 6) - fL(sl0 + (sl1 - sl0) * k / 6)));
+			if (gap >= step - .3) continue;
+			const need = sampleMax(fL, sl0, sl1) + step, level = Math.max(1, Math.ceil((need - env.base(U.line) - 1e-6) / step) + 1), hNeed = env.levelH(U.line, level);
+			const total = U.rows[U.rows.length - 1].s, rampL = Math.max(0, (hNeed - Math.min(env.stationH(U.line, U.lo), env.stationH(U.line, U.hi))) / g);
+			const zoneLo = env.platHalf(U.line, U.lo) + V.marginM, zoneHi = total - env.platHalf(U.line, U.hi) - V.marginM;
+			const fitLo = su0 - pad - rampL >= zoneLo, fitHi = su1 + pad + rampL <= zoneHi;
+			const raise = (id) => {
+				const k = U.line + ":" + id;
+				if ((floors.get(k) ?? 1) < level) {
+					floors.set(k, level);
+					changed = true;
+					notes.push({
+						edge: U.id,
+						station: k,
+						level,
+						why: "no room for the ramp"
+					});
+				}
+			};
+			if (!fitLo) raise(U.lo);
+			if (!fitHi) raise(U.hi);
+			const list = humps.get(U.id) || [], same = list.find((h) => Math.abs(h.s0 - (su0 - pad)) < 1 && Math.abs(h.s1 - (su1 + pad)) < 1);
+			if (!same) {
+				list.push({
+					s0: su0 - pad,
+					s1: su1 + pad,
+					h: hNeed,
+					over: L.id,
+					so0: sl0,
+					so1: sl1
+				});
+				humps.set(U.id, list);
+				changed = true;
+			} else if (same.h < hNeed - 1e-6) {
+				same.h = hNeed;
+				changed = true;
+			}
+		}
+		if (env.apply) env.apply(floors, humps);
+		if (!changed) break;
+	}
+	return {
+		floors,
+		humps,
+		notes
+	};
+}
+function sameLevelRegions(regions, env, pack = SEOUL_CITY_STYLE) {
+	const V = V_OF(pack).levels, step = V.stepM, out = [];
+	for (const r of regions) {
+		if ((r.ang ?? 90) < (V.crossAngleDeg ?? 25)) continue;
+		const A = env.edges.get(r.a), B = env.edges.get(r.b);
+		if (!A || !B) continue;
+		const fa = env.profile(A), fb = env.profile(B);
+		let gap = Infinity;
+		for (let k = 0; k <= 8; k++) {
+			const ha = fa(r.sa0 + (r.sa1 - r.sa0) * k / 8), hb = fb(r.sb0 + (r.sb1 - r.sb0) * k / 8);
+			gap = Math.min(gap, Math.abs(ha - hb));
+		}
+		if (gap < step - .5) out.push({
+			a: r.a,
+			b: r.b,
+			gap: +gap.toFixed(2),
+			sa: +((r.sa0 + r.sa1) / 2).toFixed(0),
+			sb: +((r.sb0 + r.sb1) / 2).toFixed(0),
+			d: +r.d.toFixed(1)
+		});
+	}
+	return out;
+}
+export { assignLevels, compareLines, edgeOverlaps, edgeProfile, holdLevels, levelHeight, lineRank, pointSegmentDistance, resolveCrossings, sameLevelRegions, segmentAngle, segmentDistance, segmentsCross, smooth01, stationLevels };

@@ -1,0 +1,13 @@
+{
+  "name": "슝 · 수도권 실시간 전철 지도",
+  "short_name": "슝",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffd400",
+  "theme_color": "#ffd400",
+  "icons": [
+    {"src": "brand/syung-light-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "brand/syung-light-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "brand/syung-light.svg", "sizes": "any", "type": "image/svg+xml"}
+  ]
+}
