@@ -1,4 +1,4 @@
-// web/modes/merge.mjs
+// web/modes/merge.mts
 var BAD_KEYS = /* @__PURE__ */ new Set([
 	"__proto__",
 	"constructor",
@@ -45,8 +45,9 @@ function mergeSettings(base, delta) {
 		if (BAD_KEYS.has(k)) throw new Error(`${k}: 쓸 수 없는 키`);
 		const v = delta[k];
 		if (v === void 0) continue;
-		const next = isPlain(v) && isPlain(base[k]) ? mergeSettings(base[k], v) : v;
-		if (next === base[k] && k in base) continue;
+		const prev = base[k];
+		const next = isPlain(v) && isPlain(prev) ? mergeSettings(prev, v) : v;
+		if (next === prev && k in base) continue;
 		(out ??= { ...base })[k] = next;
 	}
 	return out || base;

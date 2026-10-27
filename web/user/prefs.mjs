@@ -1,5 +1,5 @@
 import { USER_PREFERENCES } from "../modes/index.mjs";
-// web/user/prefs.mjs
+// web/user/prefs.mts
 var PREF_KEYS = Object.freeze({
 	themeChoice: "subway-theme",
 	mapColor: "subway-map-color",

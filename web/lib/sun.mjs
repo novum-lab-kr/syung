@@ -1,4 +1,4 @@
-// web/lib/sun.mjs
+// web/lib/sun.mts
 function seoulSun(date = /* @__PURE__ */ new Date()) {
 	const KST = 324e5, noon = Math.floor((date.getTime() + KST) / 864e5) * 864e5 - KST + 432e5;
 	const rad = Math.PI / 180, lat = 37.5665, lon = 126.978, J = noon / 864e5 + 2440587.5;

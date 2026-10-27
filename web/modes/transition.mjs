@@ -1,4 +1,4 @@
-// web/modes/transition.mjs
+// web/modes/transition.mts
 var STARCRAFT = Object.freeze([
 	"terran",
 	"zerg",
