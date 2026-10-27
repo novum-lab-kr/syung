@@ -30,11 +30,12 @@ npm run dev                         # http://localhost:8080 — web/ 을 고칠 
 ```
 `npm run dev`는 `web/`을 `dist/web`으로 빌드하고(고치면 0.1초 안팎에 다시, 새로고침) `deploy/dev_server.py --dist`로 띄웁니다.
 `data/`는 그대로, 실시간 열차(`/api/live`)는 운영 서버 프록시로 넘겨서 로컬에 API 키가 필요 없습니다. 다른 프록시를 쓰려면
-`SUBWAY_LIVE_UPSTREAM`을 지정하세요. `python3 deploy/dev_server.py`(인자 없이)는 빌드 없이 `web/`을 그대로 띄웁니다.
+`SUBWAY_LIVE_UPSTREAM`을 지정하세요. `python3 deploy/dev_server.py`는 빌드된 `dist/web`을 띄웁니다(`web/`에 TypeScript(`.mts`)가 있어 원본은 브라우저가 못 읽어요).
 필요한 것: Python 3.10+, Node 22.18+. 시험(`node --test` · `unittest`)과 서버는 설치 없이 돌고, 웹 빌드에만 `npm ci`가 필요합니다.
 
 웹 빌드(`vite.config.mts`): 모듈 하나 = 파일 하나로 이름 · 폴더 그대로 옮기고(묶지 않는다 — 첫 화면 요청 차례가 그대로),
 HTML · CSS · 그림 · 자료 · `web/vendor/`는 그대로 복사합니다. 결과 `dist/`는 git에 넣지 않습니다.
+타입 검사: `npm run typecheck`(`tsconfig.json` — strict · `.mts` 는 늘, `.mjs` 는 `// @ts-check` 를 붙인 것만).
 
 배포는 자동이에요. `main`에 푸시(또는 PR 머지)하면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트를
 돌리고, 통과하면 웹을 빌드해 `web-dist` 브랜치에 커밋으로 올린 뒤(`deploy/publish_web_dist.sh` — 트리 `web/` = `dist/web`,

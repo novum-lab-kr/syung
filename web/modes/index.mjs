@@ -1,7 +1,7 @@
 // 모드 목록 · 설정 고르기. 기본(basic)이 모든 설정의 원본이고, 모드는 다른 것만 적는다(from 을 안 적으면 basic).
 // settings(name) = 합치기(settings(from), 그 모드) → 마지막에 허용된 내 설정. 결과는 모드마다 캐시하고 얼린다(같은 모드면 같은 참조).
 // 정의는 이 파일이 import 하지 않는다: 본체가 정의를 import 해서 넘긴다(자식만 부르는 import 는 첫 화면 요청을 한 단계 늦춘다).
-import { mergeSettings, freezeSettings, validateSettings, validateModeDefinitions } from './merge.mjs';
+import { mergeSettings, freezeSettings, validateSettings, validateModeDefinitions } from './merge.mts';
 
 // 내 설정으로 바꿀 수 있는 것: 테마 · 지도 색만. 모드 고르기 · 배속은 전환 명령이지 설정 덧쓰기가 아니다.
 const COLOR = /^(#[0-9a-fA-F]{6}|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\))$/;   // #rrggbb · rgba(r,g,b,a)

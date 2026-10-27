@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mergeSettings,freezeSettings,validateSettings,validateModeDefinitions} from '../web/modes/merge.mjs';
+import {mergeSettings,freezeSettings,validateSettings,validateModeDefinitions} from '../web/modes/merge.mts';
 import {createModeRegistry} from '../web/modes/index.mjs';
 
 // 시험용 정의: 실제 basic · simcity · joseon · coaster 와 같은 모양(조선 · 롤코는 simcity 에서)

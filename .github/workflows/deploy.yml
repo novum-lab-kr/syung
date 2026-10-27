@@ -26,6 +26,7 @@ jobs:
       - run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py
       # 웹 빌드(web/ → dist/web)가 되는지 — PR 에도. 올리기는 아래 build 잡(main 만)
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run build
 
   # main: 웹을 빌드해 web-dist 브랜치에 커밋으로 쌓는다(트리 web/ = dist/web, 메시지 "web-dist <소스 커밋>").

@@ -24,8 +24,8 @@
 ## 실행 · 시험
 | 할 일 | 명령 |
 |---|---|
-| 로컬 화면 | `npm ci` 한 번 → `npm run dev [-- 포트]`(기본 8080 · 고치면 dist/web 다시 빌드 · `/api/live` 는 운영으로 넘김). 빌드 없이 원본: `python3 deploy/dev_server.py [포트]` |
-| 웹 빌드 | `npm run build` → `dist/web`(git 무시). 설정 `vite.config.mts` |
+| 로컬 화면 | `npm ci` 한 번 → `npm run dev [-- 포트]`(기본 8080 · 고치면 dist/web 다시 빌드 · `/api/live` 는 운영으로 넘김). `python3 deploy/dev_server.py [포트]` 는 빌드된 dist/web 만 띄운다(web/ 에 .mts 가 있어 원본은 브라우저가 못 읽는다) |
+| 웹 빌드 · 타입 | `npm run build` → `dist/web`(git 무시 · 설정 `vite.config.mts`) · `npm run typecheck`(tsc · `tsconfig.json`) |
 | JS 시험 | `node --test tests/*.test.mjs` |
 | Python 시험 | `python3 -m unittest discover -s tests`(OSM 캐시 없으면 일부 건너뜀) |
 | 배포 | main push → Actions(시험 → 빌드해 `web-dist` 브랜치에 올림 `deploy/publish_web_dist.sh`) → `deploy/remote_deploy.sh`(그 커밋의 빌드 결과 + 자료로 릴리스 폴더 → 링크 바꿔 끼우기 · 되돌리기). 서버는 빌드하지 않는다. 서버에서 직접 고치지 않는다 |
@@ -53,6 +53,7 @@
   - 첫 화면 JS gzip 약 560 KB(2026-10-10 값, 이후 다시 안 잼). 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
 
 ## 함정
+- **TypeScript(섞어 쓰는 중)**: 새 파일 · 옮기는 파일은 `.mts`, import 는 확장자까지(`./x.mts`), 지울 수 있는 문법만(enum · namespace · 매개변수 속성 금지 — `erasableSyntaxOnly`). 시험(`node --test`)은 Node 22.18+ 가 `.mts` 를 그대로 읽고(서버 22.23 · CI 22), 빌드는 `.mjs` 로 낸다(이름 그대로 — 결과 주소 · 요청 차례 같음). `.mjs` 는 맨 위 `// @ts-check` 를 붙인 것만 검사. 본체의 `import(\`./${n}.mjs\`)`(MODE_KIT_DEPS) 목록에 든 모듈을 `.mts` 로 옮기면 `tests/mode_kit_deps.test.mjs` 의 `.mjs` 붙이기도 맞춘다
 - **웹은 빌드 결과가 올라간다**: 운영은 `dist/web`(CI 빌드 → `web-dist` 브랜치). HTML · CSS · 그림 · JSON · `vendor/` 는 그대로 복사, `.mjs` 는 본체에서 import 로 닿아야 결과에 들어간다 — import 로 닿지 않는 모듈(시험만 부르는 것)은 운영에 없다. 도시 건물 Worker(`city/worker.mjs`)와 `new URL('…', import.meta.url)` 자산은 Vite 가 `assets/<이름>-<해시>` 로 옮긴다.
 - **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다.
 - **빠진 deps 는 node 시험이 못 잡는다**(그리기 경로). 나눈 파일은 범위 검사 · 실제 화면의 pageerror · 콘솔 오류로 확인.

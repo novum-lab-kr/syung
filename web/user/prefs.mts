@@ -9,21 +9,29 @@ export const PREF_KEYS = Object.freeze({ themeChoice: 'subway-theme', mapColor: 
 // 절전: 켜면 움직임(열차 층 · 이름표 · 따라가기 · 버스)을 1초 20번으로 그린다(덕배 2026-10-23: 발열 · 배터리 — 기본은 꺼짐, 30번 그대로)
 export const DEVICE_PREFERENCES = Object.freeze({ prebuild: Object.freeze(['on', 'off']), saver: Object.freeze(['on', 'off']) });
 
-export function createUserPrefs(opts = {}) {
-  const allowed = opts.allowed || { ...USER_PREFERENCES, ...DEVICE_PREFERENCES };
-  let storage = opts.storage; if (!('storage' in opts)) try { storage = globalThis.localStorage } catch { storage = null }   // localStorage 에 손대기만 해도 던지는 브라우저(막힌 사이트 자료)
-  const ok = (k, v) => !!allowed[k] && allowed[k].includes(v);
-  const values = {};
-  for (const k of Object.keys(PREF_KEYS)) { let v = null; try { v = storage?.getItem(PREF_KEYS[k]) ?? null } catch { } values[k] = ok(k, v) ? v : null }   // 막힌 저장소(사생활 창 등)는 없는 것과 같다
+type PrefKey = keyof typeof PREF_KEYS;
+// 항목마다 고를 수 있는 값
+type Allowed = Partial<Record<string, readonly string[]>>;
+// 기기 저장소(localStorage 와 같은 꼴 · 시험은 가짜를 넘긴다)
+interface PrefStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
+export interface UserPrefsOptions { allowed?: Allowed; storage?: PrefStorage | null }
+export interface UserPrefs { get(k: PrefKey): string | null; set(k: PrefKey, v: string): string; all(): Partial<Record<PrefKey, string>> }
+
+export function createUserPrefs(opts: UserPrefsOptions = {}): UserPrefs {
+  const allowed: Allowed = opts.allowed || { ...USER_PREFERENCES, ...DEVICE_PREFERENCES };
+  let storage: PrefStorage | null | undefined = opts.storage; if (!('storage' in opts)) try { storage = globalThis.localStorage } catch { storage = null }   // localStorage 에 손대기만 해도 던지는 브라우저(막힌 사이트 자료)
+  const ok = (k: string, v: string | null): v is string => !!allowed[k] && allowed[k].includes(v as string);
+  const values: Partial<Record<PrefKey, string | null>> = {};
+  for (const k of Object.keys(PREF_KEYS) as PrefKey[]) { let v = null; try { v = storage?.getItem(PREF_KEYS[k]) ?? null } catch { } values[k] = ok(k, v) ? v : null }   // 막힌 저장소(사생활 창 등)는 없는 것과 같다
   return {
     // 고른 값, 없으면 null(부르는 쪽이 모드 설정의 기본값을 쓴다)
-    get: k => values[k] ?? null,
+    get: (k: PrefKey) => values[k] ?? null,
     // 허용된 값만 기억하고 기기에 쓴다(쓰기가 막혀도 이번 화면에서는 그 값)
-    set(k, v) {
+    set(k: PrefKey, v: string) {
       if (!ok(k, v)) throw new Error(`${k}: 허용되지 않는 내 설정 ${v}`);
       values[k] = v; try { storage?.setItem(PREF_KEYS[k], v) } catch { }
       return v;
     },
-    all: () => Object.fromEntries(Object.entries(values).filter(([, v]) => v != null)),
+    all: () => Object.fromEntries(Object.entries(values).filter(([, v]) => v != null)) as Partial<Record<PrefKey, string>>,
   };
 }
