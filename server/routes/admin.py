@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from typing import cast
 
 from server.routes.errors import api_error
 from server.routes.response import Response
@@ -47,7 +48,7 @@ def photo(admin, path: str) -> Response | None:
     """GET /members/<번호>/avatar 면 그 회원 사진 응답(주인 쿠키는 부르는 쪽이 이미 확인했다), 아니면 None."""
     if not is_photo_path(path):
         return None
-    match = MEMBER.fullmatch(path)
+    match = cast("re.Match[str]", MEMBER.fullmatch(path))   # is_photo_path 가 맞다고 봤다
     try:
         found = admin.photo(int(match.group(1)))
     except (OSError, sqlite3.Error):

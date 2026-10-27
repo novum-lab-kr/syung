@@ -23,6 +23,7 @@ import secrets
 import threading
 import time
 from datetime import timedelta
+from typing import cast
 
 from server.config import MemberConfig, avatar_dir
 from server.services.account import (SESSION_ID, USAGE_KINDS, USAGE_MOST, device_of, session_id, session_view,
@@ -71,7 +72,8 @@ def _place(value, label: str) -> dict:
     for number, (low, high) in ((lat, LAT_RANGE), (lng, LNG_RANGE)):
         if isinstance(number, bool) or not isinstance(number, (int, float)) or not low <= number <= high:
             raise ValueError(f"{label} 좌표가 틀려요")
-    return {"name": name.strip(), "lat": round(float(lat), 6), "lng": round(float(lng), 6)}
+    # 위 검사를 지났으면 lat · lng 는 수다
+    return {"name": name.strip(), "lat": round(float(cast("float", lat)), 6), "lng": round(float(cast("float", lng)), 6)}
 
 
 def _text(value, label: str, most: int = 40) -> str:
@@ -442,14 +444,14 @@ class MemberService:
         ticket_id = self.store.add_ticket(user_id, clean_ticket(body), int(self._clock()), TICKET_LIMIT)
         if ticket_id is None:
             raise TicketLimit()
-        return ticket_view(self.store.ticket(user_id, ticket_id))
+        return ticket_view(cast("dict", self.store.ticket(user_id, ticket_id)))   # 방금 넣었다
 
     def update_ticket(self, user_id: int, ticket_id: int, body) -> dict | None:
         """그 사람의 승차권이 없으면 None. 틀리면 ValueError."""
         values = clean_ticket(body)
         if not self.store.update_ticket(user_id, ticket_id, values, int(self._clock())):
             return None
-        return ticket_view(self.store.ticket(user_id, ticket_id))
+        return ticket_view(cast("dict", self.store.ticket(user_id, ticket_id)))   # 방금 고쳤다
 
     def delete_ticket(self, user_id: int, ticket_id: int) -> bool:
         return self.store.delete_ticket(user_id, ticket_id)

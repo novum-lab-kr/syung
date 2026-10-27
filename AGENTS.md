@@ -39,6 +39,7 @@
 
 ## 서버 층 규칙
 - 한 방향으로만: routes → services → sources · store(`tests/test_server_layers.py` 가 막는다). 환경 변수 · 비밀값은 `config.py` 에서만.
+- 검사: `ruff check` · `pyright`(설정 `pyproject.toml` — 도구만 `pip install --group dev`, CI test 잡이 돈다). 새 함수 · 고친 함수는 타입 힌트. Python 3.10 문법까지만(로컬 `deploy/dev_server.py` 가 server 코드를 import 한다 — `datetime.UTC` 같은 3.11+ 는 쓰지 않는다). 타입 검사기가 못 따라가는 "위에서 이미 봤다"는 `typing.cast("타입", 값)`(실행 동작 그대로) — `assert` 로 바꾸지 않는다.
 - 지금 주소(`/live` · `/route` · `/bus/live` …)와 응답 모양은 바꾸지 않는다. 새 API 는 `/api/…`, 오류 모양 `{"error":{"code","message"}}`. 비밀값 · 개인정보는 로그에 안 찍는다.
 
 ## 속도 기준(렌더링이 1초도 늦어지면 안 된다)

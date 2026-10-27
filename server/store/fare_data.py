@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from typing import Any
 
 from server.config import ROOT
 
@@ -12,10 +13,10 @@ HOP_KM = ROOT / "data/fare/hop_km.json"   # 전철: 이웃 역 쌍마다 공식 
 BUS_KM = ROOT / "data/fare/bus_km.json"   # 버스: 서울 버스 노선마다 정류소 · 기점부터의 거리
 
 _lock = threading.Lock()
-_cache: dict[Path, tuple[float, object]] = {}
+_cache: dict[Path, tuple[float, Any]] = {}   # JSON 그대로
 
 
-def read(path: Path):
+def read(path: Path) -> Any:
     """JSON 내용(같은 수정 시각이면 앞에 읽은 것). 파일이 없으면 None."""
     try:
         stamp = path.stat().st_mtime

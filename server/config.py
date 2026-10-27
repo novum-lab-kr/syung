@@ -48,7 +48,7 @@ class SubwayConfig:
     probe_every: int = 30
 
     @classmethod
-    def from_env(cls) -> "SubwayConfig":
+    def from_env(cls) -> SubwayConfig:
         cache_seconds = max(15, int(_env("SUBWAY_LIVE_CACHE_SECONDS", "90")))   # 60+ while the key had 1000 calls a day
         return cls(
             host=_env("SUBWAY_LIVE_HOST", "127.0.0.1"),
@@ -245,7 +245,7 @@ class MemberConfig:
         return avatar_dir(self.db_file)
 
     @classmethod
-    def from_env(cls) -> "MemberConfig":
+    def from_env(cls) -> MemberConfig:
         kakao_on = _env("KAKAO_LOGIN", "0").strip() == "1"
         return cls(db_file=Path(_env("SYUNG_MEMBER_DB", "/var/lib/subway-live/members.sqlite3")),
                    public_url=_env("SYUNG_PUBLIC_URL", "https://syung.novum-lab.com").strip().rstrip("/"),

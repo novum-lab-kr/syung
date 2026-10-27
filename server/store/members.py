@@ -9,7 +9,9 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar, cast
 
 MIGRATIONS: list[tuple[int, str]] = [
     (1, """
@@ -133,6 +135,8 @@ def _count_withdraw(conn: sqlite3.Connection, at: int, reason: str) -> None:
                  "ON CONFLICT (day, reason) DO UPDATE SET count=count+1", (at + KST_SECONDS, reason))
 
 
+_T = TypeVar("_T")   # _write 가 돌려주는 것 = work 가 돌려주는 것
+
 class MemberStore:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -186,7 +190,7 @@ class MemberStore:
         finally:
             conn.close()
 
-    def _write(self, work):
+    def _write(self, work: Callable[[sqlite3.Connection], _T]) -> _T:
         """work(conn) 을 한 트랜잭션으로. 쓰기는 한 번에 하나."""
         self.open()
         with self._lock:
@@ -218,7 +222,7 @@ class MemberStore:
             row = conn.execute("SELECT user_id FROM identities WHERE provider=? AND subject=?", (provider, subject)).fetchone()
             if row:
                 return row["user_id"], False
-            user_id = conn.execute("INSERT INTO users (display_name, created_at) VALUES (?, ?)", (display_name, now)).lastrowid
+            user_id = cast("int", conn.execute("INSERT INTO users (display_name, created_at) VALUES (?, ?)", (display_name, now)).lastrowid)
             conn.execute("INSERT INTO identities (provider, subject, user_id, created_at) VALUES (?, ?, ?, ?)",
                          (provider, subject, user_id, now))
             return user_id, True
@@ -398,6 +402,7 @@ class MemberStore:
         """since: (오늘 · 7일 · 30일 시작 시각), first_day: 날짜별 수를 셀 첫 시각 → 수만(이름 · 장소 없음)."""
         counts = self._read("SELECT count(*) AS total, sum(created_at>=?) AS today, sum(created_at>=?) AS week, "
                             "sum(created_at>=?) AS month FROM users", since)
+        counts = cast("sqlite3.Row", counts)   # 수 세기는 늘 한 줄
         providers = self._all("SELECT i.provider, count(*) AS count FROM users u JOIN identities i ON i.rowid="
                               "(SELECT rowid FROM identities WHERE user_id=u.id ORDER BY created_at LIMIT 1) "
                               "GROUP BY i.provider ORDER BY count DESC, i.provider", ())
@@ -411,6 +416,7 @@ class MemberStore:
         counts = self._read("SELECT coalesce(sum(count), 0) AS total, coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS today, "
                             "coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS week, "
                             "coalesce(sum(CASE WHEN day>=? THEN count END), 0) AS month FROM withdraw_stats", since)
+        counts = cast("sqlite3.Row", counts)   # 수 세기는 늘 한 줄
         reasons = self._all("SELECT reason, sum(count) AS count FROM withdraw_stats GROUP BY reason "
                             "ORDER BY count DESC, reason", ())
         daily = self._all("SELECT day, sum(count) AS count FROM withdraw_stats WHERE day>=? GROUP BY day ORDER BY day",
@@ -432,7 +438,7 @@ class MemberStore:
             where, args = " WHERE u.display_name LIKE ? ESCAPE '\\'", (pattern,)
             if number is not None:
                 where, args = where + " OR u.id=?", args + (number,)
-        total = self._read("SELECT count(*) AS n FROM users u" + where, args)["n"]
+        total = cast("sqlite3.Row", self._read("SELECT count(*) AS n FROM users u" + where, args))["n"]   # 수 세기는 늘 한 줄
         rows = self._all(self._MEMBER_ROW + where + " ORDER BY u.created_at DESC, u.id DESC LIMIT ? OFFSET ?",
                          (now, *args, limit, offset))
         return total, rows

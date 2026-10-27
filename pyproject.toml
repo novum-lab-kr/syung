@@ -1,0 +1,26 @@
+# 서버(server/) 검사 설정 — 설치할 패키지는 없다(표준 라이브러리만). 검사 도구만 따로: pip install --group dev
+#   ruff check            # 린트(E4 · E7 · E9 · F 기본 + B 버그 냄새 + UP 최신 문법)
+#   pyright               # 타입 검사(standard — 층마다 strict 로 올린다)
+# pipeline/ · tests/ · deploy/ 는 아직 범위 밖(서버 먼저 · 계획서 4단계)
+[project]
+name = "syung-server"
+version = "0"
+requires-python = ">=3.10"   # README · 로컬 dev_server.py 가 server 코드를 import 한다(운영은 3.12)
+
+[dependency-groups]
+dev = ["ruff==0.17.3", "pyright==1.1.414"]
+
+[tool.ruff]
+target-version = "py310"
+include = ["server/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP"]
+# 지금 코드의 촘촘한 스타일(한 줄에 여러 문장 · 짧은 lambda · l/i 같은 이름)은 그대로 둔다 — 바꾸면 손대지 않은 줄까지 흔든다
+# B905 zip(strict=…) 는 길이가 다른 묶음을 일부러 자르는 곳이 있어 하나씩 보고 정한다
+ignore = ["E702", "E731", "E741", "B905"]
+
+[tool.pyright]
+include = ["server"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"

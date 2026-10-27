@@ -11,6 +11,7 @@ import time
 import urllib.error
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from server.clock import KST, kst_today
 from server.config import SubwayConfig
@@ -458,7 +459,7 @@ class SubwayLiveService:
                         return None
                     warnings.append(f"전체 노선: 이전 자료 표시 중 ({exc})")
             quota_out = self.quota_used >= limit
-            data = self.all_cache[1]
+            data = cast("tuple[float, dict]", self.all_cache)[1]   # 위에서 받았거나 이미 있었다(못 받고 없으면 위에서 돌아갔다)
             trains = [t for line in selected for t in data["lines"].get(line, [])]
             return {"ok": True, "mode": "all", "quiet": quiet, "quotaExhausted": quota_out, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": round(self._all_interval()),
                     "quota": self.quota_view(), "lines": selected, "warnings": warnings, "trains": trains}
@@ -512,7 +513,7 @@ class SubwayLiveService:
         """event-stamped records: build_live_timing.py learns rush-hour pace from them."""
         record_positions(data, self.config.burst_dir)
 
-    def _position_ttl(self, line: str, ttl: int, now: float) -> float:
+    def _position_ttl(self, line: str, ttl: float, now: float) -> float:
         """`ttl`, stretched when the budget left would not last until midnight with every line watched
         in the last 2 minutes read at that pace (like _all_interval): with many people spread over many
         lines the overlay slows down instead of running out in the afternoon and stopping for the day."""
@@ -538,7 +539,7 @@ class SubwayLiveService:
                 return True
         return False
 
-    def _positions(self, line: str, ttl: int) -> list[dict] | None:
+    def _positions(self, line: str, ttl: float) -> list[dict] | None:
         """The line's trains from the position feed, at most `ttl` seconds old; None when unavailable."""
         with self.position_lock:
             now, cached = time.time(), self.position_cache.get(line)

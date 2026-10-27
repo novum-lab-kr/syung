@@ -30,7 +30,8 @@ def id_token_claims(id_token: str, *, issuer: str, audience: str, now: float) ->
         raise ProviderError("id_token unreadable") from None
     if not isinstance(claims, dict):
         raise ProviderError("id_token unreadable")
-    audiences = claims.get("aud") if isinstance(claims.get("aud"), list) else [claims.get("aud")]
+    aud = claims.get("aud")
+    audiences = aud if isinstance(aud, list) else [aud]
     issuers = (issuer, issuer.removeprefix("https://"))   # 구글은 둘 다 쓴다
     if (claims.get("iss") not in issuers or audience not in audiences
             or not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= now
