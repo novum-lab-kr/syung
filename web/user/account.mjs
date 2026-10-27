@@ -152,7 +152,7 @@ export async function initAccount() {
   // ---- 화면 상태 ----
   function show() {
     item.hidden = false;
-    $('loginOpen').hidden = !!me; $('accountRow').hidden = !me;
+    $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
     if (!me) return;
     const initial = [...me.name][0] || '나';
     $('accountAvatar').textContent = initial; $('accountAvatarBig').textContent = initial;
@@ -174,9 +174,9 @@ export async function initAccount() {
   async function loadTickets() {
     try { const r = await getJson('./api/me/tickets'); if (r.status === 200) { tickets = r.body.tickets; renderTickets(); } } catch { /* 다음에 열 때 다시 */ }
   }
-  // 발권 화면에서 ‹ 는 내 정보로(본체의 '메뉴로' 보다 먼저 잡는다)
+  // 발권 화면에서 ‹ 는 승차권 목록으로(본체의 '메뉴로' 보다 먼저 잡는다)
   $('menuBack').addEventListener('click', e => {
-    if (!$('menuTicket').hidden) { e.stopImmediatePropagation(); $('accountRow').click(); }
+    if (!$('menuTicket').hidden) { e.stopImmediatePropagation(); $('ticketsRow').click(); }
   }, true);
 
   // ---- 발권 화면 ----
@@ -225,8 +225,8 @@ export async function initAccount() {
       if (!r.ok) { say('ticketMsg', r.body?.error?.message || '발권하지 못했어요.'); return; }
       const fixed = !!editing;
       await loadTickets();
-      $('accountRow').click();
-      say('accountMsg', fixed ? '승차권을 고쳤어요.' : '발권했어요.');
+      $('ticketsRow').click();
+      say('ticketsMsg', fixed ? '승차권을 고쳤어요.' : '발권했어요.');
     } catch { say('ticketMsg', '발권하지 못했어요. 연결을 확인해 주세요.'); }
   };
   $('ticketDelete').onclick = async () => {
@@ -236,8 +236,8 @@ export async function initAccount() {
       const r = await send('DELETE', `./api/me/tickets/${editing.id}`);
       if (!r.ok && r.status !== 404) { say('ticketMsg', '지우지 못했어요.'); return; }
       await loadTickets();
-      $('accountRow').click();
-      say('accountMsg', '승차권을 지웠어요.');
+      $('ticketsRow').click();
+      say('ticketsMsg', '승차권을 지웠어요.');
     } catch { say('ticketMsg', '지우지 못했어요. 연결을 확인해 주세요.'); }
   };
 
@@ -260,13 +260,12 @@ export async function initAccount() {
   show();
   if (me) await loadTickets();
 
-  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지우고 서랍을 연다 — 처음 가입이면 발권 화면으로 바로. 실패면 서랍 없이 팝업만
+  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지우고 서랍 첫 화면을 연다 — 처음 가입이면 발권 화면으로 바로. 실패면 서랍 없이 팝업만
   const back = /(?:^#|&)login=(\w+)/.exec(location.hash);
   if (back) {
     history.replaceState(null, '', location.pathname + location.search);
     if (me) $('settingsButton')?.click();
     if (me && back[1] === 'new') openTicket(null);
-    else if (me) $('accountRow').click();
-    else openSheet(LOGIN_ERRORS[back[1]] || '로그인이 끝나지 않았어요. 다시 해 주세요.');
+    else if (!me) openSheet(LOGIN_ERRORS[back[1]] || '로그인이 끝나지 않았어요. 다시 해 주세요.');
   }
 }
