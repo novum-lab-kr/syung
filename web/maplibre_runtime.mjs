@@ -852,7 +852,7 @@ for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaste
   });
 }
 // 회원(로그인 줄 · 내 정보 · 출퇴근): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로
-{const go=()=>import('./user/account.mjs').then(m=>m.initAccount()).catch(()=>{});
+{const go=()=>import('./user/account.mjs').then(m=>m.initAccount({colors})).catch(()=>{});   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500))}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
 feed.start();

@@ -27,7 +27,7 @@ from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginE
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
 CSRF_HEADER, CSRF_VALUE = "X-Requested-With", "syung"
-BODY_LIMIT = 4096
+BODY_LIMIT = 16384   # 승차권 본문(고른 경로 구간 최대 12개 포함)
 
 
 def member_path(path: str) -> str | None:

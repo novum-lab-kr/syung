@@ -5,7 +5,7 @@
     python3 deploy/dev_server.py 9000       # another port
 
 Serves web/ and the built data files at the same paths as the deployed site (no copy step: edit
-web/maplibre_runtime.mjs and reload). /api/live is forwarded to the production proxy, so no Seoul API
+web/maplibre_runtime.mjs and reload). /api/live (and /api/route · /api/place) is forwarded to the production proxy, so no Seoul API
 key is needed locally. Set SUBWAY_LIVE_UPSTREAM to use another proxy (e.g. http://127.0.0.1:3113/live).
 
 회원 주소(/api/auth/… · /api/me…)는 서버와 같은 코드(server/routes/members.py)로 여기서 답한다. DB 는 임시 폴더
@@ -27,6 +27,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))   # server.* (회원 주소)
 UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.novum-lab.com/api/live")
+# 길찾기 · 장소 검색(승차권 발권 화면이 부른다)도 운영으로 — 바깥 API 키 없이 로컬에서 시험한다
+JOURNEY_UPSTREAM = os.environ.get("SYUNG_JOURNEY_UPSTREAM", "https://syung.novum-lab.com/api")
+JOURNEY_PATHS = {"/api/route": "/route", "/api/place": "/place"}
 # published path → file in the repo
 DATA = {
     "/track_shapes.json": ROOT / "data" / "osm-tracks" / "track_shapes.json",
@@ -134,10 +137,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path.endswith("/api/live"):
+        if path.endswith("/api/live") or path in JOURNEY_PATHS:
             query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            upstream = UPSTREAM if path.endswith("/api/live") else JOURNEY_UPSTREAM + JOURNEY_PATHS[path]
             try:
-                req = urllib.request.Request(f"{UPSTREAM}?{query}", headers={"User-Agent": "subway-live-map-dev/1.0"})
+                req = urllib.request.Request(f"{upstream}?{query}", headers={"User-Agent": "subway-live-map-dev/1.0"})
                 with urllib.request.urlopen(req, timeout=30) as r:
                     body, status = r.read(), r.status
             except urllib.error.HTTPError as e:

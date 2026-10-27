@@ -3,6 +3,37 @@
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const min = s => Math.max(1, Math.round(s / 60));
 
+// 경로 한 개의 색 띠(구간마다 실제 걸리는 시간 비율 · 노선 색) — 길찾기 결과와 승차권 경로 선택(user/account.mjs)이 같이 쓴다
+const hm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+const legSecs = l => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
+const legColorOf = (l, colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
+const legName = l => l.type === 'bus' ? l.route : l.line;
+const legShort = l => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
+// text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
+const inkOn = hex => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
+  const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+  const L = .2126 * r + .7152 * g + .0722 * b;
+  return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
+const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
+const textW = t => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
+export function routeTrack(p, colors, width = 330) {
+  const segs = [];
+  for (const l of p.legs) {
+    if (l.type !== 'walk' && l.wait > 30) segs.push({k: 'wait', s: l.wait});
+    segs.push({k: l.type === 'walk' ? 'walk' : 'ride', s: legSecs(l), l});
+  }
+  const total = segs.reduce((a, g) => a + g.s, 0) || 1;
+  return `<div class="jtrack" aria-hidden="true">${segs.map(g => {
+    const px = g.s / total * width;
+    if (g.k === 'walk') return `<i class="jseg walk" style="flex:${g.s} 1 0"></i>`;
+    if (g.k === 'wait') return `<i class="jseg wait" style="flex:${g.s} 1 0"></i>`;
+    // every ride keeps room for at least its short name (a one-stop hop is still a line to board); walks give way
+    const c = legColorOf(g.l, colors), full = legName(g.l), short = legShort(g.l), need = textW(short) + 12;
+    const label = px >= textW(full) + 14 ? full : short;
+    return `<i class="jseg ride${g.l.type === 'bus' ? ' bus' : ''}" style="flex:${g.s} 1 0;min-width:${need}px;--c:${c};--t:${inkOn(c)}">${g.l.type === 'bus' && px >= textW(full) + 34 ? BUS : ''}${esc(label)}</i>`;
+  }).join('')}</div>`;
+}
+
 export function initJourney({openSheet, closeSheet, map, colors, myLocation, button, showRoute, clearRoute}) {
   const picked = {from: null, to: null};
   let last = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
@@ -143,43 +174,16 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   }
 
   // ---- results: one row per route; a bar shows each part of the trip at its real share of the time
-  const hm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
-  const legSecs = l => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
-  const legColor = l => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
-  const legName = l => l.type === 'bus' ? l.route : l.line;
-  const legShort = l => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
-  // text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
-  const inkOn = hex => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
-    const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
-    const L = .2126 * r + .7152 * g + .0722 * b;
-    return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
+  const legColor = l => legColorOf(l, colors);
+  const track = (p, width = 330) => routeTrack(p, colors, width);
   const dur = m => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
   const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
-  const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
   const CHEV = '<svg class="jw-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
   const UP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>';
   const DOWN = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
   const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
   const EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
 
-  const textW = t => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
-  function track(p, width = 330) {
-    const segs = [];
-    for (const l of p.legs) {
-      if (l.type !== 'walk' && l.wait > 30) segs.push({k: 'wait', s: l.wait});
-      segs.push({k: l.type === 'walk' ? 'walk' : 'ride', s: legSecs(l), l});
-    }
-    const total = segs.reduce((a, g) => a + g.s, 0) || 1;
-    return `<div class="jtrack" aria-hidden="true">${segs.map(g => {
-      const px = g.s / total * width;
-      if (g.k === 'walk') return `<i class="jseg walk" style="flex:${g.s} 1 0"></i>`;
-      if (g.k === 'wait') return `<i class="jseg wait" style="flex:${g.s} 1 0"></i>`;
-      // every ride keeps room for at least its short name (a one-stop hop is still a line to board); walks give way
-      const c = legColor(g.l), full = legName(g.l), short = legShort(g.l), need = textW(short) + 12;
-      const label = px >= textW(full) + 14 ? full : short;
-      return `<i class="jseg ride${g.l.type === 'bus' ? ' bus' : ''}" style="flex:${g.s} 1 0;min-width:${need}px;--c:${c};--t:${inkOn(c)}">${g.l.type === 'bus' && px >= textW(full) + 34 ? BUS : ''}${esc(label)}</i>`;
-    }).join('')}</div>`;
-  }
 
   // the steps of the chosen route: places (with times) joined by rides and walks on a rail
   function steps(p) {
