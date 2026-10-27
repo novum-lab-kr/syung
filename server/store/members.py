@@ -83,8 +83,15 @@ MIGRATIONS: list[tuple[int, str]] = [
     """),
 ]
 KST_SECONDS = 9 * 3600   # 날짜별 가입 수는 한국 날짜로 센다
+ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
 
 TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
+
+
+def _log(conn: sqlite3.Connection, at: int, action: str, user_id: int, reason: str) -> None:
+    """관리 기록 한 줄. 1년 지난 기록은 새로 쓸 때 같이 지운다(세션과 같은 틀)."""
+    conn.execute("DELETE FROM admin_log WHERE at<=?", (at - ADMIN_LOG_AGE,))
+    conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, ?, ?, ?)", (at, action, user_id, reason))
 
 
 class MemberStore:
@@ -294,6 +301,10 @@ class MemberStore:
                                   (user_id,))
         return member
 
+    def prune_admin_log(self, now: int) -> int:
+        """1년 지난 관리 기록을 지운다 → 지운 수. 관리 화면을 열 때도 부른다(조치가 한동안 없어도 남지 않게)."""
+        return self._write(lambda conn: conn.execute("DELETE FROM admin_log WHERE at<=?", (now - ADMIN_LOG_AGE,)).rowcount)
+
     def admin_places(self, user_id: int, at: int, reason: str) -> list[dict] | None:
         """승차권 장소(이름 · 좌표)를 꺼내며 같은 트랜잭션에 열람 기록을 남긴다. 회원이 없으면 None(기록 안 남김)."""
         def work(conn):
@@ -301,7 +312,7 @@ class MemberStore:
                 return None
             rows = conn.execute("SELECT id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng FROM tickets "
                                 "WHERE user_id=? ORDER BY created_at, id", (user_id,)).fetchall()
-            conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, 'places', ?, ?)", (at, user_id, reason))
+            _log(conn, at, "places", user_id, reason)
             return [dict(row) for row in rows]
         return self._write(work)
 
@@ -311,7 +322,7 @@ class MemberStore:
             if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
                 return None
             removed = conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,)).rowcount
-            conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, 'logout', ?, ?)", (at, user_id, reason))
+            _log(conn, at, "logout", user_id, reason)
             return removed
         return self._write(work)
 
@@ -323,6 +334,6 @@ class MemberStore:
             counts = {name: conn.execute(f"SELECT count(*) FROM {name} WHERE user_id=?", (user_id,)).fetchone()[0]
                       for name in ("identities", "sessions", "tickets")}
             conn.execute("DELETE FROM users WHERE id=?", (user_id,))
-            conn.execute("INSERT INTO admin_log (at, action, user_id, reason) VALUES (?, 'delete', ?, ?)", (at, user_id, reason))
+            _log(conn, at, "delete", user_id, reason)
             return counts
         return self._write(work)

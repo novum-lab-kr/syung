@@ -2,7 +2,7 @@
 
 - 목록 · 상세에는 승차권 장소(이름 · 좌표)와 고른 경로를 넣지 않는다. 장소는 이유를 받는 places() 로만 주고 그때 기록을 남긴다.
 - 조치(강제 로그아웃 · 탈퇴 처리)는 이유가 있어야 하고, 탈퇴 처리는 회원번호를 한 번 더 받아 맞춰 본다. 모두 admin_log 에 남긴다.
-- 기록에는 언제 · 무엇을 · 누구에게 · 왜만 남긴다(관리자 IP · 검색어 · 토큰은 남기지 않는다).
+- 기록에는 언제 · 무엇을 · 누구에게 · 왜만 남긴다(관리자 IP · 검색어 · 토큰은 남기지 않는다). 1년 보관 후 지운다(store ADMIN_LOG_AGE).
 - 서버 상태는 이미 가진 값만 읽는다(바깥 API 를 부르지 않는다).
 """
 from __future__ import annotations
@@ -58,6 +58,7 @@ class AdminService:
     # ---- 회원 ----
     def stats(self) -> dict:
         now = self.clock()
+        self.store.prune_admin_log(int(now))   # 관리 화면을 열 때마다 1년 지난 기록을 지운다
         today = datetime.fromtimestamp(now, KST).replace(hour=0, minute=0, second=0, microsecond=0)
         starts = tuple(int((today - timedelta(days=back)).timestamp()) for back in (0, 6, 29))
         first = today - timedelta(days=DAILY_DAYS - 1)
@@ -75,6 +76,7 @@ class AdminService:
         return {"total": total, "page": page, "pageSize": PAGE_SIZE, "members": [_member_view(row) for row in rows]}
 
     def member(self, user_id: int) -> dict | None:
+        self.store.prune_admin_log(int(self.clock()))   # 1년 지난 기록은 보이지 않게
         row = self.store.admin_member(user_id, int(self.clock()))
         if row is None:
             return None

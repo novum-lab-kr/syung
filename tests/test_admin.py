@@ -187,6 +187,20 @@ class AdminHttpTest(unittest.TestCase):
         self.assertNotIn("비밀검색어", dump)
         self.assertEqual(self.store.schema_version(), 4)
 
+    def test_log_is_kept_for_one_year(self):
+        self.json("POST", f"/admin/members/{self.kim}/logout", {"reason": "오래된 조치"})
+        self.now = NOW + 200 * DAY
+        self.json("POST", f"/admin/members/{self.lee}/logout", {"reason": "반년 뒤 조치"})
+        self.now = NOW + 365 * DAY - 1
+        self.json("GET", "/admin/members/stats")
+        self.assertEqual(len(self.rows("SELECT * FROM admin_log")), 2, "1년이 안 됐으면 남는다")
+        self.now = NOW + 365 * DAY
+        self.assertEqual(self.json("GET", f"/admin/members/{self.kim}")[1]["log"], [], "1년 된 기록은 상세에도 없다")
+        self.assertEqual(self.rows("SELECT reason FROM admin_log"), [("반년 뒤 조치",)])
+        self.now = NOW + 600 * DAY
+        self.json("POST", f"/admin/members/{self.kim}/places", {"reason": "새 조회"})
+        self.assertEqual(self.rows("SELECT reason FROM admin_log"), [("새 조회",)], "새 기록을 쓸 때도 1년 지난 것을 지운다")
+
     def test_unknown_admin_address_and_method(self):
         self.assertEqual(self.call("GET", "/admin/members/0")[0], 404, "0 번은 회원 주소 꼴이 아니다(debug 표로 가서 404)")
         self.assertEqual(self.call("PUT", f"/admin/members/{self.kim}", {"reason": "x"})[0], 404)
