@@ -116,7 +116,7 @@ export async function initAccount() {
   const say = (id, text) => { $(id).textContent = text || ''; };
   let me = null, tickets = [], editing = null;
 
-  // ---- 로그인 팝업(서랍 안, 아래에서) ----
+  // ---- 로그인 팝업(서랍 밖 화면 전체 위 — 열 때 서랍은 닫는다) ----
   $('accountProviders').replaceChildren(...providers.filter(p => PROVIDERS[p]).map(p => {
     const a = document.createElement('a');
     a.className = `social ${p}`; a.href = `./api/auth/${p}/start`; a.innerHTML = `${PROVIDERS[p][1]}<span>${PROVIDERS[p][0]}</span>`;
@@ -125,18 +125,29 @@ export async function initAccount() {
   const sheetOpen = () => !sheet.hidden;
   function openSheet(message) {
     say('loginMsg', message);
+    if ($('settingsPanel')?.classList.contains('open')) $('settingsClose').click();
     sheet.hidden = false; void sheet.offsetWidth; sheet.classList.add('open');
     sheet.querySelector('.social')?.focus({preventScroll: true});
   }
   function closeSheet() {
     sheet.classList.remove('open');
     setTimeout(() => { if (!sheet.classList.contains('open')) sheet.hidden = true; }, 260);
-    $('loginOpen').focus({preventScroll: true});
+    $('settingsButton')?.focus({preventScroll: true});
   }
   $('loginOpen').onclick = () => openSheet('');
   sheet.querySelector('.login-scrim').onclick = closeSheet;
-  // Esc 는 서랍보다 팝업을 먼저 닫는다(본체 keydown 보다 먼저 잡는다)
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen()) { e.stopImmediatePropagation(); closeSheet(); } }, true);
+  // 팝업이 떠 있는 동안 Esc 는 팝업을 닫고, Tab 은 팝업 안에서만 돈다
+  window.addEventListener('keydown', e => {
+    if (!sheetOpen()) return;
+    if (e.key === 'Escape') { e.stopImmediatePropagation(); closeSheet(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...sheet.querySelectorAll('a[href],button')].filter(el => el.offsetParent);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    const inside = sheet.contains(document.activeElement);
+    if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+  }, true);
 
   // ---- 화면 상태 ----
   function show() {
@@ -249,11 +260,11 @@ export async function initAccount() {
   show();
   if (me) await loadTickets();
 
-  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지우고 서랍을 연다 — 처음 가입이면 발권 화면으로 바로
+  // 로그인에서 돌아옴(#login=ok · new · <오류>): 주소를 지우고 서랍을 연다 — 처음 가입이면 발권 화면으로 바로. 실패면 서랍 없이 팝업만
   const back = /(?:^#|&)login=(\w+)/.exec(location.hash);
   if (back) {
     history.replaceState(null, '', location.pathname + location.search);
-    $('settingsButton')?.click();
+    if (me) $('settingsButton')?.click();
     if (me && back[1] === 'new') openTicket(null);
     else if (me) $('accountRow').click();
     else openSheet(LOGIN_ERRORS[back[1]] || '로그인이 끝나지 않았어요. 다시 해 주세요.');
