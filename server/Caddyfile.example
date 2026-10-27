@@ -1,4 +1,5 @@
 # Static map + live-train proxy (production: syung.novum-lab.com)
+# 운영 /etc/caddy/Caddyfile 의 이 블록과 같게 둔다(2026-10-27 운영 기준). 고친 뒤: caddy validate → systemctl reload caddy
 syung.novum-lab.com {
 	encode zstd gzip
 	# bus: handled by the existing proxy, with its own cache and daily budget.
@@ -10,9 +11,70 @@ syung.novum-lab.com {
 		rewrite * /live
 		reverse_proxy 127.0.0.1:3113
 	}
-	handle {
+	# 길찾기 · 장소 검색
+	handle /api/route {
+		rewrite * /route
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle /api/place {
+		rewrite * /place
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 어드민 자료(/api/admin/status · /api/admin/members…) → 서버의 /admin/… (주인 쿠키는 서버가 본다)
+	handle /api/admin/* {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 회원(로그인 · 승차권): /api 를 떼지 않고 넘긴다 — state 쿠키 경로가 /api/auth/ 이고
+	# 제공자 리다이렉트 URI 도 <SYUNG_PUBLIC_URL>/api/auth/<제공자>/callback 이다
+	@member path /api/auth/* /api/me /api/me/*
+	handle @member {
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 이상 감지 요약(서버가 /api/health 그대로 받는다)
+	handle /api/health {
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 주인 로그인 · 로그아웃(관리 페이지)
+	handle /api/login {
+		rewrite * /login
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle /api/logout {
+		rewrite * /logout
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 관리 페이지(슝 4fc2a69): /admin 아래, 주인만. 옛 주소는 옮겨 보낸다
+	redir /learning /admin/learning permanent
+	redir /learning.html /admin/learning permanent
+	redir /learning.json /admin/learning.json permanent
+	redir /debug /admin/debug permanent
+	redir /debug.html /admin/debug permanent
+	redir /login.html /admin/login.html?{query} permanent
+	redir /admin /admin/learning
+	# 로그인 페이지는 열려 있어야 한다(/admin/* 보다 먼저 맞는다)
+	handle /admin/login.html {
 		root * /var/www/syung
 		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+	# 나머지 관리 페이지 · learning.json: 서버의 /auth 가 주인 쿠키를 보고 204(통과) · 302(로그인 페이지) · 401(자료)
+	handle /admin/* {
+		forward_auth 127.0.0.1:3113 {
+			uri /auth
+		}
+		try_files {path} {path}.html
+		root * /var/www/syung
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+	handle {
+		root * /var/www/syung
+		header Cache-Control "public, max-age=0, s-maxage=60"
 		header X-Content-Type-Options "nosniff"
 		file_server
 	}

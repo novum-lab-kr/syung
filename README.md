@@ -68,6 +68,8 @@ node --test tests/*.test.mjs
 cp server/subway-live.env.example /etc/subway-live.env   # 키 입력
 cp server/subway-live.service /etc/systemd/system/ && systemctl enable --now subway-live
 ```
+운영 설정 예시: Caddy 는 `server/Caddyfile.example`(운영 `/etc/caddy/Caddyfile` 의 슝 블록과 같게 둔다), 환경 변수(키 · 회원 로그인)는
+`server/subway-live.env.example`. 둘 다 서버에서 고쳤으면 예시도 같이 맞춘다.
 
 ## 데이터 다시 만들기
 
