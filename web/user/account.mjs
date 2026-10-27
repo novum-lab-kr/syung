@@ -153,6 +153,45 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     return a;
   }));
   const sheetOpen = () => !sheet.hidden;
+  // 로그인 팝업 로고 움직임(Lottie): 새싹 캐릭터가 뛰어와 로고 열차에 올라타고 출발(2초 · 사용자 결정 2026-10-27).
+  // 팝업을 열 때만 플레이어(web/vendor/lottie — lottie-web 5.13.0 light, svg 렌더러만)와 움직임 JSON
+  // (web/brand/login-motion.json — tools/login_motion/make.mjs 가 만든다)을 받는다 — 첫 화면 코드에 없음.
+  // 캔버스는 팝업 위쪽 넓은 영역(800×170) — 그 안의 로고 칸 가운데(400, 135)를 실제 로고 가운데에 맞춰 얹는다.
+  // 동작 줄이기 · 받기 실패면 정지 로고 그대로. 한 번만 재생하고 끝나면 정지 로고로 바꿔 낀다
+  let motionData = null;
+  const MOTION = {width: 800, height: 170, slotX: 400, slotY: 135, wait: 220};   // wait: 카드가 올라오는 동안(.26 초) 기다렸다 재생
+  let motionAnim = null, motionTurn = 0, motionTimer = 0;
+  function stopLogoMotion() {
+    motionTurn++; clearTimeout(motionTimer);
+    motionAnim?.destroy(); motionAnim = null;
+    sheet.querySelector('.login-motion')?.remove();
+    sheet.querySelector('.login-brand').style.visibility = '';
+  }
+  async function playLogoMotion() {
+    stopLogoMotion();
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const turn = motionTurn, openedAt = performance.now();
+    try {
+      if (!globalThis.lottie) await import('../vendor/lottie/lottie_light.min.js');   // UMD: 받으면 globalThis.lottie 가 생긴다
+      if (!motionData) {
+        const res = await fetch(new URL('../brand/login-motion.json', import.meta.url));
+        if (!res.ok) return;
+        motionData = await res.json();
+      }
+    } catch { return; }
+    if (turn !== motionTurn || !globalThis.lottie || !sheet.classList.contains('open')) return;   // 그사이 닫았거나 다시 열었다
+    const logo = sheet.querySelector('.login-brand'), box = document.createElement('div');
+    box.className = 'login-motion'; box.setAttribute('aria-hidden', 'true');
+    box.style.left = `${logo.offsetLeft + logo.offsetWidth / 2 - MOTION.slotX}px`;   // 카드(.login-card, position:relative) 기준
+    box.style.top = `${logo.offsetTop + logo.offsetHeight / 2 - MOTION.slotY}px`;
+    logo.after(box);
+    // 플레이어가 받은 자료를 고쳐 쓰므로 매번 복사본을 넘긴다. 첫 장면을 바로 깔고(로고 자리는 비움 · 자리 크기는 그대로) 잠깐 뒤 재생
+    const anim = motionAnim = globalThis.lottie.loadAnimation({container: box, renderer: 'svg', loop: false, autoplay: false, animationData: structuredClone(motionData)});
+    anim.goToAndStop(0, true);
+    logo.style.visibility = 'hidden';
+    anim.addEventListener('complete', () => { if (motionAnim === anim) stopLogoMotion(); });   // 마지막 장면 = 정지 로고 → 진짜 로고로
+    motionTimer = setTimeout(() => { if (motionAnim === anim) anim.play(); }, Math.max(0, MOTION.wait - (performance.now() - openedAt)));
+  }
   // 팝업 안 안내: 서랍 아래 토스트(#accountToast)는 팝업(화면 전체 위)에 가려서, 같은 토스트 모양 카드를 팝업 안에 둔다
   function openSheet(message, error = false) {
     const note = $('loginMsg');
@@ -161,8 +200,10 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if ($('settingsPanel')?.classList.contains('open')) $('settingsClose').click();
     sheet.hidden = false; void sheet.offsetWidth; sheet.classList.add('open');
     sheet.querySelector('.social')?.focus({preventScroll: true});
+    playLogoMotion();
   }
   function closeSheet() {
+    stopLogoMotion();
     sheet.classList.remove('open');
     setTimeout(() => { if (!sheet.classList.contains('open')) sheet.hidden = true; }, 260);
     $('settingsButton')?.focus({preventScroll: true});

@@ -721,7 +721,7 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 .account-avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:11px;background:var(--syung);color:#141414;font-family:var(--round);font-size:16px}
 .account-avatar.big{width:44px;height:44px;border-radius:15px;font-size:21px}
 /* 로그인 팝업: 서랍 밖 화면 전체 위(서랍 1100 · 가림막 1099 보다 위). 좁은 화면은 아래 시트, 넓은 화면은 가운데 카드 */
-.login-sheet{position:fixed;inset:0;z-index:1200;display:flex;flex-direction:column;justify-content:flex-end}
+.login-sheet{position:fixed;inset:0;z-index:1200;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden}
 .login-scrim{position:absolute;inset:0;background:rgba(18,18,18,.4);opacity:0;transition:opacity .22s}
 .login-card{position:relative;padding:12px 24px calc(28px + env(safe-area-inset-bottom,0px));border-radius:27px 27px 0 0;background:var(--paper);color:var(--ink);box-shadow:0 -10px 30px rgba(23,30,24,.13);transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;align-items:center}
 .login-sheet.open .login-scrim{opacity:1}.login-sheet.open .login-card{transform:none}
@@ -729,6 +729,9 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 @media(prefers-reduced-motion:reduce){.login-scrim,.login-card{transition:none}}
 .login-grab{width:32px;height:4px;border-radius:5px;background:var(--rule);margin:0 0 23px}
 .login-brand{width:47px;height:47px;border-radius:15px;box-shadow:0 4px 0 #e9e5cd;margin:0 0 14px}
+/* 로고 움직임(Lottie) 캔버스: 로고 칸 위쪽 넓은 영역, 누르기는 아래로 통과. 바람 · 먼지는 테마 색 */
+.login-motion{position:absolute;width:800px;height:170px;pointer-events:none;z-index:1}
+.login-motion .lm-wind path{stroke:var(--muted)}.login-motion .lm-dust path{fill:var(--muted)}
 .login-card h2{margin:0 0 23px;font-family:var(--round);font-weight:400;font-size:25px}
 .login-list{display:flex;flex-direction:column;gap:9px;width:100%}
 .social{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;font-size:13px;font-weight:600;text-decoration:none}
