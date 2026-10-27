@@ -20,7 +20,7 @@
 
 import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './night.mjs';
 import { SEOUL_CITY_STYLE } from '../basic/city.mjs';
-import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mjs';
+import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mts';
 
 const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // as park_rides: +x east, +y south, +z up — a high south-western sun
 const LINE_MIX = [15.2, 16.6];      // zoom: below the first the skirt and roof are the line's colour, above the second the livery's

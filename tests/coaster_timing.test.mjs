@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCoasterMotion } from '../web/modes/coaster/motion.mjs';
+import { createCoasterMotion } from '../web/modes/coaster/motion.mts';
 
 test('coaster speed shaping preserves every phase departure and arrival in both directions',()=>{
   const mu=1/32000000;
