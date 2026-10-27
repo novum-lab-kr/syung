@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>내 위치 캐릭터 얼굴 캡처</title>
+<!-- 기본 내 위치 캐릭터(새싹 볼빵 후디)를 지도와 같은 렌더러(AvatarRenderer)로 정면에서 그려 얼굴(머리 + 새싹)만 투명 PNG 로 만든다.
+     만드는 법은 같은 폴더 make.sh. 브라우저로 직접 열면 그림과 [저장] 링크가 보인다(레포 루트를 http 로 띄워 /tools/avatar_face/face.html). -->
+<style>body{font:14px system-ui;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}canvas{margin:8px;vertical-align:middle}</style>
+<body>
+<script type="module">
+import {AvatarRenderer, registerAvatar} from '../../web/map/avatar.mjs';
+import * as sprout from '../../web/map/avatars/sprout.mjs';
+
+registerAvatar('sprout', sprout);
+const SIZE = 28;                 // 1x 한 변(px) — 메뉴 아바타 칸(32px)에 여백 조금
+const CENTER = [0, .73], HALF = .33;   // 캐릭터 좌표(y 왼쪽 · z 위, 키 1)에서 자를 정사각형: 머리 z .43~ · 새싹 끝 z 1.0
+// 지도 셰이더의 빛(-.5, .65, 1)을 얼굴이 정면으로 받도록 돌려 세우고, 그 앞에서 본다(그늘진 얼굴이 되지 않게)
+const yaw = Math.atan2(.65, -.5), front = [Math.cos(yaw), Math.sin(yaw)], left = [-front[1], front[0]];
+// 정면 정사영: 화면 오른쪽 = 캐릭터 왼쪽, 화면 위 = z, 가까울수록 깊이 작게(열 우선 4×4)
+const matrix = new Float32Array([
+  left[0] / HALF, 0, -front[0] * .5, 0,
+  left[1] / HALF, 0, -front[1] * .5, 0,
+  0, 1 / HALF, 0, 0,
+  -CENTER[0] / HALF, -CENTER[1] / HALF, 0, 1,
+]);
+const out = document.createElement('pre'); out.id = 'out';
+for (const scale of [1, 2, 3]) {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE * scale;
+  canvas.style.width = canvas.style.height = `${SIZE * 3}px`;
+  const gl = canvas.getContext('webgl2', {alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true});
+  gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  new AvatarRenderer().render(gl, matrix, {look: 'sprout', world: [0, 0], origin: [0, 0], yaw, scale: 1, unit: 1});
+  const name = `sprout-face-${SIZE * scale}.png`, url = canvas.toDataURL('image/png');
+  const link = Object.assign(document.createElement('a'), {href: url, download: name, textContent: `저장 ${name}`});
+  document.body.append(canvas, link, document.createElement('br'));
+  out.append(`${name} ${url}\n`);
+}
+document.body.append(out);
+</script>

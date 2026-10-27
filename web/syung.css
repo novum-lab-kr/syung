@@ -708,9 +708,16 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
    로그인 방법이 설정되지 않으면 맨 위 칸 자체가 hidden. 승차권 모양은 2026-10-27 사용자와 정한 '슝 승차권'(옛 노란 보통권 + 슝 로고) */
 .menu-account{margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}   /* 테마 아래 · 목록(.menu-nav 위 선) 위 */
 .menu-account[hidden],.menu-account [hidden],.login-sheet[hidden],.account-page [hidden],.tickets-page [hidden],.ticket-page [hidden]{display:none}
-/* 로그인 전 줄: 로그인 뒤 내 정보 줄(.menu-item + 아바타 · 이름 · ›)과 같은 모양, 아바타 자리는 빈 사람 */
-.account-avatar.empty{background:var(--control);color:var(--secondary)}
-.account-avatar.empty svg{width:18px;height:18px}
+/* 메뉴 아바타 칸의 내 위치 캐릭터 얼굴(새싹 볼빵 후디 — 만드는 법 tools/avatar_face/make.sh).
+   배경 그림이라 서랍을 열어 칸이 보일 때만 받는다(첫 화면 요청에 끼지 않는다) */
+.account-avatar.face{background:var(--control) url(brand/sprout-face-56.png) center/28px 28px no-repeat;background-image:image-set(url(brand/sprout-face-28.png) 1x,url(brand/sprout-face-56.png) 2x,url(brand/sprout-face-84.png) 3x)}
+/* 로그인 전: 누르는 버튼으로 보이게 — 테마 고르기(.theme-seg)와 같은 회색 알약 칸 + 오른쪽 노란 → 칩(사용자 결정 2026-10-27 시안 C) */
+.login-open{display:flex;align-items:center;gap:10px;width:calc(100% - 8px);margin:0 4px;min-height:52px;padding:4px 4px 4px 8px;border:0;border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:16px;font-weight:700;text-align:left;cursor:pointer}
+.login-open .account-avatar.face{width:38px;height:38px;border-radius:999px;background-color:var(--paper)}
+.login-open-name{flex:1}
+.login-open-go{flex:none;width:64px;height:44px;padding:12px 22px;border-radius:999px;background:var(--syung);color:var(--syung-ink);box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:background .15s}
+.login-open:hover .login-open-go{background:var(--syung-deep)}
+@media(prefers-reduced-motion:reduce){.login-open-go{transition:none}}
 .account-avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:11px;background:var(--syung);color:#141414;font-family:var(--round);font-size:16px}
 .account-avatar.big{width:44px;height:44px;border-radius:15px;font-size:21px}
 /* 로그인 팝업: 서랍 밖 화면 전체 위(서랍 1100 · 가림막 1099 보다 위). 좁은 화면은 아래 시트, 넓은 화면은 가운데 카드 */
