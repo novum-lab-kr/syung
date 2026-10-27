@@ -27,6 +27,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;',
 const todayDay = () => (new Date().getDay() + 6) % 7 + 1;   // 1(월) … 7(일)
 const daysText = days => days.length ? days.map(d => DAYS[d - 1]).join(' ') : '없음';
 const shortName = name => name.length >= 7 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;   // 긴 이름은 앞 3 ‥ 뒤 2
+// 장소 검색(카카오)의 역 이름은 '잠실역 2호선'처럼 호선이 붙어 온다 — 뒷면에는 역 이름만(사용자 2026-10-27). 저장된 이름은 그대로
+const stationOnly = name => name.replace(/^(.+역)\s+\S*선$/, '$1');
 
 async function getJson(url) {
   const r = await fetch(url, {cache: 'no-store', credentials: 'same-origin'});
@@ -63,7 +65,7 @@ function ticketEl(t) {
 // 발권할 때 고른 경로가 있으면 그 경로로(사용자 결정 2026-10-27), 없으면(옛 승차권) 그때 길을 찾아 가장 일찍 닿는 길로.
 function chainHTML(t, legs) {
   const rides = legs.filter(l => l.type !== 'walk');
-  const names = [t.from.name, ...rides.slice(0, -1).map(l => l.to), t.to.name];
+  const names = [stationOnly(t.from.name), ...rides.slice(0, -1).map(l => l.to), stationOnly(t.to.name)];
   const tag = rides.length > 1 ? `환승 ${rides.length - 1}` : rides.length ? '바로' : '걸어서';
   return names.map(n => `<span title="${esc(n)}">${esc(shortName(n))}</span>`).join('<em>→</em>') + `<small>${tag}</small>`;
 }
