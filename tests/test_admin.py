@@ -195,7 +195,7 @@ class AdminHttpTest(unittest.TestCase):
         self.assertEqual(len(self.rows("SELECT * FROM users WHERE id=?", (self.kim,))), 1, "확인이 틀리면 지우지 않는다")
 
         status, body = self.json("DELETE", f"/admin/members/{self.kim}", {"reason": "본인 요청(메일)", "confirm": self.kim})
-        self.assertEqual((status, body), (200, {"ok": True, "removed": {"identities": 1, "sessions": 2, "tickets": 2}}))
+        self.assertEqual((status, body), (200, {"ok": True, "removed": {"identities": 1, "sessions": 2, "tickets": 2, "photo": 0}}))
         for table in ("users", "identities", "sessions", "tickets"):
             column = "id" if table == "users" else "user_id"
             self.assertEqual(self.rows(f"SELECT * FROM {table} WHERE {column}=?", (self.kim,)), [], table)
@@ -217,7 +217,7 @@ class AdminHttpTest(unittest.TestCase):
         dump = "\n".join(self.rows("SELECT ? || group_concat(reason) FROM admin_log", ("",))[0])
         self.assertNotIn("203.0.113.9", dump)
         self.assertNotIn("비밀검색어", dump)
-        self.assertEqual(self.store.schema_version(), 5)
+        self.assertEqual(self.store.schema_version(), 6)
 
     def test_log_is_kept_for_one_year(self):
         self.json("POST", f"/admin/members/{self.kim}/logout", {"reason": "오래된 조치"})

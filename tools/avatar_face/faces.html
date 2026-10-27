@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>프로필 캐릭터 얼굴 캡처</title>
+<!-- 내 정보에서 고르는 프로필 캐릭터(내 위치 캐릭터 일곱 — web/map/avatars/)를 지도와 같은 렌더러(AvatarRenderer)로 정면에서 그려
+     머리 쪽만 투명 PNG 로 만든다(web/brand/faces/<이름>-84.png · -240.png). 만드는 법은 같은 폴더 make.sh(face.html 과 같이 돈다).
+     브라우저로 직접 열면 그림과 [저장] 링크가 보인다. ?full 이면 자르지 않은 전신(자를 범위를 고를 때). -->
+<style>body{font:14px system-ui;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}canvas{margin:8px;vertical-align:middle;width:120px;height:120px}</style>
+<body>
+<script type="module">
+import {AvatarRenderer, registerAvatar} from '../../web/map/avatar.mjs';
+import * as sprout from '../../web/map/avatars/sprout.mjs';
+import * as builder from '../../web/map/avatars/builder.mjs';
+import * as seonbi from '../../web/map/avatars/seonbi.mjs';
+import * as visitor from '../../web/map/avatars/visitor.mjs';
+import * as scv from '../../web/map/avatars/scv.mjs';
+import * as drone from '../../web/map/avatars/drone.mjs';
+import * as probe from '../../web/map/avatars/probe.mjs';
+
+const LOOKS = {sprout, builder, seonbi, visitor, scv, drone, probe};
+// 캐릭터 좌표(y 왼쪽 · z 위, 키 1)에서 자를 정사각형: [가운데 y, 가운데 z, 반 변]. 사람 넷은 머리 + 모자 · 새싹, 일꾼 셋은 몸 위쪽
+const CROPS = {
+  sprout: [0, .73, .33], builder: [0, .70, .40], seonbi: [0, .70, .41], visitor: [0, .73, .33],
+  scv: [0, .68, .36], drone: [0, .62, .40], probe: [0, .68, .36],
+};
+const SIZES = [84, 240];
+const full = new URLSearchParams(location.search).has('full');
+for (const [id, look] of Object.entries(LOOKS)) registerAvatar(id, look);
+// 지도 셰이더의 빛(-.5, .65, 1)을 얼굴이 정면으로 받도록 돌려 세우고, 그 앞에서 본다(그늘진 얼굴이 되지 않게 — face.html 과 같다)
+const yaw = Math.atan2(.65, -.5), front = [Math.cos(yaw), Math.sin(yaw)], left = [-front[1], front[0]];
+const out = document.createElement('pre'); out.id = 'out';
+for (const id of Object.keys(LOOKS)) {
+  const [cy, cz, half] = full ? [0, .55, .6] : CROPS[id];
+  // 정면 정사영: 화면 오른쪽 = 캐릭터 왼쪽, 화면 위 = z, 가까울수록 깊이 작게(열 우선 4×4)
+  const matrix = new Float32Array([
+    left[0] / half, 0, -front[0] * .5, 0,
+    left[1] / half, 0, -front[1] * .5, 0,
+    0, 1 / half, 0, 0,
+    -cy / half, -cz / half, 0, 1,
+  ]);
+  for (const size of full ? [240] : SIZES) {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
+    const gl = canvas.getContext('webgl2', {alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true});
+    gl.viewport(0, 0, size, size); gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    new AvatarRenderer().render(gl, matrix, {look: id, world: [0, 0], origin: [0, 0], yaw, scale: 1, unit: 1});
+    const name = `${id}-${size}.png`, url = canvas.toDataURL('image/png');
+    const link = Object.assign(document.createElement('a'), {href: url, download: name, textContent: `저장 ${name}`});
+    document.body.append(canvas, link);
+    out.append(`faces/${name} ${url}\n`);
+  }
+  document.body.append(document.createElement('br'));
+}
+document.body.append(out);
+</script>

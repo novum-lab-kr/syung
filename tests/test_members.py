@@ -123,10 +123,10 @@ class MemberHttpTest(unittest.TestCase):
         self.assertEqual(self.last_location, "/#login=new", "처음 가입이면 #login=new 로 돌려보낸다")
         self.assertEqual(self.provider.codes[-1][1], "https://syung.test/api/auth/kakao/callback")
         me = self.request("GET", "/api/me", cookie=session)
-        self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao"}))
+        self.assertEqual((me.status, me.json), (200, {"id": 1, "name": "민지", "provider": "kakao", "avatar": None}))
         self.assertEqual(me.headers["Cache-Control"], "no-store")
         listed = self.request("GET", "/api/auth/providers", cookie=session)
-        self.assertEqual(listed.json, {"providers": ["kakao"], "me": {"id": 1, "name": "민지", "provider": "kakao"}}, "메뉴는 요청 하나로 그린다")
+        self.assertEqual(listed.json, {"providers": ["kakao"], "me": {"id": 1, "name": "민지", "provider": "kakao", "avatar": None}}, "메뉴는 요청 하나로 그린다")
         self.assertEqual(listed.headers["Cache-Control"], "no-store")
         self.assertIsNone(self.request("GET", "/api/auth/providers", cookie="syung_session=nope").json["me"])
         # 같은 사람이 다시 로그인하면 같은 회원

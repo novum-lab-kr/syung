@@ -91,6 +91,11 @@ MIGRATIONS: list[tuple[int, str]] = [
             PRIMARY KEY (day, reason)
         )
     """),
+    # 6(2026-10-27): 프로필 사진 · 캐릭터. NULL = 기본 캐릭터, 'character:<이름>' · 'photo:<파일 이름>'(사진은 config.avatar_dir).
+    # 닉네임은 그대로 display_name — 회원이 고치면 그 값이 남고, 다시 로그인해도 제공자 닉네임으로 덮지 않는다(find_or_create_user).
+    (6, """
+        ALTER TABLE users ADD COLUMN avatar TEXT
+    """),
 ]
 KST_SECONDS = 9 * 3600   # 날짜별 가입 · 탈퇴 수는 한국 날짜로 센다
 ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
@@ -202,28 +207,60 @@ class MemberStore:
         return self._write(work)
 
     def user(self, user_id: int) -> dict | None:
-        row = self._read("SELECT u.id, u.display_name, (SELECT provider FROM identities WHERE user_id=u.id "
+        row = self._read("SELECT u.id, u.display_name, u.avatar, (SELECT provider FROM identities WHERE user_id=u.id "
                          "ORDER BY created_at LIMIT 1) AS provider FROM users u WHERE u.id=?", (user_id,))
         return dict(row) if row else None
 
-    def delete_user(self, user_id: int, now: int) -> bool:
-        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다 → 지웠나."""
+    def set_name(self, user_id: int, name: str) -> bool:
+        """닉네임을 바꾼다 → 그 회원이 있었나."""
+        return self._write(lambda conn: conn.execute("UPDATE users SET display_name=? WHERE id=?", (name, user_id)).rowcount > 0)
+
+    def set_avatar(self, user_id: int, value: str | None) -> tuple[bool, str | None]:
+        """프로필 사진 · 캐릭터를 바꾼다 → (그 회원이 있었나, 바꾸기 전 값). 앞 사진 파일은 부르는 쪽이 지운다."""
         def work(conn):
-            if conn.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount == 0:
-                return False
-            _count_withdraw(conn, now, "self")
-            return True
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None:
+                return False, None
+            conn.execute("UPDATE users SET avatar=? WHERE id=?", (value, user_id))
+            return True, row["avatar"]
         return self._write(work)
 
-    def delete_identity_user(self, provider: str, subject: str, now: int) -> bool:
-        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE) → 지웠나.
-        지웠으면 오늘 카카오 연결 해제 탈퇴 수를 1 올린다(제공자는 카카오만 부른다)."""
+    def avatars_in_use(self) -> set[str]:
+        """지금 회원이 쓰는 avatar 값 모두(남은 사진 파일 정리용)."""
+        return {row["avatar"] for row in self._all("SELECT avatar FROM users WHERE avatar IS NOT NULL", ())}
+
+    @staticmethod
+    def avatars_in_file(path: Path) -> set[str]:
+        """다른 DB 파일(백업 사본)의 avatar 값 모두 — 읽기만(immutable: 잠금 · WAL 파일을 만들지 않는다)."""
+        conn = sqlite3.connect(f"file:{Path(path).resolve()}?immutable=1", uri=True)
+        try:
+            return {row[0] for row in conn.execute("SELECT avatar FROM users WHERE avatar IS NOT NULL")}
+        finally:
+            conn.close()
+
+    def delete_user(self, user_id: int, now: int) -> dict | None:
+        """회원과 그 사람의 연결 · 세션 · 승차권을 모두 지우고(ON DELETE CASCADE) 오늘 본인 탈퇴 수를 1 올린다
+        → {'avatar': 지운 회원의 avatar 값}(사진 파일은 부르는 쪽이 지운다) · 없던 회원이면 None."""
         def work(conn):
-            removed = conn.execute("DELETE FROM users WHERE id=(SELECT user_id FROM identities WHERE provider=? AND subject=?)",
-                                   (provider, subject)).rowcount > 0
-            if removed:
-                _count_withdraw(conn, now, f"{provider}_unlink")
-            return removed
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None:
+                return None
+            conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+            _count_withdraw(conn, now, "self")
+            return {"avatar": row["avatar"]}
+        return self._write(work)
+
+    def delete_identity_user(self, provider: str, subject: str, now: int) -> dict | None:
+        """제공자 회원번호의 회원을 지운다(delete_user 와 같은 DELETE — 연결 · 세션 · 승차권은 ON DELETE CASCADE)
+        → {'avatar': …} · 없던 회원이면 None. 지웠으면 오늘 카카오 연결 해제 탈퇴 수를 1 올린다(제공자는 카카오만 부른다)."""
+        def work(conn):
+            row = conn.execute("SELECT u.id, u.avatar FROM users u JOIN identities i ON i.user_id=u.id "
+                               "WHERE i.provider=? AND i.subject=?", (provider, subject)).fetchone()
+            if row is None:
+                return None
+            conn.execute("DELETE FROM users WHERE id=?", (row["id"],))
+            _count_withdraw(conn, now, f"{provider}_unlink")
+            return {"avatar": row["avatar"]}
         return self._write(work)
 
     # ---- 세션 ----
@@ -312,7 +349,7 @@ class MemberStore:
         return {"total": counts["total"], "today": counts["today"], "week": counts["week"], "month": counts["month"],
                 "reasons": reasons, "daily": daily}
 
-    _MEMBER_ROW = ("SELECT u.id, u.display_name, u.created_at, "
+    _MEMBER_ROW = ("SELECT u.id, u.display_name, u.avatar, u.created_at, "
                    "(SELECT provider FROM identities WHERE user_id=u.id ORDER BY created_at LIMIT 1) AS provider, "
                    "(SELECT count(*) FROM tickets WHERE user_id=u.id) AS tickets, "
                    "(SELECT max(created_at) FROM sessions WHERE user_id=u.id) AS last_login, "
@@ -370,16 +407,51 @@ class MemberStore:
             return removed
         return self._write(work)
 
-    def admin_delete(self, user_id: int, at: int, reason: str) -> dict | None:
+    def admin_delete(self, user_id: int, at: int, reason: str) -> tuple[dict, str | None] | None:
         """탈퇴 처리: 회원 탈퇴(delete_user)와 같은 DELETE(연결 · 세션 · 승차권은 ON DELETE CASCADE) + 기록 + 오늘 관리자 탈퇴 수 +1
-        → 지운 수. 없으면 None."""
+        → (지운 수, 지운 회원의 avatar 값 — 사진 파일은 부르는 쪽이 지운다). 없으면 None."""
         def work(conn):
-            if conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone() is None:
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None:
                 return None
             counts = {name: conn.execute(f"SELECT count(*) FROM {name} WHERE user_id=?", (user_id,)).fetchone()[0]
                       for name in ("identities", "sessions", "tickets")}
             conn.execute("DELETE FROM users WHERE id=?", (user_id,))
             _log(conn, at, "delete", user_id, reason)
             _count_withdraw(conn, at, "admin")
-            return counts
+            return counts, row["avatar"]
+        return self._write(work)
+
+    def admin_clear_avatar(self, user_id: int, at: int, reason: str) -> tuple[bool, str | None] | None:
+        """사진 내리기: 올린 사진을 기본 캐릭터로 되돌리고 기록 → (내렸나, 내린 avatar 값). 올린 사진이 아니면 (False, 그 값) · 기록 안 남김.
+        회원이 없으면 None."""
+        def work(conn):
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None:
+                return None
+            if not (row["avatar"] or "").startswith("photo:"):
+                return False, row["avatar"]
+            conn.execute("UPDATE users SET avatar=NULL WHERE id=?", (user_id,))
+            _log(conn, at, "avatar", user_id, reason)
+            return True, row["avatar"]
+        return self._write(work)
+
+    def admin_photo_seen(self, user_id: int, at: int) -> str | None:
+        """관리자가 회원 사진을 볼 때: 지금 avatar 값을 읽으며 같은 트랜잭션에 'avatar_view' 기록(이유 없이 — 사용자 결정 2026-10-27).
+        올린 사진이 없거나 회원이 없으면 None(기록 안 남김)."""
+        def work(conn):
+            row = conn.execute("SELECT avatar FROM users WHERE id=?", (user_id,)).fetchone()
+            if row is None or not (row["avatar"] or "").startswith("photo:"):
+                return None
+            _log(conn, at, "avatar_view", user_id, "")
+            return row["avatar"]
+        return self._write(work)
+
+    def admin_reset_name(self, user_id: int, name: str, at: int, reason: str) -> bool | None:
+        """닉네임 초기화(name 은 서비스가 정한 기본 이름) + 기록 → True. 회원이 없으면 None."""
+        def work(conn):
+            if conn.execute("UPDATE users SET display_name=? WHERE id=?", (name, user_id)).rowcount == 0:
+                return None
+            _log(conn, at, "name", user_id, reason)
+            return True
         return self._write(work)

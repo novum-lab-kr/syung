@@ -6,8 +6,14 @@ GET    /api/auth/providers            → {"providers": ["kakao", …], "me": {"
 GET    /api/auth/<제공자>/start         → 302 제공자 로그인(state 쿠키)
 GET    /api/auth/<제공자>/callback      → 302 /#login=ok(처음 가입이면 =new, 세션 쿠키) · 실패면 /#login=<코드>
 POST   /api/auth/logout               → 204(세션 지움)
-GET    /api/me                        → {"id","name","provider"} · 401
-DELETE /api/me                        → 204(회원 · 설정 모두 지움)
+GET    /api/me                        → {"id","name","provider","avatar"} · 401
+                                         avatar: null(기본 캐릭터) · {"type":"character","id"} · {"type":"photo","url":"/api/me/avatar/<이름>"}
+DELETE /api/me                        → 204(회원 · 설정 · 올린 사진 모두 지움)
+PUT    /api/me/profile                {name}  → 200 내 정보 · 400(1~12자)
+PUT    /api/me/avatar                 사진: Content-Type image/webp · image/jpeg, 본문 = 256×256 사진(160 KB 까지) → 200 내 정보 ·
+                                         400(형식 · 크기 · 메타데이터) · 413 / 캐릭터: Content-Type application/json {character} → 200 내 정보
+DELETE /api/me/avatar                 → 200 내 정보(기본 캐릭터로 · 올린 사진 파일 지움)
+GET    /api/me/avatar/<이름>           → 200 사진(지금 내 사진일 때만 — 남의 · 지난 사진은 404). 이름이 바뀌면 주소가 바뀌어 오래 캐시한다
 GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7],route:{…}|null}]} · 401
 POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
 PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
@@ -28,6 +34,7 @@ import urllib.parse
 from server.routes.errors import api_error
 from server.routes.response import Response
 from server.services.members import SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError
+from server.services.profile import PHOTO_MAX_BYTES
 
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
@@ -67,6 +74,9 @@ def _error(status: int, code: str, message: str) -> Response:
 
 LOGIN_NEEDED = ("login", "로그인이 필요해요")
 TICKET_PATH = re.compile(r"/me/tickets/([1-9][0-9]{0,9})")
+PHOTO_PATH = re.compile(r"/me/avatar/([A-Za-z0-9_-]{32}\.(?:webp|jpg))")
+PHOTO_TYPES = {"image/webp": "webp", "image/jpeg": "jpg"}
+CONTENT_TYPES = {"webp": "image/webp", "jpg": "image/jpeg"}
 
 
 def handle(members, method: str, path: str, headers, read_body, address: str) -> Response | None:
@@ -113,7 +123,8 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
         members.logout(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
         return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
     ticket = TICKET_PATH.fullmatch(bare)
-    if bare not in ("/me", "/me/tickets") and not ticket:
+    photo = PHOTO_PATH.fullmatch(bare)
+    if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") and not ticket and not photo:
         return _error(404, "not_found", "없는 주소예요")
     user_id = members.user_id(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
     me = members.me(user_id) if user_id else None
@@ -125,6 +136,23 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
         if method == "DELETE":
             members.delete(user_id)
             return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
+    elif photo:
+        if method == "GET":
+            found = members.photo(user_id, photo.group(1))
+            if found is None:
+                return _error(404, "not_found", "없는 사진이에요")
+            data, extension = found
+            # 이름이 사진마다 새로 생겨(바꾸면 주소가 바뀐다) 오래 캐시해도 된다. 로그인한 본인 것이라 공용 캐시에는 두지 않는다
+            return Response(200, "image", body=data, content_type=CONTENT_TYPES[extension],
+                            cache="private, max-age=31536000, immutable")
+    elif bare == "/me/profile":
+        if method == "PUT":
+            return _with_body(read_body, lambda body: _me_or_gone(members.rename(user_id, body)))
+    elif bare == "/me/avatar":
+        if method == "PUT":
+            return _avatar(members, user_id, headers, read_body)
+        if method == "DELETE":
+            return _me_or_gone(members.reset_avatar(user_id))
     elif bare == "/me/tickets":
         if method == "GET":
             return _json({"tickets": members.tickets(user_id)})
@@ -166,6 +194,27 @@ def _kakao_unlink(members, method: str, query: str, headers, read_body) -> Respo
     except WebhookError as error:
         return _error(*WEBHOOK_ERRORS[error.code])
     return Response(200, body=b"")
+
+
+def _me_or_gone(me) -> Response:
+    """바꾼 뒤 내 정보 — 그사이 탈퇴했으면 401."""
+    return _json(me) if me else _error(401, *LOGIN_NEEDED)
+
+
+def _avatar(members, user_id: int, headers, read_body) -> Response:
+    """PUT /me/avatar: 사진(image/webp · image/jpeg 본문 그대로) 또는 캐릭터({character} JSON)."""
+    kind = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    if kind in PHOTO_TYPES:
+        raw = read_body(PHOTO_MAX_BYTES)
+        if raw is None:
+            return _error(413, "too_large", f"사진은 {PHOTO_MAX_BYTES // 1024} KB 까지예요")
+        try:
+            return _me_or_gone(members.upload_photo(user_id, raw))
+        except ValueError as error:
+            return _error(400, "bad_request", str(error))
+    if kind == "application/json":
+        return _with_body(read_body, lambda body: _me_or_gone(members.pick_character(user_id, body)))
+    return _error(415, "unsupported", "WebP · JPEG 사진이나 캐릭터만 받아요")
 
 
 def _with_body(read_body, work) -> Response:

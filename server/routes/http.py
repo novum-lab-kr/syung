@@ -2,7 +2,8 @@
 
 GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /admin/debug/recent · /admin/debug/bus-route
 POST /login · /logout · /admin/debug/ride · /admin/debug/shot
-관리(routes/admin.py): GET /admin/status · /admin/members[/stats|/<번호>], POST /admin/members/<번호>/places|logout, DELETE /admin/members/<번호>
+관리(routes/admin.py): GET /admin/status · /admin/members[/stats|/<번호>|/<번호>/avatar(사진)],
+POST /admin/members/<번호>/places|logout|avatar|name, DELETE /admin/members/<번호>
 회원(/auth/… · /me… — /api 가 붙어도 받는다, routes/members.py): GET · POST · PUT · DELETE
 /admin/… 는 주인 쿠키를 먼저 본다(없으면 401, POST 는 본문을 읽기 전에). Caddy 가 /api/admin/… 의 /api 를 떼고 넘긴다.
 그 밖은 기본 HTML 404(옛 그대로). 요청 기록(로그)은 남기지 않는다(쿼리 · 키가 든 주소가 찍히지 않게).
@@ -86,6 +87,8 @@ def make_handler(services, response_seconds: float):
                 return self._send(response.status, response.body)
             if response.kind == "error":
                 return self.send_error(response.status)
+            if response.kind == "image":
+                return self._send_image(response)
             self.send_response(response.status)
             if response.kind == "redirect":
                 self.send_header("Location", response.location)
@@ -95,6 +98,17 @@ def make_handler(services, response_seconds: float):
             if response.kind == "redirect":
                 self.send_header("Content-Length", "0")
             self.end_headers()
+
+        def _send_image(self, response: Response) -> None:
+            """프로필 사진: 형식대로 Content-Type, 내용을 짐작해 다른 형식으로 열지 않게(nosniff) · 그 자체로는 아무것도 실행하지 않게(CSP)."""
+            self.send_response(response.status)
+            self.send_header("Content-Type", response.content_type)
+            self.send_header("Cache-Control", response.cache or "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+            self.send_header("Content-Length", str(len(response.body)))
+            self.end_headers()
+            self.wfile.write(response.body)
 
         def _member(self, method: str) -> bool:
             """회원 주소면 답하고 True(routes/members.py)."""
@@ -191,6 +205,8 @@ def make_handler(services, response_seconds: float):
                 if not debug_routes.allowed(services, cookie):
                     return self._send_json(*debug_routes.LOGIN)
                 query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                if admin_routes.is_photo_path(path):   # 관리 서비스는 사진 주소일 때만 꺼낸다(디버그만 쓰는 서버 · 시험)
+                    return self._write(admin_routes.photo(services.admin, path))
                 if admin_routes.is_admin_path(path):
                     return self._send_json(*admin_routes.handle(services.admin, "GET", path, query, self.headers, None))
                 if path not in ADMIN_GET:
