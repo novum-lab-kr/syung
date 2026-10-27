@@ -1,7 +1,7 @@
 // 프로필 사진 JPEG 의 APP1(Exif) · APP13 · COM 떼기(web/user/photo_meta.mjs) — 사파리 · 아이폰 canvas JPEG 를 서버가 받게
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {stripJpegMeta} from '../web/user/photo_meta.mjs';
+import {stripJpegMeta} from '../web/user/photo_meta.mts';
 
 const seg = (marker, body) => [0xFF, marker, (body.length + 2) >> 8, (body.length + 2) & 255, ...body];
 const ascii = text => [...text].map(char => char.charCodeAt(0));

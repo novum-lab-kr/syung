@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { closestPlatformPoint } from '../web/lib/platform_route.mjs';
+import { closestPlatformPoint } from '../web/lib/platform_route.mts';
 import { StationNameLayer } from '../web/map/platform.mjs';
 
 // 출구가 승강장 한쪽 끝 밖에 몰린 역(stopReach): 그 끝을 늘린 통로에 출구가 붙어, 더 가까운 다른 노선 막대 끝으로 가지 않아요.

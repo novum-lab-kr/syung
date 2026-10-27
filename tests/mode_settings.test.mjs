@@ -162,7 +162,7 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
   assert.doesNotThrow(city({tone:'coaster',lampPool:null}));
   for(const v of [0,-1,'bad',false])assert.throws(()=>createModeRegistry([{id:'basic',settings:{city:{lampPool:v}}}]),/lampPool/,`톤 없이도 ${v}`);
   assert.throws(badS({trains:{look:'tram'}}),/허용되지 않는/);assert.throws(badS({trains:{predictStops:0}}),/predictStops/);assert.throws(badS({track:{kind:'air'}}),/허용되지 않는/);
-  const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mjs');
+  const {MAP_THEMES,MAP_COLORS,PARK_COLORS}=await import('../web/modes/basic/palette.mts');
   assert.equal(B.map.themes,MAP_THEMES);assert.equal(B.map.colors,MAP_COLORS);assert.equal(B.map.park,PARK_COLORS);
   assert.equal(B.themeChoice,'auto');assert.equal(B.mapColor,'calm');
   const bad=(map)=>createModeRegistry([{id:'basic',settings:{map}}]);
