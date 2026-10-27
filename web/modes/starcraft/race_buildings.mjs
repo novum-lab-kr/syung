@@ -7,7 +7,7 @@
 // 칠은 도시 셰이더의 종류를 그대로 쓴다 — wall(벽, 재질 색 · 창 없음), roof(지붕 색), accent(경사면 KIND.PITCHED, 팩 buildings.house.roof.pitched.colors 3색),
 // glow(KIND.SIGN, 팩 signs.colors 8색 — 밤에 스스로 빛남), metal(KIND.EQUIP 한 색, 가까이서만 자란다), trim(KIND.AWNING 3색, 가까이서만 자란다).
 // 메인 스레드는 모드 코드 받기로, Worker 는 정적 import 로 이 모듈을 불러 등록한다.
-import { registerCityPart } from '../../city/parts.mjs';
+import { registerCityPart } from '../../city/parts.mts';
 import { KIND } from '../../city/mesh.mjs';
 import { orientedBox, pointInPolygon, deepestPoint, edgeDistance } from '../../city/geom.mjs';
 import { BUILDING_MODELS } from './building_models.mjs';

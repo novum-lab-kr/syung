@@ -4,7 +4,7 @@
 // pack (resolvePack flattens it); the building type is one replaceable estimate, classifyBuilding. No GL, no DOM.
 
 import { LANDMARKS, landmarkMerc } from './landmarks_data.mjs';
-import { cityPart } from './parts.mjs';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록)
+import { cityPart } from './parts.mts';   // 조선 모드: every footprint as 기와집 when the pack carries `hanok` — 한옥 짓기는 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록)
 // vertex kinds after the city's (0–7), for the 조선 pieces (web/modes/joseon/hanok.mjs): 기와 (roofs, ridges, wall caps), a house's walls (a_bld.z type 1: mud walls of a
 // 초가), the 기와 담장's walls, 초가 thatch, 돌담 (fieldstone) — 메시 형식의 몫이라 여기에 둔다
 export const HANOK_KIND = { ROOF: 8, WALL: 9, DAM: 10, THATCH: 11, STONE: 12 };

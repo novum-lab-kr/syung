@@ -24,7 +24,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { decodeTile } from '../web/city/mvt.mjs';
+import { decodeTile } from '../web/city/mvt.mts';
 import { CityViaduct } from '../web/city/viaduct.mjs';
 import ORIGINAL_SNAP, { stops as ORIGINAL_STOPS } from '../web/city/viaduct_snap.mjs';
 import { smoothSnapPath, holdsFor, SMOOTHED_MARK } from './smooth_viaduct_snap.mjs';

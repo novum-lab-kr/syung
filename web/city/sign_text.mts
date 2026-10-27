@@ -13,7 +13,7 @@ export const SIGN_ATLAS = { size: 1024, hW: 256, hH: 40, hCols: 4, vW: 40, vH: 2
 const FONT = '"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Nanum Gothic",sans-serif';
 
 // → { data: Uint8Array(size²) 글자 진하기, hWidth: Float32Array(64) 가로 낱말 폭(칸 폭 비), vLen: Float32Array(24) 세로 낱말 길이(칸 높이 비) } 또는 null
-export function buildSignAtlas() {
+export function buildSignAtlas():{ data:Uint8Array; hWidth:Float32Array; vLen:Float32Array } | null {
   const A = SIGN_ATLAS, doc = globalThis.document; if (!doc?.createElement) return null;
   const c = doc.createElement('canvas'); c.width = c.height = A.size; const g = c.getContext('2d', { willReadFrequently: true }); if (!g) return null;
   g.fillStyle = '#000'; g.fillRect(0, 0, A.size, A.size); g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.textAlign = 'left';
@@ -25,12 +25,12 @@ export function buildSignAtlas() {
     hWidth[i] = (Math.min(m, A.hW - 8) + 8) / A.hW;
   });
   SIGN_WORDS.blade.forEach((w, i) => {   // 세로: 글자를 위에서 아래로 한 자씩(영문 · 숫자 묶음은 한 자로)
-    const chars = w.match(/[A-Za-z0-9]+|./g), x0 = i * A.vW, fs = Math.round(A.vW * .8), step = Math.min(fs * 1.08, (A.vH - 8) / chars.length);
+    const chars = w.match(/[A-Za-z0-9]+|./g)!, x0 = i * A.vW, fs = Math.round(A.vW * .8), step = Math.min(fs * 1.08, (A.vH - 8) / chars.length);
     g.font = `900 ${fs}px ${FONT}`; g.textAlign = 'center';
     chars.forEach((ch, j) => { const m = g.measureText(ch).width, k = Math.min(1, (A.vW - 4) / m); g.save(); g.translate(x0 + A.vW / 2, A.vY + 4 + step * (j + .5)); g.scale(k, Math.min(1, step / fs)); g.fillText(ch, 0, 0); g.restore() });
     g.textAlign = 'left'; vLen[i] = (step * chars.length + 8) / A.vH;
   });
   const px = g.getImageData(0, 0, A.size, A.size).data, data = new Uint8Array(A.size * A.size);
-  for (let i = 0; i < data.length; i++) data[i] = px[i * 4];
+  for (let i = 0; i < data.length; i++) data[i] = px[i * 4]!;
   return { data, hWidth, vLen };
 }
