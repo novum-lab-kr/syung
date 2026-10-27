@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mjs';
+import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
 import {createJourneyMap} from '../web/ui/journey.mjs';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../web/lib/journey_map_style.mjs';
 import {createModeRegistry} from '../web/modes/index.mjs';

@@ -4,15 +4,15 @@
 // 그래서 첫 스캔(SOS) 전의 APP1~APP15 · COM 조각을 떼고 나머지 바이트는 그대로 둔다. APP0(JFIF)은 남긴다.
 
 // bytes: Uint8Array(JPEG) → 뗀 Uint8Array. JPEG 모양이 아니면 그대로 돌려준다(서버가 판단).
-export function stripJpegMeta(bytes) {
+export function stripJpegMeta(bytes: Uint8Array): Uint8Array {
   if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return bytes;
   const parts = [bytes.subarray(0, 2)];
   let offset = 2;
   while (offset + 4 <= bytes.length && bytes[offset] === 0xFF) {
-    const marker = bytes[offset + 1];
+    const marker = bytes[offset + 1]!;   // 위 조건(offset + 4 <= 길이)으로 늘 있다
     if (marker === 0xFF) { offset += 1; continue; }   // 마커 앞 채움 바이트
     if (marker === 0xDA || marker === 0xD9) break;   // 스캔 자료부터는 그대로
-    const end = offset + 2 + ((bytes[offset + 2] << 8) | bytes[offset + 3]);
+    const end = offset + 2 + ((bytes[offset + 2]! << 8) | bytes[offset + 3]!);
     if (end > bytes.length) return bytes;
     const meta = (marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE;
     if (!meta) parts.push(bytes.subarray(offset, end));

@@ -1,5 +1,5 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
-import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mjs';
+import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mts';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
 import {initJourney} from './lib/journey-ui.mjs';
 import {createCoasterTrack} from './modes/coaster/track.mjs';   // 롤코 선로 층
@@ -18,7 +18,7 @@ import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설�
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mts';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
 import './modes/merge.mts';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
-import './modes/basic/palette.mjs';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
+import './modes/basic/palette.mts';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
 import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
 import SIMCITY_MODE from './modes/simcity/index.mjs';
 import JOSEON_MODE from './modes/joseon/index.mjs';
@@ -55,8 +55,8 @@ import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './cit
 import {CityLife} from './city/life.mjs';
 import {platformStroke} from './lib/platform_stroke.mjs';
 import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
-import {catchup,catchupAt} from './lib/train_catchup.mjs';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
-import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mjs';
+import {catchup,catchupAt} from './lib/train_catchup.mts';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
+import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mts';
 import {CityViaduct} from './city/viaduct.mjs';
 import {stops as snapStops} from './city/viaduct_snap.mjs';   // 기본·심시티: 도로 위로 옮긴 지하 역 점(곧은 승강장이면 방향도)   // city-life: 심시티 — the viaduct every line rides in that mode (deck, piers, roofed platforms; the trains are lifted onto it below)
 

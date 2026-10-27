@@ -78,7 +78,7 @@ async function shrinkPhoto(file) {
     if (blob?.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality);   // 사파리는 WebP 로 못 그린다(PNG 가 나온다)
     if (blob?.type === 'image/jpeg') {
       // 사파리 · 아이폰 JPEG 에 붙는 Exif(APP1) · APP13 조각을 뗀다 — 서버가 그런 JPEG 를 받지 않는다(올릴 때만 받는 파일)
-      const {stripJpegMeta} = await import('./photo_meta.mjs');
+      const {stripJpegMeta} = await import('./photo_meta.mts');
       blob = new Blob([stripJpegMeta(new Uint8Array(await blob.arrayBuffer()))], {type: 'image/jpeg'});
     }
     if (blob && blob.size <= PHOTO_MAX && (blob.type === 'image/webp' || blob.type === 'image/jpeg')) return blob;
