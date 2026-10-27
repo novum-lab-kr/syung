@@ -74,7 +74,7 @@ class LocalSite:
 
 @unittest.skipUnless(all(shutil.which(name) for name in (*RELEASE_TOOLS, "node", "curl")), "원격 배포 스크립트 도구가 필요합니다")
 class RemoteFixture(ReleaseFixture):
-    scripts = ("deploy.sh", "check_site.sh", "remote_deploy.sh")
+    scripts = ("deploy.sh", "check_site.sh", "remote_deploy.sh", "install_backup_units.sh")
 
     def seed_repo(self):
         self.env.update({
@@ -361,6 +361,14 @@ class RemoteDeployTest(RemoteFixture):
         self.assertEqual(self.unit_calls()[-2:], ["daemon-reload", "enable --now subway-member-backup.timer"])
         self.assertFalse((self.state / "backup-units-pending").exists())
         self.assertEqual((self.systemd / "subway-retrain.timer").read_text(), "hand installed\n")
+
+    def test_install_step_brought_by_this_deploy_runs_in_this_deploy(self):
+        # remote_deploy.sh 는 bash 가 처음 연 옛 내용을 끝까지 돈다(#15 배포에서 설치가 빠짐) — 설치 파일은 merge 뒤에 불러 새 내용으로 돈다
+        self.remote()
+        script = (self.repo / "deploy/install_backup_units.sh").read_text()
+        self.candidate({"deploy/install_backup_units.sh": script + 'echo "새 설치 단계"\n'})
+        (self.state / "backup-units-pending").touch()   # 설치가 돌게
+        self.assertIn("새 설치 단계", self.remote().stdout)
 
     def test_failed_reload_after_copy_retries_next_deploy(self):
         self.remote()   # 한 번 깔리고 켜진 뒤
