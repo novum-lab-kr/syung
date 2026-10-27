@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
 import {buildBusPath, busMotionDistance} from '../web/bus/motion.mjs';
-import {createJourneyMap} from '../web/ui/journey.mjs';
+import {createJourneyMap} from '../web/ui/journey.mts';
 
 const stops = {schemaVersion: 1, stops: [
   {id: '01', name: '출발', arsId: '00123', lng: 127, lat: 37.5},
