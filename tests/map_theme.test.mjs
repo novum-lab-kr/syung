@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createModeRegistry} from '../web/modes/index.mjs';
-import {createMapTheme} from '../web/map/theme.mjs';
+import {createMapTheme} from '../web/map/theme.mts';
 import {mergeSettings} from '../web/modes/merge.mts';
 
 const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
