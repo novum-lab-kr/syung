@@ -1,6 +1,9 @@
 import { NEW_NAMES, createRouter, key, normStatus } from "./lib/routing.mjs";
 import { seoulSun, sunPosition as sunPosition$1 } from "./lib/sun.mjs";
 import { initJourney } from "./lib/journey-ui.mjs";
+import "./npm/preact/dist/preact.mjs";
+import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { clearJourney, drawJourney } from "./ui/journey_sheet.mjs";
 import "./modes/basic/park.mjs";
 import "./modes/coaster/metrics.mjs";
 import { SEOUL_CITY_STYLE } from "./modes/basic/city.mjs";
@@ -11,8 +14,6 @@ import { COCKPIT_NEAR_M, nearMatrix, seatLabel, seatPickerHTML } from "./modes/c
 import { createCoasterRide } from "./modes/coaster/ride.mjs";
 import { createStationSearch } from "./ui/search.mjs";
 import { createBottomSheet } from "./ui/sheet.mjs";
-import "./npm/preact/dist/preact.mjs";
-import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import "./ui/station_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
 import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
@@ -1339,7 +1340,9 @@ var journeyMap = createJourneyMap({
 });
 var { rideCoords, showRoute, fitRoute, clearRoute, setSubwayOff, setRouteOpacity, focusRoute } = journeyMap;
 var journey = initJourney({
-	openSheet,
+	openSheetView,
+	drawJourney,
+	clearJourney,
 	closeSheet: () => closeSheet(),
 	map,
 	colors,
