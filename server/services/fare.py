@@ -25,9 +25,13 @@ import re
 import threading
 from collections import defaultdict
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST
 from server.store import fare_data
+
+if TYPE_CHECKING:   # 타입만
+    Hop = tuple[str, float, float | None, str | None]   # (이웃, 초, km | None, 'outside' | 'extra' | None)
 
 SUBWAY_BASE = 1550
 BUS_BASE = {"trunk": 1500, "branch": 1500, "express": 3000}   # 서울 간선 · 지선 · 광역
@@ -55,8 +59,8 @@ def joint_fare(km: float, base: int, free_km: float) -> int:
 
 class _Graph:
     """전철 이웃 쌍 자료 → 노선마다 {역 이름: [(이웃, 초, km|None, 'outside' | 'extra' | None)]}(급행 쌍 빼고)."""
-    def __init__(self, data: dict):
-        self.near: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    def __init__(self, data: dict[str, Any]):
+        self.near: dict[str, dict[str, list[Hop]]] = defaultdict(lambda: defaultdict(list))
         for line, left, right, seconds, km, outside, express, extra in data["hops"]:
             if express:   # 급행 쌍은 그 사이 완행 쌍들과 같은 선로 — 거리는 완행 쌍으로 잰다
                 continue
@@ -64,7 +68,7 @@ class _Graph:
             self.near[line][left].append((right, seconds, km, flag))
             self.near[line][right].append((left, seconds, km, flag))
 
-    def _walk(self, line: str, start: str, end: str, known_only: bool):
+    def _walk(self, line: str, start: str, end: str, known_only: bool) -> tuple[float, float, str | None] | None:
         best: dict[str, tuple[float, float, str | None]] = {start: (0, 0.0, None)}
         queue: list[tuple[float, float, str, str]] = [(0, 0.0, "", start)]
         while queue:
@@ -115,13 +119,13 @@ def _stop_key(name: str | None) -> str:
     return re.sub(r"[\s.·]", "", name or "")
 
 
-def _bus_km(routes: dict, leg: dict) -> tuple[float | None, str | None]:
+def _bus_km(routes: dict[str | None, Any], leg: dict[str, Any]) -> tuple[float | None, str | None]:
     route = routes.get(leg.get("route"))
     if route is None or route["type"] not in BUS_BASE or not PLAIN_BUS.fullmatch(leg.get("route") or ""):
         return None, "bus"
     stops = route["stops"]
     start, end = _stop_key(leg.get("from")), _stop_key(leg.get("to"))
-    best = None
+    best: float | None = None
     for index, (name, at) in enumerate(stops):
         if _stop_key(name) != start or at is None:
             continue
@@ -132,7 +136,7 @@ def _bus_km(routes: dict, leg: dict) -> tuple[float | None, str | None]:
     return (best, None) if best is not None else (None, "bus")
 
 
-def trip_fare(route: dict | None, graph: _Graph | None, buses: dict | None) -> tuple[int | None, float | None, str | None]:
+def trip_fare(route: dict[str, Any] | None, graph: _Graph | None, buses: dict[str, Any] | None) -> tuple[int | None, float | None, str | None]:
     """고른 경로 하나 → (1회 요금, 총 거리 km, None) · 못 구하면 (None, None, 이유: route · distance · outside · bus · none)."""
     if not route:
         return None, None, "route"
@@ -173,10 +177,10 @@ def month_rides(days: list[int], now: float) -> tuple[str, int]:
     return today.strftime("%Y-%m"), count
 
 
-def month_view(tickets: list[dict], now: float) -> dict:
+def month_view(tickets: list[dict[str, Any]], now: float) -> dict[str, Any]:
     """승차권(ticket_view 모양) 목록 → 이번 달 예상 교통비 {month, total, tickets:[{id,name,fare,km,rides,monthly}], skipped, reasons}."""
     graph, buses = _hop_graph(), fare_data.read(fare_data.BUS_KM)
-    month, rows, skipped, reasons = None, [], 0, defaultdict(int)
+    month, rows, skipped, reasons = None, cast("list[dict[str, Any]]", []), 0, cast("defaultdict[str | None, int]", defaultdict(int))
     for ticket in tickets:
         month, rides = month_rides(ticket["days"], now)
         fare, km, why = trip_fare(ticket.get("route"), graph, buses)

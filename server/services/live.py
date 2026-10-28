@@ -11,7 +11,7 @@ import time
 import urllib.error
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import cast
+from typing import Any, cast
 
 from server.clock import KST, kst_today
 from server.config import SubwayConfig
@@ -344,7 +344,7 @@ class SubwayLiveService:
         self.forward_seen: dict[tuple[str, str], dict] = {}   # forward_only 의 기억(두 피드를 섞은 뒤)
         self.position_lock = threading.Lock()
         self.position_cache: dict[str, tuple[float, list[dict]]] = {}
-        self.position_used = {"day": "", "calls": 0}
+        self.position_used: dict[str, Any] = {"day": "", "calls": 0}
         self.position_seen: dict[str, float] = {}   # line -> last time a request asked for it (lines being watched now)
         # 이상 감지(/api/health): 전 노선 받기의 마지막 성공 · 이어진 실패의 시작, 노선별 위치 피드 대수 대 전 역 도착 대수
         self.all_ok_at: float | None = None
@@ -381,7 +381,7 @@ class SubwayLiveService:
             self.quota_used += 1
             self._save_quota()
 
-    def quota_view(self) -> dict:
+    def quota_view(self) -> dict[str, Any]:
         return {"used": self.quota_used, "limit": self.config.daily_limit, "day": self.quota_day}
 
     def calls_left(self) -> int:

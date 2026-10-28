@@ -15,10 +15,16 @@ import statistics
 import threading
 import time
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 from server.clock import KST
 from server.services.live import LINE_NAMES, POSITION_PARTIAL_MIN, SubwayLiveService
 from server.store.live_samples import SLOT_SECONDS, SLOTS, LiveSamples, service_slot
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Event = tuple[float, str, str]   # (받은 때, 노선, 열차 번호) — LiveSamples.recent_events
 
 WINDOW = 600            # 10분
 LOW_SHARE = .5          # 평소의 50% 아래
@@ -51,17 +57,17 @@ def _share(count: float, usual: float) -> int:
 
 
 class HealthService:
-    def __init__(self, live: SubwayLiveService, samples: LiveSamples, *, clock=time.time):
+    def __init__(self, live: SubwayLiveService, samples: LiveSamples, *, clock: Callable[[], float] = time.time):
         self.live, self.samples, self.clock = live, samples, clock
         self.lock = threading.Lock()
         self.usual: dict[tuple[str, str], list[float | None]] = {}   # (일 종류, 노선) → 10분 칸마다 평소 열차 수(None = 기록 부족)
         self.covered: dict[str, list[int]] = {}   # 일 종류 → 칸마다 기록이 있던 날 수
         self.baseline_day = ""
-        self.report_cache: tuple[float, dict] | None = None
+        self.report_cache: tuple[float, dict[str, Any]] | None = None
 
     # ---- 평소 기준 ------------------------------------------------------------------------
 
-    def refresh_baseline(self, pause: float = 0.0, sleep=time.sleep) -> None:
+    def refresh_baseline(self, pause: float = 0.0, sleep: Callable[[float], None] = time.sleep) -> None:
         """지난 기록 파일(오늘 것 빼고 최근 BASELINE_DAYS 일)로 평소 기준을 다시 만든다. 하루 요약은 store 가 남겨 두 번 읽지 않는다."""
         today = datetime.fromtimestamp(self.clock(), KST)
         oldest = (today - timedelta(days=BASELINE_DAYS + 1)).strftime("%Y%m%d")
@@ -100,7 +106,7 @@ class HealthService:
 
     # ---- 지금 답 --------------------------------------------------------------------------
 
-    def report(self) -> dict:
+    def report(self) -> dict[str, Any]:
         now = self.clock()
         with self.lock:
             if self.report_cache and now - self.report_cache[0] < REPORT_SECONDS:
@@ -120,7 +126,7 @@ class HealthService:
         rows = self.usual.get((day_kind(service), line))
         return rows[slot] if rows else None
 
-    def _feed(self, now: float) -> dict:
+    def _feed(self, now: float) -> dict[str, Any]:
         live, since = self.live, self.live.all_error_since
         if since and now - since >= WINDOW and not live.quiet():
             last = f", 마지막 성공 {_clock(live.all_ok_at)}" if live.all_ok_at else ""
@@ -128,7 +134,7 @@ class HealthService:
         text = f"서울시 실시간 원본 정상({_clock(live.all_ok_at)} 받음)" if live.all_ok_at else "서울시 실시간 원본: 켠 뒤 아직 받지 않음"
         return {"key": "source:all", "ok": True, "text": text}
 
-    def _samples(self, now: float, events: list) -> dict:
+    def _samples(self, now: float, events: list[Event]) -> dict[str, Any]:
         last = max((e[0] for e in events), default=None)
         usual = sum(u for line in LINES if (u := self._usual(line, now - WINDOW / 2)))
         if (last is None or now - last >= WINDOW) and usual >= MIN_USUAL and not self.live.quiet():
@@ -136,14 +142,14 @@ class HealthService:
             return {"key": "feed:samples", "ok": False, "text": f"실시간 열차 기록이 10분 넘게 멈췄어요({since})"}
         return {"key": "feed:samples", "ok": True, "text": f"실시간 열차 기록 정상({_clock(last)})" if last else "실시간 열차 기록 없음(운행 시간 아님)"}
 
-    def _quota(self) -> dict:
+    def _quota(self) -> dict[str, Any]:
         q, p = self.live.quota_view(), self.live.position_used
         used = f"{q['used']} / {q['limit']}, 위치 피드 {p['calls']} / {self.live.config.position_budget}"
         if q["used"] >= q["limit"]:
             return {"key": "quota:daily", "ok": False, "text": f"오늘 서울시 호출 한도가 바닥났어요({used})"}
         return {"key": "quota:daily", "ok": True, "text": f"오늘 서울시 호출 {used}"}
 
-    def _line(self, line: str, now: float, events: list) -> dict:
+    def _line(self, line: str, now: float, events: list[Event]) -> dict[str, Any]:
         key = f"live:{line}"
         if self.live.quiet():
             return {"key": key, "ok": True, "text": f"{line} 운행 시간 아님"}
@@ -171,13 +177,13 @@ class HealthService:
             return {"key": key, "ok": False, "text": f"{line} 실시간 열차가 10분 넘게 안 들어와요(평소 약 {round(usual)}대, {_clock(since)}부터)"}
         return {"key": key, "ok": False, "text": f"{line} 실시간 열차가 평소의 {_share(count, usual)}%예요({count}대 / 평소 약 {round(usual)}대, {_clock(since)}부터)"}
 
-    def _position(self, line: str, now: float) -> dict:
+    def _position(self, line: str, now: float) -> dict[str, Any]:
         key = f"position:{line}"
         rows = [r for r in self.live.position_checks.get(line, []) if r[0] > now - 3600 and r[2] >= POSITION_PARTIAL_MIN]
         if not rows:
             return {"key": key, "ok": True, "text": f"{line} 위치 정보: 최근 1시간 확인 없음"}
         at, count, listed = rows[-1]
-        streak = []   # 마지막부터 거슬러 이어서 모자랐던 확인들
+        streak: list[tuple[float, int, int]] = []   # 마지막부터 거슬러 이어서 모자랐던 확인들
         for r in reversed(rows):
             if r[1] >= LOW_SHARE * r[2]:
                 break
