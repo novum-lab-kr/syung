@@ -36,7 +36,16 @@ class ShownCountTest(unittest.TestCase):
         found = [ride("A", t + 1800), ride("A", t + 1900),   # 같은 구간 → 하나
                  ride("B", t + 2000), ride("C", t + 1800 + graph.DOMINATED_LATE + 60),   # C 는 A 보다 늦고 나을 게 없다
                  ride("D", t + 1800 + graph.ROUTE_SLACK + 60)]   # 너무 늦다
-        self.assertEqual(graph._shown_count(found, t + 1800), 2)
+        self.assertEqual(graph._shown_count(found, t + 1800, None, t), 2)
+
+    def test_rides_later_than_walking_are_not_counted(self):
+        t = WHEN.timestamp()
+        found = [ride(f"L{i}", t + 1200 + i * 60) for i in range(6)]   # 20~25분에 닿는 길 여섯
+        self.assertEqual(graph._shown_count(found, t + 1200, None, t), 6)   # 걸어가기 없음(멀다)
+        # 걸어서 22분 30초: 걷기보다 일찍 닿는 셋(20 · 21 · 22분) + 걸어가기 하나
+        self.assertEqual(graph._shown_count(found, t + 1200, 1350, t), 4)
+        # 걸어서 40분: 가장 빠른 탈것보다 10분 넘게 늦어 걸어가기를 안 붙인다 → 탈것 여섯 그대로
+        self.assertEqual(graph._shown_count(found, t + 1200, 2400, t), 6)
 
 
 class EarlyStopTest(unittest.TestCase):
@@ -78,6 +87,23 @@ class EarlyStopTest(unittest.TestCase):
         # 멈추지 않고 비켜 갈 탐색이 바닥날 때까지(첫 탐색 둘 × 비켜 가기 세 겹 = 8 — 6번째에서 멈추지 않는다)
         self.assertEqual(result["searched"]["searches"], 8)
         self.assertEqual(len(result["plans"]), 1)
+
+
+    def test_does_not_stop_on_rides_that_walking_beats(self):
+        made = []
+
+        def run_batch(jobs, seconds):   # 다른 길이 넉넉히 나오지만 모두 걸어서(15분)보다 늦게 닿는다
+            out = []
+            for _ in jobs:
+                made.append(1)
+                out.append(ride(f"L{len(made)}", WHEN.timestamp() + 1200 + len(made) * 60))
+            return out
+        near = (37.5010, 127.0010)   # 약 140 m — 걸어갈 만큼 가깝다
+        with patch.object(graph, "walk_path", lambda a, b: ([[a[1], a[0]], [b[1], b[0]]], 900, 1100)):
+            result = graph.plan((37.50, 127.00), near, WHEN, {}, run_batch, 3)
+        # 걸어가기에 밀려 빠질 길로는 멈추지 않는다(전엔 6번째에서 멈춤) — 비켜 갈 탐색이 바닥날 때까지 8번
+        self.assertEqual(result["searched"]["searches"], 8)
+        self.assertEqual([p["tag"] for p in result["plans"]], ["걸어가기"])
 
 
 if __name__ == "__main__":

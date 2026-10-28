@@ -611,12 +611,21 @@ def _pick_shown(plans: list[Row]) -> list[Row]:
     return [plans[i] for i in sorted(keep)]
 
 
-def _shown_count(found: list[Row], best_arrive: float) -> int:
-    """지금까지 찾은 것으로 보여 줄 수 있는 길 수(아래 plan 의 거르기와 같은 순서 · 값을 바꾸지 않는다) — 일찍 멈출지 볼 때."""
+def _shows_walk(arrives: list[float], walk_sec: int, t0: float) -> bool:
+    """가까울 때 걸어가기를 보여 줄지: 탈것 길이 없거나, 걷기가 가장 빨리 닿는 탈것보다 10분 넘게 늦지 않으면."""
+    return not arrives or walk_sec <= min(arrives) - t0 + 10 * 60
+
+
+def _shown_count(found: list[Row], best_arrive: float, walk_sec: int | None, t0: float) -> int:
+    """지금까지 찾은 것으로 보여 줄 수 있는 길 수(아래 plan 의 거르기와 같은 순서 · 값을 바꾸지 않는다) — 일찍 멈출지 볼 때.
+    walk_sec: 걸어가기 초(가까울 때만 — 아니면 None). 걸어가기가 붙으면 걷기보다 늦게 닿는 탈것 길은 빠지니 세지 않는다."""
     firsts: dict[tuple[Any, ...], Row] = {}
     for r in sorted((r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK), key=lambda r: r["arrive"]):
         firsts.setdefault(_ride_key(r), r)
-    return len(_undominated(list(firsts.values())))
+    arrives = [r["arrive"] for r in _undominated(list(firsts.values()))]
+    if walk_sec is None or not _shows_walk(arrives, walk_sec, t0):
+        return len(arrives)
+    return 1 + sum(a < t0 + walk_sec for a in arrives)
 
 
 def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
@@ -625,6 +634,10 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     start = _walk_table(origin, _near_nodes(origin))
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     straight = _meters(origin, dest)
+    t_begin = time.monotonic()
+    # close enough to just walk: 먼저 재 둔다 — 일찍 멈출지 셀 때 걷기보다 늦게 닿는 길은 빼야 해서(탐색 예산 밖)
+    walk = walk_path(origin, dest) if straight < 2500 else None
+    walk_sec = walk[1] if walk else None
     both, subway, bus = frozenset({"subway", "bus"}), frozenset({"subway"}), frozenset({"bus"})
 
     # Many routes: the fastest by each mode, then, breadth first, the same search with one more
@@ -665,7 +678,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                 for l in r["legs"]:
                     if l["type"] != "walk":
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
-        if seeds <= tried and _shown_count(found, best_arrive) >= STOP_PLANS:
+        if seeds <= tried and _shown_count(found, best_arrive, walk_sec, when.timestamp()) >= STOP_PLANS:
             break   # 태그를 정하는 탐색이 끝났고 보여 줄 길이 넉넉하다(2026-10-28 사용자 결정 B)
     found = [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK]
 
@@ -720,9 +733,9 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                       "minutes": round((r["arrive"] - when.timestamp()) / 60), "transfers": max(0, len(transit) - 1),
                       "walkMinutes": round(sum(l["seconds"] for l in legs if l["type"] == "walk") / 60), "legs": legs,
                       "_arrive": r["arrive"]})
-    if straight < 2500:   # close enough to just walk
-        path, sec, metres = walk_path(origin, dest)
-        if not plans or sec <= min(p["_arrive"] for p in plans) - when.timestamp() + 10 * 60:
+    if walk:   # close enough to just walk
+        path, sec, metres = walk
+        if _shows_walk([p["_arrive"] for p in plans], sec, when.timestamp()):
             arrive = when.timestamp() + sec
             plans.append({"tag": "걸어가기", "kind": "walk", "leaveBy": when.strftime("%H:%M"), "arrives": _fmt(arrive),
                           "minutes": round(sec / 60), "transfers": 0, "walkMinutes": round(sec / 60), "_arrive": arrive,
@@ -736,7 +749,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     for p in plans:
         del p["_arrive"]
     out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
-           "searched": {"searches": searches, "seconds": round(time.monotonic() - t_start, 1)}}
+           "searched": {"searches": searches, "seconds": round(time.monotonic() - t_begin, 1)}}
     if not plans:
         out["error"] = "이 시각에는 다니는 열차·버스가 없거나, 가까운 역·정류장에서 이어지는 경로를 찾지 못했어요."
     return out
