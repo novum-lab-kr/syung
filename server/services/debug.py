@@ -9,10 +9,14 @@ import json
 import math
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST
 from server.services.ride_motion import detect
 from server.store.debug_log import DebugStore
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
 
 RIDE_KINDS = {"start", "gps", "arrive", "depart", "end", "mark", "motion"}
 CANCEL_NOTE = "바로 앞 도착 · 출발 취소"   # 디버깅 페이지가 이미 보낸 누름을 취소할 때 남기는 표시(debug.html undo)
@@ -30,13 +34,14 @@ class BadRequest(ValueError):
     """사람이 읽을 고정 문구만 싣는다."""
 
 
-def clean_event(raw) -> dict:
+def clean_event(raw: object) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise BadRequest("사건 모양이 아니에요")
+    raw = cast("dict[str, Any]", raw)   # JSON 객체 — 키는 늘 글자
     kind, mode = raw.get("kind"), raw.get("mode")
     if kind not in RIDE_KINDS or mode not in MODES:
         raise BadRequest("kind · mode 가 아니에요")
-    event = {"kind": kind, "mode": mode}
+    event: dict[str, Any] = {"kind": kind, "mode": mode}
     for key, size in TEXT.items():
         value = raw.get(key)
         if isinstance(value, str) and value.strip():
@@ -48,8 +53,9 @@ def clean_event(raw) -> dict:
     if kind == "motion":
         # 가속도 센서 묶음: m = 0.1초 칸마다 [t 기준 ms, 중력 포함 가속 x y z, 중력 뺀 가속 x y z, 회전 α β γ] 를 이어 붙인 숫자(없는 값은 null)
         m = raw.get("m")
-        if not isinstance(m, list) or not m or len(m) > MOTION_VALUES:
+        if not isinstance(m, list) or not m or len(cast("list[Any]", m)) > MOTION_VALUES:
             raise BadRequest(f"motion 의 m 은 1~{MOTION_VALUES}개예요")
+        m = cast("list[Any]", m)   # 위에서 list 인지 봤다
         event["m"] = [None if v is None else round(float(v), 2) for v in m
                       if v is None or (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and abs(v) <= 1e5)]
         if len(event["m"]) != len(m):
@@ -60,43 +66,44 @@ def clean_event(raw) -> dict:
 
 
 class DebugService:
-    def __init__(self, store: DebugStore, *, bus_routes=lambda: {}, clock=time.time):
+    def __init__(self, store: DebugStore, *, bus_routes: Callable[[], dict[str, dict[str, Any]]] = lambda: {}, clock: Callable[[], float] = time.time):
         self.store, self.bus_routes, self.clock = store, bus_routes, clock
 
-    def record_ride(self, body: bytes) -> dict:
+    def record_ride(self, body: bytes) -> dict[str, Any]:
         try:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             raise BadRequest("JSON 이 아니에요") from None
-        raw = payload.get("events") if isinstance(payload, dict) else None
-        if not isinstance(raw, list) or not raw or len(raw) > MAX_EVENTS:
+        raw = cast("dict[str, Any]", payload).get("events") if isinstance(payload, dict) else None
+        if not isinstance(raw, list) or not raw or len(cast("list[Any]", raw)) > MAX_EVENTS:
             raise BadRequest(f"events 는 1~{MAX_EVENTS}개예요")
+        raw = cast("list[Any]", raw)   # 위에서 list 인지 봤다
         now = self.clock()
         events = [{**clean_event(e), "receivedAt": round(now * 1000)} for e in raw]
         self.store.append_rides(events, now)
         return {"ok": True, "saved": len(events)}
 
-    def save_shot(self, data: bytes, content_type: str, note: str, state: str) -> dict:
+    def save_shot(self, data: bytes, content_type: str, note: str, state: str) -> dict[str, Any]:
         ext = SHOT_TYPES.get((content_type or "").split(";")[0].strip().lower())
         if not ext:
             raise BadRequest("사진(PNG · JPG · WEBP · HEIC) · 동영상(MP4 · MOV · WEBM)만 돼요")
         if not data or len(data) > MAX_SHOT_BYTES:
             raise BadRequest("파일이 비었거나 40MB 를 넘어요")
         try:
-            parsed = json.loads(state) if state else {}
+            parsed: object = json.loads(state) if state else {}
         except ValueError:
             parsed = {}
-        meta = {"at": round(self.clock() * 1000), "type": ext, "bytes": len(data), "note": (note or "")[:2000],
+        meta: dict[str, Any] = {"at": round(self.clock() * 1000), "type": ext, "bytes": len(data), "note": (note or "")[:2000],
                 "state": parsed if isinstance(parsed, dict) and len(state) <= 8000 else {}}
         name = self.store.save_shot(data, ext, meta, self.clock())
         return {"ok": True, "file": name}
 
-    def recent(self, day: str = "") -> dict:
+    def recent(self, day: str = "") -> dict[str, Any]:
         """그날(YYYYMMDD, 없거나 이상하면 오늘)의 탑승 기록 요약 · 기록이 있는 날 목록 · 최근 캡처."""
         today = datetime.fromtimestamp(self.clock(), KST).strftime("%Y%m%d")
         day = day if len(day) == 8 and day.isdigit() else today
-        rides: dict[str, dict] = {}
-        motions: dict[str, list[dict]] = {}
+        rides: dict[str, dict[str, Any]] = {}
+        motions: dict[str, list[dict[str, Any]]] = {}
         for e in self.store.recent_rides(day):
             if e["kind"] == "motion":
                 motions.setdefault(e["ride"], []).append(e)
@@ -119,7 +126,7 @@ class DebugService:
         days = sorted(set(self.store.ride_days()) | {today}, reverse=True)
         return {"day": day, "days": days, "rides": sorted(rides.values(), key=lambda r: -r["from"]), "shots": shots}
 
-    def find_bus_route(self, name: str) -> dict:
+    def find_bus_route(self, name: str) -> dict[str, Any]:
         name = (name or "").strip()[:20]
         if not name:
             return {"routes": []}

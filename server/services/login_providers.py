@@ -9,18 +9,27 @@ import base64
 import json
 import time
 import urllib.parse
+from typing import TYPE_CHECKING, Any, cast
 
 from server.sources.oauth import ProviderError, get_bearer, post_form
+
+if TYPE_CHECKING:   # 타입만(실행 때 config 를 다시 부르지 않는다)
+    from collections.abc import Callable
+
+    from server.config import MemberConfig
+
+    Post = Callable[[str, dict[str, Any]], dict[str, Any]]   # 토큰 주소(sources.oauth.post_form 과 같은 모양)
+    Get = Callable[[str, str], dict[str, Any]]   # 사용자 정보(sources.oauth.get_bearer)
 
 DEFAULT_NAMES = {"kakao": "카카오 사용자", "google": "구글 사용자", "apple": "Apple 사용자"}
 
 
-def _name(value, provider: str) -> str:
+def _name(value: object, provider: str) -> str:
     text = value.strip() if isinstance(value, str) else ""
     return text[:40] or DEFAULT_NAMES[provider]
 
 
-def id_token_claims(id_token: str, *, issuer: str, audience: str, now: float) -> dict:
+def id_token_claims(id_token: str, *, issuer: str, audience: str, now: float) -> dict[str, Any]:
     """토큰 주소에서 HTTPS 로 직접 받은 ID 토큰의 내용(서명 검증은 안 한다 — 구글 문서: 제공자와 직접 받은 토큰은 믿어도 된다).
     그래도 발급자 · 받는 앱 · 만료 · sub 는 본다."""
     try:
@@ -30,8 +39,9 @@ def id_token_claims(id_token: str, *, issuer: str, audience: str, now: float) ->
         raise ProviderError("id_token unreadable") from None
     if not isinstance(claims, dict):
         raise ProviderError("id_token unreadable")
+    claims = cast("dict[str, Any]", claims)   # JSON 객체 — 키는 늘 글자
     aud = claims.get("aud")
-    audiences = aud if isinstance(aud, list) else [aud]
+    audiences: list[Any] = cast("list[Any]", aud) if isinstance(aud, list) else [aud]
     issuers = (issuer, issuer.removeprefix("https://"))   # 구글은 둘 다 쓴다
     if (claims.get("iss") not in issuers or audience not in audiences
             or not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= now
@@ -43,7 +53,7 @@ def id_token_claims(id_token: str, *, issuer: str, audience: str, now: float) ->
 class KakaoProvider:
     name = "kakao"
 
-    def __init__(self, client_id: str, client_secret: str = "", *, post=post_form, get=get_bearer):
+    def __init__(self, client_id: str, client_secret: str = "", *, post: Post = post_form, get: Get = get_bearer):
         self.client_id, self.client_secret, self._post, self._get = client_id, client_secret, post, get
 
     def authorize_url(self, state: str, redirect_uri: str) -> str:
@@ -61,14 +71,14 @@ class KakaoProvider:
         member = me.get("id")
         if not isinstance(member, int) or isinstance(member, bool):
             raise ProviderError("no member id")
-        profile = (me.get("kakao_account") or {}).get("profile") or {}
-        return str(member), _name(profile.get("nickname") if isinstance(profile, dict) else None, self.name)
+        profile: object = cast("dict[str, Any]", me.get("kakao_account") or {}).get("profile") or {}
+        return str(member), _name(cast("dict[str, Any]", profile).get("nickname") if isinstance(profile, dict) else None, self.name)
 
 
 class GoogleProvider:
     name = "google"
 
-    def __init__(self, client_id: str, client_secret: str, *, post=post_form, clock=time.time):
+    def __init__(self, client_id: str, client_secret: str, *, post: Post = post_form, clock: Callable[[], float] = time.time):
         self.client_id, self.client_secret, self._post, self._clock = client_id, client_secret, post, clock
 
     def authorize_url(self, state: str, redirect_uri: str) -> str:
@@ -89,7 +99,7 @@ class AppleProvider:
     """client_secret 은 미리 만든 ES256 JWT(표준 라이브러리에 ECDSA 가 없다 · 최대 6개월). 이름 · 이메일 범위는 안 받는다(query 응답)."""
     name = "apple"
 
-    def __init__(self, client_id: str, client_secret: str, *, post=post_form, clock=time.time):
+    def __init__(self, client_id: str, client_secret: str, *, post: Post = post_form, clock: Callable[[], float] = time.time):
         self.client_id, self.client_secret, self._post, self._clock = client_id, client_secret, post, clock
 
     def authorize_url(self, state: str, redirect_uri: str) -> str:
@@ -106,9 +116,9 @@ class AppleProvider:
         return claims["sub"], DEFAULT_NAMES[self.name]
 
 
-def providers_from_config(config) -> dict:
+def providers_from_config(config: MemberConfig) -> dict[str, KakaoProvider | GoogleProvider | AppleProvider]:
     """설정이 다 있는 제공자만, 화면에 보일 차례(카카오 → 구글 → Apple)로."""
-    found = {}
+    found: dict[str, KakaoProvider | GoogleProvider | AppleProvider] = {}
     if config.kakao_client_id:
         found["kakao"] = KakaoProvider(config.kakao_client_id, config.kakao_client_secret)
     if config.google_client_id and config.google_client_secret:

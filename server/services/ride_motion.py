@@ -19,6 +19,7 @@ motion 사건의 m: 0.1초 칸마다 [사건 t 기준 ms, 중력 포함 가속 x
 from __future__ import annotations
 
 import math
+from typing import Any
 
 BIN_MS = 100
 WINDOW = 20          # 2초 평균(칸)
@@ -99,7 +100,7 @@ def _pulses(sm) -> list[dict]:
     return merged
 
 
-def detect(events: list[dict]) -> dict:
+def detect(events: list[dict[str, Any]]) -> dict[str, Any]:
     """motion 사건들 → {"events": [{"kind": "arrive"|"depart", "t": ms}], "series": [[ms, 부호 붙은 m/s²], …](1초마다)}.
     series 의 부호: 출발 방향 +, 감속 −."""
     sm = _smooth(_horizontal(_bins(events)))
