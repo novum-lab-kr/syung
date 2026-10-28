@@ -22,11 +22,6 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		requestAnimationFrame(() => sheet.classList.add("open"));
 		return ++sheetToken;
 	}
-	function openSheet(html, source = "subway") {
-		return fillBody(() => {
-			sheetBody.innerHTML = html;
-		}, source);
-	}
 	function openSheetView(mount, source = "subway") {
 		return fillBody(() => {
 			sheetBody.textContent = "";
@@ -401,7 +396,6 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		sheet,
 		sheetBody,
 		followBtn,
-		openSheet,
 		openSheetView,
 		closeSheet,
 		sheetBusy,

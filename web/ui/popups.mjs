@@ -1,6 +1,7 @@
 import { clearPanel, drawStationSheet } from "./station_sheet.mjs";
+import { drawTrainSheet } from "./train_sheet.mjs";
 // web/ui/popups.mts
-function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheet, openSheetView, follow, sheetUI, sheetBody, followBtn, live }) {
+function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheetView, follow, sheetUI, sheetBody, followBtn, live }) {
 	function trainState(plan) {
 		let el = age(plan.t.receivedAt) + plan.lead, ph = plan.phases[plan.phases.length - 1];
 		plan.phases.length - 1;
@@ -36,38 +37,55 @@ function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, t
 		if (ph.k0 === ph.k1) return `${ph.k0 === 0 ? ph.from.name : ph.to.name}역에 정차 중`;
 		return left < 10 ? `${ph.from.name} → ${ph.to.name} · 곧 도착` : `${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
 	}
-	function trainSheetHTML(plan) {
-		const t = plan.t, c = colors[t.line];
-		const badges = [t.express ? "<span class=\"b ex\">급행</span>" : "", t.last ? "<span class=\"b last\">막차</span>" : ""].join("");
-		return `<div class="train-inspect" style="--c:${c}">
-  <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
-  <div class="tp-dest">${esc(destLabel(t) || "행선지 정보 없음")}</div>
-  <div class="tp-now">${esc(riderState(plan))}</div>
-  ${canRide() ? `<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars, rideRows(plan), rider.seat)}</div><button type="button" class="ride-go">${seatLabel(rider.seat)}에 타기</button>` : ""}
-  <div class="sec">서울시 실시간 원본</div>
-  <dl class="kv">${rawFeedHTML(t)}</dl></div>`;
+	function trainView(plan, ride) {
+		const t = plan.t;
+		return {
+			color: String(colors[t.line]),
+			line: String(t.line),
+			trainNo: String(t.trainNo),
+			express: !!t.express,
+			last: !!t.last,
+			dest: destLabel(t) || "행선지 정보 없음",
+			now: riderState(plan),
+			ride,
+			raw: rawFeed(t)
+		};
 	}
-	function rawFeedHTML(t) {
-		const a = Math.round(age(t.receivedAt)), kst = (v) => v ? new Date(v).toLocaleTimeString("ko-KR", {
+	function rawFeed(t) {
+		const kst = (v) => v ? new Date(v).toLocaleTimeString("ko-KR", {
 			timeZone: "Asia/Seoul",
 			hour12: false
-		}) : "-", kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
-		return `${kv("역", esc(t.station))}${kv("상태", esc(t.status))}${kv("방향", esc(t.direction))}${kv("행선지", esc(t.destination || "-"))}
-  ${kv("기록 시각", `${esc(String(t.receivedAt || "-").slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv("받은 시각", kst(live.feed.fetchedAt))}`;
+		}) : "-";
+		return {
+			station: String(t.station),
+			status: String(t.status),
+			direction: String(t.direction),
+			destination: String(t.destination || "-"),
+			recorded: String(t.receivedAt || "-").slice(11),
+			ageSec: Math.round(age(t.receivedAt)),
+			fetched: kst(live.feed.fetchedAt)
+		};
 	}
 	function showTrainPopup(plan) {
-		const token = openSheet(trainSheetHTML(plan));
+		const first = trainView(plan, canRide() ? {
+			seatsHTML: seatPickerHTML(plan.cars, rideRows(plan), rider.seat),
+			goLabel: `${seatLabel(rider.seat)}에 타기`
+		} : null), token = openSheetView((body) => {
+			drawTrainSheet(body, first);
+			return () => clearPanel(body);
+		});
 		sheetUI.sheetTrain = plan.id;
 		requestAnimationFrame(() => follow(plan.id));
 		const timer = setInterval(() => {
 			if (token !== sheetUI.sheetToken) return clearInterval(timer);
 			const pl = planner.plans.find((p) => p.id === sheetUI.sheetTrain);
 			if (!pl) return;
-			const now = sheetBody.querySelector(".tp-now"), dest = sheetBody.querySelector(".tp-dest");
-			if (now) now.textContent = riderState(pl);
-			if (dest) dest.textContent = destLabel(pl.t) || "행선지 정보 없음";
-			const raw = sheetBody.querySelector(".train-inspect .kv"), h = rawFeedHTML(pl.t);
-			if (raw && raw.innerHTML !== h) raw.innerHTML = h;
+			drawTrainSheet(sheetBody, {
+				...first,
+				dest: destLabel(pl.t) || "행선지 정보 없음",
+				now: riderState(pl),
+				raw: rawFeed(pl.t)
+			});
 		}, 1e3);
 	}
 	document.head.insertAdjacentHTML("beforeend", "<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>");
@@ -218,8 +236,6 @@ function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, t
 	return {
 		trainState,
 		riderState,
-		trainSheetHTML,
-		rawFeedHTML,
 		showTrainPopup,
 		pickTrain,
 		liveNotice,

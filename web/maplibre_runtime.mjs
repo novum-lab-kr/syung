@@ -15,6 +15,7 @@ import { createCoasterRide } from "./modes/coaster/ride.mjs";
 import { createStationSearch } from "./ui/search.mjs";
 import { createBottomSheet } from "./ui/sheet.mjs";
 import "./ui/station_sheet.mjs";
+import "./ui/train_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
 import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
@@ -1310,7 +1311,7 @@ var sheetUI = createBottomSheet({
 		}
 	}
 });
-var { sheet, sheetBody, followBtn, openSheet, openSheetView, closeSheet, sheetBusy, sheetPad, trainLngLat, follow, followBusStart, followSoon } = sheetUI;
+var { sheet, sheetBody, followBtn, openSheetView, closeSheet, sheetBusy, sheetPad, trainLngLat, follow, followBusStart, followSoon } = sheetUI;
 var journeyMap = createJourneyMap({
 	map,
 	maplibregl,
@@ -1424,12 +1425,11 @@ if (location.hash.includes("fps")) {
 map.on("movestart", (e) => {
 	if (rider.ride && e.originalEvent) stopRide(false);
 });
-var { trainState, riderState, trainSheetHTML, rawFeedHTML, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, showStationPopup } = createPopups({
+var { trainState, riderState, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, showStationPopup } = createPopups({
 	map,
 	maplibregl,
 	planner,
 	colors,
-	esc,
 	age,
 	destLabel,
 	trainPose,
@@ -1444,7 +1444,6 @@ var { trainState, riderState, trainSheetHTML, rawFeedHTML, showTrainPopup, pickT
 	seatLabel,
 	rideRows,
 	rider,
-	openSheet,
 	openSheetView,
 	follow,
 	sheetUI,
