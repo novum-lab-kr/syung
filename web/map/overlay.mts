@@ -44,7 +44,7 @@ type Life = LifeOptions['night'];
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다). drawTrains · wallsNow 는 이 파일이 채운다(setter)
 interface OverlayLive {
   me:ReturnType<typeof createMyMotion>; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
-  bloomTune:BloomTune | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
+  bloomTune:BloomTune | null | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
   CoasterRidePlacement:typeof CoasterRidePlacement; FestoonLayer:typeof FestoonLayer; RideLayer:typeof RideLayer; busLayer:ReturnType<typeof createBusLayer> | null;
   cityBuildings:CityBuildings | null; cityLandmarks:CityLandmarks | null; settings:OverlaySettings; kitReady:boolean; sampleRideTracks:typeof sampleRideTracks;
   selected:NonNullable<Parameters<CityViaduct['render']>[2]>['selected']; stationAlpha:number; drawTrains:()=>void; wallsNow:()=>void;

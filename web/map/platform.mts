@@ -9,9 +9,9 @@ import type { MapStation } from '../trains/types.mts';
 type XY = { x:number; y:number };
 type LngLat = [number, number];
 // 역 승강장 사각형(본체 stationRects): 좌표 · 차선 비킴 px · 고가 리본 가운데 · 통로 끝, 화면 상자는 처음 그릴 때 붙인다
-export interface StationRect { coords:LngLat[]; offset:number; center?:LngLatLike; reach?:LngLatLike; box?:[number, number, number, number] }
+export interface StationRect { coords:LngLat[]; offset:number; center?:LngLatLike; reach?:LngLatLike | null; box?:[number, number, number, number] }
 // 출구(역 id → [경도, 위도, 번호])
-type Exits = Record<string, [number, number, string | number][]>;
+type Exits = Record<string, [number, number, string | number, number?][]>;   // [경도, 위도, 출구 번호, 휠체어](exits.json)
 // 승강장 리본 꼭짓점
 type PlatformStroke = typeof platformStroke;
 // 본체가 넘기는 것(이 파일이 쓰는 칸만) — 바뀌는 값은 get…()

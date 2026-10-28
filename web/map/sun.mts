@@ -13,7 +13,7 @@ export function hull(pts:XY[]):XY[]{pts=[...pts].sort((a,b)=>a[0]-b[0]||a[1]-b[1
 interface ShadowGeo { data:Float32Array; ox:number; oy:number }
 export class SunShadowLayer{
   // 필드는 선언만(declare — 실행 코드 없음, 값은 지금처럼 constructor · onAdd 가 넣는다)
-  declare id:string; declare type:'custom'; declare renderingMode:'2d'; declare geo:ShadowGeo|null; declare alpha:number; declare dirty:boolean; declare color?:[number,number,number];
+  declare id:string; declare type:'custom'; declare renderingMode:'2d'; declare geo:ShadowGeo|null; declare alpha:number; declare dirty:boolean; declare color?:[number,number,number] | null;
   declare map:MapLibre; declare pMask:WebGLProgram; declare pComp:WebGLProgram; declare buf:WebGLBuffer; declare quad:WebGLBuffer; declare tex:WebGLTexture; declare fbo:WebGLFramebuffer; declare w:number; declare h:number;
   constructor(){this.id='sun-shadows';this.type='custom';this.renderingMode='2d';this.geo=null;this.alpha=0}
   set(geo:ShadowGeo|null,alpha:number){this.geo=geo;this.alpha=alpha;this.dirty=true}

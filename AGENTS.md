@@ -5,7 +5,7 @@
 ## 어디서 무엇을 고치나
 | 경로 | 내용 |
 |---|---|
-| `web/maplibre_runtime.mjs` | 본체: 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
+| `web/maplibre_runtime.mts` | 본체(빌드 결과 이름은 `.mjs`): 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
 | `web/modes/index.mts` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
 | `web/modes/transition.mjs` | 모드 상태의 주인(지금 · 원하는 모드, 요청 번호, 롤코 배속) |
 | `web/modes/basic/` | 모든 설정의 원본: `index.mts`(설정 묶음) · `palette.mts`(지도 색) · `city.mts`(도시 팩) · `park.mts`(공원 자료) |
@@ -54,10 +54,10 @@
   - 첫 화면 JS gzip 약 560 KB(2026-10-10 값, 이후 다시 안 잼). 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
 
 ## 함정
-- **TypeScript(섞어 쓰는 중)**: 새 파일 · 옮기는 파일은 `.mts`, import 는 확장자까지(`./x.mts`), 지울 수 있는 문법만(enum · namespace · 매개변수 속성 금지 — `erasableSyntaxOnly`). 시험(`node --test`)은 Node 22.18+ 가 `.mts` 를 그대로 읽고(서버 22.23 · CI 22), 빌드는 `.mjs` 로 낸다(이름 그대로 — 결과 주소 · 요청 차례 같음). `.mjs` 는 맨 위 `// @ts-check` 를 붙인 것만 검사. 지도 타입은 `import type { Map } from 'maplibre-gl'`(devDependency 6.11.1 = `web/vendor` 와 같은 판 · 타입만 — 실행은 vendor 그대로). 본체가 넘기는 deps 는 그 파일이 쓰는 칸만 interface 로 적는다. 본체의 `import(\`./${n}.mjs\`)`(MODE_KIT_DEPS) 목록에 든 모듈을 `.mts` 로 옮기면 `tests/mode_kit_deps.test.mjs` 의 `.mjs` 붙이기도 맞춘다. `.mjs` → `.mts` 로 옮길 땐 web/ 밖에서 부르는 곳도 찾는다(`grep -rn '<파일>.mjs' tests pipeline tools`) — `pipeline/map_replay.mjs` 등이 web 모듈을 직접 import 한다(경로만 고친다)
+- **TypeScript(섞어 쓰는 중)**: 새 파일 · 옮기는 파일은 `.mts`, import 는 확장자까지(`./x.mts`), 지울 수 있는 문법만(enum · namespace · 매개변수 속성 금지 — `erasableSyntaxOnly`). 시험(`node --test`)은 Node 22.18+ 가 `.mts` 를 그대로 읽고(서버 22.23 · CI 22), 빌드는 `.mjs` 로 낸다(이름 그대로 — 결과 주소 · 요청 차례 같음). `.mjs` 는 맨 위 `// @ts-check` 를 붙인 것만 검사. 지도 타입은 `import type { Map } from 'maplibre-gl'`(devDependency 6.11.1 = `web/vendor` 와 같은 판 · 타입만 — 실행은 vendor 그대로 · 본체의 `./vendor/maplibre-gl.mjs` 는 옆의 `maplibre-gl.d.mts` 가 타입, 결과에는 싣지 않는다). 본체가 넘기는 deps 는 그 파일이 쓰는 칸만 interface 로 적는다. 본체의 `import(\`./${n}.mjs\`)`(MODE_KIT_DEPS) 목록에 든 모듈을 `.mts` 로 옮기면 `tests/mode_kit_deps.test.mjs` 의 `.mjs` 붙이기도 맞춘다. `.mjs` → `.mts` 로 옮길 땐 web/ 밖에서 부르는 곳도 찾는다(`grep -rn '<파일>.mjs' tests pipeline tools`) — `pipeline/map_replay.mjs` 등이 web 모듈을 직접 import 한다(경로만 고친다)
 - **화면 조각(Preact · `.tsx`)**: 아래 시트 몸통처럼 바닐라 껍데기 안의 칸만 Preact 로 그린다(`preact` 11 — `dependencies`, JSX 는 `preact/jsx-runtime` · tsconfig `jsxImportSource`). DOM 모양 · class · 문구 · aria 는 옛 HTML 그대로(스타일 · 단추 찾기가 맞게). Node 시험은 `.tsx` 를 못 읽으니 고르기 · 셈은 `.mts` 에 두고 `.tsx` 는 그리기만, `.tsx` 를 시험이 부르는 모듈에서 import 하지 않는다. 첫 화면 조각과 preact 는 본체가 같은 단계에서 요청한다(`import 'preact'` 줄 — 아니면 한 단계 늦다). 빌드 결과에서 npm 패키지는 `npm/<패키지>/…`(vite.config `npmPath`). 관리 화면은 `web/admin/<이름>.tsx` 를 vite `input` 에 더하고 HTML 이 인라인 스크립트 대신 `<script type="module" src="./<이름>.mjs">` 로 부른다(첫 그림은 HTML 에 두고 모듈이 비우고 그린다) — `admin/` 아래라 운영에서는 주인 쿠키 뒤이고, `deploy/check_site.sh` 는 로그인 없이 200 이 나오면 실패로 본다(운영 Caddy: `/admin/login.html` 만 열림, 그 밖의 `/admin/*` 는 확장자와 상관없이 로그인 뒤). 로그인 페이지(`admin/login.html`)가 모듈을 쓰게 되면 그 모듈은 `/admin/` 밖에 둔다(`/npm/…` 공용 preact 는 공개).
 - **웹은 빌드 결과가 올라간다**: 운영은 `dist/web`(CI 빌드 → `web-dist` 브랜치). HTML · CSS · 그림 · JSON · `vendor/` 는 그대로 복사, `.mjs` 는 본체에서 import 로 닿아야 결과에 들어간다 — import 로 닿지 않는 모듈(시험만 부르는 것)은 운영에 없다. 도시 건물 Worker(`city/worker.mjs`)와 `new URL('…', import.meta.url)` 자산은 Vite 가 `assets/<이름>-<해시>` 로 옮긴다.
-- **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다.
+- **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다. 시험은 본체를 읽자마자 타입을 걷어 낸다(`node:module` `stripTypeScriptTypes` — 타입 자리는 공백) — 구간 안에도 타입을 붙여도 되지만 표지 글자에 타입이 들어가는 자리(`new Map<…>()` · `x:T=`)는 넣지 않는다.
 - **빠진 deps 는 node 시험이 못 잡는다**(그리기 경로). 나눈 파일은 범위 검사 · 실제 화면의 pageerror · 콘솔 오류로 확인.
 - 셰이더 uniform 이름이 겹치면 컴파일 오류(그 층만 꺼진다) — 이름을 바꿀 땐 같은 파일의 기존 uniform 을 먼저 찾는다.
 - 본체의 끌어올려지는 wrapper(`effectiveTheme` · `applyTheme` …)는 앞에서 만든 층이 값으로 받아 간 이름이다 — 지우지 않는다. 늦게 생기는 값은 `live:{get x(){…}}` getter 로 넘긴다(값 복사 금지).

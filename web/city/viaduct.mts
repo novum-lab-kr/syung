@@ -85,7 +85,7 @@ export interface ViaductNet {
   offset(line:string, lo:number, hi:number):number;
   bodyPx?:(zoom:number) => number;
   rects?:Map<string, StationRect>;
-  exits?:Record<string, [number, number, string | number][] | undefined>;
+  exits?:Record<string, [number, number, string | number, number?][] | undefined>;
 }
 // 역과 역 사이 한 구간(lo → hi) — 띠 · 높이 · 끝역 조각은 쓸 때 채운다
 interface ViaductEdge extends LevelEdge {

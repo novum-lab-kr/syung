@@ -11,7 +11,7 @@ export function trainRuntime(source,zoom=16,helpers={}){
  const slice=(a,b)=>s.slice(s.indexOf(a),s.indexOf(b,s.indexOf(a)));
  r.context.maplibregl={MercatorCoordinate};
  vm.runInContext([
-   slice('const edgeGeom=new Map();','// 기본·심시티'),
+   slice('const edgeGeom','// 기본·심시티'),
    slice('function cityGeom(', '// Point and heading'),
    slice('function along(', '// Stations are drawn'),
    'const mercStop=(line,s)=>maplibregl.MercatorCoordinate.fromLngLat(stopPos(line,s));',

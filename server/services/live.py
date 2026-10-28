@@ -343,6 +343,7 @@ class SubwayLiveService:
         # 하루 호출 수 · 저장 파일의 주인. 바깥을 부르는 곳이 여럿(지도 요청 · 위치 덧씌우기 · burst · 돌아가며 읽기 · 역 확인)이고
         # 서로 다른 잠금이거나 잠금 없이 부른다 — 세기 · 저장만 이것으로 한 줄로 세운다(바깥 부르기는 잠그지 않는다)
         self.quota_lock = threading.Lock()
+        self.refresh_lock = threading.Lock()   # 길찾기의 배경 새로 받기(all_lines_now)는 한 번에 하나
         self.next_trips: set[tuple[str, str]] = set()   # normalize_arrivals: overlay_positions 가 빼는 다음 운행
         self.idle: set[tuple[str, str]] = set()   # not running yet (normalize_arrivals); kept off position-feed lines
         self.last_seen: dict[TrainKey, Row] = {}   # stabilize 의 기억
@@ -474,6 +475,22 @@ class SubwayLiveService:
         """길찾기용: 모든 노선의 지금 열차(캐시가 지났으면 한 번 새로 받는다). 받은 적 없으면 빈 dict."""
         self.snapshot_all(list(LINE_NAMES.values()))   # refreshes the shared cache if due (one upstream call at most)
         return self.all_cache[1]["lines"] if self.all_cache else {}
+
+    def all_lines_now(self) -> Row:
+        """길찾기용(기다리지 않음): 들고 있는 모든 노선 열차를 바로 주고, 캐시가 지났으면 새로 받기는 배경 스레드에서(한 번에 하나).
+        받은 적이 없으면 한 번 기다려 받는다(all_lines 와 같다 — 켠 직후)."""
+        cached = self.all_cache
+        if cached is None:
+            return self.all_lines()
+        due = time.time() - cached[0] >= self._all_interval() and not self.quiet()
+        if due and self.refresh_lock.acquire(blocking=False):
+            def refresh() -> None:
+                try:
+                    self.all_lines()   # 못 받으면 snapshot_all 이 이전 자료를 그대로 둔다
+                finally:
+                    self.refresh_lock.release()
+            threading.Thread(target=refresh, daemon=True).start()
+        return cached[1]["lines"]
 
     # ---- 노선별 위치 ------------------------------------------------------------------------
 

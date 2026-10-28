@@ -1,9 +1,9 @@
 // 길찾기: from a place (or my location) to a place, leaving now or at a set time.
 // The sheet asks /api/place for places and /api/route for plans (server/journey.py).
-// 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸
-interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined }
-interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null }
-interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[] }
+// 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸(path · stations · trainNo 는 여정 지도 표시 ui/journey 가 읽는다)
+interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
+interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
+interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[]; path:[number, number][] }
 type TransitLeg = TrainLeg | BusLeg;
 type Leg = WalkLeg | TransitLeg;
 // 띠 그리기에 쓰는 칸만(승차권에 저장한 경로도 이 칸은 있다 — user/account)
