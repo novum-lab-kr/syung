@@ -15,7 +15,7 @@ const root = path.join(import.meta.dirname, 'web')
 const vendor = path.join(root, 'vendor')
 const outDir = path.join(import.meta.dirname, 'dist', 'web')
 // 빌드가 만드는 코드(그대로 복사하지 않는다)
-const CODE = /\.(mjs|mts|ts)$/
+const CODE = /\.(mjs|mts|ts|tsx)$/
 
 // 모듈이 아닌 파일(HTML · CSS · 그림 · JSON · vendor/ 전부)을 결과 폴더의 같은 자리로 그대로 복사한다
 function staticFiles(dir: string = root): string[] {
@@ -55,11 +55,16 @@ function isVendor(id: string, importer: string | undefined): boolean {
   return absolute.startsWith(vendor + path.sep)
 }
 
+// 결과 파일 이름: web/ 밖(node_modules/<패키지>/…)에서 온 모듈은 npm/<패키지>/… 로
+const npmPath = (name: string) => name.replace(/^node_modules\//, 'npm/')
+
 export default defineConfig({
   root,
   base: './',
   publicDir: false,
   plugins: [copyStatic()],
+  // 화면 조각(.tsx — Preact): JSX 는 preact/jsx-runtime 으로(tsconfig 의 jsxImportSource 와 같다)
+  oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   // city/worker.mts(도시 건물 Worker) — new Worker(new URL(…), { type: 'module' }) 그대로 모듈 Worker
   worker: { format: 'es' },
   build: {
@@ -82,8 +87,9 @@ export default defineConfig({
         format: 'es',
         preserveModules: true,
         preserveModulesRoot: root,
-        entryFileNames: '[name].mjs',
-        chunkFileNames: '[name].mjs',
+        // npm 패키지(preact)는 node_modules/… 대신 npm/… 로 낸다 — 결과(운영 주소)에 node_modules 폴더가 생기지 않게(.gitignore · 검색 도구가 빼고 보는 이름이라 헷갈린다)
+        entryFileNames: chunk => `${npmPath(chunk.name)}.mjs`,
+        chunkFileNames: chunk => `${npmPath(chunk.name)}.mjs`,
       },
     },
   },

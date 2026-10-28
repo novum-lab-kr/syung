@@ -2,6 +2,7 @@
   // 웹(web/) 타입 검사 — 빌드는 Vite(vite.config.mts)가 타입을 지운다 · 시험(node --test)은 Node 22.18+ 가 .mts 를 바로 읽는다
   // 섞어 쓰는 중: .mts 는 늘 검사 · .mjs 는 맨 위 // @ts-check 를 붙인 것만(checkJs 를 전역으로 켜면 옛 오류가 수천 개)
   // 새 파일은 .mts · import 는 확장자까지(./x.mts) · Node 타입 지우기가 읽을 수 있는 문법만(enum · namespace · 매개변수 속성 금지)
+  // 화면 조각은 .tsx(Preact — JSX 는 preact/jsx-runtime). Node 시험은 .tsx 를 못 읽으니 순수 로직은 .mts 에 둔다
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -17,8 +18,10 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["web/**/*.mts", "web/**/*.mjs"],
+  "include": ["web/**/*.mts", "web/**/*.tsx", "web/**/*.mjs"],
   "exclude": ["web/vendor"]
 }
