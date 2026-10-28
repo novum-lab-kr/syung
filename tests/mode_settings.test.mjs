@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mergeSettings,freezeSettings,validateSettings,validateModeDefinitions} from '../web/modes/merge.mts';
-import {createModeRegistry} from '../web/modes/index.mjs';
+import {createModeRegistry} from '../web/modes/index.mts';
 
 // 시험용 정의: 실제 basic · simcity · joseon · coaster 와 같은 모양(조선 · 롤코는 simcity 에서)
 const defs=()=>[
@@ -121,7 +121,7 @@ test('출처 보기: 키마다 마지막으로 적은 모드', () => {
 });
 
 test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 하나를 같이 쓴다', async () => {
-  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
   const R=createModeRegistry(defs);
   assert.deepEqual(R.list().map(m=>[m.id,m.from]),[['basic',null],['simcity','basic'],['joseon','simcity'],['coaster','simcity']]);
   const B=R.settings('basic');
@@ -174,7 +174,7 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
 
 test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 같고, 심시티 · 롤코는 같은 참조', async () => {
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
-  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
   const R=createModeRegistry(defs),{default:CITY}=await import('../web/modes/basic/city.mjs');
   // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준. 그 뒤 더한 것(night: 2026-10-11 밤 빛, 골목 가로등 lamps.minorSpacingM)은 빼고 견준다
   const before=({night,...o})=>{const {minorSpacingM,...lamps}=o.props.lamps;return {...o,props:{...o.props,lamps}}};
@@ -198,7 +198,7 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
 
 test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켠다', async () => {
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
-  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+  const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
   const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mjs');
   assert.equal(sha(PARK),'31c26c9c23d4bc944e8b81a65e082b85aea67ed6cc00c58247f2748dc70512aa');
   const M=await import('../web/modes/coaster/metrics.mts');assert.equal(typeof M.trackMetrics,'function');assert.deepEqual(M.ridePalette(false),M.ridePalette(false,PARK),'계산 함수의 기본 자료 = 기본 공원 자료');

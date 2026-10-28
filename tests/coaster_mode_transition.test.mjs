@@ -5,9 +5,9 @@ import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
 import {createJourneyMap} from '../web/ui/journey.mts';
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../web/lib/journey_map_style.mjs';
-import {createModeRegistry} from '../web/modes/index.mjs';
+import {createModeRegistry} from '../web/modes/index.mts';
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from '../web/modes/transition.mts';
-const modeDefs=(await Promise.all(['basic','simcity','joseon','coaster','starcraft','nations','retro'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)))).flat();   // (스타크래프트는 종족 셋)
+const modeDefs=(await Promise.all(['basic','simcity','joseon','coaster','starcraft','nations','retro'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)))).flat();   // (스타크래프트는 종족 셋)
 const source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8');
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start);return source.slice(start,end)};
 const plain=x=>JSON.parse(JSON.stringify(x));

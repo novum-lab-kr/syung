@@ -14,20 +14,20 @@ import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · �
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
 import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
-import {createModeRegistry} from './modes/index.mjs';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
+import {createModeRegistry} from './modes/index.mts';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mts';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
 import './modes/merge.mts';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
-import BASIC_MODE from './modes/basic/index.mjs';   // 기본 모드: 모든 설정의 원본
+import BASIC_MODE from './modes/basic/index.mts';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mts';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
 import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
-import SIMCITY_MODE from './modes/simcity/index.mjs';
-import JOSEON_MODE from './modes/joseon/index.mjs';
+import SIMCITY_MODE from './modes/simcity/index.mts';
+import JOSEON_MODE from './modes/joseon/index.mts';
 import './modes/joseon/style.mjs';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
-import COASTER_MODE from './modes/coaster/index.mjs';
-import STARCRAFT_MODES from './modes/starcraft/index.mjs';
-import RETRO_MODE from './modes/retro/index.mjs';   // 레트로: 심시티 도시를 도트로
+import COASTER_MODE from './modes/coaster/index.mts';
+import STARCRAFT_MODES from './modes/starcraft/index.mts';
+import RETRO_MODE from './modes/retro/index.mts';   // 레트로: 심시티 도시를 도트로
 import './modes/retro/style.mjs';   // (레트로 도시 팩 덧쓰기: 같은 단계에서 요청)
-import NATION_MODES from './modes/nations/index.mjs';   // 나라: 나라마다 모드 하나(그리스 …)
+import NATION_MODES from './modes/nations/index.mts';   // 나라: 나라마다 모드 하나(그리스 …)
 import './modes/nations/greece.mjs';import './modes/nations/netherlands.mjs';import './modes/nations/paris.mjs';import './modes/nations/egypt.mjs';   // (나라 도시 팩: 같은 단계에서 요청)
 import './modes/starcraft/style.mjs';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
 import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mjs';   // 스타크래프트 유닛 모양(Codex 시안)

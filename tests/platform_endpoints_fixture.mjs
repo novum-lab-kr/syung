@@ -3,8 +3,8 @@ import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
 import SNAP,{stops as snapStops} from '../web/city/viaduct_snap.mjs';
 import {stations,paths} from './fixtures.mjs';
-import {createModeRegistry} from '../web/modes/index.mjs';
-const MODES=createModeRegistry(await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default))));
+import {createModeRegistry} from '../web/modes/index.mts';
+const MODES=createModeRegistry(await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default))));
 export function platformRuntime(source=readFileSync(new URL('../web/maplibre_runtime.mjs',import.meta.url),'utf8'),zoom=16,helpers={}){
   const data=JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json',import.meta.url),'utf8'));
   const slice=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));

@@ -5,7 +5,7 @@
 // 다른 화면 파일을 import 하지 않는다: 준비 · 바꾸기 · 버튼은 본체가 넘긴다.
 import type { Settings } from './merge.mts';
 
-// 모드 목록(web/modes/index.mjs createModeRegistry)에서 이 파일이 쓰는 것
+// 모드 목록(web/modes/index.mts createModeRegistry)에서 이 파일이 쓰는 것
 export interface ModeRegistry { has(id: string): boolean; settings(id: string, user?: unknown): Settings }
 export interface SwitchOptions { speed?: number }
 export interface ModeControllerOptions {

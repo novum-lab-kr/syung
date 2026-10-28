@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cityLayers, applyCityStyle, NIGHT_GROUND_IDS } from '../web/city/style.mts';
-import { createModeRegistry } from '../web/modes/index.mjs';
+import { createModeRegistry } from '../web/modes/index.mts';
 
 // 도시 모드 밤 빛(팩 night, 2026-10-11): 바닥 빛(번화가)은 다크 · 켬일 때만 보이고, 낮 · 꺼짐 · 도시 밖에서는 숨는다.
 // 길을 따라 번지던 빛(city-night-roads*)은 뺐다 — 길 빛은 가로등 웅덩이 · 전구만(행님 2026-10-11: 이유 없이 밝아 이상하다)
-const defs = await Promise.all(['basic', 'simcity', 'joseon', 'coaster'].map(n => import(`../web/modes/${n}/index.mjs`).then(m => m.default)));
+const defs = await Promise.all(['basic', 'simcity', 'joseon', 'coaster'].map(n => import(`../web/modes/${n}/index.mts`).then(m => m.default)));
 const R = createModeRegistry(defs);
 const fakeMap = () => {
   const layers = new Map(), vis = id => layers.get(id)?.layout?.visibility;
