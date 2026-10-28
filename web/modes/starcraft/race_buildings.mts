@@ -45,7 +45,7 @@ export interface ModelBuilder {
 }
 // 모형 하나: 고르는 기준(fit)과 짓기
 export interface ModelFit { minArea?:number; maxArea?:number; maxAspect?:number; tall?:boolean; weight?:number; small?:boolean; big?:boolean }
-export interface BuildingModel { id:string; name?:string; fit?:ModelFit; build(M:ModelBuilder):void }
+export interface BuildingModel { id:string; name?:string; floors?:number; fit?:ModelFit; build(M:ModelBuilder):void }   // floors: 나라 모형의 층수(nations/parts 가 실제 높이에 가까운 것을 고른다)
 // 팩의 race 칸(web/modes/starcraft/style.mts) — lod 'low' 는 휴대폰 템플릿(city/buildings.mts)
 interface RacePad { look?:Look; slot?:number; shape?:string | null }
 export interface RaceSpec { kind:string; pad?:RacePad | null; keep?:[number, number, number][]; lod?:string }
@@ -229,7 +229,7 @@ export function building(tb:TileBuilder, ctx:RaceCtx, unit:(h:number, k:number) 
 // 메인 스레드(그리기)와 Worker(기록 고르기)가 같은 목록 · 차례로 만들어 번호가 같다
 export const BUCKETS = [1, 1.7, 2.8];
 const TPL_S = 10, TEMPLATES = new Map<string, RaceTemplates>(), EXTRA_MODELS = new Map<string, BuildingModel[]>();
-// 다른 모드의 모형 목록도 같은 템플릿 · 인스턴스 그리기로(나라 모드 — web/modes/nations/models.mjs). 짓기(building)는 각자, 템플릿 번호는 같은 templateIndex
+// 다른 모드의 모형 목록도 같은 템플릿 · 인스턴스 그리기로(나라 모드 — web/modes/nations/models.mts). 짓기(building)는 각자, 템플릿 번호는 같은 templateIndex
 export function registerBuildingModels(kind:string, list:BuildingModel[]) { if (BUILDING_MODELS[kind]) throw new Error(`모형 ${kind}: 스타크래프트 종족 이름과 겹침`); EXTRA_MODELS.set(kind, list) }
 export const modelList = (kind:string):BuildingModel[] => BUILDING_MODELS[kind] || EXTRA_MODELS.get(kind) || [];
 export const templateIndex = (mi:number, aspect:number) => { let bi = 0, bd = Infinity; BUCKETS.forEach((b, k) => { const d = Math.abs(Math.log(aspect / b)); if (d < bd) { bd = d; bi = k } }); return mi * BUCKETS.length + bi };

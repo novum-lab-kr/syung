@@ -112,7 +112,7 @@ interface Item {
 interface LanduseArea { cls:string; outer:Ring; holes:Ring[]; bbox:[number, number, number, number]; area:number }
 interface FaceView { abut:number; near:number; dist:number; short?:boolean }
 // 건물 하나를 짓는 동안의 칸(부품 race · nation 도 받는다) — slab · roofSlot · th 는 만든 바로 뒤에 넣는다
-interface BuildCtx {
+export interface BuildCtx {
   outer:Ring; holes:Ring[]; A:number; H:number; minH:number; T:BuildingType; ti:number; seed:number; chunk:Chunk; clipped:boolean; landuse:string;
   storefront:boolean; merged:boolean; mat:number; item:number; ignore:Set<number> | null;
   slab:{ ux:number; uy:number } | null; roofSlot:number; th:{ segs:number[]; half:number; near:number; rq:number } | null;
@@ -235,7 +235,7 @@ export function resolvePack(pack:MeshPack) {
     signs: pack.signs || null,   // 간판(signs())
     hanok: pack.hanok || null,   // 조선 모드(city_hanok.mjs)
     race: pack.race || null,   // 스타크래프트 종족 건물(부품 'race' — web/modes/starcraft/race_buildings.mts)
-    nation: pack.nation || null,   // 나라 모드 건물(부품 'nation' — web/modes/nations/parts.mjs: 몇 채만 그 나라 건물, 나머지는 보통)
+    nation: pack.nation || null,   // 나라 모드 건물(부품 'nation' — web/modes/nations/parts.mts: 몇 채만 그 나라 건물, 나머지는 보통)
     waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
     light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },
     ao: L.ao || { opacity: .1, widthM: .5 }, refSun: L.referenceSun || { azimuthDeg: 225, elevationDeg: 42 },
