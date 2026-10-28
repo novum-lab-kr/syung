@@ -18,7 +18,7 @@
 //   const c88=new CoasterTrain(SEOUL_CITY_STYLE.train.coaster88); c88.init(gl);
 //   c88.begin(ox,oy); c88.car(frame,L,W,rgb,front,back)…; c88.draw(gl,M,ox,oy,{zoom,unit,walls,occlude,dark,shadow,pixelRatio,lod?,part?}); c88.dispose(gl)   (part: 'foot' 땅 그림자만 · 'body' 칸만)
 
-import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './night.mjs';
+import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './night.mts';
 import { SEOUL_CITY_STYLE } from '../basic/city.mts';
 import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mts';
 

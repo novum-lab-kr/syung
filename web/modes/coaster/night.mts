@@ -15,12 +15,12 @@
 import { PARK_DEFAULTS as STYLE } from '../basic/park.mts'; import { metresPerPixel } from './metrics.mts';
 
 const EARTH = 40075016.685578488;
-const mercX = lon => lon / 360 + .5;
-const mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
-const muOf = lat => 1 / (EARTH * Math.cos(lat * Math.PI / 180));
-export const ORIGIN = [126.978, 37.5665];   // the local origin every night buffer is relative to
+const mercX = (lon:number) => lon / 360 + .5;
+const mercY = (lat:number) => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
+const muOf = (lat:number) => 1 / (EARTH * Math.cos(lat * Math.PI / 180));
+export const ORIGIN:[number, number] = [126.978, 37.5665];   // the local origin every night buffer is relative to
 
-export const hexRGB = h => { const v = parseInt(String(h).replace('#', ''), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
+export const hexRGB = (h:unknown) => { const v = parseInt(String(h).replace('#', ''), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
 
 // ── the bulb ────────────────────────────────────────────────────────────────────────────────────
 // Shared by the ride festoons (park_rides.mjs), the track string and the fireworks: one sprite with a
@@ -74,13 +74,13 @@ void main(){
 }`;
 
 const BULB_EVERY = STYLE.night.bulbEveryM;   // metres between track bulbs, as coasterTrack.bulbs() spaces them
-const lerpZ = (z, a, b, c) => z <= 13 ? a : z >= 17 ? c : z <= 15 ? a + (b - a) * (z - 13) / 2 : b + (c - b) * (z - 15) / 2;
+const lerpZ = (z:number, a:number, b:number, c:number) => z <= 13 ? a : z >= 17 ? c : z <= 15 ? a + (b - a) * (z - 13) / 2 : b + (c - b) * (z - 15) / 2;
 // Core and halo diameters in CSS pixels; the pack caps them at 2.2 / 7 px.
-export function bulbSize(zoom, pixelRatio, scale = 1) {
-  const core = lerpZ(zoom, ...STYLE.night.corePx), glow = lerpZ(zoom, ...STYLE.night.haloPx);
+export function bulbSize(zoom:number, pixelRatio:number, scale = 1) {
+  const core = lerpZ(zoom, ...(STYLE.night.corePx as [number, number, number])), glow = lerpZ(zoom, ...(STYLE.night.haloPx as [number, number, number]));
   return { point: glow * scale * pixelRatio, coreFrac: core / glow };
 }
-export function sparkSize(zoom, pixelRatio) {           // the fireworks: halo 3x, no cap
+export function sparkSize(zoom:number, pixelRatio:number) {           // the fireworks: halo 3x, no cap
   const core = lerpZ(zoom, 2.6, 3.4, 4.2), glow = core * 3;
   return { point: glow * pixelRatio, coreFrac: core / glow };
 }
@@ -89,19 +89,19 @@ export const BULB_PAL = [STYLE.palette.dark.bulbWarm, ...Array(7).fill(STYLE.pal
 export const NEON = {drop:STYLE.palette.dark.gold,saucer:STYLE.palette.dark.bulbWarm,swing:STYLE.palette.dark.bulbWarm,ferris:STYLE.palette.dark.bulbWarm};
 export const CREAM = STYLE.palette.dark.bulbWarm;
 
-export function compile(gl, vsrc, fsrc) {
-  const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(x)); return x };
+export function compile(gl:WebGL2RenderingContext, vsrc:string, fsrc:string) {
+  const sh = (t:number, src:string) => { const x = gl.createShader(t)!; gl.shaderSource(x, src); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(x)!); return x };
   const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vsrc), f = sh(gl.FRAGMENT_SHADER, fsrc);
   gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p); gl.deleteShader(v); gl.deleteShader(f);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(p));
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(p)!);
   return p;
 }
 // what every light pass wants: tested against the rides and the walls, writing no depth, composited over.
-export function lightsOn(gl) {
+export function lightsOn(gl:WebGL2RenderingContext) {
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE);
 }
-export function lightsOff(gl) {   // back to what the track and the trains expect
+export function lightsOff(gl:WebGL2RenderingContext) {   // back to what the track and the trains expect
   gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE);
 }
 
@@ -132,12 +132,14 @@ void main(){
 // bank: the way the river runs here (unit, +x east +y south) · arc: where the lantern cluster sits,
 // metres from the anchor, on the park side · lamp: the searchlight fixture, metres from the anchor.
 // Hand-placed like the anchors themselves — close enough to the bank at the zooms they appear at.
+// 불꽃놀이 자리: 손으로 놓은 값 + init 이 메르카토르 x · y · 1 m 길이 mu 를 붙인다
+export interface FireworkSite { name:string; at:[number, number]; big?:boolean; bank:[number, number]; arc:[number, number]; lamp:[number, number]; x:number; y:number; mu:number }
 export const FIREWORK_SITES = [
   { name: '여의도한강공원', at: [126.9400, 37.5235], big: true, bank: [1, 0], arc: [-60, 60], lamp: [210, 130] },
   { name: '반포한강공원', at: [126.9950, 37.5120], bank: [1, 0], arc: [0, 60], lamp: [225, 130] },
   { name: '뚝섬한강공원', at: [127.0670, 37.5285], bank: [1, 0], arc: [0, -60], lamp: [225, -130] },
   { name: '잠실한강공원', at: [127.0860, 37.5190], bank: [1, 0], arc: [-20, 60], lamp: [-230, 130] },
-];
+] as FireworkSite[];
 const LANTERN_PAL = ['#FFD399', '#EAB0BE', '#B8D9CC'];          // in a 4:2:2 run along each cluster
 const BEAM_PAL = ['#C0D8EA', '#E5D3AB'];
 const SPARK_PAL = ['#FFD58A', '#F2A9BC', '#AFE0EA', '#CAB7EF'], HEAD = '#FFF0C8';
@@ -266,7 +268,29 @@ const CELL = 4.7e-5;
 const PLAT_CAP = 160;    // platforms lit at once; phones take half. Comfortably above what z14.2+ ever shows,
                          // so the view never has to pick a subset (which would pop as the camera moved)   // ~1.5 km of mercator: a row of cells is one draw call
 
+type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
+type TrackUniform = 'u_matrix' | 'u_time' | 'u_size' | 'u_core' | 'u_bright' | 'u_stride' | 'u_anim' | 'u_rgb' | 'u_wt' | 'u_chase' | 'u_lines';
+type FireworkUniform = 'u_matrix' | 'u_time' | 'u_size' | 'u_core' | 'u_phone' | 'u_trails' | 'u_site' | 'u_on' | 'u_pal' | 'u_head' | 'u_wt';
+type LanternUniform = 'u_matrix' | 'u_time' | 'u_size' | 'u_core' | 'u_anim' | 'u_site' | 'u_bank' | 'u_on' | 'u_pal' | 'u_wt';
+type PlatUniform = 'u_matrix' | 'u_vp' | 'u_half' | 'u_core' | 'u_caps' | 'u_wt';
+type BeamUniform = 'u_matrix' | 'u_time' | 'u_anim' | 'u_peak' | 'u_count' | 'u_site' | 'u_lamp' | 'u_on' | 'u_pal';
+// 선로 전구(setTrackBulbs): 줄(gy)마다 칸(cx) · 버퍼 안 시작(at) · 개수(n) — GPU 에 올리면 data 는 비운다
+interface TrackRow { cx:number[]; at:number[]; n:number[] }
+interface TrackBulbs { n:number; data:Float32Array | null; rows:Map<number, TrackRow>; ys:number[]; lines:Float32Array; chase:boolean; b?:WebGLBuffer; va?:WebGLVertexArrayObject }
+// render 옵션(본체 overlay 가 넘긴다): bounds 는 메르카토르 [x0, y0, x1, y1]
+export interface NightRenderOptions { now?:number; zoom?:number; phone?:boolean; reducedMotion?:boolean; bounds?:ArrayLike<number> | null; pixelRatio?:number }
 export class NightLayer {
+  // 필드는 선언만(declare — 실행 코드 없음, 값은 지금처럼 constructor · init · set… · render 가 넣는다)
+  declare O:{ x:number; y:number }; declare M:Float32Array; declare track:TrackBulbs | null; declare plats:{ n:number; P:Float64Array; box:Float64Array } | null;
+  declare stats:{ bulbs:number; sparks:number; plats:number; lanterns:number; draws:number; ms:number }; declare ping:number; declare beamOn:Float32Array; declare _moving:boolean;
+  declare pT:WebGLProgram | null; declare pF:WebGLProgram | null; declare pL:WebGLProgram; declare pP:WebGLProgram; declare pS:WebGLProgram;
+  declare uT:Uniforms<TrackUniform>; declare uF:Uniforms<FireworkUniform>; declare uL:Uniforms<LanternUniform>; declare uP:Uniforms<PlatUniform>; declare uS:Uniforms<BeamUniform>;
+  declare fwN:number; declare fwB:WebGLBuffer; declare fwVA:WebGLVertexArrayObject; declare lanN:number; declare lanB:WebGLBuffer; declare lanVA:WebGLVertexArrayObject;
+  declare platB:WebGLBuffer[]; declare platVA:WebGLVertexArrayObject[]; declare platData:Float32Array;
+  declare beamN:number; declare beamB:WebGLBuffer; declare beamB2:WebGLBuffer; declare beamVA:WebGLVertexArrayObject;
+  declare site:Float32Array; declare on:Float32Array; declare bank:Float32Array; declare lamp:Float32Array;
+  declare lanRGB:Float32Array; declare beamRGB:Float32Array; declare sparkPal:Float32Array; declare headRGB:Float32Array; declare creamRGB:Float32Array;
+  declare pending:[Float64Array, Uint8Array | null | undefined] | null; declare ready:boolean; declare gl0:WebGL2RenderingContext;
   constructor() {
     this.O = { x: mercX(ORIGIN[0]), y: mercY(ORIGIN[1]) };
     this.M = new Float32Array(16);
@@ -276,18 +300,18 @@ export class NightLayer {
     this._moving = false;
   }
 
-  init(gl) {
+  init(gl:WebGL2RenderingContext) {
     if (this.pT) return;
     this.pT = compile(gl, TRACK_VS, BULB_FS);
-    this.uT = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_bright', 'u_stride', 'u_anim', 'u_rgb', 'u_wt', 'u_chase', 'u_lines'].map(n => [n, gl.getUniformLocation(this.pT, n)]));
+    this.uT = Object.fromEntries((['u_matrix', 'u_time', 'u_size', 'u_core', 'u_bright', 'u_stride', 'u_anim', 'u_rgb', 'u_wt', 'u_chase', 'u_lines'] as const).map(n => [n, gl.getUniformLocation(this.pT!, n)])) as Uniforms<TrackUniform>;
     this.pF = compile(gl, FW_VS, BULB_FS);
-    this.uF = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_phone', 'u_trails', 'u_site', 'u_on', 'u_pal', 'u_head', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pF, n)]));
+    this.uF = Object.fromEntries((['u_matrix', 'u_time', 'u_size', 'u_core', 'u_phone', 'u_trails', 'u_site', 'u_on', 'u_pal', 'u_head', 'u_wt'] as const).map(n => [n, gl.getUniformLocation(this.pF!, n)])) as Uniforms<FireworkUniform>;
 
     // One burst per site/cycle; sites retain their staggered 28-second festival clock.
-    const out = [];
+    const out:number[] = [];
     for (let s = 0; s < FIREWORK_SITES.length; s++) {
       for (let b = 0; b < 1; b++) {
-        if (b && !FIREWORK_SITES[s].big) continue;
+        if (b && !FIREWORK_SITES[s]!.big) continue;
         for (let t = 0; t < MAXT; t++) out.push(s, b, -1, t);                      // the rocket head and its tail
         for (let i = 0; i < MAXP; i++) for (let t = 0; t < MAXT; t++) out.push(s, b, i, t);
       }
@@ -301,8 +325,8 @@ export class NightLayer {
 
     // the lanterns: eight a site, one vertex each
     this.pL = compile(gl, LANTERN_VS, BULB_FS);
-    this.uL = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_anim', 'u_site', 'u_bank', 'u_on', 'u_pal', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pL, n)]));
-    { const d = []; for (let si = 0; si < 4; si++) for (let i = 0; i < 8; i++) d.push(si, i);
+    this.uL = Object.fromEntries((['u_matrix', 'u_time', 'u_size', 'u_core', 'u_anim', 'u_site', 'u_bank', 'u_on', 'u_pal', 'u_wt'] as const).map(n => [n, gl.getUniformLocation(this.pL, n)])) as Uniforms<LanternUniform>;
+    { const d:number[] = []; for (let si = 0; si < 4; si++) for (let i = 0; i < 8; i++) d.push(si, i);
       this.lanN = d.length / 2; this.lanB = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.lanB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(d), gl.STATIC_DRAW);
       this.lanVA = gl.createVertexArray(); gl.bindVertexArray(this.lanVA);
@@ -311,22 +335,22 @@ export class NightLayer {
 
     // the platform strips: rebuilt each frame from whatever is on screen, into two stores used in turn
     this.pP = compile(gl, PLAT_VS, RIBBON_FS);
-    this.uP = Object.fromEntries(['u_matrix', 'u_vp', 'u_half', 'u_core', 'u_caps', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pP, n)]));
+    this.uP = Object.fromEntries((['u_matrix', 'u_vp', 'u_half', 'u_core', 'u_caps', 'u_wt'] as const).map(n => [n, gl.getUniformLocation(this.pP, n)])) as Uniforms<PlatUniform>;
     this.platB = [gl.createBuffer(), gl.createBuffer()]; this.platVA = [];
     this.platData = new Float32Array(PLAT_CAP * 36 * 12);
     for (let i = 0; i < 2; i++) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[i]); gl.bufferData(gl.ARRAY_BUFFER, this.platData.byteLength, gl.DYNAMIC_DRAW);
-      const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[i]);
-      let o = 0; for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 3]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 48, o); o += n * 4 }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[i]!); gl.bufferData(gl.ARRAY_BUFFER, this.platData.byteLength, gl.DYNAMIC_DRAW);
+      const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[i]!);
+      let o = 0; for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 3]] as [number, number][]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 48, o); o += n * 4 }
       gl.bindVertexArray(null); this.platVA.push(va);
     }
 
     // the searchlights: two beams a site, two crossed wedges each
     this.pS = compile(gl, BEAM_VS, BEAM_FS);
-    this.uS = Object.fromEntries(['u_matrix', 'u_time', 'u_anim', 'u_peak', 'u_count', 'u_site', 'u_lamp', 'u_on', 'u_pal'].map(n => [n, gl.getUniformLocation(this.pS, n)]));
-    { const f = [], v = [];
+    this.uS = Object.fromEntries((['u_matrix', 'u_time', 'u_anim', 'u_peak', 'u_count', 'u_site', 'u_lamp', 'u_on', 'u_pal'] as const).map(n => [n, gl.getUniformLocation(this.pS, n)])) as Uniforms<BeamUniform>;
+    { const f:number[] = [], v:number[] = [];
       for (let si = 0; si < 4; si++) for (let bm = 0; bm < 2; bm++) for (let pl = 0; pl < 2; pl++)
-        for (const [u, vv] of [[0,-1],[0,1],[1,1],[0,-1],[1,1],[1,-1]]) { f.push(si, bm, pl, u); v.push(vv) }
+        for (const [u, vv] of [[0,-1],[0,1],[1,1],[0,-1],[1,1],[1,-1]] as [number, number][]) { f.push(si, bm, pl, u); v.push(vv) }
       this.beamN = v.length;
       this.beamB = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.beamB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(f), gl.STATIC_DRAW);
       this.beamB2 = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.beamB2); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
@@ -359,39 +383,39 @@ export class NightLayer {
   // the line that bulb hangs under, for the chase. Bucketed row by row into one static buffer, so a view
   // draws a few contiguous ranges and never re-uploads; each bulb keeps its place in its string, so the
   // wave still runs along the track after the reordering.
-  setTrackBulbs(f64, rgb) {
+  setTrackBulbs(f64:Float64Array | null | undefined, rgb?:Uint8Array | null) {
     const old = this.track, gl0 = this.gl0;
-    if (old?.b && gl0) { gl0.deleteBuffer(old.b); gl0.deleteVertexArray(old.va) }   // a second call replaces the first
+    if (old?.b && gl0) { gl0.deleteBuffer(old.b); gl0.deleteVertexArray(old.va!) }   // a second call replaces the first
     this.track = null;
     if (!f64 || !f64.length) return;
     if (!this.pT) { this.pending = [f64, rgb]; return }          // init(gl) has not run yet
     const n = f64.length / 3, gx = new Int32Array(n), gy = new Int32Array(n);
-    for (let i = 0; i < n; i++) { gx[i] = Math.floor(f64[i * 3] / CELL); gy[i] = Math.floor(f64[i * 3 + 1] / CELL) }
+    for (let i = 0; i < n; i++) { gx[i] = Math.floor(f64[i * 3]! / CELL); gy[i] = Math.floor(f64[i * 3 + 1]! / CELL) }
     // the distinct line colours, so a bulb carries a one-byte index and the shader a small palette
-    const pal = [], byKey = new Map();
+    const pal:number[][] = [], byKey = new Map<number, number>();
     const idx = new Uint8Array(n);
     if (rgb) for (let i = 0; i < n; i++) {
-      const k = rgb[i * 3] << 16 | rgb[i * 3 + 1] << 8 | rgb[i * 3 + 2];
+      const k = rgb[i * 3]! << 16 | rgb[i * 3 + 1]! << 8 | rgb[i * 3 + 2]!;
       let j = byKey.get(k);
-      if (j === undefined) { j = Math.min(pal.length, 31); if (pal.length < 32) { byKey.set(k, j); pal.push([rgb[i*3]/255, rgb[i*3+1]/255, rgb[i*3+2]/255]) } }
+      if (j === undefined) { j = Math.min(pal.length, 31); if (pal.length < 32) { byKey.set(k, j); pal.push([rgb[i*3]!/255, rgb[i*3+1]!/255, rgb[i*3+2]!/255]) } }
       idx[i] = j;
     }
     const order = new Int32Array(n); for (let i = 0; i < n; i++) order[i] = i;
-    order.sort((a, b) => gy[a] - gy[b] || gx[a] - gx[b]);
-    const data = new Float32Array(n * 5), rows = new Map();
+    order.sort((a, b) => gy[a]! - gy[b]! || gx[a]! - gx[b]!);
+    const data = new Float32Array(n * 5), rows = new Map<number, TrackRow>();
     for (let j = 0; j < n; j++) {
-      const i = order[j], o = j * 5;
-      data[o] = f64[i * 3] - this.O.x; data[o + 1] = f64[i * 3 + 1] - this.O.y; data[o + 2] = f64[i * 3 + 2];
-      data[o + 3] = i; data[o + 4] = idx[i];                    // its place in the string, and its line
-      let R = rows.get(gy[i]); if (!R) rows.set(gy[i], R = { cx: [], at: [], n: [] });
+      const i = order[j]!, o = j * 5;
+      data[o] = f64[i * 3]! - this.O.x; data[o + 1] = f64[i * 3 + 1]! - this.O.y; data[o + 2] = f64[i * 3 + 2]!;
+      data[o + 3] = i; data[o + 4] = idx[i]!;                    // its place in the string, and its line
+      let R = rows.get(gy[i]!); if (!R) rows.set(gy[i]!, R = { cx: [], at: [], n: [] });
       const last = R.cx.length - 1;
-      if (last >= 0 && R.cx[last] === gx[i]) R.n[last]++; else { R.cx.push(gx[i]); R.at.push(j); R.n.push(1) }
+      if (last >= 0 && R.cx[last] === gx[i]) R.n[last]!++; else { R.cx.push(gx[i]!); R.at.push(j); R.n.push(1) }
     }
     const lines = new Float32Array(96); pal.forEach((c, i) => lines.set(c, i * 3));
     this.track = { n, data, rows, ys: [...rows.keys()].sort((a, b) => a - b), lines, chase: pal.length > 0 };
     if (this.gl0) this.uploadTrack(this.gl0);
   }
-  uploadTrack(gl) {
+  uploadTrack(gl:WebGL2RenderingContext) {
     const T = this.track; if (!T || T.b) return;
     T.b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, T.b); gl.bufferData(gl.ARRAY_BUFFER, T.data, gl.STATIC_DRAW);
     T.va = gl.createVertexArray(); gl.bindVertexArray(T.va);
@@ -405,50 +429,50 @@ export class NightLayer {
   // The station platforms, so their edges glow where the coaster runs flat through them.
   // Eight doubles a platform: x0, y0, x1, y1 (absolute mercator, the platform's centre line),
   // widthM (across), and r, g, b 0-255 — the station's line colour, or cream for a transfer.
-  setPlatforms(f64) {
+  setPlatforms(f64:ArrayLike<number> | null | undefined) {
     this.plats = null;
     if (!f64 || !f64.length) return;
     const n = f64.length / 8, P = new Float64Array(f64);
     const box = new Float64Array(n * 4);
     for (let i = 0; i < n; i++) {
-      box[i * 4] = Math.min(P[i * 8], P[i * 8 + 2]); box[i * 4 + 1] = Math.min(P[i * 8 + 1], P[i * 8 + 3]);
-      box[i * 4 + 2] = Math.max(P[i * 8], P[i * 8 + 2]); box[i * 4 + 3] = Math.max(P[i * 8 + 1], P[i * 8 + 3]);
+      box[i * 4] = Math.min(P[i * 8]!, P[i * 8 + 2]!); box[i * 4 + 1] = Math.min(P[i * 8 + 1]!, P[i * 8 + 3]!);
+      box[i * 4 + 2] = Math.max(P[i * 8]!, P[i * 8 + 2]!); box[i * 4 + 3] = Math.max(P[i * 8 + 1]!, P[i * 8 + 3]!);
     }
     this.plats = { n, P, box };
   }
 
   // one platform's two edge strips, each in three pieces so the far-out view can keep the caps alone
-  platVerts(d, o, i, mu) {
-    const P = this.plats.P, b = i * 8;
-    const ax = P[b] - this.O.x, ay = P[b + 1] - this.O.y, bx = P[b + 2] - this.O.x, by = P[b + 3] - this.O.y;
-    const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1, half = P[b + 4] / 2 * mu;
+  platVerts(d:Float32Array, o:number, i:number, mu:number) {
+    const P = this.plats!.P, b = i * 8;
+    const ax = P[b]! - this.O.x, ay = P[b + 1]! - this.O.y, bx = P[b + 2]! - this.O.x, by = P[b + 3]! - this.O.y;
+    const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1, half = P[b + 4]! / 2 * mu;
     const nx = -dy / L * half, ny = dx / L * half, z = .3 * mu;             // 0.3 m over the surface
-    const C = [(255 * .7 + P[b + 5] * .3) / 255,        // 70 % the cream #FFE8B5, 30 % the station's line colour
-      (232 * .7 + P[b + 6] * .3) / 255, (181 * .7 + P[b + 7] * .3) / 255];
+    const C = [(255 * .7 + P[b + 5]! * .3) / 255,        // 70 % the cream #FFE8B5, 30 % the station's line colour
+      (232 * .7 + P[b + 6]! * .3) / 255, (181 * .7 + P[b + 7]! * .3) / 255];
     const cut = [0, .08, .92, 1];
     for (const sg of [-1, 1]) for (let k = 0; k < 3; k++) {
-      const t0 = cut[k], t1 = cut[k + 1];
+      const t0 = cut[k]!, t1 = cut[k + 1]!;
       const Ax = ax + dx * t0 + nx * sg, Ay = ay + dy * t0 + ny * sg;
       const Bx = ax + dx * t1 + nx * sg, By = ay + dy * t1 + ny * sg;
-      for (const [t, side] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]]) {
+      for (const [t, side] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]] as [number, number][]) {
         d[o++] = Ax; d[o++] = Ay; d[o++] = z; d[o++] = Bx; d[o++] = By; d[o++] = z;
-        d[o++] = t; d[o++] = side; d[o++] = k; d[o++] = C[0]; d[o++] = C[1]; d[o++] = C[2];
+        d[o++] = t; d[o++] = side; d[o++] = k; d[o++] = C[0]!; d[o++] = C[1]!; d[o++] = C[2]!;
       }
     }
     return o;
   }
 
-  render(gl, matrix, opts = {}) {
+  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:NightRenderOptions = {}) {
     if (!this.ready) return;
     this.gl0 = gl; if (this.track && !this.track.b) this.uploadTrack(gl);
     const t0 = performance.now();
     const { now = performance.now(), zoom = 15, phone = false, reducedMotion = false, bounds, pixelRatio = 1 } = opts;
     const ts = now / 1000;
     let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
-    if (bounds) { x0 = Math.min(bounds[0], bounds[2]); x1 = Math.max(bounds[0], bounds[2]); y0 = Math.min(bounds[1], bounds[3]); y1 = Math.max(bounds[1], bounds[3]) }
+    if (bounds) { x0 = Math.min(bounds[0]!, bounds[2]!); x1 = Math.max(bounds[0]!, bounds[2]!); y0 = Math.min(bounds[1]!, bounds[3]!); y1 = Math.max(bounds[1]!, bounds[3]!) }
 
     const MT = this.M; MT.set(matrix);
-    for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * this.O.x + matrix[4 + r] * this.O.y + matrix[12 + r];
+    for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * this.O.x + matrix[4 + r]! * this.O.y + matrix[12 + r]!;
     lightsOn(gl);
     let bulbs = 0, sparks = 0, draws = 0;
 
@@ -457,15 +481,15 @@ export class NightLayer {
     if (T && T.va) {
       const gy0 = Math.floor((y0 - CELL) / CELL), gy1 = Math.floor((y1 + CELL) / CELL);
       const cx0 = Math.floor((x0 - CELL) / CELL), cx1 = Math.floor((x1 + CELL) / CELL);
-      const runs = [];
+      const runs:number[] = [];
       let total = 0;
       for (const gy of T.ys) {
         if (gy < gy0 || gy > gy1) continue;
-        const R = T.rows.get(gy);
+        const R = T.rows.get(gy)!;
         let a = -1, b = -1;
-        for (let i = 0; i < R.cx.length; i++) { if (R.cx[i] < cx0 || R.cx[i] > cx1) continue; if (a < 0) a = i; b = i }
+        for (let i = 0; i < R.cx.length; i++) { if (R.cx[i]! < cx0 || R.cx[i]! > cx1) continue; if (a < 0) a = i; b = i }
         if (a < 0) continue;
-        const first = R.at[a], count = R.at[b] + R.n[b] - first;
+        const first = R.at[a]!, count = R.at[b]! + R.n[b]! - first;
         runs.push(first, count); total += count;
       }
       // the cap: the track string gives way first, and below z14.5 it is every other bulb anyway (36 m)
@@ -479,14 +503,14 @@ export class NightLayer {
       gl.uniform3fv(this.uT.u_rgb, this.creamRGB); gl.uniform2f(this.uT.u_wt, 1, .22);
       gl.uniform1f(this.uT.u_chase, T.chase && zoom >= 14.5 ? 1 : 0); gl.uniform3fv(this.uT.u_lines, T.lines);
       gl.bindVertexArray(T.va);
-      for (let i = 0; i < runs.length; i += 2) { gl.drawArrays(gl.POINTS, runs[i], runs[i + 1]); draws++ }
+      for (let i = 0; i < runs.length; i += 2) { gl.drawArrays(gl.POINTS, runs[i]!, runs[i + 1]!); draws++ }
       bulbs = Math.round(total / stride);
     }
 
     // which festival sites are in view at all: the fireworks, the lanterns and the beams share this
     let any = false;
     for (let i = 0; i < 4; i++) {
-      const f = FIREWORK_SITES[i], pad = 420 * f.mu;                   // the burst sits ~320 m up
+      const f = FIREWORK_SITES[i]!, pad = 420 * f.mu;                   // the burst sits ~320 m up
       const on = f.x > x0 - pad && f.x < x1 + pad && f.y > y0 - pad && f.y < y1 + pad;
       this.on[i] = on ? 1 : 0; if (on) any = true;
     }
@@ -512,12 +536,12 @@ export class NightLayer {
       const cap = phone ? PLAT_CAP >> 1 : PLAT_CAP, d = this.platData, mu = muOf(37.55);   // the coaster is flat through a station, so the strips lie on the ground
       let o = 0;
       for (let i = 0; i < P.n && plats < cap; i++) {
-        if (P.box[i * 4] > x1 || P.box[i * 4 + 2] < x0 || P.box[i * 4 + 1] > y1 || P.box[i * 4 + 3] < y0) continue;
+        if (P.box[i * 4]! > x1 || P.box[i * 4 + 2]! < x0 || P.box[i * 4 + 1]! > y1 || P.box[i * 4 + 3]! < y0) continue;
         o = this.platVerts(d, o, i, mu); plats++;
       }
       if (plats) {
         const pg = this.ping;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[pg]);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.platB[pg]!);
         gl.bufferData(gl.ARRAY_BUFFER, this.platData.byteLength, gl.DYNAMIC_DRAW);     // fresh storage, never patched in flight
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, d, 0, o);
         gl.useProgram(this.pP);
@@ -525,7 +549,7 @@ export class NightLayer {
         gl.uniform2f(this.uP.u_vp, gl.drawingBufferWidth, gl.drawingBufferHeight);
         gl.uniform1f(this.uP.u_half, 1.75 * pixelRatio); gl.uniform1f(this.uP.u_core, .3);
         gl.uniform1f(this.uP.u_caps, zoom < 14.5 ? 1 : 0); gl.uniform2f(this.uP.u_wt, STYLE.night.stationEmission, .16);
-        gl.bindVertexArray(this.platVA[pg]);
+        gl.bindVertexArray(this.platVA[pg]!);
         gl.drawArrays(gl.TRIANGLES, 0, o / 12); draws++;
       }
     }
@@ -567,9 +591,9 @@ export class NightLayer {
   // true while something up there changes: the caller keeps the overlay's frames coming
   animating() { return !!this._moving }
 
-  dispose(gl) {
+  dispose(gl:WebGL2RenderingContext) {
     if (!this.pT) return;
-    const T = this.track; if (T?.b) { gl.deleteBuffer(T.b); gl.deleteVertexArray(T.va) }
+    const T = this.track; if (T?.b) { gl.deleteBuffer(T.b); gl.deleteVertexArray(T.va!) }
     gl.deleteBuffer(this.fwB); gl.deleteVertexArray(this.fwVA);
     gl.deleteBuffer(this.lanB); gl.deleteVertexArray(this.lanVA);
     gl.deleteBuffer(this.beamB); gl.deleteBuffer(this.beamB2); gl.deleteVertexArray(this.beamVA);

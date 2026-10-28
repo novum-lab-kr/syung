@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { festoonBulbs as fb, keepAt, survivors, FESTOON } from '../web/modes/coaster/festoon.mjs';
+import { festoonBulbs as fb, keepAt, survivors, FESTOON } from '../web/modes/coaster/festoon.mts';
 const festoonBulbs = (...a) => fb(...a).data;
 
 // a fake decoded building layer: square footprints (tile units, extent 4096) with ids and heights

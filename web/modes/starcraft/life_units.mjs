@@ -2,7 +2,7 @@
 // web/city/life.mjs 가 모드 설정 city.life.units 가 있으면 사람 · 차를 그리지 않고 이걸 부른다(본체가 모드 코드 받기로 받아 overlay 가 넘긴다).
 // 자리 · 방향 · 걷는지는 엔진의 것(사람 poses 14 칸, 차 TrafficSim poses 10 칸)을 그대로 쓰고, 모양은 unit_shapes.mjs(Codex 시안).
 // 사람은 그 사람의 look 번호로, 차는 그 차의 고정 난수(TrafficSim 의 car.seed)로 모양 목록에서 고른다 — 자리로 고르면 달리는 동안 모양이 바뀌었다(행님 2026-10-22).
-import { compile, hexRGB } from '../coaster/night.mjs';
+import { compile, hexRGB } from '../coaster/night.mts';
 import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mjs';
 
 const VERT = 12, INST = 8;   // 꼭짓점: 자리 3 · 법선 3 · 색 3 · 다리 1 · 축 2 / 인스턴스: x · y(로컬 m) · 방향 · 크기(m, 폭 1 당) · 걷는지 · 박자 · 색(노선 대신, 'line' 칸) r · g

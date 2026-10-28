@@ -12,7 +12,7 @@
 //   const s=new TurtleShips(style); s.init(gl);
 //   s.begin(ox,oy); s.ship(frame,L,W,rgb,moving,key,{kind,line,flag})…; s.draw(gl,M,ox,oy,{zoom,unit,walls,occlude,dark,time}); s.dispose(gl)
 
-import { compile, hexRGB } from '../coaster/night.mjs';
+import { compile, hexRGB } from '../coaster/night.mts';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────────────────────────────
 type Pair = [number, number];

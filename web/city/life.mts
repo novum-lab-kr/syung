@@ -17,7 +17,7 @@
 //   people: both city modes draw them (the same figures on the same pavements; the mode only tones their colours); false hides them.
 
 import SEOUL from '../modes/basic/city.mts';
-import { BULB_FS, bulbSize } from '../modes/coaster/night.mjs';
+import { BULB_FS, bulbSize } from '../modes/coaster/night.mts';
 import { toneRGB, hexRgb, MPP } from './style.mts';
 import type { CityStylePack } from './style.mts';
 import { RoadGraph, TrafficSim, VehicleRenderer, compileProgram, hashi, visibleRanges, sampleS } from './traffic.mts';
