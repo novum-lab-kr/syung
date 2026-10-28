@@ -1,7 +1,7 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mts';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
-import {initJourney} from './lib/journey-ui.mts';
+import {initJourney} from './lib/journey-ui.mts';import {drawJourney,clearJourney} from './ui/journey_sheet.tsx';   // 길찾기 시트 몸통은 화면 조각(Preact)이 그린다
 import {createCoasterTrack} from './modes/coaster/track.mts';   // 롤코 선로 층
 import {createCoasterGeometry} from './modes/coaster/geometry.mts';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mts';   // 롤코 주행 속도 · 탄 거리
@@ -9,7 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
-import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 · 버스 시트 화면 조각 · Preact: 같은 단계에서 요청)
+import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 · 버스 · 길찾기 시트 화면 조각 · Preact: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
@@ -584,7 +584,7 @@ const {sheet,sheetBody,followBtn,openSheet,openSheetView,closeSheet,sheetBusy,sh
 const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
-const journey=initJourney({openSheet,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{showRoute(...a);refreshLive()},clearRoute:()=>{clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+const journey=initJourney({openSheetView,drawJourney,clearJourney,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{showRoute(...a);refreshLive()},clearRoute:()=>{clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
