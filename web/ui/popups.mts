@@ -5,6 +5,8 @@ import type { LngLat, Map as MapLibre, Point } from 'maplibre-gl';
 import type { Settings } from '../modes/merge.mts';
 import type { LiveTrain, MapStation, Merc, TrainPlan } from '../trains/types.mts';
 import { drawStationSheet, clearPanel } from './station_sheet.tsx';
+import { drawTrainSheet } from './train_sheet.tsx';
+import type { TrainRawView, TrainRideView, TrainSheetProps } from './train_sheet.tsx';
 import type { ArrivalCard, ExitItem, StationSheetProps, StationSheetState } from './station_sheet.tsx';
 
 // /api/live?arrivals= 응답 한 줄(server/services/live.py index_arrivals — 이 파일이 읽는 칸)
@@ -22,15 +24,15 @@ interface PopupsLive {
 interface SheetUI { sheetTrain:string|null; sheetToken:number; following:string|null; sheetStation:MapStation|null }
 export interface PopupsDeps {
   map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:{ plans:TrainPlan[] }; colors:Record<string,string>;
-  esc:(text:unknown)=>string; age:(v:unknown)=>number; destLabel:(t:LiveTrain)=>string; trainPose:(plan:TrainPlan)=>{ dist:number; moving?:boolean };
+  age:(v:unknown)=>number; destLabel:(t:LiveTrain)=>string; trainPose:(plan:TrainPlan)=>{ dist:number; moving?:boolean };
   trackPoint:(plan:TrainPlan, dist:number)=>TrackPoint; mercStop:(line:string, s:MapStation)=>Merc; TRAIN_MIN_PX:number;
   trainBodyPx:(zoom:number)=>number; canRide:()=>boolean; laneOffsetPx:(zoom:number, bodyPx?:number)=>number;
   cityViaduct:{ train(zoom:number, bodyPx:number):{ lanePx:number }; screen(map:MapLibre, x:number, y:number, h:number):{ x:number; y:number } };
   seatPickerHTML:typeof import('../modes/coaster/first_person.mts').seatPickerHTML; seatLabel:typeof import('../modes/coaster/first_person.mts').seatLabel; rideRows:(plan:TrainPlan)=>number;
-  rider:{ seat:import('../modes/coaster/first_person.mts').Seat }; openSheet:(html:string)=>number; openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; follow:(id:string)=>void; sheetUI:SheetUI; sheetBody:HTMLElement;
+  rider:{ seat:import('../modes/coaster/first_person.mts').Seat }; openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; follow:(id:string)=>void; sheetUI:SheetUI; sheetBody:HTMLElement;
   followBtn:HTMLElement; live:PopupsLive;
 }
-export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,openSheetView,follow,sheetUI,sheetBody,followBtn,live}:PopupsDeps){
+export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,live}:PopupsDeps){
   // ---- train inspector ----------------------------------------------------------------------
   // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
   function trainState(plan:TrainPlan):string{
@@ -53,33 +55,28 @@ export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,tr
     if(ph.k0===ph.k1)return `${ph.k0===0?ph.from.name:ph.to.name}역에 정차 중`;
     return left<10?`${ph.from.name} → ${ph.to.name} · 곧 도착`:`${ph.from.name} → ${ph.to.name} · 약 ${when} 뒤 도착`;
   }
-  function trainSheetHTML(plan:TrainPlan):string{
-    const t=plan.t,c=colors[t.line];
-    const badges=[t.express?'<span class="b ex">급행</span>':'',t.last?'<span class="b last">막차</span>':''].join('');
-    return `<div class="train-inspect" style="--c:${c}">
-  <div class="tp-line"><span class="dot"></span>${esc(t.line)}<span class="no">${esc(t.trainNo)}</span>${badges}</div>
-  <div class="tp-dest">${esc(destLabel(t)||'행선지 정보 없음')}</div>
-  <div class="tp-now">${esc(riderState(plan))}</div>
-  ${canRide()?`<div class="sec">자리 고르고 타기 <span class="muted">· 위가 진행 방향</span></div><div class="ride-pick">${seatPickerHTML(plan.cars,rideRows(plan),rider.seat)}</div><button type="button" class="ride-go">${seatLabel(rider.seat)}에 타기</button>`:''}
-  <div class="sec">서울시 실시간 원본</div>
-  <dl class="kv">${rawFeedHTML(t)}</dl></div>`;
+  // 열차 시트의 그릴 거리: ride(자리 고르기)는 연 순간의 값을 받아 그대로 쓴다 — 배치도 · 타기 단추 글자는 ride.mts 가 DOM 을 직접 고친다
+  function trainView(plan:TrainPlan,ride:TrainRideView|null):TrainSheetProps{
+    const t=plan.t;
+    return {color:String(colors[t.line]),line:String(t.line),trainNo:String(t.trainNo),express:!!t.express,last:!!t.last,
+      dest:destLabel(t)||'행선지 정보 없음',now:riderState(plan),ride,raw:rawFeed(t)};
   }
-  function rawFeedHTML(t:LiveTrain):string{
-    const a=Math.round(age(t.receivedAt)),kst=(v:string|null)=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-',kv=(k:string,v:string)=>`<dt>${k}</dt><dd>${v}</dd>`;
-    return `${kv('역',esc(t.station))}${kv('상태',esc(t.status))}${kv('방향',esc(t.direction))}${kv('행선지',esc(t.destination||'-'))}
-  ${kv('기록 시각',`${esc(String(t.receivedAt||'-').slice(11))} <span class="muted">(${a}초 전)</span>`)}${kv('받은 시각',kst(live.feed.fetchedAt))}`;
+  // 옛 글자와 같게(esc 로 쓰던 칸은 String — 비어 있는 값도 옛것처럼 글자로)
+  function rawFeed(t:LiveTrain):TrainRawView{
+    const kst=(v:string|null)=>v?new Date(v).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'-';
+    return {station:String(t.station),status:String(t.status),direction:String(t.direction),destination:String(t.destination||'-'),
+      recorded:String(t.receivedAt||'-').slice(11),ageSec:Math.round(age(t.receivedAt)),fetched:kst(live.feed.fetchedAt)};
   }
   function showTrainPopup(plan:TrainPlan):void{
-    const token=openSheet(trainSheetHTML(plan));sheetUI.sheetTrain=plan.id;
+    const ride:TrainRideView|null=canRide()?{seatsHTML:seatPickerHTML(plan.cars,rideRows(plan),rider.seat),goLabel:`${seatLabel(rider.seat)}에 타기`}:null;
+    const first=trainView(plan,ride),token=openSheetView(body=>{drawTrainSheet(body,first);return ()=>clearPanel(body)});sheetUI.sheetTrain=plan.id;
     requestAnimationFrame(()=>follow(plan.id));
     // keep the status line current while this train's sheet is open (plans are rebuilt on each feed update)
+    // 지금 상태 · 행선지 · 원본(plan.t 는 새 자료마다 바뀌고 'N초 전' 이 흐른다)을 다시 그린다 — Preact 가 바뀐 글자만 고친다
     const timer=setInterval(()=>{
       if(token!==sheetUI.sheetToken)return clearInterval(timer);
       const pl=planner.plans.find(p=>p.id===sheetUI.sheetTrain);if(!pl)return;
-      const now=sheetBody.querySelector('.tp-now'),dest=sheetBody.querySelector('.tp-dest');
-      if(now)now.textContent=riderState(pl);if(dest)dest.textContent=destLabel(pl.t)||'행선지 정보 없음';
-      // the raw record too: plan.t is replaced on every feed update, and the "N초 전" age ticks
-      const raw=sheetBody.querySelector('.train-inspect .kv'),h=rawFeedHTML(pl.t);if(raw&&raw.innerHTML!==h)raw.innerHTML=h;
+      drawTrainSheet(sheetBody,{...first,dest:destLabel(pl.t)||'행선지 정보 없음',now:riderState(pl),raw:rawFeed(pl.t)});
     },1000);
   }
   document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
@@ -157,5 +154,5 @@ export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,tr
   let stationSeq=0;
   document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
-  return {trainState,riderState,trainSheetHTML,rawFeedHTML,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup};
+  return {trainState,riderState,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup};
 }
