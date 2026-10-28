@@ -19,7 +19,14 @@ motion 사건의 m: 0.1초 칸마다 [사건 t 기준 ms, 중력 포함 가속 x
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Vec = tuple[float, ...]   # x · y · z
+    Bin = tuple[float, Vec, Vec | None]   # (시각 ms, 중력 포함 가속, 중력 뺀 가속 | None)
+    Pulse = dict[str, Any]   # 밀림 한 번(start · last · sum · peak · dir)
 
 BIN_MS = 100
 WINDOW = 20          # 2초 평균(칸)
@@ -31,11 +38,11 @@ HUMP_GAP = 9.0       # 초 — 감속 끝에서 되튐 시작까지
 STAND = 6.0          # 초 — 역에 서 있다고 볼 조용한 시간(되튐이 끝난 뒤. 실제 두 탑승에선 13초 넘게, 6~10 은 결과가 같았다)
 
 
-def _bins(events: list[dict]) -> list[tuple[float, tuple, tuple]]:
+def _bins(events: list[dict[str, Any]]) -> list[Bin]:
     """(시각 ms, 중력 포함 가속, 중력 뺀 가속 | None) — 시각 차례."""
-    out = []
+    out: list[Bin] = []
     for e in events:
-        m = e.get("m") or []
+        m: list[Any] = e.get("m") or []
         for i in range(0, len(m) - 9, 10):
             off, gx, gy, gz, ax, ay, az = m[i:i + 7]
             if None in (off, gx, gy, gz):
@@ -46,9 +53,10 @@ def _bins(events: list[dict]) -> list[tuple[float, tuple, tuple]]:
     return out
 
 
-def _horizontal(bins) -> list[tuple[float, tuple]]:
+def _horizontal(bins: list[Bin]) -> list[tuple[float, Vec]]:
     """칸마다 수평 가속 벡터(휴대폰 좌표, 중력 성분 뺌)."""
-    out, low = [], None
+    low: Vec | None   # 중력 느린 평균(타입 선언만 — 값은 아래에서)
+    out, low = cast("list[tuple[float, Vec]]", []), None
     for t, g, lin in bins:
         if lin is None:   # 중력 뺀 값이 없는 기기: 중력 포함 값의 느린 평균을 중력으로(약 3초)
             low = g if low is None else tuple(l + (x - l) * 0.033 for l, x in zip(low, g))
@@ -62,9 +70,9 @@ def _horizontal(bins) -> list[tuple[float, tuple]]:
     return out
 
 
-def _smooth(h) -> list[tuple[float, tuple, float]]:
+def _smooth(h: list[tuple[float, Vec]]) -> list[tuple[float, Vec, float]]:
     """2초 가운데 평균 벡터와 그 크기. 칸 사이가 1초 넘게 비면(화면 꺼짐) 거기서 끊는다."""
-    out = []
+    out: list[tuple[float, Vec, float]] = []
     for i, (t, _) in enumerate(h):
         lo, hi = max(0, i - WINDOW // 2), min(len(h), i + WINDOW // 2)
         part = [v for tt, v in h[lo:hi] if abs(tt - t) <= WINDOW * BIN_MS / 2 + 1]
@@ -73,13 +81,13 @@ def _smooth(h) -> list[tuple[float, tuple, float]]:
     return out
 
 
-def _pulses(sm) -> list[dict]:
-    pulses, cur = [], None
+def _pulses(sm: list[tuple[float, Vec, float]]) -> list[Pulse]:
+    pulses, cur = cast("list[Pulse]", []), cast("Pulse | None", None)
     for t, s, mag in sm:
         if cur and (mag < OFF or t - cur["last"] > 1000):
             pulses.append(cur); cur = None
         if mag >= ON and cur is None:
-            cur = {"start": t, "last": t, "sum": [0.0, 0.0, 0.0], "peak": 0.0}
+            cur = cast("Pulse", {"start": t, "last": t, "sum": [0.0, 0.0, 0.0], "peak": 0.0})
         if cur and mag >= OFF:
             cur["last"] = t; cur["peak"] = max(cur["peak"], mag)
             for k in range(3):
@@ -90,7 +98,7 @@ def _pulses(sm) -> list[dict]:
     for p in pulses:
         n = math.sqrt(sum(x * x for x in p["sum"])) or 1.0
         p["dir"] = tuple(x / n for x in p["sum"])
-    merged = []
+    merged: list[Pulse] = []
     for p in pulses:
         q = merged[-1] if merged else None
         if q and (p["start"] - q["last"]) / 1000 < MERGE and sum(a * b for a, b in zip(p["dir"], q["dir"])) > 0.5:
@@ -107,8 +115,8 @@ def detect(events: list[dict[str, Any]]) -> dict[str, Any]:
     if not sm:
         return {"events": [], "series": []}
     pulses = [p for p in _pulses(sm) if p["peak"] >= PEAK]
-    out, last_depart, hump = [], None, None
-    same = lambda a, b: sum(x * y for x, y in zip(a["dir"], b["dir"]))
+    out, last_depart, hump = cast("list[dict[str, Any]]", []), cast("Pulse | None", None), cast("Pulse | None", None)
+    same: Callable[[Pulse, Pulse], float] = lambda a, b: sum(x * y for x, y in zip(a["dir"], b["dir"]))
     for i, p in enumerate(pulses):
         prev = pulses[i - 1] if i else None
         nxt = pulses[i + 1] if i + 1 < len(pulses) else None
@@ -119,7 +127,7 @@ def detect(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif prev is None or (before >= STAND and (prev is hump and same(prev, p) > 0.3)):
             out.append({"kind": "depart", "t": round(p["start"])}); last_depart = p
     # 1초마다 그래프 점(출발 방향 기준 부호)
-    series, ref2, next_t, pi = [], None, sm[0][0], 0
+    series, ref2, next_t, pi = cast("list[list[float]]", []), cast("Vec | None", None), sm[0][0], 0
     dirs = [(p["start"], p["dir"]) for p in pulses]
     first = dirs[0][1] if dirs else (1.0, 0.0, 0.0)
     ref2 = first

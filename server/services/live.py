@@ -331,7 +331,7 @@ class SubwayLiveService:
         self.quota_file = SubwayQuotaFile(self.config.quota_file)
         self.lock = threading.Lock()
         self.line_cache: dict[str, tuple[float, dict]] = {}
-        self.all_cache: tuple[float, dict] | None = None
+        self.all_cache: tuple[float, dict[str, Any]] | None = None
         self.quota_day = ""
         self.quota_used = 0
         # 하루 호출 수 · 저장 파일의 주인. 바깥을 부르는 곳이 여럿(지도 요청 · 위치 덧씌우기 · burst · 돌아가며 읽기 · 역 확인)이고
@@ -343,7 +343,7 @@ class SubwayLiveService:
         self.forward_lock = threading.Lock()
         self.forward_seen: dict[tuple[str, str], dict] = {}   # forward_only 의 기억(두 피드를 섞은 뒤)
         self.position_lock = threading.Lock()
-        self.position_cache: dict[str, tuple[float, list[dict]]] = {}
+        self.position_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self.position_used: dict[str, Any] = {"day": "", "calls": 0}
         self.position_seen: dict[str, float] = {}   # line -> last time a request asked for it (lines being watched now)
         # 이상 감지(/api/health): 전 노선 받기의 마지막 성공 · 이어진 실패의 시작, 노선별 위치 피드 대수 대 전 역 도착 대수
