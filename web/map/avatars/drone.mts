@@ -1,7 +1,8 @@
 // 저그 드론: 보랏빛 갈색 등딱지와 짧은 등뼈, 상아색 턱과 늘어진 발톱으로 떠다니는 일꾼.
+import type { AvatarPart, AvatarTools } from '../avatar.mts';
 export const name = '저그 드론';
 export const rig = {hip: .43, shoulder: .53};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   const shell = '#92667f', ridge = '#bb8b9b', flesh = '#b57f69', horn = '#edcba2';
   box(-.38,-.24,.43,.23,.24,.76,shell);
   box(-.3,-.3,.48,.16,.3,.7,shell);
@@ -14,8 +15,8 @@ export function build({box, quad}) {
   box(.335,-.12,.51,.355,.12,.59,'#69435a');
   for (const s of [-1, 1]) {
     const part = s > 0 ? 'armL' : 'armR';
-    const lo = (a, b) => [Math.min(s*a,s*b), Math.max(s*a,s*b)];
-    const limb = (x0,a,z0,x1,b,z1,color,p = 'body') => {
+    const lo = (a:number, b:number):[number, number] => [Math.min(s*a,s*b), Math.max(s*a,s*b)];
+    const limb = (x0:number,a:number,z0:number,x1:number,b:number,z1:number,color:string,p:AvatarPart = 'body') => {
       const [y0,y1] = lo(a,b); box(x0,y0,z0,x1,y1,z1,color,p);
     };
     limb(.334,.105,.62,.36,.155,.663,'#f7bf75');
@@ -30,7 +31,7 @@ export function build({box, quad}) {
     limb(-.03,.21,.66,.03,.305,.76,ridge);
   }
   // 등뼈는 날개 대신 세 개의 짧은 쐐기. 네 면을 닫아 어느 방향에서도 실루엣이 남는다.
-  for (const [x, top] of [[-.23,.98],[-.06,1],[.11,.92]]) {
+  for (const [x, top] of [[-.23,.98],[-.06,1],[.11,.92]] as [number, number][]) {
     const a=[x-.055,-.055,.81], b=[x+.065,-.055,.81];
     const c=[x+.065,.055,.81], d=[x-.055,.055,.81], tip=[x-.045,0,top];
     quad(a,b,tip,tip,[0,-.93,.37],horn);

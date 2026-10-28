@@ -1,7 +1,8 @@
 // 프로토스 프로브: 둥근 금청동 머리와 청록 수정 눈, 아래로 벌어진 네 개의 가는 침.
+import type { AvatarPart, AvatarTools } from '../avatar.mts';
 export const name = '프로토스 프로브';
 export const rig = {hip: .52, shoulder: .52};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   const gold = '#dcb963', light = '#f3d990', bronze = '#9b743f', cyan = '#70efeb';
   // 상자를 겹친 계단형 곡면: 넓은 가운데와 작은 정수리로 둥근 탐사정 머리.
   box(-.27,-.24,.56,.25,.24,.86,gold);
@@ -19,16 +20,16 @@ export function build({box, quad}) {
   box(.334,-.033,.715,.342,.033,.756,'#d5fffa');
   box(-.06,-.035,.99,.06,.035,1.015,bronze);
   // 네 침은 사각 단면의 가늘어지는 금속 봉. 앞뒤로 갈라져 떠 있는 몸을 받친다.
-  const spar = (a,b,wa,wb,color,part,rootX) => {
-    const ends = (p,w) => [[p[0]-w,p[1]-w,p[2]],[p[0]+w,p[1]-w,p[2]],
-      [p[0]+w,p[1]+w,p[2]],[p[0]-w,p[1]+w,p[2]]];
+  const spar = (a:readonly number[],b:readonly number[],wa:number,wb:number,color:string,part:AvatarPart,rootX:number) => {
+    const ends = (p:readonly number[],w:number):number[][] => [[p[0]!-w,p[1]!-w,p[2]!],[p[0]!+w,p[1]!-w,p[2]!],
+      [p[0]!+w,p[1]!+w,p[2]!],[p[0]!-w,p[1]!+w,p[2]!]];
     const A=ends(a,wa), B=ends(b,wb), pivot=[rootX,rig.hip];
-    quad(A[0],A[1],B[1],B[0],[0,-1,0],color,part,pivot);
-    quad(A[1],A[2],B[2],B[1],[1,0,0],light,part,pivot);
-    quad(A[2],A[3],B[3],B[2],[0,1,0],color,part,pivot);
-    quad(A[3],A[0],B[0],B[3],[-1,0,0],bronze,part,pivot);
-    quad(A[3],A[2],A[1],A[0],[0,0,1],light,part,pivot);
-    quad(B[0],B[1],B[2],B[3],[0,0,-1],color,part,pivot);
+    quad(A[0]!,A[1]!,B[1]!,B[0]!,[0,-1,0],color,part,pivot);
+    quad(A[1]!,A[2]!,B[2]!,B[1]!,[1,0,0],light,part,pivot);
+    quad(A[2]!,A[3]!,B[3]!,B[2]!,[0,1,0],color,part,pivot);
+    quad(A[3]!,A[0]!,B[0]!,B[3]!,[-1,0,0],bronze,part,pivot);
+    quad(A[3]!,A[2]!,A[1]!,A[0]!,[0,0,1],light,part,pivot);
+    quad(B[0]!,B[1]!,B[2]!,B[3]!,[0,0,-1],color,part,pivot);
   };
   for (const sx of [-1,1]) for (const sy of [-1,1]) {
     const part = sy > 0 ? 'legL' : 'legR';

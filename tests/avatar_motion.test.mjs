@@ -1,8 +1,8 @@
 // 내 위치 캐릭터(web/map/avatar.mjs): 걷기 판단 · 방향 · 모양 메시
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMyMotion, buildAvatarMesh, registerAvatar, avatarLooks } from '../web/map/avatar.mjs';
-import * as syung from '../web/map/avatars/sprout.mjs';
+import { createMyMotion, buildAvatarMesh, registerAvatar, avatarLooks } from '../web/map/avatar.mts';
+import * as syung from '../web/map/avatars/sprout.mts';
 
 const BASE = [127.0, 37.5], LNG_M = 111320 * Math.cos(37.5 * Math.PI / 180), LAT_M = 111320;
 const at = (e, n) => ({ coords: { longitude: BASE[0] + e / LNG_M, latitude: BASE[1] + n / LAT_M, accuracy: 10 } });
@@ -81,7 +81,7 @@ test('모양 메시: 12 float 꼭짓점, 다리 · 팔 축은 rig 높이, 그림
 });
 
 test('quad 는 꼭짓점마다 부위: 풍선 줄은 손 쪽만 팔을 따라간다', async () => {
-  const visitor = await import('../web/map/avatars/visitor.mjs');
+  const visitor = await import('../web/map/avatars/visitor.mts');
   const { body } = buildAvatarMesh(visitor), str = new Map();
   for (let i = 0; i < body.length; i += 12) if (Math.abs(body[i + 6] - 0xfa / 255) < 1e-3 && Math.abs(body[i + 8] - 0xef / 255) < 1e-3) str.set(body[i + 2].toFixed(2), [body[i + 9], body[i + 11]]);
   assert.deepEqual(str.get('0.25'), [3, Math.fround(visitor.rig.shoulder)], '손 쪽: 왼팔, 어깨 축');

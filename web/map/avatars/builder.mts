@@ -1,8 +1,9 @@
 // 심시티 모드 내 위치 캐릭터 '꼬마 건설 반장': 노란 안전모 · 주황 형광 조끼(반사띠) (Codex 시안, 행님 2026-10-22 — 기본 새싹 볼빵 후디와 같은 비율 · 얼굴)
 // 좌표 · 부위 규칙은 web/map/avatar.mjs(x 앞 · y 왼쪽 · z 위, 키 1)
+import type { AvatarTools } from '../avatar.mts';
 export const name = '꼬마 건설 반장';
 export const rig = {hip: 0.17, shoulder: 0.38};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   box(-0.16,-0.21,0.16,0.17,0.21,0.43,'#f57729','body');
   box(-0.12,-0.18,0.14,0.14,0.18,0.23,'#f57729','body');
   box(0.17,-0.215,0.275,0.185,0.215,0.315,'#f5f5d9','body');

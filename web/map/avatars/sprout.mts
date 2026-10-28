@@ -1,8 +1,9 @@
 // 기본 내 위치 캐릭터 '새싹 볼빵 후디'(Codex 시안 A4, 행님 2026-10-22): 노란 후드 · 큰 눈 · 볼터치 · 짧은 다리, 머리 위 초록 새싹.
 // 좌표 · 부위 규칙은 web/map/avatar.mjs(x 앞 · y 왼쪽 · z 위, 키 1)
+import type { AvatarTools } from '../avatar.mts';
 export const name = '새싹 볼빵 후디';
 export const rig = {hip: 0.17, shoulder: 0.38};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   box(-.16,-.21,.16,.17,.21,.43,'#FFD400','body');
   box(-.12,-.18,.14,.14,.18,.23,'#FFD400','body');
   box(-.25,-.31,.43,.26,.31,.84,'#FFD400','body');

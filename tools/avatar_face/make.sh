@@ -9,6 +9,8 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 PORT=${PORT:-8097}
 PY=$(command -v python3.13 || command -v python3)
+# 캐릭터 모양은 TypeScript(web/map/avatar.mts · avatars/*.mts)라 브라우저가 원본을 못 읽는다 — 빌드 결과(dist/web)를 부른다
+(cd "$ROOT" && npm run build >/dev/null)
 "$PY" -m http.server "$PORT" --bind 127.0.0.1 --directory "$ROOT" >/dev/null 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT

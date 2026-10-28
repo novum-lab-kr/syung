@@ -1,8 +1,9 @@
 // 조선 모드 내 위치 캐릭터 '갓 쓴 꼬마 선비': 검은 갓 · 흰 도포 · 허리띠 (Codex 시안, 행님 2026-10-22 — 기본 새싹 볼빵 후디와 같은 비율 · 얼굴)
 // 좌표 · 부위 규칙은 web/map/avatar.mjs(x 앞 · y 왼쪽 · z 위, 키 1)
+import type { AvatarTools } from '../avatar.mts';
 export const name = '갓 쓴 꼬마 선비';
 export const rig = {hip: 0.17, shoulder: 0.38};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   box(-0.16,-0.21,0.16,0.17,0.21,0.43,'#faf7ef','body');
   box(-0.14,-0.23,0.145,0.16,0.23,0.26,'#faf7ef','body');
   box(0.17,-0.215,0.275,0.185,0.215,0.315,'#6276b8','body');

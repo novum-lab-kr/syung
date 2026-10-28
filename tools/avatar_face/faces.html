@@ -7,14 +7,14 @@
 <style>body{font:14px system-ui;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}canvas{margin:8px;vertical-align:middle;width:120px;height:120px}</style>
 <body>
 <script type="module">
-import {AvatarRenderer, registerAvatar} from '../../web/map/avatar.mjs';
-import * as sprout from '../../web/map/avatars/sprout.mjs';
-import * as builder from '../../web/map/avatars/builder.mjs';
-import * as seonbi from '../../web/map/avatars/seonbi.mjs';
-import * as visitor from '../../web/map/avatars/visitor.mjs';
-import * as scv from '../../web/map/avatars/scv.mjs';
-import * as drone from '../../web/map/avatars/drone.mjs';
-import * as probe from '../../web/map/avatars/probe.mjs';
+import {AvatarRenderer, registerAvatar} from '../../dist/web/map/avatar.mjs';
+import * as sprout from '../../dist/web/map/avatars/sprout.mjs';
+import * as builder from '../../dist/web/map/avatars/builder.mjs';
+import * as seonbi from '../../dist/web/map/avatars/seonbi.mjs';
+import * as visitor from '../../dist/web/map/avatars/visitor.mjs';
+import * as scv from '../../dist/web/map/avatars/scv.mjs';
+import * as drone from '../../dist/web/map/avatars/drone.mjs';
+import * as probe from '../../dist/web/map/avatars/probe.mjs';
 
 const LOOKS = {sprout, builder, seonbi, visitor, scv, drone, probe};
 // 캐릭터 좌표(y 왼쪽 · z 위, 키 1)에서 자를 정사각형: [가운데 y, 가운데 z, 반 변]. 사람 넷은 머리 + 모자 · 새싹, 일꾼 셋은 몸 위쪽
