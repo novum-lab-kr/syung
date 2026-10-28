@@ -1,6 +1,6 @@
 import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
-// web/user/account.mjs
+// web/user/account.mts
 var $ = (id) => document.getElementById(id);
 var CHANGE = { "X-Requested-With": "syung" };
 var DAYS = [
