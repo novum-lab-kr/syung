@@ -1,5 +1,6 @@
+import { clearPanel, drawStationSheet } from "./station_sheet.mjs";
 // web/ui/popups.mts
-function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheet, follow, sheetUI, sheetBody, followBtn, live }) {
+function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheet, openSheetView, follow, sheetUI, sheetBody, followBtn, live }) {
 	function trainState(plan) {
 		let el = age(plan.t.receivedAt) + plan.lead, ph = plan.phases[plan.phases.length - 1];
 		plan.phases.length - 1;
@@ -120,45 +121,64 @@ function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, t
 		const n = +(m.match(/\[(\d+)\]/) || [])[1];
 		return n ? n * 120 : /전역/.test(m) ? 90 : 600;
 	}
-	function exitList(st) {
+	function exitItems(st) {
 		const list = live.exits[st.id];
-		if (!list || !list.length) return "";
+		if (!list || !list.length) return [];
 		const seen = /* @__PURE__ */ new Set();
-		return `<div class="exits">${list.filter((e) => !seen.has(e[2]) && seen.add(e[2])).map(([, , ref, wc]) => `<span class="exit" title="${esc(ref)}번 출구${wc === 1 ? " · 휠체어 가능" : ""}">${esc(ref)}${wc === 1 ? "<i>♿</i>" : ""}</span>`).join("")}</div>`;
+		return list.filter((e) => !seen.has(e[2]) && seen.add(e[2])).map(([, , ref, wc]) => ({
+			ref,
+			wheelchair: wc === 1
+		}));
+	}
+	function arrivalCards(st, d) {
+		const groups = /* @__PURE__ */ new Map();
+		for (const a of d.arrivals || []) {
+			const k = `${a.line}|${a.direction}`;
+			if (!groups.has(k)) groups.set(k, []);
+			groups.get(k).push(a);
+		}
+		const lines = st.lines.map((x) => x.name);
+		return [...groups.keys()].sort((x, y) => lines.indexOf(x.split("|")[0]) - lines.indexOf(y.split("|")[0]) || x.localeCompare(y, "ko")).map((k) => {
+			const [line, dir] = k.split("|"), list = groups.get(k).sort((a, b) => arrivalRank(a) - arrivalRank(b)).slice(0, 2);
+			return {
+				line,
+				direction: dir,
+				toward: (list[0].heading.split("-")[1] || "").trim(),
+				color: colors[line] || "#52646a",
+				rows: list.map((a) => ({
+					text: arrivalText(a),
+					destination: a.destination,
+					express: a.express,
+					last: a.last
+				}))
+			};
+		});
 	}
 	async function showStationPopup(st, lngLat) {
 		if (!st) return;
 		sheetUI.following = null;
 		sheetUI.sheetTrain = null;
 		followBtn.hidden = true;
-		const lineChips = st.lines.map((x) => `<span class="chip" style="--c:${colors[x.name] || "#52646a"}"><span class="dot"></span>${esc(x.name)}</span>`).join("");
 		sheetUI.sheetStation = st;
-		const journeyHere = "<div class=\"st-journey\"><button type=\"button\" data-end=\"from\">여기서 출발</button><button type=\"button\" data-end=\"to\">여기로 도착</button></div>";
-		const head = (sub) => `<div class="tp-line">${lineChips}</div><div class="tp-dest">${esc(st.name)}</div><div class="tp-now">${sub}</div>${journeyHere}`;
-		const html = (d) => {
-			const groups = /* @__PURE__ */ new Map();
-			for (const a of d.arrivals || []) {
-				const k = `${a.line}|${a.direction}`;
-				if (!groups.has(k)) groups.set(k, []);
-				groups.get(k).push(a);
-			}
-			const lines = st.lines.map((x) => x.name);
-			const cards = [...groups.keys()].sort((x, y) => lines.indexOf(x.split("|")[0]) - lines.indexOf(y.split("|")[0]) || x.localeCompare(y, "ko")).map((k) => {
-				const [line, dir] = k.split("|"), list = groups.get(k).sort((a, b) => arrivalRank(a) - arrivalRank(b)).slice(0, 2);
-				const toward = (list[0].heading.split("-")[1] || "").trim();
-				return `<div class="arr" style="--c:${colors[line] || "#52646a"}"><div class="arr-h"><span class="dot"></span>${esc(line)} <span class="muted">${esc(dir)}${toward ? " · " + esc(toward) : ""}</span></div>
-        ${list.map((a) => `<div class="arr-t"><b>${esc(arrivalText(a))}</b><span class="muted">${esc(a.destination)}행${a.express ? " · 급행" : ""}${a.last ? " · 막차" : ""}</span></div>`).join("")}</div>`;
-			}).join("");
-			const ex = exitList(st);
-			return `<div class="train-inspect station-sheet">${head(`서울시 실시간 도착정보 · ${new Date(d.fetchedAt).toLocaleTimeString("ko-KR", {
+		const view = (state) => ({
+			name: st.name,
+			chips: st.lines.map((x) => ({
+				name: x.name,
+				color: colors[x.name] || "#52646a"
+			})),
+			exits: exitItems(st),
+			state
+		});
+		const ready = (d) => ({
+			kind: "ready",
+			time: new Date(d.fetchedAt).toLocaleTimeString("ko-KR", {
 				hour: "2-digit",
 				minute: "2-digit",
 				timeZone: "Asia/Seoul"
-			})} 기준`)}
-      <div class="sec">곧 오는 열차</div>${cards ? `<div class="arrs">${cards}</div>` : "<div class=\"muted empty\">지금 도착 예정 열차 정보가 없어요.</div>"}
-      ${ex ? `<div class="sec">출구</div>${ex}` : ""}</div>`;
-		};
-		const failed = `<div class="train-inspect station-sheet">${head("도착 정보를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.")}</div>`;
+			}),
+			cards: arrivalCards(st, d)
+		});
+		const failed = { kind: "failed" };
 		const seq = ++stationSeq;
 		let d = null, err = false;
 		const settled = fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g, ""))}`, { cache: "no-store" }).then(async (r) => {
@@ -170,19 +190,26 @@ function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, t
 		});
 		await Promise.race([settled, new Promise((r) => setTimeout(r, 700))]);
 		if (seq !== stationSeq) return;
-		const skeleton = `<div class="train-inspect station-sheet">${head("도착 정보 불러오는 중…")}<div class="sec">곧 오는 열차</div><div class="arrs st-sk" aria-hidden="true">${"<div class=\"arr\"><i></i><i></i><i></i></div>".repeat(Math.min(4, Math.max(2, st.lines.length * 2)))}</div></div>`;
-		const token = openSheet(d ? html(d) : err ? failed : skeleton);
-		const put = (h) => {
-			if (token === sheetUI.sheetToken) sheetBody.innerHTML = h;
+		const skeleton = {
+			kind: "loading",
+			rows: Math.min(4, Math.max(2, st.lines.length * 2))
+		};
+		const first = d ? ready(d) : err ? failed : skeleton;
+		const token = openSheetView((body) => {
+			drawStationSheet(body, view(first));
+			return () => clearPanel(body);
+		});
+		const put = (s) => {
+			if (token === sheetUI.sheetToken) drawStationSheet(sheetBody, view(s));
 		};
 		if (!d && !err) {
 			await settled;
-			put(d ? html(d) : failed);
+			put(d ? ready(d) : failed);
 		}
 		if (d) {
 			const timer = setInterval(() => {
 				if (token !== sheetUI.sheetToken) return clearInterval(timer);
-				put(html(d));
+				put(ready(d));
 			}, 15e3);
 		}
 	}
@@ -199,7 +226,6 @@ function createPopups({ map, maplibregl, planner, colors, esc, age, destLabel, t
 		updateLiveNotice,
 		arrivalText,
 		arrivalRank,
-		exitList,
 		showStationPopup
 	};
 }

@@ -8,15 +8,30 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	const sheetBody = sheet.querySelector(".sheet-body"), followBtn = sheet.querySelector(".sheet-follow");
 	let sheetToken = 0, sheetTrain = null, following = null, easing = false;
 	let followBus = null, busMiss = 0;
-	function openSheet(html, source = "subway") {
+	let unmountBody = null;
+	function fillBody(fill, source) {
 		tuck(false);
 		if (source !== "bus") live.busLayer?.clearSelection();
-		sheetBody.innerHTML = html;
+		const u = unmountBody;
+		unmountBody = null;
+		u?.();
+		fill();
 		sheet.hidden = false;
 		sheet.style.transform = "";
 		sheet.style.transition = "";
 		requestAnimationFrame(() => sheet.classList.add("open"));
 		return ++sheetToken;
+	}
+	function openSheet(html, source = "subway") {
+		return fillBody(() => {
+			sheetBody.innerHTML = html;
+		}, source);
+	}
+	function openSheetView(mount, source = "subway") {
+		return fillBody(() => {
+			sheetBody.textContent = "";
+			unmountBody = mount(sheetBody);
+		}, source);
 	}
 	function closeSheet() {
 		live.busLayer?.clearSelection();
@@ -387,6 +402,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		sheetBody,
 		followBtn,
 		openSheet,
+		openSheetView,
 		closeSheet,
 		sheetBusy,
 		sheetPad,

@@ -11,6 +11,9 @@ import { COCKPIT_NEAR_M, nearMatrix, seatLabel, seatPickerHTML } from "./modes/c
 import { createCoasterRide } from "./modes/coaster/ride.mjs";
 import { createStationSearch } from "./ui/search.mjs";
 import { createBottomSheet } from "./ui/sheet.mjs";
+import "./npm/preact/dist/preact.mjs";
+import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import "./ui/station_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
@@ -1304,7 +1307,7 @@ var sheetUI = createBottomSheet({
 		}
 	}
 });
-var { sheet, sheetBody, followBtn, openSheet, closeSheet, sheetBusy, sheetPad, trainLngLat, follow, followBusStart, followSoon } = sheetUI;
+var { sheet, sheetBody, followBtn, openSheet, openSheetView, closeSheet, sheetBusy, sheetPad, trainLngLat, follow, followBusStart, followSoon } = sheetUI;
 var journeyMap = createJourneyMap({
 	map,
 	maplibregl,
@@ -1416,7 +1419,7 @@ if (location.hash.includes("fps")) {
 map.on("movestart", (e) => {
 	if (rider.ride && e.originalEvent) stopRide(false);
 });
-var { trainState, riderState, trainSheetHTML, rawFeedHTML, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, exitList, showStationPopup } = createPopups({
+var { trainState, riderState, trainSheetHTML, rawFeedHTML, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, showStationPopup } = createPopups({
 	map,
 	maplibregl,
 	planner,
@@ -1437,6 +1440,7 @@ var { trainState, riderState, trainSheetHTML, rawFeedHTML, showTrainPopup, pickT
 	rideRows,
 	rider,
 	openSheet,
+	openSheetView,
 	follow,
 	sheetUI,
 	sheetBody,
