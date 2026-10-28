@@ -14,6 +14,6 @@ class Response:
     body: bytes = b""
     location: str = ""
     cookie: str | None = None
-    cookies: tuple = ()
+    cookies: tuple[str, ...] = ()
     content_type: str = ""
     cache: str = ""

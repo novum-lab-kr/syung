@@ -37,13 +37,21 @@ import json
 import re
 import sqlite3
 import urllib.parse
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 
 from server.routes.errors import api_error
 from server.routes.response import Response
 from server.services.members import (SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError,
                                      token_hash)
 from server.services.profile import PHOTO_MAX_BYTES
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+    from email.message import Message
+
+    from server.services.members import MemberService
+
+    ReadBody = Callable[[int], bytes | None]   # read_body(limit) → 본문 · None(너무 큼 · 없음)
 
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
@@ -73,7 +81,7 @@ def cookie_value(cookie_header: str | None, name: str) -> str | None:
     return None
 
 
-def _json(body: dict, status: int = 200) -> Response:
+def _json(body: dict[str, Any], status: int = 200) -> Response:
     return Response(status, body=json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode())
 
 
@@ -89,7 +97,7 @@ PHOTO_TYPES = {"image/webp": "webp", "image/jpeg": "jpg"}
 CONTENT_TYPES = {"webp": "image/webp", "jpg": "image/jpeg"}
 
 
-def handle(members, method: str, path: str, headers, read_body, address: str) -> Response | None:
+def handle(members: MemberService, method: str, path: str, headers: Message, read_body: ReadBody, address: str) -> Response | None:
     """path: 쿼리까지 붙은 요청 주소. read_body(limit) → bytes | None(너무 큼 · 없음). 회원 주소가 아니면 None."""
     split = urllib.parse.urlsplit(path)
     bare = member_path(split.path)
@@ -110,7 +118,7 @@ def handle(members, method: str, path: str, headers, read_body, address: str) ->
         return _error(503, "unavailable", "회원 기능을 잠시 쓸 수 없어요")
 
 
-def _signed_in(members, headers) -> dict | None:
+def _signed_in(members: MemberService, headers: Message) -> dict[str, Any] | None:
     """지금 로그인한 사람(없으면 None). 꺼져 있으면 DB 를 열지 않고, DB 를 못 쓰면 로그인 안 한 것으로 본다(로그인 줄은 그대로 뜬다)."""
     if not members.enabled:
         return None
@@ -121,7 +129,8 @@ def _signed_in(members, headers) -> dict | None:
         return None
 
 
-def _route(members, method, bare, query, headers, read_body, address) -> Response:
+def _route(members: MemberService, method: str, bare: str, query: dict[str, list[str]], headers: Message, read_body: ReadBody,
+           address: str) -> Response:
     if bare == "/auth/providers" and method == "GET":
         return _json({"providers": list(members.providers), "me": _signed_in(members, headers)})
     if not members.enabled:
@@ -142,6 +151,7 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
     me = members.me(user_id) if user_id else None
     if me is None:
         return _error(401, *LOGIN_NEEDED)
+    user_id = cast("int", user_id)   # me 가 있으면 user_id 도 있다
     if bare in ACCOUNT_PATHS or session:
         return _account(members, method, bare, session, query, user_id, cast("str", token), read_body)   # 로그인했으면 쿠키가 있다
     if bare == "/me":
@@ -175,7 +185,7 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
     else:
         ticket_id = int(cast("re.Match[str]", ticket).group(1))   # 위 갈래들이 아니면 승차권 주소
         if method == "PUT":
-            def save(body):
+            def save(body: object) -> Response:
                 saved = members.update_ticket(user_id, ticket_id, body)
                 return _json(saved) if saved else _error(404, "not_found", "없는 승차권이에요")
             return _with_body(read_body, save)
@@ -189,7 +199,8 @@ def _route(members, method, bare, query, headers, read_body, address) -> Respons
 ACCOUNT_PATHS = ("/me/sessions", "/me/stats", "/me/usage", "/me/export")
 
 
-def _account(members, method, bare, session, query, user_id: int, token: str, read_body) -> Response:
+def _account(members: MemberService, method: str, bare: str, session: re.Match[str] | None, query: dict[str, list[str]], user_id: int, token: str,
+             read_body: ReadBody) -> Response:
     """계정 칸 · 내 통계(로그인한 본인 것만 — 모두 user_id 로만 읽고 지운다)."""
     if session:
         if method == "DELETE":
@@ -212,7 +223,7 @@ def _account(members, method, bare, session, query, user_id: int, token: str, re
             return _json(stats) if stats else _error(401, *LOGIN_NEEDED)
     elif bare == "/me/usage":
         if method == "POST":
-            def count(body):
+            def count(body: object) -> Response:
                 members.count_usage(user_id, body)
                 return Response(204, "empty")
             return _with_body(read_body, count)
@@ -228,7 +239,7 @@ WEBHOOK_ERRORS = {"off": (404, "not_found", "없는 주소예요"),
                   "bad": (400, "bad_request", "회원번호가 없거나 틀려요")}
 
 
-def _kakao_unlink(members, method: str, query: str, headers, read_body) -> Response:
+def _kakao_unlink(members: MemberService, method: str, query: str, headers: Message, read_body: ReadBody) -> Response:
     """카카오 연결 해제 웹훅. 키부터 보고 본문을 읽는다(남이 보낸 본문은 읽지 않는다). 회원번호는 응답 · 로그에 싣지 않는다."""
     if method not in ("GET", "POST"):
         return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
@@ -247,12 +258,12 @@ def _kakao_unlink(members, method: str, query: str, headers, read_body) -> Respo
     return Response(200, body=b"")
 
 
-def _me_or_gone(me) -> Response:
+def _me_or_gone(me: dict[str, Any] | None) -> Response:
     """바꾼 뒤 내 정보 — 그사이 탈퇴했으면 401."""
     return _json(me) if me else _error(401, *LOGIN_NEEDED)
 
 
-def _avatar(members, user_id: int, headers, read_body) -> Response:
+def _avatar(members: MemberService, user_id: int, headers: Message, read_body: ReadBody) -> Response:
     """PUT /me/avatar: 사진(image/webp · image/jpeg 본문 그대로) 또는 캐릭터({character} JSON)."""
     kind = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
     if kind in PHOTO_TYPES:
@@ -268,7 +279,7 @@ def _avatar(members, user_id: int, headers, read_body) -> Response:
     return _error(415, "unsupported", "WebP · JPEG 사진이나 캐릭터만 받아요")
 
 
-def _with_body(read_body, work) -> Response:
+def _with_body(read_body: ReadBody, work: Callable[[object], Response]) -> Response:
     """JSON 본문을 읽어 work(본문) — 검사 실패 · 장수 한도는 400 · 409."""
     raw = read_body(BODY_LIMIT)
     if raw is None:
@@ -285,7 +296,7 @@ def _with_body(read_body, work) -> Response:
         return _error(400, "bad_request", str(error))
 
 
-def _start(members, provider: str) -> Response:
+def _start(members: MemberService, provider: str) -> Response:
     try:
         state, url = members.start(provider)
     except LoginError:
@@ -294,7 +305,7 @@ def _start(members, provider: str) -> Response:
                     cookie=_cookie(STATE_COOKIE, f"{provider}.{state}", STATE_AGE, "/api/auth/"))
 
 
-def _callback(members, provider: str, query: dict, headers, address: str) -> Response:
+def _callback(members: MemberService, provider: str, query: dict[str, list[str]], headers: Message, address: str) -> Response:
     held = cookie_value(headers.get("Cookie"), STATE_COOKIE) or ""
     held_provider, _, held_state = held.partition(".")
     clear_state = _cookie(STATE_COOKIE, "", 0, "/api/auth/")

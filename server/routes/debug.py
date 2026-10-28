@@ -7,19 +7,26 @@ GET  /debug/bus-route    ?name=3011 → 노선 id 후보
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from server.routes.errors import api_error
 from server.routes.owner import cookie_value
 from server.services.debug import BadRequest
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    from server.services.runtime import Services
 
 RIDE_BYTES = 1024 * 1024
 LOGIN = (api_error("login", "로그인이 필요해요"), 401)
 
 
-def allowed(services, cookie_header: str | None) -> bool:
+def allowed(services: Services, cookie_header: str | None) -> bool:
     return services.auth.valid_token(cookie_value(cookie_header))
 
 
-def _guard(services, cookie_header, action):
+def _guard(services: Services, cookie_header: str | None, action: Callable[[], dict[str, Any]]) -> tuple[dict[str, Any], int]:
     if not allowed(services, cookie_header):
         return LOGIN
     try:
@@ -28,18 +35,18 @@ def _guard(services, cookie_header, action):
         return api_error("bad_request", str(error)), 400
 
 
-def ride(services, cookie_header, body: bytes):
+def ride(services: Services, cookie_header: str | None, body: bytes) -> tuple[dict[str, Any], int]:
     return _guard(services, cookie_header, lambda: services.debug.record_ride(body))
 
 
-def shot(services, cookie_header, body: bytes, content_type: str, query: dict):
-    first = lambda key: (query.get(key) or [""])[0]
+def shot(services: Services, cookie_header: str | None, body: bytes, content_type: str, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
+    first: Callable[[str], str] = lambda key: (query.get(key) or [""])[0]
     return _guard(services, cookie_header, lambda: services.debug.save_shot(body, content_type, first("note"), first("state")))
 
 
-def recent(services, cookie_header, query: dict):
+def recent(services: Services, cookie_header: str | None, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     return _guard(services, cookie_header, lambda: services.debug.recent((query.get("day") or [""])[0]))
 
 
-def bus_route(services, cookie_header, query: dict):
+def bus_route(services: Services, cookie_header: str | None, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     return _guard(services, cookie_header, lambda: services.debug.find_bus_route((query.get("name") or [""])[0]))

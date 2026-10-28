@@ -1,8 +1,13 @@
 """/live: 지도가 보는 노선들의 열차(lines · focused · focus · watch) 또는 한 역의 도착 예정(arrivals). 보여 줄 게 없으면 503."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 
-def live(service, query: dict) -> tuple[dict, int]:
+if TYPE_CHECKING:   # 타입만
+    from server.services.live import SubwayLiveService
+
+
+def live(service: SubwayLiveService, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     lines = [item.strip() for value in query.get("lines", []) for item in value.split(",") if item.strip()]
     focused = query.get("focused", [""])[0] == "1"
     focus = query.get("focus", [""])[0].strip()

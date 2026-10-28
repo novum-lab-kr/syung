@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from server.clock import KST
 
+if TYPE_CHECKING:   # 타입만
+    from server.services.runtime import Services
 
-def route(services, query: dict) -> tuple[dict, int]:
+
+def route(services: Services, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """/route?from=lat,lng&to=lat,lng[&at=YYYY-MM-DDTHH:MM] — see journey_graph.plan."""
     try:
         o = tuple(float(x) for x in query.get("from", [""])[0].split(","))
@@ -23,12 +27,12 @@ def route(services, query: dict) -> tuple[dict, int]:
     return services.journey.plan(o, d, when), 200
 
 
-def place(services, query: dict) -> tuple[dict, int]:
+def place(services: Services, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """/place?q=...[&near=lat,lng] — Kakao Local search, cached 10 minutes per query."""
     q = query.get("q", [""])[0].strip()[:80]
     if not q:
         return {"ok": False, "error": "검색어가 필요해요"}, 400
-    near = None
+    near: tuple[float, ...] | None = None
     try:
         near = tuple(float(x) for x in query.get("near", [""])[0].split(",")) or None
     except ValueError:
