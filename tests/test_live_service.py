@@ -328,6 +328,37 @@ class LiveServiceTest(unittest.TestCase):
         self.assertIs(service.all_lines(), lines)
         self.assertEqual(service.source.calls, ["all"])
 
+    def test_all_lines_now_answers_from_cache_and_refreshes_in_background(self):
+        # 길찾기(결정 E · 2026-10-28): 캐시가 지났어도 기다리지 않고 들고 있는 것을 준다 — 새로 받기는 배경에서 한 번에 하나
+        source = FakeSource(all_result={"realtimeArrivalList": [arrival_row("6310", "먹골")]})
+        service = self.service(source)
+        first = service.all_lines_now()   # 받은 적이 없으면 한 번 기다려 받는다
+        self.assertEqual(([row["trainNo"] for row in first["6호선"]], source.calls), (["6310"], ["all"]))
+        started, release = threading.Event(), threading.Event()
+        source.on_fetch = lambda operation: (started.set(), release.wait(5))
+        source.all_result = {"realtimeArrivalList": [arrival_row("6320", "먹골")]}
+        service.all_cache = (0.0, service.all_cache[1])   # 지난 캐시
+        self.assertIs(service.all_lines_now(), first)   # 받는 중이어도 바로 이전 것
+        self.assertTrue(started.wait(5))
+        self.assertIs(service.all_lines_now(), first)   # 이미 받는 중이면 하나 더 띄우지 않는다
+        release.set()
+        for _ in range(500):
+            if not service.refresh_lock.locked():
+                break
+            time.sleep(0.01)
+        self.assertEqual(source.calls, ["all", "all"])
+        self.assertEqual([row["trainNo"] for row in service.all_lines_now()["6호선"]], ["6320"])
+
+    def test_all_lines_now_does_not_refresh_in_quiet_hours(self):
+        source = FakeSource()
+        service = self.service(source)
+        service.all_lines_now()
+        service.all_cache = (0.0, service.all_cache[1])
+        with patch.object(service, "quiet", return_value=True):
+            service.all_lines_now()
+        self.assertFalse(service.refresh_lock.locked())
+        self.assertEqual(source.calls, ["all"])
+
     def test_arrivals_route_returns_200_or_503_and_preserves_station_name(self):
         source = FakeSource(all_result={"realtimeArrivalList": [arrival_row("6310", "먹골")]})
         service = self.service(source)
