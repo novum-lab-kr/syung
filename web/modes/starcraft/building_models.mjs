@@ -1,4 +1,4 @@
-// web/modes/starcraft/building_models.mjs
+// web/modes/starcraft/building_models.mts
 var A = (slot) => ({
 	look: "accent",
 	slot

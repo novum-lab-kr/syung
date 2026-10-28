@@ -2,7 +2,7 @@ import { registerCityPart } from "../../city/parts.mjs";
 import { deepestPoint, edgeDistance, orientedBox, pointInPolygon } from "../../city/geom.mjs";
 import { KIND } from "../../city/mesh.mjs";
 import { BUILDING_MODELS } from "./building_models.mjs";
-// web/modes/starcraft/race_buildings.mjs
+// web/modes/starcraft/race_buildings.mts
 var NO_AO = 8;
 var LOOK = {
 	wall: KIND.WALL,

@@ -3627,7 +3627,7 @@ registerCityPart("hanok", {
 	roofTemplate,
 	boxTemplate
 });
-// web/modes/starcraft/building_models.mjs
+// web/modes/starcraft/building_models.mts
 const A$2 = (slot) => ({
 	look: "accent",
 	slot
@@ -5569,7 +5569,7 @@ const BUILDING_MODELS = {
 		}
 	]
 };
-// web/modes/starcraft/race_buildings.mjs
+// web/modes/starcraft/race_buildings.mts
 const NO_AO$1 = 8;
 const LOOK = {
 	wall: KIND.WALL,
