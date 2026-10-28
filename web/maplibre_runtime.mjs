@@ -71,7 +71,7 @@ import { stops as stops$1 } from "./city/viaduct_snap.mjs";
 import { CityViaduct } from "./city/viaduct.mjs";
 import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
 import * as maplibregl from "./vendor/maplibre-gl.mjs";
-// web/maplibre_runtime.mjs
+// web/maplibre_runtime.mts
 var modes = createModeRegistry([
 	basic_default,
 	simcity_default,
