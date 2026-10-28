@@ -7,6 +7,7 @@ import type { LinePaths } from '../../lib/routing.mts';
 import type { MapStation } from '../../trains/types.mts';
 import type { CoasterPoint, CoasterProfile, EdgeCache, EdgeGeom, PathPt } from './types.mts';
 
+type V3 = [number, number, number];   // 3차원 방향(메르카토르 x · y · 높이)
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
 export interface CoasterGeometryDeps {
   maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate };
@@ -33,8 +34,8 @@ export function createCoasterGeometry({maplibregl,paths,byId,cityViaduct,edgeGeo
   const COASTER_H=110,COASTER_LOW=18,COASTER_FLAT=110,COASTER_RISE=160;   // m: the tallest and lowest tops; flat this far either side of a station; climb over this
   const hash=(a:number,b:number,c=0)=>{let x=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b+0x6b43a9b5,0xc2b2ae35)^Math.imul(c+0x27d4eb2f,0x165667b1);x^=x>>>15;x=Math.imul(x,0x2c1b3c6d);x^=x>>>12;return (x>>>0)/4294967296};   // 0..1, the same every time
   // The frame across (R) and up (U) of a track or car going along F, from the flat right r, turned by roll about F.
-  const rolled=(r:readonly number[],F:readonly number[],roll:number)=>{const d=r[0]!*F[0]!+r[1]!*F[1]!;let R=[r[0]!-d*F[0]!,r[1]!-d*F[1]!,-d*F[2]!];const l=Math.hypot(...R)||1;R=R.map(c=>c/l);
-    const U=[F[1]!*R[2]!-F[2]!*R[1]!,F[2]!*R[0]!-F[0]!*R[2]!,F[0]!*R[1]!-F[1]!*R[0]!];if(!roll)return [R,U];const c=Math.cos(roll),s=Math.sin(roll);
+  const rolled=(r:readonly number[],F:readonly number[],roll:number):[V3,V3]=>{const d=r[0]!*F[0]!+r[1]!*F[1]!;let R=[r[0]!-d*F[0]!,r[1]!-d*F[1]!,-d*F[2]!];const l=Math.hypot(...R)||1;R=R.map(c=>c/l);
+    const U=[F[1]!*R[2]!-F[2]!*R[1]!,F[2]!*R[0]!-F[0]!*R[2]!,F[0]!*R[1]!-F[1]!*R[0]!];if(!roll)return [R,U] as [V3,V3];const c=Math.cos(roll),s=Math.sin(roll);
     return [[c*R[0]!-s*U[0]!,c*R[1]!-s*U[1]!,c*R[2]!-s*U[2]!],[c*U[0]!+s*R[0]!,c*U[1]!+s*R[1]!,c*U[2]!+s*R[2]!]]};
   const INV_GAP=2500,INV_LOOP=.3,INV_CORK=.25;   // 2026-10-05: 고가 위 롤코에선 솟는 곳이 드물게(2500 → 8000 m) · 2026-10-06 덕배: 더 활발하게 다시 2500 m
   let invMap:Map<string, string>|null=null;

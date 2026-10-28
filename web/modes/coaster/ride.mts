@@ -12,7 +12,7 @@ import type { RailFrame } from './ride_track.mts';
 import type { RidePlan } from './types.mts';
 
 // 선로 위 한 점(본체 trackPoint): 이 파일은 x · y 만 옮긴다(칸 · 레일 틀은 본체가 읽는다)
-interface TrackPt { x:number; y:number }
+interface TrackPt { x:number; y:number; h:number; off:number; r:number[]; f:number[]; roll?:number }   // 선로 위 점(본체 trackPoint)
 // 지도 카메라의 가까운 · 먼 면(공개 API 없음 — maplibre 6.11 transform)
 interface CameraMap { _camera:{ transform:{ clearNearFarZOverride():void; overrideNearFarZ(near:number, far:number):void } } }
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
@@ -20,7 +20,7 @@ export interface CoasterRideDeps {
   map:MapLibre & CameraMap; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate }; RIDE_PX?:number;
   planner:{ plans:RidePlan[] }; colors:Record<string, string>; cityViaduct:CityViaduct; sheetBody:HTMLElement; closeSheet:()=>void;
   showTrainPopup:(plan:TrainPlan)=>void; applyTheme:()=>void; effectiveTheme:()=>string; coasterBodyPx:(zoom:number)=>number; TRAIN_MIN_PX:number;
-  mercStop:(line:string, s:MapStation)=>Merc; trainPose:(plan:TrainPlan)=>{ dist:number }; trackPoint:(plan:TrainPlan, dist:number)=>TrackPt;
+  mercStop:(line:string, s:MapStation)=>Merc; trainPose:(plan:TrainPlan)=>{ dist:number; moving:boolean }; trackPoint:(plan:TrainPlan, dist:number)=>TrackPt;
   blendShift:(plan:TrainPlan, mid:TrackPt)=>[number, number] | null; toRide:(p:RidePlan, d:number)=>number; fromRide:(p:RidePlan, a:number)=>number;
   coasterCarFrame:(P:(d:number)=>TrackPt, tail:number, car:number, j:number, n:number, unit:number, bodyPx:number, lanePx:number, gap:number)=>{ fr:number[]; L:number } | null;
   coasterRailFrames:(P:(d:number)=>TrackPt, d0:number, d1:number, step:number, unit:number, bodyPx:number, lanePx:number, front?:number, m?:number)=>RailFrame[];
@@ -35,7 +35,7 @@ interface RideBack {
 // 탄 열차(ride): 자리 · 이 프레임의 자리(snap — drawTrains 가 같은 자리에 그린다) · 1인칭 레일 · 눈 · 카메라
 interface Ride {
   id:string; seat:Seat; seen:number; back:RideBack; timer?:ReturnType<typeof setInterval>;
-  snap:{ pose:{ dist:number }; shift:[number, number] | null; j:number; k:number } | null;
+  snap:{ pose:{ dist:number; moving:boolean }; shift:[number, number] | null; j:number; k:number } | null;
   rail?:{ plan:TrainPlan; d0:number; frames:RailFrame[]; mpu:number; dirty:boolean }; eye?:number[]; cam?:ReturnType<typeof rideCamera>;
 }
 export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM}:CoasterRideDeps){

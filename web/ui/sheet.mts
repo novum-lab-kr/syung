@@ -5,7 +5,7 @@
 import type { LngLat, Map as MapLibre } from 'maplibre-gl';
 
 // 열차 계획(trains/plan)에서 이 파일이 쓰는 칸 · 선로 위 한 점(trackPoint)
-interface TrainPlanLike { id:string }
+type TrainPlanLike = import('../trains/types.mts').TrainPlan;
 interface TrackPoint { x:number; y:number; r:[number,number]; off:number }
 interface PlannerLike { plans:TrainPlanLike[]; setFrame(ts:number):void }
 // 버스 층에서 이 파일이 부르는 것
@@ -14,7 +14,7 @@ interface BusLayerLike {
   followChanged?():void; vehiclePosition(id:string):[number,number]|null|undefined; stopFollow?:string|null;
 }
 // 시트에서 길찾기로 넘기는 역(역 자료)
-interface SheetStation { name:string; lat:number; lon:number }
+type SheetStation = import('../trains/types.mts').MapStation;
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다)
 interface SheetLive {
   busLayer?:BusLayerLike|null; routeBounds:unknown; frameMs?:number;
@@ -22,7 +22,7 @@ interface SheetLive {
   rider:{ ride:unknown }; stopRide(instant:boolean):void;
 }
 export interface BottomSheetDeps {
-  map:MapLibre; maplibregl:typeof import('maplibre-gl'); planner:PlannerLike;
+  map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:PlannerLike;
   trackPoint:(plan:TrainPlanLike, dist:number)=>TrackPoint; trainPose:(plan:TrainPlanLike)=>{ dist:number };
   laneOffsetPx:(zoom:number)=>number; animFrame:(()=>void)[]; FOLLOW_FPS:number; fitRoute:(bottom:number)=>void; live:SheetLive;
 }
