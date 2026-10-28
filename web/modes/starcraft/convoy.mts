@@ -1,26 +1,37 @@
 // 스타크래프트 모드의 지하철: 열차 한 대가 유닛 행렬이 되어 고가 위를 간다(맨 앞 lead 한 마리 + 뒤 rest 여럿 — 모드 설정 trains.units).
 // 조선 거북선 선단(web/modes/joseon/turtle_ship.mts)과 같은 틀: TrainLayer 가 선로 위 틀(밑 뒤 점, F 앞, R 옆, U 위 — 메르카토르)과
-// 길이 L · 폭 W(px)를 주면 그 가운데에 유닛 하나를 W 크기로 세운다. 모양은 unit_shapes.mjs(Codex 시안), 'line' 칸은 노선 색.
+// 길이 L · 폭 W(px)를 주면 그 가운데에 유닛 하나를 W 크기로 세운다. 모양은 unit_shapes.mts(Codex 시안), 'line' 칸은 노선 색.
 // 걷는 동안(가는 중) 다리(legA · legB)를 엉덩이 축으로 흔들고 몸을 살짝 들썩인다. 깊이: 건물 벽 뒤는 occlude 만큼 비친다.
 //
 //   const u=new UnitConvoy(); u.init(gl);
 //   u.begin(ox,oy); u.unit(frame,L,W,kind,rgb,moving,key)…; u.draw(gl,M,ox,oy,{unit,walls,occlude,dark,time}); u.dispose(gl)
 import { compile, hexRGB } from '../coaster/night.mjs';
-import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mjs';
+import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mts';
 
-const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // 거북선 · 88열차와 같은 해
+// ── 타입 ──────────────────────────────────────────────────────────────────────────────────────────
+interface InstList { inst:Float32Array; n:number }
+interface UnitMesh { b:WebGLBuffer; va:WebGLVertexArrayObject; n:number }
+type InstAttr = 'i_o' | 'i_F' | 'i_R' | 'i_U' | 'i_LW' | 'i_rgb' | 'i_go';
+type Attr = 'a_p' | 'a_n' | 'a_c' | 'a_leg' | 'a_pivot' | InstAttr;
+type Uniform = 'u_matrix' | 'u_unit' | 'u_time' | 'u_alpha' | 'u_amb' | 'u_dif' | 'u_light' | 'u_fly';
+// trains/draw.mjs · sky_units 가 넘기는 그리기 옵션 중 이 파일이 읽는 칸
+export interface ConvoyDrawOptions { unit:number; walls?:unknown; occlude?:number; dark?:boolean; time?:number }
+// 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
+interface ConvoyLast { n:number; kinds:Record<string, number>; W:number | undefined; at:number[][] }
+
+const SUN = ((v:number[]) => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // 거북선 · 88열차와 같은 해
 export const FLY_W = 1.1;   // 나는 유닛(모양의 fly)이 고가 위로 뜨는 높이(몸 폭 단위)
 const VERT = 12, INST = 18;   // 꼭짓점: 자리 3 · 법선 3 · 색 3(노선 색 칸은 -1) · 다리 1 · 축 2 / 인스턴스: 틀 12 · L · W · 색 3 · 가는 중
-const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
+const fnv1a = (s:string) => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
 
 // 유닛 하나의 꼭짓점(폭 1 단위)
-export function buildUnitMesh(key) {
-  const shape = UNIT_SHAPES[key], pal = shape.palette.map(hexRGB), data = [];
-  for (const t of shapeTriangles(shape)) data.push(...t.p, ...t.n, ...(t.color === LINE ? [-1, -1, -1] : pal[t.color]), t.leg, ...t.pivot);
+export function buildUnitMesh(key:string):Float32Array {
+  const shape = UNIT_SHAPES[key]!, pal:number[][] = shape.palette.map(hexRGB), data:number[] = [];
+  for (const t of shapeTriangles(shape)) data.push(...t.p, ...t.n, ...(t.color === LINE ? [-1, -1, -1] : pal[t.color]!), t.leg, ...t.pivot);
   return new Float32Array(data);
 }
 // 유닛 길이(폭 단위): 행렬 간격을 정할 때
-export const unitLength = key => UNIT_SHAPES[key]?.len ?? 1;
+export const unitLength = (key:string) => UNIT_SHAPES[key]?.len ?? 1;
 
 const VS = `#version 300 es
 precision highp float;
@@ -47,56 +58,58 @@ in vec3 v_n;flat in vec3 v_c;uniform float u_alpha,u_amb,u_dif;uniform vec3 u_li
 void main(){float l=length(v_n),d=l>1e-6?abs(dot(v_n/l,u_light)):0.;o=vec4(v_c*(u_amb+u_dif*d),1.)*u_alpha;}`;
 
 export class UnitConvoy {
-  static last = null;   // 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
+  static last:ConvoyLast | null = null;
+  declare lists:Map<string, InstList>; declare M:Float32Array; declare seeds:Map<unknown, number>; declare p:WebGLProgram | null;
+  declare attr:Record<Attr, number>; declare uni:Record<Uniform, WebGLUniformLocation | null>; declare meshes:Map<string, UnitMesh>; declare ib:WebGLBuffer; declare cap:number; declare ox:number; declare oy:number;   // 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
   constructor() { this.lists = new Map(); this.M = new Float32Array(16); this.seeds = new Map() }
-  init(gl) {
+  init(gl:WebGL2RenderingContext) {
     if (this.p) return;
     this.p = compile(gl, VS, FS);
-    const names = ['a_p', 'a_n', 'a_c', 'a_leg', 'a_pivot', 'i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'];
-    this.attr = Object.fromEntries(names.map(n => [n, gl.getAttribLocation(this.p, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_light', 'u_fly'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    const names:Attr[] = ['a_p', 'a_n', 'a_c', 'a_leg', 'a_pivot', 'i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'];
+    this.attr = Object.fromEntries(names.map(n => [n, gl.getAttribLocation(this.p!, n)])) as Record<Attr, number>;
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_light', 'u_fly'].map(n => [n, gl.getUniformLocation(this.p!, n)])) as Record<Uniform, WebGLUniformLocation | null>;
     this.meshes = new Map(); this.ib = gl.createBuffer(); this.cap = 0;
   }
   // 모양마다 꼭짓점 버퍼(처음 쓸 때 만든다)
-  mesh(gl, key) {
+  mesh(gl:WebGL2RenderingContext, key:string):UnitMesh {
     let m = this.meshes.get(key); if (m) return m;
     const data = buildUnitMesh(key), b = gl.createBuffer(), va = gl.createVertexArray(), A = this.attr;
     gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b);
-    for (const [loc, size, off] of [[A.a_p, 3, 0], [A.a_n, 3, 3], [A.a_c, 3, 6], [A.a_leg, 1, 9], [A.a_pivot, 2, 10]]) if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, VERT * 4, off * 4) }
+    for (const [loc, size, off] of [[A.a_p, 3, 0], [A.a_n, 3, 3], [A.a_c, 3, 6], [A.a_leg, 1, 9], [A.a_pivot, 2, 10]] as [number, number, number][]) if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, VERT * 4, off * 4) }
     gl.bindVertexArray(null); m = { b, va, n: data.length / VERT }; this.meshes.set(key, m); return m;
   }
-  begin(ox, oy) { this.ox = ox; this.oy = oy; for (const l of this.lists.values()) l.n = 0 }
+  begin(ox:number, oy:number) { this.ox = ox; this.oy = oy; for (const l of this.lists.values()) l.n = 0 }
   // 유닛 하나: 틀(fr: 밑 뒤 점, F, R, U), 그 칸 길이 L · 폭 W(px), 모양 이름, 노선 색, 가는 중인지, 열차 id(걸음 박자)
-  unit(fr, L, W, kind, rgb, moving, key) {
+  unit(fr:ArrayLike<number>, L:number, W:number, kind:string, rgb:ArrayLike<number>, moving:boolean, key:unknown) {
     if (!UNIT_SHAPES[kind]) return;
     for (let k = 0; k < 12; k++) if (!Number.isFinite(fr[k])) return;
     let s = this.seeds.get(key); if (s == null) { s = fnv1a(String(key)) % 997; if (this.seeds.size > 4096) this.seeds.clear(); this.seeds.set(key, s) }
     let l = this.lists.get(kind); if (!l) this.lists.set(kind, l = { inst: new Float32Array(INST * 64), n: 0 });
     if ((l.n + 1) * INST > l.inst.length) { const g = new Float32Array(l.inst.length * 2); g.set(l.inst); l.inst = g }
     const d = l.inst, i = l.n * INST;
-    d[i] = fr[0] - this.ox; d[i + 1] = fr[1] - this.oy; d[i + 2] = fr[2]; for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k];
-    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = s * 2 + (moving ? 1 : 0); l.n++;
+    d[i] = fr[0]! - this.ox; d[i + 1] = fr[1]! - this.oy; d[i + 2] = fr[2]!; for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k]!;
+    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]!; d[i + 15] = rgb[1]!; d[i + 16] = rgb[2]!; d[i + 17] = s * 2 + (moving ? 1 : 0); l.n++;
   }
   // o: unit(px 하나의 메르카토르), walls(버퍼에 건물 깊이), occlude(벽 뒤 몫의 알파), dark, time(초)
-  draw(gl, M, ox, oy, o) {
+  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:ConvoyDrawOptions) {
     const runs = [...this.lists].filter(([, l]) => l.n), total = runs.reduce((a, [, l]) => a + l.n, 0);
-    const at = []; for (const [, l] of runs) for (let k = 0; k < Math.min(l.n, 20); k++) at.push([l.inst[k * INST] + ox, l.inst[k * INST + 1] + oy, l.inst[k * INST + 2], l.inst[k * INST + 17] % 2]);   // 유닛 자리(메르카토르) · 가는 중: 캡처가 찾아 간다
+    const at:number[][] = []; for (const [, l] of runs) for (let k = 0; k < Math.min(l.n, 20); k++) at.push([l.inst[k * INST]! + ox, l.inst[k * INST + 1]! + oy, l.inst[k * INST + 2]!, l.inst[k * INST + 17]! % 2]);   // 유닛 자리(메르카토르) · 가는 중: 캡처가 찾아 간다
     UnitConvoy.last = { n: total, kinds: Object.fromEntries(runs.map(([k, l]) => [k, l.n])), W: runs[0]?.[1].inst[13], at };
     if (!total || !this.p) return;
-    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r] * ox + M[4 + r] * oy + M[12 + r];
+    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r]! * ox + M[4 + r]! * oy + M[12 + r]!;
     const U = this.uni; gl.useProgram(this.p);
     gl.uniformMatrix4fv(U.u_matrix, false, MT); gl.uniform1f(U.u_unit, o.unit); gl.uniform1f(U.u_time, o.time ?? performance.now() / 1000);
     gl.uniform1f(U.u_amb, o.dark ? .55 : .62); gl.uniform1f(U.u_dif, o.dark ? .25 : .42); gl.uniform3fv(U.u_light, SUN);
     gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.DEPTH_TEST);
     const need = total * INST; gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
     if (this.cap < need) { this.cap = Math.max(need, INST * 256) * 2; gl.bufferData(gl.ARRAY_BUFFER, this.cap * 4, gl.DYNAMIC_DRAW) }
-    let off = 0; const parts = [];
+    let off = 0; const parts:[string, InstList, number][] = [];
     for (const [key, l] of runs) { gl.bufferSubData(gl.ARRAY_BUFFER, off * 4, l.inst, 0, l.n * INST); parts.push([key, l, off]); off += l.n * INST }
-    const names = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'], sizes = [3, 3, 3, 3, 2, 3, 1];
+    const names:InstAttr[] = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_go'], sizes = [3, 3, 3, 3, 2, 3, 1];
     for (const [key, l, base] of parts) {
       const m = this.mesh(gl, key); gl.uniform1f(U.u_fly, UNIT_SHAPES[key]?.fly ? FLY_W : 0); gl.bindVertexArray(m.va); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
-      let a = 0; names.forEach((n, k) => { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[k], gl.FLOAT, false, INST * 4, base * 4 + a * 4); gl.vertexAttribDivisor(loc, 1) } a += sizes[k] });
-      const pass = alpha => { gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n) };
+      let a = 0; names.forEach((n, k) => { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[k]!, gl.FLOAT, false, INST * 4, base * 4 + a * 4); gl.vertexAttribDivisor(loc, 1) } a += sizes[k]! });
+      const pass = (alpha:number) => { gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n) };
       gl.depthMask(false);
       if (o.walls && o.occlude) { gl.depthFunc(gl.GREATER); pass(o.occlude) }   // 건물 뒤: 희미하게(제 깊이를 쓰기 전에)
       gl.depthFunc(gl.LEQUAL); gl.depthMask(true); pass(1); gl.depthMask(false);
@@ -104,7 +117,7 @@ export class UnitConvoy {
     }
     gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL);
   }
-  dispose(gl) {
+  dispose(gl:WebGL2RenderingContext) {
     if (!this.p) return;
     for (const m of this.meshes.values()) { gl.deleteBuffer(m.b); gl.deleteVertexArray(m.va) }
     this.meshes.clear(); gl.deleteBuffer(this.ib); gl.deleteProgram(this.p); this.p = null;
