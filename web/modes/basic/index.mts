@@ -29,13 +29,13 @@ export default {
     track: { kind: 'ground', platform: 'ribbon' },
     // 열차: look 은 모양 — commuter(전동차) · fleet(배 선단, 맨 앞 거북선) · coaster88(88열차 칸) · units(스타크래프트 유닛 행렬), body 는 굵기 — wide(지도 위) · slim(고가 · 공원),
     // predictStops 는 새 자료 없이 미리 달려 갈 정차 역 수, timeWarp 는 배속으로 앞서 달리기(롤코 배속 버튼)
-    // units: look 이 units(스타크래프트 유닛 행렬)일 때 맨 앞 · 뒤 유닛 모양 이름(web/modes/starcraft/unit_shapes.mjs)
+    // units: look 이 units(스타크래프트 유닛 행렬)일 때 맨 앞 · 뒤 유닛 모양 이름(web/modes/starcraft/unit_shapes.mts)
     trains: { look: 'commuter', body: 'wide', predictStops: 3, timeWarp: false, units: { lead: 'siegeTank', rest: 'siegeTank' } },
     // 버스: look 은 모양 — bus · palanquin(가마) · siegeTank · ultralisk · reaver(스타크래프트 유닛)
     buses: { look: 'bus' },
     // 내 위치 캐릭터(줌 15 부터 노란 점 대신, web/map/avatars/): sprout(새싹 볼빵 후디) · builder(꼬마 건설 반장) · seonbi(꼬마 선비) · visitor(놀이공원 아이) · scv · drone · probe(스타크래프트 종족 일꾼)
     me: { look: 'sprout' },
-    // 하늘: units 는 가끔 화면을 가로질러 나는 유닛 모양(web/modes/starcraft/unit_shapes.mjs — 비면 없음), 평균 everyS 초마다 하나 · 동시에 maxN, 높이 altM · 몸 폭 sizeM(m) · 빠르기 speedMps
+    // 하늘: units 는 가끔 화면을 가로질러 나는 유닛 모양(web/modes/starcraft/unit_shapes.mts — 비면 없음), 평균 everyS 초마다 하나 · 동시에 maxN, 높이 altM · 몸 폭 sizeM(m) · 빠르기 speedMps
     sky: { units: [], everyS: 12, maxN: 3, altM: 90, sizeM: 28, speedMps: 45 },
     // 해: light 는 지도 빛(map: 해 따라 · park: 공원의 따뜻한 빛 PARK_COLORS), lowHouseM 은 그 팩의 hanok.tall.towerMinH 보다 낮은 건물 그림자 높이(m, 없으면 실제 높이)
     sun: { light: 'map', lowHouseM: null },

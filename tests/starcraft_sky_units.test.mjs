@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SkyUnits } from '../web/modes/starcraft/sky_units.mjs';
+import { SkyUnits } from '../web/modes/starcraft/sky_units.mts';
 
 test('스타크래프트 하늘: 화면 밖에서 나타나 화면 가운데 근처를 지나 밖으로 — 모양 이름이 없으면 안 나타난다', () => {
   let k = 0; const R = () => [.13, .71, .42, .9, .05, .66, .3][k++ % 7];

@@ -86,7 +86,7 @@ interface Person {
 }
 type ExitDeck = ((px:number, py:number, m:number) => boolean) | null;
 interface LifeOptions { pack?:LifePack; exits?:() => XY[]; deck?:(x:number, y:number, r:number) => ExitDeck }
-// 스타크래프트 유닛(web/modes/starcraft/life_units.mjs LifeUnits) — 이 파일이 부르는 draw 만
+// 스타크래프트 유닛(web/modes/starcraft/life_units.mts LifeUnits) — 이 파일이 부르는 draw 만
 interface LifeUnitsLayer { draw(gl:WebGL2RenderingContext, MT:Float32Array, mu:number, o:Record<string, unknown>):number }
 // render 가 받는 값(map/overlay.mjs 가 넘긴다)
 export interface LifeRenderOptions {
@@ -733,7 +733,7 @@ export class CityLife {
         gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
         gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._anim = true } }
     else this.people.list.length = 0;
-    // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mjs)
+    // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mts)
     if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
       stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0]!, 14 * MPP(zoom)), mpp: MPP(zoom), now: reducedMotion ? 0 : now, light, lit });
       if (!reducedMotion && stats.units) this._anim = true }

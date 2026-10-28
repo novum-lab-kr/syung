@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LifeUnits } from '../web/modes/starcraft/life_units.mjs';
+import { LifeUnits } from '../web/modes/starcraft/life_units.mts';
 
 // GL 없이: 그리기 직전까지(유닛 고르기 · 방향)만 — init · 그리기는 빈 것으로
 class Probe extends LifeUnits { init() { this.lists ??= new Map(); this.p = 1; this.attr = {}; this.uni = {} } mesh() { return { va: null, n: 0 } } }
