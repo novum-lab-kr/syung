@@ -20,7 +20,7 @@ export interface Ride {
 // 보낼 사건 하나(서버 record_ride 가 받는 모양 — 이 화면이 넣는 칸)
 export type RideEvent = Record<string, unknown> & { kind:string; ride?:string; t:number };
 
-export const fmt = (t:number):string => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+export const fmt = (time:number):string => new Date(time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 // 탄 지 'M:SS'
 export function elapsed(ms:number):string {

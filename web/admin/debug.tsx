@@ -269,15 +269,15 @@ function MotionChart({ ride }:{ ride:RideSummary }) {
     const marks = (chart:UPlot) => {
       const { ctx } = chart, dpr = devicePixelRatio || 1, size = 6 * dpr;
       const outside = (px:number) => px < chart.bbox.left - 1 || px > chart.bbox.left + chart.bbox.width + 1;
-      const tri = (t:number, kind:string, below:boolean) => {
-        const px = chart.valToPos(t / 1000, 'x', true); if (outside(px)) return;
-        const y = below ? chart.bbox.top + chart.bbox.height - size - 2 : chart.bbox.top + size + 2, dir = below ? -1 : 1;
-        ctx.beginPath(); ctx.moveTo(px - size, y - dir * size); ctx.lineTo(px + size, y - dir * size); ctx.lineTo(px, y + dir * size * .8); ctx.closePath();
+      const tri = (at:number, kind:string, below:boolean) => {
+        const px = chart.valToPos(at / 1000, 'x', true); if (outside(px)) return;
+        const tipY = below ? chart.bbox.top + chart.bbox.height - size - 2 : chart.bbox.top + size + 2, dir = below ? -1 : 1;
+        ctx.beginPath(); ctx.moveTo(px - size, tipY - dir * size); ctx.lineTo(px + size, tipY - dir * size); ctx.lineTo(px, tipY + dir * size * .8); ctx.closePath();
         ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad;
         if (below) ctx.stroke(); else { ctx.fillStyle = kind === 'depart' ? good : bad; ctx.fill() }
       };
-      const line = (t:number, kind:string) => {
-        const px = chart.valToPos(t / 1000, 'x', true); if (outside(px)) return;
+      const line = (at:number, kind:string) => {
+        const px = chart.valToPos(at / 1000, 'x', true); if (outside(px)) return;
         ctx.beginPath(); ctx.moveTo(px, chart.bbox.top); ctx.lineTo(px, chart.bbox.top + chart.bbox.height); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = kind === 'depart' ? good : bad; ctx.stroke();
       };
       ctx.save();
