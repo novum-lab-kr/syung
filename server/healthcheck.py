@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, cast
 
 PROXY = "http://127.0.0.1:3113"
 STATE = Path("/var/lib/subway-live/health.json")
@@ -23,13 +24,13 @@ WEBHOOK = os.environ.get("SUBWAY_ALERT_WEBHOOK", "").strip()
 KST = timezone(timedelta(hours=9))
 
 
-def get(path: str, timeout: int = 25) -> dict:
+def get(path: str, timeout: int = 25) -> dict[str, Any]:
     return json.load(urllib.request.urlopen(PROXY + path, timeout=timeout))
 
 
 def main() -> None:
     now = datetime.now(timezone.utc)
-    problems, info, restarted = [], {}, False
+    problems, info, restarted = cast("list[str]", []), cast("dict[str, Any]", {}), False
     try:
         get("/health", 5)
         d = get("/live?lines=" + urllib.parse.quote("2호선"))
@@ -40,14 +41,14 @@ def main() -> None:
             problems.append(f"프록시 오류: {d.get('error')}")
         elif age is not None and age > 300 and not d.get("quiet") and not d.get("quotaExhausted"):   # no upstream calls in the quiet hours or past the quota
             problems.append(f"실시간 데이터가 {round(age / 60)}분째 갱신되지 않음")
-        q = d.get("quota") or {}
+        q: dict[str, Any] = d.get("quota") or {}
         if q.get("limit") and q.get("used", 0) >= 0.9 * q["limit"]:
             problems.append(f"오늘 API 호출 {q['used']}/{q['limit']} (90% 이상)")
     except Exception as exc:  # proxy down or hung
         problems.append(f"프록시 응답 없음: {exc}")
     if any(p.startswith(("프록시 응답 없음", "실시간 데이터가")) for p in problems):
         restarted = subprocess.run(["systemctl", "restart", "subway-live"]).returncode == 0
-    prev = json.loads(STATE.read_text()) if STATE.exists() else {}
+    prev: dict[str, Any] = json.loads(STATE.read_text()) if STATE.exists() else {}
     state = {"checkedAt": now.astimezone(KST).isoformat(timespec="seconds"), "ok": not problems, "problems": problems, "restarted": restarted, **info}
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1))

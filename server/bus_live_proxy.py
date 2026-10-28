@@ -7,11 +7,17 @@ import bus_live_proxy; bus_live_proxy.snapshot(parse_qs(...)) → (body, status)
 from server.bus_live_proxy import BusError, Config, QuotaLedger, iso, parse_payload   # pipeline/bus_fetch_paths.py
 실제 코드: sources/seoul_bus.py · store/bus_quota.py · store/records.py · services/bus.py · routes/bus.py · jobs/bus_samples.py
 """
+# 아래 noqa F401 import 는 옛 이름을 밖(deploy/dev_server.py · pipeline/bus_fetch_paths.py)에 그대로 내주는 것 — 쓰지 않아도 둔다
+# pyright: reportUnusedImport=false
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
 
 _ROOT = str(Path(__file__).resolve().parent.parent)   # import bus_live_proxy(deploy/dev_server.py) 로 불러도 server 패키지를 찾게
 if _ROOT not in sys.path:
@@ -38,12 +44,12 @@ def get_arrivals() -> ArrivalProxy:
     return default_services().arrivals
 
 
-def background_loop(proxy: BusProxy | None = None, sleep=time.sleep) -> None:
+def background_loop(proxy: BusProxy | None = None, sleep: Callable[[float], None] = time.sleep) -> None:
     """subway_live_proxy.py starts it: watched routes first, then the learning routes in turn, forever."""
     bus_samples.background_loop(proxy or get_proxy(), sleep)
 
 
-def snapshot(query: dict) -> tuple[dict, int]:
+def snapshot(query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """Small integration surface for the existing subway HTTP handler (and deploy/dev_server.py)."""
     return bus_routes.snapshot(default_services(), query)
 
