@@ -18,7 +18,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST, day_bounds, iso
 from server.config import ArrivalConfig, BusConfig
@@ -27,6 +27,11 @@ from server.sources.seoul_bus import fetch_arrivals, fetch_positions
 from server.store.bus_catalog import file_stamp, read_route_list, read_routes, read_stops
 from server.store.bus_quota import QuotaLedger
 from server.store.records import record_bus
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Row = dict[str, Any]   # 바깥 API · 응답의 JSON 한 줄
 
 # 도착정보의 routeType → 지도 버스 종류. 우리 노선 자료에 없는 노선(공항버스 등)의 이름표에만 쓴다
 ARRIVAL_ROUTE_TYPES = {"1": "airport", "2": "village", "3": "trunk", "4": "branch", "5": "circular", "6": "express"}
@@ -39,7 +44,7 @@ SAMPLE_HOURS = (5 * 60, 24 * 60)   # KST 분: 버스가 다니는 동안만 모�
 WATCH_SECONDS = 90   # 지도가 이 안에 물은 노선은 '보는 중': 수집보다 먼저 새로 받아 둔다
 
 
-def note_failure(proxy, key, code: str, retry: float) -> None:
+def note_failure(proxy: BusLiveService | BusArrivalService, key: str, code: str, retry: float) -> None:
     """실패 기록. proxy.lock 안에서 부른다. 한도 초과는 바로, 401 은 연속일 때만 전체를 쉰다."""
     now = proxy.clock()
     if code == "upstream_auth":
@@ -52,7 +57,7 @@ def note_failure(proxy, key, code: str, retry: float) -> None:
         proxy.backoff_until = now + 300
 
 
-def retry_reserve(proxy, key) -> bool:
+def retry_reserve(proxy: BusLiveService | BusArrivalService, key: str) -> bool:
     """방금 부른 게 섞여 온 401 이면 바로 한 번 더 부를 자리를 잡는다(장부에 센다).
     사람이 누른 그 응답에서 바로 보이게: 안 그러면 지도가 다시 물을 때(15초)까지 비어 있다."""
     with proxy.lock:
@@ -71,7 +76,7 @@ def retry_reserve(proxy, key) -> bool:
         return allowed
 
 
-def number(value):
+def number(value: Any) -> float | None:   # JSON 값을 float() 에 그대로 넘긴다(못 바꾸면 None)
     try:
         value = float(value)
         return value if math.isfinite(value) else None
@@ -79,7 +84,7 @@ def number(value):
         return None
 
 
-def measurement_time(value) -> str | None:
+def measurement_time(value: object) -> str | None:
     text = str(value or "").strip()
     try:
         if re.fullmatch(r"\d{14}", text):
@@ -93,8 +98,8 @@ def measurement_time(value) -> str | None:
         return None
 
 
-def normalize_positions(items: list[dict], route_id: str) -> list[dict]:
-    vehicles = {}
+def normalize_positions(items: list[Row], route_id: str) -> list[Row]:
+    vehicles: dict[str, Row] = {}
     for row in items:
         vid = str(row.get("vehId") or "").strip()
         lng, lat = number(row.get("gpsX")), number(row.get("gpsY"))
@@ -106,7 +111,7 @@ def normalize_positions(items: list[dict], route_id: str) -> list[dict]:
         if row.get("routeId") and str(row["routeId"]) != route_id:
             continue
         seq = number(row.get("sectOrd"))
-        bus = {"id": f"{route_id}:{vid}", "vehicleId": vid, "routeId": route_id,
+        bus: Row = {"id": f"{route_id}:{vid}", "vehicleId": vid, "routeId": route_id,
                "lng": round(lng, 6), "lat": round(lat, 6), "heading": None, "speedKph": None,
                "stopSequence": int(seq) if seq is not None and seq >= 1 and seq.is_integer() else None,
                "atStop": str(row.get("stopFlag", "0")) == "1",
@@ -118,14 +123,14 @@ def normalize_positions(items: list[dict], route_id: str) -> list[dict]:
     return sorted(vehicles.values(), key=lambda bus: bus["id"])
 
 
-def normalize_arrivals(items: list[dict]) -> list[dict]:
+def normalize_arrivals(items: list[Row]) -> list[Row]:
     """노선마다 다가오는 버스 두 대의 안내 문구 · 남은 초 · 막차 여부. 차량 번호는 내보내지 않는다."""
-    rows = {}
+    rows: dict[str, Row] = {}
     for item in items:
         rid, name = str(item.get("busRouteId") or "").strip(), str(item.get("rtNm") or "").strip()
         if not re.fullmatch(r"\d{9}", rid) or not name or rid in rows:
             continue
-        buses = []
+        buses: list[Row] = []
         for n in ("1", "2"):
             message = str(item.get(f"arrmsg{n}") or "").strip()
             if not message:
@@ -138,11 +143,11 @@ def normalize_arrivals(items: list[dict]) -> list[dict]:
     return list(rows.values())
 
 
-def error_entry(route_id, code):
+def error_entry(route_id: str | None, code: str) -> Row:
     return {"routeId": route_id, "code": code, "message": MESSAGES[code]}
 
 
-def status_entry(status, stamp, now, buses, retry):
+def status_entry(status: str, stamp: float | None, now: float, buses: list[Row], retry: float) -> Row:
     return {"status": status, "fetchedAt": iso(stamp) if stamp is not None else None,
             "ageSeconds": max(0, round(now - stamp, 1)) if stamp is not None else None,
             "busCount": len(buses), "retryAfterSeconds": retry}
@@ -150,8 +155,8 @@ def status_entry(status, stamp, now, buses, retry):
 
 class BusLiveService:
     """노선별 버스 위치. 지도가 묻는 노선을 하루 장부 안에서 골고루 새로 받는다. 옛 이름 BusProxy."""
-    def __init__(self, config: BusConfig | None = None, *, routes: dict | None = None,
-                 fetch=None, clock=None):
+    def __init__(self, config: BusConfig | None = None, *, routes: dict[str, Any] | None = None,
+                 fetch: Callable[[str, BusConfig], list[Row]] | None = None, clock: Callable[[], float] | None = None):
         self.config = config or BusConfig.from_env()
         self.clock, self.fetch = clock or time.time, fetch or fetch_positions
         self.ledger = QuotaLedger(self.config)
@@ -163,28 +168,28 @@ class BusLiveService:
                 self.data_error, routes = True, {}
         self.routes = routes
         self.cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-        self.failures = {}
-        self.pending = set()
+        self.failures: dict[str, tuple[float, str]] = {}
+        self.pending: set[str] = set()
         self.lock = threading.Lock()
-        self.backoff_until = 0
+        self.backoff_until: float = 0
         self.auth_strikes = 0   # 연속 401 수
         self.last_ok = self.clock()   # 마지막으로 받은 때(띄운 때부터 센다)
-        self.next_at = 0
+        self.next_at: float = 0
         self.last_block = "paced"
-        self.watched = {}   # 노선 → 지도가 마지막으로 물은 때
-        self.sample_at = 0   # 다음 수집 호출을 해도 되는 때
+        self.watched: dict[str, float] = {}   # 노선 → 지도가 마지막으로 물은 때
+        self.sample_at: float = 0   # 다음 수집 호출을 해도 되는 때
 
     @property
-    def mode(self):
+    def mode(self) -> str:
         if self.config.mode == "mock":
             return "mock"
         return "live" if self.config.key and self.config.mode != "disabled" else "unavailable"
 
-    def catalog_error(self, now: float) -> dict:
+    def catalog_error(self, now: float) -> Row:
         """정적 노선 자료를 못 읽었을 때의 응답 본문."""
         return self._body([], now, errors=[error_entry(None, "data_unavailable")])
 
-    def snapshot(self, ids: list[str], focus: str, now: float) -> dict:
+    def snapshot(self, ids: list[str], focus: str, now: float) -> Row:
         """검사를 마친 노선들(routes/bus.py)의 버스 · 노선별 상태. 필요하면 한 노선을 새로 받는다.
         now: 요청을 받은 때(routes 가 검사 전에 잡는다)."""
         with self.lock:
@@ -200,8 +205,8 @@ class BusLiveService:
                         for rid in ids}
             return self._body(ids, now, buses=buses, statuses=statuses)
 
-        chosen = None
-        storage_error = None
+        chosen: str | None = None
+        storage_error: str | None = None
         with self.lock:
             due = [rid for rid in ids if rid not in self.pending
                    and now - self.cache.get(rid, (-math.inf, []))[0] >= self.config.cache_seconds
@@ -222,10 +227,10 @@ class BusLiveService:
         if chosen and not self._fetch(chosen) and retry_reserve(self, chosen):
             self._fetch(chosen)
         now = self.clock()
-        buses, statuses, errors = [], {}, []
+        buses, statuses, errors = cast("list[Row]", []), cast("dict[str, Row]", {}), cast("list[Row]", [])
         with self.lock:
             for rid in ids:
-                stamp, cached = self.cache.get(rid, (None, []))
+                stamp, cached = self.cache.get(rid, cast("tuple[None, list[Row]]", (None, [])))
                 age = now - stamp if stamp is not None else None
                 failure = self.failures.get(rid)
                 retry = max(self.next_at, self.backoff_until, failure[0] if failure else 0)
@@ -250,7 +255,7 @@ class BusLiveService:
             errors.append(error_entry(None, storage_error))
         return self._body(ids, now, buses=buses, statuses=statuses, errors=errors)
 
-    def _fetch(self, rid):
+    def _fetch(self, rid: str) -> bool:
         """One reserved upstream call (rid already in pending): cache, record, or note the failure."""
         try:
             items = self.fetch(rid, self.config)
@@ -271,7 +276,7 @@ class BusLiveService:
             with self.lock:
                 self.pending.discard(rid)
 
-    def _watched_due(self, now):
+    def _watched_due(self, now: float) -> list[str]:
         """보는 중인 노선 중 캐시가 지난 것, 가장 오래된 것부터."""
         with self.lock:
             for rid, at in list(self.watched.items()):
@@ -282,7 +287,7 @@ class BusLiveService:
                 if rid not in self.pending and now - self.cache.get(rid, (-math.inf, []))[0] >= self.config.cache_seconds
                 and now >= self.failures.get(rid, (0, ""))[0])]
 
-    def background_once(self, sample_rid) -> tuple[float, bool]:
+    def background_once(self, sample_rid: str) -> tuple[float, bool]:
         """One background turn: (seconds to wait, whether the learning route sample_rid had its turn).
         A route someone watches comes first at any hour; the learning call only when none is due."""
         now, config = self.clock(), self.config
@@ -329,7 +334,8 @@ class BusLiveService:
         self.sample_at = now + max(config.min_interval, (end.timestamp() - now) / left)
         return 0.5, True
 
-    def _body(self, ids, now, *, buses=None, statuses=None, errors=None):
+    def _body(self, ids: list[str], now: float, *, buses: list[Row] | None = None, statuses: dict[str, Row] | None = None,
+              errors: list[Row] | None = None) -> Row:
         errors, buses, statuses = list(errors or []), buses or [], statuses or {}
         try:
             quota = self.ledger.view(now)
@@ -342,7 +348,7 @@ class BusLiveService:
                 "fetchedAt": iso(now), "pollAfterSeconds": 15 if self.mode == "mock" or not ready else 30,   # 못 받은 노선은 15초 뒤 다시
                 "busCount": len(buses), "buses": buses, "routes": statuses, "quota": quota, "errors": errors}
 
-    def _mock(self, rid, now):
+    def _mock(self, rid: str, now: float) -> list[Row]:
         path = self.routes[rid].get("path", [])
         if len(path) < 2:
             return []
@@ -362,32 +368,33 @@ class BusLiveService:
 
 class BusArrivalService:
     """정류장을 누른 사람이 있을 때만 그 정류장 하나를 부른다(정류장 하나 = 호출 1번). 옛 이름 ArrivalProxy."""
-    def __init__(self, config: ArrivalConfig | None = None, *, stops: dict | None = None, fetch=None, clock=None):
+    def __init__(self, config: ArrivalConfig | None = None, *, stops: dict[str, Any] | None = None,
+                 fetch: Callable[[str, ArrivalConfig], list[Row]] | None = None, clock: Callable[[], float] | None = None):
         self.config = config or ArrivalConfig.from_env()
         self.clock, self.fetch = clock or time.time, fetch or fetch_arrivals
         self.ledger = QuotaLedger(self.config)
         self.data_error = False
-        self.stops_stamp = None   # 파일에서 읽었으면 그 파일의 (수정 시각, 크기): 배포로 바뀌면 다시 읽는다
+        self.stops_stamp: tuple[int, int] | None = None   # 파일에서 읽었으면 그 파일의 (수정 시각, 크기): 배포로 바뀌면 다시 읽는다
         self.stops = stops or {}   # arsId → 정류장
         if stops is None:
             self._load_stops()
         self.cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}   # arsId → (받은 때, 줄)
-        self.failures = {}   # arsId → (다시 물어도 되는 때, 코드)
-        self.pending = {}   # arsId → Event: 같은 정류장을 동시에 물으면 한 번만 부르고 함께 기다린다
+        self.failures: dict[str, tuple[float, str]] = {}   # arsId → (다시 물어도 되는 때, 코드)
+        self.pending: dict[str, threading.Event] = {}   # arsId → Event: 같은 정류장을 동시에 물으면 한 번만 부르고 함께 기다린다
         self.lock = threading.Lock()
-        self.next_at = 0
-        self.backoff_until = 0
+        self.next_at: float = 0
+        self.backoff_until: float = 0
         self.auth_strikes = 0   # 연속 401 수
         self.last_ok = self.clock()   # 마지막으로 받은 때(띄운 때부터 센다)
-        self.mock_routes = None
+        self.mock_routes: list[Any] | None = None
 
     @property
-    def mode(self):
+    def mode(self) -> str:
         if self.config.mode == "mock":
             return "mock"
         return "live" if self.config.key and self.config.mode != "disabled" else "unavailable"
 
-    def _load_stops(self):
+    def _load_stops(self) -> None:
         try:
             stamp = file_stamp(self.config.stops_file)
             if stamp == self.stops_stamp:
@@ -403,10 +410,10 @@ class BusArrivalService:
         if self.stops_stamp is not None or self.data_error:
             self._load_stops()
 
-    def catalog_error(self, now: float) -> dict:
+    def catalog_error(self, now: float) -> Row:
         return self._body("", now, "error", None, [], [error_entry(None, "data_unavailable")])
 
-    def snapshot(self, stop: str, now: float, fresh: bool = False) -> dict:
+    def snapshot(self, stop: str, now: float, fresh: bool = False) -> Row:
         """검사를 마친 정류장(routes/bus.py) 하나의 도착 정보. now: 요청을 받은 때, fresh: 팝업의 새로고침."""
         # 새로고침(fresh=1): 받은 지 FRESH_SECONDS 가 지났으면 새로 묻는다. 연타로 하루 한도를 쓰지 않게 그보다 짧으면 받아 둔 것
         window = min(self.config.cache_seconds, FRESH_SECONDS) if fresh else self.config.cache_seconds
@@ -416,9 +423,9 @@ class BusArrivalService:
         if self.mode == "mock":
             return self._body(stop, now, "mock", now, self._mock(stop, now), [])
 
-        call, waiting, block = False, None, ""
+        call, waiting, block = False, cast("threading.Event | None", None), ""
         with self.lock:
-            stamp = self.cache.get(stop, (None, []))[0]
+            stamp = self.cache.get(stop, cast("tuple[None, list[Row]]", (None, [])))[0]
             if stamp is None or now - stamp >= window:
                 waiting = self.pending.get(stop)
                 failure = self.failures.get(stop, (0, ""))
@@ -442,14 +449,14 @@ class BusArrivalService:
                     else:
                         block = reason
         if call:
-            self._fetch(stop, waiting)
+            self._fetch(stop, cast("threading.Event", waiting))   # 부르기로 했으면 위에서 Event 를 만들었다
             if retry_reserve(self, stop):
                 self._fetch(stop, self.pending[stop])
         elif waiting:
             waiting.wait(self.config.timeout + 1)
         now = self.clock()
         with self.lock:
-            stamp, rows = self.cache.get(stop, (None, []))
+            stamp, rows = self.cache.get(stop, cast("tuple[None, list[Row]]", (None, [])))
             failure = self.failures.get(stop)
         age = now - stamp if stamp is not None else None
         if age is not None and age < self.config.cache_seconds:
@@ -463,7 +470,7 @@ class BusArrivalService:
             code = "in_flight" if waiting else "upstream_error"
         return self._body(stop, now, status, stamp, rows, [error_entry(None, code)] if code else [])
 
-    def _fetch(self, stop, done):
+    def _fetch(self, stop: str, done: threading.Event) -> None:
         try:
             rows = normalize_arrivals(self.fetch(stop, self.config))
             with self.lock:
@@ -483,20 +490,20 @@ class BusArrivalService:
                 self.pending.pop(stop, None)
             done.set()
 
-    def _mock(self, stop, now):
+    def _mock(self, stop: str, now: float) -> list[Row]:
         if self.mock_routes is None:
             try:
                 self.mock_routes = read_route_list(self.config.routes_file)
             except (OSError, ValueError, KeyError, TypeError):
                 self.mock_routes = []
-        sid, rows = self.stops[stop].get("id"), []
+        sid, rows = self.stops[stop].get("id"), cast("list[Row]", [])
         for i, route in enumerate(r for r in self.mock_routes if sid in r.get("stopIds", [])):
             wait = int((now / 7 + i * 97) % 900)
             rows.append({"routeId": route["id"], "name": route["name"], "type": route.get("type", "other"), "direction": None,
                          "buses": [{"message": f"{wait // 60}분후[예시]", "seconds": wait, "last": False}]})
         return rows
 
-    def _body(self, stop, now, status, stamp, rows, errors):
+    def _body(self, stop: str, now: float, status: str, stamp: float | None, rows: list[Row], errors: list[Row]) -> Row:
         try:
             quota = self.ledger.view(now)
         except BusError:
