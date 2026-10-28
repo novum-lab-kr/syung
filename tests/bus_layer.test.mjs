@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mjs';
-import {buildBusPath, busMotionDistance} from '../web/bus/motion.mjs';
+import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mts';
+import {buildBusPath, busMotionDistance} from '../web/bus/motion.mts';
 import {createJourneyMap} from '../web/ui/journey.mts';
 
 const stops = {schemaVersion: 1, stops: [
@@ -570,7 +570,7 @@ test('two stops on the same spot both get a post from zoom 16 (석계역1번출�
 });
 
 test('정류장 버스 종류: 지나는 노선이 가장 많은 종류, 같으면 간선 먼저 · 정류장 기둥 색은 tint 로',async()=>{
-  const {stopType}=await import('../web/bus/layer.mjs');
+  const {stopType}=await import('../web/bus/layer.mts');
   const data={routesByStop:new Map([['a',[{type:'branch'},{type:'trunk'},{type:'branch'}]],['b',[{type:'branch'},{type:'trunk'}]]])};
   assert.equal(stopType(data,'a'),'branch');assert.equal(stopType(data,'b'),'trunk');assert.equal(stopType(data,'z'),'other');
 });

@@ -1,7 +1,7 @@
 // 조선 모드의 버스 모양 '가마'(모드 설정 buses.look = 'palanquin'): 메시만 여기, 그리기 · 셰이더(재료 20~29)는 web/bus/mesh.mjs.
 // 본체가 첫 화면에서 registerBusLook('palanquin', …) 으로 버스 렌더러에 등록한다(지금처럼 첫 화면 코드 — 모드 코드 받기로 옮기지 않는다).
 // (web/bus/mesh.mjs 에서 그대로 옮김)
-import { meshBuilder } from '../../bus/mesh.mjs';
+import { meshBuilder } from '../../bus/mesh.mts';
 
 type Pair = [number, number];
 type V3 = [number, number, number];

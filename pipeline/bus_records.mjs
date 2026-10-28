@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {buildBusPath, snapBusToPath, busLeadDistance, busPaceLead, busKstHour, nextBusMotion, retimeBusMotion, busMotionDistance} from '../web/bus/motion.mjs';
+import {buildBusPath, snapBusToPath, busLeadDistance, busPaceLead, busKstHour, nextBusMotion, retimeBusMotion, busMotionDistance} from '../web/bus/motion.mts';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const STATE = '/var/lib/subway-live';
