@@ -4,6 +4,54 @@
 // live.<이름> getter 로 그때그때 읽는다(생성 때 복사하지 않는다). lastPose 는 본체의 같은 Map.
 // Stainless Korean EMUs: a quiet cab-led icon grows into rigid chord-aligned cars.
 // Pixel-sized details fade in with car length; no textures, depth buffer or bent bodies.
+import type { LngLatLike, Map as MapLibre, MercatorCoordinate } from 'maplibre-gl';
+import type { CityViaduct } from '../city/viaduct.mts';
+import type { Settings } from '../modes/merge.mts';
+import type { RailFrame, RideTrack } from '../modes/coaster/ride_track.mts';
+import type { MapStation, Merc, TrainPlan } from './types.mts';
+
+// 선로 위 한 점(본체 trackPoint): 자리 · 높이 · 차선 비킴 px · 옆(r) · 앞(f) 방향, 롤코 기울기
+interface TrackPt { x:number; y:number; h:number; off:number; r:number[]; f:number[]; roll?:number }
+// 칸 하나의 틀(본체 coasterCarFrame): 뒤 끝 바닥 가운데 · 앞 F · 오른쪽 R · 위 U(12 칸) · 길이 px
+type CarFrame = { fr:number[]; L:number } | null;
+// 모드 코드 클래스(받은 뒤 live 로 읽는다): 이 파일이 부르는 칸만
+interface KitDrawOptions { zoom:number; unit:number; walls?:boolean; occlude?:number; dark:boolean; shadow:[number, number]; pixelRatio:number; lod?:number; part?:string }
+interface KitPart { init(gl:WebGL2RenderingContext):void; begin(ox:number, oy:number):void; draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:KitDrawOptions):void; dispose(gl:WebGL2RenderingContext):void }
+interface CoasterTrainLike extends KitPart { car(fr:number[], L:number, W:number, rgb:number[], front:boolean, back:boolean, key:string, j:number, line:string, seat:number):void }
+interface ShipsLike extends KitPart { ship(fr:number[], L:number, W:number, rgb:number[], moving:boolean, key:string, o:{ kind:string; flag:boolean; line:string }):void }
+interface UnitsLike extends KitPart { unit(fr:number[], L:number, W:number, kind:string, rgb:number[], moving:boolean, key:string):void }
+interface SkyLike { frame(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:{ sky:TrainSettings['sky']; now:number; view:number[]; mpm:number; unit:number; dark:boolean }):boolean; dispose(gl:WebGL2RenderingContext):void }
+interface KitClass<T> { new (options?:unknown):T; last:unknown }
+// 지금 모드 설정에서 이 파일이 읽는 칸
+type TrainSettings = Settings & {
+  track:{ kind:string }; trains:{ look:string; body?:string; units:{ lead:string; rest:string } };
+  sky?:{ units?:readonly unknown[] };
+};
+// 1인칭(롤코): 탄 열차의 이 순간 자리(riding) · 1인칭 레일 · 눈
+interface RideSnap { pose:{ dist:number; moving:boolean }; shift:[number, number] | null; j:number; k:number }
+interface RiderState { ride:{ rail?:{ frames:RailFrame[]; mpu:number; dirty:boolean }; eye?:number[] } | null }
+// 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다)
+export interface TrainLive {
+  kitReady:boolean; RideTrack:typeof RideTrack; CoasterTrain:KitClass<CoasterTrainLike>; TurtleShips:KitClass<ShipsLike>; UnitConvoy:KitClass<UnitsLike>;
+  SkyUnits:(new ()=>SkyLike) | null | undefined; unitLength:(kind:string)=>number; myLocation:LngLatLike | null | undefined; trainsEnabled:boolean; subwayOff:boolean;
+  settings:TrainSettings; sheetTrain:string | null; sunTrainShadow:[number, number]; following:string | null; easing:boolean; rider:RiderState;
+  riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean; journeyTrain:(plan:TrainPlan)=>boolean;
+}
+type TrainPlanB = TrainPlan & { blend?:unknown };
+// 본체가 넘기는 것(이 파일이 쓰는 칸만)
+export interface TrainLayerDeps {
+  map:MapLibre; JOSEON_STYLE:{ train?:{ turtleShip?:unknown } }; planner:{ plans:TrainPlanB[] }; coasterBodyPx:(zoom:number)=>number; bodyWidthPx:(zoom:number)=>number;
+  TRAIN_MIN_PX:number; cityViaduct:CityViaduct; laneOffsetPx:(zoom:number, bodyPx:number)=>number; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate };
+  trainPose:(plan:TrainPlan)=>{ dist:number; moving:boolean }; trackPoint:(plan:TrainPlan, dist:number)=>TrackPt; mercStop:(line:string, s:MapStation)=>Merc;
+  blendShift:(plan:TrainPlan, mid:TrackPt)=>[number, number] | null; lastPose:Map<string, { x:number; y:number }>; toRide:(plan:TrainPlan, d:number)=>number;
+  hexRGB:(v:string)=>number[]; colors:Record<string, string>; fromRide:(plan:TrainPlan, a:number)=>number;
+  coasterCarFrame:(P:(d:number)=>TrackPt, tail:number, car:number, j:number, n:number, unit:number, bodyPx:number, lanePx:number, gap:number)=>CarFrame;
+  smooth:(x:number)=>number; sunPosition:()=>Parameters<CityViaduct['shadowShift']>[0]; followSoon:()=>void; trainFrameSoon:(ms:number)=>void; TRAIN_FPS:number; live:TrainLive;
+}
+// render 옵션(overlay): 지도의 행렬, 건물 벽 깊이가 버퍼에 있으면 walls, 그 뒤는 occlude 투명도로
+interface TrainRenderOptions { defaultProjectionData:{ mainMatrix:ArrayLike<number> }; walls?:boolean; occlude?:number }
+type TrainAttr = 'a_pos' | 'a_local' | 'a_info' | 'a_color' | 'a_face';
+type TrainUniform = 'u_matrix' | 'u_offset' | 'u_shadow' | 'u_glow' | 'u_time' | 'u_alpha';
 const TRAIN_VS=`#version 300 es
 in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
 uniform mat4 u_matrix;uniform vec2 u_offset;uniform float u_shadow;
@@ -171,8 +219,14 @@ void shade(){
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
-export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}){
+export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
   class TrainLayer{
+    // 필드는 선언만(declare — 실행 코드 없음, 값은 지금처럼 constructor · onAdd · render 가 넣는다)
+    declare id:string; declare type:'custom'; declare renderingMode:'3d'; declare data:Float32Array; declare matrix:Float32Array; declare rgb:Map<string, number[]>;
+    declare rideTrack:RideTrack | null; declare c88ride:CoasterTrainLike | null; declare c88:CoasterTrainLike | null; declare ships:ShipsLike | null; declare units:UnitsLike | null; declare sky:SkyLike | null | undefined;
+    declare gl:WebGL2RenderingContext; declare map:MapLibre; declare p:WebGLProgram; declare b:WebGLBuffer; declare attr:Record<TrainAttr, number>; declare uni:Record<TrainUniform, WebGLUniformLocation | null>;
+    declare used:number; declare color:number[]; declare ox:number; declare oy:number; declare unit:number; declare width:number; declare length:number; declare kind:number; declare carPx:number;
+    declare fr:number[] | null; declare h0:number; declare cx:number; declare cy:number; declare tx:number; declare ty:number; declare c88o:KitDrawOptions; declare gpuCapacity:number;
     constructor(){
       this.id='webgl-trains';this.type='custom';this.renderingMode='3d';
       // Reuse the staging array and matrix: no JS vertex arrays or per-vertex objects each frame.
@@ -181,49 +235,49 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
     }
     // 모드 코드가 온 뒤, 지금 열차 모양(trains.look)에 쓰는 것만: coaster88 — 롤코 1인칭 레일 · 침목, 내가 탄 칸(맨 마지막에 깊이를 비우고 따로 —
     // drawTrains 끝), 88열차(서울 팩의 train.coaster88) / fleet — 조선 모드의 배 선단(열차 한 대 = 배 몇 척, 공중 수로 위). 안 쓰는 모양의 GL 은 치운다
-    kit(look){
+    kit(look:string){
       if(!live.kitReady||!this.gl)return;const gl=this.gl;
       if(look==='coaster88'&&!this.c88){this.rideTrack=new live.RideTrack();this.c88ride=new live.CoasterTrain();this.c88=new live.CoasterTrain();this.c88.init(gl);this.c88ride.init(gl)}
-      if(look!=='coaster88'&&this.c88){this.c88.dispose(gl);this.c88ride.dispose(gl);this.rideTrack.dispose(gl);this.c88=this.c88ride=this.rideTrack=null;live.CoasterTrain.last=null}
+      if(look!=='coaster88'&&this.c88){this.c88.dispose(gl);this.c88ride!.dispose(gl);this.rideTrack!.dispose(gl);this.c88=this.c88ride=this.rideTrack=null;live.CoasterTrain.last=null}
       if(look==='fleet'&&!this.ships){this.ships=new live.TurtleShips(JOSEON_STYLE.train?.turtleShip);this.ships.init(gl)}
       if(look!=='fleet'&&this.ships){this.ships.dispose(gl);this.ships=null;live.TurtleShips.last=null}
       if(look==='units'&&!this.units){this.units=new live.UnitConvoy();this.units.init(gl)}   // 스타크래프트: 유닛 행렬
       if(look!=='units'&&this.units){this.units.dispose(gl);this.units=null;live.UnitConvoy.last=null}
     }
-    onAdd(map,gl){
+    onAdd(map:MapLibre,gl:WebGL2RenderingContext){
       this.map=map;
-      const sh=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s};
+      const sh=(type:number,src:string)=>{const s=gl.createShader(type)!;gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)!);return s};
       this.p=gl.createProgram();const vs=sh(gl.VERTEX_SHADER,TRAIN_VS),fs=sh(gl.FRAGMENT_SHADER,TRAIN_FS);
       gl.attachShader(this.p,vs);gl.attachShader(this.p,fs);gl.linkProgram(this.p);gl.deleteShader(vs);gl.deleteShader(fs);
-      if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p));
+      if(!gl.getProgramParameter(this.p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.p)!);
       this.b=gl.createBuffer();
-      this.attr=Object.fromEntries(['a_pos','a_local','a_info','a_color','a_face'].map(n=>[n,gl.getAttribLocation(this.p,n)]));
-      this.uni=Object.fromEntries(['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'].map(n=>[n,gl.getUniformLocation(this.p,n)]));
+      this.attr=Object.fromEntries((['a_pos','a_local','a_info','a_color','a_face'] as const).map(n=>[n,gl.getAttribLocation(this.p,n)])) as Record<TrainAttr, number>;
+      this.uni=Object.fromEntries((['u_matrix','u_offset','u_shadow','u_glow','u_time','u_alpha'] as const).map(n=>[n,gl.getUniformLocation(this.p,n)])) as Record<TrainUniform, WebGLUniformLocation | null>;
       this.gl=gl;this.kit(live.settings.trains.look);   // coaster-train: (모드 코드가 왔으면)
     }
-    vertex(x,y,z,u,v,face){
+    vertex(x:number,y:number,z:number,u:number,v:number,face:number){
       if(this.used+13>this.data.length){const larger=new Float32Array(this.data.length*2);larger.set(this.data);this.data=larger}
       const d=this.data,i=this.used,c=this.color;this.used+=13;
       d[i]=x-this.ox;d[i+1]=y-this.oy;d[i+2]=z;d[i+3]=u;d[i+4]=v;
       d[i+5]=this.length;d[i+6]=this.width;d[i+7]=this.kind;d[i+8]=this.carPx;
-      d[i+9]=c[0];d[i+10]=c[1];d[i+11]=c[2];d[i+12]=face;
+      d[i+9]=c[0]!;d[i+10]=c[1]!;d[i+11]=c[2]!;d[i+12]=face;
     }
-    corner(x,y,z,u,v,face){
+    corner(x:number,y:number,z:number,u:number,v:number,face:number){
       // on the coaster each car has its own frame (fr: base, F along it, R across, U its up), so it climbs and turns over in the loop
-      const f=this.fr;if(f){const X=x*this.unit,Y=y*this.unit,Z=z*this.unit;this.vertex(f[0]+f[3]*X+f[6]*Y+f[9]*Z,f[1]+f[4]*X+f[7]*Y+f[10]*Z,f[2]+f[5]*X+f[8]*Y+f[11]*Z,u,v,face);return}
+      const f=this.fr;if(f){const X=x*this.unit,Y=y*this.unit,Z=z*this.unit;this.vertex(f[0]!+f[3]!*X+f[6]!*Y+f[9]!*Z,f[1]!+f[4]!*X+f[7]!*Y+f[10]!*Z,f[2]!+f[5]!*X+f[8]!*Y+f[11]!*Z,u,v,face);return}
       this.vertex(this.cx+(this.tx*x-this.ty*y)*this.unit,this.cy+(this.ty*x+this.tx*y)*this.unit,z*this.unit+this.h0,u,v,face);   // city-life: + h0 (the deck's height in 심시티, else 0)
     }
     // Roof strip with a sloped height at either end (also used for gangway caps).
-    roof(a,b,za,zb,w,face=0){
+    roof(a:number,b:number,za:number,zb:number,w:number,face=0){
       this.corner(a,-w,za,a,-w,face);this.corner(a,w,za,a,w,face);this.corner(b,w,zb,b,w,face);
       this.corner(a,-w,za,a,-w,face);this.corner(b,w,zb,b,w,face);this.corner(b,-w,zb,b,-w,face);
     }
-    wall(a,b,za,zb,y,face=1,yb=y){
+    wall(a:number,b:number,za:number,zb:number,y:number,face=1,yb=y){
       this.corner(a,y,.65,a,.65,face);this.corner(b,yb,.65,b,.65,face);this.corner(b,yb,zb,b,zb,face);
       this.corner(a,y,.65,a,.65,face);this.corner(b,yb,zb,b,zb,face);this.corner(a,y,za,a,za,face);
     }
     // Side facets follow the same rounded outline as the roof's pixel-space mask.
-    cabWall(front,side,H,low=H*.44){
+    cabWall(front:boolean,side:number,H:number,low=H*.44){
       const W=this.width,r=W*.36,nose=W*.48;
       let x=0,y=W*.5-r,z=low;
       for(let i=1;i<=4;i++){
@@ -234,23 +288,23 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       this.wall(front?this.length-r:r,front?this.length-nose:nose,z,H,side*W*.5);
     }
     // Selection ripple: a square on the ground centred on (x,y) in world units, radius R px.
-    ripple(x,y,R){
+    ripple(x:number,y:number,R:number){
       this.cx=x;this.cy=y;this.tx=1;this.ty=0;
       this.corner(-R,-R,.2,-R,-R,7);this.corner(R,-R,.2,R,-R,7);this.corner(R,R,.2,R,R,7);
       this.corner(-R,-R,.2,-R,-R,7);this.corner(R,R,.2,R,R,7);this.corner(-R,R,.2,-R,R,7);
     }
     // Headlight beams: a flat quad on the ground from the nose forward; the shader draws one cone per lamp.
     // It lies on the ground from the nose tip, where the headlights sit.
-    beam(L,w){
+    beam(L:number,w:number){
       const len=this.width*3.4,w0=w*.8,w1=w*2.3,zl=.3,zg=.3;
       this.corner(L,-w0,zl,0,-w0,6);this.corner(L,w0,zl,0,w0,6);this.corner(L+len,w1,zg,len,w1,6);
       this.corner(L,-w0,zl,0,-w0,6);this.corner(L+len,w1,zg,len,w1,6);this.corner(L+len,-w1,zg,len,-w1,6);
     }
-    end(x,w,z,face){
+    end(x:number,w:number,z:number,face:number){
       this.corner(x,-w,.65,-w,.65,face);this.corner(x,w,.65,w,.65,face);this.corner(x,w,z,w,z,face);
       this.corner(x,-w,.65,-w,.65,face);this.corner(x,w,z,w,z,face);this.corner(x,-w,z,-w,z,face);
     }
-    render(gl,options){
+    render(gl:WebGL2RenderingContext,options:TrainRenderOptions){
       this.kit(live.settings.trains.look);   // 안 쓰는 모양의 GL 은 그릴 열차가 없어도 치운다(모드를 나간 뒤)
       if(!live.myLocation&&(!live.trainsEnabled||!planner.plans.length)&&!(live.settings.sky?.units?.length&&live.SkyUnits)){if(this.sky&&this.gl){this.sky.dispose(this.gl);this.sky=null}return}   // (스타크래프트 하늘은 열차가 없어도 — 밤에도 난다)
       const drawTrainsToo=live.trainsEnabled&&!live.subwayOff;   // bus: 버스 노선을 고른 동안은 열차를 그리지 않는다
@@ -269,7 +323,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(live.myLocation&&map.getBounds().contains(live.myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(live.myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
       for(const plan of drawTrainsToo?planner.plans:[]){
         const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!snap&&!live.trainShown(plan,pose.dist))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown) — 1인칭으로 탄 열차는 늘
-        const mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
+        const mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
         this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
         let shiftX=0,shiftY=0;
@@ -281,9 +335,9 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         if(!snap&&(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach))continue;
         if(pose.moving||snap&&trainPose(plan).moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
         const n=plan.cars,real=n*plan.carMetres*m,total=Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
-        let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]);this.rgb.set(plan.t.line,color)}this.color=color;
-        if(plan.id===live.sheetTrain||live.journeyTrain(plan)){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]*o,mid.y+shiftY+mid.r[1]*o,bodyPx*3.4);this.width=bodyPx;rippling=true}   // 고른 열차 · 길찾기로 탈 열차
-        const P=d=>{const q=trackPoint(plan,K==='coaster'?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
+        let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]!);this.rgb.set(plan.t.line,color)}this.color=color;
+        if(plan.id===live.sheetTrain||live.journeyTrain(plan)){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]!*o,mid.y+shiftY+mid.r[1]!*o,bodyPx*3.4);this.width=bodyPx;rippling=true}   // 고른 열차 · 길찾기로 탈 열차
+        const P=(d:number)=>{const q=trackPoint(plan,K==='coaster'?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
         if(look==='fleet'){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
           // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞에만 (2026-10-10 덕배)
           const k=Math.max(1,Math.min(n,Math.round(total/unit/(bodyPx*3.6)))),span=total/k;
@@ -293,7 +347,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         if(look==='units'){   // 스타크래프트: 유닛 행렬 — 맨 앞에 lead 한 마리(제 길이의 1.15배 칸), 남은 길이에 rest 를 제 길이의 1.25배 간격으로(많아야 12)
           const U=S.trains.units,LW=bodyPx*unit,lead=live.unitLength(U.lead)*LW*1.15,step=live.unitLength(U.rest)*LW*1.25;
           const r=Math.max(0,Math.min(12,Math.floor((total-lead)/step))),span=r?(total-lead)/r:0,head=tail+total-Math.min(total,lead);
-          const one=(d0,len,kind,j)=>{const c=coasterCarFrame(P,d0,len,0,1,unit,bodyPx,lanePx,0);if(c)this.units?.unit(c.fr,c.L,bodyPx,kind,color,pose.moving,plan.id+':'+j)};
+          const one=(d0:number,len:number,kind:string,j:number)=>{const c=coasterCarFrame(P,d0,len,0,1,unit,bodyPx,lanePx,0);if(c)this.units?.unit(c.fr,c.L,bodyPx,kind,color,pose.moving,plan.id+':'+j)};
           one(head,Math.min(total,lead),U.lead,0);
           for(let j=0;j<r;j++)one(tail+j*span,span,U.rest,j+1);
           continue}
@@ -303,7 +357,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         // 심시티: at the LOD boundary, car chords coincide with the compact icon's chord, then articulate.
         // 기본 모드: 칸 끝은 늘 선로 위 점(P(d))에 둔다 — 곡선에서 곧은 막대로 모으지 않는다. 틈 · 지붕 이음만 unfold 로 자란다.
         const follow=K==='viaduct'?unfold:1;
-        const articulated=(d)=>{
+        const articulated=(d:number)=>{
           const q=P(d),t=(d-tail)/total;
           q.x=(start.x+(finish.x-start.x)*t)*(1-follow)+q.x*follow;
           q.y=(start.y+(finish.y-start.y)*t)*(1-follow)+q.y*follow;
@@ -314,7 +368,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         const bends=K!=='ground'?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
         if(separate){
           // Painter order follows camera ground direction; no hidden back wall can bleed through.
-          const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
+          const forward=mid.f[0]!*camX+mid.f[1]!*camY>=0;
           for(let k=0;k<n;k++){
             const j=forward?k:n-1-k;
             if(c88){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88)?.car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
@@ -344,23 +398,23 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         }else if(bends>1){
           // 기본 모드, 칸이 몸 폭 1.5배보다 짧을 때: 곧은 아이콘과 같은 모양 · 셰이더 칸 줄(carPx)을 마디마다 나눠 그려 선로를 따라 휜다.
           // 마디 끝은 그 점의 선로 법선으로 차선만큼 띄워, 이웃 마디와 같은 점에서 만난다. 틈 · 지붕 이음은 없다(한 몸).
-          const w=bodyPx/2,nose=bodyPx*.48,low=H*.44,Wm=w+MARGIN,cut=[],dir=[];
-          for(let i=0;i<=bends;i++){const q=P(tail+Math.round(i*n/bends)*car),o=(q.off+lanePx)*unit;q.x+=q.r[0]*o;q.y+=q.r[1]*o;cut.push(q)}
-          for(let i=0;i<bends;i++){const dx=cut[i+1].x-cut[i].x,dy=cut[i+1].y-cut[i].y,len=Math.hypot(dx,dy)||1e-30;dir.push([dx/len,dy/len,len])}
+          const w=bodyPx/2,nose=bodyPx*.48,low=H*.44,Wm=w+MARGIN,cut:TrackPt[]=[],dir:[number, number, number][]=[];
+          for(let i=0;i<=bends;i++){const q=P(tail+Math.round(i*n/bends)*car),o=(q.off+lanePx)*unit;q.x+=q.r[0]!*o;q.y+=q.r[1]!*o;cut.push(q)}
+          for(let i=0;i<bends;i++){const dx=cut[i+1]!.x-cut[i]!.x,dy=cut[i+1]!.y-cut[i]!.y,len=Math.hypot(dx,dy)||1e-30;dir.push([dx/len,dy/len,len])}
           // 이음매는 두 마디 방향의 이등분선으로 비스듬히 자른다(마이터): 겹침도 틈도 없어 반투명(건물 뒤) · 그림자에 이음 줄이 안 생긴다.
           // 기울기 = 가로 1 당 세로 끝이 밀리는 양, 꺾임 반각 60° 까지
-          const slope=(t,u)=>{const s=(-t[1]*u[0]+t[0]*u[1])/(1+t[0]*u[0]+t[1]*u[1]);return Math.max(-1.73,Math.min(1.73,s||0))};
-          const forward=mid.f[0]*camX+mid.f[1]*camY>=0;
+          const slope=(t:readonly number[],u:readonly number[])=>{const s=(-t[1]!*u[0]!+t[0]!*u[1]!)/(1+t[0]!*u[0]!+t[1]!*u[1]!);return Math.max(-1.73,Math.min(1.73,s||0))};
+          const forward=mid.f[0]!*camX+mid.f[1]!*camY>=0;
           for(let k=0;k<bends;k++){
-            const j=forward?k:bends-1-k,A=cut[j],[tx,ty,len]=dir[j];if(len<unit*.1)continue;
+            const j=forward?k:bends-1-k,A=cut[j]!,[tx,ty,len]=dir[j]!;if(len<unit*.1)continue;
             const back=j===0,front=j===bends-1,cars=Math.round((j+1)*n/bends)-Math.round(j*n/bends),S=len/unit,carPx=S/cars;
-            let sA=back?0:slope(dir[j],dir[j-1]),sB=front?0:slope(dir[j],dir[j+1]);
+            let sA=back?0:slope(dir[j]!,dir[j-1]!),sB=front?0:slope(dir[j]!,dir[j+1]!);
             const squeeze=Wm*(Math.abs(sA)+Math.abs(sB))/(S*.9);if(squeeze>1){sA/=squeeze;sB/=squeeze}   // 아주 짧은 마디: 안쪽 모서리가 엇갈리지 않게
             // 셰이더 x 원점을 칸 길이의 배수만큼 앞에 둬 칸 줄 · 해치가 마디를 넘어 이어진다. 앞머리 아닌 마디는 길이를 넉넉히 줘 끝 칸 줄도 그린다
             const c=back?0:carPx*Math.ceil((Math.max(Math.abs(sA)*Wm,nose+1)+.01)/carPx),L=front?c+S:c+S+Math.abs(sB)*Wm+nose+2;
             this.cx=A.x-tx*c*unit;this.cy=A.y-ty*c*unit;this.tx=tx;this.ty=ty;
             this.kind=(front?1:0)+(back?2:0);this.length=L;this.carPx=carPx;
-            const X0=y=>back?nose:c-y*sA,X1=y=>front?L-nose:c+S-y*sB,side=(-ty*camX+tx*camY)>=0?1:-1;
+            const X0=(y:number)=>back?nose:c-y*sA,X1=(y:number)=>front?L-nose:c+S-y*sB,side=(-ty*camX+tx*camY)>=0?1:-1;
             if(pitched){
               if(back&&tx*camX+ty*camY<0)this.end(0,w-bodyPx*.36,low,3);
               this.wall(X0(side*w),X1(side*w),H,H,side*w);
@@ -399,17 +453,17 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         }
       }
       // coaster-train: the 88열차 cars, with their own buffers, program and depth (the ripple and pulse below stay this layer's)
-      const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:live.sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,gl.canvas.clientWidth||1),lod:live.rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
+      const c88o=this.c88o={zoom,unit,walls:options.walls,occlude:options.occlude,dark:document.documentElement.dataset.theme==='dark',shadow:live.sunTrainShadow,pixelRatio:gl.drawingBufferWidth/Math.max(1,(gl.canvas as HTMLCanvasElement).clientWidth||1),lod:live.rider.ride?2:undefined};   // 1인칭: 눈앞의 칸들이라 늘 가장 자세하게
       if(look==='fleet'&&this.ships)this.ships.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 조선 모드: 거북선
       if(look==='units'&&this.units)this.units.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);   // 스타크래프트: 유닛 행렬
       // 스타크래프트 하늘(모드 설정 sky.units): 가끔 비행 유닛이 화면을 가로지른다 — 나는 동안 계속 그리고, 없을 때도 1초마다 다음 비행을 본다. 모드를 나가면 GL 을 치운다
       {const sky=S.sky;if(sky?.units?.length&&live.SkyUnits&&zoom>=13){this.sky??=new live.SkyUnits();if(this.sky.frame(gl,options.defaultProjectionData.mainMatrix,ox,oy,{sky,now:performance.now(),view:[lo.x,hi.y,hi.x,lo.y],mpm:O.meterInMercatorCoordinateUnits(),unit,dark:c88o.dark}))animating=true;else waiting=true}else if(this.sky){this.sky.dispose(gl);this.sky=null}}
-      if(c88&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
-      if(c88&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0].p[0],r.frames[0].p[1]]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
+      if(c88&&this.c88){this.c88.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,c88o);this.c88ride!.draw(gl,options.defaultProjectionData.mainMatrix,ox,oy,{...c88o,part:'foot'})}   // 내 칸은 땅 그림자만 여기서(몸은 cockpit)
+      if(c88&&this.rideTrack&&live.rider.ride?.rail?.frames.length&&live.rider.ride.eye){const r=live.rider.ride.rail;if(r.dirty){this.rideTrack.set(gl,r.frames,r.mpu,[r.frames[0]!.p[0]!,r.frames[0]!.p[1]!]);r.dirty=false}this.rideTrack.draw(gl,options.defaultProjectionData.mainMatrix,live.rider.ride.eye,document.documentElement.dataset.theme==='dark')}
       if(this.used){
         gl.useProgram(this.p);
         const M=options.defaultProjectionData.mainMatrix,MT=this.matrix;MT.set(M);
-        for(let r=0;r<4;r++)MT[12+r]=M[r]*ox+M[4+r]*oy+M[12+r]; // M · translate(origin), evaluated in double precision
+        for(let r=0;r<4;r++)MT[12+r]=M[r]!*ox+M[4+r]!*oy+M[12+r]!; // M · translate(origin), evaluated in double precision
         gl.uniformMatrix4fv(this.uni.u_matrix,false,MT);
         // Never write depth: the model's own faces are ordered by the painter's pass above (testing them
         // against each other flickered on phones). options.occlude (the building walls' depth is in the
@@ -418,12 +472,12 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
         gl.bindBuffer(gl.ARRAY_BUFFER,this.b);
         if(this.gpuCapacity!==this.data.length){gl.bufferData(gl.ARRAY_BUFFER,this.data.byteLength,gl.DYNAMIC_DRAW);this.gpuCapacity=this.data.length}
         gl.bufferSubData(gl.ARRAY_BUFFER,0,this.data,0,this.used);
-        const S=52,ptr=(n,size,off)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
+        const S=52,ptr=(n:TrainAttr,size:number,off:number)=>{gl.enableVertexAttribArray(this.attr[n]);gl.vertexAttribPointer(this.attr[n],size,gl.FLOAT,false,S,off)};
         ptr('a_pos',3,0);ptr('a_local',2,12);ptr('a_info',4,20);ptr('a_color',3,36);ptr('a_face',1,48);
         gl.uniform1f(this.uni.u_glow,document.documentElement.dataset.theme==='dark'?.62:.3);gl.uniform1f(this.uni.u_time,performance.now()/1000);
         const SS=K==='viaduct'?cityViaduct.shadowShift(sunPosition()):[0,0];   // city-life: 심시티 — a train up on the viaduct casts its shadow where the deck casts its own
-        const pass=alpha=>{gl.uniform1f(this.uni.u_alpha,alpha);
-          gl.uniform2f(this.uni.u_offset,live.sunTrainShadow[0]*unit+SS[0],live.sunTrainShadow[1]*unit+SS[1]);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
+        const pass=(alpha:number)=>{gl.uniform1f(this.uni.u_alpha,alpha);
+          gl.uniform2f(this.uni.u_offset,live.sunTrainShadow[0]*unit+SS[0]!,live.sunTrainShadow[1]*unit+SS[1]!);gl.uniform1f(this.uni.u_shadow,1);gl.drawArrays(gl.TRIANGLES,0,this.used/13);
           gl.uniform2f(this.uni.u_offset,0,0);gl.uniform1f(this.uni.u_shadow,0);gl.drawArrays(gl.TRIANGLES,0,this.used/13)};
         if(options.walls){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);pass(1);if(options.occlude){gl.depthFunc(gl.GREATER);pass(options.occlude)}}   // solid buildings (the park): hidden behind them
         else{gl.disable(gl.DEPTH_TEST);pass(1)}
@@ -435,7 +489,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       if(animating&&(live.following||live.rider.ride)&&!live.easing)followSoon();
       else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
     }
-    onRemove(map,gl){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.sky?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
+    onRemove(map:MapLibre,gl:WebGL2RenderingContext){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.sky?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
   }
 
   return TrainLayer;
@@ -445,10 +499,15 @@ in vec3 a_pos;uniform mat4 u_matrix;uniform float u_h;
 void main(){gl_Position=u_matrix*vec4(a_pos.xy,a_pos.z*u_h,1.);}`;
 const BLD_FS=`#version 300 es
 precision mediump float;out vec4 o;void main(){o=vec4(0.);}`;
-export function buildingDepthClass({cityOn,map,PHONE,maplibregl,live}){
+// 건물 깊이(BuildingDepth): 본체가 넘기는 것
+export interface BuildingDepthDeps { cityOn:()=>boolean; map:MapLibre; PHONE:boolean; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate }; live:TrainLive }
+export function buildingDepthClass({cityOn,map,PHONE,maplibregl,live}:BuildingDepthDeps){
   class BuildingDepth{
-    constructor(gl){
-      const sh=(t,src)=>{const x=gl.createShader(t);gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x));return x};
+    // 필드는 선언만(declare — 실행 코드 없음)
+    declare p:WebGLProgram; declare a:number; declare um:WebGLUniformLocation | null; declare uh:WebGLUniformLocation | null; declare b:WebGLBuffer; declare n:number;
+    declare gl:WebGL2RenderingContext; declare M:Float32Array; declare ox:number; declare oy:number;
+    constructor(gl:WebGL2RenderingContext){
+      const sh=(t:number,src:string)=>{const x=gl.createShader(t)!;gl.shaderSource(x,src);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(x)!);return x};
       this.p=gl.createProgram();gl.attachShader(this.p,sh(gl.VERTEX_SHADER,BLD_VS));gl.attachShader(this.p,sh(gl.FRAGMENT_SHADER,BLD_FS));gl.linkProgram(this.p);
       this.a=gl.getAttribLocation(this.p,'a_pos');this.um=gl.getUniformLocation(this.p,'u_matrix');this.uh=gl.getUniformLocation(this.p,'u_h');
       this.b=gl.createBuffer();this.n=0;this.gl=gl;this.M=new Float32Array(16);
@@ -456,20 +515,20 @@ export function buildingDepthClass({cityOn,map,PHONE,maplibregl,live}){
     shown(){if(cityOn())return false;const z=map.getZoom();return z>=(PHONE?15:14)&&map.getLayer('bm-bld3d')&&map.getLayoutProperty('bm-bld3d','visibility')!=='none'}
     rebuild(){
       this.n=0;if(!this.shown())return;
-      const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out=[];this.ox=O.x;this.oy=O.y;
-      const X=l=>(l+180)/360-O.x,Y=a=>(180-180/Math.PI*Math.log(Math.tan(Math.PI/4+a*Math.PI/360)))/360-O.y;
+      const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),mpu=O.meterInMercatorCoordinateUnits(),out:number[]=[];this.ox=O.x;this.oy=O.y;
+      const X=(l:number)=>(l+180)/360-O.x,Y=(a:number)=>(180-180/Math.PI*Math.log(Math.tan(Math.PI/4+a*Math.PI/360)))/360-O.y;
       for(const f of map.querySourceFeatures('ofm',{sourceLayer:'building'})){
         const g=f.geometry,top=(f.properties.render_height??10)*mpu,base=(f.properties.render_min_height??0)*mpu;if(top<=base)continue;
         for(const poly of g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[])for(const ring of poly)
-          for(let i=0;i+1<ring.length;i++){const x0=X(ring[i][0]),y0=Y(ring[i][1]),x1=X(ring[i+1][0]),y1=Y(ring[i+1][1]);
+          for(let i=0;i+1<ring.length;i++){const x0=X(ring[i]![0]!),y0=Y(ring[i]![1]!),x1=X(ring[i+1]![0]!),y1=Y(ring[i+1]![1]!);
             out.push(x0,y0,base,x1,y1,base,x1,y1,top,x0,y0,base,x1,y1,top,x0,y0,top)}
       }
       const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(out),gl.STATIC_DRAW);this.n=out.length/3;
     }
     // depth of the walls into the buffer; returns whether anything was drawn
-    draw(M){
+    draw(M:ArrayLike<number>){
       if(!this.n||!this.shown())return false;
-      const gl=this.gl,MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]*this.ox+M[4+r]*this.oy+M[12+r];
+      const gl=this.gl,MT=this.M;MT.set(M);for(let r=0;r<4;r++)MT[12+r]=M[r]!*this.ox+M[4+r]!*this.oy+M[12+r]!;
       gl.useProgram(this.p);gl.uniformMatrix4fv(this.um,false,MT);gl.uniform1f(this.uh,Math.max(0,Math.min(1,map.getZoom()-14)));   // the map grows buildings in over z14–15
       gl.bindBuffer(gl.ARRAY_BUFFER,this.b);gl.enableVertexAttribArray(this.a);gl.vertexAttribPointer(this.a,3,gl.FLOAT,false,12,0);
       gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LESS);gl.depthMask(true);gl.colorMask(false,false,false,false);gl.disable(gl.CULL_FACE);
