@@ -37,6 +37,7 @@ interface Arrivals { stopId:string; state:string; rows:ArrivalRow[]; count:numbe
 type RouteLike = Pick<BusRoute, 'id' | 'name' | 'path' | 'type' | 'approximate' | 'stopIds'> & Partial<Pick<BusRoute, 'geometry' | 'snapped' | 'line'>>;
 // 길찾기 버스 구간(ui/journey 가 넘긴다) — displayRoute 는 노선을 못 맞췄을 때 이 화면이 붙인다
 export interface BusLeg { type:string; routeId?:unknown; route?:unknown; path:LngLatPt[]; color?:string; displayRoute?:RouteLike }
+type JourneyLegIn = Omit<BusLeg, 'path'> & { path?:LngLatPt[] };   // 넘어오는 길찾기 구간(걷기 · 지하철은 path 가 없을 수 있다)
 // 화면의 버스 한 대
 interface FleetBus {
   row:LiveRow; route:BusRoute; path:StopsPath; motion:BusMotion; observed:number | null; fetched:number | null; received:number | null; stale:boolean; receivedWall:number;
@@ -877,9 +878,9 @@ class BusLayer {
     this.refreshView();this.renderStatic();this.draw();
     this.onRouteSelect(null);this.renderFollowUI();
   }
-  setJourney(legs:BusLeg[] | null | undefined){
+  setJourney(legs:readonly JourneyLegIn[] | null | undefined){   // 길찾기 구간 전부(걷기 · 지하철도) — 그릴 수 있는 버스 구간만 고른다
     this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopArrivals();
-    this.journeyLegs=(legs||[]).filter(l=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
+    this.journeyLegs=(legs||[]).filter((l):l is BusLeg=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
   }
   refreshDetail() { if (this.selection && this.updateDetail) this.updateDetail(this.detailHTML()); this.renderFollowUI(); }

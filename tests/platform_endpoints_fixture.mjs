@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
 import SNAP,{stops as snapStops} from '../web/city/viaduct_snap.mjs';
@@ -6,6 +7,7 @@ import {stations,paths} from './fixtures.mjs';
 import {createModeRegistry} from '../web/modes/index.mts';
 const MODES=createModeRegistry(await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default))));
 export function platformRuntime(source=readFileSync(new URL('../web/maplibre_runtime.mts',import.meta.url),'utf8'),zoom=16,helpers={}){
+  source=stripTypeScriptTypes(source);   // 본체의 타입을 걷어 낸 JS(vm 은 JS 만 — 자리는 공백으로 남아 표지 글자 그대로)
   const data=JSON.parse(readFileSync(new URL('../data/osm-tracks/track_shapes.json',import.meta.url),'utf8'));
   const slice=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
   const context=vm.createContext({stations,paths,byId:new Map(stations.map(s=>[s.id,s])),colors:{},map:{getZoom:()=>zoom},offsetCoords,trackStart,extendStart,closestPlatformPoint,coaster:false,simcity:false,cityViaduct:{snapped:(l,a,b)=>SNAP[`${l}:${a}:${b}`]||null},snapStops,stopReach:{},...data,shapes:data.edges,Map,Math,...helpers});
@@ -14,10 +16,10 @@ export function platformRuntime(source=readFileSync(new URL('../web/maplibre_run
   context.modeCtl={settings:()=>MODES.settings(context.coaster?'coaster':context.joseon?'joseon':context.simcity?'simcity':'basic')};   // 본체처럼 지금 모드의 설정(실제 모드 정의)
   vm.runInContext([
     'const LINE_GAP=5;const edgeKey=(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`;',
-    slice('const edgeLines=new Map();','// Real track geometry'),
+    slice('const edgeLines=','// Real track geometry'),
     slice('const stopPos=','\nconst stopMerc='),   // 런타임과 같은 역 점(기본·심시티는 도로 위로 옮긴 점)
     slice('function chaikin(', '// Where a station'),
-    slice(source.includes('const basicRouteCache=')?'const basicRouteCache=':source.includes('const platformRouteFeatures=')?'const platformRouteFeatures=':'function buildLineFeatures()', 'const edgeGeom=new Map();'),
+    slice(source.includes('const basicRouteCache=')?'const basicRouteCache=':source.includes('const platformRouteFeatures=')?'const platformRouteFeatures=':'function buildLineFeatures()', 'const edgeGeom'),
     slice('const cityCoords=', 'function cityGeom('),
     slice('const PLATFORM_HALF=', 'const shapesReady='),
   ].join('\n'),context);

@@ -12,7 +12,7 @@ export interface TrainPlannerDeps {
   stations:MapStation[]; stationByLine:Map<string,MapStation>; key:(v:unknown)=>string; normStatus:(v:unknown)=>string;
   route:(t:FeedTrain, s:MapStation)=>TrainRoute; merc:(s:MapStation)=>Merc; realGeom:(line:string, a:number, b:number)=>TrackGeom;
   geom:(line:string, a:number, b:number)=>TrackGeom; trainPose:(plan:TrainPlan)=>{ dist:number }; mercStop:(line:string, s:MapStation)=>Merc;
-  catchup:(gap:number, v0?:number)=>Catchup; catchupAt:(c:Catchup, t:number)=>{ v:number }; predictStops:()=>number; isRide:()=>boolean;
+  catchup:(gap:number, v0?:number)=>Catchup; catchupAt:(c:Catchup, t:number)=>{ v:number }; predictStops:()=>number; isRide:()=>unknown;   // isRide: 탄 열차(있으면 참)
   getTrains:()=>LiveTrain[];
 }
 export function createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,predictStops,isRide,getTrains}:TrainPlannerDeps){

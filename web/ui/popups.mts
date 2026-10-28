@@ -21,13 +21,13 @@ interface PopupsLive {
 // 시트(ui/sheet)에서 이 파일이 쓰는 것
 interface SheetUI { sheetTrain:string|null; sheetToken:number; following:string|null; sheetStation:MapStation|null }
 export interface PopupsDeps {
-  map:MapLibre; maplibregl:typeof import('maplibre-gl'); planner:{ plans:TrainPlan[] }; colors:Record<string,string>;
+  map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:{ plans:TrainPlan[] }; colors:Record<string,string>;
   esc:(text:unknown)=>string; age:(v:unknown)=>number; destLabel:(t:LiveTrain)=>string; trainPose:(plan:TrainPlan)=>{ dist:number; moving?:boolean };
   trackPoint:(plan:TrainPlan, dist:number)=>TrackPoint; mercStop:(line:string, s:MapStation)=>Merc; TRAIN_MIN_PX:number;
   trainBodyPx:(zoom:number)=>number; canRide:()=>boolean; laneOffsetPx:(zoom:number, bodyPx?:number)=>number;
-  cityViaduct:{ train(zoom:number, bodyPx:number):{ lanePx:number }; screen(map:MapLibre, x:number, y:number, h:number):Point };
-  seatPickerHTML:(cars:number, rows:unknown, seat:unknown)=>string; seatLabel:(seat:unknown)=>string; rideRows:(plan:TrainPlan)=>unknown;
-  rider:{ seat:unknown }; openSheet:(html:string)=>number; openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; follow:(id:string)=>void; sheetUI:SheetUI; sheetBody:HTMLElement;
+  cityViaduct:{ train(zoom:number, bodyPx:number):{ lanePx:number }; screen(map:MapLibre, x:number, y:number, h:number):{ x:number; y:number } };
+  seatPickerHTML:typeof import('../modes/coaster/first_person.mts').seatPickerHTML; seatLabel:typeof import('../modes/coaster/first_person.mts').seatLabel; rideRows:(plan:TrainPlan)=>number;
+  rider:{ seat:import('../modes/coaster/first_person.mts').Seat }; openSheet:(html:string)=>number; openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; follow:(id:string)=>void; sheetUI:SheetUI; sheetBody:HTMLElement;
   followBtn:HTMLElement; live:PopupsLive;
 }
 export function createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,openSheetView,follow,sheetUI,sheetBody,followBtn,live}:PopupsDeps){

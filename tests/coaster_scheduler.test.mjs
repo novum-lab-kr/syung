@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 
 // Exercise the actual runtime schedulers without loading a map or a second browser.
 function scheduler() {
-  const source = readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8');
-  const start = source.indexOf('const TRAIN_FPS='), end = source.indexOf('const map=new maplibregl.Map', start);
+  const source = stripTypeScriptTypes(readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8'));   // 본체의 타입을 걷어 낸 JS(vm 은 JS 만)
+  const start = source.indexOf('const TRAIN_FPS='), end = source.indexOf('\nconst map', start);
   const timers = new Map(), frames = []; let id = 0, moving = false, draws = 0, repaints = 0, animations = 0;
   const doc = { hidden: false, listeners: {}, addEventListener(t, f) { (this.listeners[t] ||= []).push(f) } };   // 탭 숨김(visibilitychange)
   const context = vm.createContext({ performance: { now: () => 100 },

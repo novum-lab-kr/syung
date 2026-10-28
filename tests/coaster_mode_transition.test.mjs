@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from '../web/lib/platform_route.mts';
 import {createJourneyMap} from '../web/ui/journey.mts';
@@ -8,7 +9,7 @@ import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from '../web/lib/j
 import {createModeRegistry} from '../web/modes/index.mts';
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from '../web/modes/transition.mts';
 const modeDefs=(await Promise.all(['basic','simcity','joseon','coaster','starcraft','nations','retro'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)))).flat();   // (스타크래프트는 종족 셋)
-const source=readFileSync(new URL('../web/maplibre_runtime.mts',import.meta.url),'utf8');
+const source=stripTypeScriptTypes(readFileSync(new URL('../web/maplibre_runtime.mts',import.meta.url),'utf8'));   // 본체의 타입을 걷어 낸 JS(vm 은 JS 만 — 자리는 공백으로 남아 표지 글자 그대로)
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start);return source.slice(start,end)};
 const plain=x=>JSON.parse(JSON.stringify(x));
 function setup(defs=modeDefs){
@@ -36,7 +37,7 @@ function setup(defs=modeDefs){
     'const stationRects=new Map();',
     part('const basicRouteCache=', 'function buildLineFeatures()'),
     part('const cityCoords=', 'function cityGeom('),
-    part('function metresBetween(', 'const STATION_WIDTH_STOPS='),
+    part('function metresBetween(', 'const STATION_WIDTH_STOPS'),
     part('function buildStationFeatures()', 'const shapesReady='),
     part('function prepareMode(', 'menu.on({switches:{toggleSimcity'),
   ].join('\n'),context);

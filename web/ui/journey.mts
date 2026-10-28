@@ -2,14 +2,16 @@
 // 여정 상태(displayedRoute · routeBounds · busRouteFocus · routeFocus · subwayOff)의 주인 — 바깥은 같은 이름의 getter · setter. 길찾기 입력 화면(lib/journey-ui)은 본체가 그대로 부른다.
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(버스 층 · 지금 모드 설정 settings · 역 흐림 stationAlpha)은 live.<이름> 으로 그때그때 읽고 쓴다.
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
-import type { GeoJSONSource, LngLatBounds, Map as MapLibre, PaddingOptions } from 'maplibre-gl';
+import type { DataDrivenPropertyValueSpecification, GeoJSONSource, LngLatBounds, Map as MapLibre, PaddingOptions } from 'maplibre-gl';
 import type { Settings } from '../modes/merge.mts';
 
 type Position = [number, number];
+// 투명도(수 또는 고가가 돌려주는 MapLibre 식 — paint 에 그대로)
+type Opacity = DataDrivenPropertyValueSpecification<number>;
 // 길찾기 결과 한 구간(서버 /route 응답 legs — 이 파일이 읽는 칸만)
 // 종류는 셋(server/services/journey_graph.py legs): 걷기 · 지하철 · 버스. path 는 그리는 선(걷기 · 버스는 서버가, 지하철은 여기서 노선 경로로)
 export interface WalkLeg { type:'walk'; path?:Position[] }
-export interface RideLeg { type:'ride'; line:string; stations:number[]; trainNo?:string; path?:Position[] }
+export interface RideLeg { type:'ride'; line:string; stations:number[]; trainNo?:string | null; path?:Position[] }
 export interface BusLeg { type:'bus'; path:Position[] }
 export type JourneyLeg = WalkLeg | RideLeg | BusLeg;
 export interface JourneyPlan { legs:JourneyLeg[] }
@@ -18,15 +20,15 @@ interface DisplayedRoute { plan:JourneyPlan; busSelection:boolean }
 type Ride = RideLeg & { pairs:Map<string, Set<string>> };
 // 열차 계획(trains/plan)에서 이 파일이 읽는 칸
 interface TrainPlanLike { id:string; t:{ line:string }; seq:{ id:number|string }[]; cum:number[] }
-interface StationLike { id:number }
+type StationLike = import('../trains/types.mts').MapStation;
 // 버스 층에서 이 파일이 부르는 것
 interface BusLayerLike { setJourney(legs:JourneyLeg[]):void; raiseRoute():void; clearSelection(options?:{ journey?:boolean }):void }
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다)
 interface JourneyLive { busLayer?:BusLayerLike|null; settings:Settings & { track:{ kind:string } }; stationAlpha:number }
 export interface JourneyMapDeps {
-  map:MapLibre; maplibregl:typeof import('maplibre-gl'); colors:Record<string,string>; byId:Map<number, StationLike>;
+  map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); colors:Record<string,string>; byId:Map<number, StationLike>;
   cityCoords:(line:string, a:number, b:number)=>Position[]; stopPos:(line:string, station:StationLike)=>Position;
-  cityViaduct:{ routeOpacity(focus:boolean):number; deckFade():number }; sheetPad:()=>number;
+  cityViaduct:{ routeOpacity(focus:boolean):unknown; deckFade():unknown }; sheetPad:()=>number;   // (둘 다 MapLibre 식 — 그대로 paint 에 넣는다)
   journeyCasingPaint:()=>object; journeyRidePaint:()=>object; journeyStopPaint:()=>object; live:JourneyLive;
 }
 export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}:JourneyMapDeps){
@@ -98,9 +100,9 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     for(const id of ['routes','stations-casing','stations','station-names','station-labels','exit-refs'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');   // 감춘 역은 눌리지도 않게
     live.stationAlpha=on?0:routeFocus?.35:1;map.triggerRepaint();
   }
-  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus):routeFocus?.25:.9);   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
+  const setRouteOpacity=()=>{if(map.getLayer('routes'))map.setPaintProperty('routes','line-opacity',live.settings.track.kind!=='ground'?cityViaduct.routeOpacity(routeFocus) as Opacity:routeFocus?.25:.9);   // 롤코도 고가 위: 상판이 나오면 땅 위 노선은 사라져요
     // 길찾기 탄 구간도 같다: 상판이 나오면 땅 위 선 · 타고 내리는 점은 사라지고 고가가 노선색으로 밝아진다(viaduct journeyFocus, 2026-10-11 행님)
-    if(map.getLayer('journey-ride')){const o=live.settings.track.kind!=='ground'?cityViaduct.deckFade():1;for(const id of ['journey-casing','journey-ride'])map.setPaintProperty(id,'line-opacity',o);for(const k of ['circle-opacity','circle-stroke-opacity'] as const)map.setPaintProperty('journey-stop',k,o)}};
+    if(map.getLayer('journey-ride')){const o=live.settings.track.kind!=='ground'?cityViaduct.deckFade() as Opacity:1;for(const id of ['journey-casing','journey-ride'])map.setPaintProperty(id,'line-opacity',o);for(const k of ['circle-opacity','circle-stroke-opacity'] as const)map.setPaintProperty('journey-stop',k,o)}};
   // 길찾기 중에는 내가 가는 방향의 열차만(2026-10-11): 탈 노선에서, 지금 자리(dist — 그리는 거리)부터의 앞길(seq, 최대 8정거장)에
   // 탈 구간의 두 역을 그 순서로 지나는 열차 — 탈 역으로 오는 것과 탄 구간 안의 것. 반대 방향 · 내릴 역을 지난 것 · 다른 노선은 숨긴다.
   // (seq[0] 은 이미 떠난 역이고 '출발' 기록은 그 역을 지난 뒤라 지금 자리부터 센다.) 버스만 타는 경로면 열차는 없다.

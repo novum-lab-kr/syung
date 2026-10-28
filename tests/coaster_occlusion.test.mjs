@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { signCollisionLayout } from '../web/lib/station_signs.mts';
 import { StationNameLayer } from '../web/map/platform.mts';
 import { registerTransitLayers } from '../web/map/layers.mts';
 import { createModeRegistry } from '../web/modes/index.mts';
 
-const source = readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8');
+const source = stripTypeScriptTypes(readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8'));   // 본체의 타입을 걷어 낸 JS(vm 은 JS 만 — 자리는 공백으로 남아 표지 글자 그대로)
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function platformRenderer() {
