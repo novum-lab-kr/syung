@@ -3,7 +3,7 @@ import { edgeDistance, pointInPolygon } from "../../city/geom.mjs";
 import { KIND } from "../../city/mesh.mjs";
 import { fitRect, modelBuilder, modelList, pickModel, raceTemplates, registerBuildingModels, templateIndex } from "../starcraft/race_buildings.mjs";
 import { NATION_CELLS, NATION_MODELS } from "./models.mjs";
-// web/modes/nations/parts.mjs
+// web/modes/nations/parts.mts
 for (const [k, list] of Object.entries(NATION_MODELS)) registerBuildingModels(k, list);
 var NATION_LIMITS = {
 	minAreaM2: 40,

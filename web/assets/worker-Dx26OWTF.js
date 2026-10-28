@@ -6158,7 +6158,7 @@ registerCityPart("race", {
 	building: building$1,
 	templates: raceTemplates
 });
-// web/modes/nations/models.mjs
+// web/modes/nations/models.mts
 const A$1 = (slot) => ({
 	look: "accent",
 	slot
@@ -6684,7 +6684,7 @@ const NATION_CELLS = {
 		floors: [2, 7]
 	}
 };
-// web/modes/nations/parts.mjs
+// web/modes/nations/parts.mts
 for (const [k, list] of Object.entries(NATION_MODELS)) registerBuildingModels(k, list);
 const NATION_LIMITS = {
 	minAreaM2: 40,

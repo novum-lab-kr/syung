@@ -1,4 +1,4 @@
-// web/modes/nations/models.mjs
+// web/modes/nations/models.mts
 var A = (slot) => ({
 	look: "accent",
 	slot
