@@ -1,4 +1,4 @@
-// web/trains/draw.mjs
+// web/trains/draw.mts
 var TRAIN_VS = `#version 300 es
 in vec3 a_pos;in vec2 a_local;in vec4 a_info;in vec3 a_color;in float a_face;
 uniform mat4 u_matrix;uniform vec2 u_offset;uniform float u_shadow;
