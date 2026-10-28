@@ -3,6 +3,7 @@
 import type { LngLatLike, Map as MapLibre, MercatorCoordinate } from 'maplibre-gl';
 import type { CityViaduct } from '../city/viaduct.mts';
 import type { closestPlatformPoint as ClosestPoint } from '../lib/platform_route.mts';
+import type { platformStroke } from '../lib/platform_stroke.mts';
 import type { MapStation } from '../trains/types.mts';
 
 type XY = { x:number; y:number };
@@ -11,8 +12,8 @@ type LngLat = [number, number];
 export interface StationRect { coords:LngLat[]; offset:number; center?:LngLatLike; reach?:LngLatLike; box?:[number, number, number, number] }
 // 출구(역 id → [경도, 위도, 번호])
 type Exits = Record<string, [number, number, string | number][]>;
-// 승강장 리본 꼭짓점(lib/platform_stroke — 아직 JS)
-type PlatformStroke = (points:XY[], unit:number, width:number)=>{ vertices:{ x:number; y:number; s:number; t:number }[]; length:number };
+// 승강장 리본 꼭짓점
+type PlatformStroke = typeof platformStroke;
 // 본체가 넘기는 것(이 파일이 쓰는 칸만) — 바뀌는 값은 get…()
 export interface StationNameDeps {
   map:MapLibre; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate }; stationRects:Map<string, StationRect>; exitCol:Map<string, number[]>;

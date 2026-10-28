@@ -1,26 +1,50 @@
 // 길찾기: from a place (or my location) to a place, leaving now or at a set time.
 // The sheet asks /api/place for places and /api/route for plans (server/journey.py).
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const min = s => Math.max(1, Math.round(s / 60));
+// 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸
+interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined }
+interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null }
+interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[] }
+type TransitLeg = TrainLeg | BusLeg;
+type Leg = WalkLeg | TransitLeg;
+// 단계 줄의 구간: 걷기 줄은 r.e 로 가르고 l 은 따로 좁혀지지 않아 걷기 칸을 함께 둔다
+type RowLeg = Omit<WalkLeg, 'type' | 'realtime'> & TransitLeg;
+export interface Plan { tag?:string; kind:string; leaveBy:string; arrives:string; minutes:number; transfers:number; walkMinutes:number; legs:Leg[] }
+interface Place { name:string; address:string; lat:number; lng:number }
+interface PlaceAnswer { ok:boolean; error?:string; places:Place[] }
+interface RouteAnswer { ok:boolean; error?:string; plans:Plan[] }
+type Colors = Record<string, string>;
+type Seg = { k:'wait'; s:number } | { k:'walk'; s:number; l:WalkLeg } | { k:'ride'; s:number; l:TransitLeg };
+type End = { lat:number; lng:number; name?:string };
+type When = { k:'now'; d?:undefined } | { k:'at'; d:Date };
+interface LastSearch { d:RouteAnswer; sel:number; from:string; to:string; at:string; when:When; picked:{ from:End | null; to:End | null }; tab?:string }
+// 경로 단계 한 줄: 자리(시각 · 이름) 또는 그 사이 걷기 · 타기
+type StepRow = { n:'start' | 'board' | 'alight' | 'end' | 'change'; name:string; t:string; t2?:string; c:string; e?:undefined } | { e:'walk'; l:WalkLeg; n?:undefined } | { e:'ride'; l:TransitLeg; n?:undefined };
+// 본체가 넘기는 것(이 파일이 쓰는 칸만)
+export interface JourneyDeps {
+  openSheet:(html:string)=>void; closeSheet?:()=>void; map:{ getCenter():{ lat:number; lng:number } }; colors:Colors; myLocation:()=>readonly number[] | null | undefined;
+  button:HTMLElement; showRoute?:(plan:Plan)=>void; clearRoute?:()=>void;
+}
+const esc = (s:unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'} as Record<string, string>)[c]!);
+const min = (s:number) => Math.max(1, Math.round(s / 60));
 
 // 경로 한 개의 색 띠(구간마다 실제 걸리는 시간 비율 · 노선 색) — 길찾기 결과와 승차권 경로 선택(user/account.mjs)이 같이 쓴다
-const hm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
-const legSecs = l => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
-const legColorOf = (l, colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
-const legName = l => l.type === 'bus' ? l.route : l.line;
-const legShort = l => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
+const hm = (t:string) => { const [h, m] = String(t).split(':').map(Number) as [number, number]; return h * 60 + m; };
+const legSecs = (l:Leg) => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
+const legColorOf = (l:TransitLeg, colors:Colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
+const legName = (l:TransitLeg) => l.type === 'bus' ? l.route : l.line;
+const legShort = (l:TransitLeg) => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
 // text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
-const inkOn = hex => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
-  const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
+  const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }) as [number, number, number];
   const L = .2126 * r + .7152 * g + .0722 * b;
   return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
 const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
-const textW = t => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
-export function routeTrack(p, colors, width = 330) {
-  const segs = [];
+const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
+export function routeTrack(p:{ legs:readonly Leg[] }, colors:Colors, width = 330) {
+  const segs:Seg[] = [];
   for (const l of p.legs) {
     if (l.type !== 'walk' && l.wait > 30) segs.push({k: 'wait', s: l.wait});
-    segs.push({k: l.type === 'walk' ? 'walk' : 'ride', s: legSecs(l), l});
+    segs.push({k: l.type === 'walk' ? 'walk' : 'ride', s: legSecs(l), l} as Seg);
   }
   const total = segs.reduce((a, g) => a + g.s, 0) || 1;
   return `<div class="jtrack" aria-hidden="true">${segs.map(g => {
@@ -34,9 +58,9 @@ export function routeTrack(p, colors, width = 330) {
   }).join('')}</div>`;
 }
 
-export function initJourney({openSheet, closeSheet, map, colors, myLocation, button, showRoute, clearRoute}) {
-  const picked = {from: null, to: null};
-  let last = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
+export function initJourney({openSheet, closeSheet, map, colors, myLocation, button, showRoute, clearRoute}:JourneyDeps) {
+  const picked:{ from:End | null; to:End | null } = {from: null, to: null};
+  let last:LastSearch | null = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
   let inSheet = false;
   let goSeq = 0;   // the latest route search; older answers are dropped   // the journey sheet (not a station or train one) is what's open
 
@@ -45,8 +69,8 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   bar.className = 'jbar'; bar.hidden = true;
   bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(bar);
-  bar.querySelector('.jbar-open').onclick = () => open();
-  bar.querySelector('.jbar-x').onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
+  bar.querySelector<HTMLElement>('.jbar-open')!.onclick = () => open();
+  bar.querySelector<HTMLElement>('.jbar-x')!.onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
 
   const PIN = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>';
   const SWAP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4"/></svg>';
@@ -85,47 +109,47 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   }
 
   // 출발 시각: now, or a time today/tomorrow picked in 10-minute steps (never before the next step from now)
-  const pad = n => String(n).padStart(2, '0');
-  let when = {k: 'now'}, draft = null;
-  const local = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const hhmm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const isTomorrow = d => d.toDateString() !== new Date().toDateString();
+  const pad = (n:number) => String(n).padStart(2, '0');
+  let when:When = {k: 'now'}, draft:Date | null = null;
+  const local = (d:Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const hhmm = (d:Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const isTomorrow = (d:Date) => d.toDateString() !== new Date().toDateString();
   const soonest = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + 1); return d; };   // the next minute
   const nextTen = () => { const d = soonest(); d.setMinutes(Math.ceil(d.getMinutes() / 10) * 10); return d; };   // where the picker starts
   const latest = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 50, 0, 0); return d; };
-  const clamp = d => new Date(Math.min(latest(), Math.max(soonest(), d)));
+  const clamp = (d:Date) => new Date(Math.min(latest() as unknown as number, Math.max(soonest() as unknown as number, d as unknown as number)));
   function whenValue() { return when.k === 'at' ? local(when.d) : ''; }
   function whenLabel() { return when.k === 'at' ? `${isTomorrow(when.d) ? '내일' : '오늘'} ${hhmm(when.d)} 출발` : '지금 출발'; }
-  function whenSet(w) {
+  function whenSet(w:When) {
     when = w;
-    const row = document.getElementById('jWhenRow');
-    document.getElementById('jWhenText').textContent = whenLabel();
+    const row = document.getElementById('jWhenRow')!;
+    document.getElementById('jWhenText')!.textContent = whenLabel();
     row.classList.toggle('set', w.k === 'at');
   }
   // hours move the time by an hour; minutes by one within the hour (59 → 00 keeps the hour); then kept in range
-  function stepped(d, u, n) {
+  function stepped(d:Date, u:string | undefined, n:number) {
     const x = new Date(d);
     if (u === 'h') x.setTime(+x + n * 3600e3);
     else x.setMinutes((x.getMinutes() + n + 60) % 60);
     return clamp(x);
   }
   function drawDraft() {
-    document.getElementById('jWhenH').textContent = pad(draft.getHours());
-    document.getElementById('jWhenM').textContent = pad(draft.getMinutes());
-    const t = isTomorrow(draft);
-    document.querySelectorAll('.jw-day button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.d === '1') === t)));
-    document.querySelectorAll('.jw-step').forEach(b => { b.disabled = +stepped(draft, b.dataset.u, +b.dataset.s) === +draft; });
+    document.getElementById('jWhenH')!.textContent = pad(draft!.getHours());
+    document.getElementById('jWhenM')!.textContent = pad(draft!.getMinutes());
+    const t = isTomorrow(draft!);
+    document.querySelectorAll<HTMLElement>('.jw-day button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.d === '1') === t)));
+    document.querySelectorAll<HTMLButtonElement>('.jw-step').forEach(b => { b.disabled = +stepped(draft!, b.dataset.u, +b.dataset.s!) === +draft!; });
   }
-  function whenOpen(on) {
-    const panel = document.getElementById('jWhenPanel'), row = document.getElementById('jWhenRow');
+  function whenOpen(on:boolean) {
+    const panel = document.getElementById('jWhenPanel')!, row = document.getElementById('jWhenRow')!;
     panel.hidden = !on; row.setAttribute('aria-expanded', String(on));
     if (on) { draft = clamp(when.k === 'at' ? new Date(when.d) : nextTen()); drawDraft(); requestAnimationFrame(() => panel.scrollIntoView({block: 'nearest', behavior: 'smooth'})); }
   }
 
-  function bindPlace(which) {
-    const input = document.getElementById(which === 'from' ? 'jFrom' : 'jTo');
-    const list = document.getElementById(which === 'from' ? 'jFromList' : 'jToList');
-    let timer = 0, seq = 0;
+  function bindPlace(which:'from' | 'to') {
+    const input = (document.getElementById(which === 'from' ? 'jFrom' : 'jTo') as HTMLInputElement);
+    const list = document.getElementById(which === 'from' ? 'jFromList' : 'jToList')!;
+    let timer:ReturnType<typeof setTimeout> | 0 = 0, seq = 0;
     input.addEventListener('input', () => {
       picked[which] = null;
       clearTimeout(timer);
@@ -135,7 +159,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
         const my = ++seq, c = map.getCenter();
         try {
           const r = await fetch(`./api/place?q=${encodeURIComponent(q)}&near=${c.lat.toFixed(5)},${c.lng.toFixed(5)}`);
-          const d = await r.json();
+          const d:PlaceAnswer = await r.json();
           if (my !== seq) return;
           list.replaceChildren();
           if (!d.ok) { list.innerHTML = `<li class="jf-empty">${esc(d.error || '검색하지 못했어요')}</li>`; list.hidden = false; return; }
@@ -154,29 +178,29 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   }
 
   // the start is known: a picked place, or 내 위치 while it is there
-  const fromOf = () => picked.from || (document.getElementById('jFrom').value.trim() === '내 위치' && myLocation() ? {lat: myLocation()[1], lng: myLocation()[0]} : null);
-  function next(which) {
+  const fromOf = () => picked.from || ((document.getElementById('jFrom') as HTMLInputElement).value.trim() === '내 위치' && myLocation() ? {lat: myLocation()![1]!, lng: myLocation()![0]!} : null);
+  function next(which?:'from' | 'to') {
     if (fromOf() && picked.to) { go(); return; }
     const empty = !fromOf() ? 'jFrom' : 'jTo';
-    if (which) document.getElementById(empty).focus({preventScroll: true});
+    if (which) document.getElementById(empty)!.focus({preventScroll: true});
   }
   // results up: the form folds into one line; tap it to change the trip
-  function fold(on) {
+  function fold(on:boolean) {
     const j = document.querySelector('.journey'); if (!j) return;
     j.classList.toggle('done', on);
-    const sum = document.getElementById('jSum');
+    const sum = document.getElementById('jSum')!;
     sum.hidden = !on;
     if (on) {
       const t = whenLabel();
-      sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc(document.getElementById('jFrom').value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc(document.getElementById('jTo').value)}</b></span></span><span class="jsum-side"><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}수정</span></span>`;
-      sum.setAttribute('aria-label', `${document.getElementById('jFrom').value}에서 ${document.getElementById('jTo').value}까지, ${t}. 눌러서 바꾸기`);
+      sum.innerHTML = `<span class="jsum-trip"><span class="jsum-end"><i class="jdot from"></i><b>${esc((document.getElementById('jFrom') as HTMLInputElement).value)}</b></span><span class="jsum-end"><i class="jdot to"></i><b>${esc((document.getElementById('jTo') as HTMLInputElement).value)}</b></span></span><span class="jsum-side"><span class="jsum-when">${esc(t)}</span><span class="jsum-edit">${EDIT}수정</span></span>`;
+      sum.setAttribute('aria-label', `${(document.getElementById('jFrom') as HTMLInputElement).value}에서 ${(document.getElementById('jTo') as HTMLInputElement).value}까지, ${t}. 눌러서 바꾸기`);
     }
   }
 
   // ---- results: one row per route; a bar shows each part of the trip at its real share of the time
-  const legColor = l => legColorOf(l, colors);
-  const track = (p, width = 330) => routeTrack(p, colors, width);
-  const dur = m => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
+  const legColor = (l:TransitLeg) => legColorOf(l, colors);
+  const track = (p:Plan, width = 330) => routeTrack(p, colors, width);
+  const dur = (m:number) => m >= 60 ? `${Math.floor(m / 60)}<small>시간</small> ${m % 60}<small>분</small>` : `${m}<small>분</small>`;
   const WALK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>';
   const CHEV = '<svg class="jw-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
   const UP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>';
@@ -186,23 +210,23 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
 
 
   // the steps of the chosen route: places (with times) joined by rides and walks on a rail
-  function steps(p) {
-    const station = (l, n) => l.type === 'bus' ? n : `${n}역`;
-    const items = [{n: 'start', name: last?.from || '출발', t: p.leaveBy, c: 'var(--syung)'}];
+  function steps(p:Plan) {
+    const station = (l:TransitLeg, n:string) => l.type === 'bus' ? n : `${n}역`;
+    const items:StepRow[] = [{n: 'start', name: last?.from || '출발', t: p.leaveBy, c: 'var(--syung)'}];
     for (const l of p.legs) {
       if (l.type === 'walk') { items.push({e: 'walk', l}); continue; }
       items.push({n: 'board', name: station(l, l.from), t: l.departs, c: legColor(l)}, {e: 'ride', l}, {n: 'alight', name: station(l, l.to), t: l.arrives, c: legColor(l)});
     }
     items.push({n: 'end', name: last?.to || '도착', t: p.arrives, c: 'var(--ink)'});
-    const rows = [];
+    const rows:StepRow[] = [];
     for (let k = 0; k < items.length; k++) {   // two places in a row: one stop, where the change happens
-      const a = items[k], b = items[k + 1];
+      const a = items[k]!, b = items[k + 1];
       if (a.n && b?.n) { rows.push({n: 'change', name: a.name === b.name ? a.name : `${a.name} → ${b.name}`, t: a.t, t2: b.t, c: b.c}); k++; }
       else rows.push(a);
     }
     return `<ol class="jsteps">${rows.map(r => {
       if (r.n) return `<li class="js node ${r.n}" style="--c:${r.c}"><span class="js-t">${esc(r.t)}</span><span class="js-dot"></span><div class="js-b"><b>${esc(r.name)}</b>${r.n === 'change' ? `<small>갈아타기${r.t2 && r.t2 !== r.t ? ` · ${esc(r.t2)} 출발` : ''}</small>` : ''}</div></li>`;
-      const l = r.l;
+      const l = r.l as RowLeg;
       if (r.e === 'walk') return `<li class="js walk"><span class="js-t"></span><span class="js-rail"></span><div class="js-b"><small>${WALK}걷기 ${min(l.seconds)}분 · ${Math.round(l.metres / 10) * 10}m${l.exit ? ` · ${esc(l.exit)}번 출구` : ''}</small></div></li>`;
       const c = legColor(l), toward = l.type === 'bus' ? `${esc(l.toward)} 방면` : (l.destination ? `${esc(l.destination)}행` : esc(l.direction || ''));
       const note = l.type === 'bus' ? (l.alts?.length ? `같은 길 ${l.alts.map(esc).join(' · ')}` : '시간표 기준') : (l.realtime ? `<span class="js-live">실시간 · 지금 ${esc(l.trainNow)}</span>` : '배차 간격 기준');
@@ -212,7 +236,7 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     }).join('')}</ol>`;
   }
 
-  function planHTML(p, i) {
+  function planHTML(p:Plan, i:number) {
     const live = p.legs.some(l => l.realtime);
     return `<article class="jp" data-i="${i}" tabindex="0" role="button" aria-label="${esc(p.tag || '경로')} ${p.minutes}분, ${esc(p.arrives)} 도착, 지도에서 보기">
   <div class="jp-top"><strong class="jp-min">${dur(p.minutes)}</strong><span class="jp-arr">${esc(p.arrives)} 도착</span>${p.tag ? `<span class="jp-tag">${esc(p.tag)}</span>` : ''}</div>
@@ -222,53 +246,53 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
 </article>`;
   }
 
-  const KINDS = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']];
-  function render(d, sel) {
-    const out = document.getElementById('jResult');
-    const count = k => d.plans.filter(p => k === 'all' || p.kind === k).length;
+  const KINDS = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']] as const;
+  function render(d:RouteAnswer, sel:number) {
+    const out = document.getElementById('jResult')!;
+    const count = (k:string) => d.plans.filter(p => k === 'all' || p.kind === k).length;
     const kinds = KINDS.filter(([k]) => k !== 'all' && count(k));
-    if (kinds.length < 2) last.tab = 'all';   // one kind only: nothing to filter
+    if (kinds.length < 2) last!.tab = 'all';   // one kind only: nothing to filter
     const tabs = kinds.length < 2 ? '' : `<div class="segmented jkinds" role="group" aria-label="경로 종류">${KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
-      `<button type="button" data-k="${k}" aria-pressed="${(last.tab || 'all') === k}">${name}<b>${count(k)}</b></button>`).join('')}</div>`;
+      `<button type="button" data-k="${k}" aria-pressed="${(last!.tab || 'all') === k}">${name}<b>${count(k)}</b></button>`).join('')}</div>`;
     out.innerHTML = tabs + `<div class="jplans">${d.plans.map(planHTML).join('')}</div>` + `<p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>`; // bus: 버스 구간도 여정과 함께 남는다(지우기는 막대의 ✕)
-    const cards = [...out.querySelectorAll('.jp')];
-    const filter = k => {
-      last.tab = k;
-      out.querySelectorAll('.jkinds button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
-      cards.forEach((c, i) => { c.hidden = !(k === 'all' || d.plans[i].kind === k); });
-      if (cards[last.sel]?.hidden) { const i = cards.findIndex(c => !c.hidden); if (i >= 0) pick(i); }
+    const cards = [...out.querySelectorAll<HTMLElement>('.jp')];
+    const filter = (k:string) => {
+      last!.tab = k;
+      out.querySelectorAll<HTMLElement>('.jkinds button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+      cards.forEach((c, i) => { c.hidden = !(k === 'all' || d.plans[i]!.kind === k); });
+      if (cards[last!.sel]?.hidden) { const i = cards.findIndex(c => !c.hidden); if (i >= 0) pick(i); }
     };
-    out.querySelectorAll('.jkinds button').forEach(b => b.addEventListener('click', () => filter(b.dataset.k)));
-    const pick = i => { last.sel = i; cards.forEach((c, j) => { c.classList.toggle('on', j === i); c.setAttribute('aria-expanded', String(j === i)); }); showRoute?.(d.plans[i]); };
+    out.querySelectorAll<HTMLElement>('.jkinds button').forEach(b => b.addEventListener('click', () => filter(b.dataset.k!)));
+    const pick = (i:number) => { last!.sel = i; cards.forEach((c, j) => { c.classList.toggle('on', j === i); c.setAttribute('aria-expanded', String(j === i)); }); showRoute?.(d.plans[i]!); };
     cards.forEach((c, i) => {
-      c.addEventListener('click', () => { if (last.sel === i && c.classList.contains('on')) closeSheet?.(); else pick(i); });
+      c.addEventListener('click', () => { if (last!.sel === i && c.classList.contains('on')) closeSheet?.(); else pick(i); });
       c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); c.click(); } });
     });
     pick(sel);
-    filter(last.tab || 'all');
+    filter(last!.tab || 'all');
   }
 
   // while the routes are worked out (a few seconds): the rows they will fill, 슝 running along the first
   const LOADING = `<div class="jload" aria-hidden="true">${[0, 1, 2].map(i => `<div class="jsk"><i class="jsk-min"></i><div class="jsk-track">${i === 0 ? '<span class="jsk-run"><i></i></span>' : ''}</div><i class="jsk-meta"></i></div>`).join('')}</div>`;
-  function failed(out, msg) {
-    const status = document.getElementById('jStatus');
+  function failed(out:HTMLElement, msg:string) {
+    const status = document.getElementById('jStatus')!;
     if (status) { status.textContent = `경로를 찾지 못했어요. ${msg}`; status.classList.add('sr'); }   // announced; the card below shows it
     out.innerHTML = `<div class="jerr"><b>경로를 찾지 못했어요</b><p>${esc(msg)}</p><button type="button" class="jerr-retry">다시 찾기</button></div>`;
-    out.querySelector('.jerr-retry').addEventListener('click', () => go());
+    out.querySelector('.jerr-retry')!.addEventListener('click', () => go());
   }
 
   async function go() {
-    const status = document.getElementById('jStatus'), out = document.getElementById('jResult');
+    const status = document.getElementById('jStatus')!, out = document.getElementById('jResult')!;
     const from = fromOf(), to = picked.to, my = ++goSeq;
-    const trip = {from: document.getElementById('jFrom').value, to: document.getElementById('jTo').value, picked: {...picked}};
+    const trip = {from: (document.getElementById('jFrom') as HTMLInputElement).value, to: (document.getElementById('jTo') as HTMLInputElement).value, picked: {...picked}};
     if (!from) { status.textContent = '출발지를 목록에서 골라 주세요.'; return; }
     if (!to) { status.textContent = '도착지를 목록에서 골라 주세요.'; return; }
     const at = whenValue();
     status.classList.remove('sr'); status.textContent = '경로를 찾고 있어요'; out.innerHTML = LOADING; fold(false);
-    document.activeElement?.blur?.();   // phone keyboard down, so the results have the room
+    (document.activeElement as HTMLElement | null)?.blur?.();   // phone keyboard down, so the results have the room
     try {
       const r = await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
-      const d = await r.json();
+      const d:RouteAnswer = await r.json();
       if (my !== goSeq || !out.isConnected) return;   // a newer search took over, or the sheet shows something else now
       if (!d.ok) { failed(out, d.error || '출발지나 도착지를 바꿔 보세요.'); return; }
       status.textContent = '';
@@ -287,51 +311,51 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
     bindPlace('from'); bindPlace('to');
     if (!last) when = {k: 'now'};
     whenSet(when);
-    document.getElementById('jWhenRow').addEventListener('click', () => whenOpen(document.getElementById('jWhenPanel').hidden));
-    document.getElementById('jWhenNow').addEventListener('click', () => { whenSet({k: 'now'}); whenOpen(false); next(); });
-    document.getElementById('jWhenGo').addEventListener('click', () => { whenSet({k: 'at', d: new Date(draft)}); whenOpen(false); next(); });
-    document.querySelectorAll('.jw-day button').forEach(b => b.addEventListener('click', () => {
-      const d = new Date(draft), today = new Date(); d.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + +b.dataset.d);
+    document.getElementById('jWhenRow')!.addEventListener('click', () => whenOpen(document.getElementById('jWhenPanel')!.hidden as boolean));
+    document.getElementById('jWhenNow')!.addEventListener('click', () => { whenSet({k: 'now'}); whenOpen(false); next(); });
+    document.getElementById('jWhenGo')!.addEventListener('click', () => { whenSet({k: 'at', d: new Date(draft!)}); whenOpen(false); next(); });
+    document.querySelectorAll<HTMLElement>('.jw-day button').forEach(b => b.addEventListener('click', () => {
+      const d = new Date(draft!), today = new Date(); d.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + +b.dataset.d!);
       draft = clamp(d); drawDraft(); }));
-    document.querySelectorAll('.jw-step').forEach(b => {   // tap: 10 minutes; hold: keeps going, faster
-      const step = () => { draft = stepped(draft, b.dataset.u, +b.dataset.s); drawDraft(); };
-      let hold = 0, rep = 0;
+    document.querySelectorAll<HTMLButtonElement>('.jw-step').forEach(b => {   // tap: 10 minutes; hold: keeps going, faster
+      const step = () => { draft = stepped(draft!, b.dataset.u, +b.dataset.s!); drawDraft(); };
+      let hold:ReturnType<typeof setTimeout> | 0 = 0, rep:ReturnType<typeof setTimeout> | 0 = 0;
       const stop = () => { clearTimeout(hold); clearTimeout(rep); hold = rep = 0; };
       // held: after 0.4 s it repeats, and speeds up the longer it is held (minutes go one at a time)
       b.addEventListener('pointerdown', e => { if (e.button) return; step(); const t0 = performance.now();
-        const tick = () => { if (b.disabled) return stop(); step(); const held = performance.now() - t0; rep = setTimeout(tick, held > 2200 ? 35 : held > 1200 ? 60 : 110); };
+        const tick = ():void => { if (b.disabled) return stop(); step(); const held = performance.now() - t0; rep = setTimeout(tick, held > 2200 ? 35 : held > 1200 ? 60 : 110); };
         hold = setTimeout(tick, 400); });
       for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
       b.addEventListener('click', e => { if (e.detail === 0) step(); });   // keyboard (Enter/Space) presses
       b.addEventListener('touchstart', e => e.preventDefault(), {passive: false});   // no selection / callout on a long press; pointer events still step
       b.addEventListener('contextmenu', e => e.preventDefault());
     });
-    document.getElementById('jSum').addEventListener('click', () => { fold(false); document.getElementById('jTo').focus({preventScroll: true}); });
-    document.getElementById('jSwap').addEventListener('click', () => {
-      const f = document.getElementById('jFrom'), t = document.getElementById('jTo'), fp = fromOf();
+    document.getElementById('jSum')!.addEventListener('click', () => { fold(false); (document.getElementById('jTo') as HTMLInputElement).focus({preventScroll: true}); });
+    document.getElementById('jSwap')!.addEventListener('click', () => {
+      const f = (document.getElementById('jFrom') as HTMLInputElement), t = (document.getElementById('jTo') as HTMLInputElement), fp = fromOf();
       [f.value, t.value] = [t.value, f.value];
       [picked.from, picked.to] = [picked.to, fp && !picked.from ? {...fp, name: '내 위치'} : picked.from];
       next();
     });
-    document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; document.getElementById('jFrom').value = '내 위치'; next('from'); });
+    document.getElementById('jHere')?.addEventListener('click', () => { picked.from = null; (document.getElementById('jFrom') as HTMLInputElement).value = '내 위치'; next('from'); });
     if (last) {   // back to the last search, as it was
-      document.getElementById('jFrom').value = last.from;
-      document.getElementById('jTo').value = last.to;
-      whenSet(last.when ? {...last.when, d: last.when.d && new Date(last.when.d)} : {k: 'now'});
+      (document.getElementById('jFrom') as HTMLInputElement).value = last.from;
+      (document.getElementById('jTo') as HTMLInputElement).value = last.to;
+      whenSet(last.when ? {...last.when, d: last.when.d && new Date(last.when.d)} as When : {k: 'now'});
       Object.assign(picked, last.picked);
       render(last.d, last.sel);
       fold(true);
-    } else if (!fresh) document.getElementById('jTo').focus({preventScroll: true});
+    } else if (!fresh) (document.getElementById('jTo') as HTMLInputElement).focus({preventScroll: true});
   }
 
   // from a station sheet: this station is one end; ask for the other
-  function openWith(end, place) {
+  function openWith(end:'from' | 'to', place:End & { name:string }) {
     last = null; picked.from = picked.to = null; clearRoute?.();
     open(true);
     const other = end === 'from' ? 'to' : 'from';
     picked[end] = place;
-    document.getElementById(end === 'from' ? 'jFrom' : 'jTo').value = place.name;
-    const o = document.getElementById(other === 'from' ? 'jFrom' : 'jTo');
+    (document.getElementById(end === 'from' ? 'jFrom' : 'jTo') as HTMLInputElement).value = place.name;
+    const o = (document.getElementById(other === 'from' ? 'jFrom' : 'jTo') as HTMLInputElement);
     if (other === 'from' && o.value === '내 위치') { go(); return; }   // to here from where I am: straight to the routes
     o.value = ''; o.focus({preventScroll: true});
   }
@@ -340,8 +364,8 @@ export function initJourney({openSheet, closeSheet, map, colors, myLocation, but
   function sheetClosed() {
     const was = inSheet; inSheet = false;
     if (!last || !was) return false;
-    const p = last.d.plans[last.sel];
-    bar.querySelector('.jbar-open').innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span></span>${track(p, 240)}`;
+    const p = last.d.plans[last.sel]!;
+    bar.querySelector('.jbar-open')!.innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span></span>${track(p, 240)}`;
     bar.hidden = false;
     return true;
   }

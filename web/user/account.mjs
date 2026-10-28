@@ -12,7 +12,7 @@
 // 승차권 뒷면을 볼 때 ticket.
 // 로그인 방법이 하나도 설정되지 않았으면(/api/auth/providers 빈 목록 · 실패) 아무것도 보이지 않는다 — 로그인 안 한 화면은 지금과 같다.
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
-import {routeTrack} from '../lib/journey-ui.mjs';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import {routeTrack} from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 
 const $ = id => document.getElementById(id);
 const CHANGE = {'X-Requested-With': 'syung'};   // 바꾸는 요청에 붙이는 머리말(서버가 확인한다)
