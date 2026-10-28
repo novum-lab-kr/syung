@@ -23,7 +23,7 @@ import secrets
 import threading
 import time
 from datetime import timedelta
-from typing import cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from server.config import MemberConfig, avatar_dir
 from server.services.account import (SESSION_ID, USAGE_KINDS, USAGE_MOST, device_of, session_id, session_view,
@@ -34,6 +34,15 @@ from server.services.profile import (CHARACTERS, avatar_value, avatar_view, chec
 from server.sources.oauth import ProviderError
 from server.store.avatars import AvatarFiles
 from server.store.members import USAGE_DAYS, MemberStore
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+    from pathlib import Path
+
+    class LoginProvider(Protocol):
+        """로그인 제공자가 갖춘 것(login_providers 의 카카오 · 구글 · Apple, 개발 서버 · 시험의 가짜)."""
+        def authorize_url(self, state: str, redirect_uri: str) -> str: ...
+        def identify(self, code: str, redirect_uri: str) -> tuple[str, str]: ...
 
 SESSION_AGE = 30 * 24 * 3600
 STATE_AGE = 600   # 제공자 화면에서 돌아올 때까지
@@ -62,9 +71,10 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _place(value, label: str) -> dict:
+def _place(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label}지를 골라 주세요")
+    value = cast("dict[str, Any]", value)   # JSON 객체 — 키는 늘 글자
     name = value.get("name")
     lat, lng = value.get("lat"), value.get("lng")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
@@ -76,31 +86,32 @@ def _place(value, label: str) -> dict:
     return {"name": name.strip(), "lat": round(float(cast("float", lat)), 6), "lng": round(float(cast("float", lng)), 6)}
 
 
-def _text(value, label: str, most: int = 40) -> str:
+def _text(value: object, label: str, most: int = 40) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > most:
         raise ValueError(f"경로의 {label}이 틀려요")
     return value.strip()
 
 
-def _count(value, label: str, most: int) -> int:
+def _count(value: object, label: str, most: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= most:
         raise ValueError(f"경로의 {label}이 틀려요")
     return value
 
 
-def _clock(value, label: str) -> str:
+def _clock(value: object, label: str) -> str:
     if not isinstance(value, str) or not TIME.fullmatch(value):
         raise ValueError(f"경로의 {label}이 틀려요")
     return value
 
 
-def _leg(leg) -> dict:
+def _leg(leg: object) -> dict[str, Any]:
     """길찾기(/api/route) 구간 하나 → 그리는 데 쓰는 칸만."""
-    if not isinstance(leg, dict) or leg.get("type") not in ("walk", "ride", "bus"):
+    if not isinstance(leg, dict) or cast("dict[str, Any]", leg).get("type") not in ("walk", "ride", "bus"):
         raise ValueError("경로 구간이 틀려요")
+    leg = cast("dict[str, Any]", leg)   # 위에서 dict 인지 봤다
     if leg["type"] == "walk":
         return {"type": "walk", "seconds": _count(leg.get("seconds"), "걷는 시간", 6 * 3600)}
-    out = {"type": leg["type"]}
+    out: dict[str, Any] = {"type": leg["type"]}
     if leg["type"] == "ride":
         out["line"] = _text(leg.get("line"), "노선", 20)
     else:
@@ -115,15 +126,17 @@ def _leg(leg) -> dict:
     return out
 
 
-def _route(value) -> str | None:
+def _route(value: object) -> str | None:
     """발권할 때 고른 경로(길찾기 결과 한 개) → 저장할 JSON 글자. 없으면 None."""
     if value is None:
         return None
     if not isinstance(value, dict):
         raise ValueError("경로가 틀려요")
+    value = cast("dict[str, Any]", value)   # JSON 객체 — 키는 늘 글자
     legs = value.get("legs")
-    if not isinstance(legs, list) or not 1 <= len(legs) <= LEGS_MAX:
+    if not isinstance(legs, list) or not 1 <= len(cast("list[Any]", legs)) <= LEGS_MAX:
         raise ValueError(f"경로 구간은 1~{LEGS_MAX}개예요")
+    legs = cast("list[Any]", legs)   # 위에서 list 인지 봤다
     tag = value.get("tag", "")
     if not isinstance(tag, str) or len(tag) > 20:
         raise ValueError("경로 이름표가 틀려요")
@@ -135,10 +148,11 @@ def _route(value) -> str | None:
     return json.dumps(route, ensure_ascii=False, separators=(",", ":"))
 
 
-def clean_ticket(body) -> dict:
+def clean_ticket(body: object) -> dict[str, Any]:
     """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7], route?:{…}} → 저장할 값. 틀리면 ValueError."""
     if not isinstance(body, dict):
         raise ValueError("본문은 JSON 객체예요")
+    body = cast("dict[str, Any]", body)   # JSON 객체 — 키는 늘 글자
     name = body.get("name")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > NAME_MAX:
         raise ValueError(f"승차권 이름은 1~{NAME_MAX}자예요")
@@ -147,15 +161,16 @@ def clean_ticket(body) -> dict:
     if not isinstance(depart, str) or not TIME.fullmatch(depart):
         raise ValueError("출발 시각은 HH:MM 이에요")
     days = body.get("days", [])
-    if (not isinstance(days, list) or len(days) > 7
-            or any(isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 7 for day in days)):
+    if (not isinstance(days, list) or len(cast("list[Any]", days)) > 7
+            or any(isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 7 for day in cast("list[Any]", days))):
         raise ValueError("타는 날은 1(월)~7(일) 목록이에요")
+    days = cast("list[int]", days)   # 위에서 1~7 수 목록인지 봤다
     return {"name": name.strip(), "from_name": origin["name"], "from_lat": origin["lat"], "from_lng": origin["lng"],
             "to_name": dest["name"], "to_lat": dest["lat"], "to_lng": dest["lng"], "depart_at": depart,
             "days": ",".join(str(day) for day in sorted(set(days))), "route": _route(body.get("route"))}
 
 
-def ticket_view(row: dict) -> dict:
+def ticket_view(row: dict[str, Any]) -> dict[str, Any]:
     """저장된 줄 → 응답 모양."""
     return {"id": row["id"], "name": row["name"],
             "from": {"name": row["from_name"], "lat": row["from_lat"], "lng": row["from_lng"]},
@@ -177,7 +192,7 @@ class TicketLimit(Exception):
 
 class MemberService:
     def __init__(self, config: MemberConfig | None = None, *, store: MemberStore | None = None,
-                 providers: dict | None = None, clock=time.time):
+                 providers: dict[str, LoginProvider] | None = None, clock: Callable[[], float] = time.time):
         self.config = config or MemberConfig.from_env()
         self.providers = providers_from_config(self.config) if providers is None else providers
         self.store = store or MemberStore(self.config.db_file)
@@ -214,7 +229,7 @@ class MemberService:
             self._tries[address] = recent + [now]
             return True
 
-    def finish(self, provider: str, query: dict, expected_state: str | None, address: str,
+    def finish(self, provider: str, query: dict[str, list[str]], expected_state: str | None, address: str,
                user_agent: str | None = None) -> tuple[str, bool]:
         """콜백 쿼리(code · state · error) → (새 세션 토큰(쿠키 값), 처음 가입했나). 실패는 LoginError.
         user_agent: 기기 종류만 뽑아 세션에 남긴다(원문은 저장하지 않는다)."""
@@ -257,25 +272,25 @@ class MemberService:
             self.store.touch_session(hashed, now)
         return user_id
 
-    def me(self, user_id: int) -> dict | None:
+    def me(self, user_id: int) -> dict[str, Any] | None:
         user = self.store.user(user_id)
         return user and {"id": user["id"], "name": user["display_name"], "provider": user["provider"],
                          "avatar": avatar_view(user["avatar"], PHOTO_URL)}
 
     # ---- 내 정보: 닉네임 · 프로필 사진 ----
-    def rename(self, user_id: int, body) -> dict | None:
+    def rename(self, user_id: int, body: object) -> dict[str, Any] | None:
         """본문 {name} → 바뀐 내 정보. 틀리면 ValueError, 회원이 없으면 None."""
-        name = clean_name(body.get("name") if isinstance(body, dict) else None)
+        name = clean_name(cast("dict[str, Any]", body).get("name") if isinstance(body, dict) else None)
         return self.me(user_id) if self.store.set_name(user_id, name) else None
 
-    def pick_character(self, user_id: int, body) -> dict | None:
+    def pick_character(self, user_id: int, body: object) -> dict[str, Any] | None:
         """본문 {character} → 바뀐 내 정보(앞에 올린 사진 파일은 지운다). 틀리면 ValueError."""
-        character = body.get("character") if isinstance(body, dict) else None
+        character = cast("dict[str, Any]", body).get("character") if isinstance(body, dict) else None
         if character not in CHARACTERS:
             raise ValueError("없는 캐릭터예요")
         return self._set_avatar(user_id, avatar_value("character", character))
 
-    def upload_photo(self, user_id: int, data: bytes) -> dict | None:
+    def upload_photo(self, user_id: int, data: bytes) -> dict[str, Any] | None:
         """사진 바이트 → 바뀐 내 정보. 받을 수 없는 사진이면 PhotoError(ValueError).
         새 파일을 쓴 뒤 DB 를 바꾸고, DB 가 새 사진을 가리키지 않게 끝난 경우(실패 · 그사이 탈퇴)에만 새 파일을 지운다."""
         name = self.avatars.save(data, check_photo(data))
@@ -291,11 +306,11 @@ class MemberService:
         self._forget_file(photo_name(before))
         return self.me(user_id)
 
-    def reset_avatar(self, user_id: int) -> dict | None:
+    def reset_avatar(self, user_id: int) -> dict[str, Any] | None:
         """기본 캐릭터로(올린 사진 파일은 지운다)."""
         return self._set_avatar(user_id, None)
 
-    def _set_avatar(self, user_id: int, value: str | None) -> dict | None:
+    def _set_avatar(self, user_id: int, value: str | None) -> dict[str, Any] | None:
         found, before = self.store.set_avatar(user_id, value)
         if not found:
             return None
@@ -320,7 +335,7 @@ class MemberService:
         data = self.avatars.read(name)
         return (data, name.rsplit(".", 1)[1]) if data is not None else None
 
-    def photos_in_copy(self, db_file) -> set[str]:
+    def photos_in_copy(self, db_file: Path) -> set[str]:
         """회원 DB 사본(백업이 막 뜬 파일)이 가리키는 사진 이름들."""
         return {name for name in map(photo_name, MemberStore.avatars_in_file(db_file)) if name}
 
@@ -329,7 +344,7 @@ class MemberService:
         하루 백업(jobs/member_backup.py)이 사본을 만들기 전에 부른다."""
         used = {photo_name(value) for value in self.store.avatars_in_use()}
         now = self._clock()
-        removed = []
+        removed: list[str] = []
         for name in self.avatars.names():
             age = self.avatars.age(name, now)
             if name not in used and age is not None and age >= ORPHAN_AGE and self.avatars.remove(name):
@@ -346,7 +361,7 @@ class MemberService:
             self._forget_file(photo_name(removed["avatar"]))
 
     # ---- 계정: 로그인 기기 ----
-    def sessions(self, user_id: int, token: str | None) -> list[dict]:
+    def sessions(self, user_id: int, token: str | None) -> list[dict[str, Any]]:
         """내 로그인 기기들(지금 기기 먼저, 그다음 최근에 쓴 차례). 지금 기기는 current: true."""
         current = token_hash(token) if token else None
         views = [session_view(row, current) for row in self.store.sessions(user_id, int(self._clock()))]
@@ -366,18 +381,18 @@ class MemberService:
         return self.store.delete_other_sessions(user_id, token_hash(token))
 
     # ---- 내 통계 · 사용 횟수 ----
-    def count_usage(self, user_id: int, body) -> None:
+    def count_usage(self, user_id: int, body: object) -> None:
         """본문 {kind}(open · route · ticket) → 오늘 그 종류 +1. 틀리면 ValueError."""
-        kind = body.get("kind") if isinstance(body, dict) else None
+        kind = cast("dict[str, Any]", body).get("kind") if isinstance(body, dict) else None
         if kind not in USAGE_KINDS:
             raise ValueError("없는 사용 종류예요")
         self.store.count_usage(user_id, int(self._clock()), kind, USAGE_MOST)
 
-    def _usage_rows(self, user_id: int) -> list[dict]:
+    def _usage_rows(self, user_id: int) -> list[dict[str, Any]]:
         first = (today_kst(self._clock()) - timedelta(days=USAGE_DAYS - 1)).strftime("%Y-%m-%d")
         return self.store.usage(user_id, first)
 
-    def stats(self, user_id: int) -> dict | None:
+    def stats(self, user_id: int) -> dict[str, Any] | None:
         joined = self.store.member_since(user_id)
         if joined is None:
             return None
@@ -390,7 +405,7 @@ class MemberService:
         """보관 기간(1년)이 지난 날짜별 사용 횟수를 지운다 → 지운 줄 수(하루 백업이 매일 부른다)."""
         return self.store.prune_usage(int(self._clock()))
 
-    def export(self, user_id: int, token: str | None) -> dict | None:
+    def export(self, user_id: int, token: str | None) -> dict[str, Any] | None:
         """내 데이터 한 묶음(회원 정보 · 로그인 방법 · 로그인 기기 · 승차권 · 날짜별 사용 횟수). 남의 것은 없다 — 모두 user_id 로만 읽는다.
         제공자 회원번호 · 세션 토큰(해시) · 사진 파일은 넣지 않는다(사진은 화면에서 따로 본다)."""
         me = self.me(user_id)
@@ -416,7 +431,7 @@ class MemberService:
         if not hmac.compare_digest((authorization or "").strip().encode(), f"KakaoAK {key}".encode()):
             raise WebhookError("auth")
 
-    def kakao_unlinked(self, fields: dict) -> bool:
+    def kakao_unlinked(self, fields: dict[str, list[str]]) -> bool:
         """웹훅 본문(app_id · user_id · referrer_type — 쿼리 · 폼을 parse_qs 한 것) → 지운 회원이 있었나. 틀리면 WebhookError."""
         app_id = fields.get("app_id", [""])[0]
         if self.config.kakao_app_id and not hmac.compare_digest(app_id.encode(), self.config.kakao_app_id.encode()):
@@ -436,22 +451,22 @@ class MemberService:
         return True
 
     # ---- 승차권 ----
-    def tickets(self, user_id: int) -> list[dict]:
+    def tickets(self, user_id: int) -> list[dict[str, Any]]:
         return [ticket_view(row) for row in self.store.tickets(user_id)]
 
-    def add_ticket(self, user_id: int, body) -> dict:
+    def add_ticket(self, user_id: int, body: object) -> dict[str, Any]:
         """발권: 검사 → 저장 → 저장된 모양. 틀리면 ValueError, 장수가 넘으면 TicketLimit."""
         ticket_id = self.store.add_ticket(user_id, clean_ticket(body), int(self._clock()), TICKET_LIMIT)
         if ticket_id is None:
             raise TicketLimit()
-        return ticket_view(cast("dict", self.store.ticket(user_id, ticket_id)))   # 방금 넣었다
+        return ticket_view(cast("dict[str, Any]", self.store.ticket(user_id, ticket_id)))   # 방금 넣었다
 
-    def update_ticket(self, user_id: int, ticket_id: int, body) -> dict | None:
+    def update_ticket(self, user_id: int, ticket_id: int, body: object) -> dict[str, Any] | None:
         """그 사람의 승차권이 없으면 None. 틀리면 ValueError."""
         values = clean_ticket(body)
         if not self.store.update_ticket(user_id, ticket_id, values, int(self._clock())):
             return None
-        return ticket_view(cast("dict", self.store.ticket(user_id, ticket_id)))   # 방금 고쳤다
+        return ticket_view(cast("dict[str, Any]", self.store.ticket(user_id, ticket_id)))   # 방금 고쳤다
 
     def delete_ticket(self, user_id: int, ticket_id: int) -> bool:
         return self.store.delete_ticket(user_id, ticket_id)
