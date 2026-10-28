@@ -50,7 +50,7 @@ import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journe
 import './modes/basic/park.mts';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
 import './modes/coaster/metrics.mts';   // (공원 치수 계산: 같은 단계에서 요청)
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './modes/coaster/track_mesh.mts';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
-import {NightLayer} from './modes/coaster/night.mjs';
+import {NightLayer} from './modes/coaster/night.mts';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './modes/coaster/first_person.mts';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
 import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './city/style.mts';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './city/life.mts';
@@ -341,7 +341,7 @@ let cityBuildings=null,cityLandmarks=null;const cityOn=()=>modeCtl.settings().ci
 const MODE_KIT_DEPS=['city/mesh','modes/nations/models','city/sign_text','city/parts','city/geom','city/mvt','city/through_buildings','city/landmarks_data','modes/coaster/badges','modes/coaster/ride_sites','modes/starcraft/building_models'];   // (web/ 기준 경로)
 function loadModeKit(){
   if(!kitLoad)for(const n of MODE_KIT_DEPS)import(`./${n}.mjs`).catch(()=>{});   // 미리 받기만: 실패는 아래 본 import 가 알린다
-  return kitLoad??=Promise.all([import('./city/buildings.mts'),import('./city/landmarks.mts'),import('./modes/joseon/turtle_ship.mts'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mts'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mjs'),import('./modes/joseon/hanok.mts'),import('./modes/coaster/festoon.mjs'),import('./city/bloom.mts'),import('./modes/starcraft/convoy.mts'),import('./modes/starcraft/race_buildings.mts'),import('./city/pixel_palette.mts'),import('./modes/nations/parts.mts'),import('./modes/starcraft/life_units.mts'),import('./modes/starcraft/sky_units.mts')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
+  return kitLoad??=Promise.all([import('./city/buildings.mts'),import('./city/landmarks.mts'),import('./modes/joseon/turtle_ship.mts'),import('./modes/coaster/train.mjs'),import('./modes/coaster/ride_track.mts'),import('./modes/coaster/rides.mjs'),import('./modes/coaster/ride_placement.mts'),import('./modes/joseon/hanok.mts'),import('./modes/coaster/festoon.mts'),import('./city/bloom.mts'),import('./modes/starcraft/convoy.mts'),import('./modes/starcraft/race_buildings.mts'),import('./city/pixel_palette.mts'),import('./modes/nations/parts.mts'),import('./modes/starcraft/life_units.mts'),import('./modes/starcraft/sky_units.mts')])   // (city_hanok: 도시 부품 'hanok' 등록 — 건물을 짓기 전에) · 롤코 밤 축제 전구
     .then(([b,l,t,c,r,p,q,,f,nb,sc,,pp,,lu,sk])=>{({UnitConvoy}=sc);({PixelPalette}=pp);({LifeUnits}=lu);({SkyUnits}=sk);({FestoonLayer}=f);({NightBloom}=nb);({CityBuildings}=b);({CityLandmarks}=l);({TurtleShips}=t);({CoasterTrain}=c);({RideTrack,SLEEPER_M}=r);({RideLayer}=p);({CoasterRidePlacement,sampleRideTracks}=q);
       cityBuildings=new CityBuildings({phone:PHONE});cityLandmarks=new CityLandmarks();kitReady=true;map.triggerRepaint()})
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}

@@ -5,7 +5,7 @@
 //
 //   const u=new UnitConvoy(); u.init(gl);
 //   u.begin(ox,oy); u.unit(frame,L,W,kind,rgb,moving,key)…; u.draw(gl,M,ox,oy,{unit,walls,occlude,dark,time}); u.dispose(gl)
-import { compile, hexRGB } from '../coaster/night.mjs';
+import { compile, hexRGB } from '../coaster/night.mts';
 import { UNIT_SHAPES, LINE, shapeTriangles } from './units.mts';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────────────────────────────

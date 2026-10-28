@@ -2,25 +2,54 @@
 // Neighbourhoods settle once in a stable order; camera movement never moves or changes a ride.
 import {decodeTile} from '../../city/mvt.mts';
 import {classifyRings,bbox} from '../../city/geom.mts';
-import {selectRideSites,withRideKind,RIDE_SITE_RULES} from './ride_sites.mjs';
+import {selectRideSites,withRideKind,RIDE_SITE_RULES} from './ride_sites.mts';
+import type { Layer } from '../../city/mvt.mts';
+import type { createCoasterTrack } from './track.mts';
+import type { EdgeGeom } from './types.mts';
+import type { RideBuilding, RideKind, RidePolygon, RideSite, RideTrackSeg } from './ride_sites.mts';
+
+type CoasterTrack = ReturnType<typeof createCoasterTrack>;
+type TrackEdge = CoasterTrack['edges'][number];
+type Bounds = readonly [number, number, number, number];
+// 롤코 선로를 놀이기구 장애물 토막으로(overlay 가 넘긴다): 도형 · 차선 비킴 · 몸 폭 · 차선 px · 코르크스크루 축 높이
+interface RideTrackOptions { geometry:(e:TrackEdge)=>EdgeGeom; offset:(e:TrackEdge)=>number; bodyPx:number; lanePx:number; heart:number }
+// 건물 높이 규칙(그리는 건물과 같게)과 타일 자리
+interface HeightPolicy { minH?:number; missingH?:number; maxH?:number }
+interface TileAt extends HeightPolicy { x:number; y:number; z?:number }
+interface TileKey { x:number; y:number; z:number; key:string }
+// 타일 하나에서 읽은 장애물(옛 읽기는 건물 목록만 돌려준다)
+interface TileObstacles { buildings:RideBuilding[]; parks:RidePolygon[]; water:RidePolygon[] }
+type TileRead = TileObstacles | RideBuilding[];
+// 자리를 같이 정하는 동네: 씨앗 · 받을 상자 · z14 타일 · 상태
+interface RideGroup { candidates:RideSite[]; box:[number, number, number, number]; tiles:{ x:number; y:number }[]; state:'waiting' | 'loading' | 'ready' | 'failed'; sites:RideSite[]; omitted:RideSite[]; error?:string; retryAt?:number }
+// 지도에서 이미 받은 타일 찾기(maplibre 6.11 의 비공개 tileManagers) · 타일 주소 틀
+interface PlacementTile { tileID?:{ canonical?:{ x:number; y:number; z:number } }; latestFeatureIndex?:{ rawTileData?:ArrayBuffer } }
+interface PlacementMap {
+  style?:{ tileManagers?:Record<string, { getRenderableIds():string[]; getTileByID(id:string):PlacementTile | undefined } | undefined> };
+  getSource(id:string):{ tiles?:string[] } | undefined;
+}
+export interface RidePlacementOptions {
+  map?:PlacementMap; readTile?:(tile:TileKey)=>Promise<TileRead>; getTracks?:(bounds:Bounds)=>RideTrackSeg[] | Promise<RideTrackSeg[]>;
+  onChange?:(sites:RideSite[])=>void; minH?:number; missingH?:number; maxH?:number; inPark?:boolean;
+}
 
 const EARTH=40075016.685578488,TILE_Z=14;
-const railCache=new WeakMap();
+const railCache=new WeakMap<CoasterTrack, Map<string, RideTrackSeg[]>>();
 // The canonical sampler includes hills, loops, corkscrews and tower spirals. A conservative
 // corridor covers both rail lanes, screen-size offsets and the rolled spine at z14 through z18.
-export function sampleRideTracks(track,bounds,{geometry,offset,bodyPx,lanePx,heart}){
+export function sampleRideTracks(track:CoasterTrack,bounds:Bounds,{geometry,offset,bodyPx,lanePx,heart}:RideTrackOptions){
   if(!track.edges)throw Error('coaster placement: rail sampler is not ready');
   let cache=railCache.get(track);if(!cache){cache=new Map();railCache.set(track,cache)}
-  const out=[];
+  const out:RideTrackSeg[]=[];
   for(const c of track.pieces()){
-    const g=geometry(c.e),mu=g.pts[0].meterInMercatorCoordinateUnits();
+    const g=geometry(c.e),mu=g.pts[0]!.meterInMercatorCoordinateUnits();
     const metresPerPx=1/(512*2**14*mu),radius=(Math.abs(offset(c.e))+lanePx+bodyPx*(.3+2*heart)+3)*metresPerPx+8,r=radius*mu;
     if(c.box[2]+r<bounds[0]||c.box[0]-r>bounds[2]||c.box[3]+r<bounds[1]||c.box[1]-r>bounds[3])continue;
     let segments=cache.get(c.id);
     if(!segments){
       segments=[];const at=track.sampler(c.e),n=Math.max(1,Math.ceil((c.s1-c.s0)/(8*mu)));
-      let q=at(c.s0),a=[q.x,q.y,q.h/mu];
-      for(let i=1;i<=n;i++){q=at(c.s0+(c.s1-c.s0)*i/n);const b=[q.x,q.y,q.h/mu];segments.push({a,b,radius});a=b}
+      let q=at(c.s0),a:[number, number, number]=[q.x,q.y,q.h/mu];
+      for(let i=1;i<=n;i++){q=at(c.s0+(c.s1-c.s0)*i/n);const b:[number, number, number]=[q.x,q.y,q.h/mu];segments.push({a,b,radius});a=b}
       cache.set(c.id,segments);
     }
     for(const s of segments)if(Math.max(s.a[0],s.b[0])+r>=bounds[0]&&Math.min(s.a[0],s.b[0])-r<=bounds[2]&&Math.max(s.a[1],s.b[1])+r>=bounds[1]&&Math.min(s.a[1],s.b[1])-r<=bounds[3])out.push(s);
@@ -28,16 +57,16 @@ export function sampleRideTracks(track,bounds,{geometry,offset,bodyPx,lanePx,hea
   return out;
 }
 
-function buildingObstacles(layer,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=Infinity}={}){
-  const out=[];
+function buildingObstacles(layer:Layer | undefined,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=Infinity}:TileAt={} as TileAt){
+  const out:RideBuilding[]=[];
   if(!layer)return out;
   const n=2**z,E=layer.extent,lat=Math.atan(Math.sinh(Math.PI*(1-2*(y+.5)/n))),mu=1/(EARTH*Math.cos(lat));
-  const world=r=>r.map((v,i)=>(v/E+(i%2?y:x))/n);
+  const world=(r:number[])=>r.map((v,i)=>(v/E+(i%2?y:x))/n);
   for(let i=0;i<layer.length;i++){
     const f=layer.feature(i),p=f.properties||{};if(p.hide_3d===true||p.hide_3d==='true')continue;
-    const H=Math.max(minH,Number.isFinite(+p.render_height)?+p.render_height:missingH);
+    const H=Math.max(minH,Number.isFinite(+(p.render_height as number))?+(p.render_height as number):missingH);
     if(H>=maxH)continue;
-    const base=Math.min(Math.max(0,+p.render_min_height||0),H-.5);
+    const base=Math.min(Math.max(0,+(p.render_min_height as number)||0),H-.5);
     const polys=classifyRings(f.loadGeometry().map(r=>r.flatMap(p=>[p.x,p.y])));
     for(const poly of polys){
       if(poly.area2/2/(n*E*mu)**2<4)continue;
@@ -48,18 +77,18 @@ function buildingObstacles(layer,{x,y,z=TILE_Z,minH=3,missingH=9,maxH=Infinity}=
   return out;
 }
 
-export function rideBuildingObstacles(raw,options={}){
+export function rideBuildingObstacles(raw:ArrayBuffer | Uint8Array,options:TileAt={} as TileAt){
   return buildingObstacles(decodeTile(raw,new Set(['building'])).building,options);
 }
 
 // Parks (urban parks: landcover grass/park and the like, theme parks and zoos from landuse) are where the rides go;
 // water is excluded even if it has no building footprints.
-export function rideTileObstacles(raw,options={}){
+export function rideTileObstacles(raw:ArrayBuffer | Uint8Array,options:TileAt={} as TileAt):TileObstacles{
   const layers=decodeTile(raw,new Set(['building','landuse','landcover','water'])),{x,y,z=TILE_Z}=options,n=2**z;
-  const parks=[],water=[],parkKinds=new Set(['park','recreation_ground','village_green','theme_park','zoo']);
+  const parks:RidePolygon[]=[],water:RidePolygon[]=[],parkKinds=new Set<unknown>(['park','recreation_ground','village_green','theme_park','zoo']);
   for(const name of ['landuse','landcover','water']){
     const layer=layers[name];if(!layer)continue;
-    const world=r=>r.map((v,i)=>(v/layer.extent+(i%2?y:x))/n);
+    const world=(r:number[])=>r.map((v,i)=>(v/layer.extent+(i%2?y:x))/n);
     for(let i=0;i<layer.length;i++){
       const f=layer.feature(i),p=f.properties||{};
       if(f.type!==3||name!=='water'&&!parkKinds.has(p.class)&&!parkKinds.has(p.subclass))continue;
@@ -72,18 +101,18 @@ export function rideTileObstacles(raw,options={}){
   return {buildings:buildingObstacles(layers.building,options),parks,water};
 }
 
-function neighbourhoods(candidates,moveM){
-  const remaining=new Set(candidates),groups=[];
+function neighbourhoods(candidates:RideSite[],moveM:number){
+  const remaining=new Set(candidates),groups:RideGroup[]=[];
   for(const seed of candidates){
     if(!remaining.delete(seed))continue;
     const sites=[seed];
-    for(let i=0;i<sites.length;i++)for(const s of remaining){const a=sites[i];
+    for(let i=0;i<sites.length;i++)for(const s of remaining){const a=sites[i]!;
       // Two moves plus the largest same-kind separation must settle together.
       if(Math.hypot(a.x-s.x,a.y-s.y)<(2*moveM+650)*Math.max(a.mu,s.mu)){remaining.delete(s);sites.push(s)}
     }
-    const box=[Infinity,Infinity,-Infinity,-Infinity],tiles=new Map(),n=2**TILE_Z;
+    const box:[number, number, number, number]=[Infinity,Infinity,-Infinity,-Infinity],tiles=new Map<string, {x:number;y:number}>(),n=2**TILE_Z;
     for(const s of sites){
-      const r=(moveM+Math.max(...['drop','ferris','swing','saucer'].map(k=>withRideKind(s,k).wide))*(s.lotte?1:2.4)+RIDE_SITE_RULES.clearanceM+4)*s.mu;
+      const r=(moveM+Math.max(...(['drop','ferris','swing','saucer'] as RideKind[]).map(k=>withRideKind(s,k).wide))*(s.lotte?1:2.4)+RIDE_SITE_RULES.clearanceM+4)*s.mu;
       box[0]=Math.min(box[0],s.x-r);box[1]=Math.min(box[1],s.y-r);box[2]=Math.max(box[2],s.x+r);box[3]=Math.max(box[3],s.y+r);
       for(let x=Math.floor((s.x-r)*n);x<=Math.floor((s.x+r)*n);x++)for(let y=Math.floor((s.y-r)*n);y<=Math.floor((s.y+r)*n);y++)tiles.set(x+','+y,{x,y});
     }
@@ -93,40 +122,44 @@ function neighbourhoods(candidates,moveM){
 }
 
 export class CoasterRidePlacement {
+  // 필드는 선언만(declare — 실행 코드 없음, 값은 지금처럼 constructor · load · count 가 넣는다)
+  declare inPark:boolean; declare map:PlacementMap | undefined; declare groups:RideGroup[]; declare tiles:Map<string, Promise<TileRead>>; declare sites:RideSite[]; declare revision:number;
+  declare getTracks:(bounds:Bounds)=>RideTrackSeg[] | Promise<RideTrackSeg[]>; declare onChange:(sites:RideSite[])=>void; declare heightPolicy:Required<HeightPolicy>;
+  declare readTile:(tile:TileKey)=>Promise<TileRead>; declare stats:Record<string, number>;
   // inPark: rides only inside parks (the coaster today); false keeps the old rule (move at most moveM, parks preferred, small rides over low roofs)
-  constructor(candidates,{map,readTile,getTracks=()=>[],onChange=()=>{},minH=3,missingH=9,maxH=Infinity,inPark=true}={}){
+  constructor(candidates:RideSite[],{map,readTile,getTracks=()=>[],onChange=()=>{},minH=3,missingH=9,maxH=Infinity,inPark=true}:RidePlacementOptions={}){
     this.inPark=inPark;this.map=map;this.groups=neighbourhoods(candidates,inPark?RIDE_SITE_RULES.parkMoveM:RIDE_SITE_RULES.moveM);this.tiles=new Map();this.sites=[];this.revision=0;
     this.getTracks=getTracks;this.onChange=onChange;this.heightPolicy={minH,missingH,maxH};
     this.readTile=readTile||((tile)=>this.mapTile(tile));this.stats={accepted:0,omitted:0,pending:0,failed:0,groups:this.groups.length};
   }
-  async mapTile({x,y,z,key}){
-    const manager=this.map.style?.tileManagers?.ofm;
+  async mapTile({x,y,z,key}:TileKey){
+    const manager=this.map!.style?.tileManagers?.ofm;
     for(const id of manager?.getRenderableIds()||[]){
-      const tile=manager.getTileByID(id),c=tile?.tileID?.canonical;
-      if(c?.x===x&&c.y===y&&c.z===z&&tile.latestFeatureIndex?.rawTileData)
-        return rideTileObstacles(tile.latestFeatureIndex.rawTileData,{x,y,z,...this.heightPolicy});
+      const tile=manager!.getTileByID(id),c=tile?.tileID?.canonical;
+      if(c?.x===x&&c.y===y&&c.z===z&&tile!.latestFeatureIndex?.rawTileData)
+        return rideTileObstacles(tile!.latestFeatureIndex.rawTileData,{x,y,z,...this.heightPolicy});
     }
-    const template=this.map.getSource('ofm')?.tiles?.[0];
+    const template=this.map!.getSource('ofm')?.tiles?.[0];
     if(!template)throw Error('coaster placement: building tile source is not ready');
-    const url=template.replace('{z}',z).replace('{x}',x).replace('{y}',y);
+    const url=template.replace('{z}',z as unknown as string).replace('{x}',x as unknown as string).replace('{y}',y as unknown as string);
     const response=await fetch(url);if(!response.ok)throw Error(`coaster placement: ${key} HTTP ${response.status}`);
     return rideTileObstacles(await response.arrayBuffer(),{x,y,z,...this.heightPolicy});
   }
-  tile(x,y){
+  tile(x:number,y:number){
     const z=TILE_Z,key=`${z}/${x}/${y}`;
     if(!this.tiles.has(key))this.tiles.set(key,Promise.resolve().then(()=>this.readTile({x,y,z,key})).catch(e=>{this.tiles.delete(key);throw e}));
-    return this.tiles.get(key);
+    return this.tiles.get(key)!;
   }
-  async load(g){
+  async load(g:RideGroup){
     g.state='loading';this.count();
     try{
-      const buildings=[],parks=[],water=[];
+      const buildings:RideBuilding[]=[],parks:RidePolygon[]=[],water:RidePolygon[]=[];
       // Bounded per-neighbourhood queue. Existing map tiles are reused; neighbouring tiles fill any holes.
       for(let i=0;i<g.tiles.length;i+=4){
         const batch=await Promise.all(g.tiles.slice(i,i+4).map(({x,y})=>this.tile(x,y)));
         for(const tile of batch){
           buildings.push(...(Array.isArray(tile)?tile:tile.buildings));
-          parks.push(...(tile.parks||[]));water.push(...(tile.water||[]));
+          parks.push(...((tile as TileObstacles).parks||[]));water.push(...((tile as TileObstacles).water||[]));
         }
       }
       const tracks=await this.getTracks(g.box);
@@ -140,12 +173,12 @@ export class CoasterRidePlacement {
       this.count();this.onChange(this.sites);
     }catch(e){g.state='failed';g.error=String(e);g.retryAt=Date.now()+15000;this.count()}
   }
-  count(){this.stats={accepted:this.sites.length,moved:this.sites.filter(s=>s.move_m>0).length,compact:this.sites.filter(s=>s.compact).length,elevated:this.sites.filter(s=>s.base_m>0).length,omitted:this.groups.reduce((n,g)=>n+g.omitted.length,0),
+  count(){this.stats={accepted:this.sites.length,moved:this.sites.filter(s=>s.move_m!>0).length,compact:this.sites.filter(s=>s.compact).length,elevated:this.sites.filter(s=>s.base_m!>0).length,omitted:this.groups.reduce((n,g)=>n+g.omitted.length,0),
     pending:this.groups.filter(g=>g.state==='loading').length,failed:this.groups.filter(g=>g.state==='failed').length,groups:this.groups.length,tiles:this.tiles.size,revision:this.revision}}
-  update(bounds){
-    const jobs=[];
+  update(bounds:Bounds){
+    const jobs:Promise<void>[]=[];
     for(const g of this.groups){
-      if(g.state==='loading'||g.state==='ready'||g.state==='failed'&&Date.now()<g.retryAt)continue;
+      if(g.state==='loading'||g.state==='ready'||g.state==='failed'&&Date.now()<g.retryAt!)continue;
       // Include the top's projected reach. Collision coverage itself uses the full physical footprint.
       const pad=Math.max(...g.candidates.map(s=>s.top*1.35*s.mu));
       if(g.box[2]+pad<bounds[0]||g.box[0]-pad>bounds[2]||g.box[3]+pad<bounds[1]||g.box[1]-pad>bounds[3])continue;
