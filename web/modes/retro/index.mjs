@@ -1,5 +1,5 @@
 import { RETRO_DELTA } from "./style.mjs";
-// web/modes/retro/index.mjs
+// web/modes/retro/index.mts
 var retro_default = {
 	id: "retro",
 	from: "simcity",

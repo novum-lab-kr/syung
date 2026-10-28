@@ -1,4 +1,4 @@
-// web/modes/coaster/index.mjs
+// web/modes/coaster/index.mts
 var coaster_default = {
 	id: "coaster",
 	from: "simcity",

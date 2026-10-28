@@ -1,5 +1,5 @@
 import { freezeSettings, mergeSettings, validateModeDefinitions, validateSettings } from "./merge.mjs";
-// web/modes/index.mjs
+// web/modes/index.mts
 var COLOR = /^(#[0-9a-fA-F]{6}|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\))$/;
 var HEX6 = /^#[0-9a-fA-F]{6}$/;
 var COLOR_GROUP = /^(palette|sky|light|dark|colou?rs?)$/i;

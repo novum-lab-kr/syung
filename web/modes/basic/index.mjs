@@ -1,7 +1,7 @@
 import { PARK_DEFAULTS } from "./park.mjs";
 import { SEOUL_CITY_STYLE } from "./city.mjs";
 import { MAP_COLORS, MAP_THEMES, PARK_COLORS } from "./palette.mjs";
-// web/modes/basic/index.mjs
+// web/modes/basic/index.mts
 var basic_default = {
 	id: "basic",
 	label: "기본",

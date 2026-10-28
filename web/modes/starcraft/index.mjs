@@ -1,5 +1,5 @@
 import { PROTOSS_DELTA, TERRAN_DELTA, ZERG_DELTA } from "./style.mjs";
-// web/modes/starcraft/index.mjs
+// web/modes/starcraft/index.mts
 var TERRAN = {
 	id: "terran",
 	from: "simcity",

@@ -3,7 +3,7 @@ import { GREECE_DELTA } from "./greece.mjs";
 import { NETHERLANDS_DELTA } from "./netherlands.mjs";
 import { PARIS_DELTA } from "./paris.mjs";
 import { EGYPT_DELTA } from "./egypt.mjs";
-// web/modes/nations/index.mjs
+// web/modes/nations/index.mts
 var withModels = (pack, kind) => ({
 	...pack,
 	race: {

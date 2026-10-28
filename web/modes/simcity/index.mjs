@@ -1,4 +1,4 @@
-// web/modes/simcity/index.mjs
+// web/modes/simcity/index.mts
 var simcity_default = {
 	id: "simcity",
 	from: "basic",

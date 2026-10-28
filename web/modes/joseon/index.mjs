@@ -1,5 +1,5 @@
 import { JOSEON_DELTA } from "./style.mjs";
-// web/modes/joseon/index.mjs
+// web/modes/joseon/index.mts
 var joseon_default = {
 	id: "joseon",
 	from: "simcity",
