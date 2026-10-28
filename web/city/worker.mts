@@ -6,7 +6,7 @@ import { TileBuilder, resolvePack } from './mesh.mts';
 import type { MeshPack, ResolvedPack, BuilderOptions } from './mesh.mts';
 
 import '../modes/joseon/hanok.mts';
-import '../modes/starcraft/race_buildings.mjs';
+import '../modes/starcraft/race_buildings.mts';
 import '../modes/nations/parts.mjs';   // 도시 부품 'nation'(나라 모드 건물)도 이 Worker 에 등록   // 도시 부품 'race'(스타크래프트 종족 건물)도 이 Worker 에 등록   // 도시 부품 'hanok' 을 이 Worker 에도 등록(조선 팩이면 한옥으로 짓는다 — 코드는 메시지로 받지 않는다)
 
 // 본체(buildings.mts)가 보내는 일: 팩 · 고가 통과 목록 한 번, 그다음 타일마다 짓기

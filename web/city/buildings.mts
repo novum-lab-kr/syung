@@ -46,7 +46,7 @@ type InstKind = 'skirt' | 'roof' | 'box';
 interface InstShape { verts:Float32Array; idx:Uint16Array; far:Range2; near:Range2; nearPhone?:Range2; detail?:Range2 }
 interface SkirtShape { verts:Float32Array; idx:Uint16Array; lo:Range2; grid:Range2; edge:Range2 }
 interface HanokPart { skirtTemplate(rows:number[]):SkirtShape; roofTemplate():InstShape; boxTemplate():InstShape }
-// 스타크래프트 모형 템플릿(race_buildings.mjs raceTemplates): 꼭짓점 8 float · 색인, 템플릿마다 [첫 색인, 개수] · 꼭대기 높이
+// 스타크래프트 모형 템플릿(race_buildings.mts raceTemplates): 꼭짓점 8 float · 색인, 템플릿마다 [첫 색인, 개수] · 꼭대기 높이
 interface RaceShape { key:string; verts:Float32Array | number[]; idx:Uint32Array | number[]; ranges:(Range2 | undefined)[]; tops:number[] }
 interface RacePart { templates(R:unknown):RaceShape }
 interface GlTemplate { key:string; vbo:WebGLBuffer; ibo:WebGLBuffer; far:Range2; near:Range2; nearPhone:Range2; detail:Range2 }
@@ -290,7 +290,7 @@ float xray(){
     vec2 a=smoothstep(r.xy-fe,r.xy,p)*(1.0-smoothstep(r.zw,r.zw+fe,p));f=max(f,a.x*a.y*u_xd[i].y);}
   return f;
 }`;
-// 스타크래프트 종족 건물(부품 'race'), 인스턴스로: 종족 템플릿(모형 × 비율 — race_buildings.mjs raceTemplates)의 점을 기록대로 놓는다
+// 스타크래프트 종족 건물(부품 'race'), 인스턴스로: 종족 템플릿(모형 × 비율 — race_buildings.mts raceTemplates)의 점을 기록대로 놓는다
 // (기록: mesh.mjs packModels — 자리 · 긴 축 · 반 길이 · 반 폭 · 높이 단위, 재질 · 지붕 색 · 높이, 건물 바이트). 같은 FS 를 쓴다(종류 · 색 칸은 템플릿 점마다)
 const VS_MODEL = `#version 300 es
 precision highp float;
