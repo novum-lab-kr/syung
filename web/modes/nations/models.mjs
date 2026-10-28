@@ -1,5 +1,5 @@
 // 나라 모드 건물 모형: 스타크래프트 종족 건물처럼 땅 위에 그 나라 건물을 통째로 세운다(행님 2026-10-22: 스타처럼 나라도 실제 모양으로).
-// 모형 좌표는 스타와 같다(web/modes/starcraft/race_buildings.mjs modelBuilder): x · y 는 칸의 반 변으로 나눈 −1..1(x 가 긴 축),
+// 모형 좌표는 스타와 같다(web/modes/starcraft/race_buildings.mts modelBuilder): x · y 는 칸의 반 변으로 나눈 −1..1(x 가 긴 축),
 // 높이 z 는 높이 단위 — 나라 모형은 기록의 높이 단위를 10 m 로 고정해(parts.mjs) z 1 = 10 m, 층 0.32 = 3.2 m 로 실제 높이다.
 // 칠: wall(그 건물의 벽 재질 색) · roof(지붕 색) · accent 0 · 1 · 2(팩 buildings.house.roof.pitched.colors — 나라마다 [특색, 흰 칠 · 철, 유리]).
 // 창은 벽에서 살짝 나온 얇은 상자(유리 accent 2) — 템플릿에 한 번만 지어 같이 쓰니(인스턴스) 건물 수만큼 늘지 않는다. 휴대폰 정점을 생각해 층마다가 아니라 기둥(층을 꿰는 긴 창)으로도 쓴다.

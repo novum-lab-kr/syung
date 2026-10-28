@@ -1,70 +1,73 @@
 // 원작 1편 건물 그림을 보고 만든 낮은 독립 모형 50종. 도시 건물 높이는 사용하지 않는다.
 // 참고: classic.battle.net/scc/{terran,zerg,protoss}/{bbuild,abuild}.shtml 및 제공된 검색 격자(무관한 결과는 공식 그림으로 보완).
-const A = slot => ({look:'accent',slot});
-const G = slot => ({look:'glow',slot});
-const D = {look:'roof'};
-const fit = (minArea,maxAspect,weight) => ({minArea,maxArea:Infinity,maxAspect,tall:false,weight});
-const rect = (x,y,hx,hy) => [[x-hx,y-hy],[x+hx,y-hy],[x+hx,y+hy],[x-hx,y+hy]];
-const ngon = (M,x,y,r,n=8) => Array.from({length:n},(_,i)=>[x+Math.cos(i*Math.PI*2/n)*r/M.aspect,y+Math.sin(i*Math.PI*2/n)*r]);
-function box(M,x,y,hx,hy,z,h,slot=0) { M.box(x,y,hx,hy,z,z+h,A(slot)) }
-function bevel(M,x,y,hx,hy,z,h,slot=0) {
+import type { ModelBuilder as MB, BuildingModel, Look } from './race_buildings.mts';
+type Pair = [number, number];
+type V3 = [number, number, number];
+const A = (slot:number) => ({look:'accent' as Look,slot});
+const G = (slot:number) => ({look:'glow' as Look,slot});
+const D = {look:'roof' as Look};
+const fit = (minArea:number,maxAspect:number,weight:number) => ({minArea,maxArea:Infinity,maxAspect,tall:false,weight});
+const rect = (x:number,y:number,hx:number,hy:number):Pair[] => [[x-hx,y-hy],[x+hx,y-hy],[x+hx,y+hy],[x-hx,y+hy]];
+const ngon = (M:MB,x:number,y:number,r:number,n=8) => Array.from({length:n},(_,i):Pair=>[x+Math.cos(i*Math.PI*2/n)*r/M.aspect,y+Math.sin(i*Math.PI*2/n)*r]);
+function box(M:MB,x:number,y:number,hx:number,hy:number,z:number,h:number,slot=0) { M.box(x,y,hx,hy,z,z+h,A(slot)) }
+function bevel(M:MB,x:number,y:number,hx:number,hy:number,z:number,h:number,slot=0) {
   M.loft(rect(x,y,hx,hy),z,rect(x,y,hx*.77,hy*.77),z+h,{...A(slot),top:true});
 }
-function drum(M,x,y,r,z,h,slot=0,r1=r,n=8) { M.frustum(x,y,r,r1,z,z+h,{n,...A(slot)}) }
-function dome(M,x,y,r,z,h,slot=0,light=false) { M.dome(x,y,r,z,h,{n:8,rings:3,...(light?G(slot):A(slot))}) }
-function sphere(M,x,y,r,z,h,slot=0,light=true) {
+function drum(M:MB,x:number,y:number,r:number,z:number,h:number,slot=0,r1=r,n=8) { M.frustum(x,y,r,r1,z,z+h,{n,...A(slot)}) }
+function dome(M:MB,x:number,y:number,r:number,z:number,h:number,slot=0,light=false) { M.dome(x,y,r,z,h,{n:8,rings:3,...(light?G(slot):A(slot))}) }
+function sphere(M:MB,x:number,y:number,r:number,z:number,h:number,slot=0,light=true) {
   M.frustum(x,y,r*.32,r,z,z+h*.4,{n:8,...(light?G(slot):A(slot))});
   dome(M,x,y,r,z+h*.4,h*.6,slot,light);
 }
-function crystal(M,x,y,r,z,h,slot=0) {
+function crystal(M:MB,x:number,y:number,r:number,z:number,h:number,slot=0) {
   M.frustum(x,y,r*.02,r,z,z+h*.43,{n:6,...G(slot)});
   M.frustum(x,y,r,0,z+h*.43,z+h,{n:6,...G(slot)});
 }
-function bone(M,a,b,c,r=.09,slot=1) {
+function bone(M:MB,a:V3,b:V3,c:V3,r=.09,slot=1) {
   // 뿔은 수직 원뿔 대신 굽은 두 마디. 끝이 안쪽/바깥쪽으로 휘는 원작 갈고리를 남긴다.
-  const p=ngon(M,a[0],a[1],r,6),q=ngon(M,b[0],b[1],r*.55,6),tip=q.map(()=>[c[0],c[1]]);
+  const p=ngon(M,a[0],a[1],r,6),q=ngon(M,b[0],b[1],r*.55,6),tip=q.map(():Pair=>[c[0],c[1]]);
   M.loft(p,a[2],q,b[2],{...A(slot),top:false});
   M.loft(q,b[2],tip,c[2],{...A(slot),top:false});
 }
-function strut(M,a,b,w=.055,slot=1) {
+function strut(M:MB,a:V3,b:V3,w=.055,slot=1) {
   const lo=a[2]<=b[2]?a:b,hi=a[2]<=b[2]?b:a;
   M.loft(rect(lo[0],lo[1],w,w),lo[2],rect(hi[0],hi[1],w*.8,w*.8),Math.max(lo[2]+.02,hi[2]),{...A(slot),top:true});
 }
-function ring(M,x,y,r,z,width=.09,slot=1,n=8) {
+function ring(M:MB,x:number,y:number,r:number,z:number,width=.09,slot=1,n=8) {
   const a=ngon(M,x,y,r,n),b=ngon(M,x,y,r-width,n);
   for(let i=0;i<n;i++) {
-    const j=(i+1)%n,p=[b[i],a[i],a[j],b[j]];
+    const j=(i+1)%n,p=[b[i]!,a[i]!,a[j]!,b[j]!];
     M.loft(p,z,p,z+.045,{...A(slot),top:true});
   }
 }
-function slit(M,x,y,hx,hy,z,h=.08,slot=1) { M.box(x,y,hx,hy,z,z+h,G(slot)) }
-function grille(M,x,y,z,count=4) {
+function slit(M:MB,x:number,y:number,hx:number,hy:number,z:number,h=.08,slot=1) { M.box(x,y,hx,hy,z,z+h,G(slot)) }
+function grille(M:MB,x:number,y:number,z:number,count=4) {
   for(let i=0;i<count;i++) M.box(x+(i-(count-1)/2)*.085,y,.018,.13,z,z+.035,D);
 }
-function legs(M) {
+function legs(M:MB) {
   for(const x of [-.57,.57])for(const y of [-.57,.57]) {
     bevel(M,x,y,.16,.14,0,.12,1);
     strut(M,[x,y,.12],[x*.77,y*.77,.43],.075,0);
   }
 }
-function tendrils(M,count=6) {
+function tendrils(M:MB,count=6) {
   for(let i=0;i<count;i++) {
     const a=i*Math.PI*2/count,x=Math.cos(a),y=Math.sin(a);
     M.loft(ngon(M,x*.48,y*.48,.13,6),.04,ngon(M,x*.7,y*.7,.055,6),.14,{...A(2),top:true});
   }
 }
-function maw(M,x,y,z,w=.23) {
+function maw(M:MB,x:number,y:number,z:number,w=.23) {
   M.box(x,y,w,.035,z,z+.2,D);
   for(const s of [-1,1])bone(M,[x+s*w,y,.09+z],[x+s*w*.85,y-.035,z+.27],[x+s*w*.48,y-.02,z+.37],.065);
 }
-function ribs(M,z,count=4) {
+function ribs(M:MB,z:number,count=4) {
   for(let i=0;i<count;i++) {
     const x=(i-(count-1)/2)*.16;
     strut(M,[x,-.5,z],[x,-.1,z+.32],.035,1);
     strut(M,[x,.5,z],[x,.1,z+.32],.035,1);
   }
 }
-export const BUILDING_MODELS = {
+export const BUILDING_MODELS:Record<string, BuildingModel[]> = {
   terran:[
     // 팔각 비행 몸통, 네 착륙 다리, 한쪽으로 치우친 관제 상자와 뒤 배기통.
     {id:'commandCenter',name:'커맨드 센터',fit:{...fit(220,2.2,3), big:true},build(M) {
@@ -646,9 +649,9 @@ export const BUILDING_MODELS = {
     // 원작의 두 갈래 비행선 같은 금빛 날개. 가운데 빈 공간과 양쪽 푸른 창열.
     {id:'stargate',name:'스타게이트',fit:{...fit(130,4,2), big:true},build(M) {
       for(const s of [-1,1]) {
-        const low=[[-.8,s*.22],[.48,s*.2],[.83,s*.52],[.48,s*.76],[-.54,s*.63]];
+        const low:Pair[]=[[-.8,s*.22],[.48,s*.2],[.83,s*.52],[.48,s*.76],[-.54,s*.63]];
         const p=s>0?low:[...low].reverse();
-        const high=p.map(([x,y])=>[x*.84,y*.9]);
+        const high=p.map(([x,y]):Pair=>[x*.84,y*.9]);
         M.loft(p,.11,high,.39,{...A(0),top:true});
         for(let i=0;i<4;i++)slit(M,-.55+i*.2,s*.38,.065,.075,.395,.035,1);
         M.loft(rect(.38,s*.53,.25,.15),.39,rect(.22,s*.49,.12,.1),1.02,{...A(1),top:true});
@@ -723,16 +726,16 @@ export const BUILDING_MODELS = {
     }},
     // 옵저버토리: 열린 삼각 마당과 서로 다른 높이의 수정 기둥 세 개.
     {id:'observatory',name:'옵저버토리',fit:{...fit(45,3,2), small:true},build(M) {
-      const p=[[-.66,-.48],[.66,-.48],[0,.66]];
+      const p:Pair[]=[[-.66,-.48],[.66,-.48],[0,.66]];
       M.loft(p,.02,p,.13,{...A(2),top:true});
-      const posts=[[-.55,-.38,.65],[.55,-.38,.81],[0,.54,1.08]];
+      const posts:V3[]=[[-.55,-.38,.65],[.55,-.38,.81],[0,.54,1.08]];
       for(const [x,y,h]of posts) {
         drum(M,x,y,.12,.13,h-.13,1,.08,6);
         sphere(M,x,y,.1,h,.22,0);
         for(const z of [.24,.39])drum(M,x,y,.13,z,.04,2,.13,6);
       }
       for(let i=0;i<3;i++) {
-        const a=posts[i],b=posts[(i+1)%3];
+        const a=posts[i]!,b=posts[(i+1)%3]!;
         strut(M,[a[0],a[1],.25],[b[0],b[1],.43],.025,1);
       }
       sphere(M,0,0,.16,.14,.2,1);

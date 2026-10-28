@@ -234,7 +234,7 @@ export function resolvePack(pack:MeshPack) {
     equip: { minZoom: num(eq.minZoom, 16), minH: num(eq.minHeightM, 12), minA: num(eq.minAreaM2, 120), penthouseArea: eq.penthouseAreaRatio || [.04, .07], penthouseH: num(eq.penthouseHeightM, 1.8), hvacCount: eq.hvacCount || [1, 3], hvacSize: eq.hvacSizeM || [1.6, 1, .9], colors: eq.colors || { light: '#A7ADA5', dark: '#4D5C59' } },
     signs: pack.signs || null,   // 간판(signs())
     hanok: pack.hanok || null,   // 조선 모드(city_hanok.mjs)
-    race: pack.race || null,   // 스타크래프트 종족 건물(부품 'race' — web/modes/starcraft/race_buildings.mjs)
+    race: pack.race || null,   // 스타크래프트 종족 건물(부품 'race' — web/modes/starcraft/race_buildings.mts)
     nation: pack.nation || null,   // 나라 모드 건물(부품 'nation' — web/modes/nations/parts.mjs: 몇 채만 그 나라 건물, 나머지는 보통)
     waterproof: { maxH: num(wp.maxHeightM, 15), p: num(wp.probability, .35), colors: wp.colors || { light: '#7D9282', dark: '#3A5047' } },
     light: L.light || { ambient: .64, directional: .36, color: '#FFF1D8', maxSideDarken: .2, maxRoofBrighten: .08 }, dark: L.dark || { ambient: .72, directional: .28, color: '#BCD0D6' },

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitRect, modelBuilder, pickModel, building, raceTemplates } from '../web/modes/starcraft/race_buildings.mjs';
-import { BUILDING_MODELS } from '../web/modes/starcraft/building_models.mjs';
+import { fitRect, modelBuilder, pickModel, building, raceTemplates } from '../web/modes/starcraft/race_buildings.mts';
+import { BUILDING_MODELS } from '../web/modes/starcraft/building_models.mts';
 import { pointInPolygon } from '../web/city/geom.mts';
 
 // 가짜 타일 짓기(web/city/mesh.mjs TileBuilder 의 쓰는 부분만): 꼭짓점 자리를 모아 윤곽 밖으로 나가는지 본다
