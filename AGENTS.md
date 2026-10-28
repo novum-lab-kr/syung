@@ -6,10 +6,10 @@
 | 경로 | 내용 |
 |---|---|
 | `web/maplibre_runtime.mjs` | 본체: 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
-| `web/modes/index.mjs` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
+| `web/modes/index.mts` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
 | `web/modes/transition.mjs` | 모드 상태의 주인(지금 · 원하는 모드, 요청 번호, 롤코 배속) |
-| `web/modes/basic/` | 모든 설정의 원본: `index.mjs`(설정 묶음) · `palette.mjs`(지도 색) · `city.mjs`(도시 팩) · `park.mjs`(공원 자료) |
-| `web/modes/<모드>/` | 그 모드의 다른 값만(`index.mjs`) + 모드 전용 콘텐츠(조선: 한옥 · 거북선 · 가마, 롤코: 선로 · 88열차 · 1인칭 · 놀이기구 · 밤) |
+| `web/modes/basic/` | 모든 설정의 원본: `index.mts`(설정 묶음) · `palette.mjs`(지도 색) · `city.mjs`(도시 팩) · `park.mjs`(공원 자료) |
+| `web/modes/<모드>/` | 그 모드의 다른 값만(`index.mts`) + 모드 전용 콘텐츠(조선: 한옥 · 거북선 · 가마, 롤코: 선로 · 88열차 · 1인칭 · 놀이기구 · 밤) |
 | `web/city/` | 공용 도시 엔진: 건물(`buildings` · `mesh` · `worker`) · 고가(`viaduct*`) · 땅(`style`) · 도시 생활(`life`) · 랜드마크 · 부품 등록(`parts`) |
 | `web/map/` | 지도 층: 승강장 · 이름표 · 해 그림자 · 테마 · 열차 캔버스 그리기 차례(`overlay`) · 정적 층 등록(`layers`) |
 | `web/trains/` | 실시간 받기(`live_feed`) · 예측(`plan`) · 열차 그리기(`draw`) |
@@ -32,10 +32,10 @@
 
 ## 모드 규칙
 - 기본이 원본, 모드는 **다른 것만** 적는다(`from` 생략 = basic, 상속 두 단계까지). 묶음은 안쪽까지 합치고 값 · 목록은 통째로, `null` 은 끄기 — 단 아는 묶음(map · city · city.life · park · track · trains · buses · sun · sky)은 `null` 대신 그 키(`enabled:false` 등)로.
-- 본체 · 엔진은 모드 이름을 묻지 않는다: `modeCtl.settings()` 의 키(`track.kind` · `trains.look` · `city.enabled` · `city.tone` · `buses.look` · `park.enabled` …)를 묻는다. 새 키는 `basic/index.mjs` 에 기본값 + `modes/index.mjs` `checkKnown` 에 값 검사.
+- 본체 · 엔진은 모드 이름을 묻지 않는다: `modeCtl.settings()` 의 키(`track.kind` · `trains.look` · `city.enabled` · `city.tone` · `buses.look` · `park.enabled` …)를 묻는다. 새 키는 `basic/index.mts` 에 기본값 + `modes/index.mts` `checkKnown` 에 값 검사.
 - 설정은 데이터뿐(함수 · 클래스 · getter 금지). 모드 전용 코드는 이름으로 등록해 쓴다(`city/parts.mjs` · `bus/mesh.mjs registerBusLook`).
 - 도시 팩 참조가 바뀌면 건물 타일을 전부 다시 짓는다: 설정은 레지스트리가 한 번 합쳐 얼린 것을 쓰고, 테마 · 색마다 새 팩을 만들지 않는다.
-- 새 모드: `web/modes/<이름>/index.mjs`(id · from · label · settings) → 본체에서 import 해 `createModeRegistry([...])` 에 넣기 → 버튼 · `prepareMode` · `commitMode` 연결.
+- 새 모드: `web/modes/<이름>/index.mts`(id · from · label · settings) → 본체에서 import 해 `createModeRegistry([...])` 에 넣기 → 버튼 · `prepareMode` · `commitMode` 연결.
 - 모드 전용 GL 자원은 그 모드를 나가면 그리는 쪽이 치운다(`trains/draw.mjs kit(look)` · overlay 의 놀이기구 · 롤코 선로 버퍼).
 
 ## 서버 층 규칙

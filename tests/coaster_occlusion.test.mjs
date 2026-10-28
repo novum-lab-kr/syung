@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { signCollisionLayout } from '../web/lib/station_signs.mjs';
 import { StationNameLayer } from '../web/map/platform.mjs';
 import { registerTransitLayers } from '../web/map/layers.mts';
-import { createModeRegistry } from '../web/modes/index.mjs';
+import { createModeRegistry } from '../web/modes/index.mts';
 
 const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -71,7 +71,7 @@ test('station labels keep their route names in every mode (the coaster rides the
   const start = source.indexOf('function syncCity(){'), end = source.indexOf('const cityViaduct=new CityViaduct(', start);
   assert.ok(start >= 0 && end > start);
   context.modeOn = { get coaster() { return context.coaster; }, get simcity() { return context.simcity; }, joseon: false };
-  const registry = createModeRegistry(await Promise.all(['basic', 'simcity', 'joseon', 'coaster'].map(n => import(`../web/modes/${n}/index.mjs`).then(m => m.default))));
+  const registry = createModeRegistry(await Promise.all(['basic', 'simcity', 'joseon', 'coaster'].map(n => import(`../web/modes/${n}/index.mts`).then(m => m.default))));
   context.modeCtl = { settings: () => registry.settings(context.coaster ? 'coaster' : context.simcity ? 'simcity' : 'basic') };   // 본체처럼 지금 모드의 설정
   vm.runInContext('const cityBuildings=new CityBuildings();const cityOn=()=>modeCtl.settings().city.enabled;\n'+source.slice(start, end), context);
   const sync = coaster => { context.coaster = coaster; vm.runInContext('syncCity()', context); };

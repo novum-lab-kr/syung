@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createModeRegistry} from '../web/modes/index.mjs';
+import {createModeRegistry} from '../web/modes/index.mts';
 import {createModeController} from '../web/modes/transition.mts';
 
-const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
 const later=()=>{let ok,no;const p=new Promise((a,b)=>{ok=a;no=b});return {p,ok,no}};
 const tick=()=>new Promise(r=>setImmediate(r));
 

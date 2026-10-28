@@ -2,7 +2,7 @@
 // 허용 항목 · 값은 모드 목록의 USER_PREFERENCES(테마 auto · light · dark, 지도 색 calm · color) — 그 밖의 값은 읽어도 버리고 쓰지도 않는다.
 // 저장 이름은 그대로(subway-theme · subway-map-color): index.html · admin/login.html · admin/learning.html 의 첫 그리기 전 스크립트도 같은 이름을 읽는다.
 // 다른 화면 파일을 import 하지 않는다(본체가 만들어 테마에 넘긴다).
-import { USER_PREFERENCES } from '../modes/index.mjs';
+import { USER_PREFERENCES } from '../modes/index.mts';
 
 export const PREF_KEYS = Object.freeze({ themeChoice: 'subway-theme', mapColor: 'subway-map-color', prebuild: 'subway-prebuild', saver: 'subway-saver' });
 // 이 기기에만 두는 항목(모드 설정과 섞지 않는다): 도시 건물 미리 짓기 켬 · 끔(덕배 2026-10-12: 휴대폰 발열 비교 버튼, 없으면 휴대폰 끔 · 컴퓨터 켬)

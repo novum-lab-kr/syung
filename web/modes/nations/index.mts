@@ -7,7 +7,7 @@ import { PARIS_DELTA } from './paris.mjs';
 import { EGYPT_DELTA } from './egypt.mjs';
 import { SEOUL_KEEP } from '../starcraft/style.mjs';   // 서울 대표 건물은 원래 모양에 나라 색만(스타와 같은 목록)
 // 팩에 race: 나라 건물을 스타 종족 건물처럼 통째로(모형 템플릿 — web/modes/nations/models.mjs, 그리기는 스타와 같은 인스턴스 길)
-const withModels = (pack, kind) => ({ ...pack, race: { kind, keep: SEOUL_KEEP } });
+const withModels = <P extends object>(pack:P, kind:string) => ({ ...pack, race: { kind, keep: SEOUL_KEEP } });
 
 export const GREECE = {
   id: 'greece',

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createModeRegistry} from '../web/modes/index.mjs';
+import {createModeRegistry} from '../web/modes/index.mts';
 import {createMapTheme} from '../web/map/theme.mts';
 import {mergeSettings} from '../web/modes/merge.mts';
 
-const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mjs`).then(m=>m.default)));
+const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
 
 // 테마는 지금 모드 설정(live.settings)의 색 자료를 읽는다: 모드가 map.themes 를 덧쓰면 그 색(4-6)
 function theme(S,t,prefs={get:()=>null,set:(_k,v)=>v}){

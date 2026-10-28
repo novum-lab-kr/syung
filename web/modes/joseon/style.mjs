@@ -1,4 +1,4 @@
-// 조선 모드의 도시 팩: 기본 도시 팩(web/modes/basic/city.mjs)에서 다른 것만. 데이터뿐 — 합치기는 모드 목록(web/modes/index.mjs)이 한다.
+// 조선 모드의 도시 팩: 기본 도시 팩(web/modes/basic/city.mjs)에서 다른 것만. 데이터뿐 — 합치기는 모드 목록(web/modes/index.mts)이 한다.
 // 조선 모드 — the Seoul pack (web/modes/basic/city.mjs) with the ground turned to packed earth and every building Joseon.
 // Data only, like the Seoul pack: city_style.mjs paints the ground from `ground` / `roads`, and city_mesh.mjs builds
 // a footprint with web/modes/joseon/hanok.mjs whenever the pack carries `hanok`. Everything not listed here (lighting,

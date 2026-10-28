@@ -20,6 +20,6 @@ test('스타크래프트 도시 생활: 차는 달리는 동안 같은 유닛(�
 });
 
 test('스타크래프트: 버스 유닛은 차 자리 유닛 목록에 없다(같은 모양이 버스 · 차로 겹치지 않게)', async () => {
-  const modes = (await import('../web/modes/starcraft/index.mjs')).default;
+  const modes = (await import('../web/modes/starcraft/index.mts')).default;
   for (const m of modes) assert.ok(!m.settings.city.life.units.cars.includes(m.settings.buses.look), `${m.id}: 버스 ${m.settings.buses.look} 가 차에도 있음`);
 });
