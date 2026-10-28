@@ -21,11 +21,22 @@ import math
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST
 from server.config import JourneyConfig
 from server.sources.osrm import OsrmSource
 from server.store import journey_data
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Row = dict[str, Any]   # JSON 한 줄(실시간 열차 · 버스 패턴 · 구간 · 결과)
+    Pt = tuple[float, float]   # (lat, lng)
+    Node = tuple[Any, ...]   # 탐색 상태 — ("at", 역) · ("bs", 정류장[, "w"]) · (노선, 출발, 다음, 종점) · ("goal",)
+    Walk = tuple[int, int, str, float, float]   # 걷기 (초, 미터, 출구, lat, lng)
+    Live = dict[str, list[Row]]   # 노선 → 실시간 열차(SubwayLiveService.all_lines)
+    Job = tuple[Any, ...]   # _search 인자 한 벌(일꾼에 피클로 보낸다)
 
 OSRM = OsrmSource(JourneyConfig.from_env().osrm_url)
 WALK_RADIUS_M = 1600          # stations considered at either end
@@ -81,10 +92,10 @@ BY_NAME = {(line, _key(n["name"])): n["id"] for n in _metro["nodes"] for line in
 # ---- buses (data/bus.json, pipeline/build_bus_data.py; optional) ---------------------------
 
 BUS = journey_data.read_optional(journey_data.BUS)
-BSTOPS = BUS["stops"] if BUS else []
-BROUTES = BUS["routes"] if BUS else []
-BPATS = BUS["patterns"] if BUS else []
-BUS_WALK = BUS["walk"] if BUS else []
+BSTOPS = BUS["stops"] if BUS else cast("list[Any]", [])
+BROUTES = BUS["routes"] if BUS else cast("list[Any]", [])
+BPATS = BUS["patterns"] if BUS else cast("list[Any]", [])
+BUS_WALK = BUS["walk"] if BUS else cast("list[Any]", [])
 # stops whose KTDB coordinates are rounded, put on their OSM stop (pipeline/fix_bus_stops.py)
 for _i, (_la, _lo) in (journey_data.read_optional(journey_data.BUS_STOP_FIX, {}).items() if BUS else ()):
     if int(_i) < len(BSTOPS):
@@ -99,12 +110,12 @@ for _i, (_, _la, _lo) in enumerate(BSTOPS):
     _bgrid[(int(_la / 0.0027), int(_lo / 0.0034))].append(_i)
 
 
-BUS_SHAPES = journey_data.read_optional(journey_data.BUS_SHAPES, {}) if BUS else {}   # pipeline/build_bus_shapes.py; optional
+BUS_SHAPES = journey_data.read_optional(journey_data.BUS_SHAPES, {}) if BUS else cast("dict[str, Any]", {})   # pipeline/build_bus_shapes.py; optional
 
 
 def _decode(s: str) -> list[list[float]]:
     """Polyline (precision 6) → [[lng, lat], ...]."""
-    pts, i, lat, lng = [], 0, 0, 0
+    pts, i, lat, lng = cast("list[list[float]]", []), 0, 0, 0
     while i < len(s):
         for which in (0, 1):
             shift = result = 0
@@ -136,7 +147,7 @@ def _bus_path(pi: int, k: int, j: int) -> list[list[float]]:
         return [[BSTOPS[i][2], BSTOPS[i][1]] for i in p["s"][k:j + 1]]
     line, at = _decode(sh[0]), sh[1]
 
-    def closest(stop, lo, hi):
+    def closest(stop: list[float], lo: int, hi: int) -> int:
         return min(range(lo, hi + 1), key=lambda n: (line[n][0] - stop[0]) ** 2 * 0.63 + (line[n][1] - stop[1]) ** 2)
 
     s0 = closest(a, at[k - 1] if k else 0, at[k + 1] if k + 1 < len(at) else len(line) - 1)
@@ -147,7 +158,7 @@ def _bus_path(pi: int, k: int, j: int) -> list[list[float]]:
 def _stops_near(p: tuple[float, float], radius: float) -> list[tuple[float, int]]:
     r = int(radius / 300) + 1
     cy, cx = int(p[0] / 0.0027), int(p[1] / 0.0034)
-    out = []
+    out: list[tuple[float, int]] = []
     for dy in range(-r, r + 1):
         for dx in range(-r, r + 1):
             for i in _bgrid.get((cy + dy, cx + dx), ()):
@@ -161,10 +172,10 @@ def _walk_sec(m: float) -> int:
     return round(m * WALK_DETOUR / WALK_SPEED)
 
 
-def _bus_next(p: dict, k: int, ready: float) -> tuple[int, float, float] | None:
+def _bus_next(p: Row, k: int, ready: float) -> tuple[int, float, float] | None:
     """The first trip of pattern p leaving its k-th stop at or after `ready` (seconds from the query
     day's midnight; GTFS times run past 24:00): (trip start, scale, departure)."""
-    tk, found = p["t"][k], None
+    tk, found = p["t"][k], cast("tuple[int, float, float] | None", None)
     for shift in (0, 86400):   # today's trips, and yesterday's still running after midnight
         r = ready + shift
         starts = p["starts"]
@@ -189,7 +200,7 @@ def _label(line: str, a: int, b: int) -> str | None:
 def _headway(line: str, label: str | None, t: datetime) -> int | None:
     """Median gap between trains at that hour; None when the samples show no service then
     (after the last train, before the first) for a line observed most of the day."""
-    h = _data["headway"].get(f"{line}|{label}") or {}
+    h: dict[str, int] = _data["headway"].get(f"{line}|{label}") or {}
     if str(t.hour) in h:
         return h[str(t.hour)]
     if len(h) - 1 >= 12:   # well observed ("*" plus 12+ hours) and nothing at this hour
@@ -212,7 +223,7 @@ def _meters(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 def _points(sid: int) -> list[tuple[float, float, str]]:
     """Where a station is entered: its exits (lat, lng, ref), else its centre."""
-    ex = _exits.get(str(sid)) or []
+    ex: list[Any] = _exits.get(str(sid)) or []
     if ex:
         return [(e[1], e[0], str(e[2] or "")) for e in ex]
     s = STATIONS[sid]
@@ -225,17 +236,17 @@ def _near_stations(p: tuple[float, float]) -> list[int]:
     return near or [sid for _, sid in d[:2]]
 
 
-def _near_nodes(p: tuple[float, float]) -> list[tuple]:
+def _near_nodes(p: tuple[float, float]) -> list[Node]:
     """Stations and bus stops to walk to or from: [("at", sid) | ("bs", stop)]."""
     return [("at", sid) for sid in _near_stations(p)] + \
            [("bs", i) for _, i in _stops_near(p, BUS_RADIUS_M)[:MAX_BUS_STOPS]]
 
 
 # stations ↔ bus stops close to one of their exits: sid → [(stop, metres, (lat, lng) of that exit)]
-STATION_BUS: dict[int, list] = defaultdict(list)
-BUS_STATION: dict[int, list] = defaultdict(list)
+STATION_BUS: dict[int, list[tuple[int, float, Pt]]] = defaultdict(list)
+BUS_STATION: dict[int, list[tuple[int, float, Pt]]] = defaultdict(list)
 for _sid in STATIONS:
-    _best: dict[int, tuple] = {}
+    _best: dict[int, tuple[float, Pt]] = {}
     for _lat, _lng, _ in _points(_sid):
         for _m, _i in _stops_near((_lat, _lng), STATION_BUS_M):
             if _i not in _best or _m < _best[_i][0]:
@@ -245,7 +256,7 @@ for _sid in STATIONS:
         BUS_STATION[_i].append((_sid, _m, _pt))
 
 
-def _walk_table(origin: tuple[float, float], nodes: list[tuple], reverse: bool = False) -> dict[tuple, tuple]:
+def _walk_table(origin: tuple[float, float], nodes: list[Node], reverse: bool = False) -> dict[Node, Walk]:
     """Walking seconds between a place and each node (a station's best exit, or a bus stop):
     {node: (seconds, metres, exit, lat, lng)}."""
     pts = [(n, p) for n in nodes for p in (_points(n[1]) if n[0] == "at" else [(BSTOPS[n[1]][1], BSTOPS[n[1]][2], "")])]
@@ -259,8 +270,8 @@ def _walk_table(origin: tuple[float, float], nodes: list[tuple], reverse: bool =
     except (OSError, ValueError, KeyError):
         # no router: straight line × 1.3 at 1.2 m/s
         dist = [_meters(origin, p[:2]) * WALK_DETOUR for _, p in pts]
-        dur = [m / WALK_SPEED for m in dist]
-    best: dict[tuple, tuple] = {}
+        dur = cast("list[float | None]", [m / WALK_SPEED for m in dist])   # OSRM 표는 못 가는 칸이 null
+    best: dict[Node, Walk] = {}
     for (n, p), s, m in zip(pts, dur, dist):
         if s is not None and (n not in best or s < best[n][0]):
             best[n] = (round(s), round(m or 0), p[2], p[0], p[1])
@@ -269,14 +280,14 @@ def _walk_table(origin: tuple[float, float], nodes: list[tuple], reverse: bool =
 
 # ---- live trains ---------------------------------------------------------------------------
 
-def _event_time(t: dict) -> datetime | None:
+def _event_time(t: Row) -> datetime | None:
     try:
         return datetime.strptime(str(t.get("receivedAt")), "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST)
     except ValueError:
         return None
 
 
-def _next_live(live: dict, line: str, at: int, toward: int, after: datetime) -> tuple[datetime, dict] | None:
+def _next_live(live: Live, line: str, at: int, toward: int, after: datetime) -> tuple[datetime, Row] | None:
     """The first live train on `line` leaving station `at` toward `toward` no earlier than `after`."""
     label = _label(line, at, toward)
     if not label:
@@ -284,14 +295,14 @@ def _next_live(live: dict, line: str, at: int, toward: int, after: datetime) -> 
     # stations upstream of `at` in this direction, with the seconds from leaving each to leaving `at`
     up, frontier = {at: 0}, [at]
     while frontier:
-        nxt = []
+        nxt: list[int] = []
         for b in frontier:
             for a in ADJ[line][b]:
                 if a not in up and _label(line, a, b) == label and (h := _hop(line, a, b)):
                     up[a] = up[b] + h
                     nxt.append(a)
         frontier = nxt
-    best = None
+    best = cast("tuple[datetime, Row] | None", None)
     for t in live.get(line) or []:
         if t.get("direction") != label:
             continue
@@ -313,12 +324,12 @@ def _next_live(live: dict, line: str, at: int, toward: int, after: datetime) -> 
 
 # ---- search --------------------------------------------------------------------------------
 
-def _unhook(pts: list, min_leg: float = 12.0) -> list:
+def _unhook(pts: list[list[float]], min_leg: float = 12.0) -> list[list[float]]:
     """Drop vertices where a [lng, lat] path doubles back (legs within ~30° of each other, one of
     them min_leg or longer), and repeated points."""
     pts = [q for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
 
-    def near(q, r, m=12.0):
+    def near(q: list[float], r: list[float], m: float = 12.0) -> bool:
         return math.hypot((q[0] - r[0]) * math.cos(math.radians(r[1])), q[1] - r[1]) * 111320 < m
     # once the path is within 12 m of where it ends, go straight there (it curled round an exit to
     # reach the footway point OSRM snapped it to); the same from where it starts
@@ -344,7 +355,7 @@ def _unhook(pts: list, min_leg: float = 12.0) -> list:
     return pts
 
 
-def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list, int, int]:
+def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list[list[float]], int, int]:
     """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres); a straight line when unavailable."""
     try:
         route = OSRM.route(a, b)
@@ -361,13 +372,13 @@ def _fmt(ts: float) -> str:
     return datetime.fromtimestamp(ts, KST).strftime("%H:%M")
 
 
-def _node_name(n: tuple) -> str:
+def _node_name(n: Node) -> str:
     return STATIONS[n[1]]["name"] if n[0] == "at" else BSTOPS[n[1]][0]
 
 
-def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], live: dict, penalty: int,
-            banned: frozenset = frozenset(), modes: frozenset = frozenset({"subway", "bus"}),
-            ceiling: float = math.inf, toward: tuple[float, float] | None = None) -> dict | None:
+def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live: Live, penalty: int,
+            banned: frozenset[Node] = frozenset(), modes: frozenset[str] = frozenset({"subway", "bus"}),
+            ceiling: float = math.inf, toward: tuple[float, float] | None = None) -> Row | None:
     """A* (Dijkstra when `toward`, the destination, is not given) over stations ("at", sid), bus stops ("bs", stop) and subway riding states
     (line, from, to, end); cost = arrival time (epoch seconds) + a penalty per boarding after the first.
     ("at"/"bs", id) is getting off there; ("at"/"bs", id, "w") is arriving on foot, which may board
@@ -375,13 +386,13 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
     the destination at ASTAR_SPEED, faster than anything runs (GTX-A averages ~28 m/s)."""
     T0 = t0.timestamp()
     day0 = t0.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    heap, best, back, tick = [], {}, {}, [0]
+    heap, best, back, tick = cast("list[tuple[float, int, int, float, Node]]", []), cast("dict[Node, tuple[float, float]]", {}), cast("dict[Node, tuple[str, Node | None, Row]]", {}), [0]
     bbest = [math.inf] * len(BSTOPS)   # best cost per bus stop, to turn down most bus pushes cheaply
     scanned: dict[tuple[int, int], tuple[int, float]] = {}   # (pattern, trip start) → (from position, cost offset)
 
-    hcache: dict[tuple, float] = {}
+    hcache: dict[Node, float] = {}
 
-    def h(s) -> float:
+    def h(s: Node) -> float:
         if toward is None or s[0] == "goal":
             return 0.0
         k = (s[0], s[1]) if s[0] in ("at", "bs") else ("at", s[2])
@@ -395,7 +406,7 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
             hcache[k] = v
         return v
 
-    def push(s, c, t, info, ch):
+    def push(s: Node, c: float, t: float, info: tuple[str, Node | None, Row], ch: int) -> None:
         if c < best.get(s, (math.inf,))[0]:
             best[s] = (c, t)
             if len(s) == 2 and s[0] == "bs":
@@ -502,13 +513,13 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
     if not finish:
         return None
 
-    path, s = [], ("goal",)
+    path, s = cast("list[tuple[str, Node, Row]]", []), cast("Node | None", ("goal",))
     while s is not None:
         kind, prev, info = back[s]
         path.append((kind, s, info))
         s = prev
     path.reverse()
-    legs = []
+    legs: list[Row] = []
     for kind, s, info in path:
         if kind == "start":
             sec_, m, ex, lat, lng = info["w"]
@@ -517,12 +528,12 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
                          "label": f"{name}역{f' {ex}번 출구' if ex else ''}까지" if s[0] == "at" else f"{name} 정류장까지"})
         elif kind == "end":
             sec_, m, ex, lat, lng = info["w"]
-            node = back[s][1]
+            node = cast("Node", back[s][1])   # end 의 앞은 늘 있다
             name = _node_name(node)
             legs.append({"type": "walk", "seconds": sec_, "metres": m, "exit": ex, "from": name, "point": (lat, lng),
                          "label": f"{name}역{f' {ex}번 출구' if ex else ''}에서 목적지까지" if node[0] == "at" else f"{name} 정류장에서 목적지까지"})
         elif kind == "walk":
-            prev = back[s][1]
+            prev = cast("Node", back[s][1])   # walk 의 앞은 늘 있다
             legs.append({"type": "walk", "seconds": info["seconds"], "metres": info["metres"], "exit": "",
                          "label": f"{_node_name(prev)}{'역' if prev[0] == 'at' else ' 정류장'}에서 {_node_name(s)}{'역' if s[0] == 'at' else ' 정류장'}으로",
                          "a": info["a"], "b": info["b"]})
@@ -556,23 +567,23 @@ def _search(t0: datetime, start: dict[tuple, tuple], goal: dict[tuple, tuple], l
     return {"legs": legs, "leave": max(T0, leave), "arrive": best[("goal",)][1]}
 
 
-def _signature(r: dict) -> tuple:
+def _signature(r: Row) -> tuple[Any, ...]:
     return tuple((l.get("line") or l.get("route"), l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
 
 
-def _search_job(args: tuple) -> dict | None:
+def _search_job(args: Job) -> Row | None:   # pyright: ignore[reportUnusedFunction] — services/journey.py 가 일꾼에 넘긴다
     """일꾼 프로세스가 부르는 탐색 하나(모듈 함수라야 forkserver 로 피클된다)."""
     return _search(*args)
 
 
-def _kind(r: dict) -> str:
+def _kind(r: Row) -> str:
     """subway, bus or mixed: what a plan rides."""
     ks = {l["type"] for l in r["legs"] if l["type"] != "walk"}
     return "mixed" if len(ks) > 1 else "bus" if ks == {"bus"} else "subway"
 
 
-def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: dict,
-         run_batch, workers: int) -> dict:
+def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
+         run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
     """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
     start = _walk_table(origin, _near_nodes(origin))
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
@@ -583,10 +594,10 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     # line (or bus route) of an earlier result barred — each of those finds the next best way
     # round it. Kept: different rides, arriving at most ROUTE_SLACK after the fastest; bounded in searches
     # and time.
-    found: list[dict] = []
-    seen_sigs, tried = set(), set()
+    found: list[Row] = []
+    seen_sigs, tried = cast("set[tuple[Any, ...]]", set()), cast("set[tuple[frozenset[str], frozenset[Node], int]]", set())
     t_start, best_arrive = time.monotonic(), math.inf
-    queue = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
+    queue: list[tuple[frozenset[str], frozenset[Node], int]] = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
     if BUS:
         queue += [(subway, frozenset(), TIE_PENALTY), (bus, frozenset(), TIE_PENALTY)]
     searches = 0
@@ -595,7 +606,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
         if left <= 0:
             break
         # a batch: the searches known so far, run side by side (_run_batch)
-        batch = []
+        batch: list[tuple[frozenset[str], frozenset[Node], int]] = []
         while queue and len(batch) < workers * 2 and searches + len(batch) < MAX_SEARCHES:
             item = queue.pop(0)
             if item not in tried:
@@ -618,10 +629,10 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
     found = [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK]
 
-    def transfers(r): return sum(l["type"] != "walk" for l in r["legs"]) - 1
-    def walking(r): return sum(l["seconds"] for l in r["legs"] if l["type"] == "walk")
+    def transfers(r: Row) -> int: return sum(l["type"] != "walk" for l in r["legs"]) - 1
+    def walking(r: Row) -> int: return sum(l["seconds"] for l in r["legs"] if l["type"] == "walk")
     # buses between the same two stops are one way to go: keep the first to arrive, list the others
-    groups: dict[tuple, dict] = {}
+    groups: dict[tuple[Any, ...], Row] = {}
     for r in sorted(found, key=lambda r: r["arrive"]):
         key = tuple((l["type"], l.get("line") or "", l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
         if key not in groups:
@@ -640,14 +651,14 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     # tags: the fastest, the fewest changes, the least walking (each once)
     tags: dict[int, str] = {}
     if found:
-        for tag, rank in (("가장 빠른 길", lambda r: (r["arrive"], transfers(r))),
-                         ("환승 적은 길", lambda r: (transfers(r), r["arrive"])),
-                         ("덜 걷는 길", lambda r: (walking(r), r["arrive"]))):
-            k = min(range(len(found)), key=lambda i: rank(found[i]))
+        for tag, rank in (("가장 빠른 길", lambda r: (r["arrive"], transfers(r))),  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType, reportUnknownVariableType] — 순위 람다(r 은 결과 한 줄 Row) — 실행 코드를 바꾸지 않고는 람다 인자에 타입을 못 준다
+                         ("환승 적은 길", lambda r: (transfers(r), r["arrive"])),  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType] — 위와 같음
+                         ("덜 걷는 길", lambda r: (walking(r), r["arrive"]))):  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType] — 위와 같음
+            k = min(range(len(found)), key=lambda i: cast("tuple[float, float]", rank(found[i])))   # 순위 = (작을수록 앞, 동점 가르기)
             tags.setdefault(k, tag)
     tagged = [(tags.get(i, ""), r) for i, r in enumerate(found)]
 
-    plans = []
+    plans: list[Row] = []
     for tag, r in tagged:
         legs = r["legs"]
         for i, l in enumerate(legs):
