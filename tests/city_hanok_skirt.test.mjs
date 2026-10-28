@@ -1,7 +1,7 @@
 // 조선 고층 처마 조각 인스턴스: 템플릿 범위와 기록(32바이트) 형식
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { skirtTemplate, skirtInst, skirtGroups } from '../web/modes/joseon/hanok.mjs';
+import { skirtTemplate, skirtInst, skirtGroups } from '../web/modes/joseon/hanok.mts';
 import { INST_STRIDES } from '../web/city/mesh.mts';
 
 test('템플릿: 먼 사각형 하나, 격자, 끝 두께가 이어진 범위', () => {

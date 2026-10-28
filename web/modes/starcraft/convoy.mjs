@@ -1,5 +1,5 @@
 // 스타크래프트 모드의 지하철: 열차 한 대가 유닛 행렬이 되어 고가 위를 간다(맨 앞 lead 한 마리 + 뒤 rest 여럿 — 모드 설정 trains.units).
-// 조선 거북선 선단(web/modes/joseon/turtle_ship.mjs)과 같은 틀: TrainLayer 가 선로 위 틀(밑 뒤 점, F 앞, R 옆, U 위 — 메르카토르)과
+// 조선 거북선 선단(web/modes/joseon/turtle_ship.mts)과 같은 틀: TrainLayer 가 선로 위 틀(밑 뒤 점, F 앞, R 옆, U 위 — 메르카토르)과
 // 길이 L · 폭 W(px)를 주면 그 가운데에 유닛 하나를 W 크기로 세운다. 모양은 unit_shapes.mjs(Codex 시안), 'line' 칸은 노선 색.
 // 걷는 동안(가는 중) 다리(legA · legB)를 엉덩이 축으로 흔들고 몸을 살짝 들썩인다. 깊이: 건물 벽 뒤는 occlude 만큼 비친다.
 //

@@ -18,7 +18,7 @@ test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 
   const warns=[],orig=console.warn;console.warn=(...a)=>warns.push(String(a[1]?.message||a[1]));
   try{assert.equal(build().inst.roof.byteLength,0,'등록 전에는 한옥 없음')}finally{console.warn=orig}
   assert.ok(warns.some(w=>/hanok 없음/.test(w)),warns.join(' | '));
-  await import('../web/modes/joseon/hanok.mjs');   // 콘텐츠 모듈을 부르면 스스로 등록
+  await import('../web/modes/joseon/hanok.mts');   // 콘텐츠 모듈을 부르면 스스로 등록
   assert.equal(hasCityPart('hanok'),true);
   assert.ok(build().inst.roof.byteLength>0,'등록 뒤 한옥 지붕');
   const p=cityPart('hanok');assert.ok(Object.isFrozen(p));assert.equal(typeof p.building,'function');
@@ -28,6 +28,6 @@ test('부품 등록: 없으면 분명한 오류, 같은 것 다시는 괜찮고 
 
 test('Worker 도 한옥 부품을 스스로 등록하고, 엔진 파일은 한옥을 import 하지 않는다', () => {
   const src=f=>readFileSync(new URL(`../web/${f}`,import.meta.url),'utf8');
-  assert.match(src('city/worker.mts'),/^import '\.\.\/modes\/joseon\/hanok\.mjs';/m);
-  for(const f of ['city/mesh.mts','city/buildings.mts'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mjs['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
+  assert.match(src('city/worker.mts'),/^import '\.\.\/modes\/joseon\/hanok\.mts';/m);
+  for(const f of ['city/mesh.mts','city/buildings.mts'])assert.doesNotMatch(src(f),/^\s*import\b[^\n]*hanok\.mts['"]/m,f);   // 실제 import 구문만(주석의 파일 이름은 괜찮다)
 });
