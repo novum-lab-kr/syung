@@ -1,27 +1,37 @@
 // Instanced buses and round bus-stop signs in the train overlay's WebGL2 context.
 // All coordinates stay double precision until the view origin is subtracted.
 const RAD = Math.PI / 180;
-export function busMercator([lng, lat]) {
-  return [lng / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + lat * RAD / 2)) / (2 * Math.PI)];
+type Vec = readonly number[];   // 메시 점 · 법선 [x, y, z], uv [u, v]
+// 차 모양(registerBusLook): 몸 메시 · 걷는 다리 · 밤 전조등 · 정류장 기둥 · 밤 불빛 · 고정 크기를 푸는 줌 · 재료 40~55 의 색
+type MeshData = Float32Array<ArrayBuffer>;
+export interface BusLook { build:(()=>MeshData) | null | undefined; carriers?:boolean; headlights?:boolean; stop?:(()=>MeshData) | null; stopGlow?:(()=>MeshData) | null; stopGrowFrom?:number | null; palette?:readonly string[] | null }
+type LookSlots = BusLook & { batch:number | null; stopBatch:number | null; glowBatch:number | null; pal?:Float32Array };
+interface Batch { vao:WebGLVertexArrayObject; mesh:WebGLBuffer; instances:WebGLBuffer; count:number; capacity:number; staging:Float32Array }
+// 그릴 차 · 정류장 하나(버스 층이 만든다)
+export interface BusItem { world:readonly number[]; yaw:number; scale:number; rgb:readonly number[]; alpha?:number; label?:string; selected?:number | boolean; phase?:number; moving?:boolean }
+export interface BusRenderOptions { origin:readonly number[]; unit:number; pitch?:number; dark:boolean; vehicles:BusItem[]; stops:BusItem[]; occlude?:number; look?:string; time?:number }
+type BusUniform = 'matrix' | 'unit' | 'pitch' | 'dark' | 'rows' | 'atlas' | 'fade' | 'time' | 'unitPal';
+export function busMercator([lng, lat]:readonly number[]):[number, number] {
+  return [lng! / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + lat! * RAD / 2)) / (2 * Math.PI)];
 }
-export function projectBusPoint(matrix, x, y, z, width, height) {
-  const w = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+export function projectBusPoint(matrix:ArrayLike<number>, x:number, y:number, z:number, width:number, height:number) {
+  const w = matrix[3]! * x + matrix[7]! * y + matrix[11]! * z + matrix[15]!;
   if (w <= 0) return null;
-  return {x: (1 + (matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12]) / w) * width / 2,
-    y: (1 - (matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13]) / w) * height / 2};
+  return {x: (1 + (matrix[0]! * x + matrix[4]! * y + matrix[8]! * z + matrix[12]!) / w) * width / 2,
+    y: (1 - (matrix[1]! * x + matrix[5]! * y + matrix[9]! * z + matrix[13]!) / w) * height / 2};
 }
 // 버스 크기(길이 = 3.1 × scale px): 멀리서(줌 15 미만)는 작게(약 19px) — 노선 위에서 서로 덜 겹치게,
 // 가까이서는 줌 15 에서 약 37px 부터 18 에서 약 51px 까지(2026-10-08 덕배: 확대해도 너무 작았다)
-export function busModelScale(zoom) { return zoom < 15 ? 6 : 12 + Math.max(0, Math.min(3, zoom - 15)) * 1.5; }
-export function busPostScale(zoom) { return .8 + Math.max(0, Math.min(3, zoom - 15)) * .1; }
+export function busModelScale(zoom:number) { return zoom < 15 ? 6 : 12 + Math.max(0, Math.min(3, zoom - 15)) * 1.5; }
+export function busPostScale(zoom:number) { return .8 + Math.max(0, Math.min(3, zoom - 15)) * .1; }
 
 // 메시 만들기 도우미(버스 · 버스 표지판, 그리고 등록한 다른 모양 — 조선 가마 web/modes/joseon/palanquin.mjs)
 export function meshBuilder() {
-  const data = [];
-  const quad = (a, b, c, d, n, material, uv = [[0,0],[1,0],[1,1],[0,1]]) => {
-    const p = [a,b,c,d]; for (const i of [0,1,2,0,2,3]) data.push(...p[i], ...n, ...uv[i], material);
+  const data:number[] = [];
+  const quad = (a:Vec, b:Vec, c:Vec, d:Vec, n:Vec, material:number, uv:readonly Vec[] = [[0,0],[1,0],[1,1],[0,1]]) => {
+    const p = [a,b,c,d] as const; for (const i of [0,1,2,0,2,3] as const) data.push(...p[i], ...n, ...uv[i]!, material);
   };
-  const box = (x0, y0, z0, x1, y1, z1, material, roof = material) => {
+  const box = (x0:number, y0:number, z0:number, x1:number, y1:number, z1:number, material:number, roof = material) => {
     quad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0],material);
     quad([x1,y1,z0],[x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[0,1,0],material);
     quad([x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],[1,0,0],material);
@@ -34,9 +44,9 @@ export function meshBuilder() {
 
 export function buildBusMesh() {
   const {data, quad, box} = meshBuilder();
-  const rim = [[-1.5,-.39],[-1.39,-.5],[1.37,-.5],[1.55,-.34],[1.55,.34],[1.37,.5],[-1.39,.5],[-1.5,.39]];
+  const rim:[number, number][] = [[-1.5,-.39],[-1.39,-.5],[1.37,-.5],[1.55,-.34],[1.55,.34],[1.37,.5],[-1.39,.5],[-1.5,.39]];
   for (let i=0;i<rim.length;i++) {
-    const a=rim[i], b=rim[(i+1)%rim.length], dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
+    const a=rim[i]!, b=rim[(i+1)%rim.length]!, dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
     quad([...a,.24],[...b,.24],[...b,1.12],[...a,1.12],[dy/len,-dx/len,0],0);
     quad([...a,1.12],[...b,1.12],[b[0]*.97,b[1]*.9,1.22],[a[0]*.97,a[1]*.9,1.22],[dy/len,-dx/len,.7],1);
     const top = [a[0]*.97,a[1]*.9,1.22], next=[b[0]*.97,b[1]*.9,1.22];
@@ -65,7 +75,7 @@ export function buildBusMesh() {
     const outer=side*.56, inner=side*.43, z=.25, radius=.24;
     for(let i=0;i<12;i++) {
       const a=i/12*Math.PI*2,b=(i+1)/12*Math.PI*2;
-      const A=[x+Math.cos(a)*radius,outer,z+Math.sin(a)*radius],B=[x+Math.cos(b)*radius,outer,z+Math.sin(b)*radius];
+      const A=[x+Math.cos(a)*radius,outer,z+Math.sin(a)*radius] as const,B=[x+Math.cos(b)*radius,outer,z+Math.sin(b)*radius] as const;
       quad([x,outer,z],A,B,B,[0,side,0],2);
       quad(A,[A[0],inner,A[2]],[B[0],inner,B[2]],B,[Math.cos((a+b)/2),0,Math.sin((a+b)/2)],2);
       const h=.095;
@@ -84,7 +94,7 @@ export function buildBusPostMesh() {
     // A low circular foot, with a bevel, anchors the charcoal post.
     quad([ca*2.7,sa*2.7,.08],[cb*2.7,sb*2.7,.08],[cb*2.3,sb*2.3,1],[ca*2.3,sa*2.3,1],[ca,sa,.4],9);
     quad([0,0,1],[ca*2.3,sa*2.3,1],[cb*2.3,sb*2.3,1],[cb*2.3,sb*2.3,1],[0,0,1],9);
-    const A=[ca*7.5,.42,18+sa*7.5],B=[cb*7.5,.42,18+sb*7.5];
+    const A=[ca*7.5,.42,18+sa*7.5] as const,B=[cb*7.5,.42,18+sb*7.5] as const;
     quad([0,.42,18],A,B,B,[0,1,0],8,[[.5,.5],[(ca+1)/2,(sa+1)/2],[(cb+1)/2,(sb+1)/2],[(cb+1)/2,(sb+1)/2]]);
     quad([A[0],-.42,A[2]],[B[0],-.42,B[2]],B,A,[ca,0,sa],10);
   }
@@ -197,17 +207,17 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
   alpha*=u_fade;if(alpha<.005)discard;outColor=vec4(col*alpha,alpha);
 }`;
 
-function program(gl) {
-  const shaders=[]; const p=gl.createProgram();
-  for(const [kind,src] of [[gl.VERTEX_SHADER,VS],[gl.FRAGMENT_SHADER,FS]]) {
-    const s=gl.createShader(kind);gl.shaderSource(s,src);gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));
+function program(gl:WebGL2RenderingContext) {
+  const shaders:WebGLShader[]=[]; const p=gl.createProgram();
+  for(const [kind,src] of [[gl.VERTEX_SHADER,VS],[gl.FRAGMENT_SHADER,FS]] as const) {
+    const s=gl.createShader(kind)!;gl.shaderSource(s,src);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)!);
     gl.attachShader(p,s);shaders.push(s);
   }
   gl.linkProgram(p);for(const s of shaders)gl.deleteShader(s);
-  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p;
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p)!);return p;
 }
-function effectMesh(beam) {
+function effectMesh(beam:boolean) {
   const {data,quad}=meshBuilder();
   if(beam)quad([1.56,-.4,.04],[5.2,-1.25,.04],[5.2,1.25,.04],[1.56,.4,.04],[0,0,1],13);
   else{quad([-3.8,-3.8,.01],[3.8,-3.8,.01],[3.8,3.8,.01],[-3.8,3.8,.01],[0,0,1],14);   // 고른 버스 파장(반지름 = 몸 폭 약 3.4배)
@@ -219,72 +229,75 @@ function effectMesh(beam) {
 //   stop: 정류장 기둥 메시(없으면 BUS 기둥), stopGlow: 밤에 정류장 위에 깊이 없이 겹치는 불빛 메시,
 //   stopGrowFrom: 이 줌 위로는 정류장이 화면 크기 고정을 풀고 지도와 같이 커진다(없으면 고정)}. 'bus' 는 기본.
 // 다른 모양(조선 가마)은 본체가 첫 화면에서 등록한다(렌더러가 처음 그리기 전에 — 셰이더의 재료 번호는 이 파일에 있다)
-const BUS_LOOKS = new Map([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
-export function registerBusLook(name, { build, carriers = false, headlights = false, stop = null, stopGlow = null, stopGrowFrom = null, palette = null }) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow, stopGrowFrom, palette }) }
-export function busStopGrowFrom(look) { return BUS_LOOKS.get(look)?.stopGrowFrom ?? null }
+const BUS_LOOKS = new Map<string, BusLook>([['bus', { build: buildBusMesh, carriers: false, headlights: true }]]);
+export function registerBusLook(name:string, { build, carriers = false, headlights = false, stop = null, stopGlow = null, stopGrowFrom = null, palette = null }:BusLook) { BUS_LOOKS.set(name, { build, carriers, headlights, stop, stopGlow, stopGrowFrom, palette }) }
+export function busStopGrowFrom(look:string) { return BUS_LOOKS.get(look)?.stopGrowFrom ?? null }
 
 export class BusRenderer {
+  declare matrix:Float32Array; declare stats:{ vehicles:number; stops:number; drawCalls:number }; declare gl:WebGL2RenderingContext | null; declare p:WebGLProgram | null;
+  declare texture:WebGLTexture; declare atlasKey:string | null; declare u:Record<BusUniform, WebGLUniformLocation | null>; declare looks:Map<string, LookSlots>; declare batches:Batch[];
+  declare labels:Map<string | undefined, number>; declare rows:number;
   constructor(){this.matrix=new Float32Array(16);this.stats={vehicles:0,stops:0,drawCalls:0};}
-  init(gl){
+  init(gl:WebGL2RenderingContext){
     if(this.gl===gl&&this.p)return;
     this.gl=gl;this.p=program(gl);this.texture=gl.createTexture();this.atlasKey=null;
-    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time','unitPal'].map(k=>[k,gl.getUniformLocation(this.p,'u_'+k)]));
+    this.u=Object.fromEntries(['matrix','unit','pitch','dark','rows','atlas','fade','time','unitPal'].map(k=>[k,gl.getUniformLocation(this.p!,'u_'+k)])) as Record<BusUniform, WebGLUniformLocation | null>;
     // 배치: 0 버스 몸 · 1 표지판 · 2 · 3 효과(낮 · 밤 전조등), 4 부터 그때 등록된 다른 모양(조선 가마 …)의 몸 · 정류장 · 밤 불빛 차례로
-    const meshes=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)],slot=build=>build?meshes.push(build())-1:null;
-    this.looks=new Map([...BUS_LOOKS].map(([name,L])=>[name,name==='bus'?{...L,batch:0,stopBatch:1,glowBatch:null}:
+    const meshes=[buildBusMesh(),buildBusPostMesh(),effectMesh(false),effectMesh(true)],slot=(build:(()=>MeshData) | null | undefined)=>build?meshes.push(build())-1:null;
+    this.looks=new Map([...BUS_LOOKS].map(([name,L]):[string, LookSlots]=>[name,name==='bus'?{...L,batch:0,stopBatch:1,glowBatch:null}:
       {...L,batch:slot(L.build),stopBatch:slot(L.stop)??1,glowBatch:slot(L.stopGlow)}]));
     this.batches=meshes.map(data=>{
       const vao=gl.createVertexArray(),mesh=gl.createBuffer(),instances=gl.createBuffer();gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER,mesh);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
-      for(const [loc,n,offset] of [[0,3,0],[1,3,3],[2,2,6],[3,1,8]]){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,36,offset*4);}
+      for(const [loc,n,offset] of [[0,3,0],[1,3,3],[2,2,6],[3,1,8]] as const){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,36,offset*4);}
       gl.bindBuffer(gl.ARRAY_BUFFER,instances);
-      for(const [loc,n,offset] of [[4,4,0],[5,4,4],[6,4,8]]){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,48,offset*4);gl.vertexAttribDivisor(loc,1);}
+      for(const [loc,n,offset] of [[4,4,0],[5,4,4],[6,4,8]] as const){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,48,offset*4);gl.vertexAttribDivisor(loc,1);}
       return {vao,mesh,instances,count:data.length/9,capacity:0,staging:new Float32Array(0)};
     });gl.bindVertexArray(null);
   }
-  atlas(names){
+  atlas(names:readonly (string | undefined)[]){
     const labels=[...new Set(names)].sort(),key=labels.join('|');
     if(key===this.atlasKey)return;
     this.atlasKey=key;this.labels=new Map(labels.map((s,i)=>[s,i]));this.rows=Math.max(1,Math.ceil(labels.length/4));
     const canvas=document.createElement('canvas');canvas.width=4*192;canvas.height=this.rows*64;
-    const ctx=canvas.getContext('2d');ctx.font='800 48px "Noto Sans KR",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';
-    labels.forEach((label,i)=>ctx.fillText(label,(i%4+.5)*192,(Math.floor(i/4)+.5)*64,178));
-    const gl=this.gl;gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    const ctx=canvas.getContext('2d')!;ctx.font='800 48px "Noto Sans KR",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';
+    labels.forEach((label,i)=>ctx.fillText(label!,(i%4+.5)*192,(Math.floor(i/4)+.5)*64,178));
+    const gl=this.gl!;gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,canvas);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   }
   // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차와 같은 값 — 1 - 건물 불투명도, 심시티 · 롤코의 꽉 찬 건물이면 0)
   // look: 'bus' · 'palanquin'(모드 설정 buses.look — 조선: 버스 대신 가마, 가마꾼은 v.moving 인 동안 달린다, v.phase 로 저마다 다른 걸음, 밤의 전조등 대신 초롱)
-  render(gl,matrix,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0,look='bus',time=0}){
+  render(gl:WebGL2RenderingContext,matrix:ArrayLike<number>,{origin,unit,pitch=Math.PI/4,dark,vehicles,stops,occlude=0,look='bus',time=0}:BusRenderOptions){
     this.stats={vehicles:vehicles.length,stops:stops.length,drawCalls:0};
     if(!vehicles.length&&!stops.length)return;
     this.init(gl);this.atlas(vehicles.map(v=>v.label));
-    const L=this.looks.get(look)||this.looks.get('bus');   // 이 모양의 배치 · 가마꾼 걸음 · 전조등(등록 안 된 이름이면 버스)
-    this.matrix.set(matrix);for(let i=0;i<4;i++)this.matrix[12+i]=matrix[i]*origin[0]+matrix[4+i]*origin[1]+matrix[12+i];
+    const L=(this.looks.get(look)||this.looks.get('bus'))!;   // 이 모양의 배치 · 가마꾼 걸음 · 전조등(등록 안 된 이름이면 버스)
+    this.matrix.set(matrix);for(let i=0;i<4;i++)this.matrix[12+i]=matrix[i]!*origin[0]!+matrix[4+i]!*origin[1]!+matrix[12+i]!;
     gl.useProgram(this.p);gl.uniformMatrix4fv(this.u.matrix,false,this.matrix);gl.uniform1f(this.u.unit,unit);gl.uniform1f(this.u.dark,dark?1:0);
     gl.uniform1f(this.u.pitch,pitch);gl.uniform1f(this.u.time,time);
-    if(L.palette){L.pal??=new Float32Array(48);L.palette.slice(0,16).forEach((h,i)=>L.pal.set([1,3,5].map(k=>parseInt(h.slice(k,k+2),16)/255),i*3));gl.uniform3fv(this.u.unitPal,L.pal)}   // 스타크래프트 유닛의 색
+    if(L.palette){L.pal??=new Float32Array(48);L.palette.slice(0,16).forEach((h,i)=>L.pal!.set([1,3,5].map(k=>parseInt(h.slice(k,k+2),16)/255),i*3));gl.uniform3fv(this.u.unitPal,L.pal)}   // 스타크래프트 유닛의 색
     gl.uniform1f(this.u.rows,this.rows);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.u.atlas,0);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1f(this.u.fade,1);
-    const draw=(batch,items,writeDepth)=>{
+    const draw=(batch:Batch,items:BusItem[],writeDepth:boolean)=>{
       if(!items.length)return;
       if(batch.staging.length<items.length*12)batch.staging=new Float32Array(2**Math.ceil(Math.log2(items.length*12)));
       const data=batch.staging;
-      items.forEach((v,i)=>data.set([v.world[0]-origin[0],v.world[1]-origin[1],v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,typeof v.selected==='number'?v.selected:v.selected?1:0,v.phase||0,L.carriers&&v.moving?1:0],i*12));
+      items.forEach((v,i)=>data.set([v.world[0]!-origin[0]!,v.world[1]!-origin[1]!,v.yaw,v.scale,...v.rgb,v.alpha??1,this.labels.get(v.label)||0,typeof v.selected==='number'?v.selected:v.selected?1:0,v.phase||0,L.carriers&&v.moving?1:0],i*12));
       gl.bindVertexArray(batch.vao);gl.bindBuffer(gl.ARRAY_BUFFER,batch.instances);
       if(batch.capacity!==data.length){gl.bufferData(gl.ARRAY_BUFFER,data.byteLength,gl.DYNAMIC_DRAW);batch.capacity=data.length;}
       gl.bufferSubData(gl.ARRAY_BUFFER,0,data,0,items.length*12);gl.depthMask(writeDepth);
       gl.drawArraysInstanced(gl.TRIANGLES,0,batch.count,items.length);this.stats.drawCalls++;
     };
     // 열차처럼: 먼저 건물 뒤(GREATER)만 흐리게 — 깊이를 쓰기 전이라 버스 자기 면끼리는 걸리지 않는다 — 그다음 앞을 그대로
-    const body=this.batches[L.batch],post=this.batches[L.stopBatch??1];
+    const body=this.batches[L.batch!]!,post=this.batches[L.stopBatch??1]!;
     if(occlude>0){gl.depthFunc(gl.GREATER);gl.uniform1f(this.u.fade,occlude);draw(body,vehicles,false);draw(post,stops,false);
       gl.depthFunc(gl.LEQUAL);gl.uniform1f(this.u.fade,1);}
-    draw(this.batches[2],vehicles,false);draw(body,vehicles,true);draw(post,stops,true);
-    if(dark&&L.headlights)draw(this.batches[3],vehicles,false);
-    if(dark&&L.glowBatch!=null)draw(this.batches[L.glowBatch],stops,false);   // 정류장 밤 불빛(조선 청사초롱): 기둥을 다 그린 뒤 깊이 없이
+    draw(this.batches[2]!,vehicles,false);draw(body,vehicles,true);draw(post,stops,true);
+    if(dark&&L.headlights)draw(this.batches[3]!,vehicles,false);
+    if(dark&&L.glowBatch!=null)draw(this.batches[L.glowBatch]!,stops,false);   // 정류장 밤 불빛(조선 청사초롱): 기둥을 다 그린 뒤 깊이 없이
     // Isolate divisors in our VAOs; TrainLayer/ExitPillars use the default VAO.
     gl.bindVertexArray(null);gl.depthMask(false);gl.depthFunc(gl.LEQUAL);
   }

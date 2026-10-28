@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildBusPath,busLaneMeters,offsetBusPath,offsetBusPointAt} from '../web/bus/motion.mjs';
-import {buildBusMesh,buildBusPostMesh,projectBusPoint,busModelScale} from '../web/bus/mesh.mjs';
+import {buildBusPath,busLaneMeters,offsetBusPath,offsetBusPointAt} from '../web/bus/motion.mts';
+import {buildBusMesh,buildBusPostMesh,projectBusPoint,busModelScale} from '../web/bus/mesh.mts';
 
 test('northbound and southbound buses move to their own right-hand lanes',()=>{
   const north=buildBusPath([[127,37.5],[127,37.501]]),south=buildBusPath([[127,37.501],[127,37.5]]);
@@ -38,7 +38,7 @@ test('picking projects the same elevated point as the WebGL camera and rejects b
 
 // 모양(모드 설정 buses.look): 버스는 몸 묶음 0 · 밤 전조등, 가마는 몸 묶음 4 · 움직이는 동안 가마꾼 걸음 · 전조등 없음(4-12)
 test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
-  const {BusRenderer}=await import('../web/bus/mesh.mjs');
+  const {BusRenderer}=await import('../web/bus/mesh.mts');
   const run=(look,dark)=>{
     const r=new BusRenderer(),calls=[];let vao=null,last=null;
     r.init=()=>{};r.atlas=()=>{};r.labels=new Map();r.rows=1;r.u={};r.matrix=new Float32Array(16);
@@ -57,7 +57,7 @@ test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
 });
 
 test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부터, 가마 메시는 web/modes/joseon/palanquin.mts',async()=>{
-  const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mjs');
+  const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mts');
   const {buildPalanquinMesh}=await import('../web/modes/joseon/palanquin.mts');
   const P=buildPalanquinMesh();assert.equal(P.length%9,0);assert.ok(P.every(Number.isFinite));assert.ok(Array.from(P).some((v,i)=>i%9===8&&v===20),'가마꾼 다리 재료');
   registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false});
@@ -69,7 +69,7 @@ test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부�
 
 // 조선 정류장(행님 2026-10-11): 가마 모양에 정류장 메시(청사초롱 장대)와 밤 불빛을 같이 등록 — 낮에는 장대만, 밤에는 불빛 묶음을 깊이 없이 하나 더
 test('조선 청사초롱 정류장: BUS 기둥과 같은 크기, 가마 모양이면 정류장 묶음 · 밤 불빛',async()=>{
-  const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mjs');
+  const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mts');
   const {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh}=await import('../web/modes/joseon/palanquin.mts');
   const C=buildChorongPostMesh(),xs=[],zs=[],mats=new Set();
   for(let i=0;i<C.length;i+=9){xs.push(C[i]);zs.push(C[i+2]);mats.add(C[i+8]);}

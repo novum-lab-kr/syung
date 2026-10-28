@@ -5,7 +5,7 @@
 // 첫 GPS 가 붙을 수 있는 자리마다 이어 붙여 보고 앞으로 가장 많이 간 쪽을 쓴다.
 import fs from 'node:fs';
 import {STATE, dayFile, readDay, loadRoutes, tracks, kst, replayDay} from './bus_records.mjs';
-import {snapBusToPath} from '../web/bus/motion.mjs';
+import {snapBusToPath} from '../web/bus/motion.mts';
 
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : null; };
 const day = arg('day'), ride = arg('ride');

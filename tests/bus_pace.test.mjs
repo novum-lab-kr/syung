@@ -29,7 +29,7 @@ test('an hour that never covered the route, gaps over 90 s and backward jumps ar
 
 test('replayDay scores a day against the observations: learned pace beats not leading on a bus that keeps moving', async () => {
   const {replayDay} = await import('../pipeline/bus_records.mjs');
-  const {buildBusPath} = await import('../web/bus/motion.mjs');
+  const {buildBusPath} = await import('../web/bus/motion.mts');
   const path = buildBusPath([[127.0, 37.5], [127.05, 37.5]]);   // 동쪽으로 약 4.4 km
   path.stops = [];
   const rmap = new Map([['R', {id: 'R', path, approximate: false, sequences: []}]]);

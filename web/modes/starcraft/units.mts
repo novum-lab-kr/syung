@@ -3,7 +3,7 @@
 // 모양 좌표: x 앞 · y 왼쪽 · z 위, 폭 1(지하철 몸 폭 · 버스 폭), x ∈ [-len/2, len/2]. 색은 palette 번호 또는 'line'(노선 · 버스 종류 색).
 // part: body · legA · legB(걷는 동안 z = rig.hip 을 축으로 흔듦, A 와 B 는 반대 박자 — 축의 x 는 그 상자 x 가운데)
 // · crawl(굼벵이처럼 기어가는 마디: 가는 동안 축 x 에 따라 앞에서 뒤로 물결치며 들썩임 — 리버. quad 는 8번째 인자로 축 x 를 줄 수 있다)
-import { meshBuilder } from '../../bus/mesh.mjs';
+import { meshBuilder } from '../../bus/mesh.mts';
 import { UNIT_SHAPES } from './unit_shapes.mts';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────────────────────────────
