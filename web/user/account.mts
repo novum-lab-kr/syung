@@ -17,6 +17,7 @@ import {accountView, avatarLook, nameLength, NAME_MAX} from './account_view.tsx'
 import type {Me, Avatar, Stats, Session} from './account_view.tsx';
 import {ticketsView, DAYS, esc, shortName, timeParts} from './tickets_view.tsx';   // 승차권 · 발권 · 장소 · 경로 쪽 그리기 — Preact
 import type {Place, FoundPlace, SlimLeg, SlimRoute, Ticket} from './tickets_view.tsx';
+import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt} from './ticket_routes.mts';   // 승차권 경로 고르기(길 모양 · 거르기 · 다음 탈 날)
 
 // 서버 응답(server/routes/members.py · /api/auth/providers · /api/route) 가운데 이 파일이 읽는 칸(승차권 · 장소는 tickets_view.tsx)
 interface Reply<B> { status:number; ok?:boolean; body:B | null }
@@ -96,7 +97,7 @@ async function send<B = Changed>(method:string, url:string, body?:unknown):Promi
 }
 
 // 뒷면 첫 줄: 승차권 출발지 → (마지막 빼고) 탄 구간마다 내린 곳 → 도착지 · 환승 N(없으면 바로).
-// 발권할 때 고른 경로가 있으면 그 경로로(사용자 결정 2026-10-27), 없으면(옛 승차권) 그때 길을 찾아 가장 일찍 닿는 길로.
+// 발권할 때 고른 경로가 있으면 그 경로로(사용자 결정 2026-10-27), 없으면(옛 승차권) 다음 탈 날 그 시각으로 길을 찾아 거른 뒤 가장 빠른 길로(2026-10-29).
 function chainHTML(t:Ticket, legs:readonly SlimLeg[]) {
   const rides = legs.filter(l => l.type !== 'walk');
   const names = [stationOnly(t.from.name), ...rides.slice(0, -1).map(l => l.to), stationOnly(t.to.name)];
@@ -107,14 +108,13 @@ const chains = new Map<string, string>();   // 승차권 번호 + 출발 · 도�
 // put: 뒷면 첫 줄에 넣을 HTML(고른 경로 · 이미 찾은 길이면 바로, 아니면 길을 찾은 뒤)
 async function fillChain(t:Ticket, put:(html:string)=>void) {
   if (t.route) { put(chainHTML(t, t.route.legs)); return; }
-  const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.depart}`;
+  const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.depart}|${t.days}`;
   if (chains.has(key)) { put(chains.get(key)!); return; }
-  const now = new Date(), pad = (n:number) => String(n).padStart(2, '0');
-  const at = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${t.depart}`;
+  const at = routeAt(nextRideDay(t.days, t.depart, new Date()));   // 발권 화면의 경로 고르기와 같은 날 · 같은 거르기
   let html:string;
   try {
     const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
-    const plan = status === 200 && body?.ok ? body.plans?.[0] : null;
+    const plan = status === 200 && body?.ok ? quickestRoute(body.plans || []) : null;
     if (!plan) throw new Error('no plan');
     html = chainHTML(t, plan.legs);
     chains.set(key, html);
@@ -436,38 +436,29 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
 
   // 경로 선택 쪽: 고른 요일 중 가장 가까운 날(없으면 오늘 · 시각이 지났으면 다음 날)의 그 시각으로 길찾기
-  function nextRide() {
-    const days = form().days, [h, m] = form().time.split(':').map(Number) as [number, number], now = new Date();
-    for (let ahead = 0; ahead < 8; ahead++) {
-      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead, h, m);
-      const weekday = (day.getDay() + 6) % 7 + 1;
-      if (day > now && (!days.length || days.includes(weekday))) return day;
-    }
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, h, m);
-  }
+  const nextRide = () => nextRideDay(form().days, form().time, new Date());
   // 저장하는 것: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(길 모양 path 같은 큰 칸은 뺀다)
   const slimLeg = (l:Plan['legs'][number]):SlimLeg => l.type === 'walk' ? {type: 'walk', seconds: Math.max(0, Math.round(l.seconds || 0))}
     : {type: l.type, ...(l.type === 'bus' ? {route: l.route, color: l.color} : {line: l.line}), from: l.from, to: l.to,
       departs: l.departs, arrives: l.arrives, wait: Math.max(0, Math.round(l.wait || 0))} as SlimLeg;
   const slimRoute = (p:Plan):SlimRoute => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});
-  const rideSig = (p:Plan | SlimRoute) => (p.legs as { type:string; line?:string; route?:string; from?:string; to?:string }[]).filter(l => l.type !== 'walk').map(l => `${l.line || l.route}|${l.from}|${l.to}`).join('>');
   let routeSeq = 0;
   async function openRoute() {
     lastField = $('ticketRoute');
     const {from, to} = form();
     if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
-    const when = nextRide(), pad = (n:number) => String(n).padStart(2, '0'), time = timeParts(form().time);
+    const when = nextRide(), time = timeParts(form().time);
     ticketsView.set({routeTrip: `${from.name} → ${to.name}`, routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
       plans: [], chosen: -1, routeMsg: '경로를 찾는 중…'});
     $('routeOpen').click();
     const my = ++routeSeq;
-    const at = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
+    const at = routeAt(when);
     try {
       const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
       if (my !== routeSeq) return;
       if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.'}); return; }
-      const plans = body.plans!, route = form().route;
+      const plans = usefulRoutes(body.plans!), route = form().route;   // 길 모양으로 묶고 덜 쓸모 있는 길은 뺀다(ticket_routes.mts)
       const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
       ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: ''});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
