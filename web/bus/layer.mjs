@@ -2,7 +2,7 @@ import { BusRenderer, busMercator, busModelScale, busPostScale, busStopGrowFrom,
 import { buildBusPath, busKstHour, busLeadDistance, busMotionDistance, busPaceLead, busPathPasses, busPathSlice, busPointAt, contains, intersects, nextBusMotion, retimeBusMotion, snapBusToPath, validCoordinate } from "./motion.mjs";
 import { BusRoadNetwork, busLinePointAt, busMetresPerPixel } from "./roads.mjs";
 import { journeyCasingPaint, journeyRidePaint, journeyStopPaint } from "../lib/journey_map_style.mjs";
-// web/bus/layer.mjs
+// web/bus/layer.mts
 var BUS_LOOKS = {
 	bus: {
 		widthK: 1.12,

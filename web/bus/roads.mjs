@@ -2,7 +2,7 @@ import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
 import { busMercator } from "./mesh.mjs";
 import { busPointAt } from "./motion.mjs";
 import { RoadGraph } from "../city/traffic.mjs";
-// web/bus/roads.mjs
+// web/bus/roads.mts
 var EARTH = 40075016.68557849;
 var LAT = 37.5665;
 var ORIGIN = busMercator([126.978, LAT]);

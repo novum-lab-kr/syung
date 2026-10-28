@@ -1,4 +1,4 @@
-// web/bus/motion.mjs
+// web/bus/motion.mts
 var M = 111320;
 var clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 var validCoordinate = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 85;

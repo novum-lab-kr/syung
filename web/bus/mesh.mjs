@@ -1,4 +1,4 @@
-// web/bus/mesh.mjs
+// web/bus/mesh.mts
 var RAD = Math.PI / 180;
 function busMercator([lng, lat]) {
 	return [lng / 360 + .5, .5 - Math.log(Math.tan(Math.PI / 4 + lat * RAD / 2)) / (2 * Math.PI)];
