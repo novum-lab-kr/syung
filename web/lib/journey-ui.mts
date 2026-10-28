@@ -352,7 +352,8 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     view = freshView();
     openSheetView(target => {
       const id = ++mountSeq; body = target; mounted = id; paint();
-      return () => { if (mounted === id) { mounted = 0; body = null; } clearJourney(target); };
+      // 단추를 누른 채로 몸통이 치워지면(Esc 등) pointerup 이 오지 않는다 — 누르고 있기 타이머도 여기서 멈춘다
+      return () => { if (mounted === id) { mounted = 0; body = null; } for (const hold of Object.values(holds)) hold.stop(); clearJourney(target); };
     });
     inSheet = true;
     if (!last) when = {k: 'now'};
