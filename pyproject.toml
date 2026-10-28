@@ -24,5 +24,5 @@ ignore = ["E702", "E731", "E741", "B905"]
 include = ["server"]
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
-# 층마다 strict 로 올린다(계획서 4단계): 지금은 sources · store 층 전부 — 다음은 services
-strict = ["server/sources/kakao.py", "server/sources/oauth.py", "server/sources/osrm.py", "server/sources/seoul_bus.py", "server/sources/seoul_subway.py", "server/store/auth_file.py", "server/store/avatars.py", "server/store/bus_catalog.py", "server/store/bus_quota.py", "server/store/debug_log.py", "server/store/fare_data.py", "server/store/journey_data.py", "server/store/live_samples.py", "server/store/members.py", "server/store/records.py", "server/store/subway_quota.py"]
+# 층마다 strict 로 올린다(계획서 4단계): 지금은 sources · store 층 전부 + services 작은 파일들 — 다음은 services 나머지
+strict = ["server/services/account.py", "server/services/owner_auth.py", "server/services/places.py", "server/services/profile.py", "server/sources/kakao.py", "server/sources/oauth.py", "server/sources/osrm.py", "server/sources/seoul_bus.py", "server/sources/seoul_subway.py", "server/store/auth_file.py", "server/store/avatars.py", "server/store/bus_catalog.py", "server/store/bus_quota.py", "server/store/debug_log.py", "server/store/fare_data.py", "server/store/journey_data.py", "server/store/live_samples.py", "server/store/members.py", "server/store/records.py", "server/store/subway_quota.py"]
