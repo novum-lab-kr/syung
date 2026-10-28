@@ -40,10 +40,10 @@ import {createLiveFeed} from './trains/live_feed.mts';   // 실시간 열차 받
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
-import {AvatarRenderer,createMyMotion,registerAvatar,avatarScale,AVATAR_MINZOOM} from './map/avatar.mjs';   // 내 위치 캐릭터(줌 15 부터 점 대신)
-import * as sproutAvatar from './map/avatars/sprout.mjs';   // 내 위치 캐릭터 모양(모드 설정 me.look): 기본 새싹 볼빵 후디
-import * as builderAvatar from './map/avatars/builder.mjs';import * as seonbiAvatar from './map/avatars/seonbi.mjs';import * as visitorAvatar from './map/avatars/visitor.mjs';
-import * as scvAvatar from './map/avatars/scv.mjs';import * as droneAvatar from './map/avatars/drone.mjs';import * as probeAvatar from './map/avatars/probe.mjs';   // 스타크래프트 종족 일꾼(테란 SCV · 저그 드론 · 프로토스 프로브)   // 심시티 건설 반장 · 조선 선비 · 롤코 놀이공원 아이(작은 상자 목록이라 첫 화면에 같이)
+import {AvatarRenderer,createMyMotion,registerAvatar,avatarScale,AVATAR_MINZOOM} from './map/avatar.mts';   // 내 위치 캐릭터(줌 15 부터 점 대신)
+import * as sproutAvatar from './map/avatars/sprout.mts';   // 내 위치 캐릭터 모양(모드 설정 me.look): 기본 새싹 볼빵 후디
+import * as builderAvatar from './map/avatars/builder.mts';import * as seonbiAvatar from './map/avatars/seonbi.mts';import * as visitorAvatar from './map/avatars/visitor.mts';
+import * as scvAvatar from './map/avatars/scv.mts';import * as droneAvatar from './map/avatars/drone.mts';import * as probeAvatar from './map/avatars/probe.mts';   // 스타크래프트 종족 일꾼(테란 SCV · 저그 드론 · 프로토스 프로브)   // 심시티 건설 반장 · 조선 선비 · 롤코 놀이공원 아이(작은 상자 목록이라 첫 화면에 같이)
 import {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh} from './modes/joseon/palanquin.mts';   // 조선 모드의 가마 · 청사초롱 정류장 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
 import './modes/basic/park.mts';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)

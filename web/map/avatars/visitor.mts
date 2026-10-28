@@ -1,8 +1,9 @@
 // 롤코 모드 내 위치 캐릭터 '두근두근 나들이': 동물 귀 머리띠 · 알록달록 옷 · 풍선 (Codex 시안, 행님 2026-10-22 — 기본 새싹 볼빵 후디와 같은 비율 · 얼굴)
 // 좌표 · 부위 규칙은 web/map/avatar.mjs(x 앞 · y 왼쪽 · z 위, 키 1 — 풍선만 머리 위로 1.46 까지 뜬다)
+import type { AvatarPart, AvatarTools } from '../avatar.mts';
 export const name = '두근두근 나들이';
 export const rig = {hip: 0.17, shoulder: 0.38};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   box(-0.16,-0.21,0.16,0.17,0.21,0.43,'#6c64bb','body');
   box(-0.12,-0.18,0.14,0.14,0.18,0.23,'#6c64bb','body');
   box(0.17,-0.21,0.29,0.185,0.21,0.36,'#61c8be','body');
@@ -39,7 +40,7 @@ export function build({box, quad}) {
   box(cx-.035,cy-.035,cz-.2,cx+.035,cy+.035,cz-.16,'#c14d78','body');
   box(cx+.155,cy-.08,cz+.02,cx+.16,cy-.02,cz+.09,'#ffe6ef','body');
   // 줄: 손 바깥 면(0.01, 0.315, 0.25 — 왼팔 축 x 0.01)에서 매듭까지 비스듬히(머리 높이에서 y 0.35 넘게 바깥), 어느 쪽에서 봐도 보이게 엇갈린 두 장. 손 쪽 두 꼭짓점만 armL
-  const a = [0.01, 0.315, 0.25], b = [cx, cy, cz - .2], w = .012, S = ['armL', 'armL', 'body', 'body'], pv = [0.01, null];
+  const a:[number, number, number] = [0.01, 0.315, 0.25], b:[number, number, number] = [cx, cy, cz - .2], w = .012, S:AvatarPart[] = ['armL', 'armL', 'body', 'body'], pv = [0.01, null];
   quad([a[0]-w,a[1],a[2]],[a[0]+w,a[1],a[2]],[b[0]+w,b[1],b[2]],[b[0]-w,b[1],b[2]],[0,-1,0],'#faf7ef',S,pv);
   quad([a[0],a[1]-w,a[2]],[a[0],a[1]+w,a[2]],[b[0],b[1]+w,b[2]],[b[0],b[1]-w,b[2]],[1,0,0],'#faf7ef',S,pv);
 }

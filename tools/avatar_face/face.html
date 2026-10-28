@@ -2,12 +2,12 @@
 <meta charset="utf-8">
 <title>내 위치 캐릭터 얼굴 캡처</title>
 <!-- 기본 내 위치 캐릭터(새싹 볼빵 후디)를 지도와 같은 렌더러(AvatarRenderer)로 정면에서 그려 얼굴(머리 + 새싹)만 투명 PNG 로 만든다.
-     만드는 법은 같은 폴더 make.sh. 브라우저로 직접 열면 그림과 [저장] 링크가 보인다(레포 루트를 http 로 띄워 /tools/avatar_face/face.html). -->
+     만드는 법은 같은 폴더 make.sh. 브라우저로 직접 열면 그림과 [저장] 링크가 보인다(npm run build 뒤 레포 루트를 http 로 띄워 /tools/avatar_face/face.html — 캐릭터 모양은 빌드 결과 dist/web 을 부른다). -->
 <style>body{font:14px system-ui;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}canvas{margin:8px;vertical-align:middle}</style>
 <body>
 <script type="module">
-import {AvatarRenderer, registerAvatar} from '../../web/map/avatar.mjs';
-import * as sprout from '../../web/map/avatars/sprout.mjs';
+import {AvatarRenderer, registerAvatar} from '../../dist/web/map/avatar.mjs';
+import * as sprout from '../../dist/web/map/avatars/sprout.mjs';
 
 registerAvatar('sprout', sprout);
 const SIZE = 28;                 // 1x 한 변(px) — 메뉴 아바타 칸(32px)에 여백 조금

@@ -1,7 +1,8 @@
 // 테란 SCV: 파란 강철 작업복과 유리 조종석, 집게와 용접 드릴을 단 꼬마 중장비.
+import type { AvatarTools } from '../avatar.mts';
 export const name = '테란 SCV';
 export const rig = {hip: .3, shoulder: .66};
-export function build({box, quad}) {
+export function build({box, quad}:AvatarTools) {
   const blue = '#477fc3', steel = '#9baeba', dark = '#435569';
   box(-.24,-.25,.32,.22,.25,.78,blue);
   box(-.2,-.21,.77,.19,.21,.89,steel);
