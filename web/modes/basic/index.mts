@@ -2,8 +2,8 @@
 // 데이터뿐: 큰 자료는 옆 파일(palette …)에 두고 여기서 모은다. 엔진 함수 · DOM · 클래스는 넣지 않는다.
 // (옆 파일은 본체도 직접 import 한다: 자식만 부르는 import 는 첫 화면 요청을 한 단계 늦춘다)
 import { MAP_THEMES, MAP_COLORS, PARK_COLORS } from './palette.mts';
-import CITY_PACK from './city.mjs';
-import PARK_DEFAULTS from './park.mjs';
+import CITY_PACK from './city.mts';
+import PARK_DEFAULTS from './park.mts';
 
 export default {
   id: 'basic',

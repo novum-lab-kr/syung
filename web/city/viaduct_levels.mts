@@ -5,12 +5,12 @@
 // never changes between frames or sessions. Between stations the deck ramps gently (levels.grade) from one level to
 // the other, next to the higher station's platform; single stations between two raised transfer stations close by
 // keep the raised level rather than dipping and climbing again. All of it in pure functions (the tests use them).
-import SEOUL from '../modes/basic/city.mjs';
+import SEOUL from '../modes/basic/city.mts';
 
 // 평면의 점(미터) · 두 끝점으로 된 선분
 type Pt = readonly [number, number];
 type StationId = string | number;
-// 팩에서 이 파일이 읽는 칸(modes/basic/city.mjs viaduct)
+// 팩에서 이 파일이 읽는 칸(modes/basic/city.mts viaduct)
 interface LevelsSpec { stepM:number; grade:number; marginM:number; humpGrade?:number; humpPadM?:number; crossAngleDeg?:number }
 export interface LevelsPack { viaduct?:{ railHeightM:number; levels:LevelsSpec } }
 // 고가 상판의 줄(ribbonRows): 시작에서 s 미터 지점의 평면 위치

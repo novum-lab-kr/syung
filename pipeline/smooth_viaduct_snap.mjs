@@ -64,7 +64,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), FILE = path.join(ROOT, 'web', 'city', 'viaduct_snap.mjs');
   const src = readFileSync(FILE, 'utf8');
   if (src.includes(SMOOTHED_MARK)) { console.error('이미 편 파일이에요. build_viaduct_snap.mjs 로 새로 만든 뒤에만 다시 펴요.'); process.exit(1) }
-  const { default: SNAP, stops } = await import(FILE), pack = (await import('../web/modes/basic/city.mjs')).default, SN = pack.viaduct.snap;
+  const { default: SNAP, stops } = await import(FILE), pack = (await import('../web/modes/basic/city.mts')).default, SN = pack.viaduct.snap;
   const TS = JSON.parse(readFileSync(path.join(ROOT, 'data', 'osm-tracks', 'track_shapes.json'), 'utf8'));
   const out = {}; for (const [id, c] of Object.entries(SNAP)) out[id] = smoothSnapPath(c, ...holdsFor(id, TS.platformHalf), { tubeM: SN.smoothTubeM, iter: SN.smoothIter });
   const lines = src.split('\n'), at = lines.findIndex(l => l.startsWith('export default '));

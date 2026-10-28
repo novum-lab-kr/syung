@@ -3,7 +3,7 @@
 //   frames: [{p:[x,y,z], F, R, U, end?}…] — 레일 중심(차선 가운데, 상판 높이)의 메르카토르 좌표와 틀, 진행 방향 순서로 SLEEPER_M 간격.
 //   end: 그 선로의 마지막 틀(다음 틀은 다른 선로), d: 탄 열차 앞에서부터 거리(m, 침목을 어디까지 놓을지)
 //   mpu: 1 m 의 메르카토르 길이, origin: [ox, oy] — 좌표는 여기서 뺀 값으로 담는다(float 정밀도)
-import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs';
+import { PARK_DEFAULTS as STYLE } from '../basic/park.mts';
 import type { ParkPack } from './metrics.mts';
 
 // 레일 틀 하나(본체 coasterRailFrames): 레일 중심 p · 앞 F · 옆 R · 위 U(메르카토르), 그 선로의 끝 end, 탄 열차 앞에서부터 거리 d(m)

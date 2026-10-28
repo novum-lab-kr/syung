@@ -28,7 +28,7 @@
 // footprints in metres with a px floor so they never vanish. Zoomed out, where no cars drive, the deck is slimmer than
 // the trains, which overhang it as they overhang the route line in the other modes.
 
-import SEOUL from '../modes/basic/city.mjs';
+import SEOUL from '../modes/basic/city.mts';
 import FLAGS from './viaduct_flags.mjs';
 import SNAP from './viaduct_snap.mjs';
 import { toneRGB, hexRgb, MPP } from './style.mts';
@@ -58,7 +58,7 @@ interface PierSpec { everyM:number; searchM:number; sideM:number; minPx:number; 
 interface StationSpec extends Record<'platformRiseM' | 'floorM' | 'platformDepthRatio' | 'gapPx' | 'canopyHeightM' | 'canopyThicknessM' | 'canopyInsetM' | 'canopyOverhangPx' | 'postEveryM' | 'postM' | 'postPx' | 'postInsetPx', number> {}
 type LevelsSpec = NonNullable<LevelsPack['viaduct']>['levels'] & { overlapM:number; crossM?:number; holdM:number };
 type ExitsSpec = ExitsV['exits'] & { enabled?:boolean; clearanceM:number; farZoom?:number; checkZoom?:number; levelPenaltyM?:number };
-// 팩의 viaduct 칸(modes/basic/city.mjs — 조선은 색 · aqueduct 만 덧쓴다)
+// 팩의 viaduct 칸(modes/basic/city.mts — 조선은 색 · aqueduct 만 덧쓴다)
 export interface ViaductSpec extends ExitsV {
   railHeightM:number; lineStepM?:number; deckThicknessM:number; parapetHeightM:number; parapetPx:number; marginPx:number;
   lowZoomLanePx:number; lowZoomBodyPx:number; widthZoom:number[]; bedWidthRatio:number; railGaugeRatio:number; railPx:number; elevatedConcreteK:number;

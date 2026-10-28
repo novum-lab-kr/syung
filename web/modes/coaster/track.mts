@@ -1,7 +1,7 @@
 // 롤코 선로 GL 층(열차 캔버스, 열차 아래): 방향마다 노선색 레일 두 줄 · 상자 거더 · 침목 · 흰 기둥. 조각은 지도 좌표로 한 번 짓고 줌마다 다시 짓지 않는다.
 // 다른 화면 파일을 import 하지 않는다: 언덕 계산(coasterAt · coasterProfile …) · 지도 · 노선 자료는 본체가 넘기고, 바뀌는 값은 isCoaster · getSelected 로 읽는다.
-import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mjs'; import { trackMetrics, zoomFade } from './metrics.mts';
-import CITY_STYLE from '../basic/city.mjs';
+import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mts'; import { trackMetrics, zoomFade } from './metrics.mts';
+import CITY_STYLE from '../basic/city.mts';
 import type { LngLatLike, Map as MapLibre, MercatorCoordinate } from 'maplibre-gl';
 import type { CityViaduct } from '../../city/viaduct.mts';
 import type { LinePaths } from '../../lib/routing.mts';

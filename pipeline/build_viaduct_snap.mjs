@@ -36,7 +36,7 @@ const selectedFile = opt('--edges'), selected = selectedFile ? new Set(JSON.pars
 const tileJSONFile = opt('--tilejson'), offline = args.includes('--offline');
 if (offline && !tileJSONFile) throw new Error('--offline에서는 --tilejson 캐시 파일이 필요해요.');
 mkdirSync(REPORT, { recursive: true }); mkdirSync(TILES, { recursive: true });
-const pack = (await import('../web/modes/basic/city.mjs')).default, SN = pack.viaduct.snap, NEAR_M = SN.nearM ?? 60, FAR_M = SN.maxOffsetM ?? 150, HOLD_M = SN.holdM ?? 40;
+const pack = (await import('../web/modes/basic/city.mts')).default, SN = pack.viaduct.snap, NEAR_M = SN.nearM ?? 60, FAR_M = SN.maxOffsetM ?? 150, HOLD_M = SN.holdM ?? 40;
 const DEV_MAX_M = SN.devMaxM ?? Infinity, SLOPE_MAX = SN.slopeMax ?? 0.3, CROSS_BLOCKS = SN.crossBlocks ?? false, STATION_M = SN.stationM ?? NEAR_M, BLEND_M = SN.blendM ?? 60, STRAIGHT_M = SN.straightM ?? 4, END_TURN = Math.cos((SN.endTurnDeg ?? 35) * Math.PI / 180), KEEP_STATIONS = new Set(SN.keepStations || []), SKIP_EDGES = new Set(SN.skipEdges || []);
 const TRACE_TURN = (SN.traceTurnDeg ?? 2.5) * Math.PI / 180;
 const SAMPLE_M = 6, NEAR_WAY_M = 60, MIN_RUN_M = 60, FAR_RUN_M = SN.farRunM ?? 500, GRID = 100, CLASSES = { motorway: 0, trunk: 0, primary: 0, secondary: 4, tertiary: 10, minor: 22 }, BIG = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);

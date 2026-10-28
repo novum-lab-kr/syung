@@ -19,17 +19,17 @@ import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transi
 import './modes/merge.mts';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mts';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mts';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
-import CITY_STYLE from './modes/basic/city.mjs';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
+import CITY_STYLE from './modes/basic/city.mts';   // city-life: the one style pack (colours, metres, zooms) the city reads — 기본 모드의 도시 팩 원본
 import SIMCITY_MODE from './modes/simcity/index.mts';
 import JOSEON_MODE from './modes/joseon/index.mts';
-import './modes/joseon/style.mjs';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
+import './modes/joseon/style.mts';   // (조선 모드의 도시 팩 덧쓰기: 같은 단계에서 요청)
 import COASTER_MODE from './modes/coaster/index.mts';
 import STARCRAFT_MODES from './modes/starcraft/index.mts';
 import RETRO_MODE from './modes/retro/index.mts';   // 레트로: 심시티 도시를 도트로
-import './modes/retro/style.mjs';   // (레트로 도시 팩 덧쓰기: 같은 단계에서 요청)
+import './modes/retro/style.mts';   // (레트로 도시 팩 덧쓰기: 같은 단계에서 요청)
 import NATION_MODES from './modes/nations/index.mts';   // 나라: 나라마다 모드 하나(그리스 …)
-import './modes/nations/greece.mjs';import './modes/nations/netherlands.mjs';import './modes/nations/paris.mjs';import './modes/nations/egypt.mjs';   // (나라 도시 팩: 같은 단계에서 요청)
-import './modes/starcraft/style.mjs';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
+import './modes/nations/greece.mts';import './modes/nations/netherlands.mts';import './modes/nations/paris.mts';import './modes/nations/egypt.mts';   // (나라 도시 팩: 같은 단계에서 요청)
+import './modes/starcraft/style.mts';   // (스타크래프트 종족 도시 팩: 같은 단계에서 요청)
 import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mjs';   // 스타크래프트 유닛 모양(Codex 시안)
 import {unitBusLook} from './modes/starcraft/units.mjs';   // 스타크래프트 버스 모양 등록 자료(유닛 → 버스 메시)   // 스타크래프트: 종족 셋(테란 · 저그 · 프로토스), 모드 하나씩
 import {SunShadowLayer,hull} from './map/sun.mts';   // 해 그림자 층
@@ -46,7 +46,7 @@ import * as builderAvatar from './map/avatars/builder.mjs';import * as seonbiAva
 import * as scvAvatar from './map/avatars/scv.mjs';import * as droneAvatar from './map/avatars/drone.mjs';import * as probeAvatar from './map/avatars/probe.mjs';   // 스타크래프트 종족 일꾼(테란 SCV · 저그 드론 · 프로토스 프로브)   // 심시티 건설 반장 · 조선 선비 · 롤코 놀이공원 아이(작은 상자 목록이라 첫 화면에 같이)
 import {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh} from './modes/joseon/palanquin.mjs';   // 조선 모드의 가마 · 청사초롱 정류장 메시
 import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
-import './modes/basic/park.mjs';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
+import './modes/basic/park.mts';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
 import './modes/coaster/metrics.mts';   // (공원 치수 계산: 같은 단계에서 요청)
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './modes/coaster/track_mesh.mts';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
 import {NightLayer} from './modes/coaster/night.mjs';
@@ -375,7 +375,7 @@ function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer(
   cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
   syncNightBloom();
 }
-// 도시 모드 밤 빛(팩 night — web/modes/basic/city.mjs): ① 불빛 다시 맞추기(lights) ② 빛 번짐(bloom, 휴대폰은 팩 night.bloom.phone 일 때만) ③ 바닥 빛(ground).
+// 도시 모드 밤 빛(팩 night — web/modes/basic/city.mts): ① 불빛 다시 맞추기(lights) ② 빛 번짐(bloom, 휴대폰은 팩 night.bloom.phone 일 때만) ③ 바닥 빛(ground).
 // 다크 테마 · 도시 모드에서만 켜진다. nightLook 은 점검 창구(window.__subwayWebGL.setNightLook)로 하나씩 끄고 켜는 스위치(시안 비교) — 평소엔 다 켬
 const nightLook={lights:true,bloom:true,ground:true,bloomTune:null};   // bloomTune: 점검용 번짐 값 덮어쓰기({strength, threshold …})
 function nightNow(){const N=cityPack()?.night,on=!!N&&cityOn()&&effectiveTheme()==='dark';return {lights:on&&nightLook.lights&&!!N.lights,ground:on&&nightLook.ground&&!!N.ground,bloom:on&&nightLook.bloom&&!!N.bloom&&(!PHONE||N.bloom.phone===true),N}}

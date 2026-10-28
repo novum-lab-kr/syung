@@ -42,7 +42,7 @@ export interface Car {
 }
 // 길 위 화면 안 구간들(s 범위)과 그 길이 합
 export interface Visible { r:[number, number][]; len:number }
-// 팩에서 이 파일이 읽는 칸(modes/basic/city.mjs props.vehicles · roads.aliases)
+// 팩에서 이 파일이 읽는 칸(modes/basic/city.mts props.vehicles · roads.aliases)
 interface VehiclesSpec {
   carSizeM:number[]; suvSizeM:number[]; suvRatio:number; colors:string[]; weights:number[]; bus?:{ sizeM:number[] }; per100M:Record<string, number>;
   laneOffsetWidthRatio:number; intersectionClearanceM:number; speedMps:[number, number]; headlights:string; taillights:string; beamMaxM:number; beamMaxOpacity:number;

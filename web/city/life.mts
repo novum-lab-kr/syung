@@ -16,7 +16,7 @@
 //   life.animating(); life.dispose(gl);
 //   people: both city modes draw them (the same figures on the same pavements; the mode only tones their colours); false hides them.
 
-import SEOUL from '../modes/basic/city.mjs';
+import SEOUL from '../modes/basic/city.mts';
 import { BULB_FS, bulbSize } from '../modes/coaster/night.mjs';
 import { toneRGB, hexRgb, MPP } from './style.mts';
 import type { CityStylePack } from './style.mts';
@@ -31,7 +31,7 @@ type MinMax = [number, number];
 type Tri = [number[], number[], number[]];
 type V3 = [number, number, number];
 type V6 = [number, number, number, number, number, number];
-// 팩(modes/basic/city.mjs · 조선 web/modes/joseon/style.mjs 가 덧쓴 것)에서 이 파일이 읽는 칸
+// 팩(modes/basic/city.mts · 조선 web/modes/joseon/style.mts 가 덧쓴 것)에서 이 파일이 읽는 칸
 interface TreesSpec {
   streetSpacingM:Record<string, number | undefined>; streetHeightM:MinMax; streetCrownDiameterM:MinMax; trunkDiameterM:number; shapeWeights:{ upright:number };
   colors:Record<Theme, Hex[]>; weights:number[]; trunk:Record<Theme, Hex>; parkAreaPerTreeM2:number; parkMinSpacingM:number; parkHeightM:MinMax; parkCrownDiameterM:MinMax;

@@ -1,7 +1,7 @@
 // 심시티 지면 — the miniature city's ground, on the MapLibre basemap: zone floors by landuse class, roads
 // by class with pavements, lane marks and centre lines close up, rail ballast, paths and plazas.
 //
-// Everything that is a colour, a width or a zoom comes from a style pack (web/modes/basic/city.mjs is the
+// Everything that is a colour, a width or a zoom comes from a style pack (web/modes/basic/city.mts is the
 // one pack for now); this module turns the pack into MapLibre layer definitions, paint and a palette,
 // and the runtime applies them where it already builds its basemap:
 //
@@ -13,7 +13,7 @@
 // In coaster mode the ground is the same city, toned down (spec §7: luma mix in linear light, then a
 // touch darker) so the rides and the trains stand out against it.
 
-import SEOUL from '../modes/basic/city.mjs';
+import SEOUL from '../modes/basic/city.mts';
 
 type Hex = string;
 type Theme = 'light' | 'dark';
@@ -26,7 +26,7 @@ interface RoadSpec { widthM:number; sidewalkM?:number; colors:Record<Theme, Hex>
 // 모드마다 색 맞추기(팩 modes.simcity · coaster …)
 interface ModeTone { saturation?:Partial<Record<Theme, number>>; brightness?:Partial<Record<Theme, number>>; shadowOpacity?:Partial<Record<Theme, number>> }
 interface NightRoadLayer { colors?:Record<string, Hex>; widthMul?:number; blurMul?:number; opacity?:Record<string, number> }
-// 도시 팩(modes/basic/city.mjs)에서 이 파일이 읽는 칸 — 모드 팩은 기본 팩에 덧쓴 것이라 모양이 같다
+// 도시 팩(modes/basic/city.mts)에서 이 파일이 읽는 칸 — 모드 팩은 기본 팩에 덧쓴 것이라 모양이 같다
 export interface CityStylePack {
   ground:{ aliases?:Record<string, string>; light:GroundColors; dark:GroundColors; ride?:Partial<Record<Theme, Record<string, Hex>>>; texture?:DirtTexture };
   roads:{

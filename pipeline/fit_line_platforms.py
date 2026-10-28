@@ -15,7 +15,7 @@
 --write: 바뀜 · (바뀐 게 있는) 승강장 면 없음 역을 stop_overrides.json(at · shift · dir · half · reach · from)과
 track_shapes.json(stops · stopDirs · platformHalf · stopHalf · stopReach, 앞뒤 구간을 [역, 막대 끝, OSM 선로, 막대 끝, 역]으로)에 쓴다.
 --snap(--write 와 같이, 2026-10-05 단계 3): 바뀐 역을 도로 맞춤(web/city/viaduct_snap.mjs) stops 에서 빼고
-web/modes/basic/city.mjs keepStations 에 넣은 뒤, 그 역에 닿은 도로 맞춤 구간만 build_viaduct_snap.mjs --edges 로 다시 만든다
+web/modes/basic/city.mts keepStations 에 넣은 뒤, 그 역에 닿은 도로 맞춤 구간만 build_viaduct_snap.mjs --edges 로 다시 만든다
 (기본 지도는 그 파일을 먼저 쓰므로). 끝나면 기본 지도가 쓰는 역 점 · 구간 끝 · 막대 끝을 데이터로 확인(snapCheck).
 역마다 정확도 판정 ⓐ~ⓓ(checks) · 카카오 검증 대상(verify: 20 m 이상 이동 · 갈림 역 · 면 없음인데 값 바뀜 · 환승역)을 내고,
 검증 대상 · 예외 역만 카카오 링크 목록(.nhm/links/<노선>.md, 좌표는 우리 역 점)을 쓴다.
@@ -551,7 +551,7 @@ def sync_edge_ends(ts: dict, line: str, keys) -> list:
     return fixed
 
 
-STYLE = ROOT / "web" / "modes" / "basic" / "city.mjs"
+STYLE = ROOT / "web" / "modes" / "basic" / "city.mts"
 SNAP_BUILD = ROOT / "pipeline" / "build_viaduct_snap.mjs"
 LINKS = ROOT / ".nhm" / "links"
 
@@ -580,7 +580,7 @@ def _snap_stops_span(text):
 
 def snap_update(net: Network, line: str, written: list, tilejson: Path, tiles: Path, report: Path) -> dict:
     """--snap: 바뀐 역 근처는 도로 맞춤보다 OSM 결과가 먼저 쓰이게(시범 eccc0e7 과 같은 방법).
-    ① 그 역을 city_viaduct_snap.mjs stops 에서 빼고 web/modes/basic/city.mjs keepStations 에 넣고
+    ① 그 역을 city_viaduct_snap.mjs stops 에서 빼고 web/modes/basic/city.mts keepStations 에 넣고
     ② 그 역에 닿은 도로 맞춤 구간만 build_viaduct_snap.mjs --edges 로 다시 만든다(바뀐 track_shapes 기준)."""
     import subprocess
     ts = net.ts

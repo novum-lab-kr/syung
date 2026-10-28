@@ -1,4 +1,4 @@
-// 조선 모드의 건물 — every footprint as a Joseon building, when the style pack carries `hanok` (web/modes/joseon/style.mjs).
+// 조선 모드의 건물 — every footprint as a Joseon building, when the style pack carries `hanok` (web/modes/joseon/style.mts).
 //
 // The footprint is fitted with an oriented rectangle of its own area (a little inside it: pack fitK), then given a type:
 //   · 초가집 (thatched, mud walls) or 기와집 (tiled, 회벽 · 창호) — by the land use, the size and a smooth district noise, so

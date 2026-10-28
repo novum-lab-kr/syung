@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {cityPalette,cityLayers,tone} from '../web/city/style.mts';
-import CITY from '../web/modes/basic/city.mjs';
+import CITY from '../web/modes/basic/city.mts';
 
 // 도시 땅 색은 tone(팩의 modes 항목 이름)으로: 심시티 · 조선은 simcity, 롤코는 coaster(차분한 공원 톤). 기본값은 simcity(4-10 전 coaster:false 와 같음)
 test('cityPalette · cityLayers: tone 이름으로 팩의 modes 항목을 고른다', () => {

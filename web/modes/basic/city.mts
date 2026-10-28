@@ -1,4 +1,4 @@
-// 기본 모드의 도시 팩(모든 모드의 원본, 심시티 · 롤코가 그대로 쓰고 조선은 다른 것만 덧쓴다 — web/modes/joseon/style.mjs). (옛 web/lib/city_style_seoul.mjs)
+// 기본 모드의 도시 팩(모든 모드의 원본, 심시티 · 롤코가 그대로 쓰고 조선은 다른 것만 덧쓴다 — web/modes/joseon/style.mts). (옛 web/lib/city_style_seoul.mjs)
 // Seoul miniature-city art direction. All dimensions are world metres unless suffixed Px.
 // 2026-10-03 QA1: SC4 material families, daylight contrast, roof mosaics and office emission contract.
 // Data only. Existing fields remain compatible; implementationContract lists NEW fields needing renderer binding.
@@ -426,7 +426,7 @@ export const SEOUL_CITY_STYLE = {
   // 2026-10-11 행님: "다크 모드일 때 동네들이 너무 어둡게 느껴지는데, 빛을 실제 빛나는 것처럼 못 보여 주나?" — 도시 모드(심시티 · 조선 · 롤코) 밤 빛.
   // lights: 불빛 다시 맞추기(창 켜진 몫 · 밝기, 1층 가게, 간판, 벽 아래를 데우는 길 불빛, 가로등 웅덩이, 차 불빛),
   // ground: 바닥 빛(큰길을 따라 번지는 가로등 빛, 가게가 모인 번화가의 따뜻한 빛 지도), bloom: 빛 번짐(화면 후처리, web/city/bloom.mjs).
-  // 다크 테마 · 도시 모드에서만 읽는다. 조선은 팩 덧쓰기로 등잔 · 횃불 빛에 맞춘다(web/modes/joseon/style.mjs).
+  // 다크 테마 · 도시 모드에서만 읽는다. 조선은 팩 덧쓰기로 등잔 · 횃불 빛에 맞춘다(web/modes/joseon/style.mts).
   "night": {
     "lights": {
       "litRatioMul": 1.2, "litRatioMax": 0.8,             // 창 켜진 몫 ×, 층마다 곱한 뒤의 상한(켜진 수보다 켜진 창의 밝기를 올린다 — Codex)
