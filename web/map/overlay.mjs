@@ -1,4 +1,4 @@
-// web/map/overlay.mjs
+// web/map/overlay.mts
 function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveRatio, signRows, drawStationSigns, effectiveTheme, REDUCED, TRAIN_FPS, TrainLayer, BuildingDepth, cityOn, cityXrayTargets, mapPalette, coasterGeo, coasterTrack, geom, edgeOffset, coasterBodyPx, trainBodyPx, cityViaduct, CORK_HEART, PHONE, trainFrameSoon, CityLife, CITY_STYLE, cityPack, $, sunPosition, NightLayer, journeyMap, exitPillars, RIDE_ZOOM, nearMatrix, COCKPIT_NEAR_M, AvatarRenderer, avatarScale, AVATAR_MINZOOM, live }) {
 	const c = document.createElement("canvas");
 	c.className = "train-overlay";
