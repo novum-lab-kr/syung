@@ -2,14 +2,14 @@
 
 import unittest
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from server.clock import KST
 from server.config import JourneyConfig
 from server.routes import journey as journey_routes
-from server.services import places
+from server.services import journey, places
 
 
 NOW = datetime(2026, 10, 10, 12, 34, 56, tzinfo=KST)
@@ -109,6 +109,32 @@ class JourneyRoutesTest(unittest.TestCase):
                 body, status = journey_routes.place(self.services, {"q": ["역"]})
                 self.assertIs(body, result)
                 self.assertEqual(status, expected_status)
+
+
+class JourneyPlannerLiveTest(unittest.TestCase):
+    """실시간 열차 붙이기(결정 E · 2026-10-28): 지금 ±1시간이면 기다리지 않는 all_lines_now, 그 밖이면 부르지 않는다."""
+    def setUp(self):
+        self.graph = SimpleNamespace(plan=Mock(return_value={"ok": True}))
+        self.live = SimpleNamespace(all_lines_now=Mock(return_value={"2호선": []}), all_lines=Mock())
+        patches = [patch.object(journey, "datetime", FixedDatetime),
+                   patch.object(journey.JourneyPlanner, "_graph", staticmethod(lambda: self.graph))]
+        for active in patches:
+            active.start()
+            self.addCleanup(active.stop)
+        self.planner = journey.JourneyPlanner(JourneyConfig(workers=0), live=self.live)
+
+    def test_near_now_uses_cached_lines_without_waiting(self):
+        self.planner.plan((37.5, 127.0), (37.6, 127.1), NOW)
+        self.live.all_lines_now.assert_called_once_with()
+        self.live.all_lines.assert_not_called()
+        self.assertEqual(self.graph.plan.call_args.args[3], {"2호선": []})
+
+    def test_other_times_do_not_touch_live(self):
+        for when in (NOW + timedelta(hours=2), NOW - timedelta(days=1)):
+            self.planner.plan((37.5, 127.0), (37.6, 127.1), when)
+            self.assertEqual(self.graph.plan.call_args.args[3], {})
+        self.live.all_lines_now.assert_not_called()
+        self.live.all_lines.assert_not_called()
 
 
 class PlaceSearchTest(unittest.TestCase):
