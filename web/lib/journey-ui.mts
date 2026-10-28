@@ -6,6 +6,9 @@ interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:s
 interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[] }
 type TransitLeg = TrainLeg | BusLeg;
 type Leg = WalkLeg | TransitLeg;
+// 띠 그리기에 쓰는 칸만(승차권에 저장한 경로도 이 칸은 있다 — user/account)
+type TrackTransit = Pick<TrainLeg, 'type' | 'line' | 'departs' | 'arrives' | 'wait'> | Pick<BusLeg, 'type' | 'route' | 'color' | 'departs' | 'arrives' | 'wait'>;
+export type TrackLeg = Pick<WalkLeg, 'type' | 'seconds'> | TrackTransit;
 // 단계 줄의 구간: 걷기 줄은 r.e 로 가르고 l 은 따로 좁혀지지 않아 걷기 칸을 함께 둔다
 type RowLeg = Omit<WalkLeg, 'type' | 'realtime'> & TransitLeg;
 export interface Plan { tag?:string; kind:string; leaveBy:string; arrives:string; minutes:number; transfers:number; walkMinutes:number; legs:Leg[] }
@@ -13,7 +16,7 @@ interface Place { name:string; address:string; lat:number; lng:number }
 interface PlaceAnswer { ok:boolean; error?:string; places:Place[] }
 interface RouteAnswer { ok:boolean; error?:string; plans:Plan[] }
 type Colors = Record<string, string>;
-type Seg = { k:'wait'; s:number } | { k:'walk'; s:number; l:WalkLeg } | { k:'ride'; s:number; l:TransitLeg };
+type Seg = { k:'wait'; s:number } | { k:'walk'; s:number; l:TrackLeg } | { k:'ride'; s:number; l:TrackTransit };
 type End = { lat:number; lng:number; name?:string };
 type When = { k:'now'; d?:undefined } | { k:'at'; d:Date };
 interface LastSearch { d:RouteAnswer; sel:number; from:string; to:string; at:string; when:When; picked:{ from:End | null; to:End | null }; tab?:string }
@@ -29,10 +32,10 @@ const min = (s:number) => Math.max(1, Math.round(s / 60));
 
 // 경로 한 개의 색 띠(구간마다 실제 걸리는 시간 비율 · 노선 색) — 길찾기 결과와 승차권 경로 선택(user/account.mjs)이 같이 쓴다
 const hm = (t:string) => { const [h, m] = String(t).split(':').map(Number) as [number, number]; return h * 60 + m; };
-const legSecs = (l:Leg) => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
-const legColorOf = (l:TransitLeg, colors:Colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
-const legName = (l:TransitLeg) => l.type === 'bus' ? l.route : l.line;
-const legShort = (l:TransitLeg) => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
+const legSecs = (l:TrackLeg) => l.type === 'walk' ? l.seconds : Math.max(60, ((hm(l.arrives) - hm(l.departs) + 1440) % 1440) * 60);
+const legColorOf = (l:TrackTransit, colors:Colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
+const legName = (l:TrackTransit) => l.type === 'bus' ? l.route : l.line;
+const legShort = (l:TrackTransit) => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
 // text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
 const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
   const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }) as [number, number, number];
@@ -40,7 +43,7 @@ const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if
   return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
 const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
 const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
-export function routeTrack(p:{ legs:readonly Leg[] }, colors:Colors, width = 330) {
+export function routeTrack(p:{ legs:readonly TrackLeg[] }, colors:Colors, width = 330) {
   const segs:Seg[] = [];
   for (const l of p.legs) {
     if (l.type !== 'walk' && l.wait > 30) segs.push({k: 'wait', s: l.wait});

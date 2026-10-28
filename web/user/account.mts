@@ -13,62 +13,87 @@
 // 로그인 방법이 하나도 설정되지 않았으면(/api/auth/providers 빈 목록 · 실패) 아무것도 보이지 않는다 — 로그인 안 한 화면은 지금과 같다.
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import type {Plan, TrackLeg} from '../lib/journey-ui.mts';
 
-const $ = id => document.getElementById(id);
+// 서버 응답(server/routes/members.py · /api/auth/providers · /api/route · /api/place) 가운데 이 파일이 읽는 칸
+interface Avatar { type:string; url?:string; id?:string }
+interface Me { name:string; provider:string; avatar?:Avatar | null }
+interface Place { name:string; lat:number; lng:number }
+// 저장하는 경로: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(slimRoute)
+type SlimLeg = TrackLeg & { from?:string; to?:string };
+interface SlimRoute { tag:string; minutes:number; leaveBy:string; arrives:string; transfers:number; walkMinutes:number; legs:SlimLeg[] }
+// 승차권 한 장(id 가 없으면 발권 화면의 미리보기)
+interface Ticket { id?:number | string; name:string; from:Place; to:Place; depart:string; days:number[]; route?:SlimRoute | null }
+interface Reply<B> { status:number; ok?:boolean; body:B | null }
+// 바꾸는 요청의 답: 실패면 error.message, 다른 기기 로그아웃이면 removed
+interface Changed { error?:{ message?:string }; removed?:number }
+interface RouteAnswer { ok?:boolean; error?:string; plans?:Plan[] }
+interface Stats {
+  daysTogether:number; tickets:number; weeklyRides:number; recent:{ days:number; openDays:number; route:number; ticket:number };
+  daily:{ day:string; open:number; route:number; ticket:number }[];
+  fare:{ month:string; total:number; skipped:number; reasons:Record<string, number>; tickets:{ name:string; fare:number; rides:number; monthly:number }[] };
+}
+interface Session { id:string; device:string; current?:boolean; lastUsedAt:number; createdAt:number }
+interface Wheel { el:HTMLElement; values:number[]; label:(value:number)=>string }
+// 로그인 팝업 로고 움직임(web/vendor/lottie — 받으면 globalThis.lottie)이 쓰는 칸
+interface LottieAnim { destroy():void; goToAndStop(frame:number, isFrame:boolean):void; play():void; addEventListener(name:string, f:()=>void):void }
+declare global { var lottie:{ loadAnimation(o:{ container:HTMLElement; renderer:string; loop:boolean; autoplay:boolean; animationData:unknown }):LottieAnim } | undefined }
+
+const $ = <T extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as T;
 const CHANGE = {'X-Requested-With': 'syung'};   // 바꾸는 요청에 붙이는 머리말(서버가 확인한다)
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];   // 1(월) … 7(일)
-const LOGIN_ERRORS = {
+const LOGIN_ERRORS:Record<string, string> = {
   denied: '로그인을 취소했어요.',
   provider: '로그인 서비스가 답하지 않아요. 잠시 뒤 다시 해 주세요.',
   limit: '시도가 너무 많아요. 10분 뒤 다시 해 주세요.',
 };
-const PROVIDER_NAMES = {kakao: '카카오', google: '구글', apple: 'Apple'};
+const PROVIDER_NAMES:Record<string, string> = {kakao: '카카오', google: '구글', apple: 'Apple'};
 const KAKAO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4C7 4 3 7.1 3 11c0 2.5 1.7 4.7 4.2 5.9l-.9 3.3c-.1.3.3.6.6.4l3.9-2.6c.4 0 .8.1 1.2.1 5 0 9-3.1 9-7S17 4 12 4z" fill="#191919"/></svg>';
 const GOOGLE = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.03 46.98 31.89 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.41 14.41 0 0 1 9.75 24c0-1.59.27-3.13.78-4.59l-7.98-6.19A23.87 23.87 0 0 0 0 24c0 3.87.93 7.53 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>';
 const APPLE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.05 12.54c.03 3.27 2.87 4.36 2.9 4.38-.02.08-.45 1.55-1.49 3.07-.9 1.31-1.83 2.62-3.3 2.65-1.44.03-1.91-.86-3.56-.86-1.64 0-2.16.83-3.53.89-1.42.05-2.5-1.42-3.41-2.73C2.8 17.26 1.39 12.36 3.3 9.05a5.3 5.3 0 0 1 4.49-2.72c1.4-.03 2.72.94 3.56.94.83 0 2.4-1.16 4.04-.99.69.03 2.63.28 3.88 2.11-.1.06-2.32 1.35-2.3 4.15ZM14.35 4.5c.76-.92 1.28-2.2 1.14-3.48-1.1.04-2.44.74-3.23 1.66-.7.81-1.32 2.11-1.15 3.35 1.23.1 2.48-.63 3.24-1.53Z"/></svg>';
-const PROVIDERS = {kakao: ['카카오로 계속하기', KAKAO], google: ['구글로 계속하기', GOOGLE], apple: ['Apple로 계속하기', APPLE]};
+const PROVIDERS:Record<string, [string, string]> = {kakao: ['카카오로 계속하기', KAKAO], google: ['구글로 계속하기', GOOGLE], apple: ['Apple로 계속하기', APPLE]};
 // 점선 슝 로고(속도선 + 기차, 노랑 네모 없이) — 앞면에 5개를 가로로, 가운데 하나가 정가운데
 const LOGO = '<svg viewBox="0 0 100 60"><g fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray=".3 2.3" stroke-linecap="round"><rect x="36" y="11" width="56" height="38" rx="19"/><rect x="40.5" y="15.5" width="47" height="29" rx="14.5"/><circle cx="74" cy="30" r="7.5"/><circle cx="74" cy="30" r="3.5"/><rect x="15" y="16" width="17" height="7" rx="3.5"/><rect x="8" y="26.5" width="24" height="7" rx="3.5"/><rect x="15" y="37" width="17" height="7" rx="3.5"/></g></svg>';
 
 // 프로필 캐릭터(내 위치 캐릭터 — web/map/avatars/). 얼굴 그림은 web/brand/faces/<이름>-84 · 240.png(tools/avatar_face/make.sh).
 // 첫째(새싹)가 기본 — 고르면 서버에는 '기본으로'(DELETE)를 보낸다
 const CHARACTERS = [['sprout', '새싹 볼빵 후디'], ['builder', '꼬마 건설 반장'], ['seonbi', '갓 쓴 꼬마 선비'], ['visitor', '두근두근 나들이'],
-  ['scv', '테란 SCV'], ['drone', '저그 드론'], ['probe', '프로토스 프로브']];
+  ['scv', '테란 SCV'], ['drone', '저그 드론'], ['probe', '프로토스 프로브']] as const;
 const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가 주는 내 사진 주소 모양(그 밖은 그리지 않는다)
 const PHOTO_SIDE = 256, PHOTO_MAX = 150 * 1024;   // 서버 한도(160 KB)보다 조금 작게
 const NAME_MAX = 12;
-const nameLength = text => [...text.trim()].length;
-const won = n => `${n.toLocaleString('ko-KR')}원`;
-const monthDay = seconds => { const d = new Date(seconds * 1000); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
-const FARE_REASONS = {route: '고른 경로가 없는 승차권', distance: '공식 거리 자료가 없는 노선', outside: '수도권 밖 구간',
+const nameLength = (text:string) => [...text.trim()].length;
+const won = (n:number) => `${n.toLocaleString('ko-KR')}원`;
+const monthDay = (seconds:number) => { const d = new Date(seconds * 1000); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
+const FARE_REASONS:Record<string, string> = {route: '고른 경로가 없는 승차권', distance: '공식 거리 자료가 없는 노선', outside: '수도권 밖 구간',
   extra: '추가 운임 노선(신분당선 · 의정부경전철 · 공항철도 영종 구간)', bus: '요금 · 거리 자료가 없는 버스', none: '전철 · 버스를 타지 않는 승차권'};
 
 // 칸(el)에 프로필을 그린다: 올린 사진이면 칸을 꽉 채우고(.photo), 아니면 캐릭터 얼굴(.face). big: 내 정보의 큰 칸(240 그림)
-function paintAvatar(el, avatar, big = false) {
-  const photo = avatar?.type === 'photo' && PHOTO_URL.test(avatar.url);
-  const id = avatar?.type === 'character' && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id : 'sprout';
+function paintAvatar(el:HTMLElement, avatar:Avatar | null | undefined, big = false) {
+  const photo = avatar?.type === 'photo' && PHOTO_URL.test(avatar.url!);
+  const id = avatar?.type === 'character' && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id! : 'sprout';
   el.classList.toggle('photo', photo);
   el.classList.toggle('face', !photo);
   // 기본 새싹 · 작은 칸은 CSS 의 image-set(28 · 56 · 84) 그대로
-  el.style.backgroundImage = photo ? `url("${avatar.url}")` : (big || id !== 'sprout') ? `url("./brand/faces/${id}-${big ? 240 : 84}.png")` : '';
+  el.style.backgroundImage = photo ? `url("${avatar!.url}")` : (big || id !== 'sprout') ? `url("./brand/faces/${id}-${big ? 240 : 84}.png")` : '';
 }
-const toBlob = (canvas, type, quality) => new Promise(done => canvas.toBlob(done, type, quality));
+const toBlob = (canvas:HTMLCanvasElement, type:string, quality:number) => new Promise<Blob | null>(done => canvas.toBlob(done, type, quality));
 // 고른 사진 → 가운데 정사각 256×256 WebP(안 되는 브라우저는 JPEG) Blob. 다시 그리므로 원본의 사진 정보(Exif · 위치)는 따라가지 않는다
-async function shrinkPhoto(file) {
+async function shrinkPhoto(file:Blob) {
   const image = await createImageBitmap(file, {imageOrientation: 'from-image'});   // 휴대폰 사진의 회전 정보는 그리기 전에 반영
   const side = Math.min(image.width, image.height);
-  let source = image, sx = (image.width - side) / 2, sy = (image.height - side) / 2, from = side;
+  let source:ImageBitmap | HTMLCanvasElement = image, sx = (image.width - side) / 2, sy = (image.height - side) / 2, from = side;
   if (side > PHOTO_SIDE * 4) {   // 아주 큰 사진은 한 번 줄였다가 다시 줄인다(한 번에 줄이면 거칠어진다)
     const step = document.createElement('canvas');
     step.width = step.height = PHOTO_SIDE * 4;
-    const stepContext = step.getContext('2d');
+    const stepContext = step.getContext('2d')!;
     stepContext.imageSmoothingQuality = 'high';
     stepContext.drawImage(image, sx, sy, side, side, 0, 0, step.width, step.height);
     source = step; sx = 0; sy = 0; from = step.width;
   }
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = PHOTO_SIDE;
-  const context = canvas.getContext('2d');
+  const context = canvas.getContext('2d')!;
   context.fillStyle = '#fff'; context.fillRect(0, 0, PHOTO_SIDE, PHOTO_SIDE);   // 투명한 곳은 흰 바탕(JPEG 는 투명이 없다)
   context.imageSmoothingQuality = 'high';
   context.drawImage(source, sx, sy, from, from, 0, 0, PHOTO_SIDE, PHOTO_SIDE);
@@ -79,32 +104,32 @@ async function shrinkPhoto(file) {
     if (blob?.type === 'image/jpeg') {
       // 사파리 · 아이폰 JPEG 에 붙는 Exif(APP1) · APP13 조각을 뗀다 — 서버가 그런 JPEG 를 받지 않는다(올릴 때만 받는 파일)
       const {stripJpegMeta} = await import('./photo_meta.mts');
-      blob = new Blob([stripJpegMeta(new Uint8Array(await blob.arrayBuffer()))], {type: 'image/jpeg'});
+      blob = new Blob([stripJpegMeta(new Uint8Array(await blob.arrayBuffer())) as Uint8Array<ArrayBuffer>], {type: 'image/jpeg'});
     }
     if (blob && blob.size <= PHOTO_MAX && (blob.type === 'image/webp' || blob.type === 'image/jpeg')) return blob;
   }
   throw new Error('too big');
 }
 
-const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const esc = (s:unknown) => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'} as Record<string, string>)[c]!);
 const todayDay = () => (new Date().getDay() + 6) % 7 + 1;   // 1(월) … 7(일)
-const daysText = days => days.length ? days.map(d => DAYS[d - 1]).join(' ') : '없음';
-const shortName = name => name.length >= 7 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;   // 긴 이름은 앞 3 ‥ 뒤 2
+const daysText = (days:number[]) => days.length ? days.map(d => DAYS[d - 1]).join(' ') : '없음';
+const shortName = (name:string) => name.length >= 7 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;   // 긴 이름은 앞 3 ‥ 뒤 2
 // 장소 검색(카카오)의 역 이름은 '잠실역 2호선'처럼 호선이 붙어 온다 — 뒷면에는 역 이름만(사용자 2026-10-27). 저장된 이름은 그대로
-const stationOnly = name => name.replace(/^(.+역)\s+\S*선$/, '$1');
+const stationOnly = (name:string) => name.replace(/^(.+역)\s+\S*선$/, '$1');
 
-async function getJson(url) {
+async function getJson<B = unknown>(url:string):Promise<Reply<B>> {
   const r = await fetch(url, {cache: 'no-store', credentials: 'same-origin'});
   return {status: r.status, body: r.headers.get('content-type')?.includes('json') ? await r.json() : null};
 }
-async function send(method, url, body) {
+async function send<B = Changed>(method:string, url:string, body?:unknown):Promise<Reply<B>> {
   const r = await fetch(url, {method, credentials: 'same-origin', headers: body ? {...CHANGE, 'Content-Type': 'application/json'} : CHANGE,
     body: body ? JSON.stringify(body) : undefined});
   return {status: r.status, ok: r.ok, body: r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => null) : null};
 }
 
 // 승차권 앞면. t: {id?, name, depart, days}
-function frontHTML(t) {
+function frontHTML(t:Pick<Ticket, 'id' | 'name' | 'depart' | 'days'>) {
   const name = t.name || '승차권';
   const serial = `${t.id ? String(t.id).padStart(4, '0') : '----'} ${t.days.map(d => DAYS[d - 1]).join('')} ${(t.depart || '').replace(':', '')}`;
   const today = t.id && t.days.includes(todayDay());
@@ -114,7 +139,7 @@ function frontHTML(t) {
     + `<div class="tk-serial">${esc(serial)}</div>${today ? '<span class="tk-today">오늘</span>' : ''}`
     + (t.id ? '<button class="tk-flip" type="button" aria-label="뒤집기">↻</button>' : '') + '</div>';
 }
-function ticketEl(t) {
+function ticketEl(t:Ticket) {
   const el = document.createElement('div');
   el.className = 'ticket';
   el.innerHTML = `<div class="ticket-in">${frontHTML(t)}<div class="tk-face tk-back">`
@@ -126,22 +151,22 @@ function ticketEl(t) {
 
 // 뒷면 첫 줄: 승차권 출발지 → (마지막 빼고) 탄 구간마다 내린 곳 → 도착지 · 환승 N(없으면 바로).
 // 발권할 때 고른 경로가 있으면 그 경로로(사용자 결정 2026-10-27), 없으면(옛 승차권) 그때 길을 찾아 가장 일찍 닿는 길로.
-function chainHTML(t, legs) {
+function chainHTML(t:Ticket, legs:readonly SlimLeg[]) {
   const rides = legs.filter(l => l.type !== 'walk');
   const names = [stationOnly(t.from.name), ...rides.slice(0, -1).map(l => l.to), stationOnly(t.to.name)];
   const tag = rides.length > 1 ? `환승 ${rides.length - 1}` : rides.length ? '바로' : '걸어서';
-  return names.map(n => `<span title="${esc(n)}">${esc(shortName(n))}</span>`).join('<em>→</em>') + `<small>${tag}</small>`;
+  return names.map(n => `<span title="${esc(n)}">${esc(shortName(n!))}</span>`).join('<em>→</em>') + `<small>${tag}</small>`;
 }
-const chains = new Map();   // 승차권 번호 + 출발 · 도착 · 시각 → 그린 HTML(한 화면에서 다시 안 부름)
-async function fillChain(t, p) {
+const chains = new Map<string, string>();   // 승차권 번호 + 출발 · 도착 · 시각 → 그린 HTML(한 화면에서 다시 안 부름)
+async function fillChain(t:Ticket, p:HTMLElement) {
   if (t.route) { p.innerHTML = chainHTML(t, t.route.legs); p.classList.remove('wait'); return; }
   const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.depart}`;
-  if (chains.has(key)) { p.innerHTML = chains.get(key); p.classList.remove('wait'); return; }
-  const now = new Date(), pad = n => String(n).padStart(2, '0');
+  if (chains.has(key)) { p.innerHTML = chains.get(key)!; p.classList.remove('wait'); return; }
+  const now = new Date(), pad = (n:number) => String(n).padStart(2, '0');
   const at = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${t.depart}`;
-  let html;
+  let html:string;
   try {
-    const {status, body} = await getJson(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
+    const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
     const plan = status === 200 && body?.ok ? body.plans?.[0] : null;
     if (!plan) throw new Error('no plan');
     html = chainHTML(t, plan.legs);
@@ -153,21 +178,21 @@ async function fillChain(t, p) {
   p.classList.remove('wait');
 }
 
-function placeSearch(input, found, onPick) {
-  let timer = 0, seq = 0;
+function placeSearch(input:HTMLInputElement, found:HTMLElement, onPick:(place:Place | null)=>void) {
+  let timer:ReturnType<typeof setTimeout> | 0 = 0, seq = 0;
   input.addEventListener('input', () => {
     onPick(null); clearTimeout(timer);
     const q = input.value.trim();
     if (q.length < 2) { found.hidden = true; return; }
     timer = setTimeout(async () => {
       const my = ++seq;
-      const row = text => { const li = document.createElement('li'); li.className = 'empty'; li.textContent = text; return li; };
+      const row = (text:string) => { const li = document.createElement('li'); li.className = 'empty'; li.textContent = text; return li; };
       try {
-        const {body} = await getJson(`./api/place?q=${encodeURIComponent(q)}`);
+        const {body} = await getJson<{ ok?:boolean; places:(Place & { address:string })[] }>(`./api/place?q=${encodeURIComponent(q)}`);
         if (my !== seq) return;
         if (!body?.ok) found.replaceChildren(row('검색하지 못했어요'));
-        else if (!body.places.length) found.replaceChildren(row('찾는 곳이 없어요'));
-        else found.replaceChildren(...body.places.map(p => {
+        else if (!body!.places.length) found.replaceChildren(row('찾는 곳이 없어요'));
+        else found.replaceChildren(...body!.places.map(p => {
           const li = document.createElement('li'), b = document.createElement('button'), name = document.createElement('b'), addr = document.createElement('small');
           b.type = 'button'; name.textContent = p.name; addr.textContent = p.address; b.append(name, addr);
           b.onclick = () => { input.value = p.name; found.hidden = true; onPick({name: p.name, lat: p.lat, lng: p.lng}); };
@@ -184,21 +209,21 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   if (!item || !sheet) return;
   // 로그인 방법과 지금 로그인한 사람을 한 번에 받는다(/api/me 를 따로 물으면 메뉴 칸이 한 번 더 늦게 뜨고,
   // 로그인이 꺼진 운영에서는 방문자마다 404 가 하나 더 찍힌다)
-  let answer = null;
-  try { answer = await getJson('./api/auth/providers'); } catch { return; }
+  let answer:Reply<{ providers?:string[]; me?:Me | null }> | null = null;
+  try { answer = await getJson<{ providers?:string[]; me?:Me | null }>('./api/auth/providers'); } catch { return; }
   const providers = answer.status === 200 ? answer.body?.providers || [] : [];
   if (!providers.length) return;   // 설정 전: 메뉴 칸을 숨긴 채로
 
-  const say = (id, text) => { $(id).textContent = text || ''; };
+  const say = (id:string, text:string) => { $(id).textContent = text || ''; };
   // 알림은 모두 서랍 아래 토스트(잠깐 떴다 사라짐) — 결과 · 연결 오류 · 입력 확인(사용자 결정 2026-10-27). 입력 확인은 그 칸으로 포커스도 옮긴다
-  let toastTimer = 0;
+  let toastTimer:ReturnType<typeof setTimeout> | 0 = 0;
   // 알림 상자(#accountToast, aria-live)는 늘 문서에 두고 카드만 넣고 뺀다 — 숨긴 상자에 글을 넣으면 화면 낭독기가 놓친다
   const toastBox = $('accountToast');
-  function hideToast(card) {
+  function hideToast(card:HTMLElement) {
     card.classList.remove('show');
     setTimeout(() => { if (toastBox.firstChild === card && !card.classList.contains('show')) toastBox.replaceChildren(); }, 200);
   }
-  function toast(text, error = false) {
+  function toast(text:string, error = false) {
     const card = document.createElement('div');
     card.className = error ? 'acct-toast is-error' : 'acct-toast';   // '.error' 는 index.html 의 지도 오류 화면(inset:0)과 겹친다
     card.innerHTML = `<span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(text)}</span>`;
@@ -207,12 +232,12 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => hideToast(card), error ? 3600 : 2400);
   }
-  let me = null, tickets = [], editing = null;
+  let me:Me | null = null, tickets:Ticket[] = [], editing:Ticket | null = null;
 
   // ---- 로그인 팝업(서랍 밖 화면 전체 위 — 열 때 서랍은 닫는다) ----
   $('accountProviders').replaceChildren(...providers.filter(p => PROVIDERS[p]).map(p => {
     const a = document.createElement('a');
-    a.className = `social ${p}`; a.href = `./api/auth/${p}/start`; a.innerHTML = `${PROVIDERS[p][1]}<span>${PROVIDERS[p][0]}</span>`;
+    a.className = `social ${p}`; a.href = `./api/auth/${p}/start`; a.innerHTML = `${PROVIDERS[p]![1]}<span>${PROVIDERS[p]![0]}</span>`;
     return a;
   }));
   const sheetOpen = () => !sheet.hidden;
@@ -221,14 +246,14 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   // (web/brand/login-motion.json — tools/login_motion/make.mjs 가 만든다)을 받는다 — 첫 화면 코드에 없음.
   // 캔버스는 팝업 위쪽 넓은 영역(800×170) — 그 안의 로고 칸 가운데(400, 135)를 실제 로고 가운데에 맞춰 얹는다.
   // 동작 줄이기 · 받기 실패면 정지 로고 그대로. 한 번만 재생하고 끝나면 정지 로고로 바꿔 낀다
-  let motionData = null;
+  let motionData:unknown = null;
   const MOTION = {width: 800, height: 170, slotX: 400, slotY: 135, wait: 220};   // wait: 카드가 올라오는 동안(.26 초) 기다렸다 재생
-  let motionAnim = null, motionTurn = 0, motionTimer = 0;
+  let motionAnim:LottieAnim | null = null, motionTurn = 0, motionTimer:ReturnType<typeof setTimeout> | 0 = 0;
   function stopLogoMotion() {
     motionTurn++; clearTimeout(motionTimer);
     motionAnim?.destroy(); motionAnim = null;
     sheet.querySelector('.login-motion')?.remove();
-    sheet.querySelector('.login-brand').style.visibility = '';
+    sheet.querySelector<HTMLElement>('.login-brand')!.style.visibility = '';
   }
   async function playLogoMotion() {
     stopLogoMotion();
@@ -243,7 +268,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       }
     } catch { return; }
     if (turn !== motionTurn || !globalThis.lottie || !sheet.classList.contains('open')) return;   // 그사이 닫았거나 다시 열었다
-    const logo = sheet.querySelector('.login-brand'), box = document.createElement('div');
+    const logo = sheet.querySelector<HTMLElement>('.login-brand')!, box = document.createElement('div');
     box.className = 'login-motion'; box.setAttribute('aria-hidden', 'true');
     box.style.left = `${logo.offsetLeft + logo.offsetWidth / 2 - MOTION.slotX}px`;   // 카드(.login-card, position:relative) 기준
     box.style.top = `${logo.offsetTop + logo.offsetHeight / 2 - MOTION.slotY}px`;
@@ -256,13 +281,13 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     motionTimer = setTimeout(() => { if (motionAnim === anim) anim.play(); }, Math.max(0, MOTION.wait - (performance.now() - openedAt)));
   }
   // 팝업 안 안내: 서랍 아래 토스트(#accountToast)는 팝업(화면 전체 위)에 가려서, 같은 토스트 모양 카드를 팝업 안에 둔다
-  function openSheet(message, error = false) {
+  function openSheet(message:string, error = false) {
     const note = $('loginMsg');
     if (message) note.innerHTML = `<span class="acct-toast show${error ? ' is-error' : ''}"><span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(message)}</span></span>`;
     else note.replaceChildren();
     if ($('settingsPanel')?.classList.contains('open')) $('settingsClose').click();
     sheet.hidden = false; void sheet.offsetWidth; sheet.classList.add('open');
-    sheet.querySelector('.social')?.focus({preventScroll: true});
+    sheet.querySelector<HTMLElement>('.social')?.focus({preventScroll: true});
     playLogoMotion();
   }
   function closeSheet() {
@@ -272,15 +297,15 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     $('settingsButton')?.focus({preventScroll: true});
   }
   $('loginOpen').onclick = () => openSheet('');
-  sheet.querySelector('.login-scrim').onclick = closeSheet;
+  sheet.querySelector<HTMLElement>('.login-scrim')!.onclick = closeSheet;
   // 팝업이 떠 있는 동안 Esc 는 팝업을 닫고, Tab 은 팝업 안에서만 돈다
   window.addEventListener('keydown', e => {
     if (!sheetOpen()) return;
     if (e.key === 'Escape') { e.stopImmediatePropagation(); closeSheet(); return; }
     if (e.key !== 'Tab') return;
-    const items = [...sheet.querySelectorAll('a[href],button')].filter(el => el.offsetParent);
+    const items = [...sheet.querySelectorAll<HTMLElement>('a[href],button')].filter(el => el.offsetParent);
     if (!items.length) return;
-    const first = items[0], last = items[items.length - 1];
+    const first = items[0]!, last = items[items.length - 1]!;
     const inside = sheet.contains(document.activeElement);
     if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
@@ -314,23 +339,23 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     // 올린 사진이 있으면 사진 칸에 그 사진, 없으면 사진기 그림
     if (current === 'photo') paintAvatar($('photoPick'), avatar);
     else { $('photoPick').classList.remove('photo', 'face'); $('photoPick').style.backgroundImage = ''; }
-    for (const b of choices.querySelectorAll('[data-character]')) b.setAttribute('aria-pressed', String(b.dataset.character === current));
+    for (const b of choices.querySelectorAll<HTMLElement>('[data-character]')) b.setAttribute('aria-pressed', String(b.dataset.character === current));
   }
   function openPick() {
     closeName();
-    for (const b of choices.querySelectorAll('[data-character]')) b.style.backgroundImage ||= `url("./brand/faces/${b.dataset.character}-240.png")`;   // 열 때만 받는다
+    for (const b of choices.querySelectorAll<HTMLElement>('[data-character]')) b.style.backgroundImage ||= `url("./brand/faces/${b.dataset.character}-240.png")`;   // 열 때만 받는다
     $('avatarPick').hidden = false; $('accountAvatarBig').setAttribute('aria-expanded', 'true');
-    choices.querySelector('[aria-pressed=true]')?.focus({preventScroll: true});
+    choices.querySelector<HTMLElement>('[aria-pressed=true]')?.focus({preventScroll: true});
   }
   function closePick() { $('avatarPick').hidden = true; $('accountAvatarBig').setAttribute('aria-expanded', 'false'); }
   $('accountAvatarBig').onclick = () => { if ($('avatarPick').hidden) openPick(); else closePick(); };
   let saving = false;
-  function busy(on) {
+  function busy(on:boolean) {
     saving = on;
     for (const b of choices.querySelectorAll('button')) b.disabled = on;
   }
   // 바꾸기 요청 공통: 401 이면 로그인 풀림, 실패면 서버 문구, 성공이면 내 정보를 다시 그린다
-  async function saveProfile(request, done) {
+  async function saveProfile(request:()=>Promise<Reply<Me & Changed>>, done:string) {
     if (saving) return;
     busy(true);
     try {
@@ -342,17 +367,17 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     } catch { toast('바꾸지 못했어요. 연결을 확인해 주세요.', true); }
     finally { busy(false); }
   }
-  function pickCharacter(id) {
+  function pickCharacter(id:string) {
     const current = me?.avatar?.type === 'character' ? me.avatar.id : me?.avatar ? 'photo' : 'sprout';
     if (id === current) return;
     saveProfile(() => id === 'sprout' ? send('DELETE', './api/me/avatar') : send('PUT', './api/me/avatar', {character: id}), '프로필을 바꿨어요');
   }
   $('photoPick').onclick = () => { if (!saving) $('photoFile').click(); };
   $('photoFile').onchange = async () => {
-    const file = $('photoFile').files[0];
-    $('photoFile').value = '';   // 같은 사진을 다시 골라도 change 가 오게
+    const file = $<HTMLInputElement>('photoFile').files![0];
+    $<HTMLInputElement>('photoFile').value = '';   // 같은 사진을 다시 골라도 change 가 오게
     if (!file) return;
-    let blob;
+    let blob:Blob;
     try { blob = await shrinkPhoto(file); } catch { toast('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.', true); return; }
     saveProfile(async () => {
       const r = await fetch('./api/me/avatar', {method: 'PUT', credentials: 'same-origin', headers: {...CHANGE, 'Content-Type': blob.type}, body: blob});
@@ -362,43 +387,43 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
 
   // ---- 내 정보: 닉네임 고치기(1~12자 · 같은 이름 허용 — 다듬기 · 검사는 서버가 한 번 더) ----
   function nameCount() {
-    const count = nameLength($('nameInput').value);
+    const count = nameLength($<HTMLInputElement>('nameInput').value);
     $('nameCount').textContent = `${count}/${NAME_MAX}`;
     $('nameCount').classList.toggle('over', count > NAME_MAX);
   }
   function openName() {
     closePick();
-    $('nameInput').value = me?.name || ''; nameCount();
+    $<HTMLInputElement>('nameInput').value = me?.name || ''; nameCount();
     $('nameForm').hidden = false; $('nameEdit').setAttribute('aria-expanded', 'true');
-    $('nameInput').focus({preventScroll: true}); $('nameInput').select();
+    $('nameInput').focus({preventScroll: true}); $<HTMLInputElement>('nameInput').select();
   }
   function closeName() { $('nameForm').hidden = true; $('nameEdit').setAttribute('aria-expanded', 'false'); }
   $('nameEdit').onclick = () => { if ($('nameForm').hidden) openName(); else closeName(); };
   $('nameCancel').onclick = () => { closeName(); $('nameEdit').focus({preventScroll: true}); };
   $('nameInput').addEventListener('input', nameCount);
-  $('nameForm').onsubmit = async e => {
+  $('nameForm').onsubmit = async (e:SubmitEvent) => {
     e.preventDefault();
-    const name = $('nameInput').value.trim(), count = nameLength(name);
+    const name = $<HTMLInputElement>('nameInput').value.trim(), count = nameLength(name);
     if (count < 1 || count > NAME_MAX) { toast(`닉네임은 1~${NAME_MAX}자예요`, true); $('nameInput').focus(); return; }
     if (name === me?.name) { closeName(); return; }
-    $('nameSave').disabled = true;
+    $<HTMLButtonElement>('nameSave').disabled = true;
     try {
       if (await saveProfile(() => send('PUT', './api/me/profile', {name}), '닉네임을 바꿨어요')) { closeName(); $('nameEdit').focus({preventScroll: true}); }
-    } finally { $('nameSave').disabled = false; }
+    } finally { $<HTMLButtonElement>('nameSave').disabled = false; }
   };
   function renderTickets() {
     $('ticketList').replaceChildren(...tickets.map(t => {
       const el = ticketEl(t);
-      el.onclick = e => {
-        if (e.target.closest('.tk-edit')) { e.stopPropagation(); openTicket(t); return; }
+      el.onclick = (e:MouseEvent) => {
+        if ((e.target as Element).closest('.tk-edit')) { e.stopPropagation(); openTicket(t); return; }
         el.classList.toggle('flipped');
-        if (el.classList.contains('flipped')) { fillChain(t, el.querySelector('.tk-chain')); countUse('ticket'); }
+        if (el.classList.contains('flipped')) { fillChain(t, el.querySelector<HTMLElement>('.tk-chain')!); countUse('ticket'); }
       };
       return el;
     }));
   }
   async function loadTickets() {
-    try { const r = await getJson('./api/me/tickets'); if (r.status === 200) { tickets = r.body.tickets; renderTickets(); } } catch { /* 다음에 열 때 다시 */ }
+    try { const r = await getJson<{ tickets:Ticket[] }>('./api/me/tickets'); if (r.status === 200) { tickets = r.body!.tickets; renderTickets(); } } catch { /* 다음에 열 때 다시 */ }
   }
   // 발권 화면에서 ‹ 는 승차권 목록으로, 장소 고르기 · 경로 선택에서 ‹ 는 발권 화면으로(본체의 '메뉴로' 보다 먼저 잡는다)
   $('menuBack').addEventListener('click', e => {
@@ -407,8 +432,8 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }, true);
 
   // ---- 발권 화면(어디서 → 어디로 → 언제 → 경로 → 타는 날 → 이름) ----
-  const form = {from: null, to: null, route: null};
-  let lastField = null;   // 장소 고르기 · 경로 선택에서 돌아오면 포커스를 둘 칸
+  const form:{ from:Place | null; to:Place | null; route:SlimRoute | null } = {from: null, to: null, route: null};
+  let lastField:HTMLElement | null = null;   // 장소 고르기 · 경로 선택에서 돌아오면 포커스를 둘 칸
   function backToForm() { $('ticketOpen').click(); lastField?.focus({preventScroll: true}); }
   const dayBox = $('ticketDays');
   dayBox.replaceChildren(...DAYS.map((label, index) => {
@@ -417,31 +442,31 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     b.onclick = () => { b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); daysChanged(); };
     return b;
   }));
-  const pickedDays = () => [...dayBox.children].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => +b.dataset.day);
+  const pickedDays = () => [...dayBox.children as HTMLCollectionOf<HTMLElement>].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => +b.dataset.day!);
   function daysChanged() {
     const now = pickedDays().join(',');
-    for (const b of $('ticketQuick').children) b.setAttribute('aria-pressed', String(b.dataset.quick === now));
+    for (const b of $('ticketQuick').children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String(b.dataset.quick === now));
     preview();
   }
-  for (const b of $('ticketQuick').children) b.onclick = () => {
-    const days = b.dataset.quick.split(',');
-    for (const day of dayBox.children) day.setAttribute('aria-pressed', String(days.includes(day.dataset.day)));
+  for (const b of $('ticketQuick').children as HTMLCollectionOf<HTMLElement>) b.onclick = () => {
+    const days = b.dataset.quick!.split(',');
+    for (const day of dayBox.children as HTMLCollectionOf<HTMLElement>) day.setAttribute('aria-pressed', String(days.includes(day.dataset.day!)));
     daysChanged();
   };
   function preview() {
-    $('ticketPreview').innerHTML = `<div class="ticket"><div class="ticket-in">${frontHTML({id: editing?.id, name: $('ticketName').value.trim(),
-      depart: $('ticketTime').value, days: pickedDays()})}</div></div>`;
+    $('ticketPreview').innerHTML = `<div class="ticket"><div class="ticket-in">${frontHTML({id: editing?.id, name: $<HTMLInputElement>('ticketName').value.trim(),
+      depart: $<HTMLInputElement>('ticketTime').value, days: pickedDays()})}</div></div>`;
   }
-  $('ticketName').addEventListener('input', () => { $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`; preview(); });
+  $('ticketName').addEventListener('input', () => { $('ticketNameCount').textContent = `${[...$<HTMLInputElement>('ticketName').value].length}/12`; preview(); });
 
   function showPlaces() {
-    for (const [id, place, empty] of [['ticketFrom', form.from, '출발지 고르기'], ['ticketTo', form.to, '도착지 고르기']]) {
-      const b = $(id).querySelector('b');
+    for (const [id, place, empty] of [['ticketFrom', form.from, '출발지 고르기'], ['ticketTo', form.to, '도착지 고르기']] as const) {
+      const b = $(id).querySelector('b')!;
       b.textContent = place?.name || empty; b.classList.toggle('ph', !place);
     }
   }
   function showTime() {
-    const [h, m] = ($('ticketTime').value || '08:00').split(':').map(Number);
+    const [h, m] = ($<HTMLInputElement>('ticketTime').value || '08:00').split(':').map(Number) as [number, number];
     $('ticketTimeText').innerHTML = `<em>${h < 12 ? '오전' : '오후'}</em> ${h % 12 || 12}:${String(m).padStart(2, '0')}`;
   }
   function showRoute() {
@@ -449,7 +474,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     b.classList.toggle('empty', !r);
     b.innerHTML = r ? `${routeTrack(r, colors, 270)}<span class="pk"><b>${r.minutes}분</b> · ${esc(r.arrives)} 도착 · 환승 ${r.transfers}</span><u>바꾸기</u>`
       : `<span class="pk">경로 고르기</span><svg class="tf-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`;
-    $('ticketSave').disabled = !r;
+    $<HTMLButtonElement>('ticketSave').disabled = !r;
   }
   // 출발 · 도착 · 시각이 바뀌면 고른 경로는 풀린다(그 경로는 그 조건에서 찾은 것)
   function routeGone() {
@@ -458,18 +483,18 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
 
   // 장소 고르기 쪽
-  let placeFor = 'from';
-  function openPlace(which) {
+  let placeFor:'from' | 'to' = 'from';
+  function openPlace(which:'from' | 'to') {
     placeFor = which; lastField = $(which === 'from' ? 'ticketFrom' : 'ticketTo');
     $('menuPlace').setAttribute('aria-label', which === 'from' ? '출발지 고르기' : '도착지 고르기');
     $('placeDot').classList.toggle('to', which === 'to');
-    $('placeQuery').value = ''; $('placeList').hidden = true; $('placeList').replaceChildren();
+    $<HTMLInputElement>('placeQuery').value = ''; $('placeList').hidden = true; $('placeList').replaceChildren();
     $('placeOpen').click();
     $('placeQuery').focus({preventScroll: true});
   }
   $('ticketFrom').onclick = () => openPlace('from');
   $('ticketTo').onclick = () => openPlace('to');
-  placeSearch($('placeQuery'), $('placeList'), place => {
+  placeSearch($<HTMLInputElement>('placeQuery'), $('placeList'), place => {
     if (!place) return;
     const before = form[placeFor];
     form[placeFor] = place;
@@ -480,16 +505,16 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   // 돌리는 동안은 칸 · 미리보기만 바꾸고, 접을 때 시각이 바뀌었으면 고른 경로를 푼다(돌리는 중에 토스트가 연달아 뜨지 않게)
   const ROW = 40;   // 휠 한 칸 높이(syung.css .tw-col button)
   const wheelBox = $('ticketTimePick');
-  const wheels = Object.fromEntries([...wheelBox.querySelectorAll('.tw-col')].map(el => [el.dataset.part, {el, values: [], label: String}]));
-  const pad2 = n => String(n).padStart(2, '0');
+  const wheels = Object.fromEntries([...wheelBox.querySelectorAll<HTMLElement>('.tw-col')].map(el => [el.dataset.part, {el, values: [], label: String}])) as Record<'ampm' | 'hour' | 'minute', Wheel>;
+  const pad2 = (n:number) => String(n).padStart(2, '0');
   let timeAtOpen = '';
-  const wheelIndex = w => Math.max(0, Math.min(w.values.length - 1, Math.round(w.el.scrollTop / ROW)));
-  function markWheel(w) {
+  const wheelIndex = (w:Wheel) => Math.max(0, Math.min(w.values.length - 1, Math.round(w.el.scrollTop / ROW)));
+  function markWheel(w:Wheel) {
     const at = wheelIndex(w);
     [...w.el.children].forEach((b, index) => { b.className = index === at ? 'on' : Math.abs(index - at) === 1 ? 'near' : ''; });
-    w.el.setAttribute('aria-valuetext', w.label(w.values[at]));
+    w.el.setAttribute('aria-valuetext', w.label(w.values[at]!));
   }
-  function setWheel(part, values, label, current) {
+  function setWheel(part:keyof typeof wheels, values:number[], label:(value:number)=>string, current:number) {
     const w = wheels[part];
     w.values = values; w.label = label;
     w.el.replaceChildren(...values.map((value, index) => {
@@ -502,14 +527,14 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     markWheel(w);
   }
   function wheelTime() {
-    const value = part => wheels[part].values[wheelIndex(wheels[part])];
+    const value = (part:keyof typeof wheels) => wheels[part].values[wheelIndex(wheels[part])]!;
     return `${pad2(value('ampm') * 12 + value('hour') % 12)}:${pad2(value('minute'))}`;
   }
   for (const w of Object.values(wheels)) {
     let frame = 0;
     w.el.addEventListener('scroll', () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => { markWheel(w); $('ticketTime').value = wheelTime(); showTime(); preview(); });
+      frame = requestAnimationFrame(() => { markWheel(w); $<HTMLInputElement>('ticketTime').value = wheelTime(); showTime(); preview(); });
     }, {passive: true});
     w.el.addEventListener('keydown', e => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
@@ -518,8 +543,8 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     });
   }
   function openWheel() {
-    const [h, m] = $('ticketTime').value.split(':').map(Number);
-    timeAtOpen = $('ticketTime').value;
+    const [h, m] = $<HTMLInputElement>('ticketTime').value.split(':').map(Number) as [number, number];
+    timeAtOpen = $<HTMLInputElement>('ticketTime').value;
     wheelBox.hidden = false; $('ticketTimeBtn').setAttribute('aria-expanded', 'true');   // 보인 뒤에 스크롤 자리를 잡는다
     const minutes = Array.from({length: 12}, (_, index) => index * 5);
     if (!minutes.includes(m)) { minutes.push(m); minutes.sort((left, right) => left - right); }   // 예전 승차권의 08:13 같은 시각은 그대로 보여 준다
@@ -531,14 +556,14 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   function closeWheel(changed = true) {
     if (wheelBox.hidden) return;
     wheelBox.hidden = true; $('ticketTimeBtn').setAttribute('aria-expanded', 'false');
-    if (changed && $('ticketTime').value !== timeAtOpen) routeGone();
+    if (changed && $<HTMLInputElement>('ticketTime').value !== timeAtOpen) routeGone();
   }
   $('ticketTimeBtn').onclick = () => { if (wheelBox.hidden) openWheel(); else closeWheel(); };
   $('ticketTimeDone').onclick = () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); };
 
   // 경로 선택 쪽: 고른 요일 중 가장 가까운 날(없으면 오늘 · 시각이 지났으면 다음 날)의 그 시각으로 길찾기
   function nextRide() {
-    const days = pickedDays(), [h, m] = $('ticketTime').value.split(':').map(Number), now = new Date();
+    const days = pickedDays(), [h, m] = $<HTMLInputElement>('ticketTime').value.split(':').map(Number) as [number, number], now = new Date();
     for (let ahead = 0; ahead < 8; ahead++) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead, h, m);
       const weekday = (day.getDay() + 6) % 7 + 1;
@@ -547,13 +572,13 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, h, m);
   }
   // 저장하는 것: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(길 모양 path 같은 큰 칸은 뺀다)
-  const slimLeg = l => l.type === 'walk' ? {type: 'walk', seconds: Math.max(0, Math.round(l.seconds || 0))}
+  const slimLeg = (l:Plan['legs'][number]):SlimLeg => l.type === 'walk' ? {type: 'walk', seconds: Math.max(0, Math.round(l.seconds || 0))}
     : {type: l.type, ...(l.type === 'bus' ? {route: l.route, color: l.color} : {line: l.line}), from: l.from, to: l.to,
-      departs: l.departs, arrives: l.arrives, wait: Math.max(0, Math.round(l.wait || 0))};
-  const slimRoute = p => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
+      departs: l.departs, arrives: l.arrives, wait: Math.max(0, Math.round(l.wait || 0))} as SlimLeg;
+  const slimRoute = (p:Plan):SlimRoute => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});
-  const rideSig = p => p.legs.filter(l => l.type !== 'walk').map(l => `${l.line || l.route}|${l.from}|${l.to}`).join('>');
-  let plans = [], chosen = -1, routeSeq = 0;
+  const rideSig = (p:Plan | SlimRoute) => (p.legs as { type:string; line?:string; route?:string; from?:string; to?:string }[]).filter(l => l.type !== 'walk').map(l => `${l.line || l.route}|${l.from}|${l.to}`).join('>');
+  let plans:Plan[] = [], chosen = -1, routeSeq = 0;
   function drawPlans() {
     $('routeList').replaceChildren(...plans.map((p, index) => {
       const b = document.createElement('button');
@@ -571,7 +596,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   async function openRoute() {
     lastField = $('ticketRoute');
     if (!form.from || !form.to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(form.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
-    const when = nextRide(), pad = n => String(n).padStart(2, '0');
+    const when = nextRide(), pad = (n:number) => String(n).padStart(2, '0');
     $('routeTrip').textContent = `${form.from.name} → ${form.to.name}`;
     $('routeWhen').textContent = `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${$('ticketTimeText').textContent} 출발 기준`;
     plans = []; chosen = -1; drawPlans(); say('routeMsg', '경로를 찾는 중…');
@@ -579,50 +604,50 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     const my = ++routeSeq;
     const at = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
     try {
-      const {status, body} = await getJson(`./api/route?from=${form.from.lat},${form.from.lng}&to=${form.to.lat},${form.to.lng}&at=${encodeURIComponent(at)}`);
+      const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${form.from.lat},${form.from.lng}&to=${form.to.lat},${form.to.lng}&at=${encodeURIComponent(at)}`);
       if (my !== routeSeq) return;
       if (status !== 200 || !body?.ok || !body.plans?.length) { say('routeMsg', body?.error || '경로를 찾지 못했어요.'); return; }
-      plans = body.plans;
-      const mine = form.route ? plans.findIndex(p => rideSig(p) === rideSig(form.route)) : -1;
+      plans = body.plans!;
+      const mine = form.route ? plans.findIndex(p => rideSig(p) === rideSig(form.route!)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
       chosen = mine >= 0 ? mine : Math.max(0, fastest);   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
       say('routeMsg', ''); drawPlans();
-      $('routeList').children[chosen]?.focus({preventScroll: true});
+      ($('routeList').children[chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
     } catch { if (my === routeSeq) say('routeMsg', '경로를 찾지 못했어요. 연결을 확인해 주세요.'); }
   }
   $('ticketRoute').onclick = openRoute;
   $('routePick').onclick = () => {
     if (!plans[chosen]) return;
-    form.route = slimRoute(plans[chosen]);
+    form.route = slimRoute(plans[chosen]!);
     showRoute(); backToForm();
   };
 
   let deleteArmed = false;
-  function openTicket(t) {
+  function openTicket(t:Ticket | null) {
     editing = t || null; deleteArmed = false; lastField = null;
     $('menuTicket').setAttribute('aria-label', t ? '승차권 고치기' : '승차권 발권');
-    $('ticketName').value = t?.name || '';
-    $('ticketNameCount').textContent = `${[...$('ticketName').value].length}/12`;
-    closeWheel(false); $('ticketTime').value = t?.depart || '08:00';
+    $<HTMLInputElement>('ticketName').value = t?.name || '';
+    $('ticketNameCount').textContent = `${[...$<HTMLInputElement>('ticketName').value].length}/12`;
+    closeWheel(false); $<HTMLInputElement>('ticketTime').value = t?.depart || '08:00';
     form.from = t?.from || null; form.to = t?.to || null; form.route = t?.route || null;
-    for (const b of dayBox.children) b.setAttribute('aria-pressed', String(t ? t.days.includes(+b.dataset.day) : false));
+    for (const b of dayBox.children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String(t ? t.days.includes(+b.dataset.day!) : false));
     $('ticketDelete').hidden = !t; $('ticketDelete').textContent = '이 승차권 지우기';
     showPlaces(); showTime(); showRoute(); daysChanged();
     $('ticketOpen').click();
   }
   $('ticketNew').onclick = () => openTicket(null);
-  $('ticketForm').onsubmit = async e => {
+  $('ticketForm').onsubmit = async (e:SubmitEvent) => {
     e.preventDefault();
     closeWheel();
     if (!form.route) return;   // 휠을 접으며 시각이 바뀌어 경로가 풀렸다(토스트로 알림)
-    const body = {name: $('ticketName').value.trim(), from: form.from, to: form.to, depart: $('ticketTime').value, days: pickedDays(), route: form.route};
+    const body = {name: $<HTMLInputElement>('ticketName').value.trim(), from: form.from, to: form.to, depart: $<HTMLInputElement>('ticketTime').value, days: pickedDays(), route: form.route};
     if (!body.from || !body.to) { toast('출발지 · 도착지를 골라 주세요', true); $(body.from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     if (!body.route) { toast('경로를 골라 주세요', true); $('ticketRoute').focus(); return; }
     if (!body.name) { toast('승차권 이름을 넣어 주세요', true); $('ticketName').focus(); return; }
-    const save = $('ticketSave');
+    const save = $<HTMLButtonElement>('ticketSave');
     save.disabled = true; save.textContent = '발권하는 중…';
     try {
-      const r = editing ? await send('PUT', `./api/me/tickets/${editing.id}`, body) : await send('POST', './api/me/tickets', body);
+      const r = editing ? await send('PUT', `./api/me/tickets/${(editing as Ticket).id}`, body) : await send('POST', './api/me/tickets', body);
       if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
       if (!r.ok) { toast(r.body?.error?.message || '발권하지 못했어요.', true); return; }
       const fixed = !!editing;
@@ -637,7 +662,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if (!editing) return;
     if (!deleteArmed) { deleteArmed = true; $('ticketDelete').textContent = '한 번 더 누르면 지워요'; return; }
     try {
-      const r = await send('DELETE', `./api/me/tickets/${editing.id}`);
+      const r = await send('DELETE', `./api/me/tickets/${editing!.id}`);
       if (!r.ok && r.status !== 404) { toast('지우지 못했어요.', true); return; }
       await loadTickets();
       $('ticketsRow').click();
@@ -646,7 +671,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   };
 
   // ---- 사용 횟수(내 통계) ----
-  function countUse(kind) {
+  function countUse(kind:string) {
     if (!me) return;
     send('POST', './api/me/usage', {kind}).catch(() => {});   // 못 보내도 화면에는 아무 일 없다
   }
@@ -657,17 +682,17 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   async function loadAccountPage() {
     if (!me) return;
     const my = ++accountSeq;
-    let stats, sessions;
-    try { [stats, sessions] = await Promise.all([getJson('./api/me/stats'), getJson('./api/me/sessions')]); } catch { return; }
+    let stats:Reply<Stats>, sessions:Reply<{ sessions:Session[] }>;
+    try { [stats, sessions] = await Promise.all([getJson<Stats>('./api/me/stats'), getJson<{ sessions:Session[] }>('./api/me/sessions')]); } catch { return; }
     if (my !== accountSeq || !me) return;
     if (stats.status === 401 || sessions.status === 401) { me = null; show(); return; }
-    if (stats.status === 200) { renderStats(stats.body); $('accountStats').hidden = false; }
-    if (sessions.status === 200) { renderSafe(sessions.body.sessions); $('accountSafe').hidden = false; }
+    if (stats.status === 200) { renderStats(stats.body!); $('accountStats').hidden = false; }
+    if (sessions.status === 200) { renderSafe(sessions.body!.sessions); $('accountSafe').hidden = false; }
   }
   $('accountRow').addEventListener('click', loadAccountPage);   // 본체가 쪽을 여는 onclick 과 같이 돈다
 
-  function renderStats(st) {
-    const cell = (value, label) => `<div class="st-cell"><b>${esc(value)}</b><small>${esc(label)}</small></div>`;
+  function renderStats(st:Stats) {
+    const cell = (value:string, label:string) => `<div class="st-cell"><b>${esc(value)}</b><small>${esc(label)}</small></div>`;
     const most = Math.max(1, ...st.daily.map(d => d.open + d.route + d.ticket));
     const bars = st.daily.map(d => {
       const n = d.open + d.route + d.ticket, [, m, day] = d.day.split('-').map(Number);
@@ -688,7 +713,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       + `<p class="st-note">한 주에 타는 횟수 ${st.weeklyRides}번 · 승차권 본 횟수 ${st.recent.ticket}번(최근 ${st.recent.days}일)</p>${fare}`;
   }
 
-  function renderSafe(list) {
+  function renderSafe(list:Session[]) {
     const body = $('accountSafeBody');
     const items = list.map(item => `<li data-session="${esc(item.id)}"><span class="dv-name">${esc(item.device)}${item.current ? '<em>이 기기</em>' : ''}</span>`
       + `<small>마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}</small>`
@@ -697,11 +722,11 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       + `<div class="dv-actions">${list.length > 1 ? '<button type="button" id="deviceOthers">다른 기기 모두 로그아웃</button>' : ''}`
       + '<button type="button" id="dataExport">내 데이터 내려받기</button></div>'
       + '<p class="st-note">내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요.</p>';
-    for (const b of body.querySelectorAll('.dv-out')) b.onclick = () => logoutDevice(b.closest('li').dataset.session, b);
+    for (const b of body.querySelectorAll<HTMLButtonElement>('.dv-out')) b.onclick = () => logoutDevice(b.closest('li')!.dataset.session!, b);
     $('deviceOthers')?.addEventListener('click', logoutOthers);
     $('dataExport').onclick = exportData;
   }
-  async function logoutDevice(id, button) {
+  async function logoutDevice(id:string, button:HTMLButtonElement) {
     button.disabled = true;
     try {
       const r = await send('DELETE', `./api/me/sessions/${encodeURIComponent(id)}`);
@@ -726,7 +751,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       const r = await getJson('./api/me/export');
       if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
       if (r.status !== 200) { toast('내려받지 못했어요. 잠시 뒤 다시 해 주세요.', true); return; }
-      const now = new Date(), pad = n => String(n).padStart(2, '0');
+      const now = new Date(), pad = (n:number) => String(n).padStart(2, '0');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(r.body, null, 2)], {type: 'application/json'}));
       a.download = `syung-my-data-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}.json`;
@@ -751,7 +776,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     } catch { toast('탈퇴하지 못했어요. 연결을 확인해 주세요.', true); }
   };
 
-  me = answer.body.me || null;
+  me = answer.body!.me || null;
   show();
   if (me) { countUse('open'); await loadTickets(); }
 
@@ -761,7 +786,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   if (back) {
     history.replaceState(null, '', location.pathname + location.search);
     const succeeded = back[1] === 'ok' || back[1] === 'new';
-    if (!me) openSheet(LOGIN_ERRORS[back[1]] || '로그인하지 못했어요. 잠시 뒤 다시 해 주세요.', back[1] !== 'denied');
+    if (!me) openSheet(LOGIN_ERRORS[back[1]!] || '로그인하지 못했어요. 잠시 뒤 다시 해 주세요.', back[1] !== 'denied');
     else if (!succeeded) $('settingsButton')?.click();
   }
 }
