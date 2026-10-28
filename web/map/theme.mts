@@ -5,6 +5,7 @@
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(지금 모드의 설정 live.settings · 버스 층 · 지도 준비)은 live.<이름> 으로 읽는다. applyTheme 를 만들 때 부르지 않는다(본체가 부른다).
 import type { Map as MapLibre } from 'maplibre-gl';
 import type { UserPrefs } from '../user/prefs.mts';
+import type { SettingsMenu } from '../ui/settings_menu.tsx';
 
 // 지도 색 한 벌(밝은 · 어두운 각각 — modes/basic/palette.mts MAP_THEMES 등)
 type Palette = Record<string, string | number | unknown[]>;
@@ -19,13 +20,14 @@ interface ThemeSettings {
 }
 interface ThemeLive { settings:ThemeSettings; busLayer?:{ setTheme(theme:Theme):void }|null; ready:boolean }
 export interface MapThemeDeps {
-  map:MapLibre; $:(id:string)=>HTMLElement|null; seoulSun:(date?:Date)=>{ rise:Date; set:Date };
+  map:MapLibre; $:(id:string)=>HTMLElement|null; menu:Pick<SettingsMenu,'theme'|'themeNote'|'sky'|'on'>;   // menu: 설정 서랍의 테마 칸(ui/settings_menu.tsx)
+  seoulSun:(date?:Date)=>{ rise:Date; set:Date };
   cityPalette:(theme:Theme, options:{ pack:unknown; tone:unknown; ride?:boolean })=>Palette;
   applyCityStyle:(map:MapLibre, options:Record<string,unknown>)=>void; applyGroundTexture:(map:MapLibre, options:Record<string,unknown>)=>void;
   syncCity:()=>void; updateSun:()=>void; focusRoute:(on:boolean)=>void; journeyMap:{ routeBounds:unknown };
   rider:{ ride:unknown }; prefs:UserPrefs; live:ThemeLive;
 }
-export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live}:MapThemeDeps){
+export function createMapTheme({map,$,menu,seoulSun,cityPalette,applyCityStyle,applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live}:MapThemeDeps){
   // ---- light / dark theme --------------------------------------------------------------------
   // 자동 (default): light from sunrise to sunset in Seoul, dark at night; 라이트 / 다크: fixed by the viewer.
   const mixHex=(a:string,b:string,t:number)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
@@ -48,15 +50,12 @@ export function createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle,applyG
     // header logo: black tile on the yellow bar, yellow tile on the dark bar
     const bi=document.querySelector<HTMLImageElement>('.brand-icon');if(bi)bi.src=`./brand/syung-${t==='dark'?'light':'dark'}.svg`;
     // 메뉴의 테마 카드(자동 · 라이트 · 다크) 아래 한 줄: 자동이면 지금 테마와 다음에 바뀌는 때(서울 해 뜨고 지는 시각), 고정이면 자동이 뭔지
-    for(const b of document.querySelectorAll<HTMLElement>('[data-theme-choice]'))b.setAttribute('aria-pressed',String(b.dataset.themeChoice===cur.themeChoice));
-    const tn=$('themeNote');
-    if(tn){
-      if(cur.themeChoice==='auto'){
-        // 다음에 바뀌는 때: 낮이면 오늘 일몰, 일출 전이면 오늘 일출, 일몰 뒤면 내일 일출(서울 날짜 기준 seoulSun 에 하루 뒤를 준다)
-        const now=new Date(),{rise,set}=seoulSun(now),nextRise=now>=set?seoulSun(new Date(now.getTime()+864e5)).rise:rise;
-        tn.innerHTML=t==='dark'?`지금은 <b>다크</b> · ${hm(nextRise)} 해 뜨면 라이트로`:`지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
-      }else tn.textContent='자동은 해 뜨면 라이트, 해 지면 다크예요';
-    }
+    menu.theme(cur.themeChoice);
+    if(cur.themeChoice==='auto'){
+      // 다음에 바뀌는 때: 낮이면 오늘 일몰, 일출 전이면 오늘 일출, 일몰 뒤면 내일 일출(서울 날짜 기준 seoulSun 에 하루 뒤를 준다)
+      const now=new Date(),{rise,set}=seoulSun(now),nextRise=now>=set?seoulSun(new Date(now.getTime()+864e5)).rise:rise;
+      menu.themeNote(t==='dark'?{lead:'지금은 ',bold:'다크',tail:` · ${hm(nextRise)} 해 뜨면 라이트로`}:{lead:'지금은 ',bold:'라이트',tail:` · ${hm(set)} 해 지면 다크로`});
+    }else menu.themeNote('자동은 해 뜨면 라이트, 해 지면 다크예요');
     drawSky();
     if(!live.ready)return;
     const set=(id:string,prop:Parameters<MapLibre['setPaintProperty']>[1],v:unknown)=>{if(map.getLayer(id))map.setPaintProperty(id,prop,v as Parameters<MapLibre['setPaintProperty']>[2])};
@@ -85,7 +84,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
-  for(const b of document.querySelectorAll<HTMLElement>('[data-theme-choice]'))b.onclick=()=>{prefs.set('themeChoice',b.dataset.themeChoice!);applyTheme()};
+  menu.on({theme:choice=>{prefs.set('themeChoice',choice);applyTheme()}});
   setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();else drawSky();updateSun()},5*60*1000);   // 고정 테마여도 하늘 그림의 해 · 달은 움직인다
 
   // ---- 하늘 띠(메뉴 맨 위 · 테마 세그먼트 위, 늘 보임) — 슝 그림: 산 · 서울 빌딩(남산타워 · 롯데타워) 앞 선로를 동글한 지하철이 달리고,
@@ -94,9 +93,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   const hm=(d:Date)=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
   // 메뉴 맨 위 하늘 그림: 고른 테마와 상관없이 늘 지금 실제 하늘(낮 · 밤)
   function drawSky():void{
-    const sp=$('sunPath');if(!sp)return;
     const now=new Date(),{rise,set}=seoulSun(now);
-    sp.innerHTML=sunPathHTML(now,rise,set);sp.classList.toggle('is-night',!(now>=rise&&now<set));
+    menu.sky(sunPathHTML(now,rise,set),!(now>=rise&&now<set));
   }
   function sunPathHTML(now:Date,rise:Date,set:Date):string{
     const W=320,H=110,left=30,right=290,base=84,arcBase=62,top=-22,dayLen=+set-+rise,day=now>=rise&&now<set,nightLen=864e5-dayLen;
