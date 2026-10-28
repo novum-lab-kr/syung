@@ -22,11 +22,28 @@ import { BULB_FS, bulbSize, compile, hexRGB, lightsOn, lightsOff } from './night
 import { SEOUL_CITY_STYLE } from '../basic/city.mts';
 import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mts';
 
-const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // as park_rides: +x east, +y south, +z up — a high south-western sun
-const LINE_MIX = [15.2, 16.6];      // zoom: below the first the skirt and roof are the line's colour, above the second the livery's
+type V3 = [number, number, number];
+type Pt = [number, V3];   // 꼭짓점 자리: [x(× L), [앞뒤 덧붙임 · 옆 · 위(× W)]]
+interface Paint { part:number; slot:number; vis:number }   // 칠(a_part) · 팔레트 자리 · 보이는 칸
+type InstAttr = 'i_o' | 'i_F' | 'i_R' | 'i_U' | 'i_LW' | 'i_rgb' | 'i_flag' | 'i_seed' | 'i_badge';
+type Attr = 'a_x' | 'a_p' | 'a_n' | 'a_part' | 'a_slot' | 'a_vis' | InstAttr;
+type BulbAttr = 'a_b' | InstAttr;
+type Uniform = 'u_matrix' | 'u_unit' | 'u_pass' | 'u_shadow' | 'u_alpha' | 'u_lineMix' | 'u_headrest' | 'u_amb' | 'u_dif' | 'u_riderLight' | 'u_pal' | 'u_light' | 'u_badges' | 'u_badgeText';
+type BulbUniform = 'u_matrix' | 'u_unit' | 'u_size' | 'u_core' | 'u_warm' | 'u_red' | 'u_wt';
+interface CarMesh { b:WebGLBuffer; va:WebGLVertexArrayObject; n:number }
+type Pointer = [loc:number, size:number, off:number];
+// 88열차 모양(서울 스타일 팩 train.coaster88 — 모르는 칸은 기본값)
+type CoasterStyle = Partial<Omit<typeof DEFAULT_STYLE, 'bodyColors'>> & { bodyColors?:Partial<typeof DEFAULT_STYLE.bodyColors> };
+// 그리기 옵션(TrainLayer 가 넘기는 것)
+export interface CoasterDrawOptions { zoom:number; unit:number; walls?:boolean; occlude?:number; dark:boolean; shadow:[number, number]; pixelRatio:number; lod?:number; part?:string }
+// 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
+interface TrainLast { n:number; lod:number; rows:number; W:number; L:number; zoom:number; badgeText:boolean; dropped:number; repaired:number }
+
+const SUN = ((v:number[]) => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // as park_rides: +x east, +y south, +z up — a high south-western sun
+const LINE_MIX = [15.2, 16.6] as const;      // zoom: below the first the skirt and roof are the line's colour, above the second the livery's
 const LOD_MID = 11, LOD_HI = 22;    // W px: wheels and a rounder nose from LOD_MID, bars, arms and the full nose from LOD_HI (riders at every level)
 const INST = 20;                    // floats an instance (the stable rider seed, then the route badge's atlas slot)
-const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
+const fnv1a = (s:string) => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
 
 // ── the car, in unit space ───────────────────────────────────────────────────────────────────────
 // x along the car in units of L (0 the rear, 1 the front) plus an offset in W; y across (±.5 the body sides); z up, in W.
@@ -40,18 +57,19 @@ const SKIN = [.97, .82, .68], HAIR = [[.16, .12, .1], [.3, .2, .12], [.1, .1, .1
 // visibility: 0 every car · 1 lead cars only · 2 all but the lead · 3 tail cars only
 const V_ALL = 0, V_LEAD = 1, V_NOTLEAD = 2, V_TAIL = 3;
 
-const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
+const norm = (a:V3):V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
 
 class Mesh {
+  declare d:number[]; declare n:number;
   constructor() { this.d = []; this.n = 0 }
   // a vertex: x (× L), p (× W), normal, part, slot, visibility — 10 floats
-  v(x, p, n, part, slot, vis) { this.d.push(x, p[0], p[1], p[2], n[0], n[1], n[2], part, slot, vis); this.n++ }
-  quad(x, A, B, C, D, o, n) { for (const p of [A, B, C, A, C, D]) this.v(x, p, n, o.part, o.slot, o.vis) }
+  v(x:number, p:V3, n:V3, part:number, slot:number, vis:number) { this.d.push(x, p[0], p[1], p[2], n[0], n[1], n[2], part, slot, vis); this.n++ }
+  quad(x:number, A:V3, B:V3, C:V3, D:V3, o:Paint, n:V3) { for (const p of [A, B, C, A, C, D]) this.v(x, p, n, o.part, o.slot, o.vis) }
   // a box between two along-positions (x0 + ex0·W … x1 + ex1·W), y0..y1, z0..z1; faces: which of +x −x +y −y +z −z to draw
-  slab(x0, ex0, x1, ex1, y0, y1, z0, z1, o, faces = 'XxYyZz') {
-    const P = (x, ex, y, z) => [x, [ex, y, z]], q = (face, a, b, c, d, n) => { if (!faces.includes(face)) return;
+  slab(x0:number, ex0:number, x1:number, ex1:number, y0:number, y1:number, z0:number, z1:number, o:Paint, faces = 'XxYyZz') {
+    const P = (x:number, ex:number, y:number, z:number):Pt => [x, [ex, y, z]], q = (face:string, a:Pt, b:Pt, c:Pt, d:Pt, n:V3) => { if (!faces.includes(face)) return;
       for (const [x, p] of [a, b, c, a, c, d]) this.v(x, p, n, o.part, o.slot, o.vis) };
-    const A = (y, z) => P(x0, ex0, y, z), B = (y, z) => P(x1, ex1, y, z);
+    const A = (y:number, z:number) => P(x0, ex0, y, z), B = (y:number, z:number) => P(x1, ex1, y, z);
     q('X', B(y0, z0), B(y1, z0), B(y1, z1), B(y0, z1), [1, 0, 0]);
     q('x', A(y1, z0), A(y0, z0), A(y0, z1), A(y1, z1), [-1, 0, 0]);
     q('Y', A(y1, z0), B(y1, z0), B(y1, z1), A(y1, z1), [0, 1, 0]);
@@ -60,13 +78,13 @@ class Mesh {
     q('z', A(y1, z0), B(y1, z0), B(y0, z0), A(y0, z0), [0, 0, -1]);
   }
   // a box at one along-position x, centred (cx, cy, cz) in W with half extents h
-  box(x, c, h, o, faces = 'XxYyZz') { this.slab(x, c[0] - h[0], x, c[0] + h[0], c[1] - h[1], c[1] + h[1], c[2] - h[2], c[2] + h[2], o, faces) }
+  box(x:number, c:V3, h:V3, o:Paint, faces = 'XxYyZz') { this.slab(x, c[0] - h[0], x, c[0] + h[0], c[1] - h[1], c[1] + h[1], c[2] - h[2], c[2] + h[2], o, faces) }
   buffer() { return new Float32Array(this.d) }
 }
 
 // the nose of the lead car: a loft from the tub's front (x = L) to the tip, elliptical in plan, its top the sloping plate
-function nose(M, rings) {
-  const prof = t => ({ w: .5 * Math.sqrt(Math.max(0, 1 - t * t)) + .06 * t, z: TUB0 + TUBH * (1 - .55 * Math.pow(t, 1.4)), x: NOSE * t });
+function nose(M:Mesh, rings:number) {
+  const prof = (t:number) => ({ w: .5 * Math.sqrt(Math.max(0, 1 - t * t)) + .06 * t, z: TUB0 + TUBH * (1 - .55 * Math.pow(t, 1.4)), x: NOSE * t });
   const side = { part: P_FLAT, slot: S_RED, vis: V_LEAD }, plate = { part: P_PLATE, slot: S_CREAM, vis: V_LEAD };
   for (let i = 0; i < rings; i++) {
     const a = prof(i / rings), b = prof((i + 1) / rings), dx = b.x - a.x, dw = a.w - b.w, dz = a.z - b.z;
@@ -79,7 +97,7 @@ function nose(M, rings) {
   M.quad(1, [t.x, -t.w, TUB0], [t.x, -t.w, t.z], [t.x, t.w, t.z], [t.x, t.w, TUB0], side, [1, 0, 0]);
 }
 // the lead car's headboard: a plate leaning back over the front wall, the line's colour (the 행선 panel)
-function headboard(M) {
+function headboard(M:Mesh) {
   const o = { part: P_LINE, slot: S_TEAL, vis: V_LEAD }, z0 = TUB0 + TUBH, z1 = z0 + .17, lean = .11, hw = .34, th = .03, nb = norm([-(z1 - z0), 0, -lean]), nf = norm([z1 - z0, 0, lean]);
   M.quad(1, [-th, -hw, z0], [-th, hw, z0], [-th - lean, hw, z1], [-th - lean, -hw, z1], o, nb);      // back face (seen from the camera behind the train)
   M.quad(1, [0, hw, z0], [0, -hw, z0], [-lean, -hw, z1], [-lean, hw, z1], o, nf);                    // front face
@@ -87,20 +105,20 @@ function headboard(M) {
   for (const s of [-1, 1]) M.quad(1, [0, s * hw, z0], [-lean, s * hw, z1], [-th - lean, s * hw, z1], [-th, s * hw, z0], o, [0, s, 0]);
 }
 // the tail car's end: the same route badge on a cream board, with line-coloured edges and two tail lamps
-function tailboard(M) {
+function tailboard(M:Mesh) {
   M.slab(0, -.025, 0, 0, -.46, .46, TUB0 + .04, TUB0 + TUBH + .02, { part: P_TAIL, slot: S_CREAM, vis: V_TAIL }, 'x');
   M.slab(0, -.025, 0, 0, -.46, .46, TUB0 + .04, TUB0 + TUBH + .02, { part: P_LINE, slot: S_TEAL, vis: V_TAIL }, 'YyZ');
   for (const s of [-1, 1]) M.box(0, [-.03, s * .3, TUB0 + TUBH * .55], [.012, .06, .05], { part: P_FLAT, slot: S_RED, vis: V_TAIL }, 'xYyZz');
 }
-function chassis(M, wheels) {
+function chassis(M:Mesh, wheels:boolean) {
   M.slab(0, .02, 1, -.02, -.44, .44, .08, TUB0, { part: P_FLAT, slot: S_CHASSIS, vis: V_ALL }, 'XxYyz');   // its top is the tub's floor
   if (wheels) for (const x of [.14, .86]) for (const s of [-1, 1]) M.box(x, [0, s * .31, .075], [.075, .045, .075], { part: P_FLAT, slot: S_WHEEL, vis: V_ALL }, 'XxYyz');
 }
-function footprint(M) {   // the ground shadow's quad, a little wider than the car (its edge is softened in the shader)
+function footprint(M:Mesh) {   // the ground shadow's quad, a little wider than the car (its edge is softened in the shader)
   M.slab(0, -.12, 1, .12, -.62, .62, 0, 0, { part: P_FOOT, slot: 0, vis: V_ALL }, 'Z');
 }
 // the open tub: walls with thickness (outer face painted, inner face and rim in the frame's teal), the deck
-function tub(M) {
+function tub(M:Mesh) {
   const outer = { part: P_SIDE, slot: S_CREAM, vis: V_ALL }, inner = { part: P_FLAT, slot: S_TEAL, vis: V_ALL }, deck = { part: P_FLAT, slot: S_DECK, vis: V_ALL }, z0 = TUB0, z1 = TUB0 + TUBH;
   for (const s of [-1, 1]) {   // side walls, between the end walls
     const yo = s * .5, yi = s * (.5 - WALL);
@@ -115,7 +133,7 @@ function tub(M) {
 // their heads stay big, toy-like (hs), so a 7 px car still shows who is aboard without making the bodies stand above the tub.
 // The bar across each row and the arms appear close up only.
 // Which seats are taken, and in what, the vertex shader decides from the car's seed and the seat's number (a_slot).
-function seats(M, rows, lod) {
+function seats(M:Mesh, rows:number, lod:number) {
   const seat = { part: P_FLAT, slot: S_SEAT, vis: V_ALL }, head = { part: P_HEAD, slot: S_SEAT, vis: V_ALL }, bar = { part: P_FLAT, slot: S_BAR, vis: V_ALL };
   const rs = lod === 0 ? 1.5 : lod === 1 ? 1.2 : 1, hs = lod === 0 ? 1.8 : lod === 1 ? 1.35 : 1, full = lod > 1;
   // Keep bodies and hair just ahead of the backrest's front face (-.07 W), including the enlarged low-zoom heads.
@@ -139,7 +157,7 @@ function seats(M, rows, lod) {
   }
 }
 // the whole car at a level of detail: 0 the tub, seats and big riders (no wheels or bars, a 3-ring nose) · 1 wheels and a rounder nose · 2 arms, bars and the full nose
-function buildCar(lod, rows) {
+function buildCar(lod:number, rows:number) {
   const M = new Mesh();
   chassis(M, lod > 0); headboard(M); tailboard(M); nose(M, lod ? (lod > 1 ? 10 : 6) : 3);
   tub(M); seats(M, rows, lod);
@@ -147,7 +165,7 @@ function buildCar(lod, rows) {
 }
 // the night bulbs: along the belt both sides, one at the nose tip, two red at the tail. a_b = (x, y, z, kind)
 function buildBulbs() {
-  const d = [], zb = TUB0 + TUBH * .46;
+  const d:number[] = [], zb = TUB0 + TUBH * .46;
   for (let i = 0; i < 5; i++) for (const s of [-1, 1]) d.push((i + .5) / 5, s * .53, zb, 0);
   d.push(1, 0, TUB0 + TUBH * .5, 1);   // (the nose tip is NOSE·W ahead: the shader adds it)
   for (const s of [-1, 1]) d.push(0, s * .3, TUB0 + TUBH * .55, 2);
@@ -242,27 +260,30 @@ const DEFAULT_STYLE = { bodyColors: { cream: '#F4E4BC', red: '#C94235', gold: '#
 
 export class CoasterTrain {
   // livery: 'A' the line only on the headboard and tail · 'B' (default) and the headrests · 'C' and, zoomed out, the skirt and roof
-  static livery = 'B';
-  static last = null;   // what the last frame drew (the capture scripts read it)
+  static livery:string = 'B';
+  static last:TrainLast | null = null;   // what the last frame drew (the capture scripts read it)
   static dropped = 0; static repaired = 0;   // cars skipped (a NaN frame) or stood up (a degenerate one), ever
-  constructor(style) {
-    const S = { ...DEFAULT_STYLE, ...(style || SEOUL_CITY_STYLE?.train?.coaster88 || {}) }, C = { ...DEFAULT_STYLE.bodyColors, ...(S.bodyColors || {}) };
-    const cream = hexRGB(C.cream), teal = hexRGB(C.teal), deck = cream.map((c, i) => c * .8 + teal[i] * .2);   // the deck: the cream, in the tub's shade
+  declare pal:Float32Array; declare bulb:number[]; declare minLight:number; declare inst:Float32Array; declare n:number; declare M:Float32Array; declare flip:number; declare seeds:Map<unknown, number>;
+  declare p:WebGLProgram | null; declare pb:WebGLProgram | null; declare attr:Record<Attr, number>; declare attrB:Record<BulbAttr, number>; declare uni:Record<Uniform, WebGLUniformLocation | null>; declare uniB:Record<BulbUniform, WebGLUniformLocation | null>;
+  declare badges:WebGLTexture | null; declare meshes:Map<string, CarMesh>; declare ib:WebGLBuffer[]; declare cap:number; declare ox:number; declare oy:number;
+  constructor(style?:CoasterStyle | null) {
+    const S:CoasterStyle = { ...DEFAULT_STYLE, ...(style || SEOUL_CITY_STYLE?.train?.coaster88 || {}) }, C = { ...DEFAULT_STYLE.bodyColors, ...(S.bodyColors || {}) };
+    const cream = hexRGB(C.cream), teal = hexRGB(C.teal), deck = cream.map((c, i) => c * .8 + teal[i]! * .2);   // the deck: the cream, in the tub's shade
     this.pal = new Float32Array(PAL * 3);
     this.pal.set([...cream, ...hexRGB(C.red), ...hexRGB(C.gold), ...teal, ...hexRGB(S.seat), ...hexRGB(S.safetyBar), ...hexRGB(S.chassis), ...hexRGB('#1E2A2F'), ...deck, ...SKIN]);
     SHIRTS_RGB.forEach((c, i) => this.pal.set(c, (S_SHIRT + i) * 3)); HAIR.forEach((c, i) => this.pal.set(c, (S_HAIR + i) * 3));
     this.bulb = hexRGB(S.bulbColor); this.minLight = S.nightMinBodyLight ?? .55;
     this.inst = new Float32Array(INST * 512); this.n = 0; this.M = new Float32Array(16); this.flip = 0; this.seeds = new Map();
   }
-  init(gl) {
+  init(gl:WebGL2RenderingContext) {
     if (this.p) return;
     this.p = compile(gl, CAR_VS, CAR_FS);
     this.pb = compile(gl, BULB_VS, BULB_FS);
-    const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_badge'];
-    this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', 'a_vis', ...inst].map(n => [n, gl.getAttribLocation(this.p, n)]));
-    this.attrB = Object.fromEntries(['a_b', ...inst].map(n => [n, gl.getAttribLocation(this.pb, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_pass', 'u_shadow', 'u_alpha', 'u_lineMix', 'u_headrest', 'u_amb', 'u_dif', 'u_riderLight', 'u_pal', 'u_light', 'u_badges', 'u_badgeText'].map(n => [n, gl.getUniformLocation(this.p, n)]));
-    this.uniB = Object.fromEntries(['u_matrix', 'u_unit', 'u_size', 'u_core', 'u_warm', 'u_red', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pb, n)]));
+    const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_badge'] as const;
+    this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', 'a_vis', ...inst].map(n => [n, gl.getAttribLocation(this.p!, n)])) as Record<Attr, number>;
+    this.attrB = Object.fromEntries(['a_b', ...inst].map(n => [n, gl.getAttribLocation(this.pb!, n)])) as Record<BulbAttr, number>;
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_pass', 'u_shadow', 'u_alpha', 'u_lineMix', 'u_headrest', 'u_amb', 'u_dif', 'u_riderLight', 'u_pal', 'u_light', 'u_badges', 'u_badgeText'].map(n => [n, gl.getUniformLocation(this.p!, n)])) as Record<Uniform, WebGLUniformLocation | null>;
+    this.uniB = Object.fromEntries(['u_matrix', 'u_unit', 'u_size', 'u_core', 'u_warm', 'u_red', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pb!, n)])) as Record<BulbUniform, WebGLUniformLocation | null>;
     // One shared CPU atlas and one texture per GL context; preserve the other overlay layers' texture/unpack state.
     const oldTex = gl.getParameter(gl.TEXTURE_BINDING_2D), oldPre = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL), oldFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
     this.badges = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.badges);
@@ -273,58 +294,58 @@ export class CoasterTrain {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, oldPre); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, oldFlip); gl.bindTexture(gl.TEXTURE_2D, oldTex);
     // the meshes: levels 0, 1 and 2 for 2, 3 and 4 rows of seats; each with its own vertex array
     this.meshes = new Map();
-    const mesh = (key, data, stride, pointers) => {
+    const mesh = (key:string, data:Float32Array, stride:number, pointers:Pointer[]) => {
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b);
       for (const [loc, size, off] of pointers) if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, off) }
       gl.bindVertexArray(null); this.meshes.set(key, { b, va, n: data.length / (stride / 4) });
     };
-    const A = this.attr, carPtrs = [[A.a_x, 1, 0], [A.a_p, 3, 4], [A.a_n, 3, 16], [A.a_part, 1, 28], [A.a_slot, 1, 32], [A.a_vis, 1, 36]];
+    const A = this.attr, carPtrs:Pointer[] = [[A.a_x, 1, 0], [A.a_p, 3, 4], [A.a_n, 3, 16], [A.a_part, 1, 28], [A.a_slot, 1, 32], [A.a_vis, 1, 36]];
     for (const lod of [0, 1, 2]) for (const rows of [2, 3, 4]) mesh(lod + ':' + rows, buildCar(lod, rows), 40, carPtrs);   // a mesh a level of detail and a seat count
     { const F = new Mesh(); footprint(F); mesh('foot', F.buffer(), 40, carPtrs) }   // the shadow pass draws only this: two triangles a car
     mesh('bulbs', buildBulbs(), 16, [[this.attrB.a_b, 4, 0]]);
     // the instances: two stores used in turn, so a frame never writes over the one being drawn
     this.ib = [gl.createBuffer(), gl.createBuffer()]; this.cap = 0;
   }
-  begin(ox, oy) { this.ox = ox; this.oy = oy; this.n = 0 }
+  begin(ox:number, oy:number) { this.ox = ox; this.oy = oy; this.n = 0 }
   // a car: its frame on the track (base, F, R, U in mercator), L and W in px, the line's colour, whether it leads or trails,
   // its train's id and car number (the stable rider seed), and the full route name for the front/tail badge
-  car(fr, L, W, rgb, front, back, key, j = 0, line = '', seat = -1) {   // seat: 1인칭으로 탄 자리 번호(이 칸이면)
+  car(fr:readonly number[], L:number, W:number, rgb:readonly number[], front:boolean, back:boolean, key:unknown, j = 0, line = '', seat = -1) {   // seat: 1인칭으로 탄 자리 번호(이 칸이면)
     if ((this.n + 1) * INST > this.inst.length) { const g = new Float32Array(this.inst.length * 2); g.set(this.inst); this.inst = g }
     const d = this.inst, i = this.n * INST;
     for (let k = 0; k < 12; k++) if (!Number.isFinite(fr[k])) { CoasterTrain.dropped++; return }   // (a NaN frame would rasterize anywhere)
-    d[i] = fr[0] - this.ox; d[i + 1] = fr[1] - this.oy; d[i + 2] = fr[2];
-    for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k];
-    if (Math.hypot(fr[9], fr[10], fr[11]) < .5) {   // a degenerate frame (its across vector along the car: no up) would draw the car flat — stand it up on the world's up
-      const F = [fr[3], fr[4], fr[5]]; let R = [-F[1], F[0], 0], l = Math.hypot(R[0], R[1]); if (l < 1e-6) { R = [1, 0, 0]; l = 1 } R = [R[0] / l, R[1] / l, 0];
-      const U = [F[1] * R[2] - F[2] * R[1], F[2] * R[0] - F[0] * R[2], F[0] * R[1] - F[1] * R[0]];
+    d[i] = fr[0]! - this.ox; d[i + 1] = fr[1]! - this.oy; d[i + 2] = fr[2]!;
+    for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k]!;
+    if (Math.hypot(fr[9]!, fr[10]!, fr[11]!) < .5) {   // a degenerate frame (its across vector along the car: no up) would draw the car flat — stand it up on the world's up
+      const F:V3 = [fr[3]!, fr[4]!, fr[5]!]; let R:V3 = [-F[1], F[0], 0], l = Math.hypot(R[0], R[1]); if (l < 1e-6) { R = [1, 0, 0]; l = 1 } R = [R[0] / l, R[1] / l, 0];
+      const U = [F[1] * R[2] - F[2] * R[1], F[2] * R[0] - F[0] * R[2], F[0] * R[1] - F[1] * R[0]] as const;
       d[i + 6] = R[0]; d[i + 7] = R[1]; d[i + 8] = R[2]; d[i + 9] = U[0]; d[i + 10] = U[1]; d[i + 11] = U[2]; CoasterTrain.repaired++;
     }
-    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = (front ? 1 : 0) + (back ? 2 : 0) + 4 * (seat + 1);
+    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]!; d[i + 15] = rgb[1]!; d[i + 16] = rgb[2]!; d[i + 17] = (front ? 1 : 0) + (back ? 2 : 0) + 4 * (seat + 1);
     let s = this.seeds.get(key); if (s == null) { s = fnv1a(String(key)) / 4294967296; if (this.seeds.size > 4096) this.seeds.clear(); this.seeds.set(key, s) }
     d[i + 18] = (s + j * .6180339887) % 1;
     d[i + 19] = routeBadgeId(line);
     this.n++;
   }
   // the instance attributes on the bound vertex array, from the store filled this frame
-  instancePointers(gl, A) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]);
-    for (const [n, size, off] of [['i_o', 3, 0], ['i_F', 3, 12], ['i_R', 3, 24], ['i_U', 3, 36], ['i_LW', 2, 48], ['i_rgb', 3, 56], ['i_flag', 1, 68], ['i_seed', 1, 72], ['i_badge', 1, 76]]) {
+  instancePointers(gl:WebGL2RenderingContext, A:Record<InstAttr, number>) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]!);
+    for (const [n, size, off] of [['i_o', 3, 0], ['i_F', 3, 12], ['i_R', 3, 24], ['i_U', 3, 36], ['i_LW', 2, 48], ['i_rgb', 3, 56], ['i_flag', 1, 68], ['i_seed', 1, 72], ['i_badge', 1, 76]] as const) {
       const loc = A[n]; if (loc < 0) continue;
       gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, INST * 4, off); gl.vertexAttribDivisor(loc, 1);
     }
   }
   // o: zoom, unit (mercator a px), walls (depth in the buffer: test against it), occlude (alpha behind the walls),
   //    dark, shadow ([dx, dy] px the sun throws the shadow), pixelRatio, lod (1인칭: 화면 폭과 상관없이 이 단계로)
-  draw(gl, M, ox, oy, o) {
+  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:CoasterDrawOptions) {
     if (!this.n || !this.p) return;
-    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r] * ox + M[4 + r] * oy + M[12 + r];   // M · translate(origin), in double precision
-    this.flip ^= 1; gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]);
+    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r]! * ox + M[4 + r]! * oy + M[12 + r]!;   // M · translate(origin), in double precision
+    this.flip ^= 1; gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]!);
     if (this.cap < this.inst.length) { gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW); this.cap = this.inst.length;
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip ^ 1]); gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]) }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip ^ 1]!); gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib[this.flip]!) }
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, this.n * INST);
-    const W = this.inst[13], L = this.inst[12], lod = o.lod ?? (W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2), rows = Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
-    const m = this.meshes.get(lod + ':' + rows), livery = CoasterTrain.livery;
+    const W = this.inst[13]!, L = this.inst[12]!, lod = o.lod ?? (W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2), rows = Math.max(2, Math.min(4, Math.round(L / W * 1.3)));
+    const m = this.meshes.get(lod + ':' + rows)!, livery = CoasterTrain.livery;
     CoasterTrain.last = { n: this.n, lod, rows, W, L, zoom: o.zoom, badgeText: o.zoom >= 16.5, dropped: CoasterTrain.dropped, repaired: CoasterTrain.repaired };
     const z = o.zoom, lineMix = livery === 'C' ? 1 - Math.min(1, Math.max(0, (z - LINE_MIX[0]) / (LINE_MIX[1] - LINE_MIX[0]))) : 0;
     gl.useProgram(this.p); gl.bindVertexArray(m.va); this.instancePointers(gl, this.attr);
@@ -336,19 +357,19 @@ export class CoasterTrain {
     const oldTex = gl.getParameter(gl.TEXTURE_BINDING_2D); gl.bindTexture(gl.TEXTURE_2D, this.badges);
     gl.uniform1i(U.u_badges, 0); gl.uniform1f(U.u_badgeText, o.zoom >= 16.5 ? 1 : 0);
     gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.DEPTH_TEST);
-    const pass = (mesh, p, alpha) => { gl.uniform1f(U.u_pass, p); gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, this.n) };
+    const pass = (mesh:CarMesh, p:number, alpha:number) => { gl.uniform1f(U.u_pass, p); gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, this.n) };
     // behind the building walls: faint, before the cars have any depth of their own (no ghost of their hidden faces)
     gl.depthMask(false);
     if (o.walls && o.occlude && o.part !== 'body') { gl.depthFunc(gl.GREATER); pass(m, 0, o.occlude) }
     gl.depthFunc(gl.LEQUAL);
-    const foot = this.meshes.get('foot'); if (o.part !== 'body') { gl.bindVertexArray(foot.va); this.instancePointers(gl, this.attr); pass(foot, 1, 1) }   // the ground shadow
+    const foot = this.meshes.get('foot')!; if (o.part !== 'body') { gl.bindVertexArray(foot.va); this.instancePointers(gl, this.attr); pass(foot, 1, 1) }   // the ground shadow
     if (o.part === 'foot') { gl.bindVertexArray(null); gl.bindTexture(gl.TEXTURE_2D, oldTex); gl.activeTexture(oldActive); return }   // part: 'foot' 땅 그림자만 · 'body' 그림자 없이 칸만(1인칭으로 탄 열차 — 깊이를 비운 맨 위에서 그린다)
     gl.bindVertexArray(m.va); this.instancePointers(gl, this.attr);
     gl.depthMask(true); pass(m, 0, 1); gl.depthMask(false);   // the cars, writing their depth: the seats sit inside the tub, the bulbs on its sides
     gl.bindVertexArray(null);
     gl.bindTexture(gl.TEXTURE_2D, oldTex); gl.activeTexture(oldActive);
     if (o.dark && (W >= LOD_MID || lod)) {   // the night: bulbs along the belt, warm; the tail lamps red
-      const b = this.meshes.get('bulbs'), s = bulbSize(z, o.pixelRatio || 1, .5), UB = this.uniB;
+      const b = this.meshes.get('bulbs')!, s = bulbSize(z, o.pixelRatio || 1, .5), UB = this.uniB;
       gl.useProgram(this.pb); gl.bindVertexArray(b.va); this.instancePointers(gl, this.attrB); lightsOn(gl);
       gl.uniformMatrix4fv(UB.u_matrix, false, MT); gl.uniform1f(UB.u_unit, o.unit); gl.uniform1f(UB.u_size, s.point); gl.uniform1f(UB.u_core, s.coreFrac);
       gl.uniform3fv(UB.u_warm, this.bulb); gl.uniform3f(UB.u_red, 1, .32, .22); gl.uniform2f(UB.u_wt, 1, .55);
@@ -357,7 +378,7 @@ export class CoasterTrain {
     }
     gl.depthFunc(gl.LEQUAL);   // as TrainLayer left it: no depth writes, LEQUAL, blending on
   }
-  dispose(gl) {
+  dispose(gl:WebGL2RenderingContext) {
     if (!this.p) return;
     for (const m of this.meshes.values()) { gl.deleteBuffer(m.b); gl.deleteVertexArray(m.va) }
     for (const b of this.ib) gl.deleteBuffer(b);

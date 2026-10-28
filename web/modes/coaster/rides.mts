@@ -14,20 +14,53 @@
 import { BULB_FS, BULB_TWINKLE, BULB_PAL, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from './night.mts';
 import { PARK_DEFAULTS as STYLE } from '../basic/park.mts'; import { ridePalette } from './metrics.mts';
 import { selectRideSites } from './ride_sites.mts';
+import type { RideKind, RideSite, SelectRideOptions } from './ride_sites.mts';
+import type { MercatorCoordinate } from 'maplibre-gl';
+
+type V2 = [number, number];
+type V3 = [number, number, number];
+type Mat4 = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+// 움직임 갈래(rot mode): 0 그대로 · 1 기둥 둘레 · 2 바퀴 축 둘레(piv) · 3 자이로드롭 고리 · 4 축 둘레를 돌며 서 있기(piv · arm)
+type Ctx = { mode:0 | 1 | 3 } | { mode:2; piv:V3 } | { mode:4; piv:V3; arm:V3 };
+// 칠: 색 자리 · xy 크기 고르기(1 기둥 · 2 바퀴 테) · 그늘 덧
+interface Paint { slot:number; sel?:number; shade?:number }
+type Corner = [V3, Paint];
+interface NeonOpts { sel?:number; tier?:number; param?:number }
+// 탑 하나: [경도, 위도, 바닥 반지름 m, 높이 m]
+type Tower = [lon:number, lat:number, footprintRadius:number, height:number];
+// 설정 park.landmarkRides 의 한 줄
+interface LandmarkRide { kind?:string; lngLat:V2; diameterM:number; yawDeg?:number }
+// 그리는 놀이기구 하나(자리 고르기의 씨앗 + 이 파일이 그리는 칸)
+interface Ride extends RideSite {
+  i:number; radius_m:number; colA:number; colB:number; struct:number; shade:number; yaw:number; phase:number; collar:number; pole:number; hue:number; landmark?:boolean;
+}
+interface RideLayerOptions extends SelectRideOptions { landmarks?:LandmarkRide[]; deferPlacement?:boolean }
+export interface RideRenderOptions {
+  now?:number; dark?:boolean; zoom?:number; phone?:boolean; reducedMotion?:boolean; bounds?:ArrayLike<number> | null; night?:boolean; pixelRatio?:number; ridePalette?:readonly string[];
+}
+interface RideStats { tris:number; rides:number; ms:number; bulbs?:number; moving?:number; lod?:number }
+interface LodMesh { va:WebGLVertexArrayObject; vb:WebGLBuffer; n:number; tris:number }
+interface LitMesh { va:WebGLVertexArrayObject; vb:WebGLBuffer; n:number }
+// 놀이기구 종류 하나의 GL 자원 · 이 프레임의 인스턴스
+interface KindGL { order:Ride[]; inst:[WebGLBuffer, WebGLBuffer]; data:Float32Array; lod:LodMesh[]; n:number; bulb:LitMesh; neon:LitMesh; wire:LitMesh; tiers:number[] }
+type RideUniform = 'u_matrix' | 'u_time' | 'u_pal' | 'u_light' | 'u_lit' | 'u_eye';
+type BulbUniform = 'u_matrix' | 'u_time' | 'u_size' | 'u_core' | 'u_tier' | 'u_thin' | 'u_anim' | 'u_bright' | 'u_pal' | 'u_wt' | 'u_neonOn';
+type NeonUniform = 'u_matrix' | 'u_time' | 'u_half' | 'u_core' | 'u_tier' | 'u_chase' | 'u_anim' | 'u_vp' | 'u_neon' | 'u_wt';
+type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
 
 const EARTH = 40075016.685578488;
-const mercX = lon => lon / 360 + .5;
-const mercY = lat => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
-const muOf = lat => 1 / (EARTH * Math.cos(lat * Math.PI / 180));   // mercator units a metre, as MercatorCoordinate.meterInMercatorCoordinateUnits()
-const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
-const LOTTE = [127.102659, 37.512537];
+const mercX = (lon:number) => lon / 360 + .5;
+const mercY = (lat:number) => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);
+const muOf = (lat:number) => 1 / (EARTH * Math.cos(lat * Math.PI / 180));   // mercator units a metre, as MercatorCoordinate.meterInMercatorCoordinateUnits()
+const fnv1a = (s:string) => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
+const LOTTE = [127.102659, 37.512537] as const;
 
 // ── small vector helpers (unit space) ───────────────────────────────────────────────────────────
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
+const sub = (a:V3, b:V3):V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a:V3, b:V3):V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul = (a:V3, k:number):V3 => [a[0] * k, a[1] * k, a[2] * k];
+const cross = (a:V3, b:V3):V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a:V3):V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
 
 // ── mesh builder ────────────────────────────────────────────────────────────────────────────────
 // 13 floats a vertex: a_v (the part that the animation turns) · a_w (the part it does not) ·
@@ -36,63 +69,64 @@ const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / 
 //            (position and normal) · 3 the drop tower's ring, lifted · 4 orbit the hub, stays upright.
 // colour slots: 0 ride colour A · 1 ride colour B · 2 structure · 3 structure shade — each one an
 // index the instance supplies, so Lotte can take a gold mast and a blue ring from the same mesh.
-const STILL = { mode: 0 }, SPIN = { mode: 1 }, LIFT = { mode: 3 };
-const wheel = piv => ({ mode: 2, piv });
-const orbit = (piv, arm) => ({ mode: 4, piv, arm });
+const STILL:Ctx = { mode: 0 }, SPIN:Ctx = { mode: 1 }, LIFT:Ctx = { mode: 3 };
+const wheel = (piv:V3):Ctx => ({ mode: 2, piv });
+const orbit = (piv:V3, arm:V3):Ctx => ({ mode: 4, piv, arm });
 
 class Mesh {
+  declare d:number[]; declare tris:number;
   constructor() { this.d = []; this.tris = 0 }
-  v(C, p, n, o) {
-    let a, b;
+  v(C:Ctx, p:V3, n:V3, o:Paint) {
+    let a:V3, b:V3;
     if (C.mode === 1) { a = p; b = [0, 0, 0] }
     else if (C.mode === 2) { a = sub(p, C.piv); b = C.piv }
     else if (C.mode === 4) { a = C.arm; b = add(C.piv, p) }
     else { a = [0, 0, 0]; b = p }
     this.d.push(a[0], a[1], a[2], b[0], b[1], b[2], n[0], n[1], n[2], o.slot, C.mode, o.sel || 0, o.shade || 0);
   }
-  tri(C, A, B, D, nA, nB, nD, o) { this.v(C, A, nA, o); this.v(C, B, nB, o); this.v(C, D, nD, o); this.tris++ }
+  tri(C:Ctx, A:V3, B:V3, D:V3, nA:V3, nB:V3, nD:V3, o:Paint) { this.v(C, A, nA, o); this.v(C, B, nB, o); this.v(C, D, nD, o); this.tris++ }
   // a quad with a normal a corner
-  quad(C, A, B, D, E, nA, nB, nD, nE, o) { this.tri(C, A, B, D, nA, nB, nD, o); this.tri(C, A, D, E, nA, nD, nE, o) }
-  fan(C, c, pts, n, o) { for (let i = 0; i < pts.length; i++) this.tri(C, c, pts[i], pts[(i + 1) % pts.length], n, n, n, o) }
+  quad(C:Ctx, A:V3, B:V3, D:V3, E:V3, nA:V3, nB:V3, nD:V3, nE:V3, o:Paint) { this.tri(C, A, B, D, nA, nB, nD, o); this.tri(C, A, D, E, nA, nD, nE, o) }
+  fan(C:Ctx, c:V3, pts:V3[], n:V3, o:Paint) { for (let i = 0; i < pts.length; i++) this.tri(C, c, pts[i]!, pts[(i + 1) % pts.length]!, n, n, n, o) }
   buffer() { return new Float32Array(this.d) }
 }
 
 // a tube between two points, radius across the axis
-function tube(M, C, p0, p1, rad, seg, o, cap0, cap1) {
-  const u = norm(sub(p1, p0)), up = Math.abs(u[2]) < .9 ? [0, 0, 1] : [1, 0, 0];
-  const a = norm(cross(u, up)), b = cross(u, a), ring = [];
+function tube(M:Mesh, C:Ctx, p0:V3, p1:V3, rad:number, seg:number, o:Paint, cap0?:boolean, cap1?:boolean) {
+  const u = norm(sub(p1, p0)), up:V3 = Math.abs(u[2]) < .9 ? [0, 0, 1] : [1, 0, 0];
+  const a = norm(cross(u, up)), b = cross(u, a), ring:V3[] = [];
   for (let i = 0; i < seg; i++) { const t = i / seg * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t); ring.push(norm([a[0] * c + b[0] * s, a[1] * c + b[1] * s, a[2] * c + b[2] * s])) }
   for (let i = 0; i < seg; i++) {
-    const n0 = ring[i], n1 = ring[(i + 1) % seg];
+    const n0 = ring[i]!, n1 = ring[(i + 1) % seg]!;
     M.quad(C, add(p0, mul(n0, rad)), add(p0, mul(n1, rad)), add(p1, mul(n1, rad)), add(p1, mul(n0, rad)), n0, n1, n1, n0, o);
   }
   if (cap0) M.fan(C, p0, ring.map(n => add(p0, mul(n, rad))).reverse(), mul(u, -1), o);
   if (cap1) M.fan(C, p1, ring.map(n => add(p1, mul(n, rad))), u, o);
 }
 // a cone/skirt around the vertical axis from (r0,z0) to (r1,z1); alt: every other segment takes slot B
-function cone(M, C, z0, r0, z1, r1, seg, o, alt, blk = 8) {
+function cone(M:Mesh, C:Ctx, z0:number, r0:number, z1:number, r1:number, seg:number, o:Paint, alt?:number, blk = 8) {
   const dr = r1 - r0, dz = z1 - z0, nl = Math.hypot(dr, dz) || 1, nr = dz / nl, nz = -dr / nl;
   for (let i = 0; i < seg; i++) {
     const t0 = i / seg * 2 * Math.PI, t1 = (i + 1) / seg * 2 * Math.PI, oo = alt != null && Math.floor(i * blk / seg) % 2 ? { ...o, slot: alt } : o;
     const c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t1), s1 = Math.sin(t1);
-    const n0 = [c0 * nr, s0 * nr, nz], n1 = [c1 * nr, s1 * nr, nz];
+    const n0:V3 = [c0 * nr, s0 * nr, nz], n1:V3 = [c1 * nr, s1 * nr, nz];
     if (r0 === 0) M.tri(C, [0, 0, z0], [c1 * r1, s1 * r1, z1], [c0 * r1, s0 * r1, z1], n0, n1, n0, oo);
     else if (r1 === 0) M.tri(C, [c0 * r0, s0 * r0, z0], [c1 * r0, s1 * r0, z0], [0, 0, z1], n0, n1, n0, oo);
     else M.quad(C, [c0 * r0, s0 * r0, z0], [c1 * r0, s1 * r0, z0], [c1 * r1, s1 * r1, z1], [c0 * r1, s0 * r1, z1], n0, n1, n1, n0, oo);
   }
 }
 // a flat disc at z, facing up (dir 1) or down (dir -1)
-function disc(M, C, z, rad, seg, o, dir = 1) {
-  const n = [0, 0, dir], pts = [];
+function disc(M:Mesh, C:Ctx, z:number, rad:number, seg:number, o:Paint, dir = 1) {
+  const n:V3 = [0, 0, dir], pts:V3[] = [];
   for (let i = 0; i < seg; i++) { const t = (dir > 0 ? i : seg - i) / seg * 2 * Math.PI; pts.push([Math.cos(t) * rad, Math.sin(t) * rad, z]) }
   M.fan(C, [0, 0, z], pts, n, o);
 }
 // an annulus with a top, a bottom and both rims (the drop tower's seat ring)
-function band(M, C, z0, z1, ri, ro, seg, o, alt, blk = 8) {
+function band(M:Mesh, C:Ctx, z0:number, z1:number, ri:number, ro:number, seg:number, o:Paint, alt?:number, blk = 8) {
   for (let i = 0; i < seg; i++) {
     const t0 = i / seg * 2 * Math.PI, t1 = (i + 1) / seg * 2 * Math.PI, oo = alt != null && Math.floor(i * blk / seg) % 2 ? { ...o, slot: alt } : o;
     const c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t1), s1 = Math.sin(t1);
-    const O0 = [c0 * ro, s0 * ro], O1 = [c1 * ro, s1 * ro], I0 = [c0 * ri, s0 * ri], I1 = [c1 * ri, s1 * ri];
+    const O0:V2 = [c0 * ro, s0 * ro], O1:V2 = [c1 * ro, s1 * ro], I0:V2 = [c0 * ri, s0 * ri], I1:V2 = [c1 * ri, s1 * ri];
     M.quad(C, [...I0, z1], [...I1, z1], [...O1, z1], [...O0, z1], [0, 0, 1], [0, 0, 1], [0, 0, 1], [0, 0, 1], oo);
     M.quad(C, [...O0, z0], [...O1, z0], [...I1, z0], [...I0, z0], [0, 0, -1], [0, 0, -1], [0, 0, -1], [0, 0, -1], oo);
     M.quad(C, [...O0, z0], [...O0, z1], [...O1, z1], [...O1, z0], [c0, s0, 0], [c0, s0, 0], [c1, s1, 0], [c1, s1, 0], oo);
@@ -100,14 +134,14 @@ function band(M, C, z0, z1, ri, ro, seg, o, alt, blk = 8) {
   }
 }
 // a box centred at c, half-extents (hx along its yaw, hy across, hz up)
-function box(M, C, c, hx, hy, hz, yaw, o) {
+function box(M:Mesh, C:Ctx, c:V3, hx:number, hy:number, hz:number, yaw:number, o:Paint) {
   const ca = Math.cos(yaw), sa = Math.sin(yaw);
   box3(M, C, c, [ca, sa, 0], [-sa, ca, 0], [0, 0, 1], hx, hy, hz, o);
 }
 // the same with the frame given, for parts that lie in the wheel's vertical plane
-function box3(M, C, c, X, Y, Z, hx, hy, hz, o) {
-  const P = (i, j, k) => [0, 1, 2].map(d => c[d] + X[d] * hx * i + Y[d] * hy * j + Z[d] * hz * k);
-  const face = (n, a, b, d, e) => M.quad(C, a, b, d, e, n, n, n, n, o);
+function box3(M:Mesh, C:Ctx, c:V3, X:V3, Y:V3, Z:V3, hx:number, hy:number, hz:number, o:Paint) {
+  const P = (i:number, j:number, k:number) => ([0, 1, 2] as const).map(d => c[d] + X[d] * hx * i + Y[d] * hy * j + Z[d] * hz * k) as V3;
+  const face = (n:V3, a:V3, b:V3, d:V3, e:V3) => M.quad(C, a, b, d, e, n, n, n, n, o);
   face(X, P(1, -1, -1), P(1, 1, -1), P(1, 1, 1), P(1, -1, 1));
   face(mul(X, -1), P(-1, 1, -1), P(-1, -1, -1), P(-1, -1, 1), P(-1, 1, 1));
   face(Y, P(1, 1, -1), P(-1, 1, -1), P(-1, 1, 1), P(1, 1, 1));
@@ -116,17 +150,17 @@ function box3(M, C, c, X, Y, Z, hx, hy, hz, o) {
   face(mul(Z, -1), P(-1, 1, -1), P(1, 1, -1), P(1, -1, -1), P(-1, -1, -1));
 }
 // 격자 기둥(트러스): p0 → p1 을 세 가닥 현재와 지그재그 빗재로. w 는 현재 사이 반지름, n 은 마디 수(2026-10-10 대관람차 다리).
-function truss(M, C, p0, p1, w, n, rad, o) {
-  const u = norm(sub(p1, p0)), up = Math.abs(u[2]) < .9 ? [0, 0, 1] : [1, 0, 0], a = norm(cross(u, up)), b = cross(u, a);
-  const off = k => { const t = k / 3 * 2 * Math.PI; return add(mul(a, Math.cos(t) * w), mul(b, Math.sin(t) * w)) };
-  const at = (k, f) => add(add(p0, mul(sub(p1, p0), f)), off(k));
+function truss(M:Mesh, C:Ctx, p0:V3, p1:V3, w:number, n:number, rad:number, o:Paint) {
+  const u = norm(sub(p1, p0)), up:V3 = Math.abs(u[2]) < .9 ? [0, 0, 1] : [1, 0, 0], a = norm(cross(u, up)), b = cross(u, a);
+  const off = (k:number) => { const t = k / 3 * 2 * Math.PI; return add(mul(a, Math.cos(t) * w), mul(b, Math.sin(t) * w)) };
+  const at = (k:number, f:number) => add(add(p0, mul(sub(p1, p0), f)), off(k));
   for (let k = 0; k < 3; k++) tube(M, C, at(k, 0), at(k, 1), rad, 4, o, false, false);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++)
     tube(M, C, at(k, i / n), at((k + 1) % 3, (i + 1) / n), rad * .55, 3, o, false, false);
 }
 // a torus in the XZ plane (the wheel's rim), axis along Y
-function torusY(M, C, c, R, t, nMaj, nMin, o) {
-  const pt = (i, j) => {
+function torusY(M:Mesh, C:Ctx, c:V3, R:number, t:number, nMaj:number, nMin:number, o:Paint) {
+  const pt = (i:number, j:number):[V3, V3] => {
     const a = i / nMaj * 2 * Math.PI, b = j / nMin * 2 * Math.PI, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
     return [[c[0] + (R + t * cb) * ca, c[1] + t * sb, c[2] + (R + t * cb) * sa], [cb * ca, sb, cb * sa]];
   };
@@ -138,15 +172,15 @@ function torusY(M, C, c, R, t, nMaj, nMin, o) {
 
 // ── the four rides, in unit space ───────────────────────────────────────────────────────────────
 // xy are radius units (×Sxy, or ×Smast where sel=1); z is height units (×Sz). Spec section 3.
-const CREAM = { slot: 2 }, SHADE = { slot: 3 }, A = { slot: 0 }, B = { slot: 1 };
-const RED={slot:4},GOLD_TONE={slot:5},CREAM_TONE={slot:6},IVORY={slot:7},TEAL={slot:8};
-const mast = s => ({ ...s, sel: 1 });
+const CREAM:Paint = { slot: 2 }, SHADE:Paint = { slot: 3 }, A:Paint = { slot: 0 }, B:Paint = { slot: 1 };
+const RED:Paint={slot:4},GOLD_TONE:Paint={slot:5},CREAM_TONE:Paint={slot:6},IVORY:Paint={slot:7},TEAL:Paint={slot:8};
+const mast = (s:Paint):Paint => ({ ...s, sel: 1 });
 
 // 기둥 디테일(가까이서만, lod 1): 민무늬 원통이던 기둥에 이음매 띠 · 점검 발판과 난간 · 사다리 통로를 붙인다(2026-10-10 행님).
 // top 은 기둥 꼭대기 높이(높이 단위), skip 은 다른 부품(캐노피 · 원반)이 차지해 띠 · 발판을 두지 않을 높이 [z0, z1],
 // decks 가 false 면 이음매 띠만(자이로드롭: 좌석 고리가 기둥을 타고 오르내린다).
-function mastDetail(M, top, seg, skip = [2, 2], decks = true) {
-  const free = z => z < skip[0] - .03 || z > skip[1] + .03;
+function mastDetail(M:Mesh, top:number, seg:number, skip:V2 = [2, 2], decks = true) {
+  const free = (z:number) => z < skip[0] - .03 || z > skip[1] + .03;
   for (let i = 1; i < 12; i++) {                                           // 이음매: 기둥 토막마다 살짝 도드라진 띠
     const z = i / 12 * top; if (free(z)) band(M, STILL, z - .002, z + .002, .9, 1.1, seg, mast(SHADE));
   }
@@ -163,9 +197,9 @@ function mastDetail(M, top, seg, skip = [2, 2], decks = true) {
 }
 // 서로 다른 단위의 두 끝을 잇는 네모 보(바큇살): 안쪽 끝 a 는 기둥 단위(oa), 바깥 끝 b 는 놀이기구 반지름 단위(ob).
 // 끝마다 [가로 반폭 h, 위아래 z0 · z1](같은 단위), d 는 바닥에서 본 방향, e 는 그 직각.
-function spoke(M, C, d, ra, ha, rb, hb, z0, z1, oa, ob) {
-  const e = [-d[1], d[0]], P = (r, h, z) => [d[0] * r + e[0] * h, d[1] * r + e[1] * h, z];
-  const face = (n, q) => { for (const [i, j, k] of [[0, 1, 2], [0, 2, 3]]) for (const x of [i, j, k]) M.v(C, q[x][0], n, q[x][1]); M.tris += 2 };
+function spoke(M:Mesh, C:Ctx, d:V2, ra:number, ha:number, rb:number, hb:number, z0:number, z1:number, oa:Paint, ob:Paint) {
+  const e:V2 = [-d[1], d[0]], P = (r:number, h:number, z:number):V3 => [d[0] * r + e[0] * h, d[1] * r + e[1] * h, z];
+  const face = (n:V3, q:[Corner, Corner, Corner, Corner]) => { for (const [i, j, k] of [[0, 1, 2], [0, 2, 3]] as const) for (const x of [i, j, k]) M.v(C, q[x][0], n, q[x][1]); M.tris += 2 };
   face([0, 0, 1], [[P(ra, -ha, z1), oa], [P(rb, -hb, z1), ob], [P(rb, hb, z1), ob], [P(ra, ha, z1), oa]]);
   face([0, 0, -1], [[P(ra, ha, z0), oa], [P(rb, hb, z0), ob], [P(rb, -hb, z0), ob], [P(ra, -ha, z0), oa]]);
   face([e[0], e[1], 0], [[P(ra, ha, z1), oa], [P(rb, hb, z1), ob], [P(rb, hb, z0), ob], [P(ra, ha, z0), oa]]);
@@ -174,7 +208,7 @@ function spoke(M, C, d, ra, ha, rb, hb, z0, z1, oa, ob) {
 // Drop tower — mast H, a seat ring that rises to 0.82H and falls, a small cone crown.
 // 2026-10-10 행님(자이로드롭이 기둥에 걸린 도넛): 고리는 기둥을 감싸는 짐칸 고리에서 바큇살로 이어진 좌석 고리 —
 // 바깥을 보는 좌석마다 등받이(두 색 번갈아) · 금색 어깨 안전바 · 매달린 다리, 꼭대기에는 기계실(두 색 벽 · 창 띠 · 지붕).
-function buildDrop(lod) {
+function buildDrop(lod:number) {
   const M = new Mesh(), seg = lod ? 12 : 7, rs = lod ? 24 : 12, seats = lod ? 16 : 8, nb = lod ? 8 : 4;
   for (let i = 0; i < nb; i++)                                             // the mast, in broad alternating bands
     tube(M, STILL, [0, 0, i / nb], [0, 0, (i + 1) / nb], 1, seg, mast(CREAM), false, false);
@@ -215,8 +249,8 @@ function buildDrop(lod) {
   return M;
 }
 // Ferris wheel — everything in D units (Sxy = Sz = D): bottom clearance .08, hub .58, rim radius .5.
-function buildFerris(lod) {
-  const M = new Mesh(), hub = [0, 0, .58], maj = lod ? 32 : 16, min = lod ? 4 : 3, cab = lod ? 12 : 8, lg = lod ? 6 : 4, sp = lod ? 12 : 8;
+function buildFerris(lod:number) {
+  const M = new Mesh(), hub:V3 = [0, 0, .58], maj = lod ? 32 : 16, min = lod ? 4 : 3, cab = lod ? 12 : 8, lg = lod ? 6 : 4, sp = lod ? 12 : 8;
   for (const y of [-.085, .085]) {                                         // two open A-frames
     for (const x of [-.34, .34]) lod ? truss(M, STILL, [x, y, 0], [0, y, .575], .016, 14, .0045, TEAL)   // 가까이서는 격자 다리
                                       : tube(M, STILL, [x, y, 0], [0, y, .575], .018, lg, TEAL, false, false);
@@ -235,13 +269,13 @@ function buildFerris(lod) {
     if (lod) for (const y of [-.058, .058]) tube(M, wheel(hub), [c * .2, y * .36, .58 + s * .2], [c * .49, y, .58 + s * .49], .006, 3, CREAM, false, false);
   }
   for (let i = 0; i < cab; i++) {                                          // upright gondolas: .065D across, .08D tall
-    const t = i / cab * 2 * Math.PI, arm = [Math.cos(t) * .5, 0, Math.sin(t) * .5], C = orbit(hub, arm);
+    const t = i / cab * 2 * Math.PI, arm:V3 = [Math.cos(t) * .5, 0, Math.sin(t) * .5], C = orbit(hub, arm);
     const col = i/cab < .5 ? CREAM_TONE : i/cab < 10/12 ? RED : GOLD_TONE;
     if (!lod) box(M, C, [0, 0, -.072], .0275, .0325, .04, 0, col);
     else {                                                                  // 가까이서: 아래 몸통 · 유리 띠 · 모서리 기둥 · 네모뿔 지붕
       box(M, C, [0, 0, -.094], .0275, .0325, .018, 0, col);
       box(M, C, [0, 0, -.06], .0255, .0305, .016, 0, SHADE);                 // 유리(어두운 띠)
-      for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) box(M, C, [x * .0262, y * .0312, -.06], .0018, .0018, .016, 0, col);
+      for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) box(M, C, [x * .0262, y * .0312, -.06], .0018, .0018, .016, 0, col);
       box(M, C, [0, 0, -.042], .029, .034, .0025, 0, col);                   // 지붕 처마
       cone(M, C, -.0395, .044, -.026, 0, 4, col);                            // 네모뿔 지붕(4쪽 원뿔)
       box(M, C, [0, 0, -.018], .007, .007, .012, 0, SHADE);                  // 매달개
@@ -251,7 +285,7 @@ function buildFerris(lod) {
   return M;
 }
 // Sky swing — mast .90H, a shallow canopy at .78H radius r, eight seats on .14H suspensions.
-function buildSwing(lod) {
+function buildSwing(lod:number) {
   const M = new Mesh(), seg = lod ? 10 : 6, cs = STYLE.rides.swingSides, n = lod ? 12 : 8;
   tube(M, STILL, [0, 0, 0], [0, 0, .9], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
@@ -264,7 +298,7 @@ function buildSwing(lod) {
   if (lod) {                                                                   // 가까이서: 캐노피 둘레 장식 천(뾰족한 술, 놀이기구 두 색 번갈아) · 꼭대기 장식
     const k = cs * 2;
     for (let i = 0; i < k; i++) {
-      const t0 = i / k * 2 * Math.PI, t1 = (i + 1) / k * 2 * Math.PI, tm = (t0 + t1) / 2, n0 = [Math.cos(tm), Math.sin(tm), 0];
+      const t0 = i / k * 2 * Math.PI, t1 = (i + 1) / k * 2 * Math.PI, tm = (t0 + t1) / 2, n0:V3 = [Math.cos(tm), Math.sin(tm), 0];
       M.tri(SPIN, [Math.cos(t0), Math.sin(t0), .765], [Math.cos(t1), Math.sin(t1), .765], [Math.cos(tm) * .995, Math.sin(tm) * .995, .712], n0, n0, n0, i % 2 ? A : B);
       M.tri(SPIN, [Math.cos(t1) * .99, Math.sin(t1) * .99, .765], [Math.cos(t0) * .99, Math.sin(t0) * .99, .765], [Math.cos(tm) * .985, Math.sin(tm) * .985, .712], mul(n0, -1), mul(n0, -1), mul(n0, -1), SHADE);
     }
@@ -286,7 +320,7 @@ function buildSwing(lod) {
 // Observation saucer — mast .95H, a disc at .80H radius r thickness .055H, a cone cap reaching H.
 // 2026-10-10 행님(원반이 납작한 접시): 기둥 목에서 벌어지는 렌즈 밑면과 갈비, 테두리를 도는 어두운 유리 창 띠와 창살(전망 객실),
 // 윗면 가장자리에 놀이기구 색 띠, 테두리 안쪽 난간. 창 띠 가운데(.8275)가 밤 전구 · 네온 자리.
-function buildSaucer(lod) {
+function buildSaucer(lod:number) {
   const M = new Mesh(), seg = lod ? 10 : 6, ds = lod ? 32 : 16, n = lod ? 24 : 12;
   tube(M, STILL, [0, 0, 0], [0, 0, .95], 1, seg, mast(CREAM), false, false);
   cone(M, STILL, .004, 2.4, .02, 1.4, seg, mast(SHADE)); disc(M, STILL, .02, 1.4, seg, mast(SHADE));
@@ -317,9 +351,10 @@ function buildSaucer(lod) {
 //   a_e = (parameter, role)  role 0 plain · 1 rim (parameter = the way round, for the slow wave)
 //                                 2 ground garland (parameter = along the string) · 3 Lotte's extra mast strings
 class Bulbs {
+  declare d:number[]; declare n:number;
   constructor() { this.d = []; this.n = 0 }
-  at(C, p, col, tier, sel, param = 0, role = 0) {
-    let a, b;
+  at(C:Ctx, p:V3, col:number, tier:number, sel:number, param = 0, role = 0) {
+    let a:V3, b:V3;
     if (C.mode === 1) { a = p; b = [0, 0, 0] }
     else if (C.mode === 2) { a = sub(p, C.piv); b = C.piv }
     else if (C.mode === 4) { a = C.arm; b = add(C.piv, p) }
@@ -327,17 +362,17 @@ class Bulbs {
     this.d.push(a[0], a[1], a[2], b[0], b[1], b[2], col, C.mode, sel, tier, param, role);
     this.n++;
   }
-  ring(C, n, rad, z, col0, tier, sel, role) {    // a string of bulbs the whole way round
+  ring(C:Ctx, n:number, rad:number, z:number, col0:(i:number)=>number, tier:number, sel:number, role:number) {    // a string of bulbs the whole way round
     for (let i = 0; i < n; i++) { const t = i / n * 2 * Math.PI; this.at(C, [Math.cos(t) * rad, Math.sin(t) * rad, z], col0(i), tier, sel, i / n, role) }
   }
   buffer() { return new Float32Array(this.d) }
 }
 // One bulb in three is the warm cream; the rest run through the seven accents, and each ride turns
 // the accents on by its own hash, so two swings side by side are not the same string twice.
-const bulbCol = i => i % 5 === 0 ? 1 : 0;
+const bulbCol = (i:number) => i % 5 === 0 ? 1 : 0;
 const GARLANDS = 4, GSPAN = 10;   // legacy wire mesh remains reusable, but outline tier has no ground garlands
-function buildBulbs(kind) {
-  const B=new Bulbs(),hub=[0,0,.58];
+function buildBulbs(kind:RideKind) {
+  const B=new Bulbs(),hub:V3=[0,0,.58];
   if(kind==='ferris')for(let i=0;i<64;i++){const t=i/64*2*Math.PI;B.at(wheel(hub),[Math.cos(t)*.51,0,.58+Math.sin(t)*.51],bulbCol(i),0,0,i/64,1)}
   else if(kind==='swing')B.ring(SPIN,40,1.01,.777,bulbCol,0,0,1);
   else if(kind==='saucer')B.ring(STILL,40,1.01,.8275,bulbCol,0,0,1);
@@ -346,10 +381,10 @@ function buildBulbs(kind) {
 }
 // the wire the garland bulbs hang on, plus the little pole at its far end
 function buildWire() {
-  const d = [];
-  const put = (dir, t) => d.push(0, 0, 0, dir[0], dir[1], 0, 0, 0, 0, 2, t, 2);   // the direction sits in a_w, as it does for a still bulb
+  const d:number[] = [];
+  const put = (dir:V2, t:number) => d.push(0, 0, 0, dir[0], dir[1], 0, 0, 0, 0, 2, t, 2);   // the direction sits in a_w, as it does for a still bulb
   for (let g = 0; g < GARLANDS; g++) {
-    const a = g / GARLANDS * 2 * Math.PI, dir = [Math.cos(a), Math.sin(a)];
+    const a = g / GARLANDS * 2 * Math.PI, dir:V2 = [Math.cos(a), Math.sin(a)];
     for (let j = 0; j < 12; j++) { put(dir, j / 12); put(dir, (j + 1) / 12) }
     d.push(0, 0, 0, dir[0], dir[1], 0, 0, 0, 0, 2, 1, 4);   // the pole: up from the ground to where the string ends
     put(dir, 1);
@@ -396,18 +431,19 @@ vec3 ridePoint(vec3 av, vec3 aw, float m, float sel, float tt, vec4 iS, vec4 iA)
 
 // a strip of neon on a ride: a run of segments, each widened across the screen
 class Neon {
+  declare d:number[]; declare n:number;
   constructor() { this.d = []; this.n = 0 }
-  seg(C, p0, p1, { sel = 0, tier = 0, param = 0 } = {}) {
+  seg(C:Ctx, p0:V3, p1:V3, { sel = 0, tier = 0, param = 0 }:NeonOpts = {}) {
     const A = vw(C, p0), B = vw(C, p1);
-    for (const [t, side] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]]) {
+    for (const [t, side] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]] as const) {
       this.d.push(A[0][0], A[0][1], A[0][2], A[1][0], A[1][1], A[1][2],
         B[0][0], B[0][1], B[0][2], B[1][0], B[1][1], B[1][2], param, C.mode, sel, tier, t, side);
       this.n++;
     }
   }
-  loop(C, n, rad, z, o, plane) {
+  loop(C:Ctx, n:number, rad:number, z:number, o:NeonOpts, plane:boolean) {
     for (let i = 0; i < n; i++) {
-      const a = i / n * 2 * Math.PI, b = (i + 1) / n * 2 * Math.PI, P = t => plane
+      const a = i / n * 2 * Math.PI, b = (i + 1) / n * 2 * Math.PI, P = (t:number):V3 => plane
         ? [Math.cos(t) * rad, 0, z + Math.sin(t) * rad] : [Math.cos(t) * rad, Math.sin(t) * rad, z];
       this.seg(C, P(a), P(b), { ...o, param: i / n });
     }
@@ -415,13 +451,13 @@ class Neon {
   buffer() { return new Float32Array(this.d) }
 }
 // the (turned, not turned) split a context implies, as Bulbs.at does it
-function vw(C, p) {
+function vw(C:Ctx, p:V3):[V3, V3] {
   if (C.mode === 1) return [p, [0, 0, 0]];
   if (C.mode === 2) return [sub(p, C.piv), C.piv];
   if (C.mode === 4) return [C.arm, add(C.piv, p)];
   return [[0, 0, 0], p];
 }
-function buildNeon(kind) {
+function buildNeon(kind:RideKind) {
   const N=new Neon();
   if(kind==='drop')N.loop(STILL,24,1.9,1.,{sel:1},false);
   else if(kind==='saucer')N.loop(STILL,48,1.02,.8275,{},false);
@@ -430,9 +466,9 @@ function buildNeon(kind) {
   return N;
 }
 
-const KINDS = ['drop', 'ferris', 'swing', 'saucer'];
+const KINDS = ['drop', 'ferris', 'swing', 'saucer'] as const;
 const INSTANCE_FLOATS = 19;
-const INST = [[4, 3], [5, 4], [6, 4], [7, 4], [8, 4]];   // xyz origin and shared instance attributes for the ride mesh and its lights
+const INST = [[4, 3], [5, 4], [6, 4], [7, 4], [8, 4]] as const;   // xyz origin and shared instance attributes for the ride mesh and its lights
 const BUILD = { drop: buildDrop, ferris: buildFerris, swing: buildSwing, saucer: buildSaucer };
 // Add the base after the ride's own pose and scale, keeping bodies and every light at the same altitude.
 const RIDE_PROJECT = `
@@ -614,8 +650,8 @@ void main(){ o = vec4(u_wire.rgb * u_wire.a, u_wire.a); }`;
 const SUN = norm([-.30, .46, .84]);   // +x east, +y south (mercator), +z up: a high south-western sun
 // The rides do not borrow the building palette: they need to separate from the blocks they replace.
 // 카메라 자리(MT 의 좌표, 곧 기준점 O 를 뺀 메르카토르): 눈은 화면 어디로도 비치지 않는 점이라 MT·E = (0,0,c,0) — E = MT⁻¹·(0,0,1,0).
-function eyeOf(m) {
-  const a = Array.from(m), inv = new Array(16);
+function eyeOf(m:ArrayLike<number>):V3 {
+  const a = Array.from(m) as Mat4, inv = new Array(16) as Mat4;
   inv[0] = a[5]*a[10]*a[15]-a[5]*a[11]*a[14]-a[9]*a[6]*a[15]+a[9]*a[7]*a[14]+a[13]*a[6]*a[11]-a[13]*a[7]*a[10];
   inv[4] = -a[4]*a[10]*a[15]+a[4]*a[11]*a[14]+a[8]*a[6]*a[15]-a[8]*a[7]*a[14]-a[12]*a[6]*a[11]+a[12]*a[7]*a[10];
   inv[8] = a[4]*a[9]*a[15]-a[4]*a[11]*a[13]-a[8]*a[5]*a[15]+a[8]*a[7]*a[13]+a[12]*a[5]*a[11]-a[12]*a[7]*a[9];
@@ -638,26 +674,32 @@ function eyeOf(m) {
 const RIDE_LIGHT = ridePalette(false), RIDE_DARK = ridePalette(true);
 const GOLD = 8, RING = 9, STRUCT = 6, SHADE_I = 7;
 // the ride grows toward the viewer as the map pulls back, or a 200 m tower is three pixels of stalk
-const EXAG = [13.5, 14.5, 15.5], EXAG_H = [2.4, 1.6, 1], EXAG_V = [1.35, 1.15, 1];
-const atZoom = (z, v) => z <= EXAG[0] ? v[0] : z >= EXAG[2] ? v[2]
+const EXAG = [13.5, 14.5, 15.5] as const, EXAG_H = [2.4, 1.6, 1] as const, EXAG_V = [1.35, 1.15, 1] as const;
+const atZoom = (z:number, v:readonly [number, number, number]) => z <= EXAG[0] ? v[0] : z >= EXAG[2] ? v[2]
   : z <= EXAG[1] ? v[0] + (v[1] - v[0]) * (z - EXAG[0]) : v[1] + (v[2] - v[1]) * (z - EXAG[1]);
 
 // 랜드마크 대관람차 한 대(설정 park.landmarkRides 의 한 줄 {kind:'ferris', lngLat, diameterM}): 보통 놀이기구와 같은 모양 · 그리기, 지름만 크게
-function landmarkSite(L, k) {
+function landmarkSite(L:LandmarkRide, k:number):Ride {
   const [lon, lat] = L.lngLat, D = L.diameterM, q = fnv1a('landmark' + k);
   return { i: -1 - k, lon, lat, x: mercX(lon), y: mercY(lat), mu: muOf(lat), radius_m: .3 * D, height_m: 1.1 * D, kind: 'ferris', lotte: false, landmark: true, q, R: .3 * D, r: .3 * D, mastR: 10,
     colA: 0, colB: 1, struct: STRUCT, shade: SHADE_I, yaw: (L.yawDeg ?? 0) * Math.PI / 180, phase: 0, period: 150,   // 큰 바퀴는 천천히(한 바퀴 2분 반)
     sxy: D, sz: D, top: 1.1 * D, wide: .55 * D, collar: 35, pole: 65, hue: 2, maxExagH: 1.15, maxExagV: 1.15 };   // (이미 커서 멀리서 키우지 않는다 — 가로만 키우면 바퀴가 찌그러진다)
 }
 // 자리 고르기가 준 놀이기구에 랜드마크를 더한다: 랜드마크 둘레(서로 몸통 폭만큼)에 겹치는 보통 놀이기구는 뺀다
-function withLandmarks(sites, landmarks) {
+function withLandmarks(sites:Ride[], landmarks:Ride[]) {
   if (!landmarks?.length) return sites;
   const keep = sites.filter(s => !s.landmark && landmarks.every(L => Math.hypot((s.lon - L.lon) * 88200, (s.lat - L.lat) * 111000) > L.wide + (s.wide || 60)));
   return [...keep, ...landmarks];
 }
 
 export class RideLayer {
-  constructor(towers,options={}) {
+  declare towers:Tower[]; declare O:{ x:number; y:number }; declare M:Float32Array; declare candidates:Ride[]; declare landmarks:Ride[]; declare _sites:Ride[];
+  declare stats:RideStats; declare _moving:boolean; declare ping:number; declare ready:boolean; declare lod:number | undefined; declare mc:typeof MercatorCoordinate | undefined;
+  declare p:WebGLProgram | null; declare pB:WebGLProgram; declare pW:WebGLProgram; declare pN:WebGLProgram;
+  declare uni:Uniforms<RideUniform>; declare uB:Uniforms<BulbUniform>; declare uW:Uniforms<BulbUniform | 'u_wire'>; declare uN:Uniforms<NeonUniform>;
+  declare bulbRGB:Float32Array; declare neonRGB:Record<RideKind, Float32Array>; declare wireBuf:Float32Array; declare kind:Record<RideKind, KindGL> | null;
+  declare _palKey:readonly string[] | undefined; declare _rgb:Float32Array;
+  constructor(towers?:Tower[] | null,options:RideLayerOptions={}) {
     this.towers = towers || [];
     this.O = { x: mercX(126.978), y: mercY(37.5665) };
     this.M = new Float32Array(16);
@@ -673,7 +715,7 @@ export class RideLayer {
         colA: 0, colB: 1, struct: STRUCT, shade: SHADE_I,
         yaw: (q >>> 8 & 1023) / 1024 * Math.PI * 2, phase: (q >>> 18 & 255) / 255 * 90,
         period: kind === 'ferris' ? 75 : kind === 'swing' ? 40 : kind === 'saucer' ? 90 : 20,
-      };
+      } as Ride;
       // Lotte: 555 m, mast 12 m, ring 28 m, nothing past 32 m from the spiral axis, and its own colours
       if (lotte) { s.mastR = 12; s.r = 28; s.colA = RING; s.colB = STRUCT; s.struct = GOLD; s.shade = STRUCT }
       s.sxy = kind === 'ferris' ? D : s.r;
@@ -687,7 +729,7 @@ export class RideLayer {
     });
     // 랜드마크 놀이기구(설정 park.landmarkRides — 롤코: 하늘공원 대관람차, 2026-10-11 행님): 자리 고르기와 상관없이 늘 그 자리에, 크기 그대로
     this.landmarks = (options.landmarks || []).map((L, k) => landmarkSite(L, k));
-    this._sites=withLandmarks(options.deferPlacement?[]:selectRideSites(this.candidates,options).sites,this.landmarks);
+    this._sites=withLandmarks(options.deferPlacement?[]:selectRideSites(this.candidates,options).sites as Ride[],this.landmarks);
     this.stats = { tris: 0, rides: 0, ms: 0 };
     this._moving = false; this.ping = 0;
   }
@@ -695,14 +737,14 @@ export class RideLayer {
   // the canonical sites, so the caller can take these buildings out of the extrusion / walls / shadows
   sites() { return this._sites.map(s => ({ lon: s.lon, lat: s.lat, x: s.x, y: s.y, radius_m: s.radius_m, height_m: s.height_m, kind: s.kind })) }
 
-  setSites(sites){
+  setSites(sites:Ride[]){
     sites=withLandmarks(sites,this.landmarks);
     if(this.p&&this.mc)for(const s of this.landmarks){const m=this.mc.fromLngLat([s.lon,s.lat]);s.x=m.x;s.y=m.y;s.mu=m.meterInMercatorCoordinateUnits()}
     this._sites=sites;
     if(this.kind)for(const k of KINDS){const K=this.kind[k];K.order=sites.filter(s=>s.kind===k);K.data=new Float32Array(K.order.length*INSTANCE_FLOATS)}
   }
 
-  init(gl, maplibregl) {
+  init(gl:WebGL2RenderingContext, maplibregl?:{ MercatorCoordinate:typeof MercatorCoordinate }) {
     if (this.p) return;
     this.mc = maplibregl?.MercatorCoordinate;
     if (maplibregl?.MercatorCoordinate) {                                   // exactly the map's own numbers
@@ -710,21 +752,21 @@ export class RideLayer {
       for (const s of this._sites) { const m = maplibregl.MercatorCoordinate.fromLngLat([s.lon, s.lat]); s.x = m.x; s.y = m.y; s.mu = m.meterInMercatorCoordinateUnits() }
     }
     this.p = compile(gl, VS, FS);
-    this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit', 'u_eye'].map(n => [n, gl.getUniformLocation(this.p, n)]));
+    this.uni = Object.fromEntries(['u_matrix', 'u_time', 'u_pal', 'u_light', 'u_lit', 'u_eye'].map(n => [n, gl.getUniformLocation(this.p!, n)])) as Uniforms<RideUniform>;
 
     this.pB = compile(gl, BULB_VS, BULB_FS);
-    this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn'].map(n => [n, gl.getUniformLocation(this.pB, n)]));
+    this.uB = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn'].map(n => [n, gl.getUniformLocation(this.pB, n)])) as Uniforms<BulbUniform>;
     this.pW = compile(gl, BULB_VS, WIRE_FS);
-    this.uW = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn', 'u_wire'].map(n => [n, gl.getUniformLocation(this.pW, n)]));
+    this.uW = Object.fromEntries(['u_matrix', 'u_time', 'u_size', 'u_core', 'u_tier', 'u_thin', 'u_anim', 'u_bright', 'u_pal', 'u_wt', 'u_neonOn', 'u_wire'].map(n => [n, gl.getUniformLocation(this.pW, n)])) as Uniforms<BulbUniform | 'u_wire'>;
     this.bulbRGB = new Float32Array(BULB_PAL.flatMap(hexRGB));
     this.pN = compile(gl, NEON_VS, RIBBON_FS);
-    this.uN = Object.fromEntries(['u_matrix', 'u_time', 'u_half', 'u_core', 'u_tier', 'u_chase', 'u_anim', 'u_vp', 'u_neon', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pN, n)]));
-    this.neonRGB = Object.fromEntries(Object.entries(NEON).map(([k, h]) => [k, new Float32Array(hexRGB(h))]));
+    this.uN = Object.fromEntries(['u_matrix', 'u_time', 'u_half', 'u_core', 'u_tier', 'u_chase', 'u_anim', 'u_vp', 'u_neon', 'u_wt'].map(n => [n, gl.getUniformLocation(this.pN, n)])) as Uniforms<NeonUniform>;
+    this.neonRGB = Object.fromEntries(Object.entries(NEON).map(([k, h]) => [k, new Float32Array(hexRGB(h))])) as Record<RideKind, Float32Array>;
     this.wireBuf = buildWire();
 
-    this.kind = {};
+    this.kind = {} as Record<RideKind, KindGL>;
     for (const k of KINDS) {
-      const K = this.kind[k] = { order: [], inst: [gl.createBuffer(), gl.createBuffer()], data: null, lod: [] };
+      const K = this.kind[k] = { order: [], inst: [gl.createBuffer(), gl.createBuffer()], data: null, lod: [] } as unknown as KindGL;
       K.order = this._sites.filter(s => s.kind === k);
       K.data = new Float32Array(K.order.length * INSTANCE_FLOATS);
       for (const b of K.inst) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW) }
@@ -734,17 +776,17 @@ export class RideLayer {
         const va = gl.createVertexArray(); gl.bindVertexArray(va);
         gl.bindBuffer(gl.ARRAY_BUFFER, vb);
         const S = 13 * 4; let o = 0;
-        for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 4]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
+        for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 4]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
         gl.bindVertexArray(null);
         K.lod[lod] = { va, vb, n: M.tris * 3, tris: M.tris };
       }
       // the lights: one mesh a kind (no LOD; tiers and a stride thin them), on the same instance buffer
-      const lit = (buf, count) => {
+      const lit = (buf:Float32Array, count:number):LitMesh => {
         const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
         const va = gl.createVertexArray(); gl.bindVertexArray(va);
         gl.bindBuffer(gl.ARRAY_BUFFER, vb);
         const S = 12 * 4; let o = 0;
-        for (const [loc, n] of [[0, 3], [1, 3], [2, 4], [3, 2]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
+        for (const [loc, n] of [[0, 3], [1, 3], [2, 4], [3, 2]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, o); o += n * 4 }
         gl.bindVertexArray(null);
         return { va, vb, n: count };
       };
@@ -753,24 +795,24 @@ export class RideLayer {
       { const N = buildNeon(k), buf = N.buffer();                           // the signature outline
         const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
         const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-        let o = 0; for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 3], [9, 4], [10, 2]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 72, o); o += n * 4 }
+        let o = 0; for (const [loc, n] of [[0, 3], [1, 3], [2, 3], [3, 3], [9, 4], [10, 2]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 72, o); o += n * 4 }
         gl.bindVertexArray(null); K.neon = { va, vb, n: N.n } }
       K.wire = lit(this.wireBuf, this.wireBuf.length / 12);
       K.tiers = [0, 0, 0];
-      for (let i = 0; i < B.n; i++) K.tiers[B.d[i * 12 + 9]]++;             // how many bulbs each tier adds
+      for (let i = 0; i < B.n; i++) K.tiers[B.d[i * 12 + 9]!]!++;             // how many bulbs each tier adds
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     this.ready = true;
   }
 
   // point the instance attributes of the bound VAO at this frame's store
-  instPtr(gl, K) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[this.ping]);
+  instPtr(gl:WebGL2RenderingContext, K:KindGL) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[this.ping]!);
     const IS = INSTANCE_FLOATS * 4; let o = 0;
     for (const [loc, n] of INST) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, IS, o); gl.vertexAttribDivisor(loc, 1); o += n * 4 }
   }
 
-  render(gl, matrix, opts = {}) {
+  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:RideRenderOptions = {}) {
     if (!this.ready) return;
     const t0 = performance.now();
     const { now = performance.now(), dark = false, zoom = 15, phone = false, reducedMotion = false, bounds, night = false, pixelRatio = 1 } = opts;
@@ -784,7 +826,7 @@ export class RideLayer {
 
     // Grow the view box by the same displayed dimensions and base altitude: elevated rides lean farther into view.
     let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
-    if (bounds) { x0 = Math.min(bounds[0], bounds[2]); x1 = Math.max(bounds[0], bounds[2]); y0 = Math.min(bounds[1], bounds[3]); y1 = Math.max(bounds[1], bounds[3]) }
+    if (bounds) { x0 = Math.min(bounds[0]!, bounds[2]!); x1 = Math.max(bounds[0]!, bounds[2]!); y0 = Math.min(bounds[1]!, bounds[3]!); y1 = Math.max(bounds[1]!, bounds[3]!) }
     const EH = atZoom(zoom, EXAG_H), EV = atZoom(zoom, EXAG_V);   // Lotte stays at 1 (it has the spiral to fit inside)
     const vis = [];
     for (const s of this._sites) {
@@ -799,9 +841,9 @@ export class RideLayer {
     // Reduced motion still stops the lot, and it is a global switch, so it never toggles under the camera.
     const split=STYLE.rides.detailZoom,h=STYLE.lod.hysteresis;
     const lod=this.lod=zoom>=split+h?1:zoom<split-h?0:this.lod??(zoom>=split?1:0),ts=now/1000;
-    for (const k of KINDS) this.kind[k].n = 0;
+    for (const k of KINDS) this.kind![k].n = 0;
     for (const s of vis) {
-      const K = this.kind[s.kind], d = K.data, i = K.n * INSTANCE_FLOATS;
+      const K = this.kind![s.kind], d = K.data, i = K.n * INSTANCE_FLOATS;
       const eh = Math.min(s.lotte ? 1 : EH, s.maxExagH ?? EXAG_H[0]), ev = Math.min(s.lotte ? 1 : EV, s.maxExagV ?? EXAG_V[0]);
       d[i] = s.x - this.O.x; d[i + 1] = s.y - this.O.y; d[i + 2] = (s.base_m ?? 0) * s.mu;
       d[i + 3] = s.sxy * eh; d[i + 4] = s.sz * ev; d[i + 5] = s.mastR * eh; d[i + 6] = s.mu;
@@ -812,7 +854,7 @@ export class RideLayer {
     }
 
     const MT = this.M; MT.set(matrix);
-    for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * this.O.x + matrix[4 + r] * this.O.y + matrix[12 + r];
+    for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * this.O.x + matrix[4 + r]! * this.O.y + matrix[12 + r]!;
     gl.useProgram(this.p);
     gl.uniformMatrix4fv(this.uni.u_matrix, false, MT);
     gl.uniform1f(this.uni.u_time, ts);
@@ -829,15 +871,15 @@ export class RideLayer {
     // Two stores a kind, used alternately, and each is orphaned before it is filled.
     const ping = this.ping = this.ping ^ 1;
     for (const k of KINDS) {
-      const K = this.kind[k]; if (!K.n) continue;
-      gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[ping]);
+      const K = this.kind![k]; if (!K.n) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, K.inst[ping]!);
       gl.bufferData(gl.ARRAY_BUFFER, K.data.byteLength, gl.DYNAMIC_DRAW);     // fresh storage
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, K.data, 0, K.n * INSTANCE_FLOATS);
     }
     let tris = 0;
     for (const k of KINDS) {
-      const K = this.kind[k]; if (!K.n) continue;
-      const L = K.lod[lod];
+      const K = this.kind![k]; if (!K.n) continue;
+      const L = K.lod[lod]!;
       gl.bindVertexArray(L.va); this.instPtr(gl, K);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, L.n, K.n);
       tris += L.tris * K.n;
@@ -848,14 +890,14 @@ export class RideLayer {
       // tier 0 keeps every ride's outline, 1 adds the wheel spokes, 2 the ground garlands; then a stride
       let tier = 0;   // only each ride's signature outline; no spoke or ground-light blanket
       const cap = (phone ? 2500 : 6000) * .4;
-      const count = t => KINDS.reduce((a, k) => a + this.kind[k].n * this.kind[k].tiers.slice(0, t + 1).reduce((x, y) => x + y, 0), 0);
+      const count = (t:number) => KINDS.reduce((a, k) => a + this.kind![k].n * this.kind![k].tiers.slice(0, t + 1).reduce((x, y) => x + y, 0), 0);
       while (tier > 0 && count(tier) > cap) tier--;
       bulbs = count(tier);
       const thin = bulbs > cap ? Math.ceil(bulbs / cap) : 1;
       bulbs = Math.ceil(bulbs / thin);
       const sz = bulbSize(zoom, pixelRatio);
       gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      const setUni = (u) => {
+      const setUni = (u:Uniforms<BulbUniform>) => {
         gl.uniformMatrix4fv(u.u_matrix, false, MT);
         gl.uniform1f(u.u_time, ts); gl.uniform1f(u.u_size, sz.point); gl.uniform1f(u.u_core, sz.coreFrac);
         gl.uniform1f(u.u_tier, tier); gl.uniform1f(u.u_thin, thin); gl.uniform1f(u.u_anim, reducedMotion ? 0 : 1);
@@ -874,7 +916,7 @@ export class RideLayer {
         gl.uniform2f(this.uN.u_vp, gl.drawingBufferWidth, gl.drawingBufferHeight);
         gl.uniform2f(this.uN.u_wt, STYLE.night.rideEmission, .12);
         for (const k of KINDS) {
-          const K = this.kind[k]; if (!K.n) continue;
+          const K = this.kind![k]; if (!K.n) continue;
           gl.uniform3fv(this.uN.u_neon, this.neonRGB[k]);
           gl.uniform1f(this.uN.u_chase, 0);            // the bright length runs round the saucers
           gl.bindVertexArray(K.neon.va); this.instPtr(gl, K);
@@ -884,10 +926,10 @@ export class RideLayer {
       if (tier >= 2) {                                                      // the thin wire first, under the bulbs
         gl.useProgram(this.pW); setUni(this.uW);
         gl.uniform1f(this.uW.u_thin, 1); gl.uniform4f(this.uW.u_wire, .459, .408, .325, .35);
-        for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.wire.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.LINES, 0, K.wire.n, K.n) } }
+        for (const k of KINDS) { const K = this.kind![k]; if (K.n) { gl.bindVertexArray(K.wire.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.LINES, 0, K.wire.n, K.n) } }
       }
       gl.useProgram(this.pB); setUni(this.uB);
-      for (const k of KINDS) { const K = this.kind[k]; if (K.n) { gl.bindVertexArray(K.bulb.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.POINTS, 0, K.bulb.n, K.n) } }
+      for (const k of KINDS) { const K = this.kind![k]; if (K.n) { gl.bindVertexArray(K.bulb.va); this.instPtr(gl, K); gl.drawArraysInstanced(gl.POINTS, 0, K.bulb.n, K.n) } }
     }
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     // left for the caller: DEPTH_TEST on / LEQUAL / depth writes on, BLEND on (blendFunc untouched), CULL_FACE off
@@ -900,9 +942,9 @@ export class RideLayer {
   // only redraws when the map does). False under reduced motion, or with nothing on screen.
   animating() { return !!this._moving }
 
-  dispose(gl) {
+  dispose(gl:WebGL2RenderingContext) {
     if (!this.p) return;
-    for (const k of KINDS) { const K = this.kind[k]; for (const b of K.inst) gl.deleteBuffer(b);
+    for (const k of KINDS) { const K = this.kind![k]; for (const b of K.inst) gl.deleteBuffer(b);
       for (const L of [...K.lod, K.bulb, K.wire, K.neon]) { gl.deleteVertexArray(L.va); gl.deleteBuffer(L.vb) } }
     gl.deleteProgram(this.p); gl.deleteProgram(this.pB); gl.deleteProgram(this.pW); gl.deleteProgram(this.pN); this.p = null; this.kind = null; this.ready = false;
   }
