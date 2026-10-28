@@ -9,7 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
-import './ui/station_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 시트 화면 조각 · Preact: 같은 단계에서 요청)
+import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 · 버스 시트 화면 조각 · Preact: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
@@ -40,7 +40,7 @@ import {StationNameLayer,ExitPillars} from './map/platform.mts';   // 승강장 
 import {createTrainPlanner} from './trains/plan.mts';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mts';   // 실시간 열차 받기 · 기록
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mts';   // 열차 그리기 · 건물 깊이
-import {createBusLayer} from './bus/layer.mts';   // bus: optional Seoul routes, stops and live vehicles
+import {createBusLayer} from './bus/layer.mts';import {drawBusSheet,clearBusSheet} from './bus/sheet_view.tsx';   // bus: optional Seoul routes, stops and live vehicles
 import {registerBusLook} from './bus/mesh.mts';   // 버스 모양 등록(조선 가마)
 import {AvatarRenderer,createMyMotion,registerAvatar,avatarScale,AVATAR_MINZOOM} from './map/avatar.mts';   // 내 위치 캐릭터(줌 15 부터 점 대신)
 import * as sproutAvatar from './map/avatars/sprout.mts';   // 내 위치 캐릭터 모양(모드 설정 me.look): 기본 새싹 볼빵 후디
@@ -678,9 +678,10 @@ map.on('load',()=>{
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();
   // bus: below subway lines, using the existing detail sheet and settings controls.
-  busLayer=createBusLayer({map,phone:PHONE,frameMs,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat() as unknown as ReturnType<BusDeps['getExitCoordinates']&{}>,onSelect:html=>{   // bus: redraw only the train canvas; reserve exit pillars
-    sheetUI.following=null;sheetUI.followBus=null;sheetUI.sheetTrain=null;followBtn.hidden=true;const token=openSheet(html,'bus');
-    return next=>{if(sheetUI.sheetToken!==token||sheetBody.innerHTML===next)return;const focused=sheetBody.contains(document.activeElement);sheetBody.innerHTML=next;if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
+  busLayer=createBusLayer({map,phone:PHONE,frameMs,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat() as unknown as ReturnType<BusDeps['getExitCoordinates']&{}>,onSelect:view=>{   // bus: redraw only the train canvas; reserve exit pillars
+    // 시트 몸통은 화면 조각(bus/sheet_view.tsx)이 그린다 — 다시 그릴 때 시트 안에 초점이 있었으면 옛 innerHTML 때처럼 제목으로(옛 글자는 브라우저가 고쳐 쓴 글자와 늘 달라 정류장 시트는 매번 갈아 끼웠다)
+    sheetUI.following=null;sheetUI.followBus=null;sheetUI.sheetTrain=null;followBtn.hidden=true;const token=openSheetView(body=>{drawBusSheet(body,view);return ()=>clearBusSheet(body)},'bus');
+    return next=>{if(sheetUI.sheetToken!==token)return;const focused=sheetBody.contains(document.activeElement);drawBusSheet(sheetBody,next);if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:(leg,{fit}:{fit?:boolean}={})=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
     if(leg)showRoute({legs:[leg as JourneyLeg]},true,fit??busLayer?.selection?.kind!=='bus');   // 버스를 눌렀거나 정류장에서 곧 올 버스를 따라가면(fit:false) 노선 전체로 멀어지지 않는다
