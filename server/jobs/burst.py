@@ -5,11 +5,17 @@ from __future__ import annotations
 
 import time
 import urllib.error
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    from server.services.live import SubwayLiveService
 
 BURST_CALLS, BURST_GAP, BURST_RESERVE = 8, 45, 150
 
 
-def burst_loop(live, sleep=time.sleep) -> None:
+def burst_loop(live: SubwayLiveService, sleep: Callable[[float], None] = time.sleep) -> None:
     """live: SubwayLiveService. SUBWAY_LIVE_BURST_EVERY 마다 노선 하나를 돌아가며(하루 호출 수 안에서)."""
     lines, every = live.config.burst_lines, live.config.burst_every
     turn = 0
