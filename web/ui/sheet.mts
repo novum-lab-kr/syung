@@ -35,7 +35,6 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   // 몸통을 화면 조각(Preact — ui/station_sheet.tsx …)이 그렸으면 다음 것을 열 때 먼저 치운다(그 조각의 정리 함수)
   let unmountBody:(()=>void)|null=null;
   function fillBody(fill:()=>void,source:string):number{tuck(false);if(source!=='bus')live.busLayer?.clearSelection();const u=unmountBody;unmountBody=null;u?.();fill();sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
-  function openSheet(html:string,source='subway'):number{return fillBody(()=>{sheetBody.innerHTML=html},source)}
   // mount: 빈 몸통에 그리고 치우는 함수를 돌려준다
   function openSheetView(mount:(body:HTMLElement)=>()=>void,source='subway'):number{return fillBody(()=>{sheetBody.textContent='';unmountBody=mount(sheetBody)},source)}
   function closeSheet():void{
@@ -168,5 +167,5 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
     if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}});
 
-  return {sheet,sheetBody,followBtn,openSheet,openSheetView,closeSheet,sheetBusy,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v:string|null){sheetTrain=v},get following(){return following},set following(v:string|null){following=v},get easing(){return easing},set easing(v:boolean){easing=v},get followBus(){return followBus},set followBus(v:string|null){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v:SheetStation|null){sheetStation=v},get sheetToken(){return sheetToken}};
+  return {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v:string|null){sheetTrain=v},get following(){return following},set following(v:string|null){following=v},get easing(){return easing},set easing(v:boolean){easing=v},get followBus(){return followBus},set followBus(v:string|null){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v:SheetStation|null){sheetStation=v},get sheetToken(){return sheetToken}};
 }
