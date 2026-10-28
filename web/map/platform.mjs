@@ -1,4 +1,4 @@
-// web/map/platform.mjs
+// web/map/platform.mts
 var NAME_PX = 40;
 var NAME_ROW = 50;
 var StationNameLayer = class {
