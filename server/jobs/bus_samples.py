@@ -11,19 +11,25 @@ from __future__ import annotations
 import hashlib
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from server.clock import KST
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable, Iterable, Sequence
+
+    from server.services.bus import BusLiveService
 
 CALLS_PER_ROUTE_DAY = 900   # 노선 하나를 05~24시에 약 75초마다
 
 
-def is_night_route(route: dict) -> bool:
+def is_night_route(route: dict[str, Any]) -> bool:
     """심야(N · 심야A) · 새벽 노선: 학습 시간(05~24시)엔 거의 안 다녀 호출이 헛돈다(10-14 N30 · N31 · 새벽A148 0대, 덕배)."""
     name = str(route.get("name") or "")
     return name.startswith(("새벽", "심야")) or (name[:1] == "N" and name[1:2].isdigit())
 
 
-def day_routes(route_ids, day: int, budget: int) -> list[str]:
+def day_routes(route_ids: Iterable[str], day: int, budget: int) -> list[str]:
     """하루 몫에서 전날 노선 하나를 재관측하고, 나머지는 해시 차례로 새로 배운다."""
     order = sorted(route_ids, key=lambda rid: hashlib.sha1(rid.encode()).hexdigest())
     if not order:
@@ -45,7 +51,7 @@ def day_routes(route_ids, day: int, budget: int) -> list[str]:
     return selected
 
 
-def sample_routes(proxy) -> list:
+def sample_routes(proxy: BusLiveService) -> Sequence[str | None]:
     config = proxy.config
     if config.sample_rotate:
         day = datetime.fromtimestamp(proxy.clock(), KST).date().toordinal()
@@ -54,7 +60,7 @@ def sample_routes(proxy) -> list:
     return [rid for rid in config.sample_routes if rid in proxy.routes] or [None]
 
 
-def background_loop(proxy, sleep=time.sleep) -> None:
+def background_loop(proxy: BusLiveService, sleep: Callable[[float], None] = time.sleep) -> None:
     """Watched routes first, then the learning routes in turn, forever (while the key is live)."""
     turn = 0
     while proxy.mode == "live":

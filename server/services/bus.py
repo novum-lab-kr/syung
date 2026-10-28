@@ -287,7 +287,7 @@ class BusLiveService:
                 if rid not in self.pending and now - self.cache.get(rid, (-math.inf, []))[0] >= self.config.cache_seconds
                 and now >= self.failures.get(rid, (0, ""))[0])]
 
-    def background_once(self, sample_rid: str) -> tuple[float, bool]:
+    def background_once(self, sample_rid: str | None) -> tuple[float, bool]:
         """One background turn: (seconds to wait, whether the learning route sample_rid had its turn).
         A route someone watches comes first at any hour; the learning call only when none is due."""
         now, config = self.clock(), self.config

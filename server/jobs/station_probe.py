@@ -6,8 +6,14 @@ from __future__ import annotations
 import time
 import urllib.error
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from server.clock import KST
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    from server.services.live import SubwayLiveService
 
 PROBE_RESERVE = 300   # 하루 남은 호출이 이만큼 안 되면 지도 몫으로 남긴다
 
@@ -27,11 +33,11 @@ def in_hours(spec: str, now: datetime) -> bool:
     return False
 
 
-def keep(rows: list[dict]) -> list[dict]:
+def keep(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{k: r.get(k) for k in ("line", "direction", "trainNo", "code", "where", "eta", "message", "receivedAt")} for r in rows]
 
 
-def probe_once(live, name: str) -> bool:
+def probe_once(live: SubwayLiveService, name: str) -> bool:
     """한 역 한 번: 받으면 기록하고 True, 못 받으면 False."""
     try:
         rows = live.fetch_station(name)   # 하루 호출 수에 센다
@@ -43,7 +49,8 @@ def probe_once(live, name: str) -> bool:
     return True
 
 
-def station_probe_loop(live, sleep=time.sleep, now=lambda: datetime.now(KST)) -> None:
+def station_probe_loop(live: SubwayLiveService, sleep: Callable[[float], None] = time.sleep,
+                       now: Callable[[], datetime] = lambda: datetime.now(KST)) -> None:
     """live: SubwayLiveService. 정한 시간에만, 역들을 고르게 나눠 돈다."""
     names, every = live.config.station_probe, live.config.station_probe_seconds
     if not names:

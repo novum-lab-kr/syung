@@ -8,6 +8,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Strings = Callable[[], list[str]]   # 빈 글자 목록을 만드는 기본값(list)
 
 ROOT = Path(__file__).resolve().parent.parent   # 저장소 루트(data/ 가 여기 아래)
 
@@ -27,7 +33,7 @@ class SubwayConfig:
     daily_limit: int = 950
     quiet_hours: str = "01:40-04:25"
     source_mode: str = "all"
-    burst_lines: list = field(default_factory=list)
+    burst_lines: list[str] = field(default_factory=cast("Strings", list))
     burst_every: int = 7200
     burst_dir: Path = Path("/var/lib/subway-live/position")
     position_lines: int = 0
@@ -37,7 +43,7 @@ class SubwayConfig:
     position_hours: str = ""
     position_budget: int = 3000
     # 역 하나 도착 자료(realtimeStationArrival/<역>)가 전 역(ALL)보다 빨리 오는지 재기(jobs/station_probe.py, 2026-10-16 덕배): 비면 끔
-    station_probe: list = field(default_factory=list)
+    station_probe: list[str] = field(default_factory=cast("Strings", list))
     station_probe_hours: str = "07:30-09:30"
     station_probe_seconds: int = 30
     station_probe_dir: Path = Path("/var/lib/subway-live/station-probe")
@@ -98,7 +104,7 @@ class BusConfig:
     quota_file: Path = Path("/var/lib/subway-live/bus-quota.json")
     routes_file: Path = ROOT / "data" / "bus" / "routes.json"
     record_dir: Path | None = None   # 받은 위치를 날마다 저장할 폴더(없으면 저장 안 함)
-    sample_routes: tuple = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름) — sample_rotate 가 꺼졌을 때만
+    sample_routes: tuple[str, ...] = ()   # 학습용으로 알아서 부를 노선(없으면 안 부름) — sample_rotate 가 꺼졌을 때만
     sample_rotate: bool = False   # 학습 노선을 날마다 돌린다(jobs/bus_samples.py). 운영 기본은 켬(from_env)
     sample_reserve: int = 250   # 하루 호출 중 지도 보는 사람 몫으로 남길 수
 

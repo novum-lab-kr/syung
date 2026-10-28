@@ -11,9 +11,16 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from server.clock import KST
 from server.services.live import LINE_NAMES, POSITION_PARTIAL_MIN
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    from server.services.health import HealthService
+    from server.services.live import SubwayLiveService
 
 PROBE_FRESH = 300
 BLOCK_READS = 20   # 한 노선을 이어 읽는 횟수(30초 간격이면 약 10분)
@@ -22,7 +29,7 @@ EVAL_LINES = ("7호선", "2호선", "9호선")
 EVAL_WINDOWS = ((8 * 60, 8 * 60 + 30), (13 * 60, 13 * 60 + 30), (18 * 60, 18 * 60 + 30))   # KST 분 [시작, 끝)
 
 
-def baseline_loop(health, sleep=time.sleep) -> None:
+def baseline_loop(health: HealthService, sleep: Callable[[float], None] = time.sleep) -> None:
     done = ""
     while True:
         today = datetime.now(KST).strftime("%Y-%m-%d")
@@ -35,7 +42,7 @@ def baseline_loop(health, sleep=time.sleep) -> None:
         sleep(3600 if done == today else 600)
 
 
-def next_probe(live, now: float) -> str | None:
+def next_probe(live: SubwayLiveService, now: float) -> str | None:
     """읽을 노선: 지금 도착 정보에 POSITION_PARTIAL_MIN 대 이상인 노선 가운데 PROBE_FRESH 초 넘게 위치 피드를 안 읽은, 가장 오래된 것."""
     if not live.all_cache:
         return None
@@ -51,7 +58,8 @@ def in_eval(t: datetime) -> bool:
     return any(a <= m < b for a, b in EVAL_WINDOWS)
 
 
-def probe_loop(live, every: int, sleep=time.sleep, clock=time.time, kst_now=lambda: datetime.now(KST)) -> None:
+def probe_loop(live: SubwayLiveService, every: int, sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.time,
+               kst_now: Callable[[], datetime] = lambda: datetime.now(KST)) -> None:
     """한 노선을 BLOCK_READS 번 이어 읽고(간격 probe_interval) 다음 노선으로. 노선마다 한 번씩 띄엄띄엄(약 7분에 한 번) 읽으면
     열차의 다음 사건을 놓쳐 학습 · 채점에 못 쓴다(2026-10-18 덕배: 학습 오차가 커 보였다) — 같은 호출 수로 이어진 자료를 만든다.
     고정 채점 창(EVAL_WINDOWS)에는 EVAL_LINES 를 every 초마다 모두 읽는다: 날마다 같은 노선 · 같은 시간의 화면 재현 점수

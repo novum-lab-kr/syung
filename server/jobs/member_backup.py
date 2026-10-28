@@ -25,18 +25,22 @@ import sqlite3
 import tarfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from server.clock import KST
 from server.config import MemberConfig
 from server.services.members import MemberService
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
 
 DEFAULT_DEST = Path("/var/backups/syung")
 KEEP_DAYS = 14
 BACKUP_NAME = re.compile(r"(?:members-(\d{8})\.sqlite3|avatars-(\d{8})\.tar)\.gz")
 
 
-def backup(db_file: Path, dest: Path, today: date, keep_days: int = KEEP_DAYS, on_copy=None) -> Path | None:
+def backup(db_file: Path, dest: Path, today: date, keep_days: int = KEEP_DAYS,
+           on_copy: Callable[[Path], None] | None = None) -> Path | None:
     """오늘 사본을 만들고 오래된 사본을 지운다. 원본이 없으면 아무것도 안 하고 None.
     on_copy(사본 경로): 압축하기 전의 사본을 읽을 일(그 사본이 가리키는 사진 이름 모으기)."""
     if not db_file.is_file():
@@ -106,7 +110,7 @@ def backup_photos(folder: Path, names: list[str], dest: Path, today: date) -> Pa
 def prune(dest: Path, today: date, keep_days: int = KEEP_DAYS) -> list[Path]:
     """이름의 날짜가 today - keep_days 보다 앞선 사본을 지우고 지운 목록을 돌려준다."""
     oldest = today - timedelta(days=keep_days)
-    removed = []
+    removed: list[Path] = []
     for path in sorted(dest.iterdir()):
         matched = BACKUP_NAME.fullmatch(path.name)
         if not matched or not path.is_file():
