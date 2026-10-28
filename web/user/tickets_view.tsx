@@ -60,7 +60,7 @@ let view:View = {
   routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '',
 };
 let handlers:Handlers | null = null;
-const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...a:Parameters<Handlers[K]>) => void)?.(...args);
+const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
 
 // 승차권 앞면(목록 카드 · 발권 화면 미리보기)
 function Front({ ticket }:{ ticket:Pick<Ticket, 'id' | 'name' | 'depart' | 'days'> }) {

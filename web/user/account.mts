@@ -303,11 +303,11 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     ticketsView.set({tickets, listTurn: ticketsView.state.listTurn + 1, flipped: tickets.map(() => false), chains: tickets.map(() => null)});
   }
   function flipTicket(index:number) {
-    const view = ticketsView.state, t = view.tickets[index]!, turn = view.listTurn;
+    const view = ticketsView.state, ticket = view.tickets[index]!, turn = view.listTurn;
     const flipped = [...view.flipped]; flipped[index] = !flipped[index];
     ticketsView.set({flipped});
     if (!flipped[index]) return;
-    fillChain(t, html => {   // 그사이 목록을 다시 받았으면(옛 카드가 빠졌으면) 그리지 않는다
+    fillChain(ticket, html => {   // 그사이 목록을 다시 받았으면(옛 카드가 빠졌으면) 그리지 않는다
       if (ticketsView.state.listTurn !== turn) return;
       const chains = [...ticketsView.state.chains]; chains[index] = html;
       ticketsView.set({chains});
@@ -355,12 +355,12 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   function placeInput(value:string) {
     ticketsView.set({placeQuery: value});
     clearTimeout(placeTimer);
-    const q = value.trim();
-    if (q.length < 2) { ticketsView.set({placeHidden: true}); return; }
+    const query = value.trim();
+    if (query.length < 2) { ticketsView.set({placeHidden: true}); return; }
     placeTimer = setTimeout(async () => {
       const my = ++placeSeq;
       try {
-        const {body} = await getJson<{ ok?:boolean; places:FoundPlace[] }>(`./api/place?q=${encodeURIComponent(q)}`);
+        const {body} = await getJson<{ ok?:boolean; places:FoundPlace[] }>(`./api/place?q=${encodeURIComponent(query)}`);
         if (my !== placeSeq) return;
         if (!body?.ok) ticketsView.set({placeRows: '검색하지 못했어요', placeHidden: false});
         else if (!body!.places.length) ticketsView.set({placeRows: '찾는 곳이 없어요', placeHidden: false});
