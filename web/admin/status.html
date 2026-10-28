@@ -102,60 +102,6 @@ td.n,th.n{text-align:right}
     <table><thead><tr><th>무엇</th><th class="n">담긴 수</th><th class="n">받은 지</th></tr></thead><tbody id="caches"></tbody></table>
   </section>
 </main>
-<script>
-const $ = id => document.getElementById(id);
-const clock = iso => iso ? iso.slice(11, 16) : '–';
-const showLogin = on => { $('login').hidden = !on; };
-function duration(seconds) {
-  const days = Math.floor(seconds / 86400), hours = Math.floor(seconds % 86400 / 3600), minutes = Math.floor(seconds % 3600 / 60);
-  if (days) return `${days}일 ${hours}시간`;
-  return hours ? `${hours}시간 ${minutes}분` : `${minutes}분`;
-}
-const cell = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
-function level(share) {   // 90% 넘으면 빨강, 70% 넘으면 노랑
-  if (share >= .9) return 'bad';
-  return share >= .7 ? 'mid' : '';
-}
-
-async function load() {
-  let body;
-  try {
-    const r = await fetch('/api/admin/status', {credentials: 'same-origin'});
-    if (r.status === 401) return showLogin(true);
-    showLogin(false);
-    body = await r.json();
-    if (!r.ok) throw new Error(body.error?.message || `요청 실패(${r.status})`);
-  } catch (error) {
-    $('problems').replaceChildren(Object.assign(document.createElement('li'), {textContent: error.message}));
-    return;
-  }
-  $('uptime').textContent = duration(body.uptimeSeconds);
-  $('started').textContent = `${body.startedAt.slice(0, 10)} ${clock(body.startedAt)} 시작`;
-  $('checked').textContent = clock(body.checkedAt);
-  $('problemCount').textContent = body.problems.length ? `${body.problems.length}건` : '없음';
-  $('problems').replaceChildren(...(body.problems.length ? body.problems.map(problem => Object.assign(document.createElement('li'), {textContent: problem.text}))
-    : [Object.assign(document.createElement('li'), {className: 'fine', textContent: '문제 없어요'})]));
-  $('calls').replaceChildren(...body.calls.map(call => {
-    const box = document.createElement('div'), line = document.createElement('div'), name = document.createElement('span'),
-      count = document.createElement('b'), meter = document.createElement('div'), fill = document.createElement('i'), sub = document.createElement('small');
-    box.className = 'call'; meter.className = 'meter';
-    const share = call.used == null || !call.limit ? 0 : Math.min(1, call.used / call.limit);
-    name.textContent = call.label;
-    count.textContent = call.used == null ? `? / ${call.limit.toLocaleString('ko-KR')}` : `${call.used.toLocaleString('ko-KR')} / ${call.limit.toLocaleString('ko-KR')}`;
-    fill.style.width = `${(share * 100).toFixed(1)}%`; fill.className = level(share);
-    sub.textContent = call.used == null ? '장부를 읽지 못했어요' : `${Math.round(share * 100)}% 사용 · 기준일 ${call.day || '아직 호출 없음'}`;
-    line.append(name, count); meter.append(fill); box.append(line, meter, sub);
-    return box;
-  }));
-  $('caches').replaceChildren(...body.caches.map(item => {
-    const tr = document.createElement('tr');
-    tr.append(cell(item.label), cell(item.entries.toLocaleString('ko-KR'), 'n'), cell(item.ageSeconds == null ? '–' : `${item.ageSeconds}초`, 'n'));
-    return tr;
-  }));
-}
-$('reload').addEventListener('click', load);
-load();
-setInterval(() => { if (!document.hidden) load(); }, 30000);
-</script>
+<script type="module" src="./status.mjs"></script>   <!-- 화면은 admin/status.tsx(Preact) — 빌드가 status.mjs 로 낸다 -->
 </body>
 </html>

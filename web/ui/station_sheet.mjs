@@ -5,10 +5,10 @@ function Head({ name, chips, sub }) {
 	return /* @__PURE__ */ a(M, { children: [
 		/* @__PURE__ */ a("div", {
 			class: "tp-line",
-			children: chips.map((c) => /* @__PURE__ */ a("span", {
+			children: chips.map((chip) => /* @__PURE__ */ a("span", {
 				class: "chip",
-				style: `--c:${c.color}`,
-				children: [/* @__PURE__ */ a("span", { class: "dot" }), c.name]
+				style: `--c:${chip.color}`,
+				children: [/* @__PURE__ */ a("span", { class: "dot" }), chip.name]
 			}))
 		}),
 		/* @__PURE__ */ a("div", {
@@ -48,15 +48,15 @@ function Card({ card }) {
 					children: [card.direction, card.toward ? " · " + card.toward : ""]
 				})
 			]
-		}), card.rows.map((a$1) => /* @__PURE__ */ a("div", {
+		}), card.rows.map((row) => /* @__PURE__ */ a("div", {
 			class: "arr-t",
-			children: [/* @__PURE__ */ a("b", { children: a$1.text }), /* @__PURE__ */ a("span", {
+			children: [/* @__PURE__ */ a("b", { children: row.text }), /* @__PURE__ */ a("span", {
 				class: "muted",
 				children: [
-					a$1.destination,
+					row.destination,
 					"행",
-					a$1.express ? " · 급행" : "",
-					a$1.last ? " · 막차" : ""
+					row.express ? " · 급행" : "",
+					row.last ? " · 막차" : ""
 				]
 			})]
 		}))]
@@ -65,10 +65,10 @@ function Card({ card }) {
 function Exits({ exits }) {
 	return /* @__PURE__ */ a("div", {
 		class: "exits",
-		children: exits.map((e) => /* @__PURE__ */ a("span", {
+		children: exits.map((exit) => /* @__PURE__ */ a("span", {
 			class: "exit",
-			title: `${e.ref}번 출구${e.wheelchair ? " · 휠체어 가능" : ""}`,
-			children: [e.ref, e.wheelchair && /* @__PURE__ */ a("i", { children: "♿" })]
+			title: `${exit.ref}번 출구${exit.wheelchair ? " · 휠체어 가능" : ""}`,
+			children: [exit.ref, exit.wheelchair && /* @__PURE__ */ a("i", { children: "♿" })]
 		}))
 	});
 }
@@ -121,7 +121,7 @@ function StationSheet({ name, chips, exits, state }) {
 			}),
 			state.cards.length ? /* @__PURE__ */ a("div", {
 				class: "arrs",
-				children: state.cards.map((c) => /* @__PURE__ */ a(Card, { card: c }))
+				children: state.cards.map((card) => /* @__PURE__ */ a(Card, { card }))
 			}) : /* @__PURE__ */ a("div", {
 				class: "muted empty",
 				children: "지금 도착 예정 열차 정보가 없어요."
