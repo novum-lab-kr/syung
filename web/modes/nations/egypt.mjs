@@ -1,4 +1,4 @@
-// web/modes/nations/egypt.mjs
+// web/modes/nations/egypt.mts
 var EGYPT_DELTA = {
 	"id": "egypt",
 	"label": "이집트 / 카이로",

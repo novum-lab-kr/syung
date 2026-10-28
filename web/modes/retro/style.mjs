@@ -1,4 +1,4 @@
-// web/modes/retro/style.mjs
+// web/modes/retro/style.mts
 var RETRO_DELTA = {
 	"id": "retro",
 	"label": "레트로 / 16비트 마을",

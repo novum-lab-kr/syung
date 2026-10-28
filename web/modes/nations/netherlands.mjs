@@ -1,4 +1,4 @@
-// web/modes/nations/netherlands.mjs
+// web/modes/nations/netherlands.mts
 var NETHERLANDS_DELTA = {
 	"id": "netherlands",
 	"label": "네덜란드 / 암스테르담",

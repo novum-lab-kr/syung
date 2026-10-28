@@ -1,4 +1,4 @@
-// web/modes/starcraft/style.mjs
+// web/modes/starcraft/style.mts
 var SEOUL_KEEP = [
 	[
 		126.94025,

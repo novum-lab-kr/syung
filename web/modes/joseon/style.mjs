@@ -1,4 +1,4 @@
-// web/modes/joseon/style.mjs
+// web/modes/joseon/style.mts
 var JOSEON_DELTA = {
 	id: "joseon",
 	label: "한양 / 조선",

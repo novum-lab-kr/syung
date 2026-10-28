@@ -1,4 +1,4 @@
-// web/modes/basic/city.mjs
+// web/modes/basic/city.mts
 var SEOUL_CITY_STYLE = {
 	"schemaVersion": 1,
 	"id": "seoul",

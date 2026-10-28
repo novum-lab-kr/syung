@@ -1,4 +1,4 @@
-// web/modes/nations/paris.mjs
+// web/modes/nations/paris.mts
 var PARIS_DELTA = {
 	"id": "paris",
 	"label": "프랑스 / 파리",

@@ -1,4 +1,4 @@
-// web/modes/basic/park.mjs
+// web/modes/basic/park.mts
 var PARK_DEFAULTS = {
 	id: "seoul-coaster",
 	version: 1,

@@ -1,4 +1,4 @@
-// web/modes/nations/greece.mjs
+// web/modes/nations/greece.mts
 var GREECE_DELTA = {
 	"id": "greece",
 	"label": "그리스 / 산토리니",
