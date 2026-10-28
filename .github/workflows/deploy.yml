@@ -6,8 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 줄 세우기: main(push · 손으로 돌리기)은 한 줄 'deploy' 에서 차례로, PR 시험은 PR 마다 따로('ci-<ref>').
+# 한 줄을 같이 쓰면 대기 중인 실행은 하나만 남아 PR 시험이 들어올 때 기다리던 main 배포가 취소된다(2026-10-28 #65 · #66)
 concurrency:
-  group: deploy
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.ref) || 'deploy' }}
   cancel-in-progress: false
 
 jobs:
