@@ -13,7 +13,7 @@ import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
 import './ui/station_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 시트 화면 조각 · Preact: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
-import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
+import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
 import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)

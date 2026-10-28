@@ -14,10 +14,10 @@
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type {Plan, TrackLeg} from '../lib/journey-ui.mts';
+import {accountView, avatarLook, nameLength, NAME_MAX} from './account_view.tsx';   // 내 정보 쪽(#menuAccount) 그리기 — Preact
+import type {Me, Avatar, Stats, Session} from './account_view.tsx';
 
 // 서버 응답(server/routes/members.py · /api/auth/providers · /api/route · /api/place) 가운데 이 파일이 읽는 칸
-interface Avatar { type:string; url?:string; id?:string }
-interface Me { name:string; provider:string; avatar?:Avatar | null }
 interface Place { name:string; lat:number; lng:number }
 // 저장하는 경로: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(slimRoute)
 type SlimLeg = TrackLeg & { from?:string; to?:string };
@@ -28,12 +28,6 @@ interface Reply<B> { status:number; ok?:boolean; body:B | null }
 // 바꾸는 요청의 답: 실패면 error.message, 다른 기기 로그아웃이면 removed
 interface Changed { error?:{ message?:string }; removed?:number }
 interface RouteAnswer { ok?:boolean; error?:string; plans?:Plan[] }
-interface Stats {
-  daysTogether:number; tickets:number; weeklyRides:number; recent:{ days:number; openDays:number; route:number; ticket:number };
-  daily:{ day:string; open:number; route:number; ticket:number }[];
-  fare:{ month:string; total:number; skipped:number; reasons:Record<string, number>; tickets:{ name:string; fare:number; rides:number; monthly:number }[] };
-}
-interface Session { id:string; device:string; current?:boolean; lastUsedAt:number; createdAt:number }
 interface Wheel { el:HTMLElement; values:number[]; label:(value:number)=>string }
 // 로그인 팝업 로고 움직임(web/vendor/lottie — 받으면 globalThis.lottie)이 쓰는 칸
 interface LottieAnim { destroy():void; goToAndStop(frame:number, isFrame:boolean):void; play():void; addEventListener(name:string, f:()=>void):void }
@@ -47,7 +41,6 @@ const LOGIN_ERRORS:Record<string, string> = {
   provider: '로그인 서비스가 답하지 않아요. 잠시 뒤 다시 해 주세요.',
   limit: '시도가 너무 많아요. 10분 뒤 다시 해 주세요.',
 };
-const PROVIDER_NAMES:Record<string, string> = {kakao: '카카오', google: '구글', apple: 'Apple'};
 const KAKAO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4C7 4 3 7.1 3 11c0 2.5 1.7 4.7 4.2 5.9l-.9 3.3c-.1.3.3.6.6.4l3.9-2.6c.4 0 .8.1 1.2.1 5 0 9-3.1 9-7S17 4 12 4z" fill="#191919"/></svg>';
 const GOOGLE = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.03 46.98 31.89 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.41 14.41 0 0 1 9.75 24c0-1.59.27-3.13.78-4.59l-7.98-6.19A23.87 23.87 0 0 0 0 24c0 3.87.93 7.53 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>';
 const APPLE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.05 12.54c.03 3.27 2.87 4.36 2.9 4.38-.02.08-.45 1.55-1.49 3.07-.9 1.31-1.83 2.62-3.3 2.65-1.44.03-1.91-.86-3.56-.86-1.64 0-2.16.83-3.53.89-1.42.05-2.5-1.42-3.41-2.73C2.8 17.26 1.39 12.36 3.3 9.05a5.3 5.3 0 0 1 4.49-2.72c1.4-.03 2.72.94 3.56.94.83 0 2.4-1.16 4.04-.99.69.03 2.63.28 3.88 2.11-.1.06-2.32 1.35-2.3 4.15ZM14.35 4.5c.76-.92 1.28-2.2 1.14-3.48-1.1.04-2.44.74-3.23 1.66-.7.81-1.32 2.11-1.15 3.35 1.23.1 2.48-.63 3.24-1.53Z"/></svg>';
@@ -55,27 +48,13 @@ const PROVIDERS:Record<string, [string, string]> = {kakao: ['카카오로 계속
 // 점선 슝 로고(속도선 + 기차, 노랑 네모 없이) — 앞면에 5개를 가로로, 가운데 하나가 정가운데
 const LOGO = '<svg viewBox="0 0 100 60"><g fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray=".3 2.3" stroke-linecap="round"><rect x="36" y="11" width="56" height="38" rx="19"/><rect x="40.5" y="15.5" width="47" height="29" rx="14.5"/><circle cx="74" cy="30" r="7.5"/><circle cx="74" cy="30" r="3.5"/><rect x="15" y="16" width="17" height="7" rx="3.5"/><rect x="8" y="26.5" width="24" height="7" rx="3.5"/><rect x="15" y="37" width="17" height="7" rx="3.5"/></g></svg>';
 
-// 프로필 캐릭터(내 위치 캐릭터 — web/map/avatars/). 얼굴 그림은 web/brand/faces/<이름>-84 · 240.png(tools/avatar_face/make.sh).
-// 첫째(새싹)가 기본 — 고르면 서버에는 '기본으로'(DELETE)를 보낸다
-const CHARACTERS = [['sprout', '새싹 볼빵 후디'], ['builder', '꼬마 건설 반장'], ['seonbi', '갓 쓴 꼬마 선비'], ['visitor', '두근두근 나들이'],
-  ['scv', '테란 SCV'], ['drone', '저그 드론'], ['probe', '프로토스 프로브']] as const;
-const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가 주는 내 사진 주소 모양(그 밖은 그리지 않는다)
 const PHOTO_SIDE = 256, PHOTO_MAX = 150 * 1024;   // 서버 한도(160 KB)보다 조금 작게
-const NAME_MAX = 12;
-const nameLength = (text:string) => [...text.trim()].length;
-const won = (n:number) => `${n.toLocaleString('ko-KR')}원`;
-const monthDay = (seconds:number) => { const d = new Date(seconds * 1000); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
-const FARE_REASONS:Record<string, string> = {route: '고른 경로가 없는 승차권', distance: '공식 거리 자료가 없는 노선', outside: '수도권 밖 구간',
-  extra: '추가 운임 노선(신분당선 · 의정부경전철 · 공항철도 영종 구간)', bus: '요금 · 거리 자료가 없는 버스', none: '전철 · 버스를 타지 않는 승차권'};
-
 // 칸(el)에 프로필을 그린다: 올린 사진이면 칸을 꽉 채우고(.photo), 아니면 캐릭터 얼굴(.face). big: 내 정보의 큰 칸(240 그림)
-function paintAvatar(el:HTMLElement, avatar:Avatar | null | undefined, big = false) {
-  const photo = avatar?.type === 'photo' && PHOTO_URL.test(avatar.url!);
-  const id = avatar?.type === 'character' && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id! : 'sprout';
+function paintAvatar(el:HTMLElement, avatar:Avatar | null | undefined) {   // 메뉴 목록의 내 정보 줄(작은 칸) — 큰 칸은 account_view
+  const {photo, image} = avatarLook(avatar);
   el.classList.toggle('photo', photo);
   el.classList.toggle('face', !photo);
-  // 기본 새싹 · 작은 칸은 CSS 의 image-set(28 · 56 · 84) 그대로
-  el.style.backgroundImage = photo ? `url("${avatar!.url}")` : (big || id !== 'sprout') ? `url("./brand/faces/${id}-${big ? 240 : 84}.png")` : '';
+  el.style.backgroundImage = image;
 }
 const toBlob = (canvas:HTMLCanvasElement, type:string, quality:number) => new Promise<Blob | null>(done => canvas.toBlob(done, type, quality));
 // 고른 사진 → 가운데 정사각 256×256 WebP(안 되는 브라우저는 JPEG) Blob. 다시 그리므로 원본의 사진 정보(Exif · 위치)는 따라가지 않는다
@@ -315,44 +294,23 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   function show() {
     item.hidden = false;
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
-    if (!me) { closeName(); closePick(); $('accountStats').hidden = true; $('accountSafe').hidden = true; accountSeq++; return; }
+    if (!me) { closeName(); closePick(); accountView.set({statsShown: false, safeShown: false}); accountSeq++; return; }
     paintAvatar($('accountAvatar'), me.avatar);   // 메뉴 내 정보 줄
-    paintAvatar($('accountAvatarBig'), me.avatar, true);
     $('accountItemName').textContent = me.name;
-    $('accountName').textContent = me.name;
-    $('accountProvider').textContent = PROVIDER_NAMES[me.provider] || me.provider;
-    markChoice();
+    accountView.set({me, marked: true});   // 내 정보 쪽: 큰 칸 · 이름 · 로그인 방법 · 고르기 눌림(로그아웃해도 마지막 그림은 그대로 — 옛 모양)
   }
 
-  // ---- 내 정보: 프로필 사진 · 캐릭터 고르기 ----
-  const choices = $('avatarChoices');
-  choices.append(...CHARACTERS.map(([id, label]) => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'pf-choice'; b.dataset.character = id; b.setAttribute('aria-label', label); b.title = label;
-    b.onclick = () => pickCharacter(id);
-    return b;
-  }));
-  function markChoice() {
-    const avatar = me?.avatar;
-    const current = avatar?.type === 'photo' ? 'photo' : avatar?.type === 'character' ? avatar.id : 'sprout';
-    $('photoPick').setAttribute('aria-pressed', String(current === 'photo'));
-    // 올린 사진이 있으면 사진 칸에 그 사진, 없으면 사진기 그림
-    if (current === 'photo') paintAvatar($('photoPick'), avatar);
-    else { $('photoPick').classList.remove('photo', 'face'); $('photoPick').style.backgroundImage = ''; }
-    for (const b of choices.querySelectorAll<HTMLElement>('[data-character]')) b.setAttribute('aria-pressed', String(b.dataset.character === current));
-  }
+  // ---- 내 정보: 프로필 사진 · 캐릭터 고르기 · 닉네임 고치기(그리기는 account_view.tsx) ----
   function openPick() {
     closeName();
-    for (const b of choices.querySelectorAll<HTMLElement>('[data-character]')) b.style.backgroundImage ||= `url("./brand/faces/${b.dataset.character}-240.png")`;   // 열 때만 받는다
-    $('avatarPick').hidden = false; $('accountAvatarBig').setAttribute('aria-expanded', 'true');
-    choices.querySelector<HTMLElement>('[aria-pressed=true]')?.focus({preventScroll: true});
+    accountView.set({facesLoaded: true, pickOpen: true});   // 캐릭터 얼굴은 처음 열 때 받는다
+    document.querySelector<HTMLElement>('#avatarChoices [aria-pressed=true]')?.focus({preventScroll: true});
   }
-  function closePick() { $('avatarPick').hidden = true; $('accountAvatarBig').setAttribute('aria-expanded', 'false'); }
-  $('accountAvatarBig').onclick = () => { if ($('avatarPick').hidden) openPick(); else closePick(); };
+  function closePick() { accountView.set({pickOpen: false}); }
   let saving = false;
   function busy(on:boolean) {
     saving = on;
-    for (const b of choices.querySelectorAll('button')) b.disabled = on;
+    accountView.set({saving: on});
   }
   // 바꾸기 요청 공통: 401 이면 로그인 풀림, 실패면 서버 문구, 성공이면 내 정보를 다시 그린다
   async function saveProfile(request:()=>Promise<Reply<Me & Changed>>, done:string) {
@@ -372,10 +330,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     if (id === current) return;
     saveProfile(() => id === 'sprout' ? send('DELETE', './api/me/avatar') : send('PUT', './api/me/avatar', {character: id}), '프로필을 바꿨어요');
   }
-  $('photoPick').onclick = () => { if (!saving) $('photoFile').click(); };
-  $('photoFile').onchange = async () => {
-    const file = $<HTMLInputElement>('photoFile').files![0];
-    $<HTMLInputElement>('photoFile').value = '';   // 같은 사진을 다시 골라도 change 가 오게
+  async function photoChosen(file:File | undefined) {   // (고른 칸의 값은 그리기 쪽이 비운다 — 같은 사진을 다시 골라도 change 가 오게)
     if (!file) return;
     let blob:Blob;
     try { blob = await shrinkPhoto(file); } catch { toast('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.', true); return; }
@@ -383,34 +338,24 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       const r = await fetch('./api/me/avatar', {method: 'PUT', credentials: 'same-origin', headers: {...CHANGE, 'Content-Type': blob.type}, body: blob});
       return {status: r.status, ok: r.ok, body: r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => null) : null};
     }, '프로필 사진을 바꿨어요');
-  };
-
-  // ---- 내 정보: 닉네임 고치기(1~12자 · 같은 이름 허용 — 다듬기 · 검사는 서버가 한 번 더) ----
-  function nameCount() {
-    const count = nameLength($<HTMLInputElement>('nameInput').value);
-    $('nameCount').textContent = `${count}/${NAME_MAX}`;
-    $('nameCount').classList.toggle('over', count > NAME_MAX);
   }
+
+  // 닉네임 고치기(1~12자 · 같은 이름 허용 — 다듬기 · 검사는 서버가 한 번 더)
   function openName() {
     closePick();
-    $<HTMLInputElement>('nameInput').value = me?.name || ''; nameCount();
-    $('nameForm').hidden = false; $('nameEdit').setAttribute('aria-expanded', 'true');
+    accountView.set({nameValue: me?.name || '', nameOpen: true});
     $('nameInput').focus({preventScroll: true}); $<HTMLInputElement>('nameInput').select();
   }
-  function closeName() { $('nameForm').hidden = true; $('nameEdit').setAttribute('aria-expanded', 'false'); }
-  $('nameEdit').onclick = () => { if ($('nameForm').hidden) openName(); else closeName(); };
-  $('nameCancel').onclick = () => { closeName(); $('nameEdit').focus({preventScroll: true}); };
-  $('nameInput').addEventListener('input', nameCount);
-  $('nameForm').onsubmit = async (e:SubmitEvent) => {
-    e.preventDefault();
-    const name = $<HTMLInputElement>('nameInput').value.trim(), count = nameLength(name);
+  function closeName() { accountView.set({nameOpen: false}); }
+  async function submitName() {
+    const name = accountView.state.nameValue.trim(), count = nameLength(name);
     if (count < 1 || count > NAME_MAX) { toast(`닉네임은 1~${NAME_MAX}자예요`, true); $('nameInput').focus(); return; }
     if (name === me?.name) { closeName(); return; }
-    $<HTMLButtonElement>('nameSave').disabled = true;
+    accountView.set({nameSaving: true});
     try {
       if (await saveProfile(() => send('PUT', './api/me/profile', {name}), '닉네임을 바꿨어요')) { closeName(); $('nameEdit').focus({preventScroll: true}); }
-    } finally { $<HTMLButtonElement>('nameSave').disabled = false; }
-  };
+    } finally { accountView.set({nameSaving: false}); }
+  }
   function renderTickets() {
     $('ticketList').replaceChildren(...tickets.map(t => {
       const el = ticketEl(t);
@@ -686,48 +631,15 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
     try { [stats, sessions] = await Promise.all([getJson<Stats>('./api/me/stats'), getJson<{ sessions:Session[] }>('./api/me/sessions')]); } catch { return; }
     if (my !== accountSeq || !me) return;
     if (stats.status === 401 || sessions.status === 401) { me = null; show(); return; }
-    if (stats.status === 200) { renderStats(stats.body!); $('accountStats').hidden = false; }
-    if (sessions.status === 200) { renderSafe(sessions.body!.sessions); $('accountSafe').hidden = false; }
+    const view = accountView.state;   // 받을 때마다 칸을 새로 만든다(옛 innerHTML 바꾸기)
+    if (stats.status === 200) accountView.set({stats: stats.body!, statsTurn: view.statsTurn + 1, statsShown: true});
+    if (sessions.status === 200) accountView.set({sessions: sessions.body!.sessions, safeTurn: view.safeTurn + 1, safeShown: true});
   }
   $('accountRow').addEventListener('click', loadAccountPage);   // 본체가 쪽을 여는 onclick 과 같이 돈다
 
-  function renderStats(st:Stats) {
-    const cell = (value:string, label:string) => `<div class="st-cell"><b>${esc(value)}</b><small>${esc(label)}</small></div>`;
-    const most = Math.max(1, ...st.daily.map(d => d.open + d.route + d.ticket));
-    const bars = st.daily.map(d => {
-      const n = d.open + d.route + d.ticket, [, m, day] = d.day.split('-').map(Number);
-      return `<i style="height:${n ? Math.max(8, Math.round(n / most * 100)) : 0}%" title="${m}월 ${day}일 · ${n}번"></i>`;
-    }).join('');
-    const f = st.fare, [, month] = f.month.split('-').map(Number);
-    const rows = f.tickets.map(t => `<li><span>${esc(t.name)}</span><small>${won(t.fare)} × ${t.rides}번</small><b>${won(t.monthly)}</b></li>`).join('');
-    const why = Object.entries(f.reasons).map(([key, n]) => `${FARE_REASONS[key] || key} ${n}장`).join(' · ');
-    const fare = st.tickets
-      ? `<div class="st-fare"><div class="st-fare-top"><span>${month}월 예상 교통비</span><b>${won(f.total)}</b></div>`
-        + `<p class="st-note">승차권대로 다 탄다고 가정한 예상이에요</p>${rows ? `<ul class="st-fare-list">${rows}</ul>` : ''}`
-        + (f.skipped ? `<p class="st-skip">${f.skipped}장 계산 못 함${why ? ` — ${esc(why)}` : ''}</p>` : '')
-        + '<p class="st-note">교통카드 어른 요금 · 고른 경로 거리 기준이에요. 갈아타는 시간 · 정기권 · 공휴일은 넣지 않았어요.</p></div>'
-      : '';
-    $('accountStatsBody').innerHTML = `<div class="st-grid">${cell(`${st.daysTogether}일`, '함께한 날')}${cell(`${st.tickets}장`, '승차권')}`
-      + `${cell(`${st.recent.openDays}일`, `최근 ${st.recent.days}일 슝 연 날`)}${cell(`${st.recent.route}번`, `최근 ${st.recent.days}일 길찾기`)}</div>`
-      + `<div class="st-bars" role="img" aria-label="최근 ${st.recent.days}일 날짜별 사용 횟수">${bars}</div>`
-      + `<p class="st-note">한 주에 타는 횟수 ${st.weeklyRides}번 · 승차권 본 횟수 ${st.recent.ticket}번(최근 ${st.recent.days}일)</p>${fare}`;
-  }
-
-  function renderSafe(list:Session[]) {
-    const body = $('accountSafeBody');
-    const items = list.map(item => `<li data-session="${esc(item.id)}"><span class="dv-name">${esc(item.device)}${item.current ? '<em>이 기기</em>' : ''}</span>`
-      + `<small>마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}</small>`
-      + (item.current ? '' : '<button type="button" class="dv-out">로그아웃</button>') + '</li>').join('');
-    body.innerHTML = `<p class="acct-sub">로그인한 기기 ${list.length}대</p><ul class="dv-list">${items}</ul>`
-      + `<div class="dv-actions">${list.length > 1 ? '<button type="button" id="deviceOthers">다른 기기 모두 로그아웃</button>' : ''}`
-      + '<button type="button" id="dataExport">내 데이터 내려받기</button></div>'
-      + '<p class="st-note">내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요.</p>';
-    for (const b of body.querySelectorAll<HTMLButtonElement>('.dv-out')) b.onclick = () => logoutDevice(b.closest('li')!.dataset.session!, b);
-    $('deviceOthers')?.addEventListener('click', logoutOthers);
-    $('dataExport').onclick = exportData;
-  }
-  async function logoutDevice(id:string, button:HTMLButtonElement) {
-    button.disabled = true;
+  const outBusy = (id:string, on:boolean) => accountView.set({outBusy: on ? [...accountView.state.outBusy, id] : accountView.state.outBusy.filter(other => other !== id)});
+  async function logoutDevice(id:string) {
+    outBusy(id, true);
     try {
       const r = await send('DELETE', `./api/me/sessions/${encodeURIComponent(id)}`);
       if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return; }
@@ -735,7 +647,7 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
       toast('그 기기에서 로그아웃했어요');
       loadAccountPage();
     } catch { toast('로그아웃하지 못했어요. 연결을 확인해 주세요.', true); }
-    finally { button.disabled = false; }
+    finally { outBusy(id, false); }
   }
   async function logoutOthers() {
     try {
@@ -762,19 +674,27 @@ export async function initAccount({colors = {}} = {}) {   // colors: 노선 이�
   }
 
   // ---- 로그아웃 · 탈퇴 ----
-  $('accountLogout').onclick = async () => {
+  async function logout() {
     try { await send('POST', './api/auth/logout'); } catch { /* 쿠키는 서버가 지운다 */ }
     me = null; tickets = []; show(); $('menuBack').click(); toast('로그아웃했어요');
-  };
-  $('accountDelete').onclick = () => { $('accountConfirm').hidden = false; $('accountConfirmYes').focus({preventScroll: true}); };
-  $('accountConfirmNo').onclick = () => { $('accountConfirm').hidden = true; };
-  $('accountConfirmYes').onclick = async () => {
+  }
+  async function deleteMe() {
     try {
       const r = await send('DELETE', './api/me');
       if (!r.ok && r.status !== 401) { toast('탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요.', true); return; }
-      me = null; tickets = []; $('accountConfirm').hidden = true; show(); $('menuBack').click(); toast('탈퇴했어요');
+      me = null; tickets = []; accountView.set({confirmOpen: false}); show(); $('menuBack').click(); toast('탈퇴했어요');
     } catch { toast('탈퇴하지 못했어요. 연결을 확인해 주세요.', true); }
-  };
+  }
+  // 내 정보 쪽에서 누른 것(account_view.tsx 가 전한다)
+  accountView.on({
+    avatarBig: () => { if (accountView.state.pickOpen) closePick(); else openPick(); },
+    pickPhoto: () => { if (!saving) $('photoFile').click(); }, photoFile: photoChosen, pickCharacter,
+    nameEdit: () => { if (accountView.state.nameOpen) closeName(); else openName(); },
+    nameCancel: () => { closeName(); $('nameEdit').focus({preventScroll: true}); }, nameSubmit: submitName,
+    logoutDevice, logoutOthers, exportData, logout,
+    deleteAsk: () => { accountView.set({confirmOpen: true}); $('accountConfirmYes').focus({preventScroll: true}); },
+    deleteNo: () => accountView.set({confirmOpen: false}), deleteYes: deleteMe,
+  });
 
   me = answer.body!.me || null;
   show();

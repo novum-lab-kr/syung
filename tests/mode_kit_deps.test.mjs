@@ -5,7 +5,8 @@ import path from 'node:path';
 
 // 모드 코드(loadModeKit)가 다시 정적으로 부르는 모듈은 MODE_KIT_DEPS 에 있어야 함께 바로 요청된다(차례 대기 없음)
 const WEB = new URL('../web/', import.meta.url).pathname;
-const imports = f => [...readFileSync(path.join(WEB, f), 'utf8').matchAll(/^\s*import\s[^'"]*?['"](\.[^'"]+)['"]/gm)]
+// (import type 은 빌드 결과에 남지 않아 요청이 없다 — 세지 않는다)
+const imports = f => [...readFileSync(path.join(WEB, f), 'utf8').matchAll(/^\s*import\s(?!type\s)[^'"]*?['"](\.[^'"]+)['"]/gm)]
   .map(m => path.normalize(path.join(path.dirname(f), m[1])));
 
 test('모드 코드가 부르는 첫 화면 밖 모듈은 모두 MODE_KIT_DEPS 로 미리 요청해요', () => {
