@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 from http.server import ThreadingHTTPServer
+from typing import TYPE_CHECKING
 
 from server.config import BusServerConfig, SubwayConfig
 from server.jobs.burst import burst_loop
@@ -19,8 +20,11 @@ from server.routes import bus as bus_routes
 from server.routes.http import Server, make_handler
 from server.services.runtime import default_services
 
+if TYPE_CHECKING:   # 타입만
+    from server.services.runtime import Services
 
-def _bus_samples(services) -> None:
+
+def _bus_samples(services: Services) -> None:
     try:
         background_loop(services.bus)   # 보는 중인 버스 노선을 먼저 새로, 남는 차례에 학습용 수집
     except Exception as e:  # noqa: BLE001 — the map's bus requests still work

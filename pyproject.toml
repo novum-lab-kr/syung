@@ -1,6 +1,6 @@
 # 서버(server/) 검사 설정 — 설치할 패키지는 없다(표준 라이브러리만). 검사 도구만 따로: pip install --group dev
 #   ruff check            # 린트(E4 · E7 · E9 · F 기본 + B 버그 냄새 + UP 최신 문법)
-#   pyright               # 타입 검사(standard — 층마다 strict 로 올린다)
+#   pyright               # 타입 검사(server/ 는 strict)
 # pipeline/ · tests/ · deploy/ 는 아직 범위 밖(서버 먼저 · 계획서 4단계)
 [project]
 name = "syung-server"
@@ -24,5 +24,5 @@ ignore = ["E702", "E731", "E741", "B905"]
 include = ["server"]
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
-# 층마다 strict 로 올린다(계획서 4단계): 지금은 jobs · routes · services · sources · store 층 전부와 config — 다음은 남은 최상위(app · bus_live_proxy · healthcheck)
-strict = ["server/config.py", "server/jobs/burst.py", "server/jobs/bus_samples.py", "server/jobs/health.py", "server/jobs/member_backup.py", "server/jobs/station_probe.py", "server/jobs/warm_journey.py", "server/routes/admin.py", "server/routes/bus.py", "server/routes/debug.py", "server/routes/errors.py", "server/routes/http.py", "server/routes/journey.py", "server/routes/live.py", "server/routes/members.py", "server/routes/owner.py", "server/routes/response.py", "server/services/journey.py", "server/services/journey_graph.py", "server/services/live.py", "server/services/bus.py", "server/services/runtime.py", "server/services/members.py", "server/services/admin.py", "server/services/ride_motion.py", "server/services/debug.py", "server/services/fare.py", "server/services/health.py", "server/services/login_providers.py", "server/services/account.py", "server/services/owner_auth.py", "server/services/places.py", "server/services/profile.py", "server/sources/kakao.py", "server/sources/oauth.py", "server/sources/osrm.py", "server/sources/seoul_bus.py", "server/sources/seoul_subway.py", "server/store/auth_file.py", "server/store/avatars.py", "server/store/bus_catalog.py", "server/store/bus_quota.py", "server/store/debug_log.py", "server/store/fare_data.py", "server/store/journey_data.py", "server/store/live_samples.py", "server/store/members.py", "server/store/records.py", "server/store/subway_quota.py"]
+# server/ 전부 strict(계획서 4단계 — 층마다 올려 2026-10-28 다 옮김). 새 파일도 strict 로 쓴다
+strict = ["server"]
