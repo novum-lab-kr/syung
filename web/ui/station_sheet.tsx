@@ -15,7 +15,7 @@ export interface StationSheetProps { name:string; chips:StationChip[]; exits:Exi
 
 function Head({ name, chips, sub }:{ name:string; chips:StationChip[]; sub:string }) {
   return <>
-    <div class="tp-line">{chips.map(c => <span class="chip" style={`--c:${c.color}`}><span class="dot"></span>{c.name}</span>)}</div>
+    <div class="tp-line">{chips.map(chip => <span class="chip" style={`--c:${chip.color}`}><span class="dot"></span>{chip.name}</span>)}</div>
     <div class="tp-dest">{name}</div>
     <div class="tp-now">{sub}</div>
     <div class="st-journey"><button type="button" data-end="from">여기서 출발</button><button type="button" data-end="to">여기로 도착</button></div>
@@ -25,12 +25,12 @@ function Head({ name, chips, sub }:{ name:string; chips:StationChip[]; sub:strin
 function Card({ card }:{ card:ArrivalCard }) {
   return <div class="arr" style={`--c:${card.color}`}>
     <div class="arr-h"><span class="dot"></span>{card.line} <span class="muted">{card.direction}{card.toward ? ' · ' + card.toward : ''}</span></div>
-    {card.rows.map(a => <div class="arr-t"><b>{a.text}</b><span class="muted">{a.destination}행{a.express ? ' · 급행' : ''}{a.last ? ' · 막차' : ''}</span></div>)}
+    {card.rows.map(row => <div class="arr-t"><b>{row.text}</b><span class="muted">{row.destination}행{row.express ? ' · 급행' : ''}{row.last ? ' · 막차' : ''}</span></div>)}
   </div>;
 }
 
 function Exits({ exits }:{ exits:ExitItem[] }) {
-  return <div class="exits">{exits.map(e => <span class="exit" title={`${e.ref}번 출구${e.wheelchair ? ' · 휠체어 가능' : ''}`}>{e.ref}{e.wheelchair && <i>♿</i>}</span>)}</div>;
+  return <div class="exits">{exits.map(exit => <span class="exit" title={`${exit.ref}번 출구${exit.wheelchair ? ' · 휠체어 가능' : ''}`}>{exit.ref}{exit.wheelchair && <i>♿</i>}</span>)}</div>;
 }
 
 export function StationSheet({ name, chips, exits, state }:StationSheetProps) {
@@ -43,7 +43,7 @@ export function StationSheet({ name, chips, exits, state }:StationSheetProps) {
   return <div class="train-inspect station-sheet">
     <Head name={name} chips={chips} sub={`서울시 실시간 도착정보 · ${state.time} 기준`} />
     <div class="sec">곧 오는 열차</div>
-    {state.cards.length ? <div class="arrs">{state.cards.map(c => <Card card={c} />)}</div> : <div class="muted empty">지금 도착 예정 열차 정보가 없어요.</div>}
+    {state.cards.length ? <div class="arrs">{state.cards.map(card => <Card card={card} />)}</div> : <div class="muted empty">지금 도착 예정 열차 정보가 없어요.</div>}
     {exits.length > 0 && <><div class="sec">출구</div><Exits exits={exits} /></>}
   </div>;
 }

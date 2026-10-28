@@ -11,7 +11,7 @@ function Problems({ view }:{ view:View }) {
   const { error, body } = view;
   if (error) return <ul class="problems" id="problems"><li>{error}</li></ul>;
   if (!body) return <ul class="problems" id="problems"><li class="fine">불러오는 중</li></ul>;
-  return <ul class="problems" id="problems">{body.problems.length ? body.problems.map(p => <li>{p.text}</li>) : <li class="fine">문제 없어요</li>}</ul>;
+  return <ul class="problems" id="problems">{body.problems.length ? body.problems.map(problem => <li>{problem.text}</li>) : <li class="fine">문제 없어요</li>}</ul>;
 }
 
 function StatusPage() {
@@ -19,16 +19,16 @@ function StatusPage() {
   async function load() {
     let body:StatusBody & { error?:{ message?:string } };
     try {
-      const r = await fetch('/api/admin/status', { credentials: 'same-origin' });
-      if (r.status === 401) { setView(v => ({ ...v, login: true })); return }
-      setView(v => ({ ...v, login: false }));
-      body = await r.json();
-      if (!r.ok) throw new Error(body.error?.message || `요청 실패(${r.status})`);
+      const response = await fetch('/api/admin/status', { credentials: 'same-origin' });
+      if (response.status === 401) { setView(prev => ({ ...prev, login: true })); return }
+      setView(prev => ({ ...prev, login: false }));
+      body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || `요청 실패(${response.status})`);
     } catch (error) {
-      setView(v => ({ ...v, error: (error as Error).message }));
+      setView(prev => ({ ...prev, error: (error as Error).message }));
       return;
     }
-    setView(v => ({ ...v, error: null, body }));
+    setView(prev => ({ ...prev, error: null, body }));
   }
   useEffect(() => { load(); const timer = setInterval(() => { if (!document.hidden) load() }, 30000); return () => clearInterval(timer) }, []);
   const { body } = view;
@@ -48,10 +48,10 @@ function StatusPage() {
 
     <section class="box" aria-label="API 사용량">
       <h2>오늘 바깥 API 호출</h2>
-      <div class="calls" id="calls">{body?.calls.map(callLine).map(c => <div class="call">
-        <div><span>{c.label}</span><b>{c.count}</b></div>
-        <div class="meter"><i class={c.level} style={{ width: c.width }}></i></div>
-        <small>{c.sub}</small>
+      <div class="calls" id="calls">{body?.calls.map(callLine).map(line => <div class="call">
+        <div><span>{line.label}</span><b>{line.count}</b></div>
+        <div class="meter"><i class={line.level} style={{ width: line.width }}></i></div>
+        <small>{line.sub}</small>
       </div>)}</div>
       <p class="note">서울시 API 는 키마다 하루 한도가 있어요(한국 날짜로 0시에 다시 세요). 위치 피드는 지하철 호출 안에서 따로 정한 예산이에요.</p>
     </section>
