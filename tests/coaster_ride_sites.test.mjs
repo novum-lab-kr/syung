@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RideLayer } from '../web/modes/coaster/rides.mjs';
-import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites,rideInPark,RIDE_SITE_RULES } from '../web/modes/coaster/ride_sites.mjs';
-import { CoasterRidePlacement } from '../web/modes/coaster/ride_placement.mjs';
+import { rideIntersectsBuildings,rideIntersectsTracks,withRideKind,selectRideSites,rideInPark,RIDE_SITE_RULES } from '../web/modes/coaster/ride_sites.mts';
+import { CoasterRidePlacement } from '../web/modes/coaster/ride_placement.mts';
 
 // a square park (mercator) of half-size m metres round s, optionally offset east by dx metres
 const square=(s,m,dx=0)=>{const r=m*s.mu,x=s.x+dx*s.mu;return {outer:[x-r,s.y-r,x+r,s.y-r,x+r,s.y+r,x-r,s.y+r],holes:[]}};
@@ -33,7 +33,7 @@ test('a high canopy may clear a low roof but cannot pass through a tall neighbou
 });
 
 test('a site stays hidden until its whole building neighbourhood has been checked',async()=>{
-  const module=await import('../web/modes/coaster/ride_placement.mjs').catch(()=>({}));
+  const module=await import('../web/modes/coaster/ride_placement.mts').catch(()=>({}));
   assert.equal(typeof module.CoasterRidePlacement,'function','placement must wait for authoritative footprint coverage');
   const candidates=new RideLayer([[127.0276,37.4979,40,180]]).candidates,s=candidates[0];
   let release;const ready=new Promise(resolve=>{release=resolve});
@@ -167,7 +167,7 @@ test('ferris clearance includes the full rotation after different horizontal and
 });
 
 test('a settled neighbourhood lets go of the tiles it read (riding across the city kept every one, 2026-10-15)',async()=>{
-  const {CoasterRidePlacement}=await import('../web/modes/coaster/ride_placement.mjs');
+  const {CoasterRidePlacement}=await import('../web/modes/coaster/ride_placement.mts');
   const s={lon:127.0,lat:37.55,height_m:200,R:20,r:20,mastR:3,top:200,mu:1/(40075016.685578488*Math.cos(37.55*Math.PI/180))};
   s.x=s.lon/360+.5;s.y=.5-Math.log(Math.tan(Math.PI/4+s.lat*Math.PI/360))/(2*Math.PI);
   let reads=0;const p=new CoasterRidePlacement([s],{readTile:async()=>{reads++;return {buildings:[],parks:[],water:[]}},getTracks:()=>[]});
