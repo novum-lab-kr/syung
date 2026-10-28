@@ -9,6 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
+import './ui/station_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 시트 화면 조각 · Preact: 같은 단계에서 요청)
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
@@ -509,7 +510,7 @@ const hexRGB=v=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,par
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
 const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
   live:{get frameMs(){return frameMs()},get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
-const {sheet,sheetBody,followBtn,openSheet,closeSheet,sheetBusy,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
+const {sheet,sheetBody,followBtn,openSheet,openSheetView,closeSheet,sheetBusy,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
 const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
@@ -534,9 +535,9 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
     iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
-const popups=createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,follow,sheetUI,sheetBody,followBtn,
+const popups=createPopups({map,maplibregl,planner,colors,esc,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheet,openSheetView,follow,sheetUI,sheetBody,followBtn,
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
-const {trainState,riderState,trainSheetHTML,rawFeedHTML,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,exitList,showStationPopup}=popups;
+const {trainState,riderState,trainSheetHTML,rawFeedHTML,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 
 // ---- station labels (DOM markers with box collision) --------------------------------
 // Station names sit inside the platform rectangle, turned along it. Where the name is longer than

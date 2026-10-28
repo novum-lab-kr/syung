@@ -13,7 +13,7 @@
 | `web/city/` | 공용 도시 엔진: 건물(`buildings` · `mesh` · `worker`) · 고가(`viaduct*`) · 땅(`style`) · 도시 생활(`life`) · 랜드마크 · 부품 등록(`parts`) |
 | `web/map/` | 지도 층: 승강장 · 이름표 · 해 그림자 · 테마 · 열차 캔버스 그리기 차례(`overlay`) · 정적 층 등록(`layers`) |
 | `web/trains/` | 실시간 받기(`live_feed`) · 예측(`plan`) · 열차 그리기(`draw`) |
-| `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시 |
+| `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시. 시트 몸통의 화면 조각은 `.tsx`(Preact — 지금 역 도착 시트 `station_sheet.tsx`, `openSheetView` 로 연다) |
 | `web/bus/` | 버스 층 · 도로 · 메시(모양 등록 `registerBusLook`) · 움직임 |
 | `web/user/prefs.mjs` | 내 설정 창구(지금은 기기 저장, 이름 `subway-theme` · `subway-map-color`) |
 | `web/lib/` | 남은 공용 도우미(routing · station_signs · sun · platform_* · journey-ui …) |
@@ -50,11 +50,12 @@
 - 빌드(`vite.config.mts`)는 요청 차례를 바꾸지 않는다: 모듈 하나 = 파일 하나 · 이름 그대로 · `treeshake: false`(켜면 본체의 "같은 단계에서 요청" `import './x.mjs'` 줄이 빠져 11개 파일이 한 단계 늦어진다 — 2026-10-27 잼) · 본체의 `import(\`./${n}.mjs\`)` 는 그대로(`dynamicImportVarsOptions.exclude`). 묶기 · 줄이기(minify)는 속도를 재고 따로 정한다.
 - 기준 숫자(2026-10-22 다시 정함 — 맥 capd, 4G rtt 150 ms · 4 Mbps, 1000×700, 파일 바꿔 끼우기 없이, 운영 659931f): 운영(gzip) 첫 노선 2.90~2.95 s · 지도 다 뜸 5.72~5.93 s · 받은 양 1449 KB(3회). 같은 잡을 개발 서버 8093(압축 없음)에 대면 7.09~7.34 s · 11.63 s · 3975 KB.
   - 옛 숫자 첫 노선 약 5.0 s · 지도 약 9.5 s(2026-10-10)는 **일부 파일만 바꿔 낀 잡 값**이다(바꿔 낀 파일은 4 Mbps 를 나눠 쓰지 않아 빨리 온다). 같은 날 바꿔 끼우기 없이 8093 에 잰 값은 5.78 s · 10.15 s(`syung-struct/fair-slowload.json`).
-  - 지켜볼 것: 첫 화면 JS 가 2026-10-22 밤 gzip 약 +35 KB(스타 도시 팩 · 유닛 모양, 나라 팩 넷, 레트로 팩 — 지연 로드는 아직 안 함). 첫 노선을 막는 파일은 `city/viaduct_snap.mjs`(8093 353 KB · 운영 gzip 115 KB) — 첫 화면에 같이 받는 것이 늘면 이 파일이 늦게 끝난다.
+  - 지켜볼 것: 첫 화면 JS 가 2026-10-22 밤 gzip 약 +35 KB(스타 도시 팩 · 유닛 모양, 나라 팩 넷, 레트로 팩 — 지연 로드는 아직 안 함). 2026-10-28 Preact 들이기로 약 +8 KB(preact 5.6 · jsx-runtime 1.0 · 역 도착 시트 1.3 — gzip -9, 4G 흉내 압축 없는 8093 꼴에서 본체 +0.05~0.11 s). 첫 노선을 막는 파일은 `city/viaduct_snap.mjs`(8093 353 KB · 운영 gzip 115 KB) — 첫 화면에 같이 받는 것이 늘면 이 파일이 늦게 끝난다.
   - 첫 화면 JS gzip 약 560 KB(2026-10-10 값, 이후 다시 안 잼). 이 서버의 점검 스크립트: `/var/lib/capd/work/syung-struct/`(slowload · modes · modesv · themecheck · lightcheck · journeycheck · ridecheck2 · reentry · errlog …, 공용 캡처 서버 capd 로만).
 
 ## 함정
 - **TypeScript(섞어 쓰는 중)**: 새 파일 · 옮기는 파일은 `.mts`, import 는 확장자까지(`./x.mts`), 지울 수 있는 문법만(enum · namespace · 매개변수 속성 금지 — `erasableSyntaxOnly`). 시험(`node --test`)은 Node 22.18+ 가 `.mts` 를 그대로 읽고(서버 22.23 · CI 22), 빌드는 `.mjs` 로 낸다(이름 그대로 — 결과 주소 · 요청 차례 같음). `.mjs` 는 맨 위 `// @ts-check` 를 붙인 것만 검사. 지도 타입은 `import type { Map } from 'maplibre-gl'`(devDependency 6.11.1 = `web/vendor` 와 같은 판 · 타입만 — 실행은 vendor 그대로). 본체가 넘기는 deps 는 그 파일이 쓰는 칸만 interface 로 적는다. 본체의 `import(\`./${n}.mjs\`)`(MODE_KIT_DEPS) 목록에 든 모듈을 `.mts` 로 옮기면 `tests/mode_kit_deps.test.mjs` 의 `.mjs` 붙이기도 맞춘다. `.mjs` → `.mts` 로 옮길 땐 web/ 밖에서 부르는 곳도 찾는다(`grep -rn '<파일>.mjs' tests pipeline tools`) — `pipeline/map_replay.mjs` 등이 web 모듈을 직접 import 한다(경로만 고친다)
+- **화면 조각(Preact · `.tsx`)**: 아래 시트 몸통처럼 바닐라 껍데기 안의 칸만 Preact 로 그린다(`preact` 11 — `dependencies`, JSX 는 `preact/jsx-runtime` · tsconfig `jsxImportSource`). DOM 모양 · class · 문구 · aria 는 옛 HTML 그대로(스타일 · 단추 찾기가 맞게). Node 시험은 `.tsx` 를 못 읽으니 고르기 · 셈은 `.mts` 에 두고 `.tsx` 는 그리기만, `.tsx` 를 시험이 부르는 모듈에서 import 하지 않는다. 첫 화면 조각과 preact 는 본체가 같은 단계에서 요청한다(`import 'preact'` 줄 — 아니면 한 단계 늦다). 빌드 결과에서 npm 패키지는 `npm/<패키지>/…`(vite.config `npmPath`).
 - **웹은 빌드 결과가 올라간다**: 운영은 `dist/web`(CI 빌드 → `web-dist` 브랜치). HTML · CSS · 그림 · JSON · `vendor/` 는 그대로 복사, `.mjs` 는 본체에서 import 로 닿아야 결과에 들어간다 — import 로 닿지 않는 모듈(시험만 부르는 것)은 운영에 없다. 도시 건물 Worker(`city/worker.mjs`)와 `new URL('…', import.meta.url)` 자산은 Vite 가 `assets/<이름>-<해시>` 로 옮긴다.
 - **본체를 글자로 잘라 실행하는 시험**: `tests/coaster_mode_transition` · `coaster_occlusion` · `platform_*_fixture` 가 본체 함수 구간을 표지 글자로 자른다. 그 구간을 옮기거나 표지를 바꾸면 시험의 표지도 맞춘다.
 - **빠진 deps 는 node 시험이 못 잡는다**(그리기 경로). 나눈 파일은 범위 검사 · 실제 화면의 pageerror · 콘솔 오류로 확인.
