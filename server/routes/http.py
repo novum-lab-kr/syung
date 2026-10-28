@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 
 from server.routes import admin as admin_routes
 from server.routes import bus as bus_routes
@@ -27,6 +27,14 @@ from server.routes import owner as owner_routes
 from server.routes.errors import api_error
 from server.routes.response import Response
 from server.services.debug import MAX_SHOT_BYTES
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+    from email.message import Message
+
+    from server.services.runtime import Services
+
+    Query = dict[str, list[str]]   # parse_qs 결과
 
 
 class Server(ThreadingHTTPServer):
@@ -56,7 +64,7 @@ class ResponseCache:
 
 # GET 주소 → route(services, query) → (body, status). /bus 는 따로(직렬화 · 길이 제한이 다르다).
 # 새 주소는 /api/… 로 만들고 오류는 routes/errors.py 의 api_error 모양 하나로(옛 주소의 응답 모양은 바꾸지 않는다)
-GET_JSON = {
+GET_JSON: dict[str, Callable[[Services, Query], tuple[dict[str, Any], int]]] = {
     "/live": lambda services, query: live_routes.live(services.live, query),
     "/health": lambda services, query: ({"ok": True}, 200),
     # 이상 감지(관제탑이 5분마다): 늘 200, 바깥 API 를 부르지 않는다
@@ -67,11 +75,11 @@ GET_JSON = {
 
 # 관리 주소(주인 쿠키만, 앞의 /admin 을 뗀 이름) — 쿠키를 받아야 해서 GET_JSON 과 따로
 ADMIN = "/admin"
-ADMIN_GET = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
+ADMIN_GET: dict[str, Callable[[Services, str | None, Query], tuple[dict[str, Any], int]]] = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
 ADMIN_POST = ("/debug/ride", "/debug/shot")
 
 
-def _body_size(headers) -> int:
+def _body_size(headers: Message) -> int:
     """Content-Length 숫자(없으면 0, 숫자가 아니면 -1) — 부르는 쪽이 0 이하를 막는다."""
     try:
         return int(headers.get("Content-Length") or 0)
@@ -79,7 +87,7 @@ def _body_size(headers) -> int:
         return -1
 
 
-def make_handler(services, response_seconds: float):
+def make_handler(services: Services, response_seconds: float) -> type[BaseHTTPRequestHandler]:
     cache = ResponseCache(response_seconds)
 
     class Handler(BaseHTTPRequestHandler):
@@ -195,7 +203,7 @@ def make_handler(services, response_seconds: float):
                 return self._send_json(*debug_routes.ride(services, cookie, body))
             self._send_json(*debug_routes.shot(services, cookie, body, self.headers.get("Content-Type", ""), query))
 
-        def _send_json(self, body, status: int) -> None:
+        def _send_json(self, body: dict[str, Any], status: int) -> None:
             self._send(status, json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode())
 
         def do_GET(self) -> None:

@@ -5,6 +5,8 @@ message 에는 사람이 읽을 고정 문구만(바깥 API 원문 · 키가 든
 """
 from __future__ import annotations
 
+from typing import Any
 
-def api_error(code: str, message: str) -> dict:
+
+def api_error(code: str, message: str) -> dict[str, Any]:
     return {"error": {"code": code, "message": message}}

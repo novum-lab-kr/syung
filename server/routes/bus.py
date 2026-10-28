@@ -10,15 +10,20 @@ import json
 import re
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:   # 타입만
+    from server.services.bus import BusArrivalService, BusLiveService
+    from server.services.runtime import Services
 
 MAX_ROUTES = 8
 
 
-def invalid(message: str) -> dict:
+def invalid(message: str) -> dict[str, Any]:
     return {"schemaVersion": 1, "ok": False, "error": "invalid_request", "message": message}
 
 
-def parse_routes(query: dict, known: dict) -> tuple[list[str], str]:
+def parse_routes(query: dict[str, list[str]], known: dict[str, Any]) -> tuple[list[str], str]:
     ids = list(dict.fromkeys(value.strip() for entry in query.get("routes", [])
                              for value in entry.split(",") if value.strip()))
     focus_values = query.get("focus", [])
@@ -30,7 +35,7 @@ def parse_routes(query: dict, known: dict) -> tuple[list[str], str]:
     return ids, focus
 
 
-def positions(service, query: dict) -> tuple[dict, int]:
+def positions(service: BusLiveService, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """노선별 버스 위치(BusLiveService)."""
     now = service.clock()   # 기준 시각은 검사 전에(옛 순서 그대로)
     if service.data_error:
@@ -42,7 +47,7 @@ def positions(service, query: dict) -> tuple[dict, int]:
     return service.snapshot(ids, focus, now), 200
 
 
-def arrivals(service, query: dict) -> tuple[dict, int]:
+def arrivals(service: BusArrivalService, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """정류장 하나의 도착 정보(BusArrivalService)."""
     now = service.clock()   # 기준 시각은 정류장 목록을 다시 읽기 전에(옛 순서 그대로)
     service.refresh_stops()
@@ -55,18 +60,19 @@ def arrivals(service, query: dict) -> tuple[dict, int]:
     return service.snapshot(stop, now, fresh=query.get("fresh", [""])[0] == "1"), 200
 
 
-def snapshot(services, query: dict) -> tuple[dict, int]:
+def snapshot(services: Services, query: dict[str, list[str]]) -> tuple[dict[str, Any], int]:
     """stop= 이 있으면(값이 비어도) 정류장 도착 정보, 아니면 버스 위치. (body, status)."""
     if "stop" in query:
         return arrivals(services.arrivals, query)
     return positions(services.bus, query)
 
 
-def make_handler(services):
+def make_handler(services: Services) -> type[BaseHTTPRequestHandler]:
     """버스만 따로 띄울 때(python3 server/bus_live_proxy.py)의 HTTP 처리. 통합 서버와 응답 모양이 조금 다르다(그대로 둔다)."""
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
+        def do_GET(self) -> None:
             parsed = urllib.parse.urlsplit(self.path)
+            body: dict[str, Any]
             if len(self.path) > 2048:
                 body, status = {"ok": False, "error": "invalid_request"}, 400
             elif parsed.path in ("/api/bus/live", "/bus/live", "/live"):
@@ -85,7 +91,7 @@ def make_handler(services):
             self.end_headers()
             self.wfile.write(raw)
 
-        def log_message(self, format, *args):
+        def log_message(self, format: str, *args: object) -> None:
             pass  # Never log request queries or key-bearing upstream errors.
 
     return Handler

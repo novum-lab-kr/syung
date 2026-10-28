@@ -20,11 +20,19 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 
 from server.routes.errors import api_error
 from server.routes.response import Response
 from server.services.admin import AdminError
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+    from email.message import Message
+
+    from server.services.admin import AdminService
+
+    ReadBody = Callable[[int], bytes | None]   # read_body(limit) → 본문 · None(너무 큼 · 없음)
 
 BODY_LIMIT = 4096
 CSRF_HEADER, CSRF_VALUE = "X-Requested-With", "syung"
@@ -44,7 +52,7 @@ def is_photo_path(path: str) -> bool:
     return match is not None and match.group(2) == "/avatar"
 
 
-def photo(admin, path: str) -> Response | None:
+def photo(admin: AdminService, path: str) -> Response | None:
     """GET /members/<번호>/avatar 면 그 회원 사진 응답(주인 쿠키는 부르는 쪽이 이미 확인했다), 아니면 None."""
     if not is_photo_path(path):
         return None
@@ -59,7 +67,7 @@ def photo(admin, path: str) -> Response | None:
     return Response(200, "image", body=data, content_type=CONTENT_TYPES[extension], cache="no-store")
 
 
-def _first(query: dict, key: str) -> str:
+def _first(query: dict[str, list[str]], key: str) -> str:
     return (query.get(key) or [""])[0]
 
 
@@ -67,7 +75,8 @@ def _page(text: str) -> int:
     return int(text) if text.isascii() and text.isdigit() and len(text) <= 6 else 1
 
 
-def handle(admin, method: str, path: str, query: dict, headers, read_body) -> tuple[dict, int]:
+def handle(admin: AdminService, method: str, path: str, query: dict[str, list[str]], headers: Message,
+           read_body: ReadBody | None) -> tuple[dict[str, Any], int]:
     """read_body(limit) → bytes | None(너무 큼 · 없음). 주인 쿠키는 부르는 쪽이 이미 확인했다."""
     if method in ("POST", "DELETE") and headers.get(CSRF_HEADER) != CSRF_VALUE:
         return api_error("forbidden", "이 요청은 관리 화면에서만 할 수 있어요"), 403
@@ -80,7 +89,7 @@ def handle(admin, method: str, path: str, query: dict, headers, read_body) -> tu
         return api_error("unavailable", "회원 DB 를 잠시 쓸 수 없어요"), 503
 
 
-def _route(admin, method, path, query, read_body) -> tuple[dict, int]:
+def _route(admin: AdminService, method: str, path: str, query: dict[str, list[str]], read_body: ReadBody | None) -> tuple[dict[str, Any], int]:
     if method == "GET" and path == "/status":
         return admin.status(), 200
     if method == "GET" and path == "/members/stats":
@@ -95,7 +104,7 @@ def _route(admin, method, path, query, read_body) -> tuple[dict, int]:
         member = admin.member(user_id)
         return (member, 200) if member else NOT_FOUND
     if (action is None and method == "DELETE") or (action and method == "POST"):
-        body = _body(read_body)
+        body = _body(cast("ReadBody", read_body))   # 본문을 읽는 요청(POST · DELETE)에는 http.py 가 늘 넘긴다
         if action == "/places":
             places = admin.places(user_id, body)
             return ({"places": places}, 200) if places is not None else NOT_FOUND
@@ -113,7 +122,7 @@ def _route(admin, method, path, query, read_body) -> tuple[dict, int]:
     return api_error("method_not_allowed", "이 주소에서 할 수 없는 요청이에요"), 405
 
 
-def _body(read_body):
+def _body(read_body: ReadBody) -> object:
     raw = read_body(BODY_LIMIT)
     if raw is None:
         raise AdminError("본문이 없거나 너무 커요")

@@ -7,9 +7,13 @@ POST /login: 비밀번호가 맞으면 쿠키를 주고 next 로 303, 틀리면 
 from __future__ import annotations
 
 import urllib.parse
+from typing import TYPE_CHECKING
 
 from server.routes.response import Response
 from server.services.owner_auth import MAX_AGE
+
+if TYPE_CHECKING:   # 타입만
+    from server.services.owner_auth import OwnerAuth
 
 COOKIE = "syung_owner"
 HOME = "/admin/learning"   # 로그인 뒤 기본으로 가는 곳
@@ -39,7 +43,7 @@ def cookie_value(cookie_header: str | None) -> str | None:
     return None
 
 
-def auth(auth_service, cookie_header: str | None, uri: str) -> Response:
+def auth(auth_service: OwnerAuth, cookie_header: str | None, uri: str) -> Response:
     """uri: X-Forwarded-Uri(없으면 HOME) — Caddy 가 지키려는 주소."""
     if auth_service.valid_token(cookie_value(cookie_header)):
         return Response(204, "empty")
@@ -52,7 +56,7 @@ def logout() -> Response:
     return Response(303, "redirect", location=LOGIN_PAGE, cookie=clear_cookie())
 
 
-def login(auth_service, form_bytes: bytes, address: str) -> Response:
+def login(auth_service: OwnerAuth, form_bytes: bytes, address: str) -> Response:
     """form_bytes: 본문(4096 바이트까지), address: X-Forwarded-For 첫 주소(없으면 연결 주소)."""
     form = urllib.parse.parse_qs(form_bytes.decode("utf-8", "replace"))
     user, password = form.get("user", [""])[0], form.get("password", [""])[0]
