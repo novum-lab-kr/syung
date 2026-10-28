@@ -1,4 +1,4 @@
-// web/lib/journey-ui.mjs
+// web/lib/journey-ui.mts
 var esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({
 	"&": "&amp;",
 	"<": "&lt;",

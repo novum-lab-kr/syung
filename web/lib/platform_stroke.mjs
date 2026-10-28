@@ -1,4 +1,4 @@
-// web/lib/platform_stroke.mjs
+// web/lib/platform_stroke.mts
 function platformStroke(points, unit, width) {
 	const p = [];
 	for (const q of points) if (!p.length || Math.hypot(q.x - p.at(-1).x, q.y - p.at(-1).y) > 1e-12) p.push(q);

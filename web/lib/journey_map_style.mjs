@@ -1,5 +1,5 @@
 import { busMetresPerPixel } from "../bus/roads.mjs";
-// web/lib/journey_map_style.mjs
+// web/lib/journey_map_style.mts
 var width = (casing, thin = false) => [
 	"interpolate",
 	["linear"],

@@ -1,4 +1,4 @@
-// web/lib/station_signs.mjs
+// web/lib/station_signs.mts
 var SIGN_FONT = "\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",sans-serif";
 var SIGN = {
 	gap: 14,
