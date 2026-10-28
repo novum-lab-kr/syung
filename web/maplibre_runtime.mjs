@@ -15,6 +15,7 @@ import "./npm/preact/dist/preact.mjs";
 import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import "./ui/station_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
+import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
@@ -1899,16 +1900,19 @@ map.on("load", () => {
 		frameMs,
 		requestRender: () => trainFrameSoon(0),
 		getExitCoordinates: () => Object.values(exits).flat(),
-		onSelect: (html) => {
+		onSelect: (view) => {
 			sheetUI.following = null;
 			sheetUI.followBus = null;
 			sheetUI.sheetTrain = null;
 			followBtn.hidden = true;
-			const token = openSheet(html, "bus");
+			const token = openSheetView((body) => {
+				drawBusSheet(body, view);
+				return () => clearBusSheet(body);
+			}, "bus");
 			return (next) => {
-				if (sheetUI.sheetToken !== token || sheetBody.innerHTML === next) return;
+				if (sheetUI.sheetToken !== token) return;
 				const focused = sheetBody.contains(document.activeElement);
-				sheetBody.innerHTML = next;
+				drawBusSheet(sheetBody, next);
 				if (focused) sheetBody.querySelector("h3")?.focus({ preventScroll: true });
 			};
 		},
