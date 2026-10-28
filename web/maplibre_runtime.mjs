@@ -37,7 +37,7 @@ import {createStationLabels} from './map/labels.mts';   // 역 이름표 자료
 import {StationNameLayer,ExitPillars} from './map/platform.mts';   // 승강장 막대 · 출구 통로 · 출구 기둥
 import {createTrainPlanner} from './trains/plan.mts';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mts';   // 실시간 열차 받기 · 기록
-import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
+import {trainLayerClass,buildingDepthClass} from './trains/draw.mts';   // 열차 그리기 · 건물 깊이
 import {createBusLayer} from './bus/layer.mjs';   // bus: optional Seoul routes, stops and live vehicles
 import {registerBusLook} from './bus/mesh.mjs';   // 버스 모양 등록(조선 가마)
 import {AvatarRenderer,createMyMotion,registerAvatar,avatarScale,AVATAR_MINZOOM} from './map/avatar.mjs';   // 내 위치 캐릭터(줌 15 부터 점 대신)
