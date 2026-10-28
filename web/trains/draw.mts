@@ -17,7 +17,7 @@ type CarFrame = { fr:number[]; L:number } | null;
 // 모드 코드 클래스(받은 뒤 live 로 읽는다): 이 파일이 부르는 칸만
 interface KitDrawOptions { zoom:number; unit:number; walls?:boolean; occlude?:number; dark:boolean; shadow:[number, number]; pixelRatio:number; lod?:number; part?:string }
 interface KitPart { init(gl:WebGL2RenderingContext):void; begin(ox:number, oy:number):void; draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:KitDrawOptions):void; dispose(gl:WebGL2RenderingContext):void }
-interface CoasterTrainLike extends KitPart { car(fr:number[], L:number, W:number, rgb:number[], front:boolean, back:boolean, key:string, j:number, line:string, seat:number):void }
+interface CoasterTrainLike extends KitPart { n:number; car(fr:number[], L:number, W:number, rgb:number[], front:boolean, back:boolean, key:string, j:number, line:string, seat:number):void }
 interface ShipsLike extends KitPart { ship(fr:number[], L:number, W:number, rgb:number[], moving:boolean, key:string, o:{ kind:string; flag:boolean; line:string }):void }
 interface UnitsLike extends KitPart { unit(fr:number[], L:number, W:number, kind:string, rgb:number[], moving:boolean, key:string):void }
 interface SkyLike { frame(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:{ sky:TrainSettings['sky']; now:number; view:number[]; mpm:number; unit:number; dark:boolean }):boolean; dispose(gl:WebGL2RenderingContext):void }
