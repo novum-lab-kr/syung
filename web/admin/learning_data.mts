@@ -99,22 +99,22 @@ export function lineTiers(latest:Latest, history:History[]):{ name:string; cls:s
 }
 
 // ---- 역별 머무는 시간: 상태 칸 ----
-export interface StopRow { name:string; n:number; sec:number | null; runs:number; own:boolean; use:number; base:number; status:[string, string, string] }
+export interface StopRow { name:string; times:number; sec:number | null; runs:number; own:boolean; use:number; base:number; status:[string, string, string] }
 export function stopRows(latest:Latest, line:string):{ rows:StopRow[]; summary:string } {
   const values = latest.lines?.[line] || {}, fallback = latest.default || {}, base = (values.zone ?? fallback.zone)!, own = values.stops || {}, got = latest.stands?.[line] || {}, names = latest.names || {};
   const rows = (latest.stations?.[line] || []).map(id => {
-    const [n, sec, runs = 0] = got[id as string] || [0, null, 0], timed = n >= MIN_STOPS, count = timed ? n : runs, mine = own[id as string];
+    const [times, sec, runs = 0] = got[id as string] || [0, null, 0], timed = times >= MIN_STOPS, count = timed ? times : runs, mine = own[id as string];
     let status:[string, string, string];
     if (mine != null) status = timed ? ['b-good', '따로 배움', '따로'] : ['b-est', '도착으로 추정', '추정'];
     else status = timed || runs >= MIN_STOPS ? ['b-mid', '평균과 비슷', '비슷'] : ['b-low', `모으는 중 ${count}/${MIN_STOPS}`, `${count}/${MIN_STOPS}`];
-    return { name: names[id as string] || `역 ${id}`, n, sec, runs, own: mine != null, use: mine ?? base, base, status };
+    return { name: names[id as string] || `역 ${id}`, times, sec, runs, own: mine != null, use: mine ?? base, base, status };
   });
   const count = (cls:string) => rows.filter(row => row.status[0] === cls).length;
   return { rows, summary: `${line} ${rows.length}개 역 · 따로 배움 ${count('b-good')}${count('b-est') ? ` · 도착으로 추정 ${count('b-est')}` : ''} · 평균과 비슷 ${count('b-mid')} · 모으는 중 ${count('b-low')} · 노선 평균 ${base}초${values.zone == null ? ' (기본값)' : ''}` };
 }
 // 처음 여는 노선: 잰 역이 가장 많은 노선(같으면 앞 노선)
 export function firstStopLine(latest:Latest, lines:string[]):string {
-  const timed = (line:string) => Object.values(latest.stands?.[line] || {}).filter(([n]) => n >= MIN_STOPS).length;
+  const timed = (line:string) => Object.values(latest.stands?.[line] || {}).filter(([times]) => times >= MIN_STOPS).length;
   return lines.reduce((best, line) => timed(line) > timed(best) ? line : best);
 }
 

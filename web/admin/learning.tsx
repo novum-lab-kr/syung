@@ -226,7 +226,7 @@ function Stops({ latest }:{ latest:Latest }) {
     <p class="note" id="stopSummary" style="margin:0 0 8px">{table?.summary}</p>
     <div class="tw"><table><thead><tr><th class="l">역</th><th>잰 횟수</th><th>잰 시간</th><th>지도 값</th><th class="l">상태</th></tr></thead><tbody id="stopTable">{table?.rows.map(row => {
       let measured:ComponentChildren = '–';
-      if (row.n) measured = row.n.toLocaleString('ko-KR');
+      if (row.times) measured = row.times.toLocaleString('ko-KR');
       else if (row.runs) measured = <span class="def"><span class="full">도착 </span>{row.runs.toLocaleString('ko-KR')}</span>;
       return <tr><td class="l">{row.name}</td><td>{measured}</td><td>{row.sec != null ? `${row.sec}초` : '–'}</td>
         <td>{row.own ? <><b>{`${row.use}초`}</b>{row.use === row.base ? ' 0초' : <>{' '}<Sgn value={row.use - row.base} />초</>}</> : <span class="def">{`${row.use}초`}</span>}</td>
@@ -390,4 +390,4 @@ fetch('/admin/learning.json', { cache: 'no-cache' }).then(response => { if (resp
   const filled = readAll(data), latest = filled.subway!.latest, stations = latest.stations || {};
   const lines = Object.keys(stations).filter(line => stations[line]!.length).sort(byLineOrder);
   set({ filled, stopLine: lines.length ? firstStopLine(latest, lines) : null });
-}).catch(error => { if (error !== 0) set({ error: true }) });
+}).catch(error => { if (error !== 0) set({ error: true, filled: {}, stopLine: null }) });   // 그리다 멈췄어도 받은 칸을 비워 첫 그림 + 오류 글자로
