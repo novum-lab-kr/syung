@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {platformRuntime, local as localMeters} from './platform_endpoints_fixture.mjs';
 import {createStationLabels} from '../web/map/labels.mts';
 import {registerTransitLayers} from '../web/map/layers.mts';
-import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mjs';
+import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mts';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
   const entries = [

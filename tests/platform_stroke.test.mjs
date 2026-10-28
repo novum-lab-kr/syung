@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {platformStroke} from '../web/lib/platform_stroke.mjs';
+import {platformStroke} from '../web/lib/platform_stroke.mts';
 import {platformRuntime} from './platform_endpoints_fixture.mjs';
 import {trainRuntime} from './platform_trains_fixture.mjs';
 import fs from 'node:fs';

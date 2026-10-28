@@ -1,7 +1,7 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mts';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
-import {initJourney} from './lib/journey-ui.mjs';
+import {initJourney} from './lib/journey-ui.mts';
 import {createCoasterTrack} from './modes/coaster/track.mts';   // 롤코 선로 층
 import {createCoasterGeometry} from './modes/coaster/geometry.mts';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mts';   // 롤코 주행 속도 · 탄 거리
@@ -46,7 +46,7 @@ import * as sproutAvatar from './map/avatars/sprout.mts';   // 내 위치 캐릭
 import * as builderAvatar from './map/avatars/builder.mts';import * as seonbiAvatar from './map/avatars/seonbi.mts';import * as visitorAvatar from './map/avatars/visitor.mts';
 import * as scvAvatar from './map/avatars/scv.mts';import * as droneAvatar from './map/avatars/drone.mts';import * as probeAvatar from './map/avatars/probe.mts';   // 스타크래프트 종족 일꾼(테란 SCV · 저그 드론 · 프로토스 프로브)   // 심시티 건설 반장 · 조선 선비 · 롤코 놀이공원 아이(작은 상자 목록이라 첫 화면에 같이)
 import {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh} from './modes/joseon/palanquin.mts';   // 조선 모드의 가마 · 청사초롱 정류장 메시
-import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mjs';   // bus: one journey presentation for route numbers and search results
+import {journeyCasingPaint,journeyRidePaint,journeyStopPaint} from './lib/journey_map_style.mts';   // bus: one journey presentation for route numbers and search results
 import './modes/basic/park.mts';   // coaster: shared park palette and metre/pixel dimensions — 기본 모드의 공원 자료(같은 단계에서 요청)
 import './modes/coaster/metrics.mts';   // (공원 치수 계산: 같은 단계에서 요청)
 import {buildCoasterTrackMesh,coasterTrackVertexShader,COASTER_TRACK_FS} from './modes/coaster/track_mesh.mts';   // 롤코 선로 메시 · 셰이더(선로 층에 넘김)
@@ -54,8 +54,8 @@ import {NightLayer} from './modes/coaster/night.mts';
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,COCKPIT_NEAR_M,nearMatrix,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatPickerHTML,seatLabel} from './modes/coaster/first_person.mts';   // 롤코 1인칭: 자리 고르기 · 그 자리 눈의 카메라
 import {addCityLayers,applyCityStyle,applyGroundTexture,cityPalette} from './city/style.mts';   // city-life: the miniature city's ground (zone floors, roads, lane marks)
 import {CityLife} from './city/life.mts';
-import {platformStroke} from './lib/platform_stroke.mjs';
-import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mjs';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
+import {platformStroke} from './lib/platform_stroke.mts';
+import {drawStationSigns,signRows,signTextSize,perspectiveRatio,placeholderText,sortLines,signCollisionLayout,signAnchor} from './lib/station_signs.mts';   // 역 이름표: 열차 · 고가 위에 떠 있는 팻말
 import {catchup,catchupAt} from './lib/train_catchup.mts';   // 앞선 예측을 따라잡을 때 더하는 속도에 상한
 import {offsetCoords,trackStart,extendStart,closestPlatformPoint} from './lib/platform_route.mts';
 import {CityViaduct} from './city/viaduct.mts';

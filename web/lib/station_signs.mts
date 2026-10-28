@@ -1,4 +1,11 @@
 // 작은 역 이름 이름표 위에 노선색 점을 놓고, 놓인 표지만 캔버스에 그려요.
+type P = [number, number];
+type Ctx = CanvasRenderingContext2D;
+// 이름표 한 장(자리잡이 자료의 ln · lc · text 에서)
+export interface SignRows { dots:{ color:string }[]; name:string }
+// 그릴 표지: 승강장 가운데 (x, y) px · 원근 비율 · 이름 크기 · 줄 · 출렁임 위상
+export interface StationSign { x:number; y:number; scale:number; size:number; rows:SignRows; phase?:number }
+export interface DrawSignOptions { dpr?:number; dark?:boolean; alpha?:number; now?:number; still?:boolean }
 export const SIGN_FONT = '"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
 // px 치수는 원근 비율을 곱해요. 이름표 아래의 떠 있는 틈은 유지해요.
 export const SIGN = {gap: 14, padX: .5, padY: 4 / 14, rim: 1.75, dot: 8, dotGap: 3, dotRise: 2, dotRim: 1, bob: 2, bobPeriod: 3200};
@@ -8,46 +15,46 @@ const THEMES = {
 };
 
 // 이름 크기는 자리잡이 레이어와 같은 줌 보간을 써요.
-export function signTextSize(zoom) {
+export function signTextSize(zoom:number) {
   return interpolateSize(zoom, [[13, 10], [16, 12.5], [18, 14]]);
 }
 
-function interpolateSize(zoom, S) {
-  if (zoom <= S[0][0]) return S[0][1];
-  for (let i = 1; i < S.length; i++) if (zoom <= S[i][0]) {
-    const [z0, s0] = S[i - 1], [z1, s1] = S[i];
+function interpolateSize(zoom:number, S:readonly P[]) {
+  if (zoom <= S[0]![0]) return S[0]![1];
+  for (let i = 1; i < S.length; i++) if (zoom <= S[i]![0]) {
+    const [z0, s0] = S[i - 1]!, [z1, s1] = S[i]!;
     return s0 + (s1 - s0) * (zoom - z0) / (z1 - z0);
   }
-  return S[S.length - 1][1];
+  return S[S.length - 1]![1];
 }
 
 // 기울인 화면에서 MapLibre 가 화면 정렬 글자에 곱하는 원근 비율이에요.
-export function perspectiveRatio(centerW, anchorW) {
+export function perspectiveRatio(centerW:number, anchorW:number) {
   return Math.min(4, Math.max(0, .5 + .5 * centerW / anchorW));
 }
 
 // 한 글자 약자로 구분하고, 인천 두 노선만 두 글자를 써요.
-const LINE_CHIPS = {'GTX-A': 'A', '경의중앙선': '경', '경강선': '강', '경춘선': '춘', '공항철도': '공', '김포골드라인': '김', '서해선': '서', '수인분당선': '수', '신분당선': '신', '신림선': '림', '에버라인선': '에', '우이신설선': '우', '의정부선': '의', '인천1호선': '인1', '인천2호선': '인2'};
-export function lineChip(name) {
+const LINE_CHIPS:Record<string, string> = {'GTX-A': 'A', '경의중앙선': '경', '경강선': '강', '경춘선': '춘', '공항철도': '공', '김포골드라인': '김', '서해선': '서', '수인분당선': '수', '신분당선': '신', '신림선': '림', '에버라인선': '에', '우이신설선': '우', '의정부선': '의', '인천1호선': '인1', '인천2호선': '인2'};
+export function lineChip(name:unknown) {
   const s = String(name || '');
   return s.match(/^([1-9])호선$/)?.[1] || LINE_CHIPS[s] || Array.from(s)[0] || '';
 }
 
 // 칩 순서: 번호 노선(1, 2, …)을 번호대로 먼저, 나머지는 원래 순서
-export function sortLines(names) {
-  const num = n => { const m = String(n).match(/^(\d+)호선$/); return m ? +m[1] : Infinity; };
-  return names.map((n, i) => [n, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map(([n]) => n);
+export function sortLines<T>(names:readonly T[]) {
+  const num = (n:T) => { const m = String(n).match(/^(\d+)호선$/); return m ? +m[1]! : Infinity; };
+  return names.map((n, i):[T, number] => [n, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map(([n]) => n);
 }
 
 // 밝은 노선색 위에는 검은 글자(출구 번호와 같은 기준)
-export function chipInk(hex) {
+export function chipInk(hex:unknown) {
   const h = String(hex || '#52646a'), r = parseInt(h.slice(1, 3), 16) / 255, g = parseInt(h.slice(3, 5), 16) / 255, b = parseInt(h.slice(5, 7), 16) / 255;
   return .299 * r + .587 * g + .114 * b > .62 ? '#141414' : '#ffffff';
 }
 
 // 흰 바탕 대비는 sRGB 상대 휘도로 계산해요.
-export function whiteContrast(hex) {
-  const linear = i => {
+export function whiteContrast(hex:string) {
+  const linear = (i:number) => {
     const c = parseInt(hex.slice(i, i + 2), 16) / 255;
     return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
   };
@@ -55,11 +62,11 @@ export function whiteContrast(hex) {
 }
 
 // RGB를 같은 비율로 낮춰 색상을 유지하고, 반올림 뒤에도 대비 4.5 이상을 보장해요.
-export function routeTextColor(hex) {
+export function routeTextColor(hex:string) {
   const color = /^#[0-9a-f]{6}$/i.test(hex) ? hex : '#52646a';
   if (whiteContrast(color) >= 4.5) return color;
   const rgb = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
-  const shade = factor => '#' + rgb.map(c => Math.floor(c * factor).toString(16).padStart(2, '0')).join('');
+  const shade = (factor:number) => '#' + rgb.map(c => Math.floor(c * factor).toString(16).padStart(2, '0')).join('');
   let low = 0, high = 1;
   for (let i = 0; i < 24; i++) {
     const mid = (low + high) / 2;
@@ -69,14 +76,14 @@ export function routeTextColor(hex) {
 }
 
 // 점의 테두리를 포함한 전체 폭과 중심 위치를 계산해요.
-export function dotLayout(count, scale = 1) {
+export function dotLayout(count:number, scale = 1) {
   const diameter = (SIGN.dot + SIGN.dotRim) * scale;
   const step = (SIGN.dot + SIGN.dotRim + SIGN.dotGap) * scale;
   return {width: count ? diameter + (count - 1) * step : 0,
     centers: Array.from({length: count}, (_, i) => (i - (count - 1) / 2) * step)};
 }
 
-export function signDimensions(nameWidth, size, count, scale = 1) {
+export function signDimensions(nameWidth:number, size:number, count:number, scale = 1) {
   const height = size * scale + 2 * SIGN.padY * size * scale;
   const width = Math.max(height, nameWidth + 2 * SIGN.padX * size * scale);
   const dots = dotLayout(count, scale);
@@ -85,15 +92,15 @@ export function signDimensions(nameWidth, size, count, scale = 1) {
 }
 
 // 세로 경계를 기기 픽셀에 맞추고 공유해서 구간 사이 틈과 겹침을 막아요.
-export function borderSegments(x, width, count, rim, dpr = 1) {
+export function borderSegments(x:number, width:number, count:number, rim:number, dpr = 1) {
   const left = x - width / 2;
   const edges = Array.from({length: count + 1}, (_, i) => i === 0 ? left - rim / 2
     : i === count ? left + width + rim / 2 : Math.round((left + width * i / count) * dpr) / dpr);
-  return Array.from({length: count}, (_, i) => ({left: edges[i], right: edges[i + 1]}));
+  return Array.from({length: count}, (_, i) => ({left: edges[i]!, right: edges[i + 1]!}));
 }
 
 // 이름표에서만 괄호 설명을 빼고, 이름이 비면 원래 표기를 유지해요.
-export function stationLabelName(name) {
+export function stationLabelName(name:unknown) {
   const original = String(name ?? '').trim();
   let text = original;
   while (/\([^()]*\)/.test(text)) text = text.replace(/\([^()]*\)/g, '');
@@ -101,7 +108,7 @@ export function stationLabelName(name) {
 }
 
 // 짧은 이름에서도 점 줄이 충돌 영역 밖으로 나가지 않게 빈칸으로 폭을 확보해요.
-export function placeholderText(lines, name) {
+export function placeholderText(lines:readonly unknown[], name:string) {
   name = stationLabelName(name);
   const extra = Math.max(0, dotLayout(lines.length).width - Array.from(name).length * 10 - 2 * SIGN.padX * 10);
   const pad = ' '.repeat(Math.ceil(extra / 10));
@@ -110,8 +117,8 @@ export function placeholderText(lines, name) {
 
 // 치수는 SIGN 과 맞춰요. 점 줄부터 이름표와 떠 있는 틈까지 예약해요.
 export function signCollisionLayout() {
-  const offset = size => [0, -(SIGN.gap + SIGN.padY * size) / size];
-  const padding = size => [SIGN.padY * size + SIGN.rim / 2 + SIGN.dot + SIGN.dotRim + SIGN.dotRise + SIGN.bob,
+  const offset = (size:number) => [0, -(SIGN.gap + SIGN.padY * size) / size];
+  const padding = (size:number) => [SIGN.padY * size + SIGN.rim / 2 + SIGN.dot + SIGN.dotRim + SIGN.dotRise + SIGN.bob,
     SIGN.padX * size + SIGN.rim / 2, SIGN.padY * size + SIGN.rim / 2 + SIGN.gap + SIGN.bob, SIGN.padX * size + SIGN.rim / 2];
   return {
     'text-anchor': 'bottom', 'text-max-width': 100,
@@ -123,18 +130,18 @@ export function signCollisionLayout() {
 }
 
 // 노선색 순서는 자리잡이 데이터의 ln · lc 순서를 그대로 써요.
-export function signRows(p) {
+export function signRows(p:{ ln?:unknown; lc?:unknown; text?:unknown }):SignRows {
   const names = String(p.ln || '').split('|').filter(Boolean), cols = String(p.lc || '').split('|');
   return {dots: names.map((_, i) => ({color: cols[i] || '#52646a'})), name: stationLabelName(p.text)};
 }
 
 // 꼬리 없이 양끝이 완전히 둥근 알약만 그려요.
-function bubblePath(ctx, x, top, w, h) {
+function bubblePath(ctx:Ctx, x:number, top:number, w:number, h:number) {
   ctx.beginPath(); ctx.roundRect(x - w / 2, top, w, h, h / 2);
 }
 
 // (x, y)는 승강장 가운데이며, 뒤에 오는 표지를 위에 그려요.
-export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, now = 0, still = false} = {}) {
+export function drawStationSigns(ctx:Ctx, signs:Iterable<StationSign>, {dpr = 1, dark = false, alpha = 1, now = 0, still = false}:DrawSignOptions = {}) {
   const T = THEMES[dark ? 'dark' : 'light'];
   ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = alpha;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -149,14 +156,14 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
     ctx.beginPath(); ctx.ellipse(x, y, Math.min(box.width * .32, 18 * s) * k, 3.2 * s * k, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = alpha; ctx.fillStyle = T.fill;
     bubblePath(ctx, x, top, box.width, box.height); ctx.fill();
-    const color = rows.dots.length === 1 ? rows.dots[0].color : '#141414';
+    const color = rows.dots.length === 1 ? rows.dots[0]!.color : '#141414';
     ctx.lineWidth = SIGN.rim * s;
     if (rows.dots.length > 1) {
       const segments = borderSegments(x, box.width, rows.dots.length, ctx.lineWidth, dpr);
       segments.forEach(({left, right}, i) => {
         ctx.save(); ctx.beginPath();
         ctx.rect(left, top - SIGN.rim * s, right - left, box.height + 2 * SIGN.rim * s); ctx.clip();
-        ctx.strokeStyle = rows.dots[i].color;
+        ctx.strokeStyle = rows.dots[i]!.color;
         bubblePath(ctx, x, top, box.width, box.height); ctx.stroke(); ctx.restore();
       });
     } else {
@@ -168,45 +175,45 @@ export function drawStationSigns(ctx, signs, {dpr = 1, dark = false, alpha = 1, 
     const dotY = top - (SIGN.rim / 2 + SIGN.dotRise) * s - (SIGN.dot + SIGN.dotRim) * s / 2;
     rows.dots.forEach((dot, i) => {
       ctx.fillStyle = dot.color; ctx.strokeStyle = T.dotRim; ctx.lineWidth = SIGN.dotRim * s;
-      ctx.beginPath(); ctx.arc(x + box.dots.centers[i], dotY, SIGN.dot * s / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + box.dots.centers[i]!, dotY, SIGN.dot * s / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     });
   }
   ctx.restore();
 }
 
 // 역 근처 미터 평면에서 교차점 · 근접 구간 · 호 길이의 가운데를 찾아요.
-export function signAnchor(platforms) {
-  const paths = platforms.map(path => path.filter(p => Array.isArray(p) && p.length >= 2 && p.every(Number.isFinite))).filter(path => path.length);
+export function signAnchor(platforms:readonly (readonly unknown[])[]):P | null {
+  const paths = platforms.map(path => path.filter((p):p is P => Array.isArray(p) && p.length >= 2 && p.every(Number.isFinite))).filter(path => path.length);
   if (!paths.length) return null;
   const points = paths.flat();
-  const origin = points.reduce((sum, p) => [sum[0] + p[0] / points.length, sum[1] + p[1] / points.length], [0, 0]);
+  const origin = points.reduce((sum:P, p):P => [sum[0] + p[0] / points.length, sum[1] + p[1] / points.length], [0, 0]);
   const meters = 6371008.8 * Math.PI / 180, longitude = meters * Math.cos(origin[1] * Math.PI / 180);
-  const local = paths.map(path => path.map(p => [(p[0] - origin[0]) * longitude, (p[1] - origin[1]) * meters]));
-  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
-  const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
-  const length = a => Math.hypot(...a);
-  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-  const mean = ps => ps.reduce((sum, p) => [sum[0] + p[0] / ps.length, sum[1] + p[1] / ps.length], [0, 0]);
-  const project = (p, a, b) => {
+  const local = paths.map(path => path.map((p):P => [(p[0] - origin[0]) * longitude, (p[1] - origin[1]) * meters]));
+  const sub = (a:P, b:P):P => [a[0] - b[0], a[1] - b[1]];
+  const dot = (a:P, b:P) => a[0] * b[0] + a[1] * b[1];
+  const cross = (a:P, b:P) => a[0] * b[1] - a[1] * b[0];
+  const length = (a:P) => Math.hypot(...a);
+  const mix = (a:P, b:P, t:number):P => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const mean = (ps:P[]) => ps.reduce((sum:P, p):P => [sum[0] + p[0] / ps.length, sum[1] + p[1] / ps.length], [0, 0]);
+  const project = (p:P, a:P, b:P) => {
     const v = sub(b, a), norm = dot(v, v);
     return mix(a, b, norm ? Math.max(0, Math.min(1, dot(sub(p, a), v) / norm)) : 0);
   };
-  const segments = path => path.length === 1 ? [[path[0], path[0]]] : path.slice(1).map((p, i) => [path[i], p]);
-  const midpoint = path => {
+  const segments = (path:P[]):[P, P][] => path.length === 1 ? [[path[0]!, path[0]!]] : path.slice(1).map((p, i):[P, P] => [path[i]!, p]);
+  const midpoint = (path:P[]) => {
     const parts = segments(path), lengths = parts.map(([a, b]) => length(sub(b, a)));
     let remaining = lengths.reduce((a, b) => a + b, 0) / 2;
     for (let i = 0; i < parts.length; i++) {
-      if (remaining <= lengths[i]) return mix(...parts[i], lengths[i] ? remaining / lengths[i] : 0);
-      remaining -= lengths[i];
+      if (remaining <= lengths[i]!) return mix(...parts[i]!, lengths[i] ? remaining / lengths[i]! : 0);
+      remaining -= lengths[i]!;
     }
-    return path[0];
+    return path[0]!;
   };
-  const intersections = [], overlaps = [], nearest = [];
+  const intersections:P[] = [], overlaps:{ point:P; weight:number }[] = [], nearest:P[] = [];
   const nearby = 40, epsilon = 1e-7;
   for (let i = 0; i < local.length; i++) for (let j = i + 1; j < local.length; j++) {
-    let closest = null;
-    for (const [a, b] of segments(local[i])) for (const [c, d] of segments(local[j])) {
+    let closest:{ point:P; distance:number } | null = null;
+    for (const [a, b] of segments(local[i]!)) for (const [c, d] of segments(local[j]!)) {
       const u = sub(b, a), v = sub(d, c), lu = length(u), lv = length(v), determinant = cross(u, v);
       // 일반 교차점은 중복을 빼서 여러 구간에 걸친 꼭짓점도 한 번만 세어요.
       if (Math.abs(determinant) > epsilon * lu * lv) {
@@ -229,20 +236,20 @@ export function signAnchor(platforms) {
         }
       }
       // 교차나 나란한 겹침이 없으면 선분 끝에서 상대 선분으로 내린 최근접점을 써요.
-      for (const [p, q] of [[a, project(a, c, d)], [b, project(b, c, d)], [project(c, a, b), c], [project(d, a, b), d]]) {
+      for (const [p, q] of [[a, project(a, c, d)], [b, project(b, c, d)], [project(c, a, b), c], [project(d, a, b), d]] as [P, P][]) {
         const distance = length(sub(p, q));
         if (!closest || distance < closest.distance) closest = {point: mix(p, q, .5), distance};
       }
     }
     if (closest && closest.distance <= nearby) nearest.push(closest.point);
   }
-  const extendedIntersections = [];
+  const extendedIntersections:P[] = [];
   if (!intersections.length && local.length > 1) {
     // 중복 끝점을 건너뛰고 양 끝의 실제 진행 방향으로 각각 300m만 연장해요.
-    const extendedSegments = path => {
+    const extendedSegments = (path:P[]) => {
       const parts = segments(path).map(coords => ({coords, extended: false}));
       for (const points of [path, [...path].reverse()]) {
-        const end = points[0], next = points.find(p => length(sub(p, end)) > epsilon);
+        const end = points[0]!, next = points.find(p => length(sub(p, end)) > epsilon);
         if (!next) continue;
         const direction = sub(end, next), distance = length(direction);
         parts.push({coords: [end, [end[0] + direction[0] * 300 / distance, end[1] + direction[1] * 300 / distance]], extended: true});
@@ -251,7 +258,7 @@ export function signAnchor(platforms) {
     };
     const extended = local.map(extendedSegments), minAngle = Math.sin(20 * Math.PI / 180);
     for (let i = 0; i < extended.length; i++) for (let j = i + 1; j < extended.length; j++) {
-      for (const first of extended[i]) for (const second of extended[j]) {
+      for (const first of extended[i]!) for (const second of extended[j]!) {
         if (!first.extended && !second.extended) continue;
         const [a, b] = first.coords, [c, d] = second.coords;
         const u = sub(b, a), v = sub(d, c), product = length(u) * length(v), determinant = cross(u, v);
@@ -264,12 +271,12 @@ export function signAnchor(platforms) {
       }
     }
   }
-  let anchor;
+  let anchor:P;
   if (intersections.length) anchor = mean(intersections);
   else if (extendedIntersections.length) anchor = mean(extendedIntersections);
   else if (overlaps.length) {
     const total = overlaps.reduce((sum, p) => sum + p.weight, 0);
-    anchor = overlaps.reduce((sum, p) => [sum[0] + p.point[0] * p.weight / total, sum[1] + p.point[1] * p.weight / total], [0, 0]);
+    anchor = overlaps.reduce((sum:P, p):P => [sum[0] + p.point[0] * p.weight / total, sum[1] + p.point[1] * p.weight / total], [0, 0]);
   } else anchor = nearest.length ? mean(nearest) : mean(local.map(midpoint));
   return [origin[0] + anchor[0] / longitude, origin[1] + anchor[1] / meters];
 }

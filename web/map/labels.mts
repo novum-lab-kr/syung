@@ -3,7 +3,7 @@
 import type { Feature } from 'geojson';
 import type { GeoJSONSource, Map as MapLibre } from 'maplibre-gl';
 import type { MapStation } from '../trains/types.mts';
-import {signAnchor,sortLines,placeholderText} from '../lib/station_signs.mjs';
+import {signAnchor,sortLines,placeholderText} from '../lib/station_signs.mts';
 
 // 이름표 하나(승강장 층이 getLabels 로 읽는다)
 export interface StationLabel { station:MapStation; line:string; text:string }
@@ -24,7 +24,7 @@ export function createStationLabels({map,stations,stationRects,colors,getSelecte
     const src=map.getSource<GeoJSONSource>('station-labels');
     if(src)src.setData({type:'FeatureCollection',features:labels.flatMap(({station:s,text}):Feature[]=>{
       const shown=s.lines.filter(x=>selected==='all'||x.name===selected);
-      const c=signAnchor((shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean) as {coords:unknown}[]).map(r=>r.coords));
+      const c=signAnchor((shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean) as {coords:unknown[]}[]).map(r=>r.coords));
       if(!c)return [];
       const names=sortLines(shown.map(x=>x.name));
       return [{type:'Feature',properties:{text,rank:-s.lines.length,ln:names.join('|'),lc:names.map((n:string)=>colors[n]||'#52646a').join('|'),ph:placeholderText(names,text)},geometry:{type:'Point',coordinates:c}}];
