@@ -27,12 +27,12 @@ class PhotoError(ValueError):
     """올린 사진이 받을 수 없는 모양 — 문구는 화면에 그대로 보인다."""
 
 
-def clean_name(value) -> str:
+def clean_name(value: object) -> str:
     """닉네임 → 저장할 글자. 틀리면 ValueError(문구는 화면에 그대로)."""
     if not isinstance(value, str):
         raise ValueError(f"닉네임은 {NAME_MIN}~{NAME_MAX}자예요")
     text = unicodedata.normalize("NFC", value)
-    kept = []
+    kept: list[str] = []
     for char in text:
         category = unicodedata.category(char)
         if category == "Zs" or char in "\t\n\r\v\f":
@@ -70,7 +70,7 @@ def _webp_chunks(data: bytes, bad: PhotoError) -> list[tuple[bytes, bytes]]:
     """RIFF 조각 목록. RIFF 크기가 파일 길이와 맞고 조각이 파일 끝에 딱 맞아야 한다."""
     if len(data) < 12 or struct.unpack_from("<I", data, 4)[0] + 8 != len(data):
         raise bad
-    chunks = []
+    chunks: list[tuple[bytes, bytes]] = []
     offset = 12
     while offset < len(data):
         if offset + 8 > len(data):
@@ -205,7 +205,7 @@ def photo_name(stored: str | None) -> str | None:
     return stored[6:] if stored and stored.startswith("photo:") else None
 
 
-def avatar_view(stored: str | None, photo_url: str) -> dict | None:
+def avatar_view(stored: str | None, photo_url: str) -> dict[str, str] | None:
     """DB 값 → 응답 모양. None(기본 캐릭터) · {type:'character', id} · {type:'photo', url}. photo_url 은 '{name}' 을 담은 틀."""
     if photo_name(stored):
         return {"type": "photo", "url": photo_url.format(name=photo_name(stored))}

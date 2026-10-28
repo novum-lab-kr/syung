@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timedelta
+from typing import Any
 
 from server.clock import KST
 
@@ -52,7 +53,7 @@ def session_id(token_hash: str) -> str:
     return hashlib.sha256(f"session:{token_hash}".encode()).hexdigest()[:16]
 
 
-def session_view(row: dict, current_hash: str | None) -> dict:
+def session_view(row: dict[str, Any], current_hash: str | None) -> dict[str, Any]:
     return {"id": session_id(row["token_hash"]), "device": device_label(row["device"]), "createdAt": row["created_at"],
             "lastUsedAt": row["used_at"] or row["created_at"], "current": row["token_hash"] == current_hash}
 
@@ -61,7 +62,7 @@ def today_kst(now: float) -> datetime:
     return datetime.fromtimestamp(now, KST).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def stats_view(now: float, joined_at: int, tickets: list[dict], rows: list[dict]) -> dict:
+def stats_view(now: float, joined_at: int, tickets: list[dict[str, Any]], rows: list[dict[str, Any]]) -> dict[str, Any]:
     """내 통계: 함께한 날 · 승차권 수 · 한 주에 타는 횟수(승차권 타는 날 합) · 최근 STATS_DAYS 일 날짜별 횟수 · 1년 합계.
     rows: 1년 치 usage_daily 줄(day · kind · count)."""
     today = today_kst(now)
