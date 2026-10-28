@@ -1,5 +1,5 @@
 // web/map/theme.mts
-function createMapTheme({ map, $, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live }) {
+function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live }) {
 	const mixHex = (a, b, t) => "#" + [
 		1,
 		3,
@@ -93,14 +93,19 @@ function createMapTheme({ map, $, seoulSun, cityPalette, applyCityStyle, applyGr
 		document.querySelector("meta[name=theme-color]")?.setAttribute("content", t === "dark" ? "#1b1c1f" : "#ffd400");
 		const bi = document.querySelector(".brand-icon");
 		if (bi) bi.src = `./brand/syung-${t === "dark" ? "light" : "dark"}.svg`;
-		for (const b of document.querySelectorAll("[data-theme-choice]")) b.setAttribute("aria-pressed", String(b.dataset.themeChoice === cur.themeChoice));
-		const tn = $("themeNote");
-		if (tn) {
-			if (cur.themeChoice === "auto") {
-				const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now), nextRise = now >= set ? seoulSun(new Date(now.getTime() + 864e5)).rise : rise;
-				tn.innerHTML = t === "dark" ? `지금은 <b>다크</b> · ${hm(nextRise)} 해 뜨면 라이트로` : `지금은 <b>라이트</b> · ${hm(set)} 해 지면 다크로`;
-			} else tn.textContent = "자동은 해 뜨면 라이트, 해 지면 다크예요";
-		}
+		menu.theme(cur.themeChoice);
+		if (cur.themeChoice === "auto") {
+			const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now), nextRise = now >= set ? seoulSun(new Date(now.getTime() + 864e5)).rise : rise;
+			menu.themeNote(t === "dark" ? {
+				lead: "지금은 ",
+				bold: "다크",
+				tail: ` · ${hm(nextRise)} 해 뜨면 라이트로`
+			} : {
+				lead: "지금은 ",
+				bold: "라이트",
+				tail: ` · ${hm(set)} 해 지면 다크로`
+			});
+		} else menu.themeNote("자동은 해 뜨면 라이트, 해 지면 다크예요");
 		drawSky();
 		if (!live.ready) return;
 		const set = (id, prop, v) => {
@@ -160,10 +165,10 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
-	for (const b of document.querySelectorAll("[data-theme-choice]")) b.onclick = () => {
-		prefs.set("themeChoice", b.dataset.themeChoice);
+	menu.on({ theme: (choice) => {
+		prefs.set("themeChoice", choice);
 		applyTheme();
-	};
+	} });
 	setInterval(() => {
 		if (cur.themeChoice === "auto") applyTheme();
 		else drawSky();
@@ -176,11 +181,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		timeZone: "Asia/Seoul"
 	});
 	function drawSky() {
-		const sp = $("sunPath");
-		if (!sp) return;
 		const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now);
-		sp.innerHTML = sunPathHTML(now, rise, set);
-		sp.classList.toggle("is-night", !(now >= rise && now < set));
+		menu.sky(sunPathHTML(now, rise, set), !(now >= rise && now < set));
 	}
 	function sunPathHTML(now, rise, set) {
 		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = +set - +rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;

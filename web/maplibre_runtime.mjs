@@ -15,6 +15,7 @@ import "./npm/preact/dist/preact.mjs";
 import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import "./ui/station_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
+import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
@@ -1991,6 +1992,7 @@ saverOn = prefs.get("saver") === "on" || location.hash.includes("saver");
 var theme = createMapTheme({
 	map,
 	$,
+	menu: settingsMenu,
 	seoulSun,
 	cityPalette,
 	applyCityStyle: (m, o) => applyCityStyle(m, {
@@ -2216,20 +2218,20 @@ var modeBusy = (() => {
 	};
 })();
 function showModeButtons(want) {
-	$("toggleSimcity")?.setAttribute("aria-pressed", String(want === "simcity"));
-	$("toggleJoseon")?.setAttribute("aria-pressed", String(want === "joseon"));
-	$("toggleRetro")?.setAttribute("aria-pressed", String(want === "retro"));
+	settingsMenu.press("toggleSimcity", want === "simcity");
+	settingsMenu.press("toggleJoseon", want === "joseon");
+	settingsMenu.press("toggleRetro", want === "retro");
 	showNation(want);
-	$("toggleCoaster").setAttribute("aria-pressed", String(want === "coaster"));
+	settingsMenu.press("toggleCoaster", want === "coaster");
 	showRace(want);
 }
 var lastRace = "terran";
 function showRace(want) {
 	const on = STARCRAFT.includes(want);
 	if (on) lastRace = want;
-	$("toggleStarcraft")?.setAttribute("aria-pressed", String(on));
-	if ($("starcraftRace")) $("starcraftRace").hidden = !on;
-	for (const b of document.querySelectorAll("[data-race]")) b.setAttribute("aria-pressed", String(b.dataset.race === want));
+	settingsMenu.press("toggleStarcraft", on);
+	settingsMenu.hide("starcraftRace", !on);
+	settingsMenu.race(want);
 }
 function commitMode(prev, next, { speed } = {}) {
 	if (next === "coaster") {
@@ -2247,17 +2249,16 @@ function applyCoaster(on, speed) {
 	if (!on) stopRide(false);
 	if (on && modeCtl.current !== "basic" && modeCtl.current !== "coaster") {
 		modeCtl.enter("basic");
-		$("toggleSimcity")?.setAttribute("aria-pressed", "false");
-		$("toggleJoseon")?.setAttribute("aria-pressed", "false");
+		settingsMenu.press("toggleSimcity", false);
+		settingsMenu.press("toggleJoseon", false);
 		showRace("coaster");
 	}
 	const was = modeCtl.current === "coaster";
 	modeCtl.enter(on ? "coaster" : "basic");
 	modeCtl.setSpeed(on ? speed : 1);
-	$("toggleCoaster").setAttribute("aria-pressed", String(on));
-	$("coasterSpeed").hidden = !on;
-	for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(+b.dataset.speed === modeCtl.speed));
-	$("speedNote").textContent = modeCtl.speed > 1 ? "실제보다 앞서 달려요" : "실시간";
+	settingsMenu.press("toggleCoaster", on);
+	settingsMenu.hide("coasterSpeed", !on);
+	settingsMenu.speed(modeCtl.speed, modeCtl.speed > 1 ? "실제보다 앞서 달려요" : "실시간");
 	if (was !== on) {
 		stopMerc.clear();
 		cityViaduct.setGaps(on ? coasterGaps : null);
@@ -2342,42 +2343,46 @@ var lastNation = NATIONS[0];
 function showNation(want) {
 	const on = NATIONS.includes(want);
 	if (on) lastNation = want;
-	$("toggleNation")?.setAttribute("aria-pressed", String(on));
-	if ($("nationRow")) $("nationRow").hidden = !on;
-	for (const b of document.querySelectorAll("[data-nation]")) b.setAttribute("aria-pressed", String(b.dataset.nation === want));
+	settingsMenu.press("toggleNation", on);
+	settingsMenu.hide("nationRow", !on);
+	settingsMenu.nation(want);
 }
 function setNation(on, id) {
 	return on ? modeCtl.request(id ?? lastNation) : offFamily(NATIONS);
 }
-if ($("toggleSimcity")) $("toggleSimcity").onclick = () => setSimcity(modeCtl.desired !== "simcity");
-if ($("toggleJoseon")) $("toggleJoseon").onclick = () => setSimcity(modeCtl.desired !== "joseon", true);
+settingsMenu.on({
+	switches: {
+		toggleSimcity: () => setSimcity(modeCtl.desired !== "simcity"),
+		toggleJoseon: () => setSimcity(modeCtl.desired !== "joseon", true),
+		toggleStarcraft: () => setStarcraft(!STARCRAFT.includes(modeCtl.desired)),
+		toggleRetro: () => setRetro(modeCtl.desired !== "retro"),
+		toggleNation: () => setNation(!NATIONS.includes(modeCtl.desired)),
+		toggleCoaster: () => setCoaster(modeCtl.desired !== "coaster")
+	},
+	nation: (id) => setNation(true, id),
+	race: (race) => setStarcraft(true, race),
+	speed: (speed) => setCoaster(true, speed)
+});
 var setJoseon = (on) => setSimcity(on, true);
-if ($("toggleStarcraft")) $("toggleStarcraft").onclick = () => setStarcraft(!STARCRAFT.includes(modeCtl.desired));
-if ($("toggleRetro")) $("toggleRetro").onclick = () => setRetro(modeCtl.desired !== "retro");
-if ($("toggleNation")) $("toggleNation").onclick = () => setNation(!NATIONS.includes(modeCtl.desired));
-for (const b of document.querySelectorAll("[data-nation]")) b.onclick = () => setNation(true, b.dataset.nation);
-for (const b of document.querySelectorAll("[data-race]")) b.onclick = () => setStarcraft(true, b.dataset.race);
-$("toggleCoaster").onclick = () => setCoaster(modeCtl.desired !== "coaster");
-for (const b of document.querySelectorAll("[data-speed]")) b.onclick = () => setCoaster(true, +b.dataset.speed);
 {
-	const b = $("togglePrebuild"), show = () => b?.setAttribute("aria-pressed", String(prebuildWant()));
+	const show = () => settingsMenu.press("togglePrebuild", prebuildWant());
 	show();
-	if (b) b.onclick = () => {
+	settingsMenu.on({ switches: { togglePrebuild: () => {
 		prebuildOn = !prebuildWant();
 		prefs.set("prebuild", prebuildOn ? "on" : "off");
 		show();
 		if (prebuildOn) prebuildCity();
-	};
+	} } });
 }
 {
-	const b = $("toggleSaver"), show = () => b?.setAttribute("aria-pressed", String(saverOn));
+	const show = () => settingsMenu.press("toggleSaver", saverOn);
 	show();
-	if (b) b.onclick = () => {
+	settingsMenu.on({ switches: { toggleSaver: () => {
 		saverOn = !saverOn;
 		prefs.set("saver", saverOn ? "on" : "off");
 		show();
 		trainFrameSoon(0);
-	};
+	} } });
 }
 {
 	{
@@ -2392,8 +2397,7 @@ for (const b of document.querySelectorAll("[data-speed]")) b.onclick = () => set
 		setTimeout(() => location.reload(), 250);
 	};
 	const btn = $("settingsButton"), panel = $("settingsPanel");
-	$("toggleCoaster").querySelector(".setting-icon").innerHTML = ICONS.coaster;
-	$("coasterSpeed").querySelector(".setting-icon").innerHTML = ICONS.speed;
+	settingsMenu.icons(ICONS.coaster, ICONS.speed);
 	const isOpen = () => !panel.hidden && panel.classList.contains("open");
 	const root = $("menuRoot"), back = $("menuBack"), title = $("settingsTitle"), pages = [...panel.querySelectorAll(".menu-page")];
 	let pageFrom = null;
