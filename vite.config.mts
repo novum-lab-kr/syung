@@ -56,7 +56,8 @@ function isVendor(id: string, importer: string | undefined): boolean {
 }
 
 // 결과 파일 이름: web/ 밖(node_modules/<패키지>/…)에서 온 모듈은 npm/<패키지>/… 로
-const npmPath = (name: string) => name.replace(/^node_modules\//, 'npm/')
+// (node_modules 가 링크면 이름 앞에 실제 경로가 붙는다 — 마지막 node_modules/ 뒤만 본다)
+const npmPath = (name: string) => name.replace(/^(?:.*\/)?node_modules\//, 'npm/')
 
 export default defineConfig({
   root,
@@ -79,7 +80,8 @@ export default defineConfig({
     reportCompressedSize: false,
     rollupOptions: {
       // 페이지가 직접 부르는 모듈: index.html 의 <script type="module" src="./maplibre_runtime.mjs">
-      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mjs') },
+      // 관리 화면(admin/*.html 의 <script type="module" src="./<이름>.mjs">) — Preact 로 옮긴 것만
+      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mjs'), 'admin/status': path.join(root, 'admin', 'status.tsx') },
       preserveEntrySignatures: 'strict',
       treeshake: false,
       external: isVendor,
