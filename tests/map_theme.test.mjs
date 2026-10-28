@@ -12,7 +12,7 @@ function theme(S,t,prefs={get:()=>null,set:(_k,v)=>v}){
   globalThis.document??={head:{insertAdjacentHTML(){}},querySelectorAll:()=>[],querySelector:()=>null,documentElement:{dataset:{}}};
   globalThis.localStorage??={getItem:()=>null,setItem(){}};
   t.mock.method(globalThis,'setInterval',()=>0);
-  return createMapTheme({map:{},$:()=>el,ICONS:{},seoulSun:()=>({rise:new Date(0),set:new Date(1)}),sunPosition:()=>({elevation:30,azimuth:180}),
+  return createMapTheme({map:{},$:()=>el,menu:{theme(){},themeNote(){},sky(){},on(){}},ICONS:{},seoulSun:()=>({rise:new Date(0),set:new Date(1)}),sunPosition:()=>({elevation:30,azimuth:180}),
     cityPalette:(_t,{pack})=>({cityPack:pack.id}),applyCityStyle(){},applyGroundTexture(){},syncCity(){},updateSun(){},focusRoute(){},journeyMap:{},rider:{},prefs,
     live:{get settings(){return S()},coaster:false,busLayer:null,ready:false}});
 }

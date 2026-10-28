@@ -10,6 +10,7 @@ import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
 import './ui/station_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 시트 화면 조각 · Preact: 같은 단계에서 요청)
+import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mjs';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
@@ -652,7 +653,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
 saverOn=prefs.get('saver')==='on'||location.hash.includes('saver');   // 절전: 이 기기에 고른 값(주소 #saver 로도 — 폰 비교용)
-const theme=createMapTheme({map,$,seoulSun,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const theme=createMapTheme({map,$,menu,seoulSun,cityPalette,applyCityStyle:(m,o)=>applyCityStyle(m,{...o,groundLight:nightNow().ground}),applyGroundTexture,syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
@@ -747,11 +748,11 @@ const modeBusy=(()=>{
     end};
 })();
 // 버튼: 원하는 모드(받는 중이면 그 모드)를 눌린 것으로, 준비가 실패하면 지금 모드로
-function showModeButtons(want){$('toggleSimcity')?.setAttribute('aria-pressed',String(want==='simcity'));$('toggleJoseon')?.setAttribute('aria-pressed',String(want==='joseon'));$('toggleRetro')?.setAttribute('aria-pressed',String(want==='retro'));showNation(want);$('toggleCoaster').setAttribute('aria-pressed',String(want==='coaster'));showRace(want)}
+function showModeButtons(want){menu.press('toggleSimcity',want==='simcity');menu.press('toggleJoseon',want==='joseon');menu.press('toggleRetro',want==='retro');showNation(want);menu.press('toggleCoaster',want==='coaster');showRace(want)}
 let lastRace='terran';   // 마지막에 고른 종족(처음엔 테란) — 스위치만 켜면 이 종족으로
 // 스타크래프트: 스위치는 종족 하나라도 켜져 있으면 눌림, 그 아래 종족 줄은 켜져 있을 때만(고른 종족이 눌림)
-function showRace(want){const on=STARCRAFT.includes(want);if(on)lastRace=want;$('toggleStarcraft')?.setAttribute('aria-pressed',String(on));if($('starcraftRace'))$('starcraftRace').hidden=!on;
-  for(const b of document.querySelectorAll('[data-race]'))b.setAttribute('aria-pressed',String(b.dataset.race===want))}
+function showRace(want){const on=STARCRAFT.includes(want);if(on)lastRace=want;menu.press('toggleStarcraft',on);menu.hide('starcraftRace',!on);
+  menu.race(want)}
 // 바꾸기: 옛 setCoaster · setSimcity 가 하던 차례 그대로(롤코 → 심시티는 롤코를 끈 뒤 심시티를 켠다)
 function commitMode(prev,next,{speed}={}){
   if(next==='coaster'){applyCoaster(true,speed??(prev==='coaster'?modeCtl.speed:1));return}   // (심시티 · 조선에서 오면 applyCoaster 가 먼저 끈다)
@@ -763,11 +764,10 @@ function commitMode(prev,next,{speed}={}){
 // tilts to show it; the speed buttons run its clock ×1/×5/×20 (1배 = back to the live positions)
 function applyCoaster(on,speed){
   if(!on)stopRide(false);   // 롤코를 끄면 1인칭에서도 내려요(옛 상태를 읽을 수 있는 동안)
-  if(on&&modeCtl.current!=='basic'&&modeCtl.current!=='coaster'){modeCtl.enter('basic');$('toggleSimcity')?.setAttribute('aria-pressed','false');$('toggleJoseon')?.setAttribute('aria-pressed','false');showRace('coaster')}
+  if(on&&modeCtl.current!=='basic'&&modeCtl.current!=='coaster'){modeCtl.enter('basic');menu.press('toggleSimcity',false);menu.press('toggleJoseon',false);showRace('coaster')}
   const was=modeCtl.current==='coaster';modeCtl.enter(on?'coaster':'basic');modeCtl.setSpeed(on?speed:1);
-  $('toggleCoaster').setAttribute('aria-pressed',String(on));$('coasterSpeed').hidden=!on;
-  for(const b of document.querySelectorAll('[data-speed]'))b.setAttribute('aria-pressed',String(+b.dataset.speed===modeCtl.speed));
-  $('speedNote').textContent=modeCtl.speed>1?'실제보다 앞서 달려요':'실시간';
+  menu.press('toggleCoaster',on);menu.hide('coasterSpeed',!on);
+  menu.speed(modeCtl.speed,modeCtl.speed>1?'실제보다 앞서 달려요':'실시간');
   if(was!==on){stopMerc.clear();cityViaduct.setGaps(on?coasterGaps:null);setRouteOpacity();map.getSource('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});planner.rebuild();lastPose.clear();
     if(map.getSource('stations')){map.getSource('stations').setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}
     if(journeyMap.displayedRoute)showRoute(journeyMap.displayedRoute.plan,journeyMap.displayedRoute.busSelection,false);
@@ -791,29 +791,24 @@ function setStarcraft(on,race){return on?modeCtl.request(race??lastRace):offFami
 function setRetro(on){return on?modeCtl.request('retro'):offFamily(['retro'])}
 // 나라: 스위치는 나라 하나라도 켜져 있으면 눌림, 그 아래 나라 줄은 켜져 있을 때만. 나라를 안 주면 마지막에 고른 나라
 let lastNation=NATIONS[0];
-function showNation(want){const on=NATIONS.includes(want);if(on)lastNation=want;$('toggleNation')?.setAttribute('aria-pressed',String(on));if($('nationRow'))$('nationRow').hidden=!on;
-  for(const b of document.querySelectorAll('[data-nation]'))b.setAttribute('aria-pressed',String(b.dataset.nation===want))}
+function showNation(want){const on=NATIONS.includes(want);if(on)lastNation=want;menu.press('toggleNation',on);menu.hide('nationRow',!on);
+  menu.nation(want)}
 function setNation(on,id){return on?modeCtl.request(id??lastNation):offFamily(NATIONS)}
-if($('toggleSimcity'))$('toggleSimcity').onclick=()=>setSimcity(modeCtl.desired!=='simcity');   // 받는 중에 다시 누르면 취소
-if($('toggleJoseon'))$('toggleJoseon').onclick=()=>setSimcity(modeCtl.desired!=='joseon',true);
+menu.on({switches:{toggleSimcity:()=>setSimcity(modeCtl.desired!=='simcity'),   // 받는 중에 다시 누르면 취소
+  toggleJoseon:()=>setSimcity(modeCtl.desired!=='joseon',true),toggleStarcraft:()=>setStarcraft(!STARCRAFT.includes(modeCtl.desired)),
+  toggleRetro:()=>setRetro(modeCtl.desired!=='retro'),toggleNation:()=>setNation(!NATIONS.includes(modeCtl.desired)),toggleCoaster:()=>setCoaster(modeCtl.desired!=='coaster')},
+  nation:id=>setNation(true,id),race:race=>setStarcraft(true,race),speed:speed=>setCoaster(true,speed)});
 const setJoseon=on=>setSimcity(on,true);
-if($('toggleStarcraft'))$('toggleStarcraft').onclick=()=>setStarcraft(!STARCRAFT.includes(modeCtl.desired));
-if($('toggleRetro'))$('toggleRetro').onclick=()=>setRetro(modeCtl.desired!=='retro');
-if($('toggleNation'))$('toggleNation').onclick=()=>setNation(!NATIONS.includes(modeCtl.desired));
-for(const b of document.querySelectorAll('[data-nation]'))b.onclick=()=>setNation(true,b.dataset.nation);
-for(const b of document.querySelectorAll('[data-race]'))b.onclick=()=>setStarcraft(true,b.dataset.race);
-$('toggleCoaster').onclick=()=>setCoaster(modeCtl.desired!=='coaster');
-for(const b of document.querySelectorAll('[data-speed]'))b.onclick=()=>setCoaster(true,+b.dataset.speed);
-{const b=$('togglePrebuild'),show=()=>b?.setAttribute('aria-pressed',String(prebuildWant()));show();   // 건물 미리 짓기 버튼: 바꾸면 이 기기에 저장, 켜면 바로 한 번 짓는다(이미 지은 건 끌 때 그대로 — 비교는 바꾼 뒤 새로고침)
-  if(b)b.onclick=()=>{prebuildOn=!prebuildWant();prefs.set('prebuild',prebuildOn?'on':'off');show();if(prebuildOn)prebuildCity()}}
-{const b=$('toggleSaver'),show=()=>b?.setAttribute('aria-pressed',String(saverOn));show();   // 절전 버튼: 바꾸면 이 기기에 저장, 바로 다음 프레임부터
-  if(b)b.onclick=()=>{saverOn=!saverOn;prefs.set('saver',saverOn?'on':'off');show();trainFrameSoon(0)}}
+{const show=()=>menu.press('togglePrebuild',prebuildWant());show();   // 건물 미리 짓기 버튼: 바꾸면 이 기기에 저장, 켜면 바로 한 번 짓는다(이미 지은 건 끌 때 그대로 — 비교는 바꾼 뒤 새로고침)
+  menu.on({switches:{togglePrebuild:()=>{prebuildOn=!prebuildWant();prefs.set('prebuild',prebuildOn?'on':'off');show();if(prebuildOn)prebuildCity()}}})}
+{const show=()=>menu.press('toggleSaver',saverOn);show();   // 절전 버튼: 바꾸면 이 기기에 저장, 바로 다음 프레임부터
+  menu.on({switches:{toggleSaver:()=>{saverOn=!saverOn;prefs.set('saver',saverOn?'on':'off');show();trainFrameSoon(0)}}})}
 // ---- settings (header hamburger → right drawer): on/off switches ----
 {
   {const z=$('zoomBadge'),show=()=>{z.textContent='z'+map.getZoom().toFixed(1)};map.on('zoom',show);show()}   // the zoom beside 새로고침, for checking views
   $('refreshButton').onclick=e=>{e.currentTarget.classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
   const btn=$('settingsButton'),panel=$('settingsPanel');
-  $('toggleCoaster').querySelector('.setting-icon').innerHTML=ICONS.coaster;$('coasterSpeed').querySelector('.setting-icon').innerHTML=ICONS.speed;
+  menu.icons(ICONS.coaster,ICONS.speed);
   // 설정 서랍(햄버거): 열 때 hidden 을 풀고 한 프레임 뒤 .open 으로 밀어 내고, 닫을 때 .open 을 떼고 밀려 들어간 뒤 hidden.
   // 버스 층은 panel.hidden=true 로 바로 닫는다 — 그래서 '열림'은 hidden 이 아니고 .open 이 붙은 때다
   const isOpen=()=>!panel.hidden&&panel.classList.contains('open');

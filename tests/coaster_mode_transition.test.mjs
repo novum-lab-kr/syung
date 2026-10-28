@@ -16,8 +16,8 @@ function setup(defs=modeDefs){
   const stations=[{id:1,name:'출발',lon:127,lat:37,lines:[{name:'L'}]},{id:2,name:'도착',lon:127.001,lat:37,lines:[{name:'L'}]}];
   const sources=new Map(['stations','journey','routes'].map(id=>[id,{data:null,setData(data){this.data=plain(data)}}]));
   let labels=0,fits=0,rides=0,rebuilds=0;const buttons={};
-  const races=STARCRAFT.map(race=>({dataset:{race},setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}));   // 종족 줄의 버튼
-  const nationBtns=NATIONS.map(nation=>({dataset:{nation},setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}));   // 나라 줄의 버튼
+  const races=STARCRAFT.map(race=>({dataset:{race}}));   // 종족 줄의 버튼
+  const nationBtns=NATIONS.map(nation=>({dataset:{nation}}));   // 나라 줄의 버튼
   class Bounds{extend(){return this}}
   const context=vm.createContext({Map,Math,STARCRAFT,NATIONS,CITY_FAMILY,coasterGeo:{bld:true},kitReady:true,loadModeKit:()=>Promise.resolve(),loadCoasterBuildings:()=>Promise.resolve(),
     offsetCoords,trackStart,extendStart,closestPlatformPoint,
@@ -25,7 +25,10 @@ function setup(defs=modeDefs){
     cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
     maplibregl:{LngLatBounds:Bounds},busLayer:null,sheetPad:()=>0,stopRide(){rides++},
-    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),document:{querySelectorAll:sel=>sel==='[data-race]'?races:sel==='[data-nation]'?nationBtns:[]},setRouteOpacity(){},
+    $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),setRouteOpacity(){},
+    // 설정 서랍의 몸통 칸(ui/settings_menu.tsx) 창구: 옛 DOM 처럼 버튼마다 눌림(글자) · 줄마다 숨김을 남긴다
+    menu:{press:(id,on)=>{(buttons[id]??={}).pressed=String(on)},hide:(id,hidden)=>{(buttons[id]??={}).hidden=hidden},
+      race:want=>{for(const b of races)b.pressed=String(b.dataset.race===want)},nation:want=>{for(const b of nationBtns)b.pressed=String(b.dataset.nation===want)},speed(){}},
     buildLineFeatures:()=>[],planner:{rebuild(){rebuilds++}},lastPose:new Map(),applyTheme(){},updateSun(){},wallsNow(){},rebuildLabels(){labels++},
   });
   vm.runInContext([
@@ -35,7 +38,7 @@ function setup(defs=modeDefs){
     part('const cityCoords=', 'function cityGeom('),
     part('function metresBetween(', 'const STATION_WIDTH_STOPS='),
     part('function buildStationFeatures()', 'const shapesReady='),
-    part('function prepareMode(', "if($('toggleSimcity'))"),
+    part('function prepareMode(', 'menu.on({switches:{toggleSimcity'),
   ].join('\n'),context);
   // 모드 상태 · 전환은 실제 컨트롤러(web/modes/transition.mjs)에 본체의 준비 · 바꾸기 · 버튼 함수를 붙인다(본체가 하는 조립과 같게)
   const fn=name=>vm.runInContext(name,context);
