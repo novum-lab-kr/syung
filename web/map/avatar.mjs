@@ -1,4 +1,4 @@
-// web/map/avatar.mjs
+// web/map/avatar.mts
 var RAD = Math.PI / 180;
 function avatarScale(zoom) {
 	const d = Math.max(0, Math.min(3, zoom - 15));

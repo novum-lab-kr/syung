@@ -1,5 +1,5 @@
 import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
-// web/map/avatars/drone.mjs
+// web/map/avatars/drone.mts
 var drone_exports = /* @__PURE__ */ __exportAll({
 	build: () => build,
 	name: () => name,

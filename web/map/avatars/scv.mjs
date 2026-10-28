@@ -1,5 +1,5 @@
 import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
-// web/map/avatars/scv.mjs
+// web/map/avatars/scv.mts
 var scv_exports = /* @__PURE__ */ __exportAll({
 	build: () => build,
 	name: () => name,

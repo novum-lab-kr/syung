@@ -1,5 +1,5 @@
 import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
-// web/map/avatars/probe.mjs
+// web/map/avatars/probe.mts
 var probe_exports = /* @__PURE__ */ __exportAll({
 	build: () => build,
 	name: () => name,

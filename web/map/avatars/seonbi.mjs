@@ -1,5 +1,5 @@
 import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
-// web/map/avatars/seonbi.mjs
+// web/map/avatars/seonbi.mts
 var seonbi_exports = /* @__PURE__ */ __exportAll({
 	build: () => build,
 	name: () => name,
