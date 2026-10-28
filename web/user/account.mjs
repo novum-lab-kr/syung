@@ -1,5 +1,6 @@
 import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
+import { accountView, avatarLook, nameLength } from "./account_view.mjs";
 // web/user/account.mts
 var $ = (id) => document.getElementById(id);
 var CHANGE = { "X-Requested-With": "syung" };
@@ -17,50 +18,19 @@ var LOGIN_ERRORS = {
 	provider: "로그인 서비스가 답하지 않아요. 잠시 뒤 다시 해 주세요.",
 	limit: "시도가 너무 많아요. 10분 뒤 다시 해 주세요."
 };
-var PROVIDER_NAMES = {
-	kakao: "카카오",
-	google: "구글",
-	apple: "Apple"
-};
 var PROVIDERS = {
 	kakao: ["카카오로 계속하기", "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4C7 4 3 7.1 3 11c0 2.5 1.7 4.7 4.2 5.9l-.9 3.3c-.1.3.3.6.6.4l3.9-2.6c.4 0 .8.1 1.2.1 5 0 9-3.1 9-7S17 4 12 4z\" fill=\"#191919\"/></svg>"],
 	google: ["구글로 계속하기", "<svg viewBox=\"0 0 48 48\" aria-hidden=\"true\"><path fill=\"#EA4335\" d=\"M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z\"/><path fill=\"#4285F4\" d=\"M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.03 46.98 31.89 46.98 24.55Z\"/><path fill=\"#FBBC05\" d=\"M10.53 28.59A14.41 14.41 0 0 1 9.75 24c0-1.59.27-3.13.78-4.59l-7.98-6.19A23.87 23.87 0 0 0 0 24c0 3.87.93 7.53 2.56 10.78l7.97-6.19Z\"/><path fill=\"#34A853\" d=\"M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z\"/></svg>"],
 	apple: ["Apple로 계속하기", "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M17.05 12.54c.03 3.27 2.87 4.36 2.9 4.38-.02.08-.45 1.55-1.49 3.07-.9 1.31-1.83 2.62-3.3 2.65-1.44.03-1.91-.86-3.56-.86-1.64 0-2.16.83-3.53.89-1.42.05-2.5-1.42-3.41-2.73C2.8 17.26 1.39 12.36 3.3 9.05a5.3 5.3 0 0 1 4.49-2.72c1.4-.03 2.72.94 3.56.94.83 0 2.4-1.16 4.04-.99.69.03 2.63.28 3.88 2.11-.1.06-2.32 1.35-2.3 4.15ZM14.35 4.5c.76-.92 1.28-2.2 1.14-3.48-1.1.04-2.44.74-3.23 1.66-.7.81-1.32 2.11-1.15 3.35 1.23.1 2.48-.63 3.24-1.53Z\"/></svg>"]
 };
 var LOGO = "<svg viewBox=\"0 0 100 60\"><g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.1\" stroke-dasharray=\".3 2.3\" stroke-linecap=\"round\"><rect x=\"36\" y=\"11\" width=\"56\" height=\"38\" rx=\"19\"/><rect x=\"40.5\" y=\"15.5\" width=\"47\" height=\"29\" rx=\"14.5\"/><circle cx=\"74\" cy=\"30\" r=\"7.5\"/><circle cx=\"74\" cy=\"30\" r=\"3.5\"/><rect x=\"15\" y=\"16\" width=\"17\" height=\"7\" rx=\"3.5\"/><rect x=\"8\" y=\"26.5\" width=\"24\" height=\"7\" rx=\"3.5\"/><rect x=\"15\" y=\"37\" width=\"17\" height=\"7\" rx=\"3.5\"/></g></svg>";
-var CHARACTERS = [
-	["sprout", "새싹 볼빵 후디"],
-	["builder", "꼬마 건설 반장"],
-	["seonbi", "갓 쓴 꼬마 선비"],
-	["visitor", "두근두근 나들이"],
-	["scv", "테란 SCV"],
-	["drone", "저그 드론"],
-	["probe", "프로토스 프로브"]
-];
-var PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;
 var PHOTO_SIDE = 256;
 var PHOTO_MAX = 153600;
-var NAME_MAX = 12;
-var nameLength = (text) => [...text.trim()].length;
-var won = (n) => `${n.toLocaleString("ko-KR")}원`;
-var monthDay = (seconds) => {
-	const d = /* @__PURE__ */ new Date(seconds * 1e3);
-	return `${d.getMonth() + 1}월 ${d.getDate()}일`;
-};
-var FARE_REASONS = {
-	route: "고른 경로가 없는 승차권",
-	distance: "공식 거리 자료가 없는 노선",
-	outside: "수도권 밖 구간",
-	extra: "추가 운임 노선(신분당선 · 의정부경전철 · 공항철도 영종 구간)",
-	bus: "요금 · 거리 자료가 없는 버스",
-	none: "전철 · 버스를 타지 않는 승차권"
-};
-function paintAvatar(el, avatar, big = false) {
-	const photo = avatar?.type === "photo" && PHOTO_URL.test(avatar.url);
-	const id = avatar?.type === "character" && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id : "sprout";
+function paintAvatar(el, avatar) {
+	const { photo, image } = avatarLook(avatar);
 	el.classList.toggle("photo", photo);
 	el.classList.toggle("face", !photo);
-	el.style.backgroundImage = photo ? `url("${avatar.url}")` : big || id !== "sprout" ? `url("./brand/faces/${id}-${big ? 240 : 84}.png")` : "";
+	el.style.backgroundImage = image;
 }
 var toBlob = (canvas, type, quality) => new Promise((done) => canvas.toBlob(done, type, quality));
 async function shrinkPhoto(file) {
@@ -390,59 +360,35 @@ async function initAccount({ colors = {} } = {}) {
 		if (!me) {
 			closeName();
 			closePick();
-			$("accountStats").hidden = true;
-			$("accountSafe").hidden = true;
+			accountView.set({
+				statsShown: false,
+				safeShown: false
+			});
 			accountSeq++;
 			return;
 		}
 		paintAvatar($("accountAvatar"), me.avatar);
-		paintAvatar($("accountAvatarBig"), me.avatar, true);
 		$("accountItemName").textContent = me.name;
-		$("accountName").textContent = me.name;
-		$("accountProvider").textContent = PROVIDER_NAMES[me.provider] || me.provider;
-		markChoice();
-	}
-	const choices = $("avatarChoices");
-	choices.append(...CHARACTERS.map(([id, label]) => {
-		const b = document.createElement("button");
-		b.type = "button";
-		b.className = "pf-choice";
-		b.dataset.character = id;
-		b.setAttribute("aria-label", label);
-		b.title = label;
-		b.onclick = () => pickCharacter(id);
-		return b;
-	}));
-	function markChoice() {
-		const avatar = me?.avatar;
-		const current = avatar?.type === "photo" ? "photo" : avatar?.type === "character" ? avatar.id : "sprout";
-		$("photoPick").setAttribute("aria-pressed", String(current === "photo"));
-		if (current === "photo") paintAvatar($("photoPick"), avatar);
-		else {
-			$("photoPick").classList.remove("photo", "face");
-			$("photoPick").style.backgroundImage = "";
-		}
-		for (const b of choices.querySelectorAll("[data-character]")) b.setAttribute("aria-pressed", String(b.dataset.character === current));
+		accountView.set({
+			me,
+			marked: true
+		});
 	}
 	function openPick() {
 		closeName();
-		for (const b of choices.querySelectorAll("[data-character]")) b.style.backgroundImage ||= `url("./brand/faces/${b.dataset.character}-240.png")`;
-		$("avatarPick").hidden = false;
-		$("accountAvatarBig").setAttribute("aria-expanded", "true");
-		choices.querySelector("[aria-pressed=true]")?.focus({ preventScroll: true });
+		accountView.set({
+			facesLoaded: true,
+			pickOpen: true
+		});
+		document.querySelector("#avatarChoices [aria-pressed=true]")?.focus({ preventScroll: true });
 	}
 	function closePick() {
-		$("avatarPick").hidden = true;
-		$("accountAvatarBig").setAttribute("aria-expanded", "false");
+		accountView.set({ pickOpen: false });
 	}
-	$("accountAvatarBig").onclick = () => {
-		if ($("avatarPick").hidden) openPick();
-		else closePick();
-	};
 	let saving = false;
 	function busy(on) {
 		saving = on;
-		for (const b of choices.querySelectorAll("button")) b.disabled = on;
+		accountView.set({ saving: on });
 	}
 	async function saveProfile(request, done) {
 		if (saving) return;
@@ -473,12 +419,7 @@ async function initAccount({ colors = {} } = {}) {
 		if (id === (me?.avatar?.type === "character" ? me.avatar.id : me?.avatar ? "photo" : "sprout")) return;
 		saveProfile(() => id === "sprout" ? send("DELETE", "./api/me/avatar") : send("PUT", "./api/me/avatar", { character: id }), "프로필을 바꿨어요");
 	}
-	$("photoPick").onclick = () => {
-		if (!saving) $("photoFile").click();
-	};
-	$("photoFile").onchange = async () => {
-		const file = $("photoFile").files[0];
-		$("photoFile").value = "";
+	async function photoChosen(file) {
 		if (!file) return;
 		let blob;
 		try {
@@ -503,39 +444,23 @@ async function initAccount({ colors = {} } = {}) {
 				body: r.headers.get("content-type")?.includes("json") ? await r.json().catch(() => null) : null
 			};
 		}, "프로필 사진을 바꿨어요");
-	};
-	function nameCount() {
-		const count = nameLength($("nameInput").value);
-		$("nameCount").textContent = `${count}/${NAME_MAX}`;
-		$("nameCount").classList.toggle("over", count > NAME_MAX);
 	}
 	function openName() {
 		closePick();
-		$("nameInput").value = me?.name || "";
-		nameCount();
-		$("nameForm").hidden = false;
-		$("nameEdit").setAttribute("aria-expanded", "true");
+		accountView.set({
+			nameValue: me?.name || "",
+			nameOpen: true
+		});
 		$("nameInput").focus({ preventScroll: true });
 		$("nameInput").select();
 	}
 	function closeName() {
-		$("nameForm").hidden = true;
-		$("nameEdit").setAttribute("aria-expanded", "false");
+		accountView.set({ nameOpen: false });
 	}
-	$("nameEdit").onclick = () => {
-		if ($("nameForm").hidden) openName();
-		else closeName();
-	};
-	$("nameCancel").onclick = () => {
-		closeName();
-		$("nameEdit").focus({ preventScroll: true });
-	};
-	$("nameInput").addEventListener("input", nameCount);
-	$("nameForm").onsubmit = async (e) => {
-		e.preventDefault();
-		const name = $("nameInput").value.trim(), count = nameLength(name);
-		if (count < 1 || count > NAME_MAX) {
-			toast(`닉네임은 1~${NAME_MAX}자예요`, true);
+	async function submitName() {
+		const name = accountView.state.nameValue.trim(), count = nameLength(name);
+		if (count < 1 || count > 12) {
+			toast(`닉네임은 1~12자예요`, true);
 			$("nameInput").focus();
 			return;
 		}
@@ -543,16 +468,16 @@ async function initAccount({ colors = {} } = {}) {
 			closeName();
 			return;
 		}
-		$("nameSave").disabled = true;
+		accountView.set({ nameSaving: true });
 		try {
 			if (await saveProfile(() => send("PUT", "./api/me/profile", { name }), "닉네임을 바꿨어요")) {
 				closeName();
 				$("nameEdit").focus({ preventScroll: true });
 			}
 		} finally {
-			$("nameSave").disabled = false;
+			accountView.set({ nameSaving: false });
 		}
-	};
+	}
 	function renderTickets() {
 		$("ticketList").replaceChildren(...tickets.map((t) => {
 			const el = ticketEl(t);
@@ -986,39 +911,22 @@ async function initAccount({ colors = {} } = {}) {
 			show();
 			return;
 		}
-		if (stats.status === 200) {
-			renderStats(stats.body);
-			$("accountStats").hidden = false;
-		}
-		if (sessions.status === 200) {
-			renderSafe(sessions.body.sessions);
-			$("accountSafe").hidden = false;
-		}
+		const view = accountView.state;
+		if (stats.status === 200) accountView.set({
+			stats: stats.body,
+			statsTurn: view.statsTurn + 1,
+			statsShown: true
+		});
+		if (sessions.status === 200) accountView.set({
+			sessions: sessions.body.sessions,
+			safeTurn: view.safeTurn + 1,
+			safeShown: true
+		});
 	}
 	$("accountRow").addEventListener("click", loadAccountPage);
-	function renderStats(st) {
-		const cell = (value, label) => `<div class="st-cell"><b>${esc(value)}</b><small>${esc(label)}</small></div>`;
-		const most = Math.max(1, ...st.daily.map((d) => d.open + d.route + d.ticket));
-		const bars = st.daily.map((d) => {
-			const n = d.open + d.route + d.ticket, [, m, day] = d.day.split("-").map(Number);
-			return `<i style="height:${n ? Math.max(8, Math.round(n / most * 100)) : 0}%" title="${m}월 ${day}일 · ${n}번"></i>`;
-		}).join("");
-		const f = st.fare, [, month] = f.month.split("-").map(Number);
-		const rows = f.tickets.map((t) => `<li><span>${esc(t.name)}</span><small>${won(t.fare)} × ${t.rides}번</small><b>${won(t.monthly)}</b></li>`).join("");
-		const why = Object.entries(f.reasons).map(([key, n]) => `${FARE_REASONS[key] || key} ${n}장`).join(" · ");
-		const fare = st.tickets ? `<div class="st-fare"><div class="st-fare-top"><span>${month}월 예상 교통비</span><b>${won(f.total)}</b></div><p class="st-note">승차권대로 다 탄다고 가정한 예상이에요</p>${rows ? `<ul class="st-fare-list">${rows}</ul>` : ""}` + (f.skipped ? `<p class="st-skip">${f.skipped}장 계산 못 함${why ? ` — ${esc(why)}` : ""}</p>` : "") + "<p class=\"st-note\">교통카드 어른 요금 · 고른 경로 거리 기준이에요. 갈아타는 시간 · 정기권 · 공휴일은 넣지 않았어요.</p></div>" : "";
-		$("accountStatsBody").innerHTML = `<div class="st-grid">${cell(`${st.daysTogether}일`, "함께한 날")}${cell(`${st.tickets}장`, "승차권")}${cell(`${st.recent.openDays}일`, `최근 ${st.recent.days}일 슝 연 날`)}${cell(`${st.recent.route}번`, `최근 ${st.recent.days}일 길찾기`)}</div><div class="st-bars" role="img" aria-label="최근 ${st.recent.days}일 날짜별 사용 횟수">${bars}</div><p class="st-note">한 주에 타는 횟수 ${st.weeklyRides}번 · 승차권 본 횟수 ${st.recent.ticket}번(최근 ${st.recent.days}일)</p>${fare}`;
-	}
-	function renderSafe(list) {
-		const body = $("accountSafeBody");
-		const items = list.map((item) => `<li data-session="${esc(item.id)}"><span class="dv-name">${esc(item.device)}${item.current ? "<em>이 기기</em>" : ""}</span><small>마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}</small>` + (item.current ? "" : "<button type=\"button\" class=\"dv-out\">로그아웃</button>") + "</li>").join("");
-		body.innerHTML = `<p class="acct-sub">로그인한 기기 ${list.length}대</p><ul class="dv-list">${items}</ul><div class="dv-actions">${list.length > 1 ? "<button type=\"button\" id=\"deviceOthers\">다른 기기 모두 로그아웃</button>" : ""}<button type="button" id="dataExport">내 데이터 내려받기</button></div><p class="st-note">내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요.</p>`;
-		for (const b of body.querySelectorAll(".dv-out")) b.onclick = () => logoutDevice(b.closest("li").dataset.session, b);
-		$("deviceOthers")?.addEventListener("click", logoutOthers);
-		$("dataExport").onclick = exportData;
-	}
-	async function logoutDevice(id, button) {
-		button.disabled = true;
+	const outBusy = (id, on) => accountView.set({ outBusy: on ? [...accountView.state.outBusy, id] : accountView.state.outBusy.filter((other) => other !== id) });
+	async function logoutDevice(id) {
+		outBusy(id, true);
 		try {
 			const r = await send("DELETE", `./api/me/sessions/${encodeURIComponent(id)}`);
 			if (r.status === 401) {
@@ -1036,7 +944,7 @@ async function initAccount({ colors = {} } = {}) {
 		} catch {
 			toast("로그아웃하지 못했어요. 연결을 확인해 주세요.", true);
 		} finally {
-			button.disabled = false;
+			outBusy(id, false);
 		}
 	}
 	async function logoutOthers() {
@@ -1084,7 +992,7 @@ async function initAccount({ colors = {} } = {}) {
 			toast("내려받지 못했어요. 연결을 확인해 주세요.", true);
 		}
 	}
-	$("accountLogout").onclick = async () => {
+	async function logout() {
 		try {
 			await send("POST", "./api/auth/logout");
 		} catch {}
@@ -1093,15 +1001,8 @@ async function initAccount({ colors = {} } = {}) {
 		show();
 		$("menuBack").click();
 		toast("로그아웃했어요");
-	};
-	$("accountDelete").onclick = () => {
-		$("accountConfirm").hidden = false;
-		$("accountConfirmYes").focus({ preventScroll: true });
-	};
-	$("accountConfirmNo").onclick = () => {
-		$("accountConfirm").hidden = true;
-	};
-	$("accountConfirmYes").onclick = async () => {
+	}
+	async function deleteMe() {
 		try {
 			const r = await send("DELETE", "./api/me");
 			if (!r.ok && r.status !== 401) {
@@ -1110,14 +1011,44 @@ async function initAccount({ colors = {} } = {}) {
 			}
 			me = null;
 			tickets = [];
-			$("accountConfirm").hidden = true;
+			accountView.set({ confirmOpen: false });
 			show();
 			$("menuBack").click();
 			toast("탈퇴했어요");
 		} catch {
 			toast("탈퇴하지 못했어요. 연결을 확인해 주세요.", true);
 		}
-	};
+	}
+	accountView.on({
+		avatarBig: () => {
+			if (accountView.state.pickOpen) closePick();
+			else openPick();
+		},
+		pickPhoto: () => {
+			if (!saving) $("photoFile").click();
+		},
+		photoFile: photoChosen,
+		pickCharacter,
+		nameEdit: () => {
+			if (accountView.state.nameOpen) closeName();
+			else openName();
+		},
+		nameCancel: () => {
+			closeName();
+			$("nameEdit").focus({ preventScroll: true });
+		},
+		nameSubmit: submitName,
+		logoutDevice,
+		logoutOthers,
+		exportData,
+		logout,
+		deleteAsk: () => {
+			accountView.set({ confirmOpen: true });
+			$("accountConfirmYes").focus({ preventScroll: true });
+		},
+		deleteNo: () => accountView.set({ confirmOpen: false }),
+		deleteYes: deleteMe
+	});
 	me = answer.body.me || null;
 	show();
 	if (me) {
