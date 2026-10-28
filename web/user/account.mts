@@ -104,13 +104,13 @@ function chainHTML(t:Ticket, legs:readonly SlimLeg[]) {
   const tag = rides.length > 1 ? `환승 ${rides.length - 1}` : rides.length ? '바로' : '걸어서';
   return names.map(n => `<span title="${esc(n)}">${esc(shortName(n!))}</span>`).join('<em>→</em>') + `<small>${tag}</small>`;
 }
-const chains = new Map<string, string>();   // 승차권 번호 + 출발 · 도착 · 시각 → 그린 HTML(한 화면에서 다시 안 부름)
+const chains = new Map<string, string>();   // 승차권 번호 + 출발 · 도착 · 물은 시각(다음 탈 날) → 그린 HTML(한 화면에서 다시 안 부름)
 // put: 뒷면 첫 줄에 넣을 HTML(고른 경로 · 이미 찾은 길이면 바로, 아니면 길을 찾은 뒤)
 async function fillChain(t:Ticket, put:(html:string)=>void) {
   if (t.route) { put(chainHTML(t, t.route.legs)); return; }
-  const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.depart}|${t.days}`;
-  if (chains.has(key)) { put(chains.get(key)!); return; }
   const at = routeAt(nextRideDay(t.days, t.depart, new Date()));   // 발권 화면의 경로 고르기와 같은 날 · 같은 거르기
+  const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${at}`;   // 다음 탈 날이 바뀌면(화면을 오래 열어 두면) 다시 찾는다
+  if (chains.has(key)) { put(chains.get(key)!); return; }
   let html:string;
   try {
     const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
