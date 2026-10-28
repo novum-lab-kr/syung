@@ -100,7 +100,7 @@ test('a stop no drawn route serves (마을버스 · 경기 버스만) is still o
 
 test('a stop number selects its route with the switch off; closing returns to static stops', () => withLayerFixture((layer,requested) => {
   layer.select({kind:'stop',id:'01'},null);
-  assert.match(layer.detailHTML(),/data-bus-route="100000001"/);
+  assert.ok(layer.detailView().rows.some(row=>row.routeId==='100000001'&&row.live));
   assert.deepEqual(requested.slice(2),['/api/bus/live?stop=00123'],'opening a stop asks only for its arrivals, never bus positions');
   layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
   assert.deepEqual(layer.requested,[route.id]);
@@ -118,9 +118,9 @@ test('a stop number selects its route with the switch off; closing returns to st
 test('a selected stop keeps mock disclosure inside the sheet that covers the map notice', () => withLayerFixture(layer => {
   layer.select({kind:'stop',id:'01'},null);
   layer.routeClick({target:{closest:()=>({dataset:{busRoute:route.id}})}});
-  assert.doesNotMatch(layer.detailHTML(),/예시 데이터/);
+  {const view=layer.detailView();assert.equal(view.mock,false);assert.doesNotMatch(view.note,/예시 데이터/);}
   layer.setLiveData({schemaVersion:1,mode:'mock',buses:[],routes:{}},[route.id]);
-  assert.match(layer.detailHTML(),/예시 데이터 · 실제 운행 정보 아님/);
+  assert.equal(layer.detailView().mock,true,'시트에 예시 데이터 · 실제 운행 정보 아님');
 },false));
 
 test('number selection and closing notify the shared journey presentation without replacing the stop sheet',()=>withLayerFixture(layer=>{
@@ -376,13 +376,13 @@ test('the selected next stop refreshes at motion completion within the one-secon
   const bus = layer.fleet.get('finishing-bus'), turning = bus.path.stops[1].distance;
   bus.motion = {from: turning - 30, to: turning + 30, startedAt: performance.now(), duration: 2000};
   layer.selection = {kind: 'bus', id: bus.row.id}; layer.selectedRoute = route.id;
-  let shown = layer.detailHTML(); layer.updateDetail = html => { shown = html; };
-  assert.match(shown, /<dd>회차<small>/);
+  let shown = layer.detailView(); layer.updateDetail = view => { shown = view; };
+  assert.deepEqual([shown.grid.next, shown.grid.onPath], ['회차', true]);
   // Completion follows a recent detail refresh and occurs even if the bus left the viewport.
   layer.enabled = true; layer.visible = [];
   bus.motion.startedAt = performance.now() - 2001; layer.detailAt = performance.now() - 100;
   layer.draw();
-  assert.match(shown, /<dd>출발<small>/);
+  assert.deepEqual([shown.grid.next, shown.grid.onPath], ['출발', true]);
 }));
 
 test('한 대의 오래된 위치는 지도 전체 지연 알림을 켜지 않고, 노선을 못 받으면 켠다', () => withLayerFixture(layer => {
@@ -402,17 +402,21 @@ test('처음부터 화면 근처 버스를 받지 않는다: 정적 노선 · �
 
 test('정류장 팝업: 번호 배지 · 새로고침 / 곧 도착 1대 카드(다음 버스 · 앞뒤 정류장) / 한 줄 목록과 흐르는 남은 시간', () => withLayerFixture(async (layer, requested) => {
   layer.select({kind: 'stop', id: '01'}, null);
-  assert.match(layer.detailHTML(), /data-bus-route="100000001"[^>]*>.*<i class="bus-wait"><\/i>/, '오는 동안에도 번호는 누를 수 있고 시간 자리만 빈 막대');
+  {const row = layer.detailView().rows.find(item => item.routeId === '100000001');
+    assert.deepEqual([row.live, row.time.kind], [true, 'wait'], '오는 동안에도 번호는 누를 수 있고 시간 자리만 빈 막대');}
   await new Promise(resolve => setImmediate(resolve));
-  const html = layer.detailHTML();
-  assert.match(html, /<span class="bus-stop-no">.*00123<\/span><h3 tabindex="-1">출발<\/h3>/);
-  assert.match(html, /<button type="button" class="bus-refresh" data-bus-refresh aria-label="도착 정보 새로 받기 · 14:05:20 기준"><span>14:05:20<\/span>/);
-  assert.match(html, /<button type="button" class="bus-hero" data-bus-route="100000001" aria-pressed="false">.*회차 방면.*<span class="bus-hero-soon">곧 도착<\/span><span class="bus-hero-next">다음 8분<\/span>/);
-  assert.match(html, /<span class="bus-track-names"><span>회차<\/span><b>출발<\/b><span><\/span><\/span>/, '같은 정류장을 두 번 지나는 노선은 앞 정류장이 있는 쪽');
-  assert.match(html, /class="bus-row" data-bus-route="100000001"[^>]*>.*<span class="bus-soon">곧 도착<\/span>/, '곧 도착은 초 없이');
-  assert.match(html, /<span class="bus-num" style="--c:#3567C8">100<\/span>/);
-  assert.match(html, /<div class="bus-row">.*>6100<.*<span class="bus-tag">지도 없음<\/span>.*<span class="bus-away">1번째 전<\/span><span class="bus-eta" data-eta="\d+">3분 1\d초<\/span>/);
-  assert.ok(html.indexOf('>100<') < html.indexOf('>6100<'), '곧 도착이 3분 뒤보다 먼저');
+  const view = layer.detailView();
+  assert.deepEqual([view.arsId, view.name], ['00123', '출발']);
+  assert.deepEqual(view.refresh, {clock: '14:05:20', loading: false}, '새로고침 단추: 받은 시각');
+  const {hero} = view;
+  assert.deepEqual([hero.one, hero.button, hero.routeId, hero.pressed, hero.direction, hero.next], [true, true, '100000001', false, '회차 방면', '다음 8분']);
+  assert.deepEqual([hero.prev, hero.stop, hero.after], ['회차', '출발', ''], '같은 정류장을 두 번 지나는 노선은 앞 정류장이 있는 쪽');
+  const soonRow = view.rows.find(row => row.routeId === '100000001'), farRow = view.rows.find(row => row.badge.name === '6100');
+  assert.deepEqual([soonRow.live, soonRow.time.kind], [true, 'soon'], '곧 도착은 초 없이');
+  assert.deepEqual(soonRow.badge, {name: '100', long: false, color: '#3567C8'});
+  assert.deepEqual([farRow.live, farRow.tag, farRow.time.kind, farRow.time.where], [false, '지도 없음', 'eta', '1번째 전']);
+  assert.ok(Number.isInteger(farRow.time.at)); assert.match(farRow.time.left, /^3분 1\d초$/);
+  assert.ok(view.rows.indexOf(soonRow) < view.rows.indexOf(farRow), '곧 도착이 3분 뒤보다 먼저');
   layer.refreshArrivals();
   assert.match(requested.at(-1), /stop=00123&fresh=1$/, '새로고침은 서버에 새로 묻는다');
   layer.clearSelection();
@@ -429,11 +433,11 @@ test('곧 도착이 여러 대면 카드에는 번호만: 한 줄에 들어가�
       arrivalBody = {schemaVersion: 1, mode: 'live', status: 'fresh', fetchedAt: '2026-10-07T05:05:20Z', ageSeconds: 0, arrivals: soon(n), errors: []};
       layer.select({kind: 'stop', id: '01'}, null);
       await new Promise(resolve => setImmediate(resolve));
-      const head = layer.detailHTML().match(/<span class="bus-hero-head is-many">(.*?)<\/span><span class="bus-hero-now">/)[1];
-      assert.equal((head.match(/class="bus-num"/g) || []).length, shown, `${n}대`);
-      assert.equal(head.includes(`bus-num-more">${more}<`), !!more);
-      assert.doesNotMatch(head, /방면|지도에 표시 중/, '여러 대면 방면 · 지도 표시는 뺀다');
-      assert.match(layer.detailHTML(), /<div class="bus-hero">/, '여러 대 카드는 누르는 버튼이 아니다');
+      const {hero} = layer.detailView();
+      assert.equal(hero.badges.length, shown, `${n}대`);
+      assert.equal(hero.more ? `+${hero.more}` : '', more);
+      assert.equal(hero.one, false, '여러 대면 번호만(방면 · 지도 표시는 뺀다)');
+      assert.equal(hero.button, false, '여러 대 카드는 누르는 버튼이 아니다');
     }
   } finally { arrivalBody = saved; }
 }, false));
@@ -457,7 +461,7 @@ test('서울시 도착 문구를 시간과 덧말로: 막차는 한 번만', () 
 test('번호 없는 가상 정류장은 도착 정보를 부르지 않는다', () => withLayerFixture(async (layer, requested) => {
   layer.select({kind: 'stop', id: '02'}, null);
   await new Promise(resolve => setImmediate(resolve));
-  assert.match(layer.detailHTML(), /이 정류장은 도착 정보가 없어요/);
+  assert.equal(layer.detailView().note, '이 정류장은 도착 정보가 없어요.');
   assert.equal(requested.filter(url => url.includes('stop=')).length, 0);
 }, false));
 
@@ -467,7 +471,7 @@ test('도착 정보 한도 소진은 그대로 알린다', () => withLayerFixtur
   try {
     layer.select({kind: 'stop', id: '01'}, null);
     await new Promise(resolve => setImmediate(resolve));
-    assert.match(layer.detailHTML(), /오늘 도착 정보 조회 한도를 다 썼어요/);
+    assert.equal(layer.detailView().note, '오늘 도착 정보 조회 한도를 다 썼어요.');
   } finally { arrivalBody = saved; }
 }, false));
 
@@ -499,7 +503,7 @@ test('긴 버스 번호(5글자 이상)는 배지 글자를 줄인다', () => wi
   try {
     layer.select({kind: 'stop', id: '01'}, null);
     await new Promise(resolve => setImmediate(resolve));
-    assert.match(layer.detailHTML(), /<span class="bus-num bus-num-long"[^>]*>7101파주<\/span>/);
+    assert.deepEqual(layer.detailView().rows.map(row => [row.badge.name, row.badge.long]), [['7101파주', true], ['100', false]]);
   } finally { arrivalBody = saved; }
 }, false));
 
@@ -589,7 +593,7 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   let followed = null;
   const follows = [], legs = [], tap = () => layer.routeClick({target: {closest: () => ({dataset: {busRoute: route.id}})}});
   const press = what => layer.routeClick({target: {closest: () => ({dataset: {busStopView: what}})}});
-  const panel = () => layer.detailHTML().match(/<div class="bus-follow[^]*?<\/div><\/div>/)?.[0] || '';
+  const panel = () => { const line = layer.detailView()?.followLine; return line ? [line.state, line.arrival, ...line.buttons.map(button => button.label)].join(' | ') : ''; };
   layer.onFollow = id => { follows.push(id); followed = id }; layer.followedBus = () => followed;
   layer.onRouteSelect = (leg, {fit} = {}) => legs.push([leg?.routeId ?? null, fit]);
   const views = []; layer.onFollowView = on => views.push(on);
@@ -601,7 +605,7 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.deepEqual([follows.at(-1), legs.at(-1)], ['near', [route.id, false]], '한 번에 따라가기, 노선 전체로 멀어지지 않는다');
   assert.equal(layer.selection.kind, 'stop', '정류장 시트는 그대로');
   assert.match(panel(), /따라가는 중[^]*노선 전체[^]*정류장으로/);
-  assert.doesNotMatch(layer.detailHTML(), /bus-rows|bus-hero/, '따라가는 동안은 상태 칸만(지도를 가리지 않게, 2026-10-19)');
+  assert.equal(layer.detailView().compact, true, '따라가는 동안은 상태 칸만(지도를 가리지 않게, 2026-10-19)');
   // 지도 우선(2026-10-20): 시트를 내리고 지도 위 정보 칸 · 아래 버튼
   assert.deepEqual([views.at(-1), layer.followUI.hidden], [true, false], '시트를 내리고 지도 위 화면을 띄운다');
   assert.match(layer.followParts.summary.innerHTML, /까지[^]*따라가는 중/);
@@ -626,7 +630,7 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
 
   press('follow'); assert.equal(follows.at(-1), 'near', '[버스 따라가기]');
   followed = null; assert.match(panel(), /따라가기 멈춤[^]*다시 따라가기[^]*노선 전체[^]*정류장으로/, '지도를 끌어 멈추면: 노선 전체로도 바로');
-  assert.doesNotMatch(layer.detailHTML(), /bus-rows/, '멈춰도 따라가기 칸만');
+  assert.equal(layer.detailView().compact, true, '멈춰도 따라가기 칸만');
   layer.renderFollowUI();
   assert.match(layer.followParts.controls.innerHTML, /다시 따라가기[^]*노선 전체[^]*정류장으로/, '멈추면 지도 위 버튼도');
   assert.match(layer.followParts.summary.innerHTML, /따라가기 멈춤/);
