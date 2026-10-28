@@ -11,13 +11,19 @@ import time
 import urllib.error
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST, kst_today
 from server.config import SubwayConfig
 from server.sources.seoul_subway import SeoulSubwaySource, check_error
 from server.store.records import record_positions, record_station_probe
 from server.store.subway_quota import SubwayQuotaFile
+
+if TYPE_CHECKING:   # 타입만
+    from collections.abc import Callable
+
+    Row = dict[str, Any]   # 바깥 API · 응답의 JSON 한 줄(열차 · 도착 행)
+    TrainKey = tuple[str, str]   # (노선, 열차 번호)
 
 PACE_RESERVE, MAX_PACE_SECONDS = 60, 600
 PROBE_RESERVE = 100   # 이상 감지의 위치 피드 확인은 지도 몫(position_reserve)보다 이만큼 더 남았을 때만
@@ -40,18 +46,18 @@ def _clean_station(value: object) -> str:
     return text
 
 
-def _status(row: dict) -> str:
+def _status(row: Row) -> str:
     return {"0": "진입", "1": "도착", "2": "출발", "3": "전역 출발", "4": "전전역 출발", "5": "전전역 도착"}.get(str(row.get("arvlCd")), "운행 중")
 
 
-def normalize(payload: dict) -> list[dict]:
-    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for row in payload.get("realtimeArrivalList") or []:
+def normalize(payload: Row) -> list[Row]:
+    grouped: dict[TrainKey, list[Row]] = defaultdict(list)
+    for row in payload.get("realtimeArrivalList") or cast("list[Row]", []):
         line = LINE_NAMES.get(str(row.get("subwayId")))
         train_no = str(row.get("btrainNo") or "").strip()
         if line and train_no:
             grouped[(line, train_no)].append(row)
-    trains = []
+    trains: list[Row] = []
     for (line, train_no), rows in grouped.items():
         row = min(rows, key=lambda r: int(str(r.get("barvlDt") or "999999")) if str(r.get("barvlDt") or "").isdigit() else 999999)
         station = _clean_station(row.get("arvlMsg3"))
@@ -72,9 +78,9 @@ def normalize(payload: dict) -> list[dict]:
     return sorted(trains, key=lambda t: (t["line"], t["trainNo"]))
 
 
-def normalize_positions(payload: dict, requested_line: str) -> list[dict]:
-    trains = []
-    for row in payload.get("realtimePositionList") or []:
+def normalize_positions(payload: Row, requested_line: str) -> list[Row]:
+    trains: list[Row] = []
+    for row in payload.get("realtimePositionList") or cast("list[Row]", []):
         line = LINE_NAMES.get(str(row.get("subwayId")), requested_line)
         raw_direction = str(row.get("updnLine") or "")
         if raw_direction in ("0", "1"):
@@ -96,21 +102,21 @@ def normalize_positions(payload: dict, requested_line: str) -> list[dict]:
     return sorted((t for t in trains if t["trainNo"] and t["station"]), key=lambda t: (t["line"], t["trainNo"]))
 
 
-def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
+def normalize_arrivals(payload: Row) -> tuple[dict[str, list[Row]], set[TrainKey], set[TrainKey]]:
     """Station-arrival rows → one position per train, grouped by line; also the next trips listed
     before they start (skipped) and the trains not running yet (idle), for overlay_positions.
 
     Each train appears once per upcoming station. Prefer a row where it is at that station
     (arvlCd 0 진입 / 1 도착 / 2 출발); otherwise use arvlMsg3 (its current station) with the
     relative codes 3 전역출발 / 4 전역진입 / 5 전역도착 re-expressed against that station."""
-    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for row in payload.get("realtimeArrivalList") or []:
+    grouped: dict[TrainKey, list[Row]] = defaultdict(list)
+    for row in payload.get("realtimeArrivalList") or cast("list[Row]", []):
         line = LINE_NAMES.get(str(row.get("subwayId")))
         train_no = str(row.get("btrainNo") or "").strip()
         if line and train_no:
             grouped[(line, train_no)].append(row)
 
-    def rank(row: dict) -> tuple[int, int]:
+    def rank(row: Row) -> tuple[int, int]:
         # A 진입/도착/출발 row far out is not where the train is now: on the 응암 loop a 하행 train
         # entering it (역촌 2분 후) also has "응암 도착" 12 minutes out, for coming round again — taken
         # as at 응암, it was run on toward 새절 and vanished (6303, 2026-09-30). Then the nearest row.
@@ -121,7 +127,7 @@ def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
     # 전역 출발/진입/도착 (3/4/5) are about the station before the row's one; arvlMsg3 names it on
     # most rows but the row's own station on some (5·6호선): then take statnFid's station (not
     # always: 공항철도's statnFid points at stations that are not even adjacent)
-    names = {str(r.get("statnId")): _clean_station(r.get("statnNm")) for r in payload.get("realtimeArrivalList") or []}
+    names = {str(r.get("statnId")): _clean_station(r.get("statnNm")) for r in payload.get("realtimeArrivalList") or cast("list[Row]", [])}
     # A train's next trip is listed before it starts: at 신내 a 상행 '응암순환' number appears while the
     # train is still running in as 하행, placed where that 하행 train is (6308/6310 at 화랑대·태릉입구,
     # 2026-09-30) — a ghost that runs backwards and then jumps to 신내. Such a train is listed only at
@@ -135,7 +141,7 @@ def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
             ends[(line, str(r.get("updnLine") or ""))].add(_clean_station(r.get("bstatnNm")))
     other = {"상행": "하행", "하행": "상행", "내선": "외선", "외선": "내선"}
 
-    def next_trip(line: str, rows: list[dict]) -> bool:
+    def next_trip(line: str, rows: list[Row]) -> bool:
         for r in rows:
             at, code = _clean_station(r.get("statnNm")), str(r.get("arvlCd"))
             eta = int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 0
@@ -147,8 +153,8 @@ def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
                 return False
         return True
 
-    out: dict[str, list[dict]] = defaultdict(list)
-    skipped, idle = set(), set()
+    out: dict[str, list[Row]] = defaultdict(list)
+    skipped, idle = cast("set[TrainKey]", set()), cast("set[TrainKey]", set())
     for (line, train_no), rows in grouped.items():
         if next_trip(line, rows):
             skipped.add((line, train_no))
@@ -181,7 +187,7 @@ def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
         # the map holds it there till departsAt instead of running it off after a normal dwell.
         departs = None
         terminus = ends[(line, other.get(str(row.get("updnLine") or ""), ""))] - {_clean_station(row.get("bstatnNm"))}
-        eta_of = lambda r: int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 0
+        eta_of: Callable[[Row], int] = lambda r: int(r["barvlDt"]) if str(r.get("barvlDt") or "").isdigit() else 0
         wait = next((r for r in rows if str(r.get("arvlCd")) in ("0", "1", "2") and eta_of(r) >= 480
                      and _clean_station(r.get("statnNm")) == station), None) if station in terminus else None
         lead = 0
@@ -190,7 +196,7 @@ def normalize_arrivals(payload: dict) -> tuple[dict[str, list[dict]], set, set]:
         stamp = _kst(str(wait.get("recptnDt") or "")) if wait else None
         if stamp:
             status = "도착"
-            departs = (stamp + timedelta(seconds=eta_of(wait) - lead)).strftime("%Y-%m-%d %H:%M:%S")
+            departs = (stamp + timedelta(seconds=eta_of(cast("Row", wait)) - lead)).strftime("%Y-%m-%d %H:%M:%S")   # stamp 가 있으면 wait 도 있다
         out[line].append({
             "line": line,
             "trainNo": train_no,
@@ -218,7 +224,7 @@ def _kst(value: str) -> datetime | None:
 FORWARD_KEEP_SECONDS = 600   # 이보다 오래된 기억은 믿지 않는다(열차가 사라졌다 다시 나온 것)
 
 
-def forward_only(trains: list[dict], memory: dict[tuple[str, str], dict]) -> list[dict]:
+def forward_only(trains: list[Row], memory: dict[TrainKey, Row]) -> list[Row]:
     """두 피드(전 역 도착 · 노선 위치)를 섞어도 열차마다 시간이 뒤로 가지 않게.
 
     전 역 도착은 받을 때 이미 약 2분, 위치 피드는 약 1분 30초 지난 내용이고(2026-10-13 출근 시간), 둘이 번갈아 오면
@@ -226,7 +232,7 @@ def forward_only(trains: list[dict], memory: dict[tuple[str, str], dict]) -> lis
       (5분 30초 늦게 옴) → 지도가 열차를 군자에 46초 더 붙잡았다
     - 같은 사건이 다른 시각으로 다시 온다: '군자 도착' 위치 08:01:35 · 전 역 도착 08:02:31 → 선로 한가운데서 57초 섰다
     (7077, 덕배 탑승 2026-10-13). 그래서 옛날 기록은 버리고(바로 전 것을 그대로), 같은 역 · 같은 상태면 처음 시각을 쓴다."""
-    out = []
+    out: list[Row] = []
     for t in trains:
         k, seen = (t["line"], t["trainNo"]), memory.get((t["line"], t["trainNo"]))
         at = _kst(str(t.get("receivedAt") or ""))
@@ -243,7 +249,7 @@ def forward_only(trains: list[dict], memory: dict[tuple[str, str], dict]) -> lis
     return out
 
 
-def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict]) -> dict[str, list[dict]]:
+def stabilize(lines: dict[str, list[Row]], memory: dict[TrainKey, Row]) -> dict[str, list[Row]]:
     """Turn all-stations snapshots into a forward-only event per train.
 
     On the Seoul Metro lines recptnDt is the snapshot time (every train of a line and direction
@@ -256,7 +262,7 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
     snapshot, or 20 s by the position feed's event times) put the trains ahead when riding 7호선
     (7081, 2026-09-28 사가정–어린이대공원).
     """
-    out: dict[str, list[dict]] = {}
+    out: dict[str, list[Row]] = {}
     # a stamp ahead of the clock (seen: 3 min, and 23:59:57 in the morning) would freeze the train
     # on the map and, as "newest", block every later record: date those now
     now = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
@@ -266,7 +272,7 @@ def stabilize(lines: dict[str, list[dict]], memory: dict[tuple[str, str], dict])
             if at and (at - now).total_seconds() > 30:
                 t["receivedAt"] = now.strftime("%Y-%m-%d %H:%M:%S")
     for line, trains in lines.items():
-        kept = []
+        kept: list[Row] = []
         for t in trains:
             k, seen = (line, t["trainNo"]), memory.get((line, t["trainNo"]))
             snap = str(t.get("receivedAt") or "")
@@ -297,10 +303,10 @@ def station_key(name: object) -> str:
     return RENAMED.get(text, text)
 
 
-def index_arrivals(payload: dict) -> dict[str, list[dict]]:
+def index_arrivals(payload: Row) -> dict[str, list[Row]]:
     """Upcoming trains per station (as the station-arrival rows give them), for station popups."""
-    out: dict[str, list[dict]] = defaultdict(list)
-    for row in payload.get("realtimeArrivalList") or []:
+    out: dict[str, list[Row]] = defaultdict(list)
+    for row in payload.get("realtimeArrivalList") or cast("list[Row]", []):
         line = LINE_NAMES.get(str(row.get("subwayId")))
         if not line:
             continue
@@ -330,7 +336,7 @@ class SubwayLiveService:
         self.source = source or SeoulSubwaySource(self.config.api_key)
         self.quota_file = SubwayQuotaFile(self.config.quota_file)
         self.lock = threading.Lock()
-        self.line_cache: dict[str, tuple[float, dict]] = {}
+        self.line_cache: dict[str, tuple[float, Row]] = {}
         self.all_cache: tuple[float, dict[str, Any]] | None = None
         self.quota_day = ""
         self.quota_used = 0
@@ -339,9 +345,9 @@ class SubwayLiveService:
         self.quota_lock = threading.Lock()
         self.next_trips: set[tuple[str, str]] = set()   # normalize_arrivals: overlay_positions 가 빼는 다음 운행
         self.idle: set[tuple[str, str]] = set()   # not running yet (normalize_arrivals); kept off position-feed lines
-        self.last_seen: dict[tuple[str, str], dict] = {}   # stabilize 의 기억
+        self.last_seen: dict[TrainKey, Row] = {}   # stabilize 의 기억
         self.forward_lock = threading.Lock()
-        self.forward_seen: dict[tuple[str, str], dict] = {}   # forward_only 의 기억(두 피드를 섞은 뒤)
+        self.forward_seen: dict[TrainKey, Row] = {}   # forward_only 의 기억(두 피드를 섞은 뒤)
         self.position_lock = threading.Lock()
         self.position_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self.position_used: dict[str, Any] = {"day": "", "calls": 0}
@@ -402,7 +408,7 @@ class SubwayLiveService:
 
     # ---- 전 노선(ALL) ------------------------------------------------------------------------
 
-    def _fetch_all(self) -> dict:
+    def _fetch_all(self) -> Row:
         try:
             self._count_call()
             payload = self.source.fetch_all()
@@ -416,7 +422,7 @@ class SubwayLiveService:
         lines, self.next_trips, self.idle = normalize_arrivals(payload)
         return {"fetchedAt": fetched_at, "lines": stabilize(lines, self.last_seen), "stations": index_arrivals(payload)}
 
-    def snapshot_arrivals(self, name: str) -> dict:
+    def snapshot_arrivals(self, name: str) -> Row:
         """Arrivals at one station from the cached all-lines call (fetching it if the cache is cold)."""
         with self.lock:
             now = time.time()
@@ -439,12 +445,12 @@ class SubwayLiveService:
         left = self.config.daily_limit - self.quota_used - PACE_RESERVE
         return max(self.config.cache_seconds, min(MAX_PACE_SECONDS, to_midnight / max(1, left)))
 
-    def snapshot_all(self, lines: list[str]) -> dict | None:
+    def snapshot_all(self, lines: list[str]) -> Row | None:
         """Serve any set of lines from one cached all-lines call; None → caller falls back per line."""
         selected = [line for line in dict.fromkeys(lines) if line in set(LINE_NAMES.values())]
         cache_seconds, limit = self.config.cache_seconds, self.config.daily_limit
         with self.lock:
-            now, warnings, quiet = time.time(), [], self.quiet()
+            now, warnings, quiet = time.time(), cast("list[str]", []), self.quiet()
             if quiet and self.all_cache is None:
                 return {"ok": True, "mode": "all", "quiet": True, "fetchedAt": datetime.now(timezone.utc).isoformat(), "trainCount": 0, "cacheSeconds": cache_seconds,
                         "quota": self.quota_view(), "lines": selected, "warnings": [], "trains": []}
@@ -459,19 +465,19 @@ class SubwayLiveService:
                         return None
                     warnings.append(f"전체 노선: 이전 자료 표시 중 ({exc})")
             quota_out = self.quota_used >= limit
-            data = cast("tuple[float, dict]", self.all_cache)[1]   # 위에서 받았거나 이미 있었다(못 받고 없으면 위에서 돌아갔다)
+            data = cast("tuple[float, Row]", self.all_cache)[1]   # 위에서 받았거나 이미 있었다(못 받고 없으면 위에서 돌아갔다)
             trains = [t for line in selected for t in data["lines"].get(line, [])]
             return {"ok": True, "mode": "all", "quiet": quiet, "quotaExhausted": quota_out, "fetchedAt": data["fetchedAt"], "trainCount": len(trains), "cacheSeconds": round(self._all_interval()),
                     "quota": self.quota_view(), "lines": selected, "warnings": warnings, "trains": trains}
 
-    def all_lines(self) -> dict:
+    def all_lines(self) -> Row:
         """길찾기용: 모든 노선의 지금 열차(캐시가 지났으면 한 번 새로 받는다). 받은 적 없으면 빈 dict."""
         self.snapshot_all(list(LINE_NAMES.values()))   # refreshes the shared cache if due (one upstream call at most)
         return self.all_cache[1]["lines"] if self.all_cache else {}
 
     # ---- 노선별 위치 ------------------------------------------------------------------------
 
-    def fetch_line(self, line: str) -> dict:
+    def fetch_line(self, line: str) -> Row:
         """한 노선의 위치 피드 한 번(하루 호출 수에 센다; 한도면 RuntimeError). burst 도 이것을 부른다."""
         self._count_call()
         payload = self.source.fetch_line(line)
@@ -490,7 +496,7 @@ class SubwayLiveService:
             "trains": trains,
         }
 
-    def fetch_station(self, name: str) -> list[dict]:
+    def fetch_station(self, name: str) -> list[Row]:
         """한 역의 도착 행 한 번(하루 호출 수에 센다; 한도면 RuntimeError) — index_arrivals 와 같은 모양으로."""
         self._count_call()
         payload = self.source.fetch_station(name)
@@ -498,7 +504,7 @@ class SubwayLiveService:
         check_error(payload)
         return index_arrivals(payload).get(station_key(name), [])
 
-    def cached_station(self, name: str) -> tuple[str, list[dict]] | None:
+    def cached_station(self, name: str) -> tuple[str, list[Row]] | None:
         """지금 들고 있는 전 역(ALL) 자료에서 그 역의 행(받은 때, 행들). 바깥을 부르지 않는다."""
         with self.lock:
             if self.all_cache is None:
@@ -506,10 +512,10 @@ class SubwayLiveService:
             data = self.all_cache[1]
             return data["fetchedAt"], data.get("stations", {}).get(station_key(name), [])
 
-    def save_station_probe(self, record: dict) -> None:
+    def save_station_probe(self, record: Row) -> None:
         record_station_probe(record, self.config.station_probe_dir)
 
-    def save_positions(self, data: dict) -> None:
+    def save_positions(self, data: Row) -> None:
         """event-stamped records: build_live_timing.py learns rush-hour pace from them."""
         record_positions(data, self.config.burst_dir)
 
@@ -539,7 +545,7 @@ class SubwayLiveService:
                 return True
         return False
 
-    def _positions(self, line: str, ttl: float) -> list[dict] | None:
+    def _positions(self, line: str, ttl: float) -> list[Row] | None:
         """The line's trains from the position feed, at most `ttl` seconds old; None when unavailable."""
         with self.position_lock:
             now, cached = time.time(), self.position_cache.get(line)
@@ -561,7 +567,7 @@ class SubwayLiveService:
             self.position_cache[line] = (now, trains)
             return trains
 
-    def overlay_positions(self, body: dict, lines: list[str], focus: str, watch: bool = True) -> dict:
+    def overlay_positions(self, body: Row, lines: list[str], focus: str, watch: bool = True) -> Row:
         """Replace the all-stations records of trains on the chosen lines with position-feed ones.
 
         Position overlay — off by default (SUBWAY_LIVE_POSITION_LINES=0); until the key's daily quota is
@@ -582,7 +588,7 @@ class SubwayLiveService:
             return body
         trains = list(body.get("trains") or [])
         at = {(t["line"], t["trainNo"]): i for i, t in enumerate(trains)}
-        used, partial = [], []
+        used, partial = cast("list[str]", []), cast("list[str]", [])
         # also the other requested lines whose position feed was read lately for someone else (no call):
         # a line dropping out of the first POSITION_LINES as the map moves no longer flips back to the
         # all-stations roster, ghosts and all (6308 at 봉화산 showing and going, 2026-09-30)
@@ -673,7 +679,7 @@ class SubwayLiveService:
 
     # ---- 지도가 묻는 것 ----------------------------------------------------------------------
 
-    def snapshot(self, lines: list[str], focused: bool = False, focus: str = "", watch: bool = True) -> dict:
+    def snapshot(self, lines: list[str], focused: bool = False, focus: str = "", watch: bool = True) -> Row:
         """지도의 /live: 보이는 노선들의 열차. ok=False 면 보여 줄 것이 없다(routes 가 503 으로)."""
         if self.config.source_mode == "all" and lines:
             body = self.snapshot_all(lines)
@@ -691,7 +697,7 @@ class SubwayLiveService:
             # Keep a continuously open viewport within roughly 960 upstream calls/day:
             # one line refreshes every 90s, two every 180s, ... five every 450s.
             ttl = self.config.focused_cache_seconds if focused and len(selected) == 1 else self.config.cache_seconds * len(selected)
-            warnings, trains, fetched = [], [], []
+            warnings, trains, fetched = cast("list[str]", []), cast("list[Row]", []), cast("list[Row]", [])
             for line in selected:
                 cached = self.line_cache.get(line)
                 if cached is None or now - cached[0] >= ttl:
