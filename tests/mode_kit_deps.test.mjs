@@ -10,11 +10,11 @@ const imports = f => [...readFileSync(path.join(WEB, f), 'utf8').matchAll(/^\s*i
   .map(m => path.normalize(path.join(path.dirname(f), m[1])));
 
 test('모드 코드가 부르는 첫 화면 밖 모듈은 모두 MODE_KIT_DEPS 로 미리 요청해요', () => {
-  const src = readFileSync(path.join(WEB, 'maplibre_runtime.mjs'), 'utf8');
+  const src = readFileSync(path.join(WEB, 'maplibre_runtime.mts'), 'utf8');
   const kit = [...src.match(/kitLoad\?\?=Promise\.all\(\[([^\]]+)\]/)[1].matchAll(/import\('\.\/((?:lib|city|modes|bus)\/[^']+)'\)/g)].map(m => m[1]);
   const deps = JSON.parse(src.match(/const MODE_KIT_DEPS=(\[[^\]]*\])/)[1].replace(/'/g, '"')).map(n => existsSync(path.join(WEB, `${n}.mts`)) ? `${n}.mts` : `${n}.mjs`);   // (.mts 로 옮긴 원본은 빌드가 .mjs 로 낸다 — 본체의 import(`./${n}.mjs`) 그대로)
   const first = new Set();
-  (function walk(f) { if (first.has(f)) return; first.add(f); imports(f).forEach(walk) })('maplibre_runtime.mjs');
+  (function walk(f) { if (first.has(f)) return; first.add(f); imports(f).forEach(walk) })('maplibre_runtime.mts');
   const need = new Set();
   (function walk(fs) { for (const f of fs) for (const g of imports(f)) if (!first.has(g) && !kit.includes(g) && !need.has(g)) { need.add(g); walk([g]) } })(kit);
   assert.deepEqual([...need].sort(), [...deps].sort());

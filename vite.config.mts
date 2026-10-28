@@ -79,9 +79,9 @@ export default defineConfig({
     dynamicImportVarsOptions: { exclude: [/maplibre_runtime\.m[jt]s$/] },
     reportCompressedSize: false,
     rollupOptions: {
-      // 페이지가 직접 부르는 모듈: index.html 의 <script type="module" src="./maplibre_runtime.mjs">
+      // 페이지가 직접 부르는 모듈: index.html 의 <script type="module" src="./maplibre_runtime.mjs">(원본 maplibre_runtime.mts — 빌드가 .mjs 로 낸다)
       // 관리 화면(admin/*.html 의 <script type="module" src="./<이름>.mjs">) — Preact 로 옮긴 것만
-      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mjs'), 'admin/status': path.join(root, 'admin', 'status.tsx'),
+      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mts'), 'admin/status': path.join(root, 'admin', 'status.tsx'),
         'admin/members': path.join(root, 'admin', 'members.tsx'), 'admin/debug': path.join(root, 'admin', 'debug.tsx'),
         'admin/learning': path.join(root, 'admin', 'learning.tsx') },
       preserveEntrySignatures: 'strict',

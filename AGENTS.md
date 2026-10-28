@@ -5,7 +5,7 @@
 ## 어디서 무엇을 고치나
 | 경로 | 내용 |
 |---|---|
-| `web/maplibre_runtime.mjs` | 본체: 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
+| `web/maplibre_runtime.mts` | 본체(빌드 결과 이름은 `.mjs`): 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
 | `web/modes/index.mts` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
 | `web/modes/transition.mjs` | 모드 상태의 주인(지금 · 원하는 모드, 요청 번호, 롤코 배속) |
 | `web/modes/basic/` | 모든 설정의 원본: `index.mts`(설정 묶음) · `palette.mts`(지도 색) · `city.mts`(도시 팩) · `park.mts`(공원 자료) |

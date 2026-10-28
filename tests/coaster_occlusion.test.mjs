@@ -7,7 +7,7 @@ import { StationNameLayer } from '../web/map/platform.mts';
 import { registerTransitLayers } from '../web/map/layers.mts';
 import { createModeRegistry } from '../web/modes/index.mts';
 
-const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8');
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function platformRenderer() {
