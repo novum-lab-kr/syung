@@ -81,7 +81,8 @@ export default defineConfig({
     rollupOptions: {
       // 페이지가 직접 부르는 모듈: index.html 의 <script type="module" src="./maplibre_runtime.mjs">
       // 관리 화면(admin/*.html 의 <script type="module" src="./<이름>.mjs">) — Preact 로 옮긴 것만
-      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mjs'), 'admin/status': path.join(root, 'admin', 'status.tsx') },
+      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mjs'), 'admin/status': path.join(root, 'admin', 'status.tsx'),
+        'admin/members': path.join(root, 'admin', 'members.tsx') },
       preserveEntrySignatures: 'strict',
       treeshake: false,
       external: isVendor,
