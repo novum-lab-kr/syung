@@ -1,6 +1,6 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
 import { metresPerPixel } from "./metrics.mjs";
-// web/modes/coaster/night.mjs
+// web/modes/coaster/night.mts
 var EARTH = 40075016.68557849;
 var mercX = (lon) => lon / 360 + .5;
 var mercY = (lat) => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);

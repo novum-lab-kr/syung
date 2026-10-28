@@ -2,7 +2,7 @@ import { BULB_FS, ORIGIN, bulbSize, compile, hexRGB, lightsOff, lightsOn } from 
 import { LANDMARKS, landmarkMerc } from "../../city/landmarks_data.mjs";
 import { classifyRings } from "../../city/geom.mjs";
 import { decodeTile } from "../../city/mvt.mjs";
-// web/modes/coaster/festoon.mjs
+// web/modes/coaster/festoon.mts
 var EARTH = 40075016.68557849;
 var TILE_Z = 14;
 var FESTOON = Object.freeze({

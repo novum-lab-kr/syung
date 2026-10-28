@@ -1,7 +1,7 @@
 import { bbox, classifyRings } from "../../city/geom.mjs";
 import { decodeTile } from "../../city/mvt.mjs";
 import { RIDE_SITE_RULES, selectRideSites, withRideKind } from "./ride_sites.mjs";
-// web/modes/coaster/ride_placement.mjs
+// web/modes/coaster/ride_placement.mts
 var EARTH = 40075016.68557849;
 var TILE_Z = 14;
 var railCache = /* @__PURE__ */ new WeakMap();

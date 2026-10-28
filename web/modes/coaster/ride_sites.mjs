@@ -1,5 +1,5 @@
 import { bbox, edgeDistance, pointInPolygon } from "../../city/geom.mjs";
-// web/modes/coaster/ride_sites.mjs
+// web/modes/coaster/ride_sites.mts
 var RIDE_SITE_RULES = Object.freeze({
 	gapM: 24,
 	sameKindM: {
