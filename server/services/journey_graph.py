@@ -51,7 +51,9 @@ STATION_ACCESS = 90           # extra seconds to get between street and platform
 WALK_DETOUR, WALK_SPEED = 1.3, 1.2   # straight line × detour at m/s, for short transfer walks
 MAX_TRIP = 4 * 3600
 ASTAR_SPEED = 35.0            # m/s
-MAX_PLANS = 12                # routes shown
+MAX_PLANS = 5                 # routes shown(2026-10-28 사용자 결정 B — 전엔 12). 태그 붙은 길은 늘 남긴다
+STOP_PLANS = 5                # 첫 탐색들(가장 빠른 · 환승 적은 · 지하철만 · 버스만)이 끝나고 보여 줄 길이 이만큼이면 멈춘다(SEARCH_SECONDS 는 상한)
+MAX_FOUND = 24                # 모아 둘 길 상한(전엔 MAX_PLANS * 2 = 24 — MAX_PLANS 가 줄어 따로 둔다)
 ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
 DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
@@ -582,6 +584,41 @@ def _kind(r: Row) -> str:
     return "mixed" if len(ks) > 1 else "bus" if ks == {"bus"} else "subway"
 
 
+def _transfers(r: Row) -> int:
+    return sum(l["type"] != "walk" for l in r["legs"]) - 1
+
+
+def _walking(r: Row) -> int:
+    return sum(l["seconds"] for l in r["legs"] if l["type"] == "walk")
+
+
+def _ride_key(r: Row) -> tuple[Any, ...]:
+    """같은 두 정류장 사이를 타는 길은 한 가지(버스 번호만 다르면 묶는다)."""
+    return tuple((l["type"], l.get("line") or "", l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
+
+
+def _undominated(found: list[Row]) -> list[Row]:
+    """같은 종류 안에서 DOMINATED_LATE 넘게 늦고 환승 · 걷기도 나을 게 없는 길은 뺀다."""
+    return [r for r in found if not any(q is not r and _kind(q) == _kind(r) and q["arrive"] + DOMINATED_LATE <= r["arrive"]
+            and _transfers(q) <= _transfers(r) and _walking(q) <= _walking(r)
+            and (q["arrive"], _transfers(q), _walking(q)) != (r["arrive"], _transfers(r), _walking(r)) for q in found)]
+
+
+def _pick_shown(plans: list[Row]) -> list[Row]:
+    """도착 차례로 놓인 plans 에서 보여 줄 MAX_PLANS 개: 태그 붙은 길(가장 빠른 · 환승 적은 · 덜 걷는 · 걸어가기)을 먼저 남기고
+    나머지는 일찍 닿는 차례 — 남긴 것의 차례는 그대로(5개로 줄어 늦게 닿는 '환승 적은 길'이 잘리지 않게)."""
+    keep = sorted(range(len(plans)), key=lambda i: (plans[i]["tag"] == "", plans[i]["_arrive"]))[:MAX_PLANS]
+    return [plans[i] for i in sorted(keep)]
+
+
+def _shown_count(found: list[Row], best_arrive: float) -> int:
+    """지금까지 찾은 것으로 보여 줄 수 있는 길 수(아래 plan 의 거르기와 같은 순서 · 값을 바꾸지 않는다) — 일찍 멈출지 볼 때."""
+    firsts: dict[tuple[Any, ...], Row] = {}
+    for r in sorted((r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK), key=lambda r: r["arrive"]):
+        firsts.setdefault(_ride_key(r), r)
+    return len(_undominated(list(firsts.values())))
+
+
 def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
          run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
     """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
@@ -600,8 +637,9 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     queue: list[tuple[frozenset[str], frozenset[Node], int]] = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
     if BUS:
         queue += [(subway, frozenset(), TIE_PENALTY), (bus, frozenset(), TIE_PENALTY)]
+    seeds = set(queue)   # 태그를 정하는 첫 탐색들 — 다 끝나야 일찍 멈출 수 있다
     searches = 0
-    while queue and searches < MAX_SEARCHES and len(found) < MAX_PLANS * 2:
+    while queue and searches < MAX_SEARCHES and len(found) < MAX_FOUND:
         left = SEARCH_SECONDS - (time.monotonic() - t_start)
         if left <= 0:
             break
@@ -627,14 +665,15 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                 for l in r["legs"]:
                     if l["type"] != "walk":
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
+        if seeds <= tried and _shown_count(found, best_arrive) >= STOP_PLANS:
+            break   # 태그를 정하는 탐색이 끝났고 보여 줄 길이 넉넉하다(2026-10-28 사용자 결정 B)
     found = [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK]
 
-    def transfers(r: Row) -> int: return sum(l["type"] != "walk" for l in r["legs"]) - 1
-    def walking(r: Row) -> int: return sum(l["seconds"] for l in r["legs"] if l["type"] == "walk")
+    transfers, walking = _transfers, _walking
     # buses between the same two stops are one way to go: keep the first to arrive, list the others
     groups: dict[tuple[Any, ...], Row] = {}
     for r in sorted(found, key=lambda r: r["arrive"]):
-        key = tuple((l["type"], l.get("line") or "", l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
+        key = _ride_key(r)
         if key not in groups:
             groups[key] = r
             continue
@@ -644,9 +683,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                 k["alts"].append(l["route"])
     found = list(groups.values())
     # of one kind, drop a way that is DOMINATED_LATE later than another and changes and walks no less
-    found = [r for r in found if not any(q is not r and _kind(q) == _kind(r) and q["arrive"] + DOMINATED_LATE <= r["arrive"]
-             and transfers(q) <= transfers(r) and walking(q) <= walking(r)
-             and (q["arrive"], transfers(q), walking(q)) != (r["arrive"], transfers(r), walking(r)) for q in found)]
+    found = _undominated(found)
 
     # tags: the fastest, the fewest changes, the least walking (each once)
     tags: dict[int, str] = {}
@@ -695,7 +732,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
     plans.sort(key=lambda p: p["_arrive"])
-    plans = plans[:MAX_PLANS]
+    plans = _pick_shown(plans)
     for p in plans:
         del p["_arrive"]
     out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
