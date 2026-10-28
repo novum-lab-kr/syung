@@ -215,7 +215,7 @@ var Wheels = class extends x {
 };
 function routeHTML(route) {
 	if (!route) return `<span class="pk">경로 고르기</span>${CHEVRON}`;
-	return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>${route.minutes}분</b> · ${esc(route.arrives)} 도착 · 환승 ${route.transfers}</span><u>바꾸기</u>`;
+	return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>약 ${route.minutes}분</b> · 환승 ${route.transfers}</span><u>바꾸기</u>`;
 }
 function TicketPage() {
 	const { opened } = view, time = timeParts(view.time), quickNow = view.days.join(",");
@@ -436,7 +436,7 @@ function PlacePage() {
 	})] });
 }
 function planHTML(plan) {
-	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min">${plan.minutes}<small>분</small></strong><span class="jp-arr">${esc(plan.arrives)} 도착</span>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">${esc(plan.leaveBy)} 출발 · 환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
+	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
 }
 function RoutePage() {
 	return /* @__PURE__ */ a(M, { children: [
@@ -460,7 +460,7 @@ function RoutePage() {
 				class: "rt-plan",
 				role: "radio",
 				"aria-checked": index === view.chosen ? "true" : "false",
-				"aria-label": `${plan.tag || "경로"} ${plan.minutes}분, ${plan.arrives} 도착, 환승 ${plan.transfers}번`,
+				"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
 				onClick: () => call("plan")(index),
 				dangerouslySetInnerHTML: { __html: planHTML(plan) }
 			}))

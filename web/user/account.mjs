@@ -1,6 +1,7 @@
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { accountView, avatarLook, nameLength } from "./account_view.mjs";
 import { DAYS, esc, shortName, ticketsView, timeParts } from "./tickets_view.mjs";
+import { nextRideDay, quickestRoute, rideSig, routeAt, usefulRoutes } from "./ticket_routes.mjs";
 // web/user/account.mts
 var $ = (id) => document.getElementById(id);
 var CHANGE = { "X-Requested-With": "syung" };
@@ -107,17 +108,16 @@ async function fillChain(t, put) {
 		put(chainHTML(t, t.route.legs));
 		return;
 	}
-	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.depart}`;
+	const at = routeAt(nextRideDay(t.days, t.depart, /* @__PURE__ */ new Date()));
+	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${at}`;
 	if (chains.has(key)) {
 		put(chains.get(key));
 		return;
 	}
-	const now = /* @__PURE__ */ new Date(), pad = (n) => String(n).padStart(2, "0");
-	const at = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${t.depart}`;
 	let html;
 	try {
 		const { status, body } = await getJson(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
-		const plan = status === 200 && body?.ok ? body.plans?.[0] : null;
+		const plan = status === 200 && body?.ok ? quickestRoute(body.plans || []) : null;
 		if (!plan) throw new Error("no plan");
 		html = chainHTML(t, plan.legs);
 		chains.set(key, html);
@@ -587,15 +587,7 @@ async function initAccount({ colors = {} } = {}) {
 		ticketsView.set({ wheelOpen: false });
 		if (changed && form().time !== timeAtOpen) routeGone();
 	}
-	function nextRide() {
-		const days = form().days, [h, m] = form().time.split(":").map(Number), now = /* @__PURE__ */ new Date();
-		for (let ahead = 0; ahead < 8; ahead++) {
-			const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead, h, m);
-			const weekday = (day.getDay() + 6) % 7 + 1;
-			if (day > now && (!days.length || days.includes(weekday))) return day;
-		}
-		return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, h, m);
-	}
+	const nextRide = () => nextRideDay(form().days, form().time, /* @__PURE__ */ new Date());
 	const slimLeg = (l) => l.type === "walk" ? {
 		type: "walk",
 		seconds: Math.max(0, Math.round(l.seconds || 0))
@@ -620,7 +612,6 @@ async function initAccount({ colors = {} } = {}) {
 		walkMinutes: p.walkMinutes,
 		legs: p.legs.map(slimLeg)
 	});
-	const rideSig = (p) => p.legs.filter((l) => l.type !== "walk").map((l) => `${l.line || l.route}|${l.from}|${l.to}`).join(">");
 	let routeSeq = 0;
 	async function openRoute() {
 		lastField = $("ticketRoute");
@@ -630,7 +621,7 @@ async function initAccount({ colors = {} } = {}) {
 			$(from ? "ticketTo" : "ticketFrom").focus();
 			return;
 		}
-		const when = nextRide(), pad = (n) => String(n).padStart(2, "0"), time = timeParts(form().time);
+		const when = nextRide(), time = timeParts(form().time);
 		ticketsView.set({
 			routeTrip: `${from.name} → ${to.name}`,
 			routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
@@ -640,7 +631,7 @@ async function initAccount({ colors = {} } = {}) {
 		});
 		$("routeOpen").click();
 		const my = ++routeSeq;
-		const at = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
+		const at = routeAt(when);
 		try {
 			const { status, body } = await getJson(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
 			if (my !== routeSeq) return;
@@ -648,7 +639,7 @@ async function initAccount({ colors = {} } = {}) {
 				ticketsView.set({ routeMsg: body?.error || "경로를 찾지 못했어요." });
 				return;
 			}
-			const plans = body.plans, route = form().route;
+			const plans = usefulRoutes(body.plans), route = form().route;
 			const mine = route ? plans.findIndex((p) => rideSig(p) === rideSig(route)) : -1;
 			const fastest = plans.findIndex((p) => p.tag === "가장 빠른 길");
 			ticketsView.set({
