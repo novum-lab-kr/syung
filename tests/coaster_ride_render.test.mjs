@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RideLayer } from '../web/modes/coaster/rides.mjs';
+import { RideLayer } from '../web/modes/coaster/rides.mts';
 
 const matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) <= Math.max(1e-11, Math.abs(expected) * 1e-6), `${message}: ${actual} vs ${expected}`);
