@@ -101,10 +101,10 @@ class Wheels extends Component {
       <div class="tw-col" data-part="minute" role="spinbutton" tabindex={0} aria-label="분"></div></div>;
   }
 }
-// 발권 화면의 경로 칸 속(옛 showRoute 의 innerHTML 글자 그대로)
+// 발권 화면의 경로 칸 속(옛 showRoute 의 innerHTML 글자) — 경로 목록과 같이 도착 시각은 빼고 '약 N분'(2026-10-29)
 function routeHTML(route:SlimRoute | null) {
   if (!route) return `<span class="pk">경로 고르기</span>${CHEVRON}`;
-  return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>${route.minutes}분</b> · ${esc(route.arrives)} 도착 · 환승 ${route.transfers}</span><u>바꾸기</u>`;
+  return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>약 ${route.minutes}분</b> · 환승 ${route.transfers}</span><u>바꾸기</u>`;
 }
 function TicketPage() {
   const { opened } = view, time = timeParts(view.time), quickNow = view.days.join(',');
@@ -144,18 +144,18 @@ function PlacePage() {
   </>;
 }
 
-// 경로 하나의 단추 속(옛 drawPlans 의 innerHTML 글자 그대로)
+// 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)
 function planHTML(plan:Plan) {
-  return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min">${plan.minutes}<small>분</small></strong>`
-    + `<span class="jp-arr">${esc(plan.arrives)} 도착</span>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
-    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">${esc(plan.leaveBy)} 출발 · 환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
+  return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>`
+    + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
+    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
 }
 function RoutePage() {
   return <>
     <div class="rt-sum"><b id="routeTrip">{view.routeTrip}</b><span id="routeWhen">{view.routeWhen}</span></div>
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
     <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{view.plans.map((plan, index) => <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
-      aria-label={`${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
+      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     <button id="routePick" class="tf-save" type="button" hidden={!view.plans.length} onClick={call('planPick')}>이 경로로</button>
   </>;
