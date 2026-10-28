@@ -1,7 +1,7 @@
 import { registerCityPart } from "../../city/parts.mjs";
 import { area, orientedBox, simplifyRing } from "../../city/geom.mjs";
 import { HANOK_KIND, POSTS } from "../../city/mesh.mjs";
-// web/modes/joseon/hanok.mjs
+// web/modes/joseon/hanok.mts
 var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 var lerp = (a, b, t) => a + (b - a) * t;
 var smooth = (t) => t * t * (3 - 2 * t);

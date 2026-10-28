@@ -1,5 +1,5 @@
 import { meshBuilder } from "../../bus/mesh.mjs";
-// web/modes/joseon/palanquin.mjs
+// web/modes/joseon/palanquin.mts
 function buildPalanquinMesh() {
 	const { data, quad, box } = meshBuilder();
 	const legBox = (x0, y0, z0, x1, y1, z1, uv) => {

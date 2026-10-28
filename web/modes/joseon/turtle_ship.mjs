@@ -1,5 +1,5 @@
 import { compile, hexRGB } from "../coaster/night.mjs";
-// web/modes/joseon/turtle_ship.mjs
+// web/modes/joseon/turtle_ship.mts
 var SUN = ((v) => {
 	const l = Math.hypot(...v);
 	return v.map((c) => c / l);

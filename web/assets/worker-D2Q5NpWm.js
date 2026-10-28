@@ -2524,7 +2524,7 @@ var TileBuilder = class {
 		};
 	}
 };
-// web/modes/joseon/hanok.mjs
+// web/modes/joseon/hanok.mts
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
