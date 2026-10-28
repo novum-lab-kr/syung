@@ -1,7 +1,7 @@
 import { UNIT_SHAPES } from "./unit_shapes.mjs";
 import { shapeTriangles } from "./units.mjs";
 import { compile, hexRGB } from "../coaster/night.mjs";
-// web/modes/starcraft/life_units.mjs
+// web/modes/starcraft/life_units.mts
 var VERT = 12;
 var INST = 8;
 var VS = `#version 300 es

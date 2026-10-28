@@ -1,4 +1,4 @@
-// web/modes/starcraft/unit_shapes.mjs
+// web/modes/starcraft/unit_shapes.mts
 var UNIT_SHAPES = {
 	siegeTank: {
 		name: "시즈 탱크",

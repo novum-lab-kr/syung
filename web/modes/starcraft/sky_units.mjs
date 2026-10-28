@@ -1,7 +1,7 @@
 import { UNIT_SHAPES } from "./unit_shapes.mjs";
 import "./units.mjs";
 import { UnitConvoy } from "./convoy.mjs";
-// web/modes/starcraft/sky_units.mjs
+// web/modes/starcraft/sky_units.mts
 var SKY_MIN_PX = 26;
 var SkyUnits = class SkyUnits {
 	constructor({ random = Math.random } = {}) {

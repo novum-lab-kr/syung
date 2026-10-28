@@ -1,7 +1,7 @@
 import { UNIT_SHAPES } from "./unit_shapes.mjs";
 import { shapeTriangles } from "./units.mjs";
 import { compile, hexRGB } from "../coaster/night.mjs";
-// web/modes/starcraft/convoy.mjs
+// web/modes/starcraft/convoy.mts
 var SUN = ((v) => {
 	const l = Math.hypot(...v);
 	return v.map((c) => c / l);

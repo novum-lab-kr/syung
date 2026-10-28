@@ -1,6 +1,6 @@
 import { UNIT_SHAPES } from "./unit_shapes.mjs";
 import { meshBuilder } from "../../bus/mesh.mjs";
-// web/modes/starcraft/units.mjs
+// web/modes/starcraft/units.mts
 var LINE = "line";
 var LEG = {
 	body: 0,
