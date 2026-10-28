@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 // Exercise the actual runtime schedulers without loading a map or a second browser.
 function scheduler() {
-  const source = readFileSync(new URL('../web/maplibre_runtime.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8');
   const start = source.indexOf('const TRAIN_FPS='), end = source.indexOf('const map=new maplibregl.Map', start);
   const timers = new Map(), frames = []; let id = 0, moving = false, draws = 0, repaints = 0, animations = 0;
   const doc = { hidden: false, listeners: {}, addEventListener(t, f) { (this.listeners[t] ||= []).push(f) } };   // 탭 숨김(visibilitychange)

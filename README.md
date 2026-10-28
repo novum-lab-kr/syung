@@ -9,7 +9,7 @@
 ## 구성
 
 ```
-web/        정적 페이지 원본 (index.html, maplibre_runtime.mjs, vendor/maplibre-gl) — npm run build 가 dist/web 으로 빌드
+web/        정적 페이지 원본 (index.html, maplibre_runtime.mts, vendor/maplibre-gl) — npm run build 가 dist/web 으로 빌드
 data/       빌드된 데이터 (git에 포함)
   ktdb-gtfs-2025/capital-metro.json   노선·역 (KTDB GTFS에서 추출)
   ktdb-gtfs-2025/edge_times.json      역간 시간표 운행 시간·정차 시간

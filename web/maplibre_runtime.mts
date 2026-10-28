@@ -1,3 +1,4 @@
+// @ts-nocheck — 본체 TS 첫 단계(R1): 이름만 .mts 로. 타입은 다음 단계(R2)에서 붙이고 이 줄을 뺀다
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mts';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
