@@ -3,7 +3,7 @@
 // 열차 자리 · 화면 함수는 본체가 넘기고, 바뀌는 값은 isCoaster · getSheetTrain · getSleeperM(모드 코드를 받은 뒤 채워짐)으로 읽는다.
 // 프레임 순서(planner.setFrame → rideFrame → 그리기) · 내리기 줄(rideBar) 붙이기 · 이벤트 연결은 본체가 한다.
 import {RIDE_ZOOM,rideFov,RIDE_NEAR_M,RIDE_FAR_M,seatRows,seatIndex,seatNumber,seatEye,rideCamera,seatLabel} from './first_person.mts';
-import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mjs';
+import { PARK_DEFAULTS as COASTER_STYLE } from '../basic/park.mts';
 import type { LngLat, LngLatLike, Map as MapLibre, MercatorCoordinate, SkySpecification } from 'maplibre-gl';
 import type { CityViaduct } from '../../city/viaduct.mts';
 import type { MapStation, Merc, TrainPlan } from '../../trains/types.mts';

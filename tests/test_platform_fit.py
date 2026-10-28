@@ -122,7 +122,7 @@ class SnapAppliedTest(unittest.TestCase):
         ts = json.loads((ROOT / "data" / "osm-tracks" / "track_shapes.json").read_text(encoding="utf-8"))
         text = (ROOT / "web" / "city" / "viaduct_snap.mjs").read_text(encoding="utf-8")
         snap = json.loads(re.search(r"export const stops = (\{.*?\});", text).group(1))
-        style = (ROOT / "web" / "modes" / "basic" / "city.mjs").read_text(encoding="utf-8")
+        style = (ROOT / "web" / "modes" / "basic" / "city.mts").read_text(encoding="utf-8")
         keep = json.loads(re.search(r'"keepStations": (\[[^\]]*\])', style).group(1))
         ovr = json.loads((ROOT / "data" / "osm-tracks" / "stop_overrides.json").read_text(encoding="utf-8"))
         metro = json.loads((ROOT / "data" / "ktdb-gtfs-2025" / "capital-metro.json").read_text(encoding="utf-8"))

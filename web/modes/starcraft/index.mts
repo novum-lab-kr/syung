@@ -1,7 +1,7 @@
 // 스타크래프트 모드: 심시티 도시 위에서 종족(테란 · 저그 · 프로토스)을 골라 논다. 종족마다 모드 하나(같은 심시티 도시 · 고가),
-// 다른 것만 적는다: 도시 팩(건물 · 땅 · 길 · 고가 색 — style.mjs), 지하철은 수송선 편대(trains.units — 맨 앞 lead + 뒤 rest, 고가 위에 떠서), 버스는 유닛 한 마리,
+// 다른 것만 적는다: 도시 팩(건물 · 땅 · 길 · 고가 색 — style.mts), 지하철은 수송선 편대(trains.units — 맨 앞 lead + 뒤 rest, 고가 위에 떠서), 버스는 유닛 한 마리,
 // 내 위치는 그 종족 일꾼. 유닛 모양은 unit_shapes.mjs(Codex 시안). 사람 · 차 · 하늘 유닛은 다음 단계(행님 2026-10-22).
-import { TERRAN_DELTA, ZERG_DELTA, PROTOSS_DELTA } from './style.mjs';
+import { TERRAN_DELTA, ZERG_DELTA, PROTOSS_DELTA } from './style.mts';
 
 export const TERRAN = {
   id: 'terran',

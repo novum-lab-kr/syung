@@ -13,7 +13,7 @@ import { signedArea2, area as ringArea, bbox as ringBbox, pointInPolygon, edgeDi
 import type { Ring, RingPolygon } from './geom.mts';
 import type { Layer } from './mvt.mts';
 
-// ── 타입(이 파일이 읽는 칸만 — 도시 팩은 web/modes/basic/city.mjs, 모드가 다른 값만 덮는다) ──────────────────
+// ── 타입(이 파일이 읽는 칸만 — 도시 팩은 web/modes/basic/city.mts, 모드가 다른 값만 덮는다) ──────────────────
 type LightDark = { light:string; dark:string };
 type ColorLists = { light?:string[]; dark?:string[] };
 // 벽 한 면의 창 정책(facadeFaces.byType): 'full' | 'sparse' | 'single' | 'blank' | 'same'(짧은 면을 다르게 하지 않음)

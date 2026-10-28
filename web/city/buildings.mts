@@ -11,7 +11,7 @@
 // Meshes are built per canonical z14 tile (the source's maximum; higher zooms overzoom it), in
 // 4×4 sub-chunks for frustum culling, cached across pans and zooms, built in time slices, and each
 // tile grows in over 0.4 s when it arrives. Every look value (materials, roofs, windows, night) comes
-// from the style pack (web/modes/basic/city.mjs, opts.stylePack): nothing Seoul-specific is coded
+// from the style pack (web/modes/basic/city.mts, opts.stylePack): nothing Seoul-specific is coded
 // here. The building type is estimated by one replaceable function, classifyBuilding (height, area,
 // landuse); pass opts.classify to override it when real use data arrives.
 //
@@ -22,7 +22,7 @@
 import { cityPart } from './parts.mts';
 import { MODEL_STRIDE } from './mesh.mts';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mjs 가 등록 — 모드 코드 받기에 들어 있다)
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mts';
-import { SEOUL_CITY_STYLE } from '../modes/basic/city.mjs';
+import { SEOUL_CITY_STYLE } from '../modes/basic/city.mts';
 import { sunPosition } from '../lib/sun.mts';
 import { buildSignAtlas, SIGN_ATLAS } from './sign_text.mts';   // 간판 글자: 업종 이름을 쓴 글자 묶음 그림(한국 상가 간판처럼)
 import type { Map as MapLibreMap, Tile, CustomRenderMethodInput } from 'maplibre-gl';

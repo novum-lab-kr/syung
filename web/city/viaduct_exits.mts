@@ -9,11 +9,11 @@
 // Geometry is laid out in the platform's frame (t along its axis from its centre, u across; metres), with the ends
 // that hang off the platform anchored to its px-sized edge (the shader adds the px parts), so the stairs stay attached
 // at every zoom. Pure functions; the tests use them.
-import SEOUL from '../modes/basic/city.mjs';
+import SEOUL from '../modes/basic/city.mts';
 import { pointSegmentDistance } from './viaduct_levels.mts';
 import { Mesh, MAT, type Frame, type Vertex } from './viaduct_mesh.mts';
 
-// 팩에서 이 파일이 읽는 칸(modes/basic/city.mjs viaduct.exits · station · marginPx)
+// 팩에서 이 파일이 읽는 칸(modes/basic/city.mts viaduct.exits · station · marginPx)
 interface StairSpec { widthM:number; minPx:number; riseRun:number; landingM:number; landingDropM:number; slabM:number; wallM:number; roofClearM:number; roofM:number; roofOverhangM:number; stepRiseM:number; postM:number; postPx:number; footClearM:number }
 interface WalkSpec { widthM:number; minPx:number; slabM:number; wallM:number; postEveryM:number; postM:number; postPx:number; maxAlongM:number }
 interface ExitsSpec { maxM:number; nearGapM:number; farExtraM:number; checkStepM:number; stair:StairSpec; walk:WalkSpec }

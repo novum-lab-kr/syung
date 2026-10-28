@@ -1,4 +1,4 @@
-import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs';
+import { PARK_DEFAULTS as STYLE } from '../basic/park.mts';
 import type { ParkPack } from './metrics.mts';
 
 // Existing 22-float track format. Negative red selects a uniform material:

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { CityViaduct, buildPlatform, STRIDE, MAT } from '../web/city/viaduct.mts';
-import SEOUL from '../web/modes/basic/city.mjs';
+import SEOUL from '../web/modes/basic/city.mts';
 import { toM } from '../web/city/life.mts';
 import { platformRuntime, local, distance } from './platform_endpoints_fixture.mjs';
 

@@ -8,7 +8,7 @@
 | `web/maplibre_runtime.mjs` | 본체: 부팅 · 조립(모든 모듈을 import 해 deps 로 넘김) · 모드 전환(`prepareMode` · `commitMode`) · 선로 도형 · 열차 자세 |
 | `web/modes/index.mts` · `merge.mjs` | 모드 목록 · 설정 상속(합치기 · 검사 · 얼리기), `settings(이름, 내 설정)` |
 | `web/modes/transition.mjs` | 모드 상태의 주인(지금 · 원하는 모드, 요청 번호, 롤코 배속) |
-| `web/modes/basic/` | 모든 설정의 원본: `index.mts`(설정 묶음) · `palette.mjs`(지도 색) · `city.mjs`(도시 팩) · `park.mjs`(공원 자료) |
+| `web/modes/basic/` | 모든 설정의 원본: `index.mts`(설정 묶음) · `palette.mts`(지도 색) · `city.mts`(도시 팩) · `park.mts`(공원 자료) |
 | `web/modes/<모드>/` | 그 모드의 다른 값만(`index.mts`) + 모드 전용 콘텐츠(조선: 한옥 · 거북선 · 가마, 롤코: 선로 · 88열차 · 1인칭 · 놀이기구 · 밤) |
 | `web/city/` | 공용 도시 엔진: 건물(`buildings` · `mesh` · `worker`) · 고가(`viaduct*`) · 땅(`style`) · 도시 생활(`life`) · 랜드마크 · 부품 등록(`parts`) |
 | `web/map/` | 지도 층: 승강장 · 이름표 · 해 그림자 · 테마 · 열차 캔버스 그리기 차례(`overlay`) · 정적 층 등록(`layers`) |

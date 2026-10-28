@@ -25,7 +25,7 @@ test('합치기: 묶음은 안쪽까지, 값 · 목록은 통째로, null 은 �
 test('합치기 결과가 옛 city_style_joseon(3529628)의 merge 와 같다', async () => {
   const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v);
   const old=(a,b)=>{const o={...a};for(const [k,v] of Object.entries(b))o[k]=isObj(v)&&isObj(a?.[k])?old(a[k],v):v;return o};
-  const {default:SEOUL}=await import('../web/modes/basic/city.mjs');
+  const {default:SEOUL}=await import('../web/modes/basic/city.mts');
   const delta={id:'j',ground:{light:{base:'#000'}},hanok:{tall:{towerMinH:15}},xray:null,roads:{widths:[1,2]}};
   assert.equal(JSON.stringify(mergeSettings(SEOUL,delta)),JSON.stringify(old(SEOUL,delta)));
 });
@@ -175,7 +175,7 @@ test('실제 모드 정의: 넷 다 검사를 지나고, 지도 색은 기본 �
 test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 같고, 심시티 · 롤코는 같은 참조', async () => {
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
   const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
-  const R=createModeRegistry(defs),{default:CITY}=await import('../web/modes/basic/city.mjs');
+  const R=createModeRegistry(defs),{default:CITY}=await import('../web/modes/basic/city.mts');
   // 옮기기 전(3529628) JSON.stringify 의 SHA-256 — 4단계 설계서의 독립 기준. 그 뒤 더한 것(night: 2026-10-11 밤 빛, 골목 가로등 lamps.minorSpacingM)은 빼고 견준다
   const before=({night,...o})=>{const {minorSpacingM,...lamps}=o.props.lamps;return {...o,props:{...o.props,lamps}}};
   assert.equal(sha(before(CITY)),'f62442b8b7887c4d012dab5cfe451e31b56e481f6124b516bdfa207180fa999e');
@@ -199,7 +199,7 @@ test('도시 팩: 옮긴 원본 · 조선 합친 결과가 옮기기 전 값과 
 test('공원 자료: 옮긴 원본이 옮기기 전 값과 같고, 롤코만 켠다', async () => {
   const crypto=await import('node:crypto'),sha=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
   const defs=await Promise.all(['basic','simcity','joseon','coaster'].map(n=>import(`../web/modes/${n}/index.mts`).then(m=>m.default)));
-  const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mjs');
+  const R=createModeRegistry(defs),{default:PARK}=await import('../web/modes/basic/park.mts');
   assert.equal(sha(PARK),'31c26c9c23d4bc944e8b81a65e082b85aea67ed6cc00c58247f2748dc70512aa');
   const M=await import('../web/modes/coaster/metrics.mts');assert.equal(typeof M.trackMetrics,'function');assert.deepEqual(M.ridePalette(false),M.ridePalette(false,PARK),'계산 함수의 기본 자료 = 기본 공원 자료');
   for(const id of ['basic','simcity','joseon'])assert.equal(R.settings(id).park.enabled,false,id);

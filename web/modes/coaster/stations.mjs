@@ -1,5 +1,5 @@
 // Shared, instanced boarding furniture; station names remain with the map's label/collision engine.
-import { PARK_DEFAULTS as STYLE } from '../basic/park.mjs'; import { zoomFade, metresPerPixel } from './metrics.mts';
+import { PARK_DEFAULTS as STYLE } from '../basic/park.mts'; import { zoomFade, metresPerPixel } from './metrics.mts';
 import { compile, hexRGB } from './night.mjs';
 import { routeBadgeId, routeBadgeAtlas, BADGE_COLS, BADGE_ROWS } from './badges.mts';
 
