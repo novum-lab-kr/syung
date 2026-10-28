@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShip, buildBoat, buildFlag, lineLabel, hullHalf, gunwale } from '../web/modes/joseon/turtle_ship.mjs';
+import { buildShip, buildBoat, buildFlag, lineLabel, hullHalf, gunwale } from '../web/modes/joseon/turtle_ship.mts';
 import JOSEON from './joseon_pack.mjs';
 import SEOUL from '../web/modes/basic/city.mts';
 

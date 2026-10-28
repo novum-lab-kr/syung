@@ -14,11 +14,29 @@
 
 import { compile, hexRGB } from '../coaster/night.mjs';
 
-const SUN = (v => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // coaster_train 과 같은 해
+// ── 타입 ──────────────────────────────────────────────────────────────────────────────────────────
+type Pair = [number, number];
+type V3 = [number, number, number];
+type Pt = [number, V3];   // 꼭짓점 자리: [x(× L), [앞뒤 덧붙임 · 옆 · 위(× W)]]
+interface Paint { part:number; slot:number; out?:readonly number[]; bottom?:boolean }   // 칠(a_part) · 팔레트 자리, 바깥쪽 점, 상자 밑면
+interface InstList { inst:Float32Array; n:number }
+type InstAttr = 'i_o' | 'i_F' | 'i_R' | 'i_U' | 'i_LW' | 'i_rgb' | 'i_flag' | 'i_seed' | 'i_label';
+type Attr = 'a_x' | 'a_p' | 'a_n' | 'a_part' | 'a_slot' | InstAttr;
+type Uniform = 'u_matrix' | 'u_unit' | 'u_time' | 'u_alpha' | 'u_amb' | 'u_dif' | 'u_dark' | 'u_pal' | 'u_light' | 'u_flagPass' | 'u_pole' | 'u_flag' | 'u_fl' | 'u_fl2' | 'u_fn' | 'u_rows' | 'u_atlas';
+interface ShipMesh { b:WebGLBuffer; va:WebGLVertexArrayObject; n:number }
+type ShipKind = 'turtle' | 'boat';
+export interface ShipOptions { kind?:ShipKind; flag?:boolean; line?:string }
+// trains/draw.mjs 가 넘기는 그리기 옵션 중 이 파일이 읽는 칸
+export interface ShipDrawOptions { zoom:number; unit:number; walls?:unknown; occlude?:number; dark?:boolean; time?:number }
+// 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
+interface ShipsLast { n:number; atlas?:HTMLCanvasElement | null; turtles?:number; boats?:number; flags?:number; lod?:number; W?:number; L?:number; zoom?:number; at?:number[][] }
+export type TurtleStyle = Partial<Record<'wood' | 'woodDark' | 'shell' | 'shellEdge' | 'spike' | 'red' | 'gold' | 'white' | 'ink' | 'oar' | 'lamp' | 'head' | 'deck' | 'path', string>>;
+
+const SUN = ((v:number[]) => { const l = Math.hypot(...v); return v.map(c => c / l) })([-.30, .46, .84]);   // coaster_train 과 같은 해
 const LOD_MID = 9, LOD_HI = 20;   // W px: 노는 LOD_MID 부터, 용 눈 · 노 여덟 쌍은 LOD_HI 부터
 const INST = 20;   // 인스턴스 하나: 틀 12, L · W, 색 3, 깃발 비트(가는 중 4 · 일반 배 64), 노 박자, 깃발 글자 줄
-const fnv1a = s => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
-const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] };
+const fnv1a = (s:string) => { let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 } return h >>> 0 };
+const norm = (a:readonly number[]):V3 => { const l = Math.hypot(a[0]!, a[1]!, a[2]!) || 1; return [a[0]! / l, a[1]! / l, a[2]! / l] };
 
 // 칠하는 방식(a_part)
 const P_FLAT = 0, P_HULL = 1, P_SHELL = 2, P_LINE = 3, P_HEAD = 4, P_BOW = 5, P_FLAG = 6, P_OAR = 7, P_DECK = 8, P_OPEN = 9;
@@ -28,34 +46,35 @@ const S_WOOD = 0, S_WOOD_DARK = 1, S_SHELL = 2, S_SHELL_EDGE = 3, S_SPIKE = 4, S
 export const POLE = { turtle: { t: .035, z: .37, h: 1.4 }, boat: { t: .07, z: .36, h: 1.35 } };   // 거북선: 꼬리(고물) 갑판에 (2026-10-10 덕배)
 // 깃발(천): 폭 · 높이(W), 화염각 길이(W) · 수(위아래, 끝; 작을 때), 천 높이 화면 목표(px)와 키움 상한, 펄럭임(끝 · 가운데 진폭, 처짐 W, 주기 s)
 // (Codex 2026-10-10: 1.0 × 0.65 W, 화염각 위아래 5 · 끝 3 — 천이 24 px 아래면 3 · 2, 목표 22 px · 1.6배까지, 가운데는 숫자가 접히지 않게 ±0.02 W)
-export const FLAG = { w: 1, h: .65, flame: .07, n: [6, 3], nSmall: [3, 2], minPx: 22, maxScale: 1.6, amp: [.07, .02], droop: .04, period: 2.4 };
+export const FLAG = { w: 1, h: .65, flame: .07, n: [6, 3], nSmall: [3, 2], minPx: 22, maxScale: 1.6, amp: [.07, .02], droop: .04, period: 2.4 } as const;
 // 깃발 글자: 번호선은 번호, 이름선은 두 글자
 const LABELS = { 'GTX-A': 'A', '경강선': '경강', '경의중앙선': '경의', '경춘선': '경춘', '공항철도': '공항', '김포골드라인': '김포', '서해선': '서해', '수인분당선': '수인', '신림선': '신림', '신분당선': '신분', '에버라인선': '에버', '우이신설선': '우이', '의정부선': '의정', '인천1호선': '인1', '인천2호선': '인2' };
-export const lineLabel = line => { const m = /^(\d+)호선$/.exec(line || ''); return m ? m[1] : LABELS[line] || String(line || '').replace(/선$/, '').slice(0, 2) };
+export const lineLabel = (line?:string | null) => { const m = /^(\d+)호선$/.exec(line || ''); return m ? m[1]! : LABELS[line as keyof typeof LABELS] || String(line || '').replace(/선$/, '').slice(0, 2) };
 
 // 배의 평면 반폭(W 단위)과 뱃전 높이: 가운데가 가장 넓고, 이물 · 고물은 뭉툭하게 잘린다
-export const hullHalf = t => Math.max(.2, .5 * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(2 * t - 1), 3)), .38));
-export const gunwale = t => .3 + .1 * Math.pow(Math.abs(2 * t - 1), 2);
+export const hullHalf = (t:number) => Math.max(.2, .5 * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(2 * t - 1), 3)), .38));
+export const gunwale = (t:number) => .3 + .1 * Math.pow(Math.abs(2 * t - 1), 2);
 // 등딱지: 뱃전 위로 솟는 높이(가운데 가장 높고 끝으로 둥글게 내려간다), 앞뒤 범위
-const SHELL_T = [.07, .93];
-const shellRise = t => { const u = (t - SHELL_T[0]) / (SHELL_T[1] - SHELL_T[0]); return .42 * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(2 * u - 1), 4)), .5) };
+const SHELL_T = [.07, .93] as const;
+const shellRise = (t:number) => { const u = (t - SHELL_T[0]) / (SHELL_T[1] - SHELL_T[0]); return .42 * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(2 * u - 1), 4)), .5) };
 const OAR_PIVOT = { y: .45, z: .17 };   // 노가 뱃전에 걸리는 자리(옆 · 위, W 단위): 셰이더가 이 둘레로 젓는다
 
 class Mesh {
+  declare d:number[]; declare n:number;
   constructor() { this.d = []; this.n = 0 }
   // 꼭짓점 하나: x(× L), p(× W: 앞뒤 덧붙임 · 옆 · 위), 법선, 칠, 자리 — 9 floats
-  v(x, p, n, part, slot) { this.d.push(x, p[0], p[1], p[2], n[0], n[1], n[2], part, slot); this.n++ }
-  tri(a, b, c, o) {   // [x, [ex, y, z]] 셋, 법선은 면에서 (L 을 모르니 x 를 W 의 4배로 보고 셈한다: 배는 대개 그만큼 길다)
-    const P = q => [q[0] * 4 + q[1][0], q[1][1], q[1][2]], A = P(a), B = P(b), C = P(c);
-    const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], w = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+  v(x:number, p:V3, n:V3, part:number, slot:number) { this.d.push(x, p[0], p[1], p[2], n[0], n[1], n[2], part, slot); this.n++ }
+  tri(a:Pt, b:Pt, c:Pt, o:Paint) {   // [x, [ex, y, z]] 셋, 법선은 면에서 (L 을 모르니 x 를 W 의 4배로 보고 셈한다: 배는 대개 그만큼 길다)
+    const P = (q:Pt):V3 => [q[0] * 4 + q[1][0], q[1][1], q[1][2]], A = P(a), B = P(b), C = P(c);
+    const u:V3 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], w:V3 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
     let n = norm([u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]);
-    if (o.out) { const c = [A[0] - o.out[0], A[1] - o.out[1], A[2] - o.out[2]]; if (n[0] * c[0] + n[1] * c[1] + n[2] * c[2] < 0) n = n.map(v => -v) }   // 바깥쪽(o.out 에서 멀어지는 쪽)을 보게
+    if (o.out) { const c:V3 = [A[0] - o.out[0]!, A[1] - o.out[1]!, A[2] - o.out[2]!]; if (n[0] * c[0] + n[1] * c[1] + n[2] * c[2] < 0) n = n.map(v => -v) as V3 }   // 바깥쪽(o.out 에서 멀어지는 쪽)을 보게
     for (const q of [a, b, c]) this.v(q[0], q[1], n, o.part, o.slot);
   }
-  quad(a, b, c, d, o) { this.tri(a, b, c, o); this.tri(a, c, d, o) }
+  quad(a:Pt, b:Pt, c:Pt, d:Pt, o:Paint) { this.tri(a, b, c, o); this.tri(a, c, d, o) }
   // 상자: 한 x 자리에서 가운데 c(W 단위: 앞뒤 · 옆 · 위), 반 크기 h
-  box(x, c, h, o) {
-    const V = (i, j, k) => [x, [c[0] + i * h[0], c[1] + j * h[1], c[2] + k * h[2]]], q = (a, b, cc, d, n) => { for (const p of [a, b, cc, a, cc, d]) this.v(p[0], p[1], n, o.part, o.slot) };
+  box(x:number, c:V3, h:V3, o:Paint) {
+    const V = (i:number, j:number, k:number):Pt => [x, [c[0] + i * h[0], c[1] + j * h[1], c[2] + k * h[2]]], q = (a:Pt, b:Pt, cc:Pt, d:Pt, n:V3) => { for (const p of [a, b, cc, a, cc, d]) this.v(p[0], p[1], n, o.part, o.slot) };
     q(V(1, -1, -1), V(1, 1, -1), V(1, 1, 1), V(1, -1, 1), [1, 0, 0]); q(V(-1, 1, -1), V(-1, -1, -1), V(-1, -1, 1), V(-1, 1, 1), [-1, 0, 0]);
     q(V(-1, 1, -1), V(1, 1, -1), V(1, 1, 1), V(-1, 1, 1), [0, 1, 0]); q(V(1, -1, -1), V(-1, -1, -1), V(-1, -1, 1), V(1, -1, 1), [0, -1, 0]);
     q(V(-1, -1, 1), V(1, -1, 1), V(1, 1, 1), V(-1, 1, 1), [0, 0, 1]); if (o.bottom) q(V(-1, 1, -1), V(1, 1, -1), V(1, -1, -1), V(-1, -1, -1), [0, 0, -1]);
@@ -64,26 +83,26 @@ class Mesh {
 }
 
 // 몸통: 물 아래 조금부터 뱃전까지, 아래가 조금 좁다. 이물 · 고물은 판으로 막는다(이물판에는 귀면)
-function hull(M, rings, face = true) {
+function hull(M:Mesh, rings:number, face = true) {
   const side = { part: P_HULL, slot: S_WOOD }, z0 = -.06, ts = Array.from({ length: rings + 1 }, (_, i) => i / rings);
   for (let i = 0; i < rings; i++) {
-    const a = ts[i], b = ts[i + 1];
+    const a = ts[i]!, b = ts[i + 1]!;
     for (const s of [-1, 1]) M.quad([a, [0, s * hullHalf(a) * .84, z0]], [b, [0, s * hullHalf(b) * .84, z0]], [b, [0, s * hullHalf(b), gunwale(b)]], [a, [0, s * hullHalf(a), gunwale(a)]], { ...side, out: [a * 4, 0, .1] });
   }
-  const end = (t, part, slot, dir) => { const h = hullHalf(t), g = gunwale(t); M.quad([t, [0, -h * .84, z0]], [t, [0, h * .84, z0]], [t, [0, h, g]], [t, [0, -h, g]], { part, slot, out: [(t - dir * .1) * 4, 0, .1] }) };
+  const end = (t:number, part:number, slot:number, dir:number) => { const h = hullHalf(t), g = gunwale(t); M.quad([t, [0, -h * .84, z0]], [t, [0, h * .84, z0]], [t, [0, h, g]], [t, [0, -h, g]], { part, slot, out: [(t - dir * .1) * 4, 0, .1] }) };
   end(1, face ? P_BOW : P_HULL, face ? S_RED : S_WOOD_DARK, 1); end(0, P_HULL, S_WOOD_DARK, -1);
   if (!face) return;
   // 뱃전 위 판(등딱지 끝 바깥에 보이는 갑판)
   const deck = { part: P_DECK, slot: S_WOOD_DARK };
-  for (const [t0, t1] of [[0, SHELL_T[0]], [SHELL_T[1], 1]]) {
+  for (const [t0, t1] of [[0, SHELL_T[0]], [SHELL_T[1], 1]] as Pair[]) {
     const n = 2; for (let i = 0; i < n; i++) { const a = t0 + (t1 - t0) * i / n, b = t0 + (t1 - t0) * (i + 1) / n;
       M.quad([a, [0, -hullHalf(a), gunwale(a)]], [b, [0, -hullHalf(b), gunwale(b)]], [b, [0, hullHalf(b), gunwale(b)]], [a, [0, hullHalf(a), gunwale(a)]], { ...deck, out: [0, 0, -5] }) }
   }
 }
 // 등딱지: 뱃전 안쪽에서 솟는 아치를 앞뒤로 이어 붙인다. 맨 위 띠는 용마루(세로 길)
-function shell(M, rings, arcs) {
+function shell(M:Mesh, rings:number, arcs:number) {
   const o = { part: P_SHELL, slot: S_SHELL }, ridge = { part: P_LINE, slot: S_SHELL_EDGE };
-  const at = (t, k) => { const h = hullHalf(t) * .97, g = gunwale(t), th = Math.PI * k / arcs, r = shellRise(t); return [t, [0, -Math.cos(th) * h, g + Math.pow(Math.sin(th), .7) * r]] };
+  const at = (t:number, k:number):Pt => { const h = hullHalf(t) * .97, g = gunwale(t), th = Math.PI * k / arcs, r = shellRise(t); return [t, [0, -Math.cos(th) * h, g + Math.pow(Math.sin(th), .7) * r]] };
   for (let i = 0; i < rings; i++) {
     const a = SHELL_T[0] + (SHELL_T[1] - SHELL_T[0]) * i / rings, b = SHELL_T[0] + (SHELL_T[1] - SHELL_T[0]) * (i + 1) / rings;
     for (let k = 0; k < arcs; k++) M.quad(at(a, k), at(b, k), at(b, k + 1), at(a, k + 1), { ...o, out: [(a + b) * 2, 0, -2] });
@@ -93,7 +112,7 @@ function shell(M, rings, arcs) {
 }
 // 등딱지의 칼끝: 선조실록 — 지붕에 열 십자 모양의 길을 내고 나머지에 칼 · 송곳을 꽂았다 (2026-10-10 덕배: 뾰족뾰족하지 않나?).
 // 십자 길(가운데 가로 · 꼭대기 세로)은 비우고, 등딱지 면에서 바깥으로 선 네모뿔
-function spikes(M, rows, arcs) {
+function spikes(M:Mesh, rows:number, arcs:number) {
   const o = { part: P_FLAT, slot: S_SPIKE }, dk = { part: P_FLAT, slot: S_SHELL_EDGE }, b = .0175, hgt = .095;   // (Codex: 밑변 0.035 W, 옆면 반은 어둡게 — 자갈이 아니라 칼끝으로)
   for (let i = 0; i < rows; i++) {
     const t = SHELL_T[0] + (SHELL_T[1] - SHELL_T[0]) * (i + .5) / rows; if (Math.abs(t - .5) < .045) continue;   // 가로 길
@@ -102,15 +121,15 @@ function spikes(M, rows, arcs) {
       const th = Math.PI * k / arcs; if (Math.abs(th - Math.PI / 2) < .2) continue;   // 꼭대기 세로 길
       const y = -Math.cos(th) * h, z = g + Math.pow(Math.sin(th), .7) * r;
       let ny = -Math.cos(th) / Math.max(h, .1), nz = Math.sin(th) / Math.max(r, .1); const l = Math.hypot(ny, nz); ny /= l; nz /= l;   // 단면의 바깥 법선
-      const ty = nz, tz = -ny, A = [t, [0, y + ny * hgt, z + nz * hgt]], out = [t * 4, y - ny * .2, z - nz * .2];
-      const C = [[-b, -b], [b, -b], [b, b], [-b, b]].map(([dx, dt]) => [t, [dx, y + ty * dt, z + tz * dt]]);
-      for (let q = 0; q < 4; q++) M.tri(C[q], C[(q + 1) % 4], A, { ...(q % 2 ? dk : o), out });
+      const ty = nz, tz = -ny, A:Pt = [t, [0, y + ny * hgt, z + nz * hgt]], out = [t * 4, y - ny * .2, z - nz * .2];
+      const C = [[-b, -b], [b, -b], [b, b], [-b, b]].map(([dx, dt]):Pt => [t, [dx!, y + ty * dt!, z + tz * dt!]]);
+      for (let q = 0; q < 4; q++) M.tri(C[q]!, C[(q + 1) % 4]!, A, { ...(q % 2 ? dk : o), out });
     }
   }
 }
 // 이물의 큰 용머리 (Codex 2026-10-10: 머리 길이 1.1 W · 폭 0.6 W · 높이 0.55 W, 목 0.45 W, 입 0.2 W 벌림): 앞 위로 오르는 목,
 // 위턱이 있는 머리와 따로 떨어진 아래턱, 입 안 깊숙이 검은 포구, 금빛 뿔 둘, 흰 눈(가까이선 검은 눈동자), 이빨
-function dragon(M, lod) {
+function dragon(M:Mesh, lod:number) {
   const head = { part: P_HEAD, slot: S_HEAD, bottom: true }, gold = { part: P_FLAT, slot: S_GOLD, bottom: true }, white = { part: P_FLAT, slot: S_WHITE }, ink = { part: P_FLAT, slot: S_INK };
   M.box(1, [.12, 0, .44], [.16, .17, .13], head);      // 목 뿌리
   M.box(1, [.36, 0, .58], [.14, .19, .14], head);      // 목
@@ -133,12 +152,12 @@ export function buildFlag() {
   M.box(0, [0, 0, .5], [.028, .028, .5], { part: P_FLAT, slot: S_WOOD_DARK });   // 깃대 (높이 1: 셰이더가 배 종류대로 늘인다)
   M.box(0, [0, 0, .955], [.06, .06, .045], { part: P_FLAT, slot: S_RED });        // 술(상모)
   M.box(0, [0, 0, 1.06], [.022, .022, .06], { part: P_FLAT, slot: S_GOLD });     // 창날
-  const nu = 12, nv = 4, q = (u, v) => M.v(0, [u, v, 0], [0, 1, 0], P_FLAG, 0);
+  const nu = 12, nv = 4, q = (u:number, v:number) => M.v(0, [u, v, 0], [0, 1, 0], P_FLAG, 0);
   for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv; q(u0, v0); q(u1, v0); q(u1, v1); q(u0, v0); q(u1, v1); q(u0, v1) }
   return M.buffer();
 }
 // 일반 배의 열린 갑판(밝은 나무, 널판 줄은 셰이더)과 가로대
-function openDeck(M, lod) {
+function openDeck(M:Mesh, lod:number) {
   const o = { part: P_OPEN, slot: S_DECK }, n = 6, t0 = .05, t1 = .95;
   for (let i = 0; i < n; i++) {
     const a = t0 + (t1 - t0) * i / n, b = t0 + (t1 - t0) * (i + 1) / n, za = gunwale(a) - .07, zb = gunwale(b) - .07;
@@ -147,7 +166,7 @@ function openDeck(M, lod) {
   if (lod) for (const t of [.33, .62]) M.box(t, [0, 0, gunwale(t) - .03], [.035, hullHalf(t) * .9, .018], { part: P_FLAT, slot: S_WOOD_DARK });
 }
 // 노: 뱃전에서 물까지 비스듬히. a_x 는 노가 걸린 자리(셰이더가 OAR_PIVOT 둘레로 젓는다)
-function oars(M, n) {
+function oars(M:Mesh, n:number) {
   const o = { part: P_OAR, slot: S_OAR };
   for (let i = 0; i < n; i++) {
     const t = .24 + .52 * (i + .5) / n;
@@ -159,7 +178,7 @@ function oars(M, n) {
   }
 }
 // 거북선(맨 앞)
-export function buildShip(lod) {
+export function buildShip(lod:number):Float32Array {
   const M = new Mesh();
   hull(M, lod ? 12 : 6); shell(M, lod ? 10 : 5, lod > 1 ? 8 : lod ? 6 : 4); dragon(M, lod);
   if (lod) spikes(M, lod > 1 ? 15 : 9, lod > 1 ? 9 : 6);
@@ -167,7 +186,7 @@ export function buildShip(lod) {
   return M.buffer();
 }
 // 일반 배(뒤): 거북선과 같은 몸통에 열린 갑판, 귀면 · 등딱지 없이
-export function buildBoat(lod) {
+export function buildBoat(lod:number):Float32Array {
   const M = new Mesh();
   hull(M, lod ? 10 : 6, false); openDeck(M, lod);
   if (lod) oars(M, lod > 1 ? 6 : 4);
@@ -271,22 +290,25 @@ const DEFAULT_STYLE = { wood: '#5A3E2B', woodDark: '#3B2A1E', shell: '#3E4A3B', 
 const ATLAS = { w: 128, h: 64, rows: 32 };   // 깃발 글자 한 줄 = 128 × 64 칸(깃발 비율쯤)
 
 export class TurtleShips {
-  static last = null;   // 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
-  constructor(style) {
+  static last:ShipsLast | null = null;
+  declare pal:Float32Array; declare lists:Record<ShipKind | 'flag', InstList>; declare M:Float32Array; declare seeds:Map<unknown, number>; declare rows:Map<string | undefined, number>; declare atlasDirty:boolean;
+  declare p:WebGLProgram | null; declare attr:Record<Attr, number>; declare uni:Record<Uniform, WebGLUniformLocation | null>; declare meshes:Map<string, ShipMesh>;
+  declare ib:WebGLBuffer; declare cap:number; declare tex:WebGLTexture; declare canvas:HTMLCanvasElement | undefined; declare ox:number; declare oy:number;   // 마지막 프레임에 그린 것(캡처 스크립트가 읽는다)
+  constructor(style?:TurtleStyle | null) {
     const S = { ...DEFAULT_STYLE, ...(style || {}) };
     this.pal = new Float32Array(PAL * 3);
     [S.wood, S.woodDark, S.shell, S.shellEdge, S.spike, S.red, S.gold, S.white, S.ink, S.oar, S.lamp, S.head, S.deck, S.path].forEach((h, i) => this.pal.set(hexRGB(h), i * 3));
     this.lists = { turtle: { inst: new Float32Array(INST * 64), n: 0 }, boat: { inst: new Float32Array(INST * 256), n: 0 }, flag: { inst: new Float32Array(INST * 64), n: 0 } };
     this.M = new Float32Array(16); this.seeds = new Map(); this.rows = new Map(); this.atlasDirty = true;
   }
-  init(gl) {
+  init(gl:WebGL2RenderingContext) {
     if (this.p) return;
     this.p = compile(gl, VS, FS);
-    const inst = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_label'];
-    this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', ...inst].map(n => [n, gl.getAttribLocation(this.p, n)]));
-    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_dark', 'u_pal', 'u_light', 'u_flagPass', 'u_pole', 'u_flag', 'u_fl', 'u_fl2', 'u_fn', 'u_rows', 'u_atlas'].map(n => [n, gl.getUniformLocation(this.p, n)]));
-    this.meshes = new Map(); const A = this.attr, ptrs = [[A.a_x, 1, 0], [A.a_p, 3, 4], [A.a_n, 3, 16], [A.a_part, 1, 28], [A.a_slot, 1, 32]];
-    const add = (key, data) => {
+    const inst:InstAttr[] = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_label'];
+    this.attr = Object.fromEntries(['a_x', 'a_p', 'a_n', 'a_part', 'a_slot', ...inst].map(n => [n, gl.getAttribLocation(this.p!, n)])) as Record<Attr, number>;
+    this.uni = Object.fromEntries(['u_matrix', 'u_unit', 'u_time', 'u_alpha', 'u_amb', 'u_dif', 'u_dark', 'u_pal', 'u_light', 'u_flagPass', 'u_pole', 'u_flag', 'u_fl', 'u_fl2', 'u_fn', 'u_rows', 'u_atlas'].map(n => [n, gl.getUniformLocation(this.p!, n)])) as Record<Uniform, WebGLUniformLocation | null>;
+    this.meshes = new Map(); const A = this.attr, ptrs:[number, number, number][] = [[A.a_x, 1, 0], [A.a_p, 3, 4], [A.a_n, 3, 16], [A.a_part, 1, 28], [A.a_slot, 1, 32]];
+    const add = (key:string, data:Float32Array) => {
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       const va = gl.createVertexArray(); gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b);
       for (const [loc, size, off] of ptrs) if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 36, off) }
@@ -299,11 +321,11 @@ export class TurtleShips {
     if (typeof document !== 'undefined' && document.fonts?.load) document.fonts.load('900 44px Jua').then(() => { this.atlasDirty = true }).catch(() => { });
   }
   // 깃발 글자 줄: 노선마다 한 줄(처음 보면 더한다)
-  labelRow(line) { let r = this.rows.get(line); if (r == null) { r = this.rows.size % ATLAS.rows; this.rows.set(line, r); this.atlasDirty = true } return r }
-  atlas(gl) {
+  labelRow(line?:string):number { let r = this.rows.get(line); if (r == null) { r = this.rows.size % ATLAS.rows; this.rows.set(line, r); this.atlasDirty = true } return r }
+  atlas(gl:WebGL2RenderingContext) {
     if (!this.atlasDirty || typeof document === 'undefined') return;
     const c = this.canvas || (this.canvas = document.createElement('canvas')); c.width = ATLAS.w; c.height = ATLAS.h * ATLAS.rows;
-    const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    const g = c.getContext('2d')!; g.clearRect(0, 0, c.width, c.height); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
     for (const [line, r] of this.rows) {
       const t = lineLabel(line), px = t.length > 1 ? 38 : 48; g.font = `900 ${px}px Jua, "Noto Sans KR", sans-serif`;   // 번호는 천 높이의 70 % 남짓, 두 글자는 60 % (작은 화면에서 읽히게)
       const y = r * ATLAS.h + ATLAS.h * .54; g.lineWidth = 4; g.strokeStyle = 'rgba(20,16,12,.75)'; g.strokeText(t, ATLAS.w / 2, y); g.fillStyle = '#FFFFFF'; g.fillText(t, ATLAS.w / 2, y);
@@ -314,16 +336,16 @@ export class TurtleShips {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.atlasDirty = false;
   }
-  begin(ox, oy) { this.ox = ox; this.oy = oy; for (const l of Object.values(this.lists)) l.n = 0 }
-  push(list, fr, L, W, rgb, flag, seed, label) {
+  begin(ox:number, oy:number) { this.ox = ox; this.oy = oy; for (const l of Object.values(this.lists)) l.n = 0 }
+  push(list:InstList, fr:ArrayLike<number>, L:number, W:number, rgb:ArrayLike<number>, flag:number, seed:number, label:number) {
     if ((list.n + 1) * INST > list.inst.length) { const g = new Float32Array(list.inst.length * 2); g.set(list.inst); list.inst = g }
     const d = list.inst, i = list.n * INST;
-    d[i] = fr[0] - this.ox; d[i + 1] = fr[1] - this.oy; d[i + 2] = fr[2]; for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k];
-    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]; d[i + 15] = rgb[1]; d[i + 16] = rgb[2]; d[i + 17] = flag; d[i + 18] = seed; d[i + 19] = label; list.n++;
+    d[i] = fr[0]! - this.ox; d[i + 1] = fr[1]! - this.oy; d[i + 2] = fr[2]!; for (let k = 0; k < 9; k++) d[i + 3 + k] = fr[3 + k]!;
+    d[i + 12] = L; d[i + 13] = W; d[i + 14] = rgb[0]!; d[i + 15] = rgb[1]!; d[i + 16] = rgb[2]!; d[i + 17] = flag; d[i + 18] = seed; d[i + 19] = label; list.n++;
   }
   // 배 한 척: 선로 위 틀(fr: 고물 밑 가운데, F, R, U — 메르카토르), 길이 L · 폭 W(px), 노선 색, 가는 중인지, 열차 id(노 젓는 박자);
   // o.kind 'turtle' (거북선) | 'boat' (일반 배), o.flag: 깃발을 단다(o.line: 그 노선 — 글자)
-  ship(fr, L, W, rgb, moving, key, o = {}) {
+  ship(fr:ArrayLike<number>, L:number, W:number, rgb:ArrayLike<number>, moving:boolean, key:unknown, o:ShipOptions = {}) {
     for (let k = 0; k < 12; k++) if (!Number.isFinite(fr[k])) return;
     let s = this.seeds.get(key); if (s == null) { s = fnv1a(String(key)) / 4294967296; if (this.seeds.size > 4096) this.seeds.clear(); this.seeds.set(key, s) }
     const kind = o.kind === 'boat' ? 'boat' : 'turtle';
@@ -331,12 +353,12 @@ export class TurtleShips {
     if (o.flag) { this.push(this.lists.flag, fr, L, W, rgb, (moving ? 4 : 0) + (kind === 'boat' ? 64 : 0), s, this.labelRow(o.line)) }
   }
   // o: zoom, unit(px 하나의 메르카토르), walls(버퍼에 건물 깊이), occlude(벽 뒤 몫의 알파), dark, time(초)
-  draw(gl, M, ox, oy, o) {
+  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, ox:number, oy:number, o:ShipDrawOptions) {
     const T = this.lists, total = T.turtle.n + T.boat.n;
     if (!total || !this.p) { TurtleShips.last = { n: 0 }; return }
-    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r] * ox + M[4 + r] * oy + M[12 + r];
-    const at = []; for (const l of [T.turtle, T.boat]) for (let k = 0; k < Math.min(l.n, 40); k++) at.push([l.inst[k * INST] + ox, l.inst[k * INST + 1] + oy, l.inst[k * INST + 2], l.inst[k * INST + 17] >= 4 ? 1 : 0, Math.atan2(l.inst[k * INST + 4], l.inst[k * INST + 3])]);   // 배 자리(메르카토르) · 가는 중 · 앞 방향: 캡처가 배를 찾아 간다
-    const W0 = (T.turtle.n ? T.turtle : T.boat).inst[13];
+    const MT = this.M; MT.set(M); for (let r = 0; r < 4; r++) MT[12 + r] = M[r]! * ox + M[4 + r]! * oy + M[12 + r]!;
+    const at:number[][] = []; for (const l of [T.turtle, T.boat]) for (let k = 0; k < Math.min(l.n, 40); k++) at.push([l.inst[k * INST]! + ox, l.inst[k * INST + 1]! + oy, l.inst[k * INST + 2]!, l.inst[k * INST + 17]! >= 4 ? 1 : 0, Math.atan2(l.inst[k * INST + 4]!, l.inst[k * INST + 3]!)]);   // 배 자리(메르카토르) · 가는 중 · 앞 방향: 캡처가 배를 찾아 간다
+    const W0 = (T.turtle.n ? T.turtle : T.boat).inst[13]!;
     TurtleShips.last = { atlas: this.canvas || null, n: total, turtles: T.turtle.n, boats: T.boat.n, flags: T.flag.n, lod: W0 < LOD_MID ? 0 : W0 < LOD_HI ? 1 : 2, W: W0, L: (T.turtle.n ? T.turtle : T.boat).inst[12], zoom: o.zoom, at };
     this.atlas(gl);
     const U = this.uni; gl.useProgram(this.p);
@@ -350,15 +372,15 @@ export class TurtleShips {
     const need = (T.turtle.n + T.boat.n + T.flag.n) * INST;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
     if (this.cap < need) { this.cap = Math.max(need, INST * 256) * 2; gl.bufferData(gl.ARRAY_BUFFER, this.cap * 4, gl.DYNAMIC_DRAW) }
-    let off = 0; const runs = [];
-    for (const [key, l] of [['turtle', T.turtle], ['boat', T.boat], ['flag', T.flag]]) { if (!l.n) continue; gl.bufferSubData(gl.ARRAY_BUFFER, off * 4, l.inst, 0, l.n * INST); runs.push([key, l, off]); off += l.n * INST }
-    const names = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_label'], sizes = [3, 3, 3, 3, 2, 3, 1, 1, 1];
+    let off = 0; const runs:[string, InstList, number][] = [];
+    for (const [key, l] of [['turtle', T.turtle], ['boat', T.boat], ['flag', T.flag]] as [string, InstList][]) { if (!l.n) continue; gl.bufferSubData(gl.ARRAY_BUFFER, off * 4, l.inst, 0, l.n * INST); runs.push([key, l, off]); off += l.n * INST }
+    const names:InstAttr[] = ['i_o', 'i_F', 'i_R', 'i_U', 'i_LW', 'i_rgb', 'i_flag', 'i_seed', 'i_label'], sizes = [3, 3, 3, 3, 2, 3, 1, 1, 1];
     for (const [key, l, base] of runs) {
-      const W = l.inst[13], lod = W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2, m = this.meshes.get(key === 'flag' ? 'flag' : key + lod);
+      const W = l.inst[13]!, lod = W < LOD_MID ? 0 : W < LOD_HI ? 1 : 2, m = this.meshes.get(key === 'flag' ? 'flag' : key + lod)!;
       gl.bindVertexArray(m.va); gl.bindBuffer(gl.ARRAY_BUFFER, this.ib);
-      let at2 = 0; names.forEach((n, k) => { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[k], gl.FLOAT, false, INST * 4, base * 4 + at2 * 4); gl.vertexAttribDivisor(loc, 1) } at2 += sizes[k] });
+      let at2 = 0; names.forEach((n, k) => { const loc = this.attr[n]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[k]!, gl.FLOAT, false, INST * 4, base * 4 + at2 * 4); gl.vertexAttribDivisor(loc, 1) } at2 += sizes[k]! });
       gl.uniform1f(U.u_flagPass, key === 'flag' ? 1 : 0);
-      const pass = alpha => { gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n) };
+      const pass = (alpha:number) => { gl.uniform1f(U.u_alpha, alpha); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.n, l.n) };
       gl.depthMask(false);
       if (o.walls && o.occlude) { gl.depthFunc(gl.GREATER); pass(o.occlude) }   // 건물 뒤: 희미하게(배 제 깊이를 쓰기 전에)
       gl.depthFunc(gl.LEQUAL); gl.depthMask(true); pass(1); gl.depthMask(false);
@@ -366,7 +388,7 @@ export class TurtleShips {
     }
     gl.bindVertexArray(null); gl.depthFunc(gl.LEQUAL);
   }
-  dispose(gl) {
+  dispose(gl:WebGL2RenderingContext) {
     if (!this.p) return;
     for (const m of this.meshes.values()) { gl.deleteBuffer(m.b); gl.deleteVertexArray(m.va) }
     gl.deleteBuffer(this.ib); gl.deleteTexture(this.tex);

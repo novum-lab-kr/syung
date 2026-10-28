@@ -56,9 +56,9 @@ test('BusRenderer: look 으로 버스 · 가마를 고른다',async()=>{
   assert.ok(run('bus',false).every(c=>c.moving===0));
 });
 
-test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부터, 가마 메시는 web/modes/joseon/palanquin.mjs',async()=>{
+test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부터, 가마 메시는 web/modes/joseon/palanquin.mts',async()=>{
   const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mjs');
-  const {buildPalanquinMesh}=await import('../web/modes/joseon/palanquin.mjs');
+  const {buildPalanquinMesh}=await import('../web/modes/joseon/palanquin.mts');
   const P=buildPalanquinMesh();assert.equal(P.length%9,0);assert.ok(P.every(Number.isFinite));assert.ok(Array.from(P).some((v,i)=>i%9===8&&v===20),'가마꾼 다리 재료');
   registerBusLook('palanquin',{build:buildPalanquinMesh,carriers:true,headlights:false});
   const gl=new Proxy({getShaderParameter:()=>true,getProgramParameter:()=>true},{get:(o,k)=>k in o?o[k]:typeof k==='string'&&/^[A-Z_0-9]+$/.test(k)?0:()=>({})});
@@ -70,7 +70,7 @@ test('버스 모양 등록: 등록한 모양은 다음 init 에서 배치 4 부�
 // 조선 정류장(행님 2026-10-11): 가마 모양에 정류장 메시(청사초롱 장대)와 밤 불빛을 같이 등록 — 낮에는 장대만, 밤에는 불빛 묶음을 깊이 없이 하나 더
 test('조선 청사초롱 정류장: BUS 기둥과 같은 크기, 가마 모양이면 정류장 묶음 · 밤 불빛',async()=>{
   const {BusRenderer,registerBusLook}=await import('../web/bus/mesh.mjs');
-  const {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh}=await import('../web/modes/joseon/palanquin.mjs');
+  const {buildPalanquinMesh,buildChorongPostMesh,buildChorongGlowMesh}=await import('../web/modes/joseon/palanquin.mts');
   const C=buildChorongPostMesh(),xs=[],zs=[],mats=new Set();
   for(let i=0;i<C.length;i+=9){xs.push(C[i]);zs.push(C[i+2]);mats.add(C[i+8]);}
   assert.ok(C.every(Number.isFinite)&&C.length/9<1500);

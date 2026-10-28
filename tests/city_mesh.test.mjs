@@ -59,10 +59,10 @@ test('간판: 상가 건물에만, 휴대폰에서는 창 간판 없이 줄어�
   assert.equal(signVerts({ render_height: 12 }), 0, 'a house gets none');
 });
 
-// 조선 모드 (web/modes/joseon/hanok.mjs): the Joseon pack builds every footprint as 기와집
+// 조선 모드 (web/modes/joseon/hanok.mts): the Joseon pack builds every footprint as 기와집
 test('조선: 낮은 건물은 초가 · 기와집, 높은 건물은 높이 그대로 한옥 고층, 큰 땅은 담장 두른 단지 — 모든 면이 바깥을 향한다', async () => {
   const { JOSEON_CITY_STYLE } = await import('./joseon_pack.mjs');
-  const { hanokLayout, houseWings } = await import('../web/modes/joseon/hanok.mjs');
+  const { hanokLayout, houseWings } = await import('../web/modes/joseon/hanok.mts');
   const J = resolvePack(JOSEON_CITY_STYLE), K = J.hanok;
   const rect = (cx, cy, hx, hy) => [{ x: cx - hx, y: cy - hy }, { x: cx + hx, y: cy - hy }, { x: cx + hx, y: cy + hy }, { x: cx - hx, y: cy + hy }, { x: cx - hx, y: cy - hy }];
   const run = feats => { const tb = new TileBuilder({ z: Z, x: TX, y: TY, extent: E, buildings: layer(feats), landuse: null }, J, {}); while (!tb.step(1e9)); return tb.result() };
