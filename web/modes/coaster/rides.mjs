@@ -2,7 +2,7 @@ import { PARK_DEFAULTS } from "../basic/park.mjs";
 import { ridePalette } from "./metrics.mjs";
 import { BULB_FS, BULB_PAL, BULB_TWINKLE, NEON, RIBBON, RIBBON_FS, bulbSize, compile, hexRGB } from "./night.mjs";
 import { selectRideSites } from "./ride_sites.mjs";
-// web/modes/coaster/rides.mjs
+// web/modes/coaster/rides.mts
 var EARTH = 40075016.68557849;
 var mercX = (lon) => lon / 360 + .5;
 var mercY = (lat) => .5 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / (2 * Math.PI);

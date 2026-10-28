@@ -1,7 +1,7 @@
 import { SEOUL_CITY_STYLE } from "../basic/city.mjs";
 import { BULB_FS, bulbSize, compile, hexRGB, lightsOff, lightsOn } from "./night.mjs";
 import { routeBadgeAtlas, routeBadgeId } from "./badges.mjs";
-// web/modes/coaster/train.mjs
+// web/modes/coaster/train.mts
 var SUN = ((v) => {
 	const l = Math.hypot(...v);
 	return v.map((c) => c / l);
