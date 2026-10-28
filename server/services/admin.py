@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 
 from server.clock import KST
 from server.config import avatar_dir
@@ -19,6 +19,13 @@ from server.services.login_providers import DEFAULT_NAMES
 from server.services.profile import photo_name
 from server.store.avatars import AvatarFiles
 from server.store.members import MemberStore
+
+if TYPE_CHECKING:   # 타입만(실행 때 지하철 · 버스 서비스를 부르지 않는다 — 늦게 꺼낸다)
+    from collections.abc import Callable
+
+    from server.services.bus import BusArrivalService, BusLiveService
+    from server.services.health import HealthService
+    from server.services.live import SubwayLiveService
 
 PAGE_SIZE = 50
 DAILY_DAYS = 30   # 날짜별 가입 수를 보여 줄 날 수(오늘 포함)
@@ -30,10 +37,10 @@ class AdminError(ValueError):
     """사람이 고칠 수 있는 요청 오류(이유 없음 · 회원번호가 다름) — 문구는 화면에 그대로 보인다."""
 
 
-def clean_reason(body) -> str:
+def clean_reason(body: object) -> str:
     if not isinstance(body, dict):
         raise AdminError("본문은 JSON 객체예요")
-    reason = body.get("reason")
+    reason = cast("dict[str, Any]", body).get("reason")   # 위에서 dict 인지 봤다
     if not isinstance(reason, str) or not reason.strip():
         raise AdminError("이유를 적어 주세요")
     reason = " ".join(reason.split())   # 줄바꿈 · 여러 칸은 한 칸으로(기록 한 줄)
@@ -46,12 +53,12 @@ def _days(text: str) -> list[int]:
     return [int(day) for day in (text or "").split(",") if day]
 
 
-def _member_view(row: dict) -> dict:
+def _member_view(row: dict[str, Any]) -> dict[str, Any]:
     return {"id": row["id"], "name": row["display_name"], "createdAt": row["created_at"], "provider": row["provider"],
             "tickets": row["tickets"], "lastLogin": row["last_login"], "sessions": row["sessions"]}
 
 
-def _avatar_view(stored: str | None) -> dict | None:
+def _avatar_view(stored: str | None) -> dict[str, str] | None:
     """관리 화면용 — 사진 주소는 /api/admin/members/<번호>/avatar(회원 쪽 주소는 주지 않는다)."""
     if photo_name(stored):
         return {"type": "photo"}
@@ -67,15 +74,17 @@ class AdminService:
     """store: 회원 DB(MemberService 의 것을 같이 쓴다). live · health · bus · arrivals: 서버 상태를 읽을 서비스를 꺼내는
     인자 없는 함수(없으면 그 칸을 빼고) — 회원 화면만 쓰는 시험 · 개발 서버가 지하철 · 버스 서비스를 만들지 않게 늦게 꺼낸다."""
 
-    def __init__(self, store: MemberStore, *, live=None, health=None, bus=None, arrivals=None,
-                 started_at: float | None = None, clock=time.time):
+    def __init__(self, store: MemberStore, *, live: Callable[[], SubwayLiveService] | None = None,
+                 health: Callable[[], HealthService] | None = None, bus: Callable[[], BusLiveService] | None = None,
+                 arrivals: Callable[[], BusArrivalService] | None = None,
+                 started_at: float | None = None, clock: Callable[[], float] = time.time):
         self.store, self.clock = store, clock
         self.avatars = AvatarFiles(avatar_dir(store.path))   # 회원 서비스와 같은 사진 폴더(회원 DB 옆)
         self._live, self._health, self._bus, self._arrivals = live, health, bus, arrivals
         self.started_at = started_at if started_at is not None else clock()
 
     # ---- 회원 ----
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         now = self.clock()
         self.store.prune_admin_log(int(now))   # 관리 화면을 열 때마다 1년 지난 기록을 지운다
         today = datetime.fromtimestamp(now, KST).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -93,14 +102,14 @@ class AdminService:
                 "withdraw": {"total": out["total"], "today": out["today"], "week": out["week"], "month": out["month"],
                              "reasons": out["reasons"], "daily": [{"day": day, "count": left.get(day, 0)} for day in days]}}
 
-    def members(self, query: str, page: int) -> dict:
+    def members(self, query: str, page: int) -> dict[str, Any]:
         word = " ".join((query or "").split())[:SEARCH_MAX]
         number = int(word) if word.isascii() and word.isdigit() and len(word) <= 12 else None
         page = max(1, page)
         total, rows = self.store.admin_members(word, number, int(self.clock()), (page - 1) * PAGE_SIZE, PAGE_SIZE)
         return {"total": total, "page": page, "pageSize": PAGE_SIZE, "members": [_member_view(row) for row in rows]}
 
-    def member(self, user_id: int) -> dict | None:
+    def member(self, user_id: int) -> dict[str, Any] | None:
         self.store.prune_admin_log(int(self.clock()))   # 1년 지난 기록은 보이지 않게
         row = self.store.admin_member(user_id, int(self.clock()))
         if row is None:
@@ -114,7 +123,7 @@ class AdminService:
         view["log"] = [{"at": item["at"], "action": item["action"], "reason": item["reason"]} for item in row["log"]]
         return view
 
-    def places(self, user_id: int, body) -> list[dict] | None:
+    def places(self, user_id: int, body: object) -> list[dict[str, Any]] | None:
         """승차권 장소(이름 · 좌표). 이유가 있어야 하고, 꺼낼 때 기록을 남긴다. 회원이 없으면 None."""
         rows = self.store.admin_places(user_id, int(self.clock()), clean_reason(body))
         if rows is None:
@@ -123,14 +132,14 @@ class AdminService:
                  "from": {"name": row["from_name"], "lat": row["from_lat"], "lng": row["from_lng"]},
                  "to": {"name": row["to_name"], "lat": row["to_lat"], "lng": row["to_lng"]}} for row in rows]
 
-    def logout(self, user_id: int, body) -> int | None:
+    def logout(self, user_id: int, body: object) -> int | None:
         """그 회원의 모든 기기에서 로그아웃 → 지운 세션 수. 회원이 없으면 None."""
         return self.store.admin_logout(user_id, int(self.clock()), clean_reason(body))
 
-    def delete(self, user_id: int, body) -> dict | None:
+    def delete(self, user_id: int, body: object) -> dict[str, int] | None:
         """탈퇴 처리: 본문 confirm 이 회원번호와 같아야 한다. 올린 사진 파일도 지운다. 회원이 없으면 None."""
         reason = clean_reason(body)
-        if str(body.get("confirm", "")).strip() != str(user_id):
+        if str(cast("dict[str, Any]", body).get("confirm", "")).strip() != str(user_id):   # clean_reason 이 dict 인지 봤다
             raise AdminError("확인용 회원번호가 맞지 않아요")
         done = self.store.admin_delete(user_id, int(self.clock()), reason)
         if done is None:
@@ -153,7 +162,7 @@ class AdminService:
         data = self.avatars.read(name) if name else None
         return (data, cast("str", name).rsplit(".", 1)[1]) if data is not None else None   # 사진을 읽었으면 이름이 있다
 
-    def clear_avatar(self, user_id: int, body) -> bool | None:
+    def clear_avatar(self, user_id: int, body: object) -> bool | None:
         """사진 내리기: 기본 캐릭터로 되돌리고 파일을 지운다. 올린 사진이 없으면 AdminError, 회원이 없으면 None."""
         done = self.store.admin_clear_avatar(user_id, int(self.clock()), clean_reason(body))
         if done is None:
@@ -164,7 +173,7 @@ class AdminService:
         self._forget_file(photo_name(avatar))
         return True
 
-    def reset_name(self, user_id: int, body) -> str | None:
+    def reset_name(self, user_id: int, body: object) -> str | None:
         """닉네임 초기화: 첫 로그인 방법의 기본 이름(카카오 사용자 · 구글 사용자 · Apple 사용자)으로. 회원이 없으면 None."""
         reason = clean_reason(body)
         row = self.store.user(user_id)
@@ -174,9 +183,9 @@ class AdminService:
         return name if self.store.admin_reset_name(user_id, name, int(self.clock()), reason) else None
 
     # ---- 서버 상태 ----
-    def status(self) -> dict:
+    def status(self) -> dict[str, Any]:
         now = self.clock()
-        body = {"checkedAt": datetime.fromtimestamp(now, KST).isoformat(timespec="seconds"),
+        body: dict[str, Any] = {"checkedAt": datetime.fromtimestamp(now, KST).isoformat(timespec="seconds"),
                 "startedAt": datetime.fromtimestamp(self.started_at, KST).isoformat(timespec="seconds"),
                 "uptimeSeconds": max(0, int(now - self.started_at)), "calls": [], "caches": [], "problems": []}
         if self._live:

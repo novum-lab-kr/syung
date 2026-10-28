@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from server.clock import KST, day_bounds, iso
 from server.config import ArrivalConfig, BusConfig
@@ -161,7 +162,7 @@ class BusLiveService:
             except (OSError, ValueError, KeyError, TypeError):
                 self.data_error, routes = True, {}
         self.routes = routes
-        self.cache = {}
+        self.cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self.failures = {}
         self.pending = set()
         self.lock = threading.Lock()
@@ -370,7 +371,7 @@ class BusArrivalService:
         self.stops = stops or {}   # arsId → 정류장
         if stops is None:
             self._load_stops()
-        self.cache = {}   # arsId → (받은 때, 줄)
+        self.cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}   # arsId → (받은 때, 줄)
         self.failures = {}   # arsId → (다시 물어도 되는 때, 코드)
         self.pending = {}   # arsId → Event: 같은 정류장을 동시에 물으면 한 번만 부르고 함께 기다린다
         self.lock = threading.Lock()
