@@ -34,7 +34,7 @@ import {UNIT_SHAPES} from './modes/starcraft/unit_shapes.mts';   // 스타크래
 import {unitBusLook} from './modes/starcraft/units.mts';   // 스타크래프트 버스 모양 등록 자료(유닛 → 버스 메시)   // 스타크래프트: 종족 셋(테란 · 저그 · 프로토스), 모드 하나씩
 import {SunShadowLayer,hull} from './map/sun.mts';   // 해 그림자 층
 import {createStationLabels} from './map/labels.mts';   // 역 이름표 자료
-import {StationNameLayer,ExitPillars} from './map/platform.mjs';   // 승강장 막대 · 출구 통로 · 출구 기둥
+import {StationNameLayer,ExitPillars} from './map/platform.mts';   // 승강장 막대 · 출구 통로 · 출구 기둥
 import {createTrainPlanner} from './trains/plan.mts';   // 열차 예측
 import {createLiveFeed} from './trains/live_feed.mts';   // 실시간 열차 받기 · 기록
 import {trainLayerClass,buildingDepthClass} from './trains/draw.mjs';   // 열차 그리기 · 건물 깊이
