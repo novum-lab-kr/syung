@@ -60,3 +60,11 @@ test('saved ticket legs have fewer fields: draw what is there, nothing else', ()
   assert.equal(steps[3].toward, null); assert.equal(steps[3].info, '25분');
   assert.equal(steps[5].text, '목적지까지 걸어서');
 });
+
+test('walks in a row (a via point): the next leg is a walk, so follow the server label instead of guessing a station', () => {
+  const legs = [{type: 'walk', seconds: 120, label: '경유지 정류장까지'}, {type: 'walk', seconds: 240, label: '경유지에서 시청역으로'}, train, {type: 'walk', seconds: 60}];
+  const steps = routeSteps(legs, ends, colors);
+  assert.equal(steps[1].text, '경유지 정류장까지 걸어서');
+  assert.equal(steps[2].text, '공릉역까지 걸어서');   // 다음이 지하철이면 그대로 역까지
+  assert.equal(routeSteps([{type: 'walk', seconds: 60}, {type: 'walk', seconds: 60}], ends, colors)[1].text, '걸어서 이동');
+});

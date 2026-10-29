@@ -107,7 +107,7 @@ function Card({ plan, index, on, hidden, actions }:{ plan:PlanView; index:number
     onClick={() => actions.card(index)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.currentTarget.click(); } }}>
     <div class="jp-top"><strong class="jp-min">{duration.hours !== null ? <>{`${duration.hours}`}<small>시간</small>{` ${duration.minutes}`}<small>분</small></> : <>{`${duration.minutes}`}<small>분</small></>}</strong><span class="jp-arr">{plan.arrive}</span>{plan.tag !== null && <span class="jp-tag">{plan.tag}</span>}</div>
     <Track segs={plan.track} />
-    <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>
+    {on && <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>}   {/* 설명 줄은 펼쳤을 때만 */}
     <StepList steps={plan.steps} className="jsteps" />
   </article>;
 }

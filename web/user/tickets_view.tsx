@@ -163,7 +163,7 @@ function PlacePage() {
 function planHTML(plan:Plan) {
   return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>`
     + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
-    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
+    + `${routeTrack(plan, view.colors, 250)}</span>`;
 }
 // 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수)
 function RouteFilters({ filter }:{ filter:RouteFilterView }) {
@@ -187,10 +187,10 @@ function RoutePage() {
     {filter && <RouteFilters filter={filter} />}
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
     {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
-    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!, opened = view.stepsOf === plan; return <div class="rt-item"><button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
+    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!, opened = view.stepsOf === plan; return <div class="rt-item"><div class="rt-card"><button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
       aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>
-      <button type="button" class="rt-open" aria-expanded={opened ? 'true' : 'false'} aria-label="경로 자세히 보기" onClick={() => set({ stepsOf: opened ? null : plan })}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button>
-      {opened && <div class="rt-steps"><StepList steps={routeSteps(plan.legs, { from: view.from?.name ?? '출발', to: view.to?.name ?? '도착' }, view.colors)} className="jsteps shown" /></div>}</div>; })}</div>
+      <button type="button" class="rt-open" aria-expanded={opened ? 'true' : 'false'} aria-label="경로 자세히 보기" onClick={() => set({ stepsOf: opened ? null : plan })}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button></div>
+      {opened && <div class="rt-steps"><p class="jp-meta">{`환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`}</p><StepList steps={routeSteps(plan.legs, { from: view.from?.name ?? '출발', to: view.to?.name ?? '도착' }, view.colors)} className="jsteps shown" /></div>}</div>; })}</div>
     {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}
