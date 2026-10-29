@@ -7,7 +7,7 @@ interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; rea
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
 // 같은 정류장(또는 옆 정류장)에서 타서 같은 곳에 내리는 다른 노선(서버가 먼저 오는 순으로 많아야 3개)
 // 옆 정류장에서 타거나 내리는 후보면 어느 정류장인지(이름 · 걷는 거리 · 갈아타는 역의 가까운 출구 — 자료 있을 때만)
-export interface SideStop { name:string; metres:number; exit?:string }
+export interface SideStop { name:string; metres:number; exit?:string; id?:string; ars?:string }
 export interface BusAlternative { route:string; color:string; departs:string; arrives:string; boardAt?:SideStop; alightAt?:SideStop }
 interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[]; alternatives?:BusAlternative[]; path:[number, number][] }
 type TransitLeg = TrainLeg | BusLeg;
@@ -87,7 +87,7 @@ const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.te
 // 같은 구간을 가는 다른 버스 안내 한 줄: '143 · 2415 · 301 중 먼저 오는 버스'(버스 구간마다, 여럿이면 ' / ') — 없으면 null
 export function sameRoutes(legs:readonly TrackLeg[]):string | null {
   // 옆 정류장 버스는 어느 정류장인지 덧붙인다: '2415 는 옆 정류장 청담역.경기고교(60m · 11번 출구 쪽)에서 타요'
-  const side = (stop:SideStop) => `옆 정류장 ${stop.name}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ''})`;
+  const side = (stop:SideStop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ''}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ''})`;
   const notes = legs.flatMap(leg => {
     if (leg.type !== 'bus' || !leg.alternatives?.length) return [];
     const where = leg.alternatives.flatMap(other => [...(other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : []), ...(other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : [])]);

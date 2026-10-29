@@ -61,6 +61,9 @@ DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept i
 MAX_EASY_TRANSFERS = 3        # 환승이 이보다 많은 길(탈 것 5개 이상)은 빼지 않고 목록 맨 뒤로(2026-10-29 사용자 결정)
 # 같은 구간 다른 버스: 같은 정류장(같은 번호)에서 타서 같은 정류장에 내리는 노선만(옆 정류장은 어디서 타고 내리는지 안내가 따로 있어야 해서 뺐다 — Codex 리뷰 2026-10-29)
 ALT_DEPART_WITHIN = 20 * 60   # 고른 버스보다 이 안에 떠나는 것만
+ALT_SAME_NAME_M = 150         # 옆 정류장 후보: 이름이 같은 정류장(길 건너 · 옆 승강장)은 이만큼까지(걷기 약 2분)
+ALT_OTHER_NAME_M = 80         # 이름이 다르면 이보다 가까울 때만(걷기 1분 안팎)
+STOP_NUMBER_M = 120           # 탐색 자료 정류장(KTDB 좌표 — 일부는 반올림)에 번호를 붙일 때 같은 이름 정류장을 찾는 범위
 ALT_ARRIVE_LATE = 15 * 60     # 고른 버스보다 이보다 늦게 닿지 않는 것만
 MAX_ALTERNATIVES = 3
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
@@ -801,13 +804,33 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
 
 
 def _nearby(stop: int) -> list[tuple[int, float]]:
-    """그 정류장과 걸어서 이어지는 옆 정류장들: [(정류장, 미터)] — 그 정류장 자신이 맨 앞(0 m)."""
-    return [(stop, 0.0), *(BUS_WALK[stop] if stop < len(BUS_WALK) else ())]
+    """그 정류장과 걸어서 이어지는 옆 정류장들: [(정류장, 미터)] — 그 정류장 자신이 맨 앞(0 m).
+    이름이 같으면 ALT_SAME_NAME_M 까지, 다르면 ALT_OTHER_NAME_M 까지(걷기 1분 안팎 — BUS_WALK 전체 300 m 는 5분이 넘는다)."""
+    name = BSTOPS[stop][0] if stop < len(BSTOPS) else None
+    near = [(j, m) for j, m in (BUS_WALK[stop] if stop < len(BUS_WALK) else ())
+            if m <= (ALT_SAME_NAME_M if BSTOPS[j][0] == name else ALT_OTHER_NAME_M)]
+    return [(stop, 0.0), *near]
+
+
+_catalog_by_name: dict[str, list[tuple[float, float, str, str]]] = defaultdict(list)   # 정류장 이름 → [(lat, lng, id, 번호)]
+for _row in cast("list[Row]", (journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {}).get("stops", ())):
+    _catalog_by_name[_row["name"]].append((_row["lat"], _row["lng"], str(_row["id"]), str(_row.get("arsId") or "")))
+
+
+def _stop_ids(stop: int) -> tuple[str, str]:
+    """탐색 자료 정류장 → (정류장 id, 정류장 번호). 같은 이름 가장 가까운 정류장(STOP_NUMBER_M 안)에서 찾고, 없으면 빈 글자."""
+    name, lat, lng = BSTOPS[stop][:3]
+    near = [(_meters((lat, lng), (la, lo)), sid, ars) for la, lo, sid, ars in _catalog_by_name.get(name, ())]
+    best = min(near, default=None)
+    return (best[1], best[2]) if best and best[0] <= STOP_NUMBER_M else ("", "")
 
 
 def _stop_note(stop: int, metres: float, sid: int | None) -> Row:
-    """옆 정류장 안내: 이름 · 걷는 거리 · 갈아타는 역의 가까운 출구(자료가 있을 때만)."""
+    """옆 정류장 안내: 이름 · 정류장 id · 번호 · 걷는 거리 · 갈아타는 역의 가까운 출구(자료가 있을 때만)."""
+    stop_id, ars = _stop_ids(stop)
     note: Row = {"name": BSTOPS[stop][0], "metres": round(metres)}
+    if stop_id:   # 같은 이름 다른 정류장을 가르는 번호
+        note["id"], note["ars"] = stop_id, ars
     ref = EXIT_REF.get((sid, stop)) if sid is not None else None
     if ref:
         note["exit"] = ref
@@ -818,7 +841,7 @@ def _alternatives(alt: tuple[Any, ...], route: str, day0: float) -> list[Row]:
     """고른 버스 구간(alt = 타는 정류장, 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 포함 · 차례대로), 정류장에 닿은 때, 떠난 때, 닿은 때,
     [앞 구간에서 내린 역 | None, 뒤 구간에서 탈 역 | None])과 같은 구간을 가는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지).
     타는 정류장 · (경유지 없는 구간의) 내리는 정류장은 걸어서 이어지는 옆 정류장도 된다 — 옆 정류장은 걷는 시간만큼 늦게 닿는 것으로 보고
-    (이미 떠난 버스는 뺀다), 응답에 boardAt · alightAt(이름 · 거리 · 출구)을 싣는다. 같은 정류장이면 칸이 없다."""
+    (이미 떠난 버스는 뺀다), 응답에 boardAt · alightAt(이름 · 정류장 번호 · 거리 · 출구)을 싣는다. 같은 정류장이면 칸이 없다."""
     from_stop, onward, ready, dep, arr = alt[:5]
     board_sid, alight_sid = (alt[5], alt[6]) if len(alt) >= 7 else (None, None)
     ends = _nearby(onward[-1]) if len(onward) == 1 else [(onward[-1], 0.0)]   # 경유지가 있으면 내리는 곳은 그 정류장 그대로

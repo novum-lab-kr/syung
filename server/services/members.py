@@ -118,6 +118,9 @@ def _side_stop(value: object) -> dict[str, Any]:
     out: dict[str, Any] = {"name": _text(row.get("name"), "옆 정류장 이름"), "metres": _count(row.get("metres"), "옆 정류장 거리", 2000)}
     if row.get("exit"):
         out["exit"] = _text(row.get("exit"), "출구 번호", 8)
+    for key in ("id", "ars"):   # 정류장 id · 번호(같은 이름 다른 정류장을 가른다)
+        if row.get(key):
+            out[key] = _text(row.get(key), "옆 정류장 번호", 12)
     return out
 
 

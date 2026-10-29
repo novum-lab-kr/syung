@@ -13,6 +13,7 @@ TIMING = ROOT / "data/live-timing.json"
 EXITS = ROOT / "data/osm-tracks/exits.json"
 BUS = ROOT / "data/bus.json"   # pipeline/build_bus_data.py; optional
 BUS_STOP_FIX = ROOT / "data/bus-stop-fix.json"   # pipeline/fix_bus_stops.py; optional
+BUS_CATALOG = ROOT / "data/bus/stops.json"   # 정류장 id · 번호(arsId) — 옆 정류장 안내에 번호를 붙인다; optional
 BUS_SHAPES = ROOT / "data/bus-shapes.json"   # pipeline/build_bus_shapes.py; optional
 
 

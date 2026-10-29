@@ -446,7 +446,7 @@ class CleanRouteTest(unittest.TestCase):
                 clean_ticket(dict(TICKET, route=route))
 
     def test_side_stop_and_exit_are_kept_and_checked(self):
-        side = {"name": "청담역.경기고교", "metres": 60, "exit": "11"}
+        side = {"name": "청담역.경기고교", "metres": 60, "exit": "11", "id": "122000084", "ars": "23187"}
         alt = {"route": "2415", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57", "boardAt": side, "alightAt": {"name": "무역센터", "metres": 90}}
         legs = [dict(leg) for leg in ROUTE["legs"]]
         legs[2] = dict(legs[2], alternatives=[alt])
