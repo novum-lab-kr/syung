@@ -64,7 +64,7 @@ ALT_SAME_NAME_M = 150         # 옆 정류장 후보: 이름이 같은 정류장
 ALT_OTHER_NAME_M = 80         # 이름이 다르면 이보다 가까울 때만(걷기 1분 안팎)
 STOP_NUMBER_M = 120           # 탐색 자료 정류장(KTDB 좌표 — 일부는 반올림)에 번호를 붙일 때 같은 이름 정류장을 찾는 범위
 ALT_ARRIVE_LATE = 15 * 60     # 고른 버스보다 이보다 늦게 닿지 않는 것만
-MAX_ALTERNATIVES = 3
+MAX_ALTERNATIVES = 12         # 안전 상한(응답이 지나치게 커지지 않게) — 2026-10-29 사용자 결정: 같은 구간 다른 버스는 시간 조건에 맞으면 다 보여 준다(웹이 3대까지만 펴 보이고 나머지는 '외 N대')
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
               "maeul": "#7bc043", "night": "#4a4f8c"}
 

@@ -51,11 +51,18 @@ class AlternativesTest(unittest.TestCase):
     def test_chosen_route_itself_is_not_listed(self):
         self.assertEqual(run([pattern(0, [0, 2, 3], NINE + 5 * 60)]), [])
 
-    def test_listed_in_order_of_leaving_and_capped(self):
+    def test_listed_in_order_of_leaving(self):
+        # 3대를 넘어도 시간 조건에 맞으면 다 나온다(2026-10-29 — 3대 상한 때문에 2415 가 빠졌다)
         patterns = [pattern(0, [0, 3], NINE + 5 * 60)] + [pattern(i, [0, 3], NINE + (9 - i) * 60) for i in (1, 2, 3, 4)]
         found = run(patterns)
-        self.assertEqual([a["route"] for a in found], ["8", "999", "301"])   # 09:05 · 09:06 · 09:07 · (2415 는 09:08 로 잘림)
-        self.assertLessEqual(len(found), graph.MAX_ALTERNATIVES)
+        self.assertEqual([a["route"] for a in found], ["8", "999", "301", "2415"])   # 09:05 · 09:06 · 09:07 · 09:08
+
+    def test_capped_by_the_safety_limit_keeping_the_earliest(self):
+        routes = [["143", "trunk"], *([f"R{n}", "trunk"] for n in range(1, 16))]
+        patterns = [pattern(0, [0, 3], NINE + 5 * 60)] + [pattern(n, [0, 3], NINE + 5 * 60 + n * 30) for n in range(1, 16)]
+        found = run(patterns, routes=routes)
+        self.assertEqual(len(found), graph.MAX_ALTERNATIVES)
+        self.assertEqual([a["route"] for a in found], [f"R{n}" for n in range(1, graph.MAX_ALTERNATIVES + 1)])
 
     def test_next_stops_are_listed_with_where_to_board_and_get_off(self):
         # 옆 정류장에서 타는 버스: 걷는 시간(60 m → 65초)만큼 늦게 닿는 것으로 보고, 어느 정류장인지(이름 · 거리 · 출구)를 싣는다
