@@ -247,6 +247,8 @@ export function busRoutesNearStops(data:BusData, box:Readonly<Box>, chosen:reado
 
 // Legacy journey legs have names, not Seoul route IDs. Require a unique name AND
 // matching endpoint geometry before using an official ID for live requests.
+// 두 점 사이 거리(m)
+function roadDistance(a:LngLatPt,b:LngLatPt):number{return Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320;}
 // 도로에 붙인 선(roads.snapLine)의 distance m 자리: 이웃 샘플 사이를 보간(굵기는 앞 샘플)
 function snappedAt(snapped:SnappedLine, distance:number):LineSample {
   const S = snapped.samples, i = Math.max(0, Math.min(S.length - 2, Math.floor(distance / snapped.step))), a = S[i]!, b = S[Math.min(S.length - 1, i + 1)]!;
@@ -529,7 +531,7 @@ class BusLayer {
     if (this.disposed) return;
     const features:ReturnType<typeof feature>[] = [], stopFeatures:StopFeature[] = [], chosen=new Set(this.chosenIds()), zoom=this.map.getZoom();
     this.lineZoom=zoom;this.roadLines=false;
-    const drawRoute=(route:RouteLike,markers:({ distance:number; coordinate?:undefined } | { coordinate:LngLatPt | undefined; distance?:undefined })[],range:[number, number] | null=null)=>{   // range: 그 선의 [from,to] m 만(길찾기 버스 구간)
+    const drawRoute=(route:RouteLike,markers:({ distance:number; coordinate?:undefined } | { coordinate:LngLatPt | undefined; distance?:undefined })[],range:[number, number] | null=null,joins:[LngLatPt, LngLatPt] | null=null)=>{   // range: 그 선의 [from,to] m 만(길찾기 버스 구간)
       const properties={routeId:route.id,name:route.name,color:color(route,this.theme),kind:'ride',selected:true,approximate:route.approximate};
       // 지하철 노선처럼 끊김 없는 한 줄: 미리 도로 중앙선에 맞춘 선(pipeline/bus_match_lines.py),
       // 없으면 공식 경로. 화면 타일로 차로를 맞추던 조각선은 끊기고 갈고리가 생겨 쓰지 않는다.
@@ -551,6 +553,16 @@ class BusLayer {
         }flush();
       }
       features.push(feature('LineString',range?busPathSlice(line!,...range):line?.points||route.path,plan));   // 표시선은 도로 선 위에
+      // 길찾기 구간의 양 끝: 걷기가 닿는 정류장 점(서버 path 끝)에서 그린 선(노선 모양 위)의 끝까지 짧게 잇는다 — 둘이 떨어져 길이 끊겨 보였다
+      if(range&&joins){
+        const roadWidth=snapped?.samples.find(p=>p.width!=null)?.width;
+        [[joins[0],range[0]],[joins[1],range[1]]].forEach(([stop,distance])=>{
+          const to=busPointAt(line!,distance as number).coordinate;
+          if(roadDistance(stop as LngLatPt,to)<1.5)return;
+          features.push(feature('LineString',[stop as LngLatPt,to],plan));
+          if(snapped)features.push(feature('LineString',[stop as LngLatPt,snappedAt(snapped,distance as number).coordinate],{...properties,lod:'road',...roadWidth?{laneWidth:roadWidth}:{}}));
+        });
+      }
       for(const marker of markers){
         const snap=marker.distance!=null?{distance:marker.distance}:line&&snapBusToPath(line,marker.coordinate,{maxError:80});
         if(snapped){
@@ -568,7 +580,7 @@ class BusLayer {
       // 노선 위 정류장 동그라미는 그리지 않는다(정류장은 BUS 기둥으로). 길찾기의 타는 곳 · 내리는 곳만 남긴다.
       // 길찾기는 탄 곳 → 내릴 곳 구간만(2026-10-11 행님: 노선 전체가 보였다). 정류장 · 노선 번호로 고른 노선은 전체.
       const ranges=legs.map(l=>journeyBusRange(path,l));
-      if(legs.length&&ranges.every(Boolean))legs.forEach((l,i)=>drawRoute(route,ranges[i]!.map(distance=>({distance})),ranges[i]!));
+      if(legs.length&&ranges.every(Boolean))legs.forEach((l,i)=>drawRoute(route,ranges[i]!.map(distance=>({distance})),ranges[i]!,[l.path[0]!,l.path.at(-1)!]));
       else drawRoute(route,legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate}))));
     }
     for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){

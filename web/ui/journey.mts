@@ -28,10 +28,41 @@ interface JourneyLive { busLayer?:BusLayerLike|null; settings:Settings & { track
 export interface JourneyMapDeps {
   map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); colors:Record<string,string>; byId:Map<number, StationLike>;
   cityCoords:(line:string, a:number, b:number)=>Position[]; stopPos:(line:string, station:StationLike)=>Position;
+  stationTrack:(line:string, station:StationLike, reach:number)=>Position[];   // 그 역을 지나는 선로 한 줄(앞 · 뒤로 reach m) — 역 안 걷기가 따라간다
   cityViaduct:{ routeOpacity(focus:boolean):unknown; deckFade():unknown }; sheetPad:()=>number;   // (둘 다 MapLibre 식 — 그대로 paint 에 넣는다)
   journeyCasingPaint:()=>object; journeyRidePaint:()=>object; journeyStopPaint:()=>object; live:JourneyLive;
 }
-export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}:JourneyMapDeps){
+
+// 역 안 걷기(승강장 점 ↔ 출구): 역 안 통로 자료가 없어 그 역의 선로를 따라 출구에서 가장 가까운 선로 위 점까지 간 뒤 출구로 꺾는다.
+// 선로가 없거나 길이 이상하면(돌아가는 길이 직선의 두 배 넘음 · 출구가 선로보다 승강장에 더 가까움) 직선.
+const INSIDE_REACH_M=350;
+export function insideWalk(track:readonly Position[], platform:Position, exit:Position):Position[]{
+  const straight:Position[]=[platform,exit];
+  if(track.length<2)return straight;
+  const kx=Math.cos(platform[1]*Math.PI/180),M=111320;
+  const metres=(a:Position,b:Position)=>Math.hypot((b[0]-a[0])*kx,b[1]-a[1])*M;
+  // 점 하나에서 가장 가까운 선로 조각 · 그 조각 위 점 · 거리(m)
+  const nearest=(p:Position)=>{
+    let best={index:0,point:track[0]!,distance:Infinity};
+    for(let i=0;i+1<track.length;i++){
+      const a=track[i]!,b=track[i+1]!,dx=(b[0]-a[0])*kx,dy=b[1]-a[1],len2=dx*dx+dy*dy;
+      const t=len2?Math.max(0,Math.min(1,(((p[0]-a[0])*kx)*dx+(p[1]-a[1])*dy)/len2)):0;
+      const point:Position=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],distance=metres(p,point);
+      if(distance<best.distance)best={index:i,point,distance};
+    }
+    return best;
+  };
+  const from=nearest(platform),to=nearest(exit);
+  const middle:Position[]=[];
+  if(to.index>=from.index)for(let i=from.index+1;i<=to.index;i++)middle.push(track[i]!);
+  else for(let i=from.index;i>to.index;i--)middle.push(track[i]!);
+  const way:Position[]=[platform,from.point,...middle,to.point,exit];
+  let along=0;for(let i=1;i<way.length;i++)along+=metres(way[i-1]!,way[i]!);
+  const direct=metres(platform,exit);
+  if(direct<25||to.distance>=direct*.8||along>direct*2+60)return straight;
+  return way.filter((point,i)=>i===0||metres(way[i-1]!,point)>.5);   // 겹친 점 정리
+}
+export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,stationTrack,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,live}:JourneyMapDeps){
   // 길찾기 route on the map: walking dashed, rides along the line's track, in the line's colour
   function rideCoords(line:string,ids:number[]):Position[]{
     const out:Position[]=[];
@@ -52,8 +83,8 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
         for(const s of [s0,s1])if(s)pts.push({type:'Feature',properties:{kind:'stop',color:colors[l.line]||'#888'},geometry:{type:'Point',coordinates:stopPos(l.line,s)}});
         // the walk ends at an exit: join it to the platform, fainter (inside the station)
         const prev=plan.legs[i-1],next=plan.legs[i+1];
-        if(prev&&prev.type==='walk'&&prev.path&&s0)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[prev.path[prev.path.length-1]!,stopPos(l.line,s0)]}});
-        if(next&&next.type==='walk'&&next.path&&s1)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:[stopPos(l.line,s1),next.path[0]!]}})}
+        if(prev&&prev.type==='walk'&&prev.path&&s0)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:insideWalk(stationTrack(l.line,s0,INSIDE_REACH_M),stopPos(l.line,s0),prev.path[prev.path.length-1]!).reverse()}});   // 출구 → 승강장(선로 따라)
+        if(next&&next.type==='walk'&&next.path&&s1)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:insideWalk(stationTrack(l.line,s1,INSIDE_REACH_M),stopPos(l.line,s1),next.path[0]!)}})}
 
     });
     const first=plan.legs[0]!,last=plan.legs[plan.legs.length-1]!;   // 여정은 늘 구간이 있다
