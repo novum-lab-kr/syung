@@ -5,7 +5,7 @@
 // 출발 시각 바퀴의 칸 속(.tw-col 의 단추 · 스크롤 자리 · on/near · aria-valuetext)은 account.mts 가 바닐라로 그대로 다룬다 — 여기서는 다시 그리지 않는다.
 // 서랍 껍데기 · 쪽(section) 숨기기 · 쪽 이름(aria-label)은 본체 · account.mts 그대로.
 import { Component, render } from 'preact';
-import { routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import { routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
 import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
 import type { RouteFilterView, RouteKind, RouteSort } from './ticket_routes.mts';
@@ -89,6 +89,7 @@ function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
     call('ticketFlip')(index);
   }}><div class="ticket-in"><Front ticket={ticket} /><div class="tk-face tk-back">
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
+    {ticket.route && sameRoutes(ticket.route.legs) !== null && <p class="tk-alt">{sameRoutes(ticket.route.legs)}</p>}
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
     <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
       {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
@@ -154,11 +155,16 @@ function PlacePage() {
   </>;
 }
 
+// 같은 구간 다른 버스 안내(없으면 빈 글자)
+export function altHTML(legs:readonly SlimLeg[]) {
+  const note = sameRoutes(legs);
+  return note ? `<span class="jp-alt">${esc(note)}</span>` : '';
+}
 // 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)
 function planHTML(plan:Plan) {
   return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>`
     + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
-    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
+    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
 }
 // 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수) + 차례(환승 적게 · 덜 걷기 — 다시 누르면 지금 차례로)
 function RouteFilters({ filter }:{ filter:RouteFilterView }) {

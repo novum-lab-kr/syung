@@ -5,11 +5,13 @@
 // 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸(path · stations · trainNo 는 여정 지도 표시 ui/journey 가 읽는다)
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
-interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[]; path:[number, number][] }
+// 같은 정류장(또는 옆 정류장)에서 타서 같은 곳에 내리는 다른 노선(서버가 먼저 오는 순으로 많아야 3개)
+export interface BusAlternative { route:string; color:string; departs:string; arrives:string }
+interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[]; alternatives?:BusAlternative[]; path:[number, number][] }
 type TransitLeg = TrainLeg | BusLeg;
 type Leg = WalkLeg | TransitLeg;
 // 띠 그리기에 쓰는 칸만(승차권에 저장한 경로도 이 칸은 있다 — user/account)
-type TrackTransit = Pick<TrainLeg, 'type' | 'line' | 'departs' | 'arrives' | 'wait'> | Pick<BusLeg, 'type' | 'route' | 'color' | 'departs' | 'arrives' | 'wait'>;
+type TrackTransit = Pick<TrainLeg, 'type' | 'line' | 'departs' | 'arrives' | 'wait'> | Pick<BusLeg, 'type' | 'route' | 'color' | 'departs' | 'arrives' | 'wait' | 'alternatives'>;
 export type TrackLeg = Pick<WalkLeg, 'type' | 'seconds'> | TrackTransit;
 // 단계 줄의 구간: 걷기 줄은 r.e 로 가르고 l 은 따로 좁혀지지 않아 걷기 칸을 함께 둔다
 type RowLeg = Omit<WalkLeg, 'type' | 'realtime'> & TransitLeg;
@@ -36,7 +38,7 @@ export type StepView =
   | { kind:'node'; n:'start' | 'board' | 'alight' | 'end' | 'change'; color:string; time:string; name:string; sub:string | null }
   | { kind:'walk'; text:string }
   | { kind:'ride'; color:string; ink:string; bus:boolean; chip:string; toward:string; text:string; live:string | null };
-export interface PlanView { aria:string; duration:DurationView; arrive:string; tag:string | null; track:TrackSegView[]; meta:string; live:boolean; steps:StepView[] }
+export interface PlanView { aria:string; alt:string | null; duration:DurationView; arrive:string; tag:string | null; track:TrackSegView[]; meta:string; live:boolean; steps:StepView[] }
 export interface PlanCardView { plan:PlanView; kind:string; on:boolean; hidden:boolean }
 export interface KindTabView { kind:string; name:string; count:number; pressed:boolean }
 export type JourneyResultView = { kind:'none' } | { kind:'loading' } | { kind:'failed'; message:string } | { kind:'plans'; tabs:KindTabView[] | null; cards:PlanCardView[] };
@@ -80,6 +82,11 @@ const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if
   return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
 const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
 const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
+// 같은 구간을 가는 다른 버스 안내 한 줄: '143 · 2415 · 301 중 먼저 오는 버스'(버스 구간마다, 여럿이면 ' / ') — 없으면 null
+export function sameRoutes(legs:readonly TrackLeg[]):string | null {
+  const notes = legs.flatMap(leg => leg.type === 'bus' && leg.alternatives?.length ? [`${[leg.route, ...leg.alternatives.map(other => other.route)].join(' · ')} 중 먼저 오는 버스`] : []);
+  return notes.length ? notes.join(' / ') : null;
+}
 // 띠의 칸들(셈) — HTML 글자(routeTrack · 승차권 · 아래 막대)와 화면 조각(결과 카드)이 같이 그린다
 export function trackParts(p:{ legs:readonly TrackLeg[] }, colors:Colors, width = 330):TrackSegView[] {
   const segs:Seg[] = [];
@@ -250,14 +257,14 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
       if (row.e === 'walk') return {kind: 'walk', text: `걷기 ${min(leg.seconds)}분 · ${Math.round(leg.metres / 10) * 10}m${leg.exit ? ` · ${leg.exit}번 출구` : ''}`};
       const color = legColor(leg), toward = leg.type === 'bus' ? `${leg.toward ?? ''} 방면` : (leg.destination ? `${leg.destination}행` : (leg.direction || ''));
       const live = leg.type !== 'bus' && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ''}` : null;
-      const note = leg.type === 'bus' ? (leg.alts?.length ? `같은 길 ${leg.alts.join(' · ')}` : '시간표 기준') : '배차 간격 기준';
+      const note = leg.type === 'bus' ? (leg.alternatives?.length ? `${leg.alternatives.map(other => `${other.route} ${other.departs}`).join(' · ')} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(' · ')}` : '시간표 기준') : '배차 간격 기준';
       const text = `${leg.stops}${leg.type === 'bus' ? '정류장' : '정거장'}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ''} · ${live ? '' : note}`;
       return {kind: 'ride', color, ink: inkOn(color), bus: leg.type === 'bus', chip: legName(leg), toward, text, live};
     });
   }
 
   function planView(plan:Plan):PlanView {
-    return {aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, duration: durParts(plan.minutes), arrive: `${plan.arrives} 도착`, tag: plan.tag || null,
+    return {aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, alt: sameRoutes(plan.legs), duration: durParts(plan.minutes), arrive: `${plan.arrives} 도착`, tag: plan.tag || null,
       track: trackParts(plan, colors), meta: `${plan.leaveBy} 출발 · 환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`, live: plan.legs.some(leg => leg.realtime), steps: steps(plan)};
   }
 

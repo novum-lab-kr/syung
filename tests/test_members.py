@@ -31,12 +31,14 @@ ROUTE = {"tag": "가장 빠른 길", "kind": "subway", "leaveBy": "08:11", "arri
                   {"type": "ride", "line": "2호선", "from": "잠실", "to": "시청", "departs": "08:13", "arrives": "08:40", "wait": 106,
                    "direction": "외선", "stations": [1, 2], "realtime": False},
                   {"type": "bus", "route": "종로11", "color": "#7bc043", "from": "조선일보", "to": "시청역", "departs": "08:53",
-                   "arrives": "08:54", "wait": 49, "alts": ["01"]}]}
+                   "arrives": "08:54", "wait": 49, "alts": ["01"],
+                   "alternatives": [{"route": "7016", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57", "path": [[127, 37]]}]}]}
 SAVED_ROUTE = {"tag": "가장 빠른 길", "minutes": 31, "leaveBy": "08:11", "arrives": "08:41", "transfers": 0, "walkMinutes": 2,
                "legs": [{"type": "walk", "seconds": 80},
                         {"type": "ride", "line": "2호선", "from": "잠실", "to": "시청", "departs": "08:13", "arrives": "08:40", "wait": 106},
                         {"type": "bus", "route": "종로11", "color": "#7bc043", "from": "조선일보", "to": "시청역", "departs": "08:53",
-                         "arrives": "08:54", "wait": 49}]}
+                         "arrives": "08:54", "wait": 49,
+                         "alternatives": [{"route": "7016", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57"}]}]}
 
 
 class FakeProvider:
@@ -149,6 +151,8 @@ class MemberHttpTest(unittest.TestCase):
         routed = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, route=ROUTE))
         self.assertEqual((routed.status, routed.json["route"]), (200, SAVED_ROUTE), "고른 경로는 그리는 칸만 남긴다")
         self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json["tickets"][0]["route"], SAVED_ROUTE)
+        broken = dict(ROUTE, legs=[dict(ROUTE["legs"][2], alternatives=[{"route": "7016", "color": "red", "departs": "08:55", "arrives": "08:57"}])])
+        self.assertEqual(self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, route=broken)).status, 400, "같은 구간 버스의 색이 틀리면 거절")
         cleared = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6]))
         self.assertIsNone(cleared.json["route"], "route 를 빼고 고치면 지운다")
         # 경유지(2026-10-29): via 를 넣으면 저장 · 읽을 때 그대로, 빼고 고치면 지운다(route 와 같다)
