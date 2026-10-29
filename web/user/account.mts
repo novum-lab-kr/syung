@@ -590,6 +590,8 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   });
   routeWatch.observe(routePanel, {attributes: true, attributeFilter: ['class', 'hidden']});
   routeWatch.observe(routePage, {attributes: true, attributeFilter: ['hidden']});
+  // 발권 화면을 떠나면(경로 쪽 · 목록 · 닫기) 그 전에 시작한 내 위치 요청은 돌아와도 적용하지 않는다
+  new MutationObserver(() => { if ($('menuTicket').hidden) { hereToken++; spotEpoch++; } }).observe($('menuTicket'), {attributes: true, attributeFilter: ['hidden']});
   // 경로 쪽에서 Esc 는 서랍을 닫지 않고 발권 화면으로(‹ 와 같다 — 본체의 서랍 Esc 보다 먼저 잡는다). 로그인 팝업이 떠 있으면 팝업이 먼저, 경유지 목록이 펼쳐져 있으면 목록이 먼저
   window.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || sheetOpen() || !onRoutePage()) return;
