@@ -16,7 +16,7 @@ function usefulRoutes(plans) {
 	if (shapes.length < 2) return shapes;
 	const quickest = Math.min(...shapes.map((plan) => plan.minutes));
 	const slowest = quickest + Math.max(SLOW_LIMIT.minutes, quickest * SLOW_LIMIT.share);
-	return shapes.filter((plan) => plan.tag === FASTEST || plan.minutes <= slowest && !shapes.some((other) => other !== plan && other.minutes < plan.minutes && other.transfers <= plan.transfers));
+	return shapes.filter((plan) => plan.tag === FASTEST || plan.minutes <= slowest);
 }
 function quickestRoute(plans) {
 	return usefulRoutes(plans).reduce((best, plan) => !best || ahead(plan, best) ? plan : best, null);
