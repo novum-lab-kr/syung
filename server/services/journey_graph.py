@@ -448,6 +448,14 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                 if c_ != a and hop and not (label and _label(line, b, c_) not in (label, None)):
                     push((line, b, c_, end), T0 + hop, T0 + hop, ("board", None, {"departs": T0, "train": None, "ready": T0, "stay": True}), 0)
             continue
+        if node[0] == "bstay":   # 경유지 정류장에서 내리지 않고 같은 버스로 계속(plan_via — ("bstay", 패턴, 운행 시작 epoch, 배율, 내린 자리)): 시간표를 다시 찾지 않는다
+            _, pi, base, scale, k = node
+            p, here = BPATS[pi], base + BPATS[pi]["t"][k] * scale
+            for j in (range(k + 1, len(p["s"])) if "bus" in modes else ()):
+                arr = base + p["t"][j] * scale
+                push(("bs", p["s"][j]), arr, arr, ("bus", None, {"p": pi, "k": k, "j": j, "base": base, "sc": scale, "departs": here, "ready": here,
+                                                                "stay": True}), 0)
+            continue
         if node[0] == "bs" and "bus" not in modes or node[0] == "at" and "subway" not in modes:
             continue
         push((*node, "w"), T0 + w[0], T0 + w[0], ("start", None, {"w": w}), 0)
@@ -520,7 +528,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                         arr = base + pt[j] * scale
                         if arr + extra < bbest[ps[j]]:
                             push(("bs", ps[j]), arr + extra, arr,
-                                 ("bus", s, {"p": pi, "k": k, "j": j, "st": st, "departs": day0 + dep, "ready": t}), changes + (kind != "start"))
+                                 ("bus", s, {"p": pi, "k": k, "j": j, "base": base, "sc": scale, "departs": day0 + dep, "ready": t}), changes + (kind != "start"))
             if kind == "bus":
                 for j, m in BUS_WALK[stop]:
                     w = _walk_sec(m)
@@ -594,7 +602,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                          "realtime": False, "toward": BSTOPS[p["s"][-1]][0],
                          "path": _bus_path(info["p"], info["k"], info["j"]),
                          "_dep": info["departs"], "_ban": [("bus", p["r"], ids[0]), ("bus", p["r"])], "_stop": ids[-1],
-                         "_trip": (info["p"], info["st"])})
+                         "_run": (info["p"], info["base"], info["sc"], info["j"]), **({"_stay": True} if info.get("stay") else {})})
     transit = [l for l in legs if l["type"] != "walk"]
     leave = transit[0]["_dep"] - (legs[0]["seconds"] if legs[0]["type"] == "walk" else 0) if transit else T0
     return {"legs": legs, "leave": max(T0, leave), "arrive": best[("goal",)][1]}
@@ -764,7 +772,7 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
             else:
                 l.pop("_dep")
                 l.pop("_ban")
-                for k in ("_stop", "_trip", "_stay"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
+                for k in ("_stop", "_run", "_stay"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
                     l.pop(k, None)
         transit = [l for l in legs if l["type"] != "walk"]
         plans.append({"tag": tag, "kind": _kind(r) if transit else "walk", "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
@@ -907,6 +915,9 @@ def _via_start(node: Node, first: Row) -> dict[Node, tuple[Walk, Row | None]]:
             out[("bs", stop)] = ((w, round(m * WALK_DETOUR), "", *b), _transfer_leg(node, ("bs", stop), w, m, pt, b))
         return out
     stop = node[1]
+    last = [l for l in first["legs"] if l["type"] != "walk"][-1]
+    if "_run" in last:   # 같은 버스로 계속 — 운행 · 내린 자리를 그대로 넘긴다(도착 시각으로 시간표를 다시 찾으면 소수 배율 반올림에 그 차를 놓친다)
+        out[("bstay", *last["_run"])] = ((0, 0, "", *here), None)
     out[node] = ((0, 0, "", *here), None)
     for j, m in BUS_WALK[stop] if stop < len(BUS_WALK) else ():
         w, b = _walk_sec(m), _node_point(("bs", j))
@@ -927,13 +938,13 @@ def _first_ride_node(r: Row) -> Node | None:
 
 
 def _same_vehicle(a: Row, b: Row) -> bool:
-    """경유지에서 내리지 않고 같은 차량을 그대로 탔는가(바로 이어진 두 탈 것 구간): 지하철은 뒤 구간이 같은 열차로 계속한 것(_stay),
-    버스는 같은 운행(패턴 · 출발 시각)을 내린 정류장에서 바로 이어 탄 것. 노선만 같고 다른 열차 · 버스면 실제 환승이라 나눠 둔다."""
+    """경유지에서 내리지 않고 같은 차량을 그대로 탔는가(바로 이어진 두 탈 것 구간): 뒤 구간이 탐색 시작의 '같은 열차 · 버스로 계속'
+    (stay · bstay → _stay)에서 나온 것. 노선만 같고 다른 열차 · 버스면 실제 환승이라 나눠 둔다."""
     if a["type"] != b["type"]:
         return False
     if a["type"] == "ride":
         return bool(b.get("_stay")) and a["line"] == b["line"] and a["stations"][-1] == b["stations"][0]
-    return "_trip" in a and a["_trip"] == b.get("_trip") and a.get("_stop") == b["_ban"][0][2]
+    return bool(b.get("_stay")) and a.get("_stop") == b["_ban"][0][2]
 
 
 def _merged(a: Row, b: Row) -> Row:
@@ -948,20 +959,21 @@ def _merged(a: Row, b: Row) -> Row:
     return out
 
 
-def _via_walk_on(node: Node, goal: dict[Node, Walk], walk_b: tuple[list[list[float]], int, int] | None, dest: tuple[float, float],
-                 ready: float) -> Row | None:
+def _via_walk_on(node: Node, goal: dict[Node, Walk], dest: tuple[float, float], ready: float) -> Row | None:
     """경유지 역 · 정류장에 내린 자리에서 목적지까지 걸어가기(뒤 구간을 걷기로 대신할 때): 그 역 출구 · 정류장이 목적지 걷기 표(goal)에 있으면
-    탐색의 '내려서 목적지까지 걷기'와 같은 구간, 없으면 경유지 → 목적지 걷기(walk_b)를 그 역 · 정류장에서 시작하고 역이면 오르내리기를 더한다."""
+    탐색의 '내려서 목적지까지 걷기'와 같은 구간, 없으면 그 정류장 · 목적지에 가장 가까운 역 출구에서 목적지까지 다시 잰다
+    (걸어갈 만한 거리 — plan 의 걸어가기와 같은 2.5 km 안. 역이면 오르내리기를 더한다)."""
     if node in goal:
         sec, m, ex, lat, lng = goal[node]
         name = _node_name(node)
         label = f"{name}역{f' {ex}번 출구' if ex else ''}에서 목적지까지" if node[0] == "at" else f"{name} 정류장에서 목적지까지"
         return {"legs": [{"type": "walk", "seconds": sec, "metres": m, "exit": ex, "from": name, "point": (lat, lng), "label": label}],
                 "leave": ready, "arrive": ready + sec}
-    if walk_b is None:
+    point = min((p[:2] for p in _points(node[1])), key=lambda q: _meters(q, dest)) if node[0] == "at" else _node_point(node)
+    if _meters(point, dest) >= 2500:
         return None
+    row = _walk_row(walk_path(point, dest), point, dest, ready, "목적지까지 걸어서")
     access = STATION_ACCESS if node[0] == "at" else 0
-    row = _walk_row(walk_b, _node_point(node), dest, ready, "목적지까지 걸어서")
     row["legs"][0]["seconds"] += access
     row["arrive"] += access
     return row
@@ -1046,7 +1058,7 @@ def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[
     for i, first in enumerate(firsts):
         ready = readies[i]
         node = arrivals[i]
-        walk_on = _via_walk_on(node, goal, walk_b, dest, ready) if node is not None else \
+        walk_on = _via_walk_on(node, goal, dest, ready) if node is not None else \
             _walk_row(walk_b, via, dest, ready, "목적지까지 걸어서") if walk_b else None
         seconds_ = backs[i]
         if walk_on and (not seconds_ or _shows_walk([r["arrive"] for r in seconds_], round(walk_on["arrive"] - ready), ready)):

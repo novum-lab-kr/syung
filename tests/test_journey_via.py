@@ -227,7 +227,7 @@ class StationViaTest(unittest.TestCase):
         self.assertEqual([l["type"] for l in legs], ["ride", "walk", "bus"])
         self.assertEqual(legs[1]["label"], "청담역에서 청담역.경기고교 정류장으로")
         self.assertEqual(legs[1]["seconds"], graph._walk_sec(80.0) + graph.STATION_ACCESS)
-        self.assertTrue(all(k not in l for l in legs for k in ("_stop", "_trip", "_stay", "_dep", "_ban", "point", "a", "b")))
+        self.assertTrue(all(k not in l for l in legs for k in ("_stop", "_run", "_stay", "_dep", "_ban", "point", "a", "b")))
         self.assertEqual(plans[0]["transfers"], 1)
 
     def test_same_train_through_the_via_station_is_one_leg(self):
@@ -271,19 +271,30 @@ class StationViaTest(unittest.TestCase):
         self.assertIn(((37.5200, 127.0550), near_dest), walked)
         self.assertEqual(plans[0]["arrives"], graph._fmt(T0 + 1800 + 200))
 
-    def test_walking_on_from_a_station_not_in_the_goal_table_adds_the_climb(self):
-        near_dest = (37.5210, 127.0560)
+    def test_walking_on_from_a_station_not_in_the_goal_table_is_measured_from_its_exit(self):
+        # 목적지 걷기 표에 없는 역이면 경유지 좌표에서 잰 걷기를 빌려 쓰지 않고 목적지에 가장 가까운 출구에서 다시 잰다(Codex 재리뷰 2)
+        near_dest = (37.5240, 127.0600)
+        walked = []
+
+        def walk_path(a, b):
+            walked.append(a)
+            return [[a[1], a[0]], [b[1], b[0]]], round(graph._meters(a, b)), round(graph._meters(a, b))
         first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("ride", "7호선", "먹골", "청담"), end_walk("청담")]}
-        with patch.object(graph, "walk_path", lambda a, b: ([[a[1], a[0]], [b[1], b[0]]], 240, 280)):
+        with patch.object(graph, "walk_path", walk_path):
             plans = graph.plan_via(ORIGIN, STATION_VIA, near_dest, WHEN, {}, self.batches(STATION_VIA, first, lambda start, modes: None), 3)["plans"]
-        self.assertEqual(plans[0]["arrives"], graph._fmt(T0 + 1800 + 240 + graph.STATION_ACCESS))
+        exit_ = min((p[:2] for p in graph._points(CHEONGDAM)), key=lambda q: graph._meters(q, near_dest))
+        self.assertIn(exit_, walked)
+        legs = plans[0]["legs"]
+        self.assertEqual(legs[1]["seconds"], round(graph._meters(exit_, near_dest)) + graph.STATION_ACCESS)
+        self.assertEqual(plans[0]["arrives"], graph._fmt(T0 + 1800 + legs[1]["seconds"]))
+        self.assertEqual(plans[0]["walkMinutes"], round(legs[1]["seconds"] / 60))
 
     def test_same_bus_through_the_via_stop_is_one_leg(self):
         stop_via = (37.53, 127.06)   # 역에서 먼 정류장(거리는 아래 _stops_near 대역이 정한다)
-        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("bus", "143", "먹골역", "청담역.경기고교", arrives="08:30", _stop=STOP, _trip=(3, 28000)),
+        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("bus", "143", "먹골역", "청담역.경기고교", arrives="08:30", _stop=STOP, _run=(3, T0, 1.2, 4)),
                                                                 {**end_walk("청담역.경기고교"), "point": stop_via}]}
-        same = leg("bus", "143", "청담역.경기고교", "무역센터", departs="08:30", arrives="08:45", path=[[127.05, 37.52], [127.06, 37.51]], _stop=7, _trip=(3, 28000))
-        later = {**same, "_trip": (3, 28600)}   # 같은 번호 다음 차 — 갈아탄 것
+        same = leg("bus", "143", "청담역.경기고교", "무역센터", departs="08:30", arrives="08:45", path=[[127.05, 37.52], [127.06, 37.51]], _stop=7, _stay=True)
+        later = {k: v for k, v in same.items() if k != "_stay"}   # 같은 번호 다음 차(정류장에서 시간표로 다시 탄 것) — 갈아탄 것
         seen = []
         answer = [same]
 
@@ -301,6 +312,7 @@ class StationViaTest(unittest.TestCase):
         self.assertEqual(seen[0][("bs", STOP)][0], 0, "버스에서 내린 정류장에서 바로")
         self.assertIn(("bs", OTHER), seen[0], "이어 걷는 정류장")
         self.assertIn(("at", CHEONGDAM), seen[0], "가까운 역")
+        self.assertIn(("bstay", 3, T0, 1.2, 4), seen[0], "내리지 않고 같은 버스로 계속(운행 · 내린 자리 그대로)")
         legs = plans[0]["legs"]
         self.assertEqual([(l["type"], l["from"], l["to"], l["stops"]) for l in legs], [("bus", "먹골역", "무역센터", 4)])
         self.assertEqual(legs[0]["path"], [[127.0, 37.5], [127.05, 37.52], [127.06, 37.51]])
@@ -374,6 +386,42 @@ class StationViaSearchTest(unittest.TestCase):
         same = [p for p in via if self.rides(p) == self.rides(line7[0])]
         self.assertTrue(same, [self.rides(p) for p in via])
         self.assertEqual(same[0]["arrives"], line7[0]["arrives"], "같은 열차로 계속 — 환승 · 기다림을 다시 더하지 않는다")
+
+
+class BusStopViaSearchTest(unittest.TestCase):
+    """실제 탐색 — 정류장 경유지를 같은 버스로 지나가기. 정류장 사이 121초 × 배율 1.2 처럼 도착 시각이 소수여도 그 버스를 놓치지 않는다(Codex 재리뷰 1)."""
+    STOPS = [["신촌가", 37.5600, 126.9400], ["홍제가", 37.5900, 126.9400], ["독바위가", 37.6200, 126.9400]]   # 역에서 190 m · 390 m · 640 m
+    WHEN = datetime(2026, 10, 30, 8, 0, tzinfo=KST)
+
+    def setUp(self):
+        stops = self.STOPS
+        pats = [{"r": 0, "s": [0, 1, 2], "t": [0, 121, 242], "d": [[st, 1.2] for st in range(5 * 3600, 24 * 3600, 600)]}]
+        for pat in pats:
+            pat["starts"] = [d[0] for d in pat["d"]]
+        routes = [["7212", "trunk"]]
+
+        def near_nodes(point):
+            return [("bs", i) for i, stop in enumerate(stops) if graph._meters(point, (stop[1], stop[2])) <= graph.BUS_RADIUS_M]
+        patches = [patch.object(graph, "OSRM", _NoRouter()), patch.object(graph, "BUS", True), patch.object(graph, "BSTOPS", stops),
+                   patch.object(graph, "BPATS", pats), patch.object(graph, "BROUTES", routes),
+                   patch.object(graph, "BUS_AT", graph.bus_boardings(pats, routes)), patch.object(graph, "BUS_WALK", [[], [], []]),
+                   patch.object(graph, "BUS_SHAPES", {}), patch.object(graph, "_near_nodes", near_nodes),
+                   patch.object(graph, "_stops_near", lambda point, radius: sorted(
+                       (graph._meters(point, (s[1], s[2])), i) for i, s in enumerate(stops) if graph._meters(point, (s[1], s[2])) <= radius)),
+                   patch.object(graph, "STATION_BUS", {}), patch.object(graph, "BUS_STATION", {})]
+        for active in patches:
+            active.start()
+            self.addCleanup(active.stop)
+
+    def test_staying_on_the_same_bus_through_the_stop(self):
+        origin, via, dest = (37.5601, 126.9401), (37.5900, 126.9400), (37.6199, 126.9401)
+        self.assertEqual(graph._via_nodes(via), [("bs", 1)])
+        run = StationViaSearchTest.run_batch
+        plain = graph.plan(origin, dest, self.WHEN, {}, run, 3)["plans"]
+        plans = graph.plan_via(origin, via, dest, self.WHEN, {}, run, 3)["plans"]
+        self.assertEqual([StationViaSearchTest.rides(p) for p in plans], [[("7212", "신촌가", "독바위가")]], "한 버스 한 구간")
+        self.assertEqual(plans[0]["arrives"], plain[0]["arrives"], "다음 차로 바뀌지 않는다")
+        self.assertEqual(plans[0]["legs"][1]["stops"], 2)
 
 
 class ViaRouteTest(unittest.TestCase):
