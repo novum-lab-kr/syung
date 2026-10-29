@@ -1,4 +1,4 @@
-import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
+import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 // web/ui/journey_sheet.tsx
 var PIN = /* @__PURE__ */ a("svg", {
@@ -274,6 +274,26 @@ function Track({ segs }) {
 		}))
 	});
 }
+var MoreText = class extends x {
+	state = { openFor: null };
+	render({ text, full, more }) {
+		if (full === null || more <= 0) return /* @__PURE__ */ a(M, { children: text });
+		if (this.state.openFor === full) return /* @__PURE__ */ a(M, { children: full });
+		return /* @__PURE__ */ a(M, { children: [
+			text,
+			" ",
+			/* @__PURE__ */ a("button", {
+				type: "button",
+				class: "jp-more",
+				onClick: (event) => {
+					event.stopPropagation();
+					this.setState({ openFor: full });
+				},
+				children: `외 ${more}대`
+			})
+		] });
+	}
+};
 function Step({ step }) {
 	if (step.kind === "node") return /* @__PURE__ */ a("li", {
 		class: `js node ${step.n}`,
@@ -312,7 +332,11 @@ function Step({ step }) {
 				children: [/* @__PURE__ */ a("p", { children: [/* @__PURE__ */ a("span", {
 					class: "js-chip",
 					children: [step.bus && BUS, step.chip]
-				}), step.toward] }), /* @__PURE__ */ a("small", { children: [step.text, step.live !== null && /* @__PURE__ */ a("span", {
+				}), step.toward] }), /* @__PURE__ */ a("small", { children: [/* @__PURE__ */ a(MoreText, {
+					text: step.text,
+					full: step.textAll,
+					more: step.more
+				}), step.live !== null && /* @__PURE__ */ a("span", {
 					class: "js-live",
 					children: step.live
 				})] })]
@@ -371,7 +395,11 @@ function Card({ plan, index, on, hidden, actions }) {
 			}),
 			plan.alt !== null && /* @__PURE__ */ a("p", {
 				class: "jp-alt",
-				children: plan.alt
+				children: /* @__PURE__ */ a(MoreText, {
+					text: plan.alt,
+					full: plan.altAll,
+					more: plan.altMore
+				})
 			}),
 			/* @__PURE__ */ a("ol", {
 				class: "jsteps",
@@ -575,4 +603,4 @@ var drawJourney = (body, view, actions) => K(/* @__PURE__ */ a(JourneySheet, {
 	actions
 }), body);
 var clearJourney = (body) => K(null, body);
-export { JourneySheet, RouteLoading, clearJourney, drawJourney };
+export { JourneySheet, MoreText, RouteLoading, clearJourney, drawJourney };

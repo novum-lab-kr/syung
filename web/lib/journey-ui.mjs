@@ -30,14 +30,18 @@ var inkOn = (hex) => {
 };
 var BUS = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z\"/></svg>";
 var textW = (t) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);
-function sameRoutes(legs) {
+function sameRoutes(legs, all = false) {
 	const side = (stop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ""}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ""})`;
 	const notes = legs.flatMap((leg) => {
 		if (leg.type !== "bus" || !leg.alternatives?.length) return [];
-		const where = leg.alternatives.flatMap((other) => [...other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : [], ...other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : []]);
-		return [`${[leg.route, ...leg.alternatives.map((other) => other.route)].join(" · ")} 중 먼저 오는 버스${where.length ? ` (${where.join(", ")})` : ""}`];
+		const shown = all ? leg.alternatives : leg.alternatives.slice(0, 3);
+		const where = shown.flatMap((other) => [...other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : [], ...other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : []]);
+		return [`${[leg.route, ...shown.map((other) => other.route)].join(" · ")} 중 먼저 오는 버스${where.length ? ` (${where.join(", ")})` : ""}`];
 	});
 	return notes.length ? notes.join(" / ") : null;
+}
+function hiddenRoutes(legs) {
+	return legs.reduce((sum, leg) => sum + (leg.type === "bus" ? Math.max(0, (leg.alternatives?.length ?? 0) - 3) : 0), 0);
 }
 function exitHints(legs) {
 	return legs.flatMap((leg, at) => {
@@ -389,8 +393,10 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			};
 			const color = legColor(leg), toward = leg.type === "bus" ? `${leg.toward ?? ""} 방면` : leg.destination ? `${leg.destination}행` : leg.direction || "";
 			const live = leg.type !== "bus" && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ""}` : null;
-			const note = leg.type === "bus" ? leg.alternatives?.length ? `${leg.alternatives.map((other) => `${other.route} ${other.departs}`).join(" · ")} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(" · ")}` : "시간표 기준" : "배차 간격 기준";
-			const text = `${leg.stops}${leg.type === "bus" ? "정류장" : "정거장"}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ""} · ${live ? "" : note}`;
+			const others = leg.type === "bus" ? leg.alternatives ?? [] : [];
+			const noteOf = (count) => leg.type === "bus" ? others.length ? `${others.slice(0, count).map((other) => `${other.route} ${other.departs}`).join(" · ")} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(" · ")}` : "시간표 기준" : "배차 간격 기준";
+			const textOf = (note) => `${leg.stops}${leg.type === "bus" ? "정류장" : "정거장"}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ""} · ${live ? "" : note}`;
+			const more = Math.max(0, others.length - 3);
 			return {
 				kind: "ride",
 				color,
@@ -398,7 +404,9 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 				bus: leg.type === "bus",
 				chip: legName(leg),
 				toward,
-				text,
+				text: textOf(noteOf(3)),
+				textAll: more ? textOf(noteOf(others.length)) : null,
+				more,
 				live
 			};
 		});
@@ -407,6 +415,8 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		return {
 			aria: `${plan.tag || "경로"} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`,
 			alt: sameRoutes(plan.legs),
+			altAll: hiddenRoutes(plan.legs) ? sameRoutes(plan.legs, true) : null,
+			altMore: hiddenRoutes(plan.legs),
 			duration: durParts(plan.minutes),
 			arrive: `${plan.arrives} 도착`,
 			tag: plan.tag || null,
@@ -668,4 +678,4 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		drop
 	};
 }
-export { exitHints, initJourney, routeTrack, sameRoutes, trackParts };
+export { exitHints, hiddenRoutes, initJourney, routeTrack, sameRoutes, trackParts };

@@ -1,7 +1,7 @@
-import { exitHints, routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
+import { exitHints, hiddenRoutes, routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { RouteLoading } from "../ui/journey_sheet.mjs";
+import { MoreText, RouteLoading } from "../ui/journey_sheet.mjs";
 // web/user/tickets_view.tsx
 var DAYS = [
 	"월",
@@ -157,8 +157,12 @@ function Card({ ticket, index }) {
 							children: exitHints(ticket.route.legs).join(" / ")
 						}), sameRoutes(ticket.route.legs) !== null && /* @__PURE__ */ a("p", {
 							class: "tk-alt",
-							title: sameRoutes(ticket.route.legs),
-							children: sameRoutes(ticket.route.legs)
+							title: sameRoutes(ticket.route.legs, true),
+							children: /* @__PURE__ */ a(MoreText, {
+								text: sameRoutes(ticket.route.legs),
+								full: sameRoutes(ticket.route.legs, true),
+								more: hiddenRoutes(ticket.route.legs)
+							})
 						})]
 					}),
 					/* @__PURE__ */ a("p", {
@@ -469,7 +473,18 @@ function PlacePage() {
 }
 function altHTML(legs) {
 	const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(" / ");
-	return note ? `<span class="jp-alt">${esc(note)}</span>` : "";
+	if (!note) return "";
+	const hidden = hiddenRoutes(legs);
+	if (!hidden) return `<span class="jp-alt">${esc(note)}</span>`;
+	return `<span class="jp-alt" data-full="${esc([sameRoutes(legs, true), ...exitHints(legs)].filter(Boolean).join(" / "))}">${esc(note)} <span class="jp-more" role="button" tabindex="0">외 ${hidden}대</span></span>`;
+}
+function planFold(event) {
+	const more = event.target.closest(".jp-more");
+	const box = more?.closest(".jp-alt");
+	if (!more || !box) return false;
+	event.stopPropagation();
+	box.textContent = box.dataset.full ?? "";
+	return true;
 }
 function planHTML(plan) {
 	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
@@ -560,7 +575,9 @@ function RoutePage() {
 					role: "radio",
 					"aria-checked": index === view.chosen ? "true" : "false",
 					"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
-					onClick: () => call("plan")(index),
+					onClick: (event) => {
+						if (!planFold(event)) call("plan")(index);
+					},
 					dangerouslySetInnerHTML: { __html: planHTML(plan) }
 				});
 			})
