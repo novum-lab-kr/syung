@@ -796,7 +796,8 @@ def _nearby(stop: int) -> list[tuple[int, float]]:
 
 
 _catalog_by_name: dict[str, list[tuple[float, float, str, str]]] = defaultdict(list)   # 정류장 이름 → [(lat, lng, id, 번호)]
-for _row in cast("list[Row]", (journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {}).get("stops", ())):
+_catalog = cast("dict[str, Any]", journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {})
+for _row in cast("list[Row]", _catalog.get("stops", ())):
     _catalog_by_name[_row["name"]].append((_row["lat"], _row["lng"], str(_row["id"]), str(_row.get("arsId") or "")))
 
 
