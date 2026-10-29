@@ -5,9 +5,9 @@
 // 출발 시각 바퀴의 칸 속(.tw-col 의 단추 · 스크롤 자리 · on/near · aria-valuetext)은 account.mts 가 바닐라로 그대로 다룬다 — 여기서는 다시 그리지 않는다.
 // 서랍 껍데기 · 쪽(section) 숨기기 · 쪽 이름(aria-label)은 본체 · account.mts 그대로.
 import { Component, render } from 'preact';
-import { exitHints, hiddenRoutes, routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import { routeSteps, routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
-import { MoreText, RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
+import { RouteLoading, StepList } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드 · 단계 목록: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
 import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
@@ -58,12 +58,14 @@ interface View {
   routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
   routeFilter:RouteFilterView | null;   // 조건 고르기(종류 · 차례)와 보일 차례(plans 의 번호) — 길이 없으면 null
   routeVia:Place | null;   // 지금 경로 목록을 찾은 경유지(이 경로로를 누르면 발권 화면의 via 가 된다)
+  stepsOf:Plan | null;   // 경로 고르기에서 단계 목록을 펼친 경로(목록을 다시 찾으면 다른 객체라 저절로 접힌다)
+  stepsOpen:string | null;   // 승차권 뒷면에서 단계 목록을 펼친 카드(목록 번호 + 카드 번호 — 목록을 다시 받으면 저절로 접힌다)
 }
 let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, via: null, wheelOpen: false, sending: false, deleteArmed: false,
   placeTo: false, placeVia: false, placeQuery: '', placeHidden: true, placeRows: [],
-  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, routeVia: null,
+  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, routeVia: null, stepsOf: null, stepsOpen: null,
 };
 let handlers:Handlers | null = null;
 const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
@@ -81,22 +83,22 @@ function Front({ ticket }:{ ticket:Pick<Ticket, 'id' | 'name' | 'depart' | 'days
 }
 // 목록 카드: 누르면 뒤집기, '고치기 ›' 는 발권 화면 · '지도에서 보기' 는 지도에 그 길(둘 다 카드 뒤집기 없이)
 function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
-  const chain = view.chains[index] ?? null;
+  const chain = view.chains[index] ?? null, stepsKey = `${view.listTurn}-${index}`, opened = view.stepsOpen === stepsKey;
   const waiting = `<span>${esc(shortName(ticket.from.name))}</span><em>→</em><span>${esc(shortName(ticket.to.name))}</span>`;
-  return <div class={view.flipped[index] ? 'ticket flipped' : 'ticket'} onClick={event => {
+  return <><div class={view.flipped[index] ? 'ticket flipped' : 'ticket'} onClick={event => {
+    if ((event.target as Element).closest('.tk-steps-btn')) { event.stopPropagation(); set({ stepsOpen: opened ? null : stepsKey }); return }
     if ((event.target as Element).closest('.tk-edit')) { event.stopPropagation(); call('ticketEdit')(index); return }
     if ((event.target as Element).closest('.tk-map')) { event.stopPropagation(); call('ticketMap')(index); return }
     call('ticketFlip')(index);
   }}><div class="ticket-in"><Front ticket={ticket} /><div class="tk-face tk-back">
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
-    {ticket.route && (exitHints(ticket.route.legs).length > 0 || sameRoutes(ticket.route.legs) !== null) && <div class="tk-alts">
-      {exitHints(ticket.route.legs).length > 0 && <p class="tk-alt" title={exitHints(ticket.route.legs).join(' / ')}>{exitHints(ticket.route.legs).join(' / ')}</p>}
-      {sameRoutes(ticket.route.legs) !== null && <p class="tk-alt" title={sameRoutes(ticket.route.legs, true)!}><MoreText text={sameRoutes(ticket.route.legs)!} full={sameRoutes(ticket.route.legs, true)} more={hiddenRoutes(ticket.route.legs)} /></p>}</div>}
+    {ticket.route && <div class="tk-alts"><button class="tk-steps-btn" type="button" aria-expanded={opened ? 'true' : 'false'}>경로 자세히<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button></div>}
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
     <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
       {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
       <button class="tk-map" type="button" aria-disabled={view.mapping === index ? 'true' : undefined}>{view.mapping === index ? '찾는 중…' : '지도에서 보기'}</button>
-      <button class="tk-edit" type="button">고치기 ›</button></span></div></div></div></div>;
+      <button class="tk-edit" type="button">고치기 ›</button></span></div></div></div></div>
+    {opened && ticket.route && <div class="tk-steps"><StepList steps={routeSteps(ticket.route.legs, { from: ticket.from.name, to: ticket.to.name }, view.colors)} className="jsteps shown" /></div>}</>;
 }
 function TicketsPage() {
   return <>
@@ -157,30 +159,11 @@ function PlacePage() {
   </>;
 }
 
-// 같은 구간 다른 버스 안내(없으면 빈 글자)
-export function altHTML(legs:readonly SlimLeg[]) {
-  const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(' / ');   // 같은 구간 다른 버스 + 갈아탈 출구 안내
-  if (!note) return '';
-  const hidden = hiddenRoutes(legs);
-  if (!hidden) return `<span class="jp-alt">${esc(note)}</span>`;
-  const full = [sameRoutes(legs, true), ...exitHints(legs)].filter(Boolean).join(' / ');
-  // 단추 속이라 단추를 또 넣을 수 없다 — 글자 단추(span). 눌렀을 때 펼치는 일은 planFold 가 한다
-  return `<span class="jp-alt" data-full="${esc(full)}">${esc(note)} <span class="jp-more" role="button" tabindex="0">외 ${hidden}대</span></span>`;
-}
-// 경로 단추 속 '외 N대' 를 누르면 글자를 다 펼친다(경로를 고르지는 않는다). 펼쳤으면 true
-function planFold(event:Event) {
-  const more = (event.target as Element).closest('.jp-more');
-  const box = more?.closest<HTMLElement>('.jp-alt');
-  if (!more || !box) return false;
-  event.stopPropagation();
-  box.textContent = box.dataset.full ?? '';
-  return true;
-}
 // 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)
 function planHTML(plan:Plan) {
   return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>`
     + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
-    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
+    + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
 }
 // 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수)
 function RouteFilters({ filter }:{ filter:RouteFilterView }) {
@@ -204,8 +187,10 @@ function RoutePage() {
     {filter && <RouteFilters filter={filter} />}
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
     {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
-    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!; return <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
-      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={event => { if (!planFold(event)) call('plan')(index); }} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>; })}</div>
+    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!, opened = view.stepsOf === plan; return <div class="rt-item"><button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
+      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>
+      <button type="button" class="rt-open" aria-expanded={opened ? 'true' : 'false'} aria-label="경로 자세히 보기" onClick={() => set({ stepsOf: opened ? null : plan })}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button>
+      {opened && <div class="rt-steps"><StepList steps={routeSteps(plan.legs, { from: view.from?.name ?? '출발', to: view.to?.name ?? '도착' }, view.colors)} className="jsteps shown" /></div>}</div>; })}</div>
     {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}
