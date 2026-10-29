@@ -118,6 +118,8 @@ def _side_stop(value: object) -> dict[str, Any]:
     out: dict[str, Any] = {"name": _text(row.get("name"), "옆 정류장 이름"), "metres": _count(row.get("metres"), "옆 정류장 거리", 2000)}
     if row.get("exit"):
         out["exit"] = _text(row.get("exit"), "출구 번호", 8)
+    if row.get("walkMinutes") is not None:
+        out["walkMinutes"] = _count(row.get("walkMinutes"), "옆 정류장 걷는 분", 60)
     for key in ("id", "ars"):   # 정류장 id · 번호(같은 이름 다른 정류장을 가른다)
         if row.get(key):
             out[key] = _text(row.get(key), "옆 정류장 번호", 12)
@@ -125,10 +127,10 @@ def _side_stop(value: object) -> dict[str, Any]:
 
 
 def _alternatives(value: object) -> list[dict[str, Any]]:
-    """같은 구간 다른 버스(alternatives) → 많아야 3개, 번호 · 색 · 출발 · 도착만. 없으면 빈 목록."""
+    """같은 구간 다른 버스(alternatives) → 많아야 12개(서버 MAX_ALTERNATIVES), 번호 · 색 · 출발 · 도착만. 없으면 빈 목록."""
     if value is None:
         return []
-    if not isinstance(value, list) or len(cast("list[Any]", value)) > 3:
+    if not isinstance(value, list) or len(cast("list[Any]", value)) > 12:
         raise ValueError("경로의 같은 구간 버스가 틀려요")
     out: list[dict[str, Any]] = []
     for item in cast("list[Any]", value):

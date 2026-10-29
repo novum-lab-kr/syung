@@ -68,10 +68,10 @@ class AlternativesTest(unittest.TestCase):
         # 옆 정류장에서 타는 버스: 걷는 시간(60 m → 65초)만큼 늦게 닿는 것으로 보고, 어느 정류장인지(이름 · 거리 · 출구)를 싣는다
         found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [1, 3], NINE + 8 * 60)], walk=True, extra=(7, 8))
         self.assertEqual([a["route"] for a in found], ["2415"])
-        self.assertEqual(found[0]["boardAt"], {"name": "청담옆", "metres": 60, "id": "122000084", "ars": "23187", "exit": "11"})
+        self.assertEqual(found[0]["boardAt"], {"name": "청담옆", "metres": 60, "walkMinutes": 1, "id": "122000084", "ars": "23187", "exit": "11"})
         self.assertNotIn("alightAt", found[0])
         found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 4], NINE + 8 * 60)], walk=True, extra=(7, 8))
-        self.assertEqual(found[0]["alightAt"], {"name": "삼성옆", "metres": 70, "id": "122000095", "ars": "23198", "exit": "3"})
+        self.assertEqual(found[0]["alightAt"], {"name": "삼성옆", "metres": 70, "walkMinutes": 1, "id": "122000095", "ars": "23198", "exit": "3"})
         self.assertNotIn("boardAt", found[0])
 
     def test_next_stop_carries_the_stop_number(self):
@@ -82,14 +82,14 @@ class AlternativesTest(unittest.TestCase):
         self.assertEqual(by_route["301"]["alightAt"]["ars"], "23198")
 
     def test_next_stop_distance_limits_by_name(self):
-        # 이름이 같으면 150 m 까지, 다르면 80 m 까지(걷기 1분 안팎) — 그 밖은 후보가 아니다
+        # 이름이 같으면 300 m 까지, 다르면 80 m 까지(걷기 1분 안팎) — 그 밖은 후보가 아니다
         names = [["청담", 0, 0], ["청담", 1, 0], ["옆동네", 2, 0], ["삼성", 3, 0]]
         def near(same_m, other_m):
             return [[[1, same_m], [2, other_m]], [[0, same_m]], [[0, other_m]], []]
-        patterns = [pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [1, 3], NINE + 8 * 60), pattern(2, [2, 3], NINE + 9 * 60)]
-        self.assertEqual([a["route"] for a in run(patterns, walk=near(150.0, 80.0), stops=names)], ["2415", "301"])   # 경계값은 들어간다
-        self.assertEqual([a["route"] for a in run(patterns, walk=near(151.0, 81.0), stops=names)], [])
-        self.assertEqual([a["route"] for a in run(patterns, walk=near(140.0, 90.0), stops=names)], ["2415"])   # 이름 다른 90 m 는 빠진다
+        patterns = [pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [1, 3], NINE + 12 * 60), pattern(2, [2, 3], NINE + 13 * 60)]   # 300 m 는 걸어 5분 넘게 — 그 뒤에 떠나는 버스여야 탈 수 있다
+        self.assertEqual([a["route"] for a in run(patterns, walk=near(300.0, 80.0), stops=names)], ["2415", "301"])   # 경계값은 들어간다
+        self.assertEqual([a["route"] for a in run(patterns, walk=near(301.0, 81.0), stops=names)], [])
+        self.assertEqual([a["route"] for a in run(patterns, walk=near(290.0, 90.0), stops=names)], ["2415"])   # 이름 다른 90 m 는 빠진다
 
     def test_same_stop_has_no_note_and_is_preferred(self):
         found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 3], NINE + 8 * 60), pattern(1, [1, 3], NINE + 8 * 60)], walk=True)
