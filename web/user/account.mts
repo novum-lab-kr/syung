@@ -354,7 +354,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   let placeTimer:ReturnType<typeof setTimeout> | 0 = 0, placeSeq = 0;
   function placeFocus(which:PlaceKey) {
     if (form().placeFor === which) return;   // 같은 칸 목록 안에서 입력 칸으로 되돌아온 것 — 떠 있는 목록을 그대로 둔다
-    clearTimeout(placeTimer); placeSeq++;
+    clearTimeout(placeTimer); placeSeq++; spotEpoch++;   // 다른 칸으로 옮겼으니 기다리던 내 위치 답은 버린다
     const spot = form()[which];
     ticketsView.set({placeFor: which, placeQuery: spot?.name || '', placeHidden: true, placeRows: []});
   }
@@ -362,6 +362,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     if (!form().placeFor) return;
     // 번호는 글자를 칠 때 바로 올린다 — 늦춰 보내는 사이에 온 이전 답이 새 글자 위에 뜨거나 골라지지 않게, 이전 결과도 바로 숨긴다
     const my = ++placeSeq;
+    spotEpoch++;   // 글자를 치는 중이면 늦게 온 내 위치가 칸을 덮어쓰지 않게 버린다
     ticketsView.set({placeQuery: value, placeHidden: true});
     clearTimeout(placeTimer);
     const query = value.trim();
@@ -645,7 +646,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
 
   let deleteArmed = false;
   function openTicket(t:Ticket | null) {
-    editing = t || null; deleteArmed = false; routeSeq++; spotEpoch++; routeKind = 'all';
+    editing = t || null; deleteArmed = false; routeSeq++; spotEpoch++; clearTimeout(placeTimer); placeSeq++;   // 이전 승차권의 검색 · 위치 답은 모두 버린다 routeKind = 'all';
     $('menuTicket').setAttribute('aria-label', t ? '승차권 고치기' : '승차권 발권');
     closeWheel(false);
     ticketsView.set({opened: true, editingId: t?.id, name: t?.name || '', time: t?.depart || '08:00', from: t?.from || null, to: t?.to || null, route: t?.route || null, via: t?.via || null,
