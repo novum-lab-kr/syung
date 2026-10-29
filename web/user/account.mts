@@ -526,6 +526,16 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   // 승차권 뒷면: 저장한 경로에는 지도에 그릴 길이 없어 다음 탈 날 그 시각으로 다시 찾는다(뒷면 첫 줄 · 경로 고르기와 같은 날).
   // 저장한 경로와 같은 길 모양(rideSig)이 있으면 그 길, 없으면 거른 뒤 가장 빠른 길 + 안내(옛 승차권 — 저장한 경로가 없으면 안내 없이)
   let mapSeq = 0;
+  // 찾는 도중 서랍을 닫거나(어떤 길로든) 승차권 목록을 떠나면 그 요청은 버린다 — 다시 목록으로 돌아와도 늦은 답이 서랍을 닫고 옛 길을 그리지 않게.
+  // 서랍 · 목록의 보임 상태가 바뀔 때마다 본다(닫기 단추 · Esc · 바깥 누름 · ‹ · 메뉴 항목이 모두 이 두 칸을 바꾼다)
+  const mapPanel = $('settingsPanel'), mapList = $('menuTickets');
+  const mapWatch = new MutationObserver(() => {
+    if (ticketsView.state.mapping < 0 || (mapPanel.classList.contains('open') && !mapList.hidden)) return;
+    mapSeq++;
+    ticketsView.set({mapping: -1});
+  });
+  mapWatch.observe(mapPanel, {attributes: true, attributeFilter: ['class', 'hidden']});
+  mapWatch.observe(mapList, {attributes: true, attributeFilter: ['hidden']});
   async function mapTicket(index:number) {
     const view = ticketsView.state, ticket = view.tickets[index], turn = view.listTurn;
     if (!ticket || view.mapping >= 0) return;
