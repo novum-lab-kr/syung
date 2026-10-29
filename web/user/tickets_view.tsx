@@ -37,6 +37,7 @@ const LOGO = '<svg viewBox="0 0 100 60"><g fill="none" stroke="currentColor" str
 const LOGOS = { __html: LOGO.repeat(5) };
 const STRIP = [0, 1, 2, 3, 4, 5, 6];
 // 내 위치 단추의 핀(길찾기 시트의 jf-here 와 같은 그림)
+const CHEVRON = '<svg class="tf-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
 const PIN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg>';
 export type PlaceKey = 'from' | 'to' | 'via';
 // 칸마다: [머리 글자, 빈 칸 글자, 이름, 칸 id, 동그라미 class]
@@ -44,10 +45,10 @@ const PLACE_TEXT = { from: ['출발', '출발지 고르기', '출발지', 'ticke
 
 interface Handlers {
   ticketFlip(index:number):void; ticketEdit(index:number):void; ticketMap(index:number):void; ticketNew():void;
-  timeToggle():void; timeDone():void;
+  timeToggle():void; timeDone():void; route():void;
   day(day:number):void; quick(days:string):void; name(value:string):void; submit():void; remove():void;
   placeFocus(which:PlaceKey):void; placeInput(value:string):void; placePick(place:FoundPlace):void; placeBlur(which:PlaceKey):void; here(which:'from' | 'to'):void;
-  plan(index:number):void; routeKind(kind:RouteKind):void; viaClear():void;
+  plan(index:number):void; planPick():void; routeKind(kind:RouteKind):void; viaClear():void;
 }
 interface View {
   colors:Record<string, string>;   // 노선 이름 → 색(본체)
@@ -60,8 +61,9 @@ interface View {
   fromHere:boolean; toHere:boolean;   // 그 칸의 곳이 '내 위치'로 넣은 것(칸에서 이름을 고칠 수 있다)
   // 장소 찾기(발권 화면 칸 바로 아래): placeFor 는 글자를 치는 중인 칸(없으면 null) · placeRows 는 찾은 곳 또는 안내 한 줄
   placeFor:PlaceKey | null; placeQuery:string; placeHidden:boolean; placeRows:FoundPlace[] | string;
-  // 경로 목록(같은 화면 아래쪽)
-  routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
+  // 경로 선택(경로 칸을 누르면 넘어가는 쪽)
+  routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
+  routeVia:Place | null;   // 지금 경로 목록을 찾은 경유지(이 경로로를 누르면 발권 화면의 via 가 된다)
   routeFilter:RouteFilterView | null;   // 조건 고르기(종류 · 차례)와 보일 차례(plans 의 번호) — 길이 없으면 null
   stepsOf:Plan | null;   // 경로 고르기에서 단계 목록을 펼친 경로(목록을 다시 찾으면 다른 객체라 저절로 접힌다)
   stepsOpen:string | null;   // 승차권 뒷면에서 단계 목록을 펼친 카드(목록 번호 + 카드 번호 — 목록을 다시 받으면 저절로 접힌다)
@@ -70,7 +72,7 @@ let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, via: null, wheelOpen: false, sending: false, deleteArmed: false, fromHere: false, toHere: false,
   placeFor: null, placeQuery: '', placeHidden: true, placeRows: [],
-  routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null, stepsOpen: null,
+  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, routeVia: null, stepsOf: null, stepsOpen: null,
 };
 let handlers:Handlers | null = null;
 const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
@@ -124,7 +126,7 @@ class Wheels extends Component {
 // 장소 칸(출발 · 도착 · 경유): 칸을 누르거나 글자를 치면 칸 바로 아래에 찾은 곳이 펼쳐지고 고르면 접힌다(길찾기 시트의 출발 · 도착 칸과 같은 방식).
 // 목록에서 고른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 — 목록은 늘 문서에 두고 숨기기만 하고, 누름은 거기서 멈춘다
 function PlaceField({ which }:{ which:PlaceKey }) {
-  const spot = view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
+  const spot = which === 'via' ? view.routeVia : view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
   return <div class="tf-fld" onFocusOut={event => {   // 같은 칸(입력 · 📍 · 결과 목록) 안으로 초점이 옮겨 가면 목록을 남기고, 영역을 벗어나야 닫는다(Tab 으로 결과 고르기)
       const next = event.relatedTarget as Node | null;
       if (!next || !event.currentTarget.contains(next)) call('placeBlur')(which);
@@ -136,10 +138,15 @@ function PlaceField({ which }:{ which:PlaceKey }) {
           else if (event.key === 'Escape' && active && !view.placeHidden) { event.stopPropagation(); set({ placeHidden: true }) }   // 목록이 떠 있으면 목록만 접고 서랍은 닫지 않는다
         }} /></span></label>
     {which === 'via'
-      ? <button id="routeViaClear" class="rt-via-x" type="button" hidden={!view.via} aria-label="경유지 빼기" title="경유지 빼기" onClick={call('viaClear')}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+      ? <button id="routeViaClear" class="rt-via-x" type="button" hidden={!view.routeVia} aria-label="경유지 빼기" title="경유지 빼기" onClick={call('viaClear')}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
       : <button id={`${id}Here`} class="tf-here" type="button" aria-label={`내 위치를 ${aria}로`} title="내 위치" onClick={() => call('here')(which)} dangerouslySetInnerHTML={{ __html: PIN }}></button>}</div>
     <ul id={`${id}List`} class="pp-list tf-list" aria-label={`${aria} 찾기 결과`} hidden={!active || view.placeHidden}>{typeof rows === 'string' ? <li class="empty">{rows}</li>
       : rows.map(found => <li><button type="button" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); call('placePick')(found) }}><b>{found.name}</b><small>{found.address}</small></button></li>)}</ul></div>;
+}
+// 발권 화면의 경로 칸 속(옛 showRoute 의 innerHTML 글자) — 경로 목록과 같이 도착 시각은 빼고 '약 N분'(2026-10-29)
+function routeHTML(route:SlimRoute | null) {
+  if (!route) return `<span class="pk">경로 고르기</span>${CHEVRON}`;
+  return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>약 ${route.minutes}분</b> · 환승 ${route.transfers}</span><u>바꾸기</u>`;
 }
 function TicketPage() {
   const { opened } = view, time = timeParts(view.time), quickNow = view.days.join(',');
@@ -152,7 +159,9 @@ function TicketPage() {
       <input id="ticketTime" type="hidden" value={view.time} />
       <div id="ticketTimePick" class="tf-wheel" hidden={!view.wheelOpen}><Wheels />
         <div class="tw-foot"><span>돌려서 고르기 · 5분 단위</span><button id="ticketTimeDone" class="tw-ok" type="button" onClick={call('timeDone')}>완료</button></div></div>
-      <RouteSection />
+      <span id="ticketRouteLabel" class="tf-l">경로</span>
+      <button id="ticketRoute" class={opened && !view.route ? 'tf-pick empty' : 'tf-pick'} type="button" aria-labelledby="ticketRouteLabel ticketRoute" onClick={call('route')}
+        dangerouslySetInnerHTML={{ __html: opened ? routeHTML(view.route) : '' }}></button>
       <div class="tf-dh"><span id="ticketDaysLabel" class="tf-l">타는 날</span><span id="ticketQuick" class="tf-quick" role="group" aria-label="타는 날 빠르게 고르기">
         {QUICK.map(([days, label]) => <button type="button" data-quick={days} aria-pressed={quickNow === days ? 'true' : 'false'} onClick={() => call('quick')(days)}><i>{label}</i></button>)}</span></div>
       <div id="ticketDays" class="tf-days" role="group" aria-labelledby="ticketDaysLabel">
@@ -177,13 +186,11 @@ function RouteFilters({ filter }:{ filter:RouteFilterView }) {
     <div class="segmented jkinds" role="group" aria-label="경로 종류">{filter.kinds.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => call('routeKind')(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>
   </div>;
 }
-// 경로 목록: 출발 · 도착이 정해지면 발권 화면 안(시각 아래)에 바로 보인다. 경유지 칸 · 종류 탭 · 단계 목록 그대로. 고르는 순간 그 경로가 이 승차권의 경로다
-function RouteSection() {
-  if (!view.opened || !view.from || !view.to) return null;
+// 경로 선택 쪽(발권 화면의 경로 칸으로 넘어간다): 경유지 칸 · 종류 탭 · 단계 목록 · 이 경로로. 경유지는 이 쪽 안에서 바로 찾는다
+function RoutePage() {
   const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
-  return <section class="tf-rt" aria-labelledby="ticketRouteLabel">
-    <span id="ticketRouteLabel" class="tf-l">경로</span>
-    <div class="rt-sum"><span id="routeWhen">{view.routeWhen}</span></div>
+  return <>
+    <div class="rt-sum"><b id="routeTrip">{view.routeTrip}</b><span id="routeWhen">{view.routeWhen}</span></div>
     <div class="tf-route rt-via"><div class="tf-pls"><PlaceField which="via" /></div></div>
     {filter && <RouteFilters filter={filter} />}
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
@@ -195,10 +202,12 @@ function RouteSection() {
     {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}
-  </section>;
+    {/* 이 경로로: 목록이 길어도 늘 보이게 맨 아래에 붙는다(경로 고르기 반쪽 시트 2026-10-29) */}
+    <div class="rt-foot" hidden={!order.length}><button id="routePick" class="tf-save" type="button" onClick={call('planPick')}>이 경로로</button></div>
+  </>;
 }
 
-const PAGES = [['menuTickets', TicketsPage], ['menuTicket', TicketPage]] as const;
+const PAGES = [['menuTickets', TicketsPage], ['menuTicket', TicketPage], ['menuRoute', RoutePage]] as const;
 const roots = PAGES.map(([id, Page]) => [document.getElementById(id), Page] as const);
 function set(patch:Partial<View>) {
   view = { ...view, ...patch };

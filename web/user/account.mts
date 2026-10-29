@@ -326,14 +326,17 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   async function loadTickets() {
     try { const r = await getJson<{ tickets:Ticket[] }>('./api/me/tickets'); if (r.status === 200) { tickets = r.body!.tickets; renderTickets(); } } catch { /* 다음에 열 때 다시 */ }
   }
-  // 발권 화면에서 ‹ 는 승차권 목록으로(본체의 '메뉴로' 보다 먼저 잡는다)
+  // 경로 쪽 ‹ 는 발권 화면으로, 발권 화면 ‹ 는 승차권 목록으로(본체의 '메뉴로' 보다 먼저 잡는다)
   $('menuBack').addEventListener('click', e => {
-    if (!$('menuTicket').hidden) { e.stopImmediatePropagation(); $('ticketsRow').click(); }
+    if (!$('menuRoute').hidden) { e.stopImmediatePropagation(); backToForm(); }
+    else if (!$('menuTicket').hidden) { e.stopImmediatePropagation(); $('ticketsRow').click(); }
   }, true);
 
   // ---- 발권 화면(어디서 → 어디로 → 언제 → 경로 → 타는 날 → 이름) ----
   // 출발 · 도착 · 시각 · 경로 · 타는 날 · 이름은 ticketsView.state 에 있다(그리기가 그 값으로 칸 · 미리보기를 그린다)
   const form = () => ticketsView.state;
+  let lastField:HTMLElement | null = null;   // 경로 쪽에서 돌아오면 포커스를 둘 칸
+  function backToForm() { $('ticketOpen').click(); lastField?.focus({preventScroll: true}); }
   function toggleDay(day:number) {
     const days = form().days;
     ticketsView.set({days: days.includes(day) ? days.filter(other => other !== day) : [...days, day].sort((left, right) => left - right)});
@@ -342,11 +345,10 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     const days = quick.split(',').map(Number);
     ticketsView.set({days: DAYS.map((_, index) => index + 1).filter(day => days.includes(day))});
   }
-  // 출발 · 도착 · 시각 · 경유지가 바뀌면 고른 경로는 풀리고, 출발 · 도착이 다 있으면 같은 화면에서 경로를 바로 다시 찾는다(그 경로는 그 조건에서 찾은 것)
-  function routeChanged() {
+  // 출발 · 도착 · 시각이 바뀌면 고른 경로는 풀린다(그 경로는 그 조건에서 찾은 것)
+  function routeGone() {
+    if (form().route) toast('출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요', true);
     ticketsView.set({route: null});
-    if (form().from && form().to) findRoutes();
-    else { routeSeq++; clearRoutes(); }
   }
   const sameSpot = (left:Place | null, right:Place | null) => !!left && !!right && left.lat === right.lat && left.lng === right.lng;
 
@@ -355,7 +357,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   function placeFocus(which:PlaceKey) {
     if (form().placeFor === which) return;   // 같은 칸 목록 안에서 입력 칸으로 되돌아온 것 — 떠 있는 목록을 그대로 둔다
     clearTimeout(placeTimer); placeSeq++; spotEpoch++;   // 다른 칸으로 옮겼으니 기다리던 내 위치 답은 버린다
-    const spot = form()[which];
+    const spot = which === 'via' ? form().routeVia : form()[which];
     ticketsView.set({placeFor: which, placeQuery: spot?.name || '', placeHidden: true, placeRows: []});
   }
   function placeInput(value:string) {
@@ -381,12 +383,18 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     if (which === 'from') return {fromHere: here};
     return which === 'to' ? {toHere: here} : {};
   };
-  // 칸에 곳을 넣는다(찾은 곳 · 내 위치). 곳이 바뀌었으면 고른 경로는 풀고 경로를 다시 찾는다
+  // 칸에 곳을 넣는다(찾은 곳 · 내 위치). 출발 · 도착이 바뀌면 고른 경로는 풀리고, 경로 쪽 경유지가 바뀌면 경로를 다시 찾는다
   function setSpot(which:PlaceKey, place:Place, here: boolean) {
-    const before = form()[which];
     spotEpoch++;   // 기다리던 내 위치 답이 있으면 버린다
+    if (which === 'via') {
+      const beforeVia = form().routeVia;
+      ticketsView.set({routeVia: place});
+      if (!sameSpot(beforeVia, place)) findRoutes();
+      return;
+    }
+    const before = form()[which];
     ticketsView.set({[which]: place, ...hereFlag(which, here)});
-    if (!sameSpot(before, place)) routeChanged();
+    if (!sameSpot(before, place)) routeGone();
   }
   function placePick(found:FoundPlace) {
     const which = form().placeFor;
@@ -402,7 +410,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     const now = form();
     if (now.placeFor !== which) return;
     clearTimeout(placeTimer); placeSeq++;
-    const spot = now[which], typed = now.placeQuery.trim(), here = which === 'via' ? false : now[`${which}Here`];
+    const spot = which === 'via' ? now.routeVia : now[which], typed = now.placeQuery.trim(), here = which === 'via' ? false : now[`${which}Here`];
     ticketsView.set({placeFor: null, placeQuery: '', placeHidden: true, placeRows: [],
       ...(spot && here && typed && typed !== spot.name ? {[which]: {...spot, name: typed}} : {})});
   }
@@ -481,7 +489,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   function closeWheel(changed = true) {
     if (!form().wheelOpen) return;
     ticketsView.set({wheelOpen: false});
-    if (changed && form().time !== timeAtOpen) routeChanged();
+    if (changed && form().time !== timeAtOpen) routeGone();
   }
 
   // 경로 선택 쪽: 고른 요일 중 가장 가까운 날(없으면 오늘 · 시각이 지났으면 다음 날)의 그 시각으로 길찾기
@@ -494,63 +502,75 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});
   let routeSeq = 0;
   let routeKind:RouteKind = 'all';   // 경로 쪽 조건(종류)
-  const clearRoutes = () => { ticketsView.set({plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null}); previewGone(); };
+  // 발권 화면에서 열면 경유지는 발권 화면의 것(고른 경로를 찾은 경유지)부터
+  function openRoute() {
+    ticketsView.set({routeVia: form().via});
+    return findRoutes();
+  }
   // 경유지 ✕: 빼고 다시 찾는다
   function clearVia() {
-    if (!form().via) return;
-    ticketsView.set({via: null});
-    routeChanged();
+    if (!form().routeVia) return;
+    ticketsView.set({routeVia: null});
+    findRoutes();
     $('routeVia').focus({preventScroll: true});
   }
-  // 출발 · 도착이 있으면 경로 목록을 찾아 같은 화면 아래쪽에 채운다(고른 칸에 초점을 빼앗지 않는다)
   async function findRoutes() {
-    const {from, to, via} = form();
-    if (!from || !to) return;
+    lastField = $('ticketRoute');
+    const {from, to, routeVia: via} = form();
+    if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), time = timeParts(form().time);
-    ticketsView.set({routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
+    ticketsView.set({routeTrip: `${from.name} → ${to.name}`, routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
       plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true, routeFilter: null, stepsOf: null});   // 길찾기 시트와 같은 글자 · 뼈대 카드
     previewGone();
+    $('routeOpen').click();
     const my = ++routeSeq;
     const at = routeAt(when);
     try {
       const {status, body} = await getJson<RouteAnswer>(routeUrl(from, to, at, via));
       if (my !== routeSeq) return;
       if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.', routeLoading: false}); return; }
-      const plans = usefulRoutes(body.plans!), saved = form().route;   // 같은 길 모양은 가장 빠른 것 하나로 묶는다(ticket_routes.mts)
-      const mine = saved ? plans.findIndex(p => rideSig(p) === rideSig(saved)) : -1;
+      const plans = usefulRoutes(body.plans!), route = form().route;   // 같은 길 모양은 가장 빠른 것 하나로 묶는다(ticket_routes.mts)
+      const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
       routeKind = 'all';   // 열 때마다 조건은 전체
-      // 고친 승차권은 저장한 길 모양 그대로(지금 없으면 아무것도 고르지 않고 저장한 경로는 그대로), 새 길 찾기는 가장 빠른 길(사용자 결정 2026-10-27)이 곧 이 승차권의 경로
-      const chosen = mine >= 0 || saved ? mine : Math.max(0, fastest);
-      ticketsView.set({plans, chosen, routeMsg: '', routeLoading: false, routeFilter: routeFilterView(plans, routeKind), ...(saved ? {} : {route: slimRoute(plans[chosen]!)})});
-      previewPlan();   // 고른 카드의 길을 바로 그린다
+      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false,   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
+        routeFilter: routeFilterView(plans, routeKind)});
+      focusChosen();
+      previewPlan();   // 처음 고른 카드의 길을 바로 그린다
     } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
   }
-  // 경로 카드를 누르면 그 경로가 이 승차권의 경로
-  function choosePlan(index:number) {
-    const plan = form().plans[index];
+  function pickPlan() {
+    const plan = form().plans[form().chosen];
     if (!plan) return;
-    ticketsView.set({chosen: index, route: slimRoute(plan)});
+    ticketsView.set({route: slimRoute(plan), via: form().routeVia});   // 고른 경로와 그 경로를 찾은 경유지를 같이
+    backToForm();
+  }
+  function choosePlan(index:number) {
+    ticketsView.set({chosen: index});
     previewPlan();
+  }
+  // 고른 카드에 초점(목록은 조건의 차례대로라 plans 번호가 아니라 보이는 자리로 찾는다)
+  function focusChosen() {
+    const {chosen, routeFilter} = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
+    ($('routeList').children[at]?.querySelector('.rt-plan') as HTMLElement | null)?.focus({preventScroll: true});
   }
   // 조건 바꾸기(종류): 받은 길을 다시 나눈다(서버를 다시 부르지 않는다). 저장된 경로가 보이면 그 카드, 아니면 처음 카드를 고르고 지도 길도 그 길로
   function refilter() {
     const {plans, route} = form(), routeFilter = routeFilterView(plans, routeKind);
     const chosen = chosenAfter(plans, routeFilter.order, route);
-    const plan = plans[chosen];
-    ticketsView.set({routeFilter, chosen, route: plan ? slimRoute(plan) : null});
-    if (plan) previewPlan(); else previewGone();   // 맞는 길이 없으면 지도 길도 지운다
+    ticketsView.set({routeFilter, chosen});
+    if (chosen >= 0) previewPlan(); else previewGone();   // 맞는 길이 없으면 지도 길도 지운다
   }
   const filterKind = (kind:RouteKind) => { routeKind = kind; refilter(); };
 
-  // ---- 경로 고르기 지도: 발권 화면에 있는 동안 서랍(.with-map) 옆 · 위 지도에 고른 카드의 길 ----
-  const routePanel = $('settingsPanel'), routePage = $('menuTicket');
+  // ---- 경로 고르기 지도: 경로 쪽에 있는 동안 서랍(.with-map) 옆 · 위 지도에 고른 카드의 길 ----
+  const routePanel = $('settingsPanel'), routePage = $('menuRoute');
   const narrow = matchMedia('(max-width: 780px)');   // syung.css 의 반쪽 시트와 같은 너비
   let previewed:Plan | null = null;
-  const onTicketPage = () => routePanel.classList.contains('open') && !routePanel.hidden && !routePage.hidden;
+  const onRoutePage = () => routePanel.classList.contains('open') && !routePanel.hidden && !routePage.hidden;
   function previewPlan() {
     const plan = form().plans[form().chosen];
-    if (!routeMap || !plan || !onTicketPage()) return;
+    if (!routeMap || !plan || !onRoutePage()) return;
     mapGone();   // 승차권 뒷면의 '지도에서 보기' 막대가 남아 있으면 치운다
     // 길이 서랍 뒤에 가리지 않게: 휴대폰은 아래 시트 높이만큼, 데스크톱은 오른쪽 서랍 너비만큼 띄운다
     routeMap.show(plan, narrow.matches ? {bottom: routePanel.offsetHeight + 24, right: 40} : {bottom: 40, right: routePanel.offsetWidth + 40});
@@ -562,14 +582,21 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     previewed = null;
     routeMap?.clear(plan);
   }
-  // 발권 화면에 들어오고 나가는 것은 서랍 · 그 쪽의 보임으로 본다(발권 · ‹ · Esc · 닫기 · 바깥 누름 · 메뉴 이동이 모두 이 칸을 바꾼다)
+  // 경로 쪽에 들어오고 나가는 것은 서랍 · 그 쪽의 보임으로 본다(이 경로로 · ‹ · Esc · 닫기 · 바깥 누름 · 메뉴 이동이 모두 이 칸을 바꾼다)
   const routeWatch = new MutationObserver(() => {
-    const on = onTicketPage();
+    const on = onRoutePage();
     if (routePanel.classList.contains('with-map') !== on) routePanel.classList.toggle('with-map', on);   // (바꿀 때만 — 이 칸도 지켜본다)
     if (!on) { routeSeq++; previewGone(); }   // 찾는 중이던 답은 버린다
   });
   routeWatch.observe(routePanel, {attributes: true, attributeFilter: ['class', 'hidden']});
   routeWatch.observe(routePage, {attributes: true, attributeFilter: ['hidden']});
+  // 경로 쪽에서 Esc 는 서랍을 닫지 않고 발권 화면으로(‹ 와 같다 — 본체의 서랍 Esc 보다 먼저 잡는다). 로그인 팝업이 떠 있으면 팝업이 먼저, 경유지 목록이 펼쳐져 있으면 목록이 먼저
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || sheetOpen() || !onRoutePage()) return;
+    if (form().placeFor && !form().placeHidden) return;
+    e.stopImmediatePropagation();
+    backToForm();
+  }, true);
   // ---- 지도에서 보기: 서랍을 닫고 지도에 길 전체, 아래 막대(길찾기 막대와 같은 모양)로 돌아온다 ----
   const mapBar = document.createElement('div');
   mapBar.className = 'jbar'; mapBar.hidden = true;
@@ -646,14 +673,13 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
 
   let deleteArmed = false;
   function openTicket(t:Ticket | null) {
-    editing = t || null; deleteArmed = false; routeSeq++; spotEpoch++; clearTimeout(placeTimer); placeSeq++;   // 이전 승차권의 검색 · 위치 답은 모두 버린다 routeKind = 'all';
+    editing = t || null; deleteArmed = false; lastField = null; routeSeq++; spotEpoch++; clearTimeout(placeTimer); placeSeq++; routeKind = 'all';   // 이전 승차권의 검색 · 위치 · 경로 답은 모두 버린다
     $('menuTicket').setAttribute('aria-label', t ? '승차권 고치기' : '승차권 발권');
     closeWheel(false);
     ticketsView.set({opened: true, editingId: t?.id, name: t?.name || '', time: t?.depart || '08:00', from: t?.from || null, to: t?.to || null, route: t?.route || null, via: t?.via || null,
       days: DAYS.map((_, index) => index + 1).filter(day => t ? t.days.includes(day) : false), deleteArmed: false, fromHere: false, toHere: false,
-      placeFor: null, placeQuery: '', placeHidden: true, placeRows: [], plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null});
+      placeFor: null, placeQuery: '', placeHidden: true, placeRows: [], routeVia: null, routeTrip: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null});
     $('ticketOpen').click();
-    if (t) findRoutes();   // 고치기는 저장한 출발 · 도착으로 경로 목록을 바로
   }
   async function submitTicket() {
     closeWheel();
@@ -692,7 +718,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     timeToggle: () => { if (form().wheelOpen) closeWheel(); else openWheel(); },
     timeDone: () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); },
     day: toggleDay, quick: quickDays, name: value => ticketsView.set({name: value}), submit: submitTicket, remove: removeTicket,
-    placeFocus, placeInput, placePick, placeBlur, here: useHere, plan: choosePlan, routeKind: filterKind, viaClear: clearVia,
+    placeFocus, placeInput, placePick, placeBlur, here: useHere, plan: choosePlan, routeKind: filterKind, viaClear: clearVia, route: openRoute, planPick: pickPlan,
   });
 
   // ---- 사용 횟수(내 통계) ----
