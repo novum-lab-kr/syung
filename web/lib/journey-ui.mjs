@@ -31,7 +31,7 @@ var inkOn = (hex) => {
 var BUS = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z\"/></svg>";
 var textW = (t) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);
 function sameRoutes(legs, all = false) {
-	const side = (stop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ""}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ""})`;
+	const side = (stop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ""}(${stop.walkMinutes ? `걸어서 ${stop.walkMinutes}분` : `${stop.metres}m`}${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ""})`;
 	const notes = legs.flatMap((leg) => {
 		if (leg.type !== "bus" || !leg.alternatives?.length) return [];
 		const shown = all ? leg.alternatives : leg.alternatives.slice(0, 3);
