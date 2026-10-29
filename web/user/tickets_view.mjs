@@ -45,6 +45,30 @@ var STRIP = [
 	6
 ];
 var CHEVRON = "<svg class=\"tf-chev\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 6 6 6-6 6\"/></svg>";
+var PIN = "<svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3.2\"/><circle cx=\"12\" cy=\"12\" r=\"7.5\"/><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3\"/></svg>";
+var PLACE_TEXT = {
+	from: [
+		"출발",
+		"출발지 고르기",
+		"출발지",
+		"ticketFrom",
+		"tf-dot"
+	],
+	to: [
+		"도착",
+		"도착지 고르기",
+		"도착지",
+		"ticketTo",
+		"tf-dot to"
+	],
+	via: [
+		"경유",
+		"+ 경유지 넣기",
+		"경유지",
+		"routeVia",
+		"tf-dot via"
+	]
+};
 var view = {
 	colors: {},
 	tickets: [],
@@ -64,8 +88,9 @@ var view = {
 	wheelOpen: false,
 	sending: false,
 	deleteArmed: false,
-	placeTo: false,
-	placeVia: false,
+	fromHere: false,
+	toHere: false,
+	placeFor: null,
 	placeQuery: "",
 	placeHidden: true,
 	placeRows: [],
@@ -269,16 +294,97 @@ var Wheels = class extends x {
 		});
 	}
 };
+function PlaceField({ which }) {
+	const spot = which === "via" ? view.routeVia : view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
+	return /* @__PURE__ */ a("div", {
+		class: "tf-fld",
+		onFocusOut: (event) => {
+			const next = event.relatedTarget;
+			if (!next || !event.currentTarget.contains(next)) call("placeBlur")(which);
+		},
+		children: [/* @__PURE__ */ a("div", {
+			class: "tf-row",
+			children: [/* @__PURE__ */ a("label", {
+				class: "tf-pl",
+				children: [/* @__PURE__ */ a("i", {
+					class: dot,
+					"aria-hidden": "true"
+				}), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("small", { children: label }), /* @__PURE__ */ a("input", {
+					id,
+					type: "text",
+					maxlength: 40,
+					autocomplete: "off",
+					"aria-label": aria,
+					"aria-controls": `${id}List`,
+					placeholder: view.opened ? empty : "",
+					value: active ? view.placeQuery : spot?.name ?? "",
+					onFocus: (event) => {
+						call("placeFocus")(which);
+						event.currentTarget.select();
+					},
+					onInput: (event) => call("placeInput")(event.currentTarget.value),
+					onKeyDown: (event) => {
+						if (event.key === "Enter") event.preventDefault();
+						else if (event.key === "Escape" && active && !view.placeHidden) {
+							event.stopPropagation();
+							set({ placeHidden: true });
+						}
+					}
+				})] })]
+			}), which === "via" ? /* @__PURE__ */ a("button", {
+				id: "routeViaClear",
+				class: "rt-via-x",
+				type: "button",
+				hidden: !view.routeVia,
+				"aria-label": "경유지 빼기",
+				title: "경유지 빼기",
+				onClick: call("viaClear"),
+				children: /* @__PURE__ */ a("svg", {
+					viewBox: "0 0 24 24",
+					width: "16",
+					height: "16",
+					"aria-hidden": "true",
+					fill: "none",
+					stroke: "currentColor",
+					"stroke-width": "2.2",
+					"stroke-linecap": "round",
+					children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
+				})
+			}) : /* @__PURE__ */ a("button", {
+				id: `${id}Here`,
+				class: "tf-here",
+				type: "button",
+				"aria-label": `내 위치를 ${aria}로`,
+				title: "내 위치",
+				onClick: () => call("here")(which),
+				dangerouslySetInnerHTML: { __html: PIN }
+			})]
+		}), /* @__PURE__ */ a("ul", {
+			id: `${id}List`,
+			class: "pp-list tf-list",
+			"aria-label": `${aria} 찾기 결과`,
+			hidden: !active || view.placeHidden,
+			children: typeof rows === "string" ? /* @__PURE__ */ a("li", {
+				class: "empty",
+				children: rows
+			}) : rows.map((found) => /* @__PURE__ */ a("li", { children: /* @__PURE__ */ a("button", {
+				type: "button",
+				onMouseDown: (event) => event.preventDefault(),
+				onClick: (event) => {
+					event.stopPropagation();
+					call("placePick")(found);
+				},
+				children: [/* @__PURE__ */ a("b", { children: found.name }), /* @__PURE__ */ a("small", { children: found.address })]
+			}) }))
+		})]
+	});
+}
 function routeHTML(route) {
 	if (!route) return `<span class="pk">경로 고르기</span>${CHEVRON}`;
 	return `${routeTrack(route, view.colors, 270)}<span class="pk"><b>약 ${route.minutes}분</b> · 환승 ${route.transfers}</span><u>바꾸기</u>`;
 }
 function TicketPage() {
 	const { opened } = view, time = timeParts(view.time), quickNow = view.days.join(",");
-	const place = (spot, empty) => opened ? /* @__PURE__ */ a("b", {
-		class: spot ? "" : "ph",
-		children: spot?.name || empty
-	}) : /* @__PURE__ */ a("b", {});
 	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
 		id: "ticketPreview",
 		"aria-hidden": "true",
@@ -308,25 +414,7 @@ function TicketPage() {
 				class: "tf-route",
 				children: /* @__PURE__ */ a("div", {
 					class: "tf-pls",
-					children: [/* @__PURE__ */ a("button", {
-						id: "ticketFrom",
-						class: "tf-pl",
-						type: "button",
-						onClick: call("placeFrom"),
-						children: [/* @__PURE__ */ a("i", {
-							class: "tf-dot",
-							"aria-hidden": "true"
-						}), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("small", { children: "출발" }), place(view.from, "출발지 고르기")] })]
-					}), /* @__PURE__ */ a("button", {
-						id: "ticketTo",
-						class: "tf-pl",
-						type: "button",
-						onClick: call("placeTo"),
-						children: [/* @__PURE__ */ a("i", {
-							class: "tf-dot to",
-							"aria-hidden": "true"
-						}), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("small", { children: "도착" }), place(view.to, "도착지 고르기")] })]
-					})]
+					children: [/* @__PURE__ */ a(PlaceField, { which: "from" }), /* @__PURE__ */ a(PlaceField, { which: "to" })]
 				})
 			}),
 			/* @__PURE__ */ a("button", {
@@ -459,38 +547,6 @@ function TicketPage() {
 		]
 	})] });
 }
-function PlacePage() {
-	const rows = view.placeRows;
-	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
-		class: "pp-bar",
-		children: [/* @__PURE__ */ a("i", {
-			id: "placeDot",
-			class: view.placeVia ? "tf-dot via" : view.placeTo ? "tf-dot to" : "tf-dot",
-			"aria-hidden": "true"
-		}), /* @__PURE__ */ a("input", {
-			id: "placeQuery",
-			type: "search",
-			placeholder: "역 · 장소 이름",
-			enterkeyhint: "search",
-			"aria-label": "장소 이름",
-			"aria-controls": "placeList",
-			value: view.placeQuery,
-			onInput: (event) => call("placeInput")(event.currentTarget.value)
-		})]
-	}), /* @__PURE__ */ a("ul", {
-		id: "placeList",
-		class: "pp-list",
-		hidden: view.placeHidden,
-		children: typeof rows === "string" ? /* @__PURE__ */ a("li", {
-			class: "empty",
-			children: rows
-		}) : rows.map((spot) => /* @__PURE__ */ a("li", { children: /* @__PURE__ */ a("button", {
-			type: "button",
-			onClick: () => call("placePick")(spot),
-			children: [/* @__PURE__ */ a("b", { children: spot.name }), /* @__PURE__ */ a("small", { children: spot.address })]
-		}) }))
-	})] });
-}
 function planHTML(plan) {
 	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}</span>`;
 }
@@ -511,47 +567,6 @@ function RouteFilters({ filter }) {
 		})
 	});
 }
-function RouteVia() {
-	const via = view.routeVia;
-	return /* @__PURE__ */ a("div", {
-		class: "tf-route rt-via",
-		children: [/* @__PURE__ */ a("div", {
-			class: "tf-pls",
-			children: /* @__PURE__ */ a("button", {
-				id: "routeVia",
-				class: "tf-pl",
-				type: "button",
-				onClick: call("viaAdd"),
-				children: [/* @__PURE__ */ a("i", {
-					class: "tf-dot via",
-					"aria-hidden": "true"
-				}), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("small", { children: "경유" }), /* @__PURE__ */ a("b", {
-					class: via ? "" : "ph",
-					children: via ? via.name : "+ 경유지 넣기"
-				})] })]
-			})
-		}), /* @__PURE__ */ a("button", {
-			id: "routeViaClear",
-			class: "rt-via-x",
-			type: "button",
-			hidden: !via,
-			"aria-label": "경유지 빼기",
-			title: "경유지 빼기",
-			onClick: call("viaClear"),
-			children: /* @__PURE__ */ a("svg", {
-				viewBox: "0 0 24 24",
-				width: "16",
-				height: "16",
-				"aria-hidden": "true",
-				fill: "none",
-				stroke: "currentColor",
-				"stroke-width": "2.2",
-				"stroke-linecap": "round",
-				children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
-			})
-		})]
-	});
-}
 function RoutePage() {
 	const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
 	return /* @__PURE__ */ a(M, { children: [
@@ -565,7 +580,13 @@ function RoutePage() {
 				children: view.routeWhen
 			})]
 		}),
-		/* @__PURE__ */ a(RouteVia, {}),
+		/* @__PURE__ */ a("div", {
+			class: "tf-route rt-via",
+			children: /* @__PURE__ */ a("div", {
+				class: "tf-pls",
+				children: /* @__PURE__ */ a(PlaceField, { which: "via" })
+			})
+		}),
 		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
 		/* @__PURE__ */ a("div", {
 			id: "routeList",
@@ -649,7 +670,6 @@ function RoutePage() {
 var roots = [
 	["menuTickets", TicketsPage],
 	["menuTicket", TicketPage],
-	["menuPlace", PlacePage],
 	["menuRoute", RoutePage]
 ].map(([id, Page]) => [document.getElementById(id), Page]);
 function set(patch) {

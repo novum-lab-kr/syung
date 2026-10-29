@@ -127,7 +127,7 @@ async function fillChain(t, put) {
 	}
 	put(html);
 }
-async function initAccount({ colors = {}, routeMap } = {}) {
+async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	const item = $("accountItem"), sheet = $("loginSheet");
 	if (!item || !sheet) return;
 	let answer = null;
@@ -423,10 +423,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		} catch {}
 	}
 	$("menuBack").addEventListener("click", (e) => {
-		if (!$("menuPlace").hidden && placeFor === "via") {
-			e.stopImmediatePropagation();
-			backToRoute(false);
-		} else if (!$("menuPlace").hidden || !$("menuRoute").hidden) {
+		if (!$("menuRoute").hidden) {
 			e.stopImmediatePropagation();
 			backToForm();
 		} else if (!$("menuTicket").hidden) {
@@ -452,37 +449,33 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		if (form().route) toast("출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요", true);
 		ticketsView.set({ route: null });
 	}
-	let placeFor = "from";
-	const PLACE_NAMES = {
-		from: "출발지 고르기",
-		to: "도착지 고르기",
-		via: "경유지 고르기"
-	};
-	function openPlace(which) {
-		placeFor = which;
-		if (which !== "via") lastField = $(which === "from" ? "ticketFrom" : "ticketTo");
-		$("menuPlace").setAttribute("aria-label", PLACE_NAMES[which]);
+	const sameSpot = (left, right) => !!left && !!right && left.lat === right.lat && left.lng === right.lng;
+	let placeTimer = 0, placeSeq = 0;
+	function placeFocus(which) {
+		if (form().placeFor === which) return;
+		clearTimeout(placeTimer);
+		placeSeq++;
+		spotEpoch++;
+		const spot = which === "via" ? form().routeVia : form()[which];
 		ticketsView.set({
-			placeTo: which === "to",
-			placeVia: which === "via",
-			placeQuery: "",
+			placeFor: which,
+			placeQuery: spot?.name || "",
 			placeHidden: true,
 			placeRows: []
 		});
-		$("placeOpen").click();
-		$("placeQuery").focus({ preventScroll: true });
 	}
-	let placeTimer = 0, placeSeq = 0;
 	function placeInput(value) {
-		ticketsView.set({ placeQuery: value });
+		if (!form().placeFor) return;
+		const my = ++placeSeq;
+		spotEpoch++;
+		ticketsView.set({
+			placeQuery: value,
+			placeHidden: true
+		});
 		clearTimeout(placeTimer);
 		const query = value.trim();
-		if (query.length < 2) {
-			ticketsView.set({ placeHidden: true });
-			return;
-		}
+		if (query.length < 2) return;
 		placeTimer = setTimeout(async () => {
-			const my = ++placeSeq;
 			try {
 				const { body } = await getJson(`./api/place?q=${encodeURIComponent(query)}`);
 				if (my !== placeSeq) return;
@@ -506,26 +499,106 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			}
 		}, 300);
 	}
+	const hereFlag = (which, here) => {
+		if (which === "from") return { fromHere: here };
+		return which === "to" ? { toHere: here } : {};
+	};
+	function setSpot(which, place, here) {
+		spotEpoch++;
+		if (which === "via") {
+			const beforeVia = form().routeVia;
+			ticketsView.set({ routeVia: place });
+			if (!sameSpot(beforeVia, place)) findRoutes();
+			return;
+		}
+		const before = form()[which];
+		ticketsView.set({
+			[which]: place,
+			...hereFlag(which, here)
+		});
+		if (!sameSpot(before, place)) routeGone();
+	}
 	function placePick(found) {
-		const place = {
+		const which = form().placeFor;
+		if (!which) return;
+		clearTimeout(placeTimer);
+		placeSeq++;
+		ticketsView.set({
+			placeFor: null,
+			placeQuery: "",
+			placeHidden: true,
+			placeRows: []
+		});
+		setSpot(which, {
 			name: found.name,
 			lat: found.lat,
 			lng: found.lng
-		};
+		}, false);
+		if (which === "from" && !form().to) $("ticketTo").focus();
+		else document.activeElement?.blur();
+	}
+	function placeBlur(which) {
+		const now = form();
+		if (now.placeFor !== which) return;
+		clearTimeout(placeTimer);
+		placeSeq++;
+		const spot = which === "via" ? now.routeVia : now[which], typed = now.placeQuery.trim(), here = which === "via" ? false : now[`${which}Here`];
 		ticketsView.set({
-			placeQuery: found.name,
-			placeHidden: true
+			placeFor: null,
+			placeQuery: "",
+			placeHidden: true,
+			placeRows: [],
+			...spot && here && typed && typed !== spot.name ? { [which]: {
+				...spot,
+				name: typed
+			} } : {}
 		});
-		if (placeFor === "via") {
-			const before = form().routeVia;
-			ticketsView.set({ routeVia: place });
-			backToRoute(!before || before.lat !== place.lat || before.lng !== place.lng);
+	}
+	let hereToken = 0, spotEpoch = 0;
+	const currentFix = () => new Promise((done) => {
+		const known = myLocation?.();
+		if (known?.[0] != null && known[1] != null) {
+			done({
+				lat: known[1],
+				lng: known[0]
+			});
 			return;
 		}
-		const before = form()[placeFor];
-		ticketsView.set({ [placeFor]: place });
-		if (!before || before.lat !== place.lat || before.lng !== place.lng) routeGone();
-		backToForm();
+		if (!navigator.geolocation) {
+			done(null);
+			return;
+		}
+		navigator.geolocation.getCurrentPosition((pos) => done({
+			lat: pos.coords.latitude,
+			lng: pos.coords.longitude
+		}), () => done(null), {
+			enableHighAccuracy: false,
+			timeout: 8e3,
+			maximumAge: 3e5
+		});
+	});
+	async function useHere(which) {
+		const token = ++hereToken, epoch = spotEpoch;
+		const fix = await currentFix();
+		if (token !== hereToken || epoch !== spotEpoch || $("menuTicket").hidden) return;
+		if (!fix) {
+			toast("위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.", true);
+			return;
+		}
+		clearTimeout(placeTimer);
+		placeSeq++;
+		ticketsView.set({
+			placeFor: null,
+			placeQuery: "",
+			placeHidden: true,
+			placeRows: []
+		});
+		setSpot(which, {
+			name: "내 위치",
+			lat: fix.lat,
+			lng: fix.lng
+		}, true);
+		if (which === "from" && !form().to) $("ticketTo").focus();
 	}
 	const ROW = 40;
 	const wheelBox = $("ticketTimePick");
@@ -643,15 +716,6 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketsView.set({ routeVia: form().via });
 		return findRoutes();
 	}
-	function backToRoute(again) {
-		if (again || !form().plans.length) {
-			findRoutes();
-			return;
-		}
-		$("routeOpen").click();
-		focusChosen();
-		previewPlan();
-	}
 	function clearVia() {
 		if (!form().routeVia) return;
 		ticketsView.set({ routeVia: null });
@@ -674,8 +738,10 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			chosen: -1,
 			routeMsg: "경로를 찾고 있어요",
 			routeLoading: true,
-			routeFilter: null
+			routeFilter: null,
+			stepsOf: null
 		});
+		previewGone();
 		$("routeOpen").click();
 		const my = ++routeSeq;
 		const at = routeAt(when);
@@ -781,6 +847,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	});
 	window.addEventListener("keydown", (e) => {
 		if (e.key !== "Escape" || sheetOpen() || !onRoutePage()) return;
+		if (form().placeFor && !form().placeHidden) return;
 		e.stopImmediatePropagation();
 		backToForm();
 	}, true);
@@ -873,6 +940,11 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		editing = t || null;
 		deleteArmed = false;
 		lastField = null;
+		routeSeq++;
+		spotEpoch++;
+		clearTimeout(placeTimer);
+		placeSeq++;
+		routeKind = "all";
 		$("menuTicket").setAttribute("aria-label", t ? "승차권 고치기" : "승차권 발권");
 		closeWheel(false);
 		ticketsView.set({
@@ -885,7 +957,21 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			route: t?.route || null,
 			via: t?.via || null,
 			days: DAYS.map((_, index) => index + 1).filter((day) => t ? t.days.includes(day) : false),
-			deleteArmed: false
+			deleteArmed: false,
+			fromHere: false,
+			toHere: false,
+			placeFor: null,
+			placeQuery: "",
+			placeHidden: true,
+			placeRows: [],
+			routeVia: null,
+			routeTrip: "",
+			plans: [],
+			chosen: -1,
+			routeMsg: "",
+			routeLoading: false,
+			routeFilter: null,
+			stepsOf: null
 		});
 		$("ticketOpen").click();
 	}
@@ -909,7 +995,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		}
 		if (!body.route) {
 			toast("경로를 골라 주세요", true);
-			$("ticketRoute").focus();
+			$("routeList").scrollIntoView({ block: "nearest" });
 			return;
 		}
 		if (!body.name) {
@@ -965,8 +1051,6 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketEdit: (index) => openTicket(ticketsView.state.tickets[index]),
 		ticketMap: mapTicket,
 		ticketNew: () => openTicket(null),
-		placeFrom: () => openPlace("from"),
-		placeTo: () => openPlace("to"),
 		timeToggle: () => {
 			if (form().wheelOpen) closeWheel();
 			else openWheel();
@@ -975,19 +1059,21 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			closeWheel();
 			$("ticketTimeBtn").focus({ preventScroll: true });
 		},
-		route: openRoute,
 		day: toggleDay,
 		quick: quickDays,
 		name: (value) => ticketsView.set({ name: value }),
 		submit: submitTicket,
 		remove: removeTicket,
+		placeFocus,
 		placeInput,
 		placePick,
+		placeBlur,
+		here: useHere,
 		plan: choosePlan,
-		planPick: pickPlan,
 		routeKind: filterKind,
-		viaAdd: () => openPlace("via"),
-		viaClear: clearVia
+		viaClear: clearVia,
+		route: openRoute,
+		planPick: pickPlan
 	});
 	function countUse(kind) {
 		if (!me) return;

@@ -2523,7 +2523,8 @@ var setJoseon = (on) => setSimcity(on, true);
 		started = true;
 		__vitePreload(() => import("./user/account.mjs").then((m) => m.initAccount({
 			colors,
-			routeMap: ticketRoute
+			routeMap: ticketRoute,
+			myLocation: () => myLocation
 		})), [], import.meta.url).catch(() => {});
 	};
 	if (location.hash.includes("login=")) go();
