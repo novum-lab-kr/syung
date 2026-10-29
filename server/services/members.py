@@ -110,19 +110,34 @@ def _bus_color(value: object) -> str:
     return value
 
 
-def _alternatives(value: object) -> list[dict[str, str]]:
+def _side_stop(value: object) -> dict[str, Any]:
+    """옆 정류장 안내(boardAt · alightAt) → 이름 · 거리 · 출구만."""
+    if not isinstance(value, dict):
+        raise ValueError("경로의 옆 정류장이 틀려요")
+    row = cast("dict[str, Any]", value)
+    out: dict[str, Any] = {"name": _text(row.get("name"), "옆 정류장 이름"), "metres": _count(row.get("metres"), "옆 정류장 거리", 2000)}
+    if row.get("exit"):
+        out["exit"] = _text(row.get("exit"), "출구 번호", 8)
+    return out
+
+
+def _alternatives(value: object) -> list[dict[str, Any]]:
     """같은 구간 다른 버스(alternatives) → 많아야 3개, 번호 · 색 · 출발 · 도착만. 없으면 빈 목록."""
     if value is None:
         return []
     if not isinstance(value, list) or len(cast("list[Any]", value)) > 3:
         raise ValueError("경로의 같은 구간 버스가 틀려요")
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     for item in cast("list[Any]", value):
         if not isinstance(item, dict):
             raise ValueError("경로의 같은 구간 버스가 틀려요")
         row = cast("dict[str, Any]", item)
-        out.append({"route": _text(row.get("route"), "버스 번호", 20), "color": _bus_color(row.get("color")),
-                    "departs": _clock(row.get("departs"), "출발 시각"), "arrives": _clock(row.get("arrives"), "도착 시각")})
+        saved: dict[str, Any] = {"route": _text(row.get("route"), "버스 번호", 20), "color": _bus_color(row.get("color")),
+                                 "departs": _clock(row.get("departs"), "출발 시각"), "arrives": _clock(row.get("arrives"), "도착 시각")}
+        for key in ("boardAt", "alightAt"):   # 옆 정류장일 때만
+            if row.get(key):
+                saved[key] = _side_stop(row[key])
+        out.append(saved)
     return out
 
 
@@ -132,7 +147,10 @@ def _leg(leg: object) -> dict[str, Any]:
         raise ValueError("경로 구간이 틀려요")
     leg = cast("dict[str, Any]", leg)   # 위에서 dict 인지 봤다
     if leg["type"] == "walk":
-        return {"type": "walk", "seconds": _count(leg.get("seconds"), "걷는 시간", 6 * 3600)}
+        walk: dict[str, Any] = {"type": "walk", "seconds": _count(leg.get("seconds"), "걷는 시간", 6 * 3600)}
+        if leg.get("exit"):   # 갈아탈 때 나가는 출구 번호(없으면 칸을 두지 않는다)
+            walk["exit"] = _text(leg.get("exit"), "출구 번호", 8)
+        return walk
     out: dict[str, Any] = {"type": leg["type"]}
     if leg["type"] == "ride":
         out["line"] = _text(leg.get("line"), "노선", 20)

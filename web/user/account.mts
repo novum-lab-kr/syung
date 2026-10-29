@@ -452,8 +452,8 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   // 경로 선택 쪽: 고른 요일 중 가장 가까운 날(없으면 오늘 · 시각이 지났으면 다음 날)의 그 시각으로 길찾기
   const nextRide = () => nextRideDay(form().days, form().time, new Date());
   // 저장하는 것: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(길 모양 path 같은 큰 칸은 뺀다)
-  const slimLeg = (l:Plan['legs'][number]):SlimLeg => l.type === 'walk' ? {type: 'walk', seconds: Math.max(0, Math.round(l.seconds || 0))}
-    : {type: l.type, ...(l.type === 'bus' ? {route: l.route, color: l.color, ...(l.alternatives?.length ? {alternatives: l.alternatives.map(({route, color, departs, arrives}) => ({route, color, departs, arrives}))} : {})} : {line: l.line}), from: l.from, to: l.to,
+  const slimLeg = (l:Plan['legs'][number]):SlimLeg => l.type === 'walk' ? {type: 'walk', seconds: Math.max(0, Math.round(l.seconds || 0)), ...(l.exit ? {exit: l.exit} : {})}
+    : {type: l.type, ...(l.type === 'bus' ? {route: l.route, color: l.color, ...(l.alternatives?.length ? {alternatives: l.alternatives.map(({route, color, departs, arrives, boardAt, alightAt}) => ({route, color, departs, arrives, ...(boardAt ? {boardAt} : {}), ...(alightAt ? {alightAt} : {})}))} : {})} : {line: l.line}), from: l.from, to: l.to,
       departs: l.departs, arrives: l.arrives, wait: Math.max(0, Math.round(l.wait || 0))} as SlimLeg;
   const slimRoute = (p:Plan):SlimRoute => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});

@@ -23,11 +23,16 @@ def pattern(route, stops, start, scale=1.0):
     return {"r": route, "s": stops, "t": [i * 120 for i in range(len(stops))], "d": [[start, scale]], "starts": [start]}
 
 
-def run(patterns, routes=ROUTES, onward=(3,), ready=READY):
+# 옆 정류장(걸어서 이어지는 곳): 청담(0) ↔ 청담옆(1) 60 m · 삼성(3) ↔ 삼성옆(4) 90 m
+WALK = [[[1, 60.0]], [[0, 60.0]], [], [[4, 90.0]], [[3, 90.0]]]
+
+
+def run(patterns, routes=ROUTES, onward=(3,), ready=READY, extra=(), walk=()):
     """143(09:05 출발 · 09:11 도착)을 고른 구간으로 놓고 같은 구간 다른 노선을 구한다. onward: 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 먼저)."""
     with patch.object(graph, "BSTOPS", STOPS), patch.object(graph, "BROUTES", routes), patch.object(graph, "BPATS", patterns), \
-            patch.object(graph, "BUS_AT", graph.bus_boardings(patterns, routes)):
-        return graph._alternatives((0, onward, ready, LEAVES, GETS), "143", DAY0)
+            patch.object(graph, "BUS_AT", graph.bus_boardings(patterns, routes)), \
+            patch.object(graph, "BUS_WALK", WALK if walk else []), patch.object(graph, "EXIT_REF", {(7, 1): "11", (8, 4): "3"}):
+        return graph._alternatives((0, onward, ready, LEAVES, GETS, *extra), "143", DAY0)
 
 
 class AlternativesTest(unittest.TestCase):
@@ -47,10 +52,28 @@ class AlternativesTest(unittest.TestCase):
         self.assertEqual([a["route"] for a in found], ["8", "999", "301"])   # 09:05 · 09:06 · 09:07 · (2415 는 09:08 로 잘림)
         self.assertLessEqual(len(found), graph.MAX_ALTERNATIVES)
 
-    def test_next_stops_are_not_the_same_place(self):
-        # 옆 정류장에서 타거나 내리는 버스는 어디서 타고 내리는지 안내가 없어 보여 주지 않는다(Codex 리뷰)
+    def test_next_stops_are_listed_with_where_to_board_and_get_off(self):
+        # 옆 정류장에서 타는 버스: 걷는 시간(60 m → 65초)만큼 늦게 닿는 것으로 보고, 어느 정류장인지(이름 · 거리 · 출구)를 싣는다
+        found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [1, 3], NINE + 8 * 60)], walk=True, extra=(7, 8))
+        self.assertEqual([a["route"] for a in found], ["2415"])
+        self.assertEqual(found[0]["boardAt"], {"name": "청담옆", "metres": 60, "exit": "11"})
+        self.assertNotIn("alightAt", found[0])
+        found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 4], NINE + 8 * 60)], walk=True, extra=(7, 8))
+        self.assertEqual(found[0]["alightAt"], {"name": "삼성옆", "metres": 90, "exit": "3"})
+        self.assertNotIn("boardAt", found[0])
+
+    def test_same_stop_has_no_note_and_is_preferred(self):
+        found = run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 3], NINE + 8 * 60), pattern(1, [1, 3], NINE + 8 * 60)], walk=True)
+        self.assertEqual(len(found), 1)
+        self.assertNotIn("boardAt", found[0])
+
+    def test_next_stop_bus_already_gone_when_you_arrive_is_left_out(self):
+        # 옆 정류장은 65초 걸어야 닿아 — 고른 버스가 떠난 09:05 보다 먼저 떠나면(09:05:30 에 닿아도 이미 떠남) 못 탄다
+        gone = pattern(1, [1, 3], NINE + 4 * 60 + 30)
+        self.assertEqual(run([pattern(0, [0, 3], NINE + 5 * 60), gone], walk=True, ready=READY + 30), [])
+
+    def test_without_walk_links_next_stop_buses_stay_out(self):
         self.assertEqual(run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [1, 3], NINE + 8 * 60)]), [])
-        self.assertEqual(run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 4], NINE + 8 * 60)]), [])
 
     def test_through_the_via_stop_when_the_leg_was_joined(self):
         # 경유지(2)에서 같은 버스로 계속 탄 구간: 경유지를 안 지나는 버스는 양 끝만 같아도 뺀다
@@ -90,6 +113,7 @@ class ShapedTest(unittest.TestCase):
         with patch.object(graph, "walk_path", lambda a, b: ([], 1, 1)):
             legs = graph._shaped(found, (0.0, 0.0), (1.0, 1.0), WHEN)[0]["legs"]
         first, second = legs[1]["_alt"], legs[2]["_alt"]
+        self.assertEqual(first[5:], (None, None))   # 앞 · 뒤에 지하철 갈아타기가 없다
         self.assertEqual(first[2], DAY0 + NINE + 300)   # 첫 탈것: 떠나는 때
         self.assertEqual(second[2], DAY0 + NINE + 600)   # 그 뒤: 떠나는 때 - 기다린 때
 
