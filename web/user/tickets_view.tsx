@@ -7,6 +7,7 @@
 import { Component, render } from 'preact';
 import { routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
+import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
 export interface Place { name:string; lat:number; lng:number }
@@ -52,13 +53,13 @@ interface View {
   // 장소 고르기: placeRows 는 찾은 곳 또는 안내 한 줄
   placeTo:boolean; placeQuery:string; placeHidden:boolean; placeRows:FoundPlace[] | string;
   // 경로 선택
-  routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string;
+  routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
 }
 let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, wheelOpen: false, sending: false, deleteArmed: false,
   placeTo: false, placeQuery: '', placeHidden: true, placeRows: [],
-  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '',
+  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false,
 };
 let handlers:Handlers | null = null;
 const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
@@ -162,6 +163,7 @@ function RoutePage() {
     <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{view.plans.map((plan, index) => <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
       aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
+    {view.routeLoading && <RouteLoading />}
     <button id="routePick" class="tf-save" type="button" hidden={!view.plans.length} onClick={call('planPick')}>이 경로로</button>
     <button id="routeMap" class="rt-map" type="button" hidden={!view.plans.length} onClick={call('planMap')}>지도에서 보기</button>
   </>;

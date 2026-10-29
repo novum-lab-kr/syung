@@ -81,9 +81,14 @@ function Card({ plan, index, on, hidden, actions }:{ plan:PlanView; index:number
   </article>;
 }
 
+// 길을 찾는 동안의 뼈대 카드 3줄(첫 줄에 달리는 열차) — 승차권 경로 선택(user/tickets_view.tsx)도 같이 쓴다. 상태 글자는 부르는 쪽이 따로 둔다
+export function RouteLoading() {
+  return <div class="jload" aria-hidden="true">{[0, 1, 2].map(row => <div class="jsk"><i class="jsk-min"></i><div class="jsk-track">{row === 0 && <span class="jsk-run"><i></i></span>}</div><i class="jsk-meta"></i></div>)}</div>;
+}
+
 function Result({ result, actions }:{ result:JourneyResultView; actions:JourneyActions }) {
   if (result.kind === 'none') return null;
-  if (result.kind === 'loading') return <div class="jload" aria-hidden="true">{[0, 1, 2].map(row => <div class="jsk"><i class="jsk-min"></i><div class="jsk-track">{row === 0 && <span class="jsk-run"><i></i></span>}</div><i class="jsk-meta"></i></div>)}</div>;
+  if (result.kind === 'loading') return <RouteLoading />;
   if (result.kind === 'failed') return <div class="jerr"><b>경로를 찾지 못했어요</b><p>{result.message}</p><button type="button" class="jerr-retry" onClick={actions.retry}>다시 찾기</button></div>;
   return <>
     {result.tabs && <div class="segmented jkinds" role="group" aria-label="경로 종류">{result.tabs.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => actions.tab(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>}
