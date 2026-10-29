@@ -8,7 +8,7 @@ import { Component, render } from 'preact';
 import { exitHints, routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
 import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
-import type { RouteFilterView, RouteKind, RouteSort } from './ticket_routes.mts';
+import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
 export interface Place { name:string; lat:number; lng:number }
@@ -42,7 +42,7 @@ interface Handlers {
   placeFrom():void; placeTo():void; timeToggle():void; timeDone():void; route():void;
   day(day:number):void; quick(days:string):void; name(value:string):void; submit():void; remove():void;
   placeInput(value:string):void; placePick(place:FoundPlace):void;
-  plan(index:number):void; planPick():void; routeKind(kind:RouteKind):void; routeSort(sort:RouteSort):void; viaAdd():void; viaClear():void;
+  plan(index:number):void; planPick():void; routeKind(kind:RouteKind):void; viaAdd():void; viaClear():void;
 }
 interface View {
   colors:Record<string, string>;   // 노선 이름 → 색(본체)
@@ -168,11 +168,10 @@ function planHTML(plan:Plan) {
     + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
     + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
 }
-// 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수) + 차례(환승 적게 · 덜 걷기 — 다시 누르면 지금 차례로)
+// 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수)
 function RouteFilters({ filter }:{ filter:RouteFilterView }) {
   return <div class="rt-filters">
     <div class="segmented jkinds" role="group" aria-label="경로 종류">{filter.kinds.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => call('routeKind')(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>
-    <div class="segmented jkinds" role="group" aria-label="경로 차례">{filter.sorts.map(tab => <button type="button" data-s={tab.sort} aria-pressed={tab.pressed} onClick={() => call('routeSort')(tab.pressed ? '' : tab.sort)}>{tab.name}</button>)}</div>
   </div>;
 }
 // 경유지 칸: 발권 화면의 출발 · 도착 칸과 같은 모양. 누르면 장소 고르기(같은 쪽), 고르면 그 경유지로 다시 찾는다 · ✕ 로 빼기
