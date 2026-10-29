@@ -891,14 +891,20 @@ h4.pf-l{line-height:1.3}
 .tf-row{display:flex;align-items:center}
 .tf-pl{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:56px;padding:0 6px 0 14px;color:#3a3410;font:inherit;text-align:left;cursor:text}
 .tf-pl span{flex:1;min-width:0}.tf-pl small{display:block;font-size:12px;font-weight:700;color:#6f6326}
-.tf-pl input{display:block;width:100%;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:16px;font-weight:700;text-overflow:ellipsis;outline:0}
+/* 한글이 위아래 · 왼쪽에서 잘리지 않게 줄 높이를 넉넉히 + 안쪽 여백을 주고 같은 만큼 바깥 여백으로 되돌린다 */
+.tf-pl input{display:block;box-sizing:border-box;width:calc(100% + 6px);min-width:0;height:28px;margin:-2px -3px;padding:2px 3px;border:0;background:none;color:inherit;font:inherit;font-size:16px;font-weight:700;line-height:24px;text-overflow:ellipsis;outline:0}
 .tf-pl input::placeholder{color:#8a7a2e;font-weight:600}
 .tf-here{flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:4px;padding:0;border:0;border-radius:12px;background:none;color:#4b4316;cursor:pointer}
 .tf-here:hover{background:rgba(255,225,77,.45)}.tf-here:focus-visible{outline:2px solid var(--focus)}
-.tf-list{max-height:260px;overflow:auto;padding:4px 6px 6px;border-top:1.5px dashed #e8d27a}
-/* 카드는 테마와 상관없이 크림색이라 목록 글자도 고정 색(다크에서 --ink 가 밝아 묻힌다) */
-.pp-list.tf-list button{color:#3a3410;border-bottom-color:#e8d27a}.pp-list.tf-list b{color:#3a3410}.pp-list.tf-list small,.pp-list.tf-list .empty{color:#6f6326}
-.pp-list.tf-list button:hover,.pp-list.tf-list button:focus-visible{background:rgba(58,52,16,.08)}
+/* 검색 목록: 입력 칸(노랑)과 구분되게 하얀 둥근 상자 + 옅은 그림자. 줄 48px · 글자는 칸보다 작게. 흐름 안에서 아래 칸을 밀어내며 펼쳐지고,
+   높이 상한은 딱 다섯 줄 — 줄 중간에서 잘려 다음 칸에 가린 것처럼 보이지 않게, 넘치면 목록 안에서 스크롤 */
+.tf-list{max-height:calc(5*48px + 8px);margin:2px 8px 8px;padding:4px;overflow-y:auto;overscroll-behavior:contain;scroll-padding:4px 0;background:#fff;border:1px solid #eadf9a;border-radius:12px;box-shadow:0 2px 8px rgba(58,52,16,.14)}
+/* 카드는 테마와 상관없이 크림색이고 목록은 하얀 면이라 글자도 고정 색(다크에서 --ink 가 밝아 묻힌다) */
+.pp-list.tf-list button{min-height:0;height:48px;padding:0 10px;justify-content:center;gap:0;border-bottom:1px solid #f1ecd2;border-radius:0;color:#3a3410}
+.pp-list.tf-list li:last-child button{border-bottom:0}
+.pp-list.tf-list b{font-size:14px;line-height:1.35;color:#3a3410}.pp-list.tf-list small,.pp-list.tf-list .empty{color:#6f6326}
+.pp-list.tf-list small{font-size:11px;line-height:1.35}.pp-list.tf-list .empty{padding:12px 10px;font-size:13px}
+.pp-list.tf-list button:hover,.pp-list.tf-list button:focus-visible{background:#fbf6d6;border-radius:8px}
 .tf-rt{display:flex;flex-direction:column;gap:8px}
 .tf-time{position:relative;display:flex;align-items:center;gap:10px;min-height:60px;padding:0 16px;border-radius:16px;background:#ffe14d;box-shadow:0 3px 0 #e6c62f;color:#3a3410;cursor:pointer}
 .tf-time span{flex:1;font-size:13px;font-weight:700}.tf-time b{font-family:var(--round);font-weight:400;font-size:30px;font-variant-numeric:tabular-nums}
