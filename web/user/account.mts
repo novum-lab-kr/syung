@@ -22,7 +22,7 @@ import {accountView, avatarLook, nameLength, NAME_MAX} from './account_view.tsx'
 import type {Me, Avatar, Stats, Session} from './account_view.tsx';
 import {ticketsView, DAYS, esc, shortName, timeParts} from './tickets_view.tsx';   // 승차권 · 발권 · 장소 · 경로 쪽 그리기 — Preact
 import type {Place, FoundPlace, SlimLeg, SlimRoute, Ticket} from './tickets_view.tsx';
-import type {RouteKind, RouteSort} from './ticket_routes.mts';
+import type {RouteKind} from './ticket_routes.mts';
 import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeFilterView, chosenAfter, routeUrl} from './ticket_routes.mts';   // 승차권 경로 고르기(길 모양 · 거르기 · 다음 탈 날)
 
 // 서버 응답(server/routes/members.py · /api/auth/providers · /api/route) 가운데 이 파일이 읽는 칸(승차권 · 장소는 tickets_view.tsx)
@@ -458,7 +458,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   const slimRoute = (p:Plan):SlimRoute => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});
   let routeSeq = 0;
-  let routeKind:RouteKind = 'all', routeSort:RouteSort = '';   // 경로 쪽 조건(종류 · 차례)
+  let routeKind:RouteKind = 'all';   // 경로 쪽 조건(종류)
   // 발권 화면에서 열면 경유지는 발권 화면의 것(고른 경로를 찾은 경유지)부터
   function openRoute() {
     ticketsView.set({routeVia: form().via});
@@ -491,12 +491,12 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
       const {status, body} = await getJson<RouteAnswer>(routeUrl(from, to, at, via));
       if (my !== routeSeq) return;
       if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.', routeLoading: false}); return; }
-      const plans = usefulRoutes(body.plans!), route = form().route;   // 길 모양으로 묶고 덜 쓸모 있는 길은 뺀다(ticket_routes.mts)
+      const plans = usefulRoutes(body.plans!), route = form().route;   // 같은 길 모양은 가장 빠른 것 하나로 묶는다(ticket_routes.mts)
       const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
-      routeKind = 'all'; routeSort = '';   // 열 때마다 조건은 전체 · 지금 차례
+      routeKind = 'all';   // 열 때마다 조건은 전체
       ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false,   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
-        routeFilter: routeFilterView(plans, routeKind, routeSort)});
+        routeFilter: routeFilterView(plans, routeKind)});
       focusChosen();
       previewPlan();   // 처음 고른 카드의 길을 바로 그린다
     } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
@@ -516,15 +516,14 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     const {chosen, routeFilter} = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
     ($('routeList').children[at] as HTMLElement | undefined)?.focus({preventScroll: true});
   }
-  // 조건 바꾸기(종류 · 차례): 받은 길을 다시 나눈다(서버를 다시 부르지 않는다). 저장된 경로가 보이면 그 카드, 아니면 처음 카드를 고르고 지도 길도 그 길로
+  // 조건 바꾸기(종류): 받은 길을 다시 나눈다(서버를 다시 부르지 않는다). 저장된 경로가 보이면 그 카드, 아니면 처음 카드를 고르고 지도 길도 그 길로
   function refilter() {
-    const {plans, route} = form(), routeFilter = routeFilterView(plans, routeKind, routeSort);
+    const {plans, route} = form(), routeFilter = routeFilterView(plans, routeKind);
     const chosen = chosenAfter(plans, routeFilter.order, route);
     ticketsView.set({routeFilter, chosen});
     if (chosen >= 0) previewPlan(); else previewGone();   // 맞는 길이 없으면 지도 길도 지운다
   }
   const filterKind = (kind:RouteKind) => { routeKind = kind; refilter(); };
-  const filterSort = (sort:RouteSort) => { routeSort = sort; refilter(); };
 
   // ---- 경로 고르기 지도: 경로 쪽에 있는 동안 서랍(.with-map) 옆 · 위 지도에 고른 카드의 길 ----
   const routePanel = $('settingsPanel'), routePage = $('menuRoute');
@@ -681,7 +680,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     timeToggle: () => { if (form().wheelOpen) closeWheel(); else openWheel(); },
     timeDone: () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); },
     route: openRoute, day: toggleDay, quick: quickDays, name: value => ticketsView.set({name: value}), submit: submitTicket, remove: removeTicket,
-    placeInput, placePick, plan: choosePlan, planPick: pickPlan, routeKind: filterKind, routeSort: filterSort,
+    placeInput, placePick, plan: choosePlan, planPick: pickPlan, routeKind: filterKind,
     viaAdd: () => openPlace('via'), viaClear: clearVia,
   });
 

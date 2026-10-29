@@ -1,7 +1,7 @@
-// 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 한참 느린 길은 빼고 · '가장 빠른 길'은 늘 남긴다(조금 느린 다른 모양은 남김) — web/user/ticket_routes.mts
+// 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 다른 모양은 다 남긴다(느려도 · '가장 빠른 길'도 그대로) — web/user/ticket_routes.mts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, SLOW_LIMIT, routeOrder, routeFilterView, chosenAfter, routeUrl} from '../web/user/ticket_routes.mts';
+import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeOrder, routeFilterView, chosenAfter, routeUrl} from '../web/user/ticket_routes.mts';
 
 const walk = {type: 'walk', seconds: 120};
 const ride = (line, from, to) => ({type: 'subway', line, from, to});
@@ -29,15 +29,9 @@ test('another shape 1~9 min slower stays even with no fewer changes', () => {
   assert.deepEqual(names(usefulRoutes(plans)), ['fast', 'direct', 'one min slower', 'slower than direct']);
 });
 
-test(`a way much slower than the fastest (over max(${SLOW_LIMIT.minutes} min, ${SLOW_LIMIT.share * 100}%)) is dropped`, () => {
-  // 가장 빠른 길 20분 → 한도 30분(10분이 더 크다): 30분 바로 가는 길은 남고 31분은 빠진다
+test('a much slower way of another shape is kept too (no slow-limit)', () => {
   const short = [plan('fast', 20, [ride('2호선', 'A', 'B'), ride('3호선', 'B', 'C')], '가장 빠른 길')];
-  assert.deepEqual(names(usefulRoutes([...short, plan('ok', 30, [ride('9호선', 'A', 'C')])])), ['fast', 'ok']);
-  assert.deepEqual(names(usefulRoutes([...short, plan('detour', 31, [ride('9호선', 'A', 'C')])])), ['fast']);
-  // 가장 빠른 길 60분 → 한도 78분(30%가 더 크다)
-  const long = [plan('fast', 60, [ride('1호선', 'A', 'B'), ride('4호선', 'B', 'C')], '가장 빠른 길')];
-  assert.deepEqual(names(usefulRoutes([...long, plan('ok', 78, [ride('경의중앙선', 'A', 'C')])])), ['fast', 'ok']);
-  assert.deepEqual(names(usefulRoutes([...long, plan('wrong way', 79, [ride('경의중앙선', 'A', 'C')])])), ['fast']);
+  assert.deepEqual(names(usefulRoutes([...short, plan('ok', 30, [ride('9호선', 'A', 'C')]), plan('detour', 55, [ride('7호선', 'A', 'C')])])), ['fast', 'ok', 'detour']);
 });
 
 test("the '가장 빠른 길' tagged way always stays, and a lone way stays as it is", () => {
@@ -51,8 +45,7 @@ test("the '가장 빠른 길' tagged way always stays, and a lone way stays as i
   const walking = {name: 'walk', tag: '걸어가기', minutes: 18, transfers: 0, walkMinutes: 18, legs: [walk]};
   assert.equal(rideSig(walking), '');
   assert.deepEqual(names(usefulRoutes([plan('ride', 15, [ride('2호선', 'A', 'B'), ride('3호선', 'B', 'C')], '가장 빠른 길'), walking])), ['ride', 'walk']);
-  assert.deepEqual(names(usefulRoutes([plan('ride', 15, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride', 'walk'], 'slower but within the limit: stays');
-  assert.deepEqual(names(usefulRoutes([plan('ride', 7, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride'], 'over the limit: dropped like any way');
+  assert.deepEqual(names(usefulRoutes([plan('ride', 7, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride', 'walk'], 'slower walking stays too');
 });
 
 test('the card back takes the quickest way after filtering', () => {
@@ -70,7 +63,7 @@ test('next ride day: the nearest chosen weekday after now, at the ticket time', 
   assert.equal(routeAt(nextRideDay([4], '08:00', now)), '2026-11-05T08:00', 'Thursday already gone: next week');
 });
 
-// 조건 바꾸기(2026-10-29): 거르기 뒤 받은 길을 종류(전체 · 지하철만 · 버스만)와 차례(환승 적게 · 덜 걷기)로 다시 나눈다
+// 조건 바꾸기(2026-10-29): 거르기 뒤 받은 길을 종류(전체 · 지하철만 · 버스만)로 다시 나눈다
 const bus = (route, from, to) => ({type: 'bus', route, from, to});
 const kinded = (name, kind, minutes, transfers, walkMinutes, rides) => ({name, kind, tag: '', minutes, transfers, walkMinutes, legs: [walk, ...rides, walk]});
 const mixedBag = [
@@ -83,36 +76,30 @@ const mixedBag = [
 const at = order => order.map(index => mixedBag[index].name);
 
 test('route kinds: all keeps every way, subway / bus only keep that kind (mixed and walking only in all)', () => {
-  assert.deepEqual(at(routeOrder(mixedBag, 'all', '')), ['subway two', 'bus long walk', 'mixed', 'subway many', 'subway direct']);
-  assert.deepEqual(at(routeOrder(mixedBag, 'subway', '')), ['subway two', 'subway many', 'subway direct']);
-  assert.deepEqual(at(routeOrder(mixedBag, 'bus', '')), ['bus long walk']);
+  assert.deepEqual(at(routeOrder(mixedBag, 'all')), ['subway two', 'bus long walk', 'mixed', 'subway many', 'subway direct']);
+  assert.deepEqual(at(routeOrder(mixedBag, 'subway')), ['subway two', 'subway many', 'subway direct']);
+  assert.deepEqual(at(routeOrder(mixedBag, 'bus')), ['bus long walk']);
 });
 
-test('route sorts: fewer changes / less walking first, ties keep the given order', () => {
-  assert.deepEqual(at(routeOrder(mixedBag, 'all', 'transfers')), ['bus long walk', 'subway direct', 'subway two', 'mixed', 'subway many']);
-  assert.deepEqual(at(routeOrder(mixedBag, 'all', 'walk')), ['subway many', 'mixed', 'subway two', 'subway direct', 'bus long walk']);
-  assert.deepEqual(at(routeOrder(mixedBag, 'subway', 'transfers')), ['subway direct', 'subway two', 'subway many']);
-});
-
-test('filter view: kind buttons with counts, sort buttons, and a short note when nothing fits', () => {
-  const view = routeFilterView(mixedBag, 'subway', 'walk');
+test('filter view: kind buttons with counts and a short note when nothing fits', () => {
+  const view = routeFilterView(mixedBag, 'subway');
   assert.deepEqual(view.kinds.map(tab => [tab.kind, tab.name, tab.count, tab.pressed]), [['all', '전체', 5, false], ['subway', '지하철만', 3, true], ['bus', '버스만', 1, false]]);
-  assert.deepEqual(view.sorts.map(tab => [tab.sort, tab.name, tab.pressed]), [['transfers', '환승 적게', false], ['walk', '덜 걷기', true]]);
+  assert.equal('sorts' in view, false, 'no sort buttons');
   assert.equal(view.empty, '');
-  const noBus = routeFilterView(mixedBag.filter(plan => plan.kind !== 'bus'), 'bus', '');
+  const noBus = routeFilterView(mixedBag.filter(plan => plan.kind !== 'bus'), 'bus');
   assert.deepEqual(noBus.order, []);
   assert.equal(noBus.empty, '버스만 타는 경로가 없어요');
   assert.equal(noBus.kinds[2].count, 0);
 });
 
 test('after a change: the saved way if it shows, else the first card, else none', () => {
-  const subwayFirst = routeOrder(mixedBag, 'subway', 'transfers');   // direct, two, many
-  assert.equal(chosenAfter(mixedBag, subwayFirst, null), 4, 'no saved way: the first card');
+  const subwayFirst = routeOrder(mixedBag, 'subway');   // two, many, direct
+  assert.equal(chosenAfter(mixedBag, subwayFirst, null), 0, 'no saved way: the first card');
   assert.equal(chosenAfter(mixedBag, subwayFirst, mixedBag[3]), 3, 'saved way shows: that card');
   // 저장된 경로는 시각 칸이 다른 SlimRoute 여도 길 모양으로 맞춘다
   const saved = {tag: '', minutes: 40, leaveBy: '08:00', arrives: '08:40', transfers: 1, walkMinutes: 6, legs: mixedBag[0].legs};
   assert.equal(chosenAfter(mixedBag, subwayFirst, saved), 0);
-  assert.equal(chosenAfter(mixedBag, routeOrder(mixedBag, 'bus', ''), saved), 1, 'saved way hidden: the first card');
+  assert.equal(chosenAfter(mixedBag, routeOrder(mixedBag, 'bus'), saved), 1, 'saved way hidden: the first card');
   assert.equal(chosenAfter(mixedBag, [], saved), -1);
 });
 
