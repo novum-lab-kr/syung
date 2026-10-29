@@ -255,6 +255,12 @@ function platformNeighbours(line:string,s:MapStation){
   for(const ids of paths[line]||[]){const i=ids.indexOf(s.id);if(i<0)continue;const p=byId.get(ids[i-1]!),n=byId.get(ids[i+1]!);if(!result.prev&&p&&p!==result.next)result.prev=p;if(!result.next&&n&&n!==result.prev)result.next=n}
   return result;
 }
+// 그 역을 지나는 선로 한 줄: 앞 역 쪽 reach m + 뒤 역 쪽 reach m (여정의 역 안 걷기가 따라간다)
+function stationTrack(line:string,s:MapStation,reach:number):LngLat[]{
+  const {prev,next}=platformNeighbours(line,s),here=stopPos(line,s);
+  const back=prev?trackFrom(line,s,prev,reach).reverse():[here],ahead=next?trackFrom(line,s,next,reach):[here];
+  return [...back,...ahead.slice(1)];
+}
 const STATION_WIDTH_STOPS:[number,number][]=[[8,6],[12,11],[14,16],[16,24],[18,28]];   // [zoom, outline width px]
 const stationWidthPx=(z:number)=>{const S=STATION_WIDTH_STOPS;if(z<=S[0]![0])return S[0]![1];for(let i=1;i<S.length;i++)if(z<=S[i]![0]){const [z0,w0]=S[i-1]!,[z1,w1]=S[i]!;return w0+(w1-w0)*(z-z0)/(z1-z0)}return S[S.length-1]![1]};
 const stationRects=new Map<string,Rect>(),PLATFORM_SCALE=.3;   // platform bars: a third of the old outline width (names sit beside them now)
@@ -581,7 +587,7 @@ const hexRGB=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16
 const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
   live:{get frameMs(){return frameMs()},get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide}}});   // 아래 시트 · 따라가기
 const {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
-const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
+const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,stationTrack,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
 // 승차권 경로 지도에서 보기(user/account — 늦게 받는다)와 길찾기 · 버스 노선은 지도의 여정 자리를 같이 쓴다: 한쪽이 그리면 다른 쪽 막대 · 길을 치운다(ticketRouteGone)

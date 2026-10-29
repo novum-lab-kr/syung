@@ -647,3 +647,15 @@ test('정류장 시트에서 번호를 누르면 곧 올 버스를 바로 따라
   assert.doesNotMatch(layer.followParts.summary.innerHTML, /노선만 표시/, "'노선만 표시' 는 지운다(행님 2026-10-20)");
   assert.equal(layer.followUI.hidden, false);
 }, false));
+
+// 길찾기 버스 구간 끝 연결선: 원래 선 · 도로 보정선을 따로 본다(Codex 리뷰 2026-10-29)
+test('원래 노선이 정류장을 지나도 도로 보정선이 떨어져 있으면 그쪽은 잇는다', async () => {
+  const {busJoinLines} = await import('../web/bus/layer.mts');
+  const stop = [127.0, 37.5];
+  const onStop = [127.0, 37.5];
+  const away = [127.0003, 37.5];   // 약 27 m
+  assert.deepEqual(busJoinLines(stop, onStop, away).map(j => j.lod), ['road']);
+  assert.deepEqual(busJoinLines(stop, away, onStop).map(j => j.lod), ['plan']);
+  assert.deepEqual(busJoinLines(stop, away, away).map(j => j.lod), ['plan', 'road']);
+  assert.deepEqual(busJoinLines(stop, onStop, null), []);
+});
