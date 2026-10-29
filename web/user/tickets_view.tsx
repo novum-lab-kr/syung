@@ -5,7 +5,7 @@
 // 출발 시각 바퀴의 칸 속(.tw-col 의 단추 · 스크롤 자리 · on/near · aria-valuetext)은 account.mts 가 바닐라로 그대로 다룬다 — 여기서는 다시 그리지 않는다.
 // 서랍 껍데기 · 쪽(section) 숨기기 · 쪽 이름(aria-label)은 본체 · account.mts 그대로.
 import { Component, render } from 'preact';
-import { routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import { exitHints, routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
 import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
 import type { RouteFilterView, RouteKind, RouteSort } from './ticket_routes.mts';
@@ -89,7 +89,9 @@ function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
     call('ticketFlip')(index);
   }}><div class="ticket-in"><Front ticket={ticket} /><div class="tk-face tk-back">
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
-    {ticket.route && sameRoutes(ticket.route.legs) !== null && <p class="tk-alt">{sameRoutes(ticket.route.legs)}</p>}
+    {ticket.route && (exitHints(ticket.route.legs).length > 0 || sameRoutes(ticket.route.legs) !== null) && <div class="tk-alts">
+      {exitHints(ticket.route.legs).length > 0 && <p class="tk-alt" title={exitHints(ticket.route.legs).join(' / ')}>{exitHints(ticket.route.legs).join(' / ')}</p>}
+      {sameRoutes(ticket.route.legs) !== null && <p class="tk-alt" title={sameRoutes(ticket.route.legs)!}>{sameRoutes(ticket.route.legs)}</p>}</div>}
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
     <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
       {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
@@ -157,7 +159,7 @@ function PlacePage() {
 
 // 같은 구간 다른 버스 안내(없으면 빈 글자)
 export function altHTML(legs:readonly SlimLeg[]) {
-  const note = sameRoutes(legs);
+  const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(' / ');   // 같은 구간 다른 버스 + 갈아탈 출구 안내
   return note ? `<span class="jp-alt">${esc(note)}</span>` : '';
 }
 // 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)

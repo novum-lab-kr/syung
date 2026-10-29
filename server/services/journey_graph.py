@@ -60,6 +60,9 @@ DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept i
 MAX_EASY_TRANSFERS = 3        # 환승이 이보다 많은 길(탈 것 5개 이상)은 빼지 않고 목록 맨 뒤로(2026-10-29 사용자 결정)
 # 같은 구간 다른 버스: 같은 정류장(같은 번호)에서 타서 같은 정류장에 내리는 노선만(옆 정류장은 어디서 타고 내리는지 안내가 따로 있어야 해서 뺐다 — Codex 리뷰 2026-10-29)
 ALT_DEPART_WITHIN = 20 * 60   # 고른 버스보다 이 안에 떠나는 것만
+ALT_SAME_NAME_M = 150         # 옆 정류장 후보: 이름이 같은 정류장(길 건너 · 옆 승강장)은 이만큼까지(걷기 약 2분)
+ALT_OTHER_NAME_M = 80         # 이름이 다르면 이보다 가까울 때만(걷기 1분 안팎)
+STOP_NUMBER_M = 120           # 탐색 자료 정류장(KTDB 좌표 — 일부는 반올림)에 번호를 붙일 때 같은 이름 정류장을 찾는 범위
 ALT_ARRIVE_LATE = 15 * 60     # 고른 버스보다 이보다 늦게 닿지 않는 것만
 MAX_ALTERNATIVES = 3
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
@@ -272,15 +275,19 @@ def _near_nodes(p: tuple[float, float]) -> list[Node]:
 # stations ↔ bus stops close to one of their exits: sid → [(stop, metres, (lat, lng) of that exit)]
 STATION_BUS: dict[int, list[tuple[int, float, Pt]]] = defaultdict(list)
 BUS_STATION: dict[int, list[tuple[int, float, Pt]]] = defaultdict(list)
+# (역, 정류장) → 갈아탈 때 나가는 출구 번호("11" · "2-1"). 출구 자료가 없는 역은 칸이 없다(= 빈 글자)
+EXIT_REF: dict[tuple[int, int], str] = {}
 for _sid in STATIONS:
-    _best: dict[int, tuple[float, Pt]] = {}
-    for _lat, _lng, _ in _points(_sid):
+    _best: dict[int, tuple[float, Pt, str]] = {}
+    for _lat, _lng, _ref in _points(_sid):
         for _m, _i in _stops_near((_lat, _lng), STATION_BUS_M):
             if _i not in _best or _m < _best[_i][0]:
-                _best[_i] = (_m, (_lat, _lng))
-    for _i, (_m, _pt) in _best.items():
+                _best[_i] = (_m, (_lat, _lng), _ref)
+    for _i, (_m, _pt, _ref) in _best.items():
         STATION_BUS[_sid].append((_i, _m, _pt))
         BUS_STATION[_i].append((_sid, _m, _pt))
+        if _ref:
+            EXIT_REF[(_sid, _i)] = _ref
 
 
 def _walk_table(origin: tuple[float, float], nodes: list[Node], reverse: bool = False) -> dict[Node, Walk]:
@@ -508,7 +515,8 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                 for stop, m, pt in STATION_BUS.get(sid, ()):
                     w = _walk_sec(m) + STATION_ACCESS
                     push(("bs", stop, "w"), cost + w, t + w, ("walk", s, {"seconds": w, "metres": round(m * WALK_DETOUR), "a": pt,
-                                                                     "b": (BSTOPS[stop][1], BSTOPS[stop][2])}), changes)
+                                                                     "b": (BSTOPS[stop][1], BSTOPS[stop][2]),
+                                                                     "exit": EXIT_REF.get((sid, stop), "")}), changes)
         elif s[0] == "bs":
             stop = s[1]
             if "bus" in modes:
@@ -541,7 +549,8 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                     for sid, m, pt in BUS_STATION.get(stop, ()):
                         w = _walk_sec(m) + STATION_ACCESS
                         push(("at", sid, "w"), cost + w, t + w, ("walk", s, {"seconds": w, "metres": round(m * WALK_DETOUR),
-                             "a": (BSTOPS[stop][1], BSTOPS[stop][2]), "b": pt}), changes)
+                             "a": (BSTOPS[stop][1], BSTOPS[stop][2]), "b": pt,
+                             "exit": EXIT_REF.get((sid, stop), "")}), changes)
         else:
             line, a, b, end = s
             push(("at", b), cost, t, ("alight", s, {}), changes)
@@ -577,7 +586,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                          "label": f"{name}역{f' {ex}번 출구' if ex else ''}에서 목적지까지" if node[0] == "at" else f"{name} 정류장에서 목적지까지"})
         elif kind == "walk":
             prev = cast("Node", back[s][1])   # walk 의 앞은 늘 있다
-            legs.append({"type": "walk", "seconds": info["seconds"], "metres": info["metres"], "exit": "",
+            legs.append({"type": "walk", "seconds": info["seconds"], "metres": info["metres"], "exit": info.get("exit", ""),
                          "label": f"{_node_name(prev)}{'역' if prev[0] == 'at' else ' 정류장'}에서 {_node_name(s)}{'역' if s[0] == 'at' else ' 정류장'}으로",
                          "a": info["a"], "b": info["b"]})
         elif kind == "board":
@@ -761,7 +770,10 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
                 if l["type"] == "bus" and l.get("_arr") is not None and not l.get("_stay"):   # 같은 구간 다른 버스는 보여 줄 길을 고른 뒤 _finish 에서 찾는다(타는 정류장 · 내리는 정류장 · 정류장에 닿은 때 · 떠난 때 · 닿은 때)
                     # 첫 탈것은 보이는 출발 일정(leaveBy)대로 가면 고른 버스가 떠나는 때에 정류장에 닿는다 — 탐색 때 닿은 때가 아니다
                     ready = l["_dep"] if l is first_ride else l["_dep"] - l["wait"]
-                    l["_alt"] = (l["_ban"][0][2], (*l.get("_via", ()), l["_stop"]), ready, l["_dep"], l["_arr"])
+                    # 앞 · 뒤가 지하철 갈아타기(걷기 하나 사이)면 그 역 — 옆 정류장 안내의 가까운 출구를 찾는 데 쓴다
+                    before = legs[i - 2]["stations"][-1] if i >= 2 and legs[i - 1]["type"] == "walk" and legs[i - 2]["type"] == "ride" else None
+                    after = legs[i + 2]["stations"][0] if i + 2 < len(legs) and legs[i + 1]["type"] == "walk" and legs[i + 2]["type"] == "ride" else None
+                    l["_alt"] = (l["_ban"][0][2], (*l.get("_via", ()), l["_stop"]), ready, l["_dep"], l["_arr"], before, after)
                 l.pop("_dep")
                 l.pop("_ban")
                 for k in ("_stop", "_run", "_stay", "_arr", "_via"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
@@ -774,33 +786,82 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
     return plans
 
 
-def _alternatives(alt: tuple[int, tuple[int, ...], float, float, float], route: str, day0: float) -> list[Row]:
-    """고른 버스 구간(alt = 타는 정류장, 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 포함 · 차례대로), 정류장에 닿은 때, 떠난 때, 닿은 때)과
-    같은 정류장에서 타서 같은 정류장들을 차례로 지나 내리는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지)."""
-    from_stop, onward, ready, dep, arr = alt
-    best: dict[str, tuple[float, float, str]] = {}
-    for pi, k in BUS_AT.get(from_stop, ()):
-        p = BPATS[pi]
-        name, rkind = BROUTES[p["r"]]
-        if name == route:
-            continue
-        at, j = k, 0
-        for stop in onward:   # 정류장들을 차례로 지나는가 — 마지막이 내리는 자리(j)
-            j = next((n for n in range(at + 1, len(p["s"])) if p["s"][n] == stop), -1)
-            if j < 0:
-                break
-            at = j
-        nxt = _bus_next(p, k, ready - day0) if j > 0 else None
-        if not nxt:
-            continue
-        start, scale, left = nxt
-        leaves, gets = day0 + left, day0 + start + p["t"][j] * scale
-        if leaves > dep + ALT_DEPART_WITHIN or gets > arr + ALT_ARRIVE_LATE:
-            continue
-        if name not in best or (leaves, gets) < best[name][:2]:
-            best[name] = (leaves, gets, BUS_COLORS.get(rkind, "#3d5bab"))
-    ordered = sorted(best.items(), key=lambda item: item[1][:2])[:MAX_ALTERNATIVES]
-    return [{"route": name, "color": color, "departs": _fmt(leaves), "arrives": _fmt(gets)} for name, (leaves, gets, color) in ordered]
+def _nearby(stop: int) -> list[tuple[int, float]]:
+    """그 정류장과 걸어서 이어지는 옆 정류장들: [(정류장, 미터)] — 그 정류장 자신이 맨 앞(0 m).
+    이름이 같으면 ALT_SAME_NAME_M 까지, 다르면 ALT_OTHER_NAME_M 까지(걷기 1분 안팎 — BUS_WALK 전체 300 m 는 5분이 넘는다)."""
+    name = BSTOPS[stop][0] if stop < len(BSTOPS) else None
+    near = [(j, m) for j, m in (BUS_WALK[stop] if stop < len(BUS_WALK) else ())
+            if m <= (ALT_SAME_NAME_M if BSTOPS[j][0] == name else ALT_OTHER_NAME_M)]
+    return [(stop, 0.0), *near]
+
+
+_catalog_by_name: dict[str, list[tuple[float, float, str, str]]] = defaultdict(list)   # 정류장 이름 → [(lat, lng, id, 번호)]
+for _row in cast("list[Row]", (journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {}).get("stops", ())):
+    _catalog_by_name[_row["name"]].append((_row["lat"], _row["lng"], str(_row["id"]), str(_row.get("arsId") or "")))
+
+
+def _stop_ids(stop: int) -> tuple[str, str]:
+    """탐색 자료 정류장 → (정류장 id, 정류장 번호). 같은 이름 가장 가까운 정류장(STOP_NUMBER_M 안)에서 찾고, 없으면 빈 글자."""
+    name, lat, lng = BSTOPS[stop][:3]
+    near = [(_meters((lat, lng), (la, lo)), sid, ars) for la, lo, sid, ars in _catalog_by_name.get(name, ())]
+    best = min(near, default=None)
+    return (best[1], best[2]) if best and best[0] <= STOP_NUMBER_M else ("", "")
+
+
+def _stop_note(stop: int, metres: float, sid: int | None) -> Row:
+    """옆 정류장 안내: 이름 · 정류장 id · 번호 · 걷는 거리 · 갈아타는 역의 가까운 출구(자료가 있을 때만)."""
+    stop_id, ars = _stop_ids(stop)
+    note: Row = {"name": BSTOPS[stop][0], "metres": round(metres)}
+    if stop_id:   # 같은 이름 다른 정류장을 가르는 번호
+        note["id"], note["ars"] = stop_id, ars
+    ref = EXIT_REF.get((sid, stop)) if sid is not None else None
+    if ref:
+        note["exit"] = ref
+    return note
+
+
+def _alternatives(alt: tuple[Any, ...], route: str, day0: float) -> list[Row]:
+    """고른 버스 구간(alt = 타는 정류장, 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 포함 · 차례대로), 정류장에 닿은 때, 떠난 때, 닿은 때,
+    [앞 구간에서 내린 역 | None, 뒤 구간에서 탈 역 | None])과 같은 구간을 가는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지).
+    타는 정류장 · (경유지 없는 구간의) 내리는 정류장은 걸어서 이어지는 옆 정류장도 된다 — 옆 정류장은 걷는 시간만큼 늦게 닿는 것으로 보고
+    (이미 떠난 버스는 뺀다), 응답에 boardAt · alightAt(이름 · 정류장 번호 · 거리 · 출구)을 싣는다. 같은 정류장이면 칸이 없다."""
+    from_stop, onward, ready, dep, arr = alt[:5]
+    board_sid, alight_sid = (alt[5], alt[6]) if len(alt) >= 7 else (None, None)
+    ends = _nearby(onward[-1]) if len(onward) == 1 else [(onward[-1], 0.0)]   # 경유지가 있으면 내리는 곳은 그 정류장 그대로
+    best: dict[str, tuple[float, float, float, str, int, float, int, float]] = {}
+    for board, board_m in _nearby(from_stop):
+        for pi, k in BUS_AT.get(board, ()):
+            p = BPATS[pi]
+            name, rkind = BROUTES[p["r"]]
+            if name == route:
+                continue
+            for end, end_m in ends:
+                at, j = k, 0
+                for stop in (*onward[:-1], end):   # 정류장들을 차례로 지나는가 — 마지막이 내리는 자리(j)
+                    j = next((n for n in range(at + 1, len(p["s"])) if p["s"][n] == stop), -1)
+                    if j < 0:
+                        break
+                    at = j
+                nxt = _bus_next(p, k, ready + (_walk_sec(board_m) if board_m else 0) - day0) if j > 0 else None
+                if not nxt:
+                    continue
+                start, scale, left = nxt
+                leaves, gets = day0 + left, day0 + start + p["t"][j] * scale
+                if leaves > dep + ALT_DEPART_WITHIN or gets + (_walk_sec(end_m) if end_m else 0) > arr + ALT_ARRIVE_LATE:
+                    continue
+                key = (leaves, gets, board_m + end_m)   # 같은 노선이 여럿이면 먼저 떠나는 것 · 같으면 덜 걷는 것
+                if name not in best or key < best[name][:3]:
+                    best[name] = (leaves, gets, board_m + end_m, BUS_COLORS.get(rkind, "#3d5bab"), board, board_m, end, end_m)
+    ordered = sorted(best.items(), key=lambda item: item[1][:3])[:MAX_ALTERNATIVES]
+    out: list[Row] = []
+    for name, (leaves, gets, _w, color, board, board_m, end, end_m) in ordered:
+        row: Row = {"route": name, "color": color, "departs": _fmt(leaves), "arrives": _fmt(gets)}
+        if board != from_stop:
+            row["boardAt"] = _stop_note(board, board_m, board_sid)
+        if end != onward[-1]:
+            row["alightAt"] = _stop_note(end, end_m, alight_sid)
+        out.append(row)
+    return out
 
 
 def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_begin: float) -> Row:
@@ -904,11 +965,11 @@ def _node_point(n: Node) -> Pt:
     return (STATIONS[n[1]]["lat"], STATIONS[n[1]]["lon"]) if n[0] == "at" else (BSTOPS[n[1]][1], BSTOPS[n[1]][2])
 
 
-def _transfer_leg(a_node: Node, b_node: Node, seconds: int, metres: float, a: Pt, b: Pt) -> Row:
+def _transfer_leg(a_node: Node, b_node: Node, seconds: int, metres: float, a: Pt, b: Pt, exit_ref: str = "") -> Row:
     """탐색 안 갈아타기 걷기 구간과 같은 모양(_search 의 walk)."""
     def named(n: Node) -> str:
         return f"{_node_name(n)}{'역' if n[0] == 'at' else ' 정류장'}"
-    return {"type": "walk", "seconds": seconds, "metres": round(metres * WALK_DETOUR), "exit": "",
+    return {"type": "walk", "seconds": seconds, "metres": round(metres * WALK_DETOUR), "exit": exit_ref,
             "label": f"{named(a_node)}에서 {named(b_node)}으로", "a": a, "b": b}
 
 
@@ -939,7 +1000,7 @@ def _via_start(node: Node, first: Row) -> dict[Node, tuple[Walk, Row | None]]:
         out[node] = ((_data["transfer"].get(str(sid), _data["defaultTransfer"]), 0, "", *here), None)
         for stop, m, pt in STATION_BUS.get(sid, ()):
             w, b = _walk_sec(m) + STATION_ACCESS, _node_point(("bs", stop))
-            out[("bs", stop)] = ((w, round(m * WALK_DETOUR), "", *b), _transfer_leg(node, ("bs", stop), w, m, pt, b))
+            out[("bs", stop)] = ((w, round(m * WALK_DETOUR), "", *b), _transfer_leg(node, ("bs", stop), w, m, pt, b, EXIT_REF.get((sid, stop), "")))
         return out
     stop = node[1]
     last = [l for l in first["legs"] if l["type"] != "walk"][-1]
@@ -951,7 +1012,7 @@ def _via_start(node: Node, first: Row) -> dict[Node, tuple[Walk, Row | None]]:
         out.setdefault(("bs", j), ((w, round(m * WALK_DETOUR), "", *b), _transfer_leg(node, ("bs", j), w, m, here, b)))
     for sid, m, pt in BUS_STATION.get(stop, ()):
         w = _walk_sec(m) + STATION_ACCESS
-        out.setdefault(("at", sid), ((w, round(m * WALK_DETOUR), "", *pt), _transfer_leg(node, ("at", sid), w, m, here, pt)))
+        out.setdefault(("at", sid), ((w, round(m * WALK_DETOUR), "", *pt), _transfer_leg(node, ("at", sid), w, m, here, pt, EXIT_REF.get((sid, stop), ""))))
     return out
 
 

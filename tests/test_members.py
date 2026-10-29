@@ -34,7 +34,7 @@ ROUTE = {"tag": "가장 빠른 길", "kind": "subway", "leaveBy": "08:11", "arri
                    "arrives": "08:54", "wait": 49, "alts": ["01"],
                    "alternatives": [{"route": "7016", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57", "path": [[127, 37]]}]}]}
 SAVED_ROUTE = {"tag": "가장 빠른 길", "minutes": 31, "leaveBy": "08:11", "arrives": "08:41", "transfers": 0, "walkMinutes": 2,
-               "legs": [{"type": "walk", "seconds": 80},
+               "legs": [{"type": "walk", "seconds": 80, "exit": "2-1"},
                         {"type": "ride", "line": "2호선", "from": "잠실", "to": "시청", "departs": "08:13", "arrives": "08:40", "wait": 106},
                         {"type": "bus", "route": "종로11", "color": "#7bc043", "from": "조선일보", "to": "시청역", "departs": "08:53",
                          "arrives": "08:54", "wait": 49,
@@ -444,6 +444,18 @@ class CleanRouteTest(unittest.TestCase):
                       dict(ROUTE, legs=[dict(bus, color="#7bc0431")]), dict(ROUTE, legs=[dict(ride, wait=None)])):
             with self.subTest(route=route), self.assertRaises(ValueError):
                 clean_ticket(dict(TICKET, route=route))
+
+    def test_side_stop_and_exit_are_kept_and_checked(self):
+        side = {"name": "청담역.경기고교", "metres": 60, "exit": "11", "id": "122000084", "ars": "23187"}
+        alt = {"route": "2415", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57", "boardAt": side, "alightAt": {"name": "무역센터", "metres": 90}}
+        legs = [dict(leg) for leg in ROUTE["legs"]]
+        legs[2] = dict(legs[2], alternatives=[alt])
+        saved = json.loads(clean_ticket(dict(TICKET, route=dict(ROUTE, legs=legs)))["route"])["legs"]
+        self.assertEqual(saved[2]["alternatives"], [alt])
+        self.assertEqual(saved[0]["exit"], "2-1")
+        legs[2] = dict(legs[2], alternatives=[dict(alt, boardAt={"name": "x", "metres": "60"})])
+        with self.assertRaises(ValueError):
+            clean_ticket(dict(TICKET, route=dict(ROUTE, legs=legs)))
 
     def test_walk_only_route_and_no_route(self):
         walk = {"tag": "걸어가기", "leaveBy": "08:10", "arrives": "08:30", "minutes": 20, "transfers": 0, "walkMinutes": 20,
