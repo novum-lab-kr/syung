@@ -6,13 +6,15 @@
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
 // 같은 정류장(또는 옆 정류장)에서 타서 같은 곳에 내리는 다른 노선(서버가 먼저 오는 순으로 많아야 3개)
-export interface BusAlternative { route:string; color:string; departs:string; arrives:string }
+// 옆 정류장에서 타거나 내리는 후보면 어느 정류장인지(이름 · 걷는 거리 · 갈아타는 역의 가까운 출구 — 자료 있을 때만)
+export interface SideStop { name:string; metres:number; exit?:string; id?:string; ars?:string }
+export interface BusAlternative { route:string; color:string; departs:string; arrives:string; boardAt?:SideStop; alightAt?:SideStop }
 interface BusLeg { type:'bus'; route:string; color:string; from:string; to:string; departs:string; arrives:string; toward:string; stops:number; wait:number; realtime:boolean; alts?:string[]; alternatives?:BusAlternative[]; path:[number, number][] }
 type TransitLeg = TrainLeg | BusLeg;
 type Leg = WalkLeg | TransitLeg;
 // 띠 그리기에 쓰는 칸만(승차권에 저장한 경로도 이 칸은 있다 — user/account)
 type TrackTransit = Pick<TrainLeg, 'type' | 'line' | 'departs' | 'arrives' | 'wait'> | Pick<BusLeg, 'type' | 'route' | 'color' | 'departs' | 'arrives' | 'wait' | 'alternatives'>;
-export type TrackLeg = Pick<WalkLeg, 'type' | 'seconds'> | TrackTransit;
+export type TrackLeg = (Pick<WalkLeg, 'type' | 'seconds'> & { exit?:string }) | TrackTransit;
 // 단계 줄의 구간: 걷기 줄은 r.e 로 가르고 l 은 따로 좁혀지지 않아 걷기 칸을 함께 둔다
 type RowLeg = Omit<WalkLeg, 'type' | 'realtime'> & TransitLeg;
 export interface Plan { tag?:string; kind:string; leaveBy:string; arrives:string; minutes:number; transfers:number; walkMinutes:number; legs:Leg[] }
@@ -84,8 +86,26 @@ const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><pa
 const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
 // 같은 구간을 가는 다른 버스 안내 한 줄: '143 · 2415 · 301 중 먼저 오는 버스'(버스 구간마다, 여럿이면 ' / ') — 없으면 null
 export function sameRoutes(legs:readonly TrackLeg[]):string | null {
-  const notes = legs.flatMap(leg => leg.type === 'bus' && leg.alternatives?.length ? [`${[leg.route, ...leg.alternatives.map(other => other.route)].join(' · ')} 중 먼저 오는 버스`] : []);
+  // 옆 정류장 버스는 어느 정류장인지 덧붙인다: '2415 는 옆 정류장 청담역.경기고교(60m · 11번 출구 쪽)에서 타요'
+  const side = (stop:SideStop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ''}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ''})`;
+  const notes = legs.flatMap(leg => {
+    if (leg.type !== 'bus' || !leg.alternatives?.length) return [];
+    const where = leg.alternatives.flatMap(other => [...(other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : []), ...(other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : [])]);
+    return [`${[leg.route, ...leg.alternatives.map(other => other.route)].join(' · ')} 중 먼저 오는 버스${where.length ? ` (${where.join(', ')})` : ''}`];
+  });
   return notes.length ? notes.join(' / ') : null;
+}
+// 지하철 ↔ 버스 갈아탈 때 어느 출구로 나가는지 한 줄씩: '청담역 11번 출구 옆 정류장에서 2415' · '대치역 3번 출구로'.
+// 출구 번호는 서버가 걷기 구간(exit)에 준다 — 없으면(출구 자료가 없는 역 · 옛 승차권) 안내를 만들지 않는다
+type HintLeg = { type:string; exit?:string; from?:string; to?:string; route?:string };
+export function exitHints(legs:readonly HintLeg[]):string[] {
+  return legs.flatMap((leg, at) => {
+    const before = legs[at - 1], after = legs[at + 1];
+    if (leg.type !== 'walk' || !leg.exit || !before || !after) return [];
+    if (before.type === 'ride' && after.type === 'bus' && before.to) return [`${before.to}역 ${leg.exit}번 출구 옆 정류장에서 ${after.route ?? '버스'}`];
+    if (before.type === 'bus' && after.type === 'ride' && after.from) return [`${after.from}역 ${leg.exit}번 출구로`];
+    return [];
+  });
 }
 // 띠의 칸들(셈) — HTML 글자(routeTrack · 승차권 · 아래 막대)와 화면 조각(결과 카드)이 같이 그린다
 export function trackParts(p:{ legs:readonly TrackLeg[] }, colors:Colors, width = 330):TrackSegView[] {

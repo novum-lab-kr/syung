@@ -352,7 +352,8 @@ class StationViaSearchTest(unittest.TestCase):
                    patch.object(graph, "_stops_near", lambda point, radius: sorted(
                        (graph._meters(point, (s[1], s[2])), i) for i, s in enumerate(stops) if graph._meters(point, (s[1], s[2])) <= radius)),
                    patch.object(graph, "STATION_BUS", {CHEONGDAM: [(0, 80.0, exit_pt)]}),
-                   patch.object(graph, "BUS_STATION", {0: [(CHEONGDAM, 80.0, exit_pt)]})]
+                   patch.object(graph, "BUS_STATION", {0: [(CHEONGDAM, 80.0, exit_pt)]}),
+                   patch.object(graph, "EXIT_REF", {(CHEONGDAM, 0): "11"})]
         for active in patches:
             active.start()
             self.addCleanup(active.stop)
@@ -374,6 +375,16 @@ class StationViaSearchTest(unittest.TestCase):
         self.assertTrue(same, [self.rides(p) for p in via])
         self.assertEqual((same[0]["arrives"], same[0]["walkMinutes"]), (fastest["arrives"], fastest["walkMinutes"]), "경유지를 넣어도 같은 시각 · 걷기")
         self.assertEqual(same[0]["tag"], "가장 빠른 길")
+
+    def test_transfer_walk_names_the_exit(self):
+        """지하철 → 버스 갈아타기 걷기 구간에 가까운 출구 번호(청담역 11번 출구)가 실린다 — 탐색 · 경유지 모두."""
+        plain = graph.plan(self.ORIGIN, self.DEST, self.WHEN, {}, self.run_batch, 3)["plans"]
+        fastest = next(p for p in plain if p["tag"] == "가장 빠른 길")
+        transfer = [l for l in fastest["legs"] if l["type"] == "walk" and "정류장으로" in l["label"]]
+        self.assertEqual([l["exit"] for l in transfer], ["11"])
+        via = graph.plan_via(self.ORIGIN, STATION_VIA, self.DEST, self.WHEN, {}, self.run_batch, 3)["plans"]
+        shown = [l["exit"] for p in via if self.rides(p) == self.rides(fastest) for l in p["legs"] if l["type"] == "walk" and "정류장으로" in l["label"]]
+        self.assertTrue(shown and set(shown) == {"11"}, shown)
 
     def test_staying_on_line_7_through_cheongdam_is_one_ride(self):
         dest = (graph.STATIONS[CHEONGDAM + 2]["lat"], graph.STATIONS[CHEONGDAM + 2]["lon"])
