@@ -456,20 +456,20 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), time = timeParts(form().time);
     ticketsView.set({routeTrip: `${from.name} → ${to.name}`, routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
-      plans: [], chosen: -1, routeMsg: '경로를 찾는 중…'});
+      plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true});   // 길찾기 시트와 같은 글자 · 뼈대 카드
     $('routeOpen').click();
     const my = ++routeSeq;
     const at = routeAt(when);
     try {
       const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
       if (my !== routeSeq) return;
-      if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.'}); return; }
+      if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.', routeLoading: false}); return; }
       const plans = usefulRoutes(body.plans!), route = form().route;   // 길 모양으로 묶고 덜 쓸모 있는 길은 뺀다(ticket_routes.mts)
       const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
-      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: ''});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
+      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
       ($('routeList').children[ticketsView.state.chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
-    } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.'}); }
+    } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
   }
   function pickPlan() {
     const plan = form().plans[form().chosen];
