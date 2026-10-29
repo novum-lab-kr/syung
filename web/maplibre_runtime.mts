@@ -910,7 +910,7 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
   $('settingsClose').onclick=close;
-  document.addEventListener('click',e=>{if(isOpen()&&!panel.classList.contains('with-map')&&!panel.contains(e.target as Node|null))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다. 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도를 눌러도 닫지 않는다
+  document.addEventListener('click',e=>{const at=e.target as Node|null;if(isOpen()&&!panel.contains(at)&&!(panel.classList.contains('with-map')&&map.getCanvasContainer().contains(at)))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다. 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도 캔버스만 눌러도 닫지 않는다(길찾기 같은 지도 위 단추는 지금처럼 닫는다)
   document.addEventListener('keydown',e=>{
     if(!isOpen())return;
     if(e.key==='Escape'){close();return}
