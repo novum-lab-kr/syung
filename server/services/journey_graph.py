@@ -58,6 +58,7 @@ MAX_FOUND = 24                # 모아 둘 길 상한(전엔 MAX_PLANS * 2 = 24 
 ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
 DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
+MAX_EASY_TRANSFERS = 3        # 환승이 이보다 많은 길(탈 것 5개 이상)은 빼지 않고 목록 맨 뒤로(2026-10-29 사용자 결정)
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
               "maeul": "#7bc043", "night": "#4a4f8c"}
 
@@ -632,6 +633,12 @@ def _pick_shown(plans: list[Row]) -> list[Row]:
     return [plans[i] for i in sorted(keep)]
 
 
+def _easy_first(plans: list[Row]) -> list[Row]:
+    """환승이 MAX_EASY_TRANSFERS 넘는 길을 맨 뒤로 — 그 안끼리 · 나머지끼리 차례(도착 순)와 태그는 그대로.
+    고르기(_pick_shown) 뒤에 보여 주는 차례만 바꾼다."""
+    return sorted(plans, key=lambda p: p["transfers"] > MAX_EASY_TRANSFERS)   # sorted 는 안정 정렬
+
+
 def _shows_walk(arrives: list[float], walk_sec: int, t0: float) -> bool:
     """가까울 때 걸어가기를 보여 줄지: 탈것 길이 없거나, 걷기가 가장 빨리 닿는 탈것보다 10분 넘게 늦지 않으면."""
     return not arrives or walk_sec <= min(arrives) - t0 + 10 * 60
@@ -766,7 +773,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
     plans.sort(key=lambda p: p["_arrive"])
-    plans = _pick_shown(plans)
+    plans = _easy_first(_pick_shown(plans))
     for p in plans:
         del p["_arrive"]
     out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,

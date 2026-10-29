@@ -30,6 +30,45 @@ class PickShownTest(unittest.TestCase):
         self.assertEqual(graph._pick_shown(plans), plans)
 
 
+class EasyFirstTest(unittest.TestCase):
+    def test_many_transfers_go_last_and_the_rest_keep_order(self):
+        # 옥정 → 양재(2026-10-29): 환승 4번(버스 5대) 길이 도착 2번째로 나왔다
+        plans = [{"tag": "", "transfers": 1, "_arrive": 100},
+                 {"tag": "가장 빠른 길", "transfers": 4, "_arrive": 90},
+                 {"tag": "환승 적은 길", "transfers": 0, "_arrive": 120},
+                 {"tag": "", "transfers": 5, "_arrive": 95},
+                 {"tag": "", "transfers": 3, "_arrive": 130}]
+        shown = graph._easy_first(plans)
+        self.assertEqual([p["_arrive"] for p in shown], [100, 120, 130, 90, 95])
+        # 태그는 그대로(가장 빠른 길이 환승 4번이어도 태그는 남고 차례만 뒤)
+        self.assertEqual([p["tag"] for p in shown], ["", "환승 적은 길", "", "가장 빠른 길", ""])
+
+    def test_three_transfers_stay_in_place(self):
+        plans = [{"tag": "", "transfers": graph.MAX_EASY_TRANSFERS, "_arrive": i} for i in range(3)]
+        self.assertEqual(graph._easy_first(plans), plans)
+
+    def test_plan_puts_four_transfer_way_last(self):
+        made = []
+
+        def run_batch(jobs, seconds):   # 첫 길(가장 빨리 닿음)만 탈 것 5개(환승 4번), 나머지는 1개
+            out = []
+            for _ in jobs:
+                made.append(1)
+                legs = 5 if len(made) == 1 else 1
+                out.append(ride(f"L{len(made)}", WHEN.timestamp() + 1800 + len(made) * 60, legs=legs))
+            return out
+        with patch.object(graph, "BUS", False), patch.object(graph, "_near_nodes", lambda point: []), \
+                patch.object(graph, "_walk_table", lambda point, nodes, reverse=False: {}), \
+                patch.object(graph, "SEARCH_SECONDS", 60.0):
+            result = graph.plan((37.50, 127.00), (37.60, 127.10), WHEN, {}, run_batch, 3)
+        plans = result["plans"]
+        self.assertEqual(plans[-1]["transfers"], 4)
+        self.assertEqual(plans[-1]["tag"], "가장 빠른 길")
+        self.assertTrue(all(p["transfers"] == 0 for p in plans[:-1]))
+        arrives = [p["arrives"] for p in plans[:-1]]
+        self.assertEqual(arrives, sorted(arrives))
+
+
 class ShownCountTest(unittest.TestCase):
     def test_counts_after_grouping_and_dropping_dominated(self):
         t = WHEN.timestamp()
