@@ -30,6 +30,10 @@ var inkOn = (hex) => {
 };
 var BUS = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z\"/></svg>";
 var textW = (t) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);
+function sameRoutes(legs) {
+	const notes = legs.flatMap((leg) => leg.type === "bus" && leg.alternatives?.length ? [`${[leg.route, ...leg.alternatives.map((other) => other.route)].join(" · ")} 중 먼저 오는 버스`] : []);
+	return notes.length ? notes.join(" / ") : null;
+}
 function trackParts(p, colors, width = 330) {
 	const segs = [];
 	for (const l of p.legs) {
@@ -371,7 +375,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			};
 			const color = legColor(leg), toward = leg.type === "bus" ? `${leg.toward ?? ""} 방면` : leg.destination ? `${leg.destination}행` : leg.direction || "";
 			const live = leg.type !== "bus" && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ""}` : null;
-			const note = leg.type === "bus" ? leg.alts?.length ? `같은 길 ${leg.alts.join(" · ")}` : "시간표 기준" : "배차 간격 기준";
+			const note = leg.type === "bus" ? leg.alternatives?.length ? `${leg.alternatives.map((other) => `${other.route} ${other.departs}`).join(" · ")} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(" · ")}` : "시간표 기준" : "배차 간격 기준";
 			const text = `${leg.stops}${leg.type === "bus" ? "정류장" : "정거장"}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ""} · ${live ? "" : note}`;
 			return {
 				kind: "ride",
@@ -388,6 +392,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	function planView(plan) {
 		return {
 			aria: `${plan.tag || "경로"} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`,
+			alt: sameRoutes(plan.legs),
 			duration: durParts(plan.minutes),
 			arrive: `${plan.arrives} 도착`,
 			tag: plan.tag || null,
@@ -649,4 +654,4 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		drop
 	};
 }
-export { initJourney, routeTrack, trackParts };
+export { initJourney, routeTrack, sameRoutes, trackParts };

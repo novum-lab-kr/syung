@@ -369,6 +369,10 @@ function Card({ plan, index, on, hidden, actions }) {
 					children: "실시간"
 				})]
 			}),
+			plan.alt !== null && /* @__PURE__ */ a("p", {
+				class: "jp-alt",
+				children: plan.alt
+			}),
 			/* @__PURE__ */ a("ol", {
 				class: "jsteps",
 				children: plan.steps.map((step) => /* @__PURE__ */ a(Step, { step }))

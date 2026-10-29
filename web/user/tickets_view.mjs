@@ -1,4 +1,4 @@
-import { routeTrack } from "../lib/journey-ui.mjs";
+import { routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { RouteLoading } from "../ui/journey_sheet.mjs";
@@ -148,6 +148,10 @@ function Card({ ticket, index }) {
 					/* @__PURE__ */ a("p", {
 						class: chain === null ? "tk-chain wait" : "tk-chain",
 						dangerouslySetInnerHTML: { __html: chain ?? waiting }
+					}),
+					ticket.route && sameRoutes(ticket.route.legs) !== null && /* @__PURE__ */ a("p", {
+						class: "tk-alt",
+						children: sameRoutes(ticket.route.legs)
 					}),
 					/* @__PURE__ */ a("p", {
 						class: "tk-time",
@@ -455,8 +459,12 @@ function PlacePage() {
 		}) }))
 	})] });
 }
+function altHTML(legs) {
+	const note = sameRoutes(legs);
+	return note ? `<span class="jp-alt">${esc(note)}</span>` : "";
+}
 function planHTML(plan) {
-	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
+	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
 }
 function RouteFilters({ filter }) {
 	return /* @__PURE__ */ a("div", {
@@ -609,4 +617,4 @@ var ticketsView = {
 };
 for (const [root] of roots) if (root) root.textContent = "";
 set({});
-export { DAYS, esc, shortName, ticketsView, timeParts };
+export { DAYS, altHTML, esc, shortName, ticketsView, timeParts };

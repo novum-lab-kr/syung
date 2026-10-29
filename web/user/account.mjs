@@ -611,7 +611,13 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		type: l.type,
 		...l.type === "bus" ? {
 			route: l.route,
-			color: l.color
+			color: l.color,
+			...l.alternatives?.length ? { alternatives: l.alternatives.map(({ route, color, departs, arrives }) => ({
+				route,
+				color,
+				departs,
+				arrives
+			})) } : {}
 		} : { line: l.line },
 		from: l.from,
 		to: l.to,
