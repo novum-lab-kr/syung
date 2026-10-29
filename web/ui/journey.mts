@@ -84,6 +84,9 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
         // the walk ends at an exit: join it to the platform, fainter (inside the station)
         const prev=plan.legs[i-1],next=plan.legs[i+1];
         if(prev&&prev.type==='walk'&&prev.path&&s0)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:insideWalk(stationTrack(l.line,s0,INSIDE_REACH_M),stopPos(l.line,s0),prev.path[prev.path.length-1]!).reverse()}});   // 출구 → 승강장(선로 따라)
+        // 같은 역 환승(ride → ride, 걷기 없음): 노선마다 승강장 점이 달라 두 점을 선로 따라 잇는다
+        const nextStart=next&&next.type==='ride'?byId.get(next.stations[0]!):null;
+        if(next&&next.type==='ride'&&nextStart&&s1&&nextStart.id===s1.id)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:insideWalk(stationTrack(l.line,s1,INSIDE_REACH_M),stopPos(l.line,s1),stopPos(next.line,nextStart))}});
         if(next&&next.type==='walk'&&next.path&&s1)feats.push({type:'Feature',properties:{kind:'inside'},geometry:{type:'LineString',coordinates:insideWalk(stationTrack(l.line,s1,INSIDE_REACH_M),stopPos(l.line,s1),next.path[0]!)}})}
 
     });

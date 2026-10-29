@@ -30,3 +30,26 @@ test('선로 밖으로 한참 돌아가는 길이면 직선', () => {
   const far = [127.054, 37.505];   // 선로에서 550 m 위
   assert.deepEqual(insideWalk(track, platform, far), [platform, far]);
 });
+
+// 같은 역 환승(ride → ride, 걷기 없음): 노선마다 승강장 점이 달라도 두 점을 옅은 선(inside)으로 잇는다(Codex 리뷰 2026-10-29)
+import {createJourneyMap} from '../web/ui/journey.mts';
+test('연속된 ride 사이 환승이 두 승강장 점을 잇는다', () => {
+  globalThis.document ??= {documentElement: {dataset: {}}, querySelector: () => null};
+  const sources = {};
+  class Bounds {extend() {return this}}
+  const map = {getSource: () => undefined, addSource(id, spec) {sources[id] = spec}, addLayer() {}, getLayer: () => undefined, triggerRepaint() {}, fitBounds() {}, setLayoutProperty() {}};
+  const platform = {'1호선:5': [127.054, 37.5], '2호선:5': [127.0525, 37.5003]};
+  const station = {id: 5};
+  const journey = createJourneyMap({map, maplibregl: {LngLatBounds: Bounds}, colors: {}, byId: new Map([[1, {id: 1}], [5, station], [9, {id: 9}]]),
+    cityCoords: () => [[127.05, 37.5], [127.056, 37.5]], stopPos: (line, st) => platform[`${line}:${st.id}`] ?? [127.0, 37.5],
+    stationTrack: () => track, cityViaduct: null, sheetPad: () => 0, journeyCasingPaint: () => ({}), journeyRidePaint: () => ({}), journeyStopPaint: () => ({}),
+    live: {busLayer: null, settings: {track: {kind: 'ground'}}, stationAlpha: 1}});
+  journey.showRoute({legs: [
+    {type: 'ride', line: '1호선', stations: [1, 5]},
+    {type: 'ride', line: '2호선', stations: [5, 9]},
+  ]});
+  const inside = sources.journey.data.features.filter(f => f.properties.kind === 'inside');
+  assert.equal(inside.length, 1);
+  assert.deepEqual(inside[0].geometry.coordinates.at(0), platform['1호선:5']);
+  assert.deepEqual(inside[0].geometry.coordinates.at(-1), platform['2호선:5']);
+});

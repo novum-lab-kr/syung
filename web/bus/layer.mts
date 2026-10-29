@@ -247,6 +247,13 @@ export function busRoutesNearStops(data:BusData, box:Readonly<Box>, chosen:reado
 
 // Legacy journey legs have names, not Seoul route IDs. Require a unique name AND
 // matching endpoint geometry before using an official ID for live requests.
+// 길찾기 버스 구간 끝(정류장 점)에서 그린 선 끝까지 잇는 짧은 선: 원래 노선 선(plan)과 도로 보정선(road)을 따로 본다(1.5 m 미만이면 그 선은 안 잇는다)
+export function busJoinLines(stop:LngLatPt, planEnd:LngLatPt, roadEnd:LngLatPt | null):{lod:'plan' | 'road'; coordinates:[LngLatPt, LngLatPt]}[]{
+  const out:{lod:'plan' | 'road'; coordinates:[LngLatPt, LngLatPt]}[]=[];
+  if(roadDistance(stop,planEnd)>=1.5)out.push({lod:'plan',coordinates:[stop,planEnd]});
+  if(roadEnd&&roadDistance(stop,roadEnd)>=1.5)out.push({lod:'road',coordinates:[stop,roadEnd]});
+  return out;
+}
 // 두 점 사이 거리(m)
 function roadDistance(a:LngLatPt,b:LngLatPt):number{return Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111320;}
 // 도로에 붙인 선(roads.snapLine)의 distance m 자리: 이웃 샘플 사이를 보간(굵기는 앞 샘플)
@@ -557,10 +564,8 @@ class BusLayer {
       if(range&&joins){
         const roadWidth=snapped?.samples.find(p=>p.width!=null)?.width;
         [[joins[0],range[0]],[joins[1],range[1]]].forEach(([stop,distance])=>{
-          const to=busPointAt(line!,distance as number).coordinate;
-          if(roadDistance(stop as LngLatPt,to)<1.5)return;
-          features.push(feature('LineString',[stop as LngLatPt,to],plan));
-          if(snapped)features.push(feature('LineString',[stop as LngLatPt,snappedAt(snapped,distance as number).coordinate],{...properties,lod:'road',...roadWidth?{laneWidth:roadWidth}:{}}));
+          const joined=busJoinLines(stop as LngLatPt,busPointAt(line!,distance as number).coordinate,snapped?snappedAt(snapped,distance as number).coordinate:null);
+          for(const join of joined)features.push(join.lod==='plan'?feature('LineString',join.coordinates,plan):feature('LineString',join.coordinates,{...properties,lod:'road',...roadWidth?{laneWidth:roadWidth}:{}}));
         });
       }
       for(const marker of markers){
