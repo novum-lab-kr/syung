@@ -31,13 +31,13 @@ WALK = [[[1, 60.0]], [[0, 60.0]], [], [[4, 70.0]], [[3, 70.0]]]
 CATALOG = {"청담옆": [(1.0, 0.0, "122000084", "23187"), (1.0001, 0.0, "122000085", "23188")], "삼성옆": [(4.0, 0.0, "122000095", "23198")]}
 
 
-def run(patterns, routes=ROUTES, onward=(3,), ready=READY, extra=(), walk=(), stops=STOPS):
+def run(patterns, routes=ROUTES, onward=(3,), ready=READY, extra=(), walk=(), stops=STOPS, goal=None):
     """143(09:05 출발 · 09:11 도착)을 고른 구간으로 놓고 같은 구간 다른 노선을 구한다. onward: 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 먼저)."""
     with patch.object(graph, "BSTOPS", stops), patch.object(graph, "BROUTES", routes), patch.object(graph, "BPATS", patterns), \
             patch.object(graph, "BUS_AT", graph.bus_boardings(patterns, routes)), \
             patch.object(graph, "BUS_WALK", (walk if isinstance(walk, list) else WALK) if walk else []), \
             patch.object(graph, "EXIT_REF", {(7, 1): "11", (8, 4): "3"}), patch.object(graph, "_catalog_by_name", CATALOG):
-        return graph._alternatives((0, onward, ready, LEAVES, GETS, *extra), "143", DAY0)
+        return graph._alternatives((0, onward, ready, LEAVES, GETS, *extra), "143", DAY0, goal)
 
 
 class AlternativesTest(unittest.TestCase):
@@ -119,6 +119,21 @@ class AlternativesTest(unittest.TestCase):
     def test_wrong_direction_is_left_out(self):
         self.assertEqual(run([pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [3, 0], NINE + 6 * 60)]), [])
 
+    def test_last_ride_alights_by_arrival_at_destination_not_by_distance(self):
+        # 마지막 탈것: 내리는 곳이 150 m 넘게 떨어져도(삼성옆 5 = 230 m) 목적지 도착이 비슷하면 후보, 늦으면 빠진다
+        stops = [*STOPS, ["삼성먼", 3.002, 0]]   # 5 번 정류장: 3(삼성) 에서 약 222 m
+        final = GETS + 120   # 고른 길은 143 이 닿고 2분 걸어 목적지에 닿는다
+        extra = (None, None, final)
+        patterns = [pattern(0, [0, 3], NINE + 5 * 60), pattern(1, [0, 5], NINE + 7 * 60)]
+        near = {("bs", 3): (120, 150, "", 0.0, 0.0), ("bs", 5): (150, 200, "", 0.0, 0.0)}
+        found = run(patterns, extra=extra, stops=stops, goal=near)
+        self.assertEqual([a["route"] for a in found], ["2415"])
+        self.assertEqual(found[0]["alightAt"]["name"], "삼성먼")
+        self.assertEqual(found[0]["alightAt"]["destMinutes"], 2)   # 150 초 → 반올림 2분
+        far = {("bs", 3): (120, 150, "", 0.0, 0.0), ("bs", 5): (2000, 1500, "", 0.0, 0.0)}   # 내려서 한참 걸어야 한다
+        self.assertEqual(run(patterns, extra=extra, stops=stops, goal=far), [])
+        self.assertEqual(run(patterns, extra=extra, stops=stops), [])   # 마지막 탈것이 아니면(goal 없음) 옛 규칙: 150 m 넘어 빠진다
+
     def test_premium_bus_is_never_offered(self):
         routes = [*ROUTES]
         routes[1] = ["P9601(출근)", "express"]
@@ -135,7 +150,7 @@ class ShapedTest(unittest.TestCase):
         with patch.object(graph, "walk_path", lambda a, b: ([], 1, 1)):
             legs = graph._shaped(found, (0.0, 0.0), (1.0, 1.0), WHEN)[0]["legs"]
         first, second = legs[1]["_alt"], legs[2]["_alt"]
-        self.assertEqual(first[5:], (None, None))   # 앞 · 뒤에 지하철 갈아타기가 없다
+        self.assertEqual(first[5:], (None, None, None))   # 앞 · 뒤에 지하철 갈아타기가 없다
         self.assertEqual(first[2], DAY0 + NINE + 300)   # 첫 탈것: 떠나는 때
         self.assertEqual(second[2], DAY0 + NINE + 600)   # 그 뒤: 떠나는 때 - 기다린 때
 
