@@ -59,7 +59,7 @@ ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
 DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
 MAX_EASY_TRANSFERS = 3        # 환승이 이보다 많은 길(탈 것 5개 이상)은 빼지 않고 목록 맨 뒤로(2026-10-29 사용자 결정)
-ALT_NEAR_M = 120              # 같은 구간 다른 버스: 타는 · 내리는 정류장에서 이만큼 안의 옆 정류장까지 같은 자리로 본다(2026-10-29 사용자 결정)
+# 같은 구간 다른 버스: 같은 정류장(같은 번호)에서 타서 같은 정류장에 내리는 노선만(옆 정류장은 어디서 타고 내리는지 안내가 따로 있어야 해서 뺐다 — Codex 리뷰 2026-10-29)
 ALT_DEPART_WITHIN = 20 * 60   # 고른 버스보다 이 안에 떠나는 것만
 ALT_ARRIVE_LATE = 15 * 60     # 고른 버스보다 이보다 늦게 닿지 않는 것만
 MAX_ALTERNATIVES = 3
@@ -759,6 +759,7 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
     plans: list[Row] = []
     for tag, r in tagged:
         legs = r["legs"]
+        first_ride = next((l for l in legs if l["type"] != "walk"), None)
         for i, l in enumerate(legs):
             if l["type"] == "walk":   # walking geometry
                 a, b = (l.pop("a"), l.pop("b")) if "a" in l else (origin, l["point"]) if "to" in l else (l["point"], dest)
@@ -775,10 +776,12 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
                 l.pop("point", None)
             else:
                 if l["type"] == "bus" and l.get("_arr") is not None and not l.get("_stay"):   # 같은 구간 다른 버스는 보여 줄 길을 고른 뒤 _finish 에서 찾는다(타는 정류장 · 내리는 정류장 · 정류장에 닿은 때 · 떠난 때 · 닿은 때)
-                    l["_alt"] = (l["_ban"][0][2], l["_stop"], l["_dep"] - l["wait"], l["_dep"], l["_arr"])
+                    # 첫 탈것은 보이는 출발 일정(leaveBy)대로 가면 고른 버스가 떠나는 때에 정류장에 닿는다 — 탐색 때 닿은 때가 아니다
+                    ready = l["_dep"] if l is first_ride else l["_dep"] - l["wait"]
+                    l["_alt"] = (l["_ban"][0][2], (*l.get("_via", ()), l["_stop"]), ready, l["_dep"], l["_arr"])
                 l.pop("_dep")
                 l.pop("_ban")
-                for k in ("_stop", "_run", "_stay", "_arr"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
+                for k in ("_stop", "_run", "_stay", "_arr", "_via"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
                     l.pop(k, None)
         transit = [l for l in legs if l["type"] != "walk"]
         plans.append({"tag": tag, "kind": _kind(r) if transit else "walk", "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
@@ -788,35 +791,31 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
     return plans
 
 
-def _alt_stops(stop: int) -> dict[int, float]:
-    """그 정류장과 ALT_NEAR_M 안의 옆 정류장 → 떨어진 미터(그 정류장은 0)."""
-    here = (BSTOPS[stop][1], BSTOPS[stop][2])
-    return {stop: 0.0, **{i: m for m, i in _stops_near(here, ALT_NEAR_M) if i != stop}}
-
-
-def _alternatives(alt: tuple[int, int, float, float, float], route: str, day0: float) -> list[Row]:
-    """고른 버스 구간(alt = 타는 · 내리는 정류장, 정류장에 닿은 때, 떠난 때, 닿은 때)과 같은 자리에서 타서 같은 자리에 내리는 다른 노선
-    (노선마다 가장 먼저 떠나는 한 대 · 먼저 오는 순 · MAX_ALTERNATIVES 개까지). 옆 정류장에서 타면 걸어가는 시간만큼 늦게 닿은 것으로 본다."""
-    from_stop, to_stop, ready, dep, arr = alt
-    alights = _alt_stops(to_stop)
+def _alternatives(alt: tuple[int, tuple[int, ...], float, float, float], route: str, day0: float) -> list[Row]:
+    """고른 버스 구간(alt = 타는 정류장, 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 포함 · 차례대로), 정류장에 닿은 때, 떠난 때, 닿은 때)과
+    같은 정류장에서 타서 같은 정류장들을 차례로 지나 내리는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지)."""
+    from_stop, onward, ready, dep, arr = alt
     best: dict[str, tuple[float, float, str]] = {}
-    for stop, metres in _alt_stops(from_stop).items():
-        at = ready + (_walk_sec(metres) if metres else 0)
-        for pi, k in BUS_AT.get(stop, ()):
-            p = BPATS[pi]
-            name, rkind = BROUTES[p["r"]]
-            if name == route:
-                continue
-            j = next((n for n in range(k + 1, len(p["s"])) if p["s"][n] in alights), None)
-            nxt = _bus_next(p, k, at - day0) if j is not None else None
-            if j is None or not nxt:
-                continue
-            start, scale, left = nxt
-            leaves, gets = day0 + left, day0 + start + p["t"][j] * scale
-            if leaves > dep + ALT_DEPART_WITHIN or gets > arr + ALT_ARRIVE_LATE:
-                continue
-            if name not in best or (leaves, gets) < best[name][:2]:
-                best[name] = (leaves, gets, BUS_COLORS.get(rkind, "#3d5bab"))
+    for pi, k in BUS_AT.get(from_stop, ()):
+        p = BPATS[pi]
+        name, rkind = BROUTES[p["r"]]
+        if name == route:
+            continue
+        at, j = k, 0
+        for stop in onward:   # 정류장들을 차례로 지나는가 — 마지막이 내리는 자리(j)
+            j = next((n for n in range(at + 1, len(p["s"])) if p["s"][n] == stop), -1)
+            if j < 0:
+                break
+            at = j
+        nxt = _bus_next(p, k, ready - day0) if j > 0 else None
+        if not nxt:
+            continue
+        start, scale, left = nxt
+        leaves, gets = day0 + left, day0 + start + p["t"][j] * scale
+        if leaves > dep + ALT_DEPART_WITHIN or gets > arr + ALT_ARRIVE_LATE:
+            continue
+        if name not in best or (leaves, gets) < best[name][:2]:
+            best[name] = (leaves, gets, BUS_COLORS.get(rkind, "#3d5bab"))
     ordered = sorted(best.items(), key=lambda item: item[1][:2])[:MAX_ALTERNATIVES]
     return [{"route": name, "color": color, "departs": _fmt(leaves), "arrives": _fmt(gets)} for name, (leaves, gets, color) in ordered]
 
@@ -1001,6 +1000,7 @@ def _merged(a: Row, b: Row) -> Row:
     else:
         out["path"] = a.get("path", []) + b.get("path", [])[1:]
         out["_stop"] = b.get("_stop")
+        out["_via"] = [*a.get("_via", []), a.get("_stop")]   # 이어 탄 경유 정류장들(같은 구간 다른 버스가 이곳들을 차례로 지나는지 볼 때)
         out["_arr"] = b.get("_arr")
         out.pop("alts", None)   # 앞 구간 두 정류장 사이 다른 번호 — 이어 탄 길 전체와는 맞지 않는다
     return out
