@@ -458,21 +458,21 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), time = timeParts(form().time);
     ticketsView.set({routeTrip: `${from.name} → ${to.name}`, routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
-      plans: [], chosen: -1, routeMsg: '경로를 찾는 중…'});
+      plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true});   // 길찾기 시트와 같은 글자 · 뼈대 카드
     $('routeOpen').click();
     const my = ++routeSeq;
     const at = routeAt(when);
     try {
       const {status, body} = await getJson<RouteAnswer>(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
       if (my !== routeSeq) return;
-      if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.'}); return; }
+      if (status !== 200 || !body?.ok || !body.plans?.length) { ticketsView.set({routeMsg: body?.error || '경로를 찾지 못했어요.', routeLoading: false}); return; }
       const plans = usefulRoutes(body.plans!), route = form().route;   // 길 모양으로 묶고 덜 쓸모 있는 길은 뺀다(ticket_routes.mts)
       const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
-      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: ''});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
+      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
       ($('routeList').children[ticketsView.state.chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
       previewPlan();   // 처음 고른 카드의 길을 바로 그린다
-    } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.'}); }
+    } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
   }
   function pickPlan() {
     const plan = form().plans[form().chosen];
@@ -522,7 +522,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   // ---- 지도에서 보기: 서랍을 닫고 지도에 길 전체, 아래 막대(길찾기 막대와 같은 모양)로 돌아온다 ----
   const mapBar = document.createElement('div');
   mapBar.className = 'jbar'; mapBar.hidden = true;
-  mapBar.innerHTML = '<button type="button" class="jbar-open"></button><button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+  mapBar.innerHTML = '<button type="button" class="jbar-open"></button><button type="button" class="jbar-x" aria-label="닫고 돌아가기" title="닫고 돌아가기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(mapBar);
   const mapBarOpen = mapBar.querySelector<HTMLElement>('.jbar-open')!;
   let mapShown:{ plan:Plan; back:()=>void } | null = null;
@@ -545,14 +545,16 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     mapBar.hidden = false;
     mapBarOpen.focus({preventScroll: true});
   }
-  mapBarOpen.addEventListener('click', e => {
+  // 막대 몸통 · ✕ 둘 다: 길을 지우고 서랍을 열어 보던 쪽 · 카드 · 초점으로 돌아간다
+  function mapBack(e:Event) {
     e.stopPropagation();   // 본체의 '서랍 밖을 눌렀나' 검사가 방금 연 서랍을 닫지 않게
     const back = mapShown?.back;
     mapGone();
     $('settingsButton').click();
     back?.();
-  });
-  mapBar.querySelector<HTMLElement>('.jbar-x')!.onclick = mapGone;
+  }
+  mapBarOpen.addEventListener('click', mapBack);
+  mapBar.querySelector<HTMLElement>('.jbar-x')!.addEventListener('click', mapBack);
   $('settingsButton').addEventListener('click', mapGone);   // 서랍을 다시 열면 승차권 길은 지운다
   routeMap?.onGone(() => { mapGone(); previewed = null; });   // 길찾기 · 버스 노선이 지도를 차지했다(그쪽이 이미 지웠다)
   // 승차권 뒷면: 저장한 경로에는 지도에 그릴 길이 없어 다음 탈 날 그 시각으로 다시 찾는다(뒷면 첫 줄 · 경로 고르기와 같은 날).
