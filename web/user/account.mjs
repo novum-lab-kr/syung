@@ -2,7 +2,7 @@ import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { accountView, avatarLook, nameLength } from "./account_view.mjs";
 import { DAYS, esc, shortName, ticketsView, timeParts } from "./tickets_view.mjs";
-import { chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, usefulRoutes } from "./ticket_routes.mjs";
+import { chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeUrl, usefulRoutes } from "./ticket_routes.mjs";
 // web/user/account.mts
 var $ = (id) => document.getElementById(id);
 var CHANGE = { "X-Requested-With": "syung" };
@@ -110,14 +110,14 @@ async function fillChain(t, put) {
 		return;
 	}
 	const at = routeAt(nextRideDay(t.days, t.depart, /* @__PURE__ */ new Date()));
-	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${at}`;
+	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.via ? `${t.via.lat},${t.via.lng}` : ""}|${at}`;
 	if (chains.has(key)) {
 		put(chains.get(key));
 		return;
 	}
 	let html;
 	try {
-		const { status, body } = await getJson(`./api/route?from=${t.from.lat},${t.from.lng}&to=${t.to.lat},${t.to.lng}&at=${encodeURIComponent(at)}`);
+		const { status, body } = await getJson(routeUrl(t.from, t.to, at, t.via));
 		const plan = status === 200 && body?.ok ? quickestRoute(body.plans || []) : null;
 		if (!plan) throw new Error("no plan");
 		html = chainHTML(t, plan.legs);
@@ -423,7 +423,10 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		} catch {}
 	}
 	$("menuBack").addEventListener("click", (e) => {
-		if (!$("menuPlace").hidden || !$("menuRoute").hidden) {
+		if (!$("menuPlace").hidden && placeFor === "via") {
+			e.stopImmediatePropagation();
+			backToRoute(false);
+		} else if (!$("menuPlace").hidden || !$("menuRoute").hidden) {
 			e.stopImmediatePropagation();
 			backToForm();
 		} else if (!$("menuTicket").hidden) {
@@ -450,12 +453,18 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketsView.set({ route: null });
 	}
 	let placeFor = "from";
+	const PLACE_NAMES = {
+		from: "출발지 고르기",
+		to: "도착지 고르기",
+		via: "경유지 고르기"
+	};
 	function openPlace(which) {
 		placeFor = which;
-		lastField = $(which === "from" ? "ticketFrom" : "ticketTo");
-		$("menuPlace").setAttribute("aria-label", which === "from" ? "출발지 고르기" : "도착지 고르기");
+		if (which !== "via") lastField = $(which === "from" ? "ticketFrom" : "ticketTo");
+		$("menuPlace").setAttribute("aria-label", PLACE_NAMES[which]);
 		ticketsView.set({
 			placeTo: which === "to",
+			placeVia: which === "via",
 			placeQuery: "",
 			placeHidden: true,
 			placeRows: []
@@ -507,6 +516,12 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			placeQuery: found.name,
 			placeHidden: true
 		});
+		if (placeFor === "via") {
+			const before = form().routeVia;
+			ticketsView.set({ routeVia: place });
+			backToRoute(!before || before.lat !== place.lat || before.lng !== place.lng);
+			return;
+		}
 		const before = form()[placeFor];
 		ticketsView.set({ [placeFor]: place });
 		if (!before || before.lat !== place.lat || before.lng !== place.lng) routeGone();
@@ -615,9 +630,28 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	});
 	let routeSeq = 0;
 	let routeKind = "all", routeSort = "";
-	async function openRoute() {
+	function openRoute() {
+		ticketsView.set({ routeVia: form().via });
+		return findRoutes();
+	}
+	function backToRoute(again) {
+		if (again || !form().plans.length) {
+			findRoutes();
+			return;
+		}
+		$("routeOpen").click();
+		focusChosen();
+		previewPlan();
+	}
+	function clearVia() {
+		if (!form().routeVia) return;
+		ticketsView.set({ routeVia: null });
+		findRoutes();
+		$("routeVia").focus({ preventScroll: true });
+	}
+	async function findRoutes() {
 		lastField = $("ticketRoute");
-		const { from, to } = form();
+		const { from, to, routeVia: via } = form();
 		if (!from || !to) {
 			toast("출발지 · 도착지를 먼저 골라 주세요", true);
 			$(from ? "ticketTo" : "ticketFrom").focus();
@@ -637,7 +671,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		const my = ++routeSeq;
 		const at = routeAt(when);
 		try {
-			const { status, body } = await getJson(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
+			const { status, body } = await getJson(routeUrl(from, to, at, via));
 			if (my !== routeSeq) return;
 			if (status !== 200 || !body?.ok || !body.plans?.length) {
 				ticketsView.set({
@@ -670,7 +704,10 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	function pickPlan() {
 		const plan = form().plans[form().chosen];
 		if (!plan) return;
-		ticketsView.set({ route: slimRoute(plan) });
+		ticketsView.set({
+			route: slimRoute(plan),
+			via: form().routeVia
+		});
 		backToForm();
 	}
 	function choosePlan(index) {
@@ -807,7 +844,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketsView.set({ mapping: index });
 		try {
 			const at = routeAt(nextRideDay(ticket.days, ticket.depart, /* @__PURE__ */ new Date()));
-			const { status, body } = await getJson(`./api/route?from=${ticket.from.lat},${ticket.from.lng}&to=${ticket.to.lat},${ticket.to.lng}&at=${encodeURIComponent(at)}`);
+			const { status, body } = await getJson(routeUrl(ticket.from, ticket.to, at, ticket.via));
 			if (my !== mapSeq || ticketsView.state.listTurn !== turn || !$("settingsPanel").classList.contains("open") || $("menuTickets").hidden) return;
 			const plans = status === 200 && body?.ok ? body.plans || [] : [];
 			const saved = ticket.route ? rideSig(ticket.route) : null;
@@ -842,6 +879,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			from: t?.from || null,
 			to: t?.to || null,
 			route: t?.route || null,
+			via: t?.via || null,
 			days: DAYS.map((_, index) => index + 1).filter((day) => t ? t.days.includes(day) : false),
 			deleteArmed: false
 		});
@@ -857,7 +895,8 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			to: now.to,
 			depart: now.time,
 			days: now.days,
-			route: now.route
+			route: now.route,
+			via: now.via
 		};
 		if (!body.from || !body.to) {
 			toast("출발지 · 도착지를 골라 주세요", true);
@@ -943,7 +982,9 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		plan: choosePlan,
 		planPick: pickPlan,
 		routeKind: filterKind,
-		routeSort: filterSort
+		routeSort: filterSort,
+		viaAdd: () => openPlace("via"),
+		viaClear: clearVia
 	});
 	function countUse(kind) {
 		if (!me) return;

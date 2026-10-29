@@ -70,4 +70,7 @@ function routeAt(when) {
 	const pad = (value) => String(value).padStart(2, "0");
 	return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
-export { ROUTE_KINDS, ROUTE_SORTS, SLOW_LIMIT, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, usefulRoutes };
+function routeUrl(from, to, at, via) {
+	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ""}`;
+}
+export { ROUTE_KINDS, ROUTE_SORTS, SLOW_LIMIT, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, usefulRoutes };

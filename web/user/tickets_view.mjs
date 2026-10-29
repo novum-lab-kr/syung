@@ -60,10 +60,12 @@ var view = {
 	from: null,
 	to: null,
 	route: null,
+	via: null,
 	wheelOpen: false,
 	sending: false,
 	deleteArmed: false,
 	placeTo: false,
+	placeVia: false,
 	placeQuery: "",
 	placeHidden: true,
 	placeRows: [],
@@ -73,7 +75,8 @@ var view = {
 	chosen: -1,
 	routeMsg: "",
 	routeLoading: false,
-	routeFilter: null
+	routeFilter: null,
+	routeVia: null
 };
 var handlers = null;
 var call = (key) => (...args) => (handlers?.[key])?.(...args);
@@ -426,7 +429,7 @@ function PlacePage() {
 		class: "pp-bar",
 		children: [/* @__PURE__ */ a("i", {
 			id: "placeDot",
-			class: view.placeTo ? "tf-dot to" : "tf-dot",
+			class: view.placeVia ? "tf-dot via" : view.placeTo ? "tf-dot to" : "tf-dot",
 			"aria-hidden": "true"
 		}), /* @__PURE__ */ a("input", {
 			id: "placeQuery",
@@ -483,6 +486,47 @@ function RouteFilters({ filter }) {
 		})]
 	});
 }
+function RouteVia() {
+	const via = view.routeVia;
+	return /* @__PURE__ */ a("div", {
+		class: "tf-route rt-via",
+		children: [/* @__PURE__ */ a("div", {
+			class: "tf-pls",
+			children: /* @__PURE__ */ a("button", {
+				id: "routeVia",
+				class: "tf-pl",
+				type: "button",
+				onClick: call("viaAdd"),
+				children: [/* @__PURE__ */ a("i", {
+					class: "tf-dot via",
+					"aria-hidden": "true"
+				}), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("small", { children: "경유" }), /* @__PURE__ */ a("b", {
+					class: via ? "" : "ph",
+					children: via ? via.name : "+ 경유지 넣기"
+				})] })]
+			})
+		}), /* @__PURE__ */ a("button", {
+			id: "routeViaClear",
+			class: "rt-via-x",
+			type: "button",
+			hidden: !via,
+			"aria-label": "경유지 빼기",
+			title: "경유지 빼기",
+			onClick: call("viaClear"),
+			children: /* @__PURE__ */ a("svg", {
+				viewBox: "0 0 24 24",
+				width: "16",
+				height: "16",
+				"aria-hidden": "true",
+				fill: "none",
+				stroke: "currentColor",
+				"stroke-width": "2.2",
+				"stroke-linecap": "round",
+				children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
+			})
+		})]
+	});
+}
 function RoutePage() {
 	const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
 	return /* @__PURE__ */ a(M, { children: [
@@ -496,6 +540,7 @@ function RoutePage() {
 				children: view.routeWhen
 			})]
 		}),
+		/* @__PURE__ */ a(RouteVia, {}),
 		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
 		/* @__PURE__ */ a("div", {
 			id: "routeList",
