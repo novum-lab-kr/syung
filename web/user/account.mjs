@@ -638,7 +638,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		legs: p.legs.map(slimLeg)
 	});
 	let routeSeq = 0;
-	let routeKind = "all", routeSort = "";
+	let routeKind = "all";
 	function openRoute() {
 		ticketsView.set({ routeVia: form().via });
 		return findRoutes();
@@ -693,13 +693,12 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			const mine = route ? plans.findIndex((p) => rideSig(p) === rideSig(route)) : -1;
 			const fastest = plans.findIndex((p) => p.tag === "가장 빠른 길");
 			routeKind = "all";
-			routeSort = "";
 			ticketsView.set({
 				plans,
 				chosen: mine >= 0 ? mine : Math.max(0, fastest),
 				routeMsg: "",
 				routeLoading: false,
-				routeFilter: routeFilterView(plans, routeKind, routeSort)
+				routeFilter: routeFilterView(plans, routeKind)
 			});
 			focusChosen();
 			previewPlan();
@@ -728,7 +727,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		$("routeList").children[at]?.focus({ preventScroll: true });
 	}
 	function refilter() {
-		const { plans, route } = form(), routeFilter = routeFilterView(plans, routeKind, routeSort);
+		const { plans, route } = form(), routeFilter = routeFilterView(plans, routeKind);
 		const chosen = chosenAfter(plans, routeFilter.order, route);
 		ticketsView.set({
 			routeFilter,
@@ -739,10 +738,6 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	}
 	const filterKind = (kind) => {
 		routeKind = kind;
-		refilter();
-	};
-	const filterSort = (sort) => {
-		routeSort = sort;
 		refilter();
 	};
 	const routePanel = $("settingsPanel"), routePage = $("menuRoute");
@@ -991,7 +986,6 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		plan: choosePlan,
 		planPick: pickPlan,
 		routeKind: filterKind,
-		routeSort: filterSort,
 		viaAdd: () => openPlace("via"),
 		viaClear: clearVia
 	});

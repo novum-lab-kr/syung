@@ -1,8 +1,4 @@
 // web/user/ticket_routes.mts
-var SLOW_LIMIT = {
-	minutes: 10,
-	share: .3
-};
 var FASTEST = "가장 빠른 길";
 var rideSig = (plan) => plan.legs.filter((leg) => leg.type !== "walk").map((leg) => `${leg.line || leg.route}|${leg.from}|${leg.to}`).join(">");
 var ahead = (left, right) => left.minutes !== right.minutes ? left.minutes < right.minutes : left.tag === FASTEST !== (right.tag === FASTEST) ? left.tag === FASTEST : left.transfers < right.transfers;
@@ -12,11 +8,7 @@ function usefulRoutes(plans) {
 		const sig = rideSig(plan), kept = best.get(sig);
 		if (!kept || ahead(plan, kept)) best.set(sig, plan);
 	}
-	const shapes = plans.filter((plan) => best.get(rideSig(plan)) === plan);
-	if (shapes.length < 2) return shapes;
-	const quickest = Math.min(...shapes.map((plan) => plan.minutes));
-	const slowest = quickest + Math.max(SLOW_LIMIT.minutes, quickest * SLOW_LIMIT.share);
-	return shapes.filter((plan) => plan.tag === FASTEST || plan.minutes <= slowest);
+	return plans.filter((plan) => best.get(rideSig(plan)) === plan);
 }
 function quickestRoute(plans) {
 	return usefulRoutes(plans).reduce((best, plan) => !best || ahead(plan, best) ? plan : best, null);
@@ -26,16 +18,12 @@ var ROUTE_KINDS = [
 	["subway", "지하철만"],
 	["bus", "버스만"]
 ];
-var ROUTE_SORTS = [["transfers", "환승 적게"], ["walk", "덜 걷기"]];
 var fits = (plan, kind) => kind === "all" || plan.kind === kind;
-function routeOrder(plans, kind, sort) {
-	const order = plans.flatMap((plan, index) => fits(plan, kind) ? [index] : []);
-	if (!sort) return order;
-	const count = (index) => sort === "transfers" ? plans[index].transfers : plans[index].walkMinutes;
-	return order.sort((left, right) => count(left) - count(right) || left - right);
+function routeOrder(plans, kind) {
+	return plans.flatMap((plan, index) => fits(plan, kind) ? [index] : []);
 }
-function routeFilterView(plans, kind, sort) {
-	const order = routeOrder(plans, kind, sort);
+function routeFilterView(plans, kind) {
+	const order = routeOrder(plans, kind);
 	const name = ROUTE_KINDS.find(([each]) => each === kind)[1];
 	return {
 		kinds: ROUTE_KINDS.map(([each, label]) => ({
@@ -43,11 +31,6 @@ function routeFilterView(plans, kind, sort) {
 			name: label,
 			count: plans.filter((plan) => fits(plan, each)).length,
 			pressed: each === kind
-		})),
-		sorts: ROUTE_SORTS.map(([each, label]) => ({
-			sort: each,
-			name: label,
-			pressed: each === sort
 		})),
 		order,
 		empty: order.length ? "" : `${name} 타는 경로가 없어요`
@@ -73,4 +56,4 @@ function routeAt(when) {
 function routeUrl(from, to, at, via) {
 	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ""}`;
 }
-export { ROUTE_KINDS, ROUTE_SORTS, SLOW_LIMIT, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, usefulRoutes };
+export { ROUTE_KINDS, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, usefulRoutes };

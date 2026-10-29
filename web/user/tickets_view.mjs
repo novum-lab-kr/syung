@@ -477,7 +477,7 @@ function planHTML(plan) {
 function RouteFilters({ filter }) {
 	return /* @__PURE__ */ a("div", {
 		class: "rt-filters",
-		children: [/* @__PURE__ */ a("div", {
+		children: /* @__PURE__ */ a("div", {
 			class: "segmented jkinds",
 			role: "group",
 			"aria-label": "경로 종류",
@@ -488,18 +488,7 @@ function RouteFilters({ filter }) {
 				onClick: () => call("routeKind")(tab.kind),
 				children: [tab.name, /* @__PURE__ */ a("b", { children: tab.count })]
 			}))
-		}), /* @__PURE__ */ a("div", {
-			class: "segmented jkinds",
-			role: "group",
-			"aria-label": "경로 차례",
-			children: filter.sorts.map((tab) => /* @__PURE__ */ a("button", {
-				type: "button",
-				"data-s": tab.sort,
-				"aria-pressed": tab.pressed,
-				onClick: () => call("routeSort")(tab.pressed ? "" : tab.sort),
-				children: tab.name
-			}))
-		})]
+		})
 	});
 }
 function RouteVia() {
