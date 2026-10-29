@@ -39,8 +39,8 @@ export interface DurationView { hours:number | null; minutes:number }
 export type StepView =
   | { kind:'node'; n:'start' | 'board' | 'alight' | 'end' | 'change'; color:string; time:string; name:string; sub:string | null }
   | { kind:'walk'; text:string }
-  | { kind:'ride'; color:string; ink:string; bus:boolean; chip:string; toward:string; text:string; live:string | null };
-export interface PlanView { aria:string; alt:string | null; duration:DurationView; arrive:string; tag:string | null; track:TrackSegView[]; meta:string; live:boolean; steps:StepView[] }
+  | { kind:'ride'; color:string; ink:string; bus:boolean; chip:string; toward:string; text:string; textAll:string | null; more:number; live:string | null };
+export interface PlanView { aria:string; alt:string | null; altAll:string | null; altMore:number; duration:DurationView; arrive:string; tag:string | null; track:TrackSegView[]; meta:string; live:boolean; steps:StepView[] }
 export interface PlanCardView { plan:PlanView; kind:string; on:boolean; hidden:boolean }
 export interface KindTabView { kind:string; name:string; count:number; pressed:boolean }
 export type JourneyResultView = { kind:'none' } | { kind:'loading' } | { kind:'failed'; message:string } | { kind:'plans'; tabs:KindTabView[] | null; cards:PlanCardView[] };
@@ -84,16 +84,23 @@ const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if
   return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
 const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
 const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
-// 같은 구간을 가는 다른 버스 안내 한 줄: '143 · 2415 · 301 중 먼저 오는 버스'(버스 구간마다, 여럿이면 ' / ') — 없으면 null
-export function sameRoutes(legs:readonly TrackLeg[]):string | null {
+// 같은 구간을 가는 다른 버스 안내 한 줄: '143 · 2415 · 301 중 먼저 오는 버스'(버스 구간마다, 여럿이면 ' / ') — 없으면 null.
+// 다른 버스가 ALT_SHOWN 대를 넘으면 그만큼만 쓰고 나머지는 more(대수)로 센다 — 누르면 펼치는 쪽이 sameRoutes(legs, true) 로 다 쓴다
+export const ALT_SHOWN = 3;
+export function sameRoutes(legs:readonly TrackLeg[], all = false):string | null {
   // 옆 정류장 버스는 어느 정류장인지 덧붙인다: '2415 는 옆 정류장 청담역.경기고교(60m · 11번 출구 쪽)에서 타요'
   const side = (stop:SideStop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ''}(${stop.metres}m${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ''})`;
   const notes = legs.flatMap(leg => {
     if (leg.type !== 'bus' || !leg.alternatives?.length) return [];
-    const where = leg.alternatives.flatMap(other => [...(other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : []), ...(other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : [])]);
-    return [`${[leg.route, ...leg.alternatives.map(other => other.route)].join(' · ')} 중 먼저 오는 버스${where.length ? ` (${where.join(', ')})` : ''}`];
+    const shown = all ? leg.alternatives : leg.alternatives.slice(0, ALT_SHOWN);
+    const where = shown.flatMap(other => [...(other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : []), ...(other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : [])]);
+    return [`${[leg.route, ...shown.map(other => other.route)].join(' · ')} 중 먼저 오는 버스${where.length ? ` (${where.join(', ')})` : ''}`];
   });
   return notes.length ? notes.join(' / ') : null;
+}
+// 접어서 안 보이는 다른 버스 수(모든 버스 구간 합)
+export function hiddenRoutes(legs:readonly TrackLeg[]):number {
+  return legs.reduce((sum, leg) => sum + (leg.type === 'bus' ? Math.max(0, (leg.alternatives?.length ?? 0) - ALT_SHOWN) : 0), 0);
 }
 // 지하철 ↔ 버스 갈아탈 때 어느 출구로 나가는지 한 줄씩: '청담역 11번 출구 옆 정류장에서 2415' · '대치역 3번 출구로'.
 // 출구 번호는 서버가 걷기 구간(exit)에 준다 — 없으면(출구 자료가 없는 역 · 옛 승차권) 안내를 만들지 않는다
@@ -277,14 +284,16 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
       if (row.e === 'walk') return {kind: 'walk', text: `걷기 ${min(leg.seconds)}분 · ${Math.round(leg.metres / 10) * 10}m${leg.exit ? ` · ${leg.exit}번 출구` : ''}`};
       const color = legColor(leg), toward = leg.type === 'bus' ? `${leg.toward ?? ''} 방면` : (leg.destination ? `${leg.destination}행` : (leg.direction || ''));
       const live = leg.type !== 'bus' && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ''}` : null;
-      const note = leg.type === 'bus' ? (leg.alternatives?.length ? `${leg.alternatives.map(other => `${other.route} ${other.departs}`).join(' · ')} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(' · ')}` : '시간표 기준') : '배차 간격 기준';
-      const text = `${leg.stops}${leg.type === 'bus' ? '정류장' : '정거장'}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ''} · ${live ? '' : note}`;
-      return {kind: 'ride', color, ink: inkOn(color), bus: leg.type === 'bus', chip: legName(leg), toward, text, live};
+      const others = leg.type === 'bus' ? leg.alternatives ?? [] : [];
+      const noteOf = (count:number) => leg.type === 'bus' ? (others.length ? `${others.slice(0, count).map(other => `${other.route} ${other.departs}`).join(' · ')} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(' · ')}` : '시간표 기준') : '배차 간격 기준';
+      const textOf = (note:string) => `${leg.stops}${leg.type === 'bus' ? '정류장' : '정거장'}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ''} · ${live ? '' : note}`;
+      const more = Math.max(0, others.length - ALT_SHOWN);
+      return {kind: 'ride', color, ink: inkOn(color), bus: leg.type === 'bus', chip: legName(leg), toward, text: textOf(noteOf(ALT_SHOWN)), textAll: more ? textOf(noteOf(others.length)) : null, more, live};
     });
   }
 
   function planView(plan:Plan):PlanView {
-    return {aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, alt: sameRoutes(plan.legs), duration: durParts(plan.minutes), arrive: `${plan.arrives} 도착`, tag: plan.tag || null,
+    return {aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, alt: sameRoutes(plan.legs), altAll: hiddenRoutes(plan.legs) ? sameRoutes(plan.legs, true) : null, altMore: hiddenRoutes(plan.legs), duration: durParts(plan.minutes), arrive: `${plan.arrives} 도착`, tag: plan.tag || null,
       track: trackParts(plan, colors), meta: `${plan.leaveBy} 출발 · 환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`, live: plan.legs.some(leg => leg.realtime), steps: steps(plan)};
   }
 

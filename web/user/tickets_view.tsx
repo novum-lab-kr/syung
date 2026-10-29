@@ -5,9 +5,9 @@
 // 출발 시각 바퀴의 칸 속(.tw-col 의 단추 · 스크롤 자리 · on/near · aria-valuetext)은 account.mts 가 바닐라로 그대로 다룬다 — 여기서는 다시 그리지 않는다.
 // 서랍 껍데기 · 쪽(section) 숨기기 · 쪽 이름(aria-label)은 본체 · account.mts 그대로.
 import { Component, render } from 'preact';
-import { exitHints, routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
+import { exitHints, hiddenRoutes, routeTrack, sameRoutes } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
-import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
+import { MoreText, RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
 import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
@@ -91,7 +91,7 @@ function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
     {ticket.route && (exitHints(ticket.route.legs).length > 0 || sameRoutes(ticket.route.legs) !== null) && <div class="tk-alts">
       {exitHints(ticket.route.legs).length > 0 && <p class="tk-alt" title={exitHints(ticket.route.legs).join(' / ')}>{exitHints(ticket.route.legs).join(' / ')}</p>}
-      {sameRoutes(ticket.route.legs) !== null && <p class="tk-alt" title={sameRoutes(ticket.route.legs)!}>{sameRoutes(ticket.route.legs)}</p>}</div>}
+      {sameRoutes(ticket.route.legs) !== null && <p class="tk-alt" title={sameRoutes(ticket.route.legs, true)!}><MoreText text={sameRoutes(ticket.route.legs)!} full={sameRoutes(ticket.route.legs, true)} more={hiddenRoutes(ticket.route.legs)} /></p>}</div>}
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
     <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
       {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
@@ -160,7 +160,21 @@ function PlacePage() {
 // 같은 구간 다른 버스 안내(없으면 빈 글자)
 export function altHTML(legs:readonly SlimLeg[]) {
   const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(' / ');   // 같은 구간 다른 버스 + 갈아탈 출구 안내
-  return note ? `<span class="jp-alt">${esc(note)}</span>` : '';
+  if (!note) return '';
+  const hidden = hiddenRoutes(legs);
+  if (!hidden) return `<span class="jp-alt">${esc(note)}</span>`;
+  const full = [sameRoutes(legs, true), ...exitHints(legs)].filter(Boolean).join(' / ');
+  // 단추 속이라 단추를 또 넣을 수 없다 — 글자 단추(span). 눌렀을 때 펼치는 일은 planFold 가 한다
+  return `<span class="jp-alt" data-full="${esc(full)}">${esc(note)} <span class="jp-more" role="button" tabindex="0">외 ${hidden}대</span></span>`;
+}
+// 경로 단추 속 '외 N대' 를 누르면 글자를 다 펼친다(경로를 고르지는 않는다). 펼쳤으면 true
+function planFold(event:Event) {
+  const more = (event.target as Element).closest('.jp-more');
+  const box = more?.closest<HTMLElement>('.jp-alt');
+  if (!more || !box) return false;
+  event.stopPropagation();
+  box.textContent = box.dataset.full ?? '';
+  return true;
 }
 // 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)
 function planHTML(plan:Plan) {
@@ -191,7 +205,7 @@ function RoutePage() {
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
     {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
     <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!; return <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
-      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>; })}</div>
+      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={event => { if (!planFold(event)) call('plan')(index); }} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>; })}</div>
     {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}

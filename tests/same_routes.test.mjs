@@ -1,7 +1,7 @@
 // 같은 구간 다른 버스 안내 한 줄(2026-10-29): '143 · 2415 · 301 중 먼저 오는 버스' — web/lib/journey-ui.mts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sameRoutes} from '../web/lib/journey-ui.mts';
+import {sameRoutes, hiddenRoutes} from '../web/lib/journey-ui.mts';
 
 const other = route => ({route, color: '#3d5bab', departs: '09:07', arrives: '09:11'});
 const bus = (route, alternatives) => ({type: 'bus', route, color: '#3d5bab', departs: '09:05', arrives: '09:11', wait: 0, alternatives});
@@ -31,4 +31,12 @@ test('side-stop buses say which stop and which exit', () => {
   assert.equal(sameRoutes([bus('143', [side])]), '143 · 2415 중 먼저 오는 버스 (2415 는 옆 정류장 청담역.경기고교 23187(60m · 11번 출구 쪽)에서 타요)');
   const down = {...other('2415'), alightAt: {name: '무역센터', metres: 90}};
   assert.equal(sameRoutes([bus('143', [down])]), '143 · 2415 중 먼저 오는 버스 (2415 는 옆 정류장 무역센터(90m)에서 내려요)');
+});
+
+test('more than three others: three shown, the rest counted, all of them when asked', () => {
+  const legs = [bus('143', ['2415', '301', '146', '401', '343'].map(other))];
+  assert.equal(sameRoutes(legs), '143 · 2415 · 301 · 146 중 먼저 오는 버스');
+  assert.equal(hiddenRoutes(legs), 2);
+  assert.equal(sameRoutes(legs, true), '143 · 2415 · 301 · 146 · 401 · 343 중 먼저 오는 버스');
+  assert.equal(hiddenRoutes([bus('143', [other('2415')])]), 0);
 });

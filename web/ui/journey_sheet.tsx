@@ -2,7 +2,7 @@
 // 화면 조각(Preact)이라 그리기만 한다 — 상태 · 셈 · 찾기 요청 · 지도 표시는 lib/journey-ui.mts(JourneyView · JourneyActions), 시트 껍데기는 ui/sheet.mts.
 // 표시(DOM 모양 · class · id · 문구 · aria)는 옛 HTML 글자와 같다: 스타일(syung.css)과 시트의 '.journey 가 있나' 검사가 그대로 맞는다.
 // 출발 · 도착 입력칸은 사용자가 치는 칸이라 처음 값(defaultValue)만 준다 — 값 바꾸기는 journey-ui 가 옛것처럼 .value 로.
-import { render } from 'preact';
+import { Component, render } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { JourneyActions, JourneyResultView, JourneyView, Place, PlaceListView, PlanView, StepHold, StepView, TrackSegView } from '../lib/journey-ui.mts';
 
@@ -59,12 +59,22 @@ function Track({ segs }:{ segs:TrackSegView[] }) {
     : <i class={seg.bus ? 'jseg ride bus' : 'jseg ride'} style={`flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}`}>{seg.icon && BUS}{seg.label}</i>)}</div>;
 }
 
+// 같은 구간 다른 버스가 많을 때: 앞의 몇 대만 쓰고 '외 N대' 를 누르면 다 펼친다(누름이 카드로 새지 않게 막는다). 펼친 상태는 글자(full)에 묶어 길이 바뀌면 접힌다
+export class MoreText extends Component<{ text:string; full:string | null; more:number }, { openFor:string | null }> {
+  state = { openFor: null as string | null };
+  render({ text, full, more }:{ text:string; full:string | null; more:number }) {
+    if (full === null || more <= 0) return <>{text}</>;
+    if (this.state.openFor === full) return <>{full}</>;
+    return <>{text} <button type="button" class="jp-more" onClick={event => { event.stopPropagation(); this.setState({ openFor: full }); }}>{`외 ${more}대`}</button></>;
+  }
+}
+
 function Step({ step }:{ step:StepView }) {
   if (step.kind === 'node') return <li class={`js node ${step.n}`} style={`--c:${step.color}`}><span class="js-t">{step.time}</span><span class="js-dot"></span><div class="js-b"><b>{step.name}</b>{step.sub !== null && <small>{step.sub}</small>}</div></li>;
   if (step.kind === 'walk') return <li class="js walk"><span class="js-t"></span><span class="js-rail"></span><div class="js-b"><small>{WALK}{step.text}</small></div></li>;
   return <li class="js ride" style={`--c:${step.color};--t:${step.ink}`}><span class="js-t"></span><span class="js-rail"></span><div class="js-b">
     <p><span class="js-chip">{step.bus && BUS}{step.chip}</span>{step.toward}</p>
-    <small>{step.text}{step.live !== null && <span class="js-live">{step.live}</span>}</small></div></li>;
+    <small><MoreText text={step.text} full={step.textAll} more={step.more} />{step.live !== null && <span class="js-live">{step.live}</span>}</small></div></li>;
 }
 
 // 경로 카드는 누르는 칸(옛 HTML 그대로 article role=button — Preact 타입은 article 에 button 역할을 두지 않아 펼쳐 넣는다)
@@ -77,7 +87,7 @@ function Card({ plan, index, on, hidden, actions }:{ plan:PlanView; index:number
     <div class="jp-top"><strong class="jp-min">{duration.hours !== null ? <>{`${duration.hours}`}<small>시간</small>{` ${duration.minutes}`}<small>분</small></> : <>{`${duration.minutes}`}<small>분</small></>}</strong><span class="jp-arr">{plan.arrive}</span>{plan.tag !== null && <span class="jp-tag">{plan.tag}</span>}</div>
     <Track segs={plan.track} />
     <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>
-    {plan.alt !== null && <p class="jp-alt">{plan.alt}</p>}
+    {plan.alt !== null && <p class="jp-alt"><MoreText text={plan.alt} full={plan.altAll} more={plan.altMore} /></p>}
     <ol class="jsteps">{plan.steps.map(step => <Step step={step} />)}</ol>
   </article>;
 }
