@@ -89,33 +89,45 @@ function cloudsScene(name, {fillColor, count, minY, spanY, minScale, spanScale, 
 
 // ===== 떨어지는 것: 한 번 떨어지는 시간(period)마다 처음으로 — 방울마다 시작 위치만 다르다 =====
 // 한 물체의 위치 풀이: 시작 위상 phase(0~1)에서 출발해 땅에 닿으면 위로 순간 이동(hold)하고 계속 — 한 바퀴(frames)에 repeat 번 떨어진다
-function fallPath(frames, repeat, phase, from, to, sway = 0) {
+function fallPath(frames, repeat, phase, from, to, sway = 0, swayPhase = 0) {
   const period = frames / repeat, xs = [], ys = [];
-  const at = fraction => [round(from[0] + (to[0] - from[0]) * fraction), round(from[1] + (to[1] - from[1]) * fraction)];
+  // 흔들림은 떨어진 정도(0~1)에 매인 사인이라 땅에 닿는 순간과 다시 떨어지는 순간(그리고 한 바퀴 처음 · 끝)의 값이 같다 — 순간 이동에 튀지 않는다
+  const wobble = fraction => sway * Math.sin(Math.PI * 4 * fraction + swayPhase);
+  const at = fraction => [round(from[0] + (to[0] - from[0]) * fraction + wobble(fraction)), round(from[1] + (to[1] - from[1]) * fraction)];
+  // 두 시각 사이를 일정 간격으로 쪼개 x 키프레임을 더한다(sway 가 있을 때만 — 없으면 양 끝 직선)
+  const swayKeys = (time0, fraction0, time1, fraction1) => {
+    if (!sway) return;
+    for (let step = time0 + 6; step < time1 - 2; step += 6) xs.push([step, at(fraction0 + (fraction1 - fraction0) * (step - time0) / (time1 - time0))[0]]);
+  };
   let time = 0, fraction = phase;
   xs.push([0, at(fraction)[0]]); ys.push([0, at(fraction)[1]]);
   for (let turn = 0; turn <= repeat; turn++) {
     const reach = time + period * (1 - fraction);
-    if (reach >= frames - 0.5) { xs.push([frames, at(fraction + (frames - time) / period)[0]]); ys.push([frames, at(fraction + (frames - time) / period)[1]]); break; }
-    const landX = round(to[0]), landY = round(to[1]), t = Math.round(reach);
+    if (reach >= frames - 0.5) {
+      const endFraction = fraction + (frames - time) / period;
+      swayKeys(time, fraction, frames, endFraction);
+      xs.push([frames, at(endFraction)[0]]); ys.push([frames, at(endFraction)[1]]); break;
+    }
+    const landX = at(1)[0], landY = round(to[1]), t = Math.round(reach);
+    swayKeys(time, fraction, t, 1);
     xs.push([t, landX, 'hold']); ys.push([t, landY, 'hold']);
-    xs.push([t + 1, round(from[0])]); ys.push([t + 1, round(from[1])]);
+    xs.push([t + 1, at(0)[0]]); ys.push([t + 1, round(from[1])]);
     time = t + 1; fraction = 0;
   }
   return {xs, ys, sway};
 }
-function drops(make, {count, repeat, frames, scale, tilt, tag, splash}) {
+function drops(make, {count, repeat, frames, scale, tilt, tag, splash, width = 1}) {
   const slide = -tilt * 1.2;   // 비스듬히: 오른쪽 위에서 왼쪽 아래로
   for (let index = 0; index < count; index++) {
     const x = round(rnd(index, 11) * (WIDTH + 40)), top = round(24 + rnd(index, 12) * 6), phase = rnd(index, 13), landY = round(GROUND + rnd(index, 14) * 3);
     const path = fallPath(frames, repeat, phase, [x, top], [x + slide, landY]);
-    make.layer(`${tag}${index}`, [outlined([droplet()], COLOR.dropFill, COLOR.dropLine, 1)], {position: splitPosition(path.xs, path.ys), scale: [scale * 100, scale * 100], rotation: tilt});
+    make.layer(`${tag}${index}`, [outlined([droplet()], COLOR.dropFill, COLOR.dropLine, width)], {position: splitPosition(path.xs, path.ys), scale: [scale * 100, scale * 100], rotation: tilt});
     if (splash && index < splash) {   // 땅 · 선로에 닿으면 작게 튄다: 닿는 순간 번쩍 퍼졌다 사라진다
       const hits = path.xs.filter(key => key[2] === 'hold').map(key => key[0]);
       const opacity = [[0, 0, 'hold']];
       hits.forEach(hit => { opacity.push([hit, 0, 'hold'], [hit + 1, 90], [hit + 5, 0, 'hold']); });
       const keys = [...new Map(opacity.map(key => [key[0], key])).values()].sort((left, right) => left[0] - right[0]);
-      make.layer(`${tag}splash${index}`, [group([polyline([[-3.5, 0], [-1.5, -2.4], [0, -3], [1.5, -2.4], [3.5, 0]]), stroke(COLOR.dropLine, 1)])], {
+      make.layer(`${tag}splash${index}`, [group([polyline([[-3.5, 0], [-1.5, -2.4], [0, -3], [1.5, -2.4], [3.5, 0]]), stroke(COLOR.dropLine, width)])], {
         position: [round(x + slide), landY], opacity: moving(keys.map(([t, value], position) => [t, value, position === keys.length - 1 ? undefined : 'hold'])),
       });
     }
@@ -124,8 +136,7 @@ function drops(make, {count, repeat, frames, scale, tilt, tag, splash}) {
 function flakes(make, {count, repeat, frames, smallest, biggest, sway, tag}) {
   for (let index = 0; index < count; index++) {
     const x = round(rnd(index, 21) * WIDTH), size = round(smallest + rnd(index, 23) * (biggest - smallest)), top = round(24 + rnd(index, 22) * 6), phase = rnd(index, 24);
-    const path = fallPath(frames, repeat, phase, [x, top], [x - 6, GROUND + 1 + rnd(index, 25) * 3]);
-    // 흔들리며 내린다: 위치 x 에 사인 흔들림을 얹는 대신 몸통을 좌우로 흔든다(키프레임을 아끼려 위치는 직선)
+    const path = fallPath(frames, repeat, phase, [x, top], [x - 6, GROUND + 1 + rnd(index, 25) * 3], sway, rnd(index, 26) * Math.PI * 2);   // 흔들리며 내린다: 위치 x 키프레임에 사인 흔들림(sway px)을 얹는다
     make.layer(`${tag}${index}`, [outlined([ellipse([0, 0], [size * 2, size * 2])], COLOR.white, COLOR.snowLine, 1)], {position: splitPosition(path.xs, path.ys)});
   }
 }
@@ -172,9 +183,9 @@ const SCENES = {
   'sky-clouds-cloudy': cloudsScene('sky-clouds-cloudy', {fillColor: COLOR.cloudLight, count: 9, minY: 6, spanY: 40, minScale: 1.0, spanScale: 0.8, seconds: 28}),
   'sky-clouds-storm': cloudsScene('sky-clouds-storm', {fillColor: COLOR.cloudStorm, count: 8, minY: 0, spanY: 26, minScale: 1.15, spanScale: 0.6, seconds: 36}),
   'sky-clouds-overcast': cloudsScene('sky-clouds-overcast', {fillColor: COLOR.cloudGrey, count: 8, minY: 2, spanY: 26, minScale: 1.15, spanScale: 0.6, seconds: 36}),
-  'sky-drizzle': fallScene('sky-drizzle', {frames: 40, fn: (make, frames) => drops(make, {count: 16, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 6})}),
-  'sky-rain': fallScene('sky-rain', {frames: 24, fn: (make, frames) => drops(make, {count: 36, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 14})}),
-  'sky-heavyrain': fallScene('sky-heavyrain', {frames: 15, fn: (make, frames) => drops(make, {count: 72, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 28})}),
+  'sky-drizzle': fallScene('sky-drizzle', {frames: 40, fn: (make, frames) => drops(make, {count: 16, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 6, width: 0.8})}),
+  'sky-rain': fallScene('sky-rain', {frames: 24, fn: (make, frames) => drops(make, {count: 36, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 14, width: 1.05})}),
+  'sky-heavyrain': fallScene('sky-heavyrain', {frames: 15, fn: (make, frames) => drops(make, {count: 72, repeat: 1, frames, scale: 0.8, tilt: 12, tag: 'drop', splash: 28, width: 1.3})}),
   'sky-snow': fallScene('sky-snow', {frames: 150, fn: (make, frames) => flakes(make, {count: 26, repeat: 1, frames, smallest: 1.3, biggest: 3.4, sway: 6, tag: 'flake'})}),
   'sky-flurry': fallScene('sky-flurry', {frames: 110, fn: (make, frames) => flakes(make, {count: 12, repeat: 1, frames, smallest: 1.1, biggest: 2.2, sway: 4, tag: 'flake'})}),
   'sky-sleet': fallScene('sky-sleet', {frames: 120, fn: (make, frames) => {
