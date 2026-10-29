@@ -8,6 +8,7 @@ import { Component, render } from 'preact';
 import { routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
 import { RouteLoading } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
+import type { RouteFilterView, RouteKind, RouteSort } from './ticket_routes.mts';
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
 export interface Place { name:string; lat:number; lng:number }
@@ -40,7 +41,7 @@ interface Handlers {
   placeFrom():void; placeTo():void; timeToggle():void; timeDone():void; route():void;
   day(day:number):void; quick(days:string):void; name(value:string):void; submit():void; remove():void;
   placeInput(value:string):void; placePick(place:FoundPlace):void;
-  plan(index:number):void; planPick():void;
+  plan(index:number):void; planPick():void; routeKind(kind:RouteKind):void; routeSort(sort:RouteSort):void;
 }
 interface View {
   colors:Record<string, string>;   // 노선 이름 → 색(본체)
@@ -54,12 +55,13 @@ interface View {
   placeTo:boolean; placeQuery:string; placeHidden:boolean; placeRows:FoundPlace[] | string;
   // 경로 선택
   routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
+  routeFilter:RouteFilterView | null;   // 조건 고르기(종류 · 차례)와 보일 차례(plans 의 번호) — 길이 없으면 null
 }
 let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, wheelOpen: false, sending: false, deleteArmed: false,
   placeTo: false, placeQuery: '', placeHidden: true, placeRows: [],
-  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false,
+  routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null,
 };
 let handlers:Handlers | null = null;
 const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
@@ -156,16 +158,27 @@ function planHTML(plan:Plan) {
     + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
     + `${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
 }
+// 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수) + 차례(환승 적게 · 덜 걷기 — 다시 누르면 지금 차례로)
+function RouteFilters({ filter }:{ filter:RouteFilterView }) {
+  return <div class="rt-filters">
+    <div class="segmented jkinds" role="group" aria-label="경로 종류">{filter.kinds.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => call('routeKind')(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>
+    <div class="segmented jkinds" role="group" aria-label="경로 차례">{filter.sorts.map(tab => <button type="button" data-s={tab.sort} aria-pressed={tab.pressed} onClick={() => call('routeSort')(tab.pressed ? '' : tab.sort)}>{tab.name}</button>)}</div>
+  </div>;
+}
 function RoutePage() {
+  const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
   return <>
     <div class="rt-sum"><b id="routeTrip">{view.routeTrip}</b><span id="routeWhen">{view.routeWhen}</span></div>
+    {filter && <RouteFilters filter={filter} />}
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
-    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{view.plans.map((plan, index) => <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
-      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
+    {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
+    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!; return <button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
+      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>; })}</div>
+    {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}
     {/* 이 경로로: 목록이 길어도 늘 보이게 맨 아래에 붙는다(경로 고르기 반쪽 시트 2026-10-29) */}
-    <div class="rt-foot" hidden={!view.plans.length}><button id="routePick" class="tf-save" type="button" onClick={call('planPick')}>이 경로로</button></div>
+    <div class="rt-foot" hidden={!order.length}><button id="routePick" class="tf-save" type="button" onClick={call('planPick')}>이 경로로</button></div>
   </>;
 }
 

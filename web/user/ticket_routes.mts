@@ -38,6 +38,47 @@ export function quickestRoute<P extends Shaped>(plans:readonly P[]):P | null {
   return usefulRoutes(plans).reduce<P | null>((best, plan) => !best || ahead(plan, best) ? plan : best, null);
 }
 
+// ---- 조건 바꾸기(사용자 결정 2026-10-29 — 마음에 드는 경로가 없을 때): 거르기(usefulRoutes) 뒤 받은 길을 다시 나눠 보인다(서버를 다시 부르지 않는다) ----
+// 종류: 길찾기 시트의 종류 탭(.jkinds)처럼 서버가 준 kind(subway · bus · mixed · walk)로 나눈다. 섞어 타기 · 걸어가기는 '전체'에만
+export type RouteKind = 'all' | 'subway' | 'bus';
+// 차례: '' 는 지금 차례(도착 차례), 환승 적게 · 덜 걷기는 그 수가 적은 길부터(같으면 지금 차례)
+export type RouteSort = '' | 'transfers' | 'walk';
+export const ROUTE_KINDS:readonly (readonly [RouteKind, string])[] = [['all', '전체'], ['subway', '지하철만'], ['bus', '버스만']];
+export const ROUTE_SORTS:readonly (readonly [Exclude<RouteSort, ''>, string])[] = [['transfers', '환승 적게'], ['walk', '덜 걷기']];
+type Sortable = Pick<Plan, 'kind' | 'transfers' | 'walkMinutes'>;
+const fits = (plan:Sortable, kind:RouteKind) => kind === 'all' || plan.kind === kind;
+
+// 조건에 맞는 길의 차례(plans 의 번호 — 고른 길은 번호로 둔다)
+export function routeOrder(plans:readonly Sortable[], kind:RouteKind, sort:RouteSort):number[] {
+  const order = plans.flatMap((plan, index) => fits(plan, kind) ? [index] : []);
+  if (!sort) return order;
+  const count = (index:number) => sort === 'transfers' ? plans[index]!.transfers : plans[index]!.walkMinutes;
+  return order.sort((left, right) => count(left) - count(right) || left - right);
+}
+
+// 조건 고르기 칸에 그릴 것: 종류 단추(전체 · 지하철만 · 버스만 — 길 수와 함께) · 차례 단추 · 보일 차례 · 맞는 길이 없을 때의 안내
+export interface RouteFilterView {
+  kinds:{ kind:RouteKind; name:string; count:number; pressed:boolean }[];
+  sorts:{ sort:Exclude<RouteSort, ''>; name:string; pressed:boolean }[];
+  order:number[]; empty:string;
+}
+export function routeFilterView(plans:readonly Sortable[], kind:RouteKind, sort:RouteSort):RouteFilterView {
+  const order = routeOrder(plans, kind, sort);
+  const name = ROUTE_KINDS.find(([each]) => each === kind)![1];
+  return {
+    kinds: ROUTE_KINDS.map(([each, label]) => ({kind: each, name: label, count: plans.filter(plan => fits(plan, each)).length, pressed: each === kind})),
+    sorts: ROUTE_SORTS.map(([each, label]) => ({sort: each, name: label, pressed: each === sort})),
+    order, empty: order.length ? '' : `${name} 타는 경로가 없어요`,
+  };
+}
+
+// 조건을 바꾼 뒤 고를 길: 저장된 경로(같은 길 모양)가 보이면 그 길, 아니면 처음 카드, 보일 길이 없으면 -1
+export function chosenAfter(plans:readonly Shaped[], order:readonly number[], saved:Shaped | null):number {
+  const sig = saved ? rideSig(saved) : null;
+  const mine = sig === null ? undefined : order.find(index => rideSig(plans[index]!) === sig);
+  return mine ?? order[0] ?? -1;
+}
+
 // 다음 탈 날: 고른 요일(1 월 … 7 일, 비었으면 아무 날) 가운데 지금보다 뒤인 가장 가까운 날의 그 시각(time 'HH:MM')
 export function nextRideDay(days:readonly number[], time:string, now:Date) {
   const [hour, minute] = time.split(':').map(Number) as [number, number];
