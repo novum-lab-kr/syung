@@ -30,27 +30,91 @@ var inkOn = (hex) => {
 };
 var BUS = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z\"/></svg>";
 var textW = (t) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);
-function sameRoutes(legs, all = false) {
-	const side = (stop) => `옆 정류장 ${stop.name}${stop.ars ? ` ${stop.ars}` : ""}(${stop.walkMinutes ? `걸어서 ${stop.walkMinutes}분` : `${stop.metres}m`}${stop.exit ? ` · ${stop.exit}번 출구 쪽` : ""})`;
-	const notes = legs.flatMap((leg) => {
-		if (leg.type !== "bus" || !leg.alternatives?.length) return [];
-		const shown = all ? leg.alternatives : leg.alternatives.slice(0, 3);
-		const where = shown.flatMap((other) => [...other.boardAt ? [`${other.route} 는 ${side(other.boardAt)}에서 타요`] : [], ...other.alightAt ? [`${other.route} 는 ${side(other.alightAt)}에서 내려요`] : []]);
-		return [`${[leg.route, ...shown.map((other) => other.route)].join(" · ")} 중 먼저 오는 버스${where.length ? ` (${where.join(", ")})` : ""}`];
-	});
-	return notes.length ? notes.join(" / ") : null;
+var rideMinutes = (leg) => leg.departs && leg.arrives ? Math.max(1, (hm(leg.arrives) - hm(leg.departs) + 1440) % 1440) : null;
+function walkText(prev, next, exit, label) {
+	const door = exit ? `${exit}번 출구` : "";
+	const out = prev?.type === "ride" && door ? `${door}로 나와 ` : "";
+	if (!next) return `${out}목적지까지 걸어서`;
+	if (next.type === "walk") return `${out}${label ? `${label} 걸어서` : "걸어서 이동"}`;
+	if (next.type === "bus") return `${out}${next.from ?? ""} 정류장까지 걸어서`;
+	return `${next.from ?? ""}역${prev?.type !== "ride" && door ? ` ${door}` : ""}까지 걸어서`;
 }
-function hiddenRoutes(legs) {
-	return legs.reduce((sum, leg) => sum + (leg.type === "bus" ? Math.max(0, (leg.alternatives?.length ?? 0) - 3) : 0), 0);
-}
-function exitHints(legs) {
-	return legs.flatMap((leg, at) => {
-		const before = legs[at - 1], after = legs[at + 1];
-		if (leg.type !== "walk" || !leg.exit || !before || !after) return [];
-		if (before.type === "ride" && after.type === "bus" && before.to) return [`${before.to}역 ${leg.exit}번 출구 옆 정류장에서 ${after.route ?? "버스"}`];
-		if (before.type === "bus" && after.type === "ride" && after.from) return [`${after.from}역 ${leg.exit}번 출구로`];
-		return [];
+var sideStop = (stop) => stop.walkMinutes ? `${stop.walkMinutes}분` : `${stop.metres}m`;
+function routeSteps(legs, ends, colors, times = null) {
+	const rows = [{
+		kind: "place",
+		at: "start",
+		name: ends.from,
+		time: times?.start ?? null
+	}];
+	legs.forEach((leg, at) => {
+		if (leg.type === "walk") {
+			const minutes = min(leg.seconds ?? 0);
+			rows.push({
+				kind: "walk",
+				text: walkText(legs[at - 1], legs[at + 1], leg.exit ?? "", leg.label),
+				detail: `${minutes}분${leg.metres ? ` · ${Math.round(leg.metres / 10) * 10}m` : ""}`
+			});
+			return;
+		}
+		const bus = leg.type === "bus", place = (name) => bus ? name ?? "" : `${name ?? ""}역`;
+		const color = bus ? leg.color ?? "#888" : colors[leg.line ?? ""] || "#888", ink = inkOn(color);
+		const others = bus ? leg.alternatives ?? [] : [];
+		const chips = bus ? [{
+			route: leg.route ?? "",
+			color,
+			ink,
+			side: null,
+			detail: null
+		}, ...others.map((other) => ({
+			route: other.route,
+			color: other.color,
+			ink: inkOn(other.color),
+			side: other.boardAt ? `옆 ${sideStop(other.boardAt)}` : null,
+			detail: other.boardAt ? `${other.boardAt.name}${other.boardAt.ars ? ` ${other.boardAt.ars}` : ""} · 걸어서 ${sideStop(other.boardAt)}${other.boardAt.exit ? ` · ${other.boardAt.exit}번 출구 쪽` : ""}` : null
+		}))] : [];
+		const minutes = rideMinutes(leg), waits = times && (leg.wait ?? 0) > 60 ? `${min(leg.wait ?? 0)}분 기다림` : null;
+		const info = [
+			leg.stops ? `${leg.stops}개 ${bus ? "정류장" : "역"}` : null,
+			minutes ? `${minutes}분` : null,
+			waits
+		].filter(Boolean).join(" · ");
+		const toward = bus ? leg.toward ? `${leg.toward} 방면` : null : leg.destination ? `${leg.destination} 방면` : leg.direction || null;
+		rows.push({
+			kind: "board",
+			name: `${place(leg.from)} 승차`,
+			color,
+			time: times ? leg.departs ?? null : null
+		}, {
+			kind: "ride",
+			color,
+			ink,
+			bus,
+			chip: bus ? leg.route ?? "" : leg.line ?? "",
+			toward,
+			chips,
+			info,
+			live: times && !bus && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ""}` : null
+		}, {
+			kind: "alight",
+			name: `${place(leg.to)} 하차`,
+			color,
+			time: times ? leg.arrives ?? null : null,
+			chips: others.flatMap((other) => other.alightAt ? [{
+				route: other.route,
+				color: other.color,
+				ink: inkOn(other.color),
+				where: other.alightAt.name
+			}] : [])
+		});
 	});
+	rows.push({
+		kind: "place",
+		at: "end",
+		name: ends.to,
+		time: times?.end ?? null
+	});
+	return rows;
 }
 function trackParts(p, colors, width = 330) {
 	const segs = [];
@@ -313,7 +377,6 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		}
 		paint();
 	}
-	const legColor = (l) => legColorOf(l, colors);
 	const track = (p, width = 330) => routeTrack(p, colors, width);
 	const durParts = (total) => total >= 60 ? {
 		hours: Math.floor(total / 60),
@@ -326,104 +389,22 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		const parts = durParts(total);
 		return parts.hours !== null ? `${parts.hours}<small>시간</small> ${parts.minutes}<small>분</small>` : `${parts.minutes}<small>분</small>`;
 	};
-	function steps(p) {
-		const station = (l, n) => l.type === "bus" ? n : `${n}역`;
-		const items = [{
-			n: "start",
-			name: last?.from || "출발",
-			t: p.leaveBy,
-			c: "var(--syung)"
-		}];
-		for (const l of p.legs) {
-			if (l.type === "walk") {
-				items.push({
-					e: "walk",
-					l
-				});
-				continue;
-			}
-			items.push({
-				n: "board",
-				name: station(l, l.from),
-				t: l.departs,
-				c: legColor(l)
-			}, {
-				e: "ride",
-				l
-			}, {
-				n: "alight",
-				name: station(l, l.to),
-				t: l.arrives,
-				c: legColor(l)
-			});
-		}
-		items.push({
-			n: "end",
-			name: last?.to || "도착",
-			t: p.arrives,
-			c: "var(--ink)"
-		});
-		const rows = [];
-		for (let k = 0; k < items.length; k++) {
-			const a = items[k], b = items[k + 1];
-			if (a.n && b?.n) {
-				rows.push({
-					n: "change",
-					name: a.name === b.name ? a.name : `${a.name} → ${b.name}`,
-					t: a.t,
-					t2: b.t,
-					c: b.c
-				});
-				k++;
-			} else rows.push(a);
-		}
-		return rows.map((row) => {
-			if (row.n) return {
-				kind: "node",
-				n: row.n,
-				color: row.c,
-				time: row.t,
-				name: row.name,
-				sub: row.n === "change" ? `갈아타기${row.t2 && row.t2 !== row.t ? ` · ${row.t2} 출발` : ""}` : null
-			};
-			const leg = row.l;
-			if (row.e === "walk") return {
-				kind: "walk",
-				text: `걷기 ${min(leg.seconds)}분 · ${Math.round(leg.metres / 10) * 10}m${leg.exit ? ` · ${leg.exit}번 출구` : ""}`
-			};
-			const color = legColor(leg), toward = leg.type === "bus" ? `${leg.toward ?? ""} 방면` : leg.destination ? `${leg.destination}행` : leg.direction || "";
-			const live = leg.type !== "bus" && leg.realtime ? `실시간 · 지금 ${leg.trainNow ?? ""}` : null;
-			const others = leg.type === "bus" ? leg.alternatives ?? [] : [];
-			const noteOf = (count) => leg.type === "bus" ? others.length ? `${others.slice(0, count).map((other) => `${other.route} ${other.departs}`).join(" · ")} 도 같은 길` : leg.alts?.length ? `같은 길 ${leg.alts.join(" · ")}` : "시간표 기준" : "배차 간격 기준";
-			const textOf = (note) => `${leg.stops}${leg.type === "bus" ? "정류장" : "정거장"}${leg.wait > 60 ? ` · ${min(leg.wait)}분 기다림` : ""} · ${live ? "" : note}`;
-			const more = Math.max(0, others.length - 3);
-			return {
-				kind: "ride",
-				color,
-				ink: inkOn(color),
-				bus: leg.type === "bus",
-				chip: legName(leg),
-				toward,
-				text: textOf(noteOf(3)),
-				textAll: more ? textOf(noteOf(others.length)) : null,
-				more,
-				live
-			};
-		});
-	}
 	function planView(plan) {
 		return {
 			aria: `${plan.tag || "경로"} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`,
-			alt: sameRoutes(plan.legs),
-			altAll: hiddenRoutes(plan.legs) ? sameRoutes(plan.legs, true) : null,
-			altMore: hiddenRoutes(plan.legs),
 			duration: durParts(plan.minutes),
-			arrive: `${plan.arrives} 도착`,
+			arrive: `${plan.leaveBy} → ${plan.arrives}`,
 			tag: plan.tag || null,
 			track: trackParts(plan, colors),
-			meta: `${plan.leaveBy} 출발 · 환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`,
+			meta: `환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`,
 			live: plan.legs.some((leg) => leg.realtime),
-			steps: steps(plan)
+			steps: routeSteps(plan.legs, {
+				from: last?.from || "출발",
+				to: last?.to || "도착"
+			}, colors, {
+				start: plan.leaveBy,
+				end: plan.arrives
+			})
 		};
 	}
 	const KINDS = [
@@ -678,4 +659,4 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		drop
 	};
 }
-export { exitHints, hiddenRoutes, initJourney, routeTrack, sameRoutes, trackParts };
+export { initJourney, routeSteps, routeTrack, trackParts };

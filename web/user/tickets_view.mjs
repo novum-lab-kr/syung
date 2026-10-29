@@ -1,7 +1,7 @@
-import { exitHints, hiddenRoutes, routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
+import { routeSteps, routeTrack } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { MoreText, RouteLoading } from "../ui/journey_sheet.mjs";
+import { RouteLoading, StepList } from "../ui/journey_sheet.mjs";
 // web/user/tickets_view.tsx
 var DAYS = [
 	"월",
@@ -76,7 +76,9 @@ var view = {
 	routeMsg: "",
 	routeLoading: false,
 	routeFilter: null,
-	routeVia: null
+	routeVia: null,
+	stepsOf: null,
+	stepsOpen: null
 };
 var handlers = null;
 var call = (key) => (...args) => (handlers?.[key])?.(...args);
@@ -123,11 +125,16 @@ function Front({ ticket }) {
 	});
 }
 function Card({ ticket, index }) {
-	const chain = view.chains[index] ?? null;
+	const chain = view.chains[index] ?? null, stepsKey = `${view.listTurn}-${index}`, opened = view.stepsOpen === stepsKey;
 	const waiting = `<span>${esc(shortName(ticket.from.name))}</span><em>→</em><span>${esc(shortName(ticket.to.name))}</span>`;
-	return /* @__PURE__ */ a("div", {
+	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
 		class: view.flipped[index] ? "ticket flipped" : "ticket",
 		onClick: (event) => {
+			if (event.target.closest(".tk-steps-btn")) {
+				event.stopPropagation();
+				set({ stepsOpen: opened ? null : stepsKey });
+				return;
+			}
 			if (event.target.closest(".tk-edit")) {
 				event.stopPropagation();
 				call("ticketEdit")(index);
@@ -149,21 +156,25 @@ function Card({ ticket, index }) {
 						class: chain === null ? "tk-chain wait" : "tk-chain",
 						dangerouslySetInnerHTML: { __html: chain ?? waiting }
 					}),
-					ticket.route && (exitHints(ticket.route.legs).length > 0 || sameRoutes(ticket.route.legs) !== null) && /* @__PURE__ */ a("div", {
+					ticket.route && /* @__PURE__ */ a("div", {
 						class: "tk-alts",
-						children: [exitHints(ticket.route.legs).length > 0 && /* @__PURE__ */ a("p", {
-							class: "tk-alt",
-							title: exitHints(ticket.route.legs).join(" / "),
-							children: exitHints(ticket.route.legs).join(" / ")
-						}), sameRoutes(ticket.route.legs) !== null && /* @__PURE__ */ a("p", {
-							class: "tk-alt",
-							title: sameRoutes(ticket.route.legs, true),
-							children: /* @__PURE__ */ a(MoreText, {
-								text: sameRoutes(ticket.route.legs),
-								full: sameRoutes(ticket.route.legs, true),
-								more: hiddenRoutes(ticket.route.legs)
-							})
-						})]
+						children: /* @__PURE__ */ a("button", {
+							class: "tk-steps-btn",
+							type: "button",
+							"aria-expanded": opened ? "true" : "false",
+							children: ["경로 자세히", /* @__PURE__ */ a("svg", {
+								viewBox: "0 0 24 24",
+								width: "12",
+								height: "12",
+								"aria-hidden": "true",
+								fill: "none",
+								stroke: "currentColor",
+								"stroke-width": "2.6",
+								"stroke-linecap": "round",
+								"stroke-linejoin": "round",
+								children: /* @__PURE__ */ a("path", { d: "m6 9 6 6 6-6" })
+							})]
+						})
 					}),
 					/* @__PURE__ */ a("p", {
 						class: "tk-time",
@@ -189,7 +200,16 @@ function Card({ ticket, index }) {
 				]
 			})]
 		})
-	});
+	}), opened && ticket.route && /* @__PURE__ */ a("div", {
+		class: "tk-steps",
+		children: /* @__PURE__ */ a(StepList, {
+			steps: routeSteps(ticket.route.legs, {
+				from: ticket.from.name,
+				to: ticket.to.name
+			}, view.colors),
+			className: "jsteps shown"
+		})
+	})] });
 }
 function TicketsPage() {
 	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
@@ -471,23 +491,8 @@ function PlacePage() {
 		}) }))
 	})] });
 }
-function altHTML(legs) {
-	const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(" / ");
-	if (!note) return "";
-	const hidden = hiddenRoutes(legs);
-	if (!hidden) return `<span class="jp-alt">${esc(note)}</span>`;
-	return `<span class="jp-alt" data-full="${esc([sameRoutes(legs, true), ...exitHints(legs)].filter(Boolean).join(" / "))}">${esc(note)} <span class="jp-more" role="button" tabindex="0">외 ${hidden}대</span></span>`;
-}
-function planFold(event) {
-	const more = event.target.closest(".jp-more");
-	const box = more?.closest(".jp-alt");
-	if (!more || !box) return false;
-	event.stopPropagation();
-	box.textContent = box.dataset.full ?? "";
-	return true;
-}
 function planHTML(plan) {
-	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span>${altHTML(plan.legs)}</span>`;
+	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}</span>`;
 }
 function RouteFilters({ filter }) {
 	return /* @__PURE__ */ a("div", {
@@ -568,17 +573,51 @@ function RoutePage() {
 			role: "radiogroup",
 			"aria-label": "경로",
 			children: order.map((index) => {
-				const plan = view.plans[index];
-				return /* @__PURE__ */ a("button", {
-					type: "button",
-					class: "rt-plan",
-					role: "radio",
-					"aria-checked": index === view.chosen ? "true" : "false",
-					"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
-					onClick: (event) => {
-						if (!planFold(event)) call("plan")(index);
-					},
-					dangerouslySetInnerHTML: { __html: planHTML(plan) }
+				const plan = view.plans[index], opened = view.stepsOf === plan;
+				return /* @__PURE__ */ a("div", {
+					class: "rt-item",
+					children: [/* @__PURE__ */ a("div", {
+						class: "rt-card",
+						children: [/* @__PURE__ */ a("button", {
+							type: "button",
+							class: "rt-plan",
+							role: "radio",
+							"aria-checked": index === view.chosen ? "true" : "false",
+							"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
+							onClick: () => call("plan")(index),
+							dangerouslySetInnerHTML: { __html: planHTML(plan) }
+						}), /* @__PURE__ */ a("button", {
+							type: "button",
+							class: "rt-open",
+							"aria-expanded": opened ? "true" : "false",
+							"aria-label": "경로 자세히 보기",
+							onClick: () => set({ stepsOf: opened ? null : plan }),
+							children: /* @__PURE__ */ a("svg", {
+								viewBox: "0 0 24 24",
+								width: "16",
+								height: "16",
+								"aria-hidden": "true",
+								fill: "none",
+								stroke: "currentColor",
+								"stroke-width": "2.6",
+								"stroke-linecap": "round",
+								"stroke-linejoin": "round",
+								children: /* @__PURE__ */ a("path", { d: "m6 9 6 6 6-6" })
+							})
+						})]
+					}), opened && /* @__PURE__ */ a("div", {
+						class: "rt-steps",
+						children: [/* @__PURE__ */ a("p", {
+							class: "jp-meta",
+							children: `환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`
+						}), /* @__PURE__ */ a(StepList, {
+							steps: routeSteps(plan.legs, {
+								from: view.from?.name ?? "출발",
+								to: view.to?.name ?? "도착"
+							}, view.colors),
+							className: "jsteps shown"
+						})]
+					})]
 				});
 			})
 		}),
@@ -631,4 +670,4 @@ var ticketsView = {
 };
 for (const [root] of roots) if (root) root.textContent = "";
 set({});
-export { DAYS, altHTML, esc, shortName, ticketsView, timeParts };
+export { DAYS, esc, shortName, ticketsView, timeParts };

@@ -1,3 +1,4 @@
+import "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 // web/ui/journey_sheet.tsx
@@ -274,50 +275,123 @@ function Track({ segs }) {
 		}))
 	});
 }
-var MoreText = class extends x {
-	state = { openFor: null };
-	render({ text, full, more }) {
-		if (full === null || more <= 0) return /* @__PURE__ */ a(M, { children: text });
-		if (this.state.openFor === full) return /* @__PURE__ */ a(M, { children: full });
-		return /* @__PURE__ */ a(M, { children: [
-			text,
-			" ",
-			/* @__PURE__ */ a("button", {
+var BusChips = class extends x {
+	state = {
+		all: false,
+		tapped: null
+	};
+	render({ chips }) {
+		const shown = this.state.all ? chips : chips.slice(0, 4), hidden = chips.length - shown.length;
+		const note = chips.find((chip) => chip.route === this.state.tapped)?.detail;
+		return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("span", {
+			class: "js-chips",
+			children: [shown.map((chip) => chip.detail === null ? /* @__PURE__ */ a("span", {
+				class: "js-chip",
+				style: `--c:${chip.color};--t:${chip.ink}`,
+				children: [BUS, chip.route]
+			}) : /* @__PURE__ */ a("button", {
+				type: "button",
+				class: "js-chip side",
+				style: `--c:${chip.color};--t:${chip.ink}`,
+				"aria-expanded": this.state.tapped === chip.route,
+				onClick: (event) => {
+					event.stopPropagation();
+					this.setState({ tapped: this.state.tapped === chip.route ? null : chip.route });
+				},
+				children: [
+					BUS,
+					chip.route,
+					/* @__PURE__ */ a("small", { children: chip.side })
+				]
+			})), hidden > 0 && /* @__PURE__ */ a("button", {
 				type: "button",
 				class: "jp-more",
 				onClick: (event) => {
 					event.stopPropagation();
-					this.setState({ openFor: full });
+					this.setState({ all: true });
 				},
-				children: `외 ${more}대`
-			})
-		] });
+				children: `외 ${hidden}대`
+			})]
+		}), note != null && /* @__PURE__ */ a("small", {
+			class: "js-side",
+			children: note
+		})] });
 	}
 };
-function Step({ step }) {
-	if (step.kind === "node") return /* @__PURE__ */ a("li", {
-		class: `js node ${step.n}`,
-		style: `--c:${step.color}`,
+function AlightChips({ chips }) {
+	return /* @__PURE__ */ a("small", {
+		class: "js-chips",
+		children: chips.map((chip) => /* @__PURE__ */ a("span", {
+			class: "js-alt",
+			children: [/* @__PURE__ */ a("span", {
+				class: "js-chip",
+				style: `--c:${chip.color};--t:${chip.ink}`,
+				children: [BUS, chip.route]
+			}), chip.where]
+		}))
+	});
+}
+function Step({ step, timed }) {
+	if (step.kind === "place") return /* @__PURE__ */ a("li", {
+		class: `js node ${step.at}`,
+		style: `--c:${step.at === "start" ? "var(--syung)" : "var(--ink)"}`,
 		children: [
-			/* @__PURE__ */ a("span", {
+			timed && /* @__PURE__ */ a("span", {
 				class: "js-t",
 				children: step.time
 			}),
 			/* @__PURE__ */ a("span", { class: "js-dot" }),
 			/* @__PURE__ */ a("div", {
 				class: "js-b",
-				children: [/* @__PURE__ */ a("b", { children: step.name }), step.sub !== null && /* @__PURE__ */ a("small", { children: step.sub })]
+				children: /* @__PURE__ */ a("b", { children: step.name })
 			})
 		]
 	});
 	if (step.kind === "walk") return /* @__PURE__ */ a("li", {
 		class: "js walk",
 		children: [
-			/* @__PURE__ */ a("span", { class: "js-t" }),
+			timed && /* @__PURE__ */ a("span", { class: "js-t" }),
 			/* @__PURE__ */ a("span", { class: "js-rail" }),
 			/* @__PURE__ */ a("div", {
 				class: "js-b",
-				children: /* @__PURE__ */ a("small", { children: [WALK, step.text] })
+				children: /* @__PURE__ */ a("small", { children: [
+					WALK,
+					step.text,
+					/* @__PURE__ */ a("span", {
+						class: "js-d",
+						children: step.detail
+					})
+				] })
+			})
+		]
+	});
+	if (step.kind === "board") return /* @__PURE__ */ a("li", {
+		class: "js node board",
+		style: `--c:${step.color}`,
+		children: [
+			timed && /* @__PURE__ */ a("span", {
+				class: "js-t",
+				children: step.time
+			}),
+			/* @__PURE__ */ a("span", { class: "js-dot" }),
+			/* @__PURE__ */ a("div", {
+				class: "js-b",
+				children: /* @__PURE__ */ a("b", { children: step.name })
+			})
+		]
+	});
+	if (step.kind === "alight") return /* @__PURE__ */ a("li", {
+		class: "js node alight",
+		style: `--c:${step.color}`,
+		children: [
+			timed && /* @__PURE__ */ a("span", {
+				class: "js-t",
+				children: step.time
+			}),
+			/* @__PURE__ */ a("span", { class: "js-dot" }),
+			/* @__PURE__ */ a("div", {
+				class: "js-b",
+				children: [/* @__PURE__ */ a("b", { children: step.name }), step.chips.length > 0 && /* @__PURE__ */ a(AlightChips, { chips: step.chips })]
 			})
 		]
 	});
@@ -325,23 +399,32 @@ function Step({ step }) {
 		class: "js ride",
 		style: `--c:${step.color};--t:${step.ink}`,
 		children: [
-			/* @__PURE__ */ a("span", { class: "js-t" }),
+			timed && /* @__PURE__ */ a("span", { class: "js-t" }),
 			/* @__PURE__ */ a("span", { class: "js-rail" }),
 			/* @__PURE__ */ a("div", {
 				class: "js-b",
-				children: [/* @__PURE__ */ a("p", { children: [/* @__PURE__ */ a("span", {
+				children: [/* @__PURE__ */ a("p", { children: [step.bus ? /* @__PURE__ */ a(BusChips, { chips: step.chips }) : /* @__PURE__ */ a("span", {
 					class: "js-chip",
-					children: [step.bus && BUS, step.chip]
-				}), step.toward] }), /* @__PURE__ */ a("small", { children: [/* @__PURE__ */ a(MoreText, {
-					text: step.text,
-					full: step.textAll,
-					more: step.more
-				}), step.live !== null && /* @__PURE__ */ a("span", {
+					children: step.chip
+				}), step.toward !== null && /* @__PURE__ */ a("span", {
+					class: "js-toward",
+					children: step.toward
+				})] }), (step.info !== "" || step.live !== null) && /* @__PURE__ */ a("small", { children: [step.info, step.live !== null && /* @__PURE__ */ a("span", {
 					class: "js-live",
 					children: step.live
 				})] })]
 			})
 		]
+	});
+}
+function StepList({ steps, className }) {
+	const timed = steps.some((step) => "time" in step && step.time !== null);
+	return /* @__PURE__ */ a("ol", {
+		class: timed ? className : `${className} notime`,
+		children: steps.map((step) => /* @__PURE__ */ a(Step, {
+			step,
+			timed
+		}))
 	});
 }
 var CARD_ROLE = { role: "button" };
@@ -357,7 +440,7 @@ function Card({ plan, index, on, hidden, actions }) {
 		hidden,
 		onClick: () => actions.card(index),
 		onKeyDown: (event) => {
-			if (event.key === "Enter" || event.key === " ") {
+			if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
 				event.preventDefault();
 				event.currentTarget.click();
 			}
@@ -386,24 +469,17 @@ function Card({ plan, index, on, hidden, actions }) {
 				]
 			}),
 			/* @__PURE__ */ a(Track, { segs: plan.track }),
-			/* @__PURE__ */ a("p", {
+			on && /* @__PURE__ */ a("p", {
 				class: "jp-meta",
 				children: [plan.meta, plan.live && /* @__PURE__ */ a("span", {
 					class: "jp-live",
 					children: "실시간"
 				})]
 			}),
-			plan.alt !== null && /* @__PURE__ */ a("p", {
-				class: "jp-alt",
-				children: /* @__PURE__ */ a(MoreText, {
-					text: plan.alt,
-					full: plan.altAll,
-					more: plan.altMore
-				})
-			}),
-			/* @__PURE__ */ a("ol", {
-				class: "jsteps",
-				children: plan.steps.map((step) => /* @__PURE__ */ a(Step, { step }))
+			"   ",
+			/* @__PURE__ */ a(StepList, {
+				steps: plan.steps,
+				className: "jsteps"
 			})
 		]
 	});
@@ -603,4 +679,4 @@ var drawJourney = (body, view, actions) => K(/* @__PURE__ */ a(JourneySheet, {
 	actions
 }), body);
 var clearJourney = (body) => K(null, body);
-export { JourneySheet, MoreText, RouteLoading, clearJourney, drawJourney };
+export { JourneySheet, RouteLoading, StepList, clearJourney, drawJourney };

@@ -724,7 +724,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	}
 	function focusChosen() {
 		const { chosen, routeFilter } = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
-		$("routeList").children[at]?.focus({ preventScroll: true });
+		($("routeList").children[at]?.querySelector(".rt-plan"))?.focus({ preventScroll: true });
 	}
 	function refilter() {
 		const { plans, route } = form(), routeFilter = routeFilterView(plans, routeKind);
