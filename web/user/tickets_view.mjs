@@ -1,4 +1,4 @@
-import { routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
+import { exitHints, routeTrack, sameRoutes } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { RouteLoading } from "../ui/journey_sheet.mjs";
@@ -149,9 +149,17 @@ function Card({ ticket, index }) {
 						class: chain === null ? "tk-chain wait" : "tk-chain",
 						dangerouslySetInnerHTML: { __html: chain ?? waiting }
 					}),
-					ticket.route && sameRoutes(ticket.route.legs) !== null && /* @__PURE__ */ a("p", {
-						class: "tk-alt",
-						children: sameRoutes(ticket.route.legs)
+					ticket.route && (exitHints(ticket.route.legs).length > 0 || sameRoutes(ticket.route.legs) !== null) && /* @__PURE__ */ a("div", {
+						class: "tk-alts",
+						children: [exitHints(ticket.route.legs).length > 0 && /* @__PURE__ */ a("p", {
+							class: "tk-alt",
+							title: exitHints(ticket.route.legs).join(" / "),
+							children: exitHints(ticket.route.legs).join(" / ")
+						}), sameRoutes(ticket.route.legs) !== null && /* @__PURE__ */ a("p", {
+							class: "tk-alt",
+							title: sameRoutes(ticket.route.legs),
+							children: sameRoutes(ticket.route.legs)
+						})]
 					}),
 					/* @__PURE__ */ a("p", {
 						class: "tk-time",
@@ -460,7 +468,7 @@ function PlacePage() {
 	})] });
 }
 function altHTML(legs) {
-	const note = sameRoutes(legs);
+	const note = [sameRoutes(legs), ...exitHints(legs)].filter(Boolean).join(" / ");
 	return note ? `<span class="jp-alt">${esc(note)}</span>` : "";
 }
 function planHTML(plan) {

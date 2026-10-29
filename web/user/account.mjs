@@ -606,17 +606,20 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	const nextRide = () => nextRideDay(form().days, form().time, /* @__PURE__ */ new Date());
 	const slimLeg = (l) => l.type === "walk" ? {
 		type: "walk",
-		seconds: Math.max(0, Math.round(l.seconds || 0))
+		seconds: Math.max(0, Math.round(l.seconds || 0)),
+		...l.exit ? { exit: l.exit } : {}
 	} : {
 		type: l.type,
 		...l.type === "bus" ? {
 			route: l.route,
 			color: l.color,
-			...l.alternatives?.length ? { alternatives: l.alternatives.map(({ route, color, departs, arrives }) => ({
+			...l.alternatives?.length ? { alternatives: l.alternatives.map(({ route, color, departs, arrives, boardAt, alightAt }) => ({
 				route,
 				color,
 				departs,
-				arrives
+				arrives,
+				...boardAt ? { boardAt } : {},
+				...alightAt ? { alightAt } : {}
 			})) } : {}
 		} : { line: l.line },
 		from: l.from,
