@@ -514,7 +514,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   // 고른 카드에 초점(목록은 조건의 차례대로라 plans 번호가 아니라 보이는 자리로 찾는다)
   function focusChosen() {
     const {chosen, routeFilter} = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
-    ($('routeList').children[at] as HTMLElement | undefined)?.focus({preventScroll: true});
+    ($('routeList').children[at]?.querySelector('.rt-plan') as HTMLElement | null)?.focus({preventScroll: true});
   }
   // 조건 바꾸기(종류): 받은 길을 다시 나눈다(서버를 다시 부르지 않는다). 저장된 경로가 보이면 그 카드, 아니면 처음 카드를 고르고 지도 길도 그 길로
   function refilter() {
