@@ -861,21 +861,23 @@ def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     t_begin = time.monotonic()
     t0 = when.timestamp()
-    # 구간이 걸어갈 만큼 가까우면 걷기도 그 구간 길 하나(plan 의 걸어가기와 같은 기준 — 탐색 예산 밖)
+    # 구간이 걸어갈 만큼 가까우면 걷기도 그 구간 길 하나(plan 의 걸어가기와 같은 기준). 걷기 조회(OSRM)는 탐색 전에 다 하고
+    # 탐색 예산(SEARCH_SECONDS)은 그 뒤부터 잰다 — 조회가 느려도 뒤 구간 탐색 몫을 먹지 않게(Codex 리뷰 2026-10-29)
     walk_a = walk_path(origin, via) if _meters(origin, via) < 2500 else None
+    walk_b = walk_path(via, dest) if _meters(via, dest) < 2500 else None
+    t_search = time.monotonic()
     found, searches = _gather(when, start, to_via, via, live, run_batch, workers, SEARCH_SECONDS * VIA_FIRST_SHARE,
                               walk_a[1] if walk_a else None)
     firsts = _via_firsts(_distinct(found))
     if walk_a and _shows_walk([r["arrive"] for r in firsts], walk_a[1], t0):
         firsts = [r for r in firsts if r["arrive"] < t0 + walk_a[1]] + [_walk_row(walk_a, origin, via, t0, "경유지까지 걸어서")]
-    walk_b = walk_path(via, dest) if _meters(via, dest) < 2500 else None
     both = frozenset({"subway", "bus"})
     # 뒤 구간: 앞 구간마다 같은 탈것으로 먼저(종류 그대로 남게), 못 찾은 것만 남은 예산에서 둘 다로 한 번 더
     backs = cast("list[Row | None]", [None] * len(firsts))   # 앞 구간 번호 → 이어 붙일 뒤 구간
     modes_of = [_MODES.get(_kind(r), both) if any(l["type"] != "walk" for l in r["legs"]) else both for r in firsts]
     for round_modes in (modes_of, [both] * len(firsts)):
         todo = [i for i, r in enumerate(backs) if r is None and (round_modes is modes_of or modes_of[i] != both)]
-        left = SEARCH_SECONDS - (time.monotonic() - t_begin)
+        left = SEARCH_SECONDS - (time.monotonic() - t_search)   # 앞 · 뒤 탐색에 쓴 시간만
         if not todo or left <= 0:
             continue
         ready = [datetime.fromtimestamp(_via_ready(firsts[i]), KST) for i in todo]

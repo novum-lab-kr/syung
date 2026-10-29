@@ -105,6 +105,21 @@ class ViaPlanTest(unittest.TestCase):
         self.assertEqual((result["ok"], result["plans"]), (False, []))
         self.assertIn("error", result)
 
+    def test_slow_walk_lookup_does_not_eat_the_search_budget(self):
+        # 출발 → 경유지가 2.5 km 안이라 걷기를 OSRM 에 묻는데 그 조회가 예산(4초)보다 오래 걸려도 뒤 구간은 찾는다(Codex 리뷰 2026-10-29)
+        clock = [1000.0]
+
+        def slow_walk(a, b):
+            clock[0] += graph.SEARCH_SECONDS + 2   # 걷기 조회 한 번에 6초
+            return [[a[1], a[0]], [b[1], b[0]]], 3600, 4000   # 한 시간 걷기 — 탈것이 이긴다
+        batches = Batches(lambda n: ride(f"A{n}", T0 + 1800) if n == 1 else None,
+                          lambda when, modes: ride("B", when.timestamp() + 600))
+        near = (37.545, 127.045)   # 경유지(VIA)에서 약 700 m
+        with patch.object(graph, "walk_path", slow_walk), patch.object(graph.time, "monotonic", lambda: clock[0]):
+            result = graph.plan_via(near, VIA, (37.545, 127.055), WHEN, {}, batches, 3)
+        self.assertTrue([c for c in batches.calls if c[0] != VIA], "뒤 구간을 찾았다")
+        self.assertTrue(result["ok"])
+
     def test_walk_legs_meet_at_the_via_point(self):
         walked = []
 
