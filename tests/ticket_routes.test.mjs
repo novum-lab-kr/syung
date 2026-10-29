@@ -1,4 +1,4 @@
-// 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 지배되는 길 · 한참 느린 길은 빼고 · '가장 빠른 길'은 늘 남긴다 — web/user/ticket_routes.mts
+// 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 한참 느린 길은 빼고 · '가장 빠른 길'은 늘 남긴다(조금 느린 다른 모양은 남김) — web/user/ticket_routes.mts
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, SLOW_LIMIT} from '../web/user/ticket_routes.mts';
@@ -19,14 +19,14 @@ test('same shape (lines + stations) is kept once — the quickest of them', () =
   assert.deepEqual(names(usefulRoutes([plan('slow twin', 34, shape), plan('fast twin', 31, shape)])), ['fast twin']);
 });
 
-test('a way that is slower and changes no less than another is dropped', () => {
+test('another shape 1~9 min slower stays even with no fewer changes', () => {
   const plans = [
     plan('fast', 30, [ride('2호선', 'A', 'B'), ride('3호선', 'B', 'C')], '가장 빠른 길'),
     plan('direct', 34, [ride('9호선', 'A', 'C')], '환승 적은 길'),
-    plan('dominated', 35, [ride('2호선', 'A', 'D'), ride('4호선', 'D', 'C')]),   // 30분 길보다 느리고 환승도 같다
-    plan('dominated by direct', 37, [ride('7호선', 'A', 'C')]),                    // 34분 바로 가는 길보다 느리고 환승 같다
+    plan('one min slower', 31, [ride('2호선', 'A', 'D'), ride('4호선', 'D', 'C')]),   // 30분 길보다 1분 느리고 환승도 같다
+    plan('slower than direct', 39, [ride('7호선', 'A', 'C')]),                        // 34분 바로 가는 길보다 느리고 환승 같다
   ];
-  assert.deepEqual(names(usefulRoutes(plans)), ['fast', 'direct']);
+  assert.deepEqual(names(usefulRoutes(plans)), ['fast', 'direct', 'one min slower', 'slower than direct']);
 });
 
 test(`a way much slower than the fastest (over max(${SLOW_LIMIT.minutes} min, ${SLOW_LIMIT.share * 100}%)) is dropped`, () => {
@@ -51,7 +51,8 @@ test("the '가장 빠른 길' tagged way always stays, and a lone way stays as i
   const walking = {name: 'walk', tag: '걸어가기', minutes: 18, transfers: 0, walkMinutes: 18, legs: [walk]};
   assert.equal(rideSig(walking), '');
   assert.deepEqual(names(usefulRoutes([plan('ride', 15, [ride('2호선', 'A', 'B'), ride('3호선', 'B', 'C')], '가장 빠른 길'), walking])), ['ride', 'walk']);
-  assert.deepEqual(names(usefulRoutes([plan('ride', 15, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride'], 'slower and no fewer changes: dropped like any way');
+  assert.deepEqual(names(usefulRoutes([plan('ride', 15, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride', 'walk'], 'slower but within the limit: stays');
+  assert.deepEqual(names(usefulRoutes([plan('ride', 7, [ride('2호선', 'A', 'C')], '가장 빠른 길'), walking])), ['ride'], 'over the limit: dropped like any way');
 });
 
 test('the card back takes the quickest way after filtering', () => {
