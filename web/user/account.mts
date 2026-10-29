@@ -481,7 +481,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   // ---- 지도에서 보기: 서랍을 닫고 지도에 길 전체, 아래 막대(길찾기 막대와 같은 모양)로 돌아온다 ----
   const mapBar = document.createElement('div');
   mapBar.className = 'jbar'; mapBar.hidden = true;
-  mapBar.innerHTML = '<button type="button" class="jbar-open"></button><button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+  mapBar.innerHTML = '<button type="button" class="jbar-open"></button><button type="button" class="jbar-x" aria-label="닫고 돌아가기" title="닫고 돌아가기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(mapBar);
   const mapBarOpen = mapBar.querySelector<HTMLElement>('.jbar-open')!;
   let mapShown:{ plan:Plan; back:()=>void } | null = null;
@@ -504,14 +504,16 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     mapBar.hidden = false;
     mapBarOpen.focus({preventScroll: true});
   }
-  mapBarOpen.addEventListener('click', e => {
+  // 막대 몸통 · ✕ 둘 다: 길을 지우고 서랍을 열어 보던 쪽 · 카드 · 초점으로 돌아간다
+  function mapBack(e:Event) {
     e.stopPropagation();   // 본체의 '서랍 밖을 눌렀나' 검사가 방금 연 서랍을 닫지 않게
     const back = mapShown?.back;
     mapGone();
     $('settingsButton').click();
     back?.();
-  });
-  mapBar.querySelector<HTMLElement>('.jbar-x')!.onclick = mapGone;
+  }
+  mapBarOpen.addEventListener('click', mapBack);
+  mapBar.querySelector<HTMLElement>('.jbar-x')!.addEventListener('click', mapBack);
   $('settingsButton').addEventListener('click', mapGone);   // 서랍을 다시 열면 승차권 길은 지운다
   routeMap?.onGone(mapGone);
   // 경로 선택 쪽: 고른 경로를 그대로(이미 받은 길)
