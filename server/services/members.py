@@ -104,6 +104,28 @@ def _clock(value: object, label: str) -> str:
     return value
 
 
+def _bus_color(value: object) -> str:
+    if not isinstance(value, str) or not COLOR.fullmatch(value):
+        raise ValueError("경로의 버스 색이 틀려요")
+    return value
+
+
+def _alternatives(value: object) -> list[dict[str, str]]:
+    """같은 구간 다른 버스(alternatives) → 많아야 3개, 번호 · 색 · 출발 · 도착만. 없으면 빈 목록."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(cast("list[Any]", value)) > 3:
+        raise ValueError("경로의 같은 구간 버스가 틀려요")
+    out: list[dict[str, str]] = []
+    for item in cast("list[Any]", value):
+        if not isinstance(item, dict):
+            raise ValueError("경로의 같은 구간 버스가 틀려요")
+        row = cast("dict[str, Any]", item)
+        out.append({"route": _text(row.get("route"), "버스 번호", 20), "color": _bus_color(row.get("color")),
+                    "departs": _clock(row.get("departs"), "출발 시각"), "arrives": _clock(row.get("arrives"), "도착 시각")})
+    return out
+
+
 def _leg(leg: object) -> dict[str, Any]:
     """길찾기(/api/route) 구간 하나 → 그리는 데 쓰는 칸만."""
     if not isinstance(leg, dict) or cast("dict[str, Any]", leg).get("type") not in ("walk", "ride", "bus"):
@@ -120,6 +142,9 @@ def _leg(leg: object) -> dict[str, Any]:
         if not isinstance(color, str) or not COLOR.fullmatch(color):
             raise ValueError("경로의 버스 색이 틀려요")
         out["color"] = color
+        alternatives = _alternatives(leg.get("alternatives"))
+        if alternatives:
+            out["alternatives"] = alternatives
     out.update({"from": _text(leg.get("from"), "타는 곳"), "to": _text(leg.get("to"), "내리는 곳"),
                 "departs": _clock(leg.get("departs"), "출발 시각"), "arrives": _clock(leg.get("arrives"), "도착 시각"),
                 "wait": _count(leg.get("wait"), "기다리는 시간", 6 * 3600)})
