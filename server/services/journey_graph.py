@@ -52,9 +52,8 @@ STATION_ACCESS = 90           # extra seconds to get between street and platform
 WALK_DETOUR, WALK_SPEED = 1.3, 1.2   # straight line × detour at m/s, for short transfer walks
 MAX_TRIP = 4 * 3600
 ASTAR_SPEED = 35.0            # m/s
-MAX_PLANS = 5                 # routes shown(2026-10-28 사용자 결정 B — 전엔 12). 태그 붙은 길은 늘 남긴다
-STOP_PLANS = 5                # 첫 탐색들(가장 빠른 · 환승 적은 · 지하철만 · 버스만)이 끝나고 보여 줄 길이 이만큼이면 멈춘다(SEARCH_SECONDS 는 상한)
-MAX_FOUND = 24                # 모아 둘 길 상한(전엔 MAX_PLANS * 2 = 24 — MAX_PLANS 가 줄어 따로 둔다)
+MAX_PLANS = 12                # routes shown(2026-10-29 사용자 결정 — #87 의 5개·일찍 멈추기를 되돌림). 태그 붙은 길은 늘 남긴다
+MAX_FOUND = 24                # 모아 둘 길 상한
 ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
 DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
@@ -649,7 +648,7 @@ def _undominated(found: list[Row]) -> list[Row]:
 
 def _pick_shown(plans: list[Row]) -> list[Row]:
     """도착 차례로 놓인 plans 에서 보여 줄 MAX_PLANS 개: 태그 붙은 길(가장 빠른 · 환승 적은 · 덜 걷는 · 걸어가기)을 먼저 남기고
-    나머지는 일찍 닿는 차례 — 남긴 것의 차례는 그대로(5개로 줄어 늦게 닿는 '환승 적은 길'이 잘리지 않게)."""
+    나머지는 일찍 닿는 차례 — 남긴 것의 차례는 그대로(늦게 닿는 '환승 적은 길'이 잘리지 않게)."""
     keep = sorted(range(len(plans)), key=lambda i: (plans[i]["tag"] == "", plans[i]["_arrive"]))[:MAX_PLANS]
     return [plans[i] for i in sorted(keep)]
 
@@ -665,21 +664,8 @@ def _shows_walk(arrives: list[float], walk_sec: int, t0: float) -> bool:
     return not arrives or walk_sec <= min(arrives) - t0 + 10 * 60
 
 
-def _shown_count(found: list[Row], best_arrive: float, walk_sec: int | None, t0: float) -> int:
-    """지금까지 찾은 것으로 보여 줄 수 있는 길 수(아래 plan 의 거르기와 같은 순서 · 값을 바꾸지 않는다) — 일찍 멈출지 볼 때.
-    walk_sec: 걸어가기 초(가까울 때만 — 아니면 None). 걸어가기가 붙으면 걷기보다 늦게 닿는 탈것 길은 빠지니 세지 않는다."""
-    firsts: dict[tuple[Any, ...], Row] = {}
-    for r in sorted((r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK), key=lambda r: r["arrive"]):
-        firsts.setdefault(_ride_key(r), r)
-    arrives = [r["arrive"] for r in _undominated(list(firsts.values()))]
-    if walk_sec is None or not _shows_walk(arrives, walk_sec, t0):
-        return len(arrives)
-    return 1 + sum(a < t0 + walk_sec for a in arrives)
-
-
 def _gather(when: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], dest: tuple[float, float], live: Live,
-            run_batch: Callable[[list[Job], float], list[Row | None]], workers: int, seconds: float,
-            walk_sec: int | None) -> tuple[list[Row], int]:
+            run_batch: Callable[[list[Job], float], list[Row | None]], workers: int, seconds: float) -> tuple[list[Row], int]:
     """탐색 결과 모으기 → (가장 빠른 것보다 ROUTE_SLACK 안에 닿는 길들, 탐색 수). seconds: 이 모으기의 예산(상한)."""
     both, subway, bus = frozenset({"subway", "bus"}), frozenset({"subway"}), frozenset({"bus"})
 
@@ -693,7 +679,6 @@ def _gather(when: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], des
     queue: list[tuple[frozenset[str], frozenset[Node], int]] = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
     if BUS:
         queue += [(subway, frozenset(), TIE_PENALTY), (bus, frozenset(), TIE_PENALTY)]
-    seeds = set(queue)   # 태그를 정하는 첫 탐색들 — 다 끝나야 일찍 멈출 수 있다
     searches = 0
     while queue and searches < MAX_SEARCHES and len(found) < MAX_FOUND:
         left = seconds - (time.monotonic() - t_start)
@@ -721,8 +706,6 @@ def _gather(when: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], des
                 for l in r["legs"]:
                     if l["type"] != "walk":
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
-        if seeds <= tried and _shown_count(found, best_arrive, walk_sec, when.timestamp()) >= STOP_PLANS:
-            break   # 태그를 정하는 탐색이 끝났고 보여 줄 길이 넉넉하다(2026-10-28 사용자 결정 B)
     return [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK], searches
 
 
@@ -847,10 +830,9 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     straight = _meters(origin, dest)
     t_begin = time.monotonic()
-    # close enough to just walk: 먼저 재 둔다 — 일찍 멈출지 셀 때 걷기보다 늦게 닿는 길은 빼야 해서(탐색 예산 밖)
+    # close enough to just walk
     walk = walk_path(origin, dest) if straight < 2500 else None
-    walk_sec = walk[1] if walk else None
-    found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS, walk_sec)
+    found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS)
     plans = _shaped(_distinct(found), origin, dest, when)
     if walk:   # close enough to just walk
         path, sec, metres = walk
@@ -1074,8 +1056,7 @@ def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[
     walk_a = walk_path(origin, via) if _meters(origin, via) < 2500 else None
     walk_b = walk_path(via, dest) if _meters(via, dest) < 2500 else None
     t_search = time.monotonic()
-    found, searches = _gather(when, start, to_via, via, live, run_batch, workers, SEARCH_SECONDS * VIA_FIRST_SHARE,
-                              walk_a[1] if walk_a else None)
+    found, searches = _gather(when, start, to_via, via, live, run_batch, workers, SEARCH_SECONDS * VIA_FIRST_SHARE)
     firsts = _via_firsts(_distinct(found))
     if walk_a and _shows_walk([r["arrive"] for r in firsts], walk_a[1], t0):
         firsts = [r for r in firsts if r["arrive"] < t0 + walk_a[1]] + [_walk_row(walk_a, origin, via, t0, "경유지까지 걸어서")]
