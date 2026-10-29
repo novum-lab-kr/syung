@@ -1,7 +1,7 @@
 // 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 다른 모양은 다 남긴다(느려도 · '가장 빠른 길'도 그대로) — web/user/ticket_routes.mts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeOrder, routeFilterView, chosenAfter, routeUrl} from '../web/user/ticket_routes.mts';
+import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeOrder, routeFilterView, chosenAfter, routeUrl, shortName} from '../web/user/ticket_routes.mts';
 
 const walk = {type: 'walk', seconds: 120};
 const ride = (line, from, to) => ({type: 'subway', line, from, to});
@@ -109,4 +109,12 @@ test('route url asks with the via only when there is one (경유지 2026-10-29)'
   assert.equal(routeUrl(from, to, '2026-10-30T08:30'), plain);
   assert.equal(routeUrl(from, to, '2026-10-30T08:30', null), plain, 'old tickets: same as before');
   assert.equal(routeUrl(from, to, '2026-10-30T08:30', {name: '성수역', lat: 37.5446, lng: 127.056}), `${plain}&via=37.5446,127.056`);
+});
+
+test('shortName: 10 letters or fewer without spaces stay whole, 11+ are shortened', () => {
+  assert.equal(shortName('위워크 삼성역'), '위워크 삼성역');
+  assert.equal(shortName('가나다라마 바사아자차'), '가나다라마 바사아자차');   // 띄어쓰기 빼면 10글자 → 그대로
+  assert.equal(shortName('가나다라마바사아자차'), '가나다라마바사아자차');   // 10글자
+  assert.equal(shortName('가나다라마바사아자차카'), '가나다‥차카');   // 11글자 → 앞 3 ‥ 뒤 2
+  assert.equal(shortName('가나다라마 바사아자차카'), '가나다‥차카');   // 띄어쓰기 빼면 11글자
 });

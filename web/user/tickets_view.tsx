@@ -8,7 +8,9 @@ import { Component, render } from 'preact';
 import { routeSteps, routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
 import { RouteLoading, StepList } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드 · 단계 목록: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
+import { shortName } from './ticket_routes.mts';
 import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
+export { shortName };   // 이름 줄이기는 시험할 수 있게 ticket_routes.mts 에 둔다
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
 export interface Place { name:string; lat:number; lng:number }
@@ -25,7 +27,6 @@ const QUICK = [['1,2,3,4,5', '평일'], ['6,7', '주말'], ['1,2,3,4,5,6,7', '�
 export const esc = (text:unknown) => String(text).replace(/[&<>"']/g, mark => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[mark]!);
 const todayDay = () => (new Date().getDay() + 6) % 7 + 1;   // 1(월) … 7(일)
 const daysText = (days:number[]) => days.length ? days.map(day => DAYS[day - 1]).join(' ') : '없음';
-export const shortName = (name:string) => name.length >= 7 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;   // 긴 이름은 앞 3 ‥ 뒤 2
 // 출발 시각 글자: '오전' · '8:00'(발권 화면 시각 칸 · 경로 선택 머리말)
 export function timeParts(time:string) {
   const [hour, minute] = (time || '08:00').split(':').map(Number) as [number, number];
