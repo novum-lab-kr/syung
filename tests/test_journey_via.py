@@ -142,6 +142,120 @@ class ViaPlanTest(unittest.TestCase):
         self.assertEqual(plans[0]["walkMinutes"], 2)
 
 
+STATION_VIA = (37.5193, 127.0539)   # 청담역(442) 중심에서 20 m — 카카오 '청담역 7호선' 좌표
+CHEONGDAM, STOP, OTHER = 442, 0, 1   # 역 · 출구 가까운 정류장 · 그 정류장에서 걸어가는 정류장(가짜 버스 자료 번호)
+
+
+def leg(kind, name, frm, to, **extra):
+    """탐색 결과 구간 하나(_search 가 만드는 칸만)."""
+    base = {"type": kind, "from": frm, "to": to, "stops": 2, "departs": "08:20", "arrives": "08:30", "seconds": 600,
+            "_dep": T0 + 1200, "color": "#3d5bab"}
+    if kind == "ride":
+        base |= {"line": name, "direction": "장암행" if name == "7호선" else None, "stations": [440, 441, CHEONGDAM],
+                 "_ban": [(name, 440), (name,)]}
+    else:
+        base |= {"route": name, "path": [[127.0, 37.5], [127.05, 37.52]], "_ban": [("bus", 9, STOP), ("bus", 9)]}
+    return base | extra
+
+
+def end_walk(name):
+    return {"type": "walk", "seconds": 0, "metres": 0, "exit": "", "from": name, "point": STATION_VIA, "label": f"{name}역에서 목적지까지"}
+
+
+def start_walk(name, seconds):
+    return {"type": "walk", "seconds": seconds, "metres": 0, "exit": "", "to": name, "point": STATION_VIA, "label": f"{name}역까지"}
+
+
+class StationViaTest(unittest.TestCase):
+    """경유지가 역 · 정류장이면 좌표까지 걷지 않고 그 역 · 정류장에서 갈아탄다(2026-10-29 사용자 결정)."""
+
+    def setUp(self):
+        stops = [["청담역.경기고교", 37.5197, 127.0550], ["진흥아파트.청담역", 37.5199, 127.0560]]
+        patches = [patch.object(graph, "BUS", True), patch.object(graph, "BSTOPS", stops),
+                   patch.object(graph, "STATION_BUS", {CHEONGDAM: [(STOP, 80.0, (37.5195, 127.0545))]}),
+                   patch.object(graph, "BUS_STATION", {STOP: [(CHEONGDAM, 80.0, (37.5195, 127.0545))]}),
+                   patch.object(graph, "BUS_WALK", [[(OTHER, 90.0)], []]),
+                   patch.object(graph, "_near_nodes", lambda point: []),
+                   patch.object(graph, "_walk_table", lambda point, nodes, reverse=False: {}),
+                   patch.object(graph, "_data", {"transfer": {str(CHEONGDAM): 150}, "defaultTransfer": 120})]
+        for active in patches:
+            active.start()
+            self.addCleanup(active.stop)
+        self.jobs = []
+
+    def batches(self, first, second):
+        def run(jobs, seconds):
+            self.jobs += jobs
+            return [first if toward == STATION_VIA else second(start) for _w, start, *_rest, toward in jobs]
+        return run
+
+    def test_station_and_its_stops_are_the_via(self):
+        self.assertEqual(graph._via_nodes(STATION_VIA), [("at", CHEONGDAM), ("bs", STOP)])
+        self.assertEqual(graph._via_nodes((37.53, 127.06)), [], "역 · 정류장이 아닌 곳(건물)은 지금처럼 좌표")
+
+    def test_subway_then_bus_from_the_stop_near_the_station(self):
+        # 재현: 7호선 먹골 → 청담 하차 → 청담역 근처 정류장 143 — 좌표(역 중심)까지 걸었다 돌아가지 않는다
+        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("ride", "7호선", "먹골", "청담"), end_walk("청담")]}
+        second = {"leave": T0 + 2000, "arrive": T0 + 2900, "legs": [start_walk("청담역.경기고교", 172), leg("bus", "143", "청담역.경기고교", "무역센터", _stop=5)]}
+        result = graph.plan_via(ORIGIN, STATION_VIA, DEST, WHEN, {}, self.batches(first, lambda start: second), 3)
+        goal = self.jobs[0][2]
+        self.assertEqual(sorted(goal), [("at", CHEONGDAM), ("bs", STOP)])
+        self.assertTrue(all(w[0] == 0 for w in goal.values()), "역 · 근처 정류장에 닿으면 끝(걷기 0)")
+        seconds = [j for j in self.jobs if j[-1] == DEST]
+        self.assertEqual(seconds[0][0].timestamp(), T0 + 1800, "뒤 구간은 내린 시각부터(갈아타기 시간은 시작 걷기에)")
+        start = seconds[0][1]
+        self.assertEqual(start[("at", CHEONGDAM)][0], 150, "같은 역 갈아타기 시간")
+        self.assertEqual(start[("bs", STOP)][0], graph._walk_sec(80.0) + graph.STATION_ACCESS, "역 ↔ 근처 정류장은 탐색의 환승 걷기 그대로")
+        legs = result["plans"][0]["legs"]
+        self.assertEqual([l["type"] for l in legs], ["ride", "walk", "bus"])
+        self.assertEqual(legs[1]["label"], "청담역에서 청담역.경기고교 정류장으로")
+        self.assertEqual(legs[1]["seconds"], graph._walk_sec(80.0) + graph.STATION_ACCESS)
+        self.assertTrue(all(k not in l for l in legs for k in ("_stop", "_dep", "_ban", "point", "a", "b")))
+        self.assertEqual(result["plans"][0]["transfers"], 1)
+
+    def test_same_train_through_the_via_station_is_one_leg(self):
+        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("ride", "7호선", "먹골", "청담"), end_walk("청담")]}
+        on = leg("ride", "7호선", "청담", "강남구청", stations=[CHEONGDAM, 443, 444], arrives="08:40", stops=2)
+        second = {"leave": T0 + 2000, "arrive": T0 + 2500, "legs": [start_walk("청담", 150), on]}
+        plans = graph.plan_via(ORIGIN, STATION_VIA, DEST, WHEN, {}, self.batches(first, lambda start: second), 3)["plans"]
+        legs = plans[0]["legs"]
+        self.assertEqual(len(legs), 1, "내렸다 같은 열차를 다시 타는 것처럼 보이지 않게")
+        self.assertEqual((legs[0]["from"], legs[0]["to"], legs[0]["stops"], legs[0]["arrives"]), ("먹골", "강남구청", 4, "08:40"))
+        self.assertEqual(legs[0]["stations"], [440, 441, CHEONGDAM, 443, 444])
+        self.assertEqual(plans[0]["transfers"], 0)
+
+    def test_turning_back_on_the_same_line_stays_two_legs(self):
+        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("ride", "7호선", "먹골", "청담"), end_walk("청담")]}
+        back = leg("ride", "7호선", "청담", "먹골", stations=[CHEONGDAM, 441, 440], direction="장암행")
+        second = {"leave": T0 + 2000, "arrive": T0 + 2500, "legs": [start_walk("청담", 150), back]}
+        legs = graph.plan_via(ORIGIN, STATION_VIA, DEST, WHEN, {}, self.batches(first, lambda start: second), 3)["plans"][0]["legs"]
+        self.assertEqual(len(legs), 2)
+
+    def test_same_bus_through_the_via_stop_is_one_leg(self):
+        stop_via = (37.53, 127.06)   # 역에서 먼 정류장(거리는 아래 _stops_near 대역이 정한다)
+        first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("bus", "143", "먹골역", "청담역.경기고교", arrives="08:30", _stop=STOP),
+                                                                {**end_walk("청담역.경기고교"), "point": stop_via}]}
+        on = leg("bus", "143", "청담역.경기고교", "무역센터", departs="08:30", arrives="08:45", path=[[127.05, 37.52], [127.06, 37.51]], _stop=7)
+        seen = []
+
+        def batches(jobs, seconds):
+            seen.extend(job[1] for job in jobs if job[-1] == DEST)
+            return [first if toward == stop_via else {"leave": T0 + 1800, "arrive": T0 + 2700, "legs": [start_walk("청담역.경기고교", 0), on]}
+                    for *_head, toward in jobs]
+        # 이름이 같은 길 건너편(OTHER 를 같은 이름으로)은 경유지, 이름이 다르면 아니다
+        with patch.object(graph, "_stops_near", lambda point, radius: [(5.0, STOP)] if radius < 100 else [(5.0, STOP), (90.0, OTHER)]):
+            self.assertEqual(graph._via_nodes(stop_via), [("bs", STOP)])
+            with patch.object(graph, "BSTOPS", [["청담역.경기고교", 37.5197, 127.0550], ["청담역.경기고교", 37.5199, 127.0560]]):
+                self.assertEqual(graph._via_nodes(stop_via), [("bs", STOP), ("bs", OTHER)])
+            plans = graph.plan_via(ORIGIN, stop_via, DEST, WHEN, {}, batches, 3)["plans"]
+        self.assertEqual(seen[0][("bs", STOP)][0], 0, "버스에서 내린 정류장에서 바로")
+        self.assertIn(("bs", OTHER), seen[0], "이어 걷는 정류장")
+        self.assertIn(("at", CHEONGDAM), seen[0], "가까운 역")
+        legs = plans[0]["legs"]
+        self.assertEqual([(l["type"], l["from"], l["to"], l["stops"]) for l in legs], [("bus", "먹골역", "무역센터", 4)])
+        self.assertEqual(legs[0]["path"], [[127.0, 37.5], [127.05, 37.52], [127.06, 37.51]])
+        self.assertEqual(plans[0]["transfers"], 0)
+
 class ViaRouteTest(unittest.TestCase):
     def setUp(self):
         self.planner = SimpleNamespace(plan=Mock(return_value={"ok": True, "plans": []}))
