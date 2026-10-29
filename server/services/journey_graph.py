@@ -656,16 +656,10 @@ def _shown_count(found: list[Row], best_arrive: float, walk_sec: int | None, t0:
     return 1 + sum(a < t0 + walk_sec for a in arrives)
 
 
-def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
-         run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
-    """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
-    start = _walk_table(origin, _near_nodes(origin))
-    goal = _walk_table(dest, _near_nodes(dest), reverse=True)
-    straight = _meters(origin, dest)
-    t_begin = time.monotonic()
-    # close enough to just walk: 먼저 재 둔다 — 일찍 멈출지 셀 때 걷기보다 늦게 닿는 길은 빼야 해서(탐색 예산 밖)
-    walk = walk_path(origin, dest) if straight < 2500 else None
-    walk_sec = walk[1] if walk else None
+def _gather(when: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], dest: tuple[float, float], live: Live,
+            run_batch: Callable[[list[Job], float], list[Row | None]], workers: int, seconds: float,
+            walk_sec: int | None) -> tuple[list[Row], int]:
+    """탐색 결과 모으기 → (가장 빠른 것보다 ROUTE_SLACK 안에 닿는 길들, 탐색 수). seconds: 이 모으기의 예산(상한)."""
     both, subway, bus = frozenset({"subway", "bus"}), frozenset({"subway"}), frozenset({"bus"})
 
     # Many routes: the fastest by each mode, then, breadth first, the same search with one more
@@ -681,7 +675,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     seeds = set(queue)   # 태그를 정하는 첫 탐색들 — 다 끝나야 일찍 멈출 수 있다
     searches = 0
     while queue and searches < MAX_SEARCHES and len(found) < MAX_FOUND:
-        left = SEARCH_SECONDS - (time.monotonic() - t_start)
+        left = seconds - (time.monotonic() - t_start)
         if left <= 0:
             break
         # a batch: the searches known so far, run side by side (_run_batch)
@@ -708,9 +702,11 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
         if seeds <= tried and _shown_count(found, best_arrive, walk_sec, when.timestamp()) >= STOP_PLANS:
             break   # 태그를 정하는 탐색이 끝났고 보여 줄 길이 넉넉하다(2026-10-28 사용자 결정 B)
-    found = [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK]
+    return [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK], searches
 
-    transfers, walking = _transfers, _walking
+
+def _distinct(found: list[Row]) -> list[Row]:
+    """같은 두 정류장 사이 버스는 한 길(먼저 닿는 것 + 다른 번호는 alts) · 같은 종류에서 한참 늦고 나을 게 없는 길은 뺀다."""
     # buses between the same two stops are one way to go: keep the first to arrive, list the others
     groups: dict[tuple[Any, ...], Row] = {}
     for r in sorted(found, key=lambda r: r["arrive"]):
@@ -722,10 +718,13 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
         for k, l in zip(kept, [l for l in r["legs"] if l["type"] != "walk"]):
             if l["type"] == "bus" and l["route"] != k["route"] and l["route"] not in k.setdefault("alts", []):
                 k["alts"].append(l["route"])
-    found = list(groups.values())
     # of one kind, drop a way that is DOMINATED_LATE later than another and changes and walks no less
-    found = _undominated(found)
+    return _undominated(list(groups.values()))
 
+
+def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, float], when: datetime) -> list[Row]:
+    """길들 → 응답의 plans 칸(태그 · 걷기 모양 · 분 · 환승 …, 차례를 고를 때 쓰는 _arrive 붙임)."""
+    transfers, walking = _transfers, _walking
     # tags: the fastest, the fewest changes, the least walking (each once)
     tags: dict[int, str] = {}
     if found:
@@ -757,10 +756,38 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
                 l.pop("_dep")
                 l.pop("_ban")
         transit = [l for l in legs if l["type"] != "walk"]
-        plans.append({"tag": tag, "kind": _kind(r), "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
+        plans.append({"tag": tag, "kind": _kind(r) if transit else "walk", "leaveBy": _fmt(r["leave"]), "arrives": _fmt(r["arrive"]),
                       "minutes": round((r["arrive"] - when.timestamp()) / 60), "transfers": max(0, len(transit) - 1),
                       "walkMinutes": round(sum(l["seconds"] for l in legs if l["type"] == "walk") / 60), "legs": legs,
                       "_arrive": r["arrive"]})
+    return plans
+
+
+def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_begin: float) -> Row:
+    """도착 차례 → 보여 줄 MAX_PLANS 개 → 환승 많은 길 뒤로 → 응답."""
+    plans.sort(key=lambda p: p["_arrive"])
+    plans = _easy_first(_pick_shown(plans))
+    for p in plans:
+        del p["_arrive"]
+    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
+           "searched": {"searches": searches, "seconds": round(time.monotonic() - t_begin, 1)}}
+    if not plans:
+        out["error"] = "이 시각에는 다니는 열차·버스가 없거나, 가까운 역·정류장에서 이어지는 경로를 찾지 못했어요."
+    return out
+
+
+def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
+         run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
+    """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
+    start = _walk_table(origin, _near_nodes(origin))
+    goal = _walk_table(dest, _near_nodes(dest), reverse=True)
+    straight = _meters(origin, dest)
+    t_begin = time.monotonic()
+    # close enough to just walk: 먼저 재 둔다 — 일찍 멈출지 셀 때 걷기보다 늦게 닿는 길은 빼야 해서(탐색 예산 밖)
+    walk = walk_path(origin, dest) if straight < 2500 else None
+    walk_sec = walk[1] if walk else None
+    found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS, walk_sec)
+    plans = _shaped(_distinct(found), origin, dest, when)
     if walk:   # close enough to just walk
         path, sec, metres = walk
         if _shows_walk([p["_arrive"] for p in plans], sec, when.timestamp()):
@@ -772,12 +799,100 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     walk_only = [p["_arrive"] for p in plans if p["tag"] == "걸어가기"]
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
-    plans.sort(key=lambda p: p["_arrive"])
-    plans = _easy_first(_pick_shown(plans))
-    for p in plans:
-        del p["_arrive"]
-    out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
-           "searched": {"searches": searches, "seconds": round(time.monotonic() - t_begin, 1)}}
-    if not plans:
-        out["error"] = "이 시각에는 다니는 열차·버스가 없거나, 가까운 역·정류장에서 이어지는 경로를 찾지 못했어요."
-    return out
+    return _finish(plans, when, straight, searches, t_begin)
+
+
+# ---- 경유지(via): 출발 → 경유지 길 몇 개 × 그 길이 닿은 시각부터 경유지 → 도착 가장 빠른 길(2026-10-29 사용자 결정 A) ----
+VIA_FIRST = 4                 # 이어 붙일 앞 구간 길 수(종류마다 가장 빠른 것 먼저, 나머지는 일찍 닿는 차례)
+VIA_FIRST_SHARE = 0.6         # 앞 구간 모으기가 쓸 탐색 예산 몫(나머지는 뒤 구간 — 둘 합쳐 SEARCH_SECONDS 를 넘지 않는다)
+_MODES = {"subway": frozenset({"subway"}), "bus": frozenset({"bus"})}   # 앞 구간 종류 → 뒤 구간을 찾을 탈것(섞어 · 걷기는 둘 다)
+
+
+def _via_firsts(found: list[Row]) -> list[Row]:
+    """이어 붙일 앞 구간 길(도착 차례 · 많아야 VIA_FIRST 개): 종류(지하철만 · 버스만 · 섞어)마다 가장 빨리 닿는 것을 먼저 넣고 나머지는 일찍 닿는 차례
+    — 뒤 구간을 같은 탈것으로 찾아 붙이니 이어 붙인 길에도 지하철만 · 버스만 길이 남는다(조건 바꾸기)."""
+    ordered = sorted(found, key=lambda r: r["arrive"])
+    picked: list[Row] = []
+    for kind in ("subway", "bus", "mixed"):
+        first = next((r for r in ordered if _kind(r) == kind), None)
+        if first is not None:
+            picked.append(first)
+    picked += [r for r in ordered if all(r is not p for p in picked)]
+    return sorted(picked[:VIA_FIRST], key=lambda r: r["arrive"])
+
+
+def _via_ready(r: Row) -> float:
+    """앞 구간이 경유지에 닿은 뒤 뒤 구간을 찾을 시각: 지하철에서 내렸으면 그 역의 갈아타기 여유(탐색의 환승 시간 규칙과 같은 값)를 더한다."""
+    rides = [l for l in r["legs"] if l["type"] != "walk"]
+    if rides and rides[-1]["type"] == "ride":
+        return r["arrive"] + _data["transfer"].get(str(rides[-1]["stations"][-1]), _data["defaultTransfer"])
+    return r["arrive"]
+
+
+def _walk_row(walk: tuple[list[list[float]], int, int], a: tuple[float, float], b: tuple[float, float], t0: float, label: str) -> Row:
+    """걸어서만 가는 구간 하나(탐색 결과와 같은 모양 — 걷기 모양은 _shaped 가 a · b 로 다시 잰다)."""
+    _path, sec, metres = walk
+    return {"legs": [{"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "label": label, "a": a, "b": b}],
+            "leave": t0, "arrive": t0 + sec}
+
+
+def _via_join(first: Row, second: Row, via: tuple[float, float]) -> Row:
+    """앞 구간 + 뒤 구간 → 한 길. 경유지 쪽 걷기는 경유지 좌표로 잇고(a · b) 이름표는 '경유지까지'.
+    경유지에서 내렸다 같은 노선을 다시 타도 하나로 합치지 않는다(두 구간 그대로 — 계획서 결정)."""
+    legs = [dict(l) for l in first["legs"]] + [dict(l) for l in second["legs"]]   # 구간마다 따로 고쳐 쓴다(같은 앞 구간을 여러 길이 같이 쓴다)
+    head = len(first["legs"])
+    last, nxt = legs[head - 1], legs[head]
+    if last["type"] == "walk" and "point" in last and "to" not in last:   # 앞 구간 끝 걷기(역 · 정류장 → 경유지)
+        last["a"], last["b"] = last.pop("point"), via
+        last["label"] = str(last["label"]).replace("목적지까지", "경유지까지")
+    if nxt["type"] == "walk" and "point" in nxt and "to" in nxt:   # 뒤 구간 첫 걷기(경유지 → 역 · 정류장)
+        nxt["a"], nxt["b"] = via, nxt.pop("point")
+    return {"legs": legs, "leave": first["leave"], "arrive": second["arrive"]}
+
+
+def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
+             run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
+    """출발 → 경유지 → 도착. 앞 구간은 plan 과 같은 모으기(예산 VIA_FIRST_SHARE 몫)로 찾고, 그 가운데 VIA_FIRST 개마다
+    그 길이 경유지에 닿은 시각(+ 갈아타기 여유)부터 뒤 구간 가장 빠른 길을 같은 탈것으로(없으면 둘 다로) 찾아 이어 붙인다.
+    이어 붙인 길에 거르기 · 태그 · 5개 고르기 · 환승 많은 길 뒤로를 그대로 쓴다. 응답 모양은 plan 과 같다."""
+    start = _walk_table(origin, _near_nodes(origin))
+    to_via = _walk_table(via, _near_nodes(via), reverse=True)
+    from_via = _walk_table(via, _near_nodes(via))
+    goal = _walk_table(dest, _near_nodes(dest), reverse=True)
+    t_begin = time.monotonic()
+    t0 = when.timestamp()
+    # 구간이 걸어갈 만큼 가까우면 걷기도 그 구간 길 하나(plan 의 걸어가기와 같은 기준 — 탐색 예산 밖)
+    walk_a = walk_path(origin, via) if _meters(origin, via) < 2500 else None
+    found, searches = _gather(when, start, to_via, via, live, run_batch, workers, SEARCH_SECONDS * VIA_FIRST_SHARE,
+                              walk_a[1] if walk_a else None)
+    firsts = _via_firsts(_distinct(found))
+    if walk_a and _shows_walk([r["arrive"] for r in firsts], walk_a[1], t0):
+        firsts = [r for r in firsts if r["arrive"] < t0 + walk_a[1]] + [_walk_row(walk_a, origin, via, t0, "경유지까지 걸어서")]
+    walk_b = walk_path(via, dest) if _meters(via, dest) < 2500 else None
+    both = frozenset({"subway", "bus"})
+    # 뒤 구간: 앞 구간마다 같은 탈것으로 먼저(종류 그대로 남게), 못 찾은 것만 남은 예산에서 둘 다로 한 번 더
+    backs = cast("list[Row | None]", [None] * len(firsts))   # 앞 구간 번호 → 이어 붙일 뒤 구간
+    modes_of = [_MODES.get(_kind(r), both) if any(l["type"] != "walk" for l in r["legs"]) else both for r in firsts]
+    for round_modes in (modes_of, [both] * len(firsts)):
+        todo = [i for i, r in enumerate(backs) if r is None and (round_modes is modes_of or modes_of[i] != both)]
+        left = SEARCH_SECONDS - (time.monotonic() - t_begin)
+        if not todo or left <= 0:
+            continue
+        ready = [datetime.fromtimestamp(_via_ready(firsts[i]), KST) for i in todo]
+        jobs = [(at, from_via, goal, live if (at - when).total_seconds() < REALTIME_HORIZON else {}, TIE_PENALTY, cast("frozenset[Node]", frozenset()),
+                 round_modes[i], math.inf, dest) for i, at in zip(todo, ready)]
+        searches += len(jobs)
+        for i, r in zip(todo, run_batch(jobs, left)):
+            backs[i] = r
+    joined: list[Row] = []
+    for i, first in enumerate(firsts):
+        ready = _via_ready(first)
+        second = backs[i]
+        if walk_b and (second is None or _shows_walk([second["arrive"]], walk_b[1], ready)):
+            ride_b = second if second is not None and second["arrive"] < ready + walk_b[1] else None
+            second = ride_b or _walk_row(walk_b, via, dest, ready, "목적지까지 걸어서")
+        if second is not None:
+            joined.append(_via_join(first, second, via))
+    best = min((r["arrive"] for r in joined), default=math.inf)
+    joined = [r for r in joined if r["arrive"] <= best + ROUTE_SLACK]
+    return _finish(_shaped(_distinct(joined), origin, dest, when), when, _meters(origin, dest), searches, t_begin)

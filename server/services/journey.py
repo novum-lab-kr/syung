@@ -74,9 +74,13 @@ class JourneyPlanner:
             out.append(search_job(j) if time.monotonic() < end else None)
         return out
 
-    def plan(self, origin: tuple[float, float], dest: tuple[float, float], when: datetime) -> dict[str, Any]:
+    def plan(self, origin: tuple[float, float], dest: tuple[float, float], when: datetime,
+             via: tuple[float, float] | None = None) -> dict[str, Any]:
         """when 이 지금 ±1시간이면 실시간 열차를 붙인다 — 들고 있는 지하철 캐시로 바로(지났으면 새로 받기는 배경에서,
-        2026-10-28 결정 E: 길찾기가 서울 API 를 기다리지 않는다 · 실시간이 한 주기 늦을 수 있음). 그 밖의 시각이면 부르지 않는다."""
+        2026-10-28 결정 E: 길찾기가 서울 API 를 기다리지 않는다 · 실시간이 한 주기 늦을 수 있음). 그 밖의 시각이면 부르지 않는다.
+        via: 경유지(있으면 출발 → 경유지 → 도착을 이어 붙인 길 — journey_graph.plan_via)."""
         near_now = abs((when - datetime.now(KST)).total_seconds()) < 3600
         live = self.live.all_lines_now() if self.live and near_now else cast("dict[str, Any]", {})
+        if via is not None:
+            return self._graph().plan_via(origin, via, dest, when, live, self._run_batch, self.config.workers)
         return self._graph().plan(origin, dest, when, live, self._run_batch, self.config.workers)
