@@ -735,8 +735,9 @@ def _distinct(found: list[Row]) -> list[Row]:
     return _undominated(list(groups.values()))
 
 
-def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, float], when: datetime) -> list[Row]:
-    """길들 → 응답의 plans 칸(태그 · 걷기 모양 · 분 · 환승 …, 차례를 고를 때 쓰는 _arrive 붙임)."""
+def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, float], when: datetime,
+            goal: dict[Node, Walk] | None = None) -> list[Row]:
+    """길들 → 응답의 plans 칸(태그 · 걷기 모양 · 분 · 환승 …, 차례를 고를 때 쓰는 _arrive 붙임). goal: 목적지 걷기 표 — 마지막 탈것의 다른 버스 후보를 가를 때."""
     transfers, walking = _transfers, _walking
     # tags: the fastest, the fewest changes, the least walking (each once)
     tags: dict[int, str] = {}
@@ -773,7 +774,8 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
                     # 앞 · 뒤가 지하철 갈아타기(걷기 하나 사이)면 그 역 — 옆 정류장 안내의 가까운 출구를 찾는 데 쓴다
                     before = legs[i - 2]["stations"][-1] if i >= 2 and legs[i - 1]["type"] == "walk" and legs[i - 2]["type"] == "ride" else None
                     after = legs[i + 2]["stations"][0] if i + 2 < len(legs) and legs[i + 1]["type"] == "walk" and legs[i + 2]["type"] == "ride" else None
-                    l["_alt"] = (l["_ban"][0][2], (*l.get("_via", ()), l["_stop"]), ready, l["_dep"], l["_arr"], before, after)
+                    last_ride = goal is not None and all(x["type"] == "walk" for x in legs[i + 1:])   # 뒤에 목적지까지 걷기만 남은 마지막 탈것
+                    l["_alt"] = (l["_ban"][0][2], (*l.get("_via", ()), l["_stop"]), ready, l["_dep"], l["_arr"], before, after, r["arrive"] if last_ride else None)
                 l.pop("_dep")
                 l.pop("_ban")
                 for k in ("_stop", "_run", "_stay", "_arr", "_via"):   # 경유지 역 · 정류장에서 이어 갈 자리 · 같은 차량 알아보기(plan_via) — 응답에는 안 싣는다
@@ -821,14 +823,22 @@ def _stop_note(stop: int, metres: float, sid: int | None) -> Row:
     return note
 
 
-def _alternatives(alt: tuple[Any, ...], route: str, day0: float) -> list[Row]:
+def _alternatives(alt: tuple[Any, ...], route: str, day0: float, goal: dict[Node, Walk] | None = None) -> list[Row]:
     """고른 버스 구간(alt = 타는 정류장, 지나 내리는 정류장들(경유지에서 이어 탔으면 경유 정류장 포함 · 차례대로), 정류장에 닿은 때, 떠난 때, 닿은 때,
-    [앞 구간에서 내린 역 | None, 뒤 구간에서 탈 역 | None])과 같은 구간을 가는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지).
+    [앞 구간에서 내린 역 | None, 뒤 구간에서 탈 역 | None, 길이 목적지에 닿는 때 | None(마지막 탈것일 때만)])과 같은 구간을 가는 다른 노선(노선마다 가장 먼저 떠나는 한 대 · 먼저 떠나는 순 · MAX_ALTERNATIVES 개까지).
     타는 정류장 · (경유지 없는 구간의) 내리는 정류장은 걸어서 이어지는 옆 정류장도 된다 — 옆 정류장은 걷는 시간만큼 늦게 닿는 것으로 보고
-    (이미 떠난 버스는 뺀다), 응답에 boardAt · alightAt(이름 · 정류장 번호 · 거리 · 출구)을 싣는다. 같은 정류장이면 칸이 없다."""
+    (이미 떠난 버스는 뺀다), 응답에 boardAt · alightAt(이름 · 정류장 번호 · 거리 · 출구)을 싣는다. 같은 정류장이면 칸이 없다.
+    마지막 탈것(뒤에 목적지까지 걷기만 남음)이면 내리는 정류장 후보를 거리 대신 '내려서 목적지까지 걸어 닿는 때'로 가른다 —
+    goal 표에 든 정류장 어디든, 닿는 때가 고른 길보다 ALT_ARRIVE_LATE 안이면 후보(응답 alightAt 에 목적지까지 걷는 분 destMinutes)."""
     from_stop, onward, ready, dep, arr = alt[:5]
     board_sid, alight_sid = (alt[5], alt[6]) if len(alt) >= 7 else (None, None)
+    final = alt[7] if len(alt) >= 8 else None
     ends = _nearby(onward[-1]) if len(onward) == 1 else [(onward[-1], 0.0)]   # 경유지가 있으면 내리는 곳은 그 정류장 그대로
+    tails: dict[int, int] = {}   # 내리는 정류장 → 거기서 목적지까지 걷는 초(마지막 탈것일 때만)
+    if final is not None and goal:
+        tails = {node[1]: walk[0] for node, walk in goal.items() if node[0] == "bs"}
+        here = (BSTOPS[onward[-1]][1], BSTOPS[onward[-1]][2])
+        ends = [*ends, *((stop, _meters(here, (BSTOPS[stop][1], BSTOPS[stop][2]))) for stop in tails if all(stop != e for e, _ in ends))]
     best: dict[str, tuple[float, float, float, str, int, float, int, float]] = {}
     for board, board_m in _nearby(from_stop):
         for pi, k in BUS_AT.get(board, ()):
@@ -848,7 +858,12 @@ def _alternatives(alt: tuple[Any, ...], route: str, day0: float) -> list[Row]:
                     continue
                 start, scale, left = nxt
                 leaves, gets = day0 + left, day0 + start + p["t"][j] * scale
-                if leaves > dep + ALT_DEPART_WITHIN or gets + (_walk_sec(end_m) if end_m else 0) > arr + ALT_ARRIVE_LATE:
+                if leaves > dep + ALT_DEPART_WITHIN:
+                    continue
+                if end in tails:   # 마지막 탈것: 내려서 목적지에 닿는 때로 본다
+                    if gets + tails[end] > cast("float", final) + ALT_ARRIVE_LATE:   # tails 가 있으면 final 도 있다
+                        continue
+                elif gets + (_walk_sec(end_m) if end_m else 0) > arr + ALT_ARRIVE_LATE:
                     continue
                 key = (leaves, gets, board_m + end_m)   # 같은 노선이 여럿이면 먼저 떠나는 것 · 같으면 덜 걷는 것
                 if name not in best or key < best[name][:3]:
@@ -861,11 +876,13 @@ def _alternatives(alt: tuple[Any, ...], route: str, day0: float) -> list[Row]:
             row["boardAt"] = _stop_note(board, board_m, board_sid)
         if end != onward[-1]:
             row["alightAt"] = _stop_note(end, end_m, alight_sid)
+            if end in tails:
+                row["alightAt"]["destMinutes"] = round(tails[end] / 60)
         out.append(row)
     return out
 
 
-def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_begin: float) -> Row:
+def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_begin: float, goal: dict[Node, Walk] | None = None) -> Row:
     """도착 차례 → 보여 줄 MAX_PLANS 개 → 환승 많은 길 뒤로 → 응답."""
     plans.sort(key=lambda p: p["_arrive"])
     plans = _easy_first(_pick_shown(plans))
@@ -875,7 +892,7 @@ def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_
         for l in p["legs"]:
             alt = l.pop("_alt", None)   # 버스 구간만(_shaped 가 달았다)
             if alt:
-                found_alts = _alternatives(alt, l["route"], day0)
+                found_alts = _alternatives(alt, l["route"], day0, goal)
                 if found_alts:
                     l["alternatives"] = found_alts
     out = {"ok": bool(plans), "at": when.strftime("%Y-%m-%d %H:%M"), "straightMetres": round(straight), "plans": plans,
@@ -895,7 +912,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     # close enough to just walk
     walk = walk_path(origin, dest) if straight < 2500 else None
     found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS)
-    plans = _shaped(_distinct(found), origin, dest, when)
+    plans = _shaped(_distinct(found), origin, dest, when, goal)
     if walk:   # close enough to just walk
         path, sec, metres = walk
         if _shows_walk([p["_arrive"] for p in plans], sec, when.timestamp()):
@@ -907,7 +924,7 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     walk_only = [p["_arrive"] for p in plans if p["tag"] == "걸어가기"]
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
-    return _finish(plans, when, straight, searches, t_begin)
+    return _finish(plans, when, straight, searches, t_begin, goal)
 
 
 # ---- 경유지(via): 출발 → 경유지 길 몇 개 × 그 길이 닿은 시각부터 경유지 → 도착 가장 빠른 길(2026-10-29 사용자 결정 A) ----
@@ -1156,7 +1173,7 @@ def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[
         joined += [_via_join(first, second, via, starts[i]) for second in seconds_]
     best = min((r["arrive"] for r in joined), default=math.inf)
     joined = [r for r in joined if r["arrive"] <= best + ROUTE_SLACK]
-    return _finish(_shaped(_distinct(joined), origin, dest, when), when, _meters(origin, dest), searches, t_begin)
+    return _finish(_shaped(_distinct(joined), origin, dest, when, goal), when, _meters(origin, dest), searches, t_begin, goal)
 
 
 def _start_walks(start: dict[Node, tuple[Walk, Row | None]] | None) -> dict[Node, Walk]:
