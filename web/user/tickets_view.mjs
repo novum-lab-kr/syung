@@ -1,6 +1,7 @@
 import { routeTrack } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { RouteLoading } from "../ui/journey_sheet.mjs";
 // web/user/tickets_view.tsx
 var DAYS = [
 	"월",
@@ -70,7 +71,8 @@ var view = {
 	routeWhen: "",
 	plans: [],
 	chosen: -1,
-	routeMsg: ""
+	routeMsg: "",
+	routeLoading: false
 };
 var handlers = null;
 var call = (key) => (...args) => (handlers?.[key])?.(...args);
@@ -486,6 +488,7 @@ function RoutePage() {
 			"aria-live": "polite",
 			children: view.routeMsg
 		}),
+		view.routeLoading && /* @__PURE__ */ a(RouteLoading, {}),
 		/* @__PURE__ */ a("button", {
 			id: "routePick",
 			class: "tf-save",

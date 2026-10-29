@@ -376,9 +376,8 @@ function Card({ plan, index, on, hidden, actions }) {
 		]
 	});
 }
-function Result({ result, actions }) {
-	if (result.kind === "none") return null;
-	if (result.kind === "loading") return /* @__PURE__ */ a("div", {
+function RouteLoading() {
+	return /* @__PURE__ */ a("div", {
 		class: "jload",
 		"aria-hidden": "true",
 		children: [
@@ -400,6 +399,10 @@ function Result({ result, actions }) {
 			]
 		}))
 	});
+}
+function Result({ result, actions }) {
+	if (result.kind === "none") return null;
+	if (result.kind === "loading") return /* @__PURE__ */ a(RouteLoading, {});
 	if (result.kind === "failed") return /* @__PURE__ */ a("div", {
 		class: "jerr",
 		children: [
@@ -568,4 +571,4 @@ var drawJourney = (body, view, actions) => K(/* @__PURE__ */ a(JourneySheet, {
 	actions
 }), body);
 var clearJourney = (body) => K(null, body);
-export { JourneySheet, clearJourney, drawJourney };
+export { JourneySheet, RouteLoading, clearJourney, drawJourney };

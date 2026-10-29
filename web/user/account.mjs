@@ -628,7 +628,8 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
 			plans: [],
 			chosen: -1,
-			routeMsg: "경로를 찾는 중…"
+			routeMsg: "경로를 찾고 있어요",
+			routeLoading: true
 		});
 		$("routeOpen").click();
 		const my = ++routeSeq;
@@ -637,7 +638,10 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			const { status, body } = await getJson(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`);
 			if (my !== routeSeq) return;
 			if (status !== 200 || !body?.ok || !body.plans?.length) {
-				ticketsView.set({ routeMsg: body?.error || "경로를 찾지 못했어요." });
+				ticketsView.set({
+					routeMsg: body?.error || "경로를 찾지 못했어요.",
+					routeLoading: false
+				});
 				return;
 			}
 			const plans = usefulRoutes(body.plans), route = form().route;
@@ -646,11 +650,15 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			ticketsView.set({
 				plans,
 				chosen: mine >= 0 ? mine : Math.max(0, fastest),
-				routeMsg: ""
+				routeMsg: "",
+				routeLoading: false
 			});
 			$("routeList").children[ticketsView.state.chosen]?.focus({ preventScroll: true });
 		} catch {
-			if (my === routeSeq) ticketsView.set({ routeMsg: "경로를 찾지 못했어요. 연결을 확인해 주세요." });
+			if (my === routeSeq) ticketsView.set({
+				routeMsg: "경로를 찾지 못했어요. 연결을 확인해 주세요.",
+				routeLoading: false
+			});
 		}
 	}
 	function pickPlan() {
