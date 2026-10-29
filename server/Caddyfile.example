@@ -31,6 +31,10 @@ syung.novum-lab.com {
 	handle @member {
 		reverse_proxy 127.0.0.1:3113
 	}
+	# 메뉴 하늘 그림 날씨(기상청 단기예보 — 서버가 /api/weather 그대로 받는다)
+	handle /api/weather {
+		reverse_proxy 127.0.0.1:3113
+	}
 	# 이상 감지 요약(서버가 /api/health 그대로 받는다)
 	handle /api/health {
 		reverse_proxy 127.0.0.1:3113

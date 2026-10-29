@@ -23,6 +23,7 @@ from server.routes import debug as debug_routes
 from server.routes import journey as journey_routes
 from server.routes import live as live_routes
 from server.routes import members as member_routes
+from server.routes import weather as weather_routes
 from server.routes import owner as owner_routes
 from server.routes.errors import api_error
 from server.routes.response import Response
@@ -71,6 +72,7 @@ GET_JSON: dict[str, Callable[[Services, Query], tuple[dict[str, Any], int]]] = {
     "/api/health": lambda services, query: (services.health.report(), 200),
     "/route": journey_routes.route,
     "/place": journey_routes.place,
+    "/api/weather": weather_routes.weather,   # 메뉴 하늘 그림 날씨(기상청 단기예보)
 }
 
 # 관리 주소(주인 쿠키만, 앞의 /admin 을 뗀 이름) — 쿠키를 받아야 해서 GET_JSON 과 따로

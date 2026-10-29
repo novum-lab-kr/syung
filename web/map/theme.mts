@@ -18,7 +18,7 @@ interface ThemeSettings {
   map:{ themes:Record<Theme,Palette>; colors:Record<Theme,Palette>; park:Record<Theme,ParkPalette>; paletteKind:string; verticalGradient:boolean };
   city:{ pack:unknown; tone:unknown; enabled:boolean; groundTexture:unknown };
 }
-interface ThemeLive { settings:ThemeSettings; busLayer?:{ setTheme(theme:Theme):void }|null; ready:boolean }
+interface ThemeLive { settings:ThemeSettings; busLayer?:{ setTheme(theme:Theme):void }|null; ready:boolean; myLocation?:[number,number]|null }   // myLocation: [경도, 위도] — 하늘 그림 날씨의 자리
 export interface MapThemeDeps {
   map:MapLibre; $:(id:string)=>HTMLElement|null; menu:Pick<SettingsMenu,'theme'|'themeNote'|'sky'|'on'>;   // menu: 설정 서랍의 테마 칸(ui/settings_menu.tsx)
   seoulSun:(date?:Date)=>{ rise:Date; set:Date };
@@ -81,6 +81,12 @@ html[data-theme=dark] .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter
 html[data-theme=dark] .maplibregl-popup-content{background:#152026;color:var(--ink)}html[data-theme=dark] .maplibregl-popup-tip{border-top-color:#152026;border-bottom-color:#152026}
 html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#2b3a40}
 .theme-toggle{top:206px}
+.sun-temp{position:absolute;right:12px;top:7px;font-family:var(--round);font-size:17px;line-height:1;color:#2b3a55;text-shadow:0 1px 0 rgba(255,255,255,.7)}
+.sun-path.is-night .sun-temp{color:#fff;text-shadow:0 1px 2px rgba(0,0,12,.55)}
+.sun-temp,.sun-times{z-index:9}
+.sky-motion{position:absolute;inset:0;pointer-events:none}.sky-motion>div{position:absolute;inset:0}
+.sun-path{isolation:isolate}.sun-path .sky-back{z-index:0}.sky-motion-clouds{z-index:1}.sun-path .sky-sun{z-index:2}.sun-path .sky-front{z-index:3}.sky-motion-train{z-index:4}.sky-motion-fall{z-index:5}
+.sun-path:has(.sky-motion.on) .sky-still-train{display:none}   /* Lottie 지하철이 뜨면 정지 그림 지하철은 숨긴다(받기 실패하면 정지 그림이 남는다) */
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
@@ -92,11 +98,34 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   // 호는 2차 베지어(양 끝 지평선 · 가운데 조절점) — 해 · 달은 그 곡선의 t=진행 자리. 밤 길이는 하루에서 낮을 뺀 값(다음 일출을 오늘 일출 시각으로 어림)
   const hm=(d:Date)=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
   // 메뉴 맨 위 하늘 그림: 고른 테마와 상관없이 늘 지금 실제 하늘(낮 · 밤)
-  function drawSky():void{
-    const now=new Date(),{rise,set}=seoulSun(now);
-    menu.sky(sunPathHTML(now,rise,set),!(now>=rise&&now<set));
+  // 날씨 층(기상청 단기예보 · 메뉴를 열 때 받아 10분 캐시): 첫 화면에서는 받지도 읽지도 않는다 — 메뉴를 처음 열 때 import()
+  type SkyWeather=typeof import('./sky_weather.mts');type SkyMotion=typeof import('./sky_motion.mts');
+  let wxMod:SkyWeather|null=null,motionMod:SkyMotion|null=null,weather:import('./sky_weather.mts').Weather|null=null,menuOpen=false;
+  let lastArt:import('./sky_weather.mts').WeatherArt|null=null,lastNight=false;
+  // 메뉴를 열 때: 지하철 · 날씨 장면(Lottie)을 틀고, 날씨를 새로 받는다(10분 안이면 다시 안 묻는다)
+  async function openSky():Promise<void>{
+    menuOpen=true;void syncMotion();
+    wxMod??=await import('./sky_weather.mts');
+    const next=await wxMod.fetchWeather(live.myLocation??null);
+    if(JSON.stringify(next)!==JSON.stringify(weather)){weather=next;drawSky()}
   }
-  function sunPathHTML(now:Date,rise:Date,set:Date):string{
+  function closeSky():void{menuOpen=false;motionMod?.pauseMotion()}
+  async function syncMotion():Promise<void>{
+    if(!menuOpen)return;
+    const host=document.getElementById('skyMotion');if(!host)return;
+    motionMod??=await import('./sky_motion.mts');
+    await motionMod.showMotion(host,lastArt?.scene??null,lastNight,!!lastArt?.wet);
+    if(menuOpen)motionMod.resumeMotion();else motionMod.pauseMotion();
+  }
+  function drawSky():void{
+    let now=new Date();const {rise,set}=seoulSun(now),forced=wxMod?.devNight()??null;   // 개발용 ?night=1|0(localhost 에서만)
+    if(forced!==null)now=forced?new Date(+set+4*36e5):new Date(+rise+(+set-+rise)/2);
+    const night=!(now>=rise&&now<set),art=weather&&wxMod?wxMod.weatherArt(weather,night):null;
+    lastArt=art;lastNight=night;
+    menu.sky(sunPathHTML(now,rise,set,art),night,art?.label);
+    void syncMotion();
+  }
+  function sunPathHTML(now:Date,rise:Date,set:Date,art:import('./sky_weather.mts').WeatherArt|null=null):string{
     const W=320,H=110,left=30,right=290,base=84,arcBase=62,top=-22,dayLen=+set-+rise,day=now>=rise&&now<set,nightLen=864e5-dayLen;
     const clamp=(v:number)=>Math.min(1,Math.max(0,v));
     const night=clamp(now>=set?(+now-+set)/nightLen:1-(+rise-+now)/nightLen),t=day?clamp((+now-+rise)/dayLen):1-night,u=1-t;   // 날짜 빼기는 숫자로(+): 같은 값
@@ -120,14 +149,16 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
       +`<rect x="158.6" y="${base-44}" width="2.8" height="24" fill="${C.city}"/><rect x="155" y="${base-40}" width="10" height="5" rx="2.5" fill="${C.city}"/><circle cx="160" cy="${base-46}" r="1.6" fill="${day?'#ff7a7a':'#ff9a9a'}"/>`   // 남산타워
       +`<path d="M262 ${base}L265 ${base-52}L267 ${base-56}L269 ${base-52}L272 ${base}Z" fill="${C.city}"/>`;   // 롯데타워
     // 해: 웃는 얼굴 + 볼 · 달: 졸린 얼굴 + z
+    const cover=art?.cover??'clear',sad=cover==='hidden'&&!!art?.wet;   // 구름 뒤에 숨은 해 · 달(비 · 눈이면 아쉬운 표정)
     const face=(fx:number,fy:number,sleepy:boolean)=>sleepy
-      ?`<path d="M${f(fx-5)} ${f(fy-1)}q2 2 4 0M${f(fx+1)} ${f(fy-1)}q2 2 4 0" fill="none" stroke="#7a6a3a" stroke-width="1.3" stroke-linecap="round"/><path d="M${f(fx-1.5)} ${f(fy+4)}q1.5 1 3 0" fill="none" stroke="#7a6a3a" stroke-width="1.2" stroke-linecap="round"/>`
-      :`<circle cx="${f(fx-3.6)}" cy="${f(fy-1.5)}" r="1.3" fill="#5a3a00"/><circle cx="${f(fx+3.6)}" cy="${f(fy-1.5)}" r="1.3" fill="#5a3a00"/><path d="M${f(fx-3)} ${f(fy+2.2)}q3 3 6 0" fill="none" stroke="#5a3a00" stroke-width="1.4" stroke-linecap="round"/>`;
+      ?`<path d="M${f(fx-5)} ${f(fy-1)}q2 2 4 0M${f(fx+1)} ${f(fy-1)}q2 2 4 0" fill="none" stroke="#7a6a3a" stroke-width="1.3" stroke-linecap="round"/><path d="M${f(fx-1.5)} ${f(fy+4)}q1.5 ${sad?-1:1} 3 0" fill="none" stroke="#7a6a3a" stroke-width="1.2" stroke-linecap="round"/>`
+      :`<circle cx="${f(fx-3.6)}" cy="${f(fy-1.5)}" r="1.3" fill="#5a3a00"/><circle cx="${f(fx+3.6)}" cy="${f(fy-1.5)}" r="1.3" fill="#5a3a00"/><path d="M${f(fx-3)} ${f(fy+(sad?3.4:2.2))}q3 ${sad?-2.6:3} 6 0" fill="none" stroke="#5a3a00" stroke-width="1.4" stroke-linecap="round"/>`;
     const cheeks=(cx:number,cy:number)=>`<circle cx="${f(cx-6.5)}" cy="${f(cy+2)}" r="2" fill="#ff8a8a" opacity=".6"/><circle cx="${f(cx+6.5)}" cy="${f(cy+2)}" r="2" fill="#ff8a8a" opacity=".6"/>`;
     const rays=[0,45,90,135,180,225,270,315].map(deg=>{const r1=13.5,r2=17.5,rad=deg*Math.PI/180;return `M${f(x+Math.cos(rad)*r1)} ${f(y+Math.sin(rad)*r1)}L${f(x+Math.cos(rad)*r2)} ${f(y+Math.sin(rad)*r2)}`}).join('');
     const body=day
       ?`<circle cx="${f(x)}" cy="${f(y)}" r="20" fill="#fff8d6" opacity=".55"/><path d="${rays}" stroke="#ffb21a" stroke-width="2.6" stroke-linecap="round"/><circle cx="${f(x)}" cy="${f(y)}" r="11" fill="#ffc21a" stroke="#f39a00" stroke-width="1.6"/>${face(x,y,false)}${cheeks(x,y)}`
       :`<circle cx="${f(x)}" cy="${f(y)}" r="17" fill="#fff4c7" opacity=".18"/><circle cx="${f(x)}" cy="${f(y)}" r="11" fill="#fff4c7" stroke="#e9d68f" stroke-width="1.4"/><circle cx="${f(x+4)}" cy="${f(y-5)}" r="1.8" fill="#eadfae"/><circle cx="${f(x-5)}" cy="${f(y+5)}" r="1.3" fill="#eadfae"/>${face(x,y,true)}${cheeks(x,y)}<text x="${f(x+12)}" y="${f(y-9)}" font-size="8" font-weight="700" fill="#c8d2ff">z</text><text x="${f(x+17)}" y="${f(y-15)}" font-size="6" font-weight="700" fill="#c8d2ff">z</text>`;
+    const roofs:[number,number,number][]=blocks.map(([bx,bw,bh])=>[bx,bw,base-bh]);
     // 땅 · 선로 · 지하철(흰 몸통 + 2호선 초록 띠, 둥근 앞머리, 밤엔 전조등)
     const tx=118,ty=base-11;
     const car=(cx:number,front:boolean)=>`<rect x="${cx}" y="${ty}" width="34" height="13" rx="${front?6:3}" fill="#ffffff" stroke="#3a3f4a" stroke-width="1"/><rect x="${cx}" y="${ty+8}" width="34" height="2.4" fill="#00a84d"/>${[4,12,20].map(o=>`<rect x="${cx+o}" y="${ty+2.4}" width="6" height="4.4" rx="1.4" fill="${day?'#9fd4ff':'#ffe08a'}"/>`).join('')}`;
@@ -136,12 +167,17 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
       +(day?'':`<path d="M${tx+70} ${ty+6}L${tx+96} ${ty+1}L${tx+96} ${ty+13}Z" fill="#ffe08a" opacity=".28"/>`)
       +`<circle cx="${tx+6}" cy="${ty+13.5}" r="2" fill="#3a3f4a"/><circle cx="${tx+28}" cy="${ty+13.5}" r="2" fill="#3a3f4a"/><circle cx="${tx+42}" cy="${ty+13.5}" r="2" fill="#3a3f4a"/><circle cx="${tx+64}" cy="${ty+13.5}" r="2" fill="#3a3f4a"/>`
       +`<path d="M${tx-6} ${ty+5}h-8M${tx-5} ${ty+9}h-12" stroke="${C.path}" stroke-opacity=".8" stroke-width="1.6" stroke-linecap="round"/>`;   // 슝~ 바람 줄
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs>`
+    // 겹: 하늘(맨 아래) < 흐르는 구름(Lottie) < 해 · 달 + 그 앞 구름 < 산 · 빌딩 · 땅 · 지하철 < 지하철(Lottie) < 떨어지는 것(Lottie) — 구름이 지나가도 해 · 달은 그림자처럼 가려지지 않는다
+    const open=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"`;
+    return `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs>`
       +`<rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}`
       +`<path d="M${left} ${arcBase}Q${W/2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>`
-      +`${body}${hills}${city}`   // 해 · 달은 산 · 빌딩 뒤로 지고 뜬다
-      +`<rect y="${base}" width="${W}" height="${H-base}" fill="${C.ground}"/><rect y="${base+2}" width="${W}" height="2" fill="${C.rail}"/>${train}</svg>`
+      +`${art?.back??''}</svg>`
+      +`${open} class="sky-sun">${body}${art?.over(x,y)??''}</svg>`   // 해 · 달은 산 · 빌딩 뒤로 지고 뜬다 · 날씨 구름이 해 · 달 아래쪽을 가린다
+      +`${open} class="sky-front">${hills}${city}`
+      +`<rect y="${base}" width="${W}" height="${H-base}" fill="${C.ground}"/><rect y="${base+2}" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs,base)??''}</svg>`
+      +(art?.temp?`<div class="sun-temp">${art.temp}</div>`:'')
       +`<div class="sun-times"><span>${hm(rise)} 해 뜸</span><span>해 짐 ${hm(set)}</span></div>`;
   }
-  return {effectiveTheme,mapPalette,applyTheme,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
+  return {effectiveTheme,mapPalette,applyTheme,openSky,closeSky,get themeChoice(){return cur.themeChoice},get mapColor(){return cur.mapColor}};
 }

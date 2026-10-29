@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:   # 타입만
@@ -195,6 +196,19 @@ class JourneyConfig:
         return cls(kakao_key=_env("KAKAO_REST_KEY", "").strip(),
                    osrm_url=_env("OSRM_URL", "http://127.0.0.1:5000").rstrip("/"),
                    workers=max(0, int(_env("JOURNEY_WORKERS", "3"))))
+
+
+@dataclass
+class WeatherConfig:
+    """메뉴 하늘 그림의 날씨(기상청 단기예보). 공공데이터포털 인증키는 계정마다 하나라 KMA_SERVICE_KEY 가 없으면
+    버스가 쓰는 SEOUL_BUS_SERVICE_KEY 를 같이 쓴다. Encoding(% 가 든 퍼센트 인코딩) · Decoding 형태 둘 다 받는다 —
+    % 가 있으면 한 번 풀어 원래 문자열로 만들고, 요청 때(sources/kma.py) 한 번만 인코딩한다. 둘 다 없으면 날씨 없음."""
+    kma_key: str = field(default="", repr=False)
+
+    @classmethod
+    def from_env(cls) -> WeatherConfig:
+        raw = (_env("KMA_SERVICE_KEY", "").strip() or _env("SEOUL_BUS_SERVICE_KEY", "").strip())
+        return cls(kma_key=unquote(raw) if "%" in raw else raw)
 
 
 @dataclass

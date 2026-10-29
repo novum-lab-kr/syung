@@ -733,7 +733,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=false],htm
 let wallsNow=()=>{};   // the train canvas's building walls, again (set up with it)
 const prefs=createUserPrefs();   // 내 설정: 이 기기에 고른 테마 · 지도 색(허용 값만)
 saverOn=prefs.get('saver')==='on'||location.hash.includes('saver');   // 절전: 이 기기에 고른 값(주소 #saver 로도 — 폰 비교용)
-const theme=createMapTheme({map,$,menu,seoulSun,cityPalette:cityPalette as ThemeDeps['cityPalette'],applyCityStyle:(m,o)=>applyCityStyle(m as unknown as CityStyleMap,{...o,groundLight:nightNow().ground}),applyGroundTexture:applyGroundTexture as unknown as ThemeDeps['applyGroundTexture'],syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready}}});
+const theme=createMapTheme({map,$,menu,seoulSun,cityPalette:cityPalette as ThemeDeps['cityPalette'],applyCityStyle:(m,o)=>applyCityStyle(m as unknown as CityStyleMap,{...o,groundLight:nightNow().ground}),applyGroundTexture:applyGroundTexture as unknown as ThemeDeps['applyGroundTexture'],syncCity,updateSun,focusRoute,journeyMap,rider,prefs,live:{get settings(){return modeCtl.settings()},get busLayer(){return busLayer},get ready(){return ready},get myLocation(){return myLocation}}});
 // 앞에서 만든 층 · 1인칭이 값으로 받아 간 이름이라 끌어올려지는 함수로 남긴다(부르는 건 테마를 만든 뒤)
 function effectiveTheme(){return theme.effectiveTheme()}
 function mapPalette(t?:Theme){return t===undefined?theme.mapPalette():theme.mapPalette(t)}
@@ -910,8 +910,8 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
   const slideMs=matchMedia('(prefers-reduced-motion: reduce)').matches?0:260;let closeTimer=0;
   const setOpen=(o:boolean)=>{
     clearTimeout(closeTimer);btn.setAttribute('aria-expanded',String(o));
-    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');$('settingsClose').focus({preventScroll:true});return}
-    panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
+    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');void theme.openSky();$('settingsClose').focus({preventScroll:true});return}
+    theme.closeSky();panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
   };
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};

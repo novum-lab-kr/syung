@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
 UPSTREAM = os.environ.get("SUBWAY_LIVE_UPSTREAM", "https://syung.novum-lab.com/api/live")
 # 길찾기 · 장소 검색(승차권 발권 화면이 부른다)도 운영으로 — 바깥 API 키 없이 로컬에서 시험한다
 JOURNEY_UPSTREAM = os.environ.get("SYUNG_JOURNEY_UPSTREAM", "https://syung.novum-lab.com/api")
-JOURNEY_PATHS = {"/api/route": "/route", "/api/place": "/place"}
+JOURNEY_PATHS = {"/api/route": "/route", "/api/place": "/place", "/api/weather": "/weather"}
 # 보여 줄 웹 폴더: 빌드 결과 dist/web(운영에 올라가는 것과 같은 파일)
 WEB = ROOT / "dist" / "web"
 # published path → file in the repo
