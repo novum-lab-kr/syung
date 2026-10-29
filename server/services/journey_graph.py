@@ -18,6 +18,7 @@ from __future__ import annotations
 import bisect
 import heapq
 import math
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -102,12 +103,32 @@ BUS_WALK = BUS["walk"] if BUS else cast("list[Any]", [])
 for _i, (_la, _lo) in (journey_data.read_optional(journey_data.BUS_STOP_FIX, {}).items() if BUS else ()):
     if int(_i) < len(BSTOPS):
         BSTOPS[int(_i)] = [BSTOPS[int(_i)][0], _la, _lo]
-BUS_AT: dict[int, list[tuple[int, int]]] = defaultdict(list)   # stop → [(pattern, position)]
-_bgrid: dict[tuple[int, int], list[int]] = defaultdict(list)
-for _pi, _p in enumerate(BPATS):
+# 경기 프리미엄버스(이름이 P + 숫자 — 예 "P9601(출근)"): 앱으로 좌석을 예약해야 타고 하루 한두 번이라
+# 시간표가 맞아도 길찾기 결과로 쓸 수 없다(2026-10-29 사용자 결정). 자료에 노선 종류 칸이 없어(build_bus_data.py 는
+# route_short_name 만 싣는다) 이름으로 가린다. 버스 층 · /bus 는 따로라 그대로 보인다
+PREMIUM_BUS = re.compile(r"P\d")
+
+
+def bookable_only(name: str) -> bool:
+    """예약해야만 타는 노선(경기 프리미엄버스)인가 — 길찾기에서 타지 않는다."""
+    return PREMIUM_BUS.match(name.strip()) is not None
+
+
+def bus_boardings(patterns: list[Row], routes: list[Any]) -> dict[int, list[tuple[int, int]]]:
+    """stop → [(pattern, position)] 탈 수 있는 자리. 프리미엄버스 패턴은 넣지 않는다(패턴 번호는 그대로 — BUS_SHAPES 가 번호로 찾는다)."""
+    at: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for pi, pat in enumerate(patterns):
+        if bookable_only(routes[pat["r"]][0]):
+            continue
+        for k, stop in enumerate(pat["s"][:-1]):
+            at[stop].append((pi, k))
+    return at
+
+
+for _p in BPATS:
     _p["starts"] = [d[0] for d in _p["d"]]
-    for _k, _s in enumerate(_p["s"][:-1]):
-        BUS_AT[_s].append((_pi, _k))
+BUS_AT = bus_boardings(BPATS, BROUTES)
+_bgrid: dict[tuple[int, int], list[int]] = defaultdict(list)
 for _i, (_, _la, _lo) in enumerate(BSTOPS):
     _bgrid[(int(_la / 0.0027), int(_lo / 0.0034))].append(_i)
 
