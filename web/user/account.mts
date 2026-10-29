@@ -22,7 +22,8 @@ import {accountView, avatarLook, nameLength, NAME_MAX} from './account_view.tsx'
 import type {Me, Avatar, Stats, Session} from './account_view.tsx';
 import {ticketsView, DAYS, esc, shortName, timeParts} from './tickets_view.tsx';   // 승차권 · 발권 · 장소 · 경로 쪽 그리기 — Preact
 import type {Place, FoundPlace, SlimLeg, SlimRoute, Ticket} from './tickets_view.tsx';
-import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt} from './ticket_routes.mts';   // 승차권 경로 고르기(길 모양 · 거르기 · 다음 탈 날)
+import type {RouteKind, RouteSort} from './ticket_routes.mts';
+import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeFilterView, chosenAfter} from './ticket_routes.mts';   // 승차권 경로 고르기(길 모양 · 거르기 · 다음 탈 날)
 
 // 서버 응답(server/routes/members.py · /api/auth/providers · /api/route) 가운데 이 파일이 읽는 칸(승차권 · 장소는 tickets_view.tsx)
 interface Reply<B> { status:number; ok?:boolean; body:B | null }
@@ -452,13 +453,14 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   const slimRoute = (p:Plan):SlimRoute => ({tag: p.tag || '', minutes: p.minutes, leaveBy: p.leaveBy, arrives: p.arrives, transfers: p.transfers,
     walkMinutes: p.walkMinutes, legs: p.legs.map(slimLeg)});
   let routeSeq = 0;
+  let routeKind:RouteKind = 'all', routeSort:RouteSort = '';   // 경로 쪽 조건(종류 · 차례)
   async function openRoute() {
     lastField = $('ticketRoute');
     const {from, to} = form();
     if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), time = timeParts(form().time);
     ticketsView.set({routeTrip: `${from.name} → ${to.name}`, routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
-      plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true});   // 길찾기 시트와 같은 글자 · 뼈대 카드
+      plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true, routeFilter: null});   // 길찾기 시트와 같은 글자 · 뼈대 카드
     $('routeOpen').click();
     const my = ++routeSeq;
     const at = routeAt(when);
@@ -469,8 +471,10 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
       const plans = usefulRoutes(body.plans!), route = form().route;   // 길 모양으로 묶고 덜 쓸모 있는 길은 뺀다(ticket_routes.mts)
       const mine = route ? plans.findIndex(p => rideSig(p) === rideSig(route)) : -1;
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
-      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
-      ($('routeList').children[ticketsView.state.chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
+      routeKind = 'all'; routeSort = '';   // 열 때마다 조건은 전체 · 지금 차례
+      ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false,   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
+        routeFilter: routeFilterView(plans, routeKind, routeSort)});
+      focusChosen();
       previewPlan();   // 처음 고른 카드의 길을 바로 그린다
     } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
   }
@@ -484,6 +488,20 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     ticketsView.set({chosen: index});
     previewPlan();
   }
+  // 고른 카드에 초점(목록은 조건의 차례대로라 plans 번호가 아니라 보이는 자리로 찾는다)
+  function focusChosen() {
+    const {chosen, routeFilter} = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
+    ($('routeList').children[at] as HTMLElement | undefined)?.focus({preventScroll: true});
+  }
+  // 조건 바꾸기(종류 · 차례): 받은 길을 다시 나눈다(서버를 다시 부르지 않는다). 저장된 경로가 보이면 그 카드, 아니면 처음 카드를 고르고 지도 길도 그 길로
+  function refilter() {
+    const {plans, route} = form(), routeFilter = routeFilterView(plans, routeKind, routeSort);
+    const chosen = chosenAfter(plans, routeFilter.order, route);
+    ticketsView.set({routeFilter, chosen});
+    if (chosen >= 0) previewPlan(); else previewGone();   // 맞는 길이 없으면 지도 길도 지운다
+  }
+  const filterKind = (kind:RouteKind) => { routeKind = kind; refilter(); };
+  const filterSort = (sort:RouteSort) => { routeSort = sort; refilter(); };
 
   // ---- 경로 고르기 지도: 경로 쪽에 있는 동안 서랍(.with-map) 옆 · 위 지도에 고른 카드의 길 ----
   const routePanel = $('settingsPanel'), routePage = $('menuRoute');
@@ -640,7 +658,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     timeToggle: () => { if (form().wheelOpen) closeWheel(); else openWheel(); },
     timeDone: () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); },
     route: openRoute, day: toggleDay, quick: quickDays, name: value => ticketsView.set({name: value}), submit: submitTicket, remove: removeTicket,
-    placeInput, placePick, plan: choosePlan, planPick: pickPlan,
+    placeInput, placePick, plan: choosePlan, planPick: pickPlan, routeKind: filterKind, routeSort: filterSort,
   });
 
   // ---- 사용 횟수(내 통계) ----
