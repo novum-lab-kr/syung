@@ -109,13 +109,28 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
     const next=await wxMod.fetchWeather(live.myLocation??null);
     if(JSON.stringify(next)!==JSON.stringify(weather)){weather=next;drawSky()}
   }
-  function closeSky():void{menuOpen=false;motionMod?.pauseMotion()}
+  function closeSky():void{menuOpen=false;applyPlay()}
+  // 움직임은 하늘 그림이 실제로 보일 때만 돈다 — 메뉴를 닫는 길이 하나가 아니라(패널을 직접 숨김 · 다른 쪽 메뉴로 넘어감 · 탭이 가려짐) 닫기 경로가 아니라 보임 상태를 따른다
+  let inView=false,watched:Element|null=null,viewWatch:IntersectionObserver|null=null;
+  function applyPlay():void{
+    if(!motionMod)return;
+    if(menuOpen&&inView&&!document.hidden)motionMod.resumeMotion();else motionMod.pauseMotion();
+  }
+  function watchView(el:Element):void{
+    if(watched===el)return;
+    if(!watched)document.addEventListener('visibilitychange',applyPlay);   // 탭이 가려져도 멈춘다(처음 하늘 그림을 볼 때 한 번만 건다)
+    viewWatch?.disconnect();watched=el;inView=false;
+    if(typeof IntersectionObserver==='undefined'){inView=true;return}   // 못 보는 브라우저는 열림 상태만 따른다
+    viewWatch=new IntersectionObserver(entries=>{inView=entries[entries.length-1]?.isIntersecting??false;applyPlay()});
+    viewWatch.observe(el);
+  }
   async function syncMotion():Promise<void>{
     if(!menuOpen)return;
     const host=document.getElementById('skyMotion');if(!host)return;
     motionMod??=await import('./sky_motion.mts');
+    watchView(host.parentElement??host);
     await motionMod.showMotion(host,lastArt?.scene??null,lastNight,!!lastArt?.wet);
-    if(menuOpen)motionMod.resumeMotion();else motionMod.pauseMotion();
+    applyPlay();
   }
   function drawSky():void{
     let now=new Date();const {rise,set}=seoulSun(now),forced=wxMod?.devNight()??null;   // 개발용 ?night=1|0(localhost 에서만)

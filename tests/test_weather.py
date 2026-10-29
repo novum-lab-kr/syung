@@ -1,5 +1,6 @@
 """/api/weather: 격자 변환 · 발표시각 · 코드 매핑 · 10분 캐시 · 키 없음 · 기상청 실패 · 키 인코딩(가짜 기상청 — 바깥 호출 없음)."""
 
+import threading
 import unittest
 import urllib.parse
 from datetime import datetime
@@ -153,6 +154,36 @@ class ServiceTest(unittest.TestCase):
     def test_out_of_grid_is_none(self):
         self.assertIsNone(service(Fake()).lookup(0.0, 0.0))
 
+    def test_unprojectable_edges_do_not_crash(self):
+        fake = Fake()
+        for lat in (-90.0, 90.0, -89.99, 89.99):
+            self.assertIsNone(service(fake).lookup(lat, 127.0), lat)
+        self.assertEqual(fake.calls, [])
+
+    def test_concurrent_same_cell_calls_kma_once(self):
+        gate, started = threading.Event(), threading.Event()
+        fake = Fake()
+        original = fake.ncst
+
+        def slow_ncst(*args):
+            started.set()
+            gate.wait(5)
+            return original(*args)
+
+        svc = weather.WeatherService(WeatherConfig(kma_key="secret-key"), ncst=slow_ncst, fcst=fake.fcst, clock=lambda: NOW)
+        results = []
+        workers = [threading.Thread(target=lambda: results.append(svc.lookup(37.5665, 126.9780))) for _ in range(4)]
+        workers[0].start()
+        started.wait(5)
+        for worker in workers[1:]:
+            worker.start()
+        gate.set()
+        for worker in workers:
+            worker.join(5)
+        self.assertEqual(len(fake.calls), 2)   # 실황 1 + 예보 1
+        self.assertEqual(len(results), 4)
+        self.assertTrue(all(body["ok"] for body in results))
+
 
 class RouteTest(unittest.TestCase):
     def test_bad_coordinates(self):
@@ -165,8 +196,9 @@ class RouteTest(unittest.TestCase):
         services = SimpleNamespace(weather=service(Fake()))
         body, status = weather_routes.weather(services, {"lat": ["37.5663"], "lng": ["126.9779"]})
         self.assertEqual((status, body["ok"]), (200, True))
-        body, status = weather_routes.weather(services, {"lat": ["0"], "lng": ["0"]})
-        self.assertEqual((status, body["error"]["code"]), (400, "out_of_range"))
+        for lat in ("0", "-90", "90"):
+            body, status = weather_routes.weather(services, {"lat": [lat], "lng": ["0"]})
+            self.assertEqual((status, body["error"]["code"]), (400, "out_of_range"), lat)
 
 
 class SourceTest(unittest.TestCase):

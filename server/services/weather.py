@@ -78,6 +78,14 @@ def _int(raw: Any, table: dict[int, str], default: str) -> str:
     return table.get(int(value), default) if value is not None else default
 
 
+class _Flight:
+    """한 칸에서 진행 중인 기상청 조회 — 같은 칸 요청이 결과를 같이 기다린다."""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.body: dict[str, Any] = {"ok": False}
+
+
 class WeatherService:
     def __init__(self, config: WeatherConfig | None = None, *, ncst: Fetch | None = None, fcst: Fetch | None = None,
                  clock: Callable[[], datetime] | None = None, monotonic: Callable[[], float] | None = None):
@@ -86,23 +94,41 @@ class WeatherService:
         self._clock, self._monotonic = clock or (lambda: datetime.now(KST)), monotonic or time.monotonic
         self._cache: dict[tuple[int, int], tuple[float, dict[str, Any]]] = {}
         self._logged: dict[str, float] = {}
+        self._flights: dict[tuple[int, int], _Flight] = {}
         self._lock = threading.Lock()
 
     def lookup(self, lat: float, lng: float) -> dict[str, Any] | None:
-        """날씨 한 칸. 격자 밖이면 None, 받지 못하면 {"ok": False}."""
+        """날씨 한 칸. 격자 밖이면 None, 받지 못하면 {"ok": False}. 같은 칸 동시 요청은 기상청에 한 번만 간다."""
+        if not -85 <= lat <= 85:   # 투영 식이 극점 근처에서 0 으로 나눈다 — 수도권이 아니어도 동작하되 투영 못 하는 좌표는 변환 전에 막는다
+            return None
         nx, ny = to_grid(lat, lng)
         if not in_grid(nx, ny):
             return None
-        now = self._monotonic()
+        cell = (nx, ny)
         with self._lock:
-            hit = self._cache.get((nx, ny))
-            if hit and now < hit[0]:
+            hit = self._cache.get(cell)
+            if hit and self._monotonic() < hit[0]:
                 return hit[1]
-        body = self._load(nx, ny)
+            flight = self._flights.get(cell)
+            leader = flight is None
+            if flight is None:
+                flight = _Flight()
+                self._flights[cell] = flight
+        if not leader:
+            flight.done.wait()   # 앞선 요청의 결과를 같이 받는다
+            return flight.body
+        try:
+            body = self._load(nx, ny)
+        except Exception:   # 예상 밖 오류도 기다리는 쪽을 풀어 준다
+            body = {"ok": False}
+            self._log("날씨 처리 오류")
         with self._lock:
             if len(self._cache) > 400:
                 self._cache.clear()
-            self._cache[(nx, ny)] = (now + (CACHE_SECONDS if body["ok"] else FAIL_SECONDS), body)
+            self._cache[cell] = (self._monotonic() + (CACHE_SECONDS if body["ok"] else FAIL_SECONDS), body)
+            self._flights.pop(cell, None)
+        flight.body = body
+        flight.done.set()
         return body
 
     def _log(self, reason: str) -> None:
