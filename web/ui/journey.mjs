@@ -257,7 +257,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 	}
 	let displayedRoute = null;
 	let routeBounds = null, busRouteFocus = false;
-	function fitRoute(bottom) {
+	function fitRoute(bottom, right = 40) {
 		if (!routeBounds) return;
 		const p = map.getPadding?.() || {}, less = (v, k) => Math.max(0, v - (p[k] || 0));
 		map.fitBounds(routeBounds, {
@@ -265,7 +265,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 				top: less(90, "top"),
 				bottom: less(bottom, "bottom"),
 				left: less(40, "left"),
-				right: less(40, "right")
+				right: less(right, "right")
 			},
 			maxZoom: 16,
 			pitch: 0,

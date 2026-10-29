@@ -1363,11 +1363,11 @@ var journey = initJourney({
 });
 document.getElementById("routeButton").addEventListener("click", () => ticketRouteGone?.());
 var ticketRoute = {
-	show(plan) {
+	show(plan, pad) {
 		journey.drop();
 		closeSheet();
 		showRoute(plan, false, false);
-		fitRoute(110);
+		fitRoute(pad?.bottom ?? 110, pad?.right);
 		refreshLive();
 	},
 	clear(plan) {
@@ -2488,7 +2488,8 @@ var setJoseon = (on) => setSimcity(on, true);
 	};
 	$("settingsClose").onclick = close;
 	document.addEventListener("click", (e) => {
-		if (isOpen() && !panel.contains(e.target)) setOpen(false);
+		const at = e.target;
+		if (isOpen() && !panel.contains(at) && !(panel.classList.contains("with-map") && map.getCanvasContainer().contains(at))) setOpen(false);
 	});
 	document.addEventListener("keydown", (e) => {
 		if (!isOpen()) return;

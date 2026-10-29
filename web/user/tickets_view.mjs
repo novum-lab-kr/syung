@@ -489,21 +489,16 @@ function RoutePage() {
 			children: view.routeMsg
 		}),
 		view.routeLoading && /* @__PURE__ */ a(RouteLoading, {}),
-		/* @__PURE__ */ a("button", {
-			id: "routePick",
-			class: "tf-save",
-			type: "button",
+		/* @__PURE__ */ a("div", {
+			class: "rt-foot",
 			hidden: !view.plans.length,
-			onClick: call("planPick"),
-			children: "이 경로로"
-		}),
-		/* @__PURE__ */ a("button", {
-			id: "routeMap",
-			class: "rt-map",
-			type: "button",
-			hidden: !view.plans.length,
-			onClick: call("planMap"),
-			children: "지도에서 보기"
+			children: /* @__PURE__ */ a("button", {
+				id: "routePick",
+				class: "tf-save",
+				type: "button",
+				onClick: call("planPick"),
+				children: "이 경로로"
+			})
 		})
 	] });
 }

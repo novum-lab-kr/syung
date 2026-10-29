@@ -654,6 +654,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 				routeLoading: false
 			});
 			$("routeList").children[ticketsView.state.chosen]?.focus({ preventScroll: true });
+			previewPlan();
 		} catch {
 			if (my === routeSeq) ticketsView.set({
 				routeMsg: "경로를 찾지 못했어요. 연결을 확인해 주세요.",
@@ -667,6 +668,54 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketsView.set({ route: slimRoute(plan) });
 		backToForm();
 	}
+	function choosePlan(index) {
+		ticketsView.set({ chosen: index });
+		previewPlan();
+	}
+	const routePanel = $("settingsPanel"), routePage = $("menuRoute");
+	const narrow = matchMedia("(max-width: 780px)");
+	let previewed = null;
+	const onRoutePage = () => routePanel.classList.contains("open") && !routePanel.hidden && !routePage.hidden;
+	function previewPlan() {
+		const plan = form().plans[form().chosen];
+		if (!routeMap || !plan || !onRoutePage()) return;
+		mapGone();
+		routeMap.show(plan, narrow.matches ? {
+			bottom: routePanel.offsetHeight + 24,
+			right: 40
+		} : {
+			bottom: 40,
+			right: routePanel.offsetWidth + 40
+		});
+		previewed = plan;
+	}
+	function previewGone() {
+		if (!previewed) return;
+		const plan = previewed;
+		previewed = null;
+		routeMap?.clear(plan);
+	}
+	const routeWatch = new MutationObserver(() => {
+		const on = onRoutePage();
+		if (routePanel.classList.contains("with-map") !== on) routePanel.classList.toggle("with-map", on);
+		if (!on) {
+			routeSeq++;
+			previewGone();
+		}
+	});
+	routeWatch.observe(routePanel, {
+		attributes: true,
+		attributeFilter: ["class", "hidden"]
+	});
+	routeWatch.observe(routePage, {
+		attributes: true,
+		attributeFilter: ["hidden"]
+	});
+	window.addEventListener("keydown", (e) => {
+		if (e.key !== "Escape" || sheetOpen() || !onRoutePage()) return;
+		e.stopImmediatePropagation();
+		backToForm();
+	}, true);
 	const mapBar = document.createElement("div");
 	mapBar.className = "jbar";
 	mapBar.hidden = true;
@@ -705,15 +754,10 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	mapBarOpen.addEventListener("click", mapBack);
 	mapBar.querySelector(".jbar-x").addEventListener("click", mapBack);
 	$("settingsButton").addEventListener("click", mapGone);
-	routeMap?.onGone(mapGone);
-	function mapPlan() {
-		const chosen = form().chosen, plan = form().plans[chosen];
-		if (!plan) return;
-		showOnMap(plan, "경로 고르기로", "", () => {
-			$("routeOpen").click();
-			$("routeList").children[chosen]?.focus({ preventScroll: true });
-		});
-	}
+	routeMap?.onGone(() => {
+		mapGone();
+		previewed = null;
+	});
 	let mapSeq = 0;
 	const mapPanel = $("settingsPanel"), mapList = $("menuTickets");
 	const mapWatch = new MutationObserver(() => {
@@ -869,9 +913,8 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		remove: removeTicket,
 		placeInput,
 		placePick,
-		plan: (index) => ticketsView.set({ chosen: index }),
-		planPick: pickPlan,
-		planMap: mapPlan
+		plan: choosePlan,
+		planPick: pickPlan
 	});
 	function countUse(kind) {
 		if (!me) return;
