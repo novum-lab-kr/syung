@@ -1,6 +1,6 @@
+import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MERC_ORIGIN as O, MU, toM } from "./life.mjs";
-import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { LANDMARKS, STUPAS } from "./landmarks_data.mjs";
 // web/city/landmarks.mts
 var N = 56;

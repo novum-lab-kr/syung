@@ -22,6 +22,7 @@ import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
+import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
 import { createMapTheme } from "./map/theme.mjs";
 import "./modes/merge.mjs";
 import { createModeRegistry } from "./modes/index.mjs";
@@ -72,7 +73,6 @@ import { catchup, catchupAt } from "./lib/train_catchup.mjs";
 import { closestPlatformPoint, extendStart, offsetCoords, trackStart } from "./lib/platform_route.mjs";
 import { stops as stops$1 } from "./city/viaduct_snap.mjs";
 import { CityViaduct } from "./city/viaduct.mjs";
-import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
 import * as maplibregl from "./vendor/maplibre-gl.mjs";
 // web/maplibre_runtime.mts
 var modes = createModeRegistry([
@@ -2051,6 +2051,9 @@ var theme = createMapTheme({
 		},
 		get ready() {
 			return ready;
+		},
+		get myLocation() {
+			return myLocation;
 		}
 	}
 });
@@ -2475,9 +2478,11 @@ var setJoseon = (on) => setSimcity(on, true);
 			panel.hidden = false;
 			panel.offsetWidth;
 			panel.classList.add("open");
+			theme.openSky();
 			$("settingsClose").focus({ preventScroll: true });
 			return;
 		}
+		theme.closeSky();
 		panel.classList.remove("open");
 		closeTimer = setTimeout(() => {
 			if (!panel.classList.contains("open")) panel.hidden = true;

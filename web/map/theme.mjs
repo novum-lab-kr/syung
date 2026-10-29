@@ -1,3 +1,4 @@
+import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 // web/map/theme.mts
 function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live }) {
 	const mixHex = (a, b, t) => "#" + [
@@ -162,6 +163,12 @@ html[data-theme=dark] .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter
 html[data-theme=dark] .maplibregl-popup-content{background:#152026;color:var(--ink)}html[data-theme=dark] .maplibregl-popup-tip{border-top-color:#152026;border-bottom-color:#152026}
 html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#2b3a40}
 .theme-toggle{top:206px}
+.sun-temp{position:absolute;right:12px;top:7px;font-family:var(--round);font-size:17px;line-height:1;color:#2b3a55;text-shadow:0 1px 0 rgba(255,255,255,.7)}
+.sun-path.is-night .sun-temp{color:#fff;text-shadow:0 1px 2px rgba(0,0,12,.55)}
+.sun-temp,.sun-times{z-index:9}
+.sky-motion{position:absolute;inset:0;pointer-events:none}.sky-motion>div{position:absolute;inset:0}
+.sun-path{isolation:isolate}.sun-path .sky-back{z-index:0}.sky-motion-clouds{z-index:1}.sun-path .sky-sun{z-index:2}.sun-path .sky-front{z-index:3}.sky-motion-train{z-index:4}.sky-motion-fall{z-index:5}
+.sun-path:has(.sky-motion.on) .sky-still-train{display:none}   /* Lottie 지하철이 뜨면 정지 그림 지하철은 숨긴다(받기 실패하면 정지 그림이 남는다) */
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
@@ -180,11 +187,64 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		hour12: false,
 		timeZone: "Asia/Seoul"
 	});
-	function drawSky() {
-		const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now);
-		menu.sky(sunPathHTML(now, rise, set), !(now >= rise && now < set));
+	let wxMod = null, motionMod = null, weather = null, menuOpen = false;
+	let lastArt = null, lastNight = false;
+	async function openSky() {
+		menuOpen = true;
+		syncMotion();
+		wxMod ??= await __vitePreload(() => import("./sky_weather.mjs"), [], import.meta.url);
+		const next = await wxMod.fetchWeather(live.myLocation ?? null);
+		if (JSON.stringify(next) !== JSON.stringify(weather)) {
+			weather = next;
+			drawSky();
+		}
 	}
-	function sunPathHTML(now, rise, set) {
+	function closeSky() {
+		menuOpen = false;
+		applyPlay();
+	}
+	let inView = false, watched = null, viewWatch = null;
+	function applyPlay() {
+		if (!motionMod) return;
+		if (menuOpen && inView && !document.hidden) motionMod.resumeMotion();
+		else motionMod.pauseMotion();
+	}
+	function watchView(el) {
+		if (watched === el) return;
+		if (!watched) document.addEventListener("visibilitychange", applyPlay);
+		viewWatch?.disconnect();
+		watched = el;
+		inView = false;
+		if (typeof IntersectionObserver === "undefined") {
+			inView = true;
+			return;
+		}
+		viewWatch = new IntersectionObserver((entries) => {
+			inView = entries[entries.length - 1]?.isIntersecting ?? false;
+			applyPlay();
+		});
+		viewWatch.observe(el);
+	}
+	async function syncMotion() {
+		if (!menuOpen) return;
+		const host = document.getElementById("skyMotion");
+		if (!host) return;
+		motionMod ??= await __vitePreload(() => import("./sky_motion.mjs"), [], import.meta.url);
+		watchView(host.parentElement ?? host);
+		await motionMod.showMotion(host, lastArt?.scene ?? null, lastNight, !!lastArt?.wet);
+		applyPlay();
+	}
+	function drawSky() {
+		let now = /* @__PURE__ */ new Date();
+		const { rise, set } = seoulSun(now), forced = wxMod?.devNight() ?? null;
+		if (forced !== null) now = forced ? /* @__PURE__ */ new Date(+set + 144e5) : /* @__PURE__ */ new Date(+rise + (+set - +rise) / 2);
+		const night = !(now >= rise && now < set), art = weather && wxMod ? wxMod.weatherArt(weather, night) : null;
+		lastArt = art;
+		lastNight = night;
+		menu.sky(sunPathHTML(now, rise, set, art), night, art?.label);
+		syncMotion();
+	}
+	function sunPathHTML(now, rise, set, art = null) {
 		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = +set - +rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;
 		const clamp = (v) => Math.min(1, Math.max(0, v));
 		const night = clamp(now >= set ? (+now - +set) / nightLen : 1 - (+rise - +now) / nightLen), t = day ? clamp((+now - +rise) / dayLen) : 1 - night, u = 1 - t;
@@ -261,7 +321,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 			for (let wy = base - bh + 4; wy < 80; wy += 6) for (let wx = bx + 3; wx < bx + bw - 3; wx += 5) w += `<rect x="${wx}" y="${wy}" width="2" height="2.6" rx=".6" fill="${C.win}" opacity="${day ? .7 : (wx * 7 + wy * 3) % 5 ? 1 : .25}"/>`;
 			return w;
 		};
-		const city = [
+		const blocks = [
 			[
 				96,
 				14,
@@ -304,8 +364,10 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 				18,
 				C.city2
 			]
-		].map(([bx, bw, bh, c]) => box(bx, bw, bh, c) + wins(bx, bw, bh)).join("") + `<path d="M146 ${base}L146 70Q160 60 174 70L174 ${base}Z" fill="${C.hill}"/><rect x="158.6" y="40" width="2.8" height="24" fill="${C.city}"/><rect x="155" y="44" width="10" height="5" rx="2.5" fill="${C.city}"/><circle cx="160" cy="38" r="1.6" fill="${day ? "#ff7a7a" : "#ff9a9a"}"/><path d="M262 ${base}L265 32L267 28L269 32L272 ${base}Z" fill="${C.city}"/>`;
-		const face = (fx, fy, sleepy) => sleepy ? `<path d="M${f(fx - 5)} ${f(fy - 1)}q2 2 4 0M${f(fx + 1)} ${f(fy - 1)}q2 2 4 0" fill="none" stroke="#7a6a3a" stroke-width="1.3" stroke-linecap="round"/><path d="M${f(fx - 1.5)} ${f(fy + 4)}q1.5 1 3 0" fill="none" stroke="#7a6a3a" stroke-width="1.2" stroke-linecap="round"/>` : `<circle cx="${f(fx - 3.6)}" cy="${f(fy - 1.5)}" r="1.3" fill="#5a3a00"/><circle cx="${f(fx + 3.6)}" cy="${f(fy - 1.5)}" r="1.3" fill="#5a3a00"/><path d="M${f(fx - 3)} ${f(fy + 2.2)}q3 3 6 0" fill="none" stroke="#5a3a00" stroke-width="1.4" stroke-linecap="round"/>`;
+		];
+		const city = blocks.map(([bx, bw, bh, c]) => box(bx, bw, bh, c) + wins(bx, bw, bh)).join("") + `<path d="M146 ${base}L146 70Q160 60 174 70L174 ${base}Z" fill="${C.hill}"/><rect x="158.6" y="40" width="2.8" height="24" fill="${C.city}"/><rect x="155" y="44" width="10" height="5" rx="2.5" fill="${C.city}"/><circle cx="160" cy="38" r="1.6" fill="${day ? "#ff7a7a" : "#ff9a9a"}"/><path d="M262 ${base}L265 32L267 28L269 32L272 ${base}Z" fill="${C.city}"/>`;
+		const sad = (art?.cover ?? "clear") === "hidden" && !!art?.wet;
+		const face = (fx, fy, sleepy) => sleepy ? `<path d="M${f(fx - 5)} ${f(fy - 1)}q2 2 4 0M${f(fx + 1)} ${f(fy - 1)}q2 2 4 0" fill="none" stroke="#7a6a3a" stroke-width="1.3" stroke-linecap="round"/><path d="M${f(fx - 1.5)} ${f(fy + 4)}q1.5 ${sad ? -1 : 1} 3 0" fill="none" stroke="#7a6a3a" stroke-width="1.2" stroke-linecap="round"/>` : `<circle cx="${f(fx - 3.6)}" cy="${f(fy - 1.5)}" r="1.3" fill="#5a3a00"/><circle cx="${f(fx + 3.6)}" cy="${f(fy - 1.5)}" r="1.3" fill="#5a3a00"/><path d="M${f(fx - 3)} ${f(fy + (sad ? 3.4 : 2.2))}q3 ${sad ? -2.6 : 3} 6 0" fill="none" stroke="#5a3a00" stroke-width="1.4" stroke-linecap="round"/>`;
 		const cheeks = (cx, cy) => `<circle cx="${f(cx - 6.5)}" cy="${f(cy + 2)}" r="2" fill="#ff8a8a" opacity=".6"/><circle cx="${f(cx + 6.5)}" cy="${f(cy + 2)}" r="2" fill="#ff8a8a" opacity=".6"/>`;
 		const rays = [
 			0,
@@ -321,6 +383,11 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 			return `M${f(x + Math.cos(rad) * r1)} ${f(y + Math.sin(rad) * r1)}L${f(x + Math.cos(rad) * r2)} ${f(y + Math.sin(rad) * r2)}`;
 		}).join("");
 		const body = day ? `<circle cx="${f(x)}" cy="${f(y)}" r="20" fill="#fff8d6" opacity=".55"/><path d="${rays}" stroke="#ffb21a" stroke-width="2.6" stroke-linecap="round"/><circle cx="${f(x)}" cy="${f(y)}" r="11" fill="#ffc21a" stroke="#f39a00" stroke-width="1.6"/>${face(x, y, false)}${cheeks(x, y)}` : `<circle cx="${f(x)}" cy="${f(y)}" r="17" fill="#fff4c7" opacity=".18"/><circle cx="${f(x)}" cy="${f(y)}" r="11" fill="#fff4c7" stroke="#e9d68f" stroke-width="1.4"/><circle cx="${f(x + 4)}" cy="${f(y - 5)}" r="1.8" fill="#eadfae"/><circle cx="${f(x - 5)}" cy="${f(y + 5)}" r="1.3" fill="#eadfae"/>${face(x, y, true)}${cheeks(x, y)}<text x="${f(x + 12)}" y="${f(y - 9)}" font-size="8" font-weight="700" fill="#c8d2ff">z</text><text x="${f(x + 17)}" y="${f(y - 15)}" font-size="6" font-weight="700" fill="#c8d2ff">z</text>`;
+		const roofs = blocks.map(([bx, bw, bh]) => [
+			bx,
+			bw,
+			base - bh
+		]);
 		const tx = 118, ty = 73;
 		const car = (cx, front) => `<rect x="${cx}" y="${ty}" width="34" height="13" rx="${front ? 6 : 3}" fill="#ffffff" stroke="#3a3f4a" stroke-width="1"/><rect x="${cx}" y="81" width="34" height="2.4" fill="#00a84d"/>${[
 			4,
@@ -328,12 +395,15 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 			20
 		].map((o) => `<rect x="${cx + o}" y="75.4" width="6" height="4.4" rx="1.4" fill="${day ? "#9fd4ff" : "#ffe08a"}"/>`).join("")}`;
 		const train = car(tx, false) + car(154, true) + `<rect x="181" y="75.4" width="5" height="4.4" rx="1.6" fill="${day ? "#9fd4ff" : "#ffe08a"}"/><circle cx="182" cy="82" r="1.1" fill="#3a3f4a"/>` + (day ? "" : `<path d="M188 79L214 74L214 86Z" fill="#ffe08a" opacity=".28"/>`) + `<circle cx="124" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="146" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="160" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="182" cy="86.5" r="2" fill="#3a3f4a"/><path d="M112 78h-8M113 82h-12" stroke="${C.path}" stroke-opacity=".8" stroke-width="1.6" stroke-linecap="round"/>`;
-		return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${body}${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/>${train}</svg><div class="sun-times"><span>${hm(rise)} 해 뜸</span><span>해 짐 ${hm(set)}</span></div>`;
+		const open = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"`;
+		return `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${art?.back ?? ""}</svg>${open} class="sky-sun">${body}${art?.over(x, y) ?? ""}</svg>${open} class="sky-front">${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs, base) ?? ""}</svg>` + (art?.temp ? `<div class="sun-temp">${art.temp}</div>` : "") + `<div class="sun-times"><span>${hm(rise)} 해 뜸</span><span>해 짐 ${hm(set)}</span></div>`;
 	}
 	return {
 		effectiveTheme,
 		mapPalette,
 		applyTheme,
+		openSky,
+		closeSky,
 		get themeChoice() {
 			return cur.themeChoice;
 		},

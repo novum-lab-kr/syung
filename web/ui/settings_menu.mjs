@@ -427,7 +427,16 @@ function ThemePick() {
 		/* @__PURE__ */ a("div", {
 			id: "sunPath",
 			class: state.sky.night ? "sun-path is-night" : "sun-path",
-			dangerouslySetInnerHTML: { __html: state.sky.html }
+			role: state.sky.label ? "img" : void 0,
+			"aria-label": state.sky.label,
+			children: [/* @__PURE__ */ a("div", {
+				class: "sun-svg",
+				dangerouslySetInnerHTML: { __html: state.sky.html }
+			}), /* @__PURE__ */ a("div", {
+				id: "skyMotion",
+				class: "sky-motion",
+				"aria-hidden": "true"
+			})]
 		}),
 		/* @__PURE__ */ a("div", {
 			class: "theme-seg",
@@ -503,10 +512,11 @@ var settingsMenu = {
 	themeNote(note) {
 		paint({ themeNote: note });
 	},
-	sky(html, night) {
+	sky(html, night, label) {
 		paint({ sky: {
 			html,
-			night
+			night,
+			label
 		} });
 	},
 	on(more) {
