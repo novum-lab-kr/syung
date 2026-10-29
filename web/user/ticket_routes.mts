@@ -84,3 +84,6 @@ type Spot = { lat:number; lng:number };
 export function routeUrl(from:Spot, to:Spot, at:string, via?:Spot | null) {
   return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ''}`;
 }
+
+// 카드 · 뒷면 첫 줄의 이름 줄이기: 띄어쓰기를 뺀 글자가 10 이하면 그대로(띄어쓰기 포함), 11 이상이면 앞 3 ‥ 뒤 2 (사용자 요청 2026-10-29)
+export const shortName = (name:string) => name.replace(/\s/g, '').length >= 11 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
