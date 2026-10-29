@@ -35,16 +35,17 @@ const STRIP = [0, 1, 2, 3, 4, 5, 6];
 const CHEVRON = '<svg class="tf-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
 
 interface Handlers {
-  ticketFlip(index:number):void; ticketEdit(index:number):void; ticketNew():void;
+  ticketFlip(index:number):void; ticketEdit(index:number):void; ticketMap(index:number):void; ticketNew():void;
   placeFrom():void; placeTo():void; timeToggle():void; timeDone():void; route():void;
   day(day:number):void; quick(days:string):void; name(value:string):void; submit():void; remove():void;
   placeInput(value:string):void; placePick(place:FoundPlace):void;
-  plan(index:number):void; planPick():void;
+  plan(index:number):void; planPick():void; planMap():void;
 }
 interface View {
   colors:Record<string, string>;   // 노선 이름 → 색(본체)
   // 승차권 목록: 받을 때마다 listTurn 을 늘려 카드를 새로 만든다(옛 replaceChildren) · 카드마다 뒤집힘 · 뒷면 첫 줄(null 이면 기다리는 모양)
   tickets:Ticket[]; listTurn:number; flipped:boolean[]; chains:(string | null)[];
+  mapping:number;   // 뒷면 '지도에서 보기'로 길을 찾는 중인 카드(없으면 -1)
   // 발권 화면: opened 는 한 번이라도 열었나(그 전엔 옛 HTML 의 빈 칸 그대로)
   opened:boolean; editingId:number | string | undefined; name:string; time:string; days:number[];
   from:Place | null; to:Place | null; route:SlimRoute | null; wheelOpen:boolean; sending:boolean; deleteArmed:boolean;
@@ -54,7 +55,7 @@ interface View {
   routeTrip:string; routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string;
 }
 let view:View = {
-  colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [],
+  colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, wheelOpen: false, sending: false, deleteArmed: false,
   placeTo: false, placeQuery: '', placeHidden: true, placeRows: [],
   routeTrip: '', routeWhen: '', plans: [], chosen: -1, routeMsg: '',
@@ -73,17 +74,21 @@ function Front({ ticket }:{ ticket:Pick<Ticket, 'id' | 'name' | 'depart' | 'days
     <div class="tk-serial">{serial}</div>{today ? <span class="tk-today">오늘</span> : null}
     {ticket.id ? <button class="tk-flip" type="button" aria-label="뒤집기">↻</button> : null}</div>;
 }
-// 목록 카드: 누르면 뒤집기, '고치기 ›' 는 발권 화면(카드 뒤집기 없이)
+// 목록 카드: 누르면 뒤집기, '고치기 ›' 는 발권 화면 · '지도에서 보기' 는 지도에 그 길(둘 다 카드 뒤집기 없이)
 function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
   const chain = view.chains[index] ?? null;
   const waiting = `<span>${esc(shortName(ticket.from.name))}</span><em>→</em><span>${esc(shortName(ticket.to.name))}</span>`;
   return <div class={view.flipped[index] ? 'ticket flipped' : 'ticket'} onClick={event => {
     if ((event.target as Element).closest('.tk-edit')) { event.stopPropagation(); call('ticketEdit')(index); return }
+    if ((event.target as Element).closest('.tk-map')) { event.stopPropagation(); call('ticketMap')(index); return }
     call('ticketFlip')(index);
   }}><div class="ticket-in"><Front ticket={ticket} /><div class="tk-face tk-back">
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
-    <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><button class="tk-edit" type="button">고치기 ›</button></div></div></div></div>;
+    <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
+      {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
+      <button class="tk-map" type="button" aria-disabled={view.mapping === index ? 'true' : undefined}>{view.mapping === index ? '찾는 중…' : '지도에서 보기'}</button>
+      <button class="tk-edit" type="button">고치기 ›</button></span></div></div></div></div>;
 }
 function TicketsPage() {
   return <>
@@ -158,6 +163,7 @@ function RoutePage() {
       aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     <button id="routePick" class="tf-save" type="button" hidden={!view.plans.length} onClick={call('planPick')}>이 경로로</button>
+    <button id="routeMap" class="rt-map" type="button" hidden={!view.plans.length} onClick={call('planMap')}>지도에서 보기</button>
   </>;
 }
 
