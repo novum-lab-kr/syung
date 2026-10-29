@@ -18,6 +18,7 @@ from server.services.live import SubwayLiveService
 from server.services.members import MemberService
 from server.services.owner_auth import OwnerAuth
 from server.services.places import PlaceSearch
+from server.services.weather import WeatherService
 from server.store.debug_log import DebugStore
 from server.store.live_samples import LiveSamples
 
@@ -26,11 +27,12 @@ class Services:
     def __init__(self, *, bus: BusLiveService | None = None, arrivals: BusArrivalService | None = None,
                  live: SubwayLiveService | None = None, journey: JourneyPlanner | None = None,
                  places: PlaceSearch | None = None, auth: OwnerAuth | None = None, health: HealthService | None = None,
-                 debug: DebugService | None = None, members: MemberService | None = None):
+                 debug: DebugService | None = None, members: MemberService | None = None,
+                 weather: WeatherService | None = None):
         self._lock = threading.RLock()   # journey 를 만들 때 live 를 같이 꺼낸다
         self._bus, self._arrivals, self._live = bus, arrivals, live
         self._journey, self._places, self._auth, self._health, self._debug = journey, places, auth, health, debug
-        self._members, self._admin = members, None
+        self._members, self._admin, self._weather = members, None, weather
         self.started_at = time.time()   # 관리 화면 '서버 시작 시각'
 
     @property
@@ -77,6 +79,14 @@ class Services:
             if self._places is None:
                 self._places = PlaceSearch()
             return self._places
+
+    @property
+    def weather(self) -> WeatherService:
+        """메뉴 하늘 그림의 날씨(키 KMA_SERVICE_KEY 가 없으면 날씨 없음)."""
+        with self._lock:
+            if self._weather is None:
+                self._weather = WeatherService()
+            return self._weather
 
     @property
     def auth(self) -> OwnerAuth:

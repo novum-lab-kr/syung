@@ -18,7 +18,7 @@ interface MenuState {
   pressed:Record<SwitchId, boolean>; hidden:Record<RowId, boolean>;
   race?:string; nation?:string; speed?:number; speedNote:string;   // 눌림 기준값(그 값과 같은 버튼이 눌림 · 없으면 aria-pressed 없음)
   icons:{ coaster:string; speed:string };   // 롤코 · 속도 아이콘(본체 ICONS 의 SVG 글자)
-  theme?:string; themeNote:ThemeNote; sky:{ html:string; night:boolean };
+  theme?:string; themeNote:ThemeNote; sky:{ html:string; night:boolean; label?:string };   // label: 날씨 한 줄(있으면 하늘 그림이 그림 역할 aria-label)
 }
 
 const SWITCHES:SwitchId[] = ['toggleSimcity', 'toggleJoseon', 'toggleStarcraft', 'toggleRetro', 'toggleNation', 'toggleCoaster', 'togglePrebuild', 'toggleSaver'];
@@ -91,7 +91,7 @@ const Device = () => <>
 function ThemePick() {
   const note = state.themeNote, choices:[string, ComponentChildren, string][] = [['auto', ICON.auto, '자동'], ['light', ICON.light, '라이트'], ['dark', ICON.dark, '다크']];
   return <>
-    <div id="sunPath" class={state.sky.night ? 'sun-path is-night' : 'sun-path'} dangerouslySetInnerHTML={{ __html: state.sky.html }}></div>
+    <div id="sunPath" class={state.sky.night ? 'sun-path is-night' : 'sun-path'} role={state.sky.label ? 'img' : undefined} aria-label={state.sky.label} ><div class="sun-svg" dangerouslySetInnerHTML={{ __html: state.sky.html }}></div><div id="skyMotion" class="sky-motion" aria-hidden="true"></div></div>
     <div class="theme-seg" role="group" aria-label="테마" aria-describedby="themeNote">{choices.map(([choice, icon, label]) =>
       <button type="button" data-theme-choice={choice} aria-pressed={pressedBy(state.theme, choice)} onClick={() => handlers.theme?.(choice)}>{icon}<span>{label}</span></button>)}</div>
     <p id="themeNote" class="theme-note" aria-live="polite">{typeof note === 'string' ? note : <>{note.lead}<b>{note.bold}</b>{note.tail}</>}</p>
@@ -118,7 +118,7 @@ export const settingsMenu = {
   icons(coaster:string, speed:string) { paint({ icons: { coaster, speed } }) },
   theme(choice:string) { paint({ theme: choice }) },
   themeNote(note:ThemeNote) { paint({ themeNote: note }) },
-  sky(html:string, night:boolean) { paint({ sky: { html, night } }) },
+  sky(html:string, night:boolean, label?:string) { paint({ sky: { html, night, label } }) },
   // 누르면 부를 함수(여러 번 불러 더한다 — 모드 · 미리 짓기 · 절전 · 테마가 따로 건다)
   on(more:Partial<Handlers>) {
     Object.assign(handlers.switches, more.switches);
