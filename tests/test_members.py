@@ -138,7 +138,7 @@ class MemberHttpTest(unittest.TestCase):
         issued = self.request("POST", "/api/me/tickets", cookie=session, body=TICKET)
         self.assertEqual(issued.status, 201)
         self.assertEqual(issued.json, {"id": 1, "name": "출근", "from": TICKET["from"], "to": TICKET["to"], "depart": "08:10", "days": [1, 2, 4, 5],
-                                       "route": None})
+                                       "route": None, "via": None})
         back = self.request("POST", "/api/me/tickets", cookie=session, body=dict(TICKET, name="퇴근", **{"from": TICKET["to"], "to": TICKET["from"]}, depart="18:30"))
         self.assertEqual(back.status, 201, "같은 요일에 여러 장")
         listed = self.request("GET", "/api/me/tickets", cookie=session).json["tickets"]
@@ -151,6 +151,13 @@ class MemberHttpTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json["tickets"][0]["route"], SAVED_ROUTE)
         cleared = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6]))
         self.assertIsNone(cleared.json["route"], "route 를 빼고 고치면 지운다")
+        # 경유지(2026-10-29): via 를 넣으면 저장 · 읽을 때 그대로, 빼고 고치면 지운다(route 와 같다)
+        via = {"name": "성수역 2호선", "lat": 37.544581, "lng": 127.055961}
+        vias = self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, route=ROUTE, via=dict(via, name=" 성수역 2호선 ")))
+        self.assertEqual((vias.status, vias.json["via"]), (200, via))
+        self.assertEqual(self.request("GET", "/api/me/tickets", cookie=session).json["tickets"][0]["via"], via)
+        self.assertEqual(self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, via={"name": "성수", "lat": 99, "lng": 127})).status, 400)
+        self.assertIsNone(self.request("PUT", "/api/me/tickets/1", cookie=session, body=dict(TICKET, depart="07:50", days=[6])).json["via"])
         self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 204)
         self.assertEqual(self.request("DELETE", "/api/me/tickets/2", cookie=session).status, 404)
 
@@ -442,7 +449,37 @@ class CleanRouteTest(unittest.TestCase):
         self.assertIsNone(clean_ticket(dict(TICKET, route=None))["route"])
 
 
+class CleanViaTest(unittest.TestCase):
+    def test_via_is_a_place_or_nothing(self):
+        saved = clean_ticket(dict(TICKET, via={"name": " 성수역 ", "lat": 37.5445812, "lng": 127.0559614}))
+        self.assertEqual((saved["via_name"], saved["via_lat"], saved["via_lng"]), ("성수역", 37.544581, 127.055961))
+        for body in (TICKET, dict(TICKET, via=None)):
+            self.assertEqual([clean_ticket(body)[name] for name in ("via_name", "via_lat", "via_lng")], [None, None, None])
+        for via in ("성수역", {}, {"name": "", "lat": 37.5, "lng": 127.0}, {"name": "성수", "lat": True, "lng": 127.0},
+                    {"name": "성수", "lat": 37.5, "lng": 200}, {"name": "가" * 81, "lat": 37.5, "lng": 127.0}):
+            with self.subTest(via=via), self.assertRaises(ValueError):
+                clean_ticket(dict(TICKET, via=via))
+
+
 class MigrationTest(unittest.TestCase):
+    def test_version_seven_tickets_read_without_via(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "m.sqlite3"
+            with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as conn:
+                conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+                conn.execute("INSERT INTO schema_version VALUES (7)")
+                for _number, sql in MIGRATIONS[:7]:
+                    for statement in (part.strip() for part in sql.split(";")):
+                        if statement and not statement.startswith(("INSERT INTO tickets", "DROP TABLE commute")):
+                            conn.execute(statement)
+                conn.execute("INSERT INTO users (id, display_name, created_at) VALUES (1, '옛 회원', 100)")
+                conn.execute("INSERT INTO tickets (user_id, name, from_name, from_lat, from_lng, to_name, to_lat, to_lng, depart_at, days, "
+                             "created_at, updated_at) VALUES (1, '출근', '집', 37.5, 127.0, '회사', 37.4, 127.1, '08:10', '1', 5, 5)")
+            members = MemberService(MemberConfig(db_file=path), providers={})
+            self.assertEqual(members.store.schema_version(), MIGRATIONS[-1][0])
+            [ticket] = members.tickets(1)
+            self.assertEqual((ticket["name"], ticket["route"], ticket["via"]), ("출근", None, None), "옛 승차권은 경유지 없이 그대로")
+
     def test_version_one_commute_rows_become_tickets(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "m.sqlite3"

@@ -14,7 +14,8 @@ PUT    /api/me/avatar                 사진: Content-Type image/webp · image/j
                                          400(형식 · 크기 · 메타데이터) · 413 / 캐릭터: Content-Type application/json {character} → 200 내 정보
 DELETE /api/me/avatar                 → 200 내 정보(기본 캐릭터로 · 올린 사진 파일 지움)
 GET    /api/me/avatar/<이름>           → 200 사진(지금 내 사진일 때만 — 남의 · 지난 사진은 404). 이름이 바뀌면 주소가 바뀌어 오래 캐시한다
-GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7],route:{…}|null}]} · 401
+GET    /api/me/tickets                → {"tickets":[{id,name,from:{name,lat,lng},to:{…},depart:"HH:MM",days:[1..7],route:{…}|null,via:{name,lat,lng}|null}]} · 401
+                                         (via: 경유지 — 발권 본문에 via 를 넣으면 저장, 없거나 null 이면 경유지 없음)
 POST   /api/me/tickets                → 201 승차권 한 장(발권) · 400(검사 실패) · 409(20장 넘음)
 PUT    /api/me/tickets/<번호>          → 200 고친 한 장 · 404(남의 것 · 없음)
 DELETE /api/me/tickets/<번호>          → 204 · 404

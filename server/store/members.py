@@ -115,12 +115,20 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         CREATE INDEX usage_daily_day ON usage_daily(day)
     """),
+    # 8(2026-10-29): 승차권 경유지(사용자 결정 A — 경로 고르기에서 '○○ 거쳐서'로 찾은 길). 셋 다 NULL 이면 경유지 없음 — 옛 승차권은 그대로.
+    # 다시 찾을 때(뒷면 첫 줄 · 지도에서 보기) 같은 경유지로 물어야 같은 길이 나온다.
+    (8, """
+        ALTER TABLE tickets ADD COLUMN via_name TEXT;
+        ALTER TABLE tickets ADD COLUMN via_lat REAL;
+        ALTER TABLE tickets ADD COLUMN via_lng REAL
+    """),
 ]
 KST_SECONDS = 9 * 3600   # 날짜별 가입 · 탈퇴 수는 한국 날짜로 센다
 ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
 USAGE_DAYS = 365   # 날짜별 사용 횟수는 1년(오늘 포함 365일) 보관(계획서 D4)
 
-TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route")
+TICKET_COLUMNS = ("name", "from_name", "from_lat", "from_lng", "to_name", "to_lat", "to_lng", "depart_at", "days", "route",
+                  "via_name", "via_lat", "via_lng")
 
 
 def _log(conn: sqlite3.Connection, at: int, action: str, user_id: int, reason: str) -> None:

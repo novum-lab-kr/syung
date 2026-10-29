@@ -149,7 +149,8 @@ def _route(value: object) -> str | None:
 
 
 def clean_ticket(body: object) -> dict[str, Any]:
-    """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7], route?:{…}} → 저장할 값. 틀리면 ValueError."""
+    """발권 · 고치기 본문 {name, from:{name,lat,lng}, to:{…}, depart:"HH:MM", days:[1..7], route?:{…}, via?:{name,lat,lng}} → 저장할 값.
+    via 가 없거나 null 이면 경유지 없음. 틀리면 ValueError."""
     if not isinstance(body, dict):
         raise ValueError("본문은 JSON 객체예요")
     body = cast("dict[str, Any]", body)   # JSON 객체 — 키는 늘 글자
@@ -165,9 +166,11 @@ def clean_ticket(body: object) -> dict[str, Any]:
             or any(isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 7 for day in cast("list[Any]", days))):
         raise ValueError("타는 날은 1(월)~7(일) 목록이에요")
     days = cast("list[int]", days)   # 위에서 1~7 수 목록인지 봤다
+    via = None if body.get("via") is None else _place(body.get("via"), "경유")
     return {"name": name.strip(), "from_name": origin["name"], "from_lat": origin["lat"], "from_lng": origin["lng"],
             "to_name": dest["name"], "to_lat": dest["lat"], "to_lng": dest["lng"], "depart_at": depart,
-            "days": ",".join(str(day) for day in sorted(set(days))), "route": _route(body.get("route"))}
+            "days": ",".join(str(day) for day in sorted(set(days))), "route": _route(body.get("route")),
+            "via_name": via["name"] if via else None, "via_lat": via["lat"] if via else None, "via_lng": via["lng"] if via else None}
 
 
 def ticket_view(row: dict[str, Any]) -> dict[str, Any]:
@@ -176,7 +179,8 @@ def ticket_view(row: dict[str, Any]) -> dict[str, Any]:
             "from": {"name": row["from_name"], "lat": row["from_lat"], "lng": row["from_lng"]},
             "to": {"name": row["to_name"], "lat": row["to_lat"], "lng": row["to_lng"]},
             "depart": row["depart_at"], "days": [int(day) for day in (row["days"] or "").split(",") if day],
-            "route": json.loads(row["route"]) if row.get("route") else None}
+            "route": json.loads(row["route"]) if row.get("route") else None,
+            "via": {"name": row["via_name"], "lat": row["via_lat"], "lng": row["via_lng"]} if row.get("via_name") else None}
 
 
 class WebhookError(Exception):

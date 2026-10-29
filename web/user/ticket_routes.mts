@@ -94,3 +94,8 @@ export function routeAt(when:Date) {
   const pad = (value:number) => String(value).padStart(2, '0');
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
+// 승차권 길찾기 주소: 출발 · 도착 · 물을 시각(at 'YYYY-MM-DDTHH:MM') + 경유지가 있으면 via(서버 /api/route?via= — 2026-10-29 사용자 결정 A)
+type Spot = { lat:number; lng:number };
+export function routeUrl(from:Spot, to:Spot, at:string, via?:Spot | null) {
+  return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ''}`;
+}
