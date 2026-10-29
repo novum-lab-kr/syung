@@ -56,4 +56,5 @@ function routeAt(when) {
 function routeUrl(from, to, at, via) {
 	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ""}`;
 }
-export { ROUTE_KINDS, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, usefulRoutes };
+var shortName = (name) => name.replace(/\s/g, "").length >= 11 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
+export { ROUTE_KINDS, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, shortName, usefulRoutes };

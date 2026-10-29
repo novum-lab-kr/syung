@@ -2,6 +2,7 @@ import { routeSteps, routeTrack } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { RouteLoading, StepList } from "../ui/journey_sheet.mjs";
+import { shortName } from "./ticket_routes.mjs";
 // web/user/tickets_view.tsx
 var DAYS = [
 	"월",
@@ -26,7 +27,6 @@ var esc = (text) => String(text).replace(/[&<>"']/g, (mark) => ({
 })[mark]);
 var todayDay = () => ((/* @__PURE__ */ new Date()).getDay() + 6) % 7 + 1;
 var daysText = (days) => days.length ? days.map((day) => DAYS[day - 1]).join(" ") : "없음";
-var shortName = (name) => name.length >= 7 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
 function timeParts(time) {
 	const [hour, minute] = (time || "08:00").split(":").map(Number);
 	return {
