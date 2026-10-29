@@ -27,8 +27,8 @@ test('no hint without an exit number, or for the first and last walk', () => {
 });
 
 test('side-stop buses say which stop and which exit', () => {
-  const side = {...other('2415'), boardAt: {name: '청담역.경기고교', metres: 60, exit: '11', ars: '23187'}};
-  assert.equal(sameRoutes([bus('143', [side])]), '143 · 2415 중 먼저 오는 버스 (2415 는 옆 정류장 청담역.경기고교 23187(60m · 11번 출구 쪽)에서 타요)');
+  const side = {...other('2415'), boardAt: {name: '청담역.경기고교', metres: 60, walkMinutes: 2, exit: '11', ars: '23187'}};
+  assert.equal(sameRoutes([bus('143', [side])]), '143 · 2415 중 먼저 오는 버스 (2415 는 옆 정류장 청담역.경기고교 23187(걸어서 2분 · 11번 출구 쪽)에서 타요)');
   const down = {...other('2415'), alightAt: {name: '무역센터', metres: 90}};
   assert.equal(sameRoutes([bus('143', [down])]), '143 · 2415 중 먼저 오는 버스 (2415 는 옆 정류장 무역센터(90m)에서 내려요)');
 });

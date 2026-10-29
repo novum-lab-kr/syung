@@ -446,7 +446,7 @@ class CleanRouteTest(unittest.TestCase):
                 clean_ticket(dict(TICKET, route=route))
 
     def test_side_stop_and_exit_are_kept_and_checked(self):
-        side = {"name": "청담역.경기고교", "metres": 60, "exit": "11", "id": "122000084", "ars": "23187"}
+        side = {"name": "청담역.경기고교", "metres": 60, "walkMinutes": 2, "exit": "11", "id": "122000084", "ars": "23187"}
         alt = {"route": "2415", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57", "boardAt": side, "alightAt": {"name": "무역센터", "metres": 90}}
         legs = [dict(leg) for leg in ROUTE["legs"]]
         legs[2] = dict(legs[2], alternatives=[alt])
@@ -454,6 +454,17 @@ class CleanRouteTest(unittest.TestCase):
         self.assertEqual(saved[2]["alternatives"], [alt])
         self.assertEqual(saved[0]["exit"], "2-1")
         legs[2] = dict(legs[2], alternatives=[dict(alt, boardAt={"name": "x", "metres": "60"})])
+        with self.assertRaises(ValueError):
+            clean_ticket(dict(TICKET, route=dict(ROUTE, legs=legs)))
+
+    def test_many_alternatives_are_kept_up_to_the_server_cap(self):
+        # 서버가 12대까지 내려 주므로 승차권에도 그만큼 저장된다(3대 상한이면 저장이 실패했다)
+        alts = [{"route": f"R{n}", "color": "#3d5bab", "departs": "08:55", "arrives": "08:57"} for n in range(12)]
+        legs = [dict(leg) for leg in ROUTE["legs"]]
+        legs[2] = dict(legs[2], alternatives=alts)
+        saved = json.loads(clean_ticket(dict(TICKET, route=dict(ROUTE, legs=legs)))["route"])["legs"]
+        self.assertEqual(saved[2]["alternatives"], alts)
+        legs[2] = dict(legs[2], alternatives=alts + alts[:1])
         with self.assertRaises(ValueError):
             clean_ticket(dict(TICKET, route=dict(ROUTE, legs=legs)))
 
