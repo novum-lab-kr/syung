@@ -383,6 +383,11 @@ function platformNeighbours(line, s) {
 	}
 	return result;
 }
+function stationTrack(line, s, reach) {
+	const { prev, next } = platformNeighbours(line, s), here = stopPos(line, s);
+	const back = prev ? trackFrom(line, s, prev, reach).reverse() : [here], ahead = next ? trackFrom(line, s, next, reach) : [here];
+	return [...back, ...ahead.slice(1)];
+}
 var STATION_WIDTH_STOPS = [
 	[8, 6],
 	[12, 11],
@@ -1319,6 +1324,7 @@ var journeyMap = createJourneyMap({
 	byId,
 	cityCoords,
 	stopPos,
+	stationTrack,
 	cityViaduct,
 	sheetPad,
 	journeyCasingPaint,

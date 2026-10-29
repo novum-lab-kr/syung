@@ -1,5 +1,46 @@
 // web/ui/journey.mts
-function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, cityViaduct, sheetPad, journeyCasingPaint, journeyRidePaint, journeyStopPaint, live }) {
+var INSIDE_REACH_M = 350;
+function insideWalk(track, platform, exit) {
+	const straight = [platform, exit];
+	if (track.length < 2) return straight;
+	const kx = Math.cos(platform[1] * Math.PI / 180), M = 111320;
+	const metres = (a, b) => Math.hypot((b[0] - a[0]) * kx, b[1] - a[1]) * M;
+	const nearest = (p) => {
+		let best = {
+			index: 0,
+			point: track[0],
+			distance: Infinity
+		};
+		for (let i = 0; i + 1 < track.length; i++) {
+			const a = track[i], b = track[i + 1], dx = (b[0] - a[0]) * kx, dy = b[1] - a[1], len2 = dx * dx + dy * dy;
+			const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * kx * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+			const point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], distance = metres(p, point);
+			if (distance < best.distance) best = {
+				index: i,
+				point,
+				distance
+			};
+		}
+		return best;
+	};
+	const from = nearest(platform), to = nearest(exit);
+	const middle = [];
+	if (to.index >= from.index) for (let i = from.index + 1; i <= to.index; i++) middle.push(track[i]);
+	else for (let i = from.index; i > to.index; i--) middle.push(track[i]);
+	const way = [
+		platform,
+		from.point,
+		...middle,
+		to.point,
+		exit
+	];
+	let along = 0;
+	for (let i = 1; i < way.length; i++) along += metres(way[i - 1], way[i]);
+	const direct = metres(platform, exit);
+	if (direct < 25 || to.distance >= direct * .8 || along > direct * 2 + 60) return straight;
+	return way.filter((point, i) => i === 0 || metres(way[i - 1], point) > .5);
+}
+function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, stationTrack, cityViaduct, sheetPad, journeyCasingPaint, journeyRidePaint, journeyStopPaint, live }) {
 	function rideCoords(line, ids) {
 		const out = [];
 		for (let i = 1; i < ids.length; i++) {
@@ -61,7 +102,16 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 					properties: { kind: "inside" },
 					geometry: {
 						type: "LineString",
-						coordinates: [prev.path[prev.path.length - 1], stopPos(l.line, s0)]
+						coordinates: insideWalk(stationTrack(l.line, s0, INSIDE_REACH_M), stopPos(l.line, s0), prev.path[prev.path.length - 1]).reverse()
+					}
+				});
+				const nextStart = next && next.type === "ride" ? byId.get(next.stations[0]) : null;
+				if (next && next.type === "ride" && nextStart && s1 && nextStart.id === s1.id) feats.push({
+					type: "Feature",
+					properties: { kind: "inside" },
+					geometry: {
+						type: "LineString",
+						coordinates: insideWalk(stationTrack(l.line, s1, INSIDE_REACH_M), stopPos(l.line, s1), stopPos(next.line, nextStart))
 					}
 				});
 				if (next && next.type === "walk" && next.path && s1) feats.push({
@@ -69,7 +119,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 					properties: { kind: "inside" },
 					geometry: {
 						type: "LineString",
-						coordinates: [stopPos(l.line, s1), next.path[0]]
+						coordinates: insideWalk(stationTrack(l.line, s1, INSIDE_REACH_M), stopPos(l.line, s1), next.path[0])
 					}
 				});
 			}
@@ -418,4 +468,4 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		}
 	};
 }
-export { createJourneyMap };
+export { createJourneyMap, insideWalk };

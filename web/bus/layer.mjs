@@ -301,6 +301,21 @@ function busRoutesNearStops(data, box, chosen = [], screen = null) {
 	}
 	return [...rank].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0])).slice(0, 8).map(([id]) => id);
 }
+function busJoinLines(stop, planEnd, roadEnd) {
+	const out = [];
+	if (roadDistance(stop, planEnd) >= 1.5) out.push({
+		lod: "plan",
+		coordinates: [stop, planEnd]
+	});
+	if (roadEnd && roadDistance(stop, roadEnd) >= 1.5) out.push({
+		lod: "road",
+		coordinates: [stop, roadEnd]
+	});
+	return out;
+}
+function roadDistance(a, b) {
+	return Math.hypot((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 111320;
+}
 function snappedAt(snapped, distance) {
 	const S = snapped.samples, i = Math.max(0, Math.min(S.length - 2, Math.floor(distance / snapped.step))), a = S[i], b = S[Math.min(S.length - 1, i + 1)];
 	const t = Math.max(0, Math.min(1, (distance - a.distance) / (b.distance - a.distance || 1)));
@@ -857,7 +872,7 @@ var BusLayer = class {
 		const features = [], stopFeatures = [], chosen = new Set(this.chosenIds()), zoom = this.map.getZoom();
 		this.lineZoom = zoom;
 		this.roadLines = false;
-		const drawRoute = (route, markers, range = null) => {
+		const drawRoute = (route, markers, range = null, joins = null) => {
 			const properties = {
 				routeId: route.id,
 				name: route.name,
@@ -899,6 +914,17 @@ var BusLayer = class {
 				flush();
 			}
 			features.push(feature("LineString", range ? busPathSlice(line, ...range) : line?.points || route.path, plan));
+			if (range && joins) {
+				const roadWidth = snapped?.samples.find((p) => p.width != null)?.width;
+				[[joins[0], range[0]], [joins[1], range[1]]].forEach(([stop, distance]) => {
+					const joined = busJoinLines(stop, busPointAt(line, distance).coordinate, snapped ? snappedAt(snapped, distance).coordinate : null);
+					for (const join of joined) features.push(join.lod === "plan" ? feature("LineString", join.coordinates, plan) : feature("LineString", join.coordinates, {
+						...properties,
+						lod: "road",
+						...roadWidth ? { laneWidth: roadWidth } : {}
+					}));
+				});
+			}
 			for (const marker of markers) {
 				const snap = marker.distance != null ? { distance: marker.distance } : line && snapBusToPath(line, marker.coordinate, { maxError: 80 });
 				if (snapped) {
@@ -922,7 +948,7 @@ var BusLayer = class {
 			if (!route) continue;
 			const path = this.geometry(route), legs = this.journeyLegs.filter((l) => journeyBusRouteIds(this.data, [l]).includes(id));
 			const ranges = legs.map((l) => journeyBusRange(path, l));
-			if (legs.length && ranges.every(Boolean)) legs.forEach((l, i) => drawRoute(route, ranges[i].map((distance) => ({ distance })), ranges[i]));
+			if (legs.length && ranges.every(Boolean)) legs.forEach((l, i) => drawRoute(route, ranges[i].map((distance) => ({ distance })), ranges[i], [l.path[0], l.path.at(-1)]));
 			else drawRoute(route, legs.flatMap((l) => [l.path[0], l.path.at(-1)].map((coordinate) => ({ coordinate }))));
 		}
 		for (const leg of this.journeyLegs) if (!journeyBusRouteIds(this.data, [leg]).length) {
@@ -1964,4 +1990,4 @@ var BusLayer = class {
 		this.fleet.clear();
 	}
 };
-export { BUS_ROAD_LINE, BUS_TYPES, BUS_ZOOM, arrivalParts, busPollDelay, busRequestURL, busRouteRefreshMs, busRoutesNearStops, countdownText, createBusLayer, journeyBusRange, journeyBusRouteIds, placeStopPosts, prepareBusData, stopType, visibleBusRoutes };
+export { BUS_ROAD_LINE, BUS_TYPES, BUS_ZOOM, arrivalParts, busJoinLines, busPollDelay, busRequestURL, busRouteRefreshMs, busRoutesNearStops, countdownText, createBusLayer, journeyBusRange, journeyBusRouteIds, placeStopPosts, prepareBusData, stopType, visibleBusRoutes };
