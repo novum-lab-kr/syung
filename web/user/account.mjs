@@ -1,3 +1,4 @@
+import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { accountView, avatarLook, nameLength } from "./account_view.mjs";
 import { DAYS, esc, shortName, ticketsView, timeParts } from "./tickets_view.mjs";
@@ -126,7 +127,7 @@ async function fillChain(t, put) {
 	}
 	put(html);
 }
-async function initAccount({ colors = {} } = {}) {
+async function initAccount({ colors = {}, routeMap } = {}) {
 	const item = $("accountItem"), sheet = $("loginSheet");
 	if (!item || !sheet) return;
 	let answer = null;
@@ -658,6 +659,94 @@ async function initAccount({ colors = {} } = {}) {
 		ticketsView.set({ route: slimRoute(plan) });
 		backToForm();
 	}
+	const mapBar = document.createElement("div");
+	mapBar.className = "jbar";
+	mapBar.hidden = true;
+	mapBar.innerHTML = "<button type=\"button\" class=\"jbar-open\"></button><button type=\"button\" class=\"jbar-x\" aria-label=\"경로 지우기\" title=\"경로 지우기\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button>";
+	document.body.append(mapBar);
+	const mapBarOpen = mapBar.querySelector(".jbar-open");
+	let mapShown = null;
+	function mapGone() {
+		if (!mapShown) return;
+		const { plan } = mapShown;
+		mapShown = null;
+		mapBar.hidden = true;
+		routeMap?.clear(plan);
+	}
+	function showOnMap(plan, backTo, note, back) {
+		if (!routeMap) return;
+		mapGone();
+		$("settingsClose").click();
+		routeMap.show(plan);
+		mapShown = {
+			plan,
+			back
+		};
+		mapBarOpen.innerHTML = `<span class="jbar-top"><b><small>약 </small>${plan.minutes}<small>분</small></b><span>‹ ${esc(backTo)}${note ? ` · ${esc(note)}` : ""}</span></span>${routeTrack(plan, colors, 240)}`;
+		mapBarOpen.setAttribute("aria-label", `${backTo} 돌아가기${note ? `. ${note}` : ""}`);
+		mapBar.hidden = false;
+		mapBarOpen.focus({ preventScroll: true });
+	}
+	mapBarOpen.addEventListener("click", (e) => {
+		e.stopPropagation();
+		const back = mapShown?.back;
+		mapGone();
+		$("settingsButton").click();
+		back?.();
+	});
+	mapBar.querySelector(".jbar-x").onclick = mapGone;
+	$("settingsButton").addEventListener("click", mapGone);
+	routeMap?.onGone(mapGone);
+	function mapPlan() {
+		const chosen = form().chosen, plan = form().plans[chosen];
+		if (!plan) return;
+		showOnMap(plan, "경로 고르기로", "", () => {
+			$("routeOpen").click();
+			$("routeList").children[chosen]?.focus({ preventScroll: true });
+		});
+	}
+	let mapSeq = 0;
+	const mapPanel = $("settingsPanel"), mapList = $("menuTickets");
+	const mapWatch = new MutationObserver(() => {
+		if (ticketsView.state.mapping < 0 || mapPanel.classList.contains("open") && !mapList.hidden) return;
+		mapSeq++;
+		ticketsView.set({ mapping: -1 });
+	});
+	mapWatch.observe(mapPanel, {
+		attributes: true,
+		attributeFilter: ["class", "hidden"]
+	});
+	mapWatch.observe(mapList, {
+		attributes: true,
+		attributeFilter: ["hidden"]
+	});
+	async function mapTicket(index) {
+		const view = ticketsView.state, ticket = view.tickets[index], turn = view.listTurn;
+		if (!ticket || view.mapping >= 0) return;
+		const my = ++mapSeq;
+		ticketsView.set({ mapping: index });
+		try {
+			const at = routeAt(nextRideDay(ticket.days, ticket.depart, /* @__PURE__ */ new Date()));
+			const { status, body } = await getJson(`./api/route?from=${ticket.from.lat},${ticket.from.lng}&to=${ticket.to.lat},${ticket.to.lng}&at=${encodeURIComponent(at)}`);
+			if (my !== mapSeq || ticketsView.state.listTurn !== turn || !$("settingsPanel").classList.contains("open") || $("menuTickets").hidden) return;
+			const plans = status === 200 && body?.ok ? body.plans || [] : [];
+			const saved = ticket.route ? rideSig(ticket.route) : null;
+			const same = saved === null ? null : quickestRoute(plans.filter((plan) => rideSig(plan) === saved));
+			const plan = same || quickestRoute(plans);
+			if (!plan) {
+				toast(body?.error || "길을 찾지 못했어요", true);
+				return;
+			}
+			showOnMap(plan, "승차권으로", ticket.route && !same ? "지금은 다른 길이 빨라요" : "", () => {
+				$("ticketsRow").click();
+				$("ticketList").children[index]?.querySelector(".tk-map")?.focus({ preventScroll: true });
+			});
+		} catch {
+			if (my === mapSeq) toast("길을 찾지 못했어요. 연결을 확인해 주세요.", true);
+		} finally {
+			if (my === mapSeq) ticketsView.set({ mapping: -1 });
+		}
+	}
 	let deleteArmed = false;
 	function openTicket(t) {
 		editing = t || null;
@@ -751,6 +840,7 @@ async function initAccount({ colors = {} } = {}) {
 	ticketsView.on({
 		ticketFlip: flipTicket,
 		ticketEdit: (index) => openTicket(ticketsView.state.tickets[index]),
+		ticketMap: mapTicket,
 		ticketNew: () => openTicket(null),
 		placeFrom: () => openPlace("from"),
 		placeTo: () => openPlace("to"),
@@ -771,7 +861,8 @@ async function initAccount({ colors = {} } = {}) {
 		placeInput,
 		placePick,
 		plan: (index) => ticketsView.set({ chosen: index }),
-		planPick: pickPlan
+		planPick: pickPlan,
+		planMap: mapPlan
 	});
 	function countUse(kind) {
 		if (!me) return;

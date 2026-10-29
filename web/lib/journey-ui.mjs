@@ -636,12 +636,17 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			if (last) sheetClosed();
 		}
 	}
+	function drop() {
+		last = null;
+		bar.hidden = true;
+	}
 	button.addEventListener("click", () => open());
 	return {
 		open,
 		openWith,
 		sheetClosed,
-		sheetReplaced
+		sheetReplaced,
+		drop
 	};
 }
 export { initJourney, routeTrack, trackParts };

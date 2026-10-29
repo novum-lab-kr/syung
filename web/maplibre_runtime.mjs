@@ -1340,6 +1340,7 @@ var journeyMap = createJourneyMap({
 	}
 });
 var { rideCoords, showRoute, fitRoute, clearRoute, setSubwayOff, setRouteOpacity, focusRoute } = journeyMap;
+var ticketRouteGone = null;
 var journey = initJourney({
 	openSheetView,
 	drawJourney,
@@ -1350,14 +1351,35 @@ var journey = initJourney({
 	myLocation: () => myLocation,
 	button: document.getElementById("routeButton"),
 	showRoute: (...a) => {
+		ticketRouteGone?.();
 		showRoute(...a);
 		refreshLive();
 	},
 	clearRoute: () => {
+		ticketRouteGone?.();
 		clearRoute();
 		refreshLive();
 	}
 });
+document.getElementById("routeButton").addEventListener("click", () => ticketRouteGone?.());
+var ticketRoute = {
+	show(plan) {
+		journey.drop();
+		closeSheet();
+		showRoute(plan, false, false);
+		fitRoute(110);
+		refreshLive();
+	},
+	clear(plan) {
+		if (journeyMap.displayedRoute?.plan === plan) {
+			clearRoute();
+			refreshLive();
+		}
+	},
+	onGone(fn) {
+		ticketRouteGone = fn;
+	}
+};
 var rider = createCoasterRide({
 	map,
 	maplibregl,
@@ -1920,8 +1942,10 @@ map.on("load", () => {
 		},
 		onRouteSelect: (leg, { fit } = {}) => {
 			setSubwayOff(!!leg);
-			if (leg) showRoute({ legs: [leg] }, true, fit ?? busLayer?.selection?.kind !== "bus");
-			else if (journeyMap.busRouteFocus) {
+			if (leg) {
+				ticketRouteGone?.();
+				showRoute({ legs: [leg] }, true, fit ?? busLayer?.selection?.kind !== "bus");
+			} else if (journeyMap.busRouteFocus) {
 				journeyMap.displayedRoute = null;
 				journeyMap.busRouteFocus = false;
 				journeyMap.routeBounds = null;
@@ -2490,7 +2514,10 @@ var setJoseon = (on) => setSimcity(on, true);
 	const go = () => {
 		if (started) return;
 		started = true;
-		__vitePreload(() => import("./user/account.mjs").then((m) => m.initAccount({ colors })), [], import.meta.url).catch(() => {});
+		__vitePreload(() => import("./user/account.mjs").then((m) => m.initAccount({
+			colors,
+			routeMap: ticketRoute
+		})), [], import.meta.url).catch(() => {});
 	};
 	if (location.hash.includes("login=")) go();
 	else {

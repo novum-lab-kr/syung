@@ -50,6 +50,7 @@ var view = {
 	listTurn: 0,
 	flipped: [],
 	chains: [],
+	mapping: -1,
 	opened: false,
 	editingId: void 0,
 	name: "",
@@ -126,6 +127,11 @@ function Card({ ticket, index }) {
 				call("ticketEdit")(index);
 				return;
 			}
+			if (event.target.closest(".tk-map")) {
+				event.stopPropagation();
+				call("ticketMap")(index);
+				return;
+			}
 			call("ticketFlip")(index);
 		},
 		children: /* @__PURE__ */ a("div", {
@@ -144,10 +150,18 @@ function Card({ ticket, index }) {
 					/* @__PURE__ */ a("div", { class: "tk-mag" }),
 					/* @__PURE__ */ a("div", {
 						class: "tk-foot",
-						children: [/* @__PURE__ */ a("span", { children: `타는 날 ${daysText(ticket.days)}` }), /* @__PURE__ */ a("button", {
-							class: "tk-edit",
-							type: "button",
-							children: "고치기 ›"
+						children: [/* @__PURE__ */ a("span", { children: `타는 날 ${daysText(ticket.days)}` }), /* @__PURE__ */ a("span", {
+							class: "tk-acts",
+							children: [/* @__PURE__ */ a("button", {
+								class: "tk-map",
+								type: "button",
+								"aria-disabled": view.mapping === index ? "true" : void 0,
+								children: view.mapping === index ? "찾는 중…" : "지도에서 보기"
+							}), /* @__PURE__ */ a("button", {
+								class: "tk-edit",
+								type: "button",
+								children: "고치기 ›"
+							})]
 						})]
 					})
 				]
@@ -479,6 +493,14 @@ function RoutePage() {
 			hidden: !view.plans.length,
 			onClick: call("planPick"),
 			children: "이 경로로"
+		}),
+		/* @__PURE__ */ a("button", {
+			id: "routeMap",
+			class: "rt-map",
+			type: "button",
+			hidden: !view.plans.length,
+			onClick: call("planMap"),
+			children: "지도에서 보기"
 		})
 	] });
 }
