@@ -353,18 +353,20 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   // 장소 찾기(칸 바로 아래 목록): 300 ms 늦춰 찾고, 늦게 온 답은 버린다
   let placeTimer:ReturnType<typeof setTimeout> | 0 = 0, placeSeq = 0;
   function placeFocus(which:PlaceKey) {
+    if (form().placeFor === which) return;   // 같은 칸 목록 안에서 입력 칸으로 되돌아온 것 — 떠 있는 목록을 그대로 둔다
     clearTimeout(placeTimer); placeSeq++;
     const spot = form()[which];
     ticketsView.set({placeFor: which, placeQuery: spot?.name || '', placeHidden: true, placeRows: []});
   }
   function placeInput(value:string) {
     if (!form().placeFor) return;
-    ticketsView.set({placeQuery: value});
+    // 번호는 글자를 칠 때 바로 올린다 — 늦춰 보내는 사이에 온 이전 답이 새 글자 위에 뜨거나 골라지지 않게, 이전 결과도 바로 숨긴다
+    const my = ++placeSeq;
+    ticketsView.set({placeQuery: value, placeHidden: true});
     clearTimeout(placeTimer);
     const query = value.trim();
-    if (query.length < 2) { placeSeq++; ticketsView.set({placeHidden: true}); return; }
+    if (query.length < 2) return;
     placeTimer = setTimeout(async () => {
-      const my = ++placeSeq;
       try {
         const {body} = await getJson<{ ok?:boolean; places:FoundPlace[] }>(`./api/place?q=${encodeURIComponent(query)}`);
         if (my !== placeSeq) return;
@@ -374,7 +376,6 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
       } catch { if (my === placeSeq) ticketsView.set({placeRows: '검색하지 못했어요', placeHidden: false}); }
     }, 300);
   }
-  const placeFieldId = {from: 'ticketFrom', to: 'ticketTo', via: 'routeVia'} as const;
   const hereFlag = (which:PlaceKey, here:boolean):Partial<{ fromHere:boolean; toHere:boolean }> => {
     if (which === 'from') return {fromHere: here};
     return which === 'to' ? {toHere: here} : {};
@@ -382,6 +383,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   // 칸에 곳을 넣는다(찾은 곳 · 내 위치). 곳이 바뀌었으면 고른 경로는 풀고 경로를 다시 찾는다
   function setSpot(which:PlaceKey, place:Place, here: boolean) {
     const before = form()[which];
+    spotEpoch++;   // 기다리던 내 위치 답이 있으면 버린다
     ticketsView.set({[which]: place, ...hereFlag(which, here)});
     if (!sameSpot(before, place)) routeChanged();
   }
@@ -392,7 +394,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     ticketsView.set({placeFor: null, placeQuery: '', placeHidden: true, placeRows: []});
     setSpot(which, {name: found.name, lat: found.lat, lng: found.lng}, false);
     if (which === 'from' && !form().to) $('ticketTo').focus();   // 출발지를 골랐으면 이어서 도착지
-    else $(placeFieldId[which]).blur();
+    else (document.activeElement as HTMLElement | null)?.blur();   // 키보드로 목록 단추에서 골랐을 수도 있어 지금 초점이 있는 것을 놓는다
   }
   // 칸을 떠난다. '내 위치'로 넣은 곳에 이름을 쳐 두고 곳은 고르지 않았으면 좌표는 두고 이름만 고친다
   function placeBlur(which:PlaceKey) {
@@ -405,7 +407,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   }
   // 📍 내 위치: 본체가 아는 내 위치(없으면 지금 한 번 물어본다 — 권한 흐름은 본체의 첫 방문 때와 같다)로 그 칸을 채운다.
   // 서버에는 좌표 → 이름 바꾸기(역지오코딩)가 없어(server/sources/kakao.py 는 장소 검색뿐) 이름은 '내 위치'
-  let locating = false;
+  let hereToken = 0, spotEpoch = 0;   // 위치를 기다리는 사이 다른 승차권을 열거나 칸을 바꾸면 늦게 온 위치는 버린다
   const currentFix = () => new Promise<{lat:number; lng:number} | null>(done => {
     const known = myLocation?.();
     if (known?.[0] != null && known[1] != null) { done({lat: known[1], lng: known[0]}); return; }
@@ -413,16 +415,14 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     navigator.geolocation.getCurrentPosition(pos => done({lat: pos.coords.latitude, lng: pos.coords.longitude}), () => done(null), {enableHighAccuracy: false, timeout: 8000, maximumAge: 300000});
   });
   async function useHere(which:'from' | 'to') {
-    if (locating) return;
-    locating = true;
-    try {
-      const fix = await currentFix();
-      if (!fix) { toast('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.', true); return; }
-      clearTimeout(placeTimer); placeSeq++;
-      ticketsView.set({placeFor: null, placeQuery: '', placeHidden: true, placeRows: []});
-      setSpot(which, {name: '내 위치', lat: fix.lat, lng: fix.lng}, true);
-      if (which === 'from' && !form().to) $('ticketTo').focus();
-    } finally { locating = false; }
+    const token = ++hereToken, epoch = spotEpoch;
+    const fix = await currentFix();
+    if (token !== hereToken || epoch !== spotEpoch || $('menuTicket').hidden) return;
+    if (!fix) { toast('위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.', true); return; }
+    clearTimeout(placeTimer); placeSeq++;
+    ticketsView.set({placeFor: null, placeQuery: '', placeHidden: true, placeRows: []});
+    setSpot(which, {name: '내 위치', lat: fix.lat, lng: fix.lng}, true);
+    if (which === 'from' && !form().to) $('ticketTo').focus();
   }
   // 출발 시각 휠(사용자와 정한 시안 B): 오전/오후 · 시 · 분(5분 단위)을 돌려 가운데 띠에 맞춘다.
   // 돌리는 동안은 칸 · 미리보기만 바꾸고, 접을 때 시각이 바뀌었으면 고른 경로를 푼다(돌리는 중에 토스트가 연달아 뜨지 않게).
@@ -645,7 +645,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
 
   let deleteArmed = false;
   function openTicket(t:Ticket | null) {
-    editing = t || null; deleteArmed = false; routeSeq++; routeKind = 'all';
+    editing = t || null; deleteArmed = false; routeSeq++; spotEpoch++; routeKind = 'all';
     $('menuTicket').setAttribute('aria-label', t ? '승차권 고치기' : '승차권 발권');
     closeWheel(false);
     ticketsView.set({opened: true, editingId: t?.id, name: t?.name || '', time: t?.depart || '08:00', from: t?.from || null, to: t?.to || null, route: t?.route || null, via: t?.via || null,

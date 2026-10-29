@@ -125,9 +125,12 @@ class Wheels extends Component {
 // 목록에서 고른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 — 목록은 늘 문서에 두고 숨기기만 하고, 누름은 거기서 멈춘다
 function PlaceField({ which }:{ which:PlaceKey }) {
   const spot = view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
-  return <div class="tf-fld"><div class="tf-row"><label class="tf-pl"><i class={dot} aria-hidden="true"></i>
+  return <div class="tf-fld" onFocusOut={event => {   // 같은 칸(입력 · 📍 · 결과 목록) 안으로 초점이 옮겨 가면 목록을 남기고, 영역을 벗어나야 닫는다(Tab 으로 결과 고르기)
+      const next = event.relatedTarget as Node | null;
+      if (!next || !event.currentTarget.contains(next)) call('placeBlur')(which);
+    }}><div class="tf-row"><label class="tf-pl"><i class={dot} aria-hidden="true"></i>
       <span><small>{label}</small><input id={id} type="text" maxlength={40} autocomplete="off" aria-label={aria} aria-controls={`${id}List`} placeholder={view.opened ? empty : ''} value={active ? view.placeQuery : spot?.name ?? ''}
-        onFocus={event => { call('placeFocus')(which); event.currentTarget.select() }} onInput={event => call('placeInput')(event.currentTarget.value)} onBlur={() => call('placeBlur')(which)}
+        onFocus={event => { call('placeFocus')(which); event.currentTarget.select() }} onInput={event => call('placeInput')(event.currentTarget.value)}
         onKeyDown={event => {
           if (event.key === 'Enter') event.preventDefault();   // 글자 칸의 Enter 가 발권(폼 제출)이 되지 않게
           else if (event.key === 'Escape' && active && !view.placeHidden) { event.stopPropagation(); set({ placeHidden: true }) }   // 목록이 떠 있으면 목록만 접고 서랍은 닫지 않는다
