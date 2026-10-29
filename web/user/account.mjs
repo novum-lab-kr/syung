@@ -2,7 +2,7 @@ import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { accountView, avatarLook, nameLength } from "./account_view.mjs";
 import { DAYS, esc, shortName, ticketsView, timeParts } from "./tickets_view.mjs";
-import { nextRideDay, quickestRoute, rideSig, routeAt, usefulRoutes } from "./ticket_routes.mjs";
+import { chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, usefulRoutes } from "./ticket_routes.mjs";
 // web/user/account.mts
 var $ = (id) => document.getElementById(id);
 var CHANGE = { "X-Requested-With": "syung" };
@@ -614,6 +614,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		legs: p.legs.map(slimLeg)
 	});
 	let routeSeq = 0;
+	let routeKind = "all", routeSort = "";
 	async function openRoute() {
 		lastField = $("ticketRoute");
 		const { from, to } = form();
@@ -629,7 +630,8 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			plans: [],
 			chosen: -1,
 			routeMsg: "경로를 찾고 있어요",
-			routeLoading: true
+			routeLoading: true,
+			routeFilter: null
 		});
 		$("routeOpen").click();
 		const my = ++routeSeq;
@@ -647,13 +649,16 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 			const plans = usefulRoutes(body.plans), route = form().route;
 			const mine = route ? plans.findIndex((p) => rideSig(p) === rideSig(route)) : -1;
 			const fastest = plans.findIndex((p) => p.tag === "가장 빠른 길");
+			routeKind = "all";
+			routeSort = "";
 			ticketsView.set({
 				plans,
 				chosen: mine >= 0 ? mine : Math.max(0, fastest),
 				routeMsg: "",
-				routeLoading: false
+				routeLoading: false,
+				routeFilter: routeFilterView(plans, routeKind, routeSort)
 			});
-			$("routeList").children[ticketsView.state.chosen]?.focus({ preventScroll: true });
+			focusChosen();
 			previewPlan();
 		} catch {
 			if (my === routeSeq) ticketsView.set({
@@ -672,6 +677,28 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		ticketsView.set({ chosen: index });
 		previewPlan();
 	}
+	function focusChosen() {
+		const { chosen, routeFilter } = form(), at = routeFilter ? routeFilter.order.indexOf(chosen) : chosen;
+		$("routeList").children[at]?.focus({ preventScroll: true });
+	}
+	function refilter() {
+		const { plans, route } = form(), routeFilter = routeFilterView(plans, routeKind, routeSort);
+		const chosen = chosenAfter(plans, routeFilter.order, route);
+		ticketsView.set({
+			routeFilter,
+			chosen
+		});
+		if (chosen >= 0) previewPlan();
+		else previewGone();
+	}
+	const filterKind = (kind) => {
+		routeKind = kind;
+		refilter();
+	};
+	const filterSort = (sort) => {
+		routeSort = sort;
+		refilter();
+	};
 	const routePanel = $("settingsPanel"), routePage = $("menuRoute");
 	const narrow = matchMedia("(max-width: 780px)");
 	let previewed = null;
@@ -914,7 +941,9 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		placeInput,
 		placePick,
 		plan: choosePlan,
-		planPick: pickPlan
+		planPick: pickPlan,
+		routeKind: filterKind,
+		routeSort: filterSort
 	});
 	function countUse(kind) {
 		if (!me) return;

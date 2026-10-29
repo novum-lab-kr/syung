@@ -21,6 +21,42 @@ function usefulRoutes(plans) {
 function quickestRoute(plans) {
 	return usefulRoutes(plans).reduce((best, plan) => !best || ahead(plan, best) ? plan : best, null);
 }
+var ROUTE_KINDS = [
+	["all", "전체"],
+	["subway", "지하철만"],
+	["bus", "버스만"]
+];
+var ROUTE_SORTS = [["transfers", "환승 적게"], ["walk", "덜 걷기"]];
+var fits = (plan, kind) => kind === "all" || plan.kind === kind;
+function routeOrder(plans, kind, sort) {
+	const order = plans.flatMap((plan, index) => fits(plan, kind) ? [index] : []);
+	if (!sort) return order;
+	const count = (index) => sort === "transfers" ? plans[index].transfers : plans[index].walkMinutes;
+	return order.sort((left, right) => count(left) - count(right) || left - right);
+}
+function routeFilterView(plans, kind, sort) {
+	const order = routeOrder(plans, kind, sort);
+	const name = ROUTE_KINDS.find(([each]) => each === kind)[1];
+	return {
+		kinds: ROUTE_KINDS.map(([each, label]) => ({
+			kind: each,
+			name: label,
+			count: plans.filter((plan) => fits(plan, each)).length,
+			pressed: each === kind
+		})),
+		sorts: ROUTE_SORTS.map(([each, label]) => ({
+			sort: each,
+			name: label,
+			pressed: each === sort
+		})),
+		order,
+		empty: order.length ? "" : `${name} 타는 경로가 없어요`
+	};
+}
+function chosenAfter(plans, order, saved) {
+	const sig = saved ? rideSig(saved) : null;
+	return (sig === null ? void 0 : order.find((index) => rideSig(plans[index]) === sig)) ?? order[0] ?? -1;
+}
 function nextRideDay(days, time, now) {
 	const [hour, minute] = time.split(":").map(Number);
 	for (let offset = 0; offset < 8; offset++) {
@@ -34,4 +70,4 @@ function routeAt(when) {
 	const pad = (value) => String(value).padStart(2, "0");
 	return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
-export { SLOW_LIMIT, nextRideDay, quickestRoute, rideSig, routeAt, usefulRoutes };
+export { ROUTE_KINDS, ROUTE_SORTS, SLOW_LIMIT, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, usefulRoutes };

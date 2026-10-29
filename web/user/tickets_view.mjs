@@ -72,7 +72,8 @@ var view = {
 	plans: [],
 	chosen: -1,
 	routeMsg: "",
-	routeLoading: false
+	routeLoading: false,
+	routeFilter: null
 };
 var handlers = null;
 var call = (key) => (...args) => (handlers?.[key])?.(...args);
@@ -454,7 +455,36 @@ function PlacePage() {
 function planHTML(plan) {
 	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}<span class="jp-meta">환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분</span></span>`;
 }
+function RouteFilters({ filter }) {
+	return /* @__PURE__ */ a("div", {
+		class: "rt-filters",
+		children: [/* @__PURE__ */ a("div", {
+			class: "segmented jkinds",
+			role: "group",
+			"aria-label": "경로 종류",
+			children: filter.kinds.map((tab) => /* @__PURE__ */ a("button", {
+				type: "button",
+				"data-k": tab.kind,
+				"aria-pressed": tab.pressed,
+				onClick: () => call("routeKind")(tab.kind),
+				children: [tab.name, /* @__PURE__ */ a("b", { children: tab.count })]
+			}))
+		}), /* @__PURE__ */ a("div", {
+			class: "segmented jkinds",
+			role: "group",
+			"aria-label": "경로 차례",
+			children: filter.sorts.map((tab) => /* @__PURE__ */ a("button", {
+				type: "button",
+				"data-s": tab.sort,
+				"aria-pressed": tab.pressed,
+				onClick: () => call("routeSort")(tab.pressed ? "" : tab.sort),
+				children: tab.name
+			}))
+		})]
+	});
+}
 function RoutePage() {
+	const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
 	return /* @__PURE__ */ a(M, { children: [
 		/* @__PURE__ */ a("div", {
 			class: "rt-sum",
@@ -466,20 +496,28 @@ function RoutePage() {
 				children: view.routeWhen
 			})]
 		}),
+		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
 		/* @__PURE__ */ a("div", {
 			id: "routeList",
 			class: "rt-list",
 			role: "radiogroup",
 			"aria-label": "경로",
-			children: view.plans.map((plan, index) => /* @__PURE__ */ a("button", {
-				type: "button",
-				class: "rt-plan",
-				role: "radio",
-				"aria-checked": index === view.chosen ? "true" : "false",
-				"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
-				onClick: () => call("plan")(index),
-				dangerouslySetInnerHTML: { __html: planHTML(plan) }
-			}))
+			children: order.map((index) => {
+				const plan = view.plans[index];
+				return /* @__PURE__ */ a("button", {
+					type: "button",
+					class: "rt-plan",
+					role: "radio",
+					"aria-checked": index === view.chosen ? "true" : "false",
+					"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
+					onClick: () => call("plan")(index),
+					dangerouslySetInnerHTML: { __html: planHTML(plan) }
+				});
+			})
+		}),
+		filter?.empty && /* @__PURE__ */ a("div", {
+			class: "rt-empty",
+			children: [/* @__PURE__ */ a("b", { children: filter.empty }), /* @__PURE__ */ a("p", { children: "다른 조건을 골라 보세요" })]
 		}),
 		/* @__PURE__ */ a("p", {
 			id: "routeMsg",
@@ -491,7 +529,7 @@ function RoutePage() {
 		view.routeLoading && /* @__PURE__ */ a(RouteLoading, {}),
 		/* @__PURE__ */ a("div", {
 			class: "rt-foot",
-			hidden: !view.plans.length,
+			hidden: !order.length,
 			children: /* @__PURE__ */ a("button", {
 				id: "routePick",
 				class: "tf-save",
