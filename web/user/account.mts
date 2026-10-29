@@ -10,8 +10,10 @@
 // 계정 = 로그인한 기기(종류 · 마지막 사용 · 하나씩 로그아웃 · 다른 기기 모두) · 내 데이터 내려받기(JSON 파일).
 // 사용 횟수는 로그인했을 때만 종류만 보낸다(장소 · 검색어 · 시각 없음): 슝을 열 때 open · 길찾기 결과(journey-ui 의 'syung:route') route ·
 // 승차권 뒷면을 볼 때 ticket.
-// 지도에서 보기(2026-10-29 사용자 결정 A — 길찾기 아래 막대와 같은 방식): 경로 선택 쪽의 고른 경로 · 승차권 뒷면의 길을 서랍을 닫고 지도에 그린다.
+// 지도에서 보기(2026-10-29 사용자 결정 A — 길찾기 아래 막대와 같은 방식): 승차권 뒷면의 길을 서랍을 닫고 지도에 그린다.
 // 아래 막대(.jbar)를 누르면 서랍 · 그 쪽 · 고른 카드 · 초점이 돌아온다. 그리기 · 길찾기와 서로 치우기는 본체(routeMap).
+// 경로 고르기는 지도와 함께(2026-10-29 사용자 결정): 경로 쪽에 있는 동안 서랍에 .with-map — 휴대폰은 아래 절반 시트 · 위에 지도,
+// 데스크톱은 서랍 그대로 옆 지도. 고른 카드의 길을 바로 그리고, 경로 쪽을 떠나면(어떤 길로든) 지운다.
 // 로그인 방법이 하나도 설정되지 않았으면(/api/auth/providers 빈 목록 · 실패) 아무것도 보이지 않는다 — 로그인 안 한 화면은 지금과 같다.
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mts';   // 아래 막대의 경로 띠(본체가 이미 받은 파일)
@@ -28,7 +30,7 @@ interface Reply<B> { status:number; ok?:boolean; body:B | null }
 interface Changed { error?:{ message?:string }; removed?:number }
 interface RouteAnswer { ok?:boolean; error?:string; plans?:Plan[] }
 // 본체(maplibre_runtime)가 넘기는 여정 지도 표시: 그리기 · (아직 이 길이면) 지우기 · 길찾기 · 버스 노선이 지도를 차지하면 부를 함수 걸기
-interface RouteMap { show(plan:Plan):void; clear(plan:Plan):void; onGone(gone:(()=>void) | null):void }
+interface RouteMap { show(plan:Plan, pad?:{ bottom:number; right:number }):void; clear(plan:Plan):void; onGone(gone:(()=>void) | null):void }
 interface Wheel { el:HTMLElement; values:number[]; label:(value:number)=>string }
 // 로그인 팝업 로고 움직임(web/vendor/lottie — 받으면 globalThis.lottie)이 쓰는 칸
 interface LottieAnim { destroy():void; goToAndStop(frame:number, isFrame:boolean):void; play():void; addEventListener(name:string, f:()=>void):void }
@@ -469,6 +471,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
       const fastest = plans.findIndex(p => p.tag === '가장 빠른 길');
       ticketsView.set({plans, chosen: mine >= 0 ? mine : Math.max(0, fastest), routeMsg: '', routeLoading: false});   // 기본은 가장 빠른 길(사용자 결정 2026-10-27)
       ($('routeList').children[ticketsView.state.chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
+      previewPlan();   // 처음 고른 카드의 길을 바로 그린다
     } catch { if (my === routeSeq) ticketsView.set({routeMsg: '경로를 찾지 못했어요. 연결을 확인해 주세요.', routeLoading: false}); }
   }
   function pickPlan() {
@@ -477,6 +480,44 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     ticketsView.set({route: slimRoute(plan)});
     backToForm();
   }
+  function choosePlan(index:number) {
+    ticketsView.set({chosen: index});
+    previewPlan();
+  }
+
+  // ---- 경로 고르기 지도: 경로 쪽에 있는 동안 서랍(.with-map) 옆 · 위 지도에 고른 카드의 길 ----
+  const routePanel = $('settingsPanel'), routePage = $('menuRoute');
+  const narrow = matchMedia('(max-width: 780px)');   // syung.css 의 반쪽 시트와 같은 너비
+  let previewed:Plan | null = null;
+  const onRoutePage = () => routePanel.classList.contains('open') && !routePanel.hidden && !routePage.hidden;
+  function previewPlan() {
+    const plan = form().plans[form().chosen];
+    if (!routeMap || !plan || !onRoutePage()) return;
+    mapGone();   // 승차권 뒷면의 '지도에서 보기' 막대가 남아 있으면 치운다
+    // 길이 서랍 뒤에 가리지 않게: 휴대폰은 아래 시트 높이만큼, 데스크톱은 오른쪽 서랍 너비만큼 띄운다
+    routeMap.show(plan, narrow.matches ? {bottom: routePanel.offsetHeight + 24, right: 40} : {bottom: 40, right: routePanel.offsetWidth + 40});
+    previewed = plan;   // 그린 뒤에 둔다(그리는 동안 본체가 부르는 '지도를 차지했다'에 지워지지 않게)
+  }
+  function previewGone() {
+    if (!previewed) return;
+    const plan = previewed;
+    previewed = null;
+    routeMap?.clear(plan);
+  }
+  // 경로 쪽에 들어오고 나가는 것은 서랍 · 그 쪽의 보임으로 본다(이 경로로 · ‹ · Esc · 닫기 · 바깥 누름 · 메뉴 이동이 모두 이 칸을 바꾼다)
+  const routeWatch = new MutationObserver(() => {
+    const on = onRoutePage();
+    if (routePanel.classList.contains('with-map') !== on) routePanel.classList.toggle('with-map', on);   // (바꿀 때만 — 이 칸도 지켜본다)
+    if (!on) { routeSeq++; previewGone(); }   // 찾는 중이던 답은 버린다
+  });
+  routeWatch.observe(routePanel, {attributes: true, attributeFilter: ['class', 'hidden']});
+  routeWatch.observe(routePage, {attributes: true, attributeFilter: ['hidden']});
+  // 경로 쪽에서 Esc 는 서랍을 닫지 않고 발권 화면으로(‹ 와 같다 — 본체의 서랍 Esc 보다 먼저 잡는다). 로그인 팝업이 떠 있으면 팝업이 먼저
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || sheetOpen() || !onRoutePage()) return;
+    e.stopImmediatePropagation();
+    backToForm();
+  }, true);
 
   // ---- 지도에서 보기: 서랍을 닫고 지도에 길 전체, 아래 막대(길찾기 막대와 같은 모양)로 돌아온다 ----
   const mapBar = document.createElement('div');
@@ -515,16 +556,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
   mapBarOpen.addEventListener('click', mapBack);
   mapBar.querySelector<HTMLElement>('.jbar-x')!.addEventListener('click', mapBack);
   $('settingsButton').addEventListener('click', mapGone);   // 서랍을 다시 열면 승차권 길은 지운다
-  routeMap?.onGone(mapGone);
-  // 경로 선택 쪽: 고른 경로를 그대로(이미 받은 길)
-  function mapPlan() {
-    const chosen = form().chosen, plan = form().plans[chosen];
-    if (!plan) return;
-    showOnMap(plan, '경로 고르기로', '', () => {
-      $('routeOpen').click();
-      ($('routeList').children[chosen] as HTMLElement | undefined)?.focus({preventScroll: true});
-    });
-  }
+  routeMap?.onGone(() => { mapGone(); previewed = null; });   // 길찾기 · 버스 노선이 지도를 차지했다(그쪽이 이미 지웠다)
   // 승차권 뒷면: 저장한 경로에는 지도에 그릴 길이 없어 다음 탈 날 그 시각으로 다시 찾는다(뒷면 첫 줄 · 경로 고르기와 같은 날).
   // 저장한 경로와 같은 길 모양(rideSig)이 있으면 그 길, 없으면 거른 뒤 가장 빠른 길 + 안내(옛 승차권 — 저장한 경로가 없으면 안내 없이)
   let mapSeq = 0;
@@ -608,7 +640,7 @@ export async function initAccount({colors = {}, routeMap}:{ colors?:Record<strin
     timeToggle: () => { if (form().wheelOpen) closeWheel(); else openWheel(); },
     timeDone: () => { closeWheel(); $('ticketTimeBtn').focus({preventScroll: true}); },
     route: openRoute, day: toggleDay, quick: quickDays, name: value => ticketsView.set({name: value}), submit: submitTicket, remove: removeTicket,
-    placeInput, placePick, plan: index => ticketsView.set({chosen: index}), planPick: pickPlan, planMap: mapPlan,
+    placeInput, placePick, plan: choosePlan, planPick: pickPlan,
   });
 
   // ---- 사용 횟수(내 통계) ----

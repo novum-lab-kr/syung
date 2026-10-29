@@ -40,7 +40,7 @@ interface Handlers {
   placeFrom():void; placeTo():void; timeToggle():void; timeDone():void; route():void;
   day(day:number):void; quick(days:string):void; name(value:string):void; submit():void; remove():void;
   placeInput(value:string):void; placePick(place:FoundPlace):void;
-  plan(index:number):void; planPick():void; planMap():void;
+  plan(index:number):void; planPick():void;
 }
 interface View {
   colors:Record<string, string>;   // 노선 이름 → 색(본체)
@@ -164,8 +164,8 @@ function RoutePage() {
       aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>)}</div>
     <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
     {view.routeLoading && <RouteLoading />}
-    <button id="routePick" class="tf-save" type="button" hidden={!view.plans.length} onClick={call('planPick')}>이 경로로</button>
-    <button id="routeMap" class="rt-map" type="button" hidden={!view.plans.length} onClick={call('planMap')}>지도에서 보기</button>
+    {/* 이 경로로: 목록이 길어도 늘 보이게 맨 아래에 붙는다(경로 고르기 반쪽 시트 2026-10-29) */}
+    <div class="rt-foot" hidden={!view.plans.length}><button id="routePick" class="tf-save" type="button" onClick={call('planPick')}>이 경로로</button></div>
   </>;
 }
 

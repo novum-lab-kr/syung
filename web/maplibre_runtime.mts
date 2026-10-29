@@ -588,7 +588,7 @@ const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,foc
 let ticketRouteGone:(()=>void)|null=null;
 const journey=initJourney({openSheetView,drawJourney,clearJourney,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
 document.getElementById('routeButton')!.addEventListener('click',()=>ticketRouteGone?.());   // 길찾기 시트를 열면 승차권 길은 지운다
-const ticketRoute={show(plan:JourneyPlan){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(110);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110)
+const ticketRoute={show(plan:JourneyPlan,pad?:{bottom:number;right:number}){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(pad?.bottom??110,pad?.right);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110) · pad: 경로 고르기의 서랍 자리(휴대폰 아래 · 데스크톱 오른쪽)
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
@@ -910,7 +910,7 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
   $('settingsClose').onclick=close;
-  document.addEventListener('click',e=>{if(isOpen()&&!panel.contains(e.target as Node|null))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다
+  document.addEventListener('click',e=>{const at=e.target as Node|null;if(isOpen()&&!panel.contains(at)&&!(panel.classList.contains('with-map')&&map.getCanvasContainer().contains(at)))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다. 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도 캔버스만 눌러도 닫지 않는다(길찾기 같은 지도 위 단추는 지금처럼 닫는다)
   document.addEventListener('keydown',e=>{
     if(!isOpen())return;
     if(e.key==='Escape'){close();return}
