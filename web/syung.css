@@ -272,8 +272,9 @@ html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
 .map-search input:focus{border-color:var(--syung-deep)!important}
 /* 지도 출처: 늘 펼친 한 줄(© OpenMapTiles © OpenStreetMap) — 열차 · 버스 자료 출처는 메뉴 '데이터 출처' 쪽 */
 .maplibregl-ctrl.maplibregl-ctrl-attrib{border-radius:999px;background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);margin:0 0 14px 12px!important;padding:1px 9px;font-size:11px;line-height:18px;white-space:nowrap}
-/* 좁은 화면(780px 이하)은 가운데 '어디로 갈까요?' 버튼(아래 16px · 높이 52px)이 왼쪽 아래까지 닿아 그 위로 올린다 — 출처가 가려지지 않게 */
-@media(max-width:780px){.maplibregl-ctrl.maplibregl-ctrl-attrib{margin-bottom:calc(78px + env(safe-area-inset-bottom,0px))!important}}
+/* 좁은 화면(780px 이하): 출처를 작게(글자 9px · 높이 13px) 화면 맨 아래(safe-area 위 3px)에 붙여 '어디로 갈까요?' 버튼 아래에 둔다.
+   버튼 · 길찾기 막대는 출처 높이만큼만 올린다 — 아래 .jbar 뒤의 같은 폭 규칙 */
+@media(max-width:780px){.maplibregl-ctrl.maplibregl-ctrl-attrib{margin:0 0 calc(3px + env(safe-area-inset-bottom,0px)) 8px!important;padding:0 6px;font-size:9px;line-height:13px}}
 .maplibregl-ctrl-attrib a{color:inherit}
 html[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1)}
 
@@ -607,6 +608,8 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 /* chosen route while the sheet is closed: the whole bar opens the results; a small ✕ top right clears it */
 .jbar{position:absolute;z-index:15;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(560px,calc(100% - 20px));display:block;background:var(--paper);color:var(--ink);border-radius:18px;box-shadow:var(--shadow)}
 .jbar[hidden]{display:none}
+/* 좁은 화면: 맨 아래 출처(위 끝 safe-area + 16px) 위로 6px 띄워 버튼 · 길찾기 막대를 아래 16px → 22px — 크기 · 모양은 그대로 */
+@media(max-width:780px){.route-cta,.jbar{bottom:calc(22px + env(safe-area-inset-bottom,0px))}}
 .jbar-open{display:flex;flex-direction:column;gap:9px;width:100%;padding:12px 14px 13px;border:0;border-radius:inherit;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .jbar-open:active{background:color-mix(in srgb,var(--control) 60%,transparent)}
 .jbar-top{display:flex;align-items:baseline;gap:8px;padding-right:34px}
