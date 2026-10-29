@@ -1,6 +1,7 @@
 // 승차권 경로 고르기(발권 화면 → 경로 칸 · 카드 뒷면): 매일 다닐 길이라 그 시각 시간표 하나에 맞춘 길을 다 보이지 않고 "길 모양"으로 고른다(사용자 결정 2026-10-29).
-// 길 모양 = 탄 노선 + 타고 내린 역(rideSig). 같은 모양은 가장 빠른 것 하나만, 다른 길보다 느리면서 환승도 같거나 많은 길과
-// 가장 빠른 길보다 한참 느린 길(우회 · 엉뚱한 방향이 대개 여기서 걸린다)은 뺀다. '가장 빠른 길' 태그 길은 늘 남긴다.
+// 길 모양 = 탄 노선 + 타고 내린 역(rideSig). 같은 모양은 가장 빠른 것 하나만, 가장 빠른 길보다 한참 느린 길(우회 · 엉뚱한 방향이
+// 대개 여기서 걸린다)은 뺀다. '가장 빠른 길' 태그 길은 늘 남긴다. 조금(한도 안) 느린 다른 모양은 환승이 같거나 많아도 남긴다 —
+// 1분 차이 대안까지 빠져 고를 게 없어졌다(운영 확인 뒤 사용자 결정 2026-10-29).
 // 길찾기("어디로 갈까요?")는 이 거르기를 쓰지 않는다 — 서버(/api/route) 응답 모양도 그대로.
 import type { Plan } from '../lib/journey-ui.mts';
 import type { SlimRoute } from './tickets_view.tsx';
@@ -29,8 +30,7 @@ export function usefulRoutes<P extends Shaped>(plans:readonly P[]):P[] {
   if (shapes.length < 2) return shapes;
   const quickest = Math.min(...shapes.map(plan => plan.minutes));
   const slowest = quickest + Math.max(SLOW_LIMIT.minutes, quickest * SLOW_LIMIT.share);
-  return shapes.filter(plan => plan.tag === FASTEST || (plan.minutes <= slowest
-    && !shapes.some(other => other !== plan && other.minutes < plan.minutes && other.transfers <= plan.transfers)));
+  return shapes.filter(plan => plan.tag === FASTEST || plan.minutes <= slowest);
 }
 
 // 거르기 뒤 가장 빠른 길(없으면 null) — 카드 뒷면이 저장된 경로 없이 길을 찾을 때
