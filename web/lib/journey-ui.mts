@@ -393,6 +393,9 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   // another sheet (station, train) took the place of ours
   function sheetReplaced() { if (inSheet) { inSheet = false; if (last) sheetClosed(); } }
 
+  // 다른 길(승차권 경로 지도에서 보기 — user/account)이 지도를 차지했다: 고른 경로 · 아래 막대를 놓는다(지도는 그쪽이 다시 그린다)
+  function drop() { last = null; bar.hidden = true; }
+
   button.addEventListener('click', () => open());
-  return {open, openWith, sheetClosed, sheetReplaced};
+  return {open, openWith, sheetClosed, sheetReplaced, drop};
 }

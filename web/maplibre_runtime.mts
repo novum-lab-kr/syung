@@ -114,7 +114,7 @@ interface FramePt{x:number;y:number;h:number;off:number;r:readonly number[];roll
 type TransitDeps=Parameters<typeof registerTransitLayers>[0];
 type ThemeDeps=Parameters<typeof createMapTheme>[0];
 type BusDeps=NonNullable<Parameters<typeof createBusLayer>[0]>;
-type JourneyLeg=import('./ui/journey.mts').JourneyLeg;
+type JourneyLeg=import('./ui/journey.mts').JourneyLeg;type JourneyPlan=import('./ui/journey.mts').JourneyPlan;
 type Theme=Parameters<ThemeDeps['cityPalette']>[0];
 type CityStyleMap=import('./city/style.mts').CityStyleMap;
 // 열차 예측(trains/plan) 계획에 본체가 붙이는 칸: 1 m(메르카토르) · 새 자료로 옮겨 그리는 출발점
@@ -584,7 +584,11 @@ const {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,tra
 const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
-const journey=initJourney({openSheetView,drawJourney,clearJourney,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{showRoute(...a);refreshLive()},clearRoute:()=>{clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+// 승차권 경로 지도에서 보기(user/account — 늦게 받는다)와 길찾기 · 버스 노선은 지도의 여정 자리를 같이 쓴다: 한쪽이 그리면 다른 쪽 막대 · 길을 치운다(ticketRouteGone)
+let ticketRouteGone:(()=>void)|null=null;
+const journey=initJourney({openSheetView,drawJourney,clearJourney,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+document.getElementById('routeButton')!.addEventListener('click',()=>ticketRouteGone?.());   // 길찾기 시트를 열면 승차권 길은 지운다
+const ticketRoute={show(plan:JourneyPlan){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(110);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110)
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
 // 열차 정보창의 배치도에서 칸 · 줄 · 좌우를 고르고 타면, 카메라가 그 자리 눈(coaster_first_person.mjs)에서 진행 방향을 보고
 // 오르내림 · 루프 · 코르크스크루를 칸과 함께 돌아요. 카메라와 내 열차는 같은 순간의 자리(ride.snap)로 그려 서로 밀리지 않아요.
@@ -684,7 +688,7 @@ map.on('load',()=>{
     return next=>{if(sheetUI.sheetToken!==token)return;const focused=sheetBody.contains(document.activeElement);drawBusSheet(sheetBody,next);if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
   },onRouteSelect:(leg,{fit}:{fit?:boolean}={})=>{   // bus: reuse journey's fitting/focus; closing or deselecting clears only this route-number presentation
     setSubwayOff(!!leg);
-    if(leg)showRoute({legs:[leg as JourneyLeg]},true,fit??busLayer?.selection?.kind!=='bus');   // 버스를 눌렀거나 정류장에서 곧 올 버스를 따라가면(fit:false) 노선 전체로 멀어지지 않는다
+    if(leg){ticketRouteGone?.();showRoute({legs:[leg as JourneyLeg]},true,fit??busLayer?.selection?.kind!=='bus')}   // 버스를 눌렀거나 정류장에서 곧 올 버스를 따라가면(fit:false) 노선 전체로 멀어지지 않는다
     else if(journeyMap.busRouteFocus){journeyMap.displayedRoute=null;journeyMap.busRouteFocus=false;journeyMap.routeBounds=null;map.getSource<GeoJSONSource>('journey')?.setData({type:'FeatureCollection',features:[]});focusRoute(false)}
   },onFollow:id=>{if(id)followBusStart(id,{zoom:17});else sheetUI.followBus=null},followedBus:()=>sheetUI.followBus,sheetPad,onFollowView:on=>{sheetUI.tuck(on);document.body.classList.toggle('bus-following',on)},   // 정류장 시트: 같은 번호를 두 번째 누르면 곧 올 버스를 따라간다
   onClear:()=>{if(sheetBody.querySelector('.bus-detail'))closeSheet()}});
@@ -919,7 +923,7 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
 }
 // 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
-{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
