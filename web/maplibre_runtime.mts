@@ -929,7 +929,7 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
 }
 // 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
-{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
