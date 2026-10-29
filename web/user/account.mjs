@@ -670,7 +670,7 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 	const mapBar = document.createElement("div");
 	mapBar.className = "jbar";
 	mapBar.hidden = true;
-	mapBar.innerHTML = "<button type=\"button\" class=\"jbar-open\"></button><button type=\"button\" class=\"jbar-x\" aria-label=\"경로 지우기\" title=\"경로 지우기\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button>";
+	mapBar.innerHTML = "<button type=\"button\" class=\"jbar-open\"></button><button type=\"button\" class=\"jbar-x\" aria-label=\"닫고 돌아가기\" title=\"닫고 돌아가기\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button>";
 	document.body.append(mapBar);
 	const mapBarOpen = mapBar.querySelector(".jbar-open");
 	let mapShown = null;
@@ -695,14 +695,15 @@ async function initAccount({ colors = {}, routeMap } = {}) {
 		mapBar.hidden = false;
 		mapBarOpen.focus({ preventScroll: true });
 	}
-	mapBarOpen.addEventListener("click", (e) => {
+	function mapBack(e) {
 		e.stopPropagation();
 		const back = mapShown?.back;
 		mapGone();
 		$("settingsButton").click();
 		back?.();
-	});
-	mapBar.querySelector(".jbar-x").onclick = mapGone;
+	}
+	mapBarOpen.addEventListener("click", mapBack);
+	mapBar.querySelector(".jbar-x").addEventListener("click", mapBack);
 	$("settingsButton").addEventListener("click", mapGone);
 	routeMap?.onGone(mapGone);
 	function mapPlan() {
