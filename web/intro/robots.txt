@@ -1,0 +1,5 @@
+# 슝 소개 사이트(syung.novum-lab.com) — 지도 앱은 map.syung.novum-lab.com(그쪽 robots.txt 는 web/robots.txt)
+User-agent: *
+Allow: /
+
+Sitemap: https://syung.novum-lab.com/sitemap.xml

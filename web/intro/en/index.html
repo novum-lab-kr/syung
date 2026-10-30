@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 슝 소개 사이트(영어 · https://syung.novum-lab.com/en/). 한국어판 ../index.html 과 같은 내용 · 같은 구조로 같이 고친다.
+     자주 묻는 질문을 고치면 아래 JSON-LD(FAQPage)의 같은 글도 고친다 -->
+<script>
+/* 옛 지도 주소의 해시 옵션으로 들어오면 지도 주소로 넘긴다 — 이 쪽의 절 이름(id tickets · features · faq — 절을 더하면 여기도)이 아닐 때만 */
+(function(){var h=location.hash.slice(1);if(h&&!/^(tickets|features|faq)$/.test(h))location.replace('https://map.syung.novum-lab.com/'+location.hash)})();
+</script>
+<title>Syung — Live Seoul Metro Train Positions · Ride Times with Tickets</title>
+<meta name="description" content="Syung is a live map that shows where every Seoul metropolitan subway train is right now, drawn on the real tracks. Save the trips you take often as tickets and see the route and transfers for your departure time at a glance.">
+<link rel="canonical" href="https://syung.novum-lab.com/en/">
+<link rel="alternate" hreflang="ko" href="https://syung.novum-lab.com/">
+<link rel="alternate" hreflang="en" href="https://syung.novum-lab.com/en/">
+<link rel="alternate" hreflang="x-default" href="https://syung.novum-lab.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Syung">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:url" content="https://syung.novum-lab.com/en/">
+<meta property="og:title" content="Syung — Live Seoul Metro Train Positions · Ride Times with Tickets">
+<meta property="og:description" content="A live map of where Seoul metropolitan subway trains are right now, on the real tracks. Save frequent trips as tickets to see the route for your departure time.">
+<meta property="og:image" content="https://syung.novum-lab.com/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Syung map — live trains running on central Seoul subway lines">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Syung — Live Seoul Metro Train Positions · Ride Times with Tickets">
+<meta name="twitter:description" content="A live map of where Seoul metropolitan subway trains are right now, on the real tracks. Save frequent trips as tickets to see the route for your departure time.">
+<meta name="twitter:image" content="https://syung.novum-lab.com/og.jpg">
+<link rel="icon" href="../../brand/favicon.ico" sizes="48x48">
+<link rel="icon" href="../../brand/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+<link rel="icon" href="../../brand/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="../../brand/syung-light-180.png">
+<meta name="theme-color" content="#ffd400">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="../intro.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "https://syung.novum-lab.com/en/#app",
+      "name": "Syung",
+      "alternateName": "슝",
+      "url": "https://map.syung.novum-lab.com/",
+      "description": "A live map that shows where Seoul metropolitan subway trains are right now, drawn on the real tracks. Save frequent trips as tickets to see the route and transfers for your departure time.",
+      "applicationCategory": "TravelApplication",
+      "operatingSystem": "Web",
+      "browserRequirements": "JavaScript · WebGL",
+      "inLanguage": "ko",
+      "image": "https://syung.novum-lab.com/og.jpg",
+      "screenshot": ["https://syung.novum-lab.com/shots/basic.jpg", "https://syung.novum-lab.com/shots/route.jpg", "https://syung.novum-lab.com/shots/city.jpg", "https://syung.novum-lab.com/shots/joseon.jpg"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://syung.novum-lab.com/en/#faq",
+      "inLanguage": "en",
+      "mainEntity": [
+        {"@type": "Question", "name": "How accurate are the train positions on the map?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Live train data runs about 20 seconds to 1 minute behind reality, and train positions update every 15–25 seconds. Syung fills the gap by moving trains along the tracks, so a train on the map can be slightly off from the real one."}},
+        {"@type": "Question", "name": "What is a ticket?",
+         "acceptedAnswer": {"@type": "Answer", "text": "A ticket is a saved trip you take often. Pick a start, a destination, a departure time and the days you ride, and Syung finds routes for that time on your next riding day; the route you choose is kept on the ticket. Flip the ticket to see where you transfer and when you leave, and tickets for today are marked \"Today\"."}},
+        {"@type": "Question", "name": "Do I need to sign in?",
+         "acceptedAnswer": {"@type": "Answer", "text": "No. The map and route search work without signing in. Only features that save things for you, such as tickets, need you to sign in."}},
+        {"@type": "Question", "name": "Where does the data come from?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Lines, stations and timetables come from the KTDB (Korea Transport Database, The Korea Transport Institute) public transit GTFS, live train positions and arrivals from the Seoul Open Data Plaza, and the base map and track shapes from OpenStreetMap contributors (ODbL) and OpenMapTiles."}},
+        {"@type": "Question", "name": "Does it work on my phone?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Yes. It opens right in the browser on phones and computers — nothing to install."}}
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../../brand/syung-light.svg" alt="" width="40" height="40"><b>Syung</b></a>
+    <nav aria-label="Language · map">
+      <a href="../" hreflang="ko" lang="ko">한국어</a>
+      <a class="open" href="https://map.syung.novum-lab.com/">Open the map</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <h1><small>Where's my train?</small>A live map of where Seoul's subway trains are right now</h1>
+        <p>Watch trains move along the real tracks on the map. Save the trips you take often as tickets, and see the route and transfers for your departure time at a glance.</p>
+        <a class="cta" href="https://map.syung.novum-lab.com/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>Open the map</a>
+        <span class="cta-note">Opens right in your browser — nothing to install. The map is in Korean.</span>
+      </div>
+      <figure class="shot">
+        <img src="../shots/basic.jpg" width="1120" height="700" alt="Syung map — live trains drawn on the tracks of each central Seoul subway line" fetchpriority="high">
+      </figure>
+    </div>
+  </div>
+
+  <section id="tickets">
+    <div class="wrap">
+      <h2>Tickets — your usual trip, timed to when you ride</h2>
+      <p class="lead">Save a trip you take at the same time every day, like your commute, as a single ticket.</p>
+      <ol class="steps">
+        <li><b>Set the trip and the time</b>Choose a start, a destination, a departure time and the days you ride. You can add a stop along the way, too.</li>
+        <li><b>Pick a route for that time</b>Syung finds routes for that time on your next riding day. Choose one and it goes on the ticket.</li>
+        <li><b>Flip the ticket</b>The back shows where you transfer, when you leave and which days you ride, and tickets for today are marked "Today". Use "View on map" to draw the trip on the map.</li>
+      </ol>
+      <p class="note">Tickets are available after you sign in.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What you can do with Syung</h2>
+      <p class="lead">To make waiting for the subway a little less frustrating.</p>
+      <div class="features">
+        <div class="feature">
+          <figure class="shot"><img src="../shots/route.jpg" width="1120" height="700" alt="Route search from Seoul Station to Gangnam — Line 4 and bus 140 in 34 minutes" loading="lazy"></figure>
+          <h3>Route search</h3>
+          <p>Combines subway, bus and walking and shows the fastest routes first. Where live data is available, it also shows where the train you'll take is right now.</p>
+        </div>
+        <div class="feature">
+          <figure class="shot"><img src="../shots/city.jpg" width="1120" height="700" alt="3D city mode — tracks running between buildings around City Hall station" loading="lazy"></figure>
+          <h3>3D city</h3>
+          <p>In 3D city mode buildings rise in 3D and trains run between them.</p>
+        </div>
+        <div class="feature">
+          <figure class="shot"><img src="../shots/joseon.jpg" width="1120" height="700" alt="Joseon mode — the area around Gwanghwamun turned into hanok houses and waterways" loading="lazy"></figure>
+          <h3>Many modes</h3>
+          <p>Change the mood of the map with modes such as Joseon, Roller coaster and Retro, or Greek, Dutch, Paris and Egypt scenery.</p>
+        </div>
+        <div class="feature">
+          <h3>And more</h3>
+          <ul class="more">
+            <li>Jump straight to a station by name</li>
+            <li>Tap a station to see the trains coming in</li>
+            <li>Light and dark screens that follow the time of day</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>Frequently asked questions</h2>
+      <div class="faq">
+        <details><summary>How accurate are the train positions on the map?</summary><p>Live train data runs about 20 seconds to 1 minute behind reality, and train positions update every 15–25 seconds. Syung fills the gap by moving trains along the tracks, so a train on the map can be slightly off from the real one.</p></details>
+        <details><summary>What is a ticket?</summary><p>A ticket is a saved trip you take often. Pick a start, a destination, a departure time and the days you ride, and Syung finds routes for that time on your next riding day; the route you choose is kept on the ticket. Flip the ticket to see where you transfer and when you leave, and tickets for today are marked "Today".</p></details>
+        <details><summary>Do I need to sign in?</summary><p>No. The map and route search work without signing in. Only features that save things for you, such as tickets, need you to sign in.</p></details>
+        <details><summary>Where does the data come from?</summary><p>Lines, stations and timetables come from the KTDB (Korea Transport Database, The Korea Transport Institute) public transit GTFS, live train positions and arrivals from the Seoul Open Data Plaza, and the base map and track shapes from OpenStreetMap contributors (ODbL) and OpenMapTiles.</p></details>
+        <details><summary>Does it work on my phone?</summary><p>Yes. It opens right in the browser on phones and computers — nothing to install.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="end">
+    <div class="wrap">
+      <h2>Want to see where your train is right now?</h2>
+      <a class="cta" href="https://map.syung.novum-lab.com/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>Open the map</a>
+    </div>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <span>Syung</span>
+    <a href="../../privacy.html" hreflang="ko">Privacy policy (Korean)</a>
+    <a href="../" hreflang="ko" lang="ko">한국어</a>
+  </div>
+</footer>
+</body>
+</html>

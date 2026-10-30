@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 슝 소개 사이트(한국어 · https://syung.novum-lab.com/). 지도 앱은 https://map.syung.novum-lab.com/ — 영어판은 en/index.html(같은 내용을 같이 고친다).
+     문구는 지금 코드가 하는 것만 적는다(승차권: web/user/account.mts · tickets_view.tsx, 실시간 지연: AGENTS.md "함정"). 알림 · 앱 이야기는 넣지 않는다.
+     자주 묻는 질문을 고치면 아래 JSON-LD(FAQPage)의 같은 글도 고친다. 운영 Caddy 는 이 폴더(릴리스의 intro/)를 소개 주소의 맨 위로 낸다(server/Caddyfile.example) -->
+<script>
+/* 옛 지도 주소의 해시 옵션(#saver · #fps · #debug …)으로 들어오면 지도 주소로 넘긴다 — 이 쪽의 절 이름(id tickets · features · faq — 절을 더하면 여기도)이 아닐 때만. 본문보다 먼저 돌아 id 로는 못 찾는다 */
+(function(){var h=location.hash.slice(1);if(h&&!/^(tickets|features|faq)$/.test(h))location.replace('https://map.syung.novum-lab.com/'+location.hash)})();
+</script>
+<title>슝 — 수도권 지하철 실시간 위치 · 승차권으로 탈 시간 안내</title>
+<meta name="description" content="슝은 수도권 지하철이 지금 어디 있는지 실제 선로 위에 보여 주는 실시간 지도예요. 자주 타는 길을 승차권으로 저장해 두면 출발 시각에 맞춘 경로와 갈아타는 곳을 바로 볼 수 있어요.">
+<link rel="canonical" href="https://syung.novum-lab.com/">
+<link rel="alternate" hreflang="ko" href="https://syung.novum-lab.com/">
+<link rel="alternate" hreflang="en" href="https://syung.novum-lab.com/en/">
+<link rel="alternate" hreflang="x-default" href="https://syung.novum-lab.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="슝">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:url" content="https://syung.novum-lab.com/">
+<meta property="og:title" content="슝 — 수도권 지하철 실시간 위치 · 승차권으로 탈 시간 안내">
+<meta property="og:description" content="수도권 지하철이 지금 어디 있는지 실제 선로 위에서 보여 주는 실시간 지도. 자주 타는 길은 승차권으로 저장해 출발 시각에 맞춘 경로를 바로 봐요.">
+<meta property="og:image" content="https://syung.novum-lab.com/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="슝 지도 — 서울 도심 노선 위를 달리는 실시간 열차">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="슝 — 수도권 지하철 실시간 위치 · 승차권으로 탈 시간 안내">
+<meta name="twitter:description" content="수도권 지하철이 지금 어디 있는지 실제 선로 위에서 보여 주는 실시간 지도. 자주 타는 길은 승차권으로 저장해 출발 시각에 맞춘 경로를 바로 봐요.">
+<meta name="twitter:image" content="https://syung.novum-lab.com/og.jpg">
+<link rel="icon" href="../brand/favicon.ico" sizes="48x48">
+<link rel="icon" href="../brand/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+<link rel="icon" href="../brand/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="../brand/syung-light-180.png">
+<meta name="theme-color" content="#ffd400">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="./intro.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "https://syung.novum-lab.com/#app",
+      "name": "슝",
+      "alternateName": "Syung",
+      "url": "https://map.syung.novum-lab.com/",
+      "description": "수도권 지하철이 지금 어디 있는지 실제 선로 위에 보여 주는 실시간 지도. 자주 타는 길을 승차권으로 저장하면 출발 시각에 맞춘 경로와 갈아타는 곳을 볼 수 있다.",
+      "applicationCategory": "TravelApplication",
+      "operatingSystem": "Web",
+      "browserRequirements": "JavaScript · WebGL",
+      "inLanguage": "ko",
+      "image": "https://syung.novum-lab.com/og.jpg",
+      "screenshot": ["https://syung.novum-lab.com/shots/basic.jpg", "https://syung.novum-lab.com/shots/route.jpg", "https://syung.novum-lab.com/shots/city.jpg", "https://syung.novum-lab.com/shots/joseon.jpg"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://syung.novum-lab.com/#faq",
+      "inLanguage": "ko",
+      "mainEntity": [
+        {"@type": "Question", "name": "지도에 보이는 열차 위치는 얼마나 정확한가요?",
+         "acceptedAnswer": {"@type": "Answer", "text": "실시간 열차 자료는 실제보다 20초에서 1분쯤 늦고, 열차 위치는 15~25초마다 바뀌어요. 슝은 그 사이를 선로를 따라 이어서 그리기 때문에 실제 열차와 조금 차이가 날 수 있어요."}},
+        {"@type": "Question", "name": "승차권은 무엇인가요?",
+         "acceptedAnswer": {"@type": "Answer", "text": "자주 타는 길을 저장해 두는 카드예요. 출발지 · 도착지 · 출발 시각 · 타는 요일을 정하면 다음에 탈 날 그 시각을 기준으로 경로를 찾아 주고, 고른 경로를 승차권에 담아 둬요. 승차권을 뒤집으면 어디서 갈아타는지와 출발 시각이 보이고, 오늘 타는 승차권에는 '오늘' 표시가 붙어요."}},
+        {"@type": "Question", "name": "로그인해야 쓸 수 있나요?",
+         "acceptedAnswer": {"@type": "Answer", "text": "지도와 길찾기는 로그인 없이 쓸 수 있어요. 승차권처럼 내 것을 저장하는 기능만 로그인한 뒤에 쓸 수 있어요."}},
+        {"@type": "Question", "name": "어떤 자료를 쓰나요?",
+         "acceptedAnswer": {"@type": "Answer", "text": "노선 · 역 · 시간표는 KTDB(국가교통DB, 한국교통연구원) 대중교통 GTFS, 실시간 열차 위치 · 도착은 서울특별시 열린데이터광장, 배경 지도와 선로 모양은 OpenStreetMap 기여자(ODbL) · OpenMapTiles 자료를 써요."}},
+        {"@type": "Question", "name": "휴대폰에서도 되나요?",
+         "acceptedAnswer": {"@type": "Answer", "text": "네. 설치 없이 휴대폰과 컴퓨터의 브라우저에서 바로 열려요."}}
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../brand/syung-light.svg" alt="" width="40" height="40"><b>슝</b></a>
+    <nav aria-label="언어 · 지도">
+      <a href="./en/" hreflang="en" lang="en">English</a>
+      <a class="open" href="https://map.syung.novum-lab.com/">지도 열기</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <h1><small>어디쯤이슝?</small>수도권 지하철이 지금 어디 있는지 보여 주는 실시간 지도</h1>
+        <p>열차가 실제 선로를 따라 움직이는 모습을 지도 위에서 봐요. 자주 타는 길은 승차권으로 저장해 두면 출발 시각에 맞춘 경로와 갈아타는 곳을 바로 볼 수 있어요.</p>
+        <a class="cta" href="https://map.syung.novum-lab.com/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>지도 열기</a>
+        <span class="cta-note">설치 없이 브라우저에서 바로 열려요</span>
+      </div>
+      <figure class="shot">
+        <img src="./shots/basic.jpg" width="1120" height="700" alt="슝 지도 — 서울 도심 노선마다 실시간 열차가 선로 위에 그려진 모습" fetchpriority="high">
+      </figure>
+    </div>
+  </div>
+
+  <section id="tickets">
+    <div class="wrap">
+      <h2>승차권 — 자주 타는 길을, 타는 시각에 맞춰</h2>
+      <p class="lead">출퇴근길처럼 늘 같은 시각에 타는 길을 승차권 한 장으로 저장해 두세요.</p>
+      <ol class="steps">
+        <li><b>길과 시각을 정해요</b>출발지 · 도착지 · 출발 시각 · 타는 요일을 고르면 돼요. 거쳐 갈 곳도 넣을 수 있어요.</li>
+        <li><b>그 시각의 경로를 골라요</b>다음에 탈 날 그 시각을 기준으로 찾은 경로들 가운데 하나를 골라 승차권에 담아요.</li>
+        <li><b>승차권을 뒤집어 확인해요</b>어디서 갈아타는지, 출발 시각, 타는 날이 적혀 있고 오늘 타는 승차권에는 '오늘' 표시가 붙어요. '지도에서 보기'로 그 길을 지도에 그려 볼 수 있어요.</li>
+      </ol>
+      <p class="note">승차권은 로그인한 뒤에 쓸 수 있어요.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>슝으로 할 수 있는 것</h2>
+      <p class="lead">지하철을 기다리는 시간이 조금 덜 답답해지도록.</p>
+      <div class="features">
+        <div class="feature">
+          <figure class="shot"><img src="./shots/route.jpg" width="1120" height="700" alt="서울역에서 강남역까지 길찾기 결과 — 4호선과 140번 버스를 이어 34분" loading="lazy"></figure>
+          <h3>길찾기</h3>
+          <p>지하철 · 버스 · 걷기를 이어 가장 빠른 길부터 보여 줘요. 실시간 정보가 있는 구간은 탈 열차가 지금 어디쯤인지도 함께 보여 줘요.</p>
+        </div>
+        <div class="feature">
+          <figure class="shot"><img src="./shots/city.jpg" width="1120" height="700" alt="3D 도시 모드 — 시청역 주변 건물 사이를 지나는 선로" loading="lazy"></figure>
+          <h3>3D 도시</h3>
+          <p>3D 도시 모드에서는 건물이 입체로 서고, 열차가 그 사이를 달려요.</p>
+        </div>
+        <div class="feature">
+          <figure class="shot"><img src="./shots/joseon.jpg" width="1120" height="700" alt="조선 모드 — 광화문 주변이 한옥과 물길로 바뀐 지도" loading="lazy"></figure>
+          <h3>여러 가지 모드</h3>
+          <p>조선 · 롤러코스터 · 레트로, 그리스 · 네덜란드 · 파리 · 이집트 풍경 같은 모드로 지도 분위기를 바꿀 수 있어요.</p>
+        </div>
+        <div class="feature">
+          <h3>그 밖에</h3>
+          <ul class="more">
+            <li>역 이름으로 바로 찾아가기</li>
+            <li>역을 누르면 그 역에 들어오는 열차 보기</li>
+            <li>시간에 따라 바뀌는 밝은 · 어두운 화면</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>자주 묻는 질문</h2>
+      <div class="faq">
+        <details><summary>지도에 보이는 열차 위치는 얼마나 정확한가요?</summary><p>실시간 열차 자료는 실제보다 20초에서 1분쯤 늦고, 열차 위치는 15~25초마다 바뀌어요. 슝은 그 사이를 선로를 따라 이어서 그리기 때문에 실제 열차와 조금 차이가 날 수 있어요.</p></details>
+        <details><summary>승차권은 무엇인가요?</summary><p>자주 타는 길을 저장해 두는 카드예요. 출발지 · 도착지 · 출발 시각 · 타는 요일을 정하면 다음에 탈 날 그 시각을 기준으로 경로를 찾아 주고, 고른 경로를 승차권에 담아 둬요. 승차권을 뒤집으면 어디서 갈아타는지와 출발 시각이 보이고, 오늘 타는 승차권에는 '오늘' 표시가 붙어요.</p></details>
+        <details><summary>로그인해야 쓸 수 있나요?</summary><p>지도와 길찾기는 로그인 없이 쓸 수 있어요. 승차권처럼 내 것을 저장하는 기능만 로그인한 뒤에 쓸 수 있어요.</p></details>
+        <details><summary>어떤 자료를 쓰나요?</summary><p>노선 · 역 · 시간표는 KTDB(국가교통DB, 한국교통연구원) 대중교통 GTFS, 실시간 열차 위치 · 도착은 서울특별시 열린데이터광장, 배경 지도와 선로 모양은 OpenStreetMap 기여자(ODbL) · OpenMapTiles 자료를 써요.</p></details>
+        <details><summary>휴대폰에서도 되나요?</summary><p>네. 설치 없이 휴대폰과 컴퓨터의 브라우저에서 바로 열려요.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="end">
+    <div class="wrap">
+      <h2>지금 열차가 어디쯤인지 볼까요?</h2>
+      <a class="cta" href="https://map.syung.novum-lab.com/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>지도 열기</a>
+    </div>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <span>슝</span>
+    <a href="../privacy.html">개인정보처리방침</a>
+    <a href="./en/" hreflang="en" lang="en">English</a>
+  </div>
+</footer>
+</body>
+</html>
