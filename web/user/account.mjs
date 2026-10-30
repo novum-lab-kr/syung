@@ -271,8 +271,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		$("accountRow").hidden = !me;
 		$("ticketsRow").hidden = !me;
 		if (!me) {
-			closeName();
-			closePick();
+			closeEdit(false);
 			accountView.set({
 				statsShown: false,
 				safeShown: false
@@ -287,108 +286,198 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			marked: true
 		});
 	}
-	function openPick() {
-		closeName();
+	const profileSheet = $("profileSheet"), profileOpen = () => !profileSheet.hidden;
+	let draftBlob = null;
+	let editTurn = 0, choiceSeq = 0;
+	function dropPreview() {
+		const url = accountView.state.draft.preview;
+		if (url) URL.revokeObjectURL(url);
+		draftBlob = null;
+	}
+	function popSay(text, error = false) {
+		if (!profileOpen()) {
+			toast(text, error);
+			return;
+		}
+		$("profileMsg").innerHTML = `<span class="acct-toast show${error ? " is-error" : ""}"><span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(text)}</span></span>`;
+	}
+	function openEdit() {
+		dropPreview();
+		editTurn++;
+		choiceSeq++;
+		$("profileMsg").replaceChildren();
 		accountView.set({
-			facesLoaded: true,
-			pickOpen: true
+			draft: { kind: "keep" },
+			converting: false,
+			nameValue: me?.name || "",
+			facesLoaded: true
 		});
-		document.querySelector("#avatarChoices [aria-pressed=true]")?.focus({ preventScroll: true });
+		profileSheet.hidden = false;
+		profileSheet.offsetWidth;
+		profileSheet.classList.add("open");
+		$("nameInput").focus({ preventScroll: true });
 	}
-	function closePick() {
-		accountView.set({ pickOpen: false });
+	function closeEdit(restoreFocus = true) {
+		editTurn++;
+		choiceSeq++;
+		dropPreview();
+		accountView.set({
+			draft: { kind: "keep" },
+			converting: false
+		});
+		if (!profileOpen()) return;
+		profileSheet.classList.remove("open");
+		setTimeout(() => {
+			if (!profileSheet.classList.contains("open")) profileSheet.hidden = true;
+		}, 260);
+		if (restoreFocus) $("profileEdit").focus({ preventScroll: true });
 	}
+	profileSheet.querySelector(".login-scrim").onclick = () => {
+		if (!saving) closeEdit();
+	};
+	$("profileClose").onclick = () => {
+		if (!saving) closeEdit();
+	};
+	profileSheet.addEventListener("click", (e) => e.stopPropagation());
+	window.addEventListener("keydown", (e) => {
+		if (!profileOpen()) return;
+		if (e.key === "Escape") {
+			e.stopImmediatePropagation();
+			if (!saving) closeEdit();
+			return;
+		}
+		if (e.key !== "Tab") return;
+		const items = [...profileSheet.querySelectorAll("button:not([disabled]),input:not([type=file])")].filter((el) => el.offsetParent);
+		if (!items.length) return;
+		const first = items[0], last = items[items.length - 1];
+		const inside = profileSheet.contains(document.activeElement);
+		if (e.shiftKey && (!inside || document.activeElement === first)) {
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			last.focus();
+		} else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			first.focus();
+		}
+	}, true);
 	let saving = false;
 	function busy(on) {
 		saving = on;
 		accountView.set({ saving: on });
 	}
-	async function saveProfile(request, done) {
-		if (saving) return;
-		busy(true);
-		try {
-			const r = await request();
-			if (r.status === 401) {
-				me = null;
-				show();
-				toast("로그인이 끝났어요. 다시 로그인해 주세요.", true);
-				return;
-			}
-			if (!r.ok) {
-				toast(r.body?.error?.message || "바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", true);
-				return;
-			}
-			me = r.body;
-			show();
-			toast(done);
-			return true;
-		} catch {
-			toast("바꾸지 못했어요. 연결을 확인해 주세요.", true);
-		} finally {
-			busy(false);
-		}
-	}
 	function pickCharacter(id) {
-		if (id === (me?.avatar?.type === "character" ? me.avatar.id : me?.avatar ? "photo" : "sprout")) return;
-		saveProfile(() => id === "sprout" ? send("DELETE", "./api/me/avatar") : send("PUT", "./api/me/avatar", { character: id }), "프로필을 바꿨어요");
+		const current = me?.avatar?.type === "character" ? me.avatar.id : me?.avatar ? "photo" : "sprout";
+		choiceSeq++;
+		dropPreview();
+		accountView.set({
+			converting: false,
+			draft: id === current ? { kind: "keep" } : {
+				kind: "character",
+				id
+			}
+		});
 	}
 	async function photoChosen(file) {
 		if (!file) return;
+		const mine = ++choiceSeq, turn = editTurn;
+		accountView.set({ converting: true });
 		let blob;
 		try {
 			blob = await shrinkPhoto(file);
 		} catch {
-			toast("이 사진은 열 수 없어요. 다른 사진을 골라 주세요.", true);
+			if (mine === choiceSeq && turn === editTurn) {
+				accountView.set({ converting: false });
+				popSay("이 사진은 열 수 없어요. 다른 사진을 골라 주세요.", true);
+			}
 			return;
 		}
-		saveProfile(async () => {
-			const r = await fetch("./api/me/avatar", {
-				method: "PUT",
-				credentials: "same-origin",
-				headers: {
-					...CHANGE,
-					"Content-Type": blob.type
-				},
-				body: blob
-			});
-			return {
-				status: r.status,
-				ok: r.ok,
-				body: r.headers.get("content-type")?.includes("json") ? await r.json().catch(() => null) : null
-			};
-		}, "프로필 사진을 바꿨어요");
-	}
-	function openName() {
-		closePick();
+		if (mine !== choiceSeq || turn !== editTurn) return;
+		dropPreview();
+		draftBlob = blob;
 		accountView.set({
-			nameValue: me?.name || "",
-			nameOpen: true
+			converting: false,
+			draft: {
+				kind: "photo",
+				preview: URL.createObjectURL(blob)
+			}
 		});
-		$("nameInput").focus({ preventScroll: true });
-		$("nameInput").select();
 	}
-	function closeName() {
-		accountView.set({ nameOpen: false });
-	}
-	async function submitName() {
-		const name = accountView.state.nameValue.trim(), count = nameLength(name);
-		if (count < 1 || count > 12) {
-			toast(`닉네임은 1~12자예요`, true);
+	async function saveEdit() {
+		if (saving || accountView.state.converting) return;
+		const name = accountView.state.nameValue.trim(), count = nameLength(name), draft = accountView.state.draft;
+		const nameChanged = name !== me?.name, avatarChanged = draft.kind !== "keep";
+		if (nameChanged && (count < 1 || count > 12)) {
+			popSay(`닉네임은 1~12자예요`, true);
 			$("nameInput").focus();
 			return;
 		}
-		if (name === me?.name) {
-			closeName();
+		if (!nameChanged && !avatarChanged) {
+			closeEdit();
 			return;
 		}
-		accountView.set({ nameSaving: true });
+		busy(true);
+		let avatarSaved = false;
+		const turn = editTurn;
 		try {
-			if (await saveProfile(() => send("PUT", "./api/me/profile", { name }), "닉네임을 바꿨어요")) {
-				closeName();
-				$("nameEdit").focus({ preventScroll: true });
+			const fail = (r, what) => {
+				if (r.status === 401) {
+					me = null;
+					show();
+					toast(avatarSaved ? "프로필 사진은 바꿨어요. 닉네임은 다시 로그인한 뒤 바꿔 주세요." : "로그인이 끝났어요. 다시 로그인해 주세요.", true);
+					return "";
+				}
+				const why = r.body?.error?.message || "잠시 뒤 다시 해 주세요.";
+				return avatarSaved ? `프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. ${why}` : `${what}을 바꾸지 못했어요. ${why}`;
+			};
+			if (avatarChanged) {
+				const blob = draftBlob;
+				const r = draft.kind === "photo" && blob ? await fetch("./api/me/avatar", {
+					method: "PUT",
+					credentials: "same-origin",
+					headers: {
+						...CHANGE,
+						"Content-Type": blob.type
+					},
+					body: blob
+				}).then(async (res) => ({
+					status: res.status,
+					ok: res.ok,
+					body: res.headers.get("content-type")?.includes("json") ? await res.json().catch(() => null) : null
+				})) : await (draft.id === "sprout" ? send("DELETE", "./api/me/avatar") : send("PUT", "./api/me/avatar", { character: draft.id }));
+				if (!r.ok) {
+					const why = fail(r, "프로필 사진");
+					if (why) popSay(why, true);
+					return;
+				}
+				me = r.body;
+				show();
+				avatarSaved = true;
 			}
+			if (nameChanged) {
+				const r = await send("PUT", "./api/me/profile", { name });
+				if (!r.ok) {
+					const why = fail(r, "닉네임");
+					if (avatarSaved) {
+						dropPreview();
+						accountView.set({ draft: { kind: "keep" } });
+					}
+					if (why) popSay(why, true);
+					return;
+				}
+				me = r.body;
+				show();
+			}
+			if (turn === editTurn) closeEdit();
+			toast(avatarChanged && nameChanged ? "프로필을 바꿨어요" : avatarChanged ? "프로필 사진을 바꿨어요" : "닉네임을 바꿨어요");
+		} catch {
+			if (avatarSaved) {
+				dropPreview();
+				accountView.set({ draft: { kind: "keep" } });
+			}
+			popSay(avatarSaved ? "프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. 연결을 확인해 주세요." : "바꾸지 못했어요. 연결을 확인해 주세요.", true);
 		} finally {
-			accountView.set({ nameSaving: false });
+			busy(false);
 		}
 	}
 	function renderTickets() {
@@ -1205,24 +1294,14 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		}
 	}
 	accountView.on({
-		avatarBig: () => {
-			if (accountView.state.pickOpen) closePick();
-			else openPick();
-		},
+		edit: openEdit,
+		cancel: () => closeEdit(),
+		save: saveEdit,
 		pickPhoto: () => {
 			if (!saving) $("photoFile").click();
 		},
 		photoFile: photoChosen,
 		pickCharacter,
-		nameEdit: () => {
-			if (accountView.state.nameOpen) closeName();
-			else openName();
-		},
-		nameCancel: () => {
-			closeName();
-			$("nameEdit").focus({ preventScroll: true });
-		},
-		nameSubmit: submitName,
 		logoutDevice,
 		logoutOthers,
 		exportData,

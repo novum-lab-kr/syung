@@ -48,12 +48,11 @@ var currentChoice = (avatar) => {
 var view = {
 	me: null,
 	marked: false,
-	pickOpen: false,
+	draft: { kind: "keep" },
+	converting: false,
 	facesLoaded: false,
 	saving: false,
-	nameOpen: false,
 	nameValue: "",
-	nameSaving: false,
 	statsShown: false,
 	stats: null,
 	statsTurn: 0,
@@ -90,53 +89,147 @@ var CAMERA = /* @__PURE__ */ a("svg", {
 		r: "3.5"
 	})]
 });
+function draftLook(me, draft) {
+	if (draft.kind === "photo") return {
+		photo: true,
+		big: `url("${draft.preview}")`,
+		small: `url("${draft.preview}")`,
+		choice: "photo"
+	};
+	if (draft.kind === "character") return {
+		photo: false,
+		big: `url("./brand/faces/${draft.id}-240.png")`,
+		small: "",
+		choice: draft.id
+	};
+	const big = avatarLook(me?.avatar, true), small = avatarLook(me?.avatar);
+	return {
+		photo: big.photo,
+		big: big.image,
+		small: small.photo ? small.image : "",
+		choice: currentChoice(me?.avatar)
+	};
+}
 function Profile() {
-	const { me } = view, big = avatarLook(me?.avatar, true), current = currentChoice(me?.avatar), photo = current === "photo";
-	const photoLook = photo ? avatarLook(me?.avatar) : null, count = nameLength(view.nameValue);
-	return /* @__PURE__ */ a(M, { children: [
-		/* @__PURE__ */ a("div", {
-			class: "account-prof",
-			children: [/* @__PURE__ */ a("button", {
-				id: "accountAvatarBig",
-				class: `account-avatar big ${me && big.photo ? "photo" : "face"}`,
-				type: "button",
-				"aria-label": "프로필 사진 바꾸기",
-				"aria-expanded": view.pickOpen ? "true" : "false",
-				"aria-controls": "avatarPick",
-				style: me ? { backgroundImage: big.image } : void 0,
-				onClick: call("avatarBig"),
-				children: BADGE
-			}), /* @__PURE__ */ a("div", {
-				class: "pf-who",
-				children: [/* @__PURE__ */ a("div", {
-					class: "pf-name",
-					children: [/* @__PURE__ */ a("b", {
-						id: "accountName",
-						children: me?.name ?? ""
-					}), /* @__PURE__ */ a("button", {
-						id: "nameEdit",
-						class: "pf-link",
-						type: "button",
-						"aria-expanded": view.nameOpen ? "true" : "false",
-						"aria-controls": "nameForm",
-						onClick: call("nameEdit"),
-						children: "고치기"
-					})]
-				}), /* @__PURE__ */ a("small", {
-					id: "accountProvider",
-					children: me ? PROVIDER_NAMES[me.provider] || me.provider : ""
+	const { me } = view, big = avatarLook(me?.avatar, true);
+	return /* @__PURE__ */ a("div", {
+		class: "account-prof",
+		children: [/* @__PURE__ */ a("button", {
+			id: "accountAvatarBig",
+			class: `account-avatar big ${me && big.photo ? "photo" : "face"}`,
+			type: "button",
+			"aria-label": "프로필 수정",
+			"aria-haspopup": "dialog",
+			style: me ? { backgroundImage: big.image } : void 0,
+			onClick: call("edit"),
+			children: BADGE
+		}), /* @__PURE__ */ a("div", {
+			class: "pf-who",
+			children: [/* @__PURE__ */ a("div", {
+				class: "pf-name",
+				children: [/* @__PURE__ */ a("b", {
+					id: "accountName",
+					children: me?.name ?? ""
+				}), /* @__PURE__ */ a("button", {
+					id: "profileEdit",
+					class: "pf-link",
+					type: "button",
+					"aria-haspopup": "dialog",
+					onClick: call("edit"),
+					children: "프로필 수정"
 				})]
+			}), /* @__PURE__ */ a("small", {
+				id: "accountProvider",
+				children: me ? PROVIDER_NAMES[me.provider] || me.provider : ""
 			})]
-		}),
-		/* @__PURE__ */ a("form", {
-			id: "nameForm",
-			class: "pf-form",
-			hidden: !view.nameOpen,
-			onSubmit: (event) => {
-				event.preventDefault();
-				call("nameSubmit")();
-			},
-			children: [/* @__PURE__ */ a("label", {
+		})]
+	});
+}
+function ProfileForm() {
+	const { me } = view, count = nameLength(view.nameValue), look = draftLook(me, view.draft), lock = view.saving || view.converting;
+	return /* @__PURE__ */ a("form", {
+		id: "profileForm",
+		class: "pf-form",
+		onSubmit: (event) => {
+			event.preventDefault();
+			call("save")();
+		},
+		children: [
+			/* @__PURE__ */ a("div", {
+				class: "account-prof",
+				children: [/* @__PURE__ */ a("button", {
+					id: "profileAvatar",
+					class: `account-avatar big ${look.photo ? "photo" : "face"}`,
+					type: "button",
+					"aria-label": "사진 올리기",
+					style: { backgroundImage: look.big },
+					disabled: lock,
+					onClick: call("pickPhoto"),
+					children: BADGE
+				}), /* @__PURE__ */ a("div", {
+					class: "pf-who",
+					children: [/* @__PURE__ */ a("div", {
+						class: "pf-name",
+						children: /* @__PURE__ */ a("b", {
+							id: "profileTitle",
+							children: "프로필 수정"
+						})
+					}), /* @__PURE__ */ a("small", { children: me ? PROVIDER_NAMES[me.provider] || me.provider : "" })]
+				})]
+			}),
+			/* @__PURE__ */ a("div", {
+				id: "avatarPick",
+				class: "pf-pick",
+				children: [
+					/* @__PURE__ */ a("p", {
+						class: "pf-l",
+						children: "사진 · 캐릭터"
+					}),
+					/* @__PURE__ */ a("div", {
+						id: "avatarChoices",
+						class: "pf-choices",
+						role: "group",
+						"aria-label": "프로필 사진 고르기",
+						children: [/* @__PURE__ */ a("button", {
+							id: "photoPick",
+							class: look.small ? "pf-choice pf-photo photo" : "pf-choice pf-photo",
+							type: "button",
+							"aria-label": "사진 올리기",
+							"aria-pressed": view.marked ? String(look.choice === "photo") : void 0,
+							style: look.small ? { backgroundImage: look.small } : void 0,
+							disabled: lock,
+							onClick: call("pickPhoto"),
+							children: [CAMERA, /* @__PURE__ */ a("span", { children: "사진" })]
+						}), CHARACTERS.map(([id, label]) => /* @__PURE__ */ a("button", {
+							type: "button",
+							class: "pf-choice",
+							"data-character": id,
+							"aria-label": label,
+							title: label,
+							"aria-pressed": view.marked ? String(id === look.choice) : void 0,
+							style: view.facesLoaded ? { backgroundImage: `url("./brand/faces/${id}-240.png")` } : void 0,
+							disabled: view.saving,
+							onClick: () => call("pickCharacter")(id)
+						}))]
+					}),
+					/* @__PURE__ */ a("input", {
+						id: "photoFile",
+						type: "file",
+						accept: "image/*",
+						hidden: true,
+						onChange: (event) => {
+							const file = event.currentTarget.files?.[0];
+							event.currentTarget.value = "";
+							call("photoFile")(file);
+						}
+					}),
+					/* @__PURE__ */ a("p", {
+						class: "pf-note",
+						children: "가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요."
+					})
+				]
+			}),
+			/* @__PURE__ */ a("label", {
 				class: "tf-in pf-in",
 				children: [/* @__PURE__ */ a("input", {
 					id: "nameInput",
@@ -146,82 +239,32 @@ function Profile() {
 					"aria-label": "닉네임",
 					"aria-describedby": "nameCount",
 					value: view.nameValue,
+					disabled: view.saving,
 					onInput: (event) => set({ nameValue: event.currentTarget.value })
 				}), /* @__PURE__ */ a("small", {
 					id: "nameCount",
 					class: count > 12 ? "over" : void 0,
 					children: `${count}/12`
 				})]
-			}), /* @__PURE__ */ a("div", {
+			}),
+			/* @__PURE__ */ a("div", {
 				class: "pf-row",
 				children: [/* @__PURE__ */ a("button", {
-					id: "nameCancel",
+					id: "profileCancel",
 					type: "button",
-					onClick: call("nameCancel"),
+					disabled: view.saving,
+					onClick: call("cancel"),
 					children: "취소"
 				}), /* @__PURE__ */ a("button", {
-					id: "nameSave",
+					id: "profileSave",
 					type: "submit",
 					class: "pf-ok",
-					disabled: view.nameSaving,
-					children: "저장"
+					disabled: lock,
+					children: view.converting ? "사진 준비 중" : "저장"
 				})]
-			})]
-		}),
-		/* @__PURE__ */ a("div", {
-			id: "avatarPick",
-			class: "pf-pick",
-			hidden: !view.pickOpen,
-			children: [
-				/* @__PURE__ */ a("p", {
-					class: "pf-l",
-					children: "프로필"
-				}),
-				/* @__PURE__ */ a("div", {
-					id: "avatarChoices",
-					class: "pf-choices",
-					role: "group",
-					"aria-label": "프로필 사진 고르기",
-					children: [/* @__PURE__ */ a("button", {
-						id: "photoPick",
-						class: photoLook ? `pf-choice pf-photo ${photoLook.photo ? "photo" : "face"}` : "pf-choice pf-photo",
-						type: "button",
-						"aria-label": "사진 올리기",
-						"aria-pressed": view.marked ? String(photo) : void 0,
-						style: photoLook ? { backgroundImage: photoLook.image } : void 0,
-						disabled: view.saving,
-						onClick: call("pickPhoto"),
-						children: [CAMERA, /* @__PURE__ */ a("span", { children: "사진" })]
-					}), CHARACTERS.map(([id, label]) => /* @__PURE__ */ a("button", {
-						type: "button",
-						class: "pf-choice",
-						"data-character": id,
-						"aria-label": label,
-						title: label,
-						"aria-pressed": view.marked ? String(id === current) : void 0,
-						style: view.facesLoaded ? { backgroundImage: `url("./brand/faces/${id}-240.png")` } : void 0,
-						disabled: view.saving,
-						onClick: () => call("pickCharacter")(id)
-					}))]
-				}),
-				/* @__PURE__ */ a("input", {
-					id: "photoFile",
-					type: "file",
-					accept: "image/*",
-					hidden: true,
-					onChange: (event) => {
-						const file = event.currentTarget.files?.[0];
-						event.currentTarget.value = "";
-						call("photoFile")(file);
-					}
-				}),
-				/* @__PURE__ */ a("p", {
-					class: "pf-note",
-					children: "가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요."
-				})
-			]
-		})
-	] });
+			})
+		]
+	});
 }
 var Cell = ({ value, label }) => /* @__PURE__ */ a("div", {
 	class: "st-cell",
@@ -421,12 +464,14 @@ function AccountPage() {
 	] });
 }
 var root = document.getElementById("menuAccount");
+var formRoot = document.getElementById("profileBody");
 function set(patch) {
 	view = {
 		...view,
 		...patch
 	};
 	if (root) K(/* @__PURE__ */ a(AccountPage, {}), root);
+	if (formRoot) K(/* @__PURE__ */ a(ProfileForm, {}), formRoot);
 }
 var accountView = {
 	set,
