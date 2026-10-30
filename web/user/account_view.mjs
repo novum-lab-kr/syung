@@ -92,20 +92,17 @@ var CAMERA = /* @__PURE__ */ a("svg", {
 function draftLook(me, draft) {
 	if (draft.kind === "photo") return {
 		photo: true,
-		big: `url("${draft.preview}")`,
 		small: `url("${draft.preview}")`,
 		choice: "photo"
 	};
 	if (draft.kind === "character") return {
 		photo: false,
-		big: `url("./brand/faces/${draft.id}-240.png")`,
 		small: "",
 		choice: draft.id
 	};
 	const big = avatarLook(me?.avatar, true), small = avatarLook(me?.avatar);
 	return {
 		photo: big.photo,
-		big: big.image,
 		small: small.photo ? small.image : "",
 		choice: currentChoice(me?.avatar)
 	};
@@ -127,17 +124,10 @@ function Profile() {
 			class: "pf-who",
 			children: [/* @__PURE__ */ a("div", {
 				class: "pf-name",
-				children: [/* @__PURE__ */ a("b", {
+				children: /* @__PURE__ */ a("b", {
 					id: "accountName",
 					children: me?.name ?? ""
-				}), /* @__PURE__ */ a("button", {
-					id: "profileEdit",
-					class: "pf-link",
-					type: "button",
-					"aria-haspopup": "dialog",
-					onClick: call("edit"),
-					children: "프로필 수정"
-				})]
+				})
 			}), /* @__PURE__ */ a("small", {
 				id: "accountProvider",
 				children: me ? PROVIDER_NAMES[me.provider] || me.provider : ""
@@ -155,26 +145,22 @@ function ProfileForm() {
 			call("save")();
 		},
 		children: [
-			/* @__PURE__ */ a("div", {
-				class: "account-prof",
-				children: [/* @__PURE__ */ a("button", {
-					id: "profileAvatar",
-					class: `account-avatar big ${look.photo ? "photo" : "face"}`,
-					type: "button",
-					"aria-label": "사진 올리기",
-					style: { backgroundImage: look.big },
-					disabled: lock,
-					onClick: call("pickPhoto"),
-					children: BADGE
-				}), /* @__PURE__ */ a("div", {
-					class: "pf-who",
-					children: [/* @__PURE__ */ a("div", {
-						class: "pf-name",
-						children: /* @__PURE__ */ a("b", {
-							id: "profileTitle",
-							children: "프로필 수정"
-						})
-					}), /* @__PURE__ */ a("small", { children: me ? PROVIDER_NAMES[me.provider] || me.provider : "" })]
+			/* @__PURE__ */ a("label", {
+				class: "tf-in pf-in",
+				children: [/* @__PURE__ */ a("input", {
+					id: "nameInput",
+					maxlength: 40,
+					autocomplete: "nickname",
+					enterkeyhint: "done",
+					"aria-label": "닉네임",
+					"aria-describedby": "nameCount",
+					value: view.nameValue,
+					disabled: view.saving,
+					onInput: (event) => set({ nameValue: event.currentTarget.value })
+				}), /* @__PURE__ */ a("small", {
+					id: "nameCount",
+					class: count > 12 ? "over" : void 0,
+					children: `${count}/12`
 				})]
 			}),
 			/* @__PURE__ */ a("div", {
@@ -228,24 +214,6 @@ function ProfileForm() {
 						children: "가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요."
 					})
 				]
-			}),
-			/* @__PURE__ */ a("label", {
-				class: "tf-in pf-in",
-				children: [/* @__PURE__ */ a("input", {
-					id: "nameInput",
-					maxlength: 40,
-					autocomplete: "nickname",
-					enterkeyhint: "done",
-					"aria-label": "닉네임",
-					"aria-describedby": "nameCount",
-					value: view.nameValue,
-					disabled: view.saving,
-					onInput: (event) => set({ nameValue: event.currentTarget.value })
-				}), /* @__PURE__ */ a("small", {
-					id: "nameCount",
-					class: count > 12 ? "over" : void 0,
-					children: `${count}/12`
-				})]
 			}),
 			/* @__PURE__ */ a("div", {
 				class: "pf-row",

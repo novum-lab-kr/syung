@@ -330,7 +330,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		setTimeout(() => {
 			if (!profileSheet.classList.contains("open")) profileSheet.hidden = true;
 		}, 260);
-		if (restoreFocus) $("profileEdit").focus({ preventScroll: true });
+		if (restoreFocus) $("accountAvatarBig").focus({ preventScroll: true });
 	}
 	profileSheet.querySelector(".login-scrim").onclick = () => {
 		if (!saving) closeEdit();
