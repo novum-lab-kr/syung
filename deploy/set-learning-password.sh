@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set the login for the owner-only learning page (https://syung.novum-lab.com/admin/learning).
+# Set the login for the owner-only learning page (https://map.syung.novum-lab.com/admin/learning).
 # Usage: set-learning-password.sh <new password> [user]     (user defaults to the current one)
 # Stored hashed in /etc/subway-live-auth.json (server/owner_auth.py); changing it logs every
 # browser out.

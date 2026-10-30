@@ -1,7 +1,18 @@
-# Static map + live-train proxy (production: syung.novum-lab.com)
-# 운영 /etc/caddy/Caddyfile 의 이 블록과 같게 둔다(2026-10-27 운영 기준). 고친 뒤: caddy validate → systemctl reload caddy
-syung.novum-lab.com {
+# 슝 운영 주소 둘(2026-10-30 나눔)
+#   map.syung.novum-lab.com — 지도 앱 + 실시간 열차 프록시 + 관리 화면(/api · /admin). 검색에는 싣지 않는다(noindex)
+#   syung.novum-lab.com     — 소개 사이트(/var/www/syung-landing — novum-web 레포 syung/ 이 관리 · 배포, 2026-10-30 옮김).
+#                             아이콘 · 개인정보처리방침(/brand/* · /privacy.html)은 이 레포 릴리스. 그 밖의 옛 주소는 map. 의 같은 경로로 넘긴다
+# 운영 /etc/caddy/Caddyfile 의 두 블록과 같게 둔다. 고칠 땐: cp Caddyfile Caddyfile.bak-<태그> → caddy validate → systemctl reload caddy
+# 처음 나눌 때의 차례(DNS map. A 레코드가 먼저 있어야 인증서가 나온다):
+#   1) map. 블록만 더한다(옛 syung. 블록은 그대로) → map. 의 / · /api/health 확인
+#   2) 배포(deploy/check_site.sh 가 map. 을 본다) · 소개 사이트 배포(novum-web → /var/www/syung-landing)
+#   3) syung. 블록을 아래 소개 블록으로 바꾼다 → 두 주소 · 넘기기 확인
+# 로그인: SYUNG_PUBLIC_URL 이 옛 주소여도 콜백(/api/auth/<제공자>/callback)이 map. 으로 308(쿼리 그대로) 되어
+# state 쿠키가 있는 map. 에서 끝난다 — 제공자 콘솔 · 환경 변수는 안 바꿔도 된다
+map.syung.novum-lab.com {
 	encode zstd gzip
+	# 지도 앱은 검색에 싣지 않는다(web/index.html 의 meta robots · canonical 과 같은 뜻)
+	header X-Robots-Tag "noindex"
 	# bus: handled by the existing proxy, with its own cache and daily budget.
 	handle /api/bus/live {
 		rewrite * /bus/live
@@ -107,5 +118,42 @@ syung.novum-lab.com {
 		header Cache-Control "public, max-age=0, s-maxage=60"
 		header X-Content-Type-Options "nosniff"
 		file_server
+	}
+}
+
+# 소개 사이트 — 정적 파일만. 소개 폴더에 있는 파일이면 내고, 아니면 map. 의 같은 경로로 넘긴다
+syung.novum-lab.com {
+	encode zstd gzip
+	header X-Content-Type-Options "nosniff"
+	# 카카오 연결 해제 웹훅: 카카오 서버가 옛 주소로 POST 한다 — 넘기지 않고 바로 받는다
+	# /api 를 떼지 않는다 — map. 의 @member 와 같다(server/routes/members.py member_path 가 /api/auth/… · /auth/… 둘 다 받는다)
+	handle /api/auth/kakao/unlink {
+		reverse_proxy 127.0.0.1:3113
+	}
+	# API 는 308 — POST 의 메서드 · 본문을 그대로 넘긴다(301 은 GET 으로 바뀔 수 있다)
+	handle /api/* {
+		redir https://map.syung.novum-lab.com{uri} 308
+	}
+	# 지도와 같이 쓰는 파일(아이콘 · 개인정보처리방침)
+	@shared path /brand/* /privacy.html
+	handle @shared {
+		root * /var/www/syung
+		header Cache-Control "public, max-age=0, s-maxage=60"
+		file_server
+	}
+	# 소개 페이지(/ · /en/ · robots.txt · sitemap.xml · og.jpg · shots/ …) — novum-web 레포 syung/ 이 관리 · 배포
+	@intro file {
+		root /var/www/syung-landing
+		try_files {path} {path}index.html
+	}
+	handle @intro {
+		root * /var/www/syung-landing
+		try_files {path} {path}index.html
+		header Cache-Control "public, max-age=0, s-maxage=60"
+		file_server
+	}
+	# 그 밖의 옛 지도 주소(/admin/… · /site.webmanifest …) → map. 의 같은 경로
+	handle {
+		redir https://map.syung.novum-lab.com{uri} permanent
 	}
 }
