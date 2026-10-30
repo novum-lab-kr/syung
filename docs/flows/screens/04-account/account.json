@@ -1,23 +1,6 @@
 {
   "title": "내 정보",
   "summary": "내 정보 줄을 누를 때마다 통계 · 기기를 받는다. 계정 칸(로그인한 기기)이 이어지고, 더 내리면 내 데이터 내려받기 · 로그아웃 · 탈퇴가 있다(이 그림 밖). 통계 · 기기 값은 촬영용으로 만든 값.",
-  "steps": [
-    {
-      "tap": "#settingsButton"
-    },
-    {
-      "wait": "#accountRow:not([hidden])"
-    },
-    {
-      "tap": "#accountRow"
-    },
-    {
-      "wait": "#accountStats:not([hidden]) .st-grid"
-    },
-    {
-      "sleep": 800
-    }
-  ],
   "marks": [
     {
       "n": 1,

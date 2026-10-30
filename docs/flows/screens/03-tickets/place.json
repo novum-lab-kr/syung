@@ -1,13 +1,6 @@
 {
   "title": "발권 — 장소 찾기",
   "summary": "「+ 승차권 예매하기」로 연 발권 화면에서 출발 칸에 글자를 친 모습. 위쪽 미리보기 승차권이 고치는 대로 바뀐다.",
-  "after": "list",
-  "steps": [
-    { "tap": "#ticketNew" },
-    { "wait": "#ticketFrom" },
-    { "type": ["#ticketFrom", "서울역"] },
-    { "wait": "#ticketFromList:not([hidden]) li button" }
-  ],
   "marks": [
     { "n": 1, "at": "#ticketPreview .ticket", "what": "미리보기 승차권 — 이름 · 출발 시각 · 타는 날이 고치는 대로 바뀐다" },
     { "n": 2, "at": "#ticketFrom", "badge": "right", "what": "출발 칸", "tap": "두 글자 이상 치면 0.3초 뒤 칸 바로 아래에 찾은 곳", "edge": "찾은 곳이 없으면 「찾는 곳이 없어요」 · 실패하면 「검색하지 못했어요」" },

@@ -1,27 +1,6 @@
 {
   "title": "로그인 팝업",
-  "session": "out",
   "summary": "로그인 안 된 사람이 서랍의 「로그인」 줄을 누르면 서랍이 닫히고 뜬다. 이 그림은 서버가 켠 방법이 카카오 · 구글일 때.",
-  "steps": [
-    {
-      "tap": "#settingsButton"
-    },
-    {
-      "wait": "#loginOpen"
-    },
-    {
-      "sleep": 500
-    },
-    {
-      "tap": "#loginOpen"
-    },
-    {
-      "wait": "#loginSheet:not([hidden]) #accountProviders a"
-    },
-    {
-      "sleep": 800
-    }
-  ],
   "marks": [
     {
       "n": 1,
