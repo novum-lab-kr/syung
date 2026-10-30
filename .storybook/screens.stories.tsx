@@ -1,5 +1,5 @@
 // 스토리북 '화면 기획': docs/flows/screens/<흐름>/ 의 JSON(설명 원본)을 읽어 그린다 — 흐름 한 장(작은 화면 + 화살표 + 무엇을 누르면) · 화면마다 그림 + 번호 설명 표
-// 그림은 디자인 시스템 컴포넌트로 조립한 화면(assembled.tsx). 아직 조립하지 않은 흐름만 찍은 PNG(node tools/flows/capture.mjs <흐름 폴더>)
+// 그림은 디자인 시스템 컴포넌트로 조립한 화면(assembled.tsx).
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { Fragment } from 'preact';
 import { ASSEMBLED } from './assembled.tsx';
@@ -47,7 +47,7 @@ function FlowSheet({ flow, flowSpec, screens }:{ flow:string; flowSpec:FlowSpec;
 function ScreenSpecs({ flow, doc }:{ flow:string; doc:string }) {
   const { flowSpec, screens:all } = readFlow(flow);
   const screens = all.filter(screen => ASSEMBLED[flow]?.[screen.name] || screen.url);
-  if (!screens.length) return <article class="flow-doc"><p>아직 찍은 화면이 없어요 — <code>node tools/flows/capture.mjs {flow}</code></p></article>;
+  if (!screens.length) return <article class="flow-doc"><p>아직 조립한 화면이 없어요.</p></article>;
   return (
     <article class="flow-doc spec-doc">
       <h1>{flowSpec?.title ?? flow}</h1>

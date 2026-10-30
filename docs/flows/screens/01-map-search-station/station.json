@@ -1,18 +1,6 @@
 {
   "title": "역 시트",
-  "after": "search",
   "summary": "0.7초 안에 도착 정보가 오면 바로 이 모양으로 연다. 받은 자료로 15초마다 다시 그린다(다시 받지는 않는다).",
-  "steps": [
-    {
-      "tap": "#searchList li:first-child"
-    },
-    {
-      "wait": ".station-sheet .arrs:not(.st-sk) .arr"
-    },
-    {
-      "sleep": 1500
-    }
-  ],
   "marks": [
     {
       "n": 1,

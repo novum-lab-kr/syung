@@ -1,5 +1,5 @@
 // 화면 기획 자료(docs/flows/screens/<흐름>/) 읽기 — 화면마다 JSON 하나(제목 · 설명 · 번호) + 찍은 PNG. 원본은 그 JSON 하나(여기 다시 적지 않는다)
-// PNG 는 tools/flows/capture.mjs 가 찍는다. 스토리북 전용(운영 dist/web 에 안 들어간다)
+// 스토리북 전용(운영 dist/web 에 안 들어간다)
 
 export interface Mark { n:number; at:string; what:string; tap?:string; edge?:string; badge?:'right' | 'above' | 'left' }
 export interface ScreenSpec { title:string; summary?:string; marks?:Mark[] }
