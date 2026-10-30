@@ -74,6 +74,27 @@ function RouteCard({ plan, index, on, hidden = false, onPick }) {
 		]
 	});
 }
+function RouteFailed({ message, onRetry }) {
+	return /* @__PURE__ */ a("div", {
+		class: "jerr",
+		children: [
+			/* @__PURE__ */ a("b", { children: "경로를 찾지 못했어요" }),
+			/* @__PURE__ */ a("p", { children: message }),
+			/* @__PURE__ */ a("button", {
+				type: "button",
+				class: "jerr-retry",
+				onClick: onRetry,
+				children: "다시 찾기"
+			})
+		]
+	});
+}
+function RouteNote() {
+	return /* @__PURE__ */ a("p", {
+		class: "jp-note",
+		children: "경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요."
+	});
+}
 function RouteLoading() {
 	return /* @__PURE__ */ a("div", {
 		class: "jload",
@@ -98,4 +119,4 @@ function RouteLoading() {
 		}))
 	});
 }
-export { RouteCard, RouteLoading, Track };
+export { RouteCard, RouteFailed, RouteLoading, RouteNote, Track };

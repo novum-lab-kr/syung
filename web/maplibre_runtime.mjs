@@ -4,12 +4,15 @@ import { appMapMode, serverUrl } from "./lib/server_url.mjs";
 import { initJourney } from "./lib/journey-ui.mjs";
 import "./npm/preact/dist/preact.mjs";
 import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import "./components/journey_fields.mjs";
 import "./components/chip.mjs";
 import "./components/icons.mjs";
 import "./components/step_list.mjs";
 import "./components/route_card.mjs";
+import "./components/journey_summary.mjs";
 import "./components/segmented.mjs";
-import { clearJourney, drawJourney } from "./ui/journey_sheet.mjs";
+import "./components/journey_when.mjs";
+import { clearJourney, drawJourney, drawJourneyBar } from "./ui/journey_sheet.mjs";
 import "./modes/basic/park.mjs";
 import "./modes/coaster/metrics.mjs";
 import { SEOUL_CITY_STYLE } from "./modes/basic/city.mjs";
@@ -1386,6 +1389,7 @@ var journey = initJourney({
 	openSheetView,
 	drawJourney,
 	clearJourney,
+	drawJourneyBar,
 	closeSheet: () => closeSheet(),
 	map,
 	colors,

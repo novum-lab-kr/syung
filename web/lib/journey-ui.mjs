@@ -152,7 +152,7 @@ function trackParts(p, colors, width = 330) {
 function routeTrack(p, colors, width = 330) {
 	return `<div class="jtrack" aria-hidden="true">${trackParts(p, colors, width).map((seg) => seg.k !== "ride" ? `<i class="jseg ${seg.k}" style="flex:${seg.flex} 1 0"></i>` : `<i class="jseg ride${seg.bus ? " bus" : ""}" style="flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}">${seg.icon ? BUS : ""}${esc(seg.label)}</i>`).join("")}</div>`;
 }
-function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney }) {
+function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar }) {
 	const picked = {
 		from: null,
 		to: null
@@ -163,14 +163,16 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	const bar = document.createElement("div");
 	bar.className = "jbar";
 	bar.hidden = true;
-	bar.innerHTML = "<button type=\"button\" class=\"jbar-open\" aria-label=\"경로 결과 다시 보기\"></button><button type=\"button\" class=\"jbar-x\" aria-label=\"경로 지우기\" title=\"경로 지우기\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button>";
 	document.body.append(bar);
-	bar.querySelector(".jbar-open").onclick = () => open();
-	bar.querySelector(".jbar-x").onclick = () => {
-		last = null;
-		bar.hidden = true;
-		clearRoute?.();
+	const barActions = {
+		open: () => open(),
+		clear: () => {
+			last = null;
+			bar.hidden = true;
+			clearRoute?.();
+		}
 	};
+	drawJourneyBar(bar, null, barActions);
 	let body = null, mounted = 0, mountSeq = 0;
 	const emptyList = () => ({
 		hidden: true,
@@ -378,17 +380,12 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		}
 		paint();
 	}
-	const track = (p, width = 330) => routeTrack(p, colors, width);
 	const durParts = (total) => total >= 60 ? {
 		hours: Math.floor(total / 60),
 		minutes: total % 60
 	} : {
 		hours: null,
 		minutes: total
-	};
-	const dur = (total) => {
-		const parts = durParts(total);
-		return parts.hours !== null ? `${parts.hours}<small>시간</small> ${parts.minutes}<small>분</small>` : `${parts.minutes}<small>분</small>`;
 	};
 	function planView(plan) {
 		return {
@@ -637,7 +634,11 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		inSheet = false;
 		if (!last || !was) return false;
 		const p = last.d.plans[last.sel];
-		bar.querySelector(".jbar-open").innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span></span>${track(p, 240)}`;
+		drawJourneyBar(bar, {
+			duration: durParts(p.minutes),
+			arrives: p.arrives,
+			track: trackParts(p, colors, 240)
+		}, barActions);
 		bar.hidden = false;
 		return true;
 	}
