@@ -1,5 +1,6 @@
 import { routeTrack } from "../lib/journey-ui.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
+import "../components/account_page.mjs";
 import { accountView, avatarLook, drawProviders, nameLength } from "./account_view.mjs";
 import { DAYS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeUrl, shortName, usefulRoutes } from "./ticket_routes.mjs";
 import "../components/button.mjs";
@@ -9,6 +10,8 @@ import "../components/time_field.mjs";
 import "../components/day_picker.mjs";
 import "../components/route_head.mjs";
 import "../components/save_button.mjs";
+import "../components/ticket_form.mjs";
+import "../components/route_picker.mjs";
 import { ticketsView, timeParts } from "./tickets_view.mjs";
 // web/user/account.mts
 var $ = (id) => document.getElementById(id);

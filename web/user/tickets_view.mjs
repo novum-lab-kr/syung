@@ -1,16 +1,13 @@
 import { routeSteps, routeTrack } from "../lib/journey-ui.mjs";
 import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { StepList } from "../components/step_list.mjs";
-import { RouteLoading } from "../components/route_card.mjs";
-import { Segmented } from "../components/segmented.mjs";
 import { DAYS, esc, shortName } from "./ticket_routes.mjs";
-import { TicketCard, TicketFront, TicketList } from "../components/ticket_card.mjs";
+import { TicketCard, TicketList } from "../components/ticket_card.mjs";
 import { PlaceField } from "../components/place_field.mjs";
 import { TimeField } from "../components/time_field.mjs";
 import { DayPicker } from "../components/day_picker.mjs";
-import { RouteHead } from "../components/route_head.mjs";
-import { SaveButton } from "../components/save_button.mjs";
+import { TicketForm } from "../components/ticket_form.mjs";
+import { RoutePicker } from "../components/route_picker.mjs";
 // web/user/tickets_view.tsx
 var todayDay = () => ((/* @__PURE__ */ new Date()).getDay() + 6) % 7 + 1;
 function timeParts(time) {
@@ -128,203 +125,65 @@ function TicketPage() {
 		depart: view.time,
 		days: view.days
 	};
-	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
-		id: "ticketPreview",
-		"aria-hidden": "true",
-		children: opened && /* @__PURE__ */ a("div", {
-			class: "ticket",
-			children: /* @__PURE__ */ a("div", {
-				class: "ticket-in",
-				children: /* @__PURE__ */ a(TicketFront, {
-					ticket: draft,
-					today: isToday(draft)
-				})
-			})
-		})
-	}), /* @__PURE__ */ a("form", {
-		id: "ticketForm",
-		class: "ticket-form",
-		autocomplete: "off",
-		noValidate: true,
-		onSubmit: (event) => {
-			event.preventDefault();
-			call("submit")();
-		},
-		children: [
-			/* @__PURE__ */ a("div", {
-				class: "tf-route",
-				children: /* @__PURE__ */ a("div", {
-					class: "tf-pls",
-					children: [/* @__PURE__ */ a(Place, { which: "from" }), /* @__PURE__ */ a(Place, { which: "to" })]
-				})
-			}),
-			/* @__PURE__ */ a(TimeField, {
-				open: view.wheelOpen,
-				text: opened ? time : null,
-				value: view.time,
-				onToggle: call("timeToggle"),
-				onDone: call("timeDone")
-			}),
-			/* @__PURE__ */ a("span", {
-				id: "ticketRouteLabel",
-				class: "tf-l",
-				children: "경로"
-			}),
-			/* @__PURE__ */ a("button", {
-				id: "ticketRoute",
-				class: opened && !view.route ? "tf-pick empty" : "tf-pick",
-				type: "button",
-				"aria-labelledby": "ticketRouteLabel ticketRoute",
-				onClick: call("route"),
-				dangerouslySetInnerHTML: { __html: opened ? routeHTML(view.route) : "" }
-			}),
-			/* @__PURE__ */ a(DayPicker, {
-				days: view.days,
-				onDay: (day) => call("day")(day),
-				onQuick: (days) => call("quick")(days)
-			}),
-			/* @__PURE__ */ a("label", {
-				class: "tf-l",
-				for: "ticketName",
-				children: "승차권 이름"
-			}),
-			/* @__PURE__ */ a("div", {
-				class: "tf-in",
-				children: [/* @__PURE__ */ a("input", {
-					id: "ticketName",
-					maxlength: 12,
-					placeholder: "이름 넣기",
-					enterkeyhint: "done",
-					value: view.name,
-					onInput: (event) => call("name")(event.currentTarget.value)
-				}), /* @__PURE__ */ a("small", {
-					id: "ticketNameCount",
-					"aria-hidden": "true",
-					children: `${[...view.name].length}/12`
-				})]
-			}),
-			/* @__PURE__ */ a(SaveButton, {
-				id: "ticketSave",
-				type: "submit",
-				disabled: view.sending || opened && !view.route,
-				children: view.sending ? "발권하는 중…" : "발권하기"
-			}),
-			/* @__PURE__ */ a("button", {
-				id: "ticketDelete",
-				class: "tf-del",
-				type: "button",
-				hidden: !opened || view.editingId === void 0,
-				onClick: call("remove"),
-				children: view.deleteArmed ? "한 번 더 누르면 지워요" : "이 승차권 지우기"
-			})
-		]
-	})] });
-}
-function planHTML(plan) {
-	return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ""}</span>${routeTrack(plan, view.colors, 250)}</span>`;
-}
-function RouteFilters({ filter }) {
-	return /* @__PURE__ */ a("div", {
-		class: "rt-filters",
-		children: /* @__PURE__ */ a(Segmented, {
-			label: "경로 종류",
-			class: "jkinds",
-			attr: "k",
-			items: filter.kinds.map((tab) => ({
-				id: tab.kind,
-				name: tab.name,
-				count: tab.count,
-				pressed: tab.pressed
-			})),
-			onPick: (kind) => call("routeKind")(kind)
-		})
+	return /* @__PURE__ */ a(TicketForm, {
+		preview: opened ? {
+			ticket: draft,
+			today: isToday(draft)
+		} : null,
+		places: /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(Place, { which: "from" }), /* @__PURE__ */ a(Place, { which: "to" })] }),
+		time: /* @__PURE__ */ a(TimeField, {
+			open: view.wheelOpen,
+			text: opened ? time : null,
+			value: view.time,
+			onToggle: call("timeToggle"),
+			onDone: call("timeDone")
+		}),
+		days: /* @__PURE__ */ a(DayPicker, {
+			days: view.days,
+			onDay: (day) => call("day")(day),
+			onQuick: (days) => call("quick")(days)
+		}),
+		routeHTML: opened ? routeHTML(view.route) : "",
+		routeEmpty: opened && !view.route,
+		name: view.name,
+		sending: view.sending,
+		saveDisabled: view.sending || opened && !view.route,
+		deleteHidden: !opened || view.editingId === void 0,
+		deleteArmed: view.deleteArmed,
+		onRoute: call("route"),
+		onName: (value) => call("name")(value),
+		onSubmit: call("submit"),
+		onDelete: call("remove")
 	});
 }
 function RoutePage() {
-	const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
-	return /* @__PURE__ */ a(M, { children: [
-		/* @__PURE__ */ a(RouteHead, {
-			when: view.routeWhen,
-			from: view.from?.name,
-			to: view.to?.name
-		}),
-		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
-		/* @__PURE__ */ a("div", {
-			id: "routeList",
-			class: "rt-list",
-			role: "radiogroup",
-			"aria-label": "경로",
-			children: order.map((index) => {
-				const plan = view.plans[index], opened = view.stepsOf === plan;
-				return /* @__PURE__ */ a("div", {
-					class: "rt-item",
-					children: [/* @__PURE__ */ a("div", {
-						class: "rt-card",
-						children: [/* @__PURE__ */ a("button", {
-							type: "button",
-							class: "rt-plan",
-							role: "radio",
-							"aria-checked": index === view.chosen ? "true" : "false",
-							"aria-label": `${plan.tag || "경로"} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`,
-							onClick: () => call("plan")(index),
-							dangerouslySetInnerHTML: { __html: planHTML(plan) }
-						}), /* @__PURE__ */ a("button", {
-							type: "button",
-							class: "rt-open",
-							"aria-expanded": opened ? "true" : "false",
-							"aria-label": "경로 자세히 보기",
-							onClick: () => set({ stepsOf: opened ? null : plan }),
-							children: /* @__PURE__ */ a("svg", {
-								viewBox: "0 0 24 24",
-								width: "16",
-								height: "16",
-								"aria-hidden": "true",
-								fill: "none",
-								stroke: "currentColor",
-								"stroke-width": "2.6",
-								"stroke-linecap": "round",
-								"stroke-linejoin": "round",
-								children: /* @__PURE__ */ a("path", { d: "m6 9 6 6 6-6" })
-							})
-						})]
-					}), opened && /* @__PURE__ */ a("div", {
-						class: "rt-steps",
-						children: [/* @__PURE__ */ a("p", {
-							class: "jp-meta",
-							children: `환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`
-						}), /* @__PURE__ */ a(StepList, {
-							steps: routeSteps(plan.legs, {
-								from: view.from?.name ?? "출발",
-								to: view.to?.name ?? "도착"
-							}, view.colors),
-							className: "jsteps shown"
-						})]
-					})]
-				});
-			})
-		}),
-		filter?.empty && /* @__PURE__ */ a("div", {
-			class: "rt-empty",
-			children: [/* @__PURE__ */ a("b", { children: filter.empty }), /* @__PURE__ */ a("p", { children: "다른 조건을 골라 보세요" })]
-		}),
-		/* @__PURE__ */ a("p", {
-			id: "routeMsg",
-			class: "account-msg",
-			role: "status",
-			"aria-live": "polite",
-			children: view.routeMsg
-		}),
-		view.routeLoading && /* @__PURE__ */ a(RouteLoading, {}),
-		/* @__PURE__ */ a("div", {
-			class: "rt-foot",
-			hidden: !order.length,
-			children: /* @__PURE__ */ a(SaveButton, {
-				id: "routePick",
-				onClick: call("planPick"),
-				children: "이 경로로"
-			})
-		})
-	] });
+	const filter = view.routeFilter;
+	const rows = (filter ? filter.order : view.plans.map((_plan, index) => index)).map((index) => {
+		const plan = view.plans[index];
+		return {
+			index,
+			plan,
+			chosen: index === view.chosen,
+			steps: view.stepsOf === plan ? routeSteps(plan.legs, {
+				from: view.from?.name ?? "출발",
+				to: view.to?.name ?? "도착"
+			}, view.colors) : null
+		};
+	});
+	return /* @__PURE__ */ a(RoutePicker, {
+		when: view.routeWhen,
+		from: view.from?.name,
+		to: view.to?.name,
+		filter,
+		rows,
+		colors: view.colors,
+		message: view.routeMsg,
+		loading: view.routeLoading,
+		onKind: (kind) => call("routeKind")(kind),
+		onPlan: (index) => call("plan")(index),
+		onSteps: (plan) => set({ stepsOf: view.stepsOf === plan ? null : plan }),
+		onPick: call("planPick")
+	});
 }
 var roots = [
 	["menuTickets", TicketsPage],

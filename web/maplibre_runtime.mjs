@@ -28,6 +28,7 @@ import { createPopups } from "./ui/popups.mjs";
 import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
 import "./components/drawer.mjs";
 import "./components/login_button.mjs";
+import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createAppBridge } from "./ui/app_bridge.mjs";

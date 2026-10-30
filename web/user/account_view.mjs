@@ -1,5 +1,6 @@
-import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
+import { render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { AccountPage as AccountPage$1, DeviceList } from "../components/account_page.mjs";
 import { LayerSheet } from "../components/layer_sheet.mjs";
 import { LoginSheetBody, SocialButtons } from "../components/login_sheet.mjs";
 import { ProfileCard } from "../components/profile_card.mjs";
@@ -13,10 +14,6 @@ var PROVIDER_NAMES = {
 	apple: "Apple"
 };
 var nameLength = (text) => [...text.trim()].length;
-var monthDay = (seconds) => {
-	const date = /* @__PURE__ */ new Date(seconds * 1e3);
-	return `${date.getMonth() + 1}월 ${date.getDate()}일`;
-};
 function avatarLook(avatar, big = false) {
 	const photo = avatar?.type === "photo" && PHOTO_URL.test(avatar.url);
 	const id = avatar?.type === "character" && CHARACTERS.some(([key]) => key === avatar.id) ? avatar.id : "sprout";
@@ -98,126 +95,25 @@ function ProfileForm() {
 		onPickCharacter: call("pickCharacter")
 	});
 }
-function SafeBody({ sessions }) {
-	return /* @__PURE__ */ a(M, { children: [
-		/* @__PURE__ */ a("p", {
-			class: "acct-sub",
-			children: `로그인한 기기 ${sessions.length}대`
-		}),
-		/* @__PURE__ */ a("ul", {
-			class: "dv-list",
-			children: sessions.map((item) => /* @__PURE__ */ a("li", {
-				"data-session": item.id,
-				children: [
-					/* @__PURE__ */ a("span", {
-						class: "dv-name",
-						children: [item.device, item.current && /* @__PURE__ */ a("em", { children: "이 기기" })]
-					}),
-					/* @__PURE__ */ a("small", { children: `마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}` }),
-					!item.current && /* @__PURE__ */ a("button", {
-						type: "button",
-						class: "dv-out",
-						disabled: view.outBusy.includes(item.id),
-						onClick: () => call("logoutDevice")(item.id),
-						children: "로그아웃"
-					})
-				]
-			}))
-		}),
-		/* @__PURE__ */ a("div", {
-			class: "dv-actions",
-			children: [sessions.length > 1 && /* @__PURE__ */ a("button", {
-				type: "button",
-				id: "deviceOthers",
-				onClick: call("logoutOthers"),
-				children: "다른 기기 모두 로그아웃"
-			}), /* @__PURE__ */ a("button", {
-				type: "button",
-				id: "dataExport",
-				onClick: call("exportData"),
-				children: "내 데이터 내려받기"
-			})]
-		}),
-		/* @__PURE__ */ a("p", {
-			class: "st-note",
-			children: "내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요."
-		})
-	] });
-}
 function AccountPage() {
-	return /* @__PURE__ */ a(M, { children: [
-		/* @__PURE__ */ a(Profile, {}),
-		/* @__PURE__ */ a("section", {
-			id: "accountStats",
-			class: "acct-sec",
-			"aria-labelledby": "accountStatsTitle",
-			hidden: !view.statsShown,
-			children: [/* @__PURE__ */ a("h4", {
-				id: "accountStatsTitle",
-				class: "pf-l",
-				children: "내 통계"
-			}), /* @__PURE__ */ a("div", {
-				id: "accountStatsBody",
-				"aria-live": "polite",
-				children: view.stats && /* @__PURE__ */ a(StatsPanel, { stats: view.stats }, view.statsTurn)
-			})]
-		}),
-		/* @__PURE__ */ a("section", {
-			id: "accountSafe",
-			class: "acct-sec",
-			"aria-labelledby": "accountSafeTitle",
-			hidden: !view.safeShown,
-			children: [/* @__PURE__ */ a("h4", {
-				id: "accountSafeTitle",
-				class: "pf-l",
-				children: "계정"
-			}), /* @__PURE__ */ a("div", {
-				id: "accountSafeBody",
-				children: view.sessions && /* @__PURE__ */ a(SafeBody, { sessions: view.sessions }, view.safeTurn)
-			})]
-		}),
-		/* @__PURE__ */ a("div", {
-			class: "account-foot",
-			children: [
-				/* @__PURE__ */ a("a", {
-					href: "./privacy.html",
-					target: "_blank",
-					rel: "noopener",
-					children: "개인정보처리방침"
-				}),
-				/* @__PURE__ */ a("button", {
-					id: "accountLogout",
-					type: "button",
-					onClick: call("logout"),
-					children: "로그아웃"
-				}),
-				/* @__PURE__ */ a("button", {
-					id: "accountDelete",
-					type: "button",
-					class: "account-delete",
-					onClick: call("deleteAsk"),
-					children: "탈퇴"
-				})
-			]
-		}),
-		/* @__PURE__ */ a("div", {
-			id: "accountConfirm",
-			class: "account-confirm",
-			hidden: !view.confirmOpen,
-			children: [/* @__PURE__ */ a("p", { children: "탈퇴하면 승차권까지 모두 지워져요" }), /* @__PURE__ */ a("div", { children: [/* @__PURE__ */ a("button", {
-				id: "accountConfirmNo",
-				type: "button",
-				onClick: call("deleteNo"),
-				children: "취소"
-			}), /* @__PURE__ */ a("button", {
-				id: "accountConfirmYes",
-				type: "button",
-				class: "danger",
-				onClick: call("deleteYes"),
-				children: "탈퇴"
-			})] })]
-		})
-	] });
+	return /* @__PURE__ */ a(AccountPage$1, {
+		profile: /* @__PURE__ */ a(Profile, {}),
+		statsShown: view.statsShown,
+		stats: view.stats && /* @__PURE__ */ a(StatsPanel, { stats: view.stats }, view.statsTurn),
+		safeShown: view.safeShown,
+		safe: view.sessions && /* @__PURE__ */ a(DeviceList, {
+			sessions: view.sessions,
+			busy: view.outBusy,
+			onLogoutDevice: (id) => call("logoutDevice")(id),
+			onLogoutOthers: call("logoutOthers"),
+			onExport: call("exportData")
+		}, view.safeTurn),
+		confirmOpen: view.confirmOpen,
+		onLogout: call("logout"),
+		onDeleteAsk: call("deleteAsk"),
+		onDeleteNo: call("deleteNo"),
+		onDeleteYes: call("deleteYes")
+	});
 }
 var loginRoot = document.getElementById("loginSheet");
 var profileRoot = document.getElementById("profileSheet");
