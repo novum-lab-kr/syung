@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 배포 뒤 확인: 웹 서버(Caddy) 너머로 화면이 실제로 부르는 주소가 답하는지. 하나라도 실패하면 1.
 #   deploy/check_site.sh [릴리스 폴더, 기본 SYUNG_WEB 링크가 가리키는 곳]
-# - 정적: 릴리스 안 모든 파일(/ · 모든 .mjs · 자료 · 옛 파일 링크) 200. admin/ 은 주인 로그인 뒤라 로그인 페이지만 200,
-#   나머지는 200 이 아니어야 한다(Caddy 보호가 빠진 채 올라가면 실패 → 되돌림).
+# - 정적: 릴리스 안 모든 파일(/ · 모든 .mjs · 자료 · 옛 파일 링크) 200. admin/ 은 200 이 아니어야 한다
+#   (Caddy 보호가 빠진 채 올라가면 실패 → 되돌림). 로그인 페이지(admin/login.html)는 보지 않는다 — 관리 화면이
+#   syung.novum-lab.com/admin(novum-web 레포 syung-admin/)으로 옮겨 가 map. 에서는 200(옮기기 전) · 301(옮긴 뒤) 둘 다 맞다
 # - API: web/ 이 fetch 하는 경로 그대로(./api/route · ./api/live → Caddy 가 서버의 /route · /live 로 넘긴다).
 #   /api/route 는 200 JSON. /api/live 는 200 JSON, 또는 서버가 낸 503 JSON(서울 API 실패)은 경고만 남기고 통과
 #   (2026-10-10 헤르메스: 서버는 클론에서 돌아 정적 파일을 되돌려도 상류 장애가 안 고쳐진다).
@@ -27,7 +28,7 @@ get() {   # → "상태 내용형식", 본문은 $body
 
 is_json() { python3 -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$body" 2>/dev/null; }
 
-files=$(cd "$dir" && find -L . -type f \( ! -path './admin/*' -o -path ./admin/login.html \) -printf '/%P\n' | sort) && [ -n "$files" ] || { echo "실패: 릴리스 파일 목록을 못 만듦"; exit 1; }
+files=$(cd "$dir" && find -L . -type f ! -path './admin/*' -printf '/%P\n' | sort) && [ -n "$files" ] || { echo "실패: 릴리스 파일 목록을 못 만듦"; exit 1; }
 n=0
 while read -r path; do
   n=$((n + 1))
