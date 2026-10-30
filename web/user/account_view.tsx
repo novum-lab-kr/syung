@@ -2,9 +2,11 @@
 // 받기 · 바꾸기 · 알림(토스트)은 user/account.mts 그대로 — 이 파일은 그리기와 누름 전달만. 상태는 옛 DOM 이 들고 있던 그대로이고
 // account.mts 가 옛 DOM 을 고치던 자리에서 accountView.set(...) 으로 바꾼다. 바뀔 때마다 바로(같은 작업 안에서) 다시 그린다.
 // 표시(DOM 모양 · class · id · 문구 · aria)는 옛 index.html · 옛 innerHTML 과 같다(옛 코드가 한 덩어리로 넣던 글자는 템플릿 하나로 — 글자 노드가 갈리면 커닝이 달라진다).
-// 겉모양 부품은 components/(프로필 줄 · 프로필 수정 · 통계 · 레이어 팝업 · 로그인 팝업) — 여기는 상태를 값으로 풀어 넘긴다. 토스트는 그대로.
+// 겉모양 부품은 components/(내 정보 틀 · 기기 목록 · 프로필 줄 · 프로필 수정 · 통계 · 레이어 팝업 · 로그인 팝업) — 여기는 상태를 값으로 풀어 넘긴다. 토스트는 그대로.
 import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
+import { AccountPage as AccountPageView, DeviceList } from '../components/account_page.tsx';
+import type { Session } from '../components/account_page.tsx';
 import { LayerSheet } from '../components/layer_sheet.tsx';
 import { LoginSheetBody, SocialButtons } from '../components/login_sheet.tsx';
 import { ProfileCard } from '../components/profile_card.tsx';
@@ -14,14 +16,12 @@ import type { Stats } from '../components/stats_panel.tsx';
 
 export interface Avatar { type:string; url?:string; id?:string }
 export interface Me { name:string; provider:string; avatar?:Avatar | null }
-export type { Stats };
-export interface Session { id:string; device:string; current?:boolean; lastUsedAt:number; createdAt:number }
+export type { Session, Stats };
 
 const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가 주는 내 사진 주소 모양(그 밖은 그리지 않는다)
 export const NAME_MAX = 12;
 const PROVIDER_NAMES:Record<string, string> = { kakao: '카카오', google: '구글', apple: 'Apple' };
 export const nameLength = (text:string) => [...text.trim()].length;
-const monthDay = (seconds:number) => { const date = new Date(seconds * 1000); return `${date.getMonth() + 1}월 ${date.getDate()}일` };
 
 // 프로필 칸 그림: 올린 사진이면 칸을 꽉 채우고(photo), 아니면 캐릭터 얼굴(face). big: 큰 칸(240 그림)
 export function avatarLook(avatar:Avatar | null | undefined, big = false):{ photo:boolean; image:string } {
@@ -82,30 +82,10 @@ function ProfileForm() {
     onName={nameValue => set({ nameValue })} onSave={call('save')} onCancel={call('cancel')} onPickPhoto={call('pickPhoto')} onPhotoFile={call('photoFile')} onPickCharacter={call('pickCharacter')} />;
 }
 
-function SafeBody({ sessions }:{ sessions:Session[] }) {
-  return <>
-    <p class="acct-sub">{`로그인한 기기 ${sessions.length}대`}</p>
-    <ul class="dv-list">{sessions.map(item => <li data-session={item.id}><span class="dv-name">{item.device}{item.current && <em>이 기기</em>}</span>
-      <small>{`마지막 사용 ${monthDay(item.lastUsedAt)} · 로그인 ${monthDay(item.createdAt)}`}</small>
-      {!item.current && <button type="button" class="dv-out" disabled={view.outBusy.includes(item.id)} onClick={() => call('logoutDevice')(item.id)}>로그아웃</button>}</li>)}</ul>
-    <div class="dv-actions">{sessions.length > 1 && <button type="button" id="deviceOthers" onClick={call('logoutOthers')}>다른 기기 모두 로그아웃</button>}
-      <button type="button" id="dataExport" onClick={call('exportData')}>내 데이터 내려받기</button></div>
-    <p class="st-note">내려받기: 회원 정보 · 로그인 기기 · 승차권 · 날짜별 사용 횟수를 JSON 파일 하나로 받아요.</p>
-  </>;
-}
-
 function AccountPage():ComponentChildren {
-  return <>
-    <Profile />
-    <section id="accountStats" class="acct-sec" aria-labelledby="accountStatsTitle" hidden={!view.statsShown}><h4 id="accountStatsTitle" class="pf-l">내 통계</h4>
-      <div id="accountStatsBody" aria-live="polite">{view.stats && <StatsPanel key={view.statsTurn} stats={view.stats} />}</div></section>
-    <section id="accountSafe" class="acct-sec" aria-labelledby="accountSafeTitle" hidden={!view.safeShown}><h4 id="accountSafeTitle" class="pf-l">계정</h4>
-      <div id="accountSafeBody">{view.sessions && <SafeBody key={view.safeTurn} sessions={view.sessions} />}</div></section>
-    <div class="account-foot"><a href="./privacy.html" target="_blank" rel="noopener">개인정보처리방침</a><button id="accountLogout" type="button" onClick={call('logout')}>로그아웃</button>
-      <button id="accountDelete" type="button" class="account-delete" onClick={call('deleteAsk')}>탈퇴</button></div>
-    <div id="accountConfirm" class="account-confirm" hidden={!view.confirmOpen}><p>탈퇴하면 승차권까지 모두 지워져요</p>
-      <div><button id="accountConfirmNo" type="button" onClick={call('deleteNo')}>취소</button><button id="accountConfirmYes" type="button" class="danger" onClick={call('deleteYes')}>탈퇴</button></div></div>
-  </>;
+  return <AccountPageView profile={<Profile />} statsShown={view.statsShown} stats={view.stats && <StatsPanel key={view.statsTurn} stats={view.stats} />}
+    safeShown={view.safeShown} safe={view.sessions && <DeviceList key={view.safeTurn} sessions={view.sessions} busy={view.outBusy} onLogoutDevice={id => call('logoutDevice')(id)} onLogoutOthers={call('logoutOthers')} onExport={call('exportData')} />}
+    confirmOpen={view.confirmOpen} onLogout={call('logout')} onDeleteAsk={call('deleteAsk')} onDeleteNo={call('deleteNo')} onDeleteYes={call('deleteYes')} />;
 }
 
 // 두 팝업의 속을 한 번 그린다(열기 · 닫기는 account.mts 가 찾아 건다 — 아래 #profileBody 는 그 안에 생기니 이 뒤에 찾는다)
