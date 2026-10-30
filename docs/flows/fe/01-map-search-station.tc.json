@@ -1,14 +1,17 @@
 {
   "cases": [
-    {"id":"MAP-1","branch":"줌이 낮음 · 노선 없음","title":"첫 화면 낮은 줌이면 줌 안내","steps":[
+    {"id":"MAP-1","branch":"줌이 낮음 · 노선 없음","title":"낮은 줌에서 줌 표시만 보이고 상태 글자 칸은 숨어 있다","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"goto":"/"},
-      {"expectText":"줌 13 이상에서 실시간 열차를 표시합니다"}
+      {"expectVisible":"#zoomBadge"},
+      {"expectHidden":"#liveState"}
     ]},
     {"id":"MAP-2","branch":"검색 결과 없음","title":"맞는 역이 없으면 안내","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"goto":"/"},
       {"fill":"#search","value":"없는역이름"},
       {"expectText":"찾는 역이 없어요"}
@@ -16,6 +19,7 @@
     {"id":"MAP-3","branch":"역 시트 받음","title":"목록에서 역을 고르면 도착 정보","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"fetchedAt":"2026-11-02T07:30:00+09:00","arrivals":[{"line":"2호선","direction":"내선","heading":"성수행 - 역삼방면","destination":"성수","eta":150,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"내선","heading":"성수행 - 역삼방면","destination":"성수","eta":420,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"외선","heading":"신도림행 - 교대방면","destination":"신도림","eta":40,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"외선","heading":"신도림행 - 교대방면","destination":"신도림","eta":330,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"신분당선","direction":"상행","heading":"신사행 - 신논현방면","destination":"신사","eta":260,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"신분당선","direction":"하행","heading":"광교행 - 양재방면","destination":"광교","eta":510,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"}]}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -26,6 +30,7 @@
     {"id":"MAP-4","branch":"역 시트 받음","title":"휴대폰 폭에서 Enter 로 역 고르기","viewport":"mobile","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"fetchedAt":"2026-11-02T07:30:00+09:00","arrivals":[{"line":"2호선","direction":"내선","heading":"성수행 - 역삼방면","destination":"성수","eta":150,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"내선","heading":"성수행 - 역삼방면","destination":"성수","eta":420,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"외선","heading":"신도림행 - 교대방면","destination":"신도림","eta":40,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"2호선","direction":"외선","heading":"신도림행 - 교대방면","destination":"신도림","eta":330,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"신분당선","direction":"상행","heading":"신사행 - 신논현방면","destination":"신사","eta":260,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"},{"line":"신분당선","direction":"하행","heading":"광교행 - 양재방면","destination":"광교","eta":510,"message":"","express":false,"last":false,"receivedAt":"2026-11-02 07:30:00"}]}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -36,6 +41,7 @@
     {"id":"MAP-5","branch":"열차 없음","title":"도착 예정이 없으면 안내","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"trains":[],"lines":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00"}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -45,6 +51,7 @@
     {"id":"MAP-6","branch":"도착 정보 실패","title":"도착 정보가 실패하면 상태 줄 안내","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":false,"error":"시험"}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -54,6 +61,7 @@
     {"id":"MAP-7","branch":"실시간 자료 끊김","title":"실시간 받기가 500 이면 지도 위 띠","allowConsole":["status of (4|5)\\d\\d"],"steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":500,"json":{}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -63,6 +71,7 @@
     {"id":"MAP-8","branch":"실시간 한도 소진","title":"한도를 다 쓰면 지도 위 띠","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"trains":[],"lines":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","quotaExhausted":true}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -72,6 +81,7 @@
     {"id":"MAP-9","branch":"실시간 일부 지연","title":"경고가 오면 지도 위 띠","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"trains":[],"lines":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","warnings":["시험"]}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
@@ -81,6 +91,7 @@
     {"id":"MAP-10","branch":"시트 닫기","title":"Esc 로 역 시트를 닫는다","steps":[
       {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
       {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/live-timing.json","status":200,"json":{}},
       {"mock":"**/api/live**","status":200,"json":{"ok":true,"trains":[],"lines":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00"}},
       {"goto":"/"},
       {"fill":"#search","value":"강남"},
