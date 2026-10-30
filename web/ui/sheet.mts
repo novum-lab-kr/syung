@@ -20,6 +20,7 @@ interface SheetLive {
   busLayer?:BusLayerLike|null; routeBounds:unknown; frameMs?:number;
   journey:{ sheetClosed():boolean; openWith(end:string, place:{ name:string; lat:number; lng:number }):void };
   rider:{ ride:unknown }; stopRide(instant:boolean):void;
+  appPad?:number|null;   // 앱 지도 모드: 앱 시트 높이(다리 setPadding) — 있으면 웹 시트 대신 이 값
 }
 export interface BottomSheetDeps {
   map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:PlannerLike;
@@ -99,7 +100,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeSheet()}});
   // Following: the camera keeps the chosen train in the middle of the map above the sheet.
   // Dragging the map stops it; the button in the sheet starts it again.
-  const sheetPad=()=>{if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector<HTMLElement>('.bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼
+  const sheetPad=()=>{if(live.appPad!=null)return live.appPad;if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector<HTMLElement>('.bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼
   // 지도 우선 버스 따라가기(2026-10-20 덕배): 시트를 닫지 않고(정류장 선택은 그대로) 아래로 내려 둔다 — 카메라는 지도 전체 가운데에 버스를 둔다
   function tuck(on:unknown):void{sheet.classList.toggle('tucked',!!on);sheet.inert=!!on}   // the 길찾기 sheet grows to 72%
   function trainLngLat(plan:TrainPlanLike):LngLat{

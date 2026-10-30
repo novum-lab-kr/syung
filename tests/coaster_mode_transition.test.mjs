@@ -25,7 +25,7 @@ function setup(defs=modeDefs){
     stations,byId:new Map(stations.map(s=>[s.id,s])),paths:{L:[[1,2]]},colors:{L:'#123'},stopDirs:{},stopHalf:{},platformHalf:{},stopWidth:{},stopReach:{},
     cityViaduct:{snapped:()=>snapped,setGaps(){}},coasterGaps:()=>[],edgeCoords:()=>base,stopPos:(_,s)=>[s.lon,s.lat],edgeOffset:()=>0,edgeLines:new Map(),edgeKey:(a,b)=>a<b?`${a}:${b}`:`${b}:${a}`,stopMerc:new Map(),snapStops:{},
     map:{getSource:id=>sources.get(id),getPitch:()=>60,getZoom:()=>15,triggerRepaint(){},fitBounds(){fits++}},
-    maplibregl:{LngLatBounds:Bounds},busLayer:null,sheetPad:()=>0,stopRide(){rides++},
+    maplibregl:{LngLatBounds:Bounds},busLayer:null,appBridge:null,sheetPad:()=>0,stopRide(){rides++},
     $:id=>(buttons[id]??={setAttribute(k,v){if(k==='aria-pressed')this.pressed=v}}),setRouteOpacity(){},
     // 설정 서랍의 몸통 칸(ui/settings_menu.tsx) 창구: 옛 DOM 처럼 버튼마다 눌림(글자) · 줄마다 숨김을 남긴다
     menu:{press:(id,on)=>{(buttons[id]??={}).pressed=String(on)},hide:(id,hidden)=>{(buttons[id]??={}).hidden=hidden},

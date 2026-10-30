@@ -26,6 +26,7 @@ export interface CoasterRideDeps {
   coasterRailFrames:(P:(d:number)=>TrackPt, d0:number, d1:number, step:number, unit:number, bodyPx:number, lanePx:number, front?:number, m?:number)=>RailFrame[];
   riderState:(plan:TrainPlan)=>string; trainLngLat:(plan:TrainPlan)=>LngLatLike; stopFollowing:()=>void; isCoaster:()=>boolean;
   getSheetTrain:()=>string | null; getSleeperM:()=>number;
+  onRide?:(state:{ riding:boolean; id:string | null; text:string })=>void;   // 앱 지도 모드 다리 rideChanged(탑승 막대 글 · 1초)
 }
 // 타기 전 지도 상태(내리면 되돌린다)
 interface RideBack {
@@ -38,7 +39,7 @@ interface Ride {
   snap:{ pose:{ dist:number; moving:boolean }; shift:[number, number] | null; j:number; k:number } | null;
   rail?:{ plan:TrainPlan; d0:number; frames:RailFrame[]; mpu:number; dirty:boolean }; eye?:number[]; cam?:ReturnType<typeof rideCamera>;
 }
-export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM}:CoasterRideDeps){
+export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityViaduct,sheetBody,closeSheet,showTrainPopup,applyTheme,effectiveTheme,coasterBodyPx,TRAIN_MIN_PX,mercStop,trainPose,trackPoint,blendShift,toRide,fromRide,coasterCarFrame,coasterRailFrames,riderState,trainLngLat,stopFollowing,isCoaster,getSheetTrain,getSleeperM,onRide}:CoasterRideDeps){
   let ride:Ride|null=null,rideSeat:Seat={car:1,row:1,side:-1};
   const riding=(plan:TrainPlan)=>ride&&ride.id===plan.id?ride.snap:null;   // 탄 열차는 늘 카메라를 놓은 순간에 그려요(느린 프레임에도 카메라와 어긋나지 않게)
   const rideRows=(plan:TrainPlan)=>{const unit=1/(512*2**RIDE_ZOOM),body=coasterBodyPx(RIDE_ZOOM),m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits(),n=plan.cars;
@@ -52,7 +53,7 @@ export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityV
       for(const x of sheetBody.querySelectorAll('.ride-pick .seat')){const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on))}
       const go=sheetBody.querySelector('.ride-go');if(go)go.textContent=`${seatLabel(rideSeat)}에 타기`;return}
     if((e.target as Element).closest('.ride-go')&&getSheetTrain())startRide(getSheetTrain()!)});
-  function rideBarText(plan:TrainPlan){rideBar.style.setProperty('--c',colors[plan.t.line]||'#52646a');rideBar.querySelector('.txt')!.textContent=`${plan.t.line} ${seatLabel(ride!.seat)} · ${riderState(plan)}`}
+  function rideBarText(plan:TrainPlan){rideBar.style.setProperty('--c',colors[plan.t.line]||'#52646a');const text=rideBar.querySelector('.txt')!.textContent=`${plan.t.line} ${seatLabel(ride!.seat)} · ${riderState(plan)}`;onRide?.({riding:true,id:ride!.id,text})}
   function startRide(id:string){
     const plan=planner.plans.find(p=>p.id===id);if(!plan||!isCoaster()||ride)return;
     const back:RideBack={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),elevation:map.getCenterElevation(),maxPitch:map.getMaxPitch(),fov:map.getVerticalFieldOfView(),clamp:map.getCenterClampedToGround()};
@@ -68,7 +69,7 @@ export function createCoasterRide({map,maplibregl,RIDE_PX=0,planner,colors,cityV
     rideFrame();map.triggerRepaint();
   }
   function stopRide(reopen:boolean){
-    if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;document.body.classList.remove('riding');applyTheme();
+    if(!ride)return;const r=ride;ride=null;clearInterval(r.timer);rideBar.hidden=true;onRide?.({riding:false,id:null,text:''});document.body.classList.remove('riding');applyTheme();
     map._camera.transform.clearNearFarZOverride();map.setVerticalFieldOfView(r.back.fov);map.setSky(r.back.sky!);if(map.getPixelRatio()!==r.back.px)map.setPixelRatio(r.back.px!);
     const plan=planner.plans.find(p=>p.id===r.id);
     map.jumpTo({center:plan?trainLngLat(plan):r.back.center,zoom:r.back.zoom,bearing:r.back.bearing,pitch:r.back.pitch,roll:0,elevation:r.back.elevation});

@@ -68,6 +68,8 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
     return {station:String(t.station),status:String(t.status),direction:String(t.direction),destination:String(t.destination||'-'),
       recorded:String(t.receivedAt||'-').slice(11),ageSec:Math.round(age(t.receivedAt)),fetched:kst(live.feed.fetchedAt)};
   }
+  // 열차 시트의 바뀌는 칸(1초마다 다시 그리는 것 그대로 — 앱 지도 모드 다리 trainUpdate 도 이 글자)
+  const trainNow=(plan:TrainPlan)=>({dest:destLabel(plan.t)||'행선지 정보 없음',now:riderState(plan),raw:rawFeed(plan.t)});
   function showTrainPopup(plan:TrainPlan):void{
     const ride:TrainRideView|null=canRide()?{seatsHTML:seatPickerHTML(plan.cars,rideRows(plan),rider.seat),goLabel:`${seatLabel(rider.seat)}에 타기`}:null;
     const first=trainView(plan,ride),token=openSheetView(body=>{drawTrainSheet(body,first);return ()=>clearPanel(body)});sheetUI.sheetTrain=plan.id;
@@ -155,5 +157,5 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
   let stationSeq=0;
   document.head.insertAdjacentHTML('beforeend','<style>.station-pop table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}.station-pop th{text-align:left;font-weight:700;padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap}.station-pop td{padding:5px 0}.station-pop td div+div{margin-top:2px}.station-pop tr+tr th,.station-pop tr+tr td{border-top:1px solid rgba(120,140,150,.2)}.station-pop .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}.station-pop .muted{color:#7a8a90;font-weight:500}.station-pop .foot{margin-top:8px;font-size:11px}.station-pop .exits{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(120,140,150,.2)}.station-pop .exits .muted{margin-right:4px;font-size:12px}.station-pop .exit{min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ffd200;color:#1d1d1d;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:1px}.station-pop .exit i{font-style:normal;font-size:10px}</style>');
 
-  return {trainState,riderState,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup};
+  return {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup};
 }

@@ -83,7 +83,7 @@ type Optional = 'querySourceFeatures' | 'project' | 'getBearing' | 'getPitch' | 
 type BusMap = Omit<MapLibre, Optional> & Partial<Pick<MapLibre, Optional>>;
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
 export interface BusLayerOptions {
-  map:BusMap; phone?:boolean; beforeId?:string; onSelect?:(view:BusSheetView | null)=>((view:BusSheetView | null)=>void) | null | undefined | void; onClear?:()=>void; fetcher?:typeof fetch;
+  map:BusMap; phone?:boolean; beforeId?:string; onSelect?:(view:BusSheetView | null)=>((view:BusSheetView | null)=>void) | null | undefined | void; onClear?:()=>void; onRelease?:()=>void; fetcher?:typeof fetch;
   requestRender?:()=>void; getExitCoordinates?:()=>LngLatPt[]; onRouteSelect?:(leg:BusLegOut, o?:{ fit:boolean })=>void; onFollow?:(id:string | null)=>void;
   followedBus?:()=>string | null; sheetPad?:()=>number; onFollowView?:(on:boolean)=>void; frameMs?:()=>number;
 }
@@ -360,7 +360,7 @@ export function createBusLayer(options:BusLayerOptions) { return new BusLayer(op
 
 class BusLayer {
   // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor 와 메서드가 넣는다)
-  declare map:BusMap; declare phone:boolean; declare frameMs:()=>number; declare beforeId:string; declare onSelect:NonNullable<BusLayerOptions['onSelect']>; declare onClear:()=>void;
+  declare map:BusMap; declare phone:boolean; declare frameMs:()=>number; declare beforeId:string; declare onSelect:NonNullable<BusLayerOptions['onSelect']>; declare onClear:()=>void; declare onRelease:()=>void;
   declare fetcher:(...args:Parameters<typeof fetch>)=>Promise<Response>; declare requestRender:()=>void; declare getExitCoordinates:()=>LngLatPt[]; declare renderer:BusRenderer;
   declare stopHits:StopHit[]; declare requested:string[]; declare journeyLegs:BusLeg[]; declare journeyIds:string[]; declare roads:BusRoadNetwork;
   declare onRouteSelect:NonNullable<BusLayerOptions['onRouteSelect']>; declare onFollow:(id:string | null)=>void; declare followedBus:()=>string | null; declare sheetPad:()=>number; declare onFollowView:(on:boolean)=>void;
@@ -376,9 +376,9 @@ class BusLayer {
   declare exitCoordinates:LngLatPt[] | undefined; declare requestKey:string | null | undefined; declare liveController:AbortController | null | undefined; declare routeStates:Record<string, RouteState> | undefined;
   declare stopFeatures:StopFeature[] | undefined; declare ends:{ legs:BusLeg[]; data:BusData; map:Map<string, [number, number][]> } | undefined; declare look:string; declare restoreFocus:HTMLElement | null | undefined;
   declare arrivals:Arrivals | null | undefined; declare arrivalTick:ReturnType<typeof setInterval> | 0 | undefined; declare arrivalTimer:Timer | undefined; declare arrivalController:AbortController | null | undefined;
-  constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, fetcher = fetch,
+  constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, onRelease = () => {}, fetcher = fetch,
     requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}, frameMs = () => 0}:BusLayerOptions) {   // frameMs: 절전일 때 움직임 간격(ms, 본체)   // onFollowView(켬): 지도 우선 따라가기 화면 — 아래 시트를 내리고 올린다   // followedBus: 카메라가 지금 따라가는 버스 id(시트 쪽 주인)
-    this.map = map; this.phone = phone; this.frameMs = frameMs; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear;
+    this.map = map; this.phone = phone; this.frameMs = frameMs; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear; this.onRelease = onRelease;   // onRelease: 고른 정류장 · 노선 · 버스를 놓았다(앱 지도 모드 다리 busClosed)
     this.fetcher = (...args:Parameters<typeof fetch>) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
     this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];
@@ -418,11 +418,7 @@ class BusLayer {
       const button=(event.target as Element).closest?.<HTMLElement>('.bus-detail [data-bus-route], .bus-detail [data-bus-refresh], .bus-detail [data-bus-stop-view]');if(!button)return;
       if(button.dataset.busRefresh!==undefined){this.refreshArrivals();return;}
       if(button.dataset.busStopView!==undefined){this.stopViewAction(button.dataset.busStopView);return;}
-      const id=button.dataset.busRoute!;if(!this.data?.routeById.has(id))return;
-      this.journeyLegs=[];this.journeyIds=[];
-      if(this.selection?.kind==='stop'){this.stopRoute(id);return;}
-      // 정류장 밖(노선 시트 등): 누르면 그 노선, 같은 번호 다시 누르면 해제
-      this.selectedRoute=this.selectedRoute===id?null:id;this.onFollow(null);this.refreshView();this.refreshDetail();this.onRouteSelect(this.selectedLeg());
+      this.pressRoute(button.dataset.busRoute!);
     };
     this.stopNote='';
     this.followNote=(text:string)=>{clearTimeout(this.stopNoteTimer);this.stopNote=text;if(text)this.stopNoteTimer=setTimeout(()=>{this.stopNote='';this.refreshDetail();this.renderFollowUI();},3000);};
@@ -914,9 +910,18 @@ class BusLayer {
     this.stopArrivals();
     if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
-    this.onRouteSelect(null);this.renderFollowUI();
+    this.onRouteSelect(null);this.renderFollowUI();this.onRelease();
+  }
+  // 시트의 노선 번호 · 줄 누르기(앱 지도 모드는 다리 busRoute 가 같은 길)
+  pressRoute(id:string) {
+    if(!this.data?.routeById.has(id))return;
+    this.journeyLegs=[];this.journeyIds=[];
+    if(this.selection?.kind==='stop'){this.stopRoute(id);return;}
+    // 정류장 밖(노선 시트 등): 누르면 그 노선, 같은 번호 다시 누르면 해제
+    this.selectedRoute=this.selectedRoute===id?null:id;this.onFollow(null);this.refreshView();this.refreshDetail();this.onRouteSelect(this.selectedLeg());
   }
   setJourney(legs:readonly JourneyLegIn[] | null | undefined){   // 길찾기 구간 전부(걷기 · 지하철도) — 그릴 수 있는 버스 구간만 고른다
+    if(this.selection)this.onRelease();
     this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopArrivals();
     this.journeyLegs=(legs||[]).filter((l):l is BusLeg=>l.type==='bus'&&Array.isArray(l.path)&&l.path.length>1&&l.path.every(validCoordinate));
     this.journeyIds=this.data?journeyBusRouteIds(this.data,this.journeyLegs):[];this.refreshView();
