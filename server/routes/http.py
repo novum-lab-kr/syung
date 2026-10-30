@@ -2,6 +2,7 @@
 
 GET  /live · /health · /api/health · /route · /place · /auth · /bus/live · /api/bus/live · /admin/debug/recent · /admin/debug/bus-route
 POST /login · /logout · /admin/debug/ride · /admin/debug/shot
+OPTIONS PUBLIC_GET(앱 지도 웹뷰의 CORS 사전 요청 — 204, CORS 머리는 Caddy)
 관리(routes/admin.py): GET /admin/status · /admin/members[/stats|/<번호>|/<번호>/avatar(사진)],
 POST /admin/members/<번호>/places|logout|avatar|name, DELETE /admin/members/<번호>
 회원(/auth/… · /me… — /api 가 붙어도 받는다, routes/members.py): GET · POST · PUT · DELETE
@@ -75,6 +76,10 @@ GET_JSON: dict[str, Callable[[Services, Query], tuple[dict[str, Any], int]]] = {
     "/api/weather": weather_routes.weather,   # 메뉴 하늘 그림 날씨(기상청 단기예보)
 }
 
+# 로그인 없이 읽는 주소 중 앱 지도 웹뷰(다른 출처)가 부르는 것 — Caddy 가 /api/live · /api/route · /api/place 를 /live · /route · /place 로 바꿔 넘긴다.
+# 사전 요청(OPTIONS)에 204 만 답한다(do_OPTIONS). 허용 출처 · CORS 머리는 Caddy 한 곳(server/Caddyfile.example @app_cors)
+PUBLIC_GET = ("/live", "/route", "/place", "/api/weather", "/bus/live", "/api/bus/live")
+
 # 관리 주소(주인 쿠키만, 앞의 /admin 을 뗀 이름) — 쿠키를 받아야 해서 GET_JSON 과 따로
 ADMIN = "/admin"
 ADMIN_GET: dict[str, Callable[[Services, str | None, Query], tuple[dict[str, Any], int]]] = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
@@ -136,6 +141,16 @@ def make_handler(services: Services, response_seconds: float) -> type[BaseHTTPRe
             # 위에서 회원 주소인 것을 봤다 — 회원 주소면 handle 은 늘 응답을 돌려준다
             self._write(cast("Response", member_routes.handle(services.members, method, self.path, self.headers, read_body, address)))
             return True
+
+        def do_OPTIONS(self) -> None:
+            """앱 지도 웹뷰의 CORS 사전 요청: 공개 GET 주소만 204(본문 없음). CORS 머리는 Caddy 가 허용 출처에만 붙인다
+            (server/Caddyfile.example "앱 지도 웹뷰 CORS" — 여기서도 붙이면 머리가 둘이 된다). 그 밖은 옛 그대로 501."""
+            if self.path.split("?", 1)[0] not in PUBLIC_GET:
+                return self.send_error(501)
+            self.send_response(204)
+            self.send_header("Allow", "GET, HEAD, OPTIONS")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def do_PUT(self) -> None:
             if not self._member("PUT"):

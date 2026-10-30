@@ -2,6 +2,7 @@
 
 // Live trains show from zoom 13 for every line on screen (or just the selected line). The proxy
 // serves all lines from one cached upstream call, so the number of lines requested is free.
+import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 export const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
 
 // onTrains(trains) → 자리 잡은 열차 수, onClear(): 예측 비우기
@@ -46,7 +47,7 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
     const mine=++request;key=k;at=Date.now();
     if(!hasPlans())liveState.parentElement!.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
     try{
-      const r=await fetch(`./api/live?lines=${encodeURIComponent(lines.join(','))}${focus?`&focus=${encodeURIComponent(focus)}`:''}`,{cache:'no-store'}),d:{ok?:boolean,error?:string,trains?:LiveTrain[],fetchedAt:string,quotaExhausted?:boolean,warnings?:string[],lines?:string[]}=await r.json();
+      const r=await fetch(serverUrl(`./api/live?lines=${encodeURIComponent(lines.join(','))}${focus?`&focus=${encodeURIComponent(focus)}`:''}`),{cache:'no-store'}),d:{ok?:boolean,error?:string,trains?:LiveTrain[],fetchedAt:string,quotaExhausted?:boolean,warnings?:string[],lines?:string[]}=await r.json();
       if(mine!==request)return; // a newer view or selection superseded this response
       if(!r.ok||!d.ok)throw Error((d.error||r.status) as string);   // 수(HTTP 상태)도 Error 가 글자로 바꾼다
       // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
