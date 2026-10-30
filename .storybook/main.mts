@@ -5,6 +5,7 @@ import type { StorybookConfig } from '@storybook/preact-vite';
 const config:StorybookConfig = {
   framework: { name: '@storybook/preact-vite', options: { builder: { viteConfigPath: '.storybook/vite.config.mts' } } },
   stories: ['../web/**/*.stories.tsx', './*.stories.tsx'],
+  staticDirs: [{ from: '../web/brand', to: '/brand' }],   // 승차권 띠의 ./brand/syung-light.svg
   core: { disableTelemetry: true },
 };
 export default config;

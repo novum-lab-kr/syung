@@ -5,6 +5,10 @@
 import type { Plan } from '../lib/journey-ui.mts';
 import type { SlimRoute } from './tickets_view.tsx';
 
+export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];   // 1(월) … 7(일)
+// HTML 글자에 넣을 때 막기
+export const esc = (text:unknown) => String(text).replace(/[&<>"']/g, mark => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[mark]!);
+
 const FASTEST = '가장 빠른 길';
 
 type Shaped = Pick<Plan, 'tag' | 'minutes' | 'transfers' | 'legs'> | SlimRoute;
