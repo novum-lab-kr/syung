@@ -1,0 +1,8 @@
+/* 스토리 바탕: 지도 화면(web/index.html 첫 <style>)의 기본 글꼴 · 색과 같게. 스토리는 시트 몸통처럼 종이(--paper) 위에 둔다 */
+*{box-sizing:border-box}
+html,body{margin:0;color:var(--ink);background:var(--board);font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit}button{color:inherit}
+.sb-paper{max-width:420px;padding:16px;border-radius:var(--radius-16);background:var(--paper)}
+.sb-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+/* 승차권 종이(뒷면 바탕 — 승차권 버튼 색이 놓이는 자리) */
+.sb-ticket{display:inline-flex;gap:6px;padding:16px;border-radius:var(--radius-16);background:#ffe88a}   /* .tk-back 바탕 */
