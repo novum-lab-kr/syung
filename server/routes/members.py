@@ -6,6 +6,15 @@ GET    /api/auth/providers            → {"providers": ["kakao", …], "me": {"
 GET    /api/auth/<제공자>/start         → 302 제공자 로그인(state 쿠키)
 GET    /api/auth/<제공자>/callback      → 302 /#login=ok(처음 가입이면 =new, 세션 쿠키) · 실패면 /#login=<코드>
 POST   /api/auth/logout               → 204(세션 지움)
+앱 로그인(2026-10-30 — 앱은 쿠키 세션을 못 쓴다. 흐름은 services/members.py 머리말):
+GET    /api/auth/<제공자>/start?app=1&code_challenge=<S256>&code_challenge_method=S256
+                                      → 302 제공자 로그인(state 쿠키에 code_challenge 를 같이 싣는다) · 400 bad_request(challenge 가 없거나 틀림)
+GET    /api/auth/<제공자>/callback      (앱으로 시작한 로그인) → 302 syung://login?code=<일회용 코드>(60초 · 한 번) ·
+                                         실패면 syung://login?error=<웹의 #login= 과 같은 코드>. 세션 쿠키는 주지 않는다
+POST   /api/auth/app/token            {code, codeVerifier} → 200 {token, expiresAt(유닉스 초 — 받은 때 + 30일), new(처음 가입), me} ·
+                                         400 invalid_code(없음 · 지남 · 이미 씀 · verifier 틀림 — 하나로) · 400 bad_request(본문)
+앱은 그 뒤 모든 회원 주소에 Authorization: Bearer <token> 을 싣는다(쿠키 대신 — 둘 다 오면 Bearer). 로그아웃 · 기기 목록 · 탈퇴는 웹과 같은 주소.
+앱 토큰은 쓸 때마다 끝나는 시각이 마지막 사용 + 30일로 밀린다(1시간에 한 번 고쳐 쓴다 · 응답에는 다시 싣지 않는다 — 401 이면 다시 로그인).
 GET    /api/me                        → {"id","name","provider","avatar"} · 401
                                          avatar: null(기본 캐릭터) · {"type":"character","id"} · {"type":"photo","url":"/api/me/avatar/<이름>"}
 DELETE /api/me                        → 204(회원 · 설정 · 올린 사진 모두 지움)
@@ -30,7 +39,7 @@ GET · POST /api/auth/kakao/unlink     → 카카오 연결 해제 웹훅(카카
                                          app_id · user_id · referrer_type 은 GET 쿼리 · POST 폼으로. 200(본문 없음 · 그 회원이 없어도) ·
                                          401(키 · 앱 ID 가 다름) · 400(회원번호가 틀림) · 404(KAKAO_ADMIN_KEY 없음)
 바꾸는 요청(POST · PUT · DELETE)은 X-Requested-With: syung 머리말이 있어야 한다(다른 사이트의 폼 · 단순 요청을 막는다 —
-쿠키 SameSite=Lax 에 더해). 웹훅만 예외 — 쿠키를 쓰지 않고 어드민 키로 확인한다. 오류 모양은 api_error 하나. 쿠키는 주인 로그인(routes/owner.py)과 같은 속성.
+쿠키 SameSite=Lax 에 더해). 앱(Bearer)도 같이 싣는다(앱 토큰 바꾸기 포함 — 규칙 하나). 웹훅만 예외 — 쿠키를 쓰지 않고 어드민 키로 확인한다. 오류 모양은 api_error 하나. 쿠키는 주인 로그인(routes/owner.py)과 같은 속성.
 """
 from __future__ import annotations
 
@@ -42,8 +51,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from server.routes.errors import api_error
 from server.routes.response import Response
-from server.services.members import (SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit, WebhookError,
-                                     token_hash)
+from server.services.members import (APP_CHALLENGE, SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit,
+                                     WebhookError, token_hash)
 from server.services.profile import PHOTO_MAX_BYTES
 
 if TYPE_CHECKING:   # 타입만
@@ -60,6 +69,9 @@ CSRF_HEADER, CSRF_VALUE = "X-Requested-With", "syung"
 BODY_LIMIT = 16384   # 승차권 본문(고른 경로 구간 최대 12개 포함)
 UNLINK_PATH = "/auth/kakao/unlink"
 UNLINK_BODY_LIMIT = 2048   # 웹훅 폼(app_id · user_id · referrer_type · group_user_token)
+APP_TOKEN_PATH = "/auth/app/token"
+APP_RETURN = "syung://login"   # 앱 딥링크(app/app.json scheme "syung") — 고정 주소라 열린 넘기기가 아니다
+APP_BODY_LIMIT = 1024   # {code, codeVerifier}
 
 
 def member_path(path: str) -> str | None:
@@ -80,6 +92,14 @@ def cookie_value(cookie_header: str | None, name: str) -> str | None:
         if key == name:
             return value
     return None
+
+
+def session_token(headers: Message) -> str | None:
+    """세션 토큰: 앱은 Authorization: Bearer <토큰>, 웹은 세션 쿠키. Bearer 가 있으면 그것만 본다(틀려도 쿠키로 넘어가지 않는다)."""
+    scheme, _, value = (headers.get("Authorization") or "").strip().partition(" ")
+    if scheme.lower() == "bearer":
+        return value.strip() or None
+    return cookie_value(headers.get("Cookie"), SESSION_COOKIE)
 
 
 def _json(body: dict[str, Any], status: int = 200) -> Response:
@@ -124,7 +144,7 @@ def _signed_in(members: MemberService, headers: Message) -> dict[str, Any] | Non
     if not members.enabled:
         return None
     try:
-        user_id = members.user_id(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
+        user_id = members.user_id(session_token(headers))
         return members.me(user_id) if user_id else None
     except (OSError, sqlite3.Error):
         return None
@@ -137,24 +157,26 @@ def _route(members: MemberService, method: str, bare: str, query: dict[str, list
     if not members.enabled:
         return _error(404, "not_found", "회원 기능이 꺼져 있어요")
     parts = bare.split("/")   # ["", "auth", 제공자, 동작]
+    if bare == APP_TOKEN_PATH and method == "POST":
+        return _app_token(members, read_body)
     if len(parts) == 4 and parts[1] == "auth" and method == "GET" and parts[3] in ("start", "callback"):
-        return _start(members, parts[2]) if parts[3] == "start" else _callback(members, parts[2], query, headers, address)
+        return _start(members, parts[2], query) if parts[3] == "start" else _callback(members, parts[2], query, headers, address)
     if bare == "/auth/logout" and method == "POST":
-        members.logout(cookie_value(headers.get("Cookie"), SESSION_COOKIE))
+        members.logout(session_token(headers))
         return Response(204, "empty", cookie=_cookie(SESSION_COOKIE, "", 0, "/"))
     ticket = TICKET_PATH.fullmatch(bare)
     photo = PHOTO_PATH.fullmatch(bare)
     session = SESSION_PATH.fullmatch(bare)
     if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") + ACCOUNT_PATHS and not ticket and not photo and not session:
         return _error(404, "not_found", "없는 주소예요")
-    token = cookie_value(headers.get("Cookie"), SESSION_COOKIE)
+    token = session_token(headers)
     user_id = members.user_id(token)
     me = members.me(user_id) if user_id else None
     if me is None:
         return _error(401, *LOGIN_NEEDED)
     user_id = cast("int", user_id)   # me 가 있으면 user_id 도 있다
     if bare in ACCOUNT_PATHS or session:
-        return _account(members, method, bare, session, query, user_id, cast("str", token), read_body)   # 로그인했으면 쿠키가 있다
+        return _account(members, method, bare, session, query, user_id, cast("str", token), read_body)   # 로그인했으면 토큰이 있다
     if bare == "/me":
         if method == "GET":
             return _json(me)
@@ -297,19 +319,58 @@ def _with_body(read_body: ReadBody, work: Callable[[object], Response]) -> Respo
         return _error(400, "bad_request", str(error))
 
 
-def _start(members: MemberService, provider: str) -> Response:
+def _start(members: MemberService, provider: str, query: dict[str, list[str]]) -> Response:
+    """state 쿠키: 웹 '<제공자>.<state>' · 앱 '<제공자>.<state>.<code_challenge>'(셋 다 '.' 이 없는 글자)."""
+    held = ""
+    if query.get("app", [""])[0] == "1":
+        challenge = query.get("code_challenge", [""])[0]
+        if query.get("code_challenge_method", [""])[0] != "S256" or not APP_CHALLENGE.fullmatch(challenge):
+            return _error(400, "bad_request", "앱 로그인은 code_challenge(S256)가 있어야 해요")
+        held = "." + challenge
     try:
         state, url = members.start(provider)
     except LoginError:
         return _error(404, "not_found", "없는 로그인 방법이에요")
     return Response(302, "redirect", location=url,
-                    cookie=_cookie(STATE_COOKIE, f"{provider}.{state}", STATE_AGE, "/api/auth/"))
+                    cookie=_cookie(STATE_COOKIE, f"{provider}.{state}{held}", STATE_AGE, "/api/auth/"))
+
+
+def _app_token(members: MemberService, read_body: ReadBody) -> Response:
+    """POST /auth/app/token {code, codeVerifier} → 세션 토큰. 틀린 까닭은 앱에 하나로만 알린다(invalid_code)."""
+    raw = read_body(APP_BODY_LIMIT)
+    if raw is None:
+        return _error(413, "too_large", "본문이 없거나 너무 커요")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _error(400, "bad_request", "본문은 JSON 이에요")
+    fields: dict[str, Any] = cast("dict[str, Any]", body) if isinstance(body, dict) else {}
+    code, verifier = fields.get("code"), fields.get("codeVerifier")
+    if not isinstance(code, str) or not isinstance(verifier, str):
+        return _error(400, "bad_request", "code · codeVerifier 는 글자예요")
+    try:
+        token, expires_at, created, user_id = members.redeem_app_code(code, verifier)
+    except LoginError:
+        return _error(400, "invalid_code", "로그인 코드가 맞지 않거나 지났어요. 다시 로그인해 주세요")
+    return _json({"token": token, "expiresAt": expires_at, "new": created, "me": members.me(user_id)})
+
+
+def _app_return(**fields: str) -> str:
+    return f"{APP_RETURN}?{urllib.parse.urlencode(fields)}"
 
 
 def _callback(members: MemberService, provider: str, query: dict[str, list[str]], headers: Message, address: str) -> Response:
-    held = cookie_value(headers.get("Cookie"), STATE_COOKIE) or ""
-    held_provider, _, held_state = held.partition(".")
+    held = (cookie_value(headers.get("Cookie"), STATE_COOKIE) or "").split(".")
+    held_provider, held_state = held[0], held[1] if len(held) > 1 else ""
+    challenge = held[2] if len(held) == 3 and APP_CHALLENGE.fullmatch(held[2]) else ""
     clear_state = _cookie(STATE_COOKIE, "", 0, "/api/auth/")
+    if challenge:   # 앱으로 시작한 로그인 — 세션 쿠키 대신 일회용 코드를 딥링크로
+        try:
+            code = members.finish_app(provider, query, held_state if held_provider == provider else None, address,
+                                      headers.get("User-Agent"), challenge)
+        except LoginError as error:
+            return Response(302, "redirect", location=_app_return(error=error.code), cookie=clear_state)
+        return Response(302, "redirect", location=_app_return(code=code), cookie=clear_state)
     try:
         token, created = members.finish(provider, query, held_state if held_provider == provider else None, address,
                                         headers.get("User-Agent"))
