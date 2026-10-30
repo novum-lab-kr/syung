@@ -3,6 +3,7 @@
 // 시트 몸통은 화면 조각(Preact — ui/journey_sheet.tsx)이 그린다: 이 파일은 상태 · 셈(그릴 거리 JourneyView)과 누르기 처리를 맡고,
 // 바뀔 때마다 본체가 넘긴 drawJourney 로 다시 그린다. 시트 밖 막대(.jbar)는 바닐라 그대로.
 // 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸(path · stations · trainNo 는 여정 지도 표시 ui/journey 가 읽는다)
+import { serverUrl } from './server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
 // 같은 정류장(또는 옆 정류장)에서 타서 같은 곳에 내리는 다른 노선(서버가 먼저 오는 순으로 많아야 3개)
@@ -242,7 +243,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
       const mine = ++seek.seq, centre = map.getCenter();
       const show = (places:Place[], empty:string | null) => { const now = view.lists[which]; now.places = places; now.empty = empty; now.hidden = false; paint(); };
       try {
-        const response = await fetch(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`);
+        const response = await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`));
         const answer:PlaceAnswer = await response.json();
         if (mine !== seek.seq) return;
         if (!answer.ok) { show([], answer.error || '검색하지 못했어요'); return; }
@@ -331,7 +332,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     (document.activeElement as HTMLElement | null)?.blur?.();   // phone keyboard down, so the results have the room
     const current = () => my === goSeq && mine !== 0 && mounted === mine;   // a newer search took over, or the sheet shows something else now
     try {
-      const response = await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
+      const response = await fetch(serverUrl(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ''}`));
       const answer:RouteAnswer = await response.json();
       if (!current()) return;
       if (!answer.ok) { failed(answer.error || '출발지나 도착지를 바꿔 보세요.'); return; }

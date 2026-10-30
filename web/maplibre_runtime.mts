@@ -12,6 +12,8 @@ import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
 import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
+import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
+import {createAppBridge} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
@@ -317,7 +319,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch('./track_shapes.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:TrackShapes|null)=>{d=d||{};shapes=d.edges||(d.stops?{}:d as unknown as Record<string,LngLat[]>);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();coasterMotion.clear();coasterGeo.reset();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
+const shapesReady=fetch(serverUrl('./track_shapes.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:TrackShapes|null)=>{d=d||{};shapes=d.edges||(d.stops?{}:d as unknown as Record<string,LngLat[]>);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();coasterMotion.clear();coasterGeo.reset();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // 롤코 1인칭 발열(덕배 2026-10-17): 휴대폰은 탈 때만 그리는 배율 1.5(점 수 약 44 % 줄임). 비교: 주소에 #ridepx=2(배율 그대로).
@@ -387,7 +389,7 @@ const {age,clock}=planner;
 let exits:Record<string,Exit[]>={};const exitCol=new Map<string,number[]>();   // exit "lon,lat" → the colour of the line its passage joins
 const EXIT_MINZOOM=16,EXIT_MAX_M=350;   // exits (and their passages) from this zoom; farther than this from every platform: no passage
 const EXIT_PASSAGES=false;   // 2026-10-05: 승강장 → 출구 통로 선은 그리지 않는다(출구 번호를 이어지는 노선색으로 칠해 대신함)
-const exitsReady=fetch('./exits.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:Record<string,Exit[]>|null)=>{exits=d||{}}).catch(()=>{});
+const exitsReady=fetch(serverUrl('./exits.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:Record<string,Exit[]>|null)=>{exits=d||{}}).catch(()=>{});
 function exitFeatures(){return Object.entries(exits).flatMap(([id,list])=>list.map(([lon,lat,ref,wc]):GeoJSON.Feature<GeoJSON.Point>=>({type:'Feature',properties:{ref,wc:wc??-1,station:+id},geometry:{type:'Point',coordinates:[lon,lat]}})))}
 const smooth=(x:number)=>x*x*(3-2*x);
 // 롤러코스터 (settings): between stations the lines rise off the ground like a coaster track and the
@@ -397,8 +399,11 @@ const smooth=(x:number)=>x*x*(3-2*x);
 // 모드 상태(web/modes/transition.mjs): 지금 · 원하는 모드, 마지막 요청 번호, 롤코 배속 · 앞서 달린 시간의 주인. 본체는 모드 이름 대신 지금 모드 설정(modeCtl.settings())을 묻는다 — modeOn 은 점검 창구(window.__subwayWebGL)의 simcity · joseon · coaster 용
 // (심시티 모드: the miniature city — the coaster mode keeps its rides on the same city; 조선 모드: 심시티 (modeOn.simcity stays true: the viaduct,
 // the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집). 전환은 아래 '모드 전환'(prepareMode · commitMode).
-const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end()},
-  commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}}) as ModeCtl;   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
+// 앱 지도 모드(주소 #app — 슝 앱의 웹뷰): 웹 메뉴 · 아래 시트 · 정보창은 숨기고(syung.css html[data-app=map]) 역 · 열차 누름은 앱에 알린다, 앱은 경로 · 역 · 모드를 보낸다(ui/app_bridge.mts).
+// 일반 웹(#app 없음)에서는 다리를 만들지 않는다 — 메시지를 받지도 보내지도 않는다
+const appBridge=appMapMode()?createAppBridge({facts:{hasStation:id=>byId.has(id),hasLine:line=>line in paths,hasMode:id=>modes.has(id)},targets:{window,document}}):null;
+const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end();appBridge?.modeChanged(now)},
+  commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);appBridge?.modeChanged(next);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}}) as ModeCtl;   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
 // city-build: the miniature city's buildings (web/city/buildings.mjs): a custom layer under the station names (so names and
@@ -618,6 +623,7 @@ map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // �
 const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
+const openTrain=(plan:TrainPlan)=>{if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------
 // Station names sit inside the platform rectangle, turned along it. Where the name is longer than
@@ -671,8 +677,8 @@ map.on('load',()=>{
   createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette:mapPalette as unknown as TrainOverlayDeps['mapPalette'],coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE:CITY_STYLE as unknown as CityPack,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,
     live:{get me(){return me},get frameStats(){return frameStats},get frameMs(){return frameMs()},get trainFrameDue(){return trainTimer?trainAt:Infinity},get LifeUnits(){return LifeUnits},get night(){return nightNow() as TrainOverlayDeps['live']['night']},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get PixelPalette(){return PixelPalette},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
   registerLocationLayers({map,geolocate,dotMaxzoom:AVATAR_MINZOOM,live:{get myLocation(){return myLocation},set myLocation(v){myLocation=v}}});   // 내 위치 점
-  map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)showTrainPopup(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else if(!sheetBusy())closeSheet()});   // bus: 누른 버스는 따라간다 · 하는 중인 시트는 빈 곳을 눌러도 둔다   // bus: subway picking keeps priority
-  map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){showTrainPopup(pl);return}const p=e.features![0]!.properties;showStationPopup(byId.get(+p.id)!,e.lngLat)});
+  map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)openTrain(pl);else if(!appBridge&&busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else if(!sheetBusy())closeSheet()});   // bus: 누른 버스는 따라간다 · 하는 중인 시트는 빈 곳을 눌러도 둔다   // bus: subway picking keeps priority
+  map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){openTrain(pl);return}const p=e.features![0]!.properties,st=byId.get(+p.id);if(appBridge){if(st)appBridge.stationTap(st)}else showStationPopup(st,e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
@@ -688,7 +694,7 @@ map.on('load',()=>{
   map.on('moveend',sunSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded&&e.tile)sunSoon()});
   addBasemap();
   // bus: below subway lines, using the existing detail sheet and settings controls.
-  busLayer=createBusLayer({map,phone:PHONE,frameMs,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat() as unknown as ReturnType<BusDeps['getExitCoordinates']&{}>,onSelect:view=>{   // bus: redraw only the train canvas; reserve exit pillars
+  busLayer=createBusLayer({map,phone:PHONE,fetcher:(input,init)=>fetch(typeof input==='string'?serverUrl(input):input,init),frameMs,requestRender:()=>trainFrameSoon(0),getExitCoordinates:()=>Object.values(exits).flat() as unknown as ReturnType<BusDeps['getExitCoordinates']&{}>,onSelect:view=>{   // bus: redraw only the train canvas; reserve exit pillars
     // 시트 몸통은 화면 조각(bus/sheet_view.tsx)이 그린다 — 다시 그릴 때 시트 안에 초점이 있었으면 옛 innerHTML 때처럼 제목으로(옛 글자는 브라우저가 고쳐 쓴 글자와 늘 달라 정류장 시트는 매번 갈아 끼웠다)
     sheetUI.following=null;sheetUI.followBus=null;sheetUI.sheetTrain=null;followBtn.hidden=true;const token=openSheetView(body=>{drawBusSheet(body,view);return ()=>clearBusSheet(body)},'bus');
     return next=>{if(sheetUI.sheetToken!==token)return;const focused=sheetBody.contains(document.activeElement);drawBusSheet(sheetBody,next);if(focused)sheetBody.querySelector('h3')?.focus({preventScroll:true})};
@@ -703,6 +709,11 @@ map.on('load',()=>{
   applyTheme();
   map.getContainer().append(liveNotice);map.getContainer().parentElement!.append(sheet,rideBar);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
+  // 앱 지도 모드: 지도가 떴다고 알리고 이때부터 앱의 명령을 받는다. 경로는 승차권 경로 보기(ticketRoute)와 같은 자리 · 맞춰 보기
+  appBridge?.ready({showRoute:(plan,pad)=>ticketRoute.show(plan,{bottom:pad.bottom??110,right:pad.right??40}),
+    clearRoute:()=>{clearRoute();refreshLive()},
+    focusStation:(id,zoom)=>{const st=byId.get(id)!;map.flyTo({center:[st.lon,st.lat],zoom:zoom??Math.max(map.getZoom(),15)})},
+    setMode:id=>{void modeCtl.request(id)}},modeCtl.current,modes.list().map(mode=>mode.id));
 });
 
 const stationSearch=createStationSearch({map,stations,colors,esc,input:$('search') as HTMLInputElement,list:$('searchList'),getSelected:()=>selected,showStationPopup});   // 역 검색
@@ -934,7 +945,7 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
 }
 // 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
-{let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+if(!appBridge){let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);

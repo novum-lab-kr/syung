@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "슝",
+    "slug": "syung",
+    "scheme": "syung",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "지도에 내 위치를 보여 주고 가까운 곳으로 지도를 옮기려고 위치를 써요."
+      },
+      "bundleIdentifier": "com.novumlab.syung"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "package": "com.novumlab.syung"
+    },
+    "plugins": [
+      "expo-router",
+      "./plugins/with-map-bundle.js"
+    ]
+  }
+}

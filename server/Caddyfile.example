@@ -20,6 +20,32 @@ map.syung.novum-lab.com {
 		rewrite * /bus/live
 		reverse_proxy 127.0.0.1:3113
 	}
+	# 앱(syung-app) 지도 웹뷰 CORS(2026-10-30): 앱 안 http 서버의 출처 하나(http://127.0.0.1:38127)에만 로그인 없이 읽는 것을 연다.
+	#   대상 = 공개 API 다섯 + 서버 릴리스가 내는 지도 자료. 로그인 · /api/me · /api/auth · /api/admin · POST 는 열지 않는다(앱 로그인은 2단계 토큰 방식)
+	#   * 금지 · Access-Control-Allow-Credentials 넣지 않는다(쿠키를 싣지 않는다) · 다른 출처 · Origin 없음이면 머리를 붙이지 않는다
+	#   머리는 여기 한 곳에서만 붙인다 — 정적 파일과 API 가 같은 규칙. 서버(server/routes/http.py)는 CORS 머리를 내지 않는다(둘이 붙이면 머리가 둘이 되어 브라우저가 거절)
+	#   세 matcher 의 path 목록 · 출처는 같아야 한다(tests/test_caddy_app_cors.py 가 본다). header 는 rewrite 보다 먼저 돌아 바깥 주소(/api/…)로 맞춘다
+	@app_paths path /api/live /api/route /api/place /api/weather /api/bus/live /track_shapes.json /live-timing.json /edge_times.json /exits.json /coaster_buildings.bin /coaster_towers.json /data/bus/*
+	header @app_paths +Vary Origin
+	@app_cors {
+		path /api/live /api/route /api/place /api/weather /api/bus/live /track_shapes.json /live-timing.json /edge_times.json /exits.json /coaster_buildings.bin /coaster_towers.json /data/bus/*
+		method GET HEAD OPTIONS
+		header Origin http://127.0.0.1:38127
+	}
+	header @app_cors {
+		Access-Control-Allow-Origin "http://127.0.0.1:38127"
+		Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+	}
+	# 사전 요청: 정적 파일(file_server 는 OPTIONS 를 받지 않는다)은 여기서 204. API 는 Caddy 가 handle 을 정렬하는 차례에 따라
+	#   여기서 204 이거나 path handle 로 서버에 가서 204(routes/http.py do_OPTIONS) — 어느 쪽이든 204 + 위 머리
+	@app_preflight {
+		path /api/live /api/route /api/place /api/weather /api/bus/live /track_shapes.json /live-timing.json /edge_times.json /exits.json /coaster_buildings.bin /coaster_towers.json /data/bus/*
+		method OPTIONS
+		header Origin http://127.0.0.1:38127
+	}
+	handle @app_preflight {
+		respond 204
+	}
 	handle /api/live {
 		rewrite * /live
 		reverse_proxy 127.0.0.1:3113

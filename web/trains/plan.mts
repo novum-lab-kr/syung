@@ -1,5 +1,6 @@
 // 열차 예측: 실시간 기록(마지막 사건과 그 시각)마다 앞으로의 주행 단계(phases)를 세운다. plans · 시계 · 시간표와 학습 자료의 주인.
 // 다른 화면 파일을 import 하지 않는다: 선로 · 역 · 자세 함수와 지금 모드는 본체가 넘긴다.
+import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 import type { Catchup } from '../lib/train_catchup.mts';
 import type { FeedTrain, TrainRoute } from '../lib/routing.mts';
 import type { LiveTrain, MapStation, Merc, Phase, TrackGeom, TrainPlan } from './types.mts';
@@ -30,13 +31,13 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
   // entering and leaving the station section, not stopping and starting); approach = 진입→도착.
   // stops = a station's own zone, runs = an edge's own 출발→도착 seconds per direction (planTrain).
   let liveTiming:LiveTiming={lines:{},default:{pace:1,zone:62,approach:40}};
-  fetch('./live-timing.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(getTrains().map(planTrain).filter(Boolean) as TrainPlan[])}}).catch(()=>{});
+  fetch(serverUrl('./live-timing.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.lines){liveTiming=d;replacePlans(getTrains().map(planTrain).filter(Boolean) as TrainPlan[])}}).catch(()=>{});
   // weekday rush hours (KST minutes of the day; pipeline/build_live_timing.py RUSH): lines that run
   // slower then have their own pace (rushPace)
   const RUSH:[number,number][]=[[420,570],[1050,1200]];
   const rushNow=()=>{const k=new Date(Date.now()+9*3600e3),d=k.getUTCDay(),m=k.getUTCHours()*60+k.getUTCMinutes();return d>0&&d<6&&RUSH.some(([a,b])=>m>=a&&m<b)};
   const timingFor=(line:string):LineTiming=>{const tm={...liveTiming.default,...liveTiming.lines[line]};if(tm.rushPace&&rushNow())tm.pace=tm.rushPace;return tm};
-  fetch('./edge_times.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:{edges?:Record<string,number>,dwell?:Record<string,number>})=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=getTrains().map(planTrain).filter(Boolean) as TrainPlan[]}).catch(()=>{});
+  fetch(serverUrl('./edge_times.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:{edges?:Record<string,number>,dwell?:Record<string,number>})=>{edgeTimes=d.edges||{};lineDwell=d.dwell||{};plans=getTrains().map(planTrain).filter(Boolean) as TrainPlan[]}).catch(()=>{});
   function segmentSeconds(a:MapStation,b:MapStation,line?:string):number{
     const sched=line&&edgeTimes[`${line}:${Math.min(a.id,b.id)}:${Math.max(a.id,b.id)}`];if(sched)return sched;
     const A=merc(a),B=merc(b),chord=Math.hypot(B.x-A.x,B.y-A.y),track=line?realGeom(line,a.id,b.id).total:chord,metres=Math.max(chord,track)/A.meterInMercatorCoordinateUnits();

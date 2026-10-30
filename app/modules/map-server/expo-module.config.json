@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["MapServerModule"]
+  },
+  "android": {
+    "modules": ["com.novumlab.syung.mapserver.MapServerModule"]
+  }
+}
