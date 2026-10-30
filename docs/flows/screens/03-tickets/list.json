@@ -1,0 +1,16 @@
+{
+  "title": "승차권 목록",
+  "summary": "설정 서랍 → 「승차권」 줄(로그인했을 때만 보인다). 승차권은 회원 코드를 받을 때(지도가 다 그려진 뒤 또는 메뉴 단추를 처음 누를 때) 받아 두고, 저장 · 지우기 뒤에 다시 받는다.",
+  "steps": [
+    { "tap": "#settingsButton" },
+    { "wait": "#ticketsRow:not([hidden])" },
+    { "tap": "#ticketsRow" },
+    { "wait": "#ticketList .ticket" }
+  ],
+  "marks": [
+    { "n": 1, "at": "#ticketList > .ticket", "what": "승차권 앞면 — 이름 · 출발 시각 · 일련번호(번호 · 요일 · 시각)", "tap": "카드를 누르면 뒤집혀 뒷면(2)", "edge": "승차권이 하나도 없으면 카드 없이 「+ 승차권 예매하기」만" },
+    { "n": 2, "at": "#ticketList .tk-today", "what": "「오늘」 — 오늘이 타는 날인 승차권", "edge": "오늘이 타는 날이 아니면 없다" },
+    { "n": 3, "at": "#ticketNew", "what": "「+ 승차권 예매하기」", "tap": "발권 화면(새로 — 출발 시각 08:00 · 타는 날 없음)" },
+    { "n": 4, "at": "#menuBack", "what": "‹ 뒤로", "tap": "설정 서랍 메뉴 목록" }
+  ]
+}

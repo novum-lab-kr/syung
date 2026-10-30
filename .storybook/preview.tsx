@@ -19,7 +19,7 @@ const preview:Preview = {
     else delete root.dataset['theme'];
     return <Story />;
   }],
-  // 첫 화면은 토큰 표 · 맨 아래 화면 흐름(docs/flows)
-  parameters: { layout: 'padded', options: { storySort: { order: ['토큰', '컴포넌트', '화면 흐름'] } } },
+  // 첫 화면은 토큰 표 · 맨 아래 화면 흐름 · 화면 기획(docs/flows)
+  parameters: { layout: 'padded', options: { storySort: { order: ['토큰', '컴포넌트', '화면 흐름', '화면 기획'] } } },
 };
 export default preview;

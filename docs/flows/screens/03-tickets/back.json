@@ -1,0 +1,18 @@
+{
+  "title": "승차권 뒷면",
+  "summary": "목록에서 카드를 누른 화면. 다시 누르면 앞면으로 돌아간다.",
+  "after": "list",
+  "steps": [
+    { "tap": "#ticketList > .ticket" },
+    { "wait": "#ticketList > .ticket.flipped .tk-chain:not(.wait)" },
+    { "sleep": 700 }
+  ],
+  "marks": [
+    { "n": 1, "badge": "right", "at": "#ticketList > .ticket.flipped .tk-chain", "what": "경로 띠 — 출발지 → 갈아타는 곳 → 도착지 · 환승 N(없으면 「바로」)", "edge": "저장한 경로가 없는 옛 승차권은 다음 탈 날 그 시각으로 찾아 가장 빠른 길로 그린다 — 찾는 동안 출발 → 도착 이름만, 못 찾으면 「길을 찾지 못했어요」" },
+    { "n": 2, "badge": "above", "at": "#ticketList > .ticket.flipped .tk-steps-btn", "what": "「경로 자세히」", "tap": "카드 아래에 단계 목록을 펼친다(다시 누르면 접기)", "edge": "저장한 경로가 있을 때만 보인다" },
+    { "n": 3, "badge": "above", "at": "#ticketList > .ticket.flipped .tk-time", "what": "출발 시각" },
+    { "n": 4, "badge": "above", "at": "#ticketList > .ticket.flipped .tk-foot > span:first-child", "what": "타는 날", "edge": "고른 요일이 없으면 「타는 날 없음」" },
+    { "n": 5, "badge": "above", "at": "#ticketList > .ticket.flipped .tk-map", "what": "「지도에서 보기」", "tap": "다음 탈 날 그 시각으로 다시 찾아 지도에 길(3)", "edge": "찾는 동안 「찾는 중…」 · 길이 없으면 토스트 「길을 찾지 못했어요」(연결 실패는 「…연결을 확인해 주세요.」)" },
+    { "n": 6, "badge": "above", "at": "#ticketList > .ticket.flipped .tk-edit", "what": "「고치기 ›」", "tap": "발권 화면(이 승차권 값으로 · 아래에 「이 승차권 지우기」)" }
+  ]
+}

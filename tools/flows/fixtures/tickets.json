@@ -1,0 +1,121 @@
+{
+ "tickets": [
+  {
+   "id": 12,
+   "name": "출근",
+   "from": {
+    "name": "서울역",
+    "lat": 37.55406888733184,
+    "lng": 126.97070335253385
+   },
+   "to": {
+    "name": "강남역 2호선",
+    "lat": 37.49808633653005,
+    "lng": 127.02800140627488
+   },
+   "depart": "08:00",
+   "days": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "route": {
+    "tag": "가장 빠른 길",
+    "minutes": 35,
+    "leaveBy": "08:02",
+    "arrives": "08:34",
+    "transfers": 1,
+    "walkMinutes": 5,
+    "legs": [
+     {
+      "type": "walk",
+      "seconds": 178,
+      "exit": "15"
+     },
+     {
+      "type": "ride",
+      "line": "4호선",
+      "from": "서울",
+      "to": "사당",
+      "departs": "08:05",
+      "arrives": "08:21",
+      "wait": 140
+     },
+     {
+      "type": "ride",
+      "line": "2호선",
+      "from": "사당",
+      "to": "강남",
+      "departs": "08:24",
+      "arrives": "08:33",
+      "wait": 106
+     },
+     {
+      "type": "walk",
+      "seconds": 108,
+      "exit": "8"
+     }
+    ]
+   }
+  },
+  {
+   "id": 27,
+   "name": "주말 운동",
+   "from": {
+    "name": "서울역",
+    "lat": 37.55406888733184,
+    "lng": 126.97070335253385
+   },
+   "to": {
+    "name": "강남역 2호선",
+    "lat": 37.49808633653005,
+    "lng": 127.02800140627488
+   },
+   "depart": "10:00",
+   "days": [
+    6,
+    7
+   ],
+   "route": {
+    "tag": "",
+    "minutes": 37,
+    "leaveBy": "08:02",
+    "arrives": "08:36",
+    "transfers": 1,
+    "walkMinutes": 11,
+    "legs": [
+     {
+      "type": "walk",
+      "seconds": 178,
+      "exit": "15"
+     },
+     {
+      "type": "ride",
+      "line": "4호선",
+      "from": "서울",
+      "to": "동작",
+      "departs": "08:05",
+      "arrives": "08:16",
+      "wait": 140
+     },
+     {
+      "type": "ride",
+      "line": "9호선",
+      "from": "동작",
+      "to": "신논현",
+      "departs": "08:22",
+      "arrives": "08:28",
+      "wait": 123
+     },
+     {
+      "type": "walk",
+      "seconds": 478,
+      "exit": "6"
+     }
+    ]
+   }
+  }
+ ]
+}

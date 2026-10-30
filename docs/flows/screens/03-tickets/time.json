@@ -1,0 +1,20 @@
+{
+  "title": "발권 — 출발 시각",
+  "summary": "출발 · 도착을 고른 뒤 「출발 시각」 칸을 눌러 휠을 연 모습.",
+  "after": "place",
+  "steps": [
+    { "tap": "#ticketFromList li:first-child button" },
+    { "type": ["#ticketTo", "강남역"] },
+    { "wait": "#ticketToList:not([hidden]) li button" },
+    { "tap": "#ticketToList li:first-child button" },
+    { "tap": "#ticketTimeBtn" },
+    { "wait": "#ticketTimePick:not([hidden]) .tw-col" },
+    { "sleep": 500 }
+  ],
+  "marks": [
+    { "n": 1, "at": "#ticketTimeBtn", "what": "출발 시각 칸", "tap": "휠을 열고 닫는다" },
+    { "n": 2, "at": "#ticketTimePick .tw-cols", "what": "휠 — 오전 · 오후 / 시 / 분(5분 단위)", "tap": "돌리는 동안은 미리보기만 바뀐다" },
+    { "n": 3, "at": "#ticketTimeDone", "what": "「완료」", "tap": "휠을 접는다", "edge": "시각이 바뀌었고 고른 경로가 있었으면 경로가 풀린다 — 토스트 「출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요」" },
+    { "n": 4, "at": "#ticketRoute", "what": "경로 칸(「경로 고르기」)", "tap": "경로 선택 쪽(5)", "edge": "출발 · 도착이 다 없으면 토스트 「출발지 · 도착지를 먼저 골라 주세요」" }
+  ]
+}

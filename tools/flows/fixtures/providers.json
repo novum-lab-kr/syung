@@ -1,0 +1,12 @@
+{
+ "providers": [
+  "kakao",
+  "google"
+ ],
+ "me": {
+  "id": 1,
+  "name": "슝슝이",
+  "provider": "kakao",
+  "avatar": null
+ }
+}
