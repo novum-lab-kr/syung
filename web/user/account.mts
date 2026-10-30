@@ -553,7 +553,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     const {from, to} = form();
     if (!from || !to) { toast('출발지 · 도착지를 먼저 골라 주세요', true); $(from ? 'ticketTo' : 'ticketFrom').focus(); return; }
     const when = nextRide(), time = timeParts(form().time);
-    ticketsView.set({routeWhen: `${when.getMonth() + 1}.${when.getDate()} ${DAYS[(when.getDay() + 6) % 7]} · ${time.ampm} ${time.clock} 출발`,
+    ticketsView.set({routeWhen: {month: when.getMonth() + 1, day: when.getDate(), weekday: DAYS[(when.getDay() + 6) % 7]!, time: `${time.ampm} ${time.clock}`},
       plans: [], chosen: -1, routeMsg: '경로를 찾고 있어요', routeLoading: true, routeFilter: null, stepsOf: null});   // 길찾기 시트와 같은 글자 · 뼈대 카드
     previewGone();
     $('routeOpen').click();
@@ -712,7 +712,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     closeWheel(false);
     ticketsView.set({opened: true, editingId: t?.id, name: t?.name || '', time: t?.depart || '08:00', from: t?.from || null, to: t?.to || null, route: t?.route || null,
       days: DAYS.map((_, index) => index + 1).filter(day => t ? t.days.includes(day) : false), deleteArmed: false, fromHere: false, toHere: false,
-      placeFor: null, placeQuery: '', placeHidden: true, placeRows: [], routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null});
+      placeFor: null, placeQuery: '', placeHidden: true, placeRows: [], routeWhen: null, plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null});
     $('ticketOpen').click();
   }
   async function submitTicket() {
