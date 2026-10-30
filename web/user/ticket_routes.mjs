@@ -1,4 +1,20 @@
 // web/user/ticket_routes.mts
+var DAYS = [
+	"월",
+	"화",
+	"수",
+	"목",
+	"금",
+	"토",
+	"일"
+];
+var esc = (text) => String(text).replace(/[&<>"']/g, (mark) => ({
+	"&": "&amp;",
+	"<": "&lt;",
+	">": "&gt;",
+	"\"": "&quot;",
+	"'": "&#39;"
+})[mark]);
 var FASTEST = "가장 빠른 길";
 var rideSig = (plan) => plan.legs.filter((leg) => leg.type !== "walk").map((leg) => `${leg.line || leg.route}|${leg.from}|${leg.to}`).join(">");
 var ahead = (left, right) => left.minutes !== right.minutes ? left.minutes < right.minutes : left.tag === FASTEST !== (right.tag === FASTEST) ? left.tag === FASTEST : left.transfers < right.transfers;
@@ -57,4 +73,4 @@ function routeUrl(from, to, at) {
 	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`;
 }
 var shortName = (name) => name.replace(/\s/g, "").length >= 11 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
-export { ROUTE_KINDS, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, shortName, usefulRoutes };
+export { DAYS, ROUTE_KINDS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, shortName, usefulRoutes };
