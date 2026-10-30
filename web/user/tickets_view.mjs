@@ -1,7 +1,11 @@
 import { routeSteps, routeTrack } from "../lib/journey-ui.mjs";
 import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { RouteLoading, StepList } from "../ui/journey_sheet.mjs";
+import { DOWN } from "../components/icons.mjs";
+import { StepList } from "../components/step_list.mjs";
+import { RouteLoading } from "../components/route_card.mjs";
+import { Segmented } from "../components/segmented.mjs";
+import { Button } from "../components/button.mjs";
 import { shortName } from "./ticket_routes.mjs";
 // web/user/tickets_view.tsx
 var DAYS = [
@@ -173,22 +177,11 @@ function Card({ ticket, index }) {
 					}),
 					ticket.route && /* @__PURE__ */ a("div", {
 						class: "tk-alts",
-						children: /* @__PURE__ */ a("button", {
-							class: "tk-steps-btn",
-							type: "button",
-							"aria-expanded": opened ? "true" : "false",
-							children: ["경로 자세히", /* @__PURE__ */ a("svg", {
-								viewBox: "0 0 24 24",
-								width: "12",
-								height: "12",
-								"aria-hidden": "true",
-								fill: "none",
-								stroke: "currentColor",
-								"stroke-width": "2.6",
-								"stroke-linecap": "round",
-								"stroke-linejoin": "round",
-								children: /* @__PURE__ */ a("path", { d: "m6 9 6 6 6-6" })
-							})]
+						children: /* @__PURE__ */ a(Button, {
+							variant: "text",
+							class: "on-ticket tk-steps-btn",
+							expanded: opened,
+							children: ["경로 자세히", DOWN]
 						})
 					}),
 					/* @__PURE__ */ a("p", {
@@ -200,14 +193,13 @@ function Card({ ticket, index }) {
 						class: "tk-foot",
 						children: [/* @__PURE__ */ a("span", { children: `타는 날 ${daysText(ticket.days)}` }), /* @__PURE__ */ a("span", {
 							class: "tk-acts",
-							children: [/* @__PURE__ */ a("button", {
-								class: "tk-map",
-								type: "button",
-								"aria-disabled": view.mapping === index ? "true" : void 0,
-								children: view.mapping === index ? "찾는 중…" : "지도에서 보기"
-							}), /* @__PURE__ */ a("button", {
-								class: "tk-edit",
-								type: "button",
+							children: [/* @__PURE__ */ a(Button, {
+								variant: "secondary",
+								class: "on-ticket tk-map",
+								loading: view.mapping === index ? "찾는 중…" : void 0,
+								children: "지도에서 보기"
+							}), /* @__PURE__ */ a(Button, {
+								class: "on-ticket tk-edit",
 								children: "고치기 ›"
 							})]
 						})]
@@ -524,17 +516,17 @@ function planHTML(plan) {
 function RouteFilters({ filter }) {
 	return /* @__PURE__ */ a("div", {
 		class: "rt-filters",
-		children: /* @__PURE__ */ a("div", {
-			class: "segmented jkinds",
-			role: "group",
-			"aria-label": "경로 종류",
-			children: filter.kinds.map((tab) => /* @__PURE__ */ a("button", {
-				type: "button",
-				"data-k": tab.kind,
-				"aria-pressed": tab.pressed,
-				onClick: () => call("routeKind")(tab.kind),
-				children: [tab.name, /* @__PURE__ */ a("b", { children: tab.count })]
-			}))
+		children: /* @__PURE__ */ a(Segmented, {
+			label: "경로 종류",
+			class: "jkinds",
+			attr: "k",
+			items: filter.kinds.map((tab) => ({
+				id: tab.kind,
+				name: tab.name,
+				count: tab.count,
+				pressed: tab.pressed
+			})),
+			onPick: (kind) => call("routeKind")(kind)
 		})
 	});
 }

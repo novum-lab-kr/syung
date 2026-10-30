@@ -1,6 +1,7 @@
-import "../lib/journey-ui.mjs";
-import { Component as x, Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
+import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { RouteCard, RouteLoading } from "../components/route_card.mjs";
+import { Segmented } from "../components/segmented.mjs";
 // web/ui/journey_sheet.tsx
 var PIN = /* @__PURE__ */ a("svg", {
 	viewBox: "0 0 24 24",
@@ -32,16 +33,6 @@ var SWAP = /* @__PURE__ */ a("svg", {
 	"stroke-linecap": "round",
 	"stroke-linejoin": "round",
 	children: /* @__PURE__ */ a("path", { d: "M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4" })
-});
-var WALK = /* @__PURE__ */ a("svg", {
-	viewBox: "0 0 24 24",
-	"aria-hidden": "true",
-	fill: "currentColor",
-	children: [/* @__PURE__ */ a("circle", {
-		cx: "13",
-		cy: "4",
-		r: "2"
-	}), /* @__PURE__ */ a("path", { d: "M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z" })]
 });
 var CHEV = /* @__PURE__ */ a("svg", {
 	class: "jw-chev",
@@ -96,12 +87,6 @@ var EDIT = /* @__PURE__ */ a("svg", {
 	"stroke-linecap": "round",
 	"stroke-linejoin": "round",
 	children: [/* @__PURE__ */ a("path", { d: "M4 20h4L19 9l-4-4L4 16z" }), /* @__PURE__ */ a("path", { d: "m13.5 6.5 4 4" })]
-});
-var BUS = /* @__PURE__ */ a("svg", {
-	viewBox: "0 0 24 24",
-	"aria-hidden": "true",
-	fill: "currentColor",
-	children: /* @__PURE__ */ a("path", { d: "M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" })
 });
 function PlaceList({ id, label, list, onPick }) {
 	return /* @__PURE__ */ a("ul", {
@@ -171,23 +156,20 @@ function When({ view, actions }) {
 						children: "지금으로"
 					})]
 				}),
-				/* @__PURE__ */ a("div", {
-					class: "segmented jw-day",
-					role: "group",
-					"aria-label": "날짜",
-					children: [/* @__PURE__ */ a("button", {
-						type: "button",
-						"data-d": "0",
-						"aria-pressed": !(draft?.tomorrow ?? false),
-						onClick: () => actions.day(0),
-						children: "오늘"
-					}), /* @__PURE__ */ a("button", {
-						type: "button",
-						"data-d": "1",
-						"aria-pressed": draft?.tomorrow ?? false,
-						onClick: () => actions.day(1),
-						children: "내일"
-					})]
+				/* @__PURE__ */ a(Segmented, {
+					label: "날짜",
+					class: "jw-day",
+					attr: "d",
+					items: [{
+						id: "0",
+						name: "오늘",
+						pressed: !(draft?.tomorrow ?? false)
+					}, {
+						id: "1",
+						name: "내일",
+						pressed: draft?.tomorrow ?? false
+					}],
+					onPick: (day) => actions.day(Number(day))
 				}),
 				/* @__PURE__ */ a("div", {
 					class: "jw-clock",
@@ -261,253 +243,6 @@ function When({ view, actions }) {
 		})]
 	});
 }
-function Track({ segs }) {
-	return /* @__PURE__ */ a("div", {
-		class: "jtrack",
-		"aria-hidden": "true",
-		children: segs.map((seg) => seg.k !== "ride" ? /* @__PURE__ */ a("i", {
-			class: `jseg ${seg.k}`,
-			style: `flex:${seg.flex} 1 0`
-		}) : /* @__PURE__ */ a("i", {
-			class: seg.bus ? "jseg ride bus" : "jseg ride",
-			style: `flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}`,
-			children: [seg.icon && BUS, seg.label]
-		}))
-	});
-}
-var BusChips = class extends x {
-	state = {
-		all: false,
-		tapped: null
-	};
-	render({ chips }) {
-		const shown = this.state.all ? chips : chips.slice(0, 4), hidden = chips.length - shown.length;
-		const note = chips.find((chip) => chip.route === this.state.tapped)?.detail;
-		return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("span", {
-			class: "js-chips",
-			children: [shown.map((chip) => chip.detail === null ? /* @__PURE__ */ a("span", {
-				class: "js-chip",
-				style: `--c:${chip.color};--t:${chip.ink}`,
-				children: [BUS, chip.route]
-			}) : /* @__PURE__ */ a("button", {
-				type: "button",
-				class: "js-chip side",
-				style: `--c:${chip.color};--t:${chip.ink}`,
-				"aria-expanded": this.state.tapped === chip.route,
-				onClick: (event) => {
-					event.stopPropagation();
-					this.setState({ tapped: this.state.tapped === chip.route ? null : chip.route });
-				},
-				children: [
-					BUS,
-					chip.route,
-					/* @__PURE__ */ a("small", { children: chip.side })
-				]
-			})), hidden > 0 && /* @__PURE__ */ a("button", {
-				type: "button",
-				class: "jp-more",
-				onClick: (event) => {
-					event.stopPropagation();
-					this.setState({ all: true });
-				},
-				children: `외 ${hidden}대`
-			})]
-		}), note != null && /* @__PURE__ */ a("small", {
-			class: "js-side",
-			children: note
-		})] });
-	}
-};
-function AlightChips({ chips }) {
-	return /* @__PURE__ */ a("small", {
-		class: "js-chips",
-		children: chips.map((chip) => /* @__PURE__ */ a("span", {
-			class: "js-alt",
-			children: [/* @__PURE__ */ a("span", {
-				class: "js-chip",
-				style: `--c:${chip.color};--t:${chip.ink}`,
-				children: [BUS, chip.route]
-			}), chip.where]
-		}))
-	});
-}
-function Step({ step, timed }) {
-	if (step.kind === "place") return /* @__PURE__ */ a("li", {
-		class: `js node ${step.at}`,
-		style: `--c:${step.at === "start" ? "var(--syung)" : "var(--ink)"}`,
-		children: [
-			timed && /* @__PURE__ */ a("span", {
-				class: "js-t",
-				children: step.time
-			}),
-			/* @__PURE__ */ a("span", { class: "js-dot" }),
-			/* @__PURE__ */ a("div", {
-				class: "js-b",
-				children: /* @__PURE__ */ a("b", { children: step.name })
-			})
-		]
-	});
-	if (step.kind === "walk") return /* @__PURE__ */ a("li", {
-		class: "js walk",
-		children: [
-			timed && /* @__PURE__ */ a("span", { class: "js-t" }),
-			/* @__PURE__ */ a("span", { class: "js-rail" }),
-			/* @__PURE__ */ a("div", {
-				class: "js-b",
-				children: /* @__PURE__ */ a("small", { children: [
-					WALK,
-					step.text,
-					/* @__PURE__ */ a("span", {
-						class: "js-d",
-						children: step.detail
-					})
-				] })
-			})
-		]
-	});
-	if (step.kind === "board") return /* @__PURE__ */ a("li", {
-		class: "js node board",
-		style: `--c:${step.color}`,
-		children: [
-			timed && /* @__PURE__ */ a("span", {
-				class: "js-t",
-				children: step.time
-			}),
-			/* @__PURE__ */ a("span", { class: "js-dot" }),
-			/* @__PURE__ */ a("div", {
-				class: "js-b",
-				children: /* @__PURE__ */ a("b", { children: step.name })
-			})
-		]
-	});
-	if (step.kind === "alight") return /* @__PURE__ */ a("li", {
-		class: "js node alight",
-		style: `--c:${step.color}`,
-		children: [
-			timed && /* @__PURE__ */ a("span", {
-				class: "js-t",
-				children: step.time
-			}),
-			/* @__PURE__ */ a("span", { class: "js-dot" }),
-			/* @__PURE__ */ a("div", {
-				class: "js-b",
-				children: [/* @__PURE__ */ a("b", { children: step.name }), step.chips.length > 0 && /* @__PURE__ */ a(AlightChips, { chips: step.chips })]
-			})
-		]
-	});
-	return /* @__PURE__ */ a("li", {
-		class: "js ride",
-		style: `--c:${step.color};--t:${step.ink}`,
-		children: [
-			timed && /* @__PURE__ */ a("span", { class: "js-t" }),
-			/* @__PURE__ */ a("span", { class: "js-rail" }),
-			/* @__PURE__ */ a("div", {
-				class: "js-b",
-				children: [/* @__PURE__ */ a("p", { children: [step.bus ? /* @__PURE__ */ a(BusChips, { chips: step.chips }) : /* @__PURE__ */ a("span", {
-					class: "js-chip",
-					children: step.chip
-				}), step.toward !== null && /* @__PURE__ */ a("span", {
-					class: "js-toward",
-					children: step.toward
-				})] }), (step.info !== "" || step.live !== null) && /* @__PURE__ */ a("small", { children: [step.info, step.live !== null && /* @__PURE__ */ a("span", {
-					class: "js-live",
-					children: step.live
-				})] })]
-			})
-		]
-	});
-}
-function StepList({ steps, className }) {
-	const timed = steps.some((step) => "time" in step && step.time !== null);
-	return /* @__PURE__ */ a("ol", {
-		class: timed ? className : `${className} notime`,
-		children: steps.map((step) => /* @__PURE__ */ a(Step, {
-			step,
-			timed
-		}))
-	});
-}
-var CARD_ROLE = { role: "button" };
-function Card({ plan, index, on, hidden, actions }) {
-	const duration = plan.duration;
-	return /* @__PURE__ */ a("article", {
-		class: on ? "jp on" : "jp",
-		"data-i": String(index),
-		tabIndex: 0,
-		...CARD_ROLE,
-		"aria-label": plan.aria,
-		"aria-expanded": on,
-		hidden,
-		onClick: () => actions.card(index),
-		onKeyDown: (event) => {
-			if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-				event.preventDefault();
-				event.currentTarget.click();
-			}
-		},
-		children: [
-			/* @__PURE__ */ a("div", {
-				class: "jp-top",
-				children: [
-					/* @__PURE__ */ a("strong", {
-						class: "jp-min",
-						children: duration.hours !== null ? /* @__PURE__ */ a(M, { children: [
-							`${duration.hours}`,
-							/* @__PURE__ */ a("small", { children: "시간" }),
-							` ${duration.minutes}`,
-							/* @__PURE__ */ a("small", { children: "분" })
-						] }) : /* @__PURE__ */ a(M, { children: [`${duration.minutes}`, /* @__PURE__ */ a("small", { children: "분" })] })
-					}),
-					/* @__PURE__ */ a("span", {
-						class: "jp-arr",
-						children: plan.arrive
-					}),
-					plan.tag !== null && /* @__PURE__ */ a("span", {
-						class: "jp-tag",
-						children: plan.tag
-					})
-				]
-			}),
-			/* @__PURE__ */ a(Track, { segs: plan.track }),
-			on && /* @__PURE__ */ a("p", {
-				class: "jp-meta",
-				children: [plan.meta, plan.live && /* @__PURE__ */ a("span", {
-					class: "jp-live",
-					children: "실시간"
-				})]
-			}),
-			"   ",
-			/* @__PURE__ */ a(StepList, {
-				steps: plan.steps,
-				className: "jsteps"
-			})
-		]
-	});
-}
-function RouteLoading() {
-	return /* @__PURE__ */ a("div", {
-		class: "jload",
-		"aria-hidden": "true",
-		children: [
-			0,
-			1,
-			2
-		].map((row) => /* @__PURE__ */ a("div", {
-			class: "jsk",
-			children: [
-				/* @__PURE__ */ a("i", { class: "jsk-min" }),
-				/* @__PURE__ */ a("div", {
-					class: "jsk-track",
-					children: row === 0 && /* @__PURE__ */ a("span", {
-						class: "jsk-run",
-						children: /* @__PURE__ */ a("i", {})
-					})
-				}),
-				/* @__PURE__ */ a("i", { class: "jsk-meta" })
-			]
-		}))
-	});
-}
 function Result({ result, actions }) {
 	if (result.kind === "none") return null;
 	if (result.kind === "loading") return /* @__PURE__ */ a(RouteLoading, {});
@@ -525,26 +260,26 @@ function Result({ result, actions }) {
 		]
 	});
 	return /* @__PURE__ */ a(M, { children: [
-		result.tabs && /* @__PURE__ */ a("div", {
-			class: "segmented jkinds",
-			role: "group",
-			"aria-label": "경로 종류",
-			children: result.tabs.map((tab) => /* @__PURE__ */ a("button", {
-				type: "button",
-				"data-k": tab.kind,
-				"aria-pressed": tab.pressed,
-				onClick: () => actions.tab(tab.kind),
-				children: [tab.name, /* @__PURE__ */ a("b", { children: tab.count })]
-			}))
+		result.tabs && /* @__PURE__ */ a(Segmented, {
+			label: "경로 종류",
+			class: "jkinds",
+			attr: "k",
+			items: result.tabs.map((tab) => ({
+				id: tab.kind,
+				name: tab.name,
+				count: tab.count,
+				pressed: tab.pressed
+			})),
+			onPick: (kind) => actions.tab(kind)
 		}),
 		/* @__PURE__ */ a("div", {
 			class: "jplans",
-			children: result.cards.map((card, index) => /* @__PURE__ */ a(Card, {
+			children: result.cards.map((card, index) => /* @__PURE__ */ a(RouteCard, {
 				plan: card.plan,
 				index,
 				on: card.on,
 				hidden: card.hidden,
-				actions
+				onPick: (pick) => actions.card(pick)
 			}))
 		}),
 		/* @__PURE__ */ a("p", {
@@ -679,4 +414,4 @@ var drawJourney = (body, view, actions) => K(/* @__PURE__ */ a(JourneySheet, {
 	actions
 }), body);
 var clearJourney = (body) => K(null, body);
-export { JourneySheet, RouteLoading, StepList, clearJourney, drawJourney };
+export { JourneySheet, clearJourney, drawJourney };
