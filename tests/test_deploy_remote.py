@@ -163,8 +163,15 @@ class SiteCheckTest(RemoteFixture):
         self.assertIn("/live-timing.json", paths)
         self.assertIn("/api/route", paths)
         self.assertIn("/api/live", paths)
-        self.assertIn("/admin/login.html", paths)
+        self.assertNotIn("/admin/login.html", paths, "로그인 페이지는 syung.novum-lab.com/admin 으로 옮겨 가 보지 않는다")
         self.assertIn("/admin/learning.html", paths, "주인 페이지는 막혀 있는지만 본다")
+
+    def test_admin_moved_to_intro_host_passes(self):
+        # 관리 화면을 syung.novum-lab.com/admin 으로 옮긴 뒤(Caddy step5): map. 의 /admin/… 은 모두 301
+        moved = (301, "text/plain", b"moved")
+        self.site.responses["/admin/login.html"] = moved
+        self.site.responses["/admin/learning.html"] = moved
+        self.check_site()
 
     def test_owner_page_open_without_login_fails(self):
         self.site.open_admin = True   # Caddy 보호 없이 올라간 경우

@@ -1,7 +1,9 @@
 # 슝 운영 주소 둘(2026-10-30 나눔)
-#   map.syung.novum-lab.com — 지도 앱 + 실시간 열차 프록시 + 관리 화면(/api · /admin). 검색에는 싣지 않는다(noindex)
-#   syung.novum-lab.com     — 소개 사이트(/var/www/syung-landing — novum-web 레포 syung/ 이 관리 · 배포, 2026-10-30 옮김).
-#                             아이콘 · 개인정보처리방침(/brand/* · /privacy.html)은 이 레포 릴리스. 그 밖의 옛 주소는 map. 의 같은 경로로 넘긴다
+#   map.syung.novum-lab.com — 지도 앱 + 실시간 열차 프록시(/api). 검색에는 싣지 않는다(noindex)
+#   syung.novum-lab.com     — 소개 사이트(/var/www/syung-landing — novum-web 레포 syung/ 이 관리 · 배포, 2026-10-30 옮김)
+#                             + 관리 화면 /admin(/var/www/syung-admin — novum-web 레포 syung-admin/ 이 관리 · 배포, 2026-10-30 옮김).
+#                             아이콘 · 개인정보처리방침(/brand/* · /privacy.html) · 학습 자료(admin/learning.json) · 디버깅이 읽는 지도 자료는 이 레포 릴리스.
+#                             그 밖의 옛 주소는 map. 의 같은 경로로 넘긴다
 # 운영 /etc/caddy/Caddyfile 의 두 블록과 같게 둔다. 고칠 땐: cp Caddyfile Caddyfile.bak-<태그> → caddy validate → systemctl reload caddy
 # 처음 나눌 때의 차례(DNS map. A 레코드가 먼저 있어야 인증서가 나온다):
 #   1) map. 블록만 더한다(옛 syung. 블록은 그대로) → map. 의 / · /api/health 확인
@@ -59,33 +61,16 @@ map.syung.novum-lab.com {
 		rewrite * /logout
 		reverse_proxy 127.0.0.1:3113
 	}
-	# 관리 페이지(슝 4fc2a69): /admin 아래, 주인만. 옛 주소는 옮겨 보낸다
-	redir /learning /admin/learning permanent
-	redir /learning.html /admin/learning permanent
-	redir /learning.json /admin/learning.json permanent
-	redir /debug /admin/debug permanent
-	redir /debug.html /admin/debug permanent
-	redir /login.html /admin/login.html?{query} permanent
-	redir /admin /admin/learning
-	# 로그인 페이지는 열려 있어야 한다(/admin/* 보다 먼저 맞는다)
-	handle /admin/login.html {
-		root * /var/www/syung
-		header Cache-Control "no-store"
-		header X-Content-Type-Options "nosniff"
-		header X-Robots-Tag "noindex"
-		file_server
-	}
-	# 나머지 관리 페이지 · learning.json: 서버의 /auth 가 주인 쿠키를 보고 204(통과) · 302(로그인 페이지) · 401(자료)
+	# 관리 페이지는 syung.novum-lab.com/admin 으로 옮겼다(2026-10-30). 옛 주소는 그리로 바로 보낸다
+	redir /learning https://syung.novum-lab.com/admin/learning permanent
+	redir /learning.html https://syung.novum-lab.com/admin/learning permanent
+	redir /learning.json https://syung.novum-lab.com/admin/learning.json permanent
+	redir /debug https://syung.novum-lab.com/admin/debug permanent
+	redir /debug.html https://syung.novum-lab.com/admin/debug permanent
+	redir /login.html https://syung.novum-lab.com/admin/login.html?{query} permanent
+	redir /admin https://syung.novum-lab.com/admin permanent
 	handle /admin/* {
-		forward_auth 127.0.0.1:3113 {
-			uri /auth
-		}
-		try_files {path} {path}.html
-		root * /var/www/syung
-		header Cache-Control "no-store"
-		header X-Content-Type-Options "nosniff"
-		header X-Robots-Tag "noindex"
-		file_server
+		redir https://syung.novum-lab.com{uri} permanent
 	}
 	handle {
 		root * /var/www/syung
@@ -95,7 +80,7 @@ map.syung.novum-lab.com {
 	}
 }
 
-# 소개 사이트 — 정적 파일만. 소개 폴더에 있는 파일이면 내고, 아니면 map. 의 같은 경로로 넘긴다
+# 소개 사이트 + 관리 화면. 소개 폴더에 있는 파일이면 내고, 아니면 map. 의 같은 경로로 넘긴다
 syung.novum-lab.com {
 	encode zstd gzip
 	header X-Content-Type-Options "nosniff"
@@ -104,9 +89,79 @@ syung.novum-lab.com {
 	handle /api/auth/kakao/unlink {
 		reverse_proxy 127.0.0.1:3113
 	}
+	# 관리 API(주인 확인은 서버가 한다) · 주인 로그인 · 로그아웃 — 관리 화면이 이 주소에서 부른다(아래 /api/* 308 보다 먼저 맞는다)
+	# 주인 쿠키(syung_owner)는 Domain 없이 주므로 주소마다 따로다 — 이 주소에서 로그인한다
+	handle /api/admin/* {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle /api/login {
+		rewrite * /login
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle /api/logout {
+		rewrite * /logout
+		reverse_proxy 127.0.0.1:3113
+	}
+	# 디버깅 화면의 탑승 중 폴링 — 308 로 map. 에 보내면 다른 출처라 CORS 로 막힌다
+	handle /api/live {
+		rewrite * /live
+		reverse_proxy 127.0.0.1:3113
+	}
+	handle /api/bus/live {
+		rewrite * /bus/live
+		reverse_proxy 127.0.0.1:3113
+	}
 	# API 는 308 — POST 의 메서드 · 본문을 그대로 넘긴다(301 은 GET 으로 바뀔 수 있다)
 	handle /api/* {
 		redir https://map.syung.novum-lab.com{uri} 308
+	}
+	# 관리 화면(2026-10-30 — novum-web 레포 syung-admin/ 이 관리 · 배포 → /var/www/syung-admin). 주인만, 로그인 페이지만 열림
+	redir /admin /admin/learning
+	handle /admin/login.html {
+		root * /var/www/syung-admin
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+	# 학습 자료는 슝 pipeline 이 지도 릴리스(/var/www/syung/admin/learning.json)에 쓴다 — 그 파일을 그대로 낸다
+	handle /admin/learning.json {
+		forward_auth 127.0.0.1:3113 {
+			uri /auth
+		}
+		root * /var/www/syung
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+	# 디버깅 화면이 읽는 지도 자료(/admin/map/index.html 역 자료 · /admin/map/edge_times.json) — 지도 릴리스에서
+	# route: 주인 확인을 앞부분을 떼기 전에(/auth 가 X-Forwarded-Uri 로 next 를 만든다)
+	handle /admin/map/* {
+		route {
+			forward_auth 127.0.0.1:3113 {
+				uri /auth
+			}
+			uri strip_prefix /admin/map
+		}
+		root * /var/www/syung
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+	# 나머지 관리 페이지: 서버의 /auth 가 주인 쿠키를 보고 204(통과) · 302(로그인 페이지) · 401(자료). 경로는 떼지 않는다
+	handle /admin/* {
+		forward_auth 127.0.0.1:3113 {
+			uri /auth
+		}
+		try_files {path} {path}.html
+		root * /var/www/syung-admin
+		header Cache-Control "no-store"
+		header X-Content-Type-Options "nosniff"
+		header X-Robots-Tag "noindex"
+		file_server
 	}
 	# 지도와 같이 쓰는 파일(아이콘 · 개인정보처리방침)
 	@shared path /brand/* /privacy.html
@@ -126,7 +181,7 @@ syung.novum-lab.com {
 		header Cache-Control "public, max-age=0, s-maxage=60"
 		file_server
 	}
-	# 그 밖의 옛 지도 주소(/admin/… · /site.webmanifest …) → map. 의 같은 경로
+	# 그 밖의 옛 지도 주소(/site.webmanifest …) → map. 의 같은 경로
 	handle {
 		redir https://map.syung.novum-lab.com{uri} permanent
 	}
