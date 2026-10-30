@@ -7,17 +7,13 @@
 import { render } from 'preact';
 import { routeSteps, routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
-// 찾는 동안 뼈대 카드 · 단계 목록 · 세그먼트 탭: 길찾기 시트와 같은 기초 컴포넌트(본체가 이미 받은 파일)
-import { RouteLoading } from '../components/route_card.tsx';
-import { Segmented } from '../components/segmented.tsx';
-import { StepList } from '../components/step_list.tsx';
 // 승차권 · 발권 부품(값과 콜백만 받는다 — 상태 · 누름 전달은 이 파일)
 import { DayPicker } from '../components/day_picker.tsx';
 import { PlaceField } from '../components/place_field.tsx';
-import { RouteHead } from '../components/route_head.tsx';
 import type { RouteWhen } from '../components/route_head.tsx';
-import { SaveButton } from '../components/save_button.tsx';
-import { TicketCard, TicketFront, TicketList } from '../components/ticket_card.tsx';
+import { RoutePicker } from '../components/route_picker.tsx';
+import { TicketCard, TicketList } from '../components/ticket_card.tsx';
+import { TicketForm } from '../components/ticket_form.tsx';
 import { TimeField } from '../components/time_field.tsx';
 import { DAYS, esc, shortName } from './ticket_routes.mts';
 import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
@@ -103,53 +99,23 @@ function routeHTML(route:SlimRoute | null) {
 }
 function TicketPage() {
   const { opened } = view, time = timeParts(view.time), draft = { id: view.editingId, name: view.name.trim(), depart: view.time, days: view.days };
-  return <>
-    <div id="ticketPreview" aria-hidden="true">{opened && <div class="ticket"><div class="ticket-in"><TicketFront ticket={draft} today={isToday(draft)} /></div></div>}</div>
-    <form id="ticketForm" class="ticket-form" autocomplete="off" noValidate onSubmit={event => { event.preventDefault(); call('submit')() }}>
-      <div class="tf-route"><div class="tf-pls"><Place which="from" /><Place which="to" /></div></div>
-      <TimeField open={view.wheelOpen} text={opened ? time : null} value={view.time} onToggle={call('timeToggle')} onDone={call('timeDone')} />
-      <span id="ticketRouteLabel" class="tf-l">경로</span>
-      <button id="ticketRoute" class={opened && !view.route ? 'tf-pick empty' : 'tf-pick'} type="button" aria-labelledby="ticketRouteLabel ticketRoute" onClick={call('route')}
-        dangerouslySetInnerHTML={{ __html: opened ? routeHTML(view.route) : '' }}></button>
-      <DayPicker days={view.days} onDay={day => call('day')(day)} onQuick={days => call('quick')(days)} />
-      <label class="tf-l" for="ticketName">승차권 이름</label><div class="tf-in"><input id="ticketName" maxlength={12} placeholder="이름 넣기" enterkeyhint="done" value={view.name}
-        onInput={event => call('name')(event.currentTarget.value)} /><small id="ticketNameCount" aria-hidden="true">{`${[...view.name].length}/12`}</small></div>
-      <SaveButton id="ticketSave" type="submit" disabled={view.sending || (opened && !view.route)}>{view.sending ? '발권하는 중…' : '발권하기'}</SaveButton>
-      <button id="ticketDelete" class="tf-del" type="button" hidden={!opened || view.editingId === undefined} onClick={call('remove')}>{view.deleteArmed ? '한 번 더 누르면 지워요' : '이 승차권 지우기'}</button>
-    </form>
-  </>;
+  return <TicketForm preview={opened ? { ticket: draft, today: isToday(draft) } : null} places={<><Place which="from" /><Place which="to" /></>}
+    time={<TimeField open={view.wheelOpen} text={opened ? time : null} value={view.time} onToggle={call('timeToggle')} onDone={call('timeDone')} />}
+    days={<DayPicker days={view.days} onDay={day => call('day')(day)} onQuick={days => call('quick')(days)} />}
+    routeHTML={opened ? routeHTML(view.route) : ''} routeEmpty={opened && !view.route} name={view.name} sending={view.sending} saveDisabled={view.sending || (opened && !view.route)}
+    deleteHidden={!opened || view.editingId === undefined} deleteArmed={view.deleteArmed}
+    onRoute={call('route')} onName={value => call('name')(value)} onSubmit={call('submit')} onDelete={call('remove')} />;
 }
 
-// 경로 하나의 단추 속: 매일 다닐 길이라 시각(그날 시간표의 출발 · 도착)은 빼고 '약 N분'(2026-10-29)
-function planHTML(plan:Plan) {
-  return `<i class="rt-radio" aria-hidden="true"></i><span class="rt-b"><span class="jp-top"><strong class="jp-min"><small>약 </small>${plan.minutes}<small>분</small></strong>`
-    + `${plan.tag ? `<span class="jp-tag">${esc(plan.tag)}</span>` : ''}</span>`
-    + `${routeTrack(plan, view.colors, 250)}</span>`;
-}
-// 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수)
-function RouteFilters({ filter }:{ filter:RouteFilterView }) {
-  return <div class="rt-filters">
-    <Segmented label="경로 종류" class="jkinds" attr="k" items={filter.kinds.map(tab => ({ id: tab.kind, name: tab.name, count: tab.count, pressed: tab.pressed }))} onPick={kind => call('routeKind')(kind)} />
-  </div>;
-}
-// 경로 선택 쪽(발권 화면의 경로 칸으로 넘어간다): 출발 · 도착 머리말 · 시간 칩 · 종류 탭 · 단계 목록 · 이 경로로
+// 경로 선택 쪽(발권 화면의 경로 칸으로 넘어간다) — 조건 차례대로 줄을 푼다(펼친 경로만 단계를 만든다)
 function RoutePage() {
   const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
-  return <>
-    <RouteHead when={view.routeWhen} from={view.from?.name} to={view.to?.name} />
-    {filter && <RouteFilters filter={filter} />}
-    {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
-    {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
-    <div id="routeList" class="rt-list" role="radiogroup" aria-label="경로">{order.map(index => { const plan = view.plans[index]!, opened = view.stepsOf === plan; return <div class="rt-item"><div class="rt-card"><button type="button" class="rt-plan" role="radio" aria-checked={index === view.chosen ? 'true' : 'false'}
-      aria-label={`${plan.tag || '경로'} 약 ${plan.minutes}분, 환승 ${plan.transfers}번`} onClick={() => call('plan')(index)} dangerouslySetInnerHTML={{ __html: planHTML(plan) }}></button>
-      <button type="button" class="rt-open" aria-expanded={opened ? 'true' : 'false'} aria-label="경로 자세히 보기" onClick={() => set({ stepsOf: opened ? null : plan })}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button></div>
-      {opened && <div class="rt-steps"><p class="jp-meta">{`환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`}</p><StepList steps={routeSteps(plan.legs, { from: view.from?.name ?? '출발', to: view.to?.name ?? '도착' }, view.colors)} className="jsteps shown" /></div>}</div>; })}</div>
-    {filter?.empty && <div class="rt-empty"><b>{filter.empty}</b><p>다른 조건을 골라 보세요</p></div>}
-    <p id="routeMsg" class="account-msg" role="status" aria-live="polite">{view.routeMsg}</p>
-    {view.routeLoading && <RouteLoading />}
-    {/* 이 경로로: 목록이 길어도 늘 보이게 맨 아래에 붙는다(경로 고르기 반쪽 시트 2026-10-29) */}
-    <div class="rt-foot" hidden={!order.length}><SaveButton id="routePick" onClick={call('planPick')}>이 경로로</SaveButton></div>
-  </>;
+  const rows = order.map(index => {
+    const plan = view.plans[index]!;
+    return { index, plan, chosen: index === view.chosen, steps: view.stepsOf === plan ? routeSteps(plan.legs, { from: view.from?.name ?? '출발', to: view.to?.name ?? '도착' }, view.colors) : null };
+  });
+  return <RoutePicker when={view.routeWhen} from={view.from?.name} to={view.to?.name} filter={filter} rows={rows} colors={view.colors} message={view.routeMsg} loading={view.routeLoading}
+    onKind={kind => call('routeKind')(kind)} onPlan={index => call('plan')(index)} onSteps={plan => set({ stepsOf: view.stepsOf === plan ? null : plan })} onPick={call('planPick')} />;
 }
 
 const PAGES = [['menuTickets', TicketsPage], ['menuTicket', TicketPage], ['menuRoute', RoutePage]] as const;
