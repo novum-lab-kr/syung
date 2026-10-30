@@ -802,7 +802,12 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		}
 		const when = nextRide(), time = timeParts(form().time);
 		ticketsView.set({
-			routeWhen: `${when.getMonth() + 1}.${when.getDate()} ${DAYS[(when.getDay() + 6) % 7]} · ${time.ampm} ${time.clock} 출발`,
+			routeWhen: {
+				month: when.getMonth() + 1,
+				day: when.getDate(),
+				weekday: DAYS[(when.getDay() + 6) % 7],
+				time: `${time.ampm} ${time.clock}`
+			},
 			plans: [],
 			chosen: -1,
 			routeMsg: "경로를 찾고 있어요",
@@ -1029,7 +1034,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			placeQuery: "",
 			placeHidden: true,
 			placeRows: [],
-			routeWhen: "",
+			routeWhen: null,
 			plans: [],
 			chosen: -1,
 			routeMsg: "",

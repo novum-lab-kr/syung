@@ -86,7 +86,7 @@ var view = {
 	placeQuery: "",
 	placeHidden: true,
 	placeRows: [],
-	routeWhen: "",
+	routeWhen: null,
 	plans: [],
 	chosen: -1,
 	routeMsg: "",
@@ -543,32 +543,49 @@ function RoutePage() {
 	return /* @__PURE__ */ a(M, { children: [
 		/* @__PURE__ */ a("div", {
 			class: "rt-sum",
-			children: [/* @__PURE__ */ a("ol", {
-				class: "rt-trip",
-				"aria-label": "출발과 도착",
-				children: [/* @__PURE__ */ a("li", {
-					class: "rt-from",
-					children: [/* @__PURE__ */ a("i", {
-						class: "js-dot",
-						"aria-hidden": "true"
-					}), /* @__PURE__ */ a("b", {
-						id: "routeFrom",
-						children: view.from?.name
-					})]
-				}), /* @__PURE__ */ a("li", {
-					class: "rt-to",
-					children: [/* @__PURE__ */ a("i", {
-						class: "js-dot",
-						"aria-hidden": "true"
-					}), /* @__PURE__ */ a("b", {
-						id: "routeTo",
-						children: view.to?.name
-					})]
-				})]
-			}), /* @__PURE__ */ a("span", {
+			children: [view.routeWhen && /* @__PURE__ */ a("div", {
+				class: "rt-cal",
 				id: "routeWhen",
-				class: "rt-when",
-				children: view.routeWhen
+				"aria-label": `${view.routeWhen.month}월 ${view.routeWhen.day}일 ${view.routeWhen.weekday}`,
+				children: [
+					/* @__PURE__ */ a("span", {
+						class: "rt-month",
+						children: [view.routeWhen.month, "월"]
+					}),
+					/* @__PURE__ */ a("b", {
+						class: "rt-day",
+						children: view.routeWhen.day
+					}),
+					/* @__PURE__ */ a("span", {
+						class: "rt-wd",
+						children: view.routeWhen.weekday
+					})
+				]
+			}), /* @__PURE__ */ a("div", {
+				class: "rt-trip",
+				children: [
+					/* @__PURE__ */ a("p", {
+						class: "rt-origin",
+						children: [/* @__PURE__ */ a("b", {
+							id: "routeFrom",
+							children: view.from?.name
+						}), "에서"]
+					}),
+					/* @__PURE__ */ a("p", {
+						class: "rt-dest",
+						children: [/* @__PURE__ */ a("b", {
+							id: "routeTo",
+							children: view.to?.name
+						}), /* @__PURE__ */ a("span", {
+							class: "rt-to-sfx",
+							children: "까지"
+						})]
+					}),
+					view.routeWhen && /* @__PURE__ */ a("p", {
+						class: "rt-time",
+						children: [/* @__PURE__ */ a("b", { children: [view.routeWhen.time, " 출발"] }), /* @__PURE__ */ a("span", { children: "이 시각 출발 기준으로 찾은 경로" })]
+					})
+				]
 			})]
 		}),
 		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
