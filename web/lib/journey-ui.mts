@@ -1,7 +1,7 @@
 // 길찾기: from a place (or my location) to a place, leaving now or at a set time.
 // The sheet asks /api/place for places and /api/route for plans (server/journey.py).
 // 시트 몸통은 화면 조각(Preact — ui/journey_sheet.tsx)이 그린다: 이 파일은 상태 · 셈(그릴 거리 JourneyView)과 누르기 처리를 맡고,
-// 바뀔 때마다 본체가 넘긴 drawJourney 로 다시 그린다. 시트 밖 막대(.jbar)는 바닐라 그대로.
+// 바뀔 때마다 본체가 넘긴 drawJourney 로 다시 그린다. 시트 밖 막대(.jbar)는 껍데기만 여기서 만들고 속은 drawJourneyBar 가 그린다.
 // 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸(path · stations · trainNo 는 여정 지도 표시 ui/journey 가 읽는다)
 import { serverUrl } from './server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
@@ -51,8 +51,12 @@ export type JourneyResultView = { kind:'none' } | { kind:'loading' } | { kind:'f
 export interface PlaceListView { hidden:boolean; places:Place[]; empty:string | null }
 // 출발 시각 고르기 칸(열 때 · 날짜 · 한 칸 움직일 때만 다시 셈 — 옛 drawDraft)
 export interface DraftView { hours:string; minutes:string; tomorrow:boolean; off:Record<string, boolean> }
+export interface JourneySummaryView { from:string; to:string; when:string; aria:string }
+// 시트를 닫은 뒤 지도 아래 막대: 고른 경로의 걸리는 시간 · 도착 · 띠
+export interface JourneyBarView { duration:DurationView; arrives:string; track:TrackSegView[] }
+export interface JourneyBarActions { open():void; clear():void }
 export interface JourneyView {
-  here:boolean; done:boolean; summary:{ from:string; to:string; when:string; aria:string } | null;
+  here:boolean; done:boolean; summary:JourneySummaryView | null;
   whenText:string; whenAt:boolean; whenOpen:boolean; draft:DraftView | null;
   lists:Record<EndKind, PlaceListView>; status:{ text:string; sr:boolean }; result:JourneyResultView;
 }
@@ -70,6 +74,7 @@ export interface JourneyDeps {
   openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; closeSheet?:()=>void; map:{ getCenter():{ lat:number; lng:number } }; colors:Colors; myLocation:()=>readonly number[] | null | undefined;
   button:HTMLElement; showRoute?:(plan:Plan)=>void; clearRoute?:()=>void;
   drawJourney:(body:HTMLElement, view:JourneyView, actions:JourneyActions)=>void; clearJourney:(body:HTMLElement)=>void;
+  drawJourneyBar:(host:HTMLElement, bar:JourneyBarView | null, actions:JourneyBarActions)=>void;
 }
 const esc = (s:unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'} as Record<string, string>)[c]!);
 const min = (s:number) => Math.max(1, Math.round(s / 60));
@@ -151,7 +156,7 @@ export function routeTrack(p:{ legs:readonly TrackLeg[] }, colors:Colors, width 
     : `<i class="jseg ride${seg.bus ? ' bus' : ''}" style="flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}">${seg.icon ? BUS : ''}${esc(seg.label)}</i>`).join('')}</div>`;
 }
 
-export function initJourney({openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney}:JourneyDeps) {
+export function initJourney({openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar}:JourneyDeps) {
   const picked:{ from:End | null; to:End | null } = {from: null, to: null};
   let last:LastSearch | null = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
   let inSheet = false;
@@ -160,10 +165,9 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
   const bar = document.createElement('div');
   bar.className = 'jbar'; bar.hidden = true;
-  bar.innerHTML = '<button type="button" class="jbar-open" aria-label="경로 결과 다시 보기"></button><button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
   document.body.append(bar);
-  bar.querySelector<HTMLElement>('.jbar-open')!.onclick = () => open();
-  bar.querySelector<HTMLElement>('.jbar-x')!.onclick = () => { last = null; bar.hidden = true; clearRoute?.(); };
+  const barActions:JourneyBarActions = {open: () => open(), clear: () => { last = null; bar.hidden = true; clearRoute?.(); }};
+  drawJourneyBar(bar, null, barActions);
 
   // 지금 그린 몸통: 열 때마다 번호가 하나씩 늘고, 다른 시트가 자리를 차지하면(치우는 함수) 0 — 늦게 온 답은 번호로 버린다(옛 out.isConnected)
   let body:HTMLElement | null = null, mounted = 0, mountSeq = 0;
@@ -274,9 +278,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   }
 
   // ---- results: one row per route; a bar shows each part of the trip at its real share of the time
-  const track = (p:Plan, width = 330) => routeTrack(p, colors, width);
   const durParts = (total:number):DurationView => total >= 60 ? {hours: Math.floor(total / 60), minutes: total % 60} : {hours: null, minutes: total};
-  const dur = (total:number) => { const parts = durParts(total); return parts.hours !== null ? `${parts.hours}<small>시간</small> ${parts.minutes}<small>분</small>` : `${parts.minutes}<small>분</small>`; };
 
   function planView(plan:Plan):PlanView {
     return {aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, duration: durParts(plan.minutes), arrive: `${plan.leaveBy} → ${plan.arrives}`, tag: plan.tag || null,
@@ -407,7 +409,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     const was = inSheet; inSheet = false;
     if (!last || !was) return false;
     const p = last.d.plans[last.sel]!;
-    bar.querySelector('.jbar-open')!.innerHTML = `<span class="jbar-top"><b>${dur(p.minutes)}</b><span>${esc(p.arrives)} 도착</span></span>${track(p, 240)}`;
+    drawJourneyBar(bar, {duration: durParts(p.minutes), arrives: p.arrives, track: trackParts(p, colors, 240)}, barActions);
     bar.hidden = false;
     return true;
   }
