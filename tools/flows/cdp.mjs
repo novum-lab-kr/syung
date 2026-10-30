@@ -54,7 +54,8 @@ export async function openChrome() {
     socket.close()
     chrome.kill()
     await sleep(300)
-    await rm(profile, { recursive: true, force: true })
+    // 크롬이 끝나며 아직 쓰는 파일이 있으면 지우기가 실패한다 — 잠깐 다시 해 보고, 그래도 안 되면 임시 폴더라 그냥 둔다
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }).catch(() => {})
   }
   return { send, on, close }
 }

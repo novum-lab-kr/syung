@@ -1,0 +1,40 @@
+{
+  "title": "로그인 팝업",
+  "session": "out",
+  "summary": "로그인 안 된 사람이 서랍의 「로그인」 줄을 누르면 서랍이 닫히고 뜬다. 이 그림은 서버가 켠 방법이 카카오 · 구글일 때.",
+  "steps": [
+    {
+      "tap": "#settingsButton"
+    },
+    {
+      "wait": "#loginOpen"
+    },
+    {
+      "sleep": 500
+    },
+    {
+      "tap": "#loginOpen"
+    },
+    {
+      "wait": "#loginSheet:not([hidden]) #accountProviders a"
+    },
+    {
+      "sleep": 800
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#accountProviders",
+      "what": "로그인 방법(서버가 켠 것만)",
+      "tap": "그 서비스의 로그인 화면으로",
+      "edge": "돌아왔을 때 실패면 팝업 안내 — 「로그인을 취소했어요.」 · 「로그인 서비스가 답하지 않아요…」 · 「시도가 너무 많아요…」 · 「로그인하지 못했어요…」"
+    },
+    {
+      "n": 2,
+      "at": ".login-privacy",
+      "badge": "left",
+      "what": "개인정보처리방침 링크"
+    }
+  ]
+}

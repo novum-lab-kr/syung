@@ -3,7 +3,7 @@
 //   node tools/flows/capture.mjs [흐름 폴더 이름…]     # 예: 03-tickets · 비우면 전부
 // 매번 같은 화면이 나오게:
 //  - 웹은 먼저 빌드(dist/web — 운영과 같은 파일)하고 deploy/dev_server.py --dist 를 빈 포트에 띄운다(8080 은 안 쓴다)
-//  - /api/* 는 모두 가로채 tools/flows/fixtures/ 의 고정 응답으로 답한다(로그인 · 승차권 · 길찾기 · 장소 · 날씨 — 운영에서 한 번 받아 둔 것). 실시간 열차는 빈 목록
+//  - /api/* 는 모두 가로채 tools/flows/fixtures/ 의 고정 응답으로 답한다(로그인 · 승차권 · 통계 · 기기 · 역 도착은 직접 만든 값, 길찾기 · 장소 · 날씨는 운영에서 한 번 받아 둔 것). 실시간 열차는 빈 목록
 //  - 시계는 FIXED_NOW(서울 시각)부터 흐르고, 움직임 줄이기(prefers-reduced-motion)로 찍는다. 지도 바탕 타일만 바깥(openfreemap)에서 받는다
 // 화면 코드(web/)는 건드리지 않는다 — 고르는 단추 · 칸은 지금 화면의 id · class 그대로
 import { spawn, spawnSync } from 'node:child_process'
@@ -24,15 +24,22 @@ const debug = (...args) => { if (process.env.FLOWS_DEBUG) console.error(new Date
 
 // ---- 고정 응답 ----
 const fixture = async (name) => readFile(path.join(fixturesDir, name), 'utf8')
-async function answerFor(url) {
+// spec.session 이 'out' 이면 로그인 안 된 사람으로 답한다
+async function answerFor(url, spec) {
   const { pathname, searchParams } = new URL(url)
   const json = async (name) => ({ status: 200, body: await fixture(name) })
-  if (pathname.endsWith('/api/auth/providers')) return json('providers.json')
+  if (pathname.endsWith('/api/auth/providers')) {
+    if (spec.session !== 'out') return json('providers.json')
+    return { status: 200, body: JSON.stringify({ ...JSON.parse(await fixture('providers.json')), me: null }) }
+  }
+  if (pathname.endsWith('/api/me/stats')) return json('stats.json')
+  if (pathname.endsWith('/api/me/sessions')) return json('sessions.json')
   if (pathname.endsWith('/api/me/tickets')) return json('tickets.json')
   if (pathname.endsWith('/api/route')) return json('route.json')
   if (pathname.endsWith('/api/weather')) return json('weather.json')
   if (pathname.endsWith('/api/place')) return json(searchParams.get('q')?.startsWith('강남') ? 'place-gangnam.json' : 'place-seoul.json')
   if (pathname.endsWith('/api/live')) {
+    if (searchParams.has('arrivals')) return json('arrivals.json')
     const lines = (searchParams.get('lines') ?? '').split(',').filter(Boolean)
     return { status: 200, body: JSON.stringify({ ok: true, trains: [], lines, fetchedAt: FIXED_NOW }) }
   }
@@ -79,7 +86,7 @@ async function startServer() {
 }
 
 // ---- 한 화면 ----
-async function preparePage(chrome) {
+async function preparePage(chrome, spec) {
   const { send, on } = chrome
   await send('Page.enable')
   await send('Runtime.enable')
@@ -92,7 +99,7 @@ async function preparePage(chrome) {
   await send('Page.addScriptToEvaluateOnNewDocument', { source: CLOCK })
   await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] })
   on('Fetch.requestPaused', async ({ requestId, request }) => {
-    const { status, body } = await answerFor(request.url)
+    const { status, body } = await answerFor(request.url, spec)
     await send('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: [{ name: 'Content-Type', value: 'application/json; charset=utf-8' }, { name: 'Cache-Control', value: 'no-store' }],
       body: Buffer.from(body).toString('base64') }).catch(() => {})
   })
@@ -156,9 +163,9 @@ async function drawMarks(send, marks) {
       if (!box || !box.width || !box.height || box.bottom < 0 || box.top > innerHeight) { missing.push(n + ' ' + at); continue; }
       const frame = document.createElement('div'); frame.className = 'flowmark-box';
       Object.assign(frame.style, { left: box.left - 3 + 'px', top: box.top - 3 + 'px', width: box.width + 6 + 'px', height: box.height + 6 + 'px' });
-      // 번호는 요소 왼쪽 위 모서리. 글자를 가리면 badge 로 옮긴다 — "right" 오른쪽 위 · "above" 칸 위 가운데. 먼저 놓은 번호와 겹치면 오른쪽으로 비킨다
-      const left = badge === 'right' ? box.right - 18 : badge === 'above' ? box.left + box.width / 2 - 12 : box.left - 10;
-      let x = Math.min(Math.max(left, 4), innerWidth - 28), y = Math.min(Math.max(badge === 'above' ? box.top - 22 : box.top - 10, 4), innerHeight - 28);
+      // 번호는 요소 왼쪽 위 모서리. 글자를 가리면 badge 로 옮긴다 — "right" 오른쪽 위 · "above" 칸 위 가운데 · "left" 칸 왼쪽 바깥. 먼저 놓은 번호와 겹치면 오른쪽으로 비킨다
+      const left = badge === 'right' ? box.right - 18 : badge === 'above' ? box.left + box.width / 2 - 12 : badge === 'left' ? box.left - 30 : box.left - 10;
+      let x = Math.min(Math.max(left, 4), innerWidth - 28), y = Math.min(Math.max(badge === 'above' ? box.top - 22 : badge === 'left' ? box.top + box.height / 2 - 12 : box.top - 10, 4), innerHeight - 28);
       while (placed.some(([px, py]) => Math.abs(px - x) < 26 && Math.abs(py - y) < 26)) x += 28;
       if (x > innerWidth - 24) { missing.push(n + ' 번호 자리가 화면 밖'); continue; }
       placed.push([x, y]);
@@ -177,7 +184,7 @@ async function screenshot(send) {
 async function captureScreen(server, flow, name, spec) {
   const chrome = await openChrome()
   try {
-    const { network, errors } = await preparePage(chrome)
+    const { network, errors } = await preparePage(chrome, spec)
     debug('크롬 준비', server.url)
     await chrome.send('Page.navigate', { url: server.url })
     await waitFor(chrome.send, '#map canvas', 30000)
@@ -235,7 +242,7 @@ async function captureFlowSheet(flowSpec, shots) {
 // ---- 흐름 문서의 '화면 기획' 칸(<!-- screens:start --> ~ <!-- screens:end -->) — 설명 원본은 화면마다 JSON, 문서는 그것으로 다시 쓴다 ----
 function screensMarkdown(flow, flowSpec, specs) {
   const lines = ['<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->', '## 화면 기획', '',
-    `흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(${FIXED_NOW.slice(0, 10)} 월 07:30 · 로그인한 사람 · 실시간 열차 없음).`, '',
+    `흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(${FIXED_NOW.slice(0, 10)} 월 07:30 · 지도 위 실시간 열차 없음).`, '',
     `![${flowSpec.title}](screens/${flow}/flow.png)`, '']
   screenOrder(flowSpec).forEach((name, index) => {
     const spec = specs[name]

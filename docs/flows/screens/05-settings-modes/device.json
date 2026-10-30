@@ -1,0 +1,31 @@
+{
+  "title": "성능 · 배터리",
+  "after": "menu",
+  "summary": "둘 다 이 기기에 저장한다.",
+  "steps": [
+    {
+      "tap": "[data-menu-page=menuDevice]"
+    },
+    {
+      "wait": "#menuDevice:not([hidden]) #togglePrebuild"
+    },
+    {
+      "sleep": 500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#togglePrebuild",
+      "what": "건물 미리 짓기",
+      "tap": "켜면 바로 한 번 짓는다",
+      "edge": "처음 값은 휴대폰 끔 · 컴퓨터 켬"
+    },
+    {
+      "n": 2,
+      "at": "#toggleSaver",
+      "what": "절전",
+      "tap": "움직임을 1초 20번으로"
+    }
+  ]
+}

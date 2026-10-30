@@ -1,0 +1,65 @@
+{
+  "title": "경로 결과",
+  "summary": "입력 칸이 요약 줄로 접히고, 첫 카드가 펼쳐져 지도에 그려진다.",
+  "steps": [
+    {
+      "tap": "#routeButton"
+    },
+    {
+      "wait": "#jTo"
+    },
+    {
+      "type": [
+        "#jFrom",
+        "서울역"
+      ]
+    },
+    {
+      "wait": "#jFromList:not([hidden]) li button"
+    },
+    {
+      "tap": "#jFromList li:first-child button"
+    },
+    {
+      "type": [
+        "#jTo",
+        "강남역"
+      ]
+    },
+    {
+      "wait": "#jToList:not([hidden]) li button"
+    },
+    {
+      "tap": "#jToList li:first-child button"
+    },
+    {
+      "wait": ".jp.on"
+    },
+    {
+      "sleep": 1500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#jSum",
+      "badge": "right",
+      "what": "요약 줄 — 출발 · 도착 · 시각 · 「수정」",
+      "tap": "입력 칸으로 돌아간다"
+    },
+    {
+      "n": 2,
+      "at": ".jkinds",
+      "what": "종류 탭 — 전체 · 지하철 · 버스 · 지하철+버스",
+      "tap": "받은 길을 나눠 보여 준다",
+      "edge": "경로 종류가 둘 이상일 때만 · 고른 카드가 숨으면 첫 보이는 카드로"
+    },
+    {
+      "n": 3,
+      "at": ".jp.on",
+      "what": "펼친 경로 카드 — 단계 목록",
+      "tap": "다시 누르면 시트가 닫히고 경로는 지도에 남는다. 다른 카드를 누르면 그 카드가 펼쳐지고 지도의 길도 바뀐다",
+      "edge": "경로 없음 「경로를 찾지 못했어요…」 · 연결 실패 「연결이 불안정해요…」 + 「다시 찾기」"
+    }
+  ]
+}

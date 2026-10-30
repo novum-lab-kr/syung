@@ -1,0 +1,23 @@
+{
+  "title": "05 설정 · 지도 모드 — 흐름 한 장",
+  "rows": [
+    {
+      "screens": [
+        "menu",
+        "modes"
+      ],
+      "taps": [
+        "도시 모드"
+      ]
+    },
+    {
+      "screens": [
+        "menu",
+        "device"
+      ],
+      "taps": [
+        "성능 · 배터리"
+      ]
+    }
+  ]
+}

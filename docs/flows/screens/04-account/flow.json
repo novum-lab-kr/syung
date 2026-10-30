@@ -1,0 +1,20 @@
+{
+  "title": "04 로그인 · 내 정보 — 흐름 한 장",
+  "rows": [
+    {
+      "screens": [
+        "login"
+      ],
+      "taps": []
+    },
+    {
+      "screens": [
+        "account",
+        "profile"
+      ],
+      "taps": [
+        "큰 그림 누르기"
+      ]
+    }
+  ]
+}

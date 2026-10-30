@@ -1,0 +1,50 @@
+{
+  "title": "설정 서랍 목록",
+  "summary": "메뉴 단추를 누르면 오른쪽에서 밀려 나온다. 늘 목록부터 보인다.",
+  "steps": [
+    {
+      "tap": "#settingsButton"
+    },
+    {
+      "wait": "#menuRoot:not([hidden]) .theme-seg"
+    },
+    {
+      "sleep": 500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": ".theme-seg",
+      "badge": "above",
+      "what": "테마 — 자동 · 라이트 · 다크",
+      "tap": "바로 적용하고 이 기기에 저장",
+      "edge": "자동은 5분마다 다시 판단"
+    },
+    {
+      "n": 2,
+      "at": "#accountRow",
+      "what": "내 정보 줄",
+      "tap": "내 정보(04)",
+      "edge": "로그인 안 됐으면 「로그인」 줄 · 로그인 방법이 없으면 회원 칸 전체 숨김"
+    },
+    {
+      "n": 3,
+      "at": "[data-menu-page=menuModes]",
+      "what": "도시 모드",
+      "tap": "모드 쪽"
+    },
+    {
+      "n": 4,
+      "at": "[data-menu-page=menuDevice]",
+      "what": "성능 · 배터리",
+      "tap": "기기 설정 쪽"
+    },
+    {
+      "n": 5,
+      "at": "[data-menu-page=menuSources]",
+      "what": "데이터 출처",
+      "tap": "출처 목록(글만 있는 쪽)"
+    }
+  ]
+}

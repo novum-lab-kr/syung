@@ -41,7 +41,7 @@ function ScreenSpecs({ flow, doc }:{ flow:string; doc:string }) {
   return (
     <article class="flow-doc spec-doc">
       <h1>{flowSpec?.title ?? flow}</h1>
-      <p>폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 로그인한 사람 · 실시간 열차 없음). 글 · 흐름도는 <a href={`./?path=/story/${doc}`} target="_top">화면 흐름</a>.</p>
+      <p>폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음). 글 · 흐름도는 <a href={`./?path=/story/${doc}`} target="_top">화면 흐름</a>.</p>
       {flowSpec && <FlowSheet flowSpec={flowSpec} screens={screens} />}
       {screens.map(({ name, spec, url }, index) => (
         <section class="spec-screen" id={`screen-${name}`} key={name}>
@@ -67,4 +67,8 @@ function ScreenSpecs({ flow, doc }:{ flow:string; doc:string }) {
 // 흐름 하나 = 스토리 하나(찍은 화면이 없으면 촬영 명령을 보인다). doc 은 같은 흐름의 '화면 흐름' 스토리 주소
 const page = (flow:string, doc:string, name:string):StoryObj => ({ name, render: () => <ScreenSpecs flow={flow} doc={doc} /> });
 
+export const flow01 = page('01-map-search-station', '화면-흐름--flow-01', '01 지도 · 역 검색');
+export const flow02 = page('02-journey', '화면-흐름--flow-02', '02 길찾기');
 export const flow03 = page('03-tickets', '화면-흐름--flow-03', '03 승차권');
+export const flow04 = page('04-account', '화면-흐름--flow-04', '04 로그인 · 내 정보');
+export const flow05 = page('05-settings-modes', '화면-흐름--flow-05', '05 설정 · 지도 모드');
