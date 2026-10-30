@@ -10,8 +10,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "dev": "node tools/dev.mjs",
     "storybook": "storybook dev -p 6006 --no-open",
-    "build-storybook": "storybook build -o dist/storybook --quiet",
-    "flows:capture": "node tools/flows/capture.mjs"
+    "build-storybook": "storybook build -o dist/storybook --quiet"
   },
   "devDependencies": {
     "@storybook/preact-vite": "10.6.5",

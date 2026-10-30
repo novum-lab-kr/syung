@@ -22,8 +22,7 @@
 
 ## 화면 기획(번호 설명)
 스토리북 **화면 기획** 이 흐름마다 흐름 한 장과 화면별 번호 설명을 보인다. 설명 원본은 `screens/<흐름>/<화면>.json` 의 `marks`(`at` 선택자 · 무엇 · 누르면 · 예외).
-- **조립 화면**(03 · 04): 디자인 시스템 컴포넌트 + 고정 자료(`tools/flows/fixtures/`)로 그린다 — `.storybook/assembled.tsx`. 번호를 못 찾으면 화면 아래에 빨간 줄로 알린다
-- **캡처**(01 · 02 · 05 — 부품이 컴포넌트가 되면 조립으로 옮긴다): `node tools/flows/capture.mjs <흐름>` 이 찍은 PNG
+- **조립 화면**(모든 흐름): 디자인 시스템 컴포넌트 + 고정 자료(`tools/flows/fixtures/`)로 그린다 — `.storybook/assembled.tsx`. 번호를 못 찾으면 화면 아래에 빨간 줄로 알린다
 
 ## 흐름도 표기
 ```mermaid

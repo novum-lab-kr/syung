@@ -1,44 +1,6 @@
 {
   "title": "경로 결과",
   "summary": "입력 칸이 요약 줄로 접히고, 첫 카드가 펼쳐져 지도에 그려진다.",
-  "steps": [
-    {
-      "tap": "#routeButton"
-    },
-    {
-      "wait": "#jTo"
-    },
-    {
-      "type": [
-        "#jFrom",
-        "서울역"
-      ]
-    },
-    {
-      "wait": "#jFromList:not([hidden]) li button"
-    },
-    {
-      "tap": "#jFromList li:first-child button"
-    },
-    {
-      "type": [
-        "#jTo",
-        "강남역"
-      ]
-    },
-    {
-      "wait": "#jToList:not([hidden]) li button"
-    },
-    {
-      "tap": "#jToList li:first-child button"
-    },
-    {
-      "wait": ".jp.on"
-    },
-    {
-      "sleep": 1500
-    }
-  ],
   "marks": [
     {
       "n": 1,

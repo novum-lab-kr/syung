@@ -1,17 +1,6 @@
 {
   "title": "역 찾기",
   "summary": "끝의 「역」은 떼고 비교한다. 같은 이름 → 앞이 같은 이름 → 짧은 이름 차례로 8개까지.",
-  "steps": [
-    {
-      "type": [
-        "#search",
-        "강남"
-      ]
-    },
-    {
-      "wait": "#searchList:not([hidden]) li"
-    }
-  ],
   "marks": [
     {
       "n": 1,
