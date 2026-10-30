@@ -2,20 +2,20 @@
 // 화면 조각(Preact)이라 그리기만 한다 — 상태 · 셈 · 찾기 요청 · 지도 표시는 lib/journey-ui.mts(JourneyView · JourneyActions), 시트 껍데기는 ui/sheet.mts.
 // 표시(DOM 모양 · class · id · 문구 · aria)는 옛 HTML 글자와 같다: 스타일(syung.css)과 시트의 '.journey 가 있나' 검사가 그대로 맞는다.
 // 출발 · 도착 입력칸은 사용자가 치는 칸이라 처음 값(defaultValue)만 준다 — 값 바꾸기는 journey-ui 가 옛것처럼 .value 로.
-import { Component, render } from 'preact';
+// 경로 카드 · 단계 목록 · 칩 · 세그먼트 탭 · 뼈대 카드는 기초 컴포넌트(components/ — 스토리북에 같은 모양)를 쓴다
+import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
-import { ALT_SHOWN } from '../lib/journey-ui.mts';
-import type { AlightChipView, BusChipView, JourneyActions, JourneyResultView, JourneyView, Place, PlaceListView, PlanView, StepHold, StepView, TrackSegView } from '../lib/journey-ui.mts';
+import type { JourneyActions, JourneyResultView, JourneyView, Place, PlaceListView, StepHold } from '../lib/journey-ui.mts';
+import { RouteCard, RouteLoading } from '../components/route_card.tsx';
+import { Segmented } from '../components/segmented.tsx';
 
 const PIN = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>;
 const SWAP = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4"/></svg>;
-const WALK = <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.2 7.6 7 9.4V13h2v-2.4l1.3-.7-1.6 8.1H11l1-4.3 2 2V21h2v-6.2l-2.1-2.1.6-3.1c1 1.3 2.5 2.1 4.2 2.2v-2c-1.4-.1-2.5-.9-3.1-2l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.6.1-.9.2z"/></svg>;
 const CHEV = <svg class="jw-chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>;
 const UP = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>;
 const DOWN = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>;
 const CLOCK = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>;
 const EDIT = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>;
-const BUS = <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>;
 
 // 장소 찾기 목록: 고를 곳들, 또는 빈 글자 한 줄
 function PlaceList({ id, label, list, onPick }:{ id:string; label:string; list:PlaceListView; onPick:(place:Place)=>void }) {
@@ -39,10 +39,7 @@ function When({ view, actions }:{ view:JourneyView; actions:JourneyActions }) {
     <button type="button" class={view.whenAt ? 'jw-row set' : 'jw-row'} id="jWhenRow" aria-expanded={view.whenOpen} aria-controls="jWhenPanel" onClick={actions.whenRow}>{CLOCK}<span id="jWhenText">{view.whenText}</span>{CHEV}</button>
     <div class="jw-panel" id="jWhenPanel" hidden={!view.whenOpen}>
       <div class="jw-head"><b>출발 시각</b><button type="button" class="jw-now" id="jWhenNow" onClick={actions.whenNow}>지금으로</button></div>
-      <div class="segmented jw-day" role="group" aria-label="날짜">
-        <button type="button" data-d="0" aria-pressed={!(draft?.tomorrow ?? false)} onClick={() => actions.day(0)}>오늘</button>
-        <button type="button" data-d="1" aria-pressed={draft?.tomorrow ?? false} onClick={() => actions.day(1)}>내일</button>
-      </div>
+      <Segmented label="날짜" class="jw-day" attr="d" items={[{ id: '0', name: '오늘', pressed: !(draft?.tomorrow ?? false) }, { id: '1', name: '내일', pressed: draft?.tomorrow ?? false }]} onPick={day => actions.day(Number(day))} />
       <div class="jw-clock" aria-live="polite">
         <div class="jw-col"><StepButton unit="h" step={1} label="1시간 늦게" off={off('h1')} hold={actions.hold.h1!} icon={UP} /><output id="jWhenH">{draft?.hours ?? '00'}</output><StepButton unit="h" step={-1} label="1시간 이르게" off={off('h-1')} hold={actions.hold['h-1']!} icon={DOWN} /></div>
         <span class="jw-colon" aria-hidden="true">:</span>
@@ -53,77 +50,13 @@ function When({ view, actions }:{ view:JourneyView; actions:JourneyActions }) {
   </div>;
 }
 
-// 경로 띠(승차권 · 아래 막대의 HTML 글자 routeTrack 과 같은 그림)
-function Track({ segs }:{ segs:TrackSegView[] }) {
-  return <div class="jtrack" aria-hidden="true">{segs.map(seg => seg.k !== 'ride'
-    ? <i class={`jseg ${seg.k}`} style={`flex:${seg.flex} 1 0`}></i>
-    : <i class={seg.bus ? 'jseg ride bus' : 'jseg ride'} style={`flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}`}>{seg.icon && BUS}{seg.label}</i>)}</div>;
-}
-
-// 탈 수 있는 버스 칩들: 고른 버스 + 같은 구간 다른 버스. 앞의 몇 대만 보이고 '외 N대' 를 누르면 다 펼친다.
-// 옆 정류장에서 타는 칩('옆 3분')을 누르면 그 정류장 이름 · 번호를 아래에 보인다. 누름이 카드로 새지 않게 막는다(카드를 누르면 시트가 닫힌다)
-class BusChips extends Component<{ chips:BusChipView[] }, { all:boolean; tapped:string | null }> {
-  state = { all: false, tapped: null as string | null };
-  render({ chips }:{ chips:BusChipView[] }) {
-    const shown = this.state.all ? chips : chips.slice(0, 1 + ALT_SHOWN), hidden = chips.length - shown.length;
-    const note = chips.find(chip => chip.route === this.state.tapped)?.detail;
-    return <>
-      <span class="js-chips">{shown.map(chip => chip.detail === null
-        ? <span class="js-chip" style={`--c:${chip.color};--t:${chip.ink}`}>{BUS}{chip.route}</span>
-        : <button type="button" class="js-chip side" style={`--c:${chip.color};--t:${chip.ink}`} aria-expanded={this.state.tapped === chip.route} onClick={event => { event.stopPropagation(); this.setState({ tapped: this.state.tapped === chip.route ? null : chip.route }); }}>{BUS}{chip.route}<small>{chip.side}</small></button>)}
-        {hidden > 0 && <button type="button" class="jp-more" onClick={event => { event.stopPropagation(); this.setState({ all: true }); }}>{`외 ${hidden}대`}</button>}</span>
-      {note != null && <small class="js-side">{note}</small>}
-    </>;
-  }
-}
-
-// 하차에서: 다른 버스가 다른 정류장에 내리면 그 칩에 정류장 이름을 작게
-function AlightChips({ chips }:{ chips:AlightChipView[] }) {
-  return <small class="js-chips">{chips.map(chip => <span class="js-alt"><span class="js-chip" style={`--c:${chip.color};--t:${chip.ink}`}>{BUS}{chip.route}</span>{chip.where}</span>)}</small>;
-}
-
-function Step({ step, timed }:{ step:StepView; timed:boolean }) {
-  if (step.kind === 'place') return <li class={`js node ${step.at}`} style={`--c:${step.at === 'start' ? 'var(--syung)' : 'var(--ink)'}`}>{timed && <span class="js-t">{step.time}</span>}<span class="js-dot"></span><div class="js-b"><b>{step.name}</b></div></li>;
-  if (step.kind === 'walk') return <li class="js walk">{timed && <span class="js-t"></span>}<span class="js-rail"></span><div class="js-b"><small>{WALK}{step.text}<span class="js-d">{step.detail}</span></small></div></li>;
-  if (step.kind === 'board') return <li class="js node board" style={`--c:${step.color}`}>{timed && <span class="js-t">{step.time}</span>}<span class="js-dot"></span><div class="js-b"><b>{step.name}</b></div></li>;
-  if (step.kind === 'alight') return <li class="js node alight" style={`--c:${step.color}`}>{timed && <span class="js-t">{step.time}</span>}<span class="js-dot"></span><div class="js-b"><b>{step.name}</b>{step.chips.length > 0 && <AlightChips chips={step.chips} />}</div></li>;
-  return <li class="js ride" style={`--c:${step.color};--t:${step.ink}`}>{timed && <span class="js-t"></span>}<span class="js-rail"></span><div class="js-b">
-    <p>{step.bus ? <BusChips chips={step.chips} /> : <span class="js-chip">{step.chip}</span>}{step.toward !== null && <span class="js-toward">{step.toward}</span>}</p>
-    {(step.info !== '' || step.live !== null) && <small>{step.info}{step.live !== null && <span class="js-live">{step.live}</span>}</small>}</div></li>;
-}
-
-// 경로의 단계 목록(출발 → 걷기 · 승차 · 하차 → 도착) — 길찾기 결과 카드와 승차권(경로 고르기 · 뒷면)이 같이 쓴다. 시각이 있는 단계가 없으면 시각 칸을 뺀다
-export function StepList({ steps, className }:{ steps:StepView[]; className:string }) {
-  const timed = steps.some(step => 'time' in step && step.time !== null);
-  return <ol class={timed ? className : `${className} notime`}>{steps.map(step => <Step step={step} timed={timed} />)}</ol>;
-}
-
-// 경로 카드는 누르는 칸(옛 HTML 그대로 article role=button — Preact 타입은 article 에 button 역할을 두지 않아 펼쳐 넣는다)
-const CARD_ROLE:Record<string, string> = {role: 'button'};
-
-function Card({ plan, index, on, hidden, actions }:{ plan:PlanView; index:number; on:boolean; hidden:boolean; actions:JourneyActions }) {
-  const duration = plan.duration;
-  return <article class={on ? 'jp on' : 'jp'} data-i={String(index)} tabIndex={0} {...CARD_ROLE} aria-label={plan.aria} aria-expanded={on} hidden={hidden}
-    onClick={() => actions.card(index)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.currentTarget.click(); } }}>
-    <div class="jp-top"><strong class="jp-min">{duration.hours !== null ? <>{`${duration.hours}`}<small>시간</small>{` ${duration.minutes}`}<small>분</small></> : <>{`${duration.minutes}`}<small>분</small></>}</strong><span class="jp-arr">{plan.arrive}</span>{plan.tag !== null && <span class="jp-tag">{plan.tag}</span>}</div>
-    <Track segs={plan.track} />
-    {on && <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>}   {/* 설명 줄은 펼쳤을 때만 */}
-    <StepList steps={plan.steps} className="jsteps" />
-  </article>;
-}
-
-// 길을 찾는 동안의 뼈대 카드 3줄(첫 줄에 달리는 열차) — 승차권 경로 선택(user/tickets_view.tsx)도 같이 쓴다. 상태 글자는 부르는 쪽이 따로 둔다
-export function RouteLoading() {
-  return <div class="jload" aria-hidden="true">{[0, 1, 2].map(row => <div class="jsk"><i class="jsk-min"></i><div class="jsk-track">{row === 0 && <span class="jsk-run"><i></i></span>}</div><i class="jsk-meta"></i></div>)}</div>;
-}
-
 function Result({ result, actions }:{ result:JourneyResultView; actions:JourneyActions }) {
   if (result.kind === 'none') return null;
   if (result.kind === 'loading') return <RouteLoading />;
   if (result.kind === 'failed') return <div class="jerr"><b>경로를 찾지 못했어요</b><p>{result.message}</p><button type="button" class="jerr-retry" onClick={actions.retry}>다시 찾기</button></div>;
   return <>
-    {result.tabs && <div class="segmented jkinds" role="group" aria-label="경로 종류">{result.tabs.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => actions.tab(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>}
-    <div class="jplans">{result.cards.map((card, index) => <Card plan={card.plan} index={index} on={card.on} hidden={card.hidden} actions={actions} />)}</div>
+    {result.tabs && <Segmented label="경로 종류" class="jkinds" attr="k" items={result.tabs.map(tab => ({ id: tab.kind, name: tab.name, count: tab.count, pressed: tab.pressed }))} onPick={kind => actions.tab(kind)} />}
+    <div class="jplans">{result.cards.map((card, index) => <RouteCard plan={card.plan} index={index} on={card.on} hidden={card.hidden} onPick={pick => actions.card(pick)} />)}</div>
     <p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>
   </>;
 }

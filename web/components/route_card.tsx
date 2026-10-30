@@ -1,5 +1,5 @@
 // 기초 컴포넌트: 경로 카드(걸리는 시간 · 도착 시각 · 꼬리표 · 경로 띠 · 펼치면 설명 줄과 단계 목록)와 찾는 동안의 뼈대 카드.
-// 지금 길찾기 시트(ui/journey_sheet.tsx 의 Card · Track · RouteLoading)와 같은 DOM 을 그린다 — 기존 화면은 2b 에서 이것을 쓰게 바꾼다.
+// 길찾기 시트(ui/journey_sheet.tsx)가 쓰고, 뼈대 카드는 승차권 경로 고르기(user/tickets_view.tsx)도 쓴다(옛 DOM 그대로).
 // props 만 받는다: 누름은 onPick(번호)로 알린다. 그릴 거리(PlanView)는 lib/journey-ui.mts 가 만든다
 import type { PlanView, TrackSegView } from '../lib/journey-ui.mts';
 import { Chip } from './chip.tsx';

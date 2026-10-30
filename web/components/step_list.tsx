@@ -1,5 +1,5 @@
 // 기초 컴포넌트: 경로의 단계 목록(출발 → 걷기 · 승차 · 하차 → 도착) — 세로선(.js-rail · 걷기와 환승은 회색 점선)과 동그라미(.js-dot), #122 규칙.
-// 지금 길찾기 시트(ui/journey_sheet.tsx 의 StepList)와 같은 DOM 을 그린다 — 기존 화면은 2b 에서 이것을 쓰게 바꾼다. 그릴 거리(StepView)는 lib/journey-ui.mts 의 routeSteps 가 만든다
+// 길찾기 시트의 경로 카드 · 승차권(경로 고르기 · 뒷면)이 같이 쓴다(옛 DOM 그대로). 그릴 거리(StepView)는 lib/journey-ui.mts 의 routeSteps 가 만든다
 import { Component } from 'preact';
 import { ALT_SHOWN } from '../lib/journey-ui.mts';
 import type { AlightChipView, BusChipView, StepView } from '../lib/journey-ui.mts';
