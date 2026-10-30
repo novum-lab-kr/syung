@@ -1,0 +1,46 @@
+{
+  "title": "프로필 수정",
+  "after": "account",
+  "summary": "서랍 위에 뜨는 팝업. 저장은 바뀐 것만 사진 → 닉네임 차례로 보낸다.",
+  "steps": [
+    {
+      "tap": "#accountAvatarBig"
+    },
+    {
+      "wait": "#profileSheet:not([hidden]) #nameInput"
+    },
+    {
+      "sleep": 500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#photoPick",
+      "what": "사진 고르기",
+      "tap": "가운데를 정사각형으로 잘라 256 크기로 줄인다",
+      "edge": "못 읽으면 「이 사진은 열 수 없어요. 다른 사진을 골라 주세요.」 · 줄이는 동안 저장이 막힌다"
+    },
+    {
+      "n": 2,
+      "at": "#avatarChoices",
+      "badge": "right",
+      "what": "캐릭터 고르기"
+    },
+    {
+      "n": 3,
+      "at": "#nameInput",
+      "badge": "right",
+      "what": "닉네임 칸",
+      "edge": "길이가 틀리면 「닉네임은 1~N자예요」"
+    },
+    {
+      "n": 4,
+      "at": "#profileSave",
+      "badge": "above",
+      "what": "저장",
+      "tap": "바뀐 것을 보내고 내 정보로",
+      "edge": "실패하면 팝업 안 안내 · 사진이 실패하면 닉네임은 보내지 않는다"
+    }
+  ]
+}

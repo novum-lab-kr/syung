@@ -1,0 +1,45 @@
+{
+  "title": "도시 모드",
+  "after": "menu",
+  "summary": "스위치 여섯, 한 번에 하나만. 모두 끄면 기본 지도.",
+  "steps": [
+    {
+      "tap": "[data-menu-page=menuModes]"
+    },
+    {
+      "wait": "#menuModes:not([hidden]) #toggleSimcity"
+    },
+    {
+      "sleep": 500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#menuBack",
+      "badge": "right",
+      "what": "‹ 목록으로",
+      "tap": "목록으로 돌아가 누른 항목에 초점"
+    },
+    {
+      "n": 2,
+      "at": "#toggleSimcity",
+      "what": "모드 스위치",
+      "tap": "켜면 그 모드로 바꾼다. 받는 중 다시 누르면 요청 취소",
+      "edge": "자료를 받는 동안 가운데 알림 「…로 바꾸는 중」 · 도시 모드는 「건물 짓는 중 n/m」(20초까지) · 받기 실패면 스위치만 돌아간다(안내 없음)"
+    },
+    {
+      "n": 3,
+      "at": "#toggleStarcraft",
+      "what": "스타크래프트",
+      "tap": "켜면 아래에 종족 줄(테란 · 저그 · 프로토스)",
+      "edge": "세계 여행은 나라 줄, 롤러코스터는 열차 속도 줄이 열린다"
+    },
+    {
+      "n": 4,
+      "at": "#cityModeHelp",
+      "badge": "right",
+      "what": "안내 — 「한 번에 하나만 켤 수 있어요. 모두 끄면 기본 지도예요.」"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+ "daysTogether": 42,
+ "tickets": 2,
+ "weeklyRides": 10,
+ "recent": {
+  "days": 7,
+  "openDays": 6,
+  "route": 5,
+  "ticket": 5
+ },
+ "daily": [
+  {
+   "day": "2026-10-27",
+   "open": 1,
+   "route": 1,
+   "ticket": 1
+  },
+  {
+   "day": "2026-10-28",
+   "open": 1,
+   "route": 0,
+   "ticket": 0
+  },
+  {
+   "day": "2026-10-29",
+   "open": 1,
+   "route": 2,
+   "ticket": 1
+  },
+  {
+   "day": "2026-10-30",
+   "open": 0,
+   "route": 0,
+   "ticket": 0
+  },
+  {
+   "day": "2026-10-31",
+   "open": 1,
+   "route": 1,
+   "ticket": 2
+  },
+  {
+   "day": "2026-11-01",
+   "open": 1,
+   "route": 0,
+   "ticket": 1
+  },
+  {
+   "day": "2026-11-02",
+   "open": 1,
+   "route": 1,
+   "ticket": 0
+  }
+ ],
+ "fare": {
+  "month": "2026-11",
+  "total": 62000,
+  "skipped": 0,
+  "reasons": {},
+  "tickets": [
+   {
+    "name": "출근",
+    "fare": 1550,
+    "rides": 40,
+    "monthly": 62000
+   }
+  ]
+ }
+}

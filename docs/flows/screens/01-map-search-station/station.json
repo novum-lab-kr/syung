@@ -1,0 +1,42 @@
+{
+  "title": "역 시트",
+  "after": "search",
+  "summary": "0.7초 안에 도착 정보가 오면 바로 이 모양으로 연다. 받은 자료로 15초마다 다시 그린다(다시 받지는 않는다).",
+  "steps": [
+    {
+      "tap": "#searchList li:first-child"
+    },
+    {
+      "wait": ".station-sheet .arrs:not(.st-sk) .arr"
+    },
+    {
+      "sleep": 1500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": ".station-sheet .tp-line",
+      "what": "이 역의 노선 칩"
+    },
+    {
+      "n": 2,
+      "at": ".station-sheet .tp-now",
+      "badge": "right",
+      "what": "상태 줄 — 「서울시 실시간 도착정보 · HH:MM 기준」",
+      "edge": "받는 중 「도착 정보 불러오는 중…」 + 뼈대 줄 · 실패 「도착 정보를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.」(다시 받기 단추 없음)"
+    },
+    {
+      "n": 3,
+      "at": ".st-journey",
+      "what": "「여기서 출발」 · 「여기로 도착」",
+      "tap": "그 역을 한쪽 끝으로 채워 길찾기(02)를 연다"
+    },
+    {
+      "n": 4,
+      "at": ".station-sheet .arrs",
+      "what": "곧 오는 열차 — 노선 · 방향마다 두 대",
+      "edge": "열차가 없으면 「지금 도착 예정 열차 정보가 없어요.」"
+    }
+  ]
+}

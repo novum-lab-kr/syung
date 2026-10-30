@@ -1,0 +1,33 @@
+{
+  "title": "역 찾기",
+  "summary": "끝의 「역」은 떼고 비교한다. 같은 이름 → 앞이 같은 이름 → 짧은 이름 차례로 8개까지.",
+  "steps": [
+    {
+      "type": [
+        "#search",
+        "강남"
+      ]
+    },
+    {
+      "wait": "#searchList:not([hidden]) li"
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": "#search",
+      "badge": "right",
+      "what": "검색 칸",
+      "tap": "Esc 면 목록을 닫는다. ↑ ↓ 로 고르고 Enter",
+      "edge": "한글 조합 중 Enter 는 무시"
+    },
+    {
+      "n": 2,
+      "at": "#searchList li:first-child",
+      "badge": "right",
+      "what": "맞는 역 한 줄 — 역 이름 · 노선",
+      "tap": "그 역으로 날아가며(줌 15 이상) 역 시트를 연다",
+      "edge": "결과가 없으면 「찾는 역이 없어요」"
+    }
+  ]
+}

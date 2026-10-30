@@ -1,0 +1,32 @@
+{
+  "title": "지도에서 보기",
+  "after": "result",
+  "summary": "시트를 닫아도 경로는 지도에 남고 아래 막대가 뜬다.",
+  "steps": [
+    {
+      "key": "Escape"
+    },
+    {
+      "wait": ".jbar:not([hidden]) .jbar-open"
+    },
+    {
+      "sleep": 1500
+    }
+  ],
+  "marks": [
+    {
+      "n": 1,
+      "at": ".jbar-open",
+      "what": "아래 막대 — 걸리는 시간 · 도착 시각 · 노선 띠",
+      "tap": "경로 결과를 다시 연다",
+      "edge": "승차권 경로가 지도를 차지하면 막대 · 경로를 놓는다"
+    },
+    {
+      "n": 2,
+      "at": ".jbar-x",
+      "badge": "above",
+      "what": "막대 ✕",
+      "tap": "지도에서 경로를 지운다"
+    }
+  ]
+}

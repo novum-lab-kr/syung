@@ -1,0 +1,72 @@
+{
+ "ok": true,
+ "fetchedAt": "2026-11-02T07:30:00+09:00",
+ "arrivals": [
+  {
+   "line": "2호선",
+   "direction": "내선",
+   "heading": "성수행 - 역삼방면",
+   "destination": "성수",
+   "eta": 150,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  },
+  {
+   "line": "2호선",
+   "direction": "내선",
+   "heading": "성수행 - 역삼방면",
+   "destination": "성수",
+   "eta": 420,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  },
+  {
+   "line": "2호선",
+   "direction": "외선",
+   "heading": "신도림행 - 교대방면",
+   "destination": "신도림",
+   "eta": 40,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  },
+  {
+   "line": "2호선",
+   "direction": "외선",
+   "heading": "신도림행 - 교대방면",
+   "destination": "신도림",
+   "eta": 330,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  },
+  {
+   "line": "신분당선",
+   "direction": "상행",
+   "heading": "신사행 - 신논현방면",
+   "destination": "신사",
+   "eta": 260,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  },
+  {
+   "line": "신분당선",
+   "direction": "하행",
+   "heading": "광교행 - 양재방면",
+   "destination": "광교",
+   "eta": 510,
+   "message": "",
+   "express": false,
+   "last": false,
+   "receivedAt": "2026-11-02 07:30:00"
+  }
+ ]
+}
