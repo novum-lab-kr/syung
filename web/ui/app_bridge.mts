@@ -36,7 +36,9 @@ export interface BridgeFacts { hasStation(id:number):boolean; hasLine(line:strin
 
 const isRecord = (value:unknown):value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNumber = (value:unknown):value is number => typeof value === 'number' && Number.isFinite(value);
-const isPosition = (value:unknown):value is Position => Array.isArray(value) && value.length >= 2 && isNumber(value[0]) && isNumber(value[1]);
+// [경도, 위도] — 유한수이고 경도 -180~180 · 위도 -90~90(틀린 좌표는 GeoJSON · 지도 맞추기를 깨뜨린다)
+const isPosition = (value:unknown):value is Position => Array.isArray(value) && value.length >= 2
+  && isNumber(value[0]) && value[0] >= -180 && value[0] <= 180 && isNumber(value[1]) && value[1] >= -90 && value[1] <= 90;
 const isPath = (value:unknown):value is Position[] => Array.isArray(value) && value.length >= 2 && value.every(isPosition);
 
 // 역 · 열차 → 앱에 보낼 칸(역 id 는 index.html stationData 의 id — /api/route 응답 legs[].stations 와 같은 번호)
@@ -51,13 +53,15 @@ export function trainInfo(plan:TrainPlan):TrainInfo {
   };
 }
 
-// 길찾기 구간 하나 검사 — 지도가 그릴 때 읽는 칸만(ui/journey.mts showRoute): 걷기 path(있으면) · 지하철 line · stations · 버스 path. 나머지 칸은 그대로 둔다(버스 층이 읽는다)
+// 길찾기 구간 하나 검사 — 지도가 그릴 때 읽는 칸만(ui/journey.mts showRoute): 걷기 path · 지하철 line · stations · path(있으면) · 버스 path. 나머지 칸은 그대로 둔다(버스 층이 읽는다)
+// 걷기 path 는 꼭 있어야 한다: showRoute 가 걷기 선 · 출발/도착 핀을 path 로 그린다(/api/route 는 걷기마다 늘 싣는다 — server/services/journey_graph.py walk_path)
 function legProblem(leg:unknown, index:number, facts:BridgeFacts):string|null {
   if (!isRecord(leg)) return `plan.legs[${index}] 가 객체가 아니다`;
-  if (leg.type === 'walk') return leg.path === undefined || isPath(leg.path) ? null : `plan.legs[${index}].path 는 [경도, 위도] 둘 이상`;
-  if (leg.type === 'bus') return isPath(leg.path) ? null : `plan.legs[${index}].path 는 [경도, 위도] 둘 이상`;
+  const pathProblem = `plan.legs[${index}].path 는 [경도, 위도](경도 -180~180 · 위도 -90~90) 둘 이상`;
+  if (leg.type === 'walk' || leg.type === 'bus') return isPath(leg.path) ? null : pathProblem;
   if (leg.type !== 'ride') return `plan.legs[${index}].type 은 walk · ride · bus`;
   if (typeof leg.line !== 'string' || !facts.hasLine(leg.line)) return `plan.legs[${index}].line 이 지도에 없는 노선`;
+  if (leg.path !== undefined && !isPath(leg.path)) return pathProblem;
   const stations = leg.stations;
   if (!Array.isArray(stations) || stations.length < 2) return `plan.legs[${index}].stations 는 역 id 둘 이상`;
   for (const id of stations) if (!isNumber(id) || !facts.hasStation(id)) return `plan.legs[${index}].stations 에 지도에 없는 역 id`;

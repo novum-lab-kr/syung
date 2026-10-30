@@ -86,6 +86,8 @@ export default function MapScreen() {
     routeRequest.current?.abort();
     const controller = new AbortController();
     routeRequest.current = controller;
+    // 앞 경로는 찾기 시작 때 지운다 — 다시 찾기가 실패해도 새 목적지 아래 옛 경로가 남거나 지도가 다시 뜰 때 되살아나지 않게
+    if (shownPlan.current) { shownPlan.current = null; send({ type: 'clearRoute' }); }
     setRoute({ status: 'loading' });
     findRoute(start, goal, controller.signal).then((result) => {
       if (controller.signal.aborted) return;

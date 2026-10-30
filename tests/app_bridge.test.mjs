@@ -55,6 +55,18 @@ test('앱 → 지도 메시지: 틀린 칸은 bad_field · 모르는 type 은 un
   assert.equal(code({type: 'showRoute', plan: {legs: [{...ride, stations: [1, 99]}]}}), 'bad_field');
   assert.equal(code({type: 'showRoute', plan: {legs: [{type: 'bus', path: [[1, 2]]}]}}), 'bad_field');
   assert.equal(code({type: 'showRoute', plan: {legs: [{type: 'boat'}]}}), 'bad_field');
+  // 걷기 path 는 필수 · 지하철 path 는 있으면 둘 이상 · 좌표는 범위 안의 유한수
+  assert.equal(code({type: 'showRoute', plan: {legs: [{type: 'walk'}, ride]}}), 'bad_field');
+  assert.equal(code({type: 'showRoute', plan: {legs: [{...walk, path: [[126.97, 37.56]]}]}}), 'bad_field');
+  assert.equal(code({type: 'showRoute', plan: {legs: [{...ride, path: []}]}}), 'bad_field');
+  assert.equal(code({type: 'showRoute', plan: {legs: [{...ride, path: [[126.97, 37.56]]}]}}), 'bad_field');
+  assert.equal(parseAppMessage({type: 'showRoute', plan: {legs: [{...ride, path: walk.path}]}}, facts).ok, true);
+  for (const point of [[181, 37.5], [-181, 37.5], [127, 91], [127, -91], [127, Infinity], [NaN, 37.5], ['127', 37.5]]) {
+    assert.equal(code({type: 'showRoute', plan: {legs: [{...walk, path: [walk.path[0], point]}]}}), 'bad_field', `walk ${point}`);
+    assert.equal(code({type: 'showRoute', plan: {legs: [{...bus, path: [point, bus.path[1]]}]}}), 'bad_field', `bus ${point}`);
+    assert.equal(code({type: 'showRoute', plan: {legs: [{...ride, path: [walk.path[0], point]}]}}), 'bad_field', `ride ${point}`);
+  }
+  assert.equal(parseAppMessage({type: 'showRoute', plan: {legs: [{type: 'walk', path: [[-180, -90], [180, 90]]}]}}, facts).ok, true);
   assert.equal(code({type: 'showRoute', plan: {legs: [walk]}, padding: {bottom: -1}}), 'bad_field');
   assert.equal(code({type: 'focusStation', id: 99}), 'bad_field');
   assert.equal(code({type: 'focusStation', id: '2'}), 'bad_field');
