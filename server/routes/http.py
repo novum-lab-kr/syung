@@ -84,6 +84,18 @@ PUBLIC_GET = ("/live", "/route", "/place", "/api/weather", "/bus/live", "/api/bu
 ADMIN = "/admin"
 ADMIN_GET: dict[str, Callable[[Services, str | None, Query], tuple[dict[str, Any], int]]] = {"/debug/recent": debug_routes.recent, "/debug/bus-route": debug_routes.bus_route}
 ADMIN_POST = ("/debug/ride", "/debug/shot")
+LOCAL_PROXY_PEERS = ("127.0.0.1", "::1")
+
+
+def client_address(headers: Message, peer: str) -> str:
+    """요청한 쪽 주소(로그인 틀린 횟수 한도의 열쇠). 바로 붙은 상대(peer)가 같은 기계의 프록시(Caddy)일 때만
+    X-Forwarded-For 첫 값을 믿는다 — 서버를 127.0.0.1 밖에 열었을 때 바깥에서 헤더를 꾸며 한도를 피하지 못하게.
+    (Caddy 는 trusted_proxies 가 없으면 들어온 X-Forwarded-For 를 버리고 자기가 본 주소로 쓴다.)"""
+    if peer in LOCAL_PROXY_PEERS:
+        forwarded = (headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return peer
 
 
 def _body_size(headers: Message) -> int:
@@ -137,7 +149,7 @@ def make_handler(services: Services, response_seconds: float) -> type[BaseHTTPRe
                     self.close_connection = True
                     return None
                 return self.rfile.read(size)
-            address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+            address = client_address(self.headers, self.client_address[0])
             # 위에서 회원 주소인 것을 봤다 — 회원 주소면 handle 은 늘 응답을 돌려준다
             self._write(cast("Response", member_routes.handle(services.members, method, self.path, self.headers, read_body, address)))
             return True
@@ -195,7 +207,7 @@ def make_handler(services: Services, response_seconds: float) -> type[BaseHTTPRe
                 self.close_connection = True
                 return self._send_json(api_error("too_large", "본문이 없거나 너무 커요"), 413)
             form = self.rfile.read(min(size, 4096))
-            address = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+            address = client_address(self.headers, self.client_address[0])
             self._write(owner_routes.login(services.auth, form, address))
 
         def _admin_post(self, path: str) -> None:
