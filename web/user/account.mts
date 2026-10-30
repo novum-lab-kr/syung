@@ -245,21 +245,52 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   function show() {
     item.hidden = false;
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
-    if (!me) { closeEdit(); accountView.set({statsShown: false, safeShown: false}); accountSeq++; return; }
+    if (!me) { closeEdit(false); accountView.set({statsShown: false, safeShown: false}); accountSeq++; return; }
     paintAvatar($('accountAvatar'), me.avatar);   // 메뉴 내 정보 줄
     $('accountItemName').textContent = me.name;
     accountView.set({me, marked: true});   // 내 정보 쪽: 큰 칸 · 이름 · 로그인 방법 · 고르기 눌림(로그아웃해도 마지막 그림은 그대로 — 옛 모양)
   }
 
-  // ---- 내 정보: 프로필 수정 — 사진/캐릭터 고르기 + 닉네임을 한 화면에서(그리기는 account_view.tsx) ----
+  // ---- 내 정보: 프로필 수정 — 레이어 팝업(#profileSheet) 안에서 사진/캐릭터 고르기 + 닉네임을 한 번에(그리기는 account_view.tsx) ----
+  // 껍데기는 로그인 팝업과 같다: 열림 애니메이션 · 뒤 어둡게 · ✕ · Esc · 바깥 누르면 닫힘 · 초점 가두기 · 닫히면 [프로필 수정] 으로 초점 복귀. 서랍은 그대로 두고 그 위에 뜬다
+  const profileSheet = $('profileSheet'), profileOpen = () => !profileSheet.hidden;
   let draftBlob:Blob | null = null;   // 새로 올릴 사진(저장을 눌러야 올라간다)
+  let editTurn = 0, choiceSeq = 0;   // editTurn: 편집을 열 때마다 · choiceSeq: 사진 · 캐릭터를 고를 때마다 — 늦게 끝난 사진 줄이기가 그 뒤의 선택을 덮지 않게
   function dropPreview() { const url = accountView.state.draft.preview; if (url) URL.revokeObjectURL(url); draftBlob = null; }
+  // 팝업 안 안내(토스트는 팝업 뒤에 가린다 — 팝업이 떠 있으면 팝업 안에, 아니면 평소 토스트)
+  function popSay(text:string, error = false) {
+    if (!profileOpen()) { toast(text, error); return; }
+    $('profileMsg').innerHTML = `<span class="acct-toast show${error ? ' is-error' : ''}"><span class="tt-speed" aria-hidden="true"><i></i><i></i></span><span>${esc(text)}</span></span>`;
+  }
   function openEdit() {
-    dropPreview();
-    accountView.set({editOpen: true, draft: {kind: 'keep'}, nameValue: me?.name || '', facesLoaded: true});   // 캐릭터 얼굴은 처음 열 때 받는다
+    dropPreview(); editTurn++; choiceSeq++;
+    $('profileMsg').replaceChildren();
+    accountView.set({draft: {kind: 'keep'}, converting: false, nameValue: me?.name || '', facesLoaded: true});   // 캐릭터 얼굴은 처음 열 때 받는다
+    profileSheet.hidden = false; void profileSheet.offsetWidth; profileSheet.classList.add('open');
     $<HTMLInputElement>('nameInput').focus({preventScroll: true});
   }
-  function closeEdit() { dropPreview(); accountView.set({editOpen: false, draft: {kind: 'keep'}}); }
+  function closeEdit(restoreFocus = true) {
+    editTurn++; choiceSeq++; dropPreview();
+    accountView.set({draft: {kind: 'keep'}, converting: false});
+    if (!profileOpen()) return;
+    profileSheet.classList.remove('open');
+    setTimeout(() => { if (!profileSheet.classList.contains('open')) profileSheet.hidden = true; }, 260);
+    if (restoreFocus) $('profileEdit').focus({preventScroll: true});
+  }
+  profileSheet.querySelector<HTMLElement>('.login-scrim')!.onclick = () => { if (!saving) closeEdit(); };
+  $('profileClose').onclick = () => { if (!saving) closeEdit(); };
+  profileSheet.addEventListener('click', e => e.stopPropagation());   // 서랍의 '바깥을 누르면 닫기'가 팝업 안 누름을 바깥으로 읽지 않게
+  window.addEventListener('keydown', e => {   // 팝업이 떠 있는 동안 Esc 는 팝업만 닫고, Tab 은 팝업 안에서만 돈다
+    if (!profileOpen()) return;
+    if (e.key === 'Escape') { e.stopImmediatePropagation(); if (!saving) closeEdit(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...profileSheet.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([type=file])')].filter(el => el.offsetParent);
+    if (!items.length) return;
+    const first = items[0]!, last = items[items.length - 1]!;
+    const inside = profileSheet.contains(document.activeElement);
+    if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); e.stopImmediatePropagation(); last.focus(); }
+    else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); e.stopImmediatePropagation(); first.focus(); }
+  }, true);
   let saving = false;
   function busy(on:boolean) {
     saving = on;
@@ -267,30 +298,43 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   }
   function pickCharacter(id:string) {
     const current = me?.avatar?.type === 'character' ? me.avatar.id : me?.avatar ? 'photo' : 'sprout';
-    dropPreview();
-    accountView.set({draft: id === current ? {kind: 'keep'} : {kind: 'character', id}});
+    choiceSeq++; dropPreview();   // 줄이는 중이던 사진은 버린다
+    accountView.set({converting: false, draft: id === current ? {kind: 'keep'} : {kind: 'character', id}});
   }
   async function photoChosen(file:File | undefined) {   // (고른 칸의 값은 그리기 쪽이 비운다 — 같은 사진을 다시 골라도 change 가 오게)
     if (!file) return;
+    const mine = ++choiceSeq, turn = editTurn;
+    accountView.set({converting: true});   // 줄이는 동안 [저장] 은 막는다
     let blob:Blob;
-    try { blob = await shrinkPhoto(file); } catch { toast('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.', true); return; }
+    try { blob = await shrinkPhoto(file); } catch {
+      if (mine === choiceSeq && turn === editTurn) { accountView.set({converting: false}); popSay('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.', true); }
+      return;
+    }
+    if (mine !== choiceSeq || turn !== editTurn) return;   // 그사이 다른 것을 골랐거나 닫았다 — 늦은 결과는 버린다
     dropPreview();
     draftBlob = blob;
-    accountView.set({draft: {kind: 'photo', preview: URL.createObjectURL(blob)}});
+    accountView.set({converting: false, draft: {kind: 'photo', preview: URL.createObjectURL(blob)}});
   }
   // 바뀐 것만 저장(사진 → 닉네임 순서). 사진이 실패하면 닉네임은 보내지 않고, 닉네임이 실패하면 사진은 이미 저장됐다고 알린다
   async function saveEdit() {
-    if (saving) return;
+    if (saving || accountView.state.converting) return;
     const name = accountView.state.nameValue.trim(), count = nameLength(name), draft = accountView.state.draft;
     const nameChanged = name !== me?.name, avatarChanged = draft.kind !== 'keep';
-    if (nameChanged && (count < 1 || count > NAME_MAX)) { toast(`닉네임은 1~${NAME_MAX}자예요`, true); $('nameInput').focus(); return; }
+    if (nameChanged && (count < 1 || count > NAME_MAX)) { popSay(`닉네임은 1~${NAME_MAX}자예요`, true); $('nameInput').focus(); return; }
     if (!nameChanged && !avatarChanged) { closeEdit(); return; }
     busy(true);
     let avatarSaved = false;
+    const turn = editTurn;
     try {
-      const fail = (r:Reply<Me & Changed>) => {   // 실패면 사람이 읽을 문구(401 은 로그인 풀림 처리 후 빈 글자)
-        if (r.status === 401) { me = null; show(); toast('로그인이 끝났어요. 다시 로그인해 주세요.', true); return ''; }
-        return r.body?.error?.message || '잠시 뒤 다시 해 주세요.';
+      // 실패 처리: 401 이면 로그인 풀림(팝업은 닫히고 평소 토스트) — 사진이 이미 저장됐으면 그 사실도 같이 알린다. 돌려주는 글은 팝업 안에 띄울 이유
+      const fail = (r:Reply<Me & Changed>, what:string) => {
+        if (r.status === 401) {
+          me = null; show();
+          toast(avatarSaved ? '프로필 사진은 바꿨어요. 닉네임은 다시 로그인한 뒤 바꿔 주세요.' : '로그인이 끝났어요. 다시 로그인해 주세요.', true);
+          return '';
+        }
+        const why = r.body?.error?.message || '잠시 뒤 다시 해 주세요.';
+        return avatarSaved ? `프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. ${why}` : `${what}을 바꾸지 못했어요. ${why}`;
       };
       if (avatarChanged) {
         const blob = draftBlob;
@@ -298,25 +342,24 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
           ? await fetch('./api/me/avatar', {method: 'PUT', credentials: 'same-origin', headers: {...CHANGE, 'Content-Type': blob.type}, body: blob})
             .then(async res => ({status: res.status, ok: res.ok, body: res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => null) : null}) as Reply<Me & Changed>)
           : await (draft.id === 'sprout' ? send<Me & Changed>('DELETE', './api/me/avatar') : send<Me & Changed>('PUT', './api/me/avatar', {character: draft.id}));
-        if (!r.ok) { const why = fail(r); if (why) toast(`프로필 사진을 바꾸지 못했어요. ${why}`, true); return; }
+        if (!r.ok) { const why = fail(r, '프로필 사진'); if (why) popSay(why, true); return; }
         me = r.body; show(); avatarSaved = true;
       }
       if (nameChanged) {
         const r = await send<Me & Changed>('PUT', './api/me/profile', {name});
         if (!r.ok) {
-          const why = fail(r);
-          if (why) toast(avatarSaved ? `프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. ${why}` : `닉네임을 바꾸지 못했어요. ${why}`, true);
-          if (avatarSaved && why) accountView.set({draft: {kind: 'keep'}});   // 사진은 이미 저장됨 — 다시 저장해도 닉네임만 보낸다
+          const why = fail(r, '닉네임');
+          if (avatarSaved) { dropPreview(); accountView.set({draft: {kind: 'keep'}}); }   // 사진은 이미 저장됨 — 다시 저장해도 닉네임만 보낸다
+          if (why) popSay(why, true);
           return;
         }
         me = r.body; show();
       }
+      if (turn === editTurn) closeEdit();
       toast(avatarChanged && nameChanged ? '프로필을 바꿨어요' : avatarChanged ? '프로필 사진을 바꿨어요' : '닉네임을 바꿨어요');
-      closeEdit();
-      $('profileEdit').focus({preventScroll: true});
     } catch {
-      toast(avatarSaved ? '프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. 연결을 확인해 주세요.' : '바꾸지 못했어요. 연결을 확인해 주세요.', true);
       if (avatarSaved) { dropPreview(); accountView.set({draft: {kind: 'keep'}}); }
+      popSay(avatarSaved ? '프로필 사진은 바꿨지만 닉네임을 바꾸지 못했어요. 연결을 확인해 주세요.' : '바꾸지 못했어요. 연결을 확인해 주세요.', true);
     } finally { busy(false); }
   }
   // ---- 승차권 목록(그리기는 tickets_view.tsx) ----
@@ -805,7 +848,7 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   }
   // 내 정보 쪽에서 누른 것(account_view.tsx 가 전한다)
   accountView.on({
-    edit: openEdit, cancel: () => { closeEdit(); $('profileEdit').focus({preventScroll: true}); }, save: saveEdit,
+    edit: openEdit, cancel: () => closeEdit(), save: saveEdit,
     pickPhoto: () => { if (!saving) $('photoFile').click(); }, photoFile: photoChosen, pickCharacter,
     logoutDevice, logoutOthers, exportData, logout,
     deleteAsk: () => { accountView.set({confirmOpen: true}); $('accountConfirmYes').focus({preventScroll: true}); },

@@ -779,7 +779,6 @@ html[data-theme=dark] .social.apple{box-shadow:inset 0 0 0 1px #5a5a5a}
 .account-avatar.photo{background:var(--control) center/cover no-repeat}
 .account-prof .account-avatar.big{position:relative;width:84px;height:84px;padding:0;border:0;border-radius:28px;background-size:72px 72px;cursor:pointer}
 .account-prof .account-avatar.big.photo{background-size:cover}
-.account-prof .account-avatar.big.pf-static{cursor:default}
 .account-prof .account-avatar.big:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .pf-badge{position:absolute;right:-4px;bottom:-4px;width:28px;height:28px;padding:6px;box-sizing:border-box;border-radius:50%;background:var(--syung);color:var(--syung-ink);box-shadow:0 0 0 3px var(--paper)}
 .pf-who{flex:1;min-width:0}
@@ -988,3 +987,13 @@ html[data-theme=dark] .acct-toast{color:var(--ink);box-shadow:0 10px 24px rgba(0
 @keyframes toast-pop{0%{opacity:0;transform:translateY(14px) scale(.96)}60%{opacity:1;transform:translateY(-3px) scale(1.01)}100%{opacity:1;transform:none}}
 @keyframes toast-zoom{0%{transform:translateX(-140%)}70%{transform:translateX(8%)}100%{transform:none}}
 @media(prefers-reduced-motion:reduce){.acct-toast,.acct-toast.show,.acct-toast.show .tt-speed{transition:none;animation:none}}
+
+/* 프로필 수정 팝업(#profileSheet — 로그인 팝업 .login-sheet 모양 그대로 + 안쪽만) */
+.profile-sheet .login-card{align-items:stretch;max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain}
+.profile-body .pf-form{margin:0}
+.profile-x{position:absolute;top:10px;right:10px;width:40px;height:40px;padding:9px;box-sizing:border-box;border:0;border-radius:50%;background:var(--control);color:var(--ink);cursor:pointer}
+.profile-x:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.profile-x svg{display:block;width:22px;height:22px}
+.profile-sheet .account-prof{margin:0 0 4px}
+.profile-sheet .account-prof .account-avatar.big[disabled]{opacity:.6;cursor:default}
+@media(min-width:721px){.profile-sheet .login-card{width:min(400px,100%)}}
