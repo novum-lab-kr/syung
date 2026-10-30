@@ -30,6 +30,16 @@ export function RouteCard({ plan, index, on, hidden = false, onPick }:RouteCardP
   </article>;
 }
 
+// 못 찾았을 때의 칸: 까닭 한 줄 + 다시 찾기
+export function RouteFailed({ message, onRetry }:{ message:string; onRetry():void }) {
+  return <div class="jerr"><b>경로를 찾지 못했어요</b><p>{message}</p><button type="button" class="jerr-retry" onClick={onRetry}>다시 찾기</button></div>;
+}
+
+// 결과 목록 아래 안내 글
+export function RouteNote() {
+  return <p class="jp-note">경로를 누르면 지도에 보여요. 창을 닫아도 경로는 남아 있어요. 첫 열차는 실시간 위치로, 이후 열차는 배차 간격으로, 버스는 시간표로 계산한 예상 시간이에요.</p>;
+}
+
 // 길을 찾는 동안의 뼈대 카드 3줄(첫 줄에 달리는 열차). 상태 글자는 부르는 쪽이 따로 둔다
 export function RouteLoading() {
   return <div class="jload" aria-hidden="true">{[0, 1, 2].map(row => <div class="jsk"><i class="jsk-min"></i><div class="jsk-track">{row === 0 && <span class="jsk-run"><i></i></span>}</div><i class="jsk-meta"></i></div>)}</div>;
