@@ -1,0 +1,6 @@
+{"cases":[{"id":"S-1","branch":"연결 실패","steps":[
+{"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"providers":[],"me":null,"buses":[]}},
+{"mock":"**/api/place**","status":200,"json":{"ok":true,"places":[{"name":"서울역","lat":37.55,"lng":126.97}]}},
+{"mock":"**/api/route**","status":200,"json":{"ok":false,"error":"테스트 이유"}},
+{"goto":"/"},{"click":"#routeButton"},{"fill":"#jFrom","value":"서울역"},{"click":"#jFromList li button"},{"fill":"#jTo","value":"서울역"},{"click":"#jToList li button"},
+{"expectText":"테스트 이유"}]}]}

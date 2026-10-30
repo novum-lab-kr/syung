@@ -63,7 +63,7 @@ function toHtml(source:string) {
     code.parentElement!.replaceWith(box);
   }
   for (const anchor of doc.querySelectorAll<HTMLAnchorElement>('a[href]')) {
-    const file = anchor.getAttribute('href')!.split('#')[0]!;
+    const file = anchor.getAttribute('href')!.split('#')[0]!.replace(/^fe\//, '');
     const storyId = FLOW_STORY[file];
     if (!storyId) continue;
     const link = storyLink(doc, storyId);
