@@ -1,7 +1,7 @@
 import { PARK_DEFAULTS } from "../basic/park.mjs";
 import { RIDE_FAR_M, rideCamera, rideFov, seatEye, seatIndex, seatLabel, seatNumber, seatRows } from "./first_person.mjs";
 // web/modes/coaster/ride.mts
-function createCoasterRide({ map, maplibregl, RIDE_PX = 0, planner, colors, cityViaduct, sheetBody, closeSheet, showTrainPopup, applyTheme, effectiveTheme, coasterBodyPx, TRAIN_MIN_PX, mercStop, trainPose, trackPoint, blendShift, toRide, fromRide, coasterCarFrame, coasterRailFrames, riderState, trainLngLat, stopFollowing, isCoaster, getSheetTrain, getSleeperM }) {
+function createCoasterRide({ map, maplibregl, RIDE_PX = 0, planner, colors, cityViaduct, sheetBody, closeSheet, showTrainPopup, applyTheme, effectiveTheme, coasterBodyPx, TRAIN_MIN_PX, mercStop, trainPose, trackPoint, blendShift, toRide, fromRide, coasterCarFrame, coasterRailFrames, riderState, trainLngLat, stopFollowing, isCoaster, getSheetTrain, getSleeperM, onRide }) {
 	let ride = null, rideSeat = {
 		car: 1,
 		row: 1,
@@ -39,7 +39,12 @@ function createCoasterRide({ map, maplibregl, RIDE_PX = 0, planner, colors, city
 	});
 	function rideBarText(plan) {
 		rideBar.style.setProperty("--c", colors[plan.t.line] || "#52646a");
-		rideBar.querySelector(".txt").textContent = `${plan.t.line} ${seatLabel(ride.seat)} · ${riderState(plan)}`;
+		const text = rideBar.querySelector(".txt").textContent = `${plan.t.line} ${seatLabel(ride.seat)} · ${riderState(plan)}`;
+		onRide?.({
+			riding: true,
+			id: ride.id,
+			text
+		});
 	}
 	function startRide(id) {
 		const plan = planner.plans.find((p) => p.id === id);
@@ -97,6 +102,11 @@ function createCoasterRide({ map, maplibregl, RIDE_PX = 0, planner, colors, city
 		ride = null;
 		clearInterval(r.timer);
 		rideBar.hidden = true;
+		onRide?.({
+			riding: false,
+			id: null,
+			text: ""
+		});
 		document.body.classList.remove("riding");
 		applyTheme();
 		map._camera.transform.clearNearFarZOverride();

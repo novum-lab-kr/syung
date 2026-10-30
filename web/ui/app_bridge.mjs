@@ -1,5 +1,13 @@
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isNumber = (value) => typeof value === "number" && Number.isFinite(value);
+var isId = (value) => typeof value === "string" && value.length > 0;
+var isCount = (value) => isNumber(value) && Number.isInteger(value) && value >= 1;
+var isSeat = (value) => isRecord(value) && isCount(value.car) && isCount(value.row) && (value.side === -1 || value.side === 1);
+var COASTER_SPEEDS = [
+	1,
+	5,
+	20
+];
 var isPosition = (value) => Array.isArray(value) && value.length >= 2 && isNumber(value[0]) && value[0] >= -180 && value[0] <= 180 && isNumber(value[1]) && value[1] >= -90 && value[1] <= 90;
 var isPath = (value) => Array.isArray(value) && value.length >= 2 && value.every(isPosition);
 function stationInfo(station) {
@@ -106,6 +114,117 @@ function parseAppMessage(raw, facts) {
 					mode: data.mode
 				}
 			};
+		case "setTheme":
+			if (data.choice !== "auto" && data.choice !== "light" && data.choice !== "dark") return bad("choice 는 auto · light · dark");
+			return {
+				ok: true,
+				command: {
+					type,
+					choice: data.choice
+				}
+			};
+		case "setPadding":
+			if (!isNumber(data.bottom) || data.bottom < 0) return bad("bottom 은 0 이상의 수(화면 px)");
+			return {
+				ok: true,
+				command: {
+					type,
+					bottom: data.bottom
+				}
+			};
+		case "watchTrain":
+		case "followTrain":
+			if (!isId(data.id)) return bad("id 는 trainTap 의 train.id");
+			return {
+				ok: true,
+				command: {
+					type,
+					id: data.id
+				}
+			};
+		case "followBus":
+			if (!isId(data.id)) return bad("id 는 busTap 의 selection.id(kind bus)");
+			return {
+				ok: true,
+				command: {
+					type,
+					id: data.id
+				}
+			};
+		case "unwatchTrain":
+		case "stopFollow":
+		case "stopRide":
+		case "closeBus":
+		case "busRefresh": return {
+			ok: true,
+			command: { type }
+		};
+		case "startRide":
+			if (!isId(data.id)) return bad("id 는 trainTap 의 train.id");
+			if (!isSeat(data.seat)) return bad("seat 는 { car, row (1 이상 정수), side (-1 · 1) }");
+			return {
+				ok: true,
+				command: {
+					type,
+					id: data.id,
+					seat: {
+						car: data.seat.car,
+						row: data.seat.row,
+						side: data.seat.side
+					}
+				}
+			};
+		case "setPref":
+			if (data.key === "prebuild" || data.key === "saver") {
+				if (typeof data.value !== "boolean") return bad(`${data.key} 의 value 는 참 · 거짓`);
+				return {
+					ok: true,
+					command: {
+						type,
+						key: data.key,
+						value: data.value
+					}
+				};
+			}
+			if (data.key === "speed") {
+				if (!isNumber(data.value) || !COASTER_SPEEDS.includes(data.value)) return bad("speed 의 value 는 1 · 5 · 20");
+				return {
+					ok: true,
+					command: {
+						type,
+						key: data.key,
+						value: data.value
+					}
+				};
+			}
+			return bad("key 는 prebuild · saver · speed");
+		case "skyOpen":
+			if (typeof data.open !== "boolean") return bad("open 은 참 · 거짓");
+			return {
+				ok: true,
+				command: {
+					type,
+					open: data.open
+				}
+			};
+		case "busRoute":
+			if (!isId(data.routeId)) return bad("routeId 는 busTap view 의 routeId");
+			return {
+				ok: true,
+				command: {
+					type,
+					routeId: data.routeId
+				}
+			};
+		case "busStopView":
+			if (data.what !== "follow" && data.what !== "route" && data.what !== "stop") return bad("what 은 follow · route · stop");
+			return {
+				ok: true,
+				command: {
+					type,
+					what: data.what
+				}
+			};
 		default: return {
 			ok: false,
 			code: "unknown_type",
@@ -117,8 +236,71 @@ function parseAppMessage(raw, facts) {
 var defaultPost = (text) => {
 	globalThis.window?.ReactNativeWebView?.postMessage(text);
 };
+function need(action, type) {
+	if (!action) throw new Error(`이 지도는 ${type} 를 못 한다`);
+	return action;
+}
+function run(actions, command) {
+	switch (command.type) {
+		case "showRoute":
+			actions.showRoute(command.plan, command.padding);
+			return;
+		case "clearRoute":
+			actions.clearRoute();
+			return;
+		case "focusStation":
+			actions.focusStation(command.id, command.zoom);
+			return;
+		case "setMode":
+			actions.setMode(command.mode);
+			return;
+		case "setTheme":
+			need(actions.setTheme, command.type).call(actions, command.choice);
+			return;
+		case "setPadding":
+			need(actions.setPadding, command.type).call(actions, command.bottom);
+			return;
+		case "watchTrain":
+			need(actions.watchTrain, command.type).call(actions, command.id);
+			return;
+		case "followTrain":
+			need(actions.followTrain, command.type).call(actions, command.id);
+			return;
+		case "followBus":
+			need(actions.followBus, command.type).call(actions, command.id);
+			return;
+		case "unwatchTrain":
+			need(actions.unwatchTrain, command.type).call(actions);
+			return;
+		case "stopFollow":
+			need(actions.stopFollow, command.type).call(actions);
+			return;
+		case "stopRide":
+			need(actions.stopRide, command.type).call(actions);
+			return;
+		case "closeBus":
+			need(actions.closeBus, command.type).call(actions);
+			return;
+		case "busRefresh":
+			need(actions.busRefresh, command.type).call(actions);
+			return;
+		case "startRide":
+			need(actions.startRide, command.type).call(actions, command.id, command.seat);
+			return;
+		case "setPref":
+			need(actions.setPref, command.type).call(actions, command.key, command.value);
+			return;
+		case "skyOpen":
+			need(actions.skyOpen, command.type).call(actions, command.open);
+			return;
+		case "busRoute":
+			need(actions.busRoute, command.type).call(actions, command.routeId);
+			return;
+		case "busStopView": need(actions.busStopView, command.type).call(actions, command.what);
+	}
+}
 function createAppBridge({ facts, post = defaultPost, targets }) {
-	let actions = null;
+	let actions = null, busOpen = false;
 	const send = (message) => {
 		try {
 			post(JSON.stringify(message));
@@ -126,6 +308,32 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 			console.error("app bridge: 보내기 실패", error);
 		}
 	};
+	const lastSent = /* @__PURE__ */ new Map(), waiting = /* @__PURE__ */ new Map();
+	function state(message) {
+		if (!actions) {
+			waiting.set(message.type, message);
+			return;
+		}
+		const text = JSON.stringify(message);
+		if (lastSent.get(message.type) === text) return;
+		lastSent.set(message.type, text);
+		try {
+			post(text);
+		} catch (error) {
+			console.error("app bridge: 보내기 실패", error);
+		}
+	}
+	let statusNext = null, statusAt = 0, statusTimer = null;
+	function flushStatus() {
+		statusTimer = null;
+		if (!statusNext) return;
+		statusAt = Date.now();
+		state({
+			type: "status",
+			...statusNext
+		});
+		statusNext = null;
+	}
 	function receive(raw) {
 		const parsed = parseAppMessage(raw, facts);
 		if (!parsed) return;
@@ -149,10 +357,7 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 			return;
 		}
 		try {
-			if (command.type === "showRoute") actions.showRoute(command.plan, command.padding);
-			else if (command.type === "clearRoute") actions.clearRoute();
-			else if (command.type === "focusStation") actions.focusStation(command.id, command.zoom);
-			else actions.setMode(command.mode);
+			run(actions, command);
 		} catch (error) {
 			console.error("app bridge: 명령 실패", command.type, error);
 			send({
@@ -168,14 +373,31 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 	});
 	return {
 		receive,
-		ready(nextActions, mode, modes) {
+		ready(nextActions, info) {
 			actions = nextActions;
 			send({
 				type: "ready",
-				version: 1,
-				mode,
-				modes
+				version: 2,
+				...info
 			});
+			lastSent.set("themeChanged", JSON.stringify({
+				type: "themeChanged",
+				...info.theme
+			}));
+			lastSent.set("prefsChanged", JSON.stringify({
+				type: "prefsChanged",
+				prefs: info.prefs
+			}));
+			for (const type of [
+				"sky",
+				"status",
+				"followChanged",
+				"rideChanged"
+			]) {
+				const message = waiting.get(type);
+				if (message) state(message);
+			}
+			waiting.clear();
 		},
 		stationTap(station) {
 			send({
@@ -194,7 +416,83 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 				type: "modeChanged",
 				mode
 			});
+		},
+		themeChanged(theme) {
+			state({
+				type: "themeChanged",
+				...theme
+			});
+		},
+		prefsChanged(prefs) {
+			state({
+				type: "prefsChanged",
+				prefs
+			});
+		},
+		sky(sky) {
+			state({
+				type: "sky",
+				...sky
+			});
+		},
+		status(next) {
+			statusNext = next;
+			if (statusTimer) return;
+			const wait = 250 - (Date.now() - statusAt);
+			if (wait <= 0) flushStatus();
+			else statusTimer = setTimeout(flushStatus, wait);
+		},
+		trainUpdate(update) {
+			if (actions) send({
+				type: "trainUpdate",
+				...update
+			});
+		},
+		trainGone(id) {
+			if (actions) send({
+				type: "trainGone",
+				id
+			});
+		},
+		followChanged(id) {
+			state({
+				type: "followChanged",
+				id
+			});
+		},
+		rideChanged(ride) {
+			state({
+				type: "rideChanged",
+				...ride
+			});
+		},
+		busTap(view, selection) {
+			if (!actions) return;
+			busOpen = true;
+			const message = {
+				type: "busTap",
+				view,
+				selection
+			};
+			lastSent.set("busUpdate", JSON.stringify({
+				...message,
+				type: "busUpdate"
+			}));
+			send(message);
+		},
+		busUpdate(view, selection) {
+			if (busOpen) state({
+				type: "busUpdate",
+				view,
+				selection
+			});
+		},
+		busClosed() {
+			if (!busOpen) return;
+			busOpen = false;
+			lastSent.delete("busUpdate");
+			send({ type: "busClosed" });
 		}
 	};
 }
-export { createAppBridge, parseAppMessage, stationInfo, trainInfo };
+export { COASTER_SPEEDS, createAppBridge, parseAppMessage, stationInfo, trainInfo };

@@ -67,6 +67,11 @@ function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainP
 			fetched: kst(live.feed.fetchedAt)
 		};
 	}
+	const trainNow = (plan) => ({
+		dest: destLabel(plan.t) || "행선지 정보 없음",
+		now: riderState(plan),
+		raw: rawFeed(plan.t)
+	});
 	function showTrainPopup(plan) {
 		const first = trainView(plan, canRide() ? {
 			seatsHTML: seatPickerHTML(plan.cars, rideRows(plan), rider.seat),
@@ -237,6 +242,7 @@ function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainP
 	return {
 		trainState,
 		riderState,
+		trainNow,
 		showTrainPopup,
 		pickTrain,
 		liveNotice,

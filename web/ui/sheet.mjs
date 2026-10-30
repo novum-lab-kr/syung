@@ -190,6 +190,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		}
 	});
 	const sheetPad = () => {
+		if (live.appPad != null) return live.appPad;
 		if (sheet.classList.contains("tucked")) {
 			const p = map.getContainer().querySelector(".bfu-panel");
 			return p ? p.offsetHeight + 24 : 0;

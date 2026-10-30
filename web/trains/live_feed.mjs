@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, updateLiveNotice, onTrains, onClear, journeyLines = () => null }) {
+function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
 	let trains = [], request = 0, on = false, failures = 0, key = "", at = 0, fetchedAt = null;
 	function liveLines() {
 		const journey = journeyLines();
@@ -29,6 +29,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 			}
 			liveState.parentElement.dataset.state = "idle";
 			liveState.textContent = !on ? "줌 13 이상에서 실시간 열차를 표시합니다" : "이 화면에는 운행 노선이 없습니다";
+			onState?.();
 			return;
 		}
 		const sheetTrain = getSheetTrain(), focus = sheetTrain ? sheetTrain.split(":")[0] : "";
@@ -39,6 +40,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		at = Date.now();
 		if (!hasPlans()) liveState.parentElement.dataset.state = "loading";
 		liveState.textContent = `${lines.join(" · ")} 열차 위치 확인 중`;
+		onState?.();
 		try {
 			const r = await fetch(serverUrl(`./api/live?lines=${encodeURIComponent(lines.join(","))}${focus ? `&focus=${encodeURIComponent(focus)}` : ""}`), { cache: "no-store" }), d = await r.json();
 			if (mine !== request) return;
@@ -56,6 +58,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 				minute: "2-digit",
 				timeZone: "Asia/Seoul"
 			})}`;
+			onState?.();
 			map.triggerRepaint();
 		} catch {
 			if (mine === request) {
@@ -63,6 +66,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 				failures++;
 				liveState.parentElement.dataset.state = "error";
 				liveState.textContent = "실시간 위치 연결 실패 · 잠시 후 재시도";
+				onState?.();
 				if (failures >= 2 || !hasPlans()) updateLiveNotice("실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.");
 			}
 		}

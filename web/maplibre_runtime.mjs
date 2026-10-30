@@ -748,6 +748,19 @@ var appBridge = appMapMode() ? createAppBridge({
 		document
 	}
 }) : null;
+var appPad = 0;
+function appStatus() {
+	if (appBridge) appBridge.status({
+		zoom: map.getZoom(),
+		live: {
+			state: liveState.parentElement.dataset.state ?? "idle",
+			text: liveState.textContent ?? ""
+		}
+	});
+}
+function appFollow() {
+	appBridge?.followChanged(sheetUI.following ?? sheetUI.followBus ?? null);
+}
 var modeCtl = createModeController({
 	registry: modes,
 	clock: () => clock(),
@@ -1333,6 +1346,9 @@ var sheetUI = createBottomSheet({
 		},
 		get stopRide() {
 			return stopRide;
+		},
+		get appPad() {
+			return appBridge ? appPad : null;
 		}
 	}
 });
@@ -1436,7 +1452,8 @@ var rider = createCoasterRide({
 	},
 	isCoaster: canRide,
 	getSheetTrain: () => sheetUI.sheetTrain,
-	getSleeperM: () => SLEEPER_M
+	getSleeperM: () => SLEEPER_M,
+	onRide: (state) => appBridge?.rideChanged(state)
 });
 var { riding, rideRows, startRide, stopRide, rideFrame, rideBar } = rider;
 animFrame.push(rideFrame);
@@ -1473,7 +1490,7 @@ if (location.hash.includes("fps")) {
 map.on("movestart", (e) => {
 	if (rider.ride && e.originalEvent) stopRide(false);
 });
-var { trainState, riderState, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, showStationPopup } = createPopups({
+var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, updateLiveNotice, arrivalText, arrivalRank, showStationPopup } = createPopups({
 	map,
 	maplibregl,
 	planner,
@@ -1757,7 +1774,8 @@ var feed = createLiveFeed({
 		planner.clear();
 		lastPose.clear();
 		map.triggerRepaint();
-	}
+	},
+	onState: appStatus
 });
 function refreshLive(force = false) {
 	return feed.refresh(force);
@@ -1911,7 +1929,7 @@ map.on("load", () => {
 		if (map.queryRenderedFeatures(e.point, { layers: ["stations", "stations-casing"] }).length) return;
 		const pl = pickTrain(e.point);
 		if (pl) openTrain(pl);
-		else if (!appBridge && busLayer?.selectAt(e.point)) {
+		else if (busLayer?.selectAt(e.point)) {
 			if (busLayer.selection?.kind === "bus") followBusStart(busLayer.selection.id);
 		} else if (!sheetBusy()) closeSheet();
 	});
@@ -1958,6 +1976,11 @@ map.on("load", () => {
 		requestRender: () => trainFrameSoon(0),
 		getExitCoordinates: () => Object.values(exits).flat(),
 		onSelect: (view) => {
+			if (appBridge) {
+				sheetUI.following = null;
+				sheetUI.followBus = null;
+				return appBus(view);
+			}
 			sheetUI.following = null;
 			sheetUI.followBus = null;
 			sheetUI.sheetTrain = null;
@@ -2001,7 +2024,8 @@ map.on("load", () => {
 		},
 		onClear: () => {
 			if (sheetBody.querySelector(".bus-detail")) closeSheet();
-		}
+		},
+		onRelease: () => appBridge?.busClosed()
 	});
 	window.__subwayWebGL.busLayer = busLayer;
 	registerExitLayers({
@@ -2036,9 +2060,150 @@ map.on("load", () => {
 		},
 		setMode: (id) => {
 			modeCtl.request(id);
-		}
-	}, modeCtl.current, modes.list().map((mode) => mode.id));
+		},
+		...appActions()
+	}, {
+		mode: modeCtl.current,
+		modes: modes.list().map((mode) => mode.id),
+		colors,
+		theme: theme.themeState(),
+		prefs: prefsState()
+	});
+	if (appBridge) {
+		animFrame.push(appFollow);
+		map.on("dragstart", appFollow);
+		setInterval(() => {
+			if (busLayer?.selection) busLayer.refreshDetail();
+		}, 1e3);
+	}
 });
+function appBus(view) {
+	const sel = busLayer?.selection;
+	if (!view || !sel) {
+		appBridge.busClosed();
+		return null;
+	}
+	appBridge.busTap(view, {
+		kind: sel.kind,
+		id: sel.id
+	});
+	return (next) => {
+		const now = busLayer?.selection;
+		if (next && now) appBridge.busUpdate(next, {
+			kind: now.kind,
+			id: now.id
+		});
+	};
+}
+var watchTimer;
+var watchMiss = 0;
+function watchTick() {
+	const id = sheetUI.sheetTrain;
+	if (!id) {
+		clearInterval(watchTimer);
+		return;
+	}
+	const plan = planner.plans.find((p) => p.id === id), now = performance.now();
+	if (!plan) {
+		if (!watchMiss) watchMiss = now;
+		else if (now - watchMiss > 5e3) {
+			clearInterval(watchTimer);
+			sheetUI.sheetTrain = null;
+			if (sheetUI.following === id) sheetUI.following = null;
+			appFollow();
+			appBridge.trainGone(id);
+		}
+		return;
+	}
+	watchMiss = 0;
+	appBridge.trainUpdate({
+		id,
+		...trainNow(plan),
+		ride: canRide() ? {
+			cars: plan.cars,
+			rows: rideRows(plan),
+			seat: { ...rider.seat }
+		} : null
+	});
+}
+var hasTrain = (id) => planner.plans.some((p) => p.id === id);
+function needBus() {
+	if (!busLayer) throw Error("버스 층이 아직 없다");
+	return busLayer;
+}
+function appActions() {
+	return {
+		setTheme: (choice) => theme.choose(choice),
+		setPadding: (bottom) => {
+			appPad = bottom;
+			if (!rider.ride && !sheetUI.following && !sheetUI.followBus) map.easeTo({
+				padding: {
+					top: 0,
+					bottom,
+					left: 0,
+					right: 0
+				},
+				duration: 300
+			});
+		},
+		watchTrain: (id) => {
+			clearInterval(watchTimer);
+			sheetUI.sheetTrain = id;
+			watchMiss = 0;
+			watchTimer = setInterval(watchTick, 1e3);
+			watchTick();
+			map.triggerRepaint();
+		},
+		unwatchTrain: () => {
+			clearInterval(watchTimer);
+			sheetUI.sheetTrain = null;
+			sheetUI.following = null;
+			appFollow();
+			map.triggerRepaint();
+		},
+		followTrain: (id) => {
+			if (!hasTrain(id)) throw Error("지금 지도에 없는 열차");
+			sheetUI.sheetTrain = id;
+			follow(id);
+			appFollow();
+		},
+		stopFollow: () => {
+			sheetUI.easing = false;
+			sheetUI.following = null;
+			sheetUI.followBus = null;
+			busLayer?.followChanged();
+			appFollow();
+		},
+		startRide: (id, seat) => {
+			if (!canRide()) throw Error("롤코 모드에서만 탈 수 있다");
+			if (rider.ride) throw Error("이미 타는 중");
+			if (!hasTrain(id)) throw Error("지금 지도에 없는 열차");
+			rider.seat = seat;
+			startRide(id);
+		},
+		stopRide: () => stopRide(false),
+		setPref: (key, value) => {
+			if (key === "prebuild") setPrebuild(!!value);
+			else if (key === "saver") setSaver(!!value);
+			else {
+				if (modeCtl.current !== "coaster") throw Error("롤코 모드에서만 속도를 바꾼다");
+				setCoaster(true, value);
+			}
+		},
+		skyOpen: (open) => {
+			if (open) theme.openSky(false);
+			else theme.closeSky();
+		},
+		closeBus: () => needBus().clearSelection(),
+		followBus: (id) => {
+			followBusStart(id);
+			appFollow();
+		},
+		busRoute: (routeId) => needBus().pressRoute(routeId),
+		busRefresh: () => needBus().refreshArrivals(),
+		busStopView: (what) => needBus().stopViewAction(what)
+	};
+}
 createStationSearch({
 	map,
 	stations,
@@ -2089,6 +2254,8 @@ var theme = createMapTheme({
 	journeyMap,
 	rider,
 	prefs,
+	onTheme: (state) => appBridge?.themeChanged(state),
+	onSky: (sky) => appBridge?.sky(sky),
 	live: {
 		get settings() {
 			return modeCtl.settings();
@@ -2331,6 +2498,9 @@ function commitMode(prev, next, { speed } = {}) {
 	}
 	applySimcity(true, next);
 }
+function speedNote() {
+	return modeCtl.speed > 1 ? "실제보다 앞서 달려요" : "실시간";
+}
 function applyCoaster(on, speed) {
 	if (!on) stopRide(false);
 	if (on && modeCtl.current !== "basic" && modeCtl.current !== "coaster") {
@@ -2344,7 +2514,8 @@ function applyCoaster(on, speed) {
 	modeCtl.setSpeed(on ? speed : 1);
 	settingsMenu.press("toggleCoaster", on);
 	settingsMenu.hide("coasterSpeed", !on);
-	settingsMenu.speed(modeCtl.speed, modeCtl.speed > 1 ? "실제보다 앞서 달려요" : "실시간");
+	settingsMenu.speed(modeCtl.speed, speedNote());
+	appBridge?.prefsChanged(prefsState());
 	if (was !== on) {
 		stopMerc.clear();
 		cityViaduct.setGaps(on ? coasterGaps : null);
@@ -2450,30 +2621,39 @@ settingsMenu.on({
 	speed: (speed) => setCoaster(true, speed)
 });
 var setJoseon = (on) => setSimcity(on, true);
-{
-	const show = () => settingsMenu.press("togglePrebuild", prebuildWant());
-	show();
-	settingsMenu.on({ switches: { togglePrebuild: () => {
-		prebuildOn = !prebuildWant();
-		prefs.set("prebuild", prebuildOn ? "on" : "off");
-		show();
-		if (prebuildOn) prebuildCity();
-	} } });
+function setPrebuild(on) {
+	prebuildOn = on;
+	prefs.set("prebuild", on ? "on" : "off");
+	settingsMenu.press("togglePrebuild", on);
+	if (on) prebuildCity();
+	appBridge?.prefsChanged(prefsState());
 }
-{
-	const show = () => settingsMenu.press("toggleSaver", saverOn);
-	show();
-	settingsMenu.on({ switches: { toggleSaver: () => {
-		saverOn = !saverOn;
-		prefs.set("saver", saverOn ? "on" : "off");
-		show();
-		trainFrameSoon(0);
-	} } });
+function setSaver(on) {
+	saverOn = on;
+	prefs.set("saver", on ? "on" : "off");
+	settingsMenu.press("toggleSaver", on);
+	trainFrameSoon(0);
+	appBridge?.prefsChanged(prefsState());
 }
+function prefsState() {
+	return {
+		prebuild: prebuildWant(),
+		saver: saverOn,
+		speed: modeCtl.speed,
+		speedNote: speedNote()
+	};
+}
+settingsMenu.press("togglePrebuild", prebuildWant());
+settingsMenu.press("toggleSaver", saverOn);
+settingsMenu.on({ switches: {
+	togglePrebuild: () => setPrebuild(!prebuildWant()),
+	toggleSaver: () => setSaver(!saverOn)
+} });
 {
 	{
 		const z = $("zoomBadge"), show = () => {
 			z.textContent = "z" + map.getZoom().toFixed(1);
+			appStatus();
 		};
 		map.on("zoom", show);
 		show();

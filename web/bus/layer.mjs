@@ -480,13 +480,14 @@ function createBusLayer(options) {
 	return new BusLayer(options);
 }
 var BusLayer = class {
-	constructor({ map, phone = false, beforeId = "routes", onSelect = () => {}, onClear = () => {}, fetcher = fetch, requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}, frameMs = () => 0 }) {
+	constructor({ map, phone = false, beforeId = "routes", onSelect = () => {}, onClear = () => {}, onRelease = () => {}, fetcher = fetch, requestRender = () => map.triggerRepaint?.(), getExitCoordinates = () => [], onRouteSelect = () => {}, onFollow = () => {}, followedBus = () => null, sheetPad = () => 0, onFollowView = () => {}, frameMs = () => 0 }) {
 		this.map = map;
 		this.phone = phone;
 		this.frameMs = frameMs;
 		this.beforeId = beforeId;
 		this.onSelect = onSelect;
 		this.onClear = onClear;
+		this.onRelease = onRelease;
 		this.fetcher = (...args) => fetcher(...args);
 		this.requestRender = requestRender;
 		this.getExitCoordinates = getExitCoordinates;
@@ -580,19 +581,7 @@ var BusLayer = class {
 				this.stopViewAction(button.dataset.busStopView);
 				return;
 			}
-			const id = button.dataset.busRoute;
-			if (!this.data?.routeById.has(id)) return;
-			this.journeyLegs = [];
-			this.journeyIds = [];
-			if (this.selection?.kind === "stop") {
-				this.stopRoute(id);
-				return;
-			}
-			this.selectedRoute = this.selectedRoute === id ? null : id;
-			this.onFollow(null);
-			this.refreshView();
-			this.refreshDetail();
-			this.onRouteSelect(this.selectedLeg());
+			this.pressRoute(button.dataset.busRoute);
 		};
 		this.stopNote = "";
 		this.followNote = (text) => {
@@ -1482,8 +1471,24 @@ var BusLayer = class {
 		this.draw();
 		this.onRouteSelect(null);
 		this.renderFollowUI();
+		this.onRelease();
+	}
+	pressRoute(id) {
+		if (!this.data?.routeById.has(id)) return;
+		this.journeyLegs = [];
+		this.journeyIds = [];
+		if (this.selection?.kind === "stop") {
+			this.stopRoute(id);
+			return;
+		}
+		this.selectedRoute = this.selectedRoute === id ? null : id;
+		this.onFollow(null);
+		this.refreshView();
+		this.refreshDetail();
+		this.onRouteSelect(this.selectedLeg());
 	}
 	setJourney(legs) {
+		if (this.selection) this.onRelease();
 		this.selection = null;
 		this.selectedRoute = null;
 		this.updateDetail = null;

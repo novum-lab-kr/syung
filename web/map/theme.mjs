@@ -1,6 +1,6 @@
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 // web/map/theme.mts
-function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live }) {
+function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, applyGroundTexture, syncCity, updateSun, focusRoute, journeyMap, rider, prefs, live, onTheme, onSky }) {
 	const mixHex = (a, b, t) => "#" + [
 		1,
 		3,
@@ -83,6 +83,16 @@ function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, a
 		const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now);
 		return now >= rise && now < set ? "light" : "dark";
 	}
+	let noteText = "";
+	const themeState = () => ({
+		choice: cur.themeChoice,
+		theme: effectiveTheme(),
+		note: noteText
+	});
+	function choose(choice) {
+		prefs.set("themeChoice", choice);
+		applyTheme();
+	}
 	function applyTheme() {
 		queueMicrotask(() => {
 			if (map.getLayer?.("journey-veil")) focusRoute(!!journeyMap.routeBounds);
@@ -97,7 +107,7 @@ function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, a
 		menu.theme(cur.themeChoice);
 		if (cur.themeChoice === "auto") {
 			const now = /* @__PURE__ */ new Date(), { rise, set } = seoulSun(now), nextRise = now >= set ? seoulSun(new Date(now.getTime() + 864e5)).rise : rise;
-			menu.themeNote(t === "dark" ? {
+			const note = t === "dark" ? {
 				lead: "지금은 ",
 				bold: "다크",
 				tail: ` · ${hm(nextRise)} 해 뜨면 라이트로`
@@ -105,8 +115,14 @@ function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, a
 				lead: "지금은 ",
 				bold: "라이트",
 				tail: ` · ${hm(set)} 해 지면 다크로`
-			});
-		} else menu.themeNote("자동은 해 뜨면 라이트, 해 지면 다크예요");
+			};
+			menu.themeNote(note);
+			noteText = note.lead + note.bold + note.tail;
+		} else {
+			noteText = "자동은 해 뜨면 라이트, 해 지면 다크예요";
+			menu.themeNote(noteText);
+		}
+		onTheme?.(themeState());
 		drawSky();
 		if (!live.ready) return;
 		const set = (id, prop, v) => {
@@ -172,10 +188,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 #lineSelect{display:none}
 .map-status{display:none}   /* title/description box over the map: removed */   /* line filter: the list of line buttons below is enough */
 </style>`);
-	menu.on({ theme: (choice) => {
-		prefs.set("themeChoice", choice);
-		applyTheme();
-	} });
+	menu.on({ theme: choose });
 	setInterval(() => {
 		if (cur.themeChoice === "auto") applyTheme();
 		else drawSky();
@@ -189,8 +202,10 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 	});
 	let wxMod = null, motionMod = null, weather = null, menuOpen = false;
 	let lastArt = null, lastNight = false;
-	async function openSky() {
+	let motionWanted = true;
+	async function openSky(motion = true) {
 		menuOpen = true;
+		motionWanted = motion;
 		syncMotion();
 		wxMod ??= await __vitePreload(() => import("./sky_weather.mjs"), [], import.meta.url);
 		const next = await wxMod.fetchWeather(live.myLocation ?? null);
@@ -226,7 +241,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		viewWatch.observe(el);
 	}
 	async function syncMotion() {
-		if (!menuOpen) return;
+		if (!menuOpen || !motionWanted) return;
 		const host = document.getElementById("skyMotion");
 		if (!host) return;
 		motionMod ??= await __vitePreload(() => import("./sky_motion.mjs"), [], import.meta.url);
@@ -241,10 +256,29 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		const night = !(now >= rise && now < set), art = weather && wxMod ? wxMod.weatherArt(weather, night) : null;
 		lastArt = art;
 		lastNight = night;
-		menu.sky(sunPathHTML(now, rise, set, art), night, art?.label);
+		const parts = skyParts(now, rise, set, art);
+		menu.sky(sunPathHTML(parts), night, art?.label);
+		onSky?.({
+			layers: {
+				back: parts.back,
+				sun: parts.sun,
+				front: parts.front
+			},
+			temp: parts.temp,
+			sunset: parts.sunset,
+			sunrise: parts.sunrise,
+			night,
+			label: art?.label ?? null,
+			motion: {
+				clouds: art?.scene.clouds ? `clouds-${art.scene.clouds}` : null,
+				fall: art?.scene.fall ?? null,
+				trainSpeed: art?.wet ? .7 : 1
+			}
+		});
 		syncMotion();
 	}
-	function sunPathHTML(now, rise, set, art = null) {
+	const sunPathHTML = (parts) => parts.back + parts.sun + parts.front + (parts.temp ? `<div class="sun-temp">${parts.temp}</div>` : "") + `<div class="sun-times"><span>해 짐 ${parts.sunset}</span><span>${parts.sunrise} 해 뜸</span></div>`;
+	function skyParts(now, rise, set, art = null) {
 		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = +set - +rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;
 		const clamp = (v) => Math.min(1, Math.max(0, v));
 		const night = clamp(now >= set ? (+now - +set) / nightLen : 1 - (+rise - +now) / nightLen), t = day ? clamp((+now - +rise) / dayLen) : night, u = 1 - t;
@@ -396,7 +430,14 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		].map((o) => `<rect x="${cx + o}" y="75.4" width="6" height="4.4" rx="1.4" fill="${day ? "#9fd4ff" : "#ffe08a"}"/>`).join("")}`;
 		const train = car(tx, false) + car(154, true) + `<rect x="181" y="75.4" width="5" height="4.4" rx="1.6" fill="${day ? "#9fd4ff" : "#ffe08a"}"/><circle cx="182" cy="82" r="1.1" fill="#3a3f4a"/>` + (day ? "" : `<path d="M188 79L214 74L214 86Z" fill="#ffe08a" opacity=".28"/>`) + `<circle cx="124" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="146" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="160" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="182" cy="86.5" r="2" fill="#3a3f4a"/><path d="M112 78h-8M113 82h-12" stroke="${C.path}" stroke-opacity=".8" stroke-width="1.6" stroke-linecap="round"/>`;
 		const open = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"`;
-		return `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${art?.back ?? ""}</svg>${open} class="sky-sun">${body}${art?.over(x, y) ?? ""}</svg>${open} class="sky-front">${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs, base) ?? ""}</svg>` + (art?.temp ? `<div class="sun-temp">${art.temp}</div>` : "") + `<div class="sun-times"><span>해 짐 ${hm(set)}</span><span>${hm(rise)} 해 뜸</span></div>`;
+		return {
+			back: `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${art?.back ?? ""}</svg>`,
+			sun: `${open} class="sky-sun">${body}${art?.over(x, y) ?? ""}</svg>`,
+			front: `${open} class="sky-front">${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs, base) ?? ""}</svg>`,
+			temp: art?.temp || null,
+			sunset: hm(set),
+			sunrise: hm(rise)
+		};
 	}
 	return {
 		effectiveTheme,
@@ -404,6 +445,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		applyTheme,
 		openSky,
 		closeSky,
+		choose,
+		themeState,
 		get themeChoice() {
 			return cur.themeChoice;
 		},
