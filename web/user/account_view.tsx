@@ -101,7 +101,7 @@ function ProfileForm() {
       <input id="photoFile" type="file" accept="image/*" hidden onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; call('photoFile')(file) }} />
       <p class="pf-note">가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요.</p>
     </div>
-    <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue}
+    <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue} disabled={view.saving}
       onInput={event => set({ nameValue: event.currentTarget.value })} /><small id="nameCount" class={count > NAME_MAX ? 'over' : undefined}>{`${count}/${NAME_MAX}`}</small></label>
     <div class="pf-row"><button id="profileCancel" type="button" disabled={view.saving} onClick={call('cancel')}>취소</button><button id="profileSave" type="submit" class="pf-ok" disabled={lock}>{view.converting ? '사진 준비 중' : '저장'}</button></div>
   </form>;
