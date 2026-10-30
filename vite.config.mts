@@ -4,7 +4,7 @@
 // 원칙: 빌드 전과 같은 파일 · 같은 주소 · 같은 요청 차례(AGENTS.md "속도 기준" — 정적 import 깊이가 첫 화면 시간을 정한다)
 // - 모듈 하나 = 파일 하나(preserveModules) · 이름 그대로(.mts → .mjs) — 묶지 않는다. 묶기는 따로 재고 정한다
 // - HTML · CSS · 그림 · 자료 · vendor/ 는 손대지 않고 그대로 복사(index.html 의 역 데이터 · 첫 그리기 전 스크립트 · modulepreload 그대로)
-// - vendor/(maplibre · three · lottie · uPlot)는 묶지 않는다: maplibre 는 제 옆의 maplibre-gl-worker.mjs 를 import.meta.url 로 찾는다
+// - vendor/(maplibre · three · lottie)는 묶지 않는다: maplibre 는 제 옆의 maplibre-gl-worker.mjs 를 import.meta.url 로 찾는다
 // - 줄이기(minify) 안 함 — 주석만 빠진다(첫 화면 JS gzip 이 줄어든다). 줄이기는 속도를 재고 따로
 import fs from 'node:fs'
 import path from 'node:path'
@@ -80,10 +80,8 @@ export default defineConfig({
     reportCompressedSize: false,
     rollupOptions: {
       // 페이지가 직접 부르는 모듈: index.html 의 <script type="module" src="./maplibre_runtime.mjs">(원본 maplibre_runtime.mts — 빌드가 .mjs 로 낸다)
-      // 관리 화면(admin/*.html 의 <script type="module" src="./<이름>.mjs">) — Preact 로 옮긴 것만
-      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mts'), 'admin/status': path.join(root, 'admin', 'status.tsx'),
-        'admin/members': path.join(root, 'admin', 'members.tsx'), 'admin/debug': path.join(root, 'admin', 'debug.tsx'),
-        'admin/learning': path.join(root, 'admin', 'learning.tsx') },
+      // 관리 화면은 novum-web 레포(syung-admin-src/)로 옮겨 가 syung.novum-lab.com/admin 에서 따로 빌드 · 배포한다(2026-10-30)
+      input: { maplibre_runtime: path.join(root, 'maplibre_runtime.mts') },
       preserveEntrySignatures: 'strict',
       treeshake: false,
       external: isVendor,
