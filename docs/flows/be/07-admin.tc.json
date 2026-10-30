@@ -1,0 +1,254 @@
+{
+  "cases": [
+    {
+      "id": "ADMIN-1",
+      "branch": "문지기 페이지 쿠키 없음",
+      "title": "기본 주소는 302",
+      "request": {
+        "method": "GET",
+        "path": "/auth"
+      },
+      "expect": {
+        "status": 302
+      }
+    },
+    {
+      "id": "ADMIN-2",
+      "branch": "문지기 자료 쿠키 없음",
+      "title": "json 은 401",
+      "request": {
+        "method": "GET",
+        "path": "/auth",
+        "headers": {
+          "X-Forwarded-Uri": "/admin/learning.json"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "ok": false,
+          "error": "login"
+        }
+      }
+    },
+    {
+      "id": "ADMIN-3",
+      "branch": "밖으로 보내는 next",
+      "title": "밖 주소도 302",
+      "request": {
+        "method": "GET",
+        "path": "/auth",
+        "headers": {
+          "X-Forwarded-Uri": "//evil.example"
+        }
+      },
+      "expect": {
+        "status": 302
+      }
+    },
+    {
+      "id": "ADMIN-4",
+      "branch": "주인 쿠키 맞음",
+      "manual": "주인 쿠키가 필요하다"
+    },
+    {
+      "id": "ADMIN-5",
+      "branch": "로그인 본문 없음",
+      "title": "본문 없으면 413",
+      "request": {
+        "method": "POST",
+        "path": "/login"
+      },
+      "expect": {
+        "status": 413,
+        "body": {
+          "error": {
+            "code": "too_large",
+            "message": "본문이 없거나 너무 커요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-6",
+      "branch": "비밀번호 틀림",
+      "title": "비밀번호 없는 본문은 303",
+      "request": {
+        "method": "POST",
+        "path": "/login",
+        "json": {
+          "user": "qa"
+        }
+      },
+      "expect": {
+        "status": 303
+      }
+    },
+    {
+      "id": "ADMIN-7",
+      "branch": "주인 로그인 성공",
+      "manual": "주인 비밀번호가 필요하다"
+    },
+    {
+      "id": "ADMIN-8",
+      "branch": "주인 로그아웃",
+      "title": "303",
+      "request": {
+        "method": "POST",
+        "path": "/logout"
+      },
+      "expect": {
+        "status": 303
+      }
+    },
+    {
+      "id": "ADMIN-9",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "서버 상태",
+      "request": {
+        "method": "GET",
+        "path": "/admin/status"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-10",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "회원 목록",
+      "request": {
+        "method": "GET",
+        "path": "/admin/members"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-11",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "회원 한 명",
+      "request": {
+        "method": "GET",
+        "path": "/admin/members/1"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-12",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "디버그 최근",
+      "request": {
+        "method": "GET",
+        "path": "/admin/debug/recent"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-13",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "없는 관리 주소도 401",
+      "request": {
+        "method": "GET",
+        "path": "/admin/nope"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-14",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "회원 로그아웃",
+      "request": {
+        "method": "POST",
+        "path": "/admin/members/1/logout"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-15",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "디버그 기록",
+      "request": {
+        "method": "POST",
+        "path": "/admin/debug/ride"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-16",
+      "branch": "관리 주소 쿠키 없음",
+      "title": "회원 지우기",
+      "request": {
+        "method": "DELETE",
+        "path": "/admin/members/1"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ADMIN-17",
+      "branch": "관리 쿠키 뒤 처리",
+      "manual": "주인 쿠키가 필요하다"
+    }
+  ]
+}

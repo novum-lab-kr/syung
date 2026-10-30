@@ -1,0 +1,311 @@
+{
+  "cases": [
+    {
+      "id": "AUTH-1",
+      "branch": "로그인 방법 묻기",
+      "title": "방법과 me null",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/providers"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "me": null
+        },
+        "shape": {
+          "providers": [
+            "string"
+          ]
+        }
+      }
+    },
+    {
+      "id": "AUTH-2",
+      "branch": "로그인 방법 묻기",
+      "title": "옛 주소도 같다",
+      "request": {
+        "method": "GET",
+        "path": "/auth/providers"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "me": null
+        },
+        "shape": {
+          "providers": [
+            "string"
+          ]
+        }
+      }
+    },
+    {
+      "id": "AUTH-3",
+      "branch": "로그인 시작",
+      "title": "구글로 보낸다",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/google/start"
+      },
+      "expect": {
+        "status": 302
+      }
+    },
+    {
+      "id": "AUTH-4",
+      "branch": "없는 제공자",
+      "title": "없는 제공자는 404",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/none/start"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "없는 로그인 방법이에요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-5",
+      "branch": "앱 시작 인자 틀림",
+      "title": "challenge 없음",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/google/start?app=1"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_request",
+            "message": "앱 로그인은 code_challenge(S256)가 있어야 해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-6",
+      "branch": "앱 시작 인자 틀림",
+      "title": "짧은 challenge",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/google/start?app=1&code_challenge_method=S256&code_challenge=short"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_request",
+            "message": "앱 로그인은 code_challenge(S256)가 있어야 해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-7",
+      "branch": "앱 시작",
+      "title": "맞는 challenge",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/google/start?app=1&code_challenge_method=S256&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+      },
+      "expect": {
+        "status": 302
+      }
+    },
+    {
+      "id": "AUTH-8",
+      "branch": "돌아왔지만 실패",
+      "title": "state 쿠키가 없으면 302",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/google/callback?code=x&state=y"
+      },
+      "expect": {
+        "status": 302
+      }
+    },
+    {
+      "id": "AUTH-9",
+      "branch": "로그인 성공",
+      "manual": "실제 제공자 로그인이 필요하다"
+    },
+    {
+      "id": "AUTH-10",
+      "branch": "앱 토큰 머리말 없음",
+      "title": "머리말 없으면 403",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/app/token"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "이 요청은 슝 화면에서만 할 수 있어요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-11",
+      "branch": "앱 토큰 본문 없음",
+      "title": "본문 없으면 413",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/app/token",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 413,
+        "body": {
+          "error": {
+            "code": "too_large",
+            "message": "본문이 없거나 너무 커요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-12",
+      "branch": "앱 토큰 칸 틀림",
+      "title": "글자가 아니면 400",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/app/token",
+        "headers": {
+          "X-Requested-With": "syung"
+        },
+        "json": {
+          "code": 1
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_request",
+            "message": "code · codeVerifier 는 글자예요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-13",
+      "branch": "앱 토큰 코드 틀림",
+      "title": "없는 코드는 400",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/app/token",
+        "headers": {
+          "X-Requested-With": "syung"
+        },
+        "json": {
+          "code": "nope",
+          "codeVerifier": "nope"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "invalid_code",
+            "message": "로그인 코드가 맞지 않거나 지났어요. 다시 로그인해 주세요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-14",
+      "branch": "앱 토큰 받음",
+      "manual": "실제 앱 로그인 코드가 필요하다"
+    },
+    {
+      "id": "AUTH-15",
+      "branch": "로그아웃 머리말 없음",
+      "title": "머리말 없으면 403",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "이 요청은 슝 화면에서만 할 수 있어요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-16",
+      "branch": "로그아웃",
+      "title": "머리말 있으면 204",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "id": "AUTH-17",
+      "branch": "카카오 해제 키 틀림",
+      "title": "키 없으면 401",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/kakao/unlink"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "카카오가 보낸 요청이 아니에요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-18",
+      "branch": "카카오 해제 잘못된 방식",
+      "title": "PUT 은 405",
+      "request": {
+        "method": "PUT",
+        "path": "/api/auth/kakao/unlink"
+      },
+      "expect": {
+        "status": 405,
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "message": "이 주소에서 할 수 없는 요청이에요"
+          }
+        }
+      }
+    },
+    {
+      "id": "AUTH-19",
+      "branch": "카카오 해제 성공",
+      "manual": "실제 어드민 키 · 회원 자료가 필요하다"
+    },
+    {
+      "id": "AUTH-20",
+      "branch": "회원 기능 꺼짐",
+      "manual": "로그인 방법을 다 끈 다른 서버 설정이 필요하다"
+    }
+  ]
+}

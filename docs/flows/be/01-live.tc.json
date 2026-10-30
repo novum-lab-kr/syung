@@ -1,0 +1,158 @@
+{
+  "cases": [
+    {
+      "id": "LIVE-1",
+      "branch": "서버 살아 있음",
+      "title": "살아 있으면 ok",
+      "request": {
+        "method": "GET",
+        "path": "/health"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "id": "LIVE-2",
+      "branch": "이상 감지 보고",
+      "title": "이상 감지 모양",
+      "request": {
+        "method": "GET",
+        "path": "/api/health"
+      },
+      "expect": {
+        "status": 200,
+        "shape": {
+          "ok": "boolean",
+          "checkedAt": "string",
+          "checks": [
+            {
+              "key": "string",
+              "ok": "boolean",
+              "text": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "LIVE-3",
+      "branch": "보는 노선 없음",
+      "title": "노선 없이 부르면 빈 목록",
+      "request": {
+        "method": "GET",
+        "path": "/live"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "mode": "viewport",
+          "trainCount": 0
+        },
+        "shape": {
+          "lines": "array",
+          "trains": "array"
+        }
+      }
+    },
+    {
+      "id": "LIVE-4",
+      "branch": "없는 노선 이름",
+      "title": "없는 노선은 버린다",
+      "request": {
+        "method": "GET",
+        "path": "/live?lines=%EC%97%86%EB%8A%94%EC%84%A0"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "mode": "viewport"
+        },
+        "shape": {
+          "lines": []
+        }
+      }
+    },
+    {
+      "id": "LIVE-5",
+      "branch": "운행 안 하는 시간",
+      "title": "쉬는 시간이면 바깥을 안 부른다",
+      "request": {
+        "method": "GET",
+        "path": "/live?lines=2%ED%98%B8%EC%84%A0"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "mode": "all",
+          "quiet": true,
+          "trainCount": 0
+        },
+        "shape": {
+          "lines": [
+            "string"
+          ],
+          "warnings": "array",
+          "trains": "array"
+        }
+      }
+    },
+    {
+      "id": "LIVE-6",
+      "branch": "실시간 열차 있음",
+      "manual": "서울 위치 API 키와 실제 운행 자료가 필요하다"
+    },
+    {
+      "id": "LIVE-7",
+      "branch": "보여 줄 것 없음",
+      "manual": "바깥 API 실패를 로컬에서 재현할 수단이 없다"
+    },
+    {
+      "id": "LIVE-8",
+      "branch": "역 도착 예정",
+      "manual": "서울 도착 API 를 실제로 부른다"
+    },
+    {
+      "id": "LIVE-9",
+      "branch": "사전 요청 허용",
+      "title": "공개 주소 OPTIONS",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/live"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "id": "LIVE-10",
+      "branch": "사전 요청 거절",
+      "title": "공개 주소가 아니면 501",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/health"
+      },
+      "expect": {
+        "status": 501
+      }
+    },
+    {
+      "id": "LIVE-11",
+      "branch": "없는 주소",
+      "title": "없는 GET 은 404",
+      "request": {
+        "method": "GET",
+        "path": "/nope"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ]
+}

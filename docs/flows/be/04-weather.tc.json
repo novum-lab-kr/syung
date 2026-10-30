@@ -1,0 +1,114 @@
+{
+  "cases": [
+    {
+      "id": "WEATHER-1",
+      "branch": "좌표 없음",
+      "title": "좌표 없이 부르면 400",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_coordinates",
+            "message": "lat 과 lng 가 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "WEATHER-2",
+      "branch": "좌표 없음",
+      "title": "글자면 400",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather?lat=abc"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_coordinates",
+            "message": "lat 과 lng 가 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "WEATHER-3",
+      "branch": "좌표 범위 밖",
+      "title": "위도 91 은 400",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather?lat=91&lng=1"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_coordinates",
+            "message": "좌표 범위가 맞지 않아요"
+          }
+        }
+      }
+    },
+    {
+      "id": "WEATHER-4",
+      "branch": "좌표 범위 밖",
+      "title": "nan 은 400",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather?lat=nan&lng=1"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "bad_coordinates",
+            "message": "좌표 범위가 맞지 않아요"
+          }
+        }
+      }
+    },
+    {
+      "id": "WEATHER-5",
+      "branch": "격자 밖",
+      "title": "0,0 은 격자 밖",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather?lat=0&lng=0"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "out_of_range",
+            "message": "기상청 격자 밖이에요"
+          }
+        }
+      }
+    },
+    {
+      "id": "WEATHER-6",
+      "branch": "날씨 못 받음",
+      "title": "키가 없으면 200 ok false",
+      "request": {
+        "method": "GET",
+        "path": "/api/weather?lat=37.5&lng=127"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": false
+        }
+      }
+    },
+    {
+      "id": "WEATHER-7",
+      "branch": "날씨 받음",
+      "manual": "기상청 키가 필요하다"
+    }
+  ]
+}

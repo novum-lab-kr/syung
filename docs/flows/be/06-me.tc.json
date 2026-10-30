@@ -1,0 +1,387 @@
+{
+  "cases": [
+    {
+      "id": "ME-1",
+      "branch": "쓰기 머리말 없음",
+      "title": "탈퇴 머리말 없음",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/me"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "이 요청은 슝 화면에서만 할 수 있어요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-2",
+      "branch": "쓰기 머리말 없음",
+      "title": "승차권 추가 머리말 없음",
+      "request": {
+        "method": "POST",
+        "path": "/api/me/tickets"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "이 요청은 슝 화면에서만 할 수 있어요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-3",
+      "branch": "없는 내 주소",
+      "title": "모르는 주소",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/nothing"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "없는 주소예요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-4",
+      "branch": "없는 내 주소",
+      "title": "승차권 번호가 글자",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/tickets/abc"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "없는 주소예요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-5",
+      "branch": "로그인 안 함",
+      "title": "내 정보",
+      "request": {
+        "method": "GET",
+        "path": "/api/me"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-6",
+      "branch": "로그인 안 함",
+      "title": "옛 주소 내 정보",
+      "request": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-7",
+      "branch": "로그인 안 함",
+      "title": "탈퇴",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/me",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-8",
+      "branch": "로그인 안 함",
+      "title": "승차권 목록",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/tickets"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-9",
+      "branch": "로그인 안 함",
+      "title": "승차권 추가",
+      "request": {
+        "method": "POST",
+        "path": "/api/me/tickets",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-10",
+      "branch": "로그인 안 함",
+      "title": "승차권 수정",
+      "request": {
+        "method": "PUT",
+        "path": "/api/me/tickets/1",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-11",
+      "branch": "로그인 안 함",
+      "title": "승차권 삭제",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/me/tickets/1",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-12",
+      "branch": "로그인 안 함",
+      "title": "기기 목록",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/sessions"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-13",
+      "branch": "로그인 안 함",
+      "title": "통계",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/stats"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-14",
+      "branch": "로그인 안 함",
+      "title": "내보내기",
+      "request": {
+        "method": "GET",
+        "path": "/api/me/export"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-15",
+      "branch": "로그인 안 함",
+      "title": "사용 기록",
+      "request": {
+        "method": "POST",
+        "path": "/api/me/usage",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-16",
+      "branch": "로그인 안 함",
+      "title": "프로필",
+      "request": {
+        "method": "PUT",
+        "path": "/api/me/profile",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-17",
+      "branch": "로그인 안 함",
+      "title": "사진",
+      "request": {
+        "method": "PUT",
+        "path": "/api/me/avatar",
+        "headers": {
+          "X-Requested-With": "syung"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-18",
+      "branch": "틀린 토큰",
+      "title": "틀린 Bearer",
+      "request": {
+        "method": "GET",
+        "path": "/api/me",
+        "headers": {
+          "Authorization": "Bearer nope"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "login",
+            "message": "로그인이 필요해요"
+          }
+        }
+      }
+    },
+    {
+      "id": "ME-19",
+      "branch": "내 정보 보기",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-20",
+      "branch": "탈퇴",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-21",
+      "branch": "프로필 바꾸기",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-22",
+      "branch": "승차권 쓰기",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-23",
+      "branch": "승차권 장수 한도",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-24",
+      "branch": "기기 · 통계 · 내보내기",
+      "manual": "로그인 세션이 필요하다"
+    },
+    {
+      "id": "ME-25",
+      "branch": "방식 틀림",
+      "manual": "로그인 세션이 필요하다"
+    }
+  ]
+}

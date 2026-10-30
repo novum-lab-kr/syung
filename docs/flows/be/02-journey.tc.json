@@ -1,0 +1,284 @@
+{
+  "cases": [
+    {
+      "id": "ROUTE-1",
+      "branch": "좌표 없음",
+      "title": "좌표 없이 부르면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "출발지와 도착지 좌표가 필요해요 (from=위도,경도&to=위도,경도)"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-2",
+      "branch": "좌표 없음",
+      "title": "좌표가 셋이면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=1,2,3&to=1,2"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "출발지와 도착지 좌표가 필요해요 (from=위도,경도&to=위도,경도)"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-3",
+      "branch": "좌표 없음",
+      "title": "숫자가 아니면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=abc&to=1,2"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "출발지와 도착지 좌표가 필요해요 (from=위도,경도&to=위도,경도)"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-4",
+      "branch": "시각 형식 틀림",
+      "title": "없는 날짜면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.5547,126.9707&at=2026-13-99"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "시각은 YYYY-MM-DDTHH:MM 형식이에요"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-5",
+      "branch": "경유지 형식 틀림",
+      "title": "경유지가 글자면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.5547,126.9707&via=abc"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "경유지 좌표는 via=위도,경도 예요"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-6",
+      "branch": "경유지 형식 틀림",
+      "title": "경유지가 nan 이면 400",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.5547,126.9707&via=nan,1"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "경유지 좌표는 via=위도,경도 예요"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-7",
+      "branch": "길 찾음",
+      "title": "강남 → 서울역 경로",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.5547,126.9707&at=2026-11-02T08:30"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "at": "2026-11-02 08:30"
+        },
+        "shape": {
+          "at": "string",
+          "straightMetres": "number",
+          "plans": [
+            {
+              "tag": "string",
+              "kind": "string",
+              "leaveBy": "string",
+              "arrives": "string",
+              "minutes": "number",
+              "transfers": "number",
+              "walkMinutes": "number",
+              "legs": "array"
+            }
+          ],
+          "searched": {
+            "searches": "number",
+            "seconds": "number"
+          }
+        }
+      }
+    },
+    {
+      "id": "ROUTE-8",
+      "branch": "가까워서 걸어감",
+      "title": "100 m 남짓은 걸어가기",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.4985,127.0285&at=2026-11-02T08:30"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true
+        },
+        "shape": {
+          "at": "string",
+          "straightMetres": "number",
+          "plans": [
+            {
+              "tag": "string",
+              "kind": "string",
+              "leaveBy": "string",
+              "arrives": "string",
+              "minutes": "number",
+              "transfers": "number",
+              "walkMinutes": "number",
+              "legs": "array"
+            }
+          ],
+          "searched": {
+            "searches": "number",
+            "seconds": "number"
+          }
+        }
+      }
+    },
+    {
+      "id": "ROUTE-9",
+      "branch": "경유지 거쳐 길 찾음",
+      "title": "경유지를 지나는 경로",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=37.4979,127.0276&to=37.5547,126.9707&via=37.5,127.0&at=2026-11-02T08:30"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": true
+        },
+        "shape": {
+          "at": "string",
+          "straightMetres": "number",
+          "plans": [
+            {
+              "tag": "string",
+              "kind": "string",
+              "leaveBy": "string",
+              "arrives": "string",
+              "minutes": "number",
+              "transfers": "number",
+              "walkMinutes": "number",
+              "legs": "array"
+            }
+          ],
+          "searched": {
+            "searches": "number",
+            "seconds": "number"
+          }
+        }
+      }
+    },
+    {
+      "id": "ROUTE-10",
+      "branch": "길 없음",
+      "title": "수도권 밖 좌표는 길 없음",
+      "request": {
+        "method": "GET",
+        "path": "/route?from=0,0&to=1,1&at=2026-11-02T08:30"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ok": false,
+          "error": "이 시각에는 다니는 열차·버스가 없거나, 가까운 역·정류장에서 이어지는 경로를 찾지 못했어요."
+        },
+        "shape": {
+          "plans": [],
+          "searched": "object"
+        }
+      }
+    },
+    {
+      "id": "ROUTE-11",
+      "branch": "실시간 겹침",
+      "manual": "지금 시각의 실제 운행 자료가 필요하다"
+    },
+    {
+      "id": "PLACE-1",
+      "branch": "검색어 없음",
+      "title": "q 없이 부르면 400",
+      "request": {
+        "method": "GET",
+        "path": "/place"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "검색어가 필요해요"
+        }
+      }
+    },
+    {
+      "id": "PLACE-2",
+      "branch": "검색어 없음",
+      "title": "공백만이면 400",
+      "request": {
+        "method": "GET",
+        "path": "/place?q=%20"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "ok": false,
+          "error": "검색어가 필요해요"
+        }
+      }
+    },
+    {
+      "id": "PLACE-3",
+      "branch": "장소 검색 실패",
+      "title": "키가 없으면 503",
+      "request": {
+        "method": "GET",
+        "path": "/place?q=gangnam"
+      },
+      "expect": {
+        "status": 503,
+        "body": {
+          "ok": false,
+          "error": "장소 검색 실패: KAKAO_REST_KEY 가 설정되지 않았어요"
+        }
+      }
+    },
+    {
+      "id": "PLACE-4",
+      "branch": "장소 찾음",
+      "manual": "카카오 키가 필요하다"
+    }
+  ]
+}
