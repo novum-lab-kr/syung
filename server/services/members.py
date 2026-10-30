@@ -10,11 +10,18 @@
 - 카카오 연결 해제 웹훅: 사용자가 카카오 쪽(계정 관리 · 계정 탈퇴 · 고객센터)에서 슝 연결을 끊으면 카카오가 알려 온다.
   Authorization: KakaoAK <대표 어드민 키> 로 진짜인지 보고, 본문 user_id(카카오 회원번호)의 회원을 정리한다
   (카카오 문서 kakaologin/callback#unlink · getting-started/callback — 받은 뒤 3초 안에 200, 그 회원이 없어도 200).
+- 앱 로그인(2026-10-30 · 앱은 쿠키 세션을 못 쓴다): 앱이 시스템 브라우저로 start(app=1 · PKCE code_challenge)를 열고 →
+  제공자 → 같은 콜백(제공자 콘솔에 등록한 리다이렉트 URI 그대로)이 세션 대신 일회용 코드를 만들어 딥링크로 앱에 돌려준다(finish_app) →
+  앱이 코드 + code_verifier 를 세션 토큰으로 바꾼다(redeem_app_code — RFC 7636 S256 · 한 번만). 토큰은 웹 세션과 같은 sessions 줄이라
+  로그인 기기 목록 · 기기별 로그아웃 · 탈퇴가 그대로 돈다(기기 수 제한 없음 — 웹과 같다). 일회용 코드는 메모리에만 APP_CODE_AGE 초
+  (서버가 다시 뜨면 다시 로그인). 앱 세션만 쓸 때마다 SESSION_AGE 연장(사용자 결정 2026-10-30): 마지막 사용 시각을 고쳐 쓸 때
+  (TOUCH_EVERY 간격) 끝나는 시각을 그때 + SESSION_AGE 로 민다 — SESSION_AGE 동안 안 쓰면 끝난다. 웹 세션은 만든 때부터 고정 그대로.
 - 계정 · 내 통계(2026-10-27 계획서 D1~D4 — 모양은 services/account.py): 로그인 기기 목록 · 하나 / 다른 기기 모두 로그아웃,
   내 데이터 내려받기(JSON), 날짜별 사용 횟수. 세션의 마지막 사용 시각은 TOUCH_EVERY 초가 지났을 때만 고쳐 쓴다(쓰기를 줄인다).
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -23,11 +30,11 @@ import secrets
 import threading
 import time
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, cast
 
 from server.config import MemberConfig, avatar_dir
-from server.services.account import (SESSION_ID, USAGE_KINDS, USAGE_MOST, device_of, session_id, session_view,
-                                     stats_view, today_kst)
+from server.services.account import (SESSION_ID, USAGE_KINDS, USAGE_MOST, app_device, device_of, session_id,
+                                     session_view, stats_view, today_kst)
 from server.services.fare import month_view
 from server.services.login_providers import providers_from_config
 from server.services.profile import (CHARACTERS, avatar_value, avatar_view, check_photo, clean_name, photo_name)
@@ -58,10 +65,14 @@ KAKAO_MEMBER = re.compile(r"[0-9]{1,20}")   # 카카오 회원번호(/v2/user/me
 PHOTO_URL = "/api/me/avatar/{name}"   # 로그인한 본인만 보는 사진 주소(routes/members.py)
 ORPHAN_AGE = 3600   # 정리할 때 이보다 갓 쓴 사진 파일은 건드리지 않는다(올리는 중일 수 있다)
 TOUCH_EVERY = 3600   # 세션 마지막 사용 시각을 고쳐 쓰는 가장 짧은 간격(화면에는 날짜 · 시각만 보인다)
+APP_CODE_AGE = 60   # 앱 일회용 코드 수명(딥링크로 돌아온 앱이 곧바로 바꾼다)
+APP_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")   # PKCE S256 code_challenge(SHA-256 32바이트의 base64url · = 없음)
+APP_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")   # PKCE code_verifier(RFC 7636 4.1)
 
 
 class LoginError(Exception):
-    """code: state(요청이 맞지 않음) · denied(사용자가 취소) · provider(제공자 실패) · limit(시도 한도) · unknown(없는 제공자)."""
+    """code: state(요청이 맞지 않음) · denied(사용자가 취소) · provider(제공자 실패) · limit(시도 한도) · unknown(없는 제공자)
+    · code(앱 일회용 코드가 없음 · 지남 · 이미 씀 · code_verifier 가 맞지 않음 · 그사이 탈퇴 — 앱에는 하나로만 알린다)."""
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
@@ -69,6 +80,20 @@ class LoginError(Exception):
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def pkce_challenge(verifier: str) -> str:
+    """code_verifier → S256 code_challenge(RFC 7636 4.2 — BASE64URL(SHA256(ASCII(verifier))), = 없음)."""
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+
+
+class AppCode(NamedTuple):
+    """콜백이 앱에 건넨 일회용 코드 하나(메모리에 코드의 해시로 둔다)."""
+    expires: int
+    user_id: int
+    created: bool   # 처음 가입했나(웹의 #login=new 와 같은 뜻)
+    device: str
+    challenge: str
 
 
 def _place(value: object, label: str) -> dict[str, Any]:
@@ -251,6 +276,7 @@ class MemberService:
         self.avatars = AvatarFiles(avatar_dir(self.store.path))   # 사진 폴더는 늘 회원 DB 옆(config.avatar_dir)
         self._clock = clock
         self._tries: dict[str, list[float]] = {}
+        self._app_codes: dict[str, AppCode] = {}
         self._lock = threading.Lock()
 
     @property
@@ -285,6 +311,40 @@ class MemberService:
                user_agent: str | None = None) -> tuple[str, bool]:
         """콜백 쿼리(code · state · error) → (새 세션 토큰(쿠키 값), 처음 가입했나). 실패는 LoginError.
         user_agent: 기기 종류만 뽑아 세션에 남긴다(원문은 저장하지 않는다)."""
+        user_id, created, now = self._identify(provider, query, expected_state, address)
+        return self._new_session(user_id, now, device_of(user_agent)), created
+
+    def finish_app(self, provider: str, query: dict[str, list[str]], expected_state: str | None, address: str,
+                   user_agent: str | None, challenge: str) -> str:
+        """앱 로그인 콜백 → 일회용 코드(딥링크로 앱에 건넨다). 세션은 앱이 코드를 바꿀 때 연다. 실패는 LoginError(finish 와 같은 code).
+        challenge: start 때 앱이 보낸 PKCE S256 code_challenge(state 쿠키에 실려 돌아온 것)."""
+        user_id, created, now = self._identify(provider, query, expected_state, address)
+        code = secrets.token_urlsafe(32)
+        with self._lock:
+            for old in [key for key, held in self._app_codes.items() if held.expires <= now]:
+                del self._app_codes[old]
+            self._app_codes[token_hash(code)] = AppCode(now + APP_CODE_AGE, user_id, created, app_device(user_agent), challenge)
+        return code
+
+    def redeem_app_code(self, code: str, verifier: str) -> tuple[str, int, bool, int]:
+        """일회용 코드 + code_verifier → (세션 토큰, 끝나는 시각(유닉스 초), 처음 가입했나, 회원 번호). 코드는 한 번만 —
+        verifier 가 틀려도 지운다(코드 하나로 verifier 를 여러 번 맞춰 보지 못하게). 실패는 LoginError("code")."""
+        if not code or len(code) > 200 or not APP_VERIFIER.fullmatch(verifier or ""):
+            raise LoginError("code")
+        now = int(self._clock())
+        with self._lock:
+            held = self._app_codes.pop(token_hash(code), None)
+        if held is None or held.expires <= now:
+            raise LoginError("code")
+        if not hmac.compare_digest(pkce_challenge(verifier).encode(), held.challenge.encode()):
+            raise LoginError("code")
+        if self.store.user(held.user_id) is None:   # 코드를 받고 바꾸기 전에 탈퇴했다
+            raise LoginError("code")
+        token = self._new_session(held.user_id, now, held.device, app=True)
+        return token, now + SESSION_AGE, held.created, held.user_id
+
+    def _identify(self, provider: str, query: dict[str, list[str]], expected_state: str | None, address: str) -> tuple[int, bool, int]:
+        """콜백 쿼리를 확인해 회원을 찾거나 만든다 → (회원 번호, 처음 가입했나, 지금 시각). 웹 · 앱 콜백이 같이 쓴다."""
         if provider not in self.providers:
             raise LoginError("unknown")
         if not self._allow(address):
@@ -303,16 +363,16 @@ class MemberService:
             raise LoginError("provider") from None
         now = int(self._clock())
         user_id, created = self.store.find_or_create_user(provider, subject, name, now)
-        return self._new_session(user_id, now, device_of(user_agent)), created
+        return user_id, created, now
 
-    def _new_session(self, user_id: int, now: int, device: str = "") -> str:
+    def _new_session(self, user_id: int, now: int, device: str = "", *, app: bool = False) -> str:
         token = secrets.token_urlsafe(32)
-        self.store.add_session(token_hash(token), user_id, now, now + SESSION_AGE, device)
+        self.store.add_session(token_hash(token), user_id, now, now + SESSION_AGE, device, app)
         return token
 
     # ---- 세션으로 ----
     def user_id(self, token: str | None) -> int | None:
-        """살아 있는 세션의 회원 번호. 마지막 사용이 TOUCH_EVERY 초보다 오래면 지금으로 고쳐 쓴다."""
+        """살아 있는 세션의 회원 번호. 마지막 사용이 TOUCH_EVERY 초보다 오래면 지금으로 고쳐 쓴다(앱 세션은 끝나는 시각도 민다)."""
         if not token or len(token) > 200:
             return None
         hashed, now = token_hash(token), int(self._clock())
@@ -321,7 +381,7 @@ class MemberService:
             return None
         user_id, used_at = found
         if now - used_at >= TOUCH_EVERY:
-            self.store.touch_session(hashed, now)
+            self.store.touch_session(hashed, now, now + SESSION_AGE)
         return user_id
 
     def me(self, user_id: int) -> dict[str, Any] | None:

@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from server.config import MemberConfig
 from server.jobs.member_backup import backup_all
 from server.routes.http import Server, make_handler
-from server.services.account import USAGE_MOST, device_label, device_of
+from server.services.account import USAGE_MOST, app_device, device_label, device_of
 from server.services.admin import AdminService
 from server.services.members import TOUCH_EVERY, MemberService
 from server.store.members import MIGRATIONS, MemberStore
@@ -45,6 +45,13 @@ class DeviceTest(unittest.TestCase):
         self.assertEqual(device_label("android/"), "안드로이드")
         self.assertEqual(device_label(""), "알 수 없는 기기")
         self.assertEqual(device_label("이상한/값"), "알 수 없는 기기")
+
+    def test_app_login_keeps_the_os_and_marks_the_app(self):
+        self.assertEqual(app_device(IPHONE), "iphone/app")
+        self.assertEqual(app_device(ANDROID_KAKAO), "android/app")
+        self.assertEqual(app_device(None), "/app")
+        self.assertEqual(device_label("iphone/app"), "아이폰 · 슝 앱")
+        self.assertEqual(device_label("/app"), "슝 앱")
 
 
 class AccountHttpTest(unittest.TestCase):

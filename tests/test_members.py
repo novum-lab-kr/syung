@@ -17,12 +17,14 @@ from types import SimpleNamespace
 from server.config import MemberConfig
 from server.routes.http import Server, make_handler
 from server.services import login_providers
-from server.services.members import TICKET_LIMIT, MemberService, TRIES, clean_ticket
+from server.services.members import APP_CODE_AGE, SESSION_AGE, TICKET_LIMIT, MemberService, TRIES, clean_ticket, pkce_challenge
 from server.sources.oauth import ProviderError
 from server.store.members import MIGRATIONS, MemberStore
 
 NOW = 1_800_000_000
 ADMIN_KEY = "test-admin-key"   # 시험용 가짜 대표 어드민 키
+VERIFIER = "app-verifier-" + "x" * 40   # 시험용 PKCE code_verifier(43~128자)
+IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
 TICKET = {"name": "출근", "from": {"name": "서울시청", "lat": 37.5663, "lng": 126.9779},
           "to": {"name": "강남역", "lat": 37.4979, "lng": 127.0276}, "depart": "08:10", "days": [5, 1, 2, 4]}
 # 길찾기(/api/route) 결과 한 개 — 그리는 데 안 쓰는 칸(path · stations · direction …)은 저장하지 않는다
@@ -72,9 +74,13 @@ class MemberHttpTest(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
 
-    def request(self, method, path, *, cookie=None, body=None, csrf=True, forwarded="192.0.2.1"):
+    def request(self, method, path, *, cookie=None, body=None, csrf=True, forwarded="192.0.2.1", token=None, agent=None):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=5)
         headers = {"X-Forwarded-For": forwarded}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if agent:
+            headers["User-Agent"] = agent
         if cookie:
             headers["Cookie"] = cookie
         if csrf:
@@ -104,6 +110,133 @@ class MemberHttpTest(unittest.TestCase):
         self.last_location = done.headers["Location"]
         session = next(c for c in done.cookies if c.startswith("syung_session="))
         return session.split(";")[0]
+
+    def app_code(self, subject="42", name="민지", *, verifier=VERIFIER, query=None):
+        """앱 로그인: start(app=1 · PKCE) → 콜백 → 딥링크의 쿼리(code 또는 error)."""
+        challenge = pkce_challenge(verifier)
+        start = self.request("GET", f"/api/auth/kakao/start?app=1&code_challenge={challenge}&code_challenge_method=S256")
+        self.assertEqual(start.status, 302)
+        state_cookie = start.cookies[0].split(";")[0]
+        self.assertTrue(state_cookie.endswith("." + challenge), "state 쿠키에 code_challenge 를 싣는다")
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(start.headers["Location"]).query)["state"][0]
+        query = query or f"code=who:{subject}:{urllib.parse.quote(name)}&state={state}"
+        done = self.request("GET", f"/api/auth/kakao/callback?{query}", cookie=state_cookie, agent=IPHONE_UA)
+        self.assertEqual(done.status, 302)
+        location = done.headers["Location"]
+        self.assertTrue(location.startswith("syung://login?"), location)
+        self.assertFalse(any(c.startswith("syung_session=") and "Max-Age=0" not in c for c in done.cookies), "앱 로그인은 세션 쿠키를 주지 않는다")
+        self.assertTrue(any(c.startswith("syung_login=;") for c in done.cookies), "state 쿠키는 지운다")
+        return {key: values[0] for key, values in urllib.parse.parse_qs(urllib.parse.urlsplit(location).query).items()}
+
+    def app_login(self, subject="42", name="민지"):
+        code = self.app_code(subject, name)["code"]
+        exchanged = self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER})
+        self.assertEqual(exchanged.status, 200, exchanged.json)
+        return exchanged.json
+
+    def test_app_login_gives_a_one_time_code_then_a_bearer_token(self):
+        answer = self.app_login()
+        self.assertEqual(set(answer), {"token", "expiresAt", "new", "me"})
+        self.assertEqual((answer["expiresAt"], answer["new"]), (NOW + SESSION_AGE, True))
+        self.assertEqual(answer["me"], {"id": 1, "name": "민지", "provider": "kakao", "avatar": None})
+        token = answer["token"]
+        me = self.request("GET", "/api/me", token=token)
+        self.assertEqual((me.status, me.json["id"]), (200, 1))
+        self.assertEqual(self.request("GET", "/api/auth/providers", token=token).json["me"]["id"], 1)
+        self.assertEqual(self.request("POST", "/api/me/tickets", token=token, body=TICKET).status, 201)
+        self.assertEqual(len(self.request("GET", "/api/me/tickets", token=token).json["tickets"]), 1)
+        sessions = self.request("GET", "/api/me/sessions", token=token).json["sessions"]
+        self.assertEqual([(row["device"], row["current"]) for row in sessions], [("아이폰 · 슝 앱", True)])
+        # 같은 사람이 웹에서도 로그인하면 같은 회원 · 기기 목록에 둘 다
+        web = self.login()
+        self.assertEqual(self.last_location, "/#login=ok")
+        self.assertEqual(len(self.request("GET", "/api/me/sessions", cookie=web).json["sessions"]), 2)
+        self.assertEqual(self.request("POST", "/api/auth/logout", token=token).status, 204)
+        self.assertEqual(self.request("GET", "/api/me", token=token).status, 401, "로그아웃한 앱 토큰은 끝난다")
+        self.assertEqual(self.request("GET", "/api/me", cookie=web).status, 200, "웹 세션은 그대로")
+        self.assertEqual(self.app_login()["new"], False, "두 번째부터는 new 가 아니다")
+
+    def test_app_session_slides_with_use_but_web_session_stays_fixed(self):
+        token = self.app_login()["token"]
+        web = self.login()
+        day = 24 * 3600
+        self.now = NOW + 29 * day
+        self.assertEqual(self.request("GET", "/api/me", token=token).status, 200)
+        self.assertEqual(self.request("GET", "/api/me", cookie=web).status, 200)
+        self.now = NOW + SESSION_AGE
+        self.assertEqual(self.request("GET", "/api/me", cookie=web).status, 401, "웹은 써도 만든 때부터 30일 고정")
+        self.assertEqual(self.request("GET", "/api/me", token=token).status, 200, "앱은 마지막 사용 + 30일")
+        self.now = NOW + SESSION_AGE + SESSION_AGE - 1
+        self.assertEqual(self.request("GET", "/api/me", token=token).status, 200, "쓸 때마다 다시 밀린다")
+        self.now += SESSION_AGE
+        self.assertEqual(self.request("GET", "/api/me", token=token).status, 401, "30일 안 쓰면 끝난다")
+
+    def test_app_code_is_single_use_short_lived_and_bound_to_the_verifier(self):
+        code = self.app_code()["code"]
+        wrong = self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": "y" * 43})
+        self.assertEqual(wrong.json, {"error": {"code": "invalid_code", "message": "로그인 코드가 맞지 않거나 지났어요. 다시 로그인해 주세요"}})
+        self.assertEqual(wrong.status, 400)
+        again = self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER})
+        self.assertEqual(again.json["error"]["code"], "invalid_code", "verifier 가 한 번 틀리면 코드는 사라진다")
+        code = self.app_code()["code"]
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER}).status, 200)
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER}).status, 400, "한 번만")
+        code = self.app_code()["code"]
+        self.now = NOW + APP_CODE_AGE
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER}).json["error"]["code"],
+                         "invalid_code", "지난 코드")
+
+    def test_app_token_bodies_and_header(self):
+        for body in (b"not json", [], {}, {"code": 1, "codeVerifier": VERIFIER}, {"code": "x"}):
+            with self.subTest(body=body):
+                result = self.request("POST", "/api/auth/app/token", body=body)
+                self.assertEqual((result.status, result.json["error"]["code"]), (400, "bad_request"))
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body=b"{" + b" " * 2000 + b"}").status, 413)
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body={"code": "x", "codeVerifier": "short"}).json["error"]["code"],
+                         "invalid_code")
+        self.assertEqual(self.request("POST", "/api/auth/app/token", body={"code": "x", "codeVerifier": VERIFIER}, csrf=False).status, 403)
+        self.assertEqual(self.request("GET", "/api/auth/app/token").status, 404)
+
+    def test_app_start_needs_an_s256_challenge(self):
+        challenge = pkce_challenge(VERIFIER)
+        for query in ("app=1", f"app=1&code_challenge={challenge}", f"app=1&code_challenge={challenge}&code_challenge_method=plain",
+                      "app=1&code_challenge=short&code_challenge_method=S256",
+                      f"app=1&code_challenge={challenge[:-1]}.&code_challenge_method=S256"):
+            with self.subTest(query=query):
+                result = self.request("GET", f"/api/auth/kakao/start?{query}")
+                self.assertEqual((result.status, result.json["error"]["code"]), (400, "bad_request"))
+                self.assertEqual(result.cookies, [])
+        self.assertEqual(self.request("GET", f"/api/auth/nope/start?app=1&code_challenge={challenge}&code_challenge_method=S256").status, 404)
+        web = self.request("GET", f"/api/auth/kakao/start?code_challenge={challenge}&code_challenge_method=S256")
+        self.assertRegex(web.cookies[0], r"^syung_login=kakao\.[\w-]+; ", "app=1 이 없으면 웹 로그인 그대로")
+
+    def test_app_callback_failures_return_to_the_app(self):
+        self.assertEqual(self.app_code(query="code=who:1:a&state=forged"), {"error": "state"})
+        self.assertEqual(self.app_code(query="code=bad&state=forged"), {"error": "state"})
+        start = self.request("GET", f"/api/auth/kakao/start?app=1&code_challenge={pkce_challenge(VERIFIER)}&code_challenge_method=S256")
+        state_cookie = start.cookies[0].split(";")[0]
+        state = state_cookie.split(".")[1]
+        for query, code in ((f"error=access_denied&state={state}", "denied"), (f"code=bad&state={state}", "provider")):
+            with self.subTest(query=query):
+                done = self.request("GET", f"/api/auth/kakao/callback?{query}", cookie=state_cookie)
+                self.assertEqual(done.headers["Location"], f"syung://login?error={code}")
+        self.members.providers["google"] = FakeProvider("google")
+        done = self.request("GET", f"/api/auth/google/callback?code=who:1:a&state={state}", cookie=state_cookie)
+        self.assertEqual(done.headers["Location"], "syung://login?error=state", "다른 제공자의 state 쿠키로는 안 된다")
+
+    def test_bearer_wins_over_the_cookie(self):
+        web = self.login()
+        self.assertEqual(self.request("GET", "/api/me", cookie=web, token="made-up").status, 401, "틀린 Bearer 는 쿠키로 넘어가지 않는다")
+        self.assertEqual(self.request("GET", "/api/me", cookie=web).status, 200)
+        token = self.app_login("7", "현우")["token"]
+        self.assertEqual(self.request("GET", "/api/me", cookie=web, token=token).json["name"], "현우")
+
+    def test_member_who_leaves_before_redeeming_gets_no_session(self):
+        web = self.login()
+        code = self.app_code()["code"]
+        self.assertEqual(self.request("DELETE", "/api/me", cookie=web).status, 204)
+        result = self.request("POST", "/api/auth/app/token", body={"code": code, "codeVerifier": VERIFIER})
+        self.assertEqual(result.json["error"]["code"], "invalid_code")
 
     def test_providers_list_and_disabled_service_hides_everything(self):
         self.assertEqual(self.request("GET", "/api/auth/providers").json, {"providers": ["kakao"], "me": None})
