@@ -1,5 +1,6 @@
 import { NEW_NAMES, createRouter, key, normStatus } from "./lib/routing.mjs";
 import { seoulSun, sunPosition as sunPosition$1 } from "./lib/sun.mjs";
+import { appMapMode, serverUrl } from "./lib/server_url.mjs";
 import { initJourney } from "./lib/journey-ui.mjs";
 import "./npm/preact/dist/preact.mjs";
 import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
@@ -20,6 +21,7 @@ import { createPopups } from "./ui/popups.mjs";
 import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
+import { createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
 import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
@@ -546,7 +548,7 @@ function buildStationFeatures() {
 		};
 	}));
 }
-var shapesReady = fetch("./track_shapes.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
+var shapesReady = fetch(serverUrl("./track_shapes.json"), { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
 	d = d || {};
 	shapes = d.edges || (d.stops ? {} : d);
 	stops = d.stops || {};
@@ -712,7 +714,7 @@ var exitCol = /* @__PURE__ */ new Map();
 var EXIT_MINZOOM = 16;
 var EXIT_MAX_M = 350;
 var EXIT_PASSAGES = false;
-var exitsReady = fetch("./exits.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
+var exitsReady = fetch(serverUrl("./exits.json"), { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
 	exits = d || {};
 }).catch(() => {});
 function exitFeatures() {
@@ -730,6 +732,17 @@ function exitFeatures() {
 	})));
 }
 var smooth = (x) => x * x * (3 - 2 * x);
+var appBridge = appMapMode() ? createAppBridge({
+	facts: {
+		hasStation: (id) => byId.has(id),
+		hasLine: (line) => line in paths,
+		hasMode: (id) => modes.has(id)
+	},
+	targets: {
+		window,
+		document
+	}
+}) : null;
 var modeCtl = createModeController({
 	registry: modes,
 	clock: () => clock(),
@@ -741,10 +754,12 @@ var modeCtl = createModeController({
 	onFail: (now) => {
 		showModeButtons(now);
 		modeBusy.end();
+		appBridge?.modeChanged(now);
 	},
 	commit: (prev, next, o) => {
 		commitMode(prev, next, o);
 		modeBusy.committed(next);
+		appBridge?.modeChanged(next);
 		if (location.hash.includes("debug")) console.info("[mode]", prev, "→", next, modes.explain(next));
 	}
 });
@@ -1496,6 +1511,10 @@ var { trainState, riderState, showTrainPopup, pickTrain, liveNotice, updateLiveN
 		}
 	}
 });
+var openTrain = (plan) => {
+	if (appBridge) appBridge.trainTap(plan);
+	else showTrainPopup(plan);
+};
 (() => {
 	const c = document.createElement("canvas").getContext("2d"), cache = /* @__PURE__ */ new Map();
 	return (t, px) => {
@@ -1886,8 +1905,8 @@ map.on("load", () => {
 		if (rider.ride) return;
 		if (map.queryRenderedFeatures(e.point, { layers: ["stations", "stations-casing"] }).length) return;
 		const pl = pickTrain(e.point);
-		if (pl) showTrainPopup(pl);
-		else if (busLayer?.selectAt(e.point)) {
+		if (pl) openTrain(pl);
+		else if (!appBridge && busLayer?.selectAt(e.point)) {
 			if (busLayer.selection?.kind === "bus") followBusStart(busLayer.selection.id);
 		} else if (!sheetBusy()) closeSheet();
 	});
@@ -1895,11 +1914,13 @@ map.on("load", () => {
 		if (rider.ride) return;
 		const pl = pickTrain(e.point);
 		if (pl) {
-			showTrainPopup(pl);
+			openTrain(pl);
 			return;
 		}
-		const p = e.features[0].properties;
-		showStationPopup(byId.get(+p.id), e.lngLat);
+		const p = e.features[0].properties, st = byId.get(+p.id);
+		if (appBridge) {
+			if (st) appBridge.stationTap(st);
+		} else showStationPopup(st, e.lngLat);
 	});
 	map.on("mouseenter", "stations", () => map.getCanvas().style.cursor = "pointer");
 	map.on("mouseleave", "stations", () => map.getCanvas().style.cursor = "");
@@ -1927,6 +1948,7 @@ map.on("load", () => {
 	busLayer = createBusLayer({
 		map,
 		phone: PHONE,
+		fetcher: (input, init) => fetch(typeof input === "string" ? serverUrl(input) : input, init),
 		frameMs,
 		requestRender: () => trainFrameSoon(0),
 		getExitCoordinates: () => Object.values(exits).flat(),
@@ -1991,6 +2013,26 @@ map.on("load", () => {
 		rebuildLabels();
 		refreshLive(true);
 	}
+	appBridge?.ready({
+		showRoute: (plan, pad) => ticketRoute.show(plan, {
+			bottom: pad.bottom ?? 110,
+			right: pad.right ?? 40
+		}),
+		clearRoute: () => {
+			clearRoute();
+			refreshLive();
+		},
+		focusStation: (id, zoom) => {
+			const st = byId.get(id);
+			map.flyTo({
+				center: [st.lon, st.lat],
+				zoom: zoom ?? Math.max(map.getZoom(), 15)
+			});
+		},
+		setMode: (id) => {
+			modeCtl.request(id);
+		}
+	}, modeCtl.current, modes.list().map((mode) => mode.id));
 });
 createStationSearch({
 	map,
@@ -2533,7 +2575,7 @@ var setJoseon = (on) => setSimcity(on, true);
 		}
 	});
 }
-{
+if (!appBridge) {
 	let started = false;
 	const go = () => {
 		if (started) return;

@@ -1,3 +1,4 @@
+import { serverUrl } from "./server_url.mjs";
 // web/lib/journey-ui.mts
 var esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({
 	"&": "&amp;",
@@ -329,7 +330,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 				paint();
 			};
 			try {
-				const answer = await (await fetch(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`)).json();
+				const answer = await (await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`))).json();
 				if (mine !== seek.seq) return;
 				if (!answer.ok) {
 					show([], answer.error || "검색하지 못했어요");
@@ -503,7 +504,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		document.activeElement?.blur?.();
 		const current = () => my === goSeq && mine !== 0 && mounted === mine;
 		try {
-			const answer = await (await fetch(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ""}`)).json();
+			const answer = await (await fetch(serverUrl(`./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}${at ? `&at=${encodeURIComponent(at)}` : ""}`))).json();
 			if (!current()) return;
 			if (!answer.ok) {
 				failed(answer.error || "출발지나 도착지를 바꿔 보세요.");

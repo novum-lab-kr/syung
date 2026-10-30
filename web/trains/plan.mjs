@@ -1,3 +1,4 @@
+import { serverUrl } from "../lib/server_url.mjs";
 // web/trains/plan.mts
 function createTrainPlanner({ stations, stationByLine, key, normStatus, route, merc, realGeom, geom, trainPose, mercStop, catchup, catchupAt, predictStops, isRide, getTrains }) {
 	function kstMs(v) {
@@ -22,7 +23,7 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 			approach: 40
 		}
 	};
-	fetch("./live-timing.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => {
+	fetch(serverUrl("./live-timing.json"), { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => {
 		if (d && d.lines) {
 			liveTiming = d;
 			replacePlans(getTrains().map(planTrain).filter(Boolean));
@@ -41,7 +42,7 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 		if (tm.rushPace && rushNow()) tm.pace = tm.rushPace;
 		return tm;
 	};
-	fetch("./edge_times.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
+	fetch(serverUrl("./edge_times.json"), { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).then((d) => {
 		edgeTimes = d.edges || {};
 		d.dwell;
 		plans = getTrains().map(planTrain).filter(Boolean);

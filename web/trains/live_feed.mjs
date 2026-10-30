@@ -1,3 +1,4 @@
+import { serverUrl } from "../lib/server_url.mjs";
 function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, updateLiveNotice, onTrains, onClear, journeyLines = () => null }) {
 	let trains = [], request = 0, on = false, failures = 0, key = "", at = 0, fetchedAt = null;
 	function liveLines() {
@@ -39,7 +40,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		if (!hasPlans()) liveState.parentElement.dataset.state = "loading";
 		liveState.textContent = `${lines.join(" · ")} 열차 위치 확인 중`;
 		try {
-			const r = await fetch(`./api/live?lines=${encodeURIComponent(lines.join(","))}${focus ? `&focus=${encodeURIComponent(focus)}` : ""}`, { cache: "no-store" }), d = await r.json();
+			const r = await fetch(serverUrl(`./api/live?lines=${encodeURIComponent(lines.join(","))}${focus ? `&focus=${encodeURIComponent(focus)}` : ""}`), { cache: "no-store" }), d = await r.json();
 			if (mine !== request) return;
 			if (!r.ok || !d.ok) throw Error(d.error || r.status);
 			const all = d.trains || [];

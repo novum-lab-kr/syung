@@ -1,3 +1,4 @@
+import { serverUrl } from "../lib/server_url.mjs";
 // web/map/sky_weather.mts
 var W = 320;
 var H = 110;
@@ -197,7 +198,7 @@ async function fetchWeather(here) {
 	if (cache && cache.key === key && Date.now() - cache.at < CACHE_MS) return cache.weather;
 	let weather = null;
 	try {
-		const response = await fetch(`./api/weather?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`, { cache: "no-store" });
+		const response = await fetch(serverUrl(`./api/weather?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`), { cache: "no-store" });
 		if (response.ok) weather = readReply(await response.json());
 	} catch {}
 	cache = {

@@ -1,3 +1,4 @@
+import { serverUrl } from "../lib/server_url.mjs";
 import { clearPanel, drawStationSheet } from "./station_sheet.mjs";
 import { drawTrainSheet } from "./train_sheet.mjs";
 // web/ui/popups.mts
@@ -199,7 +200,7 @@ function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainP
 		const failed = { kind: "failed" };
 		const seq = ++stationSeq;
 		let d = null, err = false;
-		const settled = fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g, ""))}`, { cache: "no-store" }).then(async (r) => {
+		const settled = fetch(serverUrl(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g, ""))}`), { cache: "no-store" }).then(async (r) => {
 			const x = await r.json();
 			if (!r.ok || !x.ok) throw Error();
 			d = x;

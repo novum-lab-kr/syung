@@ -1,3 +1,4 @@
+import { serverUrl } from "../../lib/server_url.mjs";
 // web/modes/coaster/geometry.mts
 function createCoasterGeometry({ maplibregl, paths, byId, cityViaduct, edgeGeom, geom, cityGeom, withCum, metresBetween, smooth, onFresh }) {
 	function coasterPath(line, a, b) {
@@ -214,7 +215,7 @@ function createCoasterGeometry({ maplibregl, paths, byId, cityViaduct, edgeGeom,
 	}
 	let coasterBld = null, coasterBldLoad = null;
 	function loadCoasterBuildings() {
-		return coasterBldLoad ??= Promise.all([fetch("./coaster_buildings.bin", { cache: "no-cache" }).then((r) => r.ok ? r.arrayBuffer() : null), fetch("./coaster_towers.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : [])]).then(([buf, towers]) => {
+		return coasterBldLoad ??= Promise.all([fetch(serverUrl("./coaster_buildings.bin"), { cache: "no-cache" }).then((r) => r.ok ? r.arrayBuffer() : null), fetch(serverUrl("./coaster_towers.json"), { cache: "no-cache" }).then((r) => r.ok ? r.json() : [])]).then(([buf, towers]) => {
 			const B = {
 				blocks: /* @__PURE__ */ new Map(),
 				towers: towers || []
