@@ -13,8 +13,9 @@ export interface LiveFeedDeps {
   map:MapLibre; stations:MapStation[]; liveState:HTMLElement; getSelected:()=>string; getSheetTrain:()=>string|null;
   hasPlans:()=>boolean; age:(v:unknown)=>number; updateLiveNotice:(msg:string|null)=>void;
   onTrains:(trains:LiveTrain[])=>number; onClear:()=>void; journeyLines?:()=>string[]|null;
+  onState?:()=>void;   // 실시간 글 · 상태가 바뀐 뒤(앱 지도 모드 다리 status)
 }
-export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,updateLiveNotice,onTrains,onClear,journeyLines=()=>null}:LiveFeedDeps){
+export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,updateLiveNotice,onTrains,onClear,journeyLines=()=>null,onState}:LiveFeedDeps){
   let trains:LiveTrain[]=[],request=0,on=false,failures=0,key='',at=0,fetchedAt:string|null=null;
   function liveLines():string[]{
     // 길찾기 중: 줌과 상관없이 탈 노선만(경로 전체를 보는 줌 11~12 에도 내 열차가 보이게 — 다른 열차는 어차피 숨긴다, journey.mjs trainShown)
@@ -38,14 +39,14 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
     if(!lines.length){
       request++;key='';if(hasPlans()){trains=[];onClear()}
       liveState.parentElement!.dataset.state='idle';liveState.textContent=!on?'줌 13 이상에서 실시간 열차를 표시합니다':'이 화면에는 운행 노선이 없습니다';
-      return;
+      onState?.();return;
     }
     // the line of the train whose sheet is open: the proxy reads it from the per-line position feed when that is on
     const sheetTrain=getSheetTrain(),focus=sheetTrain?sheetTrain.split(':')[0]:'';
     const k=lines.join(',')+(focus?'|'+focus:'');
     if(!force&&k===key&&Date.now()-at<30000)return; // same lines, fetched recently
     const mine=++request;key=k;at=Date.now();
-    if(!hasPlans())liveState.parentElement!.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;
+    if(!hasPlans())liveState.parentElement!.dataset.state='loading';liveState.textContent=`${lines.join(' · ')} 열차 위치 확인 중`;onState?.();
     try{
       const r=await fetch(serverUrl(`./api/live?lines=${encodeURIComponent(lines.join(','))}${focus?`&focus=${encodeURIComponent(focus)}`:''}`),{cache:'no-store'}),d:{ok?:boolean,error?:string,trains?:LiveTrain[],fetchedAt:string,quotaExhausted?:boolean,warnings?:string[],lines?:string[]}=await r.json();
       if(mine!==request)return; // a newer view or selection superseded this response
@@ -56,9 +57,9 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
       // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
       fetchedAt=d.fetchedAt;failures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);
       const placed=onTrains(trains),unplaced=trains.length-placed,shown=d.lines||lines;
-      liveState.parentElement!.dataset.state='ok';liveState.textContent=`추정 위치 ${placed}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;
+      liveState.parentElement!.dataset.state='ok';liveState.textContent=`추정 위치 ${placed}대${unplaced?` (역 미확인 ${unplaced})`:''}${stale?` (오래된 기록 ${stale} 제외)`:''} · ${shown.join(' · ')} · ${new Date(d.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}`;onState?.();
       map.triggerRepaint();
-    }catch{if(mine===request){key='';failures++;liveState.parentElement!.dataset.state='error';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';if(failures>=2||!hasPlans())updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
+    }catch{if(mine===request){key='';failures++;liveState.parentElement!.dataset.state='error';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';onState?.();if(failures>=2||!hasPlans())updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
   }
   // 노선 바꿀 때: 오는 응답은 버리고 기록을 비운다
   function reset(){request++;trains=[];key=''}

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {APP_SERVER_ORIGIN, serverUrl} from '../web/lib/server_url.mts';
-import {createAppBridge, parseAppMessage, APP_BRIDGE_VERSION} from '../web/ui/app_bridge.mts';
+import {createAppBridge, parseAppMessage, APP_BRIDGE_VERSION, STATUS_GAP_MS} from '../web/ui/app_bridge.mts';
 
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 // index.html 의 앱 지도 모드 표시 스크립트를 주소 #… 하나로 돌려 html[data-app] 을 본다
@@ -37,6 +37,10 @@ const facts = {hasStation: id => [1, 2, 3].includes(id), hasLine: line => line =
 const walk = {type: 'walk', path: [[126.97, 37.56], [126.98, 37.57]]};
 const ride = {type: 'ride', line: '2호선', stations: [1, 2, 3], trainNo: null};
 const bus = {type: 'bus', path: [[127, 37.5], [127.01, 37.51]], route: '472'};
+// ready 에 싣는 지도 상태(다리 v2) — 시험용 가짜 값
+const theme = {choice: 'auto', theme: 'light', note: '지금은 낮이라 밝게'};
+const prefs = {prebuild: false, saver: false, speed: 1, speedNote: '실시간'};
+const info = (mode = 'basic', modes = ['basic', 'simcity', 'coaster']) => ({mode, modes, colors: {'2호선': '#00A84D'}, theme, prefs});
 
 test('앱 → 지도 메시지: 글자(JSON) · 객체 모두 받고 칸을 검사한다', () => {
   const route = parseAppMessage(JSON.stringify({type: 'showRoute', plan: {legs: [walk, ride, bus], minutes: 12}, padding: {bottom: 320}}), facts);
@@ -82,8 +86,9 @@ test('다리: ready 전 명령은 not_ready, ready 뒤에는 지도에 넘기고
   bridge.receive({type: 'clearRoute'});
   assert.deepEqual(sent.pop(), {type: 'error', code: 'not_ready', message: '지도를 준비하는 중 — ready 를 받은 뒤 보낸다', request: 'clearRoute'});
   bridge.ready({showRoute: (plan, pad) => done.push(['route', plan.legs.length, pad]), clearRoute: () => done.push(['clear']),
-    focusStation: (id, zoom) => done.push(['focus', id, zoom]), setMode: id => { if (id === 'coaster') throw new Error('준비 실패'); done.push(['mode', id]) }}, 'basic', ['basic', 'simcity', 'coaster']);
-  assert.deepEqual(sent.pop(), {type: 'ready', version: APP_BRIDGE_VERSION, mode: 'basic', modes: ['basic', 'simcity', 'coaster']});
+    focusStation: (id, zoom) => done.push(['focus', id, zoom]), setMode: id => { if (id === 'coaster') throw new Error('준비 실패'); done.push(['mode', id]) }}, info());
+  assert.equal(APP_BRIDGE_VERSION, 2);
+  assert.deepEqual(sent.pop(), {type: 'ready', version: 2, ...info()});
   bridge.receive(JSON.stringify({type: 'showRoute', plan: {legs: [ride]}}));
   bridge.receive({type: 'focusStation', id: 3});
   bridge.receive({type: 'setMode', mode: 'simcity'});
@@ -106,8 +111,130 @@ test('다리: ready 전 명령은 not_ready, ready 뒤에는 지도에 넘기고
 test('다리: iOS(window) · Android(document) 의 message 이벤트를 한 번씩만 받는다', () => {
   const win = new EventTarget(), doc = new EventTarget(), done = [];
   const bridge = createAppBridge({facts, post: () => {}, targets: {window: win, document: doc}});
-  bridge.ready({showRoute() {}, clearRoute: () => done.push('clear'), focusStation() {}, setMode() {}}, 'basic', ['basic']);
+  bridge.ready({showRoute() {}, clearRoute: () => done.push('clear'), focusStation() {}, setMode() {}}, info('basic', ['basic']));
   win.dispatchEvent(new MessageEvent('message', {data: '{"type":"clearRoute"}'}));
   doc.dispatchEvent(new MessageEvent('message', {data: '{"type":"clearRoute"}'}));
   assert.deepEqual(done, ['clear', 'clear']);
+});
+
+test('다리 v2 앱 → 지도: 새 명령의 칸 검사', () => {
+  const ok = message => parseAppMessage(message, facts);
+  const code = message => parseAppMessage(message, facts)?.code;
+  assert.deepEqual(ok({type: 'setTheme', choice: 'dark'}).command, {type: 'setTheme', choice: 'dark'});
+  assert.deepEqual(ok({type: 'setPadding', bottom: 0}).command, {type: 'setPadding', bottom: 0});
+  for (const type of ['watchTrain', 'followTrain', 'followBus']) assert.deepEqual(ok({type, id: '2호선:2045'}).command, {type, id: '2호선:2045'});
+  for (const type of ['unwatchTrain', 'stopFollow', 'stopRide', 'closeBus', 'busRefresh']) assert.deepEqual(ok({type}).command, {type});
+  assert.deepEqual(ok({type: 'startRide', id: 'x', seat: {car: 1, row: 2, side: -1}}).command, {type: 'startRide', id: 'x', seat: {car: 1, row: 2, side: -1}});
+  assert.deepEqual(ok({type: 'setPref', key: 'saver', value: true}).command, {type: 'setPref', key: 'saver', value: true});
+  assert.deepEqual(ok({type: 'setPref', key: 'speed', value: 20}).command, {type: 'setPref', key: 'speed', value: 20});
+  assert.deepEqual(ok({type: 'skyOpen', open: false}).command, {type: 'skyOpen', open: false});
+  assert.deepEqual(ok({type: 'busRoute', routeId: '100100118'}).command, {type: 'busRoute', routeId: '100100118'});
+  assert.deepEqual(ok({type: 'busStopView', what: 'follow'}).command, {type: 'busStopView', what: 'follow'});
+  for (const bad of [
+    {type: 'setTheme', choice: 'night'}, {type: 'setPadding', bottom: -5}, {type: 'setPadding'},
+    {type: 'watchTrain', id: ''}, {type: 'followTrain', id: 3}, {type: 'followBus'},
+    {type: 'startRide', id: 'x'}, {type: 'startRide', id: 'x', seat: {car: 0, row: 1, side: 1}}, {type: 'startRide', id: 'x', seat: {car: 1, row: 1.5, side: 1}},
+    {type: 'startRide', id: 'x', seat: {car: 1, row: 1, side: 0}},
+    {type: 'setPref', key: 'prebuild', value: 'on'}, {type: 'setPref', key: 'speed', value: 3}, {type: 'setPref', key: 'volume', value: 1},
+    {type: 'skyOpen', open: 1}, {type: 'busRoute'}, {type: 'busStopView', what: 'map'},
+  ]) {
+    const result = ok(bad);
+    assert.equal(result.code, 'bad_field', JSON.stringify(bad));
+    assert.equal(result.request, bad.type);
+  }
+  assert.equal(code({type: 'watchBus', id: 'x'}), 'unknown_type');
+});
+
+test('다리 v2: 지도에 없는 일은 failed · 있는 일은 그대로 넘긴다', () => {
+  const sent = [], done = [];
+  const bridge = createAppBridge({facts, post: text => sent.push(JSON.parse(text))});
+  bridge.ready({showRoute() {}, clearRoute() {}, focusStation() {}, setMode() {},
+    startRide: (id, seat) => done.push(['ride', id, seat]), setPref: (key, value) => done.push([key, value]), busStopView: what => done.push(['stop', what])}, info());
+  sent.length = 0;
+  bridge.receive({type: 'startRide', id: 'a', seat: {car: 2, row: 3, side: 1}});
+  bridge.receive({type: 'setPref', key: 'speed', value: 5});
+  bridge.receive({type: 'busStopView', what: 'route'});
+  assert.deepEqual(done, [['ride', 'a', {car: 2, row: 3, side: 1}], ['speed', 5], ['stop', 'route']]);
+  const quiet = console.error;console.error = () => {};
+  try { bridge.receive({type: 'skyOpen', open: true}) } finally { console.error = quiet }
+  assert.equal(sent.pop().code, 'failed');
+  assert.equal(sent.length, 0);
+});
+
+test('다리 v2 지도 → 앱: 같은 값은 다시 안 보내고 · ready 전에는 마지막 값만 들고 있다', () => {
+  const sent = [];
+  const bridge = createAppBridge({facts, post: text => sent.push(JSON.parse(text))});
+  const sky = {layers: {back: '<svg/>', sun: '', front: ''}, temp: null, sunset: '18:20', sunrise: '06:40', night: false, label: null, motion: {clouds: null, fall: null, trainSpeed: 1}};
+  bridge.sky({...sky, sunset: '18:19'});
+  bridge.sky(sky);
+  bridge.followChanged('2호선:2045');
+  bridge.trainUpdate({id: 'x', dest: '성수행', now: '', raw: null, ride: null});   // ready 전 열차 · 버스 자료는 버린다
+  bridge.busTap({}, {kind: 'stop', id: '1'});
+  assert.equal(sent.length, 0);
+  bridge.ready({showRoute() {}, clearRoute() {}, focusStation() {}, setMode() {}}, info());
+  assert.deepEqual(sent.map(message => message.type), ['ready', 'sky', 'followChanged']);
+  assert.deepEqual(sent[1], {type: 'sky', ...sky});
+  assert.deepEqual(sent[2], {type: 'followChanged', id: '2호선:2045'});
+  sent.length = 0;
+  // ready 에 실은 테마 · 내 설정과 같으면 안 보낸다
+  bridge.themeChanged(theme);
+  bridge.prefsChanged(prefs);
+  bridge.sky(sky);
+  bridge.followChanged('2호선:2045');
+  assert.equal(sent.length, 0);
+  bridge.themeChanged({...theme, choice: 'dark', theme: 'dark'});
+  bridge.prefsChanged({...prefs, saver: true});
+  bridge.followChanged(null);
+  bridge.rideChanged({riding: true, id: 'a', text: '시청 → 을지로입구'});
+  bridge.rideChanged({riding: true, id: 'a', text: '시청 → 을지로입구'});
+  assert.deepEqual(sent, [
+    {type: 'themeChanged', choice: 'dark', theme: 'dark', note: theme.note},
+    {type: 'prefsChanged', prefs: {...prefs, saver: true}},
+    {type: 'followChanged', id: null},
+    {type: 'rideChanged', riding: true, id: 'a', text: '시청 → 을지로입구'},
+  ]);
+  sent.length = 0;
+  // 열차 시트 자료는 1초마다 늘 보낸다
+  const update = {id: 'a', dest: '성수행', now: '시청 도착', raw: null, ride: {cars: 10, rows: 3, seat: {car: 1, row: 1, side: 1}}};
+  bridge.trainUpdate(update);
+  bridge.trainUpdate(update);
+  bridge.trainGone('a');
+  assert.deepEqual(sent, [{type: 'trainUpdate', ...update}, {type: 'trainUpdate', ...update}, {type: 'trainGone', id: 'a'}]);
+});
+
+test('다리 v2 버스: 누름은 늘 · 바뀜은 다를 때만 · 닫힘은 열려 있을 때만', () => {
+  const sent = [];
+  const bridge = createAppBridge({facts, post: text => sent.push(JSON.parse(text))});
+  bridge.ready({showRoute() {}, clearRoute() {}, focusStation() {}, setMode() {}}, info());
+  sent.length = 0;
+  const selection = {kind: 'stop', id: '12345'}, view = {kind: 'stop', title: '시청앞'};
+  bridge.busClosed();
+  bridge.busUpdate(view, selection);
+  assert.equal(sent.length, 0);
+  bridge.busTap(view, selection);
+  bridge.busUpdate(view, selection);
+  bridge.busUpdate({...view, title: '시청앞 · 덕수궁'}, selection);
+  bridge.busTap(view, selection);
+  bridge.busClosed();
+  bridge.busClosed();
+  assert.deepEqual(sent, [
+    {type: 'busTap', view, selection},
+    {type: 'busUpdate', view: {...view, title: '시청앞 · 덕수궁'}, selection},
+    {type: 'busTap', view, selection},
+    {type: 'busClosed'},
+  ]);
+});
+
+test('다리 v2 status: 줄여 보내되 마지막 값은 늦게라도 보낸다', async () => {
+  const sent = [];
+  const bridge = createAppBridge({facts, post: text => sent.push(JSON.parse(text))});
+  bridge.ready({showRoute() {}, clearRoute() {}, focusStation() {}, setMode() {}}, info());
+  sent.length = 0;
+  const live = {state: 'ok', text: '실시간 12대'};
+  bridge.status({zoom: 12, live});
+  bridge.status({zoom: 12.5, live});
+  bridge.status({zoom: 13, live});
+  assert.deepEqual(sent, [{type: 'status', zoom: 12, live}]);
+  await new Promise(resolve => setTimeout(resolve, STATUS_GAP_MS + 50));
+  assert.deepEqual(sent, [{type: 'status', zoom: 12, live}, {type: 'status', zoom: 13, live}]);
 });
