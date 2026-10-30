@@ -122,6 +122,11 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE tickets ADD COLUMN via_lat REAL;
         ALTER TABLE tickets ADD COLUMN via_lng REAL
     """),
+    # 9(2026-10-30): 앱 로그인 세션 표시(사용자 결정 — 앱 세션만 쓸 때마다 30일 연장 · 웹은 만든 때부터 30일 고정 그대로).
+    # 옛 세션은 모두 웹(0).
+    (9, """
+        ALTER TABLE sessions ADD COLUMN app INTEGER NOT NULL DEFAULT 0
+    """),
 ]
 KST_SECONDS = 9 * 3600   # 날짜별 가입 · 탈퇴 수는 한국 날짜로 센다
 ADMIN_LOG_AGE = 365 * 86400   # 관리 기록은 1년 보관 후 파기(사용자 2026-10-27 — 개인정보처리방침 8절)
@@ -294,11 +299,12 @@ class MemberStore:
         return self._write(work)
 
     # ---- 세션 ----
-    def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int, device: str = "") -> None:
+    def add_session(self, token_hash: str, user_id: int, now: int, expires_at: int, device: str = "", app: bool = False) -> None:
+        """app: 앱 로그인 세션(touch_session 이 끝나는 시각을 민다)."""
         def work(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM sessions WHERE expires_at<=?", (now,))   # 끝난 것은 새로 만들 때 같이 치운다
-            conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, device, used_at) VALUES (?, ?, ?, ?, ?, ?)",
-                         (token_hash, user_id, now, expires_at, device, now))
+            conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, device, used_at, app) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?)", (token_hash, user_id, now, expires_at, device, now, int(app)))
         self._write(work)
 
     def session_user(self, token_hash: str, now: int) -> tuple[int, int] | None:
@@ -306,10 +312,12 @@ class MemberStore:
         row = self._read("SELECT user_id, used_at FROM sessions WHERE token_hash=? AND expires_at>?", (token_hash, now))
         return (row["user_id"], row["used_at"]) if row else None
 
-    def touch_session(self, token_hash: str, now: int) -> None:
-        """마지막 사용 시각을 now 로(부르는 쪽이 간격을 보고 가끔만 부른다)."""
-        self._write(lambda conn: conn.execute("UPDATE sessions SET used_at=? WHERE token_hash=? AND used_at<?",
-                                              (now, token_hash, now)))
+    def touch_session(self, token_hash: str, now: int, app_expires_at: int) -> None:
+        """마지막 사용 시각을 now 로(부르는 쪽이 간격을 보고 가끔만 부른다). 앱 세션이면 끝나는 시각도 app_expires_at 으로 민다
+        (줄이지는 않는다 · 웹 세션은 그대로)."""
+        self._write(lambda conn: conn.execute(
+            "UPDATE sessions SET used_at=?, expires_at=CASE WHEN app=1 AND expires_at<? THEN ? ELSE expires_at END "
+            "WHERE token_hash=? AND used_at<?", (now, app_expires_at, app_expires_at, token_hash, now)))
 
     def delete_session(self, token_hash: str) -> None:
         self._write(lambda conn: conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,)))

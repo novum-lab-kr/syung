@@ -1,6 +1,7 @@
 // 롤코 길 · 언덕 계산: 역 사이 롤코 경로(타워 코스) · 언덕 높이 · 루프 · 코르크스크루 · 옆 굽이 · 다른 노선과 엇갈리는 곳 · 건물 높이 받기.
 // 다른 화면 파일을 import 하지 않는다: 지도 · 노선 자료 · 공용 도형(geom · cityGeom · edgeGeom 캐시)은 본체가 넘긴다.
 // onFresh: 고가 높이가 바뀌어 언덕을 다시 지을 때 본체가 주행 시간 · 선로를 함께 버리게 부른다.
+import { serverUrl } from '../../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 import type { MercatorCoordinate } from 'maplibre-gl';
 import type { CityViaduct } from '../../city/viaduct.mts';
 import type { LinePaths } from '../../lib/routing.mts';
@@ -114,7 +115,7 @@ export function createCoasterGeometry({maplibregl,paths,byId,cityViaduct,edgeGeo
   // when the 롤러코스터 first turns on; the courses wait for it, so they never change under a running train.
   let coasterBld:CoasterBuildings|null=null,coasterBldLoad:Promise<void>|null=null;
   function loadCoasterBuildings(){
-    return coasterBldLoad??=Promise.all([fetch('./coaster_buildings.bin',{cache:'no-cache'}).then(r=>r.ok?r.arrayBuffer():null),fetch('./coaster_towers.json',{cache:'no-cache'}).then(r=>r.ok?r.json():[])]).then(([buf,towers])=>{
+    return coasterBldLoad??=Promise.all([fetch(serverUrl('./coaster_buildings.bin'),{cache:'no-cache'}).then(r=>r.ok?r.arrayBuffer():null),fetch(serverUrl('./coaster_towers.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():[])]).then(([buf,towers])=>{
       const B:CoasterBuildings={blocks:new Map(),towers:towers||[]};
       if(buf&&new TextDecoder().decode(new Uint8Array(buf,0,4))==='CBLD'){const v=new DataView(buf);
         Object.assign(B,{x0:v.getFloat64(8,true),y0:v.getFloat64(16,true),C:v.getFloat64(24,true),W:v.getUint32(32,true)});const n=v.getUint32(40,true);

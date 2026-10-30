@@ -994,3 +994,10 @@ html[data-theme=dark] .acct-toast{color:var(--ink);box-shadow:0 10px 24px rgba(0
 .profile-x svg{display:block;width:22px;height:22px}
 .profile-body{padding-top:30px}
 @media(min-width:721px){.profile-sheet .login-card{width:min(400px,100%)}}
+
+/* 앱 지도 모드(주소 #app — 슝 앱의 웹뷰, index.html 첫 스크립트가 html[data-app=map]): 머리줄 · 검색 · 길찾기 · 메뉴 서랍 · 로그인 · 아래 시트(역 · 열차 · 버스 · 길찾기 정보창) · 롤코 탑승 막대는
+   앱이 제 화면으로 그린다 — 웹 쪽은 숨기고 지도(+ − · 내 위치 단추 · 지도 출처 · 실시간 알림 줄 · 모드 바꾸는 중 게이지)만. 일반 웹에는 이 표시가 없다 */
+html[data-app=map] .app{grid-template-rows:minmax(0,1fr)!important}
+html[data-app=map] :is(.mast,.map-search,.route-cta,.map-status,.legend,.settings-panel,.menu-scrim,.login-sheet,.acct-live,.sheet,.ride-bar,.jbar){display:none!important}
+html[data-app=map] .live-notice{top:12px!important}
+html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}

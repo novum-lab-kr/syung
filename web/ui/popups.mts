@@ -1,6 +1,7 @@
 // 정보창: 열차 정보창(지금 상태 · 원본 기록 · 롤코면 자리 고르기), 지도에서 열차 고르기(pickTrain), 실시간 끊김 알림 줄, 역 도착 정보창(곧 오는 열차 · 출구).
 // 역 요청 번호(stationSeq) · 알림 줄 DOM 의 주인. 시트 상태는 sheetUI(시트가 주인), 자리는 rider.seat(1인칭이 주인).
 // 다른 화면 파일을 import 하지 않는다: 바뀌는 값(지금 모드 설정 settings · 열차 켬 · 노선 끔 · 출구 자료 · 실시간 받기 feed)은 live.<이름> 으로 그때그때 읽는다.
+import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 import type { LngLat, Map as MapLibre, Point } from 'maplibre-gl';
 import type { Settings } from '../modes/merge.mts';
 import type { LiveTrain, MapStation, Merc, TrainPlan } from '../trains/types.mts';
@@ -140,7 +141,7 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
     // Past 0.7 s it opens anyway, on rows shaped like the ones coming, and fills them when they land.
     const seq=++stationSeq;
     let d:ArrivalsAnswer|null=null,err=false;
-    const settled=fetch(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`,{cache:'no-store'})
+    const settled=fetch(serverUrl(`./api/live?arrivals=${encodeURIComponent(st.name.replace(/\([^)]*\)/g,''))}`),{cache:'no-store'})
       .then(async r=>{const x:ArrivalsAnswer=await r.json();if(!r.ok||!x.ok)throw Error();d=x},()=>{err=true});
     await Promise.race([settled,new Promise(r=>setTimeout(r,700))]);
     if(seq!==stationSeq)return;   // another station was tapped meanwhile

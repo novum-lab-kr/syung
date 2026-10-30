@@ -2,6 +2,7 @@
 // 움직이는 것(구름 · 비 · 눈 · 낙뢰 · 지하철)은 Lottie 장면이라 sky_motion.mts 가 맡는다. 첫 화면에서는 받지 않는다:
 // theme.mts 가 메뉴를 열 때 import() 로 부른다. 개발용 칸: 주소 끝 ?weather=rain&temp=12 (localhost 에서만 — 운영에서는 안 먹는다).
 
+import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 export type SkyCover = 'clear' | 'cloudy' | 'overcast';   // 맑음 · 구름 많음 · 흐림
 export type Precip = 'none' | 'rain' | 'rain_snow' | 'snow' | 'drizzle' | 'sleet_drizzle' | 'flurry';
 // /api/weather 응답 가운데 이 파일이 읽는 칸
@@ -137,7 +138,7 @@ export async function fetchWeather(here:[number, number] | null):Promise<Weather
   if (cache && cache.key === key && Date.now() - cache.at < CACHE_MS) return cache.weather;
   let weather:Weather | null = null;
   try {
-    const response = await fetch(`./api/weather?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`, { cache: 'no-store' });
+    const response = await fetch(serverUrl(`./api/weather?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`), { cache: 'no-store' });
     if (response.ok) weather = readReply(await response.json() as WeatherReply);
   } catch { /* 날씨 없음 */ }
   cache = { key, at: Date.now(), weather };

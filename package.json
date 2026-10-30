@@ -16,6 +16,8 @@
     "@storybook/preact-vite": "10.6.5",
     "@types/three": "0.128.0",
     "maplibre-gl": "6.11.1",
+    "marked": "16.4.2",
+    "mermaid": "12.2.0",
     "storybook": "10.6.5",
     "typescript": "7.0.2",
     "vite": "8.3.5"
