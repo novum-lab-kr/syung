@@ -2,7 +2,9 @@
 // 시트 상태(sheetToken · sheetTrain · following · easing · followBus · sheetStation)와 따라가기 카메라의 주인. 바깥은 같은 이름의 getter · setter 로 읽고 쓴다.
 // 다른 화면 파일을 import 하지 않는다: 나중에 생기는 길찾기(journey · routeBounds) · 버스 층 · 1인칭(rider · stopRide)은 live.<이름> 으로 그때그때 읽는다.
 // 만들 때 등록하는 순서(animFrame 의 열차 · 버스 카메라 → 뒤에 1인칭, Esc · dragstart)는 옛 본체 순서 그대로.
+import { h, render } from 'preact';
 import type { LngLat, Map as MapLibre } from 'maplibre-gl';
+import { SheetFrame } from '../components/sheet_frame.tsx';
 
 // 열차 계획(trains/plan)에서 이 파일이 쓰는 칸 · 선로 위 한 점(trackPoint)
 type TrainPlanLike = import('../trains/types.mts').TrainPlan;
@@ -29,7 +31,7 @@ export interface BottomSheetDeps {
 }
 export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute,live}:BottomSheetDeps){
   const sheet=document.createElement('section');sheet.className='sheet';sheet.hidden=true;sheet.setAttribute('aria-label','상세 정보');
-  sheet.innerHTML='<button type="button" class="sheet-grab" aria-label="닫기" title="끌어내리거나 눌러서 닫기"></button><button type="button" class="sheet-close" aria-label="닫기">✕</button><div class="sheet-body"></div><button type="button" class="sheet-follow" hidden>이 열차 따라가기</button>';
+  render(h(SheetFrame,null),sheet);   // 틀은 한 번만 그린다: 아래 동작이 그려진 단추를 찾아 걸고 고친다
   const sheetBody=sheet.querySelector<HTMLElement>('.sheet-body')!,followBtn=sheet.querySelector<HTMLButtonElement>('.sheet-follow')!;   // 바로 위 innerHTML 에 있다
   let sheetToken=0,sheetTrain:string|null=null,following:string|null=null,easing=false;
   let followBus:string|null=null,busMiss=0;   // bus: 지도에서 누른 버스를 카메라가 따라간다(2026-10-08 덕배). 끌면 멈추고 '이 버스 따라가기'로 다시
