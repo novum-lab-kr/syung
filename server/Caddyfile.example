@@ -99,6 +99,7 @@ syung.novum-lab.com {
 	encode zstd gzip
 	header X-Content-Type-Options "nosniff"
 	# 카카오 연결 해제 웹훅: 카카오 서버가 옛 주소로 POST 한다 — 넘기지 않고 바로 받는다
+	# /api 를 떼지 않는다 — map. 의 @member 와 같다(server/routes/members.py member_path 가 /api/auth/… · /auth/… 둘 다 받는다)
 	handle /api/auth/kakao/unlink {
 		reverse_proxy 127.0.0.1:3113
 	}
