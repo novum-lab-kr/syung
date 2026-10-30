@@ -69,10 +69,10 @@ const CAMERA = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="c
 
 // 수정 중 고른 것(draft)을 지금 프로필에 겹친 그림 · 눌림
 function draftLook(me:Me | null, draft:Draft) {
-  if (draft.kind === 'photo') return { photo: true, big: `url("${draft.preview}")`, small: `url("${draft.preview}")`, choice: 'photo' };
-  if (draft.kind === 'character') return { photo: false, big: `url("./brand/faces/${draft.id}-240.png")`, small: '', choice: draft.id! };
+  if (draft.kind === 'photo') return { photo: true, small: `url("${draft.preview}")`, choice: 'photo' };
+  if (draft.kind === 'character') return { photo: false, small: '', choice: draft.id! };
   const big = avatarLook(me?.avatar, true), small = avatarLook(me?.avatar);
-  return { photo: big.photo, big: big.image, small: small.photo ? small.image : '', choice: currentChoice(me?.avatar)! };
+  return { photo: big.photo, small: small.photo ? small.image : '', choice: currentChoice(me?.avatar)! };
 }
 
 // 서랍 안 내 정보 쪽의 프로필 줄(보기만 — 고치기는 레이어 팝업 #profileSheet 에서)
@@ -80,17 +80,16 @@ function Profile() {
   const { me } = view, big = avatarLook(me?.avatar, true);
   return <div class="account-prof"><button id="accountAvatarBig" class={`account-avatar big ${me && big.photo ? 'photo' : 'face'}`} type="button" aria-label="프로필 수정" aria-haspopup="dialog"
     style={me ? { backgroundImage: big.image } : undefined} onClick={call('edit')}>{BADGE}</button>
-    <div class="pf-who"><div class="pf-name"><b id="accountName">{me?.name ?? ''}</b><button id="profileEdit" class="pf-link" type="button" aria-haspopup="dialog" onClick={call('edit')}>프로필 수정</button></div>
+    <div class="pf-who"><div class="pf-name"><b id="accountName">{me?.name ?? ''}</b></div>
       <small id="accountProvider">{me ? PROVIDER_NAMES[me.provider] || me.provider : ''}</small></div></div>;
 }
 
-// 레이어 팝업(#profileSheet) 안: 위 사진 · 캐릭터 고르기 + 닉네임 + 저장 · 취소 — 껍데기(떠오르기 · 닫기 · 초점)는 account.mts
+// 레이어 팝업(#profileSheet) 안: 닉네임 → 사진 · 캐릭터 고르기 → 취소 · 저장 — 껍데기(떠오르기 · 닫기 · 초점)는 account.mts
 function ProfileForm() {
   const { me } = view, count = nameLength(view.nameValue), look = draftLook(me, view.draft), lock = view.saving || view.converting;
   return <form id="profileForm" class="pf-form" onSubmit={event => { event.preventDefault(); call('save')() }}>
-    <div class="account-prof"><button id="profileAvatar" class={`account-avatar big ${look.photo ? 'photo' : 'face'}`} type="button" aria-label="사진 올리기" style={{ backgroundImage: look.big }}
-      disabled={lock} onClick={call('pickPhoto')}>{BADGE}</button>
-      <div class="pf-who"><div class="pf-name"><b id="profileTitle">프로필 수정</b></div><small>{me ? PROVIDER_NAMES[me.provider] || me.provider : ''}</small></div></div>
+    <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue} disabled={view.saving}
+      onInput={event => set({ nameValue: event.currentTarget.value })} /><small id="nameCount" class={count > NAME_MAX ? 'over' : undefined}>{`${count}/${NAME_MAX}`}</small></label>
     <div id="avatarPick" class="pf-pick"><p class="pf-l">사진 · 캐릭터</p>
       <div id="avatarChoices" class="pf-choices" role="group" aria-label="프로필 사진 고르기">
         <button id="photoPick" class={look.small ? 'pf-choice pf-photo photo' : 'pf-choice pf-photo'} type="button" aria-label="사진 올리기" aria-pressed={view.marked ? String(look.choice === 'photo') as 'true' | 'false' : undefined}
@@ -101,8 +100,6 @@ function ProfileForm() {
       <input id="photoFile" type="file" accept="image/*" hidden onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; call('photoFile')(file) }} />
       <p class="pf-note">가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요.</p>
     </div>
-    <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue} disabled={view.saving}
-      onInput={event => set({ nameValue: event.currentTarget.value })} /><small id="nameCount" class={count > NAME_MAX ? 'over' : undefined}>{`${count}/${NAME_MAX}`}</small></label>
     <div class="pf-row"><button id="profileCancel" type="button" disabled={view.saving} onClick={call('cancel')}>취소</button><button id="profileSave" type="submit" class="pf-ok" disabled={lock}>{view.converting ? '사진 준비 중' : '저장'}</button></div>
   </form>;
 }
