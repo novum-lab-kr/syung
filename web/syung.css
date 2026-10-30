@@ -888,7 +888,6 @@ h4.pf-l{line-height:1.3}
 .ticket-form{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .tf-l{margin:4px 0 0;font-family:var(--round);font-size:14px;color:#6f6326}
 .tf-dot{flex:none;width:10px;height:10px;border-radius:50%;border:3px solid #4b4316}.tf-dot.to{background:#4b4316}
-.tf-dot.via{width:8px;height:8px;margin:0 1px;border-width:2.5px;border-style:dotted}   /* 경유지: 출발 · 도착 사이의 작은 점선 동그라미 */
 .tf-route{display:flex;align-items:center;border:2px solid #f3d64a;border-radius:16px;background:#fff7cc}
 .tf-pls{flex:1;min-width:0}
 /* 장소 칸(2026-10-29 한 화면): 칸 하나 = 글자 칸(.tf-pl 라벨) + 오른쪽 단추(📍 내 위치 · 경유지 ✕), 바로 아래에 찾은 곳 목록(.tf-list) */
@@ -956,12 +955,21 @@ h4.pf-l{line-height:1.3}
 .pp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;min-height:44px;padding:10px 8px;border:0;border-bottom:1px solid var(--rule);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .pp-list button:hover,.pp-list button:focus-visible{background:var(--control);border-radius:12px}
 .pp-list b{font-size:16px}.pp-list small{font-size:12px;color:var(--muted)}.pp-list .empty{padding:12px 8px;font-size:14px;color:var(--muted)}
-.rt-sum{display:flex;flex-direction:column;gap:2px;margin:0 0 10px}.rt-sum b{font-size:16px}.rt-sum span{font-size:13px;color:var(--secondary)}
+/* 경로 선택 머리말: 출발(위) · 도착(아래) 두 줄을 단계 목록과 같은 동그라미(.js-dot 시작 · 끝)로 찍고 사이를 회색 점선으로 잇는다. 긴 이름은 줄바꿈 */
+.rt-sum{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin:0 0 12px}
+.rt-trip{display:flex;flex-direction:column;gap:12px;align-self:stretch;margin:0;padding:0;list-style:none}
+.rt-trip li{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr);column-gap:10px;align-items:start}
+.rt-trip b{min-width:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere;word-break:keep-all}
+.rt-trip .js-dot{margin-top:2px}
+.rt-from .js-dot{background:var(--syung);box-shadow:inset 0 0 0 2px var(--syung-ink)}
+.rt-to .js-dot{background:var(--syung-ink);box-shadow:inset 0 0 0 3px var(--syung)}
+html[data-theme=dark] .rt-from .js-dot{box-shadow:inset 0 0 0 2px #000}
+.rt-from::after{content:"";position:absolute;left:6.5px;top:18px;bottom:-14px;width:0;border-left:3px dotted var(--muted);opacity:.8}
+.rt-when{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--syung-soft);color:#5b4c00;font-size:12.5px;font-weight:700}
+html[data-theme=dark] .rt-when{background:rgba(255,212,0,.14);color:var(--syung)}
 .route-page [hidden]{display:none}
 .rt-list{display:flex;flex-direction:column;gap:8px}
 .rt-filters{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 10px}
-.rt-via{margin:0 0 10px}.rt-via .tf-pl{min-height:48px}
-.rt-via-x{flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:4px;border:0;border-radius:12px;background:none;color:#4b4316;cursor:pointer}.rt-via-x:focus-visible{outline:2px solid var(--focus)}.rt-via-x[hidden]{display:none}
 .rt-empty{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:16px;background:var(--control)}.rt-empty b{font-size:15px}.rt-empty p{margin:0;font-size:13px;color:var(--secondary)}
 .rt-plan{display:flex;gap:10px;align-items:flex-start;width:100%;padding:12px;border:2px solid var(--rule);border-radius:16px;background:var(--paper);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .rt-plan[aria-checked=true]{border-color:#e6c62f;background:#fff7cc;color:#3a3410;box-shadow:0 3px 0 #e6c62f}

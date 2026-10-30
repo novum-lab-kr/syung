@@ -103,12 +103,10 @@ test('after a change: the saved way if it shows, else the first card, else none'
   assert.equal(chosenAfter(mixedBag, [], saved), -1);
 });
 
-test('route url asks with the via only when there is one (경유지 2026-10-29)', () => {
+test('route url has no via (승차권 경유지 2026-10-30 뺌)', () => {
   const from = {name: '서울역', lat: 37.5547, lng: 126.9707}, to = {name: '강남역', lat: 37.4979, lng: 127.0276};
   const plain = './api/route?from=37.5547,126.9707&to=37.4979,127.0276&at=2026-10-30T08%3A30';
   assert.equal(routeUrl(from, to, '2026-10-30T08:30'), plain);
-  assert.equal(routeUrl(from, to, '2026-10-30T08:30', null), plain, 'old tickets: same as before');
-  assert.equal(routeUrl(from, to, '2026-10-30T08:30', {name: '성수역', lat: 37.5446, lng: 127.056}), `${plain}&via=37.5446,127.056`);
 });
 
 test('shortName: 10 letters or fewer without spaces stay whole, 11+ are shortened', () => {
