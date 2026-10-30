@@ -20,7 +20,7 @@ import {routeTrack} from '../lib/journey-ui.mts';   // 아래 막대의 경로 �
 import type {Plan} from '../lib/journey-ui.mts';
 import {accountView, avatarLook, drawProviders, nameLength, NAME_MAX} from './account_view.tsx';   // 내 정보 쪽(#menuAccount) 그리기 — Preact
 import type {Me, Avatar, Stats, Session} from './account_view.tsx';
-import '../components/ticket_card.tsx';import '../components/place_field.tsx';import '../components/time_field.tsx';import '../components/day_picker.tsx';import '../components/route_head.tsx';import '../components/save_button.tsx';import '../components/button.tsx';   // (승차권 부품: tickets_view 와 같은 단계에서 요청)
+import '../components/ticket_card.tsx';import '../components/place_field.tsx';import '../components/time_field.tsx';import '../components/day_picker.tsx';import '../components/route_head.tsx';import '../components/save_button.tsx';import '../components/button.tsx';import '../components/ticket_form.tsx';import '../components/route_picker.tsx';import '../components/account_page.tsx';   // (승차권 · 내 정보 부품: tickets_view 와 같은 단계에서 요청)
 import {ticketsView, DAYS, esc, shortName, timeParts} from './tickets_view.tsx';   // 승차권 · 발권 · 장소 · 경로 쪽 그리기 — Preact
 import type {Place, FoundPlace, PlaceKey, SlimLeg, SlimRoute, Ticket} from './tickets_view.tsx';
 import type {RouteKind} from './ticket_routes.mts';

@@ -1,15 +1,24 @@
-// 스토리북 '화면 기획': docs/flows/screens/<흐름>/ 의 JSON(설명 원본)과 찍은 PNG 를 읽어 그린다 — 흐름 한 장(작은 그림 + 화살표 + 무엇을 누르면) · 화면마다 그림 + 번호 설명 표
-// 그림 다시 찍기: node tools/flows/capture.mjs <흐름 폴더>
+// 스토리북 '화면 기획': docs/flows/screens/<흐름>/ 의 JSON(설명 원본)을 읽어 그린다 — 흐름 한 장(작은 화면 + 화살표 + 무엇을 누르면) · 화면마다 그림 + 번호 설명 표
+// 그림은 디자인 시스템 컴포넌트로 조립한 화면(assembled.tsx). 아직 조립하지 않은 흐름만 찍은 PNG(node tools/flows/capture.mjs <흐름 폴더>)
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { Fragment } from 'preact';
+import { ASSEMBLED } from './assembled.tsx';
+import { PhoneScreen } from './phone.tsx';
 import { readFlow, type FlowSpec, type Screen } from './screens.mts';
 import './flows.css';
 
 const meta:Meta = { title: '화면 기획', parameters: { layout: 'fullscreen' } };
 export default meta;
 
+// 작은 화면: 조립 화면을 줄여 보인다(번호 없이). 아직 조립하지 않은 흐름은 찍은 PNG
+function Thumbnail({ flow, screen }:{ flow:string; screen:Screen }) {
+  const assembled = ASSEMBLED[flow]?.[screen.name];
+  if (assembled) return <div class="spec-flow-phone"><PhoneScreen screen={assembled} title={screen.spec.title} thumbnail /></div>;
+  return <img src={screen.url} alt={screen.spec.title} />;
+}
+
 // 흐름 한 장: 줄마다 화면을 가로로, 사이에 화살표와 무엇을 누르면. 작은 그림을 누르면 그 화면 설명으로 내려간다
-function FlowSheet({ flowSpec, screens }:{ flowSpec:FlowSpec; screens:Screen[] }) {
+function FlowSheet({ flow, flowSpec, screens }:{ flow:string; flowSpec:FlowSpec; screens:Screen[] }) {
   const byName = new Map(screens.map((screen, index) => [screen.name, { screen, number: index + 1 }]));
   return (
     <div class="spec-flow">
@@ -22,7 +31,7 @@ function FlowSheet({ flowSpec, screens }:{ flowSpec:FlowSpec; screens:Screen[] }
                 {index > 0 && <div class="spec-flow-arrow"><span>{row.taps[index - 1] ?? ''}</span><i aria-hidden="true">→</i></div>}
                 {found && (
                   <a class="spec-flow-thumb" href={`#screen-${name}`}>
-                    <img src={found.screen.url} alt={found.screen.spec.title} />
+                    <Thumbnail flow={flow} screen={found.screen} />
                     <span><b>{found.number}</b>{found.screen.spec.title}</span>
                   </a>
                 )}
@@ -36,19 +45,22 @@ function FlowSheet({ flowSpec, screens }:{ flowSpec:FlowSpec; screens:Screen[] }
 }
 
 function ScreenSpecs({ flow, doc }:{ flow:string; doc:string }) {
-  const { flowSpec, screens } = readFlow(flow);
+  const { flowSpec, screens:all } = readFlow(flow);
+  const screens = all.filter(screen => ASSEMBLED[flow]?.[screen.name] || screen.url);
   if (!screens.length) return <article class="flow-doc"><p>아직 찍은 화면이 없어요 — <code>node tools/flows/capture.mjs {flow}</code></p></article>;
   return (
     <article class="flow-doc spec-doc">
       <h1>{flowSpec?.title ?? flow}</h1>
-      <p>폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음). 글 · 흐름도는 <a href={`./?path=/story/${doc}`} target="_top">화면 흐름</a>.</p>
-      {flowSpec && <FlowSheet flowSpec={flowSpec} screens={screens} />}
-      {screens.map(({ name, spec, url }, index) => (
+      <p>{ASSEMBLED[flow] ? '디자인 시스템 컴포넌트로 조립한 폰 폭(390px) 화면이다 — 고정 자료(2026-11-02 월 07:30) · 지도는 바탕색 자리만(실제 지도 · 실시간 열차 · 길 그림 없음).' : '폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음).'} 글 · 흐름도는 <a href={`./?path=/story/${doc}`} target="_top">화면 흐름</a>.</p>
+      {flowSpec && <FlowSheet flow={flow} flowSpec={flowSpec} screens={screens} />}
+      {screens.map(({ name, spec, url }, index) => {
+        const assembled = ASSEMBLED[flow]?.[name];
+        return (
         <section class="spec-screen" id={`screen-${name}`} key={name}>
           <h2>{index + 1}. {spec.title}</h2>
           {spec.summary && <p>{spec.summary}</p>}
           <div class="spec-screen-body">
-            <img src={url} alt={spec.title} width={320} />
+            {assembled ? <PhoneScreen screen={assembled} marks={spec.marks ?? []} title={spec.title} /> : <img src={url} alt={spec.title} width={320} />}
             <table>
               <thead><tr><th>번호</th><th>무엇</th><th>누르면</th><th>예외 · 빈 상태</th></tr></thead>
               <tbody>
@@ -59,7 +71,8 @@ function ScreenSpecs({ flow, doc }:{ flow:string; doc:string }) {
             </table>
           </div>
         </section>
-      ))}
+        );
+      })}
     </article>
   );
 }

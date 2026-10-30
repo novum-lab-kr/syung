@@ -1,17 +1,17 @@
 // 설정 서랍(햄버거 메뉴)의 몸통 칸 — 테마 고르기(하늘 그림 · 자동/라이트/다크 · 한 줄 안내) · 도시 모드 스위치 · 성능 · 배터리.
-// 머리줄 · 목록 줄 · 로그인 단추도 여기서 한 번 그린다(서랍이 숨어 있는 칸이라 첫 화면이 늦어지지 않는다). 열기 · 닫기 · 쪽 넘기기 · Tab 가두기는 본체 · user/account.mts 그대로.
+// 겉모양은 components/settings.tsx · drawer.tsx — 이 파일은 상태와 누름 전달만. 머리줄 · 목록 줄 · 로그인 단추 · 데이터 출처도 여기서 한 번 그린다(서랍이 숨어 있는 칸이라 첫 화면이 늦어지지 않는다). 열기 · 닫기 · 쪽 넘기기 · Tab 가두기는 본체 · user/account.mts 그대로.
 // 상태는 옛 DOM 이 들고 있던 그대로(스위치별 눌림 · 줄별 숨김 · 종족 · 나라 · 속도 버튼의 눌림 기준값 · 글자) — 모드 전환 · 테마의 주인(본체 · map/theme.mts)이
 // 옛 setAttribute 자리에서 press · hide · race … 를 불러 바꾸고, 누르면 on() 으로 받은 함수를 부른다. 바뀔 때마다 바로(같은 작업 안에서) 다시 그린다.
 // 표시(DOM 모양 · class · id · 문구 · aria)는 옛 index.html 과 같다. 첫 화면 코드: 본체가 preact 와 같은 단계에서 이 파일을 요청한다.
 import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
-import { DrawerHead, MenuItem, SettingSwitch } from '../components/drawer.tsx';
-import { LoginButton } from '../components/login_button.tsx';
+import { DrawerHead } from '../components/drawer.tsx';
+import { AccountRows, CityModes, DeviceSettings, MenuNav, SourceList, ThemePicker } from '../components/settings.tsx';
+import type { ModeRowId, ModeSwitchId, ThemeNote } from '../components/settings.tsx';
 
-type SwitchId = 'toggleSimcity' | 'toggleJoseon' | 'toggleStarcraft' | 'toggleRetro' | 'toggleNation' | 'toggleCoaster' | 'togglePrebuild' | 'toggleSaver';
-type RowId = 'starcraftRace' | 'nationRow' | 'coasterSpeed';
-// 테마 한 줄 안내: 자동이면 '지금은 <b>다크</b> · … ', 고정이면 글자만
-export type ThemeNote = string | { lead:string; bold:string; tail:string };
+type SwitchId = ModeSwitchId | 'togglePrebuild' | 'toggleSaver';
+type RowId = ModeRowId;
+export type { ThemeNote };
 interface Handlers {
   switches:Partial<Record<SwitchId, () => void>>;
   race?:(race:string) => void; nation?:(nation:string) => void; speed?:(speed:number) => void; theme?:(choice:string) => void;
@@ -31,72 +31,13 @@ let state:MenuState = {
 };
 const handlers:Handlers = { switches: {} };
 
-const ICON = {
-  auto: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18z" fill="#f5a524"/><path d="M12 3a9 9 0 0 1 0 18z" fill="#4a5b78"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".6"/></svg>,
-  light: <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="#f5a524" stroke="#d98a0b" stroke-width="1.6"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" stroke="#e39a17" stroke-width="2"/></svg>,
-  dark: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="#b8c9da" stroke="#7f97b0" stroke-width="1"/></svg>,
-  simcity: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M4 21V10h6v11M10 21V3h9v18M7 13v1m0 3v1m6-11h3m-3 4h3m-3 4h3m-3 4h3"/></svg>,
-  joseon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10.5c3.5.3 6.5-1.8 10-5.5 3.5 3.7 6.5 5.8 10 5.5M5 9.5V20M19 9.5V20M3 20h18M9.5 20v-5h5v5"/></svg>,
-  starcraft: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>,
-  retro: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M4 4h4v4H4zM10 4h4v4h-4zM16 10h4v4h-4zM10 10h4v4h-4zM4 16h4v4H4zM16 16h4v4h-4z"/></svg>,
-  nation: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 3.9 5.7 3.9 9s-1.3 6.3-3.9 9c-2.6-2.7-3.9-5.7-3.9-9S9.4 5.7 12 3z"/></svg>,
-  prebuild: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V9l5-3v15M9 21V4h8v17M3 21h18M13 2l-2 4h4l-2 4"/></svg>,
-  saver: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2M7 10v4M10 10v4"/></svg>,
-  tickets: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v8a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2z"/><path d="M15 6v12" stroke-dasharray="2 2.4"/></svg>,
-  device: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>,
-  sources: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>,
-};
-
-// 눌림 글자: 기준값이 아직 없으면 속성 없음(옛 HTML 처음 모양)
-const yes = (on:boolean) => on ? 'true' : 'false';
-const pressedBy = <T,>(want:T | undefined, value:T) => want === undefined ? undefined : yes(want === value);
-
-function Switch({ id, name, desc, icon, controls }:{ id:SwitchId; name:string; desc:string; icon:ComponentChildren; controls?:string }) {
-  const key = id.slice(6).toLowerCase();   // toggleSimcity → simcity
-  return <SettingSwitch id={id} name={name} note={desc} icon={icon} pressed={state.pressed[id]} nameId={`${key}Name`} noteId={`${key}Description`} describedBy={`${key}Description cityModeHelp`} controls={controls} onClick={() => handlers.switches[id]?.()} />;
-}
-const Icon = ({ children }:{ children?:ComponentChildren }) => <span class="setting-icon" aria-hidden="true">{children}</span>;
-const RawIcon = ({ svg }:{ svg:string }) => <span class="setting-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }}></span>;
-
-function Modes() {
-  const races = [['terran', '테란'], ['zerg', '저그'], ['protoss', '프로토스']], nations = [['greece', '그리스'], ['netherlands', '네덜란드'], ['paris', '파리'], ['egypt', '이집트']];
-  return <>
-    <h3 id="cityModeTitle" class="sr">도시 모드</h3>
-    <Switch id="toggleSimcity" name="심시티" desc="작은 서울을 거닐어요" icon={<Icon>{ICON.simcity}</Icon>} />
-    <Switch id="toggleJoseon" name="조선" desc="한양 기와집 사이를 거닐어요" icon={<Icon>{ICON.joseon}</Icon>} />
-    <Switch id="toggleStarcraft" name="스타크래프트" desc="종족을 골라 서울을 거닐어요" icon={<Icon>{ICON.starcraft}</Icon>} controls="starcraftRace" />
-    <div id="starcraftRace" class="setting-row" hidden={state.hidden.starcraftRace}><Icon /><span class="setting-name">종족</span><div class="segmented" role="group" aria-label="종족">
-      {races.map(([race, label]) => <button type="button" data-race={race} aria-pressed={pressedBy(state.race, race)} onClick={() => handlers.race?.(race!)}>{label}</button>)}</div></div>
-    <Switch id="toggleRetro" name="레트로" desc="도트 게임 속 서울을 거닐어요" icon={<Icon>{ICON.retro}</Icon>} />
-    <Switch id="toggleNation" name="세계 여행" desc="서울을 다른 나라 풍으로 거닐어요" icon={<Icon>{ICON.nation}</Icon>} controls="nationRow" />
-    <div id="nationRow" class="setting-row" hidden={state.hidden.nationRow}><Icon /><span class="setting-name">나라</span><div class="segmented" role="group" aria-label="나라">
-      {nations.map(([nation, label]) => <button type="button" data-nation={nation} aria-pressed={pressedBy(state.nation, nation)} onClick={() => handlers.nation?.(nation!)}>{label}</button>)}</div></div>
-    <Switch id="toggleCoaster" name="롤러코스터" desc="도시 위를 달려요" icon={<RawIcon svg={state.icons.coaster} />} controls="coasterSpeed" />
-    <div id="coasterSpeed" class="setting-row" hidden={state.hidden.coasterSpeed}><RawIcon svg={state.icons.speed} /><span class="setting-name">열차 속도<small id="speedNote">{state.speedNote}</small></span><div class="segmented" role="group" aria-label="열차 속도">
-      {[1, 5, 20].map(speed => <button type="button" data-speed={speed} aria-pressed={pressedBy(state.speed, speed)} onClick={() => handlers.speed?.(speed)}>{`${speed}배`}</button>)}</div></div>
-    <p id="cityModeHelp" class="setting-help">한 번에 하나만 켤 수 있어요.<br />모두 끄면 기본 지도예요.</p>
-  </>;
-}
-
-const DeviceSwitch = ({ id, name, note, icon }:{ id:SwitchId; name:string; note:string; icon:ComponentChildren }) =>
-  <SettingSwitch id={id} name={name} note={note} icon={<Icon>{icon}</Icon>} pressed={state.pressed[id]} onClick={() => handlers.switches[id]?.()} />;
-const Device = () => <>
-  <DeviceSwitch id="togglePrebuild" name="건물 미리 짓기" note="모드 전환이 빨라져요 · 발열 주의" icon={ICON.prebuild} />
-  <DeviceSwitch id="toggleSaver" name="절전" note="움직임을 조금 덜 부드럽게 · 배터리 아낌" icon={ICON.saver} />
-</>;
-
-function ThemePick() {
-  const note = state.themeNote, choices:[string, ComponentChildren, string][] = [['auto', ICON.auto, '자동'], ['light', ICON.light, '라이트'], ['dark', ICON.dark, '다크']];
-  return <>
-    <div id="sunPath" class={state.sky.night ? 'sun-path is-night' : 'sun-path'} role={state.sky.label ? 'img' : undefined} aria-label={state.sky.label} ><div class="sun-svg" dangerouslySetInnerHTML={{ __html: state.sky.html }}></div><div id="skyMotion" class="sky-motion" aria-hidden="true"></div></div>
-    <div class="theme-seg" role="group" aria-label="테마" aria-describedby="themeNote">{choices.map(([choice, icon, label]) =>
-      <button type="button" data-theme-choice={choice} aria-pressed={pressedBy(state.theme, choice)} onClick={() => handlers.theme?.(choice)}>{icon}<span>{label}</span></button>)}</div>
-    <p id="themeNote" class="theme-note" aria-live="polite">{typeof note === 'string' ? note : <>{note.lead}<b>{note.bold}</b>{note.tail}</>}</p>
-  </>;
-}
+const Modes = () => <CityModes pressed={state.pressed} hidden={state.hidden} race={state.race} nation={state.nation} speed={state.speed} speedNote={state.speedNote} icons={state.icons}
+  onSwitch={id => handlers.switches[id]?.()} onRace={race => handlers.race?.(race)} onNation={nation => handlers.nation?.(nation)} onSpeed={speed => handlers.speed?.(speed)} />;
+const Device = () => <DeviceSettings prebuild={state.pressed.togglePrebuild} saver={state.pressed.toggleSaver} onPrebuild={() => handlers.switches.togglePrebuild?.()} onSaver={() => handlers.switches.toggleSaver?.()} />;
+const Theme = () => <ThemePicker theme={state.theme} note={state.themeNote} sky={state.sky} onPick={choice => handlers.theme?.(choice)} />;
 
 const roots:[Element | null, () => ComponentChildren][] = [
-  [document.querySelector('#menuRoot .theme-pick'), () => <ThemePick />],
+  [document.querySelector('#menuRoot .theme-pick'), () => <Theme />],
   [document.getElementById('menuModes'), () => <Modes />],
   [document.getElementById('menuDevice'), () => <Device />],
 ];
@@ -127,23 +68,11 @@ export const settingsMenu = {
 };
 export type SettingsMenu = typeof settingsMenu;
 
-// 내 정보 · 승차권 줄과 숨은 쪽 열기 단추(account.mts 가 hidden · 글자를 직접 고치고 눌러 쓴다 — 그래서 다시 그리지 않는다)
-const AccountRows = () => <>
-  <LoginButton />
-  <MenuItem id="accountRow" page="menuAccount" hidden nameId="accountItemName" icon={<span id="accountAvatar" class="account-avatar face" aria-hidden="true"></span>} />
-  <MenuItem id="ticketsRow" page="menuTickets" hidden name="승차권" icon={<Icon>{ICON.tickets}</Icon>} />
-  <button id="ticketOpen" type="button" data-menu-page="menuTicket" aria-controls="menuTicket" hidden tabIndex={-1}></button>
-  <button id="routeOpen" type="button" data-menu-page="menuRoute" aria-controls="menuRoute" hidden tabIndex={-1}></button>
-</>;
-const MenuNav = () => <>
-  <MenuItem page="menuModes" name="도시 모드" icon={<Icon>{ICON.simcity}</Icon>} />
-  <MenuItem page="menuDevice" name="성능 · 배터리" icon={<Icon>{ICON.device}</Icon>} />
-  <MenuItem page="menuSources" name="데이터 출처" icon={<Icon>{ICON.sources}</Icon>} />
-</>;
 const once:[Element | null, ComponentChildren][] = [
   [document.querySelector('#settingsPanel .menu-head'), <DrawerHead title="메뉴" />],
   [document.getElementById('accountItem'), <AccountRows />],
   [document.querySelector('#menuRoot .menu-nav'), <MenuNav />],
+  [document.getElementById('menuSources'), <SourceList />],
 ];
 for (const [root, view] of once) if (root) render(view, root);
 

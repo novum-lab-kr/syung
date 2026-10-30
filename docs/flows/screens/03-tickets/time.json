@@ -1,16 +1,6 @@
 {
   "title": "발권 — 출발 시각",
   "summary": "출발 · 도착을 고른 뒤 「출발 시각」 칸을 눌러 휠을 연 모습.",
-  "after": "place",
-  "steps": [
-    { "tap": "#ticketFromList li:first-child button" },
-    { "type": ["#ticketTo", "강남역"] },
-    { "wait": "#ticketToList:not([hidden]) li button" },
-    { "tap": "#ticketToList li:first-child button" },
-    { "tap": "#ticketTimeBtn" },
-    { "wait": "#ticketTimePick:not([hidden]) .tw-col" },
-    { "sleep": 500 }
-  ],
   "marks": [
     { "n": 1, "at": "#ticketTimeBtn", "what": "출발 시각 칸", "tap": "휠을 열고 닫는다" },
     { "n": 2, "at": "#ticketTimePick .tw-cols", "what": "휠 — 오전 · 오후 / 시 / 분(5분 단위)", "tap": "돌리는 동안은 미리보기만 바뀐다" },

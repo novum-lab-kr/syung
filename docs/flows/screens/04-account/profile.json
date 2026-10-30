@@ -1,18 +1,6 @@
 {
   "title": "프로필 수정",
-  "after": "account",
   "summary": "서랍 위에 뜨는 팝업. 저장은 바뀐 것만 사진 → 닉네임 차례로 보낸다.",
-  "steps": [
-    {
-      "tap": "#accountAvatarBig"
-    },
-    {
-      "wait": "#profileSheet:not([hidden]) #nameInput"
-    },
-    {
-      "sleep": 500
-    }
-  ],
   "marks": [
     {
       "n": 1,

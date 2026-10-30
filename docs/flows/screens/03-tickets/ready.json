@@ -1,15 +1,6 @@
 {
   "title": "발권 — 저장",
   "summary": "경로를 고르고 타는 날 · 이름을 넣은 발권 화면 아래쪽.",
-  "after": "route",
-  "steps": [
-    { "tap": "#routePick" },
-    { "wait": "#ticketRoute:not(.empty)" },
-    { "tap": "#ticketQuick button[data-quick='1,2,3,4,5']" },
-    { "type": ["#ticketName", "출근"] },
-    { "eval": "document.activeElement.blur(), document.getElementById('ticketDelete').scrollIntoView({ block: 'end' }), true" },
-    { "sleep": 500 }
-  ],
   "marks": [
     { "n": 1, "at": "#ticketRoute", "what": "경로 칸 — 고른 길의 띠 · 약 N분 · 환승 N", "tap": "「바꾸기」 — 경로 선택(5)으로 다시" },
     { "n": 2, "at": "#ticketQuick", "what": "평일 · 주말 · 매일", "tap": "요일을 한 번에 고른다" },

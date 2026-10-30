@@ -59,7 +59,7 @@
   </div>
 </main>
 <!-- 메뉴 서랍: 헤더의 햄버거 버튼이 오른쪽에서 밀어 낸다(본체 setOpen). 두 단계 — 첫 화면(#menuRoot)은 테마(하늘 그림 띠 + 넓은 세그먼트 + 지금 상태 한 줄) + 목록(.menu-item data-menu-page), 목록을 누르면 그 쪽(.menu-page)으로.
-     새 메뉴는 목록(ui/settings_menu.tsx)에 MenuItem 하나 + 여기 .menu-page 하나를 더한다. 서랍 머리줄 · 목록 · 로그인 · 프로필 팝업의 속은 숨겨진 칸이라 JS 가 그린다(components/). 열차 · 배경 지도는 늘 보이고 지도 색은 모드 기본값이다(스위치 없음). -->
+     새 메뉴는 목록(ui/settings_menu.tsx)에 MenuItem 하나 + 여기 .menu-page 하나를 더한다. 서랍 머리줄 · 목록 · 데이터 출처 · 로그인 · 프로필 팝업의 속은 숨겨진 칸이라 JS 가 그린다(components/). 열차 · 배경 지도는 늘 보이고 지도 색은 모드 기본값이다(스위치 없음). -->
 <div id="settingsPanel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
 <div class="menu-head"></div>
 <div class="menu-body">
@@ -67,7 +67,7 @@
 <!-- 테마 고르기 · 도시 모드 · 성능 칸의 속은 ui/settings_menu.tsx(Preact)가 그린다 — 켜고 끄기 · 눌림은 본체 · map/theme.mts 가 그 창구로 -->
 <section id="menuModes" class="menu-page setting-modes" role="group" hidden aria-labelledby="cityModeTitle" aria-describedby="cityModeHelp"></section>
 <section id="menuDevice" class="menu-page" aria-label="성능 · 배터리" hidden></section>
-<section id="menuSources" class="menu-page" aria-label="데이터 출처" hidden><ul class="source-list"><li><b>노선 · 역 · 시간표</b><span>KTDB(국가교통DB, 한국교통연구원) 대중교통 GTFS</span><span class="source-link"><a href="https://www.ktdb.go.kr/" target="_blank" rel="noopener">ktdb.go.kr</a></span></li><li><b>실시간 열차 위치 · 도착</b><span>서울특별시 열린데이터광장 지하철 실시간 도착 · 위치 정보</span><span class="source-link"><a href="https://data.seoul.go.kr/" target="_blank" rel="noopener">data.seoul.go.kr</a></span></li><li><b>버스 노선 · 정류장</b><span>서울특별시 열린데이터광장 버스 노선 · 정류소 정보 · 공공누리 제1유형(출처표시)</span><span class="source-link"><a href="https://data.seoul.go.kr/" target="_blank" rel="noopener">data.seoul.go.kr</a></span></li><li><b>실시간 버스 위치 · 도착</b><span>서울특별시 버스 정보 API(ws.bus.go.kr)</span></li><li><b>날씨</b><span>기상청 단기예보 조회서비스(공공데이터포털) 초단기실황 · 초단기예보 · 공공누리 제1유형(출처표시)</span><span class="source-link"><a href="https://www.data.go.kr/data/15084084/openapi.do" target="_blank" rel="noopener">data.go.kr</a></span></li><li><b>배경 지도 · 선로</b><span><a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> 기여자(ODbL) · 지도 타일 OpenFreeMap</span></li></ul></section>
+<section id="menuSources" class="menu-page" aria-label="데이터 출처" hidden></section>
 <section id="menuAccount" class="menu-page account-page" aria-label="내 정보" hidden></section>
 <section id="menuTickets" class="menu-page tickets-page" aria-label="승차권" hidden></section>
 <section id="menuTicket" class="menu-page ticket-page" aria-label="승차권 발권" hidden></section>

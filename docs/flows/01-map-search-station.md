@@ -122,7 +122,7 @@ flowchart TD
 | 실시간 받기 · 상태 글자 · 받기 주기 | `web/trains/live_feed.mts:36-60` · `web/trains/live_feed.mts:69-72` |
 | 지도 위 띠(끊김 · 3분 멈춤) | `web/ui/popups.mts:99-105` |
 | 역 시트 열기(0.7초 · 15초 다시 그리기) | `web/ui/popups.mts:131-153` |
-| 역 시트 그리기(받는 중 · 못 받음 · 받음) | `web/components/station_sheet.tsx:15-49` |
+| 역 시트 그리기(받는 중 · 못 받음 · 받음) | `web/components/station_sheet.tsx:15-48` |
 | 열차 시트 열기 · 열차 고르기(14px) | `web/ui/popups.mts:70-96` |
 | 아래 시트(닫기 · 끌기 · Esc · 따라가기) · 길찾기 두 단추 | `web/ui/sheet.mts:39-63` · `web/ui/sheet.mts:124-125` |
 
