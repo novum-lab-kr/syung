@@ -1,0 +1,125 @@
+{
+  "cases": [
+    {"id":"SETTINGS-1","branch":"서랍 닫기","title":"열면 목록부터 · Esc 로 닫는다","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"expectVisible":"#menuRoot"},
+      {"press":"Escape"},
+      {"expectHidden":"#settingsPanel"}
+    ]},
+    {"id":"SETTINGS-2","branch":"서랍 닫기","title":"✕ 로 닫는다(휴대폰 폭)","viewport":"mobile","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"#settingsClose"},
+      {"expectHidden":"#settingsPanel"}
+    ]},
+    {"id":"SETTINGS-3","branch":"테마","title":"다크를 고르면 눌림","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-theme-choice=\"dark\"]"},
+      {"expectVisible":"[data-theme-choice=\"dark\"][aria-pressed=\"true\"]"}
+    ]},
+    {"id":"SETTINGS-4","branch":"쪽 이동","title":"도시 모드 쪽 → ‹ 로 목록","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"expectVisible":"#toggleSimcity"},
+      {"click":"#menuBack"},
+      {"expectVisible":"#menuRoot"}
+    ]},
+    {"id":"SETTINGS-5","branch":"모드 켜고 끄기","title":"심시티 켜고 끄기","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"click":"#toggleSimcity"},
+      {"expectVisible":"#toggleSimcity[aria-pressed=\"true\"]"},
+      {"click":"#toggleSimcity"},
+      {"expectVisible":"#toggleSimcity[aria-pressed=\"false\"]"}
+    ]},
+    {"id":"SETTINGS-6","branch":"모드 켜고 끄기","title":"다른 모드를 켜면 먼저 켠 것이 꺼진다","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"click":"#toggleSimcity"},
+      {"expectVisible":"#toggleSimcity[aria-pressed=\"true\"]"},
+      {"click":"#toggleJoseon"},
+      {"expectVisible":"#toggleJoseon[aria-pressed=\"true\"]"},
+      {"expectVisible":"#toggleSimcity[aria-pressed=\"false\"]"}
+    ]},
+    {"id":"SETTINGS-7","branch":"딸린 줄","title":"스타크래프트를 켜면 종족 줄","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"click":"#toggleStarcraft"},
+      {"expectVisible":"#starcraftRace"}
+    ]},
+    {"id":"SETTINGS-8","branch":"딸린 줄","title":"세계 여행을 켜면 나라 줄","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"click":"#toggleNation"},
+      {"expectVisible":"#nationRow"}
+    ]},
+    {"id":"SETTINGS-9","branch":"딸린 줄","title":"롤러코스터를 켜면 속도 줄","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuModes\"]"},
+      {"click":"#toggleCoaster"},
+      {"expectVisible":"#coasterSpeed"}
+    ]},
+    {"id":"SETTINGS-10","branch":"성능 · 배터리","title":"절전을 켜면 눌림","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuDevice\"]"},
+      {"click":"#toggleSaver"},
+      {"expectVisible":"#toggleSaver[aria-pressed=\"true\"]"}
+    ]},
+    {"id":"SETTINGS-11","branch":"데이터 출처","title":"출처 쪽이 열린다","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"click":"[data-menu-page=\"menuSources\"]"},
+      {"expectVisible":"#menuSources"}
+    ]},
+    {"id":"SETTINGS-12","branch":"로그인 안 됨","title":"서랍에 로그인 줄","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"mock":"**/api/auth/providers","status":200,"json":{"providers":["kakao","google"],"me":null}},
+      {"goto":"/"},
+      {"click":"#settingsButton"},
+      {"expectVisible":"#loginOpen"}
+    ]},
+    {"id":"SETTINGS-13","branch":"새로고침","title":"새로고침해도 지도 화면이 다시 뜬다","steps":[
+      {"mock":"**/api/**","status":200,"json":{"ok":true,"trains":[],"lines":[],"buses":[],"arrivals":[],"fetchedAt":"2026-11-02T07:30:00+09:00","providers":[],"me":null}},
+      {"mock":"**/api/weather**","status":200,"json":{"ok":true,"nx":60,"ny":127,"tempC":17.5,"sky":"clear","precip":"none","rainMm":0,"windMs":2.4,"lightning":false,"observedAt":"2026-10-30T16:00:00+09:00","updatedAt":"2026-10-30T16:24:55+09:00"}},
+      {"goto":"/"},
+      {"click":"#refreshButton"},
+      {"expectVisible":"#routeButton"}
+    ]},
+    {"id":"SETTINGS-14","branch":"불러오는 중","manual":"가운데 알림은 자료를 받는 잠깐만 보여 단계로 잡기 어렵고, 건물 짓는 중 n/m 은 지도 타일에 달렸다"},
+    {"id":"SETTINGS-15","branch":"모드 준비 실패","manual":"모드 코드 받기를 실패시키는 단계가 없다(mock 으로 모듈 파일을 막으면 빌드 경로에 묶인다)"},
+    {"id":"SETTINGS-16","branch":"받는 중 다시 누르기","manual":"받는 도중에만 누를 수 있어 시간에 달렸다"},
+    {"id":"SETTINGS-17","branch":"승차권 경로 선택 중","manual":"지도 위 누르기 · 끌기가 필요하다(지도 캔버스 좌표는 단계로 못 적는다)"}
+  ]
+}
