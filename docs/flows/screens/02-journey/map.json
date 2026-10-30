@@ -1,18 +1,6 @@
 {
   "title": "지도에서 보기",
-  "after": "result",
   "summary": "시트를 닫아도 경로는 지도에 남고 아래 막대가 뜬다.",
-  "steps": [
-    {
-      "key": "Escape"
-    },
-    {
-      "wait": ".jbar:not([hidden]) .jbar-open"
-    },
-    {
-      "sleep": 1500
-    }
-  ],
   "marks": [
     {
       "n": 1,

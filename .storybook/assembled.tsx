@@ -4,6 +4,10 @@
 import { render, type ComponentChildren } from 'preact';
 import indexHtml from '../web/index.html?raw';
 import { DayPicker } from '../web/components/day_picker.tsx';
+import { JourneyBar } from '../web/components/journey_summary.tsx';
+import { AccountRows, CityModes, DeviceSettings, MenuNav, ThemePicker } from '../web/components/settings.tsx';
+import { SheetFrame } from '../web/components/sheet_frame.tsx';
+import { JourneySheet } from '../web/ui/journey_sheet.tsx';
 import { DrawerHead } from '../web/components/drawer.tsx';
 import { LayerSheet } from '../web/components/layer_sheet.tsx';
 import { LoginSheetBody, SocialButtons } from '../web/components/login_sheet.tsx';
@@ -16,7 +20,7 @@ import { Segmented } from '../web/components/segmented.tsx';
 import { StatsPanel } from '../web/components/stats_panel.tsx';
 import { TicketCard, TicketFront, TicketList } from '../web/components/ticket_card.tsx';
 import { TimeField } from '../web/components/time_field.tsx';
-import { routeTrack, type Plan } from '../web/lib/journey-ui.mts';
+import { routeSteps, routeTrack, trackParts, type JourneyActions, type JourneyView, type Plan, type StepLeg } from '../web/lib/journey-ui.mts';
 import { routeFilterView, usefulRoutes } from '../web/user/ticket_routes.mts';
 import placesSeoul from '../tools/flows/fixtures/place-seoul.json';
 import providers from '../tools/flows/fixtures/providers.json';
@@ -54,11 +58,11 @@ function MapApp({ children }:{ children?:ComponentChildren }) {
 }
 
 // 서랍(지도 위에 열린 모습)
-function Drawer({ title, withMap = false, children }:{ title:string; withMap?:boolean; children:ComponentChildren }) {
+function Drawer({ title, withMap = false, back = true, children }:{ title:string; withMap?:boolean; back?:boolean; children:ComponentChildren }) {
   return <>
     <MapApp />
     <div id="settingsPanel" class={withMap ? 'settings-panel open with-map' : 'settings-panel open'} role="dialog" aria-label={title}>
-      <div class="menu-head"><DrawerHead title={title} back /></div>
+      <div class="menu-head"><DrawerHead title={title} back={back} /></div>
       <div class="menu-body">{children}</div>
     </div>
     <div class="menu-scrim" aria-hidden="true"></div>
@@ -205,5 +209,68 @@ const ACCOUNT:Record<string, AssembledScreen> = {
   </>, prepare: fillProfile },
 };
 
+// ---- 02 길찾기 ----
+const JOURNEY_PLANS = routeAnswer.plans as unknown as Plan[];
+const durationOf = (minutes:number) => minutes >= 60 ? { hours: Math.floor(minutes / 60), minutes: minutes % 60 } : { hours: null, minutes };
+const planView = (plan:Plan) => ({
+  aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, duration: durationOf(plan.minutes), arrive: `${plan.leaveBy} → ${plan.arrives}`, tag: plan.tag || null,
+  track: trackParts(plan, COLORS), meta: `환승 ${plan.transfers}번 · 걷기 ${plan.walkMinutes}분`, live: plan.legs.some(leg => 'realtime' in leg && leg.realtime),
+  steps: routeSteps(plan.legs as unknown as StepLeg[], { from: FROM, to: TO }, COLORS, { start: plan.leaveBy, end: plan.arrives }),
+});
+const KIND_NAMES = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']] as const;
+const countOf = (kind:string) => JOURNEY_PLANS.filter(plan => kind === 'all' || plan.kind === kind).length;
+const NO_LIST = { hidden: true, places: [], empty: null };
+const EMPTY_JOURNEY:JourneyView = { here: false, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, draft: null, lists: { from: NO_LIST, to: NO_LIST }, status: { text: '', sr: false }, result: { kind: 'none' } };
+const FOUND_JOURNEY:JourneyView = { ...EMPTY_JOURNEY, done: true,
+  summary: { from: FROM, to: TO, when: '지금 출발', aria: `${FROM}에서 ${TO}까지, 지금 출발. 눌러서 바꾸기` },
+  result: { kind: 'plans',
+    tabs: KIND_NAMES.filter(([kind]) => countOf(kind)).map(([kind, name]) => ({ kind, name, count: countOf(kind), pressed: kind === 'all' })),
+    cards: JOURNEY_PLANS.map((plan, index) => ({ plan: planView(plan), kind: plan.kind, on: index === 0, hidden: false })) } };
+const HOLD = { down: noop, stop: noop, click: noop };
+const JOURNEY_ACTIONS:JourneyActions = { typed: noop, place: noop, here: noop, swap: noop, summary: noop, whenRow: noop, whenNow: noop, whenGo: noop, day: noop, hold: { h1: HOLD, 'h-1': HOLD, m1: HOLD, 'm-1': HOLD }, tab: noop, card: noop, retry: noop };
+const JourneyScreen = ({ view }:{ view:JourneyView }) => <>
+  <MapApp />
+  <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={view} actions={JOURNEY_ACTIONS} /></SheetFrame></section>
+</>;
+const FIRST_PLAN = JOURNEY_PLANS[0]!;
+const JOURNEY:Record<string, AssembledScreen> = {
+  input: { draw: () => <JourneyScreen view={EMPTY_JOURNEY} /> },
+  result: { draw: () => <JourneyScreen view={FOUND_JOURNEY} /> },
+  map: { draw: () => <>
+    <MapApp />
+    <div class="jbar"><JourneyBar bar={{ duration: durationOf(FIRST_PLAN.minutes), arrives: FIRST_PLAN.arrives, track: trackParts(FIRST_PLAN, COLORS, 240) }} onOpen={noop} onClear={noop} /></div>
+  </> },
+};
+
+// ---- 05 설정 · 지도 모드 ----
+// 하늘 그림 · 롤코 아이콘은 실제 화면에서 해 위치 · 본체 ICONS 로 만든다 — 조립 화면은 스토리(components/settings.stories.tsx)와 같은 보기용 그림
+const SKY = '<svg viewBox="0 0 320 96" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true"><rect width="320" height="96" fill="#bfe3f5"/><circle cx="210" cy="36" r="14" fill="#f5a524"/></svg>';
+const MODE_ICONS = {
+  coaster: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M2 18c4 0 5-10 9-10s4 6 11 6"/></svg>',
+  speed: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg>',
+};
+const MODES_OFF = { toggleSimcity: false, toggleJoseon: false, toggleStarcraft: false, toggleRetro: false, toggleNation: false, toggleCoaster: false };
+const ROWS_HIDDEN = { starcraftRace: true, nationRow: true, coasterSpeed: true };
+// 메뉴 첫 쪽: 로그인한 모습 — web/user/account.mts 가 하듯 숨은 줄을 열고 이름 · 얼굴을 넣는다
+function fillAccountRows(doc:Document) {
+  const byId = (id:string) => doc.getElementById(id);
+  byId('accountItem')?.removeAttribute('hidden');
+  byId('loginOpen')?.setAttribute('hidden', '');
+  byId('accountRow')?.removeAttribute('hidden');
+  byId('ticketsRow')?.removeAttribute('hidden');
+  const name = byId('accountItemName'), avatar = byId('accountAvatar');
+  if (name) name.textContent = providers.me.name;
+  if (avatar) avatar.style.backgroundImage = 'url("./brand/faces/sprout-240.png")';
+}
+const SETTINGS:Record<string, AssembledScreen> = {
+  menu: { draw: () => <Drawer title="메뉴" back={false}><div id="menuRoot" class="menu-list">
+    <div class="theme-pick"><ThemePicker theme="auto" note={{ lead: '지금은 ', bold: '라이트', tail: ' · 해 지면 다크로 바뀌어요' }} sky={{ html: SKY, night: false }} /></div>
+    <div id="accountItem" class="menu-account"><AccountRows /></div>
+    <nav class="menu-nav" aria-label="메뉴"><MenuNav /></nav>
+  </div></Drawer>, prepare: fillAccountRows },
+  modes: { draw: () => <Drawer title="도시 모드"><section id="menuModes" class="menu-page setting-modes" role="group" aria-labelledby="cityModeTitle" aria-describedby="cityModeHelp"><CityModes pressed={MODES_OFF} hidden={ROWS_HIDDEN} speedNote="실시간" icons={MODE_ICONS} /></section></Drawer> },
+  device: { draw: () => <Drawer title="성능 · 배터리"><section id="menuDevice" class="menu-page" aria-label="성능 · 배터리"><DeviceSettings prebuild={false} saver={false} /></section></Drawer> },
+};
+
 // 흐름 폴더 → 조립 화면. 여기 있는 흐름은 '화면 기획'이 캡처 대신 이것을 쓴다
-export const ASSEMBLED:Record<string, Record<string, AssembledScreen>> = { '03-tickets': TICKETS, '04-account': ACCOUNT };
+export const ASSEMBLED:Record<string, Record<string, AssembledScreen>> = { '02-journey': JOURNEY, '03-tickets': TICKETS, '04-account': ACCOUNT, '05-settings-modes': SETTINGS };

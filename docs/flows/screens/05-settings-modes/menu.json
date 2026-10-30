@@ -1,17 +1,6 @@
 {
   "title": "설정 서랍 목록",
   "summary": "메뉴 단추를 누르면 오른쪽에서 밀려 나온다. 늘 목록부터 보인다.",
-  "steps": [
-    {
-      "tap": "#settingsButton"
-    },
-    {
-      "wait": "#menuRoot:not([hidden]) .theme-seg"
-    },
-    {
-      "sleep": 500
-    }
-  ],
   "marks": [
     {
       "n": 1,

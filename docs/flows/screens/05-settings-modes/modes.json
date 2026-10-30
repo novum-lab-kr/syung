@@ -1,18 +1,6 @@
 {
   "title": "도시 모드",
-  "after": "menu",
   "summary": "스위치 여섯, 한 번에 하나만. 모두 끄면 기본 지도.",
-  "steps": [
-    {
-      "tap": "[data-menu-page=menuModes]"
-    },
-    {
-      "wait": "#menuModes:not([hidden]) #toggleSimcity"
-    },
-    {
-      "sleep": 500
-    }
-  ],
   "marks": [
     {
       "n": 1,

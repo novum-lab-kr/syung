@@ -18,7 +18,7 @@ const root = path.resolve(import.meta.dirname, '../..')
 const screensDir = path.join(root, 'docs/flows/screens')
 const fixturesDir = path.join(import.meta.dirname, 'fixtures')
 // 스토리북 조립 화면(.storybook/assembled.tsx)으로 옮긴 흐름 — 찍지 않는다. 다 옮기면 이 파일을 지운다
-const ASSEMBLED = new Set(['03-tickets', '04-account'])
+const ASSEMBLED = new Set(['02-journey', '03-tickets', '04-account', '05-settings-modes'])
 const WIDTH = 390, HEIGHT = 844, SCALE = 2
 const FIXED_NOW = '2026-11-02T07:30:00+09:00'   // 월요일 아침(승차권 '출근' 이 오늘 타는 날)
 const sleep = (ms) => new Promise(done => setTimeout(done, ms))

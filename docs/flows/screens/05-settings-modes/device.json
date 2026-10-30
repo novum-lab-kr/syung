@@ -1,18 +1,6 @@
 {
   "title": "성능 · 배터리",
-  "after": "menu",
   "summary": "둘 다 이 기기에 저장한다.",
-  "steps": [
-    {
-      "tap": "[data-menu-page=menuDevice]"
-    },
-    {
-      "wait": "#menuDevice:not([hidden]) #togglePrebuild"
-    },
-    {
-      "sleep": 500
-    }
-  ],
   "marks": [
     {
       "n": 1,
@@ -25,7 +13,7 @@
       "n": 2,
       "at": "#toggleSaver",
       "what": "절전",
-      "tap": "움직임을 1초 20번으로"
+      "tap": "움직임을 1초 15번으로"
     }
   ]
 }
