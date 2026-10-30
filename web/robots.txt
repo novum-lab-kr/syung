@@ -1,0 +1,4 @@
+# 슝 지도 앱(map.syung.novum-lab.com) — 페이지는 noindex(web/index.html) 라 막지 않고 읽게 둔다. 검색에 싣는 곳은 소개 사이트(web/intro/robots.txt)
+User-agent: *
+Disallow: /api/
+Disallow: /admin/
