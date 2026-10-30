@@ -165,6 +165,12 @@ def _decode(s: str) -> list[list[float]]:
     return pts
 
 
+def _bus_shaped(pi: int) -> bool:
+    """이 패턴에 도로를 따르는 모양(BUS_SHAPES)이 있나 — 없으면 _bus_path 가 정류장끼리 곧게 잇는다."""
+    sh = BUS_SHAPES.get(str(pi))
+    return bool(sh and len(sh[1]) == len(BPATS[pi]["s"]))
+
+
 def _bus_path(pi: int, k: int, j: int) -> list[list[float]]:
     """Where the bus goes from its k-th to its j-th stop: along the roads when shaped, else stop to stop.
 
@@ -612,7 +618,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                          "from": BSTOPS[ids[0]][0], "to": BSTOPS[ids[-1]][0], "departs": _fmt(info["departs"]),
                          "arrives": _fmt(best[s][1]), "stops": len(ids) - 1, "wait": round(info["departs"] - info["ready"]),
                          "realtime": False, "toward": BSTOPS[p["s"][-1]][0],
-                         "path": _bus_path(info["p"], info["k"], info["j"]),
+                         "path": _bus_path(info["p"], info["k"], info["j"]), "shaped": _bus_shaped(info["p"]),
                          "_dep": info["departs"], "_arr": best[s][1], "_ban": [("bus", p["r"], ids[0]), ("bus", p["r"])], "_stop": ids[-1],
                          "_run": (info["p"], info["base"], info["sc"], info["j"]), **({"_stay": True} if info.get("stay") else {})})
     transit = [l for l in legs if l["type"] != "walk"]

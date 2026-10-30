@@ -1,6 +1,7 @@
 """길찾기에서 경기 프리미엄버스(예약제 · P + 숫자) 빼기(2026-10-29 사용자 결정): 가짜 버스 자료로 본다."""
 
 import unittest
+from unittest import mock
 
 from server.services import journey_graph as graph
 
@@ -48,3 +49,14 @@ class BusBoardingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BusShapedTest(unittest.TestCase):
+    """길찾기 버스 구간의 shaped: 도로 모양 자료가 있는 패턴만 true(웹이 점선 대신 실선으로 그린다)."""
+
+    def test_shaped_only_when_shape_points_match_stops(self):
+        shapes = {"1": ["_p~iF~ps|U", [0, 1, 2]], "2": ["_p~iF~ps|U", [0, 1, 2]]}   # 패턴 2 는 정류장이 둘이라 점 3개와 안 맞는다
+        with mock.patch.object(graph, "BPATS", PATTERNS), mock.patch.object(graph, "BUS_SHAPES", shapes):
+            self.assertTrue(graph._bus_shaped(1))
+            self.assertFalse(graph._bus_shaped(0))   # 모양 없음 → 정류장끼리 직선
+            self.assertFalse(graph._bus_shaped(2))

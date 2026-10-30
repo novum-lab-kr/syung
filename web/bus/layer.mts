@@ -36,7 +36,7 @@ interface Arrivals { stopId:string; state:string; rows:ArrivalRow[]; count:numbe
 // 선을 그릴 수 있는 노선(자료의 노선, 또는 노선을 못 맞춘 길찾기 구간의 임시 노선)
 type RouteLike = Pick<BusRoute, 'id' | 'name' | 'path' | 'type' | 'approximate' | 'stopIds'> & Partial<Pick<BusRoute, 'geometry' | 'snapped' | 'line'>>;
 // 길찾기 버스 구간(ui/journey 가 넘긴다) — displayRoute 는 노선을 못 맞췄을 때 이 화면이 붙인다
-export interface BusLeg { type:string; routeId?:unknown; route?:unknown; path:LngLatPt[]; color?:string; displayRoute?:RouteLike }
+export interface BusLeg { type:string; routeId?:unknown; route?:unknown; path:LngLatPt[]; color?:string; shaped?:boolean; displayRoute?:RouteLike }
 type JourneyLegIn = Omit<BusLeg, 'path'> & { path?:LngLatPt[] };   // 넘어오는 길찾기 구간(걷기 · 지하철은 path 가 없을 수 있다)
 // 화면의 버스 한 대
 interface FleetBus {
@@ -589,7 +589,7 @@ class BusLayer {
       else drawRoute(route,legs.flatMap(l=>[l.path[0],l.path.at(-1)].map(coordinate=>({coordinate}))));
     }
     for(const leg of this.journeyLegs) if(!journeyBusRouteIds(this.data,[leg]).length){
-      leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:true,stopIds:[]};
+      leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:leg.shaped!==true,stopIds:[]};
       drawRoute(leg.displayRoute,[leg.path[0],leg.path.at(-1)].map(coordinate=>({coordinate})));
     }
     // 정류장은 우리가 그리는 노선과 상관없이 화면 안의 것을 다 찍는다(마을버스 · 경기 버스만 서는 정류장도)
