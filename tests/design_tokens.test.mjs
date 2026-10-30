@@ -27,8 +27,8 @@ test('syung.css 의 토큰 변수가 원본에 있다',()=>{
   assert.deepEqual(missing,[]);
 });
 
-// 토큰 CSS 는 syung.css 바로 앞에서 받는다(같은 단계 — 한 단계 늦어지지 않게 · 같은 우선순위 차례)
-test('index.html 이 토큰 CSS 를 syung.css 바로 앞에서 부른다',()=>{
+// 토큰 CSS → 기초 컴포넌트 CSS → syung.css 차례로 붙여 받는다(같은 단계 — 한 단계 늦어지지 않게 · 같은 우선순위 차례: 슝 스킨이 뒤에서 이긴다)
+test('index.html 이 토큰 · 기초 컴포넌트 CSS 를 syung.css 바로 앞에서 부른다',()=>{
   const html=read('web/index.html');
-  assert.match(html,/<link rel="stylesheet" href="\.\/tokens\/tokens\.css">[^\n]*\n<link rel="stylesheet" href="\.\/syung\.css">/);
+  assert.match(html,/<link rel="stylesheet" href="\.\/tokens\/tokens\.css">[^\n]*\n<link rel="stylesheet" href="\.\/components\/components\.css">[^\n]*\n<link rel="stylesheet" href="\.\/syung\.css">/);
 });

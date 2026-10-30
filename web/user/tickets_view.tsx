@@ -7,7 +7,12 @@
 import { Component, render } from 'preact';
 import { routeSteps, routeTrack } from '../lib/journey-ui.mts';   // 경로 띠: 길찾기 결과와 같은 그림(본체가 이미 받은 파일)
 import type { Plan, TrackLeg } from '../lib/journey-ui.mts';
-import { RouteLoading, StepList } from '../ui/journey_sheet.tsx';   // 찾는 동안 뼈대 카드 · 단계 목록: 길찾기 시트와 같은 그림(본체가 이미 받은 파일)
+// 찾는 동안 뼈대 카드 · 단계 목록 · 세그먼트 탭: 길찾기 시트와 같은 기초 컴포넌트(본체가 이미 받은 파일). 버튼은 이 화면만 쓴다(승차권 종이 색 on-ticket)
+import { Button } from '../components/button.tsx';
+import { DOWN } from '../components/icons.tsx';
+import { RouteLoading } from '../components/route_card.tsx';
+import { Segmented } from '../components/segmented.tsx';
+import { StepList } from '../components/step_list.tsx';
 import { shortName } from './ticket_routes.mts';
 import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
 export { shortName };   // 이름 줄이기는 시험할 수 있게 ticket_routes.mts 에 둔다
@@ -98,12 +103,12 @@ function Card({ ticket, index }:{ ticket:Ticket; index:number }) {
     call('ticketFlip')(index);
   }}><div class="ticket-in"><Front ticket={ticket} /><div class="tk-face tk-back">
     <p class={chain === null ? 'tk-chain wait' : 'tk-chain'} dangerouslySetInnerHTML={{ __html: chain ?? waiting }}></p>
-    {ticket.route && <div class="tk-alts"><button class="tk-steps-btn" type="button" aria-expanded={opened ? 'true' : 'false'}>경로 자세히<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button></div>}
+    {ticket.route && <div class="tk-alts"><Button variant="text" class="on-ticket tk-steps-btn" expanded={opened}>경로 자세히{DOWN}</Button></div>}
     <p class="tk-time"><span>출발 시각</span><b>{ticket.depart}</b></p><div class="tk-mag"></div>
     <div class="tk-foot"><span>{`타는 날 ${daysText(ticket.days)}`}</span><span class="tk-acts">
-      {/* 찾는 동안은 aria-disabled 만(disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
-      <button class="tk-map" type="button" aria-disabled={view.mapping === index ? 'true' : undefined}>{view.mapping === index ? '찾는 중…' : '지도에서 보기'}</button>
-      <button class="tk-edit" type="button">고치기 ›</button></span></div></div></div></div>
+      {/* 누름은 위 카드의 onClick 이 class(tk-map · tk-edit · tk-steps-btn)로 나눈다. 찾는 동안은 aria-disabled 만(Button — disabled 단추는 누름이 카드로 새어 뒤집힐 수 있다) — 두 번 누름은 account.mts 가 막는다 */}
+      <Button variant="secondary" class="on-ticket tk-map" loading={view.mapping === index ? '찾는 중…' : undefined}>지도에서 보기</Button>
+      <Button class="on-ticket tk-edit">고치기 ›</Button></span></div></div></div></div>
     {opened && ticket.route && <div class="tk-steps"><StepList steps={routeSteps(ticket.route.legs, { from: ticket.from.name, to: ticket.to.name }, view.colors)} className="jsteps shown" /></div>}</>;
 }
 function TicketsPage() {
@@ -180,7 +185,7 @@ function planHTML(plan:Plan) {
 // 조건 고르기: 종류(길찾기 시트의 종류 탭 .jkinds 모양 · 길 수)
 function RouteFilters({ filter }:{ filter:RouteFilterView }) {
   return <div class="rt-filters">
-    <div class="segmented jkinds" role="group" aria-label="경로 종류">{filter.kinds.map(tab => <button type="button" data-k={tab.kind} aria-pressed={tab.pressed} onClick={() => call('routeKind')(tab.kind)}>{tab.name}<b>{tab.count}</b></button>)}</div>
+    <Segmented label="경로 종류" class="jkinds" attr="k" items={filter.kinds.map(tab => ({ id: tab.kind, name: tab.name, count: tab.count, pressed: tab.pressed }))} onPick={kind => call('routeKind')(kind)} />
   </div>;
 }
 // 경로 선택 쪽(발권 화면의 경로 칸으로 넘어간다): 출발 · 도착 머리말 · 시간 칩 · 종류 탭 · 단계 목록 · 이 경로로

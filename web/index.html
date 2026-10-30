@@ -42,6 +42,7 @@
 </head>
 <body>
 <link rel="stylesheet" href="./tokens/tokens.css"><!-- 디자인 토큰(색 · 글자 · 간격 …): syung.css 가 쓰는 변수 — 바로 앞에, 같은 단계에서 받는다 -->
+<link rel="stylesheet" href="./components/components.css"><!-- 기초 컴포넌트(버튼 …): 토큰 뒤 · 슝 스킨 앞, 같은 단계에서 받는다 -->
 <link rel="stylesheet" href="./syung.css"><!-- after the runtime's <head> styles, so the 슝 skin wins -->
 <main class="app">
   <header class="mast"><div class="identity"><img class="brand-icon" src="./brand/syung-dark.svg" alt="" width="38" height="38"><div class="brand-line"><h1>ㅅ슈슝~</h1><p>어디쯤이슝?</p></div></div><div id="liveState" class="source-state" data-state="loading" hidden><i></i><span>실시간 열차 불러오는 중</span></div><span id="zoomBadge" class="zoom-badge" aria-label="지도 줌">z–</span><button id="refreshButton" class="settings-button refresh-button" type="button" aria-label="새로고침"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button><button id="settingsButton" class="settings-button" type="button" aria-label="설정 메뉴" aria-expanded="false" aria-controls="settingsPanel" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button></header>

@@ -9,7 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
-import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact: 같은 단계에서 요청)
+import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';import './components/route_card.tsx';import './components/step_list.tsx';import './components/segmented.tsx';import './components/chip.tsx';import './components/icons.tsx';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact · 길찾기 시트가 쓰는 기초 컴포넌트: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
