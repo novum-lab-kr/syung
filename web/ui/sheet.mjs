@@ -59,8 +59,8 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		}, 340);
 	}
 	function sheetBusy() {
-		const b = live.busLayer;
-		return !sheet.hidden && !!(following || followBus || b?.selection?.kind === "bus" || b?.followView?.() || sheetBody.querySelector(".journey"));
+		const b = live.busLayer, working = !!(following || followBus || b?.selection?.kind === "bus" || b?.followView?.());
+		return live.appMode ? working : !sheet.hidden && (working || !!sheetBody.querySelector(".journey"));
 	}
 	sheet.querySelector(".sheet-close").onclick = closeSheet;
 	{

@@ -1,3 +1,4 @@
+var appNoticeLift = (sheet, route) => Math.max(sheet ? sheet + 8 : 0, route);
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 var isId = (value) => typeof value === "string" && value.length > 0;
@@ -495,4 +496,4 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 		}
 	};
 }
-export { COASTER_SPEEDS, createAppBridge, parseAppMessage, stationInfo, trainInfo };
+export { COASTER_SPEEDS, appNoticeLift, createAppBridge, parseAppMessage, stationInfo, trainInfo };

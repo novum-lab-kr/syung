@@ -999,5 +999,6 @@ html[data-theme=dark] .acct-toast{color:var(--ink);box-shadow:0 10px 24px rgba(0
    앱이 제 화면으로 그린다 — 웹 쪽은 숨기고 지도(+ − · 내 위치 단추 · 지도 출처 · 실시간 알림 줄 · 모드 바꾸는 중 게이지)만. 일반 웹에는 이 표시가 없다 */
 html[data-app=map] .app{grid-template-rows:minmax(0,1fr)!important}
 html[data-app=map] :is(.mast,.map-search,.route-cta,.map-status,.legend,.settings-panel,.menu-scrim,.login-sheet,.acct-live,.sheet,.ride-bar,.jbar,.bus-follow-ui){display:none!important}
-html[data-app=map] .live-notice{top:12px!important}
+html[data-app=map] .live-notice{top:62px!important}   /* 앱 검색창(위 10 + 높이 44 — app StationSearch) 아래 8px. 앱이 웹뷰 위에 그리니 글이 그 뒤로 숨지 않게 */
+html[data-app=map] .bus-notice{bottom:max(124px,var(--app-notice-lift,0px))}   /* 124 = 앱 길찾기 단추(아래 16 + 높이 52) + 안전 영역(가장 큰 48 — 웹뷰 env() 는 앱 값과 같다고 믿을 수 없다) + 8. 시트 · 경로 막대는 본체 liftAppNotice */
 html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}

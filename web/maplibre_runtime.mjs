@@ -37,7 +37,7 @@ import "./components/login_button.mjs";
 import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
-import { createAppBridge } from "./ui/app_bridge.mjs";
+import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
 import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
@@ -678,7 +678,7 @@ var METRO_AREA = [
 	38.3
 ];
 map.once("load", () => {
-	if (!navigator.geolocation) return;
+	if (!navigator.geolocation || appMapMode()) return;
 	navigator.geolocation.getCurrentPosition((pos) => {
 		const { longitude: x, latitude: y } = pos.coords, [w, s, e, n] = METRO_AREA;
 		if (x < w || x > e || y < s || y > n) return;
@@ -754,6 +754,11 @@ var appBridge = appMapMode() ? createAppBridge({
 	}
 }) : null;
 var appPad = 0;
+var appSheetLift = 0;
+var appRouteLift = 0;
+function liftAppNotice() {
+	document.documentElement.style.setProperty("--app-notice-lift", `${appNoticeLift(appSheetLift, appRouteLift)}px`);
+}
 function appStatus() {
 	if (appBridge) appBridge.status({
 		zoom: map.getZoom(),
@@ -1351,6 +1356,9 @@ var sheetUI = createBottomSheet({
 		},
 		get stopRide() {
 			return stopRide;
+		},
+		get appMode() {
+			return !!appBridge;
 		},
 		get appPad() {
 			return appBridge ? appPad : null;
@@ -2049,13 +2057,19 @@ map.on("load", () => {
 		refreshLive(true);
 	}
 	appBridge?.ready({
-		showRoute: (plan, pad) => ticketRoute.show(plan, {
-			bottom: pad.bottom ?? 110,
-			right: pad.right ?? 40
-		}),
+		showRoute: (plan, pad) => {
+			ticketRoute.show(plan, {
+				bottom: pad.bottom ?? 110,
+				right: pad.right ?? 40
+			});
+			appRouteLift = pad.bottom ?? 110;
+			liftAppNotice();
+		},
 		clearRoute: () => {
 			clearRoute();
 			refreshLive();
+			appRouteLift = 0;
+			liftAppNotice();
 		},
 		focusStation: (id, zoom) => {
 			const st = byId.get(id);
@@ -2142,6 +2156,8 @@ function appActions() {
 		setTheme: (choice) => theme.choose(choice),
 		setPadding: (bottom) => {
 			appPad = bottom;
+			appSheetLift = bottom;
+			liftAppNotice();
 			if (!rider.ride && !sheetUI.following && !sheetUI.followBus) map.easeTo({
 				padding: {
 					top: 0,
