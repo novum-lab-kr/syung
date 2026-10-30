@@ -1,4 +1,4 @@
-// 설정 서랍 '내 정보' 쪽(#menuAccount)의 속 — 프로필 큰 칸 · 사진/캐릭터 고르기 · 닉네임 고치기 · 내 통계 · 계정(로그인한 기기 · 내려받기) · 로그아웃 · 탈퇴 확인.
+// 설정 서랍 '내 정보' 쪽(#menuAccount)의 속 — 프로필 큰 칸 · 프로필 수정(레이어 팝업 #profileSheet — 사진/캐릭터 고르기 + 닉네임을 한 화면에서) · 내 통계 · 계정(로그인한 기기 · 내려받기) · 로그아웃 · 탈퇴 확인.
 // 받기 · 바꾸기 · 알림(토스트)은 user/account.mts 그대로 — 이 파일은 그리기와 누름 전달만. 상태는 옛 DOM 이 들고 있던 그대로이고
 // account.mts 가 옛 DOM 을 고치던 자리에서 accountView.set(...) 으로 바꾼다. 바뀔 때마다 바로(같은 작업 안에서) 다시 그린다.
 // 표시(DOM 모양 · class · id · 문구 · aria)는 옛 index.html · 옛 innerHTML 과 같다(옛 코드가 한 덩어리로 넣던 글자는 템플릿 하나로 — 글자 노드가 갈리면 커닝이 달라진다).
@@ -43,21 +43,22 @@ export const currentChoice = (avatar:Avatar | null | undefined) => {
   return avatar?.type === 'character' ? avatar.id : 'sprout';
 };
 
+// 프로필 수정에서 고르는 중인 사진: keep(그대로) · photo(새로 올릴 사진 — preview 는 미리보기 주소) · character(캐릭터 id)
+export interface Draft { kind:'keep' | 'photo' | 'character'; id?:string; preview?:string }
 interface Handlers {
-  avatarBig():void; pickPhoto():void; photoFile(file:File | undefined):void; pickCharacter(id:string):void;
-  nameEdit():void; nameCancel():void; nameSubmit():void;
+  edit():void; cancel():void; save():void; pickPhoto():void; photoFile(file:File | undefined):void; pickCharacter(id:string):void;
   logoutDevice(id:string):void; logoutOthers():void; exportData():void; logout():void; deleteAsk():void; deleteNo():void; deleteYes():void;
 }
 interface View {
   me:Me | null; marked:boolean;   // marked: 고르기 칸의 눌림을 한 번이라도 그렸나(옛 markChoice — 처음엔 aria-pressed 없음)
-  pickOpen:boolean; facesLoaded:boolean; saving:boolean;   // facesLoaded: 고르기를 처음 열 때 캐릭터 얼굴을 받기 시작(그 뒤 그대로)
-  nameOpen:boolean; nameValue:string; nameSaving:boolean;
+  draft:Draft; converting:boolean;   // converting: 고른 사진을 줄이는 중(그동안 저장 막음)
+  facesLoaded:boolean; saving:boolean; nameValue:string;   // facesLoaded: 수정을 처음 열 때 캐릭터 얼굴을 받기 시작(그 뒤 그대로)
   statsShown:boolean; stats:Stats | null; statsTurn:number;   // turn: 받을 때마다 늘려 칸을 새로 만든다(옛 innerHTML 바꾸기)
   safeShown:boolean; sessions:Session[] | null; safeTurn:number; outBusy:string[];
   confirmOpen:boolean;
 }
 let view:View = {
-  me: null, marked: false, pickOpen: false, facesLoaded: false, saving: false, nameOpen: false, nameValue: '', nameSaving: false,
+  me: null, marked: false, draft: { kind: 'keep' }, converting: false, facesLoaded: false, saving: false, nameValue: '',
   statsShown: false, stats: null, statsTurn: 0, safeShown: false, sessions: null, safeTurn: 0, outBusy: [], confirmOpen: false,
 };
 let handlers:Handlers | null = null;
@@ -66,30 +67,44 @@ const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K
 const BADGE = <svg class="pf-badge" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>;
 const CAMERA = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>;
 
+// 수정 중 고른 것(draft)을 지금 프로필에 겹친 그림 · 눌림
+function draftLook(me:Me | null, draft:Draft) {
+  if (draft.kind === 'photo') return { photo: true, big: `url("${draft.preview}")`, small: `url("${draft.preview}")`, choice: 'photo' };
+  if (draft.kind === 'character') return { photo: false, big: `url("./brand/faces/${draft.id}-240.png")`, small: '', choice: draft.id! };
+  const big = avatarLook(me?.avatar, true), small = avatarLook(me?.avatar);
+  return { photo: big.photo, big: big.image, small: small.photo ? small.image : '', choice: currentChoice(me?.avatar)! };
+}
+
+// 서랍 안 내 정보 쪽의 프로필 줄(보기만 — 고치기는 레이어 팝업 #profileSheet 에서)
 function Profile() {
-  const { me } = view, big = avatarLook(me?.avatar, true), current = currentChoice(me?.avatar), photo = current === 'photo';
-  const photoLook = photo ? avatarLook(me?.avatar) : null, count = nameLength(view.nameValue);
-  return <>
-    <div class="account-prof"><button id="accountAvatarBig" class={`account-avatar big ${me && big.photo ? 'photo' : 'face'}`} type="button" aria-label="프로필 사진 바꾸기" aria-expanded={view.pickOpen ? 'true' : 'false'} aria-controls="avatarPick"
-      style={me ? { backgroundImage: big.image } : undefined} onClick={call('avatarBig')}>{BADGE}</button>
-      <div class="pf-who"><div class="pf-name"><b id="accountName">{me?.name ?? ''}</b><button id="nameEdit" class="pf-link" type="button" aria-expanded={view.nameOpen ? 'true' : 'false'} aria-controls="nameForm" onClick={call('nameEdit')}>고치기</button></div>
-        <small id="accountProvider">{me ? PROVIDER_NAMES[me.provider] || me.provider : ''}</small></div></div>
-    <form id="nameForm" class="pf-form" hidden={!view.nameOpen} onSubmit={event => { event.preventDefault(); call('nameSubmit')() }}>
-      <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue}
-        onInput={event => set({ nameValue: event.currentTarget.value })} /><small id="nameCount" class={count > NAME_MAX ? 'over' : undefined}>{`${count}/${NAME_MAX}`}</small></label>
-      <div class="pf-row"><button id="nameCancel" type="button" onClick={call('nameCancel')}>취소</button><button id="nameSave" type="submit" class="pf-ok" disabled={view.nameSaving}>저장</button></div>
-    </form>
-    <div id="avatarPick" class="pf-pick" hidden={!view.pickOpen}><p class="pf-l">프로필</p>
+  const { me } = view, big = avatarLook(me?.avatar, true);
+  return <div class="account-prof"><button id="accountAvatarBig" class={`account-avatar big ${me && big.photo ? 'photo' : 'face'}`} type="button" aria-label="프로필 수정" aria-haspopup="dialog"
+    style={me ? { backgroundImage: big.image } : undefined} onClick={call('edit')}>{BADGE}</button>
+    <div class="pf-who"><div class="pf-name"><b id="accountName">{me?.name ?? ''}</b><button id="profileEdit" class="pf-link" type="button" aria-haspopup="dialog" onClick={call('edit')}>프로필 수정</button></div>
+      <small id="accountProvider">{me ? PROVIDER_NAMES[me.provider] || me.provider : ''}</small></div></div>;
+}
+
+// 레이어 팝업(#profileSheet) 안: 위 사진 · 캐릭터 고르기 + 닉네임 + 저장 · 취소 — 껍데기(떠오르기 · 닫기 · 초점)는 account.mts
+function ProfileForm() {
+  const { me } = view, count = nameLength(view.nameValue), look = draftLook(me, view.draft), lock = view.saving || view.converting;
+  return <form id="profileForm" class="pf-form" onSubmit={event => { event.preventDefault(); call('save')() }}>
+    <div class="account-prof"><button id="profileAvatar" class={`account-avatar big ${look.photo ? 'photo' : 'face'}`} type="button" aria-label="사진 올리기" style={{ backgroundImage: look.big }}
+      disabled={lock} onClick={call('pickPhoto')}>{BADGE}</button>
+      <div class="pf-who"><div class="pf-name"><b id="profileTitle">프로필 수정</b></div><small>{me ? PROVIDER_NAMES[me.provider] || me.provider : ''}</small></div></div>
+    <div id="avatarPick" class="pf-pick"><p class="pf-l">사진 · 캐릭터</p>
       <div id="avatarChoices" class="pf-choices" role="group" aria-label="프로필 사진 고르기">
-        <button id="photoPick" class={photoLook ? `pf-choice pf-photo ${photoLook.photo ? 'photo' : 'face'}` : 'pf-choice pf-photo'} type="button" aria-label="사진 올리기" aria-pressed={view.marked ? String(photo) as 'true' | 'false' : undefined}
-          style={photoLook ? { backgroundImage: photoLook.image } : undefined} disabled={view.saving} onClick={call('pickPhoto')}>{CAMERA}<span>사진</span></button>
-        {CHARACTERS.map(([id, label]) => <button type="button" class="pf-choice" data-character={id} aria-label={label} title={label} aria-pressed={view.marked ? String(id === current) as 'true' | 'false' : undefined}
+        <button id="photoPick" class={look.small ? 'pf-choice pf-photo photo' : 'pf-choice pf-photo'} type="button" aria-label="사진 올리기" aria-pressed={view.marked ? String(look.choice === 'photo') as 'true' | 'false' : undefined}
+          style={look.small ? { backgroundImage: look.small } : undefined} disabled={lock} onClick={call('pickPhoto')}>{CAMERA}<span>사진</span></button>
+        {CHARACTERS.map(([id, label]) => <button type="button" class="pf-choice" data-character={id} aria-label={label} title={label} aria-pressed={view.marked ? String(id === look.choice) as 'true' | 'false' : undefined}
           style={view.facesLoaded ? { backgroundImage: `url("./brand/faces/${id}-240.png")` } : undefined} disabled={view.saving} onClick={() => call('pickCharacter')(id)}></button>)}
       </div>
       <input id="photoFile" type="file" accept="image/*" hidden onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; call('photoFile')(file) }} />
       <p class="pf-note">가운데를 정사각형으로 잘라 올려요. 위치 같은 사진 정보는 빼요.</p>
     </div>
-  </>;
+    <label class="tf-in pf-in"><input id="nameInput" maxlength={40} autocomplete="nickname" enterkeyhint="done" aria-label="닉네임" aria-describedby="nameCount" value={view.nameValue} disabled={view.saving}
+      onInput={event => set({ nameValue: event.currentTarget.value })} /><small id="nameCount" class={count > NAME_MAX ? 'over' : undefined}>{`${count}/${NAME_MAX}`}</small></label>
+    <div class="pf-row"><button id="profileCancel" type="button" disabled={view.saving} onClick={call('cancel')}>취소</button><button id="profileSave" type="submit" class="pf-ok" disabled={lock}>{view.converting ? '사진 준비 중' : '저장'}</button></div>
+  </form>;
 }
 
 const Cell = ({ value, label }:{ value:string; label:string }) => <div class="st-cell"><b>{value}</b><small>{label}</small></div>;
@@ -137,8 +152,8 @@ function AccountPage():ComponentChildren {
   </>;
 }
 
-const root = document.getElementById('menuAccount');
-function set(patch:Partial<View>) { view = { ...view, ...patch }; if (root) render(<AccountPage />, root) }
+const root = document.getElementById('menuAccount'), formRoot = document.getElementById('profileBody');
+function set(patch:Partial<View>) { view = { ...view, ...patch }; if (root) render(<AccountPage />, root); if (formRoot) render(<ProfileForm />, formRoot) }
 
 // account.mts 의 창구: 상태 바꾸기 · 지금 상태 읽기 · 누름 받을 함수 걸기
 export const accountView = {
