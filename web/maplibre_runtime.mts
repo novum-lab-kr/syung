@@ -14,7 +14,7 @@ import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
-import {createAppBridge} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
+import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
@@ -366,7 +366,7 @@ geolocate.on('error',e=>{if(autoLocating){autoLocating=false;return}if(myLocatio
 // keep the whole-network view). Asks once for location; after that the browser remembers the answer.
 const METRO_AREA:[number,number,number,number]=[126.3,36.8,127.9,38.3];
 map.once('load',()=>{
-  if(!navigator.geolocation)return;
+  if(!navigator.geolocation||appMapMode())return;   // 앱 지도 모드: 앱이 위치를 직접 구한다(expo-location) — 웹뷰가 권한 창을 켤 때마다 띄우지 않게
   navigator.geolocation.getCurrentPosition(pos=>{
     const {longitude:x,latitude:y}=pos.coords,[w,s,e,n]=METRO_AREA;
     if(x<w||x>e||y<s||y>n)return;
@@ -403,7 +403,8 @@ const smooth=(x:number)=>x*x*(3-2*x);
 // 일반 웹(#app 없음)에서는 다리를 만들지 않는다 — 메시지를 받지도 보내지도 않는다
 const appBridge=appMapMode()?createAppBridge({facts:{hasStation:id=>byId.has(id),hasLine:line=>line in paths,hasMode:id=>modes.has(id)},targets:{window,document}}):null;
 // 다리 v2(앱 지도 모드): 앱 시트 높이(setPadding — 시트 따라가기 · 맞추기가 웹 시트 대신 이 값) · 줌 · 실시간 글(status) · 따라가는 것(followChanged)
-let appPad=0;
+let appPad=0,appSheetLift=0,appRouteLift=0;
+function liftAppNotice(){document.documentElement.style.setProperty('--app-notice-lift',`${appNoticeLift(appSheetLift,appRouteLift)}px`)}   // 버스 안내 글을 앱 시트 · 경로 막대 위로(syung.css html[data-app=map] .bus-notice)
 function appStatus(){if(appBridge)appBridge.status({zoom:map.getZoom(),live:{state:liveState!.parentElement!.dataset.state??'idle',text:liveState!.textContent??''}})}
 function appFollow(){appBridge?.followChanged(sheetUI.following??sheetUI.followBus??null)}
 const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end();appBridge?.modeChanged(now)},
@@ -594,7 +595,7 @@ const hexRGB=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
 const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
-  live:{get frameMs(){return frameMs()},get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide},get appPad(){return appBridge?appPad:null}}});   // 아래 시트 · 따라가기
+  live:{get frameMs(){return frameMs()},get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get stopRide(){return stopRide},get appMode(){return !!appBridge},get appPad(){return appBridge?appPad:null}}});   // 아래 시트 · 따라가기
 const {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
 const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,stationTrack,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
@@ -715,8 +716,8 @@ map.on('load',()=>{
   map.getContainer().append(liveNotice);map.getContainer().parentElement!.append(sheet,rideBar);   // train number and destination live in the train popup, not on the map
   if(pendingLine)filterLine(pendingLine);else{rebuildLabels();refreshLive(true)}
   // 앱 지도 모드: 지도가 떴다고 알리고 이때부터 앱의 명령을 받는다. 경로는 승차권 경로 보기(ticketRoute)와 같은 자리 · 맞춰 보기
-  appBridge?.ready({showRoute:(plan,pad)=>ticketRoute.show(plan,{bottom:pad.bottom??110,right:pad.right??40}),
-    clearRoute:()=>{clearRoute();refreshLive()},
+  appBridge?.ready({showRoute:(plan,pad)=>{ticketRoute.show(plan,{bottom:pad.bottom??110,right:pad.right??40});appRouteLift=pad.bottom??110;liftAppNotice()},
+    clearRoute:()=>{clearRoute();refreshLive();appRouteLift=0;liftAppNotice()},
     focusStation:(id,zoom)=>{const st=byId.get(id)!;map.flyTo({center:[st.lon,st.lat],zoom:zoom??Math.max(map.getZoom(),15)})},
     setMode:id=>{void modeCtl.request(id)},...appActions()},
     {mode:modeCtl.current,modes:modes.list().map(mode=>mode.id),colors,theme:theme.themeState(),prefs:prefsState()});
@@ -741,7 +742,7 @@ const hasTrain=(id:string)=>planner.plans.some(p=>p.id===id);
 function needBus(){if(!busLayer)throw Error('버스 층이 아직 없다');return busLayer}
 function appActions(){return {
   setTheme:(choice:string)=>theme.choose(choice),
-  setPadding:(bottom:number)=>{appPad=bottom;if(!rider.ride&&!sheetUI.following&&!sheetUI.followBus)map.easeTo({padding:{top:0,bottom,left:0,right:0},duration:300})},   // 따라가는 중이면 다음 프레임이 이 값으로
+  setPadding:(bottom:number)=>{appPad=bottom;appSheetLift=bottom;liftAppNotice();if(!rider.ride&&!sheetUI.following&&!sheetUI.followBus)map.easeTo({padding:{top:0,bottom,left:0,right:0},duration:300})},   // 따라가는 중이면 다음 프레임이 이 값으로
   watchTrain:(id:string)=>{clearInterval(watchTimer);sheetUI.sheetTrain=id;watchMiss=0;watchTimer=setInterval(watchTick,1000);watchTick();map.triggerRepaint()},
   unwatchTrain:()=>{clearInterval(watchTimer);sheetUI.sheetTrain=null;sheetUI.following=null;appFollow();map.triggerRepaint()},   // 웹 시트 닫기처럼 열차 따라가기도 놓는다
   followTrain:(id:string)=>{if(!hasTrain(id))throw Error('지금 지도에 없는 열차');sheetUI.sheetTrain=id;follow(id);appFollow()},

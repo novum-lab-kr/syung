@@ -2,9 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';
 import {APP_SERVER_ORIGIN, serverUrl} from '../web/lib/server_url.mts';
-import {createAppBridge, parseAppMessage, APP_BRIDGE_VERSION, STATUS_GAP_MS} from '../web/ui/app_bridge.mts';
+import {createAppBridge, parseAppMessage, appNoticeLift, APP_BRIDGE_VERSION, STATUS_GAP_MS} from '../web/ui/app_bridge.mts';
 
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 // index.html 의 앱 지도 모드 표시 스크립트를 주소 #… 하나로 돌려 html[data-app] 을 본다
@@ -237,4 +238,98 @@ test('다리 v2 status: 줄여 보내되 마지막 값은 늦게라도 보낸다
   assert.deepEqual(sent, [{type: 'status', zoom: 12, live}]);
   await new Promise(resolve => setTimeout(resolve, STATUS_GAP_MS + 50));
   assert.deepEqual(sent, [{type: 'status', zoom: 12, live}, {type: 'status', zoom: 13, live}]);
+});
+
+// 지도 빈 곳 누르기: 본체의 click 처리 · live.appMode 와 시트의 sheetBusy 를 글자로 잘라 함께 돌린다(sheet.mts 는 .tsx 를 불러 Node 가 직접 못 읽는다)
+const runtimeSource = stripTypeScriptTypes(fs.readFileSync(new URL('../web/maplibre_runtime.mts', import.meta.url), 'utf8'));
+const sheetSource = stripTypeScriptTypes(fs.readFileSync(new URL('../web/ui/sheet.mts', import.meta.url), 'utf8'));
+function sliceBetween(source, start, end) {
+  const from = source.indexOf(start), to = source.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `표지를 찾지 못했다: ${start}`);
+  return source.slice(from, to + end.length);
+}
+const emptyTapSource = sliceBetween(runtimeSource, "map.on('click',e=>{if(rider.ride)return;", 'closeSheet()});');
+const appModeGetter = sliceBetween(runtimeSource, 'get appMode(){', '}');
+const sheetBusySource = sliceBetween(sheetSource, 'function sheetBusy()', '\n');
+function tapEmptyMap({app, hidden = true, following = null, followBus = null, selection = null, followView = false, journey = false}) {
+  const closed = [];
+  const context = vm.createContext({
+    appBridge: app ? {} : null, sheet: {hidden}, following, followBus, sheetBody: {querySelector: () => (journey ? {} : null)},
+    busLayer: {selection, followView: () => followView, selectAt: () => false},
+    rider: {ride: null}, map: {on: (_name, handler) => { context.tap = handler; }, queryRenderedFeatures: () => []},
+    pickTrain: () => null, closeSheet: () => closed.push('closed'),
+  });
+  vm.runInContext(`var live={${appModeGetter},get busLayer(){return busLayer}};${sheetBusySource}\n${emptyTapSource}`, context);
+  context.tap({point: {x: 1, y: 1}});
+  return closed.length === 1;
+}
+
+test('앱 지도 모드: 웹 시트가 숨어 있어도 따라가기 · 버스 선택 중이면 빈 곳을 눌러도 풀지 않는다', () => {
+  assert.equal(tapEmptyMap({app: true, following: 'train-1'}), false);
+  assert.equal(tapEmptyMap({app: true, followBus: 'bus-1'}), false);
+  assert.equal(tapEmptyMap({app: true, selection: {kind: 'bus', id: 'bus-1'}}), false);
+  assert.equal(tapEmptyMap({app: true, selection: {kind: 'stop', id: 'stop-1'}, followView: true}), false);
+});
+
+test('앱 지도 모드: 따라가기도 버스도 아니면 빈 곳을 누르면 푼다(정류장 · 노선 선택, 고른 것 없음)', () => {
+  assert.equal(tapEmptyMap({app: true}), true);
+  assert.equal(tapEmptyMap({app: true, selection: {kind: 'stop', id: 'stop-1'}}), true);
+  assert.equal(tapEmptyMap({app: true, selection: {kind: 'route', id: 'route-1'}}), true);
+});
+
+test('일반 웹: 빈 곳 누르기는 그대로 — 시트가 숨어 있으면 닫기로 가고, 열려 있으면 하는 중인 시트만 둔다', () => {
+  assert.equal(tapEmptyMap({app: false, hidden: true, selection: {kind: 'bus', id: 'bus-1'}}), true);
+  assert.equal(tapEmptyMap({app: false, hidden: true, following: 'train-1'}), true);
+  assert.equal(tapEmptyMap({app: false, hidden: false, following: 'train-1'}), false);
+  assert.equal(tapEmptyMap({app: false, hidden: false, followBus: 'bus-1'}), false);
+  assert.equal(tapEmptyMap({app: false, hidden: false, selection: {kind: 'bus', id: 'bus-1'}}), false);
+  assert.equal(tapEmptyMap({app: false, hidden: false, journey: true}), false);
+  assert.equal(tapEmptyMap({app: false, hidden: false}), true);
+});
+
+// 앱 지도 모드에서 켜자마자 위치를 묻지 않는다: 본체의 첫 방문 위치 구간을 글자로 잘라 돌린다
+const firstVisitSource = sliceBetween(runtimeSource, "map.once('load',()=>{\n  if(!navigator.geolocation", '\n});');
+function loadAndCountAsks({app}) {
+  let asks = 0, onLoad = null;
+  const context = vm.createContext({
+    appMapMode: () => app, navigator: {geolocation: {getCurrentPosition: () => { asks++; }}},
+    map: {once: (_name, handler) => { onLoad = handler; }}, geolocate: {trigger() {}}, METRO_AREA: [126.3, 36.8, 127.9, 38.3], autoLocating: false,
+  });
+  vm.runInContext(firstVisitSource, context);
+  onLoad();
+  return asks;
+}
+
+test('앱 지도 모드: 지도가 떠도 위치를 묻지 않는다(앱이 expo-location 으로 구한다 — 권한 창 없음)', () => {
+  assert.equal(loadAndCountAsks({app: true}), 0);
+});
+
+test('일반 웹: 첫 방문 위치 묻기는 그대로', () => {
+  assert.equal(loadAndCountAsks({app: false}), 1);
+});
+
+// 안내 글 자리: 앱 시트 · 막대 위로, 앱 검색창 아래로(앱 값은 app/src 의 StationSearch · RouteButton · JourneyBar · Sheet)
+const css = fs.readFileSync(new URL('../web/syung.css', import.meta.url), 'utf8');
+
+test('appNoticeLift: 시트는 그 위로 8px, 경로 막대는 앱이 잡아 둔 자리(showRoute padding) — 큰 쪽', () => {
+  assert.equal(appNoticeLift(0, 0), 0);
+  assert.equal(appNoticeLift(300, 0), 308);
+  assert.equal(appNoticeLift(0, 174), 174);
+  assert.equal(appNoticeLift(100, 174), 174);
+  assert.equal(appNoticeLift(300, 174), 308);
+});
+
+test('앱 지도 모드 CSS: 위 글은 앱 검색창(위 10 + 높이 44) 아래, 아래 글은 시트 · 막대 값을 따르되 길찾기 단추 위가 바닥', () => {
+  const top = css.match(/html\[data-app=map\] \.live-notice\{top:(\d+)px!important\}/);
+  assert.ok(top, '앱 지도 모드 .live-notice 규칙이 없다');
+  assert.ok(Number(top[1]) > 10 + 44);
+  assert.match(css, /html\[data-app=map\] \.bus-notice\{bottom:max\(124px,var\(--app-notice-lift,0px\)\)\}/);
+});
+
+test('본체: setPadding · showRoute · clearRoute 가 아래 글 자리를 고친다(일반 웹에는 이 값을 쓰는 규칙이 없다)', () => {
+  assert.match(runtimeSource, /setPadding:\(bottom\s*\)=>\{appPad=bottom;appSheetLift=bottom;liftAppNotice\(\);/);
+  assert.match(runtimeSource, /showRoute:\(plan,pad\)=>\{ticketRoute\.show\(plan,\{bottom:pad\.bottom\?\?110,right:pad\.right\?\?40\}\);appRouteLift=pad\.bottom\?\?110;liftAppNotice\(\)\}/);
+  assert.match(runtimeSource, /clearRoute:\(\)=>\{clearRoute\(\);refreshLive\(\);appRouteLift=0;liftAppNotice\(\)\}/);
+  assert.equal(css.match(/--app-notice-lift/g).length, 1);
+  assert.match(css.split('\n').find(line => line.includes('--app-notice-lift')), /^html\[data-app=map\] /);
 });
