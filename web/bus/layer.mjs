@@ -957,7 +957,7 @@ var BusLayer = class {
 				name: String(leg.route),
 				path: leg.path,
 				type: "other",
-				approximate: true,
+				approximate: leg.shaped !== true,
 				stopIds: []
 			};
 			drawRoute(leg.displayRoute, [leg.path[0], leg.path.at(-1)].map((coordinate) => ({ coordinate })));
