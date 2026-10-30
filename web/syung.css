@@ -783,7 +783,6 @@ html[data-theme=dark] .social.apple{box-shadow:inset 0 0 0 1px #5a5a5a}
 .pf-badge{position:absolute;right:-4px;bottom:-4px;width:28px;height:28px;padding:6px;box-sizing:border-box;border-radius:50%;background:var(--syung);color:var(--syung-ink);box-shadow:0 0 0 3px var(--paper)}
 .pf-who{flex:1;min-width:0}
 .pf-name{display:flex;align-items:center;gap:6px}.pf-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pf-link{flex:none;min-height:32px;padding:0 10px;border:0;border-radius:999px;background:var(--control);color:var(--ink);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .pf-form{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
 .pf-row{display:flex;gap:8px}
 .pf-row button{flex:1;min-height:44px;border:0;border-radius:12px;background:var(--control);color:var(--ink);font:inherit;font-weight:700;cursor:pointer}
@@ -994,6 +993,5 @@ html[data-theme=dark] .acct-toast{color:var(--ink);box-shadow:0 10px 24px rgba(0
 .profile-x{position:absolute;top:10px;right:10px;width:40px;height:40px;padding:9px;box-sizing:border-box;border:0;border-radius:50%;background:var(--control);color:var(--ink);cursor:pointer}
 .profile-x:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .profile-x svg{display:block;width:22px;height:22px}
-.profile-sheet .account-prof{margin:0 0 4px}
-.profile-sheet .account-prof .account-avatar.big[disabled]{opacity:.6;cursor:default}
+.profile-body{padding-top:30px}
 @media(min-width:721px){.profile-sheet .login-card{width:min(400px,100%)}}
