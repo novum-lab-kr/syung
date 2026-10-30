@@ -7,6 +7,8 @@ import type { Settings } from '../modes/merge.mts';
 import type { LiveTrain, MapStation, Merc, TrainPlan } from '../trains/types.mts';
 import { drawStationSheet, clearPanel } from './station_sheet.tsx';
 import { drawTrainSheet } from './train_sheet.tsx';
+import { TRAIN_SHEET_CSS } from '../components/train_sheet.tsx';
+import { LIVE_NOTICE_CSS } from '../components/live_notice.tsx';
 import type { TrainRawView, TrainRideView, TrainSheetProps } from './train_sheet.tsx';
 import type { ArrivalCard, ExitItem, StationSheetProps, StationSheetState } from './station_sheet.tsx';
 
@@ -82,7 +84,7 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
       drawTrainSheet(sheetBody,{...first,dest:destLabel(pl.t)||'행선지 정보 없음',now:riderState(pl),raw:rawFeed(pl.t)});
     },1000);
   }
-  document.head.insertAdjacentHTML('beforeend','<style>.train-inspect{min-width:190px}.train-inspect .tp-line{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--c)}.train-inspect .tp-line .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}.train-inspect .tp-line .no{color:#7a8a90;font-weight:600;font-variant-numeric:tabular-nums}.train-inspect .b{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:#fff;background:var(--c)}.train-inspect .b.last{background:#141414}.train-inspect .tp-dest{font-size:20px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}.train-inspect .tp-now{font-size:12px;color:#6b7b80}.train-inspect details{margin-top:8px;font-size:12px}.train-inspect summary{cursor:pointer;color:#8a979b;font-weight:600}.train-inspect table{border-collapse:collapse;font-size:12px;margin-top:4px}.train-inspect th{text-align:left;color:#6b7b80;font-weight:600;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top}.train-inspect td{padding:2px 0}.train-inspect .sec{padding-top:8px;font-weight:800;color:#172429;border-bottom:1px solid #dbe1e2}.train-inspect .muted{color:#8a979b}</style>');
+  document.head.insertAdjacentHTML('beforeend',`<style>${TRAIN_SHEET_CSS}</style>`);
   // Nearest train to a screen point (distance to the train's head–tail segment), within ~14 px.
   function pickTrain(point:Point):TrainPlan|null{
     if(!live.trainsEnabled||!live.feed.on||live.subwayOff)return null;
@@ -100,7 +102,7 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
 
   // ---- live-data notice: a strip over the map when the feed fails or goes stale -----------------
   const liveNotice=document.createElement('div');liveNotice.className='live-notice';liveNotice.hidden=true;liveNotice.setAttribute('role','status');
-  document.head.insertAdjacentHTML('beforeend','<style>.live-notice{position:absolute;z-index:6;left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 120px);padding:8px 12px;border-radius:8px;background:#fff6e0;color:#6b4a00;border:1px solid #f0cf7a;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12)}html[data-theme=dark] .live-notice{background:#3a2f12;color:#f4dc9a;border-color:#6d5620}</style>');
+  document.head.insertAdjacentHTML('beforeend',`<style>${LIVE_NOTICE_CSS}</style>`);
   function updateLiveNotice(msg:string|null):void{
     // also flag data that stopped updating (no fresh fetch for 3 minutes while trains are shown)
     if(!msg&&live.feed.fetchedAt&&live.feed.on&&Date.now()-new Date(live.feed.fetchedAt).getTime()>180000)msg=`실시간 정보가 ${new Date(live.feed.fetchedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})} 이후 갱신되지 않았어요.`;

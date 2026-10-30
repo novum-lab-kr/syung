@@ -19,3 +19,16 @@ button,input{font:inherit}button{color:inherit}
 :where(.search){position:relative}
 :where(.search input){width:100%;height:42px;border:1px solid #9fadb1;border-radius:5px;background:var(--control);padding:0 12px 0 40px}
 :where(.search svg){position:absolute;left:12px;top:12px;width:18px;height:18px;color:#62747a}
+/* 상단 막대 · 지도 위 단추 무대. 화면에선 index.html 첫 <style> 에 있는 막대 기본 규칙(같은 값) — syung.css 가 이기도록 :where 로 낮춘다 */
+.sb-map-short{height:240px}
+.sb-bar{width:390px;height:62px;display:grid}
+.sb-bar-wide{width:900px;height:auto;gap:8px}
+.sb-bar-wide .mast{height:62px}
+:where(.mast){display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 12px}
+:where(.identity){display:flex;align-items:center;gap:13px;min-width:0}
+:where(.identity h1){font-size:16px;line-height:1.1;margin:0}
+:where(.identity p){margin:3px 0 0;font-size:12px}
+:where(.source-state){display:flex;align-items:center;gap:8px;font-size:12px}
+:where(.source-state i){width:8px;height:8px;border-radius:50%}
+.sb-stage .maplibregl-ctrl-top-right{position:absolute;top:0;right:0;z-index:2}
+:where(.brand-icon){flex:none;display:block}

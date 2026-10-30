@@ -13,7 +13,7 @@
 | `web/city/` | 공용 도시 엔진: 건물(`buildings` · `mesh` · `worker`) · 고가(`viaduct*`) · 땅(`style`) · 도시 생활(`life`) · 랜드마크 · 부품 등록(`parts`) |
 | `web/map/` | 지도 층: 승강장 · 이름표 · 해 그림자 · 테마 · 열차 캔버스 그리기 차례(`overlay`) · 정적 층 등록(`layers`) |
 | `web/trains/` | 실시간 받기(`live_feed`) · 예측(`plan`) · 열차 그리기(`draw`) |
-| `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시. 시트 몸통의 화면 조각은 `.tsx`(Preact — 지금 역 도착 시트 `station_sheet.tsx` · 버스 시트 `bus/sheet_view.tsx` · 길찾기 시트 `journey_sheet.tsx`(상태 · 그릴 거리는 `lib/journey-ui.mts`) · 열차 시트 `train_sheet.tsx`(그릴 거리는 `popups.mts` — 롤코 자리 배치도 속 · 타기 단추 글자는 `modes/coaster/ride.mts` 가 직접 고치니 연 순간 값 그대로), `openSheetView` 로 연다) |
+| `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시. 시트 몸통의 화면 조각은 `.tsx`(Preact — 지금 역 도착 시트 `station_sheet.tsx`(모양은 `components/station_sheet.tsx`) · 버스 시트 `bus/sheet_view.tsx` · 길찾기 시트 `journey_sheet.tsx`(상태 · 그릴 거리는 `lib/journey-ui.mts`) · 열차 시트 `train_sheet.tsx`(모양은 `components/train_sheet.tsx` · 그릴 거리는 `popups.mts` — 롤코 자리 배치도 속 · 타기 단추 글자는 `modes/coaster/ride.mts` 가 직접 고치니 연 순간 값 그대로), `openSheetView` 로 연다) |
 | `web/bus/` | 버스 층 · 도로 · 메시(모양 등록 `registerBusLook`) · 움직임 · 버스 시트 몸통 `sheet_view.tsx`(Preact — 그릴 거리는 `layer.mts` `detailView()`) |
 | `web/user/prefs.mjs` | 내 설정 창구(지금은 기기 저장, 이름 `subway-theme` · `subway-map-color`) |
 | `web/lib/` | 남은 공용 도우미(routing · station_signs · sun · platform_* · journey-ui …) |
