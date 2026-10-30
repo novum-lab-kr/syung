@@ -94,7 +94,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   setInterval(()=>{if(cur.themeChoice==='auto')applyTheme();else drawSky();updateSun()},5*60*1000);   // 고정 테마여도 하늘 그림의 해 · 달은 움직인다
 
   // ---- 하늘 띠(메뉴 맨 위 · 테마 세그먼트 위, 늘 보임) — 슝 그림: 산 · 서울 빌딩(남산타워 · 롯데타워) 앞 선로를 동글한 지하철이 달리고,
-  // 낮엔 구름 하늘에 웃는 해가 지평선 위 호를 오른쪽(동쪽 · 해 뜸) → 왼쪽(서쪽 · 해 짐), 밤엔 별 하늘에 졸린 달이 왼쪽 → 오른쪽(해 진 뒤 → 다음 해 뜰 때). 그림 속 롯데타워가 오른쪽이라 오른쪽이 동쪽. 밤엔 창문 · 전조등이 켜진다.
+  // 낮엔 구름 하늘에 웃는 해가 지평선 위 호를 오른쪽(동쪽 · 해 뜸) → 왼쪽(서쪽 · 해 짐), 밤엔 별 하늘에 졸린 달이 오른쪽 → 왼쪽(해 진 뒤 → 다음 해 뜰 때). 그림 속 롯데타워가 오른쪽이라 오른쪽이 동쪽. 밤엔 창문 · 전조등이 켜진다.
   // 호는 2차 베지어(양 끝 지평선 · 가운데 조절점) — 해 · 달은 그 곡선의 t=진행 자리. 밤 길이는 하루에서 낮을 뺀 값(다음 일출을 오늘 일출 시각으로 어림)
   const hm=(d:Date)=>d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Seoul'});
   // 메뉴 맨 위 하늘 그림: 고른 테마와 상관없이 늘 지금 실제 하늘(낮 · 밤)
@@ -143,7 +143,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
   function sunPathHTML(now:Date,rise:Date,set:Date,art:import('./sky_weather.mts').WeatherArt|null=null):string{
     const W=320,H=110,left=30,right=290,base=84,arcBase=62,top=-22,dayLen=+set-+rise,day=now>=rise&&now<set,nightLen=864e5-dayLen;
     const clamp=(v:number)=>Math.min(1,Math.max(0,v));
-    const night=clamp(now>=set?(+now-+set)/nightLen:1-(+rise-+now)/nightLen),t=day?clamp((+now-+rise)/dayLen):1-night,u=1-t;   // 날짜 빼기는 숫자로(+): 같은 값
+    const night=clamp(now>=set?(+now-+set)/nightLen:1-(+rise-+now)/nightLen),t=day?clamp((+now-+rise)/dayLen):night,u=1-t;   // 날짜 빼기는 숫자로(+): 같은 값
     const x=u*u*right+2*u*t*(W/2)+t*t*left,y=u*u*arcBase+2*u*t*top+t*t*arcBase,f=(n:number)=>n.toFixed(1);   // 길 양 끝은 산마루 높이 — 뜰 · 질 무렵 해가 산 위로 반쯤 보인다
     const C=day
       ?{sky:['#7cc8ff','#d8f0ff'],hill:'#9fd39a',hill2:'#7cbf86',city:'#8fb3d9',city2:'#a9c6e6',win:'#d8ecff',ground:'#f3e2a9',rail:'#c9a85a',path:'#ffffff'}
