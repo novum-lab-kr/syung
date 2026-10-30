@@ -247,8 +247,8 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 	function sunPathHTML(now, rise, set, art = null) {
 		const W = 320, H = 110, left = 30, right = 290, base = 84, arcBase = 62, top = -22, dayLen = +set - +rise, day = now >= rise && now < set, nightLen = 864e5 - dayLen;
 		const clamp = (v) => Math.min(1, Math.max(0, v));
-		const night = clamp(now >= set ? (+now - +set) / nightLen : 1 - (+rise - +now) / nightLen), t = day ? clamp((+now - +rise) / dayLen) : 1 - night, u = 1 - t;
-		const x = u * u * left + 2 * u * t * (W / 2) + t * t * right, y = u * u * arcBase + 2 * u * t * top + t * t * arcBase, f = (n) => n.toFixed(1);
+		const night = clamp(now >= set ? (+now - +set) / nightLen : 1 - (+rise - +now) / nightLen), t = day ? clamp((+now - +rise) / dayLen) : night, u = 1 - t;
+		const x = u * u * right + 2 * u * t * (W / 2) + t * t * left, y = u * u * arcBase + 2 * u * t * top + t * t * arcBase, f = (n) => n.toFixed(1);
 		const C = day ? {
 			sky: ["#7cc8ff", "#d8f0ff"],
 			hill: "#9fd39a",
@@ -396,7 +396,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:#
 		].map((o) => `<rect x="${cx + o}" y="75.4" width="6" height="4.4" rx="1.4" fill="${day ? "#9fd4ff" : "#ffe08a"}"/>`).join("")}`;
 		const train = car(tx, false) + car(154, true) + `<rect x="181" y="75.4" width="5" height="4.4" rx="1.6" fill="${day ? "#9fd4ff" : "#ffe08a"}"/><circle cx="182" cy="82" r="1.1" fill="#3a3f4a"/>` + (day ? "" : `<path d="M188 79L214 74L214 86Z" fill="#ffe08a" opacity=".28"/>`) + `<circle cx="124" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="146" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="160" cy="86.5" r="2" fill="#3a3f4a"/><circle cx="182" cy="86.5" r="2" fill="#3a3f4a"/><path d="M112 78h-8M113 82h-12" stroke="${C.path}" stroke-opacity=".8" stroke-width="1.6" stroke-linecap="round"/>`;
 		const open = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"`;
-		return `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${art?.back ?? ""}</svg>${open} class="sky-sun">${body}${art?.over(x, y) ?? ""}</svg>${open} class="sky-front">${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs, base) ?? ""}</svg>` + (art?.temp ? `<div class="sun-temp">${art.temp}</div>` : "") + `<div class="sun-times"><span>${hm(rise)} 해 뜸</span><span>해 짐 ${hm(set)}</span></div>`;
+		return `${open} class="sky-back"><defs><linearGradient id="sunPathSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky[0]}"/><stop offset="1" stop-color="${C.sky[1]}"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#sunPathSky)"/>${deco}<path d="M${left} ${arcBase}Q${W / 2} ${top} ${right} ${arcBase}" fill="none" stroke="${C.path}" stroke-opacity=".75" stroke-width="1.8" stroke-dasharray="3 4" stroke-linecap="round"/>${art?.back ?? ""}</svg>${open} class="sky-sun">${body}${art?.over(x, y) ?? ""}</svg>${open} class="sky-front">${hills}${city}<rect y="${base}" width="${W}" height="26" fill="${C.ground}"/><rect y="86" width="${W}" height="2" fill="${C.rail}"/><g class="sky-still-train">${train}</g>${art?.pile(roofs, base) ?? ""}</svg>` + (art?.temp ? `<div class="sun-temp">${art.temp}</div>` : "") + `<div class="sun-times"><span>해 짐 ${hm(set)}</span><span>${hm(rise)} 해 뜸</span></div>`;
 	}
 	return {
 		effectiveTheme,
