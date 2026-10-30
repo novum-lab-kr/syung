@@ -2498,9 +2498,21 @@ var setJoseon = (on) => setSimcity(on, true);
 		setOpen(!isOpen());
 	};
 	$("settingsClose").onclick = close;
+	let pressKeeps = false;
+	document.addEventListener("pointerdown", (e) => {
+		const at = e.target;
+		pressKeeps = panel.classList.contains("with-map") && !!at && (panel.contains(at) || map.getCanvasContainer().contains(at) || !!at.closest?.(".maplibregl-ctrl,.sheet"));
+	}, true);
+	document.addEventListener("pointerup", () => setTimeout(() => {
+		pressKeeps = false;
+	}), true);
 	document.addEventListener("click", (e) => {
 		const at = e.target;
-		if (isOpen() && !panel.contains(at) && !(panel.classList.contains("with-map") && map.getCanvasContainer().contains(at))) setOpen(false);
+		if (pressKeeps) {
+			pressKeeps = false;
+			return;
+		}
+		if (isOpen() && !panel.contains(at)) setOpen(false);
 	});
 	document.addEventListener("keydown", (e) => {
 		if (!isOpen()) return;
