@@ -1,10 +1,11 @@
 # 슝 운영 주소 둘(2026-10-30 나눔)
 #   map.syung.novum-lab.com — 지도 앱 + 실시간 열차 프록시 + 관리 화면(/api · /admin). 검색에는 싣지 않는다(noindex)
-#   syung.novum-lab.com     — 소개 사이트(릴리스의 intro/ = web/intro/). 그 밖의 옛 주소는 map. 의 같은 경로로 넘긴다
+#   syung.novum-lab.com     — 소개 사이트(/var/www/syung-landing — novum-web 레포 syung/ 이 관리 · 배포, 2026-10-30 옮김).
+#                             아이콘 · 개인정보처리방침(/brand/* · /privacy.html)은 이 레포 릴리스. 그 밖의 옛 주소는 map. 의 같은 경로로 넘긴다
 # 운영 /etc/caddy/Caddyfile 의 두 블록과 같게 둔다. 고칠 땐: cp Caddyfile Caddyfile.bak-<태그> → caddy validate → systemctl reload caddy
 # 처음 나눌 때의 차례(DNS map. A 레코드가 먼저 있어야 인증서가 나온다):
 #   1) map. 블록만 더한다(옛 syung. 블록은 그대로) → map. 의 / · /api/health 확인
-#   2) 배포(deploy/check_site.sh 가 map. 을 본다 — web/intro/ 가 릴리스에 실린다)
+#   2) 배포(deploy/check_site.sh 가 map. 을 본다) · 소개 사이트 배포(novum-web → /var/www/syung-landing)
 #   3) syung. 블록을 아래 소개 블록으로 바꾼다 → 두 주소 · 넘기기 확인
 # 로그인: SYUNG_PUBLIC_URL 이 옛 주소여도 콜백(/api/auth/<제공자>/callback)이 map. 으로 308(쿼리 그대로) 되어
 # state 쿠키가 있는 map. 에서 끝난다 — 제공자 콘솔 · 환경 변수는 안 바꿔도 된다
@@ -114,13 +115,13 @@ syung.novum-lab.com {
 		header Cache-Control "public, max-age=0, s-maxage=60"
 		file_server
 	}
-	# 소개 페이지(/ · /en/ · robots.txt · sitemap.xml · og.jpg · shots/ …)
+	# 소개 페이지(/ · /en/ · robots.txt · sitemap.xml · og.jpg · shots/ …) — novum-web 레포 syung/ 이 관리 · 배포
 	@intro file {
-		root /var/www/syung/intro
+		root /var/www/syung-landing
 		try_files {path} {path}index.html
 	}
 	handle @intro {
-		root * /var/www/syung/intro
+		root * /var/www/syung-landing
 		try_files {path} {path}index.html
 		header Cache-Control "public, max-age=0, s-maxage=60"
 		file_server

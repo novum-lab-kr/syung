@@ -950,18 +950,21 @@ h4.pf-l{line-height:1.3}
 .pp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;min-height:44px;padding:10px var(--space-2);border:0;border-bottom:1px solid var(--rule);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .pp-list button:hover,.pp-list button:focus-visible{background:var(--control);border-radius:var(--radius-12)}
 .pp-list b{font-size:var(--text-16)}.pp-list small{font-size:var(--text-12);color:var(--muted)}.pp-list .empty{padding:var(--space-3) var(--space-2);font-size:var(--text-14);color:var(--muted)}
-/* 경로 선택 머리말: 출발(위) · 도착(아래) 두 줄을 단계 목록과 같은 동그라미(.js-dot 시작 · 끝)로 찍고 사이를 회색 점선으로 잇는다. 긴 이름은 줄바꿈 */
-.rt-sum{display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);margin:0 0 var(--space-3)}
-.rt-trip{display:flex;flex-direction:column;gap:var(--space-3);align-self:stretch;margin:0;padding:0;list-style:none}
-.rt-trip li{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr);column-gap:10px;align-items:start}
-.rt-trip b{min-width:0;font-size:var(--text-16);line-height:1.35;overflow-wrap:anywhere;word-break:keep-all}
-.rt-trip .js-dot{margin-top:2px}
-.rt-from .js-dot{background:var(--syung);box-shadow:inset 0 0 0 2px var(--syung-ink)}
-.rt-to .js-dot{background:var(--syung-ink);box-shadow:inset 0 0 0 3px var(--syung)}
-html[data-theme=dark] .rt-from .js-dot{box-shadow:inset 0 0 0 2px #000}
-.rt-from::after{content:"";position:absolute;left:6.5px;top:18px;bottom:-14px;width:0;border-left:3px dotted var(--muted);opacity:.8}
-.rt-when{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);background:var(--syung-soft);color:#5b4c00;font-size:var(--text-12-5);font-weight:var(--weight-bold)}
-html[data-theme=dark] .rt-when{background:rgba(255,212,0,.14);color:var(--syung)}
+/* 경로 선택 머리말: 왼쪽 달력 날짜 | 구분선 | 오른쪽 '출발지에서 → 도착지(형광 밑줄)까지 → 시각 출발'. 긴 이름은 줄바꿈 */
+.rt-sum{display:grid;grid-template-columns:auto minmax(0,1fr);gap:17px;margin:0 0 var(--space-3)}
+.rt-cal{display:flex;flex-direction:column;align-items:flex-start;min-width:50px;padding-right:14px;border-right:1px solid var(--rule)}
+.rt-month{font-size:var(--text-11);color:var(--secondary)}
+.rt-day{font:400 43px/1.05 var(--round);margin:2px 0}
+.rt-wd{width:25px;height:25px;border-radius:var(--radius-circle);background:var(--syung);color:#1d1f21;text-align:center;font:400 15px/25px var(--round)}
+.rt-trip{min-width:0;overflow-wrap:anywhere;word-break:keep-all}
+.rt-trip p{margin:0}
+.rt-origin{font-size:var(--text-13);line-height:1.6;color:var(--secondary);margin-bottom:9px!important}
+.rt-origin b{font-weight:var(--weight-semibold);color:var(--ink)}
+.rt-dest b{font:400 29px/1.2 var(--round);letter-spacing:-.025em;box-shadow:inset 0 -7px var(--syung)}
+.rt-to-sfx{font:400 20px var(--round);margin-left:5px}
+.rt-time{margin-top:14px!important;line-height:1.8;font-size:var(--text-12);color:var(--secondary)}
+.rt-time b{display:block;font-size:var(--text-14);color:var(--ink)}
+.rt-time span{display:block}
 .route-page [hidden]{display:none}
 .rt-list{display:flex;flex-direction:column;gap:var(--space-2)}
 .rt-filters{display:flex;flex-wrap:wrap;gap:6px var(--space-2);margin:0 0 10px}

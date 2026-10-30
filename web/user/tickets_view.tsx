@@ -13,6 +13,7 @@ import type { RouteFilterView, RouteKind } from './ticket_routes.mts';
 export { shortName };   // 이름 줄이기는 시험할 수 있게 ticket_routes.mts 에 둔다
 
 // 서버 응답(server/routes/members.py · /api/place) 가운데 이 쪽들이 읽는 칸
+interface RouteWhen {month:number; day:number; weekday:string; time:string}
 export interface Place { name:string; lat:number; lng:number }
 export interface FoundPlace extends Place { address:string }
 // 저장하는 경로: 띠를 그리고 뒷면을 쓰는 데 필요한 칸만(slimRoute)
@@ -61,7 +62,7 @@ interface View {
   // 장소 찾기(발권 화면 칸 바로 아래): placeFor 는 글자를 치는 중인 칸(없으면 null) · placeRows 는 찾은 곳 또는 안내 한 줄
   placeFor:PlaceKey | null; placeQuery:string; placeHidden:boolean; placeRows:FoundPlace[] | string;
   // 경로 선택(경로 칸을 누르면 넘어가는 쪽)
-  routeWhen:string; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
+  routeWhen:RouteWhen|null; plans:Plan[]; chosen:number; routeMsg:string; routeLoading:boolean;   // routeLoading: 길을 찾는 중(뼈대 카드)
   routeFilter:RouteFilterView | null;   // 조건 고르기(종류 · 차례)와 보일 차례(plans 의 번호) — 길이 없으면 null
   stepsOf:Plan | null;   // 경로 고르기에서 단계 목록을 펼친 경로(목록을 다시 찾으면 다른 객체라 저절로 접힌다)
   stepsOpen:string | null;   // 승차권 뒷면에서 단계 목록을 펼친 카드(목록 번호 + 카드 번호 — 목록을 다시 받으면 저절로 접힌다)
@@ -70,7 +71,7 @@ let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
   opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, wheelOpen: false, sending: false, deleteArmed: false, fromHere: false, toHere: false,
   placeFor: null, placeQuery: '', placeHidden: true, placeRows: [],
-  routeWhen: '', plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null, stepsOpen: null,
+  routeWhen: null, plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null, stepsOpen: null,
 };
 let handlers:Handlers | null = null;
 const call = <K extends keyof Handlers>(key:K) => (...args:Parameters<Handlers[K]>) => (handlers?.[key] as (...callArgs:Parameters<Handlers[K]>) => void)?.(...args);
@@ -186,10 +187,11 @@ function RouteFilters({ filter }:{ filter:RouteFilterView }) {
 function RoutePage() {
   const filter = view.routeFilter, order = filter ? filter.order : view.plans.map((_plan, index) => index);
   return <>
-    {/* 머리말: 출발 · 도착 두 줄(점은 단계 목록의 시작 · 끝 동그라미와 같은 모양, 사이는 점선) + 시간 칩 */}
-    <div class="rt-sum"><ol class="rt-trip" aria-label="출발과 도착"><li class="rt-from"><i class="js-dot" aria-hidden="true"></i><b id="routeFrom">{view.from?.name}</b></li>
-      <li class="rt-to"><i class="js-dot" aria-hidden="true"></i><b id="routeTo">{view.to?.name}</b></li></ol>
-      <span id="routeWhen" class="rt-when">{view.routeWhen}</span></div>
+    {/* 머리말: 왼쪽 달력 날짜 | 오른쪽 '출발지에서 → 도착지까지 → 시각 출발' (목적지가 제목) */}
+    <div class="rt-sum">{view.routeWhen && <div class="rt-cal" id="routeWhen" aria-label={`${view.routeWhen.month}월 ${view.routeWhen.day}일 ${view.routeWhen.weekday}`}><span class="rt-month">{view.routeWhen.month}월</span><b class="rt-day">{view.routeWhen.day}</b><span class="rt-wd">{view.routeWhen.weekday}</span></div>}
+      <div class="rt-trip"><p class="rt-origin"><b id="routeFrom">{view.from?.name}</b>에서</p>
+        <p class="rt-dest"><b id="routeTo">{view.to?.name}</b><span class="rt-to-sfx">까지</span></p>
+        {view.routeWhen && <p class="rt-time"><b>{view.routeWhen.time} 출발</b><span>이 시각 출발 기준으로 찾은 경로</span></p>}</div></div>
     {filter && <RouteFilters filter={filter} />}
     {/* 고를 때는 표시(aria-checked)만 바뀐다 — 누른 단추가 문서에서 빠지면 본체의 '서랍 밖을 눌렀나' 검사가 서랍을 닫는다 */}
     {/* key 없이 자리마다 고쳐 쓴다 — 조건 차례로 단추를 옮기면(key) 크롬이 고른 카드의 동그라미 점을 빈 채로 그렸다(2026-10-29 확인) */}
