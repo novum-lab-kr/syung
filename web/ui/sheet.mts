@@ -22,6 +22,7 @@ interface SheetLive {
   busLayer?:BusLayerLike|null; routeBounds:unknown; frameMs?:number;
   journey:{ sheetClosed():boolean; openWith(end:string, place:{ name:string; lat:number; lng:number }):void };
   rider:{ ride:unknown }; stopRide(instant:boolean):void;
+  appMode:boolean;   // 앱 지도 모드인가(웹 시트를 쓰지 않는다)
   appPad?:number|null;   // 앱 지도 모드: 앱 시트 높이(다리 setPadding) — 있으면 웹 시트 대신 이 값
 }
 export interface BottomSheetDeps {
@@ -52,7 +53,8 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
   }
   // 하는 중인 시트(열차 · 버스 따라가기, 버스 노선 전체, 길찾기)는 지도 빈 곳을 눌러도 닫지 않는다 — ✕ · 끌어내리기 · Esc 로만(덕배 2026-10-20)
-  function sheetBusy():boolean{const b=live.busLayer;return !sheet.hidden&&!!(following||followBus||b?.selection?.kind==='bus'||b?.followView?.()||sheetBody.querySelector('.journey'))}
+  // 앱 지도 모드: 시트는 앱(RN)에 있어 웹 시트는 늘 숨어 있다 — 숨김과 상관없이 따라가기 · 버스 선택으로만 본다
+  function sheetBusy():boolean{const b=live.busLayer,working=!!(following||followBus||b?.selection?.kind==='bus'||b?.followView?.());return live.appMode?working:!sheet.hidden&&(working||!!sheetBody.querySelector('.journey'))}
   sheet.querySelector<HTMLButtonElement>('.sheet-close')!.onclick=closeSheet;
   // The handle: drag the sheet down to close it (far or fast enough), or just tap it.
   {const grab=sheet.querySelector<HTMLButtonElement>('.sheet-grab')!;let y0=0,t0=0,dy=0,drag=false,moved=false;

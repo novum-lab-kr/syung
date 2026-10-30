@@ -12,6 +12,8 @@ import type { JourneyLeg, JourneyPlan } from './journey.mts';
 import type { BusSheetView } from '../bus/layer.mts';
 
 export const APP_BRIDGE_VERSION = 2;
+// 앱 지도 모드 버스 안내 글의 아래 자리(px): 시트 위로 8px · 경로 막대는 앱이 showRoute padding 으로 잡아 둔 자리, 큰 쪽(둘 다 없으면 0 — 바닥값은 syung.css)
+export const appNoticeLift = (sheet:number, route:number):number => Math.max(sheet?sheet+8:0, route);
 
 type Position = [number, number];
 // 지도 → 앱
