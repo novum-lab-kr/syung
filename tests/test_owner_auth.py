@@ -288,3 +288,27 @@ class LoginRequestSizeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClientAddressTest(unittest.TestCase):
+    """로그인 한도의 열쇠 주소: 로컬 프록시 뒤에서만 X-Forwarded-For 를 믿는다."""
+
+    def test_local_proxy_uses_forwarded_first(self):
+        from email.message import Message
+        from server.routes.http import client_address
+        headers = Message()
+        headers["X-Forwarded-For"] = "203.0.113.7, 10.0.0.1"
+        self.assertEqual(client_address(headers, "127.0.0.1"), "203.0.113.7")
+        self.assertEqual(client_address(headers, "::1"), "203.0.113.7")
+
+    def test_remote_peer_ignores_forwarded(self):
+        from email.message import Message
+        from server.routes.http import client_address
+        headers = Message()
+        headers["X-Forwarded-For"] = "1.2.3.4"
+        self.assertEqual(client_address(headers, "198.51.100.9"), "198.51.100.9")
+
+    def test_local_without_header_uses_peer(self):
+        from email.message import Message
+        from server.routes.http import client_address
+        self.assertEqual(client_address(Message(), "127.0.0.1"), "127.0.0.1")
