@@ -1,5 +1,7 @@
+import { createElement as k, render as K } from "../npm/preact/dist/preact.mjs";
+import { SearchList } from "../components/search_field.mjs";
 // web/ui/search.mts
-function createStationSearch({ map, stations, colors, esc, input, list, getSelected, showStationPopup }) {
+function createStationSearch({ map, stations, colors, input, list, getSelected, showStationPopup }) {
 	let searchTimer = 0;
 	const searchIn = input, searchList = list;
 	let searchHits = [], searchAt = -1;
@@ -42,7 +44,13 @@ function createStationSearch({ map, stations, colors, esc, input, list, getSelec
 			const selected = getSelected(), ok = (x) => selected === "all" || x.lines.some((l) => l.name === selected);
 			const rank = (x) => x.name === q ? 0 : x.name.startsWith(q) ? 1 : 2;
 			searchHits = stations.filter((x) => ok(x) && x.name.includes(q)).sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length).slice(0, 8);
-			searchList.innerHTML = searchHits.length ? searchHits.map((x, k) => `<li id="sr-${k}" role="option" aria-selected="false" data-k="${k}"><b>${esc(x.name)}</b><span>${x.lines.map((l) => `<i style="--c:${colors[l.name] || "#52646a"}">${esc(l.name)}</i>`).join("")}</span></li>`).join("") : "<li class=\"search-empty\" role=\"option\" aria-disabled=\"true\">찾는 역이 없어요</li>";
+			K(k(SearchList, { hits: searchHits.map((x) => ({
+				name: x.name,
+				lines: x.lines.map((l) => ({
+					name: l.name,
+					color: colors[l.name] || "#52646a"
+				}))
+			})) }), searchList);
 			searchShow(true);
 		}, 120);
 	};

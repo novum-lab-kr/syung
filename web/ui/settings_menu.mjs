@@ -1,5 +1,7 @@
 import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { DrawerHead, MenuItem, SettingSwitch } from "../components/drawer.mjs";
+import { LoginButton } from "../components/login_button.mjs";
 var state = {
 	pressed: Object.fromEntries([
 		"toggleSimcity",
@@ -185,38 +187,73 @@ var ICON = {
 			height: "10",
 			rx: "2"
 		}), /* @__PURE__ */ a("path", { d: "M21 11v2M7 10v4M10 10v4" })]
+	}),
+	tickets: /* @__PURE__ */ a("svg", {
+		viewBox: "0 0 24 24",
+		width: "20",
+		height: "20",
+		fill: "none",
+		stroke: "currentColor",
+		"stroke-width": "1.9",
+		"stroke-linecap": "round",
+		"stroke-linejoin": "round",
+		"aria-hidden": "true",
+		children: [/* @__PURE__ */ a("path", { d: "M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v8a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2z" }), /* @__PURE__ */ a("path", {
+			d: "M15 6v12",
+			"stroke-dasharray": "2 2.4"
+		})]
+	}),
+	device: /* @__PURE__ */ a("svg", {
+		viewBox: "0 0 24 24",
+		width: "20",
+		height: "20",
+		fill: "none",
+		stroke: "currentColor",
+		"stroke-width": "1.9",
+		"stroke-linecap": "round",
+		"stroke-linejoin": "round",
+		"aria-hidden": "true",
+		children: [/* @__PURE__ */ a("rect", {
+			x: "6",
+			y: "2",
+			width: "12",
+			height: "20",
+			rx: "2.5"
+		}), /* @__PURE__ */ a("path", { d: "M11 18h2" })]
+	}),
+	sources: /* @__PURE__ */ a("svg", {
+		viewBox: "0 0 24 24",
+		width: "20",
+		height: "20",
+		fill: "none",
+		stroke: "currentColor",
+		"stroke-width": "1.9",
+		"stroke-linecap": "round",
+		"stroke-linejoin": "round",
+		"aria-hidden": "true",
+		children: [/* @__PURE__ */ a("ellipse", {
+			cx: "12",
+			cy: "5.5",
+			rx: "7.5",
+			ry: "2.8"
+		}), /* @__PURE__ */ a("path", { d: "M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8" })]
 	})
 };
 var yes = (on) => on ? "true" : "false";
 var pressedBy = (want, value) => want === void 0 ? void 0 : yes(want === value);
 function Switch({ id, name, desc, icon, controls }) {
 	const key = id.slice(6).toLowerCase();
-	return /* @__PURE__ */ a("button", {
+	return /* @__PURE__ */ a(SettingSwitch, {
 		id,
-		class: "setting-switch",
-		type: "button",
-		"aria-pressed": yes(state.pressed[id]),
-		"aria-labelledby": `${key}Name`,
-		"aria-describedby": `${key}Description cityModeHelp`,
-		"aria-controls": controls,
-		onClick: () => handlers.switches[id]?.(),
-		children: [
-			icon,
-			/* @__PURE__ */ a("span", {
-				class: "setting-name",
-				children: [/* @__PURE__ */ a("span", {
-					id: `${key}Name`,
-					children: name
-				}), /* @__PURE__ */ a("small", {
-					id: `${key}Description`,
-					children: desc
-				})]
-			}),
-			/* @__PURE__ */ a("i", {
-				class: "switch",
-				"aria-hidden": "true"
-			})
-		]
+		name,
+		note: desc,
+		icon,
+		pressed: state.pressed[id],
+		nameId: `${key}Name`,
+		noteId: `${key}Description`,
+		describedBy: `${key}Description cityModeHelp`,
+		controls,
+		onClick: () => handlers.switches[id]?.()
 	});
 }
 var Icon = ({ children }) => /* @__PURE__ */ a("span", {
@@ -374,26 +411,14 @@ function Modes() {
 		})
 	] });
 }
-function DeviceSwitch({ id, name, note, icon }) {
-	return /* @__PURE__ */ a("button", {
-		id,
-		class: "setting-switch",
-		type: "button",
-		"aria-pressed": yes(state.pressed[id]),
-		onClick: () => handlers.switches[id]?.(),
-		children: [
-			/* @__PURE__ */ a(Icon, { children: icon }),
-			/* @__PURE__ */ a("span", {
-				class: "setting-name",
-				children: [name, /* @__PURE__ */ a("small", { children: note })]
-			}),
-			/* @__PURE__ */ a("i", {
-				class: "switch",
-				"aria-hidden": "true"
-			})
-		]
-	});
-}
+var DeviceSwitch = ({ id, name, note, icon }) => /* @__PURE__ */ a(SettingSwitch, {
+	id,
+	name,
+	note,
+	icon: /* @__PURE__ */ a(Icon, { children: icon }),
+	pressed: state.pressed[id],
+	onClick: () => handlers.switches[id]?.()
+});
 var Device = () => /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(DeviceSwitch, {
 	id: "togglePrebuild",
 	name: "건물 미리 짓기",
@@ -527,5 +552,65 @@ var settingsMenu = {
 		if (more.theme) handlers.theme = more.theme;
 	}
 };
+var AccountRows = () => /* @__PURE__ */ a(M, { children: [
+	/* @__PURE__ */ a(LoginButton, {}),
+	/* @__PURE__ */ a(MenuItem, {
+		id: "accountRow",
+		page: "menuAccount",
+		hidden: true,
+		nameId: "accountItemName",
+		icon: /* @__PURE__ */ a("span", {
+			id: "accountAvatar",
+			class: "account-avatar face",
+			"aria-hidden": "true"
+		})
+	}),
+	/* @__PURE__ */ a(MenuItem, {
+		id: "ticketsRow",
+		page: "menuTickets",
+		hidden: true,
+		name: "승차권",
+		icon: /* @__PURE__ */ a(Icon, { children: ICON.tickets })
+	}),
+	/* @__PURE__ */ a("button", {
+		id: "ticketOpen",
+		type: "button",
+		"data-menu-page": "menuTicket",
+		"aria-controls": "menuTicket",
+		hidden: true,
+		tabIndex: -1
+	}),
+	/* @__PURE__ */ a("button", {
+		id: "routeOpen",
+		type: "button",
+		"data-menu-page": "menuRoute",
+		"aria-controls": "menuRoute",
+		hidden: true,
+		tabIndex: -1
+	})
+] });
+var MenuNav = () => /* @__PURE__ */ a(M, { children: [
+	/* @__PURE__ */ a(MenuItem, {
+		page: "menuModes",
+		name: "도시 모드",
+		icon: /* @__PURE__ */ a(Icon, { children: ICON.simcity })
+	}),
+	/* @__PURE__ */ a(MenuItem, {
+		page: "menuDevice",
+		name: "성능 · 배터리",
+		icon: /* @__PURE__ */ a(Icon, { children: ICON.device })
+	}),
+	/* @__PURE__ */ a(MenuItem, {
+		page: "menuSources",
+		name: "데이터 출처",
+		icon: /* @__PURE__ */ a(Icon, { children: ICON.sources })
+	})
+] });
+var once = [
+	[document.querySelector("#settingsPanel .menu-head"), /* @__PURE__ */ a(DrawerHead, { title: "메뉴" })],
+	[document.getElementById("accountItem"), /* @__PURE__ */ a(AccountRows, {})],
+	[document.querySelector("#menuRoot .menu-nav"), /* @__PURE__ */ a(MenuNav, {})]
+];
+for (const [root, view] of once) if (root) K(view, root);
 paint({});
 export { settingsMenu };

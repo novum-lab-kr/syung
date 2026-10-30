@@ -1,10 +1,12 @@
+import { createElement as k, render as K } from "../npm/preact/dist/preact.mjs";
+import { SheetFrame } from "../components/sheet_frame.mjs";
 // web/ui/sheet.mts
 function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, laneOffsetPx, animFrame, FOLLOW_FPS, fitRoute, live }) {
 	const sheet = document.createElement("section");
 	sheet.className = "sheet";
 	sheet.hidden = true;
 	sheet.setAttribute("aria-label", "상세 정보");
-	sheet.innerHTML = "<button type=\"button\" class=\"sheet-grab\" aria-label=\"닫기\" title=\"끌어내리거나 눌러서 닫기\"></button><button type=\"button\" class=\"sheet-close\" aria-label=\"닫기\">✕</button><div class=\"sheet-body\"></div><button type=\"button\" class=\"sheet-follow\" hidden>이 열차 따라가기</button>";
+	K(k(SheetFrame, null), sheet);
 	const sheetBody = sheet.querySelector(".sheet-body"), followBtn = sheet.querySelector(".sheet-follow");
 	let sheetToken = 0, sheetTrain = null, following = null, easing = false;
 	let followBus = null, busMiss = 0;

@@ -18,12 +18,16 @@ import { createCoasterGeometry } from "./modes/coaster/geometry.mjs";
 import { createCoasterMotion } from "./modes/coaster/motion.mjs";
 import { COCKPIT_NEAR_M, nearMatrix, seatLabel, seatPickerHTML } from "./modes/coaster/first_person.mjs";
 import { createCoasterRide } from "./modes/coaster/ride.mjs";
+import "./components/search_field.mjs";
 import { createStationSearch } from "./ui/search.mjs";
+import "./components/sheet_frame.mjs";
 import { createBottomSheet } from "./ui/sheet.mjs";
 import "./ui/station_sheet.mjs";
 import "./ui/train_sheet.mjs";
 import { createPopups } from "./ui/popups.mjs";
 import { clearBusSheet, drawBusSheet } from "./bus/sheet_view.mjs";
+import "./components/drawer.mjs";
+import "./components/login_button.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createAppBridge } from "./ui/app_bridge.mjs";
@@ -156,12 +160,6 @@ var { byId, stationByLine, route, learnDirections } = createRouter({
 	paths
 });
 var sunPosition = (date = window.__sunTime || /* @__PURE__ */ new Date()) => sunPosition$1(date);
-var esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({
-	"&": "&amp;",
-	"<": "&lt;",
-	">": "&gt;",
-	"\"": "&quot;"
-})[c]);
 var merc = (s) => s.m ??= maplibregl.MercatorCoordinate.fromLngLat([s.lon, s.lat]);
 var edgeLines = /* @__PURE__ */ new Map();
 Object.entries(paths).forEach(([line, chunks]) => chunks.forEach((ids) => ids.slice(1).forEach((b, i) => {
@@ -2208,7 +2206,6 @@ createStationSearch({
 	map,
 	stations,
 	colors,
-	esc,
 	input: $("search"),
 	list: $("searchList"),
 	getSelected: () => selected,
