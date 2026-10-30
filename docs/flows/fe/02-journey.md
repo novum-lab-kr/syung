@@ -2,7 +2,7 @@
 
 출발 · 도착을 정하면 바로 경로를 찾고, 경로 카드를 골라 단계를 보고, 지도에 그린 채 시트를 닫으면 아래 막대로 다시 볼 수 있는 흐름. 로그인 없이 쓴다.
 
-<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
+<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/fe/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
 ## 화면 기획
 
 흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음).

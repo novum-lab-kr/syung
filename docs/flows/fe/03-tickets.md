@@ -2,7 +2,7 @@
 
 매일 타는 길을 「승차권」으로 저장해 두고(장소 · 출발 시각 · 경로 · 타는 날 · 이름), 목록에서 뒤집어 경로를 보거나 지도에 그려 보는 흐름. **로그인한 사람만** 쓴다. 모두 설정 서랍 안의 쪽(목록 `#menuTickets` → 발권 `#menuTicket` → 경로 선택 `#menuRoute`)에서 일어난다.
 
-화면 기획(조립 화면 · 번호 설명 · 흐름 한 장)은 스토리북 **화면 기획** 에 있다 — `npm run storybook` → [`화면-기획--flow-03`](http://localhost:6006/?path=/story/화면-기획--flow-03). 설명 원본은 `docs/flows/screens/03-tickets/*.json`.
+화면 기획(조립 화면 · 번호 설명 · 흐름 한 장)은 스토리북 **화면 기획** 에 있다 — `npm run storybook` → [`화면-기획--flow-03`](http://localhost:6006/?path=/story/화면-기획--flow-03). 설명 원본은 `docs/flows/fe/screens/03-tickets/*.json`.
 
 ## 시작점
 - 설정 서랍 목록의 「승차권」 줄(`#ticketsRow`) — 로그인했을 때만 보인다

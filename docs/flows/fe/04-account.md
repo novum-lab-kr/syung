@@ -2,7 +2,7 @@
 
 설정 서랍에서 로그인하고(카카오 · 구글 · Apple), 내 정보 쪽에서 통계 · 로그인 기기를 보고, 프로필(사진 · 캐릭터 · 닉네임)을 고치고, 로그아웃 · 탈퇴하는 흐름.
 
-화면 기획(조립 화면 · 번호 설명 · 흐름 한 장)은 스토리북 **화면 기획** 에 있다 — `npm run storybook` → [`화면-기획--flow-04`](http://localhost:6006/?path=/story/화면-기획--flow-04). 설명 원본은 `docs/flows/screens/04-account/*.json`.
+화면 기획(조립 화면 · 번호 설명 · 흐름 한 장)은 스토리북 **화면 기획** 에 있다 — `npm run storybook` → [`화면-기획--flow-04`](http://localhost:6006/?path=/story/화면-기획--flow-04). 설명 원본은 `docs/flows/fe/screens/04-account/*.json`.
 
 ## 시작점
 - 설정 서랍 목록의 「로그인」 줄(`#loginOpen`) — 로그인 안 됐을 때

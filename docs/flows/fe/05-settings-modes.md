@@ -2,7 +2,7 @@
 
 머리줄의 메뉴 단추로 오른쪽 설정 서랍을 열어 테마를 고르고, 도시 모드(심시티 · 조선 · 스타크래프트 · 레트로 · 세계 여행 · 롤러코스터)를 켜고 끄고, 기기 설정(건물 미리 짓기 · 절전)과 데이터 출처를 보는 흐름. 회원 줄(로그인 · 내 정보 · 승차권)은 [04](04-account.md) · [03](03-tickets.md).
 
-<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
+<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/fe/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
 ## 화면 기획
 
 흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음).

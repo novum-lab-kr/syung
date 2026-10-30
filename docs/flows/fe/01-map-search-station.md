@@ -2,7 +2,7 @@
 
 지도를 열어 실시간 열차를 보고, 역을 찾거나 눌러 그 역의 곧 오는 열차를 보는 흐름. 길찾기(02)로 넘어가는 입구도 여기 있다.
 
-<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
+<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/fe/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->
 ## 화면 기획
 
 흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(2026-11-02 월 07:30 · 지도 위 실시간 열차 없음).

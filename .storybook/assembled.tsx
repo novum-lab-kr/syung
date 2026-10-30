@@ -1,5 +1,5 @@
 // 화면 기획의 조립 화면: 디자인 시스템 컴포넌트 + 고정 자료(tools/flows/fixtures)로 흐름의 화면을 그린다.
-// 화면 이름은 docs/flows/screens/<흐름>/<이름>.json 과 같고, JSON 의 번호(at)는 이 화면 안 요소를 고른다.
+// 화면 이름은 docs/flows/fe/screens/<흐름>/<이름>.json 과 같고, JSON 의 번호(at)는 이 화면 안 요소를 고른다.
 // 아직 컴포넌트가 아닌 자리(지도 위 막대 · 경로 카드 · 기기 목록)는 web/user/*_view.tsx · web/user/account.mts 와 같은 DOM 을 여기 적는다 — view 파일은 불러오면 바로 화면을 찾아 그려서 스토리에서 못 부른다. 2e 로 컴포넌트가 되면 바꾼다
 import { render, type ComponentChildren } from 'preact';
 import indexHtml from '../web/index.html?raw';

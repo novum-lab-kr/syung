@@ -1,4 +1,4 @@
-// 스토리북 '화면 기획': docs/flows/screens/<흐름>/ 의 JSON(설명 원본)을 읽어 그린다 — 흐름 한 장(작은 화면 + 화살표 + 무엇을 누르면) · 화면마다 그림 + 번호 설명 표
+// 스토리북 '화면 기획': docs/flows/fe/screens/<흐름>/ 의 JSON(설명 원본)을 읽어 그린다 — 흐름 한 장(작은 화면 + 화살표 + 무엇을 누르면) · 화면마다 그림 + 번호 설명 표
 // 그림은 디자인 시스템 컴포넌트로 조립한 화면(assembled.tsx). 아직 조립하지 않은 흐름만 찍은 PNG(node tools/flows/capture.mjs <흐름 폴더>)
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { Fragment } from 'preact';

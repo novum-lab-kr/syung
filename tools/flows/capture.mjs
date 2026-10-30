@@ -1,5 +1,5 @@
-// 화면 기획(스토리보드) 자동 촬영: docs/flows/screens/<흐름>/*.json 의 차례(steps)대로 화면을 열어 폰 폭(390px)으로 찍고,
-// 번호 표식(marks 의 CSS 선택자로 요소 위치를 읽어 자동 배치)을 얹은 PNG 와 흐름 한 장(flow.png), 흐름 문서(docs/flows/*.md)의 '화면 기획' 칸을 만든다.
+// 화면 기획(스토리보드) 자동 촬영: docs/flows/fe/screens/<흐름>/*.json 의 차례(steps)대로 화면을 열어 폰 폭(390px)으로 찍고,
+// 번호 표식(marks 의 CSS 선택자로 요소 위치를 읽어 자동 배치)을 얹은 PNG 와 흐름 한 장(flow.png), 흐름 문서(docs/flows/fe/*.md)의 '화면 기획' 칸을 만든다.
 //   node tools/flows/capture.mjs [흐름 폴더 이름…]     # 예: 02-journey · 비우면 조립하지 않은 흐름 전부
 // 매번 같은 화면이 나오게:
 //  - 웹은 먼저 빌드(dist/web — 운영과 같은 파일)하고 deploy/dev_server.py --dist 를 빈 포트에 띄운다(8080 은 안 쓴다)
@@ -15,7 +15,7 @@ import { build } from 'vite'
 import { openChrome } from './cdp.mjs'
 
 const root = path.resolve(import.meta.dirname, '../..')
-const screensDir = path.join(root, 'docs/flows/screens')
+const screensDir = path.join(root, 'docs/flows/fe/screens')
 const fixturesDir = path.join(import.meta.dirname, 'fixtures')
 // 스토리북 조립 화면(.storybook/assembled.tsx)으로 옮긴 흐름 — 찍지 않는다. 다 옮기면 이 파일을 지운다
 const ASSEMBLED = new Set(['03-tickets', '04-account'])
@@ -239,7 +239,7 @@ async function captureFlowSheet(flowSpec, shots) {
 
 // ---- 흐름 문서의 '화면 기획' 칸(<!-- screens:start --> ~ <!-- screens:end -->) — 설명 원본은 화면마다 JSON, 문서는 그것으로 다시 쓴다 ----
 function screensMarkdown(flow, flowSpec, specs) {
-  const lines = ['<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->', '## 화면 기획', '',
+  const lines = ['<!-- screens:start — tools/flows/capture.mjs 가 docs/flows/fe/screens/ 의 JSON 으로 다시 쓴다. 손으로 고치지 말 것 -->', '## 화면 기획', '',
     `흐름 한 장 — 폰 폭(390px) 실제 화면을 고정 자료로 찍었다(${FIXED_NOW.slice(0, 10)} 월 07:30 · 지도 위 실시간 열차 없음).`, '',
     `![${flowSpec.title}](screens/${flow}/flow.png)`, '']
   screenOrder(flowSpec).forEach((name, index) => {
@@ -255,7 +255,7 @@ function screensMarkdown(flow, flowSpec, specs) {
   return lines.join('\n')
 }
 async function writeMarkdown(flow, flowSpec, specs) {
-  const file = path.join(root, 'docs/flows', `${flow}.md`)
+  const file = path.join(root, 'docs/flows/fe', `${flow}.md`)
   const source = await readFile(file, 'utf8'), block = screensMarkdown(flow, flowSpec, specs)
   const start = source.indexOf('<!-- screens:start'), end = source.indexOf('<!-- screens:end -->')
   let next
@@ -297,6 +297,6 @@ try {
     const sheet = await captureFlowSheet(flowSpec, shots)
     await writeFile(path.join(dir, 'flow.png'), sheet)
     await writeMarkdown(flow, flowSpec, specs)
-    console.log(`${flow}/flow.png ${Math.round(sheet.length / 1024)} KB · docs/flows/${flow}.md 화면 기획 칸`)
+    console.log(`${flow}/flow.png ${Math.round(sheet.length / 1024)} KB · docs/flows/fe/${flow}.md 화면 기획 칸`)
   }
 } finally { server.stop() }

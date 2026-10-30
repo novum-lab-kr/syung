@@ -1,0 +1,9 @@
+{
+  "fe": {
+    "install": "npm ci",
+    "start": "npm run build && for py in python3.13 python3.12 python3.11 python3.10 python3; do command -v $py >/dev/null && break; done; exec $py deploy/dev_server.py 8197",
+    "url": "http://127.0.0.1:8197",
+    "ready": "/",
+    "readyTimeoutSec": 120
+  }
+}
