@@ -9,7 +9,7 @@
 #   서버를 막 재시작했을 수 있어 연결 실패 · 502 · 503 · 504 는 SYUNG_CHECK_WAIT 초까지 다시 묻는다.
 #   버스 위치 · 장소 검색은 바깥 API 한도를 써서 묻지 않는다. 응답 본문은 로그에 남기지 않는다(상태 · 주소만).
 # SYUNG_CHECK_BASE(기본 지도 주소 https://map.syung.novum-lab.com) · SYUNG_CHECK_RESOLVE(기본 이 기계로, 빈 값이면 안 씀)
-# 소개 사이트(syung.novum-lab.com — 릴리스의 intro/)는 여기서 보지 않는다: 지도 주소에서도 /intro/… 로 200 이라 파일은 위 목록에 든다
+# 소개 사이트(syung.novum-lab.com)는 여기서 보지 않는다: novum-web 레포 syung/ 이 /var/www/syung-landing 으로 따로 배포한다(이 릴리스에 없다)
 set -uo pipefail
 dir=$(readlink -f "${1:-${SYUNG_WEB:-/var/www/syung}}") && [ -d "$dir" ] || { echo "실패: 릴리스 폴더 없음 ${1:-${SYUNG_WEB:-/var/www/syung}}"; exit 1; }
 BASE=${SYUNG_CHECK_BASE:-https://map.syung.novum-lab.com}

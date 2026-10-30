@@ -12,7 +12,7 @@
 #   SYUNG_STATE 밤 재학습 자료 · SYUNG_KEEP_COUNT 남길 릴리스 수
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-WEB=${SYUNG_WEB:-/var/www/syung}   # map.syung.novum-lab.com(지도) · 소개 사이트는 그 안의 intro/
+WEB=${SYUNG_WEB:-/var/www/syung}   # map.syung.novum-lab.com(지도) · 소개 사이트는 novum-web 이 따로(/var/www/syung-landing)
 RELEASES=${SYUNG_RELEASES:-/var/www/syung-releases}
 KEEP_DIR=${SYUNG_KEEP_DIR:-/var/www/syung-keep}
 STATE=${SYUNG_STATE:-/var/lib/subway-live}
