@@ -916,7 +916,12 @@ const setJoseon=(on:boolean)=>setSimcity(on,true);
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
   $('settingsClose').onclick=close;
-  document.addEventListener('click',e=>{const at=e.target as Node|null;if(isOpen()&&!panel.contains(at)&&!(panel.classList.contains('with-map')&&map.getCanvasContainer().contains(at)))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다. 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도 캔버스만 눌러도 닫지 않는다(길찾기 같은 지도 위 단추는 지금처럼 닫는다)
+  // 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도 · 서랍 · 지도 조작 단추(+ − · 내 위치) · 아래 시트 위에서 누르기 시작했으면 서랍을 닫지 않는다.
+  // 끌다가 서랍 · 머리줄 위에서 손을 떼면 click 이 둘의 공통 조상(body)으로 와 '밖을 눌렀다'로 읽히기 때문(누르기를 시작한 곳으로 본다). 길찾기 같은 지도 위 단추는 지금처럼 닫는다
+  let pressKeeps=false;
+  document.addEventListener('pointerdown',e=>{const at=e.target as Element|null;pressKeeps=panel.classList.contains('with-map')&&!!at&&(panel.contains(at)||map.getCanvasContainer().contains(at)||!!at.closest?.('.maplibregl-ctrl,.sheet'))},true);
+  document.addEventListener('pointerup',()=>setTimeout(()=>{pressKeeps=false}),true);   // click 은 손을 뗀 바로 뒤에 오므로 그 뒤에 푼다(끌기만 하고 click 이 안 와도 남지 않게)
+  document.addEventListener('click',e=>{const at=e.target as Node|null;if(pressKeeps){pressKeeps=false;return}if(isOpen()&&!panel.contains(at))setOpen(false)});   // 뒤 가림막(.menu-scrim)을 누르면 여기로 온다
   document.addEventListener('keydown',e=>{
     if(!isOpen())return;
     if(e.key==='Escape'){close();return}
