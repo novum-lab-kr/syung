@@ -53,8 +53,8 @@ function routeAt(when) {
 	const pad = (value) => String(value).padStart(2, "0");
 	return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
-function routeUrl(from, to, at, via) {
-	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ""}`;
+function routeUrl(from, to, at) {
+	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`;
 }
 var shortName = (name) => name.replace(/\s/g, "").length >= 11 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
 export { ROUTE_KINDS, chosenAfter, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, shortName, usefulRoutes };

@@ -110,14 +110,14 @@ async function fillChain(t, put) {
 		return;
 	}
 	const at = routeAt(nextRideDay(t.days, t.depart, /* @__PURE__ */ new Date()));
-	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${t.via ? `${t.via.lat},${t.via.lng}` : ""}|${at}`;
+	const key = `${t.id}|${t.from.lat},${t.from.lng}|${t.to.lat},${t.to.lng}|${at}`;
 	if (chains.has(key)) {
 		put(chains.get(key));
 		return;
 	}
 	let html;
 	try {
-		const { status, body } = await getJson(routeUrl(t.from, t.to, at, t.via));
+		const { status, body } = await getJson(routeUrl(t.from, t.to, at));
 		const plan = status === 200 && body?.ok ? quickestRoute(body.plans || []) : null;
 		if (!plan) throw new Error("no plan");
 		html = chainHTML(t, plan.legs);
@@ -545,7 +545,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		clearTimeout(placeTimer);
 		placeSeq++;
 		spotEpoch++;
-		const spot = which === "via" ? form().routeVia : form()[which];
+		const spot = form()[which];
 		ticketsView.set({
 			placeFor: which,
 			placeQuery: spot?.name || "",
@@ -588,18 +588,9 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			}
 		}, 300);
 	}
-	const hereFlag = (which, here) => {
-		if (which === "from") return { fromHere: here };
-		return which === "to" ? { toHere: here } : {};
-	};
+	const hereFlag = (which, here) => which === "from" ? { fromHere: here } : { toHere: here };
 	function setSpot(which, place, here) {
 		spotEpoch++;
-		if (which === "via") {
-			const beforeVia = form().routeVia;
-			ticketsView.set({ routeVia: place });
-			if (!sameSpot(beforeVia, place)) findRoutes();
-			return;
-		}
 		const before = form()[which];
 		ticketsView.set({
 			[which]: place,
@@ -631,7 +622,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		if (now.placeFor !== which) return;
 		clearTimeout(placeTimer);
 		placeSeq++;
-		const spot = which === "via" ? now.routeVia : now[which], typed = now.placeQuery.trim(), here = which === "via" ? false : now[`${which}Here`];
+		const spot = now[which], typed = now.placeQuery.trim(), here = now[`${which}Here`];
 		ticketsView.set({
 			placeFor: null,
 			placeQuery: "",
@@ -801,19 +792,9 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	});
 	let routeSeq = 0;
 	let routeKind = "all";
-	function openRoute() {
-		ticketsView.set({ routeVia: form().via });
-		return findRoutes();
-	}
-	function clearVia() {
-		if (!form().routeVia) return;
-		ticketsView.set({ routeVia: null });
-		findRoutes();
-		$("routeVia").focus({ preventScroll: true });
-	}
 	async function findRoutes() {
 		lastField = $("ticketRoute");
-		const { from, to, routeVia: via } = form();
+		const { from, to } = form();
 		if (!from || !to) {
 			toast("출발지 · 도착지를 먼저 골라 주세요", true);
 			$(from ? "ticketTo" : "ticketFrom").focus();
@@ -821,8 +802,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		}
 		const when = nextRide(), time = timeParts(form().time);
 		ticketsView.set({
-			routeTrip: `${from.name} → ${to.name}`,
-			routeWhen: `${when.getMonth() + 1}월 ${when.getDate()}일(${DAYS[(when.getDay() + 6) % 7]}) ${time.ampm} ${time.clock} 출발 기준`,
+			routeWhen: `${when.getMonth() + 1}.${when.getDate()} ${DAYS[(when.getDay() + 6) % 7]} · ${time.ampm} ${time.clock} 출발`,
 			plans: [],
 			chosen: -1,
 			routeMsg: "경로를 찾고 있어요",
@@ -835,7 +815,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		const my = ++routeSeq;
 		const at = routeAt(when);
 		try {
-			const { status, body } = await getJson(routeUrl(from, to, at, via));
+			const { status, body } = await getJson(routeUrl(from, to, at));
 			if (my !== routeSeq) return;
 			if (status !== 200 || !body?.ok || !body.plans?.length) {
 				ticketsView.set({
@@ -867,10 +847,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	function pickPlan() {
 		const plan = form().plans[form().chosen];
 		if (!plan) return;
-		ticketsView.set({
-			route: slimRoute(plan),
-			via: form().routeVia
-		});
+		ticketsView.set({ route: slimRoute(plan) });
 		backToForm();
 	}
 	function choosePlan(index) {
@@ -1004,7 +981,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		ticketsView.set({ mapping: index });
 		try {
 			const at = routeAt(nextRideDay(ticket.days, ticket.depart, /* @__PURE__ */ new Date()));
-			const { status, body } = await getJson(routeUrl(ticket.from, ticket.to, at, ticket.via));
+			const { status, body } = await getJson(routeUrl(ticket.from, ticket.to, at));
 			if (my !== mapSeq || ticketsView.state.listTurn !== turn || !$("settingsPanel").classList.contains("open") || $("menuTickets").hidden) return;
 			const plans = status === 200 && body?.ok ? body.plans || [] : [];
 			const saved = ticket.route ? rideSig(ticket.route) : null;
@@ -1044,7 +1021,6 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			from: t?.from || null,
 			to: t?.to || null,
 			route: t?.route || null,
-			via: t?.via || null,
 			days: DAYS.map((_, index) => index + 1).filter((day) => t ? t.days.includes(day) : false),
 			deleteArmed: false,
 			fromHere: false,
@@ -1053,8 +1029,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			placeQuery: "",
 			placeHidden: true,
 			placeRows: [],
-			routeVia: null,
-			routeTrip: "",
+			routeWhen: "",
 			plans: [],
 			chosen: -1,
 			routeMsg: "",
@@ -1074,8 +1049,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			to: now.to,
 			depart: now.time,
 			days: now.days,
-			route: now.route,
-			via: now.via
+			route: now.route
 		};
 		if (!body.from || !body.to) {
 			toast("출발지 · 도착지를 골라 주세요", true);
@@ -1160,8 +1134,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		here: useHere,
 		plan: choosePlan,
 		routeKind: filterKind,
-		viaClear: clearVia,
-		route: openRoute,
+		route: findRoutes,
 		planPick: pickPlan
 	});
 	function countUse(kind) {

@@ -60,13 +60,6 @@ var PLACE_TEXT = {
 		"도착지",
 		"ticketTo",
 		"tf-dot to"
-	],
-	via: [
-		"경유",
-		"+ 경유지 넣기",
-		"경유지",
-		"routeVia",
-		"tf-dot via"
 	]
 };
 var view = {
@@ -84,7 +77,6 @@ var view = {
 	from: null,
 	to: null,
 	route: null,
-	via: null,
 	wheelOpen: false,
 	sending: false,
 	deleteArmed: false,
@@ -94,14 +86,12 @@ var view = {
 	placeQuery: "",
 	placeHidden: true,
 	placeRows: [],
-	routeTrip: "",
 	routeWhen: "",
 	plans: [],
 	chosen: -1,
 	routeMsg: "",
 	routeLoading: false,
 	routeFilter: null,
-	routeVia: null,
 	stepsOf: null,
 	stepsOpen: null
 };
@@ -295,7 +285,7 @@ var Wheels = class extends x {
 	}
 };
 function PlaceField({ which }) {
-	const spot = which === "via" ? view.routeVia : view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
+	const spot = view[which], active = view.placeFor === which, [label, empty, aria, id, dot] = PLACE_TEXT[which], rows = view.placeRows;
 	return /* @__PURE__ */ a("div", {
 		class: "tf-fld",
 		onFocusOut: (event) => {
@@ -331,26 +321,7 @@ function PlaceField({ which }) {
 						}
 					}
 				})] })]
-			}), which === "via" ? /* @__PURE__ */ a("button", {
-				id: "routeViaClear",
-				class: "rt-via-x",
-				type: "button",
-				hidden: !view.routeVia,
-				"aria-label": "경유지 빼기",
-				title: "경유지 빼기",
-				onClick: call("viaClear"),
-				children: /* @__PURE__ */ a("svg", {
-					viewBox: "0 0 24 24",
-					width: "16",
-					height: "16",
-					"aria-hidden": "true",
-					fill: "none",
-					stroke: "currentColor",
-					"stroke-width": "2.2",
-					"stroke-linecap": "round",
-					children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
-				})
-			}) : /* @__PURE__ */ a("button", {
+			}), /* @__PURE__ */ a("button", {
 				id: `${id}Here`,
 				class: "tf-here",
 				type: "button",
@@ -572,20 +543,33 @@ function RoutePage() {
 	return /* @__PURE__ */ a(M, { children: [
 		/* @__PURE__ */ a("div", {
 			class: "rt-sum",
-			children: [/* @__PURE__ */ a("b", {
-				id: "routeTrip",
-				children: view.routeTrip
+			children: [/* @__PURE__ */ a("ol", {
+				class: "rt-trip",
+				"aria-label": "출발과 도착",
+				children: [/* @__PURE__ */ a("li", {
+					class: "rt-from",
+					children: [/* @__PURE__ */ a("i", {
+						class: "js-dot",
+						"aria-hidden": "true"
+					}), /* @__PURE__ */ a("b", {
+						id: "routeFrom",
+						children: view.from?.name
+					})]
+				}), /* @__PURE__ */ a("li", {
+					class: "rt-to",
+					children: [/* @__PURE__ */ a("i", {
+						class: "js-dot",
+						"aria-hidden": "true"
+					}), /* @__PURE__ */ a("b", {
+						id: "routeTo",
+						children: view.to?.name
+					})]
+				})]
 			}), /* @__PURE__ */ a("span", {
 				id: "routeWhen",
+				class: "rt-when",
 				children: view.routeWhen
 			})]
-		}),
-		/* @__PURE__ */ a("div", {
-			class: "tf-route rt-via",
-			children: /* @__PURE__ */ a("div", {
-				class: "tf-pls",
-				children: /* @__PURE__ */ a(PlaceField, { which: "via" })
-			})
 		}),
 		filter && /* @__PURE__ */ a(RouteFilters, { filter }),
 		/* @__PURE__ */ a("div", {
