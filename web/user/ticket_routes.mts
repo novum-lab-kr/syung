@@ -79,10 +79,10 @@ export function routeAt(when:Date) {
   const pad = (value:number) => String(value).padStart(2, '0');
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
-// 승차권 길찾기 주소: 출발 · 도착 · 물을 시각(at 'YYYY-MM-DDTHH:MM') + 경유지가 있으면 via(서버 /api/route?via= — 2026-10-29 사용자 결정 A)
+// 승차권 길찾기 주소: 출발 · 도착 · 물을 시각(at 'YYYY-MM-DDTHH:MM') — 승차권 경유지는 2026-10-30 에 뺐다(서버 /api/route?via= 는 길찾기 시트용으로 남아 있다)
 type Spot = { lat:number; lng:number };
-export function routeUrl(from:Spot, to:Spot, at:string, via?:Spot | null) {
-  return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}${via ? `&via=${via.lat},${via.lng}` : ''}`;
+export function routeUrl(from:Spot, to:Spot, at:string) {
+  return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`;
 }
 
 // 카드 · 뒷면 첫 줄의 이름 줄이기: 띄어쓰기를 뺀 글자가 10 이하면 그대로(띄어쓰기 포함), 11 이상이면 앞 3 ‥ 뒤 2 (사용자 요청 2026-10-29)
