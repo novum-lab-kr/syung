@@ -1,7 +1,7 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import {key,normStatus,createRouter,NEW_NAMES} from './lib/routing.mts';
 import {seoulSun,sunPosition as sunAt} from './lib/sun.mts';
-import {initJourney} from './lib/journey-ui.mts';import {drawJourney,clearJourney} from './ui/journey_sheet.tsx';   // 길찾기 시트 몸통은 화면 조각(Preact)이 그린다
+import {initJourney} from './lib/journey-ui.mts';import {drawJourney,clearJourney,drawJourneyBar} from './ui/journey_sheet.tsx';   // 길찾기 시트 몸통은 화면 조각(Preact)이 그린다
 import {createCoasterTrack} from './modes/coaster/track.mts';   // 롤코 선로 층
 import {createCoasterGeometry} from './modes/coaster/geometry.mts';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mts';   // 롤코 주행 속도 · 탄 거리
@@ -9,7 +9,7 @@ import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 
 import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
-import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';import './components/route_card.tsx';import './components/step_list.tsx';import './components/segmented.tsx';import './components/chip.tsx';import './components/icons.tsx';import './components/sheet_frame.tsx';import './components/search_field.tsx';import './components/drawer.tsx';import './components/login_button.tsx';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact · 길찾기 시트 · 아래 시트 · 검색 · 서랍이 쓰는 기초 컴포넌트: 같은 단계에서 요청)
+import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';import './components/route_card.tsx';import './components/step_list.tsx';import './components/segmented.tsx';import './components/journey_fields.tsx';import './components/journey_when.tsx';import './components/journey_summary.tsx';import './components/chip.tsx';import './components/icons.tsx';import './components/sheet_frame.tsx';import './components/search_field.tsx';import './components/drawer.tsx';import './components/login_button.tsx';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact · 길찾기 시트 · 아래 시트 · 검색 · 서랍이 쓰는 기초 컴포넌트: 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
@@ -600,7 +600,7 @@ const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
 // 승차권 경로 지도에서 보기(user/account — 늦게 받는다)와 길찾기 · 버스 노선은 지도의 여정 자리를 같이 쓴다: 한쪽이 그리면 다른 쪽 막대 · 길을 치운다(ticketRouteGone)
 let ticketRouteGone:(()=>void)|null=null;
-const journey=initJourney({openSheetView,drawJourney,clearJourney,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+const journey=initJourney({openSheetView,drawJourney,clearJourney,drawJourneyBar,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
 document.getElementById('routeButton')!.addEventListener('click',()=>ticketRouteGone?.());   // 길찾기 시트를 열면 승차권 길은 지운다
 const ticketRoute={show(plan:JourneyPlan,pad?:{bottom:number;right:number}){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(pad?.bottom??110,pad?.right);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110) · pad: 경로 고르기의 서랍 자리(휴대폰 아래 · 데스크톱 오른쪽)
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
