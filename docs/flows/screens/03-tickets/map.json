@@ -1,0 +1,15 @@
+{
+  "title": "지도에서 보기",
+  "summary": "뒷면의 「지도에서 보기」. 서랍이 닫히고 지도에 길 전체, 아래에 막대. 저장한 길과 같은 길이 있으면 그 길, 없으면 가장 빠른 길 + 「지금은 다른 길이 빨라요」.",
+  "after": "back",
+  "steps": [
+    { "tap": "#ticketList > .ticket.flipped .tk-map" },
+    { "wait": ".jbar:not([hidden]) .jbar-open" },
+    { "sleep": 1500 }
+  ],
+  "marks": [
+    { "n": 1, "at": ".jbar:not([hidden]) .jbar-open", "what": "아래 막대 — 약 N분 · 「‹ 승차권으로」 · 경로 띠", "tap": "길을 지우고 서랍 · 승차권 목록 · 그 카드로 돌아간다", "edge": "저장한 길과 같은 길이 없으면 「‹ 승차권으로 · 지금은 다른 길이 빨라요」" },
+    { "n": 2, "at": ".jbar:not([hidden]) .jbar-x", "what": "✕", "tap": "막대 몸통과 같다(승차권 목록으로)" },
+    { "n": 3, "at": "#settingsButton", "what": "메뉴 단추", "tap": "서랍을 다시 열면 승차권 길과 막대를 지운다" }
+  ]
+}

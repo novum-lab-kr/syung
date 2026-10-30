@@ -5,3 +5,7 @@ declare module '*?raw' {
   const text:string;
   export default text;
 }
+// 화면 기획 자료(docs/flows/screens/)를 한꺼번에 읽는다(Vite import.meta.glob)
+interface ImportMeta {
+  glob<T>(pattern:string, options:{ eager:true; import:'default'; query?:string }):Record<string, T>;
+}

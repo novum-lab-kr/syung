@@ -1,0 +1,17 @@
+{
+  "title": "발권 — 장소 찾기",
+  "summary": "「+ 승차권 예매하기」로 연 발권 화면에서 출발 칸에 글자를 친 모습. 위쪽 미리보기 승차권이 고치는 대로 바뀐다.",
+  "after": "list",
+  "steps": [
+    { "tap": "#ticketNew" },
+    { "wait": "#ticketFrom" },
+    { "type": ["#ticketFrom", "서울역"] },
+    { "wait": "#ticketFromList:not([hidden]) li button" }
+  ],
+  "marks": [
+    { "n": 1, "at": "#ticketPreview .ticket", "what": "미리보기 승차권 — 이름 · 출발 시각 · 타는 날이 고치는 대로 바뀐다" },
+    { "n": 2, "at": "#ticketFrom", "badge": "right", "what": "출발 칸", "tap": "두 글자 이상 치면 0.3초 뒤 칸 바로 아래에 찾은 곳", "edge": "찾은 곳이 없으면 「찾는 곳이 없어요」 · 실패하면 「검색하지 못했어요」" },
+    { "n": 3, "at": "#ticketFromList li:first-child button", "what": "찾은 곳(이름 · 주소)", "tap": "칸에 넣고 도착 칸으로 초점이 간다", "edge": "출발 · 도착이 바뀌면 고른 경로가 풀린다 — 토스트 「출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요」" },
+    { "n": 4, "at": "#ticketFromHere", "what": "위치 핀(내 위치)", "tap": "본체가 아는 위치를, 없으면 한 번 물어 그 칸을 「내 위치」로 채운다", "edge": "위치를 못 받으면 토스트 「위치를 가져오지 못했어요. 브라우저의 위치 권한을 확인해 주세요.」" }
+  ]
+}

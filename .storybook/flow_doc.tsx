@@ -3,6 +3,7 @@
 // - 원본 md 는 고치지 않는다 — 바꾸는 것은 그린 HTML 뿐
 import { marked } from 'marked';
 import { useEffect, useMemo, useRef } from 'preact/hooks';
+import { pictureUrl } from './screens.mts';
 import './flows.css';
 
 // 문서 파일 → 화면 흐름 스토리 주소(flows.stories.tsx 의 내보내는 이름이 주소가 된다 — 제목 '화면 흐름' → '화면-흐름' · flow01 → flow-01)
@@ -68,6 +69,11 @@ function toHtml(source:string) {
     const link = storyLink(doc, storyId);
     link.append(...anchor.childNodes);
     anchor.replaceWith(link);
+  }
+  // 화면 기획 그림(screens/<흐름>/x.png)은 스토리북이 내는 주소로 — GitHub 에서는 md 의 상대 경로 그대로 보인다
+  for (const image of doc.querySelectorAll<HTMLImageElement>('img[src^="screens/"]')) {
+    const url = pictureUrl(image.getAttribute('src')!);
+    if (url) image.src = url;
   }
   linkComponents(doc);
   return doc.body.innerHTML;
