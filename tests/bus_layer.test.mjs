@@ -659,3 +659,14 @@ test('원래 노선이 정류장을 지나도 도로 보정선이 떨어져 있�
   assert.deepEqual(busJoinLines(stop, away, away).map(j => j.lod), ['plan', 'road']);
   assert.deepEqual(busJoinLines(stop, onStop, null), []);
 });
+
+test('a journey bus leg missing from the route data is dashed unless the server says it follows the road (shaped)', () => withLayerFixture(layer => {
+  const rides = () => layer.map.getSource('bus-routes').data.features.filter(f => f.properties.kind === 'ride');
+  const path = [[127.002, 37.502], [127.004, 37.505], [127.008, 37.508]];
+  layer.setJourney([{type: 'bus', route: '서초03', path}]);
+  assert.deepEqual(rides().map(f => f.properties.approximate), [true], '예전 응답(shaped 칸 없음)은 점선');
+  layer.setJourney([{type: 'bus', route: '서초03', path, shaped: false}]);
+  assert.deepEqual(rides().map(f => f.properties.approximate), [true], '모양 자료 없음(정류장 직선)은 점선');
+  layer.setJourney([{type: 'bus', route: '서초03', path, shaped: true}]);
+  assert.deepEqual(rides().map(f => f.properties.approximate), [false], '도로 모양이 있으면 실선');
+}, false));
