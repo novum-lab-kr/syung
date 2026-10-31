@@ -11,7 +11,7 @@ import { CDG_AT, CDG_ORIGIN, cdgRing } from './monuments_data.mts';
 import { CDG_BUILDINGS } from './monuments_changdeokgung_data.mts';
 import { CDG_TREES } from './monuments_changdeokgung_trees_data.mts';
 import { CDG_TORCHES } from './monuments_changdeokgung_torches_data.mts';
-import { frameOf, rectOf, place, hall, buildWallLine, buildFrames, buildFrameOutline, clamp, FINE, MID, ROUGH } from './monuments_hanok.mts';
+import { frameOf, rectOf, place, hall, buildWallLine, buildFrames, buildFrameOutline, wingsOf, clamp, FINE, MID, ROUGH } from './monuments_hanok.mts';
 import type { Rect, Hall } from './monuments_hanok.mts';
 import { toM } from './life.mts';
 
@@ -164,26 +164,6 @@ function buildRichOutline(w:MeshWriter, r:Rect):void {
 
 // 낙선재 · 석복헌: 윤곽이 실제 ㄱ자(날개 둘 · 셋)라 사각 틀 하나로는 넘친다. 윤곽을 격자로 훑어 가장 큰 직사각형부터 떼어 낸 날개마다 팔작지붕 한옥을 세운다.
 // 단청 없는 원목: 기둥 · 창방 · 문틀을 K.timber 로, 벽은 회벽(위키백과: 단청을 하지 않은 사대부 주택 꼴). 높이 · 처마 · 칸 폭은 사진 비례 근사
-function wingsOf(r:Rect):Rect[] {
-  const STEP = .3, cosA = Math.cos(r.ang), sinA = Math.sin(r.ang), cols = Math.ceil(r.len / STEP), rows = Math.ceil(r.wid / STEP);
-  const inside = (x:number, y:number):boolean => { let hit = false; for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) { const [xi, yi] = r.pts[i]!, [xj, yj] = r.pts[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit } return hit };
-  const grid = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (__, col) => { const u = (col + .5) * STEP - r.len / 2, v = (row + .5) * STEP - r.wid / 2; return inside(r.cx + u * cosA - v * sinA, r.cy + u * sinA + v * cosA) }));
-  const out:Rect[] = [];
-  for (let pass = 0; pass < 3; pass++) {
-    const heights = new Array<number>(cols).fill(0);
-    let best = { area: 0, col0: 0, col1: 0, row0: 0, row1: 0 };
-    for (let row = 0; row < rows; row++) {   // 행마다 히스토그램에서 가장 큰 직사각형
-      for (let col = 0; col < cols; col++) heights[col] = grid[row]![col] ? heights[col]! + 1 : 0;
-      for (let col0 = 0; col0 < cols; col0++) { let low = Infinity; for (let col1 = col0; col1 < cols && heights[col1]!; col1++) { low = Math.min(low, heights[col1]!); const area = low * (col1 - col0 + 1); if (area > best.area) best = { area, col0, col1, row0: row - low + 1, row1: row } } }
-    }
-    const w0 = (best.col1 - best.col0 + 1) * STEP, h0 = (best.row1 - best.row0 + 1) * STEP;
-    if (best.area * STEP * STEP < 14 || Math.min(w0, h0) < 3) break;
-    const uc = (best.col0 + best.col1 + 1) / 2 * STEP - r.len / 2, vc = (best.row0 + best.row1 + 1) / 2 * STEP - r.wid / 2, tall = h0 > w0;
-    out.push({ cx: r.cx + uc * cosA - vc * sinA, cy: r.cy + uc * sinA + vc * cosA, len: Math.max(w0, h0), wid: Math.min(w0, h0), ang: tall ? r.ang + Math.PI / 2 : r.ang, fill: 1, pts: [] });
-    for (let row = best.row0; row <= best.row1; row++) for (let col = best.col0; col <= best.col1; col++) grid[row]![col] = false;
-  }
-  return out;
-}
 function buildTimberHouse(w:MeshWriter, outline:Rect):void {
   for (const wing of wingsOf(outline)) {
     const r = southFacing(wing); place(w, r);

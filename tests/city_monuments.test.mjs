@@ -21,6 +21,7 @@ import { CDG_TREES } from '../web/city/monuments_changdeokgung_trees_data.mts';
 import { MeshWriter, K } from '../web/city/monument_parts.mts';
 import { body, ellipsoid, torus, bowl } from '../web/city/monument_curves.mts';
 import { buildMonument as buildCdg } from '../web/city/monuments_changdeokgung.mts';
+import { hall as hanokHall } from '../web/city/monuments_hanok.mts';
 
 const STRIDE = 8;
 test('광화문 메시: 정점이 모두 유한하고 법선이 단위 길이', () => {
@@ -154,13 +155,13 @@ test('고정 규칙: 어떤 팩이든 기념물 자리 비우기가 붙는다', 
     for (const hide of MONUMENT_HIDES) assert.ok(merged.landmarkHide.includes(hide));
   }
 });
-test('고정 규칙: 지도 건물 층 필터는 자리 비우기마다 감싸는 다각형을 갖는다(경복궁은 둘레 그대로)', () => {
+test('고정 규칙: 지도 건물 층 필터는 자리 비우기마다 감싸는 다각형을 갖는다(궁 · 종묘 · 사직단 · 환구단은 둘레 그대로)', () => {
   const filter = monumentBuildingFilter();
   assert.equal(filter[0], '!'); assert.equal(filter[1][0], 'within');
   const { coordinates } = filter[1][1];
   assert.equal(coordinates.length, MONUMENT_HIDES.length);
   for (const [ring] of coordinates) assert.deepEqual(ring[0], ring[ring.length - 1]);
-  assert.equal(coordinates.filter(([ring]) => ring.length === 17).length, MONUMENT_HIDES.length - 2);   // 사각 열여섯 각형이 아닌 것 = 경복궁 · 창덕궁 둘레
+  assert.equal(coordinates.filter(([ring]) => ring.length === 17).length, MONUMENT_HIDES.length - 5);   // 사각 열여섯 각형이 아닌 것 = 경복궁 · 창덕궁 · 종묘 · 사직단 · 환구단 둘레
 });
 
 // ── 경복궁 둘레 담장 · 궁 안 건물 ──
@@ -747,4 +748,175 @@ test('도성문 렌더링: 로드 중 · 실패 · 낮 · 줌 문턱에는 횃�
   const fragment = shaderSources.find(source => source.includes('u_openingsOnly'));
   assert.ok(fragment.includes('if (u_openingsOnly) col = c * lt * .42;'));
   assert.ok(fragment.includes('k == 7 && !u_openingsOnly') && fragment.includes('k == 10 && !u_openingsOnly'));
+});
+
+// ── 종묘 · 사직단 · 환구단 ──────────────────────────────────────────────────────────────────────────────
+const SITES = {
+  jongmyo: { zone: 'jongmyo', at: dataModule.JM_AT, origin: dataModule.JM_ORIGIN, ring: dataModule.jmRing, ids: ['jm-wall', 'jm-halls', 'jm-frames'], center: [126.9944, 37.5744] },
+  sajik: { zone: 'sajik', at: dataModule.SJ_AT, origin: dataModule.SJ_ORIGIN, ring: dataModule.sjRing, ids: ['sj-wall', 'sj-halls', 'sj-frames'], center: [126.9677, 37.5756] },
+  hwangudan: { zone: 'hwangudan', at: dataModule.HG_AT, origin: dataModule.HG_ORIGIN, ring: dataModule.hgRing, ids: ['hg-wall', 'hg-halls', 'hg-frames'], center: [126.97968, 37.56501] },
+};
+const siteModules = async () => ({
+  jongmyo: { mod: await import('../web/city/monuments_jongmyo.mts'), data: await import('../web/city/monuments_jongmyo_data.mts'), buildings: 'JM_BUILDINGS' },
+  sajik: { mod: await import('../web/city/monuments_sajik.mts'), data: await import('../web/city/monuments_sajik_data.mts'), buildings: 'SJ_BUILDINGS' },
+  hwangudan: { mod: await import('../web/city/monuments_hwangudan.mts'), data: await import('../web/city/monuments_hwangudan_data.mts'), buildings: 'HG_BUILDINGS' },
+});
+const mercatorBox = (lng, lat) => { const x = (lng + 180) / 360, y = (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2; return [x - 1e-6, y - 1e-6, x + 1e-6, y + 1e-6] };
+const footprintsOf = (list, origin, at) => list.map(b => Array.from({ length: b.p.length / 2 }, (_, i) => toLocalAt([origin[0] + b.p[i * 2] / 1e6, origin[1] + b.p[i * 2 + 1] / 1e6], at)));
+
+test('종묘 · 사직단 · 환구단 구역: 그 자리가 보일 때만 켜지고 다른 궁 구역은 켜지지 않는다', () => {
+  for (const [name, site] of Object.entries(SITES)) {
+    const box = mercatorBox(...site.center);
+    assert.equal(monumentsInView(box, name), true, `${name} 자기 자리`);
+    for (const other of ['gyeongbok', 'hwangudan', 'sajik', 'jongmyo'].filter(each => each !== name && ![name, each].includes('gyeongbok'))) assert.equal(monumentsInView(box, other), false, `${name} 자리에서 ${other} 켜짐`);   // 경복궁 · 사직단 · 종묘 · 창덕궁은 서로 가까워 반경이 겹쳐도 되니 건너뛴다
+  }
+  assert.equal(monumentsInView(mercatorBox(127.1, 37.45), 'jongmyo'), false);
+});
+test('종묘 · 사직단 · 환구단 메시: 정점이 유한하고 법선이 단위 길이, 높이 · 정점 수가 한도 안', async () => {
+  const modules = await siteModules();
+  for (const [name, site] of Object.entries(SITES)) {
+    for (const id of site.ids) {
+      const data = modules[name].mod.buildMonument(id); let maxZ = 0;
+      assert.ok(data.length % (STRIDE * 3) === 0 && (data.length > 0 || id === 'sj-frames'), `${id} 정점 수`);   // 사직단은 한옥 틀(나머지 건물)이 없다
+      for (let i = 0; i < data.length; i += STRIDE) {
+        for (let k = 0; k < STRIDE; k++) assert.ok(Number.isFinite(data[i + k]), `${id} 유한 ${i}+${k}`);
+        assert.ok(Math.abs(Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) < 1e-4, `${id} 법선`);
+        maxZ = Math.max(maxZ, data[i + 2]);
+      }
+      assert.ok(maxZ < 40 && data.length / STRIDE < 500000, `${id} 높이 ${maxZ} · 정점 ${data.length / STRIDE}`);
+    }
+  }
+});
+test('종묘 · 사직단 · 환구단: 지도 자료의 전각이 둘레 안에 든다 · 핵심 전각이 있다', async () => {
+  const modules = await siteModules();
+  for (const [name, site] of Object.entries(SITES)) {
+    const list = modules[name].data[modules[name].buildings], ring = site.ring().map(pt => toLocalAt(pt, site.at));
+    assert.ok(list.length > 0, `${name} 전각 없음`);
+    for (const foot of footprintsOf(list, site.origin, site.at)) { const cx = foot.reduce((sum, pt) => sum + pt[0], 0) / foot.length, cy = foot.reduce((sum, pt) => sum + pt[1], 0) / foot.length; assert.ok(contains(ring, cx, cy), `${name} 둘레 밖`) }
+  }
+  const names = modules.jongmyo.data.JM_BUILDINGS.map(b => b.name);
+  for (const need of ['종묘 정전', '영녕전']) assert.ok(names.some(each => each === need.replace('종묘 ', '')), `${need} 자리가 없다`);
+  assert.ok(modules.hwangudan.data.HG_BUILDINGS.some(b => b.id === 487584156), '황궁우(환구단 윤곽) 자리가 없다');
+});
+test('종묘 · 사직단 · 환구단: 나무 · 횃불이 정수 쌍이고 둘레 안 · 건물 · 담장 위에 없다(횃불은 길 쌍)', async () => {
+  const modules = await siteModules();
+  const tree = { jongmyo: await import('../web/city/monuments_jongmyo_trees_data.mts'), sajik: await import('../web/city/monuments_sajik_trees_data.mts'), hwangudan: await import('../web/city/monuments_hwangudan_trees_data.mts') };
+  const torch = { jongmyo: (await import('../web/city/monuments_jongmyo_torches_data.mts')).JM_TORCHES, sajik: (await import('../web/city/monuments_sajik_torches_data.mts')).SJ_TORCHES, hwangudan: (await import('../web/city/monuments_hwangudan_torches_data.mts')).HG_TORCHES };
+  const treeData = { jongmyo: tree.jongmyo.JM_TREES, sajik: tree.sajik.SJ_TREES, hwangudan: tree.hwangudan.HG_TREES };
+  for (const [name, site] of Object.entries(SITES)) {
+    const ring = site.ring().map(pt => toLocalAt(pt, site.at)), foots = footprintsOf(modules[name].data[modules[name].buildings], site.origin, site.at);
+    const { walls } = JSON.parse(readFileSync(new URL(`./fixtures/${name}_obstacles.json`, import.meta.url), 'utf8'));
+    const fences = walls.map(line => line.map(pt => toLocalAt(pt, site.at)));
+    const treePoints = Object.values(treeData[name]).flatMap(list => { assert.equal(list.length % 2, 0); assert.ok(list.every(Number.isInteger)); return Array.from({ length: list.length / 2 }, (_, i) => ({ x: list[i * 2] / 10, y: list[i * 2 + 1] / 10 })) });
+    assert.equal(torch[name].length % 4, 0, `${name} 횃불은 좌우 쌍`); assert.ok(torch[name].every(Number.isInteger));
+    const torchPoints = Array.from({ length: torch[name].length / 2 }, (_, i) => ({ x: torch[name][i * 2] / 10, y: torch[name][i * 2 + 1] / 10 }));
+    assert.ok(torchPoints.length > 0 && torchPoints.length < 400, `${name} 횃불 수`);
+    for (const point of [...treePoints, ...torchPoints]) {
+      const where = `${name} ${point.x},${point.y}`;
+      assert.ok(contains(ring, point.x, point.y), `둘레 밖 ${where}`);
+      assert.ok(!foots.some(foot => contains(foot, point.x, point.y)), `건물 위 ${where}`);
+      for (const fence of fences) assert.ok(lineDist(point.x, point.y, fence) > .8, `담장 위 ${where}`);
+    }
+    for (const spot of torchPoints) assert.ok(!treePoints.some(treePoint => Math.hypot(treePoint.x - spot.x, treePoint.y - spot.y) < 1), `횃불이 나무 위 ${name} ${spot.x},${spot.y}`);
+  }
+  assert.ok(Object.values(treeData.jongmyo).reduce((sum, list) => sum + list.length / 2, 0) > 1000, '종묘 숲');
+});
+test('종묘 · 사직단 · 환구단: 옛 건물을 가리는 구역이 있고 정전 · 영녕전에는 창호 빛이 없다(판문은 창호 종류가 아니다)', async () => {
+  for (const [name, site] of Object.entries(SITES)) {
+    assert.ok(MONUMENT_HIDES.some(each => each.area && each.lngLat[0] === site.at[0] && each.lngLat[1] === site.at[1]), `${name} 옛 건물 숨김 구역`);
+  }
+  const { buildMonument: buildJongmyo } = await import('../web/city/monuments_jongmyo.mts');
+  const halls = buildJongmyo('jm-halls'); const kinds = new Set();
+  for (let i = 0; i < halls.length; i += STRIDE) kinds.add(halls[i + 6]);
+  assert.ok(kinds.has(K.red), '판문(붉은 칠 나무)');
+  // 밤에 빛나는 종류(K.tunnel = 12 · 발광 88%)로 판문을 짓지 않는다 — 세 구역 모두
+  for (const [name, id] of [['jongmyo', 'jm-halls'], ['sajik', 'sj-halls'], ['hwangudan', 'hg-halls']]) {
+    const data = (await siteModules())[name].mod.buildMonument(id);
+    for (let i = 0; i < data.length; i += STRIDE) assert.notEqual(data[i + 6], K.tunnel, `${id} 에 밤에 빛나는 K.tunnel`);
+  }
+  const strip = (file) => readFileSync(new URL(`../web/city/${file}`, import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  for (const file of ['monuments_jongmyo.mts', 'monuments_sajik.mts', 'monuments_hwangudan.mts']) assert.ok(!/monuments_gyeongbok|monuments_palace|monuments_changdeokgung|monuments_trees_data|monuments_torches_data/.test(strip(file)), `${file} 다른 궁 자료 의존`);
+});
+
+// 전각 속성 검사 도우미: 메시에서 종류별 삼각형 꼭짓점을 모은다
+const trianglesOf = (data, kind) => { const out = []; for (let i = 0; i < data.length; i += STRIDE * 3) if (data[i + 6] === kind) out.push([0, 1, 2].map(k => ({ x: data[i + k * STRIDE], y: data[i + k * STRIDE + 1], z: data[i + k * STRIDE + 2], nx: data[i + k * STRIDE + 3], ny: data[i + k * STRIDE + 4], nz: data[i + k * STRIDE + 5] }))); return out };
+const hallMesh = (options) => { const writer = new MeshWriter(); hanokHall(writer, { hx: 20, hy: 6, podium: 1, body: 5, rise: 4, eave: 3, bays: [19, 3], steps: { side: 12, slope: 4 }, ...options }); return new Float32Array(writer.data) };
+
+test('한옥 한 동 doorsAll: 양 끝 칸까지 19칸이 모두 판문이고, 끄면 가운데 17칸뿐', () => {
+  const frontDoors = data => trianglesOf(data, K.tunnel).filter(tri => tri.every(pt => pt.ny < -.9)).length / 2;
+  assert.equal(frontDoors(hallMesh({ doors: true, doorsAll: true })), 19);
+  assert.equal(frontDoors(hallMesh({ doors: true })), 17);
+});
+test('맞배지붕(gabled): 양 끝이 수직 박공이고 지붕면은 마루 방향으로 기울지 않는다(우진각 · 팔작이 아니다)', () => {
+  const data = hallMesh({ gabled: true });
+  const ends = trianglesOf(data, K.plaster).filter(tri => tri.every(pt => Math.abs(Math.abs(pt.nx) - 1) < 1e-4 && Math.abs(pt.x - tri[0].x) < 1e-4));
+  assert.ok(ends.length > 0, '수직 박공 벽이 없다');
+  assert.ok(new Set(ends.map(tri => Math.sign(tri[0].x))).size === 2, '박공이 양 끝에 하나씩');
+  const roof = trianglesOf(data, K.giwa);
+  assert.ok(roof.length > 0 && roof.every(tri => tri.every(pt => Math.abs(pt.nx) < 1e-4)), '지붕면이 마루 방향으로 기울었다(우진각)');
+  const hip = hallMesh({ ridgeFrac: .96 });
+  assert.ok(trianglesOf(hip, K.giwa).some(tri => tri.some(pt => Math.abs(pt.nx) > .05)), '대조: 우진각에는 옆으로 기운 면이 있다');
+});
+test('사직단: 유 · 바깥 담 모두 변마다 문 하나(틈 하나), 바깥 북쪽은 삼문 · 단 윗면은 오방색이 아닌 황토 한 빛', async () => {
+  const { mod, data } = (await siteModules()).sajik, { gatesOf } = mod;
+  const { outer, yu } = gatesOf();
+  assert.equal(yu.length, 4); assert.equal(outer.length, 6);   // 유 사방 · 바깥 사방 + 북쪽 문 둘 더(삼문)
+  const wall = mod.buildMonument('sj-wall');
+  const yuLine = []; for (let i = 0; i < data.SJ_YU.length; i += 2) yuLine.push(toLocalAt([dataModule.SJ_ORIGIN[0] + data.SJ_YU[i] / 1e6, dataModule.SJ_ORIGIN[1] + data.SJ_YU[i + 1] / 1e6], dataModule.SJ_AT));
+  const segments = [];   // 유 윗면(높이 1.0 m) 삼각형마다 가장 긴 변 = 담 한 칸의 윗선
+  for (let i = 0; i < wall.length; i += STRIDE * 3) {
+    const pts = [0, 1, 2].map(k => [wall[i + k * STRIDE], wall[i + k * STRIDE + 1], wall[i + k * STRIDE + 2]]);
+    if (!pts.every(pt => Math.abs(pt[2] - 1.0) < 1e-4)) continue;
+    const edges = [[0, 1], [1, 2], [0, 2]].map(([from, to]) => [pts[from], pts[to]]).sort((left, right) => Math.hypot(right[0][0] - right[1][0], right[0][1] - right[1][1]) - Math.hypot(left[0][0] - left[1][0], left[0][1] - left[1][1]));
+    segments.push(edges[0]);
+  }
+  const near = (x, y) => segments.some(([from, to]) => { const dx = to[0] - from[0], dy = to[1] - from[1], t = Math.max(0, Math.min(1, ((x - from[0]) * dx + (y - from[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(from[0] + dx * t - x, from[1] + dy * t - y) < .5 });
+  let gaps = 0, inGap = false;
+  for (let i = 0; i + 1 < yuLine.length; i++) {
+    const [ax, ay] = yuLine[i], [bx, by] = yuLine[i + 1], len = Math.hypot(bx - ax, by - ay);
+    for (let d = 0; d <= len; d += .5) {
+      const covered = near(ax + (bx - ax) * d / len, ay + (by - ay) * d / len);
+      if (!covered && !inGap) gaps++; inGap = !covered;
+    }
+  }
+  assert.equal(gaps, 4, `유 틈 ${gaps}`);
+  const halls = mod.buildMonument('sj-halls'), kinds = new Set(); for (let i = 0; i < halls.length; i += STRIDE) kinds.add(halls[i + 6]);
+  for (const kind of [K.deck, K.blueTile, K.trim]) { if (kind === K.trim) continue; assert.ok(!kinds.has(kind), `단 윗면에 오방색 조각 ${kind}`); }
+  assert.ok(kinds.has(K.thatch), '황토 다짐 윗면');
+});
+test('환구단: 황궁우 지붕은 기와, 석고는 둥근 몸통이고 근거 없는 청동 · 금빛이 없다', async () => {
+  const { mod } = (await siteModules()).hwangudan, halls = mod.buildMonument('hg-halls'), kinds = new Set(); for (let i = 0; i < halls.length; i += STRIDE) kinds.add(halls[i + 6]);
+  assert.ok(!kinds.has(K.bronze) && !kinds.has(K.gilt), '근거 없는 청동 · 금빛');
+  assert.ok(kinds.has(K.giwa), '기와 지붕');
+  // 둥근 몸통: 꼭짓점마다 법선이 다른(곡면) 돌 삼각형 — 석고 3기 × (세로 8 × 둘레 20 × 2) 개
+  const smooth = trianglesOf(halls, K.stone).filter(tri => tri.some(pt => Math.hypot(pt.nx - tri[0].nx, pt.ny - tri[0].ny, pt.nz - tri[0].nz) > .05));
+  assert.ok(smooth.length >= 3 * 8 * 20, `석고 곡면 삼각형 ${smooth.length}`);
+});
+
+test('담장 마루: 비스듬한 담에서도 담 방향을 따라 도는 좁은 띠(축 정렬 상자 아님)', async () => {
+  const { buildWallLine } = await import('../web/city/monuments_hanok.mts');
+  const width = (line) => {
+    const writer = new MeshWriter(); buildWallLine(writer, line, () => false);
+    const ridge = trianglesOf(new Float32Array(writer.data), K.ridge).flat();
+    const dx = line[1][0] - line[0][0], dy = line[1][1] - line[0][1], len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len;
+    const across = ridge.map(pt => pt.x * nx + pt.y * ny);   // 담 단면 방향 좌표
+    return Math.max(...across) - Math.min(...across);
+  };
+  assert.ok(width([[0, 0, 0], [60, 60, 0]]) < .5, '비스듬한 담 마루 폭');
+  assert.ok(width([[0, 0, 0], [60, 0, 0]]) < .5, '축 방향 담 마루 폭');
+});
+
+test('오목한 윤곽(종묘 전사청 ㄷ자)은 한 점 지붕 대신 날개마다 한옥 — 마당 위에 지붕이 없다', async () => {
+  const { buildFrameOutline, rectOf, frameOf } = await import('../web/city/monuments_hanok.mts');
+  const { JM_BUILDINGS } = await import('../web/city/monuments_jongmyo_data.mts');
+  const site = JM_BUILDINGS.find(each => each.id === 170403820);
+  const r = rectOf(site.p, frameOf(dataModule.JM_AT, dataModule.JM_ORIGIN));
+  const writer = new MeshWriter(); buildFrameOutline(writer, r);
+  const data = new Float32Array(writer.data);
+  assert.equal(trianglesOf(data, K.fascia).filter(tri => tri.some(pt => pt.nz > .3)).length, 0, '벽 위에 비스듬히 얹은 초록 띠(위를 보는 K.fascia)가 없다 — 있는 것은 다른 한옥과 같은 서까래 · 부연 옆면뿐');
+  const inside = (x, y) => { let hit = false; for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) { const [xi, yi] = r.pts[i], [xj, yj] = r.pts[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit } return hit };
+  const edgeDistance = (x, y) => Math.min(...r.pts.map((pt, index) => { const [bx, by] = r.pts[(index + 1) % r.pts.length], dx = bx - pt[0], dy = by - pt[1], t = Math.max(0, Math.min(1, ((x - pt[0]) * dx + (y - pt[1]) * dy) / (dx * dx + dy * dy))); return Math.hypot(x - pt[0] - dx * t, y - pt[1] - dy * t) }));
+  const roofTop = trianglesOf(data, K.giwa).filter(tri => tri.every(pt => pt.z > 3));
+  const covering = roofTop.filter(tri => { const x = (tri[0].x + tri[1].x + tri[2].x) / 3, y = (tri[0].y + tri[1].y + tri[2].y) / 3; return !inside(x, y) && edgeDistance(x, y) > 2.5 });   // 처마 내민 길이 밖으로 번진 지붕 = 마당을 덮은 것
+  assert.ok(roofTop.length > 0 && covering.length === 0, `마당 · 바깥을 덮은 지붕 ${covering.length}/${roofTop.length}`);
 });

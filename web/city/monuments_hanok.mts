@@ -1,6 +1,7 @@
 // 한옥 전각 공통 부품(담장 · 한옥 한 동 · 틀 건물): 경복궁(monuments_palace.mts) · 창덕궁(monuments_changdeokgung.mts)이 같이 쓴다. 구역 자료(건물 · 기준점)를 import 하지 않는다 —
 // 창덕궁만 보일 때 경복궁 자료가 딸려 오지 않게 기준점 틀(Frame)과 건물 목록은 부르는 쪽이 넘긴다. 모드 · 테마 입력 없음 — 실물 색 하나.
 import { MeshWriter, K, buildRoof, buildBrackets, bandBox } from './monument_parts.mts';
+import { matbaeRoof } from './monument_matbae.mts';
 import type { V3 } from './monument_parts.mts';
 import { toM } from './life.mts';
 
@@ -40,8 +41,16 @@ export function buildWallLine(w:MeshWriter, line:V3[], skip:(x:number, y:number)
         w.quad([e0x, e0y, WALL.eaveZ], [e1x, e1y, WALL.eaveZ], [qx, qy, WALL.ridgeZ], [px, py, WALL.ridgeZ], K.giwa, [nx * sign * .55, ny * sign * .55, .83], m0, m1, m1, m0);
         w.quad([e0x, e0y, WALL.eaveZ - .22], [e1x, e1y, WALL.eaveZ - .22], [e1x, e1y, WALL.eaveZ], [e0x, e0y, WALL.eaveZ], K.fascia, [nx * sign, ny * sign, 0], m0, m1, m1, m0);   // 처마 끝 막새
       }
-      const rx = ux * .2, ry = uy * .2;
-      w.box(Math.min(px, qx) - Math.abs(rx) - .15, Math.max(px, qx) + Math.abs(rx) + .15, Math.min(py, qy) - Math.abs(ry) - .15, Math.max(py, qy) + Math.abs(ry) + .15, WALL.ridgeZ - .02, WALL.ridgeZ + .2, K.ridge, { bottom: true });   // 마루(칸 전체를 덮는 낮은 띠)
+      // 마루(칸 전체를 덮는 낮은 띠): 담 방향을 따라 도는 좁은 띠 — 축 정렬 상자로 두면 비스듬한 담에서 톱니가 된다
+      {
+        const rz0 = WALL.ridgeZ - .02, rz1 = WALL.ridgeZ + .2, hw = .2, ext = .15;
+        const a = [px - ux * ext, py - uy * ext], b = [qx + ux * ext, qy + uy * ext];
+        const c = (point:number[], sign:number, z:number):V3 => [point[0]! + nx * hw * sign, point[1]! + ny * hw * sign, z];
+        w.quad(c(a, -1, rz1), c(b, -1, rz1), c(b, 1, rz1), c(a, 1, rz1), K.ridge, [0, 0, 1]);
+        for (const sign of [-1, 1]) w.quad(c(a, sign, rz0), c(b, sign, rz0), c(b, sign, rz1), c(a, sign, rz1), K.ridge, [nx * sign, ny * sign, 0]);
+        w.quad(c(a, 1, rz0), c(a, -1, rz0), c(a, -1, rz1), c(a, 1, rz1), K.ridge, [-ux, -uy, 0]);
+        w.quad(c(b, -1, rz0), c(b, 1, rz0), c(b, 1, rz1), c(b, -1, rz1), K.ridge, [ux, uy, 0]);
+      }
       // 칸 사이 단: 칸 끝의 마구리(막음 면) — 지붕 높이가 칸마다 한 번 끊겨 보이게
       w.quad([px - nx * WALL.eaveHalf, py - ny * WALL.eaveHalf, WALL.eaveZ - .22], [px + nx * WALL.eaveHalf, py + ny * WALL.eaveHalf, WALL.eaveZ - .22], [px + nx * WALL.eaveHalf, py + ny * WALL.eaveHalf, WALL.eaveZ], [px - nx * WALL.eaveHalf, py - ny * WALL.eaveHalf, WALL.eaveZ], K.fascia, [-ux, -uy, 0]);
     }
@@ -70,15 +79,15 @@ export const place = (w:MeshWriter, r:Rect) => { w.xf = { x: r.cx, y: r.cy, cos:
 // hx · hy: 몸(기둥 줄) 반 길이 · 반 폭. 긴 쪽이 x. 마루는 x 방향.
 export interface Hall {
   hx:number; hy:number; podium:number; body:number; rise:number; eave:number; bays:[number, number]; steps:{ side:number; slope:number };
-  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; gable?:number; brackets?:boolean; doors?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
+  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; gable?:number; brackets?:boolean; doors?:boolean; doorsAll?:boolean; gabled?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
 }
 const BAND = 1.1;
 function column(w:MeshWriter, x:number, y:number, z0:number, z1:number, half = .26):void { w.box(x - half, x + half, y - half, y + half, z0, z1, K.red, { bottom: true, top: true }) }
 // 창호(한지 창): 기둥 사이 칸마다 회벽 앞에 살짝 내민 창 한 장 — 밤에 안에서 불빛이 비치는 곳은 이 재질(K.window)뿐이다.
 // 문을 단 앞 칸(S.doors)에는 달지 않고, 합각 벽 · 막힌 벽(윤곽 벽)에도 달지 않는다. 낮에는 회벽과 거의 같은 색에 살 무늬만 옅다
-function windowPanes(w:MeshWriter, S:Pick<Hall, 'bays' | 'doors'>, hx:number, hy:number, base:number, top:number):void {
+function windowPanes(w:MeshWriter, S:Pick<Hall, 'bays' | 'doors' | 'doorsAll'>, hx:number, hy:number, base:number, top:number):void {
   const z0 = base + .85, z1 = top - .6, off = .14; if (z1 - z0 < .8) return;
-  const doorFirst = S.bays[0] <= 3 ? 0 : 1, doorLast = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+  const doorFirst = S.bays[0] <= 3 || S.doorsAll ? 0 : 1, doorLast = S.bays[0] <= 3 || S.doorsAll ? S.bays[0] - 1 : S.bays[0] - 2;
   const bayX = 2 * hx / S.bays[0], bayY = 2 * hy / S.bays[1];
   for (let i = 0; i < S.bays[0]; i++) {
     const cx = -hx + bayX * (i + .5), half = bayX * .31;
@@ -91,7 +100,7 @@ function windowPanes(w:MeshWriter, S:Pick<Hall, 'bays' | 'doors'>, hx:number, hy
   }
 }
 // 층 하나의 몸: 회벽 · 기둥 · 창방 · (공포) → 맨 위 높이 반환
-function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'hollow'>, hx:number, hy:number, base:number, body:number, open = false):number {
+function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'doorsAll' | 'hollow'>, hx:number, hy:number, base:number, body:number, open = false):number {
   const top = base + body;
   if (S.hollow) w.quad([-hx, -hy, base], [hx, -hy, base], [hx, hy, base], [-hx, hy, base], K.wood, [0, 0, 1]);   // 벽 없는 누각: 마루 위만 비치게
   else w.box(-hx + .2, hx - .2, -hy + .2, hy - .2, base, top, open ? K.wood : K.plaster, { top: true });   // 위층은 녹색 판문(검은 빈 면으로 보이던 것 — Codex 2026-10-31)
@@ -99,7 +108,7 @@ function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'holl
   for (let i = 1; i < S.bays[1]; i++) { const y = -hy + 2 * hy * i / S.bays[1]; for (const x of [-hx, hx]) column(w, x, y, base, top) }
   if (!S.hollow && !open) windowPanes(w, S, hx, hy, base, top);
   if (S.doors) {   // 앞(남쪽 = −y) 칸마다 어두운 문짝 자리
-    const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 ? 0 : 1, last = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+    const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 || S.doorsAll ? 0 : 1, last = S.bays[0] <= 3 || S.doorsAll ? S.bays[0] - 1 : S.bays[0] - 2;   // doorsAll: 양 끝 칸까지 모두 문(종묘 정전 · 영녕전 감실 칸마다 판문)
     for (let i = first; i <= last; i++) { const cx = -hx + bay * (i + .5); w.quad([cx - bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, top - .35], [cx - bay * .32, -hy - .03, top - .35], K.tunnel, [0, -1, 0]) }
   }
   bandBox(w, hx + .45, hy + .45, top - .4, top, K.dancheong, 0, .28);
@@ -151,6 +160,7 @@ export function hall(w:MeshWriter, S:Hall):number {
     return top - .25 + (S.upperRise ?? S.rise);
   }
   const top = storey(w, S, S.hx, S.hy, base, S.body);
+  if (S.gabled) { matbaeRoof(w, { hx: S.hx + .45, hy: S.hy + .45, eave: S.eave, z0: top - .25, rise: S.rise }); return top - .25 + S.rise }   // 맞배: 양 끝이 수직 박공
   const roof = roofOf(S, S.hx + .45, S.hy + .45, top - .25, S.rise);
   buildRoof(w, roof, { innerZ: top - .2, innerHx: S.hx + .45, innerHy: S.hy + .45 });
   if (S.gable) gableTop(w, roof, S.rise);
@@ -163,16 +173,59 @@ export const FINE = { side: 12, slope: 4 }, MID = { side: 6, slope: 3 }, ROUGH =
 // ── 나머지 건물: 한옥 틀 ─────────────────────────────────────────────────────────────────────────────────────
 // 윤곽에 맞는 돌린 사각형이면 낮은 기단 + 회벽 몸 + 우진각 지붕, 아니면(ㄱ · ㄷ자 …) 윤곽을 그대로 세운 벽과 낮은 한 점 지붕. 칸 수 · 높이는 크기에서 정한 맞춤값
 export interface OutlineLook { wall?:number; band?:boolean; height?:number }   // wall: 벽 종류(기본 회벽) · band: 작아도 가장자리 띠 지붕(ㄱ자 집) · height: 벽 높이
+// 윤곽을 격자로 훑어 가장 큰 직사각형부터 떼어 낸 날개(ㄱ · ㄷ자 집을 날개별로 세울 때). 최대 3개, 14 m² · 한 변 3 m 미만은 버린다
+export function wingsOf(r:Rect):Rect[] {
+  const STEP = .3, cosA = Math.cos(r.ang), sinA = Math.sin(r.ang), cols = Math.ceil(r.len / STEP), rows = Math.ceil(r.wid / STEP);
+  const inside = (x:number, y:number):boolean => { let hit = false; for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) { const [xi, yi] = r.pts[i]!, [xj, yj] = r.pts[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit } return hit };
+  const grid = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (__, col) => { const u = (col + .5) * STEP - r.len / 2, v = (row + .5) * STEP - r.wid / 2; return inside(r.cx + u * cosA - v * sinA, r.cy + u * sinA + v * cosA) }));
+  const out:Rect[] = [];
+  for (let pass = 0; pass < 3; pass++) {
+    const heights = new Array<number>(cols).fill(0);
+    let best = { area: 0, col0: 0, col1: 0, row0: 0, row1: 0 };
+    for (let row = 0; row < rows; row++) {   // 행마다 히스토그램에서 가장 큰 직사각형
+      for (let col = 0; col < cols; col++) heights[col] = grid[row]![col] ? heights[col]! + 1 : 0;
+      for (let col0 = 0; col0 < cols; col0++) { let low = Infinity; for (let col1 = col0; col1 < cols && heights[col1]!; col1++) { low = Math.min(low, heights[col1]!); const area = low * (col1 - col0 + 1); if (area > best.area) best = { area, col0, col1, row0: row - low + 1, row1: row } } }
+    }
+    const w0 = (best.col1 - best.col0 + 1) * STEP, h0 = (best.row1 - best.row0 + 1) * STEP;
+    if (best.area * STEP * STEP < 14 || Math.min(w0, h0) < 3) break;
+    const uc = (best.col0 + best.col1 + 1) / 2 * STEP - r.len / 2, vc = (best.row0 + best.row1 + 1) / 2 * STEP - r.wid / 2, tall = h0 > w0;
+    out.push({ cx: r.cx + uc * cosA - vc * sinA, cy: r.cy + uc * sinA + vc * cosA, len: Math.max(w0, h0), wid: Math.min(w0, h0), ang: tall ? r.ang + Math.PI / 2 : r.ang, fill: 1, pts: [] });
+    for (let row = best.row0; row <= best.row1; row++) for (let col = best.col0; col <= best.col1; col++) grid[row]![col] = false;
+  }
+  return out;
+}
+const isConcave = (pts:[number, number][]):boolean => {
+  let sign = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i]!, [bx, by] = pts[(i + 1) % pts.length]!, [cx, cy] = pts[(i + 2) % pts.length]!, cross = (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+    if (Math.abs(cross) < 1e-6) continue;
+    if (sign && Math.sign(cross) !== sign) return true;
+    sign = Math.sign(cross);
+  }
+  return false;
+};
 export function buildFrameOutline(w:MeshWriter, r:Rect, look:OutlineLook = {}):void {
   const pts = r.pts, cx = pts.reduce((sum, p) => sum + p[0], 0) / pts.length, cy = pts.reduce((sum, p) => sum + p[1], 0) / pts.length, wall = look.height ?? 3.4, wallKind = look.wall ?? K.plaster;
   let area2 = 0; for (let i = 0; i < pts.length; i++) { const [ax, ay] = pts[i]!, [bx, by] = pts[(i + 1) % pts.length]!; area2 += ax * by - bx * ay }
-  const ccw = area2 > 0, small = !look.band && Math.abs(area2) / 2 < 600;   // 작은 윤곽은 한 점 지붕, 큰 윤곽(마당을 두른 행각 · 회랑)은 가장자리를 따라 긴 지붕 띠(가운데 마당은 비운다)
+  const ccw = area2 > 0, small = !look.band && Math.abs(area2) / 2 < 600;
+  if (small && isConcave(pts)) {   // 오목한 윤곽(ㄷ · ㄱ자): 한 점 지붕은 마당을 덮으니 날개마다 한옥 한 동씩 세운다
+    const wings = wingsOf(r);
+    if (wings.length) {
+      for (const wing of wings) {
+        place(w, wing);
+        const hx = Math.max(1.2, wing.len / 2 - .6), hy = Math.max(1, wing.wid / 2 - .6);
+        hall(w, { hx, hy, podium: .6, body: 3.2, rise: clamp((hy + 1.6) * .55, 1.2, 3.4), eave: clamp(hy * .5, .9, 1.8), bays: [clamp(Math.round(hx * 2 / 3.3), 1, 9), clamp(Math.round(hy * 2 / 3.3), 1, 3)], steps: ROUGH });
+      }
+      w.xf = null;
+      return;
+    }
+  }   // 작은 윤곽은 한 점 지붕, 큰 윤곽(마당을 두른 행각 · 회랑)은 가장자리를 따라 긴 지붕 띠(가운데 마당은 비운다)
   for (let i = 0; i < pts.length; i++) {
     const [ax, ay] = pts[i]!, [bx, by] = pts[(i + 1) % pts.length]!, dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
     w.quad([ax, ay, 0], [bx, by, 0], [bx, by, wall], [ax, ay, wall], wallKind, [dy, -dx, 0]);
     if (small) {
       const e = (x:number, y:number):V3 => [x + (cx - x) * .06, y + (cy - y) * .06, wall + .5];
-      w.quad([ax, ay, wall], [bx, by, wall], e(bx, by), e(ax, ay), K.fascia, [dy, -dx, 0]);
+      w.quad([ax, ay, wall], [bx, by, wall], e(bx, by), e(ax, ay), K.giwa, [dy, -dx, 0]);   // 벽 위 처마 띠(초록 K.fascia 로 두면 초록 가장자리가 보인다)
       w.tri(e(ax, ay), e(bx, by), [cx, cy, wall + 2], K.giwa, [0, 0, 1]);
     } else {
       const inx = (ccw ? -dy : dy) / len, iny = (ccw ? dx : -dx) / len, depth = 2.7, out = .9;   // 안쪽 방향 · 지붕 띠 폭(맞춤) · 처마 내민 길이

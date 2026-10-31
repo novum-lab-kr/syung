@@ -2,7 +2,7 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, GATE_YARDS, monumentsInView } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, jmRing, sjRing, hgRing, GATE_YARDS, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
@@ -17,6 +17,9 @@ interface ZoneModule { buildMonument:(id:string) => Float32Array; trees?:{ at:[n
 const ZONES:Record<string, () => Promise<ZoneModule>> = {
   gyeongbok: () => import('./monuments_gyeongbok.mts'),
   changdeokgung: () => import('./monuments_changdeokgung.mts'),
+  jongmyo: () => import('./monuments_jongmyo.mts'),
+  sajik: () => import('./monuments_sajik.mts'),
+  hwangudan: () => import('./monuments_hwangudan.mts'),
   sungnyemun: () => import('./monuments_sungnyemun.mts'),
   heunginjimun: () => import('./monuments_heunginjimun.mts'),
 };
@@ -148,7 +151,7 @@ export class Monuments {
   inPalace = (x:number, y:number):boolean => {
     const gates = (this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => { const [gx, gy] = toM(lng, lat); return [gx, gy, radiusM] as [number, number, number] }));
     if (gates.some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
-    const rings = (this.palaceM ??= [palaceRing(), cdgRing()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
+    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), jmRing(), sjRing(), hgRing()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
     return rings.some(ring => {
       let inside = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }
