@@ -2,22 +2,24 @@ import { GATE_BASE_D, GATE_DECK_Z, MONUMENTS, palaceRing } from "./monuments_dat
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
+import { cityFarFade, cityGrow, cityMinZoom } from "./zoom_gate.mjs";
 import { COLORS, hex } from "./monument_parts.mjs";
+import { PalaceTorches } from "./monument_torches.mjs";
 import { PalaceTrees } from "./monument_trees.mjs";
 // web/city/monuments.mts
 var ZONES = { gyeongbok: () => __vitePreload(() => import("./monuments_gyeongbok.mjs"), [], import.meta.url) };
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in vec2 a_kind;
-uniform mat4 u_matrix; uniform float u_mu; uniform vec2 u_at, u_rot;
+uniform mat4 u_matrix; uniform float u_mu, u_grow; uniform vec2 u_at, u_rot;   // u_grow: 줌 · 거리에 따른 높이 비율(도시 건물의 u_grow 와 같은 값)
 out vec3 v_n, v_p; out vec2 v_k;
 void main(){
   v_p = a_pos; v_k = a_kind;
   vec2 q = vec2(a_pos.x * u_rot.x - a_pos.y * u_rot.y, -(a_pos.x * u_rot.y + a_pos.y * u_rot.x));   // 모델(동 · 북) → 방향을 돌려 지역 미터(남쪽이 +y)
   v_n = vec3(a_nrm.x * u_rot.x - a_nrm.y * u_rot.y, -(a_nrm.x * u_rot.y + a_nrm.y * u_rot.x), a_nrm.z);
-  gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu, 1.);
+  gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[20];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[21];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -62,6 +64,8 @@ void main(){
     if (side > .5) c *= 1. - .1 * max(line(v_p.z / 2.6, .035), line(along / 3.4, .035));
   } else if (k == 19) {   // 회벽: 기둥 사이 칸마다 아주 옅은 세로 결
     if (side > .5) c *= .96 + .06 * hash(vec2(floor(along / 2.4), 3.));
+  } else if (k == 20) {   // 창호(한지 창): 가는 살 격자 — 낮에는 회벽과 거의 같은 색에 살만 옅게
+    c *= 1. - .16 * max(line(along / .42, .14), line(v_p.z / .52, .14));
   } else if (k == 2) { c *= .9 + .1 * smoothstep(.0, 1., sky); }
   float lt = u_lit.x * (.72 + .28 * sky) + u_lit.y * d;
   if (u_night < .5) lt *= 1.32;   // 낮: 도시 조명이 모델을 지도보다 어둡게 만들어 사진의 밝은 돌 · 모래색이 눌린다 — 같은 정도로 올린다(밤은 따로)
@@ -70,17 +74,26 @@ void main(){
     float up = exp(-v_p.z / 15.) * (.35 + .65 * side);
     col = c * lt * .42 + c * vec3(1., .78, .52) * (.5 * up + .05);
     if (k == 9) col += vec3(.2, .15, .05) * step(.5, c.r);
+    // 안에서 새어 나오는 등불(전각 · 문루): 문 안 · 벽 사이 회벽 · 판문 · 마루 · 처마 밑이 따뜻하게 — 낮 · 라이트에는 이 줄에 들어오지 않는다
+    vec3 warm = vec3(1., .62, .28); float flick = .94 + .06 * hash(floor(v_p.xy * .5));
+    if (k == 12) col = mix(col, warm * flick, .88);                            // 문 안 · 홍예: 등불이 켜진 속
+    else if (k == 20) { float lattice = max(line(along / .42, .14), line(v_p.z / .52, .14)); col = mix(col, warm * flick * (1. - .5 * lattice), .9); }   // 창호만 한지에 비친 등불(살은 어둡게)
+    else if (k == 19) col += warm * c * .05;                                    // 회벽 · 합각 · 막힌 벽: 켜지 않는다 — 아주 약한 반사광만
+    else if (k == 7) col += warm * (n.z > .5 ? .32 : .2) * c.g * 1.6;            // 판문 · 누마루 마루
+    else if (k == 10) col += warm * .2;                                         // 처마 밑: 아래 등불이 비춘다
   }
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 var Monuments = class {
 	trees = new PalaceTrees();
+	torches = new PalaceTorches();
 	init(gl) {
 		this.gl = gl;
 		this.p = compileProgram(gl, VS, FS);
 		this.u = Object.fromEntries([
 			"u_matrix",
 			"u_mu",
+			"u_grow",
 			"u_at",
 			"u_rot",
 			"u_light",
@@ -89,6 +102,7 @@ var Monuments = class {
 			"u_col"
 		].map((name) => [name, gl.getUniformLocation(this.p, name)]));
 		this.trees.init(gl);
+		this.torches.init(gl);
 		this.items = MONUMENTS.map((M) => {
 			const [x, y] = toM(M.lngLat[0], M.lngLat[1]), a = M.yawDeg * Math.PI / 180;
 			return {
@@ -140,10 +154,25 @@ var Monuments = class {
 			gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off * 4);
 		}
 		gl.bindVertexArray(null);
+		const [cos, sin] = item.rot;
+		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+		for (let i = 0; i < data.length; i += 8) {
+			const px = data[i], py = data[i + 1], wx = item.x + px * cos - py * sin, wy = item.y - (px * sin + py * cos);
+			x0 = Math.min(x0, wx);
+			x1 = Math.max(x1, wx);
+			y0 = Math.min(y0, wy);
+			y1 = Math.max(y1, wy);
+		}
 		return item.mesh = {
 			va,
 			b,
-			n: data.length / 8
+			n: data.length / 8,
+			rect: [
+				x0,
+				x1,
+				y0,
+				y1
+			]
 		};
 	}
 	palaceM = null;
@@ -170,8 +199,12 @@ var Monuments = class {
 			z: GATE_DECK_Z
 		};
 	}
-	render(gl, MT, { light, lit, dark, zoom }) {
-		if (zoom < 14) return;
+	render(gl, MT, { light, lit, dark, zoom, phone, center }) {
+		if (zoom < cityMinZoom(phone)) return;
+		const grow = cityGrow(phone, zoom);
+		if (grow <= 0) return;
+		const [cx, cy] = toM(center[0], center[1]);
+		const keep = (rect) => phone ? cityFarFade(Math.hypot(Math.max(rect[0] - cx, 0, cx - rect[1]), Math.max(rect[2] - cy, 0, cy - rect[3])), zoom) : 1;
 		const u = this.u, palette = new Float32Array(COLORS.flatMap(hex));
 		gl.useProgram(this.p);
 		gl.uniformMatrix4fv(u.u_matrix, false, MT);
@@ -185,21 +218,46 @@ var Monuments = class {
 		gl.depthMask(true);
 		gl.disable(gl.BLEND);
 		gl.disable(gl.CULL_FACE);
+		let ready = true;
+		const palaceRect = [
+			Infinity,
+			-Infinity,
+			Infinity,
+			-Infinity
+		];
 		for (const item of this.items) {
-			if (zoom < (item.M.minZoom ?? 14)) continue;
 			const m = this.mesh(item);
-			if (!m) continue;
+			if (!m) {
+				ready = false;
+				continue;
+			}
+			if (item.M.id.startsWith("palace-")) {
+				palaceRect[0] = Math.min(palaceRect[0], m.rect[0]);
+				palaceRect[1] = Math.max(palaceRect[1], m.rect[1]);
+				palaceRect[2] = Math.min(palaceRect[2], m.rect[2]);
+				palaceRect[3] = Math.max(palaceRect[3], m.rect[3]);
+			}
+			const g = grow * keep(m.rect);
+			if (g <= 0) continue;
+			gl.uniform1f(u.u_grow, g);
 			gl.uniform2f(u.u_at, item.x, item.y);
 			gl.uniform2fv(u.u_rot, item.rot);
 			gl.bindVertexArray(m.va);
 			gl.drawArrays(gl.TRIANGLES, 0, m.n);
 		}
 		gl.bindVertexArray(null);
+		if (!ready) return;
+		const palaceGrow = grow * keep(palaceRect);
+		if (palaceGrow <= 0) return;
 		this.trees.render(gl, MT, {
 			light,
 			lit,
 			dark,
-			zoom
+			grow: palaceGrow
+		});
+		this.torches.render(gl, MT, {
+			dark,
+			grow: palaceGrow
 		});
 	}
 	dispose() {
@@ -211,6 +269,7 @@ var Monuments = class {
 		}
 		gl.deleteProgram(this.p);
 		this.trees.dispose();
+		this.torches.dispose();
 	}
 };
 export { Monuments };

@@ -18,7 +18,8 @@ var K = {
 	bronze: 16,
 	gilt: 17,
 	stone: 18,
-	plaster: 19
+	plaster: 19,
+	window: 20
 };
 var COLORS = [
 	"#E6E0D2",
@@ -40,7 +41,8 @@ var COLORS = [
 	"#3F4E44",
 	"#B9954C",
 	"#CFC9BC",
-	"#D6CBB0"
+	"#D6CBB0",
+	"#D2C6A6"
 ];
 var hex = (value) => {
 	const v = parseInt(value.slice(1), 16);

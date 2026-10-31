@@ -245,6 +245,81 @@ function column(w, x, y, z0, z1, half = .26) {
 		top: true
 	});
 }
+function windowPanes(w, S, hx, hy, base, top) {
+	const z0 = base + .85, z1 = top - .6, off = .14;
+	if (z1 - z0 < .8) return;
+	const doorFirst = S.bays[0] <= 3 ? 0 : 1, doorLast = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+	const bayX = 2 * hx / S.bays[0], bayY = 2 * hy / S.bays[1];
+	for (let i = 0; i < S.bays[0]; i++) {
+		const cx = -hx + bayX * (i + .5), half = bayX * .31;
+		if (!(S.doors && i >= doorFirst && i <= doorLast)) w.quad([
+			cx - half,
+			-hy + off,
+			z0
+		], [
+			cx + half,
+			-hy + off,
+			z0
+		], [
+			cx + half,
+			-hy + off,
+			z1
+		], [
+			cx - half,
+			-hy + off,
+			z1
+		], K.window, [
+			0,
+			-1,
+			0
+		]);
+		w.quad([
+			cx + half,
+			hy - off,
+			z0
+		], [
+			cx - half,
+			hy - off,
+			z0
+		], [
+			cx - half,
+			hy - off,
+			z1
+		], [
+			cx + half,
+			hy - off,
+			z1
+		], K.window, [
+			0,
+			1,
+			0
+		]);
+	}
+	for (let j = 0; j < S.bays[1]; j++) {
+		const cy = -hy + bayY * (j + .5), half = bayY * .31;
+		for (const side of [-1, 1]) w.quad([
+			side * (hx - off),
+			cy - half,
+			z0
+		], [
+			side * (hx - off),
+			cy + half,
+			z0
+		], [
+			side * (hx - off),
+			cy + half,
+			z1
+		], [
+			side * (hx - off),
+			cy - half,
+			z1
+		], K.window, [
+			side,
+			0,
+			0
+		]);
+	}
+}
 function storey(w, S, hx, hy, base, body, open = false) {
 	const top = base + body;
 	if (S.hollow) w.quad([
@@ -277,6 +352,7 @@ function storey(w, S, hx, hy, base, body, open = false) {
 		const y = -hy + 2 * hy * i / S.bays[1];
 		for (const x of [-hx, hx]) column(w, x, y, base, top);
 	}
+	if (!S.hollow && !open) windowPanes(w, S, hx, hy, base, top);
 	if (S.doors) {
 		const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 ? 0 : 1, last = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
 		for (let i = first; i <= last; i++) {

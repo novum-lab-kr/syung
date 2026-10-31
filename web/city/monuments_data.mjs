@@ -189,22 +189,19 @@ var MONUMENTS = [
 		id: "palace-wall",
 		zone: "gyeongbok",
 		lngLat: PALACE_AT,
-		yawDeg: 0,
-		minZoom: 14.5
+		yawDeg: 0
 	},
 	{
 		id: "palace-halls",
 		zone: "gyeongbok",
 		lngLat: PALACE_AT,
-		yawDeg: 0,
-		minZoom: 15.5
+		yawDeg: 0
 	},
 	{
 		id: "palace-frames",
 		zone: "gyeongbok",
 		lngLat: PALACE_AT,
-		yawDeg: 0,
-		minZoom: 16
+		yawDeg: 0
 	}
 ];
 var MONUMENT_HIDES = [{

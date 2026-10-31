@@ -3,6 +3,7 @@ import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MERC_ORIGIN as O, MU, toM } from "./life.mjs";
 import { LANDMARKS, STUPAS } from "./landmarks_data.mjs";
+import { cityMinZoom } from "./zoom_gate.mjs";
 // web/city/landmarks.mts
 var N = 56;
 var STRIDE = 9;
@@ -930,8 +931,8 @@ var CityLandmarks = class {
 			this.mon = null;
 		}
 	}
-	renderMonuments(gl, matrix, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds }) {
-		if (this.monFail || zoom < 14 || !monumentsInView(bounds)) return;
+	renderMonuments(gl, matrix, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds, phone = false, center = [126.978, 37.5665] }) {
+		if (this.monFail || zoom < cityMinZoom(phone) || !monumentsInView(bounds)) return;
 		if (!this.mon) {
 			if (!this.monp) {
 				const gen = this.monGen;
@@ -965,7 +966,9 @@ var CityLandmarks = class {
 			],
 			lit,
 			dark,
-			zoom
+			zoom,
+			phone,
+			center
 		});
 		gl.bindVertexArray(null);
 		gl.enable(gl.BLEND);

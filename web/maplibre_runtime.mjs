@@ -823,6 +823,7 @@ var MODE_KIT_DEPS = [
 	"city/mvt",
 	"city/through_buildings",
 	"city/landmarks_data",
+	"city/zoom_gate",
 	"modes/coaster/badges",
 	"modes/coaster/ride_sites",
 	"modes/starcraft/building_models"

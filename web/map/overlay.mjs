@@ -399,7 +399,9 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 					B.y,
 					B.x,
 					A.y
-				]
+				],
+				phone: PHONE,
+				center: [map.getCenter().lng, map.getCenter().lat]
 			});
 		} else if (live.cityLandmarks?.mon || live.cityLandmarks?.monp) live.cityLandmarks.releaseMonuments();
 		drawSigns(pd.mainMatrix);

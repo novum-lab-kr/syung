@@ -3,6 +3,7 @@ import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
 import { withMonumentHides } from "./monuments_data.mjs";
 import { cityPart } from "./parts.mjs";
 import { EARTH, INST_STRIDES, RAD, RAIL_Q, S, TileBuilder, classifyBuilding, hexRGB, num, resolvePack } from "./mesh.mjs";
+import { cityFarLimit, cityGrow, cityMinZoom, smoothstep } from "./zoom_gate.mjs";
 import { SIGN_ATLAS, buildSignAtlas } from "./sign_text.mjs";
 import through_buildings_default from "./through_buildings.mjs";
 // web/city/buildings.mts
@@ -757,7 +758,7 @@ var CityBuildings = class {
 	}
 	canShow() {
 		if (!this.map) return false;
-		if (this.map.getZoom() < (this.phone ? 14.5 : 14)) return false;
+		if (this.map.getZoom() < cityMinZoom(this.phone)) return false;
 		return !this.map.getLayer("bm-bld") || this.map.getLayoutProperty("bm-bld", "visibility") !== "none";
 	}
 	prebuild(map) {
@@ -1027,8 +1028,7 @@ var CityBuildings = class {
 		if ([...this.tiles.values()].some((e) => e.state !== "ready")) this.timer = setTimeout(() => this.work(), 6);
 	}
 	farLimit(zoom) {
-		const d1 = Math.min(2600, 1200 * 2 ** ((zoom - 15) * .5));
-		return [d1 * .7, d1];
+		return cityFarLimit(zoom);
 	}
 	upload(gl, e) {
 		const t0 = performance.now(), m = e.mesh, vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
@@ -1627,10 +1627,7 @@ var CityBuildings = class {
 		return this.draw(gl, M, false, true);
 	}
 	uniforms(gl, u, depthOnly, glass, zoom) {
-		const K = this.palette || (this.palette = this.paletteFor()), sm = (a, b, x) => {
-			const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-			return t * t * (3 - 2 * t);
-		};
+		const K = this.palette || (this.palette = this.paletteFor()), sm = smoothstep;
 		gl.uniform4fv(u.u_through, K.through);
 		gl.uniform4fv(u.u_thBand, K.thBand);
 		if (!depthOnly) {
@@ -1710,16 +1707,12 @@ var CityBuildings = class {
 		if (depthOnly) gl.colorMask(false, false, false, false);
 		else gl.colorMask(true, true, true, true);
 		this.uniforms(gl, u, depthOnly, glass, zoom);
-		const sm = (a, b, x) => {
-			const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-			return t * t * (3 - 2 * t);
-		};
 		if (glass) {
 			gl.depthMask(false);
 			gl.enable(gl.BLEND);
 			gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		}
-		const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);
+		const hi = zoom >= this.lodHi, zoomGrow = cityGrow(this.phone, zoom);
 		const M64 = this.M64, M32 = this.M32, skirts = [], models = [];
 		let growing = false, drawn = false, draws = 0;
 		const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
@@ -1779,7 +1772,7 @@ var CityBuildings = class {
 				let f = 1;
 				if (far) {
 					const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu;
-					f = 1 - sm(far[0], far[1], d);
+					f = 1 - smoothstep(far[0], far[1], d);
 					if (f <= 0) continue;
 					gl.uniform1f(u.u_grow, grow * f);
 				}

@@ -3,7 +3,6 @@ import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
 import { PALACE_TREES } from "./monuments_trees_data.mjs";
 // web/city/monument_trees.mts
-var TREE_MIN_ZOOM = 16.3;
 var TREE_COLORS = [
 	"#5B4A3A",
 	"#3F5A40",
@@ -176,7 +175,7 @@ var buildTemplate = (species) => {
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in float a_kind;
 layout(location=3) in vec4 a_inst;   // 동 · 북 자리(m) · 크기 · 돌림(라디안)
-uniform mat4 u_matrix; uniform float u_mu; uniform vec2 u_at;
+uniform mat4 u_matrix; uniform float u_mu, u_grow; uniform vec2 u_at;
 out vec3 v_n; out float v_k; out float v_h;
 void main(){
   float c = cos(a_inst.w), s = sin(a_inst.w);
@@ -185,7 +184,7 @@ void main(){
   vec2 n2 = vec2(a_nrm.x * c - a_nrm.y * s, a_nrm.x * s + a_nrm.y * c);
   v_n = vec3(n2.x, -n2.y, a_nrm.z); v_k = a_kind;
   v_h = fract(sin(dot(a_inst.xy, vec2(12.9898, 78.233))) * 43758.5453);   // 나무마다 조금씩 다른 밝기
-  gl_Position = u_matrix * vec4((u_at + vec2(q.x, -q.y)) * u_mu, p.z * u_mu, 1.);
+  gl_Position = u_matrix * vec4((u_at + vec2(q.x, -q.y)) * u_mu, p.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
 precision highp float; in vec3 v_n; in float v_k; in float v_h; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[7];
@@ -207,6 +206,7 @@ var PalaceTrees = class {
 		this.u = Object.fromEntries([
 			"u_matrix",
 			"u_mu",
+			"u_grow",
 			"u_at",
 			"u_light",
 			"u_lit",
@@ -263,12 +263,12 @@ var PalaceTrees = class {
 			});
 		}
 	}
-	render(gl, MT, { light, lit, dark, zoom }) {
-		if (zoom < 16.3) return;
+	render(gl, MT, { light, lit, dark, grow }) {
 		const u = this.u;
 		gl.useProgram(this.p);
 		gl.uniformMatrix4fv(u.u_matrix, false, MT);
 		gl.uniform1f(u.u_mu, MU);
+		gl.uniform1f(u.u_grow, grow);
 		gl.uniform2fv(u.u_at, this.at);
 		gl.uniform3fv(u.u_light, light);
 		gl.uniform2fv(u.u_lit, lit);
@@ -296,4 +296,4 @@ var PalaceTrees = class {
 		gl.deleteProgram(this.p);
 	}
 };
-export { PalaceTrees, TREE_MIN_ZOOM };
+export { PalaceTrees };
