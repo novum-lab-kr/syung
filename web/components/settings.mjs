@@ -285,6 +285,7 @@ var RACES = [
 	["zerg", "저그"],
 	["protoss", "프로토스"]
 ];
+var SHOW_NATION = false;
 var NATIONS = [
 	["greece", "그리스"],
 	["netherlands", "네덜란드"],
@@ -375,7 +376,7 @@ function CityModes({ pressed, hidden, race, nation, speed, speedNote, icons, onS
 			pressed: pressed.toggleRetro,
 			onSwitch
 		}),
-		/* @__PURE__ */ a(ModeSwitch, {
+		SHOW_NATION && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(ModeSwitch, {
 			id: "toggleNation",
 			name: "세계 여행",
 			desc: "서울을 다른 나라 풍으로 거닐어요",
@@ -383,8 +384,7 @@ function CityModes({ pressed, hidden, race, nation, speed, speedNote, icons, onS
 			controls: "nationRow",
 			pressed: pressed.toggleNation,
 			onSwitch
-		}),
-		/* @__PURE__ */ a("div", {
+		}), /* @__PURE__ */ a("div", {
 			id: "nationRow",
 			class: "setting-row",
 			hidden: hidden.nationRow,
@@ -407,7 +407,7 @@ function CityModes({ pressed, hidden, race, nation, speed, speedNote, icons, onS
 					}))
 				})
 			]
-		}),
+		})] }),
 		/* @__PURE__ */ a(ModeSwitch, {
 			id: "toggleCoaster",
 			name: "롤러코스터",

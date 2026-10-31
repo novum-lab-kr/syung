@@ -2079,7 +2079,7 @@ map.on("load", () => {
 			});
 		},
 		setMode: (id) => {
-			modeCtl.request(id);
+			modeCtl.request(NATIONS.includes(id) ? "basic" : id);
 		},
 		...appActions()
 	}, {
