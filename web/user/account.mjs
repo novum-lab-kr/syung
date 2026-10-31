@@ -1302,6 +1302,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	if (back) {
 		history.replaceState(null, "", location.pathname + location.search);
 		const succeeded = back[1] === "ok" || back[1] === "new";
+		if (succeeded && me) dispatchEvent(new CustomEvent("syung:login", { detail: me.provider }));
 		if (!me) openSheet(LOGIN_ERRORS[back[1]] || "로그인하지 못했어요. 잠시 뒤 다시 해 주세요.", back[1] !== "denied");
 		else if (!succeeded) $("settingsButton")?.click();
 	}

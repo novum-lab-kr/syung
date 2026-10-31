@@ -37,6 +37,7 @@ import "./components/login_button.mjs";
 import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
+import { startAnalytics } from "./lib/analytics.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
 import { monumentBuildingFilter } from "./city/monuments_data.mjs";
@@ -743,6 +744,7 @@ function exitFeatures() {
 	})));
 }
 var smooth = (x) => x * x * (3 - 2 * x);
+startAnalytics();
 var appBridge = appMapMode() ? createAppBridge({
 	facts: {
 		hasStation: (id) => byId.has(id),
@@ -789,6 +791,7 @@ var modeCtl = createModeController({
 		commitMode(prev, next, o);
 		modeBusy.committed(next);
 		appBridge?.modeChanged(next);
+		if (prev !== next) dispatchEvent(new CustomEvent("syung:mode", { detail: next }));
 		if (location.hash.includes("debug")) console.info("[mode]", prev, "→", next, modes.explain(next));
 	}
 });
