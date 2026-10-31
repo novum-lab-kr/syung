@@ -53,6 +53,8 @@ export interface CityModesProps {
   onSwitch?:(id:ModeSwitchId) => void; onRace?:(race:string) => void; onNation?:(nation:string) => void; onSpeed?:(speed:number) => void;
 }
 const RACES = [['terran', '테란'], ['zerg', '저그'], ['protoss', '프로토스']] as const;
+// 세계 여행은 아직 부족해 메뉴에서 임시로 숨긴다(모드 코드 · 자료는 그대로 — 다시 보이려면 true)
+const SHOW_NATION = false;
 const NATIONS = [['greece', '그리스'], ['netherlands', '네덜란드'], ['paris', '파리'], ['egypt', '이집트']] as const;
 const SPEEDS = [1, 5, 20];
 
@@ -71,9 +73,11 @@ export function CityModes({ pressed, hidden, race, nation, speed, speedNote, ico
     <div id="starcraftRace" class="setting-row" hidden={hidden.starcraftRace}><Icon /><span class="setting-name">종족</span><div class="segmented" role="group" aria-label="종족">
       {RACES.map(([value, label]) => <button type="button" data-race={value} aria-pressed={pressedBy(race, value)} onClick={() => onRace?.(value)}>{label}</button>)}</div></div>
     <ModeSwitch id="toggleRetro" name="레트로" desc="도트 게임 속 서울을 거닐어요" icon={<Icon>{ICON.retro}</Icon>} pressed={pressed.toggleRetro} onSwitch={onSwitch} />
-    <ModeSwitch id="toggleNation" name="세계 여행" desc="서울을 다른 나라 풍으로 거닐어요" icon={<Icon>{ICON.nation}</Icon>} controls="nationRow" pressed={pressed.toggleNation} onSwitch={onSwitch} />
-    <div id="nationRow" class="setting-row" hidden={hidden.nationRow}><Icon /><span class="setting-name">나라</span><div class="segmented" role="group" aria-label="나라">
-      {NATIONS.map(([value, label]) => <button type="button" data-nation={value} aria-pressed={pressedBy(nation, value)} onClick={() => onNation?.(value)}>{label}</button>)}</div></div>
+    {SHOW_NATION && <>
+      <ModeSwitch id="toggleNation" name="세계 여행" desc="서울을 다른 나라 풍으로 거닐어요" icon={<Icon>{ICON.nation}</Icon>} controls="nationRow" pressed={pressed.toggleNation} onSwitch={onSwitch} />
+      <div id="nationRow" class="setting-row" hidden={hidden.nationRow}><Icon /><span class="setting-name">나라</span><div class="segmented" role="group" aria-label="나라">
+        {NATIONS.map(([value, label]) => <button type="button" data-nation={value} aria-pressed={pressedBy(nation, value)} onClick={() => onNation?.(value)}>{label}</button>)}</div></div>
+    </>}
     <ModeSwitch id="toggleCoaster" name="롤러코스터" desc="도시 위를 달려요" icon={<RawIcon svg={icons.coaster} />} controls="coasterSpeed" pressed={pressed.toggleCoaster} onSwitch={onSwitch} />
     <div id="coasterSpeed" class="setting-row" hidden={hidden.coasterSpeed}><RawIcon svg={icons.speed} /><span class="setting-name">열차 속도<small id="speedNote">{speedNote}</small></span><div class="segmented" role="group" aria-label="열차 속도">
       {SPEEDS.map(value => <button type="button" data-speed={value} aria-pressed={pressedBy(speed, value)} onClick={() => onSpeed?.(value)}>{`${value}배`}</button>)}</div></div>

@@ -725,7 +725,8 @@ map.on('load',()=>{
   appBridge?.ready({showRoute:(plan,pad)=>{ticketRoute.show(plan,{bottom:pad.bottom??110,right:pad.right??40});appRouteLift=pad.bottom??110;liftAppNotice()},
     clearRoute:()=>{clearRoute();refreshLive();appRouteLift=0;liftAppNotice()},
     focusStation:(id,zoom)=>{const st=byId.get(id)!;map.flyTo({center:[st.lon,st.lat],zoom:zoom??Math.max(map.getZoom(),15)})},
-    setMode:id=>{void modeCtl.request(id)},...appActions()},
+    // 세계 여행 임시 숨김: 앱이 나라 모드를 보내도 메뉴로 끌 수 없으니 기본 지도로
+    setMode:id=>{void modeCtl.request(NATIONS.includes(id)?'basic':id)},...appActions()},
     {mode:modeCtl.current,modes:modes.list().map(mode=>mode.id),colors,theme:theme.themeState(),prefs:prefsState()});
   if(appBridge){animFrame.push(appFollow);map.on('dragstart',appFollow);setInterval(()=>{if(busLayer?.selection)busLayer.refreshDetail()},1000)}   // 끌어서 · 버스가 사라져 풀린 따라가기 · 곧 오는 버스 자리(hero.ratio)
 });

@@ -45,9 +45,8 @@ function Modes({ first, speedNote = '실시간' }:{ first?:ModeSwitchId; speedNo
 export const 모드_모두끔:StoryObj = { name: '도시 모드 · 모두 끔', render: () => <Modes /> };
 export const 모드_심시티:StoryObj = { name: '도시 모드 · 심시티', render: () => <Modes first="toggleSimcity" /> };
 export const 모드_종족:StoryObj = { name: '도시 모드 · 스타크래프트(종족)', render: () => <Modes first="toggleStarcraft" /> };
-export const 모드_나라:StoryObj = { name: '도시 모드 · 세계 여행(나라)', render: () => <Modes first="toggleNation" /> };
 export const 모드_속도:StoryObj = { name: '도시 모드 · 롤러코스터(속도)', render: () => <Modes first="toggleCoaster" speedNote="5배속" /> };
-export const 모드_누름:StoryObj = { name: '도시 모드 · 고르기 누름', render: () => <Modes first="toggleNation" />, play: ({ canvasElement }) => freeze(canvasElement, '.segmented button', 'is-pressed') };
+export const 모드_누름:StoryObj = { name: '도시 모드 · 고르기 누름', render: () => <Modes first="toggleStarcraft" />, play: ({ canvasElement }) => freeze(canvasElement, '.segmented button', 'is-pressed') };
 export const 모드_포커스:StoryObj = { name: '도시 모드 · 고르기 포커스', render: () => <Modes first="toggleStarcraft" />, play: ({ canvasElement }) => freeze(canvasElement, '.segmented button', 'is-focus') };
 
 function Device({ prebuild: first = false, saver: second = false }) {
