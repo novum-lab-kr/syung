@@ -173,11 +173,233 @@ var PALACE_RING = [
 	4036,
 	8690
 ];
-var palaceRing = () => {
+var ringOf = (flat, origin) => {
 	const ring = [];
-	for (let i = 0; i < PALACE_RING.length; i += 2) ring.push([PALACE_ORIGIN[0] + PALACE_RING[i] / 1e6, PALACE_ORIGIN[1] + PALACE_RING[i + 1] / 1e6]);
+	for (let i = 0; i < flat.length; i += 2) ring.push([origin[0] + flat[i] / 1e6, origin[1] + flat[i + 1] / 1e6]);
 	return ring;
 };
+var palaceRing = () => ringOf(PALACE_RING, PALACE_ORIGIN);
+var CDG_AT = [126.991, 37.5825];
+var CDG_ORIGIN = [126.98, 37.57];
+var CDG_RING = [
+	9819,
+	12212,
+	9546,
+	11709,
+	9526,
+	11282,
+	9513,
+	10906,
+	9391,
+	10908,
+	9356,
+	8960,
+	9428,
+	8725,
+	9447,
+	8664,
+	9555,
+	8330,
+	9712,
+	7801,
+	9821,
+	7819,
+	9836,
+	7765,
+	9912,
+	7778,
+	10063,
+	7803,
+	10162,
+	7820,
+	10144,
+	7889,
+	10313,
+	7920,
+	10673,
+	7588,
+	10932,
+	7630,
+	11220,
+	7844,
+	12127,
+	8501,
+	12586,
+	7772,
+	12698,
+	7647,
+	12744,
+	7597,
+	12891,
+	7578,
+	13030,
+	7705,
+	13060,
+	7722,
+	13157,
+	7807,
+	13431,
+	7773,
+	13658,
+	7807,
+	13724,
+	7945,
+	13931,
+	7885,
+	13992,
+	8021,
+	14046,
+	8142,
+	14212,
+	8509,
+	14103,
+	8539,
+	14112,
+	8593,
+	14094,
+	8808,
+	13880,
+	8803,
+	13908,
+	8855,
+	13832,
+	8976,
+	13717,
+	9009,
+	13714,
+	9048,
+	13509,
+	9213,
+	13469,
+	9202,
+	13174,
+	9397,
+	13188,
+	9426,
+	13149,
+	9506,
+	13030,
+	9530,
+	13032,
+	9539,
+	13101,
+	9786,
+	13180,
+	9858,
+	13556,
+	10633,
+	13775,
+	10871,
+	13746,
+	11248,
+	14038,
+	11792,
+	13507,
+	12563,
+	13395,
+	13304,
+	13713,
+	13647,
+	13909,
+	13876,
+	14056,
+	14236,
+	14137,
+	14509,
+	14096,
+	14755,
+	14538,
+	14899,
+	14447,
+	15051,
+	13936,
+	15665,
+	13247,
+	16884,
+	12728,
+	17067,
+	12367,
+	17144,
+	11786,
+	16997,
+	11187,
+	16957,
+	11074,
+	16868,
+	10892,
+	16835,
+	10759,
+	16777,
+	10522,
+	16794,
+	10079,
+	16935,
+	9791,
+	16924,
+	9784,
+	17029,
+	9610,
+	17025,
+	9509,
+	17196,
+	9475,
+	17383,
+	9305,
+	17536,
+	9085,
+	17438,
+	8715,
+	17519,
+	8474,
+	17454,
+	8373,
+	17331,
+	7815,
+	17006,
+	7941,
+	16602,
+	7902,
+	16098,
+	8050,
+	15534,
+	7907,
+	15526,
+	7677,
+	15208,
+	7577,
+	15177,
+	7586,
+	14893,
+	7331,
+	14819,
+	7328,
+	14750,
+	7716,
+	13863,
+	8237,
+	13710,
+	8757,
+	13851,
+	8882,
+	13886,
+	8913,
+	13896,
+	9037,
+	13985,
+	9056,
+	14031,
+	9144,
+	14068,
+	9424,
+	13669,
+	9459,
+	12908,
+	9715,
+	12624,
+	9819,
+	12212
+];
+var cdgRing = () => ringOf(CDG_RING, CDG_ORIGIN);
 var MONUMENTS = [
 	{
 		id: "gwanghwamun",
@@ -202,23 +424,59 @@ var MONUMENTS = [
 		zone: "gyeongbok",
 		lngLat: PALACE_AT,
 		yawDeg: 0
+	},
+	{
+		id: "cdg-wall",
+		zone: "changdeokgung",
+		lngLat: CDG_AT,
+		yawDeg: 0
+	},
+	{
+		id: "cdg-halls",
+		zone: "changdeokgung",
+		lngLat: CDG_AT,
+		yawDeg: 0
+	},
+	{
+		id: "cdg-frames",
+		zone: "changdeokgung",
+		lngLat: CDG_AT,
+		yawDeg: 0
 	}
 ];
-var MONUMENT_HIDES = [{
-	lngLat: [126.976817, 37.575928],
-	radiusM: 22,
-	minH: 0
-}, {
-	lngLat: PALACE_AT,
-	radiusM: 900,
-	minH: 0,
-	area: palaceRing()
-}];
-var REGION = {
-	lngLat: [126.977, 37.5745],
-	radiusM: 1500
+var MONUMENT_HIDES = [
+	{
+		lngLat: [126.976817, 37.575928],
+		radiusM: 22,
+		minH: 0
+	},
+	{
+		lngLat: PALACE_AT,
+		radiusM: 900,
+		minH: 0,
+		area: palaceRing()
+	},
+	{
+		lngLat: CDG_AT,
+		radiusM: 900,
+		minH: 0,
+		area: cdgRing()
+	}
+];
+var REGIONS = {
+	gyeongbok: {
+		lngLat: [126.977, 37.5745],
+		radiusM: 1500
+	},
+	changdeokgung: {
+		lngLat: CDG_AT,
+		radiusM: 900
+	}
 };
-function monumentsInView(bounds) {
+function monumentsInView(bounds, zone) {
+	return zone ? regionInView(bounds, REGIONS[zone]) : Object.values(REGIONS).some((region) => regionInView(bounds, region));
+}
+function regionInView(bounds, REGION) {
 	const [lng, lat] = REGION.lngLat, x = (lng + 180) / 360, y = (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2, r = REGION.radiusM / (40075016.686 * Math.cos(lat * Math.PI / 180));
 	return bounds[0] - r <= x && x <= bounds[2] + r && bounds[1] - r <= y && y <= bounds[3] + r;
 }
@@ -249,4 +507,4 @@ function monumentBuildingFilter() {
 		})
 	}]];
 }
-export { GATE_BASE_D, GATE_DECK_Z, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, monumentBuildingFilter, monumentsInView, palaceRing, withMonumentHides };
+export { CDG_AT, CDG_ORIGIN, CDG_RING, GATE_BASE_D, GATE_DECK_Z, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, cdgRing, monumentBuildingFilter, monumentsInView, palaceRing, withMonumentHides };

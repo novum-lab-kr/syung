@@ -1,13 +1,17 @@
-import { GATE_BASE_D, GATE_DECK_Z, MONUMENTS, palaceRing } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, MONUMENTS, cdgRing, monumentsInView, palaceRing } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
 import { cityFarFade, cityGrow, cityMinZoom } from "./zoom_gate.mjs";
 import { COLORS, hex } from "./monument_parts.mjs";
+import { splitTriangles } from "./monument_cells.mjs";
 import { PalaceTorches } from "./monument_torches.mjs";
 import { PalaceTrees } from "./monument_trees.mjs";
 // web/city/monuments.mts
-var ZONES = { gyeongbok: () => __vitePreload(() => import("./monuments_gyeongbok.mjs"), [], import.meta.url) };
+var ZONES = {
+	gyeongbok: () => __vitePreload(() => import("./monuments_gyeongbok.mjs"), [], import.meta.url),
+	changdeokgung: () => __vitePreload(() => import("./monuments_changdeokgung.mjs"), [], import.meta.url)
+};
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in vec2 a_kind;
 uniform mat4 u_matrix; uniform float u_mu, u_grow; uniform vec2 u_at, u_rot;   // u_grow: 줌 · 거리에 따른 높이 비율(도시 건물의 u_grow 와 같은 값)
@@ -19,7 +23,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[21];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[24];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -41,7 +45,7 @@ void main(){
   } else if (k == 4) {   // 검은 띠: 일정한 간격의 연한 사각 무늬(화방)
     float m = fract(along / 3.2); float panel = step(.3, m) * step(m, .7) * step(.2, fract(v_p.z)) * step(fract(v_p.z), .8);
     c = mix(c, vec3(.82, .8, .74), panel * (side > .5 ? .8 : 0.));
-  } else if (k == 5) {   // 기와: 내려가는 기와골, 마루는 밝은 골
+  } else if (k == 5 || k == 21) {   // 기와(21 = 청기와): 내려가는 기와골, 마루는 밝은 골
     float g = line(s / .5, .45); c *= 1. - .17 * g; c *= .96 + .06 * hash(vec2(floor(s / .5), floor(v_p.z * 1.4)));
   } else if (k == 8) { c = mix(c, u_col[2], step(.5, fract(s / .4)) * .85); }   // 처마 끝: 서까래 머리(붉은 단청 점)
   else if (k == 10) { c = mix(c * .8, u_col[2], line(s / .36, .22) * .5); }
@@ -89,6 +93,8 @@ var Monuments = class {
 	torches = new PalaceTorches();
 	init(gl) {
 		this.gl = gl;
+		this.disposed = false;
+		this.epoch++;
 		this.p = compileProgram(gl, VS, FS);
 		this.u = Object.fromEntries([
 			"u_matrix",
@@ -114,76 +120,77 @@ var Monuments = class {
 			};
 		});
 	}
+	epoch = 0;
+	disposed = false;
 	zones = /* @__PURE__ */ new Map();
 	onLoad = null;
 	mesh(item) {
 		if (item.mesh) return item.mesh;
-		const zone = item.M.zone, got = this.zones.get(zone);
+		if (this.disposed) return null;
+		const zone = item.M.zone, got = this.zones.get(zone), epoch = this.epoch;
 		if (!got || got instanceof Promise || got === "fail") {
 			if (!got) this.zones.set(zone, ZONES[zone]().then((mod) => {
+				if (epoch !== this.epoch) return;
 				this.zones.set(zone, mod);
+				if (mod.trees) this.trees.addGrove(zone, mod.trees.at, mod.trees.data);
+				if (mod.torches) this.torches.addGrove(zone, mod.torches.at, mod.torches.data);
 				this.onLoad?.();
 			}).catch((error) => {
+				if (epoch !== this.epoch) return;
 				this.zones.set(zone, "fail");
 				console.warn("기념물 구역 못 받음", zone, error);
 			}));
 			return null;
 		}
-		const gl = this.gl, data = got.buildMonument(item.M.id), va = gl.createVertexArray(), b = gl.createBuffer();
-		gl.bindVertexArray(va);
-		gl.bindBuffer(gl.ARRAY_BUFFER, b);
-		gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-		for (const [loc, size, off] of [
-			[
-				0,
-				3,
-				0
-			],
-			[
-				1,
-				3,
-				3
-			],
-			[
-				2,
-				2,
-				6
-			]
-		]) {
-			gl.enableVertexAttribArray(loc);
-			gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off * 4);
+		const gl = this.gl, data = got.buildMonument(item.M.id), [cos, sin] = item.rot, chunks = [];
+		for (const piece of splitTriangles(data, 8, (index) => {
+			const px = data[index], py = data[index + 1];
+			return [item.x + px * cos - py * sin, item.y - (px * sin + py * cos)];
+		})) {
+			const va = gl.createVertexArray(), b = gl.createBuffer();
+			gl.bindVertexArray(va);
+			gl.bindBuffer(gl.ARRAY_BUFFER, b);
+			gl.bufferData(gl.ARRAY_BUFFER, piece.items, gl.STATIC_DRAW);
+			for (const [loc, size, off] of [
+				[
+					0,
+					3,
+					0
+				],
+				[
+					1,
+					3,
+					3
+				],
+				[
+					2,
+					2,
+					6
+				]
+			]) {
+				gl.enableVertexAttribArray(loc);
+				gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off * 4);
+			}
+			gl.bindVertexArray(null);
+			chunks.push({
+				va,
+				b,
+				n: piece.items.length / 8,
+				rect: piece.rect
+			});
 		}
-		gl.bindVertexArray(null);
-		const [cos, sin] = item.rot;
-		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-		for (let i = 0; i < data.length; i += 8) {
-			const px = data[i], py = data[i + 1], wx = item.x + px * cos - py * sin, wy = item.y - (px * sin + py * cos);
-			x0 = Math.min(x0, wx);
-			x1 = Math.max(x1, wx);
-			y0 = Math.min(y0, wy);
-			y1 = Math.max(y1, wy);
-		}
-		return item.mesh = {
-			va,
-			b,
-			n: data.length / 8,
-			rect: [
-				x0,
-				x1,
-				y0,
-				y1
-			]
-		};
+		return item.mesh = { chunks };
 	}
 	palaceM = null;
 	inPalace = (x, y) => {
-		const ring = this.palaceM ??= palaceRing().map(([lng, lat]) => toM(lng, lat));
-		let inside = false;
-		for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-			const [xi, yi] = ring[i], [xj, yj] = ring[j];
-			if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
-		}
-		return inside;
+		return (this.palaceM ??= [palaceRing(), cdgRing()].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
+			let inside = false;
+			for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+				const [xi, yi] = ring[i], [xj, yj] = ring[j];
+				if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+			}
+			return inside;
+		});
 	};
 	get deck() {
 		const item = this.items.find((each) => each.M.id === "gwanghwamun");
@@ -199,7 +206,7 @@ var Monuments = class {
 			z: GATE_DECK_Z
 		};
 	}
-	render(gl, MT, { light, lit, dark, zoom, phone, center }) {
+	render(gl, MT, { light, lit, dark, zoom, phone, center, bounds }) {
 		if (zoom < cityMinZoom(phone)) return;
 		const grow = cityGrow(phone, zoom);
 		if (grow <= 0) return;
@@ -218,37 +225,27 @@ var Monuments = class {
 		gl.depthMask(true);
 		gl.disable(gl.BLEND);
 		gl.disable(gl.CULL_FACE);
-		let ready = true;
-		const palaceRect = [
-			Infinity,
-			-Infinity,
-			Infinity,
-			-Infinity
-		];
+		const zoneReady = /* @__PURE__ */ new Map();
 		for (const item of this.items) {
+			if (bounds && !monumentsInView(bounds, item.M.zone)) continue;
 			const m = this.mesh(item);
 			if (!m) {
-				ready = false;
+				zoneReady.set(item.M.zone, false);
 				continue;
 			}
-			if (item.M.id.startsWith("palace-")) {
-				palaceRect[0] = Math.min(palaceRect[0], m.rect[0]);
-				palaceRect[1] = Math.max(palaceRect[1], m.rect[1]);
-				palaceRect[2] = Math.min(palaceRect[2], m.rect[2]);
-				palaceRect[3] = Math.max(palaceRect[3], m.rect[3]);
+			if (!zoneReady.has(item.M.zone)) zoneReady.set(item.M.zone, true);
+			for (const chunk of m.chunks) {
+				const g = grow * keep(chunk.rect);
+				if (g <= 0) continue;
+				gl.uniform1f(u.u_grow, g);
+				gl.uniform2f(u.u_at, item.x, item.y);
+				gl.uniform2fv(u.u_rot, item.rot);
+				gl.bindVertexArray(chunk.va);
+				gl.drawArrays(gl.TRIANGLES, 0, chunk.n);
 			}
-			const g = grow * keep(m.rect);
-			if (g <= 0) continue;
-			gl.uniform1f(u.u_grow, g);
-			gl.uniform2f(u.u_at, item.x, item.y);
-			gl.uniform2fv(u.u_rot, item.rot);
-			gl.bindVertexArray(m.va);
-			gl.drawArrays(gl.TRIANGLES, 0, m.n);
 		}
 		gl.bindVertexArray(null);
-		if (!ready) return;
-		const palaceGrow = grow * keep(palaceRect);
-		if (palaceGrow <= 0) return;
+		const palaceGrow = (zone, rect) => zoneReady.get(zone) ? grow * keep(rect) : 0;
 		this.trees.render(gl, MT, {
 			light,
 			lit,
@@ -262,9 +259,14 @@ var Monuments = class {
 	}
 	dispose() {
 		const gl = this.gl;
+		this.disposed = true;
+		this.epoch++;
+		this.zones.clear();
 		for (const item of this.items) if (item.mesh) {
-			gl.deleteBuffer(item.mesh.b);
-			gl.deleteVertexArray(item.mesh.va);
+			for (const chunk of item.mesh.chunks) {
+				gl.deleteBuffer(chunk.b);
+				gl.deleteVertexArray(chunk.va);
+			}
 			item.mesh = null;
 		}
 		gl.deleteProgram(this.p);

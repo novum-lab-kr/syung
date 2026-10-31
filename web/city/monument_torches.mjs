@@ -1,7 +1,6 @@
-import { PALACE_AT } from "./monuments_data.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
-import { PALACE_TORCHES } from "./monuments_torches_data.mjs";
+import { splitPoints } from "./monument_cells.mjs";
 // web/city/monument_torches.mts
 var TORCH_STRIDE = 7;
 var POOL_RADIUS = 4.6;
@@ -189,11 +188,10 @@ void main(){
 }`;
 var PalaceTorches = class {
 	parts = [];
-	count = 0;
+	groves = [];
 	init(gl) {
 		this.gl = gl;
 		this.p = compileProgram(gl, VS, FS);
-		this.at = toM(PALACE_AT[0], PALACE_AT[1]);
 		this.u = Object.fromEntries([
 			"u_matrix",
 			"u_mu",
@@ -202,57 +200,81 @@ var PalaceTorches = class {
 			"u_time",
 			"u_col"
 		].map((name) => [name, gl.getUniformLocation(this.p, name)]));
-		this.count = PALACE_TORCHES.length / 2;
-		const inst = new Float32Array(this.count * 2);
-		for (let i = 0; i < inst.length; i++) inst[i] = PALACE_TORCHES[i] / 10;
-		this.inst = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, this.inst);
-		gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
 		for (const data of [buildSolid(), buildPool()]) {
-			const va = gl.createVertexArray(), b = gl.createBuffer();
-			gl.bindVertexArray(va);
+			const b = gl.createBuffer();
 			gl.bindBuffer(gl.ARRAY_BUFFER, b);
 			gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-			for (const [loc, size, off] of [
-				[
-					0,
-					3,
-					0
-				],
-				[
-					1,
-					3,
-					3
-				],
-				[
-					2,
-					1,
-					6
-				]
-			]) {
-				gl.enableVertexAttribArray(loc);
-				gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TORCH_STRIDE * 4, off * 4);
-			}
-			gl.bindBuffer(gl.ARRAY_BUFFER, this.inst);
-			gl.enableVertexAttribArray(3);
-			gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0);
-			gl.vertexAttribDivisor(3, 1);
-			gl.bindVertexArray(null);
 			this.parts.push({
-				va,
+				va: null,
 				b,
 				n: data.length / TORCH_STRIDE
 			});
 		}
 	}
+	addGrove(zone, lngLat, points) {
+		if (this.groves.some((each) => each.zone === zone)) return;
+		const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells = [];
+		for (const cell of splitPoints(at, [points])) {
+			const list = cell.items[0], count = list.length / 2, inst = new Float32Array(count * 2);
+			for (let i = 0; i < inst.length; i++) inst[i] = list[i] / 10;
+			const ib = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, ib);
+			gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+			const vas = this.parts.map((part) => {
+				const va = gl.createVertexArray();
+				gl.bindVertexArray(va);
+				gl.bindBuffer(gl.ARRAY_BUFFER, part.b);
+				for (const [loc, size, off] of [
+					[
+						0,
+						3,
+						0
+					],
+					[
+						1,
+						3,
+						3
+					],
+					[
+						2,
+						1,
+						6
+					]
+				]) {
+					gl.enableVertexAttribArray(loc);
+					gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TORCH_STRIDE * 4, off * 4);
+				}
+				gl.bindBuffer(gl.ARRAY_BUFFER, ib);
+				gl.enableVertexAttribArray(3);
+				gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0);
+				gl.vertexAttribDivisor(3, 1);
+				gl.bindVertexArray(null);
+				return va;
+			});
+			cells.push({
+				rect: [
+					cell.rect[0] - 2,
+					cell.rect[1] + 2,
+					cell.rect[2] - 2,
+					cell.rect[3] + 2
+				],
+				inst: ib,
+				count,
+				vas
+			});
+		}
+		this.groves.push({
+			zone,
+			at,
+			cells
+		});
+	}
 	render(gl, MT, { dark, grow }) {
-		if (!dark || !this.count) return;
+		if (!dark || !this.groves.length) return;
 		const u = this.u;
 		gl.useProgram(this.p);
 		gl.uniformMatrix4fv(u.u_matrix, false, MT);
 		gl.uniform1f(u.u_mu, MU);
-		gl.uniform1f(u.u_grow, grow);
-		gl.uniform2fv(u.u_at, this.at);
 		gl.uniform1f(u.u_time, performance.now() / 1e3 % 1e3);
 		gl.uniform3fv(u.u_col, new Float32Array([
 			.36,
@@ -268,27 +290,36 @@ var PalaceTorches = class {
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
 		gl.disable(gl.CULL_FACE);
-		gl.disable(gl.BLEND);
-		gl.depthMask(true);
-		gl.bindVertexArray(this.parts[0].va);
-		gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[0].n, this.count);
-		gl.enable(gl.BLEND);
-		gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
-		gl.depthMask(false);
-		gl.bindVertexArray(this.parts[1].va);
-		gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[1].n, this.count);
+		for (const grove of this.groves) {
+			gl.uniform2fv(u.u_at, grove.at);
+			for (const cell of grove.cells) {
+				const g = grow(grove.zone, cell.rect);
+				if (g <= 0 || !cell.count) continue;
+				gl.uniform1f(u.u_grow, g);
+				gl.disable(gl.BLEND);
+				gl.depthMask(true);
+				gl.bindVertexArray(cell.vas[0]);
+				gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[0].n, cell.count);
+				gl.enable(gl.BLEND);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
+				gl.depthMask(false);
+				gl.bindVertexArray(cell.vas[1]);
+				gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[1].n, cell.count);
+			}
+		}
 		gl.depthMask(true);
 		gl.disable(gl.BLEND);
 		gl.bindVertexArray(null);
 	}
 	dispose() {
 		const gl = this.gl;
-		for (const each of this.parts) {
-			gl.deleteBuffer(each.b);
-			gl.deleteVertexArray(each.va);
+		for (const grove of this.groves) for (const cell of grove.cells) {
+			gl.deleteBuffer(cell.inst);
+			for (const va of cell.vas) gl.deleteVertexArray(va);
 		}
-		gl.deleteBuffer(this.inst);
+		for (const each of this.parts) gl.deleteBuffer(each.b);
 		this.parts = [];
+		this.groves = [];
 		gl.deleteProgram(this.p);
 	}
 };

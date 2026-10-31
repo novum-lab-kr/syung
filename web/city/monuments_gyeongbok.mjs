@@ -1,5 +1,7 @@
-import { GATE_BASE_D, GATE_DECK_Z } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, PALACE_AT } from "./monuments_data.mjs";
 import { K, MeshWriter, bandBox, buildBrackets, buildRoof } from "./monument_parts.mjs";
+import { PALACE_TREES } from "./monuments_trees_data.mjs";
+import { PALACE_TORCHES } from "./monuments_torches_data.mjs";
 import { buildPalaceFrames, buildPalaceHalls, buildPalaceWall } from "./monuments_palace.mjs";
 // web/city/monuments_gyeongbok.mts
 var BASE_W = 31;
@@ -541,6 +543,14 @@ function buildSejong(w) {
 	w.frustum(0, -.05, .42, .4, seat + 3.9, .36, .34, seat + 4.55, G, { bottom: true });
 	for (const x of [-1, 1]) w.box(x * .5 - .12, x * .5 + .12, 0, .4, seat + 4, seat + 4.4, G, { bottom: true });
 }
+var trees = {
+	at: PALACE_AT,
+	data: PALACE_TREES
+};
+var torches = {
+	at: PALACE_AT,
+	data: PALACE_TORCHES
+};
 function buildGwanghwamun() {
 	const w = new MeshWriter();
 	buildGate(w);
@@ -561,4 +571,4 @@ function buildMonument(id) {
 	build(w);
 	return new Float32Array(w.data);
 }
-export { buildGwanghwamun, buildMonument };
+export { buildGwanghwamun, buildMonument, torches, trees };

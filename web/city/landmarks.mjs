@@ -968,7 +968,8 @@ var CityLandmarks = class {
 			dark,
 			zoom,
 			phone,
-			center
+			center,
+			bounds
 		});
 		gl.bindVertexArray(null);
 		gl.enable(gl.BLEND);

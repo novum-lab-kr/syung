@@ -1,7 +1,6 @@
-import { PALACE_AT } from "./monuments_data.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
-import { PALACE_TREES } from "./monuments_trees_data.mjs";
+import { splitPoints } from "./monument_cells.mjs";
 // web/city/monument_trees.mts
 var TREE_COLORS = [
 	"#5B4A3A",
@@ -197,12 +196,18 @@ void main(){
   vec3 col = c * lt; if (u_night > .5) col = c * lt * .42 + c * vec3(1., .78, .52) * .04;
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
+var SPECIES = [
+	"pine",
+	"broad",
+	"wide",
+	"persimmon"
+];
 var PalaceTrees = class {
-	species = [];
+	templates = /* @__PURE__ */ new Map();
+	groves = [];
 	init(gl) {
 		this.gl = gl;
 		this.p = compileProgram(gl, VS, FS);
-		this.at = toM(PALACE_AT[0], PALACE_AT[1]);
 		this.u = Object.fromEntries([
 			"u_matrix",
 			"u_mu",
@@ -213,63 +218,86 @@ var PalaceTrees = class {
 			"u_night",
 			"u_col"
 		].map((name) => [name, gl.getUniformLocation(this.p, name)]));
-		for (const key of Object.keys(PALACE_TREES)) {
-			const data = buildTemplate(key), points = PALACE_TREES[key], count = points.length / 2, inst = new Float32Array(count * 4);
-			for (let i = 0; i < count; i++) {
-				const x = points[i * 2] / 10, y = points[i * 2 + 1] / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-				inst.set([
-					x,
-					y,
-					.8 + .45 * h,
-					h * 6.2832
-				], i * 4);
-			}
-			const va = gl.createVertexArray(), b = gl.createBuffer(), ib = gl.createBuffer();
-			gl.bindVertexArray(va);
-			gl.bindBuffer(gl.ARRAY_BUFFER, b);
-			gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-			for (const [loc, size, off] of [
-				[
-					0,
-					3,
-					0
-				],
-				[
-					1,
-					3,
-					3
-				],
-				[
-					2,
-					1,
-					6
-				]
-			]) {
-				gl.enableVertexAttribArray(loc);
-				gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TREE_STRIDE * 4, off * 4);
-			}
-			gl.bindBuffer(gl.ARRAY_BUFFER, ib);
-			gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
-			gl.enableVertexAttribArray(3);
-			gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, 0);
-			gl.vertexAttribDivisor(3, 1);
-			gl.bindVertexArray(null);
-			this.species.push({
-				va,
-				b,
-				inst: ib,
-				n: data.length / TREE_STRIDE,
-				count
+	}
+	addGrove(zone, lngLat, trees) {
+		if (this.groves.some((each) => each.zone === zone)) return;
+		const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells = [];
+		for (const cell of splitPoints(at, SPECIES.map((key) => trees[key] ?? []))) {
+			const species = [];
+			SPECIES.forEach((key, kind) => {
+				let template = this.templates.get(key);
+				if (!template) {
+					const data = buildTemplate(key), b = gl.createBuffer();
+					gl.bindBuffer(gl.ARRAY_BUFFER, b);
+					gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+					template = {
+						b,
+						n: data.length / TREE_STRIDE
+					};
+					this.templates.set(key, template);
+				}
+				const points = cell.items[kind], count = points.length / 2, inst = new Float32Array(count * 4);
+				for (let i = 0; i < count; i++) {
+					const x = points[i * 2] / 10, y = points[i * 2 + 1] / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+					inst.set([
+						x,
+						y,
+						.8 + .45 * h,
+						h * 6.2832
+					], i * 4);
+				}
+				const va = gl.createVertexArray(), ib = gl.createBuffer();
+				gl.bindVertexArray(va);
+				gl.bindBuffer(gl.ARRAY_BUFFER, template.b);
+				for (const [loc, size, off] of [
+					[
+						0,
+						3,
+						0
+					],
+					[
+						1,
+						3,
+						3
+					],
+					[
+						2,
+						1,
+						6
+					]
+				]) {
+					gl.enableVertexAttribArray(loc);
+					gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TREE_STRIDE * 4, off * 4);
+				}
+				gl.bindBuffer(gl.ARRAY_BUFFER, ib);
+				gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+				gl.enableVertexAttribArray(3);
+				gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, 0);
+				gl.vertexAttribDivisor(3, 1);
+				gl.bindVertexArray(null);
+				species.push({
+					va,
+					inst: ib,
+					n: template.n,
+					count
+				});
+			});
+			cells.push({
+				rect: cell.rect,
+				species
 			});
 		}
+		this.groves.push({
+			zone,
+			at,
+			cells
+		});
 	}
 	render(gl, MT, { light, lit, dark, grow }) {
 		const u = this.u;
 		gl.useProgram(this.p);
 		gl.uniformMatrix4fv(u.u_matrix, false, MT);
 		gl.uniform1f(u.u_mu, MU);
-		gl.uniform1f(u.u_grow, grow);
-		gl.uniform2fv(u.u_at, this.at);
 		gl.uniform3fv(u.u_light, light);
 		gl.uniform2fv(u.u_lit, lit);
 		gl.uniform1f(u.u_night, dark ? 1 : 0);
@@ -279,20 +307,30 @@ var PalaceTrees = class {
 		gl.depthMask(true);
 		gl.disable(gl.BLEND);
 		gl.disable(gl.CULL_FACE);
-		for (const each of this.species) {
-			gl.bindVertexArray(each.va);
-			gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count);
+		for (const grove of this.groves) {
+			gl.uniform2fv(u.u_at, grove.at);
+			for (const cell of grove.cells) {
+				const g = grow(grove.zone, cell.rect);
+				if (g <= 0) continue;
+				gl.uniform1f(u.u_grow, g);
+				for (const each of cell.species) {
+					if (!each.count) continue;
+					gl.bindVertexArray(each.va);
+					gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count);
+				}
+			}
 		}
 		gl.bindVertexArray(null);
 	}
 	dispose() {
 		const gl = this.gl;
-		for (const each of this.species) {
-			gl.deleteBuffer(each.b);
+		for (const grove of this.groves) for (const cell of grove.cells) for (const each of cell.species) {
 			gl.deleteBuffer(each.inst);
 			gl.deleteVertexArray(each.va);
 		}
-		this.species = [];
+		for (const template of this.templates.values()) gl.deleteBuffer(template.b);
+		this.groves = [];
+		this.templates.clear();
 		gl.deleteProgram(this.p);
 	}
 };

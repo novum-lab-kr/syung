@@ -19,7 +19,10 @@ var K = {
 	gilt: 17,
 	stone: 18,
 	plaster: 19,
-	window: 20
+	window: 20,
+	blueTile: 21,
+	thatch: 22,
+	timber: 23
 };
 var COLORS = [
 	"#E6E0D2",
@@ -42,7 +45,10 @@ var COLORS = [
 	"#B9954C",
 	"#CFC9BC",
 	"#D6CBB0",
-	"#D2C6A6"
+	"#D2C6A6",
+	"#3F7F8E",
+	"#B79A62",
+	"#9A7A56"
 ];
 var hex = (value) => {
 	const v = parseInt(value.slice(1), 16);
@@ -55,8 +61,10 @@ var hex = (value) => {
 var MeshWriter = class {
 	data = [];
 	xf = null;
+	remap = null;
 	dz = 0;
 	tri(a, b, c, kind, hint, sa = 0, sb = 0, sc = 0) {
+		if (this.remap) kind = this.remap[kind] ?? kind;
 		if (this.dz) {
 			a = [
 				a[0],
