@@ -16,6 +16,7 @@ import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
 import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
+import {monumentBuildingFilter} from './city/monuments_data.mts';   // 문화유산 모델을 넣는 모드(city.heritage)에서 지도 건물 층의 기념물 자리 건물을 빼는 필터
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
 import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
@@ -85,7 +86,7 @@ interface ShadowLook{shadowOpacity?:Partial<Record<'dark'|'light',number>>}
 interface RuntimeOwnSettings{
   track:{kind:string;platform:string};
   trains:{predictStops:number;timeWarp:boolean;body?:string};
-  city:{enabled:boolean;tone:string;pack:CityPack};
+  city:{enabled:boolean;heritage:boolean;tone:string;pack:CityPack};
   park:{enabled:boolean};
   map:{exitLook:string;fov?:number|null;paletteKind:string;pixel:{enabled:boolean;size:number;palette:string;outline:boolean};park:Record<'dark'|'light',{lightK:number;light:string}>};
   sun:{light:string;lowHouseM?:number|null};
@@ -457,9 +458,14 @@ function cityXrayTargets(){
 // (덕배 2026-10-12: 몇 분 쓰니 손가락이 뜨거울 만큼 발열 — 원인 확정 전, 버튼으로 껐다 켰다 비교)
 let prebuildOn=null;
 const prebuildWant=()=>prebuildOn??=/(^|[^o])prebuild/.test(location.hash)?true:location.hash.includes('noprebuild')?false:(v=>v?v==='on':!PHONE)(prefs.get('prebuild'));
-function prebuildCity(){if(prebuildWant()&&cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.P.pack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
+function prebuildCity(){if(prebuildWant()&&cityBuildings&&!cityOn()&&!document.hidden&&cityBuildings.basePack===modes.settings('simcity').city.pack)cityBuildings.prebuild(map)}   // (기본 모드 팩 = 심시티 팩: 다르면 짓지 않는다)
+let heritageFilterOn:boolean|undefined;
 function syncCity(){if(!ready||!cityBuildings)return;if(cityOn()&&!map.getLayer('city-buildings'))map.addLayer(cityBuildings,map.getLayer('station-names')?'station-names':undefined);
-  cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),night:{lights:nightNow().lights}});
+  // 문화유산 모델: 기본 모드는 도시를 미리 짓는 중이라 심시티 설정을 따른다(바꿔 끼울 때 다시 짓지 않게)
+  const heritage=!!(cityOn()?modeCtl.settings():modes.settings('simcity')).city.heritage;
+  cityBuildings.set({on:cityOn(),tone:modeCtl.settings().city.tone,theme:effectiveTheme(),pack:cityPack(),heritage,night:{lights:nightNow().lights}});
+  const filterOn=!!modeCtl.settings().city.heritage;   // 지도 건물 층도 같은 자리를 비운다
+  if(filterOn!==heritageFilterOn){heritageFilterOn=filterOn;for(const id of ['bm-bld','bm-bld3d'])if(map.getLayer(id))map.setFilter(id,(filterOn?monumentBuildingFilter():null) as never)}
   syncNightBloom();
 }
 // 도시 모드 밤 빛(팩 night — web/modes/basic/city.mts): ① 불빛 다시 맞추기(lights) ② 빛 번짐(bloom, 휴대폰은 팩 night.bloom.phone 일 때만) ③ 바닥 빛(ground).

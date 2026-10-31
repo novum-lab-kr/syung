@@ -21,6 +21,7 @@
 
 import { cityPart } from './parts.mts';
 import { MODEL_STRIDE } from './mesh.mts';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mts 가 등록 — 모드 코드 받기에 들어 있다)
+import { withMonumentHides } from './monuments_data.mts';
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mts';
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mts';
 import { sunPosition } from '../lib/sun.mts';
@@ -95,7 +96,7 @@ interface DayReflection { enabled?:boolean; diffuseRangeLinear?:unknown; mixByHe
 interface Tiers { multipliers?:unknown[]; weights?:unknown[] }
 interface SignsLook { colors?:string[]; ink?:{ light?:string; dark?:string }; nightEmission?:number }
 export interface CityBuildingsOptions { phone?:boolean; stylePack?:MeshPack; worker?:boolean; classify?:BuilderOptions['classify']; through?:unknown[] }
-interface SetOptions { pack?:MeshPack; on?:boolean | null; tone?:string; theme?:Theme; maxHeight?:number | null; night?:{ lights?:boolean } }
+interface SetOptions { pack?:MeshPack; heritage?:boolean; on?:boolean | null; tone?:string; theme?:Theme; maxHeight?:number | null; night?:{ lights?:boolean } }
 interface Stats { built:number; buildMs:number; verts:number; mainBuildMs?:number; uploadMs?:number; uploads?:number; feedMaxMs?:number; glassDraws?:number; modelDraws?:number; draws?:number; [k:string]:number | undefined }
 type SignAtlas = ReturnType<typeof buildSignAtlas>;
 type Palette = ReturnType<CityBuildings['paletteFor']>;
@@ -665,6 +666,7 @@ export class CityBuildings {
   declare timer:ReturnType<typeof setTimeout> | 0; declare growing:boolean;
   declare maxTiles:number; declare maxBytes:number; declare palette:Palette | null; declare stats:Stats;
   declare useWorker:boolean; declare workers:BuildWorker[] | null;
+  declare basePack:MeshPack; declare heritage:boolean;   // basePack: 모드가 준 팩(기념물 자리 비우기를 덧붙이기 전)
   declare debug:number; declare lodHi:number; declare cull:'cw' | 'ccw' | 'none'; declare noCull:boolean; declare skipDraw:boolean;
   declare M64:Float64Array; declare M32:Float32Array; declare through:ReturnType<typeof throughIndex>;
   declare map:MapLibreMap | null; declare gl:WebGL2RenderingContext | undefined;
@@ -672,7 +674,7 @@ export class CityBuildings {
   declare xrayIn:XrayTarget[] | null | undefined; declare xr:Xray | null | undefined; declare xrSeen:Map<string, number> | undefined;
   constructor(opts:CityBuildingsOptions = {}) {
     this.id = 'city-buildings'; this.type = 'custom'; this.renderingMode = '3d';
-    this.opts = opts; this.phone = !!opts.phone; this.P = resolvePack((opts.stylePack || SEOUL_CITY_STYLE) as MeshPack);
+    this.opts = opts; this.phone = !!opts.phone; this.basePack = (opts.stylePack || SEOUL_CITY_STYLE) as MeshPack; this.heritage = false; this.P = resolvePack(this.basePack);
     this.on = false; this.tone = 'simcity'; this.theme = 'light'; this.maxHeight = Infinity;
     this.tiles = new Map(); this.visible = []; this.ctx = new Map(); this.frame = 0; this.now = 0; this.timer = 0; this.growing = false;
     this.maxTiles = this.phone ? 18 : 40; this.maxBytes = this.phone ? 56e6 : Infinity; this.palette = null; this.stats = { built: 0, buildMs: 0, verts: 0 };
@@ -685,7 +687,8 @@ export class CityBuildings {
   onRemove(map:MapLibreMap, gl:WebGL2RenderingContext) { for (const [g, c] of this.ctx) { for (const t of this.tiles.values()) this.free(g, t); g.deleteProgram(c.color.p); g.deleteProgram(c.depth.p) } this.ctx.clear(); this.map = null }
   // on/off, tone 'simcity' | 'coaster'(팩의 modes 항목), 'light' | 'dark', maxHeight (m; the coaster's towers are rides, not buildings)
   set(o:SetOptions) {
-    if (o.pack && o.pack !== this.P.pack) this.setPack(o.pack);
+    // 문화유산 모델을 넣는 모드(heritage — 모드 설정 city.heritage)에서는 모드가 준 팩(basePack)에 기념물 자리 비우기를 덧붙여 쓴다(monuments.mts 머리)
+    if (o.pack || o.heritage != null) { if (o.pack) this.basePack = o.pack; if (o.heritage != null) this.heritage = o.heritage; const want = this.heritage ? withMonumentHides(this.basePack) : this.basePack; if (want !== this.P.pack) this.setPack(want) }
     if (o.on != null) this.on = o.on; if (o.tone) this.tone = o.tone; if (o.theme) this.theme = o.theme; if (o.maxHeight != null) this.maxHeight = o.maxHeight; if (o.night) this.night = o.night;   // night: {lights} 밤 불빛 켬(팩 night.lights)
     this.palette = null; this.map?.triggerRepaint();
   }

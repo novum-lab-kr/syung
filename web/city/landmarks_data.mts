@@ -8,7 +8,7 @@
 type LngLat = [number, number];
 // 랜드마크 모델 하나(landmarks.mjs 가 그린다 · mesh.mjs 가 그 자리 조각 건물을 뺀다)
 export interface Landmark {
-  id:string; name:string; lngLat:LngLat; hide:{ radiusM:number; minH:number }; seamDeg:number;
+  id:string; name:string; lngLat:LngLat; hide:{ radiusM:number; minH:number; area?:[number, number][] }; seamDeg:number;
   profile:[number, number, number][]; roundness:number; seam:{ widthM:number; depthM:number };
   crown:{ splitM:number; gapTopM:number; latticeFromM:number }; height:number;
 }

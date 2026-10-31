@@ -14,7 +14,7 @@ export const GREECE = {
   from: 'simcity',
   label: '그리스',
   settings: {
-    city: { pack: withModels(GREECE_DELTA, 'greece') },   // 흰 회벽 · 파스텔 · 파란 돔 · 돌길 · 에게해
+    city: { heritage: false, pack: withModels(GREECE_DELTA, 'greece') },   // 흰 회벽 · 파스텔 · 파란 돔 · 돌길 · 에게해
   },
 };
 export const NETHERLANDS = {
@@ -22,7 +22,7 @@ export const NETHERLANDS = {
   from: 'simcity',
   label: '네덜란드',
   settings: {
-    city: { pack: withModels(NETHERLANDS_DELTA, 'netherlands') },   // 벽돌 · 박공 · 가파른 지붕 · 운하 · 풍차
+    city: { heritage: false, pack: withModels(NETHERLANDS_DELTA, 'netherlands') },   // 벽돌 · 박공 · 가파른 지붕 · 운하 · 풍차
   },
 };
 export const PARIS = {
@@ -30,7 +30,7 @@ export const PARIS = {
   from: 'simcity',
   label: '파리',
   settings: {
-    city: { pack: withModels(PARIS_DELTA, 'paris') },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
+    city: { heritage: false, pack: withModels(PARIS_DELTA, 'paris') },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
   },
 };
 export const EGYPT = {
@@ -38,7 +38,7 @@ export const EGYPT = {
   from: 'simcity',
   label: '이집트',
   settings: {
-    city: { pack: withModels(EGYPT_DELTA, 'egypt') },   // 사암 · 옥상 살림 · 모스크 · 피라미드 · 나일
+    city: { heritage: false, pack: withModels(EGYPT_DELTA, 'egypt') },   // 사암 · 옥상 살림 · 모스크 · 피라미드 · 나일
   },
 };
 export default [GREECE, NETHERLANDS, PARIS, EGYPT];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)

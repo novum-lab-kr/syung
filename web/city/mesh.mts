@@ -72,7 +72,7 @@ export interface MeshPack {
   signs?:SignsSpec | null; hanok?:unknown; race?:unknown; nation?:unknown;
   xray?:{ alpha?:number; edgeAlpha?:number; edgePx?:number; featherPx?:number; fadeMs?:number; maxTargets?:number; pieceM?:number; platformMarginM?:number; platformBelowM?:number; platformAboveM?:number; trainHalfWidthM?:number; trainBelowM?:number; trainAboveM?:number; trains?:boolean } | null;
   viaduct?:{ railHeightM?:number };
-  landmarkHide?:{ lngLat:[number, number]; radiusM:number; minH:number }[];   // 그 팩에서만 빼는 랜드마크 자리
+  landmarkHide?:{ lngLat:[number, number]; radiusM:number; minH:number; area?:[number, number][] }[];   // 그 팩에서만 빼는 랜드마크 자리
 }
 // 재질 칸 하나(가족 × 변형, 또는 가족 없이 유형마다 벽 넷) — bayEff 는 다 모은 뒤 덧붙인다
 interface Material {
@@ -305,6 +305,16 @@ class Writer {
   bytes() { return this.u8.subarray(0, this.n * STRIDE) }
 }
 
+// 다각형(평평한 x y 목록) 안의 점인가(경복궁 둘레처럼 원으로 못 덮는 자리를 비울 때)
+function insideArea(px:number, py:number, area:readonly number[]):boolean {
+  let inside = false;
+  for (let i = 0, j = area.length - 2; i < area.length; j = i, i += 2) {
+    const xi = area[i]!, yi = area[i + 1]!, xj = area[j]!, yj = area[j + 1]!;
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 // ── one tile's meshes, built in slices ───────────────────────────────────────────────────────────
 // src: {z,x,y,extent,buildings:VectorTileLayer,landuse:VectorTileLayer|null}
 export class TileBuilder {
@@ -313,7 +323,7 @@ export class TileBuilder {
   declare W:Writer; declare chunks:Chunk[]; declare zmax:number; declare count:number; declare fi:number; declare polys:RingPolygon[] | null; declare pi:number;
   declare landuse:LanduseArea[] | null; declare done:boolean; declare seen:Set<string>; declare items:Item[]; declare blockers:{ ring:Ring; item:number }[] | null;
   declare ei:number; declare grid:Map<number, number[]> | null; declare cell:number; declare goff:number; declare models:number[][] | null;
-  declare marks:{ x:number; y:number; r:number; minH:number }[]; declare cur:{ idLo:number; idHi:number; H:number; minH:number }; declare warned:boolean | undefined;
+  declare marks:{ x:number; y:number; r:number; minH:number; area?:number[] }[]; declare cur:{ idLo:number; idHi:number; H:number; minH:number }; declare warned:boolean | undefined;
   constructor(src:TileSource, P:ResolvedPack, opts:BuilderOptions) {
     this.src = src; this.P = P; this.opts = opts; this.E = src.extent || 4096; this.through = opts.through || null;   // through: Map osm id → [{lng, lat, railM}] (web/city/through_buildings.mjs), the buildings the viaduct passes through
     const n = 2 ** src.z, latN = Math.atan(Math.sinh(Math.PI * (1 - 2 * src.y / n))), latS = Math.atan(Math.sinh(Math.PI * (1 - 2 * (src.y + 1) / n))), lat = (latN + latS) / 2;
@@ -327,7 +337,7 @@ export class TileBuilder {
     this.items = []; this.blockers = []; this.ei = 0; this.grid = null; this.models = null;   // models: 모형 기록(부품 'race' — 스타크래프트 종족 건물, 꼭짓점 대신 템플릿 번호 · 자리)
     // 랜드마크 자리(타일 단위): 그 안에 중심이 있는 높은 조각 건물은 빼고 전용 모델(city_landmarks.mjs)이 그린다
     // (팩 landmarkHide: 그 팩에서만 빼는 자리 — 조선: 남산타워 자리에 석탑, 2026-10-11)
-    this.marks = [...LANDMARKS, ...(P.pack?.landmarkHide || []).map(h => ({ lngLat: h.lngLat, hide: h }))].map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH } })
+    this.marks = [...LANDMARKS, ...(P.pack?.landmarkHide || []).map(h => ({ lngLat: h.lngLat, hide: h }))].map(L => { const [mx, my] = landmarkMerc(L); return { x: (mx - this.ox) / this.unit, y: (my - this.oy) / this.unit, r: L.hide.radiusM / this.mPerUnit, minH: L.hide.minH, area: L.hide.area?.flatMap(([lng, lat]) => { const [ax, ay] = landmarkMerc({ lngLat: [lng, lat] }); return [(ax - this.ox) / this.unit, (ay - this.oy) / this.unit] }) } })
       .filter(m => m.x > -m.r - this.E && m.x < 2 * this.E + m.r && m.y > -m.r - this.E && m.y < 2 * this.E + m.r);   // phase 1 reads every footprint (items; blockers = raw outlines, also those in the tile's buffer), phase 2 writes the meshes
   }
   // 랜드마크 자리의 조각 건물인가: 외곽 전체의 가운데가 그 반경 안이고 높이가 minH 이상
@@ -335,7 +345,7 @@ export class TileBuilder {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const a of flat) for (let i = 0; i < a.length; i += 2) { if (a[i]! < x0) x0 = a[i]!; if (a[i]! > x1) x1 = a[i]!; if (a[i + 1]! < y0) y0 = a[i + 1]!; if (a[i + 1]! > y1) y1 = a[i + 1]! }
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    return this.marks.some(m => H >= m.minH && Math.hypot(cx - m.x, cy - m.y) < m.r && Math.max(x1 - x0, y1 - y0) < 2.5 * m.r);
+    return this.marks.some(m => H >= m.minH && (m.area ? insideArea(cx, cy, m.area) : Math.hypot(cx - m.x, cy - m.y) < m.r && Math.max(x1 - x0, y1 - y0) < 2.5 * m.r));
   }
   // run until the budget (ms) is spent; true when the tile is finished. Two phases: every footprint is read first (and all
   // outlines indexed, so each wall can look for the building across from it), then the meshes are written

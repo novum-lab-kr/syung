@@ -93,7 +93,10 @@ export interface LifeRenderOptions {
   look?:LifePack; night?:{ lights?:unknown } | null; now?:number; zoom?:number; pitch?:number; bearing?:number; dark?:boolean; tone?:string; lampPool?:number | null;
   cars?:boolean; crossings?:boolean; people?:boolean; units?:{ people?:string[]; cars?:string[] } | null; lifeUnits?:LifeUnitsLayer | null; phone?:boolean; reducedMotion?:boolean; pixelRatio?:number;
   bounds?:number[]; mapOn?:boolean; moving?:boolean; sun?:{ azimuth:number; elevation:number } | null;
+  treeKeepOut?:((x:number, y:number) => boolean) | null;   // 이 자리(지역 미터)에는 도시 나무를 심지 않는다 — 문화유산 모드의 경복궁 안(전용 나무가 따로 선다, 2026-10-31). 값이 바뀌면 칸을 다시 짓는다
+  peopleDeck?:PeopleDeck | null;   // 기념물 월대처럼 땅보다 높은 바닥(있으면 그 위의 사람을 그 높이만큼 들어 올린다 — 광화문 월대, 2026-10-31)
 }
+export interface PeopleDeck { x:number; y:number; cos:number; sin:number; centerY:number; halfX:number; halfY:number; z:number }
 // 한 장면의 셈(점검 스크립트 · 화면 밖 확인용 — window.__subwayWebGL.cityLife.stats)
 interface LifeStats {
   cells:number; ready:number; trees:number; lamps:number; cross:number; cars:number; people:number; building:boolean; waiting:number; buildMs:number; cpuMs:number; maxStep:number;
@@ -342,7 +345,7 @@ layout(location=0) in vec4 a_v;   // f (across), z (up), part, t along the limb
 layout(location=3) in vec4 i_a;   // x, y, phase, walking (0..1)
 layout(location=4) in vec4 i_b;   // facing fx, fy, shirt index, scale
 layout(location=5) in vec3 i_c;   // pants index, hair index, 모양 몫(0..1 — 현대: 머리 6가지, 조선: 옷차림 6가지)
-uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit, u_era, u_face; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light, u_jshirt[6], u_jlow[6]; uniform float u_jcum[6];
+uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit, u_era, u_face; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light, u_jshirt[6], u_jlow[6]; uniform float u_jcum[6]; uniform vec4 u_deck, u_deckR;   // 높은 바닥(월대): (원점 x · y, cos, sin) · (가운데 y, 반 폭, 반 깊이, 높이 — 높이 0 이면 없음)
 out vec3 v_col; out float v_a;
 bool is(float st, float k) { return abs(st - k) < .5; }
 void main(){
@@ -379,7 +382,9 @@ void main(){
   else if (part >= 30. && part < 40.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f -= d * sw * .4 * (part < 32. || part >= 34. ? t : 1.); }   // arms the other way (색동 띠도 팔 몫 t 만큼)
   f *= m;
   float u = u_unit * s;
-  vec3 p = vec3(i_a.xy + u_right * f * u, z * u);
+  vec2 dd = i_a.xy - u_deck.xy, md = vec2(u_deck.z * dd.x - u_deck.w * dd.y, -u_deck.w * dd.x - u_deck.z * dd.y);
+  float lift = u_deckR.w * (1. - smoothstep(-1.2, 0., max(abs(md.x) - u_deckR.y, abs(md.y - u_deckR.x) - u_deckR.z)));   // 월대 가장자리 1.2 m 비탈로 올라선다
+  vec3 p = vec3(i_a.xy + u_right * f * u, z * u + lift);
   gl_Position = u_matrix * vec4(p.xy * u_mu, p.z * u_mu, 1.);
   gl_Position.z -= layer * 3e-6 * gl_Position.w;   // 한 평면에 겹친 조각(머리 위 머리카락 · 몸 위 팔): 층 번호가 클수록 조금 앞으로 — 같은 깊이라 머리카락이 깜빡였다(2026-10-11 행님)
   int si = int(i_b.z + .5), pi = int(i_c.x + .5), hi = int(i_c.y + .5), sj = int(st + .5);
@@ -410,7 +415,7 @@ type LampUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_night' | 'u_th
 type PoolUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_arm' | 'u_radius' | 'u_rgb' | 'u_alpha';
 type BulbUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_keep' | 'u_arm' | 'u_h' | 'u_size' | 'u_core' | 'u_rgb' | 'u_wt';
 type CrossUniform = 'u_matrix' | 'u_mu' | 'u_fade' | 'u_depth' | 'u_rgb' | 'u_alpha' | 'u_stripe' | 'u_gap';
-type PersonUniform = 'u_matrix' | 'u_mu' | 'u_time' | 'u_unit' | 'u_right' | 'u_lit' | 'u_shirt' | 'u_pants' | 'u_hair' | 'u_skin' | 'u_light' | 'u_alpha' | 'u_era' | 'u_face' | 'u_jshirt' | 'u_jlow' | 'u_jcum';
+type PersonUniform = 'u_matrix' | 'u_mu' | 'u_time' | 'u_unit' | 'u_right' | 'u_lit' | 'u_shirt' | 'u_pants' | 'u_hair' | 'u_skin' | 'u_light' | 'u_alpha' | 'u_era' | 'u_face' | 'u_jshirt' | 'u_jlow' | 'u_jcum' | 'u_deck' | 'u_deckR';
 type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
 interface Mesh { b:WebGLBuffer; n:number }
 interface LampLook { va:WebGLVertexArrayObject; mesh:Mesh }
@@ -418,7 +423,7 @@ export class CityLife {
   // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · init · _init · render 가 넣는다)
   declare pack:LifePack; declare exits:() => XY[]; declare deck:(x:number, y:number, r:number) => ExitDeck; declare cells:Map<string, LifeCell>; declare graph:RoadGraph;
   declare stats:Partial<LifeStats> & { idle?:boolean }; declare _anim:boolean; declare lastQuery:number; declare building:LifeCell | null; declare M:Float32Array;
-  declare people:{ list:Person[]; poses:Float32Array; count:number; max:number; seq:number; simT:number };
+  declare keepOut:((x:number, y:number) => boolean) | null; declare people:{ list:Person[]; poses:Float32Array; count:number; max:number; seq:number; simT:number };
   declare map:MapLike; declare gl:WebGL2RenderingContext | null | undefined; declare broken:boolean | undefined;
   declare pT:WebGLProgram; declare pL:WebGLProgram; declare pP:WebGLProgram; declare pB:WebGLProgram; declare pX:WebGLProgram; declare pH:WebGLProgram;
   declare uT:Uniforms<TreeUniform>; declare uL:Uniforms<LampUniform>; declare uP:Uniforms<PoolUniform>; declare uB:Uniforms<BulbUniform>; declare uX:Uniforms<CrossUniform>; declare uH:Uniforms<PersonUniform>;
@@ -427,7 +432,7 @@ export class CityLife {
   declare vaH:WebGLVertexArrayObject; declare vaQ:WebGLVertexArrayObject; declare vaL:WebGLVertexArrayObject; declare vaT:WebGLVertexArrayObject[]; declare vaP:WebGLVertexArrayObject;
   declare lamps:Map<LampSpec, LampLook>; declare lastFrame:number | undefined; declare tick:number | undefined; declare ptick:number | undefined;
   constructor({ pack = SEOUL as unknown as LifePack, exits = () => [], deck = () => null }:LifeOptions = {}) {
-    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
+    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.keepOut = null; this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
     this.M = new Float32Array(16);
     this.people = { list: [], poses: new Float32Array(400 * 14), count: 0, max: 400, seq: 0, simT: 0 };   // seq: ids; simT: walked time (s)
   }
@@ -448,7 +453,7 @@ export class CityLife {
     this.pP = compileProgram(gl, POOL_VS, POOL_FS); this.uP = U(this.pP, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_radius', 'u_rgb', 'u_alpha'] as const);
     this.pB = compileProgram(gl, BULB_VS, BULB_FS); this.uB = U(this.pB, ['u_matrix', 'u_mu', 'u_fade', 'u_keep', 'u_arm', 'u_h', 'u_size', 'u_core', 'u_rgb', 'u_wt'] as const);
     this.pX = compileProgram(gl, CROSS_VS, CROSS_FS); this.uX = U(this.pX, ['u_matrix', 'u_mu', 'u_fade', 'u_depth', 'u_rgb', 'u_alpha', 'u_stripe', 'u_gap'] as const);
-    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha', 'u_era', 'u_face', 'u_jshirt', 'u_jlow', 'u_jcum'] as const);
+    this.pH = compileProgram(gl, PERSON_VS, FLAT_FS); this.uH = U(this.pH, ['u_matrix', 'u_mu', 'u_time', 'u_unit', 'u_right', 'u_lit', 'u_shirt', 'u_pants', 'u_hair', 'u_skin', 'u_light', 'u_alpha', 'u_era', 'u_face', 'u_jshirt', 'u_jlow', 'u_jcum', 'u_deck', 'u_deckR'] as const);
     const vbo = (data:Float32Array) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b };
     this.meshT = [0, 1].map(lod => { const m = treeMesh(lod); return { b: vbo(m), n: m.length / 7 } });
     { const m = lampMesh(this.pack.props.lamps); this.meshL = { b: vbo(m), n: m.length / 10 } }
@@ -567,7 +572,7 @@ export class CityLife {
     const T = P.trees, trees:number[] = [], lamps:number[] = [], cross:number[] = [], walks:Walk[] = [];
     const hsh = (x:number, y:number, c:number) => hashi(Math.round(x * 2), Math.round(y * 2), c);
     const treeAt = (x:number, y:number, kind:number, hMin:number, hMax:number, cMin:number, cMax:number) => { const r = hsh(x, y, 1), up = hsh(x, y, 2) < T.shapeWeights.upright ? 1 : 0; trees.push(x, y, hMin + (hMax - hMin) * r, cMin + (cMax - cMin) * hsh(x, y, 3), up, PICK(T.weights, hsh(x, y, 4)), hsh(x, y, 5), hsh(x, y, 6) * 6.283, kind) };
-    const okTree = (x:number, y:number, self:Edge | null, margin:number, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
+    const keepOut = this.keepOut, okTree = (x:number, y:number, self:Edge | null, margin:number, rail = 4) => !keepOut?.(x, y) && x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
     let n = 0;
     for (const e of edges) {
       if (e.level !== 0) continue; const sp = T.streetSpacingM[e.cls]; if (!sp || e.ramp) continue;
@@ -628,7 +633,7 @@ export class CityLife {
     cell.sub = { SUB, sx, sy }; cell.ms = performance.now() - t0; cell.counts = { trees: trees.length / 9, street: street.length / 9, lamps: lamps.length / 4, cross: cross.length / 4, edges: edges.length, walks: walks.length };
     mark('gpu'); cell.state = 'ready';
   }
-  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); if (cell.inGraph) this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
+  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
   // the sub-grid ranges of a cell the view box touches: [rowStart, rowEnd) as instance ranges
   ranges(cell:LifeCell, prop:BinnedKey, box:number[]):[number, number][] {
     const B = cell[prop]; if (!B || !B.n) return []; const { SUB, sx, sy } = cell.sub!, [bx0, by0] = cell.box, out:[number, number][] = [];
@@ -643,7 +648,8 @@ export class CityLife {
     try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
   }
   _render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:LifeRenderOptions):void {
-    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
+    const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun, peopleDeck = null, treeKeepOut = null } = opts;
+    if (!!treeKeepOut !== !!this.keepOut) { this.keepOut = treeKeepOut; this.building = null; for (const cell of [...this.cells.values()]) this.dropCell(cell) }   // 칸의 나무는 지을 때 정해지니 켜고 끌 때 다시 짓는다
     const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;   // LU: 사람 · 차 대신 유닛(스타크래프트)   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
     this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
     const pack = this.pack, box:Box = [(bounds[0]! - O.x) / MU, (bounds[1]! - O.y) / MU, (bounds[2]! - O.x) / MU, (bounds[3]! - O.y) / MU];
@@ -727,6 +733,7 @@ export class CityLife {
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
         gl.useProgram(this.pH); gl.uniformMatrix4fv(this.uH.u_matrix, false, MT); gl.uniform1f(this.uH.u_mu, MU); gl.uniform1f(this.uH.u_time, reducedMotion ? 0 : now / 1000); gl.uniform1f(this.uH.u_unit, unit);
         gl.uniform2f(this.uH.u_right, Math.cos(b), Math.sin(b)); gl.uniform2fv(this.uH.u_lit, lit); gl.uniform3fv(this.uH.u_shirt, shirts.flat()); gl.uniform3fv(this.uH.u_pants, pants.flat()); gl.uniform3fv(this.uH.u_hair, hair.flat()); gl.uniform3fv(this.uH.u_skin, col(PP.skin[theme])); gl.uniform3fv(this.uH.u_light, light); gl.uniform1f(this.uH.u_alpha, 1);
+        if (peopleDeck) { gl.uniform4f(this.uH.u_deck, peopleDeck.x, peopleDeck.y, peopleDeck.cos, peopleDeck.sin); gl.uniform4f(this.uH.u_deckR, peopleDeck.centerY, peopleDeck.halfX, peopleDeck.halfY, peopleDeck.z) } else gl.uniform4f(this.uH.u_deckR, 0, 0, 0, 0);
         gl.uniform1f(this.uH.u_face, unit * PERSON_UNITS / mpp >= 12 ? 1 : 0);   // 얼굴: 사람 키가 화면 12 px 넘을 때(작으면 점이 뭉친다)
         const OF = PP.outfits; gl.uniform1f(this.uH.u_era, OF ? 1 : 0);   // 조선 팩: 옷차림 6가지(팩 people.outfits · outfitWeights)
         if (OF) { const w = PP.outfitWeights || OF.map(() => 1), tot = w.reduce((a, b) => a + b, 0); let acc = 0; gl.uniform3fv(this.uH.u_jshirt, OF.flatMap(o => col(o.shirt))); gl.uniform3fv(this.uH.u_jlow, OF.flatMap(o => col(o.lower))); gl.uniform1fv(this.uH.u_jcum, w.map(x => (acc += x) / tot)) }
