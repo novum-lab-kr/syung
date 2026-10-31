@@ -1,6 +1,7 @@
 // 내 승차권 목록(모듈 저장소 — 목록 화면과 발권 화면이 같이 본다). 서버 /api/me/tickets(웹과 같은 주소 · 모양).
 import { useSyncExternalStore } from 'react';
 import { call, errorMessage, planOf, ticketOf, type Plan, type PlanLeg, type SlimLeg, type SlimRoute, type Ticket, type TicketBody } from './api';
+import { readToken } from './token';
 import { quickestRoute, routeAt, routePath, nextRideDay, shortName } from './ticketRoutes';
 
 export type ListState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; tickets: Ticket[] };
@@ -12,10 +13,16 @@ export const useTickets = () => useSyncExternalStore(subscribe, () => state);
 export const resetTickets = () => set({ status: 'loading' });
 export const ticketById = (id: number) => (state.status === 'ready' ? state.tickets.find(ticket => ticket.id === id) ?? null : null);
 
+// 요청을 보낼 때의 토큰으로 보내고, 응답 때 토큰이 바뀌었으면(로그아웃 · 다른 계정 로그인) 그 응답은 앞 세션 것이라 목록에 넣지 않는다
+const withToken = (token: string | null) => (token ? { token } : {});
+const sessionChanged = async (token: string | null) => (await readToken()) !== token;
+
 export async function loadTickets(): Promise<void> {
   if (state.status !== 'ready') set({ status: 'loading' });
+  const token = await readToken();
   try {
-    const reply = await call('GET', '/api/me/tickets');
+    const reply = await call('GET', '/api/me/tickets', undefined, withToken(token));
+    if (await sessionChanged(token)) return;
     const body = reply.body as { tickets?: unknown } | null;
     if (reply.ok && body && Array.isArray(body.tickets)) {
       set({ status: 'ready', tickets: body.tickets.map(ticketOf).filter((ticket): ticket is Ticket => ticket !== null) });
@@ -23,6 +30,7 @@ export async function loadTickets(): Promise<void> {
     }
     if (reply.status !== 401) set({ status: 'error', message: '승차권을 받지 못했어요.' });
   } catch {
+    if (await sessionChanged(token)) return;
     set({ status: 'error', message: '승차권을 받지 못했어요. 연결을 확인해 주세요.' });
   }
 }
@@ -35,9 +43,10 @@ export type SaveResult = { ok: true; ticket: Ticket } | { ok: false; message: st
 
 // 발권(id 없음) · 고치기(id)
 export async function saveTicket(body: TicketBody, id?: number): Promise<SaveResult> {
+  const token = await readToken();
   try {
-    const reply = id === undefined ? await call('POST', '/api/me/tickets', body) : await call('PUT', `/api/me/tickets/${id}`, body);
-    if (reply.status === 401) return { ok: false, message: null };
+    const reply = id === undefined ? await call('POST', '/api/me/tickets', body, withToken(token)) : await call('PUT', `/api/me/tickets/${id}`, body, withToken(token));
+    if (await sessionChanged(token) || reply.status === 401) return { ok: false, message: null };
     const ticket = reply.ok ? ticketOf(reply.body) : null;
     if (!ticket) return { ok: false, message: errorMessage(reply.body) ?? '발권하지 못했어요.' };
     listTurn += 1;
@@ -52,9 +61,10 @@ export async function saveTicket(body: TicketBody, id?: number): Promise<SaveRes
 }
 
 export async function deleteTicket(id: number): Promise<{ ok: boolean; message: string | null }> {
+  const token = await readToken();
   try {
-    const reply = await call('DELETE', `/api/me/tickets/${id}`);
-    if (reply.status === 401) return { ok: false, message: null };
+    const reply = await call('DELETE', `/api/me/tickets/${id}`, undefined, withToken(token));
+    if (await sessionChanged(token) || reply.status === 401) return { ok: false, message: null };
     if (!reply.ok && reply.status !== 404) return { ok: false, message: '지우지 못했어요.' };
     listTurn += 1;
     if (state.status === 'ready') set({ status: 'ready', tickets: state.tickets.filter(ticket => ticket.id !== id) });

@@ -81,16 +81,17 @@ export async function signIn(provider: Provider) {
   return applyLogin(await startLogin(provider));
 }
 
-// 로그아웃: 서버 세션을 지우고(실패해도) 이 기기 토큰을 지운다
-// 먼저 로그아웃 상태로 바꿔 두어 그 요청의 401 이 '로그인이 끝났어요'를 또 띄우지 않게 한다
+// 로그아웃: 이 기기 토큰을 먼저 지우고 서버 세션을 지운다(실패해도 그대로)
+// 응답을 기다리는 사이 다른 계정으로 로그인할 수 있으니 응답 뒤에는 토큰 · 상태 · 안내를 건드리지 않는다
+// 토큰을 먼저 지웠으니 그 요청의 401 은 api.ts 가 옛 토큰으로 보고 '로그인이 끝났어요'를 띄우지 않는다
 export async function signOut(): Promise<void> {
   const token = await readToken();
   set({ status: 'out' });
-  if (token) {
-    try { await call('POST', '/api/auth/logout', undefined, { token }); } catch { /* 연결이 안 돼도 이 기기에선 지운다 */ }
-  }
   await clearToken();
   showToast('로그아웃했어요');
+  if (token) {
+    try { await call('POST', '/api/auth/logout', undefined, { token }); } catch { /* 연결이 안 돼도 이 기기에선 이미 지웠다 */ }
+  }
 }
 
 // 탈퇴 뒤처럼 서버 세션이 이미 없을 때
