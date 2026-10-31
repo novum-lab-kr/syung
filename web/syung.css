@@ -747,9 +747,9 @@ html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
 @media(prefers-reduced-motion:reduce){.login-scrim,.login-card{transition:none}}
 .login-grab{width:32px;height:4px;border-radius:var(--radius-5);background:var(--rule);margin:0 0 23px}
 .login-brand{width:47px;height:47px;border-radius:var(--radius-15);box-shadow:0 4px 0 #e9e5cd;margin:0 0 14px}
-/* 로고 움직임(Lottie) 캔버스: 로고 칸 위쪽 넓은 영역, 누르기는 아래로 통과. 바람 · 먼지는 테마 색 */
+/* 로고 움직임(Lottie) 캔버스: 로고 칸 위쪽 넓은 영역, 누르기는 아래로 통과. 바람 · 먼지는 테마 흐린 색 · 날아가는 글자 ㅅㅠㅇ~ 는 잉크색 */
 .login-motion{position:absolute;width:800px;height:170px;pointer-events:none;z-index:1}
-.login-motion .lm-wind path{stroke:var(--muted)}.login-motion .lm-dust path{fill:var(--muted)}
+.login-motion .lm-wind path{stroke:var(--muted)}.login-motion .lm-dust path{fill:var(--muted)}.login-motion .lm-word path{fill:var(--ink)}
 .login-card h2{margin:0 0 23px;font-family:var(--round);font-weight:var(--weight-regular);font-size:25px}
 .login-list{display:flex;flex-direction:column;gap:9px;width:100%}
 .social{display:flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:48px;border-radius:var(--radius-12);font-size:var(--text-13);font-weight:var(--weight-semibold);text-decoration:none}
