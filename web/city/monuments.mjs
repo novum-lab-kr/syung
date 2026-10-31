@@ -1,4 +1,4 @@
-import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, monumentsInView, palaceRing } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, hgRing, jmRing, monumentsInView, palaceRing, sjRing } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
@@ -11,6 +11,9 @@ import { PalaceTrees } from "./monument_trees.mjs";
 var ZONES = {
 	gyeongbok: () => __vitePreload(() => import("./monuments_gyeongbok.mjs"), [], import.meta.url),
 	changdeokgung: () => __vitePreload(() => import("./monuments_changdeokgung.mjs"), [], import.meta.url),
+	jongmyo: () => __vitePreload(() => import("./monuments_jongmyo.mjs"), [], import.meta.url),
+	sajik: () => __vitePreload(() => import("./monuments_sajik.mjs"), [], import.meta.url),
+	hwangudan: () => __vitePreload(() => import("./monuments_hwangudan.mjs"), [], import.meta.url),
 	sungnyemun: () => __vitePreload(() => import("./monuments_sungnyemun.mjs"), [], import.meta.url),
 	heunginjimun: () => __vitePreload(() => import("./monuments_heunginjimun.mjs"), [], import.meta.url)
 };
@@ -201,7 +204,13 @@ var Monuments = class {
 				radiusM
 			];
 		})).some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
-		return (this.palaceM ??= [palaceRing(), cdgRing()].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
+		return (this.palaceM ??= [
+			palaceRing(),
+			cdgRing(),
+			jmRing(),
+			sjRing(),
+			hgRing()
+		].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
 			let inside = false;
 			for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
 				const [xi, yi] = ring[i], [xj, yj] = ring[j];

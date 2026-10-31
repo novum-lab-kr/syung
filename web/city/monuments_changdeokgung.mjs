@@ -4,7 +4,7 @@ import { K, MeshWriter } from "./monument_parts.mjs";
 import { CDG_BUILDINGS } from "./monuments_changdeokgung_data.mjs";
 import { CDG_TREES } from "./monuments_changdeokgung_trees_data.mjs";
 import { CDG_TORCHES } from "./monuments_changdeokgung_torches_data.mjs";
-import { FINE, MID, ROUGH, buildFrameOutline, buildFrames, buildWallLine, clamp, frameOf, hall, place, rectOf } from "./monuments_hanok.mjs";
+import { FINE, MID, ROUGH, buildFrameOutline, buildFrames, buildWallLine, clamp, frameOf, hall, place, rectOf, wingsOf } from "./monuments_hanok.mjs";
 // web/city/monuments_changdeokgung.mts
 var trees = {
 	at: CDG_AT,
@@ -471,63 +471,6 @@ function buildRichOutline(w, r) {
 			1
 		]);
 	}
-}
-function wingsOf(r) {
-	const STEP = .3, cosA = Math.cos(r.ang), sinA = Math.sin(r.ang), cols = Math.ceil(r.len / STEP), rows = Math.ceil(r.wid / STEP);
-	const inside = (x, y) => {
-		let hit = false;
-		for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) {
-			const [xi, yi] = r.pts[i], [xj, yj] = r.pts[j];
-			if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
-		}
-		return hit;
-	};
-	const grid = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (__, col) => {
-		const u = (col + .5) * STEP - r.len / 2, v = (row + .5) * STEP - r.wid / 2;
-		return inside(r.cx + u * cosA - v * sinA, r.cy + u * sinA + v * cosA);
-	}));
-	const out = [];
-	for (let pass = 0; pass < 3; pass++) {
-		const heights = new Array(cols).fill(0);
-		let best = {
-			area: 0,
-			col0: 0,
-			col1: 0,
-			row0: 0,
-			row1: 0
-		};
-		for (let row = 0; row < rows; row++) {
-			for (let col = 0; col < cols; col++) heights[col] = grid[row][col] ? heights[col] + 1 : 0;
-			for (let col0 = 0; col0 < cols; col0++) {
-				let low = Infinity;
-				for (let col1 = col0; col1 < cols && heights[col1]; col1++) {
-					low = Math.min(low, heights[col1]);
-					const area = low * (col1 - col0 + 1);
-					if (area > best.area) best = {
-						area,
-						col0,
-						col1,
-						row0: row - low + 1,
-						row1: row
-					};
-				}
-			}
-		}
-		const w0 = (best.col1 - best.col0 + 1) * STEP, h0 = (best.row1 - best.row0 + 1) * STEP;
-		if (best.area * STEP * STEP < 14 || Math.min(w0, h0) < 3) break;
-		const uc = (best.col0 + best.col1 + 1) / 2 * STEP - r.len / 2, vc = (best.row0 + best.row1 + 1) / 2 * STEP - r.wid / 2, tall = h0 > w0;
-		out.push({
-			cx: r.cx + uc * cosA - vc * sinA,
-			cy: r.cy + uc * sinA + vc * cosA,
-			len: Math.max(w0, h0),
-			wid: Math.min(w0, h0),
-			ang: tall ? r.ang + Math.PI / 2 : r.ang,
-			fill: 1,
-			pts: []
-		});
-		for (let row = best.row0; row <= best.row1; row++) for (let col = best.col0; col <= best.col1; col++) grid[row][col] = false;
-	}
-	return out;
 }
 function buildTimberHouse(w, outline) {
 	for (const wing of wingsOf(outline)) {

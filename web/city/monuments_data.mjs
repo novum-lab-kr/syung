@@ -400,6 +400,253 @@ var CDG_RING = [
 	12212
 ];
 var cdgRing = () => ringOf(CDG_RING, CDG_ORIGIN);
+var JM_AT = [126.99443, 37.57437];
+var JM_ORIGIN = [126.98, 37.57];
+var JM_RING = [
+	14790,
+	6859,
+	14824,
+	6858,
+	14953,
+	6854,
+	15113,
+	6827,
+	15260,
+	6774,
+	15385,
+	6712,
+	15433,
+	6661,
+	15529,
+	6385,
+	15570,
+	6289,
+	15779,
+	5772,
+	15748,
+	5502,
+	15805,
+	5186,
+	16119,
+	4719,
+	16532,
+	3389,
+	16701,
+	2877,
+	16665,
+	2685,
+	16458,
+	2388,
+	16313,
+	2246,
+	16221,
+	2196,
+	16107,
+	2138,
+	15937,
+	2079,
+	15735,
+	2035,
+	15583,
+	2012,
+	15507,
+	2010,
+	15403,
+	2036,
+	15211,
+	2093,
+	15029,
+	2137,
+	14931,
+	2150,
+	14827,
+	2143,
+	14706,
+	2117,
+	14718,
+	2076,
+	14621,
+	2057,
+	14556,
+	2045,
+	14546,
+	2079,
+	14447,
+	2061,
+	14349,
+	2048,
+	14159,
+	2052,
+	14006,
+	2067,
+	13899,
+	2102,
+	13784,
+	2182,
+	13684,
+	2296,
+	13502,
+	2519,
+	13009,
+	3158,
+	12712,
+	3600,
+	12453,
+	4063,
+	12014,
+	4585,
+	11615,
+	5256,
+	11445,
+	5749,
+	11445,
+	5845,
+	11448,
+	5963,
+	11652,
+	6537,
+	11741,
+	6675,
+	12397,
+	7301,
+	12768,
+	7519,
+	12945,
+	7335,
+	13095,
+	7235,
+	13368,
+	7124,
+	13583,
+	7039,
+	14108,
+	6898,
+	14420,
+	6861,
+	14706,
+	6862,
+	14757,
+	6861,
+	14790,
+	6859,
+	14790,
+	6859
+];
+var jmRing = () => ringOf(JM_RING, JM_ORIGIN);
+var SJ_AT = [126.9677, 37.5756];
+var SJ_ORIGIN = [126.96, 37.57];
+var SJ_RING = [
+	7110,
+	5488,
+	7828,
+	5192,
+	8257,
+	5845,
+	7539,
+	6142,
+	7110,
+	5488
+];
+var sjRing = () => ringOf(SJ_RING, SJ_ORIGIN);
+var HG_AT = [126.97968, 37.56501];
+var HG_ORIGIN = [126.97, 37.56];
+var HG_RING = [
+	8889,
+	5245,
+	8879,
+	5227,
+	8987,
+	5187,
+	8911,
+	5021,
+	8834,
+	5045,
+	8800,
+	5056,
+	8793,
+	5040,
+	8825,
+	5029,
+	9091,
+	4948,
+	9131,
+	4936,
+	9049,
+	4733,
+	9425,
+	4655,
+	9487,
+	4641,
+	9523,
+	4641,
+	9576,
+	4642,
+	9635,
+	4647,
+	9686,
+	4664,
+	10376,
+	4894,
+	10334,
+	4960,
+	10133,
+	4903,
+	10096,
+	4980,
+	10050,
+	5050,
+	9970,
+	5119,
+	9914,
+	5151,
+	9879,
+	5153,
+	9884,
+	5212,
+	9886,
+	5243,
+	9696,
+	5224,
+	9662,
+	5319,
+	9640,
+	5361,
+	9586,
+	5344,
+	9540,
+	5327,
+	9502,
+	5310,
+	9463,
+	5291,
+	9432,
+	5272,
+	9397,
+	5249,
+	9378,
+	5232,
+	9365,
+	5221,
+	9349,
+	5207,
+	9323,
+	5187,
+	9300,
+	5166,
+	9276,
+	5145,
+	9252,
+	5121,
+	9241,
+	5108,
+	8978,
+	5210,
+	8909,
+	5237,
+	8889,
+	5245
+];
+var hgRing = () => ringOf(HG_RING, HG_ORIGIN);
 var MONUMENTS = [
 	{
 		id: "sungnyemun",
@@ -468,6 +715,60 @@ var MONUMENTS = [
 		zone: "changdeokgung",
 		lngLat: CDG_AT,
 		yawDeg: 0
+	},
+	{
+		id: "jm-wall",
+		zone: "jongmyo",
+		lngLat: JM_AT,
+		yawDeg: 0
+	},
+	{
+		id: "jm-halls",
+		zone: "jongmyo",
+		lngLat: JM_AT,
+		yawDeg: 0
+	},
+	{
+		id: "jm-frames",
+		zone: "jongmyo",
+		lngLat: JM_AT,
+		yawDeg: 0
+	},
+	{
+		id: "sj-wall",
+		zone: "sajik",
+		lngLat: SJ_AT,
+		yawDeg: 0
+	},
+	{
+		id: "sj-halls",
+		zone: "sajik",
+		lngLat: SJ_AT,
+		yawDeg: 0
+	},
+	{
+		id: "sj-frames",
+		zone: "sajik",
+		lngLat: SJ_AT,
+		yawDeg: 0
+	},
+	{
+		id: "hg-wall",
+		zone: "hwangudan",
+		lngLat: HG_AT,
+		yawDeg: 0
+	},
+	{
+		id: "hg-halls",
+		zone: "hwangudan",
+		lngLat: HG_AT,
+		yawDeg: 0
+	},
+	{
+		id: "hg-frames",
+		zone: "hwangudan",
+		lngLat: HG_AT,
+		yawDeg: 0
 	}
 ];
 var GATE_YARDS = [{
@@ -504,6 +805,24 @@ var MONUMENT_HIDES = [
 		radiusM: 900,
 		minH: 0,
 		area: cdgRing()
+	},
+	{
+		lngLat: JM_AT,
+		radiusM: 900,
+		minH: 0,
+		area: jmRing()
+	},
+	{
+		lngLat: SJ_AT,
+		radiusM: 300,
+		minH: 0,
+		area: sjRing()
+	},
+	{
+		lngLat: HG_AT,
+		radiusM: 300,
+		minH: 0,
+		area: hgRing()
 	}
 ];
 var REGIONS = {
@@ -514,6 +833,18 @@ var REGIONS = {
 	changdeokgung: {
 		lngLat: CDG_AT,
 		radiusM: 900
+	},
+	jongmyo: {
+		lngLat: JM_AT,
+		radiusM: 700
+	},
+	sajik: {
+		lngLat: SJ_AT,
+		radiusM: 300
+	},
+	hwangudan: {
+		lngLat: HG_AT,
+		radiusM: 300
 	},
 	sungnyemun: {
 		lngLat: [126.97536025, 37.559986249999994],
@@ -558,4 +889,4 @@ function monumentBuildingFilter() {
 		})
 	}]];
 }
-export { CDG_AT, CDG_ORIGIN, CDG_RING, GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, cdgRing, monumentBuildingFilter, monumentsInView, palaceRing, withMonumentHides };
+export { CDG_AT, CDG_ORIGIN, CDG_RING, GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, HG_AT, HG_ORIGIN, HG_RING, JM_AT, JM_ORIGIN, JM_RING, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, SJ_AT, SJ_ORIGIN, SJ_RING, cdgRing, hgRing, jmRing, monumentBuildingFilter, monumentsInView, palaceRing, sjRing, withMonumentHides };

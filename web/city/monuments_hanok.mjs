@@ -1,5 +1,6 @@
 import { toM } from "./life.mjs";
 import { K, bandBox, buildBrackets, buildRoof } from "./monument_parts.mjs";
+import { matbaeRoof } from "./monument_matbae.mjs";
 // web/city/monuments_hanok.mts
 var frameOf = (at, origin) => {
 	const [ox, oy] = toM(at[0], at[1]);
@@ -130,8 +131,35 @@ function buildWallLine(w, line, skip) {
 					0
 				], m0, m1, m1, m0);
 			}
-			const rx = ux * .2, ry = uy * .2;
-			w.box(Math.min(px, qx) - Math.abs(rx) - .15, Math.max(px, qx) + Math.abs(rx) + .15, Math.min(py, qy) - Math.abs(ry) - .15, Math.max(py, qy) + Math.abs(ry) + .15, WALL.ridgeZ - .02, WALL.ridgeZ + .2, K.ridge, { bottom: true });
+			{
+				const rz0 = WALL.ridgeZ - .02, rz1 = WALL.ridgeZ + .2, hw = .2, ext = .15;
+				const a = [px - ux * ext, py - uy * ext], b = [qx + ux * ext, qy + uy * ext];
+				const c = (point, sign, z) => [
+					point[0] + nx * hw * sign,
+					point[1] + ny * hw * sign,
+					z
+				];
+				w.quad(c(a, -1, rz1), c(b, -1, rz1), c(b, 1, rz1), c(a, 1, rz1), K.ridge, [
+					0,
+					0,
+					1
+				]);
+				for (const sign of [-1, 1]) w.quad(c(a, sign, rz0), c(b, sign, rz0), c(b, sign, rz1), c(a, sign, rz1), K.ridge, [
+					nx * sign,
+					ny * sign,
+					0
+				]);
+				w.quad(c(a, 1, rz0), c(a, -1, rz0), c(a, -1, rz1), c(a, 1, rz1), K.ridge, [
+					-ux,
+					-uy,
+					0
+				]);
+				w.quad(c(b, -1, rz0), c(b, 1, rz0), c(b, 1, rz1), c(b, -1, rz1), K.ridge, [
+					ux,
+					uy,
+					0
+				]);
+			}
 			w.quad([
 				px - nx * WALL.eaveHalf,
 				py - ny * WALL.eaveHalf,
@@ -224,7 +252,7 @@ function column(w, x, y, z0, z1, half = .26) {
 function windowPanes(w, S, hx, hy, base, top) {
 	const z0 = base + .85, z1 = top - .6, off = .14;
 	if (z1 - z0 < .8) return;
-	const doorFirst = S.bays[0] <= 3 ? 0 : 1, doorLast = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+	const doorFirst = S.bays[0] <= 3 || S.doorsAll ? 0 : 1, doorLast = S.bays[0] <= 3 || S.doorsAll ? S.bays[0] - 1 : S.bays[0] - 2;
 	const bayX = 2 * hx / S.bays[0], bayY = 2 * hy / S.bays[1];
 	for (let i = 0; i < S.bays[0]; i++) {
 		const cx = -hx + bayX * (i + .5), half = bayX * .31;
@@ -330,7 +358,7 @@ function storey(w, S, hx, hy, base, body, open = false) {
 	}
 	if (!S.hollow && !open) windowPanes(w, S, hx, hy, base, top);
 	if (S.doors) {
-		const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 ? 0 : 1, last = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+		const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 || S.doorsAll ? 0 : 1, last = S.bays[0] <= 3 || S.doorsAll ? S.bays[0] - 1 : S.bays[0] - 2;
 		for (let i = first; i <= last; i++) {
 			const cx = -hx + bay * (i + .5);
 			w.quad([
@@ -536,6 +564,16 @@ function hall(w, S) {
 		return top - .25 + (S.upperRise ?? S.rise);
 	}
 	const top = storey(w, S, S.hx, S.hy, base, S.body);
+	if (S.gabled) {
+		matbaeRoof(w, {
+			hx: S.hx + .45,
+			hy: S.hy + .45,
+			eave: S.eave,
+			z0: top - .25,
+			rise: S.rise
+		});
+		return top - .25 + S.rise;
+	}
 	const roof = roofOf(S, S.hx + .45, S.hy + .45, top - .25, S.rise);
 	buildRoof(w, roof, {
 		innerZ: top - .2,
@@ -559,6 +597,73 @@ var ROUGH = {
 	side: 3,
 	slope: 2
 };
+function wingsOf(r) {
+	const STEP = .3, cosA = Math.cos(r.ang), sinA = Math.sin(r.ang), cols = Math.ceil(r.len / STEP), rows = Math.ceil(r.wid / STEP);
+	const inside = (x, y) => {
+		let hit = false;
+		for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) {
+			const [xi, yi] = r.pts[i], [xj, yj] = r.pts[j];
+			if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+		}
+		return hit;
+	};
+	const grid = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (__, col) => {
+		const u = (col + .5) * STEP - r.len / 2, v = (row + .5) * STEP - r.wid / 2;
+		return inside(r.cx + u * cosA - v * sinA, r.cy + u * sinA + v * cosA);
+	}));
+	const out = [];
+	for (let pass = 0; pass < 3; pass++) {
+		const heights = new Array(cols).fill(0);
+		let best = {
+			area: 0,
+			col0: 0,
+			col1: 0,
+			row0: 0,
+			row1: 0
+		};
+		for (let row = 0; row < rows; row++) {
+			for (let col = 0; col < cols; col++) heights[col] = grid[row][col] ? heights[col] + 1 : 0;
+			for (let col0 = 0; col0 < cols; col0++) {
+				let low = Infinity;
+				for (let col1 = col0; col1 < cols && heights[col1]; col1++) {
+					low = Math.min(low, heights[col1]);
+					const area = low * (col1 - col0 + 1);
+					if (area > best.area) best = {
+						area,
+						col0,
+						col1,
+						row0: row - low + 1,
+						row1: row
+					};
+				}
+			}
+		}
+		const w0 = (best.col1 - best.col0 + 1) * STEP, h0 = (best.row1 - best.row0 + 1) * STEP;
+		if (best.area * STEP * STEP < 14 || Math.min(w0, h0) < 3) break;
+		const uc = (best.col0 + best.col1 + 1) / 2 * STEP - r.len / 2, vc = (best.row0 + best.row1 + 1) / 2 * STEP - r.wid / 2, tall = h0 > w0;
+		out.push({
+			cx: r.cx + uc * cosA - vc * sinA,
+			cy: r.cy + uc * sinA + vc * cosA,
+			len: Math.max(w0, h0),
+			wid: Math.min(w0, h0),
+			ang: tall ? r.ang + Math.PI / 2 : r.ang,
+			fill: 1,
+			pts: []
+		});
+		for (let row = best.row0; row <= best.row1; row++) for (let col = best.col0; col <= best.col1; col++) grid[row][col] = false;
+	}
+	return out;
+}
+var isConcave = (pts) => {
+	let sign = 0;
+	for (let i = 0; i < pts.length; i++) {
+		const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length], [cx, cy] = pts[(i + 2) % pts.length], cross = (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+		if (Math.abs(cross) < 1e-6) continue;
+		if (sign && Math.sign(cross) !== sign) return true;
+		sign = Math.sign(cross);
+	}
+	return false;
+};
 function buildFrameOutline(w, r, look = {}) {
 	const pts = r.pts, cx = pts.reduce((sum, p) => sum + p[0], 0) / pts.length, cy = pts.reduce((sum, p) => sum + p[1], 0) / pts.length, wall = look.height ?? 3.4, wallKind = look.wall ?? K.plaster;
 	let area2 = 0;
@@ -567,6 +672,27 @@ function buildFrameOutline(w, r, look = {}) {
 		area2 += ax * by - bx * ay;
 	}
 	const ccw = area2 > 0, small = !look.band && Math.abs(area2) / 2 < 600;
+	if (small && isConcave(pts)) {
+		const wings = wingsOf(r);
+		if (wings.length) {
+			for (const wing of wings) {
+				place(w, wing);
+				const hx = Math.max(1.2, wing.len / 2 - .6), hy = Math.max(1, wing.wid / 2 - .6);
+				hall(w, {
+					hx,
+					hy,
+					podium: .6,
+					body: 3.2,
+					rise: clamp((hy + 1.6) * .55, 1.2, 3.4),
+					eave: clamp(hy * .5, .9, 1.8),
+					bays: [clamp(Math.round(hx * 2 / 3.3), 1, 9), clamp(Math.round(hy * 2 / 3.3), 1, 3)],
+					steps: ROUGH
+				});
+			}
+			w.xf = null;
+			return;
+		}
+	}
 	for (let i = 0; i < pts.length; i++) {
 		const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length], dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
 		w.quad([
@@ -604,7 +730,7 @@ function buildFrameOutline(w, r, look = {}) {
 				bx,
 				by,
 				wall
-			], e(bx, by), e(ax, ay), K.fascia, [
+			], e(bx, by), e(ax, ay), K.giwa, [
 				dy,
 				-dx,
 				0
@@ -674,4 +800,4 @@ function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline
 	}
 	w.xf = null;
 }
-export { FINE, MID, ROUGH, buildFrameOutline, buildFrames, buildWallLine, clamp, frameOf, hall, local, place, rectOf };
+export { FINE, MID, ROUGH, buildFrameOutline, buildFrames, buildWallLine, clamp, frameOf, hall, local, place, rectOf, wingsOf };
