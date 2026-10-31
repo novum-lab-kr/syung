@@ -14,6 +14,7 @@ import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
+import {startAnalytics} from './lib/analytics.mts';   // GA4(운영 지도 주소의 웹에서만 · 앱 지도 #app 은 부르지 않는다)
 import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
 import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · 역 이름표 캔버스 그리기 차례
 import {monumentBuildingFilter} from './city/monuments_data.mts';   // 문화유산 모델을 넣는 모드(city.heritage)에서 지도 건물 층의 기념물 자리 건물을 빼는 필터
@@ -402,6 +403,7 @@ const smooth=(x:number)=>x*x*(3-2*x);
 // the trains on it, the x-ray) in the Joseon pack — 흙바닥, 기와집). 전환은 아래 '모드 전환'(prepareMode · commitMode).
 // 앱 지도 모드(주소 #app — 슝 앱의 웹뷰): 웹 메뉴 · 아래 시트 · 정보창은 숨기고(syung.css html[data-app=map]) 역 · 열차 누름은 앱에 알린다, 앱은 경로 · 역 · 모드를 보낸다(ui/app_bridge.mts).
 // 일반 웹(#app 없음)에서는 다리를 만들지 않는다 — 메시지를 받지도 보내지도 않는다
+startAnalytics();
 const appBridge=appMapMode()?createAppBridge({facts:{hasStation:id=>byId.has(id),hasLine:line=>line in paths,hasMode:id=>modes.has(id)},targets:{window,document}}):null;
 // 다리 v2(앱 지도 모드): 앱 시트 높이(setPadding — 시트 따라가기 · 맞추기가 웹 시트 대신 이 값) · 줌 · 실시간 글(status) · 따라가는 것(followChanged)
 let appPad=0,appSheetLift=0,appRouteLift=0;
@@ -409,7 +411,7 @@ function liftAppNotice(){document.documentElement.style.setProperty('--app-notic
 function appStatus(){if(appBridge)appBridge.status({zoom:map.getZoom(),live:{state:liveState!.parentElement!.dataset.state??'idle',text:liveState!.textContent??''}})}
 function appFollow(){appBridge?.followChanged(sheetUI.following??sheetUI.followBus??null)}
 const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end();appBridge?.modeChanged(now)},
-  commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);appBridge?.modeChanged(next);if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}}) as ModeCtl;   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
+  commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);appBridge?.modeChanged(next);if(prev!==next)dispatchEvent(new CustomEvent('syung:mode',{detail:next}));if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}}) as ModeCtl;   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
 // city-build: the miniature city's buildings (web/city/buildings.mjs): a custom layer under the station names (so names and

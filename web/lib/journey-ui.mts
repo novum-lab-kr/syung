@@ -341,7 +341,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
       view.status.text = '';
       last = {d: answer, sel: 0, from: trip.from, to: trip.to, at, when: {...when}, picked: trip.picked};
       render(answer, 0);
-      dispatchEvent(new CustomEvent('syung:route'));   // 내 통계의 길찾기 횟수(user/account.mjs 가 로그인했을 때만 센다 · 장소 · 시각은 안 보낸다)
+      dispatchEvent(new CustomEvent('syung:route'));   // 내 통계의 길찾기 횟수(user/account.mjs 가 로그인했을 때만 센다) · 방문 통계(lib/analytics.mts) — 둘 다 장소 · 시각은 안 보낸다
       fold(true);
       const sheetBody = body?.closest('.sheet-body'); if (sheetBody) sheetBody.scrollTop = 0;   // the trip line and the tabs first
     } catch { if (current()) failed('연결이 불안정해요. 잠시 뒤 다시 찾아 주세요.'); }
