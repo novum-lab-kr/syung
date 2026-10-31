@@ -19,18 +19,15 @@ export const CDG_AT:[number, number] = [126.991, 37.5825];
 export const CDG_ORIGIN:[number, number] = [126.98, 37.57];
 export const CDG_RING:number[] = [9819,12212,9546,11709,9526,11282,9513,10906,9391,10908,9356,8960,9428,8725,9447,8664,9555,8330,9712,7801,9821,7819,9836,7765,9912,7778,10063,7803,10162,7820,10144,7889,10313,7920,10673,7588,10932,7630,11220,7844,12127,8501,12586,7772,12698,7647,12744,7597,12891,7578,13030,7705,13060,7722,13157,7807,13431,7773,13658,7807,13724,7945,13931,7885,13992,8021,14046,8142,14212,8509,14103,8539,14112,8593,14094,8808,13880,8803,13908,8855,13832,8976,13717,9009,13714,9048,13509,9213,13469,9202,13174,9397,13188,9426,13149,9506,13030,9530,13032,9539,13101,9786,13180,9858,13556,10633,13775,10871,13746,11248,14038,11792,13507,12563,13395,13304,13713,13647,13909,13876,14056,14236,14137,14509,14096,14755,14538,14899,14447,15051,13936,15665,13247,16884,12728,17067,12367,17144,11786,16997,11187,16957,11074,16868,10892,16835,10759,16777,10522,16794,10079,16935,9791,16924,9784,17029,9610,17025,9509,17196,9475,17383,9305,17536,9085,17438,8715,17519,8474,17454,8373,17331,7815,17006,7941,16602,7902,16098,8050,15534,7907,15526,7677,15208,7577,15177,7586,14893,7331,14819,7328,14750,7716,13863,8237,13710,8757,13851,8882,13886,8913,13896,9037,13985,9056,14031,9144,14068,9424,13669,9459,12908,9715,12624,9819,12212];
 export const cdgRing = ():[number, number][] => ringOf(CDG_RING, CDG_ORIGIN);
-// 동상(이순신 · 세종대왕): 모델 코드는 monuments_gyeongbok.mts 에 남아 있지만 이번 배포에는 내보내지 않는다(사용자 결정 2026-10-31 — 다음 브랜치에서 곡면 메시로 다시 짓는다).
-// 다시 내보낼 때 이 두 줄을 MONUMENTS 에, STATUE_HIDES 를 MONUMENT_HIDES 에 합친다.
-export const STATUES:Monument[] = [
-  { id: 'yi-sunsin', zone: 'gyeongbok', lngLat: [126.97695, 37.57097], yawDeg: 0 },   // 이순신 장군 동상: OSM node 2653074012 · direction 180°(남쪽을 본다)
-  { id: 'sejong', zone: 'gyeongbok', lngLat: [126.97691, 37.57292], yawDeg: 0 },   // 세종대왕 동상: OSM node 3841809527 · direction 180°
-];
 // 두 도성문 중심 · 방향: OSM 원자료의 육축 긴 변(2026-11-01), 구역 파일 머리에 계산 근거.
 // 숭례문 https://www.openstreetmap.org/relation/10647050 · 흥인지문 https://www.openstreetmap.org/way/320783808
 export const MONUMENTS:Monument[] = [
   { id: 'sungnyemun', zone: 'sungnyemun', lngLat: [126.97536025, 37.559986249999994], yawDeg: -41.8017044508303, openingsOnly: true },
   { id: 'heunginjimun', zone: 'heunginjimun', lngLat: [127.009594975, 37.571153975], yawDeg: 100.09911107449813, openingsOnly: true },
   { id: 'gwanghwamun', zone: 'gyeongbok', lngLat: [126.976817, 37.575928], yawDeg: -1.3 },
+  // 광화문광장 동상(곡면 메시 — monuments_statues.mts): 자리 · 방향은 OSM node(이순신 2653074012 · 세종대왕 3841809527, direction 180° = 남쪽을 본다)
+  { id: 'yi-sunsin', zone: 'gyeongbok', lngLat: [126.97695, 37.57097], yawDeg: 0 },
+  { id: 'sejong', zone: 'gyeongbok', lngLat: [126.97691, 37.57292], yawDeg: 0 },
   // 경복궁 둘레 담장 · 궁 안 건물(흥례문 … 향원정 전용 모델 + 나머지 한옥 틀): 같은 기준점 PALACE_AT, 방향 없음. 멀리서는 안 그린다
   { id: 'palace-wall', zone: 'gyeongbok', lngLat: PALACE_AT, yawDeg: 0 },
   { id: 'palace-halls', zone: 'gyeongbok', lngLat: PALACE_AT, yawDeg: 0 },
@@ -41,9 +38,6 @@ export const MONUMENTS:Monument[] = [
   { id: 'cdg-frames', zone: 'changdeokgung', lngLat: CDG_AT, yawDeg: 0 },
 ];
 // 모델이 앉는 자리의 지도 건물(OSM 광화문 외곽 49.5 × 13.3 m — 육축과 양옆 궁장 도막)을 뺀다: 그 안에 중심이 있는 조각 건물
-// (세종대왕 동상 앞 지도 건물 비우기는 STATUE_HIDES — 동상과 같이 다음 브랜치에서)
-// 동상을 내보낼 때 합칠 자리 비우기(지금은 쓰지 않는다)
-export const STATUE_HIDES = [{ lngLat: [126.97691, 37.57285] as [number, number], radiusM: 14, minH: 0 }];
 // 도성문 둘레(OSM 육축 · 옹성 전체를 감싸는 원): 지도 건물 비우기와 도시 나무 비우기가 같이 쓴다.
 // exact: 이 원은 문 외곽에 딱 맞아(tests/city_monuments.test.mjs) 기본 모드 필터가 반경을 1.5배로 키우지 않는다 — 키우면 바로 옆 건물까지 지워진다
 export interface MonumentHide { lngLat:[number, number]; radiusM:number; minH:number; area?:[number, number][]; exact?:boolean }
@@ -54,6 +48,8 @@ export const GATE_YARDS:MonumentHide[] = [
 export const MONUMENT_HIDES:MonumentHide[] = [
   ...GATE_YARDS,
   { lngLat: [126.976817, 37.575928] as [number, number], radiusM: 22, minH: 0 },
+  // 세종대왕 동상 자리(받침 8.5 × 6.2 m): 지도 건물 조각이 받침 속에 들지 않게
+  { lngLat: [126.97691, 37.57285] as [number, number], radiusM: 14, minH: 0 },
   // 경복궁 안: 둘레 안에 중심이 든 지도 건물은 모두 뺀다(전용 모델 · 한옥 틀이 대신 선다). 반경은 둘레 전체를 덮는 값 — 실제 판정은 area 다각형
   { lngLat: PALACE_AT, radiusM: 900, minH: 0, area: palaceRing() },
   // 창덕궁 안: 같은 방식(둘레 안에 중심이 든 지도 건물은 모두 뺀다)

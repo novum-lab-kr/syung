@@ -32,6 +32,16 @@ export class MeshWriter {
     nx /= len; ny /= len; nz /= len; if (nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) { nx = -nx; ny = -ny; nz = -nz }
     for (const [p, s] of [[a, sa], [b, sb], [c, sc]] as const) this.data.push(p[0], p[1], p[2], nx, ny, nz, kind, s);
   }
+  // 곡면용: 법선을 직접 준다(정점마다 매끈한 법선 — monument_curves.mts). 높이 옮김 · 자리 옮김 · 종류 바꿔치기는 tri 와 같다
+  triN(a:V3, b:V3, c:V3, na:V3, nb:V3, nc:V3, kind:number, sa = 0, sb = 0, sc = 0):void {
+    if (this.remap) kind = this.remap[kind] ?? kind;
+    if (this.dz) { a = [a[0], a[1], a[2] + this.dz]; b = [b[0], b[1], b[2] + this.dz]; c = [c[0], c[1], c[2] + this.dz] }
+    if (this.xf) {
+      const { x, y, cos, sin } = this.xf, mv = (p:V3):V3 => [x + p[0] * cos - p[1] * sin, y + p[0] * sin + p[1] * cos, p[2]], rv = (p:V3):V3 => [p[0] * cos - p[1] * sin, p[0] * sin + p[1] * cos, p[2]];
+      a = mv(a); b = mv(b); c = mv(c); na = rv(na); nb = rv(nb); nc = rv(nc);
+    }
+    for (const [p, n, s] of [[a, na, sa], [b, nb, sb], [c, nc, sc]] as const) this.data.push(p[0], p[1], p[2], n[0], n[1], n[2], kind, s);
+  }
   quad(a:V3, b:V3, c:V3, e:V3, kind:number, hint:V3, sa = 0, sb = 0, sc = 0, se = 0):void { this.tri(a, b, c, kind, hint, sa, sb, sc); this.tri(a, c, e, kind, hint, sa, sc, se) }
   // 직육면체(아래 · 위 면을 뺄 수 있다)
   box(x0:number, x1:number, y0:number, y1:number, z0:number, z1:number, kind:number, skip:{ bottom?:boolean; top?:boolean } = {}):void {

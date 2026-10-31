@@ -11,12 +11,15 @@ import coaster from '../web/modes/coaster/index.mts';
 import retro from '../web/modes/retro/index.mts';
 import starcraft from '../web/modes/starcraft/index.mts';
 import nations from '../web/modes/nations/index.mts';
+import * as dataModule from '../web/city/monuments_data.mts';
 import { PALACE_TREES } from '../web/city/monuments_trees_data.mts';
 import { PALACE_BUILDINGS } from '../web/city/monuments_gyeongbok_data.mts';
 import { PALACE_AT, PALACE_ORIGIN, palaceRing } from '../web/city/monuments_data.mts';
 import { withMonumentHides, MONUMENT_HIDES, monumentBuildingFilter, monumentsInView, MONUMENTS, CDG_AT, CDG_ORIGIN, cdgRing } from '../web/city/monuments_data.mts';
 import { CDG_BUILDINGS } from '../web/city/monuments_changdeokgung_data.mts';
 import { CDG_TREES } from '../web/city/monuments_changdeokgung_trees_data.mts';
+import { MeshWriter, K } from '../web/city/monument_parts.mts';
+import { body, ellipsoid, torus, bowl } from '../web/city/monument_curves.mts';
 import { buildMonument as buildCdg } from '../web/city/monuments_changdeokgung.mts';
 
 const STRIDE = 8;
@@ -51,8 +54,76 @@ test('이순신 동상: 정점이 유한하고 받침 10.5 m + 동상 6.5 m = �
   for (let i = 0; i < data.length; i += STRIDE) assert.ok(Math.abs(Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) < 1e-3);
   assert.ok(Math.abs(heightOf('yi-sunsin') - 17) < .6, `높이 ${heightOf('yi-sunsin')}`);
 });
-test('세종대왕 동상: 받침 2.7 m + 동상 6.2 m = 약 8.9 m', () => {
-  assert.ok(Math.abs(heightOf('sejong') - 8.9) < .6, `높이 ${heightOf('sejong')}`);
+test('세종대왕 동상: 서울미래유산 공식값 — 기단 4.2 m + 동상 6.2 m = 총 10.4 m · 폭 4.3 m 안팎 · 정점이 유한하고 법선이 단위 길이', () => {
+  const data = buildMonument('sejong');
+  assert.equal(data.length % (STRIDE * 3), 0);
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < data.length; i += STRIDE) {
+    for (let k = 0; k < STRIDE; k++) assert.ok(Number.isFinite(data[i + k]), `정점 ${i / STRIDE} 칸 ${k}`);
+    assert.ok(Math.abs(Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) < 1e-3, `법선 ${i / STRIDE}`);
+    if (data[i + 2] > 4.2 && data[i + 2] < 8) { minX = Math.min(minX, data[i]); maxX = Math.max(maxX, data[i]) }
+  }
+  assert.ok(Math.abs(heightOf('sejong') - 10.4) < .1, `높이 ${heightOf('sejong')}`);
+  assert.ok(Math.abs((maxX - minX) - 4.3) < .6, `동상 폭 ${maxX - minX}`);   // 의자 폭이 공식 폭 4.3 m
+});
+test('이순신 동상: 좌표 · 법선 전체가 유한', () => {
+  const data = buildMonument('yi-sunsin');
+  for (let i = 0; i < data.length; i++) assert.ok(Number.isFinite(data[i]), `칸 ${i}`);
+});
+test('곡면 도우미: 그릇 바깥은 바깥으로 · 안쪽은 중심(속)으로 법선이 향하고, 통 마개는 평평한 법선이 따로다', () => {
+  const bowlWriter = new MeshWriter(); bowl(bowlWriter, [0, 0, 1], 1, .1, K.gilt);
+  let outerOk = 0, outerAll = 0, innerOk = 0, innerAll = 0;
+  for (let i = 0; i < bowlWriter.data.length; i += STRIDE) {
+    const [x, y, z, nx, ny, nz] = bowlWriter.data.slice(i, i + 6), radial = Math.hypot(x, y, z - 1), dot = nx * x + ny * y + nz * (z - 1);
+    if (z - 1 > -.02) continue;   // 가장자리 띠는 위를 본다
+    if (radial > .96) { outerAll++; if (dot > 0) outerOk++ } else if (radial < .94 && radial > .8) { innerAll++; if (dot < 0) innerOk++ }
+  }
+  assert.ok(outerAll > 100 && outerOk / outerAll > .95, `바깥 ${outerOk}/${outerAll}`);
+  assert.ok(innerAll > 100 && innerOk / innerAll > .95, `안쪽 ${innerOk}/${innerAll}`);
+  const column = new MeshWriter(); body(column, [[0, 0, 0, 1, 1], [0, 0, 2, 1, 1]], K.bronze);
+  let flatCap = 0, sideBad = 0;
+  for (let i = 0; i < column.data.length; i += STRIDE) {
+    const [, , z, nx, ny, nz] = column.data.slice(i, i + 6);
+    if (Math.abs(nz) > .999) flatCap++; else if (Math.abs(nz) > .05 && z > .01 && z < 1.99) sideBad++;
+  }
+  assert.ok(flatCap >= 20, `마개 법선 ${flatCap}`); assert.equal(sideBad, 0, '옆면 법선에 마개 방향이 섞였다');
+});
+test('곡면 도우미: 극점의 면적 0 삼각형이 없고 고리(torus)는 바깥을 향한다', () => {
+  for (const make of [(w) => ellipsoid(w, [0, 0, 0], [1, 1, 1], K.gilt), (w) => bowl(w, [0, 0, 0], 1, .1, K.gilt), (w) => torus(w, [0, 0, 0], 2, .2, K.gilt), (w) => body(w, [[0, 0, 0, 1, 1], [0, 0, 2, 1, 1]], K.gilt)]) {
+    const writer = new MeshWriter(); make(writer); const d = writer.data;
+    for (let i = 0; i < d.length; i += STRIDE * 3) {
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = [d[i], d[i + 1], d[i + 2], d[i + STRIDE], d[i + STRIDE + 1], d[i + STRIDE + 2], d[i + STRIDE * 2], d[i + STRIDE * 2 + 1], d[i + STRIDE * 2 + 2]];
+      const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
+      assert.ok(Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) > 1e-9, `면적 0 삼각형 ${i / STRIDE}`);
+    }
+  }
+  const ring = new MeshWriter(); torus(ring, [0, 0, 0], 2, .2, K.gilt);
+  let out = 0, all = 0;
+  for (let i = 0; i < ring.data.length; i += STRIDE) { const [x, y, z, nx, ny, nz] = ring.data.slice(i, i + 6), r = Math.hypot(x, y); all++; if (nx * (x - x / r * 2) + ny * (y - y / r * 2) + nz * z > 0) out++ }
+  assert.ok(out / all > .98, `고리 바깥 ${out}/${all}`);
+});
+test('세종 자리 비우기(고정 자료): 받침 위 건물 조각은 숨고, 이순신 · 광화문 · 주변 건물은 숨지 않는다', () => {
+  const filter = monumentBuildingFilter(), ring = filter[1][1].coordinates[MONUMENT_HIDES.findIndex(each => each.lngLat[0] === 126.97691 && each.lngLat[1] === 37.57285)][0], [cx, cy] = [126.97691, 37.57285];
+  const inside = ([lng, lat]) => { let hit = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) hit = !hit } return hit };
+  const meter = (east, north) => [cx + east / (111320 * Math.cos(cy * Math.PI / 180)), cy + north / 110574];
+  assert.ok(inside(meter(0, 0)) && inside(meter(4, -3)), '받침 위');
+  for (const [east, north] of [[40, 0], [-40, 0], [0, 40], [0, -40], [60, 60]]) assert.ok(!inside(meter(east, north)), `이웃 ${east},${north}`);
+  assert.ok(!inside([126.97695, 37.57097]) && !inside([126.976817, 37.575928]), '이순신 · 광화문 자리');
+});
+test('동상 곡면 메시: 정점 수가 한도 안(휴대폰 버퍼 — 둘 합쳐 정점 6만 개 이하) · 동상은 곡면 법선(평면 법선만이 아니다)', () => {
+  let total = 0;
+  for (const id of ['yi-sunsin', 'sejong']) {
+    const data = buildMonument(id), count = data.length / STRIDE; total += count;
+    const normals = new Set();
+    for (let i = 0; i < data.length; i += STRIDE) normals.add(`${data[i + 3].toFixed(2)},${data[i + 4].toFixed(2)},${data[i + 5].toFixed(2)}`);
+    assert.ok(normals.size > 400, `${id} 서로 다른 법선 ${normals.size}`);
+  }
+  assert.ok(total < 60000, `정점 ${total}`);
+});
+test('동상 합치기: STATUES 따로 없이 MONUMENTS · MONUMENT_HIDES 한 곳에서 이순신 · 세종을 다룬다', () => {
+  const ids = MONUMENTS.map((entry) => entry.id);
+  assert.ok(ids.includes('yi-sunsin') && ids.includes('sejong'));
+  assert.ok(!('STATUES' in dataModule) && !('STATUE_HIDES' in dataModule));
 });
 test('적용 모드: city.heritage 가 참인 모드만 문화유산 모델 — 일곱 모드 참, 기본 · 나라 모드 거짓', () => {
   const registry = createModeRegistry([basic, simcity, joseon, coaster, retro, ...starcraft, ...nations]);
@@ -417,7 +488,7 @@ test('창덕궁 횃불: 쌍으로 길 양쪽에 같은 간격으로 서고, 둘�
 });
 
 // 가짜 GL: 모든 메서드가 불투명 객체를 돌려주고, 만든 버퍼 수를 센다
-const fakeGl = () => { const calls = { buffers: 0 }; const gl = new Proxy({}, { get: (_, name) => name === 'createBuffer' ? () => { calls.buffers++; return {} } : /^(getShaderParameter|getProgramParameter)$/.test(name) ? () => true : typeof name === 'string' && /^[A-Z_0-9]+$/.test(name) ? 0 : () => ({}) }); return { gl, calls } };
+const fakeGl = () => { const calls = { buffers: 0, vaos: 0, programs: 0, deletedBuffers: 0, deletedVaos: 0, deletedPrograms: 0 }; const gl = new Proxy({}, { get: (_, name) => name === 'createBuffer' ? () => { calls.buffers++; return {} } : name === 'createVertexArray' ? () => { calls.vaos++; return {} } : name === 'createProgram' ? () => { calls.programs++; return {} } : name === 'deleteBuffer' ? () => { calls.deletedBuffers++ } : name === 'deleteVertexArray' ? () => { calls.deletedVaos++ } : name === 'deleteProgram' ? () => { calls.deletedPrograms++ } : /^(getShaderParameter|getProgramParameter)$/.test(name) ? () => true : typeof name === 'string' && /^[A-Z_0-9]+$/.test(name) ? 0 : () => ({}) }); return { gl, calls } };
 test('지연 로드 중 모드를 나가면(dispose) 늦게 온 구역 파일이 GPU 자원을 다시 만들지 않는다', async () => {
   const { Monuments } = await import('../web/city/monuments.mts');
   const { gl, calls } = fakeGl(), layer = new Monuments(); layer.init(gl);
@@ -427,6 +498,29 @@ test('지연 로드 중 모드를 나가면(dispose) 늦게 온 구역 파일이
   await new Promise(resolve => setTimeout(resolve, 1500));
   assert.equal(calls.buffers, before, 'dispose 뒤 버퍼를 만들지 않는다'); assert.equal(layer.mesh(item), null, 'dispose 뒤에는 메시를 짓지 않는다');
   assert.equal(layer.trees.groves.length, 0); assert.equal(layer.torches.groves.length, 0);
+});
+test('동상 구역: 만든 버퍼 · VAO · 프로그램을 dispose 가 모두 지운다(생성 · 삭제 개수 일치)', async () => {
+  const { Monuments } = await import('../web/city/monuments.mts');
+  const { gl, calls } = fakeGl(), layer = new Monuments(); layer.init(gl);
+  const item = layer.items.find(each => each.M.id === 'sejong');
+  layer.mesh(item); await new Promise(resolve => setTimeout(resolve, 1500));
+  assert.ok(layer.mesh(item), '구역 파일이 온 뒤 메시를 짓는다');
+  assert.ok(calls.buffers > 0 && calls.vaos > 0 && calls.programs > 0, `버퍼 ${calls.buffers} VAO ${calls.vaos}`);
+  layer.dispose();
+  assert.equal(calls.deletedBuffers, calls.buffers, '버퍼'); assert.equal(calls.deletedVaos, calls.vaos, 'VAO'); assert.equal(calls.deletedPrograms, calls.programs, '프로그램');
+});
+test('세종 자리 비우기: 실제 건물 윤곽 고정 자료 — 받침 조각은 도시 엔진 · 지도 층 모두 숨고, 경계에 걸친 이웃 · 큰 건물은 남는다', () => {
+  const hide = MONUMENT_HIDES.find(each => each.lngLat[0] === 126.97691 && each.lngLat[1] === 37.57285), filter = monumentBuildingFilter(), ring = filter[1][1].coordinates[MONUMENT_HIDES.indexOf(hide)][0];
+  const cosLat = Math.cos(hide.lngLat[1] * Math.PI / 180), toLngLat = ([east, north]) => [hide.lngLat[0] + east / (111320 * cosLat), hide.lngLat[1] + north / 110574];
+  // 도시 엔진(mesh.mts landmarkPart)과 같은 판정: 윤곽 중심이 반경 안이고 가로 · 세로 중 큰 쪽이 반경 × 2.5 보다 작다
+  const engineHides = (box) => { const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2; return Math.hypot(cx, cy) < hide.radiusM && Math.max(box[2] - box[0], box[3] - box[1]) < 2.5 * hide.radiusM };
+  const inside = ([lng, lat]) => { let hit = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) hit = !hit } return hit };
+  const mapHides = (box) => [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]].every(corner => inside(toLngLat(corner)));
+  // [서, 남, 동, 북] 미터(숨김 중심 기준)
+  const pieces = { '받침 조각 6 × 4': [-3, -4, 3, 0], '받침 앞 조각 3 × 3': [-1.5, -8, 1.5, -5] };
+  const kept = { '경계에 걸친 이웃 18 × 10(중심 16 m)': [7, 11, 25, 21], '동쪽 이웃 12 × 12': [30, -6, 42, 6], '가까운 큰 광장 건물 40 × 30(중심 5 m)': [-15, -10, 25, 20], '북쪽 이웃 20 × 8': [-10, 30, 10, 38] };
+  for (const [name, box] of Object.entries(pieces)) { assert.ok(engineHides(box), `엔진 ${name}`); assert.ok(mapHides(box), `지도 ${name}`) }
+  for (const [name, box] of Object.entries(kept)) { assert.ok(!engineHides(box), `엔진이 숨김 ${name}`); assert.ok(!mapHides(box), `지도가 숨김 ${name}`) }
 });
 test('구역 모듈이 나무 · 횃불을 내놓는다: 창덕궁만 가도 경복궁 자료가 딸려 오지 않는다', () => {
   const strip = (file) => readFileSync(new URL(`../web/city/${file}`, import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
