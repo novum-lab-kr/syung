@@ -170,7 +170,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
     {const X=S.map.pixel;if(X.enabled&&X.palette!=='none'&&live.PixelPalette){if(!pixels){pixels=new live.PixelPalette();pixels.init(gl)}pixels.render(gl,{palette:X.palette,outline:X.outline,alpha:true})}else if(pixels){pixels.dispose(gl);pixels=null}}   // 레트로: 열차 캔버스도 색표 · 윤곽(투명 바탕은 그대로, 나가면 치운다)
     if(S.city.heritage&&live.cityLandmarks){const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments)
-      live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y]})}
+      live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y],phone:PHONE,center:[map.getCenter().lng,map.getCenter().lat]})}
     else if(live.cityLandmarks?.mon||live.cityLandmarks?.monp)live.cityLandmarks.releaseMonuments();   // 문화유산 모드를 나가면 모델 · 나무 GL 을 치운다(받던 코드도 무효)
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };

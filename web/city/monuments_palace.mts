@@ -96,6 +96,22 @@ interface Hall {
 }
 const BAND = 1.1;
 function column(w:MeshWriter, x:number, y:number, z0:number, z1:number, half = .26):void { w.box(x - half, x + half, y - half, y + half, z0, z1, K.red, { bottom: true, top: true }) }
+// 창호(한지 창): 기둥 사이 칸마다 회벽 앞에 살짝 내민 창 한 장 — 밤에 안에서 불빛이 비치는 곳은 이 재질(K.window)뿐이다.
+// 문을 단 앞 칸(S.doors)에는 달지 않고, 합각 벽 · 막힌 벽(윤곽 벽)에도 달지 않는다. 낮에는 회벽과 거의 같은 색에 살 무늬만 옅다
+function windowPanes(w:MeshWriter, S:Pick<Hall, 'bays' | 'doors'>, hx:number, hy:number, base:number, top:number):void {
+  const z0 = base + .85, z1 = top - .6, off = .14; if (z1 - z0 < .8) return;
+  const doorFirst = S.bays[0] <= 3 ? 0 : 1, doorLast = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
+  const bayX = 2 * hx / S.bays[0], bayY = 2 * hy / S.bays[1];
+  for (let i = 0; i < S.bays[0]; i++) {
+    const cx = -hx + bayX * (i + .5), half = bayX * .31;
+    if (!(S.doors && i >= doorFirst && i <= doorLast)) w.quad([cx - half, -hy + off, z0], [cx + half, -hy + off, z0], [cx + half, -hy + off, z1], [cx - half, -hy + off, z1], K.window, [0, -1, 0]);
+    w.quad([cx + half, hy - off, z0], [cx - half, hy - off, z0], [cx - half, hy - off, z1], [cx + half, hy - off, z1], K.window, [0, 1, 0]);
+  }
+  for (let j = 0; j < S.bays[1]; j++) {
+    const cy = -hy + bayY * (j + .5), half = bayY * .31;
+    for (const side of [-1, 1]) w.quad([side * (hx - off), cy - half, z0], [side * (hx - off), cy + half, z0], [side * (hx - off), cy + half, z1], [side * (hx - off), cy - half, z1], K.window, [side, 0, 0]);
+  }
+}
 // 층 하나의 몸: 회벽 · 기둥 · 창방 · (공포) → 맨 위 높이 반환
 function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'hollow'>, hx:number, hy:number, base:number, body:number, open = false):number {
   const top = base + body;
@@ -103,6 +119,7 @@ function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'holl
   else w.box(-hx + .2, hx - .2, -hy + .2, hy - .2, base, top, open ? K.wood : K.plaster, { top: true });   // 위층은 녹색 판문(검은 빈 면으로 보이던 것 — Codex 2026-10-31)
   for (let i = 0; i <= S.bays[0]; i++) { const x = -hx + 2 * hx * i / S.bays[0]; for (const y of [-hy, hy]) column(w, x, y, base, top) }
   for (let i = 1; i < S.bays[1]; i++) { const y = -hy + 2 * hy * i / S.bays[1]; for (const x of [-hx, hx]) column(w, x, y, base, top) }
+  if (!S.hollow && !open) windowPanes(w, S, hx, hy, base, top);
   if (S.doors) {   // 앞(남쪽 = −y) 칸마다 어두운 문짝 자리
     const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 ? 0 : 1, last = S.bays[0] <= 3 ? S.bays[0] - 1 : S.bays[0] - 2;
     for (let i = first; i <= last; i++) { const cx = -hx + bay * (i + .5); w.quad([cx - bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, top - .35], [cx - bay * .32, -hy - .03, top - .35], K.tunnel, [0, -1, 0]) }

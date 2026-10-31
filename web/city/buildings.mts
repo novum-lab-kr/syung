@@ -22,6 +22,7 @@
 import { cityPart } from './parts.mts';
 import { MODEL_STRIDE } from './mesh.mts';   // 조선 한옥 템플릿은 부품 'hanok'(web/modes/joseon/hanok.mts 가 등록 — 모드 코드 받기에 들어 있다)
 import { withMonumentHides } from './monuments_data.mts';
+import { smoothstep, cityMinZoom, cityGrow, cityFarLimit } from './zoom_gate.mts';   // 보이는 줌 · 자라기 · 폰의 먼 곳: 문화유산 모델과 같은 셈
 import { TileBuilder, resolvePack, classifyBuilding, STRIDE, INST_STRIDES, LOD_HI, GROW_MS, RAIL_Q, EARTH, RAD, S, num, hexRGB, POSTS } from './mesh.mts';
 import { SEOUL_CITY_STYLE } from '../modes/basic/city.mts';
 import { sunPosition } from '../lib/sun.mts';
@@ -703,7 +704,7 @@ export class CityBuildings {
   // 켜면 보일 줌 · 지도인가(켜짐은 묻지 않는다)
   canShow() {
     if (!this.map) return false;
-    if (this.map.getZoom() < (this.phone ? 14.5 : 14)) return false;   // phones: a little later than the desktop (the far fade keeps it light)
+    if (this.map.getZoom() < cityMinZoom(this.phone)) return false;   // phones: a little later than the desktop (the far fade keeps it light)
     return !this.map.getLayer('bm-bld') || this.map.getLayoutProperty('bm-bld', 'visibility') !== 'none';
   }
   // 미리 짓기(꺼져 있을 때 · 본체가 지도가 쉴 때 부른다): 켜면 보일 타일을 그리지 않고 짓기만 해 둔다 — 모드를 누르면 다 지은 것을
@@ -832,7 +833,7 @@ export class CityBuildings {
     if ([...this.tiles.values()].some(e => e.state !== 'ready')) this.timer = setTimeout(() => this.work(), 6);
   }
   // phones: the far field fades into the ground beyond this distance (m) from the view centre — [start, end] by zoom
-  farLimit(zoom:number):Range2 { const d1 = Math.min(2600, 1200 * 2 ** ((zoom - 15) * .5)); return [d1 * .7, d1] }
+  farLimit(zoom:number):Range2 { return cityFarLimit(zoom) }
   // a tile's buffers: made at their full size, then filled a few MB a frame (feed) — a 조선 tile is 10–20 MB, and putting it
   // up whole in one frame (twice: the map's canvas and the trains') stalled zooming out (2026-10-10)
   upload(gl:WebGL2RenderingContext, e:TileEntry):GpuTile {
@@ -1021,7 +1022,7 @@ export class CityBuildings {
   }
   // the uniforms both programs read (the buildings' and the 처마 instances'): the palette, light, x-ray, detail by zoom
   uniforms(gl:WebGL2RenderingContext, u:Uniforms, depthOnly:boolean, glass:boolean, zoom:number) {
-    const K = this.palette || (this.palette = this.paletteFor()), sm = (a:number, b:number, x:number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
+    const K = this.palette || (this.palette = this.paletteFor()), sm = smoothstep;
     gl.uniform4fv(u.u_through, K.through); gl.uniform4fv(u.u_thBand, K.thBand);   // both passes: the depth pass leaves the band open
     if (!depthOnly) {
       gl.uniform3fv(u.u_thGlass, K.thGlass); gl.uniform3fv(u.u_thFrame, K.thFrame); gl.uniform3fv(u.u_thInside, K.thInside); gl.uniform3fv(u.u_thMix, K.thMix);
@@ -1044,9 +1045,8 @@ export class CityBuildings {
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
     if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
     this.uniforms(gl, u, depthOnly, glass, zoom);
-    const sm = (a:number, b:number, x:number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) };
     if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
-    const hi = zoom >= this.lodHi, zoomGrow = sm(this.phone ? 14.5 : 14, (this.phone ? 14.5 : 14) + .6, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
+    const hi = zoom >= this.lodHi, zoomGrow = cityGrow(this.phone, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did
     const M64 = this.M64, M32 = this.M32, skirts = [], models = []; let growing = false, drawn = false, draws = 0;
     const far = this.phone ? this.farLimit(zoom) : null, cc = map.getCenter(), cmx = cc.lng / 360 + .5, cmy = .5 - Math.log(Math.tan(Math.PI / 4 + cc.lat * RAD / 2)) / (2 * Math.PI);
     let budget = this.phone ? 1.5e6 : 3e6;   // bytes put up to the GPU this pass; the rest next frame (growing: a repaint follows)
@@ -1077,7 +1077,7 @@ export class CityBuildings {
         const a = hi ? c.iLo : c.i0, b = hi ? c.i1 : c.iW, nk = sk ? Object.values(c.k).some(([k0, kF, k1]) => (hi ? k1 : kF) > k0) : false; if (b <= a && !nk) continue;
         let f = 1;
         if (far) {   // phones: beyond the far limit the chunk sinks into the ground, then is skipped
-          const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu; f = 1 - sm(far[0], far[1], d);
+          const d = (Math.hypot((c.x0 + c.x1) / 2 - tox, (c.y0 + c.y1) / 2 - toy) - Math.hypot(c.x1 - c.x0, c.y1 - c.y0) / 2) / m.mpu; f = 1 - smoothstep(far[0], far[1], d);
           if (f <= 0) continue; gl.uniform1f(u.u_grow, grow * f);
         }
         if (nk) sk!.chunks.push(c, grow * f);

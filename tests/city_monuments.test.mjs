@@ -14,7 +14,7 @@ import nations from '../web/modes/nations/index.mts';
 import { PALACE_TREES } from '../web/city/monuments_trees_data.mts';
 import { PALACE_BUILDINGS } from '../web/city/monuments_gyeongbok_data.mts';
 import { PALACE_AT, PALACE_ORIGIN, palaceRing } from '../web/city/monuments_data.mts';
-import { withMonumentHides, MONUMENT_HIDES, monumentBuildingFilter } from '../web/city/monuments_data.mts';
+import { withMonumentHides, MONUMENT_HIDES, monumentBuildingFilter, MONUMENTS } from '../web/city/monuments_data.mts';
 
 const STRIDE = 8;
 test('광화문 메시: 정점이 모두 유한하고 법선이 단위 길이', () => {
@@ -166,4 +166,80 @@ test('궁 안 나무: 경회지 안쪽 섬의 소나무가 있고 전용 나무 
   assert.ok(!/simcity|joseon|coaster|retro|terran|zerg|protoss|nation/i.test(source.replace(/\/\/.*$/gm, '')), '모드 이름 없음');
   const life = readFileSync(new URL('../web/city/life.mts', import.meta.url), 'utf8');
   assert.ok(life.includes('treeKeepOut') && life.includes('!keepOut?.(x, y)'), '도시 나무 비켜 가기');
+});
+
+// 횃불 자리 확인용: 모델 메시에서 높이 0.25 m 넘는 면의 바닥 삼각형(동 · 북, PALACE_AT 기준 — 나무 · 횃불 자료와 같은 좌표)
+function solidTriangles() {
+  const tris = [];
+  for (const monument of MONUMENTS) {
+    const data = buildMonument(monument.id), [mx, my] = toM(monument.lngLat[0], monument.lngLat[1]), yaw = monument.yawDeg * Math.PI / 180, cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const at = (i) => [mx + data[i] * cos - data[i + 1] * sin - AT[0], -(my - (data[i] * sin + data[i + 1] * cos) - AT[1])];
+    for (let i = 0; i < data.length; i += STRIDE * 3) if (Math.max(data[i + 2], data[i + STRIDE + 2], data[i + STRIDE * 2 + 2]) > .25) tris.push([at(i), at(i + STRIDE), at(i + STRIDE * 2)]);
+  }
+  return tris;
+}
+function nearTriangle(x, y, [a, b, c], margin) {
+  if (x < Math.min(a[0], b[0], c[0]) - margin || x > Math.max(a[0], b[0], c[0]) + margin || y < Math.min(a[1], b[1], c[1]) - margin || y > Math.max(a[1], b[1], c[1]) + margin) return false;
+  const side = (p, q) => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]), d1 = side(a, b), d2 = side(b, c), d3 = side(c, a);
+  if (!((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))) return true;   // 안쪽
+  return Math.min(segDist(x, y, a, b), segDist(x, y, b, c), segDist(x, y, c, a)) < margin;
+}
+
+// ── 길가 횃불 · 보이는 줌 ─────────────────────────────────────────────────────────────────────────────────────
+test('궁 안 횃불: 둘레 안 · 건물 · 담장 · 연못 · 길 · 나무 위에 없고 수십 개가 길가에 선다', async () => {
+  const { PALACE_TORCHES } = await import('../web/city/monuments_torches_data.mts');
+  assert.equal(PALACE_TORCHES.length % 2, 0); assert.ok(PALACE_TORCHES.every(Number.isInteger));
+  const torches = Array.from({ length: PALACE_TORCHES.length / 2 }, (_, i) => ({ x: PALACE_TORCHES[i * 2] / 10, y: PALACE_TORCHES[i * 2 + 1] / 10 }));
+  assert.ok(torches.length > 50 && torches.length < 800, `횃불 수 ${torches.length}`);
+  const ring = palaceRing().map(toLocal);
+  const footprints = PALACE_BUILDINGS.map(b => Array.from({ length: b.p.length / 2 }, (_, i) => toLocal([PALACE_ORIGIN[0] + b.p[i * 2] / 1e6, PALACE_ORIGIN[1] + b.p[i * 2 + 1] / 1e6])));
+  const { paths, walls, ponds } = JSON.parse(readFileSync(new URL('./fixtures/palace_obstacles.json', import.meta.url), 'utf8'));
+  const roads = paths.map(path => ({ half: path.half, line: path.p.map(toLocal) })), fences = walls.map(line => line.map(toLocal)), lakes = ponds.map(pond => pond.outer.map(toLocal));
+  const trees = allTrees();
+  const solids = solidTriangles();   // 모델이 실제로 세운 면(기단 · 계단 · 몸 — 높이 0.25 m 넘는 것)의 바닥 사각
+  let besideRoad = 0;
+  for (const torch of torches) {
+    const where = `${torch.x},${torch.y}`;
+    assert.ok(contains(ring, torch.x, torch.y), `둘레 밖 ${where}`);
+    assert.ok(!footprints.some(foot => contains(foot, torch.x, torch.y)), `건물 위 ${where}`);
+    for (const fence of fences) assert.ok(lineDist(torch.x, torch.y, fence) > 1, `담장 위 ${where}`);
+    for (const lake of lakes) assert.ok(!contains(lake, torch.x, torch.y), `물 위 ${where}`);
+    for (const road of roads) assert.ok(lineDist(torch.x, torch.y, road.line) > road.half * .9, `길 위 ${where}`);
+    assert.ok(!trees.some(tree => Math.hypot(tree.x - torch.x, tree.y - torch.y) < 1.2), `나무 위 ${where}`);
+    assert.ok(!solids.some(tri => nearTriangle(torch.x, torch.y, tri, 1)), `생성된 기단 · 계단 · 몸 1 m 안 ${where}`);
+    if (roads.some(road => lineDist(torch.x, torch.y, road.line) < road.half + 2.2)) besideRoad++;
+  }
+  assert.ok(besideRoad / torches.length > .95, '횃불은 길가에 선다');
+});
+
+test('보이는 줌: 모델 · 담장 · 궁 안 건물 · 나무 · 횃불이 도시 건물과 같은 공용 셈(zoom_gate)으로 보이고 사라진다', async () => {
+  const gate = await import('../web/city/zoom_gate.mts');
+  const buildings = readFileSync(new URL('../web/city/buildings.mts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.ok(buildings.includes('cityMinZoom(this.phone)') && buildings.includes('cityGrow(this.phone, zoom)') && buildings.includes('cityFarLimit(zoom)'), '도시 건물은 공용 셈을 쓴다');
+  assert.ok(!/14\.5\s*:\s*14/.test(buildings), '도시 건물에 14 / 14.5 복사본 없음');
+  assert.equal(gate.cityMinZoom(false), 14); assert.equal(gate.cityMinZoom(true), 14.5);
+  // 서서히 자라기: 문턱 0 → 0.6 줌 뒤 1(데스크톱 14~14.6 · 폰 14.5~15.1)
+  assert.equal(gate.cityGrow(false, 14), 0); assert.equal(gate.cityGrow(false, 13.9), 0); assert.ok(gate.cityGrow(false, 14.3) > 0 && gate.cityGrow(false, 14.3) < 1); assert.equal(gate.cityGrow(false, 14.6), 1);
+  assert.equal(gate.cityGrow(true, 14.5), 0); assert.ok(gate.cityGrow(true, 14.8) > 0 && gate.cityGrow(true, 14.8) < 1); assert.equal(gate.cityGrow(true, 15.1), 1);
+  // 폰의 먼 곳 줄이기: 가까우면 1, 끝 거리 밖이면 0
+  const [from, to] = gate.cityFarLimit(15); assert.equal(gate.cityFarFade(from - 1, 15), 1); assert.equal(gate.cityFarFade(to + 1, 15), 0); assert.ok(gate.cityFarFade((from + to) / 2, 15) > 0);
+  for (const monument of MONUMENTS) assert.ok(!('minZoom' in monument), `${monument.id}: 줌 기준은 하나(zoom_gate)`);
+  const monuments = readFileSync(new URL('../web/city/monuments.mts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.ok(monuments.includes('cityMinZoom(phone)') && monuments.includes('cityGrow(phone, zoom)') && monuments.includes('cityFarFade('), '문화유산도 같은 공용 셈');
+  for (const file of ['monuments.mts', 'monument_trees.mts', 'monument_torches.mts', 'landmarks.mts']) {
+    const code = readFileSync(new URL(`../web/city/${file}`, import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    assert.ok(!/zoom\s*[<>]=?\s*1[4-9]/.test(code) && !/MIN_ZOOM\s*=/.test(code) && !/14\.5/.test(code), `${file}: 따로 정한 줌 기준 없음`);
+  }
+  assert.ok(monuments.includes('if (!ready) return'), '궁 메시가 다 준비된 뒤에만 나무 · 횃불');
+  const torches = readFileSync(new URL('../web/city/monument_torches.mts', import.meta.url), 'utf8');
+  assert.ok(torches.includes('if (!dark || !this.count) return'), '횃불은 밤(다크)에만 그린다');
+});
+
+test('창호: 밤 등불은 창호(K.window)에만 — 회벽 · 합각 · 막힌 벽은 켜지 않는다', () => {
+  const monuments = readFileSync(new URL('../web/city/monuments.mts', import.meta.url), 'utf8');
+  assert.ok(monuments.includes('k == 20') && /else if \(k == 19\) col \+= warm \* c \* \.05/.test(monuments), '회벽은 아주 약한 반사광만');
+  assert.ok(!/k == 19 && side/.test(monuments.split('if (u_night > .5)')[1] || ''), '밤 가지에 회벽 발광 없음');
+  const data = buildMonument('palace-halls'); let windows = 0, plaster = 0;
+  for (let i = 0; i < data.length; i += STRIDE) { const kind = data[i + 6]; if (kind === 20) windows++; if (kind === 19) plaster++ }
+  assert.ok(windows > 100 && plaster > 0, `창호 ${windows} · 회벽 ${plaster}`);
 });

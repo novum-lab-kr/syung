@@ -1,12 +1,11 @@
 // 궁 안 나무(경복궁): 수종별 낮은 면 모형 넷을 한 번 짓고 자리마다 인스턴스로 그린다. 모양 근거: 소나무 = 굽은 줄기 + 층진 납작한 수관 덩어리,
 // 활엽수(수종 미상) = 둥근 수관 · 퍼진 수관 둘, 감나무 = 낮은 줄기에 넓은 수관 + 주황 열매(건청궁 뜰 — 위키 건청궁). 자리 자료는 monuments_trees_data.mts.
-// 고정 규칙: 어느 모드 · 테마에서나 같은 모양 · 같은 색, 낮 · 밤 조명만 다르다. 멀리서는 안 그린다(TREE_MIN_ZOOM).
+// 고정 규칙: 어느 모드 · 테마에서나 같은 모양 · 같은 색, 낮 · 밤 조명만 다르다. 멀리서는 안 그린다(Monuments.render 가 도시 건물과 같은 줌 · 자라기 · 거리 줄이기로 부른다 — zoom_gate.mts).
 import { PALACE_TREES } from './monuments_trees_data.mts';
 import { PALACE_AT } from './monuments_data.mts';
 import { toM, MU } from './life.mts';
 import { compileProgram } from './traffic.mts';
 
-export const TREE_MIN_ZOOM = 16.3;
 type V3 = [number, number, number];
 // 색표: 줄기 · 소나무 잎 · 활엽 둥근 · 활엽 퍼진 · 감나무 잎 · 감 열매 · 소나무 줄기(붉은 갈색)
 const TREE_COLORS = ['#5B4A3A', '#3F5A40', '#5C8A44', '#7DA04E', '#4F7A3C', '#D9731F', '#8A5A3C'];
@@ -77,7 +76,7 @@ const buildTemplate = (species:keyof typeof PALACE_TREES):Float32Array => {
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in float a_kind;
 layout(location=3) in vec4 a_inst;   // 동 · 북 자리(m) · 크기 · 돌림(라디안)
-uniform mat4 u_matrix; uniform float u_mu; uniform vec2 u_at;
+uniform mat4 u_matrix; uniform float u_mu, u_grow; uniform vec2 u_at;
 out vec3 v_n; out float v_k; out float v_h;
 void main(){
   float c = cos(a_inst.w), s = sin(a_inst.w);
@@ -86,7 +85,7 @@ void main(){
   vec2 n2 = vec2(a_nrm.x * c - a_nrm.y * s, a_nrm.x * s + a_nrm.y * c);
   v_n = vec3(n2.x, -n2.y, a_nrm.z); v_k = a_kind;
   v_h = fract(sin(dot(a_inst.xy, vec2(12.9898, 78.233))) * 43758.5453);   // 나무마다 조금씩 다른 밝기
-  gl_Position = u_matrix * vec4((u_at + vec2(q.x, -q.y)) * u_mu, p.z * u_mu, 1.);
+  gl_Position = u_matrix * vec4((u_at + vec2(q.x, -q.y)) * u_mu, p.z * u_mu * u_grow, 1.);
 }`;
 const FS = `#version 300 es
 precision highp float; in vec3 v_n; in float v_k; in float v_h; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[7];
@@ -106,7 +105,7 @@ export class PalaceTrees {
   species:SpeciesGl[] = [];
   init(gl:WebGL2RenderingContext):void {
     this.gl = gl; this.p = compileProgram(gl, VS, FS); this.at = toM(PALACE_AT[0], PALACE_AT[1]);
-    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_at', 'u_light', 'u_lit', 'u_night', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
+    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_light', 'u_lit', 'u_night', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
     for (const key of Object.keys(PALACE_TREES) as (keyof typeof PALACE_TREES)[]) {
       const data = buildTemplate(key), points = PALACE_TREES[key], count = points.length / 2, inst = new Float32Array(count * 4);
       for (let i = 0; i < count; i++) {   // 크기 · 돌림은 자리에서 정해 같은 값이 나온다
@@ -121,10 +120,9 @@ export class PalaceTrees {
       gl.bindVertexArray(null); this.species.push({ va: va!, b: b!, inst: ib!, n: data.length / TREE_STRIDE, count });
     }
   }
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, zoom }:{ light:[number, number, number]; lit:number[]; dark:boolean; zoom:number }):void {
-    if (zoom < TREE_MIN_ZOOM) return;
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, grow }:{ light:[number, number, number]; lit:number[]; dark:boolean; grow:number }):void {   // grow: 도시 건물과 같은 줌 · 거리 높이 비율
     const u = this.u;
-    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform2fv(u.u_at!, this.at); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0);
+    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform1f(u.u_grow!, grow); gl.uniform2fv(u.u_at!, this.at); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0);
     gl.uniform3fv(u.u_col!, new Float32Array(TREE_COLORS.flatMap(toRgb)));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     for (const each of this.species) { gl.bindVertexArray(each.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count) }

@@ -5,9 +5,9 @@ export type V3 = [number, number, number];
 export const STRIDE = 8;   // x y z · 법선 xyz · 종류 · 보조값 s(기와골 · 처마 끝 무늬 따라 미터, 띠 · 현판은 위로 0…1)
 
 // 종류(색 · 무늬를 셰이더가 정한다)
-export const K = { granite: 0, trim: 1, red: 2, dancheong: 3, band: 4, giwa: 5, ridge: 6, wood: 7, fascia: 8, plaque: 9, soffit: 10, deck: 11, tunnel: 12, haechi: 13, brick: 14, bracket: 15, bronze: 16, gilt: 17, stone: 18, plaster: 19 } as const;
+export const K = { granite: 0, trim: 1, red: 2, dancheong: 3, band: 4, giwa: 5, ridge: 6, wood: 7, fascia: 8, plaque: 9, soffit: 10, deck: 11, tunnel: 12, haechi: 13, brick: 14, bracket: 15, bronze: 16, gilt: 17, stone: 18, plaster: 19, window: 20 } as const;
 // K 순서: 화강암 · 테두리 돌(흰 돌 난간) · 주칠 · 단청 바탕(뇌록) · 검은 띠 · 기와 · 마루 · 상층 판문(녹색) · 처마 끝 · 현판 · 처마 밑 · 월대 바닥(모래색) · 문 안 · 해치 · 궁장 벽돌 · 공포 · 이순신상 청동(녹색 도는 어두운 청동) · 세종대왕상 금빛 청동 · 동상 받침 돌(큰 판석 · 연한 회색빛 미색) · 회벽(궁 안 건물 벽 — 기둥 사이 미색 회칠, 맞춤)
-export const COLORS = ['#E6E0D2', '#F4F1EA', '#A8362A', '#3B7C68', '#3A3836', '#4B5357', '#A9A79F', '#3E6B56', '#2F6A58', '#15110E', '#356B58', '#F1E3C0', '#2A2722', '#CFC8B8', '#D9D3C6', '#3B7C68', '#3F4E44', '#B9954C', '#CFC9BC', '#D6CBB0'];
+export const COLORS = ['#E6E0D2', '#F4F1EA', '#A8362A', '#3B7C68', '#3A3836', '#4B5357', '#A9A79F', '#3E6B56', '#2F6A58', '#15110E', '#356B58', '#F1E3C0', '#2A2722', '#CFC8B8', '#D9D3C6', '#3B7C68', '#3F4E44', '#B9954C', '#CFC9BC', '#D6CBB0', '#D2C6A6'];
 export const hex = (value:string) => { const v = parseInt(value.slice(1), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255] };
 
 // ── 메시 쓰기 도우미 ────────────────────────────────────────────────────────────────────────────────────────

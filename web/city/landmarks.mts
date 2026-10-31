@@ -8,6 +8,7 @@
 import { LANDMARKS, STUPAS } from './landmarks_data.mts';
 import type { Landmark, Stupa } from './landmarks_data.mts';
 import { monumentsInView } from './monuments_data.mts';
+import { cityMinZoom } from './zoom_gate.mts';
 import { MU, MERC_ORIGIN as O, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 
@@ -360,15 +361,15 @@ export class CityLandmarks {
   }
   // 우리나라 문화유산 모델(광화문 · 궁장 · 동상 …): 어느 모드에서나 같은 모델 · 같은 실물 색으로 그린다(2026-10-31 사용자 결정 — 모드 설정 · 스타일이 덮지 못한다).
   // 이 길은 탑(render)과 따로다: 선로 종류(track.kind)와 상관없이 부르고, 보이는 자리에 들어올 때 코드를 받는다. 못 받으면 그 층만 빠진다
-  renderMonuments(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds }:{ zoom?:number; dark?:boolean; sun?:{ azimuth:number; elevation:number } | null; lit?:number[]; bounds:[number, number, number, number] }):void {
-    if (this.monFail || zoom < 14 || !monumentsInView(bounds)) return;
+  renderMonuments(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds, phone = false, center = [126.978, 37.5665] }:{ zoom?:number; dark?:boolean; phone?:boolean; center?:[number, number]; sun?:{ azimuth:number; elevation:number } | null; lit?:number[]; bounds:[number, number, number, number] }):void {
+    if (this.monFail || zoom < cityMinZoom(phone) || !monumentsInView(bounds)) return;   // 다른 건물과 같은 줌에서 함께 사라진다
     if (!this.mon) {
       if (!this.monp) { const gen = this.monGen; this.monp = import('./monuments.mts').then(m => { if (gen !== this.monGen) { this.monp = null; return } const layer = new m.Monuments(); layer.init(gl); layer.onLoad = repaint; this.mon = layer; this.monp = null; repaint() }).catch(e => { this.monFail = true; console.warn('city-landmarks: 기념물 못 받음 —', e) }) }
       return;
     }
     const MT = (this.monMT ??= new Float32Array(16)); for (let i = 0; i < 16; i++) MT[i] = matrix[i]!; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * O.x + matrix[4 + r]! * O.y + matrix[12 + r]!;
     const az = (sun?.azimuth ?? 225) * Math.PI / 180, el = Math.max(sun?.elevation ?? 42, 12) * Math.PI / 180;
-    this.mon.render(gl, MT, { light: [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit, dark, zoom });
+    this.mon.render(gl, MT, { light: [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit, dark, zoom, phone, center });
     gl.bindVertexArray(null); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
   _render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36], phone = false }:LandmarkRenderOptions):void {
