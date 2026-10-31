@@ -126,6 +126,7 @@ export class RoadGraph {
     yield;
     // cut and make edges
     const edges:Edge[] = [], touched = new Set<GraphNode>(), cell:Cell = { key, edges, box };
+    this.cells.set(key, cell);   // 간선을 만들기 전에 등록한다 — 중간에 멈춰 칸을 버려도 removeCell 이 만든 간선을 모두 걷는다
     L.forEach((ln, li) => {
       const S = splits[li]!.sort((a, b) => a[0] - b[0] || a[1] - b[1]), pieces:LinePt[][] = [[ln.pts[0]!]];
       let si = 0; for (let i = 0; i + 1 < ln.pts.length; i++) {
@@ -146,7 +147,7 @@ export class RoadGraph {
     });
     yield;
     for (const n of touched) this.signalAt(n);
-    this.cells.set(key, cell); this.version++;
+    this.version++;
     return cell;
   }
   removeCell(key:string):void {

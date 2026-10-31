@@ -92,7 +92,7 @@ const place = (w:MeshWriter, r:Rect) => { w.xf = { x: r.cx, y: r.cy, cos: Math.c
 // hx · hy: 몸(기둥 줄) 반 길이 · 반 폭. 긴 쪽이 x. 마루는 x 방향.
 interface Hall {
   hx:number; hy:number; podium:number; body:number; rise:number; eave:number; bays:[number, number]; steps:{ side:number; slope:number };
-  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; brackets?:boolean; doors?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
+  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; gable?:number; brackets?:boolean; doors?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
 }
 const BAND = 1.1;
 function column(w:MeshWriter, x:number, y:number, z0:number, z1:number, half = .26):void { w.box(x - half, x + half, y - half, y + half, z0, z1, K.red, { bottom: true, top: true }) }
@@ -126,7 +126,21 @@ function roofOf(S:Hall, hx:number, hy:number, z0:number, rise:number, innerHx?:n
   const outerX = hx + S.eave, outerY = hy + S.eave, lift = S.lift ?? Math.min(1.1, S.eave * .45 + .2);
   if (innerHx !== undefined && innerHy !== undefined) return { hx: outerX, hy: outerY, ix: innerHx, iy: innerHy, z0, rise, lift, flare: Math.min(.9, S.eave * .4), steps: S.steps };
   if (S.ridgeless) { const iy = outerY * .3, ix = Math.max(.5, outerX - (outerY - iy)); return { hx: outerX, hy: outerY, ix, iy, z0, rise, lift, flare: Math.min(.9, S.eave * .4), steps: S.steps } }
-  return { hx: outerX, hy: outerY, ix: S.ridgeFrac ? Math.max(.5, outerX * S.ridgeFrac) : Math.max(.5, outerX - outerY), iy: 0, z0, rise, lift, flare: Math.min(.9, S.eave * .4), steps: S.steps };
+  const ix = S.ridgeFrac ? Math.max(.5, outerX * S.ridgeFrac) : Math.max(.5, outerX - outerY);
+  if (S.gable) return { hx: outerX, hy: outerY, ix, iy: outerY * (1 - S.gable), z0, rise: rise * S.gable, lift, flare: Math.min(.9, S.eave * .4), steps: S.steps };   // 팔작: 치마(우진각)는 윗면이 납작하게 끝나고 그 위에 맞배가 앉는다
+  return { hx: outerX, hy: outerY, ix, iy: 0, z0, rise, lift, flare: Math.min(.9, S.eave * .4), steps: S.steps };
+}
+// 팔작지붕의 윗부분: 치마 윗면(납작한 사각) 위에 긴 쪽 두 면이 용마루로 올라가고 양 끝에 세운 삼각 벽(합각)이 선다. 치마 끝 모서리의 추녀마루가 합각 아랫 귀로 이어진다
+function gableTop(w:MeshWriter, skirt:{ ix:number; iy:number; z0:number; rise:number }, fullRise:number):void {
+  const { ix, iy } = skirt, zs = skirt.z0 + skirt.rise, zTop = skirt.z0 + fullRise, over = .55;   // over: 박공 끝이 합각 벽 밖으로 내미는 길이
+  for (const side of [-1, 1]) {
+    w.quad([-ix - over, side * (iy + over * .5), zs - over * .3], [ix + over, side * (iy + over * .5), zs - over * .3], [ix + over, 0, zTop], [-ix - over, 0, zTop], K.giwa, [0, side * (zTop - zs), iy]);
+    for (const end of [-1, 1]) w.tri([end * ix, -iy, zs], [end * ix, iy, zs], [end * ix, 0, zTop], K.plaster, [end, 0, 0]);   // 합각 벽
+  }
+  w.box(-ix - over - .1, ix + over + .1, -.42, .42, zTop - .12, zTop + .6, K.ridge, { bottom: true });   // 용마루(양성바름)
+  for (const end of [-1, 1]) for (const side of [-1, 1]) {   // 박공 끝 마루띠(합각 위 비스듬한 줄)
+    const x = end * (ix + over); w.quad([x, side * (iy + over * .5) - .22, zs - over * .3], [x, side * (iy + over * .5) + .22, zs - over * .3], [x, side * .22, zTop + .1], [x, side * -.22, zTop + .1], K.ridge, [end, 0, 0]);
+  }
 }
 function hall(w:MeshWriter, S:Hall):number {
   podiumOf(w, S);
@@ -137,12 +151,14 @@ function hall(w:MeshWriter, S:Hall):number {
     const upperBase = roofZ + lowRise - .6, top = storey(w, { bays: S.bays, brackets: S.brackets }, upperHx, upperHy, upperBase, S.body * .85, true);
     const upperRoof = roofOf(S, upperHx + .45, upperHy + .45, top - .25, S.upperRise ?? S.rise);
     buildRoof(w, upperRoof, { innerZ: top - .2, innerHx: upperHx + .45, innerHy: upperHy + .45 });
+    if (S.gable) gableTop(w, upperRoof, S.upperRise ?? S.rise);
     if (S.ridgeless) roofCap(w, upperRoof.ix, upperRoof.iy, top - .25 + S.rise);
     return top - .25 + (S.upperRise ?? S.rise);
   }
   const top = storey(w, S, S.hx, S.hy, base, S.body);
   const roof = roofOf(S, S.hx + .45, S.hy + .45, top - .25, S.rise);
   buildRoof(w, roof, { innerZ: top - .2, innerHx: S.hx + .45, innerHy: S.hy + .45 });
+  if (S.gable) gableTop(w, roof, S.rise);
   if (S.ridgeless) roofCap(w, roof.ix, roof.iy, top - .25 + S.rise);
   return top - .25 + S.rise;
 }
@@ -162,7 +178,7 @@ function buildGeunjeongjeon(w:MeshWriter, r:Rect):void {
   w.box(-hx, hx, -hy, hy, 1.1, upper, K.granite, { bottom: true });
   w.quad([-hx, -hy, upper], [hx, -hy, upper], [hx, hy, upper], [-hx, hy, upper], K.deck, [0, 0, 1]);
   const stair = 3.4; for (let k = 0; k < 3; k++) w.box(-stair, stair, -hy - (3 - k) * .6, -hy + .01, 1.1, 1.1 + (upper - 1.1) * (k + 1) / 3, K.trim, { bottom: true });
-  const S:Hall = { hx: hx - 2.5, hy: hy - 2.5, podium: 0, body: 5.2, rise: 5.6, eave: 3.4, bays: [5, 5], steps: FINE, tiers: 2, brackets: true, doors: true, lift: 1.6, upper: [.95, .93], upperRise: 3.8, ridgeFrac: .66 };   // 윗지붕: 용마루 1.8 m 낮추고 아래 지붕에 가깝게 넓히고 긴 마루 · 처마 끝 들림 1.6 m(Codex 2026-10-31)
+  const S:Hall = { hx: hx - 2.5, hy: hy - 2.5, podium: 0, body: 5.2, rise: 5.6, eave: 3.4, bays: [5, 5], steps: FINE, tiers: 2, brackets: true, doors: true, lift: 1.6, upper: [.95, .93], upperRise: 3.8, ridgeFrac: .66, gable: .55 };   // 윗지붕: 용마루 1.8 m 낮추고 아래 지붕에 가깝게 넓히고 긴 마루 · 처마 끝 들림 1.6 m(Codex 2026-10-31)
   w.dz = upper; hall(w, S); w.dz = 0;   // 몸을 상월대 높이만큼 올려 짓는다
   // 월대 난간: 상월대 가장자리 돌 동자주 줄(맞춤)
   const rail = (ax:number, ay:number, bx:number, by:number) => { const n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 2.6)); for (let i = 0; i <= n; i++) { const x = ax + (bx - ax) * i / n, y = ay + (by - ay) * i / n; w.box(x - .16, x + .16, y - .16, y + .16, upper, upper + 1.05, K.trim, { bottom: true }) } };
@@ -180,7 +196,7 @@ function buildGyeonghoeru(w:MeshWriter, r:Rect):void {
     else w.prism(x, y, .42, podium, floorZ, K.granite, 8);
   }
   w.box(-bx - .9, bx + .9, -by - .9, by + .9, floorZ, floorZ + .45, K.wood, { bottom: true });   // 2층 마루 두께
-  const S:Hall = { hx: bx, hy: by, podium: 0, body: 5.2, rise: 5.8, eave: 3.2, bays: [7, 5], steps: FINE, brackets: true, hollow: true, ridgeFrac: .46, lift: 1.3 };   // 벽 없는 열린 누각 · 긴 팔작 마루(15 m 안팎) · 상층 높이 5.2 m
+  const S:Hall = { hx: bx, hy: by, podium: 0, body: 5.2, rise: 5.8, eave: 3.2, bays: [7, 5], steps: FINE, brackets: true, hollow: true, ridgeFrac: .46, lift: 1.3, gable: .5 };   // 벽 없는 열린 누각 · 긴 팔작 마루(15 m 안팎) · 상층 높이 5.2 m
   w.dz = floorZ + .45; hall(w, S); w.dz = 0;
   // 누마루 둘레 붉은 난간(높이 0.9 m, 칸마다 띄운다) · 섬 가장자리 돌 난간 동자주
   const railZ = floorZ + .45, redRail = (ax:number, ay:number, bx2:number, by2:number) => { const n = Math.max(1, Math.round(Math.hypot(bx2 - ax, by2 - ay) / 3.4)); for (let i = 0; i < n; i++) { const x0 = ax + (bx2 - ax) * i / n, y0 = ay + (by2 - ay) * i / n, x1 = ax + (bx2 - ax) * (i + 1) / n, y1 = ay + (by2 - ay) * (i + 1) / n; w.box(Math.min(x0, x1) - .07, Math.max(x0, x1) + .07, Math.min(y0, y1) - .07, Math.max(y0, y1) + .07, railZ + .78, railZ + .92, K.red, { bottom: true }); w.box(Math.min(x0, x1) - .05, Math.max(x0, x1) + .05, Math.min(y0, y1) - .05, Math.max(y0, y1) + .05, railZ + .3, railZ + .42, K.red, { bottom: true }) } };

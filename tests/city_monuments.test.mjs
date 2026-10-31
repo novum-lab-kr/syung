@@ -116,10 +116,14 @@ test('경복궁 궁 안 건물: 전용 모델 여덟 + 한옥 틀이 모두 유�
 });
 
 // ── 궁 안 나무 ─────────────────────────────────────────────────────────────────────────────────────────────
-// 자리 자료(0.1 m 정수, PALACE_AT 기준 동 · 북)를 지도 좌표 · 지역 미터로 바꿔 둘레 · 건물과 견준다
-const KX = 111320 * Math.cos(PALACE_AT[1] * Math.PI / 180), KY = 110574;
-const toMeters = ([lng, lat]) => [(lng - PALACE_AT[0]) * KX, (lat - PALACE_AT[1]) * KY];
+// 자리 자료(0.1 m 정수, PALACE_AT 기준 동 · 북)를 그리는 쪽과 같은 좌표(life.mts toM — 메르카토르 미터)로 놓고 둘레 · 건물 · 길 · 연못 · 담장과 견준다
+const { toM } = await import('../web/city/life.mts');
+const AT = toM(PALACE_AT[0], PALACE_AT[1]);
+const toLocal = ([lng, lat]) => { const [x, y] = toM(lng, lat); return [x - AT[0], -(y - AT[1])] };   // 동 · 북(+) — 나무 자료와 같은 방향
 const contains = (poly, x, y) => { let inside = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside } return inside };
+const segDist = (x, y, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy, t = len === 0 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / len)); return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy) };
+const lineDist = (x, y, line) => Math.min(...line.slice(0, -1).map((pt, i) => segDist(x, y, pt, line[i + 1])));
+const edgeDist = (x, y, poly) => lineDist(x, y, [...poly, poly[0]]);
 const allTrees = () => Object.entries(PALACE_TREES).flatMap(([species, list]) => Array.from({ length: list.length / 2 }, (_, i) => ({ species, x: list[i * 2] / 10, y: list[i * 2 + 1] / 10 })));
 
 test('궁 안 나무: 수종 넷(소나무 · 활엽 둘 · 감나무), 쌍이 맞고 유한하며 소나무 · 활엽이 수백 그루', () => {
@@ -129,12 +133,29 @@ test('궁 안 나무: 수종 넷(소나무 · 활엽 둘 · 감나무), 쌍이 �
   assert.ok(PALACE_TREES.persimmon.length / 2 >= 1 && PALACE_TREES.persimmon.length / 2 <= 5);
 });
 
-test('궁 안 나무: 모두 경복궁 둘레 안이고 건물 자리 위에는 없다', () => {
-  const ring = palaceRing().map(toMeters);
-  const footprints = PALACE_BUILDINGS.map(b => Array.from({ length: b.p.length / 2 }, (_, i) => toMeters([PALACE_ORIGIN[0] + b.p[i * 2] / 1e6, PALACE_ORIGIN[1] + b.p[i * 2 + 1] / 1e6])));
+test('궁 안 나무: 모두 경복궁 둘레 안이고 건물 자리 위에는 없다(그리는 쪽 좌표)', () => {
+  const ring = palaceRing().map(toLocal);
+  const footprints = PALACE_BUILDINGS.map(b => Array.from({ length: b.p.length / 2 }, (_, i) => toLocal([PALACE_ORIGIN[0] + b.p[i * 2] / 1e6, PALACE_ORIGIN[1] + b.p[i * 2 + 1] / 1e6])));
   for (const tree of allTrees()) {
     assert.ok(contains(ring, tree.x, tree.y), `둘레 밖 ${tree.species} ${tree.x},${tree.y}`);
     assert.ok(!footprints.some(foot => contains(foot, tree.x, tree.y)), `건물 위 ${tree.species} ${tree.x},${tree.y}`);
+  }
+});
+
+test('궁 안 나무: 길 · 담장 위에 없고 연못 물 위에도 없다(경회루 당주 섬 소나무만 물 안 섬)', () => {
+  const { paths, walls, ponds } = JSON.parse(readFileSync(new URL('./fixtures/palace_obstacles.json', import.meta.url), 'utf8'));
+  const toLine = (list) => list.map(toLocal);
+  const roads = paths.map(path => ({ half: path.half, line: toLine(path.p) })), fences = walls.map(toLine);
+  const lakes = ponds.map(pond => ({ outer: toLine(pond.outer), inner: pond.inner.map(toLine) }));
+  for (const tree of allTrees()) {
+    const where = `${tree.species} ${tree.x},${tree.y}`;
+    for (const road of roads) assert.ok(lineDist(tree.x, tree.y, road.line) > road.half, `길 위 ${where}`);
+    for (const fence of fences) assert.ok(lineDist(tree.x, tree.y, fence) > 1, `담장 위 ${where}`);
+    for (const lake of lakes) {
+      if (!contains(lake.outer, tree.x, tree.y)) continue;
+      assert.ok(lake.inner.some(island => contains(island, tree.x, tree.y)), `물 위 ${where}`);
+      assert.equal(tree.species, 'pine', `섬 위에는 소나무만 ${where}`);
+    }
   }
 });
 

@@ -330,7 +330,7 @@ export class CityLandmarks {
   // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · init · render 가 넣는다)
   declare gl:WebGL2RenderingContext | null; declare items:TowerItem[] | null; declare broken:boolean; declare MT:Float32Array;
   declare p:WebGLProgram; declare u:Uniforms<TowerUniform>; declare pS:WebGLProgram; declare uS:Uniforms<StupaUniform>; declare stupas:StupaItem[];
-  declare mon:import('./monuments.mts').Monuments | null | undefined; declare monp:Promise<void> | null | undefined; declare monFail:boolean | undefined; declare monMT:Float32Array | undefined;
+  declare mon:import('./monuments.mts').Monuments | null | undefined; declare monp:Promise<void> | null | undefined; declare monFail:boolean | undefined; declare monMT:Float32Array | undefined; monGen = 0;   // monGen: 모델 코드 받기의 세대(문화유산 모드를 나가면 올려 받던 것을 무효로 한다)
   declare s3:Stupa3DLayer | null | undefined; declare s3p:Promise<void> | null | undefined; declare s3fail:boolean | undefined;
   constructor() { this.gl = null; this.items = null; this.broken = false; this.MT = new Float32Array(16) }
   init(gl:WebGL2RenderingContext):void {
@@ -353,12 +353,17 @@ export class CityLandmarks {
     try { if (!this.gl) this.init(gl); this._render(gl, matrix, opts) }
     catch (e) { this.broken = true; console.error('city-landmarks: off —', e) }
   }
+  // 문화유산 모드를 나가면 모델 · 나무 GPU 자원을 치우고 받던 코드도 무효로 한다(다시 들어오면 새로 받는다)
+  releaseMonuments():void {
+    this.monGen++; this.monp = null;
+    if (this.mon) { this.mon.dispose(); this.mon = null }
+  }
   // 우리나라 문화유산 모델(광화문 · 궁장 · 동상 …): 어느 모드에서나 같은 모델 · 같은 실물 색으로 그린다(2026-10-31 사용자 결정 — 모드 설정 · 스타일이 덮지 못한다).
   // 이 길은 탑(render)과 따로다: 선로 종류(track.kind)와 상관없이 부르고, 보이는 자리에 들어올 때 코드를 받는다. 못 받으면 그 층만 빠진다
   renderMonuments(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds }:{ zoom?:number; dark?:boolean; sun?:{ azimuth:number; elevation:number } | null; lit?:number[]; bounds:[number, number, number, number] }):void {
     if (this.monFail || zoom < 14 || !monumentsInView(bounds)) return;
     if (!this.mon) {
-      if (!this.monp) this.monp = import('./monuments.mts').then(m => { const layer = new m.Monuments(); layer.init(gl); layer.onLoad = repaint; this.mon = layer; this.monp = null; repaint() }).catch(e => { this.monFail = true; console.warn('city-landmarks: 기념물 못 받음 —', e) });
+      if (!this.monp) { const gen = this.monGen; this.monp = import('./monuments.mts').then(m => { if (gen !== this.monGen) { this.monp = null; return } const layer = new m.Monuments(); layer.init(gl); layer.onLoad = repaint; this.mon = layer; this.monp = null; repaint() }).catch(e => { this.monFail = true; console.warn('city-landmarks: 기념물 못 받음 —', e) }) }
       return;
     }
     const MT = (this.monMT ??= new Float32Array(16)); for (let i = 0; i < 16; i++) MT[i] = matrix[i]!; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * O.x + matrix[4 + r]! * O.y + matrix[12 + r]!;

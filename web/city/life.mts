@@ -633,7 +633,7 @@ export class CityLife {
     cell.sub = { SUB, sx, sy }; cell.ms = performance.now() - t0; cell.counts = { trees: trees.length / 9, street: street.length / 9, lamps: lamps.length / 4, cross: cross.length / 4, edges: edges.length, walks: walks.length };
     mark('gpu'); cell.state = 'ready';
   }
-  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); if (cell.inGraph) this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
+  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
   // the sub-grid ranges of a cell the view box touches: [rowStart, rowEnd) as instance ranges
   ranges(cell:LifeCell, prop:BinnedKey, box:number[]):[number, number][] {
     const B = cell[prop]; if (!B || !B.n) return []; const { SUB, sx, sy } = cell.sub!, [bx0, by0] = cell.box, out:[number, number][] = [];
