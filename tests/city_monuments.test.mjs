@@ -70,7 +70,7 @@ test('고정 규칙: 모드 설정에는 기념물 이름이 없고 heritage 칸
   }
 });
 test('고정 규칙: 기념물 모듈은 모드를 import 하지 않고 그리기 입구는 모드 · 테마 값을 받지 않는다', () => {
-  for (const name of ['monuments.mts', 'monuments_data.mts', 'monument_parts.mts', 'monuments_gyeongbok.mts', 'monuments_palace.mts', 'monuments_changdeokgung.mts', 'monument_trees.mts']) {
+  for (const name of ['monuments.mts', 'monuments_data.mts', 'monument_parts.mts', 'monuments_gyeongbok.mts', 'monuments_palace.mts', 'monuments_changdeokgung.mts', 'monument_trees.mts', 'monuments_sungnyemun.mts', 'monuments_heunginjimun.mts', 'monuments_gates.mts']) {
     assert.ok(!/from\s+['"][^'"]*modes\//.test(readFileSync(new URL(`../web/city/${name}`, import.meta.url), 'utf8')), `${name} 가 modes 를 import`);
   }
   const src = readFileSync(new URL('../web/city/landmarks.mts', import.meta.url), 'utf8');
@@ -441,4 +441,216 @@ test('공간 칸 나누기: 칸마다 먼 곳 줄이기 사각이 따로 있고 
   const data = new Float32Array(8 * 6); for (let tri = 0; tri < 2; tri++) for (let v = 0; v < 3; v++) { data[(tri * 3 + v) * 8] = tri * 1000 + v; data[(tri * 3 + v) * 8 + 1] = v }
   const pieces = splitTriangles(data, 8, index => [data[index], data[index + 1]]);
   assert.equal(pieces.length, 2); assert.equal(pieces.reduce((sum, piece) => sum + piece.items.length, 0), data.length);
+});
+
+// 두 도성문: OSM 외곽 · 홍예 관통 · 구역 지연 로드 · 밤 횃불.
+const gateZones = {
+  sungnyemun: await import('../web/city/monuments_sungnyemun.mts'),
+  heunginjimun: await import('../web/city/monuments_heunginjimun.mts'),
+};
+const gateObstacles = JSON.parse(readFileSync(new URL('./fixtures/gates_obstacles.json', import.meta.url), 'utf8'));
+function gateTriangles(name) {
+  const placement = MONUMENTS.find(entry => entry.id === name);
+  const angle = placement.yawDeg * Math.PI / 180;
+  const cosine = Math.cos(angle), sine = Math.sin(angle);
+  const data = gateZones[name].buildMonument(name), triangles = [];
+  for (let offset = 0; offset < data.length; offset += STRIDE * 3) {
+    if (Math.max(data[offset + 2], data[offset + 10], data[offset + 18]) <= .25) continue;
+    triangles.push([0, 8, 16].map(delta => [data[offset + delta] * cosine - data[offset + delta + 1] * sine, data[offset + delta] * sine + data[offset + delta + 1] * cosine]));
+  }
+  return triangles;
+}
+test('숭례문 · 흥인지문: 정점 · 단위 법선 · 실물 색 재질 · 높이 · 휴대폰 메시 한도', () => {
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const data = zone.buildMonument(name);
+    assert.ok(data.byteLength < 1.5 * 1024 * 1024, `${name}: 메시 크기 ${data.byteLength}`);
+    assert.equal(data.length % 24, 0);
+    let maximumHeight = 0;
+    const materials = new Set();
+    for (let offset = 0; offset < data.length; offset += STRIDE) {
+      for (let field = 0; field < STRIDE; field++) assert.ok(Number.isFinite(data[offset + field]), `${name} 정점 ${offset}`);
+      assert.ok(Math.abs(Math.hypot(data[offset + 3], data[offset + 4], data[offset + 5]) - 1) < .001);
+      maximumHeight = Math.max(maximumHeight, data[offset + 2]); materials.add(data[offset + 6]);
+    }
+    assert.ok(Math.abs(maximumHeight - zone.SHAPE.height) < .01);
+    for (const material of [0, 2, 3, 5, 7, 9, 12, 15]) assert.ok(materials.has(material), `${name} 재질 ${material}`);
+    assert.ok(!materials.has(20), '상층 판문을 발광하는 한지창으로 바꾸지 않는다');
+    assert.equal(zone.buildMonument('없는 모델').length, 0);
+  }
+});
+test('두 도성문 홍예는 중앙 통로가 뚫려 있고 정면 다섯 칸 · 측면 두 칸 기둥열', () => {
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const data = zone.buildMonument(name), shape = zone.SHAPE;
+    const columns = new Set();
+    for (let offset = 0; offset < data.length; offset += STRIDE * 3) {
+      const corners = [0, 8, 16].map(delta => [data[offset + delta], data[offset + delta + 1], data[offset + delta + 2]]);
+      // x=0 · z=1에서 남북으로 보는 광선과 석축 면의 교차가 없어야 한다.
+      const planar = corners.map(point => [point[0], point[2]]);
+      const area = (planar[1][0] - planar[0][0]) * (planar[2][1] - planar[0][1]) - (planar[1][1] - planar[0][1]) * (planar[2][0] - planar[0][0]);
+      if (Math.abs(area) > .00001 && data[offset + 6] === 0 && corners.every(point => point[1] > -13)) assert.ok(!nearTriangle(0, 1, planar, 0), `${name} 홍예 막힘`);
+      if (data[offset + 6] === 2 && Math.abs(data[offset + 2] - shape.masonryHeight) < .001) columns.add(Math.round((data[offset] - .25 + shape.frameWidth / 2) / (shape.frameWidth / 5)));
+    }
+    assert.ok(columns.size >= 6, `${name}: 기둥 여섯 줄`);
+    assert.equal(shape.verticalPlaque, name === 'sungnyemun');
+  }
+});
+test('문루 기둥 발은 육축 윗면에 바로 닿고(떠 있지 않다) 육축 윤곽 안에 선다 · 여장은 네 면을 두른 회색 전돌', () => {
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const data = zone.buildMonument(name), { masonryHeight, base } = zone.SHAPE, feet = [];
+    const parapet = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    for (let offset = 0; offset < data.length; offset += STRIDE * 3) {
+      const kind = data[offset + 6], zs = [0, 8, 16].map(delta => data[offset + delta + 2]);
+      if (kind === 2) {   // 주칠 = 기둥(문루에서 이 재질은 기둥뿐)
+        const lowest = Math.min(...zs);
+        if (lowest < masonryHeight + .5) { feet.push(lowest); for (const delta of [0, 8, 16]) assert.ok(contains(base, data[offset + delta], data[offset + delta + 1]), `${name} 기둥 발이 육축 밖`) }
+      }
+      if (kind === 6 && Math.min(...zs) >= masonryHeight - .001 && Math.max(...zs) <= masonryHeight + 1.2 + .001) {   // 여장(회색 전돌)
+        for (const delta of [0, 8, 16]) { parapet.minX = Math.min(parapet.minX, data[offset + delta]); parapet.maxX = Math.max(parapet.maxX, data[offset + delta]); parapet.minY = Math.min(parapet.minY, data[offset + delta + 1]); parapet.maxY = Math.max(parapet.maxY, data[offset + delta + 1]) }
+      }
+    }
+    assert.ok(feet.length > 50, `${name} 기둥 면 ${feet.length}`);
+    for (const lowest of feet) assert.ok(Math.abs(lowest - masonryHeight) < .001, `${name} 기둥 발 ${lowest} ≠ 육축 윗면 ${masonryHeight}`);
+    // 여장은 앞 · 뒤 · 양옆 네 면: 문루(22.5 × 7.7 m) 둘레를 모두 덮는다
+    assert.ok(parapet.maxX - parapet.minX > zone.SHAPE.frameWidth && parapet.maxY - parapet.minY > zone.SHAPE.frameDepth, `${name} 여장이 네 면을 두르지 않음`);
+    for (const [x, y] of [[parapet.minX, 0], [parapet.maxX, 0], [0, parapet.minY], [0, parapet.maxY]]) assert.ok(contains(base, x, y), `${name} 여장이 육축 밖`);
+  }
+});
+test('도성문 현판: 폭을 s 에 싣고(셰이더가 그 폭으로 그린다) 글씨는 없다 — 검은 바탕 + 테두리', () => {
+  const source = readFileSync(new URL('../web/city/monuments.mts', import.meta.url), 'utf8');
+  assert.ok(source.includes('wd = floor(s / 2.)') && source.includes('wd > 0. ? 0.'), '셰이더가 현판 폭을 읽고 도성문에는 글씨를 안 그린다');
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const data = zone.buildMonument(name), widths = new Set();
+    for (let offset = 0; offset < data.length; offset += STRIDE) if (data[offset + 6] === 9 && data[offset + 7] >= 1) widths.add(Math.floor(data[offset + 7] / 2) / 10);
+    assert.deepEqual([...widths], [zone.SHAPE.verticalPlaque ? .9 : 2.8], `${name} 현판 폭`);
+  }
+});
+test('흥인지문 옹성: OSM 동쪽 반원 윤곽 · 두꺼운 벽 · 북쪽 입구가 남는다', () => {
+  const { base, enclosure } = gateZones.heunginjimun.SHAPE;
+  assert.ok(enclosure.length > 30);
+  assert.ok(Math.min(...enclosure.map(point => point[1])) < -34);
+  assert.ok(Math.max(...base.map(point => point[1])) > 8);
+  assert.ok(!contains(enclosure, 16, -16), '북쪽 열린 출입구');
+  assert.ok(contains(enclosure, -4, -32), '안팎 윤곽 사이 옹성 벽');
+  assert.ok(!contains(enclosure, 0, -18), '옹성 안쪽 마당은 비운다');
+  assert.equal(gateZones.sungnyemun.SHAPE.enclosure, undefined);
+});
+test('도성문 자리와 방향: OSM 원자료를 모델 좌표로 돌렸다 되돌려도 5 mm 안 · 숨김 영역이 외곽 전체를 덮는다', () => {
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const placement = MONUMENTS.find(entry => entry.id === name);
+    const obstacle = gateObstacles[name], angle = placement.yawDeg * Math.PI / 180;
+    const [originEast, originSouth] = toM(...placement.lngLat);
+    const outline = [...zone.SHAPE.base, ...(zone.SHAPE.enclosure ?? [])];
+    const hide = MONUMENT_HIDES.find(entry => entry.lngLat[0] === placement.lngLat[0]);
+    assert.equal(hide.minH, 0);
+    for (const coordinate of obstacle.outline) {
+      const [worldEast, worldSouth] = toM(...coordinate);
+      const east = worldEast - originEast, north = originSouth - worldSouth;
+      const localEast = east * Math.cos(angle) + north * Math.sin(angle);
+      const localNorth = -east * Math.sin(angle) + north * Math.cos(angle);
+      assert.ok(outline.some(point => Math.hypot(point[0] - localEast, point[1] - localNorth) < .005), `${name}: 외곽 누락 ${coordinate}`);
+      assert.ok(Math.hypot(east, north) < hide.radiusM, `${name}: 숨김 영역 밖`);
+    }
+  }
+});
+test('도성문 횃불: 통로 축 양쪽 끝에 좌우 대칭 쌍 · 같은 간격 · 육축 · 옹성 · 건물 · 보행길 · 차로와 겹치지 않음', () => {
+  for (const [name, zone] of Object.entries(gateZones)) {
+    assert.ok(zone.torches.data.length >= 12 && zone.torches.data.length % 4 === 0);
+    const placement = MONUMENTS.find(entry => entry.id === name), obstacle = gateObstacles[name], triangles = gateTriangles(name);
+    const angle = placement.yawDeg * Math.PI / 180, cosine = Math.cos(angle), sine = Math.sin(angle);
+    const points = [];
+    for (let index = 0; index < zone.torches.data.length; index += 2) points.push([zone.torches.data[index] / 10, zone.torches.data[index + 1] / 10]);
+    assert.deepEqual(zone.torches.at, placement.lngLat);
+    // 문 국소 좌표(x 폭 방향 · y 통로 방향)로 되돌려 좌우 대칭을 본다.
+    const local = points.map(([east, north]) => [east * cosine + north * sine, -east * sine + north * cosine]);
+    for (const [x, y] of local) assert.ok(local.some(([mx, my]) => Math.abs(mx + x) < .15 && Math.abs(my - y) < .15), `${name} 짝 없음 ${x.toFixed(1)},${y.toFixed(1)}`);
+    const leftRows = local.filter(([x]) => x < 0).map(([, y]) => y).sort((first, second) => first - second);
+    const ends = [leftRows.filter(y => y > 0), leftRows.filter(y => y < 0)];
+    for (const rows of ends) for (let index = 1; index < rows.length; index++) assert.ok(Math.abs(rows[index] - rows[index - 1] - 8) < .15, `${name} 간격 ${rows}`);
+    // 여유는 모두 1.6 m(생성된 육축 · 옹성 · OSM 건물 · 보행길 선). 차로는 가장자리에서 1 m(너비는 OSM 미기재 시 근사). 보행길(paths)은 폭 정보가 없어 선에서 1.6 m 이상
+    // 흥인지문 서쪽 횃불 일부는 보행 광장(plazas) 위에 선다 — 광장은 막을 곳이 아니라 걷는 바닥이라 겹쳐도 된다(건물 · 차로 · 보행길만 피한다)
+    for (const [east, north] of points) {
+      assert.ok(!triangles.some(triangle => nearTriangle(east, north, triangle, 1.6)), `${name} 실제 메시 위 ${east},${north}`);
+      for (const polygon of obstacle.buildings) assert.ok(!contains(polygon, east, north) && edgeDist(east, north, polygon) > 1.6, `${name} 건물 ${east},${north}`);
+      for (const road of obstacle.roads) assert.ok(lineDist(east, north, road.p) > road.half + 1, `${name} 차로 위`);
+      for (const path of obstacle.paths) assert.ok(lineDist(east, north, path) > 1.6, `${name} 보행길 위 ${east},${north}`);
+    }
+  }
+});
+test('도성문 숨김: 문 외곽 안 건물만 숨기고 바로 옆 건물은 도시 팩 · 기본 모드 필터 모두 남긴다 · 도시 나무는 문 둘레를 비운다', async () => {
+  const { Monuments } = await import('../web/city/monuments.mts');
+  const rings = monumentBuildingFilter()[1][1].coordinates;   // MONUMENT_HIDES 순서의 MultiPolygon 고리
+  const layer = new Monuments();
+  for (const [name, zone] of Object.entries(gateZones)) {
+    const placement = MONUMENTS.find(entry => entry.id === name), hideIndex = MONUMENT_HIDES.findIndex(entry => entry.lngLat[0] === placement.lngLat[0]);
+    const hide = MONUMENT_HIDES[hideIndex], [lng, lat] = placement.lngLat, ring = rings[hideIndex][0];
+    let hidden = 0, kept = 0;
+    for (const polygon of gateObstacles[name].buildings) {
+      const xs = polygon.map(point => point[0]), ys = polygon.map(point => point[1]);
+      const center = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      const cityHides = Math.hypot(...center) < hide.radiusM && extent < 2.5 * hide.radiusM;   // 도시 엔진(mesh.mts landmarkPart)의 판정과 같다
+      const lngLats = polygon.map(([east, north]) => [lng + east / (111320 * Math.cos(lat * Math.PI / 180)), lat + north / 110574]);
+      const mapHides = lngLats.every(point => contains(ring, point[0], point[1]));   // MapLibre within: 건물 전체가 다각형 안
+      assert.equal(mapHides, cityHides, `${name}: 도시 팩과 기본 모드 필터가 같은 건물을 숨겨야 한다 (${center.map(Math.round)})`);
+      if (cityHides) { hidden++; assert.ok(Math.hypot(...center) < 25, `${name}: 숨긴 건물은 문 외곽 안`) } else kept++;
+    }
+    assert.ok(hidden >= 1 && hidden <= 2, `${name}: 문 자신의 조각만 숨김 ${hidden}`);
+    assert.ok(kept >= 3, `${name}: 옆 건물 ${kept}채는 남는다`);
+    // 도시 나무: 문 둘레 원 안은 비우고 그 밖은 심는다(문화유산 모드 treeKeepOut)
+    const [gateX, gateY] = toM(lng, lat);
+    assert.ok(layer.inPalace(gateX, gateY) && layer.inPalace(gateX + hide.radiusM - 1, gateY), `${name}: 문 둘레 나무 비우기`);
+    assert.ok(!layer.inPalace(gateX + hide.radiusM + 5, gateY), `${name}: 둘레 밖은 심는다`);
+  }
+});
+test('구역 화면 판정: 동대문만 보는 화면에서도 로드 · 부산에서는 로드하지 않는다', async () => {
+  const { monumentsInView } = await import('../web/city/monuments_data.mts');
+  const boundsAt = ([longitude, latitude]) => {
+    const east = (longitude + 180) / 360, south = (1 - Math.log(Math.tan(Math.PI / 4 + latitude * Math.PI / 360)) / Math.PI) / 2;
+    return [east - .000001, south - .000001, east + .000001, south + .000001];
+  };
+  for (const name of Object.keys(gateZones)) {
+    const placement = MONUMENTS.find(entry => entry.id === name), bounds = boundsAt(placement.lngLat);
+    assert.ok(monumentsInView(bounds) && monumentsInView(bounds, name));
+    assert.ok(!monumentsInView(boundsAt([129.0756, 35.1796]), name));
+  }
+  assert.ok(!monumentsInView(boundsAt([129.0756, 35.1796])));
+  const source = readFileSync(new URL('../web/city/monuments.mts', import.meta.url), 'utf8');
+  for (const name of Object.keys(gateZones)) assert.ok(source.includes(`() => import('./monuments_${name}.mts')`));
+  assert.ok(source.indexOf('if (bounds && !monumentsInView(bounds, item.M.zone)) continue') < source.indexOf('const m = this.mesh(item)'));
+});
+
+test('도성문 렌더링: 로드 중 · 실패 · 낮 · 줌 문턱에는 횃불 없음, 준비된 밤에만 그리며 GL 자원은 해제', async () => {
+  const { Monuments } = await import('../web/city/monuments.mts');
+  const calls = [], shaderSources = [];
+  let resource = 0;
+  const graphics = new Proxy({}, { get: (_, name) => {
+    if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+    if (name === 'getUniformLocation') return (_program, uniform) => uniform;
+    if (String(name).startsWith('create')) return () => ++resource;
+    if (name === 'shaderSource') return (_shader, source) => shaderSources.push(source);
+    return (...args) => { calls.push([name, ...args]); };
+  } });
+  const layer = new Monuments(); layer.init(graphics);
+  const placement = MONUMENTS.find(entry => entry.id === 'heunginjimun');
+  const centerEast = (placement.lngLat[0] + 180) / 360;
+  const centerSouth = (1 - Math.log(Math.tan(Math.PI / 4 + placement.lngLat[1] * Math.PI / 360)) / Math.PI) / 2;
+  const options = { light: [0, 0, 1], lit: [.6, .4], dark: true, zoom: 17, phone: false, center: placement.lngLat, bounds: [centerEast - .000001, centerSouth - .000001, centerEast + .000001, centerSouth + .000001] };
+  const render = changes => { calls.length = 0; layer.render(graphics, new Float32Array(16), { ...options, ...changes }); };
+  layer.zones.set('heunginjimun', new Promise(() => {})); render({});
+  assert.ok(!calls.some(call => call[0] === 'drawArraysInstanced'));
+  layer.zones.set('heunginjimun', 'fail'); render({});
+  assert.ok(!calls.some(call => call[0] === 'drawArraysInstanced'));
+  layer.zones.set('heunginjimun', gateZones.heunginjimun); layer.torches.addGrove('heunginjimun', gateZones.heunginjimun.torches.at, gateZones.heunginjimun.torches.data); render({ dark: false });
+  assert.ok(calls.some(call => call[0] === 'drawArrays'));
+  assert.ok(!calls.some(call => call[0] === 'drawArraysInstanced'));
+  render({}); assert.ok(calls.filter(call => call[0] === 'drawArraysInstanced').length >= 2);
+  assert.ok(calls.some(call => call[0] === 'uniform1i' && call[1] === 'u_openingsOnly' && call[2] === 1));
+  render({ zoom: 14.3 }); assert.ok(calls.filter(call => call[0] === 'drawArraysInstanced').length >= 2);
+  assert.ok(calls.some(call => call[0] === 'uniform1f' && call[1] === 'u_grow' && Math.abs(call[2] - .5) < .001));
+  for (const changes of [{ zoom: 13.9 }, { zoom: 14.3, phone: true }]) { render(changes); assert.equal(calls.length, 0); }
+  const vertexCount = layer.items.find(item => item.M.id === 'heunginjimun').mesh.chunks.reduce((sum, chunk) => sum + chunk.n, 0);
+  layer.dispose(); assert.ok(calls.some(call => call[0] === 'deleteBuffer')); assert.ok(vertexCount > 0);
+  assert.equal(layer.items.find(item => item.M.id === 'heunginjimun').mesh, null);
+  const fragment = shaderSources.find(source => source.includes('u_openingsOnly'));
+  assert.ok(fragment.includes('if (u_openingsOnly) col = c * lt * .42;'));
+  assert.ok(fragment.includes('k == 7 && !u_openingsOnly') && fragment.includes('k == 10 && !u_openingsOnly'));
 });

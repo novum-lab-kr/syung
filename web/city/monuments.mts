@@ -2,7 +2,7 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, monumentsInView } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, GATE_YARDS, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
@@ -12,11 +12,13 @@ import { splitTriangles } from './monument_cells.mts';
 import type { Rect4 } from './monument_cells.mts';
 import { cityMinZoom, cityGrow, cityFarFade } from './zoom_gate.mts';   // 도시 건물과 같은 보이는 줌 · 자라기 · 폰의 먼 곳 줄이기
 
-// 구역 파일(구역이 늘면 한 줄씩 — 닿은 구역만 받는다)
+// 구역 파일(구역이 늘면 한 줄씩 — 닿은 구역만 받는다): 경복궁 · 창덕궁 · 숭례문 · 흥인지문(도성문은 문 둘레 100 m 안에 화면이 닿을 때만)
 interface ZoneModule { buildMonument:(id:string) => Float32Array; trees?:{ at:[number, number]; data:Record<'pine' | 'broad' | 'wide' | 'persimmon', number[]> }; torches?:{ at:[number, number]; data:number[] } }
 const ZONES:Record<string, () => Promise<ZoneModule>> = {
   gyeongbok: () => import('./monuments_gyeongbok.mts'),
   changdeokgung: () => import('./monuments_changdeokgung.mts'),
+  sungnyemun: () => import('./monuments_sungnyemun.mts'),
+  heunginjimun: () => import('./monuments_heunginjimun.mts'),
 };
 
 // ── 그리기 ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[24];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[24];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -58,10 +60,13 @@ void main(){
   } else if (k == 8) { c = mix(c, u_col[2], step(.5, fract(s / .4)) * .85); }   // 처마 끝: 서까래 머리(붉은 단청 점)
   else if (k == 10) { c = mix(c * .8, u_col[2], line(s / .36, .22) * .5); }
   else if (k == 7) { if (side > .5) c *= 1. - .3 * line(along / .34, .28); }
-  else if (k == 9) {   // 현판: 검은 바탕 · 금빛 테두리 · 금빛 글자 덩어리 셋
-    float u = (v_p.x + 2.5) / 5., v = s; vec3 gold = vec3(.85, .65, .24);
-    float edge = step(u, .035) + step(.965, u) + step(v, .09) + step(.91, v);
-    float glyph = (step(.12, u) * step(u, .3) + step(.42, u) * step(u, .58) + step(.7, u) * step(u, .88)) * step(.2, v) * step(v, .8) * step(.35, hash(floor(vec2(u * 18., v * 8.))));
+  else if (k == 9) {   // 현판: 검은 바탕 · 금빛 테두리 · (광화문만) 금빛 글자 덩어리 셋
+    // s = 2 × 현판 폭(데시미터) + 위로 0…1. 폭 0 이면 광화문의 5 m. 도성문 현판은 글씨를 지어내지 않고 바탕 + 테두리까지만
+    float wd = floor(s / 2.), v = s - 2. * wd, W = wd > 0. ? wd / 10. : 5.;
+    float u = (v_p.x + W / 2.) / W; vec3 gold = vec3(.85, .65, .24);
+    float eu = wd > 0. ? .09 / W : .035, ev = wd > 0. ? .05 : .09;
+    float edge = step(u, eu) + step(1. - eu, u) + step(v, ev) + step(1. - ev, v);
+    float glyph = wd > 0. ? 0. : (step(.12, u) * step(u, .3) + step(.42, u) * step(u, .58) + step(.7, u) * step(u, .88)) * step(.2, v) * step(v, .8) * step(.35, hash(floor(vec2(u * 18., v * 8.))));
     c = mix(c, gold, clamp(edge + glyph, 0., 1.));
   } else if (k == 14) {   // 궁장 벽돌: 작은 벽돌 줄(약 0.1 m 단)과 엇갈린 줄눈
     float rows = v_p.z / .11, row = floor(rows), cols = (along + row * .5 * .26) / .26;
@@ -85,14 +90,16 @@ void main(){
   if (u_night > .5) {   // 밤: 달빛에 어둡게, 아래에서 비추는 따뜻한 조명(문화재 야간 조명)이 위로 갈수록 옅게
     float up = exp(-v_p.z / 15.) * (.35 + .65 * side);
     col = c * lt * .42 + c * vec3(1., .78, .52) * (.5 * up + .05);
-    if (k == 9) col += vec3(.2, .15, .05) * step(.5, c.r);
+    if (u_openingsOnly) col = c * lt * .42;   // 도성문: 아래서 비추는 조명 · 처마 · 마루 불빛 없이 열린 곳(홍예 · 창호)만 빛난다
+    if (k == 9 && !u_openingsOnly) col += vec3(.2, .15, .05) * step(.5, c.r);
     // 안에서 새어 나오는 등불(전각 · 문루): 문 안 · 벽 사이 회벽 · 판문 · 마루 · 처마 밑이 따뜻하게 — 낮 · 라이트에는 이 줄에 들어오지 않는다
     vec3 warm = vec3(1., .62, .28); float flick = .94 + .06 * hash(floor(v_p.xy * .5));
     if (k == 12) col = mix(col, warm * flick, .88);                            // 문 안 · 홍예: 등불이 켜진 속
     else if (k == 20) { float lattice = max(line(along / .42, .14), line(v_p.z / .52, .14)); col = mix(col, warm * flick * (1. - .5 * lattice), .9); }   // 창호만 한지에 비친 등불(살은 어둡게)
     else if (k == 19) col += warm * c * .05;                                    // 회벽 · 합각 · 막힌 벽: 켜지 않는다 — 아주 약한 반사광만
-    else if (k == 7) col += warm * (n.z > .5 ? .32 : .2) * c.g * 1.6;            // 판문 · 누마루 마루
-    else if (k == 10) col += warm * .2;                                         // 처마 밑: 아래 등불이 비춘다
+    else if (k == 2 && u_openingsOnly) col += warm * c.r * .32;                    // 도성문 문루 기둥: 열린 하층 안에서 비추는 등불이 기둥 안쪽을 드러낸다(판문에는 빛을 지어내지 않는다)
+    else if (k == 7 && !u_openingsOnly) col += warm * (n.z > .5 ? .32 : .2) * c.g * 1.6;            // 판문 · 누마루 마루
+    else if (k == 10 && !u_openingsOnly) col += warm * .2;                                         // 처마 밑: 아래 등불이 비춘다
   }
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
@@ -108,7 +115,7 @@ export class Monuments {
   declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare items:Placed[]; declare u:Record<string, WebGLUniformLocation | null>;
   init(gl:WebGL2RenderingContext):void {
     this.gl = gl; this.disposed = false; this.epoch++; this.p = compileProgram(gl, VS, FS);
-    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
+    this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_col', 'u_openingsOnly'].map(name => [name, gl.getUniformLocation(this.p, name)]));
     this.trees.init(gl); this.torches.init(gl);
     this.items = MONUMENTS.map(M => { const [x, y] = toM(M.lngLat[0], M.lngLat[1]), a = M.yawDeg * Math.PI / 180; return { M, x, y, rot: [Math.cos(a), Math.sin(a)], mesh: null } });
   }
@@ -134,9 +141,12 @@ export class Monuments {
     }
     return (item.mesh = { chunks });
   }
-  // 궁(경복궁 · 창덕궁) 안인지(지역 미터) — 도시 나무가 궁 안을 비켜 전용 나무에 자리를 내준다
+  // 궁(경복궁 · 창덕궁) 안 · 도성문 둘레인지(지역 미터) — 도시 나무가 이 안을 비켜 전용 나무에 자리를 내주고 문 육축 위에 서지 않는다
   palaceM:[number, number][][] | null = null;
+  gateM:[number, number, number][] | null = null;   // 도성문 둘레 원(지역 미터 x · y · 반경)
   inPalace = (x:number, y:number):boolean => {
+    const gates = (this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => { const [gx, gy] = toM(lng, lat); return [gx, gy, radiusM] as [number, number, number] }));
+    if (gates.some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
     const rings = (this.palaceM ??= [palaceRing(), cdgRing()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
     return rings.some(ring => {
       let inside = false;
@@ -158,12 +168,13 @@ export class Monuments {
     const u = this.u, palette = new Float32Array(COLORS.flatMap(hex));
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0); gl.uniform3fv(u.u_col!, palette);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    // 구역(경복궁 · 창덕궁)마다: 화면이 닿을 때만 받고 그린다(창덕궁 자료는 경복궁만 보일 때 받지 않는다). 광화문은 구역 안 다른 항목과 따로 센다
+    // 구역(경복궁 · 창덕궁 · 숭례문 · 흥인지문)마다: 화면이 닿을 때만 받고 그린다(창덕궁 자료는 경복궁만 보일 때 받지 않는다). 광화문은 구역 안 다른 항목과 따로 센다
     const zoneReady = new Map<string, boolean>();
     for (const item of this.items) {
       if (bounds && !monumentsInView(bounds, item.M.zone)) continue;
       const m = this.mesh(item); if (!m) { zoneReady.set(item.M.zone, false); continue }
       if (!zoneReady.has(item.M.zone)) zoneReady.set(item.M.zone, true);
+      gl.uniform1i(u.u_openingsOnly!, item.M.openingsOnly ? 1 : 0);
       for (const chunk of m.chunks) {
         const g = grow * keep(chunk.rect); if (g <= 0) continue;
         gl.uniform1f(u.u_grow!, g); gl.uniform2f(u.u_at!, item.x, item.y); gl.uniform2fv(u.u_rot!, item.rot); gl.bindVertexArray(chunk.va); gl.drawArrays(gl.TRIANGLES, 0, chunk.n);

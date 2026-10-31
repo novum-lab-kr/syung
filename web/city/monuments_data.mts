@@ -5,7 +5,7 @@
 // zone: 이 기념물 모델이 든 구역 파일(monuments_<zone>.mts — 구역마다 따로 지연 로드한다)
 // 모델 · 담장 · 궁 안 건물 · 나무 · 횃불이 보이는 줌 · 자라기 · 폰의 먼 곳 줄이기는 도시 건물과 같은 공용 셈(zoom_gate.mts)을 쓴다 —
 // 원래 건물을 숨기는 목록(MONUMENT_HIDES)은 줌과 상관없이 늘 적용되니 같은 줌에서 함께 나타나고 사라져 비거나 겹치는 구간이 없다
-export interface Monument { id:string; zone:string; lngLat:[number, number]; yawDeg:number }
+export interface Monument { id:string; zone:string; lngLat:[number, number]; yawDeg:number; openingsOnly?:boolean }
 export const GATE_DECK_Z = 1.1, GATE_BASE_D = 13.3;   // 광화문 월대 윗면 높이(맞춤) · 육축 깊이(지도 외곽)
 // 경복궁 모델의 기준점(지도 좌표) · 둘레와 건물 자리의 정수 좌표 원점
 export const PALACE_AT:[number, number] = [126.977, 37.579];
@@ -25,7 +25,11 @@ export const STATUES:Monument[] = [
   { id: 'yi-sunsin', zone: 'gyeongbok', lngLat: [126.97695, 37.57097], yawDeg: 0 },   // 이순신 장군 동상: OSM node 2653074012 · direction 180°(남쪽을 본다)
   { id: 'sejong', zone: 'gyeongbok', lngLat: [126.97691, 37.57292], yawDeg: 0 },   // 세종대왕 동상: OSM node 3841809527 · direction 180°
 ];
+// 두 도성문 중심 · 방향: OSM 원자료의 육축 긴 변(2026-11-01), 구역 파일 머리에 계산 근거.
+// 숭례문 https://www.openstreetmap.org/relation/10647050 · 흥인지문 https://www.openstreetmap.org/way/320783808
 export const MONUMENTS:Monument[] = [
+  { id: 'sungnyemun', zone: 'sungnyemun', lngLat: [126.97536025, 37.559986249999994], yawDeg: -41.8017044508303, openingsOnly: true },
+  { id: 'heunginjimun', zone: 'heunginjimun', lngLat: [127.009594975, 37.571153975], yawDeg: 100.09911107449813, openingsOnly: true },
   { id: 'gwanghwamun', zone: 'gyeongbok', lngLat: [126.976817, 37.575928], yawDeg: -1.3 },
   // 경복궁 둘레 담장 · 궁 안 건물(흥례문 … 향원정 전용 모델 + 나머지 한옥 틀): 같은 기준점 PALACE_AT, 방향 없음. 멀리서는 안 그린다
   { id: 'palace-wall', zone: 'gyeongbok', lngLat: PALACE_AT, yawDeg: 0 },
@@ -40,7 +44,15 @@ export const MONUMENTS:Monument[] = [
 // (세종대왕 동상 앞 지도 건물 비우기는 STATUE_HIDES — 동상과 같이 다음 브랜치에서)
 // 동상을 내보낼 때 합칠 자리 비우기(지금은 쓰지 않는다)
 export const STATUE_HIDES = [{ lngLat: [126.97691, 37.57285] as [number, number], radiusM: 14, minH: 0 }];
-export const MONUMENT_HIDES = [
+// 도성문 둘레(OSM 육축 · 옹성 전체를 감싸는 원): 지도 건물 비우기와 도시 나무 비우기가 같이 쓴다.
+// exact: 이 원은 문 외곽에 딱 맞아(tests/city_monuments.test.mjs) 기본 모드 필터가 반경을 1.5배로 키우지 않는다 — 키우면 바로 옆 건물까지 지워진다
+export interface MonumentHide { lngLat:[number, number]; radiusM:number; minH:number; area?:[number, number][]; exact?:boolean }
+export const GATE_YARDS:MonumentHide[] = [
+  { lngLat: [126.97536025, 37.559986249999994] as [number, number], radiusM: 27, minH: 0, exact: true },
+  { lngLat: [127.009594975, 37.571153975] as [number, number], radiusM: 43, minH: 0, exact: true },
+];
+export const MONUMENT_HIDES:MonumentHide[] = [
+  ...GATE_YARDS,
   { lngLat: [126.976817, 37.575928] as [number, number], radiusM: 22, minH: 0 },
   // 경복궁 안: 둘레 안에 중심이 든 지도 건물은 모두 뺀다(전용 모델 · 한옥 틀이 대신 선다). 반경은 둘레 전체를 덮는 값 — 실제 판정은 area 다각형
   { lngLat: PALACE_AT, radiusM: 900, minH: 0, area: palaceRing() },
@@ -53,6 +65,9 @@ export const MONUMENT_HIDES = [
 const REGIONS:Record<string, { lngLat:[number, number]; radiusM:number }> = {
   gyeongbok: { lngLat: [126.9770, 37.5745], radiusM: 1500 },
   changdeokgung: { lngLat: CDG_AT, radiusM: 900 },
+  // 도성문: 문 둘레 100 m 안에 화면이 닿을 때만 그 문의 코드를 받는다
+  sungnyemun: { lngLat: [126.97536025, 37.559986249999994], radiusM: 100 },
+  heunginjimun: { lngLat: [127.009594975, 37.571153975], radiusM: 100 },
 };
 // zone 을 주면 그 구역만, 안 주면 어느 구역이든(화면이 닿으면 true)
 export function monumentsInView(bounds:[number, number, number, number], zone?:string):boolean {
@@ -75,9 +90,9 @@ export function withMonumentHides<P extends HidePack>(pack:P):P {
 // 기본 모드(MapLibre 건물 층 bm-bld · bm-bld3d)에서 같은 자리 건물을 빼는 필터: 도시 엔진의 자리 비우기(위)는 이 층에 닿지 않는다.
 // `within` 은 건물 전체가 다각형 안에 들어야 참이라, 반경을 키운 열여섯 각형으로 건물 윤곽 전체를 감싼다(반경 × 1.5).
 export function monumentBuildingFilter():unknown[] {
-  const rings = MONUMENT_HIDES.map(({ lngLat: [lng, lat], radiusM, area }) => {
+  const rings = MONUMENT_HIDES.map(({ lngLat: [lng, lat], radiusM, area, exact }) => {
     if (area) return [[...area, area[0]!]];
-    const ring:[number, number][] = [], r = radiusM * 1.5;
+    const ring:[number, number][] = [], r = radiusM * (exact ? 1.03 : 1.5);   // 열여섯 각형의 안쪽 원이 반경 이상이 되게(1.03 × cos(π/16) > 1)
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; ring.push([lng + Math.cos(a) * r / (111320 * Math.cos(lat * Math.PI / 180)), lat + Math.sin(a) * r / 110574]) }
     ring.push(ring[0]!); return [ring];
   });
