@@ -369,7 +369,7 @@ export class CityLandmarks {
     }
     const MT = (this.monMT ??= new Float32Array(16)); for (let i = 0; i < 16; i++) MT[i] = matrix[i]!; for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * O.x + matrix[4 + r]! * O.y + matrix[12 + r]!;
     const az = (sun?.azimuth ?? 225) * Math.PI / 180, el = Math.max(sun?.elevation ?? 42, 12) * Math.PI / 180;
-    this.mon.render(gl, MT, { light: [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit, dark, zoom, phone, center });
+    this.mon.render(gl, MT, { light: [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)], lit, dark, zoom, phone, center, bounds });
     gl.bindVertexArray(null); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
   _render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { zoom = 15, dark = false, look = 'tower', sun = null, lit = [.64, .36], phone = false }:LandmarkRenderOptions):void {

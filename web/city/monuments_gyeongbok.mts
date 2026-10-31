@@ -2,7 +2,9 @@
 // 공통 부품은 monument_parts.mts. 모드 · 테마 입력은 없다 — 어느 모드에서나 같은 모델 · 같은 실물 색.
 import { MeshWriter, K, buildRoof, buildBrackets, bandBox } from './monument_parts.mts';
 import type { V3 } from './monument_parts.mts';
-import { GATE_BASE_D as BASE_D, GATE_DECK_Z as Z0 } from './monuments_data.mts';
+import { GATE_BASE_D as BASE_D, GATE_DECK_Z as Z0, PALACE_AT } from './monuments_data.mts';
+import { PALACE_TREES } from './monuments_trees_data.mts';
+import { PALACE_TORCHES } from './monuments_torches_data.mts';
 import { buildPalaceWall, buildPalaceHalls, buildPalaceFrames } from './monuments_palace.mts';
 
 // ── 광화문 ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -212,6 +214,9 @@ function buildSejong(w:MeshWriter):void {
   for (const x of [-1, 1]) w.box(x * .5 - .12, x * .5 + .12, .0, .4, seat + 4.0, seat + 4.4, G, { bottom: true });   // 위로 선 두 날개
 }
 
+// 궁 안 나무 · 길가 횃불 자리: 구역 모듈이 내놓는다(경복궁 자료는 경복궁에 닿을 때만 받는다)
+export const trees = { at: PALACE_AT, data: PALACE_TREES };
+export const torches = { at: PALACE_AT, data: PALACE_TORCHES };
 export function buildGwanghwamun():Float32Array {
   const w = new MeshWriter(); buildGate(w); return new Float32Array(w.data);
 }

@@ -1,8 +1,8 @@
 // 궁 안 길가 횃불(경복궁): 밤(다크 · 야간 — 기존 effectiveTheme() === 'dark' 판단 그대로 `dark`)에만 그린다. 낮 · 라이트에는 아무것도 그리지 않는다.
 // 한 개 = 나무 기둥 + 쇠 불통 + 불꽃(스스로 빛나는 색) + 땅 위에 번지는 따뜻한 빛 웅덩이(더하기 섞기). 모양 둘을 인스턴스로 한 번에 그린다.
 // 자리 자료는 monuments_torches_data.mts(길 가장자리 밖 · 16 m 간격 — 건물 · 담장 · 연못 · 다른 길 · 나무 위는 뺐다). 모드 이름을 묻지 않는다 — 켜고 끄는 건 부르는 쪽(city.heritage).
-import { PALACE_TORCHES } from './monuments_torches_data.mts';
-import { PALACE_AT } from './monuments_data.mts';
+import { splitPoints } from './monument_cells.mts';
+import type { Rect4 } from './monument_cells.mts';
 import { toM, MU } from './life.mts';
 import { compileProgram } from './traffic.mts';
 
@@ -64,35 +64,59 @@ void main(){
 }`;
 
 interface TorchGl { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number }
+interface TorchCell { rect:Rect4; inst:WebGLBuffer; count:number; vas:WebGLVertexArrayObject[] }
+interface TorchGrove { zone:string; at:[number, number]; cells:TorchCell[] }
+// 구역(경복궁 · 창덕궁)마다 자리 묶음(숲)을 두고 모양 둘(기둥+불통+불꽃 · 빛 웅덩이)은 같이 쓴다
 export class PalaceTorches {
-  declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare u:Record<string, WebGLUniformLocation | null>; declare at:[number, number]; declare inst:WebGLBuffer;
-  parts:TorchGl[] = []; count = 0;
+  declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare u:Record<string, WebGLUniformLocation | null>;
+  parts:TorchGl[] = []; groves:TorchGrove[] = [];
   init(gl:WebGL2RenderingContext):void {
-    this.gl = gl; this.p = compileProgram(gl, VS, FS); this.at = toM(PALACE_AT[0], PALACE_AT[1]);
+    this.gl = gl; this.p = compileProgram(gl, VS, FS);
     this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_time', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
-    this.count = PALACE_TORCHES.length / 2; const inst = new Float32Array(this.count * 2); for (let i = 0; i < inst.length; i++) inst[i] = PALACE_TORCHES[i]! / 10;
-    this.inst = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, this.inst); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
     for (const data of [buildSolid(), buildPool()]) {
-      const va = gl.createVertexArray(), b = gl.createBuffer();
-      gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TORCH_STRIDE * 4, off * 4) }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.inst); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0); gl.vertexAttribDivisor(3, 1);
-      gl.bindVertexArray(null); this.parts.push({ va: va!, b: b!, n: data.length / TORCH_STRIDE });
+      const b = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      this.parts.push({ va: null as unknown as WebGLVertexArrayObject, b, n: data.length / TORCH_STRIDE });
     }
   }
-  // 밤(dark)에만 그린다 — 낮 · 라이트에서는 곧바로 돌아간다
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { dark, grow }:{ dark:boolean; grow:number }):void {   // grow: 도시 건물과 같은 줌 · 거리 높이 비율(빛 웅덩이는 그만큼 옅게)
-    if (!dark || !this.count) return;
+  addGrove(zone:string, lngLat:[number, number], points:readonly number[]):void {
+    if (this.groves.some(each => each.zone === zone)) return;
+    const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells:TorchCell[] = [];
+    for (const cell of splitPoints(at, [points])) {
+      const list = cell.items[0]!, count = list.length / 2, inst = new Float32Array(count * 2); for (let i = 0; i < inst.length; i++) inst[i] = list[i]! / 10;
+      const ib = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+      const vas = this.parts.map(part => {
+        const va = gl.createVertexArray()!;
+        gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, part.b);
+        for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TORCH_STRIDE * 4, off * 4) }
+        gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0); gl.vertexAttribDivisor(3, 1);
+        gl.bindVertexArray(null); return va;
+      });
+      cells.push({ rect: [cell.rect[0] - 2, cell.rect[1] + 2, cell.rect[2] - 2, cell.rect[3] + 2], inst: ib, count, vas });
+    }
+    this.groves.push({ zone, at, cells });
+  }
+  // 밤(dark)에만 그린다 — 낮 · 라이트에서는 곧바로 돌아간다. grow: 구역마다 도시 건물과 같은 줌 · 거리 높이 비율(0 이면 건너뜀 · 빛 웅덩이는 그만큼 옅게)
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { dark, grow }:{ dark:boolean; grow:(zone:string, rect:Rect4) => number }):void {
+    if (!dark || !this.groves.length) return;
     const u = this.u;
-    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform1f(u.u_grow!, grow); gl.uniform2fv(u.u_at!, this.at); gl.uniform1f(u.u_time!, performance.now() / 1000 % 1000);
+    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform1f(u.u_time!, performance.now() / 1000 % 1000);
     gl.uniform3fv(u.u_col!, new Float32Array([.36, .25, .17, .2, .19, .18, 0, 0, 0]));   // 기둥 · 쇠 불통 색(불꽃은 셰이더가 만든다)
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
-    gl.disable(gl.BLEND); gl.depthMask(true); gl.bindVertexArray(this.parts[0]!.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[0]!.n, this.count);
-    gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE); gl.depthMask(false); gl.bindVertexArray(this.parts[1]!.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[1]!.n, this.count);
+    for (const grove of this.groves) {
+      gl.uniform2fv(u.u_at!, grove.at);
+      for (const cell of grove.cells) {
+        const g = grow(grove.zone, cell.rect); if (g <= 0 || !cell.count) continue;
+        gl.uniform1f(u.u_grow!, g);
+        gl.disable(gl.BLEND); gl.depthMask(true); gl.bindVertexArray(cell.vas[0]!); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[0]!.n, cell.count);
+        gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE); gl.depthMask(false); gl.bindVertexArray(cell.vas[1]!); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[1]!.n, cell.count);
+      }
+    }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
   }
   dispose():void {
-    const gl = this.gl; for (const each of this.parts) { gl.deleteBuffer(each.b); gl.deleteVertexArray(each.va) }
-    gl.deleteBuffer(this.inst); this.parts = []; gl.deleteProgram(this.p);
+    const gl = this.gl;
+    for (const grove of this.groves) for (const cell of grove.cells) { gl.deleteBuffer(cell.inst); for (const va of cell.vas) gl.deleteVertexArray(va) }
+    for (const each of this.parts) gl.deleteBuffer(each.b);
+    this.parts = []; this.groves = []; gl.deleteProgram(this.p);
   }
 }

@@ -1,8 +1,8 @@
 // 궁 안 나무(경복궁): 수종별 낮은 면 모형 넷을 한 번 짓고 자리마다 인스턴스로 그린다. 모양 근거: 소나무 = 굽은 줄기 + 층진 납작한 수관 덩어리,
 // 활엽수(수종 미상) = 둥근 수관 · 퍼진 수관 둘, 감나무 = 낮은 줄기에 넓은 수관 + 주황 열매(건청궁 뜰 — 위키 건청궁). 자리 자료는 monuments_trees_data.mts.
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모양 · 같은 색, 낮 · 밤 조명만 다르다. 멀리서는 안 그린다(Monuments.render 가 도시 건물과 같은 줌 · 자라기 · 거리 줄이기로 부른다 — zoom_gate.mts).
-import { PALACE_TREES } from './monuments_trees_data.mts';
-import { PALACE_AT } from './monuments_data.mts';
+import { splitPoints } from './monument_cells.mts';
+import type { Rect4 } from './monument_cells.mts';
 import { toM, MU } from './life.mts';
 import { compileProgram } from './traffic.mts';
 
@@ -54,7 +54,7 @@ class TreeWriter {
 }
 
 // 모양 넷(미터 · 높이 z). 소나무 약 9 m: 굽은 줄기 + 층진 납작 수관 셋 / 둥근 활엽 약 8 m / 퍼진 활엽 약 6.5 m · 폭 9 m / 감나무 약 5 m + 열매
-const buildTemplate = (species:keyof typeof PALACE_TREES):Float32Array => {
+const buildTemplate = (species:Species):Float32Array => {
   const w = new TreeWriter();
   if (species === 'pine') {
     w.limb(0, 0, 0, .34, .5, .1, 3.4, .28, TC.pineBark); w.limb(.5, .1, 3.4, .28, -.3, .2, 6.2, .2, TC.pineBark);
@@ -99,37 +99,69 @@ void main(){
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 
-interface SpeciesGl { va:WebGLVertexArrayObject; b:WebGLBuffer; inst:WebGLBuffer; n:number; count:number }
+const SPECIES = ['pine', 'broad', 'wide', 'persimmon'] as const;
+type Species = typeof SPECIES[number];
+export type TreeData = Record<Species, number[]>;
+interface SpeciesGl { va:WebGLVertexArrayObject; inst:WebGLBuffer; n:number; count:number }
+interface TreeCell { rect:Rect4; species:SpeciesGl[] }
+interface Grove { zone:string; at:[number, number]; cells:TreeCell[] }
+// 나무 숲: 모양 넷(템플릿)은 한 번 짓고, 구역(경복궁 · 창덕궁 …)이 자기 자리 묶음을 구역 모듈로 내놓으면 공간 칸(약 150 m)으로 나눠 숲을 더한다. 자리는 숲의 기준점에서 잰 0.1 m 정수
 export class PalaceTrees {
-  declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare u:Record<string, WebGLUniformLocation | null>; declare at:[number, number];
-  species:SpeciesGl[] = [];
+  declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare u:Record<string, WebGLUniformLocation | null>;
+  templates = new Map<Species, { b:WebGLBuffer; n:number }>();
+  groves:Grove[] = [];
   init(gl:WebGL2RenderingContext):void {
-    this.gl = gl; this.p = compileProgram(gl, VS, FS); this.at = toM(PALACE_AT[0], PALACE_AT[1]);
+    this.gl = gl; this.p = compileProgram(gl, VS, FS);
     this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_light', 'u_lit', 'u_night', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
-    for (const key of Object.keys(PALACE_TREES) as (keyof typeof PALACE_TREES)[]) {
-      const data = buildTemplate(key), points = PALACE_TREES[key], count = points.length / 2, inst = new Float32Array(count * 4);
-      for (let i = 0; i < count; i++) {   // 크기 · 돌림은 자리에서 정해 같은 값이 나온다
-        const x = points[i * 2]! / 10, y = points[i * 2 + 1]! / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-        inst.set([x, y, .8 + .45 * h, h * 6.2832], i * 4);
-      }
-      const va = gl.createVertexArray(), b = gl.createBuffer(), ib = gl.createBuffer();
-      gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TREE_STRIDE * 4, off * 4) }
-      gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(3, 1);
-      gl.bindVertexArray(null); this.species.push({ va: va!, b: b!, inst: ib!, n: data.length / TREE_STRIDE, count });
-    }
   }
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, grow }:{ light:[number, number, number]; lit:number[]; dark:boolean; grow:number }):void {   // grow: 도시 건물과 같은 줌 · 거리 높이 비율
+  addGrove(zone:string, lngLat:[number, number], trees:TreeData):void {
+    if (this.groves.some(each => each.zone === zone)) return;
+    const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells:TreeCell[] = [];
+    for (const cell of splitPoints(at, SPECIES.map(key => trees[key] ?? []))) {
+      const species:SpeciesGl[] = [];
+      SPECIES.forEach((key, kind) => {
+        let template = this.templates.get(key);
+        if (!template) {
+          const data = buildTemplate(key), b = gl.createBuffer()!;
+          gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          template = { b, n: data.length / TREE_STRIDE }; this.templates.set(key, template);
+        }
+        const points = cell.items[kind]!, count = points.length / 2, inst = new Float32Array(count * 4);
+        for (let i = 0; i < count; i++) {   // 크기 · 돌림은 자리에서 정해 같은 값이 나온다
+          const x = points[i * 2]! / 10, y = points[i * 2 + 1]! / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+          inst.set([x, y, .8 + .45 * h, h * 6.2832], i * 4);
+        }
+        const va = gl.createVertexArray(), ib = gl.createBuffer();
+        gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, template.b);
+        for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 1, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TREE_STRIDE * 4, off * 4) }
+        gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(3, 1);
+        gl.bindVertexArray(null); species.push({ va: va!, inst: ib!, n: template.n, count });
+      });
+      cells.push({ rect: cell.rect, species });
+    }
+    this.groves.push({ zone, at, cells });
+  }
+  // grow: 구역마다 도시 건물과 같은 줌 · 거리 높이 비율(0 이면 그 구역은 건너뜀)
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, grow }:{ light:[number, number, number]; lit:number[]; dark:boolean; grow:(zone:string, rect:Rect4) => number }):void {
     const u = this.u;
-    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform1f(u.u_grow!, grow); gl.uniform2fv(u.u_at!, this.at); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0);
+    gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0);
     gl.uniform3fv(u.u_col!, new Float32Array(TREE_COLORS.flatMap(toRgb)));
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    for (const each of this.species) { gl.bindVertexArray(each.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count) }
+    for (const grove of this.groves) {
+      gl.uniform2fv(u.u_at!, grove.at);
+      for (const cell of grove.cells) {
+        const g = grow(grove.zone, cell.rect); if (g <= 0) continue;
+        gl.uniform1f(u.u_grow!, g);
+        for (const each of cell.species) { if (!each.count) continue; gl.bindVertexArray(each.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count) }
+      }
+    }
     gl.bindVertexArray(null);
   }
   dispose():void {
-    const gl = this.gl; for (const each of this.species) { gl.deleteBuffer(each.b); gl.deleteBuffer(each.inst); gl.deleteVertexArray(each.va) }
-    this.species = []; gl.deleteProgram(this.p);
+    const gl = this.gl;
+    for (const grove of this.groves) for (const cell of grove.cells) for (const each of cell.species) { gl.deleteBuffer(each.inst); gl.deleteVertexArray(each.va) }
+    for (const template of this.templates.values()) gl.deleteBuffer(template.b);
+    this.groves = []; this.templates.clear(); gl.deleteProgram(this.p);
   }
 }

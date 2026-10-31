@@ -2,17 +2,21 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
 import { PalaceTorches } from './monument_torches.mts';
 import { PalaceTrees } from './monument_trees.mts';
+import { splitTriangles } from './monument_cells.mts';
+import type { Rect4 } from './monument_cells.mts';
 import { cityMinZoom, cityGrow, cityFarFade } from './zoom_gate.mts';   // 도시 건물과 같은 보이는 줌 · 자라기 · 폰의 먼 곳 줄이기
 
 // 구역 파일(구역이 늘면 한 줄씩 — 닿은 구역만 받는다)
-const ZONES:Record<string, () => Promise<{ buildMonument:(id:string) => Float32Array }>> = {
+interface ZoneModule { buildMonument:(id:string) => Float32Array; trees?:{ at:[number, number]; data:Record<'pine' | 'broad' | 'wide' | 'persimmon', number[]> }; torches?:{ at:[number, number]; data:number[] } }
+const ZONES:Record<string, () => Promise<ZoneModule>> = {
   gyeongbok: () => import('./monuments_gyeongbok.mts'),
+  changdeokgung: () => import('./monuments_changdeokgung.mts'),
 };
 
 // ── 그리기 ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -27,7 +31,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[21];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[24];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -49,7 +53,7 @@ void main(){
   } else if (k == 4) {   // 검은 띠: 일정한 간격의 연한 사각 무늬(화방)
     float m = fract(along / 3.2); float panel = step(.3, m) * step(m, .7) * step(.2, fract(v_p.z)) * step(fract(v_p.z), .8);
     c = mix(c, vec3(.82, .8, .74), panel * (side > .5 ? .8 : 0.));
-  } else if (k == 5) {   // 기와: 내려가는 기와골, 마루는 밝은 골
+  } else if (k == 5 || k == 21) {   // 기와(21 = 청기와): 내려가는 기와골, 마루는 밝은 골
     float g = line(s / .5, .45); c *= 1. - .17 * g; c *= .96 + .06 * hash(vec2(floor(s / .5), floor(v_p.z * 1.4)));
   } else if (k == 8) { c = mix(c, u_col[2], step(.5, fract(s / .4)) * .85); }   // 처마 끝: 서까래 머리(붉은 단청 점)
   else if (k == 10) { c = mix(c * .8, u_col[2], line(s / .36, .22) * .5); }
@@ -93,75 +97,85 @@ void main(){
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 
-interface GLMesh { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number; rect:[number, number, number, number] }   // rect: 지역 미터에서 모델이 덮는 사각 [x0, x1, y0, y1] — 폰의 거리 줄이기에 쓴다
+interface GLChunk { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number; rect:Rect4 }   // rect: 지역 미터에서 이 조각이 덮는 사각 [x0, x1, y0, y1] — 폰의 거리 줄이기에 쓴다
+interface GLMesh { chunks:GLChunk[] }   // 모델 하나를 공간 칸(약 150 m)으로 나눈 조각들 — 칸마다 먼 곳 줄이기를 받는다
 interface Placed { M:(typeof MONUMENTS)[number]; x:number; y:number; rot:[number, number]; mesh:GLMesh | null }
-export interface MonumentRender { light:[number, number, number]; lit:number[]; dark:boolean; zoom:number; phone:boolean; center:[number, number] }   // center: 지도 가운데(경위도) — 폰은 도시 건물처럼 멀리 있을수록 줄이다 뺀다
+export interface MonumentRender { light:[number, number, number]; lit:number[]; dark:boolean; zoom:number; phone:boolean; center:[number, number]; bounds?:[number, number, number, number] }   // center: 지도 가운데(경위도) — 폰은 도시 건물처럼 멀리 있을수록 줄이다 뺀다 · bounds: 화면 경위도 상자 — 구역별로 닿을 때만 받고 그린다
 
 export class Monuments {
-  trees = new PalaceTrees();   // 궁 안 나무(경복궁) — 인스턴스로 한 번에
-  torches = new PalaceTorches();   // 궁 안 길가 횃불(경복궁) — 밤에만
+  trees = new PalaceTrees();   // 궁 안 나무(경복궁 · 창덕궁) — 인스턴스로 한 번에
+  torches = new PalaceTorches();   // 궁 안 길가 횃불(경복궁 · 창덕궁) — 밤에만
   declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare items:Placed[]; declare u:Record<string, WebGLUniformLocation | null>;
   init(gl:WebGL2RenderingContext):void {
-    this.gl = gl; this.p = compileProgram(gl, VS, FS);
+    this.gl = gl; this.disposed = false; this.epoch++; this.p = compileProgram(gl, VS, FS);
     this.u = Object.fromEntries(['u_matrix', 'u_mu', 'u_grow', 'u_at', 'u_rot', 'u_light', 'u_lit', 'u_night', 'u_col'].map(name => [name, gl.getUniformLocation(this.p, name)]));
     this.trees.init(gl); this.torches.init(gl);
     this.items = MONUMENTS.map(M => { const [x, y] = toM(M.lngLat[0], M.lngLat[1]), a = M.yawDeg * Math.PI / 180; return { M, x, y, rot: [Math.cos(a), Math.sin(a)], mesh: null } });
   }
-  zones = new Map<string, { buildMonument:(id:string) => Float32Array } | Promise<void> | 'fail'>();
+  epoch = 0;   // dispose · init 마다 올라간다 — 이전 세대의 늦은 구역 파일은 버린다
+  disposed = false;   // 모드를 나간 뒤(dispose) 늦게 도착한 구역 파일이 GPU 자원을 다시 만들지 않게 한다
+  zones = new Map<string, ZoneModule | Promise<void> | 'fail'>();
   onLoad:(() => void) | null = null;
   // 구역 파일이 아직이면 받기 시작하고 null(그릴 건 다음 프레임부터), 실패하면 그 구역은 그리지 않는다
   mesh(item:Placed):GLMesh | null {
     if (item.mesh) return item.mesh;
-    const zone = item.M.zone, got = this.zones.get(zone);
+    if (this.disposed) return null;
+    const zone = item.M.zone, got = this.zones.get(zone), epoch = this.epoch;
     if (!got || got instanceof Promise || got === 'fail') {
-      if (!got) this.zones.set(zone, ZONES[zone]!().then(mod => { this.zones.set(zone, mod); this.onLoad?.() }).catch(error => { this.zones.set(zone, 'fail'); console.warn('기념물 구역 못 받음', zone, error) }));
+      if (!got) this.zones.set(zone, ZONES[zone]!().then(mod => { if (epoch !== this.epoch) return; this.zones.set(zone, mod); if (mod.trees) this.trees.addGrove(zone, mod.trees.at, mod.trees.data); if (mod.torches) this.torches.addGrove(zone, mod.torches.at, mod.torches.data); this.onLoad?.() }).catch(error => { if (epoch !== this.epoch) return; this.zones.set(zone, 'fail'); console.warn('기념물 구역 못 받음', zone, error) }));
       return null;
     }
-    const gl = this.gl, data = got.buildMonument(item.M.id), va = gl.createVertexArray(), b = gl.createBuffer();
-    gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 2, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE * 4, off * 4) }
-    gl.bindVertexArray(null);
-    const [cos, sin] = item.rot; let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i < data.length; i += STRIDE) { const px = data[i]!, py = data[i + 1]!, wx = item.x + px * cos - py * sin, wy = item.y - (px * sin + py * cos); x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); y0 = Math.min(y0, wy); y1 = Math.max(y1, wy) }
-    return (item.mesh = { va, b, n: data.length / STRIDE, rect: [x0, x1, y0, y1] });
+    const gl = this.gl, data = got.buildMonument(item.M.id), [cos, sin] = item.rot, chunks:GLChunk[] = [];
+    for (const piece of splitTriangles(data, STRIDE, index => { const px = data[index]!, py = data[index + 1]!; return [item.x + px * cos - py * sin, item.y - (px * sin + py * cos)] })) {
+      const va = gl.createVertexArray()!, b = gl.createBuffer()!;
+      gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, piece.items, gl.STATIC_DRAW);
+      for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 2, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE * 4, off * 4) }
+      gl.bindVertexArray(null); chunks.push({ va, b, n: piece.items.length / STRIDE, rect: piece.rect });
+    }
+    return (item.mesh = { chunks });
   }
-  // 경복궁 안인지(지역 미터) — 도시 나무가 궁 안을 비켜 전용 나무에 자리를 내준다
-  palaceM:[number, number][] | null = null;
+  // 궁(경복궁 · 창덕궁) 안인지(지역 미터) — 도시 나무가 궁 안을 비켜 전용 나무에 자리를 내준다
+  palaceM:[number, number][][] | null = null;
   inPalace = (x:number, y:number):boolean => {
-    const ring = (this.palaceM ??= palaceRing().map(([lng, lat]) => toM(lng, lat)));
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }
-    return inside;
+    const rings = (this.palaceM ??= [palaceRing(), cdgRing()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
+    return rings.some(ring => {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }
+      return inside;
+    });
   };
   // 월대 위 보행자를 월대 높이로 들어 올리는 값(도시 생활이 쓴다). 모델 좌표의 월대 사각 = x ±24.35 · y −36.35 … −6.65
   get deck():{ x:number; y:number; cos:number; sin:number; centerY:number; halfX:number; halfY:number; z:number } | null {
     const item = this.items.find(each => each.M.id === 'gwanghwamun'); if (!item) return null;
     return { x: item.x, y: item.y, cos: item.rot[0], sin: item.rot[1], centerY: -GATE_BASE_D / 2 - 14.85, halfX: 24.35, halfY: 14.85, z: GATE_DECK_Z };
   }
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, zoom, phone, center }:MonumentRender):void {
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, zoom, phone, center, bounds }:MonumentRender):void {
     if (zoom < cityMinZoom(phone)) return;   // 다른 건물과 같은 줌에서 함께 사라진다
     const grow = cityGrow(phone, zoom); if (grow <= 0) return;   // 문턱에서 높이 0 → 0.6 줌 뒤 전체(도시 건물과 같은 비율)
     const [cx, cy] = toM(center[0], center[1]);
     // 폰: 도시 건물처럼 화면 가운데에서 멀수록 땅으로 가라앉다 뺀다(사각까지의 거리 — 건물 조각의 가까운 가장자리와 같은 잣대)
-    const keep = (rect:[number, number, number, number]) => phone ? cityFarFade(Math.hypot(Math.max(rect[0] - cx, 0, cx - rect[1]), Math.max(rect[2] - cy, 0, cy - rect[3])), zoom) : 1;
+    const keep = (rect:Rect4) => phone ? cityFarFade(Math.hypot(Math.max(rect[0] - cx, 0, cx - rect[1]), Math.max(rect[2] - cy, 0, cy - rect[3])), zoom) : 1;
     const u = this.u, palette = new Float32Array(COLORS.flatMap(hex));
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0); gl.uniform3fv(u.u_col!, palette);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    let ready = true; const palaceRect:[number, number, number, number] = [Infinity, -Infinity, Infinity, -Infinity];
+    // 구역(경복궁 · 창덕궁)마다: 화면이 닿을 때만 받고 그린다(창덕궁 자료는 경복궁만 보일 때 받지 않는다). 광화문은 구역 안 다른 항목과 따로 센다
+    const zoneReady = new Map<string, boolean>();
     for (const item of this.items) {
-      const m = this.mesh(item); if (!m) { ready = false; continue }
-      if (item.M.id.startsWith('palace-')) { palaceRect[0] = Math.min(palaceRect[0], m.rect[0]); palaceRect[1] = Math.max(palaceRect[1], m.rect[1]); palaceRect[2] = Math.min(palaceRect[2], m.rect[2]); palaceRect[3] = Math.max(palaceRect[3], m.rect[3]) }
-      const g = grow * keep(m.rect); if (g <= 0) continue;
-      gl.uniform1f(u.u_grow!, g); gl.uniform2f(u.u_at!, item.x, item.y); gl.uniform2fv(u.u_rot!, item.rot); gl.bindVertexArray(m.va); gl.drawArrays(gl.TRIANGLES, 0, m.n);
+      if (bounds && !monumentsInView(bounds, item.M.zone)) continue;
+      const m = this.mesh(item); if (!m) { zoneReady.set(item.M.zone, false); continue }
+      if (!zoneReady.has(item.M.zone)) zoneReady.set(item.M.zone, true);
+      for (const chunk of m.chunks) {
+        const g = grow * keep(chunk.rect); if (g <= 0) continue;
+        gl.uniform1f(u.u_grow!, g); gl.uniform2f(u.u_at!, item.x, item.y); gl.uniform2fv(u.u_rot!, item.rot); gl.bindVertexArray(chunk.va); gl.drawArrays(gl.TRIANGLES, 0, chunk.n);
+      }
     }
     gl.bindVertexArray(null);
-    // 궁 안 나무 · 횃불은 궁 건물 메시가 다 준비된 뒤에만(지연 로드 중 · 실패 때 나무 · 횃불만 허공에 뜨지 않게)
-    if (!ready) return;
-    const palaceGrow = grow * keep(palaceRect); if (palaceGrow <= 0) return;
+    // 궁 안 나무 · 횃불은 그 구역 건물 메시가 다 준비된 뒤에만(지연 로드 중 · 실패 때 나무 · 횃불만 허공에 뜨지 않게) — 칸(약 150 m)마다 거리 줄이기
+    const palaceGrow = (zone:string, rect:Rect4) => zoneReady.get(zone) ? grow * keep(rect) : 0;
     this.trees.render(gl, MT, { light, lit, dark, grow: palaceGrow }); this.torches.render(gl, MT, { dark, grow: palaceGrow });
   }
   dispose():void {   // 모드를 나가면 GL 자원을 치운다
-    const gl = this.gl; for (const item of this.items) if (item.mesh) { gl.deleteBuffer(item.mesh.b); gl.deleteVertexArray(item.mesh.va); item.mesh = null }
+    const gl = this.gl; this.disposed = true; this.epoch++; this.zones.clear(); for (const item of this.items) if (item.mesh) { for (const chunk of item.mesh.chunks) { gl.deleteBuffer(chunk.b); gl.deleteVertexArray(chunk.va) } item.mesh = null }
     gl.deleteProgram(this.p); this.trees.dispose(); this.torches.dispose();
   }
 }
