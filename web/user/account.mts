@@ -35,8 +35,11 @@ interface RouteAnswer { ok?:boolean; error?:string; plans?:Plan[] }
 interface RouteMap { show(plan:Plan, pad?:{ bottom:number; right:number }):void; clear(plan:Plan):void; onGone(gone:(()=>void) | null):void }
 interface Wheel { el:HTMLElement; values:number[]; label:(value:number)=>string }
 // 로그인 팝업 로고 움직임(web/vendor/lottie — 받으면 globalThis.lottie)이 쓰는 칸
-interface LottieAnim { destroy():void; goToAndStop(frame:number, isFrame:boolean):void; play():void; addEventListener(name:string, f:()=>void):void }
+// playSegments([[처음, 끝], …], true): 구간을 차례로 재생하고, loop:true 면 마지막 구간을 되풀이한다(끝 프레임은 포함하지 않는다)
+interface LottieAnim { destroy():void; goToAndStop(frame:number, isFrame:boolean):void; play():void; playSegments(segments:[number, number][], force:boolean):void; addEventListener(name:string, f:()=>void):void }
 declare global { var lottie:{ loadAnimation(o:{ container:HTMLElement; renderer:string; loop:boolean; autoplay:boolean; animationData:unknown }):LottieAnim } | undefined }
+// 움직임 JSON 에서 쓰는 칸: 끝 프레임(op) · 되풀이 구간 표시(markers 의 'loop' — tm 시작 · dr 길이)
+interface MotionData { op:number; markers?:{ tm:number; cm:string; dr:number }[] }
 
 const $ = <T extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as T;
 const CHANGE = {'X-Requested-With': 'syung'};   // 바꾸는 요청에 붙이는 머리말(서버가 확인한다)
@@ -164,12 +167,13 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
   // ---- 로그인 팝업(서랍 밖 화면 전체 위 — 열 때 서랍은 닫는다) ----
   drawProviders(providers);
   const sheetOpen = () => !sheet.hidden;
-  // 로그인 팝업 로고 움직임(Lottie): 새싹 캐릭터가 뛰어와 로고 열차에 올라타고 출발(2초 · 사용자 결정 2026-10-27).
+  // 로그인 팝업 로고 움직임(Lottie): 새싹 캐릭터가 뛰어와 로고 열차에 올라타고 글자 ㅅㅠㅇ~ 가 날아가며 출발 → 지붕 뒤에서 얼굴이 살짝 보였다 내려가고
+  // 잎만 남은 채 달린다(사용자 결정 2026-10-31). 앞부분은 한 번, 그 뒤 달리는 구간(JSON markers 'loop')만 팝업이 닫힐 때까지 되풀이한다.
   // 팝업을 열 때만 플레이어(web/vendor/lottie — lottie-web 5.13.0 light, svg 렌더러만)와 움직임 JSON
-  // (web/brand/login-motion.json — tools/login_motion/make.mjs 가 만든다)을 받는다 — 첫 화면 코드에 없음.
+  // (web/brand/login-motion-loop.json — tools/login_motion/make.mjs 가 만든다)을 받는다 — 첫 화면 코드에 없음.
   // 캔버스는 팝업 위쪽 넓은 영역(800×170) — 그 안의 로고 칸 가운데(400, 135)를 실제 로고 가운데에 맞춰 얹는다.
-  // 동작 줄이기 · 받기 실패면 정지 로고 그대로. 한 번만 재생하고 끝나면 정지 로고로 바꿔 낀다
-  let motionData:unknown = null;
+  // 동작 줄이기 · 받기 실패면 움직임 없는 정지 로고 그대로. 닫으면(closeSheet) 멈추고 지운다
+  let motionData:MotionData | null = null;
   const MOTION = {width: 800, height: 170, slotX: 400, slotY: 135, wait: 220};   // wait: 카드가 올라오는 동안(.26 초) 기다렸다 재생
   let motionAnim:LottieAnim | null = null, motionTurn = 0, motionTimer:ReturnType<typeof setTimeout> | 0 = 0;
   function stopLogoMotion() {
@@ -185,9 +189,9 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     try {
       if (!globalThis.lottie) await import('../vendor/lottie/lottie_light.min.js');   // UMD: 받으면 globalThis.lottie 가 생긴다
       if (!motionData) {
-        const res = await fetch(new URL('../brand/login-motion.json', import.meta.url));
+        const res = await fetch(new URL('../brand/login-motion-loop.json', import.meta.url));
         if (!res.ok) return;
-        motionData = await res.json();
+        motionData = await res.json() as MotionData;
       }
     } catch { return; }
     if (turn !== motionTurn || !globalThis.lottie || !sheet.classList.contains('open')) return;   // 그사이 닫았거나 다시 열었다
@@ -197,11 +201,14 @@ export async function initAccount({colors = {}, routeMap, myLocation}:{ colors?:
     box.style.top = `${logo.offsetTop + logo.offsetHeight / 2 - MOTION.slotY}px`;
     logo.after(box);
     // 플레이어가 받은 자료를 고쳐 쓰므로 매번 복사본을 넘긴다. 첫 장면을 바로 깔고(로고 자리는 비움 · 자리 크기는 그대로) 잠깐 뒤 재생
-    const anim = motionAnim = globalThis.lottie.loadAnimation({container: box, renderer: 'svg', loop: false, autoplay: false, animationData: structuredClone(motionData)});
+    const loop = motionData.markers?.find(marker => marker.cm === 'loop'), end = motionData.op;
+    const anim = motionAnim = globalThis.lottie.loadAnimation({container: box, renderer: 'svg', loop: !!loop, autoplay: false, animationData: structuredClone(motionData)});
     anim.goToAndStop(0, true);
     logo.style.visibility = 'hidden';
-    anim.addEventListener('complete', () => { if (motionAnim === anim) stopLogoMotion(); });   // 마지막 장면 = 정지 로고 → 진짜 로고로
-    motionTimer = setTimeout(() => { if (motionAnim === anim) anim.play(); }, Math.max(0, MOTION.wait - (performance.now() - openedAt)));
+    if (!loop) anim.addEventListener('complete', () => { if (motionAnim === anim) stopLogoMotion(); });   // 되풀이 표시가 없는 자료면 한 번 재생하고 정지 로고로
+    // 0 → 끝 한 번, 그다음 되풀이 구간(loop.tm → loop.tm + loop.dr)만 되풀이(끝 프레임의 그림 = 시작 프레임의 그림이라 이음새가 없다)
+    const play = () => (loop ? anim.playSegments([[0, end], [loop.tm, loop.tm + loop.dr]], true) : anim.play());
+    motionTimer = setTimeout(() => { if (motionAnim === anim) play(); }, Math.max(0, MOTION.wait - (performance.now() - openedAt)));
   }
   // 팝업 안 안내: 서랍 아래 토스트(#accountToast)는 팝업(화면 전체 위)에 가려서, 같은 토스트 모양 카드를 팝업 안에 둔다
   function openSheet(message:string, error = false) {
