@@ -422,6 +422,18 @@ var MONUMENTS = [
 		yawDeg: -1.3
 	},
 	{
+		id: "yi-sunsin",
+		zone: "gyeongbok",
+		lngLat: [126.97695, 37.57097],
+		yawDeg: 0
+	},
+	{
+		id: "sejong",
+		zone: "gyeongbok",
+		lngLat: [126.97691, 37.57292],
+		yawDeg: 0
+	},
+	{
 		id: "palace-wall",
 		zone: "gyeongbok",
 		lngLat: PALACE_AT,
@@ -474,6 +486,11 @@ var MONUMENT_HIDES = [
 	{
 		lngLat: [126.976817, 37.575928],
 		radiusM: 22,
+		minH: 0
+	},
+	{
+		lngLat: [126.97691, 37.57285],
+		radiusM: 14,
 		minH: 0
 	},
 	{

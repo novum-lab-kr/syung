@@ -3,6 +3,7 @@ import { K, MeshWriter, bandBox, buildBrackets, buildRoof } from "./monument_par
 import { PALACE_TREES } from "./monuments_trees_data.mjs";
 import { PALACE_TORCHES } from "./monuments_torches_data.mjs";
 import { buildPalaceFrames, buildPalaceHalls, buildPalaceWall } from "./monuments_palace.mjs";
+import { buildSejong, buildYiSunsin } from "./monuments_statues.mjs";
 // web/city/monuments_gyeongbok.mts
 var BASE_W = 31;
 var ARCHES = [
@@ -457,91 +458,6 @@ function buildHaechi(w, x, y) {
 	part(-.66, -.5, -.9, -.65, 2.05, 2.5);
 	part(.5, .66, -.9, -.65, 2.05, 2.5);
 	part(-.14, .14, .95, 1.3, .5, 1.3);
-}
-var YI = {
-	plinth: .5,
-	shaftTop: 10.5,
-	height: 6.5
-};
-function buildYiSunsin(w) {
-	const z = YI.shaftTop;
-	w.box(-5.2, 5.2, -5.2, 5.2, 0, .3, K.stone, { bottom: true });
-	w.box(-4.2, 4.2, -4.2, 4.2, .3, YI.plinth, K.stone, { bottom: true });
-	w.box(-1.9, 1.9, -1.7, 1.7, YI.plinth, 1.5, K.stone, { bottom: true });
-	w.frustum(0, 0, 1.4, 1.25, 1.5, 1.18, 1.08, z - .3, K.stone, { bottom: true });
-	w.box(-1.3, 1.3, -1.18, 1.18, z - .3, z, K.stone, { bottom: true });
-	const sy = -3.2, sz = YI.plinth;
-	w.box(-.6, .6, -4.5, -1.9000000000000001, sz, sz + .22, K.stone, { bottom: true });
-	w.frustum(0, sy, .55, 1.3, sz + .22, .42, 1.1, sz + .62, K.bronze, { bottom: true });
-	w.frustum(0, sy, .42, 1, sz + .62, .2, .7, sz + .98, K.bronze, { bottom: true });
-	w.box(-.17, .17, -4.75, -4.300000000000001, sz + .5, sz + .85, K.bronze, { bottom: true });
-	for (const x of [-2.4, 2.4]) {
-		w.prism(x, -3, .5, sz, sz + .55, K.bronze, 12);
-		w.prism(x, -3, .56, sz + .12, sz + .2, K.trim, 12);
-	}
-	w.box(-.8, -.1, -.85, .5, z, z + .4, K.bronze, { bottom: true });
-	w.box(.1, .8, -.85, .5, z, z + .4, K.bronze, { bottom: true });
-	w.frustum(0, 0, 1.05, .6, z + .3, .68, .5, z + 2.9, K.bronze, { bottom: true });
-	w.box(-.8, .8, -.55, .55, z + 2.8, z + 3.1, K.trim, { bottom: true });
-	w.frustum(0, 0, .65, .48, z + 3.05, .95, .52, z + 4.5, K.bronze, { bottom: true });
-	for (const x of [-1.05, 1.05]) w.frustum(x, 0, .3, .36, z + 4.7, .22, .3, z + 3.9, K.bronze, { bottom: true });
-	w.box(-1.45, -.85, -.5, .25, z + 3, z + 4.2, K.bronze, { bottom: true });
-	w.box(-1.65, -1.1, -.9, -.45, z + 3.2, z + 3.75, K.bronze, { bottom: true });
-	w.box(-1.55, -1.3, -.8, -.55, z + .5, z + 4.9, K.bronze, { bottom: true });
-	w.box(-1.7, -1.15, -.88, -.48, z + 3.75, z + 3.9, K.trim, { bottom: true });
-	w.box(.85, 1.7, -.1, .4, z + 3, z + 4.2, K.bronze, { bottom: true });
-	w.box(.5, 1.3, -.45, 0, z + 2.85, z + 3.2, K.bronze, { bottom: true });
-	w.box(-.25, .25, -.25, .25, z + 4.4, z + 4.7, K.bronze, { bottom: true });
-	w.box(-.42, .42, -.42, .36, z + 4.6, z + 5.2, K.bronze, { bottom: true });
-	w.box(-.12, .12, -.46, -.3, z + 4.7, z + 4.95, K.bronze, { bottom: true });
-	w.frustum(0, 0, .52, .48, z + 5.15, .3, .28, z + 6.1, K.bronze, { bottom: true });
-	w.box(-.5, .5, .3, .55, z + 4.7, z + 5.5, K.bronze, { bottom: true });
-	w.box(-.07, .07, -.07, .07, z + 6.05, z + YI.height, K.bronze, { bottom: true });
-}
-var SEJONG = {
-	baseTop: 3.4,
-	total: 6.2
-};
-function buildSejong(w) {
-	const z = SEJONG.baseTop, G = K.gilt;
-	w.frustum(0, 0, 4.25, 3.1, 0, 2.7, 2.1, z, K.stone, { bottom: true });
-	for (const [x, kind] of [
-		[-3, 0],
-		[0, 1],
-		[3, 2]
-	]) {
-		const y = -5.2;
-		w.box(x - .45, x + .45, -5.65, -4.75, 0, .85, K.stone, { bottom: true });
-		if (kind === 0) w.frustum(x, y, .5, .5, .85, .72, .72, 1.25, G, { bottom: true });
-		else if (kind === 1) w.prism(x, y, .22, .85, 1.55, G, 10);
-		else {
-			w.prism(x, y, .5, .85, 1, G, 8);
-			w.frustum(x, y, .42, .42, 1, .42, .42, 1.8, G, { bottom: true });
-			w.frustum(x, y, .55, .08, 1.15, .55, .08, 1.65, G, { bottom: true });
-		}
-	}
-	w.box(-1.75, 1.75, -1.25, 1, z, z + .65, K.bronze, { bottom: true });
-	w.box(-1.75, 1.75, .55, 1, z + .5, z + 3.1, K.bronze, { bottom: true });
-	for (const x of [-1.7, 1.7]) w.box(x - .12, x + .12, .45, 1.05, z + .5, z + 3.3, K.bronze, { bottom: true });
-	for (const x of [-1.55, 1.55]) w.box(x - .15, x + .15, -.85, .85, z + 2.75, z + 3.05, K.bronze, { bottom: true });
-	const seat = z + .65;
-	for (const x of [-.45, .45]) w.box(x - .22, x + .22, -1.35, -.6, seat, seat + .25, G, { bottom: true });
-	w.frustum(0, -.55, 1.45, 1.1, seat, .95, .8, seat + 1.9, G, { bottom: true });
-	for (const x of [-.6, .6]) w.frustum(x, -.95, .45, .6, seat + 1.2, .4, .5, seat + 2.3, G, { bottom: true });
-	w.frustum(0, 0, .8, .55, seat + 1.2, 1, .5, seat + 3, G, { bottom: true });
-	w.box(-.45, .45, -.6, -.25, seat + 1.7, seat + 2.6, G, { bottom: true });
-	w.frustum(-1.05, -.4, .45, .35, seat + 2, .5, .4, seat + 2.95, G, { bottom: true });
-	w.frustum(-1.3, -.75, .55, .4, seat + 1.9, .3, .25, seat + 2.9, G, { bottom: true });
-	w.box(-1.55, -1.2, -1.05, -.8, seat + 2.8, seat + 3.4, G, { bottom: true });
-	w.frustum(1.05, -.4, .4, .3, seat + 1.7, .45, .35, seat + 2.5, G, { bottom: true });
-	w.frustum(1.25, -.85, .5, .4, seat + 1.2, .3, .25, seat + 1.9, G, { bottom: true });
-	w.box(.55, 1.8, -1.5, -.7, seat + 1.2, seat + 1.35, G, { bottom: true });
-	w.box(1.25, 1.8, -1.5, -.7, seat + 1.35, seat + 1.6, G, { bottom: true });
-	w.box(-.2, .2, -.25, .1, seat + 2.95, seat + 3.2, G, { bottom: true });
-	w.box(-.42, .42, -.42, .3, seat + 3.15, seat + 3.95, G, { bottom: true });
-	w.box(-.18, .18, -.55, -.35, seat + 3, seat + 3.45, G, { bottom: true });
-	w.frustum(0, -.05, .42, .4, seat + 3.9, .36, .34, seat + 4.55, G, { bottom: true });
-	for (const x of [-1, 1]) w.box(x * .5 - .12, x * .5 + .12, 0, .4, seat + 4, seat + 4.4, G, { bottom: true });
 }
 var trees = {
 	at: PALACE_AT,

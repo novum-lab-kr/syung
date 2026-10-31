@@ -123,6 +123,60 @@ var MeshWriter = class {
 			[c, sc]
 		]) this.data.push(p[0], p[1], p[2], nx, ny, nz, kind, s);
 	}
+	triN(a, b, c, na, nb, nc, kind, sa = 0, sb = 0, sc = 0) {
+		if (this.remap) kind = this.remap[kind] ?? kind;
+		if (this.dz) {
+			a = [
+				a[0],
+				a[1],
+				a[2] + this.dz
+			];
+			b = [
+				b[0],
+				b[1],
+				b[2] + this.dz
+			];
+			c = [
+				c[0],
+				c[1],
+				c[2] + this.dz
+			];
+		}
+		if (this.xf) {
+			const { x, y, cos, sin } = this.xf, mv = (p) => [
+				x + p[0] * cos - p[1] * sin,
+				y + p[0] * sin + p[1] * cos,
+				p[2]
+			], rv = (p) => [
+				p[0] * cos - p[1] * sin,
+				p[0] * sin + p[1] * cos,
+				p[2]
+			];
+			a = mv(a);
+			b = mv(b);
+			c = mv(c);
+			na = rv(na);
+			nb = rv(nb);
+			nc = rv(nc);
+		}
+		for (const [p, n, s] of [
+			[
+				a,
+				na,
+				sa
+			],
+			[
+				b,
+				nb,
+				sb
+			],
+			[
+				c,
+				nc,
+				sc
+			]
+		]) this.data.push(p[0], p[1], p[2], n[0], n[1], n[2], kind, s);
+	}
 	quad(a, b, c, e, kind, hint, sa = 0, sb = 0, sc = 0, se = 0) {
 		this.tri(a, b, c, kind, hint, sa, sb, sc);
 		this.tri(a, c, e, kind, hint, sa, sc, se);
