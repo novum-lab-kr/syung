@@ -73,8 +73,11 @@ test('station labels keep their route names in every mode (the coaster rides the
   assert.ok(start >= 0 && end > start);
   context.modeOn = { get coaster() { return context.coaster; }, get simcity() { return context.simcity; }, joseon: false };
   const registry = createModeRegistry(await Promise.all(['basic', 'simcity', 'joseon', 'coaster'].map(n => import(`../web/modes/${n}/index.mts`).then(m => m.default))));
+  context.modes = registry;
   context.modeCtl = { settings: () => registry.settings(context.coaster ? 'coaster' : context.simcity ? 'simcity' : 'basic') };   // 본체처럼 지금 모드의 설정
-  vm.runInContext('const cityBuildings=new CityBuildings();const cityOn=()=>modeCtl.settings().city.enabled;\n'+source.slice(start, end), context);
+  context.monumentBuildingFilter = () => ['!', ['within', {}]];
+  context.map.setFilter = () => {};
+  vm.runInContext('let heritageFilterOn=false;const cityBuildings=new CityBuildings();const cityOn=()=>modeCtl.settings().city.enabled;\n'+source.slice(start, end), context);
   const sync = coaster => { context.coaster = coaster; vm.runInContext('syncCity()', context); };
   sync(false);
   sync(true);

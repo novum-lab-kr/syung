@@ -74,6 +74,7 @@ export function createModeRegistry(definitions:readonly ModeDefinition[] | Reado
     if (S.sky && !(Array.isArray(S.sky.units) && S.sky.units.every(v => typeof v === 'string'))) throw new Error(`${id}.sky.units: 유닛 모양 이름 목록이어야`);
     const LU = S.city?.life?.units; if (LU != null) for (const k of ['people', 'cars']) if (!Array.isArray(LU[k]) || !(LU[k] as unknown[]).every(v => typeof v === 'string')) throw new Error(`${id}.city.life.units.${k}: 유닛 모양 이름 목록이어야`);
     for (const k of ['lead', 'rest']) if (S.trains?.units && typeof S.trains.units[k] !== 'string') throw new Error(`${id}.trains.units.${k}: 유닛 모양 이름이어야`);   // (이름이 맞는지는 그리는 쪽 — 없는 모양은 안 그린다)
+    if (S.city && 'heritage' in S.city && typeof S.city.heritage !== 'boolean') throw new Error(`${id}.city.heritage: 참 · 거짓`);
     for (const k of ['cars', 'crossings']) if (S.city?.life && k in S.city.life && typeof S.city.life[k] !== 'boolean') throw new Error(`${id}.city.life.${k}: 참 · 거짓`); oneOf(S.trains?.body, ['wide', 'slim'], `${id}.trains.body`); oneOf(S.track?.platform, ['ribbon', 'straight'], `${id}.track.platform`);
     if (S.city && 'tone' in S.city) {   // 톤: 팩 modes 의 진짜 톤 항목(채도 · 밝기가 있는 묶음 — colorMath · transitionMs 는 아님)
       const T = S.city.tone, M = S.city.pack?.modes, e = typeof T === 'string' && M && Object.hasOwn(M, T) ? M[T] : null;

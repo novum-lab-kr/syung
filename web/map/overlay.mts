@@ -32,7 +32,7 @@ type LandmarkOptions = NonNullable<Parameters<CityLandmarks['render']>[2]>;
 type OverlaySettings = Settings & {
   track:{ kind:string }; buses:{ look:string }; me:{ look:Parameters<AvatarRenderer['render']>[2]['look'] };
   park:{ enabled:boolean; towerM:number; landmarkRides:NonNullable<ConstructorParameters<typeof RideLayer>[1]>['landmarks'] };
-  city:{ enabled:boolean; xray:boolean; tone:LifeOptions['tone']; lampPool:LifeOptions['lampPool']; landmarks:LandmarkOptions['look']; life:{ cars:LifeOptions['cars']; crossings:LifeOptions['crossings']; units:LifeOptions['units'] } };
+  city:{ enabled:boolean; heritage:boolean; xray:boolean; tone:LifeOptions['tone']; lampPool:LifeOptions['lampPool']; landmarks:LandmarkOptions['look']; life:{ cars:LifeOptions['cars']; crossings:LifeOptions['crossings']; units:LifeOptions['units'] } };
   map:{ pixel:{ enabled:boolean; palette:string; outline:NonNullable<Parameters<PixelPalette['render']>[1]>['outline'] } };
 };
 // 프레임 통계(본체 frameStats) 가운데 이 파일이 세는 칸
@@ -135,7 +135,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
       if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE,exits:()=>Object.values(exitPillars.d.getExits()).flat() as unknown as XY[],deck:(x,y,r)=>cityViaduct.deckProbe(x,y,r)});cityLife.init(gl,maplibregl,map as unknown as LifeMap);window.__subwayWebGL.cityLife=cityLife}
       const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-      cityLife.render(gl,pd.mainMatrix,{look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,units:S.city.life.units,lifeUnits:lifeUnitsFor(gl,S) as LifeOptions['lifeUnits'],phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:true,moving:map.isMoving(),sun:sunPosition()});
+      cityLife.render(gl,pd.mainMatrix,{peopleDeck:S.city.heritage?live.cityLandmarks?.mon?.deck??null:null,treeKeepOut:S.city.heritage?live.cityLandmarks?.mon?.inPalace??null:null,look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,units:S.city.life.units,lifeUnits:lifeUnitsFor(gl,S) as LifeOptions['lifeUnits'],phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:true,moving:map.isMoving(),sun:sunPosition()});
       if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
     if(live.busLayer)live.busLayer.look=S.buses.look;live.busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
     if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
@@ -169,6 +169,8 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
       gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
     {const X=S.map.pixel;if(X.enabled&&X.palette!=='none'&&live.PixelPalette){if(!pixels){pixels=new live.PixelPalette();pixels.init(gl)}pixels.render(gl,{palette:X.palette,outline:X.outline,alpha:true})}else if(pixels){pixels.dispose(gl);pixels=null}}   // 레트로: 열차 캔버스도 색표 · 윤곽(투명 바탕은 그대로, 나가면 치운다)
+    if(S.city.heritage&&live.cityLandmarks){const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments)
+      live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y]})}
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };
   map.on('render',()=>{live.frameStats.mapRenders++;live.drawTrains()});   // the camera moved or the map redrew: trains follow in the same frame
