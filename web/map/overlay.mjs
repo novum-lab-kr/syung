@@ -184,6 +184,8 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			}
 			const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
 			cityLife.render(gl, pd.mainMatrix, {
+				peopleDeck: S.city.heritage ? live.cityLandmarks?.mon?.deck ?? null : null,
+				treeKeepOut: S.city.heritage ? live.cityLandmarks?.mon?.inPalace ?? null : null,
 				look: cityPack(),
 				night: live.night,
 				now: performance.now(),
@@ -386,6 +388,20 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				pixels = null;
 			}
 		}
+		if (S.city.heritage && live.cityLandmarks) {
+			const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+			live.cityLandmarks.renderMonuments(gl, pd.mainMatrix, {
+				zoom: map.getZoom(),
+				dark: effectiveTheme() === "dark",
+				sun: sunPosition(),
+				bounds: [
+					A.x,
+					B.y,
+					B.x,
+					A.y
+				]
+			});
+		} else if (live.cityLandmarks?.mon || live.cityLandmarks?.monp) live.cityLandmarks.releaseMonuments();
 		drawSigns(pd.mainMatrix);
 	};
 	map.on("render", () => {

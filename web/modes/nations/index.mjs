@@ -15,25 +15,37 @@ var GREECE = {
 	id: "greece",
 	from: "simcity",
 	label: "그리스",
-	settings: { city: { pack: withModels(GREECE_DELTA, "greece") } }
+	settings: { city: {
+		heritage: false,
+		pack: withModels(GREECE_DELTA, "greece")
+	} }
 };
 var NETHERLANDS = {
 	id: "netherlands",
 	from: "simcity",
 	label: "네덜란드",
-	settings: { city: { pack: withModels(NETHERLANDS_DELTA, "netherlands") } }
+	settings: { city: {
+		heritage: false,
+		pack: withModels(NETHERLANDS_DELTA, "netherlands")
+	} }
 };
 var PARIS = {
 	id: "paris",
 	from: "simcity",
 	label: "파리",
-	settings: { city: { pack: withModels(PARIS_DELTA, "paris") } }
+	settings: { city: {
+		heritage: false,
+		pack: withModels(PARIS_DELTA, "paris")
+	} }
 };
 var EGYPT = {
 	id: "egypt",
 	from: "simcity",
 	label: "이집트",
-	settings: { city: { pack: withModels(EGYPT_DELTA, "egypt") } }
+	settings: { city: {
+		heritage: false,
+		pack: withModels(EGYPT_DELTA, "egypt")
+	} }
 };
 var nations_default = [
 	GREECE,

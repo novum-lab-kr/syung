@@ -136,6 +136,7 @@ function createModeRegistry(definitions, { root = "basic", maxDepth = 2, prefere
 			for (const k of ["people", "cars"]) if (!Array.isArray(LU[k]) || !LU[k].every((v) => typeof v === "string")) throw new Error(`${id}.city.life.units.${k}: 유닛 모양 이름 목록이어야`);
 		}
 		for (const k of ["lead", "rest"]) if (S.trains?.units && typeof S.trains.units[k] !== "string") throw new Error(`${id}.trains.units.${k}: 유닛 모양 이름이어야`);
+		if (S.city && "heritage" in S.city && typeof S.city.heritage !== "boolean") throw new Error(`${id}.city.heritage: 참 · 거짓`);
 		for (const k of ["cars", "crossings"]) if (S.city?.life && k in S.city.life && typeof S.city.life[k] !== "boolean") throw new Error(`${id}.city.life.${k}: 참 · 거짓`);
 		oneOf(S.trains?.body, ["wide", "slim"], `${id}.trains.body`);
 		oneOf(S.track?.platform, ["ribbon", "straight"], `${id}.track.platform`);

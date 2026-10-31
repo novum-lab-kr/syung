@@ -1,5 +1,6 @@
 import { sunPosition } from "../lib/sun.mjs";
 import { SEOUL_CITY_STYLE } from "../modes/basic/city.mjs";
+import { withMonumentHides } from "./monuments_data.mjs";
 import { cityPart } from "./parts.mjs";
 import { EARTH, INST_STRIDES, RAD, RAIL_Q, S, TileBuilder, classifyBuilding, hexRGB, num, resolvePack } from "./mesh.mjs";
 import { SIGN_ATLAS, buildSignAtlas } from "./sign_text.mjs";
@@ -678,7 +679,9 @@ var CityBuildings = class {
 		this.renderingMode = "3d";
 		this.opts = opts;
 		this.phone = !!opts.phone;
-		this.P = resolvePack(opts.stylePack || SEOUL_CITY_STYLE);
+		this.basePack = opts.stylePack || SEOUL_CITY_STYLE;
+		this.heritage = false;
+		this.P = resolvePack(this.basePack);
 		this.on = false;
 		this.tone = "simcity";
 		this.theme = "light";
@@ -723,7 +726,12 @@ var CityBuildings = class {
 		this.map = null;
 	}
 	set(o) {
-		if (o.pack && o.pack !== this.P.pack) this.setPack(o.pack);
+		if (o.pack || o.heritage != null) {
+			if (o.pack) this.basePack = o.pack;
+			if (o.heritage != null) this.heritage = o.heritage;
+			const want = this.heritage ? withMonumentHides(this.basePack) : this.basePack;
+			if (want !== this.P.pack) this.setPack(want);
+		}
 		if (o.on != null) this.on = o.on;
 		if (o.tone) this.tone = o.tone;
 		if (o.theme) this.theme = o.theme;
@@ -888,7 +896,7 @@ var CityBuildings = class {
 			for (let i = 0; i < n; i++) {
 				const w = new Worker(new URL(
 					/* @vite-ignore */
-					new URL("../assets/worker-Dx26OWTF.js", import.meta.url).href,
+					new URL("../assets/worker-DJ2ZksJ6.js", import.meta.url).href,
 					"" + import.meta.url
 				), { type: "module" });
 				w.busy = null;

@@ -1308,6 +1308,14 @@ var Writer = class {
 		return this.u8.subarray(0, this.n * 32);
 	}
 };
+function insideArea(px, py, area) {
+	let inside = false;
+	for (let i = 0, j = area.length - 2; i < area.length; j = i, i += 2) {
+		const xi = area[i], yi = area[i + 1], xj = area[j], yj = area[j + 1];
+		if (yi > py !== yj > py && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+	}
+	return inside;
+}
 var TileBuilder = class {
 	constructor(src, P, opts) {
 		this.src = src;
@@ -1368,7 +1376,11 @@ var TileBuilder = class {
 				x: (mx - this.ox) / this.unit,
 				y: (my - this.oy) / this.unit,
 				r: L.hide.radiusM / this.mPerUnit,
-				minH: L.hide.minH
+				minH: L.hide.minH,
+				area: L.hide.area?.flatMap(([lng, lat]) => {
+					const [ax, ay] = landmarkMerc({ lngLat: [lng, lat] });
+					return [(ax - this.ox) / this.unit, (ay - this.oy) / this.unit];
+				})
 			};
 		}).filter((m) => m.x > -m.r - this.E && m.x < 2 * this.E + m.r && m.y > -m.r - this.E && m.y < 2 * this.E + m.r);
 	}
@@ -1381,7 +1393,7 @@ var TileBuilder = class {
 			if (a[i + 1] > y1) y1 = a[i + 1];
 		}
 		const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-		return this.marks.some((m) => H >= m.minH && Math.hypot(cx - m.x, cy - m.y) < m.r && Math.max(x1 - x0, y1 - y0) < 2.5 * m.r);
+		return this.marks.some((m) => H >= m.minH && (m.area ? insideArea(cx, cy, m.area) : Math.hypot(cx - m.x, cy - m.y) < m.r && Math.max(x1 - x0, y1 - y0) < 2.5 * m.r));
 	}
 	step(budget) {
 		const t0 = performance.now(), bl = this.src.buildings;

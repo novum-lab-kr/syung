@@ -25,6 +25,7 @@ var basic_default = {
 		},
 		city: {
 			enabled: false,
+			heritage: false,
 			groundTexture: false,
 			xray: false,
 			tone: "simcity",

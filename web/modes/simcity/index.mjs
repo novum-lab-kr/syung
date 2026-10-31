@@ -7,7 +7,8 @@ var simcity_default = {
 		map: { paletteKind: "city" },
 		city: {
 			enabled: true,
-			xray: true
+			xray: true,
+			heritage: true
 		},
 		track: { kind: "viaduct" },
 		trains: { body: "slim" },

@@ -1,3 +1,4 @@
+import { monumentsInView } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MERC_ORIGIN as O, MU, toM } from "./life.mjs";
@@ -804,6 +805,7 @@ var LOOK = {
 	}
 };
 var CityLandmarks = class {
+	monGen = 0;
 	constructor() {
 		this.gl = null;
 		this.items = null;
@@ -919,6 +921,55 @@ var CityLandmarks = class {
 			this.broken = true;
 			console.error("city-landmarks: off —", e);
 		}
+	}
+	releaseMonuments() {
+		this.monGen++;
+		this.monp = null;
+		if (this.mon) {
+			this.mon.dispose();
+			this.mon = null;
+		}
+	}
+	renderMonuments(gl, matrix, { zoom = 15, dark = false, sun = null, lit = [.64, .36], bounds }) {
+		if (this.monFail || zoom < 14 || !monumentsInView(bounds)) return;
+		if (!this.mon) {
+			if (!this.monp) {
+				const gen = this.monGen;
+				this.monp = __vitePreload(() => import("./monuments.mjs").then((m) => {
+					if (gen !== this.monGen) {
+						this.monp = null;
+						return;
+					}
+					const layer = new m.Monuments();
+					layer.init(gl);
+					layer.onLoad = repaint;
+					this.mon = layer;
+					this.monp = null;
+					repaint();
+				}), [], import.meta.url).catch((e) => {
+					this.monFail = true;
+					console.warn("city-landmarks: 기념물 못 받음 —", e);
+				});
+			}
+			return;
+		}
+		const MT = this.monMT ??= /* @__PURE__ */ new Float32Array(16);
+		for (let i = 0; i < 16; i++) MT[i] = matrix[i];
+		for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r] * O.x + matrix[4 + r] * O.y + matrix[12 + r];
+		const az = (sun?.azimuth ?? 225) * Math.PI / 180, el = Math.max(sun?.elevation ?? 42, 12) * Math.PI / 180;
+		this.mon.render(gl, MT, {
+			light: [
+				Math.sin(az) * Math.cos(el),
+				-Math.cos(az) * Math.cos(el),
+				Math.sin(el)
+			],
+			lit,
+			dark,
+			zoom
+		});
+		gl.bindVertexArray(null);
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 	}
 	_render(gl, matrix, { zoom = 15, dark = false, look = "tower", sun = null, lit = [.64, .36], phone = false }) {
 		const wood = look === "wood-tower";

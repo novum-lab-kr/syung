@@ -39,6 +39,7 @@ import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
+import { monumentBuildingFilter } from "./city/monuments_data.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
 import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
 import { createMapTheme } from "./map/theme.mjs";
@@ -945,18 +946,26 @@ function cityXrayTargets() {
 var prebuildOn = null;
 var prebuildWant = () => prebuildOn ??= /(^|[^o])prebuild/.test(location.hash) ? true : location.hash.includes("noprebuild") ? false : ((v) => v ? v === "on" : !PHONE)(prefs.get("prebuild"));
 function prebuildCity() {
-	if (prebuildWant() && cityBuildings && !cityOn() && !document.hidden && cityBuildings.P.pack === modes.settings("simcity").city.pack) cityBuildings.prebuild(map);
+	if (prebuildWant() && cityBuildings && !cityOn() && !document.hidden && cityBuildings.basePack === modes.settings("simcity").city.pack) cityBuildings.prebuild(map);
 }
+var heritageFilterOn;
 function syncCity() {
 	if (!ready || !cityBuildings) return;
 	if (cityOn() && !map.getLayer("city-buildings")) map.addLayer(cityBuildings, map.getLayer("station-names") ? "station-names" : void 0);
+	const heritage = !!(cityOn() ? modeCtl.settings() : modes.settings("simcity")).city.heritage;
 	cityBuildings.set({
 		on: cityOn(),
 		tone: modeCtl.settings().city.tone,
 		theme: effectiveTheme(),
 		pack: cityPack(),
+		heritage,
 		night: { lights: nightNow().lights }
 	});
+	const filterOn = !!modeCtl.settings().city.heritage;
+	if (filterOn !== heritageFilterOn) {
+		heritageFilterOn = filterOn;
+		for (const id of ["bm-bld", "bm-bld3d"]) if (map.getLayer(id)) map.setFilter(id, filterOn ? monumentBuildingFilter() : null);
+	}
 	syncNightBloom();
 }
 var nightLook = {

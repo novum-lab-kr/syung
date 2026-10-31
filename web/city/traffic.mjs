@@ -185,6 +185,7 @@ var RoadGraph = class RoadGraph {
 			edges,
 			box
 		};
+		this.cells.set(key, cell);
 		L.forEach((ln, li) => {
 			const S = splits[li].sort((a, b) => a[0] - b[0] || a[1] - b[1]), pieces = [[ln.pts[0]]];
 			let si = 0;
@@ -259,7 +260,6 @@ var RoadGraph = class RoadGraph {
 		});
 		yield;
 		for (const n of touched) this.signalAt(n);
-		this.cells.set(key, cell);
 		this.version++;
 		return cell;
 	}

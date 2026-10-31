@@ -900,7 +900,7 @@ layout(location=0) in vec4 a_v;   // f (across), z (up), part, t along the limb
 layout(location=3) in vec4 i_a;   // x, y, phase, walking (0..1)
 layout(location=4) in vec4 i_b;   // facing fx, fy, shirt index, scale
 layout(location=5) in vec3 i_c;   // pants index, hair index, 모양 몫(0..1 — 현대: 머리 6가지, 조선: 옷차림 6가지)
-uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit, u_era, u_face; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light, u_jshirt[6], u_jlow[6]; uniform float u_jcum[6];
+uniform mat4 u_matrix; uniform float u_mu, u_time, u_unit, u_era, u_face; uniform vec2 u_right, u_lit; uniform vec3 u_shirt[4], u_pants[4], u_hair[4], u_skin, u_light, u_jshirt[6], u_jlow[6]; uniform float u_jcum[6]; uniform vec4 u_deck, u_deckR;   // 높은 바닥(월대): (원점 x · y, cos, sin) · (가운데 y, 반 폭, 반 깊이, 높이 — 높이 0 이면 없음)
 out vec3 v_col; out float v_a;
 bool is(float st, float k) { return abs(st - k) < .5; }
 void main(){
@@ -937,7 +937,9 @@ void main(){
   else if (part >= 30. && part < 40.) { float d = mod(part, 2.) < .5 ? -1. : 1.; f -= d * sw * .4 * (part < 32. || part >= 34. ? t : 1.); }   // arms the other way (색동 띠도 팔 몫 t 만큼)
   f *= m;
   float u = u_unit * s;
-  vec3 p = vec3(i_a.xy + u_right * f * u, z * u);
+  vec2 dd = i_a.xy - u_deck.xy, md = vec2(u_deck.z * dd.x - u_deck.w * dd.y, -u_deck.w * dd.x - u_deck.z * dd.y);
+  float lift = u_deckR.w * (1. - smoothstep(-1.2, 0., max(abs(md.x) - u_deckR.y, abs(md.y - u_deckR.x) - u_deckR.z)));   // 월대 가장자리 1.2 m 비탈로 올라선다
+  vec3 p = vec3(i_a.xy + u_right * f * u, z * u + lift);
   gl_Position = u_matrix * vec4(p.xy * u_mu, p.z * u_mu, 1.);
   gl_Position.z -= layer * 3e-6 * gl_Position.w;   // 한 평면에 겹친 조각(머리 위 머리카락 · 몸 위 팔): 층 번호가 클수록 조금 앞으로 — 같은 깊이라 머리카락이 깜빡였다(2026-10-11 행님)
   int si = int(i_b.z + .5), pi = int(i_c.x + .5), hi = int(i_c.y + .5), sj = int(st + .5);
@@ -967,6 +969,7 @@ var CityLife = class {
 		this.exits = exits;
 		this.deck = deck;
 		this.cells = /* @__PURE__ */ new Map();
+		this.keepOut = null;
 		this.graph = new RoadGraph();
 		this.stats = {};
 		this._anim = false;
@@ -1128,7 +1131,9 @@ var CityLife = class {
 			"u_face",
 			"u_jshirt",
 			"u_jlow",
-			"u_jcum"
+			"u_jcum",
+			"u_deck",
+			"u_deckR"
 		]);
 		const vbo = (data) => {
 			const b = gl.createBuffer();
@@ -1570,7 +1575,7 @@ var CityLife = class {
 			const r = hsh(x, y, 1), up = hsh(x, y, 2) < T.shapeWeights.upright ? 1 : 0;
 			trees.push(x, y, hMin + (hMax - hMin) * r, cMin + (cMax - cMin) * hsh(x, y, 3), up, PICK(T.weights, hsh(x, y, 4)), hsh(x, y, 5), hsh(x, y, 6) * 6.283, kind);
 		};
-		const okTree = (x, y, self, margin, rail = 4) => x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
+		const keepOut = this.keepOut, okTree = (x, y, self, margin, rail = 4) => !keepOut?.(x, y) && x >= bx0 && x < bx1 && y >= by0 && y < by1 && !(maskAt(x, y) & 1) && !inBuilding(x, y, 1.2) && roadClear(x, y, self, margin) && railClear(x, y, rail) && exitClear(x, y);
 		let n = 0;
 		for (const e of edges) {
 			if (e.level !== 0) continue;
@@ -1752,7 +1757,7 @@ var CityLife = class {
 			"lamps",
 			"cross"
 		]) if (cell[k]?.b) gl.deleteBuffer(cell[k].b);
-		if (cell.inGraph) this.graph.removeCell(cell.key);
+		this.graph.removeCell(cell.key);
 		this.cells.delete(cell.key);
 	}
 	ranges(cell, prop, box) {
@@ -1784,7 +1789,12 @@ var CityLife = class {
 		}
 	}
 	_render(gl, matrix, opts) {
-		const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = "simcity", lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun } = opts;
+		const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = "simcity", lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun, peopleDeck = null, treeKeepOut = null } = opts;
+		if (!!treeKeepOut !== !!this.keepOut) {
+			this.keepOut = treeKeepOut;
+			this.building = null;
+			for (const cell of [...this.cells.values()]) this.dropCell(cell);
+		}
 		const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;
 		this._anim = false;
 		if (!bounds || !mapOn || zoom < MINZ) {
@@ -2083,6 +2093,10 @@ var CityLife = class {
 				gl.uniform3fv(this.uH.u_skin, col(PP.skin[theme]));
 				gl.uniform3fv(this.uH.u_light, light);
 				gl.uniform1f(this.uH.u_alpha, 1);
+				if (peopleDeck) {
+					gl.uniform4f(this.uH.u_deck, peopleDeck.x, peopleDeck.y, peopleDeck.cos, peopleDeck.sin);
+					gl.uniform4f(this.uH.u_deckR, peopleDeck.centerY, peopleDeck.halfX, peopleDeck.halfY, peopleDeck.z);
+				} else gl.uniform4f(this.uH.u_deckR, 0, 0, 0, 0);
 				gl.uniform1f(this.uH.u_face, unit * PERSON_UNITS / mpp >= 12 ? 1 : 0);
 				const OF = PP.outfits;
 				gl.uniform1f(this.uH.u_era, OF ? 1 : 0);
