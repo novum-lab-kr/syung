@@ -776,7 +776,7 @@ function buildFrameOutline(w, r, look = {}) {
 		}
 	}
 }
-function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline) {
+function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline, remapFor) {
 	for (const b of buildings.filter((each) => !dedicated.includes(each.name) && each.p.length >= 6)) {
 		const r = rectOf(b.p, frame);
 		if (r.len * r.wid < 10) continue;
@@ -786,6 +786,7 @@ function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline
 			continue;
 		}
 		place(w, r);
+		w.remap = remapFor?.(r) ?? null;
 		const hx = Math.max(1.2, r.len / 2 - 1), hy = Math.max(1, r.wid / 2 - 1), bay = clamp(Math.round(hx * 2 / 3.3), 1, 9);
 		hall(w, {
 			hx,
@@ -797,6 +798,7 @@ function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline
 			bays: [bay, clamp(Math.round(hy * 2 / 3.3), 1, 3)],
 			steps: ROUGH
 		});
+		w.remap = null;
 	}
 	w.xf = null;
 }
