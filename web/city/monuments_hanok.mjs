@@ -650,13 +650,13 @@ function buildFrameOutline(w, r, look = {}) {
 		}
 	}
 }
-function buildFrames(w, buildings, dedicated, frame) {
+function buildFrames(w, buildings, dedicated, frame, outline = buildFrameOutline) {
 	for (const b of buildings.filter((each) => !dedicated.includes(each.name) && each.p.length >= 6)) {
 		const r = rectOf(b.p, frame);
 		if (r.len * r.wid < 10) continue;
 		if (r.fill < .78 || r.len * r.wid > 1500) {
 			w.xf = null;
-			buildFrameOutline(w, r);
+			outline(w, r);
 			continue;
 		}
 		place(w, r);

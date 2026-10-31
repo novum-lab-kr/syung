@@ -233,69 +233,152 @@ function buildHexPavilion(w, r) {
 	cone(radius * .8 + .6, 5, 1.7, .12);
 	w.frustum(0, 0, .2, .2, 6.6, .05, .05, 7.4, K.gilt);
 }
-function buildFanPavilion(w, r) {
-	const hx = Math.max(2, r.len / 2 - .3), radius = hx * 2, half = clamp(Math.atan2(Math.max(1, r.wid / 2 - .3), radius * .75), .35, 1.1), floor = .7, steps = 9;
-	const arc = (rad, z, k) => {
-		const a = -half + 2 * half * k / steps;
-		return [
-			-hx + Math.cos(a) * rad,
-			Math.sin(a) * rad,
-			z
-		];
-	};
-	const apex = (z) => [
-		-hx,
-		0,
+function buildFanPavilion(w, pts) {
+	const edges = pts.map((from, i) => ({
+		from,
+		to: pts[(i + 1) % pts.length],
+		len: Math.hypot(pts[(i + 1) % pts.length][0] - from[0], pts[(i + 1) % pts.length][1] - from[1])
+	})).sort((one, two) => two.len - one.len);
+	const [side1, side2] = [edges[0], edges[1]];
+	const d1 = [side1.to[0] - side1.from[0], side1.to[1] - side1.from[1]], d2 = [side2.to[0] - side2.from[0], side2.to[1] - side2.from[1]], cross = d1[0] * d2[1] - d1[1] * d2[0];
+	if (Math.abs(cross) < 1e-6) return;
+	const t = ((side2.from[0] - side1.from[0]) * d2[1] - (side2.from[1] - side1.from[1]) * d2[0]) / cross;
+	const apex = [side1.from[0] + d1[0] * t, side1.from[1] + d1[1] * t];
+	const cx = pts.reduce((sum, pt) => sum + pt[0], 0) / pts.length, cy = pts.reduce((sum, pt) => sum + pt[1], 0) / pts.length, mid = Math.atan2(cy - apex[1], cx - apex[0]);
+	const polar = pts.map((pt) => {
+		let rel = Math.atan2(pt[1] - apex[1], pt[0] - apex[0]) - mid;
+		while (rel > Math.PI) rel -= 2 * Math.PI;
+		while (rel < -Math.PI) rel += 2 * Math.PI;
+		return {
+			rel,
+			rad: Math.hypot(pt[0] - apex[0], pt[1] - apex[1])
+		};
+	});
+	const radii = polar.map((item) => item.rad), split = (Math.min(...radii) + Math.max(...radii)) / 2, mean = (list) => list.reduce((sum, v) => sum + v, 0) / Math.max(1, list.length);
+	const rOut = mean(radii.filter((v) => v > split)), rIn = mean(radii.filter((v) => v <= split)), halfAng = Math.max(...polar.map((item) => Math.abs(item.rel)));
+	const at = (rad, rel, z) => [
+		apex[0] + Math.cos(mid + rel) * rad,
+		apex[1] + Math.sin(mid + rel) * rad,
 		z
-	];
-	for (let k = 0; k < steps; k++) {
-		w.tri(apex(floor), arc(radius + .4, floor, k), arc(radius + .4, floor, k + 1), K.deck, [
+	], floor = .6, ARC = 12;
+	for (let k = 0; k < ARC; k++) {
+		const r0 = -halfAng + 2 * halfAng * k / ARC, r1 = -halfAng + 2 * halfAng * (k + 1) / ARC, mr = (r0 + r1) / 2, lo = rIn - .3, hi = rOut + .4;
+		w.quad(at(lo, r0, floor), at(hi, r0, floor), at(hi, r1, floor), at(lo, r1, floor), K.deck, [
 			0,
 			0,
 			1
 		]);
-		const mid = -half + 2 * half * (k + .5) / steps;
-		w.quad(arc(radius + .4, 0, k), arc(radius + .4, 0, k + 1), arc(radius + .4, floor, k + 1), arc(radius + .4, floor, k), K.granite, [
-			Math.cos(mid),
-			Math.sin(mid),
+		w.quad(at(hi, r0, 0), at(hi, r1, 0), at(hi, r1, floor), at(hi, r0, floor), K.granite, [
+			Math.cos(mid + mr),
+			Math.sin(mid + mr),
+			0
+		]);
+		w.quad(at(lo, r1, 0), at(lo, r0, 0), at(lo, r0, floor), at(lo, r1, floor), K.granite, [
+			-Math.cos(mid + mr),
+			-Math.sin(mid + mr),
 			0
 		]);
 	}
-	for (const k of [
-		0,
-		3,
-		6,
-		9
-	]) {
-		const [x, y] = arc(radius, 0, k);
-		w.box(x - .2, x + .2, y - .2, y + .2, floor, 3.3, K.red, {
+	for (const side of [-1, 1]) w.quad(at(rIn - .3, side * halfAng, 0), at(rOut + .4, side * halfAng, 0), at(rOut + .4, side * halfAng, floor), at(rIn - .3, side * halfAng, floor), K.granite, [
+		-Math.sin(mid + side * halfAng) * side,
+		Math.cos(mid + side * halfAng) * side,
+		0
+	]);
+	const post = (rad, rel) => {
+		const [x, y] = at(rad, rel, 0);
+		w.box(x - .17, x + .17, y - .17, y + .17, floor, 3.1, K.red, {
 			bottom: true,
 			top: true
 		});
+	};
+	for (let k = 0; k <= 4; k++) post(rOut, -halfAng + 2 * halfAng * k / 4);
+	for (let k = 0; k <= 2; k++) post(rIn, -halfAng + 2 * halfAng * k / 2);
+	const beam = (rad, z0, z1) => {
+		for (let k = 0; k < ARC; k++) {
+			const r0 = -halfAng + 2 * halfAng * k / ARC, r1 = -halfAng + 2 * halfAng * (k + 1) / ARC, mr = (r0 + r1) / 2;
+			w.quad(at(rad + .2, r0, z0), at(rad + .2, r1, z0), at(rad + .2, r1, z1), at(rad + .2, r0, z1), K.dancheong, [
+				Math.cos(mid + mr),
+				Math.sin(mid + mr),
+				0
+			]);
+		}
+	};
+	beam(rOut, 2.65, 3.1);
+	beam(rIn - .4, 2.65, 3.1);
+	const eaveZ = 3.1, over = 1.1, outer = rOut + over, inner = Math.max(.4, rIn - .5), reach = halfAng + over / Math.max(1, rOut) * .9, RAD = 4, ANG = 14;
+	const height = (rel, rad) => eaveZ + 1.4999999999999996 * (1 - Math.abs(rel) / reach) * (.82 + .18 * (rad - inner) / (outer - inner));
+	for (let i = 0; i < RAD; i++) for (let k = 0; k < ANG; k++) {
+		const rad0 = inner + (outer - inner) * i / RAD, rad1 = inner + (outer - inner) * (i + 1) / RAD, r0 = -reach + 2 * reach * k / ANG, r1 = -reach + 2 * reach * (k + 1) / ANG;
+		w.quad(at(rad0, r0, height(r0, rad0)), at(rad1, r0, height(r0, rad1)), at(rad1, r1, height(r1, rad1)), at(rad0, r1, height(r1, rad0)), K.giwa, [
+			0,
+			0,
+			1
+		], i * 1.2, (i + 1) * 1.2, (i + 1) * 1.2, i * 1.2);
 	}
-	w.box(-hx - .2, -hx + .2, -.2, .2, floor, 3.3, K.red, {
-		bottom: true,
-		top: true
-	});
-	const eaveZ = 3.3, over = 1.3;
-	for (let k = 0; k < steps; k++) {
-		const mid = -half + 2 * half * (k + .5) / steps, hint = [
-			Math.cos(mid) * .5,
-			Math.sin(mid) * .5,
-			.85
-		];
-		w.tri(apex(4.9), arc(radius + over, eaveZ, k), arc(radius + over, eaveZ, k + 1), K.giwa, hint, 0, k * 1.2, (k + 1) * 1.2);
-		w.quad(arc(radius + over, 3.05, k), arc(radius + over, 3.05, k + 1), arc(radius + over, eaveZ, k + 1), arc(radius + over, eaveZ, k), K.fascia, [
-			Math.cos(mid),
-			Math.sin(mid),
+	for (let k = 0; k < ANG; k++) {
+		const r0 = -reach + 2 * reach * k / ANG, r1 = -reach + 2 * reach * (k + 1) / ANG, mr = (r0 + r1) / 2;
+		w.quad(at(outer, r0, height(r0, outer) - .3), at(outer, r1, height(r1, outer) - .3), at(outer, r1, height(r1, outer)), at(outer, r0, height(r0, outer)), K.fascia, [
+			Math.cos(mid + mr),
+			Math.sin(mid + mr),
+			0
+		]);
+		w.quad(at(inner, r1, height(r1, inner) - .3), at(inner, r0, height(r0, inner) - .3), at(inner, r0, height(r0, inner)), at(inner, r1, height(r1, inner)), K.fascia, [
+			-Math.cos(mid + mr),
+			-Math.sin(mid + mr),
 			0
 		]);
 	}
-	for (const end of [-1, 1]) {
-		const a = end < 0 ? 0 : steps;
-		w.tri(apex(4.9), apex(eaveZ), arc(radius + over, eaveZ, a), K.fascia, [
+	for (const side of [-1, 1]) for (let i = 0; i < RAD; i++) {
+		const rad0 = inner + (outer - inner) * i / RAD, rad1 = inner + (outer - inner) * (i + 1) / RAD, rel = side * reach;
+		w.quad(at(rad0, rel, height(rel, rad0) - .3), at(rad1, rel, height(rel, rad1) - .3), at(rad1, rel, height(rel, rad1)), at(rad0, rel, height(rel, rad0)), K.fascia, [
+			-Math.sin(mid + rel) * side,
+			Math.cos(mid + rel) * side,
+			0
+		]);
+	}
+	for (let i = 0; i < RAD; i++) {
+		const rad0 = inner + (outer - inner) * i / RAD, rad1 = inner + (outer - inner) * (i + 1) / RAD, nx = -Math.sin(mid) * .22, ny = Math.cos(mid) * .22;
+		const [a0, a1] = [at(rad0, 0, height(0, rad0) + .3), at(rad1, 0, height(0, rad1) + .3)];
+		w.quad([
+			a0[0] - nx,
+			a0[1] - ny,
+			a0[2]
+		], [
+			a1[0] - nx,
+			a1[1] - ny,
+			a1[2]
+		], [
+			a1[0] + nx,
+			a1[1] + ny,
+			a1[2]
+		], [
+			a0[0] + nx,
+			a0[1] + ny,
+			a0[2]
+		], K.ridge, [
 			0,
-			end,
+			0,
+			1
+		]);
+		for (const side of [-1, 1]) w.quad([
+			a0[0] + nx * side,
+			a0[1] + ny * side,
+			a0[2] - .3
+		], [
+			a1[0] + nx * side,
+			a1[1] + ny * side,
+			a1[2] - .3
+		], [
+			a1[0] + nx * side,
+			a1[1] + ny * side,
+			a1[2]
+		], [
+			a0[0] + nx * side,
+			a0[1] + ny * side,
+			a0[2]
+		], K.ridge, [
+			nx * side,
+			ny * side,
 			0
 		]);
 	}
@@ -314,6 +397,166 @@ var gate = (w, r, bays = [3, 2]) => {
 		stair: r.len > 8
 	});
 };
+var NAKSEONJAE_AT = [221, -418];
+function buildRichOutline(w, r) {
+	const post = Math.hypot(r.cx - NAKSEONJAE_AT[0], r.cy - NAKSEONJAE_AT[1]) < 70 ? K.timber : K.red, height = 3.2;
+	buildFrameOutline(w, r, {
+		band: true,
+		height
+	});
+	const pts = r.pts;
+	let area2 = 0;
+	for (let i = 0; i < pts.length; i++) {
+		const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+		area2 += ax * by - bx * ay;
+	}
+	const ccw = area2 > 0;
+	for (let i = 0; i < pts.length; i++) {
+		const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length], dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+		if (len < 1.6) continue;
+		const ux = dx / len, uy = dy / len, outX = (ccw ? dy : -dy) / len, outY = (ccw ? -dx : dx) / len, bays = Math.max(1, Math.round(len / 3));
+		const along = (t, lift, z) => [
+			ax + dx * t + outX * lift,
+			ay + dy * t + outY * lift,
+			z
+		];
+		w.quad(along(0, .12, 0), along(1, .12, 0), along(1, .12, .5), along(0, .12, .5), K.granite, [
+			outX,
+			outY,
+			0
+		]);
+		w.quad(along(0, .1, 2.7), along(1, .1, 2.7), along(1, .1, height), along(0, .1, height), post, [
+			outX,
+			outY,
+			0
+		]);
+		for (let k = 0; k <= bays; k++) {
+			const [x, y] = along(k / bays, .12, 0);
+			w.box(x - .13 - Math.abs(uy) * .05, x + .13 + Math.abs(uy) * .05, y - .13 - Math.abs(ux) * .05, y + .13 + Math.abs(ux) * .05, .4, height, post, { bottom: true });
+		}
+		for (let k = 0; k < bays; k++) {
+			const t0 = (k + .2) / bays, t1 = (k + .8) / bays;
+			w.quad(along(t0, .07, .9), along(t1, .07, .9), along(t1, .07, 2.5), along(t0, .07, 2.5), K.window, [
+				outX,
+				outY,
+				0
+			]);
+		}
+		const inX = -outX, inY = -outY, depth = 2.7, ridgeZ = 4.9 + .12;
+		const [rx0, ry0, rx1, ry1] = [
+			ax + inX * depth,
+			ay + inY * depth,
+			bx + inX * depth,
+			by + inY * depth
+		];
+		w.quad([
+			rx0 - inX * .15 - ux * .2,
+			ry0 - inY * .15 - uy * .2,
+			ridgeZ
+		], [
+			rx1 - inX * .15 + ux * .2,
+			ry1 - inY * .15 + uy * .2,
+			ridgeZ
+		], [
+			rx1 + inX * .15 + ux * .2,
+			ry1 + inY * .15 + uy * .2,
+			ridgeZ
+		], [
+			rx0 + inX * .15 - ux * .2,
+			ry0 + inY * .15 - uy * .2,
+			ridgeZ
+		], K.ridge, [
+			0,
+			0,
+			1
+		]);
+	}
+}
+function wingsOf(r) {
+	const STEP = .3, cosA = Math.cos(r.ang), sinA = Math.sin(r.ang), cols = Math.ceil(r.len / STEP), rows = Math.ceil(r.wid / STEP);
+	const inside = (x, y) => {
+		let hit = false;
+		for (let i = 0, j = r.pts.length - 1; i < r.pts.length; j = i++) {
+			const [xi, yi] = r.pts[i], [xj, yj] = r.pts[j];
+			if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+		}
+		return hit;
+	};
+	const grid = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (__, col) => {
+		const u = (col + .5) * STEP - r.len / 2, v = (row + .5) * STEP - r.wid / 2;
+		return inside(r.cx + u * cosA - v * sinA, r.cy + u * sinA + v * cosA);
+	}));
+	const out = [];
+	for (let pass = 0; pass < 3; pass++) {
+		const heights = new Array(cols).fill(0);
+		let best = {
+			area: 0,
+			col0: 0,
+			col1: 0,
+			row0: 0,
+			row1: 0
+		};
+		for (let row = 0; row < rows; row++) {
+			for (let col = 0; col < cols; col++) heights[col] = grid[row][col] ? heights[col] + 1 : 0;
+			for (let col0 = 0; col0 < cols; col0++) {
+				let low = Infinity;
+				for (let col1 = col0; col1 < cols && heights[col1]; col1++) {
+					low = Math.min(low, heights[col1]);
+					const area = low * (col1 - col0 + 1);
+					if (area > best.area) best = {
+						area,
+						col0,
+						col1,
+						row0: row - low + 1,
+						row1: row
+					};
+				}
+			}
+		}
+		const w0 = (best.col1 - best.col0 + 1) * STEP, h0 = (best.row1 - best.row0 + 1) * STEP;
+		if (best.area * STEP * STEP < 14 || Math.min(w0, h0) < 3) break;
+		const uc = (best.col0 + best.col1 + 1) / 2 * STEP - r.len / 2, vc = (best.row0 + best.row1 + 1) / 2 * STEP - r.wid / 2, tall = h0 > w0;
+		out.push({
+			cx: r.cx + uc * cosA - vc * sinA,
+			cy: r.cy + uc * sinA + vc * cosA,
+			len: Math.max(w0, h0),
+			wid: Math.min(w0, h0),
+			ang: tall ? r.ang + Math.PI / 2 : r.ang,
+			fill: 1,
+			pts: []
+		});
+		for (let row = best.row0; row <= best.row1; row++) for (let col = best.col0; col <= best.col1; col++) grid[row][col] = false;
+	}
+	return out;
+}
+function buildTimberHouse(w, outline) {
+	for (const wing of wingsOf(outline)) {
+		const r = southFacing(wing);
+		place(w, r);
+		w.remap = {
+			[K.red]: K.timber,
+			[K.dancheong]: K.timber,
+			[K.band]: K.timber
+		};
+		const { hx, hy } = half(r, .5);
+		hall(w, {
+			hx,
+			hy,
+			podium: .8,
+			lowPodium: [.7],
+			body: 3.2,
+			rise: 3,
+			eave: 2,
+			bays: [clamp(Math.round(hx * 2 / 3), 1, 6), clamp(Math.round(hy * 2 / 3), 1, 2)],
+			steps: FINE,
+			doors: true,
+			stair: r.len > 8,
+			gable: .45
+		});
+		w.remap = null;
+		w.xf = null;
+	}
+}
 var DEDICATED = {
 	돈화문: (w, r) => {
 		hall(w, {
@@ -418,7 +661,6 @@ var DEDICATED = {
 	},
 	부용정: buildBuyongjeong,
 	존덕정: buildHexPavilion,
-	관람정: buildFanPavilion,
 	청의정: (w, r) => pavilion(w, r, K.thatch),
 	인정문: (w, r) => gate(w, r),
 	진선문: (w, r) => gate(w, r),
@@ -440,13 +682,10 @@ var DEDICATED = {
 	].map((name) => [name, (w, r) => pavilion(w, r)]))
 };
 function buildHalls(w) {
-	for (const each of CDG_BUILDINGS.filter((item) => TIMBER_HOUSES.includes(item.name) && item.p.length >= 6)) {
+	for (const each of CDG_BUILDINGS.filter((item) => TIMBER_HOUSES.includes(item.name) && item.p.length >= 6)) buildTimberHouse(w, rectOf(each.p, FRAME));
+	for (const each of CDG_BUILDINGS.filter((item) => FAN_PAVILIONS.includes(item.name) && item.p.length >= 6)) {
 		w.xf = null;
-		buildFrameOutline(w, rectOf(each.p, FRAME), {
-			wall: K.timber,
-			band: true,
-			height: 3.2
-		});
+		buildFanPavilion(w, rectOf(each.p, FRAME).pts);
 	}
 	for (const each of CDG_BUILDINGS.filter((item) => DEDICATED[item.name] && item.p.length >= 6)) {
 		const r = southFacing(rectOf(each.p, FRAME));
@@ -457,12 +696,17 @@ function buildHalls(w) {
 }
 var OUTLINE_ONLY = ["수강재"];
 var TIMBER_HOUSES = ["낙선재", "석복헌"];
+var FAN_PAVILIONS = ["관람정"];
 function buildRest(w) {
-	const names = [...Object.keys(DEDICATED), ...TIMBER_HOUSES];
-	buildFrames(w, CDG_BUILDINGS.filter((each) => !OUTLINE_ONLY.includes(each.name)), names, FRAME);
+	const names = [
+		...Object.keys(DEDICATED),
+		...TIMBER_HOUSES,
+		...FAN_PAVILIONS
+	];
+	buildFrames(w, CDG_BUILDINGS.filter((each) => !OUTLINE_ONLY.includes(each.name)), names, FRAME, buildRichOutline);
 	for (const each of CDG_BUILDINGS.filter((item) => OUTLINE_ONLY.includes(item.name))) {
 		w.xf = null;
-		buildFrameOutline(w, rectOf(each.p, FRAME));
+		buildRichOutline(w, rectOf(each.p, FRAME));
 	}
 }
 function buildMonument(id) {
