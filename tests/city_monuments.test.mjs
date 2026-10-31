@@ -185,6 +185,53 @@ function nearTriangle(x, y, [a, b, c], margin) {
   return Math.min(segDist(x, y, a, b), segDist(x, y, b, c), segDist(x, y, c, a)) < margin;
 }
 
+test('궁 안 횃불: 근정전 마당은 어도 양옆 11자 두 줄 · 마당 둘레 네모 · 앞 계단 양옆만 같은 간격으로 선다(흩어 놓지 않는다)', async () => {
+  const { PALACE_TORCHES } = await import('../web/city/monuments_torches_data.mts');
+  const all = Array.from({ length: PALACE_TORCHES.length / 2 }, (_, i) => ({ x: PALACE_TORCHES[i * 2] / 10, y: PALACE_TORCHES[i * 2 + 1] / 10 }));
+  const yard = all.filter(torch => torch.x > -55 && torch.x < 50 && torch.y > -140 && torch.y < -14);
+  const XL = -29.3, XR = 27.7, YF = -84.5, YB = -26.8, near = (a, b) => Math.abs(a - b) < .15;
+  const rim = yard.filter(torch => near(torch.x, XL) || near(torch.x, XR) || near(torch.y, YB) || (near(torch.y, YF) && (torch.x < -20 || torch.x > 12)));
+  const aisle = yard.filter(torch => torch.y < -84.4 - 0 && torch.y > -135 && !rim.includes(torch));
+  const hall = PALACE_BUILDINGS.find(b => b.name === '근정전'), ring2 = Array.from({ length: 4 }, (_, i) => toLocal([PALACE_ORIGIN[0] + hall.p[i * 2] / 1e6, PALACE_ORIGIN[1] + hall.p[i * 2 + 1] / 1e6]));
+  const hallX = ring2.reduce((sum, p) => sum + p[0], 0) / 4;
+  const flank = yard.filter(torch => !rim.includes(torch) && !aisle.includes(torch));
+  assert.equal(rim.length + aisle.length + flank.length, yard.length);
+  assert.equal(flank.length, 2, '앞 계단 양옆 하나씩');
+  assert.ok(Math.abs((flank[0].x + flank[1].x) / 2 - hallX) < 2.5 && Math.abs(flank[0].y - flank[1].y) < 1, `계단 양옆은 근정전 앞 가운데(계단) 기준 좌우 ${flank.map(p => `${p.x},${p.y}`)}`);
+  assert.ok(Math.abs(flank[0].x - flank[1].x) > 10 && Math.abs(flank[0].x - flank[1].x) < 15, '계단 폭(8 m) 밖 양옆');
+  assert.ok(flank.every(p => p.y < -70 && p.y > -80), '앞 계단 옆(월대 앞)');
+  // 어도 두 줄: 같은 높이마다 쌍, 층 간격이 같고 두 줄 사이 폭이 일정(평행)
+  const rows = [...new Set(aisle.map(p => p.y))].sort((a, b) => a - b);
+  assert.ok(rows.length >= 4, `어도 줄 ${rows.length}`);
+  for (const y of rows) assert.equal(aisle.filter(p => p.y === y).length, 2, `줄마다 좌우 하나씩 ${y}`);
+  const gaps = rows.slice(1).map((y, i) => y - rows[i]);
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) < .25, `같은 간격 ${gaps}`);
+  const widths = rows.map(y => { const row = aisle.filter(p => p.y === y).map(p => p.x).sort((a, b) => a - b); return row[1] - row[0] });
+  assert.ok(Math.max(...widths) - Math.min(...widths) < .15, `두 줄 폭이 일정(11자) ${widths}`);
+  assert.ok(Math.min(...widths) > 18 && Math.max(...widths) < 30, `어도 양옆 ${widths[0]}`);
+  assert.ok(rows.at(-1) > YF - .2 && rows.at(-1) < YF + .2, '두 줄은 마당 네모 선의 앞 변에서 끝난다');
+  // 둘레: 변마다 같은 간격(±0.15 m)
+  for (const edge of [rim.filter(p => near(p.x, XR)).map(p => p.y), rim.filter(p => near(p.x, XL)).map(p => p.y), rim.filter(p => near(p.y, YB)).map(p => p.x)]) {
+    const sorted = [...edge].sort((a, b) => a - b), steps = sorted.slice(1).map((v, i) => v - sorted[i]);
+    assert.ok(sorted.length >= 4 && Math.max(...steps) - Math.min(...steps) < .3, `변 간격 ${steps}`);
+  }
+  assert.ok(rim.length >= 12, `마당 둘레 ${rim.length}`);
+});
+
+test('궁 안 횃불: 긴 길은 길 양옆에 쌍으로 서서 쌍의 가운데가 길 위에 놓인다(빈 땅에 흩지 않는다)', async () => {
+  const { PALACE_TORCHES } = await import('../web/city/monuments_torches_data.mts');
+  const all = Array.from({ length: PALACE_TORCHES.length / 2 }, (_, i) => ({ x: PALACE_TORCHES[i * 2] / 10, y: PALACE_TORCHES[i * 2 + 1] / 10 }));
+  const { paths } = JSON.parse(readFileSync(new URL('./fixtures/palace_obstacles.json', import.meta.url), 'utf8'));
+  const lines = paths.map(path => path.p.map(toLocal));
+  const outside = all.filter(torch => !(torch.x > -55 && torch.x < 50 && torch.y > -140 && torch.y < -14));
+  let paired = 0;
+  for (const torch of outside) {
+    const mates = outside.filter(other => other !== torch && Math.hypot(other.x - torch.x, other.y - torch.y) < 12);
+    if (mates.some(other => lines.some(line => lineDist((other.x + torch.x) / 2, (other.y + torch.y) / 2, line) < .3))) paired++;
+  }
+  assert.ok(paired / outside.length > .9, `길 양옆 쌍 ${paired}/${outside.length}`);
+});
+
 // ── 길가 횃불 · 보이는 줌 ─────────────────────────────────────────────────────────────────────────────────────
 test('궁 안 횃불: 둘레 안 · 건물 · 담장 · 연못 · 길 · 나무 위에 없고 수십 개가 길가에 선다', async () => {
   const { PALACE_TORCHES } = await import('../web/city/monuments_torches_data.mts');
@@ -204,7 +251,11 @@ test('궁 안 횃불: 둘레 안 · 건물 · 담장 · 연못 · 길 · 나무 
     assert.ok(!footprints.some(foot => contains(foot, torch.x, torch.y)), `건물 위 ${where}`);
     for (const fence of fences) assert.ok(lineDist(torch.x, torch.y, fence) > 1, `담장 위 ${where}`);
     for (const lake of lakes) assert.ok(!contains(lake, torch.x, torch.y), `물 위 ${where}`);
-    for (const road of roads) assert.ok(lineDist(torch.x, torch.y, road.line) > road.half * .9, `길 위 ${where}`);
+    const inYard = torch.x > -55 && torch.x < 50 && torch.y > -140 && torch.y < -14;   // 근정전 마당 — 둘레 윤곽 선(닫힌 길 · 넓은 보행 구역 선)은 길이 아니라 마당 가장자리
+    for (const road of roads) {
+      if (inYard && (road.half >= 3 || (road.line.length > 3 && Math.hypot(road.line[0][0] - road.line.at(-1)[0], road.line[0][1] - road.line.at(-1)[1]) < .01))) continue;
+      assert.ok(lineDist(torch.x, torch.y, road.line) > road.half * .9, `길 위 ${where}`);
+    }
     assert.ok(!trees.some(tree => Math.hypot(tree.x - torch.x, tree.y - torch.y) < 1.2), `나무 위 ${where}`);
     assert.ok(!solids.some(tri => nearTriangle(torch.x, torch.y, tri, 1)), `생성된 기단 · 계단 · 몸 1 m 안 ${where}`);
     if (roads.some(road => lineDist(torch.x, torch.y, road.line) < road.half + 2.2)) besideRoad++;
