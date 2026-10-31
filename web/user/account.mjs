@@ -193,7 +193,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		try {
 			if (!globalThis.lottie) await __vitePreload(() => import("../vendor/lottie/lottie_light.min.js"), [], import.meta.url);
 			if (!motionData) {
-				const res = await fetch(new URL(new URL("../assets/login-motion-CWTYoLkL.json", import.meta.url).href, "" + import.meta.url));
+				const res = await fetch(new URL(new URL("../assets/login-motion-loop-CIdLbdRM.json", import.meta.url).href, "" + import.meta.url));
 				if (!res.ok) return;
 				motionData = await res.json();
 			}
@@ -207,20 +207,22 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		box.style.left = `${logo.offsetLeft + logo.offsetWidth / 2 - MOTION.slotX}px`;
 		box.style.top = `${logo.offsetTop + logo.offsetHeight / 2 - MOTION.slotY}px`;
 		logo.after(box);
+		const loop = motionData.markers?.find((marker) => marker.cm === "loop"), end = motionData.op;
 		const anim = motionAnim = globalThis.lottie.loadAnimation({
 			container: box,
 			renderer: "svg",
-			loop: false,
+			loop: !!loop,
 			autoplay: false,
 			animationData: structuredClone(motionData)
 		});
 		anim.goToAndStop(0, true);
 		logo.style.visibility = "hidden";
-		anim.addEventListener("complete", () => {
+		if (!loop) anim.addEventListener("complete", () => {
 			if (motionAnim === anim) stopLogoMotion();
 		});
+		const play = () => loop ? anim.playSegments([[0, end], [loop.tm, loop.tm + loop.dr]], true) : anim.play();
 		motionTimer = setTimeout(() => {
-			if (motionAnim === anim) anim.play();
+			if (motionAnim === anim) play();
 		}, Math.max(0, MOTION.wait - (performance.now() - openedAt)));
 	}
 	function openSheet(message, error = false) {
