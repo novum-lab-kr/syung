@@ -236,14 +236,15 @@ export function buildFrameOutline(w:MeshWriter, r:Rect, look:OutlineLook = {}):v
   }
 }
 // 한옥 틀 건물들: 전용 모델이 있는 이름(dedicated)은 건너뛰고 나머지를 틀로 짓는다. 경복궁 · 창덕궁이 같이 쓴다
-export function buildFrames(w:MeshWriter, buildings:{ name:string; p:number[] }[], dedicated:string[], frame:Frame, outline:(w:MeshWriter, r:Rect) => void = buildFrameOutline):void {
+export function buildFrames(w:MeshWriter, buildings:{ name:string; p:number[] }[], dedicated:string[], frame:Frame, outline:(w:MeshWriter, r:Rect) => void = buildFrameOutline, remapFor?:(r:Rect) => Record<number, number> | null):void {
   for (const b of buildings.filter(each => !dedicated.includes(each.name) && each.p.length >= 6)) {
     const r = rectOf(b.p, frame);
     if (r.len * r.wid < 10) continue;   // 아주 작은 것(화장실 · 매점 …)은 건너뛴다
     if (r.fill < .78 || r.len * r.wid > 1500) { w.xf = null; outline(w, r); continue }
-    place(w, r);
+    place(w, r); w.remap = remapFor?.(r) ?? null;   // 원목 구역은 사각 틀도 붉은 기둥 · 단청 · 녹색 칸막이를 원목으로
     const hx = Math.max(1.2, r.len / 2 - 1), hy = Math.max(1, r.wid / 2 - 1), bay = clamp(Math.round(hx * 2 / 3.3), 1, 9);
     hall(w, { hx, hy, podium: .6, body: 3.2, rise: clamp((hy + 1.6) * .55, 1.2, 3.4), eave: clamp(hy * .5, .9, 1.8), bays: [bay, clamp(Math.round(hy * 2 / 3.3), 1, 3)], steps: ROUGH });
+    w.remap = null;
   }
   w.xf = null;
 }

@@ -161,7 +161,7 @@ test('고정 규칙: 지도 건물 층 필터는 자리 비우기마다 감싸�
   const { coordinates } = filter[1][1];
   assert.equal(coordinates.length, MONUMENT_HIDES.length);
   for (const [ring] of coordinates) assert.deepEqual(ring[0], ring[ring.length - 1]);
-  assert.equal(coordinates.filter(([ring]) => ring.length === 17).length, MONUMENT_HIDES.length - 5);   // 사각 열여섯 각형이 아닌 것 = 경복궁 · 창덕궁 · 종묘 · 사직단 · 환구단 둘레
+  assert.equal(coordinates.filter(([ring]) => ring.length === 17).length, MONUMENT_HIDES.filter(hide => !hide.area).length);   // 열여섯 각형 = 둘레(area) 없는 원 모양 숨김, 나머지는 궁 · 건물 둘레 그대로
 });
 
 // ── 경복궁 둘레 담장 · 궁 안 건물 ──
