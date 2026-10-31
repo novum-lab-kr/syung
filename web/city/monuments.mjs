@@ -1,4 +1,4 @@
-import { GATE_BASE_D, GATE_DECK_Z, MONUMENTS, cdgRing, monumentsInView, palaceRing } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, monumentsInView, palaceRing } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
@@ -10,7 +10,9 @@ import { PalaceTrees } from "./monument_trees.mjs";
 // web/city/monuments.mts
 var ZONES = {
 	gyeongbok: () => __vitePreload(() => import("./monuments_gyeongbok.mjs"), [], import.meta.url),
-	changdeokgung: () => __vitePreload(() => import("./monuments_changdeokgung.mjs"), [], import.meta.url)
+	changdeokgung: () => __vitePreload(() => import("./monuments_changdeokgung.mjs"), [], import.meta.url),
+	sungnyemun: () => __vitePreload(() => import("./monuments_sungnyemun.mjs"), [], import.meta.url),
+	heunginjimun: () => __vitePreload(() => import("./monuments_heunginjimun.mjs"), [], import.meta.url)
 };
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in vec2 a_kind;
@@ -23,7 +25,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform vec3 u_col[24];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[24];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -50,10 +52,13 @@ void main(){
   } else if (k == 8) { c = mix(c, u_col[2], step(.5, fract(s / .4)) * .85); }   // 처마 끝: 서까래 머리(붉은 단청 점)
   else if (k == 10) { c = mix(c * .8, u_col[2], line(s / .36, .22) * .5); }
   else if (k == 7) { if (side > .5) c *= 1. - .3 * line(along / .34, .28); }
-  else if (k == 9) {   // 현판: 검은 바탕 · 금빛 테두리 · 금빛 글자 덩어리 셋
-    float u = (v_p.x + 2.5) / 5., v = s; vec3 gold = vec3(.85, .65, .24);
-    float edge = step(u, .035) + step(.965, u) + step(v, .09) + step(.91, v);
-    float glyph = (step(.12, u) * step(u, .3) + step(.42, u) * step(u, .58) + step(.7, u) * step(u, .88)) * step(.2, v) * step(v, .8) * step(.35, hash(floor(vec2(u * 18., v * 8.))));
+  else if (k == 9) {   // 현판: 검은 바탕 · 금빛 테두리 · (광화문만) 금빛 글자 덩어리 셋
+    // s = 2 × 현판 폭(데시미터) + 위로 0…1. 폭 0 이면 광화문의 5 m. 도성문 현판은 글씨를 지어내지 않고 바탕 + 테두리까지만
+    float wd = floor(s / 2.), v = s - 2. * wd, W = wd > 0. ? wd / 10. : 5.;
+    float u = (v_p.x + W / 2.) / W; vec3 gold = vec3(.85, .65, .24);
+    float eu = wd > 0. ? .09 / W : .035, ev = wd > 0. ? .05 : .09;
+    float edge = step(u, eu) + step(1. - eu, u) + step(v, ev) + step(1. - ev, v);
+    float glyph = wd > 0. ? 0. : (step(.12, u) * step(u, .3) + step(.42, u) * step(u, .58) + step(.7, u) * step(u, .88)) * step(.2, v) * step(v, .8) * step(.35, hash(floor(vec2(u * 18., v * 8.))));
     c = mix(c, gold, clamp(edge + glyph, 0., 1.));
   } else if (k == 14) {   // 궁장 벽돌: 작은 벽돌 줄(약 0.1 m 단)과 엇갈린 줄눈
     float rows = v_p.z / .11, row = floor(rows), cols = (along + row * .5 * .26) / .26;
@@ -77,14 +82,16 @@ void main(){
   if (u_night > .5) {   // 밤: 달빛에 어둡게, 아래에서 비추는 따뜻한 조명(문화재 야간 조명)이 위로 갈수록 옅게
     float up = exp(-v_p.z / 15.) * (.35 + .65 * side);
     col = c * lt * .42 + c * vec3(1., .78, .52) * (.5 * up + .05);
-    if (k == 9) col += vec3(.2, .15, .05) * step(.5, c.r);
+    if (u_openingsOnly) col = c * lt * .42;   // 도성문: 아래서 비추는 조명 · 처마 · 마루 불빛 없이 열린 곳(홍예 · 창호)만 빛난다
+    if (k == 9 && !u_openingsOnly) col += vec3(.2, .15, .05) * step(.5, c.r);
     // 안에서 새어 나오는 등불(전각 · 문루): 문 안 · 벽 사이 회벽 · 판문 · 마루 · 처마 밑이 따뜻하게 — 낮 · 라이트에는 이 줄에 들어오지 않는다
     vec3 warm = vec3(1., .62, .28); float flick = .94 + .06 * hash(floor(v_p.xy * .5));
     if (k == 12) col = mix(col, warm * flick, .88);                            // 문 안 · 홍예: 등불이 켜진 속
     else if (k == 20) { float lattice = max(line(along / .42, .14), line(v_p.z / .52, .14)); col = mix(col, warm * flick * (1. - .5 * lattice), .9); }   // 창호만 한지에 비친 등불(살은 어둡게)
     else if (k == 19) col += warm * c * .05;                                    // 회벽 · 합각 · 막힌 벽: 켜지 않는다 — 아주 약한 반사광만
-    else if (k == 7) col += warm * (n.z > .5 ? .32 : .2) * c.g * 1.6;            // 판문 · 누마루 마루
-    else if (k == 10) col += warm * .2;                                         // 처마 밑: 아래 등불이 비춘다
+    else if (k == 2 && u_openingsOnly) col += warm * c.r * .32;                    // 도성문 문루 기둥: 열린 하층 안에서 비추는 등불이 기둥 안쪽을 드러낸다(판문에는 빛을 지어내지 않는다)
+    else if (k == 7 && !u_openingsOnly) col += warm * (n.z > .5 ? .32 : .2) * c.g * 1.6;            // 판문 · 누마루 마루
+    else if (k == 10 && !u_openingsOnly) col += warm * .2;                                         // 처마 밑: 아래 등불이 비춘다
   }
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
@@ -105,7 +112,8 @@ var Monuments = class {
 			"u_light",
 			"u_lit",
 			"u_night",
-			"u_col"
+			"u_col",
+			"u_openingsOnly"
 		].map((name) => [name, gl.getUniformLocation(this.p, name)]));
 		this.trees.init(gl);
 		this.torches.init(gl);
@@ -182,7 +190,16 @@ var Monuments = class {
 		return item.mesh = { chunks };
 	}
 	palaceM = null;
+	gateM = null;
 	inPalace = (x, y) => {
+		if ((this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => {
+			const [gx, gy] = toM(lng, lat);
+			return [
+				gx,
+				gy,
+				radiusM
+			];
+		})).some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
 		return (this.palaceM ??= [palaceRing(), cdgRing()].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
 			let inside = false;
 			for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -234,6 +251,7 @@ var Monuments = class {
 				continue;
 			}
 			if (!zoneReady.has(item.M.zone)) zoneReady.set(item.M.zone, true);
+			gl.uniform1i(u.u_openingsOnly, item.M.openingsOnly ? 1 : 0);
 			for (const chunk of m.chunks) {
 				const g = grow * keep(chunk.rect);
 				if (g <= 0) continue;

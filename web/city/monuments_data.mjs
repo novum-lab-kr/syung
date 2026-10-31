@@ -402,6 +402,20 @@ var CDG_RING = [
 var cdgRing = () => ringOf(CDG_RING, CDG_ORIGIN);
 var MONUMENTS = [
 	{
+		id: "sungnyemun",
+		zone: "sungnyemun",
+		lngLat: [126.97536025, 37.559986249999994],
+		yawDeg: -41.8017044508303,
+		openingsOnly: true
+	},
+	{
+		id: "heunginjimun",
+		zone: "heunginjimun",
+		lngLat: [127.009594975, 37.571153975],
+		yawDeg: 100.09911107449813,
+		openingsOnly: true
+	},
+	{
 		id: "gwanghwamun",
 		zone: "gyeongbok",
 		lngLat: [126.976817, 37.575928],
@@ -444,7 +458,19 @@ var MONUMENTS = [
 		yawDeg: 0
 	}
 ];
+var GATE_YARDS = [{
+	lngLat: [126.97536025, 37.559986249999994],
+	radiusM: 27,
+	minH: 0,
+	exact: true
+}, {
+	lngLat: [127.009594975, 37.571153975],
+	radiusM: 43,
+	minH: 0,
+	exact: true
+}];
 var MONUMENT_HIDES = [
+	...GATE_YARDS,
 	{
 		lngLat: [126.976817, 37.575928],
 		radiusM: 22,
@@ -471,6 +497,14 @@ var REGIONS = {
 	changdeokgung: {
 		lngLat: CDG_AT,
 		radiusM: 900
+	},
+	sungnyemun: {
+		lngLat: [126.97536025, 37.559986249999994],
+		radiusM: 100
+	},
+	heunginjimun: {
+		lngLat: [127.009594975, 37.571153975],
+		radiusM: 100
 	}
 };
 function monumentsInView(bounds, zone) {
@@ -495,9 +529,9 @@ function withMonumentHides(pack) {
 function monumentBuildingFilter() {
 	return ["!", ["within", {
 		type: "MultiPolygon",
-		coordinates: MONUMENT_HIDES.map(({ lngLat: [lng, lat], radiusM, area }) => {
+		coordinates: MONUMENT_HIDES.map(({ lngLat: [lng, lat], radiusM, area, exact }) => {
 			if (area) return [[...area, area[0]]];
-			const ring = [], r = radiusM * 1.5;
+			const ring = [], r = radiusM * (exact ? 1.03 : 1.5);
 			for (let i = 0; i < 16; i++) {
 				const a = i / 16 * Math.PI * 2;
 				ring.push([lng + Math.cos(a) * r / (111320 * Math.cos(lat * Math.PI / 180)), lat + Math.sin(a) * r / 110574]);
@@ -507,4 +541,4 @@ function monumentBuildingFilter() {
 		})
 	}]];
 }
-export { CDG_AT, CDG_ORIGIN, CDG_RING, GATE_BASE_D, GATE_DECK_Z, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, cdgRing, monumentBuildingFilter, monumentsInView, palaceRing, withMonumentHides };
+export { CDG_AT, CDG_ORIGIN, CDG_RING, GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, cdgRing, monumentBuildingFilter, monumentsInView, palaceRing, withMonumentHides };
