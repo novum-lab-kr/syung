@@ -48,7 +48,17 @@ test('스크립트는 load 뒤 쉴 때 한 번 부르고 주소 뒤는 보내지
   assert.deepEqual(config.slice(1), ['G-PV1KC7LCL6', {page_location: 'https://map.syung.novum-lab.com/', allow_google_signals: false, allow_ad_personalization_signals: false}]);
 });
 
-test('이벤트는 셋뿐이고 정한 값만 나간다', () => {
+test('출발 · 도착 선택은 어느 쪽인지만 나간다', () => {
+  const page = fakePage();
+  startAnalytics(page, false);
+  fire(page, 'syung:place_end', 'to');
+  fire(page, 'syung:place_end', 'from');
+  fire(page, 'syung:place_end', '강남역');
+  fire(page, 'syung:place_end', {end: 'to', lat: 37.5});
+  assert.deepEqual(events(page), [['place_end', {end: 'to'}], ['place_end', {end: 'from'}]]);
+});
+
+test('이벤트는 넷뿐이고 정한 값만 나간다', () => {
   const page = fakePage();
   startAnalytics(page, false);
   fire(page, 'syung:route', {from: '시청', to: '강남', lat: 37.5});

@@ -68,6 +68,13 @@ export function chosenAfter(plans:readonly Shaped[], order:readonly number[], sa
   return mine ?? order[0] ?? -1;
 }
 
+// 길찾기에서 고른 길을 발권 시각으로 다시 찾은 답에서: 같은 길 모양이 있으면 그 길, 없으면 가장 빠른 길(changed — 안내한다)
+export function routeForTicket<P extends Shaped>(plans:readonly P[], chosen:Shaped) {
+  const sig = rideSig(chosen), same = plans.find(plan => rideSig(plan) === sig);
+  if (same) return {route: same, changed: false};
+  const route = quickestRoute(plans);
+  return {route, changed: !!route};
+}
 // 다음 탈 날: 고른 요일(1 월 … 7 일, 비었으면 아무 날) 가운데 지금보다 뒤인 가장 가까운 날의 그 시각(time 'HH:MM')
 export function nextRideDay(days:readonly number[], time:string, now:Date) {
   const [hour, minute] = time.split(':').map(Number) as [number, number];

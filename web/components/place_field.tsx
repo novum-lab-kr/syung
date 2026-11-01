@@ -1,6 +1,6 @@
 // 장소 칸(출발 · 도착): 글자 칸 + 내 위치 단추 + 칸 바로 아래 찾은 곳 목록(PlaceResults). props 만 받아 그린다 — 찾기 · 고르기는 화면 쪽(account.mts).
 // 목록에서 고른 단추가 문서에서 빠지면 서랍의 '밖을 눌렀나' 검사가 서랍을 닫는다 — 목록은 늘 문서에 두고 숨기기만 하고, 누름은 거기서 멈춘다
-// 내 위치 단추의 핀(길찾기 시트의 jf-here 와 같은 그림)
+// 내 위치 단추의 핀
 const PIN = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg>';
 
 export interface PlaceRow { name:string; address:string }

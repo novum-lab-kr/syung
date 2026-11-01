@@ -43,7 +43,7 @@ interface NightNow { bloom:boolean; N:{ bloom:BloomTune & { overlay?:BloomTune }
 type Life = LifeOptions['night'];
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다). drawTrains · wallsNow 는 이 파일이 채운다(setter)
 interface OverlayLive {
-  me:ReturnType<typeof createMyMotion>; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
+  placeMarker:readonly number[] | null; me:ReturnType<typeof createMyMotion>; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
   bloomTune:BloomTune | null | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
   CoasterRidePlacement:typeof CoasterRidePlacement; FestoonLayer:typeof FestoonLayer; RideLayer:typeof RideLayer; busLayer:ReturnType<typeof createBusLayer> | null;
   cityBuildings:CityBuildings | null; cityLandmarks:CityLandmarks | null; settings:OverlaySettings; kitReady:boolean; sampleRideTracks:typeof sampleRideTracks;
@@ -172,6 +172,10 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(S.city.heritage&&live.cityLandmarks){const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments)
       live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y],phone:PHONE,center:[map.getCenter().lng,map.getCenter().lat]})}
     else if(live.cityLandmarks?.mon||live.cityLandmarks?.monp)live.cityLandmarks.releaseMonuments();   // 문화유산 모드를 나가면 모델 · 나무 GL 을 치운다(받던 코드도 무효)
+    // 장소 검색에서 고른 곳의 슝 마커: 어떤 3D 보다 위에(건물 · 열차에 가리지 않게). 지도가 다시 그릴 때만 그리고 다음 프레임을 부탁하지 않는다
+    if(live.placeMarker&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(live.placeMarker as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
+      if(!avatar)avatar=new AvatarRenderer();
+      avatar.renderMarker(gl,pd.mainMatrix,{world:[q.x,q.y],origin:[O.x,O.y],zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch(),dark:effectiveTheme()==='dark'})}
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };
   map.on('render',()=>{live.frameStats.mapRenders++;live.drawTrains()});   // the camera moved or the map redrew: trains follow in the same frame

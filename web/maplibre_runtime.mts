@@ -6,10 +6,9 @@ import {createCoasterTrack} from './modes/coaster/track.mts';   // 롤코 선로
 import {createCoasterGeometry} from './modes/coaster/geometry.mts';   // 롤코 길 · 언덕 계산
 import {createCoasterMotion} from './modes/coaster/motion.mts';   // 롤코 주행 속도 · 탄 거리
 import {createCoasterRide} from './modes/coaster/ride.mts';   // 롤코 1인칭 타기
-import {createStationSearch} from './ui/search.mts';   // 역 검색
 import {createBottomSheet} from './ui/sheet.mts';   // 아래 시트 · 따라가기
 import {createPopups} from './ui/popups.mts';   // 열차 · 역 정보창
-import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';import './components/route_card.tsx';import './components/step_list.tsx';import './components/segmented.tsx';import './components/journey_fields.tsx';import './components/journey_when.tsx';import './components/journey_summary.tsx';import './components/chip.tsx';import './components/icons.tsx';import './components/sheet_frame.tsx';import './components/search_field.tsx';import './components/drawer.tsx';import './components/login_button.tsx';import './components/station_sheet.tsx';import './components/train_sheet.tsx';import './components/live_notice.tsx';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact · 길찾기 시트 · 아래 시트 · 검색 · 서랍이 쓰는 기초 컴포넌트: 같은 단계에서 요청)
+import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journey_sheet.tsx';import './ui/train_sheet.tsx';import 'preact';import 'preact/jsx-runtime';import './components/route_card.tsx';import './components/step_list.tsx';import './components/segmented.tsx';import './components/place_search.tsx';import './components/time_field.tsx';import './lib/place-search.mts';import './lib/time-wheel.mts';import './components/journey_when.tsx';import './components/journey_summary.tsx';import './components/chip.tsx';import './components/icons.tsx';import './components/sheet_frame.tsx';import './components/drawer.tsx';import './components/login_button.tsx';import './components/station_sheet.tsx';import './components/train_sheet.tsx';import './components/live_notice.tsx';   // (역 도착 · 버스 · 길찾기 · 열차 시트 화면 조각 · Preact · 길찾기 시트 · 아래 시트 · 검색 · 서랍이 쓰는 기초 컴포넌트: 같은 단계에서 요청)
 import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통과 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
@@ -71,6 +70,7 @@ import type {Map as MapLibre,CustomLayerInterface,GeoJSONSource} from 'maplibre-
 import type {LinePaths,FeedTrain} from './lib/routing.mts';
 import type {Settings,ModeDefinition} from './modes/merge.mts';
 import type {MapStation,TrainPlan,LiveTrain,Merc} from './trains/types.mts';
+import type {TicketDesk} from './lib/journey-ui.mts';
 import type {TrainLive} from './trains/draw.mts';
 import type {TrainOverlayDeps} from './map/overlay.mts';
 import type {StationRect} from './map/platform.mts';
@@ -610,7 +610,9 @@ const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;
 // 승차권 경로 지도에서 보기(user/account — 늦게 받는다)와 길찾기 · 버스 노선은 지도의 여정 자리를 같이 쓴다: 한쪽이 그리면 다른 쪽 막대 · 길을 치운다(ticketRouteGone)
 let ticketRouteGone:(()=>void)|null=null;
-const journey=initJourney({openSheetView,drawJourney,clearJourney,drawJourneyBar,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+let placeMarker:readonly number[]|null=null;   // 장소 검색에서 고른 곳의 슝 마커(overlay 가 열차 캔버스에 그린다)
+let ticketDesk:(()=>Promise<TicketDesk|undefined>)|null=null;   // 승차권 등록: 회원 코드를 받은 뒤의 창구(아래 — 늦게 받는다)
+const journey=initJourney({stations,showStation:station=>showStationPopup(station as MapStation),setPlaceMarker:spot=>{placeMarker=spot;trainFrameSoon(0)},ticketDesk:async()=>ticketDesk?.(),openSheetView,drawJourney,clearJourney,drawJourneyBar,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
 document.getElementById('routeButton')!.addEventListener('click',()=>ticketRouteGone?.());   // 길찾기 시트를 열면 승차권 길은 지운다
 const ticketRoute={show(plan:JourneyPlan,pad?:{bottom:number;right:number}){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(pad?.bottom??110,pad?.right);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110) · pad: 경로 고르기의 서랍 자리(휴대폰 아래 · 데스크톱 오른쪽)
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
@@ -688,7 +690,7 @@ map.on('load',()=>{
   registerTransitLayers({map,shapesReady,buildLineFeatures,buildStationFeatures,basicRouteCache,rebuildLabels,stationNames,STATION_WIDTH_STOPS,PHONE,signCollisionLayout:signCollisionLayout as TransitDeps['signCollisionLayout'],live:{get track(){return modeCtl.settings().track}}});   // 노선 · 승강장 · 역 이름표 자리(web/map/layers.mjs)
   // trains: their own canvas over the map (see TRAIN_FPS) — web/map/overlay.mjs
   createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette:mapPalette as unknown as TrainOverlayDeps['mapPalette'],coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE:CITY_STYLE as unknown as CityPack,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,
-    live:{get me(){return me},get frameStats(){return frameStats},get frameMs(){return frameMs()},get trainFrameDue(){return trainTimer?trainAt:Infinity},get LifeUnits(){return LifeUnits},get night(){return nightNow() as TrainOverlayDeps['live']['night']},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get PixelPalette(){return PixelPalette},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
+    live:{get placeMarker(){return placeMarker},get me(){return me},get frameStats(){return frameStats},get frameMs(){return frameMs()},get trainFrameDue(){return trainTimer?trainAt:Infinity},get LifeUnits(){return LifeUnits},get night(){return nightNow() as TrainOverlayDeps['live']['night']},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get PixelPalette(){return PixelPalette},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
   registerLocationLayers({map,geolocate,dotMaxzoom:AVATAR_MINZOOM,live:{get myLocation(){return myLocation},set myLocation(v){myLocation=v}}});   // 내 위치 점
   map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)openTrain(pl);else if(busLayer?.selectAt(e.point)){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else if(!sheetBusy())closeSheet()});   // bus: 누른 버스는 따라간다 · 하는 중인 시트는 빈 곳을 눌러도 둔다   // bus: subway picking keeps priority
   map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){openTrain(pl);return}const p=e.features![0]!.properties,st=byId.get(+p.id);if(appBridge){if(st)appBridge.stationTap(st)}else showStationPopup(st,e.lngLat)});
@@ -769,7 +771,6 @@ function appActions(){return {
   busStopView:(what:string)=>needBus().stopViewAction(what),
 }}
 
-const stationSearch=createStationSearch({map,stations,colors,input:$('search') as HTMLInputElement,list:$('searchList'),getSelected:()=>selected,showStationPopup});   // 역 검색
 // ---- icon buttons ----------------------------------------------------------------------------
 const svg=(d:string)=>`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS={
@@ -1003,7 +1004,7 @@ menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:(
 }
 // 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
-if(!appBridge){let started=false;const go=()=>{if(started)return;started=true;import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation})).catch(()=>{})};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+if(!appBridge){const mapLoaded=new Promise<void>(done=>map.once('load',()=>done()));let desk:Promise<TicketDesk|undefined>|null=null;const go=()=>desk??=import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation,journeyReturn:search=>journey.ticketReturn(search),mapLoaded})).catch(()=>undefined);ticketDesk=go;   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);

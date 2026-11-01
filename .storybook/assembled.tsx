@@ -6,7 +6,6 @@ import indexHtml from '../web/index.html?raw';
 import { DayPicker } from '../web/components/day_picker.tsx';
 import { JourneyBar } from '../web/components/journey_summary.tsx';
 import { AccountRows, CityModes, DeviceSettings, MenuNav, ThemePicker } from '../web/components/settings.tsx';
-import { SearchList } from '../web/components/search_field.tsx';
 import { SheetFrame } from '../web/components/sheet_frame.tsx';
 import { StationSheet, type ArrivalCard } from '../web/components/station_sheet.tsx';
 import { TRAIN_SHEET_CSS } from '../web/components/train_sheet.tsx';
@@ -23,6 +22,7 @@ import { Segmented } from '../web/components/segmented.tsx';
 import { StatsPanel } from '../web/components/stats_panel.tsx';
 import { TicketCard, TicketFront, TicketList } from '../web/components/ticket_card.tsx';
 import { TimeField } from '../web/components/time_field.tsx';
+import type { PlaceHit } from '../web/lib/place-search.mts';
 import { routeSteps, routeTrack, trackParts, type JourneyActions, type JourneyView, type Plan, type StepLeg } from '../web/lib/journey-ui.mts';
 import { routeFilterView, usefulRoutes } from '../web/user/ticket_routes.mts';
 import arrivalAnswer from '../tools/flows/fixtures/arrivals.json';
@@ -51,7 +51,7 @@ interface Ticket { id:number; name:string; depart:string; days:number[]; from:{ 
 // ---- 지도 화면의 틀: 머리 막대 · 검색은 index.html 원문을 잘라 쓴다(2e 로 컴포넌트가 되면 바꾼다). 지도 자리는 .map 의 정적 바탕 ----
 const MAST = /<header class="mast">[\s\S]*?<\/header>/.exec(indexHtml)?.[0] ?? '';
 const MAP_AREA = /<section class="map-area"[^>]*>([\s\S]*?)<\/section>/.exec(indexHtml)?.[1] ?? '';
-function MapApp({ children }:{ children?:ComponentChildren }) {
+export function MapApp({ children }:{ children?:ComponentChildren }) {
   return <main class="app">
     <div style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: MAST }} />
     <div class="layout"><section class="map-area">
@@ -62,7 +62,7 @@ function MapApp({ children }:{ children?:ComponentChildren }) {
 }
 
 // 서랍(지도 위에 열린 모습)
-function Drawer({ title, withMap = false, back = true, children }:{ title:string; withMap?:boolean; back?:boolean; children:ComponentChildren }) {
+export function Drawer({ title, withMap = false, back = true, children }:{ title:string; withMap?:boolean; back?:boolean; children:ComponentChildren }) {
   return <>
     <MapApp />
     <div id="settingsPanel" class={withMap ? 'settings-panel open with-map' : 'settings-panel open'} role="dialog" aria-label={title}>
@@ -86,7 +86,7 @@ function TicketsPage({ flipped = false }:{ flipped?:boolean }) {
 const place = (rows:PlaceRow[] | string, listHidden:boolean) => ({ rows, listHidden, onFocus: noop, onInput: noop, onPick: noop, onLeave: noop, onHere: noop, onCloseList: noop });
 
 interface DraftProps { from:string; to?:string; found?:PlaceRow[]; wheel?:boolean; route?:Plan; days?:number[]; name?:string }
-function TicketPage({ from, to = '', found, wheel = false, route, days = [], name = '' }:DraftProps) {
+export function TicketPage({ from, to = '', found, wheel = false, route, days = [], name = '' }:DraftProps) {
   const routeBody = route
     ? `${routeTrack(route, COLORS, 270)}<span class="pk"><b>약 ${route.minutes}분</b> · 환승 ${route.transfers}</span><u>바꾸기</u>`
     : `<span class="pk">경로 고르기</span>${CHEVRON}`;
@@ -214,7 +214,7 @@ const ACCOUNT:Record<string, AssembledScreen> = {
 };
 
 // ---- 02 길찾기 ----
-const JOURNEY_PLANS = routeAnswer.plans as unknown as Plan[];
+export const JOURNEY_PLANS = routeAnswer.plans as unknown as Plan[];
 const durationOf = (minutes:number) => minutes >= 60 ? { hours: Math.floor(minutes / 60), minutes: minutes % 60 } : { hours: null, minutes };
 const planView = (plan:Plan) => ({
   aria: `${plan.tag || '경로'} ${plan.minutes}분, ${plan.arrives} 도착, 지도에서 보기`, duration: durationOf(plan.minutes), arrive: `${plan.leaveBy} → ${plan.arrives}`, tag: plan.tag || null,
@@ -223,16 +223,15 @@ const planView = (plan:Plan) => ({
 });
 const KIND_NAMES = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']] as const;
 const countOf = (kind:string) => JOURNEY_PLANS.filter(plan => kind === 'all' || plan.kind === kind).length;
-const NO_LIST = { hidden: true, places: [], empty: null };
-const EMPTY_JOURNEY:JourneyView = { here: false, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, draft: null, lists: { from: NO_LIST, to: NO_LIST }, status: { text: '', sr: false }, result: { kind: 'none' } };
-const FOUND_JOURNEY:JourneyView = { ...EMPTY_JOURNEY, done: true,
-  summary: { from: FROM, to: TO, when: '지금 출발', aria: `${FROM}에서 ${TO}까지, 지금 출발. 눌러서 바꾸기` },
+const EMPTY_SEARCH = { title: '어디로 갈까요?', query: '', hits: [], pending: false, failed: false, fixed: null, here: false };
+export const EMPTY_JOURNEY:JourneyView = { stage: 'search', search: EMPTY_SEARCH, picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, draft: null, status: { text: '', sr: false }, result: { kind: 'none' } };
+export const FOUND_JOURNEY:JourneyView = { ...EMPTY_JOURNEY, stage: 'route', done: true,
+  summary: { from: FROM, to: TO, when: '지금 출발', aria: `${FROM}에서 ${TO}까지, 지금 출발` },
   result: { kind: 'plans',
     tabs: KIND_NAMES.filter(([kind]) => countOf(kind)).map(([kind, name]) => ({ kind, name, count: countOf(kind), pressed: kind === 'all' })),
     cards: JOURNEY_PLANS.map((plan, index) => ({ plan: planView(plan), kind: plan.kind, on: index === 0, hidden: false })) } };
-const HOLD = { down: noop, stop: noop, click: noop };
-const JOURNEY_ACTIONS:JourneyActions = { typed: noop, place: noop, here: noop, swap: noop, summary: noop, whenRow: noop, whenNow: noop, whenGo: noop, day: noop, hold: { h1: HOLD, 'h-1': HOLD, m1: HOLD, 'm-1': HOLD }, tab: noop, card: noop, retry: noop };
-const JourneyScreen = ({ view }:{ view:JourneyView }) => <>
+export const JOURNEY_ACTIONS:JourneyActions = { typed: noop, place: noop, here: noop, end: noop, arrivals: noop, changeEnd: noop, swap: noop, whenRow: noop, whenNow: noop, whenGo: noop, day: noop, tab: noop, card: noop, ticket: noop, retry: noop };
+export const JourneyScreen = ({ view }:{ view:JourneyView }) => <>
   <MapApp />
   <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={view} actions={JOURNEY_ACTIONS} /></SheetFrame></section>
 </>;
@@ -278,16 +277,16 @@ const SETTINGS:Record<string, AssembledScreen> = {
 
 // ---- 01 지도 · 역 검색 ----
 const LINE_COLORS:Record<string, string> = { '2호선': '#00A84D', '신분당선': '#D4003B', '7호선': '#747F00', '수인분당선': '#F5A200', '에버라인': '#6FB245' };
-const chipOf = (name:string) => ({ name, color: LINE_COLORS[name]! });
+export const chipOf = (name:string) => ({ name, color: LINE_COLORS[name]! });
 // 「강남」을 쳤을 때의 목록(역 자료는 index.html 안에 있어 촬영 때 나온 세 줄을 그대로 적는다)
-const SEARCH_HITS = [
-  { name: '강남', lines: [chipOf('2호선'), chipOf('신분당선')] },
-  { name: '강남대', lines: [chipOf('에버라인')] },
-  { name: '강남구청', lines: [chipOf('7호선'), chipOf('수인분당선')] },
+export const SEARCH_HITS:PlaceHit[] = [
+  { name: '강남', lat: 37.497942, lng: 127.027621, lines: [chipOf('2호선'), chipOf('신분당선')] },
+  { name: '강남대', lat: 37.270161, lng: 127.125688, lines: [chipOf('에버라인')] },
+  { name: '강남구청', lat: 37.517186, lng: 127.041262, lines: [chipOf('7호선'), chipOf('수인분당선')] },
 ];
 // web/ui/popups.mts 처럼 노선 · 방향으로 묶어 두 대까지(고정 자료는 모두 eta 초 단위 · 받은 시각이 지금)
 const arrivalText = (eta:number) => eta < 60 ? '곧 도착' : `${Math.floor(eta / 60)}분 후`;
-function arrivalCards():ArrivalCard[] {
+export function arrivalCards():ArrivalCard[] {
   const groups = new Map<string, typeof arrivalAnswer.arrivals>();
   for (const arrival of arrivalAnswer.arrivals) {
     const key = `${arrival.line}|${arrival.direction}`;
@@ -299,23 +298,14 @@ function arrivalCards():ArrivalCard[] {
       rows: [...list].sort((one, other) => one.eta - other.eta).slice(0, 2).map(arrival => ({ text: arrivalText(arrival.eta), destination: arrival.destination, express: arrival.express, last: arrival.last })) };
   });
 }
-// 검색 칸은 index.html 원문이라 값 · 목록은 그린 뒤에 채운다(web/ui/search.mts 와 같다)
-function typeSearch(doc:Document, open:boolean) {
-  const input = doc.querySelector<HTMLInputElement>('#search'), list = doc.querySelector<HTMLElement>('#searchList');
-  if (input) input.value = '강남';
-  if (!open || !input || !list) return;
-  render(<SearchList hits={SEARCH_HITS} />, list);
-  list.hidden = false;
-  input.setAttribute('aria-expanded', 'true');
-}
 const MAP_SCREENS:Record<string, AssembledScreen> = {
   home: { draw: () => <MapApp /> },
-  search: { draw: () => <MapApp />, prepare: doc => typeSearch(doc, true) },
+  search: { draw: () => <JourneyScreen view={{ ...EMPTY_JOURNEY, search: { ...EMPTY_SEARCH, query: '강남', hits: SEARCH_HITS } }} /> },
   station: { draw: () => <>
     <style>{TRAIN_SHEET_CSS}</style>
     <MapApp />
     <section class="sheet open" aria-label="상세 정보"><SheetFrame><StationSheet name="강남" chips={[chipOf('2호선'), chipOf('신분당선')]} exits={[]} state={{ kind: 'ready', time: '오전 07:30', cards: arrivalCards() }} /></SheetFrame></section>
-  </>, prepare: doc => typeSearch(doc, false) },
+  </> },
 };
 
 // 흐름 폴더 → 조립 화면. 여기 있는 흐름은 '화면 기획'이 캡처 대신 이것을 쓴다

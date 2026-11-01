@@ -124,7 +124,7 @@ html[data-theme=dark] .bus-follow.is-off .bus-follow-actions button:not([data-bu
 .bus-stop.is-following .bus-follow{margin-top:0}
 /* 버스 따라가기 · 따라가기 집중(2026-10-20 덕배가 고른 Codex 2차 시안 02, 노란 머리 띠는 그대로): 시트 · 검색창 · 지도 버튼을 내리고 아래 한 칸만 */
 .sheet.open.tucked{transform:translateY(calc(105% + var(--kb,0px)))!important;pointer-events:none}
-body.bus-following .route-cta,body.bus-following .map-search,body.bus-following .maplibregl-ctrl-top-right{display:none}
+body.bus-following .route-cta,body.bus-following .maplibregl-ctrl-top-right{display:none}
 .bus-follow-ui{position:absolute;inset:0;z-index:7;pointer-events:none}
 .bfu-panel{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:480px;margin:0 auto;box-sizing:border-box;padding:11px var(--space-3) var(--space-3);border-radius:var(--radius-18);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto}
 .bfu-line{display:flex;align-items:center;gap:var(--space-2);min-width:0}
@@ -255,11 +255,8 @@ html[data-theme=dark] .identity p{color:#c9c2a0}
 html[data-theme=dark] .source-state{background:rgba(255,212,0,.1);color:#f1efe6}
 html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
 
-/* ---- full-width map; the line filter panel is gone, search floats on the map ---- */
+/* ---- full-width map; the line filter panel is gone ---- */
 .layout{grid-template-columns:minmax(0,1fr)!important}
-.map-search{position:absolute;z-index:6;top:14px;left:14px;width:min(340px,calc(100% - 84px))}
-.map-search input{box-shadow:var(--shadow);border-color:transparent!important;background:var(--paper)!important}
-.map-search input:focus{border-color:var(--syung-deep)!important}
 /* 지도 출처: 늘 펼친 한 줄(© OpenMapTiles © OpenStreetMap) — 열차 · 버스 자료 출처는 메뉴 '데이터 출처' 쪽 */
 .maplibregl-ctrl.maplibregl-ctrl-attrib{border-radius:var(--radius-pill);background:var(--paper);color:var(--secondary);box-shadow:var(--shadow);margin:0 0 14px var(--space-3)!important;padding:1px 9px;font-size:var(--text-11);line-height:18px;white-space:nowrap}
 /* 좁은 화면(780px 이하): 출처를 작게(글자 9px · 높이 13px) 화면 맨 아래(safe-area 위 3px)에 붙여 '어디로 갈까요?' 버튼 아래에 둔다.
@@ -268,12 +265,8 @@ html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
 .maplibregl-ctrl-attrib a{color:inherit}
 html[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1)}
 
-/* ---- search ---- */
+/* ---- rail ---- */
 .rail{background:var(--paper);border-right:0;box-shadow:2px 0 0 var(--rule)}
-.search-wrap{border-bottom:0;padding-bottom:6px}
-.search input{height:44px;border:2px solid var(--rule);border-radius:var(--radius-pill);background:var(--control);padding-left:42px;transition:border-color var(--duration-150),box-shadow var(--duration-150)}
-.search input:focus{outline:0;border-color:var(--syung-deep);box-shadow:0 0 0 4px rgba(255,212,0,.35);background:var(--paper)}
-.search svg{left:15px;top:13px;color:var(--muted)}
 .filter-head strong{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-15)}
 .text-btn{text-decoration:none;background:var(--control);color:var(--secondary);padding:5px 11px;border-radius:var(--radius-pill);font-weight:var(--weight-semibold)}
 .text-btn:hover{background:var(--syung);color:var(--syung-ink)}
@@ -288,8 +281,6 @@ html[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1)}
 html[data-theme=dark] .line-btn[aria-pressed=true] .count{background:rgba(0,0,0,.3)}
 .provenance{border-top:2px dashed var(--rule);font-size:var(--text-11-5)}
 .provenance strong{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-13)}
-html[data-theme=dark] .search input{border-color:var(--rule);background:var(--control)}
-html[data-theme=dark] .search input:focus{border-color:var(--syung);box-shadow:0 0 0 4px rgba(255,212,0,.2)}
 
 /* ---- map controls: soft rounded pills ---- */
 .maplibregl-ctrl-group{border-radius:var(--radius-16)!important;box-shadow:var(--shadow)!important;overflow:hidden;background:var(--paper)!important}
@@ -314,7 +305,7 @@ html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=true],html
 .mode-busy--wait em{width:40px;animation:jsk-run var(--duration-1100) ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.mode-busy,.mode-busy--wait em{animation:none}.mode-busy--wait em{width:100%;opacity:.5}}
 html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syung)!important}
-.live-notice{top:66px!important;max-width:calc(100% - 28px)!important;text-align:center}   /* under the search bar, not over it */
+.live-notice{top:66px!important;max-width:calc(100% - 28px)!important;text-align:center}
 
 /* ---- popups (station, train) ---- */
 .maplibregl-popup-content{border-radius:var(--radius-18)!important;padding:14px var(--space-4) var(--space-3)!important;box-shadow:var(--shadow)!important;background:var(--paper);color:var(--ink)}
@@ -332,8 +323,6 @@ html[data-theme=dark] .live-notice{background:#2a2612!important;color:var(--syun
   body{overflow:hidden!important}
   .app{height:100%!important;grid-template-rows:62px minmax(0,1fr)!important}
   .layout{grid-template-rows:minmax(0,1fr)!important}
-  .map-search{top:10px;left:10px;width:calc(100% - 20px)}
-  .maplibregl-ctrl-top-right{top:54px}   /* +/− under the full-width search bar */
   .identity h1{font-size:var(--text-24)}
   .brand-icon{width:36px;height:36px;border-radius:var(--radius-10)}
   .line-btn{grid-template-columns:16px auto auto;min-height:34px;border:2px solid var(--rule);border-radius:var(--radius-pill);padding:3px 11px 3px var(--space-2)}
@@ -396,7 +385,7 @@ html[data-theme=dark] .train-inspect .sec{color:var(--ink);border-bottom-color:v
 .ride-bar{position:absolute;z-index:21;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);display:flex;align-items:center;gap:var(--space-2);max-width:calc(100% - 24px);padding:5px 5px 5px var(--space-3);border-radius:var(--radius-pill);background:rgba(20,20,20,.86);color:#fff;font-size:var(--text-13);font-weight:var(--weight-semibold);box-shadow:var(--shadow)}
 .ride-bar[hidden]{display:none}
 body.riding .map{background-image:none!important;background-color:var(--ride-ground,#D3D6CC)!important} /* 타는 동안: 타일이 끝난 먼 땅에 바탕 격자 대신 땅빛 */
-body.riding .map-search,body.riding .route-cta{display:none} /* 타는 동안: 화면은 앞 풍경, 위에는 탄 자리 띠만 */
+body.riding .route-cta{display:none} /* 타는 동안: 화면은 앞 풍경, 위에는 탄 자리 띠만 */
 .ride-bar .dot{flex:none;width:9px;height:9px;border-radius:var(--radius-circle);background:var(--c)}
 .ride-bar .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ride-bar .ride-off{flex:none;height:32px;padding:0 14px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-14);cursor:pointer}
@@ -422,7 +411,6 @@ html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 
 
 /* ---- 길찾기 (lib/journey-ui.mjs) ---- */
-.map-search{display:flex;align-items:center}
 /* the one call to action: bottom middle of the map, between the credits and my location */
 .route-cta{position:absolute;z-index:8;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);width:min(360px,calc(100% - 132px));height:52px;padding:0 var(--space-5);
@@ -433,50 +421,23 @@ html[data-theme=dark] .sheet{box-shadow:0 -10px 30px rgba(0,0,0,.5)}
 .route-cta:hover{filter:brightness(.97)}
 .map-area:has(.sheet.open) .route-cta,body:has(.jbar:not([hidden])) .route-cta{display:none}
 html[data-theme=dark] .route-cta{box-shadow:0 3px 0 rgba(0,0,0,.4),0 10px 24px rgba(0,0,0,.45)}
-/* station search: matches under the field */
-.search-list{position:absolute;z-index:7;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;border-radius:var(--radius-18);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);max-height:min(360px,55vh);overflow:auto;overscroll-behavior:contain}
-.search-list[hidden]{display:none}
-.search-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:6px var(--space-3);border-radius:var(--radius-12);cursor:pointer}
-.search-list li:hover,.search-list li[aria-selected=true]{background:var(--control)}
-.search-list b{font-size:var(--text-16);font-weight:var(--weight-bold);white-space:nowrap}
-.search-list span{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:var(--space-1)}
-.search-list i{font-style:normal;font-size:var(--text-11);font-weight:var(--weight-bold);padding:2px var(--space-2);border-radius:var(--radius-pill);background:var(--c);color:#fff;white-space:nowrap}
-.search-list .search-empty{color:var(--muted);font-size:var(--text-14);cursor:default}
 /* station sheet: start or end a trip here */
 .st-journey{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);margin:14px 0 var(--space-1)}
 .st-journey button{height:46px;border:0;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
 .st-journey button[data-end=to]{background:var(--syung);color:var(--syung-ink)}
 .journey{display:flex;flex-direction:column;gap:10px}
 .journey h3{margin:0;padding:0 2px;font-size:var(--text-17)!important}
-/* 출발/도착: one card, two rows, a dot for each end, swap on the right */
-.jcard{position:relative;border-radius:var(--radius-16);background:var(--control);padding:2px var(--space-12) 2px 0}
-.jf{position:relative}
-.jrow{display:flex;align-items:center;gap:10px;padding-left:14px}
-.jrow+.jrow{border-top:1px solid var(--rule)}
 .jdot{flex:none;width:10px;height:10px;border-radius:var(--radius-circle);background:var(--syung);box-shadow:0 0 0 2px var(--syung-ink)}
 .jdot.to{background:var(--syung-ink);box-shadow:0 0 0 2px var(--syung)}
 html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
-.jrow input{flex:1;min-width:0;height:48px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:var(--text-16)}   /* 16px: iOS zooms the page into smaller fields */
-.jrow input:focus{outline:none}
-.jrow:focus-within .jdot{transform:scale(1.25)}
-.jrow input::placeholder{color:var(--muted)}
-.jf-here{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:2px;padding:0;border:0;border-radius:var(--radius-circle);background:transparent;color:var(--secondary);cursor:pointer}
-.jf-here svg{width:20px;height:20px}
-.jf-here:hover{background:var(--paper);color:var(--ink)}
-.jswap{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;border-radius:var(--radius-circle);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
-.jswap svg{width:18px;height:18px}
 /* 출발 시각: a small row under the card */
 .jopts{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
-.jf-list{position:absolute;z-index:5;left:0;right:0;top:100%;margin:var(--space-1) 0 0;padding:var(--space-1);list-style:none;border-radius:var(--radius-12);background:var(--paper);box-shadow:var(--shadow);max-height:240px;overflow:auto}
-.jf-list button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:var(--space-2) 10px;border:0;border-radius:var(--radius-9);background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.jf-list button:hover{background:var(--control)}
-.jf-list b{font-size:var(--text-14)}.jf-list small,.jf-empty{font-size:var(--text-12);color:var(--muted)}.jf-empty{padding:var(--space-2) 10px}
 .sheet-body:has(.journey){margin:0 -12px;padding:0 var(--space-3)}
 
 /* 길찾기 sheet: taller, so the routes have room under the form */
 .sheet:has(.journey){max-height:72%}
 /* no double-tap page zoom on the controls; the map keeps its own gestures */
-.mast,.map-search,.route-cta,.sheet,.jbar,.settings-panel{touch-action:manipulation}
+.mast,.route-cta,.sheet,.jbar,.settings-panel{touch-action:manipulation}
 @media(max-width:720px){
   .app{grid-template-rows:52px minmax(0,1fr)!important}
   .brand-icon{width:32px;height:32px}
@@ -488,25 +449,18 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 /* ==== 길찾기 results (lib/journey-ui.mjs) ==== */
 .jf-status{font-size:var(--text-13);color:var(--secondary);min-height:18px}
 .journey.done .jf-status:empty,.jf-status:empty{display:none}
-.journey.done h3,.journey.done .jcard,.journey.done .jopts{display:none}
-/* 출발/도착 card: a dotted rail joins the two ends */
-.jcard::before{content:"";position:absolute;left:18px;top:30px;bottom:30px;border-left:2px dotted var(--muted);opacity:.6}
+.journey.done h3{display:none}
 
-/* the trip, folded: one card — from over to on a dotted rail, the time and a small 수정 on the right;
-   the sheet's ✕ sits beside it, centred on it */
-.jsum{position:relative;display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;margin:0;padding:10px var(--space-3) 10px 14px;border:0;border-radius:var(--radius-16);background:var(--control);color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background var(--duration-150)}
+/* 접힌 경로: 한 장에 출발 · 도착을 점선으로 잇고, 각 줄을 누르면 그 끝을 장소 검색으로 바꾼다 */
+.jsum{position:relative;display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;margin:0;padding:10px var(--space-3) 10px 14px;border:0;border-radius:var(--radius-16);background:var(--control);color:var(--ink);font:inherit;text-align:left;transition:background var(--duration-150);min-width:0}
 .jsum[hidden]{display:none}
-.jsum:hover{background:color-mix(in srgb,var(--control) 80%,var(--ink) 6%)}
 .jsum-trip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
 .jsum-trip::before{content:"";position:absolute;left:3px;top:13px;bottom:13px;border-left:2px dotted var(--muted);opacity:.7}
-.jsum-end{display:flex;align-items:center;gap:10px;min-width:0;font-size:var(--text-15);line-height:20px}
+.jsum-end{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:30px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:var(--text-15);line-height:20px;text-align:left;cursor:pointer}
+.jsum-swap{flex:none;display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;border-radius:var(--radius-circle);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
+.jsum-swap svg{width:18px;height:18px}
 .jsum-end b{font-weight:var(--weight-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jsum-end .jdot{width:8px;height:8px}
-.jsum-side{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.jsum-when{font-size:var(--text-12);font-weight:var(--weight-bold);color:var(--secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.jsum-edit{display:inline-flex;align-items:center;gap:var(--space-1);height:26px;padding:0 10px 0 var(--space-2);border-radius:var(--radius-pill);background:var(--paper);color:var(--ink);font-size:var(--text-12-5);font-weight:var(--weight-bold);box-shadow:0 1px 0 rgba(20,20,20,.08)}
-.jsum-edit svg{width:13px;height:13px}
-.jsum:hover .jsum-edit{background:var(--syung);color:var(--syung-ink)}
 .sheet .sheet-close{display:none}   /* every sheet: the handle closes it (drag down or tap), and Esc */
 
 /* kind filter: the same segmented control as the time and the theme */
@@ -666,12 +620,6 @@ html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 .sheet{bottom:var(--kb,0px)}   /* no transition on bottom: the keyboard itself is the motion */
 .sheet.kb{max-height:calc(100% - var(--kb,0px) - 8px);border-radius:var(--radius-22) var(--radius-22) 0 0;padding-bottom:10px}
 @media(prefers-reduced-motion:reduce){.sheet{transition:none}}
-/* typing a place: the matches open right under the card, in the flow (a popover the scrolling body would clip);
-   the time row and the swap step aside until one is picked */
-.journey .jf-list{position:static;margin:-4px 0 0;max-height:none;padding:var(--space-1);box-shadow:none;background:var(--control);border-radius:var(--radius-14)}
-.journey .jf-list[hidden]{display:none}
-.jf-list button{min-height:48px}
-.journey:has(.jf-list:not([hidden])) .jopts,.journey:has(.jf-list:not([hidden])) .jswap{display:none}
 
 /* ㅅ슈슝~ | 어디쯤이슝? — the tagline sits on the name's line, after a thin rule */
 .identity .brand-line{display:flex;align-items:center;gap:10px;min-width:0}
@@ -698,21 +646,10 @@ html[data-theme=dark] .jw-row.set svg:first-child{color:var(--syung)}
 .jw-now{height:30px;padding:0 var(--space-3);border:0;border-radius:var(--radius-pill);background:var(--paper);color:var(--ink);font:inherit;font-size:var(--text-12-5);font-weight:var(--weight-bold);cursor:pointer}
 .jw-day{align-self:center;background:var(--paper)}
 .jw-day button{padding:7px 18px;font-size:var(--text-13-5)}
-.jw-clock{display:flex;align-items:center;justify-content:center;gap:6px}
-.jw-col{display:flex;flex-direction:column;align-items:center;gap:var(--space-1)}
-.jw-col output{min-width:2.2ch;font-family:var(--round);font-size:42px;line-height:1.05;text-align:center;font-variant-numeric:tabular-nums}
-.jw-colon{font-family:var(--round);font-size:var(--text-36);line-height:1;color:var(--muted);padding:0 6px}
-.jw-step{display:grid;place-items:center;width:64px;height:38px;padding:0;border:0;border-radius:var(--radius-12);background:var(--paper);color:var(--ink);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;transition:background var(--duration-150)}
-.jw-step svg{width:20px;height:20px}
-.jw-step:hover{background:var(--syung-soft)}
-html[data-theme=dark] .jw-step:hover{background:rgba(255,212,0,.14)}
-.jw-step:active{transform:scale(.95)}
-.jw-step:disabled{opacity:.3;cursor:default;background:var(--paper)}
 .jw-go{height:46px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer;box-shadow:var(--shadow-edge)}
 @media(prefers-reduced-motion:reduce){.jw-panel{animation:none}.jw-row .jw-chev{transition:none}}
 /* holding − / + (or the numbers) must not start iOS text selection or its copy callout */
-.jw-panel,.jw-clock,.jw-clock *,.jw-step{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.jw-step{-webkit-tap-highlight-color:transparent}
+.jw-panel{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 /* station sheet: the line chips carry their own dot (the base .chip:before drew an empty one, a gap before it) */
 .sheet .station-sheet .chip::before{display:none}
 .sheet .station-sheet .chip{padding:3px 10px 3px var(--space-2)}
@@ -868,6 +805,7 @@ h4.pf-l{line-height:1.3}
 /* 발권 화면(2026-10-27 사용자와 정한 시안 A: 어디서 → 어디로 → 언제 → 경로 → 타는 날 → 이름). 누르는 곳은 44px 이상.
    출발 ↔ 도착 바꾸기는 뺐다(바꾸면 경로를 다시 골라야 해서 — 사용자 2026-10-27) */
 .ticket-form{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-3)}
+.tf-note{margin:calc(var(--space-1) * -1) 0 0;font-size:var(--text-14);line-height:20px;color:#6f6326}
 .tf-l{margin:var(--space-1) 0 0;font-family:var(--round);font-size:var(--text-14);color:#6f6326}
 .tf-dot{flex:none;width:10px;height:10px;border-radius:var(--radius-circle);border:3px solid #4b4316}.tf-dot.to{background:#4b4316}
 .tf-route{display:flex;align-items:center;border:2px solid #f3d64a;border-radius:var(--radius-16);background:#fff7cc}
@@ -998,7 +936,54 @@ html[data-theme=dark] .acct-toast{color:var(--ink);box-shadow:0 10px 24px rgba(0
 /* 앱 지도 모드(주소 #app — 슝 앱의 웹뷰, index.html 첫 스크립트가 html[data-app=map]): 머리줄 · 검색 · 길찾기 · 메뉴 서랍 · 로그인 · 아래 시트(역 · 열차 · 버스 · 길찾기 정보창) · 롤코 탑승 막대는
    앱이 제 화면으로 그린다 — 웹 쪽은 숨기고 지도(+ − · 내 위치 단추 · 지도 출처 · 실시간 알림 줄 · 모드 바꾸는 중 게이지)만. 일반 웹에는 이 표시가 없다 */
 html[data-app=map] .app{grid-template-rows:minmax(0,1fr)!important}
-html[data-app=map] :is(.mast,.map-search,.route-cta,.map-status,.legend,.settings-panel,.menu-scrim,.login-sheet,.acct-live,.sheet,.ride-bar,.jbar,.bus-follow-ui){display:none!important}
+html[data-app=map] :is(.mast,.route-cta,.map-status,.legend,.settings-panel,.menu-scrim,.login-sheet,.acct-live,.sheet,.ride-bar,.jbar,.bus-follow-ui){display:none!important}
+html[data-app=map] .maplibregl-ctrl-top-right{top:54px}   /* 앱 검색창(위 10 + 높이 44) 아래 — 웹이 앱보다 먼저 배포된다 */
 html[data-app=map] .live-notice{top:62px!important}   /* 앱 검색창(위 10 + 높이 44 — app StationSearch) 아래 8px. 앱이 웹뷰 위에 그리니 글이 그 뒤로 숨지 않게 */
 html[data-app=map] .bus-notice{bottom:max(124px,var(--app-notice-lift,0px))}   /* 124 = 앱 길찾기 단추(아래 16 + 높이 52) + 안전 영역(가장 큰 48 — 웹뷰 env() 는 앱 값과 같다고 믿을 수 없다) + 8. 시트 · 경로 막대는 본체 liftAppNotice */
 html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
+/* 장소 검색(components/place_search.tsx) · 경로 결과 위 줄 · 승차권 등록 */
+.ps{display:flex;flex-direction:column;gap:var(--space-3)}
+.ps-title{margin:0 2px;font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-22);color:var(--ink)}
+.ps-field{display:flex;align-items:center;gap:var(--space-2);min-height:56px;padding:0 6px 0 14px;border:2px solid var(--syung);border-radius:var(--radius-16);background:var(--syung-soft);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
+.ps-field:focus-within{border-color:var(--syung-deep)}
+.ps-field svg{flex:none}
+.ps-field input{flex:1;min-width:0;height:44px;border:0;background:none;outline:0;color:inherit;font:inherit;font-size:var(--text-16);font-weight:var(--weight-bold)}
+.ps-field input::placeholder{color:var(--secondary);font-weight:var(--weight-semibold)}
+.ps-clear{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;background:none;color:var(--secondary);cursor:pointer}
+.ps-list{margin:0;padding:0;list-style:none}
+.ps-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;padding:var(--space-2) var(--space-1);border:0;border-bottom:1px solid var(--rule);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.ps-list li:last-child .ps-row{border-bottom:0}
+.ps-row:active{background:var(--control)}
+.ps-tile{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:var(--radius-12);background:var(--control);color:var(--secondary)}
+.ps-tile.station{background:var(--syung);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
+.ps-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ps-text b{font-size:var(--text-16);font-weight:var(--weight-bold)}
+.ps-text mark{background:var(--syung-soft);color:inherit;border-radius:4px;box-shadow:inset 0 -2px 0 var(--syung)}
+.ps-text small{font-size:var(--text-13);color:var(--muted)}
+.ps-chips{display:flex;flex-wrap:wrap;gap:var(--space-1)}
+.ps-chips i{font-style:normal;font-size:var(--text-11);font-weight:var(--weight-bold);padding:2px var(--space-2);border-radius:var(--radius-pill);background:var(--c);color:var(--paper);white-space:nowrap}
+.ps-empty{display:flex;flex-direction:column;align-items:center;gap:var(--space-2);padding:var(--space-6) var(--space-4);text-align:center}
+.ps-empty img{width:47px;height:47px}
+.ps-empty b{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-18);color:var(--ink)}
+.ps-empty small{font-size:var(--text-13);color:var(--muted)}
+.ps-picked{display:flex;flex-direction:column;gap:6px;padding:2px 2px var(--space-1)}
+.ps-picked h3{margin:0;font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-26);color:var(--ink)}
+.ps-picked p{margin:0;font-size:var(--text-14);color:var(--secondary)}
+.ps-ends{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);margin-top:var(--space-3)}
+.ps-ends button{height:50px;border:0;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font-family:var(--round);font-size:var(--text-17);box-shadow:var(--shadow-edge);cursor:pointer}
+.ps-ends button.to{background:var(--syung);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
+.ps-ends button:active{transform:translateY(2px);box-shadow:none}
+.ps-route{border:2px solid var(--syung);border-radius:var(--radius-16);background:var(--syung-soft);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
+.ps-route .ps-field{border:0;background:none;box-shadow:none;border-radius:0}
+.ps-end{display:flex;align-items:center;gap:var(--space-3);min-height:56px;padding:0 14px}
+.ps-end small{display:block;font-size:var(--text-12);font-weight:var(--weight-bold);color:var(--secondary)}
+.ps-end b{font-size:var(--text-16)}
+.ps-route .ps-end+.ps-field,.ps-route .ps-field+.ps-end{border-top:1.5px dashed var(--syung-deep)}
+.ps-arrivals{height:44px;margin-top:var(--space-2);border:0;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font-family:var(--round);font-size:var(--text-15);cursor:pointer}
+.jtop{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2);align-items:center}
+.jtop .jwhen{display:contents!important}
+.jtop .jw-row{width:auto;gap:var(--space-1);padding:0 10px;white-space:nowrap;border-radius:var(--radius-14)}
+.jtop .jw-panel{grid-column:1/-1;border-radius:var(--radius-14)}
+.jw-wheel{align-self:stretch;margin-top:0;border-top:2px solid #ffe14d;border-radius:var(--radius-16)}   /* 발권 화면과 달리 위 칸에 붙지 않는 독립 칸 */
+.jp-note{margin:var(--space-2) 0 0;font-size:var(--text-14);line-height:20px;color:var(--secondary)}
+.jp-ticket{display:block;width:100%;height:46px;margin:var(--space-2) 0 2px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}

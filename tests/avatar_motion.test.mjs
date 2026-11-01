@@ -1,7 +1,7 @@
 // 내 위치 캐릭터(web/map/avatar.mjs): 걷기 판단 · 방향 · 모양 메시
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMyMotion, buildAvatarMesh, registerAvatar, avatarLooks } from '../web/map/avatar.mts';
+import { createMyMotion, buildAvatarMesh, registerAvatar, avatarLooks, nodAngle, facingYaw } from '../web/map/avatar.mts';
 import * as syung from '../web/map/avatars/sprout.mts';
 
 const BASE = [127.0, 37.5], LNG_M = 111320 * Math.cos(37.5 * Math.PI / 180), LAT_M = 111320;
@@ -96,4 +96,14 @@ test('quad 는 꼭짓점마다 부위: 풍선 줄은 손 쪽만 팔을 따라간
 test('등록한 이름으로 바꿔 쓴다', () => {
   registerAvatar('test-look', syung);
   assert.ok(avatarLooks().includes('test-look'));
+});
+
+test('슝 마커: 머리는 목 위 몸 부위(6)이고 고개 각 · 방향은 카메라를 따른다', () => {
+  const data = buildAvatarMesh(syung).body, parts = new Set();
+  for (let at = 9; at < data.length; at += 12) parts.add(data[at]);
+  assert.ok(parts.has(6));
+  assert.ok(Math.abs(nodAngle(90)) < 1e-9);
+  assert.ok(nodAngle(0) > nodAngle(60));
+  assert.ok(Math.abs(facingYaw(0) - Math.PI / 2) < 1e-9);
+  assert.ok(Math.abs(facingYaw(90) - Math.PI) < 1e-9);
 });
