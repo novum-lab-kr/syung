@@ -93,6 +93,9 @@ export function TicketPage({ from, to = '', found, wheel = false, route, days = 
   return <section id="menuTicket" class="menu-page ticket-page">
     <div id="ticketPreview" aria-hidden="true"><div class="ticket"><div class="ticket-in"><TicketFront ticket={{ name, depart: '08:00', days }} today={days.includes(RIDE_DAY)} /></div></div></div>
     <form id="ticketForm" class="ticket-form" autocomplete="off" noValidate>
+      <label class="tf-l" for="ticketName">승차권 이름</label>
+      <div class="tf-in"><input id="ticketName" maxlength={12} placeholder="이름 넣기" enterkeyhint="done" value={name} /><small id="ticketNameCount" aria-hidden="true">{`${[...name].length}/12`}</small></div>
+      <DayPicker days={days} onDay={noop} onQuick={noop} />
       <div class="tf-route"><div class="tf-pls">
         <PlaceField id="ticketFrom" head="출발" name="출발지" placeholder="출발지 고르기" value={from} {...place(found ?? [], !found)} />
         <PlaceField id="ticketTo" head="도착" name="도착지" placeholder="도착지 고르기" to value={to} {...place([], true)} />
@@ -100,9 +103,6 @@ export function TicketPage({ from, to = '', found, wheel = false, route, days = 
       <TimeField open={wheel} text={{ ampm: '오전', clock: '8:00' }} value="08:00" onToggle={noop} onDone={noop} />
       <span id="ticketRouteLabel" class="tf-l">경로</span>
       <button id="ticketRoute" class={route ? 'tf-pick' : 'tf-pick empty'} type="button" aria-labelledby="ticketRouteLabel ticketRoute" dangerouslySetInnerHTML={{ __html: routeBody }}></button>
-      <DayPicker days={days} onDay={noop} onQuick={noop} />
-      <label class="tf-l" for="ticketName">승차권 이름</label>
-      <div class="tf-in"><input id="ticketName" maxlength={12} placeholder="이름 넣기" enterkeyhint="done" value={name} /><small id="ticketNameCount" aria-hidden="true">{`${[...name].length}/12`}</small></div>
       <SaveButton id="ticketSave" type="submit" disabled={!route}>발권하기</SaveButton>
     </form>
   </section>;
@@ -224,13 +224,13 @@ const planView = (plan:Plan) => ({
 const KIND_NAMES = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']] as const;
 const countOf = (kind:string) => JOURNEY_PLANS.filter(plan => kind === 'all' || plan.kind === kind).length;
 const EMPTY_SEARCH = { title: '어디로 갈까요?', query: '', hits: [], pending: false, failed: false, fixed: null, here: false };
-export const EMPTY_JOURNEY:JourneyView = { stage: 'search', search: EMPTY_SEARCH, picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, draft: null, status: { text: '', sr: false }, result: { kind: 'none' } };
+export const EMPTY_JOURNEY:JourneyView = { stage: 'search', search: EMPTY_SEARCH, picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, status: { text: '', sr: false }, result: { kind: 'none' } };
 export const FOUND_JOURNEY:JourneyView = { ...EMPTY_JOURNEY, stage: 'route', done: true,
   summary: { from: FROM, to: TO, when: '지금 출발', aria: `${FROM}에서 ${TO}까지, 지금 출발` },
   result: { kind: 'plans',
     tabs: KIND_NAMES.filter(([kind]) => countOf(kind)).map(([kind, name]) => ({ kind, name, count: countOf(kind), pressed: kind === 'all' })),
     cards: JOURNEY_PLANS.map((plan, index) => ({ plan: planView(plan), kind: plan.kind, on: index === 0, hidden: false })) } };
-export const JOURNEY_ACTIONS:JourneyActions = { typed: noop, place: noop, here: noop, end: noop, arrivals: noop, changeEnd: noop, swap: noop, whenRow: noop, whenNow: noop, whenGo: noop, day: noop, tab: noop, card: noop, ticket: noop, retry: noop };
+export const JOURNEY_ACTIONS:JourneyActions = { typed: noop, place: noop, here: noop, end: noop, arrivals: noop, changeEnd: noop, swap: noop, whenRow: noop, whenNow: noop, whenGo: noop, tab: noop, card: noop, ticket: noop, retry: noop };
 export const JourneyScreen = ({ view }:{ view:JourneyView }) => <>
   <MapApp />
   <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={view} actions={JOURNEY_ACTIONS} /></SheetFrame></section>

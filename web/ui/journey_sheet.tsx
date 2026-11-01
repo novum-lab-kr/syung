@@ -34,7 +34,7 @@ export function JourneySheet({ view, actions }:{ view:JourneyView; actions:Journ
   return <div class="journey done">
     <div class="jtop">
       <JourneySummary summary={view.summary} onEnd={actions.changeEnd} onSwap={actions.swap} />
-      <JourneyWhen text={view.whenText} isSet={view.whenAt} open={view.whenOpen} draft={view.draft} onRow={actions.whenRow} onNow={actions.whenNow} onGo={actions.whenGo} onDay={actions.day} />
+      <JourneyWhen text={view.whenText} isSet={view.whenAt} open={view.whenOpen} onRow={actions.whenRow} onNow={actions.whenNow} onGo={actions.whenGo} />
     </div>
     <div class={view.status.sr ? 'jf-status sr' : 'jf-status'} id="jStatus" role="status" aria-live="polite">{view.status.text}</div>
     <div id="jResult"><Result result={view.result} actions={actions} /></div>

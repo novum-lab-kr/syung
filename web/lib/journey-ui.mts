@@ -26,7 +26,7 @@ type Seg = { k:'wait'; s:number } | { k:'walk'; s:number; l:TrackLeg } | { k:'ri
 type End = { lat:number; lng:number; name?:string };
 type When = { k:'now'; d?:undefined } | { k:'at'; d:Date };
 export type EndKind = 'from' | 'to';
-interface LastSearch { d:RouteAnswer; sel:number; from:string; to:string; at:string; when:When; picked:{ from:End | null; to:End | null }; tab?:string }
+interface LastSearch { d:RouteAnswer; sel:number; opened?:boolean; from:string; to:string; at:string; when:When; picked:{ from:End | null; to:End | null }; tab?:string }   // sel: 지도에 그린 경로 · opened: 그 카드를 펼쳤는가
 
 // ---- 화면 조각이 그리는 거리(ui/journey_sheet.tsx 는 이것만 보고 그린다)
 // 경로 띠 한 칸: 걷기 · 기다림은 시간 비율만, 타기는 최소 너비(짧은 이름) · 노선 색 · 글자 색 · 버스 아이콘
@@ -51,8 +51,6 @@ export type JourneyResultView = { kind:'none' } | { kind:'loading' } | { kind:'f
 // 장소 검색: fixed 는 이미 정해진 끝(그 반대쪽을 찾는다), here 는 맨 위 「내 위치」 줄을 보일지
 export interface FixedEnd { which:EndKind; name:string }
 export interface PlaceSearchView { title:string; query:string; hits:PlaceHit[]; pending:boolean; failed:boolean; fixed:FixedEnd | null; here:boolean }
-// 출발 시각 고르기 칸: 시 · 분은 바퀴가 스스로 들고(lib/time-wheel.mts) 날짜만 그린다
-export interface DraftView { tomorrow:boolean }
 export interface JourneySummaryView { from:string; to:string; when:string; aria:string }
 // 시트를 닫은 뒤 지도 아래 막대: 고른 경로의 걸리는 시간 · 도착 · 띠
 export interface JourneyBarView { duration:DurationView; arrives:string; track:TrackSegView[] }
@@ -60,13 +58,13 @@ export interface JourneyBarActions { open():void; clear():void }
 // 시트 한 장의 단계: 장소 검색 → 고른 곳의 작은 시트 → 경로 결과
 export interface JourneyView {
   stage:'search' | 'picked' | 'route'; search:PlaceSearchView; picked:PlaceHit | null; done:boolean; summary:JourneySummaryView | null;
-  whenText:string; whenAt:boolean; whenOpen:boolean; draft:DraftView | null;
+  whenText:string; whenAt:boolean; whenOpen:boolean;
   status:{ text:string; sr:boolean }; result:JourneyResultView;
 }
 // 화면 조각의 단추 · 입력칸이 부르는 것
 export interface JourneyActions {
   typed(text:string):void; place(hit:PlaceHit):void; here():void; end(which:EndKind):void; arrivals():void; changeEnd(which:EndKind):void; swap():void;
-  whenRow():void; whenNow():void; whenGo():void; day(offset:number):void;
+  whenRow():void; whenNow():void; whenGo():void;
   tab(kind:string):void; card(index:number):void; ticket(index:number):void; retry():void;
 }
 // 승차권 등록(user/account.mts 가 맡는다): 값을 채워 경로 목록 위에 발권 화면(서랍)을 연다(로그인 전이면 로그인 팝업). search 는 발권 화면을 닫을 때 그대로 돌려줄 지난 검색
@@ -166,6 +164,14 @@ export function routeTrack(p:{ legs:readonly TrackLeg[] }, colors:Colors, width 
     : `<i class="jseg ride${seg.bus ? ' bus' : ''}" style="flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}">${seg.icon ? BUS : ''}${esc(seg.label)}</i>`).join('')}</div>`;
 }
 
+// 길찾기 시각 바퀴로 고를 수 있는 때(now: 시험이 시계를 넘긴다)
+// 가장 이른 때: 다음 5분
+export function soonestWhen(now = new Date()):Date { const at = new Date(now); at.setSeconds(0, 0); at.setMinutes(Math.floor(at.getMinutes() / 5) * 5 + 5); return at; }
+// 고를 수 있는 범위로 되돌린다: 23:55 이 지나면 오늘 고를 시각이 없어 다음 5분(자정)
+export function keepPickable(at:Date, now = new Date()):Date { const latest = new Date(now); latest.setHours(23, 55, 0, 0); return new Date(Math.max(+soonestWhen(now), Math.min(+latest, +at))); }
+// 바퀴의 'HH:MM' 은 늘 오늘 기준이다: 앞서 맞춘 날짜를 이어 쓰면 바퀴를 연 채 자정을 넘겼을 때 어제 시각이 된다
+export function wheelDate(time:string, now = new Date()):Date { const [hours = 0, minutes = 0] = time.split(':').map(Number), at = new Date(now); at.setHours(hours, minutes, 0, 0); return at; }
+
 const TICKET_NO_START = '내 위치를 찾지 못했어요. 위에서 출발을 다시 골라 주세요.';   // 펼친 카드는 길어 위 안내 줄이 안 보인다: 단추 바로 위에
 
 export function initJourney({openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk}:JourneyDeps) {
@@ -186,20 +192,17 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   let body:HTMLElement | null = null, mounted = 0, mountSeq = 0;
   const hereKnown = () => !!myLocation();
   const emptySearch = (fixed:FixedEnd | null = null):PlaceSearchView => ({title: fixed?.which === 'from' ? '어디로 갈까요?' : fixed ? '어디서 출발할까요?' : '어디로 갈까요?', query: '', hits: [], pending: false, failed: false, fixed, here: fixed?.which === 'to' && hereKnown()});
-  const freshView = ():JourneyView => ({stage: 'search', search: emptySearch(), picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, draft: null, status: {text: '', sr: false}, result: {kind: 'none'}});
+  const freshView = ():JourneyView => ({stage: 'search', search: emptySearch(), picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, status: {text: '', sr: false}, result: {kind: 'none'}});
   let view = freshView();
   const paint = () => { if (body) drawJourney(body, view, actions); };
   const focusSearch = () => document.getElementById('placeInput')?.focus({preventScroll: true});
 
-  // 출발 시각: 지금, 또는 오늘 · 내일의 5분 단위 시각(발권 화면과 같은 바퀴 — 지금보다 앞은 고를 수 없다)
+  // 출발 시각: 지금, 또는 오늘의 5분 단위 시각(발권 화면과 같은 바퀴 — 지금보다 앞은 고를 수 없다)
   const pad = (n:number) => String(n).padStart(2, '0');
   let when:When = {k: 'now'}, draft:Date | null = null, wheel:TimeWheel | null = null, wheelBox:HTMLElement | null = null, wheelTimer:ReturnType<typeof setTimeout> | 0 = 0;
   const local = (d:Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const hhmm = (d:Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const isTomorrow = (d:Date) => d.toDateString() !== new Date().toDateString();
-  const soonest = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(Math.floor(d.getMinutes() / 5) * 5 + 5); return d; };   // 바퀴로 고를 수 있는 가장 이른 때: 다음 5분
-  const latest = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 55, 0, 0); return d; };
-  const clamp = (d:Date) => new Date(Math.min(+latest(), Math.max(+soonest(), +d)));
   function whenValue() { return when.k === 'at' ? local(when.d) : ''; }
   function whenLabel() { return when.k === 'at' ? `${isTomorrow(when.d) ? '내일' : '오늘'} ${hhmm(when.d)} 출발` : '지금 출발'; }
   function whenSet(chosen:When) {
@@ -207,18 +210,16 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     view.whenText = whenLabel(); view.whenAt = chosen.k === 'at';
     paint();
   }
-  const drawDraft = () => { view.draft = {tomorrow: isTomorrow(draft!)}; paint(); };
   // 돌리는 동안 값만 따라가고, 멈춘 뒤에 지난 시각이면 고를 수 있는 가장 이른 때로 되돌린다(돌리는 손과 싸우지 않게)
   function wheelMoved(time:string) {
-    const [hours = 0, minutes = 0] = time.split(':').map(Number), at = new Date(draft!);
-    at.setHours(hours, minutes, 0, 0); draft = at;
+    draft = wheelDate(time);
     clearTimeout(wheelTimer);
-    wheelTimer = setTimeout(() => { const kept = clamp(draft!); if (+kept !== +draft!) { draft = kept; wheel?.roll(hhmm(kept)); } drawDraft(); }, 180);
+    wheelTimer = setTimeout(() => { const kept = keepPickable(draft!); if (+kept !== +draft!) { draft = kept; wheel?.roll(hhmm(kept)); } }, 180);
   }
   function whenOpen(on:boolean) {
     view.whenOpen = on; clearTimeout(wheelTimer);
     if (!on) { paint(); return; }
-    draft = clamp(when.k === 'at' ? new Date(when.d) : soonest()); drawDraft();
+    draft = keepPickable(when.k === 'at' ? new Date(when.d) : soonestWhen()); paint();
     const box = document.getElementById('jWhenWheel');   // 칸이 새로 그려졌을 때만 새로 잇는다(같은 칸에 듣는 곳이 쌓이지 않게)
     if (box && box !== wheelBox) { wheelBox = box; wheel = createTimeWheel(box, wheelMoved); }
     wheel?.show(hhmm(draft));
@@ -301,22 +302,22 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
 
   const KINDS = [['all', '전체'], ['subway', '지하철'], ['bus', '버스'], ['mixed', '지하철+버스']] as const;
   const cardsOf = () => view.result.kind === 'plans' ? view.result.cards : [];
-  // 경로 하나 고르기: 카드를 펼치고 지도에 보인다(옛것처럼 그린 다음 showRoute)
-  function pick(index:number) {
-    last!.sel = index;
-    cardsOf().forEach((card, other) => { card.on = other === index; card.note = ''; });
+  // 경로 하나 고르기: 지도에 보이고, opened 면 카드도 펼친다(옛것처럼 그린 다음 showRoute). 결과가 처음 나올 때는 지도에만 그리고 카드는 접어 둔다
+  function pick(index:number, opened = true) {
+    last!.sel = index; last!.opened = opened;
+    cardsOf().forEach((card, other) => { card.on = opened && other === index; card.note = ''; });
     paint();
     // 지도가 아직 안 떴거나 그리다 실패해도 목록은 쓴다(로그인 복귀가 이 길로 온다)
     try { showRoute?.(last!.d.plans[index]!); } catch (error) { console.warn('지도에 경로를 그리지 못했어요', error); }
   }
-  // 종류 탭: 고른 경로가 숨으면 첫 보이는 경로로
+  // 종류 탭: 지도에 그린 경로가 숨으면 첫 보이는 경로로(카드는 접은 채)
   function filter(kind:string) {
     last!.tab = kind;
     if (view.result.kind === 'plans') view.result.tabs?.forEach(tab => { tab.pressed = tab.kind === kind; });
     const cards = cardsOf();
     cards.forEach(card => { card.hidden = !(kind === 'all' || card.kind === kind); });
     paint();
-    if (cards[last!.sel]?.hidden) { const first = cards.findIndex(card => !card.hidden); if (first >= 0) pick(first); }
+    if (cards[last!.sel]?.hidden) { const first = cards.findIndex(card => !card.hidden); if (first >= 0) pick(first, false); }
   }
   function render(answer:RouteAnswer, sel:number) {
     const count = (kind:string) => answer.plans.filter(plan => kind === 'all' || plan.kind === kind).length;
@@ -326,11 +327,20 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     // bus: 버스 구간도 여정과 함께 남는다(지우기는 막대의 ✕)
     view.result = {kind: 'plans', tabs, cards: answer.plans.map(plan => ({plan: planView(plan), kind: plan.kind, on: false, hidden: false}))};
     paint();
-    pick(sel);
+    pick(sel, !!last!.opened);   // 처음 나온 결과는 접은 채, 시트를 다시 열 때 · 발권에서 돌아올 때는 펼쳐 둔 카드 그대로
     filter(last!.tab || 'all');
   }
   // 펼친 경로를 또 누르면 시트를 닫는다(경로는 지도에 남는다)
-  function cardPressed(index:number) { if (last!.sel === index && cardsOf()[index]?.on) closeSheet?.(); else pick(index); }
+  function cardPressed(index:number) { if (last!.sel === index && cardsOf()[index]?.on) closeSheet?.(); else { pick(index); revealOpened(); } }
+  // 시트 높이가 고정이라 펼친 상세가 시트 밖으로 나가면 카드 머리부터 보이게 스크롤한다
+  function revealOpened() {
+    requestAnimationFrame(() => {
+      const opened = document.querySelector('.jp.on'), port = opened?.closest('.sheet-body');
+      if (!opened || !port) return;
+      const card = opened.getBoundingClientRect(), box = port.getBoundingClientRect();
+      if (card.top < box.top || card.bottom > box.bottom) opened.scrollIntoView({block: 'start', behavior: 'smooth'});
+    });
+  }
 
   function failed(message:string) {
     view.status = {text: `경로를 찾지 못했어요. ${message}`, sr: true};   // announced; the card below shows it
@@ -401,11 +411,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     changeEnd,
     whenRow() { whenOpen(!view.whenOpen); },
     whenNow() { whenSet({k: 'now'}); whenOpen(false); go(); },
-    whenGo() { draft = clamp(draft!); whenSet({k: 'at', d: new Date(draft)}); whenOpen(false); go(); },
-    day(offset) {
-      const at = new Date(draft!), today = new Date(); at.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + offset);
-      draft = clamp(at); wheel?.roll(hhmm(draft)); drawDraft();
-    },
+    whenGo() { draft = keepPickable(draft!); whenSet({k: 'at', d: new Date(draft)}); whenOpen(false); go(); },
     tab: filter, card: cardPressed, ticket: index => { ticket(index); }, retry: () => { go(); },
   };
 

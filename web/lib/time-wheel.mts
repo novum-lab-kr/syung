@@ -1,6 +1,6 @@
 // 출발 시각 바퀴(오전 · 오후 / 시 / 5분 단위 분)의 움직임. 칸은 components/time_field.tsx TimeWheels 가 한 번만 그리고, 칸 속(단추 · 스크롤 자리 · on/near · aria-valuetext)은 여기서 바닐라로 다룬다.
 // 발권 화면(user/account.mts)과 길찾기 시각 고르기(lib/journey-ui.mts)가 같이 쓴다.
-const ROW = 40;   // 바퀴 한 칸 높이(syung.css .tw-col button)
+const ROW = 34;   // 바퀴 한 칸 높이(syung.css .tw-col button)
 const pad = (value:number) => String(value).padStart(2, '0');
 type WheelPart = 'ampm' | 'hour' | 'minute';
 interface Wheel { el:HTMLElement; values:number[]; label:(value:number)=>string }

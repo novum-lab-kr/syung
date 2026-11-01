@@ -1,7 +1,7 @@
 // 길찾기 부품 스토리: 출발 시각 고르기 · 접힌 요약 · 못 찾음 · 안내 글 · 아래 막대(기본 · 누름 · 포커스 · 비활성 · 빈 상태 · 긴 이름, 라이트/다크는 도구 막대)
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { DraftView, JourneyBarView } from '../lib/journey-ui.mts';
+import type { JourneyBarView } from '../lib/journey-ui.mts';
 import { createTimeWheel } from '../lib/time-wheel.mts';
 import { JourneyBar, JourneySummary } from './journey_summary.tsx';
 import { JourneyWhen } from './journey_when.tsx';
@@ -17,20 +17,19 @@ const noop = () => {};
 const LONG_NAME = LONG_PLACES[0]!.name;
 
 // 시각 고르기: 바퀴 칸 속은 화면과 같은 lib/time-wheel.mts 가 채운다
-const DRAFT:DraftView = { tomorrow: false };
-function When({ open = false, text = '지금 출발', isSet = false, first = DRAFT }:{ open?:boolean; text?:string; isSet?:boolean; first?:DraftView }) {
-  const [shown, setShown] = useState(open), [draft, setDraft] = useState(first), box = useRef<HTMLDivElement>(null);
+function When({ open = false, text = '지금 출발', isSet = false }:{ open?:boolean; text?:string; isSet?:boolean }) {
+  const [shown, setShown] = useState(open), box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const wheel = box.current?.querySelector<HTMLElement>('#jWhenWheel');
     if (shown && wheel) createTimeWheel(wheel, noop).show('08:30');
   }, [shown]);
-  return <div ref={box} class="sb-paper"><div class="journey"><JourneyWhen text={text} isSet={isSet} open={shown} draft={draft}
-    onRow={() => setShown(!shown)} onNow={() => setShown(false)} onGo={() => setShown(false)} onDay={day => setDraft({ tomorrow: day === 1 })} /></div></div>;
+  return <div ref={box} class="sb-paper"><div class="journey"><div class="jtop"><JourneyWhen text={text} isSet={isSet} open={shown}
+    onRow={() => setShown(!shown)} onNow={() => setShown(false)} onGo={() => setShown(false)} /></div></div></div>;
 }
 export const 시각_접힘:StoryObj = { name: '출발 시각/접힘(지금 출발)', render: () => <When /> };
 export const 시각_고름:StoryObj = { name: '출발 시각/접힘(고른 시각)', render: () => <When text="오늘 08:30 출발" isSet /> };
+export const 시각_내일:StoryObj = { name: '출발 시각/접힘(자정 직전 내일)', render: () => <When text="내일 00:00 출발" isSet /> };
 export const 시각_펼침:StoryObj = { name: '출발 시각/펼침(바퀴)', render: () => <When open /> };
-export const 시각_내일:StoryObj = { name: '출발 시각/펼침(내일)', render: () => <When open first={{ tomorrow: true }} /> };
 export const 시각_줄_포커스:StoryObj = { name: '출발 시각/줄 포커스', render: () => <When />, play: ({ canvasElement }) => freeze(canvasElement, '.jw-row', 'is-focus') };
 export const 시각_단추_누름:StoryObj = { name: '출발 시각/이 시간에 출발 누름', render: () => <When open />, play: ({ canvasElement }) => freeze(canvasElement, '.jw-go', 'is-pressed') };
 
@@ -39,7 +38,7 @@ function Summary({ from = '강남역 2호선', to = '교대역', when = '지금 
   return <div class="sb-paper"><div class="journey done"><JourneySummary summary={{ from, to, when, aria: `${from}에서 ${to}까지, ${when}` }} onEnd={noop} onSwap={noop} /></div></div>;
 }
 export const 요약:StoryObj = { name: '접힌 요약/기본', render: () => <Summary /> };
-export const 요약_고른_시각:StoryObj = { name: '접힌 요약/고른 시각', render: () => <Summary when="내일 08:30 출발" /> };
+export const 요약_고른_시각:StoryObj = { name: '접힌 요약/고른 시각', render: () => <Summary when="오늘 08:30 출발" /> };
 export const 요약_긴_이름:StoryObj = { name: '접힌 요약/긴 이름', render: () => <Summary from={LONG_NAME} to={LONG_NAME} /> };
 export const 요약_포커스:StoryObj = { name: '접힌 요약/포커스', render: () => <Summary />, play: ({ canvasElement }) => freeze(canvasElement, '.jsum-end', 'is-focus') };
 

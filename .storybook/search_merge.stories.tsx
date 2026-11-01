@@ -30,7 +30,8 @@ const finding = (title:string, which:'from' | 'to'):JourneyView => ({ ...EMPTY_J
 const PLAN_RESULT = FOUND_JOURNEY.result as Extract<JourneyResultView, { kind:'plans' }>;
 // 조립 화면의 고정 경로를 쓰되 출발 · 도착 이름만 이 흐름의 것으로
 const CARDS = PLAN_RESULT.cards.map(card => ({ ...card, plan: { ...card.plan, steps: card.plan.steps.map(step => step.kind === 'place' ? { ...step, name: step.at === 'start' ? MY_PLACE : STATION } : step) } }));
-const ROUTE:JourneyView = { ...FOUND_JOURNEY, summary: { from: MY_PLACE, to: STATION, when: '지금 출발', aria: `${MY_PLACE}에서 ${STATION}까지, 지금 출발` }, result: { ...PLAN_RESULT, cards: CARDS } };
+const OPENED:JourneyView = { ...FOUND_JOURNEY, summary: { from: MY_PLACE, to: STATION, when: '지금 출발', aria: `${MY_PLACE}에서 ${STATION}까지, 지금 출발` }, result: { ...PLAN_RESULT, cards: CARDS } };
+const ROUTE:JourneyView = { ...OPENED, result: { ...PLAN_RESULT, cards: CARDS.map(card => ({ ...card, on: false })) } };   // 처음 나온 결과: 카드는 접혀 있다
 
 const focusInput = (doc:Document) => doc.querySelector<HTMLInputElement>('#placeInput')?.focus({ preventScroll: true });
 // 바퀴 칸 속은 화면과 같은 lib/time-wheel.mts 가 채운다
@@ -46,11 +47,11 @@ const SCREENS:{ title:string; screen:AssembledScreen }[] = [
   { title: '5. 장소를 고름: 슝 마커 + 작은 시트', screen: sheet(picked(PLACE_HIT)) },
   { title: '6. 뒤로: 마커 · 시트 닫고 검색어 · 결과 그대로', screen: sheet(FOUND) },
   { title: '7. 도착을 고름: 출발은 내 위치, 지금 출발로 경로 결과', screen: sheet(ROUTE) },
-  { title: '8. 「지금 출발」을 누르면 발권 화면과 같은 시각 바퀴', screen: sheet({ ...ROUTE, whenOpen: true, draft: { tomorrow: false } }, fillWheel) },
-  { title: '9. 펼친 경로 카드 맨 아래 「승차권 등록」', screen: sheet(ROUTE, showTicketButton) },
+  { title: '8. 「지금 출발」을 누르면 발권 화면과 같은 시각 바퀴', screen: sheet({ ...ROUTE, whenOpen: true }, fillWheel) },
+  { title: '9. 경로 카드를 고르면 펼쳐지고 맨 아래 「승차권 등록」', screen: sheet(OPENED, showTicketButton) },
   { title: '10. 경로 목록 위에 기존 발권 화면이 채워진 채 열림(닫으면 목록 그대로)', screen: { draw: () => <>
     <Drawer title="승차권 발권"><TicketPage from={MY_PLACE} to={STATION} route={JOURNEY_PLANS[0]!} /></Drawer>
-    <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={ROUTE} actions={JOURNEY_ACTIONS} /></SheetFrame></section>
+    <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={OPENED} actions={JOURNEY_ACTIONS} /></SheetFrame></section>
   </> } },
   { title: '11. 출발을 고름: 도착을 같은 방식으로 찾기', screen: sheet(finding('어디로 갈까요?', 'from'), focusInput) },
   { title: '12. 내 위치를 못 쓸 때: 보던 자리에서 출발 찾기', screen: sheet(finding('어디서 출발할까요?', 'to'), focusInput) },
