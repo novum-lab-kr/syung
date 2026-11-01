@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>캐릭터 전신 캡처</title>
+<!-- 소개 페이지에 넣는 캐릭터 전신(직접 만든 넷)을 지도와 같은 렌더러(AvatarRenderer)로 비스듬히 위에서 그려 투명 PNG 로 만든다.
+     캐릭터마다 왼쪽을 보는 것(-left)과 오른쪽을 보는 것(-right) 두 장. 만드는 법은 같은 폴더 renders.sh.
+     브라우저로 직접 열면 그림과 [저장] 링크가 보인다(npm run build 뒤 레포 루트를 http 로 띄워 /tools/avatar_face/renders.html). -->
+<style>body{font:14px system-ui;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}canvas{margin:8px;vertical-align:middle;width:320px;height:320px}</style>
+<body>
+<script type="module">
+import {AvatarRenderer, buildAvatarMesh, registerAvatar} from '../../dist/web/map/avatar.mjs';
+import * as sprout from '../../dist/web/map/avatars/sprout.mjs';
+import * as seonbi from '../../dist/web/map/avatars/seonbi.mjs';
+import * as builder from '../../dist/web/map/avatars/builder.mjs';
+import * as visitor from '../../dist/web/map/avatars/visitor.mjs';
+
+const LOOKS = {sprout, seonbi, builder, visitor};
+const SIZE = 1536;              // 한 변(px)
+const ELEVATION = 28 * Math.PI / 180, AZIMUTH = 38 * Math.PI / 180;   // 올려 본 각도 · 정면에서 돌아간 각도
+const MARGIN = 1.06;            // 잘리지 않게 둘레 여백
+const SHADOW_RADIUS = .42;      // 발밑 그림자 반지름(avatar.mts buildAvatarMesh)
+// 지도 셰이더의 빛(-.5, .65, 1)을 얼굴이 정면으로 받도록 돌려 세운다(그늘진 얼굴이 되지 않게 — faces.html 과 같다). 빛은 좌우가 같아 두 방향의 밝기가 같다
+const yaw = Math.atan2(.65, -.5), front = [Math.cos(yaw), Math.sin(yaw)], left = [-front[1], front[0]];
+const dot = (first, second) => first[0] * second[0] + first[1] * second[1] + first[2] * second[2];
+
+// 정사영 카메라: 캐릭터 좌표(x 앞 · y 왼쪽 · z 위)에서 화면 오른쪽 · 위 · 카메라 쪽. 카메라가 캐릭터의 왼쪽(side 1)에 서면 화면에서 왼쪽을 본다
+function cameraAxes(side) {
+  const sinAz = Math.sin(AZIMUTH) * side, cosAz = Math.cos(AZIMUTH), sinEl = Math.sin(ELEVATION), cosEl = Math.cos(ELEVATION);
+  return {right: [-sinAz, cosAz, 0], up: [-sinEl * cosAz, -sinEl * sinAz, cosEl], toward: [cosEl * cosAz, cosEl * sinAz, sinEl]};
+}
+// 그릴 점 전부(몸 꼭짓점 + 그림자 둘레)
+function outlinePoints(look) {
+  const body = buildAvatarMesh(look).body, points = [];
+  for (let index = 0; index < body.length; index += 12) points.push([body[index], body[index + 1], body[index + 2]]);
+  for (let step = 0; step < 32; step++) { const angle = step / 32 * 2 * Math.PI; points.push([Math.cos(angle) * SHADOW_RADIUS, Math.sin(angle) * SHADOW_RADIUS, 0]) }
+  return points;
+}
+function bounds(points, axes) {
+  const xs = points.map(point => dot(point, axes.right)), ys = points.map(point => dot(point, axes.up));
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  return {centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, half: Math.max(maxX - minX, maxY - minY) / 2};
+}
+// 캐릭터 좌표의 축을 지도 좌표로(앞 · 왼쪽 · 위 → 동 · 남 · 위) 옮긴다 — 렌더러가 yaw 로 돌려 그리기 때문
+const toWorld = axis => [axis[0] * front[0] + axis[1] * left[0], axis[0] * front[1] + axis[1] * left[1], axis[2]];
+
+for (const [id, look] of Object.entries(LOOKS)) registerAvatar(id, look);
+const out = document.createElement('pre'); out.id = 'out';
+for (const [id, look] of Object.entries(LOOKS)) {
+  const points = outlinePoints(look), sides = {left: 1, right: -1};
+  const framed = Object.entries(sides).map(([name, side]) => { const axes = cameraAxes(side); return {name, axes, box: bounds(points, axes)} });
+  // 두 장의 크기가 같도록 반 변을 맞춘다
+  const half = Math.max(...framed.map(({box}) => box.half)) * MARGIN;
+  for (const {name, axes, box} of framed) {
+    const right = toWorld(axes.right), up = toWorld(axes.up), toward = toWorld(axes.toward);
+    // 열 우선 4×4: 가까울수록 깊이 작게
+    const matrix = new Float32Array([
+      right[0] / half, up[0] / half, -toward[0] * .3, 0,
+      right[1] / half, up[1] / half, -toward[1] * .3, 0,
+      right[2] / half, up[2] / half, -toward[2] * .3, 0,
+      -box.centerX / half, -box.centerY / half, 0, 1,
+    ]);
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE;
+    const gl = canvas.getContext('webgl2', {alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true});
+    gl.viewport(0, 0, SIZE, SIZE); gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    new AvatarRenderer().render(gl, matrix, {look: id, world: [0, 0], origin: [0, 0], yaw, scale: 1, unit: 1});
+    const file = `${id}-${name}.png`, url = canvas.toDataURL('image/png');
+    document.body.append(canvas, Object.assign(document.createElement('a'), {href: url, download: file, textContent: `저장 ${file}`}));
+    out.append(`renders/${file} ${url}\n`);
+  }
+  document.body.append(document.createElement('br'));
+}
+document.body.append(out);
+</script>
