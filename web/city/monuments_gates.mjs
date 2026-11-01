@@ -197,19 +197,20 @@ function pavilion(writer, shape) {
 	const halfWidth = shape.frameWidth / 2, halfDepth = shape.frameDepth / 2;
 	const floor = shape.masonryHeight;
 	const timberHeight = shape.height - floor;
-	for (const tier of [0, 1]) {
+	const tiers = shape.tiers ?? 2, bays = shape.bays ?? 5, top = tiers - 1;
+	for (let tier = 0; tier < tiers; tier++) {
 		const halfFront = halfWidth - tier * .6, halfSide = halfDepth - tier * .25;
 		const bottom = floor + timberHeight * tier * UPPER_TIER_START;
 		const beam = bottom + timberHeight * BEAM_FRACTION;
-		for (let column = 0; column <= 5; column++) {
-			const east = -halfFront + halfFront * 2 * column / 5;
+		for (let column = 0; column <= bays; column++) {
+			const east = -halfFront + halfFront * 2 * column / bays;
 			for (const north of [
 				-halfSide,
 				0,
 				halfSide
 			]) writer.prism(east, north, .25, bottom, beam, K.red, 10);
-			if (tier === 1 && column < 5) for (const side of [-1, 1]) {
-				const next = -halfFront + halfFront * 2 * (column + 1) / 5;
+			if (tier === 1 && column < bays) for (const side of [-1, 1]) {
+				const next = -halfFront + halfFront * 2 * (column + 1) / bays;
 				writer.box(east + .25, next - .25, side * halfSide - .08, side * halfSide + .08, bottom + .15, beam - .15, K.wood);
 			}
 		}
@@ -217,8 +218,8 @@ function pavilion(writer, shape) {
 		bandBox(writer, halfFront + .3, halfSide + .3, beam - .2, beam + .25, K.dancheong, 0, .28);
 		buildBrackets(writer, halfFront + .3, halfSide + .3, beam + .15);
 		const eave = beam + .9, roofRise = shape.height - .62 - eave;
-		const innerDepth = tier === 0 ? halfDepth - .2 : 0;
-		const rise = tier === 0 ? timberHeight * .17 : roofRise;
+		const innerDepth = tier === top ? 0 : halfDepth - .2;
+		const rise = tier === top ? roofRise : timberHeight * .17;
 		buildRoof(writer, {
 			hx: halfFront + 2.5,
 			hy: halfSide + 2.4,
@@ -254,7 +255,7 @@ function pavilion(writer, shape) {
 			0,
 			-1
 		]);
-		if (tier === 1) {
+		if (tier === top) {
 			const plaque = shape.verticalPlaque ? PLAQUE_VERTICAL : PLAQUE_HORIZONTAL, y = -halfSide - .3, widthCode = 2 * Math.round(plaque.width * 10);
 			writer.box(-plaque.width / 2, plaque.width / 2, y, y + .15, bottom + .1, bottom + .1 + plaque.height, K.plaque);
 			writer.quad([
@@ -329,4 +330,26 @@ function buildCityGate(shape) {
 	pavilion(writer, shape);
 	return new Float32Array(writer.data);
 }
-export { buildCityGate };
+function clipOutsideGate(line, base, yawDeg) {
+	const angle = yawDeg * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+	const halfX = Math.max(...base.map((point) => Math.abs(point[0]))) + .8, halfY = Math.max(...base.map((point) => Math.abs(point[1]))) + 1.6;
+	const inside = (east, north) => Math.abs(east * cos + north * sin) < halfX && Math.abs(-east * sin + north * cos) < halfY;
+	const runs = [];
+	let run = [];
+	for (let index = 0; index + 1 < line.length; index++) {
+		const [ax, ay] = line[index], [bx, by] = line[index + 1], steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / .5));
+		for (let step = 0; step < steps; step++) {
+			const t0 = step / steps, t1 = (step + 1) / steps, from = [ax + (bx - ax) * t0, ay + (by - ay) * t0], to = [ax + (bx - ax) * t1, ay + (by - ay) * t1];
+			if (inside((from[0] + to[0]) / 2, (from[1] + to[1]) / 2)) {
+				if (run.length) runs.push(run);
+				run = [];
+				continue;
+			}
+			if (!run.length) run.push(from);
+			run.push(to);
+		}
+	}
+	if (run.length) runs.push(run);
+	return runs;
+}
+export { buildCityGate, clipOutsideGate };

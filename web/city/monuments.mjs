@@ -1,4 +1,4 @@
-import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, beRing, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jgRing, jmRing, jmjRing, mdRing, monumentsInView, palaceRing, s2Ring, sdRing, sjRing, tombRings, wgRing } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, bcRing, beRing, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jgRing, jmRing, jmjRing, mdRing, monumentsInView, palaceRing, s2Ring, sdRing, sjRing, tombRings, wgRing } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
@@ -26,6 +26,9 @@ var ZONES = {
 	seodaemun: () => __vitePreload(() => import("./monuments_seodaemun.mjs"), [], import.meta.url),
 	jogyesa: () => __vitePreload(() => import("./monuments_jogyesa.mjs"), [], import.meta.url),
 	bongeunsa: () => __vitePreload(() => import("./monuments_bongeunsa.mjs"), [], import.meta.url),
+	sukjeongmun: () => __vitePreload(() => import("./monuments_sukjeongmun.mjs"), [], import.meta.url),
+	changuimun: () => __vitePreload(() => import("./monuments_changuimun.mjs"), [], import.meta.url),
+	bukchon: () => __vitePreload(() => import("./monuments_bukchon.mjs"), [], import.meta.url),
 	seonjeong: () => __vitePreload(() => import("./monuments_seonjeong.mjs"), [], import.meta.url),
 	jeongneung: () => __vitePreload(() => import("./monuments_jeongneung.mjs"), [], import.meta.url),
 	uireung: () => __vitePreload(() => import("./monuments_uireung.mjs"), [], import.meta.url),
@@ -262,6 +265,7 @@ var Monuments = class {
 			sdRing(),
 			jgRing(),
 			beRing(),
+			bcRing(),
 			...tombRings()
 		].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
 			let inside = false;

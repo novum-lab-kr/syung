@@ -2294,6 +2294,23 @@ var BE_RING = [
 	5380
 ];
 var beRing = () => ringOf(BE_RING, BE_ORIGIN);
+var SJM_AT = [126.9810832, 37.595533];
+var CUM_AT = [126.966521, 37.5926116];
+var BC_AT = [126.9862, 37.5808];
+var BC_ORIGIN = [126.98, 37.57];
+var BC_RING = [
+	4e3,
+	8500,
+	8500,
+	8500,
+	8800,
+	13e3,
+	3800,
+	13e3,
+	4e3,
+	8500
+];
+var bcRing = () => ringOf(BC_RING, BC_ORIGIN);
 var MONUMENTS = [
 	{
 		id: "sungnyemun",
@@ -2308,6 +2325,44 @@ var MONUMENTS = [
 		lngLat: [127.009594975, 37.571153975],
 		yawDeg: 100.09911107449813,
 		openingsOnly: true
+	},
+	{
+		id: "sj-gate",
+		zone: "sukjeongmun",
+		lngLat: SJM_AT,
+		yawDeg: 128,
+		openingsOnly: true
+	},
+	{
+		id: "sj-wall",
+		zone: "sukjeongmun",
+		lngLat: SJM_AT,
+		yawDeg: 0
+	},
+	{
+		id: "cu-gate",
+		zone: "changuimun",
+		lngLat: CUM_AT,
+		yawDeg: 253,
+		openingsOnly: true
+	},
+	{
+		id: "cu-wall",
+		zone: "changuimun",
+		lngLat: CUM_AT,
+		yawDeg: 0
+	},
+	{
+		id: "bc-halls",
+		zone: "bukchon",
+		lngLat: BC_AT,
+		yawDeg: 0
+	},
+	{
+		id: "bc-frames",
+		zone: "bukchon",
+		lngLat: BC_AT,
+		yawDeg: 0
 	},
 	{
 		id: "gwanghwamun",
@@ -2664,17 +2719,32 @@ var MONUMENTS = [
 		yawDeg: 0
 	}
 ];
-var GATE_YARDS = [{
-	lngLat: [126.97536025, 37.559986249999994],
-	radiusM: 27,
-	minH: 0,
-	exact: true
-}, {
-	lngLat: [127.009594975, 37.571153975],
-	radiusM: 43,
-	minH: 0,
-	exact: true
-}];
+var GATE_YARDS = [
+	{
+		lngLat: [126.97536025, 37.559986249999994],
+		radiusM: 27,
+		minH: 0,
+		exact: true
+	},
+	{
+		lngLat: [127.009594975, 37.571153975],
+		radiusM: 43,
+		minH: 0,
+		exact: true
+	},
+	{
+		lngLat: SJM_AT,
+		radiusM: 9.3,
+		minH: 0,
+		exact: true
+	},
+	{
+		lngLat: CUM_AT,
+		radiusM: 8.1,
+		minH: 0,
+		exact: true
+	}
+];
 var MONUMENT_HIDES = [
 	...GATE_YARDS,
 	{
@@ -2836,6 +2906,12 @@ var MONUMENT_HIDES = [
 		radiusM: 700,
 		minH: 0,
 		area: beRing()
+	},
+	{
+		lngLat: BC_AT,
+		radiusM: 600,
+		minH: 0,
+		area: bcRing()
 	}
 ];
 var REGIONS = {
@@ -2938,6 +3014,18 @@ var REGIONS = {
 	heunginjimun: {
 		lngLat: [127.009594975, 37.571153975],
 		radiusM: 100
+	},
+	sukjeongmun: {
+		lngLat: SJM_AT,
+		radiusM: 450
+	},
+	changuimun: {
+		lngLat: CUM_AT,
+		radiusM: 450
+	},
+	bukchon: {
+		lngLat: BC_AT,
+		radiusM: 450
 	}
 };
 function monumentsInView(bounds, zone) {
@@ -2974,4 +3062,4 @@ function monumentBuildingFilter() {
 		})
 	}]];
 }
-export { BE_AT, BE_ORIGIN, BE_RING, CDG_AT, CDG_ORIGIN, CDG_RING, CGG_AT, CGG_ORIGIN, CGG_RING, DSG_AT, DSG_ORIGIN, DSG_RING, GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, GHG_AT, GHG_ORIGIN, GHG_RING, HG_AT, HG_ORIGIN, HG_RING, HHM_RING, HIN_AT, HIN_ORIGIN, HIN_RINGS, JG_AT, JG_ORIGIN, JG_RING, JMJ_RING, JM_AT, JM_ORIGIN, JM_RING, JNG_AT, JNG_ORIGIN, JNG_RINGS, MCN_AT, MCN_ORIGIN, MCN_RINGS, MD_AT, MD_ORIGIN, MD_RING, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, PNP_AT, PNP_ORIGIN, PNP_RINGS, S2_AT, S2_ORIGIN, S2_RING, SD_AT, SD_ORIGIN, SD_RING, SJN_AT, SJN_ORIGIN, SJN_RINGS, SJ_AT, SJ_ORIGIN, SJ_RING, SKC_AT, SKC_ORIGIN, SKC_RINGS, TGN_AT, TGN_ORIGIN, TGN_RINGS, UHG_AT, UHG_HIDE_RINGS, UHG_ORIGIN, UHG_RING, UIR_AT, UIR_ORIGIN, UIR_RINGS, WG_AT, WG_ORIGIN, WG_RING, beRing, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, hinRings, jgRing, jmRing, jmjRing, jngRings, mcnRings, mdRing, monumentBuildingFilter, monumentsInView, palaceRing, pnpRings, s2Ring, sdRing, sjRing, sjnRings, skcRings, tgnRings, tombRings, uhgHideRings, uhgRing, uirRings, wgRing, withMonumentHides };
+export { BC_AT, BC_ORIGIN, BC_RING, BE_AT, BE_ORIGIN, BE_RING, CDG_AT, CDG_ORIGIN, CDG_RING, CGG_AT, CGG_ORIGIN, CGG_RING, CUM_AT, DSG_AT, DSG_ORIGIN, DSG_RING, GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, GHG_AT, GHG_ORIGIN, GHG_RING, HG_AT, HG_ORIGIN, HG_RING, HHM_RING, HIN_AT, HIN_ORIGIN, HIN_RINGS, JG_AT, JG_ORIGIN, JG_RING, JMJ_RING, JM_AT, JM_ORIGIN, JM_RING, JNG_AT, JNG_ORIGIN, JNG_RINGS, MCN_AT, MCN_ORIGIN, MCN_RINGS, MD_AT, MD_ORIGIN, MD_RING, MONUMENTS, MONUMENT_HIDES, PALACE_AT, PALACE_ORIGIN, PALACE_RING, PNP_AT, PNP_ORIGIN, PNP_RINGS, S2_AT, S2_ORIGIN, S2_RING, SD_AT, SD_ORIGIN, SD_RING, SJM_AT, SJN_AT, SJN_ORIGIN, SJN_RINGS, SJ_AT, SJ_ORIGIN, SJ_RING, SKC_AT, SKC_ORIGIN, SKC_RINGS, TGN_AT, TGN_ORIGIN, TGN_RINGS, UHG_AT, UHG_HIDE_RINGS, UHG_ORIGIN, UHG_RING, UIR_AT, UIR_ORIGIN, UIR_RINGS, WG_AT, WG_ORIGIN, WG_RING, bcRing, beRing, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, hinRings, jgRing, jmRing, jmjRing, jngRings, mcnRings, mdRing, monumentBuildingFilter, monumentsInView, palaceRing, pnpRings, s2Ring, sdRing, sjRing, sjnRings, skcRings, tgnRings, tombRings, uhgHideRings, uhgRing, uirRings, wgRing, withMonumentHides };
