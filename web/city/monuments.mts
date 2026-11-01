@@ -8,7 +8,7 @@ import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
 import { PalaceTorches } from './monument_torches.mts';
 import { PalaceTrees } from './monument_trees.mts';
-import { splitTriangles } from './monument_cells.mts';
+import { splitTriangles, cellInView } from './monument_cells.mts';
 import type { Rect4 } from './monument_cells.mts';
 import { cityMinZoom, cityGrow, cityFarFade } from './zoom_gate.mts';   // 도시 건물과 같은 보이는 줌 · 자라기 · 폰의 먼 곳 줄이기
 
@@ -152,7 +152,7 @@ void main(){
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 
-interface GLChunk { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number; rect:Rect4 }   // rect: 지역 미터에서 이 조각이 덮는 사각 [x0, x1, y0, y1] — 폰의 거리 줄이기에 쓴다
+interface GLChunk { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number; rect:Rect4; top:number }   // rect: 지역 미터에서 이 조각이 덮는 사각 [x0, x1, y0, y1] — 폰의 거리 줄이기에 쓴다
 interface GLMesh { chunks:GLChunk[] }   // 모델 하나를 공간 칸(약 150 m)으로 나눈 조각들 — 칸마다 먼 곳 줄이기를 받는다
 interface Placed { M:(typeof MONUMENTS)[number]; x:number; y:number; rot:[number, number]; mesh:GLMesh | null }
 export interface MonumentRender { light:[number, number, number]; lit:number[]; dark:boolean; zoom:number; phone:boolean; center:[number, number]; bounds?:[number, number, number, number] }   // center: 지도 가운데(경위도) — 폰은 도시 건물처럼 멀리 있을수록 줄이다 뺀다 · bounds: 화면 경위도 상자 — 구역별로 닿을 때만 받고 그린다
@@ -171,6 +171,9 @@ export class Monuments {
   disposed = false;   // 모드를 나간 뒤(dispose) 늦게 도착한 구역 파일이 GPU 자원을 다시 만들지 않게 한다
   zones = new Map<string, ZoneModule | Promise<void> | 'fail'>();
   onLoad:(() => void) | null = null;
+  builtThisFrame = false;   // 한 프레임에 건물 하나만 짓는다 — 경복궁 여섯 채(약 15만 정점)를 한꺼번에 지으면 폰에서 한 프레임이 수백 ms 막힌다
+  deferred = false;   // 못 지은 것이 남았으면 다음 프레임에 이어 짓는다
+  palette = new Float32Array(COLORS.flatMap(hex));   // 색표는 한 번만(프레임마다 새 배열을 만들지 않는다)
   // 구역 파일이 아직이면 받기 시작하고 null(그릴 건 다음 프레임부터), 실패하면 그 구역은 그리지 않는다
   mesh(item:Placed):GLMesh | null {
     if (item.mesh) return item.mesh;
@@ -180,12 +183,15 @@ export class Monuments {
       if (!got) this.zones.set(zone, ZONES[zone]!().then(mod => { if (epoch !== this.epoch) return; this.zones.set(zone, mod); if (mod.trees) this.trees.addGrove(zone, mod.trees.at, mod.trees.data); if (mod.torches) this.torches.addGrove(zone, mod.torches.at, mod.torches.data); this.onLoad?.() }).catch(error => { if (epoch !== this.epoch) return; this.zones.set(zone, 'fail'); console.warn('기념물 구역 못 받음', zone, error) }));
       return null;
     }
+    if (this.builtThisFrame) { this.deferred = true; return null }
+    this.builtThisFrame = true;
     const gl = this.gl, data = got.buildMonument(item.M.id), [cos, sin] = item.rot, chunks:GLChunk[] = [];
     for (const piece of splitTriangles(data, STRIDE, index => { const px = data[index]!, py = data[index + 1]!; return [item.x + px * cos - py * sin, item.y - (px * sin + py * cos)] })) {
       const va = gl.createVertexArray()!, b = gl.createBuffer()!;
       gl.bindVertexArray(va); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, piece.items, gl.STATIC_DRAW);
       for (const [loc, size, off] of [[0, 3, 0], [1, 3, 3], [2, 2, 6]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE * 4, off * 4) }
-      gl.bindVertexArray(null); chunks.push({ va, b, n: piece.items.length / STRIDE, rect: piece.rect });
+      let top = 0; for (let z = 2; z < piece.items.length; z += STRIDE) if (piece.items[z]! > top) top = piece.items[z]!;   // 화면 밖 거르기용 칸 높이
+      gl.bindVertexArray(null); chunks.push({ va, b, n: piece.items.length / STRIDE, rect: piece.rect, top });
     }
     return (item.mesh = { chunks });
   }
@@ -213,7 +219,7 @@ export class Monuments {
     const [cx, cy] = toM(center[0], center[1]);
     // 폰: 도시 건물처럼 화면 가운데에서 멀수록 땅으로 가라앉다 뺀다(사각까지의 거리 — 건물 조각의 가까운 가장자리와 같은 잣대)
     const keep = (rect:Rect4) => phone ? cityFarFade(Math.hypot(Math.max(rect[0] - cx, 0, cx - rect[1]), Math.max(rect[2] - cy, 0, cy - rect[3])), zoom) : 1;
-    const u = this.u, palette = new Float32Array(COLORS.flatMap(hex));
+    const u = this.u, palette = this.palette; this.builtThisFrame = false; this.deferred = false;
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0); gl.uniform3fv(u.u_col!, palette);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     // 구역(경복궁 · 창덕궁 · 숭례문 · 흥인지문)마다: 화면이 닿을 때만 받고 그린다(창덕궁 자료는 경복궁만 보일 때 받지 않는다). 광화문은 구역 안 다른 항목과 따로 센다
@@ -224,13 +230,14 @@ export class Monuments {
       if (!zoneReady.has(item.M.zone)) zoneReady.set(item.M.zone, true);
       gl.uniform1i(u.u_openingsOnly!, item.M.openingsOnly ? 1 : 0);
       for (const chunk of m.chunks) {
-        const g = grow * keep(chunk.rect); if (g <= 0) continue;
+        const g = grow * keep(chunk.rect); if (g <= 0 || !cellInView(MT, MU, chunk.rect, chunk.top)) continue;   // 폰 거리 줄이기 · 화면 밖 건너뛰기
         gl.uniform1f(u.u_grow!, g); gl.uniform2f(u.u_at!, item.x, item.y); gl.uniform2fv(u.u_rot!, item.rot); gl.bindVertexArray(chunk.va); gl.drawArrays(gl.TRIANGLES, 0, chunk.n);
       }
     }
     gl.bindVertexArray(null);
+    if (this.deferred) setTimeout(() => this.onLoad?.(), 0);   // 남은 건물은 다음 프레임에
     // 궁 안 나무 · 횃불은 그 구역 건물 메시가 다 준비된 뒤에만(지연 로드 중 · 실패 때 나무 · 횃불만 허공에 뜨지 않게) — 칸(약 150 m)마다 거리 줄이기
-    const palaceGrow = (zone:string, rect:Rect4) => zoneReady.get(zone) ? grow * keep(rect) : 0;
+    const palaceGrow = (zone:string, rect:Rect4, top:number) => zoneReady.get(zone) && cellInView(MT, MU, rect, top) ? grow * keep(rect) : 0;
     this.trees.render(gl, MT, { light, lit, dark, grow: palaceGrow }); this.torches.render(gl, MT, { dark, grow: palaceGrow });
   }
   dispose():void {   // 모드를 나가면 GL 자원을 치운다

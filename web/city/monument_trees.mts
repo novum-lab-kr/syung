@@ -99,6 +99,8 @@ void main(){
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
 
+const TREE_SCALE_MAX = 1.25;   // 나무 크기 = .8 + .45 × (0…1) 의 최댓값(addGrove)
+const TREE_TOP = 20;   // 나무 높이 위쪽 한계(m) — 화면 밖 거르기용(소나무 7.7 m × 크기 1.25 보다 넉넉히)
 const SPECIES = ['pine', 'broad', 'wide', 'persimmon'] as const;
 type Species = typeof SPECIES[number];
 export type TreeData = Record<Species, number[]>;
@@ -108,7 +110,7 @@ interface Grove { zone:string; at:[number, number]; cells:TreeCell[] }
 // 나무 숲: 모양 넷(템플릿)은 한 번 짓고, 구역(경복궁 · 창덕궁 …)이 자기 자리 묶음을 구역 모듈로 내놓으면 공간 칸(약 150 m)으로 나눠 숲을 더한다. 자리는 숲의 기준점에서 잰 0.1 m 정수
 export class PalaceTrees {
   declare gl:WebGL2RenderingContext; declare p:WebGLProgram; declare u:Record<string, WebGLUniformLocation | null>;
-  templates = new Map<Species, { b:WebGLBuffer; n:number }>();
+  templates = new Map<Species, { b:WebGLBuffer; n:number; reach:number }>();
   groves:Grove[] = [];
   init(gl:WebGL2RenderingContext):void {
     this.gl = gl; this.p = compileProgram(gl, VS, FS);
@@ -117,15 +119,20 @@ export class PalaceTrees {
   addGrove(zone:string, lngLat:[number, number], trees:TreeData):void {
     if (this.groves.some(each => each.zone === zone)) return;
     const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells:TreeCell[] = [];
+    for (const key of SPECIES) {   // 모양 넷은 칸 범위(수관이 점 밖으로 나가는 길이)를 알아야 해서 먼저 짓는다
+      if (this.templates.has(key)) continue;
+      const data = buildTemplate(key), b = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      let reach = 0; for (let i = 0; i < data.length; i += TREE_STRIDE) reach = Math.max(reach, Math.hypot(data[i]!, data[i + 1]!));
+      this.templates.set(key, { b, n: data.length / TREE_STRIDE, reach: reach * TREE_SCALE_MAX });   // 돌려도 반지름 안(원)
+    }
+    const reach = Math.max(...[...this.templates.values()].map(each => each.reach));
     for (const cell of splitPoints(at, SPECIES.map(key => trees[key] ?? []))) {
+      const r = cell.rect, pad = Math.max(0, reach - 3);   // splitPoints 는 점 ±3 m 만 잡는다 — 수관이 더 나가므로 넓힌다(화면 밖 거르기가 가장자리 수관을 자르지 않게)
+      r[0] -= pad; r[1] += pad; r[2] -= pad; r[3] += pad;
       const species:SpeciesGl[] = [];
       SPECIES.forEach((key, kind) => {
-        let template = this.templates.get(key);
-        if (!template) {
-          const data = buildTemplate(key), b = gl.createBuffer()!;
-          gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-          template = { b, n: data.length / TREE_STRIDE }; this.templates.set(key, template);
-        }
+        const template = this.templates.get(key)!;
         const points = cell.items[kind]!, count = points.length / 2, inst = new Float32Array(count * 4);
         for (let i = 0; i < count; i++) {   // 크기 · 돌림은 자리에서 정해 같은 값이 나온다
           const x = points[i * 2]! / 10, y = points[i * 2 + 1]! / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
@@ -143,7 +150,7 @@ export class PalaceTrees {
     this.groves.push({ zone, at, cells });
   }
   // grow: 구역마다 도시 건물과 같은 줌 · 거리 높이 비율(0 이면 그 구역은 건너뜀)
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, grow }:{ light:[number, number, number]; lit:number[]; dark:boolean; grow:(zone:string, rect:Rect4) => number }):void {
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { light, lit, dark, grow }:{ light:[number, number, number]; lit:number[]; dark:boolean; grow:(zone:string, rect:Rect4, top:number) => number }):void {
     const u = this.u;
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform3fv(u.u_light!, light); gl.uniform2fv(u.u_lit!, lit); gl.uniform1f(u.u_night!, dark ? 1 : 0);
     gl.uniform3fv(u.u_col!, new Float32Array(TREE_COLORS.flatMap(toRgb)));
@@ -151,7 +158,7 @@ export class PalaceTrees {
     for (const grove of this.groves) {
       gl.uniform2fv(u.u_at!, grove.at);
       for (const cell of grove.cells) {
-        const g = grow(grove.zone, cell.rect); if (g <= 0) continue;
+        const g = grow(grove.zone, cell.rect, TREE_TOP); if (g <= 0) continue;
         gl.uniform1f(u.u_grow!, g);
         for (const each of cell.species) { if (!each.count) continue; gl.bindVertexArray(each.va); gl.drawArraysInstanced(gl.TRIANGLES, 0, each.n, each.count) }
       }

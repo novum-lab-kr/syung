@@ -63,6 +63,7 @@ void main(){
   o = vec4(u_col[k] * (.35 * up + vec3(1., .62, .3) * .9 * near), 1.);   // 기둥 · 불통: 달빛 아래 어둡고 불꽃 가까이만 따뜻하게
 }`;
 
+const TORCH_TOP = 4;   // 횃불 높이 위쪽 한계(m, 불꽃 2.7 m) — 화면 밖 거르기용
 interface TorchGl { va:WebGLVertexArrayObject; b:WebGLBuffer; n:number }
 interface TorchCell { rect:Rect4; inst:WebGLBuffer; count:number; vas:WebGLVertexArrayObject[] }
 interface TorchGrove { zone:string; at:[number, number]; cells:TorchCell[] }
@@ -91,12 +92,13 @@ export class PalaceTorches {
         gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0); gl.vertexAttribDivisor(3, 1);
         gl.bindVertexArray(null); return va;
       });
-      cells.push({ rect: [cell.rect[0] - 2, cell.rect[1] + 2, cell.rect[2] - 2, cell.rect[3] + 2], inst: ib, count, vas });
+      const pad = 2;   // 점 ±3 m + 2 = ±5 m ≥ 빛 웅덩이 반지름 POOL_RADIUS 4.6 m (화면 밖 거르기가 웅덩이를 자르지 않는다)
+      cells.push({ rect: [cell.rect[0] - pad, cell.rect[1] + pad, cell.rect[2] - pad, cell.rect[3] + pad], inst: ib, count, vas });
     }
     this.groves.push({ zone, at, cells });
   }
   // 밤(dark)에만 그린다 — 낮 · 라이트에서는 곧바로 돌아간다. grow: 구역마다 도시 건물과 같은 줌 · 거리 높이 비율(0 이면 건너뜀 · 빛 웅덩이는 그만큼 옅게)
-  render(gl:WebGL2RenderingContext, MT:Float32Array, { dark, grow }:{ dark:boolean; grow:(zone:string, rect:Rect4) => number }):void {
+  render(gl:WebGL2RenderingContext, MT:Float32Array, { dark, grow }:{ dark:boolean; grow:(zone:string, rect:Rect4, top:number) => number }):void {
     if (!dark || !this.groves.length) return;
     const u = this.u;
     gl.useProgram(this.p); gl.uniformMatrix4fv(u.u_matrix!, false, MT); gl.uniform1f(u.u_mu!, MU); gl.uniform1f(u.u_time!, performance.now() / 1000 % 1000);
@@ -105,7 +107,7 @@ export class PalaceTorches {
     for (const grove of this.groves) {
       gl.uniform2fv(u.u_at!, grove.at);
       for (const cell of grove.cells) {
-        const g = grow(grove.zone, cell.rect); if (g <= 0 || !cell.count) continue;
+        const g = grow(grove.zone, cell.rect, TORCH_TOP); if (g <= 0 || !cell.count) continue;
         gl.uniform1f(u.u_grow!, g);
         gl.disable(gl.BLEND); gl.depthMask(true); gl.bindVertexArray(cell.vas[0]!); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[0]!.n, cell.count);
         gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE); gl.depthMask(false); gl.bindVertexArray(cell.vas[1]!); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.parts[1]!.n, cell.count);

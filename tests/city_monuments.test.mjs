@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildGwanghwamun, buildMonument } from '../web/city/monuments_gyeongbok.mts';
+import { cellInView } from '../web/city/monument_cells.mts';
 import { createModeRegistry } from '../web/modes/index.mts';
 import basic from '../web/modes/basic/index.mts';
 import simcity from '../web/modes/simcity/index.mts';
@@ -713,6 +714,70 @@ test('구역 화면 판정: 동대문만 보는 화면에서도 로드 · 부산
   assert.ok(source.indexOf('if (bounds && !monumentsInView(bounds, item.M.zone)) continue') < source.indexOf('const m = this.mesh(item)'));
 });
 
+const IDENTITY = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+
+test('화면 밖 칸 거르기: 안 · 밖 · 카메라 뒤', () => {
+  const rect = [0, 10, 0, 10];
+  assert.equal(cellInView(IDENTITY, 1e-4, rect, 5), true);
+  assert.equal(cellInView(IDENTITY, 1, [5, 6, 5, 6], 5), false, '클립 밖(오른쪽 위)');
+  assert.equal(cellInView(IDENTITY, 1, [-3, 3, -3, 3], 5), true, '화면에 걸치면 그린다');
+  assert.equal(cellInView(new Float32Array(16), 1, rect, 5), false, '카메라 뒤(w<=0)');
+});
+
+// 열 우선 4×4 행렬(GL) 도우미 — 원근 시험용
+const matMul = (a, b) => { const out = new Float32Array(16); for (let col = 0; col < 4; col++) for (let row = 0; row < 4; row++) { let sum = 0; for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[col * 4 + k]; out[col * 4 + row] = sum } return out };
+const perspective = (fovY, aspect, near, far) => { const f = 1 / Math.tan(fovY / 2); return Float32Array.of(f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0) };
+const translate = (x, y, z) => Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1);
+const rotateX = angle => { const c = Math.cos(angle), s = Math.sin(angle); return Float32Array.of(1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1) };
+
+test('화면 밖 칸 거르기(원근): 보이는 상자는 절대 거르지 않는다 — 높은 건물 윗부분 · 카메라 뒤 걸침', () => {
+  const view = matMul(perspective(0.64, 390 / 844, 0.1, 400), matMul(translate(0, 0, -60), rotateX(-0.96)));   // 폰 비슷한 세로 화면 · 기울인 카메라(지도 단위 m)
+  const visibleBySampling = (rect, top) => { for (let ix = 0; ix <= 6; ix++) for (let iy = 0; iy <= 6; iy++) for (let iz = 0; iz <= 6; iz++) {
+    const x = rect[0] + (rect[1] - rect[0]) * ix / 6, y = rect[2] + (rect[3] - rect[2]) * iy / 6, z = top * iz / 6;
+    const cx = view[0] * x + view[4] * y + view[8] * z + view[12], cy = view[1] * x + view[5] * y + view[9] * z + view[13], cw = view[3] * x + view[7] * y + view[11] * z + view[15];
+    if (cw > 0 && Math.abs(cx) <= cw && Math.abs(cy) <= cw) return true } return false };
+  let seed = 7; const random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  let visible = 0, topOnly = 0, straddle = 0;
+  for (let i = 0; i < 4000; i++) {
+    const x = (random() - .5) * 120, y = (random() - .5) * 160, size = 2 + random() * 40, rect = [x, x + size, y, y + size * (.3 + random())], top = random() * 60;
+    if (visibleBySampling(rect, top)) { visible++; assert.equal(cellInView(view, 1, rect, top), true, `보이는데 걸러짐 ${JSON.stringify(rect)} 높이 ${top}`) }
+    const baseOnly = visibleBySampling(rect, 0); if (!baseOnly && visibleBySampling(rect, top)) topOnly++;
+    const behind = [rect[0], rect[1]].some(px => [rect[2], rect[3]].some(py => view[3] * px + view[7] * py + view[15] <= 0)); if (behind && visibleBySampling(rect, top)) straddle++;
+  }
+  assert.ok(visible > 200 && topOnly > 5 && straddle > 5, `시험이 경우를 덮는다 (보임 ${visible} · 윗부분만 ${topOnly} · 카메라 뒤 걸침 ${straddle})`);
+  assert.equal(cellInView(view, 1, [500, 520, 500, 520], 5), false, '한참 밖은 거른다');
+});
+
+test('나무 칸 범위: 수관이 점 밖으로 나가도 칸 안에 든다(가장자리 수관이 사라지지 않게)', async () => {
+  const { PalaceTrees } = await import('../web/city/monument_trees.mts');
+  const buffers = [];
+  const graphics = new Proxy({}, { get: (_, name) => {
+    if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+    if (String(name).startsWith('create')) return () => ({});
+    if (name === 'bufferData') return (_target, data) => buffers.push(data);
+    return () => {};
+  } });
+  const trees = new PalaceTrees(); trees.init(graphics);
+  trees.addGrove('probe', [126.977, 37.579], { pine: [], broad: [], wide: [0, 0], persimmon: [] });   // 나무 한 그루(점 하나)
+  const templates = buffers.filter(each => each.length > 100);   // 모양 넷(7개씩 한 정점)
+  let reach = 0; for (const data of templates) for (let i = 0; i < data.length; i += 7) reach = Math.max(reach, Math.hypot(data[i], data[i + 1]) * 1.25);   // 가장 큰 나무(크기 1.25)
+  assert.ok(reach > 3, `수관이 점 ±3 m 를 넘는다(${reach.toFixed(2)} m) — 옛 칸 범위로는 모자란 경우`);
+  const [x0, x1, y0, y1] = trees.groves[0].cells[0].rect;
+  assert.ok((x1 - x0) / 2 >= reach - 1e-9 && (y1 - y0) / 2 >= reach - 1e-9, `칸 반폭 ${(x1 - x0) / 2} ≥ 수관 ${reach}`);
+});
+
+test('횃불 칸 범위: 빛 웅덩이(반지름 4.6 m)가 칸 안에 든다', async () => {
+  const { PalaceTorches } = await import('../web/city/monument_torches.mts');
+  const graphics = new Proxy({}, { get: (_, name) => {
+    if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+    if (String(name).startsWith('create')) return () => ({});
+    return () => {};
+  } });
+  const torches = new PalaceTorches(); torches.init(graphics); torches.addGrove('probe', [126.977, 37.579], [0, 0]);
+  const [x0, x1, y0, y1] = torches.groves[0].cells[0].rect;
+  assert.ok((x1 - x0) / 2 >= 4.6 && (y1 - y0) / 2 >= 4.6);
+});
+
 test('도성문 렌더링: 로드 중 · 실패 · 낮 · 줌 문턱에는 횃불 없음, 준비된 밤에만 그리며 GL 자원은 해제', async () => {
   const { Monuments } = await import('../web/city/monuments.mts');
   const calls = [], shaderSources = [];
@@ -729,7 +794,7 @@ test('도성문 렌더링: 로드 중 · 실패 · 낮 · 줌 문턱에는 횃�
   const centerEast = (placement.lngLat[0] + 180) / 360;
   const centerSouth = (1 - Math.log(Math.tan(Math.PI / 4 + placement.lngLat[1] * Math.PI / 360)) / Math.PI) / 2;
   const options = { light: [0, 0, 1], lit: [.6, .4], dark: true, zoom: 17, phone: false, center: placement.lngLat, bounds: [centerEast - .000001, centerSouth - .000001, centerEast + .000001, centerSouth + .000001] };
-  const render = changes => { calls.length = 0; layer.render(graphics, new Float32Array(16), { ...options, ...changes }); };
+  const render = changes => { calls.length = 0; layer.render(graphics, IDENTITY, { ...options, ...changes }); };   // 단위행렬: 화면 안에 있는 것으로 본다(영행렬은 모두 카메라 뒤라 걸러진다)
   layer.zones.set('heunginjimun', new Promise(() => {})); render({});
   assert.ok(!calls.some(call => call[0] === 'drawArraysInstanced'));
   layer.zones.set('heunginjimun', 'fail'); render({});

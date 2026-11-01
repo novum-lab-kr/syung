@@ -30,3 +30,18 @@ export function splitTriangles(data:Float32Array, stride:number, world:(index:nu
   }
   return [...groups.values()].map(group => ({ rect: group.rect, items: new Float32Array(group.floats) }));
 }
+
+// 칸(사각 · 높이 zTop m)이 화면 밖이면 거짓 — 여덟 모서리가 모두 같은 쪽(왼 · 오 · 위 · 아래)으로 벗어나거나 모두 카메라 뒤면 그리지 않는다.
+// 보이는 것은 그대로고(밖은 어차피 잘린다) 정점 처리와 그리기 호출만 덜어 준다. 깊이(z) 쪽은 보지 않는다(보수적으로 남김).
+// MT: 도시 그리기 행렬(지역 미터 → 클립) · mu: 미터 → 지도 단위 배율(셰이더 u_mu)
+export function cellInView(MT:ArrayLike<number>, mu:number, rect:Rect4, zTop:number):boolean {
+  let outside = 63, behind = true;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = (corner & 1 ? rect[1] : rect[0]) * mu, y = (corner & 2 ? rect[3] : rect[2]) * mu, z = (corner & 4 ? zTop : 0) * mu;
+    const cx = MT[0]! * x + MT[4]! * y + MT[8]! * z + MT[12]!, cy = MT[1]! * x + MT[5]! * y + MT[9]! * z + MT[13]!, cw = MT[3]! * x + MT[7]! * y + MT[11]! * z + MT[15]!;
+    if (cw > 0) behind = false;
+    outside &= (cx < -cw ? 1 : 0) | (cx > cw ? 2 : 0) | (cy < -cw ? 4 : 0) | (cy > cw ? 8 : 0);
+    if (!outside && !behind) return true;
+  }
+  return !(behind || outside);
+}
