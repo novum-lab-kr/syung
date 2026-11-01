@@ -55,13 +55,19 @@ export function mergeHits(stationHits:readonly PlaceHit[], places:readonly Found
 export const endName = (hit:PlaceHit) => hit.lines && !/역$/.test(hit.name) ? `${hit.name}역` : hit.name;
 
 // 'HH:MM' → 가까운 5분. 발권 시각 바퀴가 5분 단위다(23:58 → 00:00)
-export function nearestFive(time:string, now:Date) {
+const clockText = (total:number) => `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+export function nearestFive(time:string) {
   const [hours = 0, minutes = 0] = time.split(':').map(Number);
-  const exact = hours * 60 + minutes, rounded = Math.round(exact / 5) * 5;
-  // 내려 맞춘 시각이 이미 지났으면 다음 5분으로 올린다: 지난 시각은 다음 탈 날(내일)로 찾게 되어 길이 달라진다. 같은 분도 지난 것으로 본다(nextRideDay 와 같은 기준)
-  const passed = rounded < exact && rounded <= now.getHours() * 60 + now.getMinutes();
-  const total = (passed ? rounded + 5 : rounded) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  return clockText(Math.round((hours * 60 + minutes) / 5) * 5);
+}
+// 승차권 등록 시각: 가까운 5분. 오늘 경로인데 그 시각이 이미 지났으면 지금 기준 다음 5분으로 올린다 — 지난 시각은 다음 탈 날(내일)로 찾게 되어 길이 달라진다.
+// 같은 분도 지난 것으로 본다(nextRideDay 와 같은 기준). 내일로 고른 경로는 시계만 봐서는 지난 것이 아니니 올리지 않는다
+export function ticketTime(leaveBy:string, now:Date, tomorrow:boolean) {
+  const nearest = nearestFive(leaveBy);
+  if (tomorrow) return nearest;
+  const [hours = 0, minutes = 0] = leaveBy.split(':').map(Number);
+  const rounded = Math.round((hours * 60 + minutes) / 5) * 5, nowTotal = now.getHours() * 60 + now.getMinutes();
+  return rounded <= nowTotal ? clockText(Math.floor(nowTotal / 5) * 5 + 5) : nearest;
 }
 
 // 출발 · 도착 맞바꾸기. start 는 지금 출발 좌표(내 위치면 그 순간의 좌표) — 내 위치가 출발로 돌아오면 좌표를 들고 있지 않고 다시 지금 위치를 쓴다

@@ -70,7 +70,7 @@ export interface JourneyActions {
   tab(kind:string):void; card(index:number):void; ticket(index:number):void; retry():void;
 }
 // 승차권 등록(user/account.mts 가 맡는다): 값을 채워 경로 목록 위에 발권 화면(서랍)을 연다(로그인 전이면 로그인 팝업). search 는 발권 화면을 닫을 때 그대로 돌려줄 지난 검색
-export interface TicketStart { from:End & { name:string }; to:End & { name:string }; leaveBy:string; fromHere:boolean; plan:Plan }
+export interface TicketStart { from:End & { name:string }; to:End & { name:string }; leaveBy:string; tomorrow:boolean; fromHere:boolean; plan:Plan }
 export interface TicketDesk { start(draft:TicketStart, search:unknown):void }
 export interface TicketReturn { back():void }
 
@@ -373,7 +373,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     if (!desk) { view.status = {text: '지금은 승차권을 등록할 수 없어요.', sr: false}; paint(); return; }
     const here = search.picked.from ? null : fromOf(), start = search.picked.from ?? here, end = search.picked.to;
     if (!start || !end) { const card = cardsOf()[index]; if (card) { card.note = TICKET_NO_START; paint(); } return; }
-    desk.start({from: {name: search.from, lat: start.lat, lng: start.lng}, to: {name: search.to, lat: end.lat, lng: end.lng}, leaveBy: plan.leaveBy, fromHere: !!here, plan}, search);
+    desk.start({from: {name: search.from, lat: start.lat, lng: start.lng}, to: {name: search.to, lat: end.lat, lng: end.lng}, leaveBy: plan.leaveBy, tomorrow: search.when.k === 'at' && isTomorrow(search.when.d), fromHere: !!here, plan}, search);
   }
   // 발권 화면을 닫을 때(뒤로 · 닫기 · 저장): 경로 목록이 펼친 카드까지 그대로. 목록이 아직 열려 있으면 할 일이 없고,
   // 경로 고르기 지도가 지도를 차지해(drop) 목록이 닫혔으면 간직한 search 로 다시 연다. search 는 로그인 페이지를 다녀오면 sessionStorage 에서 온 복사본이다 — 시각(when.d)이 글자라 open 이 다시 Date 로 만든다

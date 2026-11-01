@@ -18,7 +18,7 @@
 // 본체가 지도를 다 띄운 뒤 import() 로 부른다(첫 화면 코드에 없음).
 import {routeTrack} from '../lib/journey-ui.mts';   // 아래 막대의 경로 띠(본체가 이미 받은 파일)
 import type {Plan, TicketDesk, TicketReturn, TicketStart} from '../lib/journey-ui.mts';
-import {nearestFive} from '../lib/place-search.mts';   // 본체가 이미 받은 파일
+import {ticketTime} from '../lib/place-search.mts';   // 본체가 이미 받은 파일
 import {createTimeWheel} from '../lib/time-wheel.mts';   // 길찾기 시각 고르기와 같은 바퀴(본체가 이미 받은 파일)
 import {accountView, avatarLook, drawProviders, nameLength, NAME_MAX} from './account_view.tsx';   // 내 정보 쪽(#menuAccount) 그리기 — Preact
 import type {Me, Avatar, Stats, Session} from './account_view.tsx';
@@ -696,7 +696,7 @@ export async function initAccount({colors = {}, routeMap, myLocation, journeyRet
   async function openFromJourney(draft:TicketStart, search:unknown) {
     if (!$('settingsPanel').classList.contains('open')) $('settingsButton').click();   // 로그인 복귀를 기다리는 동안 이미 열었으면 그대로
     openTicket(null);
-    const {from, to} = draft, time = nearestFive(draft.leaveBy, new Date());
+    const {from, to} = draft, time = ticketTime(draft.leaveBy, new Date(), draft.tomorrow);
     ticketFrom = journeyReturn?.(search) ?? null;
     ticketsView.set({from: {name: from.name, lat: from.lat, lng: from.lng}, to: {name: to.name, lat: to.lat, lng: to.lng}, time, fromHere: draft.fromHere});
     // routeSeq 는 쓰지 않는다: 서랍을 연 변화를 routeWatch 가 받아 routeSeq 를 올려 이 답이 늘 버려진다
