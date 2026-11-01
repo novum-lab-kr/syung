@@ -13,6 +13,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	let unmountBody = null;
 	function fillBody(fill, source) {
 		tuck(false);
+		sheet.classList.remove("tall");
 		if (source !== "bus") live.busLayer?.clearSelection();
 		const u = unmountBody;
 		unmountBody = null;
@@ -76,6 +77,13 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	{
 		const grab = sheet.querySelector(".sheet-grab");
 		let y0 = 0, t0 = 0, dy = 0, drag = false, moved = false;
+		const LOW = .5, HIGH = .72;
+		const resizable = () => matchMedia("(max-width:720px)").matches && !sheet.classList.contains("kb") && !!sheetBody.querySelector(".journey.done");
+		let sized = false, area = 0, h0 = 0, raw = 0;
+		const putHeight = (height) => {
+			sheet.style.height = height;
+			sheet.style.maxHeight = height;
+		};
 		grab.addEventListener("pointerdown", (e) => {
 			if (e.button) return;
 			drag = true;
@@ -83,19 +91,44 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			y0 = e.clientY;
 			t0 = performance.now();
 			dy = 0;
+			raw = 0;
+			sized = resizable();
+			area = sheet.offsetParent?.clientHeight ?? 0;
+			h0 = sheet.offsetHeight;
 			grab.setPointerCapture(e.pointerId);
 			sheet.style.transition = "none";
 		});
 		grab.addEventListener("pointermove", (e) => {
 			if (!drag) return;
-			dy = Math.max(0, e.clientY - y0);
-			if (dy > 4) moved = true;
+			raw = e.clientY - y0;
+			if (sized) {
+				if (Math.abs(raw) > 4) moved = true;
+				putHeight(`${Math.min(area * HIGH, Math.max(area * LOW, h0 - raw))}px`);
+				dy = sheet.classList.contains("tall") ? 0 : Math.max(0, raw);
+			} else {
+				dy = Math.max(0, raw);
+				if (dy > 4) moved = true;
+			}
 			sheet.style.transform = `translateY(${dy}px)`;
 		});
+		const settleHeight = () => {
+			const tall = sheet.classList.contains("tall"), held = sheet.offsetHeight;
+			putHeight("");
+			const pulled = tall ? area * HIGH - held : held - area * LOW, quick = Math.abs(raw) / Math.max(1, performance.now() - t0) > .6;
+			if (moved && (pulled > area * .21999999999999997 * .3 || quick && pulled > 24)) {
+				sheet.classList.toggle("tall", !tall);
+				if (live.routeBounds) fitRoute(area * (tall ? LOW : HIGH) + 30);
+			}
+			return tall;
+		};
 		const end = () => {
 			if (!drag) return;
 			drag = false;
 			sheet.style.transition = "";
+			if (sized && settleHeight()) {
+				sheet.style.transform = "";
+				return;
+			}
 			const fast = dy / Math.max(1, performance.now() - t0) > .6;
 			if (moved && (dy > Math.min(120, sheet.offsetHeight * .3) || fast && dy > 24)) {
 				sheet.style.transform = "translateY(calc(105% + var(--kb,0px)))";

@@ -3,8 +3,8 @@ import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { PlaceEndsCard, PlaceHereRow, PlacePickedSheet, PlaceSearch, PlaceSearchField } from "../components/place_search.mjs";
 import { RouteCard, RouteFailed, RouteLoading, RouteNote } from "../components/route_card.mjs";
 import { JourneyBar, JourneySummary } from "../components/journey_summary.mjs";
-import { Segmented } from "../components/segmented.mjs";
 import { JourneyWhen } from "../components/journey_when.mjs";
+import { Segmented } from "../components/segmented.mjs";
 // web/ui/journey_sheet.tsx
 function Result({ result, actions }) {
 	if (result.kind === "none") return null;
@@ -93,11 +93,9 @@ function JourneySheet({ view, actions }) {
 					text: view.whenText,
 					isSet: view.whenAt,
 					open: view.whenOpen,
-					draft: view.draft,
 					onRow: actions.whenRow,
 					onNow: actions.whenNow,
-					onGo: actions.whenGo,
-					onDay: actions.day
+					onGo: actions.whenGo
 				})]
 			}),
 			/* @__PURE__ */ a("div", {

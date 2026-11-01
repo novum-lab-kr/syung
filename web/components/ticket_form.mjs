@@ -27,6 +27,27 @@ function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, routeN
 			onSubmit?.();
 		},
 		children: [
+			/* @__PURE__ */ a("label", {
+				class: "tf-l",
+				for: "ticketName",
+				children: "승차권 이름"
+			}),
+			/* @__PURE__ */ a("div", {
+				class: "tf-in",
+				children: [/* @__PURE__ */ a("input", {
+					id: "ticketName",
+					maxlength: 12,
+					placeholder: "이름 넣기",
+					enterkeyhint: "done",
+					value: name,
+					onInput: (event) => onName?.(event.currentTarget.value)
+				}), /* @__PURE__ */ a("small", {
+					id: "ticketNameCount",
+					"aria-hidden": "true",
+					children: `${[...name].length}/12`
+				})]
+			}),
+			days,
 			/* @__PURE__ */ a("div", {
 				class: "tf-route",
 				children: /* @__PURE__ */ a("div", {
@@ -52,27 +73,6 @@ function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, routeN
 				class: "tf-note",
 				role: "status",
 				children: routeNote
-			}),
-			days,
-			/* @__PURE__ */ a("label", {
-				class: "tf-l",
-				for: "ticketName",
-				children: "승차권 이름"
-			}),
-			/* @__PURE__ */ a("div", {
-				class: "tf-in",
-				children: [/* @__PURE__ */ a("input", {
-					id: "ticketName",
-					maxlength: 12,
-					placeholder: "이름 넣기",
-					enterkeyhint: "done",
-					value: name,
-					onInput: (event) => onName?.(event.currentTarget.value)
-				}), /* @__PURE__ */ a("small", {
-					id: "ticketNameCount",
-					"aria-hidden": "true",
-					children: `${[...name].length}/12`
-				})]
 			}),
 			/* @__PURE__ */ a(SaveButton, {
 				id: "ticketSave",

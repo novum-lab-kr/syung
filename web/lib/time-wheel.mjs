@@ -1,5 +1,5 @@
 // web/lib/time-wheel.mts
-var ROW = 40;
+var ROW = 34;
 var pad = (value) => String(value).padStart(2, "0");
 var clockParts = (time) => {
 	const [hours = 0, minutes = 0] = time.split(":").map(Number);

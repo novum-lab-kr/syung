@@ -158,6 +158,22 @@ function trackParts(p, colors, width = 330) {
 function routeTrack(p, colors, width = 330) {
 	return `<div class="jtrack" aria-hidden="true">${trackParts(p, colors, width).map((seg) => seg.k !== "ride" ? `<i class="jseg ${seg.k}" style="flex:${seg.flex} 1 0"></i>` : `<i class="jseg ride${seg.bus ? " bus" : ""}" style="flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}">${seg.icon ? BUS : ""}${esc(seg.label)}</i>`).join("")}</div>`;
 }
+function soonestWhen(now = /* @__PURE__ */ new Date()) {
+	const at = new Date(now);
+	at.setSeconds(0, 0);
+	at.setMinutes(Math.floor(at.getMinutes() / 5) * 5 + 5);
+	return at;
+}
+function keepPickable(at, now = /* @__PURE__ */ new Date()) {
+	const latest = new Date(now);
+	latest.setHours(23, 55, 0, 0);
+	return new Date(Math.max(+soonestWhen(now), Math.min(+latest, +at)));
+}
+function wheelDate(time, now = /* @__PURE__ */ new Date()) {
+	const [hours = 0, minutes = 0] = time.split(":").map(Number), at = new Date(now);
+	at.setHours(hours, minutes, 0, 0);
+	return at;
+}
 var TICKET_NO_START = "내 위치를 찾지 못했어요. 위에서 출발을 다시 골라 주세요.";
 function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk }) {
 	const picked = {
@@ -204,7 +220,6 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		whenText: "지금 출발",
 		whenAt: false,
 		whenOpen: false,
-		draft: null,
 		status: {
 			text: "",
 			sr: false
@@ -221,19 +236,6 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	const isTomorrow = (d) => d.toDateString() !== (/* @__PURE__ */ new Date()).toDateString();
-	const soonest = () => {
-		const d = /* @__PURE__ */ new Date();
-		d.setSeconds(0, 0);
-		d.setMinutes(Math.floor(d.getMinutes() / 5) * 5 + 5);
-		return d;
-	};
-	const latest = () => {
-		const d = /* @__PURE__ */ new Date();
-		d.setDate(d.getDate() + 1);
-		d.setHours(23, 55, 0, 0);
-		return d;
-	};
-	const clamp = (d) => new Date(Math.min(+latest(), Math.max(+soonest(), +d)));
 	function whenValue() {
 		return when.k === "at" ? local(when.d) : "";
 	}
@@ -246,22 +248,15 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		view.whenAt = chosen.k === "at";
 		paint();
 	}
-	const drawDraft = () => {
-		view.draft = { tomorrow: isTomorrow(draft) };
-		paint();
-	};
 	function wheelMoved(time) {
-		const [hours = 0, minutes = 0] = time.split(":").map(Number), at = new Date(draft);
-		at.setHours(hours, minutes, 0, 0);
-		draft = at;
+		draft = wheelDate(time);
 		clearTimeout(wheelTimer);
 		wheelTimer = setTimeout(() => {
-			const kept = clamp(draft);
+			const kept = keepPickable(draft);
 			if (+kept !== +draft) {
 				draft = kept;
 				wheel?.roll(hhmm(kept));
 			}
-			drawDraft();
 		}, 180);
 	}
 	function whenOpen(on) {
@@ -271,8 +266,8 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			paint();
 			return;
 		}
-		draft = clamp(when.k === "at" ? new Date(when.d) : soonest());
-		drawDraft();
+		draft = keepPickable(when.k === "at" ? new Date(when.d) : soonestWhen());
+		paint();
 		const box = document.getElementById("jWhenWheel");
 		if (box && box !== wheelBox) {
 			wheelBox = box;
@@ -446,10 +441,11 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		["mixed", "지하철+버스"]
 	];
 	const cardsOf = () => view.result.kind === "plans" ? view.result.cards : [];
-	function pick(index) {
+	function pick(index, opened = true) {
 		last.sel = index;
+		last.opened = opened;
 		cardsOf().forEach((card, other) => {
-			card.on = other === index;
+			card.on = opened && other === index;
 			card.note = "";
 		});
 		paint();
@@ -471,7 +467,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		paint();
 		if (cards[last.sel]?.hidden) {
 			const first = cards.findIndex((card) => !card.hidden);
-			if (first >= 0) pick(first);
+			if (first >= 0) pick(first, false);
 		}
 	}
 	function render(answer, sel) {
@@ -495,12 +491,26 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			}))
 		};
 		paint();
-		pick(sel);
+		pick(sel, !!last.opened);
 		filter(last.tab || "all");
 	}
 	function cardPressed(index) {
 		if (last.sel === index && cardsOf()[index]?.on) closeSheet?.();
-		else pick(index);
+		else {
+			pick(index);
+			revealOpened();
+		}
+	}
+	function revealOpened() {
+		requestAnimationFrame(() => {
+			const opened = document.querySelector(".jp.on"), port = opened?.closest(".sheet-body");
+			if (!opened || !port) return;
+			const card = opened.getBoundingClientRect(), box = port.getBoundingClientRect();
+			if (card.top < box.top || card.bottom > box.bottom) opened.scrollIntoView({
+				block: "start",
+				behavior: "smooth"
+			});
+		});
 	}
 	function failed(message) {
 		view.status = {
@@ -644,20 +654,13 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			go();
 		},
 		whenGo() {
-			draft = clamp(draft);
+			draft = keepPickable(draft);
 			whenSet({
 				k: "at",
 				d: new Date(draft)
 			});
 			whenOpen(false);
 			go();
-		},
-		day(offset) {
-			const at = new Date(draft), today = /* @__PURE__ */ new Date();
-			at.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + offset);
-			draft = clamp(at);
-			wheel?.roll(hhmm(draft));
-			drawDraft();
 		},
 		tab: filter,
 		card: cardPressed,
@@ -782,4 +785,4 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		ticketReturn
 	};
 }
-export { initJourney, routeSteps, routeTrack, trackParts };
+export { initJourney, keepPickable, routeSteps, routeTrack, soonestWhen, trackParts, wheelDate };
