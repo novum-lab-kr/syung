@@ -141,6 +141,31 @@ export const MCN_RINGS:number[][] = [
 ];
 export const mcnRings = ():[number, number][][] => MCN_RINGS.map(ring => ringOf(ring, MCN_ORIGIN));
 export const tombRings = ():[number, number][][] => [...sjnRings(), ...jngRings(), ...uirRings(), ...hinRings(), ...tgnRings(), ...skcRings(), ...pnpRings(), ...mcnRings()];
+// 근현대 문화유산 여섯 곳(탑골공원 · 명동성당 · 문화역서울 284 · 서대문형무소 · 조계사 · 봉은사): 기준점 · 정수 좌표 원점 · 둘레(OSM 건물 · 담 · 경계에서 — © OpenStreetMap contributors). 건물 · 나무 자료는 구역 파일(지연 로드)에 있다
+export const WG_AT:[number, number] = [126.98835, 37.5715];
+export const WG_ORIGIN:[number, number] = [126.98, 37.57];
+export const WG_RING:number[] = [7855,603,7862,517,8305,460,8510,436,8594,444,8702,455,8716,990,8679,1095,8238,1673,8068,1620,7855,603];
+export const wgRing = ():[number, number][] => ringOf(WG_RING, WG_ORIGIN);
+export const MD_AT:[number, number] = [126.9874, 37.5634];
+export const MD_ORIGIN:[number, number] = [126.98, 37.56];
+export const MD_RING:number[] = [5883,3929,5940,3782,5865,3754,5829,3591,5857,3472,6060,3039,5942,2975,6019,2733,6167,2573,5951,2452,5970,2355,6194,2426,6255,2141,6717,2219,6796,1967,8007,2084,8695,2210,8593,2583,8548,2744,8413,2996,8151,3399,7820,3279,7754,3432,7740,3652,7709,3790,7731,3903,7766,3941,7435,4572,7075,4545,6434,4186,6157,4076,5883,3929];
+export const mdRing = ():[number, number][] => ringOf(MD_RING, MD_ORIGIN);
+export const S2_AT:[number, number] = [126.97161, 37.55599];
+export const S2_ORIGIN:[number, number] = [126.97, 37.55];
+export const S2_RING:number[] = [1412,6211,1428,5340,1629,5339,1737,5399,1798,5775,1801,5977,1657,6507,1606,6641,1412,6638,1412,6211];
+export const s2Ring = ():[number, number][] => ringOf(S2_RING, S2_ORIGIN);
+export const SD_AT:[number, number] = [126.9558, 37.5742];
+export const SD_ORIGIN:[number, number] = [126.95, 37.57];
+export const SD_RING:number[] = [4836,4498,5882,3367,6052,3188,6230,3300,7027,3855,7166,4747,5928,5188,5469,5020,5383,4960,5056,4695,4836,4498];
+export const sdRing = ():[number, number][] => ringOf(SD_RING, SD_ORIGIN);
+export const JG_AT:[number, number] = [126.98215, 37.5741];
+export const JG_ORIGIN:[number, number] = [126.98, 37.57];
+export const JG_RING:number[] = [1416,4065,1773,4831,1957,4788,2067,4951,2207,4914,2184,4834,2299,4801,2239,4623,2243,4534,2399,4531,2373,4198,2370,4089,2385,3964,2462,3981,2763,3990,2770,3746,2665,3724,2670,3680,2215,3622,2219,3521,2122,3520,2120,3400,1651,3442,1655,3477,1289,3529,1416,4065];
+export const jgRing = ():[number, number][] => ringOf(JG_RING, JG_ORIGIN);
+export const BE_AT:[number, number] = [127.0575, 37.5148];
+export const BE_ORIGIN:[number, number] = [127.05, 37.51];
+export const BE_RING:number[] = [5056,5380,5069,4885,5574,4882,5691,4611,5906,4644,5993,4654,6169,4629,6287,4544,6362,4395,6515,3788,6534,3714,8336,4005,8253,4375,8358,4528,8517,4781,8539,5625,8938,5773,8377,6630,7056,6274,6665,6227,6260,6112,5806,5919,5404,5675,5056,5380];
+export const beRing = ():[number, number][] => ringOf(BE_RING, BE_ORIGIN);
 // 두 도성문 중심 · 방향: OSM 원자료의 육축 긴 변(2026-11-01), 구역 파일 머리에 계산 근거.
 // 숭례문 https://www.openstreetmap.org/relation/10647050 · 흥인지문 https://www.openstreetmap.org/way/320783808
 export const MONUMENTS:Monument[] = [
@@ -200,6 +225,21 @@ export const MONUMENTS:Monument[] = [
   { id: 'pnp-wall', zone: 'pungnap', lngLat: PNP_AT, yawDeg: 0 },
   { id: 'mcn-land', zone: 'mongchon', lngLat: MCN_AT, yawDeg: 0 },
   { id: 'mcn-halls', zone: 'mongchon', lngLat: MCN_AT, yawDeg: 0 },
+  // 근현대 문화유산 여섯 곳: 같은 방식
+  { id: 'wg-wall', zone: 'wongaksa', lngLat: WG_AT, yawDeg: 0 },
+  { id: 'wg-halls', zone: 'wongaksa', lngLat: WG_AT, yawDeg: 0 },
+  { id: 'wg-frames', zone: 'wongaksa', lngLat: WG_AT, yawDeg: 0 },
+  { id: 'md-halls', zone: 'myeongdong', lngLat: MD_AT, yawDeg: 0 },
+  { id: 'md-frames', zone: 'myeongdong', lngLat: MD_AT, yawDeg: 0 },
+  { id: 's2-halls', zone: 'seoul284', lngLat: S2_AT, yawDeg: 0 },
+  { id: 'sd-wall', zone: 'seodaemun', lngLat: SD_AT, yawDeg: 0 },
+  { id: 'sd-halls', zone: 'seodaemun', lngLat: SD_AT, yawDeg: 0 },
+  { id: 'sd-frames', zone: 'seodaemun', lngLat: SD_AT, yawDeg: 0 },
+  { id: 'jg-halls', zone: 'jogyesa', lngLat: JG_AT, yawDeg: 0 },
+  { id: 'jg-frames', zone: 'jogyesa', lngLat: JG_AT, yawDeg: 0 },
+  { id: 'be-wall', zone: 'bongeunsa', lngLat: BE_AT, yawDeg: 0 },
+  { id: 'be-halls', zone: 'bongeunsa', lngLat: BE_AT, yawDeg: 0 },
+  { id: 'be-frames', zone: 'bongeunsa', lngLat: BE_AT, yawDeg: 0 },
 ];
 // 모델이 앉는 자리의 지도 건물(OSM 광화문 외곽 49.5 × 13.3 m — 육축과 양옆 궁장 도막)을 뺀다: 그 안에 중심이 있는 조각 건물
 // 도성문 둘레(OSM 육축 · 옹성 전체를 감싸는 원): 지도 건물 비우기와 도시 나무 비우기가 같이 쓴다.
@@ -239,6 +279,12 @@ export const MONUMENT_HIDES:MonumentHide[] = [
   ...skcRings().map(area => ({ lngLat: SKC_AT, radiusM: 200, minH: 0, area })),
   ...pnpRings().map(area => ({ lngLat: PNP_AT, radiusM: 900, minH: 0, area })),
   ...mcnRings().map(area => ({ lngLat: MCN_AT, radiusM: 100, minH: 0, area })),
+  { lngLat: WG_AT, radiusM: 500, minH: 0, area: wgRing() },
+  { lngLat: MD_AT, radiusM: 500, minH: 0, area: mdRing() },
+  { lngLat: S2_AT, radiusM: 400, minH: 0, area: s2Ring() },
+  { lngLat: SD_AT, radiusM: 500, minH: 0, area: sdRing() },
+  { lngLat: JG_AT, radiusM: 500, minH: 0, area: jgRing() },
+  { lngLat: BE_AT, radiusM: 700, minH: 0, area: beRing() },
 ];
 
 // 이 모델들이 있는 곳(광화문 · 경복궁 · 광화문광장 · 창덕궁 둘레): 화면이 이 둘레에 닿을 때만 코드를 받는다(첫 화면 · 다른 도시에서는 받지 않는다)
@@ -261,6 +307,12 @@ const REGIONS:Record<string, { lngLat:[number, number]; radiusM:number }> = {
   seokchon: { lngLat: SKC_AT, radiusM: 200 },
   pungnap: { lngLat: PNP_AT, radiusM: 900 },
   mongchon: { lngLat: MCN_AT, radiusM: 230 },
+  wongaksa: { lngLat: WG_AT, radiusM: 500 },
+  myeongdong: { lngLat: MD_AT, radiusM: 500 },
+  seoul284: { lngLat: S2_AT, radiusM: 400 },
+  seodaemun: { lngLat: SD_AT, radiusM: 500 },
+  jogyesa: { lngLat: JG_AT, radiusM: 500 },
+  bongeunsa: { lngLat: BE_AT, radiusM: 700 },
   // 도성문: 문 둘레 100 m 안에 화면이 닿을 때만 그 문의 코드를 받는다
   sungnyemun: { lngLat: [126.97536025, 37.559986249999994], radiusM: 100 },
   heunginjimun: { lngLat: [127.009594975, 37.571153975], radiusM: 100 },

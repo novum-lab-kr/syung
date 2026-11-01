@@ -34,7 +34,7 @@ export const LANDMARKS:Landmark[] = [
 // minPx: 실제 크기면 너무 작을 때 화면에서 이만큼은 보이게 키운다(탑골공원 12 m). widthMul: 거대한 탑은 가로를 줄여 날씬하게(그대로 키우면 기단이 260 m).
 export const STUPAS:Stupa[] = [
   { id: 'namsan-stupa', kind: 'seokga', lngLat: [126.988216, 37.551259], height: 240, widthMul: .65, looks: ['wood-tower'], yawDeg: 0 },   // 남산타워 아래 광장(72 × 75 m) 한가운데 — 기단(폭 약 71 m)이 광장에 앉게(2026-10-11 행님: 바닥 보고 자리 잡기)
-  { id: 'wongaksa', kind: 'wongaksa', lngLat: [126.98830, 37.57123], height: 12, looks: ['wood-tower'], minPx: 30, yawDeg: 0 },   // 탑골공원 팔각정 쪽으로 약 18 m(행님 2026-10-11: 집 쪽으로)
+  // 원각사지 십층석탑은 전용 모델(monuments_wongaksa.mts — 실제 자리 · 보호각 · 모든 모드)로 그려 여기서 뺐다(2026-11-01) — 겹쳐 두 개로 보였다
 ];
 
 const mercX = (lng:number) => (lng + 180) / 360;

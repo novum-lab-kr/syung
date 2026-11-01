@@ -79,7 +79,7 @@ export const place = (w:MeshWriter, r:Rect) => { w.xf = { x: r.cx, y: r.cy, cos:
 // hx · hy: 몸(기둥 줄) 반 길이 · 반 폭. 긴 쪽이 x. 마루는 x 방향.
 export interface Hall {
   hx:number; hy:number; podium:number; body:number; rise:number; eave:number; bays:[number, number]; steps:{ side:number; slope:number };
-  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; gable?:number; brackets?:boolean; doors?:boolean; doorsAll?:boolean; gabled?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
+  tiers?:1 | 2; lift?:number; ridgeFrac?:number; upper?:[number, number]; upperRise?:number; hollow?:boolean; ridgeless?:boolean; gable?:number; brackets?:boolean; doors?:boolean; doorsAll?:boolean; doorKind?:number; gabled?:boolean; stair?:boolean; lowPodium?:number[];   // lowPodium: 기단을 여러 벌대로 쌓을 때 벌마다 바깥으로 내미는 폭
 }
 const BAND = 1.1;
 function column(w:MeshWriter, x:number, y:number, z0:number, z1:number, half = .26):void { w.box(x - half, x + half, y - half, y + half, z0, z1, K.red, { bottom: true, top: true }) }
@@ -100,7 +100,7 @@ function windowPanes(w:MeshWriter, S:Pick<Hall, 'bays' | 'doors' | 'doorsAll'>, 
   }
 }
 // 층 하나의 몸: 회벽 · 기둥 · 창방 · (공포) → 맨 위 높이 반환
-function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'doorsAll' | 'hollow'>, hx:number, hy:number, base:number, body:number, open = false):number {
+function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'doorsAll' | 'doorKind' | 'hollow'>, hx:number, hy:number, base:number, body:number, open = false):number {
   const top = base + body;
   if (S.hollow) w.quad([-hx, -hy, base], [hx, -hy, base], [hx, hy, base], [-hx, hy, base], K.wood, [0, 0, 1]);   // 벽 없는 누각: 마루 위만 비치게
   else w.box(-hx + .2, hx - .2, -hy + .2, hy - .2, base, top, open ? K.wood : K.plaster, { top: true });   // 위층은 녹색 판문(검은 빈 면으로 보이던 것 — Codex 2026-10-31)
@@ -109,7 +109,7 @@ function storey(w:MeshWriter, S:Pick<Hall, 'bays' | 'brackets' | 'doors' | 'door
   if (!S.hollow && !open) windowPanes(w, S, hx, hy, base, top);
   if (S.doors) {   // 앞(남쪽 = −y) 칸마다 어두운 문짝 자리
     const bay = 2 * hx / S.bays[0], first = S.bays[0] <= 3 || S.doorsAll ? 0 : 1, last = S.bays[0] <= 3 || S.doorsAll ? S.bays[0] - 1 : S.bays[0] - 2;   // doorsAll: 양 끝 칸까지 모두 문(종묘 정전 · 영녕전 감실 칸마다 판문)
-    for (let i = first; i <= last; i++) { const cx = -hx + bay * (i + .5); w.quad([cx - bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, top - .35], [cx - bay * .32, -hy - .03, top - .35], K.tunnel, [0, -1, 0]) }
+    for (let i = first; i <= last; i++) { const cx = -hx + bay * (i + .5); w.quad([cx - bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, base + .1], [cx + bay * .32, -hy - .03, top - .35], [cx - bay * .32, -hy - .03, top - .35], S.doorKind ?? K.tunnel, [0, -1, 0]) }
   }
   bandBox(w, hx + .45, hy + .45, top - .4, top, K.dancheong, 0, .28);
   bandBox(w, hx + .45, hy + .45, top, top + BAND, K.dancheong, .3, 1);

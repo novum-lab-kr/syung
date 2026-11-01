@@ -2,7 +2,7 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, tombRings, GATE_YARDS, monumentsInView } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, wgRing, mdRing, s2Ring, sdRing, jgRing, beRing, tombRings, GATE_YARDS, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
@@ -26,6 +26,12 @@ const ZONES:Record<string, () => Promise<ZoneModule>> = {
   hwangudan: () => import('./monuments_hwangudan.mts'),
   sungnyemun: () => import('./monuments_sungnyemun.mts'),
   heunginjimun: () => import('./monuments_heunginjimun.mts'),
+  wongaksa: () => import('./monuments_wongaksa.mts'),
+  myeongdong: () => import('./monuments_myeongdong.mts'),
+  seoul284: () => import('./monuments_seoul284.mts'),
+  seodaemun: () => import('./monuments_seodaemun.mts'),
+  jogyesa: () => import('./monuments_jogyesa.mts'),
+  bongeunsa: () => import('./monuments_bongeunsa.mts'),
   seonjeong: () => import('./monuments_seonjeong.mts'),
   jeongneung: () => import('./monuments_jeongneung.mts'),
   uireung: () => import('./monuments_uireung.mts'),
@@ -48,7 +54,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[32];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[35];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -90,7 +96,7 @@ void main(){
     c *= (.93 + .1 * hash(vec2(floor(cols), row))) * (1. - .2 * joint);
   } else if (k == 15) {   // 공포: 덩어리마다 붉고 푸르게(단청)
     c = mod(floor(along / 1.55 + .5), 2.) < 1. ? u_col[2] : vec3(.17, .36, .56);
-  } else if (k == 25) {   // 붉은 벽돌(서양식 건물 · 중명전 · 정관헌): 작은 벽돌 줄 + 엇갈린 줄눈
+  } else if (k == 25 || k == 32) {   // 붉은 · 회색 벽돌(서양식 건물 · 명동성당 · 서대문형무소): 작은 벽돌 줄 + 엇갈린 줄눈
     float rows = v_p.z / .09, row = floor(rows), cols = (along + row * .5 * .22) / .22;
     float jr = min(fract(rows), 1. - fract(rows)), jc = min(fract(cols), 1. - fract(cols)) * .22 / .09;
     float joint = (1. - smoothstep(0., .1, min(jr, jc))) * (1. - smoothstep(.3, .8, fwidth(rows)));
@@ -103,7 +109,7 @@ void main(){
       float joint = 1. - smoothstep(0., .06, min(min(fract(rows), 1. - fract(rows)), min(fract(cols), 1. - fract(cols)) * .8));
       c *= (.82 + .3 * hash(vec2(cell, row))) * (1. - .28 * joint); }
     else c *= .8 + .32 * hash(floor(v_p.xy * 1.6));
-  } else if (k == 26) {   // 유리(대온실): 철골 살이 가늘게 비치는 옅은 청록
+  } else if (k == 26 || k == 34) {   // 유리(대온실 · 보호각): 철골 살이 가늘게 비치는 옅은 청록
     c *= 1. - .22 * max(line(along / 1.4, .08), line(v_p.z / 1.4, .08));
   } else if (k == 27) {   // 서양식 유리창: 한지 격자 없이 어두운 유리 — 가운데 세로 문설주 하나만
     c *= 1. - .35 * line(along / 1.1, .06);
@@ -130,6 +136,8 @@ void main(){
     // 안에서 새어 나오는 등불(전각 · 문루): 문 안 · 벽 사이 회벽 · 판문 · 마루 · 처마 밑이 따뜻하게 — 낮 · 라이트에는 이 줄에 들어오지 않는다
     vec3 warm = vec3(1., .62, .28); float flick = .94 + .06 * hash(floor(v_p.xy * .5));
     if (k == 12) col = mix(col, warm * flick, .88);                            // 문 안 · 홍예: 등불이 켜진 속
+    else if (k == 26) { if (side > .5) col = mix(col, warm * flick * .5, .22); }   // 유리 온실: 벽에만 안의 불빛이 아주 옅게(지붕은 근거 없어 켜지 않는다 — 사진 근사)
+    else if (k == 27) col = mix(col, warm * flick * .5, .3);                       // 서양식 유리창: 안의 불빛이 은은히(격자 없음)
     else if (k == 20) { float lattice = max(line(along / .42, .14), line(v_p.z / .52, .14)); col = mix(col, warm * flick * (1. - .5 * lattice), .9); }   // 창호만 한지에 비친 등불(살은 어둡게)
     else if (k == 26) { if (side > .5) col = mix(col, warm * flick * .5, .22); }   // 유리 온실: 벽에만 안의 불빛이 아주 옅게(지붕은 근거 없어 켜지 않는다 — 사진 근사)
     else if (k == 27) col = mix(col, warm * flick * .5, .3);                       // 서양식 유리창: 안의 불빛이 은은히(격자 없음)
@@ -184,7 +192,7 @@ export class Monuments {
   inPalace = (x:number, y:number):boolean => {
     const gates = (this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => { const [gx, gy] = toM(lng, lat); return [gx, gy, radiusM] as [number, number, number] }));
     if (gates.some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
-    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing(), ...tombRings()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
+    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing(), wgRing(), mdRing(), s2Ring(), sdRing(), jgRing(), beRing(), ...tombRings()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
     return rings.some(ring => {
       let inside = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }
