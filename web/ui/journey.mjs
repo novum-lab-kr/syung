@@ -280,20 +280,8 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 				],
 				paint: {
 					"circle-radius": 8,
-					"circle-color": [
-						"match",
-						["get", "kind"],
-						"start",
-						"#ffd400",
-						"#141414"
-					],
-					"circle-stroke-color": [
-						"match",
-						["get", "kind"],
-						"start",
-						"#141414",
-						"#ffd400"
-					],
+					"circle-color": endFill(),
+					"circle-stroke-color": endRim(),
 					"circle-stroke-width": 3
 				}
 			});
@@ -334,6 +322,21 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 	}
 	const veilColor = () => document.documentElement.dataset.theme === "dark" ? "#0b0c0e" : "#fbfaf4";
 	const walkColor = () => document.documentElement.dataset.theme === "dark" ? "#f1efe6" : "#141414";
+	const endYellow = () => document.documentElement.dataset.theme === "dark" ? "#e3c54f" : "#ffd400";
+	const endFill = () => [
+		"match",
+		["get", "kind"],
+		"start",
+		endYellow(),
+		"#141414"
+	];
+	const endRim = () => [
+		"match",
+		["get", "kind"],
+		"start",
+		"#141414",
+		endYellow()
+	];
 	let routeFocus = false;
 	let subwayOff = false;
 	function setSubwayOff(on) {
@@ -413,6 +416,8 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		if (map.getLayer("journey-veil")) {
 			map.setLayoutProperty("journey-veil", "visibility", on ? "visible" : "none");
 			map.setPaintProperty("journey-veil", "fill-color", veilColor());
+			map.setPaintProperty("journey-ends", "circle-color", endFill());
+			map.setPaintProperty("journey-ends", "circle-stroke-color", endRim());
 			map.setPaintProperty("journey-walk", "line-color", walkColor());
 			if (map.getLayer("journey-inside")) map.setPaintProperty("journey-inside", "line-color", walkColor());
 		}

@@ -236,20 +236,20 @@ function registerExitLayers({ map, exitsReady, exitFeatures, EXIT_MINZOOM }) {
 			features: []
 		}
 	});
-	{
-		const R = 2, S = 52, c = document.createElement("canvas");
-		c.width = S;
-		c.height = 56;
-		const x = c.getContext("2d");
-		x.beginPath();
-		x.roundRect(R, R, 48, 48, 8);
-		x.fillStyle = "#141414";
-		x.fill();
-		x.beginPath();
-		x.roundRect(2.2 * R, 2.2 * R, S - 4.4 * R, S - 4.4 * R, 6);
-		x.fillStyle = "#ffd400";
-		x.fill();
-		map.addImage("exit-sign", x.getImageData(0, 0, S, 56), {
+	for (const [image, fill] of [["exit-sign", "#ffd400"], ["exit-sign-dark", "#e3c54f"]]) {
+		const R = 2, S = 52, canvas = document.createElement("canvas");
+		canvas.width = S;
+		canvas.height = 56;
+		const paint = canvas.getContext("2d");
+		paint.beginPath();
+		paint.roundRect(R, R, 48, 48, 8);
+		paint.fillStyle = "#141414";
+		paint.fill();
+		paint.beginPath();
+		paint.roundRect(2.2 * R, 2.2 * R, S - 4.4 * R, S - 4.4 * R, 6);
+		paint.fillStyle = fill;
+		paint.fill();
+		map.addImage(image, paint.getImageData(0, 0, S, 56), {
 			pixelRatio: R,
 			stretchX: [[20, 32]],
 			stretchY: [[20, 32]],

@@ -28,7 +28,7 @@ var hex = (c) => [
 	3,
 	5
 ].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
-function buildAvatarMesh({ build, rig }) {
+function buildAvatarMesh({ build, rig, darkColors }, { dark = false } = {}) {
 	const data = [];
 	const put = (p, n, rgb, part, pivot) => data.push(...p, ...n, ...rgb, part, ...pivot);
 	const quad = (a, b, c, d, n, color, part = "body", pivot = null) => {
@@ -42,7 +42,7 @@ function buildAvatarMesh({ build, rig }) {
 			part,
 			part,
 			part
-		]).map((p) => PARTS[p] ?? 0), rgb = hex(color);
+		]).map((p) => PARTS[p] ?? 0), rgb = hex(dark && darkColors?.[color] || color);
 		const px = pivot ? pivot[0] : (Math.min(a[0], b[0], c[0], d[0]) + Math.max(a[0], b[0], c[0], d[0])) / 2;
 		const pv = (k) => [px, pivot && pivot[1] != null && k ? pivot[1] : k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
 		const head = K.every((k) => k === 0) && Math.min(a[2], b[2], c[2], d[2]) >= NECK;
@@ -350,12 +350,13 @@ var AvatarRenderer = class {
 			"shade"
 		].map((k) => [k, gl.getUniformLocation(this.p, "u_" + k)]));
 	}
-	mesh(id) {
-		let m = this.meshes.get(id);
-		if (m) return m;
+	mesh(id, dark = false) {
 		const look = LOOKS.get(id);
 		if (!look) return null;
-		const gl = this.gl, built = buildAvatarMesh(look);
+		const key = dark && look.darkColors ? `${id}:dark` : id;
+		let m = this.meshes.get(key);
+		if (m) return m;
+		const gl = this.gl, built = buildAvatarMesh(look, { dark });
 		m = Object.fromEntries(Object.entries(built).map(([k, data]) => {
 			const vao = gl.createVertexArray(), buf = gl.createBuffer();
 			gl.bindVertexArray(vao);
@@ -398,12 +399,12 @@ var AvatarRenderer = class {
 			}];
 		}));
 		gl.bindVertexArray(null);
-		this.meshes.set(id, m);
+		this.meshes.set(key, m);
 		return m;
 	}
 	render(gl, matrix, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }) {
 		this.init(gl);
-		const m = this.mesh(look) || this.mesh(LOOKS.keys().next().value);
+		const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark);
 		if (!m) return;
 		this.matrix.set(matrix);
 		for (let i = 0; i < 4; i++) this.matrix[12 + i] = matrix[i] * origin[0] + matrix[4 + i] * origin[1] + matrix[12 + i];

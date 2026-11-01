@@ -152,6 +152,8 @@ function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, a
 		}
 		set("station-labels", "text-color", P.stationText);
 		set("station-labels", "text-halo-color", P.halo);
+		set("me-dot", "circle-color", t === "dark" ? "#e3c54f" : "#ffd400");
+		if (map.getLayer("exit-refs")) map.setLayoutProperty("exit-refs", "icon-image", t === "dark" ? "exit-sign-dark" : "exit-sign");
 		applyCityStyle(map, {
 			on: S.city.enabled,
 			theme: t,

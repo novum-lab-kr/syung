@@ -2,6 +2,7 @@ import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
 // web/map/avatars/sprout.mts
 var sprout_exports = /* @__PURE__ */ __exportAll({
 	build: () => build,
+	darkColors: () => darkColors,
 	name: () => name,
 	rig: () => rig
 });
@@ -10,6 +11,7 @@ var rig = {
 	hip: .17,
 	shoulder: .38
 };
+var darkColors = { "#FFD400": "#e3c54f" };
 function build({ box, quad }) {
 	box(-.16, -.21, .16, .17, .21, .43, "#FFD400", "body");
 	box(-.12, -.18, .14, .14, .18, .23, "#FFD400", "body");
@@ -285,4 +287,4 @@ function build({ box, quad }) {
 		0
 	], "#368C3C", "body");
 }
-export { build, name, rig, sprout_exports };
+export { build, darkColors, name, rig, sprout_exports };
