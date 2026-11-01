@@ -3,6 +3,7 @@
 import type { AvatarTools } from '../avatar.mts';
 export const name = '새싹 볼빵 후디';
 export const rig = {hip: 0.17, shoulder: 0.38};
+export const darkColors = {'#FFD400': '#e3c54f'};   // 다크 테마의 후드: 덜 쨍한 노랑
 export function build({box, quad}:AvatarTools) {
   box(-.16,-.21,.16,.17,.21,.43,'#FFD400','body');
   box(-.12,-.18,.14,.14,.18,.23,'#FFD400','body');

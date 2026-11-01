@@ -107,3 +107,14 @@ test('슝 마커: 머리는 목 위 몸 부위(6)이고 고개 각 · 방향은 
   assert.ok(Math.abs(facingYaw(0) - Math.PI / 2) < 1e-9);
   assert.ok(Math.abs(facingYaw(90) - Math.PI) < 1e-9);
 });
+
+test('다크 색: 새싹 후드만 다크에서 바뀌고 라이트 · 다른 모양은 그대로', async () => {
+  const hasColor = (mesh, hex) => { const rgb = [1, 3, 5].map(at => Math.fround(parseInt(hex.slice(at, at + 2), 16) / 255));
+    for (let i = 0; i < mesh.body.length; i += 12) if (mesh.body[i + 6] === rgb[0] && mesh.body[i + 7] === rgb[1] && mesh.body[i + 8] === rgb[2]) return true;
+    return false };
+  assert.ok(hasColor(buildAvatarMesh(syung), '#FFD400'), '라이트(기본): 원래 노랑');
+  const dark = buildAvatarMesh(syung, { dark: true });
+  assert.ok(hasColor(dark, '#e3c54f') && !hasColor(dark, '#FFD400'), '다크: 덜 쨍한 노랑만');
+  const builder = await import('../web/map/avatars/builder.mts');
+  assert.ok(hasColor(buildAvatarMesh(builder, { dark: true }), '#FFD400'), '다크 색을 안 적은 모양은 그대로');
+});

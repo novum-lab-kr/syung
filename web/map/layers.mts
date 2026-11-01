@@ -56,10 +56,11 @@ export function registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM}:{m
   // exits: yellow number discs (like station exit signs) from zoom 16
   map.addSource('exits',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   // exit sign: flat yellow rounded square with a thin ink rim, stretched to the number
-  {const R=2,S=26*R,c=document.createElement('canvas');c.width=S;c.height=S+2*R;const x=c.getContext('2d')!;
-   x.beginPath();x.roundRect(R,R,S-2*R,S-2*R,4*R);x.fillStyle='#141414';x.fill();
-   x.beginPath();x.roundRect(2.2*R,2.2*R,S-4.4*R,S-4.4*R,3*R);x.fillStyle='#ffd400';x.fill();   // flat: thin ink rim, no drop shadow
-   map.addImage('exit-sign',x.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
+  // 다크 테마는 덜 쨍한 노랑 그림(어느 쪽을 쓸지는 map/theme.mts applyTheme 가 고른다)
+  for(const [image,fill] of [['exit-sign','#ffd400'],['exit-sign-dark','#e3c54f']] as const){const R=2,S=26*R,canvas=document.createElement('canvas');canvas.width=S;canvas.height=S+2*R;const paint=canvas.getContext('2d')!;
+   paint.beginPath();paint.roundRect(R,R,S-2*R,S-2*R,4*R);paint.fillStyle='#141414';paint.fill();
+   paint.beginPath();paint.roundRect(2.2*R,2.2*R,S-4.4*R,S-4.4*R,3*R);paint.fillStyle=fill;paint.fill();   // flat: thin ink rim, no drop shadow
+   map.addImage(image,paint.getImageData(0,0,S,S+2*R),{pixelRatio:R,stretchX:[[10*R,16*R]],stretchY:[[10*R,16*R]],content:[5*R,4*R,S-5*R,S-4*R]})}
   map.addLayer({id:'exit-refs',type:'symbol',source:'exits',minzoom:EXIT_MINZOOM,layout:{'text-field':['get','ref'],'text-font':['Noto Sans Bold'],'text-size':['interpolate',['linear'],['zoom'],16,10,18,12.5],'icon-image':'exit-sign','icon-text-fit':'both','icon-text-fit-padding':[2,3,2,3],'icon-allow-overlap':true,'text-allow-overlap':true},paint:{'text-color':'#141414','text-opacity':0,'icon-opacity':0}});   // invisible: holds the exits' room so station names make way (the pillars are drawn with the trains)
   map.moveLayer('exit-refs','station-labels');   // 역 이름표가 먼저 자리를 잡아요: 표지판은 역 바로 위에만 서서, 출구 자리를 비키면 기울인 화면에선 설 곳이 없어요(이름표가 기둥 위에 그려져요)
   exitsReady.then(()=>map.getSource<GeoJSONSource>('exits')!.setData({type:'FeatureCollection',features:exitFeatures()}));

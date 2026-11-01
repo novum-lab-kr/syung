@@ -22,12 +22,12 @@
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
 .refresh-button{margin-left:auto}
 .zoom-badge{margin-left:auto;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px var(--space-2);border-radius:var(--radius-pill);background:rgba(255,255,255,.55);font-variant-numeric:tabular-nums}   /* current map zoom, for checking views */
-html[data-theme=dark] .zoom-badge{background:rgba(255,212,0,.1)}
+html[data-theme=dark] .zoom-badge{background:rgba(227,197,79,.1)}
 .zoom-badge+.refresh-button{margin-left:-12px}
 .refresh-button+.settings-button{margin-left:-16px}   /* the pair sits together: 4px between the 40px targets, not the header's 20px */
 .refresh-button.spin svg{transform:rotate(360deg);transition:transform var(--duration-600)}
 .settings-button:hover{background:rgba(20,20,20,.08)}
-html[data-theme=dark] .settings-button:hover{background:rgba(255,212,0,.12)}
+html[data-theme=dark] .settings-button:hover{background:rgba(227,197,79,.12)}
 /* 설정 서랍: 오른쪽에서 밀려 나온다. hidden 이면 닫힘(버스 층도 hidden 으로 닫는다), .open 이 붙으면 다 나온 자리.
    body 바로 아래라 지도 위 층(map-status 800 · error 1000)보다 위에 뜬다 */
 .settings-panel{position:fixed;z-index:1100;top:0;right:0;bottom:0;width:min(340px,86vw);display:flex;flex-direction:column;background:var(--paper);color:var(--ink);box-shadow:-6px 0 24px rgba(20,20,20,.18);border-radius:var(--radius-18) 0 0 var(--radius-18);transform:translateX(100%);transition:transform var(--duration-260) var(--ease-standard);padding-top:env(safe-area-inset-top,0px);padding-right:env(safe-area-inset-right,0px)}
@@ -250,10 +250,10 @@ button.bus-row:focus-visible{outline:var(--focus-width-thin) solid var(--focus);
 @media(prefers-reduced-motion:reduce){.setting-modes .setting-switch:active{transform:none}}
 /* my location: bottom right */
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group{margin:0 10px 18px 0}
-html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(255,212,0,.35)}
+html[data-theme=dark] .mast{background:#1b1c1f;color:var(--syung);box-shadow:0 2px 0 rgba(227,197,79,.35)}
 html[data-theme=dark] .identity p{color:#c9c2a0}
-html[data-theme=dark] .source-state{background:rgba(255,212,0,.1);color:#f1efe6}
-html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(255,212,0,.15)}
+html[data-theme=dark] .source-state{background:rgba(227,197,79,.1);color:#f1efe6}
+html[data-theme=dark] .source-state i{box-shadow:0 0 0 3px rgba(227,197,79,.15)}
 
 /* ---- full-width map; the line filter panel is gone ---- */
 .layout{grid-template-columns:minmax(0,1fr)!important}
@@ -291,7 +291,7 @@ html[data-theme=dark] .line-btn[aria-pressed=true] .count{background:rgba(0,0,0,
 .maplibregl-ctrl-group .map-toggle+.map-toggle,.maplibregl-ctrl-group .map-toggle+.train-toggle,.maplibregl-ctrl-group .train-toggle+.map-toggle{border-top:1px solid var(--rule)!important}
 .maplibregl-ctrl-group .map-toggle[aria-pressed=true],.maplibregl-ctrl-group .train-toggle[aria-pressed=true]{color:var(--syung-ink)!important}
 .maplibregl-ctrl-top-right .maplibregl-ctrl{margin:10px 10px 0 0}
-html[data-theme=dark] .maplibregl-ctrl-group button:hover{background:rgba(255,212,0,.14)!important}
+html[data-theme=dark] .maplibregl-ctrl-group button:hover{background:rgba(227,197,79,.14)!important}
 html[data-theme=dark] .maplibregl-ctrl-group .map-toggle[aria-pressed=true],html[data-theme=dark] .maplibregl-ctrl-group .train-toggle[aria-pressed=true]{color:var(--syung)!important}
 .webgl-zoom{border:0!important;border-radius:var(--radius-pill)!important;background:var(--paper)!important;color:var(--ink)!important;box-shadow:var(--shadow);padding:6px 11px!important;font-family:var(--round);font-weight:var(--weight-regular)!important;font-size:var(--text-13)!important}
 .live-notice{border-radius:var(--radius-pill)!important;border:0!important;background:var(--syung)!important;color:var(--syung-ink)!important;box-shadow:var(--shadow)!important;padding:var(--space-2) var(--space-4)!important}
@@ -490,7 +490,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jp-min small{font-size:var(--text-15);margin-left:1px}
 .jp-arr{font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary);font-variant-numeric:tabular-nums}
 .jp-tag{margin-left:auto;align-self:center;flex:none;font-size:var(--text-11-5);font-weight:var(--weight-bold);padding:3px 9px;border-radius:var(--radius-pill);background:var(--syung-soft);color:#5b4c00}
-html[data-theme=dark] .jp-tag{background:rgba(255,212,0,.14);color:var(--syung)}
+html[data-theme=dark] .jp-tag{background:rgba(227,197,79,.14);color:var(--syung)}
 .jp-meta{margin:0;display:flex;align-items:center;gap:6px;font-size:var(--text-12-5);color:var(--secondary);font-variant-numeric:tabular-nums}
 .jp-more{display:inline;padding:0;border:0;background:none;font:inherit;font-weight:var(--weight-bold);color:inherit;text-decoration:underline;cursor:pointer}   /* 탈 수 있는 버스 '외 N대' */
 .jp-live{display:inline-flex;align-items:center;gap:var(--space-1);margin-left:auto;font-size:var(--text-11-5);font-weight:var(--weight-bold);color:#1f8f55}
@@ -991,3 +991,78 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .jw-wheel{align-self:stretch;margin-top:0;padding:var(--space-2) 14px;border-top:2px solid #ffe14d;border-radius:var(--radius-16)}   /* 발권 화면과 달리 위 칸에 붙지 않는 독립 칸 */
 .jp-note{margin:var(--space-2) 0 0;font-size:var(--text-14);line-height:20px;color:var(--secondary)}
 .jp-ticket{display:block;width:100%;height:46px;margin:var(--space-2) 0 2px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
+
+/* 다크 모드 노랑 줄이기(시안 2026-11-01): 노랑은 지금 할 일 하나에만 — 주요 단추 · 고른 탭 · 승차권 카드만 노란 면.
+   입력 칸 · 패널은 어두운 회색 면 + 밝은 글자, 입력 중인 칸만 노란 테두리. 라이트 값은 건드리지 않는다.
+   --syung-soft 는 앱이 같이 읽는 토큰 원본(tokens.json)을 두고 웹 다크에서만 덮어쓴다 */
+html[data-theme=dark]{--syung-soft:var(--control)}
+
+/* 장소 검색 */
+html[data-theme=dark] .ps-field,html[data-theme=dark] .ps-route{border-color:var(--rule);color:var(--ink);box-shadow:none}
+html[data-theme=dark] .ps-field:focus-within,html[data-theme=dark] .ps-route:focus-within{border-color:var(--syung)}
+html[data-theme=dark] .ps-route .ps-end+.ps-field,html[data-theme=dark] .ps-route .ps-field+.ps-end{border-top-color:var(--rule)}
+html[data-theme=dark] .ps-tile.station{background:var(--control);color:var(--syung);box-shadow:none}
+html[data-theme=dark] .ps-text mark{background:none;color:var(--syung);box-shadow:none}
+
+/* 발권 칸 */
+html[data-theme=dark] .tf-note,html[data-theme=dark] .tf-l,html[data-theme=dark] .tf-in small,html[data-theme=dark] .tf-pick u,html[data-theme=dark] .tf-pl small,html[data-theme=dark] .tf-pick.empty .pk{color:var(--secondary)}
+html[data-theme=dark] .tf-dot{border-color:var(--secondary)}html[data-theme=dark] .tf-dot.to{background:var(--secondary)}
+html[data-theme=dark] .tf-route,html[data-theme=dark] .tf-pick,html[data-theme=dark] .tf-in{border-color:var(--rule);background:var(--control);color:var(--ink)}
+html[data-theme=dark] .tf-fld+.tf-fld{border-top-color:var(--rule)}
+html[data-theme=dark] .tf-pl,html[data-theme=dark] .tf-in input{color:var(--ink)}
+html[data-theme=dark] .tf-pl input::placeholder,html[data-theme=dark] .tf-in input::placeholder{color:var(--muted)}
+html[data-theme=dark] .tf-here{color:var(--secondary)}html[data-theme=dark] .tf-here:hover{background:var(--rule)}
+html[data-theme=dark] .tf-in:focus-within,html[data-theme=dark] .tf-pick:focus-visible{border-color:var(--syung);outline:0}
+html[data-theme=dark] .tf-pl:focus-within{outline-color:var(--syung)}
+html[data-theme=dark] .tf-list{background:var(--paper);border-color:var(--rule);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+html[data-theme=dark] .pp-list.tf-list button{border-bottom-color:var(--rule);color:var(--ink)}
+html[data-theme=dark] .pp-list.tf-list b{color:var(--ink)}
+html[data-theme=dark] .pp-list.tf-list small,html[data-theme=dark] .pp-list.tf-list .empty{color:var(--muted)}
+html[data-theme=dark] .pp-list.tf-list button:hover,html[data-theme=dark] .pp-list.tf-list button:focus-visible{background:var(--control)}
+html[data-theme=dark] .tf-quick i{border-color:var(--rule);color:var(--secondary)}
+html[data-theme=dark] .tf-quick [aria-pressed=true] i{background:var(--control);border-color:var(--secondary);color:var(--ink)}
+html[data-theme=dark] .tf-days button{border-color:var(--rule);background:var(--control);color:var(--secondary)}
+html[data-theme=dark] .tf-days button[aria-pressed=true]{background:var(--control);border-color:var(--syung);color:var(--syung);box-shadow:none}
+
+/* 아직 못 누르는 단추는 노랗지 않게(노랑은 지금 할 수 있는 일에만) */
+html[data-theme=dark] .tf-save[disabled]{background:var(--control);color:var(--muted);opacity:1}
+
+/* 시각 칸과 바퀴: 펼친(입력 중인) 칸만 노란 테두리, 가운데 줄은 어두운 면에 노란 글자 */
+html[data-theme=dark] .tf-time{background:var(--control);color:var(--ink);box-shadow:none}
+html[data-theme=dark] .tf-time[aria-expanded=true]{box-shadow:inset 2px 0 0 var(--syung),inset -2px 0 0 var(--syung),inset 0 2px 0 var(--syung)}   /* 아래 바퀴와 한 칸으로 이어지게 아랫변은 비운다 */
+html[data-theme=dark] .tf-wheel{border-color:var(--syung);background:var(--control);color:var(--ink)}
+html[data-theme=dark] .jw-wheel{border-color:var(--rule);background:var(--paper)}
+html[data-theme=dark] .tw-band{background:var(--rule);box-shadow:none}
+html[data-theme=dark] .tw-col:focus-visible{outline-color:var(--syung)}
+html[data-theme=dark] .tw-col button{color:var(--muted)}
+html[data-theme=dark] .tw-col button.near{color:var(--secondary)}
+html[data-theme=dark] .tw-col button.on{color:var(--syung)}
+html[data-theme=dark] .tw-foot span{color:var(--secondary)}
+
+/* 경로 고르기: 고른 경로는 어두운 면에 노란 테두리 */
+html[data-theme=dark] .rt-plan[aria-checked=true]{border-color:var(--syung);background:var(--control);color:var(--ink);box-shadow:none}
+html[data-theme=dark] .rt-radio{border-color:var(--muted);background:none}
+html[data-theme=dark] .rt-plan[aria-checked=true] .rt-radio{border-color:var(--syung)}
+html[data-theme=dark] .rt-plan[aria-checked=true] .jp-arr,html[data-theme=dark] .rt-plan[aria-checked=true] .jp-meta{color:var(--secondary)}
+
+/* 다크 모드 덜 쨍한 노랑(시안 2026-11-01): #ffd400 → #e3c54f. 토큰 원본(tokens.json)과 라이트는 그대로, 웹 다크에서만 덮어쓴다.
+   글자 대비(4.5:1 이상): 단추 글자 10.85 · 카드 글자 5.94~9.35 · 어두운 면 위 노란 글자 8.13~10.05 */
+html[data-theme=dark]{--syung:#e3c54f;--syung-deep:#d1b345;--focus:#e3c54f;--selected:rgba(227,197,79,.16);--shadow-edge-brand:0 3px 0 #b39a3c}
+/* 로고: 그림 파일의 노랑이 글자값이라 같은 그림을 새 노랑으로 넣는다 */
+html[data-theme=dark] .brand-icon,html[data-theme=dark] .tk-strip img,html[data-theme=dark] .ps-empty img,html[data-theme=dark] .login-brand{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' rx='22' fill='%23e3c54f'/%3E%3Crect x='36' y='34' width='42' height='28' rx='14' fill='%23141414'/%3E%3Ccircle cx='66' cy='48' r='5' fill='%23e3c54f'/%3E%3Cpath d='M16 38h14M12 48h18M16 58h14' stroke='%23141414' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E")}
+/* 글자값으로 적힌 노랑 */
+html[data-theme=dark] .tf-save,html[data-theme=dark] .tw-ok{background:var(--syung);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
+html[data-theme=dark] .tf-save[disabled]{background:var(--control);color:var(--muted);box-shadow:none}
+html[data-theme=dark] .sheet .station-sheet .exit,html[data-theme=dark] .station-pop .exit{background:var(--syung)}
+html[data-theme=dark] .acct-toast{border-color:var(--syung)}html[data-theme=dark] .acct-toast .tt-speed i{background:var(--syung)}
+/* 승차권 카드: 면을 낮춘 만큼 위 글자를 진하게 */
+html[data-theme=dark] .tk-face{background:var(--syung);color:#4a4216;box-shadow:var(--shadow-edge-brand),0 7px 14px rgba(0,0,0,.25)}
+html[data-theme=dark] .tk-back{background:#ecd98a}
+html[data-theme=dark] .tk-logo-row svg{color:#7d6e24}
+html[data-theme=dark] .tk-top b{color:#3a3410;opacity:1}
+html[data-theme=dark] .tk-time b{color:#3a3410}
+html[data-theme=dark] .tk-time span,html[data-theme=dark] .tk-foot,html[data-theme=dark] .tk-serial,html[data-theme=dark] .tk-flip,html[data-theme=dark] .tk-chain em,html[data-theme=dark] .tk-chain small,html[data-theme=dark] .tk-chain.wait{color:#4a4216}
+html[data-theme=dark] .tk-strip{background:#efdf9b}
+html[data-theme=dark] .tk-strip span{color:#3a3410}
+html[data-theme=dark] .tk-today{background:#f6f0da;color:#a23f24}
+html[data-theme=dark] .sy-btn.on-ticket,html[data-theme=dark] .sy-btn.on-ticket.sy-btn-text{--btn-ink:#4a4216;--btn-on:#f3e8b4;--btn-focus:#4a4216}

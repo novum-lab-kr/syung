@@ -107,7 +107,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
       map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});
       map.addLayer({id:'journey-inside',type:'line',source:'journey',filter:['==',['get','kind'],'inside'],layout:{'line-cap':'round'},paint:{'line-color':walkColor(),'line-opacity':.45,'line-width':['interpolate',['linear'],['zoom'],10,2,16,4],'line-dasharray':[0.1,2.2]}});
       map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});   // bus: shared stop marker
-      map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':['match',['get','kind'],'start','#ffd400','#141414'],'circle-stroke-color':['match',['get','kind'],'start','#141414','#ffd400'],'circle-stroke-width':3}});
+      map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':endFill(),'circle-stroke-color':endRim(),'circle-stroke-width':3}});
     }else map.getSource<GeoJSONSource>('journey')!.setData(data);
     live.busLayer?.raiseRoute();focusRoute(true);   // bus: keep selected lanes above the lazily created veil
     const all=data.features.flatMap(f=>f.geometry.type==='Point'?[f.geometry.coordinates as Position]:(f.geometry as LineString).coordinates as Position[]);   // 점 · 선만 넣었다
@@ -125,6 +125,10 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   function clearRoute(){displayedRoute=null;live.busLayer?.clearSelection({journey:true});routeBounds=null;if(map.getSource('journey'))map.getSource<GeoJSONSource>('journey')!.setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
   const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
   const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
+  // 경로 양끝 점: 출발은 노란 속 · 도착은 노란 테두리(다크는 덜 쨍한 노랑)
+  const endYellow=()=>document.documentElement.dataset.theme==='dark'?'#e3c54f':'#ffd400';
+  const endFill=():DataDrivenPropertyValueSpecification<string>=>['match',['get','kind'],'start',endYellow(),'#141414'];
+  const endRim=():DataDrivenPropertyValueSpecification<string>=>['match',['get','kind'],'start','#141414',endYellow()];
   // The lines on the ground: faded under a found route; on the 롤러코스터 a faint shadow of its track (the track itself
   // is not drawn zoomed out below 12.5: there they come back in full)
   let routeFocus=false;
@@ -155,7 +159,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
   // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)
   function focusRoute(on:boolean):void{
-    if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
+    if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-ends','circle-color',endFill());map.setPaintProperty('journey-ends','circle-stroke-color',endRim());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
     routeFocus=on;setRouteOpacity();
     live.stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
     if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);

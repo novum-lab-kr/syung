@@ -9,7 +9,7 @@ type V3 = readonly number[];
 export type AvatarBox = (x0:number, y0:number, z0:number, x1:number, y1:number, z1:number, color:string, part?:AvatarPart)=>void;
 export type AvatarQuad = (a:V3, b:V3, c:V3, d:V3, n:V3, color:string, part?:AvatarPart | readonly AvatarPart[], pivot?:readonly (number | null)[] | null)=>void;
 export interface AvatarTools { box:AvatarBox; quad:AvatarQuad }
-export interface AvatarLook { build(tools:AvatarTools):void; rig:{ hip:number; shoulder:number }; name?:string }
+export interface AvatarLook { build(tools:AvatarTools):void; rig:{ hip:number; shoulder:number }; name?:string; darkColors?:Record<string, string> }   // darkColors: 다크 테마에서 바꿔 칠할 색(모양에 적은 것만)
 // 위치(GeolocationPosition 모양)와 이 프레임의 모습
 interface PositionLike { coords:{ longitude:number; latitude:number; accuracy?:number | null }; timestamp?:number }
 export interface MyPose { lngLat:number[]; yaw:number | null; walk:number; phase:number; animating:boolean }
@@ -44,11 +44,11 @@ export const nodAngle = (pitch:number) => (90 - pitch) * NOD_RATE * RAD;
 export const facingYaw = (bearing:number) => Math.atan2(Math.cos(bearing * RAD), -Math.sin(bearing * RAD));
 const hex = (c:string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
 // 꼭짓점: 자리 3 · 법선 3 · 색 3 · 부위 1 · 축(x, z) 2 = 12 float. 부위 5 = 바닥 그림자(축 칸에 원 안 좌표 −1~1)
-export function buildAvatarMesh({ build, rig }:AvatarLook) {
+export function buildAvatarMesh({ build, rig, darkColors }:AvatarLook, { dark = false } = {}) {
   const data:number[] = [];
   const put = (p:V3, n:V3, rgb:number[], part:number, pivot:number[]) => data.push(...p, ...n, ...rgb, part, ...pivot);
   const quad:AvatarQuad = (a, b, c, d, n, color, part = 'body', pivot = null) => {
-    const P = [a, b, c, d], K = (Array.isArray(part) ? part : [part, part, part, part]).map(p => PARTS[p] ?? 0), rgb = hex(color);
+    const P = [a, b, c, d], K = (Array.isArray(part) ? part : [part, part, part, part]).map(p => PARTS[p] ?? 0), rgb = hex((dark && darkColors?.[color]) || color);
     // 축: 다리 · 팔은 이 면들의 x 가운데(상자는 아래 box 가 상자 가운데를 넘긴다), 높이는 그 꼭짓점 부위의 rig
     const px = pivot ? pivot[0]! : (Math.min(a[0]!, b[0]!, c[0]!, d[0]!) + Math.max(a[0]!, b[0]!, c[0]!, d[0]!)) / 2;
     const pv = (k:number) => [px, pivot && pivot[1] != null && k ? pivot[1]! : k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
@@ -157,23 +157,24 @@ export class AvatarRenderer {
     gl.linkProgram(this.p!); if (!gl.getProgramParameter(this.p!, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(this.p!)!);
     this.u = Object.fromEntries((['matrix', 'pose', 'unit', 'walk', 'phase', 'fade', 'dark', 'nod', 'shade'] as const).map(k => [k, gl.getUniformLocation(this.p!, 'u_' + k)])) as Uniforms<AvatarUniform>;
   }
-  // 모양마다 한 번 짓는다(몸 · 그림자 두 묶음)
-  mesh(id:string | null | undefined) {
-    let m = this.meshes.get(id!); if (m) return m;
+  // 모양마다 한 번 짓는다(몸 · 그림자 두 묶음). 다크 색이 따로 있는 모양은 다크 한 벌을 더(테마가 바뀌어도 두 벌을 재사용)
+  mesh(id:string | null | undefined, dark = false) {
     const look = LOOKS.get(id!); if (!look) return null;
-    const gl = this.gl!, built = buildAvatarMesh(look);
+    const key = dark && look.darkColors ? `${id}:dark` : id!;
+    let m = this.meshes.get(key); if (m) return m;
+    const gl = this.gl!, built = buildAvatarMesh(look, { dark });
     m = Object.fromEntries(Object.entries(built).map(([k, data]) => {
       const vao = gl.createVertexArray(), buf = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       for (const [loc, n, off] of [[0, 3, 0], [1, 3, 3], [2, 3, 6], [3, 1, 9], [4, 2, 10]] as [number, number, number][]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 48, off * 4) }
       return [k, { vao, buf, count: data.length / 12 }];
     })) as unknown as AvatarMesh;
-    gl.bindVertexArray(null); this.meshes.set(id!, m); return m;
+    gl.bindVertexArray(null); this.meshes.set(key, m); return m;
   }
   // world: 메르카토르 [x, y], yaw: 앞 방향(라디안, 버스와 같음), scale: 키 px, unit: 1/(512·2^줌),
   // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차 · 버스와 같은 자리에서), nod: 고개 든 각, lightYaw: 빛을 셈할 때의 방향(없으면 yaw)
   render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }:AvatarRenderOptions) {
-    this.init(gl); const m = this.mesh(look) || this.mesh(LOOKS.keys().next().value); if (!m) return;
+    this.init(gl); const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark); if (!m) return;
     this.matrix.set(matrix); for (let i = 0; i < 4; i++) this.matrix[12 + i] = matrix[i]! * origin[0]! + matrix[4 + i]! * origin[1]! + matrix[12 + i]!;
     gl.useProgram(this.p); gl.uniformMatrix4fv(this.u.matrix, false, this.matrix);
     gl.uniform4f(this.u.pose, world[0]! - origin[0]!, world[1]! - origin[1]!, yaw, scale); gl.uniform1f(this.u.unit, unit);

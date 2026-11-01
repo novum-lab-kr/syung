@@ -187,7 +187,7 @@ void main(){vec3 col=v_color.rgb; float alpha=v_color.a;float m=v_material;
       float window=shape(roundedBox(p-vec2(0.,.15),vec2(.28,.18),.025));
       float lamps=shape(length(vec2(abs(p.x)-.245,p.y+.20))-.048);
       float ink=max(ring,max(max(body,tyres),bumper)*(1.-max(window,lamps)));
-      col=mix(mix(vec3(1.,.83,.08),vec3(1.,.89,.28),u_dark),vec3(.07,.08,.08),ink);
+      col=mix(mix(vec3(1.,.83,.08),vec3(.89,.773,.31),u_dark),vec3(.07,.08,.08),ink);   // 정류장 판 노랑: 다크는 #e3c54f(시트 · 단추와 같다)
     }
     if(abs(m-28.)<.2){   // 가마 지붕 위 현판: 한지 #F2E6CE 에 먹색 #282A26 번호, 가장자리는 노선 색
       float index=v_info.x;vec2 cell=vec2(mod(index,4.),floor(index/4.));

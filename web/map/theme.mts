@@ -79,6 +79,9 @@ export function createMapTheme({map,$,menu,seoulSun,cityPalette,applyCityStyle,a
     set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
     for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]] as [string,unknown][]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
     set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
+    // 내 위치 점 · 출구 번호판: 다크는 덜 쨍한 노랑(시트 · 단추의 web/syung.css 다크 값과 같다)
+    set('me-dot','circle-color',t==='dark'?'#e3c54f':'#ffd400');
+    if(map.getLayer('exit-refs'))map.setLayoutProperty('exit-refs','icon-image',t==='dark'?'exit-sign-dark':'exit-sign');
     applyCityStyle(map,{on:S.city.enabled,theme:t,tone:S.city.tone,mapOn:true,pack:S.city.pack,ride:!!rider.ride});   // city-life: the city ground's layers in this theme and mode (the stock roads step aside)
     applyGroundTexture(map,{on:S.city.groundTexture,theme:t,pack:S.city.pack});   // 조선: 흙 질감 (packed earth instead of a flat floor)
     syncCity();   // city-build: the buildings follow the mode and theme
