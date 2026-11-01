@@ -1,4 +1,4 @@
-import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jmRing, jmjRing, monumentsInView, palaceRing, sjRing } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jmRing, jmjRing, monumentsInView, palaceRing, sjRing, tombRings } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
@@ -19,7 +19,15 @@ var ZONES = {
 	sajik: () => __vitePreload(() => import("./monuments_sajik.mjs"), [], import.meta.url),
 	hwangudan: () => __vitePreload(() => import("./monuments_hwangudan.mjs"), [], import.meta.url),
 	sungnyemun: () => __vitePreload(() => import("./monuments_sungnyemun.mjs"), [], import.meta.url),
-	heunginjimun: () => __vitePreload(() => import("./monuments_heunginjimun.mjs"), [], import.meta.url)
+	heunginjimun: () => __vitePreload(() => import("./monuments_heunginjimun.mjs"), [], import.meta.url),
+	seonjeong: () => __vitePreload(() => import("./monuments_seonjeong.mjs"), [], import.meta.url),
+	jeongneung: () => __vitePreload(() => import("./monuments_jeongneung.mjs"), [], import.meta.url),
+	uireung: () => __vitePreload(() => import("./monuments_uireung.mjs"), [], import.meta.url),
+	heonin: () => __vitePreload(() => import("./monuments_heonin.mjs"), [], import.meta.url),
+	taegang: () => __vitePreload(() => import("./monuments_taegang.mjs"), [], import.meta.url),
+	seokchon: () => __vitePreload(() => import("./monuments_seokchon.mjs"), [], import.meta.url),
+	pungnap: () => __vitePreload(() => import("./monuments_pungnap.mjs"), [], import.meta.url),
+	mongchon: () => __vitePreload(() => import("./monuments_mongchon.mjs"), [], import.meta.url)
 };
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_nrm; layout(location=2) in vec2 a_kind;
@@ -32,7 +40,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[30];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[32];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -79,6 +87,14 @@ void main(){
     float jr = min(fract(rows), 1. - fract(rows)), jc = min(fract(cols), 1. - fract(cols)) * .22 / .09;
     float joint = (1. - smoothstep(0., .1, min(jr, jc))) * (1. - smoothstep(.3, .8, fwidth(rows)));
     c *= (.92 + .12 * hash(vec2(floor(cols), row))) * (1. - .22 * joint);
+  } else if (k == 30) {   // 풀(봉분 · 토성 · 둔덕): 잔디가 얼룩덜룩 — 큰 얼룩 둘이 겹치고 비탈일수록 어둡게
+    float blotch = hash(floor(v_p.xy * .45)) * .55 + hash(floor(v_p.xy * 1.7) + 7.) * .45;
+    c *= .86 + .26 * blotch; c *= .88 + .12 * n.z;
+  } else if (k == 31) {   // 적석(석촌동 고분): 크기가 들쭉날쭉한 돌 층 — 단(약 0.4 m)마다 엇갈린 줄눈, 윗면은 돌 얼룩
+    if (side > .5) { float rows = v_p.z / .42, row = floor(rows), cols = (along + row * .37) / (.55 + .5 * hash(vec2(row, 1.))), cell = floor(cols);
+      float joint = 1. - smoothstep(0., .06, min(min(fract(rows), 1. - fract(rows)), min(fract(cols), 1. - fract(cols)) * .8));
+      c *= (.82 + .3 * hash(vec2(cell, row))) * (1. - .28 * joint); }
+    else c *= .8 + .32 * hash(floor(v_p.xy * 1.6));
   } else if (k == 26) {   // 유리(대온실): 철골 살이 가늘게 비치는 옅은 청록
     c *= 1. - .22 * max(line(along / 1.4, .08), line(v_p.z / 1.4, .08));
   } else if (k == 27) {   // 서양식 유리창: 한지 격자 없이 어두운 유리 — 가운데 세로 문설주 하나만
@@ -231,7 +247,8 @@ var Monuments = class {
 			hhmRing(),
 			jmRing(),
 			sjRing(),
-			hgRing()
+			hgRing(),
+			...tombRings()
 		].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
 			let inside = false;
 			for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
