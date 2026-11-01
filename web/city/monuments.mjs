@@ -1,4 +1,4 @@
-import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jmRing, jmjRing, monumentsInView, palaceRing, sjRing, tombRings } from "./monuments_data.mjs";
+import { GATE_BASE_D, GATE_DECK_Z, GATE_YARDS, MONUMENTS, beRing, cdgRing, cggRing, dsgRing, ghgRing, hgRing, hhmRing, jgRing, jmRing, jmjRing, mdRing, monumentsInView, palaceRing, s2Ring, sdRing, sjRing, tombRings, wgRing } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
@@ -20,6 +20,12 @@ var ZONES = {
 	hwangudan: () => __vitePreload(() => import("./monuments_hwangudan.mjs"), [], import.meta.url),
 	sungnyemun: () => __vitePreload(() => import("./monuments_sungnyemun.mjs"), [], import.meta.url),
 	heunginjimun: () => __vitePreload(() => import("./monuments_heunginjimun.mjs"), [], import.meta.url),
+	wongaksa: () => __vitePreload(() => import("./monuments_wongaksa.mjs"), [], import.meta.url),
+	myeongdong: () => __vitePreload(() => import("./monuments_myeongdong.mjs"), [], import.meta.url),
+	seoul284: () => __vitePreload(() => import("./monuments_seoul284.mjs"), [], import.meta.url),
+	seodaemun: () => __vitePreload(() => import("./monuments_seodaemun.mjs"), [], import.meta.url),
+	jogyesa: () => __vitePreload(() => import("./monuments_jogyesa.mjs"), [], import.meta.url),
+	bongeunsa: () => __vitePreload(() => import("./monuments_bongeunsa.mjs"), [], import.meta.url),
 	seonjeong: () => __vitePreload(() => import("./monuments_seonjeong.mjs"), [], import.meta.url),
 	jeongneung: () => __vitePreload(() => import("./monuments_jeongneung.mjs"), [], import.meta.url),
 	uireung: () => __vitePreload(() => import("./monuments_uireung.mjs"), [], import.meta.url),
@@ -40,7 +46,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 var FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[32];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[35];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -82,7 +88,7 @@ void main(){
     c *= (.93 + .1 * hash(vec2(floor(cols), row))) * (1. - .2 * joint);
   } else if (k == 15) {   // 공포: 덩어리마다 붉고 푸르게(단청)
     c = mod(floor(along / 1.55 + .5), 2.) < 1. ? u_col[2] : vec3(.17, .36, .56);
-  } else if (k == 25) {   // 붉은 벽돌(서양식 건물 · 중명전 · 정관헌): 작은 벽돌 줄 + 엇갈린 줄눈
+  } else if (k == 25 || k == 32) {   // 붉은 · 회색 벽돌(서양식 건물 · 명동성당 · 서대문형무소): 작은 벽돌 줄 + 엇갈린 줄눈
     float rows = v_p.z / .09, row = floor(rows), cols = (along + row * .5 * .22) / .22;
     float jr = min(fract(rows), 1. - fract(rows)), jc = min(fract(cols), 1. - fract(cols)) * .22 / .09;
     float joint = (1. - smoothstep(0., .1, min(jr, jc))) * (1. - smoothstep(.3, .8, fwidth(rows)));
@@ -95,7 +101,7 @@ void main(){
       float joint = 1. - smoothstep(0., .06, min(min(fract(rows), 1. - fract(rows)), min(fract(cols), 1. - fract(cols)) * .8));
       c *= (.82 + .3 * hash(vec2(cell, row))) * (1. - .28 * joint); }
     else c *= .8 + .32 * hash(floor(v_p.xy * 1.6));
-  } else if (k == 26) {   // 유리(대온실): 철골 살이 가늘게 비치는 옅은 청록
+  } else if (k == 26 || k == 34) {   // 유리(대온실 · 보호각): 철골 살이 가늘게 비치는 옅은 청록
     c *= 1. - .22 * max(line(along / 1.4, .08), line(v_p.z / 1.4, .08));
   } else if (k == 27) {   // 서양식 유리창: 한지 격자 없이 어두운 유리 — 가운데 세로 문설주 하나만
     c *= 1. - .35 * line(along / 1.1, .06);
@@ -122,6 +128,8 @@ void main(){
     // 안에서 새어 나오는 등불(전각 · 문루): 문 안 · 벽 사이 회벽 · 판문 · 마루 · 처마 밑이 따뜻하게 — 낮 · 라이트에는 이 줄에 들어오지 않는다
     vec3 warm = vec3(1., .62, .28); float flick = .94 + .06 * hash(floor(v_p.xy * .5));
     if (k == 12) col = mix(col, warm * flick, .88);                            // 문 안 · 홍예: 등불이 켜진 속
+    else if (k == 26) { if (side > .5) col = mix(col, warm * flick * .5, .22); }   // 유리 온실: 벽에만 안의 불빛이 아주 옅게(지붕은 근거 없어 켜지 않는다 — 사진 근사)
+    else if (k == 27) col = mix(col, warm * flick * .5, .3);                       // 서양식 유리창: 안의 불빛이 은은히(격자 없음)
     else if (k == 20) { float lattice = max(line(along / .42, .14), line(v_p.z / .52, .14)); col = mix(col, warm * flick * (1. - .5 * lattice), .9); }   // 창호만 한지에 비친 등불(살은 어둡게)
     else if (k == 26) { if (side > .5) col = mix(col, warm * flick * .5, .22); }   // 유리 온실: 벽에만 안의 불빛이 아주 옅게(지붕은 근거 없어 켜지 않는다 — 사진 근사)
     else if (k == 27) col = mix(col, warm * flick * .5, .3);                       // 서양식 유리창: 안의 불빛이 은은히(격자 없음)
@@ -248,6 +256,12 @@ var Monuments = class {
 			jmRing(),
 			sjRing(),
 			hgRing(),
+			wgRing(),
+			mdRing(),
+			s2Ring(),
+			sdRing(),
+			jgRing(),
+			beRing(),
 			...tombRings()
 		].map((ring) => ring.map(([lng, lat]) => toM(lng, lat)))).some((ring) => {
 			let inside = false;

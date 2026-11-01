@@ -70,14 +70,6 @@ var STUPAS = [{
 	widthMul: .65,
 	looks: ["wood-tower"],
 	yawDeg: 0
-}, {
-	id: "wongaksa",
-	kind: "wongaksa",
-	lngLat: [126.9883, 37.57123],
-	height: 12,
-	looks: ["wood-tower"],
-	minPx: 30,
-	yawDeg: 0
 }];
 var mercX = (lng) => (lng + 180) / 360;
 var mercY = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;

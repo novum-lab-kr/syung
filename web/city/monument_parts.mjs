@@ -30,7 +30,10 @@ var K = {
 	teal: 28,
 	cream: 29,
 	grass: 30,
-	rubble: 31
+	rubble: 31,
+	greyBrick: 32,
+	copper: 33,
+	shield: 34
 };
 var COLORS = [
 	"#E6E0D2",
@@ -64,7 +67,10 @@ var COLORS = [
 	"#2F7F80",
 	"#E3D9BF",
 	"#7A9250",
-	"#A8A08E"
+	"#A8A08E",
+	"#8F8D88",
+	"#3F7A63",
+	"#9DB8BF"
 ];
 var hex = (value) => {
 	const v = parseInt(value.slice(1), 16);

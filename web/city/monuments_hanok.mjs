@@ -377,7 +377,7 @@ function storey(w, S, hx, hy, base, body, open = false) {
 				cx - bay * .32,
 				-hy - .03,
 				top - .35
-			], K.tunnel, [
+			], S.doorKind ?? K.tunnel, [
 				0,
 				-1,
 				0
