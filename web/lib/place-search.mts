@@ -55,9 +55,12 @@ export function mergeHits(stationHits:readonly PlaceHit[], places:readonly Found
 export const endName = (hit:PlaceHit) => hit.lines && !/역$/.test(hit.name) ? `${hit.name}역` : hit.name;
 
 // 'HH:MM' → 가까운 5분. 발권 시각 바퀴가 5분 단위다(23:58 → 00:00)
-export function nearestFive(time:string) {
+export function nearestFive(time:string, now:Date) {
   const [hours = 0, minutes = 0] = time.split(':').map(Number);
-  const total = (Math.round((hours * 60 + minutes) / 5) * 5) % 1440;
+  const exact = hours * 60 + minutes, rounded = Math.round(exact / 5) * 5;
+  // 내려 맞춘 시각이 이미 지났으면 다음 5분으로 올린다: 지난 시각은 다음 탈 날(내일)로 찾게 되어 길이 달라진다. 같은 분도 지난 것으로 본다(nextRideDay 와 같은 기준)
+  const passed = rounded < exact && rounded <= now.getHours() * 60 + now.getMinutes();
+  const total = (passed ? rounded + 5 : rounded) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 

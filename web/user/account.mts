@@ -696,7 +696,7 @@ export async function initAccount({colors = {}, routeMap, myLocation, journeyRet
   async function openFromJourney(draft:TicketStart, search:unknown) {
     if (!$('settingsPanel').classList.contains('open')) $('settingsButton').click();   // 로그인 복귀를 기다리는 동안 이미 열었으면 그대로
     openTicket(null);
-    const {from, to} = draft, time = nearestFive(draft.leaveBy);
+    const {from, to} = draft, time = nearestFive(draft.leaveBy, new Date());
     ticketFrom = journeyReturn?.(search) ?? null;
     ticketsView.set({from: {name: from.name, lat: from.lat, lng: from.lng}, to: {name: to.name, lat: to.lat, lng: to.lng}, time, fromHere: draft.fromHere});
     // routeSeq 는 쓰지 않는다: 서랍을 연 변화를 routeWatch 가 받아 routeSeq 를 올려 이 답이 늘 버려진다

@@ -40,10 +40,20 @@ test('경로 끝 이름: 역만 「역」을 붙인다', () => {
   assert.equal(endName({ name: '양재천', lat: 0, lng: 0 }), '양재천');
 });
 test('가까운 5분(하루를 넘으면 0시로)', () => {
-  assert.equal(nearestFive('08:12'), '08:10');
-  assert.equal(nearestFive('08:13'), '08:15');
-  assert.equal(nearestFive('23:58'), '00:00');
-  assert.equal(nearestFive('08:30'), '08:30');
+  const early = new Date(2026, 10, 1, 6, 0);
+  assert.equal(nearestFive('08:12', early), '08:10');
+  assert.equal(nearestFive('08:13', early), '08:15');
+  assert.equal(nearestFive('23:58', early), '00:00');
+  assert.equal(nearestFive('08:30', early), '08:30');
+});
+test('내려 맞춘 시각이 지금보다 이르면 다음 5분으로', () => {
+  const at = (hour, minute, second = 0) => new Date(2026, 10, 1, hour, minute, second);
+  assert.equal(nearestFive('17:42', at(17, 42)), '17:45');
+  assert.equal(nearestFive('17:41', at(17, 40, 30)), '17:45', '같은 분이면 이미 지난 것');
+  assert.equal(nearestFive('17:42', at(17, 39)), '17:40', '아직 안 지났으면 그대로');
+  assert.equal(nearestFive('17:43', at(17, 43)), '17:45', '올려 맞춘 것은 그대로');
+  assert.equal(nearestFive('17:40', at(17, 42)), '17:40', '딱 맞는 시각은 내림이 아니다');
+  assert.equal(nearestFive('23:58', at(23, 58)), '00:00', '자정을 넘겨 올린 값은 건드리지 않는다');
 });
 test('역 자체 거르기: 그 역의 노선 · 철도 이름만 빠지고 가게 이름은 남는다', () => {
   const near = { lat: 37.4985, lng: 127.0276 }, seoul = findStations(STATIONS, '서울', COLORS).filter(hit => hit.name === '서울'), seoulNear = { lat: 37.555, lng: 126.972 };
