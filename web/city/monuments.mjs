@@ -4,7 +4,7 @@ import { compileProgram } from "./traffic.mjs";
 import { MU, toM } from "./life.mjs";
 import { cityFarFade, cityGrow, cityMinZoom } from "./zoom_gate.mjs";
 import { COLORS, hex } from "./monument_parts.mjs";
-import { splitTriangles } from "./monument_cells.mjs";
+import { cellInView, splitTriangles } from "./monument_cells.mjs";
 import { PalaceTorches } from "./monument_torches.mjs";
 import { PalaceTrees } from "./monument_trees.mjs";
 // web/city/monuments.mts
@@ -180,6 +180,9 @@ var Monuments = class {
 	disposed = false;
 	zones = /* @__PURE__ */ new Map();
 	onLoad = null;
+	builtThisFrame = false;
+	deferred = false;
+	palette = new Float32Array(COLORS.flatMap(hex));
 	mesh(item) {
 		if (item.mesh) return item.mesh;
 		if (this.disposed) return null;
@@ -198,6 +201,11 @@ var Monuments = class {
 			}));
 			return null;
 		}
+		if (this.builtThisFrame) {
+			this.deferred = true;
+			return null;
+		}
+		this.builtThisFrame = true;
 		const gl = this.gl, data = got.buildMonument(item.M.id), [cos, sin] = item.rot, chunks = [];
 		for (const piece of splitTriangles(data, 8, (index) => {
 			const px = data[index], py = data[index + 1];
@@ -227,12 +235,15 @@ var Monuments = class {
 				gl.enableVertexAttribArray(loc);
 				gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off * 4);
 			}
+			let top = 0;
+			for (let z = 2; z < piece.items.length; z += 8) if (piece.items[z] > top) top = piece.items[z];
 			gl.bindVertexArray(null);
 			chunks.push({
 				va,
 				b,
 				n: piece.items.length / 8,
-				rect: piece.rect
+				rect: piece.rect,
+				top
 			});
 		}
 		return item.mesh = { chunks };
@@ -296,7 +307,9 @@ var Monuments = class {
 		if (grow <= 0) return;
 		const [cx, cy] = toM(center[0], center[1]);
 		const keep = (rect) => phone ? cityFarFade(Math.hypot(Math.max(rect[0] - cx, 0, cx - rect[1]), Math.max(rect[2] - cy, 0, cy - rect[3])), zoom) : 1;
-		const u = this.u, palette = new Float32Array(COLORS.flatMap(hex));
+		const u = this.u, palette = this.palette;
+		this.builtThisFrame = false;
+		this.deferred = false;
 		gl.useProgram(this.p);
 		gl.uniformMatrix4fv(u.u_matrix, false, MT);
 		gl.uniform1f(u.u_mu, MU);
@@ -321,7 +334,7 @@ var Monuments = class {
 			gl.uniform1i(u.u_openingsOnly, item.M.openingsOnly ? 1 : 0);
 			for (const chunk of m.chunks) {
 				const g = grow * keep(chunk.rect);
-				if (g <= 0) continue;
+				if (g <= 0 || !cellInView(MT, MU, chunk.rect, chunk.top)) continue;
 				gl.uniform1f(u.u_grow, g);
 				gl.uniform2f(u.u_at, item.x, item.y);
 				gl.uniform2fv(u.u_rot, item.rot);
@@ -330,7 +343,8 @@ var Monuments = class {
 			}
 		}
 		gl.bindVertexArray(null);
-		const palaceGrow = (zone, rect) => zoneReady.get(zone) ? grow * keep(rect) : 0;
+		if (this.deferred) setTimeout(() => this.onLoad?.(), 0);
+		const palaceGrow = (zone, rect, top) => zoneReady.get(zone) && cellInView(MT, MU, rect, top) ? grow * keep(rect) : 0;
 		this.trees.render(gl, MT, {
 			light,
 			lit,

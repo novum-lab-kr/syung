@@ -196,6 +196,8 @@ void main(){
   vec3 col = c * lt; if (u_night > .5) col = c * lt * .42 + c * vec3(1., .78, .52) * .04;
   o = vec4(clamp(col, 0., 1.), 1.);
 }`;
+var TREE_SCALE_MAX = 1.25;
+var TREE_TOP = 20;
 var SPECIES = [
 	"pine",
 	"broad",
@@ -222,20 +224,29 @@ var PalaceTrees = class {
 	addGrove(zone, lngLat, trees) {
 		if (this.groves.some((each) => each.zone === zone)) return;
 		const gl = this.gl, at = toM(lngLat[0], lngLat[1]), cells = [];
+		for (const key of SPECIES) {
+			if (this.templates.has(key)) continue;
+			const data = buildTemplate(key), b = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, b);
+			gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+			let reach = 0;
+			for (let i = 0; i < data.length; i += TREE_STRIDE) reach = Math.max(reach, Math.hypot(data[i], data[i + 1]));
+			this.templates.set(key, {
+				b,
+				n: data.length / TREE_STRIDE,
+				reach: reach * TREE_SCALE_MAX
+			});
+		}
+		const reach = Math.max(...[...this.templates.values()].map((each) => each.reach));
 		for (const cell of splitPoints(at, SPECIES.map((key) => trees[key] ?? []))) {
+			const r = cell.rect, pad = Math.max(0, reach - 3);
+			r[0] -= pad;
+			r[1] += pad;
+			r[2] -= pad;
+			r[3] += pad;
 			const species = [];
 			SPECIES.forEach((key, kind) => {
-				let template = this.templates.get(key);
-				if (!template) {
-					const data = buildTemplate(key), b = gl.createBuffer();
-					gl.bindBuffer(gl.ARRAY_BUFFER, b);
-					gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-					template = {
-						b,
-						n: data.length / TREE_STRIDE
-					};
-					this.templates.set(key, template);
-				}
+				const template = this.templates.get(key);
 				const points = cell.items[kind], count = points.length / 2, inst = new Float32Array(count * 4);
 				for (let i = 0; i < count; i++) {
 					const x = points[i * 2] / 10, y = points[i * 2 + 1] / 10, h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
@@ -310,7 +321,7 @@ var PalaceTrees = class {
 		for (const grove of this.groves) {
 			gl.uniform2fv(u.u_at, grove.at);
 			for (const cell of grove.cells) {
-				const g = grow(grove.zone, cell.rect);
+				const g = grow(grove.zone, cell.rect, TREE_TOP);
 				if (g <= 0) continue;
 				gl.uniform1f(u.u_grow, g);
 				for (const each of cell.species) {

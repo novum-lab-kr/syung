@@ -62,4 +62,15 @@ function splitTriangles(data, stride, world) {
 		items: new Float32Array(group.floats)
 	}));
 }
-export { splitPoints, splitTriangles };
+function cellInView(MT, mu, rect, zTop) {
+	let outside = 63, behind = true;
+	for (let corner = 0; corner < 8; corner++) {
+		const x = (corner & 1 ? rect[1] : rect[0]) * mu, y = (corner & 2 ? rect[3] : rect[2]) * mu, z = (corner & 4 ? zTop : 0) * mu;
+		const cx = MT[0] * x + MT[4] * y + MT[8] * z + MT[12], cy = MT[1] * x + MT[5] * y + MT[9] * z + MT[13], cw = MT[3] * x + MT[7] * y + MT[11] * z + MT[15];
+		if (cw > 0) behind = false;
+		outside &= (cx < -cw ? 1 : 0) | (cx > cw ? 2 : 0) | (cy < -cw ? 4 : 0) | (cy > cw ? 8 : 0);
+		if (!outside && !behind) return true;
+	}
+	return !(behind || outside);
+}
+export { cellInView, splitPoints, splitTriangles };

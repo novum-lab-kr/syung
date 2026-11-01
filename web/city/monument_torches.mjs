@@ -186,6 +186,7 @@ void main(){
   vec3 n = normalize(v_n); float up = .3 + .7 * max(n.z, 0.), near = exp(-max(v_p.z - 1.7, 0.) * 2.2);
   o = vec4(u_col[k] * (.35 * up + vec3(1., .62, .3) * .9 * near), 1.);   // 기둥 · 불통: 달빛 아래 어둡고 불꽃 가까이만 따뜻하게
 }`;
+var TORCH_TOP = 4;
 var PalaceTorches = class {
 	parts = [];
 	groves = [];
@@ -251,12 +252,13 @@ var PalaceTorches = class {
 				gl.bindVertexArray(null);
 				return va;
 			});
+			const pad = 2;
 			cells.push({
 				rect: [
-					cell.rect[0] - 2,
-					cell.rect[1] + 2,
-					cell.rect[2] - 2,
-					cell.rect[3] + 2
+					cell.rect[0] - pad,
+					cell.rect[1] + pad,
+					cell.rect[2] - pad,
+					cell.rect[3] + pad
 				],
 				inst: ib,
 				count,
@@ -293,7 +295,7 @@ var PalaceTorches = class {
 		for (const grove of this.groves) {
 			gl.uniform2fv(u.u_at, grove.at);
 			for (const cell of grove.cells) {
-				const g = grow(grove.zone, cell.rect);
+				const g = grow(grove.zone, cell.rect, TORCH_TOP);
 				if (g <= 0 || !cell.count) continue;
 				gl.uniform1f(u.u_grow, g);
 				gl.disable(gl.BLEND);
