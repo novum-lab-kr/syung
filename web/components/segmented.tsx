@@ -1,4 +1,4 @@
-// 기초 컴포넌트: 세그먼트 탭(길찾기 종류 탭 · 오늘/내일 · 승차권 경로 종류 — .segmented). 고른 칸은 aria-pressed.
+// 기초 컴포넌트: 세그먼트 탭(길찾기 종류 탭 · 승차권 경로 종류 — .segmented). 고른 칸은 aria-pressed.
 // 지금 화면과 같은 DOM(div role=group > button[data-<attr>] · 개수는 <b>)을 그려 syung.css 를 그대로 쓴다
 import type { ComponentChildren } from 'preact';
 

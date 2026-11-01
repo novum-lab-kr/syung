@@ -38,7 +38,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   let followBus:string|null=null,busMiss=0;   // bus: 지도에서 누른 버스를 카메라가 따라간다(2026-10-08 덕배). 끌면 멈추고 '이 버스 따라가기'로 다시
   // 몸통을 화면 조각(Preact — ui/station_sheet.tsx …)이 그렸으면 다음 것을 열 때 먼저 치운다(그 조각의 정리 함수)
   let unmountBody:(()=>void)|null=null;
-  function fillBody(fill:()=>void,source:string):number{tuck(false);if(source!=='bus')live.busLayer?.clearSelection();const u=unmountBody;unmountBody=null;u?.();fill();sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
+  function fillBody(fill:()=>void,source:string):number{tuck(false);sheet.classList.remove('tall');if(source!=='bus')live.busLayer?.clearSelection();const u=unmountBody;unmountBody=null;u?.();fill();sheet.hidden=false;sheet.style.transform='';sheet.style.transition='';requestAnimationFrame(()=>sheet.classList.add('open'));return ++sheetToken}   // bus: release the bus selection when another detail opens
   // mount: 빈 몸통에 그리고 치우는 함수를 돌려준다
   function openSheetView(mount:(body:HTMLElement)=>()=>void,source='subway'):number{return fillBody(()=>{sheetBody.textContent='';unmountBody=mount(sheetBody)},source)}
   function closeSheet():void{
@@ -65,10 +65,24 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   function sheetBusy():boolean{const b=live.busLayer,working=!!(following||followBus||b?.selection?.kind==='bus'||b?.followView?.());return live.appMode?working:!sheet.hidden&&(working||!!sheetBody.querySelector('.journey'))}
   sheet.querySelector<HTMLButtonElement>('.sheet-close')!.onclick=closeByHand;
   // The handle: drag the sheet down to close it (far or fast enough), or just tap it.
+  // 휴대폰 경로 결과 시트만 두 높이: 50% ↔ 위로 끌면 72%(.tall). 72%에서 아래로 끌면 50%까지만(닫기는 50%에서 다시 끌 때). 다른 시트는 아래로 끌기뿐
   {const grab=sheet.querySelector<HTMLButtonElement>('.sheet-grab')!;let y0=0,t0=0,dy=0,drag=false,moved=false;
-    grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
-    grab.addEventListener('pointermove',e=>{if(!drag)return;dy=Math.max(0,e.clientY-y0);if(dy>4)moved=true;sheet.style.transform=`translateY(${dy}px)`});
+    const LOW=.5,HIGH=.72;
+    const resizable=()=>matchMedia('(max-width:720px)').matches&&!sheet.classList.contains('kb')&&!!sheetBody.querySelector('.journey.done');
+    let sized=false,area=0,h0=0,raw=0;
+    const putHeight=(height:string)=>{sheet.style.height=height;sheet.style.maxHeight=height};
+    grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;raw=0;sized=resizable();area=(sheet.offsetParent as HTMLElement|null)?.clientHeight??0;h0=sheet.offsetHeight;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
+    grab.addEventListener('pointermove',e=>{if(!drag)return;raw=e.clientY-y0;
+      if(sized){if(Math.abs(raw)>4)moved=true;putHeight(`${Math.min(area*HIGH,Math.max(area*LOW,h0-raw))}px`);dy=sheet.classList.contains('tall')?0:Math.max(0,raw)}
+      else{dy=Math.max(0,raw);if(dy>4)moved=true}
+      sheet.style.transform=`translateY(${dy}px)`});
+    // 놓을 때 두 높이 중 하나로: 72% 였으면 true(닫기 판단으로 넘기지 않는다)
+    const settleHeight=():boolean=>{const tall=sheet.classList.contains('tall'),held=sheet.offsetHeight;putHeight('');
+      const pulled=tall?area*HIGH-held:held-area*LOW,quick=Math.abs(raw)/Math.max(1,performance.now()-t0)>.6;
+      if(moved&&(pulled>area*(HIGH-LOW)*.3||quick&&pulled>24)){sheet.classList.toggle('tall',!tall);if(live.routeBounds)fitRoute(area*(tall?LOW:HIGH)+30)}
+      return tall};
     const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
+      if(sized&&settleHeight()){sheet.style.transform='';return}
       const fast=dy/Math.max(1,performance.now()-t0)>.6;
       if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeByHand()}
       else sheet.style.transform=''};

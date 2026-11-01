@@ -436,6 +436,11 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 
 /* 길찾기 sheet: taller, so the routes have room under the form */
 .sheet:has(.journey){max-height:72%}
+/* 휴대폰: 경로 결과 시트는 지도의 길이 보이게 처음 높이를 50%로 둔다. 카드를 펼치거나 시각을 골라도 커지지 않고 몸통(.sheet-body)이 스크롤한다.
+   손잡이를 위로 끌 때만 72%(.tall — ui/sheet.mts) */
+@media(max-width:720px){.sheet:not(.kb):has(.journey.done){height:50%;max-height:50%}
+  .sheet.tall:not(.kb):has(.journey.done){height:72%;max-height:72%}}
+@media(max-width:720px) and (prefers-reduced-motion:no-preference){.sheet:not(.kb):has(.journey.done){transition:transform .32s var(--ease-sheet),height .2s var(--ease-sheet),max-height .2s var(--ease-sheet)}}
 /* no double-tap page zoom on the controls; the map keeps its own gestures */
 .mast,.route-cta,.sheet,.jbar,.settings-panel{touch-action:manipulation}
 @media(max-width:720px){
@@ -461,6 +466,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .jsum-swap svg{width:18px;height:18px}
 .jsum-end b{font-weight:var(--weight-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jsum-end .jdot{width:8px;height:8px}
+
 .sheet .sheet-close{display:none}   /* every sheet: the handle closes it (drag down or tap), and Esc */
 
 /* kind filter: the same segmented control as the time and the theme */
@@ -628,25 +634,21 @@ html[data-theme=dark] .brand-icon{content:url(./brand/syung-light.svg)}
 .identity .brand-line p::before{content:"";width:1.5px;height:14px;border-radius:1px;background:currentColor;opacity:.45}
 @media(max-width:720px){.identity .brand-line p{display:none}}   /* phones: the name only */
 
-/* 출발 시각: one quiet line under the card; tapped, it opens in place — 오늘/내일, a big clock, −/+ 10분 */
+/* 출발 시각: 카드의 셋째 줄; tapped, it opens in place — the time wheels */
 .jwhen{display:block}
 .jw-row{display:flex;align-items:center;gap:var(--space-2);width:100%;height:44px;padding:0 var(--space-3) 0 14px;border:0;border-radius:var(--radius-14);background:var(--control);color:var(--ink);font:inherit;font-size:var(--text-14-5);font-weight:var(--weight-bold);text-align:left;cursor:pointer}
 .jw-row svg{width:17px;height:17px;flex:none;color:var(--secondary)}
 .jw-row span{flex:1;min-width:0}
 .jw-row .jw-chev{width:16px;height:16px;transition:transform var(--duration-200) var(--ease-sheet)}
-.jw-row[aria-expanded=true]{border-radius:var(--radius-14) var(--radius-14) 0 0}
 .jw-row[aria-expanded=true] .jw-chev{transform:rotate(90deg)}
 .jw-row.set svg:first-child{color:var(--syung-deep)}
 html[data-theme=dark] .jw-row.set svg:first-child{color:var(--syung)}
-.jw-panel{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-3);padding:var(--space-1) 14px 14px;border-radius:0 0 var(--radius-14) var(--radius-14);background:var(--control);animation:jw-in var(--duration-200) var(--ease-sheet)}
+.jw-panel{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-3);padding:0 14px 14px;background:var(--control);animation:jw-in var(--duration-200) var(--ease-sheet)}
 .jw-panel[hidden]{display:none}
 @keyframes jw-in{from{opacity:0;transform:translateY(-4px)}}
-.jw-head{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--rule);padding-top:var(--space-3)}
-.jw-head b{font-size:var(--text-13);color:var(--secondary)}
-.jw-now{height:30px;padding:0 var(--space-3);border:0;border-radius:var(--radius-pill);background:var(--paper);color:var(--ink);font:inherit;font-size:var(--text-12-5);font-weight:var(--weight-bold);cursor:pointer}
-.jw-day{align-self:center;background:var(--paper)}
-.jw-day button{padding:7px 18px;font-size:var(--text-13-5)}
-.jw-go{height:46px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer;box-shadow:var(--shadow-edge)}
+.jw-acts{display:flex;align-items:center;gap:var(--space-2)}
+.jw-now{flex:none;height:46px;padding:0 var(--space-3);border:0;border-radius:var(--radius-pill);background:var(--paper);color:var(--ink);font:inherit;font-size:var(--text-12-5);font-weight:var(--weight-bold);cursor:pointer}
+.jw-go{flex:1;min-width:0;height:46px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer;box-shadow:var(--shadow-edge)}
 @media(prefers-reduced-motion:reduce){.jw-panel{animation:none}.jw-row .jw-chev{transition:none}}
 /* holding − / + (or the numbers) must not start iOS text selection or its copy callout */
 .jw-panel{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -838,16 +840,16 @@ h4.pf-l{line-height:1.3}
 /* 출발 시각 휠(사용자와 정한 시안 B): 오전/오후 · 시 · 분(5분 단위)을 위아래로 돌려 가운데 노란 띠에 맞춘다 */
 .tf-wheel{margin-top:-8px;padding:var(--space-3) 14px 14px;border:2px solid #ffe14d;border-top:0;border-radius:0 0 var(--radius-16) var(--radius-16);background:#fff7cc;color:#3a3410;animation:jw-in var(--duration-200) var(--ease-sheet)}
 .tf-wheel[hidden]{display:none}
-.tw-cols{position:relative;display:flex;justify-content:center;align-items:center;gap:6px;height:200px}
-.tw-band{position:absolute;left:0;right:0;top:80px;height:40px;border-radius:var(--radius-12);background:#ffe14d;box-shadow:var(--shadow-edge-brand);pointer-events:none}
-.tw-col{position:relative;width:68px;height:200px;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain;outline:0;
-  -webkit-mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent)}
+.tw-cols{position:relative;display:flex;justify-content:center;align-items:center;gap:6px;height:102px}   /* 세 칸(칸 높이 34px = lib/time-wheel.mts ROW) */
+.tw-band{position:absolute;left:0;right:0;top:34px;height:34px;border-radius:var(--radius-12);background:#ffe14d;box-shadow:var(--shadow-edge-brand);pointer-events:none}
+.tw-col{position:relative;width:68px;height:102px;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain;outline:0;
+  -webkit-mask-image:linear-gradient(transparent,#000 25%,#000 75%,transparent);mask-image:linear-gradient(transparent,#000 25%,#000 75%,transparent)}
 .tw-col::-webkit-scrollbar{display:none}
 .tw-col:focus-visible{border-radius:var(--radius-14);outline:2px dashed #c9a800;outline-offset:-2px}   /* 키보드로 고를 때만: 노란 계열 점선(진한 선은 휠 위에서 딱딱해 보인다) */
-.tw-col::before,.tw-col::after{content:"";display:block;height:80px}
-.tw-col button{display:grid;place-items:center;width:100%;height:40px;padding:0;border:0;background:none;color:#b3a35a;font-family:var(--round);font-size:var(--text-19);scroll-snap-align:center;cursor:pointer;transition:color var(--duration-120),font-size var(--duration-120)}
-.tw-col button.near{color:#7d6f2c;font-size:var(--text-21)}.tw-col button.on{color:#3a3410;font-size:27px}
-.tw-colon{position:relative;font-family:var(--round);font-size:var(--text-26)}
+.tw-col::before,.tw-col::after{content:"";display:block;height:34px}
+.tw-col button{display:grid;place-items:center;width:100%;height:34px;padding:0;border:0;background:none;color:#b3a35a;font-family:var(--round);font-size:var(--text-16);scroll-snap-align:center;cursor:pointer;transition:color var(--duration-120),font-size var(--duration-120)}
+.tw-col button.near{color:#7d6f2c;font-size:var(--text-18)}.tw-col button.on{color:#3a3410;font-size:var(--text-21)}
+.tw-colon{position:relative;font-family:var(--round);font-size:var(--text-21)}
 .tw-foot{display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-2)}.tw-foot span{font-size:var(--text-12);color:#6f6326}
 .tw-ok{min-height:44px;padding:0 22px;border:0;border-radius:var(--radius-14);background:#ffe14d;box-shadow:var(--shadow-edge-brand);color:#3a3410;font-family:var(--round);font-size:var(--text-16);cursor:pointer}
 @media(prefers-reduced-motion:reduce){.tf-wheel{animation:none}.tw-col{scroll-behavior:auto}}
@@ -980,10 +982,12 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .ps-end b{font-size:var(--text-16)}
 .ps-route .ps-end+.ps-field,.ps-route .ps-field+.ps-end{border-top:1.5px dashed var(--syung-deep)}
 .ps-arrivals{height:44px;margin-top:var(--space-2);border:0;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font-family:var(--round);font-size:var(--text-15);cursor:pointer}
-.jtop{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2);align-items:center}
+/* 출발 · 도착 · 시간 세 줄을 카드 하나에 묶는다. 맞바꾸기 단추는 출발 · 도착 줄 옆 */
+.jtop{display:grid;grid-template-columns:minmax(0,1fr);border-radius:var(--radius-16);background:var(--control)}
+.jtop .jsum{background:none;border-radius:0}
 .jtop .jwhen{display:contents!important}
-.jtop .jw-row{width:auto;gap:var(--space-1);padding:0 10px;white-space:nowrap;border-radius:var(--radius-14)}
-.jtop .jw-panel{grid-column:1/-1;border-radius:var(--radius-14)}
-.jw-wheel{align-self:stretch;margin-top:0;border-top:2px solid #ffe14d;border-radius:var(--radius-16)}   /* 발권 화면과 달리 위 칸에 붙지 않는 독립 칸 */
+.jtop .jw-row{background:none;border-top:1px dashed var(--rule);border-radius:0}
+.jtop .jw-panel{background:none;border-radius:0}
+.jw-wheel{align-self:stretch;margin-top:0;padding:var(--space-2) 14px;border-top:2px solid #ffe14d;border-radius:var(--radius-16)}   /* 발권 화면과 달리 위 칸에 붙지 않는 독립 칸 */
 .jp-note{margin:var(--space-2) 0 0;font-size:var(--text-14);line-height:20px;color:var(--secondary)}
 .jp-ticket{display:block;width:100%;height:46px;margin:var(--space-2) 0 2px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
