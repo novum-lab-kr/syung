@@ -2,7 +2,7 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, GATE_YARDS, monumentsInView } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, tombRings, GATE_YARDS, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
@@ -26,6 +26,14 @@ const ZONES:Record<string, () => Promise<ZoneModule>> = {
   hwangudan: () => import('./monuments_hwangudan.mts'),
   sungnyemun: () => import('./monuments_sungnyemun.mts'),
   heunginjimun: () => import('./monuments_heunginjimun.mts'),
+  seonjeong: () => import('./monuments_seonjeong.mts'),
+  jeongneung: () => import('./monuments_jeongneung.mts'),
+  uireung: () => import('./monuments_uireung.mts'),
+  heonin: () => import('./monuments_heonin.mts'),
+  taegang: () => import('./monuments_taegang.mts'),
+  seokchon: () => import('./monuments_seokchon.mts'),
+  pungnap: () => import('./monuments_pungnap.mts'),
+  mongchon: () => import('./monuments_mongchon.mts'),
 };
 
 // ── 그리기 ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -40,7 +48,7 @@ void main(){
   gl_Position = u_matrix * vec4((u_at + q) * u_mu, a_pos.z * u_mu * u_grow, 1.);
 }`;
 const FS = `#version 300 es
-precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[30];
+precision highp float; in vec3 v_n, v_p; in vec2 v_k; uniform vec3 u_light; uniform vec2 u_lit; uniform float u_night; uniform bool u_openingsOnly; uniform vec3 u_col[32];
 out vec4 o;
 float hash(vec2 p){p=fract(p*vec2(.1031,.1030));p+=dot(p,p.yx+33.33);return fract((p.x+p.y)*p.x);}
 float line(float x, float w){ float f = abs(fract(x) - .5) * 2.; return 1. - smoothstep(1. - w, 1., f); }
@@ -87,6 +95,14 @@ void main(){
     float jr = min(fract(rows), 1. - fract(rows)), jc = min(fract(cols), 1. - fract(cols)) * .22 / .09;
     float joint = (1. - smoothstep(0., .1, min(jr, jc))) * (1. - smoothstep(.3, .8, fwidth(rows)));
     c *= (.92 + .12 * hash(vec2(floor(cols), row))) * (1. - .22 * joint);
+  } else if (k == 30) {   // 풀(봉분 · 토성 · 둔덕): 잔디가 얼룩덜룩 — 큰 얼룩 둘이 겹치고 비탈일수록 어둡게
+    float blotch = hash(floor(v_p.xy * .45)) * .55 + hash(floor(v_p.xy * 1.7) + 7.) * .45;
+    c *= .86 + .26 * blotch; c *= .88 + .12 * n.z;
+  } else if (k == 31) {   // 적석(석촌동 고분): 크기가 들쭉날쭉한 돌 층 — 단(약 0.4 m)마다 엇갈린 줄눈, 윗면은 돌 얼룩
+    if (side > .5) { float rows = v_p.z / .42, row = floor(rows), cols = (along + row * .37) / (.55 + .5 * hash(vec2(row, 1.))), cell = floor(cols);
+      float joint = 1. - smoothstep(0., .06, min(min(fract(rows), 1. - fract(rows)), min(fract(cols), 1. - fract(cols)) * .8));
+      c *= (.82 + .3 * hash(vec2(cell, row))) * (1. - .28 * joint); }
+    else c *= .8 + .32 * hash(floor(v_p.xy * 1.6));
   } else if (k == 26) {   // 유리(대온실): 철골 살이 가늘게 비치는 옅은 청록
     c *= 1. - .22 * max(line(along / 1.4, .08), line(v_p.z / 1.4, .08));
   } else if (k == 27) {   // 서양식 유리창: 한지 격자 없이 어두운 유리 — 가운데 세로 문설주 하나만
@@ -168,7 +184,7 @@ export class Monuments {
   inPalace = (x:number, y:number):boolean => {
     const gates = (this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => { const [gx, gy] = toM(lng, lat); return [gx, gy, radiusM] as [number, number, number] }));
     if (gates.some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
-    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
+    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing(), ...tombRings()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
     return rings.some(ring => {
       let inside = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }

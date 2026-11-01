@@ -73,6 +73,74 @@ export const HG_AT:[number, number] = [126.97968, 37.56501];
 export const HG_ORIGIN:[number, number] = [126.97, 37.56];
 export const HG_RING:number[] = [8889,5245,8879,5227,8987,5187,8911,5021,8834,5045,8800,5056,8793,5040,8825,5029,9091,4948,9131,4936,9049,4733,9425,4655,9487,4641,9523,4641,9576,4642,9635,4647,9686,4664,10376,4894,10334,4960,10133,4903,10096,4980,10050,5050,9970,5119,9914,5151,9879,5153,9884,5212,9886,5243,9696,5224,9662,5319,9640,5361,9586,5344,9540,5327,9502,5310,9463,5291,9432,5272,9397,5249,9378,5232,9365,5221,9349,5207,9323,5187,9300,5166,9276,5145,9252,5121,9241,5108,8978,5210,8909,5237,8889,5245];
 export const hgRing = ():[number, number][] => ringOf(HG_RING, HG_ORIGIN);
+// 왕릉(선릉 · 정릉(중종) · 정릉(신덕왕후) · 의릉 · 헌인릉 · 태릉 · 강릉) · 석촌동 고분군 · 풍납토성 · 몽촌토성 움집터: 구역마다 기준점(AT) · 정수 좌표 원점(ORIGIN) · 숨김 둘레(RINGS — 지도 건물을 비우고 도시 나무가 비킨다).
+// 둘레는 OSM 공원 · 담 윤곽이 있으면 그것, 없으면 건물 · 봉분 윤곽을 감싼 바깥 18 m 넓힌 볼록 껍질(근사). 풍납토성은 남은 성벽 선을 양쪽 17 m(모델 밑 반폭)씩 띠로 감싼 것. 건물 · 봉분 · 나무 자료는 구역 파일(지연 로드)에 있다. (© OpenStreetMap contributors, ODbL)
+export const SJN_AT:[number, number] = [127.04932, 37.50845];
+export const SJN_ORIGIN:[number, number] = [127.04, 37.5];
+export const SJN_RINGS:number[][] = [
+  [5271,8223,5388,8150,5540,8056,5590,8124,5939,8181,6185,8222,6240,8198,6238,8153,6248,8081,6210,8023,6177,7985,6210,7933,6248,7915,6316,7901,6391,7865,6447,7823,6583,7476,6598,7412,7007,7163,7271,7139,6967,7344,6972,7301,6960,7275,6921,7287,6867,7312,6807,7349,6780,7378,6786,7400,6749,7484,6697,7551,6658,7635,6626,7744,6621,7826,6639,7922,6687,8011,6774,8016,6822,8052,6819,8087,6792,8135,6744,8170,6705,8210,6675,8286,6634,8354,6539,8447,6442,8481,6408,8495,6205,8560,6118,8608,6064,8649,5998,8651,5909,8642,5877,8659,5827,8648,5795,8641,5729,8627,5709,8677,5727,8682,5654,8880,5579,8898,5425,8862,5382,8813,5447,8621,5417,8609,5356,8597,5253,8559,5263,8503,5383,8455,5393,8399,5368,8292,5271,8223],
+  [6751,8651,6858,8665,6882,8558,6775,8543,6751,8651],
+  [11375,8946,11392,9023,11435,9092,11500,9147,12501,9579,12736,9474,12987,9291,13113,9179,13266,8940,13354,8629,12787,8150,12723,8106,12629,8126,12029,8300,11916,8352,11422,8801,11385,8870,11375,8946],
+  [9057,7088,9081,7282,9855,7224,9847,7095,9717,7039,9057,7088],
+  [6802,9552,7116,9925,7314,9939,7598,9747,7611,9589,7196,9285,6802,9552],
+];
+export const sjnRings = ():[number, number][][] => SJN_RINGS.map(ring => ringOf(ring, SJN_ORIGIN));
+export const JNG_AT:[number, number] = [127.00598, 37.60221];
+export const JNG_ORIGIN:[number, number] = [127, 37.6];
+export const JNG_RINGS:number[][] = [
+  [5310,2122,5314,2195,5447,2278,6482,2411,6620,2371,6648,2290,6555,2198,6468,2164,5399,2017,5352,2054,5310,2122],
+];
+export const jngRings = ():[number, number][][] => JNG_RINGS.map(ring => ringOf(ring, JNG_ORIGIN));
+export const UIR_AT:[number, number] = [127.05721, 37.60402];
+export const UIR_ORIGIN:[number, number] = [127.05, 37.6];
+export const UIR_RINGS:number[][] = [
+  [8518,4144,8376,4244,8062,4295,7692,4242,7266,4208,7077,4134,6955,3995,6786,3816,6601,3679,6364,3590,6222,3513,6874,3131,7636,3532,8158,3781,8221,3811,8448,3978,8518,4144],
+  [7663,4551,7697,4678,7866,4649,7832,4523,7663,4551],
+];
+export const uirRings = ():[number, number][][] => UIR_RINGS.map(ring => ringOf(ring, UIR_ORIGIN));
+export const HIN_AT:[number, number] = [127.08132, 37.46503];
+export const HIN_ORIGIN:[number, number] = [127.07, 37.46];
+export const HIN_RINGS:number[][] = [
+  [9856,6474,9913,5626,10370,5113,10776,4383,11239,4542,13685,4569,14291,4822,13223,6798,9856,6474],
+  [12168,4418,12528,4425,12536,4310,12168,4304,12168,4418],
+  [12321,3881,12326,3961,13153,4043,13191,3872,13056,3794,12863,3764,12739,3758,12499,3798,12378,3845,12321,3881],
+  [12548,4417,13515,4431,13521,4162,12555,4148,12548,4417],
+  [10013,4121,10019,4146,10031,4171,10116,4296,10171,4350,10200,4352,10233,4349,10263,4342,10289,4331,10309,4318,10327,4304,10344,4282,10354,4257,10360,4234,10361,4214,10359,4196,10350,4176,10338,4154,10206,3981,10173,3982,10145,3986,10109,3993,10085,4001,10062,4014,10035,4043,10021,4083,10013,4121],
+  [8940,5689,9191,5688,9194,5488,8943,5484,8933,5580,8940,5689],
+  [9547,5263,9614,5300,9709,5191,9642,5154,9547,5263],
+];
+export const hinRings = ():[number, number][][] => HIN_RINGS.map(ring => ringOf(ring, HIN_ORIGIN));
+export const TGN_AT:[number, number] = [127.10116, 37.63684];
+export const TGN_ORIGIN:[number, number] = [127.09, 37.63];
+export const TGN_RINGS:number[][] = [
+  [6614,4834,6651,4863,6852,4928,6939,4912,7041,4729,7406,3420,7409,3347,7285,3320,7233,3374,6614,4834],
+  [14996,10248,15216,10298,15409,10293,15889,9765,16049,9471,16069,9313,15645,9147,15254,9340,15097,9554,14905,9817,14932,10149,14996,10248],
+];
+export const tgnRings = ():[number, number][][] => TGN_RINGS.map(ring => ringOf(ring, TGN_ORIGIN));
+export const SKC_AT:[number, number] = [127.10218, 37.50318];
+export const SKC_ORIGIN:[number, number] = [127.1, 37.5];
+export const SKC_RINGS:number[][] = [
+  [1794,4161,2527,4173,2615,3690,2496,2340,2394,2191,2156,2243,1884,2737,1722,3669,1794,4161],
+];
+export const skcRings = ():[number, number][][] => SKC_RINGS.map(ring => ringOf(ring, SKC_ORIGIN));
+export const PNP_AT:[number, number] = [127.11618, 37.53417];
+export const PNP_ORIGIN:[number, number] = [127.11, 37.52];
+export const PNP_RINGS:number[][] = [
+  [8350,12278,8148,12079,7922,11791,7746,11617,7312,11277,6842,10939,6366,10640,6069,10450,5895,10305,5731,10200,5611,10133,5505,10067,5365,9969,5202,9772,5525,9606,5664,9777,5749,9830,5842,9888,5965,9958,6158,10081,6326,10223,6606,10401,7091,10706,7577,11055,8027,11408,8239,11617,8464,11905,8649,12085,8350,12278],
+  [9693,15038,9183,13840,9548,13742,10058,14940,9693,15038],
+  [5065,9619,4783,9332,4538,9190,4365,9051,3846,8634,3416,8282,3145,7988,3294,8024,3072,8120,2730,8228,1755,8570,1318,8663,1287,8688,1248,8765,1221,8856,1209,8963,1247,9052,1288,9133,1311,9346,1464,10228,1082,10269,929,9385,907,9183,884,9153,826,8994,840,8813,883,8666,978,8506,1179,8378,1615,8285,2577,7948,2912,7842,3149,7741,3431,7784,3708,8082,4121,8420,4640,8836,4787,8957,5059,9118,5369,9431,5065,9619],
+  [8844,20343,9237,20107,10025,19577,10274,19810,9481,20343,9077,20586,8844,20343],
+  [8995,13532,8823,13021,8688,12725,8511,12454,8854,12314,9042,12604,9192,12933,9367,13453,8995,13532],
+  [10293,19388,11037,18864,11110,18782,11144,18603,11140,18372,11089,18126,10945,17865,10802,17653,10710,17521,11047,17373,11141,17508,11293,17733,11458,18038,11524,18343,11528,18624,11472,18886,11305,19083,10549,19617,10293,19388],
+];
+export const pnpRings = ():[number, number][][] => PNP_RINGS.map(ring => ringOf(ring, PNP_ORIGIN));
+export const MCN_AT:[number, number] = [127.12451, 37.52037];
+export const MCN_ORIGIN:[number, number] = [127.12, 37.52];
+export const MCN_RINGS:number[][] = [
+  [4552,512,4422,523,4329,490,4290,427,4312,364,4389,314,4373,244,4515,208,4548,276,4637,278,4702,317,4730,364,4714,424,4662,473,4552,512],
+];
+export const mcnRings = ():[number, number][][] => MCN_RINGS.map(ring => ringOf(ring, MCN_ORIGIN));
+export const tombRings = ():[number, number][][] => [...sjnRings(), ...jngRings(), ...uirRings(), ...hinRings(), ...tgnRings(), ...skcRings(), ...pnpRings(), ...mcnRings()];
 // 두 도성문 중심 · 방향: OSM 원자료의 육축 긴 변(2026-11-01), 구역 파일 머리에 계산 근거.
 // 숭례문 https://www.openstreetmap.org/relation/10647050 · 흥인지문 https://www.openstreetmap.org/way/320783808
 export const MONUMENTS:Monument[] = [
@@ -114,6 +182,24 @@ export const MONUMENTS:Monument[] = [
   { id: 'hg-wall', zone: 'hwangudan', lngLat: HG_AT, yawDeg: 0 },
   { id: 'hg-halls', zone: 'hwangudan', lngLat: HG_AT, yawDeg: 0 },
   { id: 'hg-frames', zone: 'hwangudan', lngLat: HG_AT, yawDeg: 0 },
+  // 왕릉 · 석촌동 고분군 · 풍납토성 · 몽촌토성 움집터: 같은 방식(기준점 고정 · 방향 없음). 멀리서는 안 그린다
+  { id: 'sjn-wall', zone: 'seonjeong', lngLat: SJN_AT, yawDeg: 0 },
+  { id: 'sjn-halls', zone: 'seonjeong', lngLat: SJN_AT, yawDeg: 0 },
+  { id: 'sjn-frames', zone: 'seonjeong', lngLat: SJN_AT, yawDeg: 0 },
+  { id: 'jng-wall', zone: 'jeongneung', lngLat: JNG_AT, yawDeg: 0 },
+  { id: 'jng-halls', zone: 'jeongneung', lngLat: JNG_AT, yawDeg: 0 },
+  { id: 'uir-wall', zone: 'uireung', lngLat: UIR_AT, yawDeg: 0 },
+  { id: 'uir-halls', zone: 'uireung', lngLat: UIR_AT, yawDeg: 0 },
+  { id: 'uir-frames', zone: 'uireung', lngLat: UIR_AT, yawDeg: 0 },
+  { id: 'hin-wall', zone: 'heonin', lngLat: HIN_AT, yawDeg: 0 },
+  { id: 'hin-halls', zone: 'heonin', lngLat: HIN_AT, yawDeg: 0 },
+  { id: 'hin-frames', zone: 'heonin', lngLat: HIN_AT, yawDeg: 0 },
+  { id: 'tgn-wall', zone: 'taegang', lngLat: TGN_AT, yawDeg: 0 },
+  { id: 'tgn-halls', zone: 'taegang', lngLat: TGN_AT, yawDeg: 0 },
+  { id: 'skc-halls', zone: 'seokchon', lngLat: SKC_AT, yawDeg: 0 },
+  { id: 'pnp-wall', zone: 'pungnap', lngLat: PNP_AT, yawDeg: 0 },
+  { id: 'mcn-land', zone: 'mongchon', lngLat: MCN_AT, yawDeg: 0 },
+  { id: 'mcn-halls', zone: 'mongchon', lngLat: MCN_AT, yawDeg: 0 },
 ];
 // 모델이 앉는 자리의 지도 건물(OSM 광화문 외곽 49.5 × 13.3 m — 육축과 양옆 궁장 도막)을 뺀다: 그 안에 중심이 있는 조각 건물
 // 도성문 둘레(OSM 육축 · 옹성 전체를 감싸는 원): 지도 건물 비우기와 도시 나무 비우기가 같이 쓴다.
@@ -144,6 +230,15 @@ export const MONUMENT_HIDES:MonumentHide[] = [
   { lngLat: JM_AT, radiusM: 900, minH: 0, area: jmRing() },
   { lngLat: SJ_AT, radiusM: 300, minH: 0, area: sjRing() },
   { lngLat: HG_AT, radiusM: 300, minH: 0, area: hgRing() },
+  // 왕릉 · 고분군 · 토성 · 움집터: 숨김 둘레 안에 중심이 든 지도 건물을 뺀다(전용 모델 · 한옥 틀 · 상자가 대신 선다)
+  ...sjnRings().map(area => ({ lngLat: SJN_AT, radiusM: 450, minH: 0, area })),
+  ...jngRings().map(area => ({ lngLat: JNG_AT, radiusM: 200, minH: 0, area })),
+  ...uirRings().map(area => ({ lngLat: UIR_AT, radiusM: 300, minH: 0, area })),
+  ...hinRings().map(area => ({ lngLat: HIN_AT, radiusM: 450, minH: 0, area })),
+  ...tgnRings().map(area => ({ lngLat: TGN_AT, radiusM: 700, minH: 0, area })),
+  ...skcRings().map(area => ({ lngLat: SKC_AT, radiusM: 200, minH: 0, area })),
+  ...pnpRings().map(area => ({ lngLat: PNP_AT, radiusM: 900, minH: 0, area })),
+  ...mcnRings().map(area => ({ lngLat: MCN_AT, radiusM: 100, minH: 0, area })),
 ];
 
 // 이 모델들이 있는 곳(광화문 · 경복궁 · 광화문광장 · 창덕궁 둘레): 화면이 이 둘레에 닿을 때만 코드를 받는다(첫 화면 · 다른 도시에서는 받지 않는다)
@@ -158,6 +253,14 @@ const REGIONS:Record<string, { lngLat:[number, number]; radiusM:number }> = {
   jongmyo: { lngLat: JM_AT, radiusM: 700 },
   sajik: { lngLat: SJ_AT, radiusM: 300 },
   hwangudan: { lngLat: HG_AT, radiusM: 300 },
+  seonjeong: { lngLat: SJN_AT, radiusM: 450 },
+  jeongneung: { lngLat: JNG_AT, radiusM: 200 },
+  uireung: { lngLat: UIR_AT, radiusM: 300 },
+  heonin: { lngLat: HIN_AT, radiusM: 450 },
+  taegang: { lngLat: TGN_AT, radiusM: 700 },
+  seokchon: { lngLat: SKC_AT, radiusM: 200 },
+  pungnap: { lngLat: PNP_AT, radiusM: 900 },
+  mongchon: { lngLat: MCN_AT, radiusM: 230 },
   // 도성문: 문 둘레 100 m 안에 화면이 닿을 때만 그 문의 코드를 받는다
   sungnyemun: { lngLat: [126.97536025, 37.559986249999994], radiusM: 100 },
   heunginjimun: { lngLat: [127.009594975, 37.571153975], radiusM: 100 },
