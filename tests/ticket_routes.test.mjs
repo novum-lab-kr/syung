@@ -1,7 +1,7 @@
 // 승차권 경로 고르기(2026-10-29): 길 모양으로 묶고 · 다른 모양은 다 남긴다(느려도 · '가장 빠른 길'도 그대로) — web/user/ticket_routes.mts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeOrder, routeFilterView, chosenAfter, routeUrl, shortName} from '../web/user/ticket_routes.mts';
+import {usefulRoutes, quickestRoute, rideSig, nextRideDay, routeAt, routeOrder, routeFilterView, chosenAfter, routeForTicket, routeUrl, shortName} from '../web/user/ticket_routes.mts';
 
 const walk = {type: 'walk', seconds: 120};
 const ride = (line, from, to) => ({type: 'subway', line, from, to});
@@ -115,4 +115,12 @@ test('shortName: 10 letters or fewer without spaces stay whole, 11+ are shortene
   assert.equal(shortName('가나다라마바사아자차'), '가나다라마바사아자차');   // 10글자
   assert.equal(shortName('가나다라마바사아자차카'), '가나다‥차카');   // 11글자 → 앞 3 ‥ 뒤 2
   assert.equal(shortName('가나다라마 바사아자차카'), '가나다‥차카');   // 띄어쓰기 빼면 11글자
+});
+
+test('다시 찾은 답: 같은 길 모양이면 그 길, 없으면 가장 빠른 길 + 바뀜 표시, 없으면 비어 있음', () => {
+  const chosen = plan('고른 길', 30, [ride('1호선', '서울', '시청')]);
+  const same = plan('같은 길', 33, [ride('1호선', '서울', '시청')]), fast = plan('빠른 길', 20, [ride('2호선', '시청', '을지로입구')]);
+  assert.deepEqual(routeForTicket([fast, same], chosen), {route: same, changed: false});
+  assert.deepEqual(routeForTicket([fast], chosen), {route: fast, changed: true});
+  assert.deepEqual(routeForTicket([], chosen), {route: null, changed: false});
 });

@@ -14,10 +14,11 @@ export interface AvatarLook { build(tools:AvatarTools):void; rig:{ hip:number; s
 interface PositionLike { coords:{ longitude:number; latitude:number; accuracy?:number | null }; timestamp?:number }
 export interface MyPose { lngLat:number[]; yaw:number | null; walk:number; phase:number; animating:boolean }
 type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
-type AvatarUniform = 'matrix' | 'pose' | 'unit' | 'walk' | 'phase' | 'fade' | 'dark';
+type AvatarUniform = 'matrix' | 'pose' | 'unit' | 'walk' | 'phase' | 'fade' | 'dark' | 'nod' | 'shade';
 interface MeshPart { vao:WebGLVertexArrayObject; buf:WebGLBuffer; count:number }
 interface AvatarMesh { body:MeshPart; shadow:MeshPart }
-export interface AvatarRenderOptions { look?:string | null; world:readonly number[]; origin:readonly number[]; yaw:number; scale:number; unit:number; walk?:number; phase?:number; dark?:boolean; occlude?:number }
+export interface AvatarRenderOptions { look?:string | null; world:readonly number[]; origin:readonly number[]; yaw:number; scale:number; unit:number; walk?:number; phase?:number; dark?:boolean; occlude?:number; nod?:number; lightYaw?:number }
+export interface MarkerRenderOptions { world:readonly number[]; origin:readonly number[]; zoom:number; bearing:number; pitch:number; dark?:boolean }
 export const AVATAR_MINZOOM = 15;   // 이 줌부터 캐릭터, 아래는 지금처럼 노란 점(map/layers.mjs 의 me 층 maxzoom)
 // 키(px): 줌 15 에서 40 px → 18 에서 69 px, 18 부터는 줌 하나에 1.5배(19 104 px · 20 155 px).
 // 화면 크기를 붙잡아 두면 확대할수록 지도에 비해 작아 보였고(행님 2026-10-22: 18 부터는 줄이지 말자), 지도와 같이 2배씩은 너무 컸다(행님: 쫌만 줄이자)
@@ -31,6 +32,16 @@ export function registerAvatar(id:string, look:AvatarLook) { LOOKS.set(id, look)
 export function avatarLooks() { return [...LOOKS.keys()] }
 
 const PARTS:Record<string, number> = { body: 0, legL: 1, legR: 2, armL: 3, armR: 4 };
+const HEAD_PART = 6;   // 몸통 윗면 위쪽의 몸(사람형 모양의 머리): 목을 축으로 고개를 든다(u_nod — 내 위치 캐릭터는 0)
+const NECK = .43;
+// 고른 곳의 슝 마커: 내 위치 캐릭터보다 크고, 올려다보는 각의 이만큼 고개를 든다(정면으로 다 들면 얼굴이 하늘을 향한다)
+export const MARKER_SIZE = 1.5;
+const MARKER_LOOK = 'sprout', NOD_RATE = .6;
+const MARKER_LIGHT_YAW = Math.atan2(.65, -.5);   // 얼굴이 늘 빛 쪽(아래 FS 의 빛)이게: 지도를 돌려도 어두워지지 않는다
+// 기울기 → 고개 든 각. 카메라가 위에 있을수록(pitch 가 작을수록) 더 든다
+export const nodAngle = (pitch:number) => (90 - pitch) * NOD_RATE * RAD;
+// 화면 쪽을 보는 방향(내 위치 캐릭터가 방향을 모를 때와 같다)
+export const facingYaw = (bearing:number) => Math.atan2(Math.cos(bearing * RAD), -Math.sin(bearing * RAD));
 const hex = (c:string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
 // 꼭짓점: 자리 3 · 법선 3 · 색 3 · 부위 1 · 축(x, z) 2 = 12 float. 부위 5 = 바닥 그림자(축 칸에 원 안 좌표 −1~1)
 export function buildAvatarMesh({ build, rig }:AvatarLook) {
@@ -41,7 +52,8 @@ export function buildAvatarMesh({ build, rig }:AvatarLook) {
     // 축: 다리 · 팔은 이 면들의 x 가운데(상자는 아래 box 가 상자 가운데를 넘긴다), 높이는 그 꼭짓점 부위의 rig
     const px = pivot ? pivot[0]! : (Math.min(a[0]!, b[0]!, c[0]!, d[0]!) + Math.max(a[0]!, b[0]!, c[0]!, d[0]!)) / 2;
     const pv = (k:number) => [px, pivot && pivot[1] != null && k ? pivot[1]! : k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
-    for (const i of [0, 1, 2, 0, 2, 3]) put(P[i]!, n, rgb, K[i]!, pv(K[i]!));
+    const head = K.every(k => k === 0) && Math.min(a[2]!, b[2]!, c[2]!, d[2]!) >= NECK;
+    for (const i of [0, 1, 2, 0, 2, 3]) put(P[i]!, n, rgb, head ? HEAD_PART : K[i]!, head ? [0, NECK] : pv(K[i]!));
   };
   const box:AvatarBox = (x0, y0, z0, x1, y1, z1, color, part = 'body') => {
     const k = PARTS[part] ?? 0, pv = [(x0 + x1) / 2, k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
@@ -111,21 +123,22 @@ export function createMyMotion({ now = () => performance.now() }:{ now?:()=>numb
 const VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_normal; layout(location=2) in vec3 a_color;
 layout(location=3) in float a_part; layout(location=4) in vec2 a_pivot;
-uniform mat4 u_matrix; uniform vec4 u_pose; uniform float u_unit,u_walk,u_phase;
+uniform mat4 u_matrix; uniform vec4 u_pose; uniform float u_unit,u_walk,u_phase,u_nod,u_shade;
 out vec3 v_normal; out vec3 v_color; out vec2 v_disc; flat out float v_part;
 void main(){vec3 p=a_pos,n=a_normal;float ph=6.2832*u_phase,a=0.;
   // 다리: 엉덩이 축, 왼발 · 오른발 반대 박자. 팔: 어깨 축, 같은 쪽 다리와 반대
   if(a_part>.5&&a_part<2.5)a=u_walk*.5*sin(ph)*(a_part<1.5?1.:-1.);
   else if(a_part>2.5&&a_part<4.5)a=-u_walk*.4*sin(ph)*(a_part<3.5?1.:-1.);
+  else if(a_part>5.5)a=u_nod;
   if(a!=0.){float ca=cos(a),sa=sin(a);vec2 d=vec2(p.x-a_pivot.x,p.z-a_pivot.y);p.x=a_pivot.x+ca*d.x-sa*d.y;p.z=a_pivot.y+sa*d.x+ca*d.y;
     n=vec3(ca*n.x-sa*n.z,n.y,sa*n.x+ca*n.z);}
-  if(a_part<4.5)p.z+=u_walk*.03*abs(sin(ph));   // 걸음마다 살짝 들썩(그림자는 바닥에)
+  if(a_part<4.5||a_part>5.5)p.z+=u_walk*.03*abs(sin(ph));   // 걸음마다 살짝 들썩(그림자는 바닥에)
   float c=cos(u_pose.z),s=sin(u_pose.z);vec3 w=p*u_pose.w*u_unit;w.xy=vec2(c*w.x-s*w.y,s*w.x+c*w.y)+u_pose.xy;
-  gl_Position=u_matrix*vec4(w,1.);v_normal=vec3(c*n.x-s*n.y,s*n.x+c*n.y,n.z);v_color=a_color;v_part=a_part;v_disc=a_pivot;}`;
+  float cs=cos(u_shade),ss=sin(u_shade);gl_Position=u_matrix*vec4(w,1.);v_normal=vec3(cs*n.x-ss*n.y,ss*n.x+cs*n.y,n.z);v_color=a_color;v_part=a_part;v_disc=a_pivot;}`;
 const FS = `#version 300 es
 precision highp float;in vec3 v_normal;in vec3 v_color;in vec2 v_disc;flat in float v_part;uniform float u_fade,u_dark;out vec4 o;
 void main(){vec3 col=v_color;float alpha=1.;
-  if(v_part>4.5){float d=length(v_disc);alpha=mix(.24,.4,u_dark)*(1.-smoothstep(.3,1.,d));col=vec3(.05,.06,.06);}
+  if(v_part>4.5&&v_part<5.5){float d=length(v_disc);alpha=mix(.24,.4,u_dark)*(1.-smoothstep(.3,1.,d));col=vec3(.05,.06,.06);}
   else col*=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);   // 버스와 같은 빛
   alpha*=u_fade;if(alpha<.005)discard;o=vec4(col*alpha,alpha);}`;
 
@@ -142,7 +155,7 @@ export class AvatarRenderer {
       gl.attachShader(this.p!, s); gl.deleteShader(s);
     }
     gl.linkProgram(this.p!); if (!gl.getProgramParameter(this.p!, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(this.p!)!);
-    this.u = Object.fromEntries((['matrix', 'pose', 'unit', 'walk', 'phase', 'fade', 'dark'] as const).map(k => [k, gl.getUniformLocation(this.p!, 'u_' + k)])) as Uniforms<AvatarUniform>;
+    this.u = Object.fromEntries((['matrix', 'pose', 'unit', 'walk', 'phase', 'fade', 'dark', 'nod', 'shade'] as const).map(k => [k, gl.getUniformLocation(this.p!, 'u_' + k)])) as Uniforms<AvatarUniform>;
   }
   // 모양마다 한 번 짓는다(몸 · 그림자 두 묶음)
   mesh(id:string | null | undefined) {
@@ -158,19 +171,24 @@ export class AvatarRenderer {
     gl.bindVertexArray(null); this.meshes.set(id!, m); return m;
   }
   // world: 메르카토르 [x, y], yaw: 앞 방향(라디안, 버스와 같음), scale: 키 px, unit: 1/(512·2^줌),
-  // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차 · 버스와 같은 자리에서)
-  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0 }:AvatarRenderOptions) {
+  // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차 · 버스와 같은 자리에서), nod: 고개 든 각, lightYaw: 빛을 셈할 때의 방향(없으면 yaw)
+  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }:AvatarRenderOptions) {
     this.init(gl); const m = this.mesh(look) || this.mesh(LOOKS.keys().next().value); if (!m) return;
     this.matrix.set(matrix); for (let i = 0; i < 4; i++) this.matrix[12 + i] = matrix[i]! * origin[0]! + matrix[4 + i]! * origin[1]! + matrix[12 + i]!;
     gl.useProgram(this.p); gl.uniformMatrix4fv(this.u.matrix, false, this.matrix);
     gl.uniform4f(this.u.pose, world[0]! - origin[0]!, world[1]! - origin[1]!, yaw, scale); gl.uniform1f(this.u.unit, unit);
-    gl.uniform1f(this.u.walk, walk); gl.uniform1f(this.u.phase, phase); gl.uniform1f(this.u.dark, dark ? 1 : 0);
+    gl.uniform1f(this.u.walk, walk); gl.uniform1f(this.u.phase, phase); gl.uniform1f(this.u.dark, dark ? 1 : 0); gl.uniform1f(this.u.nod, nod); gl.uniform1f(this.u.shade, lightYaw);
     gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     const draw = (b:MeshPart, fade:number, func:number, write:boolean) => { gl.uniform1f(this.u.fade, fade); gl.depthFunc(func); gl.depthMask(write); gl.bindVertexArray(b.vao); gl.drawArrays(gl.TRIANGLES, 0, b.count) };
     draw(m.shadow, 1, gl.LEQUAL, false);
     if (occlude > 0) draw(m.body, occlude, gl.GREATER, false);   // 건물 뒤: 비치게(깊이를 쓰기 전)
     draw(m.body, 1, gl.LEQUAL, true);
     gl.bindVertexArray(null); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
+  }
+  // 고른 곳의 슝 마커: 늘 카메라를 보고 고개만 기울기를 따른다. 앞서 그린 깊이를 비워 건물 · 열차에 가리지 않는다(캔버스 맨 마지막에 부른다)
+  renderMarker(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { world, origin, zoom, bearing, pitch, dark = false }:MarkerRenderOptions) {
+    gl.depthMask(true); gl.clear(gl.DEPTH_BUFFER_BIT);
+    this.render(gl, matrix, { look: MARKER_LOOK, world, origin, yaw: facingYaw(bearing), scale: avatarScale(zoom) * MARKER_SIZE, unit: 1 / (512 * 2 ** zoom), dark, nod: nodAngle(pitch), lightYaw: MARKER_LIGHT_YAW });
   }
   dispose() {
     if (!this.gl) return; const gl = this.gl;

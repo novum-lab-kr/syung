@@ -54,7 +54,7 @@ interface View {
   mapping:number;   // 뒷면 '지도에서 보기'로 길을 찾는 중인 카드(없으면 -1)
   // 발권 화면: opened 는 한 번이라도 열었나(그 전엔 옛 HTML 의 빈 칸 그대로)
   opened:boolean; editingId:number | string | undefined; name:string; time:string; days:number[];
-  from:Place | null; to:Place | null; route:SlimRoute | null; wheelOpen:boolean; sending:boolean; deleteArmed:boolean;
+  from:Place | null; to:Place | null; route:SlimRoute | null; routeNote:string; wheelOpen:boolean; sending:boolean; deleteArmed:boolean;
   fromHere:boolean; toHere:boolean;   // 그 칸의 곳이 '내 위치'로 넣은 것(칸에서 이름을 고칠 수 있다)
   // 장소 찾기(발권 화면 칸 바로 아래): placeFor 는 글자를 치는 중인 칸(없으면 null) · placeRows 는 찾은 곳 또는 안내 한 줄
   placeFor:PlaceKey | null; placeQuery:string; placeHidden:boolean; placeRows:FoundPlace[] | string;
@@ -66,7 +66,7 @@ interface View {
 }
 let view:View = {
   colors: {}, tickets: [], listTurn: 0, flipped: [], chains: [], mapping: -1,
-  opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, wheelOpen: false, sending: false, deleteArmed: false, fromHere: false, toHere: false,
+  opened: false, editingId: undefined, name: '', time: '08:00', days: [], from: null, to: null, route: null, routeNote: '', wheelOpen: false, sending: false, deleteArmed: false, fromHere: false, toHere: false,
   placeFor: null, placeQuery: '', placeHidden: true, placeRows: [],
   routeWhen: null, plans: [], chosen: -1, routeMsg: '', routeLoading: false, routeFilter: null, stepsOf: null, stepsOpen: null,
 };
@@ -102,7 +102,7 @@ function TicketPage() {
   return <TicketForm preview={opened ? { ticket: draft, today: isToday(draft) } : null} places={<><Place which="from" /><Place which="to" /></>}
     time={<TimeField open={view.wheelOpen} text={opened ? time : null} value={view.time} onToggle={call('timeToggle')} onDone={call('timeDone')} />}
     days={<DayPicker days={view.days} onDay={day => call('day')(day)} onQuick={days => call('quick')(days)} />}
-    routeHTML={opened ? routeHTML(view.route) : ''} routeEmpty={opened && !view.route} name={view.name} sending={view.sending} saveDisabled={view.sending || (opened && !view.route)}
+    routeHTML={opened ? routeHTML(view.route) : ''} routeEmpty={opened && !view.route} routeNote={opened ? view.route && view.routeNote : ''} name={view.name} sending={view.sending} saveDisabled={view.sending || (opened && !view.route)}
     deleteHidden={!opened || view.editingId === undefined} deleteArmed={view.deleteArmed}
     onRoute={call('route')} onName={value => call('name')(value)} onSubmit={call('submit')} onDelete={call('remove')} />;
 }

@@ -7,6 +7,7 @@ import FLOW02 from '../docs/flows/02-journey.md?raw';
 import FLOW03 from '../docs/flows/03-tickets.md?raw';
 import FLOW04 from '../docs/flows/04-account.md?raw';
 import FLOW05 from '../docs/flows/05-settings-modes.md?raw';
+import FLOW06 from '../docs/flows/06-search-merge.md?raw';
 
 const meta:Meta = { title: '화면 흐름', parameters: { layout: 'fullscreen' } };
 export default meta;
@@ -20,3 +21,4 @@ export const flow02 = page(FLOW02, '02 길찾기');
 export const flow03 = page(FLOW03, '03 승차권');
 export const flow04 = page(FLOW04, '04 로그인 · 내 정보');
 export const flow05 = page(FLOW05, '05 설정 · 모드');
+export const flow06 = page(FLOW06, '06 검색 합치기');

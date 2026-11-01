@@ -16,9 +16,6 @@ button,input{font:inherit}button{color:inherit}
 .setting-modes .sb-pressed .setting-switch{transform:scale(.99)}
 /* 화면에선 index.html 첫 <style> 에 있는 검색 칸 기본 규칙(같은 값) — syung.css 가 이기도록 :where 로 낮춘다 */
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-:where(.search){position:relative}
-:where(.search input){width:100%;height:42px;border:1px solid #9fadb1;border-radius:5px;background:var(--control);padding:0 12px 0 40px}
-:where(.search svg){position:absolute;left:12px;top:12px;width:18px;height:18px;color:#62747a}
 /* 상단 막대 · 지도 위 단추 무대. 화면에선 index.html 첫 <style> 에 있는 막대 기본 규칙(같은 값) — syung.css 가 이기도록 :where 로 낮춘다 */
 .sb-map-short{height:240px}
 .sb-bar{width:390px;height:62px;display:grid}

@@ -8,13 +8,13 @@ import type { TicketFaceData } from './ticket_card.tsx';
 export interface TicketFormProps {
   preview:{ ticket:TicketFaceData; today:boolean } | null;   // 처음 열기 전엔 null(옛 HTML 의 빈 칸)
   places:ComponentChildren; time:ComponentChildren; days:ComponentChildren;
-  routeHTML:string; routeEmpty:boolean;   // 경로 칸 속 글자 · 아직 안 고른 모양인가
+  routeHTML:string; routeEmpty:boolean; routeNote?:string | null;   // 경로 칸 속 글자 · 아직 안 고른 모양인가
   name:string;
   sending:boolean; saveDisabled:boolean;
   deleteHidden:boolean; deleteArmed:boolean;   // deleteArmed: 한 번 눌러 확인을 기다리는 중
   onRoute?:() => void; onName?:(value:string) => void; onSubmit?:() => void; onDelete?:() => void;
 }
-export function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, name, sending, saveDisabled, deleteHidden, deleteArmed, onRoute, onName, onSubmit, onDelete }:TicketFormProps) {
+export function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, routeNote, name, sending, saveDisabled, deleteHidden, deleteArmed, onRoute, onName, onSubmit, onDelete }:TicketFormProps) {
   return <>
     <div id="ticketPreview" aria-hidden="true">{preview && <div class="ticket"><div class="ticket-in"><TicketFront ticket={preview.ticket} today={preview.today} /></div></div>}</div>
     <form id="ticketForm" class="ticket-form" autocomplete="off" noValidate onSubmit={event => { event.preventDefault(); onSubmit?.() }}>
@@ -23,6 +23,7 @@ export function TicketForm({ preview, places, time, days, routeHTML, routeEmpty,
       <span id="ticketRouteLabel" class="tf-l">경로</span>
       <button id="ticketRoute" class={routeEmpty ? 'tf-pick empty' : 'tf-pick'} type="button" aria-labelledby="ticketRouteLabel ticketRoute" onClick={() => onRoute?.()}
         dangerouslySetInnerHTML={{ __html: routeHTML }}></button>
+      {routeNote && <p class="tf-note" role="status">{routeNote}</p>}
       {days}
       <label class="tf-l" for="ticketName">승차권 이름</label><div class="tf-in"><input id="ticketName" maxlength={12} placeholder="이름 넣기" enterkeyhint="done" value={name}
         onInput={event => onName?.(event.currentTarget.value)} /><small id="ticketNameCount" aria-hidden="true">{`${[...name].length}/12`}</small></div>

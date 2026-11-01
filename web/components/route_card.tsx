@@ -16,10 +16,10 @@ export function Track({ segs }:{ segs:TrackSegView[] }) {
 // 카드는 누르는 칸(옛 HTML 그대로 article role=button — Preact 타입은 article 에 button 역할을 두지 않아 펼쳐 넣는다)
 const CARD_ROLE:Record<string, string> = { role: 'button' };
 
-export interface RouteCardProps { plan:PlanView; index:number; on:boolean; hidden?:boolean; onPick:(index:number) => void }
+export interface RouteCardProps { plan:PlanView; index:number; on:boolean; hidden?:boolean; note?:string | undefined; onPick:(index:number) => void; onTicket?:(index:number) => void }
 
-// on: 고른(펼친) 카드 — 설명 줄 · 단계 목록이 보인다. Enter · Space 로도 누른다
-export function RouteCard({ plan, index, on, hidden = false, onPick }:RouteCardProps) {
+// on: 고른(펼친) 카드 — 설명 줄 · 단계 목록과(onTicket 이 있으면) 맨 아래 「승차권 등록」이 보인다. Enter · Space 로도 누른다
+export function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket }:RouteCardProps) {
   const duration = plan.duration;
   return <article class={on ? 'jp on' : 'jp'} data-i={String(index)} tabIndex={0} {...CARD_ROLE} aria-label={plan.aria} aria-expanded={on} hidden={hidden}
     onClick={() => onPick(index)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.currentTarget.click(); } }}>
@@ -27,6 +27,8 @@ export function RouteCard({ plan, index, on, hidden = false, onPick }:RouteCardP
     <Track segs={plan.track} />
     {on && <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>}
     <StepList steps={plan.steps} className="jsteps" />
+    {on && note && <p class="jp-note" role="status">{note}</p>}
+    {on && onTicket && <button type="button" class="jp-ticket" onClick={event => { event.stopPropagation(); onTicket(index); }}>승차권 등록</button>}
   </article>;
 }
 

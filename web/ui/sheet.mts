@@ -20,7 +20,7 @@ type SheetStation = import('../trains/types.mts').MapStation;
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다)
 interface SheetLive {
   busLayer?:BusLayerLike|null; routeBounds:unknown; frameMs?:number;
-  journey:{ sheetClosed():boolean; openWith(end:string, place:{ name:string; lat:number; lng:number }):void };
+  journey:{ back():boolean; sheetClosed():boolean; openWith(end:string, place:{ name:string; lat:number; lng:number }):void };
   rider:{ ride:unknown }; stopRide(instant:boolean):void;
   appMode:boolean;   // 앱 지도 모드인가(웹 시트를 쓰지 않는다)
   appPad?:number|null;   // 앱 지도 모드: 앱 시트 높이(다리 setPadding) — 있으면 웹 시트 대신 이 값
@@ -48,24 +48,32 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     if(sheet.contains(document.activeElement))(document.activeElement as HTMLElement).blur();
     sheet.classList.remove('open');sheetToken++;sheetTrain=null;following=null;followBus=null;followBtn.hidden=true;
     // a chosen route stays on the map, with a bar to bring the results back (journey-ui)
-    if(live.routeBounds&&live.journey.sheetClosed())fitRoute(110);
+    const routeStays=live.journey.sheetClosed();   // 먼저 부른다: 지도에 길이 없어도 고른 곳 마커를 치우고 시트에서 나왔다고 알린다
+    if(live.routeBounds&&routeStays)fitRoute(110);
     else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
     setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
+  }
+  // 사람이 닫을 때(손잡이 · Esc)만: 길찾기 시트 안의 뒤로(고른 곳의 작은 시트 → 장소 검색)면 닫지 않는다. 코드가 닫을 때(승차권 경로 보기 등)는 closeSheet 로 바로 닫는다
+  function closeByHand():void{
+    if(!sheet.hidden&&live.journey.back()){
+      if(sheet.contains(document.activeElement))(document.activeElement as HTMLElement).blur();
+      sheet.style.transform='';sheet.style.transition='';return}
+    closeSheet();
   }
   // 하는 중인 시트(열차 · 버스 따라가기, 버스 노선 전체, 길찾기)는 지도 빈 곳을 눌러도 닫지 않는다 — ✕ · 끌어내리기 · Esc 로만(덕배 2026-10-20)
   // 앱 지도 모드: 시트는 앱(RN)에 있어 웹 시트는 늘 숨어 있다 — 숨김과 상관없이 따라가기 · 버스 선택으로만 본다
   function sheetBusy():boolean{const b=live.busLayer,working=!!(following||followBus||b?.selection?.kind==='bus'||b?.followView?.());return live.appMode?working:!sheet.hidden&&(working||!!sheetBody.querySelector('.journey'))}
-  sheet.querySelector<HTMLButtonElement>('.sheet-close')!.onclick=closeSheet;
+  sheet.querySelector<HTMLButtonElement>('.sheet-close')!.onclick=closeByHand;
   // The handle: drag the sheet down to close it (far or fast enough), or just tap it.
   {const grab=sheet.querySelector<HTMLButtonElement>('.sheet-grab')!;let y0=0,t0=0,dy=0,drag=false,moved=false;
     grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
     grab.addEventListener('pointermove',e=>{if(!drag)return;dy=Math.max(0,e.clientY-y0);if(dy>4)moved=true;sheet.style.transform=`translateY(${dy}px)`});
     const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
       const fast=dy/Math.max(1,performance.now()-t0)>.6;
-      if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeSheet()}
+      if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeByHand()}
       else sheet.style.transform=''};
     grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
-    grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeSheet()})}
+    grab.addEventListener('click',e=>{if(moved){e.preventDefault();moved=false;return}closeByHand()})}
   // Phone keyboard: only the sheet rises above it. iOS scrolls or pans the page to show a focused field
   // (header and map slide off); put the page back and lift the sheet by the keyboard's height instead.
   // iOS reports the keyboard late or only once (and not at all when a still-focused field is tapped again
@@ -101,7 +109,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
       for(const ev of ['resize','scroll'])vv.addEventListener(ev,()=>log.push(`${(performance.now()/1e3).toFixed(2)} vv.${ev} ${Math.round(vv.height)}/${Math.round(vv.offsetTop)}`));
       addEventListener('scroll',()=>log.push(`${(performance.now()/1e3).toFixed(2)} win.scroll ${Math.round(scrollY)}`),{passive:true});
       document.addEventListener('focusin',e=>log.push(`${(performance.now()/1e3).toFixed(2)} focus ${(e.target as Element).id||(e.target as Element).tagName}`))}}
-  addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeSheet()}});
+  addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.rider.ride)live.stopRide(true);else closeByHand()}});
   // Following: the camera keeps the chosen train in the middle of the map above the sheet.
   // Dragging the map stops it; the button in the sheet starts it again.
   const sheetPad=()=>{if(live.appPad!=null)return live.appPad;if(sheet.classList.contains('tucked')){const p=map.getContainer().querySelector<HTMLElement>('.bfu-panel');return p?p.offsetHeight+24:0}return sheet.hidden?0:Math.min(sheet.offsetHeight,map.getContainer().clientHeight*.75)};   // 내려 둔 동안은 아래 따라가기 칸만큼

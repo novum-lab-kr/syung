@@ -16,8 +16,9 @@ test('새로고침 · 메뉴 단추는 index.html 과 컴포넌트가 같다',()
   assert.ok(bar.includes(element('<button id="refreshButton"','</button>')));
   assert.ok(bar.includes(element('<button id="settingsButton"','</button>')));
 });
-test('검색 칸 돋보기 · 라벨은 index.html 과 컴포넌트가 같다',()=>{
-  const field=read('components/search_field.tsx'),box=element('<div class="map-search search">','</ul></div>');
-  assert.ok(field.includes(box.slice(box.indexOf('<svg'),box.indexOf('</svg>')+6)));
-  assert.ok(field.includes('<label class="sr" for="search">역 검색</label>'));
+test('위쪽 역 검색창은 없고 입구는 「어디로 갈까요?」 하나다',()=>{
+  const html=read('index.html');
+  assert.ok(!html.includes('map-search')&&!html.includes('id="search"'));
+  assert.ok(html.includes('id="routeButton"'));
+  assert.ok(read('components/place_search.tsx').includes("'장소 검색'"));
 });

@@ -14,6 +14,7 @@ const FLOW_STORY:Record<string, string> = {
   '03-tickets.md': '화면-흐름--flow-03',
   '04-account.md': '화면-흐름--flow-04',
   '05-settings-modes.md': '화면-흐름--flow-05',
+  '06-search-merge.md': '화면-흐름--flow-06',
 };
 
 // 문서에 나오는 말 → 컴포넌트 스토리 주소(web/components/*.stories.tsx 의 첫 스토리)
