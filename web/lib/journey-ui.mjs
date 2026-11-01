@@ -1,5 +1,11 @@
 import { serverUrl } from "./server_url.mjs";
+import { endName, findStations, mergeHits, swappedEnds } from "./place-search.mjs";
+import { createTimeWheel } from "./time-wheel.mjs";
 // web/lib/journey-ui.mts
+var HERE_NAME = "내 위치";
+var HOME_ZOOM = 15;
+var PICK_ZOOM = 16;
+var PICK_PAD = 200;
 var esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({
 	"&": "&amp;",
 	"<": "&lt;",
@@ -152,10 +158,15 @@ function trackParts(p, colors, width = 330) {
 function routeTrack(p, colors, width = 330) {
 	return `<div class="jtrack" aria-hidden="true">${trackParts(p, colors, width).map((seg) => seg.k !== "ride" ? `<i class="jseg ${seg.k}" style="flex:${seg.flex} 1 0"></i>` : `<i class="jseg ride${seg.bus ? " bus" : ""}" style="flex:${seg.flex} 1 0;min-width:${seg.need}px;--c:${seg.color};--t:${seg.ink}">${seg.icon ? BUS : ""}${esc(seg.label)}</i>`).join("")}</div>`;
 }
-function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar }) {
+var TICKET_NO_START = "내 위치를 찾지 못했어요. 위에서 출발을 다시 골라 주세요.";
+function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk }) {
 	const picked = {
 		from: null,
 		to: null
+	};
+	const names = {
+		from: HERE_NAME,
+		to: ""
 	};
 	let last = null;
 	let inSheet = false;
@@ -174,23 +185,26 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	};
 	drawJourneyBar(bar, null, barActions);
 	let body = null, mounted = 0, mountSeq = 0;
-	const emptyList = () => ({
-		hidden: true,
-		places: [],
-		empty: null
+	const hereKnown = () => !!myLocation();
+	const emptySearch = (fixed = null) => ({
+		title: fixed?.which === "from" ? "어디로 갈까요?" : fixed ? "어디서 출발할까요?" : "어디로 갈까요?",
+		query: "",
+		hits: [],
+		pending: false,
+		failed: false,
+		fixed,
+		here: fixed?.which === "to" && hereKnown()
 	});
 	const freshView = () => ({
-		here: !!myLocation(),
+		stage: "search",
+		search: emptySearch(),
+		picked: null,
 		done: false,
 		summary: null,
 		whenText: "지금 출발",
 		whenAt: false,
 		whenOpen: false,
 		draft: null,
-		lists: {
-			from: emptyList(),
-			to: emptyList()
-		},
 		status: {
 			text: "",
 			sr: false
@@ -201,30 +215,25 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	const paint = () => {
 		if (body) drawJourney(body, view, actions);
 	};
-	const field = (which) => document.getElementById(which === "from" ? "jFrom" : "jTo");
+	const focusSearch = () => document.getElementById("placeInput")?.focus({ preventScroll: true });
 	const pad = (n) => String(n).padStart(2, "0");
-	let when = { k: "now" }, draft = null;
+	let when = { k: "now" }, draft = null, wheel = null, wheelBox = null, wheelTimer = 0;
 	const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	const isTomorrow = (d) => d.toDateString() !== (/* @__PURE__ */ new Date()).toDateString();
 	const soonest = () => {
 		const d = /* @__PURE__ */ new Date();
 		d.setSeconds(0, 0);
-		d.setMinutes(d.getMinutes() + 1);
-		return d;
-	};
-	const nextTen = () => {
-		const d = soonest();
-		d.setMinutes(Math.ceil(d.getMinutes() / 10) * 10);
+		d.setMinutes(Math.floor(d.getMinutes() / 5) * 5 + 5);
 		return d;
 	};
 	const latest = () => {
 		const d = /* @__PURE__ */ new Date();
 		d.setDate(d.getDate() + 1);
-		d.setHours(23, 50, 0, 0);
+		d.setHours(23, 55, 0, 0);
 		return d;
 	};
-	const clamp = (d) => new Date(Math.min(latest(), Math.max(soonest(), d)));
+	const clamp = (d) => new Date(Math.min(+latest(), Math.max(+soonest(), +d)));
 	function whenValue() {
 		return when.k === "at" ? local(when.d) : "";
 	}
@@ -237,148 +246,173 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		view.whenAt = chosen.k === "at";
 		paint();
 	}
-	function stepped(d, unit, n) {
-		const x = new Date(d);
-		if (unit === "h") x.setTime(+x + n * 36e5);
-		else x.setMinutes((x.getMinutes() + n + 60) % 60);
-		return clamp(x);
-	}
-	const STEP_KEYS = [
-		["h", 1],
-		["h", -1],
-		["m", 1],
-		["m", -1]
-	];
-	function drawDraft() {
-		const at = draft;
-		view.draft = {
-			hours: pad(at.getHours()),
-			minutes: pad(at.getMinutes()),
-			tomorrow: isTomorrow(at),
-			off: Object.fromEntries(STEP_KEYS.map(([unit, step]) => [`${unit}${step}`, +stepped(at, unit, step) === +at]))
-		};
+	const drawDraft = () => {
+		view.draft = { tomorrow: isTomorrow(draft) };
 		paint();
+	};
+	function wheelMoved(time) {
+		const [hours = 0, minutes = 0] = time.split(":").map(Number), at = new Date(draft);
+		at.setHours(hours, minutes, 0, 0);
+		draft = at;
+		clearTimeout(wheelTimer);
+		wheelTimer = setTimeout(() => {
+			const kept = clamp(draft);
+			if (+kept !== +draft) {
+				draft = kept;
+				wheel?.roll(hhmm(kept));
+			}
+			drawDraft();
+		}, 180);
 	}
 	function whenOpen(on) {
 		view.whenOpen = on;
-		if (on) {
-			draft = clamp(when.k === "at" ? new Date(when.d) : nextTen());
-			drawDraft();
-			requestAnimationFrame(() => document.getElementById("jWhenPanel")?.scrollIntoView({
-				block: "nearest",
-				behavior: "smooth"
-			}));
-		} else paint();
-	}
-	function holdStep(unit, amount) {
-		let hold = 0, repeat = 0;
-		const step = () => {
-			draft = stepped(draft, unit, amount);
-			drawDraft();
-		};
-		const stop = () => {
-			clearTimeout(hold);
-			clearTimeout(repeat);
-			hold = repeat = 0;
-		};
-		return {
-			down(event) {
-				if (event.button) return;
-				const target = event.currentTarget;
-				step();
-				const started = performance.now();
-				const tick = () => {
-					if (target.disabled) return stop();
-					step();
-					const held = performance.now() - started;
-					repeat = setTimeout(tick, held > 2200 ? 35 : held > 1200 ? 60 : 110);
-				};
-				hold = setTimeout(tick, 400);
-			},
-			stop,
-			click(event) {
-				if (event.detail === 0) step();
-			}
-		};
-	}
-	const holds = Object.fromEntries(STEP_KEYS.map(([unit, step]) => [`${unit}${step}`, holdStep(unit, step)]));
-	const seeks = {
-		from: {
-			timer: 0,
-			seq: 0
-		},
-		to: {
-			timer: 0,
-			seq: 0
-		}
-	};
-	function typed(which, text) {
-		const seek = seeks[which], list = view.lists[which];
-		picked[which] = null;
-		clearTimeout(seek.timer);
-		const query = text.trim();
-		if (query.length < 2) {
-			list.hidden = true;
+		clearTimeout(wheelTimer);
+		if (!on) {
 			paint();
 			return;
 		}
-		seek.timer = setTimeout(async () => {
-			const mine = ++seek.seq, centre = map.getCenter();
-			const show = (places, empty) => {
-				const now = view.lists[which];
-				now.places = places;
-				now.empty = empty;
-				now.hidden = false;
+		draft = clamp(when.k === "at" ? new Date(when.d) : soonest());
+		drawDraft();
+		const box = document.getElementById("jWhenWheel");
+		if (box && box !== wheelBox) {
+			wheelBox = box;
+			wheel = createTimeWheel(box, wheelMoved);
+		}
+		wheel?.show(hhmm(draft));
+		requestAnimationFrame(() => document.getElementById("jWhenPanel")?.scrollIntoView({
+			block: "nearest",
+			behavior: "smooth"
+		}));
+	}
+	let seekTimer = 0, seekSeq = 0;
+	function typed(text) {
+		const search = view.search, query = text.trim(), mine = ++seekSeq, stationHits = findStations(stations, query, colors);
+		clearTimeout(seekTimer);
+		search.query = text;
+		search.hits = stationHits;
+		search.failed = false;
+		search.pending = query.length >= 2;
+		paint();
+		if (query.length < 2) return;
+		seekTimer = setTimeout(async () => {
+			const centre = map.getCenter(), show = (places, failed) => {
+				search.hits = mergeHits(stationHits, places);
+				search.failed = failed;
+				search.pending = false;
 				paint();
 			};
 			try {
 				const answer = await (await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`))).json();
-				if (mine !== seek.seq) return;
-				if (!answer.ok) {
-					show([], answer.error || "검색하지 못했어요");
-					return;
-				}
-				if (!answer.places.length) {
-					show([], "찾는 곳이 없어요");
-					return;
-				}
-				show(answer.places, null);
+				if (mine === seekSeq) show(answer.ok ? answer.places : [], !answer.ok);
 			} catch {
-				if (mine === seek.seq) show([], "검색하지 못했어요");
+				if (mine === seekSeq) show([], true);
 			}
 		}, 300);
 	}
-	function placePicked(which, place) {
-		picked[which] = place;
-		field(which).value = place.name;
-		view.lists[which].hidden = true;
-		paint();
-		next(which);
-	}
-	const fromOf = () => picked.from || (field("from").value.trim() === "내 위치" && myLocation() ? {
-		lat: myLocation()[1],
-		lng: myLocation()[0]
-	} : null);
-	function next(which) {
-		if (fromOf() && picked.to) {
+	const stopSeeking = () => {
+		clearTimeout(seekTimer);
+		seekSeq++;
+	};
+	const endOf = (hit) => ({
+		name: endName(hit),
+		lat: hit.lat,
+		lng: hit.lng
+	});
+	function placePicked(hit) {
+		stopSeeking();
+		view.search.pending = false;
+		const fixed = view.search.fixed;
+		if (fixed) {
+			fillEnd(fixed.which === "from" ? "to" : "from", endOf(hit));
 			go();
 			return;
 		}
-		const empty = !fromOf() ? "from" : "to";
-		if (which) field(empty).focus({ preventScroll: true });
-	}
-	function fold(on) {
-		view.done = on;
-		if (on) {
-			const from = field("from").value, to = field("to").value, label = whenLabel();
-			view.summary = {
-				from,
-				to,
-				when: label,
-				aria: `${from}에서 ${to}까지, ${label}. 눌러서 바꾸기`
-			};
-		}
+		document.activeElement?.blur?.();
+		view.picked = hit;
+		view.stage = "picked";
 		paint();
+		setPlaceMarker([hit.lng, hit.lat]);
+		map.flyTo({
+			center: [hit.lng, hit.lat],
+			zoom: Math.max(map.getZoom(), PICK_ZOOM),
+			padding: {
+				top: 0,
+				bottom: PICK_PAD,
+				left: 0,
+				right: 0
+			},
+			duration: 900
+		});
+	}
+	function fillEnd(which, end) {
+		picked[which] = end;
+		names[which] = end.name;
+	}
+	const useHere = () => {
+		picked.from = null;
+		names.from = HERE_NAME;
+	};
+	function chooseEnd(which, end) {
+		dispatchEvent(new CustomEvent("syung:place_end", { detail: which }));
+		fillEnd(which, end);
+		if (which === "to" && hereKnown()) {
+			useHere();
+			go();
+			return;
+		}
+		if (which === "from") {
+			picked.to = null;
+			names.to = "";
+		} else {
+			picked.from = null;
+			names.from = "";
+		}
+		searchFor(which, end.name);
+	}
+	function searchFor(which, name) {
+		stopSeeking();
+		whenOpen(false);
+		view.search = emptySearch({
+			which,
+			name
+		});
+		view.picked = null;
+		view.stage = "search";
+		view.done = false;
+		paint();
+		focusSearch();
+	}
+	function changeEnd(which) {
+		const other = which === "from" ? "to" : "from";
+		searchFor(other, names[other]);
+	}
+	function swap() {
+		const swapped = swappedEnds(names, picked, fromOf(), HERE_NAME);
+		Object.assign(names, swapped.names);
+		Object.assign(picked, swapped.picked);
+		whenOpen(false);
+		stopSeeking();
+		go();
+	}
+	function hereRow() {
+		useHere();
+		stopSeeking();
+		go();
+	}
+	const fromOf = () => picked.from || (names.from === HERE_NAME && myLocation() ? {
+		lat: myLocation()[1],
+		lng: myLocation()[0]
+	} : null);
+	function fold() {
+		const label = whenLabel();
+		view.done = true;
+		view.stage = "route";
+		view.summary = {
+			from: names.from,
+			to: names.to,
+			when: label,
+			aria: `${names.from}에서 ${names.to}까지, ${label}`
+		};
 	}
 	const durParts = (total) => total >= 60 ? {
 		hours: Math.floor(total / 60),
@@ -416,9 +450,14 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		last.sel = index;
 		cardsOf().forEach((card, other) => {
 			card.on = other === index;
+			card.note = "";
 		});
 		paint();
-		showRoute?.(last.d.plans[index]);
+		try {
+			showRoute?.(last.d.plans[index]);
+		} catch (error) {
+			console.warn("지도에 경로를 그리지 못했어요", error);
+		}
 	}
 	function filter(kind) {
 		last.tab = kind;
@@ -477,27 +516,24 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	async function go() {
 		const from = fromOf(), to = picked.to, my = ++goSeq, mine = mounted;
 		const trip = {
-			from: field("from").value,
-			to: field("to").value,
+			from: names.from,
+			to: names.to,
 			picked: { ...picked }
 		};
-		if (!from) {
-			view.status.text = "출발지를 목록에서 골라 주세요.";
-			paint();
-			return;
-		}
-		if (!to) {
-			view.status.text = "도착지를 목록에서 골라 주세요.";
-			paint();
+		if (!from || !to) {
+			searchFor(from ? "from" : "to", from ? names.from : names.to);
 			return;
 		}
 		const at = whenValue();
+		setPlaceMarker(null);
 		view.status = {
 			text: "경로를 찾고 있어요",
 			sr: false
 		};
 		view.result = { kind: "loading" };
-		fold(false);
+		view.picked = null;
+		fold();
+		paint();
 		document.activeElement?.blur?.();
 		const current = () => my === goSeq && mine !== 0 && mounted === mine;
 		try {
@@ -519,70 +555,134 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			};
 			render(answer, 0);
 			dispatchEvent(new CustomEvent("syung:route"));
-			fold(true);
+			paint();
 			const sheetBody = body?.closest(".sheet-body");
 			if (sheetBody) sheetBody.scrollTop = 0;
 		} catch {
 			if (current()) failed("연결이 불안정해요. 잠시 뒤 다시 찾아 주세요.");
 		}
 	}
+	async function ticket(index) {
+		const search = last, plan = search?.d.plans[index];
+		if (!search || !plan) return;
+		search.sel = index;
+		view.status = {
+			text: "",
+			sr: false
+		};
+		const desk = await ticketDesk?.();
+		if (last !== search) return;
+		if (!desk) {
+			view.status = {
+				text: "지금은 승차권을 등록할 수 없어요.",
+				sr: false
+			};
+			paint();
+			return;
+		}
+		const here = search.picked.from ? null : fromOf(), start = search.picked.from ?? here, end = search.picked.to;
+		if (!start || !end) {
+			const card = cardsOf()[index];
+			if (card) {
+				card.note = TICKET_NO_START;
+				paint();
+			}
+			return;
+		}
+		desk.start({
+			from: {
+				name: search.from,
+				lat: start.lat,
+				lng: start.lng
+			},
+			to: {
+				name: search.to,
+				lat: end.lat,
+				lng: end.lng
+			},
+			leaveBy: plan.leaveBy,
+			tomorrow: search.when.k === "at" && isTomorrow(search.when.d),
+			fromHere: !!here,
+			plan
+		}, search);
+	}
+	function ticketReturn(search) {
+		const saved = search;
+		if (!saved?.d?.plans?.length) return null;
+		return { back() {
+			if (!inSheet || !last) {
+				last = saved;
+				open();
+			}
+			requestAnimationFrame(() => {
+				const again = body?.querySelector(".jp.on .jp-ticket");
+				again?.scrollIntoView({ block: "nearest" });
+				again?.focus({ preventScroll: true });
+			});
+		} };
+	}
 	const actions = {
 		typed,
 		place: placePicked,
-		here() {
-			picked.from = null;
-			field("from").value = "내 위치";
-			next("from");
+		here: hereRow,
+		swap,
+		end(which) {
+			const hit = view.picked;
+			if (hit) chooseEnd(which, endOf(hit));
 		},
-		swap() {
-			const fromField = field("from"), toField = field("to"), start = fromOf();
-			[fromField.value, toField.value] = [toField.value, fromField.value];
-			[picked.from, picked.to] = [picked.to, start && !picked.from ? {
-				...start,
-				name: "내 위치"
-			} : picked.from];
-			next();
+		arrivals() {
+			const hit = view.picked, station = hit && stations.find((one) => one.name === hit.name && one.lat === hit.lat);
+			if (station) showStation(station);
 		},
-		summary() {
-			fold(false);
-			field("to").focus({ preventScroll: true });
-		},
+		changeEnd,
 		whenRow() {
 			whenOpen(!view.whenOpen);
 		},
 		whenNow() {
 			whenSet({ k: "now" });
 			whenOpen(false);
-			next();
+			go();
 		},
 		whenGo() {
+			draft = clamp(draft);
 			whenSet({
 				k: "at",
 				d: new Date(draft)
 			});
 			whenOpen(false);
-			next();
+			go();
 		},
 		day(offset) {
 			const at = new Date(draft), today = /* @__PURE__ */ new Date();
 			at.setFullYear(today.getFullYear(), today.getMonth(), today.getDate() + offset);
 			draft = clamp(at);
+			wheel?.roll(hhmm(draft));
 			drawDraft();
 		},
-		hold: holds,
 		tab: filter,
 		card: cardPressed,
+		ticket: (index) => {
+			ticket(index);
+		},
 		retry: () => {
 			go();
 		}
 	};
-	function open(fresh = false) {
+	function showResults() {
+		const search = last;
+		names.from = search.from;
+		names.to = search.to;
+		whenSet(search.when ? {
+			...search.when,
+			d: search.when.d && new Date(search.when.d)
+		} : { k: "now" });
+		Object.assign(picked, search.picked);
+		fold();
+		render(search.d, search.sel);
+	}
+	function open() {
 		bar.hidden = true;
-		for (const seek of Object.values(seeks)) {
-			clearTimeout(seek.timer);
-			seek.seq++;
-		}
-		for (const hold of Object.values(holds)) hold.stop();
+		stopSeeking();
 		view = freshView();
 		openSheetView((target) => {
 			const id = ++mountSeq;
@@ -594,52 +694,71 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 					mounted = 0;
 					body = null;
 				}
-				for (const hold of Object.values(holds)) hold.stop();
+				clearTimeout(wheelTimer);
+				setPlaceMarker(null);
 				clearJourney(target);
 			};
 		});
 		inSheet = true;
-		if (!last) when = { k: "now" };
+		if (!last) {
+			when = { k: "now" };
+			useHere();
+			picked.to = null;
+			names.to = "";
+			if (!hereKnown()) names.from = "";
+		}
 		whenSet(when);
-		if (last) {
-			field("from").value = last.from;
-			field("to").value = last.to;
-			whenSet(last.when ? {
-				...last.when,
-				d: last.when.d && new Date(last.when.d)
-			} : { k: "now" });
-			Object.assign(picked, last.picked);
-			render(last.d, last.sel);
-			fold(true);
-		} else if (!fresh) field("to").focus({ preventScroll: true });
+		if (last) showResults();
+	}
+	function start() {
+		open();
+		if (last) return;
+		const spot = myLocation();
+		if (spot) map.flyTo({
+			center: [spot[0], spot[1]],
+			zoom: Math.max(map.getZoom(), HOME_ZOOM),
+			duration: 900
+		});
+		focusSearch();
 	}
 	function openWith(end, place) {
 		last = null;
 		picked.from = picked.to = null;
 		clearRoute?.();
-		open(true);
-		const other = end === "from" ? "to" : "from";
-		picked[end] = place;
-		field(end).value = place.name;
-		const otherField = field(other);
-		if (other === "from" && otherField.value === "내 위치") {
-			go();
-			return;
-		}
-		otherField.value = "";
-		otherField.focus({ preventScroll: true });
+		open();
+		chooseEnd(end, place);
 	}
+	function back() {
+		if (!inSheet) return false;
+		setPlaceMarker(null);
+		if (view.stage === "picked") {
+			view.stage = "search";
+			view.picked = null;
+			paint();
+			return true;
+		}
+		if (view.stage === "search" && view.search.fixed && last) {
+			stopSeeking();
+			showResults();
+			return true;
+		}
+		return false;
+	}
+	const showBar = () => {
+		const plan = last.d.plans[last.sel];
+		drawJourneyBar(bar, {
+			duration: durParts(plan.minutes),
+			arrives: plan.arrives,
+			track: trackParts(plan, colors, 240)
+		}, barActions);
+		bar.hidden = false;
+	};
 	function sheetClosed() {
 		const was = inSheet;
 		inSheet = false;
+		setPlaceMarker(null);
 		if (!last || !was) return false;
-		const p = last.d.plans[last.sel];
-		drawJourneyBar(bar, {
-			duration: durParts(p.minutes),
-			arrives: p.arrives,
-			track: trackParts(p, colors, 240)
-		}, barActions);
-		bar.hidden = false;
+		showBar();
 		return true;
 	}
 	function sheetReplaced() {
@@ -652,13 +771,15 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		last = null;
 		bar.hidden = true;
 	}
-	button.addEventListener("click", () => open());
+	button.addEventListener("click", start);
 	return {
 		open,
 		openWith,
+		back,
 		sheetClosed,
 		sheetReplaced,
-		drop
+		drop,
+		ticketReturn
 	};
 }
 export { initJourney, routeSteps, routeTrack, trackParts };

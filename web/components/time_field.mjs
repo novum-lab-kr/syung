@@ -1,7 +1,7 @@
 import { Component as x, Fragment as M } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 // web/components/time_field.tsx
-var Wheels = class extends x {
+var TimeWheels = class extends x {
 	shouldComponentUpdate() {
 		return false;
 	}
@@ -80,7 +80,7 @@ function TimeField({ open, text, value, onToggle, onDone }) {
 			id: "ticketTimePick",
 			class: "tf-wheel",
 			hidden: !open,
-			children: [/* @__PURE__ */ a(Wheels, {}), /* @__PURE__ */ a("div", {
+			children: [/* @__PURE__ */ a(TimeWheels, {}), /* @__PURE__ */ a("div", {
 				class: "tw-foot",
 				children: [/* @__PURE__ */ a("span", { children: "돌려서 고르기 · 5분 단위" }), /* @__PURE__ */ a("button", {
 					id: "ticketTimeDone",
@@ -93,4 +93,4 @@ function TimeField({ open, text, value, onToggle, onDone }) {
 		})
 	] });
 }
-export { TimeField };
+export { TimeField, TimeWheels };

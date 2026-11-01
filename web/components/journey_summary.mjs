@@ -2,16 +2,6 @@ import { Fragment as M } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { Track } from "./route_card.mjs";
 // web/components/journey_summary.tsx
-var EDIT = /* @__PURE__ */ a("svg", {
-	viewBox: "0 0 24 24",
-	"aria-hidden": "true",
-	fill: "none",
-	stroke: "currentColor",
-	"stroke-width": "2",
-	"stroke-linecap": "round",
-	"stroke-linejoin": "round",
-	children: [/* @__PURE__ */ a("path", { d: "M4 20h4L19 9l-4-4L4 16z" }), /* @__PURE__ */ a("path", { d: "m13.5 6.5 4 4" })]
-});
 var CLOSE = /* @__PURE__ */ a("svg", {
 	viewBox: "0 0 24 24",
 	width: "16",
@@ -23,33 +13,46 @@ var CLOSE = /* @__PURE__ */ a("svg", {
 	"stroke-linecap": "round",
 	children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
 });
-function JourneySummary({ hidden, summary, onOpen }) {
-	return /* @__PURE__ */ a("button", {
-		type: "button",
+var SWAP = /* @__PURE__ */ a("svg", {
+	viewBox: "0 0 24 24",
+	"aria-hidden": "true",
+	fill: "none",
+	stroke: "currentColor",
+	"stroke-width": "2",
+	"stroke-linecap": "round",
+	"stroke-linejoin": "round",
+	children: /* @__PURE__ */ a("path", { d: "M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4" })
+});
+function JourneySummary({ summary, onEnd, onSwap }) {
+	return /* @__PURE__ */ a("div", {
 		class: "jsum",
 		id: "jSum",
-		hidden,
+		role: "group",
 		"aria-label": summary?.aria,
-		onClick: onOpen,
-		children: summary && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("span", {
+		children: [summary && /* @__PURE__ */ a("span", {
 			class: "jsum-trip",
-			children: [/* @__PURE__ */ a("span", {
+			children: [/* @__PURE__ */ a("button", {
+				type: "button",
 				class: "jsum-end",
+				"aria-label": `출발 ${summary.from} 바꾸기`,
+				onClick: () => onEnd("from"),
 				children: [/* @__PURE__ */ a("i", { class: "jdot from" }), /* @__PURE__ */ a("b", { children: summary.from })]
-			}), /* @__PURE__ */ a("span", {
+			}), /* @__PURE__ */ a("button", {
+				type: "button",
 				class: "jsum-end",
+				"aria-label": `도착 ${summary.to} 바꾸기`,
+				onClick: () => onEnd("to"),
 				children: [/* @__PURE__ */ a("i", { class: "jdot to" }), /* @__PURE__ */ a("b", { children: summary.to })]
 			})]
-		}), /* @__PURE__ */ a("span", {
-			class: "jsum-side",
-			children: [/* @__PURE__ */ a("span", {
-				class: "jsum-when",
-				children: summary.when
-			}), /* @__PURE__ */ a("span", {
-				class: "jsum-edit",
-				children: [EDIT, "수정"]
-			})]
-		})] })
+		}), summary && onSwap && /* @__PURE__ */ a("button", {
+			type: "button",
+			class: "jsum-swap",
+			id: "jSwap",
+			"aria-label": "출발지와 도착지 바꾸기",
+			title: "바꾸기",
+			onClick: onSwap,
+			children: SWAP
+		})]
 	});
 }
 function JourneyBar({ bar, onOpen, onClear }) {

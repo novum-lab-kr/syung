@@ -35,6 +35,10 @@ function startAnalytics(page = window, app = appMapMode()) {
 			const method = detailOf(event);
 			if (typeof method === "string" && LOGIN_METHODS.has(method)) gtag("event", "login", { method });
 		});
+		page.addEventListener("syung:place_end", (event) => {
+			const end = detailOf(event);
+			if (end === "from" || end === "to") gtag("event", "place_end", { end });
+		});
 		const load = () => {
 			const loader = page.document.createElement("script");
 			loader.async = true;

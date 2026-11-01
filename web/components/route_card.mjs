@@ -19,7 +19,7 @@ function Track({ segs }) {
 	});
 }
 var CARD_ROLE = { role: "button" };
-function RouteCard({ plan, index, on, hidden = false, onPick }) {
+function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket }) {
 	const duration = plan.duration;
 	return /* @__PURE__ */ a("article", {
 		class: on ? "jp on" : "jp",
@@ -70,6 +70,20 @@ function RouteCard({ plan, index, on, hidden = false, onPick }) {
 			/* @__PURE__ */ a(StepList, {
 				steps: plan.steps,
 				className: "jsteps"
+			}),
+			on && note && /* @__PURE__ */ a("p", {
+				class: "jp-note",
+				role: "status",
+				children: note
+			}),
+			on && onTicket && /* @__PURE__ */ a("button", {
+				type: "button",
+				class: "jp-ticket",
+				onClick: (event) => {
+					event.stopPropagation();
+					onTicket(index);
+				},
+				children: "승차권 등록"
 			})
 		]
 	});

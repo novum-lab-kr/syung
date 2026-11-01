@@ -15,6 +15,14 @@ var PARTS = {
 	armL: 3,
 	armR: 4
 };
+var HEAD_PART = 6;
+var NECK = .43;
+var MARKER_SIZE = 1.5;
+var MARKER_LOOK = "sprout";
+var NOD_RATE = .6;
+var MARKER_LIGHT_YAW = Math.atan2(.65, -.5);
+var nodAngle = (pitch) => (90 - pitch) * NOD_RATE * RAD;
+var facingYaw = (bearing) => Math.atan2(Math.cos(bearing * RAD), -Math.sin(bearing * RAD));
 var hex = (c) => [
 	1,
 	3,
@@ -37,6 +45,7 @@ function buildAvatarMesh({ build, rig }) {
 		]).map((p) => PARTS[p] ?? 0), rgb = hex(color);
 		const px = pivot ? pivot[0] : (Math.min(a[0], b[0], c[0], d[0]) + Math.max(a[0], b[0], c[0], d[0])) / 2;
 		const pv = (k) => [px, pivot && pivot[1] != null && k ? pivot[1] : k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
+		const head = K.every((k) => k === 0) && Math.min(a[2], b[2], c[2], d[2]) >= NECK;
 		for (const i of [
 			0,
 			1,
@@ -44,7 +53,7 @@ function buildAvatarMesh({ build, rig }) {
 			0,
 			2,
 			3
-		]) put(P[i], n, rgb, K[i], pv(K[i]));
+		]) put(P[i], n, rgb, head ? HEAD_PART : K[i], head ? [0, NECK] : pv(K[i]));
 	};
 	const box = (x0, y0, z0, x1, y1, z1, color, part = "body") => {
 		const k = PARTS[part] ?? 0, pv = [(x0 + x1) / 2, k === 1 || k === 2 ? rig.hip : k ? rig.shoulder : 0];
@@ -292,21 +301,22 @@ function createMyMotion({ now = () => performance.now() } = {}) {
 var VS = `#version 300 es
 layout(location=0) in vec3 a_pos; layout(location=1) in vec3 a_normal; layout(location=2) in vec3 a_color;
 layout(location=3) in float a_part; layout(location=4) in vec2 a_pivot;
-uniform mat4 u_matrix; uniform vec4 u_pose; uniform float u_unit,u_walk,u_phase;
+uniform mat4 u_matrix; uniform vec4 u_pose; uniform float u_unit,u_walk,u_phase,u_nod,u_shade;
 out vec3 v_normal; out vec3 v_color; out vec2 v_disc; flat out float v_part;
 void main(){vec3 p=a_pos,n=a_normal;float ph=6.2832*u_phase,a=0.;
   // 다리: 엉덩이 축, 왼발 · 오른발 반대 박자. 팔: 어깨 축, 같은 쪽 다리와 반대
   if(a_part>.5&&a_part<2.5)a=u_walk*.5*sin(ph)*(a_part<1.5?1.:-1.);
   else if(a_part>2.5&&a_part<4.5)a=-u_walk*.4*sin(ph)*(a_part<3.5?1.:-1.);
+  else if(a_part>5.5)a=u_nod;
   if(a!=0.){float ca=cos(a),sa=sin(a);vec2 d=vec2(p.x-a_pivot.x,p.z-a_pivot.y);p.x=a_pivot.x+ca*d.x-sa*d.y;p.z=a_pivot.y+sa*d.x+ca*d.y;
     n=vec3(ca*n.x-sa*n.z,n.y,sa*n.x+ca*n.z);}
-  if(a_part<4.5)p.z+=u_walk*.03*abs(sin(ph));   // 걸음마다 살짝 들썩(그림자는 바닥에)
+  if(a_part<4.5||a_part>5.5)p.z+=u_walk*.03*abs(sin(ph));   // 걸음마다 살짝 들썩(그림자는 바닥에)
   float c=cos(u_pose.z),s=sin(u_pose.z);vec3 w=p*u_pose.w*u_unit;w.xy=vec2(c*w.x-s*w.y,s*w.x+c*w.y)+u_pose.xy;
-  gl_Position=u_matrix*vec4(w,1.);v_normal=vec3(c*n.x-s*n.y,s*n.x+c*n.y,n.z);v_color=a_color;v_part=a_part;v_disc=a_pivot;}`;
+  float cs=cos(u_shade),ss=sin(u_shade);gl_Position=u_matrix*vec4(w,1.);v_normal=vec3(cs*n.x-ss*n.y,ss*n.x+cs*n.y,n.z);v_color=a_color;v_part=a_part;v_disc=a_pivot;}`;
 var FS = `#version 300 es
 precision highp float;in vec3 v_normal;in vec3 v_color;in vec2 v_disc;flat in float v_part;uniform float u_fade,u_dark;out vec4 o;
 void main(){vec3 col=v_color;float alpha=1.;
-  if(v_part>4.5){float d=length(v_disc);alpha=mix(.24,.4,u_dark)*(1.-smoothstep(.3,1.,d));col=vec3(.05,.06,.06);}
+  if(v_part>4.5&&v_part<5.5){float d=length(v_disc);alpha=mix(.24,.4,u_dark)*(1.-smoothstep(.3,1.,d));col=vec3(.05,.06,.06);}
   else col*=.74+.26*max(dot(normalize(v_normal),normalize(vec3(-.5,.65,1.))),0.);   // 버스와 같은 빛
   alpha*=u_fade;if(alpha<.005)discard;o=vec4(col*alpha,alpha);}`;
 var AvatarRenderer = class {
@@ -335,7 +345,9 @@ var AvatarRenderer = class {
 			"walk",
 			"phase",
 			"fade",
-			"dark"
+			"dark",
+			"nod",
+			"shade"
 		].map((k) => [k, gl.getUniformLocation(this.p, "u_" + k)]));
 	}
 	mesh(id) {
@@ -389,7 +401,7 @@ var AvatarRenderer = class {
 		this.meshes.set(id, m);
 		return m;
 	}
-	render(gl, matrix, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0 }) {
+	render(gl, matrix, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }) {
 		this.init(gl);
 		const m = this.mesh(look) || this.mesh(LOOKS.keys().next().value);
 		if (!m) return;
@@ -402,6 +414,8 @@ var AvatarRenderer = class {
 		gl.uniform1f(this.u.walk, walk);
 		gl.uniform1f(this.u.phase, phase);
 		gl.uniform1f(this.u.dark, dark ? 1 : 0);
+		gl.uniform1f(this.u.nod, nod);
+		gl.uniform1f(this.u.shade, lightYaw);
 		gl.enable(gl.DEPTH_TEST);
 		gl.disable(gl.CULL_FACE);
 		gl.enable(gl.BLEND);
@@ -420,6 +434,21 @@ var AvatarRenderer = class {
 		gl.depthMask(false);
 		gl.depthFunc(gl.LEQUAL);
 	}
+	renderMarker(gl, matrix, { world, origin, zoom, bearing, pitch, dark = false }) {
+		gl.depthMask(true);
+		gl.clear(gl.DEPTH_BUFFER_BIT);
+		this.render(gl, matrix, {
+			look: MARKER_LOOK,
+			world,
+			origin,
+			yaw: facingYaw(bearing),
+			scale: avatarScale(zoom) * MARKER_SIZE,
+			unit: 1 / (512 * 2 ** zoom),
+			dark,
+			nod: nodAngle(pitch),
+			lightYaw: MARKER_LIGHT_YAW
+		});
+	}
 	dispose() {
 		if (!this.gl) return;
 		const gl = this.gl;
@@ -432,4 +461,4 @@ var AvatarRenderer = class {
 		this.gl = null;
 	}
 };
-export { AvatarRenderer, avatarScale, buildAvatarMesh, createMyMotion, registerAvatar };
+export { AvatarRenderer, MARKER_SIZE, avatarScale, buildAvatarMesh, createMyMotion, facingYaw, nodAngle, registerAvatar };

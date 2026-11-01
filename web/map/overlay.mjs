@@ -404,6 +404,18 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				center: [map.getCenter().lng, map.getCenter().lat]
 			});
 		} else if (live.cityLandmarks?.mon || live.cityLandmarks?.monp) live.cityLandmarks.releaseMonuments();
+		if (live.placeMarker && !rider.ride) {
+			const q = maplibregl.MercatorCoordinate.fromLngLat(live.placeMarker), O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
+			if (!avatar) avatar = new AvatarRenderer();
+			avatar.renderMarker(gl, pd.mainMatrix, {
+				world: [q.x, q.y],
+				origin: [O.x, O.y],
+				zoom: map.getZoom(),
+				bearing: map.getBearing(),
+				pitch: map.getPitch(),
+				dark: effectiveTheme() === "dark"
+			});
+		}
 		drawSigns(pd.mainMatrix);
 	};
 	map.on("render", () => {

@@ -56,6 +56,18 @@ function chosenAfter(plans, order, saved) {
 	const sig = saved ? rideSig(saved) : null;
 	return (sig === null ? void 0 : order.find((index) => rideSig(plans[index]) === sig)) ?? order[0] ?? -1;
 }
+function routeForTicket(plans, chosen) {
+	const sig = rideSig(chosen), same = plans.find((plan) => rideSig(plan) === sig);
+	if (same) return {
+		route: same,
+		changed: false
+	};
+	const route = quickestRoute(plans);
+	return {
+		route,
+		changed: !!route
+	};
+}
 function nextRideDay(days, time, now) {
 	const [hour, minute] = time.split(":").map(Number);
 	for (let offset = 0; offset < 8; offset++) {
@@ -73,4 +85,4 @@ function routeUrl(from, to, at) {
 	return `./api/route?from=${from.lat},${from.lng}&to=${to.lat},${to.lng}&at=${encodeURIComponent(at)}`;
 }
 var shortName = (name) => name.replace(/\s/g, "").length >= 11 ? `${name.slice(0, 3)}‥${name.slice(-2)}` : name;
-export { DAYS, ROUTE_KINDS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeOrder, routeUrl, shortName, usefulRoutes };
+export { DAYS, ROUTE_KINDS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeForTicket, routeOrder, routeUrl, shortName, usefulRoutes };

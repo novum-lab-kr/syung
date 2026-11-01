@@ -3,7 +3,7 @@ import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { TicketFront } from "./ticket_card.mjs";
 import { SaveButton } from "./save_button.mjs";
 // web/components/ticket_form.tsx
-function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, name, sending, saveDisabled, deleteHidden, deleteArmed, onRoute, onName, onSubmit, onDelete }) {
+function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, routeNote, name, sending, saveDisabled, deleteHidden, deleteArmed, onRoute, onName, onSubmit, onDelete }) {
 	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
 		id: "ticketPreview",
 		"aria-hidden": "true",
@@ -47,6 +47,11 @@ function TicketForm({ preview, places, time, days, routeHTML, routeEmpty, name, 
 				"aria-labelledby": "ticketRouteLabel ticketRoute",
 				onClick: () => onRoute?.(),
 				dangerouslySetInnerHTML: { __html: routeHTML }
+			}),
+			routeNote && /* @__PURE__ */ a("p", {
+				class: "tf-note",
+				role: "status",
+				children: routeNote
 			}),
 			days,
 			/* @__PURE__ */ a("label", {

@@ -1,10 +1,10 @@
 import { routeSteps, routeTrack } from "../lib/journey-ui.mjs";
 import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { TimeField } from "../components/time_field.mjs";
 import { DAYS, esc, shortName } from "./ticket_routes.mjs";
 import { TicketCard, TicketList } from "../components/ticket_card.mjs";
 import { PlaceField } from "../components/place_field.mjs";
-import { TimeField } from "../components/time_field.mjs";
 import { DayPicker } from "../components/day_picker.mjs";
 import { TicketForm } from "../components/ticket_form.mjs";
 import { RoutePicker } from "../components/route_picker.mjs";
@@ -47,6 +47,7 @@ var view = {
 	from: null,
 	to: null,
 	route: null,
+	routeNote: "",
 	wheelOpen: false,
 	sending: false,
 	deleteArmed: false,
@@ -145,6 +146,7 @@ function TicketPage() {
 		}),
 		routeHTML: opened ? routeHTML(view.route) : "",
 		routeEmpty: opened && !view.route,
+		routeNote: opened ? view.route && view.routeNote : "",
 		name: view.name,
 		sending: view.sending,
 		saveDisabled: view.sending || opened && !view.route,

@@ -40,7 +40,8 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		following = null;
 		followBus = null;
 		followBtn.hidden = true;
-		if (live.routeBounds && live.journey.sheetClosed()) fitRoute(110);
+		const routeStays = live.journey.sheetClosed();
+		if (live.routeBounds && routeStays) fitRoute(110);
 		else map.easeTo({
 			padding: {
 				top: 0,
@@ -58,11 +59,20 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			}
 		}, 340);
 	}
+	function closeByHand() {
+		if (!sheet.hidden && live.journey.back()) {
+			if (sheet.contains(document.activeElement)) document.activeElement.blur();
+			sheet.style.transform = "";
+			sheet.style.transition = "";
+			return;
+		}
+		closeSheet();
+	}
 	function sheetBusy() {
 		const b = live.busLayer, working = !!(following || followBus || b?.selection?.kind === "bus" || b?.followView?.());
 		return live.appMode ? working : !sheet.hidden && (working || !!sheetBody.querySelector(".journey"));
 	}
-	sheet.querySelector(".sheet-close").onclick = closeSheet;
+	sheet.querySelector(".sheet-close").onclick = closeByHand;
 	{
 		const grab = sheet.querySelector(".sheet-grab");
 		let y0 = 0, t0 = 0, dy = 0, drag = false, moved = false;
@@ -89,7 +99,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			const fast = dy / Math.max(1, performance.now() - t0) > .6;
 			if (moved && (dy > Math.min(120, sheet.offsetHeight * .3) || fast && dy > 24)) {
 				sheet.style.transform = "translateY(calc(105% + var(--kb,0px)))";
-				closeSheet();
+				closeByHand();
 			} else sheet.style.transform = "";
 		};
 		grab.addEventListener("pointerup", end);
@@ -100,7 +110,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 				moved = false;
 				return;
 			}
-			closeSheet();
+			closeByHand();
 		});
 	}
 	if (window.visualViewport) {
@@ -188,7 +198,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	addEventListener("keydown", (e) => {
 		if (e.key === "Escape") {
 			if (live.rider.ride) live.stopRide(true);
-			else closeSheet();
+			else closeByHand();
 		}
 	});
 	const sheetPad = () => {

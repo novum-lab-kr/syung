@@ -1,12 +1,14 @@
+import { ticketTime } from "../lib/place-search.mjs";
+import { createTimeWheel } from "../lib/time-wheel.mjs";
 import { routeTrack } from "../lib/journey-ui.mjs";
+import "../components/time_field.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import "../components/account_page.mjs";
 import { accountView, avatarLook, drawProviders, nameLength } from "./account_view.mjs";
-import { DAYS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeUrl, shortName, usefulRoutes } from "./ticket_routes.mjs";
+import { DAYS, chosenAfter, esc, nextRideDay, quickestRoute, rideSig, routeAt, routeFilterView, routeForTicket, routeUrl, shortName, usefulRoutes } from "./ticket_routes.mjs";
 import "../components/button.mjs";
 import "../components/ticket_card.mjs";
 import "../components/place_field.mjs";
-import "../components/time_field.mjs";
 import "../components/day_picker.mjs";
 import "../components/route_head.mjs";
 import "../components/save_button.mjs";
@@ -132,7 +134,10 @@ async function fillChain(t, put) {
 	}
 	put(html);
 }
-async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
+var ROUTE_CHANGED_NOTE = "이 시각에는 고른 길이 없어 가장 빠른 길로 채웠어요";
+var TICKET_DRAFT_KEY = "syung-ticket-draft";
+var MAP_WAIT_MS = 15e3;
+async function initAccount({ colors = {}, routeMap, myLocation, journeyReturn, mapLoaded } = {}) {
 	const item = $("accountItem"), sheet = $("loginSheet");
 	if (!item || !sheet) return;
 	let answer = null;
@@ -237,6 +242,9 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		playLogoMotion();
 	}
 	function closeSheet() {
+		try {
+			sessionStorage.removeItem(TICKET_DRAFT_KEY);
+		} catch {}
 		stopLogoMotion();
 		sheet.classList.remove("open");
 		setTimeout(() => {
@@ -512,13 +520,21 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			}
 		} catch {}
 	}
+	let ticketFrom = null;
+	function closeToJourney() {
+		const from = ticketFrom;
+		ticketFrom = null;
+		$("settingsClose").click();
+		from.back();
+	}
 	$("menuBack").addEventListener("click", (e) => {
 		if (!$("menuRoute").hidden) {
 			e.stopImmediatePropagation();
 			backToForm();
 		} else if (!$("menuTicket").hidden) {
 			e.stopImmediatePropagation();
-			$("ticketsRow").click();
+			if (ticketFrom) closeToJourney();
+			else $("ticketsRow").click();
 		}
 	}, true);
 	const form = () => ticketsView.state;
@@ -537,7 +553,10 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	}
 	function routeGone() {
 		if (form().route) toast("출발 · 도착 · 시각이 바뀌어서 경로를 다시 골라 주세요", true);
-		ticketsView.set({ route: null });
+		ticketsView.set({
+			route: null,
+			routeNote: ""
+		});
 	}
 	const sameSpot = (left, right) => !!left && !!right && left.lat === right.lat && left.lng === right.lng;
 	let placeTimer = 0, placeSeq = 0;
@@ -681,76 +700,13 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		}, true);
 		if (which === "from" && !form().to) $("ticketTo").focus();
 	}
-	const ROW = 40;
-	const wheelBox = $("ticketTimePick");
-	const wheels = Object.fromEntries([...wheelBox.querySelectorAll(".tw-col")].map((el) => [el.dataset.part, {
-		el,
-		values: [],
-		label: String
-	}]));
-	const pad2 = (n) => String(n).padStart(2, "0");
+	const wheel = createTimeWheel($("ticketTimePick"), (time) => ticketsView.set({ time }));
 	let timeAtOpen = "";
-	const wheelIndex = (w) => Math.max(0, Math.min(w.values.length - 1, Math.round(w.el.scrollTop / ROW)));
-	function markWheel(w) {
-		const at = wheelIndex(w);
-		[...w.el.children].forEach((b, index) => {
-			b.className = index === at ? "on" : Math.abs(index - at) === 1 ? "near" : "";
-		});
-		w.el.setAttribute("aria-valuetext", w.label(w.values[at]));
-	}
-	function setWheel(part, values, label, current) {
-		const w = wheels[part];
-		w.values = values;
-		w.label = label;
-		w.el.replaceChildren(...values.map((value, index) => {
-			const b = document.createElement("button");
-			b.type = "button";
-			b.tabIndex = -1;
-			b.textContent = label(value);
-			b.onclick = () => w.el.scrollTo({
-				top: index * ROW,
-				behavior: "smooth"
-			});
-			return b;
-		}));
-		w.el.scrollTop = Math.max(0, values.indexOf(current)) * ROW;
-		markWheel(w);
-	}
-	function wheelTime() {
-		const value = (part) => wheels[part].values[wheelIndex(wheels[part])];
-		return `${pad2(value("ampm") * 12 + value("hour") % 12)}:${pad2(value("minute"))}`;
-	}
-	for (const w of Object.values(wheels)) {
-		let frame = 0;
-		w.el.addEventListener("scroll", () => {
-			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(() => {
-				markWheel(w);
-				ticketsView.set({ time: wheelTime() });
-			});
-		}, { passive: true });
-		w.el.addEventListener("keydown", (e) => {
-			if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-			e.preventDefault();
-			w.el.scrollTo({
-				top: (wheelIndex(w) + (e.key === "ArrowDown" ? 1 : -1)) * ROW,
-				behavior: "smooth"
-			});
-		});
-	}
 	function openWheel() {
-		const [h, m] = form().time.split(":").map(Number);
 		timeAtOpen = form().time;
 		ticketsView.set({ wheelOpen: true });
-		const minutes = Array.from({ length: 12 }, (_, index) => index * 5);
-		if (!minutes.includes(m)) {
-			minutes.push(m);
-			minutes.sort((left, right) => left - right);
-		}
-		setWheel("ampm", [0, 1], (value) => value ? "오후" : "오전", h < 12 ? 0 : 1);
-		setWheel("hour", Array.from({ length: 12 }, (_, index) => index + 1), String, h % 12 || 12);
-		setWheel("minute", minutes, pad2, m);
-		wheels.hour.el.focus({ preventScroll: true });
+		wheel.show(form().time);
+		wheel.focus();
 	}
 	function closeWheel(changed = true) {
 		if (!form().wheelOpen) return;
@@ -853,7 +809,10 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 	function pickPlan() {
 		const plan = form().plans[form().chosen];
 		if (!plan) return;
-		ticketsView.set({ route: slimRoute(plan) });
+		ticketsView.set({
+			route: slimRoute(plan),
+			routeNote: ""
+		});
 		backToForm();
 	}
 	function choosePlan(index) {
@@ -908,6 +867,11 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			routeSeq++;
 			previewGone();
 		}
+		if (ticketFrom && !(routePanel.classList.contains("open") && !routePanel.hidden)) {
+			const from = ticketFrom;
+			ticketFrom = null;
+			from.back();
+		}
 	});
 	routeWatch.observe(routePanel, {
 		attributes: true,
@@ -922,6 +886,12 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		if (form().placeFor && !form().placeHidden) return;
 		e.stopImmediatePropagation();
 		backToForm();
+	}, true);
+	window.addEventListener("keydown", (e) => {
+		if (e.key !== "Escape" || sheetOpen() || !ticketFrom || onRoutePage() || !routePanel.classList.contains("open")) return;
+		if (form().placeFor && !form().placeHidden) return;
+		e.stopImmediatePropagation();
+		closeToJourney();
 	}, true);
 	const mapBar = document.createElement("div");
 	mapBar.className = "jbar";
@@ -1007,8 +977,9 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			if (my === mapSeq) ticketsView.set({ mapping: -1 });
 		}
 	}
-	let deleteArmed = false;
+	let deleteArmed = false, prefillSeq = 0;
 	function openTicket(t) {
+		prefillSeq++;
 		editing = t || null;
 		deleteArmed = false;
 		lastField = null;
@@ -1027,6 +998,7 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			from: t?.from || null,
 			to: t?.to || null,
 			route: t?.route || null,
+			routeNote: "",
 			days: DAYS.map((_, index) => index + 1).filter((day) => t ? t.days.includes(day) : false),
 			deleteArmed: false,
 			fromHere: false,
@@ -1044,6 +1016,40 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			stepsOf: null
 		});
 		$("ticketOpen").click();
+	}
+	async function openFromJourney(draft, search) {
+		if (!$("settingsPanel").classList.contains("open")) $("settingsButton").click();
+		openTicket(null);
+		const { from, to } = draft, time = ticketTime(draft.leaveBy, /* @__PURE__ */ new Date(), draft.tomorrow);
+		ticketFrom = journeyReturn?.(search) ?? null;
+		ticketsView.set({
+			from: {
+				name: from.name,
+				lat: from.lat,
+				lng: from.lng
+			},
+			to: {
+				name: to.name,
+				lat: to.lat,
+				lng: to.lng
+			},
+			time,
+			fromHere: draft.fromHere
+		});
+		const my = ++prefillSeq, still = () => my === prefillSeq && !form().route && form().time === time && sameSpot(form().from, from) && sameSpot(form().to, to);
+		try {
+			const { status, body } = await getJson(routeUrl(from, to, routeAt(nextRide())));
+			if (!still()) return;
+			const plans = status === 200 && body?.plans ? usefulRoutes(body.plans) : [];
+			const { route, changed } = routeForTicket(plans, draft.plan);
+			if (route) ticketsView.set({
+				route: slimRoute(route),
+				routeNote: changed ? ROUTE_CHANGED_NOTE : ""
+			});
+			else toast("경로를 찾지 못했어요. 경로를 골라 주세요", true);
+		} catch {
+			if (still()) toast("경로를 찾지 못했어요. 연결을 확인해 주세요.", true);
+		}
 	}
 	async function submitTicket() {
 		closeWheel();
@@ -1087,7 +1093,8 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 			}
 			const fixed = !!editing;
 			await loadTickets();
-			$("ticketsRow").click();
+			if (ticketFrom) closeToJourney();
+			else $("ticketsRow").click();
 			toast(fixed ? "승차권을 고쳤어요" : "발권했어요");
 		} catch {
 			toast("발권하지 못했어요. 연결을 확인해 주세요.", true);
@@ -1305,6 +1312,51 @@ async function initAccount({ colors = {}, routeMap, myLocation } = {}) {
 		if (succeeded && me) dispatchEvent(new CustomEvent("syung:login", { detail: me.provider }));
 		if (!me) openSheet(LOGIN_ERRORS[back[1]] || "로그인하지 못했어요. 잠시 뒤 다시 해 주세요.", back[1] !== "denied");
 		else if (!succeeded) $("settingsButton")?.click();
+		let saved = null;
+		try {
+			saved = sessionStorage.getItem(TICKET_DRAFT_KEY);
+		} catch {}
+		const dropDraft = () => {
+			try {
+				sessionStorage.removeItem(TICKET_DRAFT_KEY);
+			} catch {}
+		};
+		if (saved && succeeded && me) {
+			const stored = saved;
+			Promise.race([mapLoaded, new Promise((done) => {
+				setTimeout(done, MAP_WAIT_MS);
+			})]).then(() => {
+				setTimeout(() => {
+					try {
+						const { draft, search } = JSON.parse(stored);
+						try {
+							journeyReturn?.(search)?.back();
+						} catch (error) {
+							console.warn("경로 목록을 되돌리지 못했어요", error);
+						}
+						openFromJourney(draft, search);
+					} catch (error) {
+						console.warn("승차권 초안을 읽지 못했어요", error);
+					}
+					dropDraft();
+				});
+			});
+		} else dropDraft();
 	}
+	return { start(draft, search) {
+		if (!me) {
+			try {
+				sessionStorage.setItem(TICKET_DRAFT_KEY, JSON.stringify({
+					draft,
+					search
+				}));
+			} catch {}
+			openSheet("로그인하면 승차권을 등록할 수 있어요");
+			return;
+		}
+		setTimeout(() => {
+			openFromJourney(draft, search);
+		});
+	} };
 }
 export { initAccount };

@@ -1,16 +1,19 @@
 import { NEW_NAMES, createRouter, key, normStatus } from "./lib/routing.mjs";
 import { seoulSun, sunPosition as sunPosition$1 } from "./lib/sun.mjs";
 import { appMapMode, serverUrl } from "./lib/server_url.mjs";
+import "./lib/place-search.mjs";
+import "./lib/time-wheel.mjs";
 import { initJourney } from "./lib/journey-ui.mjs";
 import "./npm/preact/dist/preact.mjs";
 import "./npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import "./components/journey_fields.mjs";
+import "./components/place_search.mjs";
 import "./components/chip.mjs";
 import "./components/icons.mjs";
 import "./components/step_list.mjs";
 import "./components/route_card.mjs";
 import "./components/journey_summary.mjs";
 import "./components/segmented.mjs";
+import "./components/time_field.mjs";
 import "./components/journey_when.mjs";
 import { clearJourney, drawJourney, drawJourneyBar } from "./ui/journey_sheet.mjs";
 import "./modes/basic/park.mjs";
@@ -21,8 +24,6 @@ import { createCoasterGeometry } from "./modes/coaster/geometry.mjs";
 import { createCoasterMotion } from "./modes/coaster/motion.mjs";
 import { COCKPIT_NEAR_M, nearMatrix, seatLabel, seatPickerHTML } from "./modes/coaster/first_person.mjs";
 import { createCoasterRide } from "./modes/coaster/ride.mjs";
-import "./components/search_field.mjs";
-import { createStationSearch } from "./ui/search.mjs";
 import "./components/sheet_frame.mjs";
 import { createBottomSheet } from "./ui/sheet.mjs";
 import "./components/station_sheet.mjs";
@@ -1409,7 +1410,16 @@ var journeyMap = createJourneyMap({
 });
 var { rideCoords, showRoute, fitRoute, clearRoute, setSubwayOff, setRouteOpacity, focusRoute } = journeyMap;
 var ticketRouteGone = null;
+var placeMarker = null;
+var ticketDesk = null;
 var journey = initJourney({
+	stations,
+	showStation: (station) => showStationPopup(station),
+	setPlaceMarker: (spot) => {
+		placeMarker = spot;
+		trainFrameSoon(0);
+	},
+	ticketDesk: async () => ticketDesk?.(),
 	openSheetView,
 	drawJourney,
 	clearJourney,
@@ -1864,6 +1874,9 @@ map.on("load", () => {
 		avatarScale,
 		AVATAR_MINZOOM: 15,
 		live: {
+			get placeMarker() {
+				return placeMarker;
+			},
 			get me() {
 				return me;
 			},
@@ -2239,15 +2252,6 @@ function appActions() {
 		busStopView: (what) => needBus().stopViewAction(what)
 	};
 }
-createStationSearch({
-	map,
-	stations,
-	colors,
-	input: $("search"),
-	list: $("searchList"),
-	getSelected: () => selected,
-	showStationPopup
-});
 var svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 var ICONS = {
 	auto: svg("<path d=\"M12 3a9 9 0 0 1 0 18z\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12\" cy=\"12\" r=\"9\"/>"),
@@ -2795,16 +2799,16 @@ settingsMenu.on({ switches: {
 	});
 }
 if (!appBridge) {
-	let started = false;
-	const go = () => {
-		if (started) return;
-		started = true;
-		__vitePreload(() => import("./user/account.mjs").then((m) => m.initAccount({
-			colors,
-			routeMap: ticketRoute,
-			myLocation: () => myLocation
-		})), [], import.meta.url).catch(() => {});
-	};
+	const mapLoaded = new Promise((done) => map.once("load", () => done()));
+	let desk = null;
+	const go = () => desk ??= __vitePreload(() => import("./user/account.mjs").then((m) => m.initAccount({
+		colors,
+		routeMap: ticketRoute,
+		myLocation: () => myLocation,
+		journeyReturn: (search) => journey.ticketReturn(search),
+		mapLoaded
+	})), [], import.meta.url).catch(() => void 0);
+	ticketDesk = go;
 	if (location.hash.includes("login=")) go();
 	else {
 		map.once("idle", () => "requestIdleCallback" in window ? requestIdleCallback(go, { timeout: 4e3 }) : setTimeout(go, 1500));
