@@ -166,11 +166,26 @@ export const BE_AT:[number, number] = [127.0575, 37.5148];
 export const BE_ORIGIN:[number, number] = [127.05, 37.51];
 export const BE_RING:number[] = [5056,5380,5069,4885,5574,4882,5691,4611,5906,4644,5993,4654,6169,4629,6287,4544,6362,4395,6515,3788,6534,3714,8336,4005,8253,4375,8358,4528,8517,4781,8539,5625,8938,5773,8377,6630,7056,6274,6665,6227,6260,6112,5806,5919,5404,5675,5056,5380];
 export const beRing = ():[number, number][] => ringOf(BE_RING, BE_ORIGIN);
+// 한양도성 북쪽 두 문(숙정문 · 창의문) 중심 · 방향: OSM 건물 윤곽(숙정문 way 607913396 · 창의문 way 382251765)의 최소 직사각형 중심 · 긴 변(2026-11-01). 문 바깥 면(−y)이 숙정문 북동 · 창의문 서쪽을 보게 잡은 방향(근사)
+export const SJM_AT:[number, number] = [126.9810832, 37.595533], SJM_YAW = 128;
+export const CUM_AT:[number, number] = [126.966521, 37.5926116], CUM_YAW = 253;
+// 북촌 한옥마을: 기준점 · 정수 좌표 원점 · 둘레(근사 — OSM 에 북촌 경계가 없어 가회동 · 계동 · 재동의 작은 집 밀집 구역을 사각 윤곽으로 읽은 값)
+export const BC_AT:[number, number] = [126.9862, 37.5808];
+export const BC_ORIGIN:[number, number] = [126.98, 37.57];
+export const BC_RING:number[] = [4000,8500,8500,8500,8800,13000,3800,13000,4000,8500];
+export const bcRing = ():[number, number][] => ringOf(BC_RING, BC_ORIGIN);
 // 두 도성문 중심 · 방향: OSM 원자료의 육축 긴 변(2026-11-01), 구역 파일 머리에 계산 근거.
 // 숭례문 https://www.openstreetmap.org/relation/10647050 · 흥인지문 https://www.openstreetmap.org/way/320783808
 export const MONUMENTS:Monument[] = [
   { id: 'sungnyemun', zone: 'sungnyemun', lngLat: [126.97536025, 37.559986249999994], yawDeg: -41.8017044508303, openingsOnly: true },
   { id: 'heunginjimun', zone: 'heunginjimun', lngLat: [127.009594975, 37.571153975], yawDeg: 100.09911107449813, openingsOnly: true },
+  // 한양도성 북쪽 두 문 + 둘레 성곽 선 · 북촌 한옥마을
+  { id: 'sj-gate', zone: 'sukjeongmun', lngLat: SJM_AT, yawDeg: SJM_YAW, openingsOnly: true },
+  { id: 'sj-wall', zone: 'sukjeongmun', lngLat: SJM_AT, yawDeg: 0 },
+  { id: 'cu-gate', zone: 'changuimun', lngLat: CUM_AT, yawDeg: CUM_YAW, openingsOnly: true },
+  { id: 'cu-wall', zone: 'changuimun', lngLat: CUM_AT, yawDeg: 0 },
+  { id: 'bc-halls', zone: 'bukchon', lngLat: BC_AT, yawDeg: 0 },
+  { id: 'bc-frames', zone: 'bukchon', lngLat: BC_AT, yawDeg: 0 },
   { id: 'gwanghwamun', zone: 'gyeongbok', lngLat: [126.976817, 37.575928], yawDeg: -1.3 },
   // 광화문광장 동상(곡면 메시 — monuments_statues.mts): 자리 · 방향은 OSM node(이순신 2653074012 · 세종대왕 3841809527, direction 180° = 남쪽을 본다)
   { id: 'yi-sunsin', zone: 'gyeongbok', lngLat: [126.97695, 37.57097], yawDeg: 0 },
@@ -248,6 +263,8 @@ export interface MonumentHide { lngLat:[number, number]; radiusM:number; minH:nu
 export const GATE_YARDS:MonumentHide[] = [
   { lngLat: [126.97536025, 37.559986249999994] as [number, number], radiusM: 27, minH: 0, exact: true },
   { lngLat: [127.009594975, 37.571153975] as [number, number], radiusM: 43, minH: 0, exact: true },
+  { lngLat: SJM_AT, radiusM: 9.3, minH: 0, exact: true },
+  { lngLat: CUM_AT, radiusM: 8.1, minH: 0, exact: true },
 ];
 export const MONUMENT_HIDES:MonumentHide[] = [
   ...GATE_YARDS,
@@ -285,6 +302,7 @@ export const MONUMENT_HIDES:MonumentHide[] = [
   { lngLat: SD_AT, radiusM: 500, minH: 0, area: sdRing() },
   { lngLat: JG_AT, radiusM: 500, minH: 0, area: jgRing() },
   { lngLat: BE_AT, radiusM: 700, minH: 0, area: beRing() },
+  { lngLat: BC_AT, radiusM: 600, minH: 0, area: bcRing() },
 ];
 
 // 이 모델들이 있는 곳(광화문 · 경복궁 · 광화문광장 · 창덕궁 둘레): 화면이 이 둘레에 닿을 때만 코드를 받는다(첫 화면 · 다른 도시에서는 받지 않는다)
@@ -316,6 +334,9 @@ const REGIONS:Record<string, { lngLat:[number, number]; radiusM:number }> = {
   // 도성문: 문 둘레 100 m 안에 화면이 닿을 때만 그 문의 코드를 받는다
   sungnyemun: { lngLat: [126.97536025, 37.559986249999994], radiusM: 100 },
   heunginjimun: { lngLat: [127.009594975, 37.571153975], radiusM: 100 },
+  sukjeongmun: { lngLat: SJM_AT, radiusM: 450 },   // 문 둘레 성곽 선(420 m)까지
+  changuimun: { lngLat: CUM_AT, radiusM: 450 },
+  bukchon: { lngLat: BC_AT, radiusM: 450 },
 };
 // zone 을 주면 그 구역만, 안 주면 어느 구역이든(화면이 닿으면 true)
 export function monumentsInView(bounds:[number, number, number, number], zone?:string):boolean {

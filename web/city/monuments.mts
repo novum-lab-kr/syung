@@ -2,7 +2,7 @@
 // 이 파일은 화면에 닿은 구역만 import() 로 받는다(web/city/landmarks.mts 가 이 파일을 부른다 — 첫 화면에는 없다).
 // 고정 규칙: 어느 모드 · 테마에서나 같은 모델 · 같은 실물 색(색표는 monument_parts.mts COLORS 하나). 낮 · 밤 조명만 달라진다.
 // 자리 · 방향 · 구역은 monuments_data.mts. three.js 를 쓰지 않는 날 WebGL 메시(데스크톱 · 휴대폰 같은 모델).
-import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, wgRing, mdRing, s2Ring, sdRing, jgRing, beRing, tombRings, GATE_YARDS, monumentsInView } from './monuments_data.mts';
+import { MONUMENTS, GATE_DECK_Z, GATE_BASE_D, palaceRing, cdgRing, dsgRing, jmjRing, cggRing, ghgRing, hhmRing, jmRing, sjRing, hgRing, wgRing, mdRing, s2Ring, sdRing, jgRing, beRing, bcRing, tombRings, GATE_YARDS, monumentsInView } from './monuments_data.mts';
 import { MU, toM } from './life.mts';
 import { compileProgram } from './traffic.mts';
 import { STRIDE, COLORS, hex } from './monument_parts.mts';
@@ -32,6 +32,9 @@ const ZONES:Record<string, () => Promise<ZoneModule>> = {
   seodaemun: () => import('./monuments_seodaemun.mts'),
   jogyesa: () => import('./monuments_jogyesa.mts'),
   bongeunsa: () => import('./monuments_bongeunsa.mts'),
+  sukjeongmun: () => import('./monuments_sukjeongmun.mts'),
+  changuimun: () => import('./monuments_changuimun.mts'),
+  bukchon: () => import('./monuments_bukchon.mts'),
   seonjeong: () => import('./monuments_seonjeong.mts'),
   jeongneung: () => import('./monuments_jeongneung.mts'),
   uireung: () => import('./monuments_uireung.mts'),
@@ -192,7 +195,7 @@ export class Monuments {
   inPalace = (x:number, y:number):boolean => {
     const gates = (this.gateM ??= GATE_YARDS.map(({ lngLat: [lng, lat], radiusM }) => { const [gx, gy] = toM(lng, lat); return [gx, gy, radiusM] as [number, number, number] }));
     if (gates.some(([gx, gy, radius]) => Math.hypot(x - gx, y - gy) < radius)) return true;
-    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing(), wgRing(), mdRing(), s2Ring(), sdRing(), jgRing(), beRing(), ...tombRings()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
+    const rings = (this.palaceM ??= [palaceRing(), cdgRing(), dsgRing(), jmjRing(), cggRing(), ghgRing(), hhmRing(), jmRing(), sjRing(), hgRing(), wgRing(), mdRing(), s2Ring(), sdRing(), jgRing(), beRing(), bcRing(), ...tombRings()].map(ring => ring.map(([lng, lat]) => toM(lng, lat))));
     return rings.some(ring => {
       let inside = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i]!, [xj, yj] = ring[j]!; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }

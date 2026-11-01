@@ -14,6 +14,7 @@ const PLAQUE_VERTICAL = { width: .9, height: 1.9 }, PLAQUE_HORIZONTAL = { width:
 export interface GateShape {
   base:GatePoint[]; enclosure?:GatePoint[]; frameWidth:number; frameDepth:number;
   height:number; masonryHeight:number; archWidth:number; archHeight:number; verticalPlaque:boolean;
+  tiers?:1 | 2; bays?:number;   // 단층 문루(숙정문 · 창의문)는 tiers 1 · 정면 칸 수 bays(기본 중층 · 5칸)
 }
 
 // 오목한 OSM 윤곽도 그대로 덮는 가로 절편: 모서리마다 잘라 윗면과 옆면만 만든다.
@@ -74,16 +75,17 @@ function pavilion(writer:MeshWriter, shape:GateShape):void {
   const halfWidth = shape.frameWidth / 2, halfDepth = shape.frameDepth / 2;
   const floor = shape.masonryHeight;   // 기둥 발은 육축 윗면에 바로 닿는다(단 · 바닥 면으로 띄우지 않는다)
   const timberHeight = shape.height - floor;
-  for (const tier of [0, 1]) {
+  const tiers = shape.tiers ?? 2, bays = shape.bays ?? 5, top = tiers - 1;
+  for (let tier = 0; tier < tiers; tier++) {
     const inset = tier * .6, halfFront = halfWidth - inset, halfSide = halfDepth - tier * .25;
     const bottom = floor + timberHeight * tier * UPPER_TIER_START;
     const beam = bottom + timberHeight * BEAM_FRACTION;
-    // 정면 다섯 칸은 기둥 여섯 줄, 측면 두 칸은 세 줄. 가운데 칸도 열린 하층을 가짜 벽으로 막지 않는다.
-    for (let column = 0; column <= 5; column++) {
-      const east = -halfFront + halfFront * 2 * column / 5;
+    // 정면 다섯 칸(기본)은 기둥 여섯 줄, 측면 두 칸은 세 줄. 가운데 칸도 열린 하층을 가짜 벽으로 막지 않는다.
+    for (let column = 0; column <= bays; column++) {
+      const east = -halfFront + halfFront * 2 * column / bays;
       for (const north of [-halfSide, 0, halfSide]) writer.prism(east, north, .25, bottom, beam, K.red, 10);
-      if (tier === 1 && column < 5) for (const side of [-1, 1]) {
-        const next = -halfFront + halfFront * 2 * (column + 1) / 5;
+      if (tier === 1 && column < bays) for (const side of [-1, 1]) {
+        const next = -halfFront + halfFront * 2 * (column + 1) / bays;
         writer.box(east + .25, next - .25, side * halfSide - .08, side * halfSide + .08, bottom + .15, beam - .15, K.wood);
       }
     }
@@ -91,12 +93,12 @@ function pavilion(writer:MeshWriter, shape:GateShape):void {
     bandBox(writer, halfFront + .3, halfSide + .3, beam - .2, beam + .25, K.dancheong, 0, .28);
     buildBrackets(writer, halfFront + .3, halfSide + .3, beam + .15);
     const eave = beam + .9, roofRise = shape.height - .62 - eave;
-    const innerDepth = tier === 0 ? halfDepth - .2 : 0;
-    const rise = tier === 0 ? timberHeight * .17 : roofRise;
+    const innerDepth = tier === top ? 0 : halfDepth - .2;
+    const rise = tier === top ? roofRise : timberHeight * .17;
     buildRoof(writer, { hx: halfFront + 2.5, hy: halfSide + 2.4, ix: halfFront - halfSide, iy: innerDepth, z0: eave, rise, lift: ROOF_LIFT, flare: ROOF_FLARE }, { innerZ: beam + .8, innerHx: halfFront + .3, innerHy: halfSide + .3 });
     // 문루 안쪽 개구부의 천장만 등불을 받는다. 막힌 판문 · 단청 · 기와에는 발광 재질을 쓰지 않는다.
     if (tier === 0) writer.quad([-halfFront, -halfSide, beam], [halfFront, -halfSide, beam], [halfFront, halfSide, beam], [-halfFront, halfSide, beam], K.tunnel, [0, 0, -1]);
-    if (tier === 1) {
+    if (tier === top) {
       // 현판: 검은 바탕 + 금빛 테두리까지만(글씨는 지어내지 않는다). 셰이더가 폭을 s 에서 읽도록 데시미터 폭을 싣는다
       const plaque = shape.verticalPlaque ? PLAQUE_VERTICAL : PLAQUE_HORIZONTAL, y = -halfSide - .3, widthCode = 2 * Math.round(plaque.width * 10);
       writer.box(-plaque.width / 2, plaque.width / 2, y, y + .15, bottom + .1, bottom + .1 + plaque.height, K.plaque);
@@ -142,4 +144,24 @@ export function buildCityGate(shape:GateShape):Float32Array {
   }
   pavilion(writer, shape);
   return new Float32Array(writer.data);
+}
+
+// 성곽 선에서 성문 자리를 잘라 낸다: 선을 .5 m 씩 나눠, 문 국소 좌표(방향 yawDeg)에서 육축 상자(앞뒤 + 1.6 m · 좌우 + .8 m) 안에 든 조각을 버린다 —
+// 성곽이 문 앞을 가로질러 홍예 통로를 막지 않게(문 육축이 그 자리를 채운다). 점은 문 중심 기준 동 · 북 미터.
+export function clipOutsideGate(line:GatePoint[], base:GatePoint[], yawDeg:number):GatePoint[][] {
+  const angle = yawDeg * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+  const halfX = Math.max(...base.map(point => Math.abs(point[0]))) + .8, halfY = Math.max(...base.map(point => Math.abs(point[1]))) + 1.6;
+  const inside = (east:number, north:number):boolean => Math.abs(east * cos + north * sin) < halfX && Math.abs(-east * sin + north * cos) < halfY;
+  const runs:GatePoint[][] = []; let run:GatePoint[] = [];
+  for (let index = 0; index + 1 < line.length; index++) {
+    const [ax, ay] = line[index]!, [bx, by] = line[index + 1]!, steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / .5));
+    for (let step = 0; step < steps; step++) {
+      const t0 = step / steps, t1 = (step + 1) / steps, from:GatePoint = [ax + (bx - ax) * t0, ay + (by - ay) * t0], to:GatePoint = [ax + (bx - ax) * t1, ay + (by - ay) * t1];
+      if (inside((from[0] + to[0]) / 2, (from[1] + to[1]) / 2)) { if (run.length) runs.push(run); run = []; continue }
+      if (!run.length) run.push(from);
+      run.push(to);
+    }
+  }
+  if (run.length) runs.push(run);
+  return runs;
 }
