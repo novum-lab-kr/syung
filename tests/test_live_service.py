@@ -120,6 +120,35 @@ class LiveServiceTest(unittest.TestCase):
                 self.assertEqual((waiting["station"], waiting["status"], waiting["departsAt"]),
                                  ("신내", "도착", expected))
 
+    def test_normalize_arrivals_distrusts_arrival_code_with_far_message(self):
+        # 2026-11-02 15:05 공개 행 그대로: 8호선은 "[n]번째 전역" · "전역 진입" 행에도 code 1 을 준다
+        def row(line, train, station, code, current, message, stamp, direction="상행", destination="별내"):
+            return {"subwayId": line, "btrainNo": train, "statnNm": station, "statnId": station,
+                    "bstatnNm": destination, "updnLine": direction, "arvlCd": code, "barvlDt": "0",
+                    "arvlMsg3": current, "arvlMsg2": message, "recptnDt": stamp}
+        rows = [
+            # 8174: 위치 피드는 가락시장 도착 — 지금까지는 가장 새 행(천호)을 골라 "천호 도착"
+            row("1008", "8174", "천호", "1", "가락시장", "[6]번째 전역 (가락시장)", "2026-11-02 15:04:08"),
+            row("1008", "8174", "강동구청", "1", "가락시장", "[5]번째 전역 (가락시장)", "2026-11-02 15:04:08"),
+            row("1008", "8174", "석촌", "1", "가락시장", "[2]번째 전역 (가락시장)", "2026-11-02 15:03:28"),
+            row("1008", "8174", "가락시장", "1", "가락시장", "가락시장 도착", "2026-11-02 15:03:28"),
+            # 8172: 미래 시각인 암사 행이 가장 새 행이라 "암사 도착"으로 그려졌다
+            row("1008", "8172", "천호", "1", "강동구청", "전역 진입", "2026-11-02 15:04:08"),
+            row("1008", "8172", "암사", "1", "강동구청", "[2]번째 전역 (강동구청)", "2026-11-02 23:58:36"),
+            row("1008", "8172", "강동구청", "0", "강동구청", "강동구청 진입", "2026-11-02 15:04:08"),
+            # 다른 노선의 정상 행은 그대로: arvlMsg3 가 그 역과 달라도 메시지가 그 역이면 믿는다
+            row("1001", "0108", "노량진", "0", "대방", "노량진 진입", "2026-11-02 15:03:50", destination="의정부"),
+            row("1009", "9624", "김포공항", "1", "개화", "개화 도착", "2026-11-02 15:05:20", destination="중앙보훈병원"),
+        ]
+        lines, _, _ = live.normalize_arrivals({"realtimeArrivalList": rows})
+        placed = {(t["line"], t["trainNo"]): (t["station"], t["status"]) for trains in lines.values() for t in trains}
+        self.assertEqual(placed[("8호선", "8174")], ("가락시장", "운행 중"))
+        self.assertEqual(placed[("8호선", "8172")], ("강동구청", "운행 중"))
+        self.assertEqual(placed[("1호선", "0108")], ("노량진", "진입"))
+        self.assertEqual(placed[("9호선", "9624")], ("김포공항", "도착"))
+        # 역 도착 창(index_arrivals)은 원본 code 그대로
+        self.assertEqual(live.index_arrivals({"realtimeArrivalList": rows})["천호"][0]["code"], "1")
+
     def test_fetch_all_installs_next_trip_and_idle_state(self):
         source = FakeSource(all_result={"realtimeArrivalList": [
             arrival_row("6283", "태릉입구", direction="하행", destination="신내"),

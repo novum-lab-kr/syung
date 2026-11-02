@@ -102,6 +102,23 @@ def normalize_positions(payload: Row, requested_line: str) -> list[Row]:
     return sorted((t for t in trains if t["trainNo"] and t["station"]), key=lambda t: (t["line"], t["trainNo"]))
 
 
+# 메시지가 "아직 몇 역 전"이라고 말하는 행
+_FAR_MESSAGE = re.compile(r"번째 전역|^전역 (도착|진입|출발)")
+
+
+def _distrust_far_arrival(row: Row) -> Row:
+    """진입/도착/출발(0/1/2) 코드인데 메시지는 몇 역 전이라고 하는 행은 그 역에 있다고 믿지 않는다.
+
+    8호선 원본은 이 모양의 행이 대부분이다: 메시지 "[5]번째 전역 (별내)" 인데 code 1 · eta 0
+    (2026-11-02 공개 행 530개 중 395개, 다른 노선은 2,134개 중 0개). 그 역 도착으로 받으면
+    강동구청 · 장자호수공원에 있는 열차가 암사 도착으로 그려졌다. 코드를 99(운행 중)로 바꿔
+    arvlMsg3 가 말하는 지금 역에 둔다. 메시지만 본다 — arvlMsg3 가 그 역과 다른 것만으로는
+    가리지 않는다(1호선 "노량진 진입" 행의 arvlMsg3 는 앞 역 대방이다)."""
+    if str(row.get("arvlCd")) in ("0", "1", "2") and _FAR_MESSAGE.search(str(row.get("arvlMsg2") or "").strip()):
+        return {**row, "arvlCd": "99"}
+    return row
+
+
 def normalize_arrivals(payload: Row) -> tuple[dict[str, list[Row]], set[TrainKey], set[TrainKey]]:
     """Station-arrival rows → one position per train, grouped by line; also the next trips listed
     before they start (skipped) and the trains not running yet (idle), for overlay_positions.
@@ -114,7 +131,7 @@ def normalize_arrivals(payload: Row) -> tuple[dict[str, list[Row]], set[TrainKey
         line = LINE_NAMES.get(str(row.get("subwayId")))
         train_no = str(row.get("btrainNo") or "").strip()
         if line and train_no:
-            grouped[(line, train_no)].append(row)
+            grouped[(line, train_no)].append(_distrust_far_arrival(row))
 
     def rank(row: Row) -> tuple[int, int]:
         # A 진입/도착/출발 row far out is not where the train is now: on the 응암 loop a 하행 train
