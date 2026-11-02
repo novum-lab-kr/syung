@@ -1,3 +1,4 @@
+import { distanceText, inkOn } from "../lib/place-search.mjs";
 import { Fragment as M } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 // web/components/place_search.tsx
@@ -89,7 +90,7 @@ var HERE = /* @__PURE__ */ a("svg", {
 });
 var PLACE_SEARCH_LABEL = "장소 검색";
 var noop = () => {};
-function PlaceSearchField({ value = "", label = PLACE_SEARCH_LABEL, onInput = noop, onClear = noop }) {
+function PlaceSearchField({ value = "", label = PLACE_SEARCH_LABEL, onInput = noop, onClear = noop, onEnter = noop }) {
 	return /* @__PURE__ */ a("div", {
 		class: "ps-field",
 		children: [
@@ -99,9 +100,13 @@ function PlaceSearchField({ value = "", label = PLACE_SEARCH_LABEL, onInput = no
 				type: "text",
 				autocomplete: "off",
 				"aria-label": label,
+				enterkeyhint: "go",
 				placeholder: PLACE_SEARCH_LABEL,
 				value,
-				onInput: (event) => onInput(event.currentTarget.value)
+				onInput: (event) => onInput(event.currentTarget.value),
+				onKeyDown: (event) => {
+					if (event.key === "Enter" && !event.isComposing) onEnter();
+				}
 			}),
 			value && /* @__PURE__ */ a("button", {
 				type: "button",
@@ -125,7 +130,7 @@ function Marked({ name, query }) {
 var Chips = ({ hit }) => /* @__PURE__ */ a("span", {
 	class: "ps-chips",
 	children: hit.lines.map((line) => /* @__PURE__ */ a("i", {
-		style: `--c:${line.color}`,
+		style: `--c:${line.color};--t:${inkOn(line.color)}`,
 		children: line.name
 	}))
 });
@@ -141,7 +146,7 @@ var PlaceRow = ({ hit, query, onPick = noop }) => /* @__PURE__ */ a("button", {
 		children: [/* @__PURE__ */ a(Marked, {
 			name: hit.name,
 			query
-		}), hit.lines ? /* @__PURE__ */ a(Chips, { hit }) : /* @__PURE__ */ a("small", { children: hit.address })]
+		}), hit.lines ? /* @__PURE__ */ a(Chips, { hit }) : /* @__PURE__ */ a("small", { children: [hit.address, hit.metres === void 0 ? "" : distanceText(hit.metres)].filter(Boolean).join(" · ") })]
 	})]
 });
 var PlaceList = ({ hits, query, onPick, here }) => /* @__PURE__ */ a("ul", {
@@ -165,7 +170,7 @@ var PlaceHereRow = ({ onPick }) => /* @__PURE__ */ a("button", {
 		children: /* @__PURE__ */ a("b", { children: "내 위치" })
 	})]
 });
-var PlaceEmpty = ({ query, failed = false }) => /* @__PURE__ */ a("div", {
+var PlaceEmpty = ({ query, failed = false, onRetry }) => /* @__PURE__ */ a("div", {
 	class: "ps-empty",
 	children: [
 		/* @__PURE__ */ a("img", {
@@ -174,7 +179,16 @@ var PlaceEmpty = ({ query, failed = false }) => /* @__PURE__ */ a("div", {
 			width: 47,
 			height: 47
 		}),
-		failed && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("b", { children: "검색하지 못했어요" }), /* @__PURE__ */ a("small", { children: "잠시 뒤 다시 찾아 보세요" })] }),
+		failed && /* @__PURE__ */ a(M, { children: [
+			/* @__PURE__ */ a("b", { children: "검색하지 못했어요" }),
+			/* @__PURE__ */ a("small", { children: "잠시 뒤 다시 찾아 보세요" }),
+			onRetry && /* @__PURE__ */ a("button", {
+				type: "button",
+				class: "ps-retry",
+				onClick: onRetry,
+				children: "다시 찾기"
+			})
+		] }),
 		!failed && query && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("b", { children: "찾는 곳이 없어요" }), /* @__PURE__ */ a("small", { children: [
 			"「",
 			query,
@@ -183,30 +197,64 @@ var PlaceEmpty = ({ query, failed = false }) => /* @__PURE__ */ a("div", {
 		!failed && !query && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("b", { children: "어디든 슝!" }), /* @__PURE__ */ a("small", { children: "역이나 장소 이름을 적어 보세요" })] })
 	]
 });
-var PlaceSearch = ({ title = "어디로 갈까요?", query = "", hits = [], failed = false, pending = false, onPick, here, children }) => /* @__PURE__ */ a("div", {
-	class: "ps",
-	children: [
-		/* @__PURE__ */ a("h3", {
-			class: "ps-title",
-			children: title
-		}),
-		children ?? /* @__PURE__ */ a(PlaceSearchField, { value: query }),
-		hits.length || here ? /* @__PURE__ */ a(PlaceList, {
-			hits,
-			query: query.trim(),
-			here,
-			...onPick ? { onPick } : {}
-		}) : !pending && /* @__PURE__ */ a(PlaceEmpty, {
-			query: query.trim(),
-			failed
-		})
-	]
-});
-var PlacePickedSheet = ({ hit, onEnd = noop, onArrivals = noop }) => /* @__PURE__ */ a("div", {
+var MIN_ASK = 2;
+var PlaceSearch = ({ title = "어디로 갈까요?", query = "", hits = [], failed = false, pending = false, notice = "", onPick, onRetry, here, children }) => {
+	const wanted = query.trim(), listed = hits.length > 0 || !!here;
+	return /* @__PURE__ */ a("div", {
+		class: wanted ? "ps typing" : "ps",
+		children: [
+			/* @__PURE__ */ a("h3", {
+				class: "ps-title",
+				children: title
+			}),
+			/* @__PURE__ */ a("div", {
+				class: "ps-stick",
+				children: children ?? /* @__PURE__ */ a(PlaceSearchField, { value: query })
+			}),
+			notice && /* @__PURE__ */ a("p", {
+				class: "ps-notice",
+				role: "alert",
+				children: notice
+			}),
+			listed && /* @__PURE__ */ a(PlaceList, {
+				hits,
+				query: wanted,
+				here,
+				...onPick ? { onPick } : {}
+			}),
+			pending && /* @__PURE__ */ a("p", {
+				class: "ps-pending",
+				role: "status",
+				children: "장소를 찾고 있어요"
+			}),
+			listed && failed && /* @__PURE__ */ a("p", {
+				class: "ps-failed",
+				role: "status",
+				children: ["장소를 찾지 못했어요", onRetry && /* @__PURE__ */ a("button", {
+					type: "button",
+					class: "ps-retry",
+					onClick: onRetry,
+					children: "다시 찾기"
+				})]
+			}),
+			!listed && !pending && /* @__PURE__ */ a(PlaceEmpty, {
+				failed,
+				...wanted.length >= MIN_ASK ? { query: wanted } : {},
+				...onRetry ? { onRetry } : {}
+			})
+		]
+	});
+};
+var PlacePickedSheet = ({ hit, notice = "", onEnd = noop, onArrivals = noop }) => /* @__PURE__ */ a("div", {
 	class: "ps-picked",
 	children: [
 		/* @__PURE__ */ a("h3", { children: hit.name }),
 		hit.lines ? /* @__PURE__ */ a(Chips, { hit }) : hit.address && /* @__PURE__ */ a("p", { children: hit.address }),
+		notice && /* @__PURE__ */ a("p", {
+			class: "ps-notice",
+			role: "alert",
+			children: notice
+		}),
 		hit.lines && /* @__PURE__ */ a("button", {
 			type: "button",
 			class: "ps-arrivals",
@@ -230,7 +278,7 @@ var PlacePickedSheet = ({ hit, onEnd = noop, onArrivals = noop }) => /* @__PURE_
 		})
 	]
 });
-var PlaceEndsCard = ({ fixedName, fixed, value = "", onInput = noop, onClear = noop }) => {
+var PlaceEndsCard = ({ fixedName, fixed, value = "", onInput = noop, onClear = noop, onEnter = noop }) => {
 	const row = /* @__PURE__ */ a("div", {
 		class: "ps-end",
 		children: [/* @__PURE__ */ a("i", {
@@ -242,11 +290,31 @@ var PlaceEndsCard = ({ fixedName, fixed, value = "", onInput = noop, onClear = n
 		value,
 		label: fixed === "from" ? "도착지" : "출발지",
 		onInput,
-		onClear
+		onClear,
+		onEnter
 	});
 	return /* @__PURE__ */ a("div", {
 		class: "ps-route",
 		children: fixed === "from" ? /* @__PURE__ */ a(M, { children: [row, field] }) : /* @__PURE__ */ a(M, { children: [field, row] })
 	});
 };
-export { PLACE_SEARCH_LABEL, PlaceEmpty, PlaceEndsCard, PlaceHereRow, PlaceList, PlacePickedSheet, PlaceRow, PlaceSearch, PlaceSearchField };
+var BACK = /* @__PURE__ */ a("svg", {
+	viewBox: "0 0 24 24",
+	width: "24",
+	height: "24",
+	"aria-hidden": "true",
+	fill: "none",
+	stroke: "currentColor",
+	"stroke-width": "2",
+	"stroke-linecap": "round",
+	"stroke-linejoin": "round",
+	children: /* @__PURE__ */ a("path", { d: "m15 6-6 6 6 6" })
+});
+var JourneyStep = ({ canBack, onPress = noop }) => /* @__PURE__ */ a("button", {
+	type: "button",
+	class: canBack ? "jstep back" : "jstep",
+	"aria-label": canBack ? "뒤로" : "닫기",
+	onClick: onPress,
+	children: canBack ? BACK : CLEAR
+});
+export { JourneyStep, PLACE_SEARCH_LABEL, PlaceEmpty, PlaceEndsCard, PlaceHereRow, PlaceList, PlacePickedSheet, PlaceRow, PlaceSearch, PlaceSearchField };

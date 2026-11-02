@@ -51,15 +51,42 @@ function isStationItself(place, station) {
 	if (rest && !rest.split(/\s+/).every((word) => isLineName(word, station))) return false;
 	return metresBetween(place, station) <= SAME_STATION_METRES;
 }
-function mergeHits(stationHits, places) {
-	const others = places.filter((place) => !stationHits.some((station) => isStationItself(place, station)));
+var squeezed = (text) => text.replace(/\s+/g, "");
+function mergeHits(stationHits, places, { query = "", here = null } = {}) {
+	const wanted = squeezed(query), named = (place) => wanted && squeezed(place.name).includes(wanted) ? 0 : 1;
+	const others = places.filter((place) => !stationHits.some((station) => isStationItself(place, station))).sort((one, other) => named(one) - named(other));
 	return [...stationHits, ...others.map(({ name, address, lat, lng }) => ({
 		name,
 		lat,
 		lng,
-		...address ? { address } : {}
+		...address ? { address } : {},
+		...here ? { metres: metresBetween(here, {
+			lat,
+			lng
+		}) } : {}
 	}))];
 }
+function distanceText(metres) {
+	const rounded = Math.round(metres / 10) * 10;
+	return rounded < 1e3 ? `${rounded}m` : `${(metres / 1e3).toFixed(1)}km`;
+}
+var SAME_SPOT_METRES = 30;
+var sameSpot = (one, other) => metresBetween(one, other) <= SAME_SPOT_METRES;
+var inkOn = (hex) => {
+	const value = parseInt(String(hex).slice(1), 16);
+	if (Number.isNaN(value)) return "#fff";
+	const [red, green, blue] = [
+		value >> 16,
+		value >> 8 & 255,
+		value & 255
+	].map((channel) => {
+		const unit = channel / 255;
+		return unit <= .03928 ? unit / 12.92 : ((unit + .055) / 1.055) ** 2.4;
+	});
+	const light = .2126 * red + .7152 * green + .0722 * blue;
+	if (1.05 / (light + .05) >= 4.5) return "#fff";
+	return (light + .05) / .057 >= 4.5 ? "#141414" : "#000";
+};
 var endName = (hit) => hit.lines && !/역$/.test(hit.name) ? `${hit.name}역` : hit.name;
 var clockText = (total) => `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 function nearestFive(time) {
@@ -88,4 +115,4 @@ function swappedEnds(names, picked, start, hereName) {
 		}
 	};
 }
-export { endName, findStations, mergeHits, metresBetween, nearestFive, stationQuery, swappedEnds, ticketTime };
+export { distanceText, endName, findStations, inkOn, mergeHits, metresBetween, nearestFive, sameSpot, stationQuery, swappedEnds, ticketTime };

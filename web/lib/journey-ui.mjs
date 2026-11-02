@@ -1,10 +1,10 @@
-import { serverUrl } from "./server_url.mjs";
-import { endName, findStations, mergeHits, swappedEnds } from "./place-search.mjs";
+import { appMapMode, serverUrl } from "./server_url.mjs";
+import { endName, findStations, inkOn, mergeHits, sameSpot, swappedEnds } from "./place-search.mjs";
 import { createTimeWheel } from "./time-wheel.mjs";
 // web/lib/journey-ui.mts
 var HERE_NAME = "내 위치";
-var HOME_ZOOM = 15;
 var PICK_ZOOM = 16;
+var SEEK_LIMIT_MS = 1e4;
 var PICK_PAD = 200;
 var esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({
 	"&": "&amp;",
@@ -21,20 +21,6 @@ var legSecs = (l) => l.type === "walk" ? l.seconds : Math.max(60, (hm(l.arrives)
 var legColorOf = (l, colors) => l.type === "bus" ? l.color : colors[l.line] || "#888";
 var legName = (l) => l.type === "bus" ? l.route : l.line;
 var legShort = (l) => l.type === "bus" ? l.route : l.line.replace(/호선$/, "").replace(/선$/, "");
-var inkOn = (hex) => {
-	const n = parseInt(String(hex).slice(1), 16);
-	if (Number.isNaN(n)) return "#fff";
-	const [r, g, b] = [
-		n >> 16,
-		n >> 8 & 255,
-		n & 255
-	].map((v) => {
-		v /= 255;
-		return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
-	});
-	const L = .2126 * r + .7152 * g + .0722 * b;
-	return 1.05 / (L + .05) >= (L + .05) / .057 ? "#fff" : "#141414";
-};
 var BUS = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z\"/></svg>";
 var textW = (t) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);
 var rideMinutes = (leg) => leg.departs && leg.arrives ? Math.max(1, (hm(leg.arrives) - hm(leg.departs) + 1440) % 1440) : null;
@@ -187,16 +173,24 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	let last = null;
 	let inSheet = false;
 	let goSeq = 0;
+	let trail = null, routeBack = null, originStation = null;
 	const bar = document.createElement("div");
 	bar.className = "jbar";
 	bar.hidden = true;
 	document.body.append(bar);
+	const clearBar = () => {
+		last = null;
+		bar.hidden = true;
+		clearRoute?.();
+		trail = null;
+		view = freshView();
+	};
 	const barActions = {
 		open: () => open(),
-		clear: () => {
-			last = null;
-			bar.hidden = true;
-			clearRoute?.();
+		clear: clearBar,
+		fresh: () => {
+			clearBar();
+			start();
 		}
 	};
 	drawJourneyBar(bar, null, barActions);
@@ -228,7 +222,10 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	});
 	let view = freshView();
 	const paint = () => {
-		if (body) drawJourney(body, view, actions);
+		if (body) {
+			view.canBack = canGoBack();
+			drawJourney(body, view, actions);
+		}
 	};
 	const focusSearch = () => document.getElementById("placeInput")?.focus({ preventScroll: true });
 	const pad = (n) => String(n).padStart(2, "0");
@@ -282,25 +279,44 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	let seekTimer = 0, seekSeq = 0;
 	function typed(text) {
 		const search = view.search, query = text.trim(), mine = ++seekSeq, stationHits = findStations(stations, query, colors);
+		const merged = () => {
+			const spot = myLocation();
+			return mergeHits(stationHits, search.places ?? [], {
+				query,
+				here: spot ? {
+					lat: spot[1],
+					lng: spot[0]
+				} : null
+			});
+		};
 		clearTimeout(seekTimer);
+		const asked = search.asked ?? "";
+		if (query.length < 2 || !(query.startsWith(asked) || asked.startsWith(query))) search.places = [];
 		search.query = text;
-		search.hits = stationHits;
+		search.hits = merged();
 		search.failed = false;
 		search.pending = query.length >= 2;
+		search.cut = false;
+		view.notice = "";
 		paint();
 		if (query.length < 2) return;
 		seekTimer = setTimeout(async () => {
-			const centre = map.getCenter(), show = (places, failed) => {
-				search.hits = mergeHits(stationHits, places);
-				search.failed = failed;
+			const centre = map.getCenter(), limit = new AbortController(), timer = setTimeout(() => limit.abort(), SEEK_LIMIT_MS);
+			const show = (places, isFailed) => {
+				search.places = places;
+				search.asked = query;
+				search.hits = merged();
+				search.failed = isFailed;
 				search.pending = false;
 				paint();
 			};
 			try {
-				const answer = await (await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`))).json();
+				const answer = await (await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`), { signal: limit.signal })).json();
 				if (mine === seekSeq) show(answer.ok ? answer.places : [], !answer.ok);
 			} catch {
 				if (mine === seekSeq) show([], true);
+			} finally {
+				clearTimeout(timer);
 			}
 		}, 300);
 	}
@@ -308,14 +324,19 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		clearTimeout(seekTimer);
 		seekSeq++;
 	};
+	const cutSeek = () => {
+		if (view.search.pending) view.search.cut = true;
+		stopSeeking();
+		view.search.pending = false;
+	};
 	const endOf = (hit) => ({
 		name: endName(hit),
 		lat: hit.lat,
 		lng: hit.lng
 	});
 	function placePicked(hit) {
-		stopSeeking();
-		view.search.pending = false;
+		cutSeek();
+		view.notice = "";
 		const fixed = view.search.fixed;
 		if (fixed) {
 			fillEnd(fixed.which === "from" ? "to" : "from", endOf(hit));
@@ -349,6 +370,10 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	};
 	function chooseEnd(which, end) {
 		dispatchEvent(new CustomEvent("syung:place_end", { detail: which }));
+		if (view.picked) trail = {
+			hit: view.picked,
+			search: view.search
+		};
 		fillEnd(which, end);
 		if (which === "to" && hereKnown()) {
 			useHere();
@@ -391,7 +416,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	}
 	function hereRow() {
 		useHere();
-		stopSeeking();
+		cutSeek();
 		go();
 	}
 	const fromOf = () => picked.from || (names.from === HERE_NAME && myLocation() ? {
@@ -534,6 +559,16 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 			searchFor(from ? "from" : "to", from ? names.from : names.to);
 			return;
 		}
+		if (sameSpot(from, to)) {
+			if (view.stage === "route") failed("출발과 도착이 같아요");
+			else {
+				view.notice = "출발과 도착이 같아요";
+				paint();
+			}
+			return;
+		}
+		view.notice = "";
+		if (view.stage === "search" && view.search.fixed) routeBack = view.search;
 		const at = whenValue();
 		setPlaceMarker(null);
 		view.status = {
@@ -563,6 +598,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 				when: { ...when },
 				picked: trip.picked
 			};
+			trail = routeBack = originStation = null;
 			render(answer, 0);
 			dispatchEvent(new CustomEvent("syung:route"));
 			paint();
@@ -636,6 +672,21 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		place: placePicked,
 		here: hereRow,
 		swap,
+		clear() {
+			typed("");
+			focusSearch();
+		},
+		enter() {
+			const first = view.search.hits[0];
+			if (first && (first.lines || !view.search.pending)) placePicked(first);
+			else document.activeElement?.blur?.();
+		},
+		retrySeek() {
+			typed(view.search.query);
+		},
+		leave() {
+			if (!back()) closeSheet?.();
+		},
 		end(which) {
 			const hit = view.picked;
 			if (hit) chooseEnd(which, endOf(hit));
@@ -683,10 +734,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		fold();
 		render(search.d, search.sel);
 	}
-	function open() {
-		bar.hidden = true;
-		stopSeeking();
-		view = freshView();
+	function mountView() {
 		openSheetView((target) => {
 			const id = ++mountSeq;
 			body = target;
@@ -702,7 +750,17 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 				clearJourney(target);
 			};
 		});
+	}
+	function open() {
+		bar.hidden = true;
+		stopSeeking();
+		const kept = trail?.search ?? (view.search.fixed ? null : view.search), keep = !last && !!kept?.query.trim(), unfinished = keep && (kept.pending || !!kept.cut);
+		view = freshView();
+		if (keep) view.search = kept;
+		trail = routeBack = originStation = null;
+		mountView();
 		inSheet = true;
+		armHistory();
 		if (!last) {
 			when = { k: "now" };
 			useHere();
@@ -712,41 +770,137 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		}
 		whenSet(when);
 		if (last) showResults();
+		else if (unfinished) typed(kept.query);
 	}
 	function start() {
 		open();
-		if (last) return;
-		const spot = myLocation();
-		if (spot) map.flyTo({
-			center: [spot[0], spot[1]],
-			zoom: Math.max(map.getZoom(), HOME_ZOOM),
-			duration: 900
-		});
-		focusSearch();
+		if (!last) focusSearch();
 	}
 	function openWith(end, place) {
 		last = null;
 		picked.from = picked.to = null;
 		clearRoute?.();
 		open();
+		originStation = stations.find((one) => one.lat === place.lat && one.lon === place.lng) ?? null;
+		view.search = emptySearch();
 		chooseEnd(end, place);
 	}
-	function back() {
-		if (!inSheet) return false;
-		setPlaceMarker(null);
-		if (view.stage === "picked") {
-			view.stage = "search";
-			view.picked = null;
+	const resumeSeek = () => {
+		if (view.search.cut) typed(view.search.query);
+	};
+	function toOrigin() {
+		stopSeeking();
+		if (trail) {
+			const { hit, search } = trail;
+			picked.from = picked.to = null;
+			useHere();
+			names.to = "";
+			if (!hereKnown()) names.from = "";
+			view.search = search;
+			view.picked = hit;
+			view.stage = "picked";
+			view.done = false;
+			view.status = {
+				text: "",
+				sr: false
+			};
+			view.result = { kind: "none" };
+			routeBack = null;
 			paint();
+			setPlaceMarker([hit.lng, hit.lat]);
 			return true;
 		}
-		if (view.stage === "search" && view.search.fixed && last) {
-			stopSeeking();
-			showResults();
+		if (originStation) {
+			const station = originStation;
+			originStation = null;
+			inSheet = false;
+			disarmHistory();
+			showStation(station);
 			return true;
 		}
 		return false;
 	}
+	const hasPlans = () => view.result.kind === "plans";
+	function canGoBack() {
+		if (view.stage === "picked") return true;
+		if (hasPlans()) return false;
+		return !!(view.stage === "search" ? view.search.fixed && (last || trail || originStation) : last || routeBack || trail || originStation);
+	}
+	function back() {
+		if (!inSheet) return false;
+		if (!mounted) {
+			if (last || view.stage === "route") return false;
+			mountView();
+			if (view.picked) setPlaceMarker([view.picked.lng, view.picked.lat]);
+			return true;
+		}
+		view.notice = "";
+		if (view.stage === "picked") {
+			setPlaceMarker(null);
+			view.stage = "search";
+			view.picked = null;
+			trail = null;
+			paint();
+			resumeSeek();
+			return true;
+		}
+		if (view.stage === "search") {
+			if (!view.search.fixed) return false;
+			if (last) {
+				stopSeeking();
+				showResults();
+				return true;
+			}
+			return toOrigin();
+		}
+		if (hasPlans()) return false;
+		goSeq++;
+		whenOpen(false);
+		if (last) {
+			showResults();
+			return true;
+		}
+		if (routeBack) {
+			view.search = routeBack;
+			routeBack = null;
+			view.stage = "search";
+			view.done = false;
+			view.status = {
+				text: "",
+				sr: false
+			};
+			view.result = { kind: "none" };
+			paint();
+			resumeSeek();
+			return true;
+		}
+		return toOrigin();
+	}
+	const pageHistory = appMapMode() ? null : globalThis.history ?? null;
+	let armed = false, walking = false;
+	function armHistory() {
+		if (!pageHistory || armed) return;
+		armed = true;
+		if (!walking) pageHistory.pushState(pageHistory.state, "");
+	}
+	function disarmHistory() {
+		if (!pageHistory || !armed) return;
+		armed = false;
+		if (walking) return;
+		walking = true;
+		pageHistory.back();
+	}
+	if (pageHistory) globalThis.addEventListener("popstate", () => {
+		if (walking) {
+			walking = false;
+			if (armed) pageHistory.pushState(pageHistory.state, "");
+			return;
+		}
+		if (!armed) return;
+		armed = false;
+		if (back() && inSheet) armHistory();
+		else if (inSheet) closeSheet?.();
+	});
 	const showBar = () => {
 		const plan = last.d.plans[last.sel];
 		drawJourneyBar(bar, {
@@ -759,6 +913,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	function sheetClosed() {
 		const was = inSheet;
 		inSheet = false;
+		disarmHistory();
 		setPlaceMarker(null);
 		if (!last || !was) return false;
 		showBar();

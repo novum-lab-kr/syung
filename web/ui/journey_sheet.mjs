@@ -1,6 +1,6 @@
 import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { PlaceEndsCard, PlaceHereRow, PlacePickedSheet, PlaceSearch, PlaceSearchField } from "../components/place_search.mjs";
+import { JourneyStep, PlaceEndsCard, PlaceHereRow, PlacePickedSheet, PlaceSearch, PlaceSearchField } from "../components/place_search.mjs";
 import { RouteCard, RouteFailed, RouteLoading, RouteNote } from "../components/route_card.mjs";
 import { JourneyBar, JourneySummary } from "../components/journey_summary.mjs";
 import { JourneyWhen } from "../components/journey_when.mjs";
@@ -42,47 +42,57 @@ function Result({ result, actions }) {
 	] });
 }
 function Search({ view, actions }) {
-	const { title, query, hits, pending, failed, fixed, here } = view.search, clear = () => actions.typed("");
+	const { title, query, hits, pending, failed, fixed, here } = view.search;
 	return /* @__PURE__ */ a(PlaceSearch, {
 		title,
 		query,
 		hits,
 		pending,
 		failed,
+		notice: view.notice ?? "",
 		onPick: actions.place,
+		onRetry: actions.retrySeek,
 		here: here ? /* @__PURE__ */ a(PlaceHereRow, { onPick: actions.here }) : null,
 		children: fixed ? /* @__PURE__ */ a(PlaceEndsCard, {
 			fixedName: fixed.name,
 			fixed: fixed.which,
 			value: query,
 			onInput: actions.typed,
-			onClear: clear
+			onClear: actions.clear,
+			onEnter: actions.enter
 		}) : /* @__PURE__ */ a(PlaceSearchField, {
 			value: query,
 			onInput: actions.typed,
-			onClear: clear
+			onClear: actions.clear,
+			onEnter: actions.enter
 		})
 	});
 }
 function JourneySheet({ view, actions }) {
+	const step = /* @__PURE__ */ a(JourneyStep, {
+		canBack: !!view.canBack,
+		onPress: actions.leave
+	});
 	if (view.stage === "search") return /* @__PURE__ */ a("div", {
 		class: "journey",
-		children: /* @__PURE__ */ a(Search, {
+		children: [step, /* @__PURE__ */ a(Search, {
 			view,
 			actions
-		})
+		})]
 	});
 	if (view.stage === "picked" && view.picked) return /* @__PURE__ */ a("div", {
 		class: "journey",
-		children: /* @__PURE__ */ a(PlacePickedSheet, {
+		children: [step, /* @__PURE__ */ a(PlacePickedSheet, {
 			hit: view.picked,
+			notice: view.notice ?? "",
 			onEnd: actions.end,
 			onArrivals: actions.arrivals
-		})
+		})]
 	});
 	return /* @__PURE__ */ a("div", {
 		class: "journey done",
 		children: [
+			step,
 			/* @__PURE__ */ a("div", {
 				class: "jtop",
 				children: [/* @__PURE__ */ a(JourneySummary, {
@@ -123,6 +133,7 @@ var clearJourney = (body) => K(null, body);
 var drawJourneyBar = (host, bar, actions) => K(/* @__PURE__ */ a(JourneyBar, {
 	bar,
 	onOpen: actions.open,
-	onClear: actions.clear
+	onClear: actions.clear,
+	onFresh: actions.fresh
 }), host);
 export { JourneySheet, clearJourney, drawJourney, drawJourneyBar };

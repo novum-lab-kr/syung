@@ -438,7 +438,8 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 .sheet:has(.journey){max-height:72%}
 /* 휴대폰: 경로 결과 시트는 지도의 길이 보이게 처음 높이를 50%로 둔다. 카드를 펼치거나 시각을 골라도 커지지 않고 몸통(.sheet-body)이 스크롤한다.
    손잡이를 위로 끌 때만 72%(.tall — ui/sheet.mts) */
-@media(max-width:720px){.sheet:not(.kb):has(.journey.done){height:50%;max-height:50%}
+@media(max-width:720px){.sheet:not(.kb):has(.ps.typing){height:72%}   /* 적는 동안 줄 수가 달라져도 시트 높이는 그대로 */
+  .sheet:not(.kb):has(.journey.done){height:50%;max-height:50%}
   .sheet.tall:not(.kb):has(.journey.done){height:72%;max-height:72%}}
 @media(max-width:720px) and (prefers-reduced-motion:no-preference){.sheet:not(.kb):has(.journey.done){transition:transform .32s var(--ease-sheet),height .2s var(--ease-sheet),max-height .2s var(--ease-sheet)}}
 /* no double-tap page zoom on the controls; the map keeps its own gestures */
@@ -459,10 +460,10 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 /* 접힌 경로: 한 장에 출발 · 도착을 점선으로 잇고, 각 줄을 누르면 그 끝을 장소 검색으로 바꾼다 */
 .jsum{position:relative;display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;margin:0;padding:10px var(--space-3) 10px 14px;border:0;border-radius:var(--radius-16);background:var(--control);color:var(--ink);font:inherit;text-align:left;transition:background var(--duration-150);min-width:0}
 .jsum[hidden]{display:none}
-.jsum-trip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.jsum-trip::before{content:"";position:absolute;left:3px;top:13px;bottom:13px;border-left:2px dotted var(--muted);opacity:.7}
-.jsum-end{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:30px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:var(--text-15);line-height:20px;text-align:left;cursor:pointer}
-.jsum-swap{flex:none;display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;border-radius:var(--radius-circle);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
+.jsum-trip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:0}
+.jsum-trip::before{content:"";position:absolute;left:3px;top:27px;bottom:27px;border-left:2px dotted var(--muted);opacity:.7}
+.jsum-end{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:44px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:var(--text-15);line-height:20px;text-align:left;cursor:pointer}
+.jsum-swap{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:var(--radius-circle);background:var(--paper);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
 .jsum-swap svg{width:18px;height:18px}
 .jsum-end b{font-weight:var(--weight-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jsum-end .jdot{width:8px;height:8px}
@@ -472,7 +473,7 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 /* kind filter: the same segmented control as the time and the theme */
 .jkinds{align-self:flex-start;max-width:100%;overflow-x:auto;scrollbar-width:none}
 .jkinds::-webkit-scrollbar{display:none}
-.jkinds button{padding:6px var(--space-3);font-size:var(--text-13)}
+.jkinds button{min-height:44px;padding:6px var(--space-3);font-size:var(--text-13)}
 .jkinds button b{margin-left:var(--space-1);font-weight:var(--weight-bold);opacity:.55;font-variant-numeric:tabular-nums}
 .jkinds button[aria-pressed=true] b{opacity:.8}
 
@@ -587,7 +588,7 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 @media(max-width:780px){.route-cta,.jbar{bottom:calc(22px + env(safe-area-inset-bottom,0px))}}
 .jbar-open{display:flex;flex-direction:column;gap:9px;width:100%;padding:var(--space-3) 14px 13px;border:0;border-radius:inherit;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .jbar-open:active{background:color-mix(in srgb,var(--control) 60%,transparent)}
-.jbar-top{display:flex;align-items:baseline;gap:var(--space-2);padding-right:34px}
+.jbar-top{display:flex;align-items:baseline;gap:var(--space-2);padding-right:118px}
 .jbar-top b{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-21);line-height:1}
 .jbar-top b small{font-size:var(--text-13)}
 .jbar-top span{font-size:var(--text-13);font-weight:var(--weight-bold);color:var(--secondary)}
@@ -597,6 +598,7 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 .jbar-x svg{width:14px;height:14px}
 .jbar-x:hover{color:var(--ink)}
 .jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */
+.jbar-new{position:absolute;top:0;right:44px;min-height:44px;padding:0 var(--space-2);border:0;background:none;color:var(--ink);font:inherit;font-size:var(--text-13);font-weight:var(--weight-bold);cursor:pointer}
 
 /* my location: under +/−, in the 슝 palette (the control's own icon is a blue sprite) */
 .maplibregl-ctrl-top-right .maplibregl-ctrl-group+.maplibregl-ctrl-group{margin-top:var(--space-2)}
@@ -952,6 +954,15 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .ps-field input{flex:1;min-width:0;height:44px;border:0;background:none;outline:0;color:inherit;font:inherit;font-size:var(--text-16);font-weight:var(--weight-bold)}
 .ps-field input::placeholder{color:var(--secondary);font-weight:var(--weight-semibold)}
 .ps-clear{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;background:none;color:var(--secondary);cursor:pointer}
+.ps-title{position:relative;z-index:2}
+.ps-stick{position:sticky;top:0;z-index:1;margin-top:-16px;padding:16px 0 var(--space-1);background:var(--paper)}   /* 목록을 내려도 입력칸은 남는다 · 위 16px 는 붙었을 때 닫기 단추와 겹치지 않게 */
+.ps-pending,.ps-failed,.ps-notice{margin:0;padding:var(--space-2) var(--space-1);font-size:var(--text-14);font-weight:var(--weight-semibold);color:var(--secondary)}
+.ps-notice{color:var(--ink)}
+.ps-failed{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)}
+.ps-retry{flex:none;min-height:44px;padding:0 var(--space-3);border:0;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font:inherit;font-size:var(--text-13);font-weight:var(--weight-bold);cursor:pointer}
+.journey:has(>.jstep){padding-top:18px}   /* 손잡이 줄에 얹은 단추만큼 내용을 내린다 */
+.jstep{position:absolute;z-index:3;top:0;right:6px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:var(--radius-circle);background:none;color:var(--secondary);cursor:pointer}
+.jstep.back{right:auto;left:6px;color:var(--ink)}
 .ps-list{margin:0;padding:0;list-style:none}
 .ps-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;padding:var(--space-2) var(--space-1);border:0;border-bottom:1px solid var(--rule);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .ps-list li:last-child .ps-row{border-bottom:0}
@@ -961,9 +972,9 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .ps-text{display:flex;flex-direction:column;gap:3px;min-width:0}
 .ps-text b{font-size:var(--text-16);font-weight:var(--weight-bold)}
 .ps-text mark{background:var(--syung-soft);color:inherit;border-radius:4px;box-shadow:inset 0 -2px 0 var(--syung)}
-.ps-text small{font-size:var(--text-13);color:var(--muted)}
+.ps-text small{font-size:var(--text-13);color:var(--secondary)}
 .ps-chips{display:flex;flex-wrap:wrap;gap:var(--space-1)}
-.ps-chips i{font-style:normal;font-size:var(--text-11);font-weight:var(--weight-bold);padding:2px var(--space-2);border-radius:var(--radius-pill);background:var(--c);color:var(--paper);white-space:nowrap}
+.ps-chips i{font-style:normal;font-size:var(--text-11);font-weight:var(--weight-bold);padding:2px var(--space-2);border-radius:var(--radius-pill);background:var(--c);color:var(--t,var(--paper));white-space:nowrap}
 .ps-empty{display:flex;flex-direction:column;align-items:center;gap:var(--space-2);padding:var(--space-6) var(--space-4);text-align:center}
 .ps-empty img{width:47px;height:47px}
 .ps-empty b{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-18);color:var(--ink)}
