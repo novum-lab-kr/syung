@@ -74,7 +74,7 @@ class LocalSite:
 
 @unittest.skipUnless(all(shutil.which(name) for name in (*RELEASE_TOOLS, "node", "curl")), "원격 배포 스크립트 도구가 필요합니다")
 class RemoteFixture(ReleaseFixture):
-    scripts = ("deploy.sh", "check_site.sh", "remote_deploy.sh", "install_backup_units.sh")
+    scripts = ("deploy.sh", "check_site.sh", "remote_deploy.sh", "install_backup_units.sh", "select_tests.py")
 
     def seed_repo(self):
         self.env.update({
@@ -270,6 +270,24 @@ class RemoteDeployTest(RemoteFixture):
         self.assertIn(skip, self.remote().stdout)
         self.candidate({"deploy/notes.txt": "deploy tooling changed\n"})
         self.assertNotIn(skip, self.remote().stdout)
+
+    def test_candidate_tests_follow_changes_since_last_successful_deploy(self):
+        self.assertIn("고른 시험: js=1 python=all", self.remote().stdout)   # 성공 기록이 없으면 전부
+        self.candidate({"web/index.html": "new web"})
+        self.assertIn("고른 시험: js=1 python=web", self.remote().stdout)
+        self.candidate({"docs/note.md": "글만\n"})
+        self.assertIn("고른 시험: js=0 python=none", self.remote().stdout)
+        self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n"})
+        self.assertIn("고른 시험: js=1 python=all", self.remote().stdout)
+
+    def test_failed_deploy_changes_stay_in_next_selection(self):
+        self.remote()
+        self.candidate({"server/subway_live_proxy.py": "VERSION = 2\n",
+                        "tests/test_tiny.py": "import unittest\nclass Tiny(unittest.TestCase):\n    def test_fail(self):\n        self.fail('candidate failure')\n"})
+        self.assertNotEqual(self.remote(check=False).returncode, 0)
+        self.candidate({"web/index.html": "new web",
+                        "tests/test_tiny.py": "import unittest\nclass Tiny(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n"})
+        self.assertIn("고른 시험: js=1 python=all", self.remote().stdout)   # 성공 기록부터 재므로 앞서 실패한 서버 변경이 빠지지 않는다
 
     def test_only_server_changes_restart_after_successful_baseline(self):
         self.remote()

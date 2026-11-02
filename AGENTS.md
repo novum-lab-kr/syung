@@ -28,7 +28,7 @@
 | 웹 빌드 · 타입 | `npm run build` → `dist/web`(git 무시 · 설정 `vite.config.mts`) · `npm run typecheck`(tsc · `tsconfig.json`) |
 | JS 시험 | `node --test tests/*.test.mjs` |
 | Python 시험 | `python3 -m unittest discover -s tests`(OSM 캐시 없으면 일부 건너뜀) |
-| 배포 | main push → Actions(시험 → 빌드해 `web-dist` 브랜치에 올림 `deploy/publish_web_dist.sh`) → `deploy/remote_deploy.sh`(그 커밋의 빌드 결과 + 자료로 릴리스 폴더 → 링크 바꿔 끼우기 · 되돌리기). 서버는 빌드하지 않는다. 서버에서 직접 고치지 않는다 |
+| 배포 | main push → Actions(시험 → 빌드해 `web-dist` 브랜치에 올림 `deploy/publish_web_dist.sh`) → `deploy/remote_deploy.sh`(그 커밋의 빌드 결과 + 자료로 릴리스 폴더 → 링크 바꿔 끼우기 · 되돌리기). 서버는 빌드하지 않는다. 서버에서 직접 고치지 않는다. 배포 시험은 바뀐 부분과 관련된 것만(`deploy/select_tests.py` — 표에 없는 경로 · `server/` · `pipeline/` · `data/` · `deploy/` · 설정이 바뀌면 전부), PR · `athena-handoff` 는 머지 전에 늘 전부(`.github/actions/check`). 웹 파일을 읽는 Python 시험을 새로 만들면 `WEB_PYTHON_TESTS` 에 넣는다 |
 
 ## 모드 규칙
 - 기본이 원본, 모드는 **다른 것만** 적는다(`from` 생략 = basic, 상속 두 단계까지). 묶음은 안쪽까지 합치고 값 · 목록은 통째로, `null` 은 끄기 — 단 아는 묶음(map · city · city.life · park · track · trains · buses · sun · sky)은 `null` 대신 그 키(`enabled:false` 등)로.
