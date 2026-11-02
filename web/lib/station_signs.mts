@@ -140,6 +140,22 @@ function bubblePath(ctx:Ctx, x:number, top:number, w:number, h:number) {
   ctx.beginPath(); ctx.roundRect(x - w / 2, top, w, h, h / 2);
 }
 
+// 화면 상자(CSS px — left · right · top · bottom)
+export interface ScreenBox { left:number; right:number; top:number; bottom:number }
+// 그린 이름표가 차지하는 화면 상자: 알약 · 점 줄, 둥둥 오르내림까지. 땅 그림자는 빼요(승강장 자리에 그대로 남아요).
+export function signBounds(ctx:Ctx, {x, y, scale: s, size, rows}:StationSign):ScreenBox {
+  ctx.font = `700 ${size * s}px ${SIGN_FONT}`;
+  const box = signDimensions(ctx.measureText(stationLabelName(rows.name)).width, size, rows.dots.length, s);
+  const bottom = y - SIGN.gap * s + SIGN.bob * s, top = bottom - box.height - 2 * SIGN.bob * s - box.above;
+  return {left: x - box.boundsWidth / 2, right: x + box.boundsWidth / 2, top, bottom};
+}
+// 내 위치 캐릭터(avoid)와 겹친 이름표는 옆으로 비켜요: 덜 옮기는 쪽(왼쪽 · 오른쪽)으로 gap 만큼 띄워 x 만 바꿔요. 안 겹치면 그대로.
+export function dodgeSign(sign:StationSign, bounds:ScreenBox, avoid:ScreenBox, gap = 4):StationSign {
+  if (bounds.right <= avoid.left || bounds.left >= avoid.right || bounds.bottom <= avoid.top || bounds.top >= avoid.bottom) return sign;
+  const toRight = avoid.right + gap - bounds.left, toLeft = bounds.right - (avoid.left - gap);
+  return {...sign, x: sign.x + (toRight <= toLeft ? toRight : -toLeft)};
+}
+
 // (x, y)는 승강장 가운데이며, 뒤에 오는 표지를 위에 그려요.
 export function drawStationSigns(ctx:Ctx, signs:Iterable<StationSign>, {dpr = 1, dark = false, alpha = 1, now = 0, still = false}:DrawSignOptions = {}) {
   const T = THEMES[dark ? 'dark' : 'light'];

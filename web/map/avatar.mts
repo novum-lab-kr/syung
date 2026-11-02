@@ -16,8 +16,9 @@ export interface MyPose { lngLat:number[]; yaw:number | null; walk:number; phase
 type Uniforms<K extends string> = Record<K, WebGLUniformLocation | null>;
 type AvatarUniform = 'matrix' | 'pose' | 'unit' | 'walk' | 'phase' | 'fade' | 'dark' | 'nod' | 'shade';
 interface MeshPart { vao:WebGLVertexArrayObject; buf:WebGLBuffer; count:number }
-interface AvatarMesh { body:MeshPart; shadow:MeshPart }
-export interface AvatarRenderOptions { look?:string | null; world:readonly number[]; origin:readonly number[]; yaw:number; scale:number; unit:number; walk?:number; phase?:number; dark?:boolean; occlude?:number; nod?:number; lightYaw?:number }
+interface AvatarMesh { body:MeshPart; shadow:MeshPart; points:Float32Array }   // points: 몸 꼭짓점 자리(x y z) — 화면 윤곽(outline)용
+export interface AvatarRenderOptions { look?:string | null; world:readonly number[]; origin:readonly number[]; yaw:number; scale:number; unit:number; walk?:number; phase?:number; dark?:boolean; nod?:number; lightYaw?:number }
+export type AvatarOutlineOptions = Pick<AvatarRenderOptions, 'look' | 'world' | 'yaw' | 'scale' | 'unit' | 'dark'>
 export interface MarkerRenderOptions { world:readonly number[]; origin:readonly number[]; zoom:number; bearing:number; pitch:number; dark?:boolean }
 export const AVATAR_MINZOOM = 15;   // 이 줌부터 캐릭터, 아래는 지금처럼 노란 점(map/layers.mjs 의 me 층 maxzoom)
 // 키(px): 줌 15 에서 40 px → 18 에서 69 px, 18 부터는 줌 하나에 1.5배(19 104 px · 20 155 px).
@@ -163,17 +164,20 @@ export class AvatarRenderer {
     const key = dark && look.darkColors ? `${id}:dark` : id!;
     let m = this.meshes.get(key); if (m) return m;
     const gl = this.gl!, built = buildAvatarMesh(look, { dark });
-    m = Object.fromEntries(Object.entries(built).map(([k, data]) => {
+    const entries = Object.entries(built).map(([k, data]) => {
       const vao = gl.createVertexArray(), buf = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       for (const [loc, n, off] of [[0, 3, 0], [1, 3, 3], [2, 3, 6], [3, 1, 9], [4, 2, 10]] as [number, number, number][]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 48, off * 4) }
       return [k, { vao, buf, count: data.length / 12 }];
-    })) as unknown as AvatarMesh;
+    });
+    const points = new Float32Array(built.body.length / 4);   // 꼭짓점 12 float 중 앞 3(자리)만
+    for (let at = 0, to = 0; at < built.body.length; at += 12, to += 3) points.set(built.body.subarray(at, at + 3), to);
+    m = { ...Object.fromEntries(entries), points } as unknown as AvatarMesh;
     gl.bindVertexArray(null); this.meshes.set(key, m); return m;
   }
   // world: 메르카토르 [x, y], yaw: 앞 방향(라디안, 버스와 같음), scale: 키 px, unit: 1/(512·2^줌),
-  // occlude: 건물 뒤에 가린 부분을 비치게 그릴 불투명도(열차 · 버스와 같은 자리에서), nod: 고개 든 각, lightYaw: 빛을 셈할 때의 방향(없으면 yaw)
-  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }:AvatarRenderOptions) {
+  // nod: 고개 든 각, lightYaw: 빛을 셈할 때의 방향(없으면 yaw)
+  render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, nod = 0, lightYaw = yaw }:AvatarRenderOptions) {
     this.init(gl); const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark); if (!m) return;
     this.matrix.set(matrix); for (let i = 0; i < 4; i++) this.matrix[12 + i] = matrix[i]! * origin[0]! + matrix[4 + i]! * origin[1]! + matrix[12 + i]!;
     gl.useProgram(this.p); gl.uniformMatrix4fv(this.u.matrix, false, this.matrix);
@@ -182,7 +186,6 @@ export class AvatarRenderer {
     gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     const draw = (b:MeshPart, fade:number, func:number, write:boolean) => { gl.uniform1f(this.u.fade, fade); gl.depthFunc(func); gl.depthMask(write); gl.bindVertexArray(b.vao); gl.drawArrays(gl.TRIANGLES, 0, b.count) };
     draw(m.shadow, 1, gl.LEQUAL, false);
-    if (occlude > 0) draw(m.body, occlude, gl.GREATER, false);   // 건물 뒤: 비치게(깊이를 쓰기 전)
     draw(m.body, 1, gl.LEQUAL, true);
     gl.bindVertexArray(null); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
   }
@@ -191,9 +194,30 @@ export class AvatarRenderer {
     gl.depthMask(true); gl.clear(gl.DEPTH_BUFFER_BIT);
     this.render(gl, matrix, { look: MARKER_LOOK, world, origin, yaw: facingYaw(bearing), scale: avatarScale(zoom) * MARKER_SIZE, unit: 1 / (512 * 2 ** zoom), dark, nod: nodAngle(pitch), lightYaw: MARKER_LIGHT_YAW });
   }
+  // 화면(CSS px)에서 몸이 차지하는 윤곽: 몸 꼭짓점을 render 와 같은 셈으로 옮긴 볼록 껍질(선 자세 · 걸음 들썩임은 뺀다). 못 셈하면 null
+  outline(matrix:ArrayLike<number>, { look = null, world, yaw, scale, unit, dark = false }:AvatarOutlineOptions, width:number, height:number) {
+    if (!this.gl) return null; const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark); if (!m) return null;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw), size = scale * unit, pts:[number, number][] = [];
+    for (let at = 0; at < m.points.length; at += 3) {
+      const px = m.points[at]! * size, py = m.points[at + 1]! * size, pz = m.points[at + 2]! * size;
+      const wx = cos * px - sin * py + world[0]!, wy = sin * px + cos * py + world[1]!;   // render 는 origin 을 뺀 자리 × origin 을 접은 행렬 — 같은 값
+      const cx = matrix[0]! * wx + matrix[4]! * wy + matrix[8]! * pz + matrix[12]!, cy = matrix[1]! * wx + matrix[5]! * wy + matrix[9]! * pz + matrix[13]!, cw = matrix[3]! * wx + matrix[7]! * wy + matrix[11]! * pz + matrix[15]!;
+      if (!(cw > 0)) return null;
+      pts.push([(cx / cw * .5 + .5) * width, (.5 - cy / cw * .5) * height]);
+    }
+    return convexHull(pts);
+  }
   dispose() {
     if (!this.gl) return; const gl = this.gl;
     for (const m of this.meshes.values()) for (const b of Object.values(m)) { gl.deleteBuffer(b.buf); gl.deleteVertexArray(b.vao) }
     gl.deleteProgram(this.p); this.p = null; this.gl = null;
   }
+}
+// 볼록 껍질(monotone chain): 점들을 감싸는 다각형 꼭짓점(차례대로)
+function convexHull(points:[number, number][]) {
+  const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (sorted.length < 3) return sorted;
+  const cross = (o:[number, number], a:[number, number], b:[number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list:[number, number][]) => { const out:[number, number][] = []; for (const pt of list) { while (out.length >= 2 && cross(out[out.length - 2]!, out[out.length - 1]!, pt) <= 0) out.pop(); out.push(pt) } out.pop(); return out };
+  return [...half(sorted), ...half(sorted.slice().reverse())];
 }

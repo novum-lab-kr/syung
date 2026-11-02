@@ -24,7 +24,7 @@ import type { AvatarRenderer, createMyMotion } from './avatar.mts';
 import type { ExitPillars } from './platform.mts';
 import type { createJourneyMap } from '../ui/journey.mts';
 import type { createBusLayer } from '../bus/layer.mts';
-import type { drawStationSigns, perspectiveRatio, signRows, signTextSize, StationSign } from '../lib/station_signs.mts';
+import type { dodgeSign, drawStationSigns, perspectiveRatio, signBounds, signRows, signTextSize, StationSign } from '../lib/station_signs.mts';
 
 type LifeOptions = NonNullable<Parameters<CityLife['render']>[2]>;
 type LandmarkOptions = NonNullable<Parameters<CityLandmarks['render']>[2]>;
@@ -52,7 +52,7 @@ interface OverlayLive {
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
 export interface TrainOverlayDeps {
   map:MapLibre; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate }; signTextSize:typeof signTextSize; rider:{ ride:unknown }; perspectiveRatio:typeof perspectiveRatio;
-  signRows:typeof signRows; drawStationSigns:typeof drawStationSigns; effectiveTheme:()=>string; REDUCED:MediaQueryList; TRAIN_FPS:number;
+  signRows:typeof signRows; drawStationSigns:typeof drawStationSigns; signBounds:typeof signBounds; dodgeSign:typeof dodgeSign; effectiveTheme:()=>string; REDUCED:MediaQueryList; TRAIN_FPS:number;
   TrainLayer:ReturnType<typeof trainLayerClass>; BuildingDepth:ReturnType<typeof buildingDepthClass>; cityOn:()=>boolean; cityXrayTargets:()=>Parameters<CityBuildings['setXray']>[0];
   mapPalette:()=>{ bld3dOpacity:number }; coasterGeo:ReturnType<typeof createCoasterGeometry>; coasterTrack:ReturnType<typeof createCoasterTrack>;
   geom:(line:string, lo:number, hi:number)=>EdgeGeom; edgeOffset:(line:string, lo:number, hi:number)=>number; coasterBodyPx:(zoom:number)=>number; trainBodyPx:(zoom:number)=>number;
@@ -70,14 +70,14 @@ type RideSites = Parameters<RideLayer['setSites']>[0];
 type XY = [number, number];
 // 점검 스크립트가 읽는 자리(본체가 만든다)
 declare global { interface Window { __subwayWebGL:Record<string, unknown> } }
-export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,live}:TrainOverlayDeps){
+export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,signBounds,dodgeSign,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,live}:TrainOverlayDeps){
   const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
   c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true})!;
   // 역 이름표 캔버스: 열차 캔버스 바로 위(마커 · 팝업 아래)
   const sc=document.createElement('canvas');sc.className='station-signs';c.after(sc);sc.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const SIGN_PR=Math.min(globalThis.devicePixelRatio||1,PHONE?2:3);   // 이름표 캔버스는 제 해상도(지도 캔버스가 도트로 낮아져도 글자는 선명하게)
-  const sctx=sc.getContext('2d')!;let signFeatures:MapGeoJSONFeature[]=[],signAt=0,signMatrix:ArrayLike<number> | null=null,signTimer:ReturnType<typeof setTimeout> | 0=0,signShown=false,signQM:number[] | null=null;   // signQM: 이름표 목록을 받은 때의 카메라
+  const sctx=sc.getContext('2d')!;let signFeatures:MapGeoJSONFeature[]=[],signAt=0,signMatrix:ArrayLike<number> | null=null,signTimer:ReturnType<typeof setTimeout> | 0=0,signShown=false,signQM:number[] | null=null,meShape:[number, number][] | null=null;   // signQM: 이름표 목록을 받은 때의 카메라 · meShape: 내 위치 캐릭터의 화면 윤곽(CSS px — 이름표에 구멍)
   // 그릴 이름표가 없으면 캔버스를 숨긴다: 다 지우고 아무것도 안 그리면 크롬이 직전 그림을 계속 띄웠다 — 크게 옮긴 뒤 전 자리의 역 이름이
   // 같은 화면 자리에 몇 초씩 남았다(2026-10-10 덕배, 잠실 → 여의도). 캔버스 픽셀은 비어 있었다
   const showSigns=(on:boolean)=>{if(on!==signShown){signShown=on;sc.style.visibility=on?'':'hidden'}};
@@ -99,8 +99,15 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
     }
     items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
+    if(meShape&&meShape.length>2){   // 내 위치 캐릭터와 겹친 이름표만 캐릭터 옆으로 비킨다(다른 이름표 자리는 그대로)
+      const xs=meShape.map(([x])=>x),ys=meShape.map(([,y])=>y),avoid={left:Math.min(...xs),right:Math.max(...xs),top:Math.min(...ys),bottom:Math.max(...ys)};
+      for(let i=0;i<items.length;i++)items[i]=dodgeSign(items[i]!,signBounds(sctx,items[i]!),avoid)}
     showSigns(items.length>0);
     drawStationSigns(sctx,items,{dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
+    if(meShape&&meShape.length>2){   // 내 위치 캐릭터가 이름표 앞에 보이게: 캐릭터 윤곽만큼 이름표를 지운다(가장자리 1 px 더)
+      const k=SW/Math.max(1,W);sctx.save();sctx.globalCompositeOperation='destination-out';sctx.beginPath();
+      for(const [x,y] of meShape)sctx.lineTo(x*k,y*k);
+      sctx.closePath();sctx.fill();sctx.lineWidth=2*k;sctx.lineJoin='round';sctx.stroke();sctx.restore()}
     // 둥둥 타이머: 열차 층 프레임이 곧(40 ms 안) 그리면 그쪽이 이름표도 그리므로 건너뛴다 — 움직이는 동안 이름표를 1초 60번(열차 30 + 자기 30) 그리던 것. 숨긴 탭은 걸지 않는다
     if(!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<Math.max(40,live.frameMs)))drawSigns(signMatrix)},live.frameMs);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
@@ -145,11 +152,6 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       live.cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',look:S.city.landmarks,sun:sunPosition(),phone:PHONE})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
     coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
     layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&park,occlude:behind});
-    {const me=live.me.at(),zoom=map.getZoom();   // 내 위치 캐릭터: 줌 15 부터 점 대신, 열차 위(파장은 발밑). 건물 뒤에 가려도 늘 비친다. 방향을 아직 모르면 화면 쪽을 본다
-      if(me&&zoom>=AVATAR_MINZOOM&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(me.lngLat as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),b=map.getBearing()*Math.PI/180;
-        if(!avatar)avatar=new AvatarRenderer();
-        avatar.render(gl,pd.mainMatrix,{look:S.me.look,world:[q.x,q.y],origin:[O.x,O.y],yaw:me.yaw??Math.atan2(Math.cos(b),-Math.sin(b)),scale:avatarScale(zoom),unit:1/(512*2**zoom),walk:REDUCED.matches?0:me.walk,phase:me.phase,dark:effectiveTheme()==='dark',occlude:Math.max(behind,.35)});
-        if(me.animating)trainFrameSoon(1000/TRAIN_FPS)}}
     // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
     if(park&&effectiveTheme()==='dark'&&coasterTrack.edges){   // (edges: once the track has been set up)
       if(!night){night=new NightLayer();night.init(gl)}
@@ -172,6 +174,17 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(S.city.heritage&&live.cityLandmarks){const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments)
       live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y],phone:PHONE,center:[map.getCenter().lng,map.getCenter().lat]})}
     else if(live.cityLandmarks?.mon||live.cityLandmarks?.monp)live.cityLandmarks.releaseMonuments();   // 문화유산 모드를 나가면 모델 · 나무 GL 을 치운다(받던 코드도 무효)
+    // 내 위치 캐릭터: 줌 15 부터 점 대신. 지도 위에 떠 있게 — 앞서 그린 깊이를 비워 건물 · 열차 · 고가 · 문화유산 모델에 가리지 않고(슝 마커처럼 3D 를 다 그린 뒤),
+    // 역 이름표 캔버스에는 캐릭터 윤곽만큼 구멍을 낸다(meShape — drawSigns). 방향을 아직 모르면 화면 쪽을 본다
+    meShape=null;
+    {const me=live.me.at(),zoom=map.getZoom();
+      if(me&&zoom>=AVATAR_MINZOOM&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(me.lngLat as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),b=map.getBearing()*Math.PI/180;
+        if(!avatar)avatar=new AvatarRenderer();
+        const pose={look:S.me.look,world:[q.x,q.y],origin:[O.x,O.y],yaw:me.yaw??Math.atan2(Math.cos(b),-Math.sin(b)),scale:avatarScale(zoom),unit:1/(512*2**zoom),dark:effectiveTheme()==='dark'};
+        gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);
+        avatar.render(gl,pd.mainMatrix,{...pose,walk:REDUCED.matches?0:me.walk,phase:me.phase});
+        meShape=avatar.outline(pd.mainMatrix,pose,m.clientWidth,m.clientHeight);
+        if(me.animating)trainFrameSoon(1000/TRAIN_FPS)}}
     // 장소 검색에서 고른 곳의 슝 마커: 어떤 3D 보다 위에(건물 · 열차에 가리지 않게). 지도가 다시 그릴 때만 그리고 다음 프레임을 부탁하지 않는다
     if(live.placeMarker&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(live.placeMarker as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
       if(!avatar)avatar=new AvatarRenderer();

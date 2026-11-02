@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {platformRuntime, local as localMeters} from './platform_endpoints_fixture.mjs';
 import {createStationLabels} from '../web/map/labels.mts';
 import {registerTransitLayers} from '../web/map/layers.mts';
-import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName} from '../web/lib/station_signs.mts';
+import {lineChip, sortLines, signRows, placeholderText, perspectiveRatio, drawStationSigns, signCollisionLayout, SIGN, signTextSize, dotLayout, signDimensions, routeTextColor, whiteContrast, borderSegments, signAnchor, stationLabelName, dodgeSign, signBounds} from '../web/lib/station_signs.mts';
 
 test('모든 지정 노선 약자는 표와 같고 서로 겹치지 않아요', () => {
   const entries = [
@@ -329,4 +329,28 @@ test('괄호 제거는 이름표 데이터와 실제 글자, 충돌 글자에만
   drawStationSigns(ctx, [{x: 100, y: 200, scale: 1, size: 14, rows: {name: props.text, dots: [{color: props.lc}]}}], {still: true});
   assert.equal(ctx.calls.find(c => c.method === 'fillText').args[0], '신촌');
   assert.equal(ctx.calls.find(c => c.method === 'roundRect').args[2], 2 * 14 + 14);
+});
+
+test('내 위치 캐릭터와 겹친 이름표만 덜 옮기는 옆으로 비켜요', () => {
+  const sign = {x: 100, y: 200, scale: 1, size: 12.5, rows: {dots: [{color: '#00a84d'}], name: '강남'}};
+  const box = {left: 80, right: 120, top: 160, bottom: 190};
+  // 안 겹치면 그대로(같은 객체)
+  assert.equal(dodgeSign(sign, box, {left: 200, right: 240, top: 150, bottom: 210}), sign);
+  assert.equal(dodgeSign(sign, box, {left: 90, right: 110, top: 191, bottom: 230}), sign);
+  // 캐릭터가 이름표 왼쪽에 걸치면 오른쪽으로: 이름표 왼끝 = 캐릭터 오른끝 + 4
+  const right = dodgeSign(sign, box, {left: 60, right: 95, top: 150, bottom: 210});
+  assert.equal(right.x, 100 + (95 + 4 - 80));
+  assert.equal(right.y, 200);
+  // 오른쪽에 걸치면 왼쪽으로: 이름표 오른끝 = 캐릭터 왼끝 − 4
+  assert.equal(dodgeSign(sign, box, {left: 105, right: 140, top: 150, bottom: 210}).x, 100 - (120 - (105 - 4)));
+});
+
+test('이름표 화면 상자는 알약 · 점 줄 · 둥둥 높이를 담고 승강장 x 가운데예요', () => {
+  const ctx = {font: '', measureText: () => ({width: 30})};
+  const sign = {x: 100, y: 200, scale: 1, size: 12.5, rows: {dots: [{color: '#00a84d'}, {color: '#d4003b'}], name: '강남'}};
+  const b = signBounds(ctx, sign), d = signDimensions(30, 12.5, 2, 1);
+  assert.equal(b.right - b.left, d.boundsWidth);
+  assert.equal((b.left + b.right) / 2, 100);
+  assert.equal(b.bottom, 200 - SIGN.gap + SIGN.bob);
+  assert.equal(b.bottom - b.top, d.height + 2 * SIGN.bob + d.above);
 });
