@@ -1,5 +1,13 @@
 import { serverUrl } from "../lib/server_url.mjs";
-function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
+var KEEP_STALE_LINES = /* @__PURE__ */ new Set(["3호선", "7호선"]);
+function staleLimit(t, leg) {
+	if (t.departsAt || KEEP_STALE_LINES.has(t.line)) return 600;
+	const status = String(t.status || "").replace(/\s/g, "");
+	if (status === "도착" && leg.atDestination) return 180;
+	if (status === "출발" && leg.lastLegSeconds != null) return Math.min(600, leg.lastLegSeconds + 240);
+	return 600;
+}
+function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, destinationLeg, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
 	let trains = [], request = 0, on = false, failures = 0, key = "", at = 0, fetchedAt = null;
 	function liveLines() {
 		const journey = journeyLines();
@@ -46,7 +54,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 			if (mine !== request) return;
 			if (!r.ok || !d.ok) throw Error(d.error || r.status);
 			const all = d.trains || [];
-			trains = all.filter((t) => age(t.receivedAt) <= 600);
+			trains = all.filter((t) => age(t.receivedAt) <= staleLimit(t, destinationLeg(t)));
 			const stale = all.length - trains.length;
 			fetchedAt = d.fetchedAt;
 			failures = 0;
@@ -104,4 +112,4 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		}
 	};
 }
-export { createLiveFeed };
+export { createLiveFeed, staleLimit };

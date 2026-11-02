@@ -1795,6 +1795,7 @@ var feed = createLiveFeed({
 	journeyLines: () => journeyMap.rideLines(),
 	map,
 	stations,
+	destinationLeg: planner.destinationLeg,
 	liveState,
 	getSelected: () => selected,
 	getSheetTrain: () => sheetUI.sheetTrain,

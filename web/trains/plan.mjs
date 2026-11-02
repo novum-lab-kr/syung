@@ -219,11 +219,31 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 		}
 		plans = next;
 	}
+	function destinationLeg(t) {
+		const s = stationByLine.get(`${t.line}:${key(t.station)}`), dest = stationByLine.get(`${t.line}:${key(t.destination)}`);
+		if (!s || !dest) return {
+			atDestination: false,
+			lastLegSeconds: null
+		};
+		if (s.id === dest.id) return {
+			atDestination: true,
+			lastLegSeconds: null
+		};
+		if (route(t, s).ahead[1]?.id !== dest.id) return {
+			atDestination: false,
+			lastLegSeconds: null
+		};
+		return {
+			atDestination: false,
+			lastLegSeconds: edgeTimes[`${t.line}:${Math.min(s.id, dest.id)}:${Math.max(s.id, dest.id)}`] ?? null
+		};
+	}
 	return {
 		planTrain,
 		replacePlans,
 		age,
 		clock,
+		destinationLeg,
 		get plans() {
 			return plans;
 		},
