@@ -57,6 +57,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 				sheet.hidden = true;
 				sheet.style.setProperty("--kb", "0px");
 				sheet.classList.remove("kb");
+				sheet.style.removeProperty("--ps-h");
 			}
 		}, 340);
 	}
@@ -80,6 +81,8 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		const LOW = .5, HIGH = .72;
 		const resizable = () => matchMedia("(max-width:720px)").matches && !sheet.classList.contains("kb") && !!sheetBody.querySelector(".journey.done");
 		let sized = false, area = 0, h0 = 0, raw = 0;
+		let stretch = false, least = 0, most = 0;
+		const SEARCH_LOW = .45;
 		const putHeight = (height) => {
 			sheet.style.height = height;
 			sheet.style.maxHeight = height;
@@ -95,13 +98,24 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			sized = resizable();
 			area = sheet.offsetParent?.clientHeight ?? 0;
 			h0 = sheet.offsetHeight;
+			stretch = !!sheetBody.querySelector(".ps");
+			if (stretch) {
+				most = Math.min(area * HIGH, area - (parseInt(sheet.style.getPropertyValue("--kb")) || 0) - 8);
+				least = Math.min(document.documentElement.clientHeight * SEARCH_LOW, most);
+			}
 			grab.setPointerCapture(e.pointerId);
 			sheet.style.transition = "none";
 		});
 		grab.addEventListener("pointermove", (e) => {
 			if (!drag) return;
 			raw = e.clientY - y0;
-			if (sized) {
+			if (stretch) {
+				if (Math.abs(raw) > 4) moved = true;
+				const next = Math.min(most, Math.max(least, h0 - raw));
+				if (next <= least + 1) sheet.style.removeProperty("--ps-h");
+				else sheet.style.setProperty("--ps-h", `${next}px`);
+				dy = h0 <= least + 1 ? Math.max(0, raw) : 0;
+			} else if (sized) {
 				if (Math.abs(raw) > 4) moved = true;
 				putHeight(`${Math.min(area * HIGH, Math.max(area * LOW, h0 - raw))}px`);
 				dy = sheet.classList.contains("tall") ? 0 : Math.max(0, raw);
@@ -125,6 +139,10 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			if (!drag) return;
 			drag = false;
 			sheet.style.transition = "";
+			if (stretch && h0 > least + 1) {
+				sheet.style.transform = "";
+				return;
+			}
 			if (sized && settleHeight()) {
 				sheet.style.transform = "";
 				return;

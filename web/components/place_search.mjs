@@ -201,7 +201,7 @@ var MIN_ASK = 2;
 var PlaceSearch = ({ title = "어디로 갈까요?", query = "", hits = [], failed = false, pending = false, notice = "", onPick, onRetry, here, children }) => {
 	const wanted = query.trim(), listed = hits.length > 0 || !!here;
 	return /* @__PURE__ */ a("div", {
-		class: wanted ? "ps typing" : "ps",
+		class: "ps",
 		children: [
 			/* @__PURE__ */ a("h3", {
 				class: "ps-title",

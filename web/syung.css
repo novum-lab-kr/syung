@@ -436,10 +436,10 @@ html[data-theme=dark] .jdot.from{box-shadow:0 0 0 2px #000}
 
 /* 길찾기 sheet: taller, so the routes have room under the form */
 .sheet:has(.journey){max-height:72%}
+.sheet:has(.ps){height:min(var(--ps-h,45dvh),calc(100% - var(--kb,0px) - 8px))}   /* 장소 검색은 글자와 상관없이 높이가 그대로: 기본은 화면의 45%, 손잡이로 늘린 높이(--ps-h — ui/sheet.mts), 키보드가 있으면 그 위 자리 안에서 */
 /* 휴대폰: 경로 결과 시트는 지도의 길이 보이게 처음 높이를 50%로 둔다. 카드를 펼치거나 시각을 골라도 커지지 않고 몸통(.sheet-body)이 스크롤한다.
    손잡이를 위로 끌 때만 72%(.tall — ui/sheet.mts) */
-@media(max-width:720px){.sheet:not(.kb):has(.ps.typing){height:72%}   /* 적는 동안 줄 수가 달라져도 시트 높이는 그대로 */
-  .sheet:not(.kb):has(.journey.done){height:50%;max-height:50%}
+@media(max-width:720px){.sheet:not(.kb):has(.journey.done){height:50%;max-height:50%}
   .sheet.tall:not(.kb):has(.journey.done){height:72%;max-height:72%}}
 @media(max-width:720px) and (prefers-reduced-motion:no-preference){.sheet:not(.kb):has(.journey.done){transition:transform .32s var(--ease-sheet),height .2s var(--ease-sheet),max-height .2s var(--ease-sheet)}}
 /* no double-tap page zoom on the controls; the map keeps its own gestures */
