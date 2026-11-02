@@ -2,6 +2,7 @@
 // 모양 근거: 발권 화면 장소 칸(.tf-route), 「어디로 갈까요?」 단추(.route-cta), 역 시트(.st-journey), 노선 칩. 스타일은 syung.css .ps-*
 import type { ComponentChildren } from 'preact';
 import { distanceText, inkOn, type PlaceHit } from '../lib/place-search.mts';
+import { startWhereMotion } from '../lib/where_motion.mts';
 
 const SEARCH = <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg>;
 const CLEAR = <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
@@ -35,12 +36,20 @@ export const PlaceList = ({ hits, query, onPick, here }:{ hits:PlaceHit[]; query
 export const PlaceHereRow = ({ onPick }:{ onPick():void }) =>
   <button type="button" class="ps-row" onClick={onPick}><span class="ps-tile">{HERE}</span><span class="ps-text"><b>내 위치</b></span></button>;
 
+// 처음 안내의 로고: 멈춘 로고 자리에 로그인과 같은 「타고 가는」 움직임을 얹는다(lib/where_motion.mts). 칸이 생기고 없어질 때만 불리도록 ref 는 고정 함수
+const LOGO = <img src="./brand/syung-light.svg" alt="" width={47} height={47} />;
+let stopMotion:(()=>void) | null = null;
+const motionRef = (box:HTMLDivElement | null) => {
+  stopMotion?.();
+  stopMotion = box ? startWhereMotion(box) : null;
+};
+
 // 빈 상태: 아직 안 적음 · 못 찾음 · 찾기 실패
 export const PlaceEmpty = ({ query, failed = false, onRetry }:{ query?:string; failed?:boolean; onRetry?:()=>void }) => <div class="ps-empty">
-  <img src="./brand/syung-light.svg" alt="" width={47} height={47} />
+  {!failed && !query ? <><div class="ps-logo">{LOGO}</div><div class="ps-motion-clip" aria-hidden="true"><div class="login-motion ps-motion" ref={motionRef}></div></div></> : LOGO}
   {failed && <><b>검색하지 못했어요</b><small>잠시 뒤 다시 찾아 보세요</small>{onRetry && <button type="button" class="ps-retry" onClick={onRetry}>다시 찾기</button>}</>}
   {!failed && query && <><b>찾는 곳이 없어요</b><small>「{query}」 대신 다른 이름으로 찾아 보세요</small></>}
-  {!failed && !query && <><b>어디든 슝!</b><small>역이나 장소 이름을 적어 보세요</small></>}
+  {!failed && !query && <><b>어디든 슝!</b><small>가는 길은 슝이 함께해요</small></>}
 </div>;
 
 // 장소는 두 글자부터 묻는다: 한 글자에 「없어요」라고 하지 않고 처음 안내를 둔다

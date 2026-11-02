@@ -977,6 +977,13 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .ps-chips i{font-style:normal;font-size:var(--text-11);font-weight:var(--weight-bold);padding:2px var(--space-2);border-radius:var(--radius-pill);background:var(--c);color:var(--t,var(--paper));white-space:nowrap}
 .ps-empty{display:flex;flex-direction:column;align-items:center;gap:var(--space-2);padding:var(--space-6) var(--space-4);text-align:center}
 .ps-empty img{width:47px;height:47px}
+/* 처음 안내 로고 움직임(로그인과 같은 Lottie · lib/where_motion.mts): 800×170 캔버스의 로고 칸 (400,135)을 로고 가운데에 맞춘다.
+   패널 폭으로 잘라 가로 스크롤이 생기지 않게 하고, 입력칸(.ps-stick) 아래로 지나간다. 다 그려지면 멈춘 로고를 숨긴다 */
+.ps-empty{position:relative}
+.ps-logo,.ps-logo img{display:block;border-radius:var(--radius-15)}
+.ps-motion-clip{position:absolute;z-index:0;left:calc(-1 * var(--space-3));right:calc(-1 * var(--space-3));top:calc(var(--space-6) + 23.5px - 135px);height:170px;overflow:hidden;pointer-events:none}
+.ps-motion{z-index:auto;left:calc(50% - 400px);top:0}
+.ps-empty:has(.ps-motion.on) .ps-logo img{visibility:hidden}
 .ps-empty b{font-family:var(--round);font-weight:var(--weight-regular);font-size:var(--text-18);color:var(--ink)}
 .ps-empty small{font-size:var(--text-13);color:var(--muted)}
 .ps-picked{display:flex;flex-direction:column;gap:6px;padding:2px 2px var(--space-1)}
