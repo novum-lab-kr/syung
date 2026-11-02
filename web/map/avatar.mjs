@@ -357,7 +357,7 @@ var AvatarRenderer = class {
 		let m = this.meshes.get(key);
 		if (m) return m;
 		const gl = this.gl, built = buildAvatarMesh(look, { dark });
-		m = Object.fromEntries(Object.entries(built).map(([k, data]) => {
+		const entries = Object.entries(built).map(([k, data]) => {
 			const vao = gl.createVertexArray(), buf = gl.createBuffer();
 			gl.bindVertexArray(vao);
 			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -397,12 +397,18 @@ var AvatarRenderer = class {
 				buf,
 				count: data.length / 12
 			}];
-		}));
+		});
+		const points = new Float32Array(built.body.length / 4);
+		for (let at = 0, to = 0; at < built.body.length; at += 12, to += 3) points.set(built.body.subarray(at, at + 3), to);
+		m = {
+			...Object.fromEntries(entries),
+			points
+		};
 		gl.bindVertexArray(null);
 		this.meshes.set(key, m);
 		return m;
 	}
-	render(gl, matrix, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, occlude = 0, nod = 0, lightYaw = yaw }) {
+	render(gl, matrix, { look = null, world, origin, yaw, scale, unit, walk = 0, phase = 0, dark = false, nod = 0, lightYaw = yaw }) {
 		this.init(gl);
 		const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark);
 		if (!m) return;
@@ -429,7 +435,6 @@ var AvatarRenderer = class {
 			gl.drawArrays(gl.TRIANGLES, 0, b.count);
 		};
 		draw(m.shadow, 1, gl.LEQUAL, false);
-		if (occlude > 0) draw(m.body, occlude, gl.GREATER, false);
 		draw(m.body, 1, gl.LEQUAL, true);
 		gl.bindVertexArray(null);
 		gl.depthMask(false);
@@ -450,6 +455,20 @@ var AvatarRenderer = class {
 			lightYaw: MARKER_LIGHT_YAW
 		});
 	}
+	outline(matrix, { look = null, world, yaw, scale, unit, dark = false }, width, height) {
+		if (!this.gl) return null;
+		const m = this.mesh(look, dark) || this.mesh(LOOKS.keys().next().value, dark);
+		if (!m) return null;
+		const cos = Math.cos(yaw), sin = Math.sin(yaw), size = scale * unit, pts = [];
+		for (let at = 0; at < m.points.length; at += 3) {
+			const px = m.points[at] * size, py = m.points[at + 1] * size, pz = m.points[at + 2] * size;
+			const wx = cos * px - sin * py + world[0], wy = sin * px + cos * py + world[1];
+			const cx = matrix[0] * wx + matrix[4] * wy + matrix[8] * pz + matrix[12], cy = matrix[1] * wx + matrix[5] * wy + matrix[9] * pz + matrix[13], cw = matrix[3] * wx + matrix[7] * wy + matrix[11] * pz + matrix[15];
+			if (!(cw > 0)) return null;
+			pts.push([(cx / cw * .5 + .5) * width, (.5 - cy / cw * .5) * height]);
+		}
+		return convexHull(pts);
+	}
 	dispose() {
 		if (!this.gl) return;
 		const gl = this.gl;
@@ -462,4 +481,19 @@ var AvatarRenderer = class {
 		this.gl = null;
 	}
 };
+function convexHull(points) {
+	const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+	if (sorted.length < 3) return sorted;
+	const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+	const half = (list) => {
+		const out = [];
+		for (const pt of list) {
+			while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], pt) <= 0) out.pop();
+			out.push(pt);
+		}
+		out.pop();
+		return out;
+	};
+	return [...half(sorted), ...half(sorted.slice().reverse())];
+}
 export { AvatarRenderer, MARKER_SIZE, avatarScale, buildAvatarMesh, createMyMotion, facingYaw, nodAngle, registerAvatar };

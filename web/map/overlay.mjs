@@ -1,5 +1,5 @@
 // web/map/overlay.mts
-function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveRatio, signRows, drawStationSigns, effectiveTheme, REDUCED, TRAIN_FPS, TrainLayer, BuildingDepth, cityOn, cityXrayTargets, mapPalette, coasterGeo, coasterTrack, geom, edgeOffset, coasterBodyPx, trainBodyPx, cityViaduct, CORK_HEART, PHONE, trainFrameSoon, CityLife, CITY_STYLE, cityPack, $, sunPosition, NightLayer, journeyMap, exitPillars, RIDE_ZOOM, nearMatrix, COCKPIT_NEAR_M, AvatarRenderer, avatarScale, AVATAR_MINZOOM, live }) {
+function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveRatio, signRows, drawStationSigns, signBounds, dodgeSign, effectiveTheme, REDUCED, TRAIN_FPS, TrainLayer, BuildingDepth, cityOn, cityXrayTargets, mapPalette, coasterGeo, coasterTrack, geom, edgeOffset, coasterBodyPx, trainBodyPx, cityViaduct, CORK_HEART, PHONE, trainFrameSoon, CityLife, CITY_STYLE, cityPack, $, sunPosition, NightLayer, journeyMap, exitPillars, RIDE_ZOOM, nearMatrix, COCKPIT_NEAR_M, AvatarRenderer, avatarScale, AVATAR_MINZOOM, live }) {
 	const c = document.createElement("canvas");
 	c.className = "train-overlay";
 	map.getCanvas().after(c);
@@ -15,7 +15,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 	sc.style.cssText = "position:absolute;left:0;top:0;pointer-events:none";
 	const SIGN_PR = Math.min(globalThis.devicePixelRatio || 1, PHONE ? 2 : 3);
 	const sctx = sc.getContext("2d");
-	let signFeatures = [], signAt = 0, signMatrix = null, signTimer = 0, signShown = false, signQM = null;
+	let signFeatures = [], signAt = 0, signMatrix = null, signTimer = 0, signShown = false, signQM = null, meShape = null;
 	const showSigns = (on) => {
 		if (on !== signShown) {
 			signShown = on;
@@ -70,6 +70,15 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			});
 		}
 		items.sort((a, b) => a.y - b.y);
+		if (meShape && meShape.length > 2) {
+			const xs = meShape.map(([x]) => x), ys = meShape.map(([, y]) => y), avoid = {
+				left: Math.min(...xs),
+				right: Math.max(...xs),
+				top: Math.min(...ys),
+				bottom: Math.max(...ys)
+			};
+			for (let i = 0; i < items.length; i++) items[i] = dodgeSign(items[i], signBounds(sctx, items[i]), avoid);
+		}
 		showSigns(items.length > 0);
 		drawStationSigns(sctx, items, {
 			dpr: SW / Math.max(1, W),
@@ -78,6 +87,19 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			now,
 			still: REDUCED.matches
 		});
+		if (meShape && meShape.length > 2) {
+			const k = SW / Math.max(1, W);
+			sctx.save();
+			sctx.globalCompositeOperation = "destination-out";
+			sctx.beginPath();
+			for (const [x, y] of meShape) sctx.lineTo(x * k, y * k);
+			sctx.closePath();
+			sctx.fill();
+			sctx.lineWidth = 2 * k;
+			sctx.lineJoin = "round";
+			sctx.stroke();
+			sctx.restore();
+		}
 		if (!REDUCED.matches && !signTimer && !document.hidden) signTimer = setTimeout(() => {
 			signTimer = 0;
 			if (!map.isMoving() && signMatrix && !(live.trainFrameDue - performance.now() < Math.max(40, live.frameMs))) drawSigns(signMatrix);
@@ -251,26 +273,6 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			walls: drawn || !!rides && park,
 			occlude: behind
 		});
-		{
-			const me = live.me.at(), zoom = map.getZoom();
-			if (me && zoom >= AVATAR_MINZOOM && !rider.ride) {
-				const q = maplibregl.MercatorCoordinate.fromLngLat(me.lngLat), O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()), b = map.getBearing() * Math.PI / 180;
-				if (!avatar) avatar = new AvatarRenderer();
-				avatar.render(gl, pd.mainMatrix, {
-					look: S.me.look,
-					world: [q.x, q.y],
-					origin: [O.x, O.y],
-					yaw: me.yaw ?? Math.atan2(Math.cos(b), -Math.sin(b)),
-					scale: avatarScale(zoom),
-					unit: 1 / (512 * 2 ** zoom),
-					walk: REDUCED.matches ? 0 : me.walk,
-					phase: me.phase,
-					dark: effectiveTheme() === "dark",
-					occlude: Math.max(behind, .35)
-				});
-				if (me.animating) trainFrameSoon(1e3 / TRAIN_FPS);
-			}
-		}
 		if (park && effectiveTheme() === "dark" && coasterTrack.edges) {
 			if (!night) {
 				night = new NightLayer();
@@ -404,6 +406,32 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				center: [map.getCenter().lng, map.getCenter().lat]
 			});
 		} else if (live.cityLandmarks?.mon || live.cityLandmarks?.monp) live.cityLandmarks.releaseMonuments();
+		meShape = null;
+		{
+			const me = live.me.at(), zoom = map.getZoom();
+			if (me && zoom >= AVATAR_MINZOOM && !rider.ride) {
+				const q = maplibregl.MercatorCoordinate.fromLngLat(me.lngLat), O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()), b = map.getBearing() * Math.PI / 180;
+				if (!avatar) avatar = new AvatarRenderer();
+				const pose = {
+					look: S.me.look,
+					world: [q.x, q.y],
+					origin: [O.x, O.y],
+					yaw: me.yaw ?? Math.atan2(Math.cos(b), -Math.sin(b)),
+					scale: avatarScale(zoom),
+					unit: 1 / (512 * 2 ** zoom),
+					dark: effectiveTheme() === "dark"
+				};
+				gl.depthMask(true);
+				gl.clear(gl.DEPTH_BUFFER_BIT);
+				avatar.render(gl, pd.mainMatrix, {
+					...pose,
+					walk: REDUCED.matches ? 0 : me.walk,
+					phase: me.phase
+				});
+				meShape = avatar.outline(pd.mainMatrix, pose, m.clientWidth, m.clientHeight);
+				if (me.animating) trainFrameSoon(1e3 / TRAIN_FPS);
+			}
+		}
 		if (live.placeMarker && !rider.ride) {
 			const q = maplibregl.MercatorCoordinate.fromLngLat(live.placeMarker), O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
 			if (!avatar) avatar = new AvatarRenderer();

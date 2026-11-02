@@ -69,7 +69,7 @@ import { UNIT_SHAPES } from "./modes/starcraft/unit_shapes.mjs";
 import { registerBusLook } from "./bus/mesh.mjs";
 import { unitBusLook } from "./modes/starcraft/units.mjs";
 import { SunShadowLayer, hull } from "./map/sun.mjs";
-import { drawStationSigns, perspectiveRatio, signCollisionLayout, signRows, signTextSize } from "./lib/station_signs.mjs";
+import { dodgeSign, drawStationSigns, perspectiveRatio, signBounds, signCollisionLayout, signRows, signTextSize } from "./lib/station_signs.mjs";
 import { createStationLabels } from "./map/labels.mjs";
 import { ExitPillars, StationNameLayer } from "./map/platform.mjs";
 import { createTrainPlanner } from "./trains/plan.mjs";
@@ -1843,6 +1843,8 @@ map.on("load", () => {
 		perspectiveRatio,
 		signRows,
 		drawStationSigns,
+		signBounds,
+		dodgeSign,
 		effectiveTheme,
 		REDUCED,
 		TRAIN_FPS,

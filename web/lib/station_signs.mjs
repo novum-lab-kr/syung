@@ -162,6 +162,25 @@ function bubblePath(ctx, x, top, w, h) {
 	ctx.beginPath();
 	ctx.roundRect(x - w / 2, top, w, h, h / 2);
 }
+function signBounds(ctx, { x, y, scale: s, size, rows }) {
+	ctx.font = `700 ${size * s}px ${SIGN_FONT}`;
+	const box = signDimensions(ctx.measureText(stationLabelName(rows.name)).width, size, rows.dots.length, s);
+	const bottom = y - SIGN.gap * s + SIGN.bob * s, top = bottom - box.height - 2 * SIGN.bob * s - box.above;
+	return {
+		left: x - box.boundsWidth / 2,
+		right: x + box.boundsWidth / 2,
+		top,
+		bottom
+	};
+}
+function dodgeSign(sign, bounds, avoid, gap = 4) {
+	if (bounds.right <= avoid.left || bounds.left >= avoid.right || bounds.bottom <= avoid.top || bounds.top >= avoid.bottom) return sign;
+	const toRight = avoid.right + gap - bounds.left, toLeft = bounds.right - (avoid.left - gap);
+	return {
+		...sign,
+		x: sign.x + (toRight <= toLeft ? toRight : -toLeft)
+	};
+}
 function drawStationSigns(ctx, signs, { dpr = 1, dark = false, alpha = 1, now = 0, still = false } = {}) {
 	const T = THEMES[dark ? "dark" : "light"];
 	ctx.save();
@@ -325,4 +344,4 @@ function signAnchor(platforms) {
 	} else anchor = nearest.length ? mean(nearest) : mean(local.map(midpoint));
 	return [origin[0] + anchor[0] / longitude, origin[1] + anchor[1] / meters];
 }
-export { SIGN, SIGN_FONT, borderSegments, dotLayout, drawStationSigns, perspectiveRatio, placeholderText, routeTextColor, signAnchor, signCollisionLayout, signDimensions, signRows, signTextSize, sortLines, stationLabelName, whiteContrast };
+export { SIGN, SIGN_FONT, borderSegments, dodgeSign, dotLayout, drawStationSigns, perspectiveRatio, placeholderText, routeTextColor, signAnchor, signBounds, signCollisionLayout, signDimensions, signRows, signTextSize, sortLines, stationLabelName, whiteContrast };
