@@ -964,6 +964,11 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .jstep{position:absolute;z-index:3;top:0;right:6px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:var(--radius-circle);background:none;color:var(--secondary);cursor:pointer}
 .jstep.back{right:auto;left:6px;color:var(--ink)}
 .ps-list{margin:0;padding:0;list-style:none}
+/* 장소 검색 목록 스크롤 막대: 기본 굵은 막대 대신 .menu-body 처럼 얇게(사파리·크롬은 ::-webkit-scrollbar) */
+.sheet-body:has(.ps){scrollbar-width:thin;scrollbar-color:var(--rule) transparent}
+.sheet-body:has(.ps)::-webkit-scrollbar{width:6px}
+.sheet-body:has(.ps)::-webkit-scrollbar-track{background:transparent}
+.sheet-body:has(.ps)::-webkit-scrollbar-thumb{background:var(--rule);border-radius:var(--radius-pill)}
 .ps-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:64px;padding:var(--space-2) var(--space-1);border:0;border-bottom:1px solid var(--rule);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .ps-list li:last-child .ps-row{border-bottom:0}
 .ps-row:active{background:var(--control)}
