@@ -48,7 +48,7 @@ const MIN_ASK = 2;
 export interface PlaceSearchProps { title?:string; query?:string; hits?:PlaceHit[]; failed?:boolean; pending?:boolean; notice?:string; onPick?:(hit:PlaceHit)=>void; onRetry?:()=>void; here?:ComponentChildren; children?:ComponentChildren }
 export const PlaceSearch = ({ title = '어디로 갈까요?', query = '', hits = [], failed = false, pending = false, notice = '', onPick, onRetry, here, children }:PlaceSearchProps) => {
   const wanted = query.trim(), listed = hits.length > 0 || !!here;
-  return <div class={wanted ? 'ps typing' : 'ps'}>
+  return <div class="ps">
     <h3 class="ps-title">{title}</h3>
     <div class="ps-stick">{children ?? <PlaceSearchField value={query} />}</div>
     {notice && <p class="ps-notice" role="alert">{notice}</p>}

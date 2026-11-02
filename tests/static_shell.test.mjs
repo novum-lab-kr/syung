@@ -22,3 +22,8 @@ test('위쪽 역 검색창은 없고 입구는 「어디로 갈까요?」 하나
   assert.ok(html.includes('id="routeButton"'));
   assert.ok(read('components/place_search.tsx').includes("'장소 검색'"));
 });
+test('장소 검색 패널 높이는 글자가 있든 없든 같다',()=>{
+  const css=read('syung.css');
+  assert.ok(css.includes('.sheet:has(.ps){height:min(var(--ps-h,45dvh),calc(100% - var(--kb,0px) - 8px))}'));
+  assert.ok(!css.includes('.ps.typing')&&!read('components/place_search.tsx').includes('typing'));
+});

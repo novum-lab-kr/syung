@@ -51,7 +51,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     const routeStays=live.journey.sheetClosed();   // 먼저 부른다: 지도에 길이 없어도 고른 곳 마커를 치우고 시트에서 나왔다고 알린다
     if(live.routeBounds&&routeStays)fitRoute(110);
     else map.easeTo({padding:{top:0,bottom:0,left:0,right:0},duration:300});
-    setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb')}},340);   // after the .32s slide
+    setTimeout(()=>{if(!sheet.classList.contains('open')){sheet.hidden=true;sheet.style.setProperty('--kb','0px');sheet.classList.remove('kb');sheet.style.removeProperty('--ps-h')}},340);   // after the .32s slide
   }
   // 사람이 닫을 때(손잡이 · Esc)만: 길찾기 시트 안의 뒤로(고른 곳의 작은 시트 → 장소 검색)면 닫지 않는다. 코드가 닫을 때(승차권 경로 보기 등)는 closeSheet 로 바로 닫는다
   function closeByHand():void{
@@ -70,10 +70,16 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     const LOW=.5,HIGH=.72;
     const resizable=()=>matchMedia('(max-width:720px)').matches&&!sheet.classList.contains('kb')&&!!sheetBody.querySelector('.journey.done');
     let sized=false,area=0,h0=0,raw=0;
+    // 장소 검색 패널: 화면의 45%(syung.css) ~ 위 한계(경로 시트와 같은 72%, 키보드가 있으면 그 위 자리) 사이에서 놓은 높이 그대로. 45%에서 아래로 끌 때만 닫기로 간다
+    let stretch=false,least=0,most=0;
+    const SEARCH_LOW=.45;
     const putHeight=(height:string)=>{sheet.style.height=height;sheet.style.maxHeight=height};
-    grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;raw=0;sized=resizable();area=(sheet.offsetParent as HTMLElement|null)?.clientHeight??0;h0=sheet.offsetHeight;grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
+    grab.addEventListener('pointerdown',e=>{if(e.button)return;drag=true;moved=false;y0=e.clientY;t0=performance.now();dy=0;raw=0;sized=resizable();area=(sheet.offsetParent as HTMLElement|null)?.clientHeight??0;h0=sheet.offsetHeight;
+      stretch=!!sheetBody.querySelector('.ps');if(stretch){most=Math.min(area*HIGH,area-(parseInt(sheet.style.getPropertyValue('--kb'))||0)-8);least=Math.min(document.documentElement.clientHeight*SEARCH_LOW,most)}
+      grab.setPointerCapture(e.pointerId);sheet.style.transition='none'});
     grab.addEventListener('pointermove',e=>{if(!drag)return;raw=e.clientY-y0;
-      if(sized){if(Math.abs(raw)>4)moved=true;putHeight(`${Math.min(area*HIGH,Math.max(area*LOW,h0-raw))}px`);dy=sheet.classList.contains('tall')?0:Math.max(0,raw)}
+      if(stretch){if(Math.abs(raw)>4)moved=true;const next=Math.min(most,Math.max(least,h0-raw));if(next<=least+1)sheet.style.removeProperty('--ps-h');else sheet.style.setProperty('--ps-h',`${next}px`);dy=h0<=least+1?Math.max(0,raw):0}
+      else if(sized){if(Math.abs(raw)>4)moved=true;putHeight(`${Math.min(area*HIGH,Math.max(area*LOW,h0-raw))}px`);dy=sheet.classList.contains('tall')?0:Math.max(0,raw)}
       else{dy=Math.max(0,raw);if(dy>4)moved=true}
       sheet.style.transform=`translateY(${dy}px)`});
     // 놓을 때 두 높이 중 하나로: 72% 였으면 true(닫기 판단으로 넘기지 않는다)
@@ -82,6 +88,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
       if(moved&&(pulled>area*(HIGH-LOW)*.3||quick&&pulled>24)){sheet.classList.toggle('tall',!tall);if(live.routeBounds)fitRoute(area*(tall?LOW:HIGH)+30)}
       return tall};
     const end=()=>{if(!drag)return;drag=false;sheet.style.transition='';
+      if(stretch&&h0>least+1){sheet.style.transform='';return}   // 늘려 둔 패널을 내린 것: 45%에서 멈추고 닫지 않는다
       if(sized&&settleHeight()){sheet.style.transform='';return}
       const fast=dy/Math.max(1,performance.now()-t0)>.6;
       if(moved&&(dy>Math.min(120,sheet.offsetHeight*.3)||fast&&dy>24)){sheet.style.transform='translateY(calc(105% + var(--kb,0px)))';closeByHand()}
