@@ -11,15 +11,18 @@ import type { LiveTrain, MapStation } from './types.mts';
 
 // 끝난 열차 빼기: 종착역 앞에 끊긴 기록을 10분 두면 약 3분 간격 노선에서 3대가 겹쳐 보인다.
 // 값은 샘플 30일(2026-10-03~11-01)로 쟀다 — 달리는데 사라지는 비율이 노선마다 2% 이하인 가장 짧은 여유, 재등장이 적은 도착 3분.
-export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240;
-// 3호선 · 7호선은 여유를 늘려도 2% 를 넘어 10분 그대로
-const KEEP_STALE_LINES=new Set(['3호선','7호선']);
+export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240,LONG_LAST_LEG_SECONDS=1200;
+// 예외(같은 30일 기록): 구파발은 도착 뒤 대부분 연신내로 다시 나오고(3호선 사라짐 683건 중 669건), 천왕 → 온수는 다음 기록까지 길게 빈다(90% 13.5분)
+const KEEP_ARRIVED=new Set(['3호선:구파발']),LONG_LAST_LEG=new Set(['7호선:천왕','7호선:강남구청']);
 export interface DestinationLeg { atDestination:boolean; lastLegSeconds:number|null }
 export function staleLimit(t:LiveTrain, leg:DestinationLeg):number{
-  if(t.departsAt||KEEP_STALE_LINES.has(t.line))return STALE_SECONDS;   // departsAt: 출발을 기다리는 열차는 지도가 그때까지 붙든다
-  const status=String(t.status||'').replace(/\s/g,'');
-  if(status==='도착'&&leg.atDestination)return ARRIVED_SECONDS;
-  if(status==='출발'&&leg.lastLegSeconds!=null)return Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
+  if(t.departsAt)return STALE_SECONDS;   // departsAt: 출발을 기다리는 열차는 지도가 그때까지 붙든다
+  const status=String(t.status||'').replace(/\s/g,''),place=`${t.line}:${t.station}`;
+  if(status==='도착'&&leg.atDestination)return KEEP_ARRIVED.has(place)?STALE_SECONDS:ARRIVED_SECONDS;
+  if(status==='출발'&&leg.lastLegSeconds!=null){
+    if(LONG_LAST_LEG.has(place))return LONG_LAST_LEG_SECONDS;
+    return Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
+  }
   return STALE_SECONDS;
 }
 

@@ -6,7 +6,7 @@ import {setImmediate} from 'node:timers/promises';
 import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
 import {createTrainPlanner} from '../web/trains/plan.mts';
-import {ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,STALE_SECONDS,staleLimit} from '../web/trains/live_feed.mts';
+import {ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,LONG_LAST_LEG_SECONDS,STALE_SECONDS,staleLimit} from '../web/trains/live_feed.mts';
 
 const html=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 const json=id=>JSON.parse(html.match(new RegExp(`<script[^>]*id="${id}"[^>]*>([\\s\\S]*?)</script>`))[1]);
@@ -52,11 +52,27 @@ test('행선지 역 출발은 바로 빼지 않는다(2호선 순환 · 우이�
   assert.equal(limit(train('우이신설선','신설동','출발','신설동')),STALE_SECONDS);
 });
 
-test('3호선 · 7호선은 전부 10분 그대로',async t=>{
-  const {limit}=await setup(t);
+test('3호선: 구파발 도착만 10분, 그 밖은 일반 규칙',async t=>{
+  const {limit,edgeOf}=await setup(t);
   assert.equal(limit(train('3호선','구파발','도착','구파발')),STALE_SECONDS);
-  assert.equal(limit(train('3호선','지축','출발','구파발')),STALE_SECONDS);
-  assert.equal(limit(train('7호선','장암','도착','장암')),STALE_SECONDS);
+  assert.equal(limit(train('3호선','대화','도착','대화')),ARRIVED_SECONDS);
+  assert.equal(limit(train('3호선','수서','도착','수서')),ARRIVED_SECONDS);
+  assert.equal(limit(train('3호선','지축','출발','구파발')),edgeOf('3호선','지축','구파발')+LAST_LEG_MARGIN_SECONDS);
+  // 구파발이 행선지가 아니면 예외가 아니라 원래 10분 규칙이다(출발 대기)
+  assert.equal(limit(train('3호선','구파발','도착','오금')),STALE_SECONDS);
+});
+
+test('7호선: 행선지 직전 천왕 · 강남구청 출발만 20분, 그 밖은 일반 규칙',async t=>{
+  const {limit,edgeOf}=await setup(t);
+  // 방향은 실제 기록 그대로(천왕 → 온수행도 하행으로 온다)
+  assert.equal(limit(train('7호선','천왕','출발','온수')),LONG_LAST_LEG_SECONDS);
+  assert.equal(limit(train('7호선','강남구청','출발','청담',{direction:'상행'})),LONG_LAST_LEG_SECONDS);
+  assert.equal(limit(train('7호선','온수','도착','온수',{direction:'상행'})),ARRIVED_SECONDS);
+  assert.equal(limit(train('7호선','장암','도착','장암',{direction:'상행'})),ARRIVED_SECONDS);
+  assert.equal(limit(train('7호선','도봉산','출발','장암',{direction:'상행'})),edgeOf('7호선','도봉산','장암')+LAST_LEG_MARGIN_SECONDS);
+  // 같은 역이어도 다음 역이 행선지가 아니거나 도착 기록이면 10분
+  assert.equal(limit(train('7호선','천왕','출발','장암',{direction:'상행'})),STALE_SECONDS);
+  assert.equal(limit(train('7호선','천왕','도착','온수')),STALE_SECONDS);
 });
 
 test('구간 시간이 없거나 역을 못 찾으면 10분',async t=>{
