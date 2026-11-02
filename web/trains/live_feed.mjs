@@ -1,10 +1,15 @@
 import { serverUrl } from "../lib/server_url.mjs";
-var KEEP_STALE_LINES = /* @__PURE__ */ new Set(["3호선", "7호선"]);
+var LONG_LAST_LEG_SECONDS = 1200;
+var KEEP_ARRIVED = /* @__PURE__ */ new Set(["3호선:구파발"]);
+var LONG_LAST_LEG = /* @__PURE__ */ new Set(["7호선:천왕", "7호선:강남구청"]);
 function staleLimit(t, leg) {
-	if (t.departsAt || KEEP_STALE_LINES.has(t.line)) return 600;
-	const status = String(t.status || "").replace(/\s/g, "");
-	if (status === "도착" && leg.atDestination) return 180;
-	if (status === "출발" && leg.lastLegSeconds != null) return Math.min(600, leg.lastLegSeconds + 240);
+	if (t.departsAt) return 600;
+	const status = String(t.status || "").replace(/\s/g, ""), place = `${t.line}:${t.station}`;
+	if (status === "도착" && leg.atDestination) return KEEP_ARRIVED.has(place) ? 600 : 180;
+	if (status === "출발" && leg.lastLegSeconds != null) {
+		if (LONG_LAST_LEG.has(place)) return LONG_LAST_LEG_SECONDS;
+		return Math.min(600, leg.lastLegSeconds + 240);
+	}
 	return 600;
 }
 function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, destinationLeg, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
@@ -112,4 +117,4 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		}
 	};
 }
-export { createLiveFeed, staleLimit };
+export { LONG_LAST_LEG_SECONDS, createLiveFeed, staleLimit };
