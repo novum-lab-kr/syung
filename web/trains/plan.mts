@@ -3,6 +3,7 @@
 import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
 import type { Catchup } from '../lib/train_catchup.mts';
 import type { FeedTrain, TrainRoute } from '../lib/routing.mts';
+import type { DestinationLeg } from './live_feed.mts';
 import type { LiveTrain, MapStation, Merc, Phase, TrackGeom, TrainPlan } from './types.mts';
 
 // 노선마다 배운 실시간 시간(live-timing.json · pipeline/build_live_timing.py): 이 파일이 읽는 칸
@@ -135,7 +136,15 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     }
     plans=next;
   }
-  return {planTrain,replacePlans,age,clock,get plans(){return plans},get frameClock(){return frameClock},
+  // 이 기록이 행선지와 얼마나 가까운가(지도에서 끝난 열차를 빼는 기준 — live_feed staleLimit). 구간 시간은 시간표(edge_times)만 쓴다: 없으면 null
+  function destinationLeg(t:LiveTrain):DestinationLeg{
+    const s=stationByLine.get(`${t.line}:${key(t.station)}`),dest=stationByLine.get(`${t.line}:${key(t.destination)}`);
+    if(!s||!dest)return {atDestination:false,lastLegSeconds:null};
+    if(s.id===dest.id)return {atDestination:true,lastLegSeconds:null};
+    if(route(t,s).ahead[1]?.id!==dest.id)return {atDestination:false,lastLegSeconds:null};
+    return {atDestination:false,lastLegSeconds:edgeTimes[`${t.line}:${Math.min(s.id,dest.id)}:${Math.max(s.id,dest.id)}`]??null};
+  }
+  return {planTrain,replacePlans,age,clock,destinationLeg,get plans(){return plans},get frameClock(){return frameClock},
     rebuild(){plans=getTrains().map(planTrain).filter(Boolean) as TrainPlan[]},   // 모드 · 선로가 바뀌면 처음부터 다시(이어 그리지 않는다)
     clear(){plans=[]},
     setFrame(ts:number){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}};   // 1인칭: 이 화면 프레임의 시각

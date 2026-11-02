@@ -681,7 +681,7 @@ function filterLine(line:string){
   refreshLive(true);
 }
 // 실시간 열차(trains/live_feed.mjs): 받은 기록으로 예측만 다시 세운다
-const feed=createLiveFeed({journeyLines:()=>journeyMap.rideLines(),map,stations,liveState:liveState!,getSelected:()=>selected,getSheetTrain:()=>sheetUI.sheetTrain,hasPlans:()=>planner.plans.length>0,age,updateLiveNotice,
+const feed=createLiveFeed({journeyLines:()=>journeyMap.rideLines(),map,stations,destinationLeg:planner.destinationLeg,liveState:liveState!,getSelected:()=>selected,getSheetTrain:()=>sheetUI.sheetTrain,hasPlans:()=>planner.plans.length>0,age,updateLiveNotice,
   onTrains:trains=>{learnDirections(trains);planner.replacePlans(trains.map(planner.planTrain).filter(Boolean) as TrainPlan[]);lastPose.clear();return planner.plans.length},
   onClear:()=>{planner.clear();lastPose.clear();map.triggerRepaint()},onState:appStatus});
 function refreshLive(force=false){return feed.refresh(force)}

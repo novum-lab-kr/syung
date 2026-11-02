@@ -9,13 +9,27 @@ export const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
 import type { Map as MapLibre } from 'maplibre-gl';
 import type { LiveTrain, MapStation } from './types.mts';
 
+// 끝난 열차 빼기: 종착역 앞에 끊긴 기록을 10분 두면 약 3분 간격 노선에서 3대가 겹쳐 보인다.
+// 값은 샘플 30일(2026-10-03~11-01)로 쟀다 — 달리는데 사라지는 비율이 노선마다 2% 이하인 가장 짧은 여유, 재등장이 적은 도착 3분.
+export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240;
+// 3호선 · 7호선은 여유를 늘려도 2% 를 넘어 10분 그대로
+const KEEP_STALE_LINES=new Set(['3호선','7호선']);
+export interface DestinationLeg { atDestination:boolean; lastLegSeconds:number|null }
+export function staleLimit(t:LiveTrain, leg:DestinationLeg):number{
+  if(t.departsAt||KEEP_STALE_LINES.has(t.line))return STALE_SECONDS;   // departsAt: 출발을 기다리는 열차는 지도가 그때까지 붙든다
+  const status=String(t.status||'').replace(/\s/g,'');
+  if(status==='도착'&&leg.atDestination)return ARRIVED_SECONDS;
+  if(status==='출발'&&leg.lastLegSeconds!=null)return Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
+  return STALE_SECONDS;
+}
+
 export interface LiveFeedDeps {
   map:MapLibre; stations:MapStation[]; liveState:HTMLElement; getSelected:()=>string; getSheetTrain:()=>string|null;
-  hasPlans:()=>boolean; age:(v:unknown)=>number; updateLiveNotice:(msg:string|null)=>void;
+  hasPlans:()=>boolean; age:(v:unknown)=>number; destinationLeg:(t:LiveTrain)=>DestinationLeg; updateLiveNotice:(msg:string|null)=>void;
   onTrains:(trains:LiveTrain[])=>number; onClear:()=>void; journeyLines?:()=>string[]|null;
   onState?:()=>void;   // 실시간 글 · 상태가 바뀐 뒤(앱 지도 모드 다리 status)
 }
-export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,updateLiveNotice,onTrains,onClear,journeyLines=()=>null,onState}:LiveFeedDeps){
+export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,destinationLeg,updateLiveNotice,onTrains,onClear,journeyLines=()=>null,onState}:LiveFeedDeps){
   let trains:LiveTrain[]=[],request=0,on=false,failures=0,key='',at=0,fetchedAt:string|null=null;
   function liveLines():string[]{
     // 길찾기 중: 줌과 상관없이 탈 노선만(경로 전체를 보는 줌 11~12 에도 내 열차가 보이게 — 다른 열차는 어차피 숨긴다, journey.mjs trainShown)
@@ -52,8 +66,8 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
       if(mine!==request)return; // a newer view or selection superseded this response
       if(!r.ok||!d.ok)throw Error((d.error||r.status) as string);   // 수(HTTP 상태)도 Error 가 글자로 바꾼다
       // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
-      // service); extrapolating it would park a ghost train somewhere down the line.
-      const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=STALE_SECONDS);const stale=all.length-trains.length;
+      // service); extrapolating it would park a ghost train somewhere down the line. 행선지 앞 기록은 더 일찍(staleLimit).
+      const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=staleLimit(t,destinationLeg(t)));const stale=all.length-trains.length;
       // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
       fetchedAt=d.fetchedAt;failures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);
       const placed=onTrains(trains),unplaced=trains.length-placed,shown=d.lines||lines;
