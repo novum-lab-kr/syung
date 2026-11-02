@@ -1,7 +1,7 @@
 // 장소 검색의 순수 셈: 역 찾기 · 역과 카카오 장소를 한 목록으로 합치기 · 시각을 가까운 5분으로 맞추기. 화면 · 요청은 lib/journey-ui.mts.
 export interface PlaceLine { name:string; color:string }
 // 목록 한 줄. lines 가 있으면 역(노란 칸 · 노선 칩), 없으면 장소(핀 칸 · 주소)
-export interface PlaceHit { name:string; address?:string; lat:number; lng:number; lines?:PlaceLine[]; stationId?:number }
+export interface PlaceHit { name:string; address?:string; lat:number; lng:number; lines?:PlaceLine[]; stationId?:number; metres?:number }
 export interface SearchableStation { id?:number; name:string; lat:number; lon:number; lines:readonly { name:string }[] }
 export interface FoundPlace { name:string; address?:string; lat:number; lng:number }
 
@@ -45,11 +45,31 @@ function isStationItself(place:FoundPlace, station:PlaceHit) {
   return metresBetween(place, station) <= SAME_STATION_METRES;
 }
 
-// 한 목록: 역 먼저, 그 뒤에 역과 겹치지 않는 장소
-export function mergeHits(stationHits:readonly PlaceHit[], places:readonly FoundPlace[]):PlaceHit[] {
-  const others = places.filter(place => !stationHits.some(station => isStationItself(place, station)));
-  return [...stationHits, ...others.map(({name, address, lat, lng}) => ({name, lat, lng, ...(address ? {address} : {})}))];
+const squeezed = (text:string) => text.replace(/\s+/g, '');
+// 한 목록: 역 먼저, 그 뒤에 역과 겹치지 않는 장소.
+// query 를 주면 장소 중 이름에 그 말이 든 곳을 앞으로(나머지 차례는 받은 그대로), here 를 주면 장소마다 거기서의 거리(metres)를 단다
+export function mergeHits(stationHits:readonly PlaceHit[], places:readonly FoundPlace[], {query = '', here = null}:{ query?:string; here?:{ lat:number; lng:number } | null } = {}):PlaceHit[] {
+  const wanted = squeezed(query), named = (place:FoundPlace) => wanted && squeezed(place.name).includes(wanted) ? 0 : 1;
+  const others = places.filter(place => !stationHits.some(station => isStationItself(place, station))).sort((one, other) => named(one) - named(other));
+  return [...stationHits, ...others.map(({name, address, lat, lng}) => ({name, lat, lng, ...(address ? {address} : {}), ...(here ? {metres: metresBetween(here, {lat, lng})} : {})}))];
 }
+
+// 거리 글자: 1 km 안은 10 m 단위, 그 밖은 km 한 자리
+export function distanceText(metres:number) {
+  const rounded = Math.round(metres / 10) * 10;
+  return rounded < 1000 ? `${rounded}m` : `${(metres / 1000).toFixed(1)}km`;
+}
+
+// 출발과 도착을 같은 곳으로 보는 거리(내부 구현값)
+const SAME_SPOT_METRES = 30;
+export const sameSpot = (one:{ lat:number; lng:number }, other:{ lat:number; lng:number }) => metresBetween(one, other) <= SAME_SPOT_METRES;
+
+// 노선 색 위 글자 색: 대비 4.5 를 넘는 흰 글자, 안 되면 어두운 글자(수인분당, 에버라인…). 둘 다 못 넘는 중간 밝기(7호선)만 검정(#141414 ≈ L .007)
+export const inkOn = (hex:string) => { const value = parseInt(String(hex).slice(1), 16); if (Number.isNaN(value)) return '#fff';
+  const [red, green, blue] = [value >> 16, value >> 8 & 255, value & 255].map(channel => { const unit = channel / 255; return unit <= .03928 ? unit / 12.92 : ((unit + .055) / 1.055) ** 2.4; }) as [number, number, number];
+  const light = .2126 * red + .7152 * green + .0722 * blue;
+  if (1.05 / (light + .05) >= 4.5) return '#fff';
+  return (light + .05) / .057 >= 4.5 ? '#141414' : '#000'; };
 
 // 경로의 끝으로 쓸 이름: 역은 '역'을 붙인다(역 시트에서 고를 때와 같다)
 export const endName = (hit:PlaceHit) => hit.lines && !/역$/.test(hit.name) ? `${hit.name}역` : hit.name;

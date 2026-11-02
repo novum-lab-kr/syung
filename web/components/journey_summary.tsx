@@ -15,13 +15,14 @@ export function JourneySummary({ summary, onEnd, onSwap }:{ summary:JourneySumma
 }
 
 // bar: 아직 고른 경로가 없으면 null(막대는 숨어 있다)
-export function JourneyBar({ bar, onOpen, onClear }:{ bar:JourneyBarView | null; onOpen():void; onClear():void }) {
+export function JourneyBar({ bar, onOpen, onClear, onFresh }:{ bar:JourneyBarView | null; onOpen():void; onClear():void; onFresh?():void }) {
   const duration = bar?.duration;
   return <>
     <button type="button" class="jbar-open" aria-label="경로 결과 다시 보기" onClick={onOpen}>{bar && <>
       <span class="jbar-top"><b>{duration!.hours !== null ? <>{`${duration!.hours}`}<small>시간</small>{` ${duration!.minutes}`}<small>분</small></> : <>{`${duration!.minutes}`}<small>분</small></>}</b><span>{`${bar.arrives} 도착`}</span></span>
       <Track segs={bar.track} />
     </>}</button>
+    {onFresh && <button type="button" class="jbar-new" onClick={onFresh}>새로 찾기</button>}
     <button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기" onClick={onClear}>{CLOSE}</button>
   </>;
 }

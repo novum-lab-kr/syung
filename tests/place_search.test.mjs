@@ -1,7 +1,7 @@
 // 장소 검색의 순수 셈(web/lib/place-search.mts): 역 찾기 · 한 목록 합치기 · 가까운 5분
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { endName, findStations, mergeHits, nearestFive, stationQuery, swappedEnds, ticketTime } from '../web/lib/place-search.mts';
+import { distanceText, endName, findStations, inkOn, mergeHits, nearestFive, sameSpot, stationQuery, swappedEnds, ticketTime } from '../web/lib/place-search.mts';
 
 const STATIONS = [
   { id: 1, name: '서울대입구', lat: 37.481, lon: 126.952, lines: [{ name: '2호선' }] },
@@ -70,4 +70,34 @@ test('맞바꾸기: 내 위치는 그 좌표로 도착이 되고, 출발로 돌�
   assert.deepEqual(once, { names: { from: '강남역', to: '내 위치' }, picked: { from: gangnam, to: { lat: 3, lng: 4, name: '내 위치' } } });
   const twice = swappedEnds(once.names, once.picked, gangnam, '내 위치');
   assert.deepEqual(twice, { names: { from: '내 위치', to: '강남역' }, picked: { from: null, to: gangnam } });
+});
+
+test('장소는 이름에 찾는 말이 든 곳이 먼저고, 나머지는 받은 차례 그대로다', () => {
+  const spot = { lat: 37.6, lng: 127.1 };
+  const places = [{ name: '코엑스', ...spot }, { name: '양재 천변', ...spot }, { name: '서초구청', ...spot }, { name: '양재천', ...spot }];
+  assert.deepEqual(mergeHits([], places, { query: '양재천' }).map(hit => hit.name), ['양재 천변', '양재천', '코엑스', '서초구청']);
+  assert.deepEqual(mergeHits([], places).map(hit => hit.name), places.map(place => place.name));
+});
+
+test('거리는 내 위치를 줄 때만 장소에 달린다', () => {
+  const place = { name: '양재천', lat: 37.6, lng: 127.1 };
+  assert.equal(mergeHits([], [place])[0].metres, undefined);
+  assert.ok(Math.abs(mergeHits([], [place], { here: { lat: 37.601, lng: 127.1 } })[0].metres - 111) < 2);
+});
+
+test('거리 글자: 1 km 안은 m, 그 밖은 km 한 자리', () => {
+  assert.equal(distanceText(347), '350m');
+  assert.equal(distanceText(998), '1.0km');
+  assert.equal(distanceText(12340), '12.3km');
+});
+
+test('출발과 도착이 같은 곳인가', () => {
+  assert.equal(sameSpot({ lat: 37.5, lng: 127 }, { lat: 37.5001, lng: 127 }), true);
+  assert.equal(sameSpot({ lat: 37.5, lng: 127 }, { lat: 37.501, lng: 127 }), false);
+});
+
+test('노선 칩 글자 색은 잘 읽히는 쪽이다', () => {
+  assert.equal(inkOn('#0052A4'), '#fff');
+  assert.equal(inkOn('#F5A200'), '#141414');
+  assert.equal(inkOn('#747F00'), '#000');   // 7호선: 흰 글자도 #141414 도 4.5 를 못 넘는다
 });

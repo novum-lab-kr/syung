@@ -3,8 +3,8 @@
 // 시트 몸통은 화면 조각(Preact — ui/journey_sheet.tsx)이 그린다: 이 파일은 상태 · 셈(그릴 거리 JourneyView)과 누르기 처리를 맡고,
 // 바뀔 때마다 본체가 넘긴 drawJourney 로 다시 그린다. 시트 밖 막대(.jbar)는 껍데기만 여기서 만들고 속은 drawJourneyBar 가 그린다.
 // 서버 응답(server/services/journey_graph.py · sources/kakao.py) 중 이 파일이 읽는 칸(path · stations · trainNo 는 여정 지도 표시 ui/journey 가 읽는다)
-import { serverUrl } from './server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
-import { endName, findStations, mergeHits, swappedEnds, type FoundPlace, type PlaceHit, type SearchableStation } from './place-search.mts';
+import { appMapMode, serverUrl } from './server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로 · 브라우저 뒤로는 웹에서만
+import { endName, findStations, inkOn, mergeHits, sameSpot, swappedEnds, type FoundPlace, type PlaceHit, type SearchableStation } from './place-search.mts';
 import { createTimeWheel, type TimeWheel } from './time-wheel.mts';
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
@@ -50,20 +50,21 @@ export interface KindTabView { kind:string; name:string; count:number; pressed:b
 export type JourneyResultView = { kind:'none' } | { kind:'loading' } | { kind:'failed'; message:string } | { kind:'plans'; tabs:KindTabView[] | null; cards:PlanCardView[] };
 // 장소 검색: fixed 는 이미 정해진 끝(그 반대쪽을 찾는다), here 는 맨 위 「내 위치」 줄을 보일지
 export interface FixedEnd { which:EndKind; name:string }
-export interface PlaceSearchView { title:string; query:string; hits:PlaceHit[]; pending:boolean; failed:boolean; fixed:FixedEnd | null; here:boolean }
+export interface PlaceSearchView { title:string; query:string; hits:PlaceHit[]; pending:boolean; failed:boolean; fixed:FixedEnd | null; here:boolean; places?:FoundPlace[]; asked?:string; cut?:boolean }   // places · asked: 직전 장소 답과 그때 물은 말 · cut: 찾던 중 골라서 끊겼다
 export interface JourneySummaryView { from:string; to:string; when:string; aria:string }
 // 시트를 닫은 뒤 지도 아래 막대: 고른 경로의 걸리는 시간 · 도착 · 띠
 export interface JourneyBarView { duration:DurationView; arrives:string; track:TrackSegView[] }
-export interface JourneyBarActions { open():void; clear():void }
+export interface JourneyBarActions { open():void; clear():void; fresh():void }
 // 시트 한 장의 단계: 장소 검색 → 고른 곳의 작은 시트 → 경로 결과
 export interface JourneyView {
   stage:'search' | 'picked' | 'route'; search:PlaceSearchView; picked:PlaceHit | null; done:boolean; summary:JourneySummaryView | null;
   whenText:string; whenAt:boolean; whenOpen:boolean;
   status:{ text:string; sr:boolean }; result:JourneyResultView;
+  notice?:string; canBack?:boolean;   // notice: 찾지 않고 알리는 말(출발과 도착이 같을 때) · canBack: 한 단계 돌아갈 곳이 있다(없으면 닫기)
 }
 // 화면 조각의 단추 · 입력칸이 부르는 것
 export interface JourneyActions {
-  typed(text:string):void; place(hit:PlaceHit):void; here():void; end(which:EndKind):void; arrivals():void; changeEnd(which:EndKind):void; swap():void;
+  typed(text:string):void; clear():void; enter():void; retrySeek():void; leave():void; place(hit:PlaceHit):void; here():void; end(which:EndKind):void; arrivals():void; changeEnd(which:EndKind):void; swap():void;
   whenRow():void; whenNow():void; whenGo():void;
   tab(kind:string):void; card(index:number):void; ticket(index:number):void; retry():void;
 }
@@ -81,8 +82,8 @@ export interface JourneyDeps {
   stations:readonly SearchableStation[]; showStation:(station:SearchableStation)=>void; setPlaceMarker:(spot:readonly [number, number] | null)=>void; ticketDesk?:()=>Promise<TicketDesk | undefined>;
 }
 const HERE_NAME = '내 위치';
-const HOME_ZOOM = 15;   // 「어디로 갈까요?」로 내 위치에 옮길 때 · 고른 곳으로 옮길 때 이보다 멀면 이만큼 당긴다
-const PICK_ZOOM = 16;
+const PICK_ZOOM = 16;   // 고른 곳으로 옮길 때 이보다 멀면 이만큼 당긴다
+const SEEK_LIMIT_MS = 10000;   // 장소 답을 기다리는 한도: 서버의 카카오 시간 제한(8초)보다 조금 길게(내부 구현값)
 const PICK_PAD = 200;   // 작은 시트에 가리지 않게 고른 곳을 위로
 const esc = (s:unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'} as Record<string, string>)[c]!);
 const min = (s:number) => Math.max(1, Math.round(s / 60));
@@ -93,11 +94,6 @@ const legSecs = (l:TrackLeg) => l.type === 'walk' ? l.seconds : Math.max(60, ((h
 const legColorOf = (l:TrackTransit, colors:Colors) => l.type === 'bus' ? l.color : (colors[l.line] || '#888');
 const legName = (l:TrackTransit) => l.type === 'bus' ? l.route : l.line;
 const legShort = (l:TrackTransit) => l.type === 'bus' ? l.route : l.line.replace(/호선$/, '').replace(/선$/, '');
-// text on a line colour: dark on the light ones (수인분당, 에버라인…), white on the rest
-const inkOn = (hex:string) => { const n = parseInt(String(hex).slice(1), 16); if (Number.isNaN(n)) return '#fff';
-  const [r, g, b] = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }) as [number, number, number];
-  const L = .2126 * r + .7152 * g + .0722 * b;
-  return 1.05 / (L + .05) >= (L + .05) / .057 ? '#fff' : '#141414'; };   // whichever reads better (#141414 ≈ L .007)
 const BUS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-1 1.7V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 16V5a2 2 0 0 1 2-2zm0 3v5h14V6zm2 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>';
 const textW = (t:string) => [...String(t)].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 11.5 : 7), 0);   // at the bar's 11.5px
 // 단계 목록을 만들 때 읽는 구간 칸. 길찾기 구간과 승차권에 저장한 구간이 같이 쓰는 모양이라 모두 있을 수도 없을 수도 있다
@@ -180,12 +176,16 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   let last:LastSearch | null = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
   let inSheet = false;
   let goSeq = 0;   // the latest route search; older answers are dropped   // the journey sheet (not a station or train one) is what's open
+  // 한 단계 뒤로 갈 곳: trail 고른 곳의 작은 시트(그때의 검색 그대로) · routeBack 경로를 찾기 전 반대쪽 검색 · originStation 이 패널을 연 역 시트
+  let trail:{ hit:PlaceHit; search:PlaceSearchView } | null = null, routeBack:PlaceSearchView | null = null, originStation:SearchableStation | null = null;
 
   // bar at the bottom while the sheet is closed: the chosen route; tap to see the results again
   const bar = document.createElement('div');
   bar.className = 'jbar'; bar.hidden = true;
   document.body.append(bar);
-  const barActions:JourneyBarActions = {open: () => open(), clear: () => { last = null; bar.hidden = true; clearRoute?.(); }};
+  // 경로를 지우면 지난 검색도 끝난 일이다: 다음 패널은 빈칸에서
+  const clearBar = () => { last = null; bar.hidden = true; clearRoute?.(); trail = null; view = freshView(); };
+  const barActions:JourneyBarActions = {open: () => open(), clear: clearBar, fresh: () => { clearBar(); start(); }};
   drawJourneyBar(bar, null, barActions);
 
   // 지금 그린 몸통: 열 때마다 번호가 하나씩 늘고, 다른 시트가 자리를 차지하면(치우는 함수) 0 — 늦게 온 답은 번호로 버린다(옛 out.isConnected)
@@ -194,7 +194,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   const emptySearch = (fixed:FixedEnd | null = null):PlaceSearchView => ({title: fixed?.which === 'from' ? '어디로 갈까요?' : fixed ? '어디서 출발할까요?' : '어디로 갈까요?', query: '', hits: [], pending: false, failed: false, fixed, here: fixed?.which === 'to' && hereKnown()});
   const freshView = ():JourneyView => ({stage: 'search', search: emptySearch(), picked: null, done: false, summary: null, whenText: '지금 출발', whenAt: false, whenOpen: false, status: {text: '', sr: false}, result: {kind: 'none'}});
   let view = freshView();
-  const paint = () => { if (body) drawJourney(body, view, actions); };
+  const paint = () => { if (body) { view.canBack = canGoBack(); drawJourney(body, view, actions); } };
   const focusSearch = () => document.getElementById('placeInput')?.focus({preventScroll: true});
 
   // 출발 시각: 지금, 또는 오늘의 5분 단위 시각(발권 화면과 같은 바퀴 — 지금보다 앞은 고를 수 없다)
@@ -230,25 +230,33 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   let seekTimer:ReturnType<typeof setTimeout> | 0 = 0, seekSeq = 0;
   function typed(text:string) {
     const search = view.search, query = text.trim(), mine = ++seekSeq, stationHits = findStations(stations, query, colors);
+    const merged = () => { const spot = myLocation(); return mergeHits(stationHits, search.places ?? [], {query, here: spot ? {lat: spot[1]!, lng: spot[0]!} : null}); };
     clearTimeout(seekTimer);
-    search.query = text; search.hits = stationHits; search.failed = false; search.pending = query.length >= 2;
+    // 이어 적는 중이면 새 답이 올 때까지 앞 장소 줄을 둔다(줄이 사라졌다 나타나 목록이 출렁이지 않게). 다른 말로 바꿨으면 앞 답은 틀린 줄이라 비운다
+    const asked = search.asked ?? '';
+    if (query.length < 2 || !(query.startsWith(asked) || asked.startsWith(query))) search.places = [];
+    search.query = text; search.hits = merged(); search.failed = false; search.pending = query.length >= 2; search.cut = false; view.notice = '';
     paint();
     if (query.length < 2) return;
     seekTimer = setTimeout(async () => {
-      const centre = map.getCenter(), show = (places:FoundPlace[], failed:boolean) => { search.hits = mergeHits(stationHits, places); search.failed = failed; search.pending = false; paint(); };
+      const centre = map.getCenter(), limit = new AbortController(), timer = setTimeout(() => limit.abort(), SEEK_LIMIT_MS);
+      const show = (places:FoundPlace[], isFailed:boolean) => { search.places = places; search.asked = query; search.hits = merged(); search.failed = isFailed; search.pending = false; paint(); };
       try {
-        const response = await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`));
+        const response = await fetch(serverUrl(`./api/place?q=${encodeURIComponent(query)}&near=${centre.lat.toFixed(5)},${centre.lng.toFixed(5)}`), {signal: limit.signal});
         const answer:PlaceAnswer = await response.json();
         if (mine === seekSeq) show(answer.ok ? answer.places : [], !answer.ok);
-      } catch { if (mine === seekSeq) show([], true); }
+      } catch { if (mine === seekSeq) show([], true); } finally { clearTimeout(timer); }
     }, 300);
   }
   const stopSeeking = () => { clearTimeout(seekTimer); seekSeq++; };
 
+  // 찾던 중에 골랐다: 돌아오면 다시 찾는다(resumeSeek)
+  const cutSeek = () => { if (view.search.pending) view.search.cut = true; stopSeeking(); view.search.pending = false; };
+
   const endOf = (hit:PlaceHit):End & { name:string } => ({name: endName(hit), lat: hit.lat, lng: hit.lng});
   // 목록에서 고름: 한쪽이 정해져 있으면 다른 쪽을 채워 바로 길찾기, 아니면 그곳으로 옮겨 마커와 작은 시트
   function placePicked(hit:PlaceHit) {
-    stopSeeking(); view.search.pending = false;
+    cutSeek(); view.notice = '';
     const fixed = view.search.fixed;
     if (fixed) { fillEnd(fixed.which === 'from' ? 'to' : 'from', endOf(hit)); go(); return; }
     (document.activeElement as HTMLElement | null)?.blur?.();
@@ -261,6 +269,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   // 「여기서 출발」 · 「여기로 도착」(작은 시트 · 역 시트): 도착이고 내 위치를 알면 바로 경로, 아니면 다른 쪽을 찾는다
   function chooseEnd(which:EndKind, end:End & { name:string }) {
     dispatchEvent(new CustomEvent('syung:place_end', {detail: which}));   // 방문 통계(lib/analytics.mts — 출발 · 도착 구분만, 장소는 안 보낸다)
+    if (view.picked) trail = {hit: view.picked, search: view.search};
     fillEnd(which, end);
     if (which === 'to' && hereKnown()) { useHere(); go(); return; }
     if (which === 'from') { picked.to = null; names.to = ''; } else { picked.from = null; names.from = ''; }
@@ -283,7 +292,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     Object.assign(names, swapped.names); Object.assign(picked, swapped.picked);
     whenOpen(false); stopSeeking(); go();
   }
-  function hereRow() { useHere(); stopSeeking(); go(); }
+  function hereRow() { useHere(); cutSeek(); go(); }
 
   const fromOf = () => picked.from || (names.from === HERE_NAME && myLocation() ? {lat: myLocation()![1]!, lng: myLocation()![0]!} : null);
   function fold() {
@@ -352,6 +361,12 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     const from = fromOf(), to = picked.to, my = ++goSeq, mine = mounted;
     const trip = {from: names.from, to: names.to, picked: {...picked}};
     if (!from || !to) { searchFor(from ? 'from' : 'to', from ? names.from : names.to); return; }
+    if (sameSpot(from, to)) {   // 찾지 않고 알린다: 고르던 단계면 그 자리에, 결과 단계면 결과 칸에
+      if (view.stage === 'route') failed('출발과 도착이 같아요'); else { view.notice = '출발과 도착이 같아요'; paint(); }
+      return;
+    }
+    view.notice = '';
+    if (view.stage === 'search' && view.search.fixed) routeBack = view.search;
     const at = whenValue();
     setPlaceMarker(null);
     // while the routes are worked out (a few seconds): the rows they will fill, 슝 running along the first
@@ -365,6 +380,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
       if (!answer.ok) { failed(answer.error || '출발지나 도착지를 바꿔 보세요.'); return; }
       view.status.text = '';
       last = {d: answer, sel: 0, from: trip.from, to: trip.to, at, when: {...when}, picked: trip.picked};
+      trail = routeBack = originStation = null;
       render(answer, 0);
       dispatchEvent(new CustomEvent('syung:route'));   // 내 통계의 길찾기 횟수(user/account.mjs 가 로그인했을 때만 센다) · 방문 통계(lib/analytics.mts) — 둘 다 장소 · 시각은 안 보낸다
       paint();
@@ -403,6 +419,13 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
 
   const actions:JourneyActions = {
     typed, place: placePicked, here: hereRow, swap,
+    clear() { typed(''); focusSearch(); },
+    enter() {   // 맨 위 줄 고르기(장소가 아직 오는 중이면 역만 확정할 수 있다) — 고를 게 없으면 키보드만 내린다
+      const first = view.search.hits[0];
+      if (first && (first.lines || !view.search.pending)) placePicked(first); else (document.activeElement as HTMLElement | null)?.blur?.();
+    },
+    retrySeek() { typed(view.search.query); },
+    leave() { if (!back()) closeSheet?.(); },
     end(which) { const hit = view.picked; if (hit) chooseEnd(which, endOf(hit)); },
     arrivals() {
       const hit = view.picked, station = hit && stations.find(one => one.name === hit.name && one.lat === hit.lat);
@@ -423,43 +446,106 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     fold();
     render(search.d, search.sel);
   }
-  function open() {
-    bar.hidden = true;
-    stopSeeking();   // 앞서 연 몸통의 늦은 장소 답은 새 몸통에 닿지 않게
-    view = freshView();
+  // 몸통을 그린다(열 때 · 다른 시트에 가렸다 돌아올 때)
+  function mountView() {
     openSheetView(target => {
       const id = ++mountSeq; body = target; mounted = id; paint();
       return () => { if (mounted === id) { mounted = 0; body = null; } clearTimeout(wheelTimer); setPlaceMarker(null); clearJourney(target); };
     });
+  }
+  function open() {
+    bar.hidden = true;
+    stopSeeking();   // 앞서 연 몸통의 늦은 장소 답은 새 몸통에 닿지 않게
+    // 경로 없이 닫았다 다시 열면 적던 검색어 · 결과를 그대로(새로고침 전까지 · 저장 안 함)
+    const kept = trail?.search ?? (view.search.fixed ? null : view.search), keep = !last && !!kept?.query.trim(), unfinished = keep && (kept!.pending || !!kept!.cut);
+    view = freshView();
+    if (keep) view.search = kept!;
+    trail = routeBack = originStation = null;
+    mountView();
     inSheet = true;
+    armHistory();
     if (!last) { when = {k: 'now'}; useHere(); picked.to = null; names.to = ''; if (!hereKnown()) names.from = ''; }
     whenSet(when);
     if (last) showResults();   // back to the last search, as it was
+    else if (unfinished) typed(kept!.query);   // 답을 받기 전에 닫았다: 다시 묻는다
   }
-  // 「어디로 갈까요?」: 지난 결과가 있으면 그대로, 아니면 내 위치로 옮겨 장소 검색(내 위치를 모르면 지도는 보던 자리)
+  // 「어디로 갈까요?」: 지난 결과가 있으면 그대로, 아니면 장소 검색(지도는 보던 자리 그대로)
   function start() {
     open();
-    if (last) return;
-    const spot = myLocation();
-    if (spot) map.flyTo({center: [spot[0]!, spot[1]!], zoom: Math.max(map.getZoom(), HOME_ZOOM), duration: 900});
-    focusSearch();
+    if (!last) focusSearch();
   }
 
   // from a station sheet: this station is one end; ask for the other
   function openWith(end:EndKind, place:End & { name:string }) {
     last = null; picked.from = picked.to = null; clearRoute?.();
     open();
+    originStation = stations.find(one => one.lat === place.lat && one.lon === place.lng) ?? null;
+    view.search = emptySearch();   // 역에서 시작한 길찾기라 앞 검색어를 잇지 않는다
     chooseEnd(end, place);
   }
 
-  // 시트를 닫기 전에 시트가 묻는다(손잡이 · Esc): 고른 곳의 작은 시트면 장소 검색으로(검색어 · 결과 · 지도 그대로), 결과에서 끝을 바꾸던 중이면 결과로 돌아간다. true 면 닫지 않는다
-  function back() {
-    if (!inSheet) return false;
-    setPlaceMarker(null);
-    if (view.stage === 'picked') { view.stage = 'search'; view.picked = null; paint(); return true; }
-    if (view.stage === 'search' && view.search.fixed && last) { stopSeeking(); showResults(); return true; }
+  // 찾던 중에 끊긴 검색이면 다시 묻는다
+  const resumeSeek = () => { if (view.search.cut) typed(view.search.query); };
+  // 고른 곳 · 반대쪽 찾기에서 시작점으로: 고른 곳의 작은 시트, 없으면 패널을 연 역 시트. 갈 곳이 없으면 false
+  function toOrigin() {
+    stopSeeking();
+    if (trail) {
+      const {hit, search} = trail;
+      picked.from = picked.to = null; useHere(); names.to = ''; if (!hereKnown()) names.from = '';
+      view.search = search; view.picked = hit; view.stage = 'picked'; view.done = false; view.status = {text: '', sr: false}; view.result = {kind: 'none'}; routeBack = null;
+      paint(); setPlaceMarker([hit.lng, hit.lat]);
+      return true;
+    }
+    if (originStation) {
+      const station = originStation;
+      originStation = null; inSheet = false; disarmHistory();
+      showStation(station);
+      return true;
+    }
     return false;
   }
+  const hasPlans = () => view.result.kind === 'plans';
+  function canGoBack() {
+    if (view.stage === 'picked') return true;
+    if (hasPlans()) return false;
+    return !!(view.stage === 'search' ? view.search.fixed && (last || trail || originStation) : last || routeBack || trail || originStation);
+  }
+  // 한 단계 뒤로(손잡이 · Esc · 뒤로 단추 · 브라우저 뒤로): 고른 곳 → 장소 검색(검색어 · 결과 · 지도 그대로), 반대쪽 찾기 → 결과 · 고른 곳 · 역 시트, 경로 기다림 · 실패 → 그 앞. true 면 닫지 않는다
+  function back() {
+    if (!inSheet) return false;
+    if (!mounted) {   // 다른 시트(곧 오는 열차 · 정류장)가 패널을 가렸다: 경로가 없으면 하던 곳으로, 있으면 그 시트만 닫아 아래 막대로
+      if (last || view.stage === 'route') return false;
+      mountView();
+      if (view.picked) setPlaceMarker([view.picked.lng, view.picked.lat]);
+      return true;
+    }
+    view.notice = '';
+    if (view.stage === 'picked') { setPlaceMarker(null); view.stage = 'search'; view.picked = null; trail = null; paint(); resumeSeek(); return true; }
+    if (view.stage === 'search') {
+      if (!view.search.fixed) return false;
+      if (last) { stopSeeking(); showResults(); return true; }
+      return toOrigin();
+    }
+    if (hasPlans()) return false;
+    goSeq++;   // 기다리던 답은 버린다
+    whenOpen(false);
+    if (last) { showResults(); return true; }
+    if (routeBack) { view.search = routeBack; routeBack = null; view.stage = 'search'; view.done = false; view.status = {text: '', sr: false}; view.result = {kind: 'none'}; paint(); resumeSeek(); return true; }
+    return toOrigin();
+  }
+
+  // 브라우저 뒤로(웹만 — 앱 지도는 웹 시트를 쓰지 않는다): 패널이 열린 동안 기록 한 칸을 얹어 두고, 뒤로를 누르면 페이지를 떠나지 않고 한 단계 뒤로 · 더 없으면 닫는다.
+  // 주소는 그대로다. 손으로 닫으면 얹은 칸을 스스로 걷는다(그 popstate 는 건너뛴다)
+  const pageHistory = appMapMode() ? null : globalThis.history ?? null;
+  let armed = false, walking = false;   // walking: 칸을 걷는 뒤로가 아직 끝나지 않았다
+  function armHistory() { if (!pageHistory || armed) return; armed = true; if (!walking) pageHistory.pushState(pageHistory.state, ''); }
+  function disarmHistory() { if (!pageHistory || !armed) return; armed = false; if (walking) return; walking = true; pageHistory.back(); }
+  if (pageHistory) globalThis.addEventListener('popstate', () => {
+    if (walking) { walking = false; if (armed) pageHistory.pushState(pageHistory.state, ''); return; }   // 걷는 사이 다시 열었으면 다 걷은 뒤 칸을 한 번만 얹는다
+    if (!armed) return;
+    armed = false;
+    if (back() && inSheet) armHistory(); else if (inSheet) closeSheet?.();
+  });
 
   const showBar = () => {
     const plan = last!.d.plans[last!.sel]!;
@@ -469,6 +555,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   // the sheet was closed: keep the route and show the bar when it was ours; true if a route stays up
   function sheetClosed() {
     const was = inSheet; inSheet = false;
+    disarmHistory();
     setPlaceMarker(null);
     if (!last || !was) return false;
     showBar();
