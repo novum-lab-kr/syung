@@ -1,5 +1,5 @@
-import { monumentsInView } from "./monuments_data.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
+import { monumentsInView } from "./monuments_data.mjs";
 import { compileProgram } from "./traffic.mjs";
 import { MERC_ORIGIN as O, MU, toM } from "./life.mjs";
 import { LANDMARKS, STUPAS } from "./landmarks_data.mjs";

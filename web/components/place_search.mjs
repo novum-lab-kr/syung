@@ -1,5 +1,6 @@
 import { distanceText, inkOn } from "../lib/place-search.mjs";
 import { Fragment as M } from "../npm/preact/dist/preact.mjs";
+import { startWhereMotion } from "../lib/where_motion.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 // web/components/place_search.tsx
 var SEARCH = /* @__PURE__ */ a("svg", {
@@ -170,15 +171,31 @@ var PlaceHereRow = ({ onPick }) => /* @__PURE__ */ a("button", {
 		children: /* @__PURE__ */ a("b", { children: "내 위치" })
 	})]
 });
+var LOGO = /* @__PURE__ */ a("img", {
+	src: "./brand/syung-light.svg",
+	alt: "",
+	width: 47,
+	height: 47
+});
+var stopMotion = null;
+var motionRef = (box) => {
+	stopMotion?.();
+	stopMotion = box ? startWhereMotion(box) : null;
+};
 var PlaceEmpty = ({ query, failed = false, onRetry }) => /* @__PURE__ */ a("div", {
 	class: "ps-empty",
 	children: [
-		/* @__PURE__ */ a("img", {
-			src: "./brand/syung-light.svg",
-			alt: "",
-			width: 47,
-			height: 47
-		}),
+		!failed && !query ? /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("div", {
+			class: "ps-logo",
+			children: LOGO
+		}), /* @__PURE__ */ a("div", {
+			class: "ps-motion-clip",
+			"aria-hidden": "true",
+			children: /* @__PURE__ */ a("div", {
+				class: "login-motion ps-motion",
+				ref: motionRef
+			})
+		})] }) : LOGO,
 		failed && /* @__PURE__ */ a(M, { children: [
 			/* @__PURE__ */ a("b", { children: "검색하지 못했어요" }),
 			/* @__PURE__ */ a("small", { children: "잠시 뒤 다시 찾아 보세요" }),
@@ -194,7 +211,7 @@ var PlaceEmpty = ({ query, failed = false, onRetry }) => /* @__PURE__ */ a("div"
 			query,
 			"」 대신 다른 이름으로 찾아 보세요"
 		] })] }),
-		!failed && !query && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("b", { children: "어디든 슝!" }), /* @__PURE__ */ a("small", { children: "역이나 장소 이름을 적어 보세요" })] })
+		!failed && !query && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("b", { children: "어디든 슝!" }), /* @__PURE__ */ a("small", { children: "가는 길은 슝이 함께해요" })] })
 	]
 });
 var MIN_ASK = 2;
