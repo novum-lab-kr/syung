@@ -16,26 +16,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # main 은 바뀐 경로를 재려고 기록을 받는다(내용 없이 · 기록만이라 가볍다). PR 은 지금처럼 최신 하나만
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - uses: actions/setup-python@v5
+          fetch-depth: ${{ github.ref != 'refs/heads/main' && 1 || 0 }}
+          filter: ${{ github.ref == 'refs/heads/main' && 'blob:none' || '' }}
+      # 시험을 통과해 빌드까지 끝난 마지막 커밋 — 여기서부터 바뀐 부분을 본다. 앞 배포가 실패 · 취소돼도 그 변경이 빠지지 않는다(못 찾으면 전부)
+      - id: last-built
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git fetch --quiet --depth=1 origin refs/heads/web-dist || exit 0
+          subject="$(git log -1 --format=%s FETCH_HEAD)"
+          echo "sha=${subject#web-dist }" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/check
         with:
-          python-version: '3.12'   # 서버와 같은 버전
-      # 서버 검사(pyproject.toml): ruff 린트 · pyright 타입 검사 — 도구만 설치(서버는 표준 라이브러리만). pip 25.1+ 가 --group 을 안다
-      - run: python3 -m pip install --upgrade pip && python3 -m pip install --group dev
-      - run: ruff check
-      - run: pyright
-      - run: node --test tests/*.test.mjs
-      - run: python3 -m unittest discover -s tests
-      - run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py
-      # 웹 빌드(web/ → dist/web)가 되는지 — PR 에도. 올리기는 아래 build 잡(main 만)
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      # 스토리북(개발 도구 — 디자인 토큰 · 기초 컴포넌트)이 빌드되는지만 — 배포하지 않는다
-      - run: npm run build-storybook
+          base: ${{ steps.last-built.outputs.sha }}
 
   # main: 웹을 빌드해 web-dist 브랜치에 커밋으로 쌓는다(트리 web/ = dist/web, 메시지 "web-dist <소스 커밋>").
   #   서버(deploy/deploy.sh)는 node 빌드 없이 이 커밋에서 web/ 을 꺼낸다. 앞 커밋을 부모로 이어 붙여 옛 커밋도 다시 배포할 수 있다

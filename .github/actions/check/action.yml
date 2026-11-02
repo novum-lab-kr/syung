@@ -1,0 +1,55 @@
+# 레포 검사 한 벌 — deploy.yml test 잡과 athena-handoff.yml verify 잡이 같이 쓴다(먼저 actions/checkout 을 부른다).
+# base 를 비우면 전부. main 배포만 base(마지막으로 빌드된 커밋)를 넘겨 바뀐 부분과 관련된 것만 돈다(deploy/select_tests.py).
+# 공개 레포라 로그가 누구에게나 보인다 — 여기에 비밀값을 넘기지 않는다.
+name: check
+description: 린트 · 타입 · 시험 · 웹 빌드
+inputs:
+  base:
+    description: 바뀐 부분을 잴 기준 커밋(비우면 전부)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'   # 서버와 같은 버전
+    - id: pick
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+      run: python3 deploy/select_tests.py "$BASE" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+    # 서버 검사(pyproject.toml): ruff 린트 · pyright 타입 검사 — 도구만 설치(서버는 표준 라이브러리만). pip 25.1+ 가 --group 을 안다
+    - if: steps.pick.outputs.python == 'all'
+      shell: bash
+      run: python3 -m pip install --upgrade pip && python3 -m pip install --group dev
+    - if: steps.pick.outputs.python == 'all'
+      shell: bash
+      run: ruff check
+    - if: steps.pick.outputs.python == 'all'
+      shell: bash
+      run: pyright
+    - shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+      run: python3 deploy/select_tests.py --run "$BASE" "$GITHUB_SHA"
+    - if: steps.pick.outputs.python == 'all'
+      shell: bash
+      run: python3 -m py_compile server/*.py pipeline/*.py deploy/*.py
+    # 웹 빌드(web/ → dist/web)가 되는지. 올리기는 deploy.yml build 잡(main 만)
+    - if: steps.pick.outputs.js == '1'
+      shell: bash
+      run: npm ci
+    - if: steps.pick.outputs.js == '1'
+      shell: bash
+      run: npm run typecheck
+    - if: steps.pick.outputs.js == '1'
+      shell: bash
+      run: npm run build
+    # 스토리북(개발 도구 — 디자인 토큰 · 기초 컴포넌트)이 빌드되는지만 — 배포하지 않는다
+    - if: steps.pick.outputs.js == '1'
+      shell: bash
+      run: npm run build-storybook

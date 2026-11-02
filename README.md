@@ -41,7 +41,7 @@ HTML · CSS · 그림 · 자료 · `web/vendor/`는 그대로 복사합니다. �
 돌리고, 통과하면 웹을 빌드해 `web-dist` 브랜치에 커밋으로 올린 뒤(`deploy/publish_web_dist.sh` — 트리 `web/` = `dist/web`,
 메시지 `web-dist <소스 커밋>`) 서버에 SSH로 접속해 `deploy/remote_deploy.sh`를 실행해요(최신 코드 받기 → 테스트 → 배포,
 `server/`가 바뀌었으면 프록시 재시작). 서버는 node 빌드를 하지 않고 `web-dist`에서 그 커밋의 빌드 결과를 꺼내요.
-배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요. PR에는 테스트와 빌드 확인만 돌아요. 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
+배포 키는 서버에서 이 스크립트만 실행하도록 제한돼 있어요. PR에는 테스트와 빌드 확인만 돌아요(늘 전부). `main` 배포의 테스트는 바뀐 부분과 관련된 것만 돌고, 서버 코드 · 자료 · 배포 장치가 바뀌면 전부 돌아요(`deploy/select_tests.py`). 수동 배포: Actions 탭에서 `test-and-deploy` → Run workflow. 서버 로그: `/var/log/subway-deploy.log`.
 
 `remote_deploy.sh` 순서: `origin/main` 커밋 하나를 정해(빌드가 아직이면 마지막으로 빌드된 커밋) 임시 폴더에 꺼내 테스트 → 통과해야 merge → `deploy/deploy.sh`가
 그 커밋의 빌드 결과(`web-dist` — 빌드 도입 전 커밋이면 커밋의 `web/` 그대로) 전체와 자료 파일로 새 릴리스(`/var/www/syung-releases/<시각>-<커밋>`)를 만들고 `/var/www/syung` 링크를 한 번에
