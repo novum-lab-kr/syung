@@ -135,6 +135,124 @@ def _rides_on(line: str, a: int, b: int, c: int) -> bool:
     return (line, a, b, c) in THROUGH
 
 
+def service_runs(lines: dict[str, list[Row]]) -> dict[str, list[tuple[list[int], dict[int, list[int]]]]]:
+    """노선 → 운행 계통마다 (역 차례, 역 → 그 차례 자리들). 양 방향(뒤집은 차례)을 다 넣고, 순환 계통은 한 바퀴 더 잇는다(through_rides 와 같다)."""
+    out: dict[str, list[tuple[list[int], dict[int, list[int]]]]] = defaultdict(list)
+    for line, variants in lines.items():
+        for variant in variants:
+            stops: list[int] = variant["stops"]
+            circle = len(stops) > 2 and stops[0] == stops[-1] and len(set(stops)) == len(stops) - 1
+            seq = stops + stops[1:] if circle else stops
+            for order in (seq, seq[::-1]):
+                where: dict[int, list[int]] = defaultdict(list)
+                for at, stop in enumerate(order):
+                    where[stop].append(at)
+                out[line].append((order, where))
+    return out
+
+
+RUNS = service_runs(_metro["lines"])
+_runs_cache: dict[tuple[str, tuple[int, ...]], bool] = {}
+
+
+def _runs_in_order(line: str, stops: tuple[int, ...]) -> bool:
+    """운행 계통 하나가 stops 를 이 차례대로 지나나(사이에 다른 역이 있어도 된다 — 급행이 건너뛰는 역)."""
+    key = (line, stops)
+    hit = _runs_cache.get(key)
+    if hit is None:
+        hit = False
+        for _, where in RUNS.get(line, ()):
+            pos = -1
+            for stop in stops:
+                pos = next((at for at in where.get(stop, ()) if at > pos), -1)
+                if pos < 0:
+                    break
+            if pos >= 0:
+                hit = True
+                break
+        _runs_cache[key] = hit
+    return hit
+
+
+def _in_order(order: list[int], stops: tuple[int, ...]) -> bool:
+    """order 안에 stops 가 이 차례대로 있나(사이에 다른 역이 있어도 된다)."""
+    pos = 0
+    for stop in stops:
+        try:
+            pos = order.index(stop, pos) + 1
+        except ValueError:
+            return False
+    return True
+
+
+def _run_to(order: list[int], end: int) -> list[int]:
+    """order[end] 에서 끝나는 한 방향 구간: 뒤로 가며 역이 다시 나오기 직전까지(order[end] 포함).
+    6호선처럼 갔다 오는 계통(신내 → 응암 고리 → 신내)에서 반대편(돌아오는 쪽) 구간을 같은 방향으로 보지 않게 한다."""
+    seen: set[int] = set()
+    start = end + 1
+    while start > 0 and order[start - 1] not in seen:
+        start -= 1
+        seen.add(order[start])
+    return order[start:end + 1]
+
+
+def _back_on_run(order: list[int], at: int, want: tuple[int, ...], c: int) -> bool:
+    """order[at](갈아탄 역)에서 끝나는 한 방향 구간에 want(「c … a → s」)가 있고, c 가 같은 방향으로 바로 앞(다음 역)이 아니다.
+    6호선 응암 고리는 응암이 고리 처음과 끝에 다 있어 연신내 → 구산 뒤 구산 → 응암(앞으로 감)도 「응암 … 연신내 → 구산」이 된다 —
+    c 가 이 차례의 다음 역이면 앞으로 가는 것이다(c = a 인 바로 되돌아감은 다음 역일 수 없다)."""
+    return _in_order(_run_to(order, at), want) and not (at + 1 < len(order) and order[at + 1] == c)
+
+
+_turn_cache: dict[tuple[str, int, int, int], bool] = {}
+
+
+def _turns_back(line: str, a: int, s: int, c: int) -> bool:
+    """a → s 로 와서 s 에서 갈아탄 열차가 다음 역 c 로 가면 왔던 쪽으로 되돌아가나: 운행 계통 하나(어느 방향이든)에
+    「c … a → s」 차례가 있다 — c 가 a 이거나 a 너머(독산 → 금천구청 뒤 금천구청 → 서울 급행: 서울 … 독산 → 금천구청).
+    지선으로 꺾는 갈아타기(광명 → 금천구청 → 안양)는 한 계통에 셋이 같이 없어 되돌아감이 아니다.
+    순환 계통은 s 가 끝에 오게 돌린 뒤 s 뒤쪽 반 바퀴만 본다 — 이음매(시청)에서 앞으로 가는 역이 한 바퀴 뒤로도 잡히지 않게.
+    나머지 계통은 s 에서 끝나는 한 방향 구간(_run_to)만 본다 — 6호선 화랑대 → 봉화산 뒤 봉화산 → 신내를 돌아오는 쪽 구간
+    「신내 … 화랑대 → 봉화산」으로 잡아 되돌아감으로 보던 것(Codex 리뷰 2026-11-04)."""
+    key = (line, a, s, c)
+    hit = _turn_cache.get(key)
+    if hit is None:
+        hit = False
+        want = (a, s) if c == a else (c, a, s)
+        for variant in _metro["lines"].get(line, ()):
+            stops: list[int] = variant["stops"]
+            lap = len(set(stops))
+            # 순환: 처음 = 끝이고 한 바퀴(서로 다른 역 수)가 그대로 되풀이 — 2호선 본선 자료는 12바퀴(517역)다
+            circle = len(stops) > 2 and stops[0] == stops[-1] and (len(stops) - 1) % lap == 0 and \
+                stops[:-1] == stops[:lap] * ((len(stops) - 1) // lap)
+            base = stops[:lap] if circle else stops
+            for order in (base, base[::-1]):
+                if circle:
+                    if s not in order:
+                        continue
+                    k = order.index(s)
+                    hit = _in_order((order[k + 1:] + order[:k + 1])[-(len(order) // 2):], want)
+                else:
+                    hit = any(_back_on_run(order, at, want, c) for at, stop in enumerate(order) if stop == s)
+                if hit:
+                    break
+            if hit:
+                break
+        _turn_cache[key] = hit
+    return hit
+
+
+def _train_goes(line: str, x: int, at: int, toward: int, end: int | None) -> bool:
+    """지금 x 에 있는 열차(종점 end — 모르면 None)가 at 에서 toward 로 가나: 운행 계통 하나에 x → at → toward → end 차례로 있다.
+    방향 이름(상행 · 하행)만 같은 다른 갈래 열차를 거른다 — 금천구청 → 석수(안양 쪽)에 광명셔틀(금천구청에서 광명으로 꺾는다) ·
+    용산-동인천(금천구청을 안 지난다)을 고르던 것(2026-11-04 운영 광명 → 안양).
+    지금 역 · 탈 역에서 끝나는 열차는 차례와 상관없이 뺀다 — 순환 계통은 한 바퀴 더 이어 보아 「성수 → 뚝섬 → 성수」도 차례로 있어서,
+    성수에 도착해 끝나는 열차(성수종착)를 성수 → 뚝섬에 골랐다(Codex 리뷰 2026-11-04)."""
+    if end in (x, at):
+        return False
+    stops = [x, at, toward] + ([end] if end is not None else [])
+    return _runs_in_order(line, tuple(stop for k, stop in enumerate(stops) if k == 0 or stop != stops[k - 1]))
+
+
 # ---- buses (data/bus.json, pipeline/build_bus_data.py; optional) ---------------------------
 
 BUS = journey_data.read_optional(journey_data.BUS)
@@ -392,6 +510,8 @@ def _next_live(live: Live, line: str, at: int, toward: int, after: datetime) -> 
         end = BY_NAME.get((line, _key(t.get("destination", ""))))
         if end in up and up[end] < up[x]:
             continue   # it terminates before reaching `at`
+        if not _train_goes(line, x, at, toward, end):
+            continue   # 같은 방향 이름이어도 at → toward 로 안 가는 갈래(지선 · 다른 계통) 열차
         dep = leave_x + timedelta(seconds=up[x])
         if dep >= after and (best is None or dep < best[0]):
             best = (dep, t)
@@ -535,6 +655,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                     ready = t + (_data["transfer"].get(str(sid), _data["defaultTransfer"]) if kind == "alight" else 0)
                     pen = 0 if kind == "start" else penalty
                     ready_dt = datetime.fromtimestamp(ready, KST)
+                    came = cast("Node", back[s][1]) if kind == "alight" else None   # 내리기 전에 탄 구간 (노선, 앞 역, 이 역, 종점)
                     for b in ADJ[line][sid]:
                         hop = _hop(line, sid, b)
                         if not hop:
@@ -542,6 +663,10 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                         lv = _next_live(live, line, sid, b, ready_dt) if ready - T0 < REALTIME_HORIZON else None
                         if lv:
                             dep, train = lv[0].timestamp(), lv[1]
+                        elif came is not None and came[0] == line and _turns_back(line, came[1], sid, b):
+                            # 반대로 갔다가 같은 노선으로 되돌아오며 갈아타기는 갈아탈 열차가 실시간으로 확인될 때만(2026-11-04 사용자 결정 —
+                            # 독산 → 금천구청 → 급행 서울이 급행 기다림을 기본 간격 절반 4분으로 셈해 앞섰다)
+                            continue
                         else:
                             gap = _headway(line, _label(line, sid, b), ready_dt)
                             if gap is None:
