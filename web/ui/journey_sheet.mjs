@@ -35,7 +35,8 @@ function Result({ result, actions }) {
 				hidden: card.hidden,
 				note: card.note,
 				onPick: (pick) => actions.card(pick),
-				onTicket: (pick) => actions.ticket(pick)
+				onTicket: (pick) => actions.ticket(pick),
+				onGo: (pick) => actions.go(pick)
 			}))
 		}),
 		/* @__PURE__ */ a(RouteNote, {})
@@ -134,6 +135,7 @@ var drawJourneyBar = (host, bar, actions) => K(/* @__PURE__ */ a(JourneyBar, {
 	bar,
 	onOpen: actions.open,
 	onClear: actions.clear,
-	onFresh: actions.fresh
+	onFresh: actions.fresh,
+	onGo: actions.go
 }), host);
 export { JourneySheet, clearJourney, drawJourney, drawJourneyBar };

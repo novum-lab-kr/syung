@@ -19,7 +19,7 @@ function Track({ segs }) {
 	});
 }
 var CARD_ROLE = { role: "button" };
-function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket }) {
+function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket, onGo }) {
 	const duration = plan.duration;
 	return /* @__PURE__ */ a("article", {
 		class: on ? "jp on" : "jp",
@@ -75,6 +75,15 @@ function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket }) 
 				class: "jp-note",
 				role: "status",
 				children: note
+			}),
+			on && onGo && /* @__PURE__ */ a("button", {
+				type: "button",
+				class: "rg-go",
+				onClick: (event) => {
+					event.stopPropagation();
+					onGo(index);
+				},
+				children: "이 길로 출발"
 			}),
 			on && onTicket && /* @__PURE__ */ a("button", {
 				type: "button",

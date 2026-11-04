@@ -55,7 +55,7 @@ function JourneySummary({ summary, onEnd, onSwap }) {
 		})]
 	});
 }
-function JourneyBar({ bar, onOpen, onClear, onFresh }) {
+function JourneyBar({ bar, onOpen, onClear, onFresh, onGo }) {
 	const duration = bar?.duration;
 	return /* @__PURE__ */ a(M, { children: [
 		/* @__PURE__ */ a("button", {
@@ -86,6 +86,12 @@ function JourneyBar({ bar, onOpen, onClear, onFresh }) {
 			title: "경로 지우기",
 			onClick: onClear,
 			children: CLOSE
+		}),
+		bar && onGo && /* @__PURE__ */ a("button", {
+			type: "button",
+			class: "rg-go",
+			onClick: onGo,
+			children: "이 길로 출발"
 		})
 	] });
 }

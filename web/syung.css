@@ -596,6 +596,26 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 .jbar .jseg{font-size:var(--text-10-5);border-radius:var(--radius-5)}
 .jbar-x{position:absolute;top:7px;right:7px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:var(--radius-circle);background:var(--control);color:var(--secondary);cursor:pointer}
 .jbar-x svg{width:14px;height:14px}
+/* 타고 가기(ui/ride_along · components/ride_card — 시안 .storybook/ride_along.stories.tsx (라)): 카드가 캐릭터의 말풍선.
+   말풍선 · 캐릭터는 슝 소개 사이트(novum-web syung/intro.css .a-sheet · .a-pen · .hop-hero 휴대폰 자리) 그대로, 말풍선만 시안보다 12px 올려 캐릭터 머리와 안 겹치게(2026-11-04) */
+.rg-stack{position:absolute;z-index:15;left:50%;transform:translateX(-50%);bottom:calc(116px + env(safe-area-inset-bottom,0px));width:min(560px,calc(100% - 24px));display:flex;flex-direction:column;align-items:center;gap:var(--space-2);touch-action:manipulation}
+.rg-talk{position:relative;align-self:stretch;padding:16px 52px 18px 16px;border-radius:22px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-edge),0 16px 40px rgba(0,0,0,.26)}
+.rg-talk::after{content:"";position:absolute;right:40px;bottom:-11px;width:24px;height:24px;border-radius:0 0 6px 0;background:var(--paper);box-shadow:3px 3px 0 rgba(0,0,0,.1);transform:rotate(45deg)}
+.rg-talk b{display:block;font:400 22px/1.25 var(--round);word-break:keep-all}
+.rg-said{margin:8px 0 0;font:400 15px/1.7 var(--round);color:var(--ink);word-break:keep-all}
+.rg-pen{padding:0 .3em 0 .2em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 24' preserveAspectRatio='none'%3E%3Cfilter id='g' x='-5%25' y='-5%25' width='110%25' height='110%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09 .55' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.2 2.45'/%3E%3CfeComposite in='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Cg filter='url%28%23g%29' fill='none' stroke='%23ffd400' stroke-width='6.5' stroke-linecap='round' stroke-opacity='.62'%3E%3Cpath d='M5 8C50 5 96 9 140 7S205 5 233 8'/%3E%3Cpath d='M10 13C60 10 110 14 160 12S215 11 238 14'/%3E%3Cpath d='M2 18C48 16 100 20 150 17S208 16 229 19'/%3E%3Cpath stroke-width='3' d='M28 11C90 13 150 9 224 11'/%3E%3C/g%3E%3C/svg%3E") no-repeat 0 60%/100% .95em;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+/* 다크: 밝은 글 뒤 진한 노랑은 취소선처럼 보여 아래로 내려 얇게(글 아래쪽 반만 칠한다) */
+html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .62em;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 24' preserveAspectRatio='none'%3E%3Cfilter id='g' x='-5%25' y='-5%25' width='110%25' height='110%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09 .55' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.2 2.45'/%3E%3CfeComposite in='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Cg filter='url%28%23g%29' fill='none' stroke='%23ffd400' stroke-width='6.5' stroke-linecap='round' stroke-opacity='.34'%3E%3Cpath d='M5 8C50 5 96 9 140 7S205 5 233 8'/%3E%3Cpath d='M10 13C60 10 110 14 160 12S215 11 238 14'/%3E%3Cpath d='M2 18C48 16 100 20 150 17S208 16 229 19'/%3E%3Cpath stroke-width='3' d='M28 11C90 13 150 9 224 11'/%3E%3C/g%3E%3C/svg%3E")}
+.rg-talk small{display:block;margin-top:6px;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
+.rg-detour{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.rg-x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--control);color:var(--ink);cursor:pointer}
+.rg-sprout{position:absolute;right:-6px;bottom:-110px;width:92px;height:92px;background:center/contain no-repeat;pointer-events:none}
+.rg-sprout.flip{transform:scaleX(-1)}
+.rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
+.jbar .rg-go,.jp .rg-go{display:block;width:calc(100% - 28px);height:42px;margin:0 14px 13px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
+.jp .rg-go{width:100%;margin:var(--space-2) 0 0;height:46px}
+.jp .rg-go+.jp-ticket{background:var(--control);color:var(--ink);height:42px}
+body:has(.rg-talk) .route-cta{display:none}
 .jbar-x:hover{color:var(--ink)}
 .jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */
 .jbar-new{position:absolute;top:0;right:44px;min-height:44px;padding:0 var(--space-2);border:0;background:none;color:var(--ink);font:inherit;font-size:var(--text-13);font-weight:var(--weight-bold);cursor:pointer}

@@ -161,7 +161,7 @@ function wheelDate(time, now = /* @__PURE__ */ new Date()) {
 	return at;
 }
 var TICKET_NO_START = "내 위치를 찾지 못했어요. 위에서 출발을 다시 골라 주세요.";
-function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk }) {
+function initJourney({ openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk, rideStart }) {
 	const picked = {
 		from: null,
 		to: null
@@ -172,6 +172,7 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 	};
 	let last = null;
 	let inSheet = false;
+	let riding = false;
 	let goSeq = 0;
 	let trail = null, routeBack = null, originStation = null;
 	const bar = document.createElement("div");
@@ -191,6 +192,9 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		fresh: () => {
 			clearBar();
 			start();
+		},
+		go: () => {
+			if (last) rideGo(last.sel);
 		}
 	};
 	drawJourneyBar(bar, null, barActions);
@@ -720,6 +724,9 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		},
 		retry: () => {
 			go();
+		},
+		go: (index) => {
+			rideGo(index);
 		}
 	};
 	function showResults() {
@@ -916,8 +923,36 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		disarmHistory();
 		setPlaceMarker(null);
 		if (!last || !was) return false;
-		showBar();
+		if (!riding) showBar();
 		return true;
+	}
+	function rideGo(index) {
+		const search = last, plan = search?.d.plans[index];
+		if (!search || !plan || !rideStart) return;
+		if (search.sel !== index) pick(index);
+		riding = true;
+		bar.hidden = true;
+		if (inSheet) closeSheet?.();
+		rideStart(plan, search.to);
+	}
+	function rideEnded() {
+		riding = false;
+		if (last && !inSheet) showBar();
+	}
+	function fromHere() {
+		riding = false;
+		const search = last, to = search?.picked.to;
+		last = null;
+		clearRoute?.();
+		when = { k: "now" };
+		open();
+		if (!search || !to) return;
+		fillEnd("to", {
+			...to,
+			name: search.to
+		});
+		useHere();
+		go();
 	}
 	function sheetReplaced() {
 		if (inSheet) {
@@ -937,7 +972,9 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		sheetClosed,
 		sheetReplaced,
 		drop,
-		ticketReturn
+		ticketReturn,
+		rideEnded,
+		fromHere
 	};
 }
 export { initJourney, keepPickable, routeSteps, routeTrack, soonestWhen, trackParts, wheelDate };

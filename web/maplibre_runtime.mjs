@@ -40,6 +40,9 @@ import "./components/login_button.mjs";
 import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
+import "./lib/ride-along.mjs";
+import { createRideAlong } from "./ui/ride_along.mjs";
+import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
@@ -1439,7 +1442,8 @@ var journey = initJourney({
 		ticketRouteGone?.();
 		clearRoute();
 		refreshLive();
-	}
+	},
+	rideStart: (plan, toName) => rideAlong.start(plan, toName)
 });
 document.getElementById("routeButton").addEventListener("click", () => ticketRouteGone?.());
 var ticketRoute = {
@@ -1571,7 +1575,26 @@ var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, u
 		}
 	}
 });
+var rideAlong = createRideAlong({
+	map,
+	geolocate,
+	planner,
+	trainPose,
+	trainLngLat,
+	arrivalRank,
+	byId,
+	animFrame,
+	drawRideCard,
+	look: () => modeCtl.settings().me?.look,
+	walked: (leg, cut) => journeyMap.markWalked(leg, cut && {
+		done: cut.done.map(([x, y]) => [x, y]),
+		rest: cut.rest.map(([x, y]) => [x, y])
+	}),
+	ended: () => journey.rideEnded(),
+	detour: () => journey.fromHere()
+});
 var openTrain = (plan) => {
+	if (rideAlong.tapTrain(plan)) return;
 	if (appBridge) appBridge.trainTap(plan);
 	else showTrainPopup(plan);
 };
@@ -1594,8 +1617,8 @@ var hexRGB3 = (v) => [
 	parseInt(v.slice(5, 7), 16) / 255
 ];
 var trainLive = {
-	trainShown: (p, d) => journeyMap.trainShown(p, d),
-	journeyTrain: (p) => journeyMap.journeyTrain(p),
+	trainShown: (p, d) => rideAlong.rideTrain(p) || journeyMap.trainShown(p, d),
+	journeyTrain: (p) => rideAlong.rideTrain(p) || journeyMap.journeyTrain(p),
 	get kitReady() {
 		return kitReady;
 	},

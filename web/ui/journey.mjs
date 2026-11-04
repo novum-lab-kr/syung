@@ -65,7 +65,10 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		plan.legs.forEach((l, i) => {
 			if (l.type === "walk") feats.push({
 				type: "Feature",
-				properties: { kind: "walk" },
+				properties: {
+					kind: "walk",
+					leg: i
+				},
 				geometry: {
 					type: "LineString",
 					coordinates: l.path
@@ -145,6 +148,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 			type: "FeatureCollection",
 			features: [...feats, ...pts]
 		};
+		routeData = data;
 		if (!map.getSource("journey")) {
 			map.addSource("journey-veil", {
 				type: "geojson",
@@ -234,6 +238,34 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 				}
 			});
 			map.addLayer({
+				id: "journey-walked",
+				type: "line",
+				source: "journey",
+				filter: [
+					"==",
+					["get", "kind"],
+					"walked"
+				],
+				layout: {
+					"line-cap": "round",
+					"line-join": "round"
+				},
+				paint: {
+					"line-color": walkColor(),
+					"line-opacity": .25,
+					"line-width": [
+						"interpolate",
+						["linear"],
+						["zoom"],
+						10,
+						3,
+						16,
+						6
+					],
+					"line-dasharray": [.1, 1.8]
+				}
+			});
+			map.addLayer({
 				id: "journey-inside",
 				type: "line",
 				source: "journey",
@@ -293,6 +325,47 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		routeBounds = all.length ? all.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(all[0], all[0])) : null;
 		if (refit) fitRoute(sheetPad() + 30);
 	}
+	let routeData = null;
+	function markWalked(leg, cut) {
+		const source = map.getSource("journey");
+		if (!routeData || !source) return;
+		const features = routeData.features.flatMap((feature) => {
+			const at = feature.properties?.kind === "walk" ? Number(feature.properties.leg) : NaN;
+			if (leg < 0 || Number.isNaN(at) || at > leg) return [feature];
+			if (at < leg || !cut) return [{
+				...feature,
+				properties: {
+					...feature.properties,
+					kind: "walked"
+				}
+			}];
+			return [{
+				type: "Feature",
+				properties: {
+					kind: "walked",
+					leg: at
+				},
+				geometry: {
+					type: "LineString",
+					coordinates: cut.done
+				}
+			}, {
+				type: "Feature",
+				properties: {
+					kind: "walk",
+					leg: at
+				},
+				geometry: {
+					type: "LineString",
+					coordinates: cut.rest
+				}
+			}];
+		});
+		source.setData({
+			type: "FeatureCollection",
+			features
+		});
+	}
 	let displayedRoute = null;
 	let routeBounds = null, busRouteFocus = false;
 	function fitRoute(bottom, right = 40) {
@@ -312,6 +385,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 	}
 	function clearRoute() {
 		displayedRoute = null;
+		routeData = null;
 		live.busLayer?.clearSelection({ journey: true });
 		routeBounds = null;
 		if (map.getSource("journey")) map.getSource("journey").setData({
@@ -419,6 +493,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 			map.setPaintProperty("journey-ends", "circle-color", endFill());
 			map.setPaintProperty("journey-ends", "circle-stroke-color", endRim());
 			map.setPaintProperty("journey-walk", "line-color", walkColor());
+			if (map.getLayer("journey-walked")) map.setPaintProperty("journey-walked", "line-color", walkColor());
 			if (map.getLayer("journey-inside")) map.setPaintProperty("journey-inside", "line-color", walkColor());
 		}
 		routeFocus = on;
@@ -434,6 +509,7 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		showRoute,
 		fitRoute,
 		clearRoute,
+		markWalked,
 		setSubwayOff,
 		setRouteOpacity,
 		focusRoute,
