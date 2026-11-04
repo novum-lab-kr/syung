@@ -151,10 +151,21 @@ test('곧 올 열차 고르기: 내릴 역 전에 끝나거나 다른 지선으�
   assert.equal(arrivalFits(row(), leg, null, nameOf), true);
   assert.equal(arrivalFits(row({destination: '용산'}), leg, null, nameOf), false);      // 목적지 전 종착
   assert.equal(arrivalFits(row({destination: '용산(급행)'}), leg, null, nameOf), false);
-  assert.equal(arrivalFits(row(), leg, [133, 134, 135, 900, 901], nameOf), false);     // 지선: 내릴 역 전에 길 밖으로
+  assert.equal(arrivalFits(row(), leg, [133, 134, 135, 900, 901, 902, 903, 904], nameOf), false);   // 지선: 내릴 역 전에 길 밖 역이 5개 이어짐
+  assert.equal(arrivalFits(row(), leg, [133, 134, 135, 900, 901, 902, 903], nameOf), true);        // 길 밖 4개까지는 급행 건너뛰기로 본다
   assert.equal(arrivalFits(row(), leg, [120, 121, 133, 134], nameOf), true);           // 예측 차례가 9역에서 끊김(멀리 있는 열차)
   assert.equal(arrivalFits(row({destination: '용산'}), leg, [133, 134, 135], nameOf), false);
   assert.equal(arrivalFits(row(), leg, [134, 135, 136, 137, 138], nameOf), true);
   assert.equal(arrivalFits(row({direction: '상행'}), leg, null, nameOf), false);
   assert.equal(arrivalFits(row({destination: '대방'}), leg, null, nameOf), true);      // 내릴 역이 종착이면 탈 수 있다
+});
+test('곧 올 열차 고르기: 급행이 건너뛰는 역(구간 밖)이 예측에 끼어도 다른 지선이 아니다(운영 시험 2026-11-04 · 9호선 노량진→여의도 사이 샛강)', () => {
+  // 길찾기 구간 stations 에는 정차역만 있다 — 급행 열차 예측 차례에는 안 서는 역이 낀다
+  const leg = rideLeg({line: '9호선', direction: '상행', stations: [910, 912, 914, 916]});
+  const names = {910: '노량진', 911: '샛강', 912: '여의도', 913: '국회의사당', 914: '당산', 915: '선유도', 916: '염창'};
+  const nameOf = id => names[id];
+  const row = extra => ({line: '9호선', direction: '상행', destination: '김포공항', trainNo: '9', ...extra});
+  assert.equal(arrivalFits(row(), leg, [910, 911, 912, 913, 914], nameOf), true);         // 샛강 · 국회의사당을 건너뛰는 급행
+  assert.equal(arrivalFits(row(), leg, [911, 912, 913, 914, 915, 916, 917], nameOf), true);   // 구간 밖 역이 하나씩 끼고 내릴 역까지 닿는다
+  assert.equal(arrivalFits(row(), leg, [910, 911, 912, 913, 914, 915], nameOf), true);     // 예측이 내릴 역 전에 끊겨도(9역 한도)
 });
