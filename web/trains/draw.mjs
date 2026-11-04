@@ -705,7 +705,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, coasterBodyPx, bodyWidthP
 					pass(1);
 				}
 			}
-			if (animating && (live.following || live.rider.ride) && !live.easing) followSoon();
+			if (animating && (live.following || live.rider.ride || live.rideFollow) && !live.easing) followSoon();
 			else if (animating || rippling) trainFrameSoon(1e3 / TRAIN_FPS);
 			else if (waiting) trainFrameSoon(1e3);
 		}

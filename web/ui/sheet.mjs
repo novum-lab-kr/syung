@@ -361,7 +361,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	};
 	function followLoop(ts) {
 		followRaf = 0;
-		if (!(following || live.rider.ride || followBus) || easing) return;
+		if (!(following || live.rider.ride || followBus || live.rideFollow) || easing) return;
 		if (!live.rider.ride && ts - followLast < Math.max(1e3 / FOLLOW_FPS, live.frameMs || 0) - 4) {
 			followSoon();
 			return;
@@ -444,7 +444,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			}
 		});
 	});
-	map.on("dragstart", () => {
+	function stopFollow() {
 		if (following) {
 			following = null;
 			followBtn.hidden = !sheetTrain;
@@ -455,7 +455,8 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			followBtn.hidden = live.busLayer?.selection?.kind !== "bus";
 			busFollowChanged();
 		}
-	});
+	}
+	map.on("dragstart", stopFollow);
 	return {
 		sheet,
 		sheetBody,
@@ -469,6 +470,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		follow,
 		followBusStart,
 		followSoon,
+		stopFollow,
 		get sheetTrain() {
 			return sheetTrain;
 		},

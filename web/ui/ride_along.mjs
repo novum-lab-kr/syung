@@ -8,12 +8,12 @@ var FIX_FRESH_MS = 3e4;
 var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour }) {
+function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, otherFollow }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
 	let ride = null, timer = 0, arrivalsTimer = 0;
-	let fix = null, following = true, turnedOn = false, cam = null, camAt = 0;
+	let fix = null, following = true, turnedOn = false, cam = null, camAt = 0, camKey = "";
 	const step = () => ride ? ride.steps[ride.at] : null;
 	const legAt = (index) => ride?.legs[index];
 	const freshFix = () => fix && Date.now() - fix.t < FIX_FRESH_MS ? fix.spot : null;
@@ -65,12 +65,20 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			draw();
 		}
 	});
-	animFrame.push(() => {
+	const followingTrain = () => {
 		const current = step();
-		if (!ride || !following || current?.kind !== "ride" || legAt(current.leg)?.type !== "ride" || map.isMoving()) return;
-		const plan = planOf(ride.train);
-		if (!plan) return;
-		const spot = trainLngLat(plan), now = performance.now();
+		return !!ride && following && current?.kind === "ride" && legAt(current.leg)?.type === "ride" && !!planOf(ride.train);
+	};
+	const yieldToOther = () => {
+		if (!ride || !following || !otherFollow.active()) return false;
+		following = false;
+		draw();
+		return true;
+	};
+	animFrame.push(() => {
+		if (!ride || !following || yieldToOther()) return;
+		if (!followingTrain() || map.isMoving()) return;
+		const spot = trainLngLat(planOf(ride.train)), now = performance.now();
 		if (!cam || now - camAt > 1e3) cam = {
 			lng: spot.lng,
 			lat: spot.lat
@@ -83,6 +91,9 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			};
 		}
 		camAt = now;
+		const key = `${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;
+		if (key === camKey) return;
+		camKey = key;
 		map.jumpTo({
 			center: cam,
 			padding: pad()
@@ -177,6 +188,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		draw();
 	}
 	function tick() {
+		yieldToOther();
 		const current = step();
 		if (!ride || !current || current.kind === "done") return;
 		const leg = legAt(current.leg), spot = freshFix(), nowMs = Date.now(), now = /* @__PURE__ */ new Date();
@@ -344,8 +356,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			detour();
 		},
 		follow: () => {
+			otherFollow.stop();
 			following = true;
 			cam = null;
+			camKey = "";
 			draw();
 			const current = step(), spot = freshFix();
 			if (current?.kind === "ride" && legAt(current.leg)?.type === "ride") {
@@ -460,6 +474,9 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		rideTrain,
 		get active() {
 			return !!ride;
+		},
+		get followingTrain() {
+			return followingTrain();
 		}
 	};
 }

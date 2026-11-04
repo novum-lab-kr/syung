@@ -1372,6 +1372,9 @@ var sheetUI = createBottomSheet({
 		get rider() {
 			return rider;
 		},
+		get rideFollow() {
+			return rideAlong.followingTrain;
+		},
 		get stopRide() {
 			return stopRide;
 		},
@@ -1585,6 +1588,10 @@ var rideAlong = createRideAlong({
 	byId,
 	animFrame,
 	drawRideCard,
+	otherFollow: {
+		active: () => !!sheetUI.following || !!sheetUI.followBus,
+		stop: () => sheetUI.stopFollow()
+	},
 	look: () => modeCtl.settings().me?.look,
 	walked: (leg, cut) => journeyMap.markWalked(leg, cut && {
 		done: cut.done.map(([x, y]) => [x, y]),
@@ -1664,6 +1671,9 @@ var trainLive = {
 	},
 	get rider() {
 		return rider;
+	},
+	get rideFollow() {
+		return rideAlong.followingTrain;
 	},
 	get riding() {
 		return riding;
