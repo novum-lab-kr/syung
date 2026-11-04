@@ -54,7 +54,7 @@ export interface PlaceSearchView { title:string; query:string; hits:PlaceHit[]; 
 export interface JourneySummaryView { from:string; to:string; when:string; aria:string }
 // 시트를 닫은 뒤 지도 아래 막대: 고른 경로의 걸리는 시간 · 도착 · 띠
 export interface JourneyBarView { duration:DurationView; arrives:string; track:TrackSegView[] }
-export interface JourneyBarActions { open():void; clear():void; fresh():void }
+export interface JourneyBarActions { open():void; clear():void; fresh():void; go():void }   // go: 「이 길로 출발」(타고 가기 — ui/ride_along)
 // 시트 한 장의 단계: 장소 검색 → 고른 곳의 작은 시트 → 경로 결과
 export interface JourneyView {
   stage:'search' | 'picked' | 'route'; search:PlaceSearchView; picked:PlaceHit | null; done:boolean; summary:JourneySummaryView | null;
@@ -66,7 +66,7 @@ export interface JourneyView {
 export interface JourneyActions {
   typed(text:string):void; clear():void; enter():void; retrySeek():void; leave():void; place(hit:PlaceHit):void; here():void; end(which:EndKind):void; arrivals():void; changeEnd(which:EndKind):void; swap():void;
   whenRow():void; whenNow():void; whenGo():void;
-  tab(kind:string):void; card(index:number):void; ticket(index:number):void; retry():void;
+  tab(kind:string):void; card(index:number):void; ticket(index:number):void; retry():void; go(index:number):void;
 }
 // 승차권 등록(user/account.mts 가 맡는다): 값을 채워 경로 목록 위에 발권 화면(서랍)을 연다(로그인 전이면 로그인 팝업). search 는 발권 화면을 닫을 때 그대로 돌려줄 지난 검색
 export interface TicketStart { from:End & { name:string }; to:End & { name:string }; leaveBy:string; tomorrow:boolean; fromHere:boolean; plan:Plan }
@@ -80,6 +80,7 @@ export interface JourneyDeps {
   drawJourney:(body:HTMLElement, view:JourneyView, actions:JourneyActions)=>void; clearJourney:(body:HTMLElement)=>void;
   drawJourneyBar:(host:HTMLElement, bar:JourneyBarView | null, actions:JourneyBarActions)=>void;
   stations:readonly SearchableStation[]; showStation:(station:SearchableStation)=>void; setPlaceMarker:(spot:readonly [number, number] | null)=>void; ticketDesk?:()=>Promise<TicketDesk | undefined>;
+  rideStart?:(plan:Plan, toName:string)=>void;   // 「이 길로 출발」: 타고 가기 카드를 연다(본체가 ui/ride_along 을 잇는다)
 }
 const HERE_NAME = '내 위치';
 const PICK_ZOOM = 16;   // 고른 곳으로 옮길 때 이보다 멀면 이만큼 당긴다
@@ -170,11 +171,12 @@ export function wheelDate(time:string, now = new Date()):Date { const [hours = 0
 
 const TICKET_NO_START = '내 위치를 찾지 못했어요. 위에서 출발을 다시 골라 주세요.';   // 펼친 카드는 길어 위 안내 줄이 안 보인다: 단추 바로 위에
 
-export function initJourney({openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk}:JourneyDeps) {
+export function initJourney({openSheetView, closeSheet, map, colors, myLocation, button, showRoute, clearRoute, drawJourney, clearJourney, drawJourneyBar, stations, showStation, setPlaceMarker, ticketDesk, rideStart}:JourneyDeps) {
   const picked:{ from:End | null; to:End | null } = {from: null, to: null};
   const names:Record<EndKind, string> = {from: HERE_NAME, to: ''};
   let last:LastSearch | null = null;   // the last search: {d, sel, from, to, at} — kept while its route is on the map
   let inSheet = false;
+  let riding = false;   // 타고 가는 중: 시트를 닫아도 아래 막대 대신 타고 가기 카드
   let goSeq = 0;   // the latest route search; older answers are dropped   // the journey sheet (not a station or train one) is what's open
   // 한 단계 뒤로 갈 곳: trail 고른 곳의 작은 시트(그때의 검색 그대로) · routeBack 경로를 찾기 전 반대쪽 검색 · originStation 이 패널을 연 역 시트
   let trail:{ hit:PlaceHit; search:PlaceSearchView } | null = null, routeBack:PlaceSearchView | null = null, originStation:SearchableStation | null = null;
@@ -185,7 +187,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   document.body.append(bar);
   // 경로를 지우면 지난 검색도 끝난 일이다: 다음 패널은 빈칸에서
   const clearBar = () => { last = null; bar.hidden = true; clearRoute?.(); trail = null; view = freshView(); };
-  const barActions:JourneyBarActions = {open: () => open(), clear: clearBar, fresh: () => { clearBar(); start(); }};
+  const barActions:JourneyBarActions = {open: () => open(), clear: clearBar, fresh: () => { clearBar(); start(); }, go: () => { if (last) rideGo(last.sel); }};
   drawJourneyBar(bar, null, barActions);
 
   // 지금 그린 몸통: 열 때마다 번호가 하나씩 늘고, 다른 시트가 자리를 차지하면(치우는 함수) 0 — 늦게 온 답은 번호로 버린다(옛 out.isConnected)
@@ -435,7 +437,7 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     whenRow() { whenOpen(!view.whenOpen); },
     whenNow() { whenSet({k: 'now'}); whenOpen(false); go(); },
     whenGo() { draft = keepPickable(draft!); whenSet({k: 'at', d: new Date(draft)}); whenOpen(false); go(); },
-    tab: filter, card: cardPressed, ticket: index => { ticket(index); }, retry: () => { go(); },
+    tab: filter, card: cardPressed, ticket: index => { ticket(index); }, retry: () => { go(); }, go: index => { rideGo(index); },
   };
 
   function showResults() {
@@ -558,8 +560,32 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     disarmHistory();
     setPlaceMarker(null);
     if (!last || !was) return false;
-    showBar();
+    if (!riding) showBar();
     return true;
+  }
+
+  // 「이 길로 출발」(펼친 카드 · 아래 막대): 그 경로를 지도에 둔 채 시트 · 막대를 닫고 타고 가기 카드로
+  function rideGo(index:number) {
+    const search = last, plan = search?.d.plans[index];
+    if (!search || !plan || !rideStart) return;
+    if (search.sel !== index) pick(index);
+    riding = true; bar.hidden = true;
+    if (inSheet) closeSheet?.();
+    rideStart(plan, search.to);
+  }
+  // 타고 가기를 끝냈다(✕ · 도착 뒤 ✕): 경로가 남았으면 아래 막대로
+  function rideEnded() {
+    riding = false;
+    if (last && !inSheet) showBar();
+  }
+  // 「다른 길 찾기」: 지금 내 위치에서 같은 목적지로, 지금 출발로 다시 찾는다
+  function fromHere() {
+    riding = false;
+    const search = last, to = search?.picked.to;
+    last = null; clearRoute?.(); when = {k: 'now'};
+    open();
+    if (!search || !to) return;
+    fillEnd('to', {...to, name: search.to}); useHere(); go();
   }
 
   // another sheet (station, train) took the place of ours
@@ -569,5 +595,5 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   function drop() { last = null; bar.hidden = true; }
 
   button.addEventListener('click', start);
-  return {open, openWith, back, sheetClosed, sheetReplaced, drop, ticketReturn};
+  return {open, openWith, back, sheetClosed, sheetReplaced, drop, ticketReturn, rideEnded, fromHere};
 }

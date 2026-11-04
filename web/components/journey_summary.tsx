@@ -14,8 +14,8 @@ export function JourneySummary({ summary, onEnd, onSwap }:{ summary:JourneySumma
   </span>}{summary && onSwap && <button type="button" class="jsum-swap" id="jSwap" aria-label="출발지와 도착지 바꾸기" title="바꾸기" onClick={onSwap}>{SWAP}</button>}</div>;
 }
 
-// bar: 아직 고른 경로가 없으면 null(막대는 숨어 있다)
-export function JourneyBar({ bar, onOpen, onClear, onFresh }:{ bar:JourneyBarView | null; onOpen():void; onClear():void; onFresh?():void }) {
+// bar: 아직 고른 경로가 없으면 null(막대는 숨어 있다) · onGo: 맨 아래 「이 길로 출발」(타고 가기)
+export function JourneyBar({ bar, onOpen, onClear, onFresh, onGo }:{ bar:JourneyBarView | null; onOpen():void; onClear():void; onFresh?():void; onGo?():void }) {
   const duration = bar?.duration;
   return <>
     <button type="button" class="jbar-open" aria-label="경로 결과 다시 보기" onClick={onOpen}>{bar && <>
@@ -24,5 +24,6 @@ export function JourneyBar({ bar, onOpen, onClear, onFresh }:{ bar:JourneyBarVie
     </>}</button>
     {onFresh && <button type="button" class="jbar-new" onClick={onFresh}>새로 찾기</button>}
     <button type="button" class="jbar-x" aria-label="경로 지우기" title="경로 지우기" onClick={onClear}>{CLOSE}</button>
+    {bar && onGo && <button type="button" class="rg-go" onClick={onGo}>이 길로 출발</button>}
   </>;
 }

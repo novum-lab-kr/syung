@@ -230,7 +230,7 @@ export const FOUND_JOURNEY:JourneyView = { ...EMPTY_JOURNEY, stage: 'route', don
   result: { kind: 'plans',
     tabs: KIND_NAMES.filter(([kind]) => countOf(kind)).map(([kind, name]) => ({ kind, name, count: countOf(kind), pressed: kind === 'all' })),
     cards: JOURNEY_PLANS.map((plan, index) => ({ plan: planView(plan), kind: plan.kind, on: index === 0, hidden: false })) } };
-export const JOURNEY_ACTIONS:JourneyActions = { typed: noop, clear: noop, enter: noop, retrySeek: noop, leave: noop, place: noop, here: noop, end: noop, arrivals: noop, changeEnd: noop, swap: noop, whenRow: noop, whenNow: noop, whenGo: noop, tab: noop, card: noop, ticket: noop, retry: noop };
+export const JOURNEY_ACTIONS:JourneyActions = { typed: noop, clear: noop, enter: noop, retrySeek: noop, leave: noop, place: noop, here: noop, end: noop, arrivals: noop, changeEnd: noop, swap: noop, whenRow: noop, whenNow: noop, whenGo: noop, tab: noop, card: noop, ticket: noop, retry: noop, go: noop };
 export const JourneyScreen = ({ view }:{ view:JourneyView }) => <>
   <MapApp />
   <section class="sheet open" aria-label="상세 정보"><SheetFrame><JourneySheet view={view} actions={JOURNEY_ACTIONS} /></SheetFrame></section>

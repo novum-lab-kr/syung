@@ -12,6 +12,7 @@ import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journ
 import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통과 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
+import {createRideAlong} from './ui/ride_along.mts';import {drawRideCard} from './components/ride_card.tsx';import './lib/ride-along.mts';   // 타고 가기(「이 길로 출발」 뒤 카드 한 장 — 셈 · 글은 lib/ride-along, 같은 단계에서 요청)
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
 import {startAnalytics} from './lib/analytics.mts';   // GA4(운영 지도 주소의 웹에서만 · 앱 지도 #app 은 부르지 않는다)
 import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
@@ -612,7 +613,7 @@ const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,foc
 let ticketRouteGone:(()=>void)|null=null;
 let placeMarker:readonly number[]|null=null;   // 장소 검색에서 고른 곳의 슝 마커(overlay 가 열차 캔버스에 그린다)
 let ticketDesk:(()=>Promise<TicketDesk|undefined>)|null=null;   // 승차권 등록: 회원 코드를 받은 뒤의 창구(아래 — 늦게 받는다)
-const journey=initJourney({stations,showStation:station=>showStationPopup(station as MapStation),setPlaceMarker:spot=>{placeMarker=spot;trainFrameSoon(0)},ticketDesk:async()=>ticketDesk?.(),openSheetView,drawJourney,clearJourney,drawJourneyBar,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()}});   // 길찾기 노선만 받기 · 다시 전부
+const journey=initJourney({stations,showStation:station=>showStationPopup(station as MapStation),setPlaceMarker:spot=>{placeMarker=spot;trainFrameSoon(0)},ticketDesk:async()=>ticketDesk?.(),openSheetView,drawJourney,clearJourney,drawJourneyBar,closeSheet:()=>closeSheet(),map,colors,myLocation:()=>myLocation,button:document.getElementById('routeButton')!,showRoute:(...a)=>{ticketRouteGone?.();showRoute(...a);refreshLive()},clearRoute:()=>{ticketRouteGone?.();clearRoute();refreshLive()},rideStart:(plan,toName)=>rideAlong.start(plan,toName)});   // 길찾기 노선만 받기 · 다시 전부
 document.getElementById('routeButton')!.addEventListener('click',()=>ticketRouteGone?.());   // 길찾기 시트를 열면 승차권 길은 지운다
 const ticketRoute={show(plan:JourneyPlan,pad?:{bottom:number;right:number}){journey.drop();closeSheet();showRoute(plan,false,false);fitRoute(pad?.bottom??110,pad?.right);refreshLive()},clear(plan:JourneyPlan){if(journeyMap.displayedRoute?.plan===plan){clearRoute();refreshLive()}},onGone(fn:(()=>void)|null){ticketRouteGone=fn}};   // 맞춰 보기는 아래 막대 자리만큼 띄운다(길찾기 막대와 같은 110) · pad: 경로 고르기의 서랍 자리(휴대폰 아래 · 데스크톱 오른쪽)
 // ---- 롤코 1인칭: 고른 자리에 앉아 열차를 타요 ----------------------------------------------------
@@ -638,7 +639,10 @@ map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // �
 const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
-const openTrain=(plan:TrainPlan)=>{if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
+// 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
+const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard,
+  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere()});
+const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------
 // Station names sit inside the platform rectangle, turned along it. Where the name is longer than
@@ -652,7 +656,8 @@ const hexRGB3=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),1
 // footprints (a ray through a building always crosses one); walls along tile edges lie inside
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
-const trainLive:TrainLive={trainShown:(p,d)=>journeyMap.trainShown(p,d),journeyTrain:p=>journeyMap.journeyTrain(p),get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return (me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding}};
+const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),journeyTrain:p=>rideAlong.rideTrain(p)||journeyMap.journeyTrain(p),   // 타고 가는 열차는 늘 보이고 둘레가 퍼진다(ui/ride_along)
+get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return (me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get riding(){return riding}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidthPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected,getLook:()=>modeCtl.settings().map.exitLook});

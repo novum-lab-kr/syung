@@ -74,7 +74,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     busRouteFocus=busSelection;if(!busSelection){setSubwayOff(false);live.busLayer?.setJourney(plan.legs)}   // bus: 길찾기 경로는 지하철을 다시 보인다   // bus: keep the stop sheet's selection intact
     const feats:Feature[]=[],pts:Feature[]=[];
     plan.legs.forEach((l,i)=>{
-      if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk'},geometry:{type:'LineString',coordinates:l.path!}});   // 걷기는 서버가 길을 준다
+      if(l.type==='walk')feats.push({type:'Feature',properties:{kind:'walk',leg:i},geometry:{type:'LineString',coordinates:l.path!}});   // 걷기는 서버가 길을 준다
       else if(l.type==='bus'){}   // bus: road-matched line and boarding markers share busLayer's journey styles
       else{const c=rideCoords(l.line,l.stations);feats.push({type:'Feature',properties:{kind:'ride',color:colors[l.line]||'#888'},geometry:{type:'LineString',coordinates:c}});
         // boarding and alighting where the ride is drawn from (the platform on the track), not the
@@ -94,6 +94,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     if(first.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'start'},geometry:{type:'Point',coordinates:first.path[0]!}});   // bus: a route number has stops, not journey origin/destination pins
     if(last.path&&!busSelection)pts.push({type:'Feature',properties:{kind:'end'},geometry:{type:'Point',coordinates:last.path[last.path.length-1]!}});   // bus
     const data:FeatureCollection={type:'FeatureCollection',features:[...feats,...pts]};
+    routeData=data;
     if(!map.getSource('journey')){
       // veil: everything under the route (base map, other lines, station names) fades back
       map.addSource('journey-veil',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]]]}} as Feature});
@@ -105,6 +106,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
       map.addLayer({id:'journey-casing',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyCasingPaint()});   // bus: shared casing
       map.addLayer({id:'journey-ride',type:'line',source:'journey',filter:['==',['get','kind'],'ride'],layout:{'line-cap':'round','line-join':'round'},paint:journeyRidePaint()});   // bus: shared stroke
       map.addLayer({id:'journey-walk',type:'line',source:'journey',filter:['==',['get','kind'],'walk'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});
+      map.addLayer({id:'journey-walked',type:'line',source:'journey',filter:['==',['get','kind'],'walked'],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':walkColor(),'line-opacity':.25,'line-width':['interpolate',['linear'],['zoom'],10,3,16,6],'line-dasharray':[0.1,1.8]}});   // 타고 가기: 지나온 걷기 길은 흐리게(markWalked)
       map.addLayer({id:'journey-inside',type:'line',source:'journey',filter:['==',['get','kind'],'inside'],layout:{'line-cap':'round'},paint:{'line-color':walkColor(),'line-opacity':.45,'line-width':['interpolate',['linear'],['zoom'],10,2,16,4],'line-dasharray':[0.1,2.2]}});
       map.addLayer({id:'journey-stop',type:'circle',source:'journey',filter:['==',['get','kind'],'stop'],paint:journeyStopPaint()});   // bus: shared stop marker
       map.addLayer({id:'journey-ends',type:'circle',source:'journey',filter:['in',['get','kind'],['literal',['start','end']]],paint:{'circle-radius':8,'circle-color':endFill(),'circle-stroke-color':endRim(),'circle-stroke-width':3}});
@@ -115,6 +117,19 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     routeBounds=all.length?all.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(all[0],all[0])):null;
     if(refit)fitRoute(sheetPad()+30);
   }
+  // 타고 가기(ui/ride_along): 지나온 걷기 길을 흐리게. leg 앞의 걷기는 다 지나왔고, cut 이 있으면 leg 의 걷기를 그 자리에서 나눈다 · leg<0 이면 처음대로
+  let routeData:FeatureCollection|null=null;
+  function markWalked(leg:number,cut:{done:Position[];rest:Position[]}|null):void{
+    const source=map.getSource<GeoJSONSource>('journey');
+    if(!routeData||!source)return;
+    const features=routeData.features.flatMap((feature):Feature[]=>{
+      const at=feature.properties?.kind==='walk'?Number(feature.properties.leg):NaN;
+      if(leg<0||Number.isNaN(at)||at>leg)return [feature];
+      if(at<leg||!cut)return [{...feature,properties:{...feature.properties,kind:'walked'}}];
+      return [{type:'Feature',properties:{kind:'walked',leg:at},geometry:{type:'LineString',coordinates:cut.done}},{type:'Feature',properties:{kind:'walk',leg:at},geometry:{type:'LineString',coordinates:cut.rest}}];
+    });
+    source.setData({type:'FeatureCollection',features});
+  }
   let displayedRoute:DisplayedRoute|null=null;   // 모드 전환 때 표시 중인 여정만 다시 그려요.
   let routeBounds:LngLatBounds|null=null,busRouteFocus=false;   // bus: route-number focus is released with its detail sheet
   // MapLibre 는 fitBounds 의 padding 에 지도에 남은 padding(따라가기 카메라가 jumpTo 로 둔 시트 높이)을 더한다 — 그대로 주면 시트 높이가
@@ -122,7 +137,7 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   // right: 오른쪽 여백(데스크톱 서랍 옆 승차권 경로 고르기 — 서랍 너비만큼, 기본 40)
   function fitRoute(bottom:number,right=40):void{if(!routeBounds)return;const p:Partial<PaddingOptions>=map.getPadding?.()||{},less=(v:number,k:keyof PaddingOptions)=>Math.max(0,v-(p[k]||0));
     map.fitBounds(routeBounds,{padding:{top:less(90,'top'),bottom:less(bottom,'bottom'),left:less(40,'left'),right:less(right,'right')},maxZoom:16,pitch:0,duration:800})}
-  function clearRoute(){displayedRoute=null;live.busLayer?.clearSelection({journey:true});routeBounds=null;if(map.getSource('journey'))map.getSource<GeoJSONSource>('journey')!.setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
+  function clearRoute(){displayedRoute=null;routeData=null;live.busLayer?.clearSelection({journey:true});routeBounds=null;if(map.getSource('journey'))map.getSource<GeoJSONSource>('journey')!.setData({type:'FeatureCollection',features:[]});focusRoute(false)}   // bus: clear journey selection with its route
   const veilColor=()=>document.documentElement.dataset.theme==='dark'?'#0b0c0e':'#fbfaf4';
   const walkColor=()=>document.documentElement.dataset.theme==='dark'?'#f1efe6':'#141414';
   // 경로 양끝 점: 출발은 노란 속 · 도착은 노란 테두리(다크는 덜 쨍한 노랑)
@@ -159,10 +174,10 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
   // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)
   function focusRoute(on:boolean):void{
-    if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-ends','circle-color',endFill());map.setPaintProperty('journey-ends','circle-stroke-color',endRim());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
+    if(map.getLayer('journey-veil')){map.setLayoutProperty('journey-veil','visibility',on?'visible':'none');map.setPaintProperty('journey-veil','fill-color',veilColor());map.setPaintProperty('journey-ends','circle-color',endFill());map.setPaintProperty('journey-ends','circle-stroke-color',endRim());map.setPaintProperty('journey-walk','line-color',walkColor());if(map.getLayer('journey-walked'))map.setPaintProperty('journey-walked','line-color',walkColor());if(map.getLayer('journey-inside'))map.setPaintProperty('journey-inside','line-color',walkColor())}
     routeFocus=on;setRouteOpacity();
     live.stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
     if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
   }
-  return {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,journeyRides,get displayedRoute(){return displayedRoute},set displayedRoute(v:DisplayedRoute|null){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v:LngLatBounds|null){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v:boolean){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v:boolean){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v:boolean){subwayOff=v}};
+  return {rideCoords,showRoute,fitRoute,clearRoute,markWalked,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,journeyRides,get displayedRoute(){return displayedRoute},set displayedRoute(v:DisplayedRoute|null){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v:LngLatBounds|null){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v:boolean){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v:boolean){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v:boolean){subwayOff=v}};
 }

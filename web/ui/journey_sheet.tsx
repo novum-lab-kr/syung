@@ -16,7 +16,7 @@ function Result({ result, actions }:{ result:JourneyResultView; actions:JourneyA
   if (result.kind === 'failed') return <RouteFailed message={result.message} onRetry={actions.retry} />;
   return <>
     {result.tabs && <Segmented label="경로 종류" class="jkinds" attr="k" items={result.tabs.map(tab => ({ id: tab.kind, name: tab.name, count: tab.count, pressed: tab.pressed }))} onPick={kind => actions.tab(kind)} />}
-    <div class="jplans">{result.cards.map((card, index) => <RouteCard plan={card.plan} index={index} on={card.on} hidden={card.hidden} note={card.note} onPick={pick => actions.card(pick)} onTicket={pick => actions.ticket(pick)} />)}</div>
+    <div class="jplans">{result.cards.map((card, index) => <RouteCard plan={card.plan} index={index} on={card.on} hidden={card.hidden} note={card.note} onPick={pick => actions.card(pick)} onTicket={pick => actions.ticket(pick)} onGo={pick => actions.go(pick)} />)}</div>
     <RouteNote />
   </>;
 }
@@ -46,4 +46,4 @@ export function JourneySheet({ view, actions }:{ view:JourneyView; actions:Journ
 export const drawJourney = (body:HTMLElement, view:JourneyView, actions:JourneyActions):void => render(<JourneySheet view={view} actions={actions} />, body);
 export const clearJourney = (body:HTMLElement):void => render(null, body);
 // 시트를 닫은 뒤 지도 아래 막대의 속(껍데기 .jbar 는 journey-ui 가 만든다)
-export const drawJourneyBar = (host:HTMLElement, bar:JourneyBarView | null, actions:JourneyBarActions):void => render(<JourneyBar bar={bar} onOpen={actions.open} onClear={actions.clear} onFresh={actions.fresh} />, host);
+export const drawJourneyBar = (host:HTMLElement, bar:JourneyBarView | null, actions:JourneyBarActions):void => render(<JourneyBar bar={bar} onOpen={actions.open} onClear={actions.clear} onFresh={actions.fresh} onGo={actions.go} />, host);
