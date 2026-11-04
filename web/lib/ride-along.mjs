@@ -214,8 +214,8 @@ function legOverByTime(legs, index, now, planArrives) {
 var BOARD_FALLBACK_MS = 45e3;
 var BOARD_GIVE_UP_MS = 18e4;
 var pickedLeft = (track, stationId, seen) => (seen || track.seqIds.includes(stationId)) && leftStation(track, stationId);
-function boardNow({ nowMs, zeroSinceMs, trainLeft, trainGone, listLength, listFresh, departsPassed }) {
-	if (trainLeft || trainGone) return true;
+function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
+	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
 	return (!listLength || !listFresh) && departsPassed;
 }

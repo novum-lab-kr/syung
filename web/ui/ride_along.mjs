@@ -241,6 +241,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			const pickedTrack = pickedPlan ? trackOf(pickedPlan) : null;
 			if (pickedTrack?.seqIds.includes(fromId)) ride.pickedSaw = true;
 			const trainLeft = pickedTrack ? pickedLeft(pickedTrack, fromId, ride.pickedSaw) : null;
+			const listFresh = nowMs - ride.arrivalsAt < ARRIVALS_STALE_MS;
+			const pickedDueS = listFresh && ride.due ? list?.find((item) => item.row.trainNo === ride.due.trainNo)?.s ?? null : null;
 			const trainGone = !!ride.due && !!list && ride.due.atMs <= ride.arrivalsAt + ARRIVALS_MS && !list.some((item) => item.row.trainNo === ride.due.trainNo);
 			if (!ride.zeroSince && !trainGone) {
 				const first = list?.find((item) => item.s >= walkS * HURRY_SHARE);
@@ -260,9 +262,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 				nowMs,
 				zeroSinceMs: ride.zeroSince,
 				trainLeft: trainLeft ?? (zeroPlan ? leftStation(trackOf(zeroPlan), fromId) : null),
+				pickedDueS,
 				trainGone,
 				listLength: list?.length ?? 0,
-				listFresh: nowMs - ride.arrivalsAt < ARRIVALS_STALE_MS,
+				listFresh,
 				departsPassed: passedTime(leg.departs, now, 1)
 			})) {
 				advance();
