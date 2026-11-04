@@ -35,6 +35,7 @@ export interface TrainLive {
   kitReady:boolean; RideTrack:typeof RideTrack; CoasterTrain:KitClass<CoasterTrainLike>; TurtleShips:KitClass<ShipsLike>; UnitConvoy:KitClass<UnitsLike>;
   SkyUnits:(new ()=>SkyLike) | null | undefined; unitLength:(kind:string)=>number; myLocation:LngLatLike | null | undefined; trainsEnabled:boolean; subwayOff:boolean;
   settings:TrainSettings; sheetTrain:string | null; sunTrainShadow:[number, number]; following:string | null; easing:boolean; rider:RiderState;
+  rideFollow:boolean;   // 타고 가기가 탄 열차를 따라가는 중(시트 따라가기처럼 카메라 · 지도 · 열차를 같이 움직인다)
   riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean; journeyTrain:(plan:TrainPlan)=>boolean;
 }
 type TrainPlanB = TrainPlan & { blend?:unknown };
@@ -486,7 +487,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,coasterBodyPx,bodyWidt
       // FOLLOW_FPS); trains standing at a station: once a second, to see them set off
       // following a moving train: camera, map and trains step together (followSoon), and no extra
       // train-only frames in between — they drew the train ahead of the map it sits on (jitter)
-      if(animating&&(live.following||live.rider.ride)&&!live.easing)followSoon();
+      if(animating&&(live.following||live.rider.ride||live.rideFollow)&&!live.easing)followSoon();
       else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
     }
     onRemove(map:MapLibre,gl:WebGL2RenderingContext){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.sky?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's

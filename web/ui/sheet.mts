@@ -22,6 +22,7 @@ interface SheetLive {
   busLayer?:BusLayerLike|null; routeBounds:unknown; frameMs?:number;
   journey:{ back():boolean; sheetClosed():boolean; openWith(end:string, place:{ name:string; lat:number; lng:number }):void };
   rider:{ ride:unknown }; stopRide(instant:boolean):void;
+  rideFollow:boolean;   // 타고 가기(ui/ride_along.mts)가 탄 열차를 따라가는 중 — 그 카메라 콜백도 animFrame 에 있어 이 루프가 돌려 준다
   appMode:boolean;   // 앱 지도 모드인가(웹 시트를 쓰지 않는다)
   appPad?:number|null;   // 앱 지도 모드: 앱 시트 높이(다리 setPadding) — 있으면 웹 시트 대신 이 값
 }
@@ -171,7 +172,7 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   addEventListener('blur',()=>touching.clear());
   const handsOn=()=>{if(!(touching.size>0||map.isMoving()))return false;
     const m=map.getCenter();cam={lng:m.lng,lat:m.lat};camAt=performance.now();followAt='';return true};   // 놓으면 사람이 둔 자리에서 열차 · 버스로 미끄러져 돌아간다
-  function followLoop(ts:number):void{followRaf=0;if(!(following||live.rider.ride||followBus)||easing)return;
+  function followLoop(ts:number):void{followRaf=0;if(!(following||live.rider.ride||followBus||live.rideFollow)||easing)return;
     if(!live.rider.ride&&ts-followLast<Math.max(1000/FOLLOW_FPS,live.frameMs||0)-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
     followLast=ts;if(live.rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
     if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
@@ -198,8 +199,10 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
     const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
     map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
   });
-  map.on('dragstart',()=>{if(following){following=null;followBtn.hidden=!sheetTrain}
-    if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}});
+  // 시트의 따라가기(열차 · 버스)를 끈다 — 손으로 지도를 끌 때, 타고 가기 카드의 「다시 따라가기」(ui/ride_along.mts)가 탄 열차로 돌아올 때
+  function stopFollow():void{if(following){following=null;followBtn.hidden=!sheetTrain}
+    if(followBus){followBus=null;followBtn.textContent='이 버스 따라가기';followBtn.hidden=live.busLayer?.selection?.kind!=='bus';busFollowChanged()}}
+  map.on('dragstart',stopFollow);
 
-  return {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,get sheetTrain(){return sheetTrain},set sheetTrain(v:string|null){sheetTrain=v},get following(){return following},set following(v:string|null){following=v},get easing(){return easing},set easing(v:boolean){easing=v},get followBus(){return followBus},set followBus(v:string|null){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v:SheetStation|null){sheetStation=v},get sheetToken(){return sheetToken}};
+  return {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,tuck,trainLngLat,follow,followBusStart,followSoon,stopFollow,get sheetTrain(){return sheetTrain},set sheetTrain(v:string|null){sheetTrain=v},get following(){return following},set following(v:string|null){following=v},get easing(){return easing},set easing(v:boolean){easing=v},get followBus(){return followBus},set followBus(v:string|null){followBus=v},get sheetStation(){return sheetStation},set sheetStation(v:SheetStation|null){sheetStation=v},get sheetToken(){return sheetToken}};
 }
