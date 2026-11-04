@@ -193,6 +193,9 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       const pickedTrack = pickedPlan ? trackOf(pickedPlan) : null;
       if (pickedTrack?.seqIds.includes(fromId)) ride.pickedSaw = true;
       const trainLeft = pickedTrack ? pickedLeft(pickedTrack, fromId, ride.pickedSaw) : null;
+      // 고른 열차가 곧 올 열차 줄에서 몇 초 남았나(줄이 끊겼거나 빠졌으면 모름)
+      const listFresh = nowMs - ride.arrivalsAt < ARRIVALS_STALE_MS;
+      const pickedDueS = listFresh && ride.due ? list?.find(item => item.row.trainNo === ride!.due!.trainNo)?.s ?? null : null;
       const trainGone = !!ride.due && !!list && ride.due.atMs <= ride.arrivalsAt + ARRIVALS_MS && !list.some(item => item.row.trainNo === ride!.due!.trainNo);
       // 걸어서 탈 수 있는 첫 열차가 탈 열차(짐작) — 그 열차가 역에 닿으면(곧 도착 0초) 그 열차로 굳힌다
       if (!ride.zeroSince && !trainGone) {
@@ -202,8 +205,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       }
       const zeroPlan = ride.zeroSince ? planOf(ride.train) : null;
       // 곧 올 열차를 모르면(못 받음 · 방향 모름 · 비었음 · 갱신이 끊김) 탈 시각 1분 뒤
-      if (boardNow({nowMs, zeroSinceMs: ride.zeroSince, trainLeft: trainLeft ?? (zeroPlan ? leftStation(trackOf(zeroPlan), fromId) : null), trainGone,
-        listLength: list?.length ?? 0, listFresh: nowMs - ride.arrivalsAt < ARRIVALS_STALE_MS, departsPassed: passedTime(leg.departs, now, 1)})) { advance(); return; }
+      if (boardNow({nowMs, zeroSinceMs: ride.zeroSince, trainLeft: trainLeft ?? (zeroPlan ? leftStation(trackOf(zeroPlan), fromId) : null), pickedDueS, trainGone,
+        listLength: list?.length ?? 0, listFresh, departsPassed: passedTime(leg.departs, now, 1)})) { advance(); return; }
       draw();
       return;
     }

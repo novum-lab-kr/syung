@@ -214,16 +214,20 @@ export function legOverByTime(legs:readonly RideLeg[], index:number, now:Date, p
 // ---- 지하철 진행 판단(ui/ride_along 의 tick 이 부른다 — 시험으로 멈춤 · 잘못 고름을 막는다)
 export const BOARD_FALLBACK_MS = 45000;   // 탈 열차를 지도에서 못 찾을 때 도착 0초부터 이만큼 지나면 탄 것으로
 export const BOARD_GIVE_UP_MS = 180000;   // 찾았어도 이만큼이면(열차 예측이 멈춘 경우)
+export const BOARD_EARLY_S = 60;   // 곧 올 열차 줄에서 고른 열차가 이보다 많이 남았으면 지도 예측이 떠났다고 해도 타지 않았다
 
 // 기다리기 → 탔다. 곧 도착 0초는 피드가 건너뛸 수 있고 목록 갱신이 끊길 수도 있어 여러 근거 중 하나면 탄 것으로 짐작한다
 //  zeroSinceMs: 곧 도착 0초를 본 때(못 봤으면 0) · trainLeft: 짐작한 열차가 이 역을 떠났나(지도에 없으면 null)
+//  pickedDueS: 고른 열차가 최근 받은 곧 올 열차 줄에서 몇 초 남았나(줄이 끊김 · 비었음 · 줄에서 빠짐이면 null)
 //  trainGone: 짐작한 열차가 올 때가 지나 새 목록에서 사라졌나 · listFresh: 곧 올 열차 목록을 최근에 받았나 · departsPassed: 탈 시각 1분 지남
 // 고른 열차가 탈 역을 떠났나: 차례(앞 9역)에서 그 역을 본 적이 있어야 한다(아직 먼 열차는 역이 차례에 없어 leftStation 이 떠남으로 본다)
 export const pickedLeft = (track:PlanTrack, stationId:number, seen:boolean):boolean => (seen || track.seqIds.includes(stationId)) && leftStation(track, stationId);
 
-export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
-export function boardNow({nowMs, zeroSinceMs, trainLeft, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {
-  if (trainLeft || trainGone) return true;
+export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
+export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {
+  // 지도 예측은 앞서 나갈 수 있다 — 곧 올 열차 줄이 아직 1분 넘게 남았다고 하면 떠난 것으로 보지 않는다
+  const early = pickedDueS !== null && pickedDueS > BOARD_EARLY_S;
+  if ((trainLeft && !early) || trainGone) return true;
   if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= BOARD_GIVE_UP_MS : nowMs - zeroSinceMs >= BOARD_FALLBACK_MS)) return true;
   return (!listLength || !listFresh) && departsPassed;
 }

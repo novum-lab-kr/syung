@@ -107,12 +107,23 @@ test('카드 캐릭터: 지도 모드를 따르고 스타 세 모드는 새싹',
 });
 
 // ---- 지하철 진행 멈춤 · 잘못 고름(Codex 리뷰 2026-11-04 재현)
-const BASE = {nowMs: 1_000_000, zeroSinceMs: 0, trainLeft: null, trainGone: false, listLength: 2, listFresh: true, departsPassed: true};
+const BASE = {nowMs: 1_000_000, zeroSinceMs: 0, trainLeft: null, pickedDueS: null, trainGone: false, listLength: 2, listFresh: true, departsPassed: true};
 test('기다리기: 곧 도착 0초를 못 봐도 짐작한 열차가 떠났거나 목록에서 제때 사라지면 탔다', () => {
   // 피드가 0초를 건너뜀: 다음 열차들만 남았고 지도의 짐작 열차는 이 역을 떠났다 — 출발 10분 뒤에도 기다리기면 안 된다
   assert.equal(boardNow({...BASE, trainLeft: true}), true);
   // 지도에 그 열차가 없어도, 곧 올 목록에서 올 때가 지나 사라졌으면
   assert.equal(boardNow({...BASE, trainGone: true}), true);
+});
+test('기다리기: 곧 올 열차 줄에서 고른 열차가 1분 넘게 남았으면 지도 예측이 역을 지났다고 해도 타지 않았다', () => {
+  // 지도 예측(pickedLeft)이 먼저 앞서 나가도, 줄이 아직 90초 남았다고 하면 기다린다
+  assert.equal(boardNow({...BASE, trainLeft: true, pickedDueS: 90}), false);
+  assert.equal(boardNow({...BASE, trainLeft: true, pickedDueS: 61}), false);
+  // 1분 안이면 예측을 믿는다
+  assert.equal(boardNow({...BASE, trainLeft: true, pickedDueS: 60}), true);
+  assert.equal(boardNow({...BASE, trainLeft: true, pickedDueS: 0}), true);
+  // 줄이 끊겼거나(모름) 그 열차가 줄에서 빠졌으면 지금처럼
+  assert.equal(boardNow({...BASE, trainLeft: true, pickedDueS: null}), true);
+  assert.equal(boardNow({...BASE, trainGone: true, pickedDueS: null}), true);
 });
 test('기다리기: 고른 열차가 떠났나 — 아직 먼 열차(탈 역이 차례 밖)는 떠난 것이 아니다', () => {
   const far = {seqIds: [101, 102, 103], cum: [0, 1000, 2000], dist: 500};
