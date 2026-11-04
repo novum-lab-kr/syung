@@ -99,6 +99,42 @@ for _n in STATIONS.values():   # riders see the current name
 BY_NAME = {(line, _key(n["name"])): n["id"] for n in _metro["nodes"] for line in n["lines"]}
 
 
+def through_rides(lines: dict[str, list[Row]], adj: dict[str, dict[int, set[int]]]) -> set[tuple[str, int, int, int]]:
+    """같은 열차로 a → b → c 를 계속 갈 수 있는 (노선, a, b, c): 운행 계통 하나에서 a 가 b 보다 앞이고 c 가 뒤(또는 반대 방향).
+    방향 이름(dirs)이 없는 급행 · 지선 이음(1호선 서울↔금천구청 · 9호선 노량진↔동작 …)에서 지나쳤다 되돌아오거나
+    지선에서 꺾는 길(독산-금천구청-서울 · 광명-금천구청-안양)을 막는다 — 2026-11-04. 순환 계통(2호선 본선 — 처음 = 끝이고 나머지는 한 번씩)은
+    한 바퀴 더 이어 본다(이음매 시청을 지나 계속). 6호선처럼 갔다 오는 계통(처음 = 끝이지만 역이 두 번 나옴)은 잇지 않는다."""
+    out: set[tuple[str, int, int, int]] = set()
+    for line, variants in lines.items():
+        near = adj.get(line, {})
+        for variant in variants:
+            stops: list[int] = variant["stops"]
+            circle = len(stops) > 2 and stops[0] == stops[-1] and len(set(stops)) == len(stops) - 1
+            seq = stops + stops[1:] if circle else stops
+            first: dict[int, int] = {}
+            last: dict[int, int] = {}
+            for at, stop in enumerate(seq):
+                first.setdefault(stop, at)
+                last[stop] = at
+            for at, mid in enumerate(seq):
+                before = [x for x in near.get(mid, ()) if first.get(x, at) < at]
+                after = [x for x in near.get(mid, ()) if last.get(x, at) > at]
+                for prev in before:
+                    for nxt in after:
+                        if prev != nxt:
+                            out.add((line, prev, mid, nxt))
+                            out.add((line, nxt, mid, prev))
+    return out
+
+
+THROUGH = through_rides(_metro["lines"], ADJ)
+
+
+def _rides_on(line: str, a: int, b: int, c: int) -> bool:
+    """a → b 로 온 열차가 그대로 c 까지 가나(THROUGH)."""
+    return (line, a, b, c) in THROUGH
+
+
 # ---- buses (data/bus.json, pipeline/build_bus_data.py; optional) ---------------------------
 
 BUS = journey_data.read_optional(journey_data.BUS)
@@ -461,7 +497,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
             label = _label(line, a, b)
             for c_ in (ADJ[line][b] if "subway" in modes and b != end else ()):
                 hop = _hop(line, b, c_)
-                if c_ != a and hop and not (label and _label(line, b, c_) not in (label, None)):
+                if c_ != a and hop and not (label and _label(line, b, c_) not in (label, None)) and _rides_on(line, a, b, c_):
                     push((line, b, c_, end), T0 + hop, T0 + hop, ("board", None, {"departs": T0, "train": None, "ready": T0, "stay": True}), 0)
             continue
         if node[0] == "bstay":   # 경유지 정류장에서 내리지 않고 같은 버스로 계속(plan_via — ("bstay", 패턴, 운행 시작 epoch, 배율, 내린 자리)): 시간표를 다시 찾지 않는다
@@ -560,10 +596,10 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
         else:
             line, a, b, end = s
             push(("at", b), cost, t, ("alight", s, {}), changes)
-            # ride on, same direction; a live train goes no further than its destination
+            # ride on, same direction and along a real service (THROUGH); a live train goes no further than its destination
             label = _label(line, a, b)
             for c_ in (ADJ[line][b] if b != end else ()):
-                if c_ == a or (label and _label(line, b, c_) not in (label, None)):
+                if c_ == a or (label and _label(line, b, c_) not in (label, None)) or not _rides_on(line, a, b, c_):
                     continue
                 hop = _hop(line, b, c_)
                 if hop:
