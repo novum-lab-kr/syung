@@ -231,9 +231,11 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 	const toId = leg.stations[leg.stations.length - 1], onLeg = new Set(leg.stations);
 	if (trainSeq && toId !== void 0) {
 		const start = trainSeq.findIndex((id) => onLeg.has(id) && id !== toId);
+		let offRun = 0;
 		if (start >= 0) for (const id of trainSeq.slice(start)) {
 			if (id === toId) break;
-			if (!onLeg.has(id)) return false;
+			if (onLeg.has(id)) offRun = 0;
+			else if (++offRun > 4) return false;
 		}
 	}
 	if (!row.destination) return true;
