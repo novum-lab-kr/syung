@@ -222,7 +222,14 @@ var BOARD_GIVE_UP_MS = 18e4;
 var pickedLeft = (track, stationId, seen) => (seen || track.seqIds.includes(stationId)) && leftStation(track, stationId);
 var pickedArrived = ({ zeroSinceMs, pickedDueS, track, stationId }) => !!zeroSinceMs || pickedDueS !== null && pickedDueS <= 0 || !!track && reached(track, stationId) && !leftStation(track, stationId);
 var LOST_FIX_MS = 3e4;
-var lostUnderground = ({ nowMs, lastFixMs, stationM }) => !!lastFixMs && stationM !== null && stationM <= 150 && nowMs - lastFixMs > 3e4;
+var lostUnderground = ({ nowMs, lastFixMs, stationM, exitM = null }) => !!lastFixMs && nowMs - lastFixMs > 3e4 && (stationM !== null && stationM <= 150 || atExit(exitM));
+var atExit = (exitM) => exitM !== null && exitM <= 50;
+var nearestM = (spot, points) => points.reduce((best, point) => {
+	const away = metres(spot, point);
+	return best === null || away < best ? away : best;
+}, null);
+var nearBoarding = ({ goalM, stationM, exitM }) => goalM <= 100 || stationM !== null && stationM <= 100 || atExit(exitM);
+var otherExit = ({ goalM, exitM }) => atExit(exitM) && goalM > 50;
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
@@ -254,4 +261,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, offFixes, onPath, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, otherExit, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };

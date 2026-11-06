@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, boardNow, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, offFixes, onPath, pickedArrived, pickedLeft, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, boardNow, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, otherExit, pickedArrived, pickedLeft, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var TICK_MS = 1e3;
 var ARRIVALS_MS = 2e4;
@@ -8,7 +8,7 @@ var FIX_FRESH_MS = 3e4;
 var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow }) {
+function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
@@ -225,6 +225,17 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		});
 		draw();
 	}
+	function boardingAway(spot, next) {
+		const stationId = next?.type === "ride" ? next.stations[0] : void 0, station = stationId === void 0 ? null : byId.get(stationId);
+		if (stationId === void 0) return {
+			stationM: null,
+			exitM: null
+		};
+		return {
+			stationM: station ? metres(spot, [station.lon, station.lat]) : null,
+			exitM: nearestM(spot, exitsOf(stationId))
+		};
+	}
 	function tick() {
 		yieldToOther();
 		const current = step();
@@ -233,14 +244,21 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (current.kind === "walk") {
 			const next = legAt(current.leg + 1), path = leg.type === "walk" ? leg.path ?? [] : [];
 			if (!spot || path.length < 2) {
-				const boarding = next?.type === "ride" ? byId.get(next.stations[0]) : null;
-				if (fix && path.length >= 2 && lostUnderground({
-					nowMs,
-					lastFixMs: fix.t,
-					stationM: boarding ? metres(fix.spot, [boarding.lon, boarding.lat]) : null
-				})) {
-					advance(fix.t);
-					return;
+				if (fix && path.length >= 2) {
+					const goalM = metres(fix.spot, path[path.length - 1]), { stationM, exitM } = boardingAway(fix.spot, next);
+					if (lostUnderground({
+						nowMs,
+						lastFixMs: fix.t,
+						stationM,
+						exitM
+					})) {
+						if (otherExit({
+							goalM,
+							exitM
+						})) ride.leftM = 0;
+						advance(fix.t);
+						return;
+					}
 				}
 				if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance();
 				else draw();
@@ -254,10 +272,18 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			});
 			if (ride.track.length > 90) ride.track.shift();
 			walked(current.leg, splitPath(path, where.at));
-			const goal = path[path.length - 1], station = next?.type === "ride" ? byId.get(next.stations[0]) : null;
-			if (metres(spot, goal) <= 100 || station && metres(spot, [station.lon, station.lat]) <= 100) {
+			const goalM = metres(spot, path[path.length - 1]), { stationM, exitM } = boardingAway(spot, next);
+			if (nearBoarding({
+				goalM,
+				stationM,
+				exitM
+			})) {
 				ride.nearSince ||= nowMs;
 				if (nowMs - ride.nearSince >= 5e3) {
+					if (otherExit({
+						goalM,
+						exitM
+					})) ride.leftM = 0;
 					advance();
 					return;
 				}

@@ -1599,7 +1599,8 @@ var rideAlong = createRideAlong({
 	}),
 	ended: () => journey.rideEnded(),
 	detour: () => journey.fromHere(),
-	reroute: (spot) => journey.reroute(spot)
+	reroute: (spot) => journey.reroute(spot),
+	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat])
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
