@@ -155,21 +155,25 @@ var walkSub = (legs, index, leftM, leftS) => `${stepNo(legs, index)} · ${roundM
 function waitTitle(leg) {
 	return leg.type === "bus" ? `${leg.route} ${leg.toward} 방면 타는 곳으로` : `${leg.line} ${leg.to} 방면 타는 곳으로`;
 }
-function waitText(legs, index, walkS, arrivalsS, turn) {
+function waitText(legs, index, walkS, arrivalsS, turn, arrived = false) {
 	const previous = legs[index - 1], parts = [];
 	if (previous && previous.type !== "walk") parts.push(stepNo(legs, index - 1));
-	parts.push(`걸어서 ${minutes(walkS)}분`);
+	parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : "승강장 도착");
 	if (!arrivalsS?.length) return {
 		say: null,
 		sub: parts.join(" · ")
 	};
 	const { missed, next } = catchable(arrivalsS, walkS), [first, second] = next;
-	if (first !== void 0) parts.push(missed ? `다음 열차 ${minutes(first)}분 뒤` : `열차 ${minutes(first)}분 뒤`);
-	if (second !== void 0) parts.push(missed ? `그다음 ${minutes(second)}분 뒤` : `다음 ${minutes(second)}분 뒤`);
+	if (first !== void 0) parts.push(firstTrainText(first, missed, arrived));
+	if (second !== void 0) parts.push(missed && !arrived ? `그다음 ${minutes(second)}분 뒤` : `다음 ${minutes(second)}분 뒤`);
 	return {
 		say: talkLine(missed || first === void 0 ? "miss" : talkKind(first, walkS), turn),
 		sub: parts.join(" · ")
 	};
+}
+function firstTrainText(firstS, missed, arrived) {
+	if (arrived) return "열차 도착 · 지금 타세요";
+	return missed ? `다음 열차 ${minutes(firstS)}분 뒤` : `열차 ${minutes(firstS)}분 뒤`;
 }
 var rideTitle = (leg) => `${leg.to}에서 내려요`;
 function rideSub(legs, index, stopsLeft) {
@@ -216,6 +220,9 @@ function legOverByTime(legs, index, now, planArrives) {
 var BOARD_FALLBACK_MS = 45e3;
 var BOARD_GIVE_UP_MS = 18e4;
 var pickedLeft = (track, stationId, seen) => (seen || track.seqIds.includes(stationId)) && leftStation(track, stationId);
+var pickedArrived = ({ zeroSinceMs, pickedDueS, track, stationId }) => !!zeroSinceMs || pickedDueS !== null && pickedDueS <= 0 || !!track && reached(track, stationId) && !leftStation(track, stationId);
+var LOST_FIX_MS = 3e4;
+var lostUnderground = ({ nowMs, lastFixMs, stationM }) => !!lastFixMs && stationM !== null && stationM <= 150 && nowMs - lastFixMs > 3e4;
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
@@ -247,4 +254,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, offFixes, onPath, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, offFixes, onPath, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };
