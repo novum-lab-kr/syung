@@ -50,6 +50,11 @@ MAX_BUS_STOPS = 24
 STATION_BUS_M = 250           # bus stops this close to a station exit are a transfer
 STATION_ACCESS = 90           # extra seconds to get between street and platform
 WALK_DETOUR, WALK_SPEED = 1.3, 1.2   # straight line × detour at m/s, for short transfer walks
+# 같은 역 출구들의 걷는 시간이 가장 빠른 것과 이 안이면 비긴 것 — 그 가운데 큰길 건너편 출구는 뺀다(2026-11-06 사용자 결정 A,
+# 시청 서쪽 → 아현이 길 건너 9번으로: 걷기 길 자료가 큰길을 중앙선 한 줄로만 알아 건너는 데 드는 시간이 없다)
+EXIT_TIE_S = 20
+EXIT_SIDE_NEAR_M = 500        # 출발점(도착점)이 출구에서 이보다 멀면 쪽을 따지지 않는다(길이 휘면 늘린 선의 쪽이 틀린다)
+EXIT_SIDE_MIN_M = 3           # 큰길 선에서 이보다 가까우면 어느 쪽인지 모른다
 MAX_TRIP = 4 * 3600
 ASTAR_SPEED = 35.0            # m/s
 MAX_PLANS = 12                # routes shown(2026-10-29 사용자 결정 — #87 의 5개·일찍 멈추기를 되돌림). 태그 붙은 길은 늘 남긴다
@@ -72,6 +77,10 @@ _metro = journey_data.read(journey_data.METRO)
 _data = journey_data.read(journey_data.JOURNEY)
 _timing = journey_data.read(journey_data.TIMING)
 _exits = journey_data.read(journey_data.EXITS)
+# 출구 (lat, lng) → 옆 큰길을 늘린 선의 두 점 ((lat, lng), (lat, lng)) — pipeline/build_exit_roads.py, 없으면 쪽을 안 따진다
+EXIT_ROAD: dict[tuple[float, float], tuple[tuple[float, float], tuple[float, float]]] = {
+    (row[1], row[0]): ((row[3], row[2]), (row[5], row[4]))
+    for rows in cast("dict[str, list[list[float]]]", journey_data.read_optional(journey_data.EXIT_ROADS, {})).values() for row in rows}
 STATIONS = {n["id"]: n for n in _metro["nodes"]}
 ADJ: dict[str, dict[int, set[int]]] = defaultdict(lambda: defaultdict(set))
 for key in _data["hops"]:
@@ -465,11 +474,43 @@ def _walk_table(origin: tuple[float, float], nodes: list[Node], reverse: bool = 
         # no router: straight line × 1.3 at 1.2 m/s
         dist = [_meters(origin, p[:2]) * WALK_DETOUR for _, p in pts]
         dur = cast("list[float | None]", [m / WALK_SPEED for m in dist])   # OSRM 표는 못 가는 칸이 null
-    best: dict[Node, Walk] = {}
+    found: dict[Node, list[tuple[float, Walk]]] = defaultdict(list)
     for (n, p), s, m in zip(pts, dur, dist):
-        if s is not None and (n not in best or s < best[n][0]):
-            best[n] = (round(s), round(m or 0), p[2], p[0], p[1])
-    return best
+        if s is not None:
+            found[n].append((s, (round(s), round(m or 0), p[2], p[0], p[1])))
+    return {n: _pick_exit(origin, ways) for n, ways in found.items()}
+
+
+def _road_side(road: tuple[tuple[float, float], tuple[float, float]], p: tuple[float, float]) -> int:
+    """p 가 큰길 선(두 점을 늘린 직선)의 왼쪽이면 1, 오른쪽이면 -1, 선에서 EXIT_SIDE_MIN_M 안이면 0."""
+    (alat, alng), (blat, blng) = road
+    k = math.cos(math.radians(alat))
+    dx, dy = (blng - alng) * k, blat - alat
+    px, py = (p[1] - alng) * k, p[0] - alat
+    span = math.hypot(dx, dy)
+    if span == 0:
+        return 0
+    cross = dx * py - dy * px
+    if abs(cross) / span * 111320 < EXIT_SIDE_MIN_M:
+        return 0
+    return 1 if cross > 0 else -1
+
+
+def _across(place: tuple[float, float], exit_pt: tuple[float, float]) -> bool:
+    """출구가 place 에서 큰길 건너편인가(옆 큰길을 모르거나 멀면 False)."""
+    road = EXIT_ROAD.get(exit_pt)
+    if road is None or _meters(place, exit_pt) > EXIT_SIDE_NEAR_M:
+        return False
+    here, there = _road_side(road, place), _road_side(road, exit_pt)
+    return here != 0 and there != 0 and here != there
+
+
+def _pick_exit(place: tuple[float, float], ways: list[tuple[float, Walk]]) -> Walk:
+    """한 역(정류장)으로 가는 걷기 가운데 하나: 가장 빠른 것. 다만 그와 EXIT_TIE_S 안으로 비기는 것 가운데
+    place 에서 큰길 건너편인 출구는 빼고 고른다(다 건너편이면 가장 빠른 것). ways 는 (OSRM 초, 걷기)."""
+    fastest = min(ways, key=lambda sw: sw[0])
+    near = [sw for sw in ways if sw[0] <= fastest[0] + EXIT_TIE_S and not _across(place, (sw[1][3], sw[1][4]))]
+    return min(near, key=lambda sw: sw[0])[1] if near else fastest[1]
 
 
 # ---- live trains ---------------------------------------------------------------------------
