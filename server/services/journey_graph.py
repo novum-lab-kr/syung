@@ -1135,6 +1135,28 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     return _finish(plans, when, straight, searches, t_begin, goal)
 
 
+def walk_leg(origin: tuple[float, float], dest: tuple[float, float] | None = None, station: int | None = None) -> Row | None:
+    """걷기 한 구간만(타고 가기에서 길을 벗어났을 때 탈 것은 그대로 두고 걷는 길만 다시 — 2026-11-06 결정 D1). 거리 제한 없음.
+    station: 그 역 출구 가운데 _walk_table · _pick_exit 가 고른 곳까지 — plan 의 첫 걷기와 같은 모양(to · exit · label).
+    dest: 그 좌표까지 — plan 의 '걸어가기' 걷기와 같은 모양(direct). 모르는 역이면 None."""
+    if station is not None:
+        if station not in STATIONS:
+            return None
+        node = ("at", station)
+        walk = _walk_table(origin, [node]).get(node)
+        if walk is None:   # 걸어서 닿는 출구가 없다(OSRM 표가 모두 null)
+            return None
+        sec, metres, ex, lat, lng = walk
+        name = STATIONS[station]["name"]
+        path, _, _ = walk_path(origin, (lat, lng))
+        return {"type": "walk", "seconds": sec, "metres": metres, "exit": ex, "to": name,
+                "label": f"{name}역{f' {ex}번 출구' if ex else ''}까지", "path": path}
+    if dest is None:
+        return None
+    path, sec, metres = walk_path(origin, dest)
+    return {"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "label": "목적지까지 걸어서", "path": path}
+
+
 # ---- 경유지(via): 출발 → 경유지 길 몇 개 × 그 길이 닿은 시각부터 경유지 → 도착 가장 빠른 길(2026-10-29 사용자 결정 A) ----
 VIA_FIRST = 4                 # 이어 붙일 앞 구간 길 수(종류마다 가장 빠른 것 먼저, 나머지는 일찍 닿는 차례)
 VIA_FIRST_SHARE = 0.6         # 앞 구간 모으기가 쓸 탐색 예산 몫(나머지는 뒤 구간 — 둘 합쳐 SEARCH_SECONDS 를 넘지 않는다)

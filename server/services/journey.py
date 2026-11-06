@@ -84,3 +84,8 @@ class JourneyPlanner:
         if via is not None:
             return self._graph().plan_via(origin, via, dest, when, live, self._run_batch, self.config.workers)
         return self._graph().plan(origin, dest, when, live, self._run_batch, self.config.workers)
+
+    def walk(self, origin: tuple[float, float], dest: tuple[float, float] | None = None,
+             station: int | None = None) -> dict[str, Any] | None:
+        """걷기 한 구간만(journey_graph.walk_leg) — 탐색 일꾼 · 실시간 열차를 쓰지 않는다."""
+        return self._graph().walk_leg(origin, dest, station)
