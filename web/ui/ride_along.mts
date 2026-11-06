@@ -6,7 +6,7 @@
 import { serverUrl } from '../lib/server_url.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, boardNow, characterOf, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, pickedLeft, offFixes, rideOver, rideSteps, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, boardNow, characterOf, lostUnderground, pickedArrived, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, pickedLeft, offFixes, rideOver, rideSteps, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -133,10 +133,11 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   }
   // 지금 남은 걷기: 카드가 뜬 뒤로 걸은 만큼 줄어든다(타는 곳에 닿은 뒤 들어오는 열차를 탈 열차로 고를 수 있게)
   const waitWalkS = () => ride ? Math.max(0, ride.waitFrom.s - (Date.now() - ride.waitFrom.at) / 1000) : 0;
-  const startWait = (index:number) => { if (ride) ride.waitFrom = {s: walkFromS(index), at: Date.now()}; };
+  // since: 걷는 시간을 셀 때부터(위치가 끊겨 넘기면 마지막 위치를 받은 때 — 그 뒤 걸은 만큼 이미 줄어 있다)
+  const startWait = (index:number, since = Date.now()) => { if (ride) ride.waitFrom = {s: walkFromS(index), at: since}; };
 
   // ---- 한 걸음 나아가기(구간이 끝났다)
-  function advance() {
+  function advance(waitSince?:number) {
     if (!ride) return;
     const was = step();
     if (was?.kind === 'walk') walked(was.leg + 1, null);
@@ -145,7 +146,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.arrivalsAt = 0;
     const now = step()!;
     if (now.kind === 'walk') { ride.track = []; ride.leftM = (legAt(now.leg) as { metres?:number })?.metres ?? 0; }
-    if (now.kind === 'wait') startWait(now.leg);
+    if (now.kind === 'wait') startWait(now.leg, waitSince);
     if (now.kind === 'wait' && legAt(now.leg)?.type === 'ride') { ride.arrivals = null; ride.train = guessTrain(now.leg); loadArrivals(now.leg); }
     if (now.kind === 'ride') {
       const leg = legAt(now.leg);
@@ -191,7 +192,13 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const leg = legAt(current.leg)!, spot = freshFix(), nowMs = Date.now(), now = new Date();
     if (current.kind === 'walk') {
       const next = legAt(current.leg + 1), path = leg.type === 'walk' ? leg.path ?? [] : [];
-      if (!spot || path.length < 2) { if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance(); else draw(); return; }
+      if (!spot || path.length < 2) {
+        // 지하로 들어가 위치가 끊김: 마지막 위치가 타는 역 150m 안이면 기다리기로(걷는 시간은 그 위치의 남은 길 ride.leftM 으로 · 그 때부터 센다)
+        const boarding = next?.type === 'ride' ? byId.get(next.stations[0]!) : null;
+        if (fix && path.length >= 2 && lostUnderground({nowMs, lastFixMs: fix.t, stationM: boarding ? metres(fix.spot, [boarding.lon, boarding.lat]) : null})) { advance(fix.t); return; }
+        if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance(); else draw();
+        return;
+      }
       const where = onPath(spot, path);
       ride.leftM = Math.max(0, where.total - where.at);
       ride.track.push({t: nowMs, at: where.at}); if (ride.track.length > 90) ride.track.shift();
@@ -265,12 +272,22 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const transit = leg as RideTrainLeg | RideBusLeg;
     if (current.kind === 'wait') {
       const list = transit.type === 'ride' && ride.arrivalsFor === current.leg ? arrivalSecs()?.map(item => item.s) ?? null : null;
-      return {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn)};
+      const arrived = transit.type === 'ride' && !!list && pickedIn(transit);
+      return {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived)};
     }
     let left:number;
     if (transit.type === 'ride') { const plan = planOf(ride.train); left = (plan && stopsLeft(trackOf(plan), transit.stations)) ?? stopsLeftByTime(transit, new Date()); }
     else { const spot = freshFix(), where = spot ? onPath(spot, transit.path) : null; left = where && where.total ? Math.max(1, Math.ceil(transit.stops * (1 - where.at / where.total))) : stopsLeftByTime(transit, new Date()); }
     return {...base, title: rideTitle(transit), sub: rideSub(ride.legs, current.leg, left)};
+  }
+  // 카드의 첫 열차(걸어서 탈 수 있는 첫 열차 = tick 이 고른 열차)가 이 역에 들어왔나. 지도에서 다른 열차로 바로잡았으면(picked ≠ train) 보지 않는다
+  function pickedIn(leg:RideTrainLeg):boolean {
+    const due = ride?.due;
+    if (!ride || !due || ride.picked !== ride.train) return false;
+    const list = arrivalSecs(), walkS = waitWalkS(), first = list?.find(item => item.s >= walkS * HURRY_SHARE);
+    if (first?.row.trainNo !== due.trainNo) return false;
+    const plan = planOf(ride.picked), listFresh = Date.now() - ride.arrivalsAt < ARRIVALS_STALE_MS;
+    return pickedArrived({zeroSinceMs: ride.zeroSince, pickedDueS: listFresh ? first.s : null, track: plan ? trackOf(plan) : null, stationId: leg.stations[0]!});
   }
   const actions:RideCardActionsLike = {
     close: () => { stop(); ended(); },
