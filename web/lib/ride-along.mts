@@ -250,9 +250,23 @@ export const pickedArrived = ({zeroSinceMs, pickedDueS, track, stationId}:Arrive
 //  30초는 ui/ride_along 이 위치를 「지금 위치」로 쓰는 시간(FIX_FRESH_MS)과 같다 — 그 뒤로는 위치가 없는 것처럼 시각으로만 넘겼다
 export const LOST_NEAR_M = 150;
 export const LOST_FIX_MS = 30000;
-export interface LostInput { nowMs:number; lastFixMs:number; stationM:number | null }
-export const lostUnderground = ({nowMs, lastFixMs, stationM}:LostInput):boolean =>
-  !!lastFixMs && stationM !== null && stationM <= LOST_NEAR_M && nowMs - lastFixMs > LOST_FIX_MS;
+//  exitM: 마지막 위치에서 그 역의 가장 가까운 출구까지(m · 출구 자료가 없으면 null) — 50m(EXIT_NEAR_M) 안이어도 넘긴다(어느 출구든 · 2026-11-06 사용자 확정)
+export interface LostInput { nowMs:number; lastFixMs:number; stationM:number | null; exitM?:number | null }
+export const lostUnderground = ({nowMs, lastFixMs, stationM, exitM = null}:LostInput):boolean =>
+  !!lastFixMs && nowMs - lastFixMs > LOST_FIX_MS && ((stationM !== null && stationM <= LOST_NEAR_M) || atExit(exitM));
+
+// 걷기 → 기다리기(그 역의 어느 출구든 — 2026-11-06 사용자 확정): 길찾기가 정한 출구가 아닌 출구로 들어가도 넘기게 탈 역의 모든 출구를 본다
+//  goalM: 걷는 길 끝(정한 출구)까지 · stationM: 역 한가운데까지(다음이 지하철이 아니면 null) · exitM: 가장 가까운 출구까지(출구 자료가 없으면 null)
+export const EXIT_NEAR_M = 50;
+const atExit = (exitM:number | null):boolean => exitM !== null && exitM <= EXIT_NEAR_M;
+export const nearestM = (spot:LngLat, points:readonly LngLat[]):number | null =>
+  points.reduce<number | null>((best, point) => { const away = metres(spot, point); return best === null || away < best ? away : best; }, null);
+export interface NearInput { goalM:number; stationM:number | null; exitM:number | null }
+// 기다리기로 넘길 만큼 가까운가: 길 끝 · 역 한가운데 100m(NEAR_M) 안이거나 아무 출구 50m 안(5초 머묾은 부르는 쪽이 센다)
+export const nearBoarding = ({goalM, stationM, exitM}:NearInput):boolean =>
+  goalM <= NEAR_M || (stationM !== null && stationM <= NEAR_M) || atExit(exitM);
+// 정한 출구가 아닌 출구로 들어갔나(어느 출구 50m 안인데 길 끝은 50m 밖) — 그러면 남은 길을 0 으로 보고 승강장 90초만 센다
+export const otherExit = ({goalM, exitM}:{ goalM:number; exitM:number | null }):boolean => atExit(exitM) && goalM > EXIT_NEAR_M;
 
 export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
 export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {

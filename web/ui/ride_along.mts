@@ -6,7 +6,7 @@
 import { serverUrl } from '../lib/server_url.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, boardNow, characterOf, lostUnderground, pickedArrived, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, pickedLeft, offFixes, rideOver, rideSteps, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, boardNow, characterOf, lostUnderground, nearBoarding, nearestM, otherExit, pickedArrived, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, pickedLeft, offFixes, rideOver, rideSteps, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -32,6 +32,8 @@ export interface RideAlongDeps {
   reroute:(spot:LngLat) => Promise<{ plan:RidePlan; use():void } | null>;
   // 시트의 다른 따라가기(열차 · 버스 — ui/sheet.mts following · followBus): 켜져 있으면 타고 가기 카메라가 비키고, 「다시 따라가기」는 그쪽을 끈다
   otherFollow:{ active():boolean; stop():void };
+  // 역의 모든 출구 좌표(본체가 받은 /exits.json — 역 번호 → 출구들 · 아직 못 받았거나 없으면 [])
+  exitsOf:(stationId:number) => readonly LngLat[];
 }
 export interface RidePlan { arrives:string; legs:readonly unknown[] }
 
@@ -39,7 +41,7 @@ export interface RidePlan { arrives:string; legs:readonly unknown[] }
 const TICK_MS = 1000, ARRIVALS_MS = 20000, ARRIVALS_STALE_MS = ARRIVALS_MS * 3, FIX_FRESH_MS = 30000;
 const FOLLOW_ZOOM = 16, RIDE_ZOOM = 15, FOLLOW_EASE = 0.25;
 
-export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow}:RideAlongDeps) {
+export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf}:RideAlongDeps) {
   const host = document.createElement('div');
   host.className = 'rg-host';
   document.body.append(host);
@@ -184,6 +186,13 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     draw();
   }
 
+  // 다음 구간이 지하철이면 그 탈 역 한가운데 · 가장 가까운 출구까지(m — 모르면 null)
+  function boardingAway(spot:LngLat, next:RideLeg | undefined):{ stationM:number | null; exitM:number | null } {
+    const stationId = next?.type === 'ride' ? next.stations[0] : undefined, station = stationId === undefined ? null : byId.get(stationId);
+    if (stationId === undefined) return {stationM: null, exitM: null};
+    return {stationM: station ? metres(spot, [station.lon, station.lat]) : null, exitM: nearestM(spot, exitsOf(stationId))};
+  }
+
   // 1초마다(그리고 위치를 받을 때마다) 지금 단계가 끝났는지 본다
   function tick() {
     yieldToOther();
@@ -193,9 +202,12 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (current.kind === 'walk') {
       const next = legAt(current.leg + 1), path = leg.type === 'walk' ? leg.path ?? [] : [];
       if (!spot || path.length < 2) {
-        // 지하로 들어가 위치가 끊김: 마지막 위치가 타는 역 150m 안이면 기다리기로(걷는 시간은 그 위치의 남은 길 ride.leftM 으로 · 그 때부터 센다)
-        const boarding = next?.type === 'ride' ? byId.get(next.stations[0]!) : null;
-        if (fix && path.length >= 2 && lostUnderground({nowMs, lastFixMs: fix.t, stationM: boarding ? metres(fix.spot, [boarding.lon, boarding.lat]) : null})) { advance(fix.t); return; }
+        // 지하로 들어가 위치가 끊김: 마지막 위치가 타는 역 150m 안이거나 그 역 아무 출구 50m 안이면 기다리기로
+        // (걷는 시간은 그 위치의 남은 길 ride.leftM 으로 · 다른 출구 쪽이면 남은 길 0 · 그 때부터 센다)
+        if (fix && path.length >= 2) {
+          const goalM = metres(fix.spot, path[path.length - 1]!), {stationM, exitM} = boardingAway(fix.spot, next);
+          if (lostUnderground({nowMs, lastFixMs: fix.t, stationM, exitM})) { if (otherExit({goalM, exitM})) ride.leftM = 0; advance(fix.t); return; }
+        }
         if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance(); else draw();
         return;
       }
@@ -203,10 +215,12 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       ride.leftM = Math.max(0, where.total - where.at);
       ride.track.push({t: nowMs, at: where.at}); if (ride.track.length > 90) ride.track.shift();
       walked(current.leg, splitPath(path, where.at));
-      // 다음 탈 곳(역 · 정류장 · 목적지) 100m 안에 5초 머물면
-      const goal = path[path.length - 1]!, station = next?.type === 'ride' ? byId.get(next.stations[0]!) : null;
-      const near = metres(spot, goal) <= NEAR_M || (station && metres(spot, [station.lon, station.lat]) <= NEAR_M);
-      if (near) { ride.nearSince ||= nowMs; if (nowMs - ride.nearSince >= NEAR_HOLD_MS) { advance(); return; } }
+      // 다음 탈 곳(역 · 정류장 · 목적지) 100m 안이나 탈 역 아무 출구 50m 안에 5초 머물면(다른 출구로 들어갔으면 남은 길 0)
+      const goalM = metres(spot, path[path.length - 1]!), {stationM, exitM} = boardingAway(spot, next);
+      if (nearBoarding({goalM, stationM, exitM})) {
+        ride.nearSince ||= nowMs;
+        if (nowMs - ride.nearSince >= NEAR_HOLD_MS) { if (otherExit({goalM, exitM})) ride.leftM = 0; advance(); return; }
+      }
       else ride.nearSince = 0;
       draw();
       return;

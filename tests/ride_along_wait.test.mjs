@@ -1,7 +1,7 @@
 // 타고 가기 기다리기 카드 — 승강장 도착 · 열차 도착 · 지하에서 위치가 끊겨 기다리기로(계획서 2026-11-06 「기다리기 카드」)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LOST_FIX_MS, LOST_NEAR_M, lostUnderground, pickedArrived, waitText } from '../web/lib/ride-along.mts';
+import { EXIT_NEAR_M, LOST_FIX_MS, LOST_NEAR_M, STATION_ACCESS_S, lostUnderground, nearBoarding, nearestM, otherExit, pickedArrived, waitText, walkLeftS } from '../web/lib/ride-along.mts';
 
 const walkLeg = {type: 'walk', seconds: 300, metres: 240, label: '시청역 5번 출구까지', path: [[126.977, 37.566], [126.979, 37.566]]};
 const rideLeg = (extra = {}) => ({type: 'ride', line: '2호선', from: '시청', to: '강남', departs: '08:10', arrives: '08:40', direction: '외선', stops: 12, wait: 120, stations: [201, 202, 203], ...extra});
@@ -42,4 +42,35 @@ test('지하에서 위치가 끊김: 마지막 위치가 타는 역 150m 안 · 
   assert.equal(lostUnderground({...base, stationM: 151}), false, '150m 밖이면 걷기 그대로');
   assert.equal(lostUnderground({...base, stationM: null}), false, '다음이 지하철이 아니면');
   assert.equal(lostUnderground({...base, lastFixMs: 0}), false, '위치를 받은 적 없음');
+});
+
+// 그 역의 어느 출구든(2026-11-06 사용자 확정): 정한 출구가 아닌 출구 50m 안에 머물거나 그 근처에서 위치가 끊기면 기다리기로
+test('어느 출구든: 가장 가까운 출구 거리 · 출구 50m 안이면 가까움(기존 길 끝 · 역 100m 규칙은 그대로)', () => {
+  assert.equal(EXIT_NEAR_M, 50);
+  const exits = [[126.9800, 37.5660], [126.9760, 37.5650]];
+  assert.equal(nearestM([126.9760, 37.5650], exits), 0);
+  assert.ok(Math.abs(nearestM([126.9760, 37.5654], exits) - 44.5) < 1, '북쪽으로 약 45m');
+  assert.equal(nearestM([126.9760, 37.5650], []), null, '출구 자료 없음');
+  assert.equal(nearBoarding({goalM: 400, stationM: 300, exitM: 40}), true, '다른 출구로 들어감');
+  assert.equal(nearBoarding({goalM: 400, stationM: 300, exitM: 60}), false, '출구에서 60m — 아직 걷기');
+  assert.equal(nearBoarding({goalM: 400, stationM: 300, exitM: null}), false, '출구 자료가 없으면 예전대로');
+  assert.equal(nearBoarding({goalM: 90, stationM: null, exitM: null}), true, '정한 출구(길 끝) 100m 그대로');
+  assert.equal(nearBoarding({goalM: 400, stationM: 95, exitM: null}), true, '역 한가운데 100m 그대로');
+});
+
+test('다른 출구로 들어갔으면 남은 길 0(승강장 90초만) — 정한 출구 쪽이면 남은 길 그대로', () => {
+  assert.equal(otherExit({goalM: 400, exitM: 30}), true);
+  assert.equal(otherExit({goalM: 20, exitM: 20}), false, '정한 출구 근처');
+  assert.equal(otherExit({goalM: 400, exitM: 80}), false, '어느 출구에도 안 닿음');
+  assert.equal(otherExit({goalM: 400, exitM: null}), false);
+  assert.equal(walkLeftS([walkLeg, rideLeg()], 0, 0, 1.2), STATION_ACCESS_S, '남은 길 0 이면 승강장 90초만');
+});
+
+test('다른 출구 근처에서 위치가 끊김: 역 150m 밖이어도 출구 50m 안이면 기다리기로 · 출구에서 먼 곳이면 안 넘김', () => {
+  const base = {nowMs: 100000, lastFixMs: 100000 - 31000, stationM: 320};
+  assert.equal(lostUnderground({...base, exitM: 45}), true, '다른 출구 근처에서 끊김');
+  assert.equal(lostUnderground({...base, exitM: 51}), false, '출구에서 51m');
+  assert.equal(lostUnderground({...base, exitM: null}), false, '출구 자료 없음 · 역 150m 밖');
+  assert.equal(lostUnderground({...base, exitM: 45, lastFixMs: 100000 - 30000}), false, '30초까지는 기다린다');
+  assert.equal(lostUnderground({...base, stationM: 140, exitM: 200}), true, '역 150m 규칙은 그대로');
 });

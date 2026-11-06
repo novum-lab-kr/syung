@@ -641,7 +641,7 @@ const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 // 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
 const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard,otherFollow:{active:()=>!!sheetUI.following||!!sheetUI.followBus,stop:()=>sheetUI.stopFollow()},
-  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere(),reroute:spot=>journey.reroute(spot)});
+  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere(),reroute:spot=>journey.reroute(spot),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat])});
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------
