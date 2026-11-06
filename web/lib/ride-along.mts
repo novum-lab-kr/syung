@@ -5,8 +5,10 @@ export type LngLat = readonly [number, number];
 
 export const NEAR_M = 100;             // 역 · 정류장 이만큼 안이면 기다리기(2026-11-04 확정)
 export const NEAR_HOLD_MS = 5000;      // …에 이만큼 머물면(위치가 튀어 왔다 갔다 하지 않게)
-export const OFF_M = 60;               // 걷는 길에서 이만큼 넘게 벗어나
-export const OFF_HOLD_MS = 10000;      // …이만큼 지나면 「다른 길 찾기」
+export const OFF_M = 60;               // 버스를 기다릴 때 내 위치가 버스 길에서 이만큼 안이면 버스 길 위로 친다
+export const WALK_OFF_M = 20;          // 걷는 길에서 이만큼 넘게 벗어난 위치를(2026-11-06 사용자 확정)
+export const OFF_FIXES = 3;            // …연달아 이만큼 받으면 지금 위치에서 길을 다시 찾는다(위치 한 번 튐 무시 — 아테나 추천 · 2026-11-06 계획서)
+export const REROUTE_GAP_MS = 30000;   // 다시 찾은 뒤(성공 · 실패) 이만큼은 다시 부르지 않는다
 export const HURRY_SHARE = 0.8;        // 평소 걷는 시간의 80% 안에 닿으면 「서두르면 탈 수 있음」, 그보다 빠듯하면 못 탐
 export const TRANSFER_SPARE_S = 60;    // 갈아타기 최소 시간은 방향 구분이 없어 1분 여유를 더한다
 export const BAD_FIX_M = 100;          // 정확도가 이보다 나쁜 위치는 버린다
@@ -58,6 +60,14 @@ export function splitPath(path:readonly LngLat[], at:number):{ done:LngLat[]; re
   }
   return {done: [...path], rest: path.length ? [path[path.length - 1]!] : []};
 }
+
+// ---- 걷는 길에서 벗어남(ui/ride_along 이 위치를 받을 때마다 부른다)
+// 연달아 벗어난 위치 수: 벗어났으면 하나 늘고, 길 위(20m 안)로 돌아오면 0
+export const offFixes = (count:number, offM:number):number => offM > WALK_OFF_M ? count + 1 : 0;
+// 다시 찾을까: 연달아 3번 벗어났고 · 찾는 중이 아니고 · 지난번 찾은 뒤 간격이 지났다(lastMs 0 = 아직 안 찾음)
+export interface RerouteInput { offFixes:number; busy:boolean; nowMs:number; lastMs:number }
+export const shouldReroute = ({offFixes: count, busy, nowMs, lastMs}:RerouteInput):boolean =>
+  count >= OFF_FIXES && !busy && (!lastMs || nowMs - lastMs >= REROUTE_GAP_MS);
 
 // ---- 한마디: 여유 = 열차가 오는 시간 − 걷는 시간(「뛰어요」는 쓰지 않는다 — 계단 안전 · 자료가 늦을 수 있음)
 export type TalkKind = 'miss' | 'hurry' | 'tight' | 'fit' | 'easy' | 'free';

@@ -76,7 +76,7 @@ export interface TicketReturn { back():void }
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
 export interface JourneyDeps {
   openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; closeSheet?:()=>void; map:{ getCenter():{ lat:number; lng:number }; getZoom():number; flyTo(options:{ center:[number, number]; zoom:number; duration:number; padding?:{ top:number; bottom:number; left:number; right:number } }):unknown }; colors:Colors; myLocation:()=>readonly number[] | null | undefined;
-  button:HTMLElement; showRoute?:(plan:Plan)=>void; clearRoute?:()=>void;
+  button:HTMLElement; showRoute?:(plan:Plan, busSelection?:boolean, refit?:boolean)=>void; clearRoute?:()=>void;   // refit false: 지도를 경로에 맞추지 않는다(타고 가기 중 다시 찾음 — 따라가기 카메라 그대로)
   drawJourney:(body:HTMLElement, view:JourneyView, actions:JourneyActions)=>void; clearJourney:(body:HTMLElement)=>void;
   drawJourneyBar:(host:HTMLElement, bar:JourneyBarView | null, actions:JourneyBarActions)=>void;
   stations:readonly SearchableStation[]; showStation:(station:SearchableStation)=>void; setPlaceMarker:(spot:readonly [number, number] | null)=>void; ticketDesk?:()=>Promise<TicketDesk | undefined>;
@@ -588,6 +588,24 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     fillEnd('to', {...to, name: search.to}); useHere(); go();
   }
 
+  // 타고 가기 중 걷는 길에서 벗어남(ui/ride_along): 시트를 열지 않고 지금 위치 → 같은 목적지 · 지금 출발로 다시 찾는다. 못 찾으면 null(지금 길 그대로)
+  // use(): 그 답을 지난 검색으로 — 지도 경로 · 끝낸 뒤 아래 막대 · 다시 연 시트가 새 길(그 사이 다른 길이 지도를 차지했으면 하지 않는다)
+  async function reroute(spot:readonly [number, number]):Promise<{ plan:Plan; use():void } | null> {
+    const search = last, to = search?.picked.to;
+    if (!search || !to) return null;
+    try {
+      const response = await fetch(serverUrl(`./api/route?from=${spot[1]},${spot[0]}&to=${to.lat},${to.lng}`));
+      const answer:RouteAnswer = await response.json(), plan = answer.ok ? answer.plans[0] : undefined;
+      if (!plan || last !== search) return null;
+      return {plan, use() {
+        if (last !== search) return;
+        last = {d: answer, sel: 0, from: HERE_NAME, to: search.to, at: '', when: {k: 'now'}, picked: {from: null, to}};
+        try { showRoute?.(plan, false, false); } catch (error) { console.warn('지도에 경로를 그리지 못했어요', error); }
+        if (inSheet && mounted && hasPlans()) showResults();   // 결과 시트를 열어 둔 채 걷던 중이면 그 목록도 새 길로
+      }};
+    } catch { return null; }
+  }
+
   // another sheet (station, train) took the place of ours
   function sheetReplaced() { if (inSheet) { inSheet = false; if (last) sheetClosed(); } }
 
@@ -595,5 +613,5 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
   function drop() { last = null; bar.hidden = true; }
 
   button.addEventListener('click', start);
-  return {open, openWith, back, sheetClosed, sheetReplaced, drop, ticketReturn, rideEnded, fromHere};
+  return {open, openWith, back, sheetClosed, sheetReplaced, drop, ticketReturn, rideEnded, fromHere, reroute};
 }

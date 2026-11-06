@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, OFF_M, catchable, characterOf, legOverByTime, legPace, measuredPace, metres, onPath, reached, leftStation, rideSteps, rideSub,
   splitPath, stopsLeft, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, doneSub,
+  OFF_FIXES, REROUTE_GAP_MS, WALK_OFF_M, offFixes, shouldReroute,
 } from '../web/lib/ride-along.mts';
 
 // 서울시청 근처 한 줄(동쪽으로 약 200m)
@@ -179,4 +180,20 @@ test('곧 올 열차 고르기: 급행이 건너뛰는 역(구간 밖)이 예측
   assert.equal(arrivalFits(row(), leg, [910, 911, 912, 913, 914], nameOf), true);         // 샛강 · 국회의사당을 건너뛰는 급행
   assert.equal(arrivalFits(row(), leg, [911, 912, 913, 914, 915, 916, 917], nameOf), true);   // 구간 밖 역이 하나씩 끼고 내릴 역까지 닿는다
   assert.equal(arrivalFits(row(), leg, [910, 911, 912, 913, 914, 915], nameOf), true);     // 예측이 내릴 역 전에 끊겨도(9역 한도)
+});
+
+test('걷는 길 벗어남: 20m 넘는 위치를 연달아 3번 받으면 다시 찾기 — 한 번 튄 위치는 0 으로 돌아간다', () => {
+  assert.equal(WALK_OFF_M, 20); assert.equal(OFF_FIXES, 3);
+  let count = 0;
+  for (const off of [25, 30]) count = offFixes(count, off);
+  assert.equal(count, 2);
+  assert.equal(offFixes(count, 20), 0, '20m 딱이면 길 위');
+  count = [25, 5, 25, 25].reduce(offFixes, 0);
+  assert.equal(count, 2, '중간에 길 위로 돌아오면 처음부터 센다');
+  const base = {offFixes: 3, busy: false, nowMs: 100000, lastMs: 0};
+  assert.equal(shouldReroute(base), true, '처음이면 바로');
+  assert.equal(shouldReroute({...base, offFixes: 2}), false, '두 번은 아직');
+  assert.equal(shouldReroute({...base, busy: true}), false, '찾는 중이면 또 부르지 않는다');
+  assert.equal(shouldReroute({...base, lastMs: base.nowMs - REROUTE_GAP_MS + 1}), false, '다시 찾은 직후는 쉰다');
+  assert.equal(shouldReroute({...base, lastMs: base.nowMs - REROUTE_GAP_MS}), true, '간격이 지나면 다시');
 });
