@@ -1,5 +1,5 @@
 var NEAR_HOLD_MS = 5e3;
-var OFF_HOLD_MS = 1e4;
+var REROUTE_GAP_MS = 3e4;
 var HURRY_SHARE = .8;
 var WALK_SPEED = 1.2;
 var SPEED_RANGE = [.5, 2.5];
@@ -50,6 +50,8 @@ function splitPath(path, at) {
 		rest: path.length ? [path[path.length - 1]] : []
 	};
 }
+var offFixes = (count, offM) => offM > 20 ? count + 1 : 0;
+var shouldReroute = ({ offFixes: count, busy, nowMs, lastMs }) => count >= 3 && !busy && (!lastMs || nowMs - lastMs >= 3e4);
 var TALK = {
 	miss: ["포탈 열면 가능한데… 그럴 거면 집으로 여시죠"],
 	hurry: ["지금 출발하면 전설, 망설이면 다음 열차"],
@@ -245,4 +247,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, OFF_HOLD_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, offFixes, onPath, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };

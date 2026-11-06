@@ -954,6 +954,40 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		useHere();
 		go();
 	}
+	async function reroute(spot) {
+		const search = last, to = search?.picked.to;
+		if (!search || !to) return null;
+		try {
+			const answer = await (await fetch(serverUrl(`./api/route?from=${spot[1]},${spot[0]}&to=${to.lat},${to.lng}`))).json(), plan = answer.ok ? answer.plans[0] : void 0;
+			if (!plan || last !== search) return null;
+			return {
+				plan,
+				use() {
+					if (last !== search) return;
+					last = {
+						d: answer,
+						sel: 0,
+						from: HERE_NAME,
+						to: search.to,
+						at: "",
+						when: { k: "now" },
+						picked: {
+							from: null,
+							to
+						}
+					};
+					try {
+						showRoute?.(plan, false, false);
+					} catch (error) {
+						console.warn("지도에 경로를 그리지 못했어요", error);
+					}
+					if (inSheet && mounted && hasPlans()) showResults();
+				}
+			};
+		} catch {
+			return null;
+		}
+	}
 	function sheetReplaced() {
 		if (inSheet) {
 			inSheet = false;
@@ -974,7 +1008,8 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		drop,
 		ticketReturn,
 		rideEnded,
-		fromHere
+		fromHere,
+		reroute
 	};
 }
 export { initJourney, keepPickable, routeSteps, routeTrack, soonestWhen, trackParts, wheelDate };

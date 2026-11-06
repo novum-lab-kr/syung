@@ -1598,7 +1598,8 @@ var rideAlong = createRideAlong({
 		rest: cut.rest.map(([x, y]) => [x, y])
 	}),
 	ended: () => journey.rideEnded(),
-	detour: () => journey.fromHere()
+	detour: () => journey.fromHere(),
+	reroute: (spot) => journey.reroute(spot)
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
