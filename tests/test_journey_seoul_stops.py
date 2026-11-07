@@ -131,13 +131,53 @@ class SeoulStopSearchTest(unittest.TestCase):
         self.assertEqual({key: leg[key] for key in ("routeId", "fromId", "fromArs", "toId", "toArs")},
                          {"routeId": "100100075", "fromId": "101000033", "fromArs": "02128", "toId": "101000173", "toArs": "02001"})
 
-    def test_without_seoul_match_the_leg_is_as_before(self):
+    def test_without_seoul_match_only_the_boarding_stop_number_is_filled(self):
+        # 서울 자료에 없는 노선(경기 · 광역)처럼 맞추지 못한 패턴: KTDB 자리에서 타고, 타는 정류장 번호만 이름 · 거리로 싣는다
         pats = graph.BPATS
-        with patch.object(graph, "SEOUL", {}), patch.object(graph, "BUS_AT", graph.bus_boardings(pats, KTDB_ROUTES)):
+        with patch.object(graph, "SEOUL", {}), patch.object(graph, "BUS_AT", graph.bus_boardings(pats, KTDB_ROUTES)), \
+                patch.object(graph, "_catalog_by_name", catalog_by_name(SEOUL_STOPS)), patch.object(graph, "BSTOPS_RAW", {}):
             legs = self.bus_legs()
-        self.assertEqual(legs[0]["from"], "시청역9번출구.시청서소문2청사", "예전 동작(맞추기 없음)은 KTDB 자리에서 탄다")
-        self.assertNotIn("routeId", legs[0])
-        self.assertNotIn("fromArs", legs[0])
+        self.assertEqual(legs[0]["from"], "시청역9번출구.시청서소문2청사", "맞추기 없으면 KTDB 자리에서 탄다")
+        self.assertEqual((legs[0].get("fromId"), legs[0].get("fromArs")), ("101000036", "02133"))
+        for key in ("routeId", "toId", "toArs"):
+            self.assertNotIn(key, legs[0])
+
+
+def catalog_by_name(seoul_stops):
+    """journey_graph._catalog_by_name 꼴(이름 → [(lat, lng, id, 번호)])."""
+    out = {}
+    for row in seoul_stops.values():
+        out.setdefault(row["name"], []).append((row["lat"], row["lng"], row["id"], row["arsId"]))
+    return out
+
+
+class BoardIdsTest(unittest.TestCase):
+    """서울 자료에 없는 노선(M4403 · 6001 — 2026-11-08 운영 #4)의 탈 정류장 번호: 같은 이름 · 가까움 · 길 양쪽이 비슷하면 비움."""
+    def ids(self, stop, catalog, raw=None):
+        with patch.object(graph, "BSTOPS", [stop]), patch.object(graph, "BSTOPS_RAW", raw or {}), \
+                patch.object(graph, "_catalog_by_name", catalog_by_name(catalog)):
+            return graph._board_ids(0)
+
+    def row(self, sid, ars, name, lat, lng):
+        return {sid: {"id": sid, "arsId": ars, "name": name, "lat": lat, "lng": lng}}
+
+    def test_single_same_name_stop_nearby(self):
+        # KCC사옥(22162) — KTDB 좌표에서 약 6 m
+        self.assertEqual(self.ids(["KCC사옥", 37.5, 127.0], self.row("121000086", "22162", "KCC사옥", 37.50005, 127.0)), ("121000086", "22162"))
+
+    def test_far_or_other_name_is_left_empty(self):
+        self.assertEqual(self.ids(["KCC사옥", 37.5, 127.0], self.row("x", "1", "KCC사옥", 37.502, 127.0)), ("", ""), "약 220 m")
+        self.assertEqual(self.ids(["KCC사옥", 37.5, 127.0], self.row("x", "1", "다른 정류장", 37.5, 127.0)), ("", ""))
+
+    def test_both_sides_of_the_road(self):
+        both = {**self.row("a", "1", "갑", 37.50005, 127.0), **self.row("b", "2", "갑", 37.5001, 127.0)}   # 약 6 m · 11 m — 어느 쪽인지 모른다
+        self.assertEqual(self.ids(["갑", 37.5, 127.0], both), ("", ""))
+        clear = {**self.row("a", "1", "갑", 37.50005, 127.0), **self.row("b", "2", "갑", 37.5005, 127.0)}   # 약 6 m · 56 m
+        self.assertEqual(self.ids(["갑", 37.5, 127.0], clear), ("a", "1"))
+
+    def test_raw_coordinates_count_too(self):
+        # bus-stop-fix 가 옮긴 좌표로는 멀어도 옮기기 전 좌표로 가까우면 찾는다
+        self.assertEqual(self.ids(["갑", 37.502, 127.0], self.row("a", "1", "갑", 37.5, 127.0), {0: (37.5, 127.0)}), ("a", "1"))
 
 
 if __name__ == "__main__":

@@ -68,6 +68,7 @@ ALT_DEPART_WITHIN = 20 * 60   # 고른 버스보다 이 안에 떠나는 것만
 ALT_SAME_NAME_M = 300         # 옆 정류장 후보: 이름이 같은 정류장(길 건너 · 옆 승강장)은 BUS_WALK 상한까지(걷기 약 4분 — 직선 132 m 여도 길 건너 돌면 150 m 를 넘었다, 2026-10-29 2415)
 ALT_OTHER_NAME_M = 80         # 이름이 다르면 이보다 가까울 때만(걷기 1분 안팎)
 STOP_NUMBER_M = 120           # 탐색 자료 정류장(KTDB 좌표 — 일부는 반올림)에 번호를 붙일 때 같은 이름 정류장을 찾는 범위
+BOARD_GAP_M = 30              # 서울 자료에 없는 노선(경기 · 광역)의 탈 정류장 번호: 가장 가까운 같은 이름 정류장이 다음 것보다 이만큼은 가까워야 고른다(길 양쪽 — 2026-11-08 잼)
 # 탐색 자료(KTDB) 패턴을 서울 버스 자료 노선에 맞추기(seoul_runs): KTDB 좌표는 일부가 반올림(경도 소수 셋째 — 최대 약 45 m)이다
 SEOUL_NAME_M = 120            # 이름(조각)이 같은 정류장을 찾는 범위
 SEOUL_NEAR_M = 60             # 이름이 달라도 같은 정류장으로 보는 범위(이름만 바뀐 정류장 — 남대문세무서 → 명동성당.남대문세무서 41 m)
@@ -398,10 +399,12 @@ def _alights(pi: int, j: int) -> bool:
 
 
 def _seoul_ids(pi: int, k: int, j: int) -> Row:
-    """버스 구간 응답에 싣는 서울 버스 자료 번호: 노선 id(routeId) · 타는 정류장(fromId · fromArs) · 내리는 정류장(toId · toArs) — 맞춘 패턴만."""
+    """버스 구간 응답에 싣는 서울 버스 자료 번호: 노선 id(routeId) · 타는 정류장(fromId · fromArs) · 내리는 정류장(toId · toArs) — 맞춘 패턴.
+    맞추지 못한 패턴(서울 자료에 없는 노선)은 타는 정류장(fromId · fromArs)만 _board_ids 로."""
     run = SEOUL.get(pi)
-    if run is None:
-        return {}
+    if run is None:   # 서울 자료에 없는 노선(M4403 · 6001 같은 경기 · 광역): 타는 정류장 번호만 이름 · 거리로(못 찾으면 비움)
+        stop_id, ars = _board_ids(BPATS[pi]["s"][k])
+        return {"fromId": stop_id, "fromArs": ars} if ars else {}
     ids: Row = {"routeId": run[0]}
     for side, spot in (("from", run[1][k]), ("to", run[1][j])):
         if spot is not None:
@@ -1153,6 +1156,19 @@ def _stop_ids(stop: int) -> tuple[str, str]:
     near = [(_meters((lat, lng), (la, lo)), sid, ars) for la, lo, sid, ars in _catalog_by_name.get(name, ())]
     best = min(near, default=None)
     return (best[1], best[2]) if best and best[0] <= STOP_NUMBER_M else ("", "")
+
+
+def _board_ids(stop: int) -> tuple[str, str]:
+    """서울 자료에 없는 노선의 탈 정류장 → (정류장 id, 번호) — 웹이 그 정류장 도착 정보에서 노선을 고른다.
+    같은 이름 정류장 중 가장 가까운 것(옮기기 전 KTDB 좌표도 같이 본다)이 STOP_NUMBER_M 안이고, 다음 같은 이름 정류장보다 BOARD_GAP_M 넘게
+    가까울 때만. 길 양쪽 같은 이름 둘이 비슷하게 가까우면 가까운 쪽이 틀린 때가 28% 라 비운다(서울 자료로 맞춘 운영 패턴으로 잰 값 ·
+    이 규칙으로는 탈 자리 61% 를 채우고 2.6% 가 다르다 · 2026-11-08)."""
+    name, lat, lng = BSTOPS[stop][:3]
+    points = [(lat, lng), *((BSTOPS_RAW[stop],) if stop in BSTOPS_RAW else ())]
+    near = sorted((min(_meters(point, (la, lo)) for point in points), sid, ars) for la, lo, sid, ars in _catalog_by_name.get(name, ()))
+    if not near or near[0][0] > STOP_NUMBER_M or (len(near) > 1 and near[1][0] - near[0][0] < BOARD_GAP_M):
+        return ("", "")
+    return (near[0][1], near[0][2])
 
 
 def _stop_note(stop: int, metres: float, sid: int | None) -> Row:
