@@ -561,48 +561,59 @@ def _next_live(live: Live, line: str, at: int, toward: int, after: datetime) -> 
 
 # ---- search --------------------------------------------------------------------------------
 
-def _unhook(pts: list[list[float]], min_leg: float = 12.0) -> list[list[float]]:
-    """Drop vertices where a [lng, lat] path doubles back (legs within ~30° of each other, one of
-    them min_leg or longer), and repeated points."""
-    pts = [q for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
+def _unhook_kept(pts: list[list[float]], min_leg: float = 12.0) -> list[int]:
+    """Indices (in order) of the [lng, lat] path's vertices to keep: drop vertices where it doubles back
+    (legs within ~30° of each other, one of them min_leg or longer), and repeated points — 번호로 돌려줘
+    walk_path 가 길 위 구간(road)을 최종 path 기준으로 센다."""
+    idx = [i for i, q in enumerate(pts) if i == 0 or q != pts[i - 1]]
 
     def near(q: list[float], r: list[float], m: float = 12.0) -> bool:
         return math.hypot((q[0] - r[0]) * math.cos(math.radians(r[1])), q[1] - r[1]) * 111320 < m
     # once the path is within 12 m of where it ends, go straight there (it curled round an exit to
     # reach the footway point OSRM snapped it to); the same from where it starts
-    if len(pts) > 2:
-        end = next(i for i in range(len(pts)) if near(pts[i], pts[-1]))
-        pts = pts[:end] + [pts[-1]] if end else [pts[0], pts[-1]]
-        start = max(i for i in range(len(pts)) if near(pts[i], pts[0]))
-        pts = [pts[0]] + pts[start + 1:] if start < len(pts) - 1 else [pts[0], pts[-1]]
+    if len(idx) > 2:
+        end = next(i for i in range(len(idx)) if near(pts[idx[i]], pts[idx[-1]]))
+        idx = idx[:end] + [idx[-1]] if end else [idx[0], idx[-1]]
+        start = max(i for i in range(len(idx)) if near(pts[idx[i]], pts[idx[0]]))
+        idx = [idx[0]] + idx[start + 1:] if start < len(idx) - 1 else [idx[0], idx[-1]]
     changed = True
-    while changed and len(pts) > 2:
+    while changed and len(idx) > 2:
         changed = False
-        for i in range(1, len(pts) - 1):
-            k = math.cos(math.radians(pts[i][1]))
-            ax, ay = (pts[i - 1][0] - pts[i][0]) * k, pts[i - 1][1] - pts[i][1]
-            bx, by = (pts[i + 1][0] - pts[i][0]) * k, pts[i + 1][1] - pts[i][1]
+        for i in range(1, len(idx) - 1):
+            p, q, r = pts[idx[i - 1]], pts[idx[i]], pts[idx[i + 1]]
+            k = math.cos(math.radians(q[1]))
+            ax, ay = (p[0] - q[0]) * k, p[1] - q[1]
+            bx, by = (r[0] - q[0]) * k, r[1] - q[1]
             la, lb = math.hypot(ax, ay) * 111320, math.hypot(bx, by) * 111320
             if la < 0.5 or lb < 0.5 or max(la, lb) < min_leg:
                 continue
             if (ax * bx + ay * by) / (math.hypot(ax, ay) * math.hypot(bx, by)) > 0.85:
-                del pts[i]
+                del idx[i]
                 changed = True
                 break
-    return pts
+    return idx
 
 
-def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list[list[float]], int, int]:
-    """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres); a straight line when unavailable."""
+def walk_path(a: tuple[float, float], b: tuple[float, float]) -> tuple[list[list[float]], int, int, list[int]]:
+    """OSRM foot route a→b: ([[lng, lat], ...], seconds, metres, road); a straight line when unavailable.
+    road = [i, j]: path[i] … path[j] 가 OSRM 길을 따라가는 부분, path[0]→path[i] · path[j]→path[-1] 은 길 밖 직선 이음
+    (내 위치 → 가장 가까운 길 · 길 → 끝 점 — 웹이 흐리게 그린다, 2026-11-07). 길 위 마디가 하나도 없으면(직선 하나 · 두 점으로 접힘) [0, 0]."""
     try:
         route = OSRM.route(a, b)
         # from the very point to the very point (OSRM starts and ends where it snapped them onto a
         # footway), without the hook where it ran past an exit or stop and came back to it
-        pts = [[a[1], a[0]], *route["geometry"]["coordinates"], [b[1], b[0]]]
-        return _unhook(pts), round(route["duration"]), round(route["distance"])
+        coords = route["geometry"]["coordinates"]
+        pts = [[a[1], a[0]], *coords, [b[1], b[0]]]
+        n = len(coords)
+        kept = _unhook_kept(pts)
+        # 길 위 점: OSRM 의 점(1 … n). 시작 · 끝 점이 OSRM 첫 · 끝 점과 같으면(이미 길 위) 그 점도 — 겹친 점은 하나만 남는다
+        lo, hi = (0 if n and pts[0] == pts[1] else 1), (n + 1 if n and pts[n + 1] == pts[n] else n)
+        on_road = [p for p, k in enumerate(kept) if lo <= k <= hi]
+        road = [on_road[0], on_road[-1]] if on_road and on_road[0] < on_road[-1] else [0, 0]
+        return [pts[k] for k in kept], round(route["duration"]), round(route["distance"]), road
     except (OSError, ValueError, KeyError, IndexError):
         m = _meters(a, b) * 1.3
-        return [[a[1], a[0]], [b[1], b[0]]], round(m / 1.2), round(m)
+        return [[a[1], a[0]], [b[1], b[0]]], round(m / 1.2), round(m), [0, 0]
 
 
 def _fmt(ts: float) -> str:
@@ -973,7 +984,7 @@ def _shaped(found: list[Row], origin: tuple[float, float], dest: tuple[float, fl
                     b = (nxt["path"][0][1], nxt["path"][0][0])
                 if prv and prv["type"] == "bus" and prv.get("path"):
                     a = (prv["path"][-1][1], prv["path"][-1][0])
-                l["path"], _, _ = walk_path(a, b)
+                l["path"], _, _, l["road"] = walk_path(a, b)
                 l.pop("point", None)
             else:
                 if l["type"] == "bus" and l.get("_arr") is not None and not l.get("_stay"):   # 같은 구간 다른 버스는 보여 줄 길을 고른 뒤 _finish 에서 찾는다(타는 정류장 · 내리는 정류장 · 정류장에 닿은 때 · 떠난 때 · 닿은 때)
@@ -1122,13 +1133,13 @@ def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime,
     found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS)
     plans = _shaped(_distinct(found), origin, dest, when, goal)
     if walk:   # close enough to just walk
-        path, sec, metres = walk
+        path, sec, metres, road = walk
         if _shows_walk([p["_arrive"] for p in plans], sec, when.timestamp()):
             arrive = when.timestamp() + sec
             plans.append({"tag": "걸어가기", "kind": "walk", "leaveBy": when.strftime("%H:%M"), "arrives": _fmt(arrive),
                           "minutes": round(sec / 60), "transfers": 0, "walkMinutes": round(sec / 60), "_arrive": arrive,
                           "legs": [{"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True,
-                                    "label": "목적지까지 걸어서", "path": path}]})
+                                    "label": "목적지까지 걸어서", "path": path, "road": road}]})
     walk_only = [p["_arrive"] for p in plans if p["tag"] == "걸어가기"]
     if walk_only:   # riding that gets there later than walking is no use
         plans = [p for p in plans if p["tag"] == "걸어가기" or p["_arrive"] < walk_only[0]]
@@ -1148,13 +1159,13 @@ def walk_leg(origin: tuple[float, float], dest: tuple[float, float] | None = Non
             return None
         sec, metres, ex, lat, lng = walk
         name = STATIONS[station]["name"]
-        path, _, _ = walk_path(origin, (lat, lng))
+        path, _, _, road = walk_path(origin, (lat, lng))
         return {"type": "walk", "seconds": sec, "metres": metres, "exit": ex, "to": name,
-                "label": f"{name}역{f' {ex}번 출구' if ex else ''}까지", "path": path}
+                "label": f"{name}역{f' {ex}번 출구' if ex else ''}까지", "path": path, "road": road}
     if dest is None:
         return None
-    path, sec, metres = walk_path(origin, dest)
-    return {"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "label": "목적지까지 걸어서", "path": path}
+    path, sec, metres, road = walk_path(origin, dest)
+    return {"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "label": "목적지까지 걸어서", "path": path, "road": road}
 
 
 # ---- 경유지(via): 출발 → 경유지 길 몇 개 × 그 길이 닿은 시각부터 경유지 → 도착 가장 빠른 길(2026-10-29 사용자 결정 A) ----
@@ -1189,9 +1200,9 @@ def _via_ready(r: Row) -> float:
     return r["arrive"]
 
 
-def _walk_row(walk: tuple[list[list[float]], int, int], a: tuple[float, float], b: tuple[float, float], t0: float, label: str) -> Row:
+def _walk_row(walk: tuple[list[list[float]], int, int, list[int]], a: tuple[float, float], b: tuple[float, float], t0: float, label: str) -> Row:
     """걸어서만 가는 구간 하나(탐색 결과와 같은 모양 — 걷기 모양은 _shaped 가 a · b 로 다시 잰다)."""
-    _path, sec, metres = walk
+    _path, sec, metres, _road = walk
     return {"legs": [{"type": "walk", "seconds": sec, "metres": metres, "exit": "", "direct": True, "label": label, "a": a, "b": b}],
             "leave": t0, "arrive": t0 + sec}
 

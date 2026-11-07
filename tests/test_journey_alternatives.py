@@ -154,7 +154,7 @@ class ShapedTest(unittest.TestCase):
                     "_arr": DAY0 + dep + 360, "_ban": [("bus", 0, 0)], "_stop": 3, "_run": None, **extra}
         walk = {"type": "walk", "seconds": 60, "metres": 50, "exit": "", "to": "a", "point": (0.0, 0.0), "label": "x"}
         found = [{"leave": DAY0 + NINE, "arrive": DAY0 + NINE + 900, "legs": [dict(walk), bus("143", NINE + 300, 200), bus("9", NINE + 700, 100)]}]
-        with patch.object(graph, "walk_path", lambda a, b: ([], 1, 1)):
+        with patch.object(graph, "walk_path", lambda a, b: ([], 1, 1, [0, 0])):
             legs = graph._shaped(found, (0.0, 0.0), (1.0, 1.0), WHEN)[0]["legs"]
         first, second = legs[1]["_alt"], legs[2]["_alt"]
         self.assertEqual(first[5:], (None, None, None))   # 앞 · 뒤에 지하철 갈아타기가 없다

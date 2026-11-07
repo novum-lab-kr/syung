@@ -45,7 +45,7 @@ class WalkLegTest(unittest.TestCase):
         with patch.object(graph, "OSRM", osrm):
             leg = graph.walk_leg(WEST, dest)
         self.assertEqual(osrm.routes, [(WEST, dest)])
-        self.assertEqual(set(leg), {"type", "seconds", "metres", "exit", "direct", "label", "path"})
+        self.assertEqual(set(leg), {"type", "seconds", "metres", "exit", "direct", "label", "path", "road"})
         self.assertEqual((leg["type"], leg["exit"], leg["direct"], leg["label"]), ("walk", "", True, "목적지까지 걸어서"))
         self.assertEqual(leg["path"][0], [WEST[1], WEST[0]])
         self.assertEqual(leg["path"][-1], [dest[1], dest[0]])
@@ -56,7 +56,7 @@ class WalkLegTest(unittest.TestCase):
         with patch.object(graph, "OSRM", osrm):
             leg = graph.walk_leg(WEST, station=SICHEONG)
         ten = next(p for p in graph._points(SICHEONG) if p[2] == "10")
-        self.assertEqual(set(leg), {"type", "seconds", "metres", "exit", "to", "label", "path"})
+        self.assertEqual(set(leg), {"type", "seconds", "metres", "exit", "to", "label", "path", "road"})
         self.assertEqual((leg["type"], leg["seconds"], leg["metres"], leg["exit"], leg["to"]), ("walk", 236, 330, "10", "시청"))
         self.assertEqual(leg["label"], "시청역 10번 출구까지")
         self.assertEqual(osrm.routes, [(WEST, ten[:2])], "그린 길도 고른 출구까지")

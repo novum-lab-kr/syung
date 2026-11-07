@@ -111,7 +111,7 @@ class ViaPlanTest(unittest.TestCase):
 
         def slow_walk(a, b):
             clock[0] += graph.SEARCH_SECONDS + 2   # 걷기 조회 한 번에 6초
-            return [[a[1], a[0]], [b[1], b[0]]], 3600, 4000   # 한 시간 걷기 — 탈것이 이긴다
+            return [[a[1], a[0]], [b[1], b[0]]], 3600, 4000, [0, 0]   # 한 시간 걷기 — 탈것이 이긴다
         batches = Batches(lambda n: ride(f"A{n}", T0 + 1800) if n == 1 else None,
                           lambda when, modes: ride("B", when.timestamp() + 600))
         near = (37.545, 127.045)   # 경유지(VIA)에서 약 700 m
@@ -125,7 +125,7 @@ class ViaPlanTest(unittest.TestCase):
 
         def walk_path(a, b):
             walked.append((a, b))
-            return [[a[1], a[0]], [b[1], b[0]]], 60, 70
+            return [[a[1], a[0]], [b[1], b[0]]], 60, 70, [0, 0]
         first, second = ride("A", T0 + 1800), ride("B", T0 + 3000)
         first["legs"] += [{"type": "walk", "seconds": 60, "metres": 70, "exit": "1", "from": "A1", "point": (37.551, 127.051),
                            "label": "A1역 1번 출구에서 목적지까지"}]
@@ -261,7 +261,7 @@ class StationViaTest(unittest.TestCase):
 
         def walk_path(a, b):
             walked.append((a, b))
-            return [[a[1], a[0]], [b[1], b[0]]], 240, 280
+            return [[a[1], a[0]], [b[1], b[0]]], 240, 280, [0, 0]
         with patch.object(graph, "_walk_table", lambda point, nodes, reverse=False: goal if point == near_dest else {}), \
                 patch.object(graph, "walk_path", walk_path):
             plans = graph.plan_via(ORIGIN, STATION_VIA, near_dest, WHEN, {}, self.batches(STATION_VIA, first, lambda start, modes: None), 3)["plans"]
@@ -278,7 +278,7 @@ class StationViaTest(unittest.TestCase):
 
         def walk_path(a, b):
             walked.append(a)
-            return [[a[1], a[0]], [b[1], b[0]]], round(graph._meters(a, b)), round(graph._meters(a, b))
+            return [[a[1], a[0]], [b[1], b[0]]], round(graph._meters(a, b)), round(graph._meters(a, b)), [0, 0]
         first = {"leave": T0 + 60, "arrive": T0 + 1800, "legs": [leg("ride", "7호선", "먹골", "청담"), end_walk("청담")]}
         with patch.object(graph, "walk_path", walk_path):
             plans = graph.plan_via(ORIGIN, STATION_VIA, near_dest, WHEN, {}, self.batches(STATION_VIA, first, lambda start, modes: None), 3)["plans"]
