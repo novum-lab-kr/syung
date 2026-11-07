@@ -496,6 +496,7 @@ var BusLayer = class {
 		this.requested = [];
 		this.journeyLegs = [];
 		this.journeyIds = [];
+		this.ridden = null;
 		this.roads = new BusRoadNetwork();
 		this.onRouteSelect = onRouteSelect;
 		this.onFollow = onFollow;
@@ -1152,6 +1153,91 @@ var BusLayer = class {
 	chosenIds() {
 		return this.selectedRoute ? [this.selectedRoute] : this.journeyIds;
 	}
+	journeyStopAt(leg, spot) {
+		if (!this.data) return null;
+		for (const id of journeyBusRouteIds(this.data, [leg])) {
+			const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
+			const snap = path && range && snapBusToPath(path, spot, {
+				min: range[0],
+				max: range[1],
+				maxError: 150
+			});
+			if (!path || !range || !snap) continue;
+			const stops = path.stops.filter((item) => item.distance >= range[0] - 5 && item.distance <= range[1] + 5);
+			const passed = stops.filter((item) => item.distance <= snap.distance + 15);
+			return {
+				now: passed.at(-1)?.stop.name ?? null,
+				next: stops[passed.length]?.stop.name ?? null
+			};
+		}
+		return null;
+	}
+	journeyBoard(leg) {
+		if (!this.data) return null;
+		for (const id of journeyBusRouteIds(this.data, [leg])) {
+			const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
+			if (!path || !range) continue;
+			let best = null;
+			for (const item of path.stops) if (!best || Math.abs(item.distance - range[0]) < Math.abs(best.distance - range[0])) best = item;
+			if (best && Math.abs(best.distance - range[0]) <= 60) return {
+				routeId: id,
+				stopId: best.stop.id,
+				arsId: best.stop.arsId || null
+			};
+		}
+		return null;
+	}
+	journeyApproach(routeId, stopId, skip) {
+		const route = this.data?.routeById.get(routeId), stops = route ? this.geometry(route)?.stops || [] : [], now = performance.now();
+		let best = null, gap = Infinity;
+		for (const bus of this.fleet.values()) {
+			if (bus.route.id !== routeId || bus.stale || skip.has(bus.row.id)) continue;
+			const distance = busMotionDistance(bus.motion, now);
+			for (const item of stops) if (item.stop.id === stopId && item.distance - distance >= -15 && item.distance - distance < gap) {
+				gap = item.distance - distance;
+				best = bus.row.id;
+			}
+		}
+		return best;
+	}
+	journeyAtStop(vehicleId, stopId) {
+		const bus = this.fleet.get(vehicleId);
+		if (!bus || bus.stale) return null;
+		const distance = busMotionDistance(bus.motion, performance.now());
+		const at = bus.path.stops.filter((item) => item.stop.id === stopId).sort((first, second) => Math.abs(first.distance - distance) - Math.abs(second.distance - distance))[0];
+		return at ? distance >= at.distance - 15 : null;
+	}
+	async journeyArrivals(arsId, routeId) {
+		try {
+			const body = await (await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(arsId)}`, { cache: "no-store" })).json();
+			if (body?.schemaVersion !== 1 || !Array.isArray(body.arrivals)) return null;
+			const got = Date.now(), age = Number(body.ageSeconds) || 0, row = body.arrivals.find((item) => item?.routeId === routeId);
+			const times = [];
+			for (const bus of row?.buses || []) {
+				const message = String(bus?.message || ""), seconds = Number.isFinite(bus?.seconds) ? bus.seconds : null;
+				if (/곧 도착/.test(message)) times.push(got);
+				else if (seconds != null && seconds > 0 && /분|초/.test(message)) times.push(got + Math.max(0, seconds - age) * 1e3);
+			}
+			return times;
+		} catch {
+			return null;
+		}
+	}
+	rideWith(vehicleId, spot) {
+		const bus = vehicleId ? this.fleet.get(vehicleId) : null;
+		const snap = bus && spot ? snapBusToPath(bus.path, spot, {
+			hint: busMotionDistance(bus.motion, performance.now()),
+			maxError: 150
+		}) : null;
+		this.ridden = bus && snap ? {
+			id: bus.row.id,
+			distance: snap.distance
+		} : null;
+	}
+	shownDistance(bus, now) {
+		if (this.ridden?.id === bus.row.id) return this.ridden.distance;
+		return this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now);
+	}
 	journeyEnds() {
 		if (this.selectedRoute || !this.journeyLegs.length || !this.data) return null;
 		if (this.ends?.legs === this.journeyLegs && this.ends.data === this.data) return this.ends.map;
@@ -1256,7 +1342,7 @@ var BusLayer = class {
 		if (this.active()) for (const bus of [...this.fleet.values()].sort((a, b) => Number(b.row.id === this.selection?.id) - Number(a.row.id === this.selection?.id))) {
 			if (!allowed.has(bus.route.id) || wall - bus.receivedWall > EXPIRE_MS) continue;
 			if (bus.observed != null && wall - bus.observed > STALE_MS) this.freeze(bus);
-			const distance = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, now);
+			const distance = this.shownDistance(bus, now);
 			if (ends && !(ends.get(bus.route.id) || [[-Infinity, Infinity]]).some(([a, b]) => distance >= a && distance <= b + 30)) continue;
 			const overview = zoom < BUS_ZOOM.buses || !this.map.querySourceFeatures, pose = overview ? busPointAt(bus.path, distance) : busLinePointAt(this.snappedLine(bus.route, bus.path), distance);
 			if (!pose || !contains(view, pose.coordinate)) continue;
@@ -1354,7 +1440,7 @@ var BusLayer = class {
 	vehiclePosition(id) {
 		const bus = this.fleet.get(id);
 		if (!bus || !this.active()) return null;
-		const zoom = this.map.getZoom(), distance = this.reduced.matches ? bus.motion.to : busMotionDistance(bus.motion, performance.now());
+		const zoom = this.map.getZoom(), distance = this.shownDistance(bus, performance.now());
 		return (zoom < BUS_ZOOM.buses || !this.map.querySourceFeatures ? busPointAt(bus.path, distance) : busLinePointAt(this.snappedLine(bus.route, bus.path), distance))?.coordinate || null;
 	}
 	selectAt(point) {

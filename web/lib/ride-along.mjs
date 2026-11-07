@@ -217,30 +217,32 @@ var walkSub = (legs, index, leftM, leftS) => `${stepNo(legs, index)} · ${roundM
 function waitTitle(leg) {
 	return leg.type === "bus" ? `${leg.route} ${leg.toward} 방면 타는 곳으로` : `${leg.line} ${leg.to} 방면 타는 곳으로`;
 }
-function waitText(legs, index, walkS, arrivalsS, turn, arrived = false) {
+function waitText(legs, index, walkS, arrivalsS, turn, arrived = false, gone = false) {
 	const previous = legs[index - 1], parts = [];
 	if (previous && previous.type !== "walk") parts.push(stepNo(legs, index - 1));
-	parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : "승강장 도착");
+	parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : `${legs[index]?.type === "bus" ? "정류장" : "승강장"} 도착`);
 	if (!arrivalsS?.length) return {
-		say: null,
+		say: gone ? talkLine("miss", turn) : null,
 		sub: parts.join(" · ")
 	};
-	const { missed, next } = catchable(arrivalsS, walkS), [first, second] = next;
-	if (first !== void 0) parts.push(firstTrainText(first, missed, arrived));
+	const caught = catchable(arrivalsS, walkS), missed = caught.missed || gone, [first, second] = caught.next;
+	const leg = legs[index], noun = leg?.type === "bus" ? `${leg.route}번` : "열차";
+	if (first !== void 0) parts.push(firstTrainText(first, missed, arrived, noun));
 	if (second !== void 0) parts.push(missed && !arrived ? `그다음 ${minutes(second)}분 뒤` : `다음 ${minutes(second)}분 뒤`);
 	return {
 		say: talkLine(missed || first === void 0 ? "miss" : talkKind(first, walkS), turn),
 		sub: parts.join(" · ")
 	};
 }
-function firstTrainText(firstS, missed, arrived) {
-	if (arrived) return "열차 도착 · 지금 타세요";
-	return missed ? `다음 열차 ${minutes(firstS)}분 뒤` : `열차 ${minutes(firstS)}분 뒤`;
+function firstTrainText(firstS, missed, arrived, noun) {
+	if (arrived) return `${noun} 도착 · 지금 타세요`;
+	return missed ? `다음 ${noun} ${minutes(firstS)}분 뒤` : `${noun} ${minutes(firstS)}분 뒤`;
 }
 var rideTitle = (leg) => `${leg.to}에서 내려요`;
-function rideSub(legs, index, stopsLeft) {
-	const leg = legs[index];
-	return stopsLeft <= 1 ? `${stepNo(legs, index)} · 다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요` : `${stepNo(legs, index)} · ${stopsLeft}정거장 · ${leg.arrives}`;
+function rideSub(legs, index, stopsLeft, where = null) {
+	const leg = legs[index], head = where ? `${stepNo(legs, index)} · 지금 ${where.now}` : stepNo(legs, index);
+	if (stopsLeft <= 1) return `${head} · 다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요`;
+	return `${head}${where?.next ? ` · 다음 ${where.next}` : ""} · ${stopsLeft}정거장 · ${leg.arrives}`;
 }
 function doneSub(toName, now, startedMs) {
 	const pad = (value) => String(value).padStart(2, "0");
@@ -256,6 +258,22 @@ function leftStation({ seqIds, cum, dist }, stationId) {
 	if (index < 0) return seqIds.length > 0 && dist >= (cum[0] ?? 0);
 	return dist > cum[index] + gapAt(cum, index) * .1;
 }
+function rideStops(track, stations) {
+	const first = stations.findIndex((id) => track.seqIds.includes(id));
+	if (first < 0) return null;
+	let now = first > 0 ? stations[first - 1] : null;
+	for (const id of stations.slice(first)) {
+		if (!track.seqIds.includes(id) || !reached(track, id)) return now == null ? null : {
+			now,
+			next: id
+		};
+		now = id;
+	}
+	return now == null ? null : {
+		now,
+		next: null
+	};
+}
 function stopsLeft({ seqIds, cum, dist }, stations) {
 	const goal = seqIds.indexOf(stations[stations.length - 1]);
 	if (goal < 0) return null;
@@ -264,7 +282,8 @@ function stopsLeft({ seqIds, cum, dist }, stations) {
 	return count;
 }
 function stopsLeftByTime(leg, now) {
-	const start = hm(leg.departs), span = (hm(leg.arrives) - start + 1440) % 1440 || 1, gone = (now.getHours() * 60 + now.getMinutes() - start + 1440) % 1440;
+	const start = hm(leg.departs), span = (hm(leg.arrives) - start + 1440) % 1440 || 1, since = (now.getHours() * 60 + now.getMinutes() - start + 1440) % 1440;
+	const gone = since < 720 ? since : 0;
 	return Math.max(1, Math.ceil(leg.stops * (1 - Math.min(1, gone / span))));
 }
 function legOverByTime(legs, index, now, planArrives) {
@@ -291,7 +310,15 @@ var nearestM = (spot, points) => points.reduce((best, point) => {
 	return best === null || away < best ? away : best;
 }, null);
 var nearBoarding = ({ goalM, stationM, exitM }) => goalM <= 100 || stationM !== null && stationM <= 100 || atExit(exitM);
-var otherExit = ({ goalM, exitM }) => atExit(exitM) && goalM > 50;
+function arriveOutcome(walkS, arrived) {
+	if (!arrived) return null;
+	return walkS <= 0 ? "board" : "missed";
+}
+function arrivedEarly(rows, walkS, station) {
+	if (walkS <= 0) return [];
+	const name = station.replace(/\([^)]*\)/g, "").trim();
+	return rows.flatMap((row) => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
+}
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
@@ -323,4 +350,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, otherExit, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };

@@ -114,7 +114,7 @@ void main(){
 	}
 	render(gl, options) {
 		const { map, maplibregl, stationRects, exitCol, cityViaduct, colors, hexRGB3, stationWidthPx, platformPx, PLATFORM_SCALE, closestPlatformPoint, platformStroke, EXIT_MINZOOM, EXIT_MAX_M, EXIT_PASSAGES, document, matchMedia } = this.d;
-		const selected = this.d.getSelected(), exits = this.d.getExits(), stationAlpha = this.d.getStationAlpha(), kind = this.d.getTrack().kind;
+		const selected = this.d.getSelected(), exits = this.d.getExits(), stationAlpha = this.d.getStationAlpha(), kind = this.d.getTrack().kind, bright = stationAlpha < 1 ? this.d.getBright() : null;
 		if (!stationRects.size) return;
 		this.buildAtlas(gl);
 		const z = map.getZoom(), unit = 1 / (512 * 2 ** z), data = [], hgt = stationWidthPx(z);
@@ -345,7 +345,10 @@ void main(){
 				], col, -1, 0);
 			}
 		}
-		for (const g of geo.values()) {
+		const ordered = [...geo.values()].filter((g) => !bright?.has(g.id)), lit = bright ? [...geo.values()].filter((g) => bright.has(g.id)) : [];
+		let litFrom = -1;
+		for (const g of [...ordered, ...lit]) {
+			if (litFrom < 0 && lit.length && g === lit[0]) litFrom = data.length;
 			if (pointsOnly) {
 				quad(g.cx, g.cy, 1, 0, dot, dot, [
 					0,
@@ -398,7 +401,13 @@ void main(){
 		gl.disable(gl.CULL_FACE);
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-		gl.drawArrays(gl.TRIANGLES, 0, data.length / 15);
+		if (litFrom < 0) {
+			gl.drawArrays(gl.TRIANGLES, 0, data.length / 15);
+			return;
+		}
+		if (litFrom) gl.drawArrays(gl.TRIANGLES, 0, litFrom / 15);
+		gl.uniform1f(this.uni.u_alpha, 1);
+		gl.drawArrays(gl.TRIANGLES, litFrom / 15, (data.length - litFrom) / 15);
 	}
 };
 var PILLAR_PX = [[

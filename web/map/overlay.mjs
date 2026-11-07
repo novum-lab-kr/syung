@@ -52,6 +52,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			M[3] * x + M[7] * y + M[15]
 		];
 		const O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()), cw = clip(O.x, O.y)[2], size = signTextSize(map.getZoom()), seen = /* @__PURE__ */ new Set(), items = [];
+		const bright = live.stationAlpha < 1 ? live.brightStations : null, lit = /* @__PURE__ */ new Set();
 		for (const f of signFeatures) {
 			const [lng, lat] = f.geometry.coordinates, k = `${lng},${lat}`;
 			if (seen.has(k)) continue;
@@ -68,6 +69,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				rows: signRows(f.properties),
 				phase: (lng * 977 + lat * 613) % (Math.PI * 2)
 			});
+			if (bright?.has(String(f.properties.id))) lit.add(items.at(-1));
 		}
 		items.sort((a, b) => a.y - b.y);
 		if (meShape && meShape.length > 2) {
@@ -77,15 +79,26 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				top: Math.min(...ys),
 				bottom: Math.max(...ys)
 			};
-			for (let i = 0; i < items.length; i++) items[i] = dodgeSign(items[i], signBounds(sctx, items[i]), avoid);
+			for (let i = 0; i < items.length; i++) {
+				const moved = dodgeSign(items[i], signBounds(sctx, items[i]), avoid);
+				if (lit.delete(items[i])) lit.add(moved);
+				items[i] = moved;
+			}
 		}
 		showSigns(items.length > 0);
-		drawStationSigns(sctx, items, {
+		const signOptions = {
 			dpr: SW / Math.max(1, W),
 			dark: effectiveTheme() === "dark",
-			alpha: live.stationAlpha,
 			now,
 			still: REDUCED.matches
+		};
+		drawStationSigns(sctx, lit.size ? items.filter((item) => !lit.has(item)) : items, {
+			...signOptions,
+			alpha: live.stationAlpha
+		});
+		if (lit.size) drawStationSigns(sctx, items.filter((item) => lit.has(item)), {
+			...signOptions,
+			alpha: 1
 		});
 		if (meShape && meShape.length > 2) {
 			const k = SW / Math.max(1, W);

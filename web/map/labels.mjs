@@ -32,6 +32,7 @@ function createStationLabels({ map, stations, stationRects, colors, getSelected 
 				return [{
 					type: "Feature",
 					properties: {
+						id: String(s.id),
 						text,
 						rank: -s.lines.length,
 						ln: names.join("|"),

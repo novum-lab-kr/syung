@@ -1600,7 +1600,15 @@ var rideAlong = createRideAlong({
 	ended: () => journey.rideEnded(),
 	detour: () => journey.fromHere(),
 	reroute: (spot, plan, index) => journey.reroute(spot, plan, index),
-	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat])
+	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat]),
+	busStopAt: (leg, spot) => busLayer?.journeyStopAt(leg, [spot[0], spot[1]]) ?? null,
+	bus: {
+		board: (leg) => busLayer?.journeyBoard(leg) ?? null,
+		arrivals: async (arsId, routeId) => busLayer ? await busLayer.journeyArrivals(arsId, routeId) : null,
+		approach: (routeId, stopId, skip) => busLayer?.journeyApproach(routeId, stopId, skip) ?? null,
+		atStop: (vehicleId, stopId) => busLayer?.journeyAtStop(vehicleId, stopId) ?? null,
+		ride: (vehicleId, spot) => busLayer?.rideWith(vehicleId, spot && [spot[0], spot[1]])
+	}
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
@@ -1779,7 +1787,8 @@ var stationNames = new StationNameLayer({
 	getSelected: () => selected,
 	getExits: () => exits,
 	getStationAlpha: () => stationAlpha,
-	getTrack: () => modeCtl.settings().track
+	getTrack: () => modeCtl.settings().track,
+	getBright: () => rideAlong.stationIds
 });
 var stationLabels = createStationLabels({
 	map,
@@ -1975,6 +1984,9 @@ map.on("load", () => {
 			},
 			get stationAlpha() {
 				return stationAlpha;
+			},
+			get brightStations() {
+				return rideAlong.stationIds;
 			},
 			get drawTrains() {
 				return drawTrains;
