@@ -69,6 +69,54 @@ export interface RerouteInput { offFixes:number; busy:boolean; nowMs:number; las
 export const shouldReroute = ({offFixes: count, busy, nowMs, lastMs}:RerouteInput):boolean =>
   count >= OFF_FIXES && !busy && (!lastMs || nowMs - lastMs >= REROUTE_GAP_MS);
 
+// ---- 다시 찾기는 걷는 구간만(2026-11-06 사용자 — 고른 지하철 · 버스는 그대로 · plans/feature/20261106-슝-길-벗어나면-걷는-길만-다시-찾기.md)
+// 서버 /api/route?walk=1 이 이보다 오래 걷는 길을 주면 못 찾은 것으로(위도 · 경도가 뒤집히면 13,000 km 직선이 온다 — 2026-11-07 아테나 운영 확인)
+export const WALK_AGAIN_MAX_S = 7200;
+// 지금 걷는 구간의 끝: 다음이 지하철이면 그 역(출구는 서버가 고른다) · 버스면 그 버스 길 첫 점(정류장) · 마지막 걷기면 목적지 · 걷기 다음 걷기면 지금 길 끝
+export type WalkEnd = { station:number } | { to:LngLat } | { goal:true };
+export function walkEnd(legs:readonly RideLeg[], index:number):WalkEnd | null {
+  const leg = legs[index], next = legs[index + 1];
+  if (leg?.type !== 'walk') return null;
+  if (!next) return {goal: true};
+  if (next.type === 'ride') return next.stations[0] === undefined ? null : {station: next.stations[0]};
+  const end = next.type === 'bus' ? next.path[0] : leg.path?.[leg.path.length - 1];
+  return end ? {to: end} : null;
+}
+// /api/route 뒤에 붙일 물음: 서버는 위도,경도 순서(spot · 길 점은 [경도, 위도]) · goal 은 목적지(위도 · 경도 칸)
+export function walkQuery(spot:LngLat, end:WalkEnd, goal:{ lat:number; lng:number }):string {
+  const from = `walk=1&from=${spot[1]},${spot[0]}`;
+  if ('station' in end) return `${from}&station=${end.station}`;
+  const [lng, lat] = 'to' in end ? end.to : [goal.lng, goal.lat];
+  return `${from}&to=${lat},${lng}`;
+}
+// 서버 답 → 새 걷기(못 찾음 · 모양이 다름 · 터무니없이 긺이면 null)
+export interface FreshWalk { seconds:number; metres:number; path:LngLat[]; exit:string; label:string; to:string | null }
+const isSpot = (value:unknown):value is LngLat => Array.isArray(value) && value.length >= 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+export function freshWalk(answer:unknown):FreshWalk | null {
+  if (!answer || typeof answer !== 'object' || (answer as { ok?:unknown }).ok !== true) return null;
+  const leg = (answer as { leg?:unknown }).leg;
+  if (!leg || typeof leg !== 'object') return null;
+  const {type, seconds, metres, path, exit, label, to} = leg as Record<string, unknown>;
+  if (type !== 'walk' || typeof seconds !== 'number' || !(seconds >= 0 && seconds <= WALK_AGAIN_MAX_S) || typeof metres !== 'number' || !Number.isFinite(metres)) return null;
+  if (!Array.isArray(path) || path.length < 2 || !path.every(isSpot)) return null;
+  return {seconds, metres, path: path.map(([lng, lat]) => [lng, lat] as const), exit: typeof exit === 'string' ? exit : '', label: typeof label === 'string' ? label : '', to: typeof to === 'string' ? to : null};
+}
+// 경로에서 index 의 걷기만 새 걷기로 바꾼 경로(나머지 구간 · 탈 것은 그대로 — 같은 객체).
+// 역까지 걷기는 출구 · 역 이름도 서버 값으로, 글(label)은 첫 걷기일 때만 서버 값(갈아타기 · 버스 · 목적지 걷기는 원래 글 — 좌표 끝의 서버 글은 늘 「목적지까지 걸어서」).
+// 시간: 걷는 시간 · 거리 · 걷는 분은 새 값. 마지막 걷기면 도착 시각 = 지금 + 새 걷는 시간(분은 그만큼 더하고 뺀다), 아니면 탈 것의 시각이 그대로라 도착도 그대로
+export interface WalkPlanLike { arrives:string; minutes:number; walkMinutes:number; legs:readonly unknown[] }
+export function spliceWalk<P extends WalkPlanLike>(plan:P, index:number, fresh:FreshWalk, end:WalkEnd, now:Date):P {
+  const legs = [...plan.legs] as RideLeg[], old = legs[index] as RideWalkLeg, previous = legs[index - 1];
+  const station = 'station' in end, transfer = !!previous && previous.type !== 'walk';
+  legs[index] = {...old, seconds: fresh.seconds, metres: fresh.metres, path: fresh.path,
+    ...(station ? {exit: fresh.exit, ...(fresh.to ? {to: fresh.to} : {})} : {}), ...(station && !transfer && fresh.label ? {label: fresh.label} : {})};
+  const walkMinutes = Math.round(legs.reduce((sum, leg) => sum + (leg.type === 'walk' ? leg.seconds : 0), 0) / 60);
+  if (index < legs.length - 1) return {...plan, legs, walkMinutes};
+  const pad = (value:number) => String(value).padStart(2, '0'), at = new Date(+now + fresh.seconds * 1000);
+  const arrives = `${pad(at.getHours())}:${pad(at.getMinutes())}`, shift = ((hm(arrives) - hm(plan.arrives) + 720 + 1440) % 1440) - 720;
+  return {...plan, legs, walkMinutes, arrives, minutes: Math.max(0, plan.minutes + shift)};
+}
+
 // ---- 한마디: 여유 = 열차가 오는 시간 − 걷는 시간(「뛰어요」는 쓰지 않는다 — 계단 안전 · 자료가 늦을 수 있음)
 export type TalkKind = 'miss' | 'hurry' | 'tight' | 'fit' | 'easy' | 'free';
 const TALK:Record<TalkKind, readonly string[]> = {

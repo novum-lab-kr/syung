@@ -28,8 +28,9 @@ export interface RideAlongDeps {
   drawRideCard:(host:HTMLElement, view:RideCardView | null, actions:RideCardActionsLike) => void;
   look:() => string | null | undefined; walked:(leg:number, cut:{ done:LngLat[]; rest:LngLat[] } | null) => void;
   ended:() => void; detour:() => void;
-  // 걷는 길에서 벗어남: 지금 위치 → 같은 목적지 · 지금 출발로 다시 찾는다(lib/journey-ui reroute). 못 찾으면 null · use() 는 그 길을 지도 · 아래 막대에 둔다
-  reroute:(spot:LngLat) => Promise<{ plan:RidePlan; use():void } | null>;
+  // 걷는 길에서 벗어남: 지금 위치 → 그 걷는 구간(plan.legs[index])의 끝까지 걷기만 다시 찾아 그 구간만 바꾼 경로(lib/journey-ui reroute — 탈 것은 그대로).
+  // 못 찾으면 null · use() 는 그 경로를 지도 · 아래 막대에 둔다
+  reroute:(spot:LngLat, plan:RidePlan, index:number) => Promise<{ plan:RidePlan; use():void } | null>;
   // 시트의 다른 따라가기(열차 · 버스 — ui/sheet.mts following · followBus): 켜져 있으면 타고 가기 카메라가 비키고, 「다시 따라가기」는 그쪽을 끈다
   otherFollow:{ active():boolean; stop():void };
   // 역의 모든 출구 좌표(본체가 받은 /exits.json — 역 번호 → 출구들 · 아직 못 받았거나 없으면 [])
@@ -169,17 +170,19 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride.offFixes) ride.detour = false;
     if (shouldReroute({offFixes: ride.offFixes, busy: ride.rerouting, nowMs: Date.now(), lastMs: ride.reroutedAt})) rerouteFrom(spot);
   }
-  // 새 길이 오면 시트 없이 그 길 처음부터 이어 간다. 못 찾으면(경로 없음 · 연결) 지금 길 그대로 「다른 길 찾기 ›」. 그 사이 걷기가 끝났거나 그만뒀으면 버린다
+  // 새 걷기가 오면 시트 없이 그 걷는 구간만 바꿔 같은 단계를 이어 간다(나머지 구간 · 탈 열차 · 버스는 그대로). 못 찾으면(길 없음 · 연결 · 터무니없는 답)
+  // 지금 길 그대로 「다른 길 찾기 ›」. 그 사이 걷기가 끝났거나 그만뒀으면 버린다
   async function rerouteFrom(spot:LngLat) {
-    const mine = ride!, at = mine.at;
+    const mine = ride!, at = mine.at, index = (mine.steps[at] as { leg:number }).leg;
     mine.rerouting = true;
-    const found = await reroute(spot).catch(() => null);
+    const found = await reroute(spot, {arrives: mine.arrives, legs: mine.legs}, index).catch(() => null);
     mine.rerouting = false; mine.reroutedAt = Date.now();
     if (ride !== mine || mine.at !== at) return;
-    if (!found) { mine.detour = true; draw(); return; }
+    if (!found || found.plan.legs.length !== mine.legs.length) { mine.detour = true; draw(); return; }
     found.use();
     mine.turn++;
-    begin(found.plan);
+    const legs = found.plan.legs as RideLeg[];
+    Object.assign(mine, {legs, arrives: found.plan.arrives, steps: rideSteps(legs), nearSince: 0, offFixes: 0, detour: false, track: [], leftM: (legs[index] as { metres?:number })?.metres ?? 0});
     cam = null;
     const now = freshFix();
     if (following && now) map.easeTo({center: [...now], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
@@ -322,7 +325,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     document.body.classList.toggle('riding-along', !!next);
   }
 
-  // ride 의 경로 칸을 이 경로 처음으로(「이 길로 출발」 · 길을 다시 찾음 — 출발 시각 · 목적지 이름 · 따라가기는 그대로)
+  // ride 의 경로 칸을 이 경로 처음으로(「이 길로 출발」 — 출발 시각 · 목적지 이름 · 따라가기는 그대로)
   function begin(plan:RidePlan) {
     if (!ride) return;
     const legs = plan.legs as RideLeg[];

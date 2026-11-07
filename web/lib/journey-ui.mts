@@ -6,6 +6,7 @@
 import { appMapMode, serverUrl } from './server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로 · 브라우저 뒤로는 웹에서만
 import { endName, findStations, inkOn, mergeHits, sameSpot, swappedEnds, type FoundPlace, type PlaceHit, type SearchableStation } from './place-search.mts';
 import { createTimeWheel, type TimeWheel } from './time-wheel.mts';
+import { freshWalk, spliceWalk, walkEnd, walkQuery } from './ride-along.mts';   // 타고 가기에서 걷는 구간만 다시 찾기(본체가 같은 단계에서 요청)
 interface WalkLeg { type:'walk'; seconds:number; metres:number; exit:string; realtime?:undefined; path?:[number, number][] }
 interface TrainLeg { type:'ride'; line:string; from:string; to:string; departs:string; arrives:string; direction:string; destination:string | null; stops:number; wait:number; realtime:boolean; trainNow:string | null; stations:number[]; trainNo?:string | null }
 // 같은 정류장(또는 옆 정류장)에서 타서 같은 곳에 내리는 다른 노선(서버가 먼저 오는 순으로 많아야 3개)
@@ -588,20 +589,23 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     fillEnd('to', {...to, name: search.to}); useHere(); go();
   }
 
-  // 타고 가기 중 걷는 길에서 벗어남(ui/ride_along): 시트를 열지 않고 지금 위치 → 같은 목적지 · 지금 출발로 다시 찾는다. 못 찾으면 null(지금 길 그대로)
-  // use(): 그 답을 지난 검색으로 — 지도 경로 · 끝낸 뒤 아래 막대 · 다시 연 시트가 새 길(그 사이 다른 길이 지도를 차지했으면 하지 않는다)
-  async function reroute(spot:readonly [number, number]):Promise<{ plan:Plan; use():void } | null> {
-    const search = last, to = search?.picked.to;
-    if (!search || !to) return null;
+  // 타고 가기 중 걷는 길에서 벗어남(ui/ride_along): 시트를 열지 않고 지금 위치에서 그 걷는 구간(legs[index])의 끝까지 걷기만 다시 찾아 그 구간만 바꿔 끼운다
+  // (고른 지하철 · 버스 · 정류장은 그대로 — 2026-11-06 사용자). riding: 타고 가는 경로(지난 검색의 경로 하나와 같은 legs). 못 찾으면 null(지금 길 그대로)
+  // use(): 바꾼 경로를 지난 검색에 — 지도 경로 · 끝낸 뒤 아래 막대 · 다시 연 시트가 새 걷기(그 사이 다른 길이 지도를 차지했으면 하지 않는다)
+  async function reroute(spot:readonly [number, number], riding:{ legs:readonly unknown[] }, index:number):Promise<{ plan:Plan; use():void } | null> {
+    const search = last, to = search?.picked.to, at = search ? search.d.plans.findIndex(plan => plan.legs === riding.legs) : -1, plan = search?.d.plans[at];
+    const end = plan ? walkEnd(plan.legs, index) : null;
+    if (!search || !to || !plan || !end) return null;
     try {
-      const response = await fetch(serverUrl(`./api/route?from=${spot[1]},${spot[0]}&to=${to.lat},${to.lng}`));
-      const answer:RouteAnswer = await response.json(), plan = answer.ok ? answer.plans[0] : undefined;
-      if (!plan || last !== search) return null;
-      return {plan, use() {
+      const response = await fetch(serverUrl(`./api/route?${walkQuery(spot, end, to)}`));
+      const fresh = freshWalk(await response.json());
+      if (!fresh || last !== search) return null;
+      const next = spliceWalk(plan, index, fresh, end, new Date());
+      return {plan: next, use() {
         if (last !== search) return;
-        last = {d: answer, sel: 0, from: HERE_NAME, to: search.to, at: '', when: {k: 'now'}, picked: {from: null, to}};
-        try { showRoute?.(plan, false, false); } catch (error) { console.warn('지도에 경로를 그리지 못했어요', error); }
-        if (inSheet && mounted && hasPlans()) showResults();   // 결과 시트를 열어 둔 채 걷던 중이면 그 목록도 새 길로
+        last = {...search, d: {...search.d, plans: search.d.plans.map((each, which) => which === at ? next : each)}};
+        if (at === search.sel) try { showRoute?.(next, false, false); } catch (error) { console.warn('지도에 경로를 그리지 못했어요', error); }
+        if (inSheet && mounted && hasPlans()) showResults();   // 결과 시트를 열어 둔 채 걷던 중이면 그 목록도 새 걷기로
       }};
     } catch { return null; }
   }
