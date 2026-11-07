@@ -21,6 +21,7 @@ export interface StationNameDeps {
   PLATFORM_SCALE:number; closestPlatformPoint:typeof ClosestPoint; platformStroke:PlatformStroke; EXIT_MINZOOM:number; EXIT_MAX_M:number; EXIT_PASSAGES:boolean;
   document:Document; matchMedia:(q:string)=>{ matches:boolean };
   getLabels:()=>{ text:string }[]; getSelected:()=>string; getExits:()=>Exits; getStationAlpha:()=>number; getTrack:()=>{ kind:string };
+  getBright:()=>ReadonlySet<string>;   // 흐리게 하지 않을 역 번호(타고 가기 중 내가 타는 지하철 구간의 역) — 막대만 흐림 없이 따로 그린다
 }
 export interface ExitPillarDeps {
   map:MapLibre; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate }; stations:MapStation[]; exitCol:Map<string, number[]>; colors:Record<string, string>;
@@ -99,7 +100,7 @@ void main(){
   }
   render(gl:WebGL2RenderingContext,options:CustomRenderOptions){
     const {map,maplibregl,stationRects,exitCol,cityViaduct,colors,hexRGB3,stationWidthPx,platformPx,PLATFORM_SCALE,closestPlatformPoint,platformStroke,EXIT_MINZOOM,EXIT_MAX_M,EXIT_PASSAGES,document,matchMedia}=this.d;
-    const selected=this.d.getSelected(),exits=this.d.getExits(),stationAlpha=this.d.getStationAlpha(),kind=this.d.getTrack().kind;   // 선로 종류(지금 모드 설정)
+    const selected=this.d.getSelected(),exits=this.d.getExits(),stationAlpha=this.d.getStationAlpha(),kind=this.d.getTrack().kind,bright=stationAlpha<1?this.d.getBright():null;   // 선로 종류(지금 모드 설정)
     if(!stationRects.size)return;
     this.buildAtlas(gl);
     const z=map.getZoom(),unit=1/(512*2**z),data:number[]=[],hgt=stationWidthPx(z);
@@ -170,7 +171,11 @@ void main(){
       for(const [cx,cy,ux,uy,l,ww,col] of pass)quad(cx,cy,ux,uy,l,ww,[0,0,0,0],col,-1,0);       // passage: a thin line in the station's line colour
       }
     }
-    for(const g of geo.values()){
+    // 흐리게 하지 않을 역(lit)의 막대는 맨 뒤에 모아 그 부분만 흐림 없이 그린다
+    const ordered=[...geo.values()].filter(g=>!bright?.has(g.id)),lit=bright?[...geo.values()].filter(g=>bright.has(g.id)):[];
+    let litFrom=-1;
+    for(const g of [...ordered,...lit]){
+      if(litFrom<0&&lit.length&&g===lit[0])litFrom=data.length;
       if(pointsOnly){quad(g.cx,g.cy,1,0,dot,dot,[0,0,0,0],g.col,0,0);continue}
       if(g.points){
         const stroke=platformStroke(g.points,unit,g.h);
@@ -188,7 +193,9 @@ void main(){
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.uni.u_tex,0);
     if(kind!=='ground'){gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false)}else gl.disable(gl.DEPTH_TEST);   // coaster: platforms and exit passages follow the exit pillars' building occlusion   // city-life: cityOn — 심시티 too (its buildings are opaque; the bars floated over them, and over the viaduct)
     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.TRIANGLES,0,data.length/15);
+    if(litFrom<0){gl.drawArrays(gl.TRIANGLES,0,data.length/15);return}
+    if(litFrom)gl.drawArrays(gl.TRIANGLES,0,litFrom/15);
+    gl.uniform1f(this.uni.u_alpha,1);gl.drawArrays(gl.TRIANGLES,litFrom/15,(data.length-litFrom)/15);
   }
 }
 // Exit pillars (zoom 16+), drawn on the train canvas above the trains: a square column standing on the exit,

@@ -2,8 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, OFF_M, catchable, characterOf, legOverByTime, legPace, measuredPace, metres, onPath, reached, leftStation, rideSteps, rideSub,
-  splitPath, stopsLeft, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, doneSub,
+  HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, rideStops, OFF_M, catchable, characterOf, legOverByTime, legPace, measuredPace, metres, onPath, reached, leftStation, rideSteps, rideSub,
+  splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, doneSub,
   OFF_FIXES, REROUTE_GAP_MS, WALK_OFF_M, offFixes, shouldReroute,
 } from '../web/lib/ride-along.mts';
 
@@ -65,6 +65,10 @@ test('걷기 · 타기 · 도착 카드 글', () => {
   assert.equal(walkSub(legs, 0, 72, 70), '1/3 · 70m · 1분');
   assert.equal(rideSub(legs, 1, 5), '2/3 · 5정거장 · 08:40');
   assert.equal(rideSub(legs, 1, 1), '2/3 · 다음 역에서 내려요');
+  // 지금 역 · 다음 역을 알면 앞에 붙인다(2026-11-07 요청 — 지하철 · 버스 둘 다)
+  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: '종로3가'}), '2/3 · 지금 종각 · 다음 종로3가 · 5정거장 · 08:40');
+  assert.equal(rideSub(legs, 1, 1, {now: '동대문', next: '동묘앞'}), '2/3 · 지금 동대문 · 다음 역에서 내려요');
+  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: null}), '2/3 · 지금 종각 · 5정거장 · 08:40');
   const now = new Date(2026, 10, 4, 8, 40), started = +now - 32 * 60000;
   assert.equal(doneSub('강남역', now, started), '강남역 · 08:40 · 32분 걸렸어요');
   assert.deepEqual(rideSteps(legs).map(step => step.kind), ['walk', 'wait', 'ride', 'walk', 'done']);
@@ -90,6 +94,21 @@ test('열차 진행: 닿음 · 떠남 · 남은 정거장', () => {
   assert.equal(stopsLeft(track(500), [201, 202, 203]), 2);
   assert.equal(stopsLeft(track(1500), [201, 202, 203]), 1);
   assert.equal(stopsLeft(track(500), [201, 209]), null);
+  // 지금 역 = 닿은(reached) 마지막 역 · 다음 역 = 그다음 — 탄 구간 안에서만
+  assert.deepEqual(rideStops(track(500), [201, 202, 203]), {now: 201, next: 202});
+  assert.deepEqual(rideStops(track(995), [201, 202, 203]), {now: 202, next: 203});   // 역에 들어서는 중(3% 안)
+  assert.deepEqual(rideStops(track(2000), [202, 203]), {now: 203, next: null});
+  assert.deepEqual(rideStops({seqIds: [202, 203, 204], cum: [1000, 2000, 3000], dist: 1500}, [201, 202, 203]), {now: 202, next: 203});   // 지난 역은 예측 차례에서 빠진다
+  assert.equal(rideStops(track(500), [202, 203]), null);   // 아직 탄 역 전
+  assert.deepEqual(rideStops(track(1500), [201, 202, 203, 204, 205, 206]), {now: 202, next: 203});   // 먼 내릴 역은 예측에 없다(앞 10개 역뿐)
+  assert.deepEqual(rideStops(track(3000), [203, 204, 205]), {now: 204, next: 205});   // 다음 역이 예측 밖
+  assert.equal(rideStops(track(500), [208, 209]), null);   // 구간 역이 예측에 하나도 없음
+});
+
+test('열차를 못 따라갈 때 시각으로 남은 정거장', () => {
+  assert.equal(stopsLeftByTime(rideLeg(), new Date(2026, 10, 4, 8, 25)), 6);
+  assert.equal(stopsLeftByTime(rideLeg(), new Date(2026, 10, 4, 8, 7)), 12);   // 정한 열차보다 앞 열차를 탐(탄 시각 전) — 전에는 1(2026-11-07 화면)
+  assert.equal(stopsLeftByTime(rideLeg(), new Date(2026, 10, 4, 8, 50)), 1);
 });
 
 test('위치를 못 쓸 때 시각으로 구간 끝', () => {

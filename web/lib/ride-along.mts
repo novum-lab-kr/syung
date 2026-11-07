@@ -209,30 +209,35 @@ export const walkSub = (legs:readonly RideLeg[], index:number, leftM:number, lef
 export function waitTitle(leg:RideTrainLeg | RideBusLeg):string {
   return leg.type === 'bus' ? `${leg.route} ${leg.toward} 방면 타는 곳으로` : `${leg.line} ${leg.to} 방면 타는 곳으로`;
 }
-// 걷는 시간이 다 됐으면(0초) 「걸어서 1분」 대신 「승강장 도착」(갈아타기도 같다) · arrived: 첫 열차(고른 열차)가 이 역에 들어왔다(pickedArrived)
-export function waitText(legs:readonly RideLeg[], index:number, walkS:number, arrivalsS:readonly number[] | null, turn:number, arrived = false):{ say:string | null; sub:string } {
+// 걷는 시간이 다 됐으면(0초) 「걸어서 1분」 대신 「승강장 도착」 · 버스는 「정류장 도착」(갈아타기도 같다) · arrived: 첫 열차(고른 열차)가 이 역에 들어왔다(pickedArrived)
+// gone: 승강장 시간 전에 들어와 놓친 열차가 줄에 아직 있다(arrivalsS 에서는 뺐다) — 걸어서 못 타는 열차를 뺐을 때와 같은 글(「다음 열차」 · 놓침 한마디)
+export function waitText(legs:readonly RideLeg[], index:number, walkS:number, arrivalsS:readonly number[] | null, turn:number, arrived = false, gone = false):{ say:string | null; sub:string } {
   const previous = legs[index - 1], parts:string[] = [];
   if (previous && previous.type !== 'walk') parts.push(stepNo(legs, index - 1));
-  parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : '승강장 도착');
-  if (!arrivalsS?.length) return {say: null, sub: parts.join(' · ')};
-  const {missed, next} = catchable(arrivalsS, walkS), [first, second] = next;
-  if (first !== undefined) parts.push(firstTrainText(first, missed, arrived));
+  parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : `${legs[index]?.type === 'bus' ? '정류장' : '승강장'} 도착`);   // 버스는 정류장(2026-11-07 사용자 시험)
+  if (!arrivalsS?.length) return {say: gone ? talkLine('miss', turn) : null, sub: parts.join(' · ')};   // 놓친 열차 말고는 아직 모름
+  const caught = catchable(arrivalsS, walkS), missed = caught.missed || gone, [first, second] = caught.next;
+  const leg = legs[index], noun = leg?.type === 'bus' ? `${leg.route}번` : '열차';   // 버스는 「472번 3분 뒤」(2026-11-07 사용자 결정)
+  if (first !== undefined) parts.push(firstTrainText(first, missed, arrived, noun));
   if (second !== undefined) parts.push(missed && !arrived ? `그다음 ${minutes(second)}분 뒤` : `다음 ${minutes(second)}분 뒤`);
   const kind = missed || first === undefined ? 'miss' : talkKind(first, walkS);
   return {say: talkLine(kind, turn), sub: parts.join(' · ')};
 }
 
-function firstTrainText(firstS:number, missed:boolean, arrived:boolean):string {
-  if (arrived) return '열차 도착 · 지금 타세요';
-  return missed ? `다음 열차 ${minutes(firstS)}분 뒤` : `열차 ${minutes(firstS)}분 뒤`;
+function firstTrainText(firstS:number, missed:boolean, arrived:boolean, noun:string):string {
+  if (arrived) return `${noun} 도착 · 지금 타세요`;
+  return missed ? `다음 ${noun} ${minutes(firstS)}분 뒤` : `${noun} ${minutes(firstS)}분 뒤`;
 }
 
 // 타기 카드: 「사당에서 내려요」 · 「2/4 · 5정거장 · 08:21」 → 한 정거장 남으면 「2/4 · 다음 역에서 내려요」
 export const rideTitle = (leg:RideTrainLeg | RideBusLeg):string => `${leg.to}에서 내려요`;
-export function rideSub(legs:readonly RideLeg[], index:number, stopsLeft:number):string {
-  const leg = legs[index] as RideTrainLeg | RideBusLeg;
-  return stopsLeft <= 1 ? `${stepNo(legs, index)} · 다음 ${leg.type === 'bus' ? '정류장' : '역'}에서 내려요` : `${stepNo(legs, index)} · ${stopsLeft}정거장 · ${leg.arrives}`;
+// where: 지금 역(정류장) · 다음 역 이름(rideStops · 버스 층 journeyStopAt) — 모르면 null(그때는 예전 글 그대로)
+export function rideSub(legs:readonly RideLeg[], index:number, stopsLeft:number, where:RideWhere | null = null):string {
+  const leg = legs[index] as RideTrainLeg | RideBusLeg, head = where ? `${stepNo(legs, index)} · 지금 ${where.now}` : stepNo(legs, index);
+  if (stopsLeft <= 1) return `${head} · 다음 ${leg.type === 'bus' ? '정류장' : '역'}에서 내려요`;
+  return `${head}${where?.next ? ` · 다음 ${where.next}` : ''} · ${stopsLeft}정거장 · ${leg.arrives}`;
 }
+export interface RideWhere { now:string; next:string | null }
 // 도착 카드: 「슝 도착!」 · 「강남역 · 08:40 · 32분 걸렸어요」
 export function doneSub(toName:string, now:Date, startedMs:number):string {
   const pad = (value:number) => String(value).padStart(2, '0');
@@ -252,6 +257,19 @@ export function leftStation({seqIds, cum, dist}:PlanTrack, stationId:number):boo
   if (index < 0) return seqIds.length > 0 && dist >= (cum[0] ?? 0);   // 그 역이 이미 지나간 차례에서 빠졌다
   return dist > cum[index]! + gapAt(cum, index) * 0.1;
 }
+// 탄 열차가 선 역(또는 막 지난 역)과 다음 역 — 탄 구간(stations: 탄 역 → 내릴 역, 사이 역 모두) 안에서, 닿음은 reached 와 같은 셈.
+// 예측(seqIds)은 앞으로 갈 역 몇 개뿐이다(2026-11-07 화면에서 10개 — 먼 내릴 역은 없다): 예측에 처음 보이는 구간 역 앞은 이미 지난 역(leftStation 과 같음),
+// 그 뒤 예측에 없는 역은 아직 먼 역. 구간 역이 하나도 예측에 없거나 아직 탄 역 전이면 null
+export function rideStops(track:PlanTrack, stations:readonly number[]):{ now:number; next:number | null } | null {
+  const first = stations.findIndex(id => track.seqIds.includes(id));
+  if (first < 0) return null;
+  let now:number | null = first > 0 ? stations[first - 1]! : null;
+  for (const id of stations.slice(first)) {
+    if (!track.seqIds.includes(id) || !reached(track, id)) return now == null ? null : {now, next: id};
+    now = id;
+  }
+  return now == null ? null : {now, next: null};
+}
 export function stopsLeft({seqIds, cum, dist}:PlanTrack, stations:readonly number[]):number | null {
   const goal = seqIds.indexOf(stations[stations.length - 1]!);
   if (goal < 0) return null;
@@ -259,9 +277,11 @@ export function stopsLeft({seqIds, cum, dist}:PlanTrack, stations:readonly numbe
   for (let index = 0; index <= goal; index++) if (cum[index]! > dist + gapAt(cum, index) * 0.03) count++;
   return count;
 }
-// 열차를 못 따라갈 때(지도에 없음): 탄 시각 · 내릴 시각 사이 지난 몫으로
+// 열차를 못 따라갈 때(지도에 없음): 탄 시각 · 내릴 시각 사이 지난 몫으로. 길찾기가 정한 열차보다 앞 열차를 타 아직 탄 시각 전이면 지난 몫 0
+//  (전에는 하루를 한 바퀴 돈 몫으로 셈해 막 탔는데 「다음 역에서 내려요」 — 2026-11-07 화면)
 export function stopsLeftByTime(leg:RideTrainLeg | RideBusLeg, now:Date):number {
-  const start = hm(leg.departs), end = hm(leg.arrives), span = ((end - start + 1440) % 1440) || 1, gone = ((now.getHours() * 60 + now.getMinutes() - start + 1440) % 1440);
+  const start = hm(leg.departs), end = hm(leg.arrives), span = ((end - start + 1440) % 1440) || 1, since = (now.getHours() * 60 + now.getMinutes() - start + 1440) % 1440;
+  const gone = since < 720 ? since : 0;
   return Math.max(1, Math.ceil(leg.stops * (1 - Math.min(1, gone / span))));
 }
 // 시각 기준(위치를 못 쓸 때): 그 구간이 끝났나 — 걷기는 다음 탈 것이 타는 곳에 닿을 시각, 타기는 내릴 시각
@@ -313,8 +333,26 @@ export interface NearInput { goalM:number; stationM:number | null; exitM:number 
 // 기다리기로 넘길 만큼 가까운가: 길 끝 · 역 한가운데 100m(NEAR_M) 안이거나 아무 출구 50m 안(5초 머묾은 부르는 쪽이 센다)
 export const nearBoarding = ({goalM, stationM, exitM}:NearInput):boolean =>
   goalM <= NEAR_M || (stationM !== null && stationM <= NEAR_M) || atExit(exitM);
-// 정한 출구가 아닌 출구로 들어갔나(어느 출구 50m 안인데 길 끝은 50m 밖) — 그러면 남은 길을 0 으로 보고 승강장 90초만 센다
-export const otherExit = ({goalM, exitM}:{ goalM:number; exitM:number | null }):boolean => atExit(exitM) && goalM > EXIT_NEAR_M;
+// (가까워서 · 지하로 들어가 끊겨서 기다리기로 넘기면 남은 길은 0 으로 보고 승강장 90초만 그때부터 센다 — 2026-11-07 사용자 결정. 넘긴 자리의 남은 길은
+//  길 밖 위치를 길 위로 비춘 값이라 역 앞에서도 100m 넘게 남아 「걸어서 2분」 · 열차 놓침으로 보였다)
+
+// 고른 열차가 탈 역에 들어왔을 때(pickedArrived · 올 때가 지나 줄에서 사라짐 — 2026-11-07 사용자 결정): 승강장 시간이 끝났으면 그 순간 탄 것(board),
+//  아직 남았으면 놓친 것(missed — 다음 열차로). 안 들어왔으면 null(지하라 위치 없이 시간으로만 가린다)
+export type ArriveOutcome = 'board' | 'missed' | null;
+export function arriveOutcome(walkS:number, arrived:boolean):ArriveOutcome {
+  if (!arrived) return null;
+  return walkS <= 0 ? 'board' : 'missed';
+}
+
+// 승강장 시간이 아직 남았는데 이미 이 역에 들어와 있는 열차는 고른 열차가 아니어도 놓친 열차(③ — 승강장에 닿기 전에 들어왔다).
+// 이것을 빼지 않으면 승강장 시간이 끝나는 순간 서 있던 그 열차를 새로 골라 바로 탄 것으로 봤다(2026-11-07 화면 추적 — 0102 「시청 도착」 90초 넘게).
+// 들어와 있음은 남은 초 0 이 아니라 줄의 글(「시청 도착」 · 「시청 진입」 — /api/live?arrivals= message)로 본다: 「전역 도착 150초」를 시계로 깎으면
+// 실제보다 100초쯤 먼저 0 이 된다(같은 날 추적 0106)
+export function arrivedEarly(rows:readonly { message:string; trainNo?:string | null }[], walkS:number, station:string):string[] {
+  if (walkS <= 0) return [];
+  const name = station.replace(/\([^)]*\)/g, '').trim();
+  return rows.flatMap(row => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
+}
 
 export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
 export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {

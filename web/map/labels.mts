@@ -1,4 +1,4 @@
-// 역 이름표: 보이는 역마다 이름 · 노선 · 자리(signAnchor)를 'station-labels' 자료로 만든다. labels 의 주인(승강장 층이 getLabels 로 읽는다).
+// 역 이름표: 보이는 역마다 역 번호 · 이름 · 노선 · 자리(signAnchor)를 'station-labels' 자료로 만든다(번호는 흐림 없이 그릴 역 가르기). labels 의 주인(승강장 층이 getLabels 로 읽는다).
 // 이름표 symbol 층 등록 · 캔버스 팻말 그리기는 아직 본체(map.on('load') · 열차 캔버스).
 import type { Feature } from 'geojson';
 import type { GeoJSONSource, Map as MapLibre } from 'maplibre-gl';
@@ -27,7 +27,7 @@ export function createStationLabels({map,stations,stationRects,colors,getSelecte
       const c=signAnchor((shown.map(x=>stationRects.get(`${x.name}:${s.id}`)).filter(Boolean) as {coords:unknown[]}[]).map(r=>r.coords));
       if(!c)return [];
       const names=sortLines(shown.map(x=>x.name));
-      return [{type:'Feature',properties:{text,rank:-s.lines.length,ln:names.join('|'),lc:names.map((n:string)=>colors[n]||'#52646a').join('|'),ph:placeholderText(names,text)},geometry:{type:'Point',coordinates:c}}];
+      return [{type:'Feature',properties:{id:String(s.id),text,rank:-s.lines.length,ln:names.join('|'),lc:names.map((n:string)=>colors[n]||'#52646a').join('|'),ph:placeholderText(names,text)},geometry:{type:'Point',coordinates:c}}];
     })});
     schedule();
   }

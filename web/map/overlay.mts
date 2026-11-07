@@ -47,7 +47,7 @@ interface OverlayLive {
   bloomTune:BloomTune | null | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
   CoasterRidePlacement:typeof CoasterRidePlacement; FestoonLayer:typeof FestoonLayer; RideLayer:typeof RideLayer; busLayer:ReturnType<typeof createBusLayer> | null;
   cityBuildings:CityBuildings | null; cityLandmarks:CityLandmarks | null; settings:OverlaySettings; kitReady:boolean; sampleRideTracks:typeof sampleRideTracks;
-  selected:NonNullable<Parameters<CityViaduct['render']>[2]>['selected']; stationAlpha:number; drawTrains:()=>void; wallsNow:()=>void;
+  selected:NonNullable<Parameters<CityViaduct['render']>[2]>['selected']; stationAlpha:number; brightStations:ReadonlySet<string>; drawTrains:()=>void; wallsNow:()=>void;
 }
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
 export interface TrainOverlayDeps {
@@ -92,18 +92,22 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     if(!signFeatures.length){showSigns(false);return}
     const clip=(x:number,y:number):[number, number, number]=>[M[0]!*x+M[4]!*y+M[12]!,M[1]!*x+M[5]!*y+M[13]!,M[3]!*x+M[7]!*y+M[15]!];
     const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set<string>(),items:StationSign[]=[];
+    const bright=live.stationAlpha<1?live.brightStations:null,lit=new Set<StationSign>();   // 흐리게 하지 않을 역(타고 가기 중 내 지하철 구간)의 이름표
     for(const f of signFeatures){
       const [lng,lat]=(f.geometry as Point).coordinates as XY,k=`${lng},${lat}`;if(seen.has(k))continue;seen.add(k);
       const q=maplibregl.MercatorCoordinate.fromLngLat([lng,lat]),[x,y,w]=clip(q.x,q.y);if(!(w>0))continue;
       const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(rider.ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
       items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
+      if(bright?.has(String(f.properties.id)))lit.add(items.at(-1)!);
     }
     items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
     if(meShape&&meShape.length>2){   // 내 위치 캐릭터와 겹친 이름표만 캐릭터 옆으로 비킨다(다른 이름표 자리는 그대로)
       const xs=meShape.map(([x])=>x),ys=meShape.map(([,y])=>y),avoid={left:Math.min(...xs),right:Math.max(...xs),top:Math.min(...ys),bottom:Math.max(...ys)};
-      for(let i=0;i<items.length;i++)items[i]=dodgeSign(items[i]!,signBounds(sctx,items[i]!),avoid)}
+      for(let i=0;i<items.length;i++){const moved=dodgeSign(items[i]!,signBounds(sctx,items[i]!),avoid);if(lit.delete(items[i]!))lit.add(moved);items[i]=moved}}
     showSigns(items.length>0);
-    drawStationSigns(sctx,items,{dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',alpha:live.stationAlpha,now,still:REDUCED.matches});
+    const signOptions={dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',now,still:REDUCED.matches};
+    drawStationSigns(sctx,lit.size?items.filter(item=>!lit.has(item)):items,{...signOptions,alpha:live.stationAlpha});
+    if(lit.size)drawStationSigns(sctx,items.filter(item=>lit.has(item)),{...signOptions,alpha:1});
     if(meShape&&meShape.length>2){   // 내 위치 캐릭터가 이름표 앞에 보이게: 캐릭터 윤곽만큼 이름표를 지운다(가장자리 1 px 더)
       const k=SW/Math.max(1,W);sctx.save();sctx.globalCompositeOperation='destination-out';sctx.beginPath();
       for(const [x,y] of meShape)sctx.lineTo(x*k,y*k);
