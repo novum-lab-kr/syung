@@ -68,6 +68,11 @@ ALT_DEPART_WITHIN = 20 * 60   # 고른 버스보다 이 안에 떠나는 것만
 ALT_SAME_NAME_M = 300         # 옆 정류장 후보: 이름이 같은 정류장(길 건너 · 옆 승강장)은 BUS_WALK 상한까지(걷기 약 4분 — 직선 132 m 여도 길 건너 돌면 150 m 를 넘었다, 2026-10-29 2415)
 ALT_OTHER_NAME_M = 80         # 이름이 다르면 이보다 가까울 때만(걷기 1분 안팎)
 STOP_NUMBER_M = 120           # 탐색 자료 정류장(KTDB 좌표 — 일부는 반올림)에 번호를 붙일 때 같은 이름 정류장을 찾는 범위
+# 탐색 자료(KTDB) 패턴을 서울 버스 자료 노선에 맞추기(seoul_runs): KTDB 좌표는 일부가 반올림(경도 소수 셋째 — 최대 약 45 m)이다
+SEOUL_NAME_M = 120            # 이름(조각)이 같은 정류장을 찾는 범위
+SEOUL_NEAR_M = 60             # 이름이 달라도 같은 정류장으로 보는 범위(이름만 바뀐 정류장 — 남대문세무서 → 명동성당.남대문세무서 41 m)
+SEOUL_MIN_SHARE = 0.6         # 자리의 이만큼은 맞아야 같은 노선으로 본다
+SEOUL_BACK_M = 500            # 서울 노선 차례를 거꾸로 가는 후보는 이만큼 먼 것으로 친다(같은 이름 반대 방향 정류장 가르기)
 ALT_ARRIVE_LATE = 15 * 60     # 고른 버스보다 이보다 늦게 닿지 않는 것만
 MAX_ALTERNATIVES = 12         # 안전 상한(응답이 지나치게 커지지 않게) — 2026-10-29 사용자 결정: 같은 구간 다른 버스는 시간 조건에 맞으면 다 보여 준다(웹이 3대까지만 펴 보이고 나머지는 '외 N대')
 BUS_COLORS = {"trunk": "#3d5bab", "branch": "#5bb025", "express": "#e60012", "circular": "#f2b70a",
@@ -262,6 +267,12 @@ def _train_goes(line: str, x: int, at: int, toward: int, end: int | None) -> boo
     return _runs_in_order(line, tuple(stop for k, stop in enumerate(stops) if k == 0 or stop != stops[k - 1]))
 
 
+def _meters(a: tuple[float, float], b: tuple[float, float]) -> float:
+    (lat1, lon1), (lat2, lon2) = a, b
+    x = math.radians(lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
+    return 6371000 * math.hypot(x, math.radians(lat2 - lat1))
+
+
 # ---- buses (data/bus.json, pipeline/build_bus_data.py; optional) ---------------------------
 
 BUS = journey_data.read_optional(journey_data.BUS)
@@ -270,8 +281,10 @@ BROUTES = BUS["routes"] if BUS else cast("list[Any]", [])
 BPATS = BUS["patterns"] if BUS else cast("list[Any]", [])
 BUS_WALK = BUS["walk"] if BUS else cast("list[Any]", [])
 # stops whose KTDB coordinates are rounded, put on their OSM stop (pipeline/fix_bus_stops.py)
+BSTOPS_RAW: dict[int, tuple[float, float]] = {}   # 옮기기 전 KTDB 좌표 — 서울 노선 정류장 맞추기(seoul_runs)가 같이 본다
 for _i, (_la, _lo) in (journey_data.read_optional(journey_data.BUS_STOP_FIX, {}).items() if BUS else ()):
     if int(_i) < len(BSTOPS):
+        BSTOPS_RAW[int(_i)] = (BSTOPS[int(_i)][1], BSTOPS[int(_i)][2])
         BSTOPS[int(_i)] = [BSTOPS[int(_i)][0], _la, _lo]
 # 경기 프리미엄버스(이름이 P + 숫자 — 예 "P9601(출근)"): 앱으로 좌석을 예약해야 타고 하루 한두 번이라
 # 시간표가 맞아도 길찾기 결과로 쓸 수 없다(2026-10-29 사용자 결정). 자료에 노선 종류 칸이 없어(build_bus_data.py 는
@@ -284,20 +297,126 @@ def bookable_only(name: str) -> bool:
     return PREMIUM_BUS.match(name.strip()) is not None
 
 
-def bus_boardings(patterns: list[Row], routes: list[Any]) -> dict[int, list[tuple[int, int]]]:
-    """stop → [(pattern, position)] 탈 수 있는 자리. 프리미엄버스 패턴은 넣지 않는다(패턴 번호는 그대로 — BUS_SHAPES 가 번호로 찾는다)."""
+SeoulStop = tuple[str, str]   # 서울 버스 자료 정류장 (id, 번호 arsId)
+SeoulRun = tuple[str, list["SeoulStop | None"]]   # 패턴 하나: (서울 노선 id, 자리마다 서울 정류장 — 그 노선이 지금 서지 않는 자리는 None)
+
+
+def _stop_words(name: str) -> set[str]:
+    """정류장 이름을 '.' 으로 나눈 조각(괄호 꼬리 '(중)' · '(경유)' 는 뗀다) — KTDB 「남대문세무서」 · 서울 「명동성당.남대문세무서」를 같은 곳으로 본다."""
+    return {re.sub(r"\(.*?\)$", "", word).strip() for word in name.split(".")} - {""}
+
+
+def seoul_runs(patterns: list[Row], routes: list[Any], stops: list[Any],
+               seoul_routes: list[Row], seoul_stops: dict[str, Row],
+               raw: dict[int, tuple[float, float]] | None = None) -> dict[int, SeoulRun]:
+    """탐색 자료(KTDB 2025-03) 패턴을 서울 버스 자료(data/bus/routes.json · stops.json — 실시간 도착 · 위치가 쓰는 자료)의 같은 이름 노선에 맞춘다.
+    KTDB 노선은 그 뒤 바뀐 것이 있다 — 472 · 172 가 KTDB 로는 경찰청 → 시청역9번출구(02133)를 지나지만 서울 자료 · 도착 정보로는
+    경찰청 → 숭례문 → 소공동주민센터(02128)로 가고 02133 에는 101 만 선다(2026-11-07 운영 재현). 그런 자리에서 타라고 내지 않게
+    자리마다 그 노선의 서울 정류장을 찾는다: 이름(조각)이 같고 SEOUL_NAME_M 안이거나, 이름이 달라도 SEOUL_NEAR_M 안(이름만 바뀐 정류장).
+    같은 이름이 양쪽 방향에 있으니 서울 노선의 정류장 차례를 따라가며(DP) 고른다. 맞은 자리가 SEOUL_MIN_SHARE 보다 적은 패턴은
+    이름만 같은 다른 노선(경기 · 인천)이거나 통째로 바뀐 노선이라 맞추지 않는다(그대로 다 타고 내린다 · 번호 없음).
+    raw = bus-stop-fix 로 옮기기 전 KTDB 좌표: 옮긴 OSM 자리가 서울 정류장에서 멀어진 곳이 있어(운영 245 자리 · 2026-11-07)
+    두 좌표 중 가까운 쪽으로 본다."""
+    by_name = {str(row["name"]): row for row in seoul_routes}
+    grids: dict[str, dict[tuple[int, int], list[tuple[int, Row, set[str]]]]] = {}   # 서울 노선 id → 칸 → [(차례, 정류장, 이름 조각)]
+    out: dict[int, SeoulRun] = {}
+    for pi, pat in enumerate(patterns):
+        seoul = by_name.get(str(routes[pat["r"]][0]).strip())
+        if not seoul:
+            continue
+        rid = str(seoul["id"])
+        if rid not in grids:
+            grids[rid] = defaultdict(list)
+            for n, sid in enumerate(seoul["stopIds"]):
+                row = seoul_stops.get(sid)
+                if row:
+                    grids[rid][(int(row["lat"] / 0.0027), int(row["lng"] / 0.0034))].append((n, row, _stop_words(str(row["name"]))))
+        grid = grids[rid]
+        # 자리마다 후보: [(서울 노선 차례, 미터, (id, 번호))]
+        options: list[list[tuple[int, float, SeoulStop]]] = []
+        for stop in pat["s"]:
+            name, lat, lng = stops[stop][:3]
+            mine, near = _stop_words(str(name)), cast("dict[int, tuple[float, SeoulStop]]", {})   # 서울 차례 → (미터, 정류장)
+            for point in ((lat, lng), *((raw[stop],) if raw and stop in raw else ())):
+                cy, cx = int(point[0] / 0.0027), int(point[1] / 0.0034)   # 칸 하나 약 300 m — 옆 칸까지 보면 SEOUL_NAME_M 을 다 덮는다
+                for n, row, theirs in (hit for dy in (-1, 0, 1) for dx in (-1, 0, 1) for hit in grid.get((cy + dy, cx + dx), ())):
+                    metres = _meters(point, (row["lat"], row["lng"]))
+                    if (metres <= SEOUL_NEAR_M or (metres <= SEOUL_NAME_M and mine & theirs)) and (n not in near or metres < near[n][0]):
+                        near[n] = (metres, (str(row["id"]), str(row.get("arsId") or "")))
+            options.append([(n, metres, spot) for n, (metres, spot) in near.items()])
+        if sum(1 for found in options if found) < SEOUL_MIN_SHARE * len(options):
+            continue
+        out[pi] = (str(seoul["id"]), _follow_order(options))
+    return out
+
+
+def _follow_order(options: list[list[tuple[int, float, SeoulStop]]]) -> list[SeoulStop | None]:
+    """자리마다 후보 하나 — 서울 노선 차례가 앞으로만 가게(거꾸로 · 제자리면 SEOUL_BACK_M 만큼 더 먼 것으로 친다), 그 안에서 거리 합이 가장 작게."""
+    best: list[tuple[float, int, int]] = []   # 앞 자리 후보마다 (지금까지 합, 서울 차례, 그 후보를 고른 앞 자리 후보 번호 | -1)
+    chain: list[list[tuple[float, int, int]]] = []
+    for found in options:
+        if not found:
+            chain.append([])
+            continue
+        now: list[tuple[float, int, int]] = []
+        for order, metres, _ in found:
+            if not best:
+                now.append((metres, order, -1))
+                continue
+            back = min(range(len(best)), key=lambda c: best[c][0] + (0 if order > best[c][1] else SEOUL_BACK_M))
+            now.append((best[back][0] + (0 if order > best[back][1] else SEOUL_BACK_M) + metres, order, back))
+        chain.append(now)
+        best = now
+    picked: list[SeoulStop | None] = [None] * len(options)
+    pick = min(range(len(best)), key=lambda c: best[c][0]) if best else -1
+    for k in range(len(options) - 1, -1, -1):
+        if not chain[k] or pick < 0:
+            continue
+        picked[k] = options[k][pick][2]
+        pick = chain[k][pick][2]
+    return picked
+
+
+def bus_boardings(patterns: list[Row], routes: list[Any], seoul: dict[int, SeoulRun] | None = None) -> dict[int, list[tuple[int, int]]]:
+    """stop → [(pattern, position)] 탈 수 있는 자리. 프리미엄버스 패턴은 넣지 않는다(패턴 번호는 그대로 — BUS_SHAPES 가 번호로 찾는다).
+    서울 버스 자료에 맞춘 패턴(seoul)은 그 노선이 지금 서지 않는 자리에서 타지 않는다."""
     at: dict[int, list[tuple[int, int]]] = defaultdict(list)
     for pi, pat in enumerate(patterns):
         if bookable_only(routes[pat["r"]][0]):
             continue
+        run = (seoul or {}).get(pi)
         for k, stop in enumerate(pat["s"][:-1]):
-            at[stop].append((pi, k))
+            if run is None or run[1][k] is not None:
+                at[stop].append((pi, k))
     return at
+
+
+def _alights(pi: int, j: int) -> bool:
+    """패턴 pi 의 j 번째 자리에서 내릴 수 있나 — 서울 버스 자료로 그 노선이 지금 서지 않는 자리면 아니다."""
+    run = SEOUL.get(pi)
+    return run is None or run[1][j] is not None
+
+
+def _seoul_ids(pi: int, k: int, j: int) -> Row:
+    """버스 구간 응답에 싣는 서울 버스 자료 번호: 노선 id(routeId) · 타는 정류장(fromId · fromArs) · 내리는 정류장(toId · toArs) — 맞춘 패턴만."""
+    run = SEOUL.get(pi)
+    if run is None:
+        return {}
+    ids: Row = {"routeId": run[0]}
+    for side, spot in (("from", run[1][k]), ("to", run[1][j])):
+        if spot is not None:
+            ids[f"{side}Id"], ids[f"{side}Ars"] = spot
+    return ids
 
 
 for _p in BPATS:
     _p["starts"] = [d[0] for d in _p["d"]]
-BUS_AT = bus_boardings(BPATS, BROUTES)
+_catalog = cast("dict[str, Any]", journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {})
+_seoul_routes = cast("dict[str, Any]", journey_data.read_optional(journey_data.BUS_SEOUL_ROUTES, {}) or {}) if BUS else {}
+SEOUL: dict[int, SeoulRun] = seoul_runs(
+    BPATS, BROUTES, BSTOPS, cast("list[Row]", _seoul_routes.get("routes", [])),
+    {str(row["id"]): row for row in cast("list[Row]", _catalog.get("stops", ()))} if BUS else {}, BSTOPS_RAW)
+BUS_AT = bus_boardings(BPATS, BROUTES, SEOUL)
 _bgrid: dict[tuple[int, int], list[int]] = defaultdict(list)
 for _i, (_, _la, _lo) in enumerate(BSTOPS):
     _bgrid[(int(_la / 0.0027), int(_lo / 0.0034))].append(_i)
@@ -410,12 +529,6 @@ def _headway(line: str, label: str | None, t: datetime) -> int | None:
 def _stand(line: str) -> int:
     tm = {**_timing["default"], **_timing["lines"].get(line, {})}
     return max(15, tm["zone"] - 10)
-
-
-def _meters(a: tuple[float, float], b: tuple[float, float]) -> float:
-    (lat1, lon1), (lat2, lon2) = a, b
-    x = math.radians(lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
-    return 6371000 * math.hypot(x, math.radians(lat2 - lat1))
 
 
 # ---- walking -------------------------------------------------------------------------------
@@ -684,6 +797,8 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
             _, pi, base, scale, k = node
             p, here = BPATS[pi], base + BPATS[pi]["t"][k] * scale
             for j in (range(k + 1, len(p["s"])) if "bus" in modes else ()):
+                if not _alights(pi, j):
+                    continue
                 arr = base + p["t"][j] * scale
                 push(("bs", p["s"][j]), arr, arr, ("bus", None, {"p": pi, "k": k, "j": j, "base": base, "sc": scale, "departs": here, "ready": here,
                                                                 "stay": True}), 0)
@@ -764,7 +879,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                     scanned[(pi, st)] = (k, extra)
                     for j in range(k + 1, len(ps)):
                         arr = base + pt[j] * scale
-                        if arr + extra < bbest[ps[j]]:
+                        if arr + extra < bbest[ps[j]] and _alights(pi, j):
                             push(("bs", ps[j]), arr + extra, arr,
                                  ("bus", s, {"p": pi, "k": k, "j": j, "base": base, "sc": scale, "departs": day0 + dep, "ready": t}), changes + (kind != "start"))
             if kind == "bus":
@@ -840,6 +955,7 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
                          "arrives": _fmt(best[s][1]), "stops": len(ids) - 1, "wait": round(info["departs"] - info["ready"]),
                          "realtime": False, "toward": BSTOPS[p["s"][-1]][0],
                          "path": _bus_path(info["p"], info["k"], info["j"]), "shaped": _bus_shaped(info["p"]),
+                         **_seoul_ids(info["p"], info["k"], info["j"]),
                          "_dep": info["departs"], "_arr": best[s][1], "_ban": [("bus", p["r"], ids[0]), ("bus", p["r"])], "_stop": ids[-1],
                          "_run": (info["p"], info["base"], info["sc"], info["j"]), **({"_stay": True} if info.get("stay") else {})})
     transit = [l for l in legs if l["type"] != "walk"]
@@ -1025,7 +1141,6 @@ def _nearby(stop: int) -> list[tuple[int, float]]:
 
 
 _catalog_by_name: dict[str, list[tuple[float, float, str, str]]] = defaultdict(list)   # 정류장 이름 → [(lat, lng, id, 번호)]
-_catalog = cast("dict[str, Any]", journey_data.read_optional(journey_data.BUS_CATALOG, {}) or {})
 for _row in cast("list[Row]", _catalog.get("stops", ())):
     _catalog_by_name[_row["name"]].append((_row["lat"], _row["lng"], str(_row["id"]), str(_row.get("arsId") or "")))
 
@@ -1076,7 +1191,7 @@ def _alternatives(alt: tuple[Any, ...], route: str, day0: float, goal: dict[Node
             for end, end_m in ends:
                 at, j = k, 0
                 for stop in (*onward[:-1], end):   # 정류장들을 차례로 지나는가 — 마지막이 내리는 자리(j)
-                    j = next((n for n in range(at + 1, len(p["s"])) if p["s"][n] == stop), -1)
+                    j = next((n for n in range(at + 1, len(p["s"])) if p["s"][n] == stop and _alights(pi, n)), -1)
                     if j < 0:
                         break
                     at = j
