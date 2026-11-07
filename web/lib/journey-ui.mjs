@@ -1,6 +1,7 @@
 import { appMapMode, serverUrl } from "./server_url.mjs";
 import { endName, findStations, inkOn, mergeHits, sameSpot, swappedEnds } from "./place-search.mjs";
 import { createTimeWheel } from "./time-wheel.mjs";
+import { freshWalk, spliceWalk, walkEnd, walkQuery } from "./ride-along.mjs";
 // web/lib/journey-ui.mts
 var HERE_NAME = "내 위치";
 var PICK_ZOOM = 16;
@@ -954,30 +955,28 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		useHere();
 		go();
 	}
-	async function reroute(spot) {
-		const search = last, to = search?.picked.to;
-		if (!search || !to) return null;
+	async function reroute(spot, riding, index) {
+		const search = last, to = search?.picked.to, at = search ? search.d.plans.findIndex((plan) => plan.legs === riding.legs) : -1, plan = search?.d.plans[at];
+		const end = plan ? walkEnd(plan.legs, index) : null;
+		if (!search || !to || !plan || !end) return null;
 		try {
-			const answer = await (await fetch(serverUrl(`./api/route?from=${spot[1]},${spot[0]}&to=${to.lat},${to.lng}`))).json(), plan = answer.ok ? answer.plans[0] : void 0;
-			if (!plan || last !== search) return null;
+			const response = await fetch(serverUrl(`./api/route?${walkQuery(spot, end, to)}`));
+			const fresh = freshWalk(await response.json());
+			if (!fresh || last !== search) return null;
+			const next = spliceWalk(plan, index, fresh, end, /* @__PURE__ */ new Date());
 			return {
-				plan,
+				plan: next,
 				use() {
 					if (last !== search) return;
 					last = {
-						d: answer,
-						sel: 0,
-						from: HERE_NAME,
-						to: search.to,
-						at: "",
-						when: { k: "now" },
-						picked: {
-							from: null,
-							to
+						...search,
+						d: {
+							...search.d,
+							plans: search.d.plans.map((each, which) => which === at ? next : each)
 						}
 					};
-					try {
-						showRoute?.(plan, false, false);
+					if (at === search.sel) try {
+						showRoute?.(next, false, false);
 					} catch (error) {
 						console.warn("지도에 경로를 그리지 못했어요", error);
 					}

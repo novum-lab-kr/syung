@@ -3,6 +3,7 @@ import { seoulSun, sunPosition as sunPosition$1 } from "./lib/sun.mjs";
 import { appMapMode, serverUrl } from "./lib/server_url.mjs";
 import "./lib/place-search.mjs";
 import "./lib/time-wheel.mjs";
+import "./lib/ride-along.mjs";
 import { initJourney } from "./lib/journey-ui.mjs";
 import "./npm/preact/dist/preact.mjs";
 import { __vitePreload } from "./_virtual/_vite/preload-helper.mjs";
@@ -40,7 +41,6 @@ import "./components/login_button.mjs";
 import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
-import "./lib/ride-along.mjs";
 import { createRideAlong } from "./ui/ride_along.mjs";
 import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
@@ -1599,7 +1599,7 @@ var rideAlong = createRideAlong({
 	}),
 	ended: () => journey.rideEnded(),
 	detour: () => journey.fromHere(),
-	reroute: (spot) => journey.reroute(spot),
+	reroute: (spot, plan, index) => journey.reroute(spot, plan, index),
 	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat])
 });
 var openTrain = (plan) => {

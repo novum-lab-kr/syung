@@ -52,6 +52,68 @@ function splitPath(path, at) {
 }
 var offFixes = (count, offM) => offM > 20 ? count + 1 : 0;
 var shouldReroute = ({ offFixes: count, busy, nowMs, lastMs }) => count >= 3 && !busy && (!lastMs || nowMs - lastMs >= 3e4);
+var WALK_AGAIN_MAX_S = 7200;
+function walkEnd(legs, index) {
+	const leg = legs[index], next = legs[index + 1];
+	if (leg?.type !== "walk") return null;
+	if (!next) return { goal: true };
+	if (next.type === "ride") return next.stations[0] === void 0 ? null : { station: next.stations[0] };
+	const end = next.type === "bus" ? next.path[0] : leg.path?.[leg.path.length - 1];
+	return end ? { to: end } : null;
+}
+function walkQuery(spot, end, goal) {
+	const from = `walk=1&from=${spot[1]},${spot[0]}`;
+	if ("station" in end) return `${from}&station=${end.station}`;
+	const [lng, lat] = "to" in end ? end.to : [goal.lng, goal.lat];
+	return `${from}&to=${lat},${lng}`;
+}
+var isSpot = (value) => Array.isArray(value) && value.length >= 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+function freshWalk(answer) {
+	if (!answer || typeof answer !== "object" || answer.ok !== true) return null;
+	const leg = answer.leg;
+	if (!leg || typeof leg !== "object") return null;
+	const { type, seconds, metres, path, exit, label, to } = leg;
+	if (type !== "walk" || typeof seconds !== "number" || !(seconds >= 0 && seconds <= 7200) || typeof metres !== "number" || !Number.isFinite(metres)) return null;
+	if (!Array.isArray(path) || path.length < 2 || !path.every(isSpot)) return null;
+	return {
+		seconds,
+		metres,
+		path: path.map(([lng, lat]) => [lng, lat]),
+		exit: typeof exit === "string" ? exit : "",
+		label: typeof label === "string" ? label : "",
+		to: typeof to === "string" ? to : null
+	};
+}
+function spliceWalk(plan, index, fresh, end, now) {
+	const legs = [...plan.legs], old = legs[index], previous = legs[index - 1];
+	const station = "station" in end, transfer = !!previous && previous.type !== "walk";
+	legs[index] = {
+		...old,
+		seconds: fresh.seconds,
+		metres: fresh.metres,
+		path: fresh.path,
+		...station ? {
+			exit: fresh.exit,
+			...fresh.to ? { to: fresh.to } : {}
+		} : {},
+		...station && !transfer && fresh.label ? { label: fresh.label } : {}
+	};
+	const walkMinutes = Math.round(legs.reduce((sum, leg) => sum + (leg.type === "walk" ? leg.seconds : 0), 0) / 60);
+	if (index < legs.length - 1) return {
+		...plan,
+		legs,
+		walkMinutes
+	};
+	const pad = (value) => String(value).padStart(2, "0"), at = /* @__PURE__ */ new Date(+now + fresh.seconds * 1e3);
+	const arrives = `${pad(at.getHours())}:${pad(at.getMinutes())}`, shift = (hm(arrives) - hm(plan.arrives) + 720 + 1440) % 1440 - 720;
+	return {
+		...plan,
+		legs,
+		walkMinutes,
+		arrives,
+		minutes: Math.max(0, plan.minutes + shift)
+	};
+}
 var TALK = {
 	miss: ["포탈 열면 가능한데… 그럴 거면 집으로 여시죠"],
 	hurry: ["지금 출발하면 전설, 망설이면 다음 열차"],
@@ -261,4 +323,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, arrivalFits, boardNow, catchable, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, otherExit, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, otherExit, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };

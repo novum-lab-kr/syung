@@ -201,20 +201,33 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		})) rerouteFrom(spot);
 	}
 	async function rerouteFrom(spot) {
-		const mine = ride, at = mine.at;
+		const mine = ride, at = mine.at, index = mine.steps[at].leg;
 		mine.rerouting = true;
-		const found = await reroute(spot).catch(() => null);
+		const found = await reroute(spot, {
+			arrives: mine.arrives,
+			legs: mine.legs
+		}, index).catch(() => null);
 		mine.rerouting = false;
 		mine.reroutedAt = Date.now();
 		if (ride !== mine || mine.at !== at) return;
-		if (!found) {
+		if (!found || found.plan.legs.length !== mine.legs.length) {
 			mine.detour = true;
 			draw();
 			return;
 		}
 		found.use();
 		mine.turn++;
-		begin(found.plan);
+		const legs = found.plan.legs;
+		Object.assign(mine, {
+			legs,
+			arrives: found.plan.arrives,
+			steps: rideSteps(legs),
+			nearSince: 0,
+			offFixes: 0,
+			detour: false,
+			track: [],
+			leftM: legs[index]?.metres ?? 0
+		});
 		cam = null;
 		const now = freshFix();
 		if (following && now) map.easeTo({
