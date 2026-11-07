@@ -1,5 +1,5 @@
 var NEAR_HOLD_MS = 5e3;
-var REROUTE_GAP_MS = 3e4;
+var REROUTE_GAP_MS = 1e4;
 var HURRY_SHARE = .8;
 var WALK_SPEED = 1.2;
 var SPEED_RANGE = [.5, 2.5];
@@ -51,7 +51,7 @@ function splitPath(path, at) {
 	};
 }
 var offFixes = (count, offM) => offM > 20 ? count + 1 : 0;
-var shouldReroute = ({ offFixes: count, busy, nowMs, lastMs }) => count >= 3 && !busy && (!lastMs || nowMs - lastMs >= 3e4);
+var shouldReroute = ({ offFixes: count, busy, nowMs, lastMs }) => count >= 3 && !busy && (!lastMs || nowMs - lastMs >= 1e4);
 var WALK_AGAIN_MAX_S = 7200;
 function walkEnd(legs, index) {
 	const leg = legs[index], next = legs[index + 1];
