@@ -595,6 +595,7 @@ var trainTimer = 0;
 var trainAt = 0;
 var drawTrains = () => {};
 var myLocation = null;
+var meHidden = false;
 var saverOn = false;
 var frameMs = () => 1e3 / (saverOn ? SAVER_FPS : TRAIN_FPS);
 var frameStats = {
@@ -603,6 +604,12 @@ var frameStats = {
 	signQueries: 0,
 	mapRenders: 0
 };
+function hideMe(on) {
+	if (on === meHidden) return;
+	meHidden = on;
+	for (const id of ["me-ring", "me-dot"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "none" : "visible");
+	trainFrameSoon(0);
+}
 function trainFrameSoon(ms) {
 	if (document.hidden) return;
 	if (saverOn && ms > 0 && ms < 1e3 / SAVER_FPS) ms = 1e3 / SAVER_FPS;
@@ -1607,7 +1614,10 @@ var rideAlong = createRideAlong({
 		arrivals: async (arsId, routeId) => busLayer ? await busLayer.journeyArrivals(arsId, routeId) : null,
 		approach: (routeId, stopId, skip) => busLayer?.journeyApproach(routeId, stopId, skip) ?? null,
 		atStop: (vehicleId, stopId) => busLayer?.journeyAtStop(vehicleId, stopId) ?? null,
-		ride: (vehicleId, spot) => busLayer?.rideWith(vehicleId, spot && [spot[0], spot[1]])
+		ride: (vehicleId, spot) => {
+			busLayer?.rideWith(vehicleId, spot && [spot[0], spot[1]]);
+			hideMe(!!busLayer?.ridden);
+		}
 	}
 });
 var openTrain = (plan) => {
@@ -1656,7 +1666,7 @@ var trainLive = {
 	},
 	unitLength: (k) => UNIT_SHAPES[k]?.len ?? 1,
 	get myLocation() {
-		return me.shown() || myLocation;
+		return meHidden ? null : me.shown() || myLocation;
 	},
 	get trainsEnabled() {
 		return trainsEnabled;
@@ -1928,6 +1938,9 @@ map.on("load", () => {
 			get me() {
 				return me;
 			},
+			get meHidden() {
+				return meHidden;
+			},
 			get frameStats() {
 				return frameStats;
 			},
@@ -2020,7 +2033,7 @@ map.on("load", () => {
 		if (map.queryRenderedFeatures(e.point, { layers: ["stations", "stations-casing"] }).length) return;
 		const pl = pickTrain(e.point);
 		if (pl) openTrain(pl);
-		else if (busLayer?.selectAt(e.point)) {
+		else if (busLayer?.selectAt(e.point, { stops: !rideAlong.active })) {
 			if (busLayer.selection?.kind === "bus") followBusStart(busLayer.selection.id);
 		} else if (!sheetBusy()) closeSheet();
 	});
@@ -2031,6 +2044,7 @@ map.on("load", () => {
 			openTrain(pl);
 			return;
 		}
+		if (rideAlong.active) return;
 		const p = e.features[0].properties, st = byId.get(+p.id);
 		if (appBridge) {
 			if (st) appBridge.stationTap(st);

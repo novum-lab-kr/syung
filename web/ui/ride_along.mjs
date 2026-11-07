@@ -337,7 +337,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			if (leg.type === "bus") {
 				const board = ride.busBoard;
 				if (board) {
-					if (ride.car && bus.atStop(ride.car, board.stopId) === null) ride.car = null;
+					if (ride.car && bus.atStop(ride.car, board.stopId) !== true) ride.car = null;
 					ride.car ??= bus.approach(board.routeId, board.stopId, ride.missed);
 					const outcome = arriveOutcome(waitWalkS(), !!ride.car && bus.atStop(ride.car, board.stopId) === true);
 					if (outcome === "board") {

@@ -422,7 +422,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 		meShape = null;
 		{
 			const me = live.me.at(), zoom = map.getZoom();
-			if (me && zoom >= AVATAR_MINZOOM && !rider.ride) {
+			if (me && zoom >= AVATAR_MINZOOM && !rider.ride && !live.meHidden) {
 				const q = maplibregl.MercatorCoordinate.fromLngLat(me.lngLat), O = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()), b = map.getBearing() * Math.PI / 180;
 				if (!avatar) avatar = new AvatarRenderer();
 				const pose = {

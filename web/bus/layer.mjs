@@ -1174,6 +1174,12 @@ var BusLayer = class {
 	}
 	journeyBoard(leg) {
 		if (!this.data) return null;
+		const named = this.data.routeById.get(String(leg.routeId)), fromId = String(leg.fromId ?? "");
+		if (named && fromId && named.stopIds.includes(fromId)) return {
+			routeId: named.id,
+			stopId: fromId,
+			arsId: String(leg.fromArs ?? "") || this.data.stopById.get(fromId)?.arsId || null
+		};
 		for (const id of journeyBusRouteIds(this.data, [leg])) {
 			const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
 			if (!path || !range) continue;
@@ -1443,7 +1449,7 @@ var BusLayer = class {
 		const zoom = this.map.getZoom(), distance = this.shownDistance(bus, performance.now());
 		return (zoom < BUS_ZOOM.buses || !this.map.querySourceFeatures ? busPointAt(bus.path, distance) : busLinePointAt(this.snappedLine(bus.route, bus.path), distance))?.coordinate || null;
 	}
-	selectAt(point) {
+	selectAt(point, { stops = true } = {}) {
 		if (!this.data) return false;
 		let nearest = null, distance = Infinity;
 		for (const hit of this.hits) {
@@ -1463,6 +1469,7 @@ var BusLayer = class {
 		if (this.map.getZoom() < BUS_ZOOM.stops) return false;
 		const stop = this.stopHits.filter((h) => contains(h.bounds, [point.x, point.y])).sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y))[0];
 		if (stop) {
+			if (!stops) return false;
 			this.select({
 				kind: "stop",
 				id: stop.id
