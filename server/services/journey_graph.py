@@ -570,12 +570,20 @@ def _unhook_kept(pts: list[list[float]], min_leg: float = 12.0) -> list[int]:
     def near(q: list[float], r: list[float], m: float = 12.0) -> bool:
         return math.hypot((q[0] - r[0]) * math.cos(math.radians(r[1])), q[1] - r[1]) * 111320 < m
     # once the path is within 12 m of where it ends, go straight there (it curled round an exit to
-    # reach the footway point OSRM snapped it to); the same from where it starts
+    # reach the footway point OSRM snapped it to); the same from where it starts.
+    # 12 m 안에 처음(시작은 마지막) 들어온 점은 남긴다 — 그 점까지 지우면 끝 점 · 시작 점과 그 밖의 점이 직선으로 이어져
+    # 이음이 건물 위로 길어진다(2026-11-07 시청 덕수궁길: 11 m 옆 길에 붙은 점을 지워 59 m 직선). 남기면 이음은 12 m 를 넘지 않는다
     if len(idx) > 2:
         end = next(i for i in range(len(idx)) if near(pts[idx[i]], pts[idx[-1]]))
-        idx = idx[:end] + [idx[-1]] if end else [idx[0], idx[-1]]
+        if end == 0:
+            idx = [idx[0], idx[-1]]
+        elif end < len(idx) - 1:
+            idx = idx[:end + 1] + [idx[-1]]
         start = max(i for i in range(len(idx)) if near(pts[idx[i]], pts[idx[0]]))
-        idx = [idx[0]] + idx[start + 1:] if start < len(idx) - 1 else [idx[0], idx[-1]]
+        if start == len(idx) - 1:
+            idx = [idx[0], idx[-1]]
+        elif start > 0:
+            idx = [idx[0]] + idx[start:]
     changed = True
     while changed and len(idx) > 2:
         changed = False

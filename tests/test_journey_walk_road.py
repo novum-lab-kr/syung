@@ -59,19 +59,27 @@ class WalkRoadTest(unittest.TestCase):
         self.assertEqual(road, [1, len(path) - 2])
         self.check_road(path, road, road_pts)
 
-    def test_points_near_the_start_are_dropped_and_the_road_starts_after_them(self):
-        # 시작 12 m 안의 OSRM 점(출구를 돌아 붙은 갈고리)은 _unhook 이 지운다 — road 는 지운 뒤 path 기준
+    def test_points_near_the_start_are_dropped_but_the_last_one_stays(self):
+        # 시작 12 m 안의 OSRM 점(출구를 돌아 붙은 갈고리)은 _unhook 이 지우되 12 m 안 마지막 점은 남긴다 — 이음이 12 m 를 넘지 않게
         road_pts = [pt(5, 0), pt(8, 3), pt(60, 3), pt(60, 120)]
         path, _, _, road = walk(at(0, 0), at(60, 160), road_pts)
-        self.assertEqual(path, [pt(0, 0), pt(60, 3), pt(60, 120), pt(60, 160)])
-        self.assertEqual(road, [1, 2])
+        self.assertEqual(path, [pt(0, 0), pt(8, 3), pt(60, 3), pt(60, 120), pt(60, 160)])
+        self.assertEqual(road, [1, 3])
         self.check_road(path, road, road_pts)
 
-    def test_points_near_the_end_are_dropped_too(self):
+    def test_points_near_the_end_are_dropped_but_the_first_one_stays(self):
         road_pts = [pt(0, 30), pt(100, 30), pt(100, 85), pt(104, 88)]
         path, _, _, road = walk(at(0, 0), at(100, 90), road_pts)
-        self.assertEqual(path, [pt(0, 0), pt(0, 30), pt(100, 30), pt(100, 90)])
-        self.assertEqual(road, [1, 2])
+        self.assertEqual(path, [pt(0, 0), pt(0, 30), pt(100, 30), pt(100, 85), pt(100, 90)])
+        self.assertEqual(road, [1, 3])
+        self.check_road(path, road, road_pts)
+
+    def test_snapped_point_near_the_start_keeps_the_connector_short(self):
+        # 재현(운영 2026-11-07 시청 덕수궁길): OSRM 이 11 m 옆 길에 붙였는데 그 점을 지워 다음 점(59 m 남쪽)과 직선으로 이었다
+        road_pts = [pt(-11, 0), pt(-10, -59), pt(200, -59), pt(200, -100)]
+        path, _, _, road = walk(at(0, 0), at(200, -100), road_pts)
+        self.assertEqual(path[:2], [pt(0, 0), pt(-11, 0)])
+        self.assertEqual(road[0], 1)
         self.check_road(path, road, road_pts)
 
     def test_first_road_point_doubling_back_is_dropped(self):
@@ -103,7 +111,7 @@ class WalkRoadTest(unittest.TestCase):
 
     def test_unhook_kept_counts_input_points(self):
         pts = [pt(0, 0), pt(5, 0), pt(8, 3), pt(60, 3), pt(60, 3), pt(60, 120), pt(60, 160)]
-        self.assertEqual(graph._unhook_kept(pts), [0, 3, 5, 6])   # 시작 12 m 안 · 겹친 점은 빠진다
+        self.assertEqual(graph._unhook_kept(pts), [0, 2, 3, 5, 6])   # 시작 12 m 안은 마지막 점만 · 겹친 점은 빠진다
 
 
 class ShapedRoadTest(unittest.TestCase):
