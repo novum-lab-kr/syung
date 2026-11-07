@@ -943,6 +943,8 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
         elif kind == "ride":
             legs[-1]["stops"] += 1
             legs[-1]["stations"].append(s[2])
+            # 첫 역 쌍의 방향을 dirs 가 모르면(9호선 노량진 → 다음 역 · 2026-11-08 운영 시험) 같은 구간 뒤 쌍으로 — 웹은 방향이 없으면 곧 올 열차를 못 고른다
+            legs[-1]["direction"] = legs[-1]["direction"] or _label(s[0], s[1], s[2])
         elif kind == "alight":
             legs[-1]["to"] = STATIONS[s[1]]["name"]   # s is ("at", station) here
             legs[-1]["arrives"] = _fmt(best[s][1])
