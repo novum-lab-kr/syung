@@ -69,3 +69,26 @@ test('버스 층이 차를 못 보면 탄 차는 모름(실시간 위치 그대�
   fix([126.9798, 37.5642]);
   assert.equal(calls.ride.at(-1)[0], null);
 });
+
+// 운영 472 추적(2026-11-07 probe): 지켜보던 앞 차가 몇 초 위치가 끊겼다(stale — 층이 못 봄) 돌아왔다. 그동안 뒤 차를 골라 붙들고 있어
+// 앞 차가 정류장에 들어와도 탄 것으로 넘어가지 않았다(탄 차 ridden 도 없음)
+test('지켜보던 앞 차가 잠깐 안 보였다 돌아와 정류장에 들어오면 그 차를 탄 것(뒤 차를 붙들지 않는다)', async context => {
+  const {rideAlong, cars, calls, fix, view} = setup();
+  context.after(() => rideAlong.stop());
+  fix(STOP);
+  rideAlong.start({arrives: hhmm, legs: [BUS]}, '신사역');
+  await settle();
+  cars.approach = 'BUS1'; cars.atStop.set('BUS1', false);
+  fix(STOP);
+  // 앞 차 위치가 끊김: 층은 그 차를 못 보고 곧 올 차로 뒤 차를 낸다
+  cars.atStop.delete('BUS1'); cars.approach = 'BUS2'; cars.atStop.set('BUS2', false);
+  fix(STOP);
+  // 앞 차가 돌아와 다시 가장 가까운 곧 올 차 → 정류장에 들어옴
+  cars.approach = 'BUS1'; cars.atStop.set('BUS1', false);
+  fix(STOP);
+  cars.atStop.set('BUS1', true);
+  fix(STOP);
+  assert.equal(view().title, '신사역에서 내려요');
+  fix(STOP);
+  assert.deepEqual(calls.ride.at(-1), ['BUS1', STOP], '탄 차는 앞 차');
+});

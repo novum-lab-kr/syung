@@ -257,7 +257,7 @@ function tapEmptyMap({app, hidden = true, following = null, followBus = null, se
     appBridge: app ? {} : null, sheet: {hidden}, following, followBus, sheetBody: {querySelector: () => (journey ? {} : null)},
     busLayer: {selection, followView: () => followView, selectAt: () => false},
     rider: {ride: null}, map: {on: (_name, handler) => { context.tap = handler; }, queryRenderedFeatures: () => []},
-    pickTrain: () => null, closeSheet: () => closed.push('closed'),
+    pickTrain: () => null, closeSheet: () => closed.push('closed'), rideAlong: {active: false},   // 타고 가기 중이 아님(정류장 누르기 막기와 상관없는 시험)
   });
   vm.runInContext(`var live={${appModeGetter},get busLayer(){return busLayer}};${sheetBusySource}\n${emptyTapSource}`, context);
   context.tap({point: {x: 1, y: 1}});

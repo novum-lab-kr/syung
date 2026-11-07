@@ -43,7 +43,7 @@ interface NightNow { bloom:boolean; N:{ bloom:BloomTune & { overlay?:BloomTune }
 type Life = LifeOptions['night'];
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다). drawTrains · wallsNow 는 이 파일이 채운다(setter)
 interface OverlayLive {
-  placeMarker:readonly number[] | null; me:ReturnType<typeof createMyMotion>; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
+  placeMarker:readonly number[] | null; me:ReturnType<typeof createMyMotion>; meHidden:boolean; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
   bloomTune:BloomTune | null | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
   CoasterRidePlacement:typeof CoasterRidePlacement; FestoonLayer:typeof FestoonLayer; RideLayer:typeof RideLayer; busLayer:ReturnType<typeof createBusLayer> | null;
   cityBuildings:CityBuildings | null; cityLandmarks:CityLandmarks | null; settings:OverlaySettings; kitReady:boolean; sampleRideTracks:typeof sampleRideTracks;
@@ -181,8 +181,9 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     // 내 위치 캐릭터: 줌 15 부터 점 대신. 지도 위에 떠 있게 — 앞서 그린 깊이를 비워 건물 · 열차 · 고가 · 문화유산 모델에 가리지 않고(슝 마커처럼 3D 를 다 그린 뒤),
     // 역 이름표 캔버스에는 캐릭터 윤곽만큼 구멍을 낸다(meShape — drawSigns). 방향을 아직 모르면 화면 쪽을 본다
     meShape=null;
+    // meHidden: 버스를 타는 동안 탄 차를 내 위치에 그리면 캐릭터는 숨긴다(본체 hideMe)
     {const me=live.me.at(),zoom=map.getZoom();
-      if(me&&zoom>=AVATAR_MINZOOM&&!rider.ride){const q=maplibregl.MercatorCoordinate.fromLngLat(me.lngLat as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),b=map.getBearing()*Math.PI/180;
+      if(me&&zoom>=AVATAR_MINZOOM&&!rider.ride&&!live.meHidden){const q=maplibregl.MercatorCoordinate.fromLngLat(me.lngLat as XY),O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),b=map.getBearing()*Math.PI/180;
         if(!avatar)avatar=new AvatarRenderer();
         const pose={look:S.me.look,world:[q.x,q.y],origin:[O.x,O.y],yaw:me.yaw??Math.atan2(Math.cos(b),-Math.sin(b)),scale:avatarScale(zoom),unit:1/(512*2**zoom),dark:effectiveTheme()==='dark'};
         gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);

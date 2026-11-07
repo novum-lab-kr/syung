@@ -670,3 +670,53 @@ test('a journey bus leg missing from the route data is dashed unless the server 
   layer.setJourney([{type: 'bus', route: '서초03', path, shaped: true}]);
   assert.deepEqual(rides().map(f => f.properties.approximate), [false], '도로 모양이 있으면 실선');
 }, false));
+
+// 2026-11-07 운영 472: 길찾기 자료(KTDB) 정류장이 서울 노선 선에서 136m 밖이라 선 위 가장 가까운 정류장이 60m 넘게 떨어져 탈 정류장을 못 골랐다
+// → 서버가 실은 서울 노선 id · 타는 정류장 id(fromId · fromArs)가 있으면 그대로 쓰고, 없거나 그 노선이 안 서는 정류장이면 예전처럼 선으로 짐작한다
+test('journeyBoard uses the server Seoul stop ids; without them it still guesses from the line (60 m)', () => withLayerFixture(layer => {
+  const line = {id: '100100075', name: '472', type: 'trunk', stopIds: ['s1', 's2'], path: [[127, 37.5], [127.01, 37.5]], pathSource: 'stops'};
+  const busStops = {schemaVersion: 1, stops: [
+    {id: 's1', name: '소공동', arsId: '02128', lng: 127, lat: 37.5}, {id: 's2', name: '서울광장', arsId: '02641', lng: 127.008, lat: 37.5},
+    {id: 'far', name: '시청역9번출구', arsId: '02133', lng: 127.001, lat: 37.5012}]};
+  layer.data = prepareBusData({schemaVersion: 1, routes: [line]}, busStops);
+  // 선에서 133m 밖 · 선 위로는 s1 에서 88m 뒤에 비춰지는 시작점(472 와 같은 꼴)
+  const leg = {type: 'bus', route: '472', path: [[127.001, 37.5012], [127.004, 37.5], [127.008, 37.5]]};
+  assert.equal(layer.journeyBoard(leg), null, '정류장 번호 없이는 60m 를 넘겨 못 고른다(예전 그대로)');
+  assert.deepEqual(layer.journeyBoard({...leg, routeId: line.id, fromId: 's1', fromArs: '02128'}), {routeId: line.id, stopId: 's1', arsId: '02128'});
+  assert.deepEqual(layer.journeyBoard({...leg, routeId: line.id, fromId: 's1', fromArs: ''}), {routeId: line.id, stopId: 's1', arsId: '02128'}, '번호가 비면 정류장 자료의 번호');
+  assert.equal(layer.journeyBoard({...leg, routeId: line.id, fromId: 'far', fromArs: '02133'}), null, '그 노선이 안 서는 정류장은 쓰지 않고 선으로 짐작한다');
+  const near = {...leg, path: [[127.0005, 37.5002], [127.004, 37.5], [127.008, 37.5]]};
+  assert.deepEqual(layer.journeyBoard(near), {routeId: line.id, stopId: 's1', arsId: '02128'}, '정류장 번호가 없는 노선은 선으로(60m 안)');
+}, false));
+
+// 2026-11-07 사용자 결정: 버스를 타는 동안 탄 차를 내 위치에 그리면 내 위치 캐릭터는 숨긴다(본체가 ridden 이 있을 때만 숨긴다).
+// ridden 은 차가 지도에 있고 내 위치가 그 노선 선 150m 안일 때만 — 못 정하면 null(캐릭터 그대로)
+test('rideWith: ridden only when the car is on the map and my spot snaps to its line; otherwise null', () => withLayerFixture(layer => {
+  const r = layer.data.routeById.get(route.id), path = layer.geometry(r), half = path.total / 4;
+  layer.fleet.set('b', {row: {id: 'b'}, route: r, path, stale: false, motion: {from: half, to: half, startedAt: 0, duration: 0}});
+  layer.rideWith('b', [127.005, 37.505]);
+  assert.equal(layer.ridden?.id, 'b', '선 위 내 위치: 탄 차를 거기 그린다');
+  layer.rideWith('b', [127.05, 37.505]);
+  assert.equal(layer.ridden, null, '선에서 150m 넘게 떨어진 위치: 모름');
+  layer.rideWith('없는 버스', [127.005, 37.505]);
+  assert.equal(layer.ridden, null, '지도에 없는 차: 모름');
+  layer.rideWith('b', [127.005, 37.505]); layer.rideWith(null, null);
+  assert.equal(layer.ridden, null, '내리거나 그만두면 없음');
+}, false));
+
+// 2026-11-07 사용자 결정: 타고 가기 중에는 정류장을 눌러도 정보창을 열지 않는다(본체가 selectAt(…, {stops:false})) — 버스(차)는 그대로 눌린다
+test('selectAt with stops:false does not open a stop (nor the line under it); buses still open', () => withLayerFixture(layer => {
+  layer.hits = [];
+  const picked = []; layer.select = (...a) => picked.push(a);
+  layer.stopHits = [{id: 's1', x: 10, y: 10, bounds: [0, 0, 20, 20], visualBounds: [0, 0, 20, 20]}];
+  layer.map.queryRenderedFeatures = () => [{properties: {routeId: route.id, lod: 'road'}}];
+  assert.equal(layer.selectAt({x: 10, y: 10}, {stops: false}), false, '타고 가기 중: 정류장을 눌러도 아무것도 안 연다');
+  assert.deepEqual(picked, []);
+  assert.equal(layer.selectAt({x: 10, y: 10}), true, '끝나면 다시 정류장');
+  assert.deepEqual(picked, [[{kind: 'stop', id: 's1'}, null]]);
+  const bus = {row: {id: 'b'}, route: {id: route.id}};
+  layer.hits = [{x: 10, y: 10, bounds: [0, 0, 20, 20], bus}];
+  assert.equal(layer.selectAt({x: 10, y: 10}, {stops: false}), true, '버스(차)는 그대로 눌린다');
+  assert.deepEqual(picked.at(-1), [{kind: 'bus', id: 'b'}, route.id]);
+  delete layer.select;
+}, false));

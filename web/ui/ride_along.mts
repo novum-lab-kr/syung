@@ -276,7 +276,9 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
         // 지켜보는 곧 올 차가 정류장에 들어왔다: 승강장 시간(걷기)이 끝났으면 그 순간 탄 것 · 아직이면 놓침 → 그 차를 빼고 다음 차(지하철과 같은 규칙 — 2026-11-07 사용자 결정)
         const board = ride.busBoard;
         if (board) {
-          if (ride.car && bus.atStop(ride.car, board.stopId) === null) ride.car = null;   // 차가 지도에서 사라짐 — 다시 고른다
+          // 아직 정류장에 안 들어온 차는 틱마다 다시 고른다(가장 가까운 곧 올 차): 앞 차 위치가 몇 초 끊긴 사이 뒤 차를 붙들면
+          //  돌아온 앞 차가 정류장에 들어와도 못 봤다(2026-11-07 운영 472 추적). 들어온 차(true)는 탈지 놓칠지 가릴 때까지 그대로
+          if (ride.car && bus.atStop(ride.car, board.stopId) !== true) ride.car = null;
           ride.car ??= bus.approach(board.routeId, board.stopId, ride.missed);
           const outcome = arriveOutcome(waitWalkS(), !!ride.car && bus.atStop(ride.car, board.stopId) === true);
           if (outcome === 'board') { advance(); return; }

@@ -36,7 +36,8 @@ interface Arrivals { stopId:string; state:string; rows:ArrivalRow[]; count:numbe
 // 선을 그릴 수 있는 노선(자료의 노선, 또는 노선을 못 맞춘 길찾기 구간의 임시 노선)
 type RouteLike = Pick<BusRoute, 'id' | 'name' | 'path' | 'type' | 'approximate' | 'stopIds'> & Partial<Pick<BusRoute, 'geometry' | 'snapped' | 'line'>>;
 // 길찾기 버스 구간(ui/journey 가 넘긴다) — displayRoute 는 노선을 못 맞췄을 때 이 화면이 붙인다
-export interface BusLeg { type:string; routeId?:unknown; route?:unknown; path:LngLatPt[]; color?:string; shaped?:boolean; displayRoute?:RouteLike }
+// routeId · fromId · fromArs: 서버가 서울 버스 자료에 맞춘 노선만 싣는 노선 id · 타는 정류장 id · 번호(경기 · 인천 · 마을은 없다 · 번호는 빈 글자일 수 있다)
+export interface BusLeg { type:string; routeId?:unknown; route?:unknown; fromId?:unknown; fromArs?:unknown; path:LngLatPt[]; color?:string; shaped?:boolean; displayRoute?:RouteLike }
 type JourneyLegIn = Omit<BusLeg, 'path'> & { path?:LngLatPt[] };   // 넘어오는 길찾기 구간(걷기 · 지하철은 path 가 없을 수 있다)
 // 화면의 버스 한 대
 interface FleetBus {
@@ -751,8 +752,11 @@ class BusLayer {
     return null;
   }
   // 타고 가기 기다리기: 버스 구간의 탈 정류장(노선 정류장 가운데 선 위 거리가 구간 시작에 가장 가까운 것 · 60m 안) — 정류장 도착(arsId)을 받고 곧 올 차를 고른다
+  // 서버가 서울 노선 id · 타는 정류장 id 를 실었고 그 노선이 그 정류장에 서면 그대로 쓴다(선 · 이름으로 짐작하지 않는다)
   journeyBoard(leg:BusLeg):{ routeId:string; stopId:string; arsId:string | null } | null {
     if(!this.data)return null;
+    const named=this.data.routeById.get(String(leg.routeId)),fromId=String(leg.fromId??'');
+    if(named&&fromId&&named.stopIds.includes(fromId))return {routeId:named.id,stopId:fromId,arsId:String(leg.fromArs??'')||this.data.stopById.get(fromId)?.arsId||null};
     for(const id of journeyBusRouteIds(this.data,[leg])){
       const path=this.geometry(this.data.routeById.get(id)!),range=journeyBusRange(path,leg);
       if(!path||!range)continue;
@@ -931,14 +935,15 @@ class BusLayer {
     const pose = zoom < BUS_ZOOM.buses || !this.map.querySourceFeatures ? busPointAt(bus.path, distance) : busLinePointAt(this.snappedLine(bus.route, bus.path), distance);
     return pose?.coordinate || null;
   }
-  selectAt(point:ScreenPt) {
+  // stops:false — 정류장은 열지 않는다(타고 가기 중 · 2026-11-07 사용자 결정). 정류장을 누른 것은 빈 곳처럼 false(그 아래 노선 선도 고르지 않는다) · 버스는 그대로
+  selectAt(point:ScreenPt, {stops = true}:{ stops?:boolean } = {}) {
     if (!this.data) return false;
     let nearest:BusHit | null = null, distance = Infinity;
     for (const hit of this.hits) { const d = Math.hypot(hit.x - point.x, hit.y - point.y); if (contains(hit.bounds,[point.x,point.y])&&d<distance) { nearest=hit;distance=d; } }
     if (nearest) { this.select({kind: 'bus', id: (nearest as BusHit).bus.row.id}, (nearest as BusHit).bus.route.id); return true; }
     if (this.map.getZoom() < BUS_ZOOM.stops) return false;
     const stop=this.stopHits.filter(h=>contains(h.bounds,[point.x,point.y])).sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0];
-    if(stop){this.select({kind:'stop',id:stop.id},null);return true;}
+    if(stop){if(!stops)return false;this.select({kind:'stop',id:stop.id},null);return true;}
     const routes = this.map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], {layers: [...LAYERS.slice(0, 2), ...(this.check ? CHECK_LAYERS.slice(0, 1) : [])]});
     // 짝이 있는 표시선(lod 'plan')은 이 줌(stops ≥ BUS_ROAD_LINE.to)에서 투명하다 — 조회는 투명도를 보지 않으므로 뺀다(Codex 검토)
     const route = routes.find(f => f.properties.lod !== 'plan');
