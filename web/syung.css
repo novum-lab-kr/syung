@@ -614,7 +614,12 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 .rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
 .jbar .rg-go,.jp .rg-go{display:block;width:calc(100% - 28px);height:42px;margin:0 14px 13px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
 .jp .rg-go{width:100%;margin:var(--space-2) 0 0;height:46px}
-.jp .rg-go+.jp-ticket{background:var(--control);color:var(--ink);height:42px}
+/* 「이 길로 출발」 · 「승차권 등록」은 한 줄로(2026-11-08 사용자 — 두 줄이던 것): 출발이 넓게 · 승차권은 옆 회색 단추. 승차권 단추가 없으면 출발이 한 줄 다 */
+.jp-go{display:flex;gap:var(--space-2);margin-top:var(--space-2)}
+.jp-go .rg-go,.jp-go .jp-ticket{flex:1 1 0;width:auto;min-width:0;height:46px;margin:0}
+.jp-go .rg-go{flex-grow:1.6}
+/* 승차권은 펼친 카드 바탕(--control)과 같으면 글자만 떠 보여(2026-11-08 사용자) 글자색을 조금 섞은 연한 회색으로 채운다 — 다크도 같은 식 */
+.jp .rg-go+.jp-ticket{background:color-mix(in srgb,var(--ink) 9%,var(--control));color:var(--ink)}
 body:has(.rg-talk) .route-cta{display:none}
 .jbar-x:hover{color:var(--ink)}
 .jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */

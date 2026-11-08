@@ -1608,16 +1608,17 @@ var rideAlong = createRideAlong({
 	detour: () => journey.fromHere(),
 	reroute: (spot, plan, index) => journey.reroute(spot, plan, index),
 	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat]),
-	busStopAt: (leg, spot) => busLayer?.journeyStopAt(leg, [spot[0], spot[1]]) ?? null,
+	busStopAt: (leg, spot, share) => busLayer?.journeyStopAt(leg, [spot[0], spot[1]], share) ?? null,
 	bus: {
 		board: (leg) => busLayer?.journeyBoard(leg) ?? null,
-		arrivals: async (arsId, routeId) => busLayer ? await busLayer.journeyArrivals(arsId, routeId) : null,
+		arrivals: async (arsId, routeId, routeName) => busLayer ? await busLayer.journeyArrivals(arsId, routeId, routeName) : null,
 		approach: (routeId, stopId, skip) => busLayer?.journeyApproach(routeId, stopId, skip) ?? null,
 		atStop: (vehicleId, stopId) => busLayer?.journeyAtStop(vehicleId, stopId) ?? null,
-		ride: (vehicleId, spot) => {
+		ride: (vehicleId, spot, riding) => {
 			busLayer?.rideWith(vehicleId, spot && [spot[0], spot[1]]);
-			hideMe(!!busLayer?.ridden);
-		}
+			hideMe(riding);
+		},
+		watch: (routeId) => busLayer?.watchRoute(routeId)
 	}
 });
 var openTrain = (plan) => {

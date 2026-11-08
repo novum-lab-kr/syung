@@ -76,23 +76,25 @@ function RouteCard({ plan, index, on, hidden = false, note, onPick, onTicket, on
 				role: "status",
 				children: note
 			}),
-			on && onGo && /* @__PURE__ */ a("button", {
-				type: "button",
-				class: "rg-go",
-				onClick: (event) => {
-					event.stopPropagation();
-					onGo(index);
-				},
-				children: "이 길로 출발"
-			}),
-			on && onTicket && /* @__PURE__ */ a("button", {
-				type: "button",
-				class: "jp-ticket",
-				onClick: (event) => {
-					event.stopPropagation();
-					onTicket(index);
-				},
-				children: "승차권 등록"
+			on && (onGo || onTicket) && /* @__PURE__ */ a("div", {
+				class: "jp-go",
+				children: [onGo && /* @__PURE__ */ a("button", {
+					type: "button",
+					class: "rg-go",
+					onClick: (event) => {
+						event.stopPropagation();
+						onGo(index);
+					},
+					children: "이 길로 출발"
+				}), onTicket && /* @__PURE__ */ a("button", {
+					type: "button",
+					class: "jp-ticket",
+					onClick: (event) => {
+						event.stopPropagation();
+						onTicket(index);
+					},
+					children: "승차권 등록"
+				})]
 			})
 		]
 	});

@@ -525,11 +525,9 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		filter(last.tab || "all");
 	}
 	function cardPressed(index) {
-		if (last.sel === index && cardsOf()[index]?.on) closeSheet?.();
-		else {
-			pick(index);
-			revealOpened();
-		}
+		if (last.sel === index && cardsOf()[index]?.on) return;
+		pick(index);
+		revealOpened();
 	}
 	function revealOpened() {
 		requestAnimationFrame(() => {

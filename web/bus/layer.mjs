@@ -341,6 +341,14 @@ function journeyBusRouteIds(data, legs) {
 	}
 	return [...new Set(ids)].slice(0, 8);
 }
+function busRowByName(rows, route) {
+	if (!route) return null;
+	const found = rows.filter((row) => {
+		const name = String(row?.name ?? "");
+		return name.startsWith(route) && !/^[0-9A-Za-z(-]/.test(name.slice(route.length)) && !name.includes("예약");
+	});
+	return found.length === 1 ? found[0] : null;
+}
 var journeyRanges = /* @__PURE__ */ new WeakMap();
 function journeyBusRange(line, leg) {
 	if (!line || !leg) return null;
@@ -497,6 +505,7 @@ var BusLayer = class {
 		this.journeyLegs = [];
 		this.journeyIds = [];
 		this.ridden = null;
+		this.watchId = null;
 		this.roads = new BusRoadNetwork();
 		this.onRouteSelect = onRouteSelect;
 		this.onFollow = onFollow;
@@ -777,7 +786,7 @@ var BusLayer = class {
 	setEnabled(enabled) {
 		if (this.disposed) return;
 		this.enabled = !!enabled;
-		if (!this.enabled && !this.chosenIds().length) {
+		if (!this.enabled && !this.liveIds().length) {
 			this.stopLive();
 			this.fleet.clear();
 			this.hits = [];
@@ -840,7 +849,7 @@ var BusLayer = class {
 			width: canvas.clientWidth,
 			height: canvas.clientHeight
 		} : null;
-		this.requested = this.enabled || this.chosenIds().length ? busRoutesNearStops(this.data, boundsArray(this.map.getBounds()), this.chosenIds(), screen) : [];
+		this.requested = this.enabled || this.liveIds().length ? busRoutesNearStops(this.data, boundsArray(this.map.getBounds()), this.liveIds(), screen) : [];
 		this.renderStatic();
 		this.renderCheck();
 		this.draw();
@@ -1153,16 +1162,34 @@ var BusLayer = class {
 	chosenIds() {
 		return this.selectedRoute ? [this.selectedRoute] : this.journeyIds;
 	}
-	journeyStopAt(leg, spot) {
+	liveIds() {
+		return this.watchId ? [.../* @__PURE__ */ new Set([...this.chosenIds(), this.watchId])] : this.chosenIds();
+	}
+	watchRoute(routeId) {
+		if (this.watchId === routeId) return;
+		this.watchId = routeId;
+		if (!this.enabled && !this.liveIds().length) {
+			this.stopLive();
+			this.fleet.clear();
+		}
+		this.refreshView();
+	}
+	journeyStopAt(leg, spot, share = null) {
 		if (!this.data) return null;
 		for (const id of journeyBusRouteIds(this.data, [leg])) {
 			const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
-			const snap = path && range && snapBusToPath(path, spot, {
+			if (!path || !range) continue;
+			const guess = share === null ? null : range[0] + (range[1] - range[0]) * share;
+			const snap = (guess === null ? null : snapBusToPath(path, spot, {
+				min: Math.max(range[0], guess - 300),
+				max: Math.min(range[1], guess + 300),
+				maxError: 60
+			})) || snapBusToPath(path, spot, {
 				min: range[0],
 				max: range[1],
 				maxError: 150
 			});
-			if (!path || !range || !snap) continue;
+			if (!snap) continue;
 			const stops = path.stops.filter((item) => item.distance >= range[0] - 5 && item.distance <= range[1] + 5);
 			const passed = stops.filter((item) => item.distance <= snap.distance + 15);
 			return {
@@ -1191,6 +1218,13 @@ var BusLayer = class {
 				arsId: best.stop.arsId || null
 			};
 		}
+		const fromArs = String(leg.fromArs ?? ""), routeName = String(leg.route ?? "");
+		if (!named && fromArs && routeName) return {
+			routeId: "",
+			stopId: fromId,
+			arsId: fromArs,
+			routeName
+		};
 		return null;
 	}
 	journeyApproach(routeId, stopId, skip) {
@@ -1213,11 +1247,11 @@ var BusLayer = class {
 		const at = bus.path.stops.filter((item) => item.stop.id === stopId).sort((first, second) => Math.abs(first.distance - distance) - Math.abs(second.distance - distance))[0];
 		return at ? distance >= at.distance - 15 : null;
 	}
-	async journeyArrivals(arsId, routeId) {
+	async journeyArrivals(arsId, routeId, routeName = null) {
 		try {
 			const body = await (await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(arsId)}`, { cache: "no-store" })).json();
 			if (body?.schemaVersion !== 1 || !Array.isArray(body.arrivals)) return null;
-			const got = Date.now(), age = Number(body.ageSeconds) || 0, row = body.arrivals.find((item) => item?.routeId === routeId);
+			const got = Date.now(), age = Number(body.ageSeconds) || 0, row = routeId ? body.arrivals.find((item) => item?.routeId === routeId) : busRowByName(body.arrivals, routeName);
 			const times = [];
 			for (const bus of row?.buses || []) {
 				const message = String(bus?.message || ""), seconds = Number.isFinite(bus?.seconds) ? bus.seconds : null;
@@ -1261,7 +1295,7 @@ var BusLayer = class {
 		return map;
 	}
 	active() {
-		return !this.disposed && !document.hidden && (!!this.selectedRoute || this.journeyIds.length > 0 || (this.enabled || this.chosenIds().length > 0) && this.map.getZoom() >= BUS_ZOOM.buses);
+		return !this.disposed && !document.hidden && (!!this.selectedRoute || this.journeyIds.length > 0 || !!this.watchId || (this.enabled || this.chosenIds().length > 0) && this.map.getZoom() >= BUS_ZOOM.buses);
 	}
 	stopAnimation() {
 		clearTimeout(this.frameTimer);
@@ -1346,7 +1380,7 @@ var BusLayer = class {
 		let moving = false;
 		const allowed = new Set(this.chosenIds().length ? this.chosenIds() : this.requested), ends = this.journeyEnds();
 		if (this.active()) for (const bus of [...this.fleet.values()].sort((a, b) => Number(b.row.id === this.selection?.id) - Number(a.row.id === this.selection?.id))) {
-			if (!allowed.has(bus.route.id) || wall - bus.receivedWall > EXPIRE_MS) continue;
+			if (!(allowed.has(bus.route.id) || bus.row.id === this.ridden?.id) || wall - bus.receivedWall > EXPIRE_MS) continue;
 			if (bus.observed != null && wall - bus.observed > STALE_MS) this.freeze(bus);
 			const distance = this.shownDistance(bus, now);
 			if (ends && !(ends.get(bus.route.id) || [[-Infinity, Infinity]]).some(([a, b]) => distance >= a && distance <= b + 30)) continue;
@@ -1555,7 +1589,7 @@ var BusLayer = class {
 			this.journeyIds = [];
 		}
 		this.stopArrivals();
-		if (!this.enabled && !this.chosenIds().length) {
+		if (!this.enabled && !this.liveIds().length) {
 			this.stopLive();
 			this.fleet.clear();
 		}
@@ -2088,4 +2122,4 @@ var BusLayer = class {
 		this.fleet.clear();
 	}
 };
-export { BUS_ROAD_LINE, BUS_TYPES, BUS_ZOOM, arrivalParts, busJoinLines, busPollDelay, busRequestURL, busRouteRefreshMs, busRoutesNearStops, countdownText, createBusLayer, journeyBusRange, journeyBusRouteIds, placeStopPosts, prepareBusData, stopType, visibleBusRoutes };
+export { BUS_ROAD_LINE, BUS_TYPES, BUS_ZOOM, arrivalParts, busJoinLines, busPollDelay, busRequestURL, busRouteRefreshMs, busRoutesNearStops, busRowByName, countdownText, createBusLayer, journeyBusRange, journeyBusRouteIds, placeStopPosts, prepareBusData, stopType, visibleBusRoutes };

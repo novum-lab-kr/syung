@@ -8,21 +8,25 @@ function metres(from, to) {
 	const across = (to[0] - from[0]) * Math.cos((from[1] + to[1]) / 2 * Math.PI / 180), up = to[1] - from[1];
 	return Math.hypot(across, up) * M_PER_DEG;
 }
-function onPath(point, path) {
+function onPath(point, path, within) {
 	if (path.length < 2) return {
 		off: path[0] ? metres(point, path[0]) : 0,
 		at: 0,
 		total: 0
 	};
 	const cos = Math.cos(point[1] * Math.PI / 180), flat = (spot) => [spot[0] * cos * M_PER_DEG, spot[1] * M_PER_DEG], here = flat(point);
+	const min = within?.min ?? -Infinity, max = within?.max ?? Infinity;
 	let best = Infinity, bestAt = 0, walked = 0;
 	for (let index = 1; index < path.length; index++) {
 		const start = flat(path[index - 1]), end = flat(path[index]), dx = end[0] - start[0], dy = end[1] - start[1], span = Math.hypot(dx, dy);
-		const share = span ? Math.max(0, Math.min(1, ((here[0] - start[0]) * dx + (here[1] - start[1]) * dy) / (span * span))) : 0;
-		const gap = Math.hypot(here[0] - start[0] - dx * share, here[1] - start[1] - dy * share);
-		if (gap < best) {
-			best = gap;
-			bestAt = walked + span * share;
+		if (walked + span >= min && walked <= max) {
+			const low = span ? Math.max(0, (min - walked) / span) : 0, high = span ? Math.min(1, (max - walked) / span) : 0;
+			const share = span ? Math.max(low, Math.min(high, ((here[0] - start[0]) * dx + (here[1] - start[1]) * dy) / (span * span))) : 0;
+			const gap = Math.hypot(here[0] - start[0] - dx * share, here[1] - start[1] - dy * share);
+			if (gap < best) {
+				best = gap;
+				bestAt = walked + span * share;
+			}
 		}
 		walked += span;
 	}
@@ -31,6 +35,13 @@ function onPath(point, path) {
 		at: bestAt,
 		total: walked
 	};
+}
+function onPathFrom(point, path, from) {
+	const near = onPath(point, path, {
+		min: from - 30,
+		max: from + 300
+	});
+	return near.off <= 60 ? near : onPath(point, path);
 }
 function splitPath(path, at) {
 	let walked = 0;
@@ -350,4 +361,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
