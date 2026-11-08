@@ -1,5 +1,7 @@
-import { render as K } from "../npm/preact/dist/preact.mjs";
+import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
+import { useCallback as b, useState as d } from "../npm/preact/hooks/dist/hooks.mjs";
+import { GoalFlag, MapArrival } from "./ride_arrival.mjs";
 // web/components/ride_card.tsx
 var CLOSE = /* @__PURE__ */ a("svg", {
 	viewBox: "0 0 24 24",
@@ -62,8 +64,45 @@ function RideCard({ view, actions }) {
 		]
 	});
 }
-var drawRideCard = (host, view, actions) => K(view ? /* @__PURE__ */ a(RideCard, {
-	view,
-	actions
-}) : null, host);
+function ArrivalCard({ view, actions, map, hideMe }) {
+	const [failed, setFailed] = d(false), fail = b(() => setFailed(true), []);
+	const at = view.arrival?.at;
+	if (failed || !view.arrival || !at) return /* @__PURE__ */ a(RideCard, {
+		view,
+		actions
+	});
+	return /* @__PURE__ */ a(MapArrival, {
+		map,
+		at,
+		hideMe,
+		arrival: view.arrival,
+		onClose: actions.close,
+		onError: fail
+	});
+}
+function drawRideCard(host, view, actions, map, hideMe) {
+	const goal = view?.goal?.at, flag = map && goal ? /* @__PURE__ */ a(GoalFlag, {
+		map,
+		at: goal
+	}, "goal") : null;
+	const draw = (body, flagOnTop = false) => K(flag ? /* @__PURE__ */ a(M, { children: [
+		flagOnTop ? null : flag,
+		body,
+		flagOnTop ? flag : null
+	] }) : body, host);
+	const at = view?.arrival?.at;
+	if (view?.arrival && map && at) {
+		draw(/* @__PURE__ */ a(ArrivalCard, {
+			view,
+			actions,
+			map,
+			hideMe
+		}, "arrival"), true);
+		return;
+	}
+	draw(view ? /* @__PURE__ */ a(RideCard, {
+		view,
+		actions
+	}, "card") : null);
+}
 export { RideCard, drawRideCard };

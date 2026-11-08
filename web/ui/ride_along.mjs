@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, characterOf, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, characterOf, doneParts, doneSub, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, splitPath, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var BUS_ARRIVALS_MS = 3e4;
 var BUS_MISS_MS = 3e4;
@@ -19,6 +19,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 	const step = () => ride ? ride.steps[ride.at] : null;
 	const legAt = (index) => ride?.legs[index];
 	const freshFix = () => fix && Date.now() - fix.t < FIX_FRESH_MS ? fix.spot : null;
+	const endSpot = () => ride ? rideEndSpot(ride.legs, (id) => {
+		const station = byId.get(id);
+		return station ? [station.lon, station.lat] : null;
+	}) : null;
 	const planOf = (id) => id ? planner.plans.find((plan) => plan.id === id) ?? null : null;
 	const trackOf = (plan) => ({
 		seqIds: plan.seq.map((station) => station.id),
@@ -44,7 +48,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		offTrack(fix.spot);
 		tick();
 		const current = step();
-		if (following && current && !(current.kind === "ride" && legAt(current.leg)?.type === "ride")) map.easeTo({
+		if (following && current && current.kind !== "done" && !(current.kind === "ride" && legAt(current.leg)?.type === "ride")) map.easeTo({
 			center: [...fix.spot],
 			zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
 			padding: pad(),
@@ -210,7 +214,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			}
 		}
 		const spot = freshFix();
-		if (following && spot && now.kind !== "ride") map.easeTo({
+		if (following && spot && now.kind !== "ride" && now.kind !== "done") map.easeTo({
 			center: [...spot],
 			zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
 			padding: pad(),
@@ -222,6 +226,13 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			clearInterval(busTimer);
 			timer = arrivalsTimer = busTimer = 0;
 			unlocate();
+			const end = endSpot() ?? spot;
+			if (end) map.easeTo({
+				center: [...end],
+				zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
+				padding: pad(),
+				duration: 800
+			});
 		}
 		cam = null;
 		draw();
@@ -458,14 +469,22 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			flip: character.flip,
 			following,
 			detour: false,
-			say: null
+			say: null,
+			goal: { at: endSpot() }
 		};
-		if (current.kind === "done") return {
-			...base,
-			following: true,
-			title: "슝 도착!",
-			sub: doneSub(ride.toName, /* @__PURE__ */ new Date(), ride.startedMs)
-		};
+		if (current.kind === "done") {
+			const now = /* @__PURE__ */ new Date();
+			return {
+				...base,
+				following: true,
+				title: "슝 도착!",
+				sub: doneSub(ride.toName, now, ride.startedMs),
+				arrival: {
+					...doneParts(ride.toName, now, ride.startedMs),
+					at: endSpot()
+				}
+			};
+		}
 		const leg = legAt(current.leg);
 		if (current.kind === "walk") {
 			const pace = measuredPace(ride.track) ?? legPace(ride.legs, current.leg);
@@ -530,8 +549,9 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 	}
 	const actions = {
 		close: () => {
+			const arrived = step()?.kind === "done";
 			stop();
-			ended();
+			ended(arrived);
 		},
 		detour: () => {
 			stop();

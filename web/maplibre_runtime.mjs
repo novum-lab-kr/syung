@@ -42,6 +42,7 @@ import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createRideAlong } from "./ui/ride_along.mjs";
+import "./components/ride_arrival.mjs";
 import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
@@ -609,6 +610,22 @@ function hideMe(on) {
 	meHidden = on;
 	for (const id of ["me-ring", "me-dot"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "none" : "visible");
 	trainFrameSoon(0);
+}
+var arrivalEnds = null;
+function arrivalHideMe(on) {
+	hideMe(on);
+	if (!map.getLayer("journey-ends")) return;
+	if (on) {
+		arrivalEnds ??= map.getFilter("journey-ends");
+		map.setFilter("journey-ends", [
+			"==",
+			["get", "kind"],
+			"start"
+		]);
+	} else if (arrivalEnds !== null) {
+		map.setFilter("journey-ends", arrivalEnds || null);
+		arrivalEnds = null;
+	}
 }
 function trainFrameSoon(ms) {
 	if (document.hidden) return;
@@ -1594,7 +1611,7 @@ var rideAlong = createRideAlong({
 	arrivalRank,
 	byId,
 	animFrame,
-	drawRideCard,
+	drawRideCard: (host, view, actions) => drawRideCard(host, view, actions, map, arrivalHideMe),
 	otherFollow: {
 		active: () => !!sheetUI.following || !!sheetUI.followBus,
 		stop: () => sheetUI.stopFollow()
@@ -1604,7 +1621,7 @@ var rideAlong = createRideAlong({
 		done: cut.done.map(([x, y]) => [x, y]),
 		rest: cut.rest.map(([x, y]) => [x, y])
 	}),
-	ended: () => journey.rideEnded(),
+	ended: (arrived) => journey.rideEnded(arrived),
 	detour: () => journey.fromHere(),
 	reroute: (spot, plan, index) => journey.reroute(spot, plan, index),
 	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat]),

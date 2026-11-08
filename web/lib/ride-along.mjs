@@ -255,9 +255,30 @@ function rideSub(legs, index, stopsLeft, where = null) {
 	if (stopsLeft <= 1) return `${head} · 다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요`;
 	return `${head}${where?.next ? ` · 다음 ${where.next}` : ""} · ${stopsLeft}정거장 · ${leg.arrives}`;
 }
-function doneSub(toName, now, startedMs) {
+function doneParts(toName, now, startedMs) {
 	const pad = (value) => String(value).padStart(2, "0");
-	return `${toName} · ${pad(now.getHours())}:${pad(now.getMinutes())} · ${minutes((+now - startedMs) / 1e3)}분 걸렸어요`;
+	return {
+		to: toName,
+		time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+		took: minutes((+now - startedMs) / 1e3)
+	};
+}
+function rideEndSpot(legs, stationSpot) {
+	for (let index = legs.length - 1; index >= 0; index--) {
+		const leg = legs[index];
+		if (leg.type === "ride") {
+			const id = leg.stations.at(-1), spot = id === void 0 ? null : stationSpot(id);
+			if (spot) return spot;
+			continue;
+		}
+		const end = leg.path?.at(-1);
+		if (end) return end;
+	}
+	return null;
+}
+function doneSub(toName, now, startedMs) {
+	const { to, time, took } = doneParts(toName, now, startedMs);
+	return `${to} · ${time} · ${took}분 걸렸어요`;
 }
 var gapAt = (cum, index) => Math.abs((cum[index + 1] ?? cum[index]) - (cum[index - 1] ?? cum[index])) / 2 || 1;
 function reached({ seqIds, cum, dist }, stationId) {
@@ -361,4 +382,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };

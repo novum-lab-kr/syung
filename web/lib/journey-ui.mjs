@@ -934,8 +934,12 @@ function initJourney({ openSheetView, closeSheet, map, colors, myLocation, butto
 		if (inSheet) closeSheet?.();
 		rideStart(plan, search.to);
 	}
-	function rideEnded() {
+	function rideEnded(arrived = false) {
 		riding = false;
+		if (arrived) {
+			clearBar();
+			return;
+		}
 		if (last && !inSheet) showBar();
 	}
 	function fromHere() {
