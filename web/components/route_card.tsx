@@ -28,8 +28,11 @@ export function RouteCard({ plan, index, on, hidden = false, note, onPick, onTic
     {on && <p class="jp-meta">{plan.meta}{plan.live && <span class="jp-live">실시간</span>}</p>}
     <StepList steps={plan.steps} className="jsteps" />
     {on && note && <p class="jp-note" role="status">{note}</p>}
-    {on && onGo && <button type="button" class="rg-go" onClick={event => { event.stopPropagation(); onGo(index); }}>이 길로 출발</button>}
-    {on && onTicket && <button type="button" class="jp-ticket" onClick={event => { event.stopPropagation(); onTicket(index); }}>승차권 등록</button>}
+    {/* 맨 아래 단추는 한 줄로(2026-11-08 사용자 — 두 줄이던 것) */}
+    {on && (onGo || onTicket) && <div class="jp-go">
+      {onGo && <button type="button" class="rg-go" onClick={event => { event.stopPropagation(); onGo(index); }}>이 길로 출발</button>}
+      {onTicket && <button type="button" class="jp-ticket" onClick={event => { event.stopPropagation(); onTicket(index); }}>승차권 등록</button>}
+    </div>}
   </article>;
 }
 

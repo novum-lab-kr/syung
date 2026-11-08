@@ -278,6 +278,15 @@ export function journeyBusRouteIds(data:BusData | null | undefined, legs:readonl
   return [...new Set(ids)].slice(0,8);
 }
 
+// 정류장 도착 행 가운데 길찾기 노선 이름(route — 예 'M4403')의 것: 행 이름은 「노선 + 지역」(예 'M4403화성'). 이름 앞부분이 같고 바로 뒤가
+// 숫자 · 영문 · '-' · '(' 가 아닌 것(6002 ≠ 6002-1화성 · 1101 ≠ 1101N용인)만, 예약 버스(「(예약)」 · '5100예약수원')는 뺀다(2026-11-08 사용자 결정).
+// 하나로 못 좁히면 null — 그땐 걷는 시간만(예전 그대로)
+export function busRowByName<Row extends { name?:unknown }>(rows:readonly Row[], route:string | null | undefined):Row | null {
+  if (!route) return null;
+  const found = rows.filter(row => { const name = String(row?.name ?? ''); return name.startsWith(route) && !/^[0-9A-Za-z(-]/.test(name.slice(route.length)) && !name.includes('예약'); });
+  return found.length === 1 ? found[0]! : null;
+}
+
 // 길찾기 버스 구간이 노선 표시선(line)의 어디서 어디까지인지(m). 오가는 노선은 탄 곳 · 내릴 곳을 두 번씩 지나므로
 // 탄 곳이 앞인 짝 가운데 길이가 탄 구간에 가깝고, 탄 구간의 ¼ · ½ · ¾ 지점이 그 사이 선에 붙는 것(같은 두 정류장 사이 다른 가지 가르기)을 고른다.
 // 서버 구간의 첫 조각 방향은 정류장 → 도로 꺾임이라 쓰지 않는다. 못 맞추면 null — 그때는 노선 전체를 그린다.
@@ -366,6 +375,7 @@ class BusLayer {
   declare stopHits:StopHit[]; declare requested:string[]; declare journeyLegs:BusLeg[]; declare journeyIds:string[]; declare roads:BusRoadNetwork;
   // 타고 가기로 탄 차와 그 차를 그릴 노선 선 위 거리(내 GPS 를 비춘 자리 — rideWith)
   declare ridden:{ id:string; distance:number } | null;
+  declare watchId:string | null;
   declare onRouteSelect:NonNullable<BusLayerOptions['onRouteSelect']>; declare onFollow:(id:string | null)=>void; declare followedBus:()=>string | null; declare sheetPad:()=>number; declare onFollowView:(on:boolean)=>void;
   declare followOn:boolean; declare followUI:HTMLDivElement | null; declare followKeys:Record<string, string>; declare followParts:Record<'summary' | 'details' | 'controls', HTMLDivElement>; declare followExpanded:boolean;
   declare stopView:string | null; declare stopFollow:string | null; declare stopCamera:{ center:{ lng:number; lat:number }; zoom:number; bearing:number; pitch:number } | null;
@@ -384,7 +394,7 @@ class BusLayer {
     this.map = map; this.phone = phone; this.frameMs = frameMs; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear; this.onRelease = onRelease;   // onRelease: 고른 정류장 · 노선 · 버스를 놓았다(앱 지도 모드 다리 busClosed)
     this.fetcher = (...args:Parameters<typeof fetch>) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
-    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.ridden=null;
+    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.ridden=null;this.watchId=null;
     this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;this.followedBus=followedBus;this.sheetPad=sheetPad;this.onFollowView=onFollowView;this.followOn=false;this.followUI=null;this.followKeys={};
     this.stopView=null;this.stopFollow=null;this.stopCamera=null;   // 정류장 시트에서 고른 번호: 'follow'(곧 올 버스 따라가기) | 'route'(노선 전체) · 그 버스 · 번호를 누르기 전 카메라([정류장으로])
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
@@ -493,7 +503,7 @@ class BusLayer {
   setEnabled(enabled:unknown) {
     if (this.disposed) return;
     this.enabled = !!enabled;
-    if (!this.enabled && !this.chosenIds().length) {this.stopLive();this.fleet.clear();this.hits=[];}
+    if (!this.enabled && !this.liveIds().length) {this.stopLive();this.fleet.clear();this.hits=[];}
     this.refreshView();this.draw();
     this.updateStatus();
   }
@@ -524,7 +534,7 @@ class BusLayer {
     }
     this.exitCoordinates=this.getExitCoordinates().filter(p=>contains(this.box!,p));
     const canvas=this.map.getCanvas(),screen=this.map.project?{project:(p:LngLatPt)=>this.map.project!(p),width:canvas.clientWidth,height:canvas.clientHeight}:null;
-    this.requested=this.enabled||this.chosenIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.chosenIds(),screen):[];
+    this.requested=this.enabled||this.liveIds().length?busRoutesNearStops(this.data,boundsArray(this.map.getBounds()),this.liveIds(),screen):[];
     this.renderStatic(); this.renderCheck(); this.draw(); this.updateStatus();
     const ids = this.requested, key = `${ids.join(',')}|${this.selectedRoute || this.journeyIds[0] || ''}`;
     if (!this.active() || !ids.length) { this.stopLive(); return; }
@@ -736,15 +746,31 @@ class BusLayer {
     this.updateStatus(); this.refreshDetail(); this.draw();
   }
   chosenIds(){return this.selectedRoute?[this.selectedRoute]:this.journeyIds;}
+  // 실시간으로 받을 노선: 고른 노선(없으면 길찾기 노선) + 타고 가기가 기다리거나 타는 노선(watchRoute — 그리기는 chosenIds 그대로).
+  // 노선을 고르면 길찾기 노선이 지워져(select) 타고 가기가 곧 올 차 · 탄 차를 못 봤다
+  // (2026-11-08 운영 10케이스 #8 — 타는 중 140번 선이 골라진 채 603 을 25분 못 탐 · 273 탄 차가 10분 뒤 실시간 목록에서 빠짐)
+  liveIds(){return this.watchId?[...new Set([...this.chosenIds(),this.watchId])]:this.chosenIds();}
+  // 타고 가기(ui/ride_along): 기다리거나 타는 버스 노선(서울 노선 id — 그만두면 null). 노선 · 정류장을 눌러도 이 노선은 계속 받는다
+  watchRoute(routeId:string | null){
+    if(this.watchId===routeId)return;
+    this.watchId=routeId;
+    if(!this.enabled&&!this.liveIds().length){this.stopLive();this.fleet.clear();}
+    this.refreshView();
+  }
   // 타고 가기(ui/ride_along): 길찾기 버스 구간에서 내 위치의 지금 정류장 · 다음 정류장 이름. 노선 정류장(geometry.stops) 가운데 탄 구간(journeyBusRange) 안의 것만 보고,
   // 내 위치는 그 노선 선에 비춘 거리로 견준다(지난 정류장 = 지금, 그다음 = 다음 · 15m 안이면 닿은 것으로). 노선 · 구간 · 내 위치를 못 맞추면 null.
   // now null = 구간 안 정류장을 아직 하나도 못 지남(탄 정류장이 선 위에서 구간 시작보다 조금 앞에 비춰져 빠진 때 — 부르는 쪽이 탄 정류장 이름으로 채운다)
-  journeyStopAt(leg:BusLeg, spot:LngLatPt):{ now:string | null; next:string | null } | null {
+  // share: 부르는 쪽이 앞으로만 셈한 구간 안 내 자리(0~1 — 모르면 null). 있으면 구간 안 그 자리 ±300m 에서 먼저 찾는다 — 고리 노선(같은 정류장을
+  // 두 번 지남)에서 힌트 없이 찾으면 두 쪽 사이를 오갔다(2026-11-08 운영 10케이스 #7 6616 — 지금 수궁119안전센터 ↔ 예림디자인고)
+  journeyStopAt(leg:BusLeg, spot:LngLatPt, share:number | null = null):{ now:string | null; next:string | null } | null {
     if(!this.data)return null;
     for(const id of journeyBusRouteIds(this.data,[leg])){
       const path=this.geometry(this.data.routeById.get(id)!),range=journeyBusRange(path,leg);
-      const snap=path&&range&&snapBusToPath(path,spot,{min:range[0],max:range[1],maxError:150});
-      if(!path||!range||!snap)continue;
+      if(!path||!range)continue;
+      const guess=share===null?null:range[0]+(range[1]-range[0])*share;
+      const near=guess===null?null:snapBusToPath(path,spot,{min:Math.max(range[0],guess-300),max:Math.min(range[1],guess+300),maxError:60});
+      const snap=near||snapBusToPath(path,spot,{min:range[0],max:range[1],maxError:150});
+      if(!snap)continue;
       const stops=path.stops.filter(item=>item.distance>=range[0]-5&&item.distance<=range[1]+5);
       const passed=stops.filter(item=>item.distance<=snap.distance+15);
       return {now:passed.at(-1)?.stop.name??null,next:stops[passed.length]?.stop.name??null};
@@ -753,7 +779,9 @@ class BusLayer {
   }
   // 타고 가기 기다리기: 버스 구간의 탈 정류장(노선 정류장 가운데 선 위 거리가 구간 시작에 가장 가까운 것 · 60m 안) — 정류장 도착(arsId)을 받고 곧 올 차를 고른다
   // 서버가 서울 노선 id · 타는 정류장 id 를 실었고 그 노선이 그 정류장에 서면 그대로 쓴다(선 · 이름으로 짐작하지 않는다)
-  journeyBoard(leg:BusLeg):{ routeId:string; stopId:string; arsId:string | null } | null {
+  // 서울 자료에 없는 노선(경기 · 광역 · 맞추지 못한 서울 패턴): 서버가 타는 정류장 id · 번호만 실으면(2026-11-08 계약 syung-be 787289b) 노선 id 없이
+  // routeName(구간 노선 이름)으로 — 도착은 이름으로 고르고(busRowByName) 곧 올 차 · 탄 차는 모른다(routeId '')
+  journeyBoard(leg:BusLeg):{ routeId:string; stopId:string; arsId:string | null; routeName?:string } | null {
     if(!this.data)return null;
     const named=this.data.routeById.get(String(leg.routeId)),fromId=String(leg.fromId??'');
     if(named&&fromId&&named.stopIds.includes(fromId))return {routeId:named.id,stopId:fromId,arsId:String(leg.fromArs??'')||this.data.stopById.get(fromId)?.arsId||null};
@@ -764,6 +792,8 @@ class BusLayer {
       for(const item of path.stops)if(!best||Math.abs(item.distance-range[0])<Math.abs(best.distance-range[0]))best=item;
       if(best&&Math.abs(best.distance-range[0])<=60)return {routeId:id,stopId:best.stop.id,arsId:best.stop.arsId||null};
     }
+    const fromArs=String(leg.fromArs??''),routeName=String(leg.route??'');
+    if(!named&&fromArs&&routeName)return {routeId:'',stopId:fromId,arsId:fromArs,routeName};
     return null;
   }
   // 그 정류장에 곧 올 차(정류장 15m 뒤까지 · 가장 가까운 것 — approachingBus 와 같은 셈, skip 의 차는 빼고) · 그 차가 정류장에 들어왔나(정류장 15m 앞을 넘음 · 차가 안 보이면 null)
@@ -784,13 +814,14 @@ class BusLayer {
     return at?distance>=at.distance-15:null;
   }
   // 그 정류장 도착(/api/bus/live?stop= · 정류장 시트와 같은 자료)에서 그 노선 버스가 올 때(이 기기 시계 ms · 곧 도착은 지금). 못 받으면 null
-  async journeyArrivals(arsId:string, routeId:string):Promise<number[] | null> {
+  // routeId 가 비면(서울 자료에 없는 노선) routeName 으로 행을 고른다(busRowByName)
+  async journeyArrivals(arsId:string, routeId:string, routeName:string | null = null):Promise<number[] | null> {
     try{
       const response=await this.fetcher(`/api/bus/live?stop=${encodeURIComponent(arsId)}`,{cache:'no-store'});
       const body:ArrivalsPayload=await response.json();
       if(body?.schemaVersion!==1||!Array.isArray(body.arrivals))return null;
       // 남은 초는 서버가 받은 때 기준 — 서버 캐시에 있던 시간(ageSeconds)만큼 뺀다(loadArrivals 와 같게)
-      const got=Date.now(),age=Number(body.ageSeconds)||0,row=body.arrivals.find(item=>item?.routeId===routeId);
+      const got=Date.now(),age=Number(body.ageSeconds)||0,row=routeId?body.arrivals.find(item=>item?.routeId===routeId):busRowByName(body.arrivals,routeName);
       const times:number[]=[];
       for(const bus of row?.buses||[]){
         const message=String(bus?.message||''),seconds=Number.isFinite(bus?.seconds)?bus.seconds!:null;
@@ -827,7 +858,7 @@ class BusLayer {
   }
   // 정류장 팝업에서 고른 노선 하나는 노선 전체가 보이게 멀리 빼도 그 노선 버스를 계속 받는다(호출은 노선 1개)
   // 길찾기 버스 노선(맞춘 것만)도 고른 노선처럼 멀리서도 받는다(경로 전체를 보는 줌에서 탈 버스가 보이게, 2026-10-11) — 1~2개 노선
-  active() { return !this.disposed && !document.hidden && (!!this.selectedRoute || this.journeyIds.length>0 || (this.enabled||this.chosenIds().length>0) && this.map.getZoom() >= BUS_ZOOM.buses); }
+  active() { return !this.disposed && !document.hidden && (!!this.selectedRoute || this.journeyIds.length>0 || !!this.watchId || (this.enabled||this.chosenIds().length>0) && this.map.getZoom() >= BUS_ZOOM.buses); }
   stopAnimation() { clearTimeout(this.frameTimer); cancelAnimationFrame(this.frame); this.frameTimer = 0; this.frame = 0; }
   stopLive() {
     clearTimeout(this.pollTimer); this.pollTimer = 0; this.stopAnimation();
@@ -870,7 +901,7 @@ class BusLayer {
     let moving=false;
     const allowed=new Set(this.chosenIds().length?this.chosenIds():this.requested),ends=this.journeyEnds();
     if(this.active())for(const bus of [...this.fleet.values()].sort((a,b)=>Number(b.row.id===this.selection?.id)-Number(a.row.id===this.selection?.id))){
-      if(!allowed.has(bus.route.id)||wall-bus.receivedWall>EXPIRE_MS)continue;
+      if(!(allowed.has(bus.route.id)||bus.row.id===this.ridden?.id)||wall-bus.receivedWall>EXPIRE_MS)continue;   // 탄 차는 다른 노선을 골라도 그린다
       if(bus.observed!=null&&wall-bus.observed>STALE_MS)this.freeze(bus);
       const distance=this.shownDistance(bus,now);
       if(ends&&!(ends.get(bus.route.id)||[[-Infinity,Infinity]] as [number, number][]).some(([a,b])=>distance>=a&&distance<=b+30))continue;   // 길찾기: 탈 곳으로 오는 차 · 탄 구간 안의 차만
@@ -986,7 +1017,7 @@ class BusLayer {
     this.restoreFocus=null;this.selection=null;this.selectedRoute=null;this.updateDetail=null;this.stopView=null;this.stopFollow=null;this.stopCamera=null;this.followNote?.('');
     if(journey){this.journeyLegs=[];this.journeyIds=[];}
     this.stopArrivals();
-    if(!this.enabled&&!this.chosenIds().length){this.stopLive();this.fleet.clear();}
+    if(!this.enabled&&!this.liveIds().length){this.stopLive();this.fleet.clear();}
     this.refreshView();this.renderStatic();this.draw();
     this.onRouteSelect(null);this.renderFollowUI();this.onRelease();
   }

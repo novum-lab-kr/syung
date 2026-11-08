@@ -38,7 +38,7 @@ function setup() {
     byId: new Map([[1, {lat: 37.5658, lon: 126.9770, name: '시청'}], [2, {lat: 37.5563, lon: 126.9723, name: '서울'}], [3, {lat: 37.5547, lon: 126.9707, name: '남영'}]]),
     animFrame, drawRideCard: (_host, _view, next) => { actions = next; }, look: () => 'sprout', walked() {}, ended() {}, detour() {},
     // 버스 층 없음(버스 기다리기는 내 위치 · 출발 시각으로만)
-    bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}},
+    bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}, watch() {}},
     otherFollow: {active: () => otherOn, stop: () => { otherOn = false; calls.otherStop++; }},
   });
   // 방향이 없는 구간은 곧 올 열차를 받지 않는다(fetch 없음) · 길찾기가 알려 준 열차 0097 이 첫 짐작

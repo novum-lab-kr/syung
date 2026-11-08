@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts} from '../web/bus/layer.mts';
+import {prepareBusData, visibleBusRoutes, busRequestURL, busPollDelay, createBusLayer, busRoutesNearStops, journeyBusRouteIds, journeyBusRange, arrivalParts, countdownText, placeStopPosts, busRowByName} from '../web/bus/layer.mts';
 import {buildBusPath, busMotionDistance} from '../web/bus/motion.mts';
 import {createJourneyMap} from '../web/ui/journey.mts';
 
@@ -719,4 +719,39 @@ test('selectAt with stops:false does not open a stop (nor the line under it); bu
   assert.equal(layer.selectAt({x: 10, y: 10}, {stops: false}), true, '버스(차)는 그대로 눌린다');
   assert.deepEqual(picked.at(-1), [{kind: 'bus', id: 'b'}, route.id]);
   delete layer.select;
+}, false));
+
+// 운영 10케이스 #8(2026-11-08): 타는 중 노선을 고르면(select) 길찾기 노선이 지워져 그 노선 실시간을 안 받았다 — 타고 가기가 알린 노선(watchRoute)은 계속 받는다
+test('타고 가기가 지켜보는 노선은 길찾기 · 고른 노선이 지워져도 실시간으로 받고, 놓으면 그친다', () => withLayerFixture(layer => {
+  const leg={type:'bus',route:'100',path:route.path};
+  layer.setJourney([leg]);layer.watchRoute(route.id);
+  layer.clearSelection({journey:true});   // 노선을 고르거나 여정이 지워진 것과 같은 상태
+  assert.deepEqual(layer.chosenIds(),[], '그리기는 고른 노선 · 길찾기 그대로');
+  assert.deepEqual(layer.requested,[route.id], '받기에는 지켜보는 노선이 남는다');
+  assert.equal(layer.active(),true);
+  layer.watchRoute(null);
+  assert.deepEqual(layer.requested,[]);
+  assert.equal(layer.active(),false);
+},false));
+
+// 광역(2026-11-08 사용자 결정 · 계약 syung-be 787289b): 서울 자료에 없는 노선은 서버가 탈 정류장 id · 번호만 싣는다 → 도착 행을 노선 이름 앞부분으로 · 예약 버스는 뺀다
+// 행 이름은 운영 /api/bus/live?stop=22162(KCC사옥 · 2026-11-08) 그대로
+const STOP_22162 = ['643', 'M4403(예약)화성', 'M4403화성', '4403(예약)화성', '4403화성', '6002(예약)화성', '6002-1화성', '6002화성', '5100수원', '5100예약수원', '1101N용인', '1101광주', 'M4448화성', 'M4449화성'].map(name => ({name}));
+test('busRowByName: 노선 이름 앞부분 + 지역만 · 예약 · 다른 가지(6002-1 · 1101N)는 빼고 하나로 못 좁히면 null', () => {
+  assert.equal(busRowByName(STOP_22162, 'M4403')?.name, 'M4403화성');
+  assert.equal(busRowByName(STOP_22162, '4403')?.name, '4403화성');
+  assert.equal(busRowByName(STOP_22162, '6002')?.name, '6002화성');
+  assert.equal(busRowByName(STOP_22162, '5100')?.name, '5100수원');
+  assert.equal(busRowByName(STOP_22162, '1101')?.name, '1101광주');
+  assert.equal(busRowByName(STOP_22162, '643')?.name, '643', '서울 노선 이름 그대로도');
+  assert.equal(busRowByName(STOP_22162, 'M444'), null, '이름 일부(M4448 · M4449)로는 안 고른다');
+  assert.equal(busRowByName(STOP_22162, 'M9999'), null);
+  assert.equal(busRowByName(STOP_22162, ''), null);
+  assert.equal(busRowByName([{name: '1005광주'}, {name: '1005용인'}], '1005'), null, '지역이 둘이면 못 좁힘');
+});
+
+test('journeyBoard: 서울 자료에 없는 노선은 서버가 실은 정류장 번호 · 노선 이름으로(노선 id 없음)', () => withLayerFixture(layer => {
+  const leg = {type: 'bus', route: 'M4403', fromId: '121000123', fromArs: '22162', path: [[127.03, 37.49], [127.05, 37.48]]};
+  assert.deepEqual(layer.journeyBoard(leg), {routeId: '', stopId: '121000123', arsId: '22162', routeName: 'M4403'});
+  assert.equal(layer.journeyBoard({...leg, fromArs: undefined, fromId: undefined}), null, '못 찾았으면(두 칸 없음) 예전처럼 null');
 }, false));

@@ -342,8 +342,9 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     pick(sel, !!last!.opened);   // 처음 나온 결과는 접은 채, 시트를 다시 열 때 · 발권에서 돌아올 때는 펼쳐 둔 카드 그대로
     filter(last!.tab || 'all');
   }
-  // 펼친 경로를 또 누르면 시트를 닫는다(경로는 지도에 남는다)
-  function cardPressed(index:number) { if (last!.sel === index && cardsOf()[index]?.on) closeSheet?.(); else { pick(index); revealOpened(); } }
+  // 펼친 경로를 또 누르면 그대로 둔다(2026-11-08 사용자 A안): 닫으면 아래 막대의 「이 길로 출발」이 누른 손가락 밑에 나타나
+  // 한 번 더 누르면 타고 가기가 시작됐다. 시트 닫기는 ✕ · 손잡이 · 지도 빈 곳으로
+  function cardPressed(index:number) { if (last!.sel === index && cardsOf()[index]?.on) return; pick(index); revealOpened(); }
   // 시트 높이가 고정이라 펼친 상세가 시트 밖으로 나가면 카드 머리부터 보이게 스크롤한다
   function revealOpened() {
     requestAnimationFrame(() => {

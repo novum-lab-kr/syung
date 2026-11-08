@@ -23,7 +23,7 @@ function setup(answers) {
     planner: {plans: []}, trainPose: () => ({dist: 0}), trainLngLat: () => ({lng: 0, lat: 0}), arrivalRank: () => 0, byId: new Map(), animFrame: [],
     drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended: () => { calls.ended++; }, detour: () => { calls.detour++; },
     // 버스 층 없음(버스 기다리기는 내 위치 · 출발 시각으로만)
-    bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}},
+    bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}, watch() {}},
     otherFollow: {active: () => false, stop() {}},
     reroute: (spot, plan, index) => { calls.reroute.push(spot); calls.asked.push({plan, index}); const next = answers.shift(); const made = typeof next === 'function' ? next(plan, index) : next; return Promise.resolve(made ? {plan: made, use: () => { calls.used++; }} : null); },
   });

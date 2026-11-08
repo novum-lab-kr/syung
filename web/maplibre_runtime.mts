@@ -335,14 +335,14 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 // Trains, the selected-train ripple and the my-location pulse are drawn on their own canvas over
 // the map (drawTrains), at TRAIN_FPS while something there moves: a map redraw (3D buildings and
 // all) is only needed when the camera moves, and following a train moves it at FOLLOW_FPS.
-const TRAIN_FPS=30,FOLLOW_FPS=30,SAVER_FPS=15,animFrame:(()=>void)[]=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation:[number,number]|null=null,meHidden=false;   // meHidden: 탄 버스를 내 위치에 그리는 동안 내 위치(캐릭터 · 점 · 파장)를 숨긴다(hideMe)
+const TRAIN_FPS=30,FOLLOW_FPS=30,SAVER_FPS=15,animFrame:(()=>void)[]=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation:[number,number]|null=null,meHidden=false;   // meHidden: 버스를 타는 단계 동안 내 위치(캐릭터 · 점 · 파장)를 숨긴다(hideMe)
 // 절전(설정 창 버튼, 이 기기에 저장): 움직임을 SAVER_FPS 로 — 30 fps 를 부르는 곳은 그대로 두고 예약 간격만 늘린다(이름표 · 따라가기 · 버스도 이 값)
 // (타이머 뒤 requestAnimationFrame 이 화면 한 번을 더 기다려 60 Hz 화면의 '30'은 실제 약 20번이다 — 맥 측정 2026-10-26: 20 으로 두니 18번, 거의 그대로. 15 → 실제 약 13~15번)
 let saverOn=false;const frameMs=()=>1000/(saverOn?SAVER_FPS:TRAIN_FPS);
 // 다시 그린 횟수(쌓임): 열차 층 프레임 · 이름표 · 이름표 조회 · 지도 프레임 — 발열 · 배터리 점검(2026-10-23 덕배)이 1초에 몇 번인지 잰다(__subwayWebGL.frames)
 const frameStats={trains:0,signs:0,signQueries:0,mapRenders:0};
 // 버스를 타는 동안 탄 차를 내 위치에 그리면(버스 층 ridden) 내 위치 캐릭터 · 점 · 파장을 숨겨 탄 버스만 보이게(2026-11-07 사용자 결정).
-// 내리거나 그만두면 · 탄 차를 못 정하면(ridden 없음) 그대로 보인다
+// 버스를 타는 단계 동안은 탄 차를 못 정하거나 놓쳐도(ridden 없음) 계속 숨긴다(2026-11-08 사용자 결정 — 놓친 동안 캐릭터가 다시 보였다). 내리거나 그만두면 다시 보인다
 function hideMe(on:boolean){if(on===meHidden)return;meHidden=on;
   for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');
   trainFrameSoon(0)}
@@ -646,9 +646,9 @@ const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 // 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
 const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard,otherFollow:{active:()=>!!sheetUI.following||!!sheetUI.followBus,stop:()=>sheetUI.stopFollow()},
-  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]])??null,
-  bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId)=>busLayer?await busLayer.journeyArrivals(arsId,routeId):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
-    atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(!!busLayer?.ridden)}}});
+  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot,share)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]],share)??null,
+  bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId,routeName)=>busLayer?await busLayer.journeyArrivals(arsId,routeId,routeName):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
+    atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId)}});
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------

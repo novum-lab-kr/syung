@@ -33,19 +33,32 @@ export function pathLength(path:readonly LngLat[]):number {
   for (let index = 1; index < path.length; index++) total += metres(path[index - 1]!, path[index]!);
   return total;
 }
-// 길 위에서 가장 가까운 자리: off 길에서 떨어진 거리 · at 길 처음부터 그 자리까지 · total 길 전체
-export function onPath(point:LngLat, path:readonly LngLat[]):{ off:number; at:number; total:number } {
+// 길 위에서 가장 가까운 자리: off 길에서 떨어진 거리 · at 길 처음부터 그 자리까지 · total 길 전체.
+// within: 길 처음부터 [min, max] m 안에서만 찾는다(그 밖 조각은 건너뛰고 걸친 조각은 그 끝까지만)
+export function onPath(point:LngLat, path:readonly LngLat[], within?:{ min:number; max:number }):{ off:number; at:number; total:number } {
   if (path.length < 2) return {off: path[0] ? metres(point, path[0]) : 0, at: 0, total: 0};
   const cos = Math.cos(point[1] * Math.PI / 180), flat = (spot:LngLat) => [spot[0] * cos * M_PER_DEG, spot[1] * M_PER_DEG] as const, here = flat(point);
+  const min = within?.min ?? -Infinity, max = within?.max ?? Infinity;
   let best = Infinity, bestAt = 0, walked = 0;
   for (let index = 1; index < path.length; index++) {
     const start = flat(path[index - 1]!), end = flat(path[index]!), dx = end[0] - start[0], dy = end[1] - start[1], span = Math.hypot(dx, dy);
-    const share = span ? Math.max(0, Math.min(1, ((here[0] - start[0]) * dx + (here[1] - start[1]) * dy) / (span * span))) : 0;
-    const gap = Math.hypot(here[0] - start[0] - dx * share, here[1] - start[1] - dy * share);
-    if (gap < best) { best = gap; bestAt = walked + span * share; }
+    if (walked + span >= min && walked <= max) {
+      const low = span ? Math.max(0, (min - walked) / span) : 0, high = span ? Math.min(1, (max - walked) / span) : 0;
+      const share = span ? Math.max(low, Math.min(high, ((here[0] - start[0]) * dx + (here[1] - start[1]) * dy) / (span * span))) : 0;
+      const gap = Math.hypot(here[0] - start[0] - dx * share, here[1] - start[1] - dy * share);
+      if (gap < best) { best = gap; bestAt = walked + span * share; }
+    }
     walked += span;
   }
   return {off: best, at: bestAt, total: walked};
+}
+// 버스 길처럼 같은 곳을 두 번 지나는 길(고리 · 오가는 노선)에서 지난 자리(from m)부터 앞으로만 찾는다: 30m 뒤 ~ 300m 앞(AHEAD_M) 안에서 먼저 보고,
+// 그 안에서 길 위(OFF_M)로 못 맞추면(위치가 끊겼다 멀리서 돌아옴) 길 전체. 전체로 찾으면 고리의 되돌아오는 쪽에 붙어 타기 전에 「내려요」로 넘어가고
+// 지금 · 다음 · 남은 정거장이 두 쪽 사이를 오갔다(2026-11-08 운영 10케이스 #7 6616 — 수궁119안전센터를 두 번 지남)
+export const AHEAD_M = 300;
+export function onPathFrom(point:LngLat, path:readonly LngLat[], from:number):{ off:number; at:number; total:number } {
+  const near = onPath(point, path, {min: from - 30, max: from + AHEAD_M});
+  return near.off <= OFF_M ? near : onPath(point, path);
 }
 // 길을 at(처음부터 m)에서 나눈다: 지나온 길 · 남은 길(둘 다 그 자리 점을 같이 가진다)
 export function splitPath(path:readonly LngLat[], at:number):{ done:LngLat[]; rest:LngLat[] } {
