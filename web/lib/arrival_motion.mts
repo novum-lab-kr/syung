@@ -51,7 +51,7 @@ export function playArrival(box:HTMLElement, name:ArrivalScene, onError?:() => v
   let anim:LottieAnim | null = null, gone = false, failed = false;
   const fail = () => {
     if (gone || failed || !box.isConnected) return;
-    failed = true; anim?.destroy(); anim = null; box.classList.remove('on'); onError?.();
+    failed = true; anim?.destroy(); anim = null; box.classList.remove('on'); box.classList.add('fail'); onError?.();   // .fail: 움직임 없이 정적 표시(syung.css)
   };
   void Promise.all([loadScene(name), player() ? 0 : import('../vendor/lottie/lottie_light.min.js')]).then(([data]) => {
     const lottie = player();

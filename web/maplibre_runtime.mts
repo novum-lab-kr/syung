@@ -347,7 +347,8 @@ function hideMe(on:boolean){if(on===meHidden)return;meHidden=on;
   for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');
   trainFrameSoon(0)}
 // 도착 연기(components/ride_arrival.tsx): 내 위치 캐릭터 · 점과 함께 경로의 도착 점(journey-ends 의 end)도 숨긴다 — 연기하는 캐릭터 발밑에 까만 공처럼 겹쳤다(2026-11-08 6차 녹화)
-function arrivalHideMe(on:boolean){hideMe(on);if(map.getLayer('journey-ends'))map.setFilter('journey-ends',on?['==',['get','kind'],'start']:['in',['get','kind'],['literal',['start','end']]])}
+let arrivalEnds:ReturnType<MapLibre['getFilter']>|null=null;   // 숨기기 전 journey-ends 필터(되돌릴 때 이 값 그대로 — 층이 정한 필터를 여기서 다시 적지 않는다 · null = 아직 안 숨김)
+function arrivalHideMe(on:boolean){hideMe(on);if(!map.getLayer('journey-ends'))return;if(on){arrivalEnds??=map.getFilter('journey-ends');map.setFilter('journey-ends',['==',['get','kind'],'start'])}else if(arrivalEnds!==null){map.setFilter('journey-ends',arrivalEnds||null);arrivalEnds=null}}
 function trainFrameSoon(ms:number){if(document.hidden)return;if(saverOn&&ms>0&&ms<1000/SAVER_FPS)ms=1000/SAVER_FPS;const at=performance.now()+ms;   // 탭이 숨겨지면 예약하지 않는다(다시 보이면 visibilitychange 가 깨운다)
   if(trainTimer&&trainAt<=at)return;clearTimeout(trainTimer);trainAt=at;trainTimer=setTimeout(()=>{trainTimer=0;requestAnimationFrame(()=>{if(!map.isMoving())drawTrains()})},ms)}   // while the map moves it draws them with each of its frames: a timer frame there used a newer camera than the map under it (tall rides slid and snapped back)
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)trainFrameSoon(0)});   // 다시 보이면 한 번 깨운다(숨긴 동안 멈춘 움직임이 이어 간다)
