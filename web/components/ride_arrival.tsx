@@ -31,13 +31,13 @@ function useAnchor(map:ArrivalMap, at:readonly [number, number]) {
 }
 
 // 장면 · 플레이어는 도착할 때(깃발은 타기 시작할 때) 받는다
-function useMotion(name:ArrivalScene) {
+function useMotion(name:ArrivalScene, onError?:() => void) {
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let stop:(() => void) | null = null, gone = false;
-    void import('../lib/arrival_motion.mts').then(motion => { if (!gone && box.current) stop = motion.playArrival(box.current, name); });
+    void import('../lib/arrival_motion.mts').then(motion => { if (!gone && box.current) stop = motion.playArrival(box.current, name, onError); }).catch(() => { if (!gone) onError?.(); });
     return () => { gone = true; stop?.(); };
-  }, [name]);
+  }, [name, onError]);
   return box;
 }
 
@@ -53,11 +53,11 @@ function useTapClose(map:ArrivalMap, onClose:() => void) {
   }, [map, onClose]);
 }
 
-interface Props { map:ArrivalMap; at:readonly [number, number]; arrival:RideArrivalParts; onClose():void; hideMe?:(on:boolean) => void }
+interface Props { map:ArrivalMap; at:readonly [number, number]; arrival:RideArrivalParts; onClose():void; onError():void; hideMe?:(on:boolean) => void }
 
 // 도착 연기: 지도 위 내 위치 캐릭터(3D)를 잠깐 숨기고 그 자리에서 연기한다(한 번 연기 후 끝 자세 정지)
-export function MapArrival({ map, at, arrival, onClose, hideMe }:Props) {
-  const anchor = useAnchor(map, at), box = useMotion('char-ride');
+export function MapArrival({ map, at, arrival, onClose, onError, hideMe }:Props) {
+  const anchor = useAnchor(map, at), box = useMotion('char-ride', onError);
   useEffect(() => { hideMe?.(true); return () => hideMe?.(false); }, [hideMe]);
   useTapClose(map, onClose);
   return <div ref={anchor} class="ra ram rac" role="status" aria-live="polite" aria-label={`${arrival.to} 슝 도착 · ${arrival.time} 도착 · ${arrival.took}분 걸렸어요 · 지도를 누르면 길찾기를 끝내요`}>
