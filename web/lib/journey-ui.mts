@@ -575,9 +575,11 @@ export function initJourney({openSheetView, closeSheet, map, colors, myLocation,
     if (inSheet) closeSheet?.();
     rideStart(plan, search.to);
   }
-  // 타고 가기를 끝냈다(✕ · 도착 뒤 ✕): 경로가 남았으면 아래 막대로
-  function rideEnded() {
+  // 타고 가기를 끝냈다: 도착 뒤 ✕ 는 길찾기를 다 끝낸다(경로 · 아래 막대 · 지도 경로 — 아래 막대 ✕ 와 같다 · 2026-11-08 사용자),
+  // 타는 도중 ✕ 는 경로가 남았으면 아래 막대로
+  function rideEnded(arrived = false) {
     riding = false;
+    if (arrived) { clearBar(); return; }
     if (last && !inSheet) showBar();
   }
   // 「다른 길 찾기」: 지금 내 위치에서 같은 목적지로, 지금 출발로 다시 찾는다
