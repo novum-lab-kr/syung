@@ -620,7 +620,25 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 .jp-go .rg-go{flex-grow:1.6}
 /* 승차권은 펼친 카드 바탕(--control)과 같으면 글자만 떠 보여(2026-11-08 사용자) 글자색을 조금 섞은 연한 회색으로 채운다 — 다크도 같은 식 */
 .jp .rg-go+.jp-ticket{background:color-mix(in srgb,var(--ink) 9%,var(--control));color:var(--ink)}
-body:has(.rg-talk) .route-cta{display:none}
+body:has(.rg-talk,.ra) .route-cta{display:none}
+/* 타고 가기 도착 표시(components/ride_arrival.tsx): 상자 없이 지도 속 도착 자리에 붙는다 — .ram · .rag 는 크기 0 인 닻(도착 자리 화면 좌표로 transform · useAnchor), 안의 것은 그 점 기준.
+   누르기는 모두 지도로 지나간다(지도를 누르면 닫힌다 — ✕ 없음) */
+.ra.ram{position:fixed;left:0;top:0;width:0;height:0;z-index:15;color:var(--ink);pointer-events:none}
+.ral-scene{position:absolute;pointer-events:none}
+.ral-scene svg{display:block}
+/* 도착 연기(장면 600×250 · 발밑 (200,196) 이 도착 자리 — tools/arrival_motion/make.mjs rideScene). 글은 머리 위 테두리 글씨만(카드 없음) */
+.rac-scene{left:-100px;top:-196px;width:200px;height:220px}.rac-ride{left:-200px;width:600px;height:250px}
+.rac-say{position:absolute;left:0;top:-90px;white-space:nowrap;color:var(--ink);font:400 var(--text-18)/1 var(--round);text-shadow:0 0 3px var(--paper),0 0 3px var(--paper),0 0 6px var(--paper);transform:translateX(-50%);pointer-events:none}
+.ral-scene:not(.on)~.rac-say{visibility:hidden}
+.ral-scene.on~.rac-say{animation:rac-pop var(--duration-260) var(--ease-standard) 1.45s both}
+.rac .lm-wind path{stroke:var(--muted)}.rac .lm-dust path{fill:var(--muted)}
+/* 다크: 까만 열차가 어두운 지도에 묻혀 몸통은 슝 노랑 · 눈은 먹색으로 뒤집는다(로그인 로고 상자 노랑 + 열차 먹색의 반대 짝 · 2026-11-08 사용자 결정) */
+html[data-theme=dark] .rac .lm-train-body path{fill:var(--syung)}html[data-theme=dark] .rac .lm-train-eye path{fill:var(--syung-ink)}
+/* 길 끝 깃발(GoalFlag): 장면 48×64 를 화면 px 그대로 · 깃대 밑 = 장면 (6,60) → 도착 자리 오른쪽 24px(도착하면 새싹이 · 머리 위 「도착!」 과 안 겹친다) */
+.rag{position:fixed;left:0;top:0;width:0;height:0;z-index:15;pointer-events:none}
+.rag-flag{left:18px;top:-60px;width:48px;height:64px}
+@keyframes rac-pop{0%{transform:translateX(-50%) translateY(8px) scale(.6);opacity:0}70%{transform:translateX(-50%) scale(1.12);opacity:1}}
+@media (prefers-reduced-motion:reduce){.ram *,.rag *{animation:none}}
 .jbar-x:hover{color:var(--ink)}
 .jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */
 .jbar-new{position:absolute;top:0;right:44px;min-height:44px;padding:0 var(--space-2);border:0;background:none;color:var(--ink);font:inherit;font-size:var(--text-13);font-weight:var(--weight-bold);cursor:pointer}

@@ -7,7 +7,7 @@
 import { serverUrl } from '../lib/server_url.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, arrivedEarly, arriveOutcome, boardNow, characterOf, lostUnderground, nearBoarding, nearestM, pickedArrived, doneSub, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, arrivedEarly, arriveOutcome, boardNow, characterOf, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -28,7 +28,8 @@ export interface RideAlongDeps {
   arrivalRank:(row:never) => number; byId:ReadonlyMap<number, { lat:number; lon:number; name:string }>; animFrame:(() => void)[];
   drawRideCard:(host:HTMLElement, view:RideCardView | null, actions:RideCardActionsLike) => void;
   look:() => string | null | undefined; walked:(leg:number, cut:{ done:LngLat[]; rest:LngLat[] } | null) => void;
-  ended:() => void; detour:() => void;
+  // arrived: 「슝 도착!」 카드의 ✕(목적지에 닿은 뒤) — 길찾기를 다 끝낸다 · false 는 타는 도중 ✕(경로는 아래 막대로 남긴다)
+  ended:(arrived:boolean) => void; detour:() => void;
   // 걷는 길에서 벗어남: 지금 위치 → 그 걷는 구간(plan.legs[index])의 끝까지 걷기만 다시 찾아 그 구간만 바꾼 경로(lib/journey-ui reroute — 탈 것은 그대로).
   // 못 찾으면 null · use() 는 그 경로를 지도 · 아래 막대에 둔다
   reroute:(spot:LngLat, plan:RidePlan, index:number) => Promise<{ plan:RidePlan; use():void } | null>;
@@ -85,6 +86,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   const step = () => ride ? ride.steps[ride.at]! : null;
   const legAt = (index:number) => ride?.legs[index];
   const freshFix = () => fix && Date.now() - fix.t < FIX_FRESH_MS ? fix.spot : null;
+  // 도착 자리(지도 속 도착 표시 · 도착 때 카메라)
+  const endSpot = ():LngLat | null => ride ? rideEndSpot(ride.legs, id => { const station = byId.get(id); return station ? [station.lon, station.lat] : null; }) : null;
   const planOf = (id:string | null) => id ? planner.plans.find(plan => plan.id === id) ?? null : null;
   const trackOf = (plan:RidePlanLike) => ({seqIds: plan.seq.map(station => station.id), cum: plan.cum, dist: trainPose(plan as never).dist});
   // 카드 높이만큼 아래를 비워 내 위치 · 열차가 말풍선 위에 오게
@@ -99,7 +102,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     offTrack(fix.spot);
     tick();
     const current = step();
-    if (following && current && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride')) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+    if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride')) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
   });
   const locate = () => { if (geolocate._watchState === 'OFF') { turnedOn = true; geolocate.trigger(); } };
   const unlocate = () => {
@@ -206,8 +209,13 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       if (leg?.type === 'ride') { const plan = planOf(ride.train); if (plan && following) map.easeTo({center: [trainLngLat(plan as never).lng, trainLngLat(plan as never).lat], zoom: RIDE_ZOOM, padding: pad(), duration: 700}); }
     }
     const spot = freshFix();
-    if (following && spot && now.kind !== 'ride') map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
-    if (now.kind === 'done') { clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; unlocate(); }
+    if (following && spot && now.kind !== 'ride' && now.kind !== 'done') map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+    if (now.kind === 'done') {
+      clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; unlocate();
+      // 도착: 카메라를 도착 자리로(도착 표시가 화면에 보이게 — 모르면 내 위치) · 그 뒤 위치가 와도 따라가지 않는다(위 geolocate)
+      const end = endSpot() ?? spot;
+      if (end) map.easeTo({center: [...end], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 800});
+    }
     cam = null;
     draw();
   }
@@ -359,8 +367,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   function view():RideCardView | null {
     const current = step();
     if (!ride || !current) return null;
-    const character = characterOf(look()), base = {image: character.file, flip: character.flip, following, detour: false, say: null};
-    if (current.kind === 'done') return {...base, following: true, title: '슝 도착!', sub: doneSub(ride.toName, new Date(), ride.startedMs)};
+    const character = characterOf(look()), base = {image: character.file, flip: character.flip, following, detour: false, say: null, goal: {at: endSpot()}};
+    if (current.kind === 'done') { const now = new Date(); return {...base, following: true, title: '슝 도착!', sub: doneSub(ride.toName, now, ride.startedMs), arrival: {...doneParts(ride.toName, now, ride.startedMs), at: endSpot()}}; }
     const leg = legAt(current.leg)!;
     if (current.kind === 'walk') {
       const pace = measuredPace(ride.track) ?? legPace(ride.legs, current.leg);
@@ -400,7 +408,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     return pickedArrived({zeroSinceMs: ride.zeroSince, pickedDueS: listFresh && row ? row.s : null, track: plan ? trackOf(plan) : null, stationId: leg.stations[0]!});
   }
   const actions:RideCardActionsLike = {
-    close: () => { stop(); ended(); },
+    close: () => { const arrived = step()?.kind === 'done'; stop(); ended(arrived); },
     detour: () => { stop(); detour(); },
     follow: () => {
       otherFollow.stop(); following = true; cam = null; camKey = ''; draw();   // camKey 도 비운다 — 그 사이 다른 따라가기가 카메라를 옮겼을 수 있다

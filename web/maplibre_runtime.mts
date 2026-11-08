@@ -12,7 +12,7 @@ import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journ
 import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통과 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
-import {createRideAlong} from './ui/ride_along.mts';import {drawRideCard} from './components/ride_card.tsx';import './lib/ride-along.mts';   // 타고 가기(「이 길로 출발」 뒤 카드 한 장 — 셈 · 글은 lib/ride-along, 같은 단계에서 요청)
+import {createRideAlong} from './ui/ride_along.mts';import {drawRideCard} from './components/ride_card.tsx';import './components/ride_arrival.tsx';import './lib/ride-along.mts';   // 타고 가기(「이 길로 출발」 뒤 카드 한 장 — 셈 · 글은 lib/ride-along, 같은 단계에서 요청)
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
 import {startAnalytics} from './lib/analytics.mts';   // GA4(운영 지도 주소의 웹에서만 · 앱 지도 #app 은 부르지 않는다)
 import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
@@ -346,6 +346,8 @@ const frameStats={trains:0,signs:0,signQueries:0,mapRenders:0};
 function hideMe(on:boolean){if(on===meHidden)return;meHidden=on;
   for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'none':'visible');
   trainFrameSoon(0)}
+// 도착 연기(components/ride_arrival.tsx): 내 위치 캐릭터 · 점과 함께 경로의 도착 점(journey-ends 의 end)도 숨긴다 — 연기하는 캐릭터 발밑에 까만 공처럼 겹쳤다(2026-11-08 6차 녹화)
+function arrivalHideMe(on:boolean){hideMe(on);if(map.getLayer('journey-ends'))map.setFilter('journey-ends',on?['==',['get','kind'],'start']:['in',['get','kind'],['literal',['start','end']]])}
 function trainFrameSoon(ms:number){if(document.hidden)return;if(saverOn&&ms>0&&ms<1000/SAVER_FPS)ms=1000/SAVER_FPS;const at=performance.now()+ms;   // 탭이 숨겨지면 예약하지 않는다(다시 보이면 visibilitychange 가 깨운다)
   if(trainTimer&&trainAt<=at)return;clearTimeout(trainTimer);trainAt=at;trainTimer=setTimeout(()=>{trainTimer=0;requestAnimationFrame(()=>{if(!map.isMoving())drawTrains()})},ms)}   // while the map moves it draws them with each of its frames: a timer frame there used a newer camera than the map under it (tall rides slid and snapped back)
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)trainFrameSoon(0)});   // 다시 보이면 한 번 깨운다(숨긴 동안 멈춘 움직임이 이어 간다)
@@ -645,8 +647,8 @@ const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 // 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
-const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard,otherFollow:{active:()=>!!sheetUI.following||!!sheetUI.followBus,stop:()=>sheetUI.stopFollow()},
-  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:()=>journey.rideEnded(),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot,share)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]],share)??null,
+const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard:(host,view,actions)=>drawRideCard(host,view,actions,map,arrivalHideMe),otherFollow:{active:()=>!!sheetUI.following||!!sheetUI.followBus,stop:()=>sheetUI.stopFollow()},
+  look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:arrived=>journey.rideEnded(arrived),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot,share)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]],share)??null,
   bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId,routeName)=>busLayer?await busLayer.journeyArrivals(arsId,routeId,routeName):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
     atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId)}});
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다

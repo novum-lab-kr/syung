@@ -3,6 +3,8 @@
 // 그리기만 한다 — 글 · 그림 이름은 lib/ride-along.mts, 상태 · 위치 · 카메라는 ui/ride_along.mts
 import { render } from 'preact';
 import type { RideCardView } from '../lib/ride-along.mts';
+import type { ComponentChild } from 'preact';
+import { GoalFlag, MapArrival, type ArrivalMap } from './ride_arrival.tsx';
 
 const CLOSE = <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 
@@ -23,5 +25,13 @@ export function RideCard({ view, actions }:{ view:RideCardView; actions:RideCard
 }
 
 // 카드 자리(ui/ride_along 이 만든다)에 그리기 · 다시 그리기 · 치우기(view 가 null)
-export const drawRideCard = (host:HTMLElement, view:RideCardView | null, actions:RideCardActions):void =>
-  render(view ? <RideCard view={view} actions={actions} /> : null, host);
+// 타고 가는 동안 길 끝 자리에 깃발을 미리 세운다(GoalFlag — 도착 뒤에도 같은 열쇠로 남는다).
+// 도착하면 말풍선 대신 지도 속 도착 자리에서 연기한다(MapArrival — map · 도착 자리가 있을 때만, 없으면 「슝 도착!」 말풍선).
+// 타는 중엔 카드 앞(카드가 깃발을 덮는다) · 도착하면 연기 뒤에 둬서 열차 · 새싹이보다 앞에 그린다(같은 z-index — 문서 차례가 위아래)
+export function drawRideCard(host:HTMLElement, view:RideCardView | null, actions:RideCardActions, map?:ArrivalMap, hideMe?:(on:boolean) => void):void {
+  const goal = view?.goal?.at, flag = map && goal ? <GoalFlag key="goal" map={map} at={goal} /> : null;
+  const draw = (body:ComponentChild, flagOnTop = false) => render(flag ? <>{flagOnTop ? null : flag}{body}{flagOnTop ? flag : null}</> : body, host);
+  const at = view?.arrival?.at;
+  if (view?.arrival && map && at) { draw(<MapArrival key="arrival" map={map} at={at} hideMe={hideMe} arrival={view.arrival} onClose={actions.close} />, true); return; }
+  draw(view ? <RideCard key="card" view={view} actions={actions} /> : null);
+}

@@ -196,7 +196,12 @@ export function rideSteps(legs:readonly RideLeg[]):RideStep[] {
 
 // ---- 카드 글(components/ride_card.tsx 가 그린다)
 // look: 카드 캐릭터 그림 이름 · detour: 작은 글 자리에 「다른 길 찾기 ›」 · flip: 오른쪽을 보는 그림이라 말풍선 쪽(왼쪽)으로 뒤집는다
-export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean }
+// arrival: 도착 카드에만 — 도착 연기(components/ride_arrival.tsx)가 글을 나눠 쓴다(목적지 · 도착 시각 · 걸린 분)
+export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal }
+// goal: 길 끝 자리(타고 가는 동안 그 자리에 깃발을 미리 세운다 — 자리를 모르면 null)
+export interface RideGoal { at:LngLat | null }
+// at: 도착 자리(도착 연기가 그 자리에 붙는다 — 모르면 「슝 도착!」 말풍선)
+export interface RideArrivalParts { to:string; time:string; took:number; at?:LngLat | null }
 // 캐릭터 그림(brand/characters — 슝 소개 사이트 그림). 그림이 없는 스타 세 모드(SCV · 드론 · 프로브)는 새싹으로(2026-11-04 확정)
 const CHARACTER:Record<string, { file:string; flip:boolean }> = {
   sprout: {file: 'sprout-left.webp', flip: false}, builder: {file: 'builder-right.webp', flip: true}, seonbi: {file: 'seonbi-right.webp', flip: true}, visitor: {file: 'visitor-left.webp', flip: false},
@@ -252,9 +257,27 @@ export function rideSub(legs:readonly RideLeg[], index:number, stopsLeft:number,
 }
 export interface RideWhere { now:string; next:string | null }
 // 도착 카드: 「슝 도착!」 · 「강남역 · 08:40 · 32분 걸렸어요」
-export function doneSub(toName:string, now:Date, startedMs:number):string {
+export function doneParts(toName:string, now:Date, startedMs:number):RideArrivalParts {
   const pad = (value:number) => String(value).padStart(2, '0');
-  return `${toName} · ${pad(now.getHours())}:${pad(now.getMinutes())} · ${minutes((+now - startedMs) / 1000)}분 걸렸어요`;
+  return {to: toName, time: `${pad(now.getHours())}:${pad(now.getMinutes())}`, took: minutes((+now - startedMs) / 1000)};
+}
+// 길의 끝(도착 표시 · 도착 때 카메라): 끝에서부터 — 걷기 · 버스는 길 끝점, 지하철은 내린 역(stationSpot). 모르면 null
+export function rideEndSpot(legs:readonly RideLeg[], stationSpot:(id:number) => LngLat | null):LngLat | null {
+  for (let index = legs.length - 1; index >= 0; index--) {
+    const leg = legs[index]!;
+    if (leg.type === 'ride') {
+      const id = leg.stations.at(-1), spot = id === undefined ? null : stationSpot(id);
+      if (spot) return spot;
+      continue;
+    }
+    const end = leg.path?.at(-1);
+    if (end) return end;
+  }
+  return null;
+}
+export function doneSub(toName:string, now:Date, startedMs:number):string {
+  const {to, time, took} = doneParts(toName, now, startedMs);
+  return `${to} · ${time} · ${took}분 걸렸어요`;
 }
 
 // 열차 위 진행: 열차 예측(trains/plan)의 지나갈 역 차례(seq · cum)와 지금 자리(dist)로
