@@ -390,6 +390,59 @@ function addBasemap({ map, sunShadows, PHONE, CITY_STYLE, addCityLayers, applyTh
 		}
 	});
 	L({
+		id: "bm-road-alley-case",
+		type: "line",
+		source: "ofm",
+		"source-layer": "transportation",
+		minzoom: 15,
+		filter: [
+			"all",
+			[
+				"in",
+				["get", "class"],
+				["literal", [
+					"service",
+					"path",
+					"track"
+				]]
+			],
+			[
+				"!=",
+				["get", "subclass"],
+				"platform"
+			],
+			[
+				"!=",
+				["get", "brunnel"],
+				"tunnel"
+			],
+			[
+				"==",
+				["geometry-type"],
+				"LineString"
+			]
+		],
+		layout: {
+			"line-cap": "round",
+			"line-join": "round"
+		},
+		paint: {
+			"line-color": "#cfd8da",
+			"line-width": [
+				"interpolate",
+				["linear"],
+				["zoom"],
+				15,
+				1.1,
+				17,
+				3,
+				19,
+				5
+			],
+			"line-opacity": .8
+		}
+	});
+	L({
 		id: "bm-road-alley",
 		type: "line",
 		source: "ofm",
@@ -427,7 +480,7 @@ function addBasemap({ map, sunShadows, PHONE, CITY_STYLE, addCityLayers, applyTh
 			"line-join": "round"
 		},
 		paint: {
-			"line-color": "#c9d3d6",
+			"line-color": "#ffffff",
 			"line-width": [
 				"interpolate",
 				["linear"],

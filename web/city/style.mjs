@@ -656,6 +656,7 @@ function applyCityStyle(map, { on = false, theme = "light", tone = "simcity", ma
 		for (const id of NIGHT_GROUND_IDS) if (!has.has(id) && map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
 	}
 	for (const [id, op] of [
+		["bm-road-alley-case", .8],
 		["bm-road-alley", 1],
 		["bm-road-minor-case", .8],
 		["bm-road-minor", .8],
