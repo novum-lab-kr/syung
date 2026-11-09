@@ -66,7 +66,7 @@ export function registerExitLayers({map,exitsReady,exitFeatures,EXIT_MINZOOM}:{m
   exitsReady.then(()=>map.getSource<GeoJSONSource>('exits')!.setData({type:'FeatureCollection',features:exitFeatures()}));
 }
 
-export const BASEMAP_LAYERS=['bm-landcover','bm-park','bm-water','bm-bld','bm-bld3d','bm-road-alley','bm-road-minor-case','bm-road-minor','bm-road-major','bm-rail','bm-label-water','bm-label-park','bm-label-road','bm-label-poi','bm-label-place'];
+export const BASEMAP_LAYERS=['bm-landcover','bm-park','bm-water','bm-bld','bm-bld3d','bm-road-alley-case','bm-road-alley','bm-road-minor-case','bm-road-minor','bm-road-major','bm-rail','bm-label-water','bm-label-park','bm-label-road','bm-label-poi','bm-label-place'];
 export function addBasemap({map,sunShadows,PHONE,CITY_STYLE,addCityLayers,applyTheme}:{map:MapLibre,sunShadows:CustomLayerInterface,PHONE:boolean,CITY_STYLE:unknown,addCityLayers:(map:MapLibre,options:{pack:unknown})=>void,applyTheme:()=>void}){
   map.addSource('ofm',{type:'vector',url:'https://tiles.openfreemap.org/planet',attribution:'<a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>'});
   const L=(o:AddLayerObject)=>map.addLayer(o,'routes');
@@ -80,7 +80,9 @@ export function addBasemap({map,sunShadows,PHONE,CITY_STYLE,addCityLayers,applyT
   // shows through it; trains write their depth first so a building behind a train doesn't cover it.
   map.addLayer({id:'bm-bld3d',type:'fill-extrusion',source:'ofm','source-layer':'building',minzoom:PHONE?15:14,paint:{'fill-extrusion-color':'#d9dde0','fill-extrusion-height':['interpolate',['linear'],['zoom'],14,0,15,['coalesce',['get','render_height'],10]],'fill-extrusion-base':['coalesce',['get','render_min_height'],0],'fill-extrusion-opacity':.5}});
   // 골목(차 다니는 뒷길 service · 보행로 path · 농로 track): 확대 15 부터만(폰에서 넓게 볼 때 선이 너무 많아지지 않게), 주택가 길보다 가늘게. 지하 통로 · 승강장 · 광장 면은 뺀다
-  L({id:'bm-road-alley',type:'line',source:'ofm','source-layer':'transportation',minzoom:15,filter:['all',['in',['get','class'],['literal',['service','path','track']]],['!=',['get','subclass'],'platform'],['!=',['get','brunnel'],'tunnel'],['==',['geometry-type'],'LineString']],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#c9d3d6','line-width':['interpolate',['linear'],['zoom'],15,.5,17,1.6,19,3]}});
+  // 골목 테두리: 골목도 주택가 길처럼 흰 선 아래에 조금 넓게 깐다(같은 걸러내기 · 같은 확대 기준)
+  L({id:'bm-road-alley-case',type:'line',source:'ofm','source-layer':'transportation',minzoom:15,filter:['all',['in',['get','class'],['literal',['service','path','track']]],['!=',['get','subclass'],'platform'],['!=',['get','brunnel'],'tunnel'],['==',['geometry-type'],'LineString']],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#cfd8da','line-width':['interpolate',['linear'],['zoom'],15,1.1,17,3,19,5],'line-opacity':.8}});
+  L({id:'bm-road-alley',type:'line',source:'ofm','source-layer':'transportation',minzoom:15,filter:['all',['in',['get','class'],['literal',['service','path','track']]],['!=',['get','subclass'],'platform'],['!=',['get','brunnel'],'tunnel'],['==',['geometry-type'],'LineString']],layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],15,.5,17,1.6,19,3]}});
   // 주택가 길 테두리: 흰 선 아래에 조금 넓게 깔아 밝은 바탕에서도 길이 보이게(선 모양 · 색은 그대로)
   L({id:'bm-road-minor-case',type:'line',source:'ofm','source-layer':'transportation',minzoom:14,filter:['in',['get','class'],['literal',['tertiary','minor']]],paint:{'line-color':'#cfd8da','line-width':['interpolate',['linear'],['zoom'],14,1.4,17,4.6],'line-opacity':.8}});
   L({id:'bm-road-minor',type:'line',source:'ofm','source-layer':'transportation',minzoom:14,filter:['in',['get','class'],['literal',['tertiary','minor']]],paint:{'line-color':'#ffffff','line-width':['interpolate',['linear'],['zoom'],14,.6,17,3],'line-opacity':.8}});
