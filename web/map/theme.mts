@@ -76,7 +76,7 @@ export function createMapTheme({map,$,menu,seoulSun,cityPalette,applyCityStyle,a
     set('background','background-color',P.bg);map.triggerRepaint();
     set('bm-water','fill-color',P.water);set('bm-park','fill-color',P.park);set('bm-landcover','fill-color',P.land);set('bm-bld','fill-color',P.bld);
     set('bm-bld3d','fill-extrusion-color',P.bld3d);set('bm-bld3d','fill-extrusion-opacity',S.city.enabled?0:P.bld3dOpacity);if(map.getLayer('bm-bld3d'))map.setPaintProperty('bm-bld3d','fill-extrusion-vertical-gradient',S.map.verticalGradient)
-    set('bm-road-alley','line-color',P.roadAlley);set('bm-road-minor-case','line-color',P.roadCase);set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
+    set('bm-road-alley-case','line-color',P.roadCase);set('bm-road-alley','line-color',P.roadAlley);set('bm-road-minor-case','line-color',P.roadCase);set('bm-road-minor','line-color',P.roadMinor);set('bm-road-major','line-color',P.roadMajor);set('bm-rail','line-color',P.rail);
     for(const [id,c] of [['bm-label-place',P.text],['bm-label-road',P.road],['bm-label-water',P.waterText],['bm-label-park',P.parkText],['bm-label-poi',P.poi]] as [string,unknown][]){set(id,'text-color',c);set(id,'text-halo-color',P.halo)}
     set('station-labels','text-color',P.stationText);set('station-labels','text-halo-color',P.halo);
     // 내 위치 점 · 출구 번호판: 다크는 덜 쨍한 노랑(시트 · 단추의 web/syung.css 다크 값과 같다)
