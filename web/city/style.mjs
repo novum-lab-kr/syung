@@ -655,7 +655,12 @@ function applyCityStyle(map, { on = false, theme = "light", tone = "simcity", ma
 		const has = new Set(nightGround(pack).map((x) => x.layer.id));
 		for (const id of NIGHT_GROUND_IDS) if (!has.has(id) && map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
 	}
-	for (const [id, op] of [["bm-road-minor", .8], ["bm-road-major", 1]]) if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", show ? 0 : op);
+	for (const [id, op] of [
+		["bm-road-alley", 1],
+		["bm-road-minor-case", .8],
+		["bm-road-minor", .8],
+		["bm-road-major", 1]
+	]) if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", show ? 0 : op);
 	for (const [id, op] of [["bm-landcover", .7], ["bm-park", .8]]) if (map.getLayer(id)) map.setPaintProperty(id, "fill-opacity", show ? 1 : op);
 	return show;
 }

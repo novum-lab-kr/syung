@@ -137,6 +137,8 @@ function createMapTheme({ map, $, menu, seoulSun, cityPalette, applyCityStyle, a
 		set("bm-bld3d", "fill-extrusion-color", P.bld3d);
 		set("bm-bld3d", "fill-extrusion-opacity", S.city.enabled ? 0 : P.bld3dOpacity);
 		if (map.getLayer("bm-bld3d")) map.setPaintProperty("bm-bld3d", "fill-extrusion-vertical-gradient", S.map.verticalGradient);
+		set("bm-road-alley", "line-color", P.roadAlley);
+		set("bm-road-minor-case", "line-color", P.roadCase);
 		set("bm-road-minor", "line-color", P.roadMinor);
 		set("bm-road-major", "line-color", P.roadMajor);
 		set("bm-rail", "line-color", P.rail);
