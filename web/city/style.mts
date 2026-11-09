@@ -218,7 +218,7 @@ export function applyCityStyle(map:CityStyleMap, { on = false, theme = 'light' a
     if (show) for (const [k, v] of Object.entries(layer.paint)) if (!k.endsWith('-transition')) map.setPaintProperty(layer.id, k, v);
   }
   { const has = new Set(nightGround(pack).map(x => x.layer.id)); for (const id of NIGHT_GROUND_IDS) if (!has.has(id) && map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none') }   // 이 팩에 없는 밤 바닥 빛
-  for (const [id, op] of [['bm-road-minor', .8], ['bm-road-major', 1]] as const) if (map.getLayer(id)) map.setPaintProperty(id, 'line-opacity', show ? 0 : op);
+  for (const [id, op] of [['bm-road-alley', 1], ['bm-road-minor-case', .8], ['bm-road-minor', .8], ['bm-road-major', 1]] as const) if (map.getLayer(id)) map.setPaintProperty(id, 'line-opacity', show ? 0 : op);
   for (const [id, op] of [['bm-landcover', .7], ['bm-park', .8]] as const) if (map.getLayer(id)) map.setPaintProperty(id, 'fill-opacity', show ? 1 : op);
   return show;
 }
