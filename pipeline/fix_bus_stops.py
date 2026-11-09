@@ -3,9 +3,17 @@
 
 A quarter of the KTDB GTFS stops have 3 decimals or fewer (~100 m; 1,410 of them 1–2 decimals), so
 길찾기 walked to a point off the stop and drew the stop apart from it. Each such stop is matched to
-an OSM bus stop (highway=bus_stop, or a bus platform) of the same name within the rounding
-(150 m at 3 decimals, 900 m at 2); of the two sides of a road, the one on the right of the buses
-through it (right-hand traffic). Undecided sides and unmatched stops keep their coordinates.
+an OSM bus stop (highway=bus_stop, or a bus platform) of the same name inside the rounding: per axis
+half a unit of that axis's last decimal plus SLACK_M (37.5078 · 127.056 → ±6 m north-south, ±45 m
+east-west, each + 10 m). The nearest one wins; the side of the road (on the right of the buses
+through it — right-hand traffic) only decides between candidates within SIDE_TIE_M of each other.
+Undecided sides and unmatched stops keep their coordinates.
+
+예전 규칙(2026-09-30 운영 자료)은 반지름(3자리 150 m) 안 후보를 오른쪽 표 → 거리 차례로 골랐다. 오른쪽 판단이
+앞 정류장 → 뒤 정류장 직선 기준이라 교차로에서 꺾는 노선은 틀리고, 표가 거리를 이겨 150 m 떨어진 다른 같은 이름
+정류장으로 옮겼다(포스코사거리 KTDB 원본 28 m → 125 m · 2415 위워크 삼성 → 묵동 길찾기 · 2026-11-09).
+서울 노선이 서는 공식 정류장(data/bus/stops.json)으로 재면 옮긴 4,887 중 원본보다 20 m+ 멀어진 것 501(그중 100 m+ 125)
+→ 이 규칙으로 123(100 m+ 4), 20 m+ 가까워진 것 1,178 → 1,356.
 Output: {"<stop index in bus.json>": [lat, lng]}. Rebuild whenever data/bus.json is rebuilt.
 Needs pyosmium (pip install osmium) and the OSRM extract, or an extracted stop list:
 Usage: fix_bus_stops.py [south-korea.osm.pbf | osm_bus_stops.json]
@@ -24,7 +32,9 @@ ROOT = Path(__file__).resolve().parent.parent
 BUS = ROOT / "data" / "bus.json"
 OUT = ROOT / "data" / "bus-stop-fix.json"
 PBF = "/var/lib/osrm/south-korea-latest.osm.pbf"
-RADIUS = {3: 150, 2: 900}   # metres, by decimals of the rounder coordinate
+RADIUS = {3: 150, 2: 900}   # metres, by decimals of the rounder coordinate — 찾는 범위(반올림 상자를 다 덮는다)
+SLACK_M = 10      # 반올림 상자 바깥으로 더 보는 거리(OSM 점과 KTDB 가 찍은 자리가 다른 만큼) — 5 · 10 · 15 · 20 m 중 서울 공식 정류장에 가장 맞았다
+SIDE_TIE_M = 20   # 가장 가까운 후보와 이만큼 안이면 길의 어느 쪽인지(오른쪽 표)로 가른다
 
 
 def osm_stops(src: str) -> list[list]:
@@ -52,6 +62,13 @@ def norm(name: str) -> str:
 def decimals(x: float) -> int:
     s = repr(x)
     return len(s.split(".")[1]) if "." in s else 0
+
+
+def in_rounding(lat: float, lng: float, osm_lat: float, osm_lng: float) -> bool:
+    """OSM 점이 KTDB 좌표의 반올림 상자(축마다 마지막 자리의 반 + SLACK_M) 안인가 — 37.5078 은 남북 ±6 m 인데 127.056 은 동서 ±45 m."""
+    slack = SLACK_M / 111320
+    return (abs(osm_lat - lat) <= 0.5 * 10 ** -decimals(lat) + slack
+            and abs(osm_lng - lng) <= 0.5 * 10 ** -decimals(lng) + slack / math.cos(math.radians(lat)))
 
 
 def local(p, o):
@@ -101,15 +118,19 @@ def main(src: str) -> None:
             stat["precise" if min(decimals(lat), decimals(lng)) >= 4 else "too coarse"] += 1
             continue
         n = norm(name)
-        cands = [(d, j) for d, j in near(lat, lng, r) if norm(osm[j][0]) == n]
+        cands = sorted((d, j) for d, j in near(lat, lng, r)
+                       if norm(osm[j][0]) == n and in_rounding(lat, lng, osm[j][1], osm[j][2]))
         if not cands:
             stat["no OSM stop"] += 1
             continue
-        best = sorted(cands, key=lambda x: (-right_side(i, x[1]), x[0]))
-        if len(best) > 1 and right_side(i, best[0][1]) == right_side(i, best[1][1]) and abs(best[0][0] - best[1][0]) < 20:
-            stat["side undecided"] += 1
-            continue
-        fix[str(i)] = [osm[best[0][1]][1], osm[best[0][1]][2]]
+        pick = cands[0][1]
+        if len(cands) > 1 and cands[1][0] - cands[0][0] < SIDE_TIE_M:   # 가까운 둘이 비슷하면(길 양쪽) 오른쪽 표로
+            first, second = right_side(i, cands[0][1]), right_side(i, cands[1][1])
+            if first == second:
+                stat["side undecided"] += 1
+                continue
+            pick = cands[0][1] if first > second else cands[1][1]
+        fix[str(i)] = [osm[pick][1], osm[pick][2]]
         stat["moved"] += 1
     OUT.write_text(json.dumps(fix, separators=(",", ":")), encoding="utf-8")
     print(json.dumps(dict(stat), ensure_ascii=False))
