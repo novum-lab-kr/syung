@@ -356,6 +356,18 @@ function stayedFixes(count, track, nextId, atBoarding) {
 	return reached(track, nextId) || leftStation(track, nextId) ? count + 1 : 0;
 }
 var leftBehind = (count) => count >= 3;
+function withTrainFixes(count, { stationM, exitM, trainM }) {
+	return !nearBoarding({
+		goalM: Infinity,
+		stationM,
+		exitM
+	}) && trainM < stationM ? count + 1 : 0;
+}
+function holdOutcome({ nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached }) {
+	if (!leftMs) return nowMs - sinceMs >= 18e4 ? "board" : null;
+	if (moved >= 3 || nowMs - Math.max(lastFixMs, leftMs) > 3e4) return "board";
+	return nextReached && lastFixMs >= leftMs && !moved ? "missed" : null;
+}
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
@@ -387,4 +399,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
