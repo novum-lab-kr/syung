@@ -37,7 +37,7 @@ interface Arrivals { stopId:string; state:string; rows:ArrivalRow[]; count:numbe
 type RouteLike = Pick<BusRoute, 'id' | 'name' | 'path' | 'type' | 'approximate' | 'stopIds'> & Partial<Pick<BusRoute, 'geometry' | 'snapped' | 'line'>>;
 // 길찾기 버스 구간(ui/journey 가 넘긴다) — displayRoute 는 노선을 못 맞췄을 때 이 화면이 붙인다
 // routeId · fromId · fromArs: 서버가 서울 버스 자료에 맞춘 노선만 싣는 노선 id · 타는 정류장 id · 번호(경기 · 인천 · 마을은 없다 · 번호는 빈 글자일 수 있다)
-export interface BusLeg { type:string; routeId?:unknown; route?:unknown; fromId?:unknown; fromArs?:unknown; path:LngLatPt[]; color?:string; shaped?:boolean; displayRoute?:RouteLike }
+export interface BusLeg { type:string; routeId?:unknown; route?:unknown; fromId?:unknown; fromArs?:unknown; toId?:unknown; path:LngLatPt[]; color?:string; shaped?:boolean; displayRoute?:RouteLike }
 type JourneyLegIn = Omit<BusLeg, 'path'> & { path?:LngLatPt[] };   // 넘어오는 길찾기 구간(걷기 · 지하철은 path 가 없을 수 있다)
 // 화면의 버스 한 대
 interface FleetBus {
@@ -376,6 +376,7 @@ class BusLayer {
   // 타고 가기로 탄 차와 그 차를 그릴 노선 선 위 거리(내 GPS 를 비춘 자리 — rideWith)
   declare ridden:{ id:string; distance:number } | null;
   declare watchId:string | null;
+  declare routeOnly:boolean; declare routeStops:{ legs:BusLeg[]; data:BusData; ids:Set<string> } | undefined;   // 타고 가기 동안 정류장 기둥은 경로 것만(setRouteOnly)
   declare onRouteSelect:NonNullable<BusLayerOptions['onRouteSelect']>; declare onFollow:(id:string | null)=>void; declare followedBus:()=>string | null; declare sheetPad:()=>number; declare onFollowView:(on:boolean)=>void;
   declare followOn:boolean; declare followUI:HTMLDivElement | null; declare followKeys:Record<string, string>; declare followParts:Record<'summary' | 'details' | 'controls', HTMLDivElement>; declare followExpanded:boolean;
   declare stopView:string | null; declare stopFollow:string | null; declare stopCamera:{ center:{ lng:number; lat:number }; zoom:number; bearing:number; pitch:number } | null;
@@ -394,7 +395,7 @@ class BusLayer {
     this.map = map; this.phone = phone; this.frameMs = frameMs; this.beforeId = beforeId; this.onSelect = onSelect; this.onClear = onClear; this.onRelease = onRelease;   // onRelease: 고른 정류장 · 노선 · 버스를 놓았다(앱 지도 모드 다리 busClosed)
     this.fetcher = (...args:Parameters<typeof fetch>) => fetcher(...args); // Window.fetch must not receive the BusLayer as its receiver.
     this.requestRender=requestRender;this.getExitCoordinates=getExitCoordinates;this.renderer=new BusRenderer();
-    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.ridden=null;this.watchId=null;
+    this.stopHits=[];this.requested=[];this.journeyLegs=[];this.journeyIds=[];this.ridden=null;this.watchId=null;this.routeOnly=false;
     this.roads=new BusRoadNetwork();this.onRouteSelect=onRouteSelect;this.onFollow=onFollow;this.followedBus=followedBus;this.sheetPad=sheetPad;this.onFollowView=onFollowView;this.followOn=false;this.followUI=null;this.followKeys={};
     this.stopView=null;this.stopFollow=null;this.stopCamera=null;   // 정류장 시트에서 고른 번호: 'follow'(곧 올 버스 따라가기) | 'route'(노선 전체) · 그 버스 · 번호를 누르기 전 카메라([정류장으로])
     this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
@@ -601,10 +602,14 @@ class BusLayer {
       leg.displayRoute??={id:'',name:String(leg.route),path:leg.path,type:'other',approximate:leg.shaped!==true,stopIds:[]};
       drawRoute(leg.displayRoute,[leg.path[0],leg.path.at(-1)].map(coordinate=>({coordinate})));
     }
-    // 정류장은 우리가 그리는 노선과 상관없이 화면 안의 것을 다 찍는다(마을버스 · 경기 버스만 서는 정류장도)
-    if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const [id, stop] of this.data.stopById) {
-      if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name, type: stopType(this.data, id)}) as StopFeature);
-      if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
+    // 정류장은 우리가 그리는 노선과 상관없이 화면 안의 것을 다 찍는다(마을버스 · 경기 버스만 서는 정류장도) — 타고 가기 동안은 경로 것만(setRouteOnly)
+    if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) {
+      const data = this.data, only = this.routeOnly ? this.journeyStopIds() : null;
+      const stops = only ? [...only].flatMap(id => { const stop = data.stopById.get(id); return stop ? [[id, stop] as const] : []; }) : data.stopById;
+      for (const [id, stop] of stops) {
+        if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature('Point', this.kerbside(stop), {id, name: stop.name, type: stopType(data, id)}) as StopFeature);
+        if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
+      }
     }
     this.map.getSource<GeoJSONSource>(SOURCE_ROUTES)?.setData(collection(features));
     this.raiseRoute();
@@ -756,6 +761,27 @@ class BusLayer {
     this.watchId=routeId;
     if(!this.enabled&&!this.liveIds().length){this.stopLive();this.fleet.clear();}
     this.refreshView();
+  }
+  // 타고 가기(ui/ride_along · 2026-11-10 사용자 결정 — 배터리): 그동안 정류장 기둥은 내 경로의 버스 정류장만 그린다(화면 안 정류장 전부를 1초마다 훑지도 않는다). 그만두면 다시 전부
+  setRouteOnly(on:boolean){
+    if(this.disposed||this.routeOnly===on)return;
+    this.routeOnly=on;
+    this.refreshView();this.draw();
+  }
+  // 길찾기 버스 구간의 정류장 id: 서버가 준 타고 내릴 정류장(fromId · toId) + 노선 정류장 가운데 탄 구간(journeyBusRange) 안의 것. 여정이 바뀔 때만 다시 고른다
+  journeyStopIds():Set<string>{
+    if(!this.data)return new Set();
+    if(this.routeStops?.legs===this.journeyLegs&&this.routeStops.data===this.data)return this.routeStops.ids;
+    const ids=new Set<string>();
+    for(const leg of this.journeyLegs){
+      for(const id of [leg.fromId,leg.toId])if(id!=null&&id!=='')ids.add(String(id));
+      for(const id of journeyBusRouteIds(this.data,[leg])){
+        const path=this.geometry(this.data.routeById.get(id)!),range=journeyBusRange(path,leg);
+        if(path&&range)for(const item of path.stops)if(item.distance>=range[0]-5&&item.distance<=range[1]+5)ids.add(item.stop.id);
+      }
+    }
+    this.routeStops={legs:this.journeyLegs,data:this.data,ids};
+    return ids;
   }
   // 타고 가기(ui/ride_along): 길찾기 버스 구간에서 내 위치의 지금 정류장 · 다음 정류장 이름. 노선 정류장(geometry.stops) 가운데 탄 구간(journeyBusRange) 안의 것만 보고,
   // 내 위치는 그 노선 선에 비춘 거리로 견준다(지난 정류장 = 지금, 그다음 = 다음 · 15m 안이면 닿은 것으로). 노선 · 구간 · 내 위치를 못 맞추면 null.
