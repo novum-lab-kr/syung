@@ -390,6 +390,15 @@ export function arrivedEarly(rows:readonly { message:string; trainNo?:string | n
   return rows.flatMap(row => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
 }
 
+// 탄 것으로 넘긴 뒤 → 사실은 놓침(2026-11-10 사용자 — 열차를 못 타고 승강장에 남았는데 「타는 중」 그대로): 탄 열차가 이 구간의 다음 역에 닿았거나 지났는데
+//  내 위치는 아직 탄 역(역 한가운데 100m · 아무 출구 50m — 걷기 → 기다리기와 같은 nearBoarding)이면 그 위치를 센다. 연달아 OFF_FIXES(3)번이면 놓친 것
+//  (지하라 위치가 안 오면 세지 않는다 — 지금처럼 탄 것으로 둔다)
+export function stayedFixes(count:number, track:PlanTrack | null, nextId:number | undefined, atBoarding:boolean):number {
+  if (!track || nextId === undefined || !atBoarding) return 0;
+  return reached(track, nextId) || leftStation(track, nextId) ? count + 1 : 0;
+}
+export const leftBehind = (count:number):boolean => count >= OFF_FIXES;
+
 export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
 export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {
   // 지도 예측은 앞서 나갈 수 있다 — 곧 올 열차 줄이 아직 1분 넘게 남았다고 하면 떠난 것으로 보지 않는다

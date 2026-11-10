@@ -689,6 +689,24 @@ test('journeyBoard uses the server Seoul stop ids; without them it still guesses
   assert.deepEqual(layer.journeyBoard(near), {routeId: line.id, stopId: 's1', arsId: '02128'}, '정류장 번호가 없는 노선은 선으로(60m 안)');
 }, false));
 
+// 2026-11-10 사용자 결정(배터리): 타고 가기 동안은 내 경로의 버스 정류장만 기둥으로 그린다 — 화면 안 다른 정류장은 뺀다. 그만두면 다시 전부
+test('setRouteOnly: while riding along only the journey bus stops stay; off restores every stop in view', () => withLayerFixture(layer => {
+  const line = {id: '100100075', name: '472', type: 'trunk', stopIds: ['s1', 's2', 's3'], path: [[127, 37.5], [127.01, 37.5]], pathSource: 'stops'};
+  const busStops = {schemaVersion: 1, stops: [
+    {id: 's1', name: '소공동', arsId: '02128', lng: 127, lat: 37.5}, {id: 's2', name: '서울광장', arsId: '02641', lng: 127.004, lat: 37.5},
+    {id: 's3', name: '종점', arsId: '02999', lng: 127.01, lat: 37.5}, {id: 'other', name: '경로 밖', arsId: '02133', lng: 127.005, lat: 37.505}]};
+  layer.data = prepareBusData({schemaVersion: 1, routes: [line]}, busStops);
+  const shown = () => layer.stopFeatures.map(f => f.properties.id).sort();
+  layer.setJourney([{type: 'walk'}, {type: 'bus', route: '472', routeId: line.id, fromId: 's1', toId: 's2', path: [[127, 37.5], [127.004, 37.5]]}]);
+  assert.deepEqual(shown(), ['other', 's1', 's2', 's3'], '길찾기만 보는 동안은 그대로 전부');
+  layer.setRouteOnly(true);
+  assert.deepEqual(shown(), ['s1', 's2'], '탄 구간(s1 → s2)의 정류장만 · 노선의 다른 정류장 · 경로 밖 정류장은 뺀다');
+  layer.setJourney([{type: 'walk'}]);
+  assert.deepEqual(shown(), [], '버스 구간이 없는 경로(지하철 · 걷기만)면 정류장 없음');
+  layer.setRouteOnly(false);
+  assert.deepEqual(shown(), ['other', 's1', 's2', 's3'], '그만두면 원래대로');
+}, false));
+
 // 2026-11-07 사용자 결정: 버스를 타는 동안 탄 차를 내 위치에 그리면 내 위치 캐릭터는 숨긴다(본체가 ridden 이 있을 때만 숨긴다).
 // ridden 은 차가 지도에 있고 내 위치가 그 노선 선 150m 안일 때만 — 못 정하면 null(캐릭터 그대로)
 test('rideWith: ridden only when the car is on the map and my spot snaps to its line; otherwise null', () => withLayerFixture(layer => {
