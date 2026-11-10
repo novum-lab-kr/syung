@@ -506,6 +506,7 @@ var BusLayer = class {
 		this.journeyIds = [];
 		this.ridden = null;
 		this.watchId = null;
+		this.routeOnly = false;
 		this.roads = new BusRoadNetwork();
 		this.onRouteSelect = onRouteSelect;
 		this.onFollow = onFollow;
@@ -961,13 +962,20 @@ var BusLayer = class {
 			};
 			drawRoute(leg.displayRoute, [leg.path[0], leg.path.at(-1)].map((coordinate) => ({ coordinate })));
 		}
-		if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) for (const [id, stop] of this.data.stopById) {
-			if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature("Point", this.kerbside(stop), {
-				id,
-				name: stop.name,
-				type: stopType(this.data, id)
-			}));
-			if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
+		if (this.data && this.box && this.map.getZoom() >= BUS_ZOOM.stops) {
+			const data = this.data, only = this.routeOnly ? this.journeyStopIds() : null;
+			const stops = only ? [...only].flatMap((id) => {
+				const stop = data.stopById.get(id);
+				return stop ? [[id, stop]] : [];
+			}) : data.stopById;
+			for (const [id, stop] of stops) {
+				if (contains(this.box, [stop.lng, stop.lat])) stopFeatures.push(feature("Point", this.kerbside(stop), {
+					id,
+					name: stop.name,
+					type: stopType(data, id)
+				}));
+				if (stopFeatures.length >= (this.phone ? 700 : 1400)) break;
+			}
 		}
 		this.map.getSource(SOURCE_ROUTES)?.setData(collection(features));
 		this.raiseRoute();
@@ -1173,6 +1181,32 @@ var BusLayer = class {
 			this.fleet.clear();
 		}
 		this.refreshView();
+	}
+	setRouteOnly(on) {
+		if (this.disposed || this.routeOnly === on) return;
+		this.routeOnly = on;
+		this.refreshView();
+		this.draw();
+	}
+	journeyStopIds() {
+		if (!this.data) return /* @__PURE__ */ new Set();
+		if (this.routeStops?.legs === this.journeyLegs && this.routeStops.data === this.data) return this.routeStops.ids;
+		const ids = /* @__PURE__ */ new Set();
+		for (const leg of this.journeyLegs) {
+			for (const id of [leg.fromId, leg.toId]) if (id != null && id !== "") ids.add(String(id));
+			for (const id of journeyBusRouteIds(this.data, [leg])) {
+				const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
+				if (path && range) {
+					for (const item of path.stops) if (item.distance >= range[0] - 5 && item.distance <= range[1] + 5) ids.add(item.stop.id);
+				}
+			}
+		}
+		this.routeStops = {
+			legs: this.journeyLegs,
+			data: this.data,
+			ids
+		};
+		return ids;
 	}
 	journeyStopAt(leg, spot, share = null) {
 		if (!this.data) return null;

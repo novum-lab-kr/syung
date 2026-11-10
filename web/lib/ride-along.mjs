@@ -351,6 +351,11 @@ function arrivedEarly(rows, walkS, station) {
 	const name = station.replace(/\([^)]*\)/g, "").trim();
 	return rows.flatMap((row) => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
 }
+function stayedFixes(count, track, nextId, atBoarding) {
+	if (!track || nextId === void 0 || !atBoarding) return 0;
+	return reached(track, nextId) || leftStation(track, nextId) ? count + 1 : 0;
+}
+var leftBehind = (count) => count >= 3;
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
@@ -382,4 +387,4 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };

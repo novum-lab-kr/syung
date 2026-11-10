@@ -1635,7 +1635,8 @@ var rideAlong = createRideAlong({
 			busLayer?.rideWith(vehicleId, spot && [spot[0], spot[1]]);
 			hideMe(riding);
 		},
-		watch: (routeId) => busLayer?.watchRoute(routeId)
+		watch: (routeId) => busLayer?.watchRoute(routeId),
+		routeOnly: (on) => busLayer?.setRouteOnly(on)
 	}
 });
 var openTrain = (plan) => {
