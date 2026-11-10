@@ -399,6 +399,24 @@ export function stayedFixes(count:number, track:PlanTrack | null, nextId:number 
 }
 export const leftBehind = (count:number):boolean => count >= OFF_FIXES;
 
+// 기다리기 → 탔다는 열차가 떠난 뒤 내 위치로 가린다(2026-11-11 사용자 선택 B — 출구 ~ 승강장 통로가 길어 승강장 90초가 지나도 아직 통로에 있을 수 있다).
+// 고른 열차가 들어오면(승강장 시간 끝) 바로 넘기지 않고 기다리기 화면 그대로 붙들고(hold), 떠난 뒤:
+//  위치가 탄 역에서 벗어나(역 한가운데 100m · 아무 출구 50m 밖 — nearBoarding 아님) 탄 역보다 열차에 더 가까우면 그 위치를 센다. 연달아 OFF_FIXES(3)번이면 탄 것
+export interface WithTrainInput { stationM:number; exitM:number | null; trainM:number }
+export function withTrainFixes(count:number, {stationM, exitM, trainM}:WithTrainInput):number {
+  return !nearBoarding({goalM: Infinity, stationM, exitM}) && trainM < stationM ? count + 1 : 0;
+}
+//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 마지막 위치를 받은 때(0 = 없음) · moved: withTrainFixes 수 · nextReached: 열차가 다음 역에 닿았나(지났나)
+//  탄 것: 열차를 따라 움직임 · 떠난 뒤 위치가 30초(LOST_FIX_MS — 걷기 → 기다리기의 지하 끊김과 같은 값) 넘게 안 옴(지하) ·
+//   지도 예측이 떠나지 않은 채 3분(BOARD_GIVE_UP_MS — 예측이 멈춘 경우 · 붙들기 전과 같은 값)
+//  놓친 것: 열차가 다음 역에 닿았는데 떠난 뒤 받은 마지막 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
+export interface HoldInput { nowMs:number; sinceMs:number; leftMs:number; lastFixMs:number; moved:number; nextReached:boolean }
+export function holdOutcome({nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached}:HoldInput):ArriveOutcome {
+  if (!leftMs) return nowMs - sinceMs >= BOARD_GIVE_UP_MS ? 'board' : null;
+  if (moved >= OFF_FIXES || nowMs - Math.max(lastFixMs, leftMs) > LOST_FIX_MS) return 'board';
+  return nextReached && lastFixMs >= leftMs && !moved ? 'missed' : null;
+}
+
 export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
 export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {
   // 지도 예측은 앞서 나갈 수 있다 — 곧 올 열차 줄이 아직 1분 넘게 남았다고 하면 떠난 것으로 보지 않는다

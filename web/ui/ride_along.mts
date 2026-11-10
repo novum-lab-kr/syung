@@ -7,7 +7,7 @@
 import { serverUrl } from '../lib/server_url.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, arrivedEarly, arriveOutcome, boardNow, characterOf, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, stayedFixes, rideTitle, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, arrivedEarly, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -78,6 +78,9 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     missed:Set<string>;
     // stayed: 탄 열차는 다음 역에 갔는데 내 위치가 탄 역에 그대로인 위치 수 · backed: 그래서 기다리기로 되돌아왔다(탈 시각으로는 다시 넘기지 않는다)
     stayed:number; backed:boolean;
+    // hold: 고른 열차가 들어와 탈 수 있었는데 아직 탔는지 모름 — 떠난 뒤 내 위치로 가린다(기다리기 화면 그대로 · 2026-11-11 사용자 선택 B)
+    //  id 열차 · sinceMs 붙든 때 · leftMs 탈 역을 떠난 것을 본 때(0 = 아직) · moved 떠난 뒤 열차를 따라간 위치 수
+    hold:{ id:string; trainNo:string; sinceMs:number; leftMs:number; moved:number } | null;
     // 버스 기다리기: board 탈 정류장 · etas 그 노선 버스가 올 때(ms) · etasAt 받은 때 · car 지켜보는 곧 올 차 · missedAt 놓친 때(0 = 없음)
     // ridden: 탄 차(정류장에 들어온 그 차 — 모르면 null · 지도에서 내 위치에 그린다)
     busBoard:{ routeId:string; stopId:string; arsId:string | null; routeName?:string } | null; etas:number[] | null; etasAt:number; car:string | null; missedAt:number; ridden:string | null;
@@ -105,6 +108,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride) return;
     offTrack(fix.spot);
     leftWithoutMe(fix.spot);
+    followHeld(fix.spot);
     tick();
     const current = step();
     if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride')) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
@@ -200,7 +204,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (was?.kind === 'walk') walked(was.leg + 1, null);
     ride.at = Math.min(ride.steps.length - 1, ride.at + 1);
     ride.turn++; ride.nearSince = 0; ride.offFixes = 0; ride.detour = false; ride.zeroSince = 0;
-    ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.arrivalsAt = 0; ride.missed = new Set(); ride.stayed = 0; ride.backed = false;
+    ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.arrivalsAt = 0; ride.missed = new Set(); ride.stayed = 0; ride.backed = false; ride.hold = null;
     if (was?.kind === 'ride') { ride.ridden = null; bus.ride(null, null, false); bus.watch(null); }   // 내린 버스는 다시 실시간 위치로
     const now = step()!;
     if (now.kind === 'wait' && legAt(now.leg)?.type === 'bus') startBusWait(now.leg);
@@ -264,10 +268,53 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!leftBehind(ride.stayed)) return;
     const trainNo = ride.train!.slice(leg.line.length + 1);
     ride.at--; ride.turn++;
-    Object.assign(ride, {stayed: 0, backed: true, nearSince: 0, zeroSince: 0, picked: null, pickedSaw: false, due: null, train: null, missed: new Set([trainNo]), waitFrom: {s: 0, at: Date.now()}});
+    Object.assign(ride, {stayed: 0, backed: true, hold: null, nearSince: 0, zeroSince: 0, picked: null, pickedSaw: false, due: null, train: null, missed: new Set([trainNo]), waitFrom: {s: 0, at: Date.now()}});
     loadArrivals(current.leg);
     cam = null;
     if (following) map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+    draw();
+  }
+
+  // ---- 기다리기 → 탔다(2026-11-11 사용자 선택 B): 고른 열차가 들어와 탈 수 있게 되면 바로 넘기지 않고 붙든다(hold — 기다리기 화면 그대로).
+  // 출구 ~ 승강장 통로가 길면 승강장 90초가 지나도 아직 통로라, 열차가 떠난 뒤 내 위치가 그 열차를 따라가거나 끊겨야(지하) 탄 것으로 본다.
+  // 붙들 수 없으면(곧 올 열차 줄에서 고른 열차가 아님 — 방향 모르는 구간 · 지도에 없는 열차 · 탈 역 좌표 없음) 지금처럼 바로 넘긴다
+  function boardOrHold(leg:RideTrainLeg, nowMs:number) {
+    if (!ride) return;
+    const plan = ride.picked && ride.picked === ride.train ? planOf(ride.train) : null;
+    if (!plan || !byId.get(leg.stations[0]!)) { advance(); return; }
+    ride.hold = {id: plan.id, trainNo: plan.id.slice(leg.line.length + 1), sinceMs: nowMs, leftMs: 0, moved: 0};
+    holdTick(leg, nowMs);
+  }
+  // 붙든 열차가 탈 역을 떠났나(본 때를 남긴다) — 지도에서 사라졌으면 null
+  function heldTrack(leg:RideTrainLeg, nowMs:number) {
+    const hold = ride?.hold, plan = hold ? planOf(hold.id) : null;
+    if (!hold || !plan) return null;
+    const track = trackOf(plan);
+    if (!hold.leftMs && leftStation(track, leg.stations[0]!)) hold.leftMs = nowMs;
+    return {hold, plan, track};
+  }
+  // 위치를 받을 때마다(offTrack 처럼 — 1초 tick 은 같은 위치를 여러 번 보니 세지 않는다): 떠난 뒤 탄 역을 벗어나 열차 쪽이면 센다
+  function followHeld(spot:LngLat) {
+    const current = step(), leg = current?.kind === 'wait' ? legAt(current.leg) : null;
+    if (!ride?.hold || leg?.type !== 'ride') return;
+    const held = heldTrack(leg, Date.now()), {stationM, exitM} = boardingAway(spot, leg);
+    if (!held?.hold.leftMs || stationM === null) return;
+    const train = trainLngLat(held.plan as never);
+    held.hold.moved = withTrainFixes(held.hold.moved, {stationM, exitM, trainM: metres(spot, [train.lng, train.lat])});
+  }
+  function holdTick(leg:RideTrainLeg, nowMs:number) {
+    if (!ride?.hold) return;
+    const held = heldTrack(leg, nowMs), nextId = leg.stations[1];
+    if (!held) { advance(); return; }   // 지도에서 열차가 사라졌다 — 붙들기 전처럼 탄 것으로
+    const {hold, track} = held;
+    const outcome = holdOutcome({nowMs, sinceMs: hold.sinceMs, leftMs: hold.leftMs, lastFixMs: fix?.t ?? 0, moved: hold.moved,
+      nextReached: nextId !== undefined && (reached(track, nextId) || leftStation(track, nextId))});
+    if (outcome === 'board') { advance(); return; }
+    if (outcome === 'missed') {
+      // 놓침: 그 열차를 빼고 다음 열차(승강장은 이미 닿았으니 걷기 0 · 탈 시각으로 다시 넘기지 않는다 — leftWithoutMe 와 같다)
+      ride.missed.add(hold.trainNo);
+      Object.assign(ride, {hold: null, backed: true, picked: null, pickedSaw: false, due: null, zeroSince: 0, train: null});
+    }
     draw();
   }
 
@@ -330,6 +377,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
         return;
       }
       if (leg.type !== 'ride') return;
+      if (ride.hold) { holdTick(leg, nowMs); return; }
       const list = arrivalSecs(), walkS = waitWalkS(), fromId = leg.stations[0]!;
       // 새 목록으로 짐작을 바꾸기 전에: 먼저 고른 열차가 이 역을 떠났나 · 올 때가 지나 새 목록에서 사라졌나(곧 도착 0초를 피드가 건너뛰어도 탄 것으로)
       const pickedPlan = ride.picked === ride.train ? planOf(ride.picked) : null;
@@ -342,7 +390,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       const trainGone = !!ride.due && !!list && ride.due.atMs <= ride.arrivalsAt + ARRIVALS_MS && !list.some(item => item.row.trainNo === ride!.due!.trainNo);
       // 짐작을 새 줄로 바꾸기 전에 — 고른 열차가 들어왔다(또는 올 때가 지나 줄에서 사라졌다): 승강장 시간이 끝났으면 그 순간 탄 것 · 아직이면 놓침 → 그 열차를 빼고 다음 열차로(2026-11-07 사용자 결정)
       const outcome = arriveOutcome(walkS, pickedIn(leg) || trainGone);
-      if (outcome === 'board') { advance(); return; }
+      if (outcome === 'board') { boardOrHold(leg, nowMs); return; }
       if (outcome === 'missed' && ride.due) {
         ride.missed.add(ride.due.trainNo);
         ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.zeroSince = 0; ride.train = null;
@@ -361,7 +409,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       // 곧 올 열차를 모르면(못 받음 · 방향 모름 · 비었음 · 갱신이 끊김) 탈 시각 1분 뒤 — 단 승강장 걷기가 끝난 뒤에만. 탈 시각이 지나 닿은 갈아타기는
       // 곧 올 열차를 받기도 전(목록 0)에 바로 탄 것으로 넘어갔다(2026-11-08 운영 10케이스 #3 고속터미널 9호선 — 기다리기 2초)
       if (boardNow({nowMs, zeroSinceMs: ride.zeroSince, trainLeft: trainLeft ?? (zeroPlan ? leftStation(trackOf(zeroPlan), fromId) : null), pickedDueS, trainGone,
-        listLength: list?.length ?? 0, listFresh, departsPassed: walkS <= 0 && !ride.backed && passedTime(leg.departs, now, 1)})) { advance(); return; }
+        listLength: list?.length ?? 0, listFresh, departsPassed: walkS <= 0 && !ride.backed && passedTime(leg.departs, now, 1)})) { boardOrHold(leg, nowMs); return; }
       draw();
       return;
     }
@@ -455,7 +503,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride) return;
     const legs = plan.legs as RideLeg[];
     Object.assign(ride, {legs, arrives: plan.arrives, steps: rideSteps(legs), at: 0, nearSince: 0, offFixes: 0, detour: false, track: [],
-      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, waitFrom: {s: 0, at: Date.now()}, leftM: (legs[0] as { metres?:number })?.metres ?? 0});
+      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, waitFrom: {s: 0, at: Date.now()}, leftM: (legs[0] as { metres?:number })?.metres ?? 0});
     const first = step()!;
     if (first.kind === 'wait') startWait(first.leg);
     if (first.kind === 'wait' && legs[first.leg]?.type === 'ride') { ride.train = guessTrain(first.leg); loadArrivals(first.leg); }
@@ -465,7 +513,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   function start(plan:RidePlan, toName:string) {
     stop();
     ride = {legs: [], arrives: plan.arrives, toName, steps: [], at: 0, startedMs: Date.now(), turn: 0, nearSince: 0, offFixes: 0, rerouting: false, reroutedAt: 0, detour: false, track: [],
-      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, waitFrom: {s: 0, at: Date.now()}, leftM: 0};
+      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, waitFrom: {s: 0, at: Date.now()}, leftM: 0};
     begin(plan);
     bus.routeOnly?.(true);
     const legs = ride.legs;
