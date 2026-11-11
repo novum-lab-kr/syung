@@ -399,4 +399,73 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		return !!name && bareName(name) === destination;
 	});
 }
-export { BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
+function clockMs(time, nowMs) {
+	const now = new Date(nowMs), at = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() + hm(time) * 6e4;
+	const gap = at - nowMs;
+	if (gap > 432e5) return at - 864e5;
+	return gap < -432e5 ? at + 864e5 : at;
+}
+function alightPlanMs(leg, boardMs) {
+	const spanMs = (hm(leg.arrives) - hm(leg.departs) + 1440) % 1440 * 6e4, stops = Math.max(1, leg.stops);
+	return boardMs + spanMs * (stops - 1) / stops;
+}
+function boardAlertText(leg) {
+	return leg.type === "bus" ? {
+		title: `🚌 ${leg.route} 버스가 곧 와요`,
+		body: ""
+	} : {
+		title: `🚇 ${leg.line} ${leg.to} 방면 열차가 곧 와요`,
+		body: "탈 준비하세요"
+	};
+}
+function alightAlertText(leg) {
+	return {
+		title: leg.type === "bus" ? `🚌 다음 정류장 ${leg.to}에서 내리세요` : `🚇 다음 역 ${leg.to}에서 내리세요`,
+		body: ""
+	};
+}
+function rideAlerts({ legs, index, step, nowMs, tries, boardAtMs, boardedMs, leaveAtMs, stopsLeft }) {
+	const leg = legs[index];
+	if (!leg || leg.type === "walk") return [];
+	const alerts = [];
+	if (step === "wait" && boardAtMs !== null) alerts.push({
+		id: `board:${index}:${tries}`,
+		at: boardAtMs - 12e4,
+		...boardAlertText(leg)
+	});
+	if (step === "wait" && boardAtMs === null) return alerts;
+	const boardMs = (step === "ride" ? boardedMs : boardAtMs) ?? clockMs(leg.departs, nowMs);
+	const last = step === "ride" && stopsLeft !== null && stopsLeft <= 1;
+	alerts.push({
+		id: `alight:${index}`,
+		at: last ? nowMs : leaveAtMs ?? alightPlanMs(leg, boardMs),
+		...alightAlertText(leg)
+	});
+	return alerts;
+}
+function dueAlerts(list, sent, fired, nowMs) {
+	const out = [];
+	for (const alert of list) {
+		if (fired.has(alert.id)) continue;
+		if (alert.at > nowMs) {
+			out.push(alert);
+			continue;
+		}
+		fired.add(alert.id);
+		const was = sent.get(alert.id)?.at;
+		if (was === void 0 || was > nowMs) out.push({
+			...alert,
+			at: nowMs
+		});
+	}
+	return out;
+}
+var ALERT_MOVE_MS = 1e4;
+function alertsChanged(next, sent) {
+	if (next.length !== sent.size) return true;
+	return next.some((alert) => {
+		const was = sent.get(alert.id);
+		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
+	});
+}
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAlerts, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };

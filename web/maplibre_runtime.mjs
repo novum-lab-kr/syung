@@ -42,6 +42,7 @@ import "./components/settings.mjs";
 import { settingsMenu } from "./ui/settings_menu.mjs";
 import { createJourneyMap } from "./ui/journey.mjs";
 import { createRideAlong } from "./ui/ride_along.mjs";
+import { rideAlertSink } from "./ui/ride_alerts.mjs";
 import "./components/ride_arrival.mjs";
 import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
@@ -1157,6 +1158,15 @@ function spaceTrains() {
 		spaced.set(a.p, a.pose);
 	}
 }
+function trainLeaves(p, id) {
+	let at = -(age(p.t.receivedAt) + p.lead);
+	for (const x of p.phases) {
+		if (x.from.id === id && x.to !== x.from) return Date.now() + at * 1e3;
+		if (!Number.isFinite(x.dur)) return null;
+		at += x.dur;
+	}
+	return null;
+}
 function rawPose(p) {
 	const S = modeCtl.settings();
 	let el = age(p.t.receivedAt) + p.lead + (S.trains.timeWarp ? warpNow() : 0), ph = p.phases[p.phases.length - 1];
@@ -1639,7 +1649,9 @@ var rideAlong = createRideAlong({
 		watch: (routeId) => busLayer?.watchRoute(routeId),
 		routeOnly: (on) => busLayer?.setRouteOnly(on)
 	},
-	devLog: () => devRideLog
+	devLog: () => devRideLog,
+	alerts: rideAlertSink(appBridge ? (list) => appBridge.rideAlerts(list) : null),
+	trainLeaves: (p, id) => trainLeaves(p, id)
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;

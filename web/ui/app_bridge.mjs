@@ -393,7 +393,8 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 				"sky",
 				"status",
 				"followChanged",
-				"rideChanged"
+				"rideChanged",
+				"rideAlerts"
 			]) {
 				const message = waiting.get(type);
 				if (message) state(message);
@@ -465,6 +466,17 @@ function createAppBridge({ facts, post = defaultPost, targets }) {
 			state({
 				type: "rideChanged",
 				...ride
+			});
+		},
+		rideAlerts(alerts) {
+			state({
+				type: "rideAlerts",
+				alerts: alerts.map(({ id, at, title, body }) => ({
+					id,
+					at,
+					title,
+					body
+				}))
 			});
 		},
 		busTap(view, selection) {

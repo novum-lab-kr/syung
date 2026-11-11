@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAlerts, rideEndSpot, rideOver, rideSteps, rideStops, rideSub, rideTitle, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var BUS_ARRIVALS_MS = 3e4;
 var BUS_MISS_MS = 3e4;
@@ -10,7 +10,7 @@ var FIX_FRESH_MS = 3e4;
 var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null }) {
+function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
@@ -174,7 +174,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 	};
 	function advance(waitSince) {
 		if (!ride) return;
-		const was = step();
+		const was = step(), boardedMs = ride.hold?.sinceMs ?? Date.now();
 		if (was?.kind === "walk") walked(was.leg + 1, null);
 		ride.at = Math.min(ride.steps.length - 1, ride.at + 1);
 		ride.turn++;
@@ -198,6 +198,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		const now = step();
 		if (now.kind === "wait" && legAt(now.leg)?.type === "bus") startBusWait(now.leg);
 		if (now.kind === "ride" && legAt(now.leg)?.type === "bus") ride.ridden = ride.car && ride.busBoard && bus.atStop(ride.car, ride.busBoard.stopId) ? ride.car : null;
+		if (now.kind === "ride") ride.boardedMs = boardedMs;
 		if (now.kind === "walk") {
 			ride.track = [];
 			ride.leftM = legAt(now.leg)?.metres ?? 0;
@@ -639,7 +640,19 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 				...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())
 			};
 		}
+		const { left, where } = rideProgress(transit);
+		return {
+			...base,
+			title: rideTitle(transit),
+			sub: rideSub(ride.legs, current.leg, left, where)
+		};
+	}
+	function rideProgress(transit) {
 		let left, where = null;
+		if (!ride) return {
+			left: transit.stops,
+			where
+		};
 		if (transit.type === "ride") {
 			const plan = planOf(ride.train), track = plan ? trackOf(plan) : null, stops = track ? rideStops(track, transit.stations) : null;
 			const byStops = stops ? transit.stations.length - 1 - transit.stations.indexOf(stops.now) : null;
@@ -659,10 +672,44 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			};
 		}
 		return {
-			...base,
-			title: rideTitle(transit),
-			sub: rideSub(ride.legs, current.leg, left, where)
+			left,
+			where
 		};
+	}
+	function pushAlerts() {
+		if (!alerts || !ride) return;
+		const current = step(), nowMs = Date.now();
+		if (!current || current.kind === "walk" || current.kind === "done") {
+			alerts.update([], nowMs);
+			return;
+		}
+		const leg = legAt(current.leg);
+		let boardAtMs = null, leaveAtMs = null, left = null;
+		if (current.kind === "wait") boardAtMs = boardAt(leg, nowMs);
+		else {
+			left = rideProgress(leg).left;
+			const plan = leg.type === "ride" ? planOf(ride.train) : null, previous = leg.type === "ride" ? leg.stations.at(-2) : void 0;
+			leaveAtMs = plan && previous !== void 0 && trainLeaves ? trainLeaves(plan, previous) : null;
+		}
+		alerts.update(rideAlerts({
+			legs: ride.legs,
+			index: current.leg,
+			step: current.kind,
+			nowMs,
+			tries: ride.missed.size,
+			boardAtMs,
+			boardedMs: ride.boardedMs || null,
+			leaveAtMs,
+			stopsLeft: left
+		}), nowMs);
+	}
+	function boardAt(leg, nowMs) {
+		if (leg.type === "bus") return busBoardAt(nowMs);
+		return ride?.due && ride.picked === ride.train ? ride.due.atMs : null;
+	}
+	function busBoardAt(nowMs) {
+		const secs = busEtaSecs(nowMs), first = secs?.length ? catchable(secs, waitWalkS()).next[0] : void 0;
+		return first === void 0 ? null : nowMs + first * 1e3;
 	}
 	function pickedIn(leg) {
 		const due = ride?.due;
@@ -745,6 +792,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 	}
 	let painted = "";
 	function draw() {
+		pushAlerts();
 		const log = ride ? devLog() : null;
 		if (log?.recording) log.judge(judgeState(), logInfo());
 		const next = view();
@@ -786,6 +834,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			missedAt: 0,
 			ridden: null,
 			busAt: 0,
+			boardedMs: 0,
 			waitFrom: {
 				s: 0,
 				at: Date.now()
@@ -801,6 +850,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (first.kind === "wait" && legs[first.leg]?.type === "bus") startBusWait(first.leg);
 	}
 	function start(plan, toName) {
+		alerts?.ask();
 		stop();
 		ride = {
 			legs: [],
@@ -835,6 +885,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			missedAt: 0,
 			ridden: null,
 			busAt: 0,
+			boardedMs: 0,
 			waitFrom: {
 				s: 0,
 				at: Date.now()
@@ -876,6 +927,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		timer = arrivalsTimer = busTimer = 0;
 		ride = null;
 		painted = "";
+		alerts?.clear();
 		bus.ride(null, null, false);
 		bus.watch(null);
 		bus.routeOnly?.(false);
