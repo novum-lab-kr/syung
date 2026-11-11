@@ -15,7 +15,7 @@ import { StatsPanel } from '../components/stats_panel.tsx';
 import type { Stats } from '../components/stats_panel.tsx';
 
 export interface Avatar { type:string; url?:string; id?:string }
-export interface Me { name:string; provider:string; avatar?:Avatar | null }
+export interface Me { name:string; provider:string; avatar?:Avatar | null; developer?:boolean }   // developer: 개발자 회원만 true(서버 SYUNG_DEVELOPER_IDS — 아니면 칸이 없다)
 export type { Session, Stats };
 
 const PHOTO_URL = /^\/api\/me\/avatar\/[\w-]{32}\.(?:webp|jpg)$/;   // 서버가 주는 내 사진 주소 모양(그 밖은 그리지 않는다)

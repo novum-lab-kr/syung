@@ -133,6 +133,27 @@ class DebugPageTest(unittest.TestCase):
                 urllib.request.urlopen(request)
             self.assertEqual(caught.exception.code, 404, path)
 
+    def test_map_only_events_are_refused_on_the_owner_page(self):
+        # judge · answer 는 개발자 회원의 지도 기록(/api/me/rides)만 — 디버깅 페이지 기록 모양은 그대로
+        event = {"ride": "r1", "kind": "answer", "mode": "subway", "t": NOW * 1000, "answer": "rode"}
+        self.assertEqual(self.call("/admin/debug/ride", json.dumps({"events": [event]}).encode())[0], 400)
+
+    def test_prune_keeps_ninety_days(self):
+        # 오늘(2026-10-12)이 1일째 — 90일째는 2026-07-15, 그 앞날 것은 지운다(탑승 기록 · 캡처 파일 · 캡처 목록 줄)
+        (self.root / "rides").mkdir(); (self.root / "shots").mkdir()
+        for day in ("20260714", "20260715", "20261012"):
+            (self.root / "rides" / f"{day}.jsonl").write_text("{}\n")
+            (self.root / "shots" / f"{day}-120000-abcdef.png").write_bytes(b"png")
+        listing = [{"at": 1, "file": f"{day}-120000-abcdef.png"} for day in ("20260714", "20260715", "20261012")]
+        (self.root / "shots.jsonl").write_text("".join(json.dumps(row) + "\n" for row in listing) + "깨진 줄\n")
+        debug = DebugService(DebugStore(self.root), clock=lambda: NOW)
+        self.assertEqual(debug.prune(), {"rides": 1, "shots": 1})
+        self.assertEqual(sorted(p.name for p in (self.root / "rides").iterdir()), ["20260715.jsonl", "20261012.jsonl"])
+        self.assertEqual(sorted(p.name for p in (self.root / "shots").iterdir()), ["20260715-120000-abcdef.png", "20261012-120000-abcdef.png"])
+        self.assertEqual((self.root / "shots.jsonl").read_text().splitlines(),
+                         [json.dumps(listing[1]), json.dumps(listing[2]), "깨진 줄"])
+        self.assertEqual(debug.prune(), {"rides": 0, "shots": 0})
+
     def test_login_returns_to_the_debug_page(self):
         self.assertEqual(safe_next("/admin/debug"), "/admin/debug")
         self.assertEqual(safe_next("/debug"), "/admin/learning")

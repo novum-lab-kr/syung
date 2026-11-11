@@ -197,7 +197,9 @@ export function rideSteps(legs:readonly RideLeg[]):RideStep[] {
 // ---- 카드 글(components/ride_card.tsx 가 그린다)
 // look: 카드 캐릭터 그림 이름 · detour: 작은 글 자리에 「다른 길 찾기 ›」 · flip: 오른쪽을 보는 그림이라 말풍선 쪽(왼쪽)으로 뒤집는다
 // arrival: 도착 카드에만 — 도착 연기(components/ride_arrival.tsx)가 글을 나눠 쓴다(목적지 · 도착 시각 · 걸린 분)
-export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal }
+export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal; dev?:RideDevView }
+// dev: 개발자 회원만 — 카드에 [탔음] [안 탔음](answered: 이번 탑승에서 마지막으로 누른 것 · 2026-11-11 계획서 D2)
+export interface RideDevView { answered:'rode' | 'not_rode' | null }
 // goal: 길 끝 자리(타고 가는 동안 그 자리에 깃발을 미리 세운다 — 자리를 모르면 null)
 export interface RideGoal { at:LngLat | null }
 // at: 도착 자리(도착 연기가 그 자리에 붙는다 — 모르면 「슝 도착!」 말풍선)

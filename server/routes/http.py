@@ -151,7 +151,10 @@ def make_handler(services: Services, response_seconds: float) -> type[BaseHTTPRe
                 return self.rfile.read(size)
             address = client_address(self.headers, self.client_address[0])
             # 위에서 회원 주소인 것을 봤다 — 회원 주소면 handle 은 늘 응답을 돌려준다
-            self._write(cast("Response", member_routes.handle(services.members, method, self.path, self.headers, read_body, address)))
+            # 개발자 회원의 탑승 기록은 디버깅 기록과 같은 곳에(부를 때 꺼낸다 — 회원 주소마다 디버깅 서비스를 만들지 않게)
+            record_ride: Callable[[bytes, str], dict[str, Any]] = lambda body, source: services.debug.record_ride(body, source)
+            self._write(cast("Response", member_routes.handle(services.members, method, self.path, self.headers, read_body, address,
+                                                              record_ride)))
             return True
 
         def do_OPTIONS(self) -> None:

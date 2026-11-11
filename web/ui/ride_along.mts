@@ -12,6 +12,7 @@ import {
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
+import type { RideAnswer, RideLog, RideLogInfo } from '../user/dev_ride_log.mts';   // 타입만(개발자 기록기는 user/account 가 개발자일 때만 받는다)
 
 // /api/live?arrivals= 한 줄(server/services/live.py index_arrivals — 이 파일이 읽는 칸)
 export interface RideArrival { line:string; direction:string; destination?:string | null; trainNo?:string | null; eta:number | null; message:string; receivedAt:string | null }
@@ -23,7 +24,7 @@ interface CameraMap {
   jumpTo(options:{ center:{ lng:number; lat:number }; padding:{ top:number; bottom:number; left:number; right:number } }):unknown;
   on(type:'movestart', listener:(event:{ originalEvent?:unknown }) => void):unknown;
 }
-export interface RideCardActionsLike { close():void; detour():void; follow():void }
+export interface RideCardActionsLike { close():void; detour():void; follow():void; answer(value:RideAnswer):void }
 export interface RideAlongDeps {
   map:CameraMap; geolocate:GeolocateLike; planner:{ plans:readonly RidePlanLike[] }; trainPose:(plan:never) => { dist:number }; trainLngLat:(plan:never) => { lng:number; lat:number };
   arrivalRank:(row:never) => number; byId:ReadonlyMap<number, { lat:number; lon:number; name:string }>; animFrame:(() => void)[];
@@ -58,6 +59,8 @@ export interface RideAlongDeps {
   alerts?:RideAlertSink | null;
   // 열차가 그 역을 떠날 때(지도 예측 단계 — 1970 기준 ms · 예측에 그 역이 없으면 null)
   trainLeaves?:(plan:never, stationId:number) => number | null;
+  // 개발자 회원의 타고 가기 기록기(user/dev_ride_log — 개발자로 로그인했을 때만 있다 · 없으면 아무것도 기록하지 않는다)
+  devLog?:() => RideLog | null;
 }
 export interface RidePlan { arrives:string; legs:readonly unknown[] }
 
@@ -67,7 +70,7 @@ const BUS_ARRIVALS_MS = 30000, BUS_MISS_MS = 30000;
 const TICK_MS = 1000, ARRIVALS_MS = 20000, ARRIVALS_STALE_MS = ARRIVALS_MS * 3, FIX_FRESH_MS = 30000;
 const FOLLOW_ZOOM = 16, RIDE_ZOOM = 15, FOLLOW_EASE = 0.25;
 
-export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, alerts = null, trainLeaves}:RideAlongDeps) {
+export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves}:RideAlongDeps) {
   const host = document.createElement('div');
   host.className = 'rg-host';
   document.body.append(host);
@@ -110,6 +113,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   // ---- 위치: 내 위치 단추(GeolocateControl)의 위치를 같이 받는다. 꺼져 있었으면 켜고 끝날 때 끈다
   // 출발 전에 받은 위치도 30초 안이면 쓴다(같은 자리면 다시 오지 않는다)
   geolocate.on('geolocate', event => {
+    if (ride) devLog()?.gps(event.coords);   // 개발자 기록: 흐린 위치도 그대로(지하에서 어떻게 흐려지는지 보려고)
     if (event.coords.accuracy > BAD_FIX_M) return;
     fix = {spot: [event.coords.longitude, event.coords.latitude], t: Date.now()};
     if (!ride) return;
@@ -228,6 +232,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const spot = freshFix();
     if (following && spot && now.kind !== 'ride' && now.kind !== 'done') map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
     if (now.kind === 'done') {
+      { const log = devLog(); log?.judge('done', logInfo()); log?.end('도착', logInfo()); }   // 개발자 기록: 도착 판정 → 끝
       clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; unlocate();
       // 도착: 카메라를 도착 자리로(도착 표시가 화면에 보이게 — 모르면 내 위치) · 그 뒤 위치가 와도 따라가지 않는다(위 geolocate)
       const end = endSpot() ?? spot;
@@ -523,6 +528,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   const actions:RideCardActionsLike = {
     close: () => { const arrived = step()?.kind === 'done'; stop(); ended(arrived); },
     detour: () => { stop(); detour(); },
+    answer: value => { devLog()?.answer(value, logInfo()); draw(); },
     follow: () => {
       otherFollow.stop(); following = true; cam = null; camKey = ''; draw();   // camKey 도 비운다 — 그 사이 다른 따라가기가 카메라를 옮겼을 수 있다
       const current = step(), spot = freshFix();
@@ -530,10 +536,33 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       else if (spot) map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
     },
   };
+  // ---- 개발자 기록(devLog 가 있을 때만): 사건마다 지금 구간의 탈 것 · 판정 이름
+  // 걷기는 다음에 탈 것으로 본다(걷다가 역 · 정류장에 닿는 차례도 그 탈 것의 기록에 들게). 탈 것이 없으면(다 걷기) 지하철로
+  function logInfo():RideLogInfo {
+    const current = step(), legs = ride?.legs ?? [];
+    const index = current && current.kind !== 'done' ? legs.findIndex((leg, at) => at >= current.leg && leg.type !== 'walk') : -1;
+    const leg = index >= 0 ? legs[index] : undefined;
+    if (leg?.type === 'bus') return {mode: 'bus', routeId: ride?.busBoard?.routeId || null, routeName: leg.route, vehicle: ride?.ridden ?? ride?.car ?? null, station: leg.from};
+    if (leg?.type === 'ride') return {mode: 'subway', line: leg.line, train: ride?.train?.split(':')[1] ?? leg.trainNo ?? null, station: leg.from};
+    return {mode: 'subway'};
+  }
+  // 판정 이름: 단계(walk · wait · ride · done) + 기다리기의 속사정(hold 들어온 열차 · 떠난 뒤 가리는 중 · missed 놓침 · back 탄 줄 알았다 되돌아옴) + @구간 번호
+  function judgeState():string {
+    const current = step();
+    if (!ride || !current) return 'none';
+    if (current.kind === 'done') return 'done';
+    let detail = '';
+    if (current.kind === 'wait') detail = ride.hold ? ':hold' : ride.backed ? ':back' : ride.missed.size || ride.missedAt ? ':missed' : '';
+    return `${current.kind}${detail}@${current.leg}`;
+  }
   let painted = '';
   function draw() {
     pushAlerts();
-    const next = view(), key = JSON.stringify(next);
+    const log = ride ? devLog() : null;
+    if (log?.recording) log.judge(judgeState(), logInfo());
+    const next = view();
+    if (next && log?.recording && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자만: [탔음] [안 탔음]
+    const key = JSON.stringify(next);
     if (key === painted) return;
     painted = key;
     drawRideCard(host, next, actions);
@@ -561,6 +590,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     bus.routeOnly?.(true);
     const legs = ride.legs;
     following = true; cam = null;
+    devLog()?.begin(logInfo());   // 누름 안에서(아이폰 센서 권한) — 첫 판정은 아래 draw 가 남긴다
     locate();
     draw();
     timer = setInterval(tick, TICK_MS);
@@ -572,6 +602,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   }
   function stop() {
     if (!ride) return;
+    const log = devLog();
+    if (log?.recording) log.end('그만둠', logInfo());   // 도착 뒤 ✕ 는 이미 끝냈다
     clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0;
     ride = null; painted = '';
     alerts?.clear();

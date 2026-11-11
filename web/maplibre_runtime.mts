@@ -72,6 +72,7 @@ import type {LinePaths,FeedTrain} from './lib/routing.mts';
 import type {Settings,ModeDefinition} from './modes/merge.mts';
 import type {MapStation,TrainPlan,LiveTrain,Merc} from './trains/types.mts';
 import type {TicketDesk} from './lib/journey-ui.mts';
+import type {RideLog} from './user/dev_ride_log.mts';   // 타입만(파일은 개발자 회원일 때만 user/account 가 받는다)
 import type {TrainLive} from './trains/draw.mts';
 import type {TrainOverlayDeps} from './map/overlay.mts';
 import type {StationRect} from './map/platform.mts';
@@ -650,10 +651,12 @@ const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 // 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
+// devRideLog: 개발자 회원의 타고 가기 기록기(user/account 가 개발자일 때만 넘긴다 · 앱 지도 모드는 회원을 안 불러 늘 null)
+let devRideLog:RideLog|null=null;
 const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainPose:trainPose as never,trainLngLat:trainLngLat as never,arrivalRank:arrivalRank as never,byId,animFrame,drawRideCard:(host,view,actions)=>drawRideCard(host,view,actions,map,arrivalHideMe),otherFollow:{active:()=>!!sheetUI.following||!!sheetUI.followBus,stop:()=>sheetUI.stopFollow()},
   look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:arrived=>journey.rideEnded(arrived),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot,share)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]],share)??null,
   bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId,routeName)=>busLayer?await busLayer.journeyArrivals(arsId,routeId,routeName):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
-    atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId),routeOnly:on=>busLayer?.setRouteOnly(on)},
+    atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId),routeOnly:on=>busLayer?.setRouteOnly(on)},devLog:()=>devRideLog,
   alerts:rideAlertSink(appBridge?list=>appBridge.rideAlerts(list):null),trainLeaves:(p,id)=>trainLeaves(p as RuntimePlan,id)});   // 타고 가기 알림: 앱이면 다리로(앱이 폰에 예약) · 브라우저면 웹 알림(ui/ride_alerts)
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
@@ -1023,7 +1026,7 @@ menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:(
 }
 // 회원(로그인 줄 · 내 정보 · 승차권): 첫 화면 코드에 넣지 않고 지도가 한 번 다 그려진 뒤 받는다. 로그인에서 돌아온 주소(#login=…)면 바로,
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
-if(!appBridge){const mapLoaded=new Promise<void>(done=>map.once('load',()=>done()));let desk:Promise<TicketDesk|undefined>|null=null;const go=()=>desk??=import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation,journeyReturn:search=>journey.ticketReturn(search),mapLoaded})).catch(()=>undefined);ticketDesk=go;   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
+if(!appBridge){const mapLoaded=new Promise<void>(done=>map.once('load',()=>done()));let desk:Promise<TicketDesk|undefined>|null=null;const go=()=>desk??=import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation,journeyReturn:search=>journey.ticketReturn(search),mapLoaded,devRides:log=>{devRideLog=log}})).catch(()=>undefined);ticketDesk=go;   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))go();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(go,{timeout:4000}):setTimeout(go,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,go,{once:true})}}
 map.on('move',scheduleLabels);map.on('resize',scheduleLabels);
