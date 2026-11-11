@@ -137,7 +137,7 @@ async function fillChain(t, put) {
 var ROUTE_CHANGED_NOTE = "이 시각에는 고른 길이 없어 가장 빠른 길로 채웠어요";
 var TICKET_DRAFT_KEY = "syung-ticket-draft";
 var MAP_WAIT_MS = 15e3;
-async function initAccount({ colors = {}, routeMap, myLocation, journeyReturn, mapLoaded } = {}) {
+async function initAccount({ colors = {}, routeMap, myLocation, journeyReturn, mapLoaded, devRides } = {}) {
 	const item = $("accountItem"), sheet = $("loginSheet");
 	if (!item || !sheet) return;
 	let answer = null;
@@ -274,8 +274,37 @@ async function initAccount({ colors = {}, routeMap, myLocation, journeyReturn, m
 			first.focus();
 		}
 	}, true);
+	let rideLog = null, rideLogOn = false;
+	function devRideLog(on) {
+		if (on === rideLogOn) return;
+		rideLogOn = on;
+		if (!on) {
+			rideLog?.close();
+			rideLog = null;
+			devRides?.(null);
+			return;
+		}
+		__vitePreload(async () => {
+			const { browserRideLog } = await import("./dev_ride_log.mjs");
+			return { browserRideLog };
+		}, [], import.meta.url).then(({ browserRideLog }) => {
+			if (!rideLogOn || rideLog) return;
+			const log = browserRideLog(() => {
+				if (rideLog === log) {
+					rideLog = null;
+					rideLogOn = false;
+					devRides?.(null);
+				}
+			});
+			rideLog = log;
+			devRides?.(log);
+		}).catch(() => {
+			rideLogOn = false;
+		});
+	}
 	function show() {
 		item.hidden = false;
+		devRideLog(!!me?.developer);
 		$("loginOpen").hidden = !!me;
 		$("accountRow").hidden = !me;
 		$("ticketsRow").hidden = !me;

@@ -1602,6 +1602,7 @@ var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, u
 		}
 	}
 });
+var devRideLog = null;
 var rideAlong = createRideAlong({
 	map,
 	geolocate,
@@ -1637,7 +1638,8 @@ var rideAlong = createRideAlong({
 		},
 		watch: (routeId) => busLayer?.watchRoute(routeId),
 		routeOnly: (on) => busLayer?.setRouteOnly(on)
-	}
+	},
+	devLog: () => devRideLog
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
@@ -2890,7 +2892,10 @@ if (!appBridge) {
 		routeMap: ticketRoute,
 		myLocation: () => myLocation,
 		journeyReturn: (search) => journey.ticketReturn(search),
-		mapLoaded
+		mapLoaded,
+		devRides: (log) => {
+			devRideLog = log;
+		}
 	})), [], import.meta.url).catch(() => void 0);
 	ticketDesk = go;
 	if (location.hash.includes("login=")) go();

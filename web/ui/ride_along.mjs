@@ -10,7 +10,7 @@ var FIX_FRESH_MS = 3e4;
 var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus }) {
+function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
@@ -39,6 +39,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		};
 	};
 	geolocate.on("geolocate", (event) => {
+		if (ride) devLog()?.gps(event.coords);
 		if (event.coords.accuracy > 100) return;
 		fix = {
 			spot: [event.coords.longitude, event.coords.latitude],
@@ -226,6 +227,11 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			duration: 600
 		});
 		if (now.kind === "done") {
+			{
+				const log = devLog();
+				log?.judge("done", logInfo());
+				log?.end("도착", logInfo());
+			}
 			clearInterval(timer);
 			clearInterval(arrivalsTimer);
 			clearInterval(busTimer);
@@ -680,6 +686,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			stop();
 			detour();
 		},
+		answer: (value) => {
+			devLog()?.answer(value, logInfo());
+			draw();
+		},
 		follow: () => {
 			otherFollow.stop();
 			following = true;
@@ -706,9 +716,40 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			});
 		}
 	};
+	function logInfo() {
+		const current = step(), legs = ride?.legs ?? [];
+		const index = current && current.kind !== "done" ? legs.findIndex((leg, at) => at >= current.leg && leg.type !== "walk") : -1;
+		const leg = index >= 0 ? legs[index] : void 0;
+		if (leg?.type === "bus") return {
+			mode: "bus",
+			routeId: ride?.busBoard?.routeId || null,
+			routeName: leg.route,
+			vehicle: ride?.ridden ?? ride?.car ?? null,
+			station: leg.from
+		};
+		if (leg?.type === "ride") return {
+			mode: "subway",
+			line: leg.line,
+			train: ride?.train?.split(":")[1] ?? leg.trainNo ?? null,
+			station: leg.from
+		};
+		return { mode: "subway" };
+	}
+	function judgeState() {
+		const current = step();
+		if (!ride || !current) return "none";
+		if (current.kind === "done") return "done";
+		let detail = "";
+		if (current.kind === "wait") detail = ride.hold ? ":hold" : ride.backed ? ":back" : ride.missed.size || ride.missedAt ? ":missed" : "";
+		return `${current.kind}${detail}@${current.leg}`;
+	}
 	let painted = "";
 	function draw() {
-		const next = view(), key = JSON.stringify(next);
+		const log = ride ? devLog() : null;
+		if (log?.recording) log.judge(judgeState(), logInfo());
+		const next = view();
+		if (next && log?.recording && step()?.kind !== "done") next.dev = { answered: log.answered };
+		const key = JSON.stringify(next);
 		if (key === painted) return;
 		painted = key;
 		drawRideCard(host, next, actions);
@@ -805,6 +846,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		const legs = ride.legs;
 		following = true;
 		cam = null;
+		devLog()?.begin(logInfo());
 		locate();
 		draw();
 		timer = setInterval(tick, TICK_MS);
@@ -826,6 +868,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 	}
 	function stop() {
 		if (!ride) return;
+		const log = devLog();
+		if (log?.recording) log.end("그만둠", logInfo());
 		clearInterval(timer);
 		clearInterval(arrivalsTimer);
 		clearInterval(busTimer);

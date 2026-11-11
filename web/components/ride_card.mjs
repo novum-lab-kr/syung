@@ -14,6 +14,21 @@ var CLOSE = /* @__PURE__ */ a("svg", {
 	"stroke-linecap": "round",
 	children: /* @__PURE__ */ a("path", { d: "M6 6l12 12M18 6 6 18" })
 });
+var DEV_ANSWERS = [["rode", "탔음"], ["not_rode", "안 탔음"]];
+function DevAnswer({ dev, answer }) {
+	return /* @__PURE__ */ a("div", {
+		class: "rg-dev",
+		role: "group",
+		"aria-label": "개발자 기록 — 탔는지 표시",
+		children: DEV_ANSWERS.map(([value, label]) => /* @__PURE__ */ a("button", {
+			type: "button",
+			class: `sy-btn ${dev.answered === value ? "sy-btn-primary" : "sy-btn-secondary"}`,
+			"aria-pressed": dev.answered === value ? "true" : "false",
+			onClick: () => answer?.(value),
+			children: label
+		}, value))
+	});
+}
 function RideCard({ view, actions }) {
 	return /* @__PURE__ */ a("div", {
 		class: "rg-stack",
@@ -46,6 +61,10 @@ function RideCard({ view, actions }) {
 						},
 						children: "다른 길 찾기 ›"
 					}) : view.sub }),
+					view.dev && /* @__PURE__ */ a(DevAnswer, {
+						dev: view.dev,
+						answer: actions.answer
+					}),
 					/* @__PURE__ */ a("button", {
 						type: "button",
 						class: "rg-x",
