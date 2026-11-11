@@ -34,6 +34,10 @@ DELETE /api/me/sessions/<번호>         → 204(내 기기 하나 로그아웃 
 GET    /api/me/stats                  → 내 통계 {joinedAt,daysTogether,tickets,weeklyRides,recent:{days,openDays,route,ticket},
                                          year:{openDays,route,ticket},daily:[{day,open,route,ticket}]}
 POST   /api/me/usage                  {kind: open|route|ticket} → 204(오늘 그 종류 +1) · 400
+POST   /api/me/rides                  {"events":[…]} → 200 {"ok":true,"saved":N} — 개발자 회원(설정 SYUNG_DEVELOPER_IDS · /api/me 의
+                                         developer:true)의 지도 타고 가기 기록. 사건 모양은 디버깅 기록과 같고(services/debug.py clean_event)
+                                         judge · answer 를 더 받는다. 서버가 source:"map" 을 붙여 디버깅 기록(rides/)에 남긴다 ·
+                                         401 · 403 forbidden(개발자 아님 — 본문을 읽지 않는다) · 400 bad_request · 413 too_large(1 MB)
 GET    /api/me/export                 → 내 데이터 JSON 한 묶음(회원 정보 · 로그인 방법 · 기기 · 승차권 · 날짜별 사용 횟수 — 화면이 파일로 저장)
 GET · POST /api/auth/kakao/unlink     → 카카오 연결 해제 웹훅(카카오 서버가 부른다). Authorization: KakaoAK <대표 어드민 키>,
                                          app_id · user_id · referrer_type 은 GET 쿼리 · POST 폼으로. 200(본문 없음 · 그 회원이 없어도) ·
@@ -49,8 +53,10 @@ import sqlite3
 import urllib.parse
 from typing import TYPE_CHECKING, Any, cast
 
+from server.routes.debug import RIDE_BYTES
 from server.routes.errors import api_error
 from server.routes.response import Response
+from server.services.debug import MAP_SOURCE, BadRequest
 from server.services.members import (APP_CHALLENGE, SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit,
                                      WebhookError, token_hash)
 from server.services.profile import PHOTO_MAX_BYTES
@@ -62,6 +68,7 @@ if TYPE_CHECKING:   # 타입만
     from server.services.members import MemberService
 
     ReadBody = Callable[[int], bytes | None]   # read_body(limit) → 본문 · None(너무 큼 · 없음)
+    RecordRide = Callable[[bytes, str], dict[str, Any]]   # (본문, 출처) → {ok, saved} · BadRequest — services/debug.py record_ride
 
 SESSION_COOKIE = "syung_session"
 STATE_COOKIE = "syung_login"
@@ -118,8 +125,10 @@ PHOTO_TYPES = {"image/webp": "webp", "image/jpeg": "jpg"}
 CONTENT_TYPES = {"webp": "image/webp", "jpg": "image/jpeg"}
 
 
-def handle(members: MemberService, method: str, path: str, headers: Message, read_body: ReadBody, address: str) -> Response | None:
-    """path: 쿼리까지 붙은 요청 주소. read_body(limit) → bytes | None(너무 큼 · 없음). 회원 주소가 아니면 None."""
+def handle(members: MemberService, method: str, path: str, headers: Message, read_body: ReadBody, address: str,
+           record_ride: RecordRide | None = None) -> Response | None:
+    """path: 쿼리까지 붙은 요청 주소. read_body(limit) → bytes | None(너무 큼 · 없음). 회원 주소가 아니면 None.
+    record_ride: 개발자 회원의 탑승 기록을 남기는 곳(없으면 /me/rides 는 404)."""
     split = urllib.parse.urlsplit(path)
     bare = member_path(split.path)
     if bare is None:
@@ -133,7 +142,7 @@ def handle(members: MemberService, method: str, path: str, headers: Message, rea
     if method in ("POST", "PUT", "DELETE") and headers.get(CSRF_HEADER) != CSRF_VALUE:
         return _error(403, "forbidden", "이 요청은 슝 화면에서만 할 수 있어요")
     try:
-        return _route(members, method, bare, urllib.parse.parse_qs(split.query), headers, read_body, address)
+        return _route(members, method, bare, urllib.parse.parse_qs(split.query), headers, read_body, address, record_ride)
     except (OSError, sqlite3.Error):
         # DB 자리가 아직 없거나 잠겼다 — 내용(경로 · SQL)은 밖으로 내지 않는다
         return _error(503, "unavailable", "회원 기능을 잠시 쓸 수 없어요")
@@ -151,7 +160,7 @@ def _signed_in(members: MemberService, headers: Message) -> dict[str, Any] | Non
 
 
 def _route(members: MemberService, method: str, bare: str, query: dict[str, list[str]], headers: Message, read_body: ReadBody,
-           address: str) -> Response:
+           address: str, record_ride: RecordRide | None = None) -> Response:
     if bare == "/auth/providers" and method == "GET":
         return _json({"providers": list(members.providers), "me": _signed_in(members, headers)})
     if not members.enabled:
@@ -167,7 +176,8 @@ def _route(members: MemberService, method: str, bare: str, query: dict[str, list
     ticket = TICKET_PATH.fullmatch(bare)
     photo = PHOTO_PATH.fullmatch(bare)
     session = SESSION_PATH.fullmatch(bare)
-    if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") + ACCOUNT_PATHS and not ticket and not photo and not session:
+    rides = bare == RIDES_PATH and record_ride is not None
+    if bare not in ("/me", "/me/tickets", "/me/profile", "/me/avatar") + ACCOUNT_PATHS and not ticket and not photo and not session and not rides:
         return _error(404, "not_found", "없는 주소예요")
     token = session_token(headers)
     user_id = members.user_id(token)
@@ -175,6 +185,8 @@ def _route(members: MemberService, method: str, bare: str, query: dict[str, list
     if me is None:
         return _error(401, *LOGIN_NEEDED)
     user_id = cast("int", user_id)   # me 가 있으면 user_id 도 있다
+    if rides:
+        return _rides(members, method, user_id, read_body, cast("RecordRide", record_ride))   # 위에서 있는 것을 봤다
     if bare in ACCOUNT_PATHS or session:
         return _account(members, method, bare, session, query, user_id, cast("str", token), read_body)   # 로그인했으면 토큰이 있다
     if bare == "/me":
@@ -220,6 +232,23 @@ def _route(members: MemberService, method: str, bare: str, query: dict[str, list
 
 
 ACCOUNT_PATHS = ("/me/sessions", "/me/stats", "/me/usage", "/me/export")
+RIDES_PATH = "/me/rides"
+
+
+def _rides(members: MemberService, method: str, user_id: int, read_body: ReadBody, record_ride: RecordRide) -> Response:
+    """POST /me/rides: 개발자 회원의 지도 타고 가기 기록. 개발자인지 먼저 보고 본문을 읽는다(남의 큰 본문은 읽지 않는다).
+    기록에는 회원번호를 싣지 않는다(디버깅 기록과 같은 모양 + source)."""
+    if method != "POST":
+        return _error(405, "method_not_allowed", "이 주소에서 할 수 없는 요청이에요")
+    if not members.is_developer(user_id):
+        return _error(403, "forbidden", "개발자 계정만 탑승 기록을 보낼 수 있어요")
+    raw = read_body(RIDE_BYTES)
+    if raw is None:
+        return _error(413, "too_large", "본문이 없거나 너무 커요")
+    try:
+        return _json(record_ride(raw, MAP_SOURCE))
+    except BadRequest as error:
+        return _error(400, "bad_request", str(error))
 
 
 def _account(members: MemberService, method: str, bare: str, session: re.Match[str] | None, query: dict[str, list[str]], user_id: int, token: str,

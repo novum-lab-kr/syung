@@ -247,6 +247,8 @@ class MemberConfig:
     실어 보낸다)가 있어야 받는다. KAKAO_APP_ID(앱 ID)를 주면 본문의 app_id 도 맞춰 본다. 로그인을 꺼도 이미 가입한 사람은 지워야 해서
     KAKAO_LOGIN 과 따로 읽는다.
     구글: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET. Apple: APPLE_CLIENT_ID(Services ID) + APPLE_CLIENT_SECRET(미리 만든 ES256 JWT, 6개월).
+    개발자 회원(2026-11-11): SYUNG_DEVELOPER_IDS 에 회원번호를 쉼표로(예 "1,7"). 그 회원은 /api/me 에 developer:true 가 붙고
+    지도 타고 가기 기록을 POST /api/me/rides 로 보낼 수 있다. 비었거나 없으면 아무도 개발자가 아니다(숫자가 아닌 값은 버린다).
     """
     db_file: Path = Path("/var/lib/subway-live/members.sqlite3")
     public_url: str = "https://syung.novum-lab.com"   # 리다이렉트 URI 의 앞부분(제공자 콘솔에 등록한 것과 같아야 한다)
@@ -258,6 +260,7 @@ class MemberConfig:
     google_client_secret: str = field(default="", repr=False)
     apple_client_id: str = field(default="", repr=False)
     apple_client_secret: str = field(default="", repr=False)
+    developer_ids: frozenset[int] = frozenset()
 
     @property
     def avatar_dir(self) -> Path:
@@ -276,4 +279,5 @@ class MemberConfig:
                    google_client_id=_env("GOOGLE_CLIENT_ID", "").strip(),
                    google_client_secret=_env("GOOGLE_CLIENT_SECRET", "").strip(),
                    apple_client_id=_env("APPLE_CLIENT_ID", "").strip(),
-                   apple_client_secret=_env("APPLE_CLIENT_SECRET", "").strip())
+                   apple_client_secret=_env("APPLE_CLIENT_SECRET", "").strip(),
+                   developer_ids=frozenset(int(part) for part in _env("SYUNG_DEVELOPER_IDS", "").split(",") if part.strip().isdigit()))

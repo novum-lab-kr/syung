@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from server.config import BusServerConfig, SubwayConfig
 from server.jobs.burst import burst_loop
+from server.jobs.debug_prune import prune_loop
 from server.jobs.bus_samples import background_loop
 from server.jobs.station_probe import station_probe_loop
 from server.jobs.health import baseline_loop, probe_loop
@@ -40,6 +41,7 @@ def main() -> None:
         threading.Thread(target=burst_loop, args=(services.live,), daemon=True).start()
     threading.Thread(target=_bus_samples, args=(services,), daemon=True).start()
     threading.Thread(target=baseline_loop, args=(services.health,), daemon=True).start()   # 이상 감지: 평소 기준
+    threading.Thread(target=prune_loop, args=(lambda: services.debug,), daemon=True).start()   # 90일 지난 디버깅 기록 지우기
     if config.probe_every > 0:
         threading.Thread(target=probe_loop, args=(services.live, config.probe_every), daemon=True).start()   # 이상 감지: 위치 피드 확인
     if config.station_probe:
