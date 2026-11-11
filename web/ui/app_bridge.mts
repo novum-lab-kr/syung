@@ -1,11 +1,11 @@
 // 앱 ↔ 지도 다리(웹 쪽): 슝 앱(React Native · Expo)이 웹뷰에 이 지도를 앱 지도 모드(주소 #app — index.html 첫 스크립트가 html[data-app=map])로 띄우면
 // 지도 → 앱: window.ReactNativeWebView.postMessage(JSON 글자) — ready · stationTap · trainTap · modeChanged · error
-//   v2(더하기만): themeChanged · trainUpdate · trainGone · followChanged · rideChanged · prefsChanged · status · sky · busTap · busUpdate · busClosed
+//   v2(더하기만): themeChanged · trainUpdate · trainGone · followChanged · rideChanged · prefsChanged · status · sky · busTap · busUpdate · busClosed · rideAlerts
 // 앱 → 지도: 웹뷰의 postMessage(JSON 글자 — iOS 는 window, Android 는 document 의 message 이벤트) — showRoute · clearRoute · focusStation · setMode
 //   v2(더하기만): setTheme · setPadding · watchTrain · unwatchTrain · followTrain · stopFollow · startRide · stopRide · setPref · skyOpen
 //   · closeBus · followBus · busRoute · busRefresh · busStopView
 // 메시지 이름 · 칸은 계획서(plans/feature/20261030-슝-앱-만들기.md) 6절 "다리 v2" 표 — 바꾸면 앱도 같이 바꾼다(version 을 올린다).
-// 상태 알림(themeChanged · status · sky · prefsChanged · followChanged · rideChanged · busUpdate)은 같은 값이면 다시 보내지 않고, ready 전에는 보내지 않는다.
+// 상태 알림(themeChanged · status · sky · prefsChanged · followChanged · rideChanged · rideAlerts · busUpdate)은 같은 값이면 다시 보내지 않고, ready 전에는 보내지 않는다.
 // 이 파일은 고르기 · 검사만 한다(화면 · 지도는 본체가 넘긴 함수로) — 다른 화면 파일을 import 하지 않는다(본체가 같은 단계에서 요청).
 import type { MapStation, TrainPlan } from '../trains/types.mts';
 import type { JourneyLeg, JourneyPlan } from './journey.mts';
@@ -36,6 +36,9 @@ export interface Seat { car:number; row:number; side:number }   // 칸 1 = 맨 �
 export interface TrainRaw { station:string; status:string; direction:string; destination:string; recorded:string; ageSec:number; fetched:string }   // ui/train_sheet.tsx TrainRawView 와 같은 칸
 export interface TrainUpdate { id:string; dest:string; now:string; raw:TrainRaw; ride:{ cars:number; rows:number; seat:Seat } | null }
 export interface RideState { riding:boolean; id:string|null; text:string }
+// 타고 가기 알림 예약 하나(계획서 plans/feature/20261111-syung-타고-가기-앱-알림.md 6절): id 예약 이름(같은 id 는 같은 알림 — 때 · 글이 바뀌면 다시 건다) ·
+//  at 울릴 때(1970 기준 ms — 이미 지났으면 바로 띄운다) · title 알림 제목 · body 알림 글('' 이면 글 없이)
+export interface RideAlertInfo { id:string; at:number; title:string; body:string }
 export interface BusSelection { kind:string; id:string }   // stop · route · bus(bus/layer.mts selection)
 export interface ReadyInfo { mode:string; modes:string[]; colors:Record<string, string>; theme:ThemeState; prefs:PrefsState }
 export type MapMessage =
@@ -45,6 +48,7 @@ export type MapMessage =
   | { type:'trainGone'; id:string }
   | { type:'followChanged'; id:string|null }
   | ({ type:'rideChanged' } & RideState)
+  | { type:'rideAlerts'; alerts:RideAlertInfo[] }
   | { type:'prefsChanged'; prefs:PrefsState }
   | ({ type:'status' } & MapStatus)
   | ({ type:'sky' } & SkyState)
@@ -282,7 +286,7 @@ export function createAppBridge({ facts, post = defaultPost, targets }:{ facts:B
       send({ type:'ready', version:APP_BRIDGE_VERSION, ...info });
       lastSent.set('themeChanged', JSON.stringify({ type:'themeChanged', ...info.theme }));
       lastSent.set('prefsChanged', JSON.stringify({ type:'prefsChanged', prefs:info.prefs }));
-      for (const type of ['sky', 'status', 'followChanged', 'rideChanged']) { const message = waiting.get(type); if (message) state(message) }
+      for (const type of ['sky', 'status', 'followChanged', 'rideChanged', 'rideAlerts']) { const message = waiting.get(type); if (message) state(message) }
       waiting.clear();
     },
     stationTap(station:MapStation):void { send({ type:'stationTap', station:stationInfo(station) }) },
@@ -302,6 +306,8 @@ export function createAppBridge({ facts, post = defaultPost, targets }:{ facts:B
     trainGone(id:string):void { if (actions) send({ type:'trainGone', id }) },
     followChanged(id:string|null):void { state({ type:'followChanged', id }) },
     rideChanged(ride:RideState):void { state({ type:'rideChanged', ...ride }) },
+    // 타고 가기 알림 예약 전체(전체 교체 — 목록에 없는 예약은 앱이 지운다 · 빈 목록 = 모두 지움. 이미 뜬 알림은 그대로)
+    rideAlerts(alerts:readonly RideAlertInfo[]):void { state({ type:'rideAlerts', alerts:alerts.map(({ id, at, title, body }) => ({ id, at, title, body })) }) },
     // 버스: 누름은 늘 보내고(같은 자료여도 새로 연다), 바뀜은 값이 다를 때만, 닫힘은 열려 있을 때만
     busTap(view:BusSheetView, selection:BusSelection):void {
       if (!actions) return;
