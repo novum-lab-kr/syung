@@ -6,7 +6,7 @@ import threading
 import unittest
 import urllib.error
 from types import SimpleNamespace
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 from server import app
 from server.config import SubwayConfig
@@ -155,12 +155,17 @@ class AppTest(unittest.TestCase):
         config = SubwayConfig(host="127.0.0.1", port=38199, burst_every=every, response_seconds=1.75)
         services = SimpleNamespace(
             live=SimpleNamespace(load_quota=Mock(side_effect=lambda: events.append("load"))),
-            journey=object(), bus=object(), health=object(),
+            journey=object(), bus=object(), health=object(), debug=object(),
         )
         threads = []
 
         def thread(*, target, args, daemon):
             events.append("thread")
+            if target is app.prune_loop:
+                # 디버깅 기록 지우기는 서비스를 늦게 꺼내는 lambda 를 받는다 — 불러서 같은 서비스인지 본다.
+                (debug,) = args
+                self.assertIs(debug(), services.debug)
+                args = ("debug",)
             threads.append((target, args, daemon))
             return SimpleNamespace(start=lambda: events.append("start"))
 
@@ -188,18 +193,20 @@ class AppTest(unittest.TestCase):
 
     def test_main_loads_quota_then_starts_warm_burst_bus_then_server(self):
         events, threads, services = self.run_main(7200)
-        self.assertEqual(events, ["load"] + ["thread", "start"] * 5 + ["handler", "server", "serve"])
+        self.assertEqual(events, ["load"] + ["thread", "start"] * 6 + ["handler", "server", "serve"])
         self.assertEqual(threads, [(app.warm_journey, (services,), True),
                                    (app.burst_loop, (services.live,), True),
                                    (app._bus_samples, (services,), True),
                                    (app.baseline_loop, (services.health,), True),
+                                   (app.prune_loop, ("debug",), True),
                                    (app.probe_loop, (services.live, 30), True)])
 
     def test_main_without_burst_starts_only_warm_and_bus_threads(self):
         events, threads, services = self.run_main(0)
-        self.assertEqual(events, ["load"] + ["thread", "start"] * 4 + ["handler", "server", "serve"])
+        self.assertEqual(events, ["load"] + ["thread", "start"] * 5 + ["handler", "server", "serve"])
         self.assertEqual(threads, [(app.warm_journey, (services,), True), (app._bus_samples, (services,), True),
-                                   (app.baseline_loop, (services.health,), True), (app.probe_loop, (services.live, 30), True)])
+                                   (app.baseline_loop, (services.health,), True), (app.prune_loop, ("debug",), True),
+                                   (app.probe_loop, (services.live, 30), True)])
 
     def test_main_continues_after_journey_creation_fails_in_warm_thread(self):
         events = []
@@ -221,7 +228,7 @@ class AppTest(unittest.TestCase):
                     events.append("warm-start")
                     # 가짜 start 안에서 warm을 실행해, 잡은 예외가 main으로 새지 않는지 확인한다.
                     target(*args)
-                elif target in (app.baseline_loop, app.probe_loop):
+                elif target in (app.baseline_loop, app.prune_loop, app.probe_loop):
                     pass
                 else:
                     self.assertIs(target, app._bus_samples)
@@ -244,7 +251,8 @@ class AppTest(unittest.TestCase):
         self.assertEqual(threads.call_args_list,
                          [call(target=app.warm_journey, args=(services,), daemon=True),
                           call(target=app._bus_samples, args=(services,), daemon=True),
-                          call(target=app.baseline_loop, args=(services.health,), daemon=True)])
+                          call(target=app.baseline_loop, args=(services.health,), daemon=True),
+                          call(target=app.prune_loop, args=ANY, daemon=True)])
         make_handler.assert_called_once_with(services, config.response_seconds)
         server.assert_called_once_with((config.host, config.port), handler)
         server.return_value.serve_forever.assert_called_once_with()

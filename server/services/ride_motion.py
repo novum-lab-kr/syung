@@ -14,6 +14,15 @@ motion 사건의 m: 0.1초 칸마다 [사건 t 기준 ms, 중력 포함 가속 x
      되튐은 중력을 추정하는 모든 기기에 생긴다(중력 뺀 값이 없는 기기는 _horizontal 이 같은 식으로 추정한다).
    맞춘 근거: 7호선 두 번 탑승(10-13 · 10-14, 누름 40번)에서 센서 − 누름 가운데 도착 −1.1초 · 출발 −0.8초(사람이 1초쯤 늦게 누른다),
    40번 중 37번이 5초 안, 누름 없는 센서 사건 0. 놓친 것: 끝 역 하나, 출발 하나, 출발 전에 한 번 더 밀린 역 하나(26초 일찍).
+5. 센서가 끊기면(화면 꺼짐 — 10-15 탑승에서 20~68초씩 스무 번) 그 사이의 감속 · 되튐을 못 봐 차례 사슬이 끊긴다
+   (옛 규칙은 첫 출발 뒤 출발을 하나도 못 잡았다 — 1/11). 끊김(RESUME_GAP 초 넘게 칸이 빔)을 지나면 '놓침' 으로 두고,
+   다음 사건을 잡을 때까지 마지막 출발과 같은 쪽(>0.3)으로 STAND 초 넘게 조용하다 밀린 것을 다시 출발로 읽는다.
+   - 반대쪽 밀림은 끊김 뒤에 본 감속이라 출발이 아니다(10-15 에서 거짓 출발 일곱 중 다섯이 이것).
+   - 같은 쪽 밀림 뒤 STAND 초 넘게 조용하다 REBOUND_RUN 초 안에 또 같은 쪽으로 밀리면, 앞 것은 끊김에 가려진 감속의 되튐이라
+     섰다로 읽는다(열차는 역 사이를 그렇게 짧게 못 간다 — 10-15 되튐 → 다음 출발 33 · 39 · 45 · 52초).
+   - 휴대폰을 돌려 쥔 채 끊김을 지나면 놓친다(거짓으로 잡기보다 놓치는 쪽).
+   다시 잰 값(누름 5초 안 · 누름 없는 센서): 10-15 출발 1/11 → 9/11 · 0, 도착 1/11 → 3/11 · 4(되튐 시작이 누름보다 7초 이른 둘 포함),
+   10-13 · 10-14 는 그대로(끊김이 짧거나 끊김 뒤 바로 사슬이 이어진다).
 한계: 같은 노선 두 번으로만 맞췄다 — 다른 노선 · 버스 · 다른 휴대폰은 탑승 기록으로 다시 본다.
 """
 from __future__ import annotations
@@ -35,6 +44,8 @@ MIN_PULSE = 2.0      # 초 — 열차 가속 · 감속은 8초 넘게 이어진�
 MERGE = 1.0          # 초 — 같은 방향 밀림 사이가 이보다 짧으면 한 번으로
 PEAK = 0.45          # m/s² — 이보다 약한 밀림은 버린다(폰 만짐 · 작은 흔들림)
 HUMP_GAP = 9.0       # 초 — 감속 끝에서 되튐 시작까지
+RESUME_GAP = 5.0     # 초 — 칸이 이보다 오래 비면 센서가 끊긴 것(화면 꺼짐). 그 사이 사건을 놓쳤을 수 있다
+REBOUND_RUN = 60.0   # 초 — 끊김 뒤 같은 쪽 밀림 둘이 이 안이면 앞 것은 되튐(역 사이 한 번 달리기보다 짧다)
 STAND = 6.0          # 초 — 역에 서 있다고 볼 조용한 시간(되튐이 끝난 뒤. 실제 두 탑승에선 13초 넘게, 6~10 은 결과가 같았다)
 
 
@@ -111,21 +122,32 @@ def _pulses(sm: list[tuple[float, Vec, float]]) -> list[Pulse]:
 def detect(events: list[dict[str, Any]]) -> dict[str, Any]:
     """motion 사건들 → {"events": [{"kind": "arrive"|"depart", "t": ms}], "series": [[ms, 부호 붙은 m/s²], …](1초마다)}.
     series 의 부호: 출발 방향 +, 감속 −."""
-    sm = _smooth(_horizontal(_bins(events)))
+    bins = _bins(events)
+    sm = _smooth(_horizontal(bins))
     if not sm:
         return {"events": [], "series": []}
     pulses = [p for p in _pulses(sm) if p["peak"] >= PEAK]
+    cuts = [(a[0], b[0]) for a, b in zip(bins, bins[1:]) if b[0] - a[0] > RESUME_GAP * 1000]   # 센서가 끊긴 구간(앞 칸 · 뒤 칸 시각)
+    cut_between: Callable[[float, float], bool] = lambda lo, hi: any(lo <= a and b <= hi for a, b in cuts)
     out, last_depart, hump = cast("list[dict[str, Any]]", []), cast("Pulse | None", None), cast("Pulse | None", None)
+    lost = False   # 끊김을 지나 아직 다음 사건을 못 잡았다(그사이 감속 · 되튐을 놓쳤을 수 있다)
     same: Callable[[Pulse, Pulse], float] = lambda a, b: sum(x * y for x, y in zip(a["dir"], b["dir"]))
     for i, p in enumerate(pulses):
         prev = pulses[i - 1] if i else None
         nxt = pulses[i + 1] if i + 1 < len(pulses) else None
         before = (p["start"] - prev["last"]) / 1000 if prev else math.inf
         after = (nxt["start"] - p["last"]) / 1000 if nxt else math.inf
+        lost = lost or (prev is not None and cut_between(prev["last"], p["start"]))
         if prev is not None and prev is not last_depart and before <= HUMP_GAP and same(prev, p) < -0.5 and after >= STAND:
-            out.append({"kind": "arrive", "t": round(p["start"])}); hump = p   # 감속 → 되튐 → 조용
+            out.append({"kind": "arrive", "t": round(p["start"])}); hump = p; lost = False   # 감속 → 되튐 → 조용
         elif prev is None or (before >= STAND and (prev is hump and same(prev, p) > 0.3)):
-            out.append({"kind": "depart", "t": round(p["start"])}); last_depart = p
+            out.append({"kind": "depart", "t": round(p["start"])}); last_depart = p; lost = False
+        elif lost and before >= STAND and (last_depart is None or same(last_depart, p) > 0.3):   # 끊김 뒤 다시 시작(머리말 5)
+            if nxt is not None and same(p, nxt) > 0.3 and after >= STAND and (nxt["start"] - p["start"]) / 1000 <= REBOUND_RUN:
+                out.append({"kind": "arrive", "t": round(p["start"])}); hump = p   # 가려진 감속의 되튐 — 다음 밀림이 출발
+            else:
+                out.append({"kind": "depart", "t": round(p["start"])}); last_depart = p
+            lost = False
     # 1초마다 그래프 점(출발 방향 기준 부호)
     series, ref2, next_t, pi = cast("list[list[float]]", []), cast("Vec | None", None), sm[0][0], 0
     dirs = [(p["start"], p["dir"]) for p in pulses]

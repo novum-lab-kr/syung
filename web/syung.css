@@ -612,6 +612,7 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 .rg-sprout{position:absolute;right:-6px;bottom:-110px;width:92px;height:92px;background:center/contain no-repeat;pointer-events:none}
 .rg-sprout.flip{transform:scaleX(-1)}
 .rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
+.rg-dev{display:flex;gap:var(--space-2);margin-top:10px}.rg-dev .sy-btn{min-height:30px;font-size:var(--text-14)}   /* 개발자만: [탔음] [안 탔음] */
 .jbar .rg-go,.jp .rg-go{display:block;width:calc(100% - 28px);height:42px;margin:0 14px 13px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
 .jp .rg-go{width:100%;margin:var(--space-2) 0 0;height:46px}
 /* 「이 길로 출발」 · 「승차권 등록」은 한 줄로(2026-11-08 사용자 — 두 줄이던 것): 출발이 넓게 · 승차권은 옆 회색 단추. 승차권 단추가 없으면 출발이 한 줄 다 */

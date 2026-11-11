@@ -385,9 +385,18 @@ class MemberService:
         return user_id
 
     def me(self, user_id: int) -> dict[str, Any] | None:
+        """내 정보. 개발자 회원(설정 SYUNG_DEVELOPER_IDS)만 developer:true 가 더 붙는다 — 다른 회원은 옛 모양 그대로."""
         user = self.store.user(user_id)
-        return user and {"id": user["id"], "name": user["display_name"], "provider": user["provider"],
-                         "avatar": avatar_view(user["avatar"], PHOTO_URL)}
+        if not user:
+            return None
+        found: dict[str, Any] = {"id": user["id"], "name": user["display_name"], "provider": user["provider"],
+                                 "avatar": avatar_view(user["avatar"], PHOTO_URL)}
+        if self.is_developer(user_id):
+            found["developer"] = True
+        return found
+
+    def is_developer(self, user_id: int) -> bool:
+        return user_id in self.config.developer_ids
 
     # ---- 내 정보: 닉네임 · 프로필 사진 ----
     def rename(self, user_id: int, body: object) -> dict[str, Any] | None:

@@ -13,8 +13,11 @@ import unittest
 import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from server.config import MemberConfig
+from server.services.debug import DebugService
+from server.store.debug_log import DebugStore
 from server.routes.http import Server, make_handler
 from server.services import login_providers
 from server.services.members import APP_CODE_AGE, SESSION_AGE, TICKET_LIMIT, MemberService, TRIES, clean_ticket, pkce_challenge
@@ -663,6 +666,86 @@ class MigrationTest(unittest.TestCase):
             with contextlib.closing(sqlite3.connect(path)) as conn:
                 self.assertIsNone(conn.execute("SELECT name FROM sqlite_master WHERE name='commute'").fetchone())
 
+
+
+class DeveloperRideTest(unittest.TestCase):
+    """개발자 회원(SYUNG_DEVELOPER_IDS)의 지도 타고 가기 기록: /api/me 표시 · POST /api/me/rides → 디버깅 기록(rides/)."""
+    request = MemberHttpTest.request
+    login = MemberHttpTest.login
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory(prefix="syung-dev-rides-test-")
+        self.addCleanup(folder.cleanup)
+        self.db = Path(folder.name) / "members.sqlite3"
+        self.debug_dir = Path(folder.name) / "debug"
+        self.now = NOW
+        self.provider = FakeProvider()
+        self.members = MemberService(MemberConfig(db_file=self.db, public_url="https://syung.test", developer_ids=frozenset({1})),
+                                     providers={"kakao": self.provider}, clock=lambda: self.now)
+        self.debug = DebugService(DebugStore(self.debug_dir), clock=lambda: self.now)
+        self.server = Server(("127.0.0.1", 0), make_handler(SimpleNamespace(members=self.members, debug=self.debug), 0))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.developer = self.login("42", "개발자")   # 회원 1
+        self.member = self.login("43", "민지")   # 회원 2
+
+    def events(self):
+        t = self.now * 1000
+        return [{"ride": "m1", "kind": "start", "mode": "subway", "line": "7호선", "t": t, "source": "admin"},
+                {"ride": "m1", "kind": "gps", "mode": "subway", "t": t + 1000, "lat": 37.5, "lng": 127.1, "acc": 12},
+                {"ride": "m1", "kind": "motion", "mode": "subway", "t": t + 2000, "m": [0, 0.1, 9.8, 0.2, 0, 0, 0, None, None, None]},
+                {"ride": "m1", "kind": "judge", "mode": "subway", "t": t + 3000, "state": "boarded", "station": "군자"},
+                {"ride": "m1", "kind": "answer", "mode": "subway", "t": t + 4000, "answer": "rode"},
+                {"ride": "m1", "kind": "depart", "mode": "subway", "t": t + 5000, "station": "군자"}]
+
+    def saved(self):
+        folder = self.debug_dir / "rides"
+        return [json.loads(line) for path in sorted(folder.glob("*.jsonl")) for line in path.read_text().splitlines()] if folder.exists() else []
+
+    def test_me_marks_only_developers(self):
+        self.assertEqual(self.request("GET", "/api/me", cookie=self.developer).json,
+                         {"id": 1, "name": "개발자", "provider": "kakao", "avatar": None, "developer": True})
+        self.assertEqual(self.request("GET", "/api/me", cookie=self.member).json,
+                         {"id": 2, "name": "민지", "provider": "kakao", "avatar": None}, "다른 회원은 옛 모양 그대로")
+        self.assertTrue(self.request("GET", "/api/auth/providers", cookie=self.developer).json["me"]["developer"])
+
+    def test_developer_rides_are_saved_like_debug_rides(self):
+        answer = self.request("POST", "/api/me/rides", cookie=self.developer, body={"events": self.events()})
+        self.assertEqual((answer.status, answer.json), (200, {"ok": True, "saved": 6}))
+        rows = self.saved()
+        self.assertEqual({row["source"] for row in rows}, {"map"}, "보낸 쪽이 적은 source 는 버리고 서버가 map 을 붙인다")
+        self.assertEqual(rows[1]["lat"], 37.5)
+        self.assertEqual(rows[3]["state"], "boarded")
+        self.assertEqual(rows[4]["answer"], "rode")
+        self.assertNotIn("user", json.dumps(rows), "기록에 회원번호를 싣지 않는다")
+        # 관리 화면 디버깅(/admin/debug/recent)이 읽는 요약에 그대로 보인다 — 누름은 arrive · depart 만
+        ride = self.debug.recent()["rides"][0]
+        self.assertEqual((ride["ride"], ride["line"], ride["gps"], ride["taps"]),
+                         ("m1", "7호선", 1, [{"kind": "depart", "t": self.now * 1000 + 5000, "station": "군자"}]))
+        self.assertIn("sensor", ride)
+
+    def test_only_developers_can_send(self):
+        body = {"events": self.events()}
+        self.assertEqual(self.request("POST", "/api/me/rides", body=body).status, 401)
+        refused = self.request("POST", "/api/me/rides", cookie=self.member, body=body)
+        self.assertEqual((refused.status, refused.json["error"]["code"]), (403, "forbidden"))
+        self.assertEqual(self.request("POST", "/api/me/rides", cookie=self.developer, body=body, csrf=False).status, 403)
+        self.assertEqual(self.request("GET", "/api/me/rides", cookie=self.developer).status, 405)
+        self.assertEqual(self.saved(), [])
+
+    def test_bad_rides_are_refused_whole(self):
+        for events in ([], [{"ride": "m1", "kind": "answer", "mode": "subway", "t": self.now * 1000, "answer": "maybe"}],
+                       [{"ride": "m1", "kind": "judge", "mode": "subway", "t": self.now * 1000}]):
+            answer = self.request("POST", "/api/me/rides", cookie=self.developer, body={"events": events})
+            self.assertEqual((answer.status, answer.json["error"]["code"]), (400, "bad_request"), events)
+        self.assertEqual(self.saved(), [])
+
+    def test_developer_ids_come_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"SYUNG_DEVELOPER_IDS": " 7, 12,x,,"}):
+            self.assertEqual(MemberConfig.from_env().developer_ids, frozenset({7, 12}))
+        with mock.patch.dict(os.environ, {"SYUNG_DEVELOPER_IDS": ""}):
+            self.assertEqual(MemberConfig.from_env().developer_ids, frozenset(), "비면 아무도 개발자가 아니다")
 
 if __name__ == "__main__":
     unittest.main()

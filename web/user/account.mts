@@ -26,6 +26,7 @@ import '../components/ticket_card.tsx';import '../components/place_field.tsx';im
 import {ticketsView, DAYS, esc, shortName, timeParts} from './tickets_view.tsx';   // 승차권 · 발권 · 장소 · 경로 쪽 그리기 — Preact
 import type {Place, FoundPlace, PlaceKey, SlimLeg, SlimRoute, Ticket} from './tickets_view.tsx';
 import type {RouteKind} from './ticket_routes.mts';
+import type {RideLog} from './dev_ride_log.mts';
 import {usefulRoutes, quickestRoute, rideSig, routeForTicket, nextRideDay, routeAt, routeFilterView, chosenAfter, routeUrl} from './ticket_routes.mts';   // 승차권 경로 고르기(길 모양 · 거르기 · 다음 탈 날)
 
 // 서버 응답(server/routes/members.py · /api/auth/providers · /api/route) 가운데 이 파일이 읽는 칸(승차권 · 장소는 tickets_view.tsx)
@@ -137,7 +138,8 @@ async function fillChain(t:Ticket, put:(html:string)=>void) {
 const ROUTE_CHANGED_NOTE = '이 시각에는 고른 길이 없어 가장 빠른 길로 채웠어요';
 const TICKET_DRAFT_KEY = 'syung-ticket-draft';   // 승차권 등록 중 로그인하러 다녀오는 동안만(이 탭 sessionStorage)
 const MAP_WAIT_MS = 15000;   // 로그인 복귀: 지도를 이만큼만 기다리고 발권 화면을 연다
-export async function initAccount({colors = {}, routeMap, myLocation, journeyReturn, mapLoaded}:{ mapLoaded?:Promise<void>; colors?:Record<string, string>; routeMap?:RouteMap; myLocation?:()=>readonly number[] | null | undefined; journeyReturn?:(search:unknown)=>TicketReturn | null } = {}):Promise<TicketDesk | undefined> {
+// devRides: 개발자 회원(/api/me developer:true)이면 타고 가기 기록기를, 아니게 되면 null 을 본체에 넘긴다(ui/ride_along 이 쓴다 · 2026-11-11 계획서 D2 · D3)
+export async function initAccount({colors = {}, routeMap, myLocation, journeyReturn, mapLoaded, devRides}:{ mapLoaded?:Promise<void>; colors?:Record<string, string>; routeMap?:RouteMap; myLocation?:()=>readonly number[] | null | undefined; journeyReturn?:(search:unknown)=>TicketReturn | null; devRides?:(log:RideLog | null)=>void } = {}):Promise<TicketDesk | undefined> {
   const item = $('accountItem'), sheet = $('loginSheet');
   if (!item || !sheet) return;
   // 로그인 방법과 지금 로그인한 사람을 한 번에 받는다(/api/me 를 따로 물으면 메뉴 칸이 한 번 더 늦게 뜨고,
@@ -246,9 +248,23 @@ export async function initAccount({colors = {}, routeMap, myLocation, journeyRet
     else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
   }, true);
 
+  // ---- 개발자 회원의 타고 가기 기록: 개발자일 때만 기록기 파일을 받는다(아니면 받지도 · 센서 권한을 묻지도 · 보내지도 않는다)
+  let rideLog:RideLog | null = null, rideLogOn = false;
+  function devRideLog(on:boolean) {
+    if (on === rideLogOn) return;
+    rideLogOn = on;
+    if (!on) { rideLog?.close(); rideLog = null; devRides?.(null); return; }
+    import('./dev_ride_log.mts').then(({browserRideLog}) => {
+      if (!rideLogOn || rideLog) return;   // 그사이 로그아웃했다 · 이미 만들었다
+      const log:RideLog = browserRideLog(() => { if (rideLog === log) { rideLog = null; rideLogOn = false; devRides?.(null); } });   // 401 · 403: 떼어 낸다
+      rideLog = log; devRides?.(log);
+    }).catch(() => { rideLogOn = false; });   // 못 받음: 기록 없이(다음에 내 정보가 바뀔 때 다시)
+  }
+
   // ---- 화면 상태 ----
   function show() {
     item.hidden = false;
+    devRideLog(!!me?.developer);
     $('loginOpen').hidden = !!me; $('accountRow').hidden = !me; $('ticketsRow').hidden = !me;
     if (!me) { closeEdit(false); accountView.set({statsShown: false, safeShown: false}); accountSeq++; return; }
     paintAvatar($('accountAvatar'), me.avatar);   // 메뉴 내 정보 줄
