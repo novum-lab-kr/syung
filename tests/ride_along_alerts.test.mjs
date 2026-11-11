@@ -24,10 +24,15 @@ test('기다리는 동안: 실시간으로 아는 첫 열차 도착 2분 전 탈
   assert.deepEqual(alight, {id: 'alight:1', at: arrives + 16 * 60000, title: '🚇 다음 역 사당에서 내리세요', body: ''});
 });
 
-test('실시간 도착을 모르면 탈 준비는 없다(시간표만으로 「곧 와요」 안 함) — 내림 준비는 계획 탈 시각으로', () => {
-  const alerts = rideAlerts({...base, legs: [walk, trainLeg], index: 1, step: 'wait'});
-  assert.deepEqual(alerts.map(alert => alert.id), ['alight:1']);
-  assert.equal(alerts[0].at, clockMs('08:05', NOW) + 16 * 60000);
+test('실시간 도착을 모르면 탈 준비는 없다(시간표만으로 「곧 와요」 안 함) — 내림 준비도 없다', () => {
+  assert.deepEqual(rideAlerts({...base, legs: [walk, trainLeg], index: 1, step: 'wait'}), []);
+});
+
+test('계획 출발이 이미 지난 기다리기(08:05 출발 · 지금 08:30 · 실시간 모름)는 빈 목록 — 승강장에서 「내리세요」가 울리지 않는다', () => {
+  const late = clockMs('08:30', NOW);
+  assert.deepEqual(rideAlerts({...base, legs: [walk, trainLeg], index: 1, step: 'wait', nowMs: late}), []);
+  const ride = rideAlerts({...base, legs: [walk, trainLeg], index: 1, step: 'ride', nowMs: late, boardedMs: late});
+  assert.deepEqual(ride.map(alert => [alert.id, alert.at]), [['alight:1', late + 16 * 60000]], '탄 뒤에 탄 때부터 센다');
 });
 
 test('놓쳐서 다음 열차를 기다리면 탈 준비는 새 id', () => {

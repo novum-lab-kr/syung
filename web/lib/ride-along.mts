@@ -460,7 +460,8 @@ export function arrivalFits(row:ArrivalRowLike, leg:RideTrainLeg, trainSeq:reado
 // ---- 알림 때(계획서 plans/feature/20261111-syung-타고-가기-앱-알림.md — D2 · 5절 글): 지금 구간(기다리기 · 타기)마다
 //  탈 준비 = 기다리는 동안 걸어서 탈 수 있는 첫 열차 · 버스가 오기 2분 전(실시간 도착을 알 때만 — 시간표만으로 「곧 와요」를 하지 않는다)
 //  내림 준비 = 내릴 역(정류장) 바로 앞 역을 떠날 때: 탄 열차의 예측(leaveAtMs)을 알면 그것, 카드가 「다음 역에서 내려요」(남은 1정거장)면 지금,
-//   모르면 계획 시각(탄 때 + 타는 시간 × (정거장 − 1) ÷ 정거장 — 서버 구간에 역마다 시각이 없어 고르게 나눈다)
+//   모르면 탄 때 + 타는 시간 × (정거장 − 1) ÷ 정거장(서버 구간에 역마다 시각이 없어 고르게 나눈다). 탄 때는 타는 중이면 탄 시각,
+//   기다리는 중이면 실시간으로 올 때 — 기다리는 중에 그것을 모르면 내림 준비도 만들지 않는다(계획 시각이 이미 지났으면 승강장에서 「내리세요」가 울리고 id 가 소진된다)
 // id 는 구간 번호로(놓쳐서 다음 열차 · 버스를 기다리면 탈 준비는 새 id — tries 는 놓친 수). at 은 1970 기준 ms
 export const BOARD_ALERT_S = 120;   // 곧 와요: 도착 2분 전(2026-11-11 사용자 D2)
 export interface RideAlert { id:string; at:number; title:string; body:string }
@@ -495,6 +496,8 @@ export function rideAlerts({legs, index, step, nowMs, tries, boardAtMs, boardedM
   if (!leg || leg.type === 'walk') return [];
   const alerts:RideAlert[] = [];
   if (step === 'wait' && boardAtMs !== null) alerts.push({id: `board:${index}:${tries}`, at: boardAtMs - BOARD_ALERT_S * 1000, ...boardAlertText(leg)});
+  if (step === 'wait' && boardAtMs === null) return alerts;
+  // 타는 중에 탄 시각을 모를 때만 계획 출발 시각으로
   const boardMs = (step === 'ride' ? boardedMs : boardAtMs) ?? clockMs(leg.departs, nowMs);
   const last = step === 'ride' && stopsLeft !== null && stopsLeft <= 1;
   alerts.push({id: `alight:${index}`, at: last ? nowMs : leaveAtMs ?? alightPlanMs(leg, boardMs), ...alightAlertText(leg)});
