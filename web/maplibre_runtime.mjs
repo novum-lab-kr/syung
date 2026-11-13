@@ -1290,7 +1290,16 @@ var bodyWidthPx = (z) => {
 var TRAIN_MIN_PX = 36;
 var laneOffsetPx = (z, body = bodyWidthPx(z)) => (1.5 + 2.5 * Math.max(0, Math.min(1, (z - 8) / 7))) / 2 + 3.5 + body / 2;
 var coasterBodyPx = (z) => Math.min(bodyWidthPx(z), Math.max(7, 20 * pxPerMetre(z) / 1.6));
-var trainBodyPx = (z) => modeCtl.settings().trains.body === "slim" ? coasterBodyPx(z) : bodyWidthPx(z);
+var COMMUTER_FAR_PX = 12;
+var commuterBodyPx = (z) => {
+	const k = smooth(Math.max(0, Math.min(1, (z - 14) / 2)));
+	return ((farBodyPx(z) * (1 - k) + COMMUTER_FAR_PX * k) ** 6 + (TRAIN_CLOSE_M * pxPerMetre(z)) ** 6) ** (1 / 6);
+};
+var trainBodyPx = (z) => {
+	const s = modeCtl.settings();
+	if (s.trains.body === "slim") return coasterBodyPx(z);
+	return s.trains.look === "commuter" && s.track.kind === "ground" ? commuterBodyPx(z) : bodyWidthPx(z);
+};
 var canRide = () => {
 	const S = modeCtl.settings();
 	return S.park.enabled && S.track.kind === "coaster";
@@ -1736,8 +1745,7 @@ var TrainLayer = trainLayerClass({
 	map,
 	JOSEON_STYLE,
 	planner,
-	coasterBodyPx,
-	bodyWidthPx,
+	trainBodyPx,
 	TRAIN_MIN_PX,
 	cityViaduct,
 	laneOffsetPx,
