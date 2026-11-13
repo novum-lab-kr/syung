@@ -961,7 +961,7 @@ function cityXrayTargets() {
 			if (!journeyMap.trainShown(plan, pose.dist)) continue;
 			const q = trackPoint(plan, pose.dist);
 			if (!inV(q.x, q.y)) continue;
-			const half = Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit) / 2, a = trackPoint(plan, pose.dist - half), e = trackPoint(plan, pose.dist + half);
+			const half = (trainIcon() ? bodyPx * TRAIN_ICON_RATIO * unit : Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit)) / 2, a = trackPoint(plan, pose.dist - half), e = trackPoint(plan, pose.dist + half);
 			out.push({
 				id: "t" + plan.id,
 				ax: a.x,
@@ -1288,13 +1288,14 @@ var bodyWidthPx = (z) => {
 	return k <= 0 ? far : far * (TRAIN_CLOSE_M * pxPerMetre(z) / far) ** k;
 };
 var TRAIN_MIN_PX = 36;
+var TRAIN_ICON_RATIO = 2.7;
+var trainIcon = () => {
+	const S = modeCtl.settings();
+	return S.track.kind === "ground" && S.trains.look === "commuter";
+};
 var laneOffsetPx = (z, body = bodyWidthPx(z)) => (1.5 + 2.5 * Math.max(0, Math.min(1, (z - 8) / 7))) / 2 + 3.5 + body / 2;
 var coasterBodyPx = (z) => Math.min(bodyWidthPx(z), Math.max(7, 20 * pxPerMetre(z) / 1.6));
-var COMMUTER_FAR_PX = 12;
-var commuterBodyPx = (z) => {
-	const k = smooth(Math.max(0, Math.min(1, (z - 14) / 2)));
-	return ((farBodyPx(z) * (1 - k) + COMMUTER_FAR_PX * k) ** 6 + (TRAIN_CLOSE_M * pxPerMetre(z)) ** 6) ** (1 / 6);
-};
+var commuterBodyPx = (z) => 15 * 2 ** ((z - 13) / 4);
 var trainBodyPx = (z) => {
 	const s = modeCtl.settings();
 	if (s.trains.body === "slim") return coasterBodyPx(z);
@@ -1589,6 +1590,8 @@ var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, u
 	trackPoint,
 	mercStop,
 	TRAIN_MIN_PX,
+	TRAIN_ICON_RATIO,
+	trainIcon,
 	trainBodyPx,
 	canRide,
 	laneOffsetPx,
@@ -1747,6 +1750,7 @@ var TrainLayer = trainLayerClass({
 	planner,
 	trainBodyPx,
 	TRAIN_MIN_PX,
+	TRAIN_ICON_RATIO,
 	cityViaduct,
 	laneOffsetPx,
 	maplibregl,

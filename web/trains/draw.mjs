@@ -9,7 +9,7 @@ void main(){v_local=a_local;v_info=a_info;v_color=a_color;v_face=a_face;
 var TRAIN_FS = `#version 300 es
 precision highp float;
 in vec2 v_local;flat in vec4 v_info;flat in vec3 v_color;flat in float v_face;
-uniform float u_shadow,u_glow,u_time,u_alpha,u_commuter;out vec4 outColor;
+uniform float u_shadow,u_glow,u_time,u_alpha;out vec4 outColor;
 float box(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
 float ink(float d){float a=max(.18,fwidth(d)*.65);return 1.-smoothstep(-a,a,d);}
 float rect(vec2 p,vec2 c,vec2 b){return ink(box(p-c,b));}
@@ -18,7 +18,6 @@ void shade(){
   float L=v_info.x,W=v_info.y,kind=mod(v_info.z,4.),carPx=v_info.w,H=W*.68;
   bool front=mod(kind,2.)>.5,back=kind>1.5;
   vec2 p=v_local;vec3 col;float alpha=1.;
-  bool gnd=u_commuter>.5;   // 땅 선로의 기본 통근 열차만: 확대 디테일 · 칸 끝 이음 줄(심시티 고가 열차는 그대로)
   float endX=min(back?p.x:1e5,front?L-p.x:1e5);
   bool lead=front&&L-p.x<=endX+.001;   // nearer the running end → the cab that leads
   float nose=W*.48,halfW=W*.5;
@@ -50,7 +49,6 @@ void shade(){
     alpha=ink(edge);if(alpha<=0.)discard;
     float ay=abs(p.y),x=carPx>0.?mod(p.x,carPx):p.x;
     col=mix(vec3(.88,.91,.92),vec3(.60,.66,.70),smoothstep(W*.24,halfW,ay));
-    if(gnd)col=mix(vec3(.81,.85,.87),vec3(.50,.57,.61),smoothstep(W*.18,halfW,ay));   // 둥근 지붕: 가운데 밝고 어깨로 갈수록 어둡게(밝은 지도와 섞이지 않게)
     // Raised roof shoulder and a continuous line-colour cant rail remain legible from above.
     col=mix(col,vec3(.97,.98,.98),stroke(ay-(halfW-1.9),.20));
     col=mix(col,v_color,ink(abs(ay-(halfW-.95))-.70));
@@ -59,34 +57,7 @@ void shade(){
     float rim=ink(abs(ay-(halfW-.26))-.25);
     col=mix(col,door<min(1.1,pitch*.16)?vec3(.72,.78,.80):vec3(.12,.23,.28),rim*detail);
     vec3 cleanRoof=col;
-    if(detail>0.&&gnd){
-      // 한국 전동차 지붕: 골판 · 칸 끝 둥근 모서리 그늘 · 냉방기 둘(팬 두 개 · 그림자) · 환기구 · 가운데 점검구
-      float ribs=stroke(mod(p.y+W*7.035,W*.07)-W*.035,.11)*step(ay,W*.36)*smoothstep(10.,22.,W);
-      col=mix(col,vec3(.66,.72,.75),ribs*.55);
-      float endD=min(x,localL-x);
-      col*=mix(.84,1.,smoothstep(0.,W*.28,endD));
-      float cx=x<localL*.5?localL*.28:localL*.72;
-      vec2 q=vec2(x-cx,p.y),size=vec2(min(localL*.095,W*.75),W*.25);
-      col=mix(col,vec3(.24,.30,.34),rect(q,vec2(W*.05,W*.07),size)*.45);   // 냉방기 그림자(해 반대쪽)
-      col=mix(col,vec3(.86,.89,.90),rect(q,vec2(0),size));
-      col=mix(col,vec3(.55,.62,.66),rect(q,vec2(0),size)*stroke(box(q,size-vec2(.45)),.28));
-      for(int i=0;i<2;i++){
-        float fan=length(q-vec2((float(i)*2.-1.)*size.x*.5,0.)),r=min(W*.15,size.x*.42);
-        col=mix(col,vec3(.40,.47,.51),ink(fan-r));
-        col=mix(col,vec3(.62,.69,.72),ink(fan-r*.78)*stroke(mod(atan(q.y,q.x-(float(i)*2.-1.)*size.x*.5)*1.9+30.,1.)-.5,.18));
-        col=mix(col,vec3(.30,.36,.40),stroke(fan-r,.22));
-        col=mix(col,vec3(.28,.34,.37),ink(fan-max(.45,r*.22)));
-      }
-      col=mix(col,vec3(.50,.57,.61),rect(q,vec2(0),vec2(min(.9,size.x*.08),size.y*.82)));   // 가운데 그릴
-      vec2 v=vec2(abs(x-localL*.5)-localL*.12,p.y);   // 환기구 둘
-      col=mix(col,vec3(.36,.43,.47),rect(v,vec2(0),vec2(W*.07,W*.11)));
-      col=mix(col,vec3(.70,.76,.79),rect(vec2(x,p.y),vec2(localL*.5,0),vec2(min(1.6,W*.06),W*.17))*.8);
-      if(v_info.z>3.5){
-        vec2 q=vec2(x-localL*.5,p.y);float diamond=abs(q.x)/2.8+abs(q.y)/2.;
-        col=mix(col,vec3(.23,.29,.32),stroke(diamond-1.,.16));
-        col=mix(col,vec3(.19,.24,.27),rect(q,vec2(0),vec2(.4,W*.29)));
-      }
-    }else if(detail>0.){
+    if(detail>0.){
       // Two low-profile air-conditioning packs with end grilles and a circular fan.
       float cx=x<localL*.5?localL*.29:localL*.71;
       vec2 q=vec2(x-cx,p.y);vec2 size=vec2(min(5.7,localL*.105),W*.235);
@@ -117,11 +88,6 @@ void shade(){
       float seams=smoothstep(W*.8,W*1.5,carPx);
       float shoulder=smoothstep(W*.22,W*.36,ay);
       col=mix(col,vec3(.40,.49,.53),ink(joint-.25)*seams*mix(shoulder,.55,detail));
-    }
-    if(gnd&&carPx<=0.){
-      // 칸마다 그릴 때도 이웃 칸 쪽 끝에 이음 줄 — 마디로 그리던 칸 줄(위)이 틈이 벌어지기 전까지 끊기지 않게
-      float joint=min(back?1e5:p.x,front?1e5:L-p.x);
-      col=mix(col,vec3(.40,.49,.53),ink(joint-.25)*mix(smoothstep(W*.22,W*.36,ay),.55,detail));
     }
     if(endX<nose+.7){
       vec3 body=col;
@@ -174,19 +140,6 @@ void shade(){
       }else col=mix(col,vec3(.08,.19,.25),rect(vec2(endX,z),vec2(nose*.9,H*.72),vec2(nose*.3,H*.12)));
       if(z<1.4)col=vec3(.16,.22,.25);
     }
-    if(gnd){
-      // 유리 위쪽은 하늘을 비춰 조금 밝게(앞머리 유리는 그대로)
-      if(endX>=nose+1.)col=mix(col,vec3(.34,.48,.56),windowBand*smoothstep(H*.68,H*.84,z)*.55);
-      // 차체 아래: 바닥틀 · 기기 상자 · 대차(바퀴 둘) — 칸 앞뒤 14 % 자리
-      col=mix(col,vec3(.25,.30,.33),1.-smoothstep(H*.2-.35,H*.2+.35,z));
-      col=mix(col,vec3(.33,.39,.42),rect(vec2(x-localL*.5,z),vec2(0,H*.12),vec2(localL*.2,H*.06)));
-      col=mix(col,vec3(.22,.27,.30),rect(vec2(mod(x-localL*.3,localL*.1)-localL*.05,z),vec2(0,H*.12),vec2(.25,H*.06))*rect(vec2(x-localL*.5,z),vec2(0,H*.12),vec2(localL*.2,H*.06)));
-      float bx=x<localL*.5?x-localL*.14:x-localL*.86;
-      col=mix(col,vec3(.12,.15,.17),rect(vec2(bx,z),vec2(0,H*.11),vec2(localL*.065,H*.07)));
-      float wheel=length(vec2(abs(bx)-localL*.033,z-H*.1));
-      col=mix(col,vec3(.07,.09,.10),ink(wheel-H*.1));
-      col=mix(col,vec3(.42,.47,.50),stroke(wheel-H*.035,.2));
-    }
     vec3 simpleSide=mix(vec3(.65,.72,.75),v_color,ink(abs(z-H*.45)-H*.15));
     simpleSide=mix(simpleSide,vec3(.13,.24,.29),ink(abs(z-H*.74)-H*.13));
     col=mix(simpleSide,col,detail);
@@ -213,7 +166,7 @@ void shade(){
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
 var NOSE_Z = .3;
-function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
+function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, TRAIN_ICON_RATIO, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
 	class TrainLayer {
 		constructor() {
 			this.id = "webgl-trains";
@@ -291,8 +244,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				"u_shadow",
 				"u_glow",
 				"u_time",
-				"u_alpha",
-				"u_commuter"
+				"u_alpha"
 			].map((n) => [n, gl.getUniformLocation(this.p, n)]));
 			this.gl = gl;
 			this.kit(live.settings.trains.look);
@@ -396,6 +348,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 			}
 			const drawTrainsToo = live.trainsEnabled && !live.subwayOff;
 			const S = live.settings, K = S.track.kind, look = S.trains.look, c88 = look === "coaster88";
+			const icon = K === "ground" && look === "commuter";
 			const zoom = map.getZoom(), unit = 1 / (512 * 2 ** zoom), bodyPx = trainBodyPx(zoom), MIN_PX = TRAIN_MIN_PX, MARGIN = 3;
 			const lanePx = K !== "ground" ? cityViaduct.train(zoom, bodyPx).lanePx : laneOffsetPx(zoom, bodyPx);
 			const view = map.getBounds(), lo = maplibregl.MercatorCoordinate.fromLngLat(view.getSouthWest()), hi = maplibregl.MercatorCoordinate.fromLngLat(view.getNorthEast()), pad = (hi.x - lo.x) * .1;
@@ -448,11 +401,11 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 					x: mid.x + shiftX,
 					y: mid.y + shiftY
 				});
-				const reach = pad + Math.max(plan.cars * plan.carMetres * m, MIN_PX * unit) / 2 + lanePx * unit;
+				const reach = pad + Math.max(plan.cars * plan.carMetres * m, MIN_PX * unit, icon ? bodyPx * TRAIN_ICON_RATIO * unit : 0) / 2 + lanePx * unit;
 				if (!snap && (mid.x < lo.x - reach || mid.x > hi.x + reach || mid.y > lo.y + reach || mid.y < hi.y - reach)) continue;
 				if (pose.moving || snap && trainPose(plan).moving) animating = true;
 				else waiting = true;
-				const n = plan.cars, real = n * plan.carMetres * m, total = Math.max(real, MIN_PX * unit, c88 ? n * bodyPx * 1.6 * unit : 0), car = total / n, tail = (K === "coaster" ? toRide(plan, pose.dist) : pose.dist) - total / 2;
+				const n = plan.cars, real = n * plan.carMetres * m, total = icon ? bodyPx * TRAIN_ICON_RATIO * unit : Math.max(real, MIN_PX * unit, c88 ? n * bodyPx * 1.6 * unit : 0), car = total / n, tail = (K === "coaster" ? toRide(plan, pose.dist) : pose.dist) - total / 2;
 				let color = this.rgb.get(plan.t.line);
 				if (!color) {
 					color = hexRGB(colors[plan.t.line]);
@@ -501,7 +454,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 					for (let j = 0; j < r; j++) one(tail + j * span, span, U.rest, j + 1);
 					continue;
 				}
-				const ratio = car / unit / bodyPx, separate = c88 || ratio >= 1.5;
+				const ratio = car / unit / bodyPx, separate = !icon && (c88 || ratio >= 1.5);
 				const unfold = c88 ? 1 : smooth(Math.max(0, Math.min(1, (ratio - 1.5) / .9))), gap = 1.4 * unit * unfold;
 				const start = P(tail), finish = P(tail + total);
 				const follow = K === "viaduct" ? unfold : 1;
@@ -512,7 +465,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 					q.h = (start.h + (finish.h - start.h) * t) * (1 - follow) + q.h * follow;
 					return q;
 				};
-				const bends = K !== "ground" ? 1 : Math.max(1, Math.min(n, Math.floor(total / unit / (bodyPx * .8))));
+				const bends = K !== "ground" || icon ? 1 : Math.max(1, Math.min(n, Math.floor(total / unit / (bodyPx * .8))));
 				if (separate) {
 					const forward = mid.f[0] * camX + mid.f[1] * camY >= 0;
 					for (let k = 0; k < n; k++) {
@@ -729,7 +682,6 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				ptr("a_color", 3, 36);
 				ptr("a_face", 1, 48);
 				gl.uniform1f(this.uni.u_glow, document.documentElement.dataset.theme === "dark" ? .62 : .3);
-				gl.uniform1f(this.uni.u_commuter, K === "ground" && look === "commuter" ? 1 : 0);
 				gl.uniform1f(this.uni.u_time, performance.now() / 1e3);
 				const SS = K === "viaduct" ? cityViaduct.shadowShift(sunPosition()) : [0, 0];
 				const pass = (alpha) => {

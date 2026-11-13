@@ -4,7 +4,7 @@ import { TRAIN_SHEET_CSS } from "../components/train_sheet.mjs";
 import { drawTrainSheet } from "./train_sheet.mjs";
 import { LIVE_NOTICE_CSS } from "../components/live_notice.mjs";
 // web/ui/popups.mts
-function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheetView, follow, sheetUI, sheetBody, followBtn, live }) {
+function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainPose, trackPoint, mercStop, TRAIN_MIN_PX, TRAIN_ICON_RATIO, trainIcon, trainBodyPx, canRide, laneOffsetPx, cityViaduct, seatPickerHTML, seatLabel, rideRows, rider, openSheetView, follow, sheetUI, sheetBody, followBtn, live }) {
 	function trainState(plan) {
 		let el = age(plan.t.receivedAt) + plan.lead, ph = plan.phases[plan.phases.length - 1];
 		plan.phases.length - 1;
@@ -104,8 +104,9 @@ function createPopups({ map, maplibregl, planner, colors, age, destLabel, trainP
 		for (const plan of planner.plans) {
 			const pose = trainPose(plan);
 			if (!live.trainShown(plan, pose.dist)) continue;
-			const m = mercStop(plan.t.line, plan.seq[0]).meterInMercatorCoordinateUnits(), half = Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit) / 2;
-			const Z = map.getZoom(), lane = live.settings.track.kind !== "ground" ? cityViaduct.train(Z, trainBodyPx(Z)).lanePx : laneOffsetPx(Z, trainBodyPx(Z)), P = (d) => {
+			const Z = map.getZoom();
+			const m = mercStop(plan.t.line, plan.seq[0]).meterInMercatorCoordinateUnits(), half = (trainIcon() ? trainBodyPx(Z) * TRAIN_ICON_RATIO * unit : Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit)) / 2;
+			const lane = live.settings.track.kind !== "ground" ? cityViaduct.train(Z, trainBodyPx(Z)).lanePx : laneOffsetPx(Z, trainBodyPx(Z)), P = (d) => {
 				const q = trackPoint(plan, d), o = (q.off + lane) * unit, X = q.x + q.r[0] * o, Y = q.y + q.r[1] * o;
 				return live.settings.track.kind !== "ground" ? cityViaduct.screen(map, X, Y, q.h) : map.project(new maplibregl.MercatorCoordinate(X, Y, 0).toLngLat());
 			};
