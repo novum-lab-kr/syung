@@ -463,7 +463,7 @@ function cityXrayTargets(){
     out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,...box})}
   if(X.trains&&trainsEnabled){const bodyPx=trainBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
     for(const plan of planner.plans){const pose=trainPose(plan);if(!journeyMap.trainShown(plan,pose.dist))continue;const q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;   // 길찾기에 숨긴 열차는 건물 뒤 비침도 없다
-      const half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
+      const half=(trainIcon()?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit))/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
       out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
 // 켬 · 끔: 설정 창 버튼(이 기기에 저장) — 처음 읽을 때 주소 #prebuild · #noprebuild 가 먼저, 아무것도 없으면 휴대폰 끔 · 컴퓨터 켬
@@ -577,15 +577,15 @@ const farBodyPx=(z:number)=>15+13*smooth(Math.max(0,Math.min(1,(z-13)/4)));
 // 걸려 z18.5 부터 지도는 커지는데 열차 · 고가 · 수로는 28 px 에 멈춰 상대적으로 가늘어졌다)
 const bodyWidthPx=(z:number)=>{const far=farBodyPx(z),k=smooth(Math.max(0,Math.min(1,(z-TRAIN_CLOSE_ZOOM[0]!)/(TRAIN_CLOSE_ZOOM[1]!-TRAIN_CLOSE_ZOOM[0]!))));
   return k<=0?far:far*(TRAIN_CLOSE_M*pxPerMetre(z)/far)**k},TRAIN_MIN_PX=36;   // min on-screen length when zoomed out; 줄어드는 구간은 비율로 이어서 매끄럽게
+const TRAIN_ICON_RATIO=2.7;   // 땅 선로 통근 열차: 칸 나눔 없는 캡슐 한 덩어리의 길이 ÷ 몸 폭(운영 낮은 줌 막대 아이콘 — 줌 13 2.4 · 줌 14 3.1 사이) — 그리기 · 고르기 · 건물 비침이 같이 쓴다
+const trainIcon=()=>{const S=modeCtl.settings();return S.track.kind==='ground'&&S.trains.look==='commuter'};
 const laneOffsetPx=(z:number,body=bodyWidthPx(z))=>(1.5+2.5*Math.max(0,Math.min(1,(z-8)/7)))/2+3.5+body/2;
 // on the coaster (always car by car) zoomed out: a slimmer body, so a 20 m car stays longer than wide (≥ 7 px across)
 const coasterBodyPx=(z:number)=>Math.min(bodyWidthPx(z),Math.max(7,20*pxPerMetre(z)/1.6));
-// 기본 통근 열차(trains.look commuter · 땅 선로 · 굵은 몸): 줌 14 까지는 bodyWidthPx 와 같고, 줌 14→16 에 화면 폭을
-// COMMUTER_FAR_PX 로 천천히 줄이면서 실제 폭(TRAIN_CLOSE_M)과 부드럽게 겹친다 — 줌 16 의 뭉툭한 통(26 px)이 줌 17 에서
-// 가는 칸 줄(10 px)로 갈아 끼워지던 것(2026-11-13). 줌 17 에서 약 12.5 px(실제 약 6 m — 출구 · 보도를 덮던 13 m 보다 가늘다),
-// 줌 18 위로는 bodyWidthPx 와 거의 같다(실제 폭)
-const COMMUTER_FAR_PX=12,commuterBodyPx=(z:number)=>{const k=smooth(Math.max(0,Math.min(1,(z-14)/2))),far=farBodyPx(z)*(1-k)+COMMUTER_FAR_PX*k;
-  return (far**6+(TRAIN_CLOSE_M*pxPerMetre(z))**6)**(1/6)};
+// 기본 통근 열차(trains.look commuter · 땅 선로): 모든 줌에서 같은 캡슐 한 덩어리(길이 = 폭 × TRAIN_ICON_RATIO)를 크기만 바꿔 그린다
+// (2026-11-13 사용자: 운영 낮은 줌처럼 하나만 보이게). 폭은 줌 13 에서 운영과 같은 15 px, 줌 하나 오를 때마다 2^(1/4)배(줌 15 약 21 · 17 약 30 · 19 약 42 px)
+// — 실제 크기를 따르지 않는 아이콘이라 가까이서는 실제 열차(10량 200 m)보다 짧다
+const commuterBodyPx=(z:number)=>15*2**((z-13)/4);
 // 지금 모드의 열차 굵기(trains.body: wide · slim) — 그리기 · 클릭 · 고가 상판 · x-ray 가 같은 값을 쓴다
 const trainBodyPx=(z:number)=>{const s=modeCtl.settings();if(s.trains.body==='slim')return coasterBodyPx(z);return s.trains.look==='commuter'&&s.track.kind==='ground'?commuterBodyPx(z):bodyWidthPx(z)};
 // 1인칭으로 탈 수 있는지: 공원이 켜져 있고 롤코 길 위(자리 고르기 버튼 · 타기 · 내린 뒤 정보창이 같은 조건)
@@ -653,7 +653,7 @@ if(location.hash.includes('fps')){const o=document.createElement('pre');o.style.
     iv.length=js.length=cam.length=0},1000)}
 map.on('movestart',e=>{if(rider.ride&&e.originalEvent)stopRide(false)});   // 끌기 · 확대 · 돌리기: 사람이 카메라를 잡으면 내려요
 
-const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,
+const popups=createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,TRAIN_ICON_RATIO,trainIcon,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,
   live:{trainShown:(p,d)=>journeyMap.trainShown(p,d),get settings(){return modeCtl.settings()},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get exits(){return exits},get feed(){return feed}}});   // 열차 · 역 정보창, 열차 고르기, 실시간 알림
 const {trainState,riderState,trainNow,showTrainPopup,pickTrain,liveNotice,updateLiveNotice,arrivalText,arrivalRank,showStationPopup}=popups;
 // 타고 가기: 걷기 → 기다리기 → 타기 → 도착 카드(지도 위 열차를 누르면 탄 열차 바로잡기 — 같은 노선이면 시트를 열지 않는다)
@@ -680,7 +680,7 @@ const hexRGB3=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),1
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
 const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),journeyTrain:p=>rideAlong.rideTrain(p)||journeyMap.journeyTrain(p),   // 타고 가는 열차는 늘 보이고 둘레가 퍼진다(ui/ride_along)
 get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return meHidden?null:(me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get riding(){return riding}};
-const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
+const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected,getLook:()=>modeCtl.settings().map.exitLook});
 // 롤코 선로(modes/coaster/track.mjs)

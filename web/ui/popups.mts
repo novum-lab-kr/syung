@@ -28,14 +28,14 @@ interface SheetUI { sheetTrain:string|null; sheetToken:number; following:string|
 export interface PopupsDeps {
   map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:{ plans:TrainPlan[] }; colors:Record<string,string>;
   age:(v:unknown)=>number; destLabel:(t:LiveTrain)=>string; trainPose:(plan:TrainPlan)=>{ dist:number; moving?:boolean };
-  trackPoint:(plan:TrainPlan, dist:number)=>TrackPoint; mercStop:(line:string, s:MapStation)=>Merc; TRAIN_MIN_PX:number;
+  trackPoint:(plan:TrainPlan, dist:number)=>TrackPoint; mercStop:(line:string, s:MapStation)=>Merc; TRAIN_MIN_PX:number; TRAIN_ICON_RATIO:number; trainIcon:()=>boolean;
   trainBodyPx:(zoom:number)=>number; canRide:()=>boolean; laneOffsetPx:(zoom:number, bodyPx?:number)=>number;
   cityViaduct:{ train(zoom:number, bodyPx:number):{ lanePx:number }; screen(map:MapLibre, x:number, y:number, h:number):{ x:number; y:number } };
   seatPickerHTML:typeof import('../modes/coaster/first_person.mts').seatPickerHTML; seatLabel:typeof import('../modes/coaster/first_person.mts').seatLabel; rideRows:(plan:TrainPlan)=>number;
   rider:{ seat:import('../modes/coaster/first_person.mts').Seat }; openSheetView:(mount:(body:HTMLElement)=>()=>void)=>number; follow:(id:string)=>void; sheetUI:SheetUI; sheetBody:HTMLElement;
   followBtn:HTMLElement; live:PopupsLive;
 }
-export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,live}:PopupsDeps){
+export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainPose,trackPoint,mercStop,TRAIN_MIN_PX,TRAIN_ICON_RATIO,trainIcon,trainBodyPx,canRide,laneOffsetPx,cityViaduct,seatPickerHTML,seatLabel,rideRows,rider,openSheetView,follow,sheetUI,sheetBody,followBtn,live}:PopupsDeps){
   // ---- train inspector ----------------------------------------------------------------------
   // Click a train (or its tag): show the raw live-feed record next to what the map is doing with it.
   function trainState(plan:TrainPlan):string{
@@ -91,8 +91,9 @@ export function createPopups({map,maplibregl,planner,colors,age,destLabel,trainP
     const unit=1/(512*2**map.getZoom());let best:{plan:TrainPlan,d:number}|null=null;
     for(const plan of planner.plans){
       const pose=trainPose(plan);if(!live.trainShown(plan,pose.dist))continue;   // 길찾기에 숨긴 열차는 눌리지도 않게
-      const m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits(),half=Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit)/2;
-      const Z=map.getZoom(),lane=live.settings.track.kind!=='ground'?cityViaduct.train(Z,trainBodyPx(Z)).lanePx:laneOffsetPx(Z,trainBodyPx(Z)),P=(d:number)=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return live.settings.track.kind!=='ground'?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
+      const Z=map.getZoom();   // 땅 선로 통근 열차는 실제 길이가 아닌 캡슐 아이콘 길이로 그린다 — 그린 길이대로 고른다
+      const m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits(),half=(trainIcon()?trainBodyPx(Z)*TRAIN_ICON_RATIO*unit:Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit))/2;
+      const lane=live.settings.track.kind!=='ground'?cityViaduct.train(Z,trainBodyPx(Z)).lanePx:laneOffsetPx(Z,trainBodyPx(Z)),P=(d:number)=>{const q=trackPoint(plan,d),o=(q.off+lane)*unit,X=q.x+q.r[0]*o,Y=q.y+q.r[1]*o;return live.settings.track.kind!=='ground'?cityViaduct.screen(map,X,Y,q.h):map.project(new maplibregl.MercatorCoordinate(X,Y,0).toLngLat())};   // city-life: 심시티 — picked where it is drawn, up on the viaduct
       const A=P(pose.dist-half),B=P(pose.dist+half),dx=B.x-A.x,dy=B.y-A.y,l2=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((point.x-A.x)*dx+(point.y-A.y)*dy)/l2));
       const d=Math.hypot(point.x-(A.x+dx*u),point.y-(A.y+dy*u));
       if(d<14&&(!best||d<best.d))best={plan,d};
