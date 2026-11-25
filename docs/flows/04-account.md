@@ -74,18 +74,18 @@ flowchart TD
 ## 관련 코드
 | 무엇 | 경로:줄 |
 |---|---|
-| 서랍의 회원 줄 · 로그인 팝업 · 프로필 팝업 껍데기 | `web/index.html:63` · `web/index.html:77-79` |
-| 회원 코드 늦게 받기(`login=` 이면 바로) | `web/maplibre_runtime.mts:935-939` |
-| 로그인 방법 · 지금 로그인한 사람 받기 | `web/user/account.mts:136-146` |
-| 로그인 오류 문구 · 로그인 방법 단추 | `web/user/account.mts:42-46` · `web/user/account.mts:50` · `web/user/account.mts:147-152` |
-| 로그인 팝업 열기 · 닫기 · Esc · Tab | `web/user/account.mts:214-242` |
-| 줄 보이기(로그인 됨 · 안 됨) | `web/user/account.mts:245-253` |
-| 프로필 수정(열기 · 닫기 · 사진 · 캐릭터 · 저장) | `web/user/account.mts:254-363` |
-| 사용 횟수 | `web/user/account.mts:759-763` |
-| 내 정보 받기 · 기기 로그아웃 · 내려받기 | `web/user/account.mts:766-815` |
-| 로그아웃 · 탈퇴 | `web/user/account.mts:817-828` |
-| 로그인에서 돌아옴 | `web/user/account.mts:841-849` |
-| 내 정보 쪽 · 프로필 팝업 몸통 그리기 | `web/user/account_view.tsx:79-150` |
+| 서랍의 회원 줄 · 로그인 팝업 · 프로필 팝업 껍데기 | `web/index.html:64` · `web/index.html:78-80` |
+| 회원 코드 늦게 받기(`login=` 이면 바로) | `web/maplibre_runtime.mts:1060-1064` |
+| 로그인 방법 · 지금 로그인한 사람 받기 | `web/user/account.mts:142-152` |
+| 로그인 오류 문구 · 로그인 방법 단추 | `web/user/account.mts:48-52` · `web/components/login_sheet.tsx:7` · `web/user/account.mts:153-158` |
+| 로그인 팝업 열기 · 닫기 · Esc · Tab | `web/user/account.mts:220-249` |
+| 줄 보이기(로그인 됨 · 안 됨) | `web/user/account.mts:265-274` |
+| 프로필 수정(열기 · 닫기 · 사진 · 캐릭터 · 저장) | `web/user/account.mts:275-384` |
+| 사용 횟수 | `web/user/account.mts:771-775` |
+| 내 정보 받기 · 기기 로그아웃 · 내려받기 | `web/user/account.mts:778-827` |
+| 로그아웃 · 탈퇴 | `web/user/account.mts:829-840` |
+| 로그인에서 돌아옴 | `web/user/account.mts:853-878` |
+| 내 정보 쪽 · 프로필 팝업 몸통 그리기 | `web/user/account_view.tsx:73-89` |
 
 ## 확인 필요
-- 로그인 성공(`#login=ok` · `new`)으로 돌아왔을 때 안내(토스트 등)가 없다 — 서랍의 줄이 바뀐 것 말고는 알림이 없다. 코드 주석은 의도로 적혀 있다(`web/user/account.mts:841-842`). 처음 가입(`new`)도 같은 화면인지 정책 확인 필요
+- 로그인 성공(`#login=ok` · `new`)으로 돌아왔을 때 안내(토스트 등)가 없다 — 서랍의 줄이 바뀐 것 말고는 알림이 없다. 코드 주석은 의도로 적혀 있다(`web/user/account.mts:853-854`). 처음 가입(`new`)도 같은 화면인지 정책 확인 필요

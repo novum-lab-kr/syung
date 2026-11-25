@@ -97,22 +97,22 @@ flowchart TD
 ## 관련 코드
 | 무엇 | 경로:줄 |
 |---|---|
-| 서랍의 승차권 줄 · 세 쪽 | `web/index.html:63` · `web/user/tickets_view.tsx:210`(쪽 목록 `PAGES`) |
-| 목록 받기 · 그리기 · 뒤집기 · 뒷면 경로 | `web/user/account.mts:365-383` · `web/user/account.mts:839` · `web/user/account.mts:117-133` |
-| 카드 앞 · 뒷면 · 목록 쪽 | `web/user/tickets_view.tsx:80-113` |
-| ‹ 차례(경로 → 발권 → 목록) | `web/user/account.mts:385-389` |
-| 요일 · 경로 풀림 | `web/user/account.mts:395-407` |
-| 장소 찾기 · 고르기 · 위치 핀 | `web/user/account.mts:410-481` |
-| 출발 시각 휠 | `web/user/account.mts:482-540` |
-| 경로 찾기 · 고르기 · 종류 탭 | `web/user/account.mts:542-597` |
-| 경로 선택 쪽 지도 · Esc | `web/user/account.mts:599-633` |
-| 지도에서 보기 · 아래 막대 | `web/user/account.mts:634-707` |
-| 발권 화면 열기 · 저장 · 지우기 | `web/user/account.mts:709-748` |
-| 발권 화면 · 경로 선택 쪽 그리기 | `web/user/tickets_view.tsx:144-207` |
-| 지도에 그리기(본체 쪽 — 길찾기 경로를 놓게 함) | `web/maplibre_runtime.mts:597` |
+| 서랍의 승차권 줄 · 세 쪽 | `web/index.html:64` · `web/user/tickets_view.tsx:121`(쪽 목록 `PAGES`) |
+| 목록 받기 · 그리기 · 뒤집기 · 뒷면 경로 | `web/user/account.mts:386-404` · `web/user/account.mts:851` · `web/user/account.mts:119-135` |
+| 카드 앞 · 뒷면 · 목록 쪽 | `web/user/tickets_view.tsx:79-88` · `web/components/ticket_card.tsx` |
+| ‹ 차례(경로 → 발권 → 목록) | `web/user/account.mts:409-417` |
+| 요일 · 경로 풀림 | `web/user/account.mts:423-435` |
+| 장소 찾기 · 고르기 · 위치 핀 | `web/user/account.mts:438-509` |
+| 출발 시각 휠 | `web/user/account.mts:510-525` |
+| 경로 찾기 · 고르기 · 종류 탭 | `web/user/account.mts:527-582` |
+| 경로 선택 쪽 지도 · Esc | `web/user/account.mts:584-626` |
+| 지도에서 보기 · 아래 막대 | `web/user/account.mts:627-700` |
+| 발권 화면 열기 · 저장 · 지우기 | `web/user/account.mts:702-760` |
+| 발권 화면 · 경로 선택 쪽 그리기 | `web/user/tickets_view.tsx:96-120` · `web/components/ticket_form.tsx` · `web/components/route_picker.tsx` |
+| 지도에 그리기(본체 쪽 — 길찾기 경로를 놓게 함) | `web/maplibre_runtime.mts:658` |
 | 같은 길 묶기 · 다음 탈 날 · 종류 탭 셈 | `web/user/ticket_routes.mts` |
 
 ## 확인 필요
-- **타는 날 없이 저장된다** — 새 승차권은 타는 날이 비어 있고, 저장 때 요일을 검사하지 않는다(서버도 빈 목록을 받는다 `server/services/members.py:212-216`). 뒷면에는 「타는 날 없음」으로 보인다. 요일을 꼭 고르게 할지 정책 확인 필요
-- `web/user/account.mts:627` 주석에 「경유지 목록이 펼쳐져 있으면 목록이 먼저」가 남아 있다 — 경유지는 #127 에서 빠졌고 코드가 보는 것은 장소 목록(`placeFor`)이다. 주석만 옛 글로 보인다(동작 영향 없음 · 고치지 않음)
-- 서버의 발권 본문에는 아직 `via`(경유지) 칸이 있다(`server/services/members.py:200` · `server/routes/members.py:17`) — 웹은 보내지 않는다. 서버 쪽에서 남겨 둘지는 syung-be 확인 필요
+- **타는 날 없이 저장된다** — 새 승차권은 타는 날이 비어 있고, 저장 때 요일을 검사하지 않는다(서버도 빈 목록을 받는다 `server/services/members.py:237-241`). 뒷면에는 「타는 날 없음」으로 보인다. 요일을 꼭 고르게 할지 정책 확인 필요
+- `web/user/account.mts:613` 주석에 「경유지 목록이 펼쳐져 있으면 목록이 먼저」가 남아 있다 — 경유지는 #127 에서 빠졌고 코드가 보는 것은 장소 목록(`placeFor`)이다. 주석만 옛 글로 보인다(동작 영향 없음 · 고치지 않음)
+- 서버의 발권 본문에는 아직 `via`(경유지) 칸이 있다(`server/services/members.py:225` · `server/routes/members.py:26`) — 웹은 보내지 않는다. 서버 쪽에서 남겨 둘지는 syung-be 확인 필요
