@@ -53,7 +53,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		followHeld(fix.spot);
 		tick();
 		const current = step();
-		if (following && current && current.kind !== "done" && !(current.kind === "ride" && legAt(current.leg)?.type === "ride") && nearEdge(fix.spot)) map.easeTo({
+		if (following && current && current.kind !== "done" && !(current.kind === "ride" && legAt(current.leg)?.type === "ride") && !infoOn && nearEdge(fix.spot)) map.easeTo({
 			center: [...fix.spot],
 			zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
 			padding: pad(),
@@ -244,6 +244,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			}
 			stopTimers();
 			unlocate();
+			doneTimer = setTimeout(() => actions.close(), DONE_CLOSE_MS);
 			const end = endSpot() ?? spot;
 			if (end) map.easeTo({
 				center: [...end],
@@ -642,10 +643,31 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			};
 			const list = ride.arrivalsFor === current.leg ? arrivalSecs()?.map((item) => item.s) ?? null : null;
 			const arrived = !!list && pickedIn(transit);
-			return {
+			const card = {
 				...base,
 				title: waitTitle(transit),
 				...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())
+			};
+			const previous = legAt(current.leg - 1);
+			const stops = previous?.type === "ride" ? rideList(ride.legs, current.leg - 1, {
+				now: previous.to,
+				next: null
+			}, stopNames, legColor) : null;
+			if (!stops) return card;
+			const rows = stops.rows.map((row, order) => order === stops.at && row.kind === "stop" ? {
+				...row,
+				off: false
+			} : row);
+			return {
+				...card,
+				info: {
+					here: weatherSpot(),
+					talk: null,
+					list: {
+						...stops,
+						rows
+					}
+				}
 			};
 		}
 		const { left, where } = rideProgress(transit);
@@ -934,6 +956,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			if (current?.kind === "wait") loadBusArrivals(current.leg);
 		}, BUS_ARRIVALS_MS);
 	}
+	const DONE_CLOSE_MS = 15e3;
+	let doneTimer = 0;
 	function stopTimers() {
 		clearInterval(timer);
 		clearInterval(arrivalsTimer);
@@ -1023,6 +1047,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		const log = devLog();
 		if (log?.recording) log.end("그만둠", logInfo());
 		stopTimers();
+		clearTimeout(doneTimer);
+		doneTimer = 0;
 		ride = null;
 		painted = "";
 		setInfo(false);

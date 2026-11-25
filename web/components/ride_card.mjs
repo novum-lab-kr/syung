@@ -389,9 +389,9 @@ var SKY_CRAYON = /* @__PURE__ */ a("filter", {
 	]
 });
 var TEXT_CRAYON = /* @__PURE__ */ a(M, { children: [textCrayon("rg-text-crayon", .9, "-2.2 2.3"), textCrayon("rg-text-crayon-big", 1.6, "-2.6 2.4")] });
-function RideEdge({ color, top, bottom }) {
-	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("i", {
-		class: `rg-edge top${top ? "" : " off"}`,
+function RideHatch({ color, past }) {
+	return /* @__PURE__ */ a("i", {
+		class: `rg-edge top${past ? " past" : ""}`,
 		"aria-hidden": "true",
 		children: /* @__PURE__ */ a("svg", {
 			viewBox: "0 0 44 56",
@@ -423,7 +423,10 @@ function RideEdge({ color, top, bottom }) {
 				]
 			})
 		})
-	}), /* @__PURE__ */ a("i", {
+	});
+}
+function RideEdge({ color, bottom }) {
+	return /* @__PURE__ */ a(M, { children: /* @__PURE__ */ a("i", {
 		class: `rg-edge bottom${bottom ? "" : " off"}`,
 		"aria-hidden": "true",
 		children: /* @__PURE__ */ a("svg", {
@@ -484,7 +487,7 @@ function RideEdge({ color, top, bottom }) {
 				})
 			]
 		})
-	})] });
+	}) });
 }
 var LIST_ROW_PX = 40;
 var EDGE_BOTTOM_PX = 76;
@@ -535,7 +538,10 @@ function RideList({ list }) {
 			},
 			onTouchEnd: release,
 			onTouchCancel: release,
-			children: /* @__PURE__ */ a("ol", {
+			children: [headColor && /* @__PURE__ */ a(RideHatch, {
+				color: headColor,
+				past: focus > 0
+			}), /* @__PURE__ */ a("ol", {
 				class: focus > 0 ? "head-past" : void 0,
 				style: headColor ? `--rg-head:${headColor}` : void 0,
 				children: list.rows.map((row, order) => {
@@ -558,10 +564,9 @@ function RideList({ list }) {
 						children: [now && /* @__PURE__ */ a("small", { children: note }), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "여기서 내려요" })] })]
 					});
 				})
-			})
+			})]
 		}), lined && /* @__PURE__ */ a(RideEdge, {
 			color: lined.color,
-			top: !!headColor,
 			bottom
 		})]
 	});
@@ -608,15 +613,11 @@ function ArrivalCard({ view, actions, map, hideMe }) {
 	});
 }
 function drawRideCard(host, view, actions, map, hideMe) {
-	const goal = view?.goal?.at, flag = map && goal ? /* @__PURE__ */ a(GoalFlag, {
+	const goal = view?.goal?.at, flag = map && goal && !view?.arrival ? /* @__PURE__ */ a(GoalFlag, {
 		map,
 		at: goal
 	}, "goal") : null;
-	const draw = (body, flagOnTop = false) => K(flag ? /* @__PURE__ */ a(M, { children: [
-		flagOnTop ? null : flag,
-		body,
-		flagOnTop ? flag : null
-	] }) : body, host);
+	const draw = (body) => K(flag ? /* @__PURE__ */ a(M, { children: [flag, body] }) : body, host);
 	const at = view?.arrival?.at;
 	if (view?.arrival && map && at) {
 		draw(/* @__PURE__ */ a(ArrivalCard, {
@@ -624,7 +625,7 @@ function drawRideCard(host, view, actions, map, hideMe) {
 			actions,
 			map,
 			hideMe
-		}, "arrival"), true);
+		}, "arrival"));
 		return;
 	}
 	const card = view ? /* @__PURE__ */ a(RideCard, {
