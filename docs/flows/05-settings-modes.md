@@ -61,19 +61,19 @@ flowchart TD
 ## 관련 코드
 | 무엇 | 경로:줄 |
 |---|---|
-| 서랍 · 목록 · 쪽 껍데기 | `web/index.html:60-67` |
-| 서랍 열기 · 닫기 · 쪽 이동 · Esc · Tab · 바깥 누르기 | `web/maplibre_runtime.mts:886-933` |
-| 새로고침 단추 | `web/maplibre_runtime.mts:889` |
-| 테마 그리기 · 저장 | `web/ui/settings_menu.tsx:91-99` · `web/map/theme.mts:93-94` |
-| 모드 스위치 · 종족 · 나라 · 속도 그리기 | `web/ui/settings_menu.tsx:61-79` |
-| 모드 상태의 주인(요청 · 취소 · 실패) | `web/modes/transition.mts:32-35` · 연결 `web/maplibre_runtime.mts:400-401` |
-| 모드 준비 · 바꾸는 중 알림 | `web/maplibre_runtime.mts:804-829` |
-| 모드 바꾸기 · 끄기 · 스위치 연결 | `web/maplibre_runtime.mts:831-879` |
-| 건물 미리 짓기 · 절전 | `web/ui/settings_menu.tsx:81-89` · `web/maplibre_runtime.mts:880-883` · `web/maplibre_runtime.mts:446-450` · `web/maplibre_runtime.mts:735` |
-| 기기 저장 이름 | `web/user/prefs.mts:6` |
+| 서랍 · 목록 · 쪽 껍데기 | `web/index.html:60-68` |
+| 서랍 열기 · 닫기 · 쪽 이동 · Esc · Tab · 바깥 누르기 | `web/maplibre_runtime.mts:1011-1058` |
+| 새로고침 단추 | `web/maplibre_runtime.mts:1014` |
+| 테마 그리기 · 저장 | `web/components/settings.tsx:39-44` · `web/map/theme.mts:54` · `web/map/theme.mts:111` |
+| 모드 스위치 · 종족 · 나라 · 속도 그리기 | `web/components/settings.tsx:67-86` |
+| 모드 상태의 주인(요청 · 취소 · 실패) | `web/modes/transition.mts:32-35` · 연결 `web/maplibre_runtime.mts:446-447` |
+| 모드 준비 · 바꾸는 중 알림 | `web/maplibre_runtime.mts:924-949` |
+| 모드 바꾸기 · 끄기 · 스위치 연결 | `web/maplibre_runtime.mts:951-1001` |
+| 건물 미리 짓기 · 절전 | `web/components/settings.tsx:90-93` · `web/maplibre_runtime.mts:1004-1010` · `web/maplibre_runtime.mts:492-496` · `web/maplibre_runtime.mts:851` |
+| 기기 저장 이름 | `web/user/prefs.mts:7` |
 
 ## 확인 필요
-- **모드는 새로고침하면 기본으로 돌아온다** — 저장 이름 목록(`web/user/prefs.mts:6`)에 모드가 없어 고른 모드를 기억하지 않는다. 의도된 동작인지 확인 필요
-- **모드 준비 실패에 안내가 없다** — 자료 받기가 실패하면 스위치만 지금 모드로 돌아가고 콘솔 오류만 남는다(`web/modes/transition.mts:35` · `web/maplibre_runtime.mts:400`). 사람에게 알릴지 확인 필요
+- **모드는 새로고침하면 기본으로 돌아온다** — 저장 이름 목록(`web/user/prefs.mts:7`)에 모드가 없어 고른 모드를 기억하지 않는다. 의도된 동작인지 확인 필요
+- **모드 준비 실패에 안내가 없다** — 자료 받기가 실패하면 스위치만 지금 모드로 돌아가고 콘솔 오류만 남는다(`web/modes/transition.mts:35` · `web/maplibre_runtime.mts:446`). 사람에게 알릴지 확인 필요
 - 지도 색(`subway-map-color` — calm · color) 저장 이름은 있지만 고르는 화면이 서랍에 없다(값은 모드 설정 `web/modes/basic/index.mts:13` 에서만 온다). 화면을 만들 계획인지 확인 필요
 - 롤러코스터의 열차 타기(열차 시트의 자리 고르기 · 타기)는 이번 흐름 목록에 없어 적지 않았다

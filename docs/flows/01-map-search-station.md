@@ -47,7 +47,7 @@ flowchart TD
 ```
 
 ## 단계
-1. **지도 열기** — 머리줄 상태 글자는 「실시간 열차 불러오는 중」으로 시작한다(`web/index.html:46`).
+1. **지도 열기** — 머리줄 상태 글자는 「실시간 열차 불러오는 중」으로 시작한다(`web/index.html:48`).
 2. **첫 위치** — 처음 그려질 때 위치를 한 번 묻는다. 수도권 상자 안이면 내 위치 단추를 누른 것처럼 확대하고, 거부 · 수도권 밖 · 위치 기능 없음이면 전체 노선도 그대로 둔다(안내 없음).
 3. **실시간 열차** — 줌 13 이상에서 화면에 보이는 노선의 열차를 받는다. 상태 글자: 「… 열차 위치 확인 중」 → 「추정 위치 N대 · 노선 · 시각」. 지도를 옮기면 0.6초 뒤, 그 밖에는 10초마다 살펴 19초가 지났거나 열차 시트가 열려 있으면 다시 받는다.
 4. **역 찾기** — 「어디로 갈까요?」 장소 검색에 치면 맞는 역(끝의 「역」은 떼고 비교 · 같은 이름 → 앞이 같은 이름 → 포함 차례)이 장소와 한 목록으로 나온다. 고르면 슝 마커와 작은 시트가 뜨고, 「곧 오는 열차」를 누르면 역 시트를 연다. 자세히는 [06](06-search-merge.md).
@@ -74,15 +74,15 @@ flowchart TD
 | 무엇 | 경로:줄 |
 |---|---|
 | 머리줄 · 길찾기 단추 · 지도 오류 칸 | `web/index.html` 머리줄 · `#routeButton` · `#error` |
-| 첫 위치 · 위치 권한 안내 | `web/maplibre_runtime.mts:350-374` |
-| 지도 누르기(열차 → 버스 → 시트 닫기) · 역 점 누르기 | `web/maplibre_runtime.mts:674-675` |
+| 첫 위치 · 위치 권한 안내 | `web/maplibre_runtime.mts:364-411` |
+| 지도 누르기(열차 → 버스 → 시트 닫기) · 역 점 누르기 | `web/maplibre_runtime.mts:745-746` |
 | 역 · 장소 찾기 | `web/lib/place-search.mts` · `web/lib/journey-ui.mts` `typed` · `web/components/place_search.tsx` |
-| 실시간 받기 · 상태 글자 · 받기 주기 | `web/trains/live_feed.mts:36-60` · `web/trains/live_feed.mts:69-72` |
-| 지도 위 띠(끊김 · 3분 멈춤) | `web/ui/popups.mts:99-105` |
-| 역 시트 열기(0.7초 · 15초 다시 그리기) | `web/ui/popups.mts:131-153` |
+| 실시간 받기 · 상태 글자 · 받기 주기 | `web/trains/live_feed.mts:55-79` · `web/trains/live_feed.mts:88-91` |
+| 지도 위 띠(끊김 · 3분 멈춤) | `web/ui/popups.mts:105-111` |
+| 역 시트 열기(0.7초 · 15초 다시 그리기) | `web/ui/popups.mts:137-159` |
 | 역 시트 그리기(받는 중 · 못 받음 · 받음) | `web/components/station_sheet.tsx:15-48` |
-| 열차 시트 열기 · 열차 고르기(14px) | `web/ui/popups.mts:70-96` |
-| 아래 시트(닫기 · 끌기 · Esc · 따라가기) · 길찾기 두 단추 | `web/ui/sheet.mts:39-63` · `web/ui/sheet.mts:124-125` |
+| 열차 시트 열기 · 열차 고르기(14px) | `web/ui/popups.mts:75-102` |
+| 아래 시트(닫기 · 끌기 · Esc · 따라가기) · 길찾기 두 단추 | `web/ui/sheet.mts:44-98` · `web/ui/sheet.mts:159-160` |
 
 ## 확인 필요
 - `web/index.html` 의 「지도를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 새로고침해 주세요.」 칸(`#error`)을 여는 코드를 `web/` 안에서 찾지 못했다 — 지금은 보이지 않는 칸으로 읽힌다. 지도 스타일 · 자료를 못 받을 때의 화면이 정해져 있는지 확인 필요

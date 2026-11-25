@@ -15,11 +15,14 @@
 | `web/trains/` | 실시간 받기(`live_feed`) · 예측(`plan`) · 열차 그리기(`draw`) |
 | `web/ui/` | 아래 시트 · 정보창 · 검색 · 여정 지도 표시. 시트 몸통의 화면 조각은 `.tsx`(Preact — 지금 역 도착 시트 `station_sheet.tsx`(모양은 `components/station_sheet.tsx`) · 버스 시트 `bus/sheet_view.tsx` · 길찾기 시트 `journey_sheet.tsx`(상태 · 그릴 거리는 `lib/journey-ui.mts`) · 열차 시트 `train_sheet.tsx`(모양은 `components/train_sheet.tsx` · 그릴 거리는 `popups.mts` — 롤코 자리 배치도 속 · 타기 단추 글자는 `modes/coaster/ride.mts` 가 직접 고치니 연 순간 값 그대로), `openSheetView` 로 연다) |
 | `web/bus/` | 버스 층 · 도로 · 메시(모양 등록 `registerBusLook`) · 움직임 · 버스 시트 몸통 `sheet_view.tsx`(Preact — 그릴 거리는 `layer.mts` `detailView()`) |
-| `web/user/prefs.mjs` | 내 설정 창구(지금은 기기 저장, 이름 `subway-theme` · `subway-map-color`) |
+| `web/user/prefs.mts` | 내 설정 창구(지금은 기기 저장, 이름 `PREF_KEYS` — `subway-theme` · `subway-map-color` · `subway-prebuild` · `subway-saver`) |
 | `web/lib/` | 남은 공용 도우미(routing · station_signs · sun · platform_* · journey-ui …) |
 | `web/index.html` | 역 데이터는 안에 둔다 — 손으로 고치지 말고 `python3 pipeline/build_stations.py` |
 | `server/` | `app.py`(주소 → 담당) → `routes/` → `services/` → `sources/`(바깥 API) · `store/`(파일), `jobs/` 배경 작업, `config.py` 환경 변수 · 비밀값 |
 | `pipeline/` | 자료 만들기(역 · 선로 · 고가 · 버스). 실행하면 바깥에서 받거나 web/ 의 생성 파일을 덮는다 — `--help` 도 그대로 도는 스크립트가 있다. 확인만 할 땐 `node --check` · `python3 -m py_compile` |
+| `app/` | Expo 앱(React Native · 담당 syung-app). 웹 지도를 웹뷰로 띄운다(`src/map/MapWebView.tsx` · 다리 `src/map/bridge.ts` ↔ 웹 `web/ui/app_bridge.mts`) |
+| `tools/` | 개발 도구(운영에 안 들어간다): `dev.mjs`(`npm run dev` — dist/web 다시 빌드 + 로컬 서버) · `tokens/make.mjs`(디자인 토큰 `web/tokens/tokens.json` → `tokens.css` · `tokens.mts`) · `*_motion/make.mjs`(로그인 · 도착 · 타고 가기 · 하늘 움직임 Lottie JSON → `web/brand/`) · `avatar_face/`(캐릭터 얼굴 PNG) · `flows/fixtures/`(스토리북 화면 기획 고정 자료) |
+| `.storybook/` | 스토리북(개발 도구 · `npm run storybook` 로컬 6006 · `npm run build-storybook` → `dist/storybook`). 스토리는 `web/` 의 `*.stories.tsx` + 여기의 화면 흐름(`docs/flows/*.md` 를 읽어 그림) · 설정은 옆의 `vite.config.mts` |
 
 ## 실행 · 시험
 | 할 일 | 명령 |
