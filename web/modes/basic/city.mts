@@ -492,7 +492,7 @@ export const SEOUL_CITY_STYLE = {
   },
   // 2026-10-06 덕배: 간판 — 1인칭(눈높이)에서 건물이 밋밋했다. 상가(shop 이거나 1층이 상가인 땅) 건물의 긴 바깥 벽에
   // 1층 위 가로 간판(가게 1~3칸), 2층부터 창 간판, 벽 끝에 길 쪽으로 튀어나온 세로 돌출 간판. 글자는 셰이더의 무늬(city_buildings.mjs),
-  // 밤에는 스스로 빛난다. 브랜드 노랑(#FFD400)은 쓰지 않는다. web/city/mesh.mjs signs() 가 읽는다
+  // 밤에는 스스로 빛난다. web/city/mesh.mjs signs() 가 읽는다
   "signs": {
     "types": ["shop"], "minHeightM": 4, "maxHeightM": 32, "probability": 0.8, "maxWalls": 2, "minWallM": 4,
     "fascia": {"heightM": 0.9, "depthM": 0.22, "belowM": 0.1, "gapM": 0.35, "shopM": 7, "maxShops": 3},
