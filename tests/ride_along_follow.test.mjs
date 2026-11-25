@@ -28,7 +28,8 @@ function setup() {
     on: (type, listener) => { listeners[type] = listener; },
   };
   const geolocate = {_watchState: 'ACTIVE', trigger() {}, on() {}};
-  const planner = {plans: [{id: '1호선:0097', seq: [{id: 1}, {id: 2}, {id: 3}], cum: [0, 1000, 2000]}]};
+  // 탄 열차는 아직 탄 역(시청) 500 m 앞 — 이번 역을 몰라 정보 화면 대신 지도로 따라가는 때다(이번 역을 알면 지도를 덮는다 — tests/ride_along_battery 「정보 화면」)
+  const planner = {plans: [{id: '1호선:0097', seq: [{id: 1}, {id: 2}, {id: 3}], cum: [500, 1500, 2500]}]};
   const animFrame = [];
   // 시트의 버스 따라가기 콜백은 타고 가기 콜백보다 먼저 들어 있다(본체: createBottomSheet → createRideAlong) — 같은 프레임에 둘 다 jumpTo 하면 뒤(타고 가기)가 이긴다
   const BUS = {lng: 126.9780, lat: 37.5700};

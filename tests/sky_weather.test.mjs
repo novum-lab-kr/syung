@@ -43,3 +43,16 @@ test('날씨 받기: 서울 좌표로 묻고 10분 캐시, 실패 · 오류는 n
   t.mock.method(globalThis,'fetch',async()=>{throw new Error('offline')});
   assert.equal(await fetchWeather([127.5,36.5]),null);
 });
+
+test('weatherTalk: 날씨를 말로 — 그림 종류 · 기온 · 한마디 하나(낙뢰 > 비 · 눈 > 기온)', async () => {
+  const {weatherTalk} = await import('../web/map/sky_weather.mts');
+  const base = {tempC: 12, sky: 'clear', precip: 'none', rainMm: 0, windMs: 2, lightning: false};
+  assert.deepEqual(weatherTalk(base), {icon: 'sun', text: '맑아요, 12도예요.', tip: null});
+  assert.deepEqual(weatherTalk({...base, sky: 'overcast', precip: 'rain', rainMm: 3, tempC: 3}), {icon: 'rain', text: '비가 와요, 3도예요.', tip: '우산 챙겨요!'});
+  assert.equal(weatherTalk({...base, precip: 'rain', rainMm: 12}).text, '비가 많이 와요, 12도예요.');
+  assert.deepEqual(weatherTalk({...base, precip: 'snow', tempC: -3.2}), {icon: 'snow', text: '눈이 와요, 영하 3도예요.', tip: '미끄러우니 조심해요!'});
+  assert.deepEqual(weatherTalk({...base, precip: 'rain', rainMm: 12, lightning: true}), {icon: 'bolt', text: '천둥 번개가 쳐요, 12도예요.', tip: '조심해서 가요!'});
+  assert.deepEqual(weatherTalk({...base, sky: 'cloudy', tempC: 5}), {icon: 'cloud', text: '구름이 많아요, 5도예요.', tip: '외투 꼭 잠가요!'});
+  assert.equal(weatherTalk({...base, tempC: 31}).tip, '물 챙겨요!');
+  assert.deepEqual(weatherTalk({...base, sky: 'overcast', tempC: null}), {icon: 'cloud', text: '흐려요.', tip: null});
+});

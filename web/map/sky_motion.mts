@@ -19,7 +19,7 @@ const hexOf = (rgb:number[]) => `#${rgb.slice(0, 3).map(part => Math.round(part 
 const rgbOf = (code:string) => [1, 3, 5].map(at => +(parseInt(code.slice(at, at + 2), 16) / 255).toFixed(4));
 
 interface Json { [key:string]:unknown }
-function nightColors(node:unknown):void {
+export function nightColors(node:unknown):void {   // lib/ride_info_motion.mts 도 같은 표로 칠한다(타고 가기 정보 화면의 날씨 층)
   if (Array.isArray(node)) { node.forEach(nightColors); return; }
   if (!node || typeof node !== 'object') return;
   const item = node as Json;

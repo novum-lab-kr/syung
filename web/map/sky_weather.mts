@@ -33,6 +33,37 @@ export function weatherLabel(w:Weather):string {
   return parts.join(' ');
 }
 
+// 날씨를 말로(타고 가기 정보 화면의 말풍선 · 2026-11-25 사용자 — 「비 오면 우산 챙겨라 · 추우면 외투 잠가라」): 「지금 ○○역엔 」 뒤에 붙는 말 · 한마디(tip — 없으면 null) · 그림 종류
+// 한마디는 하나만 — 낙뢰 > 비 · 눈 > 기온(5도 이하 외투 · 30도 이상 물)
+export interface WeatherTalk { icon:'sun' | 'cloud' | 'rain' | 'snow' | 'bolt'; text:string; tip:string | null }
+const COLD_C = 5, HOT_C = 30;
+const SKY_SAID: Record<SkyCover, string> = { clear: '맑아요', cloudy: '구름이 많아요', overcast: '흐려요' };
+const PRECIP_SAID: Record<Precip, string> = { none: '', rain: '비가 와요', rain_snow: '진눈깨비가 와요', snow: '눈이 와요', drizzle: '빗방울이 떨어져요', sleet_drizzle: '진눈깨비가 와요', flurry: '눈이 날려요' };
+function weatherTip(w:Weather):string | null {
+  if (w.lightning) return '조심해서 가요!';
+  if (w.precip === 'snow' || w.precip === 'flurry') return '미끄러우니 조심해요!';
+  if (w.precip !== 'none') return '우산 챙겨요!';
+  if (w.tempC !== null && w.tempC <= COLD_C) return '외투 꼭 잠가요!';
+  return w.tempC !== null && w.tempC >= HOT_C ? '물 챙겨요!' : null;
+}
+function weatherIcon(w:Weather):WeatherTalk['icon'] {
+  if (w.lightning) return 'bolt';
+  if (w.precip === 'snow' || w.precip === 'flurry') return 'snow';
+  if (w.precip !== 'none') return 'rain';
+  return w.sky === 'clear' ? 'sun' : 'cloud';
+}
+function weatherSaid(w:Weather):string {
+  if (w.lightning) return '천둥 번개가 쳐요';
+  if (w.precip === 'rain' && w.rainMm >= 10) return '비가 많이 와요';
+  return PRECIP_SAID[w.precip] || SKY_SAID[w.sky];
+}
+function tempSaid(tempC:number | null):string {
+  if (tempC === null) return '';
+  const degrees = Math.round(tempC);
+  return degrees < 0 ? `, 영하 ${-degrees}도예요` : `, ${degrees}도예요`;
+}
+export const weatherTalk = (w:Weather):WeatherTalk => ({ icon: weatherIcon(w), text: `${weatherSaid(w)}${tempSaid(w.tempC)}.`, tip: weatherTip(w) });
+
 // 날씨로 장면 고르기: 낙뢰 > 비 · 눈 종류 > 구름. 비 · 눈 · 낙뢰가 오면 하늘 값과 상관없이 두꺼운 구름(예보 어긋남 방지)
 export function sceneFor(w:Weather):Scene {
   const wet = w.precip !== 'none';
