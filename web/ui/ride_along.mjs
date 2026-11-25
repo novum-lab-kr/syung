@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAlerts, rideEndSpot, rideList, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideList, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var BUS_ARRIVALS_MS = 3e4;
 var BUS_MISS_MS = 3e4;
@@ -661,12 +661,11 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		return {
 			...card,
 			info: {
-				unit: transit.type === "bus" ? "정류장" : "역",
 				here: weatherSpot(),
 				talk: rideTalk(ride.legs, current.leg, left),
 				list,
 				...skyAt ? { sky: {
-					name: transit.type === "bus" ? transit.to : `${transit.to}역`,
+					name: transit.to,
 					at: skyAt
 				} } : {}
 			}
@@ -699,7 +698,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			const name = (id) => id == null ? null : byId.get(id)?.name ?? null, now = name(stops?.now ?? null);
 			if (now) where = {
 				now,
-				next: name(stops?.next ?? null)
+				next: name(stops?.next ?? null),
+				ahead: !!track && !!stops && rideAhead(track, stops.now, stops.next)
 			};
 		} else {
 			const spot = freshFix(), along = spot ? busAlong(spot, transit.path) : null;

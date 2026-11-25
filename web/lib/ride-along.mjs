@@ -254,43 +254,65 @@ function rideNextText(legs, index) {
 	const leg = legs[index], next = legs[index + 1];
 	if (!leg || leg.type === "walk") return null;
 	const walk = next?.type === "walk" ? next : null, board = walk ? legs[index + 2] : next;
-	const exit = walk?.exit ? `${walk.exit}번 출구로 나가` : "", walkMin = walk && walk.seconds > 0 ? minutes(walk.seconds) : 0;
+	const walkMin = walk && walk.seconds > 0 ? minutes(walk.seconds) : 0;
+	const exit = walk?.exit ? [{
+		text: `${walk.exit}번 출구`,
+		mark: "bold"
+	}, "로 나가"] : [];
+	const walked = walkMin ? [{
+		text: `${walkMin}분`,
+		mark: "bold"
+	}] : [];
 	if (board && board.type !== "walk") {
-		const name = board.type === "bus" ? `${board.route}번` : board.line, leaves = ` ${board.departs}에 출발해요`;
-		if (!exit && !walkMin) return [
-			"내리면 ",
+		const isBus = board.type === "bus", name = isBus ? `${board.route}번` : board.line;
+		const leaves = [
+			" ",
 			{
-				text: name,
-				mark: "line"
+				text: board.departs,
+				mark: "bold"
 			},
-			`${toward(name)} 갈아타요.${leaves}`
+			isBus ? "쯤 와요" : "에 출발해요"
+		];
+		const boarded = {
+			text: name,
+			mark: "line"
+		};
+		if (!exit.length && !walkMin) return [
+			"내리면 ",
+			boarded,
+			`${toward(name)} 갈아타요.`,
+			...leaves
 		];
 		return [
-			`내리면 ${[exit, walkMin ? `${walkMin}분 걷고` : ""].filter(Boolean).join(" ")}${walkMin ? "," : "서"} `,
-			{
-				text: name,
-				mark: "line"
-			},
-			` 타요.${leaves}`
+			"내리면 ",
+			...exit.length && walkMin ? [
+				...exit,
+				" ",
+				...walked,
+				" 걷고, "
+			] : walkMin ? [...walked, " 걷고, "] : [...exit, "서 "],
+			boarded,
+			" 타요.",
+			...leaves
 		];
 	}
-	if (exit && walkMin) return [
-		`내리면 ${exit}서 `,
-		{
-			text: `${walkMin}분`,
-			mark: "line"
-		},
+	if (exit.length && walkMin) return [
+		"내리면 ",
+		...exit,
+		"서 ",
+		...walked,
 		"만 걸으면 도착이에요"
 	];
 	if (walkMin) return [
 		"내려서 ",
-		{
-			text: `${walkMin}분`,
-			mark: "line"
-		},
+		...walked,
 		"만 걸으면 도착이에요"
 	];
-	return exit ? [`내리면 ${exit}요`] : null;
+	return exit.length ? [
+		"내리면 ",
+		...exit,
+		"요"
+	] : null;
 }
 function toward(word) {
 	const code = (word.codePointAt(word.length - 1) ?? 0) - 44032;
@@ -303,7 +325,19 @@ function rideTalk(legs, index, stopsLeft) {
 	const sub = stopsLeft <= 1 ? [{
 		text: `다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요!`,
 		mark: "star"
-	}] : [`아직 ${stopsLeft}정거장 남았어요. ${leg.arrives}쯤 도착해요`];
+	}] : [
+		"아직 ",
+		{
+			text: `${stopsLeft}정거장`,
+			mark: "bold"
+		},
+		" 남았어요. ",
+		{
+			text: leg.arrives,
+			mark: "bold"
+		},
+		"쯤 도착해요"
+	];
 	return {
 		title: [{
 			text: leg.to,
@@ -362,10 +396,16 @@ function rideList(legs, index, where, namesOf, colorOf) {
 			off: spot === last
 		}));
 	});
-	return at < 0 ? null : {
+	if (at < 0) return null;
+	return {
 		rows,
-		at
+		at,
+		ahead: !!where.ahead && nextIsStop(rows, at)
 	};
+}
+function nextIsStop(rows, at) {
+	const now = rows[at], next = rows[at + 1];
+	return now?.kind === "stop" && next?.kind === "stop" && now.edge !== "last";
 }
 function edgeOf(spot, last) {
 	if (spot === 0) return "first";
@@ -426,6 +466,11 @@ function rideStops(track, stations) {
 		now,
 		next: null
 	};
+}
+function rideAhead(track, nowId, nextId) {
+	if (nextId == null || !leftStation(track, nowId)) return false;
+	const from = track.seqIds.indexOf(nowId), to = track.seqIds.indexOf(nextId);
+	return from >= 0 && to > from;
 }
 function stopsLeft({ seqIds, cum, dist }, stations) {
 	const goal = seqIds.indexOf(stations[stations.length - 1]);
@@ -589,4 +634,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAlerts, rideEndSpot, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };

@@ -30,10 +30,46 @@ function DevAnswer({ dev, answer }) {
 		}, value))
 	});
 }
-var said = (parts) => parts.map((part) => typeof part === "string" ? part : /* @__PURE__ */ a("span", {
-	class: `rg-${part.mark}`,
-	children: part.text
-}));
+function said(parts) {
+	return parts.map((part) => {
+		if (typeof part === "string") return part;
+		if (part.mark === "line") return /* @__PURE__ */ a("span", {
+			class: "rg-line",
+			children: part.text
+		});
+		return part.mark === "star" ? /* @__PURE__ */ a(Starred, { text: part.text }) : /* @__PURE__ */ a("span", {
+			class: "rg-mark",
+			children: part.text
+		});
+	});
+}
+function Starred({ text }) {
+	return /* @__PURE__ */ a("span", {
+		class: "rg-star",
+		children: [text, /* @__PURE__ */ a("svg", {
+			class: "rg-star-art",
+			viewBox: "0 0 48 48",
+			"aria-hidden": "true",
+			"stroke-linecap": "round",
+			"stroke-linejoin": "round",
+			children: /* @__PURE__ */ a("g", {
+				filter: "url(#rg-crayon)",
+				children: [/* @__PURE__ */ a("path", {
+					d: "M24 5.5l5.4 12 13 2.1-9.6 9 2.7 13.1L24 35.4l-11.9 6.1 2.8-13-9.7-9.2 13.3-1.4z",
+					fill: "#ffc928",
+					stroke: "#f08a24",
+					"stroke-width": "2.6"
+				}), /* @__PURE__ */ a("path", {
+					d: "M16 26l13-8M17.5 31.5l15-9.5M22 34l9-5.5",
+					fill: "none",
+					stroke: "#f5a623",
+					"stroke-width": "2",
+					opacity: ".75"
+				})]
+			})
+		})]
+	});
+}
 var SKY_ART = {
 	sun: /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("circle", {
 		cx: "24",
@@ -111,46 +147,10 @@ function SkyArt({ icon }) {
 		fill: "none",
 		"stroke-linecap": "round",
 		"stroke-linejoin": "round",
-		children: [/* @__PURE__ */ a("filter", {
-			id: "rg-crayon",
-			x: "-10%",
-			y: "-10%",
-			width: "120%",
-			height: "120%",
-			children: [
-				/* @__PURE__ */ a("feTurbulence", {
-					type: "fractalNoise",
-					baseFrequency: ".12",
-					numOctaves: "2",
-					seed: "4",
-					result: "wobble"
-				}),
-				/* @__PURE__ */ a("feDisplacementMap", {
-					in: "SourceGraphic",
-					in2: "wobble",
-					scale: "2.6",
-					result: "shape"
-				}),
-				/* @__PURE__ */ a("feTurbulence", {
-					type: "fractalNoise",
-					baseFrequency: ".8 .5",
-					numOctaves: "2",
-					seed: "9"
-				}),
-				/* @__PURE__ */ a("feColorMatrix", {
-					values: "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.4",
-					result: "grain"
-				}),
-				/* @__PURE__ */ a("feComposite", {
-					in: "shape",
-					in2: "grain",
-					operator: "in"
-				})
-			]
-		}), /* @__PURE__ */ a("g", {
+		children: /* @__PURE__ */ a("g", {
 			filter: "url(#rg-crayon)",
 			children: SKY_ART[night && icon === "sun" ? "moon" : icon]
-		})]
+		})
 	});
 }
 function RideSky({ spot }) {
@@ -171,11 +171,8 @@ function RideSky({ spot }) {
 			"지금 ",
 			spot.name,
 			"엔 ",
-			sky.text,
-			sky.tip && /* @__PURE__ */ a(M, { children: [" ", /* @__PURE__ */ a("span", {
-				class: "rg-star",
-				children: sky.tip
-			})] })
+			said(sky.said),
+			sky.tip && /* @__PURE__ */ a(M, { children: [" ", /* @__PURE__ */ a(Starred, { text: sky.tip })] })
 		] })]
 	}) : null;
 }
@@ -354,6 +351,43 @@ var textCrayon = (id, wobble, grain) => /* @__PURE__ */ a("filter", {
 		})
 	]
 });
+var SKY_CRAYON = /* @__PURE__ */ a("filter", {
+	id: "rg-crayon",
+	x: "-10%",
+	y: "-10%",
+	width: "120%",
+	height: "120%",
+	children: [
+		/* @__PURE__ */ a("feTurbulence", {
+			type: "fractalNoise",
+			baseFrequency: ".12",
+			numOctaves: "2",
+			seed: "4",
+			result: "wobble"
+		}),
+		/* @__PURE__ */ a("feDisplacementMap", {
+			in: "SourceGraphic",
+			in2: "wobble",
+			scale: "2.6",
+			result: "shape"
+		}),
+		/* @__PURE__ */ a("feTurbulence", {
+			type: "fractalNoise",
+			baseFrequency: ".8 .5",
+			numOctaves: "2",
+			seed: "9"
+		}),
+		/* @__PURE__ */ a("feColorMatrix", {
+			values: "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.4",
+			result: "grain"
+		}),
+		/* @__PURE__ */ a("feComposite", {
+			in: "shape",
+			in2: "grain",
+			operator: "in"
+		})
+	]
+});
 var TEXT_CRAYON = /* @__PURE__ */ a(M, { children: [textCrayon("rg-text-crayon", .9, "-2.2 2.3"), textCrayon("rg-text-crayon-big", 1.6, "-2.6 2.4")] });
 function RideEdge({ color, top, bottom }) {
 	return /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("i", {
@@ -401,6 +435,7 @@ function RideEdge({ color, top, bottom }) {
 				EDGE_CRAYON,
 				ROW_CRAYON,
 				TEXT_CRAYON,
+				SKY_CRAYON,
 				/* @__PURE__ */ a("g", {
 					filter: "url(#rg-edge-crayon)",
 					children: [/* @__PURE__ */ a("path", {
@@ -452,17 +487,17 @@ function RideEdge({ color, top, bottom }) {
 	})] });
 }
 var LIST_ROW_PX = 40;
-var EDGE_TOP_PX = 56;
 var EDGE_BOTTOM_PX = 76;
-function RideList({ list, unit }) {
+function RideList({ list }) {
 	const box = T(null), touching = T(false), waiting = T(false), opened = T(false);
+	const focus = list.ahead ? list.at + 1 : list.at;
 	const centre = b((smooth) => {
 		const calm = !smooth || matchMedia("(prefers-reduced-motion:reduce)").matches;
 		box.current?.scrollTo({
-			top: list.at * LIST_ROW_PX,
+			top: focus * LIST_ROW_PX,
 			behavior: calm ? "auto" : "smooth"
 		});
-	}, [list.at]);
+	}, [focus]);
 	A(() => {
 		if (touching.current) {
 			waiting.current = true;
@@ -470,21 +505,13 @@ function RideList({ list, unit }) {
 		}
 		centre(opened.current);
 		opened.current = true;
-	}, [list.at]);
-	const [ends, setEnds] = d({
-		top: false,
-		bottom: false
-	});
+	}, [focus]);
+	const [bottom, setBottom] = d(false);
 	const measure = b(() => {
-		const host = box.current, rows = host?.querySelectorAll("li");
-		const first = rows?.[0], last = rows?.[rows.length - 1];
-		if (!host || !first || !last) return;
-		const frame = host.getBoundingClientRect(), head = first.getBoundingClientRect(), tail = last.getBoundingClientRect();
-		const top = head.top + head.height / 2 < frame.top + EDGE_TOP_PX, bottom = tail.top + tail.height / 2 > frame.bottom - EDGE_BOTTOM_PX;
-		setEnds((seen) => seen.top === top && seen.bottom === bottom ? seen : {
-			top,
-			bottom
-		});
+		const host = box.current, last = host?.querySelector("li:last-child");
+		if (!host || !last) return;
+		const tail = last.getBoundingClientRect();
+		setBottom(tail.top + tail.height / 2 > host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX);
 	}, []);
 	A(measure, [list.at, list.rows.length]);
 	const release = b(() => {
@@ -495,6 +522,8 @@ function RideList({ list, unit }) {
 		}
 	}, [centre]);
 	const lined = list.rows.slice(0, list.at + 1).reverse().concat(list.rows).find((row) => row.kind !== "gap");
+	const head = list.rows[0], headColor = head && head.kind !== "gap" ? head.color : null;
+	const pastClass = (order) => order < focus ? " past" : "";
 	return /* @__PURE__ */ a("div", {
 		class: "rg-list-box",
 		children: [/* @__PURE__ */ a("div", {
@@ -506,29 +535,34 @@ function RideList({ list, unit }) {
 			},
 			onTouchEnd: release,
 			onTouchCancel: release,
-			children: /* @__PURE__ */ a("ol", { children: list.rows.map((row, order) => {
-				const gone = order < list.at ? " past" : "";
-				if (row.kind === "gap") return /* @__PURE__ */ a("li", {
-					class: `gap${gone}`,
-					children: /* @__PURE__ */ a("i", { children: row.text })
-				});
-				if (row.kind === "leg") return /* @__PURE__ */ a("li", {
-					class: `leg${gone}`,
-					style: `--rg-line:${row.color}`,
-					children: /* @__PURE__ */ a("b", { children: row.text })
-				});
-				const now = order === list.at, state = now ? "now" : order < list.at ? "past" : "rest";
-				return /* @__PURE__ */ a("li", {
-					class: `stop ${state}${row.edge ? ` ${row.edge}` : ""}`,
-					style: `--rg-line:${row.color}`,
-					"aria-current": now ? "step" : void 0,
-					children: [now && /* @__PURE__ */ a("small", { children: ["이번 ", unit] }), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "내림" })] })]
-				});
-			}) })
+			children: /* @__PURE__ */ a("ol", {
+				class: focus > 0 ? "head-past" : void 0,
+				style: headColor ? `--rg-head:${headColor}` : void 0,
+				children: list.rows.map((row, order) => {
+					if (row.kind === "gap") return /* @__PURE__ */ a("li", {
+						class: `gap${pastClass(order)}`,
+						children: /* @__PURE__ */ a("i", { children: row.text })
+					});
+					if (row.kind === "leg") return /* @__PURE__ */ a("li", {
+						class: `leg${pastClass(order)}`,
+						style: `--rg-line:${row.color}`,
+						children: /* @__PURE__ */ a("b", { children: row.text })
+					});
+					const now = order === focus;
+					let note = order === 0 ? "여기서 탔어요" : "지금 여기예요";
+					if (list.ahead) note = "다음은 여기예요";
+					return /* @__PURE__ */ a("li", {
+						class: `stop${now ? " now" : ""}${pastClass(order)}${row.edge ? ` ${row.edge}` : ""}`,
+						style: `--rg-line:${row.color}`,
+						"aria-current": now ? "step" : void 0,
+						children: [now && /* @__PURE__ */ a("small", { children: note }), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "여기서 내려요" })] })]
+					});
+				})
+			})
 		}), lined && /* @__PURE__ */ a(RideEdge, {
 			color: lined.color,
-			top: ends.top,
-			bottom: ends.bottom
+			top: !!headColor,
+			bottom
 		})]
 	});
 }
@@ -554,10 +588,7 @@ function RideInfo({ info }) {
 				class: "rg-info-scene",
 				ref: box
 			})
-		}), /* @__PURE__ */ a(RideList, {
-			list: info.list,
-			unit: info.unit
-		})]
+		}), /* @__PURE__ */ a(RideList, { list: info.list })]
 	});
 }
 function ArrivalCard({ view, actions, map, hideMe }) {

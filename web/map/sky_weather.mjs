@@ -60,13 +60,27 @@ function weatherSaid(w) {
 	return PRECIP_SAID[w.precip] || SKY_SAID[w.sky];
 }
 function tempSaid(tempC) {
-	if (tempC === null) return "";
+	if (tempC === null) return [];
 	const degrees = Math.round(tempC);
-	return degrees < 0 ? `, 영하 ${-degrees}도예요` : `, ${degrees}도예요`;
+	return [
+		", ",
+		{
+			text: degrees < 0 ? `영하 ${-degrees}도` : `${degrees}도`,
+			mark: "bold"
+		},
+		"예요"
+	];
 }
 var weatherTalk = (w) => ({
 	icon: weatherIcon(w),
-	text: `${weatherSaid(w)}${tempSaid(w.tempC)}.`,
+	said: [
+		{
+			text: weatherSaid(w),
+			mark: "bold"
+		},
+		...tempSaid(w.tempC),
+		"."
+	],
 	tip: weatherTip(w)
 });
 function sceneFor(w) {
