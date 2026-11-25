@@ -7,10 +7,12 @@ var TICK_MS = 1e3;
 var ARRIVALS_MS = 2e4;
 var ARRIVALS_STALE_MS = ARRIVALS_MS * 3;
 var FIX_FRESH_MS = 3e4;
+var HIDDEN_TICK_MS = 5e3;
 var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves }) {
+var EDGE_SHARE = .2;
+function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {} }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
@@ -51,13 +53,18 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		followHeld(fix.spot);
 		tick();
 		const current = step();
-		if (following && current && current.kind !== "done" && !(current.kind === "ride" && legAt(current.leg)?.type === "ride")) map.easeTo({
+		if (following && current && current.kind !== "done" && !(current.kind === "ride" && legAt(current.leg)?.type === "ride") && nearEdge(fix.spot)) map.easeTo({
 			center: [...fix.spot],
 			zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
 			padding: pad(),
 			duration: 600
 		});
 	});
+	function nearEdge(spot) {
+		if (map.getZoom() < FOLLOW_ZOOM) return true;
+		const { x, y } = map.project([spot[0], spot[1]]), box = map.getContainer(), width = box.clientWidth, height = box.clientHeight - pad().bottom;
+		return x < width * EDGE_SHARE || x > width * (1 - EDGE_SHARE) || y < height * EDGE_SHARE || y > height * (1 - EDGE_SHARE);
+	}
 	const locate = () => {
 		if (geolocate._watchState === "OFF") {
 			turnedOn = true;
@@ -104,6 +111,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		const key = `${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;
 		if (key === camKey) return;
 		camKey = key;
+		labelMode();
 		map.jumpTo({
 			center: cam,
 			padding: pad()
@@ -190,6 +198,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		ride.stayed = 0;
 		ride.backed = false;
 		ride.hold = null;
+		ride.settled = false;
 		if (was?.kind === "ride") {
 			ride.ridden = null;
 			bus.ride(null, null, false);
@@ -233,10 +242,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 				log?.judge("done", logInfo());
 				log?.end("도착", logInfo());
 			}
-			clearInterval(timer);
-			clearInterval(arrivalsTimer);
-			clearInterval(busTimer);
-			timer = arrivalsTimer = busTimer = 0;
+			stopTimers();
 			unlocate();
 			const end = endSpot() ?? spot;
 			if (end) map.easeTo({
@@ -304,12 +310,13 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (!ride || current?.kind !== "ride") return;
 		const leg = legAt(current.leg);
 		if (leg?.type !== "ride") return;
-		const plan = planOf(ride.train), { stationM, exitM } = boardingAway(spot, leg);
-		ride.stayed = stayedFixes(ride.stayed, plan ? trackOf(plan) : null, leg.stations[1], nearBoarding({
+		const plan = planOf(ride.train), { stationM, exitM } = boardingAway(spot, leg), atBoarding = nearBoarding({
 			goalM: Infinity,
 			stationM,
 			exitM
-		}));
+		});
+		if (stationM !== null && !atBoarding) ride.settled = true;
+		ride.stayed = stayedFixes(ride.stayed, plan ? trackOf(plan) : null, leg.stations[1], atBoarding);
 		if (!leftBehind(ride.stayed)) return;
 		const trainNo = ride.train.slice(leg.line.length + 1);
 		ride.at--;
@@ -328,7 +335,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			waitFrom: {
 				s: 0,
 				at: Date.now()
-			}
+			},
+			settled: false
 		});
 		loadArrivals(current.leg);
 		cam = null;
@@ -790,8 +798,30 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (current.kind === "wait") detail = ride.hold ? ":hold" : ride.backed ? ":back" : ride.missed.size || ride.missedAt ? ":missed" : "";
 		return `${current.kind}${detail}@${current.leg}`;
 	}
+	let lowGps = false;
+	function gpsMode() {
+		const current = step(), leg = current?.kind === "ride" ? legAt(current.leg) : void 0;
+		let want = false;
+		if (ride && leg?.type === "ride") {
+			const plan = planOf(ride.train), track = plan ? trackOf(plan) : null, nextId = leg.stations[1];
+			const passedNext = !track || nextId === void 0 || reached(track, nextId) || leftStation(track, nextId);
+			want = ride.settled || passedNext && !freshFix();
+		}
+		if (want === lowGps) return;
+		lowGps = want;
+		gpsLowPower(want);
+	}
+	let labelsQuiet = false;
+	function labelMode() {
+		const want = followingTrain();
+		if (want === labelsQuiet) return;
+		labelsQuiet = want;
+		quietLabels(want);
+	}
 	let painted = "";
 	function draw() {
+		gpsMode();
+		labelMode();
 		pushAlerts();
 		const log = ride ? devLog() : null;
 		if (log?.recording) log.judge(judgeState(), logInfo());
@@ -835,6 +865,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			ridden: null,
 			busAt: 0,
 			boardedMs: 0,
+			settled: false,
 			waitFrom: {
 				s: 0,
 				at: Date.now()
@@ -849,6 +880,42 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		}
 		if (first.kind === "wait" && legs[first.leg]?.type === "bus") startBusWait(first.leg);
 	}
+	let slowTick = false;
+	function startTimers() {
+		slowTick = false;
+		timer = setInterval(tick, TICK_MS);
+		arrivalsTimer = setInterval(() => {
+			const current = step();
+			if (current?.kind === "wait") loadArrivals(current.leg);
+		}, ARRIVALS_MS);
+		busTimer = setInterval(() => {
+			const current = step();
+			if (current?.kind === "wait") loadBusArrivals(current.leg);
+		}, BUS_ARRIVALS_MS);
+	}
+	function stopTimers() {
+		clearInterval(timer);
+		clearInterval(arrivalsTimer);
+		clearInterval(busTimer);
+		timer = arrivalsTimer = busTimer = 0;
+		slowTick = false;
+	}
+	document.addEventListener("visibilitychange", () => {
+		if (!ride || step()?.kind === "done") return;
+		if (document.hidden) {
+			stopTimers();
+			timer = setInterval(tick, HIDDEN_TICK_MS);
+			slowTick = true;
+			return;
+		}
+		if (timer && !slowTick) return;
+		stopTimers();
+		startTimers();
+		tick();
+		const current = step();
+		if (current?.kind === "wait" && legAt(current.leg)?.type === "ride") loadArrivals(current.leg);
+		if (current?.kind === "wait" && legAt(current.leg)?.type === "bus") loadBusArrivals(current.leg);
+	});
 	function start(plan, toName) {
 		alerts?.ask();
 		stop();
@@ -886,6 +953,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			ridden: null,
 			busAt: 0,
 			boardedMs: 0,
+			settled: false,
 			waitFrom: {
 				s: 0,
 				at: Date.now()
@@ -900,15 +968,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		devLog()?.begin(logInfo());
 		locate();
 		draw();
-		timer = setInterval(tick, TICK_MS);
-		arrivalsTimer = setInterval(() => {
-			const current = step();
-			if (current?.kind === "wait") loadArrivals(current.leg);
-		}, ARRIVALS_MS);
-		busTimer = setInterval(() => {
-			const current = step();
-			if (current?.kind === "wait" && !document.hidden) loadBusArrivals(current.leg);
-		}, BUS_ARRIVALS_MS);
+		startTimers();
 		const walkPath = legs[0]?.type === "walk" ? legs[0].path : null, spot = freshFix() ?? walkPath?.[0];
 		if (spot) map.easeTo({
 			center: [...spot],
@@ -921,12 +981,11 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (!ride) return;
 		const log = devLog();
 		if (log?.recording) log.end("그만둠", logInfo());
-		clearInterval(timer);
-		clearInterval(arrivalsTimer);
-		clearInterval(busTimer);
-		timer = arrivalsTimer = busTimer = 0;
+		stopTimers();
 		ride = null;
 		painted = "";
+		gpsMode();
+		labelMode();
 		alerts?.clear();
 		bus.ride(null, null, false);
 		bus.watch(null);

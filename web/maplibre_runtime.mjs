@@ -684,6 +684,26 @@ var geolocate = new maplibregl.GeolocateControl({
 map.addControl(geolocate, "top-right");
 var autoLocating = false;
 var lastFix = null;
+var LOW_GPS = {
+	enableHighAccuracy: false,
+	maximumAge: 3e4
+};
+var lowWatch = null;
+var labelFade = map._fadeDuration;
+function quietLabels(on) {
+	map._fadeDuration = on ? 0 : labelFade;
+}
+function gpsLowPower(on) {
+	const ctl = geolocate, id = ctl._geolocationWatchID;
+	if (id === void 0) {
+		lowWatch = null;
+		return;
+	}
+	if (on === (lowWatch === id)) return;
+	navigator.geolocation.clearWatch(id);
+	ctl._geolocationWatchID = navigator.geolocation.watchPosition(ctl._onSuccess, ctl._onError, on ? LOW_GPS : ctl.options.positionOptions);
+	lowWatch = on ? ctl._geolocationWatchID : null;
+}
 var geolocateButton = map.getContainer().querySelector(".maplibregl-ctrl-geolocate");
 geolocateButton?.addEventListener("click", (ev) => {
 	const cls = geolocateButton.classList;
@@ -1663,7 +1683,9 @@ var rideAlong = createRideAlong({
 	},
 	devLog: () => devRideLog,
 	alerts: rideAlertSink(appBridge ? (list) => appBridge.rideAlerts(list) : null),
-	trainLeaves: (p, id) => trainLeaves(p, id)
+	trainLeaves: (p, id) => trainLeaves(p, id),
+	gpsLowPower,
+	quietLabels
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
@@ -1739,6 +1761,9 @@ var trainLive = {
 	},
 	get rideFollow() {
 		return rideAlong.followingTrain;
+	},
+	get ridingAlong() {
+		return rideAlong.active;
 	},
 	get riding() {
 		return riding;
@@ -2481,22 +2506,27 @@ var mapPixels = {
 };
 var sunTrainShadow = [1.1, 1.5];
 var sunShadows = new SunShadowLayer();
+var sunLightKey = "";
 function updateSun() {
 	if (!ready) return;
 	const { elevation: el, azimuth: az } = sunPosition(), up = el > 1, dark = effectiveTheme() === "dark", S = modeCtl.settings();
 	const K = S.sun.light === "park" && S.map.park[dark ? "dark" : "light"];
-	try {
-		map.setLight({
-			anchor: "map",
-			position: [
-				1.4,
-				up ? az : 0,
-				up ? Math.max(10, 90 - el) : 20
-			],
-			intensity: K ? K.lightK : up ? .55 : .3,
-			color: K ? K.light : dark ? "#9fb4c8" : "#ffffff"
-		});
-	} catch {}
+	const light = {
+		anchor: "map",
+		position: [
+			1.4,
+			up ? Math.round(az) : 0,
+			up ? Math.round(Math.max(10, 90 - el)) : 20
+		],
+		intensity: K ? K.lightK : up ? .55 : .3,
+		color: K ? K.light : dark ? "#9fb4c8" : "#ffffff"
+	}, lightKey = JSON.stringify(light);
+	if (lightKey !== sunLightKey) {
+		sunLightKey = lightKey;
+		try {
+			map.setLight(light);
+		} catch {}
+	}
 	const sh = up ? Math.min(7, 1.6 / Math.tan(el * Math.PI / 180)) : 1.2, away = (az + 180) * Math.PI / 180;
 	sunTrainShadow = up ? [Math.sin(away) * sh, -Math.cos(away) * sh] : [.8, 1.1];
 	if (!up || map.getZoom() < 14.5 || !map.getLayer("bm-bld3d") || map.getLayoutProperty("bm-bld3d", "visibility") === "none") {

@@ -165,6 +165,7 @@ void shade(){
 }
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
+var RIDE_RIPPLE_MS = 125;
 var NOSE_Z = .3;
 function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, TRAIN_ICON_RATIO, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
 	class TrainLayer {
@@ -707,7 +708,8 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				}
 			}
 			if (animating && (live.following || live.rider.ride || live.rideFollow) && !live.easing) followSoon();
-			else if (animating || rippling) trainFrameSoon(1e3 / TRAIN_FPS);
+			else if (animating) trainFrameSoon(1e3 / TRAIN_FPS);
+			else if (rippling) trainFrameSoon(live.ridingAlong ? RIDE_RIPPLE_MS : 1e3 / TRAIN_FPS);
 			else if (waiting) trainFrameSoon(1e3);
 		}
 		onRemove(map, gl) {

@@ -344,6 +344,14 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	function followSoon() {
 		if (!followRaf) followRaf = requestAnimationFrame(followLoop);
 	}
+	const RIDE_FOLLOW_MS = 500;
+	let followTimer = 0;
+	const followLater = (ms) => {
+		if (!followTimer) followTimer = setTimeout(() => {
+			followTimer = 0;
+			followSoon();
+		}, ms);
+	};
 	const touching = /* @__PURE__ */ new Set();
 	map.getCanvasContainer().addEventListener("pointerdown", (e) => touching.add(e.pointerId));
 	for (const t of ["pointerup", "pointercancel"]) addEventListener(t, (e) => touching.delete(e.pointerId), true);
@@ -362,8 +370,10 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	function followLoop(ts) {
 		followRaf = 0;
 		if (!(following || live.rider.ride || followBus || live.rideFollow) || easing) return;
-		if (!live.rider.ride && ts - followLast < Math.max(1e3 / FOLLOW_FPS, live.frameMs || 0) - 4) {
-			followSoon();
+		const rideOnly = !(following || live.rider.ride || followBus), gap = Math.max(rideOnly ? RIDE_FOLLOW_MS : 1e3 / FOLLOW_FPS, live.frameMs || 0);
+		if (!live.rider.ride && ts - followLast < gap - 4) {
+			if (rideOnly) followLater(gap - (ts - followLast));
+			else followSoon();
 			return;
 		}
 		followLast = ts;
