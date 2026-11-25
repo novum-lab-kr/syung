@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BOARD_ALERT_S, alightPlanMs, clockMs, dueAlerts, rideAlerts } from '../web/lib/ride-along.mts';
 
-globalThis.document = {hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
+globalThis.document = {addEventListener() {}, hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
 globalThis.innerHeight = 844;
 const {createRideAlerts, browserAlerts, rideAlertSink} = await import('../web/ui/ride_alerts.mts');
 const {createRideAlong} = await import('../web/ui/ride_along.mts');
@@ -126,7 +126,7 @@ test('타고 가기: 곧 올 열차 2분 뒤를 받으면 탈 준비(지금) · 
   const delivered = [], sink = createRideAlerts(list => delivered.push(list)), CITY_HALL = [126.9770, 37.5658];
   let onFix = null;
   const rideAlong = createRideAlong({
-    map: {getZoom: () => 16, isMoving: () => false, easeTo() {}, jumpTo() {}, on() {}},
+    map: {getZoom: () => 16, isMoving: () => false, project: () => ({x: 0, y: 0}), getContainer: () => ({clientWidth: 390, clientHeight: 844}), easeTo() {}, jumpTo() {}, on() {}},
     geolocate: {_watchState: 'ACTIVE', trigger() {}, on: (_type, listener) => { onFix = listener; }},
     planner: {plans: []}, trainPose: () => ({dist: 0}), trainLngLat: () => ({lng: 0, lat: 0}), arrivalRank: row => row.eta,
     byId: new Map([[1, {lat: CITY_HALL[1], lon: CITY_HALL[0], name: '시청'}], [2, {lat: 37.5563, lon: 126.9723, name: '서울역'}], [3, {lat: 37.5547, lon: 126.9707, name: '남영'}]]),

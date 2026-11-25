@@ -36,6 +36,7 @@ export interface TrainLive {
   SkyUnits:(new ()=>SkyLike) | null | undefined; unitLength:(kind:string)=>number; myLocation:LngLatLike | null | undefined; trainsEnabled:boolean; subwayOff:boolean;
   settings:TrainSettings; sheetTrain:string | null; sunTrainShadow:[number, number]; following:string | null; easing:boolean; rider:RiderState;
   rideFollow:boolean;   // 타고 가기가 탄 열차를 따라가는 중(시트 따라가기처럼 카메라 · 지도 · 열차를 같이 움직인다)
+  ridingAlong:boolean;   // 타고 가기 중(걷기 · 기다리기 · 타기) — 파장만 남았으면 느리게 다시 그린다(RIDE_RIPPLE_MS)
   riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean; journeyTrain:(plan:TrainPlan)=>boolean;
 }
 type TrainPlanB = TrainPlan & { blend?:unknown };
@@ -219,6 +220,8 @@ void shade(){
 }
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
+// 타고 가기 중 파장(내 위치 · 탄 열차 둘레)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
+const RIDE_RIPPLE_MS=125;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
   class TrainLayer{
@@ -491,7 +494,8 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
       // following a moving train: camera, map and trains step together (followSoon), and no extra
       // train-only frames in between — they drew the train ahead of the map it sits on (jitter)
       if(animating&&(live.following||live.rider.ride||live.rideFollow)&&!live.easing)followSoon();
-      else if(animating||rippling)trainFrameSoon(1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
+      else if(animating)trainFrameSoon(1000/TRAIN_FPS);
+      else if(rippling)trainFrameSoon(live.ridingAlong?RIDE_RIPPLE_MS:1000/TRAIN_FPS);else if(waiting)trainFrameSoon(1000);
     }
     onRemove(map:MapLibre,gl:WebGL2RenderingContext){gl.deleteBuffer(this.b);gl.deleteProgram(this.p);this.c88?.dispose(gl);this.c88ride?.dispose(gl);this.ships?.dispose(gl);this.units?.dispose(gl);this.sky?.dispose(gl);this.rideTrack?.dispose(gl)}   // coaster-train: and the 88열차's
   }

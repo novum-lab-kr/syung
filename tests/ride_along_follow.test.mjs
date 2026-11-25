@@ -10,7 +10,7 @@ import vm from 'node:vm';
 
 // ride_along 은 모듈을 읽을 때 카드 자리(div)를 body 에 붙인다 — Node 에는 document 가 없어 최소한만 흉내 낸다
 const element = () => ({className: '', querySelector: () => null});
-globalThis.document = {createElement: element, body: {append() {}, classList: {toggle() {}, remove() {}}}};
+globalThis.document = {addEventListener() {}, createElement: element, body: {append() {}, classList: {toggle() {}, remove() {}}}};
 globalThis.innerHeight = 844;
 // 프레임 시간은 시험이 명시적으로 진행한다(카메라가 열차 쪽으로 미끄러지는 몫은 지난 시간으로 셈 — 같은 시각이면 0)
 let clockMs = 0;
@@ -136,8 +136,9 @@ const drawSource = stripTypeScriptTypes(readFileSync(new URL('../web/trains/draw
 const part = (source, from, to) => { const start = source.indexOf(from), end = source.indexOf(to, start); assert.ok(start >= 0 && end > start, `표지 글자 ${from}`); return source.slice(start, end); };
 
 function loopHarness() {
-  const calls = {raf: 0, repaint: 0, frames: 0};
+  const calls = {raf: 0, repaint: 0, frames: 0, timers: []};
   const context = vm.createContext({
+    setTimeout: (callback, ms) => { calls.timers.push({callback, ms}); return calls.timers.length; },
     Math, performance, followRaf: 0, followLast: 0, following: null, followBus: null, easing: false, FOLLOW_FPS: 30,
     live: {rider: {ride: null}, rideFollow: false, frameMs: 0}, planner: {setFrame() {}},
     animFrame: [() => { calls.frames++; }], map: {triggerRepaint() { calls.repaint++; }},
@@ -166,6 +167,38 @@ test('sheet.mts followLoop: 타고 가기(rideFollow)만 켜져 있어도 animFr
   followLoop(3000);
   assert.equal(calls.frames, 1, '타고 가기가 끝나면 루프도 멈춘다(다시 예약하지 않는다)');
   assert.equal(calls.raf, 0);
+});
+
+test('sheet.mts followLoop: 타고 가기만 따라갈 때는 1초에 2번 — 그 사이는 화면 프레임마다 헛돌지 않고 타이머로 기다린다(배터리 추천안 A)', () => {
+  const {context, calls, followLoop} = loopHarness();
+  context.live.rideFollow = true;
+  followLoop(1000);
+  assert.equal(calls.frames, 1);
+  followLoop(1016);   // 다음 화면 프레임(열차 층이 followSoon 으로 깨움)
+  assert.equal(calls.frames, 1, '500 ms 안에는 카메라 · 지도를 다시 그리지 않는다');
+  assert.equal(calls.raf, 0, '화면 프레임을 다시 예약하지 않는다');
+  assert.equal(calls.timers.length, 1);
+  assert.ok(Math.abs(calls.timers[0].ms - 484) < 1, `남은 만큼 기다린다(${calls.timers[0].ms})`);
+  followLoop(1100);
+  assert.equal(calls.timers.length, 1, '기다리는 타이머는 하나만');
+  calls.timers[0].callback();
+  assert.equal(calls.raf, 1, '타이머가 끝나면 화면 프레임에 맞춰');
+  followLoop(1500);
+  assert.equal(calls.frames, 2);
+  // 시트에서 열차를 따라가면(시트 따라가기) 예전처럼 FOLLOW_FPS
+  context.following = '1호선:0097';
+  followLoop(1534);
+  assert.equal(calls.frames, 3, '시트 따라가기는 30 fps 그대로');
+});
+
+test('draw.mts: 타고 가기 중 파장만 남았으면 느리게(1초 8번), 그 밖은 예전 그대로(배터리 추천안 F)', () => {
+  const decide = vm.runInContext(`(function(animating, rippling, waiting, live, followSoon, trainFrameSoon, TRAIN_FPS) {\n${part(drawSource, '      if(animating&&(live.following', '\n    }\n    onRemove(')}\n})`, vm.createContext({RIDE_RIPPLE_MS: 125}));
+  const run = (live, animating, rippling) => { const calls = []; decide(animating, rippling, false, live, () => calls.push('follow'), ms => calls.push(ms), 20); return calls; };
+  const idle = {following: null, rider: {ride: null}, rideFollow: false, easing: false, ridingAlong: false};
+  assert.deepEqual(run(idle, false, true), [50], '타고 가기가 아니면 파장도 TRAIN_FPS');
+  assert.deepEqual(run({...idle, ridingAlong: true}, false, true), [125], '타고 가기 중 파장만이면 125 ms');
+  assert.deepEqual(run({...idle, ridingAlong: true}, true, true), [50], '열차가 움직이면 열차 프레임 그대로');
+  assert.deepEqual(run({...idle, ridingAlong: true, rideFollow: true}, true, true), ['follow'], '탄 열차를 따라가면 카메라 루프로(2 fps)');
 });
 
 test('draw.mts: 열차가 움직이는 프레임에 타고 가기(rideFollow)면 followSoon 으로 깨우고, 아니면 열차 프레임만', () => {

@@ -364,6 +364,22 @@ const me=createMyMotion();   // 내 위치 캐릭터의 걷기 · 서기 · 미�
 const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true,maximumAge:2000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'top-right');   // under +/−; alone on phones, where +/− are hidden   // 정확한 위치로 자주: 내 위치 캐릭터가 걷는지 알려면(배터리를 조금 더 쓴다, 2026-10-22 행님)
 let autoLocating=false,lastFix:GeolocationCoordinates|null=null;
+// 타고 가기로 지하철을 탄 동안은 위치를 덜 정확하게 · 드물게(ui/ride_along gpsMode — 땅 밑에서 GPS 가 위성을 찾느라 배터리를 쓴다, 2026-11-25 사용자 추천안 D).
+// GeolocateControl 은 watch 를 켤 때만 옵션을 읽어서, 켜져 있는 watch 를 같은 처리기(_onSuccess · _onError)로 다시 건다 — 단추 상태는 그대로.
+// 되돌릴 때는 이 위의 정확한 옵션으로(그사이 단추로 끄고 다시 켠 watch 는 라이브러리 것이라 건드리지 않는다)
+const LOW_GPS:PositionOptions={enableHighAccuracy:false,maximumAge:30000};
+type GeoWatch={_geolocationWatchID?:number;_onSuccess:PositionCallback;_onError:PositionErrorCallback;options:{positionOptions:PositionOptions}};
+let lowWatch:number|null=null;
+// 타고 가기로 탄 열차를 따라가는 동안은 이름표 fade 를 끈다(ui/ride_along labelMode — 카메라가 1초에 2번 움직일 때마다 fade 0.3초 동안 지도를 프레임마다 다시 그렸다 · 2026-11-25).
+// MapLibre 는 fadeDuration 을 만들 때만 받아서 안쪽 값(_fadeDuration)을 바꾼다
+const labelFade=(map as unknown as {_fadeDuration:number})._fadeDuration;
+function quietLabels(on:boolean){(map as unknown as {_fadeDuration:number})._fadeDuration=on?0:labelFade}
+function gpsLowPower(on:boolean){const ctl=geolocate as unknown as GeoWatch,id=ctl._geolocationWatchID;
+  if(id===undefined){lowWatch=null;return}
+  if(on===(lowWatch===id))return;
+  navigator.geolocation.clearWatch(id);
+  ctl._geolocationWatchID=navigator.geolocation.watchPosition(ctl._onSuccess,ctl._onError,on?LOW_GPS:ctl.options.positionOptions);
+  lowWatch=on?ctl._geolocationWatchID:null}
 // 위치가 켜진 채(저절로 켜진 경우 포함) 버튼을 누르면 MapLibre 는 끈다 — 끄지 않고 내 위치로 지도를 옮긴다.
 // 켜지는 중이면 그대로 기다린다. 오류 상태 · 지도를 움직여 둔 상태(background)는 라이브러리 그대로.
 const geolocateButton=map.getContainer().querySelector('.maplibregl-ctrl-geolocate');
@@ -663,7 +679,7 @@ const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainP
   look:()=>modeCtl.settings().me?.look,walked:(leg,cut)=>journeyMap.markWalked(leg,cut&&{done:cut.done.map(([x,y])=>[x,y]),rest:cut.rest.map(([x,y])=>[x,y])}),ended:arrived=>journey.rideEnded(arrived),detour:()=>journey.fromHere(),reroute:(spot,plan,index)=>journey.reroute(spot,plan,index),exitsOf:id=>(exits[id]||[]).map(([lon,lat]):[number,number]=>[lon,lat]),busStopAt:(leg,spot,share)=>busLayer?.journeyStopAt(leg as never,[spot[0],spot[1]],share)??null,
   bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId,routeName)=>busLayer?await busLayer.journeyArrivals(arsId,routeId,routeName):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
     atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId),routeOnly:on=>busLayer?.setRouteOnly(on)},devLog:()=>devRideLog,
-  alerts:rideAlertSink(appBridge?list=>appBridge.rideAlerts(list):null),trainLeaves:(p,id)=>trainLeaves(p as RuntimePlan,id)});   // 타고 가기 알림: 앱이면 다리로(앱이 폰에 예약) · 브라우저면 웹 알림(ui/ride_alerts)
+  alerts:rideAlertSink(appBridge?list=>appBridge.rideAlerts(list):null),trainLeaves:(p,id)=>trainLeaves(p as RuntimePlan,id),gpsLowPower,quietLabels});   // 타고 가기 알림: 앱이면 다리로(앱이 폰에 예약) · 브라우저면 웹 알림(ui/ride_alerts)
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------
@@ -679,7 +695,7 @@ const hexRGB3=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),1
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
 const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),journeyTrain:p=>rideAlong.rideTrain(p)||journeyMap.journeyTrain(p),   // 타고 가는 열차는 늘 보이고 둘레가 퍼진다(ui/ride_along)
-get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return meHidden?null:(me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get riding(){return riding}};
+get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return meHidden?null:(me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sheetTrain(){return sheetUI.sheetTrain},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get ridingAlong(){return rideAlong.active},get riding(){return riding}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected,getLook:()=>modeCtl.settings().map.exitLook});
@@ -849,12 +865,16 @@ const mapPixels:FxLayer<import('./city/pixel_palette.mts').PixelPalette>={id:'re
 // on the ground under the lines. Trains cast their shadow the same way. No shadows after sunset.
 let sunTrainShadow:[number,number]=[1.1,1.5];
 const sunShadows=new SunShadowLayer();
+let sunLightKey='';
 function updateSun(){
   if(!ready)return;
   const {elevation:el,azimuth:az}=sunPosition(),up=el>1,dark=effectiveTheme()==='dark',S=modeCtl.settings();
   // face lighting: light comes from the sun (polar = 90° − elevation); a soft overhead light at night
   const K=S.sun.light==='park'&&S.map.park[dark?'dark':'light'];   // the park: a warm light, softer (no blue cast at night)
-  try{map.setLight({anchor:'map',position:[1.4,up?az:0,up?Math.max(10,90-el):20],intensity:K?K.lightK:up?.55:.3,color:K?K.light:dark?'#9fb4c8':'#ffffff'})}catch{}
+  // 빛 방향은 1° 단위로 · 같으면 setLight 를 건너뛴다 — 부를 때마다 0.3초 빛 전환이 새로 시작돼 그동안 지도를 프레임마다 다시 그렸다
+  // (지도가 멈출 때마다 불려서 타고 가기로 따라가면 1초에 2번 · 배터리 2026-11-25)
+  const light={anchor:'map' as const,position:[1.4,up?Math.round(az):0,up?Math.round(Math.max(10,90-el)):20] as [number,number,number],intensity:K?K.lightK:up?.55:.3,color:K?K.light:dark?'#9fb4c8':'#ffffff'},lightKey=JSON.stringify(light);
+  if(lightKey!==sunLightKey){sunLightKey=lightKey;try{map.setLight(light)}catch{}}
   // trains: shadow away from the sun, longer when it is low
   const sh=up?Math.min(7,1.6/Math.tan(el*Math.PI/180)):1.2,away=(az+180)*Math.PI/180;
   sunTrainShadow=up?[Math.sin(away)*sh,-Math.cos(away)*sh]:[.8,1.1];
