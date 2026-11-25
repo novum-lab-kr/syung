@@ -201,7 +201,8 @@ export interface RideCardView { title:string; say:string | null; sub:string; det
 // info: 지하철 · 버스를 탄 동안 지도 대신 보여 주는 정보 화면(여정 전체 역 목록 · 말풍선 글 — 2026-11-25 사용자 결정)
 // here: 풍경의 날씨를 물을 자리([lng, lat] · 모르면 null = 서울)
 // sky: 내릴 곳 날씨를 물을 자리와 그 이름(자리를 모르면 칸 없음 — 다른 곳 날씨를 보여 주지 않는다)
-export interface RideInfoView { here:[number, number] | null; list:RideListView; talk:RideTalk; sky?:RideSkySpot }
+export interface RideInfoView { here:[number, number] | null; list:RideListView; talk:RideTalk | null; sky?:RideSkySpot }
+// talk 이 null = 지하철끼리 갈아타는 동안(기다리기 단계) — 말풍선은 기다리기 카드 글(title · say · sub) 그대로
 // talk: 정보 화면의 말풍선 글(rideTalk · 2026-11-25 사용자 — 옆 목록과 겹치는 「지금 ○○ · 다음 ○○」 은 빼고 말하듯이). 글 조각마다 표시:
 // line = 손으로 그은 밑줄(color = 그 노선 · 버스 색) · bold = 밑줄 없이 살짝 크게 · 진하게 · star = 별표
 // 밑줄은 내릴 곳 · 갈아탈 것 두 곳만(2026-11-26 사용자 안 「나」 — 「밑줄이 너무 많다 · 다 똑같은 색」)

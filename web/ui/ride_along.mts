@@ -137,7 +137,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     followHeld(fix.spot);
     tick();
     const current = step();
-    if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride') && nearEdge(fix.spot)) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+    if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride') && !infoOn && nearEdge(fix.spot)) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
   });
   // 내 위치가 보이는 칸(카드 위)의 가장자리 쪽이거나 밖인가 · 줌이 따라가기 줌보다 멀면(내 위치가 작게 보인다) 옮긴다
   function nearEdge(spot:LngLat):boolean {
@@ -256,6 +256,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (now.kind === 'done') {
       { const log = devLog(); log?.judge('done', logInfo()); log?.end('도착', logInfo()); }   // 개발자 기록: 도착 판정 → 끝
       stopTimers(); unlocate();
+      doneTimer = setTimeout(() => actions.close(), DONE_CLOSE_MS);   // 도착 15초 뒤 사용자가 닫은 것과 같은 길로 끝낸다(먼저 닫으면 stop 이 지운다)
       // 도착: 카메라를 도착 자리로(도착 표시가 화면에 보이게 — 모르면 내 위치) · 그 뒤 위치가 와도 따라가지 않는다(위 geolocate)
       const end = endSpot() ?? spot;
       if (end) map.easeTo({center: [...end], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 800});
@@ -488,7 +489,15 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       if (transit.type === 'bus') return {...base, title: waitTitle(transit), sub: waitText(ride.legs, current.leg, waitWalkS(), busEtaSecs(Date.now()), ride.turn, false, !!ride.missedAt).sub};
       const list = ride.arrivalsFor === current.leg ? arrivalSecs()?.map(item => item.s) ?? null : null;
       const arrived = !!list && pickedIn(transit);
-      return {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())};
+      const card = {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())};
+      // 지하철에서 내려 바로 지하철로 갈아타는 동안만(앞 탈 것 · 다음 탈 것 둘 다 지하철 — 다음이 버스면 위에서 이미 지도로 나갔다 · 사이 걷기 구간 없음) 지도 대신 정보 화면 그대로 — 역 안이라 위치를 못 받아 지도에 제대로 못 그린다(2026-11-26 사용자).
+      // 이번 역 줄 = 갈아타는 역(내린 구간의 마지막 역) · 말풍선은 기다리기 카드 글 그대로(talk 없음)
+      const previous = legAt(current.leg - 1);
+      const stops = previous?.type === 'ride' ? rideList(ride.legs, current.leg - 1, {now: previous.to, next: null}, stopNames, legColor) : null;
+      if (!stops) return card;
+      // 이미 내렸으니 갈아타는 역 줄의 「여기서 내려요」 표는 뺀다(2026-11-26 사용자 — 타는 중의 내릴 역 표는 그대로)
+      const rows = stops.rows.map((row, order) => order === stops.at && row.kind === 'stop' ? {...row, off: false} : row);
+      return {...card, info: {here: weatherSpot(), talk: null, list: {...stops, rows}}};
     }
     const {left, where} = rideProgress(transit);
     const card = {...base, title: rideTitle(transit), sub: rideSub(ride.legs, current.leg, left, where)};
@@ -670,6 +679,9 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     arrivalsTimer = setInterval(() => { const current = step(); if (current?.kind === 'wait') loadArrivals(current.leg); }, ARRIVALS_MS);
     busTimer = setInterval(() => { const current = step(); if (current?.kind === 'wait') loadBusArrivals(current.leg); }, BUS_ARRIVALS_MS);
   }
+  // 도착 화면을 이만큼 보여 준 뒤 길찾기를 저절로 끝낸다(2026-11-26 사용자 「도착 이후 15초 있다가 길찾기 종료」)
+  const DONE_CLOSE_MS = 15000;
+  let doneTimer:ReturnType<typeof setTimeout> | 0 = 0;
   function stopTimers() { clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; slowTick = false; }
   document.addEventListener('visibilitychange', () => {
     if (!ride || step()?.kind === 'done') return;
@@ -705,6 +717,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const log = devLog();
     if (log?.recording) log.end('그만둠', logInfo());   // 도착 뒤 ✕ 는 이미 끝냈다
     stopTimers();
+    clearTimeout(doneTimer); doneTimer = 0;
     ride = null; painted = '';
     setInfo(false);
     gpsMode();   // 덜 정확하게 받던 중이면 원래대로(아래 unlocate 가 끄기 전에)

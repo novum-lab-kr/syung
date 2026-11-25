@@ -87,9 +87,9 @@ export function RideCard({ view, actions }:{ view:RideCardView; actions:RideCard
   </div>;
 }
 
-// 목록 칸 위 · 아래 끝 그림(2026-11-25 사용자 확정 「그리다 만 색연필 선」): 노선 선을 색연필로 긋다 만 것처럼 —
+// 목록 위 · 아래 끝 그림(2026-11-25 사용자 확정 「그리다 만 색연필 선」): 노선 선을 색연필로 긋다 만 것처럼 —
 // 위 끝은 선이 옅은 빗금 몇 개로 흩어지고, 아래 끝은 거칠게 끊긴 자리에 색연필 한 자루가 비스듬히 놓여 심이 선 끝에 닿는다.
-// 색 = 지금 구간 노선 색(갈아타면 바뀐다) · 질감은 날씨 그림(#rg-crayon)과 같은 값 · 나무 · 쇠테 · 지우개 색은 syung.css(풍경 색표)
+// 아래 끝 그림 색 = 지금 구간 노선 색(갈아타면 바뀐다) · 위 끝 빗금 색 = 첫 구간 색 · 질감은 날씨 그림(#rg-crayon)과 같은 값 · 나무 · 쇠테 · 지우개 색은 syung.css(풍경 색표)
 const EDGE_CRAYON = <filter id="rg-edge-crayon" x="-20%" y="-20%" width="140%" height="140%">
   <feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="4" result="wobble"/>
   <feDisplacementMap in="SourceGraphic" in2="wobble" scale="2.6" result="shape"/>
@@ -123,13 +123,18 @@ const SKY_CRAYON = <filter id="rg-crayon" x="-10%" y="-10%" width="120%" height=
 </filter>;
 const TEXT_CRAYON = <>{textCrayon('rg-text-crayon', 0.9, '-2.2 2.3')}{textCrayon('rg-text-crayon-big', 1.6, '-2.6 2.4')}</>;
 // top · bottom = 그쪽으로 노선 선이 이어질 때만 보인다(이어질 줄이 없으면 숨김 — 2026-11-25 사용자). 필터는 목록의 선 · 점도 쓰니 늘 그려 둔다
-function RideEdge({ color, top, bottom }:{ color:string; top:boolean; bottom:boolean }) {
+// 위 끝 빗금(선이 옅은 빗금 몇 개로 흩어진다) — 목록 안 첫 역 줄 위에 있어 목록과 같이 스크롤된다(2026-11-26 사용자 결정 A: 칸 위에 붙박여 있으면
+// 스크롤할 때 다른 구간 역 위에 앞 구간 색 빗금이 남아 어색하다). 색 = 첫 구간 노선 색(첫 줄 위로 잇는 선과 같은 색)
+function RideHatch({ color, past }:{ color:string; past:boolean }) {
+  return <i class={`rg-edge top${past ? ' past' : ''}`} aria-hidden="true"><svg viewBox="0 0 44 56" fill="none" stroke={color} stroke-linecap="round">
+    <g filter="url(#rg-edge-crayon)">
+      <path d="M22 62V52l-2-4" stroke-width="4.4"/><path d="M17 43l8-11" stroke-width="4.2" opacity=".9"/><path d="M18 28l7-10" stroke-width="3.4" opacity=".68"/><path d="M19 13l5-8" stroke-width="2.6" opacity=".45"/>
+    </g>
+  </svg></i>;
+}
+// 아래 끝 그림(거칠게 끊긴 선 + 색연필 한 자루) — 목록 칸 아래 끝에 붙박이 · 색연필 필터 묶음도 여기서 그려 둔다
+function RideEdge({ color, bottom }:{ color:string; bottom:boolean }) {
   return <>
-    <i class={`rg-edge top${top ? '' : ' off'}`} aria-hidden="true"><svg viewBox="0 0 44 56" fill="none" stroke={color} stroke-linecap="round">
-      <g filter="url(#rg-edge-crayon)">
-        <path d="M22 62V52l-2-4" stroke-width="4.4"/><path d="M17 43l8-11" stroke-width="4.2" opacity=".9"/><path d="M18 28l7-10" stroke-width="3.4" opacity=".68"/><path d="M19 13l5-8" stroke-width="2.6" opacity=".45"/>
-      </g>
-    </svg></i>
     <i class={`rg-edge bottom${bottom ? '' : ' off'}`} aria-hidden="true"><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
       {EDGE_CRAYON}{ROW_CRAYON}{TEXT_CRAYON}{SKY_CRAYON}
       <g filter="url(#rg-edge-crayon)">
@@ -161,7 +166,7 @@ function RideList({ list }:{ list:RideListView }) {
     centre(opened.current);
     opened.current = true;
   }, [focus]);
-  // 위 끝 그림은 늘 — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
+  // 위 끝 빗금은 목록 안(RideHatch · 같이 스크롤) — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
   // 아래 끝 그림은 노선 선이 그 끝까지 닿을 때만: 마지막 줄 가운데가 아래 끝 그림 자리 안
   const [bottom, setBottom] = useState(false);
   const measure = useCallback(() => {
@@ -176,6 +181,7 @@ function RideList({ list }:{ list:RideListView }) {
   const head = list.rows[0], headColor = head && head.kind !== 'gap' ? head.color : null;   // 첫 줄 위로 이어 그을 선 색(첫 줄은 늘 역 · 구간 줄)
   const pastClass = (order:number) => order < focus ? ' past' : '';   // 지나온 줄은 살짝만 흐리게(2026-11-26 사용자 「살짝만」)
   return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
+    {headColor && <RideHatch color={headColor} past={focus > 0} />}
     <ol class={focus > 0 ? 'head-past' : undefined} style={headColor ? `--rg-head:${headColor}` : undefined}>
       {list.rows.map((row, order) => {
         if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`}><i>{row.text}</i></li>;
@@ -189,7 +195,7 @@ function RideList({ list }:{ list:RideListView }) {
         </li>;
       })}
     </ol>
-  </div>{lined && <RideEdge color={lined.color} top={!!headColor} bottom={bottom} />}</div>;
+  </div>{lined && <RideEdge color={lined.color} bottom={bottom} />}</div>;
 }
 
 // 지하철 · 버스를 탄 동안 지도 대신(2026-11-25 사용자 결정): 「가고 있다」 풍경 움직임(lib/ride_info_motion — 지연 로드) · 여정 전체 역(버스는 정류장) 목록.
@@ -218,14 +224,13 @@ function ArrivalCard({ view, actions, map, hideMe }:{ view:RideCardView; actions
 }
 
 // 카드 자리(ui/ride_along 이 만든다)에 그리기 · 다시 그리기 · 치우기(view 가 null)
-// 타고 가는 동안 길 끝 자리에 깃발을 미리 세운다(GoalFlag — 도착 뒤에도 같은 열쇠로 남는다).
+// 타고 가는 동안 길 끝 자리에 깃발을 미리 세운다(GoalFlag — 카드 앞에 둬 카드가 깃발을 덮는다). 도착하면 깃발은 그리지 않는다(2026-11-26 사용자 「도착했을 때 깃발은 빼줘」).
 // 도착하면 말풍선 대신 지도 속 도착 자리에서 연기한다(MapArrival — map · 도착 자리가 있을 때만, 없으면 「슝 도착!」 말풍선).
-// 타는 중엔 카드 앞(카드가 깃발을 덮는다) · 도착하면 연기 뒤에 둬서 열차 · 새싹이보다 앞에 그린다(같은 z-index — 문서 차례가 위아래)
 export function drawRideCard(host:HTMLElement, view:RideCardView | null, actions:RideCardActions, map?:ArrivalMap, hideMe?:(on:boolean) => void):void {
-  const goal = view?.goal?.at, flag = map && goal ? <GoalFlag key="goal" map={map} at={goal} /> : null;
-  const draw = (body:ComponentChild, flagOnTop = false) => render(flag ? <>{flagOnTop ? null : flag}{body}{flagOnTop ? flag : null}</> : body, host);
+  const goal = view?.goal?.at, flag = map && goal && !view?.arrival ? <GoalFlag key="goal" map={map} at={goal} /> : null;
+  const draw = (body:ComponentChild) => render(flag ? <>{flag}{body}</> : body, host);
   const at = view?.arrival?.at;
-  if (view?.arrival && map && at) { draw(<ArrivalCard key="arrival" view={view} actions={actions} map={map} hideMe={hideMe} />, true); return; }
+  if (view?.arrival && map && at) { draw(<ArrivalCard key="arrival" view={view} actions={actions} map={map} hideMe={hideMe} />); return; }
   const card = view ? <RideCard key="card" view={view} actions={actions} /> : null;
   draw(view?.info ? <><RideInfo key="info" info={view.info} />{card}</> : card);
 }
