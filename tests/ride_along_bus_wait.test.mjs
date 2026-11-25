@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 // ride_along 은 모듈을 읽을 때 카드 자리(div)를 body 에 붙인다 — Node 에는 document 가 없어 최소한만 흉내 낸다(ride_along_follow 와 같다)
-globalThis.document = {hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
+globalThis.document = {addEventListener() {}, hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
 globalThis.innerHeight = 844;
 const {createRideAlong} = await import('../web/ui/ride_along.mts');
 
@@ -18,7 +18,7 @@ function setup() {
   let onFix = null;
   const views = [], cars = {approach: null, atStop: new Map()}, calls = {arrivals: [], ride: [], watch: []};
   const rideAlong = createRideAlong({
-    map: {getZoom: () => 16, isMoving: () => false, easeTo() {}, jumpTo() {}, on() {}},
+    map: {getZoom: () => 16, isMoving: () => false, project: () => ({x: 0, y: 0}), getContainer: () => ({clientWidth: 390, clientHeight: 844}), easeTo() {}, jumpTo() {}, on() {}},
     geolocate: {_watchState: 'ACTIVE', trigger() {}, on: (_type, listener) => { onFix = listener; }},
     planner: {plans: []}, trainPose: () => ({dist: 0}), trainLngLat: () => ({lng: 0, lat: 0}), arrivalRank: () => 0, byId: new Map(), animFrame: [],
     drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended() {}, detour() {},

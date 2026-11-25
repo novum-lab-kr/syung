@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-globalThis.document = {hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
+globalThis.document = {addEventListener() {}, hidden: false, createElement: () => ({className: '', querySelector: () => null}), body: {append() {}, classList: {toggle() {}, remove() {}}}};
 globalThis.innerHeight = 844;
 const {createRideAlong} = await import('../web/ui/ride_along.mts');
 
@@ -30,7 +30,7 @@ function setup(context, route = CITY_LINE) {
   ]})});
   const plans = [{id, seq: [{id: 0}, ...route.stations.map(station => ({id: station}))], cum: [0, 1000, 2000, 3000]}];
   const rideAlong = createRideAlong({
-    map: {getZoom: () => 16, isMoving: () => false, easeTo() {}, jumpTo() {}, on() {}},
+    map: {getZoom: () => 16, isMoving: () => false, project: () => ({x: 0, y: 0}), getContainer: () => ({clientWidth: 390, clientHeight: 844}), easeTo() {}, jumpTo() {}, on() {}},
     geolocate: {_watchState: 'ACTIVE', trigger() {}, on: (_type, listener) => { onFix = listener; }},
     planner: {plans}, trainPose: plan => ({dist: dist.get(plan.id) ?? 0}), trainLngLat: () => ({lng: trainSpot[0], lat: trainSpot[1]}), arrivalRank: row => row.eta,
     byId: new Map(route.byId),

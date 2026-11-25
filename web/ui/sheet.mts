@@ -164,6 +164,10 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   // (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
   const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam:{lng:number,lat:number}|null=null,camAt=0;
   function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
+  // 타고 가기로 탄 열차만 따라갈 때(시트 · 롤코 · 버스 따라가기 없음)는 카메라 · 지도 · 열차를 1초에 2번만(배터리 — 2026-11-25 사용자 추천안 A).
+  // 그 사이는 화면 프레임마다 헛돌지 않고 타이머로 기다린다
+  const RIDE_FOLLOW_MS=500;let followTimer:ReturnType<typeof setTimeout>|number=0;
+  const followLater=(ms:number)=>{if(!followTimer)followTimer=setTimeout(()=>{followTimer=0;followSoon()},ms)};
   // 손가락 · 마우스가 지도에 닿아 있거나 손으로 움직이는(핀치 · 휠 · 회전) 동안은 따라가기 카메라가 쉰다: jumpTo 는 MapLibre 의 손동작을
   // 모두 끊고 처음부터 다시 받게 해서(stop → 처리기 reset) 따라가는 동안 핀치 확대 · 천천히 끌기가 먹지 않았다(행님 2026-10-22). 놓으면 다시 따라간다
   const touching=new Set<number>();
@@ -173,7 +177,8 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   const handsOn=()=>{if(!(touching.size>0||map.isMoving()))return false;
     const m=map.getCenter();cam={lng:m.lng,lat:m.lat};camAt=performance.now();followAt='';return true};   // 놓으면 사람이 둔 자리에서 열차 · 버스로 미끄러져 돌아간다
   function followLoop(ts:number):void{followRaf=0;if(!(following||live.rider.ride||followBus||live.rideFollow)||easing)return;
-    if(!live.rider.ride&&ts-followLast<Math.max(1000/FOLLOW_FPS,live.frameMs||0)-4){followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
+    const rideOnly=!(following||live.rider.ride||followBus),gap=Math.max(rideOnly?RIDE_FOLLOW_MS:1000/FOLLOW_FPS,live.frameMs||0);
+    if(!live.rider.ride&&ts-followLast<gap-4){if(rideOnly)followLater(gap-(ts-followLast));else followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
     followLast=ts;if(live.rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
     if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
   animFrame.push(()=>{
