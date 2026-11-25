@@ -20,7 +20,7 @@ const CITY_HALL = [126.9770, 37.5658], SEOUL = [126.9723, 37.5563];
 function setup(context) {
   let onFix = null, clock = Date.now(), screen = {x: 195, y: 300};
   context.mock.timers.enable({apis: ['setInterval']});
-  const realNow = Date.now, realFetch = globalThis.fetch, views = [], id = '1호선:0097', dist = new Map([[id, 0]]), calls = {easeTo: 0, fetch: 0, gps: [], labels: [], info: []};
+  const realNow = Date.now, realFetch = globalThis.fetch, views = [], id = '1호선:0097', dist = new Map([[id, 0]]), calls = {easeTo: 0, fetch: 0, gps: [], labels: [], info: [], ended: []};
   Date.now = () => clock;
   globalThis.fetch = async () => { calls.fetch++; return {json: async () => ({arrivals: [
     {line: '1호선', direction: '하행', destination: null, trainNo: '0097', eta: 120, message: '전역 출발', receivedAt: null},
@@ -33,7 +33,7 @@ function setup(context) {
     geolocate: {_watchState: 'ACTIVE', trigger() {}, on: (_type, listener) => { onFix = listener; }},
     planner: {plans}, trainPose: plan => ({dist: dist.get(plan.id) ?? 0}), trainLngLat: () => ({lng: SEOUL[0], lat: SEOUL[1]}), arrivalRank: row => row.eta,
     byId: new Map([[1, {lat: CITY_HALL[1], lon: CITY_HALL[0], name: '시청'}], [2, {lat: SEOUL[1], lon: SEOUL[0], name: '서울역'}], [3, {lat: 37.5547, lon: 126.9707, name: '남영'}]]),
-    animFrame: [], drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended() {}, detour() {},
+    animFrame: [], drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended(arrived) { calls.ended.push(arrived); }, detour() {},
     otherFollow: {active: () => false, stop() {}}, reroute: async () => null, exitsOf: () => [], busStopAt: () => null,
     bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}, watch() {}},
     gpsLowPower: on => calls.gps.push(on), quietLabels: on => calls.labels.push(on), infoScreen: on => calls.info.push(on),
@@ -197,4 +197,89 @@ test('정보 화면: 탄 열차가 지도 목록에 없으면(이번 역 모름)
   assert.equal(view().info, undefined);
   assert.equal(rideAlong.infoScreen, false);
   assert.deepEqual(calls.info, [true, false]);
+});
+
+// ---- 지하철끼리 갈아타는 동안(사이 걷기 구간 없음)도 정보 화면(2026-11-26 사용자 — 역 안이라 위치를 못 받아 지도에 제대로 못 그린다)
+test('정보 화면: 지하철에서 내려 바로 지하철로 갈아타는 기다리기에도 그대로 — 이번 역 줄은 갈아타는 역 · 말풍선은 기다리기 카드 글 · 지도 그리기는 멈춘 채', async context => {
+  const ctx = setup(context), {rideAlong, fix, calls, view, dist, id, pass, quiet} = ctx;
+  const plan = {arrives: at(30), legs: [
+    {type: 'ride', line: '1호선', from: '시청', to: '서울역', departs: at(-5), arrives: at(5), direction: '하행', stops: 1, wait: 60, stations: [1, 2], trainNo: '0097'},
+    {type: 'ride', line: '4호선', from: '서울역', to: '남영', departs: at(9), arrives: at(15), direction: '하행', stops: 1, wait: 60, stations: [2, 3], trainNo: null},
+  ]};
+  fix(CITY_HALL);
+  rideAlong.start(plan, '남영');
+  await settle();
+  assert.equal(view().info, undefined, '첫 탑승 전 기다리기는 지도 그대로');
+  pass(100); dist.set(id, 1000); fix(CITY_HALL); dist.set(id, 1300); quiet(1); quiet(31);   // 0097 을 탐(boardAtCityHall 과 같은 장면)
+  assert.equal(view().title, '서울역에서 내려요');
+  assert.deepEqual(calls.info, [true]);
+  const easedBefore = calls.easeTo;
+  dist.set(id, 2000);   // 서울역에 닿음 → 내려서 4호선 기다리기
+  quiet(1);
+  await settle();
+  assert.equal(view().title, '4호선 남영 방면 타는 곳으로');
+  assert.match(view().sub, /^1\/2 · 걸어서 \d+분/, '말풍선 작은 글은 기다리기 카드 그대로');
+  assert.deepEqual(view().info, {here: [127, 37.6], talk: null, list: {rows: [
+    {kind: 'stop', name: '시청', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '서울역', color: '#888', edge: 'last', off: false},   // 이미 내렸다 — 「여기서 내려요」 표 없음
+    {kind: 'gap', text: '4호선으로 갈아타기'},
+    {kind: 'stop', name: '서울역', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '남영', color: '#888', edge: 'last', off: true},
+  ], at: 1, ahead: false}});
+  assert.equal(rideAlong.infoScreen, true);
+  assert.deepEqual(calls.info, [true], '내리고 갈아타는 사이에 지도 그리기를 되돌리지 않는다');
+  fix(SEOUL);   // 역 안에서 위치가 한 번 와도(화면 가장자리 쪽) 덮인 지도를 옮기지 않는다
+  ctx.setScreen({x: 20, y: 300}); fix(SEOUL);
+  assert.equal(calls.easeTo, easedBefore, '정보 화면 동안은 내 위치로 카메라를 옮기지 않는다');
+});
+
+test('정보 화면: 지하철에서 내려 버스를 기다릴 때는 사이 걷기 구간이 없어도 지도(2026-11-26 사용자 「지하철 내려서 지하철 탈 때만」)', async context => {
+  const ctx = setup(context), {rideAlong, fix, calls, view, dist, id, pass, quiet} = ctx;
+  const plan = {arrives: at(30), legs: [
+    {type: 'ride', line: '1호선', from: '시청', to: '서울역', departs: at(-5), arrives: at(5), direction: '하행', stops: 1, wait: 60, stations: [1, 2], trainNo: '0097'},
+    {type: 'bus', route: '273', from: '서울역', to: '남영', departs: at(9), arrives: at(15), toward: '남영', stops: 1, wait: 60, path: [SEOUL, SEOUL]},
+  ]};
+  fix(CITY_HALL);
+  rideAlong.start(plan, '남영');
+  await settle();
+  pass(100); dist.set(id, 1000); fix(CITY_HALL); dist.set(id, 1300); quiet(1); quiet(31);   // 0097 을 탐
+  assert.deepEqual(calls.info, [true]);
+  dist.set(id, 2000);   // 서울역에 닿음 → 내려서 273번 기다리기
+  quiet(1);
+  await settle();
+  assert.match(view().title, /273/);
+  assert.equal(view().info, undefined, '버스를 기다리는 동안은 지도');
+  assert.equal(rideAlong.infoScreen, false);
+  assert.deepEqual(calls.info, [true, false], '내리면 지도 그리기를 되돌린다');
+});
+
+// ---- 도착 15초 뒤 길찾기를 저절로 끝낸다(2026-11-26 사용자) — 사용자가 닫은 것과 같은 길(stop → ended(true))
+// 도착 타이머(setTimeout)만 붙잡아 손으로 돌린다(다른 setTimeout — settle — 은 그대로)
+function catchTimeouts(context) {
+  const real = globalThis.setTimeout, realClear = globalThis.clearTimeout, waiting = new Map();
+  globalThis.setTimeout = (run, ms, ...rest) => { if (ms !== 15000) return real(run, ms, ...rest); const key = {ms}; waiting.set(key, run); return key; };
+  globalThis.clearTimeout = key => { if (!waiting.delete(key)) realClear(key); };
+  context.after(() => { globalThis.setTimeout = real; globalThis.clearTimeout = realClear; });
+  return waiting;
+}
+test('도착: 15초 뒤 저절로 끝낸다 — 닫은 것과 같이 카드를 치우고 도착으로 알린다', async context => {
+  const waiting = catchTimeouts(context), ctx = setup(context), {rideAlong, calls, view, dist, id, quiet} = ctx;
+  await boardAtCityHall(ctx);
+  assert.equal(waiting.size, 0, '타는 동안엔 예약하지 않는다');
+  dist.set(id, 3000);   // 남영 도착
+  quiet(1);
+  assert.equal(view().title, '슝 도착!');
+  assert.deepEqual([...waiting.keys()].map(key => key.ms), [15000]);
+  assert.deepEqual(calls.ended, []);
+  for (const run of [...waiting.values()]) run();
+  assert.equal(rideAlong.active, false);
+  assert.equal(view(), null, '카드를 치운다');
+  assert.deepEqual(calls.ended, [true]);
+});
+test('도착: 15초 전에 그만두면 저절로 끝내기 예약을 지운다', async context => {
+  const waiting = catchTimeouts(context), ctx = setup(context), {rideAlong, dist, id, quiet} = ctx;
+  await boardAtCityHall(ctx);
+  dist.set(id, 3000);
+  quiet(1);
+  assert.equal(waiting.size, 1);
+  rideAlong.stop();
+  assert.equal(waiting.size, 0);
 });

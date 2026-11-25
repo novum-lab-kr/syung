@@ -66,8 +66,8 @@ export function MapArrival({ map, at, arrival, onClose, onError, hideMe }:Props)
   </div>;
 }
 
-// 길 끝 깃발(노란 삼각 · 11차 확정): 타고 가는 동안 길 끝 자리에 꽂혀 계속 펄럭인다. 도착해도 같은 것이 그대로 남는다(ride_card 가 같은 자리 · 같은 열쇠로 그려 Lottie 가 끊기지 않는다).
-// 깃대는 도착 자리 바로 오른쪽 — 새싹이가 그 왼쪽(도착 자리)에 착지해 나란히 선다 · 열차는 깃대 밑동 아래로 지나간다. 그리기만(누르기는 지도로)
+// 길 끝 깃발(노란 삼각 · 11차 확정): 타고 가는 동안 길 끝 자리에 꽂혀 계속 펄럭인다. 도착하면 치운다(ride_card drawRideCard — 2026-11-26 사용자).
+// 깃대는 도착 자리 바로 오른쪽 · 열차는 깃대 밑동 아래로 지나간다. 그리기만(누르기는 지도로)
 export function GoalFlag({ map, at }:{ map:ArrivalMap; at:readonly [number, number] }) {
   const anchor = useAnchor(map, at), box = useMotion('flag');
   return <div ref={anchor} class="rag" aria-hidden="true">
