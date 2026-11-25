@@ -94,14 +94,27 @@ test('C 화면이 숨으면 곧 올 열차를 받지 않고, 다시 보이면 �
   assert.equal(calls.fetch, 4, '그 뒤로 20초마다 이어 간다');
 });
 
-test('C 숨은 동안은 1초 tick 도 쉰다 — 보이면 바로 돌아 그동안 끝난 단계를 넘긴다', async context => {
+test('C 숨은 동안 tick 은 5초마다로 느리게 — 판정(알림 예약)은 이어 가고, 보이면 바로 돌아 1초로', async context => {
   const ctx = setup(context), {dist, id, view, pass, context: testContext} = ctx;
   await boardAtCityHall(ctx);
   setHidden(true);
   dist.set(id, 3000);   // 숨은 동안 남영에 닿음
-  pass(5);
-  testContext.mock.timers.tick(5000);
-  assert.equal(view().title, '남영에서 내려요', '숨은 동안은 판정하지 않는다');
+  pass(4);
+  testContext.mock.timers.tick(4000);
+  assert.equal(view().title, '남영에서 내려요', '5초가 안 됐으면 아직 판정하지 않는다');
+  pass(1);
+  testContext.mock.timers.tick(1000);
+  assert.match(view().title, /도착/, '숨은 동안도 5초마다 판정한다(알림이 화면 꺼진 사람에게 가야 한다)');
+});
+
+test('C 숨었다 다시 보이면 바로 한 번 돌고 1초 tick 으로 돌아온다', async context => {
+  const ctx = setup(context), {dist, id, view, pass, context: testContext} = ctx;
+  await boardAtCityHall(ctx);
+  setHidden(true);
+  dist.set(id, 3000);
+  pass(2);
+  testContext.mock.timers.tick(2000);
+  assert.equal(view().title, '남영에서 내려요');
   setHidden(false);
   assert.match(view().title, /도착/, '보이자마자 한 번 돌아 도착으로');
 });

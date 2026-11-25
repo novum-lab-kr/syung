@@ -72,6 +72,8 @@ export interface RidePlan { arrives:string; legs:readonly unknown[] }
 // BUS_ARRIVALS_MS: 버스 정류장 도착은 서버가 하루 장부로 아껴 받는 자료라 정류장 시트(30초)와 같게 · BUS_MISS_MS: 놓친 버스가 아직 남은 도착 목록에서 그 버스로 볼 창
 const BUS_ARRIVALS_MS = 30000, BUS_MISS_MS = 30000;
 const TICK_MS = 1000, ARRIVALS_MS = 20000, ARRIVALS_STALE_MS = ARRIVALS_MS * 3, FIX_FRESH_MS = 30000;
+// 화면이 숨은 동안 tick 간격 — 판정 · 알림 예약은 이어 가되 1초마다 돌지 않는다(배터리)
+const HIDDEN_TICK_MS = 5000;
 const FOLLOW_ZOOM = 16, RIDE_ZOOM = 15, FOLLOW_EASE = 0.25;
 // 걷기 · 기다리기: 내 위치가 화면(카드 위 칸)의 가장자리 이 몫 안으로 들어왔을 때만 카메라를 옮긴다(위치마다 옮기면 1초에 0.6초씩 지도를 다시 그렸다 — 배터리, 2026-11-25 사용자 추천안 B)
 const EDGE_SHARE = 0.2;
@@ -622,17 +624,21 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (first.kind === 'wait' && legs[first.leg]?.type === 'ride') { ride.train = guessTrain(first.leg); loadArrivals(first.leg); }
     if (first.kind === 'wait' && legs[first.leg]?.type === 'bus') startBusWait(first.leg);
   }
-  // ---- 1초 tick · 곧 올 열차(20초) · 버스 도착(30초). 화면이 숨으면 멈추고 다시 보이면 바로 한 번 돌려 이어 간다(배터리 — 2026-11-25 사용자 추천안 C)
+  // ---- 1초 tick · 곧 올 열차(20초) · 버스 도착(30초). 화면이 숨으면 받기는 멈추고 tick 만 HIDDEN_TICK_MS 로 느리게, 다시 보이면 바로 한 번 돌려 이어 간다(배터리 — 2026-11-25 사용자 추천안 C).
+  // tick 을 아예 멈추면 숨은 동안 탔다 · 내릴 역 판정이 멈춰 알림(곧 도착 · 다음 역 내림) 예약도 멈춘다 — 알림은 화면을 끈 사람에게 가는 것이다(리뷰 2026-11-25)
+  let slowTick = false;
   function startTimers() {
+    slowTick = false;
     timer = setInterval(tick, TICK_MS);
     arrivalsTimer = setInterval(() => { const current = step(); if (current?.kind === 'wait') loadArrivals(current.leg); }, ARRIVALS_MS);
     busTimer = setInterval(() => { const current = step(); if (current?.kind === 'wait') loadBusArrivals(current.leg); }, BUS_ARRIVALS_MS);
   }
-  function stopTimers() { clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; }
+  function stopTimers() { clearInterval(timer); clearInterval(arrivalsTimer); clearInterval(busTimer); timer = arrivalsTimer = busTimer = 0; slowTick = false; }
   document.addEventListener('visibilitychange', () => {
     if (!ride || step()?.kind === 'done') return;
-    if (document.hidden) { stopTimers(); return; }
-    if (timer) return;
+    if (document.hidden) { stopTimers(); timer = setInterval(tick, HIDDEN_TICK_MS); slowTick = true; return; }
+    if (timer && !slowTick) return;
+    stopTimers();
     startTimers();
     tick();
     const current = step();
