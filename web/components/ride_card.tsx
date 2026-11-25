@@ -22,8 +22,23 @@ function DevAnswer({ dev, answer }:{ dev:RideDevView; answer?:RideCardActions['a
   </div>;
 }
 
-// 말풍선 글 조각(lib/ride-along RideSaid): 표시가 붙은 조각은 손으로 그은 밑줄(.rg-line) · 별표(.rg-star) — 2026-11-25 사용자 「밑줄 쫙 긋거나 별표 치거나」
-const said = (parts:readonly RideSaid[]) => parts.map(part => typeof part === 'string' ? part : <span class={`rg-${part.mark}`}>{part.text}</span>);
+// 말풍선 글 조각(lib/ride-along RideSaid): 손으로 그은 노란 색연필 밑줄(.rg-line) · 밑줄 없이 살짝 크게(.rg-mark) · 별표(.rg-star) — 2026-11-25 사용자 「밑줄 쫙 긋거나 별표 치거나」
+// 별표는 글 오른쪽 끝에 색연필로 그린 별(2026-11-26 사용자 — 글 앞 이모지 같은 별 대신 · 날씨 그림과 같은 #rg-crayon 질감)
+function said(parts:readonly RideSaid[]) {
+  return parts.map(part => {
+    if (typeof part === 'string') return part;
+    if (part.mark === 'line') return <span class="rg-line">{part.text}</span>;
+    return part.mark === 'star' ? <Starred text={part.text} /> : <span class="rg-mark">{part.text}</span>;
+  });
+}
+function Starred({ text }:{ text:string }) {
+  return <span class="rg-star">{text}<svg class="rg-star-art" viewBox="0 0 48 48" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round">
+    <g filter="url(#rg-crayon)">
+      <path d="M24 5.5l5.4 12 13 2.1-9.6 9 2.7 13.1L24 35.4l-11.9 6.1 2.8-13-9.7-9.2 13.3-1.4z" fill="#ffc928" stroke="#f08a24" stroke-width="2.6"/>
+      <path d="M16 26l13-8M17.5 31.5l15-9.5M22 34l9-5.5" fill="none" stroke="#f5a623" stroke-width="2" opacity=".75"/>
+    </g>
+  </svg></span>;
+}
 
 // 색연필로 그린 것 같은 날씨 그림(2026-11-25 사용자): 선을 삐뚤빼뚤하게 밀고(feDisplacementMap) 색을 군데군데 비운다(종이 결)
 const SKY_ART:Record<WeatherTalk['icon'] | 'moon', ComponentChild> = {
@@ -37,18 +52,11 @@ const SKY_ART:Record<WeatherTalk['icon'] | 'moon', ComponentChild> = {
 function SkyArt({ icon }:{ icon:WeatherTalk['icon'] }) {
   const night = document.documentElement.dataset.theme === 'dark';   // 풍경과 같은 밤 판정(lib/ride_info_motion) — 맑은 밤은 해 대신 달
   return <svg class="rg-sky-art" viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <filter id="rg-crayon" x="-10%" y="-10%" width="120%" height="120%">
-      <feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="4" result="wobble"/>
-      <feDisplacementMap in="SourceGraphic" in2="wobble" scale="2.6" result="shape"/>
-      <feTurbulence type="fractalNoise" baseFrequency=".8 .5" numOctaves="2" seed="9"/>
-      <feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.4" result="grain"/>
-      <feComposite in="shape" in2="grain" operator="in"/>
-    </filter>
     <g filter="url(#rg-crayon)">{SKY_ART[night && icon === 'sun' ? 'moon' : icon]}</g>
   </svg>;
 }
 
-// 내릴 곳 날씨 한 줄(받으면 나타난다 — lib/ride_info_motion skySay · 지연 로드): 색연필 그림 + 「지금 ○○역엔 비가 와요, 12도예요.」 + 별표 한마디(「우산 챙겨요!」). 못 받으면 줄 없이
+// 내릴 곳 날씨 한 줄(받으면 나타난다 — lib/ride_info_motion skySay · 지연 로드): 색연필 그림 + 「지금 (잠실)엔 (비가 와요), (12도)예요.」(밑줄 · 역 이름 뒤 「역」 없이 — 2026-11-26 사용자) + 한마디 끝에 색연필 별(「우산 챙겨요!★」). 못 받으면 줄 없이
 function RideSky({ spot }:{ spot:RideSkySpot }) {
   const [sky, setSky] = useState<WeatherTalk | null>(null), key = spot.at.join();
   useEffect(() => {
@@ -57,7 +65,7 @@ function RideSky({ spot }:{ spot:RideSkySpot }) {
     void import('../lib/ride_info_motion.mts').then(motion => motion.skySay(spot.at)).then(talk => { if (!gone) setSky(talk); }).catch(() => { /* 날씨 줄 없이 */ });
     return () => { gone = true; };
   }, [key]);
-  return sky ? <p class="rg-more rg-more-sky"><SkyArt icon={sky.icon} /><span>지금 {spot.name}엔 {sky.text}{sky.tip && <> <span class="rg-star">{sky.tip}</span></>}</span></p> : null;
+  return sky ? <p class="rg-more rg-more-sky"><SkyArt icon={sky.icon} /><span>지금 {spot.name}엔 {said(sky.said)}{sky.tip && <> <Starred text={sky.tip} /></>}</span></p> : null;
 }
 
 export function RideCard({ view, actions }:{ view:RideCardView; actions:RideCardActions }) {
@@ -105,6 +113,14 @@ const textCrayon = (id:string, wobble:number, grain:string) => <filter id={id} x
   <feColorMatrix values={`0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 ${grain}`} result="grain"/>
   <feComposite in="shape" in2="grain" operator="in"/>
 </filter>;
+// 날씨 그림 · 별표의 색연필 질감(#rg-crayon) — 별표는 날씨 줄이 없을 때(「다음 역에서 내려요!」)도 있어 이 늘 그리는 묶음에 둔다
+const SKY_CRAYON = <filter id="rg-crayon" x="-10%" y="-10%" width="120%" height="120%">
+  <feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="4" result="wobble"/>
+  <feDisplacementMap in="SourceGraphic" in2="wobble" scale="2.6" result="shape"/>
+  <feTurbulence type="fractalNoise" baseFrequency=".8 .5" numOctaves="2" seed="9"/>
+  <feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.4" result="grain"/>
+  <feComposite in="shape" in2="grain" operator="in"/>
+</filter>;
 const TEXT_CRAYON = <>{textCrayon('rg-text-crayon', 0.9, '-2.2 2.3')}{textCrayon('rg-text-crayon-big', 1.6, '-2.6 2.4')}</>;
 // top · bottom = 그쪽으로 노선 선이 이어질 때만 보인다(이어질 줄이 없으면 숨김 — 2026-11-25 사용자). 필터는 목록의 선 · 점도 쓰니 늘 그려 둔다
 function RideEdge({ color, top, bottom }:{ color:string; top:boolean; bottom:boolean }) {
@@ -115,7 +131,7 @@ function RideEdge({ color, top, bottom }:{ color:string; top:boolean; bottom:boo
       </g>
     </svg></i>
     <i class={`rg-edge bottom${bottom ? '' : ' off'}`} aria-hidden="true"><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      {EDGE_CRAYON}{ROW_CRAYON}{TEXT_CRAYON}
+      {EDGE_CRAYON}{ROW_CRAYON}{TEXT_CRAYON}{SKY_CRAYON}
       <g filter="url(#rg-edge-crayon)">
         <path d="M22 -6V40l-3 6 5 4-4 5 2 5" stroke={color} stroke-width="4.4"/>
         <g transform="translate(22 61) rotate(-28)">
@@ -131,45 +147,49 @@ function RideEdge({ color, top, bottom }:{ color:string; top:boolean; bottom:boo
 // 여정 전체 역(정류장) 세로 목록(lib/ride-along rideList · 2026-11-25 사용자 시안 15 · 16): 역을 전부 적고 손가락으로 스크롤해 다 볼 수 있다(칸은 말풍선 밑까지 — 말풍선 · 새싹이는 그 위에 떠 있다).
 // 처음 열 때 · 이번 역이 바뀔 때만 이번 역을 말풍선 위로 보이는 부분의 가운데로 스크롤한다(움직임 줄이기면 바로) — 그 사이엔 사용자가 스크롤한 자리를 그대로 둔다.
 // 손가락이 닿아 있는 동안 역이 바뀌면 손을 뗀 뒤에 맞춘다. 줄 높이가 정해져 있어(syung.css .rg-list — 이번 역만 72px · 나머지 40px) 자리는 줄 번호 × 40px
-const LIST_ROW_PX = 40, EDGE_TOP_PX = 56, EDGE_BOTTOM_PX = 76;   // 끝 그림 높이(syung.css .rg-edge.top · .bottom)
-function RideList({ list, unit }:{ list:RideListView; unit:RideInfoView['unit'] }) {
+const LIST_ROW_PX = 40, EDGE_BOTTOM_PX = 76;   // 줄 높이(syung.css .rg-list li) · 아래 끝 그림 높이(.rg-edge.bottom)
+function RideList({ list }:{ list:RideListView }) {
   const box = useRef<HTMLDivElement>(null), touching = useRef(false), waiting = useRef(false), opened = useRef(false);
+  // 큰 줄 자리(focus): 역 사이를 달리는 중이면 다음 역 줄에 「다음은 여기예요」(2026-11-26 사용자 안 B — 점은 움직이지 않는다 · 배터리)
+  const focus = list.ahead ? list.at + 1 : list.at;
   const centre = useCallback((smooth:boolean) => {
     const calm = !smooth || matchMedia('(prefers-reduced-motion:reduce)').matches;
-    box.current?.scrollTo({top: list.at * LIST_ROW_PX, behavior: calm ? 'auto' : 'smooth'});
-  }, [list.at]);
+    box.current?.scrollTo({top: focus * LIST_ROW_PX, behavior: calm ? 'auto' : 'smooth'});
+  }, [focus]);
   useEffect(() => {
     if (touching.current) { waiting.current = true; return; }
     centre(opened.current);
     opened.current = true;
-  }, [list.at]);
-  // 끝 그림은 노선 선이 그 끝까지 닿을 때만: 첫 줄 가운데(선이 시작하는 곳)가 위 끝 그림 자리 안 · 마지막 줄 가운데가 아래 끝 그림 자리 안
-  const [ends, setEnds] = useState({top: false, bottom: false});
+  }, [focus]);
+  // 위 끝 그림은 늘 — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
+  // 아래 끝 그림은 노선 선이 그 끝까지 닿을 때만: 마지막 줄 가운데가 아래 끝 그림 자리 안
+  const [bottom, setBottom] = useState(false);
   const measure = useCallback(() => {
-    const host = box.current, rows = host?.querySelectorAll('li');
-    const first = rows?.[0], last = rows?.[rows.length - 1];
-    if (!host || !first || !last) return;
-    const frame = host.getBoundingClientRect(), head = first.getBoundingClientRect(), tail = last.getBoundingClientRect();
-    const top = head.top + head.height / 2 < frame.top + EDGE_TOP_PX, bottom = tail.top + tail.height / 2 > frame.bottom - EDGE_BOTTOM_PX;
-    setEnds(seen => seen.top === top && seen.bottom === bottom ? seen : {top, bottom});
+    const host = box.current, last = host?.querySelector('li:last-child');
+    if (!host || !last) return;
+    const tail = last.getBoundingClientRect();
+    setBottom(tail.top + tail.height / 2 > host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX);
   }, []);
   useEffect(measure, [list.at, list.rows.length]);
   const release = useCallback(() => { touching.current = false; if (waiting.current) { waiting.current = false; centre(true); } }, [centre]);
   const lined = list.rows.slice(0, list.at + 1).reverse().concat(list.rows).find(row => row.kind !== 'gap');   // 지금 구간(없으면 첫 구간)의 노선 색
+  const head = list.rows[0], headColor = head && head.kind !== 'gap' ? head.color : null;   // 첫 줄 위로 이어 그을 선 색(첫 줄은 늘 역 · 구간 줄)
+  const pastClass = (order:number) => order < focus ? ' past' : '';   // 지나온 줄은 살짝만 흐리게(2026-11-26 사용자 「살짝만」)
   return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
-    <ol>
+    <ol class={focus > 0 ? 'head-past' : undefined} style={headColor ? `--rg-head:${headColor}` : undefined}>
       {list.rows.map((row, order) => {
-        const gone = order < list.at ? ' past' : '';   // 지난 줄(갈아타기 · 한 줄 구간 포함)은 점 · 선까지 흐리게
-        if (row.kind === 'gap') return <li class={`gap${gone}`}><i>{row.text}</i></li>;
-        if (row.kind === 'leg') return <li class={`leg${gone}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
-        const now = order === list.at, state = now ? 'now' : order < list.at ? 'past' : 'rest';
-        return <li class={`stop ${state}${row.edge ? ` ${row.edge}` : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
-          {now && <small>이번 {unit}</small>}
-          <span><b>{row.name}</b>{row.off && <em>내림</em>}</span>
+        if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`}><i>{row.text}</i></li>;
+        if (row.kind === 'leg') return <li class={`leg${pastClass(order)}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
+        const now = order === focus;
+        let note = order === 0 ? '여기서 탔어요' : '지금 여기예요';
+        if (list.ahead) note = '다음은 여기예요';
+        return <li class={`stop${now ? ' now' : ''}${pastClass(order)}${row.edge ? ` ${row.edge}` : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
+          {now && <small>{note}</small>}
+          <span><b>{row.name}</b>{row.off && <em>여기서 내려요</em>}</span>
         </li>;
       })}
     </ol>
-  </div>{lined && <RideEdge color={lined.color} top={ends.top} bottom={ends.bottom} />}</div>;
+  </div>{lined && <RideEdge color={lined.color} top={!!headColor} bottom={bottom} />}</div>;
 }
 
 // 지하철 · 버스를 탄 동안 지도 대신(2026-11-25 사용자 결정): 「가고 있다」 풍경 움직임(lib/ride_info_motion — 지연 로드) · 여정 전체 역(버스는 정류장) 목록.
@@ -185,7 +205,7 @@ function RideInfo({ info }:{ info:RideInfoView }) {
   }, []);
   return <section class="rg-info" aria-label="타고 가는 곳">
     <div class="rg-info-view" aria-hidden="true"><div class="rg-info-scene" ref={box}></div></div>
-    <RideList list={info.list} unit={info.unit} />
+    <RideList list={info.list} />
   </section>;
 }
 
