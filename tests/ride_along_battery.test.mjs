@@ -20,7 +20,7 @@ const CITY_HALL = [126.9770, 37.5658], SEOUL = [126.9723, 37.5563];
 function setup(context) {
   let onFix = null, clock = Date.now(), screen = {x: 195, y: 300};
   context.mock.timers.enable({apis: ['setInterval']});
-  const realNow = Date.now, realFetch = globalThis.fetch, views = [], id = '1호선:0097', dist = new Map([[id, 0]]), calls = {easeTo: 0, fetch: 0, gps: [], labels: []};
+  const realNow = Date.now, realFetch = globalThis.fetch, views = [], id = '1호선:0097', dist = new Map([[id, 0]]), calls = {easeTo: 0, fetch: 0, gps: [], labels: [], info: []};
   Date.now = () => clock;
   globalThis.fetch = async () => { calls.fetch++; return {json: async () => ({arrivals: [
     {line: '1호선', direction: '하행', destination: null, trainNo: '0097', eta: 120, message: '전역 출발', receivedAt: null},
@@ -36,14 +36,14 @@ function setup(context) {
     animFrame: [], drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended() {}, detour() {},
     otherFollow: {active: () => false, stop() {}}, reroute: async () => null, exitsOf: () => [], busStopAt: () => null,
     bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}, watch() {}},
-    gpsLowPower: on => calls.gps.push(on), quietLabels: on => calls.labels.push(on),
+    gpsLowPower: on => calls.gps.push(on), quietLabels: on => calls.labels.push(on), infoScreen: on => calls.info.push(on),
   });
   context.after(() => { rideAlong.stop(); Date.now = realNow; globalThis.fetch = realFetch; document.hidden = false; });
   const fix = ([longitude, latitude], accuracy = 10) => onFix({coords: {longitude, latitude, accuracy}});
   const ridePlan = {arrives: at(20), legs: [{type: 'ride', line: '1호선', from: '시청', to: '남영', departs: at(-5), arrives: at(10), direction: '하행', stops: 2, wait: 60, stations: [1, 2, 3], trainNo: '0097'}]};
   const pass = seconds => { clock += seconds * 1000; };
   const quiet = seconds => { pass(seconds); context.mock.timers.tick(1000); };
-  return {rideAlong, ridePlan, fix, dist, id, calls, view: () => views.at(-1), pass, quiet, context, setScreen: next => { screen = next; }};
+  return {rideAlong, ridePlan, plans, fix, dist, id, calls, view: () => views.at(-1), pass, quiet, context, setScreen: next => { screen = next; }};
 }
 
 // 시청에서 0097 을 기다리다 승강장 시간이 지나 0097 이 들어왔다 떠나고 위치가 30초 넘게 끊김(지하) → 탄 것(tests/ride_along_missed_train 과 같은 장면)
@@ -150,11 +150,51 @@ test('D 열차가 다음 역에 닿았는데 위치가 30초 넘게 없으면(�
   assert.deepEqual(calls.gps, [true, false], '그만두면 원래대로');
 });
 
-test('탄 열차를 따라가는 동안만 이름표 fade 를 끄고, 그만두면 되돌린다', async context => {
-  const ctx = setup(context), {rideAlong, calls} = ctx;
-  await boardAtCityHall(ctx);
-  assert.equal(rideAlong.followingTrain, true);
-  assert.deepEqual(calls.labels, [true]);
+// 여정 전체 역 목록(시안 15 — 노선 색을 안 넘겨 회색)
+const LIST_ROWS = [{kind: 'stop', name: '시청', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '서울역', color: '#888', edge: null, off: false}, {kind: 'stop', name: '남영', color: '#888', edge: 'last', off: true}];
+// ---- 2단계(2026-11-25): 탄 동안 이번 역을 알면 지도 대신 정보 화면 — 그동안 탄 열차 따라가기 · 지도 그리기를 쉰다
+// 말풍선 글(lib/ride-along rideTalk): 내릴 곳에 밑줄 · 작은 글은 남은 정거장 + 계획 도착 시각(ridePlan 의 at(10) — 여정을 만든 때의 시각)
+const TALK = sub => ({title: [{text: '남영', mark: 'line'}, '에서 내려요'], sub, todo: null});
+test('정보 화면: 탄 뒤 이번 역을 알면 카드에 역 목록 · 말풍선 글이 붙고 본체에 알린다 — 따라가기 · 이름표 fade 끄기는 하지 않는다', async context => {
+  const ctx = setup(context), {rideAlong, calls, view, dist, id, quiet} = ctx;
+  await boardAtCityHall(ctx);   // 0097 은 시청을 떠나 300 m
+  const ARRIVES = view().info.talk.sub[0].match(/\d\d:\d\d/)[0];   // 시험 도중 분이 바뀌어도 같은 값으로 본다
+  assert.deepEqual(view().info, {unit: '역', here: [127, 37.6], talk: TALK(['아직 2정거장 남았어요. ' + ARRIVES + '쯤 도착해요']), list: {rows: LIST_ROWS, at: 0}, sky: {name: '남영역', at: [126.9707, 37.5547]}});
+  assert.equal(rideAlong.infoScreen, true);
+  assert.deepEqual(calls.info, [true], '지도 그리기를 멈추라고 한 번');
+  assert.equal(rideAlong.followingTrain, false, '지도를 덮었으니 탄 열차를 따라가지 않는다(따라가기 루프가 돌지 않는다)');
+  assert.deepEqual(calls.labels, []);
+  dist.set(id, 2000);   // 서울역에 닿음
+  quiet(1);
+  assert.deepEqual(view().info, {unit: '역', here: [127, 37.6], talk: TALK([{text: '다음 역에서 내려요!', mark: 'star'}]), list: {rows: LIST_ROWS, at: 1}, sky: {name: '남영역', at: [126.9707, 37.5547]}});
+  assert.deepEqual(calls.info, [true], '역이 바뀌어도 다시 알리지 않는다');
+});
+
+test('정보 화면: 걷기 · 기다리기에는 없고, 도착하거나 그만두면 지도 그리기를 되돌린다', async context => {
+  const ctx = setup(context), {rideAlong, ridePlan, fix, calls, view, dist, id, quiet} = ctx;
+  fix(CITY_HALL);
+  rideAlong.start(ridePlan, '남영');
+  await settle();
+  assert.equal(view().info, undefined, '기다리기는 지도 그대로');
+  assert.deepEqual(calls.info, []);
   rideAlong.stop();
-  assert.deepEqual(calls.labels, [true, false]);
+  await boardAtCityHall(ctx);
+  assert.deepEqual(calls.info, [true]);
+  dist.set(id, 3000);   // 남영 도착
+  quiet(1);
+  assert.equal(view().info, undefined, '도착 화면은 지도에서 연기한다');
+  assert.deepEqual(calls.info, [true, false]);
+  await boardAtCityHall(ctx);
+  rideAlong.stop();
+  assert.deepEqual(calls.info, [true, false, true, false], '그만두면 되돌린다');
+});
+
+test('정보 화면: 탄 열차가 지도 목록에 없으면(이번 역 모름) 지도 그대로', async context => {
+  const ctx = setup(context), {rideAlong, calls, view, quiet, plans} = ctx;
+  await boardAtCityHall(ctx);
+  plans.length = 0;   // 탄 열차가 실시간 목록에서 빠짐
+  quiet(1);
+  assert.equal(view().info, undefined);
+  assert.equal(rideAlong.infoScreen, false);
+  assert.deepEqual(calls.info, [true, false]);
 });

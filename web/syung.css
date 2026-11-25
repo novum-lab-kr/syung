@@ -613,6 +613,68 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 .rg-sprout.flip{transform:scaleX(-1)}
 .rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
 .rg-dev{display:flex;gap:var(--space-2);margin-top:10px}.rg-dev .sy-btn{min-height:30px;font-size:var(--text-14)}   /* 개발자만: [탔음] [안 탔음] */
+/* 탄 동안 정보 화면(components/ride_card.tsx RideInfo): 지도를 덮고 말풍선 카드만 위에(새싹이는 카드의 원래 자리 — 오른쪽 아래). 풍경(400×300 장면 · 그 위에 날씨 층)은 화면 폭 가득 · 아래 맞춤(ride_info_motion slice) */
+.rg-info{position:fixed;inset:0;z-index:14;display:flex;flex-direction:column;align-items:center;padding:0 28px;overflow:hidden;background:var(--board);color:var(--ink)}
+/* 바탕은 단색 판(--board) — 그라데이션 없음(2026-11-25 사용자) */
+.rg-info-view{position:relative;flex:none;width:100vw;height:min(75vw,30vh);overflow:hidden}
+.rg-info-scene,.rg-info-scene>div{position:absolute;inset:0}
+.rg-info-scene svg{display:block;width:100%;height:100%}
+/* 로고 움직임(login-motion-loop 800×170 · 까만 열차 20.6×13.7 · 바닥 y 141.85 · 새싹이 달려오는 바닥 y 158.5): 노란 바탕을 뺀 열차가 차만 한 크기(폭 약 9.9vw)로 맨 앞 차로에 놓이게
+   장면을 0.4787vw 배(22.5vw/47)로 — 열차 바닥이 풍경 y 262(바닥에서 9.5vw) · 새싹은 보도 위(1.5vw)를 달려온다 */
+.rg-info-scene>.rg-scene-logo{inset:auto;left:calc(50% - 191.49vw);bottom:-3.98vw;width:382.98vw;height:81.38vw}
+/* 여정 전체 역 목록(components/ride_card.tsx RideList · 2026-11-25 사용자 시안 15 · 16): 풍경 바로 밑부터 화면 끝까지인 세로 스크롤 칸(위아래 여백 없음 · 스크롤바 숨김) — 손가락으로 모든 역을 볼 수 있다.
+   줄 높이 고정(보통 40px · 이번 역 72px). 아래 247px(카드 자리 116px + 두 줄 든 말풍선 131px)은 떠 있는 말풍선이 덮으니 「보이는 부분」 = 칸 높이 - 247px.
+   목록 위아래 padding 은 첫 역 · 내릴 역도 보이는 부분의 가운데까지 스크롤해 올 수 있는 만큼(100cqh = 칸 높이) — 그래서 scrollTop = 줄 번호 × 40px 이면 그 줄이 가운데다 */
+.rg-list-box{position:relative;flex:1 1 0;min-height:0;width:min(420px,100%);display:flex}   /* 목록 칸 + 위 · 아래 끝 그림 자리 */
+.rg-list{position:relative;flex:1 1 0;min-height:0;width:min(420px,100%);container-type:size;overflow:hidden auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;scrollbar-width:none}
+.rg-list::-webkit-scrollbar{display:none}
+/* 목록 칸 위 · 아래 끝 56px 은 서서히 사라지게(2026-11-25 사용자) — 칸에 건 마스크라 스크롤해도 자리 그대로 */
+.rg-list{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%)}
+.rg-list ol{--rg-seen:calc(100cqh - 269px - env(safe-area-inset-bottom,0px));margin:0;padding:max(0px,calc(var(--rg-seen) / 2 - 36px)) 0 calc(100cqh - var(--rg-seen) / 2 - 36px);list-style:none}
+.rg-list li{position:relative;box-sizing:border-box;height:40px;padding-left:34px;display:flex;flex-direction:column;justify-content:center;overflow:hidden;color:var(--ink);transition:height .6s ease,opacity .6s ease}   /* 앞으로 갈 역은 진하게(2026-11-25 사용자) — 지난 줄만 점 · 선까지 흐리게 */
+.rg-list li.past{opacity:.4}
+.rg-list li.now{height:72px}
+.rg-list li::after{content:"";position:absolute;left:8px;top:0;bottom:0;width:4px;background:var(--rg-line)}
+.rg-list li.first::after{top:50%}.rg-list li.last::after{bottom:50%}
+.rg-list li.gap::after,.rg-list li.leg::after{left:9px;width:0;background:none;border-left:2px dotted var(--secondary)}
+.rg-list li.stop::before,.rg-list li.leg::before{content:"";position:absolute;z-index:1;left:3px;top:50%;margin-top:-7px;width:14px;height:14px;border-radius:50%;box-sizing:border-box;border:3px solid var(--rg-line);background:var(--paper)}
+html[data-theme=dark] .rg-list li.stop::before,html[data-theme=dark] .rg-list li.leg::before{background:#fff}
+.rg-list li.now::before{border-color:var(--ink);background:var(--syung)}
+html[data-theme=dark] .rg-list li.now::before{background:var(--syung)}
+.rg-list li.gap{font-size:var(--text-14);font-weight:var(--weight-bold)}
+.rg-list small{flex:none;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
+.rg-list span{display:flex;align-items:center;gap:8px;min-width:0}
+.rg-list b{min-width:0;font:400 20px/1.2 var(--round);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:font-size .6s ease}
+.rg-list li.now b{font-size:34px}
+.rg-list em{flex:none;padding:2px 8px;border-radius:var(--radius-pill);background:var(--control);color:var(--ink);font-style:normal;font-size:12px;font-weight:var(--weight-bold)}
+@media (prefers-reduced-motion:reduce){.rg-list li,.rg-list b{transition:none}}
+/* 말풍선 안 두 줄(시안 16 · 2026-11-25 사용자): 내려서 할 일 · 내릴 곳 날씨 — 정보 화면일 때만 있다 */
+.rg-more{margin:6px 0 0;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--ink);word-break:keep-all}
+.rg-more-sky{display:flex;align-items:center;gap:8px;color:var(--secondary)}
+.rg-more-sky>span{min-width:0}
+.rg-sky-art{flex:none;width:40px;height:40px}
+/* 말풍선의 손으로 그은 표시(2026-11-25 사용자 「밑줄 쫙 긋거나 별표 치거나」): 색연필 밑줄 · 별 */
+.rg-line{padding-bottom:.16em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 16' preserveAspectRatio='none'%3E%3Cfilter id='g' x='-5%25' y='-20%25' width='110%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09 .55' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.2 2.6'/%3E%3CfeComposite in='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Cg filter='url%28%23g%29' fill='none' stroke='%23ff6a4d' stroke-width='3.4' stroke-linecap='round'%3E%3Cpath d='M4 6C60 3 120 8 236 4'/%3E%3Cpath d='M14 12C80 9 150 13 228 10'/%3E%3C/g%3E%3C/svg%3E") no-repeat 0 100%/100% .42em;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.rg-star{display:inline-block;color:var(--ink)}
+.rg-star::before{content:"";display:inline-block;width:1.25em;height:1.25em;margin-right:.15em;vertical-align:-.25em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cfilter id='g' x='-5%25' y='-20%25' width='110%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.5 .7' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.2 2.6'/%3E%3CfeComposite in='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Cpath filter='url%28%23g%29' d='M12 2.5l2.8 6.2 6.7.7-5 4.6 1.4 6.7L12 17.3l-5.9 3.4 1.4-6.7-5-4.6 6.7-.7z' fill='%23ffc928' stroke='%23f08a24' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
+/* 끝 그림 「그리다 만 색연필 선」(components/ride_card RideEdge): 목록 칸 위 · 아래 끝에 붙는다(스크롤과 무관) — 노선 선 자리(목록 왼쪽 10px)에 맞춘다.
+   아래쪽은 선을 끝 그림이 이어 그리니 목록은 76px 위에서부터 사라진다. 연필 나무 · 쇠테 · 지우개는 풍경 색표(lib/ride_info_motion PAINT)의 낮/밤 값 */
+.rg-list-box .rg-list{-webkit-mask-image:linear-gradient(to bottom,transparent 30px,#000 60px,#000 calc(100% - 100px),transparent calc(100% - 76px));mask-image:linear-gradient(to bottom,transparent 30px,#000 60px,#000 calc(100% - 100px),transparent calc(100% - 76px))}
+.rg-edge{position:absolute;z-index:1;left:-12px;pointer-events:none;transition:opacity .3s ease}
+.rg-edge.off{opacity:0}   /* 그쪽으로 이어질 줄이 없으면 숨김(지우면 필터도 사라지니 투명하게만) */
+/* 목록의 노선 선 · 역 점도 색연필로 그은 것처럼(2026-11-25 사용자) — 필터는 RideEdge 가 그려 둔다 */
+.rg-list-box .rg-list li::after{filter:url(#rg-row-crayon)}
+.rg-list-box .rg-list li.stop::before,.rg-list-box .rg-list li.leg::before{filter:url(#rg-edge-crayon)}
+/* 역 이름 · 갈아타기 줄 글씨도 색연필로(2026-11-25 사용자) — 읽히게 선보다 약한 필터, 이번 역 큰 글씨만 조금 세게. 「이번 역」 작은 글 · 「내림」 표는 그대로 */
+.rg-list-box .rg-list b,.rg-list-box .rg-list li.gap i{filter:url(#rg-text-crayon)}
+.rg-list-box .rg-list li.gap i{font-style:normal}
+.rg-list-box .rg-list li.now b{filter:url(#rg-text-crayon-big)}
+.rg-edge svg{display:block;width:100%;height:100%;overflow:visible}
+.rg-edge.top{top:0;width:44px;height:56px}.rg-edge.bottom{bottom:0;width:120px;height:76px}
+.rg-edge .wood{fill:#ffe9a8}.rg-edge .band{fill:#6f7b8c}.rg-edge .rubber{fill:#f6a5a5}.rg-edge .shade{stroke:rgba(0,0,0,.18);stroke-width:3}
+html[data-theme=dark] .rg-edge .wood{fill:#d8c890}html[data-theme=dark] .rg-edge .band{fill:#6d76a8}html[data-theme=dark] .rg-edge .rubber{fill:#8a4f84}
+/* 낮은 화면(브라우저 주소 막대 등)에서는 풍경을 줄이고 사이를 좁힌다 — 「다음 역」이 말풍선에 가리지 않게 */
+@media (max-height:720px){.rg-info-view{height:min(75vw,24vh)}}
 .jbar .rg-go,.jp .rg-go{display:block;width:calc(100% - 28px);height:42px;margin:0 14px 13px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}
 .jp .rg-go{width:100%;margin:var(--space-2) 0 0;height:46px}
 /* 「이 길로 출발」 · 「승차권 등록」은 한 줄로(2026-11-08 사용자 — 두 줄이던 것): 출발이 넓게 · 승차권은 옆 회색 단추. 승차권 단추가 없으면 출발이 한 줄 다 */

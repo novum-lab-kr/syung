@@ -8,7 +8,7 @@ import { serverUrl } from '../lib/server_url.mts';
 import type { RideAlertSink } from './ride_alerts.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, arrivedEarly, catchable, rideAlerts, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, arrivedEarly, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -65,6 +65,11 @@ export interface RideAlongDeps {
   gpsLowPower?:(on:boolean) => void;
   // 탄 열차를 따라가는 동안 이름표를 서서히 나타내지 않기(true) / 원래대로(false) — 카메라가 움직일 때마다 0.3초씩 지도를 프레임마다 다시 그렸다. 없으면 바꾸지 않는다
   quietLabels?:(on:boolean) => void;
+  // 탄 동안 정보 화면이 지도를 덮었다 · 걷혔다 — 본체가 그동안 지도 다시 그리기를 멈춘다
+  infoScreen?:(on:boolean) => void;
+  // 정보 화면의 역 목록: 버스 구간의 정류장 이름 차례대로(bus/layer journeyStops — 못 맞추면 null = 그 구간은 한 줄) · 노선 색(본체 colors — 없으면 회색)
+  busStops?:(leg:RideBusLeg) => string[] | null;
+  lineColor?:(line:string) => string | undefined;
 }
 export interface RidePlan { arrives:string; legs:readonly unknown[] }
 
@@ -78,7 +83,7 @@ const FOLLOW_ZOOM = 16, RIDE_ZOOM = 15, FOLLOW_EASE = 0.25;
 // 걷기 · 기다리기: 내 위치가 화면(카드 위 칸)의 가장자리 이 몫 안으로 들어왔을 때만 카메라를 옮긴다(위치마다 옮기면 1초에 0.6초씩 지도를 다시 그렸다 — 배터리, 2026-11-25 사용자 추천안 B)
 const EDGE_SHARE = 0.2;
 
-export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}}:RideAlongDeps) {
+export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}, infoScreen = () => {}, busStops = () => null, lineColor = () => undefined}:RideAlongDeps) {
   const host = document.createElement('div');
   host.className = 'rg-host';
   document.body.append(host);
@@ -151,7 +156,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
 
   // 지하철을 타는 동안 지도가 따라갈 열차가 있는가(탄 열차가 지도 목록에 있을 때만). 본체가 시트 따라가기 루프(ui/sheet.mts followLoop) · 열차 층(trains/draw.mts)에
   // 이 값을 넘겨 루프를 돌린다 — 아래 animFrame 콜백은 그 루프가 부른다(루프는 시트 따라가기 · 롤코 · 버스일 때만 돌아, 이 값이 없으면 콜백이 한 번도 안 불린다 — 2026-11-04 운영)
-  const followingTrain = ():boolean => { const current = step(); return !!ride && following && current?.kind === 'ride' && legAt(current.leg)?.type === 'ride' && !!planOf(ride.train); };
+  const followingTrain = ():boolean => { const current = step(); return !!ride && following && !infoOn && current?.kind === 'ride' && legAt(current.leg)?.type === 'ride' && !!planOf(ride.train); };
   // 시트에서 다른 열차 · 버스 따라가기를 고르면 손으로 움직였을 때와 같게 끈다(카드에 「다시 따라가기」). 프레임에서(같은 프레임에 둘 다 jumpTo 하면 뒤인 이쪽이
   // 덮어 버린다 — Codex 리뷰 2026-11-04)와 1초 tick 에서(고른 열차가 역에 서 있으면 프레임 루프가 안 돌아 카드가 안 바뀌었다 — 2026-11-04 로컬 확인) 본다
   const yieldToOther = ():boolean => { if (!ride || !following || !otherFollow.active()) return false; following = false; draw(); return true; };
@@ -486,7 +491,27 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       return {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())};
     }
     const {left, where} = rideProgress(transit);
-    return {...base, title: rideTitle(transit), sub: rideSub(ride.legs, current.leg, left, where)};
+    const card = {...base, title: rideTitle(transit), sub: rideSub(ride.legs, current.leg, left, where)};
+    // 이번 역(정류장)을 알 때만 지도 대신 정보 화면 — 모르면(탄 열차가 지도에 없음 · 버스 위치 없음) 지도 그대로(2026-11-25 사용자 결정)
+    if (!where) return card;
+    const skyAt = alightSpot(transit);
+    const list = rideList(ride.legs, current.leg, where, stopNames, legColor);
+    if (!list) return card;
+    return {...card, info: {unit: transit.type === 'bus' ? '정류장' : '역', here: weatherSpot(), talk: rideTalk(ride.legs, current.leg, left), list,
+      ...(skyAt ? {sky: {name: transit.type === 'bus' ? transit.to : `${transit.to}역`, at: skyAt}} : {})}};
+  }
+  // 정보 화면 역 목록의 구간별 역 이름 · 색(lib/ride-along rideList) — 지하철은 구간 역 번호(사이 역 모두)의 이름 · 하나라도 모르면 null
+  function stopNames(leg:RideTrainLeg | RideBusLeg):string[] | null {
+    if (leg.type === 'bus') return busStops(leg);
+    const names = leg.stations.map(id => byId.get(id)?.name);
+    return names.every((name):name is string => !!name) ? names : null;
+  }
+  const legColor = (leg:RideTrainLeg | RideBusLeg):string => (leg.type === 'bus' ? leg.color : lineColor(leg.line)) ?? '#888';
+  // 내릴 곳 자리([lng, lat] — 지하철은 내릴 역 · 버스는 탄 길의 끝. 모르면 null)
+  function alightSpot(transit:RideTrainLeg | RideBusLeg):[number, number] | null {
+    if (transit.type === 'bus') { const end = transit.path.at(-1); return end ? [end[0], end[1]] : null; }
+    const last = transit.stations.at(-1), station = last === undefined ? undefined : byId.get(last);
+    return station ? [station.lon, station.lat] : null;
   }
   // 타는 중 남은 정거장 · 지금 역(카드 글과 내림 준비 알림이 같이 쓴다)
   function rideProgress(transit:RideTrainLeg | RideBusLeg):{ left:number; where:RideWhere | null } {
@@ -597,14 +622,26 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     labelsQuiet = want;
     quietLabels(want);
   }
+  // 정보 화면(탄 동안 이번 · 다음 역 — components/ride_card RideInfo)이 지도를 덮는 동안: 탄 열차 따라가기(카메라 · 따라가기 루프)를 쉬고 본체에 알려 지도 그리기를 멈춘다(배터리 2단계 · 2026-11-25)
+  let infoOn = false;
+  function setInfo(on:boolean) {
+    if (on === infoOn) return;
+    infoOn = on;
+    if (!on) cam = null;   // 지도로 돌아오면 탄 열차 자리로 바로
+    infoScreen(on);
+    labelMode();
+  }
+  // 정보 화면의 날씨를 물을 자리: 마지막 내 위치를 0.1° 로 뭉갠다(타고 가는 동안 카드를 다시 그리지 않게) · 없으면 null(서울)
+  const weatherSpot = ():[number, number] | null => fix ? [Math.round(fix.spot[0] * 10) / 10, Math.round(fix.spot[1] * 10) / 10] : null;
   let painted = '';
   function draw() {
+    const next = view();
+    setInfo(!!next?.info);   // 따라가기 · 이름표(labelMode)보다 먼저 — 정보 화면이면 그쪽은 쉰다
     gpsMode();
     labelMode();
     pushAlerts();
     const log = ride ? devLog() : null;
     if (log?.recording) log.judge(judgeState(), logInfo());
-    const next = view();
     if (next && log?.recording && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자만: [탔음] [안 탔음]
     const key = JSON.stringify(next);
     if (key === painted) return;
@@ -669,6 +706,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (log?.recording) log.end('그만둠', logInfo());   // 도착 뒤 ✕ 는 이미 끝냈다
     stopTimers();
     ride = null; painted = '';
+    setInfo(false);
     gpsMode();   // 덜 정확하게 받던 중이면 원래대로(아래 unlocate 가 끄기 전에)
     labelMode();
     alerts?.clear();
@@ -697,5 +735,5 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (lit.legs !== legs) lit = {legs, ids: new Set((legs ?? []).flatMap(leg => leg.type === 'ride' ? leg.stations.map(String) : []))};
     return lit.ids;
   };
-  return {start, stop, tapTrain, rideTrain, get active() { return !!ride; }, get followingTrain() { return followingTrain(); }, get stationIds() { return stationIds(); }};
+  return {start, stop, tapTrain, rideTrain, get active() { return !!ride; }, get followingTrain() { return followingTrain(); }, get infoScreen() { return infoOn; }, get stationIds() { return stationIds(); }};
 }

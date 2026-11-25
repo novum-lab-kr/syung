@@ -803,6 +803,17 @@ class BusLayer {
     }
     return null;
   }
+  // 타고 가기 정보 화면의 정류장 목록: 버스 구간(탄 곳 → 내릴 곳)의 정류장 이름 차례대로(journeyStopAt 과 같은 범위). 노선 · 구간을 못 맞추면 null
+  journeyStops(leg:BusLeg):string[] | null {
+    if(!this.data)return null;
+    for(const id of journeyBusRouteIds(this.data,[leg])){
+      const path=this.geometry(this.data.routeById.get(id)!),range=journeyBusRange(path,leg);
+      if(!path||!range)continue;
+      const stops=path.stops.filter(item=>item.distance>=range[0]-5&&item.distance<=range[1]+5);
+      if(stops.length>=2)return stops.map(item=>item.stop.name);
+    }
+    return null;
+  }
   // 타고 가기 기다리기: 버스 구간의 탈 정류장(노선 정류장 가운데 선 위 거리가 구간 시작에 가장 가까운 것 · 60m 안) — 정류장 도착(arsId)을 받고 곧 올 차를 고른다
   // 서버가 서울 노선 id · 타는 정류장 id 를 실었고 그 노선이 그 정류장에 서면 그대로 쓴다(선 · 이름으로 짐작하지 않는다)
   // 서울 자료에 없는 노선(경기 · 광역 · 맞추지 못한 서울 패턴): 서버가 타는 정류장 id · 번호만 실으면(2026-11-08 계약 syung-be 787289b) 노선 id 없이
