@@ -145,4 +145,4 @@ function resumeMotion() {
 		if (slot.box.parentElement === hostBox) slot.anim?.play();
 	});
 }
-export { pauseMotion, resumeMotion, showMotion };
+export { nightColors, pauseMotion, resumeMotion, showMotion };

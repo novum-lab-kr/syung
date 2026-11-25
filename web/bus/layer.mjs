@@ -1233,6 +1233,16 @@ var BusLayer = class {
 		}
 		return null;
 	}
+	journeyStops(leg) {
+		if (!this.data) return null;
+		for (const id of journeyBusRouteIds(this.data, [leg])) {
+			const path = this.geometry(this.data.routeById.get(id)), range = journeyBusRange(path, leg);
+			if (!path || !range) continue;
+			const stops = path.stops.filter((item) => item.distance >= range[0] - 5 && item.distance <= range[1] + 5);
+			if (stops.length >= 2) return stops.map((item) => item.stop.name);
+		}
+		return null;
+	}
 	journeyBoard(leg) {
 		if (!this.data) return null;
 		const named = this.data.routeById.get(String(leg.routeId)), fromId = String(leg.fromId ?? "");

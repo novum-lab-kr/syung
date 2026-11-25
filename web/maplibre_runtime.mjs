@@ -598,6 +598,7 @@ var trainAt = 0;
 var drawTrains = () => {};
 var myLocation = null;
 var meHidden = false;
+var rideInfoOn = false;
 var saverOn = false;
 var frameMs = () => 1e3 / (saverOn ? SAVER_FPS : TRAIN_FPS);
 var frameStats = {
@@ -629,7 +630,7 @@ function arrivalHideMe(on) {
 	}
 }
 function trainFrameSoon(ms) {
-	if (document.hidden) return;
+	if (document.hidden || rideInfoOn) return;
 	if (saverOn && ms > 0 && ms < 1e3 / SAVER_FPS) ms = 1e3 / SAVER_FPS;
 	const at = performance.now() + ms;
 	if (trainTimer && trainAt <= at) return;
@@ -692,6 +693,17 @@ var lowWatch = null;
 var labelFade = map._fadeDuration;
 function quietLabels(on) {
 	map._fadeDuration = on ? 0 : labelFade;
+}
+function rideInfoScreen(on) {
+	if (on === rideInfoOn) return;
+	rideInfoOn = on;
+	if (on) {
+		map.triggerRepaint = () => map;
+		return;
+	}
+	Reflect.deleteProperty(map, "triggerRepaint");
+	map.triggerRepaint();
+	trainFrameSoon(0);
 }
 function gpsLowPower(on) {
 	const ctl = geolocate, id = ctl._geolocationWatchID;
@@ -1669,6 +1681,8 @@ var rideAlong = createRideAlong({
 	reroute: (spot, plan, index) => journey.reroute(spot, plan, index),
 	exitsOf: (id) => (exits[id] || []).map(([lon, lat]) => [lon, lat]),
 	busStopAt: (leg, spot, share) => busLayer?.journeyStopAt(leg, [spot[0], spot[1]], share) ?? null,
+	busStops: (leg) => busLayer?.journeyStops(leg) ?? null,
+	lineColor: (line) => colors[line],
 	bus: {
 		board: (leg) => busLayer?.journeyBoard(leg) ?? null,
 		arrivals: async (arsId, routeId, routeName) => busLayer ? await busLayer.journeyArrivals(arsId, routeId, routeName) : null,
@@ -1685,7 +1699,8 @@ var rideAlong = createRideAlong({
 	alerts: rideAlertSink(appBridge ? (list) => appBridge.rideAlerts(list) : null),
 	trainLeaves: (p, id) => trainLeaves(p, id),
 	gpsLowPower,
-	quietLabels
+	quietLabels,
+	infoScreen: rideInfoScreen
 });
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;

@@ -25,6 +25,50 @@ function weatherLabel(w) {
 	if (w.tempC !== null) parts.push(`${Math.round(w.tempC)}도`);
 	return parts.join(" ");
 }
+var COLD_C = 5;
+var HOT_C = 30;
+var SKY_SAID = {
+	clear: "맑아요",
+	cloudy: "구름이 많아요",
+	overcast: "흐려요"
+};
+var PRECIP_SAID = {
+	none: "",
+	rain: "비가 와요",
+	rain_snow: "진눈깨비가 와요",
+	snow: "눈이 와요",
+	drizzle: "빗방울이 떨어져요",
+	sleet_drizzle: "진눈깨비가 와요",
+	flurry: "눈이 날려요"
+};
+function weatherTip(w) {
+	if (w.lightning) return "조심해서 가요!";
+	if (w.precip === "snow" || w.precip === "flurry") return "미끄러우니 조심해요!";
+	if (w.precip !== "none") return "우산 챙겨요!";
+	if (w.tempC !== null && w.tempC <= COLD_C) return "외투 꼭 잠가요!";
+	return w.tempC !== null && w.tempC >= HOT_C ? "물 챙겨요!" : null;
+}
+function weatherIcon(w) {
+	if (w.lightning) return "bolt";
+	if (w.precip === "snow" || w.precip === "flurry") return "snow";
+	if (w.precip !== "none") return "rain";
+	return w.sky === "clear" ? "sun" : "cloud";
+}
+function weatherSaid(w) {
+	if (w.lightning) return "천둥 번개가 쳐요";
+	if (w.precip === "rain" && w.rainMm >= 10) return "비가 많이 와요";
+	return PRECIP_SAID[w.precip] || SKY_SAID[w.sky];
+}
+function tempSaid(tempC) {
+	if (tempC === null) return "";
+	const degrees = Math.round(tempC);
+	return degrees < 0 ? `, 영하 ${-degrees}도예요` : `, ${degrees}도예요`;
+}
+var weatherTalk = (w) => ({
+	icon: weatherIcon(w),
+	text: `${weatherSaid(w)}${tempSaid(w.tempC)}.`,
+	tip: weatherTip(w)
+});
 function sceneFor(w) {
 	const sky = w.precip !== "none" || w.lightning ? "overcast" : w.sky;
 	const clouds = sky === "clear" ? null : sky;
@@ -208,4 +252,4 @@ async function fetchWeather(here) {
 	};
 	return weather;
 }
-export { devNight, devWeather, fetchWeather, sceneFor, weatherArt, weatherLabel };
+export { devNight, devWeather, fetchWeather, sceneFor, weatherArt, weatherLabel, weatherTalk };
