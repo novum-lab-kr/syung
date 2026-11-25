@@ -235,6 +235,19 @@ test('rideList: 구간마다 역을 다 적고 갈아타기 줄을 사이에 · 
   // 받침이 없으면 「로」(공항철도로 · GTX-A로)
   const air = [train('2호선', ['합정', '홍대입구']), train('공항철도', ['홍대입구', '공덕'])];
   assert.deepEqual(rideList(air, 0, {now: '합정', next: '홍대입구'}, leg => names.get(leg) ?? null, () => '#111').rows[2], {kind: 'gap', text: '공항철도로 갈아타기'});
+  // 다음 역으로 가는 중(ahead): 다음 줄이 같은 구간의 역일 때만 — 이번 역이 내릴 역(다음 줄이 갈아타기)이면 false
+  assert.equal(list.ahead, false, 'where.ahead 가 없으면 false');
+  assert.equal(rideList(legs, 1, {now: '선릉', next: '역삼', ahead: true}, leg => names.get(leg) ?? null, () => '#111').ahead, true);
+  assert.equal(rideList(legs, 1, {now: '강남', next: null, ahead: true}, leg => names.get(leg) ?? null, () => '#111').ahead, false);
+});
+
+test('rideAhead: 이번 역을 떠난 뒤에만 다음 역으로 가는 중 · 서 있거나 예측에 없으면 false', async () => {
+  const {rideAhead} = await import('../web/lib/ride-along.mts');
+  const track = dist => ({seqIds: [201, 202, 203], cum: [0, 1000, 2000], dist});
+  assert.equal(rideAhead(track(1000), 202, 203), false, '역에 서 있음');
+  assert.equal(rideAhead(track(1340), 202, 203), true);
+  assert.equal(rideAhead(track(1500), 202, null), false, '다음 역 없음');
+  assert.equal(rideAhead(track(1500), 202, 209), false, '다음 역이 예측에 없음');
 });
 
 test('rideList: 탄 구간의 역 이름을 모르거나 이번 역이 목록에 없으면 이번 · 다음 · 내릴 곳만', async () => {
@@ -245,14 +258,14 @@ test('rideList: 탄 구간의 역 이름을 모르거나 이번 역이 목록에
   assert.deepEqual(list.rows.map(row => [row.name, row.off]), [['신사역', false], ['가로수길', false], ['압구정역', true]]);
 });
 
-test('rideTalk: 정보 화면 말풍선 — 목록과 겹치는 말 없이 말하듯이 · 내릴 곳에 밑줄 · 한 정거장 남으면 별표', async () => {
+test('rideTalk: 정보 화면 말풍선 — 목록과 겹치는 말 없이 말하듯이 · 내릴 곳 · 갈아탈 것만 노란 밑줄 · 숫자는 살짝 크게 · 한 정거장 남으면 별표', async () => {
   const {rideTalk} = await import('../web/lib/ride-along.mts');
   const train = {type: 'ride', line: '1호선', from: '서울역', to: '오산', departs: '08:10', arrives: '09:20', stops: 27, wait: 0, stations: []};
   const next = {type: 'ride', line: '2호선', from: '선릉', to: '강남', departs: '09:25', arrives: '09:30', stops: 2, wait: 0, stations: []};
   const talk = rideTalk([train, next], 0, 21);
   assert.deepEqual(talk.title, [{text: '오산', mark: 'line'}, '에서 내려요']);
-  assert.deepEqual(talk.sub, ['아직 21정거장 남았어요. 09:20쯤 도착해요']);
-  assert.deepEqual(talk.todo, ['내리면 ', {text: '2호선', mark: 'line'}, '으로 갈아타요. 09:25에 출발해요']);
+  assert.deepEqual(talk.sub, ['아직 ', {text: '21정거장', mark: 'bold'}, ' 남았어요. ', {text: '09:20', mark: 'bold'}, '쯤 도착해요']);
+  assert.deepEqual(talk.todo, ['내리면 ', {text: '2호선', mark: 'line'}, '으로 갈아타요.', ' ', {text: '09:25', mark: 'bold'}, '에 출발해요']);
   assert.deepEqual(rideTalk([train, next], 0, 1).sub, [{text: '다음 역에서 내려요!', mark: 'star'}]);
   const bus = {type: 'bus', route: '472', from: '강남역', to: '신사역', departs: '08:21', arrives: '08:33', toward: '신사', stops: 5, wait: 0, path: []};
   assert.deepEqual(rideTalk([bus], 0, 1).sub, [{text: '다음 정류장에서 내려요!', mark: 'star'}]);
@@ -264,13 +277,18 @@ test('rideNextText: 내려서 할 일 — 출구 · 걷기 · 다음 탈 것(계
   const train = (line, to, departs) => ({type: 'ride', line, from: '선릉', to, departs, arrives: '08:34', stops: 2, wait: 0, stations: []});
   const walk = (seconds, exit = '') => ({type: 'walk', seconds, metres: seconds, exit});
   const bus = {type: 'bus', route: '472', from: '강남역', to: '신사역', departs: '08:21', arrives: '08:33', toward: '신사', stops: 5, wait: 0, path: []};
-  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(120, '5'), bus], 0)), '내리면 5번 출구로 나가 2분 걷고, 472번 타요. 08:21에 출발해요');
-  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(120), bus], 0)), '내리면 2분 걷고, 472번 타요. 08:21에 출발해요');
-  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(0, '5'), bus], 0)), '내리면 5번 출구로 나가서 472번 타요. 08:21에 출발해요');
+  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(120, '5'), bus], 0)), '내리면 5번 출구로 나가 2분 걷고, 472번 타요. 08:21쯤 와요');
+  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(120), bus], 0)), '내리면 2분 걷고, 472번 타요. 08:21쯤 와요');
+  assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(0, '5'), bus], 0)), '내리면 5번 출구로 나가서 472번 타요. 08:21쯤 와요');
   assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), train('공항철도', '김포공항', '08:40')], 0)), '내리면 공항철도로 갈아타요. 08:40에 출발해요', '받침 없으면 「로」');
   assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(240, '3')], 0)), '내리면 3번 출구로 나가서 4분만 걸으면 도착이에요');
   assert.equal(text(rideNextText([bus, walk(120)], 0)), '내려서 2분만 걸으면 도착이에요');
   assert.equal(text(rideNextText([train('2호선', '강남', '08:30'), walk(0, '3')], 0)), '내리면 3번 출구로 나가요');
+  // 탈 노선 · 버스만 밑줄 · 출구 번호 · 걷는 분 · 출발 시각은 살짝 크게만 — 2026-11-26 사용자 안 「나」
+  const marked = parts => parts.filter(part => typeof part !== 'string').map(part => `${part.mark}:${part.text}`);
+  assert.deepEqual(marked(rideNextText([train('2호선', '강남', '08:30'), walk(120, '5'), bus], 0)), ['bold:5번 출구', 'bold:2분', 'line:472번', 'bold:08:21']);
+  assert.deepEqual(marked(rideNextText([train('2호선', '강남', '08:30'), train('공항철도', '김포공항', '08:40')], 0)), ['line:공항철도', 'bold:08:40']);
+  assert.deepEqual(marked(rideNextText([train('2호선', '강남', '08:30'), walk(240, '3')], 0)), ['bold:3번 출구', 'bold:4분']);
   assert.equal(rideNextText([train('2호선', '강남', '08:30')], 0), null);
   assert.equal(rideNextText([walk(60)], 0), null);
 });

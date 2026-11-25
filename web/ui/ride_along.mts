@@ -8,7 +8,7 @@ import { serverUrl } from '../lib/server_url.mts';
 import type { RideAlertSink } from './ride_alerts.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
-  arrivalFits, arrivedEarly, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, arrivedEarly, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideAhead, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
   type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -497,8 +497,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const skyAt = alightSpot(transit);
     const list = rideList(ride.legs, current.leg, where, stopNames, legColor);
     if (!list) return card;
-    return {...card, info: {unit: transit.type === 'bus' ? '정류장' : '역', here: weatherSpot(), talk: rideTalk(ride.legs, current.leg, left), list,
-      ...(skyAt ? {sky: {name: transit.type === 'bus' ? transit.to : `${transit.to}역`, at: skyAt}} : {})}};
+    return {...card, info: {here: weatherSpot(), talk: rideTalk(ride.legs, current.leg, left), list,
+      ...(skyAt ? {sky: {name: transit.to, at: skyAt}} : {})}};
   }
   // 정보 화면 역 목록의 구간별 역 이름 · 색(lib/ride-along rideList) — 지하철은 구간 역 번호(사이 역 모두)의 이름 · 하나라도 모르면 null
   function stopNames(leg:RideTrainLeg | RideBusLeg):string[] | null {
@@ -523,7 +523,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       const byStops = stops ? transit.stations.length - 1 - transit.stations.indexOf(stops.now) : null;
       left = (track && stopsLeft(track, transit.stations)) ?? byStops ?? stopsLeftByTime(transit, new Date());
       const name = (id:number | null) => id == null ? null : byId.get(id)?.name ?? null, now = name(stops?.now ?? null);
-      if (now) where = {now, next: name(stops?.next ?? null)};
+      if (now) where = {now, next: name(stops?.next ?? null), ahead: !!track && !!stops && rideAhead(track, stops.now, stops.next)};
     } else {
       const spot = freshFix(), along = spot ? busAlong(spot, transit.path) : null;
       left = along && along.total ? Math.max(1, Math.ceil(transit.stops * (1 - along.at / along.total))) : stopsLeftByTime(transit, new Date());

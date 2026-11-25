@@ -35,7 +35,9 @@ export function weatherLabel(w:Weather):string {
 
 // 날씨를 말로(타고 가기 정보 화면의 말풍선 · 2026-11-25 사용자 — 「비 오면 우산 챙겨라 · 추우면 외투 잠가라」): 「지금 ○○역엔 」 뒤에 붙는 말 · 한마디(tip — 없으면 null) · 그림 종류
 // 한마디는 하나만 — 낙뢰 > 비 · 눈 > 기온(5도 이하 외투 · 30도 이상 물)
-export interface WeatherTalk { icon:'sun' | 'cloud' | 'rain' | 'snow' | 'bolt'; text:string; tip:string | null }
+// said: 글 조각 — 날씨 상태 · 기온은 밑줄 없이 살짝 크게 · 진하게(bold · 2026-11-26 사용자 안 「나」 — 밑줄은 내릴 곳 · 갈아탈 것만 · 한마디 tip 은 그리는 쪽이 별표). lib/ride-along RideSaid 에 그대로 들어간다
+export type WeatherSaid = string | { text:string; mark:'bold' };
+export interface WeatherTalk { icon:'sun' | 'cloud' | 'rain' | 'snow' | 'bolt'; said:WeatherSaid[]; tip:string | null }
 const COLD_C = 5, HOT_C = 30;
 const SKY_SAID: Record<SkyCover, string> = { clear: '맑아요', cloudy: '구름이 많아요', overcast: '흐려요' };
 const PRECIP_SAID: Record<Precip, string> = { none: '', rain: '비가 와요', rain_snow: '진눈깨비가 와요', snow: '눈이 와요', drizzle: '빗방울이 떨어져요', sleet_drizzle: '진눈깨비가 와요', flurry: '눈이 날려요' };
@@ -57,12 +59,13 @@ function weatherSaid(w:Weather):string {
   if (w.precip === 'rain' && w.rainMm >= 10) return '비가 많이 와요';
   return PRECIP_SAID[w.precip] || SKY_SAID[w.sky];
 }
-function tempSaid(tempC:number | null):string {
-  if (tempC === null) return '';
+function tempSaid(tempC:number | null):WeatherSaid[] {
+  if (tempC === null) return [];
   const degrees = Math.round(tempC);
-  return degrees < 0 ? `, 영하 ${-degrees}도예요` : `, ${degrees}도예요`;
+  return [', ', { text: degrees < 0 ? `영하 ${-degrees}도` : `${degrees}도`, mark: 'bold' }, '예요'];
 }
-export const weatherTalk = (w:Weather):WeatherTalk => ({ icon: weatherIcon(w), text: `${weatherSaid(w)}${tempSaid(w.tempC)}.`, tip: weatherTip(w) });
+// 「(비가 와요), (12도)예요.」
+export const weatherTalk = (w:Weather):WeatherTalk => ({ icon: weatherIcon(w), said: [{ text: weatherSaid(w), mark: 'bold' }, ...tempSaid(w.tempC), '.'], tip: weatherTip(w) });
 
 // 날씨로 장면 고르기: 낙뢰 > 비 · 눈 종류 > 구름. 비 · 눈 · 낙뢰가 오면 하늘 값과 상관없이 두꺼운 구름(예보 어긋남 방지)
 export function sceneFor(w:Weather):Scene {
