@@ -102,6 +102,8 @@ import { stops as stops$1 } from "./city/viaduct_snap.mjs";
 import { CityViaduct } from "./city/viaduct.mjs";
 import * as maplibregl from "./vendor/maplibre-gl.mjs";
 // web/maplibre_runtime.mts
+var fakeGpsPage = new URLSearchParams(location.search).get("fakegps") === "1" && !appMapMode();
+var fakeGps = fakeGpsPage ? await __vitePreload(() => import("./dev/fake_gps.mjs").then((mod) => mod.installFakeGps()), [], import.meta.url).catch(() => null) : null;
 var modes = createModeRegistry([
 	basic_default,
 	simcity_default,
@@ -1703,6 +1705,23 @@ var rideAlong = createRideAlong({
 	quietLabels,
 	infoScreen: rideInfoScreen
 });
+fakeGps?.mount({
+	map,
+	ride: () => rideAlong.devPlay(),
+	trainAt: (id) => {
+		const plan = planner.plans.find((p) => p.id === id);
+		if (!plan) return null;
+		const at = trainLngLat(plan);
+		return [at.lng, at.lat];
+	},
+	stationAt: (id) => {
+		const station = byId.get(id);
+		return station ? [station.lon, station.lat] : null;
+	},
+	locate: () => {
+		if (geolocate._watchState === "OFF") geolocate.trigger();
+	}
+});
 var openTrain = (plan) => {
 	if (rideAlong.tapTrain(plan)) return;
 	if (appBridge) appBridge.trainTap(plan);
@@ -2967,7 +2986,7 @@ if (!appBridge) {
 	ticketDesk = go;
 	let rideLogAsked = false;
 	const startRideLog = () => {
-		if (rideLogAsked) return;
+		if (rideLogAsked || fakeGpsPage) return;
 		rideLogAsked = true;
 		__vitePreload(() => import("./user/dev_ride_log.mjs").then((m) => {
 			const log = m.browserRideLog(() => {

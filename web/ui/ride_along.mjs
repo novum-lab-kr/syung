@@ -1194,11 +1194,21 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		};
 		return lit.ids;
 	};
+	const devPlay = () => {
+		const current = step();
+		return ride && current ? {
+			legs: ride.legs,
+			step: current,
+			train: ride.hold?.id ?? ride.train,
+			held: !!ride.hold
+		} : null;
+	};
 	return {
 		start,
 		stop,
 		tapTrain,
 		rideTrain,
+		devPlay,
 		get active() {
 			return !!ride;
 		},
