@@ -194,7 +194,7 @@ function rideSteps(legs) {
 	steps.push({ kind: "done" });
 	return steps;
 }
-function rideFixView({ step, left, undo, choosing, listed = false }) {
+function rideFixView({ step, undo, choosing, listed = false }) {
 	if (choosing) return {
 		title: "탄 열차를 지도에서 눌러 주세요",
 		say: null,
@@ -221,22 +221,6 @@ function rideFixView({ step, left, undo, choosing, listed = false }) {
 	const other = {
 		act: "other",
 		text: "다른 열차를 탔어요 ›"
-	};
-	if (left) return {
-		title: "열차에 탔어요?",
-		say: "슝이 헷갈려요",
-		fix: {
-			buttons: [{
-				act: "boarded",
-				text: "탔어요",
-				main: true
-			}, {
-				act: "missed",
-				text: "못 탔어요",
-				main: false
-			}],
-			links: [other]
-		}
 	};
 	if (undo) return {
 		title: null,
@@ -472,16 +456,22 @@ function rideList(legs, index, where, namesOf, colorOf, trains = null) {
 			if (target?.kind === "stop") target.marks = [...target.marks ?? [], item];
 		};
 		const mineRow = ahead ? at + 1 : at;
+		const share = nextIsStop(rows, at) ? where.share ?? null : null;
+		let slide = share ?? 0;
+		if (share !== null && ahead) slide = share - 1;
 		mark(mineRow, {
 			id: trains.mine,
 			mine: true,
-			bus: trains.bus
+			bus: trains.bus,
+			...slide ? { slide } : {}
 		});
 		if (othersFrom >= 0) {
 			for (const other of trains.others) if (othersFrom + other.at !== mineRow) mark(othersFrom + other.at, {
 				id: other.id,
 				mine: false,
-				bus: trains.bus
+				bus: trains.bus,
+				...other.slide ? { slide: other.slide } : {},
+				...other.name ? { name: other.name } : {}
 			});
 		}
 	}
@@ -491,10 +481,21 @@ function rideList(legs, index, where, namesOf, colorOf, trains = null) {
 		ahead
 	};
 }
+function rideSwapAsk(name) {
+	return {
+		title: "이 열차로 바꿀까요?",
+		name: name || null,
+		yes: "바꾸기",
+		no: "취소"
+	};
+}
 function goingAlong(track, stations) {
+	const order = stations.map((id) => track.seqIds.indexOf(id)).filter((spot) => spot >= 0);
+	if (order.length < 2 || order.some((spot, index) => index > 0 && spot <= order[index - 1])) return null;
 	const stops = rideStops(track, stations);
 	if (!stops) return null;
-	return stops.next == null || track.seqIds.includes(stops.next) ? stops : null;
+	if (stops.next == null) return leftStation(track, stops.now) ? null : stops;
+	return track.seqIds.includes(stops.next) ? stops : null;
 }
 function rideTrainSpots(tracks, stations, mine) {
 	const spots = [];
@@ -502,10 +503,12 @@ function rideTrainSpots(tracks, stations, mine) {
 		if (id === mine) continue;
 		const stops = goingAlong(track, stations);
 		if (!stops) continue;
-		const at = stations.indexOf(rideAhead(track, stops.now, stops.next) ? stops.next : stops.now);
+		const ahead = rideAhead(track, stops.now, stops.next), share = rideShare(track, stops.now, stops.next);
+		const at = stations.indexOf(ahead ? stops.next : stops.now), slide = ahead ? share - 1 : share;
 		if (at >= 0) spots.push({
 			id,
-			at
+			at,
+			...slide ? { slide } : {}
 		});
 	}
 	return spots;
@@ -588,6 +591,12 @@ function rideStops(track, stations) {
 		next: null
 	};
 }
+function rideShare({ seqIds, cum, dist }, nowId, nextId) {
+	const from = nextId == null ? -1 : seqIds.indexOf(nowId), to = nextId == null ? -1 : seqIds.indexOf(nextId);
+	if (from < 0 || to <= from) return 0;
+	const start = cum[from], span = cum[to] - start;
+	return span > 0 ? Math.min(1, Math.max(0, (dist - start) / span)) : 0;
+}
 function rideAhead(track, nowId, nextId) {
 	if (nextId == null || !leftStation(track, nowId)) return false;
 	const from = track.seqIds.indexOf(nowId), to = track.seqIds.indexOf(nextId);
@@ -629,12 +638,12 @@ var nearestM = (spot, points) => points.reduce((best, point) => {
 	return best === null || away < best ? away : best;
 }, null);
 var nearBoarding = ({ goalM, stationM, exitM }) => goalM <= 100 || stationM !== null && stationM <= 100 || atExit(exitM);
-function arriveOutcome(walkS, arrived) {
+function arriveOutcome(walkS, arrived, runS = 0) {
 	if (!arrived) return null;
-	return walkS <= 0 ? "board" : "missed";
+	return walkS <= runS ? "board" : "missed";
 }
 function arrivedEarly(rows, walkS, station) {
-	if (walkS <= 0) return [];
+	if (walkS <= 60) return [];
 	const name = station.replace(/\([^)]*\)/g, "").trim();
 	return rows.flatMap((row) => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
 }
@@ -643,29 +652,24 @@ function stayedFixes(count, track, nextId, atBoarding) {
 	return reached(track, nextId) || leftStation(track, nextId) ? count + 1 : 0;
 }
 var leftBehind = (count) => count >= 3;
-function withTrainFixes(count, { stationM, exitM, trainM }) {
-	return !nearBoarding({
-		goalM: Infinity,
-		stationM,
-		exitM
-	}) && trainM < stationM ? count + 1 : 0;
-}
-function holdOutcome({ nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached }) {
-	if (!leftMs) return nowMs - sinceMs >= 18e4 ? "board" : null;
-	if (moved >= 3 || nowMs - Math.max(lastFixMs, leftMs) > 3e4) return "board";
-	return nextReached && lastFixMs >= leftMs && !moved ? "missed" : null;
-}
 function boardNow({ nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed }) {
 	if (trainLeft && !(pickedDueS !== null && pickedDueS > 60) || trainGone) return true;
 	if (zeroSinceMs && (trainLeft !== null ? nowMs - zeroSinceMs >= 18e4 : nowMs - zeroSinceMs >= 45e3)) return true;
 	return (!listLength || !listFresh) && departsPassed;
 }
-function rideOver(track, stations, timeOver, longOver) {
+function rideOver(track, stations, timeOver, longOver, sawLeg) {
 	const toId = stations[stations.length - 1];
 	if (!track || toId === void 0) return timeOver;
 	if (track.seqIds.includes(toId)) return reached(track, toId);
-	return track.seqIds.some((id) => stations.includes(id)) ? longOver : timeOver;
+	if (track.seqIds.some((id) => stations.includes(id))) return longOver;
+	return sawLeg && track.seqIds.length > 0 || timeOver;
 }
+var offTrainFixes = (count, { stationM, exitM, trainM }) => nearBoarding({
+	goalM: Infinity,
+	stationM,
+	exitM
+}) && (trainM === null || trainM > 100) ? count + 1 : 0;
+var gotOff = (count) => count >= 3;
 var bareName = (name) => name.replace(/\(.*?\)/g, "").trim().replace(/역$/, "");
 function arrivalFits(row, leg, trainSeq, nameOf) {
 	if (row.line !== leg.line || row.direction !== leg.direction) return false;
@@ -755,4 +759,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, rideTrainSpots, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideShare, rideSteps, rideStops, rideSub, rideSwapAsk, rideTalk, rideTitle, rideTrainSpots, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };

@@ -20,12 +20,6 @@
 .source-state[hidden]{display:none!important}
 .settings-button{flex:none;width:40px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:var(--radius-10);background:transparent;color:inherit;cursor:pointer}
 .settings-button svg{width:24px;height:24px;transition:transform .3s}
-.refresh-button{margin-left:auto}
-.zoom-badge{margin-left:auto;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px var(--space-2);border-radius:var(--radius-pill);background:rgba(255,255,255,.55);font-variant-numeric:tabular-nums}   /* current map zoom, for checking views */
-html[data-theme=dark] .zoom-badge{background:rgba(227,197,79,.1)}
-.zoom-badge+.refresh-button{margin-left:-12px}
-.refresh-button+.settings-button{margin-left:-16px}   /* the pair sits together: 4px between the 40px targets, not the header's 20px */
-.refresh-button.spin svg{transform:rotate(360deg);transition:transform var(--duration-600)}
 .settings-button:hover{background:rgba(20,20,20,.08)}
 html[data-theme=dark] .settings-button:hover{background:rgba(227,197,79,.12)}
 /* 설정 서랍: 오른쪽에서 밀려 나온다. hidden 이면 닫힘(버스 층도 hidden 으로 닫는다), .open 이 붙으면 다 나온 자리.
@@ -615,11 +609,25 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 /* 바로잡기 창구(2026-11-26 사용자 결정 A+B): 늘 보이는 글 링크(누르는 칸은 위아래로 넓혀 손가락에 맞게) · 슝이 헷갈릴 때 묻는 단추 */
 .rg-fix{display:flex;flex-wrap:wrap;align-items:center;margin:2px 0 -6px;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
 .rg-fix .rg-detour{padding:6px 0}.rg-fix i{margin:0 .45em;font-style:normal}
+/* 목록의 다른 열차로 바꾸기 확인 팝업(components/ride_card.tsx SwapAsk — 로그인 팝업 .login-sheet 모양 그대로 + 안쪽만) */
+.rg-swap .login-card h2{margin-bottom:var(--space-2)}
+.rg-swap-name{margin:0 0 var(--space-5);font-size:var(--text-15);color:var(--muted)}
+.rg-swap-do{display:flex;gap:var(--space-2);align-self:stretch}.rg-swap-do .sy-btn{flex:1;min-height:44px;justify-content:center;font-size:var(--text-15)}
 .rg-ask{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:10px}.rg-ask .sy-btn{min-height:38px;font-size:var(--text-15)}
 .rg-dev{display:flex;gap:var(--space-2);margin-top:10px}.rg-dev .sy-btn{min-height:30px;font-size:var(--text-14)}   /* 개발자만: [탔음] [안 탔음] */
 /* 탄 동안 정보 화면(components/ride_card.tsx RideInfo): 지도를 덮고 말풍선 카드만 위에(새싹이는 카드의 원래 자리 — 오른쪽 아래). 풍경(400×300 장면 · 그 위에 날씨 층)은 화면 폭 가득 · 아래 맞춤(ride_info_motion slice) */
 .rg-info{position:fixed;inset:0;z-index:14;display:flex;flex-direction:column;align-items:center;padding:0 28px;overflow:hidden;background:var(--board);color:var(--ink)}
 /* 바탕은 단색 판(--board) — 그라데이션 없음(2026-11-25 사용자) */
+/* 새싹이가 선 승강장(components/ride_card.tsx platformArt · 2026-11-26 사용자 시안 H): 목록 · 카드 뒤(z -1 — .rg-info 는 제 쌓임 맥락이라 바탕 위 · 목록 아래).
+   그림의 발밑 (1000,500)을 새싹이 발밑에 — 새싹이 오른쪽 끝 = 화면 오른쪽에서 max(6px, 50% - 286px)(.rg-stack 폭 · .rg-sprout right:-6px), 발은 그보다 48px 안 ·
+   새싹이 아래 끝(6px + 안전 영역)보다 24px 위. 넘치는 부분은 .rg-info 가 자른다 */
+.rg-platform{position:absolute;z-index:-1;width:1400px;height:700px;right:calc(max(6px, 50% - 286px) + 48px - 400px);bottom:calc(30px + env(safe-area-inset-bottom,0px) - 200px);pointer-events:none}
+.rg-platform svg{display:block;width:100%;height:100%}
+/* 색은 지도 색(modes/basic/palette.mts) — 라이트: 바닥 bld · 선로 바닥 rail · 자갈 roadCase · 레일 road / 다크: 바닥 roadMajor · 선로 바닥 bld · 자갈 roadMinor · 벽 rail */
+.rg-pl-top{fill:#dfe4e6}.rg-pl-tile{stroke:#fff;stroke-opacity:.7}.rg-pl-safety{stroke:var(--syung)}.rg-pl-dot{fill:#e6c62f}.rg-pl-shadow{fill:#000;fill-opacity:.12}
+.rg-pl-pit{fill:#c3cbcf}.rg-pl-bal{fill:#cfd8da}.rg-pl-tie{stroke:#7a8589;stroke-opacity:.45}.rg-pl-rail{stroke:#7a8589}.rg-pl-lip{fill:#000;fill-opacity:.1}.rg-pl-wall{fill:#b3bdc1}
+html[data-theme=dark] .rg-pl-top{fill:#2f3f47}html[data-theme=dark] .rg-pl-tile{stroke:#3a4a53}html[data-theme=dark] .rg-pl-shadow{fill-opacity:.35}
+html[data-theme=dark] .rg-pl-pit{fill:#1c262b}html[data-theme=dark] .rg-pl-bal{fill:#243238}html[data-theme=dark] .rg-pl-tie{stroke:#7f9096;stroke-opacity:.35}html[data-theme=dark] .rg-pl-rail{stroke:#7f9096}html[data-theme=dark] .rg-pl-lip{fill-opacity:.3}html[data-theme=dark] .rg-pl-wall{fill:#35454d}
 .rg-info-view{position:relative;flex:none;width:100vw;height:min(75vw,30vh);overflow:hidden}
 .rg-info-scene,.rg-info-scene>div{position:absolute;inset:0}
 .rg-info-scene svg{display:block;width:100%;height:100%}
@@ -705,8 +713,9 @@ html[data-theme=dark] .rg-edge .wood{fill:#d8c890}html[data-theme=dark] .rg-edge
 .rg-list li.marked{overflow:visible}
 .rg-train{position:absolute;z-index:2;top:50%;display:block;margin:0;padding:0;border:0;background:none;transform:translateY(-50%);filter:drop-shadow(0 0 1.2px var(--paper)) drop-shadow(0 0 1.2px var(--paper))}
 .rg-train svg{display:block;width:100%;height:auto;overflow:visible}
-.rg-train.mine{width:34px;left:-37px}
-.rg-train.other{width:26px;left:-29px;opacity:.5}
+.rg-train.mine{width:34px;left:-37px;top:calc(50% + var(--rg-slide,0) * 56px);transition:top 1s linear}   /* 역 사이 간 몫만큼 선을 따라(56px = 40px 줄 반 + 72px 이번 줄 반 — 둘 사이 역 점 거리 · 2026-11-26 사용자) */
+@media (prefers-reduced-motion:reduce){.rg-train.mine,.rg-train.other{transition:none}}
+.rg-train.other{width:26px;left:-29px;opacity:.5;top:calc(50% + var(--rg-shift,0px) + var(--rg-slide,0) * var(--rg-step,40px));transition:top 1s linear}   /* 다른 열차도 역 사이를 따라(--rg-step = 옆 줄 역 점 거리 · ride_card.tsx · 2026-11-26 사용자 「다 움직여」) */
 button.rg-train{padding:12px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}   /* 누를 자리는 위아래로 넓게 */
 button.rg-train.stacked{padding:1px 0}   /* 한 줄에 여럿이 쌓이면 누를 자리를 간격(13px)만큼만 — 서로 안 겹치게 */
 /* 낮은 화면(브라우저 주소 막대 등)에서는 풍경을 줄이고 사이를 좁힌다 — 「다음 역」이 말풍선에 가리지 않게 */
@@ -734,12 +743,9 @@ body:has(.rg-talk,.ra) .route-cta{display:none}
 .rac .lm-wind path{stroke:var(--muted)}.rac .lm-dust path{fill:var(--muted)}
 /* 다크: 까만 열차가 어두운 지도에 묻혀 몸통은 슝 노랑 · 눈은 먹색으로 뒤집는다(로그인 로고 상자 노랑 + 열차 먹색의 반대 짝 · 2026-11-08 사용자 결정) */
 html[data-theme=dark] .rac .lm-train-body path{fill:var(--syung)}html[data-theme=dark] .rac .lm-train-eye path{fill:var(--syung-ink)}
-/* 길 끝 깃발(GoalFlag): 장면 48×64 를 화면 px 그대로 · 깃대 밑 = 장면 (6,60) → 도착 자리 오른쪽 24px(도착하면 새싹이 · 머리 위 「도착!」 과 안 겹친다) */
-.rag{position:fixed;left:0;top:0;width:0;height:0;z-index:15;pointer-events:none}
-.rag-flag{left:18px;top:-60px;width:48px;height:64px}
 @keyframes rac-late{from{visibility:hidden}to{visibility:visible}}
 @keyframes rac-pop{0%{transform:translateX(-50%) translateY(8px) scale(.6);opacity:0}70%{transform:translateX(-50%) scale(1.12);opacity:1}}
-@media (prefers-reduced-motion:reduce){.ram *,.rag *{animation:none}}
+@media (prefers-reduced-motion:reduce){.ram *{animation:none}}
 .jbar-x:hover{color:var(--ink)}
 .jbar-x::after{content:"";position:absolute;inset:-7px}   /* a 44px target around the small circle */
 .jbar-new{position:absolute;top:0;right:44px;min-height:44px;padding:0 var(--space-2);border:0;background:none;color:var(--ink);font:inherit;font-size:var(--text-13);font-weight:var(--weight-bold);cursor:pointer}

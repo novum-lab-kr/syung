@@ -44,6 +44,7 @@ import { createJourneyMap } from "./ui/journey.mjs";
 import { createRideAlong } from "./ui/ride_along.mjs";
 import { rideAlertSink } from "./ui/ride_alerts.mjs";
 import "./components/ride_arrival.mjs";
+import "./components/layer_sheet.mjs";
 import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
@@ -2859,18 +2860,8 @@ settingsMenu.on({ switches: {
 	toggleSaver: () => setSaver(!saverOn)
 } });
 {
-	{
-		const z = $("zoomBadge"), show = () => {
-			z.textContent = "z" + map.getZoom().toFixed(1);
-			appStatus();
-		};
-		map.on("zoom", show);
-		show();
-	}
-	$("refreshButton").onclick = (e) => {
-		e.currentTarget.classList.add("spin");
-		setTimeout(() => location.reload(), 250);
-	};
+	map.on("zoom", appStatus);
+	appStatus();
 	const btn = $("settingsButton"), panel = $("settingsPanel");
 	settingsMenu.icons(ICONS.coaster, ICONS.speed);
 	const isOpen = () => !panel.hidden && panel.classList.contains("open");

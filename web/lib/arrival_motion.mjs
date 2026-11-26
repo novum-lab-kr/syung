@@ -1,6 +1,5 @@
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import arrival_char_ride_default from "../brand/arrival-char-ride.json_url.mjs";
-import arrival_flag_default from "../brand/arrival-flag.json_url.mjs";
 // web/lib/arrival_motion.mts
 var player = () => globalThis.lottie;
 var PAINT = {
@@ -39,10 +38,7 @@ var cache = /* @__PURE__ */ new Map();
 function loadScene(name) {
 	let pending = cache.get(name);
 	if (!pending) {
-		pending = fetch(new URL((/* #__PURE__ */ Object.assign({
-			"../brand/arrival-char-ride.json": arrival_char_ride_default,
-			"../brand/arrival-flag.json": arrival_flag_default
-		}))[`../brand/arrival-${name}.json`], import.meta.url)).then((response) => response.ok ? response.json() : null).catch(() => null);
+		pending = fetch(new URL((/* #__PURE__ */ Object.assign({ "../brand/arrival-char-ride.json": arrival_char_ride_default }))[`../brand/arrival-${name}.json`], import.meta.url)).then((response) => response.ok ? response.json() : null).catch(() => null);
 		pending.then((data) => {
 			if (!data) cache.delete(name);
 		});
@@ -50,7 +46,7 @@ function loadScene(name) {
 	}
 	return pending;
 }
-function playArrival(box, name, onError) {
+function playArrival(box, name, onError, onEnd) {
 	let anim = null, gone = false, failed = false;
 	const fail = () => {
 		if (gone || failed || !box.isConnected) return;
@@ -79,13 +75,19 @@ function playArrival(box, name, onError) {
 		anim = lottie.loadAnimation({
 			container: box,
 			renderer: "svg",
-			loop: name === "flag" && !still,
+			loop: false,
 			autoplay: !still,
 			animationData: copy
 		});
 		anim.addEventListener("data_failed", fail);
 		anim.addEventListener("error", fail);
-		if (still) anim.goToAndStop(anim.totalFrames - 1, true);
+		anim.addEventListener("complete", () => {
+			if (!gone && !failed) onEnd?.();
+		});
+		if (still) {
+			anim.goToAndStop(anim.totalFrames - 1, true);
+			onEnd?.();
+		}
 		box.classList.add("on");
 	}).catch(fail);
 	return () => {

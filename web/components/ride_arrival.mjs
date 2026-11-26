@@ -25,12 +25,13 @@ function useAnchor(map, at) {
 	]);
 	return anchor;
 }
-function useMotion(name, onError) {
-	const box = T(null);
+function useMotion(name, onError, onEnd) {
+	const box = T(null), ended = T(onEnd);
+	ended.current = onEnd;
 	A(() => {
 		let stop = null, gone = false;
 		__vitePreload(() => import("../lib/arrival_motion.mjs").then((motion) => {
-			if (!gone && box.current) stop = motion.playArrival(box.current, name, onError);
+			if (!gone && box.current) stop = motion.playArrival(box.current, name, onError, () => ended.current?.());
 		}), [], import.meta.url).catch(() => {
 			if (!gone) onError?.();
 		});
@@ -56,8 +57,8 @@ function useTapClose(map, onClose) {
 		};
 	}, [map, onClose]);
 }
-function MapArrival({ map, at, arrival, onClose, onError, hideMe }) {
-	const anchor = useAnchor(map, at), box = useMotion("char-ride", onError);
+function MapArrival({ map, at, arrival, onClose, onError, onPlayed, hideMe }) {
+	const anchor = useAnchor(map, at), box = useMotion("char-ride", onError, onPlayed);
 	A(() => {
 		hideMe?.(true);
 		return () => hideMe?.(false);
@@ -80,16 +81,4 @@ function MapArrival({ map, at, arrival, onClose, onError, hideMe }) {
 		})]
 	});
 }
-function GoalFlag({ map, at }) {
-	const anchor = useAnchor(map, at), box = useMotion("flag");
-	return /* @__PURE__ */ a("div", {
-		ref: anchor,
-		class: "rag",
-		"aria-hidden": "true",
-		children: /* @__PURE__ */ a("span", {
-			ref: box,
-			class: "ral-scene rag-flag"
-		})
-	});
-}
-export { GoalFlag, MapArrival };
+export { MapArrival };

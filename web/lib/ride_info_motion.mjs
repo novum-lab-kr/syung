@@ -1,7 +1,6 @@
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { panelScene, playRange } from "./where_motion.mjs";
 import arrival_char_ride_default from "../brand/arrival-char-ride.json_url.mjs";
-import arrival_flag_default from "../brand/arrival-flag.json_url.mjs";
 import login_motion_loop_default from "../brand/login-motion-loop.json_url.mjs";
 import login_motion_default from "../brand/login-motion.json_url.mjs";
 import ride_scenery_default from "../brand/ride-scenery.json_url.mjs";
@@ -87,7 +86,6 @@ function loadScene(name) {
 	if (!pending) {
 		pending = fetch(new URL((/* #__PURE__ */ Object.assign({
 			"../brand/arrival-char-ride.json": arrival_char_ride_default,
-			"../brand/arrival-flag.json": arrival_flag_default,
 			"../brand/login-motion-loop.json": login_motion_loop_default,
 			"../brand/login-motion.json": login_motion_default,
 			"../brand/ride-scenery.json": ride_scenery_default,

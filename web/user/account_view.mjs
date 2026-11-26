@@ -1,7 +1,7 @@
 import { render as K } from "../npm/preact/dist/preact.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
-import { AccountPage as AccountPage$1, DeviceList } from "../components/account_page.mjs";
 import { LayerSheet } from "../components/layer_sheet.mjs";
+import { AccountPage as AccountPage$1, DeviceList } from "../components/account_page.mjs";
 import { LoginSheetBody, SocialButtons } from "../components/login_sheet.mjs";
 import { ProfileCard } from "../components/profile_card.mjs";
 import { CHARACTERS, ProfileForm as ProfileForm$1, ProfileSheetBody } from "../components/profile_form.mjs";

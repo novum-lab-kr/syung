@@ -1,8 +1,10 @@
+import { rideSwapAsk } from "../lib/ride-along.mjs";
 import { Fragment as M, render as K } from "../npm/preact/dist/preact.mjs";
 import { __vitePreload } from "../_virtual/_vite/preload-helper.mjs";
 import { jsx as a } from "../npm/preact/jsx-runtime/dist/jsxRuntime.mjs";
 import { useCallback as b, useEffect as A, useRef as T, useState as d } from "../npm/preact/hooks/dist/hooks.mjs";
-import { GoalFlag, MapArrival } from "./ride_arrival.mjs";
+import { MapArrival } from "./ride_arrival.mjs";
+import { LayerSheet } from "./layer_sheet.mjs";
 // web/components/ride_card.tsx
 var CLOSE = /* @__PURE__ */ a("svg", {
 	viewBox: "0 0 24 24",
@@ -524,6 +526,7 @@ function RideEdge({ color }) {
 	}) });
 }
 var LIST_ROW_PX = 40;
+var FOCUS_ROW_PX = 72;
 var EDGE_BOTTOM_PX = 76;
 var SUBWAY_ART = (color) => /* @__PURE__ */ a("svg", {
 	viewBox: "0 0 48 20",
@@ -665,20 +668,24 @@ var BUS_ART = (color) => /* @__PURE__ */ a("svg", {
 	})
 });
 var STACK_PX = 13;
-function TrainMark({ mark, color, pick, order = 0, count = 1 }) {
+function TrainMark({ mark, color, pick, order = 0, count = 1, step = LIST_ROW_PX }) {
 	const art = mark.bus ? BUS_ART(color) : SUBWAY_ART(color), size = mark.mine ? "mine" : "other";
 	if (mark.mine || !mark.id || !pick) return /* @__PURE__ */ a("i", {
 		class: `rg-train ${size}${mark.bus ? " bus" : ""}`,
+		style: mark.slide ? `--rg-slide:${mark.slide.toFixed(3)};--rg-step:${step}px` : void 0,
 		"aria-hidden": "true",
 		children: art
 	});
-	const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX;
+	const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX, vars = [shift ? `--rg-shift:${shift}px` : "", mark.slide ? `--rg-slide:${mark.slide.toFixed(3)};--rg-step:${step}px` : ""].filter(Boolean).join(";");
 	return /* @__PURE__ */ a("button", {
 		type: "button",
 		class: `rg-train ${size}${count > 1 ? " stacked" : ""}`,
-		style: shift ? `top:calc(50% + ${shift}px)` : void 0,
-		"aria-label": "이 열차를 탔어요",
-		onClick: () => pick(id),
+		style: vars || void 0,
+		"aria-label": `${mark.name ?? "이 열차"} — 탄 열차로 바꾸기`,
+		onClick: () => pick({
+			...mark,
+			id
+		}),
 		children: art
 	});
 }
@@ -724,6 +731,8 @@ function RideList({ list, pick }) {
 	const head = list.rows[0], headColor = head && head.kind !== "gap" ? head.color : null;
 	const pastClass = (order) => order < focus ? " past" : "";
 	const last = list.rows.length - 1;
+	const rowPx = (order) => order === focus ? FOCUS_ROW_PX : LIST_ROW_PX;
+	const slideStep = (order, slide = 0) => (rowPx(order) + rowPx(order + Math.sign(slide))) / 2;
 	return /* @__PURE__ */ a("div", {
 		class: "rg-list-box",
 		children: [/* @__PURE__ */ a("div", {
@@ -765,7 +774,8 @@ function RideList({ list, pick }) {
 								color: row.color,
 								pick,
 								order: others.indexOf(mark),
-								count: others.length
+								count: others.length,
+								step: slideStep(order, mark.slide)
 							}, mark.id ?? "mine")),
 							now && /* @__PURE__ */ a("small", { children: note }),
 							/* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "여기서 내려요" })] })
@@ -775,6 +785,81 @@ function RideList({ list, pick }) {
 			})]
 		}), edgeColor && /* @__PURE__ */ a(RideEdge, { color: edgeColor })]
 	});
+}
+var platformSvg = "";
+function platformArt() {
+	if (platformSvg) return platformSvg;
+	const at = (i, j) => [1e3 + 60 * i + 60 * j, 500 + 30 * i - 30 * j];
+	const pts = (list) => list.map((point) => point.map((num) => num.toFixed(1)).join(",")).join(" ");
+	const line = (cls, from, to, width) => `<line class="${cls}" x1="${from[0].toFixed(1)}" y1="${from[1].toFixed(1)}" x2="${to[0].toFixed(1)}" y2="${to[1].toFixed(1)}"${width ? ` stroke-width="${width}"` : ""}/>`;
+	const poly = (cls, list) => `<polygon class="${cls}" points="${pts(list)}"/>`;
+	const drop = (point, by) => [point[0], point[1] + by];
+	const back = -1.15, far = 14, side = 14, wide = 30, step = .5;
+	const tiles = (edge, dir, end, span) => {
+		let out = "";
+		for (let row = edge + dir * step; dir > 0 ? row < end : row > end; row += dir * step) out += line("rg-pl-tile", at(row, -span), at(row, span));
+		for (let col = -span; col <= span; col += step) out += line("rg-pl-tile", at(edge + dir * .38, col), at(end, col));
+		out += line("rg-pl-safety", at(edge + dir * .12, -14), at(edge + dir * .12, side), 3);
+		for (let dot = -56; dot < 56; dot++) {
+			const [cx, cy] = at(edge + dir * .24, dot / 4);
+			out += `<circle class="rg-pl-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.1"/>`;
+		}
+		return out;
+	};
+	const track = (mid) => {
+		let out = poly("rg-pl-bal", [
+			at(mid - .32, -14),
+			at(mid - .32, side),
+			at(mid + .32, side),
+			at(mid + .32, -14)
+		]);
+		for (let tie = -70; tie < 70; tie++) out += line("rg-pl-tie", at(mid - .22, tie / 5), at(mid + .22, tie / 5), 3);
+		for (const off of [-.13, .13]) out += line("rg-pl-rail", at(mid + off, -14), at(mid + off, side), 1.6);
+		return out;
+	};
+	const opposite = -3.25, beyond = -21.15;
+	let rear = poly("rg-pl-pit", [
+		at(opposite, -14),
+		at(opposite, side),
+		at(back, side),
+		at(back, -14)
+	]);
+	rear += track(-1.75) + track(-2.65);
+	rear += poly("rg-pl-top", [
+		at(beyond, -30),
+		at(beyond, wide),
+		at(opposite, wide),
+		at(opposite, -30)
+	]);
+	rear += tiles(opposite, -1, beyond, wide);
+	rear += poly("rg-pl-wall", [
+		at(opposite, -14),
+		at(opposite, side),
+		drop(at(opposite, side), 9),
+		drop(at(opposite, -14), 9)
+	]);
+	rear += poly("rg-pl-lip", [
+		at(back, -14),
+		at(back, side),
+		at(-1.3299999999999998, side),
+		at(-1.3299999999999998, -14)
+	]);
+	let front = poly("rg-pl-pit", [
+		at(back, -14),
+		at(back, side),
+		drop(at(back, side), -5),
+		drop(at(back, -14), -5)
+	]);
+	front += poly("rg-pl-top", [
+		at(back, -14),
+		at(back, side),
+		at(far, side),
+		at(far, -14)
+	]);
+	front += tiles(back, 1, far, side);
+	front += "<ellipse class=\"rg-pl-shadow\" cx=\"1000\" cy=\"500\" rx=\"26\" ry=\"8\"/>";
+	platformSvg = `<svg viewBox="0 0 1400 700"><defs><linearGradient id="rgPlFade" gradientUnits="userSpaceOnUse" x1="0" y1="180" x2="0" y2="350"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient><mask id="rgPlMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1400" height="700"><rect width="1400" height="700" fill="url(#rgPlFade)"/></mask></defs><g mask="url(#rgPlMask)">${rear}</g>${front}</svg>`;
+	return platformSvg;
 }
 function RideInfo({ info, pick }) {
 	const box = T(null);
@@ -791,18 +876,98 @@ function RideInfo({ info, pick }) {
 	return /* @__PURE__ */ a("section", {
 		class: "rg-info",
 		"aria-label": "타고 가는 곳",
-		children: [/* @__PURE__ */ a("div", {
-			class: "rg-info-view",
-			"aria-hidden": "true",
-			children: /* @__PURE__ */ a("div", {
-				class: "rg-info-scene",
-				ref: box
+		children: [
+			/* @__PURE__ */ a("div", {
+				class: "rg-info-view",
+				"aria-hidden": "true",
+				children: /* @__PURE__ */ a("div", {
+					class: "rg-info-scene",
+					ref: box
+				})
+			}),
+			/* @__PURE__ */ a("i", {
+				class: "rg-platform",
+				"aria-hidden": "true",
+				dangerouslySetInnerHTML: { __html: platformArt() }
+			}),
+			/* @__PURE__ */ a(RideList, {
+				list: info.list,
+				pick
 			})
-		}), /* @__PURE__ */ a(RideList, {
-			list: info.list,
-			pick
-		})]
+		]
 	});
+}
+function SwapAsk({ mark, yes, no }) {
+	const [open, setOpen] = d(false), sure = T(null), ask = rideSwapAsk(mark.name);
+	A(() => {
+		const frame = requestAnimationFrame(() => setOpen(true));
+		sure.current?.focus({ preventScroll: true });
+		const key = (event) => {
+			if (event.key === "Escape") {
+				event.stopImmediatePropagation();
+				no();
+			}
+		};
+		window.addEventListener("keydown", key, true);
+		return () => {
+			cancelAnimationFrame(frame);
+			window.removeEventListener("keydown", key, true);
+		};
+	}, []);
+	return /* @__PURE__ */ a("div", {
+		class: `login-sheet rg-swap${open ? " open" : ""}`,
+		onClick: (event) => {
+			if (event.target.classList.contains("login-scrim")) no();
+		},
+		children: /* @__PURE__ */ a(LayerSheet, {
+			labelledBy: "rgSwapTitle",
+			children: [
+				/* @__PURE__ */ a("h2", {
+					id: "rgSwapTitle",
+					children: ask.title
+				}),
+				ask.name && /* @__PURE__ */ a("p", {
+					class: "rg-swap-name",
+					children: ask.name
+				}),
+				/* @__PURE__ */ a("div", {
+					class: "rg-swap-do",
+					children: [/* @__PURE__ */ a("button", {
+						type: "button",
+						class: "sy-btn sy-btn-secondary",
+						onClick: no,
+						children: ask.no
+					}), /* @__PURE__ */ a("button", {
+						type: "button",
+						class: "sy-btn sy-btn-primary",
+						ref: sure,
+						onClick: yes,
+						children: ask.yes
+					})]
+				})
+			]
+		})
+	});
+}
+function RideInfoCard({ info, card, pick }) {
+	const [asking, setAsking] = d(null);
+	const yes = () => {
+		const id = asking?.id;
+		setAsking(null);
+		if (id) pick?.(id);
+	};
+	return /* @__PURE__ */ a(M, { children: [
+		/* @__PURE__ */ a(RideInfo, {
+			info,
+			pick: pick ? setAsking : void 0
+		}),
+		card,
+		asking && /* @__PURE__ */ a(SwapAsk, {
+			mark: asking,
+			yes,
+			no: () => setAsking(null)
+		}, asking.id)
+	] });
 }
 function ArrivalCard({ view, actions, map, hideMe }) {
 	const [failed, setFailed] = d(false), fail = b(() => setFailed(true), []);
@@ -817,32 +982,29 @@ function ArrivalCard({ view, actions, map, hideMe }) {
 		hideMe,
 		arrival: view.arrival,
 		onClose: actions.close,
-		onError: fail
+		onError: fail,
+		onPlayed: actions.played
 	});
 }
 function drawRideCard(host, view, actions, map, hideMe) {
-	const goal = view?.goal?.at, flag = map && goal && !view?.arrival ? /* @__PURE__ */ a(GoalFlag, {
-		map,
-		at: goal
-	}, "goal") : null;
-	const draw = (body) => K(flag ? /* @__PURE__ */ a(M, { children: [flag, body] }) : body, host);
 	const at = view?.arrival?.at;
 	if (view?.arrival && map && at) {
-		draw(/* @__PURE__ */ a(ArrivalCard, {
+		K(/* @__PURE__ */ a(ArrivalCard, {
 			view,
 			actions,
 			map,
 			hideMe
-		}, "arrival"));
+		}, "arrival"), host);
 		return;
 	}
 	const card = view ? /* @__PURE__ */ a(RideCard, {
 		view,
 		actions
 	}, "card") : null;
-	draw(view?.info ? /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(RideInfo, {
+	K(view?.info ? /* @__PURE__ */ a(RideInfoCard, {
 		info: view.info,
+		card,
 		pick: actions.pick
-	}, "info"), card] }) : card);
+	}, "info") : card, host);
 }
 export { RideCard, drawRideCard };

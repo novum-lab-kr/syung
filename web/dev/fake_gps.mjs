@@ -27,6 +27,7 @@ var SPEEDS = [
 	3,
 	10
 ];
+var alightNow = (trainSpot, alightSpot) => !!trainSpot && !!alightSpot && metres(trainSpot, alightSpot) <= 150;
 function installFakeGps() {
 	const real = navigator.geolocation;
 	if (!real) return null;
@@ -119,7 +120,7 @@ function installFakeGps() {
 		}
 	};
 	return { mount(deps) {
-		let playing = false, speed = 1, legIndex = -1, walkedM = 0, aboard = false, note = "";
+		let playing = false, speed = 1, legIndex = -1, walkedM = 0, off = false, note = "";
 		let legPath = null;
 		const playTick = () => {
 			const ride = deps.ride();
@@ -127,7 +128,7 @@ function installFakeGps() {
 				note = "타고 가기가 꺼져 있어요";
 				return;
 			}
-			const { step, legs, train, held } = ride, leg = step.kind === "done" ? void 0 : legs[step.leg];
+			const { step, legs, train } = ride, leg = step.kind === "done" ? void 0 : legs[step.leg];
 			if (step.kind === "done" || !leg) {
 				note = "도착";
 				playing = false;
@@ -136,7 +137,7 @@ function installFakeGps() {
 			if (step.leg !== legIndex) {
 				legIndex = step.leg;
 				walkedM = 0;
-				aboard = false;
+				off = false;
 				legPath = null;
 			}
 			if (step.kind === "walk" || leg.type === "bus" && step.kind === "ride") {
@@ -160,14 +161,15 @@ function installFakeGps() {
 			if (leg.type !== "ride") return;
 			const board = deps.stationAt(leg.stations[0]), trainSpot = train ? deps.trainAt(train) : null;
 			if (step.kind === "wait") {
-				if (trainSpot && held) aboard = true;
-				if (trainSpot && aboard) {
-					spot = trainSpot;
-					note = `열차 ${train} 따라가는 중(기다리기)`;
-				} else {
-					spot = board ?? spot;
-					note = `${leg.from}역에서 기다리는 중${train ? ` · 열차 ${train}` : ""}`;
-				}
+				spot = board ?? spot;
+				note = `${leg.from}역에서 기다리는 중${train ? ` · 열차 ${train}` : ""}`;
+				return;
+			}
+			const alightSpot = deps.stationAt(leg.stations[leg.stations.length - 1]);
+			if (alightNow(trainSpot, alightSpot)) off = true;
+			if (off) {
+				spot = alightSpot ?? spot;
+				note = `${leg.to}역에서 내렸어요`;
 				return;
 			}
 			if (trainSpot) {
@@ -289,4 +291,4 @@ function installFakeGps() {
 		paint();
 	} };
 }
-export { alongPath, installFakeGps };
+export { alightNow, alongPath, installFakeGps };
