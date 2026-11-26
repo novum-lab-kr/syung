@@ -17,6 +17,12 @@ export interface TrainPlannerDeps {
   catchup:(gap:number, v0?:number)=>Catchup; catchupAt:(c:Catchup, t:number)=>{ v:number }; predictStops:()=>number; isRide:()=>unknown;   // isRide: 탄 열차(있으면 참)
   getTrains:()=>LiveTrain[];
 }
+// 역 하나의 서기 · 떠나기 셈(planTrain 과 화면 재현 채점 pipeline/replay_score.mjs 가 같이 쓴다). zone = 피드 도착→출발(승강장 구간에 든 때 → 나간 때).
+// 피드 도착 뒤 brake 초 감속해 서고, stand 초 서 있다가, 도착 뒤 dwell 초에 떠난다 — 피드 출발보다 pullOut(= zone − dwell) 초 먼저
+export function stopTiming(tm:{ zone:number; stand?:number }):{ dwell:number; stand:number; brake:number; pullOut:number }{
+  const dwell=Math.max(15,tm.zone-20),stand=Math.min(dwell,Math.max(20,Math.min(tm.stand||30,dwell-20)));
+  return {dwell,stand,brake:dwell-stand,pullOut:tm.zone-dwell};
+}
 export function createTrainPlanner({stations,stationByLine,key,normStatus,route,merc,realGeom,geom,trainPose,mercStop,catchup,catchupAt,predictStops,isRide,getTrains}:TrainPlannerDeps){
   function kstMs(v:unknown):number{const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1]!,+m[2]!-1,+m[3]!,+m[4]!-9,+m[5]!,+m[6]!):NaN}
   function age(v:unknown):number{const t=kstMs(v);return t===t?Math.max(0,((clock()===frameClock?frameEpoch:Date.now())-t)/1000):0}
@@ -73,7 +79,7 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     // feed's next events are expected at are unchanged (build_live_timing.evaluate).
     // 감속(BRAKE)은 20초 이상, 정차는 20초 이상: 정차 30초에서 남는 만큼만 감속하면 구간 시간이 짧은 노선(7호선 zone 60)은
     // 감속이 10초뿐이라 실제보다 일찍 섰다(7호선 중곡 약 10초 빨리 도착, 2026-10-12 덕배 탑승). 출발 시각은 그대로다.
-    const tm=timingFor(t.line),DWELL=Math.max(15,tm.zone-20),STAND=Math.min(DWELL,Math.max(20,Math.min(tm.stand||30,DWELL-20))),BRAKE=DWELL-STAND;
+    const tm=timingFor(t.line),{dwell:DWELL,stand:STAND,brake:BRAKE}=stopTiming(tm);
     // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
     // 완행은 급행을 보내려고 서는 역(대피)이 방향 · 출퇴근마다 따로 있다(live-timing waits — 9호선 가양 · 동작 · 샛강 · 사평 · 송파나루 약 200초).
     // 역 하나로 섞어 배운 70~90초만 서면 대피 중인 열차를 2~3분 먼저 떠나보내 세 역 앞까지 갔다(화면 재현 9호선, 2026-10-22)
@@ -144,7 +150,7 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     if(route(t,s).ahead[1]?.id!==dest.id)return {atDestination:false,lastLegSeconds:null};
     return {atDestination:false,lastLegSeconds:edgeTimes[`${t.line}:${Math.min(s.id,dest.id)}:${Math.max(s.id,dest.id)}`]??null};
   }
-  return {planTrain,replacePlans,age,clock,destinationLeg,get plans(){return plans},get frameClock(){return frameClock},
+  return {planTrain,replacePlans,age,clock,destinationLeg,timingFor,get plans(){return plans},get frameClock(){return frameClock},
     rebuild(){plans=getTrains().map(planTrain).filter(Boolean) as TrainPlan[]},   // 모드 · 선로가 바뀌면 처음부터 다시(이어 그리지 않는다)
     clear(){plans=[]},
     setFrame(ts:number){frameClock=ts;frameEpoch=Date.now()-(performance.now()-ts)}};   // 1인칭: 이 화면 프레임의 시각

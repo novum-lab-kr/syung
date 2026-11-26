@@ -172,10 +172,13 @@ def backfill(d: date, have: set[date]) -> dict | None:
 
 def replay_scores(keep: int = 28) -> dict:
     """화면 재현 점수(retrain 이 replay_score.mjs 로 남긴 replay-scores.json): 날짜별 창마다 — 학습 현황 맨 위 '오픈 기준'.
-    기준(2026-10-19 Codex 초안): 도착 · 출발 |오차| 가운데 ≤ 15초 · 90 % ≤ 30초 · 치우침 ±10초, 역 사이 10초 넘는 멈춤 0."""
+    기준(2026-10-19 Codex 초안): 도착 · 출발 |오차| 가운데 ≤ 15초 · 90 % ≤ 30초 · 치우침 ±10초, 역 사이 10초 넘는 멈춤 0.
+    scoringSince: 같은 순간끼리 견주는 채점(창에 moments "section" — replay_score.mjs, 2026-11-27)으로 매긴 첫 날. 그 전 날은 옛 방식
+    (슝이 선 · 떠난 때를 피드 도착 · 출발과 바로 견줘 도착 +감속 · 출발 −앞당김만큼 쏠렸다)이라 다시 매기지 않고 둔다."""
     path = STATE / "replay-scores.json"
     scores = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return {"criteria": {"absMedian": 15, "p90": 30, "bias": 10, "stalls": 0},
+    since = next((d for d in sorted(scores) if any(w.get("moments") == "section" for w in scores[d])), None)
+    return {"criteria": {"absMedian": 15, "p90": 30, "bias": 10, "stalls": 0}, "scoringSince": since,
             "days": [{"day": d, "windows": scores[d]} for d in sorted(scores)[-keep:]]}
 
 

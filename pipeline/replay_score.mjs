@@ -1,6 +1,10 @@
 // 화면 재현 점수(오픈 판단 숫자, 2026-10-19 덕배 · Codex 상의): 고정 채점 창(server/jobs/health.py EVAL_LINES · EVAL_WINDOWS)마다
 // 그날 지도가 받은 자료로 화면을 다시 그리고(map_replay), 나중에 위치 피드가 알려 준 열차 자신의 사건 시각과 견준다.
 // '피드 사건 기준' 오차다: 피드의 도착 · 출발은 실제로 서고 떠난 때와 조금 다를 수 있다(실제 탑승 비교는 ride_replay).
+// 같은 순간끼리 견준다(2026-11-27 — moments:'section'): 피드 도착 = 승강장 구간에 든 때, 출발 = 구간을 나간 때다. 지도는 탑승 비교로 맞춰
+// 도착 뒤 brake 초 감속해 서고 출발 pullOut 초 전에 떠난다(web/trains/plan.mts stopTiming). 그래서 슝이 선 때 − brake 를 피드 도착과,
+// 떠난 때 + pullOut 을 피드 출발과 견준다. 전에는 선 때 · 떠난 때를 바로 견줘 예측이 꼭 맞아도 도착 +brake · 출발 −pullOut(7호선 +20 · −20)이 남았다.
+// replay-scores.json 의 이 날 전 점수는 옛 방식이다(moments 칸이 없다).
 // 읽기만 한다. 바깥 API 를 부르지 않는다.
 //
 //   node pipeline/replay_score.mjs --day 20261019 [--lines 7호선,2호선] [--windows 08:00-08:30,13:00-13:30] [--timing 파일] [--json]
@@ -47,7 +51,8 @@ export function scoreWindow(events,log,to){
     const L=log.get(ev.train);if(!L)continue;
     const stops=L.stops.filter(s=>s.where!=='(역 사이)'&&key(s.where)===key(ev.station));
     const passes=(L.passes||[]).filter(x=>key(x.where)===key(ev.station)).map(x=>({at:x.at,pass:true}));
-    const near=[...stops.map(s=>({s,at:ev.status==='도착'?s.stop:s.leave})),...passes].filter(x=>x.at!=null&&Math.abs(x.at-ev.t)<MATCH_MS).sort((a,b)=>Math.abs(a.at-ev.t)-Math.abs(b.at-ev.t))[0];
+    const tm=L.timing||{brake:0,pullOut:0};   // timing 이 없는 기록(시험 · 옛 log)은 선 때 · 떠난 때 그대로
+    const near=[...stops.map(s=>({s,at:ev.status==='도착'?s.stop-tm.brake*1e3:s.leave==null?null:s.leave+tm.pullOut*1e3})),...passes].filter(x=>x.at!=null&&Math.abs(x.at-ev.t)<MATCH_MS).sort((a,b)=>Math.abs(a.at-ev.t)-Math.abs(b.at-ev.t))[0];
     if(!near)continue;
     matched++;if(near.pass)passed++;err[ev.status].push(Math.round((near.at-ev.t)/1000));
   }
@@ -57,7 +62,7 @@ export function scoreWindow(events,log,to){
     trainMs+=Math.min(to,L.stops.at(-1).leave??to)-L.stops[0].stop;
     for(const s of L.stops)if(s.where==='(역 사이)'&&s.leave&&(s.leave-s.stop)/1000>=STALL_S){stalls++;stallSecs.push((s.leave-s.stop)/1000)}
   }
-  return {arrive:summary(err.도착),depart:summary(err.출발),events:events.length,coverage:events.length?+(matched/events.length).toFixed(3):null,passed,
+  return {moments:'section',arrive:summary(err.도착),depart:summary(err.출발),events:events.length,coverage:events.length?+(matched/events.length).toFixed(3):null,passed,
     stalls:{n:stalls,perTrainHour:trainMs>0?+(stalls/(trainMs/3600e3)).toFixed(2):null,median:q(stallSecs,.5),p90:q(stallSecs,.9)}};
 }
 

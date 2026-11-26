@@ -11,7 +11,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
-import {createTrainPlanner} from '../web/trains/plan.mts';
+import {createTrainPlanner,stopTiming} from '../web/trains/plan.mts';
 
 export {key};
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -75,7 +75,8 @@ function forwardOnly(prev,r){
 }
 
 // records 를 가짜 시계로 from 20분 전부터 to 까지 흘려 trains(열차 번호들)의 기록을 돌려준다:
-// Map(열차 번호 → {stops: [{where: 역 이름 | '(역 사이)', stop, leave, held, record}], passes: [{where, at}]}) — stop · leave · at 은 ms
+// Map(열차 번호 → {stops: [{where: 역 이름 | '(역 사이)', stop, leave, held, record}], passes: [{where, at}], timing}) — stop · leave · at 은 ms
+// timing: 그 노선의 서기 · 떠나기 셈(plan.mts stopTiming — brake · pullOut 초). 슝이 선 때 − brake = 승강장 구간에 든 때(피드 도착), 떠난 때 + pullOut = 피드 출발
 // passes: 급행이 서지 않고 지나간 역과 그때(피드는 통과역에도 도착 · 출발을 찍는다 — 9호선 급행 10-21 하루 약 900건)
 // raw: 샘플 그대로(고치기 전 서버) · onPoll(planner, NOW, before): 디버그용
 export async function replayMap({from,to,records,trains,timingPath=path.join(LIVE,'live-timing.json'),raw=false,onPoll=null}){
@@ -110,7 +111,7 @@ export async function replayMap({from,to,records,trains,timingPath=path.join(LIV
       mercStop:(_l,s)=>merc(s),catchup,catchupAt,predictStops:()=>3,isRide:()=>false,getTrains:()=>current});
     await new Promise(r=>setTimeout(r,50));   // live-timing · edge_times 읽기
     const latest=new Map(),want=new Set(trains);
-    const log=new Map(trains.map(n=>[n,{stops:[],passes:[],state:null,plan:null,dist:0}]));
+    const log=new Map(trains.map(n=>[n,{stops:[],passes:[],timing:null,state:null,plan:null,dist:0}]));
     const STEP=250,POLL=20e3,AT_STATION_M=30;
     let ri=0,nextPoll=NOW;
     for(;NOW<=to;NOW+=STEP){
@@ -126,6 +127,7 @@ export async function replayMap({from,to,records,trains,timingPath=path.join(LIV
       if(NOW<from)continue;
       for(const p of planner.plans){
         const L=log.get(p.t.trainNo);if(!L)continue;
+        L.timing??=stopTiming(planner.timingFor(p.t.line));   // live-timing 을 읽은 뒤(위 50 ms) 지도와 같은 값
         const pose=rawPose(p);
         if(p.t.express){   // 같은 계획에서 이번 걸음에 지나간 비정차역(계획이 바뀐 걸음은 거리 기준이 달라 건너뛴다)
           if(L.plan===p)for(let i=0;i<p.seq.length;i++)if(p.cum[i]>L.dist&&p.cum[i]<=pose.dist&&!(p.seq[i].express||[]).includes(p.t.line))L.passes.push({where:p.seq[i].name,at:NOW});

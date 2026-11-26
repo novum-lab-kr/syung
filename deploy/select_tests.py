@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 # 웹만 바뀌었을 때 도는 Python 시험: web/ 을 읽거나 web/ 에 쓰는 pipeline 을 부르는 것(tests/test_deploy_select.py 가 빠진 것을 잡는다)
-WEB_PYTHON_TESTS = ("test_build_stations", "test_platform_fit", "test_viaduct_flags")
+WEB_PYTHON_TESTS = ("test_build_stations", "test_learning_replay_scores", "test_platform_fit", "test_viaduct_flags")
 PYTHON_ORDER = {"none": 0, "web": 1, "all": 2}
 FULL = (True, "all")
 
