@@ -11,18 +11,26 @@ import type { LiveTrain, MapStation } from './types.mts';
 
 // 끝난 열차 빼기: 종착역 앞에 끊긴 기록을 10분 두면 약 3분 간격 노선에서 3대가 겹쳐 보인다.
 // 값은 샘플 30일(2026-10-03~11-01)로 쟀다 — 달리는데 사라지는 비율이 노선마다 2% 이하인 가장 짧은 여유, 재등장이 적은 도착 3분.
-export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240,LONG_LAST_LEG_SECONDS=1200;
-// 예외(같은 30일 기록): 구파발은 도착 뒤 대부분 연신내로 다시 나오고(3호선 사라짐 683건 중 669건), 천왕 → 온수는 다음 기록까지 길게 빈다(90% 13.5분)
-const KEEP_ARRIVED=new Set(['3호선:구파발']),LONG_LAST_LEG=new Set(['7호선:천왕','7호선:강남구청']);
+// 행선지 역의 진입 · 출발, 직전 역의 도착 · 진입도 같은 잣대로 6일(2026-11-18~25 중)을 재서 6분 여유(노선마다 1.1% 이하) —
+// 이 기록이 10분 남아 종착역에 서 있던 것이 겹침의 가장 큰 몫이었다(11-25 하루 겹침 사건 6,503건 중 42%가 끝난 열차의 옛 기록).
+// 운행중 · 전역 출발 기록은 행선지 근처에서도 오래 비었다 다시 이어져(경의중앙선 운행중 26%) 10분 그대로.
+export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240,LONG_LAST_LEG_SECONDS=1200,NEAR_END_SECONDS=360;
+// 예외(같은 30일 기록): 구파발은 도착 뒤 대부분 연신내로 다시 나오고(3호선 사라짐 683건 중 669건 · 진입 · 출발도 6일 기록에서 이어 감), 천왕 → 온수는 다음 기록까지 길게 빈다(90% 13.5분).
+// 사당행 4호선은 사당 출발 뒤에도 같은 번호로 이어 간다(6일 258건 중 254건 · 6분 한도면 15%를 잘못 뺀다).
+const KEEP_ARRIVED=new Set(['3호선:구파발']),KEEP_DEPARTED=new Set(['4호선:사당']),LONG_LAST_LEG=new Set(['7호선:천왕','7호선:강남구청']);
 export interface DestinationLeg { atDestination:boolean; lastLegSeconds:number|null }
 export function staleLimit(t:LiveTrain, leg:DestinationLeg):number{
   if(t.departsAt)return STALE_SECONDS;   // departsAt: 출발을 기다리는 열차는 지도가 그때까지 붙든다
   const status=String(t.status||'').replace(/\s/g,''),place=`${t.line}:${t.station}`;
-  if(status==='도착'&&leg.atDestination)return KEEP_ARRIVED.has(place)?STALE_SECONDS:ARRIVED_SECONDS;
-  if(status==='출발'&&leg.lastLegSeconds!=null){
-    if(LONG_LAST_LEG.has(place))return LONG_LAST_LEG_SECONDS;
-    return Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
+  if(leg.atDestination){
+    if(KEEP_ARRIVED.has(place))return STALE_SECONDS;
+    if(status==='도착')return ARRIVED_SECONDS;
+    if(status==='진입'||(status==='출발'&&!KEEP_DEPARTED.has(place)))return NEAR_END_SECONDS;
+    return STALE_SECONDS;
   }
+  if(leg.lastLegSeconds==null)return STALE_SECONDS;
+  if(status==='출발')return LONG_LAST_LEG.has(place)?LONG_LAST_LEG_SECONDS:Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
+  if(status==='도착'||status==='진입')return Math.min(STALE_SECONDS,leg.lastLegSeconds+NEAR_END_SECONDS);
   return STALE_SECONDS;
 }
 

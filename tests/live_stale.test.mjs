@@ -6,7 +6,7 @@ import {setImmediate} from 'node:timers/promises';
 import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
 import {createTrainPlanner} from '../web/trains/plan.mts';
-import {ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,LONG_LAST_LEG_SECONDS,STALE_SECONDS,staleLimit} from '../web/trains/live_feed.mts';
+import {ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,LONG_LAST_LEG_SECONDS,NEAR_END_SECONDS,STALE_SECONDS,staleLimit} from '../web/trains/live_feed.mts';
 
 const html=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 const json=id=>JSON.parse(html.match(new RegExp(`<script[^>]*id="${id}"[^>]*>([\\s\\S]*?)</script>`))[1]);
@@ -31,9 +31,22 @@ test('2026-11-02 봉화산: 도착한 6083 은 3분 뒤 · 직전 역을 떠난 
   assert.ok(run>0);
   assert.equal(limit(train('6호선','봉화산','도착','봉화산')),ARRIVED_SECONDS);
   assert.equal(limit(train('6호선','화랑대','출발','봉화산')),run+LAST_LEG_MARGIN_SECONDS);
-  // 6087: 직전 역 도착(오래 서 있을 수 있다) · 행선지 역으로 진입 중은 10분 그대로
-  assert.equal(limit(train('6호선','화랑대','도착','봉화산')),STALE_SECONDS);
+  // 2026-11-27: 직전 역 도착 · 진입은 구간 시간 + 6분, 행선지 역 진입은 6분(끝난 열차가 10분 서 있어 다음 열차와 겹쳤다)
+  assert.equal(limit(train('6호선','화랑대','도착','봉화산')),run+NEAR_END_SECONDS);
+  assert.equal(limit(train('6호선','화랑대','진입','봉화산')),run+NEAR_END_SECONDS);
+  assert.equal(limit(train('6호선','봉화산','진입','봉화산')),NEAR_END_SECONDS);
+  // 운행중 · 전역 출발은 행선지 근처에서도 오래 비었다 이어져 10분 그대로
+  assert.equal(limit(train('6호선','화랑대','운행중','봉화산')),STALE_SECONDS);
   assert.equal(limit(train('6호선','봉화산','전역 출발','봉화산')),STALE_SECONDS);
+  assert.equal(limit(train('6호선','봉화산','운행중','봉화산')),STALE_SECONDS);
+});
+
+test('2026-11-27 겹침: 종착역 출발 기록(8호선 별내 · GTX-A 서울역 · 신림선 샛강)은 6분 뒤 빠진다',async t=>{
+  const {limit}=await setup(t);
+  assert.equal(limit(train('8호선','별내','출발','별내')),NEAR_END_SECONDS);
+  assert.equal(limit(train('GTX-A','서울역','출발','서울역')),NEAR_END_SECONDS);
+  assert.equal(limit(train('신림선','샛강','출발','샛강')),NEAR_END_SECONDS);
+  assert.ok(NEAR_END_SECONDS<STALE_SECONDS);
 });
 
 test('출발 대기 열차는 빼지 않는다: 행선지가 현재 역과 다르거나 departsAt 이 있으면 10분',async t=>{
@@ -46,15 +59,25 @@ test('출발 대기 열차는 빼지 않는다: 행선지가 현재 역과 다�
   assert.equal(limit(train('6호선','화랑대','출발','봉화산',{departsAt:'2026-11-02 10:20:00'})),STALE_SECONDS);
 });
 
-test('행선지 역 출발은 바로 빼지 않는다(2호선 순환 · 우이신설선)',async t=>{
+test('행선지 역 출발은 바로 빼지 않는다(2호선 순환 · 우이신설선): 6분 — 성수 출발은 6일 1,212건 중 1,211건이 6분 안에 다음 기록',async t=>{
   const {limit}=await setup(t);
-  assert.equal(limit(train('2호선','성수','출발','성수',{direction:'내선'})),STALE_SECONDS);
-  assert.equal(limit(train('우이신설선','신설동','출발','신설동')),STALE_SECONDS);
+  assert.equal(limit(train('2호선','성수','출발','성수',{direction:'내선'})),NEAR_END_SECONDS);
+  assert.equal(limit(train('우이신설선','신설동','출발','신설동')),NEAR_END_SECONDS);
+  assert.ok(NEAR_END_SECONDS>ARRIVED_SECONDS);
 });
 
-test('3호선: 구파발 도착만 10분, 그 밖은 일반 규칙',async t=>{
+test('4호선: 사당행이 사당을 출발한 기록은 같은 번호로 이어 가니 10분',async t=>{
+  const {limit}=await setup(t);
+  assert.equal(limit(train('4호선','사당','출발','사당')),STALE_SECONDS);
+  assert.equal(limit(train('4호선','사당','도착','사당')),ARRIVED_SECONDS);
+  assert.equal(limit(train('4호선','사당','진입','사당')),NEAR_END_SECONDS);
+});
+
+test('3호선: 구파발행이 구파발에 찍힌 기록은 10분, 그 밖은 일반 규칙',async t=>{
   const {limit,edgeOf}=await setup(t);
   assert.equal(limit(train('3호선','구파발','도착','구파발')),STALE_SECONDS);
+  assert.equal(limit(train('3호선','구파발','진입','구파발')),STALE_SECONDS);
+  assert.equal(limit(train('3호선','구파발','출발','구파발')),STALE_SECONDS);
   assert.equal(limit(train('3호선','대화','도착','대화')),ARRIVED_SECONDS);
   assert.equal(limit(train('3호선','수서','도착','수서')),ARRIVED_SECONDS);
   assert.equal(limit(train('3호선','지축','출발','구파발')),edgeOf('3호선','지축','구파발')+LAST_LEG_MARGIN_SECONDS);
@@ -70,9 +93,9 @@ test('7호선: 행선지 직전 천왕 · 강남구청 출발만 20분, 그 밖�
   assert.equal(limit(train('7호선','온수','도착','온수',{direction:'상행'})),ARRIVED_SECONDS);
   assert.equal(limit(train('7호선','장암','도착','장암',{direction:'상행'})),ARRIVED_SECONDS);
   assert.equal(limit(train('7호선','도봉산','출발','장암',{direction:'상행'})),edgeOf('7호선','도봉산','장암')+LAST_LEG_MARGIN_SECONDS);
-  // 같은 역이어도 다음 역이 행선지가 아니거나 도착 기록이면 10분
+  // 같은 역이어도 다음 역이 행선지가 아니면 10분 · 도착 기록은 일반 직전 역 규칙(6일 기록에서 길게 비지 않았다)
   assert.equal(limit(train('7호선','천왕','출발','장암',{direction:'상행'})),STALE_SECONDS);
-  assert.equal(limit(train('7호선','천왕','도착','온수')),STALE_SECONDS);
+  assert.equal(limit(train('7호선','천왕','도착','온수')),edgeOf('7호선','천왕','온수')+NEAR_END_SECONDS);
 });
 
 test('구간 시간이 없거나 역을 못 찾으면 10분',async t=>{
