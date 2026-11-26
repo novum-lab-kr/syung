@@ -3,14 +3,14 @@
 // 그리기만 한다 — 글 · 그림 이름은 lib/ride-along.mts, 상태 · 위치 · 카메라는 ui/ride_along.mts
 import { Fragment, render } from 'preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import type { RideCardView, RideDevView, RideFixAct, RideFixView, RideInfoView, RideListView, RideSaid, RideSkySpot } from '../lib/ride-along.mts';
+import type { RideCardView, RideDevView, RideFixAct, RideFixView, RideInfoView, RideListView, RideMark, RideSaid, RideSkySpot } from '../lib/ride-along.mts';
 import type { WeatherTalk } from '../map/sky_weather.mts';
 import type { ComponentChild } from 'preact';
 import { GoalFlag, MapArrival, type ArrivalMap } from './ride_arrival.tsx';
 
 const CLOSE = <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 
-export interface RideCardActions { close():void; detour():void; follow():void; answer?(value:'rode' | 'not_rode'):void; fix?(act:RideFixAct):void }
+export interface RideCardActions { close():void; detour():void; follow():void; answer?(value:'rode' | 'not_rode'):void; fix?(act:RideFixAct):void; pick?(id:string):void }
 
 // 개발자 회원만(2026-11-11 계획서 D2): 정답 누름 [탔음] [안 탔음] — 기초 버튼(components/button.tsx)과 같은 class(.sy-btn)로 그린다
 // (그 파일을 부르면 첫 화면에 받는 파일이 늘어 모양만 같이 쓴다). 누른 쪽은 주 버튼 모양 · aria-pressed
@@ -29,6 +29,7 @@ function FixAsk({ fix, act }:{ fix:RideFixView; act?:RideCardActions['fix'] }) {
       {fix.buttons.map(button => <button key={button.act} type="button" class={`sy-btn ${button.main ? 'sy-btn-primary' : 'sy-btn-secondary'}`} onClick={() => act?.(button.act)}>{button.text}</button>)}
     </div>}
     {fix.links.length > 0 && <p class="rg-fix">
+      {fix.hint && <><span>{fix.hint}</span><i aria-hidden="true">·</i></>}
       {fix.links.map((link, order) => <Fragment key={link.act}>{order > 0 && <i aria-hidden="true">·</i>}<a href="#" class="rg-detour" onClick={event => { event.preventDefault(); act?.(link.act); }}>{link.text}</a></Fragment>)}
     </p>}
   </>;
@@ -102,7 +103,7 @@ export function RideCard({ view, actions }:{ view:RideCardView; actions:RideCard
 
 // 목록 위 · 아래 끝 그림(2026-11-25 사용자 확정 「그리다 만 색연필 선」): 노선 선을 색연필로 긋다 만 것처럼 —
 // 위 끝은 선이 옅은 빗금 몇 개로 흩어지고, 아래 끝은 거칠게 끊긴 자리에 색연필 한 자루가 비스듬히 놓여 심이 선 끝에 닿는다.
-// 아래 끝 그림 색 = 지금 구간 노선 색(갈아타면 바뀐다) · 위 끝 빗금 색 = 첫 구간 색 · 질감은 날씨 그림(#rg-crayon)과 같은 값 · 나무 · 쇠테 · 지우개 색은 syung.css(풍경 색표)
+// 아래 끝 그림 색 = 목록 칸 아래 끝에 닿은 줄의 노선 색(2026-11-26 사용자 「둘 다 고쳐줘」 — 예전엔 지금 구간 색이라 1호선 → 7호선이면 7호선 줄 끝에 1호선 색연필이 놓였다) · 위 끝 빗금 색 = 첫 구간 색 · 질감은 날씨 그림(#rg-crayon)과 같은 값 · 나무 · 쇠테 · 지우개 색은 syung.css(풍경 색표)
 const EDGE_CRAYON = <filter id="rg-edge-crayon" x="-20%" y="-20%" width="140%" height="140%">
   <feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="4" result="wobble"/>
   <feDisplacementMap in="SourceGraphic" in2="wobble" scale="2.6" result="shape"/>
@@ -145,10 +146,11 @@ function RideHatch({ color, past }:{ color:string; past:boolean }) {
     </g>
   </svg></i>;
 }
-// 아래 끝 그림(거칠게 끊긴 선 + 색연필 한 자루) — 목록 칸 아래 끝에 붙박이 · 색연필 필터 묶음도 여기서 그려 둔다
-function RideEdge({ color, bottom }:{ color:string; bottom:boolean }) {
+// 아래 끝 그림(거칠게 끊긴 선 + 색연필 한 자루) — 목록 칸 아래 끝에 붙박이(2026-11-26 사용자 안 B 「색연필은 계속 하단에 있고 선만 그어줘」).
+// 목록 끝까지 내리면 마지막 줄 선이 연필까지 이어진다(syung.css li.tail::after) · 색연필 필터 묶음도 여기서 그려 둔다
+function RideEdge({ color }:{ color:string }) {
   return <>
-    <i class={`rg-edge bottom${bottom ? '' : ' off'}`} aria-hidden="true"><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <i class="rg-edge bottom" aria-hidden="true"><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
       {EDGE_CRAYON}{ROW_CRAYON}{TEXT_CRAYON}{SKY_CRAYON}
       <g filter="url(#rg-edge-crayon)">
         <path d="M22 -6V40l-3 6 5 4-4 5 2 5" stroke={color} stroke-width="4.4"/>
@@ -166,7 +168,30 @@ function RideEdge({ color, bottom }:{ color:string; bottom:boolean }) {
 // 처음 열 때 · 이번 역이 바뀔 때만 이번 역을 말풍선 위로 보이는 부분의 가운데로 스크롤한다(움직임 줄이기면 바로) — 그 사이엔 사용자가 스크롤한 자리를 그대로 둔다.
 // 손가락이 닿아 있는 동안 역이 바뀌면 손을 뗀 뒤에 맞춘다. 줄 높이가 정해져 있어(syung.css .rg-list — 이번 역만 72px · 나머지 40px) 자리는 줄 번호 × 40px
 const LIST_ROW_PX = 40, EDGE_BOTTOM_PX = 76;   // 줄 높이(syung.css .rg-list li) · 아래 끝 그림 높이(.rg-edge.bottom)
-function RideList({ list }:{ list:RideListView }) {
+// 역 점 왼쪽의 열차 · 버스 그림(2026-11-26 사용자 시안5 — 「포인트 왼쪽에 좀더 작게」): 끝 그림과 같은 색연필 질감(#rg-edge-crayon) · 종이색 테두리(syung.css .rg-train).
+// 지하철은 바퀴 없이 옆모습(둥근 앞머리 · 앞 유리 · 창 · 가운데 갈라진 문 두 짝 · 아래 치마 띠 — 2026-11-26 사용자 「지하철은 바퀴가 없는데」), 버스는 바퀴 둘.
+// 탄 것은 크게(34px) · 다른 열차는 작게(26px) · 반투명. 다른 열차는 누르면 그 열차로 바꾼다(actions.pick — 지도에서 누른 것과 같다)
+const SUBWAY_ART = (color:string) => <svg viewBox="0 0 48 20" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><g filter="url(#rg-edge-crayon)">
+  <path d="M2 2h35c5.5 0 9 4.5 9 10v5H2z" fill={color} stroke="var(--ink)" stroke-width="1.5"/>
+  <path d="M37 4.5c3 .3 5.6 2.6 6.6 6.5H37z" fill="var(--paper)"/>
+  <rect x="5" y="5" width="6" height="5" rx="1" fill="var(--paper)"/><rect x="22" y="5" width="6" height="5" rx="1" fill="var(--paper)"/>
+  <rect x="13" y="4" width="7" height="12" rx="1" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/><path d="M16.5 4v12" stroke="var(--ink)" stroke-width="1"/>
+  <rect x="30" y="4" width="6" height="12" rx="1" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/><path d="M33 4v12" stroke="var(--ink)" stroke-width="1"/>
+  <path d="M2 17.5h44" stroke="var(--ink)" stroke-width="2"/>
+</g></svg>;
+const BUS_ART = (color:string) => <svg viewBox="0 0 40 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><g filter="url(#rg-edge-crayon)">
+  <rect x="2" y="3" width="36" height="15" rx="4" fill={color} stroke="var(--ink)" stroke-width="1.5"/>
+  <rect x="6" y="6" width="7" height="5" rx="1" fill="var(--paper)"/><rect x="15" y="6" width="7" height="5" rx="1" fill="var(--paper)"/><rect x="24" y="6" width="5" height="5" rx="1" fill="var(--paper)"/>
+  <rect x="31" y="6" width="5" height="10" rx="1" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/>
+  <circle cx="10" cy="19" r="3.2" fill="var(--ink)"/><circle cx="30" cy="19" r="3.2" fill="var(--ink)"/>
+</g></svg>;
+function TrainMark({ mark, color, pick }:{ mark:RideMark; color:string; pick?:(id:string) => void }) {
+  const art = mark.bus ? BUS_ART(color) : SUBWAY_ART(color), size = mark.mine ? 'mine' : 'other';
+  if (mark.mine || !mark.id || !pick) return <i class={`rg-train ${size}${mark.bus ? ' bus' : ''}`} aria-hidden="true">{art}</i>;
+  const id = mark.id;
+  return <button type="button" class={`rg-train ${size}`} aria-label="이 열차를 탔어요" onClick={() => pick(id)}>{art}</button>;
+}
+function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void }) {
   const box = useRef<HTMLDivElement>(null), touching = useRef(false), waiting = useRef(false), opened = useRef(false);
   // 큰 줄 자리(focus): 역 사이를 달리는 중이면 다음 역 줄에 「다음은 여기예요」(2026-11-26 사용자 안 B — 점은 움직이지 않는다 · 배터리)
   const focus = list.ahead ? list.at + 1 : list.at;
@@ -179,43 +204,48 @@ function RideList({ list }:{ list:RideListView }) {
     centre(opened.current);
     opened.current = true;
   }, [focus]);
-  // 위 끝 빗금은 목록 안(RideHatch · 같이 스크롤) — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
-  // 아래 끝 그림은 노선 선이 그 끝까지 닿을 때만: 마지막 줄 가운데가 아래 끝 그림 자리 안
-  const [bottom, setBottom] = useState(false);
-  const measure = useCallback(() => {
-    const host = box.current, last = host?.querySelector('li:last-child');
-    if (!host || !last) return;
-    const tail = last.getBoundingClientRect();
-    setBottom(tail.top + tail.height / 2 > host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX);
-  }, []);
-  useEffect(measure, [list.at, list.rows.length]);
   const release = useCallback(() => { touching.current = false; if (waiting.current) { waiting.current = false; centre(true); } }, [centre]);
-  const lined = list.rows.slice(0, list.at + 1).reverse().concat(list.rows).find(row => row.kind !== 'gap');   // 지금 구간(없으면 첫 구간)의 노선 색
+  // 위 끝 빗금은 목록 안(RideHatch · 같이 스크롤) — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
+  // 아래 끝 그림 색 = 그림 위쪽(칸 아래 끝 76px 위)에 걸친 줄의 노선 색 — 갈아타기 줄이면 바로 아래 줄, 끝 너머면 마지막 줄. 스크롤 · 줄 수가 바뀔 때 다시 잰다
+  const [edgeAt, setEdgeAt] = useState(-1);
+  const measure = useCallback(() => {
+    const host = box.current;
+    if (!host) return;
+    const line = host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX, items = [...host.querySelectorAll('ol > li')];
+    const hit = items.findIndex(item => item.getBoundingClientRect().bottom > line);
+    setEdgeAt(hit < 0 ? items.length - 1 : hit);
+  }, []);
+  useEffect(measure, [list.at, list.rows.length, measure]);
+  const edgeRow = list.rows.slice(Math.max(0, edgeAt)).find(row => row.kind !== 'gap') ?? list.rows.findLast(row => row.kind !== 'gap');
+  const edgeColor = edgeRow?.color ?? null;   // find 가 갈아타기 줄을 걸러 이미 역 · 구간 줄
   const head = list.rows[0], headColor = head && head.kind !== 'gap' ? head.color : null;   // 첫 줄 위로 이어 그을 선 색(첫 줄은 늘 역 · 구간 줄)
   const pastClass = (order:number) => order < focus ? ' past' : '';   // 지나온 줄은 살짝만 흐리게(2026-11-26 사용자 「살짝만」)
+  const last = list.rows.length - 1;
   return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
     {headColor && <RideHatch color={headColor} past={focus > 0} />}
     <ol class={focus > 0 ? 'head-past' : undefined} style={headColor ? `--rg-head:${headColor}` : undefined}>
       {list.rows.map((row, order) => {
+        const tail = order === last;   // 마지막 줄 선은 목록 끝(아래 끝 그림)까지 이어 긋는다
         if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`}><i>{row.text}</i></li>;
-        if (row.kind === 'leg') return <li class={`leg${pastClass(order)}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
-        const now = order === focus;
+        if (row.kind === 'leg') return <li class={`leg${pastClass(order)}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
+        const now = order === focus, marks = row.marks ?? [];
         let note = order === 0 ? '여기서 탔어요' : '지금 여기예요';
         if (list.ahead) note = '다음은 여기예요';
-        return <li class={`stop${now ? ' now' : ''}${pastClass(order)}${row.edge ? ` ${row.edge}` : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
+        return <li class={`stop${now ? ' now' : ''}${pastClass(order)}${row.edge ? ` ${row.edge}` : ''}${marks.length ? ' marked' : ''}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
+          {marks.map(mark => <TrainMark key={mark.id ?? 'mine'} mark={mark} color={row.color} pick={pick} />)}
           {now && <small>{note}</small>}
           <span><b>{row.name}</b>{row.off && <em>여기서 내려요</em>}</span>
         </li>;
       })}
     </ol>
-  </div>{lined && <RideEdge color={lined.color} bottom={bottom} />}</div>;
+  </div>{edgeColor && <RideEdge color={edgeColor} />}</div>;
 }
 
 // 지하철 · 버스를 탄 동안 지도 대신(2026-11-25 사용자 결정): 「가고 있다」 풍경 움직임(lib/ride_info_motion — 지연 로드) · 여정 전체 역(버스는 정류장) 목록.
 // 말풍선 카드(✕ · 다시 따라가기)는 그 위에 그대로 둔다
 // 가운데 로고도 같은 모듈이 그린다(로그인 화면의 로고 움직임 — 노란 바탕 없이 · 2026-11-25 사용자)
 // 내려서 할 일 · 내릴 곳 날씨는 말풍선 안에(RideCard — 시안 16)
-function RideInfo({ info }:{ info:RideInfoView }) {
+function RideInfo({ info, pick }:{ info:RideInfoView; pick?:(id:string) => void }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let gone = false, stop:(() => void) | null = null;
@@ -224,7 +254,7 @@ function RideInfo({ info }:{ info:RideInfoView }) {
   }, []);
   return <section class="rg-info" aria-label="타고 가는 곳">
     <div class="rg-info-view" aria-hidden="true"><div class="rg-info-scene" ref={box}></div></div>
-    <RideList list={info.list} />
+    <RideList list={info.list} pick={pick} />
   </section>;
 }
 
@@ -245,5 +275,5 @@ export function drawRideCard(host:HTMLElement, view:RideCardView | null, actions
   const at = view?.arrival?.at;
   if (view?.arrival && map && at) { draw(<ArrivalCard key="arrival" view={view} actions={actions} map={map} hideMe={hideMe} />); return; }
   const card = view ? <RideCard key="card" view={view} actions={actions} /> : null;
-  draw(view?.info ? <><RideInfo key="info" info={view.info} />{card}</> : card);
+  draw(view?.info ? <><RideInfo key="info" info={view.info} pick={actions.pick} />{card}</> : card);
 }

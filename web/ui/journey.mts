@@ -169,7 +169,6 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
   const ahead=(p:TrainPlanLike,dist:number)=>{let i=0;while(i<p.seq.length-1&&p.cum[i+1]!<dist)i++;return p.seq.slice(i)};   // 지금 달리는 칸의 앞 역부터
   const isJourneyTrain=(p:TrainPlanLike,l:Ride)=>!!l.trainNo&&p.id===`${l.line}:${l.trainNo}`;
   function trainShown(p:TrainPlanLike,dist:number):boolean{const R=rides();return !R||R.some(l=>l.line===p.t.line&&(isJourneyTrain(p,l)||passes(ahead(p,dist),l.pairs)))}
-  function journeyTrain(p:TrainPlanLike):boolean{return !!rides()?.some(l=>isJourneyTrain(p,l))}   // 탈 열차: 고른 열차처럼 둘레가 퍼진다
   function journeyRides(){return rides()}   // 고가(viaduct journeyFocus): 같은 여정이면 같은 배열 — 없으면 null, 버스만 타면 []
   function rideLines(){const L=[...new Set((rides()||[]).map(l=>l.line))];return L.length?L:null}   // 실시간은 줌과 상관없이 이 노선만 받는다(live_feed)
   // route focus: veil on, my location kept above the veil (열차 · 버스는 흐리게 하지 않고 이 여정의 것만 남긴다 — trainShown · BusLayer.journeyEnds)
@@ -179,5 +178,5 @@ export function createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,
     live.stationAlpha=subwayOff?0:on?.35:1;map.triggerRepaint();
     if(on)for(const id of ['me-ring','me-dot'])if(map.getLayer(id))map.moveLayer(id);
   }
-  return {rideCoords,showRoute,fitRoute,clearRoute,markWalked,setSubwayOff,setRouteOpacity,focusRoute,trainShown,journeyTrain,rideLines,journeyRides,get displayedRoute(){return displayedRoute},set displayedRoute(v:DisplayedRoute|null){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v:LngLatBounds|null){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v:boolean){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v:boolean){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v:boolean){subwayOff=v}};
+  return {rideCoords,showRoute,fitRoute,clearRoute,markWalked,setSubwayOff,setRouteOpacity,focusRoute,trainShown,rideLines,journeyRides,get displayedRoute(){return displayedRoute},set displayedRoute(v:DisplayedRoute|null){displayedRoute=v},get routeBounds(){return routeBounds},set routeBounds(v:LngLatBounds|null){routeBounds=v},get busRouteFocus(){return busRouteFocus},set busRouteFocus(v:boolean){busRouteFocus=v},get routeFocus(){return routeFocus},set routeFocus(v:boolean){routeFocus=v},get subwayOff(){return subwayOff},set subwayOff(v:boolean){subwayOff=v}};
 }

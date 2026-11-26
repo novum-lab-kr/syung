@@ -84,6 +84,48 @@ test('타는 동안 프레임마다 탄 열차 자리로 카메라 — 같은 �
   assert.equal(calls.jumpTo.length, 3, '멈춘 뒤에는 카메라를 옮기지 않는다');
 });
 
+test('기다리는 동안 지도를 끌어 따라가기가 꺼졌어도 타면 다시 켜져 탄 열차로 간다(운영 2026-11-26 — 타는 내내 「다시 따라가기」)', context => {
+  const {rideAlong, plan, calls, listeners, animFrame} = setup();
+  context.after(() => rideAlong.stop());
+  rideAlong.start(plan, '여의도공원');
+  listeners.movestart({originalEvent: {}});   // 기다리는 중에 손으로 지도를 끈다 → 카드에 「다시 따라가기」
+  rideAlong.tapTrain({id: '1호선:0097'});      // 열차를 누르면 탄 것으로(advance)
+  assert.equal(rideAlong.followingTrain, true, '타는 단계로 넘어가면 따라가기를 되살린다');
+  assert.equal(calls.easeTo.length, 1, '탈 때 그 열차로 한 번 이동');
+  frame(animFrame);
+  assert.equal(calls.jumpTo.length, 1, '프레임마다 탄 열차를 따라간다');
+});
+
+test('타는 중 「다른 열차를 탔어요」로 고르다 지도를 끌었어도 열차를 누르면 그 열차를 따라간다', context => {
+  const {rideAlong, plan, listeners, animFrame, calls, actions} = setup();
+  context.after(() => rideAlong.stop());
+  rideAlong.start(plan, '여의도공원');
+  rideAlong.tapTrain({id: '1호선:0097'});
+  actions().fix('other');                      // 지도에서 탄 열차를 고르는 중
+  listeners.movestart({originalEvent: {}});   // 열차를 찾으려고 지도를 끈다
+  assert.equal(rideAlong.followingTrain, false);
+  const before = calls.easeTo.length;
+  rideAlong.tapTrain({id: '1호선:0097'});
+  assert.equal(rideAlong.followingTrain, true, '고른 열차를 따라간다');
+  assert.equal(calls.easeTo.length, before + 1, '고른 열차로 지도를 옮긴다(서 있어도)');
+  assert.deepEqual(calls.easeTo.at(-1).center, [CITY_HALL.lng, CITY_HALL.lat]);
+  frame(animFrame);
+  assert.equal(calls.jumpTo.length, 1);
+});
+
+test('기다리는 중 「다른 열차예요 ›」로 고르다 지도를 끌었어도 열차를 누르면 타는 중으로 넘어가 그 열차를 따라간다', context => {
+  const {rideAlong, plan, listeners, calls, actions} = setup();
+  context.after(() => rideAlong.stop());
+  rideAlong.start(plan, '여의도공원');
+  actions().fix('other');
+  listeners.movestart({originalEvent: {}});
+  const before = calls.easeTo.length;
+  rideAlong.tapTrain({id: '1호선:0097'});
+  assert.equal(rideAlong.followingTrain, true);
+  assert.equal(calls.easeTo.length, before + 1, '그 열차로 지도를 옮긴다');
+  assert.deepEqual(calls.easeTo.at(-1).center, [CITY_HALL.lng, CITY_HALL.lat]);
+});
+
 test('탄 열차가 지도 목록에 없으면 followingTrain 은 아니다(루프를 헛돌리지 않는다)', context => {
   const {rideAlong, plan, planner, animFrame, calls} = setup();
   context.after(() => rideAlong.stop());
