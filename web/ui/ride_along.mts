@@ -9,8 +9,8 @@ import type { RideAlertSink } from './ride_alerts.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, STATION_ACCESS_S,
   arrivalFits, arrivedEarly, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, holdOutcome, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideAhead, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, withTrainFixes, reached, splitPath, stopsLeft, stopsLeftByTime,
-  transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle,
-  type LngLat, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
+  transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, rideFixView,
+  type LngLat, type RideFixAct, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
 import type { RideAnswer, RideLog, RideLogInfo } from '../user/dev_ride_log.mts';   // 타입만(개발자 기록기는 user/account 가 개발자일 때만 받는다)
 
@@ -24,7 +24,7 @@ interface CameraMap {
   jumpTo(options:{ center:{ lng:number; lat:number }; padding:{ top:number; bottom:number; left:number; right:number } }):unknown;
   on(type:'movestart', listener:(event:{ originalEvent?:unknown }) => void):unknown;
 }
-export interface RideCardActionsLike { close():void; detour():void; follow():void; answer(value:RideAnswer):void }
+export interface RideCardActionsLike { close():void; detour():void; follow():void; answer(value:RideAnswer):void; fix(act:RideFixAct):void }
 export interface RideAlongDeps {
   map:CameraMap; geolocate:GeolocateLike; planner:{ plans:readonly RidePlanLike[] }; trainPose:(plan:never) => { dist:number }; trainLngLat:(plan:never) => { lng:number; lat:number };
   arrivalRank:(row:never) => number; byId:ReadonlyMap<number, { lat:number; lon:number; name:string }>; animFrame:(() => void)[];
@@ -59,7 +59,7 @@ export interface RideAlongDeps {
   alerts?:RideAlertSink | null;
   // 열차가 그 역을 떠날 때(지도 예측 단계 — 1970 기준 ms · 예측에 그 역이 없으면 null)
   trainLeaves?:(plan:never, stationId:number) => number | null;
-  // 개발자 회원의 타고 가기 기록기(user/dev_ride_log — 개발자로 로그인했을 때만 있다 · 없으면 아무것도 기록하지 않는다)
+  // 타고 가기 기록기(user/dev_ride_log — 로그인과 상관없이 본체가 만든다 · 앱 지도 모드 · 받기 전이면 없고 그때는 아무것도 기록하지 않는다)
   devLog?:() => RideLog | null;
   // 위치를 덜 정확하게 · 드물게 받기(true) / 원래대로(false) — 본체가 내 위치 단추의 watch 를 다시 건다. 없으면 바꾸지 않는다
   gpsLowPower?:(on:boolean) => void;
@@ -111,9 +111,12 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     boardedMs:number;
     // settled: 지하철을 탄 뒤 탄 역에 남겨졌는지(leftWithoutMe)는 더 볼 것이 없다 — 위치를 덜 정확하게 받아도 된다(gpsMode)
     settled:boolean;
+    // 바로잡기(2026-11-26 사용자 결정 A+B): undo 슝이 스스로 놓침으로 되돌린 열차 id(「아니에요, 탔어요」로 다시 탄다 — null = 묻지 않는다) · choosing 지도에서 탄 열차를 고르는 중(「다른 열차」)
+    undo:string | null; choosing:boolean;
   };
   let ride:Ride | null = null, timer:ReturnType<typeof setInterval> | 0 = 0, arrivalsTimer:ReturnType<typeof setInterval> | 0 = 0, busTimer:ReturnType<typeof setInterval> | 0 = 0;
-  let fix:{ spot:LngLat; t:number } | null = null, following = true, turnedOn = false, cam:{ lng:number; lat:number } | null = null, camAt = 0, camKey = '';
+  // fix.newAt: 좌표가 바뀐 위치를 마지막으로 받은 때 — 지하에서 브라우저가 마지막 위치를 그대로 다시 주면 t 만 늘고 newAt 은 그대로(2026-11-26 사용자 결정 A)
+  let fix:{ spot:LngLat; t:number; newAt:number } | null = null, following = true, turnedOn = false, cam:{ lng:number; lat:number } | null = null, camAt = 0, camKey = '';
 
   const step = () => ride ? ride.steps[ride.at]! : null;
   const legAt = (index:number) => ride?.legs[index];
@@ -130,11 +133,14 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   geolocate.on('geolocate', event => {
     if (ride) devLog()?.gps(event.coords);   // 개발자 기록: 흐린 위치도 그대로(지하에서 어떻게 흐려지는지 보려고)
     if (event.coords.accuracy > BAD_FIX_M) return;
-    fix = {spot: [event.coords.longitude, event.coords.latitude], t: Date.now()};
+    const spot:LngLat = [event.coords.longitude, event.coords.latitude], nowMs = Date.now();
+    const repeat = !!fix && fix.spot[0] === spot[0] && fix.spot[1] === spot[1];
+    fix = {spot, t: nowMs, newAt: repeat ? fix!.newAt : nowMs};
     if (!ride) return;
     offTrack(fix.spot);
-    leftWithoutMe(fix.spot);
-    followHeld(fix.spot);
+    // 같은 좌표 되풀이는 새 위치가 아니다(2026-11-26 사용자 결정 A · ①): 붙든 동안 열차를 따라갔는지 · 탄 뒤 탄 역에 남았는지 셀 거리가 없다
+    //  지하에서 같은 좌표만 오는데 진짜로 못 탄 경우는 사용자가 「못 탔어요」로 바로잡는다
+    if (!repeat) { leftWithoutMe(fix.spot); followHeld(fix.spot); }
     tick();
     const current = step();
     if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride') && !infoOn && nearEdge(fix.spot)) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
@@ -156,7 +162,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
 
   // 지하철을 타는 동안 지도가 따라갈 열차가 있는가(탄 열차가 지도 목록에 있을 때만). 본체가 시트 따라가기 루프(ui/sheet.mts followLoop) · 열차 층(trains/draw.mts)에
   // 이 값을 넘겨 루프를 돌린다 — 아래 animFrame 콜백은 그 루프가 부른다(루프는 시트 따라가기 · 롤코 · 버스일 때만 돌아, 이 값이 없으면 콜백이 한 번도 안 불린다 — 2026-11-04 운영)
-  const followingTrain = ():boolean => { const current = step(); return !!ride && following && !infoOn && current?.kind === 'ride' && legAt(current.leg)?.type === 'ride' && !!planOf(ride.train); };
+  const followingTrain = ():boolean => { const current = step(); return !!ride && following && !infoOn && !ride.choosing && current?.kind === 'ride' && legAt(current.leg)?.type === 'ride' && !!planOf(ride.train); };
   // 시트에서 다른 열차 · 버스 따라가기를 고르면 손으로 움직였을 때와 같게 끈다(카드에 「다시 따라가기」). 프레임에서(같은 프레임에 둘 다 jumpTo 하면 뒤인 이쪽이
   // 덮어 버린다 — Codex 리뷰 2026-11-04)와 1초 tick 에서(고른 열차가 역에 서 있으면 프레임 루프가 안 돌아 카드가 안 바뀌었다 — 2026-11-04 로컬 확인) 본다
   const yieldToOther = ():boolean => { if (!ride || !following || !otherFollow.active()) return false; following = false; draw(); return true; };
@@ -237,7 +243,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (was?.kind === 'walk') walked(was.leg + 1, null);
     ride.at = Math.min(ride.steps.length - 1, ride.at + 1);
     ride.turn++; ride.nearSince = 0; ride.offFixes = 0; ride.detour = false; ride.zeroSince = 0;
-    ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.arrivalsAt = 0; ride.missed = new Set(); ride.stayed = 0; ride.backed = false; ride.hold = null; ride.settled = false;
+    ride.picked = null; ride.pickedSaw = false; ride.due = null; ride.arrivalsAt = 0; ride.missed = new Set(); ride.stayed = 0; ride.backed = false; ride.hold = null; ride.settled = false; ride.undo = null; ride.choosing = false;
     if (was?.kind === 'ride') { ride.ridden = null; bus.ride(null, null, false); bus.watch(null); }   // 내린 버스는 다시 실시간 위치로
     const now = step()!;
     if (now.kind === 'wait' && legAt(now.leg)?.type === 'bus') startBusWait(now.leg);
@@ -303,12 +309,20 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (stationM !== null && !atBoarding) ride.settled = true;   // 탄 역을 벗어난 좋은 위치(BAD_FIX_M 안) — 열차에 탔다
     ride.stayed = stayedFixes(ride.stayed, plan ? trackOf(plan) : null, leg.stations[1], atBoarding);
     if (!leftBehind(ride.stayed)) return;
-    const trainNo = ride.train!.slice(leg.line.length + 1);
+    backToWait(leg, current.leg, true);
+  }
+  // 타는 중 → 같은 구간의 기다리기로 되돌림(슝이 탄 역에 남은 것을 봤을 때 · 사용자가 「못 탔어요」를 눌렀을 때). 탄 열차는 빼고 다음 열차
+  //  guessed: 슝이 스스로 되돌림 — 「아니에요, 탔어요」로 물을 수 있게 그 열차를 남긴다(사용자가 누른 것이면 묻지 않는다)
+  function backToWait(leg:RideTrainLeg, index:number, guessed:boolean) {
+    if (!ride) return;
+    const train = ride.train, trainNo = train ? train.slice(leg.line.length + 1) : null;
     ride.at--; ride.turn++;
-    Object.assign(ride, {stayed: 0, backed: true, hold: null, nearSince: 0, zeroSince: 0, picked: null, pickedSaw: false, due: null, train: null, missed: new Set([trainNo]), waitFrom: {s: 0, at: Date.now()}, settled: false});
-    loadArrivals(current.leg);
+    Object.assign(ride, {stayed: 0, backed: true, hold: null, nearSince: 0, zeroSince: 0, picked: null, pickedSaw: false, due: null, train: null, missed: new Set(trainNo ? [trainNo] : []), waitFrom: {s: 0, at: Date.now()}, settled: false,
+      undo: guessed ? train : null, choosing: false});
+    loadArrivals(index);
     cam = null;
-    if (following) map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+    const spot = freshFix();
+    if (following && spot) map.easeTo({center: [...spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
     draw();
   }
 
@@ -320,6 +334,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const plan = ride.picked && ride.picked === ride.train ? planOf(ride.train) : null;
     if (!plan || !byId.get(leg.stations[0]!)) { advance(); return; }
     ride.hold = {id: plan.id, trainNo: plan.id.slice(leg.line.length + 1), sinceMs: nowMs, leftMs: 0, moved: 0};
+    ride.undo = null;   // 새 열차가 들어왔다 — 앞 열차를 탔냐고 더 묻지 않는다
     holdTick(leg, nowMs);
   }
   // 붙든 열차가 탈 역을 떠났나(본 때를 남긴다) — 지도에서 사라졌으면 null
@@ -341,18 +356,23 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   }
   function holdTick(leg:RideTrainLeg, nowMs:number) {
     if (!ride?.hold) return;
-    const held = heldTrack(leg, nowMs), nextId = leg.stations[1];
+    // 놓침은 둘째 역에 닿을 때 가린다(2026-11-26 사용자 결정 B — 다음 역까지는 열차 안 위치가 아직 탄 역 근처로 늦게 따라올 수 있다 · 구간이 한 역이면 그 역)
+    const held = heldTrack(leg, nowMs), nextId = leg.stations[2] ?? leg.stations[1];
     if (!held) { advance(); return; }   // 지도에서 열차가 사라졌다 — 붙들기 전처럼 탄 것으로
     const {hold, track} = held;
-    const outcome = holdOutcome({nowMs, sinceMs: hold.sinceMs, leftMs: hold.leftMs, lastFixMs: fix?.t ?? 0, moved: hold.moved,
+    const outcome = holdOutcome({nowMs, sinceMs: hold.sinceMs, leftMs: hold.leftMs, lastFixMs: fix?.newAt ?? 0, moved: hold.moved,
       nextReached: nextId !== undefined && (reached(track, nextId) || leftStation(track, nextId))});
     if (outcome === 'board') { advance(); return; }
-    if (outcome === 'missed') {
-      // 놓침: 그 열차를 빼고 다음 열차(승강장은 이미 닿았으니 걷기 0 · 탈 시각으로 다시 넘기지 않는다 — leftWithoutMe 와 같다)
-      ride.missed.add(hold.trainNo);
-      Object.assign(ride, {hold: null, backed: true, picked: null, pickedSaw: false, due: null, zeroSince: 0, train: null});
-    }
+    if (outcome === 'missed') missHeld(true);
     draw();
+  }
+  // 붙든 열차를 놓침: 그 열차를 빼고 다음 열차(승강장은 이미 닿았으니 걷기 0 · 탈 시각으로 다시 넘기지 않는다 — leftWithoutMe 와 같다)
+  //  guessed: 슝이 스스로 가렸다 — 「아니에요, 탔어요」로 물을 수 있게 그 열차를 남긴다
+  function missHeld(guessed:boolean) {
+    const hold = ride?.hold;
+    if (!ride || !hold) return;
+    ride.missed.add(hold.trainNo);
+    Object.assign(ride, {hold: null, backed: true, picked: null, pickedSaw: false, due: null, zeroSince: 0, train: null, undo: guessed ? hold.id : null});
   }
 
   // 다음 구간이 지하철이면 그 탈 역 한가운데 · 가장 가까운 출구까지(m — 모르면 null)
@@ -489,20 +509,23 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       if (transit.type === 'bus') return {...base, title: waitTitle(transit), sub: waitText(ride.legs, current.leg, waitWalkS(), busEtaSecs(Date.now()), ride.turn, false, !!ride.missedAt).sub};
       const list = ride.arrivalsFor === current.leg ? arrivalSecs()?.map(item => item.s) ?? null : null;
       const arrived = !!list && pickedIn(transit);
-      const card = {...base, title: waitTitle(transit), ...waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown())};
+      const asked = rideFixView({step: 'wait', left: !!ride.hold?.leftMs, undo: !!ride.undo, choosing: ride.choosing});
+      const said = waitText(ride.legs, current.leg, waitWalkS(), list, ride.turn, arrived, missedShown());
+      const card = {...base, title: asked.title ?? waitTitle(transit), say: asked.say ?? said.say, sub: ride.hold?.leftMs && !ride.choosing ? `${transit.line} 열차가 막 떠났어요` : said.sub, fix: asked.fix};
       // 지하철에서 내려 바로 지하철로 갈아타는 동안만(앞 탈 것 · 다음 탈 것 둘 다 지하철 — 다음이 버스면 위에서 이미 지도로 나갔다 · 사이 걷기 구간 없음) 지도 대신 정보 화면 그대로 — 역 안이라 위치를 못 받아 지도에 제대로 못 그린다(2026-11-26 사용자).
       // 이번 역 줄 = 갈아타는 역(내린 구간의 마지막 역) · 말풍선은 기다리기 카드 글 그대로(talk 없음)
       const previous = legAt(current.leg - 1);
       const stops = previous?.type === 'ride' ? rideList(ride.legs, current.leg - 1, {now: previous.to, next: null}, stopNames, legColor) : null;
-      if (!stops) return card;
+      if (!stops || ride.choosing) return card;   // 고르는 중에는 지도(정보 화면을 걷는다)
       // 이미 내렸으니 갈아타는 역 줄의 「여기서 내려요」 표는 뺀다(2026-11-26 사용자 — 타는 중의 내릴 역 표는 그대로)
       const rows = stops.rows.map((row, order) => order === stops.at && row.kind === 'stop' ? {...row, off: false} : row);
       return {...card, info: {here: weatherSpot(), talk: null, list: {...stops, rows}}};
     }
     const {left, where} = rideProgress(transit);
-    const card = {...base, title: rideTitle(transit), sub: rideSub(ride.legs, current.leg, left, where)};
+    const asked = transit.type === 'ride' ? rideFixView({step: 'ride', left: false, undo: false, choosing: ride.choosing}) : null;
+    const card = {...base, title: asked?.title ?? rideTitle(transit), sub: rideSub(ride.legs, current.leg, left, where), ...(asked ? {fix: asked.fix} : {})};
     // 이번 역(정류장)을 알 때만 지도 대신 정보 화면 — 모르면(탄 열차가 지도에 없음 · 버스 위치 없음) 지도 그대로(2026-11-25 사용자 결정)
-    if (!where) return card;
+    if (!where || ride.choosing) return card;   // 고르는 중에는 지도(정보 화면을 걷는다)
     const skyAt = alightSpot(transit);
     const list = rideList(ride.legs, current.leg, where, stopNames, legColor);
     if (!list) return card;
@@ -577,10 +600,35 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const plan = planOf(ride.picked), listFresh = Date.now() - ride.arrivalsAt < ARRIVALS_STALE_MS;
     return pickedArrived({zeroSinceMs: ride.zeroSince, pickedDueS: listFresh && row ? row.s : null, track: plan ? trackOf(plan) : null, stationId: leg.stations[0]!});
   }
+  // 바로잡기 창구(2026-11-26 사용자 결정 A+B — 지하철 구간의 기다리기 · 타는 중만 · 글은 lib/ride-along rideFixView)
+  //  boarded 탔어요: 지금 짐작한(붙든) 열차로 탄 것 · missed 못 탔어요: 붙든 열차 놓침 / 타는 중이면 기다리기로 되돌림(슝이 가렸을 때와 같다)
+  //  undo 아니에요, 탔어요: 슝이 놓침으로 본 그 열차로 다시 타는 중 · other 다른 열차: 지도에서 탄 열차를 누르게(tapTrain — 정보 화면은 걷는다) · stay 그만 고르기
+  function fixRide(act:RideFixAct) {
+    const current = step(), leg = current && current.kind !== 'walk' && current.kind !== 'done' ? legAt(current.leg) : undefined;
+    if (!ride || !current || leg?.type !== 'ride') return;
+    if (act === 'other' || act === 'stay') {
+      ride.choosing = act === 'other';
+      cam = null;
+      const spot = freshFix(), station = byId.get(leg.stations[0]!), center:LngLat | null = spot ?? (station ? [station.lon, station.lat] : null);
+      if (ride.choosing && center) map.easeTo({center: [...center], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
+      draw();
+      return;
+    }
+    if (current.kind === 'ride') { if (act === 'missed') backToWait(leg, current.leg, false); return; }
+    if (act === 'missed') {
+      missHeld(false);   // 기다리기의 「못 탔어요」는 붙든 열차가 떠난 뒤(B 묻기)에만 보인다
+      draw();
+      return;
+    }
+    if (act === 'undo' && ride.undo) { ride.missed.delete(ride.undo.slice(leg.line.length + 1)); ride.train = ride.undo; }
+    else if (act === 'boarded' && ride.hold) ride.train = ride.hold.id;
+    advance();
+  }
   const actions:RideCardActionsLike = {
     close: () => { const arrived = step()?.kind === 'done'; stop(); ended(arrived); },
     detour: () => { stop(); detour(); },
     answer: value => { devLog()?.answer(value, logInfo()); draw(); },
+    fix: act => fixRide(act),
     follow: () => {
       otherFollow.stop(); following = true; cam = null; camKey = ''; draw();   // camKey 도 비운다 — 그 사이 다른 따라가기가 카메라를 옮겼을 수 있다
       const current = step(), spot = freshFix();
@@ -651,7 +699,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     pushAlerts();
     const log = ride ? devLog() : null;
     if (log?.recording) log.judge(judgeState(), logInfo());
-    if (next && log?.recording && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자만: [탔음] [안 탔음]
+    if (next && log?.recording && log.developer && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자 회원만: [탔음] [안 탔음](기록은 누구나 — 2026-11-26 C안)
     const key = JSON.stringify(next);
     if (key === painted) return;
     painted = key;
@@ -664,7 +712,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride) return;
     const legs = plan.legs as RideLeg[];
     Object.assign(ride, {legs, arrives: plan.arrives, steps: rideSteps(legs), at: 0, nearSince: 0, offFixes: 0, detour: false, track: [],
-      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, boardedMs: 0, settled: false, waitFrom: {s: 0, at: Date.now()}, leftM: (legs[0] as { metres?:number })?.metres ?? 0});
+      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, boardedMs: 0, settled: false, undo: null, choosing: false, waitFrom: {s: 0, at: Date.now()}, leftM: (legs[0] as { metres?:number })?.metres ?? 0});
     const first = step()!;
     if (first.kind === 'wait') startWait(first.leg);
     if (first.kind === 'wait' && legs[first.leg]?.type === 'ride') { ride.train = guessTrain(first.leg); loadArrivals(first.leg); }
@@ -699,7 +747,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     alerts?.ask();   // 브라우저 알림 권한: 누름 안에서 묻는다(D4 — 아직 안 정했을 때만)
     stop();
     ride = {legs: [], arrives: plan.arrives, toName, steps: [], at: 0, startedMs: Date.now(), turn: 0, nearSince: 0, offFixes: 0, rerouting: false, reroutedAt: 0, detour: false, track: [],
-      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, boardedMs: 0, settled: false, waitFrom: {s: 0, at: Date.now()}, leftM: 0};
+      train: null, zeroSince: 0, arrivals: null, arrivalsFor: -1, picked: null, pickedSaw: false, due: null, arrivalsAt: 0, missed: new Set(), stayed: 0, backed: false, hold: null, busBoard: null, etas: null, etasAt: 0, car: null, missedAt: 0, ridden: null, busAt: 0, boardedMs: 0, settled: false, undo: null, choosing: false, waitFrom: {s: 0, at: Date.now()}, leftM: 0};
     begin(plan);
     bus.routeOnly?.(true);
     const legs = ride.legs;
@@ -735,7 +783,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride || !current || current.kind === 'walk' || current.kind === 'done') return false;
     const leg = legAt(current.leg);
     if (leg?.type !== 'ride' || !plan.id.startsWith(`${leg.line}:`)) return false;
-    ride.train = plan.id;
+    ride.train = plan.id; ride.choosing = false;
     if (current.kind === 'wait') advance(); else { cam = null; draw(); }
     return true;
   }

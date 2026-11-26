@@ -612,6 +612,10 @@ html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .6
 .rg-sprout{position:absolute;right:-6px;bottom:-110px;width:92px;height:92px;background:center/contain no-repeat;pointer-events:none}
 .rg-sprout.flip{transform:scaleX(-1)}
 .rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
+/* 바로잡기 창구(2026-11-26 사용자 결정 A+B): 늘 보이는 글 링크(누르는 칸은 위아래로 넓혀 손가락에 맞게) · 슝이 헷갈릴 때 묻는 단추 */
+.rg-fix{display:flex;flex-wrap:wrap;align-items:center;margin:2px 0 -6px;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
+.rg-fix .rg-detour{padding:6px 0}.rg-fix i{margin:0 .45em;font-style:normal}
+.rg-ask{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:10px}.rg-ask .sy-btn{min-height:38px;font-size:var(--text-15)}
 .rg-dev{display:flex;gap:var(--space-2);margin-top:10px}.rg-dev .sy-btn{min-height:30px;font-size:var(--text-14)}   /* 개발자만: [탔음] [안 탔음] */
 /* 탄 동안 정보 화면(components/ride_card.tsx RideInfo): 지도를 덮고 말풍선 카드만 위에(새싹이는 카드의 원래 자리 — 오른쪽 아래). 풍경(400×300 장면 · 그 위에 날씨 층)은 화면 폭 가득 · 아래 맞춤(ride_info_motion slice) */
 .rg-info{position:fixed;inset:0;z-index:14;display:flex;flex-direction:column;align-items:center;padding:0 28px;overflow:hidden;background:var(--board);color:var(--ink)}

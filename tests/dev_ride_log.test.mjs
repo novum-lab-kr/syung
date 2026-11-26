@@ -1,19 +1,21 @@
-// 개발자 회원의 타고 가기 기록기(web/user/dev_ride_log.mts) — 기기에 쌓기 · 15초마다 POST /api/me/rides · 센서 0.1초 칸 ·
-// 보낸 결과에 따라 빼기 / 다시 / 멈추기(2026-11-11 계획서 — 서버 계약 server/routes/members.py · services/debug.py clean_event)
+// 타고 가기 기록기(web/user/dev_ride_log.mts) — 기기에 쌓기 · 15초마다 POST /api/me/rides(본문 device 늘 · 2026-11-26 C안) · 센서 0.1초 칸(개발자 회원만) ·
+// 보낸 결과에 따라 빼기 / 다시 / 멈추기(2026-11-11 계획서 — 서버 계약 server/routes/members.py · services/debug.py clean_event · DEVICE)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRideLog, batchSize, dropAfter, motionChunks, closeCell, RIDE_LOG_KEY, FLUSH_MS, MOTION_MS} from '../web/user/dev_ride_log.mts';
+import {createRideLog, batchSize, dropAfter, motionChunks, closeCell, rideDevice, DEVICE, DEVICE_KEY, RIDE_LOG_KEY, FLUSH_MS, MOTION_MS} from '../web/user/dev_ride_log.mts';
 
 const KINDS = new Set(['start', 'gps', 'arrive', 'depart', 'end', 'mark', 'motion', 'judge', 'answer']);   // 서버 MAP_KINDS
 const SUBWAY = {mode: 'subway', line: '2호선', train: '2234', station: '시청'};
+const DEVICE_ID = '0f8c2a4e-6b1d-4c3a-9e7f-2d5b8a1c6e90';   // 시험용 기기 id(randomUUID 모양)
 
 // 가짜 브라우저: 저장소 · 보내기(답 차례를 고를 수 있다) · 시계 · 되풀이 · 센서
 function rig({stored = null, replies = [], ask = null} = {}) {
   const store = new Map(stored ? [[RIDE_LOG_KEY, stored]] : []), sent = [], timers = new Set(), asked = [];
   let clock = Date.UTC(2026, 10, 11, 1, 0, 0), motionOn = null;
   const deps = {
+    device: DEVICE_ID,
     storage: {getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value); }},
-    send: async (url, init) => { sent.push({url, init, events: JSON.parse(init.body).events}); const status = replies.length ? replies.shift() : 200; if (status === 'throw') throw new Error('offline'); return {status}; },
+    send: async (url, init) => { const body = JSON.parse(init.body); sent.push({url, init, device: body.device, events: body.events}); const status = replies.length ? replies.shift() : 200; if (status === 'throw') throw new Error('offline'); return {status}; },
     now: () => clock,
     every: (run, ms) => { const timer = {run, ms}; timers.add(timer); return () => timers.delete(timer); },
     online: () => true,
@@ -37,9 +39,10 @@ function serverShape(event) {
   if (event.kind === 'answer') assert.ok(['rode', 'not_rode'].includes(event.answer));
 }
 
-test('출발 누름 안에서 센서 권한을 바로 묻고, 시작 · 판정 · 정답 · 끝을 기기에 쌓아 서버 모양으로 보낸다', async () => {
+test('개발자 회원: 출발 누름 안에서 센서 권한을 바로 묻고, 시작 · 판정 · 정답 · 끝을 기기에 쌓아 서버 모양으로 보낸다', async () => {
   const box = rig({ask: async () => 'granted'});
   const log = createRideLog(box.deps);
+  log.setDeveloper(true);
   assert.equal(box.timers.size, 0, '쌓인 것이 없으면 보내기 타이머도 없다');
   log.begin(SUBWAY);
   assert.equal(box.asked.length, 1, 'begin 안에서 기다림 없이 권한을 묻는다(아이폰 누름 안)');
@@ -54,6 +57,7 @@ test('출발 누름 안에서 센서 권한을 바로 묻고, 시작 · 판정 �
   assert.equal(first.init.method, 'POST');
   assert.equal(first.init.credentials, 'same-origin');
   assert.equal(first.init.headers['X-Requested-With'], 'syung');
+  assert.equal(first.device, DEVICE_ID, '본문에 늘 기기 id');
   assert.deepEqual(first.events.map(event => event.kind), ['start', 'judge', 'judge', 'answer']);
   assert.deepEqual(first.events.filter(event => event.kind === 'judge').map(event => event.state), ['wait@0', 'wait:hold@0']);
   assert.equal(first.events[0].line, '2호선');
@@ -89,9 +93,10 @@ test('GPS 는 5초에 한 점 · 15초 안의 마지막 위치를 다른 사건�
   events.forEach(serverShape);
 });
 
-test('가속도: 0.1초 칸 평균을 5초마다 motion 으로 · 권한을 거절하면 센서 없이', async () => {
+test('가속도(개발자 회원): 0.1초 칸 평균을 5초마다 motion 으로 · 권한을 거절하면 센서 없이', async () => {
   const box = rig({ask: async () => 'granted'});
   const log = createRideLog(box.deps);
+  log.setDeveloper(true);
   log.begin(SUBWAY);
   await box.settle();
   assert.equal(box.motionOn, true);
@@ -109,19 +114,82 @@ test('가속도: 0.1초 칸 평균을 5초마다 motion 으로 · 권한을 거�
   assert.equal(box.motionOn, false, '끝나면 센서를 끈다');
 
   const denied = rig({ask: async () => 'denied'});
-  createRideLog(denied.deps).begin(SUBWAY);
+  const deniedLog = createRideLog(denied.deps);
+  deniedLog.setDeveloper(true);
+  deniedLog.begin(SUBWAY);
   await denied.settle();
   assert.equal(denied.motionOn, false);
 });
 
-test('보낸 결과: 끊김 · 503 은 다음에 다시, 400 은 그 묶음을 버리고, 401 은 멈추고(기기에 둔다), 403 은 멈추고 지운다', async () => {
-  const box = rig({replies: ['throw', 503, 400]});
+test('타는 도중 개발자 회원이 아니게 되면(로그아웃) 센서를 바로 끄고, 권한 답을 기다리던 중이면 답이 와도 켜지 않는다', async () => {
+  const box = rig({ask: async () => 'granted'});
+  const log = createRideLog(box.deps);
+  log.setDeveloper(true);
+  log.begin(SUBWAY);
+  await box.settle();
+  assert.equal(box.motionOn, true);
+  box.motion({accelerationIncludingGravity: {x: 0, y: 9.8, z: 0}});
+  log.setDeveloper(false);
+  assert.equal(box.motionOn, false, '로그아웃하면 센서를 끈다');
+  assert.equal([...box.timers].some(timer => timer.ms === MOTION_MS), false, '센서 묶음 타이머도 끈다');
+  assert.equal(log.recording, true, '위치 · 판정 기록은 그대로(익명으로 이어 간다)');
+
+  let grant = () => {};
+  const waiting = rig({ask: () => new Promise(done => { grant = () => done('granted'); })});
+  const waitingLog = createRideLog(waiting.deps);
+  waitingLog.setDeveloper(true);
+  waitingLog.begin(SUBWAY);
+  waitingLog.setDeveloper(false);
+  grant(); await waiting.settle();
+  assert.equal(waiting.motionOn, false, '기다리던 권한 답은 버린다');
+  assert.equal([...waiting.timers].some(timer => timer.ms === MOTION_MS), false);
+});
+
+test('개발자 아님 · 로그인 안 함: 센서 권한을 묻지 않고 센서 없이 시작 · 위치 · 판정을 기기 id 와 함께 보낸다', async () => {
+  const box = rig({ask: async () => 'granted'});
+  const log = createRideLog(box.deps);
+  assert.equal(log.developer, false);
+  log.begin(SUBWAY);
+  log.gps({latitude: 37.5658, longitude: 126.9772, accuracy: 12});
+  log.judge('wait@0', SUBWAY);
+  await box.settle();
+  assert.equal(box.asked.length, 0, '권한을 묻지 않는다');
+  assert.equal(box.motionOn, false);
+  box.fire(FLUSH_MS); await box.settle();
+  assert.equal(box.sent.length, 1);
+  assert.equal(box.sent[0].device, DEVICE_ID);
+  assert.deepEqual(box.sent[0].events.map(event => event.kind), ['start', 'gps', 'judge']);
+  box.sent[0].events.forEach(serverShape);
+});
+
+test('기기 id: 서버 형식(영문 · 숫자 · - · _ 16~64자)이면 저장한 것을 그대로, 없거나 틀리면 새로 만들어 둔다', () => {
+  const store = new Map(), storage = {getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value); }};
+  let made = 0;
+  const make = () => { made++; return DEVICE_ID; };
+  assert.equal(rideDevice(storage, make), DEVICE_ID);
+  assert.equal(store.get(DEVICE_KEY), DEVICE_ID);
+  assert.equal(rideDevice(storage, make), DEVICE_ID);
+  assert.equal(made, 1, '두 번째는 저장한 것');
+  store.set(DEVICE_KEY, 'short');
+  assert.equal(rideDevice(storage, make), DEVICE_ID);
+  assert.equal(made, 2, '형식이 틀리면 새로');
+  const blocked = {getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }};
+  assert.equal(rideDevice(blocked, make), DEVICE_ID, '막힌 저장소: 이 화면 동안만');
+  assert.equal(rideDevice(null, make), DEVICE_ID);
+  for (const id of [DEVICE_ID, 'a'.repeat(16), 'A_b-'.repeat(16), '0123456789abcdef0123456789abcdef']) assert.ok(DEVICE.test(id), id);
+  for (const id of ['a'.repeat(15), 'a'.repeat(65), 'abc def ghij klmnop', '가'.repeat(20)]) assert.equal(DEVICE.test(id), false, id);
+});
+
+test('보낸 결과: 끊김 · 503 · 429 는 다음에 다시, 400 은 그 묶음을 버리고, 401 은 멈추고(기기에 둔다), 403 은 멈추고 지운다', async () => {
+  const box = rig({replies: ['throw', 503, 429, 400]});
   const log = createRideLog(box.deps);
   log.begin(SUBWAY);
   box.fire(FLUSH_MS); await box.settle();
   assert.equal(box.saved().length, 1, '끊김: 그대로');
   box.fire(FLUSH_MS); await box.settle();
   assert.equal(box.saved().length, 1, '503: 그대로');
+  box.fire(FLUSH_MS); await box.settle();
+  assert.equal(box.saved().length, 1, '429(너무 잦음 · 하루 합계): 그대로 — 다음 차례에');
   box.fire(FLUSH_MS); await box.settle();
   assert.equal(box.saved().length, 0, '400: 버린다');
 
@@ -156,10 +224,10 @@ test('지난번에 못 보낸 기록은 다시 만들 때 보낸다 · close 뒤
   assert.equal(box.saved().length, 1, '쌓인 것은 기기에 둔다');
 });
 
-test('보내기 묶음: 500개 · 센서 40개까지 · 200 · 400 · 413 만 줄에서 뺀다', () => {
+test('보내기 묶음: 500개 · 센서 40개까지 · 200 · 400 · 413 만 줄에서 뺀다(429 는 남긴다)', () => {
   assert.equal(batchSize(Array.from({length: 900}, () => ({kind: 'gps'}))), 500);
   assert.equal(batchSize([{kind: 'start'}, ...Array.from({length: 60}, () => ({kind: 'motion'}))]), 41);
-  assert.deepEqual([200, 400, 413, 401, 403, 500, 503].map(dropAfter), [true, true, true, false, false, false, false]);
+  assert.deepEqual([200, 400, 413, 401, 403, 429, 500, 503].map(dropAfter), [true, true, true, false, false, false, false, false]);
   const bins = Array.from({length: 150}, (_, index) => closeCell({slot: 1000 + index * 100, sum: Array(9).fill(1), n: Array(9).fill(1)}));
   const chunks = motionChunks(bins, 1000);
   assert.deepEqual(chunks.map(chunk => chunk.length), [1400, 100]);

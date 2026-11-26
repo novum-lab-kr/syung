@@ -134,7 +134,7 @@ test('D 탄 역에 그대로 있으면(놓침을 가려야 한다) 정확한 위
   const ctx = setup(context), {fix, dist, id, calls, view, pass} = ctx;
   await boardAtCityHall(ctx);
   dist.set(id, 2000);   // 0097 은 서울역에 닿음 · 나는 시청에 그대로
-  for (let count = 0; count < 3; count++) { pass(5); fix(CITY_HALL); }
+  for (let count = 0; count < 3; count++) { pass(5); fix([CITY_HALL[0] + (count % 2 ? 0.00002 : -0.00002), CITY_HALL[1]]); }   // 조금씩 흔들리는 위치(같은 좌표 되풀이는 새 위치가 아니다)
   assert.match(view().title, /타는 곳으로/, '놓친 것으로 보고 기다리기로');
   assert.deepEqual(calls.gps, [], '놓침을 가리는 동안 위치 정확도는 그대로');
 });

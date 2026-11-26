@@ -197,7 +197,7 @@ export function rideSteps(legs:readonly RideLeg[]):RideStep[] {
 // ---- 카드 글(components/ride_card.tsx 가 그린다)
 // look: 카드 캐릭터 그림 이름 · detour: 작은 글 자리에 「다른 길 찾기 ›」 · flip: 오른쪽을 보는 그림이라 말풍선 쪽(왼쪽)으로 뒤집는다
 // arrival: 도착 카드에만 — 도착 연기(components/ride_arrival.tsx)가 글을 나눠 쓴다(목적지 · 도착 시각 · 걸린 분)
-export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal; dev?:RideDevView; info?:RideInfoView }
+export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal; dev?:RideDevView; info?:RideInfoView; fix?:RideFixView }
 // info: 지하철 · 버스를 탄 동안 지도 대신 보여 주는 정보 화면(여정 전체 역 목록 · 말풍선 글 — 2026-11-25 사용자 결정)
 // here: 풍경의 날씨를 물을 자리([lng, lat] · 모르면 null = 서울)
 // sky: 내릴 곳 날씨를 물을 자리와 그 이름(자리를 모르면 칸 없음 — 다른 곳 날씨를 보여 주지 않는다)
@@ -217,6 +217,21 @@ export interface RideListView { rows:RideListRow[]; at:number; ahead:boolean }
 export interface RideSkySpot { name:string; at:[number, number] }
 // dev: 개발자 회원만 — 카드에 [탔음] [안 탔음](answered: 이번 탑승에서 마지막으로 누른 것 · 2026-11-11 계획서 D2)
 export interface RideDevView { answered:'rode' | 'not_rode' | null }
+// fix: 슝의 탑승 판정을 사용자가 바로잡는 창구(지하철 구간의 기다리기 · 타는 중만 — 2026-11-26 사용자 결정 A+B · rideFixView)
+//  buttons = 슝이 헷갈려 묻는 단추(main = 주 단추 모양) · links = 늘 보이는 글 링크
+export type RideFixAct = 'boarded' | 'missed' | 'other' | 'stay' | 'undo';
+export interface RideFixView { buttons:{ act:RideFixAct; text:string; main:boolean }[]; links:{ act:RideFixAct; text:string }[] }
+// 바로잡기 창구를 그릴 상태: step 지금 단계 · left 붙든 열차가 탈 역을 떠났다(탔는지 아직 모름) · undo 슝이 스스로 놓침으로 되돌렸다 · choosing 지도에서 탄 열차를 고르는 중
+export interface RideFixState { step:'wait' | 'ride'; left:boolean; undo:boolean; choosing:boolean }
+// 카드 글을 바꾸는 것(title · say — null 이면 그대로)과 창구. 고르는 중 > 붙든 열차 떠남(B 묻기) > 놓침으로 되돌림(B 묻기) > 늘 보이는 링크(A) 차례
+export function rideFixView({step, left, undo, choosing}:RideFixState):{ title:string | null; say:string | null; fix:RideFixView } {
+  if (choosing) return {title: '탄 열차를 지도에서 눌러 주세요', say: null, fix: {buttons: [], links: [{act: 'stay', text: '안 고를게요 ›'}]}};
+  if (step === 'ride') return {title: null, say: null, fix: {buttons: [], links: [{act: 'missed', text: '못 탔어요 ›'}, {act: 'other', text: '다른 열차예요 ›'}]}};
+  const other = {act: 'other', text: '다른 열차를 탔어요 ›'} as const;
+  if (left) return {title: '열차에 탔어요?', say: '슝이 헷갈려요', fix: {buttons: [{act: 'boarded', text: '탔어요', main: true}, {act: 'missed', text: '못 탔어요', main: false}], links: [other]}};
+  if (undo) return {title: null, say: '못 탄 것 같아요', fix: {buttons: [{act: 'undo', text: '아니에요, 탔어요', main: false}], links: [other]}};
+  return {title: null, say: null, fix: {buttons: [], links: [{act: 'boarded', text: '벌써 탔어요 ›'}, other]}};
+}
 // goal: 길 끝 자리(타고 가는 동안 그 자리에 깃발을 미리 세운다 — 자리를 모르면 null)
 export interface RideGoal { at:LngLat | null }
 // at: 도착 자리(도착 연기가 그 자리에 붙는다 — 모르면 「슝 도착!」 말풍선)
@@ -508,10 +523,11 @@ export interface WithTrainInput { stationM:number; exitM:number | null; trainM:n
 export function withTrainFixes(count:number, {stationM, exitM, trainM}:WithTrainInput):number {
   return !nearBoarding({goalM: Infinity, stationM, exitM}) && trainM < stationM ? count + 1 : 0;
 }
-//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 마지막 위치를 받은 때(0 = 없음) · moved: withTrainFixes 수 · nextReached: 열차가 다음 역에 닿았나(지났나)
+//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 좌표가 바뀐 위치를 마지막으로 받은 때(0 = 없음 — 같은 좌표 되풀이는 새 위치가 아니다 · 2026-11-26 사용자 결정 A)
+//  moved: withTrainFixes 수 · nextReached: 열차가 탄 역 다음다음 역에 닿았나(지났나 — 구간이 한 역이면 다음 역 · 2026-11-26 사용자 결정 B)
 //  탄 것: 열차를 따라 움직임 · 떠난 뒤 위치가 30초(LOST_FIX_MS — 걷기 → 기다리기의 지하 끊김과 같은 값) 넘게 안 옴(지하) ·
 //   지도 예측이 떠나지 않은 채 3분(BOARD_GIVE_UP_MS — 예측이 멈춘 경우 · 붙들기 전과 같은 값)
-//  놓친 것: 열차가 다음 역에 닿았는데 떠난 뒤 받은 마지막 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
+//  놓친 것: 열차가 다음다음 역에 닿았는데 떠난 뒤 받은 마지막 새 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
 export interface HoldInput { nowMs:number; sinceMs:number; leftMs:number; lastFixMs:number; moved:number; nextReached:boolean }
 export function holdOutcome({nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached}:HoldInput):ArriveOutcome {
   if (!leftMs) return nowMs - sinceMs >= BOARD_GIVE_UP_MS ? 'board' : null;

@@ -1,5 +1,5 @@
-// 타고 가기(web/ui/ride_along.mts) × 개발자 기록기(devLog — 2026-11-11 계획서 D2 · D3):
-// 개발자일 때만 「이 길로 출발」 ~ 도착 · ✕ 동안 시작 · 판정 · 끝을 남기고 카드에 [탔음] [안 탔음](view.dev)을 둔다. 기록기가 없으면 지금 그대로
+// 타고 가기(web/ui/ride_along.mts) × 기록기(devLog — 2026-11-11 계획서 D2 · D3 · 2026-11-26 C안):
+// 기록기가 있으면(로그인과 상관없이) 「이 길로 출발」 ~ 도착 · ✕ 동안 시작 · 판정 · 끝을 남기고, 개발자 회원이면 카드에 [탔음] [안 탔음](view.dev)도 둔다. 기록기가 없으면 지금 그대로
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -10,7 +10,7 @@ const {createRideAlong} = await import('../web/ui/ride_along.mts');
 const at = minutes => { const time = new Date(Date.now() + minutes * 60000); return `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`; };
 
 // 가짜 기록기: 부른 차례만 적는다(판정은 진짜처럼 바뀔 때만)
-function fakeLog() {
+function fakeLog(developer = true) {
   const calls = [];
   let recording = false, answered = null, last = '';
   return {
@@ -20,8 +20,8 @@ function fakeLog() {
     judge(state) { if (recording && state !== last) { last = state; calls.push(['judge', state]); } },
     answer(value) { calls.push(['answer', value]); answered = value; },
     end(note) { calls.push(['end', note]); recording = false; },
-    async flush() {}, close() {},
-    get recording() { return recording; }, get answered() { return answered; },
+    async flush() {}, close() {}, setDeveloper(on) { developer = on; },
+    get developer() { return developer; }, get recording() { return recording; }, get answered() { return answered; },
   };
 }
 
@@ -67,7 +67,16 @@ test('개발자: 도착하면 done 판정 → 끝 · 도착 카드에는 버튼�
   assert.deepEqual(log.calls, [['begin', 'subway'], ['judge', 'walk@0'], ['judge', 'done'], ['end', '도착']]);
 });
 
-test('개발자 아님 · 로그인 안 함(기록기 없음): 카드는 지금 그대로', context => {
+test('개발자 아님 · 로그인 안 함: 출발 ~ ✕ 를 그대로 남기지만 카드에 [탔음] [안 탔음] 은 없다', context => {
+  const log = fakeLog(false);
+  const {rideAlong, views, actions} = ride(context, log);
+  rideAlong.start({arrives: at(10), legs: [{type: 'walk', metres: 600, minutes: 8}]}, '시청역');
+  assert.equal('dev' in views.at(-1), false);
+  actions().close();
+  assert.deepEqual(log.calls, [['begin', 'subway'], ['judge', 'walk@0'], ['end', '그만둠']]);
+});
+
+test('기록기 없음(앱 지도 모드 · 받기 전): 카드는 지금 그대로', context => {
   for (const log of [undefined, null]) {
     const {rideAlong, views} = ride(context, log);
     rideAlong.start({arrives: at(10), legs: [{type: 'walk', metres: 600, minutes: 8}]}, '시청역');
