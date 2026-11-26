@@ -976,7 +976,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		pushAlerts();
 		const log = ride ? devLog() : null;
 		if (log?.recording) log.judge(judgeState(), logInfo());
-		if (next && log?.recording && log.developer && step()?.kind !== "done") next.dev = { answered: log.answered };
+		const kind = step()?.kind;
+		if (next && log?.recording && log.developer && (kind === "wait" || kind === "ride")) next.dev = { answered: log.answered };
 		const key = JSON.stringify(next);
 		if (key === painted) return;
 		painted = key;
