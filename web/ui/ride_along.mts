@@ -113,7 +113,8 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     settled:boolean;
   };
   let ride:Ride | null = null, timer:ReturnType<typeof setInterval> | 0 = 0, arrivalsTimer:ReturnType<typeof setInterval> | 0 = 0, busTimer:ReturnType<typeof setInterval> | 0 = 0;
-  let fix:{ spot:LngLat; t:number } | null = null, following = true, turnedOn = false, cam:{ lng:number; lat:number } | null = null, camAt = 0, camKey = '';
+  // fix.newAt: 좌표가 바뀐 위치를 마지막으로 받은 때 — 지하에서 브라우저가 마지막 위치를 그대로 다시 주면 t 만 늘고 newAt 은 그대로(2026-11-26 사용자 결정 A)
+  let fix:{ spot:LngLat; t:number; newAt:number } | null = null, following = true, turnedOn = false, cam:{ lng:number; lat:number } | null = null, camAt = 0, camKey = '';
 
   const step = () => ride ? ride.steps[ride.at]! : null;
   const legAt = (index:number) => ride?.legs[index];
@@ -130,11 +131,14 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   geolocate.on('geolocate', event => {
     if (ride) devLog()?.gps(event.coords);   // 개발자 기록: 흐린 위치도 그대로(지하에서 어떻게 흐려지는지 보려고)
     if (event.coords.accuracy > BAD_FIX_M) return;
-    fix = {spot: [event.coords.longitude, event.coords.latitude], t: Date.now()};
+    const spot:LngLat = [event.coords.longitude, event.coords.latitude], nowMs = Date.now();
+    const repeat = !!fix && fix.spot[0] === spot[0] && fix.spot[1] === spot[1];
+    fix = {spot, t: nowMs, newAt: repeat ? fix!.newAt : nowMs};
     if (!ride) return;
     offTrack(fix.spot);
-    leftWithoutMe(fix.spot);
-    followHeld(fix.spot);
+    // 같은 좌표 되풀이는 새 위치가 아니다(2026-11-26 사용자 결정 A · ①): 붙든 동안 열차를 따라갔는지 · 탄 뒤 탄 역에 남았는지 셀 거리가 없다
+    //  지하에서 같은 좌표만 오는데 진짜로 못 탄 경우는 사용자가 「못 탔어요」로 바로잡는다
+    if (!repeat) { leftWithoutMe(fix.spot); followHeld(fix.spot); }
     tick();
     const current = step();
     if (following && current && current.kind !== 'done' && !(current.kind === 'ride' && legAt(current.leg)?.type === 'ride') && !infoOn && nearEdge(fix.spot)) map.easeTo({center: [...fix.spot], zoom: Math.max(map.getZoom(), FOLLOW_ZOOM), padding: pad(), duration: 600});
@@ -341,10 +345,11 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   }
   function holdTick(leg:RideTrainLeg, nowMs:number) {
     if (!ride?.hold) return;
-    const held = heldTrack(leg, nowMs), nextId = leg.stations[1];
+    // 놓침은 둘째 역에 닿을 때 가린다(2026-11-26 사용자 결정 B — 다음 역까지는 열차 안 위치가 아직 탄 역 근처로 늦게 따라올 수 있다 · 구간이 한 역이면 그 역)
+    const held = heldTrack(leg, nowMs), nextId = leg.stations[2] ?? leg.stations[1];
     if (!held) { advance(); return; }   // 지도에서 열차가 사라졌다 — 붙들기 전처럼 탄 것으로
     const {hold, track} = held;
-    const outcome = holdOutcome({nowMs, sinceMs: hold.sinceMs, leftMs: hold.leftMs, lastFixMs: fix?.t ?? 0, moved: hold.moved,
+    const outcome = holdOutcome({nowMs, sinceMs: hold.sinceMs, leftMs: hold.leftMs, lastFixMs: fix?.newAt ?? 0, moved: hold.moved,
       nextReached: nextId !== undefined && (reached(track, nextId) || leftStation(track, nextId))});
     if (outcome === 'board') { advance(); return; }
     if (outcome === 'missed') {

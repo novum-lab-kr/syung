@@ -508,10 +508,11 @@ export interface WithTrainInput { stationM:number; exitM:number | null; trainM:n
 export function withTrainFixes(count:number, {stationM, exitM, trainM}:WithTrainInput):number {
   return !nearBoarding({goalM: Infinity, stationM, exitM}) && trainM < stationM ? count + 1 : 0;
 }
-//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 마지막 위치를 받은 때(0 = 없음) · moved: withTrainFixes 수 · nextReached: 열차가 다음 역에 닿았나(지났나)
+//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 좌표가 바뀐 위치를 마지막으로 받은 때(0 = 없음 — 같은 좌표 되풀이는 새 위치가 아니다 · 2026-11-26 사용자 결정 A)
+//  moved: withTrainFixes 수 · nextReached: 열차가 탄 역 다음다음 역에 닿았나(지났나 — 구간이 한 역이면 다음 역 · 2026-11-26 사용자 결정 B)
 //  탄 것: 열차를 따라 움직임 · 떠난 뒤 위치가 30초(LOST_FIX_MS — 걷기 → 기다리기의 지하 끊김과 같은 값) 넘게 안 옴(지하) ·
 //   지도 예측이 떠나지 않은 채 3분(BOARD_GIVE_UP_MS — 예측이 멈춘 경우 · 붙들기 전과 같은 값)
-//  놓친 것: 열차가 다음 역에 닿았는데 떠난 뒤 받은 마지막 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
+//  놓친 것: 열차가 다음다음 역에 닿았는데 떠난 뒤 받은 마지막 새 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
 export interface HoldInput { nowMs:number; sinceMs:number; leftMs:number; lastFixMs:number; moved:number; nextReached:boolean }
 export function holdOutcome({nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached}:HoldInput):ArriveOutcome {
   if (!leftMs) return nowMs - sinceMs >= BOARD_GIVE_UP_MS ? 'board' : null;
