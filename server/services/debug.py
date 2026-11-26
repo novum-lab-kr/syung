@@ -112,6 +112,10 @@ def _address_key(address: str) -> str:
     return str(parsed)
 
 
+def _at(item: dict[str, Any]) -> float:
+    return item["t"]
+
+
 def _device(value: object) -> str:
     if value is None:
         raise MissingDevice("기기 표시(device)가 없어요")
@@ -201,16 +205,26 @@ class DebugService:
         return {"ok": True, "file": name}
 
     def recent(self, day: str = "") -> dict[str, Any]:
-        """그날(YYYYMMDD, 없거나 이상하면 오늘)의 탑승 기록 요약 · 기록이 있는 날 목록 · 최근 캡처."""
+        """그날(YYYYMMDD, 없거나 이상하면 오늘)의 탑승 기록 요약 · 기록이 있는 날 목록 · 최근 캡처.
+        지도 타고 가기 기록(source "map")은 탑승마다 source · device(익명 기기 id, 개발자 회원이면 None) ·
+        judges[{t,state}](앱 판정 흐름) · answers[{t,answer}](누른 정답)를 더 싣는다 — 디버깅 페이지 기록 줄은 옛 모양 그대로.
+        탑승은 (device, ride) 로 묶는다 — 다른 기기가 같은 ride 글자를 보내도 섞이지 않게(device 없는 기록은 예전처럼 ride 하나로)."""
         today = datetime.fromtimestamp(self.clock(), KST).strftime("%Y%m%d")
         day = day if len(day) == 8 and day.isdigit() else today
-        rides: dict[str, dict[str, Any]] = {}
-        motions: dict[str, list[dict[str, Any]]] = {}
+        rides: dict[tuple[str, str], dict[str, Any]] = {}
+        motions: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for e in self.store.recent_rides(day):
+            key = (str(e.get("device") or ""), e["ride"])
             if e["kind"] == "motion":
-                motions.setdefault(e["ride"], []).append(e)
-            r = rides.setdefault(e["ride"], {"ride": e["ride"], "mode": e["mode"], "line": e.get("line") or e.get("routeName"),
-                                             "from": e["t"], "to": e["t"], "stops": 0, "gps": 0, "taps": []})
+                motions.setdefault(key, []).append(e)
+            r = rides.setdefault(key, {"ride": e["ride"], "mode": e["mode"], "line": e.get("line") or e.get("routeName"),
+                                       "from": e["t"], "to": e["t"], "stops": 0, "gps": 0, "taps": []})
+            if e.get("source") == MAP_SOURCE and "source" not in r:
+                r.update(source=MAP_SOURCE, device=e.get("device"), judges=[], answers=[])
+            if e["kind"] == "judge" and "judges" in r:
+                r["judges"].append({"t": e["t"], "state": e.get("state")})
+            elif e["kind"] == "answer" and "answers" in r:
+                r["answers"].append({"t": e["t"], "answer": e.get("answer")})
             if e["kind"] in ("arrive", "depart"):
                 r["taps"].append({"kind": e["kind"], "t": e["t"], "station": e.get("station")})
                 r["stops"] += e["kind"] == "arrive"
@@ -220,9 +234,12 @@ class DebugService:
                     r["stops"] -= r["taps"].pop(before[-1])["kind"] == "arrive"
             r["to"] = max(r["to"], e["t"])
             r["gps"] += e["kind"] == "gps"
-        for ride_id, r in rides.items():   # 센서가 잡은 섰다 · 떠났다(시험판, ride_motion)
-            if ride_id in motions:
-                found = detect(motions[ride_id])
+        for key, r in rides.items():   # 센서가 잡은 섰다 · 떠났다(시험판, ride_motion)
+            if "judges" in r:   # 늦게 다시 보낸 묶음이 있어도 시각 차례로
+                r["judges"].sort(key=_at)
+                r["answers"].sort(key=_at)
+            if key in motions:
+                found = detect(motions[key])
                 r["sensor"], r["series"] = found["events"], found["series"]
         shots = [{k: s.get(k) for k in ("at", "type", "bytes", "note", "file")} for s in self.store.recent_shots(20)]
         days = sorted(set(self.store.ride_days()) | {today}, reverse=True)

@@ -3,6 +3,7 @@
 POST /debug/ride  탑승 기록 사건 묶음(JSON {"events": […]})
 POST /debug/shot  캡처 파일 본문 그대로, ?note=…&state=…(JSON) — Content-Type 으로 종류를 안다
 GET  /debug/recent       그날(?day=YYYYMMDD, 기본 오늘) 탑승 기록 요약 · 기록 있는 날 · 최근 캡처 목록
+                         지도 타고 가기 탑승(source "map")은 source · device · judges[{t,state}] · answers[{t,answer}] 칸이 더 붙는다
 GET  /debug/bus-route    ?name=3011 → 노선 id 후보
 """
 from __future__ import annotations
