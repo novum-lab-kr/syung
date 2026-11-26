@@ -221,10 +221,10 @@ test('정보 화면: 지하철에서 내려 바로 지하철로 갈아타는 기
   quiet(1);
   await settle();
   assert.equal(view().title, '4호선 남영 방면 타는 곳으로');
-  assert.match(view().sub, /^1\/2 · 걸어서 \d+분/, '말풍선 작은 글은 기다리기 카드 그대로');
+  assert.match(view().sub, /^걸어서 \d+분/, '말풍선 작은 글은 기다리기 카드 그대로');
   assert.deepEqual(view().info, {here: [127, 37.6], talk: null, list: {rows: [
     {kind: 'stop', name: '시청', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '서울역', color: '#888', edge: 'last', off: false},   // 이미 내렸다 — 「여기서 내려요」 표 없음
-    {kind: 'gap', text: '4호선으로 갈아타기'},
+    {kind: 'gap'},
     {kind: 'stop', name: '서울역', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '남영', color: '#888', edge: 'last', off: true},
   ], at: 1, ahead: false}});
   assert.equal(rideAlong.infoScreen, true);

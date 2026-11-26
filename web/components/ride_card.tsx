@@ -149,10 +149,11 @@ function RideHatch({ color, past }:{ color:string; past:boolean }) {
   </svg></i>;
 }
 // 아래 끝 그림(거칠게 끊긴 선 + 색연필 한 자루) — 목록 칸 아래 끝에 붙박이(2026-11-26 사용자 안 B 「색연필은 계속 하단에 있고 선만 그어줘」).
-// 목록 끝까지 내리면 마지막 줄 선이 연필까지 이어진다(syung.css li.tail::after) · 색연필 필터 묶음도 여기서 그려 둔다
-function RideEdge({ color }:{ color:string }) {
+// 목록 끝까지 내리면 마지막 줄 선이 연필까지 이어진다(syung.css li.tail::after) · 색연필 필터 묶음도 여기서 그려 둔다.
+// 마지막 줄이 연필 자리까지 내려오면 연필이 그 줄 밑에 붙어 같이 밀려 내려간다(push px — 2026-11-26 사용자 「밀려 내려감」 · 안 그러면 「여기서 내려요」 를 덮는다)
+function RideEdge({ color, push }:{ color:string; push:number }) {
   return <>
-    <i class="rg-edge bottom" aria-hidden="true"><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <i class="rg-edge bottom" aria-hidden="true" style={push > 0 ? `transform:translateY(${push}px)` : undefined}><svg viewBox="0 0 120 76" fill="none" stroke-linecap="round" stroke-linejoin="round">
       {EDGE_CRAYON}{ROW_CRAYON}{TEXT_CRAYON}{SKY_CRAYON}
       <g filter="url(#rg-edge-crayon)">
         <path d="M22 -6V40l-3 6 5 4-4 5 2 5" stroke={color} stroke-width="4.4"/>
@@ -213,14 +214,17 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(mark:RideMark) => v
   }, [focus]);
   const release = useCallback(() => { touching.current = false; if (waiting.current) { waiting.current = false; centre(true); } }, [centre]);
   // 위 끝 빗금은 목록 안(RideHatch · 같이 스크롤) — 첫 줄 선이 목록 맨 위부터 내려온다(2026-11-26 사용자 「시작할 때 열차 라인은 안 끊기게 위에서부터 내려오게」 · syung.css .rg-list ol::before).
-  // 아래 끝 그림 색 = 그림 위쪽(칸 아래 끝 76px 위)에 걸친 줄의 노선 색 — 갈아타기 줄이면 바로 아래 줄, 끝 너머면 마지막 줄. 스크롤 · 줄 수가 바뀔 때 다시 잰다
-  const [edgeAt, setEdgeAt] = useState(-1);
+  // 아래 끝 그림 색 = 그림 위쪽(칸 아래 끝 76px 위)에 걸친 줄의 노선 색 — 갈아타기 줄이면 바로 아래 줄, 끝 너머면 마지막 줄. 스크롤 · 줄 수 · 줄 높이가 바뀔 때 다시 잰다
+  // 마지막 줄 아래 끝이 그 선보다 내려와 있으면 그만큼 연필을 밀어 내린다(edgePush)
+  const [edgeAt, setEdgeAt] = useState(-1), [edgePush, setEdgePush] = useState(0);
   const measure = useCallback(() => {
     const host = box.current;
     if (!host) return;
     const line = host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX, items = [...host.querySelectorAll('ol > li')];
     const hit = items.findIndex(item => item.getBoundingClientRect().bottom > line);
     setEdgeAt(hit < 0 ? items.length - 1 : hit);
+    const lastBottom = items.at(-1)?.getBoundingClientRect().bottom ?? line;
+    setEdgePush(Math.max(0, Math.round(lastBottom - line)));
   }, []);
   useEffect(measure, [list.at, list.rows.length, measure]);
   const edgeRow = list.rows.slice(Math.max(0, edgeAt)).find(row => row.kind !== 'gap') ?? list.rows.findLast(row => row.kind !== 'gap');
@@ -231,12 +235,12 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(mark:RideMark) => v
   // 그 줄 역 점 → slide 쪽 옆 줄 역 점 거리(두 줄 높이의 반씩 — 큰 줄(focus)은 72px · syung.css .rg-list li.now)
   const rowPx = (order:number) => order === focus ? FOCUS_ROW_PX : LIST_ROW_PX;
   const slideStep = (order:number, slide = 0) => (rowPx(order) + rowPx(order + Math.sign(slide))) / 2;
-  return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
+  return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTransitionEnd={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
     {headColor && <RideHatch color={headColor} past={focus > 0} />}
     <ol class={focus > 0 ? 'head-past' : undefined} style={headColor ? `--rg-head:${headColor}` : undefined}>
       {list.rows.map((row, order) => {
         const tail = order === last;   // 마지막 줄 선은 목록 끝(아래 끝 그림)까지 이어 긋는다
-        if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`}><i>{row.text}</i></li>;
+        if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`} />;   // 갈아타기 줄은 점선만(글 없음 · 2026-11-26 사용자)
         if (row.kind === 'leg') return <li class={`leg${pastClass(order)}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
         const now = order === focus, marks = row.marks ?? [], others = marks.filter(mark => !mark.mine);
         let note = order === 0 ? '여기서 탔어요' : '지금 여기예요';
@@ -248,7 +252,7 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(mark:RideMark) => v
         </li>;
       })}
     </ol>
-  </div>{edgeColor && <RideEdge color={edgeColor} />}</div>;
+  </div>{edgeColor && <RideEdge color={edgeColor} push={edgePush} />}</div>;
 }
 
 // 새싹이가 선 승강장(2026-11-26 사용자 시안 H): 아이소 2:1 바닥이 화면 오른쪽 · 아래 끝까지, 뒷모서리 너머 선로 둘 · 맞은편 승강장(같은 타일)은

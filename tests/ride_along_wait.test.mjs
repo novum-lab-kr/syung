@@ -11,7 +11,7 @@ test('걷는 시간이 0이면 「승강장 도착」 — 0초 전에는 그대�
   assert.equal(waitText(legs, 1, 0, [300, 540], 0).sub, '승강장 도착 · 열차 5분 뒤 · 다음 9분 뒤');
   assert.equal(waitText(legs, 1, 0, null, 0).sub, '승강장 도착');
   assert.equal(waitText(legs, 1, 20, null, 0).sub, '걸어서 1분');
-  assert.equal(waitText(legs, 2, 0, [420], 0).sub, '2/3 · 승강장 도착 · 열차 7분 뒤', '갈아타기도 같다');
+  assert.equal(waitText(legs, 2, 0, [420], 0).sub, '승강장 도착 · 열차 7분 뒤', '갈아타기도 같다');
   const busLeg = {type: 'bus', route: '472', from: '시청역9번출구.시청서소문2청사', to: '신사역', departs: '08:10', arrives: '08:40', toward: '개포동', stops: 9, wait: 60, path: []};
   assert.equal(waitText([walkLeg, busLeg], 1, 0, null, 0).sub, '정류장 도착', '버스는 정류장(2026-11-07 사용자 시험)');
   assert.equal(waitText([walkLeg, busLeg], 1, 0, [180, 720], 0).sub, '정류장 도착 · 472번 3분 뒤 · 다음 12분 뒤', '버스 도착 실시간(2026-11-07 사용자 결정)');

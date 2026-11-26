@@ -478,7 +478,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     const leg = legAt(current.leg)!;
     if (current.kind === 'walk') {
       const pace = measuredPace(ride.track) ?? legPace(ride.legs, current.leg);
-      return {...base, detour: ride.detour, title: walkTitle(ride.legs, current.leg, ride.toName), sub: walkSub(ride.legs, current.leg, ride.leftM, walkLeftS(ride.legs, current.leg, ride.leftM, pace))};
+      return {...base, detour: ride.detour, title: walkTitle(ride.legs, current.leg, ride.toName), sub: walkSub(ride.leftM, walkLeftS(ride.legs, current.leg, ride.leftM, pace))};
     }
     const transit = leg as RideTrainLeg | RideBusLeg;
     if (current.kind === 'wait') {

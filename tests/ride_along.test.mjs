@@ -53,7 +53,7 @@ test('기다리기 카드 글: 첫 기다리기 · 갈아타기 · 못 탐', () 
   assert.equal(first.sub, '걸어서 2분 · 열차 5분 뒤 · 다음 9분 뒤');
   assert.equal(first.say, '열차랑 약속 잡은 사람처럼 걷는 중');
   const transfer = waitText(legs, 2, 120, [60, 420], 0);
-  assert.equal(transfer.sub, '2/3 · 걸어서 2분 · 다음 열차 7분 뒤');
+  assert.equal(transfer.sub, '걸어서 2분 · 다음 열차 7분 뒤');
   assert.equal(transfer.say, '포탈 열면 가능한데… 그럴 거면 집으로 여시죠');
   assert.deepEqual(waitText(legs, 1, 120, null, 0), {say: null, sub: '걸어서 2분'});
 });
@@ -62,13 +62,13 @@ test('걷기 · 타기 · 도착 카드 글', () => {
   const legs = [walkLeg(), rideLeg(), walkLeg({label: undefined})];
   assert.equal(walkTitle(legs, 0, '강남역'), '시청역 5번 출구까지 걸어요');
   assert.equal(walkTitle(legs, 2, '강남역'), '강남역까지 걸어요');
-  assert.equal(walkSub(legs, 0, 72, 70), '1/3 · 70m · 1분');
-  assert.equal(rideSub(legs, 1, 5), '2/3 · 5정거장 · 08:40');
-  assert.equal(rideSub(legs, 1, 1), '2/3 · 다음 역에서 내려요');
+  assert.equal(walkSub(72, 70), '70m · 1분');
+  assert.equal(rideSub(legs, 1, 5), '5정거장 · 08:40');
+  assert.equal(rideSub(legs, 1, 1), '다음 역에서 내려요');
   // 지금 역 · 다음 역을 알면 앞에 붙인다(2026-11-07 요청 — 지하철 · 버스 둘 다)
-  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: '종로3가'}), '2/3 · 지금 종각 · 다음 종로3가 · 5정거장 · 08:40');
-  assert.equal(rideSub(legs, 1, 1, {now: '동대문', next: '동묘앞'}), '2/3 · 지금 동대문 · 다음 역에서 내려요');
-  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: null}), '2/3 · 지금 종각 · 5정거장 · 08:40');
+  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: '종로3가'}), '지금 종각 · 다음 종로3가 · 5정거장 · 08:40');
+  assert.equal(rideSub(legs, 1, 1, {now: '동대문', next: '동묘앞'}), '지금 동대문 · 다음 역에서 내려요');
+  assert.equal(rideSub(legs, 1, 5, {now: '종각', next: null}), '지금 종각 · 5정거장 · 08:40');
   const now = new Date(2026, 10, 4, 8, 40), started = +now - 32 * 60000;
   assert.equal(doneSub('강남역', now, started), '강남역 · 08:40 · 32분 걸렸어요');
   assert.deepEqual(rideSteps(legs).map(step => step.kind), ['walk', 'wait', 'ride', 'walk', 'done']);
@@ -244,14 +244,11 @@ test('rideList: 구간마다 역을 다 적고 갈아타기 줄을 사이에 · 
   assert.equal(list.at, 1);
   assert.deepEqual(list.rows, [
     {kind: 'stop', name: '선릉', color: '#0a0', edge: 'first', off: false}, {kind: 'stop', name: '역삼', color: '#0a0', edge: null, off: false}, {kind: 'stop', name: '강남', color: '#0a0', edge: 'last', off: true},
-    {kind: 'gap', text: '472번으로 갈아타기 · 걷기 2분'}, {kind: 'leg', text: '472번 강남역 → 신사역', color: '#00f'}]);
-  // 지하철끼리 갈아타면 걷기 구간이 없다 — 걷기 글 없이
+    {kind: 'gap'}, {kind: 'leg', text: '472번 강남역 → 신사역', color: '#00f'}]);
+  // 갈아타기 줄은 글 없이 점선만(2026-11-26 사용자) — 지하철끼리(걷기 구간 없음)도 같다
   const pair = [train('1호선', ['시청', '서울역']), train('4호선', ['서울역', '숙대입구'])];
-  assert.deepEqual(rideList(pair, 1, {now: '서울역', next: '숙대입구'}, leg => names.get(leg) ?? null, () => '#111').rows[2], {kind: 'gap', text: '4호선으로 갈아타기'});
+  assert.deepEqual(rideList(pair, 1, {now: '서울역', next: '숙대입구'}, leg => names.get(leg) ?? null, () => '#111').rows[2], {kind: 'gap'});
   assert.equal(rideList(pair, 1, {now: '서울역', next: '숙대입구'}, leg => names.get(leg) ?? null, () => '#111').at, 3, '같은 이름이 앞 구간에도 있어도 탄 구간의 줄');
-  // 받침이 없으면 「로」(공항철도로 · GTX-A로)
-  const air = [train('2호선', ['합정', '홍대입구']), train('공항철도', ['홍대입구', '공덕'])];
-  assert.deepEqual(rideList(air, 0, {now: '합정', next: '홍대입구'}, leg => names.get(leg) ?? null, () => '#111').rows[2], {kind: 'gap', text: '공항철도로 갈아타기'});
   // 다음 역으로 가는 중(ahead): 다음 줄이 같은 구간의 역일 때만 — 이번 역이 내릴 역(다음 줄이 갈아타기)이면 false
   assert.equal(list.ahead, false, 'where.ahead 가 없으면 false');
   assert.equal(rideList(legs, 1, {now: '선릉', next: '역삼', ahead: true}, leg => names.get(leg) ?? null, () => '#111').ahead, true);

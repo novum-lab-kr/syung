@@ -657,7 +657,6 @@ html[data-theme=dark] .rg-pl-pit{fill:#1c262b}html[data-theme=dark] .rg-pl-bal{f
 html[data-theme=dark] .rg-list li.stop::before,html[data-theme=dark] .rg-list li.leg::before{background:#fff}
 .rg-list li.now::before{border-color:var(--ink);background:var(--syung)}
 html[data-theme=dark] .rg-list li.now::before{background:var(--syung)}
-.rg-list li.gap{font-size:var(--text-14);font-weight:var(--weight-bold)}
 .rg-list small{flex:none;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
 .rg-list span{display:flex;align-items:center;gap:8px;min-width:0}
 .rg-list b{min-width:0;font:400 20px/1.2 var(--round);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:font-size .6s ease}
@@ -691,15 +690,14 @@ html[data-theme=dark] .rg-list li.now::before{background:var(--syung)}
 .rg-list-box .rg-list li.gap::after{left:8px;width:4px;border:0;background:var(--rg-dots) 50% 0/4px 10px repeat-y}
 .rg-list-box .rg-list li.last:has(+ li.gap)::after{bottom:0;background:linear-gradient(var(--rg-line),var(--rg-line)) 0 0/100% 50% no-repeat,var(--rg-dots) 50% 100%/4px 10px repeat-y}
 .rg-list-box .rg-list li.gap + li.first::after{top:0;background:linear-gradient(var(--rg-line),var(--rg-line)) 0 100%/100% 50% no-repeat,var(--rg-dots) 50% 0/4px 10px repeat-y}
-/* 역 이름 · 갈아타기 줄 글씨도 색연필로(2026-11-25 사용자) — 읽히게 선보다 약한 필터, 이번 역 큰 글씨만 조금 세게. 「여기서 탔어요 · 지금 여기예요」 작은 글 · 「여기서 내려요」 표는 그대로 */
-.rg-list-box .rg-list b,.rg-list-box .rg-list li.gap i{filter:url(#rg-text-crayon)}
-.rg-list-box .rg-list li.gap i{font-style:normal}
+/* 역 이름 글씨도 색연필로(2026-11-25 사용자) — 읽히게 선보다 약한 필터, 이번 역 큰 글씨만 조금 세게. 「여기서 탔어요 · 지금 여기예요」 작은 글 · 「여기서 내려요」 표는 그대로 */
+.rg-list-box .rg-list b{filter:url(#rg-text-crayon)}
 .rg-list-box .rg-list li.now b{filter:url(#rg-text-crayon-big)}
 .rg-edge svg{display:block;width:100%;height:100%;overflow:visible}
 .rg-edge.top{top:var(--rg-hatch);width:44px;height:56px}.rg-edge.top.past{opacity:.72}.rg-edge.bottom{bottom:0;width:120px;height:76px}
 .rg-edge .wood{fill:#ffe9a8}.rg-edge .band{fill:#6f7b8c}.rg-edge .rubber{fill:#f6a5a5}.rg-edge .shade{stroke:rgba(0,0,0,.18);stroke-width:3}
 html[data-theme=dark] .rg-edge .wood{fill:#d8c890}html[data-theme=dark] .rg-edge .band{fill:#6d76a8}html[data-theme=dark] .rg-edge .rubber{fill:#8a4f84}
-/* 아래 끝 그림은 목록 칸 아래 끝에 붙박이(2026-11-26 사용자 안 B — 예전 마지막 줄 밑에 붙이면 중간에선 연필이 안 보였다).
+/* 아래 끝 그림은 목록 칸 아래 끝에 붙박이(2026-11-26 사용자 안 B — 예전 마지막 줄 밑에 붙이면 중간에선 연필이 안 보였다) · 마지막 줄이 그 자리까지 내려오면 그 줄 밑에 붙어 밀려 내려간다(ride_card.tsx edgePush — 2026-11-26 사용자 「밀려 내려감」).
    마지막 줄 선은 목록 아래 여백(ol padding-bottom)을 다 지나 칸 아래 끝까지 — 끝까지 내리면 그 선이 연필 심에 닿는다(선 결은 위의 #rg-row-crayon 그대로) */
 .rg-list li.tail{overflow:visible}
 .rg-list li.tail::after{bottom:calc(var(--rg-seen) / 2 + 36px - 100cqh)}

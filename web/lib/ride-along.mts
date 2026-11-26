@@ -212,7 +212,7 @@ export interface RideTalk { title:RideSaid[]; sub:RideSaid[]; todo:RideSaid[] | 
 // list: 여정 전체 역(정류장) 세로 목록(rideList · 2026-11-25 사용자 시안 15 — 이번 역이 목록 칸 가운데 · 넘친 위아래는 잘린다). at = 이번 역 줄 번호
 // 줄: stop = 역 하나(edge: 구간의 첫 · 끝 역 — 옆 선을 거기서 끊는다 · off: 내릴 역) · gap = 갈아타기 구분 줄 · leg = 정류장 목록을 모르는 구간 한 줄
 // marks: 그 역 줄에 그릴 열차(버스) 그림(2026-11-26 사용자 시안5 — 역 점 왼쪽 · 탄 것은 크게, 다른 열차는 작게 · 반투명)
-export type RideListRow = { kind:'stop'; name:string; color:string; edge:'first' | 'last' | null; off:boolean; marks?:RideMark[] } | { kind:'gap'; text:string } | { kind:'leg'; text:string; color:string };
+export type RideListRow = { kind:'stop'; name:string; color:string; edge:'first' | 'last' | null; off:boolean; marks?:RideMark[] } | { kind:'gap' } | { kind:'leg'; text:string; color:string };
 // id: 누르면 그 열차로 바꾼다(planner plan id — 버스 · 탄 것은 null 이 아니어도 바꿀 것이 없다) · mine: 지금 탄 것 · bus: 버스 그림
 // name: 다른 열차의 이름(「7호선 장암행」 — 누르면 뜨는 확인 팝업 글 · rideSwapAsk)
 // slide: 탄 열차 그림을 그 줄 역 점에서 옆 역 줄 쪽으로 옮길 몫(-1 ~ 1 · 음수 = 위 줄 쪽 — 역 사이를 지도와 같은 예측 자리로 · 2026-11-26 사용자). 없으면 역 점 그대로
@@ -254,9 +254,9 @@ export const characterOf = (look:string | null | undefined):{ file:string; flip:
 const minutes = (seconds:number) => Math.max(1, Math.round(seconds / 60));
 const roundM = (value:number) => Math.max(10, Math.round(value / 10) * 10);
 const placeOf = (leg:RideTrainLeg | RideBusLeg, name:string) => leg.type === 'bus' ? `${name} 정류장` : `${name}역`;
-const stepNo = (legs:readonly RideLeg[], index:number) => `${index + 1}/${legs.length}`;
 
-// 걷기 카드: 「서울역 15번 출구까지 걸어요」 · 「1/4 · 70m · 1분」. 첫 걷기는 서버 글(출구까지), 갈아타기 걷기는 다음 타는 곳, 마지막은 목적지
+// 카드 아래 글에 「2/5 · 」 같은 단계 번호는 붙이지 않는다(2026-11-26 사용자 「이걸 길찾기 단계 번호라고 사용자가 어캐 아냐」 → 숫자 빼기)
+// 걷기 카드: 「서울역 15번 출구까지 걸어요」 · 「70m · 1분」. 첫 걷기는 서버 글(출구까지), 갈아타기 걷기는 다음 타는 곳, 마지막은 목적지
 export function walkTitle(legs:readonly RideLeg[], index:number, toName:string):string {
   const leg = legs[index], next = legs[index + 1];
   if (!next) return `${toName}까지 걸어요`;
@@ -264,17 +264,16 @@ export function walkTitle(legs:readonly RideLeg[], index:number, toName:string):
   if (index === 0 && leg?.type === 'walk' && leg.label) return `${leg.label} 걸어요`;
   return `${placeOf(next, next.from)}까지 걸어요`;
 }
-export const walkSub = (legs:readonly RideLeg[], index:number, leftM:number, leftS:number):string => `${stepNo(legs, index)} · ${roundM(leftM)}m · ${minutes(leftS)}분`;
+export const walkSub = (leftM:number, leftS:number):string => `${roundM(leftM)}m · ${minutes(leftS)}분`;
 
-// 기다리기 · 갈아타기 카드: 「4호선 사당 방면 타는 곳으로」 · 한마디 · 「걸어서 2분 · 열차 5분 뒤 · 다음 9분 뒤」(갈아타기는 앞에 「2/4 · 」)
+// 기다리기 · 갈아타기 카드: 「4호선 사당 방면 타는 곳으로」 · 한마디 · 「걸어서 2분 · 열차 5분 뒤 · 다음 9분 뒤」(갈아타기도 같다)
 export function waitTitle(leg:RideTrainLeg | RideBusLeg):string {
   return leg.type === 'bus' ? `${leg.route} ${leg.toward} 방면 타는 곳으로` : `${leg.line} ${leg.to} 방면 타는 곳으로`;
 }
 // 걷는 시간이 다 됐으면(0초) 「걸어서 1분」 대신 「승강장 도착」 · 버스는 「정류장 도착」(갈아타기도 같다) · arrived: 첫 열차(고른 열차)가 이 역에 들어왔다(pickedArrived)
 // gone: 승강장 시간 전에 들어와 놓친 열차가 줄에 아직 있다(arrivalsS 에서는 뺐다) — 걸어서 못 타는 열차를 뺐을 때와 같은 글(「다음 열차」 · 놓침 한마디)
 export function waitText(legs:readonly RideLeg[], index:number, walkS:number, arrivalsS:readonly number[] | null, turn:number, arrived = false, gone = false):{ say:string | null; sub:string } {
-  const previous = legs[index - 1], parts:string[] = [];
-  if (previous && previous.type !== 'walk') parts.push(stepNo(legs, index - 1));
+  const parts:string[] = [];
   parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : `${legs[index]?.type === 'bus' ? '정류장' : '승강장'} 도착`);   // 버스는 정류장(2026-11-07 사용자 시험)
   if (!arrivalsS?.length) return {say: gone ? talkLine('miss', turn) : null, sub: parts.join(' · ')};   // 놓친 열차 말고는 아직 모름
   const caught = catchable(arrivalsS, walkS), missed = caught.missed || gone, [first, second] = caught.next;
@@ -290,7 +289,7 @@ function firstTrainText(firstS:number, missed:boolean, arrived:boolean, noun:str
   return missed ? `다음 ${noun} ${minutes(firstS)}분 뒤` : `${noun} ${minutes(firstS)}분 뒤`;
 }
 
-// 타기 카드: 「사당에서 내려요」 · 「2/4 · 5정거장 · 08:21」 → 한 정거장 남으면 「2/4 · 다음 역에서 내려요」
+// 타기 카드: 「사당에서 내려요」 · 「5정거장 · 08:21」 → 한 정거장 남으면 「다음 역에서 내려요」
 export const rideTitle = (leg:RideTrainLeg | RideBusLeg):string => `${leg.to}에서 내려요`;
 
 
@@ -333,17 +332,17 @@ export function rideTalk(legs:readonly RideLeg[], index:number, stopsLeft:number
 }
 
 // ---- 정보 화면의 여정 전체 역 목록(components/ride_card.tsx RideList 가 그린다 · 2026-11-25 사용자 시안 15)
-// 탈 것 구간마다 역(정류장)을 차례대로 다 적고, 구간 사이에는 갈아타기 줄(「2호선으로 갈아타기 · 걷기 2분」 — 걷기 구간이 없으면 걷기 글 없음)을 둔다. 처음 · 끝 걷기는 적지 않는다.
+// 탈 것 구간마다 역(정류장)을 차례대로 다 적고, 구간 사이에는 갈아타기 줄(글 없이 점선만 — 2026-11-26 사용자 「갈아타는 구간에 적어둔건 다 빼줘」)을 둔다. 처음 · 끝 걷기는 적지 않는다.
 // namesOf: 그 구간의 역 이름(탄 곳 → 내릴 곳 · 사이 역 모두) — 모르면 null(버스 층이 그 노선을 모름): 그 구간은 「472번 논현역 → 압구정역」 한 줄(정류장을 지어 넣지 않는다).
 // 지금 탄 구간에서 이번 역을 목록에서 못 찾으면(이름을 모름 · 목록과 다름) 그 구간은 이번 · 다음 · 내릴 곳만 적는다. 이번 역 줄을 못 정하면 null
 // trains: 지금 구간의 열차 그림(없으면 그림 없이) — 다른 열차는 구간 역 이름을 다 알 때만(못 맞추면 이번 · 다음 · 내릴 곳만이라 줄이 구간 역과 안 맞는다)
 export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere, namesOf:(leg:RideTrainLeg | RideBusLeg) => readonly string[] | null, colorOf:(leg:RideTrainLeg | RideBusLeg) => string, trains:RideListTrains | null = null):RideListView | null {
   const rows:RideListRow[] = [];
-  let at = -1, walkS = 0, before:RideTrainLeg | RideBusLeg | null = null, othersFrom = -1;
+  let at = -1, before:RideTrainLeg | RideBusLeg | null = null, othersFrom = -1;
   legs.forEach((leg, order) => {
-    if (leg.type === 'walk') { walkS += leg.seconds; return; }
-    if (before) { const name = leg.type === 'bus' ? `${leg.route}번` : leg.line; rows.push({kind: 'gap', text: `${name}${toward(name)} 갈아타기${walkS > 0 ? ` · 걷기 ${minutes(walkS)}분` : ''}`}); }
-    before = leg; walkS = 0;
+    if (leg.type === 'walk') return;
+    if (before) rows.push({kind: 'gap'});
+    before = leg;
     const color = colorOf(leg), known = namesOf(leg);
     let names = known && known.length >= 2 ? known : null, here = -1;
     if (order === index) {
@@ -430,9 +429,10 @@ function edgeOf(spot:number, last:number):'first' | 'last' | null {
 
 // where: 지금 역(정류장) · 다음 역 이름(rideStops · 버스 층 journeyStopAt) — 모르면 null(그때는 예전 글 그대로)
 export function rideSub(legs:readonly RideLeg[], index:number, stopsLeft:number, where:RideWhere | null = null):string {
-  const leg = legs[index] as RideTrainLeg | RideBusLeg, head = where ? `${stepNo(legs, index)} · 지금 ${where.now}` : stepNo(legs, index);
-  if (stopsLeft <= 1) return `${head} · 다음 ${leg.type === 'bus' ? '정류장' : '역'}에서 내려요`;
-  return `${head}${where?.next ? ` · 다음 ${where.next}` : ''} · ${stopsLeft}정거장 · ${leg.arrives}`;
+  const leg = legs[index] as RideTrainLeg | RideBusLeg, parts = where ? [`지금 ${where.now}`] : [];
+  if (stopsLeft <= 1) return [...parts, `다음 ${leg.type === 'bus' ? '정류장' : '역'}에서 내려요`].join(' · ');
+  if (where?.next) parts.push(`다음 ${where.next}`);
+  return [...parts, `${stopsLeft}정거장`, leg.arrives].join(' · ');
 }
 // ahead: 이번 역을 떠나 다음 역으로 가는 중(rideAhead — 지하철만 · 역에 서 있거나 모르면 false)
 // share: 이번 역 → 다음 역 사이 간 몫(0 ~ 1 · 지도와 같은 예측 자리 — rideShare). 모르면 없음(목록의 탄 열차 그림이 역 줄에 붙어 선다)

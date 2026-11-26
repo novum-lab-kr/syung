@@ -47,7 +47,7 @@ test('20m 넘게 벗어난 위치 3번째에 지금 위치로 다시 찾고, 새
   assert.equal(calls.detour, 0, '시트(다른 길 찾기)는 열지 않는다');
   assert.equal(rideAlong.active, true, '타고 가기는 그대로');
   assert.equal(view().detour, false);
-  assert.match(view().sub, /^1\/1 · /, '새 걷기 카드');
+  assert.match(view().sub, /^\d+m · \d+분$/, '새 걷기 카드');
   assert.equal(calls.asked[0].index, 0, '지금 걷는 구간');
   // 새 길 위에서 벗어나도 간격 안에서는 다시 부르지 않는다
   for (const spot of [WEST, WEST, WEST, WEST]) fix(spot);
@@ -163,7 +163,7 @@ test('버스를 타러 걷다 벗어나도 같은 버스 · 정류장 그대로 
   assert.equal(calls.used, 1);
   assert.equal(calls.detour, 0);
   assert.equal(view().title, '부흥고등학교 정류장까지 걸어요', '같은 정류장');
-  assert.match(view().sub, /^1\/3 · 250m · /, '새 걷기 거리 · 같은 단계');
+  assert.match(view().sub, /^250m · /, '새 걷기 거리');
   // 새 걷기 위에서 다시 벗어나면(간격 뒤) 바뀐 경로로 묻는다 — 버스 구간은 처음 것 그대로
   for (const spot of [WEST, WEST, WEST]) fix(spot);
   assert.equal(calls.asked.length, 1, '간격 안');
