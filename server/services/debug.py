@@ -4,12 +4,19 @@
 받은 값은 정해진 칸 · 길이 · 범위만 남기고 나머지는 버린다(아무 JSON 이나 쌓이지 않게).
 개발자 회원의 지도 타고 가기 기록(2026-11-11, POST /api/me/rides)도 같은 자리 · 같은 모양으로 남긴다 — 서버가 source:"map" 을 붙이고,
 지도만 보내는 사건 둘을 더 받는다: judge(앱 판정 — state 글자) · answer(개발자가 누른 정답 — answer "rode" | "not_rode").
+로그인 안 한 사람(과 개발자 아닌 회원)의 지도 기록(2026-11-26 사용자 C안)도 같은 자리 · 같은 모양으로 남긴다 — 회원번호 대신
+웹이 만든 무작위 기기 id 를 본문 device 로 받아 사건마다 device 를 붙인다(형식 DEVICE). 로그인 없이 열린 쓰기 길이라
+주소(IP · IPv6 는 /64 로 묶어)마다 ANON_WINDOW 초에 ANON_TRIES 번까지, 모두 합쳐 하루(한국 날짜) ANON_DAY_BYTES 까지만 받는다
+(allow_anonymous — 본문을 읽기 전에 센다. 하루 합계는 메모리에만 — 서버를 다시 켜면 0 부터).
 기록은 KEEP_DAYS 일 지나면 지운다(jobs/debug_prune.py — 디버깅 페이지 기록 · 캡처도 같이).
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
+import re
+import threading
 import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
@@ -35,11 +42,18 @@ MAX_SHOT_BYTES = 40 * 1024 * 1024
 TEXT = {"ride": 40, "line": 40, "routeId": 20, "routeName": 20, "station": 60, "train": 20, "vehicle": 20, "note": 300}
 STATE_TEXT = 40   # judge 의 state 길이 상한
 MOTION_VALUES = 1500   # motion 한 사건의 m 길이 상한(10 Hz × 5초 × 10칸 = 500)
+DEVICE = re.compile(r"[A-Za-z0-9_-]{16,64}")   # 익명 기기 id(웹 crypto.randomUUID() 36자가 들어가게)
+ANON_TRIES, ANON_WINDOW = 12, 60   # 익명 기록: 주소마다 60초에 12번(웹은 15초마다 + 정답 · 도착 때 한 번 더 보낸다)
+ANON_DAY_BYTES = 100 * 1024 * 1024   # 익명 기록 본문 하루 합계 상한(주소를 바꿔 가며 보내도 디스크가 차지 않게 · 90일 보관이면 9 GB 까지)
 NUMBER = {"t": (1.6e12, 4.1e12), "lat": (33.0, 39.0), "lng": (124.0, 132.0), "acc": (0, 1e5), "speed": (0, 100), "heading": (0, 360)}
 
 
 class BadRequest(ValueError):
     """사람이 읽을 고정 문구만 싣는다."""
+
+
+class MissingDevice(BadRequest):
+    """익명 기록인데 본문에 device 가 없다 — 부르는 쪽이 옛 응답(401 · 403)으로 답한다(기기 id 를 모르는 옛 화면이 기록을 지우지 않게)."""
 
 
 def clean_event(raw: object, kinds: set[str] = RIDE_KINDS) -> dict[str, Any]:
@@ -82,13 +96,58 @@ def clean_event(raw: object, kinds: set[str] = RIDE_KINDS) -> dict[str, Any]:
     return event
 
 
+def _address_key(address: str) -> str:
+    """요청 수를 세는 열쇠: IPv4 는 그대로, IPv6 는 /64 망(한 집 · 한 기기가 끝자리를 바꿔 가며 한도를 피하지 못하게)."""
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if parsed.version == 6:
+        return str(ipaddress.ip_network(f"{parsed}/64", strict=False))
+    return str(parsed)
+
+
+def _device(value: object) -> str:
+    if value is None:
+        raise MissingDevice("기기 표시(device)가 없어요")
+    if not isinstance(value, str) or not DEVICE.fullmatch(value):
+        raise BadRequest("기기 표시(device)는 영문 · 숫자 · - · _ 16~64자예요")
+    return value
+
+
 class DebugService:
     def __init__(self, store: DebugStore, *, bus_routes: Callable[[], dict[str, dict[str, Any]]] = lambda: {}, clock: Callable[[], float] = time.time):
         self.store, self.bus_routes, self.clock = store, bus_routes, clock
+        self._tries: dict[str, list[float]] = {}
+        self._swept = 0.0   # 지난 주소 정리 시각(요청마다 전부 돌지 않게 ANON_WINDOW 초에 한 번)
+        self._day, self._day_bytes = "", 0   # 익명 기록 본문 하루 합계(한국 날짜)
+        self._lock = threading.Lock()
 
-    def record_ride(self, body: bytes, source: str | None = None) -> dict[str, Any]:
-        """사건 묶음을 그날 파일에 남긴다. source="map"(개발자 회원의 지도 기록)이면 judge · answer 도 받고 사건마다 source 를 붙인다
-        (보낸 쪽이 적은 source 는 늘 버린다 — 정해진 칸만)."""
+    def _today(self) -> str:
+        return datetime.fromtimestamp(self.clock(), KST).strftime("%Y%m%d")
+
+    def allow_anonymous(self, address: str) -> bool:
+        """익명 기록: 하루 합계가 ANON_DAY_BYTES 를 넘었으면 거절, 아니면 주소마다 ANON_WINDOW 초에 ANON_TRIES 번까지.
+        부를 때마다 한 번으로 센다(services/members.py _allow 와 같은 방식)."""
+        now, today, key = self.clock(), self._today(), _address_key(address)
+        with self._lock:
+            if self._day == today and self._day_bytes >= ANON_DAY_BYTES:
+                return False
+            if now - self._swept >= ANON_WINDOW:
+                self._swept = now
+                for old in [name for name, times in self._tries.items() if now - times[-1] >= ANON_WINDOW]:
+                    del self._tries[old]
+            recent = [moment for moment in self._tries.get(key, []) if now - moment < ANON_WINDOW]
+            if len(recent) >= ANON_TRIES:
+                self._tries[key] = recent
+                return False
+            self._tries[key] = recent + [now]
+            return True
+
+    def record_ride(self, body: bytes, source: str | None = None, anonymous: bool = False) -> dict[str, Any]:
+        """사건 묶음을 그날 파일에 남긴다. source="map"(지도 기록)이면 judge · answer 도 받고 사건마다 source 를 붙인다
+        (보낸 쪽이 적은 source · device 는 늘 버린다 — 정해진 칸만). anonymous 면 본문 device(DEVICE 형식)가 있어야 하고
+        사건마다 device 를 붙인다 — 없으면 MissingDevice, 형식이 틀리면 BadRequest."""
         try:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -99,8 +158,15 @@ class DebugService:
         raw = cast("list[Any]", raw)   # 위에서 list 인지 봤다
         now = self.clock()
         kinds, stamp = (MAP_KINDS, {"source": MAP_SOURCE}) if source == MAP_SOURCE else (RIDE_KINDS, {})
+        if anonymous:
+            stamp = {**stamp, "device": _device(cast("dict[str, Any]", payload).get("device"))}   # events 가 있으면 payload 는 dict
         events = [{**clean_event(e, kinds), **stamp, "receivedAt": round(now * 1000)} for e in raw]
         self.store.append_rides(events, now)
+        if anonymous:
+            today = self._today()
+            with self._lock:
+                self._day_bytes = (self._day_bytes if self._day == today else 0) + len(body)
+                self._day = today
         return {"ok": True, "saved": len(events)}
 
     def save_shot(self, data: bytes, content_type: str, note: str, state: str) -> dict[str, Any]:
