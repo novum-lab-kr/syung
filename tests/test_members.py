@@ -803,6 +803,24 @@ class DeveloperRideTest(unittest.TestCase):
             self.now += 86400
             self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.9").status, 200)
 
+    def test_daily_total_is_checked_before_saving(self):
+        """남은 양보다 큰 본문은 저장 전에 429 — 하루 합계를 넘겨 저장하지 않는다. 저장이 실패하면 예약한 양을 되돌린다."""
+        body = {"device": self.DEVICE, "events": self.events()}
+        size = len(json.dumps(body).encode())
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size * 2 - 1):
+            self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.1").status, 200)
+            refused = self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.2")
+            self.assertEqual((refused.status, refused.json["error"]["code"]), (429, "rate_limited"))
+            self.assertEqual(len(self.saved()), 6, "넘는 본문은 남기지 않는다")
+        raw = json.dumps(body).encode()
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size), \
+             mock.patch.object(self.debug.store, "append_rides", side_effect=OSError("디스크")):
+            self.now += 86400
+            with self.assertRaises(OSError):
+                self.debug.record_ride(raw, "map", True)
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size):
+            self.assertEqual(self.debug.record_ride(raw, "map", True)["saved"], 6, "실패한 저장은 합계에 넣지 않는다")
+
     def test_anonymous_rides_work_without_member_feature(self):
         """회원 기능(로그인 제공자)이 꺼져 있어도 익명 기록은 받는다 — device 가 없으면 옛 401."""
         off = MemberService(MemberConfig(db_file=self.db, public_url="https://syung.test"), providers={}, clock=lambda: self.now)

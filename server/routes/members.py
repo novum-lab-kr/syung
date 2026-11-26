@@ -62,7 +62,7 @@ from typing import TYPE_CHECKING, Any, cast
 from server.routes.debug import RIDE_BYTES
 from server.routes.errors import api_error
 from server.routes.response import Response
-from server.services.debug import MAP_SOURCE, BadRequest, MissingDevice
+from server.services.debug import MAP_SOURCE, BadRequest, DayFull, MissingDevice
 from server.services.members import (APP_CHALLENGE, SESSION_AGE, STATE_AGE, TICKET_LIMIT, LoginError, TicketLimit,
                                      WebhookError, token_hash)
 from server.services.profile import PHOTO_MAX_BYTES
@@ -259,6 +259,8 @@ def _rides(members: MemberService, method: str, headers: Message, read_body: Rea
         return _error(413, "too_large", "본문이 없거나 너무 커요")
     try:
         return _json(record_ride(raw, MAP_SOURCE, not developer))
+    except DayFull:   # 하루 익명 합계 — 주소마다 제한과 같은 응답
+        return _error(429, "rate_limited", "기록을 너무 자주 보냈어요. 잠시 뒤에 다시 보내 주세요")
     except MissingDevice:   # 기기 id 를 모르는 옛 화면 — 옛 응답 그대로(웹은 401 이면 쌓인 기록을 두고 멈춘다)
         if not signed_in:
             return _error(401, *LOGIN_NEEDED)

@@ -7,7 +7,8 @@
 로그인 안 한 사람(과 개발자 아닌 회원)의 지도 기록(2026-11-26 사용자 C안)도 같은 자리 · 같은 모양으로 남긴다 — 회원번호 대신
 웹이 만든 무작위 기기 id 를 본문 device 로 받아 사건마다 device 를 붙인다(형식 DEVICE). 로그인 없이 열린 쓰기 길이라
 주소(IP · IPv6 는 /64 로 묶어)마다 ANON_WINDOW 초에 ANON_TRIES 번까지, 모두 합쳐 하루(한국 날짜) ANON_DAY_BYTES 까지만 받는다
-(allow_anonymous — 본문을 읽기 전에 센다. 하루 합계는 메모리에만 — 서버를 다시 켜면 0 부터).
+(allow_anonymous — 본문을 읽기 전에 센다. 하루 합계는 record_ride 가 저장 전에 같은 잠금 안에서 본문 크기만큼 예약하고
+ 넘으면 DayFull · 저장이 실패하면 되돌린다. 메모리에만 — 서버를 다시 켜면 0 부터).
 기록은 KEEP_DAYS 일 지나면 지운다(jobs/debug_prune.py — 디버깅 페이지 기록 · 캡처도 같이).
 """
 from __future__ import annotations
@@ -50,6 +51,10 @@ NUMBER = {"t": (1.6e12, 4.1e12), "lat": (33.0, 39.0), "lng": (124.0, 132.0), "ac
 
 class BadRequest(ValueError):
     """사람이 읽을 고정 문구만 싣는다."""
+
+
+class DayFull(Exception):
+    """익명 기록 하루 합계(ANON_DAY_BYTES)를 이 본문이 넘긴다 — 부르는 쪽이 429 로 답한다."""
 
 
 class MissingDevice(BadRequest):
@@ -147,7 +152,7 @@ class DebugService:
     def record_ride(self, body: bytes, source: str | None = None, anonymous: bool = False) -> dict[str, Any]:
         """사건 묶음을 그날 파일에 남긴다. source="map"(지도 기록)이면 judge · answer 도 받고 사건마다 source 를 붙인다
         (보낸 쪽이 적은 source · device 는 늘 버린다 — 정해진 칸만). anonymous 면 본문 device(DEVICE 형식)가 있어야 하고
-        사건마다 device 를 붙인다 — 없으면 MissingDevice, 형식이 틀리면 BadRequest."""
+        사건마다 device 를 붙인다 — 없으면 MissingDevice, 형식이 틀리면 BadRequest, 하루 합계를 넘기면 DayFull(저장 안 함)."""
         try:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -161,12 +166,23 @@ class DebugService:
         if anonymous:
             stamp = {**stamp, "device": _device(cast("dict[str, Any]", payload).get("device"))}   # events 가 있으면 payload 는 dict
         events = [{**clean_event(e, kinds), **stamp, "receivedAt": round(now * 1000)} for e in raw]
-        self.store.append_rides(events, now)
-        if anonymous:
-            today = self._today()
-            with self._lock:
-                self._day_bytes = (self._day_bytes if self._day == today else 0) + len(body)
-                self._day = today
+        if not anonymous:
+            self.store.append_rides(events, now)
+            return {"ok": True, "saved": len(events)}
+        today, size = self._today(), len(body)
+        with self._lock:   # 저장 전에 예약 — 동시에 온 요청도 합계를 넘겨 저장하지 못한다
+            if self._day != today:
+                self._day, self._day_bytes = today, 0
+            if self._day_bytes + size > ANON_DAY_BYTES:
+                raise DayFull("오늘 받을 수 있는 기록을 다 받았어요")
+            self._day_bytes += size
+        try:
+            self.store.append_rides(events, now)
+        except BaseException:
+            with self._lock:   # 못 남긴 양은 되돌린다(그사이 날이 바뀌었으면 새 날 합계는 건드리지 않는다)
+                if self._day == today:
+                    self._day_bytes -= size
+            raise
         return {"ok": True, "saved": len(events)}
 
     def save_shot(self, data: bytes, content_type: str, note: str, state: str) -> dict[str, Any]:
