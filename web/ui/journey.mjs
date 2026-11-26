@@ -476,9 +476,6 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		const R = rides();
 		return !R || R.some((l) => l.line === p.t.line && (isJourneyTrain(p, l) || passes(ahead(p, dist), l.pairs)));
 	}
-	function journeyTrain(p) {
-		return !!rides()?.some((l) => isJourneyTrain(p, l));
-	}
 	function journeyRides() {
 		return rides();
 	}
@@ -514,7 +511,6 @@ function createJourneyMap({ map, maplibregl, colors, byId, cityCoords, stopPos, 
 		setRouteOpacity,
 		focusRoute,
 		trainShown,
-		journeyTrain,
 		rideLines,
 		journeyRides,
 		get displayedRoute() {

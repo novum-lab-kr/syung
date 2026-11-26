@@ -1728,7 +1728,6 @@ var hexRGB3 = (v) => [
 ];
 var trainLive = {
 	trainShown: (p, d) => rideAlong.rideTrain(p) || journeyMap.trainShown(p, d),
-	journeyTrain: (p) => rideAlong.rideTrain(p) || journeyMap.journeyTrain(p),
 	get kitReady() {
 		return kitReady;
 	},
@@ -1759,9 +1758,6 @@ var trainLive = {
 	},
 	get settings() {
 		return modeCtl.settings();
-	},
-	get sheetTrain() {
-		return sheetUI.sheetTrain;
 	},
 	get sunTrainShadow() {
 		return sunTrainShadow;

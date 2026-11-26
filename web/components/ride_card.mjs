@@ -43,7 +43,10 @@ function FixAsk({ fix, act }) {
 		}, button.act))
 	}), fix.links.length > 0 && /* @__PURE__ */ a("p", {
 		class: "rg-fix",
-		children: fix.links.map((link, order) => /* @__PURE__ */ a(M, { children: [order > 0 && /* @__PURE__ */ a("i", {
+		children: [fix.hint && /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a("span", { children: fix.hint }), /* @__PURE__ */ a("i", {
+			"aria-hidden": "true",
+			children: "·"
+		})] }), fix.links.map((link, order) => /* @__PURE__ */ a(M, { children: [order > 0 && /* @__PURE__ */ a("i", {
 			"aria-hidden": "true",
 			children: "·"
 		}), /* @__PURE__ */ a("a", {
@@ -54,7 +57,7 @@ function FixAsk({ fix, act }) {
 				act?.(link.act);
 			},
 			children: link.text
-		})] }, link.act))
+		})] }, link.act))]
 	})] });
 }
 function said(parts) {
@@ -456,9 +459,9 @@ function RideHatch({ color, past }) {
 		})
 	});
 }
-function RideEdge({ color, bottom }) {
+function RideEdge({ color }) {
 	return /* @__PURE__ */ a(M, { children: /* @__PURE__ */ a("i", {
-		class: `rg-edge bottom${bottom ? "" : " off"}`,
+		class: "rg-edge bottom",
 		"aria-hidden": "true",
 		children: /* @__PURE__ */ a("svg", {
 			viewBox: "0 0 120 76",
@@ -522,7 +525,164 @@ function RideEdge({ color, bottom }) {
 }
 var LIST_ROW_PX = 40;
 var EDGE_BOTTOM_PX = 76;
-function RideList({ list }) {
+var SUBWAY_ART = (color) => /* @__PURE__ */ a("svg", {
+	viewBox: "0 0 48 20",
+	"aria-hidden": "true",
+	"stroke-linecap": "round",
+	"stroke-linejoin": "round",
+	children: /* @__PURE__ */ a("g", {
+		filter: "url(#rg-edge-crayon)",
+		children: [
+			/* @__PURE__ */ a("path", {
+				d: "M2 2h35c5.5 0 9 4.5 9 10v5H2z",
+				fill: color,
+				stroke: "var(--ink)",
+				"stroke-width": "1.5"
+			}),
+			/* @__PURE__ */ a("path", {
+				d: "M37 4.5c3 .3 5.6 2.6 6.6 6.5H37z",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "5",
+				y: "5",
+				width: "6",
+				height: "5",
+				rx: "1",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "22",
+				y: "5",
+				width: "6",
+				height: "5",
+				rx: "1",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "13",
+				y: "4",
+				width: "7",
+				height: "12",
+				rx: "1",
+				fill: "var(--paper)",
+				stroke: "var(--ink)",
+				"stroke-width": "1"
+			}),
+			/* @__PURE__ */ a("path", {
+				d: "M16.5 4v12",
+				stroke: "var(--ink)",
+				"stroke-width": "1"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "30",
+				y: "4",
+				width: "6",
+				height: "12",
+				rx: "1",
+				fill: "var(--paper)",
+				stroke: "var(--ink)",
+				"stroke-width": "1"
+			}),
+			/* @__PURE__ */ a("path", {
+				d: "M33 4v12",
+				stroke: "var(--ink)",
+				"stroke-width": "1"
+			}),
+			/* @__PURE__ */ a("path", {
+				d: "M2 17.5h44",
+				stroke: "var(--ink)",
+				"stroke-width": "2"
+			})
+		]
+	})
+});
+var BUS_ART = (color) => /* @__PURE__ */ a("svg", {
+	viewBox: "0 0 40 24",
+	"aria-hidden": "true",
+	"stroke-linecap": "round",
+	"stroke-linejoin": "round",
+	children: /* @__PURE__ */ a("g", {
+		filter: "url(#rg-edge-crayon)",
+		children: [
+			/* @__PURE__ */ a("rect", {
+				x: "2",
+				y: "3",
+				width: "36",
+				height: "15",
+				rx: "4",
+				fill: color,
+				stroke: "var(--ink)",
+				"stroke-width": "1.5"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "6",
+				y: "6",
+				width: "7",
+				height: "5",
+				rx: "1",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "15",
+				y: "6",
+				width: "7",
+				height: "5",
+				rx: "1",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "24",
+				y: "6",
+				width: "5",
+				height: "5",
+				rx: "1",
+				fill: "var(--paper)"
+			}),
+			/* @__PURE__ */ a("rect", {
+				x: "31",
+				y: "6",
+				width: "5",
+				height: "10",
+				rx: "1",
+				fill: "var(--paper)",
+				stroke: "var(--ink)",
+				"stroke-width": "1"
+			}),
+			/* @__PURE__ */ a("circle", {
+				cx: "10",
+				cy: "19",
+				r: "3.2",
+				fill: "var(--ink)"
+			}),
+			/* @__PURE__ */ a("circle", {
+				cx: "30",
+				cy: "19",
+				r: "3.2",
+				fill: "var(--ink)"
+			})
+		]
+	})
+});
+var STACK_PX = 13;
+function TrainMark({ mark, color, pick, order = 0, count = 1 }) {
+	const art = mark.bus ? BUS_ART(color) : SUBWAY_ART(color), size = mark.mine ? "mine" : "other";
+	if (mark.mine || !mark.id || !pick) return /* @__PURE__ */ a("i", {
+		class: `rg-train ${size}${mark.bus ? " bus" : ""}`,
+		"aria-hidden": "true",
+		children: art
+	});
+	const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX;
+	return /* @__PURE__ */ a("button", {
+		type: "button",
+		class: `rg-train ${size}${count > 1 ? " stacked" : ""}`,
+		style: shift ? `top:calc(50% + ${shift}px)` : void 0,
+		"aria-label": "이 열차를 탔어요",
+		onClick: () => pick(id),
+		children: art
+	});
+}
+function RideList({ list, pick }) {
 	const box = T(null), touching = T(false), waiting = T(false), opened = T(false);
 	const focus = list.ahead ? list.at + 1 : list.at;
 	const centre = b((smooth) => {
@@ -540,14 +700,6 @@ function RideList({ list }) {
 		centre(opened.current);
 		opened.current = true;
 	}, [focus]);
-	const [bottom, setBottom] = d(false);
-	const measure = b(() => {
-		const host = box.current, last = host?.querySelector("li:last-child");
-		if (!host || !last) return;
-		const tail = last.getBoundingClientRect();
-		setBottom(tail.top + tail.height / 2 > host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX);
-	}, []);
-	A(measure, [list.at, list.rows.length]);
 	const release = b(() => {
 		touching.current = false;
 		if (waiting.current) {
@@ -555,9 +707,23 @@ function RideList({ list }) {
 			centre(true);
 		}
 	}, [centre]);
-	const lined = list.rows.slice(0, list.at + 1).reverse().concat(list.rows).find((row) => row.kind !== "gap");
+	const [edgeAt, setEdgeAt] = d(-1);
+	const measure = b(() => {
+		const host = box.current;
+		if (!host) return;
+		const line = host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX, items = [...host.querySelectorAll("ol > li")];
+		const hit = items.findIndex((item) => item.getBoundingClientRect().bottom > line);
+		setEdgeAt(hit < 0 ? items.length - 1 : hit);
+	}, []);
+	A(measure, [
+		list.at,
+		list.rows.length,
+		measure
+	]);
+	const edgeColor = (list.rows.slice(Math.max(0, edgeAt)).find((row) => row.kind !== "gap") ?? list.rows.findLast((row) => row.kind !== "gap"))?.color ?? null;
 	const head = list.rows[0], headColor = head && head.kind !== "gap" ? head.color : null;
 	const pastClass = (order) => order < focus ? " past" : "";
+	const last = list.rows.length - 1;
 	return /* @__PURE__ */ a("div", {
 		class: "rg-list-box",
 		children: [/* @__PURE__ */ a("div", {
@@ -576,33 +742,41 @@ function RideList({ list }) {
 				class: focus > 0 ? "head-past" : void 0,
 				style: headColor ? `--rg-head:${headColor}` : void 0,
 				children: list.rows.map((row, order) => {
+					const tail = order === last;
 					if (row.kind === "gap") return /* @__PURE__ */ a("li", {
 						class: `gap${pastClass(order)}`,
 						children: /* @__PURE__ */ a("i", { children: row.text })
 					});
 					if (row.kind === "leg") return /* @__PURE__ */ a("li", {
-						class: `leg${pastClass(order)}`,
+						class: `leg${pastClass(order)}${tail ? " tail" : ""}`,
 						style: `--rg-line:${row.color}`,
 						children: /* @__PURE__ */ a("b", { children: row.text })
 					});
-					const now = order === focus;
+					const now = order === focus, marks = row.marks ?? [], others = marks.filter((mark) => !mark.mine);
 					let note = order === 0 ? "여기서 탔어요" : "지금 여기예요";
 					if (list.ahead) note = "다음은 여기예요";
 					return /* @__PURE__ */ a("li", {
-						class: `stop${now ? " now" : ""}${pastClass(order)}${row.edge ? ` ${row.edge}` : ""}`,
+						class: `stop${now ? " now" : ""}${pastClass(order)}${row.edge ? ` ${row.edge}` : ""}${marks.length ? " marked" : ""}${tail ? " tail" : ""}`,
 						style: `--rg-line:${row.color}`,
 						"aria-current": now ? "step" : void 0,
-						children: [now && /* @__PURE__ */ a("small", { children: note }), /* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "여기서 내려요" })] })]
+						children: [
+							marks.map((mark) => /* @__PURE__ */ a(TrainMark, {
+								mark,
+								color: row.color,
+								pick,
+								order: others.indexOf(mark),
+								count: others.length
+							}, mark.id ?? "mine")),
+							now && /* @__PURE__ */ a("small", { children: note }),
+							/* @__PURE__ */ a("span", { children: [/* @__PURE__ */ a("b", { children: row.name }), row.off && /* @__PURE__ */ a("em", { children: "여기서 내려요" })] })
+						]
 					});
 				})
 			})]
-		}), lined && /* @__PURE__ */ a(RideEdge, {
-			color: lined.color,
-			bottom
-		})]
+		}), edgeColor && /* @__PURE__ */ a(RideEdge, { color: edgeColor })]
 	});
 }
-function RideInfo({ info }) {
+function RideInfo({ info, pick }) {
 	const box = T(null);
 	A(() => {
 		let gone = false, stop = null;
@@ -624,7 +798,10 @@ function RideInfo({ info }) {
 				class: "rg-info-scene",
 				ref: box
 			})
-		}), /* @__PURE__ */ a(RideList, { list: info.list })]
+		}), /* @__PURE__ */ a(RideList, {
+			list: info.list,
+			pick
+		})]
 	});
 }
 function ArrivalCard({ view, actions, map, hideMe }) {
@@ -663,6 +840,9 @@ function drawRideCard(host, view, actions, map, hideMe) {
 		view,
 		actions
 	}, "card") : null;
-	draw(view?.info ? /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(RideInfo, { info: view.info }, "info"), card] }) : card);
+	draw(view?.info ? /* @__PURE__ */ a(M, { children: [/* @__PURE__ */ a(RideInfo, {
+		info: view.info,
+		pick: actions.pick
+	}, "info"), card] }) : card);
 }
 export { RideCard, drawRideCard };

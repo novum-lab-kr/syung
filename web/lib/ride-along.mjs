@@ -194,7 +194,7 @@ function rideSteps(legs) {
 	steps.push({ kind: "done" });
 	return steps;
 }
-function rideFixView({ step, left, undo, choosing }) {
+function rideFixView({ step, left, undo, choosing, listed = false }) {
 	if (choosing) return {
 		title: "탄 열차를 지도에서 눌러 주세요",
 		say: null,
@@ -214,10 +214,8 @@ function rideFixView({ step, left, undo, choosing }) {
 			links: [{
 				act: "missed",
 				text: "못 탔어요 ›"
-			}, {
-				act: "other",
-				text: "다른 열차예요 ›"
-			}]
+			}],
+			...listed ? { hint: "다른 열차면 목록의 열차를 눌러요" } : {}
 		}
 	};
 	const other = {
@@ -417,9 +415,9 @@ function rideTalk(legs, index, stopsLeft) {
 		todo: rideNextText(legs, index)
 	};
 }
-function rideList(legs, index, where, namesOf, colorOf) {
+function rideList(legs, index, where, namesOf, colorOf, trains = null) {
 	const rows = [];
-	let at = -1, walkS = 0, before = null;
+	let at = -1, walkS = 0, before = null, othersFrom = -1;
 	legs.forEach((leg, order) => {
 		if (leg.type === "walk") {
 			walkS += leg.seconds;
@@ -446,7 +444,7 @@ function rideList(legs, index, where, namesOf, colorOf) {
 					leg.to
 				].filter((name, spot, all) => !!name && all.indexOf(name) === spot);
 				here = 0;
-			}
+			} else if (names) othersFrom = rows.length;
 		}
 		if (!names) {
 			rows.push({
@@ -467,11 +465,64 @@ function rideList(legs, index, where, namesOf, colorOf) {
 		}));
 	});
 	if (at < 0) return null;
+	const ahead = !!where.ahead && nextIsStop(rows, at);
+	if (trains) {
+		const mark = (row, item) => {
+			const target = rows[row];
+			if (target?.kind === "stop") target.marks = [...target.marks ?? [], item];
+		};
+		const mineRow = ahead ? at + 1 : at;
+		mark(mineRow, {
+			id: trains.mine,
+			mine: true,
+			bus: trains.bus
+		});
+		if (othersFrom >= 0) {
+			for (const other of trains.others) if (othersFrom + other.at !== mineRow) mark(othersFrom + other.at, {
+				id: other.id,
+				mine: false,
+				bus: trains.bus
+			});
+		}
+	}
 	return {
 		rows,
 		at,
-		ahead: !!where.ahead && nextIsStop(rows, at)
+		ahead
 	};
+}
+function goingAlong(track, stations) {
+	const stops = rideStops(track, stations);
+	if (!stops) return null;
+	return stops.next == null || track.seqIds.includes(stops.next) ? stops : null;
+}
+function rideTrainSpots(tracks, stations, mine) {
+	const spots = [];
+	for (const { id, track } of tracks) {
+		if (id === mine) continue;
+		const stops = goingAlong(track, stations);
+		if (!stops) continue;
+		const at = stations.indexOf(rideAhead(track, stops.now, stops.next) ? stops.next : stops.now);
+		if (at >= 0) spots.push({
+			id,
+			at
+		});
+	}
+	return spots;
+}
+function boardedPick(tracks, stations) {
+	let best = null;
+	for (const { id, track } of tracks) {
+		const stops = goingAlong(track, stations);
+		if (!stops || stops.next == null) continue;
+		const spot = stations.indexOf(stops.now), left = track.cum[track.seqIds.indexOf(stops.next)] - track.dist;
+		if (!best || spot < best.spot || spot === best.spot && left > best.left) best = {
+			id,
+			spot,
+			left
+		};
+	}
+	return best?.id ?? null;
 }
 function nextIsStop(rows, at) {
 	const now = rows[at], next = rows[at + 1];
@@ -704,4 +755,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, rideTrainSpots, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };

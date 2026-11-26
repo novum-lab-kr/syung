@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, catchable, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, boardedPick, catchable, characterOf, doneParts, doneSub, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, rideTrainSpots, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, withTrainFixes } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var BUS_ARRIVALS_MS = 3e4;
 var BUS_MISS_MS = 3e4;
@@ -31,6 +31,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		cum: plan.cum,
 		dist: trainPose(plan).dist
 	});
+	const lineTracks = (leg) => planner.plans.filter((plan) => plan.id.startsWith(`${leg.line}:`)).map((plan) => ({
+		id: plan.id,
+		track: trackOf(plan)
+	}));
 	const pad = () => {
 		const card = host.querySelector(".rg-talk");
 		return {
@@ -215,6 +219,10 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (now.kind === "wait" && legAt(now.leg)?.type === "bus") startBusWait(now.leg);
 		if (now.kind === "ride" && legAt(now.leg)?.type === "bus") ride.ridden = ride.car && ride.busBoard && bus.atStop(ride.car, ride.busBoard.stopId) ? ride.car : null;
 		if (now.kind === "ride") ride.boardedMs = boardedMs;
+		if (now.kind === "ride") {
+			following = true;
+			camKey = "";
+		}
 		if (now.kind === "walk") {
 			ride.track = [];
 			ride.leftM = legAt(now.leg)?.metres ?? 0;
@@ -699,11 +707,22 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			};
 		}
 		const { left, where } = rideProgress(transit);
+		const trains = transit.type === "ride" ? {
+			mine: ride.train,
+			bus: false,
+			others: rideTrainSpots(lineTracks(transit), transit.stations, ride.train)
+		} : {
+			mine: null,
+			bus: true,
+			others: []
+		};
+		const list = where && !ride.choosing ? rideList(ride.legs, current.leg, where, stopNames, legColor, trains) : null;
 		const asked = transit.type === "ride" ? rideFixView({
 			step: "ride",
 			left: false,
 			undo: false,
-			choosing: ride.choosing
+			choosing: ride.choosing,
+			listed: !!list
 		}) : null;
 		const card = {
 			...base,
@@ -711,10 +730,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			sub: rideSub(ride.legs, current.leg, left, where),
 			...asked ? { fix: asked.fix } : {}
 		};
-		if (!where || ride.choosing) return card;
-		const skyAt = alightSpot(transit);
-		const list = rideList(ride.legs, current.leg, where, stopNames, legColor);
 		if (!list) return card;
+		const skyAt = alightSpot(transit);
 		return {
 			...card,
 			info: {
@@ -847,7 +864,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (act === "undo" && ride.undo) {
 			ride.missed.delete(ride.undo.slice(leg.line.length + 1));
 			ride.train = ride.undo;
-		} else if (act === "boarded" && ride.hold) ride.train = ride.hold.id;
+		} else if (act === "boarded") ride.train = boardedPick(lineTracks(leg), leg.stations) ?? ride.hold?.id ?? ride.train;
 		advance();
 	}
 	const actions = {
@@ -865,6 +882,9 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			draw();
 		},
 		fix: (act) => fixRide(act),
+		pick: (id) => {
+			tapTrain({ id });
+		},
 		follow: () => {
 			otherFollow.stop();
 			following = true;
@@ -1141,11 +1161,24 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (leg?.type !== "ride" || !plan.id.startsWith(`${leg.line}:`)) return false;
 		ride.train = plan.id;
 		ride.choosing = false;
-		if (current.kind === "wait") advance();
-		else {
-			cam = null;
-			draw();
+		if (current.kind === "wait") {
+			advance();
+			return true;
 		}
+		following = true;
+		cam = null;
+		camKey = "";
+		const chosen = planOf(plan.id);
+		if (chosen) {
+			const at = trainLngLat(chosen);
+			map.easeTo({
+				center: [at.lng, at.lat],
+				zoom: Math.max(map.getZoom(), RIDE_ZOOM),
+				padding: pad(),
+				duration: 600
+			});
+		}
+		draw();
 		return true;
 	}
 	const rideTrain = (plan) => !!ride && ride.train === plan.id;

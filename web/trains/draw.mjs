@@ -413,17 +413,6 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 					this.rgb.set(plan.t.line, color);
 				}
 				this.color = color;
-				if (plan.id === live.sheetTrain || live.journeyTrain(plan)) {
-					const o = (mid.off + lanePx) * unit;
-					this.fr = null;
-					this.width = bodyPx;
-					this.length = 0;
-					this.kind = 0;
-					this.carPx = 0;
-					this.ripple(mid.x + shiftX + mid.r[0] * o, mid.y + shiftY + mid.r[1] * o, bodyPx * 3.4);
-					this.width = bodyPx;
-					rippling = true;
-				}
 				const P = (d) => {
 					const q = trackPoint(plan, K === "coaster" ? fromRide(plan, d) : d);
 					q.x += shiftX;
