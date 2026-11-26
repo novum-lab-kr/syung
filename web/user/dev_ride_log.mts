@@ -14,7 +14,7 @@ export interface RideLogEvent extends Record<string, unknown> { kind:string; mod
 export interface RideLog {
   // 「이 길로 출발」 누름 안에서 부른다(아이폰은 누르는 순간에만 센서 권한을 물을 수 있다 — 개발자 회원만 센서를 켠다)
   begin(info:RideLogInfo):void;
-  setDeveloper(on:boolean):void;   // 개발자 회원인가(user/account.mts 가 /api/me 를 받을 때마다) — 다음 출발부터 센서
+  setDeveloper(on:boolean):void;   // 개발자 회원인가(user/account.mts 가 /api/me 를 받을 때마다) — 켜기는 다음 출발부터 센서 · 끄기는 센서를 바로 끈다
   readonly developer:boolean;
   gps(coords:{ latitude:number; longitude:number; accuracy:number; speed?:number | null; heading?:number | null }):void;
   judge(state:string, info:RideLogInfo):void;   // 같은 state 를 연달아 받으면 한 번만 남긴다
@@ -144,7 +144,7 @@ export function createRideLog(deps:RideLogDeps):RideLog {
     if (!listen || !developer) return;   // 센서는 개발자 회원만(다른 사람에게는 권한을 묻지 않는다)
     const turn = ++motion.turn;
     const on = () => {
-      if (turn !== motion.turn || !ride) return;   // 그사이 끝냈다
+      if (turn !== motion.turn || !ride || !developer) return;   // 그사이 끝냈거나 개발자 회원이 아니게 됐다
       motion.off = listen(onMotion);
       motionOff = deps.every(() => sendMotion(), MOTION_MS);
     };
@@ -204,7 +204,8 @@ export function createRideLog(deps:RideLogDeps):RideLog {
       ride = null; lastFix = null;
       void flush();
     },
-    setDeveloper(on) { developer = on; },
+    // 타는 도중 개발자 회원이 아니게 되면(로그아웃) 센서와 묶음 타이머를 바로 끄고 기다리던 권한 답도 버린다(stopMotion 이 turn 을 올린다) — 위치 · 판정은 익명으로 이어 간다
+    setDeveloper(on) { if (!on) stopMotion(); developer = on; },
     get developer() { return developer; },
     flush,
     close: quit,

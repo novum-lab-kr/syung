@@ -121,6 +121,30 @@ test('가속도(개발자 회원): 0.1초 칸 평균을 5초마다 motion 으로
   assert.equal(denied.motionOn, false);
 });
 
+test('타는 도중 개발자 회원이 아니게 되면(로그아웃) 센서를 바로 끄고, 권한 답을 기다리던 중이면 답이 와도 켜지 않는다', async () => {
+  const box = rig({ask: async () => 'granted'});
+  const log = createRideLog(box.deps);
+  log.setDeveloper(true);
+  log.begin(SUBWAY);
+  await box.settle();
+  assert.equal(box.motionOn, true);
+  box.motion({accelerationIncludingGravity: {x: 0, y: 9.8, z: 0}});
+  log.setDeveloper(false);
+  assert.equal(box.motionOn, false, '로그아웃하면 센서를 끈다');
+  assert.equal([...box.timers].some(timer => timer.ms === MOTION_MS), false, '센서 묶음 타이머도 끈다');
+  assert.equal(log.recording, true, '위치 · 판정 기록은 그대로(익명으로 이어 간다)');
+
+  let grant = () => {};
+  const waiting = rig({ask: () => new Promise(done => { grant = () => done('granted'); })});
+  const waitingLog = createRideLog(waiting.deps);
+  waitingLog.setDeveloper(true);
+  waitingLog.begin(SUBWAY);
+  waitingLog.setDeveloper(false);
+  grant(); await waiting.settle();
+  assert.equal(waiting.motionOn, false, '기다리던 권한 답은 버린다');
+  assert.equal([...waiting.timers].some(timer => timer.ms === MOTION_MS), false);
+});
+
 test('개발자 아님 · 로그인 안 함: 센서 권한을 묻지 않고 센서 없이 시작 · 위치 · 판정을 기기 id 와 함께 보낸다', async () => {
   const box = rig({ask: async () => 'granted'});
   const log = createRideLog(box.deps);
