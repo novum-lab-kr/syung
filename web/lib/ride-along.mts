@@ -211,7 +211,12 @@ export type RideSaid = string | { text:string; mark:'line' | 'bold' | 'star' };
 export interface RideTalk { title:RideSaid[]; sub:RideSaid[]; todo:RideSaid[] | null }
 // list: 여정 전체 역(정류장) 세로 목록(rideList · 2026-11-25 사용자 시안 15 — 이번 역이 목록 칸 가운데 · 넘친 위아래는 잘린다). at = 이번 역 줄 번호
 // 줄: stop = 역 하나(edge: 구간의 첫 · 끝 역 — 옆 선을 거기서 끊는다 · off: 내릴 역) · gap = 갈아타기 구분 줄 · leg = 정류장 목록을 모르는 구간 한 줄
-export type RideListRow = { kind:'stop'; name:string; color:string; edge:'first' | 'last' | null; off:boolean } | { kind:'gap'; text:string } | { kind:'leg'; text:string; color:string };
+// marks: 그 역 줄에 그릴 열차(버스) 그림(2026-11-26 사용자 시안5 — 역 점 왼쪽 · 탄 것은 크게, 다른 열차는 작게 · 반투명)
+export type RideListRow = { kind:'stop'; name:string; color:string; edge:'first' | 'last' | null; off:boolean; marks?:RideMark[] } | { kind:'gap'; text:string } | { kind:'leg'; text:string; color:string };
+// id: 누르면 그 열차로 바꾼다(planner plan id — 버스 · 탄 것은 null 이 아니어도 바꿀 것이 없다) · mine: 지금 탄 것 · bus: 버스 그림
+export interface RideMark { id:string | null; mine:boolean; bus:boolean }
+// 지금 구간의 열차 그림 자리(rideList 에 넘긴다): mine = 탄 것(이번 역 줄 — 역 사이면 다음 역 줄) · others = 같은 노선 · 가는 방향의 다른 열차(at = 구간 역 차례 · rideTrainSpots)
+export interface RideListTrains { mine:string | null; bus:boolean; others:readonly { id:string; at:number }[] }
 // ahead: 이번 역(at 줄)을 떠나 다음 줄(같은 구간의 다음 역)로 가는 중 — 그리는 쪽이 다음 역에 「다음은 여기예요」(2026-11-26 사용자 안 B · 점은 움직이지 않는다 — 배터리). 역에 서 있거나 모르면 false(버스는 아직 늘 false)
 export interface RideListView { rows:RideListRow[]; at:number; ahead:boolean }
 export interface RideSkySpot { name:string; at:[number, number] }
@@ -220,13 +225,16 @@ export interface RideDevView { answered:'rode' | 'not_rode' | null }
 // fix: 슝의 탑승 판정을 사용자가 바로잡는 창구(지하철 구간의 기다리기 · 타는 중만 — 2026-11-26 사용자 결정 A+B · rideFixView)
 //  buttons = 슝이 헷갈려 묻는 단추(main = 주 단추 모양) · links = 늘 보이는 글 링크
 export type RideFixAct = 'boarded' | 'missed' | 'other' | 'stay' | 'undo';
-export interface RideFixView { buttons:{ act:RideFixAct; text:string; main:boolean }[]; links:{ act:RideFixAct; text:string }[] }
+// hint: 링크 앞에 적는 작은 글(타는 중 정보 화면 — 「다른 열차면 목록의 열차를 눌러요」)
+export interface RideFixView { buttons:{ act:RideFixAct; text:string; main:boolean }[]; links:{ act:RideFixAct; text:string }[]; hint?:string }
 // 바로잡기 창구를 그릴 상태: step 지금 단계 · left 붙든 열차가 탈 역을 떠났다(탔는지 아직 모름) · undo 슝이 스스로 놓침으로 되돌렸다 · choosing 지도에서 탄 열차를 고르는 중
-export interface RideFixState { step:'wait' | 'ride'; left:boolean; undo:boolean; choosing:boolean }
+// listed: 타는 중 정보 화면의 역 목록에 열차 그림이 보인다(그 열차를 눌러 바꾼다)
+export interface RideFixState { step:'wait' | 'ride'; left:boolean; undo:boolean; choosing:boolean; listed?:boolean }
 // 카드 글을 바꾸는 것(title · say — null 이면 그대로)과 창구. 고르는 중 > 붙든 열차 떠남(B 묻기) > 놓침으로 되돌림(B 묻기) > 늘 보이는 링크(A) 차례
-export function rideFixView({step, left, undo, choosing}:RideFixState):{ title:string | null; say:string | null; fix:RideFixView } {
+// 타는 중은 「다른 열차예요 ›」 없이(2026-11-26 사용자 — 목록 · 지도의 열차를 바로 눌러 바꾼다) 목록이 보이면 「다른 열차면 목록의 열차를 눌러요」
+export function rideFixView({step, left, undo, choosing, listed = false}:RideFixState):{ title:string | null; say:string | null; fix:RideFixView } {
   if (choosing) return {title: '탄 열차를 지도에서 눌러 주세요', say: null, fix: {buttons: [], links: [{act: 'stay', text: '안 고를게요 ›'}]}};
-  if (step === 'ride') return {title: null, say: null, fix: {buttons: [], links: [{act: 'missed', text: '못 탔어요 ›'}, {act: 'other', text: '다른 열차예요 ›'}]}};
+  if (step === 'ride') return {title: null, say: null, fix: {buttons: [], links: [{act: 'missed', text: '못 탔어요 ›'}], ...(listed ? {hint: '다른 열차면 목록의 열차를 눌러요'} : {})}};
   const other = {act: 'other', text: '다른 열차를 탔어요 ›'} as const;
   if (left) return {title: '열차에 탔어요?', say: '슝이 헷갈려요', fix: {buttons: [{act: 'boarded', text: '탔어요', main: true}, {act: 'missed', text: '못 탔어요', main: false}], links: [other]}};
   if (undo) return {title: null, say: '못 탄 것 같아요', fix: {buttons: [{act: 'undo', text: '아니에요, 탔어요', main: false}], links: [other]}};
@@ -327,9 +335,10 @@ export function rideTalk(legs:readonly RideLeg[], index:number, stopsLeft:number
 // 탈 것 구간마다 역(정류장)을 차례대로 다 적고, 구간 사이에는 갈아타기 줄(「2호선으로 갈아타기 · 걷기 2분」 — 걷기 구간이 없으면 걷기 글 없음)을 둔다. 처음 · 끝 걷기는 적지 않는다.
 // namesOf: 그 구간의 역 이름(탄 곳 → 내릴 곳 · 사이 역 모두) — 모르면 null(버스 층이 그 노선을 모름): 그 구간은 「472번 논현역 → 압구정역」 한 줄(정류장을 지어 넣지 않는다).
 // 지금 탄 구간에서 이번 역을 목록에서 못 찾으면(이름을 모름 · 목록과 다름) 그 구간은 이번 · 다음 · 내릴 곳만 적는다. 이번 역 줄을 못 정하면 null
-export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere, namesOf:(leg:RideTrainLeg | RideBusLeg) => readonly string[] | null, colorOf:(leg:RideTrainLeg | RideBusLeg) => string):RideListView | null {
+// trains: 지금 구간의 열차 그림(없으면 그림 없이) — 다른 열차는 구간 역 이름을 다 알 때만(못 맞추면 이번 · 다음 · 내릴 곳만이라 줄이 구간 역과 안 맞는다)
+export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere, namesOf:(leg:RideTrainLeg | RideBusLeg) => readonly string[] | null, colorOf:(leg:RideTrainLeg | RideBusLeg) => string, trains:RideListTrains | null = null):RideListView | null {
   const rows:RideListRow[] = [];
-  let at = -1, walkS = 0, before:RideTrainLeg | RideBusLeg | null = null;
+  let at = -1, walkS = 0, before:RideTrainLeg | RideBusLeg | null = null, othersFrom = -1;
   legs.forEach((leg, order) => {
     if (leg.type === 'walk') { walkS += leg.seconds; return; }
     if (before) { const name = leg.type === 'bus' ? `${leg.route}번` : leg.line; rows.push({kind: 'gap', text: `${name}${toward(name)} 갈아타기${walkS > 0 ? ` · 걷기 ${minutes(walkS)}분` : ''}`}); }
@@ -340,6 +349,7 @@ export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere,
       here = names ? names.findIndex((name, spot) => name === where.now && (where.next == null || names![spot + 1] === where.next)) : -1;
       if (here < 0 && names) here = names.indexOf(where.now);
       if (here < 0) { names = [where.now, where.next, leg.to].filter((name, spot, all):name is string => !!name && all.indexOf(name) === spot); here = 0; }
+      else if (names) othersFrom = rows.length;
     }
     if (!names) { rows.push({kind: 'leg', text: `${leg.type === 'bus' ? `${leg.route}번` : leg.line} ${leg.from} → ${leg.to}`, color}); return; }
     if (here >= 0) at = rows.length + here;
@@ -347,7 +357,47 @@ export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere,
     names.forEach((name, spot) => rows.push({kind: 'stop', name, color, edge: edgeOf(spot, last), off: spot === last}));
   });
   if (at < 0) return null;
-  return {rows, at, ahead: !!where.ahead && nextIsStop(rows, at)};
+  const ahead = !!where.ahead && nextIsStop(rows, at);
+  if (trains) {
+    const mark = (row:number, item:RideMark) => { const target = rows[row]; if (target?.kind === 'stop') target.marks = [...target.marks ?? [], item]; };
+    const mineRow = ahead ? at + 1 : at;
+    mark(mineRow, {id: trains.mine, mine: true, bus: trains.bus});
+    // 탄 것과 같은 줄이면 다른 열차는 그리지 않는다(그림이 겹친다)
+    if (othersFrom >= 0) for (const other of trains.others) if (othersFrom + other.at !== mineRow) mark(othersFrom + other.at, {id: other.id, mine: false, bus: trains.bus});
+  }
+  return {rows, at, ahead};
+}
+// 열차가 그 구간(stations: 탄 역 → 내릴 역)을 가는 방향으로 달리는 중인가 — rideStops 로 선 역(막 지난 역) · 다음 역을 찾고, 다음 역이 그 열차의 앞으로 갈 차례(seqIds)에 있어야 한다
+//  (반대 방향 열차가 탄 역에 서 있으면 rideStops 는 그 역을 주지만 다음 역은 그 열차 차례에 없다). 내릴 역에 닿았으면 next null
+function goingAlong(track:PlanTrack, stations:readonly number[]):{ now:number; next:number | null } | null {
+  const stops = rideStops(track, stations);
+  if (!stops) return null;
+  return stops.next == null || track.seqIds.includes(stops.next) ? stops : null;
+}
+// 정보 화면 목록에 그릴 같은 노선 · 가는 방향 다른 열차(2026-11-26 사용자 — 누르면 그 열차로 바꾼다): at = 구간 역 차례(서 있으면 그 역 · 역 사이면 다음 역 — rideAhead). 탄 열차(mine)는 빼고
+export function rideTrainSpots(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[], mine:string | null):{ id:string; at:number }[] {
+  const spots:{ id:string; at:number }[] = [];
+  for (const {id, track} of tracks) {
+    if (id === mine) continue;
+    const stops = goingAlong(track, stations);
+    if (!stops) continue;
+    const at = stations.indexOf(rideAhead(track, stops.now, stops.next) ? stops.next! : stops.now);
+    if (at >= 0) spots.push({id, at});
+  }
+  return spots;
+}
+// 「탔어요 · 벌써 탔어요」를 누르면 탄 열차로 볼 것(2026-11-26 사용자 — 「가는 방향쪽 가장 가까운」): 같은 노선 · 가는 방향 열차 가운데 탄 역에 닿았고(서 있음 · 떠남)
+// 아직 내릴 역 전인 것 중 탄 역에서 가장 가까운 것(서 있으면 0). 먼저 막 지난 역의 구간 차례로, 같은 역 사이면 다음 역까지 남은 거리가 먼 쪽으로 견준다
+// (지난 역은 예측 차례 seqIds 에서 빠지기도 해 지난 역 기준 몫은 못 센다 — 다음 역은 goingAlong 이 차례에 있음을 보장한다 · PR #178 리뷰). 없으면 null(부르는 쪽이 붙든 · 고른 · 길찾기 열차로)
+export function boardedPick(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[]):string | null {
+  let best:{ id:string; spot:number; left:number } | null = null;
+  for (const {id, track} of tracks) {
+    const stops = goingAlong(track, stations);
+    if (!stops || stops.next == null) continue;
+    const spot = stations.indexOf(stops.now), left = track.cum[track.seqIds.indexOf(stops.next)]! - track.dist;
+    if (!best || spot < best.spot || (spot === best.spot && left > best.left)) best = {id, spot, left};
+  }
+  return best?.id ?? null;
 }
 // 이번 역 줄 바로 뒤가 같은 구간의 역 줄인가(갈아타기 줄 · 다른 구간이면 달리는 표시를 하지 않는다)
 function nextIsStop(rows:readonly RideListRow[], at:number):boolean {

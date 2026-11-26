@@ -34,10 +34,10 @@ interface RiderState { ride:{ rail?:{ frames:RailFrame[]; mpu:number; dirty:bool
 export interface TrainLive {
   kitReady:boolean; RideTrack:typeof RideTrack; CoasterTrain:KitClass<CoasterTrainLike>; TurtleShips:KitClass<ShipsLike>; UnitConvoy:KitClass<UnitsLike>;
   SkyUnits:(new ()=>SkyLike) | null | undefined; unitLength:(kind:string)=>number; myLocation:LngLatLike | null | undefined; trainsEnabled:boolean; subwayOff:boolean;
-  settings:TrainSettings; sheetTrain:string | null; sunTrainShadow:[number, number]; following:string | null; easing:boolean; rider:RiderState;
+  settings:TrainSettings; sunTrainShadow:[number, number]; following:string | null; easing:boolean; rider:RiderState;
   rideFollow:boolean;   // 타고 가기가 탄 열차를 따라가는 중(시트 따라가기처럼 카메라 · 지도 · 열차를 같이 움직인다)
   ridingAlong:boolean;   // 타고 가기 중(걷기 · 기다리기 · 타기) — 파장만 남았으면 느리게 다시 그린다(RIDE_RIPPLE_MS)
-  riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean; journeyTrain:(plan:TrainPlan)=>boolean;
+  riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean;
 }
 type TrainPlanB = TrainPlan & { blend?:unknown };
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
@@ -220,7 +220,7 @@ void shade(){
 }
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
-// 타고 가기 중 파장(내 위치 · 탄 열차 둘레)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
+// 타고 가기 중 파장(내 위치 — 열차 둘레 파장은 2026-11-26 뺐다)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
 const RIDE_RIPPLE_MS=125;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
@@ -343,7 +343,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
         if(pose.moving||snap&&trainPose(plan).moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
         const n=plan.cars,real=n*plan.carMetres*m,total=icon?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
         let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]!);this.rgb.set(plan.t.line,color)}this.color=color;
-        if(plan.id===live.sheetTrain||live.journeyTrain(plan)){const o=(mid.off+lanePx)*unit;this.fr=null;this.width=bodyPx;this.length=0;this.kind=0;this.carPx=0;this.ripple(mid.x+shiftX+mid.r[0]!*o,mid.y+shiftY+mid.r[1]!*o,bodyPx*3.4);this.width=bodyPx;rippling=true}   // 고른 열차 · 길찾기로 탈 열차
+        // 고른 열차 · 길찾기로 탈 열차 둘레 파장은 뺐다(2026-11-26 사용자 「파장빼줘」 · 「모두 빼기」) — 파장은 내 위치에만 남는다
         const P=(d:number)=>{const q=trackPoint(plan,K==='coaster'?fromRide(plan,d):d);q.x+=shiftX;q.y+=shiftY;return q};
         if(look==='fleet'){   // 조선 모드: 배 선단 — 한 척이 몸 폭의 3.6배쯤 되게 척 수를 고르고(많아야 칸 수), 배 사이는 32 % 띄운다(한 척이 길이:폭 3.4쯤)
           // 맨 앞(j = k-1)만 거북선: 길이 1.25배 · 폭 1.3배(이물 쪽으로 늘린다), 뒤는 일반 배. 노선 깃발은 맨 앞에만 (2026-10-10 덕배)

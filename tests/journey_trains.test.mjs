@@ -1,4 +1,4 @@
-// 길찾기 중에는 내가 가는 방향의 열차만 보인다(2026-10-11): web/ui/journey.mjs trainShown · journeyTrain
+// 길찾기 중에는 내가 가는 방향의 열차만 보인다(2026-10-11): web/ui/journey.mjs trainShown(탈 열차 둘레 파장 journeyTrain 은 2026-11-26 뺐다)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createJourneyMap} from '../web/ui/journey.mts';
@@ -27,11 +27,8 @@ test('a journey keeps only the trains coming my way on my line, and its own real
   assert.equal(shown(j, train('g', '1호선', [2, 3, 4]), 1000), true, 'standing at my last station');
   assert.equal(shown(j, train('e', '2호선', [1, 2, 3])), false, 'another line');
   assert.equal(shown(j, train('0176', '1호선', [-9, -8])), true, 'the train the journey picked');
-  assert.equal(j.journeyTrain(train('0176', '1호선', [-9, -8])), true);
-  assert.equal(j.journeyTrain(train('a', '1호선', [0, 1])), false);
   j.clearRoute();
   assert.equal(shown(j, train('c', '1호선', [4, 3, 2])), true, 'route cleared: every train again');
-  assert.equal(j.journeyTrain(train('0176', '1호선', [0, 1])), false);
 });
 
 test('a bus-only journey shows no trains; a bus route number leaves the trains to subwayOff', () => {

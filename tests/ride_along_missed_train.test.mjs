@@ -253,14 +253,14 @@ test('열차가 들어와 서 있는 동안(아직 안 떠남)은 위치가 끊�
 const links = view => view.fix?.links.map(link => link.text) ?? [];
 const buttons = view => view.fix?.buttons.map(button => button.text) ?? [];
 
-test('② 글: 고르는 중 > 붙든 열차 떠남 > 놓침으로 되돌림 > 늘 보이는 링크 차례 · 타는 중은 「못 탔어요 · 다른 열차예요」', () => {
+test('② 글: 고르는 중 > 붙든 열차 떠남 > 놓침으로 되돌림 > 늘 보이는 링크 차례 · 타는 중은 「못 탔어요」만', () => {
   const pick = state => rideFixView({step: 'wait', left: false, undo: false, choosing: false, ...state});
   assert.deepEqual(pick({}).fix.links.map(link => link.text), ['벌써 탔어요 ›', '다른 열차를 탔어요 ›']);
   assert.deepEqual(pick({left: true}), {title: '열차에 탔어요?', say: '슝이 헷갈려요', fix: {buttons: [{act: 'boarded', text: '탔어요', main: true}, {act: 'missed', text: '못 탔어요', main: false}], links: [{act: 'other', text: '다른 열차를 탔어요 ›'}]}});
   assert.equal(pick({undo: true}).say, '못 탄 것 같아요');
   assert.deepEqual(pick({undo: true}).fix.buttons.map(button => button.act), ['undo']);
   assert.equal(pick({left: true, undo: true, choosing: true}).title, '탄 열차를 지도에서 눌러 주세요');
-  assert.deepEqual(rideFixView({step: 'ride', left: false, undo: false, choosing: false}).fix.links.map(link => link.act), ['missed', 'other']);
+  assert.deepEqual(rideFixView({step: 'ride', left: false, undo: false, choosing: false}).fix.links.map(link => link.act), ['missed'], '타는 중엔 「다른 열차예요」 없이 목록 · 지도의 열차를 바로 누른다(2026-11-26 사용자)');
 });
 
 test('② A 기다리기: 「벌써 탔어요」 — 열차가 들어오기 전이라도 지금 짐작한 열차로 타는 중', async context => {
@@ -273,7 +273,7 @@ test('② A 기다리기: 「벌써 탔어요」 — 열차가 들어오기 전�
   press('boarded');
   assert.equal(view().title, '석계에서 내려요');
   assert.ok(rideAlong.rideTrain({id}), '짐작한 0097 을 따라간다');
-  assert.deepEqual(links(view()), ['못 탔어요 ›', '다른 열차예요 ›'], '타는 중에는 「못 탔어요 · 다른 열차예요」');
+  assert.deepEqual(links(view()), ['못 탔어요 ›'], '타는 중에는 「못 탔어요」만(다른 열차는 목록 · 지도에서 바로 누른다)');
 });
 
 test('② B 붙든 열차가 떠남: 「열차에 탔어요?」 [탔어요] → 바로 타는 중', async context => {

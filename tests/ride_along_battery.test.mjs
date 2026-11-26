@@ -154,19 +154,21 @@ test('D 열차가 다음 역에 닿았는데 위치가 30초 넘게 없으면(�
 const LIST_ROWS = [{kind: 'stop', name: '시청', color: '#888', edge: 'first', off: false}, {kind: 'stop', name: '서울역', color: '#888', edge: null, off: false}, {kind: 'stop', name: '남영', color: '#888', edge: 'last', off: true}];
 // ---- 2단계(2026-11-25): 탄 동안 이번 역을 알면 지도 대신 정보 화면 — 그동안 탄 열차 따라가기 · 지도 그리기를 쉰다
 // 말풍선 글(lib/ride-along rideTalk): 내릴 곳에 노란 밑줄 · 작은 글은 남은 정거장 + 계획 도착 시각(ridePlan 의 at(10) — 여정을 만든 때의 시각)
+// 탄 열차 그림은 이번 역 줄(역 사이면 다음 역 줄 — 2026-11-26 사용자 시안5)
+const MARKED = (row, train) => LIST_ROWS.map((item, order) => order === row ? {...item, marks: [{id: train, mine: true, bus: false}]} : item);
 const TALK = sub => ({title: [{text: '남영', mark: 'line'}, '에서 내려요'], sub, todo: null});
 test('정보 화면: 탄 뒤 이번 역을 알면 카드에 역 목록 · 말풍선 글이 붙고 본체에 알린다 — 따라가기 · 이름표 fade 끄기는 하지 않는다', async context => {
   const ctx = setup(context), {rideAlong, calls, view, dist, id, quiet} = ctx;
   await boardAtCityHall(ctx);   // 0097 은 시청을 떠나 300 m
   const ARRIVES = view().info.talk.sub[3].text;   // 시험 도중 분이 바뀌어도 같은 값으로 본다
-  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK(['아직 ', {text: '2정거장', mark: 'bold'}, ' 남았어요. ', {text: ARRIVES, mark: 'bold'}, '쯤 도착해요']), list: {rows: LIST_ROWS, at: 0, ahead: true}, sky: {name: '남영', at: [126.9707, 37.5547]}});
+  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK(['아직 ', {text: '2정거장', mark: 'bold'}, ' 남았어요. ', {text: ARRIVES, mark: 'bold'}, '쯤 도착해요']), list: {rows: MARKED(1, id), at: 0, ahead: true}, sky: {name: '남영', at: [126.9707, 37.5547]}});
   assert.equal(rideAlong.infoScreen, true);
   assert.deepEqual(calls.info, [true], '지도 그리기를 멈추라고 한 번');
   assert.equal(rideAlong.followingTrain, false, '지도를 덮었으니 탄 열차를 따라가지 않는다(따라가기 루프가 돌지 않는다)');
   assert.deepEqual(calls.labels, []);
   dist.set(id, 2000);   // 서울역에 닿음
   quiet(1);
-  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK([{text: '다음 역에서 내려요!', mark: 'star'}]), list: {rows: LIST_ROWS, at: 1, ahead: false}, sky: {name: '남영', at: [126.9707, 37.5547]}});
+  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK([{text: '다음 역에서 내려요!', mark: 'star'}]), list: {rows: MARKED(1, id), at: 1, ahead: false}, sky: {name: '남영', at: [126.9707, 37.5547]}});
   assert.deepEqual(calls.info, [true], '역이 바뀌어도 다시 알리지 않는다');
 });
 
