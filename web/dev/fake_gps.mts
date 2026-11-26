@@ -69,7 +69,8 @@ export function installFakeGps():{ mount(deps:FakeGpsDeps):void } | null {
     watchPosition(ok, fail, options) {
       const id = nextId++;
       watches.set(id, {ok, fail, options, realId: on ? null : real.watchPosition(ok, fail, options)});
-      if (on) setTimeout(emit, 0);
+      // 끊김(④)을 먼저 켠 뒤 등록한 watch 도 오류를 받게 한다(emit 은 끊김이면 아무것도 안 보낸다)
+      if (on) setTimeout(() => { if (cut) fail?.(failure('가짜 GPS: 위치 끊김')); else emit(); }, 0);
       return id;
     },
     clearWatch(id) {
@@ -93,14 +94,17 @@ export function installFakeGps():{ mount(deps:FakeGpsDeps):void } | null {
   return {mount(deps) {
     // ---- 재생: 타고 가기의 지금 단계를 보고 자리를 정한다(열차는 실제 시각대로 · 배속은 걷기 · 버스만)
     let playing = false, speed = 1, legIndex = -1, walkedM = 0, aboard = false, note = '';
+    // 이 구간의 길 — 구간에 들어설 때 한 번 정해 둔다(지금 자리에서 곧은 선을 매 틱 다시 그으면 누적 거리가 겹쳐 더해진다)
+    let legPath:LngLat[] | null = null;
     const playTick = () => {
       const ride = deps.ride();
       if (!ride) { note = '타고 가기가 꺼져 있어요'; return; }
       const {step, legs, train, held} = ride, leg = step.kind === 'done' ? undefined : legs[step.leg];
       if (step.kind === 'done' || !leg) { note = '도착'; playing = false; return; }
-      if (step.leg !== legIndex) { legIndex = step.leg; walkedM = 0; aboard = false; }
+      if (step.leg !== legIndex) { legIndex = step.leg; walkedM = 0; aboard = false; legPath = null; }
       if (step.kind === 'walk' || leg.type === 'bus' && step.kind === 'ride') {
-        const path = pathOf(leg, legs[step.leg + 1]);
+        legPath ??= pathOf(leg, legs[step.leg + 1]);
+        const path = legPath;
         if (!path) { note = '걷는 길을 몰라요 — 지도를 눌러 옮겨 주세요'; return; }
         walkedM += (leg.type === 'bus' ? BUS_MPS : WALK_MPS) * speed * TICK_MS / 1000;
         const where = alongPath(path, walkedM);
