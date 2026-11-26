@@ -707,7 +707,10 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     pushAlerts();
     const log = ride ? devLog() : null;
     if (log?.recording) log.judge(judgeState(), logInfo());
-    if (next && log?.recording && log.developer && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자 회원만: [탔음] [안 탔음](기록은 누구나 — 2026-11-26 C안)
+    // 개발자 회원만: [탔음] [안 탔음](기록은 누구나 — 2026-11-26 C안). 기다리기 · 타는 중에만 — 걷는 동안(정류장 · 역에 닿기 전 · 내린 뒤)은
+    //  탈 것이 없어 누를 까닭이 없다(2026-11-26 사용자 「버스 타는 거 도착도 안 했는데 탔음 안 탔음 뜨는 게 말이 됨?」)
+    const kind = step()?.kind;
+    if (next && log?.recording && log.developer && (kind === 'wait' || kind === 'ride')) next.dev = {answered: log.answered};
     const key = JSON.stringify(next);
     if (key === painted) return;
     painted = key;

@@ -41,18 +41,31 @@ function ride(context, log) {
   return {rideAlong, views, actions: () => actions, fix: coords => onFix({coords})};
 }
 
+// 버스를 기다리는 구간(첫 단계가 기다리기 — 정류장 바로 앞에서 출발)
+const BUS_LEG = {type: 'bus', route: '2114', from: '먹골파출소.신안아파트입구', to: '봉화산역', departs: at(5), arrives: at(15), toward: '중랑공영차고지', stops: 5, wait: 60, path: [[127.0812, 37.6143], [127.0928, 37.6165]]};
+
 test('개발자: 출발에서 기록을 시작하고 첫 판정 · 위치(흐린 것도) · 정답 · ✕ 를 남긴다', context => {
   const log = fakeLog();
   const {rideAlong, views, actions, fix} = ride(context, log);
-  rideAlong.start({arrives: at(10), legs: [{type: 'walk', metres: 600, minutes: 8}]}, '시청역');
-  assert.deepEqual(log.calls.slice(0, 2), [['begin', 'subway'], ['judge', 'walk@0']]);
-  assert.deepEqual(views.at(-1).dev, {answered: null}, '카드에 [탔음] [안 탔음]');
+  rideAlong.start({arrives: at(15), legs: [BUS_LEG]}, '봉화산역');
+  assert.deepEqual(log.calls.slice(0, 2), [['begin', 'bus'], ['judge', 'wait@0']]);
+  assert.deepEqual(views.at(-1).dev, {answered: null}, '기다리기 카드에 [탔음] [안 탔음]');
   fix({longitude: 126.97, latitude: 37.56, accuracy: 900});   // 타고 가기는 버리는 흐린 위치도 기록에는 남긴다
   actions().answer('not_rode');
   assert.deepEqual(views.at(-1).dev, {answered: 'not_rode'});
   actions().close();
   assert.deepEqual(log.calls.slice(2), [['gps', 900], ['answer', 'not_rode'], ['end', '그만둠']]);
   assert.equal(views.at(-1), null);
+});
+
+test('개발자: 정류장까지 걷는 동안은 [탔음] [안 탔음] 이 없다(기록은 그대로)', context => {
+  const log = fakeLog();
+  const {rideAlong, views, actions} = ride(context, log);
+  rideAlong.start({arrives: at(15), legs: [{type: 'walk', metres: 212, minutes: 3, label: '먹골파출소.신안아파트입구 정류장까지'}, BUS_LEG]}, '봉화산역');
+  assert.deepEqual(log.calls.slice(0, 2), [['begin', 'bus'], ['judge', 'walk@0']]);
+  assert.equal('dev' in views.at(-1), false, '걷기 카드에는 단추 없음');
+  actions().close();
+  assert.deepEqual(log.calls.at(-1), ['end', '그만둠']);
 });
 
 test('개발자: 도착하면 done 판정 → 끝 · 도착 카드에는 버튼이 없고 ✕ 에서 다시 끝내지 않는다', context => {
