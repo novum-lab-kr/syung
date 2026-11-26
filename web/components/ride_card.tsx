@@ -185,11 +185,14 @@ const BUS_ART = (color:string) => <svg viewBox="0 0 40 24" aria-hidden="true" st
   <rect x="31" y="6" width="5" height="10" rx="1" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/>
   <circle cx="10" cy="19" r="3.2" fill="var(--ink)"/><circle cx="30" cy="19" r="3.2" fill="var(--ink)"/>
 </g></svg>;
-function TrainMark({ mark, color, pick }:{ mark:RideMark; color:string; pick?:(id:string) => void }) {
+// 한 줄에 다른 열차가 여럿이면 위아래로 나눠 쌓는다(PR #178 리뷰 — 같은 자리에 겹치면 앞 그림을 눌러도 마지막 단추가 받았다).
+// 간격 13px(26px 그림 높이 ≈ 11px) · 쌓였을 땐 누를 자리도 그 간격만큼(syung.css .rg-train.stacked)
+const STACK_PX = 13;
+function TrainMark({ mark, color, pick, order = 0, count = 1 }:{ mark:RideMark; color:string; pick?:(id:string) => void; order?:number; count?:number }) {
   const art = mark.bus ? BUS_ART(color) : SUBWAY_ART(color), size = mark.mine ? 'mine' : 'other';
   if (mark.mine || !mark.id || !pick) return <i class={`rg-train ${size}${mark.bus ? ' bus' : ''}`} aria-hidden="true">{art}</i>;
-  const id = mark.id;
-  return <button type="button" class={`rg-train ${size}`} aria-label="이 열차를 탔어요" onClick={() => pick(id)}>{art}</button>;
+  const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX;
+  return <button type="button" class={`rg-train ${size}${count > 1 ? ' stacked' : ''}`} style={shift ? `top:calc(50% + ${shift}px)` : undefined} aria-label="이 열차를 탔어요" onClick={() => pick(id)}>{art}</button>;
 }
 function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void }) {
   const box = useRef<HTMLDivElement>(null), touching = useRef(false), waiting = useRef(false), opened = useRef(false);
@@ -228,11 +231,11 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void 
         const tail = order === last;   // 마지막 줄 선은 목록 끝(아래 끝 그림)까지 이어 긋는다
         if (row.kind === 'gap') return <li class={`gap${pastClass(order)}`}><i>{row.text}</i></li>;
         if (row.kind === 'leg') return <li class={`leg${pastClass(order)}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`}><b>{row.text}</b></li>;
-        const now = order === focus, marks = row.marks ?? [];
+        const now = order === focus, marks = row.marks ?? [], others = marks.filter(mark => !mark.mine);
         let note = order === 0 ? '여기서 탔어요' : '지금 여기예요';
         if (list.ahead) note = '다음은 여기예요';
         return <li class={`stop${now ? ' now' : ''}${pastClass(order)}${row.edge ? ` ${row.edge}` : ''}${marks.length ? ' marked' : ''}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
-          {marks.map(mark => <TrainMark key={mark.id ?? 'mine'} mark={mark} color={row.color} pick={pick} />)}
+          {marks.map(mark => <TrainMark key={mark.id ?? 'mine'} mark={mark} color={row.color} pick={pick} order={others.indexOf(mark)} count={others.length} />)}
           {now && <small>{note}</small>}
           <span><b>{row.name}</b>{row.off && <em>여기서 내려요</em>}</span>
         </li>;

@@ -387,17 +387,15 @@ export function rideTrainSpots(tracks:readonly { id:string; track:PlanTrack }[],
   return spots;
 }
 // 「탔어요 · 벌써 탔어요」를 누르면 탄 열차로 볼 것(2026-11-26 사용자 — 「가는 방향쪽 가장 가까운」): 같은 노선 · 가는 방향 열차 가운데 탄 역에 닿았고(서 있음 · 떠남)
-// 아직 내릴 역 전인 것 중 탄 역에서 가장 가까운 것(서 있으면 0). 구간 역 차례 + 다음 역까지 간 몫으로 견준다. 없으면 null(부르는 쪽이 붙든 · 고른 · 길찾기 열차로)
+// 아직 내릴 역 전인 것 중 탄 역에서 가장 가까운 것(서 있으면 0). 먼저 막 지난 역의 구간 차례로, 같은 역 사이면 다음 역까지 남은 거리가 먼 쪽으로 견준다
+// (지난 역은 예측 차례 seqIds 에서 빠지기도 해 지난 역 기준 몫은 못 센다 — 다음 역은 goingAlong 이 차례에 있음을 보장한다 · PR #178 리뷰). 없으면 null(부르는 쪽이 붙든 · 고른 · 길찾기 열차로)
 export function boardedPick(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[]):string | null {
-  let best:{ id:string; far:number } | null = null;
+  let best:{ id:string; spot:number; left:number } | null = null;
   for (const {id, track} of tracks) {
     const stops = goingAlong(track, stations);
     if (!stops || stops.next == null) continue;
-    const from = track.seqIds.indexOf(stops.now), to = track.seqIds.indexOf(stops.next);
-    const span = from >= 0 && to > from ? track.cum[to]! - track.cum[from]! : 0;
-    const part = span > 0 ? Math.min(0.99, Math.max(0, (track.dist - track.cum[from]!) / span)) : 0;
-    const far = stations.indexOf(stops.now) + part;
-    if (!best || far < best.far) best = {id, far};
+    const spot = stations.indexOf(stops.now), left = track.cum[track.seqIds.indexOf(stops.next)]! - track.dist;
+    if (!best || spot < best.spot || (spot === best.spot && left > best.left)) best = {id, spot, left};
   }
   return best?.id ?? null;
 }

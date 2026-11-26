@@ -708,6 +708,7 @@ html[data-theme=dark] .rg-edge .wood{fill:#d8c890}html[data-theme=dark] .rg-edge
 .rg-train.mine{width:34px;left:-37px}
 .rg-train.other{width:26px;left:-29px;opacity:.5}
 button.rg-train{padding:12px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}   /* 누를 자리는 위아래로 넓게 */
+button.rg-train.stacked{padding:1px 0}   /* 한 줄에 여럿이 쌓이면 누를 자리를 간격(13px)만큼만 — 서로 안 겹치게 */
 /* 낮은 화면(브라우저 주소 막대 등)에서는 풍경을 줄이고 사이를 좁힌다 — 「다음 역」이 말풍선에 가리지 않게 */
 @media (max-height:720px){.rg-info-view{height:min(75vw,24vh)}}
 .jbar .rg-go,.jp .rg-go{display:block;width:calc(100% - 28px);height:42px;margin:0 14px 13px;border:0;border-radius:var(--radius-pill);background:var(--syung);color:var(--syung-ink);font-family:var(--round);font-size:var(--text-16);cursor:pointer}

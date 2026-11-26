@@ -14,6 +14,13 @@ test('자동 선택: 탄 역에 서 있는 열차(거리 0)가 막 떠난 열차
   assert.equal(boardedPick([leaving, standing], STATIONS), '2호선:A');
 });
 
+test('자동 선택: 지난 역이 예측 차례에서 빠져도 같은 역 사이에선 다음 역까지 남은 거리가 먼 쪽(탄 역에 가까운 쪽)을 고른다(PR #178 리뷰)', () => {
+  const nearNext = {id: '2호선:A', track: along([2, 3, 4, 5], -100)};   // 다음 역(2) 100m 앞
+  const nearBoard = {id: '2호선:B', track: along([2, 3, 4, 5], -900)};   // 탄 역(1)을 막 떠남 — 다음 역 900m 앞
+  assert.equal(boardedPick([nearNext, nearBoard], STATIONS), '2호선:B');
+  assert.equal(boardedPick([nearBoard, nearNext], STATIONS), '2호선:B');
+});
+
 test('자동 선택: 서 있는 열차가 없으면 탄 역을 지나 가장 덜 간 열차', () => {
   const far = {id: '2호선:far', track: along([3, 4, 5], 200)};      // 2번 역 지나 3번 역 근처
   const near = {id: '2호선:near', track: along([2, 3, 4, 5], -500)};   // 1번 역 떠나 2번 역 가는 중(1 은 차례에서 빠짐)
