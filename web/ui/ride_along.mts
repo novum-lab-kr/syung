@@ -59,7 +59,7 @@ export interface RideAlongDeps {
   alerts?:RideAlertSink | null;
   // 열차가 그 역을 떠날 때(지도 예측 단계 — 1970 기준 ms · 예측에 그 역이 없으면 null)
   trainLeaves?:(plan:never, stationId:number) => number | null;
-  // 개발자 회원의 타고 가기 기록기(user/dev_ride_log — 개발자로 로그인했을 때만 있다 · 없으면 아무것도 기록하지 않는다)
+  // 타고 가기 기록기(user/dev_ride_log — 로그인과 상관없이 본체가 만든다 · 앱 지도 모드 · 받기 전이면 없고 그때는 아무것도 기록하지 않는다)
   devLog?:() => RideLog | null;
   // 위치를 덜 정확하게 · 드물게 받기(true) / 원래대로(false) — 본체가 내 위치 단추의 watch 를 다시 건다. 없으면 바꾸지 않는다
   gpsLowPower?:(on:boolean) => void;
@@ -651,7 +651,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     pushAlerts();
     const log = ride ? devLog() : null;
     if (log?.recording) log.judge(judgeState(), logInfo());
-    if (next && log?.recording && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자만: [탔음] [안 탔음]
+    if (next && log?.recording && log.developer && step()?.kind !== 'done') next.dev = {answered: log.answered};   // 개발자 회원만: [탔음] [안 탔음](기록은 누구나 — 2026-11-26 C안)
     const key = JSON.stringify(next);
     if (key === painted) return;
     painted = key;

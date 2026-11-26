@@ -1,8 +1,10 @@
-// 개발자 회원의 타고 가기 기록(2026-11-11 계획서 D2 · D3): 「이 길로 출발」 ~ 도착 · ✕ 동안 GPS · 가속도 센서 · 타고 가기 판정을
-// 기기(localStorage)에 먼저 쌓고 15초마다 POST /api/me/rides 로 보낸다 — 지하 · 터널에서 끊겨도 잃지 않게(관리 화면 디버깅과 같은 방식).
+// 타고 가기 기록(2026-11-11 계획서 D2 · D3 — 개발자 회원만 · 2026-11-26 사용자 C안 — 로그인 안 해도): 「이 길로 출발」 ~ 도착 · ✕ 동안 GPS · 타고 가기 판정
+// (개발자 회원은 가속도 센서도)을 기기(localStorage)에 먼저 쌓고 15초마다 POST /api/me/rides 로 보낸다 — 지하 · 터널에서 끊겨도 잃지 않게(관리 화면 디버깅과 같은 방식).
 // 사건 모양은 서버 services/debug.py clean_event(디버깅 기록과 같은 칸 + judge{state} · answer{answer}) — 서버가 source "map" 을 붙인다.
-// 이 파일은 /api/me 가 developer:true 일 때만 user/account.mts 가 만든다 — 개발자가 아니거나 로그인 안 했으면 이 파일은 받지도 않고
-// 센서 권한도 묻지 않고 요청도 없다. 브라우저 것(저장소 · fetch · 시계 · 센서)은 넘겨받아 Node 시험이 그대로 돌린다.
+// 본문에 늘 기기 id(device — 이 기기에 한 번 만들어 둔 무작위 값)를 싣는다: 개발자 회원이 아니면(로그인 안 함 포함) 서버가 그 값으로 익명 기록을 남긴다
+// (개발자 회원은 서버가 device 를 버리고 옛 길 그대로). 본체가 지도를 다 그린 뒤 이 파일을 받아 하나만 만들고(앱 지도 모드는 만들지 않는다),
+// 개발자 회원인지는 user/account.mts 가 알려 준다(setDeveloper) — 개발자만 센서 권한을 묻고 [탔음] [안 탔음] 을 보인다.
+// 브라우저 것(저장소 · fetch · 시계 · 센서)은 넘겨받아 Node 시험이 그대로 돌린다.
 
 export type RideLogMode = 'subway' | 'bus';
 export type RideAnswer = 'rode' | 'not_rode';
@@ -10,19 +12,23 @@ export type RideAnswer = 'rode' | 'not_rode';
 export interface RideLogInfo { mode:RideLogMode; line?:string | null; train?:string | null; routeId?:string | null; routeName?:string | null; vehicle?:string | null; station?:string | null }
 export interface RideLogEvent extends Record<string, unknown> { kind:string; mode:RideLogMode; ride:string; t:number }
 export interface RideLog {
-  // 「이 길로 출발」 누름 안에서 부른다(아이폰은 누르는 순간에만 센서 권한을 물을 수 있다)
+  // 「이 길로 출발」 누름 안에서 부른다(아이폰은 누르는 순간에만 센서 권한을 물을 수 있다 — 개발자 회원만 센서를 켠다)
   begin(info:RideLogInfo):void;
+  setDeveloper(on:boolean):void;   // 개발자 회원인가(user/account.mts 가 /api/me 를 받을 때마다) — 다음 출발부터 센서
+  readonly developer:boolean;
   gps(coords:{ latitude:number; longitude:number; accuracy:number; speed?:number | null; heading?:number | null }):void;
   judge(state:string, info:RideLogInfo):void;   // 같은 state 를 연달아 받으면 한 번만 남긴다
   answer(value:RideAnswer, info:RideLogInfo):void;
   end(note:string, info:RideLogInfo):void;   // 도착 · 그만둠 — 센서를 끄고 남은 것을 바로 보낸다
   flush():Promise<void>;   // 쌓인 것을 지금 보낸다(다시 연결 · 화면을 숨길 때)
-  close():void;   // 로그아웃 · 개발자 아님: 센서 · 보내기를 멈춘다(쌓인 것은 기기에 둔다 — 다시 개발자로 로그인하면 보낸다)
+  close():void;   // 센서 · 보내기를 멈춘다(쌓인 것은 기기에 둔다 — 다음에 만들 때 보낸다)
   readonly recording:boolean;
   readonly answered:RideAnswer | null;   // 이번 탑승에서 마지막으로 누른 정답(카드에 눌림 표시)
 }
 
 export const RIDE_LOG_KEY = 'syung-dev-ride-log';   // 기기에 쌓아 둔 사건 줄
+export const DEVICE_KEY = 'syung-ride-device';   // 이 기기의 기록 id(한 번 만들어 둔다)
+export const DEVICE = /^[A-Za-z0-9_-]{16,64}$/;   // 서버 services/debug.py DEVICE 와 같은 형식
 export const FLUSH_MS = 15000, MOTION_MS = 5000, GPS_GAP_MS = 4500, GPS_KEEP_MS = 15000;
 export const MAX_QUEUE = 4000;   // 기기에 둘 사건 수 상한(넘으면 오래된 것부터 — 센서 묶음 약 3 KB × 4000 은 저장소 한도를 넘으니 저장 실패면 메모리에만)
 const RIDE_URL = './api/me/rides';
@@ -34,7 +40,7 @@ export function batchSize(queue:readonly { kind:string }[]):number {
   for (const event of queue) { if (size >= 500 || (event.kind === 'motion' && ++moves > 40)) break; size++; }
   return size;
 }
-// 보낸 결과 → 보낸 묶음을 줄에서 뺄까. 200 · 400(고칠 수 없는 묶음) · 413(너무 큼)은 빼고, 503 · 끊김은 다음에 다시(401 · 403 은 아래에서 멈춘다)
+// 보낸 결과 → 보낸 묶음을 줄에서 뺄까. 200 · 400(고칠 수 없는 묶음) · 413(너무 큼)은 빼고, 429(너무 잦음 · 하루 합계 넘음) · 503 · 끊김은 다음에 다시(401 · 403 은 아래에서 멈춘다)
 export const dropAfter = (status:number):boolean => (status >= 200 && status < 300) || status === 400 || status === 413;
 
 // ---- 가속도 센서: 0.1초 칸 평균 → [칸 시각, 값 9개(없으면 null)] · 5초마다 한 사건에 140칸까지(서버 상한 1500개 = 150칸)
@@ -62,7 +68,18 @@ function infoFields(info:RideLogInfo):Record<string, string> {
   return fields;
 }
 
+// 이 기기의 기록 id: 저장해 둔 것이 서버 형식이면 그대로, 없거나 틀리면 make() 로 새로 만들어 둔다(저장소가 막히면 이 화면 동안만)
+export function rideDevice(storage:RideLogDeps['storage'], make:() => string):string {
+  let saved:string | null = null;
+  try { saved = storage?.getItem(DEVICE_KEY) ?? null; } catch { /* 막힌 저장소 */ }
+  if (saved && DEVICE.test(saved)) return saved;
+  const fresh = make();
+  try { storage?.setItem(DEVICE_KEY, fresh); } catch { /* 막힌 저장소: 이 화면 동안만 */ }
+  return fresh;
+}
+
 export interface RideLogDeps {
+  device:string;   // 본문 device(rideDevice)
   storage:{ getItem(key:string):string | null; setItem(key:string, value:string):void } | null;
   send(url:string, init:{ method:'POST'; credentials:'same-origin'; headers:Record<string, string>; body:string }):Promise<{ status:number }>;
   now():number;
@@ -71,14 +88,14 @@ export interface RideLogDeps {
   // 센서: 권한 묻기(아이폰만 함수가 있다 — 없으면 null) · 듣기 걸기 → 끄기. 센서가 없는 기기는 listen 이 null
   askMotion:(() => Promise<string>) | null;
   listenMotion:((on:(event:MotionLike) => void) => () => void) | null;
-  forbidden?():void;   // 401(로그인 끝남) · 403(이제 개발자 아님) — 기록을 그만둔다
+  forbidden?():void;   // 401 · 403 — device 를 아직 모르는 옛 서버가 개발자 회원만 받을 때. 기록을 그만둔다
 }
 
 export function createRideLog(deps:RideLogDeps):RideLog {
   const load = ():RideLogEvent[] => { try { const raw = deps.storage?.getItem(RIDE_LOG_KEY); const list:unknown = raw ? JSON.parse(raw) : []; return Array.isArray(list) ? list as RideLogEvent[] : []; } catch { return []; } };
   let queue = load(), sending = false, stopped = false;
   const save = () => { try { deps.storage?.setItem(RIDE_LOG_KEY, JSON.stringify(queue)); } catch { /* 저장소가 차거나 막힘: 메모리에만 두고 보낸다 */ } };
-  let ride:string | null = null, lastState = '', answered:RideAnswer | null = null, gpsAt = 0;
+  let ride:string | null = null, lastState = '', answered:RideAnswer | null = null, gpsAt = 0, developer = false;
   let lastFix:{ t:number; lat:number; lng:number; acc:number } | null = null;
   const motion:{ bins:(number | null)[][]; cur:MotionCell | null; off:(() => void) | null; turn:number } = {bins: [], cur: null, off: null, turn: 0};
   let flushOff:(() => void) | null = null, motionOff:(() => void) | null = null;
@@ -97,9 +114,10 @@ export function createRideLog(deps:RideLogDeps):RideLog {
     sending = true;
     const batch = queue.slice(0, batchSize(queue));
     try {
-      const reply = await deps.send(RIDE_URL, {method: 'POST', credentials: 'same-origin', headers: CHANGE, body: JSON.stringify({events: batch})});
-      if (reply.status === 401) { quit(); deps.forbidden?.(); return; }   // 로그인이 끝났다 — 더 보내지 않는다(쌓인 것은 다음 로그인 때)
-      if (reply.status === 403) { quit(); queue = []; save(); deps.forbidden?.(); return; }   // 이제 개발자가 아니다 — 받아 줄 곳이 없으니 기기 기록도 지운다
+      const reply = await deps.send(RIDE_URL, {method: 'POST', credentials: 'same-origin', headers: CHANGE, body: JSON.stringify({device: deps.device, events: batch})});
+      // 401 · 403 은 device 를 모르는 옛 서버(개발자 회원만 받음)일 때만 온다
+      if (reply.status === 401) { quit(); deps.forbidden?.(); return; }   // 로그인 안 함 — 더 보내지 않는다(쌓인 것은 다음에 만들 때)
+      if (reply.status === 403) { quit(); queue = []; save(); deps.forbidden?.(); return; }   // 개발자가 아니다 — 받아 줄 곳이 없으니 기기 기록도 지운다
       if (dropAfter(reply.status)) { queue = queue.slice(batch.length); save(); }
     } catch { /* 끊김: 다음 차례에 다시 */ } finally { sending = false; }
     if (!ride && !queue.length) { flushOff?.(); flushOff = null; }   // 다 보냈고 타고 가기도 끝났다 — 다음 출발까지 쉰다
@@ -123,7 +141,7 @@ export function createRideLog(deps:RideLogDeps):RideLog {
   }
   function startMotion() {
     const listen = deps.listenMotion;
-    if (!listen) return;
+    if (!listen || !developer) return;   // 센서는 개발자 회원만(다른 사람에게는 권한을 묻지 않는다)
     const turn = ++motion.turn;
     const on = () => {
       if (turn !== motion.turn || !ride) return;   // 그사이 끝냈다
@@ -186,6 +204,8 @@ export function createRideLog(deps:RideLogDeps):RideLog {
       ride = null; lastFix = null;
       void flush();
     },
+    setDeveloper(on) { developer = on; },
+    get developer() { return developer; },
     flush,
     close: quit,
     get recording() { return !!ride; },
@@ -194,13 +214,17 @@ export function createRideLog(deps:RideLogDeps):RideLog {
   return log;
 }
 
-// 브라우저에 붙인 기록기(account.mts 가 개발자일 때만 부른다). forbidden: 401 · 403 이면 본체에서 떼어 낸다
+// 브라우저에 붙인 기록기(본체가 하나만 만든다). forbidden: 401 · 403 이면 본체에서 떼어 낸다
+// 기기 id 는 crypto.randomUUID(36자) — 없는 옛 브라우저는 getRandomValues 16바이트를 16진수 32자로
+const newDevice = ():string => typeof crypto.randomUUID === 'function' ? crypto.randomUUID()
+  : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
 type AskingMotion = typeof DeviceMotionEvent & { requestPermission?:() => Promise<string> };
 export function browserRideLog(forbidden?:() => void):RideLog {
   let storage:RideLogDeps['storage'] = null;
   try { storage = localStorage; } catch { /* 막힌 저장소: 메모리에만 */ }
   const hasMotion = typeof DeviceMotionEvent !== 'undefined', ask = hasMotion ? (DeviceMotionEvent as AskingMotion).requestPermission : undefined;
   const log = createRideLog({
+    device: rideDevice(storage, newDevice),
     storage,
     send: (url, init) => fetch(url, init),
     now: () => Date.now(),
