@@ -449,7 +449,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			})) {
 				ride.nearSince ||= nowMs;
 				if (nowMs - ride.nearSince >= 5e3) {
-					ride.leftM = 0;
+					ride.leftM = Math.min(ride.leftM, goalM, exitM ?? Infinity);
 					advance();
 					return;
 				}
