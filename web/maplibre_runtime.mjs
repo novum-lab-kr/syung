@@ -1657,6 +1657,7 @@ var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, u
 	}
 });
 var devRideLog = null;
+var rideDeveloper = false;
 var rideAlong = createRideAlong({
 	map,
 	geolocate,
@@ -2962,15 +2963,34 @@ if (!appBridge) {
 		myLocation: () => myLocation,
 		journeyReturn: (search) => journey.ticketReturn(search),
 		mapLoaded,
-		devRides: (log) => {
-			devRideLog = log;
+		devRides: (on) => {
+			rideDeveloper = on;
+			devRideLog?.setDeveloper(on);
 		}
 	})), [], import.meta.url).catch(() => void 0);
 	ticketDesk = go;
-	if (location.hash.includes("login=")) go();
+	let rideLogAsked = false;
+	const startRideLog = () => {
+		if (rideLogAsked) return;
+		rideLogAsked = true;
+		__vitePreload(() => import("./user/dev_ride_log.mjs").then((m) => {
+			const log = m.browserRideLog(() => {
+				if (devRideLog === log) devRideLog = null;
+			});
+			log.setDeveloper(rideDeveloper);
+			devRideLog = log;
+		}), [], import.meta.url).catch(() => {
+			rideLogAsked = false;
+		});
+	};
+	const goAll = () => {
+		startRideLog();
+		return go();
+	};
+	if (location.hash.includes("login=")) goAll();
 	else {
-		map.once("idle", () => "requestIdleCallback" in window ? requestIdleCallback(go, { timeout: 4e3 }) : setTimeout(go, 1500));
-		for (const type of ["pointerdown", "click"]) document.getElementById("settingsButton")?.addEventListener(type, go, { once: true });
+		map.once("idle", () => "requestIdleCallback" in window ? requestIdleCallback(goAll, { timeout: 4e3 }) : setTimeout(goAll, 1500));
+		for (const type of ["pointerdown", "click"]) document.getElementById("settingsButton")?.addEventListener(type, goAll, { once: true });
 	}
 }
 map.on("move", scheduleLabels);

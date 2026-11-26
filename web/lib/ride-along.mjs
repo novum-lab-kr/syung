@@ -194,6 +194,76 @@ function rideSteps(legs) {
 	steps.push({ kind: "done" });
 	return steps;
 }
+function rideFixView({ step, left, undo, choosing }) {
+	if (choosing) return {
+		title: "탄 열차를 지도에서 눌러 주세요",
+		say: null,
+		fix: {
+			buttons: [],
+			links: [{
+				act: "stay",
+				text: "안 고를게요 ›"
+			}]
+		}
+	};
+	if (step === "ride") return {
+		title: null,
+		say: null,
+		fix: {
+			buttons: [],
+			links: [{
+				act: "missed",
+				text: "못 탔어요 ›"
+			}, {
+				act: "other",
+				text: "다른 열차예요 ›"
+			}]
+		}
+	};
+	const other = {
+		act: "other",
+		text: "다른 열차를 탔어요 ›"
+	};
+	if (left) return {
+		title: "열차에 탔어요?",
+		say: "슝이 헷갈려요",
+		fix: {
+			buttons: [{
+				act: "boarded",
+				text: "탔어요",
+				main: true
+			}, {
+				act: "missed",
+				text: "못 탔어요",
+				main: false
+			}],
+			links: [other]
+		}
+	};
+	if (undo) return {
+		title: null,
+		say: "못 탄 것 같아요",
+		fix: {
+			buttons: [{
+				act: "undo",
+				text: "아니에요, 탔어요",
+				main: false
+			}],
+			links: [other]
+		}
+	};
+	return {
+		title: null,
+		say: null,
+		fix: {
+			buttons: [],
+			links: [{
+				act: "boarded",
+				text: "벌써 탔어요 ›"
+			}, other]
+		}
+	};
+}
 var CHARACTER = {
 	sprout: {
 		file: "sprout-left.webp",
@@ -634,4 +704,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, holdOutcome, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideSteps, rideStops, rideSub, rideTalk, rideTitle, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle, withTrainFixes };

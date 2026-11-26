@@ -1,5 +1,7 @@
 // web/user/dev_ride_log.mts
 var RIDE_LOG_KEY = "syung-dev-ride-log";
+var DEVICE_KEY = "syung-ride-device";
+var DEVICE = /^[A-Za-z0-9_-]{16,64}$/;
 var FLUSH_MS = 15e3;
 var MOTION_MS = 5e3;
 var GPS_GAP_MS = 4500;
@@ -54,6 +56,18 @@ function infoFields(info) {
 	}
 	return fields;
 }
+function rideDevice(storage, make) {
+	let saved = null;
+	try {
+		saved = storage?.getItem("syung-ride-device") ?? null;
+	} catch {}
+	if (saved && DEVICE.test(saved)) return saved;
+	const fresh = make();
+	try {
+		storage?.setItem(DEVICE_KEY, fresh);
+	} catch {}
+	return fresh;
+}
 function createRideLog(deps) {
 	const load = () => {
 		try {
@@ -70,7 +84,7 @@ function createRideLog(deps) {
 			deps.storage?.setItem(RIDE_LOG_KEY, JSON.stringify(queue));
 		} catch {}
 	};
-	let ride = null, lastState = "", answered = null, gpsAt = 0;
+	let ride = null, lastState = "", answered = null, gpsAt = 0, developer = false;
 	let lastFix = null;
 	const motion = {
 		bins: [],
@@ -107,7 +121,10 @@ function createRideLog(deps) {
 				method: "POST",
 				credentials: "same-origin",
 				headers: CHANGE,
-				body: JSON.stringify({ events: batch })
+				body: JSON.stringify({
+					device: deps.device,
+					events: batch
+				})
 			});
 			if (reply.status === 401) {
 				quit();
@@ -169,10 +186,10 @@ function createRideLog(deps) {
 	}
 	function startMotion() {
 		const listen = deps.listenMotion;
-		if (!listen) return;
+		if (!listen || !developer) return;
 		const turn = ++motion.turn;
 		const on = () => {
-			if (turn !== motion.turn || !ride) return;
+			if (turn !== motion.turn || !ride || !developer) return;
 			motion.off = listen(onMotion);
 			motionOff = deps.every(() => sendMotion(), MOTION_MS);
 		};
@@ -256,6 +273,13 @@ function createRideLog(deps) {
 			lastFix = null;
 			flush();
 		},
+		setDeveloper(on) {
+			if (!on) stopMotion();
+			developer = on;
+		},
+		get developer() {
+			return developer;
+		},
 		flush,
 		close: quit,
 		get recording() {
@@ -267,6 +291,7 @@ function createRideLog(deps) {
 	};
 	return log;
 }
+var newDevice = () => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Array.from(crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 function browserRideLog(forbidden) {
 	let storage = null;
 	try {
@@ -274,6 +299,7 @@ function browserRideLog(forbidden) {
 	} catch {}
 	const hasMotion = typeof DeviceMotionEvent !== "undefined", ask = hasMotion ? DeviceMotionEvent.requestPermission : void 0;
 	const log = createRideLog({
+		device: rideDevice(storage, newDevice),
 		storage,
 		send: (url, init) => fetch(url, init),
 		now: () => Date.now(),
@@ -298,4 +324,4 @@ function browserRideLog(forbidden) {
 	});
 	return log;
 }
-export { FLUSH_MS, GPS_GAP_MS, GPS_KEEP_MS, MAX_QUEUE, MOTION_MS, RIDE_LOG_KEY, batchSize, browserRideLog, closeCell, createRideLog, dropAfter, motionChunks, motionValues };
+export { DEVICE, DEVICE_KEY, FLUSH_MS, GPS_GAP_MS, GPS_KEEP_MS, MAX_QUEUE, MOTION_MS, RIDE_LOG_KEY, batchSize, browserRideLog, closeCell, createRideLog, dropAfter, motionChunks, motionValues, rideDevice };

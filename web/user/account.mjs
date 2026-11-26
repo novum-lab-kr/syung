@@ -274,33 +274,11 @@ async function initAccount({ colors = {}, routeMap, myLocation, journeyReturn, m
 			first.focus();
 		}
 	}, true);
-	let rideLog = null, rideLogOn = false;
+	let developerNow = null;
 	function devRideLog(on) {
-		if (on === rideLogOn) return;
-		rideLogOn = on;
-		if (!on) {
-			rideLog?.close();
-			rideLog = null;
-			devRides?.(null);
-			return;
-		}
-		__vitePreload(async () => {
-			const { browserRideLog } = await import("./dev_ride_log.mjs");
-			return { browserRideLog };
-		}, [], import.meta.url).then(({ browserRideLog }) => {
-			if (!rideLogOn || rideLog) return;
-			const log = browserRideLog(() => {
-				if (rideLog === log) {
-					rideLog = null;
-					rideLogOn = false;
-					devRides?.(null);
-				}
-			});
-			rideLog = log;
-			devRides?.(log);
-		}).catch(() => {
-			rideLogOn = false;
-		});
+		if (on === developerNow) return;
+		developerNow = on;
+		devRides?.(on);
 	}
 	function show() {
 		item.hidden = false;

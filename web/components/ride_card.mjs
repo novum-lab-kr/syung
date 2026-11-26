@@ -30,6 +30,33 @@ function DevAnswer({ dev, answer }) {
 		}, value))
 	});
 }
+function FixAsk({ fix, act }) {
+	return /* @__PURE__ */ a(M, { children: [fix.buttons.length > 0 && /* @__PURE__ */ a("div", {
+		class: "rg-ask",
+		role: "group",
+		"aria-label": "열차에 탔는지 알려 주기",
+		children: fix.buttons.map((button) => /* @__PURE__ */ a("button", {
+			type: "button",
+			class: `sy-btn ${button.main ? "sy-btn-primary" : "sy-btn-secondary"}`,
+			onClick: () => act?.(button.act),
+			children: button.text
+		}, button.act))
+	}), fix.links.length > 0 && /* @__PURE__ */ a("p", {
+		class: "rg-fix",
+		children: fix.links.map((link, order) => /* @__PURE__ */ a(M, { children: [order > 0 && /* @__PURE__ */ a("i", {
+			"aria-hidden": "true",
+			children: "·"
+		}), /* @__PURE__ */ a("a", {
+			href: "#",
+			class: "rg-detour",
+			onClick: (event) => {
+				event.preventDefault();
+				act?.(link.act);
+			},
+			children: link.text
+		})] }, link.act))
+	})] });
+}
 function said(parts) {
 	return parts.map((part) => {
 		if (typeof part === "string") return part;
@@ -214,6 +241,10 @@ function RideCard({ view, actions }) {
 						children: said(talk.todo)
 					}),
 					info?.sky && /* @__PURE__ */ a(RideSky, { spot: info.sky }),
+					view.fix && /* @__PURE__ */ a(FixAsk, {
+						fix: view.fix,
+						act: actions.fix
+					}),
 					view.dev && /* @__PURE__ */ a(DevAnswer, {
 						dev: view.dev,
 						answer: actions.answer
