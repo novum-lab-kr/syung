@@ -379,11 +379,12 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       ride.leftM = Math.max(0, where.total - where.at);
       ride.track.push({t: nowMs, at: where.at}); if (ride.track.length > 90) ride.track.shift();
       walked(current.leg, splitPath(path, where.at));
-      // 다음 탈 곳(역 · 정류장 · 목적지) 100m 안이나 탈 역 아무 출구 50m 안에 5초 머물면 닿은 것(남은 길 0 · 승강장 시간만 그때부터 — 2026-11-07 사용자 결정)
+      // 다음 탈 곳(역 · 정류장 · 목적지) 100m 안이나 탈 역 아무 출구 50m 안에 5초 머물면 닿은 것 — 남은 걷기는 지금 자리에서 가까운 출구 · 길 끝까지 곧은 거리(길을 따라 남은 것보다 길지 않게) + 승강장 시간을 그때부터
+      //  (예전엔 남은 길을 0 으로 봐 100m 앞에서 30초만 지나면 들어오는 열차를 탄 것으로 보고 따라가기가 켜졌다 — 2026-11-26 사용자 결정 · 신설동 재현 3회)
       const goalM = metres(spot, path[path.length - 1]!), {stationM, exitM} = boardingAway(spot, next);
       if (nearBoarding({goalM, stationM, exitM})) {
         ride.nearSince ||= nowMs;
-        if (nowMs - ride.nearSince >= NEAR_HOLD_MS) { ride.leftM = 0; advance(); return; }
+        if (nowMs - ride.nearSince >= NEAR_HOLD_MS) { ride.leftM = Math.min(ride.leftM, goalM, exitM ?? Infinity); advance(); return; }
       }
       else ride.nearSince = 0;
       draw();
