@@ -1,16 +1,16 @@
 // 타고 가기 카드: 카드 자체가 캐릭터의 말풍선(슝 소개 사이트 첫 화면 모양 — 시안 .storybook/ride_along.stories.tsx (라)).
 // 큰 글 한 줄 · 한마디(형광펜, 기다리기 카드만) · 작은 글(또는 「다른 길 찾기 ›」) · ✕, 오른쪽 아래에 캐릭터 온몸(꼬리가 가리킨다).
 // 그리기만 한다 — 글 · 그림 이름은 lib/ride-along.mts, 상태 · 위치 · 카메라는 ui/ride_along.mts
-import { render } from 'preact';
+import { Fragment, render } from 'preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import type { RideCardView, RideDevView, RideInfoView, RideListView, RideSaid, RideSkySpot } from '../lib/ride-along.mts';
+import type { RideCardView, RideDevView, RideFixAct, RideFixView, RideInfoView, RideListView, RideSaid, RideSkySpot } from '../lib/ride-along.mts';
 import type { WeatherTalk } from '../map/sky_weather.mts';
 import type { ComponentChild } from 'preact';
 import { GoalFlag, MapArrival, type ArrivalMap } from './ride_arrival.tsx';
 
 const CLOSE = <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 
-export interface RideCardActions { close():void; detour():void; follow():void; answer?(value:'rode' | 'not_rode'):void }
+export interface RideCardActions { close():void; detour():void; follow():void; answer?(value:'rode' | 'not_rode'):void; fix?(act:RideFixAct):void }
 
 // 개발자 회원만(2026-11-11 계획서 D2): 정답 누름 [탔음] [안 탔음] — 기초 버튼(components/button.tsx)과 같은 class(.sy-btn)로 그린다
 // (그 파일을 부르면 첫 화면에 받는 파일이 늘어 모양만 같이 쓴다). 누른 쪽은 주 버튼 모양 · aria-pressed
@@ -20,6 +20,18 @@ function DevAnswer({ dev, answer }:{ dev:RideDevView; answer?:RideCardActions['a
     {DEV_ANSWERS.map(([value, label]) => <button key={value} type="button" class={`sy-btn ${dev.answered === value ? 'sy-btn-primary' : 'sy-btn-secondary'}`}
       aria-pressed={dev.answered === value ? 'true' : 'false'} onClick={() => answer?.(value)}>{label}</button>)}
   </div>;
+}
+
+// 바로잡기 창구(2026-11-26 사용자 결정 A+B — 글 · 고르기는 lib/ride-along rideFixView): 슝이 헷갈릴 때 묻는 단추(.sy-btn — DevAnswer 와 같은 까닭으로 모양만) · 늘 보이는 글 링크(「다른 길 찾기 ›」와 같은 .rg-detour)
+function FixAsk({ fix, act }:{ fix:RideFixView; act?:RideCardActions['fix'] }) {
+  return <>
+    {fix.buttons.length > 0 && <div class="rg-ask" role="group" aria-label="열차에 탔는지 알려 주기">
+      {fix.buttons.map(button => <button key={button.act} type="button" class={`sy-btn ${button.main ? 'sy-btn-primary' : 'sy-btn-secondary'}`} onClick={() => act?.(button.act)}>{button.text}</button>)}
+    </div>}
+    {fix.links.length > 0 && <p class="rg-fix">
+      {fix.links.map((link, order) => <Fragment key={link.act}>{order > 0 && <i aria-hidden="true">·</i>}<a href="#" class="rg-detour" onClick={event => { event.preventDefault(); act?.(link.act); }}>{link.text}</a></Fragment>)}
+    </p>}
+  </>;
 }
 
 // 말풍선 글 조각(lib/ride-along RideSaid): 손으로 그은 노란 색연필 밑줄(.rg-line) · 밑줄 없이 살짝 크게(.rg-mark) · 별표(.rg-star) — 2026-11-25 사용자 「밑줄 쫙 긋거나 별표 치거나」
@@ -80,6 +92,7 @@ export function RideCard({ view, actions }:{ view:RideCardView; actions:RideCard
       <small>{view.detour ? <a href="#" class="rg-detour" onClick={event => { event.preventDefault(); actions.detour(); }}>다른 길 찾기 ›</a> : talk ? said(talk.sub) : view.sub}</small>
       {talk?.todo && <p class="rg-more">{said(talk.todo)}</p>}
       {info?.sky && <RideSky spot={info.sky} />}
+      {view.fix && <FixAsk fix={view.fix} act={actions.fix} />}
       {view.dev && <DevAnswer dev={view.dev} answer={actions.answer} />}
       <button type="button" class="rg-x" aria-label="타고 가기 끝내기" title="타고 가기 끝내기" onClick={actions.close}>{CLOSE}</button>
     </div>
