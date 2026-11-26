@@ -16,7 +16,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from server.config import MemberConfig
-from server.services.debug import DebugService
+from server.services import debug as debug_service
+from server.services.debug import ANON_TRIES, ANON_WINDOW, DebugService
 from server.store.debug_log import DebugStore
 from server.routes.http import Server, make_handler
 from server.services import login_providers
@@ -740,6 +741,100 @@ class DeveloperRideTest(unittest.TestCase):
             answer = self.request("POST", "/api/me/rides", cookie=self.developer, body={"events": events})
             self.assertEqual((answer.status, answer.json["error"]["code"]), (400, "bad_request"), events)
         self.assertEqual(self.saved(), [])
+
+    DEVICE = "3f2b6c1e-9a4d-4b7e-8c21-5d6f7a8b9c0d"   # 웹 crypto.randomUUID() 꼴
+
+    def test_anonymous_rides_are_saved_with_device(self):
+        """로그인 안 함 · 개발자 아닌 회원: 본문 device 로 같은 자리 · 같은 모양에 남긴다(회원번호 없음)."""
+        for cookie in (None, self.member):
+            answer = self.request("POST", "/api/me/rides", cookie=cookie, body={"device": self.DEVICE, "events": self.events(), "user": 2})
+            self.assertEqual((answer.status, answer.json), (200, {"ok": True, "saved": 6}), cookie)
+        rows = self.saved()
+        self.assertEqual(len(rows), 12)
+        self.assertEqual({(row["source"], row["device"]) for row in rows}, {("map", self.DEVICE)})
+        self.assertNotIn("user", json.dumps(rows), "익명 기록에도 회원번호를 싣지 않는다")
+        self.assertEqual(self.debug.recent()["rides"][0]["ride"], "m1", "관리 화면 디버깅 요약에 그대로 보인다")
+
+    def test_developer_rides_keep_the_old_shape(self):
+        """개발자 회원은 device 를 보내도 옛 길 그대로(기기 칸 없음 · 요청 제한 없음)."""
+        for _ in range(ANON_TRIES + 2):
+            answer = self.request("POST", "/api/me/rides", cookie=self.developer, body={"device": self.DEVICE, "events": self.events()[:1]})
+            self.assertEqual(answer.status, 200)
+        self.assertTrue(all("device" not in row for row in self.saved()))
+
+    def test_bad_device_is_refused(self):
+        for device in ("", "짧다", "a" * 15, "a" * 65, "abc def ghi jkl mno", 12345678901234567, ["x" * 20]):
+            answer = self.request("POST", "/api/me/rides", body={"device": device, "events": self.events()})
+            self.assertEqual((answer.status, answer.json["error"]["code"]), (400, "bad_request"), device)
+        bad_event = [{"ride": "m1", "kind": "answer", "mode": "subway", "t": self.now * 1000, "answer": "maybe"}]
+        self.assertEqual(self.request("POST", "/api/me/rides", body={"device": self.DEVICE, "events": bad_event}).status, 400)
+        self.assertEqual(self.saved(), [])
+
+    def test_anonymous_rides_are_rate_limited_per_address(self):
+        body = {"device": self.DEVICE, "events": self.events()[:1]}
+        for _ in range(ANON_TRIES):
+            self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="198.51.100.7").status, 200)
+        refused = self.request("POST", "/api/me/rides", body=body, forwarded="198.51.100.7")
+        self.assertEqual((refused.status, refused.json["error"]["code"]), (429, "rate_limited"))
+        self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="198.51.100.8").status, 200, "다른 주소는 따로 센다")
+        self.assertEqual(self.request("POST", "/api/me/rides", cookie=self.developer, body=body, forwarded="198.51.100.7").status, 200,
+                         "개발자는 막지 않는다")
+        self.now += ANON_WINDOW
+        self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="198.51.100.7").status, 200, "시간이 지나면 다시 받는다")
+        self.assertEqual(len(self.saved()), ANON_TRIES + 3)
+
+    def test_ipv6_addresses_are_counted_per_64(self):
+        """IPv6 는 끝자리(/64 안)를 바꿔 가며 보내도 한 주소로 센다."""
+        for number in range(ANON_TRIES):
+            self.assertTrue(self.debug.allow_anonymous(f"2001:db8:1:2::{number + 1:x}"))
+        self.assertFalse(self.debug.allow_anonymous("2001:db8:1:2:ffff::9"))
+        self.assertTrue(self.debug.allow_anonymous("2001:db8:1:3::1"), "다른 /64 는 따로")
+
+    def test_anonymous_rides_stop_at_the_daily_total(self):
+        """주소를 바꿔 가며 보내도 하루 익명 본문 합계를 넘으면 429 — 개발자 기록은 그대로 받고, 다음 날 다시 받는다."""
+        body = {"device": self.DEVICE, "events": self.events()}
+        size = len(json.dumps(body).encode())
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size * 2):
+            for number in range(2):
+                self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded=f"203.0.113.{number}").status, 200)
+            refused = self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.9")
+            self.assertEqual((refused.status, refused.json["error"]["code"]), (429, "rate_limited"))
+            self.assertEqual(self.request("POST", "/api/me/rides", cookie=self.developer, body=body).status, 200)
+            self.now += 86400
+            self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.9").status, 200)
+
+    def test_daily_total_is_checked_before_saving(self):
+        """남은 양보다 큰 본문은 저장 전에 429 — 하루 합계를 넘겨 저장하지 않는다. 저장이 실패하면 예약한 양을 되돌린다."""
+        body = {"device": self.DEVICE, "events": self.events()}
+        size = len(json.dumps(body).encode())
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size * 2 - 1):
+            self.assertEqual(self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.1").status, 200)
+            refused = self.request("POST", "/api/me/rides", body=body, forwarded="203.0.113.2")
+            self.assertEqual((refused.status, refused.json["error"]["code"]), (429, "rate_limited"))
+            self.assertEqual(len(self.saved()), 6, "넘는 본문은 남기지 않는다")
+        raw = json.dumps(body).encode()
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size), \
+             mock.patch.object(self.debug.store, "append_rides", side_effect=OSError("디스크")):
+            self.now += 86400
+            with self.assertRaises(OSError):
+                self.debug.record_ride(raw, "map", True)
+        with mock.patch.object(debug_service, "ANON_DAY_BYTES", size):
+            self.assertEqual(self.debug.record_ride(raw, "map", True)["saved"], 6, "실패한 저장은 합계에 넣지 않는다")
+
+    def test_anonymous_rides_work_without_member_feature(self):
+        """회원 기능(로그인 제공자)이 꺼져 있어도 익명 기록은 받는다 — device 가 없으면 옛 401."""
+        off = MemberService(MemberConfig(db_file=self.db, public_url="https://syung.test"), providers={}, clock=lambda: self.now)
+        self.assertFalse(off.enabled)
+        server = Server(("127.0.0.1", 0), make_handler(SimpleNamespace(members=off, debug=self.debug), 0))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        target = SimpleNamespace(server=server)
+        answer = MemberHttpTest.request(target, "POST", "/api/me/rides", body={"device": self.DEVICE, "events": self.events()})
+        self.assertEqual(answer.status, 200)
+        self.assertEqual(MemberHttpTest.request(target, "POST", "/api/me/rides", body={"events": self.events()}).status, 401)
+        self.assertEqual(MemberHttpTest.request(target, "POST", "/api/me/rides", body={"device": self.DEVICE, "events": self.events()},
+                                                csrf=False).status, 403, "바꾸는 요청 머리말은 그대로 본다")
 
     def test_developer_ids_come_from_the_environment(self):
         with mock.patch.dict(os.environ, {"SYUNG_DEVELOPER_IDS": " 7, 12,x,,"}):
