@@ -133,6 +133,11 @@ interface Rect{coords:LngLat[];offset:number;widthM:number;plat:number;center?:L
 interface TrackShapes{edges?:Record<string,LngLat[]>;stops?:Record<string,LngLat>;stopDirs?:Record<string,LngLat>;stopHalf?:Record<string,number>;platformHalf?:Record<string,number>;stopWidth?:Record<string,number>;stopReach?:Record<string,LngLat>}
 // 점검 창구(window.__subwayWebGL — 점검 스크립트가 쓴다) · 해 시각 미리 보기(__sunTime)
 declare global{interface Window{__sunTime?:Date;__subwayWebGL:Record<string,unknown>}}
+// 가짜 GPS(web/dev/fake_gps.mts — 타고 가기 시험): 주소에 ?fakegps=1 이 있을 때만 받아 붙인다(없으면 파일도 안 받는다 · 앱 지도(#app)는 빼고 · 2026-11-26 사용자).
+// 지도가 위치를 묻기 전에(내 위치 단추 · 첫 위치) navigator.geolocation 을 바꿔 끼워야 해서 기다린다.
+// 지도를 만들기 전 맨 앞에서 기다린다 — 지도를 만든 뒤에 기다리면 그사이 지도 load 가 지나가 뒤에 건 map.once('load') 가 안 불린다(지도가 빈 채로 — 2026-11-26 잼)
+const fakeGpsPage=new URLSearchParams(location.search).get('fakegps')==='1'&&!appMapMode();
+const fakeGps=fakeGpsPage?await import('./dev/fake_gps.mts').then(mod=>mod.installFakeGps()).catch(()=>null):null;
 
 // 모드 설정: 기본이 원본, 모드는 다른 것만. 시작할 때 한 번 검사 · 합치고 얼려 둔다(잘못된 정의는 여기서 멈춘다)
 const modes=createModeRegistry([BASIC_MODE,SIMCITY_MODE,JOSEON_MODE,COASTER_MODE,...STARCRAFT_MODES,RETRO_MODE,...NATION_MODES] as ModeDefinition[]) as ModeRegistry;
@@ -687,6 +692,8 @@ const rideAlong=createRideAlong({map,geolocate:geolocate as never,planner,trainP
   bus:{board:leg=>busLayer?.journeyBoard(leg as never)??null,arrivals:async(arsId,routeId,routeName)=>busLayer?await busLayer.journeyArrivals(arsId,routeId,routeName):null,approach:(routeId,stopId,skip)=>busLayer?.journeyApproach(routeId,stopId,skip)??null,
     atStop:(vehicleId,stopId)=>busLayer?.journeyAtStop(vehicleId,stopId)??null,ride:(vehicleId,spot,riding)=>{busLayer?.rideWith(vehicleId,spot&&[spot[0],spot[1]]);hideMe(riding)},watch:routeId=>busLayer?.watchRoute(routeId),routeOnly:on=>busLayer?.setRouteOnly(on)},devLog:()=>devRideLog,
   alerts:rideAlertSink(appBridge?list=>appBridge.rideAlerts(list):null),trainLeaves:(p,id)=>trainLeaves(p as RuntimePlan,id),gpsLowPower,quietLabels,infoScreen:rideInfoScreen});   // 타고 가기 알림: 앱이면 다리로(앱이 폰에 예약) · 브라우저면 웹 알림(ui/ride_alerts)
+fakeGps?.mount({map,ride:()=>rideAlong.devPlay(),trainAt:id=>{const plan=planner.plans.find(p=>p.id===id);if(!plan)return null;const at=trainLngLat(plan as never) as {lng:number;lat:number};return [at.lng,at.lat]},
+  stationAt:id=>{const station=byId.get(id);return station?[station.lon,station.lat]:null},locate:()=>{if((geolocate as unknown as {_watchState:string})._watchState==='OFF')geolocate.trigger()}});   // 가짜 GPS 패널(위 · ?fakegps=1)
 const openTrain=(plan:TrainPlan)=>{if(rideAlong.tapTrain(plan))return;if(appBridge)appBridge.trainTap(plan);else showTrainPopup(plan)};   // 앱 지도 모드: 열차 시트 대신 앱에 알린다
 
 // ---- station labels (DOM markers with box collision) --------------------------------
@@ -1061,7 +1068,8 @@ menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:(
 // 그 전에 메뉴 버튼을 누르면 그때 바로(지도를 기다리느라 메뉴 칸이 늦게 뜨지 않게). 한 번만 받는다
 if(!appBridge){const mapLoaded=new Promise<void>(done=>map.once('load',()=>done()));let desk:Promise<TicketDesk|undefined>|null=null;const go=()=>desk??=import('./user/account.mts').then(m=>m.initAccount({colors,routeMap:ticketRoute,myLocation:()=>myLocation,journeyReturn:search=>journey.ticketReturn(search),mapLoaded,devRides:on=>{rideDeveloper=on;devRideLog?.setDeveloper(on)}})).catch(()=>undefined);ticketDesk=go;
   // 타고 가기 기록기: 회원 받기와 같은 때 한 번(로그인 기능이 꺼져 있어도 · 못 받으면 다음 부를 때 다시). 401 · 403(옛 서버)이면 떼어 낸다
-  let rideLogAsked=false;const startRideLog=()=>{if(rideLogAsked)return;rideLogAsked=true;import('./user/dev_ride_log.mts').then(m=>{const log=m.browserRideLog(()=>{if(devRideLog===log)devRideLog=null});log.setDeveloper(rideDeveloper);devRideLog=log}).catch(()=>{rideLogAsked=false})};
+  let rideLogAsked=false;   // 가짜 GPS 페이지(?fakegps=1)는 타고 가기 기록을 만들지 않는다 — 가짜 위치가 서버 기록에 섞이지 않게(2026-11-26 사용자 ⓐ)
+  const startRideLog=()=>{if(rideLogAsked||fakeGpsPage)return;rideLogAsked=true;import('./user/dev_ride_log.mts').then(m=>{const log=m.browserRideLog(()=>{if(devRideLog===log)devRideLog=null});log.setDeveloper(rideDeveloper);devRideLog=log}).catch(()=>{rideLogAsked=false})};
   const goAll=()=>{startRideLog();return go()};   // colors: 승차권 경로 띠(길찾기와 같은 노선 색)
   if(location.hash.includes('login='))goAll();else{map.once('idle',()=>'requestIdleCallback' in window?requestIdleCallback(goAll,{timeout:4000}):setTimeout(goAll,1500));
     for(const type of ['pointerdown','click'])document.getElementById('settingsButton')?.addEventListener(type,goAll,{once:true})}}

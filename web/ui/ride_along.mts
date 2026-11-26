@@ -810,5 +810,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (lit.legs !== legs) lit = {legs, ids: new Set((legs ?? []).flatMap(leg => leg.type === 'ride' ? leg.stations.map(String) : []))};
     return lit.ids;
   };
-  return {start, stop, tapTrain, rideTrain, get active() { return !!ride; }, get followingTrain() { return followingTrain(); }, get infoScreen() { return infoOn; }, get stationIds() { return stationIds(); }};
+  // 개발 도구(가짜 GPS · web/dev/fake_gps)가 경로를 따라 재생할 거리: 구간 · 지금 단계 · 붙든(없으면 짐작 · 탄) 열차 · 붙들었나(열차가 들어와 탈 수 있다)
+  const devPlay = () => { const current = step(); return ride && current ? {legs: ride.legs, step: current, train: ride.hold?.id ?? ride.train, held: !!ride.hold} : null; };
+  return {start, stop, tapTrain, rideTrain, devPlay, get active() { return !!ride; }, get followingTrain() { return followingTrain(); }, get infoScreen() { return infoOn; }, get stationIds() { return stationIds(); }};
 }
