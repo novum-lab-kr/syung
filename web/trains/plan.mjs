@@ -1,5 +1,14 @@
 import { serverUrl } from "../lib/server_url.mjs";
 // web/trains/plan.mts
+function stopTiming(tm) {
+	const dwell = Math.max(15, tm.zone - 20), stand = Math.min(dwell, Math.max(20, Math.min(tm.stand || 30, dwell - 20)));
+	return {
+		dwell,
+		stand,
+		brake: dwell - stand,
+		pullOut: tm.zone - dwell
+	};
+}
 function createTrainPlanner({ stations, stationByLine, key, normStatus, route, merc, realGeom, geom, trainPose, mercStop, catchup, catchupAt, predictStops, isRide, getTrains }) {
 	function kstMs(v) {
 		const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
@@ -92,7 +101,7 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 			break;
 		}
 		const ahead = r.ahead.slice(0, Math.max(1, upto) + 1);
-		const tm = timingFor(t.line), DWELL = Math.max(15, tm.zone - 20), STAND = Math.min(DWELL, Math.max(20, Math.min(tm.stand || 30, DWELL - 20))), BRAKE = DWELL - STAND;
+		const tm = timingFor(t.line), { dwell: DWELL, stand: STAND, brake: BRAKE } = stopTiming(tm);
 		const period = rushNow() ? "rush" : "day", zoneAt = (st) => (t.express ? null : tm.waits?.[`${st.id}:${t.direction}:${period}`]) ?? tm.stops?.[st.id] ?? tm.zone;
 		const more = (st) => zoneAt(st) - tm.zone, stand = (st) => Math.max(5, STAND + more(st));
 		const paced = (from, to) => {
@@ -244,6 +253,7 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 		age,
 		clock,
 		destinationLeg,
+		timingFor,
 		get plans() {
 			return plans;
 		},
@@ -262,4 +272,4 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 		}
 	};
 }
-export { createTrainPlanner };
+export { createTrainPlanner, stopTiming };
