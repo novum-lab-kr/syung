@@ -725,6 +725,25 @@ class DeveloperRideTest(unittest.TestCase):
         self.assertEqual((ride["ride"], ride["line"], ride["gps"], ride["taps"]),
                          ("m1", "7호선", 1, [{"kind": "depart", "t": self.now * 1000 + 5000, "station": "군자"}]))
         self.assertIn("sensor", ride)
+        t = self.now * 1000   # 관리 화면 '타고 가기' 탭이 쓰는 칸 — 개발자 회원은 기기 id 가 없다
+        self.assertEqual((ride["source"], ride["device"], ride["judges"], ride["answers"]),
+                         ("map", None, [{"t": t + 3000, "state": "boarded"}], [{"t": t + 4000, "answer": "rode"}]))
+
+    def test_recent_keeps_devices_apart_and_owner_rides_plain(self):
+        """같은 ride 글자라도 기기가 다르면 다른 탑승 · 디버깅 페이지 기록 줄에는 지도 칸이 붙지 않는다."""
+        other = "a" * 20
+        for device in (self.DEVICE, other):
+            events = self.events()[3:5] if device == other else self.events()
+            self.assertEqual(self.request("POST", "/api/me/rides", body={"device": device, "events": events}).status, 200)
+        t = self.now * 1000
+        self.debug.record_ride(json.dumps({"events": [{"ride": "m1", "kind": "arrive", "mode": "subway", "t": t, "station": "군자"}]}).encode())
+        rides = self.debug.recent()["rides"]
+        mine = {ride.get("device"): ride for ride in rides}
+        self.assertEqual(set(mine), {self.DEVICE, other, None})
+        self.assertEqual((mine[other]["judges"], mine[other]["answers"], mine[other]["gps"]),
+                         ([{"t": t + 3000, "state": "boarded"}], [{"t": t + 4000, "answer": "rode"}], 0))
+        self.assertEqual(mine[self.DEVICE]["gps"], 1)
+        self.assertTrue({"source", "device", "judges", "answers"}.isdisjoint(mine[None]), "디버깅 페이지 기록은 옛 모양 그대로")
 
     def test_only_developers_can_send(self):
         body = {"events": self.events()}
