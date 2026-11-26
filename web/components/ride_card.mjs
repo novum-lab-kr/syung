@@ -461,10 +461,11 @@ function RideHatch({ color, past }) {
 		})
 	});
 }
-function RideEdge({ color }) {
+function RideEdge({ color, push }) {
 	return /* @__PURE__ */ a(M, { children: /* @__PURE__ */ a("i", {
 		class: "rg-edge bottom",
 		"aria-hidden": "true",
+		style: push > 0 ? `transform:translateY(${push}px)` : void 0,
 		children: /* @__PURE__ */ a("svg", {
 			viewBox: "0 0 120 76",
 			fill: "none",
@@ -714,13 +715,15 @@ function RideList({ list, pick }) {
 			centre(true);
 		}
 	}, [centre]);
-	const [edgeAt, setEdgeAt] = d(-1);
+	const [edgeAt, setEdgeAt] = d(-1), [edgePush, setEdgePush] = d(0);
 	const measure = b(() => {
 		const host = box.current;
 		if (!host) return;
 		const line = host.getBoundingClientRect().bottom - EDGE_BOTTOM_PX, items = [...host.querySelectorAll("ol > li")];
 		const hit = items.findIndex((item) => item.getBoundingClientRect().bottom > line);
 		setEdgeAt(hit < 0 ? items.length - 1 : hit);
+		const lastBottom = items.at(-1)?.getBoundingClientRect().bottom ?? line;
+		setEdgePush(Math.max(0, Math.round(lastBottom - line)));
 	}, []);
 	A(measure, [
 		list.at,
@@ -739,6 +742,7 @@ function RideList({ list, pick }) {
 			class: "rg-list",
 			ref: box,
 			onScroll: measure,
+			onTransitionEnd: measure,
 			onTouchStart: () => {
 				touching.current = true;
 			},
@@ -752,10 +756,7 @@ function RideList({ list, pick }) {
 				style: headColor ? `--rg-head:${headColor}` : void 0,
 				children: list.rows.map((row, order) => {
 					const tail = order === last;
-					if (row.kind === "gap") return /* @__PURE__ */ a("li", {
-						class: `gap${pastClass(order)}`,
-						children: /* @__PURE__ */ a("i", { children: row.text })
-					});
+					if (row.kind === "gap") return /* @__PURE__ */ a("li", { class: `gap${pastClass(order)}` });
 					if (row.kind === "leg") return /* @__PURE__ */ a("li", {
 						class: `leg${pastClass(order)}${tail ? " tail" : ""}`,
 						style: `--rg-line:${row.color}`,
@@ -783,7 +784,10 @@ function RideList({ list, pick }) {
 					});
 				})
 			})]
-		}), edgeColor && /* @__PURE__ */ a(RideEdge, { color: edgeColor })]
+		}), edgeColor && /* @__PURE__ */ a(RideEdge, {
+			color: edgeColor,
+			push: edgePush
+		})]
 	});
 }
 var platformSvg = "";

@@ -602,7 +602,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 				...base,
 				detour: ride.detour,
 				title: walkTitle(ride.legs, current.leg, ride.toName),
-				sub: walkSub(ride.legs, current.leg, ride.leftM, walkLeftS(ride.legs, current.leg, ride.leftM, pace))
+				sub: walkSub(ride.leftM, walkLeftS(ride.legs, current.leg, ride.leftM, pace))
 			};
 		}
 		const transit = leg;

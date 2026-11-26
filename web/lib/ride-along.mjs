@@ -268,7 +268,6 @@ var characterOf = (look) => CHARACTER[look ?? ""] ?? CHARACTER.sprout;
 var minutes = (seconds) => Math.max(1, Math.round(seconds / 60));
 var roundM = (value) => Math.max(10, Math.round(value / 10) * 10);
 var placeOf = (leg, name) => leg.type === "bus" ? `${name} 정류장` : `${name}역`;
-var stepNo = (legs, index) => `${index + 1}/${legs.length}`;
 function walkTitle(legs, index, toName) {
 	const leg = legs[index], next = legs[index + 1];
 	if (!next) return `${toName}까지 걸어요`;
@@ -276,13 +275,12 @@ function walkTitle(legs, index, toName) {
 	if (index === 0 && leg?.type === "walk" && leg.label) return `${leg.label} 걸어요`;
 	return `${placeOf(next, next.from)}까지 걸어요`;
 }
-var walkSub = (legs, index, leftM, leftS) => `${stepNo(legs, index)} · ${roundM(leftM)}m · ${minutes(leftS)}분`;
+var walkSub = (leftM, leftS) => `${roundM(leftM)}m · ${minutes(leftS)}분`;
 function waitTitle(leg) {
 	return leg.type === "bus" ? `${leg.route} ${leg.toward} 방면 타는 곳으로` : `${leg.line} ${leg.to} 방면 타는 곳으로`;
 }
 function waitText(legs, index, walkS, arrivalsS, turn, arrived = false, gone = false) {
-	const previous = legs[index - 1], parts = [];
-	if (previous && previous.type !== "walk") parts.push(stepNo(legs, index - 1));
+	const parts = [];
 	parts.push(walkS > 0 ? `걸어서 ${minutes(walkS)}분` : `${legs[index]?.type === "bus" ? "정류장" : "승강장"} 도착`);
 	if (!arrivalsS?.length) return {
 		say: gone ? talkLine("miss", turn) : null,
@@ -401,21 +399,11 @@ function rideTalk(legs, index, stopsLeft) {
 }
 function rideList(legs, index, where, namesOf, colorOf, trains = null) {
 	const rows = [];
-	let at = -1, walkS = 0, before = null, othersFrom = -1;
+	let at = -1, before = null, othersFrom = -1;
 	legs.forEach((leg, order) => {
-		if (leg.type === "walk") {
-			walkS += leg.seconds;
-			return;
-		}
-		if (before) {
-			const name = leg.type === "bus" ? `${leg.route}번` : leg.line;
-			rows.push({
-				kind: "gap",
-				text: `${name}${toward(name)} 갈아타기${walkS > 0 ? ` · 걷기 ${minutes(walkS)}분` : ""}`
-			});
-		}
+		if (leg.type === "walk") return;
+		if (before) rows.push({ kind: "gap" });
 		before = leg;
-		walkS = 0;
 		const color = colorOf(leg), known = namesOf(leg);
 		let names = known && known.length >= 2 ? known : null, here = -1;
 		if (order === index) {
@@ -536,9 +524,14 @@ function edgeOf(spot, last) {
 	return spot === last ? "last" : null;
 }
 function rideSub(legs, index, stopsLeft, where = null) {
-	const leg = legs[index], head = where ? `${stepNo(legs, index)} · 지금 ${where.now}` : stepNo(legs, index);
-	if (stopsLeft <= 1) return `${head} · 다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요`;
-	return `${head}${where?.next ? ` · 다음 ${where.next}` : ""} · ${stopsLeft}정거장 · ${leg.arrives}`;
+	const leg = legs[index], parts = where ? [`지금 ${where.now}`] : [];
+	if (stopsLeft <= 1) return [...parts, `다음 ${leg.type === "bus" ? "정류장" : "역"}에서 내려요`].join(" · ");
+	if (where?.next) parts.push(`다음 ${where.next}`);
+	return [
+		...parts,
+		`${stopsLeft}정거장`,
+		leg.arrives
+	].join(" · ");
 }
 function doneParts(toName, now, startedMs) {
 	const pad = (value) => String(value).padStart(2, "0");
