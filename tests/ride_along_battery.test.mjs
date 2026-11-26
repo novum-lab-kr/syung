@@ -33,7 +33,7 @@ function setup(context) {
     geolocate: {_watchState: 'ACTIVE', trigger() {}, on: (_type, listener) => { onFix = listener; }},
     planner: {plans}, trainPose: plan => ({dist: dist.get(plan.id) ?? 0}), trainLngLat: () => ({lng: SEOUL[0], lat: SEOUL[1]}), arrivalRank: row => row.eta,
     byId: new Map([[1, {lat: CITY_HALL[1], lon: CITY_HALL[0], name: '시청'}], [2, {lat: SEOUL[1], lon: SEOUL[0], name: '서울역'}], [3, {lat: 37.5547, lon: 126.9707, name: '남영'}]]),
-    animFrame: [], drawRideCard: (_host, view) => { views.push(view); }, look: () => 'sprout', walked() {}, ended(arrived) { calls.ended.push(arrived); }, detour() {},
+    animFrame: [], drawRideCard: (_host, view, actions) => { views.push(view); calls.actions = actions; }, look: () => 'sprout', walked() {}, ended(arrived) { calls.ended.push(arrived); }, detour() {},
     otherFollow: {active: () => false, stop() {}}, reroute: async () => null, exitsOf: () => [], busStopAt: () => null,
     bus: {board: () => null, arrivals: async () => null, approach: () => null, atStop: () => null, ride() {}, watch() {}},
     gpsLowPower: on => calls.gps.push(on), quietLabels: on => calls.labels.push(on), infoScreen: on => calls.info.push(on),
@@ -155,13 +155,14 @@ const LIST_ROWS = [{kind: 'stop', name: '시청', color: '#888', edge: 'first', 
 // ---- 2단계(2026-11-25): 탄 동안 이번 역을 알면 지도 대신 정보 화면 — 그동안 탄 열차 따라가기 · 지도 그리기를 쉰다
 // 말풍선 글(lib/ride-along rideTalk): 내릴 곳에 노란 밑줄 · 작은 글은 남은 정거장 + 계획 도착 시각(ridePlan 의 at(10) — 여정을 만든 때의 시각)
 // 탄 열차 그림은 이번 역 줄(역 사이면 다음 역 줄 — 2026-11-26 사용자 시안5)
-const MARKED = (row, train) => LIST_ROWS.map((item, order) => order === row ? {...item, marks: [{id: train, mine: true, bus: false}]} : item);
+// slide: 역 사이 간 몫만큼 선 중간에(2026-11-26 사용자 — 달리는 중은 다음 역 줄에서 위로 남은 몫)
+const MARKED = (row, train, slide) => LIST_ROWS.map((item, order) => order === row ? {...item, marks: [{id: train, mine: true, bus: false, ...(slide ? {slide} : {})}]} : item);
 const TALK = sub => ({title: [{text: '남영', mark: 'line'}, '에서 내려요'], sub, todo: null});
 test('정보 화면: 탄 뒤 이번 역을 알면 카드에 역 목록 · 말풍선 글이 붙고 본체에 알린다 — 따라가기 · 이름표 fade 끄기는 하지 않는다', async context => {
   const ctx = setup(context), {rideAlong, calls, view, dist, id, quiet} = ctx;
   await boardAtCityHall(ctx);   // 0097 은 시청을 떠나 300 m
   const ARRIVES = view().info.talk.sub[3].text;   // 시험 도중 분이 바뀌어도 같은 값으로 본다
-  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK(['아직 ', {text: '2정거장', mark: 'bold'}, ' 남았어요. ', {text: ARRIVES, mark: 'bold'}, '쯤 도착해요']), list: {rows: MARKED(1, id), at: 0, ahead: true}, sky: {name: '남영', at: [126.9707, 37.5547]}});
+  assert.deepEqual(view().info, {here: [127, 37.6], talk: TALK(['아직 ', {text: '2정거장', mark: 'bold'}, ' 남았어요. ', {text: ARRIVES, mark: 'bold'}, '쯤 도착해요']), list: {rows: MARKED(1, id, 0.3 - 1), at: 0, ahead: true}, sky: {name: '남영', at: [126.9707, 37.5547]}});
   assert.equal(rideAlong.infoScreen, true);
   assert.deepEqual(calls.info, [true], '지도 그리기를 멈추라고 한 번');
   assert.equal(rideAlong.followingTrain, false, '지도를 덮었으니 탄 열차를 따라가지 않는다(따라가기 루프가 돌지 않는다)');
@@ -254,10 +255,11 @@ test('정보 화면: 지하철에서 내려 버스를 기다릴 때는 사이 �
 });
 
 // ---- 도착 15초 뒤 길찾기를 저절로 끝낸다(2026-11-26 사용자) — 사용자가 닫은 것과 같은 길(stop → ended(true))
-// 도착 타이머(setTimeout)만 붙잡아 손으로 돌린다(다른 setTimeout — settle — 은 그대로)
+// 도착 연기(로티)가 끝나면(played) 그때부터 5초로 바꾼다(2026-11-26 사용자 「표현 끝나고 5초 있다 끄자」)
+// 도착 타이머(setTimeout — 15초 · 5초)만 붙잡아 손으로 돌린다(다른 setTimeout — settle — 은 그대로)
 function catchTimeouts(context) {
   const real = globalThis.setTimeout, realClear = globalThis.clearTimeout, waiting = new Map();
-  globalThis.setTimeout = (run, ms, ...rest) => { if (ms !== 15000) return real(run, ms, ...rest); const key = {ms}; waiting.set(key, run); return key; };
+  globalThis.setTimeout = (run, ms, ...rest) => { if (ms !== 15000 && ms !== 5000) return real(run, ms, ...rest); const key = {ms}; waiting.set(key, run); return key; };
   globalThis.clearTimeout = key => { if (!waiting.delete(key)) realClear(key); };
   context.after(() => { globalThis.setTimeout = real; globalThis.clearTimeout = realClear; });
   return waiting;
@@ -283,5 +285,34 @@ test('도착: 15초 전에 그만두면 저절로 끝내기 예약을 지운다'
   quiet(1);
   assert.equal(waiting.size, 1);
   rideAlong.stop();
+  assert.equal(waiting.size, 0);
+});
+test('도착: 도착 연기(로티)가 끝나면 15초 예약을 지우고 5초 뒤 저절로 끝낸다', async context => {
+  const waiting = catchTimeouts(context), ctx = setup(context), {rideAlong, calls, view, dist, id, quiet} = ctx;
+  await boardAtCityHall(ctx);
+  calls.actions.played();   // 도착 전 신호는 무시(타는 중)
+  assert.equal(waiting.size, 0);
+  dist.set(id, 3000);
+  quiet(1);
+  assert.equal(view().title, '슝 도착!');
+  calls.actions.played();
+  assert.deepEqual([...waiting.keys()].map(key => key.ms), [5000], '15초 예약은 지우고 5초만');
+  assert.deepEqual(calls.ended, []);
+  for (const run of [...waiting.values()]) run();
+  assert.equal(rideAlong.active, false);
+  assert.equal(view(), null);
+  assert.deepEqual(calls.ended, [true]);
+});
+test('도착: 연기가 끝난 뒤 5초 안에 사용자가 닫으면 그쪽이 먼저 — 5초 예약을 지우고 한 번만 끝낸다', async context => {
+  const waiting = catchTimeouts(context), ctx = setup(context), {calls, dist, id, quiet} = ctx;
+  await boardAtCityHall(ctx);
+  dist.set(id, 3000);
+  quiet(1);
+  calls.actions.played();
+  assert.equal(waiting.size, 1);
+  calls.actions.close();   // 지도 누름 · ✕ 와 같은 길
+  assert.equal(waiting.size, 0);
+  assert.deepEqual(calls.ended, [true]);
+  calls.actions.played();   // 닫은 뒤 늦게 온 끝 신호는 아무것도 안 한다
   assert.equal(waiting.size, 0);
 });

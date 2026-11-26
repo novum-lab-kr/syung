@@ -197,7 +197,7 @@ export function rideSteps(legs:readonly RideLeg[]):RideStep[] {
 // ---- 카드 글(components/ride_card.tsx 가 그린다)
 // look: 카드 캐릭터 그림 이름 · detour: 작은 글 자리에 「다른 길 찾기 ›」 · flip: 오른쪽을 보는 그림이라 말풍선 쪽(왼쪽)으로 뒤집는다
 // arrival: 도착 카드에만 — 도착 연기(components/ride_arrival.tsx)가 글을 나눠 쓴다(목적지 · 도착 시각 · 걸린 분)
-export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; goal?:RideGoal; dev?:RideDevView; info?:RideInfoView; fix?:RideFixView }
+export interface RideCardView { title:string; say:string | null; sub:string; detour:boolean; image:string; flip:boolean; following:boolean; arrival?:RideArrivalParts; dev?:RideDevView; info?:RideInfoView; fix?:RideFixView }
 // info: 지하철 · 버스를 탄 동안 지도 대신 보여 주는 정보 화면(여정 전체 역 목록 · 말풍선 글 — 2026-11-25 사용자 결정)
 // here: 풍경의 날씨를 물을 자리([lng, lat] · 모르면 null = 서울)
 // sky: 내릴 곳 날씨를 물을 자리와 그 이름(자리를 모르면 칸 없음 — 다른 곳 날씨를 보여 주지 않는다)
@@ -214,9 +214,12 @@ export interface RideTalk { title:RideSaid[]; sub:RideSaid[]; todo:RideSaid[] | 
 // marks: 그 역 줄에 그릴 열차(버스) 그림(2026-11-26 사용자 시안5 — 역 점 왼쪽 · 탄 것은 크게, 다른 열차는 작게 · 반투명)
 export type RideListRow = { kind:'stop'; name:string; color:string; edge:'first' | 'last' | null; off:boolean; marks?:RideMark[] } | { kind:'gap'; text:string } | { kind:'leg'; text:string; color:string };
 // id: 누르면 그 열차로 바꾼다(planner plan id — 버스 · 탄 것은 null 이 아니어도 바꿀 것이 없다) · mine: 지금 탄 것 · bus: 버스 그림
-export interface RideMark { id:string | null; mine:boolean; bus:boolean }
+// name: 다른 열차의 이름(「7호선 장암행」 — 누르면 뜨는 확인 팝업 글 · rideSwapAsk)
+// slide: 탄 열차 그림을 그 줄 역 점에서 옆 역 줄 쪽으로 옮길 몫(-1 ~ 1 · 음수 = 위 줄 쪽 — 역 사이를 지도와 같은 예측 자리로 · 2026-11-26 사용자). 없으면 역 점 그대로
+export interface RideMark { id:string | null; mine:boolean; bus:boolean; slide?:number; name?:string }
 // 지금 구간의 열차 그림 자리(rideList 에 넘긴다): mine = 탄 것(이번 역 줄 — 역 사이면 다음 역 줄) · others = 같은 노선 · 가는 방향의 다른 열차(at = 구간 역 차례 · rideTrainSpots)
-export interface RideListTrains { mine:string | null; bus:boolean; others:readonly { id:string; at:number }[] }
+// others 의 slide: 그 열차 그림을 at 줄에서 옆 역 줄 쪽으로 옮길 몫(RideMark.slide 와 같은 뜻 · rideTrainSpots)
+export interface RideListTrains { mine:string | null; bus:boolean; others:readonly { id:string; at:number; slide?:number; name?:string }[] }
 // ahead: 이번 역(at 줄)을 떠나 다음 줄(같은 구간의 다음 역)로 가는 중 — 그리는 쪽이 다음 역에 「다음은 여기예요」(2026-11-26 사용자 안 B · 점은 움직이지 않는다 — 배터리). 역에 서 있거나 모르면 false(버스는 아직 늘 false)
 export interface RideListView { rows:RideListRow[]; at:number; ahead:boolean }
 export interface RideSkySpot { name:string; at:[number, number] }
@@ -227,21 +230,19 @@ export interface RideDevView { answered:'rode' | 'not_rode' | null }
 export type RideFixAct = 'boarded' | 'missed' | 'other' | 'stay' | 'undo';
 // hint: 링크 앞에 적는 작은 글(타는 중 정보 화면 — 「다른 열차면 목록의 열차를 눌러요」)
 export interface RideFixView { buttons:{ act:RideFixAct; text:string; main:boolean }[]; links:{ act:RideFixAct; text:string }[]; hint?:string }
-// 바로잡기 창구를 그릴 상태: step 지금 단계 · left 붙든 열차가 탈 역을 떠났다(탔는지 아직 모름) · undo 슝이 스스로 놓침으로 되돌렸다 · choosing 지도에서 탄 열차를 고르는 중
+// 바로잡기 창구를 그릴 상태: step 지금 단계 · undo 슝이 스스로 놓침으로 되돌렸다 · choosing 지도에서 탄 열차를 고르는 중
 // listed: 타는 중 정보 화면의 역 목록에 열차 그림이 보인다(그 열차를 눌러 바꾼다)
-export interface RideFixState { step:'wait' | 'ride'; left:boolean; undo:boolean; choosing:boolean; listed?:boolean }
-// 카드 글을 바꾸는 것(title · say — null 이면 그대로)과 창구. 고르는 중 > 붙든 열차 떠남(B 묻기) > 놓침으로 되돌림(B 묻기) > 늘 보이는 링크(A) 차례
+export interface RideFixState { step:'wait' | 'ride'; undo:boolean; choosing:boolean; listed?:boolean }
+// 카드 글을 바꾸는 것(title · say — null 이면 그대로)과 창구. 고르는 중 > 놓침으로 되돌림(B 묻기) > 늘 보이는 링크(A) 차례
+// (붙든 열차가 떠났을 때 묻던 「열차에 탔어요?」는 뺐다 — 떠나는 순간 탄 것으로 본다 · 2026-11-26 사용자 결정)
 // 타는 중은 「다른 열차예요 ›」 없이(2026-11-26 사용자 — 목록 · 지도의 열차를 바로 눌러 바꾼다) 목록이 보이면 「다른 열차면 목록의 열차를 눌러요」
-export function rideFixView({step, left, undo, choosing, listed = false}:RideFixState):{ title:string | null; say:string | null; fix:RideFixView } {
+export function rideFixView({step, undo, choosing, listed = false}:RideFixState):{ title:string | null; say:string | null; fix:RideFixView } {
   if (choosing) return {title: '탄 열차를 지도에서 눌러 주세요', say: null, fix: {buttons: [], links: [{act: 'stay', text: '안 고를게요 ›'}]}};
   if (step === 'ride') return {title: null, say: null, fix: {buttons: [], links: [{act: 'missed', text: '못 탔어요 ›'}], ...(listed ? {hint: '다른 열차면 목록의 열차를 눌러요'} : {})}};
   const other = {act: 'other', text: '다른 열차를 탔어요 ›'} as const;
-  if (left) return {title: '열차에 탔어요?', say: '슝이 헷갈려요', fix: {buttons: [{act: 'boarded', text: '탔어요', main: true}, {act: 'missed', text: '못 탔어요', main: false}], links: [other]}};
   if (undo) return {title: null, say: '못 탄 것 같아요', fix: {buttons: [{act: 'undo', text: '아니에요, 탔어요', main: false}], links: [other]}};
   return {title: null, say: null, fix: {buttons: [], links: [{act: 'boarded', text: '벌써 탔어요 ›'}, other]}};
 }
-// goal: 길 끝 자리(타고 가는 동안 그 자리에 깃발을 미리 세운다 — 자리를 모르면 null)
-export interface RideGoal { at:LngLat | null }
 // at: 도착 자리(도착 연기가 그 자리에 붙는다 — 모르면 「슝 도착!」 말풍선)
 export interface RideArrivalParts { to:string; time:string; took:number; at?:LngLat | null }
 // 캐릭터 그림(brand/characters — 슝 소개 사이트 그림). 그림이 없는 스타 세 모드(SCV · 드론 · 프로브)는 새싹으로(2026-11-04 확정)
@@ -361,28 +362,46 @@ export function rideList(legs:readonly RideLeg[], index:number, where:RideWhere,
   if (trains) {
     const mark = (row:number, item:RideMark) => { const target = rows[row]; if (target?.kind === 'stop') target.marks = [...target.marks ?? [], item]; };
     const mineRow = ahead ? at + 1 : at;
-    mark(mineRow, {id: trains.mine, mine: true, bus: trains.bus});
+    // 역 사이면 간 몫만큼 선 중간에: 떠나기 전(이번 역 줄)은 아래로 · 달리는 중(다음 역 줄)은 위로 남은 만큼(2026-11-26 사용자 「저 화면에서 지하철 움직이게」)
+    const share = nextIsStop(rows, at) ? where.share ?? null : null;
+    let slide = share ?? 0;
+    if (share !== null && ahead) slide = share - 1;
+    mark(mineRow, {id: trains.mine, mine: true, bus: trains.bus, ...(slide ? {slide} : {})});
     // 탄 것과 같은 줄이면 다른 열차는 그리지 않는다(그림이 겹친다)
-    if (othersFrom >= 0) for (const other of trains.others) if (othersFrom + other.at !== mineRow) mark(othersFrom + other.at, {id: other.id, mine: false, bus: trains.bus});
+    if (othersFrom >= 0) for (const other of trains.others) if (othersFrom + other.at !== mineRow) mark(othersFrom + other.at, {id: other.id, mine: false, bus: trains.bus, ...(other.slide ? {slide: other.slide} : {}), ...(other.name ? {name: other.name} : {})});
   }
   return {rows, at, ahead};
 }
+// 목록의 다른 열차를 누르면 바로 바꾸지 않고 묻는 팝업 글(2026-11-26 사용자 「탑승한 지하철 바꿀 거냐고 물어볼까?」): [바꾸기]일 때만 바꾼다 · 이름을 모르면 이름 줄 없이
+export function rideSwapAsk(name:string | null | undefined):{ title:string; name:string | null; yes:string; no:string } {
+  return {title: '이 열차로 바꿀까요?', name: name || null, yes: '바꾸기', no: '취소'};
+}
 // 열차가 그 구간(stations: 탄 역 → 내릴 역)을 가는 방향으로 달리는 중인가 — rideStops 로 선 역(막 지난 역) · 다음 역을 찾고, 다음 역이 그 열차의 앞으로 갈 차례(seqIds)에 있어야 한다
 //  (반대 방향 열차가 탄 역에 서 있으면 rideStops 는 그 역을 주지만 다음 역은 그 열차 차례에 없다). 내릴 역에 닿았으면 next null
+// 방향은 구간 역이 예측 차례(seqIds)에 같은 차례로 놓였는지로 본다(2026-11-26 실제 응답 — 예측 차례 맨 앞에는 막 지난 역(previous)이 남아,
+//  다음 역 하나만 seqIds 에 있는지 보면 반대 방향 열차도 통과해 하행 구간 목록에 상행 열차가 섞였다 · 중곡 「카카오엔 없는 열차」 · 있다 사라졌다).
+//  구간 역이 둘 넘게 seqIds 에 있고 그 자리가 구간 차례대로 커질 때만 가는 방향
+// 내릴 역에 닿은 열차는 아직 그 역에 서 있을 때만(떠났으면 구간 밖): 차례(seqIds)에는 막 지난 역도 남아 있어 내릴 역을 지나 달리는 열차도,
+//  반대 방향으로 내릴 역 → 그 앞 역을 지난 열차도 rideStops 가 「내릴 역에 닿음」으로 준다(2026-11-26 7호선 먹골 → 중화 — 중화 줄에 두 대)
 function goingAlong(track:PlanTrack, stations:readonly number[]):{ now:number; next:number | null } | null {
+  const order = stations.map(id => track.seqIds.indexOf(id)).filter(spot => spot >= 0);
+  if (order.length < 2 || order.some((spot, index) => index > 0 && spot <= order[index - 1]!)) return null;
   const stops = rideStops(track, stations);
   if (!stops) return null;
-  return stops.next == null || track.seqIds.includes(stops.next) ? stops : null;
+  if (stops.next == null) return leftStation(track, stops.now) ? null : stops;
+  return track.seqIds.includes(stops.next) ? stops : null;
 }
 // 정보 화면 목록에 그릴 같은 노선 · 가는 방향 다른 열차(2026-11-26 사용자 — 누르면 그 열차로 바꾼다): at = 구간 역 차례(서 있으면 그 역 · 역 사이면 다음 역 — rideAhead). 탄 열차(mine)는 빼고
-export function rideTrainSpots(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[], mine:string | null):{ id:string; at:number }[] {
-  const spots:{ id:string; at:number }[] = [];
+// slide: 탄 열차와 같은 셈(rideShare)으로 역 사이 선을 따라 옮길 몫 — 서 있으면 다음 역 쪽으로 간 몫 · 달리는 중이면 다음 역 줄에서 위로 남은 몫(2026-11-26 사용자 「다 움직여」). 0 이면 없음
+export function rideTrainSpots(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[], mine:string | null):{ id:string; at:number; slide?:number }[] {
+  const spots:{ id:string; at:number; slide?:number }[] = [];
   for (const {id, track} of tracks) {
     if (id === mine) continue;
     const stops = goingAlong(track, stations);
     if (!stops) continue;
-    const at = stations.indexOf(rideAhead(track, stops.now, stops.next) ? stops.next! : stops.now);
-    if (at >= 0) spots.push({id, at});
+    const ahead = rideAhead(track, stops.now, stops.next), share = rideShare(track, stops.now, stops.next);
+    const at = stations.indexOf(ahead ? stops.next! : stops.now), slide = ahead ? share - 1 : share;
+    if (at >= 0) spots.push({id, at, ...(slide ? {slide} : {})});
   }
   return spots;
 }
@@ -416,7 +435,8 @@ export function rideSub(legs:readonly RideLeg[], index:number, stopsLeft:number,
   return `${head}${where?.next ? ` · 다음 ${where.next}` : ''} · ${stopsLeft}정거장 · ${leg.arrives}`;
 }
 // ahead: 이번 역을 떠나 다음 역으로 가는 중(rideAhead — 지하철만 · 역에 서 있거나 모르면 false)
-export interface RideWhere { now:string; next:string | null; ahead?:boolean }
+// share: 이번 역 → 다음 역 사이 간 몫(0 ~ 1 · 지도와 같은 예측 자리 — rideShare). 모르면 없음(목록의 탄 열차 그림이 역 줄에 붙어 선다)
+export interface RideWhere { now:string; next:string | null; ahead?:boolean; share?:number }
 // 도착 카드: 「슝 도착!」 · 「강남역 · 08:40 · 32분 걸렸어요」
 export function doneParts(toName:string, now:Date, startedMs:number):RideArrivalParts {
   const pad = (value:number) => String(value).padStart(2, '0');
@@ -468,6 +488,13 @@ export function rideStops(track:PlanTrack, stations:readonly number[]):{ now:num
   return now == null ? null : {now, next: null};
 }
 // 이번 역을 떠나(leftStation) 다음 역으로 가는 중인지 — 아직 이번 역에 서 있거나(떠나지 않음) 두 역 중 하나가 예측에 없으면 false
+// 이번 역 → 다음 역 사이에서 열차가 간 몫(0 ~ 1 · 2026-11-26 사용자 「목록에서도 지하철 움직이게」) — 두 역 중 하나가 예측에 없거나 다음 역이 없으면 0
+export function rideShare({seqIds, cum, dist}:PlanTrack, nowId:number, nextId:number | null):number {
+  const from = nextId == null ? -1 : seqIds.indexOf(nowId), to = nextId == null ? -1 : seqIds.indexOf(nextId);
+  if (from < 0 || to <= from) return 0;
+  const start = cum[from]!, span = cum[to]! - start;
+  return span > 0 ? Math.min(1, Math.max(0, (dist - start) / span)) : 0;
+}
 export function rideAhead(track:PlanTrack, nowId:number, nextId:number | null):boolean {
   if (nextId == null || !leftStation(track, nowId)) return false;
   const from = track.seqIds.indexOf(nowId), to = track.seqIds.indexOf(nextId);
@@ -541,18 +568,21 @@ export const nearBoarding = ({goalM, stationM, exitM}:NearInput):boolean =>
 
 // 고른 열차가 탈 역에 들어왔을 때(pickedArrived · 올 때가 지나 줄에서 사라짐 — 2026-11-07 사용자 결정): 승강장 시간이 끝났으면 그 순간 탄 것(board),
 //  아직 남았으면 놓친 것(missed — 다음 열차로). 안 들어왔으면 null(지하라 위치 없이 시간으로만 가린다)
+//  runS: 남은 걷기가 이만큼 이하면 뛰어서 탈 수 있다고 보고 탄 쪽(board)으로 — 지하철은 RUN_S(1분 · 2026-11-26 사용자 「걸어서 1분이면 뛰어갈 수 있다」), 버스는 0(예전대로)
 export type ArriveOutcome = 'board' | 'missed' | null;
-export function arriveOutcome(walkS:number, arrived:boolean):ArriveOutcome {
+export const RUN_S = 60;
+export function arriveOutcome(walkS:number, arrived:boolean, runS = 0):ArriveOutcome {
   if (!arrived) return null;
-  return walkS <= 0 ? 'board' : 'missed';
+  return walkS <= runS ? 'board' : 'missed';
 }
 
 // 승강장 시간이 아직 남았는데 이미 이 역에 들어와 있는 열차는 고른 열차가 아니어도 놓친 열차(③ — 승강장에 닿기 전에 들어왔다).
 // 이것을 빼지 않으면 승강장 시간이 끝나는 순간 서 있던 그 열차를 새로 골라 바로 탄 것으로 봤다(2026-11-07 화면 추적 — 0102 「시청 도착」 90초 넘게).
 // 들어와 있음은 남은 초 0 이 아니라 줄의 글(「시청 도착」 · 「시청 진입」 — /api/live?arrivals= message)로 본다: 「전역 도착 150초」를 시계로 깎으면
 // 실제보다 100초쯤 먼저 0 이 된다(같은 날 추적 0106)
+// (남은 걷기가 RUN_S(1분) 이하면 뛰어서 탈 수 있으니 빼지 않는다 — arriveOutcome 과 같은 기준 · 2026-11-26 사용자)
 export function arrivedEarly(rows:readonly { message:string; trainNo?:string | null }[], walkS:number, station:string):string[] {
-  if (walkS <= 0) return [];
+  if (walkS <= RUN_S) return [];
   const name = station.replace(/\([^)]*\)/g, '').trim();
   return rows.flatMap(row => row.trainNo && (row.message === `${name} 도착` || row.message === `${name} 진입`) ? [row.trainNo] : []);
 }
@@ -566,24 +596,10 @@ export function stayedFixes(count:number, track:PlanTrack | null, nextId:number 
 }
 export const leftBehind = (count:number):boolean => count >= OFF_FIXES;
 
-// 기다리기 → 탔다는 열차가 떠난 뒤 내 위치로 가린다(2026-11-11 사용자 선택 B — 출구 ~ 승강장 통로가 길어 승강장 90초가 지나도 아직 통로에 있을 수 있다).
-// 고른 열차가 들어오면(승강장 시간 끝) 바로 넘기지 않고 기다리기 화면 그대로 붙들고(hold), 떠난 뒤:
-//  위치가 탄 역에서 벗어나(역 한가운데 100m · 아무 출구 50m 밖 — nearBoarding 아님) 탄 역보다 열차에 더 가까우면 그 위치를 센다. 연달아 OFF_FIXES(3)번이면 탄 것
-export interface WithTrainInput { stationM:number; exitM:number | null; trainM:number }
-export function withTrainFixes(count:number, {stationM, exitM, trainM}:WithTrainInput):number {
-  return !nearBoarding({goalM: Infinity, stationM, exitM}) && trainM < stationM ? count + 1 : 0;
-}
-//  sinceMs: 붙든 때 · leftMs: 열차가 탈 역을 떠난 것을 본 때(0 = 아직) · lastFixMs: 좌표가 바뀐 위치를 마지막으로 받은 때(0 = 없음 — 같은 좌표 되풀이는 새 위치가 아니다 · 2026-11-26 사용자 결정 A)
-//  moved: withTrainFixes 수 · nextReached: 열차가 탄 역 다음다음 역에 닿았나(지났나 — 구간이 한 역이면 다음 역 · 2026-11-26 사용자 결정 B)
-//  탄 것: 열차를 따라 움직임 · 떠난 뒤 위치가 30초(LOST_FIX_MS — 걷기 → 기다리기의 지하 끊김과 같은 값) 넘게 안 옴(지하) ·
-//   지도 예측이 떠나지 않은 채 3분(BOARD_GIVE_UP_MS — 예측이 멈춘 경우 · 붙들기 전과 같은 값)
-//  놓친 것: 열차가 다음다음 역에 닿았는데 떠난 뒤 받은 마지막 새 위치가 열차 쪽이 아니다(아직 탄 역 · 통로 근처)
-export interface HoldInput { nowMs:number; sinceMs:number; leftMs:number; lastFixMs:number; moved:number; nextReached:boolean }
-export function holdOutcome({nowMs, sinceMs, leftMs, lastFixMs, moved, nextReached}:HoldInput):ArriveOutcome {
-  if (!leftMs) return nowMs - sinceMs >= BOARD_GIVE_UP_MS ? 'board' : null;
-  if (moved >= OFF_FIXES || nowMs - Math.max(lastFixMs, leftMs) > LOST_FIX_MS) return 'board';
-  return nextReached && lastFixMs >= leftMs && !moved ? 'missed' : null;
-}
+// 기다리기 → 탔다(2026-11-26 사용자 결정 — 11-11 선택 B 의 「떠난 뒤 내 위치로 가리기」를 바꿈): 고른 열차가 탈 역에 들어온 순간 승강장에 와 있거나
+//  남은 걷기 1분(RUN_S) 이하면 탄 것(arriveOutcome — 출발을 기다리지 않는다). 못 탔으면 타는 중에 되돌린다 — 열차가 다음 역에 닿은 뒤에도
+//  내 위치가 탄 역 근처로 연달아 OFF_FIXES(3)번 찍힐 때만(stayedFixes · leftBehind — 2026-11-10 규칙 그대로)
+//  받아들인 단점: 안 탄 사람도 열차가 다음 역에 닿을 때쯤까지는 잠깐 탄 것으로 보인다
 
 export interface BoardInput { nowMs:number; zeroSinceMs:number; trainLeft:boolean | null; pickedDueS:number | null; trainGone:boolean; listLength:number; listFresh:boolean; departsPassed:boolean }
 export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, listLength, listFresh, departsPassed}:BoardInput):boolean {
@@ -595,13 +611,22 @@ export function boardNow({nowMs, zeroSinceMs, trainLeft, pickedDueS, trainGone, 
 }
 
 // 타는 중 → 내렸다: 탄 열차 예측(track — 지도에 없으면 null)에 내릴 역이 있으면 그것으로(늦는 열차도 기다린다)
-//  내릴 역이 빠졌으면: 아직 이 구간의 역을 앞에 두었으면(예측이 9역까지라 먼 내릴 역이 안 보임) 넉넉한 시각(longOver), 아니면(지나침 · 다른 길) 시각(timeOver)
-export function rideOver(track:PlanTrack | null, stations:readonly number[], timeOver:boolean, longOver:boolean):boolean {
+//  내릴 역이 빠졌으면: 아직 이 구간의 역을 앞에 두었으면(예측이 9역까지라 먼 내릴 역이 안 보임) 넉넉한 시각(longOver),
+//  구간 역이 하나도 없는데 전에는 보였으면(sawLeg) 내릴 역을 지나간 것 — 바로 내렸다(2026-11-26 중화: 계획보다 앞 열차를 타 계획 도착 시각까지
+//  지난 열차를 7역 더 따라갔다 · 예측이 한 번에 몇 역씩 건너뛰면 reached 를 못 본 채 내릴 역이 빠진다), 처음부터 안 보였으면(다른 길) 시각(timeOver)
+export function rideOver(track:PlanTrack | null, stations:readonly number[], timeOver:boolean, longOver:boolean, sawLeg:boolean):boolean {
   const toId = stations[stations.length - 1];
   if (!track || toId === undefined) return timeOver;
   if (track.seqIds.includes(toId)) return reached(track, toId);
-  return track.seqIds.some(id => stations.includes(id)) ? longOver : timeOver;
+  if (track.seqIds.some(id => stations.includes(id))) return longOver;
+  return (sawLeg && track.seqIds.length > 0) || timeOver;
 }
+// 타는 중 → 내렸다(위치로 · 2026-11-26 중화): 내릴 역(역 한가운데 100m · 아무 출구 50m — nearBoarding)에 있고 탄 열차와 NEAR_M(100m) 넘게 떨어진
+//  (열차가 지도에 없으면 떨어진 것) 새 위치를 센다. 연달아 OFF_FIXES(3)번이면 내린 것(gotOff) — 열차 예측이 늦거나 다른 열차를 탔어도 내 위치로 넘어간다
+export interface OffTrainInput { stationM:number | null; exitM:number | null; trainM:number | null }
+export const offTrainFixes = (count:number, {stationM, exitM, trainM}:OffTrainInput):number =>
+  nearBoarding({goalM: Infinity, stationM, exitM}) && (trainM === null || trainM > NEAR_M) ? count + 1 : 0;
+export const gotOff = (count:number):boolean => count >= OFF_FIXES;
 
 // 역 이름 맞추기: "용산(급행)" · "용산역" → "용산"
 const bareName = (name:string):string => name.replace(/\(.*?\)/g, '').trim().replace(/역$/, '');

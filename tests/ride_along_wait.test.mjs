@@ -1,7 +1,7 @@
 // 타고 가기 기다리기 카드 — 승강장 도착 · 열차 도착 · 지하에서 위치가 끊겨 기다리기로(계획서 2026-11-06 「기다리기 카드」)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT_NEAR_M, LOST_FIX_MS, LOST_NEAR_M, STATION_ACCESS_S, arriveOutcome, arrivedEarly, legPace, lostUnderground, nearBoarding, nearestM, pickedArrived, waitText, walkLeftS } from '../web/lib/ride-along.mts';
+import { EXIT_NEAR_M, LOST_FIX_MS, LOST_NEAR_M, RUN_S, STATION_ACCESS_S, arriveOutcome, arrivedEarly, legPace, lostUnderground, nearBoarding, nearestM, pickedArrived, waitText, walkLeftS } from '../web/lib/ride-along.mts';
 
 const walkLeg = {type: 'walk', seconds: 300, metres: 240, label: '시청역 5번 출구까지', path: [[126.977, 37.566], [126.979, 37.566]]};
 const rideLeg = (extra = {}) => ({type: 'ride', line: '2호선', from: '시청', to: '강남', departs: '08:10', arrives: '08:40', direction: '외선', stops: 12, wait: 120, stations: [201, 202, 203], ...extra});
@@ -83,6 +83,16 @@ test('고른 열차가 들어왔을 때: 승강장 시간이 끝났으면 탄 �
   assert.equal(arriveOutcome(30, false), null);
 });
 
+test('지하철: 남은 걷기 1분(RUN_S) 이하면 고른 열차가 들어와도 놓침이 아니라 탄 쪽(붙들기) — 뛰어서 탈 수 있다(2026-11-26 사용자)', () => {
+  assert.equal(RUN_S, 60);
+  assert.equal(arriveOutcome(30, true, RUN_S), 'board', '30초 남음 — 뛰어서 탄다');
+  assert.equal(arriveOutcome(60, true, RUN_S), 'board', '딱 1분');
+  assert.equal(arriveOutcome(61, true, RUN_S), 'missed', '1분 넘게 남음 — 예전처럼 놓침');
+  assert.equal(arriveOutcome(STATION_ACCESS_S, true, RUN_S), 'missed', '승강장에 막 닿음(90초)');
+  assert.equal(arriveOutcome(30, false, RUN_S), null, '안 들어왔으면 그대로');
+  assert.equal(arriveOutcome(30, true), 'missed', '버스(runS 없음)는 예전대로');
+});
+
 test('놓친 열차가 줄에 남아 있으면(줄에서는 뺐다) 「다음 열차」 글 · 놓침 한마디', () => {
   const text = waitText(legs, 1, 40, [300, 540], 0, false, true);
   assert.equal(text.sub, '걸어서 1분 · 다음 열차 5분 뒤 · 그다음 9분 뒤');
@@ -104,7 +114,8 @@ test('다른 출구 근처에서 위치가 끊김: 역 150m 밖이어도 출구 
 test('승강장 시간이 남았는데 이 역에 들어와 있는 열차는 고른 열차가 아니어도 놓친 열차(③ — 2026-11-07 화면 추적 0102 「시청 도착」)', () => {
   const rows = [{message: '시청 도착', trainNo: '0102'}, {message: '시청 진입', trainNo: '0100'}, {message: '전역 도착', trainNo: '0106'},
     {message: '시청 출발', trainNo: '0098'}, {message: '[2]번째 전역 (남영)', trainNo: '0654'}, {message: '시청 도착', trainNo: null}];
-  assert.deepEqual(arrivedEarly(rows, 30, '시청'), ['0102', '0100'], '전역 도착(남은 초를 깎아 0 이 돼도) · 출발 · 번호 없는 줄은 빼지 않는다');
-  assert.deepEqual(arrivedEarly(rows, 30, '시청(1호선)'), ['0102', '0100'], '괄호 붙은 역 이름');
+  assert.deepEqual(arrivedEarly(rows, 90, '시청'), ['0102', '0100'], '전역 도착(남은 초를 깎아 0 이 돼도) · 출발 · 번호 없는 줄은 빼지 않는다');
+  assert.deepEqual(arrivedEarly(rows, 61, '시청(1호선)'), ['0102', '0100'], '괄호 붙은 역 이름 · 1분 넘게 남음');
   assert.deepEqual(arrivedEarly(rows, 0, '시청'), [], '승강장 시간이 끝났으면 서 있는 열차를 탈 수 있다');
+  assert.deepEqual(arrivedEarly(rows, 60, '시청'), [], '남은 걷기 1분(RUN_S) 이하 — 뛰어서 탈 수 있으니 빼지 않는다(2026-11-26 사용자)');
 });

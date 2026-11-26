@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, rideStops, OFF_M, catchable, characterOf, legOverByTime, legPace, measuredPace, metres, onPath, reached, leftStation, rideSteps, rideSub,
   splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, doneSub,
-  OFF_FIXES, REROUTE_GAP_MS, WALK_OFF_M, offFixes, shouldReroute,
+  OFF_FIXES, REROUTE_GAP_MS, WALK_OFF_M, offFixes, shouldReroute, offTrainFixes, gotOff,
 } from '../web/lib/ride-along.mts';
 
 // 서울시청 근처 한 줄(동쪽으로 약 200m)
@@ -164,15 +164,32 @@ test('기다리기: 열차가 아직 오는 중이면 탈 시각이 지나도(�
 });
 test('타는 중: 내릴 역이 열차 예측에서 빠지면 시각으로', () => {
   const track = {seqIds: [201, 202, 203], cum: [0, 1000, 2000], dist: 500};
-  // 지나쳤거나 다른 길(예측에 이 구간 역이 없다): 시각
-  assert.equal(rideOver(track, [204, 205], true, false), true);
-  assert.equal(rideOver(track, [204, 205], false, false), false);
+  // 처음부터 다른 길(예측에 이 구간 역이 보인 적 없다): 시각
+  assert.equal(rideOver(track, [204, 205], true, false, false), true);
+  assert.equal(rideOver(track, [204, 205], false, false, false), false);
   // 먼 내릴 역(예측 9역 밖)이라 아직 안 보임: 넉넉한 시각까지 열차를 따른다
-  assert.equal(rideOver(track, [202, 203, 204, 205], true, false), false);
-  assert.equal(rideOver(track, [202, 203, 204, 205], true, true), true);
+  assert.equal(rideOver(track, [202, 203, 204, 205], true, false, true), false);
+  assert.equal(rideOver(track, [202, 203, 204, 205], true, true, true), true);
   // 예측에 있으면 열차를 믿는다(늦는 열차)
-  assert.equal(rideOver(track, [202, 203], true, true), false);
-  assert.equal(rideOver(null, [202, 203], true, false), true);
+  assert.equal(rideOver(track, [202, 203], true, true, true), false);
+  assert.equal(rideOver(null, [202, 203], true, false, true), true);
+});
+test('타는 중: 구간 역이 보이던 열차에서 구간 역이 모두 빠지면 내릴 역을 지난 것 — 계획 시각 전이어도 내렸다(2026-11-26 중화)', () => {
+  // 마들 → 중화 구간을 탄 열차가 중화를 지나 상봉 · 면목 …(예측이 중화를 건너뛰어 reached 를 못 봤다)
+  const passed = {seqIds: [301, 302, 303], cum: [0, 1000, 2000], dist: 1200};
+  assert.equal(rideOver(passed, [201, 202, 203, 204], false, false, true), true);
+  assert.equal(rideOver(passed, [201, 202, 203, 204], false, false, false), false);   // 한 번도 안 보였으면 그대로 시각
+  assert.equal(rideOver({seqIds: [], cum: [], dist: 0}, [201, 204], false, false, true), false);   // 빈 예측은 지난 것으로 보지 않는다
+});
+test('타는 중: 내릴 역에서 열차와 떨어진 새 위치가 연달아 3번이면 내렸다(2026-11-26 중화)', () => {
+  const away = {stationM: 40, exitM: null, trainM: 600};
+  assert.equal(offTrainFixes(0, away), 1);
+  assert.equal(gotOff([1, 2, 3].reduce(count => offTrainFixes(count, away), 0)), true);
+  assert.equal(gotOff(offTrainFixes(1, away)), false);
+  assert.equal(offTrainFixes(2, {stationM: 40, exitM: null, trainM: 30}), 0);    // 열차와 같이 있다(아직 열차 안 · 역에 선 열차)
+  assert.equal(offTrainFixes(2, {stationM: 400, exitM: 30, trainM: 900}), 3);    // 출구 50m 안
+  assert.equal(offTrainFixes(2, {stationM: 400, exitM: 300, trainM: 900}), 0);   // 내릴 역 밖
+  assert.equal(offTrainFixes(0, {stationM: 60, exitM: null, trainM: null}), 1);  // 열차가 지도에 없으면 떨어진 것
 });
 test('곧 올 열차 고르기: 내릴 역 전에 끝나거나 다른 지선으로 가는 열차는 뺀다', () => {
   const leg = rideLeg({line: '1호선', direction: '하행', stations: [133, 134, 135, 136, 137]});

@@ -1,5 +1,5 @@
 // 타고 가기 도착 표시(2026-11-08 사용자 — 팝업 말고 지도 위에서): 로그인 로고 움직임을 거꾸로 — 열차가 슈우웅 들어와 덜컹 멈추고
-// 새싹이가 뛰어내려 길 끝 깃발 옆에 착지 → 빈 열차는 다시 달려 화면 밖으로 · 머리 위 「도착!」. 지도 속 도착 자리에 붙어 지도와 같이 움직인다(상자 · 막 없음).
+// 새싹이가 뛰어내려 도착 자리에 착지 → 빈 열차는 다시 달려 화면 밖으로 · 머리 위 「도착!」. 지도 속 도착 자리에 붙어 지도와 같이 움직인다(상자 · 막 없음).
 // 닫기: ✕ 없음 — 도착 뒤 지도 아무 데나 누르면(연기 도중이어도) 닫는다(길찾기를 다 끝낸다 · 12차 사용자). 키보드는 Esc
 // 다 읽는 글(도착 역 · 시간)은 화면 읽기 프로그램용 이름표로만. 움직임 장면은 lib/arrival_motion.mts(도착할 때만 받는다)
 import { useEffect, useRef } from 'preact/hooks';
@@ -30,12 +30,13 @@ function useAnchor(map:ArrivalMap, at:readonly [number, number]) {
   return anchor;
 }
 
-// 장면 · 플레이어는 도착할 때(깃발은 타기 시작할 때) 받는다
-function useMotion(name:ArrivalScene, onError?:() => void) {
-  const box = useRef<HTMLSpanElement>(null);
+// 장면 · 플레이어는 도착할 때 받는다. onEnd: 한 번 재생하는 장면이 끝나면(다시 그려도 장면을 새로 틀지 않게 ref 로 받는다)
+function useMotion(name:ArrivalScene, onError?:() => void, onEnd?:() => void) {
+  const box = useRef<HTMLSpanElement>(null), ended = useRef(onEnd);
+  ended.current = onEnd;
   useEffect(() => {
     let stop:(() => void) | null = null, gone = false;
-    void import('../lib/arrival_motion.mts').then(motion => { if (!gone && box.current) stop = motion.playArrival(box.current, name, onError); }).catch(() => { if (!gone) onError?.(); });
+    void import('../lib/arrival_motion.mts').then(motion => { if (!gone && box.current) stop = motion.playArrival(box.current, name, onError, () => ended.current?.()); }).catch(() => { if (!gone) onError?.(); });
     return () => { gone = true; stop?.(); };
   }, [name, onError]);
   return box;
@@ -53,24 +54,15 @@ function useTapClose(map:ArrivalMap, onClose:() => void) {
   }, [map, onClose]);
 }
 
-interface Props { map:ArrivalMap; at:readonly [number, number]; arrival:RideArrivalParts; onClose():void; onError():void; hideMe?:(on:boolean) => void }
+interface Props { map:ArrivalMap; at:readonly [number, number]; arrival:RideArrivalParts; onClose():void; onError():void; onPlayed?:() => void; hideMe?:(on:boolean) => void }
 
-// 도착 연기: 지도 위 내 위치 캐릭터(3D)를 잠깐 숨기고 그 자리에서 연기한다(한 번 연기 후 끝 자세 정지)
-export function MapArrival({ map, at, arrival, onClose, onError, hideMe }:Props) {
-  const anchor = useAnchor(map, at), box = useMotion('char-ride', onError);
+// 도착 연기: 지도 위 내 위치 캐릭터(3D)를 잠깐 숨기고 그 자리에서 연기한다(한 번 연기 후 끝 자세 정지 — 끝나면 onPlayed · 5초 뒤 저절로 닫기는 ui/ride_along)
+export function MapArrival({ map, at, arrival, onClose, onError, onPlayed, hideMe }:Props) {
+  const anchor = useAnchor(map, at), box = useMotion('char-ride', onError, onPlayed);
   useEffect(() => { hideMe?.(true); return () => hideMe?.(false); }, [hideMe]);
   useTapClose(map, onClose);
   return <div ref={anchor} class="ra ram rac" role="status" aria-live="polite" aria-label={`${arrival.to} 슝 도착 · ${arrival.time} 도착 · ${arrival.took}분 걸렸어요 · 지도를 누르면 길찾기를 끝내요`}>
     <span ref={box} class="ral-scene rac-scene rac-ride" aria-hidden="true" />
     <span class="rac-say" aria-hidden="true">도착!</span>
-  </div>;
-}
-
-// 길 끝 깃발(노란 삼각 · 11차 확정): 타고 가는 동안 길 끝 자리에 꽂혀 계속 펄럭인다. 도착하면 치운다(ride_card drawRideCard — 2026-11-26 사용자).
-// 깃대는 도착 자리 바로 오른쪽 · 열차는 깃대 밑동 아래로 지나간다. 그리기만(누르기는 지도로)
-export function GoalFlag({ map, at }:{ map:ArrivalMap; at:readonly [number, number] }) {
-  const anchor = useAnchor(map, at), box = useMotion('flag');
-  return <div ref={anchor} class="rag" aria-hidden="true">
-    <span ref={box} class="ral-scene rag-flag" />
   </div>;
 }

@@ -1,12 +1,12 @@
-// 타고 가기 도착 표시 움직임(Lottie — 도착 연기 char-ride · 길 끝 깃발 flag): 장면 JSON(web/brand/arrival-*.json — tools/arrival_motion/make.mjs)과
+// 타고 가기 도착 표시 움직임(Lottie — 도착 연기 char-ride): 장면 JSON(web/brand/arrival-*.json — tools/arrival_motion/make.mjs)과
 // 플레이어(web/vendor/lottie — svg 렌더러)는 쓸 때만 받는다(ride_arrival.tsx 가 이 파일을 import() 로 부른다 · 첫 화면 코드에 없음).
-// 연기는 한 번 재생하고 끝 장면에서 멈춘다 · 깃발만 되풀이 · 움직임 줄이기면 바로 끝 장면.
+// 연기는 한 번 재생하고 끝 장면에서 멈춘다 · 움직임 줄이기면 바로 끝 장면.
 // 색: 'lm-' 층은 로그인 장면 색 그대로, 나머지(색종이)는 자리 표시 색으로 만들어 두고(make.mjs COLOR) 불러올 때 CSS 변수의 지금 값으로 칠한다
 interface LottieAnim { destroy():void; play():void; goToAndStop(frame:number, isFrame:boolean):void; totalFrames:number; addEventListener(name:string, listener:() => void):void }
 interface LottieApi { loadAnimation(options:{ container:HTMLElement; renderer:string; loop:boolean; autoplay:boolean; animationData:unknown }):LottieAnim }
 const player = () => (globalThis as unknown as { lottie?:LottieApi }).lottie;   // 받으면 globalThis.lottie 가 생긴다(sky_motion.mts · where_motion.mts 와 같은 전역)
 
-export type ArrivalScene = 'char-ride' | 'flag';   // char-ride: 로그인 로고 열차를 거꾸로 탄 도착 연기 · flag: 길 끝 깃발(되풀이)
+export type ArrivalScene = 'char-ride';   // 로그인 로고 열차를 거꾸로 탄 도착 연기(길 끝 깃발 flag 는 2026-11-26 사용자 「깃발 아예 없애기」로 뺌)
 interface Json { [key:string]:unknown }
 
 // 자리 표시 색(make.mjs COLOR) → CSS 변수
@@ -27,7 +27,7 @@ function paint(node:unknown, colors:Map<string, number[]>):void {
   if (Array.isArray(node)) { node.forEach(child => paint(child, colors)); return; }
   if (!node || typeof node !== 'object') return;
   const item = node as Json, color = item.c as { k?:unknown } | undefined;
-  if (typeof item.nm === 'string' && item.nm.startsWith('lm-') && typeof item.ty === 'number') return;   // 로그인 로고 · 새싹이 · 깃발 층: 로그인 장면 그대로 고정 색
+  if (typeof item.nm === 'string' && item.nm.startsWith('lm-') && typeof item.ty === 'number') return;   // 로그인 로고 · 새싹이 층: 로그인 장면 그대로 고정 색
   if ((item.ty === 'fl' || item.ty === 'st') && color && Array.isArray(color.k) && typeof color.k[0] === 'number') {
     const next = colors.get(hexOf(color.k as number[]));
     if (next) color.k = [...next, 1];
@@ -47,7 +47,8 @@ function loadScene(name:ArrivalScene):Promise<Json | null> {
 }
 
 // box 안에 장면을 그린다. 돌려준 함수로 치운다(마커가 사라질 때). 실패는 부르는 쪽에 알려 기존 도착 카드로 돌린다.
-export function playArrival(box:HTMLElement, name:ArrivalScene, onError?:() => void):() => void {
+// onEnd: 한 번 재생하는 장면(도착 연기)이 끝 장면에 닿으면 — 플레이어의 'complete'(반복하지 않는 장면이 끝나면 낸다) · 움직임 줄이기면 끝 장면을 세운 바로 그때
+export function playArrival(box:HTMLElement, name:ArrivalScene, onError?:() => void, onEnd?:() => void):() => void {
   let anim:LottieAnim | null = null, gone = false, failed = false;
   const fail = () => {
     if (gone || failed || !box.isConnected) return;
@@ -62,10 +63,11 @@ export function playArrival(box:HTMLElement, name:ArrivalScene, onError?:() => v
     const copy = structuredClone(data);   // 플레이어가 받은 자료를 고쳐 쓴다
     paint(copy.layers, colors);
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    anim = lottie.loadAnimation({ container: box, renderer: 'svg', loop: name === 'flag' && !still, autoplay: !still, animationData: copy });
+    anim = lottie.loadAnimation({ container: box, renderer: 'svg', loop: false, autoplay: !still, animationData: copy });
     anim.addEventListener('data_failed', fail);
     anim.addEventListener('error', fail);
-    if (still) anim.goToAndStop(anim.totalFrames - 1, true);   // 움직임 줄이기: 끝 장면 정지
+    anim.addEventListener('complete', () => { if (!gone && !failed) onEnd?.(); });
+    if (still) { anim.goToAndStop(anim.totalFrames - 1, true); onEnd?.(); }   // 움직임 줄이기: 끝 장면 정지
     box.classList.add('on');
   }).catch(fail);
   return () => { gone = true; anim?.destroy(); anim = null; };

@@ -6,7 +6,6 @@
 
 ## 시작점
 - 머리줄 메뉴 단추(`#settingsButton`) — 열 때마다 목록(`#menuRoot`)부터
-- 머리줄 새로고침 단추(`#refreshButton`) — 페이지를 다시 연다
 
 ## 흐름도
 ```mermaid
@@ -31,7 +30,6 @@ flowchart TD
   Device -- "‹" --> Root
   Sources -- "‹" --> Root
   Root -- "X · Esc · 바깥 누르기" --> Closed(["서랍 닫힘 · 메뉴 단추에 초점"])
-  Reload(["새로고침 단추"]) --> Again(["페이지 다시 열기 · 모드는 기본으로"])
 ```
 
 ## 단계
@@ -63,7 +61,6 @@ flowchart TD
 |---|---|
 | 서랍 · 목록 · 쪽 껍데기 | `web/index.html:60-68` |
 | 서랍 열기 · 닫기 · 쪽 이동 · Esc · Tab · 바깥 누르기 | `web/maplibre_runtime.mts:1011-1058` |
-| 새로고침 단추 | `web/maplibre_runtime.mts:1014` |
 | 테마 그리기 · 저장 | `web/components/settings.tsx:39-44` · `web/map/theme.mts:54` · `web/map/theme.mts:111` |
 | 모드 스위치 · 종족 · 나라 · 속도 그리기 | `web/components/settings.tsx:67-86` |
 | 모드 상태의 주인(요청 · 취소 · 실패) | `web/modes/transition.mts:32-35` · 연결 `web/maplibre_runtime.mts:446-447` |

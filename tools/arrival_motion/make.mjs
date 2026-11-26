@@ -1,4 +1,4 @@
-// 타고 가기 도착 표시 움직임(Lottie JSON)을 만든다 → web/brand/arrival-char-ride.json(도착 연기) · arrival-flag.json(길 끝 깃발 · 되풀이)
+// 타고 가기 도착 표시 움직임(Lottie JSON)을 만든다 → web/brand/arrival-char-ride.json(도착 연기)
 // 지도 속 도착 자리 마커 안에서 재생한다(30fps · 연기는 한 번 재생 후 끝 장면 정지 — web/lib/arrival_motion.mts).
 // 색은 로그인 장면 값(LM) 고정('lm-' 층 — 다시 칠하지 않는다) · 색종이만 자리 표시 색(COLOR) — arrival_motion.mts 가 불러올 때 CSS 변수
 // (--syung · --syung-deep · --syung-ink · --ink · --paper)의 지금 값으로 바꿔 칠한다. 아래 COLOR 표와 arrival_motion.mts 의 PAINT 표를 맞춘다.
@@ -76,7 +76,7 @@ const FEET = [100, 196];
 // 로그인 장면처럼 색은 고정값(라이트 · 다크 같음) — 이 층들은 이름이 'lm-' 로 시작해 arrival_motion.mts 가 다시 칠하지 않는다.
 // 바람 선 · 먼지만 테마 색(class lm-wind · lm-dust → syung.css 가 var(--muted)). 색종이는 다른 안과 같이 자리 표시 색(CSS 변수로 칠함).
 // 위치는 [x, y] 한 묶음만 쓴다(나눈 위치 s:true 금지 — NaN).
-const LM = {yellow: hex('#ffd400'), ink: hex('#141414'), ledge: hex('#e9e5cd'), spark: hex('#f5a524'), face: hex('#ffe5ba'), cheek: hex('#f4a9b5'), leaf: hex('#5bbf4a'), stem: hex('#368c3c'), theme: hex('#8a8676')};
+const LM = {yellow: hex('#ffd400'), ink: hex('#141414'), spark: hex('#f5a524'), face: hex('#ffe5ba'), cheek: hex('#f4a9b5'), leaf: hex('#5bbf4a'), stem: hex('#368c3c'), theme: hex('#8a8676')};
 const lmGroup = (items, {position = [0, 0], anchor = [0, 0], scale = [100, 100], rotation = 0} = {}) =>
   ({ty: 'gr', it: [...items, {ty: 'tr', p: prop(position), a: prop(anchor), s: prop(scale), r: prop(rotation), o: still(100), sk: still(0), sa: still(0)}]});
 const line = points => ({ty: 'sh', ks: still(pathOf(points, false))});
@@ -102,7 +102,7 @@ const sparkStar = size => polygon([[0, -size], [size * 0.28, -size * 0.28], [siz
 function rideScene() {
   // 열차 = 로고 속 까만 열차(logo-body)만(노란 로고 상자 · 받침 · 속도선은 뺌 — 사용자 요청 2026-11-08) · 220% 로 키워 새싹이 옆에 선다(약 45×30)
   // 캔버스 600×250(발밑 (200,196) — 받는 쪽 .rac-ride 가 넓다 · 10차에 왼쪽으로 100 늘려 열차가 멀리서 들어온다): 오른쪽으로 400px 남겨 열차가 화면 밖까지 달려 나간다(390 폭 휴대폰은 발밑에서 195px 이 화면 끝)
-  // 10차: 깃발(GoalFlag — 깃대는 발밑 오른쪽 24px · 밑동 = 발밑 높이)과 안 겹치게 열차 길을 발밑보다 26px 아래로(열차 위 끝이 깃대 밑동 그림자보다 아래) ·
+  // 10차: 깃발(옛 GoalFlag — 2026-11-26 뺌 · 깃대는 발밑 오른쪽 24px · 밑동 = 발밑 높이)과 안 겹치게 열차 길을 발밑보다 26px 아래로(열차 위 끝이 깃대 밑동 그림자보다 아래) ·
   // 멈추는 자리는 발밑 왼쪽 아래 → 새싹이는 오른쪽 위로 포물선을 그려 깃발 바로 왼쪽(발밑)에 착지 · 열차는 깃발 밑으로 지나 오른쪽 밖으로
   const FEET_R = [FEET[0] + 100, FEET[1]];   // 이 장면의 발밑(캔버스를 왼쪽으로 100 늘림)
   const frames = 74, K = 220, TRAIN = [180, 222], STOP = 18, LAND = 42, DEP = 48, GONE = DEP + 20;
@@ -187,59 +187,7 @@ function rideScene() {
   return {...make.done(), layers};
 }
 
-// ===== 길 끝 깃발(노란 삼각 페넌트 · 11차 확정 — 타고 가는 동안 길 끝 자리에 미리 꽂혀 펄럭인다 · 되풀이) =====
-// 지도 표시 크기: 캔버스 48×64 = 화면 px 그대로(줄이지 않는다) · 깃대 밑(땅) = (6,60) · 깃대 + 둥근 머리 약 44px.
-// 천은 여러 점 경로로 그리고 매 장면 모양 자체를 바꾼다(기울이기 X): 물결이 깃대에서 끝으로 흘러가고(깃대 쪽은 고정 · 끝일수록 크게),
-// 물결이 꺾여 내려가는 쪽에 같은 색 계열 그늘 한 단계. 색은 로그인 장면 값(LM) 고정('lm-' 층 — 테마로 다시 칠하지 않는다).
-// 선: 천 테두리 2 · 깃대 · 머리 1.75(로그인 바람 선 2.5 · 지도 역 이름표 테두리 1.75 사이) · 둥근 끝 · 둥근 이음
-const FLAG = {frames: 60, step: 2, pole: [6, 60], top: 22, amp: 2.2, waves: 0.85, length: 26, height: 17};
-const TAU = Math.PI * 2;
-// 천의 한 점(u: 깃대 0 → 끝 1) 물결 높이 — t: 0~1 한 바퀴
-const flagWave = (u, t) => FLAG.amp * Math.pow(Math.max(0, u), 1.1) * Math.sin(TAU * (u * FLAG.waves - t));
-// 매끈한 닫힌 경로: 꺾이는 점(corner)은 날카롭게, 나머지는 이웃 점으로 접선(캣멀-롬)
-function smoothPath(points, corners, closed = true) {
-  const count = points.length, tangents = points.map((point, index) => {
-    if (corners.has(index)) return [0, 0];
-    const prev = points[(index - 1 + count) % count], next = points[(index + 1) % count];
-    return [(next[0] - prev[0]) / 6, (next[1] - prev[1]) / 6];
-  });
-  return {v: points.map(point => point.map(round)), i: tangents.map(([x, y]) => [round(-x), round(-y)]), o: tangents.map(([x, y]) => [round(x), round(y)]), c: closed};
-}
-const shapeKeys = paths => ({ty: 'sh', ks: {a: 1, k: paths.map(([time, path], index) => ({t: time, s: [path], ...(index < paths.length - 1 ? {o: {x: 0, y: 0}, i: {x: 1, y: 1}} : {})}))}});
-// 천 모양(뾰족 끝): at(u,v) = 물결 전 자리(u: 깃대 0 → 끝 1 · v: 위 0 → 아래 1) · samples: 위 가장자리를 짚을 u 들(끝은 1 — 위아래가 만나 꺾인다)
-function clothOutline(at, t, samples) {
-  const points = [], corners = new Set(), push = (u, v, corner) => { const [x, y] = at(u, v); if (corner) corners.add(points.length); points.push([x, y + flagWave(u, t)]); };
-  samples.forEach((u, index) => push(u, 0, index === 0 || u === 1));
-  [...samples].reverse().forEach(u => { if (u === 1) return; push(u, 1, u === 0); });
-  return smoothPath(points, corners);
-}
-// 그늘 띠: 물결이 꺾여 내려가는 쪽(위상 0.25~0.75) — 천 안의 u 구간 [from,to] 를 위 · 아래 가장자리로 감싼다(구간이 비면 한 점으로 접힌다)
-function foldBand(at, from, to, t, count = 6) {
-  const [start, end] = [Math.min(1, Math.max(0, from)), Math.min(1, Math.max(0, to))], points = [];
-  for (let index = 0; index <= count; index++) { const u = start + (end - start) * index / count, [x, y] = at(u, 0); points.push([x, y + flagWave(u, t)]); }
-  for (let index = count; index >= 0; index--) { const u = start + (end - start) * index / count, [x, y] = at(u, 1); points.push([x, y + flagWave(u, t)]); }
-  return smoothPath(points, new Set([0, count, count + 1, 2 * count + 1]));
-}
-function flagScene() {
-  const {frames, step, pole: [poleX, base], top, length, height} = FLAG, make = scene('arrival-flag', 48, 64, frames);
-  const cloth = LM.yellow, fold = hex('#e6c62f');   // 슝 노랑 · 그늘은 브랜드 그림자 노랑(--shadow-edge-brand)
-  const middle = top + height / 2, samples = Array.from({length: 11}, (_, index) => index / 10);
-  const at = (u, v) => [poleX + u * length, middle + (v - 0.5) * height * (1 - u)];   // 삼각: 끝으로 갈수록 좁아진다
-  const times = Array.from({length: frames / step + 1}, (_, index) => index * step);
-  const keys = draw => shapeKeys(times.map(time => [time, draw(time / frames)]));
-  const band = shift => keys(t => foldBand(at, (t + shift + 0.25) / FLAG.waves, (t + shift + 0.75) / FLAG.waves, t));
-  // 깃대 + 둥근 머리(맨 위 — 천이 붙는 자리를 덮는다)
-  make.layer('lm-flag-pole', [
-    group([ellipse([poleX, top - 3], [7, 7]), stroke(LM.ink, 1.75), fill(LM.yellow)]),
-    group([rect([poleX, (top - 1 + base) / 2], [3.5, base - top + 1], 1.75), stroke(LM.ink, 1.75), fill(LM.ledge)]),
-  ]);
-  const outline = group([keys(t => clothOutline(at, t, samples)), stroke(LM.ink, 2)]);
-  make.layer('lm-flag-cloth', [outline, group([band(-1), fill(fold)]), group([band(0), fill(fold)]), group([keys(t => clothOutline(at, t, samples)), fill(cloth)])]);
-  make.layer('lm-flag-shadow', [group([ellipse([0, 0], [11, 3.4]), fill(COLOR.shadow, 30)])], {position: still([poleX, base])});
-  return make.done();
-}
-
-for (const [name, data] of [['arrival-flag', flagScene()], ['arrival-char-ride', rideScene()]]) {
+for (const [name, data] of [['arrival-char-ride', rideScene()]]) {
   writeFileSync(`${OUT}${name}.json`, JSON.stringify(data));
   console.log(`${name}.json  ${data.layers.length}층 · ${data.op}장면 · ${JSON.stringify(data).length}B`);
 }

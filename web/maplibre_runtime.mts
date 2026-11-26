@@ -12,7 +12,7 @@ import './ui/station_sheet.tsx';import './bus/sheet_view.tsx';import './ui/journ
 import './components/settings.tsx';   // (메뉴 · 설정 부품: 서랍 몸통과 같은 단계에서 요청)
 import {settingsMenu as menu} from './ui/settings_menu.tsx';   // 설정 서랍의 몸통 칸(테마 · 도시 모드 · 성능) — 눌림 · 숨김은 이 창구로
 import {createJourneyMap} from './ui/journey.mts';   // 여정 지도 표시
-import {createRideAlong} from './ui/ride_along.mts';import {rideAlertSink} from './ui/ride_alerts.mts';import {drawRideCard} from './components/ride_card.tsx';import './components/ride_arrival.tsx';import './lib/ride-along.mts';   // 타고 가기(「이 길로 출발」 뒤 카드 한 장 — 셈 · 글은 lib/ride-along, 같은 단계에서 요청)
+import {createRideAlong} from './ui/ride_along.mts';import {rideAlertSink} from './ui/ride_alerts.mts';import {drawRideCard} from './components/ride_card.tsx';import './components/ride_arrival.tsx';import './components/layer_sheet.tsx';import './lib/ride-along.mts';   // 타고 가기(「이 길로 출발」 뒤 카드 한 장 — 셈 · 글은 lib/ride-along, 같은 단계에서 요청 · layer_sheet 는 목록 열차 바꾸기 확인 팝업)
 import {serverUrl,appMapMode} from './lib/server_url.mts';   // 서버 주소 한 곳(앱 지도 모드면 운영 서비스 주소)
 import {startAnalytics} from './lib/analytics.mts';   // GA4(운영 지도 주소의 웹에서만 · 앱 지도 #app 은 부르지 않는다)
 import {createAppBridge,appNoticeLift} from './ui/app_bridge.mts';   // 앱 ↔ 지도 다리(앱 지도 모드에서만 켠다)
@@ -1017,8 +1017,7 @@ menu.press('togglePrebuild',prebuildWant());menu.press('toggleSaver',saverOn);
 menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:()=>setSaver(!saverOn)}});
 // ---- settings (header hamburger → right drawer): on/off switches ----
 {
-  {const z=$('zoomBadge'),show=()=>{z.textContent='z'+map.getZoom().toFixed(1);appStatus()};map.on('zoom',show);show()}   // the zoom beside 새로고침, for checking views
-  $('refreshButton').onclick=e=>{(e.currentTarget as HTMLElement).classList.add('spin');setTimeout(()=>location.reload(),250)};   // picks up a new deploy (plain asset URLs, no cache-busting)
+  map.on('zoom',appStatus);appStatus();   // 앱 다리에 줌이 바뀔 때마다 알린다(머리줄 줌 표시는 뺐다)
   const btn=$('settingsButton'),panel=$('settingsPanel');
   menu.icons(ICONS.coaster,ICONS.speed);
   // 설정 서랍(햄버거): 열 때 hidden 을 풀고 한 프레임 뒤 .open 으로 밀어 내고, 닫을 때 .open 을 떼고 밀려 들어간 뒤 hidden.

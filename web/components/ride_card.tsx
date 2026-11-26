@@ -6,11 +6,13 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { RideCardView, RideDevView, RideFixAct, RideFixView, RideInfoView, RideListView, RideMark, RideSaid, RideSkySpot } from '../lib/ride-along.mts';
 import type { WeatherTalk } from '../map/sky_weather.mts';
 import type { ComponentChild } from 'preact';
-import { GoalFlag, MapArrival, type ArrivalMap } from './ride_arrival.tsx';
+import { MapArrival, type ArrivalMap } from './ride_arrival.tsx';
+import { LayerSheet } from './layer_sheet.tsx';
+import { rideSwapAsk } from '../lib/ride-along.mts';
 
 const CLOSE = <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 
-export interface RideCardActions { close():void; detour():void; follow():void; answer?(value:'rode' | 'not_rode'):void; fix?(act:RideFixAct):void; pick?(id:string):void }
+export interface RideCardActions { close():void; detour():void; follow():void; played?():void; answer?(value:'rode' | 'not_rode'):void; fix?(act:RideFixAct):void; pick?(id:string):void }
 
 // 개발자 회원만(2026-11-11 계획서 D2): 정답 누름 [탔음] [안 탔음] — 기초 버튼(components/button.tsx)과 같은 class(.sy-btn)로 그린다
 // (그 파일을 부르면 첫 화면에 받는 파일이 늘어 모양만 같이 쓴다). 누른 쪽은 주 버튼 모양 · aria-pressed
@@ -167,10 +169,10 @@ function RideEdge({ color }:{ color:string }) {
 // 여정 전체 역(정류장) 세로 목록(lib/ride-along rideList · 2026-11-25 사용자 시안 15 · 16): 역을 전부 적고 손가락으로 스크롤해 다 볼 수 있다(칸은 말풍선 밑까지 — 말풍선 · 새싹이는 그 위에 떠 있다).
 // 처음 열 때 · 이번 역이 바뀔 때만 이번 역을 말풍선 위로 보이는 부분의 가운데로 스크롤한다(움직임 줄이기면 바로) — 그 사이엔 사용자가 스크롤한 자리를 그대로 둔다.
 // 손가락이 닿아 있는 동안 역이 바뀌면 손을 뗀 뒤에 맞춘다. 줄 높이가 정해져 있어(syung.css .rg-list — 이번 역만 72px · 나머지 40px) 자리는 줄 번호 × 40px
-const LIST_ROW_PX = 40, EDGE_BOTTOM_PX = 76;   // 줄 높이(syung.css .rg-list li) · 아래 끝 그림 높이(.rg-edge.bottom)
+const LIST_ROW_PX = 40, FOCUS_ROW_PX = 72, EDGE_BOTTOM_PX = 76;   // 줄 높이(syung.css .rg-list li) · 큰 줄 높이(li.now) · 아래 끝 그림 높이(.rg-edge.bottom)
 // 역 점 왼쪽의 열차 · 버스 그림(2026-11-26 사용자 시안5 — 「포인트 왼쪽에 좀더 작게」): 끝 그림과 같은 색연필 질감(#rg-edge-crayon) · 종이색 테두리(syung.css .rg-train).
 // 지하철은 바퀴 없이 옆모습(둥근 앞머리 · 앞 유리 · 창 · 가운데 갈라진 문 두 짝 · 아래 치마 띠 — 2026-11-26 사용자 「지하철은 바퀴가 없는데」), 버스는 바퀴 둘.
-// 탄 것은 크게(34px) · 다른 열차는 작게(26px) · 반투명. 다른 열차는 누르면 그 열차로 바꾼다(actions.pick — 지도에서 누른 것과 같다)
+// 탄 것은 크게(34px) · 다른 열차는 작게(26px) · 반투명. 다른 열차는 누르면 「이 열차로 바꿀까요?」를 묻고 [바꾸기]면 그 열차로 바꾼다(SwapAsk → actions.pick — 지도에서 누른 것과 같다)
 const SUBWAY_ART = (color:string) => <svg viewBox="0 0 48 20" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><g filter="url(#rg-edge-crayon)">
   <path d="M2 2h35c5.5 0 9 4.5 9 10v5H2z" fill={color} stroke="var(--ink)" stroke-width="1.5"/>
   <path d="M37 4.5c3 .3 5.6 2.6 6.6 6.5H37z" fill="var(--paper)"/>
@@ -188,13 +190,15 @@ const BUS_ART = (color:string) => <svg viewBox="0 0 40 24" aria-hidden="true" st
 // 한 줄에 다른 열차가 여럿이면 위아래로 나눠 쌓는다(PR #178 리뷰 — 같은 자리에 겹치면 앞 그림을 눌러도 마지막 단추가 받았다).
 // 간격 13px(26px 그림 높이 ≈ 11px) · 쌓였을 땐 누를 자리도 그 간격만큼(syung.css .rg-train.stacked)
 const STACK_PX = 13;
-function TrainMark({ mark, color, pick, order = 0, count = 1 }:{ mark:RideMark; color:string; pick?:(id:string) => void; order?:number; count?:number }) {
+function TrainMark({ mark, color, pick, order = 0, count = 1, step = LIST_ROW_PX }:{ mark:RideMark; color:string; pick?:(mark:RideMark) => void; order?:number; count?:number; step?:number }) {
   const art = mark.bus ? BUS_ART(color) : SUBWAY_ART(color), size = mark.mine ? 'mine' : 'other';
-  if (mark.mine || !mark.id || !pick) return <i class={`rg-train ${size}${mark.bus ? ' bus' : ''}`} aria-hidden="true">{art}</i>;
-  const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX;
-  return <button type="button" class={`rg-train ${size}${count > 1 ? ' stacked' : ''}`} style={shift ? `top:calc(50% + ${shift}px)` : undefined} aria-label="이 열차를 탔어요" onClick={() => pick(id)}>{art}</button>;
+  // 탄 것은 역 사이 간 몫(slide)만큼 선을 따라 옮긴다(syung.css .rg-train.mine --rg-slide)
+  if (mark.mine || !mark.id || !pick) return <i class={`rg-train ${size}${mark.bus ? ' bus' : ''}`} style={mark.slide ? `--rg-slide:${mark.slide.toFixed(3)};--rg-step:${step}px` : undefined} aria-hidden="true">{art}</i>;
+  // 다른 열차도 역 사이 간 몫만큼(--rg-slide × --rg-step — 옆 줄 역 점까지 거리 · 2026-11-26 사용자 「다 움직여」) · 쌓임 간격은 --rg-shift
+  const id = mark.id, shift = (order - (count - 1) / 2) * STACK_PX, vars = [shift ? `--rg-shift:${shift}px` : '', mark.slide ? `--rg-slide:${mark.slide.toFixed(3)};--rg-step:${step}px` : ''].filter(Boolean).join(';');
+  return <button type="button" class={`rg-train ${size}${count > 1 ? ' stacked' : ''}`} style={vars || undefined} aria-label={`${mark.name ?? '이 열차'} — 탄 열차로 바꾸기`} onClick={() => pick({...mark, id})}>{art}</button>;
 }
-function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void }) {
+function RideList({ list, pick }:{ list:RideListView; pick?:(mark:RideMark) => void }) {
   const box = useRef<HTMLDivElement>(null), touching = useRef(false), waiting = useRef(false), opened = useRef(false);
   // 큰 줄 자리(focus): 역 사이를 달리는 중이면 다음 역 줄에 「다음은 여기예요」(2026-11-26 사용자 안 B — 점은 움직이지 않는다 · 배터리)
   const focus = list.ahead ? list.at + 1 : list.at;
@@ -224,6 +228,9 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void 
   const head = list.rows[0], headColor = head && head.kind !== 'gap' ? head.color : null;   // 첫 줄 위로 이어 그을 선 색(첫 줄은 늘 역 · 구간 줄)
   const pastClass = (order:number) => order < focus ? ' past' : '';   // 지나온 줄은 살짝만 흐리게(2026-11-26 사용자 「살짝만」)
   const last = list.rows.length - 1;
+  // 그 줄 역 점 → slide 쪽 옆 줄 역 점 거리(두 줄 높이의 반씩 — 큰 줄(focus)은 72px · syung.css .rg-list li.now)
+  const rowPx = (order:number) => order === focus ? FOCUS_ROW_PX : LIST_ROW_PX;
+  const slideStep = (order:number, slide = 0) => (rowPx(order) + rowPx(order + Math.sign(slide))) / 2;
   return <div class="rg-list-box"><div class="rg-list" ref={box} onScroll={measure} onTouchStart={() => { touching.current = true; }} onTouchEnd={release} onTouchCancel={release}>
     {headColor && <RideHatch color={headColor} past={focus > 0} />}
     <ol class={focus > 0 ? 'head-past' : undefined} style={headColor ? `--rg-head:${headColor}` : undefined}>
@@ -235,7 +242,7 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void 
         let note = order === 0 ? '여기서 탔어요' : '지금 여기예요';
         if (list.ahead) note = '다음은 여기예요';
         return <li class={`stop${now ? ' now' : ''}${pastClass(order)}${row.edge ? ` ${row.edge}` : ''}${marks.length ? ' marked' : ''}${tail ? ' tail' : ''}`} style={`--rg-line:${row.color}`} aria-current={now ? 'step' : undefined}>
-          {marks.map(mark => <TrainMark key={mark.id ?? 'mine'} mark={mark} color={row.color} pick={pick} order={others.indexOf(mark)} count={others.length} />)}
+          {marks.map(mark => <TrainMark key={mark.id ?? 'mine'} mark={mark} color={row.color} pick={pick} order={others.indexOf(mark)} count={others.length} step={slideStep(order, mark.slide)} />)}
           {now && <small>{note}</small>}
           <span><b>{row.name}</b>{row.off && <em>여기서 내려요</em>}</span>
         </li>;
@@ -244,11 +251,60 @@ function RideList({ list, pick }:{ list:RideListView; pick?:(id:string) => void 
   </div>{edgeColor && <RideEdge color={edgeColor} />}</div>;
 }
 
+// 새싹이가 선 승강장(2026-11-26 사용자 시안 H): 아이소 2:1 바닥이 화면 오른쪽 · 아래 끝까지, 뒷모서리 너머 선로 둘 · 맞은편 승강장(같은 타일)은
+// 위로 갈수록 종이색으로 흐려진다. 1400×700 그림 · 발밑 = (1000,500) — 자리는 syung.css .rg-platform, 색은 .rg-pl-* (지도 색 palette.mts).
+// 좌표 축: 앞으로(i) = 오른쪽 아래 (60,30) · 옆으로(j) = 오른쪽 위 (60,-30). 모양이 늘 같아 글로 한 번만 만든다
+let platformSvg = '';
+function platformArt():string {
+  if (platformSvg) return platformSvg;
+  const at = (i:number, j:number):[number, number] => [1000 + 60 * i + 60 * j, 500 + 30 * i - 30 * j];
+  const pts = (list:[number, number][]) => list.map(point => point.map(num => num.toFixed(1)).join(',')).join(' ');
+  const line = (cls:string, from:[number, number], to:[number, number], width?:number) =>
+    `<line class="${cls}" x1="${from[0].toFixed(1)}" y1="${from[1].toFixed(1)}" x2="${to[0].toFixed(1)}" y2="${to[1].toFixed(1)}"${width ? ` stroke-width="${width}"` : ''}/>`;
+  const poly = (cls:string, list:[number, number][]) => `<polygon class="${cls}" points="${pts(list)}"/>`;
+  const drop = (point:[number, number], by:number):[number, number] => [point[0], point[1] + by];
+  const back = -1.15, far = 14, side = 14, wide = 30, step = 0.5;   // back = 뒷모서리(선로 쪽) · step = 타일 한 칸
+  // 승강장 바닥 무늬(새싹이 쪽 · 맞은편 같이): 노란 안전선 · 점자 블록 · 흰 격자 두 방향. edge = 선로 쪽 끝, dir = 선로에서 멀어지는 쪽(+1 · -1)
+  const tiles = (edge:number, dir:number, end:number, span:number) => {
+    let out = '';
+    for (let row = edge + dir * step; dir > 0 ? row < end : row > end; row += dir * step) out += line('rg-pl-tile', at(row, -span), at(row, span));
+    for (let col = -span; col <= span; col += step) out += line('rg-pl-tile', at(edge + dir * 0.38, col), at(end, col));
+    out += line('rg-pl-safety', at(edge + dir * 0.12, -side), at(edge + dir * 0.12, side), 3);
+    for (let dot = -side * 4; dot < side * 4; dot++) { const [cx, cy] = at(edge + dir * 0.24, dot / 4); out += `<circle class="rg-pl-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.1"/>`; }
+    return out;
+  };
+  // 선로 하나(c = 가운데): 자갈 · 침목 · 레일 둘
+  const track = (mid:number) => {
+    let out = poly('rg-pl-bal', [at(mid - 0.32, -side), at(mid - 0.32, side), at(mid + 0.32, side), at(mid + 0.32, -side)]);
+    for (let tie = -side * 5; tie < side * 5; tie++) out += line('rg-pl-tie', at(mid - 0.22, tie / 5), at(mid + 0.22, tie / 5), 3);
+    for (const off of [-0.13, 0.13]) out += line('rg-pl-rail', at(mid + off, -side), at(mid + off, side), 1.6);
+    return out;
+  };
+  // 뒷모서리 너머(흐림 가림 안): 선로 바닥 · 선로 둘 · 맞은편 승강장(바닥 · 무늬 · 선로 쪽 벽 면) · 승강장 그늘
+  const opposite = back - 2.1, beyond = back - 20;
+  let rear = poly('rg-pl-pit', [at(opposite, -side), at(opposite, side), at(back, side), at(back, -side)]);
+  rear += track(back - 0.6) + track(back - 1.5);
+  rear += poly('rg-pl-top', [at(beyond, -wide), at(beyond, wide), at(opposite, wide), at(opposite, -wide)]);
+  rear += tiles(opposite, -1, beyond, wide);
+  rear += poly('rg-pl-wall', [at(opposite, -side), at(opposite, side), drop(at(opposite, side), 9), drop(at(opposite, -side), 9)]);
+  rear += poly('rg-pl-lip', [at(back, -side), at(back, side), at(back - 0.18, side), at(back - 0.18, -side)]);
+  // 새싹이 쪽 승강장: 뒷모서리 턱 · 바닥 · 무늬 · 발밑 그림자
+  let front = poly('rg-pl-pit', [at(back, -side), at(back, side), drop(at(back, side), -5), drop(at(back, -side), -5)]);
+  front += poly('rg-pl-top', [at(back, -side), at(back, side), at(far, side), at(far, -side)]);
+  front += tiles(back, 1, far, side);
+  front += '<ellipse class="rg-pl-shadow" cx="1000" cy="500" rx="26" ry="8"/>';
+  // 흐림: 발밑 위 150px 까지 다 보이고 320px 에서 종이색(바탕이 비친다)
+  const fade = '<defs><linearGradient id="rgPlFade" gradientUnits="userSpaceOnUse" x1="0" y1="180" x2="0" y2="350"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient>'
+    + '<mask id="rgPlMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1400" height="700"><rect width="1400" height="700" fill="url(#rgPlFade)"/></mask></defs>';
+  platformSvg = `<svg viewBox="0 0 1400 700">${fade}<g mask="url(#rgPlMask)">${rear}</g>${front}</svg>`;
+  return platformSvg;
+}
+
 // 지하철 · 버스를 탄 동안 지도 대신(2026-11-25 사용자 결정): 「가고 있다」 풍경 움직임(lib/ride_info_motion — 지연 로드) · 여정 전체 역(버스는 정류장) 목록.
 // 말풍선 카드(✕ · 다시 따라가기)는 그 위에 그대로 둔다
 // 가운데 로고도 같은 모듈이 그린다(로그인 화면의 로고 움직임 — 노란 바탕 없이 · 2026-11-25 사용자)
 // 내려서 할 일 · 내릴 곳 날씨는 말풍선 안에(RideCard — 시안 16)
-function RideInfo({ info, pick }:{ info:RideInfoView; pick?:(id:string) => void }) {
+function RideInfo({ info, pick }:{ info:RideInfoView; pick?:(mark:RideMark) => void }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let gone = false, stop:(() => void) | null = null;
@@ -257,8 +313,42 @@ function RideInfo({ info, pick }:{ info:RideInfoView; pick?:(id:string) => void 
   }, []);
   return <section class="rg-info" aria-label="타고 가는 곳">
     <div class="rg-info-view" aria-hidden="true"><div class="rg-info-scene" ref={box}></div></div>
+    <i class="rg-platform" aria-hidden="true" dangerouslySetInnerHTML={{ __html: platformArt() }} />
     <RideList list={info.list} pick={pick} />
   </section>;
+}
+
+// 목록의 다른 열차를 누르면 바로 바꾸지 않고 묻는다(2026-11-26 사용자 — 글은 lib/ride-along rideSwapAsk): 로그인 · 프로필 수정 팝업과 같은 레이어 팝업(LayerSheet · 바깥 .login-sheet — 열기는 user/account.mts openSheet 처럼 그린 뒤 open).
+// [바꾸기]일 때만 actions.pick · [취소] · 가림막 · Esc 는 그대로. 정보 화면(.rg-info)은 제 쌓임 맥락이라 팝업은 그 밖(카드 옆)에 그린다
+function SwapAsk({ mark, yes, no }:{ mark:RideMark; yes:() => void; no:() => void }) {
+  const [open, setOpen] = useState(false), sure = useRef<HTMLButtonElement>(null), ask = rideSwapAsk(mark.name);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpen(true));
+    sure.current?.focus({preventScroll: true});
+    const key = (event:KeyboardEvent) => { if (event.key === 'Escape') { event.stopImmediatePropagation(); no(); } };
+    window.addEventListener('keydown', key, true);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('keydown', key, true); };
+  }, []);
+  return <div class={`login-sheet rg-swap${open ? ' open' : ''}`} onClick={event => { if ((event.target as HTMLElement).classList.contains('login-scrim')) no(); }}>
+    <LayerSheet labelledBy="rgSwapTitle">
+      <h2 id="rgSwapTitle">{ask.title}</h2>
+      {ask.name && <p class="rg-swap-name">{ask.name}</p>}
+      <div class="rg-swap-do">
+        <button type="button" class="sy-btn sy-btn-secondary" onClick={no}>{ask.no}</button>
+        <button type="button" class="sy-btn sy-btn-primary" ref={sure} onClick={yes}>{ask.yes}</button>
+      </div>
+    </LayerSheet>
+  </div>;
+}
+// 정보 화면 + 카드 + (누른 열차가 있으면) 확인 팝업
+function RideInfoCard({ info, card, pick }:{ info:RideInfoView; card:ComponentChild; pick?:(id:string) => void }) {
+  const [asking, setAsking] = useState<RideMark | null>(null);
+  const yes = () => { const id = asking?.id; setAsking(null); if (id) pick?.(id); };
+  return <>
+    <RideInfo info={info} pick={pick ? setAsking : undefined} />
+    {card}
+    {asking && <SwapAsk key={asking.id} mark={asking} yes={yes} no={() => setAsking(null)} />}
+  </>;
 }
 
 // 장면·플레이어를 못 받으면 기존 말풍선으로 복귀한다. MapArrival 정리에서 내 위치 숨김도 해제된다.
@@ -266,17 +356,15 @@ function ArrivalCard({ view, actions, map, hideMe }:{ view:RideCardView; actions
   const [failed, setFailed] = useState(false), fail = useCallback(() => setFailed(true), []);
   const at = view.arrival?.at;
   if (failed || !view.arrival || !at) return <RideCard view={view} actions={actions} />;
-  return <MapArrival map={map} at={at} hideMe={hideMe} arrival={view.arrival} onClose={actions.close} onError={fail} />;
+  return <MapArrival map={map} at={at} hideMe={hideMe} arrival={view.arrival} onClose={actions.close} onError={fail} onPlayed={actions.played} />;
 }
 
 // 카드 자리(ui/ride_along 이 만든다)에 그리기 · 다시 그리기 · 치우기(view 가 null)
-// 타고 가는 동안 길 끝 자리에 깃발을 미리 세운다(GoalFlag — 카드 앞에 둬 카드가 깃발을 덮는다). 도착하면 깃발은 그리지 않는다(2026-11-26 사용자 「도착했을 때 깃발은 빼줘」).
+// 길 끝 깃발은 그리지 않는다(2026-11-26 사용자 「깃발 아예 없애기」 — 타는 동안 · 도착 모두).
 // 도착하면 말풍선 대신 지도 속 도착 자리에서 연기한다(MapArrival — map · 도착 자리가 있을 때만, 없으면 「슝 도착!」 말풍선).
 export function drawRideCard(host:HTMLElement, view:RideCardView | null, actions:RideCardActions, map?:ArrivalMap, hideMe?:(on:boolean) => void):void {
-  const goal = view?.goal?.at, flag = map && goal && !view?.arrival ? <GoalFlag key="goal" map={map} at={goal} /> : null;
-  const draw = (body:ComponentChild) => render(flag ? <>{flag}{body}</> : body, host);
   const at = view?.arrival?.at;
-  if (view?.arrival && map && at) { draw(<ArrivalCard key="arrival" view={view} actions={actions} map={map} hideMe={hideMe} />); return; }
+  if (view?.arrival && map && at) { render(<ArrivalCard key="arrival" view={view} actions={actions} map={map} hideMe={hideMe} />, host); return; }
   const card = view ? <RideCard key="card" view={view} actions={actions} /> : null;
-  draw(view?.info ? <><RideInfo key="info" info={view.info} pick={actions.pick} />{card}</> : card);
+  render(view?.info ? <RideInfoCard key="info" info={view.info} card={card} pick={actions.pick} /> : card, host);
 }

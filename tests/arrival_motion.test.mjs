@@ -61,7 +61,9 @@ test('재생기 비동기 오류는 한 번만 알리고 부분 장면을 치운
 test('이미 닫았거나 DOM에서 빠진 장면은 늦은 로딩 실패를 알리지 않는다', async context => {
   let reject;
   const {box, errors, fail} = setup(context, () => new Promise((_, no) => { reject = no; }));
-  const stop = playArrival(box, 'flag', fail);
+  // 장면이 char-ride 하나뿐이라 앞 시험이 받아 둔 장면(모듈 캐시)을 피해 새 모듈로 부른다
+  const fresh = await import('../web/lib/arrival_motion.mts?late');
+  const stop = fresh.playArrival(box, 'char-ride', fail);
   stop(); reject(new Error('late rejection')); await settle();
   assert.deepEqual(errors, []);
   box.isConnected = false;

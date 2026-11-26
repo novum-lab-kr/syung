@@ -11,10 +11,11 @@ const element=(from,to)=>{const start=html.indexOf(from);assert.ok(start>=0,`ind
 test('길찾기 단추는 index.html 과 컴포넌트가 같다',()=>{
   assert.ok(read('components/route_button.tsx').includes(element('<button id="routeButton"','</button>')));
 });
-test('새로고침 · 메뉴 단추는 index.html 과 컴포넌트가 같다',()=>{
+test('메뉴 단추는 index.html 과 컴포넌트가 같다',()=>{
   const bar=read('components/top_bar.tsx');
-  assert.ok(bar.includes(element('<button id="refreshButton"','</button>')));
   assert.ok(bar.includes(element('<button id="settingsButton"','</button>')));
+  // 머리줄의 줌 표시 · 새로고침 단추는 뺐다(2026-11-26)
+  for(const id of ['zoomBadge','refreshButton'])assert.ok(!html.includes(`id="${id}"`)&&!bar.includes(`id="${id}"`),id);
 });
 test('위쪽 역 검색창은 없고 입구는 「어디로 갈까요?」 하나다',()=>{
   const html=read('index.html');

@@ -20,8 +20,8 @@ export function alongPath(path:readonly LngLat[], distanceM:number):{ spot:LngLa
   return {spot: path[path.length - 1] ?? [0, 0], end: true};
 }
 
-// 타고 가기가 알려 주는 지금 상태(ui/ride_along devPlay): 구간 · 지금 단계 · 기다리는(붙든) 또는 탄 열차 id
-export interface FakeGpsRide { legs:readonly RideLeg[]; step:RideStep; train:string | null; held:boolean }
+// 타고 가기가 알려 주는 지금 상태(ui/ride_along devPlay): 구간 · 지금 단계 · 기다리는(짐작한) 또는 탄 열차 id
+export interface FakeGpsRide { legs:readonly RideLeg[]; step:RideStep; train:string | null }
 export interface FakeGpsDeps {
   map:{ getCenter():{ lng:number; lat:number }; getCanvasContainer():HTMLElement; unproject(point:[number, number]):{ lng:number; lat:number } };
   ride:() => FakeGpsRide | null;
@@ -32,6 +32,10 @@ export interface FakeGpsDeps {
 
 const WALK_MPS = 1.3, BUS_MPS = 8, TICK_MS = 1000, WOBBLE_DEG = 0.000003;
 const SPEEDS = [1, 3, 10];
+// 타는 중: 탄 열차가 내릴 역 점에서 이만큼 안에 들어오면 내린다(역 점과 열차 자리는 수십 m 떨어질 수 있다) — 그 뒤로는 내릴 역에 서 있고 열차를 따라가지 않는다
+//  (전에는 내릴 역을 지나도 열차를 계속 따라가 내림 판정이 안 되면 어린이대공원까지 갔다 — 2026-11-26 중화)
+export const ALIGHT_M = 150;
+export const alightNow = (trainSpot:LngLat | null, alightSpot:LngLat | null):boolean => !!trainSpot && !!alightSpot && metres(trainSpot, alightSpot) <= ALIGHT_M;
 
 interface Watch { ok:PositionCallback; fail:PositionErrorCallback | null | undefined; options:PositionOptions | undefined; realId:number | null }
 
@@ -93,15 +97,15 @@ export function installFakeGps():{ mount(deps:FakeGpsDeps):void } | null {
 
   return {mount(deps) {
     // ---- 재생: 타고 가기의 지금 단계를 보고 자리를 정한다(열차는 실제 시각대로 · 배속은 걷기 · 버스만)
-    let playing = false, speed = 1, legIndex = -1, walkedM = 0, aboard = false, note = '';
+    let playing = false, speed = 1, legIndex = -1, walkedM = 0, off = false, note = '';
     // 이 구간의 길 — 구간에 들어설 때 한 번 정해 둔다(지금 자리에서 곧은 선을 매 틱 다시 그으면 누적 거리가 겹쳐 더해진다)
     let legPath:LngLat[] | null = null;
     const playTick = () => {
       const ride = deps.ride();
       if (!ride) { note = '타고 가기가 꺼져 있어요'; return; }
-      const {step, legs, train, held} = ride, leg = step.kind === 'done' ? undefined : legs[step.leg];
+      const {step, legs, train} = ride, leg = step.kind === 'done' ? undefined : legs[step.leg];
       if (step.kind === 'done' || !leg) { note = '도착'; playing = false; return; }
-      if (step.leg !== legIndex) { legIndex = step.leg; walkedM = 0; aboard = false; legPath = null; }
+      if (step.leg !== legIndex) { legIndex = step.leg; walkedM = 0; off = false; legPath = null; }
       if (step.kind === 'walk' || leg.type === 'bus' && step.kind === 'ride') {
         legPath ??= pathOf(leg, legs[step.leg + 1]);
         const path = legPath;
@@ -114,16 +118,12 @@ export function installFakeGps():{ mount(deps:FakeGpsDeps):void } | null {
       }
       if (leg.type === 'bus') { spot = leg.path[0] ?? spot; note = '버스 기다리는 중'; return; }
       if (leg.type !== 'ride') return;
-      // 기다리기: 탈 역에 서 있다가 붙든(또는 짐작한) 열차가 오면 그 열차를 따라간다 · 타는 중: 탄 열차를 따라간다
+      // 기다리기: 탈 역에 서 있는다(열차가 들어온 순간 타고 가기가 타는 중으로 넘긴다 · 2026-11-26) · 타는 중: 탄 열차를 따라간다
       const board = deps.stationAt(leg.stations[0]!), trainSpot = train ? deps.trainAt(train) : null;
-      if (step.kind === 'wait') {
-        // 타고 가기가 들어온 열차를 붙들면(held) 올라탄다(aboard) — 그 뒤로는 열차를 따라간다(떠난 열차를 따라가야 탔다고 본다)
-        // (역 점과 승강장 · 열차 자리는 수십 m 떨어질 수 있어 거리로 가리지 않는다 — 강남 2호선 2026-11-26 잼)
-        if (trainSpot && held) aboard = true;
-        if (trainSpot && aboard) { spot = trainSpot; note = `열차 ${train} 따라가는 중(기다리기)`; }
-        else { spot = board ?? spot; note = `${leg.from}역에서 기다리는 중${train ? ` · 열차 ${train}` : ''}`; }
-        return;
-      }
+      if (step.kind === 'wait') { spot = board ?? spot; note = `${leg.from}역에서 기다리는 중${train ? ` · 열차 ${train}` : ''}`; return; }
+      const alightSpot = deps.stationAt(leg.stations[leg.stations.length - 1]!);
+      if (alightNow(trainSpot, alightSpot)) off = true;
+      if (off) { spot = alightSpot ?? spot; note = `${leg.to}역에서 내렸어요`; return; }
       if (trainSpot) { spot = trainSpot; note = `열차 ${train} 타고 가는 중`; } else note = '탄 열차가 지도에 없어요';
     };
     // 걷기 · 버스 구간의 길: 걷기는 서버 길(path) · 없으면 지금 자리 → 다음 타는 곳 곧은 선

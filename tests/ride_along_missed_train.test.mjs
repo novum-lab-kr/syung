@@ -51,7 +51,7 @@ function setup(context, route = CITY_LINE) {
   return {rideAlong, plan, fix, dist, id, view: () => views.at(-1), press: act => acts.at(-1).fix(act), pass, quiet, trainAt: spot => { trainSpot = spot; }};
 }
 
-// 시청에서 0097 을 기다리다 승강장 시간이 지나 0097 이 들어왔다 떠나고 위치가 30초 넘게 끊김(지하) → 탄 것(2026-11-11 선택 B)
+// 시청에서 0097 을 기다리다 승강장 시간이 지나 0097 이 들어옴 → 들어온 순간 탄 것(2026-11-26 사용자 결정 — 출발을 기다리지 않는다)
 async function boardAtCityHall({rideAlong, plan, fix, dist, id, view, pass, quiet}, spot = CITY_HALL, to = '남영') {
   fix(spot);
   rideAlong.start(plan, to);
@@ -60,11 +60,9 @@ async function boardAtCityHall({rideAlong, plan, fix, dist, id, view, pass, quie
   pass(100);   // 승강장 90초 지남
   dist.set(id, 1000);   // 0097 이 탈 역에 들어옴
   fix(spot);
-  assert.match(view().title, /타는 곳으로/, '들어온 순간에는 아직 기다리기(떠난 뒤 내 위치로 가린다)');
+  assert.equal(view().title, `${to}에서 내려요`, '들어온 순간 탄 것');
   dist.set(id, 1300);   // 0097 이 떠남
   quiet(1);
-  quiet(31);   // 떠난 뒤 위치가 30초 넘게 안 옴
-  assert.equal(view().title, `${to}에서 내려요`, '떠난 뒤 위치가 끊기면 탄 것');
 }
 
 test('열차는 다음 역까지 갔는데 내 위치가 탄 역에 그대로면 놓친 것 — 기다리기로 되돌려 다음 열차', async context => {
@@ -137,130 +135,76 @@ test('태릉입구 한계: 지하라 위치가 안 오거나 정확도가 100m �
   assert.equal(view().title, '석계에서 내려요', '흐린 위치는 버려 그대로');
 });
 
-// ---- 2026-11-11 사용자 선택 B: 출구 ~ 승강장 통로가 길어 승강장 90초가 지나도 아직 통로에 있을 수 있다 — 열차가 떠난 뒤 내 위치로 가린다
-// 태릉입구 통로 자리: 역 한가운데에서 동쪽(석계 반대쪽)으로 약 150m — 역 100m · 출구 50m 밖(출구 자료 없음)
-const PASSAGE = [127.076835, 37.617939];
-
-async function waitAtTaereung(context) {
+// ---- 2026-11-26 사용자 결정(8080 가짜 GPS 먹골 — 열차가 들어와 캐릭터와 겹쳤는데 「지금 타세요」 그대로 · 「탔다는 가정하에 화면 전환」):
+// 고른 열차가 탈 역에 들어온 순간 승강장에 와 있거나 남은 걷기 1분(RUN_S) 이하면 탄 것 — 출발을 기다리지 않는다.
+// 못 탔으면 열차가 다음 역에 닿은 뒤 탄 역 근처 위치가 연달아 3번(OFF_FIXES)일 때만 되돌린다 · 「못 탔어요」 그대로
+async function arriveOnPlatform(context, waitS = 100) {
   const ctx = setup(context, TAEREUNG_LINE);
-  const {rideAlong, plan, fix, dist, id, view, pass} = ctx;
+  const {rideAlong, plan, fix, dist, id, pass} = ctx;
   fix(TAEREUNG);
   rideAlong.start(plan, '석계');
   await settle();
-  pass(100);   // 승강장 90초 지남 — 사람은 아직 통로
-  dist.set(id, 1000);   // 0097 이 태릉입구에 들어옴
-  fix(PASSAGE);
-  assert.match(view().title, /6호선 석계 방면 타는 곳으로/, '들어온 순간에는 아직 기다리기');
-  dist.set(id, 1300);   // 0097 이 떠남
-  pass(5); fix(PASSAGE);
-  assert.equal(view().title, '열차에 탔어요?', '떠났어도 내 위치가 열차를 따라가지 않으면 기다리기 — 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  return ctx;
-}
-
-// 서 있어도 GPS 는 조금씩 흔들린다 — 통로에서 약 0.5m 옆(역 100m · 출구 50m 밖 그대로)
-const PASSAGE_NEAR = [127.076840, 37.617943];
-const passageAt = count => count % 2 ? PASSAGE : PASSAGE_NEAR;
-
-test('태릉입구 6호선 상행: 긴 통로에 있는 동안 0097 이 들어왔다 떠나 둘째 역(돌곶이)에 닿으면 놓친 것 — 석계에서는 아직 · 0097 빼고 다음 열차', async context => {
-  const {fix, dist, id, view, pass} = await waitAtTaereung(context);
-  for (let count = 0; count < 3; count++) { pass(5); fix(passageAt(count)); }
-  assert.equal(view().title, '열차에 탔어요?', '붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  dist.set(id, 2000);   // 0097 이 석계에 닿음 · 나는 통로 그대로
-  for (let count = 0; count < 3; count++) { pass(5); fix(passageAt(count)); }
-  assert.equal(view().title, '열차에 탔어요?', '붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  assert.doesNotMatch(view().sub, /다음 열차/, '다음 역에서는 아직 놓침으로 보지 않는다(2026-11-26 결정 B)');
-  dist.set(id, 3000);   // 0097 이 돌곶이에 닿음 · 나는 통로 그대로
-  pass(5); fix(PASSAGE_NEAR);
-  assert.match(view().title, /6호선 석계 방면 타는 곳으로/, '놓친 것 — 기다리기 그대로');
-  pass(5); fix(TAEREUNG);
-  assert.match(view().sub, /다음 열차 7분 뒤/, '놓친 0097 은 빼고 0099');
-  pass(60); fix(PASSAGE);
-  assert.match(view().title, /타는 곳으로/, '탈 시각이 지났어도 시각으로 넘기지 않는다');
-});
-
-// 2026-11-26 사용자 「승강장 도착 · 열차 도착이었는데 안 타졌어 · 그러고 나서 다음 열차 몇 분」(지하): 붙든 뒤 열차가 떠났는데 승강장 위치가 계속 와서
-// 30초 끊김(= 탄 것)도 못 되고 열차가 다음 역에 닿자 놓침으로 되돌렸다(계획서 길 1)
-async function holdOnPlatform(context) {
-  const ctx = setup(context, TAEREUNG_LINE);
-  const {rideAlong, plan, fix, dist, id, view, pass} = ctx;
-  fix(TAEREUNG);
-  rideAlong.start(plan, '석계');
-  await settle();
-  pass(100);   // 승강장 90초 지남(승강장 도착)
+  pass(waitS);
   dist.set(id, 1000);   // 0097 이 들어옴
   fix(TAEREUNG);
-  assert.match(view().sub, /열차 도착/, '「열차 도착 · 지금 타세요」');
-  dist.set(id, 1300);   // 0097 이 떠남
   return ctx;
 }
 
-test('결정 A: 붙든 뒤 승강장 좌표가 똑같이 되풀이되면(지하에서 브라우저가 마지막 위치를 다시 줌) 새 위치가 아니다 — 떠난 뒤 30초면 탄 것', async context => {
-  const {fix, dist, id, view, pass} = await holdOnPlatform(context);
-  for (let count = 0; count < 4; count++) { pass(5); fix(TAEREUNG); }
-  assert.equal(view().title, '열차에 탔어요?', '20초는 아직 기다리기 — 붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  dist.set(id, 2000);   // 석계에 닿음 — 같은 좌표만 왔으니 놓침이 아니다
-  for (let count = 0; count < 4; count++) { pass(5); fix(TAEREUNG); }
-  assert.equal(view().title, '석계에서 내려요', '떠남을 본 뒤 새 위치가 30초 넘게 없음 — 탄 것');
-});
-
-test('결정 B: 붙든 뒤 승강장 근처 위치(조금씩 바뀜)가 계속 와도 다음 역에서는 놓침이 아니다 — 그사이 위치가 열차를 따라가면 탄 것', async context => {
-  const {fix, dist, id, view, pass, trainAt} = await holdOnPlatform(context);
-  const nearPlatform = count => [TAEREUNG[0] + (count % 2 ? 0.00002 : -0.00002), TAEREUNG[1]];   // 역 한가운데 약 2m 옆(기지국 · 와이파이 위치가 늦게 따라옴)
-  for (let count = 0; count < 6; count++) { pass(5); fix(nearPlatform(count)); }
-  dist.set(id, 2000);   // 석계에 닿음 · 위치는 아직 태릉입구 근처
-  pass(5); fix(nearPlatform(0));
-  assert.equal(view().title, '열차에 탔어요?', '붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  assert.doesNotMatch(view().sub, /다음 열차/, '다음 역에서는 놓침으로 되돌리지 않는다');
-  dist.set(id, 2500); trainAt(SEOKGYE);   // 석계를 지나 돌곶이 쪽 · 내 위치가 그제야 열차를 따라옴
-  for (let count = 0; count < 3; count++) { pass(5); fix([SEOKGYE[0] + count * 0.00001, SEOKGYE[1]]); }
-  assert.equal(view().title, '석계에서 내려요', '열차를 따라 세 번 — 탄 것');
-});
-
-test('태릉입구 6호선 상행: 0097 이 떠난 뒤 내 위치가 열차를 따라 석계 쪽으로 움직이면 탄 것', async context => {
-  const {fix, dist, id, view, pass, trainAt} = await waitAtTaereung(context);
-  const between = [(TAEREUNG[0] + SEOKGYE[0]) / 2, (TAEREUNG[1] + SEOKGYE[1]) / 2];
-  dist.set(id, 1500); trainAt(between);
-  const riding = count => [between[0] + count * 0.00001, between[1]];   // 열차 안이라 좌표가 조금씩 바뀐다(같은 좌표 되풀이는 새 위치가 아니다 — 결정 A)
-  pass(5); fix(riding(0));
-  pass(5); fix(riding(1));
-  assert.equal(view().title, '열차에 탔어요?', '두 번까지는 기다리기 — 붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  pass(5); fix(riding(2));
-  assert.equal(view().title, '석계에서 내려요', '열차를 따라 세 번 — 탄 것');
-});
-
-test('태릉입구 6호선 상행: 0097 이 떠난 뒤 위치가 30초 넘게 끊기면(지하) 탄 것 · 30초 전에는 기다리기', async context => {
-  const {view, quiet} = await waitAtTaereung(context);
-  quiet(20);
-  assert.equal(view().title, '열차에 탔어요?', '20초는 아직 — 붙든 열차가 떠나 슝이 묻는다(2026-11-26 결정 B 묻기)');
-  quiet(15);
+test('고른 열차가 들어온 순간 탄 것 — 서 있는 동안에도 타는 중 화면(출발을 기다리지 않는다)', async context => {
+  const {view} = await arriveOnPlatform(context);
   assert.equal(view().title, '석계에서 내려요');
 });
 
-test('열차가 들어와 서 있는 동안(아직 안 떠남)은 위치가 끊겨도 기다리기 — 「지금 타세요」 그대로', async context => {
-  const {rideAlong, plan, fix, dist, id, view, pass, quiet} = setup(context);
-  fix(CITY_HALL);
-  rideAlong.start(plan, '남영');
-  await settle();
-  pass(100);
-  dist.set(id, 1000);
-  fix(CITY_HALL);
-  quiet(40);
-  assert.match(view().title, /타는 곳으로/);
-  assert.match(view().sub, /열차 도착/);
+test('남은 걷기 1분 이하면 승강장에 닿기 전이라도 들어온 순간 탄 것(뛰어서 탄다) · 1분 넘게 남았으면 놓침', async context => {
+  const near = await arriveOnPlatform(context, 40);   // 승강장 90초 가운데 40초 — 50초 남음
+  near.quiet(1);   // 1초 tick 이 가린다
+  assert.equal(near.view().title, '석계에서 내려요', '50초 남음 — 탄 것');
+});
+
+test('들어오자 탄 것으로 넘긴 뒤 열차가 다음 역(석계)에 닿았는데 탄 역 근처 위치가 연달아 3번이면 놓친 것 — 「못 탄 것 같아요」 [아니에요, 탔어요] → 그 열차로 다시', async context => {
+  const {rideAlong, fix, dist, id, view, press, pass} = await arriveOnPlatform(context);
+  assert.equal(view().title, '석계에서 내려요');
+  for (let count = 0; count < 4; count++) { pass(5); fix(jitter(TAEREUNG, count)); }
+  assert.equal(view().title, '석계에서 내려요', '다음 역에 닿기 전에는 세지 않는다');
+  dist.set(id, 2000);   // 0097 이 석계에 닿음 · 나는 태릉입구 근처 그대로
+  pass(5); fix(jitter(TAEREUNG, 0)); pass(5); fix(jitter(TAEREUNG, 1));   // (앞 위치와 같은 좌표 되풀이는 새 위치가 아니라 번갈아 흔든다)
+  assert.equal(view().title, '석계에서 내려요', '한두 번 튐으로는 되돌리지 않는다');
+  pass(5); fix(jitter(TAEREUNG, 0));
+  assert.match(view().title, /6호선 석계 방면 타는 곳으로/, '연달아 3번 — 놓친 것');
+  assert.equal(view().say, '못 탄 것 같아요');
+  assert.deepEqual(buttons(view()), ['아니에요, 탔어요']);
+  press('undo');
+  assert.equal(view().title, '석계에서 내려요');
+  assert.ok(rideAlong.rideTrain({id}), '놓친 것으로 본 0097 을 다시 따라간다');
+});
+
+// 받아들인 단점(2026-11-26 사용자): 출구 ~ 승강장 통로(역 100m · 출구 50m 밖)에 있는 동안 열차가 들어와도 탄 것 — 통로 위치로는 되돌리지 않는다(사용자가 「못 탔어요」)
+// 태릉입구 통로 자리: 역 한가운데에서 동쪽(석계 반대쪽)으로 약 150m(출구 자료 없음)
+const PASSAGE = [127.076835, 37.617939];
+test('통로에 있는 동안 고른 열차가 들어와도 탄 것 — 「못 탔어요」를 누르면 그 열차 빼고 다음 열차', async context => {
+  const {fix, dist, id, view, press, pass} = await arriveOnPlatform(context);
+  pass(1); fix(PASSAGE);
+  assert.equal(view().title, '석계에서 내려요');
+  dist.set(id, 2000);
+  for (let count = 0; count < 3; count++) { pass(5); fix([PASSAGE[0] + (count % 2 ? 0.00001 : 0), PASSAGE[1]]); }
+  assert.equal(view().title, '석계에서 내려요', '탄 역 근처(nearBoarding)가 아니니 되돌리지 않는다');
+  press('missed');
+  assert.match(view().title, /6호선 석계 방면 타는 곳으로/);
+  pass(5); fix(TAEREUNG);
+  assert.match(view().sub, /다음 열차 7분 뒤/, '0097 은 빼고 0099');
 });
 
 // ---- 2026-11-26 사용자 결정 ② 바로잡기 창구 A+B: 늘 보이는 링크(A) + 슝이 헷갈릴 때 묻기(B) — 지하철 구간만
 const links = view => view.fix?.links.map(link => link.text) ?? [];
 const buttons = view => view.fix?.buttons.map(button => button.text) ?? [];
 
-test('② 글: 고르는 중 > 붙든 열차 떠남 > 놓침으로 되돌림 > 늘 보이는 링크 차례 · 타는 중은 「못 탔어요」만', () => {
-  const pick = state => rideFixView({step: 'wait', left: false, undo: false, choosing: false, ...state});
+test('② 글: 고르는 중 > 놓침으로 되돌림 > 늘 보이는 링크 차례 · 타는 중은 「못 탔어요」만', () => {
+  const pick = state => rideFixView({step: 'wait', undo: false, choosing: false, ...state});
   assert.deepEqual(pick({}).fix.links.map(link => link.text), ['벌써 탔어요 ›', '다른 열차를 탔어요 ›']);
-  assert.deepEqual(pick({left: true}), {title: '열차에 탔어요?', say: '슝이 헷갈려요', fix: {buttons: [{act: 'boarded', text: '탔어요', main: true}, {act: 'missed', text: '못 탔어요', main: false}], links: [{act: 'other', text: '다른 열차를 탔어요 ›'}]}});
   assert.equal(pick({undo: true}).say, '못 탄 것 같아요');
   assert.deepEqual(pick({undo: true}).fix.buttons.map(button => button.act), ['undo']);
-  assert.equal(pick({left: true, undo: true, choosing: true}).title, '탄 열차를 지도에서 눌러 주세요');
-  assert.deepEqual(rideFixView({step: 'ride', left: false, undo: false, choosing: false}).fix.links.map(link => link.act), ['missed'], '타는 중엔 「다른 열차예요」 없이 목록 · 지도의 열차를 바로 누른다(2026-11-26 사용자)');
+  assert.equal(pick({undo: true, choosing: true}).title, '탄 열차를 지도에서 눌러 주세요');
+  assert.deepEqual(rideFixView({step: 'ride', undo: false, choosing: false}).fix.links.map(link => link.act), ['missed'], '타는 중엔 「다른 열차예요」 없이 목록 · 지도의 열차를 바로 누른다(2026-11-26 사용자)');
 });
 
 test('② A 기다리기: 「벌써 탔어요」 — 열차가 들어오기 전이라도 지금 짐작한 열차로 타는 중', async context => {
@@ -274,41 +218,6 @@ test('② A 기다리기: 「벌써 탔어요」 — 열차가 들어오기 전�
   assert.equal(view().title, '석계에서 내려요');
   assert.ok(rideAlong.rideTrain({id}), '짐작한 0097 을 따라간다');
   assert.deepEqual(links(view()), ['못 탔어요 ›'], '타는 중에는 「못 탔어요」만(다른 열차는 목록 · 지도에서 바로 누른다)');
-});
-
-test('② B 붙든 열차가 떠남: 「열차에 탔어요?」 [탔어요] → 바로 타는 중', async context => {
-  const {fix, view, press, pass} = await holdOnPlatform(context);
-  pass(5); fix(jitter(TAEREUNG, 0));
-  assert.equal(view().title, '열차에 탔어요?');
-  assert.equal(view().say, '슝이 헷갈려요');
-  assert.match(view().sub, /6호선 열차가 막 떠났어요/);
-  assert.deepEqual(buttons(view()), ['탔어요', '못 탔어요']);
-  press('boarded');
-  assert.equal(view().title, '석계에서 내려요');
-});
-
-test('② B 붙든 열차가 떠남 → [못 탔어요]: 그 열차 빼고 다음 열차 · 사용자가 말했으니 「아니에요, 탔어요」는 안 묻는다', async context => {
-  const {fix, view, press, pass} = await holdOnPlatform(context);
-  pass(5); fix(jitter(TAEREUNG, 0));
-  press('missed');
-  pass(5); fix(jitter(TAEREUNG, 0));
-  assert.match(view().title, /6호선 석계 방면 타는 곳으로/);
-  assert.match(view().sub, /다음 열차 7분 뒤/, '놓친 0097 은 빼고 0099');
-  assert.deepEqual(buttons(view()), []);
-  assert.deepEqual(links(view()), ['벌써 탔어요 ›', '다른 열차를 탔어요 ›']);
-});
-
-test('② B 슝이 스스로 놓침으로 되돌림: 「못 탄 것 같아요」 [아니에요, 탔어요] → 그 열차로 다시 타는 중', async context => {
-  const {rideAlong, fix, dist, id, view, press, pass} = await holdOnPlatform(context);
-  for (let count = 0; count < 3; count++) { pass(5); fix(jitter(TAEREUNG, count)); }
-  dist.set(id, 3000);   // 0097 이 돌곶이(둘째 역)에 닿음 · 나는 태릉입구 근처 — 슝은 놓친 것으로 본다
-  pass(5); fix(jitter(TAEREUNG, 1));
-  assert.match(view().title, /6호선 석계 방면 타는 곳으로/);
-  assert.equal(view().say, '못 탄 것 같아요');
-  assert.deepEqual(buttons(view()), ['아니에요, 탔어요']);
-  press('undo');
-  assert.equal(view().title, '석계에서 내려요');
-  assert.ok(rideAlong.rideTrain({id}), '놓친 것으로 본 0097 을 다시 따라간다');
 });
 
 test('② A 타는 중: 「못 탔어요」 → 기다리기(사용자가 말한 것은 되묻지 않는다)', async context => {

@@ -14,16 +14,16 @@ export default meta;
 
 const MapSpot = ({ children }:{ children:ComponentChildren }) => <div class="sb-stage sb-stage-map sb-map-short">{children}</div>;
 
-export const 막대_기본:StoryObj = { name: '상단 막대 · 기본', render: () => <div class="sb-bar"><TopBar zoom="z13.4" /></div> };
+export const 막대_기본:StoryObj = { name: '상단 막대 · 기본', render: () => <div class="sb-bar"><TopBar /></div> };
 export const 막대_처음:StoryObj = { name: '상단 막대 · 지도 뜨기 전', render: () => <div class="sb-bar"><TopBar /></div> };
-export const 막대_포커스:StoryObj = { name: '상단 막대 · 단추 포커스', render: () => <div class="sb-bar" ref={focusFirst}><TopBar zoom="z13.4" /></div> };
+export const 막대_포커스:StoryObj = { name: '상단 막대 · 단추 포커스', render: () => <div class="sb-bar" ref={focusFirst}><TopBar /></div> };
 export const 막대_상태글자:StoryObj = {
   name: '상단 막대 · 실시간 상태 글자(화면에서는 숨김)',
   render: () => <div class="sb-bar sb-bar-wide">
-    <TopBar zoom="z13.4" liveHidden={false} />
-    <TopBar zoom="z13.4" liveHidden={false} liveKind="ok" liveText="추정 위치 42대 · 2호선 · 08:12 기준" />
-    <TopBar zoom="z10.2" liveHidden={false} liveKind="idle" liveText="줌 13 이상에서 실시간 열차를 표시합니다" />
-    <TopBar zoom="z13.4" liveHidden={false} liveKind="error" liveText="실시간 위치 연결 실패 · 잠시 후 재시도" />
+    <TopBar liveHidden={false} />
+    <TopBar liveHidden={false} liveKind="ok" liveText="추정 위치 42대 · 2호선 · 08:12 기준" />
+    <TopBar liveHidden={false} liveKind="idle" liveText="줌 13 이상에서 실시간 열차를 표시합니다" />
+    <TopBar liveHidden={false} liveKind="error" liveText="실시간 위치 연결 실패 · 잠시 후 재시도" />
   </div>,
 };
 
