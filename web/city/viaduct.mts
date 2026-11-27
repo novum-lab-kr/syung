@@ -362,6 +362,7 @@ export class CityViaduct {
   declare bytes:number; declare frame:number; declare stats:ViaductStats; declare edges:ViaductEdge[] | null; declare edgeIndex:Map<string, ViaductEdge> | null;
   declare gl:WebGL2RenderingContext | null; declare broken:boolean; declare rgb:Map<string, number[]>;
   declare levels:Map<string, number> | null; declare levelsVersion:number; declare exitLayouts:Map<string, PlacedLayout>;
+  declare stairMemo:Map<string, boolean | undefined>;   // hasStair 결과(출구 기둥이 프레임마다 출구마다 묻는다) — 계단 조각('ex:')이 생기거나 지워질 때 비운다
   declare gapFn:((line:string, lo:number, hi:number) => Range[] | null) | null; declare gapV:number | undefined;
   declare lineSteps:Map<string, number> | undefined; declare focus:Focus | null | undefined; declare nbr:Map<string, number> | undefined;
   declare staleKeys:[string, number][] | undefined; declare humps:Map<string, Hump[]> | undefined; declare resolving:boolean | undefined;
@@ -372,7 +373,7 @@ export class CityViaduct {
   declare pierTries:number | undefined; declare exitTries:number | undefined;
   constructor({ pack = SEOUL as ViaductPack, net }:{ pack?:ViaductPack; net?:ViaductNet } = {}) {
     this.pack = pack; this.V = V_OF(pack); this.net = net!; this.cache = new Map(); this.plats = new Map(); this.bytes = 0; this.frame = 0; this.stats = {}; this.edges = null; this.edgeIndex = null; this.gl = null; this.broken = false; this.rgb = new Map();
-    this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map();
+    this.levels = null; this.levelsVersion = 0; this.exitLayouts = new Map(); this.stairMemo = new Map();
   }
   get railM() { return this.V.railHeightM }
   // 조선 모드 ↔ 심시티: 팩만 바꾼다. 두 팩의 치수가 같아서(조선 팩은 색 · aqueduct 만 덧쓴다) 지은 조각은 그대로 쓰고 색만 새로
@@ -583,9 +584,9 @@ export class CityViaduct {
   put(k:string, data:Float32Array):Piece {
     const gl = this.gl!, vao = gl.createVertexArray(), b = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     for (const [loc, n, off] of ATTRS) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, STRIDE * 4, off * 4) } gl.bindVertexArray(null);
-    const a:Piece = { vao, b, n: data.length / STRIDE, bytes: data.byteLength, f: this.frame }; this.cache.set(k, a); this.bytes += a.bytes; return a;
+    const a:Piece = { vao, b, n: data.length / STRIDE, bytes: data.byteLength, f: this.frame }; this.cache.set(k, a); this.bytes += a.bytes; if (k.startsWith('ex:')) this.stairMemo.clear(); return a;
   }
-  del(k:string) { const a = this.cache.get(k); if (!a) return; this.gl!.deleteVertexArray(a.vao); this.gl!.deleteBuffer(a.b); this.bytes -= a.bytes; this.cache.delete(k) }
+  del(k:string) { const a = this.cache.get(k); if (!a) return; this.gl!.deleteVertexArray(a.vao); this.gl!.deleteBuffer(a.b); this.bytes -= a.bytes; this.cache.delete(k); if (k.startsWith('ex:')) this.stairMemo.clear() }
   lineRGB(line:string, theme:Theme):number[] { const k = line + theme; let c = this.rgb.get(k); if (!c) { c = toneRGB(hexRgb(this.net.colors[line] || '#888888'), this.pack, 'simcity', theme); this.rgb.set(k, c) } return c }
 
   render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:ViaductRenderOptions = {}):boolean {
@@ -702,6 +703,10 @@ export class CityViaduct {
   }
   // does this exit (of station id, at lon/lat) have a stair standing? true / false (none placed, or blocked) / undefined (not laid out yet)
   hasStair(id:number | string, lon:number, lat:number):boolean | undefined {
+    const mk = id + ',' + lon + ',' + lat; if (this.stairMemo.has(mk)) return this.stairMemo.get(mk);
+    const r = this.findStair(id, lon, lat); this.stairMemo.set(mk, r); return r;
+  }
+  findStair(id:number | string, lon:number, lat:number):boolean | undefined {
     let seen = false;
     for (const [k, a] of this.cache) {
       if (!k.startsWith('ex:') || !a.lay || k.split(':')[2] !== String(id)) continue; seen = true;

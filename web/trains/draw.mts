@@ -44,7 +44,9 @@ type TrainPlanB = TrainPlan & { blend?:unknown };
 export interface TrainLayerDeps {
   map:MapLibre; JOSEON_STYLE:{ train?:{ turtleShip?:unknown } }; planner:{ plans:TrainPlanB[] }; trainBodyPx:(zoom:number)=>number;
   TRAIN_MIN_PX:number; TRAIN_ICON_RATIO:number; cityViaduct:CityViaduct; laneOffsetPx:(zoom:number, bodyPx:number)=>number; maplibregl:{ MercatorCoordinate:typeof MercatorCoordinate };
-  trainPose:(plan:TrainPlan)=>{ dist:number; moving:boolean }; trackPoint:(plan:TrainPlan, dist:number)=>TrackPt; mercStop:(line:string, s:MapStation)=>Merc;
+  trainPose:(plan:TrainPlan)=>{ dist:number; moving:boolean }; trackPoint:(plan:TrainPlan, dist:number)=>TrackPt;
+  // trainMid: 이번 차례 열차 가운데 자리(본체가 간격 맞추기 · x-ray 와 같이 쓴다 — 고치지 않는다) · trainNear: 화면 근처일 수 있나(아니면 자리도 셈하지 않는다)
+  trainMid:(plan:TrainPlan, dist:number)=>TrackPt; trainNear:(plan:TrainPlan, dist:number)=>boolean; mercStop:(line:string, s:MapStation)=>Merc;
   blendShift:(plan:TrainPlan, mid:TrackPt)=>[number, number] | null; lastPose:Map<string, { x:number; y:number }>; toRide:(plan:TrainPlan, d:number)=>number;
   hexRGB:(v:string)=>number[]; colors:Record<string, string>; fromRide:(plan:TrainPlan, a:number)=>number;
   coasterCarFrame:(P:(d:number)=>TrackPt, tail:number, car:number, j:number, n:number, unit:number, bodyPx:number, lanePx:number, gap:number)=>CarFrame;
@@ -223,7 +225,7 @@ void main(){shade();outColor*=u_alpha;}`;
 // 타고 가기 중 파장(내 위치 — 열차 둘레 파장은 2026-11-26 뺐다)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
 const RIDE_RIPPLE_MS=125;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
-export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
+export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,trainMid,trainNear,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
   class TrainLayer{
     // 필드는 선언만(declare — 실행 코드 없음, 값은 지금처럼 constructor · onAdd · render 가 넣는다)
     declare id:string; declare type:'custom'; declare renderingMode:'3d'; declare data:Float32Array; declare matrix:Float32Array; declare rgb:Map<string, number[]>;
@@ -329,8 +331,8 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
       // my-location pulse: the ripple, in 슝 yellow, under the trains
       if(live.myLocation&&map.getBounds().contains(live.myLocation)){const q=maplibregl.MercatorCoordinate.fromLngLat(live.myLocation);this.color=[1,.83,0];this.width=8;this.length=0;this.kind=0;this.carPx=0;this.ripple(q.x,q.y,8*3.4);this.width=bodyPx;rippling=true}
       for(const plan of drawTrainsToo?planner.plans:[]){
-        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!snap&&!live.trainShown(plan,pose.dist))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown) — 1인칭으로 탄 열차는 늘
-        const mid=trackPoint(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
+        const snap=live.riding(plan),pose=snap?snap.pose:trainPose(plan);if(!snap&&(!trainNear(plan,pose.dist)||!live.trainShown(plan,pose.dist)))continue;   // 길찾기 중에는 내가 가는 방향의 열차만(journey.mjs trainShown) — 1인칭으로 탄 열차는 늘 · 멀리 있는 열차는 자리부터 건너뛴다
+        const mid=trainMid(plan,pose.dist),m=mercStop(plan.t.line,plan.seq[0]!).meterInMercatorCoordinateUnits();   // 1인칭으로 탄 열차: 카메라를 놓은 그 순간의 자리
         this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
         let shiftX=0,shiftY=0;

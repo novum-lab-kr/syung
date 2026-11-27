@@ -422,6 +422,7 @@ interface LampLook { va:WebGLVertexArrayObject; mesh:Mesh }
 export class CityLife {
   // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · init · _init · render 가 넣는다)
   declare pack:LifePack; declare exits:() => XY[]; declare deck:(x:number, y:number, r:number) => ExitDeck; declare cells:Map<string, LifeCell>; declare graph:RoadGraph;
+  declare spotMemo:Map<string, { x:number; y:number } | null>;   // exitSpot 결과(출구 기둥이 프레임마다 출구마다 묻는다) — 칸이 다 지어지거나 지워질 때 비운다
   declare stats:Partial<LifeStats> & { idle?:boolean }; declare _anim:boolean; declare lastQuery:number; declare building:LifeCell | null; declare M:Float32Array;
   declare keepOut:((x:number, y:number) => boolean) | null; declare people:{ list:Person[]; poses:Float32Array; count:number; max:number; seq:number; simT:number };
   declare map:MapLike; declare gl:WebGL2RenderingContext | null | undefined; declare broken:boolean | undefined;
@@ -432,7 +433,7 @@ export class CityLife {
   declare vaH:WebGLVertexArrayObject; declare vaQ:WebGLVertexArrayObject; declare vaL:WebGLVertexArrayObject; declare vaT:WebGLVertexArrayObject[]; declare vaP:WebGLVertexArrayObject;
   declare lamps:Map<LampSpec, LampLook>; declare lastFrame:number | undefined; declare tick:number | undefined; declare ptick:number | undefined;
   constructor({ pack = SEOUL as unknown as LifePack, exits = () => [], deck = () => null }:LifeOptions = {}) {
-    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.keepOut = null; this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
+    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.spotMemo = new Map(); this.keepOut = null; this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
     this.M = new Float32Array(16);
     this.people = { list: [], poses: new Float32Array(400 * 14), count: 0, max: 400, seq: 0, simT: 0 };   // seq: ids; simT: walked time (s)
   }
@@ -585,10 +586,10 @@ export class CityLife {
     for (const [bit, area] of [[2, T.parkAreaPerTreeM2 * .7], [4, T.parkAreaPerTreeM2], [8, T.parkAreaPerTreeM2 * 3.2]] as const) {
       const sp = Math.sqrt(area), minSp = T.parkMinSpacingM, j = Math.max(0, Math.min(.45, (sp - minSp) / (2 * sp)));   // the jitter keeps the pack's minimum spacing
       for (let gx = Math.floor(bx0 / sp); gx <= Math.floor(bx1 / sp); gx++) { for (let gy = Math.floor(by0 / sp); gy <= Math.floor(by1 / sp); gy++) {
+        if ((++n & 31) === 0 && performance.now() - (cell.s0 || 0) > 4) yield;   // 걸음을 시간으로 자른다(공원이 큰 칸은 한 걸음이 CPU 4배에서 240 ms 였다 — 2026-11-27 잼)
         const x = (gx + .5 + (hashi(gx, gy, 21) - .5) * 2 * j) * sp, y = (gy + .5 + (hashi(gx, gy, 22) - .5) * 2 * j) * sp;
         if (!(maskAt(x, y) & bit) || !okTree(x, y, null, 2.5, 5) || !pathClear(x, y, 1.6)) continue;
-        treeAt(x, y, 1, T.parkHeightM[0], T.parkHeightM[1], T.parkCrownDiameterM[0], T.parkCrownDiameterM[1]) }
-        if (++n % 40 === 0) yield }
+        treeAt(x, y, 1, T.parkHeightM[0], T.parkHeightM[1], T.parkCrownDiameterM[0], T.parkCrownDiameterM[1]) } }
     }
     mark('park-trees'); yield;
     // lamps along the main streets: every 28 m, primaries both sides staggered, clear of the junctions
@@ -631,9 +632,9 @@ export class CityLife {
     cell.trees = binned(street, 9); cell.ptrees = binned(park, 9); cell.lamps = binned(lamps, 4); cell.cross = binned(cross, 4); cell.walks = walks; cell.hot = hot;
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     cell.sub = { SUB, sx, sy }; cell.ms = performance.now() - t0; cell.counts = { trees: trees.length / 9, street: street.length / 9, lamps: lamps.length / 4, cross: cross.length / 4, edges: edges.length, walks: walks.length };
-    mark('gpu'); cell.state = 'ready';
+    mark('gpu'); cell.state = 'ready'; this.spotMemo.clear();
   }
-  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); this.graph.removeCell(cell.key); this.cells.delete(cell.key) }
+  dropCell(cell:LifeCell):void { const gl = this.gl!; for (const k of ['trees', 'ptrees', 'lamps', 'cross'] as const) if (cell[k]?.b) gl.deleteBuffer(cell[k].b); this.graph.removeCell(cell.key); this.cells.delete(cell.key); this.spotMemo.clear() }
   // the sub-grid ranges of a cell the view box touches: [rowStart, rowEnd) as instance ranges
   ranges(cell:LifeCell, prop:BinnedKey, box:number[]):[number, number][] {
     const B = cell[prop]; if (!B || !B.n) return []; const { SUB, sx, sy } = cell.sub!, [bx0, by0] = cell.box, out:[number, number][] = [];
@@ -659,17 +660,18 @@ export class CityLife {
     for (const [key, x, y] of need) { wanted.add(key); if (!this.cells.has(key)) this.cells.set(key, { key, x, y, box: this.cellBox(x, y), state: 'pending', tries: 0 }) }
     const pending = [...this.cells.values()].filter(c => c.state === 'pending');
     const due = pending.filter(c => !(c.retryAt! > now));   // (retryAt 이 없으면 undefined > now 는 false — 바로 물을 셀)
-    if (due.length && now - this.lastQuery > 400) {
+    // 끄는 동안(moving)에는 칸을 묻지도 짓지도 않는다 — 멈춘 뒤에 짓는다(짓는 칸이 남아 있으면 stillBuilding 이 프레임을 계속 부른다). 끌기 프레임의 12~16 % · 최장 400 ms 멈칫(2026-11-27 잼)
+    if (!moving && due.length && now - this.lastQuery > 400) {
       this.lastQuery = now; const by = this.gather();
       // a tile that is there but bare (water, say) is finished at once; one whose features have not come (not loaded yet, or
       // only in the padding — the map does not fetch what is off screen) is asked after again, less and less often, and is
       // built when they do come. (Settling for empty after a few tries left whole tiles bare after a pan: no trees, cars or people.)
-      for (const c of due) { const F = by.get(c.key); if (F && (F.transportation.length || F.building.length || F.landcover.length)) { c.state = 'building'; c.gen = this.build(c, F) } else if (F) { c.state = 'ready'; c.counts = {}; c.walks = []; c.bare = true } else { c.tries++; c.retryAt = now + Math.min(8000, 400 * 2 ** Math.min(c.tries, 5)) } }
+      for (const c of due) { const F = by.get(c.key); if (F && (F.transportation.length || F.building.length || F.landcover.length)) { c.state = 'building'; c.gen = this.build(c, F) } else if (F) { c.state = 'ready'; c.counts = {}; c.walks = []; c.bare = true; this.spotMemo.clear() } else { c.tries++; c.retryAt = now + Math.min(8000, 400 * 2 ** Math.min(c.tries, 5)) } }
     }
     // one cell at a time, nearest the centre first, within this frame's budget
     if (!this.building || this.building.state !== 'building') { const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2; this.building = [...this.cells.values()].filter(c => c.state === 'building').sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null }
     // (slow frames — a weak device, a software renderer — get a bigger slice: the city should not take a minute to appear)
-    if (this.building) { const deadline = t0 + (moving ? 4 : Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4))), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen!.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
+    if (this.building && !moving) { const deadline = t0 + Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4)), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen!.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
     if (this.cells.size > 10) for (const c of [...this.cells.values()]) { if (this.cells.size <= 8) break; if (!wanted.has(c.key) && c.state !== 'building') this.dropCell(c) }
     this.lastFrame = now;
     const stillBuilding = [...this.cells.values()].some(c => c.state === 'building' || (c.state === 'pending' && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3]))), waiting = [...this.cells.values()].filter(c => c.state === 'pending').length;   // building: the view still lacks props (being built, or its tile not here yet); waiting: cells (in view or not) without their tile
@@ -818,7 +820,8 @@ export class CityLife {
   // Is (x, y) (local metres) inside a building footprint: true / false, or undefined where no cell is ready yet (the
   // viaduct's piers wait for that, so none stands in a building whose tile has not come).
   // 출구 표지 자리(mercator): 건물을 피해 옮긴 곳. 그 셀이 아직 안 지어졌거나 그 출구를 모르면 null(원래 자리에 그린다)
-  exitSpot(lon:number, lat:number):{ x:number; y:number } | null { const [x, y] = toM(lon, lat);
+  exitSpot(lon:number, lat:number):{ x:number; y:number } | null { const mk = lon + ',' + lat; if (this.spotMemo.has(mk)) return this.spotMemo.get(mk)!; const r = this.findSpot(lon, lat); this.spotMemo.set(mk, r); return r }
+  findSpot(lon:number, lat:number):{ x:number; y:number } | null { const [x, y] = toM(lon, lat);
     for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; const q = c.state === 'ready' && c.exitSpots?.get(lon + ',' + lat); return q ? { x: q[0] * MU + O.x, y: q[1] * MU + O.y } : null }
     return null }
   inBuilding(x:number, y:number):boolean | undefined { for (const c of this.cells.values()) { const b = c.box; if (x < b[0] || x >= b[2] || y < b[1] || y >= b[3]) continue; if (c.state !== 'ready') return undefined; return c.bare ? false : c.inBuilding ? c.inBuilding(x, y, 1.3) : false } return undefined }

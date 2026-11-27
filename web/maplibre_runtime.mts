@@ -252,6 +252,7 @@ function along(line:string,from:MapStation,to:MapStation,k:number):{x:number;y:n
 // Stations are drawn as platform-length pills laid along the track (≈180 m), like Kakao Map:
 // a dot when zoomed out, a platform when zoomed in, so a stopped train visibly sits "in" it.
 const PLATFORM_HALF=90;
+let rectsV=0;   // 승강장(stationRects)을 다시 지을 때마다 하나씩 — x-ray 승강장 조각 기억이 본다
 function metresBetween(a:readonly number[],b:readonly number[]){return Math.hypot((b[0]!-a[0]!)*Math.cos(a[1]!*Math.PI/180),b[1]!-a[1]!)*111320}
 // First `dist` metres of the track from station s toward neighbour n, starting at s.
 function trackFrom(line:string,s:MapStation,n:MapStation,dist:number){
@@ -278,7 +279,7 @@ const stationWidthPx=(z:number)=>{const S=STATION_WIDTH_STOPS;if(z<=S[0]![0])ret
 const stationRects=new Map<string,Rect>(),PLATFORM_SCALE=.3;   // platform bars: a third of the old outline width (names sit beside them now)
 const platformPx=(r:StationRect&{widthM?:number},base:number)=>{if(!r.widthM)return base;const lat=r.coords[0]![1]*Math.PI/180,mpp=40075016.686*Math.cos(lat)/(512*2**map.getZoom());return Math.max(base,Math.min(base*2,r.widthM/mpp))};
 function buildStationFeatures(){
-  const {platform,kind}=modeCtl.settings().track,ribbon=platform==='ribbon',ground=kind==='ground';   // ribbon: 노선을 따라 휘는 띠(모든 모드), straight: 곧은 상자
+  rectsV++;const {platform,kind}=modeCtl.settings().track,ribbon=platform==='ribbon',ground=kind==='ground';   // ribbon: 노선을 따라 휘는 띠(모든 모드), straight: 곧은 상자
   return stations.flatMap(s=>s.lines.map((x):GeoJSON.Feature<GeoJSON.LineString>=>{
     const line=x.name,{prev,next}=neighbours(line,s);
     const back=prev?trackFrom(line,s,prev,PLATFORM_HALF).reverse():[stopPos(line,s)],ahead=next?trackFrom(line,s,next,PLATFORM_HALF):[stopPos(line,s)];
@@ -329,7 +330,7 @@ function buildStationFeatures(){
   }));
 }
 
-const shapesReady=fetch(serverUrl('./track_shapes.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:TrackShapes|null)=>{d=d||{};shapes=d.edges||(d.stops?{}:d as unknown as Record<string,LngLat[]>);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();edgeGeom.clear();coasterMotion.clear();coasterGeo.reset();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
+const shapesReady=fetch(serverUrl('./track_shapes.json'),{cache:'no-cache'}).then(r=>r.ok?r.json():{}).then((d:TrackShapes|null)=>{d=d||{};shapes=d.edges||(d.stops?{}:d as unknown as Record<string,LngLat[]>);stops=d.stops||{};stopDirs=d.stopDirs||{};stopHalf=d.stopHalf||{};platformHalf=d.platformHalf||{};stopWidth=d.stopWidth||{};stopReach=d.stopReach||{};smoothCache.clear();basicRouteCache.clear();stationRects.clear();rectsV++;edgeGeom.clear();coasterMotion.clear();coasterGeo.reset();stopMerc.clear();if(Object.keys(shapes).length)document.querySelector('.provenance')?.insertAdjacentHTML('beforeend',' 선로 형태는 © OpenStreetMap contributors 자료를 사용했습니다.');planner.rebuild()}).catch(()=>{});
 // Phones (touch devices): render at most 2× device pixels and raise 3D buildings from zoom 15.
 const PHONE=matchMedia('(max-width:720px),(pointer:coarse)').matches;
 // 롤코 1인칭 발열(덕배 2026-10-17): 휴대폰은 탈 때만 그리는 배율 1.5(점 수 약 44 % 줄임). 비교: 주소에 #ridepx=2(배율 그대로).
@@ -476,10 +477,21 @@ function loadModeKit(){
     .catch(e=>{kitLoad=null;console.warn('mode kit: failed to load',e);throw e})}
 // city-build: 심시티 x-ray — the station platforms and running trains near the view, as boxes in mercator for cityBuildings: the
 // buildings hiding them turn to glass there (pack.xray). Platforms: the station rect at its viaduct level; trains: tail to head on the deck
+// 승강장 조각은 카메라 · 승강장 · 고가 높이가 그대로면 지난 결과를 다시 쓴다(열차만 움직이는 멈춘 화면에서 프레임마다 다시 짓던 것)
+type XrayBox=NonNullable<Parameters<import('./city/buildings.mts').CityBuildings['setXray']>[0]>[number];type XrayPack=NonNullable<import('./city/buildings.mts').CityBuildings['P']['xray']>;
+let xrayPlat:{key:unknown[];out:XrayBox[]}|null=null;
 function cityXrayTargets(){
   const X=cityBuildings!.P.xray;if(!X||!X.on)return null;
   const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),m=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
-  const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x:number,y:number)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad,out=[];
+  const zoom=map.getZoom(),unit=1/(512*2**zoom),pad=(B.x-A.x)*.3,inV=(x:number,y:number)=>x>A.x-pad&&x<B.x+pad&&y>B.y-pad&&y<A.y+pad;
+  cityViaduct.levelsOf();   // 높이를 먼저 맞춰 둔다(stationH 가 늦게 다시 셈하면 세대 값이 바뀐다)
+  const key=[A.x,A.y,B.x,B.y,zoom,m,X,rectsV,stationRects.size,cityViaduct.levelsVersion,cityViaduct.V];
+  if(!xrayPlat||xrayPlat.key.some((v,i)=>v!==key[i]))xrayPlat={key,out:xrayPlatforms(X,inV,m,unit)};
+  const out=[...xrayPlat.out];
+  if(X.trains&&trainsEnabled)xrayTrains(X,out,inV,m,unit,zoom);
+  return out}
+function xrayPlatforms(X:XrayPack,inV:(x:number,y:number)=>boolean,m:number,unit:number){
+  const out:XrayBox[]=[];
   for(const [k,r] of stationRects){const c=r.coords,i=k.lastIndexOf(':'),line=k.slice(0,i),id=+k.slice(i+1);
     const P=maplibregl.MercatorCoordinate.fromLngLat(c[0]!),Q=maplibregl.MercatorCoordinate.fromLngLat(c[c.length-1]!),cx=(P.x+Q.x)/2,cy=(P.y+Q.y)/2;if(!inV(cx,cy))continue;
     const h=cityViaduct.stationH(line,id)*m,box={z0:h-X.platformBelowM*m,z1:h+X.platformAboveM*m,w:(Math.max(r.widthM||0,10)/2+X.platformMarginM)*m+Math.abs(r.offset||0)*unit,m};
@@ -491,11 +503,14 @@ function cityXrayTargets(){
       continue}
     const dx=Q.x-P.x,dy=Q.y-P.y,d=Math.hypot(dx,dy)||1e-12,L=Math.max(20*m,d*Math.max(.1,Math.min(1,r.plat||1)))/2;
     out.push({id:'s'+k,ax:cx-dx/d*L,ay:cy-dy/d*L,bx:cx+dx/d*L,by:cy+dy/d*L,...box})}
-  if(X.trains&&trainsEnabled){const bodyPx=trainBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
-    for(const plan of planner.plans){const pose=trainPose(plan);if(!journeyMap.trainShown(plan,pose.dist))continue;const q=trackPoint(plan,pose.dist);if(!inV(q.x,q.y))continue;   // 길찾기에 숨긴 열차는 건물 뒤 비침도 없다
-      const half=(trainIcon()?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit))/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
-      out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
   return out}
+// 열차: 가운데 자리는 간격 맞추기 · 열차 층과 같이 쓰고(trainMid), 두 역 상자가 화면 여백 밖인 열차는 자리를 셈하지 않는다(nearBox)
+function xrayTrains(X:XrayPack,out:XrayBox[],inV:(x:number,y:number)=>boolean,m:number,unit:number,zoom:number){
+  const bodyPx=trainBodyPx(zoom),lane=cityViaduct.train(zoom,bodyPx).lanePx;
+  // 미리 거르기는 간격 맞추기 상자(한 화면 · 1 km 여백 — trainPose 가 방금 맞춤)로: 두 역 사각형은 휜 선로를 다 못 덮어 좁은 상자면 화면 안 열차가 빠진다
+  for(const plan of planner.plans){const pose=trainPose(plan);if(!nearBox(plan,pose.dist,spacedBox)||!journeyMap.trainShown(plan,pose.dist))continue;const q=trainMid(plan,pose.dist);if(!inV(q.x,q.y))continue;   // 길찾기에 숨긴 열차는 건물 뒤 비침도 없다
+    const half=(trainIcon()?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(plan.cars*plan.carMetres*m,TRAIN_MIN_PX*unit))/2,a=trackPoint(plan,pose.dist-half),e=trackPoint(plan,pose.dist+half);
+    out.push({id:'t'+plan.id,ax:a.x,ay:a.y,bx:e.x,by:e.y,z0:q.h-X.trainBelowM*m,z1:q.h+X.trainAboveM*m,w:X.trainHalfWidthM*m+(Math.abs(q.off||0)+lane+bodyPx)*unit,m})}}
 // 켬 · 끔: 설정 창 버튼(이 기기에 저장) — 처음 읽을 때 주소 #prebuild · #noprebuild 가 먼저, 아무것도 없으면 휴대폰 끔 · 컴퓨터 켬
 // (덕배 2026-10-12: 몇 분 쓰니 손가락이 뜨거울 만큼 발열 — 원인 확정 전, 버튼으로 껐다 켰다 비교)
 let prebuildOn=null;
@@ -535,11 +550,25 @@ const coasterMotion=createCoasterMotion({geom,coasterAt,isCoaster:()=>modeCtl.se
 // leaving 잠실나루 and 6085 coming in 2 s later, 2026-10-03; a train held at its next platform after fresh data meets the
 // one standing there): the one behind waits TRAIN_GAP_M back, as at a signal. Same line, direction and express or not
 // (an express passes a local at a station). Worked out for all the trains at once, at most every 10 ms.
-const TRAIN_GAP_M=20,spaced=new Map<RuntimePlan,Pose>();let spacedAt=-1e9,spacedFor:RuntimePlan[]|null=null;
+// 화면 근처(상자 + 한 화면 폭, 적어도 SPACE_NEAR_M)의 열차끼리만 맞춘다 — 멀리 있는 열차는 예측 그대로(그리지 않으니 선로 위 자리를 셈하지 않는다).
+// 앞 열차가 여백 밖이면 이 열차가 화면에 보일 만큼 가깝지 않다.
+const TRAIN_GAP_M=20,SPACE_NEAR_M=1000,spaced=new Map<RuntimePlan,Pose>();let spacedAt=-1e9,spacedFor:RuntimePlan[]|null=null;
 function trainPose(p:RuntimePlan):Pose{const now=clock(),plans=planner.plans;if((now===planner.frameClock?now!==spacedAt:now-spacedAt>10)||spacedFor!==plans){spaceTrains();spacedAt=now;spacedFor=plans}return spaced.get(p)||rawPose(p)}
+// 이번 차례 열차 가운데 자리(trackPoint(열차, 자세 거리)): 간격 맞추기 · x-ray · 열차 층이 같은 거리로 묻는 것을 한 번만 셈한다(간격을 다시 맞출 때 비운다 · 받은 쪽은 고치지 않는다)
+const midAt=new Map<RuntimePlan,{d:number;q:TrackPt}>();
+function trainMid(p:RuntimePlan,dist:number):TrackPt{const c=midAt.get(p);if(c&&c.d===dist)return c.q;const q=trackPoint(p,dist);midAt.set(p,{d:dist,q});return q}
+// 열차가 상자(mercator [x0, y0, x1, y1]) 근처일 수 있나: 지금 달리는 두 역을 잇는 사각형으로 본다(trackPoint 없이 — 선로가 휘는 만큼은 상자 여백이 덮는다)
+function nearBox(p:RuntimePlan,dist:number,box:readonly number[]):boolean{
+  const {seq,cum}=p;let i=0;while(i<seq.length-2&&cum[i+1]!<dist)i++;
+  const a=mercStop(p.t.line,seq[i]!),b=seq.length>1?mercStop(p.t.line,seq[i+1]!):a;
+  return !(Math.max(a.x,b.x)<box[0]!||Math.min(a.x,b.x)>box[2]!||Math.max(a.y,b.y)<box[1]!||Math.min(a.y,b.y)>box[3]!)}
+let spacedBox:number[]=[-Infinity,-Infinity,Infinity,Infinity];
+// 열차 층: 간격 맞추기와 같은 상자 밖 열차는 그리지 않으니 자리도 셈하지 않는다
+const trainNear=(p:RuntimePlan,dist:number)=>nearBox(p,dist,spacedBox);
+function spaceBox():number[]{const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),pad=Math.max(B.x-A.x,A.y-B.y,SPACE_NEAR_M*A.meterInMercatorCoordinateUnits());return [A.x-pad,B.y-pad,B.x+pad,A.y+pad]}
 function spaceTrains(){
-  spaced.clear();const groups=new Map<string,Spaced[]>(),at=(e:Spaced)=>{const q=trackPoint(e.p,e.pose.dist);e.x=q.x;e.y=q.y;e.f=q.f};
-  for(const p of planner.plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2)continue;
+  spaced.clear();midAt.clear();const groups=new Map<string,Spaced[]>(),at=(e:Spaced)=>{const q=trainMid(e.p,e.pose.dist);e.x=q.x;e.y=q.y;e.f=q.f},box=spacedBox=spaceBox();
+  for(const p of planner.plans){const pose=rawPose(p);spaced.set(p,pose);if(p.seq.length<2||!nearBox(p,pose.dist,box))continue;
     const m=mercStop(p.t.line,p.seq[0]!).meterInMercatorCoordinateUnits(),k=`${p.t.line}|${p.t.direction}|${p.t.express?1:0}`,e={p,pose,half:p.cars*p.carMetres*m/2,m} as Spaced;at(e);
     if(!groups.has(k))groups.set(k,[]);groups.get(k)!.push(e)}
   for(const g of groups.values())if(g.length>1)for(let pass=0;pass<2;pass++)for(const a of g)for(const b of g){if(a===b)continue;
@@ -712,7 +741,7 @@ const hexRGB3=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),1
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
 const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),   // 타고 가는 열차는 늘 보인다(ui/ride_along)
 get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return meHidden?null:(me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get ridingAlong(){return rideAlong.active},get riding(){return riding}};
-const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
+const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,trainMid,trainNear,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
 const exitPillars=new ExitPillars({map,maplibregl,stations,exitCol,colors,hexRGB3,EXIT_MINZOOM,document,getExits:()=>exits,getSelected:()=>selected,getLook:()=>modeCtl.settings().map.exitLook});
 // 롤코 선로(modes/coaster/track.mjs)
