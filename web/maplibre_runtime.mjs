@@ -52,6 +52,7 @@ import { createTrainOverlay } from "./map/overlay.mjs";
 import { StaticLayer } from "./map/static_layer.mjs";
 import { monumentBuildingFilter } from "./city/monuments_data.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
+import { ownGpsWatch } from "./map/gps_watch.mjs";
 import { createMapTheme } from "./map/theme.mjs";
 import "./modes/merge.mjs";
 import { createModeRegistry } from "./modes/index.mjs";
@@ -681,11 +682,12 @@ var BASE_FOV = map.getVerticalFieldOfView();
 var busLayer = null;
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 var me = createMyMotion();
+var GPS = {
+	enableHighAccuracy: true,
+	maximumAge: 2e3
+};
 var geolocate = new maplibregl.GeolocateControl({
-	positionOptions: {
-		enableHighAccuracy: true,
-		maximumAge: 2e3
-	},
+	positionOptions: GPS,
 	trackUserLocation: true,
 	showAccuracyCircle: false,
 	fitBoundsOptions: { maxZoom: 16 }
@@ -693,11 +695,10 @@ var geolocate = new maplibregl.GeolocateControl({
 map.addControl(geolocate, "top-right");
 var autoLocating = false;
 var lastFix = null;
-var LOW_GPS = {
+var gpsWatch = ownGpsWatch(geolocate, () => navigator.geolocation, GPS, {
 	enableHighAccuracy: false,
 	maximumAge: 3e4
-};
-var lowWatch = null;
+});
 var labelFade = map._fadeDuration;
 function quietLabels(on) {
 	map._fadeDuration = on ? 0 : labelFade;
@@ -714,15 +715,7 @@ function rideInfoScreen(on) {
 	trainFrameSoon(0);
 }
 function gpsLowPower(on) {
-	const ctl = geolocate, id = ctl._geolocationWatchID;
-	if (id === void 0) {
-		lowWatch = null;
-		return;
-	}
-	if (on === (lowWatch === id)) return;
-	navigator.geolocation.clearWatch(id);
-	ctl._geolocationWatchID = navigator.geolocation.watchPosition(ctl._onSuccess, ctl._onError, on ? LOW_GPS : ctl.options.positionOptions);
-	lowWatch = on ? ctl._geolocationWatchID : null;
+	gpsWatch.lowPower(on);
 }
 var geolocateButton = map.getContainer().querySelector(".maplibregl-ctrl-geolocate");
 geolocateButton?.addEventListener("click", (ev) => {
