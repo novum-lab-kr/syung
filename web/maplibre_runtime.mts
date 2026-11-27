@@ -20,6 +20,7 @@ import {createTrainOverlay} from './map/overlay.mts';   // 열차 캔버스 · �
 import {StaticLayer} from './map/static_layer.mts';   // 열차 캔버스의 정적 층 캐시(멈춘 화면에서 나무 · 고가 · 랜드마크를 담아 두고 되살림)
 import {monumentBuildingFilter} from './city/monuments_data.mts';   // 문화유산 모델을 넣는 모드(city.heritage)에서 지도 건물 층의 기념물 자리 건물을 빼는 필터
 import {registerTransitLayers,registerLocationLayers,registerExitLayers,addBasemap as addBasemapLayers,BASEMAP_LAYERS} from './map/layers.mts';   // 정적 층 등록 · 바탕 지도
+import {ownGpsWatch,type GpsWatchControl} from './map/gps_watch.mts';   // 내 위치 단추의 GPS 옵션(켤 때마다 · 타고 가기 낮춤)
 import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해 위치 아이콘
 import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
 import {createModeRegistry} from './modes/index.mts';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
@@ -369,15 +370,14 @@ let busLayer:ReturnType<typeof createBusLayer>|null=null;   // bus: owns its loa
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 // My location (no station popup opens by itself; tap a station for its trains).
 const me=createMyMotion();   // 내 위치 캐릭터의 걷기 · 서기 · 미끄러지듯 옮기기(위치마다 fix, 그릴 때 at)
-const geolocate=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true,maximumAge:2000},trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
+const GPS:PositionOptions={enableHighAccuracy:true,maximumAge:2000};
+const geolocate=new maplibregl.GeolocateControl({positionOptions:GPS,trackUserLocation:true,showAccuracyCircle:false,fitBoundsOptions:{maxZoom:16}});
 map.addControl(geolocate,'top-right');   // under +/−; alone on phones, where +/− are hidden   // 정확한 위치로 자주: 내 위치 캐릭터가 걷는지 알려면(배터리를 조금 더 쓴다, 2026-10-22 행님)
 let autoLocating=false,lastFix:GeolocationCoordinates|null=null;
 // 타고 가기로 지하철을 탄 동안은 위치를 덜 정확하게 · 드물게(ui/ride_along gpsMode — 땅 밑에서 GPS 가 위성을 찾느라 배터리를 쓴다, 2026-11-25 사용자 추천안 D).
-// GeolocateControl 은 watch 를 켤 때만 옵션을 읽어서, 켜져 있는 watch 를 같은 처리기(_onSuccess · _onError)로 다시 건다 — 단추 상태는 그대로.
-// 되돌릴 때는 이 위의 정확한 옵션으로(그사이 단추로 끄고 다시 켠 watch 는 라이브러리 것이라 건드리지 않는다)
-const LOW_GPS:PositionOptions={enableHighAccuracy:false,maximumAge:30000};
-type GeoWatch={_geolocationWatchID?:number;_onSuccess:PositionCallback;_onError:PositionErrorCallback;options:{positionOptions:PositionOptions}};
-let lowWatch:number|null=null;
+// GeolocateControl 은 watch 를 켤 때만 옵션을 읽고 권한 거부가 한 번 난 뒤로는 제 옵션(덜 정확 · 10분 묵은 위치)으로 켜서, 단추가 켜는 watch 마다 map/gps_watch 가 지금 바라는 옵션으로 다시 건다 — 단추 상태는 그대로.
+// 그사이 단추로 끄고 다시 켜도 낮춘 채로 켜진다(2026-11-27)
+const gpsWatch=ownGpsWatch(geolocate as unknown as GpsWatchControl,()=>navigator.geolocation,GPS,{enableHighAccuracy:false,maximumAge:30000});
 // 타고 가기로 탄 열차를 따라가는 동안은 이름표 fade 를 끈다(ui/ride_along labelMode — 카메라가 1초에 2번 움직일 때마다 fade 0.3초 동안 지도를 프레임마다 다시 그렸다 · 2026-11-25).
 // MapLibre 는 fadeDuration 을 만들 때만 받아서 안쪽 값(_fadeDuration)을 바꾼다
 const labelFade=(map as unknown as {_fadeDuration:number})._fadeDuration;
@@ -389,12 +389,7 @@ function quietLabels(on:boolean){(map as unknown as {_fadeDuration:number})._fad
 function rideInfoScreen(on:boolean){if(on===rideInfoOn)return;rideInfoOn=on;
   if(on){map.triggerRepaint=()=>map;return}
   Reflect.deleteProperty(map,'triggerRepaint');map.triggerRepaint();trainFrameSoon(0)}
-function gpsLowPower(on:boolean){const ctl=geolocate as unknown as GeoWatch,id=ctl._geolocationWatchID;
-  if(id===undefined){lowWatch=null;return}
-  if(on===(lowWatch===id))return;
-  navigator.geolocation.clearWatch(id);
-  ctl._geolocationWatchID=navigator.geolocation.watchPosition(ctl._onSuccess,ctl._onError,on?LOW_GPS:ctl.options.positionOptions);
-  lowWatch=on?ctl._geolocationWatchID:null}
+function gpsLowPower(on:boolean){gpsWatch.lowPower(on)}
 // 위치가 켜진 채(저절로 켜진 경우 포함) 버튼을 누르면 MapLibre 는 끈다 — 끄지 않고 내 위치로 지도를 옮긴다.
 // 켜지는 중이면 그대로 기다린다. 오류 상태 · 지도를 움직여 둔 상태(background)는 라이브러리 그대로.
 const geolocateButton=map.getContainer().querySelector('.maplibregl-ctrl-geolocate');
