@@ -102,7 +102,8 @@ function createTrainPlanner({ stations, stationByLine, key, normStatus, route, m
 		}
 		const ahead = r.ahead.slice(0, Math.max(1, upto) + 1);
 		const tm = timingFor(t.line), { dwell: DWELL, stand: STAND, brake: BRAKE } = stopTiming(tm);
-		const period = rushNow() ? "rush" : "day", zoneAt = (st) => (t.express ? null : tm.waits?.[`${st.id}:${t.direction}:${period}`]) ?? tm.stops?.[st.id] ?? tm.zone;
+		const period = rushNow() ? "rush" : "day", dayZone = period === "day" ? tm.dayZone ?? 0 : 0;
+		const zoneAt = (st) => (t.express ? null : tm.waits?.[`${st.id}:${t.direction}:${period}`]) ?? (tm.stops?.[st.id] ?? tm.zone) + dayZone;
 		const more = (st) => zoneAt(st) - tm.zone, stand = (st) => Math.max(5, STAND + more(st));
 		const paced = (from, to) => {
 			const D = tm.runs?.[`${from.id}:${to.id}`];
