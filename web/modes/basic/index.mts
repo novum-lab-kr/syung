@@ -21,7 +21,8 @@ export default {
     // xray: 역 · 열차를 가린 건물을 유리로(치수는 팩의 xray)
     // tone: 팩의 modes 항목 이름(땅 · 건물 · 사람의 채도 · 밝기 · 그림자), lampPool: 가로등 빛 웅덩이 배수(null 이면 그 tone 의 lampPool)
     // life: 도시 생활(차 · 횡단보도, units: 사람 · 차 대신 세울 유닛 {people: [모양…], cars: [모양…]} — 스타크래프트, null 이면 사람 · 차), landmarks: 랜드마크 탑 모양(tower · wood-tower)
-    city: { enabled: false, heritage: false, groundTexture: false, xray: false, tone: 'simcity', lampPool: 1.4, life: { cars: true, crossings: true, units: null }, landmarks: 'tower', pack: CITY_PACK },
+    // zoomOutBasic: 고가 상판이 나오기 전 줌(고가 팩 lod.deck[0])보다 멀면 노선 · 역 · 열차 굵기를 기본 모드 모습으로(web/modes/zoom_out.mts — track 밖에 둔다: 가족 모드끼리 track 참조가 같아야 전환 때 선로를 다시 짓지 않는다)
+    city: { enabled: false, heritage: false, zoomOutBasic: false, groundTexture: false, xray: false, tone: 'simcity', lampPool: 1.4, life: { cars: true, crossings: true, units: null }, landmarks: 'tower', pack: CITY_PACK },
     // 공원(롤코): 꺼 둔 기본 — 선로 · 역 · 놀이기구 · 밤 · 1인칭 자료. 놀이기구는 towerM 이상 탑마다 하나, 그 둘레 공원 안 빈 자리에(건물은 그대로)
     park: { enabled: false, towerM: 150, style: PARK_DEFAULTS, landmarkRides: [] },   // landmarkRides: 늘 그 자리에 서는 큰 놀이기구 [{kind:'ferris', lngLat:[경도, 위도], diameterM, yawDeg?}]
     // 선로: kind 는 노선 · 열차가 달리는 길 — ground(땅 위 노선, 도로 맞춤 · 공유 선로 칸은 경로 안), viaduct(심시티 고가 위, 공유 선로 칸은 옆으로 벌림),

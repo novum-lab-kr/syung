@@ -17,11 +17,13 @@ export interface ModeControllerOptions {
   onFail?(current: string, error: unknown): void;
   clock(): number;
   root?: string;
+  // 지금 보이는 설정: 모드 설정을 받아 화면 사정(줌 등)에 맞춘 설정을 돌려준다 — 같은 입력이면 같은 참조(없으면 그대로)
+  view?(settings: Settings): Settings;
 }
 export const STARCRAFT = Object.freeze(['terran', 'zerg', 'protoss']);   // 스타크래프트 종족 모드(web/modes/starcraft)
 export const NATIONS = Object.freeze(['greece', 'netherlands', 'paris', 'egypt']);   // 나라 모드(web/modes/nations) — 차례대로 더한다
 export const CITY_FAMILY = Object.freeze(['simcity', 'joseon', 'retro', ...STARCRAFT, ...NATIONS]);   // 심시티 도시 위의 모드(심시티 스위치 · 조선 · 레트로 · 종족 · 나라) — 서로 바꿀 때 롤코처럼 끄고 켜지 않는다
-export function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = 'basic' }: ModeControllerOptions) {
+export function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = 'basic', view = S => S }: ModeControllerOptions) {
   let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0, S = registry.settings(root);   // S: 지금 모드의 설정(자주 묻는다 — 바뀔 때만 고른다)
 
   // 모드 요청. 준비가 이미 끝났으면 지금 바로(동기) 바꾸고 true, 기다려야 하면 Promise(바꿨으면 true, 늦었거나 실패면 false — reject 하지 않는다).
@@ -51,6 +53,6 @@ export function createModeController({ registry, prepare, commit, onRequest = ()
   return {
     request, cancel, enter, setSpeed, warpNow, flags,
     get current() { return current }, get desired() { return desired }, get speed() { return speed }, get seq() { return seq },
-    settings: (user?: unknown): Settings => user == null ? S : registry.settings(current, user),
+    settings: (user?: unknown): Settings => view(user == null ? S : registry.settings(current, user)),
   };
 }

@@ -23,6 +23,7 @@ import {createMapTheme} from './map/theme.mts';   // 테마 · 지도 색 · 해
 import {createUserPrefs} from './user/prefs.mts';   // 내 설정 창구(테마 · 지도 색 — 지금은 이 기기)
 import {createModeRegistry} from './modes/index.mts';   // 모드 목록 · 설정 상속(기본 → 모드 → 내 설정)
 import {createModeController,STARCRAFT,NATIONS,CITY_FAMILY} from './modes/transition.mts';   // 모드 전환: 지금 · 원하는 모드, 마지막 요청, 롤코 배속
+import {zoomOutSettings} from './modes/zoom_out.mts';   // 축소하면 기본 지하철(city.zoomOutBasic): 멀리선 노선 · 역 · 열차 굵기를 기본 모드 것으로
 import './modes/merge.mts';   // (모드 목록이 부르는 합치기: 같은 단계에서 요청)
 import BASIC_MODE from './modes/basic/index.mts';   // 기본 모드: 모든 설정의 원본
 import './modes/basic/palette.mts';   // (기본 모드의 지도 색 자료: 같은 단계에서 요청)
@@ -448,7 +449,8 @@ let appPad=0,appSheetLift=0,appRouteLift=0;
 function liftAppNotice(){document.documentElement.style.setProperty('--app-notice-lift',`${appNoticeLift(appSheetLift,appRouteLift)}px`)}   // 버스 안내 글을 앱 시트 · 경로 막대 위로(syung.css html[data-app=map] .bus-notice)
 function appStatus(){if(appBridge)appBridge.status({zoom:map.getZoom(),live:{state:liveState!.parentElement!.dataset.state??'idle',text:liveState!.textContent??''}})}
 function appFollow(){appBridge?.followChanged(sheetUI.following??sheetUI.followBus??null)}
-const modeCtl=createModeController({registry:modes,clock:()=>clock(),prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end();appBridge?.modeChanged(now)},
+let zoomedOut=false;   // 고가 상판이 나오기 전 줌보다 멀리 축소했나(syncZoomOut 이 정한다)
+const modeCtl=createModeController({registry:modes,clock:()=>clock(),view:S=>zoomedOut?zoomOutSettings(S,modes.settings('basic')):S,prepare:id=>prepareMode(id),onRequest:(want,now)=>{showModeButtons(want);modeBusy.request(want,now)},onFail:now=>{showModeButtons(now);modeBusy.end();appBridge?.modeChanged(now)},
   commit:(prev,next,o)=>{commitMode(prev,next,o);modeBusy.committed(next);appBridge?.modeChanged(next);if(prev!==next)dispatchEvent(new CustomEvent('syung:mode',{detail:next}));if(location.hash.includes('debug'))console.info('[mode]',prev,'→',next,modes.explain(next))}}) as ModeCtl;   // #debug: 바꿀 때마다 최종 설정의 출처(키 → 적은 모드)
 const modeOn=modeCtl.flags;
 const cityPack=()=>modeCtl.settings().city.pack;   // the pack the ground, the buildings and their shadows read — 지금 모드 설정의 도시 팩(심시티 · 롤코 · 기본은 같은 참조)
@@ -990,6 +992,10 @@ function applySimcity(on:boolean,id='simcity'){
   const was=modeCtl.settings(),next=on?id:'basic',same=modeCtl.current===next;modeCtl.enter(next);const now=modeCtl.settings();
   if(now.track===was.track){if(now.trains.predictStops!==was.trains.predictStops){planner.rebuild();lastPose.clear()}if(!same){applyTheme();updateSun();map.triggerRepaint()}return}
   setRouteOpacity();planner.rebuild();lastPose.clear();map.getSource<GeoJSONSource>('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource<GeoJSONSource>('stations')!.setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}applyTheme();updateSun();wallsNow();map.triggerRepaint()}   // 심시티에서는 노선 선의 투명도와 고가 표시를 바꾸고 같은 도로 맞춤 경로를 유지해요.
+// 축소하면 기본 지하철(city.zoomOutBasic — web/modes/zoom_out.mts): 고가 상판이 나오기 시작하는 줌(고가 팩 lod.deck[0])을 넘나들면
+// 보이는 선로 설정이 바뀌니 노선 · 역 · 열차 예측을 다시 짓는다(applySimcity 의 선로가 바뀔 때와 같다). 그 키가 없는 모드는 참조가 같아 할 일이 없다
+function syncZoomOut(){const want=map.getZoom()<cityViaduct.deckFrom();if(want===zoomedOut)return;const was=modeCtl.settings().track;zoomedOut=want;if(modeCtl.settings().track===was)return;
+  setRouteOpacity();planner.rebuild();lastPose.clear();map.getSource<GeoJSONSource>('routes')?.setData({type:'FeatureCollection',features:buildLineFeatures()});if(map.getSource('stations')){map.getSource<GeoJSONSource>('stations')!.setData({type:'FeatureCollection',features:buildStationFeatures()});rebuildLabels()}map.triggerRepaint()}
 // 요청(버튼 · 창구). 끄기: 그 가족이 켜져 있으면 기본으로(롤코를 끄면 1인칭에서도 내려요 — 바꾸기 안에서 한 번), 받는 중이기만 하면 그 요청만 거둔다(지금 모드 그대로),
 // 다른 가족만 켜져 있거나 받는 중이면 그대로 둔다
 function offFamily(ids:readonly string[]){if(ids.includes(modeCtl.current))return modeCtl.request('basic');if(ids.includes(modeCtl.desired))modeCtl.cancel()}
@@ -1017,6 +1023,7 @@ menu.press('togglePrebuild',prebuildWant());menu.press('toggleSaver',saverOn);
 menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:()=>setSaver(!saverOn)}});
 // ---- settings (header hamburger → right drawer): on/off switches ----
 {
+  map.on('zoom',syncZoomOut);syncZoomOut();   // 축소하면 기본 지하철
   map.on('zoom',appStatus);appStatus();   // 앱 다리에 줌이 바뀔 때마다 알린다(머리줄 줌 표시는 뺐다)
   const btn=$('settingsButton'),panel=$('settingsPanel');
   menu.icons(ICONS.coaster,ICONS.speed);

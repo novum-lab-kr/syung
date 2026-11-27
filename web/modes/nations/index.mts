@@ -1,6 +1,7 @@
 // 나라 모드: 심시티 도시(같은 서울 윤곽 · 고가)를 그 나라 풍으로 — 나라마다 모드 하나. 다른 것만 적는다:
 // 도시 팩 색 · 창 · 지붕(나라 파일, 생성기로 만든 데이터)과 몇 채만 그 나라 건물(팩 nation.kind → 부품 'nation', web/modes/nations/parts.mts).
 // 차례대로 더한다: 그리스 → 네덜란드 → 파리 → 이집트(행님 2026-10-22, 시안 look3d).
+// city.zoomOutBasic: 축소하면 기본 지하철은 심시티만(2026-11-27 사용자 답 '심시티만') — 심시티에서 물려받은 참을 끈다
 import { GREECE_DELTA } from './greece.mts';
 import { NETHERLANDS_DELTA } from './netherlands.mts';
 import { PARIS_DELTA } from './paris.mts';
@@ -14,7 +15,7 @@ export const GREECE = {
   from: 'simcity',
   label: '그리스',
   settings: {
-    city: { heritage: false, pack: withModels(GREECE_DELTA, 'greece') },   // 흰 회벽 · 파스텔 · 파란 돔 · 돌길 · 에게해
+    city: { zoomOutBasic: false, heritage: false, pack: withModels(GREECE_DELTA, 'greece') },   // 흰 회벽 · 파스텔 · 파란 돔 · 돌길 · 에게해
   },
 };
 export const NETHERLANDS = {
@@ -22,7 +23,7 @@ export const NETHERLANDS = {
   from: 'simcity',
   label: '네덜란드',
   settings: {
-    city: { heritage: false, pack: withModels(NETHERLANDS_DELTA, 'netherlands') },   // 벽돌 · 박공 · 가파른 지붕 · 운하 · 풍차
+    city: { zoomOutBasic: false, heritage: false, pack: withModels(NETHERLANDS_DELTA, 'netherlands') },   // 벽돌 · 박공 · 가파른 지붕 · 운하 · 풍차
   },
 };
 export const PARIS = {
@@ -30,7 +31,7 @@ export const PARIS = {
   from: 'simcity',
   label: '파리',
   settings: {
-    city: { heritage: false, pack: withModels(PARIS_DELTA, 'paris') },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
+    city: { zoomOutBasic: false, heritage: false, pack: withModels(PARIS_DELTA, 'paris') },   // 석회석 · 망사르드 · 지붕창 · 굴뚝 · 철제 발코니
   },
 };
 export const EGYPT = {
@@ -38,7 +39,7 @@ export const EGYPT = {
   from: 'simcity',
   label: '이집트',
   settings: {
-    city: { heritage: false, pack: withModels(EGYPT_DELTA, 'egypt') },   // 사암 · 옥상 살림 · 모스크 · 피라미드 · 나일
+    city: { zoomOutBasic: false, heritage: false, pack: withModels(EGYPT_DELTA, 'egypt') },   // 사암 · 옥상 살림 · 모스크 · 피라미드 · 나일
   },
 };
 export default [GREECE, NETHERLANDS, PARIS, EGYPT];   // (고르는 줄의 차례 · 나라 id 목록은 transition.mjs NATIONS)

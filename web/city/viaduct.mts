@@ -407,6 +407,7 @@ export class CityViaduct {
   snapped(line:string, lo:number, hi:number):XY[] | null { return (SNAP as unknown as Record<string, XY[] | undefined>)[`${line}:${lo}:${hi}`] || null }
   train(zoom:number, bodyPx:number) { return trainMetrics(zoom, bodyPx, this.pack) }
   routeOpacity(focus:unknown) { return routeOpacityExpr(focus, this.pack) }
+  deckFrom() { return this.V.lod.deck[0]! }   // 상판이 나오기 시작하는 줌(이보다 멀면 상판을 그리지 않는다 — 축소하면 기본 지하철의 경계)
   deckFade() { const [z0, z1] = this.V.lod.deck; return ['interpolate', ['linear'], ['zoom'], z0, 1, z1, 0] }   // 길찾기 탄 구간의 땅 위 선: 상판이 나오면 사라진다
   // where a thing hM metres up casts its shadow: away from the sun by its height (mercator units; nothing when the sun is down)
   shadowShift(sun:Sun | null | undefined, hM = this.V.railHeightM):XY {

@@ -1,12 +1,13 @@
 // 조선 모드: 심시티와 같은 도시를 조선 팩으로(흙바닥 · 기와집 · 수로 · 거북선 · 가마). 다른 것만 적는다 — 설정 키는 4단계 커밋마다 옮겨 온다.
 import { JOSEON_DELTA } from './style.mts';
 
+// city.zoomOutBasic: 축소하면 기본 지하철은 심시티만(2026-11-27 사용자 답 '심시티만') — 심시티에서 물려받은 참을 끈다
 export default {
   id: 'joseon',
   from: 'simcity',
   label: '조선',
   settings: {
-    city: { pack: JOSEON_DELTA, groundTexture: true, life: { cars: false, crossings: false }, landmarks: 'wood-tower' },   // 도시 팩에서 조선만 다른 것(흙바닥 · 한옥 · 수로 …), 흙 질감, 차 · 횡단보도 없음, 나무 탑
+    city: { zoomOutBasic: false, pack: JOSEON_DELTA, groundTexture: true, life: { cars: false, crossings: false }, landmarks: 'wood-tower' },   // 도시 팩에서 조선만 다른 것(흙바닥 · 한옥 · 수로 …), 흙 질감, 차 · 횡단보도 없음, 나무 탑
     map: { exitLook: 'jangseung' },   // 출구 표지: 장승(관모에 노선색 띠, 몸통에 출구 번호) + 양쪽 횃불(2026-10-11 행님)
     trains: { look: 'fleet' },
     me: { look: 'seonbi' },   // 내 위치: 갓 쓴 꼬마 선비(2026-10-22 행님)
