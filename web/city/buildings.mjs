@@ -1507,13 +1507,13 @@ var CityBuildings = class {
 		this.collect();
 		this.draw(gl, options.defaultProjectionData.mainMatrix, false);
 	}
-	drawDepth(gl, M) {
+	drawDepth(gl, M, erase = false) {
 		if (!this.shown() || !this.visible.length) {
 			this.xr = null;
 			return false;
 		}
 		this.xrayFrame(gl, M);
-		return this.draw(gl, M, true);
+		return this.draw(gl, M, true, false, erase);
 	}
 	setXray(targets) {
 		this.xrayIn = targets && targets.length ? targets : null;
@@ -1689,7 +1689,7 @@ var CityBuildings = class {
 		if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
 		this.xrayUniforms(gl, u, glass);
 	}
-	draw(gl, M, depthOnly, glass = false) {
+	draw(gl, M, depthOnly, glass = false, erase = false) {
 		const t0 = performance.now(), map = this.map, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
 		gl.useProgram(prog.p);
 		gl.enable(gl.DEPTH_TEST);
@@ -1704,7 +1704,7 @@ var CityBuildings = class {
 		gl.disable(gl.BLEND);
 		gl.disable(gl.STENCIL_TEST);
 		gl.disable(gl.SCISSOR_TEST);
-		if (depthOnly) gl.colorMask(false, false, false, false);
+		if (depthOnly) gl.colorMask(erase, erase, erase, erase);
 		else gl.colorMask(true, true, true, true);
 		this.uniforms(gl, u, depthOnly, glass, zoom);
 		if (glass) {

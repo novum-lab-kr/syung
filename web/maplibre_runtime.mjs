@@ -49,6 +49,7 @@ import { drawRideCard } from "./components/ride_card.mjs";
 import { startAnalytics } from "./lib/analytics.mjs";
 import { appNoticeLift, createAppBridge } from "./ui/app_bridge.mjs";
 import { createTrainOverlay } from "./map/overlay.mjs";
+import { StaticLayer } from "./map/static_layer.mjs";
 import { monumentBuildingFilter } from "./city/monuments_data.mjs";
 import { addBasemap as addBasemap$1, registerExitLayers, registerLocationLayers, registerTransitLayers } from "./map/layers.mjs";
 import { createMapTheme } from "./map/theme.mjs";
@@ -2085,6 +2086,7 @@ map.on("load", () => {
 		coasterBodyPx,
 		trainBodyPx,
 		cityViaduct,
+		StaticLayer,
 		CORK_HEART,
 		PHONE,
 		trainFrameSoon,

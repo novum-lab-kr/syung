@@ -974,6 +974,8 @@ var CityLife = class {
 		this.graph = new RoadGraph();
 		this.stats = {};
 		this._anim = false;
+		this._animS = false;
+		this._animM = false;
 		this.lastQuery = 0;
 		this.building = null;
 		this.M = /* @__PURE__ */ new Float32Array(16);
@@ -1778,7 +1780,7 @@ var CityLife = class {
 			this._render(gl, matrix, opts);
 		} catch (e) {
 			this.broken = true;
-			this._anim = false;
+			this._anim = this._animS = this._animM = false;
 			console.error("city-life: off —", e);
 			try {
 				gl.bindVertexArray(null);
@@ -1796,9 +1798,13 @@ var CityLife = class {
 			this.building = null;
 			for (const cell of [...this.cells.values()]) this.dropCell(cell);
 		}
+		const doS = opts.part !== "moving", doM = opts.part !== "static";
 		const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;
-		this._anim = false;
+		if (doS) this._animS = false;
+		if (doM) this._animM = false;
+		this._anim = this._animS || this._animM;
 		if (!bounds || !mapOn || zoom < MINZ) {
+			this._anim = this._animS = this._animM = false;
 			this.stats.idle = true;
 			return;
 		}
@@ -1814,64 +1820,66 @@ var CityLife = class {
 			box[2] + pad,
 			box[3] + pad
 		];
-		const need = this.needed(vbox), wanted = /* @__PURE__ */ new Set();
-		for (const [key, x, y] of need) {
-			wanted.add(key);
-			if (!this.cells.has(key)) this.cells.set(key, {
-				key,
-				x,
-				y,
-				box: this.cellBox(x, y),
-				state: "pending",
-				tries: 0
-			});
-		}
-		const due = [...this.cells.values()].filter((c) => c.state === "pending").filter((c) => !(c.retryAt > now));
-		if (!moving && due.length && now - this.lastQuery > 400) {
-			this.lastQuery = now;
-			const by = this.gather();
-			for (const c of due) {
-				const F = by.get(c.key);
-				if (F && (F.transportation.length || F.building.length || F.landcover.length)) {
-					c.state = "building";
-					c.gen = this.build(c, F);
-				} else if (F) {
-					c.state = "ready";
-					c.counts = {};
-					c.walks = [];
-					c.bare = true;
-					this.spotMemo.clear();
-				} else {
-					c.tries++;
-					c.retryAt = now + Math.min(8e3, 400 * 2 ** Math.min(c.tries, 5));
+		if (doS) {
+			const need = this.needed(vbox), wanted = /* @__PURE__ */ new Set();
+			for (const [key, x, y] of need) {
+				wanted.add(key);
+				if (!this.cells.has(key)) this.cells.set(key, {
+					key,
+					x,
+					y,
+					box: this.cellBox(x, y),
+					state: "pending",
+					tries: 0
+				});
+			}
+			const due = [...this.cells.values()].filter((c) => c.state === "pending").filter((c) => !(c.retryAt > now));
+			if (!moving && due.length && now - this.lastQuery > 400) {
+				this.lastQuery = now;
+				const by = this.gather();
+				for (const c of due) {
+					const F = by.get(c.key);
+					if (F && (F.transportation.length || F.building.length || F.landcover.length)) {
+						c.state = "building";
+						c.gen = this.build(c, F);
+					} else if (F) {
+						c.state = "ready";
+						c.counts = {};
+						c.walks = [];
+						c.bare = true;
+						this.spotMemo.clear();
+					} else {
+						c.tries++;
+						c.retryAt = now + Math.min(8e3, 400 * 2 ** Math.min(c.tries, 5));
+					}
 				}
 			}
-		}
-		if (!this.building || this.building.state !== "building") {
-			const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
-			this.building = [...this.cells.values()].filter((c) => c.state === "building").sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null;
-		}
-		if (this.building && !moving) {
-			const deadline = t0 + Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4)), c = this.building;
-			let r;
-			do {
-				const s0 = c.s0 = performance.now();
-				r = c.gen.next();
-				const el = performance.now() - s0;
-				c.cur = (c.cur || 0) + el;
-				c.maxStep = Math.max(c.maxStep || 0, el);
-				c.cpuMs = (c.cpuMs || 0) + el;
-			} while (!r.done && performance.now() < deadline);
-			if (r.done) {
-				c.gen = null;
-				this.building = null;
+			if (!this.building || this.building.state !== "building") {
+				const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+				this.building = [...this.cells.values()].filter((c) => c.state === "building").sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null;
 			}
+			if (this.building && !moving) {
+				const deadline = t0 + Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4)), c = this.building;
+				let r;
+				do {
+					const s0 = c.s0 = performance.now();
+					r = c.gen.next();
+					const el = performance.now() - s0;
+					c.cur = (c.cur || 0) + el;
+					c.maxStep = Math.max(c.maxStep || 0, el);
+					c.cpuMs = (c.cpuMs || 0) + el;
+				} while (!r.done && performance.now() < deadline);
+				if (r.done) {
+					c.gen = null;
+					this.building = null;
+				}
+			}
+			if (this.cells.size > 10) for (const c of [...this.cells.values()]) {
+				if (this.cells.size <= 8) break;
+				if (!wanted.has(c.key) && c.state !== "building") this.dropCell(c);
+			}
+			this.lastFrame = now;
 		}
-		if (this.cells.size > 10) for (const c of [...this.cells.values()]) {
-			if (this.cells.size <= 8) break;
-			if (!wanted.has(c.key) && c.state !== "building") this.dropCell(c);
-		}
-		this.lastFrame = now;
 		const stillBuilding = [...this.cells.values()].some((c) => c.state === "building" || c.state === "pending" && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3])), waiting = [...this.cells.values()].filter((c) => c.state === "pending").length;
 		const MT = this.M;
 		MT.set(matrix);
@@ -1915,7 +1923,7 @@ var CityLife = class {
 		gl.depthMask(true);
 		gl.disable(gl.BLEND);
 		gl.disable(gl.CULL_FACE);
-		if (fadePark > 0) {
+		if (doS && fadePark > 0) {
 			const T = pack.props.trees, cap = T.maxVisible[phone ? "phone" : "desktop"], draws = [], pdraws = [];
 			let nS = 0, nP = 0;
 			for (const c of ready) {
@@ -2032,9 +2040,9 @@ var CityLife = class {
 			if (LM.torch) {
 				gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : now % 1e6 / 1e3);
 				gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]);
-				if (!reducedMotion && lampDraws.length) this._anim = true;
+				if (doS && !reducedMotion && lampDraws.length) this._animS = true;
 			}
-			if (fadeLamp > 0) {
+			if (doS && fadeLamp > 0) {
 				gl.bindVertexArray(LP.va);
 				for (const [c, a, n] of lampDraws) {
 					inst(c, a);
@@ -2042,7 +2050,7 @@ var CityLife = class {
 				}
 			}
 		}
-		if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
+		if (!doM) {} else if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
 			const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1e3, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]);
 			this.traffic.step(dt, {
 				box: vbox,
@@ -2064,10 +2072,10 @@ var CityLife = class {
 			});
 			stats.cars = this.traffic.count;
 			stats.traffic = this.traffic.stats;
-			if (!reducedMotion && this.traffic.count) this._anim = true;
+			if (!reducedMotion && this.traffic.count) this._animM = true;
 		} else this.traffic.clear();
-		this.tick = now;
-		if (people && fadePeople > 0) {
+		if (doM) this.tick = now;
+		if (!doM) {} else if (people && fadePeople > 0) {
 			const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion);
 			stats.people = n;
 			if (n && !LU) {
@@ -2133,10 +2141,10 @@ var CityLife = class {
 					gl.vertexAttribDivisor(loc, 1);
 				}
 				gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n);
-				if (!reducedMotion) this._anim = true;
+				if (!reducedMotion) this._animM = true;
 			}
 		} else this.people.list.length = 0;
-		if (LU) {
+		if (LU && doM) {
 			const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
 			stats.units = LU.draw(gl, MT, MU, {
 				people: this.people.poses,
@@ -2152,12 +2160,12 @@ var CityLife = class {
 				light,
 				lit
 			});
-			if (!reducedMotion && stats.units) this._anim = true;
+			if (!reducedMotion && stats.units) this._animM = true;
 		}
 		gl.depthMask(false);
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-		if (fadeCross > 0 && crossings) {
+		if (doS && fadeCross > 0 && crossings) {
 			const X = pack.roads.crossing, draws = [];
 			let total = 0;
 			for (const c of ready) for (const [a, n] of this.ranges(c, "cross", vbox)) {
@@ -2192,42 +2200,46 @@ var CityLife = class {
 		if (dark && lampDraws.length) {
 			const LM = look.props.lamps, keep = phone ? .5 : 1.01, lp = lampPool ?? pack.modes[mode].lampPool, glow = hexRgb(LM.light), LPn = NL?.lampPool;
 			const pool = LPn ? LPn.opacity * Math.max(.5, Math.min(1, lp / 1.4)) : Math.min(LM.poolOpacity * lp, LM.simcityPoolMaxOpacity);
-			gl.useProgram(this.pP);
-			gl.uniformMatrix4fv(this.uP.u_matrix, false, MT);
-			gl.uniform1f(this.uP.u_mu, MU);
-			gl.uniform1f(this.uP.u_fade, fadePool);
-			gl.uniform1f(this.uP.u_keep, keep);
-			gl.uniform1f(this.uP.u_arm, LM.armM);
-			gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
-			gl.uniform3fv(this.uP.u_rgb, glow);
-			gl.uniform1f(this.uP.u_alpha, pool);
-			gl.bindVertexArray(this.vaQ);
-			for (const [c, a, n] of lampDraws) {
-				gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b);
-				gl.enableVertexAttribArray(3);
-				gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16);
-				gl.vertexAttribDivisor(3, 1);
-				gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+			if (doS) {
+				gl.useProgram(this.pP);
+				gl.uniformMatrix4fv(this.uP.u_matrix, false, MT);
+				gl.uniform1f(this.uP.u_mu, MU);
+				gl.uniform1f(this.uP.u_fade, fadePool);
+				gl.uniform1f(this.uP.u_keep, keep);
+				gl.uniform1f(this.uP.u_arm, LM.armM);
+				gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
+				gl.uniform3fv(this.uP.u_rgb, glow);
+				gl.uniform1f(this.uP.u_alpha, pool);
+				gl.bindVertexArray(this.vaQ);
+				for (const [c, a, n] of lampDraws) {
+					gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b);
+					gl.enableVertexAttribArray(3);
+					gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16);
+					gl.vertexAttribDivisor(3, 1);
+					gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+				}
 			}
-			const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));
-			gl.useProgram(this.pB);
-			gl.uniformMatrix4fv(this.uB.u_matrix, false, MT);
-			gl.uniform1f(this.uB.u_mu, MU);
-			gl.uniform1f(this.uB.u_fade, fadePool);
-			gl.uniform1f(this.uB.u_keep, keep);
-			gl.uniform1f(this.uB.u_arm, LM.armM);
-			gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));
-			gl.uniform1f(this.uB.u_size, sz.point);
-			gl.uniform1f(this.uB.u_core, sz.coreFrac);
-			gl.uniform3fv(this.uB.u_rgb, glow);
-			gl.uniform2f(this.uB.u_wt, .85, .14);
-			gl.bindVertexArray(this.vaP);
-			for (const [c, a, n] of lampDraws) {
-				gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b);
-				gl.enableVertexAttribArray(3);
-				gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16);
-				gl.vertexAttribDivisor(3, 0);
-				gl.drawArrays(gl.POINTS, 0, n);
+			if (doM) {
+				const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));
+				gl.useProgram(this.pB);
+				gl.uniformMatrix4fv(this.uB.u_matrix, false, MT);
+				gl.uniform1f(this.uB.u_mu, MU);
+				gl.uniform1f(this.uB.u_fade, fadePool);
+				gl.uniform1f(this.uB.u_keep, keep);
+				gl.uniform1f(this.uB.u_arm, LM.armM);
+				gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));
+				gl.uniform1f(this.uB.u_size, sz.point);
+				gl.uniform1f(this.uB.u_core, sz.coreFrac);
+				gl.uniform3fv(this.uB.u_rgb, glow);
+				gl.uniform2f(this.uB.u_wt, .85, .14);
+				gl.bindVertexArray(this.vaP);
+				for (const [c, a, n] of lampDraws) {
+					gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps.b);
+					gl.enableVertexAttribArray(3);
+					gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16);
+					gl.vertexAttribDivisor(3, 0);
+					gl.drawArrays(gl.POINTS, 0, n);
+				}
 			}
 		}
 		gl.bindVertexArray(null);
@@ -2238,9 +2250,29 @@ var CityLife = class {
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		gl.disable(gl.CULL_FACE);
-		if (stillBuilding) this._anim = true;
-		stats.ms = performance.now() - t0;
-		this.stats = stats;
+		if (doS && stillBuilding) this._animS = true;
+		this._anim = this._animS || this._animM;
+		if (doS && doM) {
+			stats.ms = performance.now() - t0;
+			this.stats = stats;
+			return;
+		}
+		const prev = this.stats;
+		if (doS) this.stats = {
+			...stats,
+			cars: prev.cars ?? 0,
+			people: prev.people ?? 0,
+			units: prev.units,
+			traffic: prev.traffic,
+			ms: performance.now() - t0
+		};
+		else {
+			prev.cars = stats.cars;
+			prev.people = stats.people;
+			prev.units = stats.units;
+			prev.traffic = stats.traffic;
+			prev.idle = false;
+		}
 	}
 	stepPeople(now, box, ready, fade, phone, reducedMotion) {
 		const PP = this.pack.props.people, L = this.people.list, dt = Math.min(.1, (now - (this.ptick || now)) / 1e3);

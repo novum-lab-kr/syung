@@ -1,5 +1,5 @@
 // web/map/overlay.mts
-function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveRatio, signRows, drawStationSigns, signBounds, dodgeSign, effectiveTheme, REDUCED, TRAIN_FPS, TrainLayer, BuildingDepth, cityOn, cityXrayTargets, mapPalette, coasterGeo, coasterTrack, geom, edgeOffset, coasterBodyPx, trainBodyPx, cityViaduct, CORK_HEART, PHONE, trainFrameSoon, CityLife, CITY_STYLE, cityPack, $, sunPosition, NightLayer, journeyMap, exitPillars, RIDE_ZOOM, nearMatrix, COCKPIT_NEAR_M, AvatarRenderer, avatarScale, AVATAR_MINZOOM, live }) {
+function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveRatio, signRows, drawStationSigns, signBounds, dodgeSign, effectiveTheme, REDUCED, TRAIN_FPS, TrainLayer, BuildingDepth, cityOn, cityXrayTargets, mapPalette, coasterGeo, coasterTrack, geom, edgeOffset, coasterBodyPx, trainBodyPx, cityViaduct, StaticLayer, CORK_HEART, PHONE, trainFrameSoon, CityLife, CITY_STYLE, cityPack, $, sunPosition, NightLayer, journeyMap, exitPillars, RIDE_ZOOM, nearMatrix, COCKPIT_NEAR_M, AvatarRenderer, avatarScale, AVATAR_MINZOOM, live }) {
 	const c = document.createElement("canvas");
 	c.className = "train-overlay";
 	map.getCanvas().after(c);
@@ -135,6 +135,141 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 		return null;
 	};
 	let avatar = null, rides = null, night = null, festoon = null, cityLife = null, ridePlacement = null, bloom = null, pixels = null;
+	let statik = null, lastKey = null, mapFrame = false;
+	const STATIC_MAX_MS = 2e3;
+	const lifeNow = () => {
+		if (!cityLife) {
+			cityLife = new CityLife({
+				pack: CITY_STYLE,
+				exits: () => Object.values(exitPillars.d.getExits()).flat(),
+				deck: (x, y, r) => cityViaduct.deckProbe(x, y, r)
+			});
+			cityLife.init(gl, maplibregl, map);
+			window.__subwayWebGL.cityLife = cityLife;
+		}
+		return cityLife;
+	};
+	const lifeDraw = (S, M, part) => {
+		const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()), m = map.getCanvas();
+		lifeNow().render(gl, M, {
+			peopleDeck: S.city.heritage ? live.cityLandmarks?.mon?.deck ?? null : null,
+			treeKeepOut: S.city.heritage ? live.cityLandmarks?.mon?.inPalace ?? null : null,
+			look: cityPack(),
+			night: live.night,
+			now: performance.now(),
+			zoom: map.getZoom(),
+			bearing: map.getBearing(),
+			dark: effectiveTheme() === "dark",
+			tone: S.city.tone,
+			lampPool: S.city.lampPool,
+			cars: S.city.life.cars,
+			crossings: S.city.life.crossings,
+			people: true,
+			units: S.city.life.units,
+			lifeUnits: lifeUnitsFor(gl, S),
+			phone: PHONE,
+			reducedMotion: REDUCED.matches,
+			pixelRatio: c.width / Math.max(1, m.clientWidth),
+			bounds: [
+				A.x,
+				B.y,
+				B.x,
+				A.y
+			],
+			mapOn: true,
+			moving: map.isMoving(),
+			sun: sunPosition(),
+			part
+		});
+	};
+	const viaductDraw = (M) => {
+		const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()), zoom = map.getZoom();
+		cityViaduct.setPack(cityPack());
+		const pending = !!cityViaduct.render(gl, M, {
+			now: performance.now(),
+			zoom,
+			dark: effectiveTheme() === "dark",
+			phone: PHONE,
+			bounds: [
+				A.x,
+				B.y,
+				B.x,
+				A.y
+			],
+			sun: sunPosition(),
+			life: cityLife,
+			selected: live.selected,
+			moving: map.isMoving(),
+			bodyPx: trainBodyPx(zoom),
+			journey: journeyMap.journeyRides()
+		});
+		if (pending) trainFrameSoon(50);
+		return pending;
+	};
+	const landmarksDraw = (S, M) => live.cityLandmarks?.render(gl, M, {
+		zoom: map.getZoom(),
+		dark: effectiveTheme() === "dark",
+		look: S.city.landmarks,
+		sun: sunPosition(),
+		phone: PHONE
+	});
+	const monumentsDraw = (M) => {
+		const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+		live.cityLandmarks.renderMonuments(gl, M, {
+			zoom: map.getZoom(),
+			dark: effectiveTheme() === "dark",
+			sun: sunPosition(),
+			bounds: [
+				A.x,
+				B.y,
+				B.x,
+				A.y
+			],
+			phone: PHONE,
+			center: [map.getCenter().lng, map.getCenter().lat]
+		});
+	};
+	const staticFrame = (S, park, M) => {
+		if (!(S.city.enabled && !park && cityOn() && !!live.cityBuildings)) {
+			if (statik) {
+				statik.dispose();
+				statik = null;
+				delete window.__subwayWebGL.staticLayer;
+			}
+			lastKey = null;
+			return null;
+		}
+		const n = live.night, sun = sunPosition(), key = [
+			...Array.from(M),
+			c.width,
+			c.height,
+			S,
+			effectiveTheme(),
+			Math.round((sun?.azimuth ?? 0) * 2),
+			Math.round((sun?.elevation ?? 0) * 2),
+			cityPack(),
+			n.lights,
+			n.ground,
+			n.bloom,
+			n.N,
+			live.selected,
+			journeyMap.journeyRides(),
+			S.city.heritage ? live.cityLandmarks?.mon?.inPalace ?? null : null,
+			REDUCED.matches
+		];
+		const same = !!lastKey && lastKey.length === key.length && lastKey.every((v, i) => Object.is(v, key[i]));
+		lastKey = key;
+		if (mapFrame || !same || map.isMoving()) {
+			statik?.invalidate();
+			return null;
+		}
+		if (!statik) {
+			statik = new StaticLayer(gl);
+			window.__subwayWebGL.staticLayer = statik;
+		}
+		if (statik.broken) return null;
+		return statik.has(key, c.width, c.height) && performance.now() - statik.at < STATIC_MAX_MS ? "reuse" : "build";
+	};
 	live.drawTrains = () => {
 		live.frameStats.trains++;
 		const S = live.settings, K = S.track.kind, park = S.park.enabled;
@@ -151,7 +286,17 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		const pd = map.painter.transform.getProjectionDataForCustomLayer(true);
 		if (cityOn() && live.cityBuildings) live.cityBuildings.setXray(S.city.xray ? cityXrayTargets() : null);
-		const drawn = cityOn() && live.cityBuildings ? live.cityBuildings.drawDepth(gl, pd.mainMatrix) : walls.draw(pd.mainMatrix), behind = drawn && !cityOn() ? 1 - mapPalette().bld3dOpacity : 0;
+		const cache = staticFrame(S, park, pd.mainMatrix);
+		const monStatic = !!cache && S.city.heritage && !!live.cityLandmarks && !live.night.bloom && !(S.map.pixel.enabled && S.map.pixel.palette !== "none");
+		if (cache === "build") {
+			lifeDraw(S, pd.mainMatrix, "static");
+			const pending = K !== "ground" && viaductDraw(pd.mainMatrix);
+			landmarksDraw(S, pd.mainMatrix);
+			if (monStatic) monumentsDraw(pd.mainMatrix);
+			if (!pending && !cityLife._animS && !cityViaduct.aqueduct) statik.snapshot(lastKey, c.width, c.height, performance.now());
+			else statik.invalidate();
+		} else if (cache === "reuse") statik.restore();
+		const drawn = cityOn() && live.cityBuildings ? live.cityBuildings.drawDepth(gl, pd.mainMatrix, !!cache) : walls.draw(pd.mainMatrix), behind = drawn && !cityOn() ? 1 - mapPalette().bld3dOpacity : 0;
 		if (park && live.kitReady && coasterGeo.bld?.towers?.length) {
 			if (!rides) {
 				rides = new live.RideLayer(coasterGeo.bld.towers, {
@@ -208,81 +353,13 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			if (window.__subwayWebGL) delete window.__subwayWebGL.rides;
 		}
 		if (S.city.enabled) {
-			if (!cityLife) {
-				cityLife = new CityLife({
-					pack: CITY_STYLE,
-					exits: () => Object.values(exitPillars.d.getExits()).flat(),
-					deck: (x, y, r) => cityViaduct.deckProbe(x, y, r)
-				});
-				cityLife.init(gl, maplibregl, map);
-				window.__subwayWebGL.cityLife = cityLife;
-			}
-			const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-			cityLife.render(gl, pd.mainMatrix, {
-				peopleDeck: S.city.heritage ? live.cityLandmarks?.mon?.deck ?? null : null,
-				treeKeepOut: S.city.heritage ? live.cityLandmarks?.mon?.inPalace ?? null : null,
-				look: cityPack(),
-				night: live.night,
-				now: performance.now(),
-				zoom: map.getZoom(),
-				bearing: map.getBearing(),
-				dark: effectiveTheme() === "dark",
-				tone: S.city.tone,
-				lampPool: S.city.lampPool,
-				cars: S.city.life.cars,
-				crossings: S.city.life.crossings,
-				people: true,
-				units: S.city.life.units,
-				lifeUnits: lifeUnitsFor(gl, S),
-				phone: PHONE,
-				reducedMotion: REDUCED.matches,
-				pixelRatio: c.width / Math.max(1, m.clientWidth),
-				bounds: [
-					A.x,
-					B.y,
-					B.x,
-					A.y
-				],
-				mapOn: true,
-				moving: map.isMoving(),
-				sun: sunPosition()
-			});
+			lifeDraw(S, pd.mainMatrix, cache ? "moving" : void 0);
 			if (cityLife.animating()) trainFrameSoon(1e3 / TRAIN_FPS);
 		}
 		if (live.busLayer) live.busLayer.look = S.buses.look;
 		live.busLayer?.render(gl, pd.mainMatrix, behind);
-		if (K !== "ground") {
-			const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()), zoom = map.getZoom();
-			cityViaduct.setPack(cityPack());
-			if (cityViaduct.render(gl, pd.mainMatrix, {
-				now: performance.now(),
-				zoom,
-				dark: effectiveTheme() === "dark",
-				phone: PHONE,
-				bounds: [
-					A.x,
-					B.y,
-					B.x,
-					A.y
-				],
-				sun: sunPosition(),
-				life: cityLife,
-				selected: live.selected,
-				moving: map.isMoving(),
-				bodyPx: trainBodyPx(zoom),
-				journey: journeyMap.journeyRides()
-			})) trainFrameSoon(50);
-		}
-		if (S.city.enabled) {
-			const zoom = map.getZoom();
-			live.cityLandmarks?.render(gl, pd.mainMatrix, {
-				zoom,
-				dark: effectiveTheme() === "dark",
-				look: S.city.landmarks,
-				sun: sunPosition(),
-				phone: PHONE
-			});
-		}
+		if (K !== "ground" && !cache) viaductDraw(pd.mainMatrix);
+		if (S.city.enabled && !cache) landmarksDraw(S, pd.mainMatrix);
 		coasterTrack.render(gl, pd.mainMatrix, behind);
 		layer.render(gl, {
 			defaultProjectionData: pd,
@@ -407,20 +484,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			}
 		}
 		if (S.city.heritage && live.cityLandmarks) {
-			const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-			live.cityLandmarks.renderMonuments(gl, pd.mainMatrix, {
-				zoom: map.getZoom(),
-				dark: effectiveTheme() === "dark",
-				sun: sunPosition(),
-				bounds: [
-					A.x,
-					B.y,
-					B.x,
-					A.y
-				],
-				phone: PHONE,
-				center: [map.getCenter().lng, map.getCenter().lat]
-			});
+			if (!monStatic) monumentsDraw(pd.mainMatrix);
 		} else if (live.cityLandmarks?.mon || live.cityLandmarks?.monp) live.cityLandmarks.releaseMonuments();
 		meShape = null;
 		{
@@ -464,7 +528,12 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 	};
 	map.on("render", () => {
 		live.frameStats.mapRenders++;
-		live.drawTrains();
+		mapFrame = true;
+		try {
+			live.drawTrains();
+		} finally {
+			mapFrame = false;
+		}
 	});
 	let wallTimer = 0;
 	const wallsSoon = () => {
