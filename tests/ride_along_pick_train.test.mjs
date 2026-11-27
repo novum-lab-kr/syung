@@ -134,3 +134,23 @@ test('타는 중 바로잡기 글: 「다른 열차예요」 없이 · 목록이
   assert.equal(rideFixView({step: 'ride', undo: false, choosing: false}).fix.hint, undefined, '지도 화면(목록 없음)엔 목록 글 없음');
   assert.ok(rideFixView({step: 'wait', undo: false, choosing: false}).fix.links.some(link => link.text === '다른 열차를 탔어요 ›'));
 });
+
+// 2호선 성수에서 번호가 바뀐 열차 이어 타기(2026-11-27 재생 시험 시청 → 잠실 — 녹화 11-25 3078 이 「성수종착 진입」 뒤 끊기고 3132 가 「성수 출발」로 이어 감)
+//  구간: 1(탄 역) → 2 → 19(성수) → 20 → 24(내릴 역) · 역 사이 1000m
+test('성수 이어 타기: 탄 열차 예측이 성수에서 끝나면 그때 지도에 있던 열차(앞차 · 앞차의 새 번호)는 빼고 그 뒤 성수를 떠난 새 열차로', async () => {
+  const {ringEnded, ringSuccessor} = await import('../web/lib/ride-along.mts');
+  const LEG = [1, 2, 19, 20, 24];
+  const mine = along([2, 19], 1000);                    // 성수에 닿아 서 있다(행선지 성수 — 예측 차례가 성수에서 끝남)
+  assert.equal(ringEnded(along([2, 19], 400), LEG, 19), false, '성수에 아직 안 닿음');
+  assert.equal(ringEnded(mine, LEG, 19), true);
+  assert.equal(ringEnded(mine, [1, 2, 19], 19), false, '성수에서 내리면 이어 탈 것이 없다');
+  assert.equal(ringEnded(along([2, 19, 20], 1000), LEG, 19), false, '성수 너머가 예측에 있으면 끝난 게 아니다');
+  // 끝난 때 지도: 탄 열차 3078 · 앞차 3076(성수 너머) · 앞차의 새 번호 6130(성수에 서 있다)
+  const seen = new Set(['2호선:3078', '2호선:3076', '2호선:6130']);
+  const front = {id: '2호선:3076', track: along([19, 20, 24, 25], 900)};
+  const frontNew = {id: '2호선:6130', track: along([19, 20, 24, 25], 500)};   // 그 뒤 성수를 떠남 — 그래도 앞차
+  const held = {id: '2호선:3132', track: along([2, 19], 1000)};              // 내 열차의 새 번호가 아직 성수에 서 있다
+  assert.equal(ringSuccessor([front, frontNew, held], LEG, 19, seen), null, '새 번호가 성수 너머로 가기 전에는 아직 고르지 않는다');
+  const moving = {id: '2호선:3132', track: along([19, 20, 24, 25], 300)};
+  assert.equal(ringSuccessor([front, frontNew, moving], LEG, 19, seen), '2호선:3132');
+});
