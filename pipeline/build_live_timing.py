@@ -34,6 +34,19 @@ Output (data/live-timing.json), read by the map runtime:
   each train happens to stand.
   역 정차(stops)를 시간대로 나눠도 같았다(2026-10-15, 10-13 채점 · 앞 14일 학습): 출퇴근 · 아침/저녁/낮 · 매시 모두
   평균 15.36 → 15.28~15.33 s, 출퇴근 평균 17.6 → 17.3 s — 남은 오차는 열차마다 우연히 오래 서는 것이라 넣지 않았다.
+  다시 재 보니 출퇴근 밖 정차 차이(dayZone)는 넣는다(2026-11-27, 11/24 · 11/25 · 11/26 을 앞 14일로 배워 채점): 10/15 은 평균 |오차|만
+  봤고 쏠림(부호 있는 가운데값)은 보지 않았다. 배운 값은 2호선 −3 s(세 날 같음). 평균 |오차| 14.622 → 14.620 · 12.122 → 12.048 ·
+  14.036 → 14.020 s, 2호선 13시 도착→출발 쏠림 +2 · +4 · +3 → −1 · +1 · 0 s, 출퇴근 밖 다른 시간 +6.5 · +4 · +3 → +3.5 · +1 · 0 s.
+  화면 재현(replay_score, 지도가 dayZone 을 더한다고 치고) 13시 2호선 출발 +7 · +11 · +9 → +4 · +8 · +6 s(도착 ±1 · 8시 · 18시 그대로).
+  1 · 7 · 8 · 9호선은 −1 s 가 나왔지만 넣으면 11/26 평균이 14.036 → 14.055 로 나빠져 DAY_MIN_ABS 2 s 아래는 넣지 않는다.
+  경계는 지도의 waits 와 같은 RUSH 밖(평일 10–17시만 나눈 것은 2호선 저녁 쏠림이 그대로 +6.5 · +4 · +3), 노선 하나 값
+  (역마다는 표본이 모자란다 · 노선 전체 가운데의 차이보다 역마다 차이의 가운데가 평균 |오차|가 조금 낮았다).
+- dayZone: seconds (whole, usually negative) to add to a station's stand (stops, else zone) outside weekday rush hours (RUSH —
+  weekends all day), when the train does not use waits. The median over the line's stations of (that station's 도착→출발 outside
+  rush − its 도착→출발 at all hours), weighted by the records outside rush. Only lines with DAY_MIN_N such records and a
+  difference of DAY_MIN_ABS s or more; absent = 0.
+  stops mix both periods and the position feed reads rush hours more (11/20 2호선 rush 1246 · day 390), so the map's trains
+  stood a few seconds too long at midday (화면 재현 2호선 13시 출발 +11, 2026-11-25).
 - approach: seconds from 진입 to 도착.
 All three only use records stamped with their own event time (a stamp shared by three or
 more trains of a line and direction in one fetch is a snapshot time, useless for durations this
@@ -68,6 +81,7 @@ OUT = ROOT / "data" / "live-timing.json"
 DEFAULT = {"pace": 1.0, "zone": 62, "approach": 40}
 STOP_MIN_N, STOP_CLAMP, RUN_MIN_N = 30, (30, 180), 15
 WAIT_MIN_N, WAIT_CLAMP, WAIT_DIFF, WAIT_MAX = 8, (30, 360), 30, 420   # 완행 대피: 기록 수 · 범위 · stops 와 이만큼 달라야 · 이보다 긴 도착→출발은 버림
+DAY_MIN_N, DAY_STOP_MIN_N, DAY_MIN_ABS = 100, 5, 2   # dayZone: 노선의 출퇴근 밖 도착→출발 기록 수 · 역 하나가 차이를 내려면 출퇴근 밖 기록이 이만큼(전체는 STOP_MIN_N) · 이보다 작은 차이는 넣지 않는다
 WINDOW = 14   # days a nightly retrain learns from (retrain_live_timing.py)
 MIN_N = {"pace": 200, "zone": 100, "approach": 100, "rushPace": 60}
 CLAMP = {"pace": (0.95, 1.05), "zone": (40, 95), "approach": (25, 85), "rushPace": (0.95, 1.12)}
@@ -167,22 +181,42 @@ def wait_key(a, e: dict) -> str | None:
 
 
 def stand(tm: dict, a, e: dict | None = None) -> float:
-    """Seconds from 도착 until the train pulls out at station a (출발 comes 15 s later); e: the 도착 record, for a local's wait."""
+    """Seconds from 도착 until the train pulls out at station a (출발 comes 15 s later); e: the 도착 record, for a local's wait
+    and dayZone outside rush hours."""
     k = wait_key(a, e) if e else None
     zone = tm.get("waits", {}).get(k) if k else None
-    return max(15, (zone or tm.get("stops", {}).get(str(a), tm["zone"])) - 10)
+    if not zone:
+        zone = tm.get("stops", {}).get(str(a), tm["zone"])
+        if e and not rush(e["receivedAt"]):
+            zone += tm.get("dayZone", 0)
+    return max(15, zone - 10)
+
+
+def day_zone(stations: list[list[tuple]], waits: dict) -> int:
+    """출퇴근 밖 정차 차이(초): 역마다 (출퇴근 밖 가운데 − 전체 가운데)를 출퇴근 밖 기록 수로 무게 준 가운데. waits 를 쓴 기록은 뺀다."""
+    diffs, n_day = [], 0
+    for rows in stations:
+        kept = [(dt, is_day) for dt, wait, is_day in rows if not (wait and wait in waits)]
+        outside = [dt for dt, is_day in kept if is_day]
+        n_day += len(outside)
+        if len(outside) >= DAY_STOP_MIN_N and len(kept) >= STOP_MIN_N:
+            diffs += [statistics.median(outside) - statistics.median([dt for dt, _ in kept])] * len(outside)
+    shift = round(statistics.median(diffs)) if diffs and n_day >= DAY_MIN_N else 0
+    return shift if abs(shift) >= DAY_MIN_ABS else 0
 
 
 def learn(paths: list[str], verbose: bool = False) -> dict:
     pace, zone, approach, rush_pace = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     zone_at, leave, onward = defaultdict(list), defaultdict(list), defaultdict(list)   # (line, a, b): 출발 → 도착, 도착 → 도착
     wait_at = defaultdict(list)   # (line, wait_key): 완행의 도착 → 출발
+    zone_rows = defaultdict(list)   # (line, a): (도착 → 출발, wait_key, 출퇴근 밖) — dayZone 용
     for line, e1, e2, a, b, dt in day_pairs(paths):
         s1, s2, both = e1["status"], e2["status"], e1["event"] and e2["event"]
         if a == b:
             if both and (s1, s2) == ("도착", "출발") and dt < 300:
                 zone[line].append(dt)
                 zone_at[(line, a)].append(dt)
+                zone_rows[(line, a)].append((dt, wait_key(a, e1), not rush(e1["receivedAt"])))
             if both and (s1, s2) == ("도착", "출발") and dt < WAIT_MAX and (k := wait_key(a, e1)):
                 wait_at[(line, k)].append(dt)
             if both and (s1, s2) == ("진입", "도착") and dt < 180:
@@ -227,6 +261,8 @@ def learn(paths: list[str], verbose: bool = False) -> dict:
                     waits[k] = w
         if waits:
             out["waits"] = waits
+        if day := day_zone([rows for (l, _), rows in sorted(zone_rows.items()) if l == line], waits):
+            out["dayZone"] = day
         tm, runs = {**DEFAULT, **out}, {}
         for (l, a, b) in sorted(set(leave) | set(onward)):
             if l != line:
