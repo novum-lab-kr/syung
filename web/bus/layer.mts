@@ -388,6 +388,7 @@ class BusLayer {
   declare stopNote:string; declare followNote:(text:string)=>void; declare stopNoteTimer:Timer | undefined; declare roadSoon:(ms:number)=>void; declare roadTimer:Timer | undefined; declare roadData:(e:MapSourceDataEvent)=>void;
   declare lineZoom:number; declare roadLines:boolean; declare box:Box | undefined; declare checkDetail:boolean | null | undefined; declare loading:boolean; declare staticController:AbortController | null | undefined;
   declare exitCoordinates:LngLatPt[] | undefined; declare requestKey:string | null | undefined; declare liveController:AbortController | null | undefined; declare routeStates:Record<string, RouteState> | undefined;
+  declare stopPlace:{ key:unknown[]; result:ReturnType<typeof placeStopPosts> } | undefined;   // 정류장 기둥 자리 기억(render)
   declare stopFeatures:StopFeature[] | undefined; declare ends:{ legs:BusLeg[]; data:BusData; map:Map<string, [number, number][]> } | undefined; declare look:string; declare restoreFocus:HTMLElement | null | undefined;
   declare arrivals:Arrivals | null | undefined; declare arrivalTick:ReturnType<typeof setInterval> | 0 | undefined; declare arrivalTimer:Timer | undefined; declare arrivalController:AbortController | null | undefined;
   constructor({map, phone = false, beforeId = 'routes', onSelect = () => {}, onClear = () => {}, onRelease = () => {}, fetcher = fetch,
@@ -974,9 +975,15 @@ class BusLayer {
       if(run||selected)moving=true;   // 고른 버스의 바닥 파장도 움직이는 동안처럼 다시 그린다
       if(vehicles.length>=(this.phone?160:320))break;
     }
-    const placement=placeStopPosts(zoom<BUS_ZOOM.stops?[]:(this.stopFeatures||[]),this.exitCoordinates||[],
-      {project,width,height,zoom,unit,origin,bearing:(this.map.getBearing?.()||0)*Math.PI/180,phone:this.phone,selected:this.selection?.id,
-        tint:f=>rgb(color({type:f.properties.type},this.theme)),growFrom:busStopGrowFrom(this.look)});   // 정류장 색 = 버스 종류 색(BUS 기둥은 쓰지 않고, 조선 청사초롱 비단이 쓴다)
+    // 정류장 기둥 자리: 카메라(행렬) · 화면 크기 · 정류장 · 출구 · 고른 것 · 테마 · 모양이 그대로면 지난번 결과를 그대로 쓴다 — 열차가 움직여 다시 그릴 때마다(1초 20~30번)
+    // 같은 자리를 다시 셈했다(멈춘 화면 rAF 의 약 1.7% — 2026-11-27 잼). 결과는 읽기만 한다(posts · stopHits 로 옮겨 담을 뿐)
+    const stopFeatures=zoom<BUS_ZOOM.stops?null:(this.stopFeatures||null),bearing=(this.map.getBearing?.()||0)*Math.PI/180,chosenStop=this.selection?.id;
+    const placeKey:unknown[]=[stopFeatures,this.exitCoordinates,width,height,zoom,bearing,this.phone,chosenStop,this.theme,this.look,...Array.from(matrix)];
+    const last=this.stopPlace,placement=last&&last.key.length===placeKey.length&&last.key.every((v,i)=>v===placeKey[i])?last.result
+      :placeStopPosts(stopFeatures||[],this.exitCoordinates||[],
+        {project,width,height,zoom,unit,origin,bearing,phone:this.phone,selected:chosenStop,
+          tint:f=>rgb(color({type:f.properties.type},this.theme)),growFrom:busStopGrowFrom(this.look)});   // 정류장 색 = 버스 종류 색(BUS 기둥은 쓰지 않고, 조선 청사초롱 비단이 쓴다)
+    this.stopPlace={key:placeKey,result:placement};
     posts.push(...placement.posts);this.stopHits.push(...placement.hits);
     this.renderer.render(gl,matrix,{origin,unit,pitch:(this.map.getPitch?.()||0)*Math.PI/180,dark:this.theme==='dark',vehicles,stops:posts,occlude,look:this.look,time:now/1000});
     moving=this.refreshAnimatedDetail(now)||moving;
