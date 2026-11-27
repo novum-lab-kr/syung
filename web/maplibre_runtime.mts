@@ -380,8 +380,11 @@ let autoLocating=false,lastFix:GeolocationCoordinates|null=null;
 const gpsWatch=ownGpsWatch(geolocate as unknown as GpsWatchControl,()=>navigator.geolocation,GPS,{enableHighAccuracy:false,maximumAge:30000});
 // 타고 가기로 탄 열차를 따라가는 동안은 이름표 fade 를 끈다(ui/ride_along labelMode — 카메라가 1초에 2번 움직일 때마다 fade 0.3초 동안 지도를 프레임마다 다시 그렸다 · 2026-11-25).
 // MapLibre 는 fadeDuration 을 만들 때만 받아서 안쪽 값(_fadeDuration)을 바꾼다
-const labelFade=(map as unknown as {_fadeDuration:number})._fadeDuration;
-function quietLabels(on:boolean){(map as unknown as {_fadeDuration:number})._fadeDuration=on?0:labelFade}
+// 시트에서 열차 · 버스를 따라가는 동안도 끈다 — 따라가기 카메라가 움직일 때마다 fade 가 다시 시작돼 지도를 1초 50~57번 다시 그렸다(2026-11-27 잼 · 모바일 점검 표 A #1).
+// 두 주인(타고 가기 · 시트 따라가기)이 따로 켜고 끄니 MapLibre 가 읽는 그 칸을 getter 로 둔다(시트는 뒤에 생겨 followQuiet 를 그때 바꿔 낀다)
+const labelFade=(map as unknown as {_fadeDuration:number})._fadeDuration;let rideQuiet=false,followQuiet=()=>false;
+Object.defineProperty(map,'_fadeDuration',{configurable:true,get:()=>rideQuiet||followQuiet()?0:labelFade});
+function quietLabels(on:boolean){rideQuiet=on}
 // 타고 가기 정보 화면(탄 동안 이번 · 다음 역 — ui/ride_along infoScreen)이 지도를 덮는 동안은 지도를 다시 그리지 않는다(배터리 2단계 · 2026-11-25).
 // 열차 층 · 버스 층 · 타일 · 실시간 받기가 모두 map.triggerRepaint 로 그리기를 부르니 그 문 하나를 막는다(그리지 않으면 층들의 다음 프레임 예약도 저절로 끊긴다).
 // 열차 캔버스는 그 문과 따로 제 타이머(trainFrameSoon → drawTrains)로도 돈다 — 화면 안에 움직이는 열차가 있으면 정보 화면 뒤에서 1초 20번 계속 그렸다(2026-11-25 잼) → trainFrameSoon 도 rideInfoOn 이면 예약하지 않는다
@@ -675,9 +678,10 @@ const destLabel=(t:LiveTrain)=>{const d=String(t.destination||'');return !d?'':/
 const hexRGB=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),16)/255,parseInt(v.slice(5,7),16)/255];
 
 // ---- bottom sheet: station and train details slide up from the bottom of the map -------------
-const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute:bottom=>fitRoute(bottom),
+const sheetUI=createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,trainFrameSoon,fitRoute:bottom=>fitRoute(bottom),
   live:{get frameMs(){return frameMs()},get journey(){return journey},get routeBounds(){return journeyMap.routeBounds},get busLayer(){return busLayer},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get stopRide(){return stopRide},get appMode(){return !!appBridge},get appPad(){return appBridge?appPad:null}}});   // 아래 시트 · 따라가기
 const {sheet,sheetBody,followBtn,openSheetView,closeSheet,sheetBusy,sheetPad,trainLngLat,follow,followBusStart,followSoon}=sheetUI;
+followQuiet=()=>!!(sheetUI.following||sheetUI.followBus);   // 시트 따라가기 동안 이름표 fade 끄기(위 labelFade)
 const journeyMap=createJourneyMap({map,maplibregl,colors,byId,cityCoords,stopPos,stationTrack,cityViaduct,sheetPad,journeyCasingPaint,journeyRidePaint,journeyStopPaint,
   live:{get busLayer(){return busLayer},get settings(){return modeCtl.settings()},get stationAlpha(){return stationAlpha},set stationAlpha(v){stationAlpha=v}}});   // 여정 지도 표시
 const {rideCoords,showRoute,fitRoute,clearRoute,setSubwayOff,setRouteOpacity,focusRoute}=journeyMap;

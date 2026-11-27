@@ -29,9 +29,9 @@ interface SheetLive {
 export interface BottomSheetDeps {
   map:MapLibre; maplibregl:typeof import('../vendor/maplibre-gl.mjs'); planner:PlannerLike;
   trackPoint:(plan:TrainPlanLike, dist:number)=>TrackPoint; trainPose:(plan:TrainPlanLike)=>{ dist:number };
-  laneOffsetPx:(zoom:number)=>number; animFrame:(()=>void)[]; FOLLOW_FPS:number; fitRoute:(bottom:number)=>void; live:SheetLive;
+  laneOffsetPx:(zoom:number)=>number; animFrame:(()=>void)[]; FOLLOW_FPS:number; trainFrameSoon:(ms:number)=>void; fitRoute:(bottom:number)=>void; live:SheetLive;
 }
-export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,fitRoute,live}:BottomSheetDeps){
+export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,laneOffsetPx,animFrame,FOLLOW_FPS,trainFrameSoon,fitRoute,live}:BottomSheetDeps){
   const sheet=document.createElement('section');sheet.className='sheet';sheet.hidden=true;sheet.setAttribute('aria-label','상세 정보');
   render(h(SheetFrame,null),sheet);   // 틀은 한 번만 그린다: 아래 동작이 그려진 단추를 찾아 걸고 고친다
   const sheetBody=sheet.querySelector<HTMLElement>('.sheet-body')!,followBtn=sheet.querySelector<HTMLButtonElement>('.sheet-follow')!;   // 바로 위 innerHTML 에 있다
@@ -163,6 +163,13 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   // the map with its trains drawn right after in one render. The camera eases toward the train
   // (FOLLOW_EASE s) so a correction from fresh data slides instead of jumping.
   const FOLLOW_EASE=.25;let followAt='',followRaf=0,followLast=0,cam:{lng:number,lat:number}|null=null,camAt=0;
+  // 열차 따라가기 카메라는 화면에서 FOLLOW_STEP_PX(CSS px) 넘게 옮겨야 할 때만 옮긴다 — 그 사이는 지도를 다시 그리지 않고 열차 캔버스만(trainFrameSoon).
+  // 1초 30번 카메라를 0.3 px 씩 옮기느라 지도 전체(건물 · 선 · 이름표)를 1초 30~56번 다시 그렸다(휴대폰 rAF JS 562 ms/s — 2026-11-27 모바일 점검 표 A #1)
+  const FOLLOW_STEP_PX=1;let camLast:{lng:number,lat:number}|null=null,padLast=-1,camMoved=false;
+  function followCamTo(at:{lng:number,lat:number}):void{const pad=sheetPad();
+    if(camLast&&pad===padLast){const world=512*2**map.getZoom(),from=maplibregl.MercatorCoordinate.fromLngLat(camLast),to=maplibregl.MercatorCoordinate.fromLngLat(at);
+      if(Math.hypot(to.x-from.x,to.y-from.y)*world<FOLLOW_STEP_PX)return}
+    camLast=at;padLast=pad;camMoved=true;map.jumpTo({center:at,padding:{top:0,bottom:pad,left:0,right:0}})}
   function followSoon(){if(!followRaf)followRaf=requestAnimationFrame(followLoop)}
   // 타고 가기로 탄 열차만 따라갈 때(시트 · 롤코 · 버스 따라가기 없음)는 카메라 · 지도 · 열차를 1초에 2번만(배터리 — 2026-11-25 사용자 추천안 A).
   // 그 사이는 화면 프레임마다 헛돌지 않고 타이머로 기다린다
@@ -175,20 +182,19 @@ export function createBottomSheet({map,maplibregl,planner,trackPoint,trainPose,l
   for(const t of ['pointerup','pointercancel'] as const)addEventListener(t,e=>touching.delete(e.pointerId),true);
   addEventListener('blur',()=>touching.clear());
   const handsOn=()=>{if(!(touching.size>0||map.isMoving()))return false;
-    const m=map.getCenter();cam={lng:m.lng,lat:m.lat};camAt=performance.now();followAt='';return true};   // 놓으면 사람이 둔 자리에서 열차 · 버스로 미끄러져 돌아간다
+    const m=map.getCenter();cam={lng:m.lng,lat:m.lat};camAt=performance.now();followAt='';camLast=null;return true};   // 놓으면 사람이 둔 자리에서 열차 · 버스로 미끄러져 돌아간다
   function followLoop(ts:number):void{followRaf=0;if(!(following||live.rider.ride||followBus||live.rideFollow)||easing)return;
     const rideOnly=!(following||live.rider.ride||followBus),gap=Math.max(rideOnly?RIDE_FOLLOW_MS:1000/FOLLOW_FPS,live.frameMs||0);
     if(!live.rider.ride&&ts-followLast<gap-4){if(rideOnly)followLater(gap-(ts-followLast));else followSoon();return}   // skip display frames down to FOLLOW_FPS (1인칭으로 탈 때는 화면 주사율 그대로: 30 fps 로 묶으니 풍경이 끊겨 보였다 — 2026-10-06 덕배)
-    followLast=ts;if(live.rider.ride)planner.setFrame(ts);for(const f of animFrame)f();map.triggerRepaint();
+    followLast=ts;if(live.rider.ride)planner.setFrame(ts);camMoved=false;for(const f of animFrame)f();
+    if(camMoved||live.rider.ride||followBus||live.rideFollow)map.triggerRepaint();else trainFrameSoon(0);   // 열차 따라가기에서 카메라가 그대로면 열차 캔버스만(지도 render 가 열차도 같이 그린다)
     if(followBus)followSoon()}   // bus: 버스는 열차 그리기와 따로 움직여서, 따라가는 동안은 계속
   animFrame.push(()=>{
     const sel=following&&!easing&&!handsOn()&&sheetTrain&&planner.plans.find(p=>p.id===sheetTrain);if(!sel)return;
     const c=trainLngLat(sel),now=performance.now();
     if(!cam||now-camAt>1000)cam={lng:c.lng,lat:c.lat};
     else{const a=1-Math.exp(-(now-camAt)/1000/FOLLOW_EASE);cam={lng:cam.lng+(c.lng-cam.lng)*a,lat:cam.lat+(c.lat-cam.lat)*a}}
-    camAt=now;
-    const k=`${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;if(k===followAt)return;followAt=k;
-    map.jumpTo({center:cam,padding:{top:0,bottom:sheetPad(),left:0,right:0}});
+    camAt=now;followCamTo(cam);
   });
   animFrame.push(()=>{   // bus: 따라가는 버스 — 열차와 같은 방식으로 카메라가 부드럽게 따라붙는다
     if(!followBus||easing||handsOn())return;
