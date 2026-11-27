@@ -1,5 +1,5 @@
 import { serverUrl } from "../lib/server_url.mjs";
-import { BOARD_GIVE_UP_MS, HURRY_SHARE, arrivalFits, arriveOutcome, arrivedEarly, boardNow, boardedPick, catchable, characterOf, doneParts, doneSub, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideOver, rideShare, rideSteps, rideStops, rideSub, rideTalk, rideTitle, rideTrainSpots, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle } from "../lib/ride-along.mjs";
+import { BOARD_GIVE_UP_MS, HURRY_SHARE, RING_SWAP_STATION, arrivalFits, arriveOutcome, arrivedEarly, boardNow, boardedPick, catchable, characterOf, doneParts, doneSub, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideOver, rideShare, rideSteps, rideStops, rideSub, rideTalk, rideTitle, rideTrainSpots, ringEnded, ringSuccessor, shouldReroute, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, transferS, waitText, waitTitle, walkLeftS, walkOverByTime, walkSub, walkTitle } from "../lib/ride-along.mjs";
 // web/ui/ride_along.mts
 var BUS_ARRIVALS_MS = 3e4;
 var BUS_MISS_MS = 3e4;
@@ -25,7 +25,20 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		key: "",
 		sawLeg: false,
 		offFixes: 0,
-		fewest: Infinity
+		fewest: Infinity,
+		ringSeen: null
+	};
+	let walkAt = {
+		key: "",
+		ms: 0
+	};
+	const walkSince = (nowMs) => {
+		const key = ride ? `${ride.startedMs}:${ride.at}` : "";
+		if (walkAt.key !== key) walkAt = {
+			key,
+			ms: nowMs
+		};
+		return walkAt.ms;
 	};
 	const alightOf = () => {
 		const key = ride ? `${ride.startedMs}:${ride.at}:${ride.train ?? ""}` : "";
@@ -33,7 +46,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			key,
 			sawLeg: false,
 			offFixes: 0,
-			fewest: Infinity
+			fewest: Infinity,
+			ringSeen: null
 		};
 		return alight;
 	};
@@ -414,7 +428,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		if (!ride || !current || current.kind === "done") return;
 		const leg = legAt(current.leg), spot = freshFix(), nowMs = Date.now(), now = /* @__PURE__ */ new Date();
 		if (current.kind === "walk") {
-			const next = legAt(current.leg + 1), path = leg.type === "walk" ? leg.path ?? [] : [];
+			const next = legAt(current.leg + 1), path = leg.type === "walk" ? leg.path ?? [] : [], since = walkSince(nowMs);
 			if (!spot || path.length < 2) {
 				if (fix && path.length >= 2) {
 					const { stationM, exitM } = boardingAway(fix.spot, next);
@@ -429,7 +443,7 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 						return;
 					}
 				}
-				if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance();
+				if (walkOverByTime(ride.legs, current.leg, now, ride.arrives, since)) advance();
 				else draw();
 				return;
 			}
@@ -540,7 +554,18 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			return;
 		}
 		if (leg.type === "ride") {
-			const plan = planOf(ride.train), track = plan ? trackOf(plan) : null, state = alightOf();
+			let plan = planOf(ride.train), track = plan ? trackOf(plan) : null, state = alightOf();
+			const ringId = leg.line === "2호선" ? leg.stations.find((id) => byId.get(id)?.name === RING_SWAP_STATION) : void 0;
+			if (ringId !== void 0) {
+				if (!state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map((item) => item.id));
+				const next = state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null;
+				if (next) {
+					ride.train = next;
+					plan = planOf(next);
+					track = plan ? trackOf(plan) : null;
+					state = alightOf();
+				}
+			}
 			const late = new Date(nowMs - BOARD_GIVE_UP_MS);
 			if (track?.seqIds.some((id) => leg.stations.includes(id))) state.sawLeg = true;
 			if (gotOff(state.offFixes) || rideOver(track, leg.stations, legOverByTime(ride.legs, current.leg, now, ride.arrives), legOverByTime(ride.legs, current.leg, late, ride.arrives), state.sawLeg)) {

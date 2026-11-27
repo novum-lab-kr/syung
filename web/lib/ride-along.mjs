@@ -515,6 +515,15 @@ function boardedPick(tracks, stations) {
 	}
 	return best?.id ?? null;
 }
+var RING_SWAP_STATION = "성수";
+function ringEnded(track, stations, ringId) {
+	const at = stations.indexOf(ringId);
+	return !!track && at >= 0 && at < stations.length - 1 && track.seqIds[track.seqIds.length - 1] === ringId && reached(track, ringId);
+}
+function ringSuccessor(tracks, stations, ringId, seen) {
+	const rest = stations.slice(Math.max(0, stations.indexOf(ringId)));
+	return boardedPick(tracks.filter(({ id }) => !seen.has(id)), rest);
+}
 function nextIsStop(rows, at) {
 	const now = rows[at], next = rows[at + 1];
 	return now?.kind === "stop" && next?.kind === "stop" && now.edge !== "last";
@@ -619,6 +628,12 @@ function legOverByTime(legs, index, now, planArrives) {
 	if (next.type === "walk") return false;
 	return passed(next.departs, next.wait / 60);
 }
+function walkOverByTime(legs, index, now, planArrives, walkSinceMs) {
+	if (!legOverByTime(legs, index, now, planArrives)) return false;
+	const leg = legs[index];
+	if (leg?.type !== "walk" || legs[index + 1] || legs[index - 1]?.type !== "ride" || !Number.isFinite(leg.seconds)) return true;
+	return now.getTime() - walkSinceMs >= (leg.seconds + 90) * 1e3;
+}
 var BOARD_FALLBACK_MS = 45e3;
 var BOARD_GIVE_UP_MS = 18e4;
 var pickedLeft = (track, stationId, seen) => (seen || track.seqIds.includes(stationId)) && leftStation(track, stationId);
@@ -678,6 +693,7 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 	}
 	if (!row.destination) return true;
 	const destination = bareName(row.destination);
+	if (row.line === "2호선" && destination === "성수") return true;
 	return !leg.stations.slice(0, -1).some((id) => {
 		const name = nameOf(id);
 		return !!name && bareName(name) === destination;
@@ -752,4 +768,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideShare, rideSteps, rideStops, rideSub, rideSwapAsk, rideTalk, rideTitle, rideTrainSpots, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkQuery, walkSub, walkTitle };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, RING_SWAP_STATION, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideShare, rideSteps, rideStops, rideSub, rideSwapAsk, rideTalk, rideTitle, rideTrainSpots, ringEnded, ringSuccessor, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkOverByTime, walkQuery, walkSub, walkTitle };
