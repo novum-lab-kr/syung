@@ -1476,19 +1476,37 @@ var BusLayer = class {
 			if (run || selected) moving = true;
 			if (vehicles.length >= (this.phone ? 160 : 320)) break;
 		}
-		const placement = placeStopPosts(zoom < BUS_ZOOM.stops ? [] : this.stopFeatures || [], this.exitCoordinates || [], {
+		const stopFeatures = zoom < BUS_ZOOM.stops ? null : this.stopFeatures || null, bearing = (this.map.getBearing?.() || 0) * Math.PI / 180, chosenStop = this.selection?.id;
+		const placeKey = [
+			stopFeatures,
+			this.exitCoordinates,
+			width,
+			height,
+			zoom,
+			bearing,
+			this.phone,
+			chosenStop,
+			this.theme,
+			this.look,
+			...Array.from(matrix)
+		];
+		const last = this.stopPlace, placement = last && last.key.length === placeKey.length && last.key.every((v, i) => v === placeKey[i]) ? last.result : placeStopPosts(stopFeatures || [], this.exitCoordinates || [], {
 			project,
 			width,
 			height,
 			zoom,
 			unit,
 			origin,
-			bearing: (this.map.getBearing?.() || 0) * Math.PI / 180,
+			bearing,
 			phone: this.phone,
-			selected: this.selection?.id,
+			selected: chosenStop,
 			tint: (f) => rgb(color({ type: f.properties.type }, this.theme)),
 			growFrom: busStopGrowFrom(this.look)
 		});
+		this.stopPlace = {
+			key: placeKey,
+			result: placement
+		};
 		posts.push(...placement.posts);
 		this.stopHits.push(...placement.hits);
 		this.renderer.render(gl, matrix, {
