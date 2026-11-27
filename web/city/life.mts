@@ -95,6 +95,9 @@ export interface LifeRenderOptions {
   bounds?:number[]; mapOn?:boolean; moving?:boolean; sun?:{ azimuth:number; elevation:number } | null;
   treeKeepOut?:((x:number, y:number) => boolean) | null;   // 이 자리(지역 미터)에는 도시 나무를 심지 않는다 — 문화유산 모드의 경복궁 안(전용 나무가 따로 선다, 2026-10-31). 값이 바뀌면 칸을 다시 짓는다
   peopleDeck?:PeopleDeck | null;   // 기념물 월대처럼 땅보다 높은 바닥(있으면 그 위의 사람을 그 높이만큼 들어 올린다 — 광화문 월대, 2026-10-31)
+  // 나눠 그리기(열차 캔버스의 정적 캐시 — map/static_layer.mts): 'static' 은 칸 짓기 · 나무 · 가로등 · 횡단보도 · 밤 웅덩이만, 'moving' 은 차 · 사람 · 유닛 · 밤 전구만
+  // (전구는 높이 떠 있어 앞을 지나는 열차 · 차보다 나중에 섞여야 해서 움직이는 쪽). 없으면 지금처럼 한 번에 다
+  part?:'static' | 'moving';
 }
 export interface PeopleDeck { x:number; y:number; cos:number; sin:number; centerY:number; halfX:number; halfY:number; z:number }
 // 한 장면의 셈(점검 스크립트 · 화면 밖 확인용 — window.__subwayWebGL.cityLife.stats)
@@ -423,7 +426,7 @@ export class CityLife {
   // 필드는 선언만(declare — 실행 코드 없음, 값은 constructor · init · _init · render 가 넣는다)
   declare pack:LifePack; declare exits:() => XY[]; declare deck:(x:number, y:number, r:number) => ExitDeck; declare cells:Map<string, LifeCell>; declare graph:RoadGraph;
   declare spotMemo:Map<string, { x:number; y:number } | null>;   // exitSpot 결과(출구 기둥이 프레임마다 출구마다 묻는다) — 칸이 다 지어지거나 지워질 때 비운다
-  declare stats:Partial<LifeStats> & { idle?:boolean }; declare _anim:boolean; declare lastQuery:number; declare building:LifeCell | null; declare M:Float32Array;
+  declare stats:Partial<LifeStats> & { idle?:boolean }; declare _anim:boolean; declare _animS:boolean; declare _animM:boolean; declare lastQuery:number; declare building:LifeCell | null; declare M:Float32Array;
   declare keepOut:((x:number, y:number) => boolean) | null; declare people:{ list:Person[]; poses:Float32Array; count:number; max:number; seq:number; simT:number };
   declare map:MapLike; declare gl:WebGL2RenderingContext | null | undefined; declare broken:boolean | undefined;
   declare pT:WebGLProgram; declare pL:WebGLProgram; declare pP:WebGLProgram; declare pB:WebGLProgram; declare pX:WebGLProgram; declare pH:WebGLProgram;
@@ -433,7 +436,7 @@ export class CityLife {
   declare vaH:WebGLVertexArrayObject; declare vaQ:WebGLVertexArrayObject; declare vaL:WebGLVertexArrayObject; declare vaT:WebGLVertexArrayObject[]; declare vaP:WebGLVertexArrayObject;
   declare lamps:Map<LampSpec, LampLook>; declare lastFrame:number | undefined; declare tick:number | undefined; declare ptick:number | undefined;
   constructor({ pack = SEOUL as unknown as LifePack, exits = () => [], deck = () => null }:LifeOptions = {}) {
-    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.spotMemo = new Map(); this.keepOut = null; this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this.lastQuery = 0; this.building = null;
+    this.pack = pack; this.exits = exits; this.deck = deck; this.cells = new Map(); this.spotMemo = new Map(); this.keepOut = null; this.graph = new RoadGraph(); this.stats = {}; this._anim = false; this._animS = false; this._animM = false; this.lastQuery = 0; this.building = null;
     this.M = new Float32Array(16);
     this.people = { list: [], poses: new Float32Array(400 * 14), count: 0, max: 400, seq: 0, simT: 0 };   // seq: ids; simT: walked time (s)
   }
@@ -646,16 +649,18 @@ export class CityLife {
   // ── the frame ───────────────────────────────────────────────────────────────────────────────
   render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:LifeRenderOptions = {}):void {
     if (this.broken || !this.gl) return;
-    try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
+    try { this._render(gl, matrix, opts) } catch (e) { this.broken = true; this._anim = this._animS = this._animM = false; console.error('city-life: off —', e); try { gl.bindVertexArray(null); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA) } catch { } }
   }
   _render(gl:WebGL2RenderingContext, matrix:ArrayLike<number>, opts:LifeRenderOptions):void {
     const t0 = performance.now(), { now = t0, zoom = 15, bearing = 0, dark = false, tone = 'simcity', lampPool = 1.4, cars = true, crossings = true, people = true, phone = false, reducedMotion = false, pixelRatio = 1, bounds, mapOn = true, moving = false, sun, peopleDeck = null, treeKeepOut = null } = opts;
     if (!!treeKeepOut !== !!this.keepOut) { this.keepOut = treeKeepOut; this.building = null; for (const cell of [...this.cells.values()]) this.dropCell(cell) }   // 칸의 나무는 지을 때 정해지니 켜고 끌 때 다시 짓는다
+    const doS = opts.part !== 'moving', doM = opts.part !== 'static';   // 이번에 그릴 몫: 정적(칸 · 나무 · 가로등 · 바닥 무늬) · 움직이는 것(차 · 사람 · 전구)
     const look = opts.look || this.pack, LU = opts.units && opts.lifeUnits || null;   // LU: 사람 · 차 대신 유닛(스타크래프트)   // look: the mode's pack for the lamps' look(조선 팩: 횃불); cars · crossings: 모드 설정 city.life(조선: 차 · 횡단보도 없음)
-    this._anim = false; if (!bounds || !mapOn || zoom < MINZ) { this.stats.idle = true; return }
+    if (doS) this._animS = false; if (doM) this._animM = false; this._anim = this._animS || this._animM; if (!bounds || !mapOn || zoom < MINZ) { this._anim = this._animS = this._animM = false; this.stats.idle = true; return }
     const pack = this.pack, box:Box = [(bounds[0]! - O.x) / MU, (bounds[1]! - O.y) / MU, (bounds[2]! - O.x) / MU, (bounds[3]! - O.y) / MU];
     const pad = Math.min(400, (box[2] - box[0]) * .15), vbox:Box = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];   // a little past the edges: props grow in before they are in frame
     // cells: wanted, waiting, being built
+    if (doS) {   // 칸 고르기 · 짓기 · 버리기는 정적 몫만(움직이는 몫은 지은 칸을 읽기만) — 안쪽 들여쓰기는 그대로 둔다
     const need = this.needed(vbox), wanted = new Set();
     for (const [key, x, y] of need) { wanted.add(key); if (!this.cells.has(key)) this.cells.set(key, { key, x, y, box: this.cellBox(x, y), state: 'pending', tries: 0 }) }
     const pending = [...this.cells.values()].filter(c => c.state === 'pending');
@@ -674,6 +679,7 @@ export class CityLife {
     if (this.building && !moving) { const deadline = t0 + Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4)), c = this.building; let r; do { const s0 = c.s0 = performance.now(); r = c.gen!.next(); const el = performance.now() - s0; c.cur = (c.cur || 0) + el; c.maxStep = Math.max(c.maxStep || 0, el); c.cpuMs = (c.cpuMs || 0) + el } while (!r.done && performance.now() < deadline); if (r.done) { c.gen = null; this.building = null } }
     if (this.cells.size > 10) for (const c of [...this.cells.values()]) { if (this.cells.size <= 8) break; if (!wanted.has(c.key) && c.state !== 'building') this.dropCell(c) }
     this.lastFrame = now;
+    }
     const stillBuilding = [...this.cells.values()].some(c => c.state === 'building' || (c.state === 'pending' && !(c.box[2] < box[0] || c.box[0] > box[2] || c.box[3] < box[1] || c.box[1] > box[3]))), waiting = [...this.cells.values()].filter(c => c.state === 'pending').length;   // building: the view still lacks props (being built, or its tile not here yet); waiting: cells (in view or not) without their tile
     // the frame's matrix (the local origin folded in, in double precision) and lighting
     const MT = this.M; MT.set(matrix); for (let r = 0; r < 4; r++) MT[12 + r] = matrix[r]! * O.x + matrix[4 + r]! * O.y + matrix[12 + r]!;
@@ -686,7 +692,7 @@ export class CityLife {
     const stats:LifeStats = { cells: this.cells.size, ready: ready.length, trees: 0, lamps: 0, cross: 0, cars: 0, people: 0, building: stillBuilding, waiting, buildMs: Math.round(Math.max(0, ...ready.map(c => c.ms || 0))), cpuMs: Math.round(Math.max(0, ...ready.map(c => c.cpuMs || 0))), maxStep: Math.round(Math.max(0, ...ready.map(c => c.maxStep || 0))), phases: ready.map(c => c.phases), counts: ready.map(c => c.counts) };
     gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     // ── trees (and their shadows by day): the view's sub-grid ranges of each cell, capped by rank ──
-    if (fadePark > 0) {
+    if (doS && fadePark > 0) {
       const T = pack.props.trees, cap = T.maxVisible[phone ? 'phone' : 'desktop'], draws:[LifeCell, Binned, number, number][] = [], pdraws:[LifeCell, Binned, number, number][] = []; let nS = 0, nP = 0;
       for (const c of ready) { for (const [a, n] of this.ranges(c, 'trees', box)) nS += n; for (const [a, n] of this.ranges(c, 'ptrees', box)) nP += n;
         for (const r of this.ranges(c, 'trees', vbox)) draws.push([c, c.trees!, ...r]); for (const r of this.ranges(c, 'ptrees', vbox)) pdraws.push([c, c.ptrees!, ...r]) }
@@ -717,19 +723,21 @@ export class CityLife {
       const inst = (c:LifeCell, a:number) => { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1) };
       gl.useProgram(this.pL); gl.uniformMatrix4fv(this.uL.u_matrix, false, MT); gl.uniform1f(this.uL.u_mu, MU); gl.uniform1f(this.uL.u_fade, fadeLamp); gl.uniform1f(this.uL.u_keep, keep); gl.uniform1f(this.uL.u_night, dark ? 1 : 0); gl.uniform1f(this.uL.u_thick, Math.max(1, .55 * MPP(zoom) / (LM.poleDiameterM / 2)));   // never thinner than about half a pixel
       gl.uniform2fv(this.uL.u_lit, lit); gl.uniform3fv(this.uL.u_pole, col(LM.pole[theme])); gl.uniform3fv(this.uL.u_glow, hexRgb(LM.light)); gl.uniform3fv(this.uL.u_light, light); gl.uniform1f(this.uL.u_alpha, 1);
-      if (LM.torch) { gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : (now % 1e6) / 1000); gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]); if (!reducedMotion && lampDraws.length) this._anim = true }   // 횃불은 계속 흔들린다
-      if (fadeLamp > 0) { gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) } }
+      if (LM.torch) { gl.uniform1f(this.uL.u_time, reducedMotion ? 0 : (now % 1e6) / 1000); gl.uniform3fv(this.uL.u_flame, [...hexRgb(LM.torch.flame[0]), ...hexRgb(LM.torch.flame[1])]); if (doS && !reducedMotion && lampDraws.length) this._animS = true }   // 횃불은 계속 흔들린다
+      if (doS && fadeLamp > 0) { gl.bindVertexArray(LP.va); for (const [c, a, n] of lampDraws) { inst(c, a); gl.drawArraysInstanced(gl.TRIANGLES, 0, LP.mesh.n, n) } }
     }
     // ── cars: the simulation, then the instanced boxes ──
-    if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
+    if (!doM) { /* 차 · 사람 · 유닛: 움직이는 몫에서 */ }
+    else if (fadeCar > 0 && cars && !(phone && zoom < 16.3)) {
       const V = pack.props.vehicles, dt = (now - (this.tick || now)) / 1000, grow = Math.max(1, 5 * MPP(zoom) / V.carSizeM[0]!);
       this.traffic.step(dt, { box: vbox, cap: V.maxVisible[phone ? 'phone' : 'desktop'], fade: fadeCar, now: now / 1000, reducedMotion });
       if (!LU) this.vehicles.draw(gl, MT, MU, this.traffic.poses, this.traffic.count, { light, lit, night: dark, glass: col(pack.buildingDefaults.glass[theme]), dark: col('#2a2f33'), grow: grow * (.2 + .8 * fadeCar), beams: zoom >= (NL?.carBeam?.minZoom ?? 16.5), beamAlpha: NL?.carBeam?.opacity, pixelRatio });
-      stats.cars = this.traffic.count; stats.traffic = this.traffic.stats; if (!reducedMotion && this.traffic.count) this._anim = true;
+      stats.cars = this.traffic.count; stats.traffic = this.traffic.stats; if (!reducedMotion && this.traffic.count) this._animM = true;
     } else this.traffic.clear();
-    this.tick = now;
+    if (doM) this.tick = now;
     // ── people on the pavements ──
-    if (people && fadePeople > 0) { const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion); stats.people = n;
+    if (!doM) { /* 위와 같이 */ }
+    else if (people && fadePeople > 0) { const n = this.stepPeople(now, vbox, ready, fadePeople, phone, reducedMotion); stats.people = n;
       if (n && !LU) { const PP = look.props.people, mpp = MPP(zoom), unit = Math.max(PP.heightM, 6 * mpp) / PERSON_UNITS, b = bearing * Math.PI / 180;
         const buf = this.peopleInst[this.ping ^= 1]!; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, this.people.poses.byteLength, gl.DYNAMIC_DRAW); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.people.poses, 0, n * 14);
         const shirts = PP.clothes.map(col), pants = PP.clothes.map(h => col(h).map(v => v * .55)), hair = (PP.hair ?? ['#1C140F', '#332114', '#121214', '#4D331F']).map(col);   // (hair: the pack's if it has one)
@@ -740,15 +748,15 @@ export class CityLife {
         const OF = PP.outfits; gl.uniform1f(this.uH.u_era, OF ? 1 : 0);   // 조선 팩: 옷차림 6가지(팩 people.outfits · outfitWeights)
         if (OF) { const w = PP.outfitWeights || OF.map(() => 1), tot = w.reduce((a, b) => a + b, 0); let acc = 0; gl.uniform3fv(this.uH.u_jshirt, OF.flatMap(o => col(o.shirt))); gl.uniform3fv(this.uH.u_jlow, OF.flatMap(o => col(o.lower))); gl.uniform1fv(this.uH.u_jcum, w.map(x => (acc += x) / tot)) }
         gl.bindVertexArray(this.vaH); gl.bindBuffer(gl.ARRAY_BUFFER, buf); for (const [loc, k, off] of [[3, 4, 0], [4, 4, 16], [5, 3, 32]] as const) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, k, gl.FLOAT, false, 56, off); gl.vertexAttribDivisor(loc, 1) }
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._anim = true } }
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, this.meshH.n, n); if (!reducedMotion) this._animM = true } }
     else this.people.list.length = 0;
     // 스타크래프트(opts.lifeUnits · opts.units — 모드 설정 city.life.units): 사람 · 차 자리에 유닛 모형(web/modes/starcraft/life_units.mts)
-    if (LU) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
+    if (LU && doM) { const PP = look.props.people, nP = people && fadePeople > 0 ? this.people.count : 0, nC = fadeCar > 0 && cars && !(phone && zoom < 16.3) ? this.traffic.count : 0;
       stats.units = LU.draw(gl, MT, MU, { people: this.people.poses, peopleN: nP, cars: this.traffic.poses, carsN: nC, carList: this.traffic.cars, units: opts.units, personH: Math.max(PP.heightM, 6 * MPP(zoom)), carLenM: Math.max(pack.props.vehicles.carSizeM[0]!, 14 * MPP(zoom)), mpp: MPP(zoom), now: reducedMotion ? 0 : now, light, lit });
-      if (!reducedMotion && stats.units) this._anim = true }
+      if (!reducedMotion && stats.units) this._animM = true }
     // ── decals: zebra crossings close up; after dark the lamps' pools and bulbs ──
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    if (fadeCross > 0 && crossings) {
+    if (doS && fadeCross > 0 && crossings) {
       const X = pack.roads.crossing, draws:[LifeCell, number, number][] = []; let total = 0; for (const c of ready) for (const [a, n] of this.ranges(c, 'cross', vbox)) { draws.push([c, a, n]); total += n } stats.cross = total;
       if (total) { gl.useProgram(this.pX); gl.uniformMatrix4fv(this.uX.u_matrix, false, MT); gl.uniform1f(this.uX.u_mu, MU); gl.uniform1f(this.uX.u_fade, fadeCross); gl.uniform1f(this.uX.u_depth, X.depthM);
         gl.uniform3fv(this.uX.u_rgb, col(pack.roads.lane.colors[theme])); gl.uniform1f(this.uX.u_alpha, (dark ? .55 : .9) * fadeCross); gl.uniform1f(this.uX.u_stripe, X.stripeM); gl.uniform1f(this.uX.u_gap, X.gapM);
@@ -757,19 +765,28 @@ export class CityLife {
     if (dark && lampDraws.length) {
       const LM = look.props.lamps, keep = phone ? .5 : 1.01, lp = lampPool ?? (pack.modes![mode] as LifeModeTone).lampPool, glow = hexRgb(LM.light), LPn = NL?.lampPool;
       const pool = LPn ? LPn.opacity * Math.max(.5, Math.min(1, lp / 1.4)) : Math.min(LM.poolOpacity * lp, LM.simcityPoolMaxOpacity);   // (밤 불빛: 모드의 웅덩이 배수를 기본 1.4 에 견준 몫만큼, 반 아래로는 안 줄인다)
-      gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadePool); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
-      gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
-      gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
-      const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));   // (횃불: 불빛 점을 더 크게)
-      gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadePool); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
-      gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
-      gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
+      if (doS) {   // 웅덩이: 땅에 깔리니 정적
+        gl.useProgram(this.pP); gl.uniformMatrix4fv(this.uP.u_matrix, false, MT); gl.uniform1f(this.uP.u_mu, MU); gl.uniform1f(this.uP.u_fade, fadePool); gl.uniform1f(this.uP.u_keep, keep); gl.uniform1f(this.uP.u_arm, LM.armM); gl.uniform1f(this.uP.u_radius, LM.poolRadiusM * (LPn?.radiusMul ?? 1.6));
+        gl.uniform3fv(this.uP.u_rgb, glow); gl.uniform1f(this.uP.u_alpha, pool);
+        gl.bindVertexArray(this.vaQ); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n) }
+      }
+      if (doM) {   // 전구: 떠 있으니 앞을 지나는 것보다 나중에
+        const sz = bulbSize(zoom, pixelRatio, .9 * (LM.torch?.glowMul ?? 1));   // (횃불: 불빛 점을 더 크게)
+        gl.useProgram(this.pB); gl.uniformMatrix4fv(this.uB.u_matrix, false, MT); gl.uniform1f(this.uB.u_mu, MU); gl.uniform1f(this.uB.u_fade, fadePool); gl.uniform1f(this.uB.u_keep, keep); gl.uniform1f(this.uB.u_arm, LM.armM); gl.uniform1f(this.uB.u_h, LM.heightM + (LM.torch ? LM.torch.basketM + .5 * LM.torch.flameM : 0));   // (횃불: 불꽃 가운데)
+        gl.uniform1f(this.uB.u_size, sz.point); gl.uniform1f(this.uB.u_core, sz.coreFrac); gl.uniform3fv(this.uB.u_rgb, glow); gl.uniform2f(this.uB.u_wt, .85, .14);
+        gl.bindVertexArray(this.vaP); for (const [c, a, n] of lampDraws) { gl.bindBuffer(gl.ARRAY_BUFFER, c.lamps!.b); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 16, a * 16); gl.vertexAttribDivisor(3, 0); gl.drawArrays(gl.POINTS, 0, n) }
+      }
     }
     // back to what the track and the trains expect
     gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE);
-    if (stillBuilding) this._anim = true;   // frames keep coming while a cell is being built
-    stats.ms = performance.now() - t0; this.stats = stats;
+    if (doS && stillBuilding) this._animS = true;   // frames keep coming while a cell is being built
+    this._anim = this._animS || this._animM;
+    if (doS && doM) { stats.ms = performance.now() - t0; this.stats = stats; return }
+    // 나눠 그릴 때: 정적 몫은 차 · 사람 셈을 지난 값 그대로 두고, 움직이는 몫은 그 셈만 바꾼다(점검 스크립트가 읽는 stats 모양은 같게)
+    const prev = this.stats;
+    if (doS) this.stats = { ...stats, cars: prev.cars ?? 0, people: prev.people ?? 0, units: prev.units, traffic: prev.traffic, ms: performance.now() - t0 };
+    else { prev.cars = stats.cars; prev.people = stats.people; prev.units = stats.units; prev.traffic = stats.traffic; prev.idle = false }
   }
   // People: spawned on the pavements in view by zone (the pack's rate per 100 m) and how lively the place is
   // (POIs, stations), walking their side of the street, on to another street at the corner, a pause now and

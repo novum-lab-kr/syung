@@ -971,10 +971,12 @@ export class CityBuildings {
     this.draw(gl, options.defaultProjectionData.mainMatrix, false);
   }
   // the walls' depth into the train canvas (its own GL context); true when anything was drawn
-  drawDepth(gl:WebGL2RenderingContext, M:ArrayLike<number>) {
+  // erase: 깊이와 함께 색을 0(투명)으로도 쓴다 — 열차 캔버스의 정적 캐시(map/static_layer.mts)가 나무 · 고가를 먼저 되살린 뒤, 건물이 앞인 곳을 지운다
+  // (원래 차례 — 건물 깊이를 먼저 쓰고 그 뒤 나무 · 고가가 깊이 시험에서 떨어지던 것 — 와 같은 그림. x-ray 구멍은 discard 라 그대로 보인다)
+  drawDepth(gl:WebGL2RenderingContext, M:ArrayLike<number>, erase = false) {
     if (!this.shown() || !this.visible.length) { this.xr = null; return false }
     this.xrayFrame(gl, M);   // this frame's x-ray boxes (심시티): the depth pass leaves them open, drawGlass tints them after
-    return this.draw(gl, M, true);
+    return this.draw(gl, M, true, false, erase);
   }
   // ── x-ray (심시티): buildings between the camera and a station platform or a running train turn to glass there ──
   // targets: [{id, ax, ay, bx, by, z0, z1, w, m}] in mercator units (a segment, its bottom/top height, half width; m = one metre),
@@ -1039,11 +1041,11 @@ export class CityBuildings {
     if (!depthOnly) gl.uniform1f(u.u_debug, this.debug);
     this.xrayUniforms(gl, u, glass);   // x-ray boxes: the depth pass and the glass pass on the train canvas; none in the map's own pass (it has no boxes then)
   }
-  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, depthOnly:boolean, glass = false) {
+  draw(gl:WebGL2RenderingContext, M:ArrayLike<number>, depthOnly:boolean, glass = false, erase = false) {
     const t0 = performance.now(), map = this.map!, C = this.context(gl), prog = depthOnly ? C.depth : C.color, u = prog.u, zoom = map.getZoom(), now = this.now || performance.now();
     gl.useProgram(prog.p);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); if (this.cull === 'none') gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(this.cull === 'ccw' ? gl.CCW : gl.CW) } gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
-    if (depthOnly) gl.colorMask(false, false, false, false); else gl.colorMask(true, true, true, true);
+    if (depthOnly) gl.colorMask(erase, erase, erase, erase); else gl.colorMask(true, true, true, true);   // (깊이 셰이더는 색 0 을 낸다 — erase 면 그 0 이 써진다)
     this.uniforms(gl, u, depthOnly, glass, zoom);
     if (glass) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA) }   // premultiplied, and only where the train canvas drew something behind (a deck, a platform, a train): elsewhere the map's own opaque building and the labels over it stay as they are
     const hi = zoom >= this.lodHi, zoomGrow = cityGrow(this.phone, zoom);   // the city rises over the first 0.6 zoom, as the map's boxes did

@@ -24,6 +24,7 @@ import type { AvatarRenderer, createMyMotion } from './avatar.mts';
 import type { ExitPillars } from './platform.mts';
 import type { createJourneyMap } from '../ui/journey.mts';
 import type { createBusLayer } from '../bus/layer.mts';
+import type { StaticLayer } from './static_layer.mts';
 import type { dodgeSign, drawStationSigns, perspectiveRatio, signBounds, signRows, signTextSize, StationSign } from '../lib/station_signs.mts';
 
 type LifeOptions = NonNullable<Parameters<CityLife['render']>[2]>;
@@ -39,7 +40,7 @@ type OverlaySettings = Settings & {
 interface FrameStats { signs:number; signQueries:number; trains:number; mapRenders:number }
 // 밤 빛 번짐(본체 nightNow()) — bloom 이 켜졌는지와 밤 설정의 번짐 값
 type BloomTune = Partial<Omit<NonNullable<Parameters<NightBloom['render']>[1]>, 'tint'>> & { tint?:string };
-interface NightNow { bloom:boolean; N:{ bloom:BloomTune & { overlay?:BloomTune } } }
+interface NightNow { bloom:boolean; ground?:boolean; N:{ bloom:BloomTune & { overlay?:BloomTune } } }
 type Life = LifeOptions['night'];
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다). drawTrains · wallsNow 는 이 파일이 채운다(setter)
 interface OverlayLive {
@@ -59,6 +60,7 @@ export interface TrainOverlayDeps {
   cityViaduct:CityViaduct; CORK_HEART:number; PHONE:boolean; trainFrameSoon:(ms:number)=>void; CityLife:typeof CityLife; CITY_STYLE:NonNullable<ConstructorParameters<typeof CityLife>[0]>['pack']; cityPack:()=>LifeOptions['look'];
   $:unknown; sunPosition:()=>LifeOptions['sun']; NightLayer:typeof NightLayer; journeyMap:ReturnType<typeof createJourneyMap>; exitPillars:ExitPillars; RIDE_ZOOM:number;
   nearMatrix:(M:ArrayLike<number>, near:number)=>ArrayLike<number>; COCKPIT_NEAR_M:number; AvatarRenderer:typeof AvatarRenderer; avatarScale:(zoom:number)=>number; AVATAR_MINZOOM:number;
+  StaticLayer:typeof StaticLayer;
   live:OverlayLive;
 }
 type Towers = ConstructorParameters<typeof RideLayer>[0];
@@ -70,7 +72,7 @@ type RideSites = Parameters<RideLayer['setSites']>[0];
 type XY = [number, number];
 // 점검 스크립트가 읽는 자리(본체가 만든다)
 declare global { interface Window { __subwayWebGL:Record<string, unknown> } }
-export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,signBounds,dodgeSign,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,live}:TrainOverlayDeps){
+export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,signBounds,dodgeSign,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette,coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,StaticLayer,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,live}:TrainOverlayDeps){
   const c=document.createElement('canvas');c.className='train-overlay';map.getCanvas().after(c);   // right above the map, under markers and popups
   c.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const gl=c.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:true})!;
@@ -120,6 +122,31 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   // 스타크래프트: 사람 · 차 대신 유닛(모드 설정 city.life.units — 모드 코드 받기의 LifeUnits). 그 모드를 나가면 GL 을 치운다
   const lifeUnitsFor=(gl:WebGL2RenderingContext,S:OverlaySettings)=>{if(S.city.life.units&&live.LifeUnits)return lifeUnits??=new live.LifeUnits();if(lifeUnits){lifeUnits.dispose(gl);lifeUnits=null}return null};
   let avatar:AvatarRenderer | null=null,rides:RideLayer | null=null,night:(NightLayer & { trackSrc?:unknown }) | null=null,festoon:FestoonLayer | null=null,cityLife:CityLife | null=null,ridePlacement:CoasterRidePlacement | null=null,bloom:NightBloom | null=null,pixels:PixelPalette | null=null;   // bloom: 밤 빛 번짐(도시 모드 · 다크에서만, 나가면 치운다)   // coaster: checked ride sites; cityLife: city-life's props
+  // 정적 층 캐시(심시티 성능 ⑤ — map/static_layer.mts): 카메라가 멈춘 타이머 장에서는 도시 생활의 정적 몫 · 고가 · 랜드마크를 담아 둔 것으로 되살리고,
+  // 건물은 지우개(깊이 + 색 0)로 그 위에, 움직이는 것(차 · 사람 · 버스 · 열차 …)만 새로 그린다. 지도가 다시 그린 장 · 카메라가 움직인 장 · 공원은 지금 길 그대로
+  let statik:StaticLayer | null=null,lastKey:unknown[] | null=null,mapFrame=false;
+  const STATIC_MAX_MS=2000;   // 멈춰 있어도 이만큼 지나면 정적을 새로 그린다(교각 재시도 · 화면 밖 칸 묻기 같은 속사정이 따라오게)
+  const lifeNow=()=>{if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE,exits:()=>Object.values(exitPillars.d.getExits()).flat() as unknown as XY[],deck:(x,y,r)=>cityViaduct.deckProbe(x,y,r)});cityLife.init(gl,maplibregl,map as unknown as LifeMap);window.__subwayWebGL.cityLife=cityLife}return cityLife};
+  const lifeDraw=(S:OverlaySettings,M:ArrayLike<number>,part?:LifeOptions['part'])=>{const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),m=map.getCanvas();
+    lifeNow().render(gl,M,{peopleDeck:S.city.heritage?live.cityLandmarks?.mon?.deck??null:null,treeKeepOut:S.city.heritage?live.cityLandmarks?.mon?.inPalace??null:null,look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,units:S.city.life.units,lifeUnits:lifeUnitsFor(gl,S) as LifeOptions['lifeUnits'],phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:true,moving:map.isMoving(),sun:sunPosition(),part})};
+  // 고가. 아직 짓는 중이면 true
+  const viaductDraw=(M:ArrayLike<number>)=>{
+    const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
+    cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
+    const pending=!!cityViaduct.render(gl,M,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:trainBodyPx(zoom),journey:journeyMap.journeyRides()});if(pending)trainFrameSoon(50);
+    return pending};
+  const landmarksDraw=(S:OverlaySettings,M:ArrayLike<number>)=>live.cityLandmarks?.render(gl,M,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',look:S.city.landmarks,sun:sunPosition(),phone:PHONE});   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
+  const monumentsDraw=(M:ArrayLike<number>)=>{const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
+    live.cityLandmarks!.renderMonuments(gl,M,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y],phone:PHONE,center:[map.getCenter().lng,map.getCenter().lat]})};
+  // 이번 장의 길: 'reuse' 담아 둔 정적을 되살림 · 'build' 정적을 그려 담음 · null 지금 길(차례 그대로)
+  const staticFrame=(S:OverlaySettings,park:boolean,M:ArrayLike<number>):'reuse' | 'build' | null=>{
+    const city=S.city.enabled&&!park&&cityOn()&&!!live.cityBuildings;
+    if(!city){if(statik){statik.dispose();statik=null;delete window.__subwayWebGL.staticLayer}lastKey=null;return null}
+    const n=live.night,sun=sunPosition(),key=[...Array.from(M),c.width,c.height,S,effectiveTheme(),Math.round((sun?.azimuth??0)*2),Math.round((sun?.elevation??0)*2),cityPack(),n.lights,n.ground,n.bloom,n.N,live.selected,journeyMap.journeyRides(),S.city.heritage?live.cityLandmarks?.mon?.inPalace??null:null,REDUCED.matches];   // (월대 deck 은 사람만 쓰고 부를 때마다 새 객체라 넣지 않는다)
+    const same=!!lastKey&&lastKey.length===key.length&&lastKey.every((v,i)=>Object.is(v,key[i]));lastKey=key;
+    if(mapFrame||!same||map.isMoving()){statik?.invalidate();return null}   // 지도가 다시 그린 장(타일 · x-ray 흐려짐 …) · 카메라가 움직인 장
+    if(!statik){statik=new StaticLayer(gl);window.__subwayWebGL.staticLayer=statik}if(statik.broken)return null;   // (점검 스크립트: staticLayer.broken=true 면 지금 길 — 전 · 후 캡처 견주기)
+    return statik.has(key,c.width,c.height)&&performance.now()-statik.at<STATIC_MAX_MS?'reuse':'build'};
   live.drawTrains=()=>{
     live.frameStats.trains++;
     const S=live.settings,K=S.track.kind,park=S.park.enabled;   // 지금 모드 설정: 선로 종류(고가 · 롤코 길), 공원(놀이기구 · 밤 선로 · 1인칭)
@@ -128,7 +155,14 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);   // bus: clear instanced geometry depth even after a no-write pass
     const pd=map.painter.transform.getProjectionDataForCustomLayer(true);   // the transform the map just drew with
     if(cityOn()&&live.cityBuildings)live.cityBuildings.setXray(S.city.xray?cityXrayTargets():null);   // city-build: 심시티 x-ray boxes (none on the coaster)
-    const drawn=cityOn()&&live.cityBuildings?live.cityBuildings.drawDepth(gl,pd.mainMatrix):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
+    const cache=staticFrame(S,park,pd.mainMatrix);
+    // 문화유산도 정적 묶음에: 색표 · 빛 번짐이 없을 때만(그 둘은 문화유산을 뒤에 그려야 실물 색 · 번짐 없는 그대로). 짓는 중엔 지도에 다시 그리기를 부탁해 캐시가 풀린다
+    const monStatic=!!cache&&S.city.heritage&&!!live.cityLandmarks&&!live.night.bloom&&!(S.map.pixel.enabled&&S.map.pixel.palette!=='none');
+    if(cache==='build'){   // 정적을 건물 깊이 없이 먼저 그려 담는다(건물이 앞인 곳은 바로 아래 지우개가 지운다 — 원래 차례와 같은 그림). 짓는 중 · 움직이는 수로면 담지 않는다
+      lifeDraw(S,pd.mainMatrix,'static');const pending=K!=='ground'&&viaductDraw(pd.mainMatrix);landmarksDraw(S,pd.mainMatrix);if(monStatic)monumentsDraw(pd.mainMatrix);
+      if(!pending&&!cityLife!._animS&&!cityViaduct.aqueduct)statik!.snapshot(lastKey!,c.width,c.height,performance.now());else statik!.invalidate()}
+    else if(cache==='reuse')statik!.restore();
+    const drawn=cityOn()&&live.cityBuildings?live.cityBuildings.drawDepth(gl,pd.mainMatrix,!!cache):walls.draw(pd.mainMatrix),behind=drawn&&!cityOn()?1-mapPalette().bld3dOpacity:0;   // city-build: in a city mode the city's own (opaque) walls
     if(park&&live.kitReady&&coasterGeo.bld?.towers?.length){   // the rides: one for each tower, in the parks round it (the towers stay buildings) — first, so the track and trains depth-test against them
       if(!rides){   // coaster: only expose a neighbourhood after its buildings and rails have been checked
         rides=new live.RideLayer(coasterGeo.bld.towers as Towers,{deferPlacement:true,landmarks:S.park.landmarkRides});rides.init(gl,maplibregl);if(window.__subwayWebGL)window.__subwayWebGL.rides=rides;   // 캡처 · 점검용: 놀이기구 자리(rides.sites())
@@ -144,17 +178,11 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       if(rides.animating())trainFrameSoon(1000/TRAIN_FPS)}
     else if(!park&&rides){rides.dispose(gl);rides=null;if(window.__subwayWebGL)delete window.__subwayWebGL.rides}   // 공원을 나가면 놀이기구 GL 을 치운다(자리 계산 ridePlacement 은 남긴다)
     if(S.city.enabled){   // city-life: the living city (trees, lamps, cars, people) once the walls and rides have their depth, before the track and the trains. The people walk in both modes (LIFE-01): the same figures in the same places, only toned by the mode
-      if(!cityLife){cityLife=new CityLife({pack:CITY_STYLE,exits:()=>Object.values(exitPillars.d.getExits()).flat() as unknown as XY[],deck:(x,y,r)=>cityViaduct.deckProbe(x,y,r)});cityLife.init(gl,maplibregl,map as unknown as LifeMap);window.__subwayWebGL.cityLife=cityLife}
-      const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());
-      cityLife.render(gl,pd.mainMatrix,{peopleDeck:S.city.heritage?live.cityLandmarks?.mon?.deck??null:null,treeKeepOut:S.city.heritage?live.cityLandmarks?.mon?.inPalace??null:null,look:cityPack(),night:live.night,now:performance.now(),zoom:map.getZoom(),bearing:map.getBearing(),dark:effectiveTheme()==='dark',tone:S.city.tone,lampPool:S.city.lampPool,cars:S.city.life.cars,crossings:S.city.life.crossings,people:true,units:S.city.life.units,lifeUnits:lifeUnitsFor(gl,S) as LifeOptions['lifeUnits'],phone:PHONE,reducedMotion:REDUCED.matches,pixelRatio:c.width/Math.max(1,m.clientWidth),bounds:[A.x,B.y,B.x,A.y],mapOn:true,moving:map.isMoving(),sun:sunPosition()});
-      if(cityLife.animating())trainFrameSoon(1000/TRAIN_FPS)}
+      lifeDraw(S,pd.mainMatrix,cache?'moving':undefined);   // (정적 캐시 장: 차 · 사람 · 전구만)
+      if(cityLife!.animating())trainFrameSoon(1000/TRAIN_FPS)}
     if(live.busLayer)live.busLayer.look=S.buses.look;live.busLayer?.render(gl,pd.mainMatrix,behind);   // 조선 모드: 버스 대신 가마   // bus: shared walls/depth, instanced road vehicles and BUS posts in every mode — 건물 뒤는 열차와 같은 투명도로 비친다
-    if(K!=='ground'){   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains
-      const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()),zoom=map.getZoom();
-      cityViaduct.setPack(cityPack());   // 조선 모드: 같은 고가를 물 채운 돌 수로로
-      if(cityViaduct.render(gl,pd.mainMatrix,{now:performance.now(),zoom,dark:effectiveTheme()==='dark',phone:PHONE,bounds:[A.x,B.y,B.x,A.y],sun:sunPosition(),life:cityLife,selected:live.selected,moving:map.isMoving(),bodyPx:trainBodyPx(zoom),journey:journeyMap.journeyRides()}))trainFrameSoon(50)}
-    if(S.city.enabled){const zoom=map.getZoom();   // 랜드마크는 도시 쪽: 멀리 축소해 선로가 기본 모습이 되어도(city.zoomOutBasic) 그대로 그린다
-      live.cityLandmarks?.render(gl,pd.mainMatrix,{zoom,dark:effectiveTheme()==='dark',look:S.city.landmarks,sun:sunPosition(),phone:PHONE})}   // 랜드마크: 조각 건물은 city_mesh 가 뺐다. 롤코에서도 같은 모델(2026-10-10 행님: 심시티만 바뀌고 롤코는 예전 그대로였다) — 그 자리 자이로드롭은 뺐고, 8호선 코스는 반지름 150 m 로 그 둘레를 감아 오른다
+    if(K!=='ground'&&!cache)viaductDraw(pd.mainMatrix);   // city-life: 심시티 고가 — (롤코도 이 고가 위를 달린다) the viaduct the trains ride (deck; piers kept off the buildings' footprints through cityLife; roofed platforms), once the cars and buses have their depth, before the trains (정적 캐시 장은 위에서 담아 두었다)
+    if(S.city.enabled&&!cache)landmarksDraw(S,pd.mainMatrix);   // 랜드마크는 도시 쪽: 멀리 축소해 선로가 기본 모습이 되어도(city.zoomOutBasic) 그대로 그린다(정적 캐시 장은 위에서 담아 두었다)
     coasterTrack.render(gl,pd.mainMatrix,behind);   // under the trains
     layer.render(gl,{defaultProjectionData:pd,walls:drawn||!!rides&&park,occlude:behind});
     // the park at night (dark theme): bulbs under the track and fireworks over the river — after everything solid has its depth
@@ -176,8 +204,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       const ppm=512*2**RIDE_ZOOM*maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
       gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);layer.c88ride.draw(gl,nearMatrix(pd.mainMatrix,COCKPIT_NEAR_M*ppm),layer.ox,layer.oy,{...layer.c88o,part:'body',occlude:0})}
     {const X=S.map.pixel;if(X.enabled&&X.palette!=='none'&&live.PixelPalette){if(!pixels){pixels=new live.PixelPalette();pixels.init(gl)}pixels.render(gl,{palette:X.palette,outline:X.outline,alpha:true})}else if(pixels){pixels.dispose(gl);pixels=null}}   // 레트로: 열차 캔버스도 색표 · 윤곽(투명 바탕은 그대로, 나가면 치운다)
-    if(S.city.heritage&&live.cityLandmarks){const b=map.getBounds(),A=maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()),B=maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast());   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments)
-      live.cityLandmarks.renderMonuments(gl,pd.mainMatrix,{zoom:map.getZoom(),dark:effectiveTheme()==='dark',sun:sunPosition(),bounds:[A.x,B.y,B.x,A.y],phone:PHONE,center:[map.getCenter().lng,map.getCenter().lat]})}
+    if(S.city.heritage&&live.cityLandmarks){if(!monStatic)monumentsDraw(pd.mainMatrix)}   // 우리나라 문화유산 모델(레트로 도트 색표 뒤에 그려 색표가 실물 색을 바꾸지 못한다): 모드 · 선로 종류와 상관없이 늘 같은 모델(landmarks.mts renderMonuments) — 정적 캐시 장은 위에서 담아 두었다
     else if(live.cityLandmarks?.mon||live.cityLandmarks?.monp)live.cityLandmarks.releaseMonuments();   // 문화유산 모드를 나가면 모델 · 나무 GL 을 치운다(받던 코드도 무효)
     // 내 위치 캐릭터: 줌 15 부터 점 대신. 지도 위에 떠 있게 — 앞서 그린 깊이를 비워 건물 · 열차 · 고가 · 문화유산 모델에 가리지 않고(슝 마커처럼 3D 를 다 그린 뒤),
     // 역 이름표 캔버스에는 캐릭터 윤곽만큼 구멍을 낸다(meShape — drawSigns). 방향을 아직 모르면 화면 쪽을 본다
@@ -197,7 +224,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       avatar.renderMarker(gl,pd.mainMatrix,{world:[q.x,q.y],origin:[O.x,O.y],zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch(),dark:effectiveTheme()==='dark'})}
     drawSigns(pd.mainMatrix);   // 역 이름표: 3D 를 다 그린 뒤 그 위 캔버스에
   };
-  map.on('render',()=>{live.frameStats.mapRenders++;live.drawTrains()});   // the camera moved or the map redrew: trains follow in the same frame
+  map.on('render',()=>{live.frameStats.mapRenders++;mapFrame=true;try{live.drawTrains()}finally{mapFrame=false}});   // the camera moved or the map redrew: trains follow in the same frame
   // walls: again when new building tiles arrive or the view settles somewhere new
   let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();requestAnimationFrame(live.drawTrains)},250)};   // not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it   // city-life: the walkers' streets went with the walkers (city_life.mjs)
   live.wallsNow=()=>{walls.rebuild();requestAnimationFrame(live.drawTrains)};map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
