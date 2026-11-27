@@ -1,3 +1,4 @@
+import { key } from "../lib/routing.mjs";
 import { serverUrl } from "../lib/server_url.mjs";
 var LONG_LAST_LEG_SECONDS = 1200;
 var KEEP_ARRIVED = /* @__PURE__ */ new Set(["3호선:구파발"]);
@@ -56,8 +57,63 @@ function createArrivalMemory(age) {
 		forgetOld
 	};
 }
+var RING_LINE = "2호선";
+var RING_SWAP = "성수";
+var RING_ENDED = /* @__PURE__ */ new Set([
+	"도착",
+	"진입",
+	"운행중"
+]);
+var RING_LEAVING = /* @__PURE__ */ new Set(["출발", "운행중"]);
+var stampSeconds = (v) => {
+	const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+	return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1e3 : NaN;
+};
+var atSwap = (name) => key(name) === RING_SWAP && !/지선/.test(name);
+function ringRenames(list) {
+	const here = list.filter((t) => t.line === RING_LINE && atSwap(t.station) && !Number.isNaN(stampSeconds(t.receivedAt))).sort((a, b) => stampSeconds(a.receivedAt) - stampSeconds(b.receivedAt));
+	const ended = (t) => RING_ENDED.has(normStatus(t)) && atSwap(t.destination);
+	const renames = /* @__PURE__ */ new Map(), taken = /* @__PURE__ */ new Set();
+	for (const next of [...here.filter((t) => normStatus(t) === "출발"), ...here.filter((t) => normStatus(t) !== "출발")]) {
+		if (taken.has(next) || !RING_LEAVING.has(normStatus(next))) continue;
+		const at = stampSeconds(next.receivedAt);
+		const old = here.findLast((t) => !taken.has(t) && t !== next && t.trainNo !== next.trainNo && t.direction === next.direction && ended(t) && stampSeconds(t.receivedAt) < at && at - stampSeconds(t.receivedAt) <= 300);
+		if (old) {
+			taken.add(old);
+			taken.add(next);
+			renames.set(`${old.line}:${old.trainNo}`, `${next.line}:${next.trainNo}`);
+		}
+	}
+	return renames;
+}
+function createRingRenames() {
+	let links = /* @__PURE__ */ new Map();
+	function apply(list) {
+		const byId = new Map(list.map((t) => [`${t.line}:${t.trainNo}`, t])), next = /* @__PURE__ */ new Map();
+		for (const [from, link] of links) if (byId.get(from)?.receivedAt === link.receivedAt && byId.has(link.to)) next.set(from, { ...link });
+		const fresh = ringRenames(list);
+		for (const link of next.values()) {
+			const to = fresh.get(link.to);
+			if (to) link.to = to;
+		}
+		for (const [from, to] of fresh) if (!next.has(from)) next.set(from, {
+			to,
+			receivedAt: byId.get(from).receivedAt
+		});
+		links = next;
+		return links.size ? list.filter((t) => !links.has(`${t.line}:${t.trainNo}`)) : [...list];
+	}
+	return {
+		apply,
+		renamed: (id) => links.get(id)?.to ?? null,
+		clear() {
+			links = /* @__PURE__ */ new Map();
+		}
+	};
+}
 function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, destinationLeg, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
 	let trains = [], request = 0, on = false, failures = 0, key = "", at = 0, fetchedAt = null;
+	const rings = createRingRenames();
 	const arrivals = createArrivalMemory(age);
 	function liveLines() {
 		const journey = journeyLines();
@@ -109,6 +165,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 				const leg = destinationLeg(t);
 				return !arrivals.finished(t, leg) && age(t.receivedAt) <= staleLimit(t, leg);
 			});
+			trains = rings.apply(trains);
 			const stale = all.length - trains.length;
 			fetchedAt = d.fetchedAt;
 			failures = 0;
@@ -137,6 +194,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		request++;
 		trains = [];
 		key = "";
+		rings.clear();
 	}
 	function start() {
 		setInterval(() => {
@@ -158,6 +216,7 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		get trains() {
 			return trains;
 		},
+		renamed: rings.renamed,
 		get on() {
 			return on;
 		},
@@ -166,4 +225,4 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		}
 	};
 }
-export { ARRIVAL_MEMORY_SECONDS, LONG_LAST_LEG_SECONDS, createArrivalMemory, createLiveFeed, staleLimit };
+export { ARRIVAL_MEMORY_SECONDS, LONG_LAST_LEG_SECONDS, createArrivalMemory, createLiveFeed, createRingRenames, ringRenames, staleLimit };

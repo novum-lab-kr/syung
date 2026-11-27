@@ -686,10 +686,13 @@ function arrivalFits(row, leg, trainSeq, nameOf) {
 		const start = trainSeq.findIndex((id) => onLeg.has(id) && id !== toId);
 		let offRun = 0;
 		if (start >= 0) for (const id of trainSeq.slice(start)) {
-			if (id === toId) break;
-			if (onLeg.has(id)) offRun = 0;
-			else if (++offRun > 4) return false;
+			if (id === toId) {
+				offRun = 0;
+				break;
+			}
+			offRun = onLeg.has(id) ? 0 : offRun + 1;
 		}
+		if (offRun > 4) return false;
 	}
 	if (!row.destination) return true;
 	const destination = bareName(row.destination);

@@ -12,7 +12,7 @@ var FOLLOW_ZOOM = 16;
 var RIDE_ZOOM = 15;
 var FOLLOW_EASE = .25;
 var EDGE_SHARE = .2;
-function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}, infoScreen = () => {}, busStops = () => null, lineColor = () => void 0 }) {
+function createRideAlong({ trainRenamed = () => null, map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}, infoScreen = () => {}, busStops = () => null, lineColor = () => void 0 }) {
 	const host = document.createElement("div");
 	host.className = "rg-host";
 	document.body.append(host);
@@ -26,7 +26,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 		sawLeg: false,
 		offFixes: 0,
 		fewest: Infinity,
-		ringSeen: null
+		ringSeen: null,
+		ringDone: false
 	};
 	let walkAt = {
 		key: "",
@@ -47,7 +48,8 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			sawLeg: false,
 			offFixes: 0,
 			fewest: Infinity,
-			ringSeen: null
+			ringSeen: null,
+			ringDone: false
 		};
 		return alight;
 	};
@@ -557,13 +559,15 @@ function createRideAlong({ map, geolocate, planner, trainPose, trainLngLat, arri
 			let plan = planOf(ride.train), track = plan ? trackOf(plan) : null, state = alightOf();
 			const ringId = leg.line === "2호선" ? leg.stations.find((id) => byId.get(id)?.name === RING_SWAP_STATION) : void 0;
 			if (ringId !== void 0) {
-				if (!state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map((item) => item.id));
-				const next = state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null;
+				const renamed = ride.train && leg.stations.indexOf(ringId) < leg.stations.length - 1 ? trainRenamed(ride.train) : null;
+				if (!renamed && !state.ringDone && !state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map((item) => item.id));
+				const next = renamed ?? (state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null);
 				if (next) {
 					ride.train = next;
 					plan = planOf(next);
 					track = plan ? trackOf(plan) : null;
 					state = alightOf();
+					state.ringDone = true;
 				}
 			}
 			const late = new Date(nowMs - BOARD_GIVE_UP_MS);

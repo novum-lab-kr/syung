@@ -1731,6 +1731,7 @@ var { trainState, riderState, trainNow, showTrainPopup, pickTrain, liveNotice, u
 var devRideLog = null;
 var rideDeveloper = false;
 var rideAlong = createRideAlong({
+	trainRenamed: (id) => feed.renamed(id),
 	map,
 	geolocate,
 	planner,
