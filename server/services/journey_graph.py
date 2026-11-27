@@ -31,6 +31,7 @@ from server.store import journey_data
 
 if TYPE_CHECKING:   # 타입만
     from collections.abc import Callable
+    from typing import Protocol
 
     Row = dict[str, Any]   # JSON 한 줄(실시간 열차 · 버스 패턴 · 구간 · 결과)
     Pt = tuple[float, float]   # (lat, lng)
@@ -38,6 +39,13 @@ if TYPE_CHECKING:   # 타입만
     Walk = tuple[int, int, str, float, float]   # 걷기 (초, 미터, 출구, lat, lng)
     Live = dict[str, list[Row]]   # 노선 → 실시간 열차(SubwayLiveService.all_lines)
     Job = tuple[Any, ...]   # _search 인자 한 벌(일꾼에 피클로 보낸다)
+
+    class SearchStream(Protocol):
+        """탐색을 하나씩 넣고 끝나는 대로 받는 통로(JourneyPlanner.open_stream · 대역은 _BatchStream)."""
+        def submit(self, job: Job, stop_at: float) -> int: ...   # stop_at: time.time() 기준 — 넘기면 찾다 만다
+        def next(self, timeout: float) -> tuple[int, Row | None] | None: ...   # (submit 번호, 결과) · timeout 안에 끝난 것이 없으면 None
+        def close(self) -> None: ...   # 아직 안 돈 것은 버린다
+
 
 OSRM = OsrmSource(JourneyConfig.from_env().osrm_url)
 WALK_RADIUS_M = 1600          # stations considered at either end
@@ -61,6 +69,7 @@ MAX_PLANS = 12                # routes shown(2026-10-29 사용자 결정 — #87
 MAX_FOUND = 24                # 모아 둘 길 상한
 ROUTE_SLACK = 60 * 60         # at most this much later than the fastest
 MAX_SEARCHES, SEARCH_SECONDS = 24, 4.0
+EMPTY_GRACE = 2.0             # 예산 안에 길을 하나도 못 찾았으면 돌고 있는 탐색을 이만큼 더 기다린다(_gather — 동시 요청이 몰릴 때 '경로 없음' 대신)
 DOMINATED_LATE = 35 * 60      # a way no better in changes and walking is kept if within this
 MAX_EASY_TRANSFERS = 3        # 환승이 이보다 많은 길(탈 것 5개 이상)은 빼지 않고 목록 맨 뒤로(2026-10-29 사용자 결정)
 # 같은 구간 다른 버스: 같은 정류장(같은 번호)에서 타서 같은 정류장에 내리는 노선만(옆 정류장은 어디서 타고 내리는지 안내가 따로 있어야 해서 뺐다 — Codex 리뷰 2026-10-29)
@@ -750,8 +759,9 @@ def _node_name(n: Node) -> str:
 
 def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live: Live, penalty: int,
             banned: frozenset[Node] = frozenset(), modes: frozenset[str] = frozenset({"subway", "bus"}),
-            ceiling: float = math.inf, toward: tuple[float, float] | None = None) -> Row | None:
-    """A* (Dijkstra when `toward`, the destination, is not given) over stations ("at", sid), bus stops ("bs", stop) and subway riding states
+            ceiling: float = math.inf, toward: tuple[float, float] | None = None, stop_at: float = math.inf) -> Row | None:
+    """stop_at: 이 시각(time.time())을 넘기면 찾다 말고 None — 요청이 이미 끝난 탐색이 일꾼을 붙잡지 않게.
+    A* (Dijkstra when `toward`, the destination, is not given) over stations ("at", sid), bus stops ("bs", stop) and subway riding states
     (line, from, to, end); cost = arrival time (epoch seconds) + a penalty per boarding after the first.
     ("at"/"bs", id) is getting off there; ("at"/"bs", id, "w") is arriving on foot, which may board
     but neither walks on (no chains of walks) nor ends the trip. The A* bound: the straight line to
@@ -809,8 +819,11 @@ def _search(t0: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], live:
         if node[0] == "bs" and "bus" not in modes or node[0] == "at" and "subway" not in modes:
             continue
         push((*node, "w"), T0 + w[0], T0 + w[0], ("start", None, {"w": w}), 0)
-    finish = False
+    finish, pops = False, 0
     while heap:
+        pops += 1
+        if not pops & 1023 and time.time() > stop_at:   # 시계는 1024번에 한 번만 본다
+            return None
         bound, changes, _, cost, s = heapq.heappop(heap)
         if best[s][0] < cost:
             continue
@@ -972,9 +985,9 @@ def _signature(r: Row) -> tuple[Any, ...]:
     return tuple((l.get("line") or l.get("route"), l["from"], l["to"]) for l in r["legs"] if l["type"] != "walk")
 
 
-def _search_job(args: Job) -> Row | None:   # pyright: ignore[reportUnusedFunction] — services/journey.py 가 일꾼에 넘긴다
-    """일꾼 프로세스가 부르는 탐색 하나(모듈 함수라야 forkserver 로 피클된다)."""
-    return _search(*args)
+def _search_job(args: Job, stop_at: float = math.inf) -> Row | None:   # pyright: ignore[reportUnusedFunction] — services/journey.py 가 일꾼에 넘긴다
+    """일꾼 프로세스가 부르는 탐색 하나(모듈 함수라야 forkserver 로 피클된다). stop_at: _search 와 같다."""
+    return _search(*args, stop_at=stop_at)
 
 
 def _kind(r: Row) -> str:
@@ -1021,49 +1034,93 @@ def _shows_walk(arrives: list[float], walk_sec: int, t0: float) -> bool:
     return not arrives or walk_sec <= min(arrives) - t0 + 10 * 60
 
 
+class _BatchStream:
+    """run_batch(탐색 목록 → 결과 목록)를 SearchStream 처럼 쓰기: 기다릴 때 그때까지 받은 것을 한꺼번에 돌린다
+    (시험 대역 · 일꾼 풀이 없을 때). stop_at 은 run_batch 가 예산(seconds)으로 대신한다."""
+
+    def __init__(self, run_batch: Callable[[list[Job], float], list[Row | None]]):
+        self.run_batch = run_batch
+        self.waiting: list[tuple[int, Job]] = []
+        self.ready: list[tuple[int, Row | None]] = []
+        self.next_id = 0
+
+    def submit(self, job: Job, stop_at: float) -> int:
+        self.next_id += 1
+        self.waiting.append((self.next_id, job))
+        return self.next_id
+
+    def next(self, timeout: float) -> tuple[int, Row | None] | None:
+        if not self.ready and self.waiting:
+            ids = [i for i, _job in self.waiting]
+            self.ready = list(zip(ids, self.run_batch([job for _i, job in self.waiting], timeout)))
+            self.waiting = []
+        return self.ready.pop(0) if self.ready else None
+
+    def close(self) -> None:
+        self.waiting, self.ready = [], []
+
+
 def _gather(when: datetime, start: dict[Node, Walk], goal: dict[Node, Walk], dest: tuple[float, float], live: Live,
-            run_batch: Callable[[list[Job], float], list[Row | None]], workers: int, seconds: float) -> tuple[list[Row], int]:
-    """탐색 결과 모으기 → (가장 빠른 것보다 ROUTE_SLACK 안에 닿는 길들, 탐색 수). seconds: 이 모으기의 예산(상한)."""
+            stream: SearchStream, workers: int, seconds: float, grace: float = 0.0) -> tuple[list[Row], int]:
+    """탐색 결과 모으기 → (가장 빠른 것보다 ROUTE_SLACK 안에 닿는 길들, 탐색 수). seconds: 이 모으기의 예산(상한).
+    grace: 예산이 끝날 때까지 길을 하나도 못 찾았으면 돌고 있는 탐색을 이만큼 더 기다린다(새 탐색은 더 넣지 않는다)."""
     both, subway, bus = frozenset({"subway", "bus"}), frozenset({"subway"}), frozenset({"bus"})
 
     # Many routes: the fastest by each mode, then, breadth first, the same search with one more
     # line (or bus route) of an earlier result barred — each of those finds the next best way
     # round it. Kept: different rides, arriving at most ROUTE_SLACK after the fastest; bounded in searches
     # and time.
-    found: list[Row] = []
+    # 탐색은 끝나는 대로 받는다(2026-11-09): 전에는 workers*2 개 묶음을 내고 묶음의 가장 느린 탐색까지 기다린 뒤 다음 묶음을 내서
+    # 그동안 일꾼이 놀았다. 이제 하나가 끝나면 그 결과에서 나온 탐색을 바로 넣어 일꾼 몫(workers*2)을 늘 채운다.
+    got: list[tuple[int, Row]] = []   # (낸 차례, 결과) — 끝나는 차례는 그때그때 달라 마지막에 낸 차례로 줄 세운다(같은 입력 → 같은 답)
     seen_sigs, tried = cast("set[tuple[Any, ...]]", set()), cast("set[tuple[frozenset[str], frozenset[Node], int]]", set())
     t_start, best_arrive = time.monotonic(), math.inf
+    end = t_start + seconds
     queue: list[tuple[frozenset[str], frozenset[Node], int]] = [(both, frozenset(), TIE_PENALTY), (both, frozenset(), TRANSFER_PENALTY)]
     if BUS:
-        queue += [(subway, frozenset(), TIE_PENALTY), (bus, frozenset(), TIE_PENALTY)]
+        # 지하철만 탐색을 맨 앞에(2026-11-27): 버스 든 탐색 1회는 수백 ms, 지하철만은 수십 ms 라 동시 요청이 몰려도
+        # 요청마다 첫 차례(rank 0)로 이것부터 끝나 '경로 없음'이 되지 않는다(동시 8개 재현 — 계획서 20261127 route-budget)
+        queue = [(subway, frozenset(), TIE_PENALTY), *queue, (bus, frozenset(), TIE_PENALTY)]
     searches = 0
-    while queue and searches < MAX_SEARCHES and len(found) < MAX_FOUND:
-        left = seconds - (time.monotonic() - t_start)
-        if left <= 0:
-            break
-        # a batch: the searches known so far, run side by side (_run_batch)
-        batch: list[tuple[frozenset[str], frozenset[Node], int]] = []
-        while queue and len(batch) < workers * 2 and searches + len(batch) < MAX_SEARCHES:
-            item = queue.pop(0)
-            if item not in tried:
+    running: dict[int, tuple[int, frozenset[str], frozenset[Node]]] = {}   # 스트림 번호 → (낸 차례, 탈것, 뺀 노선)
+    try:
+        while len(seen_sigs) < MAX_FOUND:
+            now = time.monotonic()
+            wait_until = end if seen_sigs else end + grace
+            while now < end and queue and len(running) < max(1, workers) * 2 and searches < MAX_SEARCHES:   # 일꾼 0(차례로)도 둘씩
+                modes, banned, pen = item = queue.pop(0)
+                if item in tried:
+                    continue
                 tried.add(item)
-                batch.append(item)
-        searches += len(batch)
-        ceiling = best_arrive + ROUTE_SLACK + 2 * TRANSFER_PENALTY
-        jobs = [(when, start, goal, live, pen, banned, modes, ceiling, dest) for modes, banned, pen in batch]
-        for (modes, banned, _pen), r in zip(batch, run_batch(jobs, left)):
+                ceiling = best_arrive + ROUTE_SLACK + 2 * TRANSFER_PENALTY
+                job = (when, start, goal, live, pen, banned, modes, ceiling, dest)
+                running[stream.submit(job, time.time() + (wait_until - now))] = (searches, modes, banned)
+                searches += 1
+            if not running or now >= wait_until:
+                break
+            done = stream.next(wait_until - now)
+            if done is None:   # 기다리는 동안 끝난 것이 없다
+                break
+            order, modes, banned = running.pop(done[0])
+            r = done[1]
             if not r or r["arrive"] > best_arrive + ROUTE_SLACK:
                 continue
             best_arrive = min(best_arrive, r["arrive"])
-            sig = _signature(r)
-            if sig not in seen_sigs:
-                seen_sigs.add(sig)
-                found.append(r)
+            got.append((order, r))
+            seen_sigs.add(_signature(r))
             if len(banned) < 3:   # route around each line or bus of this one
                 for l in r["legs"]:
                     if l["type"] != "walk":
                         queue.append((modes, banned | {l["_ban"][1]}, TIE_PENALTY))
-    return [r for r in found if r["arrive"] <= best_arrive + ROUTE_SLACK], searches
+    finally:
+        stream.close()
+    found: list[Row] = []
+    sigs: set[tuple[Any, ...]] = set()
+    for _order, r in sorted(got, key=lambda pair: pair[0]):
+        if r["arrive"] <= best_arrive + ROUTE_SLACK and _signature(r) not in sigs:
+            sigs.add(_signature(r))
+            found.append(r)
+    return found, searches
 
 
 def _distinct(found: list[Row]) -> list[Row]:
@@ -1263,15 +1320,18 @@ def _finish(plans: list[Row], when: datetime, straight: float, searches: int, t_
 
 
 def plan(origin: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
-         run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
-    """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 한 번에 workers*2 개씩."""
+         run_batch: Callable[[list[Job], float], list[Row | None]], workers: int,
+         open_stream: Callable[[], SearchStream] | None = None) -> Row:
+    """run_batch(jobs, seconds): 탐색 여럿을 나란히(JourneyPlanner._run_batch), workers: 늘 workers*2 개씩 돌린다.
+    open_stream: 끝나는 대로 받는 통로(JourneyPlanner.open_stream) — 없으면 run_batch 로 묶어 돌린다(_BatchStream)."""
     start = _walk_table(origin, _near_nodes(origin))
     goal = _walk_table(dest, _near_nodes(dest), reverse=True)
     straight = _meters(origin, dest)
     t_begin = time.monotonic()
     # close enough to just walk
     walk = walk_path(origin, dest) if straight < 2500 else None
-    found, searches = _gather(when, start, goal, dest, live, run_batch, workers, SEARCH_SECONDS)
+    stream = open_stream() if open_stream else _BatchStream(run_batch)
+    found, searches = _gather(when, start, goal, dest, live, stream, workers, SEARCH_SECONDS, EMPTY_GRACE)
     plans = _shaped(_distinct(found), origin, dest, when, goal)
     if walk:   # close enough to just walk
         path, sec, metres, road = walk
@@ -1500,7 +1560,8 @@ def _via_join(first: Row, second: Row, via: tuple[float, float], start: dict[Nod
 
 
 def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[float, float], when: datetime, live: Live,
-             run_batch: Callable[[list[Job], float], list[Row | None]], workers: int) -> Row:
+             run_batch: Callable[[list[Job], float], list[Row | None]], workers: int,
+             open_stream: Callable[[], SearchStream] | None = None) -> Row:
     """출발 → 경유지 → 도착. 앞 구간은 plan 과 같은 모으기(예산 VIA_FIRST_SHARE 몫)로 찾고, 그 가운데 VIA_FIRST 개마다
     그 길이 경유지에 닿은 시각(+ 갈아타기 여유)부터 뒤 구간 가장 빠른 길을 같은 탈것으로(없으면 둘 다로) 찾아 이어 붙인다.
     경유지가 역 · 정류장이면(_via_nodes) 앞 구간은 그 역 · 정류장에 닿으면 끝, 뒤 구간은 내린 자리에서 탐색의 갈아타기 규칙대로 출발한다.
@@ -1517,7 +1578,8 @@ def plan_via(origin: tuple[float, float], via: tuple[float, float], dest: tuple[
     walk_a = walk_path(origin, via) if _meters(origin, via) < 2500 else None
     walk_b = walk_path(via, dest) if _meters(via, dest) < 2500 else None
     t_search = time.monotonic()
-    found, searches = _gather(when, start, to_via, via, live, run_batch, workers, SEARCH_SECONDS * VIA_FIRST_SHARE)
+    stream = open_stream() if open_stream else _BatchStream(run_batch)
+    found, searches = _gather(when, start, to_via, via, live, stream, workers, SEARCH_SECONDS * VIA_FIRST_SHARE)
     firsts = _via_firsts(_distinct(found))
     if walk_a and _shows_walk([r["arrive"] for r in firsts], walk_a[1], t0):
         firsts = [r for r in firsts if r["arrive"] < t0 + walk_a[1]] + [_walk_row(walk_a, origin, via, t0, "경유지까지 걸어서")]

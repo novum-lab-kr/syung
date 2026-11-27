@@ -118,6 +118,19 @@ test('위치를 못 쓸 때 시각으로 구간 끝', () => {
   assert.equal(legOverByTime(legs, 1, new Date(2026, 10, 4, 8, 41), '08:50'), true);
 });
 
+test('위치를 못 쓸 때 마지막 걷기: 계획보다 늦게 내렸으면 계획 도착 시각이 아니라 걷기를 시작한 뒤 걷는 시간 + 역 밖으로 나오는 시간이 지나야 끝(재생 시험 2026-11-27 시청→잠실 — 6분 늦게 내려 내린 지 1초 만에 「슝 도착!」)', async () => {
+  const {walkOverByTime} = await import('../web/lib/ride-along.mts');
+  const legs = [walkLeg(), rideLeg({arrives: '08:40'}), walkLeg({seconds: 250})];
+  const since = new Date(2026, 10, 4, 8, 46).getTime();   // 계획(08:40 내림 · 08:44 도착)보다 6분 늦게 내려 걷기 시작
+  assert.equal(walkOverByTime(legs, 2, new Date(2026, 10, 4, 8, 46, 1), '08:44', since), false);
+  assert.equal(walkOverByTime(legs, 2, new Date(2026, 10, 4, 8, 51, 39), '08:44', since), false);   // 250 + 90 초 = 08:51:40
+  assert.equal(walkOverByTime(legs, 2, new Date(2026, 10, 4, 8, 51, 40), '08:44', since), true);
+  // 제때 내렸으면 그대로 계획 도착 시각 — 계획보다 일찍 끝내지 않는다
+  assert.equal(walkOverByTime(legs, 2, new Date(2026, 10, 4, 8, 43), '08:44', new Date(2026, 10, 4, 8, 30).getTime()), false);
+  // 마지막이 아닌 걷기는 원래대로(다음 탈 것의 탈 시각)
+  assert.equal(walkOverByTime(legs, 0, new Date(2026, 10, 4, 8, 8, 30), '08:44', new Date(2026, 10, 4, 8, 8).getTime()), true);
+});
+
 test('카드 캐릭터: 지도 모드를 따르고 스타 세 모드는 새싹', () => {
   assert.deepEqual(characterOf('sprout'), {file: 'sprout-left.webp', flip: false});
   assert.deepEqual(characterOf('builder'), {file: 'builder-right.webp', flip: true});
@@ -206,6 +219,16 @@ test('곧 올 열차 고르기: 내릴 역 전에 끝나거나 다른 지선으�
   assert.equal(arrivalFits(row(), leg, [134, 135, 136, 137, 138], nameOf), true);
   assert.equal(arrivalFits(row({direction: '상행'}), leg, null, nameOf), false);
   assert.equal(arrivalFits(row({destination: '대방'}), leg, null, nameOf), true);      // 내릴 역이 종착이면 탈 수 있다
+});
+test('곧 올 열차 고르기: 2호선 순환열차(행선지 「성수」)는 성수를 지나 계속 가니 성수 너머로 가는 구간에도 탄다(재생 시험 2026-11-27 시청→잠실)', () => {
+  // 곧 올 열차 줄의 행선지(bstatnNm)는 순환열차를 「성수」로 적는다 — 11-25 녹화 2호선 내선 08:20~08:49 「성수」 363 · 「성수종착」 10(위치 피드 statnTnm 은 「성수종착」)
+  const leg = rideLeg({line: '2호선', direction: '내선', stations: [1, 10, 19, 20, 21, 22, 23, 24]});
+  const names = {1: '시청', 10: '을지로입구', 19: '성수', 20: '건대입구', 21: '구의', 22: '강변', 23: '잠실나루', 24: '잠실'};
+  const nameOf = id => names[id];
+  const row = extra => ({line: '2호선', direction: '내선', destination: '성수', trainNo: '3078', ...extra});
+  assert.equal(arrivalFits(row(), leg, null, nameOf), true);
+  assert.equal(arrivalFits(row({line: '7호선'}), {...leg, line: '7호선'}, null, nameOf), false);   // 2호선 밖의 「성수」 행선지는 원래대로
+  assert.equal(arrivalFits(row({destination: '건대입구'}), leg, null, nameOf), false);   // 2호선도 다른 역 행선지가 내릴 역 앞이면 그대로 뺀다
 });
 test('곧 올 열차 고르기: 급행이 건너뛰는 역(구간 밖)이 예측에 끼어도 다른 지선이 아니다(운영 시험 2026-11-04 · 9호선 노량진→여의도 사이 샛강)', () => {
   // 길찾기 구간 stations 에는 정차역만 있다 — 급행 열차 예측 차례에는 안 서는 역이 낀다

@@ -8,7 +8,7 @@ import { serverUrl } from '../lib/server_url.mts';
 import type { RideAlertSink } from './ride_alerts.mts';
 import {
   BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, RUN_S, STATION_ACCESS_S,
-  arrivalFits, arrivedEarly, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideAhead, rideShare, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, reached, splitPath, stopsLeft, stopsLeftByTime,
+  arrivalFits, arrivedEarly, ringEnded, ringSuccessor, RING_SWAP_STATION, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, walkOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideAhead, rideShare, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, reached, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, rideFixView, rideTrainSpots, boardedPick,
   type LngLat, type RideFixAct, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
 } from '../lib/ride-along.mts';
@@ -121,10 +121,14 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   const freshFix = () => fix && Date.now() - fix.t < FIX_FRESH_MS ? fix.spot : null;
   // 내림 판정(2026-11-26 — 중화에서 내렸는데 계속 열차를 따라감): 지금 타는 구간 · 열차마다 따로 센다(구간 · 열차가 바뀌면 처음부터)
   //  sawLeg: 탄 열차 예측에 이 구간 역이 보인 적 있다(rideOver) · offFixes: 내릴 역에서 열차와 떨어진 새 위치 수(offTrainFixes) · fewest: 보여 준 가장 적은 남은 정거장
-  let alight = {key: '', sawLeg: false, offFixes: 0, fewest: Infinity};
+  //  ringSeen: 탄 2호선 열차 예측이 성수에서 끝난 때 지도에 있던 같은 노선 열차(null = 아직 안 끝남 — ringEnded · 그 밖의 새 번호를 이어 탈 열차로 고르는 중)
+  let alight = {key: '', sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null as Set<string> | null};
+  // 지금 걷기를 시작한 때(위치 없이 시각으로 끝낼 때 — walkOverByTime · tick 이 그 걷기를 처음 본 때)
+  let walkAt = {key: '', ms: 0};
+  const walkSince = (nowMs:number) => { const key = ride ? `${ride.startedMs}:${ride.at}` : ''; if (walkAt.key !== key) walkAt = {key, ms: nowMs}; return walkAt.ms; };
   const alightOf = () => {
     const key = ride ? `${ride.startedMs}:${ride.at}:${ride.train ?? ''}` : '';
-    if (alight.key !== key) alight = {key, sawLeg: false, offFixes: 0, fewest: Infinity};
+    if (alight.key !== key) alight = {key, sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null};
     return alight;
   };
   // 도착 자리(지도 속 도착 표시 · 도착 때 카메라)
@@ -364,7 +368,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     if (!ride || !current || current.kind === 'done') return;
     const leg = legAt(current.leg)!, spot = freshFix(), nowMs = Date.now(), now = new Date();
     if (current.kind === 'walk') {
-      const next = legAt(current.leg + 1), path = leg.type === 'walk' ? leg.path ?? [] : [];
+      const next = legAt(current.leg + 1), path = leg.type === 'walk' ? leg.path ?? [] : [], since = walkSince(nowMs);
       if (!spot || path.length < 2) {
         // 지하로 들어가 위치가 끊김: 마지막 위치가 타는 역 150m 안이거나 그 역 아무 출구 50m 안이면 기다리기로
         // (남은 길 0 · 승강장 시간만 마지막 위치를 받은 때부터 센다 — 2026-11-07 사용자 결정)
@@ -372,7 +376,7 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
           const {stationM, exitM} = boardingAway(fix.spot, next);
           if (lostUnderground({nowMs, lastFixMs: fix.t, stationM, exitM})) { ride.leftM = 0; advance(fix.t); return; }
         }
-        if (legOverByTime(ride.legs, current.leg, now, ride.arrives)) advance(); else draw();
+        if (walkOverByTime(ride.legs, current.leg, now, ride.arrives, since)) advance(); else draw();
         return;
       }
       const where = onPath(spot, path);
@@ -449,7 +453,14 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
     }
     // 타는 중
     if (leg.type === 'ride') {
-      const plan = planOf(ride.train), track = plan ? trackOf(plan) : null, state = alightOf();
+      let plan = planOf(ride.train), track = plan ? trackOf(plan) : null, state = alightOf();
+      // 2호선 성수에서 번호가 바뀐 열차를 이어 탄다(ringEnded) — 바꾸면 내림 셈(alight)은 새 열차로 처음부터
+      const ringId = leg.line === '2호선' ? leg.stations.find(id => byId.get(id)?.name === RING_SWAP_STATION) : undefined;
+      if (ringId !== undefined) {
+        if (!state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map(item => item.id));
+        const next = state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null;
+        if (next) { ride.train = next; plan = planOf(next); track = plan ? trackOf(plan) : null; state = alightOf(); }
+      }
       const late = new Date(nowMs - BOARD_GIVE_UP_MS);   // 먼 내릴 역이 예측에 아직 안 보일 때는 도착 시각 + 3분까지 열차를 따른다
       if (track?.seqIds.some(id => leg.stations.includes(id))) state.sawLeg = true;
       if (gotOff(state.offFixes) || rideOver(track, leg.stations, legOverByTime(ride.legs, current.leg, now, ride.arrives), legOverByTime(ride.legs, current.leg, late, ride.arrives), state.sawLeg)) { advance(); return; }
