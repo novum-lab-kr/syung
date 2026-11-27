@@ -3,6 +3,7 @@
 // Live trains show from zoom 13 for every line on screen (or just the selected line). The proxy
 // serves all lines from one cached upstream call, so the number of lines requested is free.
 import { serverUrl } from '../lib/server_url.mts';   // 앱 지도 모드면 운영 서비스 주소로
+import { key as stationKey } from '../lib/routing.mts';   // 역 이름 맞추기(성수종착 → 성수)
 export const LIVE_ZOOM=13,LIVE_MAX_LINES=24,STALE_SECONDS=600;
 
 // onTrains(trains) → 자리 잡은 열차 수, onClear(): 예측 비우기
@@ -60,6 +61,48 @@ export function createArrivalMemory(age:(v:unknown)=>number){
   return {finished,forgetOld};
 }
 
+// 2호선은 성수에서 번호가 바뀐다(같은 열차가 새 번호로 계속 돈다): 옛 번호의 성수 도착 · 진입 · 운행중 기록은 3~10분 남아(위 한도) 새 번호와 함께 그려졌다.
+// 11-25 녹화: 성수에서 끝난 번호 286 가운데 207(성수종착 도착)은 바로 빠지고, 남는 79 의 새 번호는 옛 번호 마지막 기록 30~170초 뒤 성수 출발 · 운행중으로 처음 나온다.
+// 같은 방향 승강장은 하나라 옛 번호가 닿은 뒤 성수를 떠나는 다른 번호는 그 열차다 — 옛 번호 → 새 번호(열차 id `노선:번호`)를 짝지어 옛 번호를 뺀다.
+// 새 번호는 옛 번호 마지막 기록 뒤 RING_RENAME_SECONDS(5분 — 녹화의 짝이 거의 다 이 안) 안에서만 짝짓는다.
+export const RING_RENAME_SECONDS=300;
+const RING_LINE='2호선',RING_SWAP='성수',RING_ENDED=new Set(['도착','진입','운행중']),RING_LEAVING=new Set(['출발','운행중']);
+const stampSeconds=(v:string|null):number=>{const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);return m?Date.UTC(+m[1]!,+m[2]!-1,+m[3]!,+m[4]!,+m[5]!,+m[6]!)/1000:NaN};
+const atSwap=(name:string):boolean=>stationKey(name)===RING_SWAP&&!/지선/.test(name);   // key 는 「지선」을 떼니(성수지선 → 성수) 이름으로 한 번 더 본다
+export function ringRenames(list:readonly LiveTrain[]):Map<string,string>{
+  const here=list.filter(t=>t.line===RING_LINE&&atSwap(t.station)&&!Number.isNaN(stampSeconds(t.receivedAt)))
+    .sort((a,b)=>stampSeconds(a.receivedAt)-stampSeconds(b.receivedAt));
+  const ended=(t:LiveTrain):boolean=>RING_ENDED.has(normStatus(t))&&atSwap(t.destination);
+  const renames=new Map<string,string>(),taken=new Set<LiveTrain>();
+  // 새 번호(성수를 떠나는 기록)마다 그보다 먼저 성수에서 끝난 옛 번호 가운데 가장 늦게 닿은 것 — 승강장에 서 있던 것은 마지막에 닿은 열차다.
+  //  출발을 먼저 짝짓는다: 운행중은 끝난 옛 번호일 수도 새 번호일 수도 있어 먼저 보면 옛 번호끼리 짝지었다(2067 → 2069)
+  for(const next of [...here.filter(t=>normStatus(t)==='출발'),...here.filter(t=>normStatus(t)!=='출발')]){
+    if(taken.has(next)||!RING_LEAVING.has(normStatus(next)))continue;
+    const at=stampSeconds(next.receivedAt);
+    const old=here.findLast(t=>!taken.has(t)&&t!==next&&t.trainNo!==next.trainNo&&t.direction===next.direction&&ended(t)
+      &&stampSeconds(t.receivedAt)<at&&at-stampSeconds(t.receivedAt)<=RING_RENAME_SECONDS);
+    if(old){taken.add(old);taken.add(next);renames.set(`${old.line}:${old.trainNo}`,`${next.line}:${next.trainNo}`)}
+  }
+  return renames;
+}
+// 받을 때마다 짝을 이어 둔다: 새 번호가 성수를 떠나 다음 역에 찍혀도 옛 번호의 같은 기록(받은 시각 그대로)이 남아 있으면 계속 뺀다
+//  (안 그러면 새 번호가 건대입구 · 뚝섬으로 가자마자 옛 번호가 성수에 다시 그려졌다). 옛 번호에 새 기록이 오면 잊는다(같은 번호로 계속 달리는 열차)
+export function createRingRenames(){
+  let links=new Map<string,{to:string;receivedAt:string|null}>();
+  function apply(list:readonly LiveTrain[]):LiveTrain[]{
+    const byId=new Map(list.map(t=>[`${t.line}:${t.trainNo}`,t])),next=new Map<string,{to:string;receivedAt:string|null}>();
+    for(const [from,link] of links)if(byId.get(from)?.receivedAt===link.receivedAt&&byId.has(link.to))next.set(from,{...link});
+    // 이어 둔 A→B 의 B 가 새 짝 B→C 의 옛 번호가 되면 A 도 C 를 가리킨다(A · B 가 다 빠진 채 A 가 지도에 없는 B 를 가리켰다 — PR #186 리뷰).
+    //  B 를 후보에서 빼지 않는다: 운행중은 닿은 기록 · 떠나는 기록 둘 다라 먼저 생긴 잘못된 짝(2067 → 2069)을 B→C(2069 → 2133)가 바로잡는다(11-25 녹화 — 빼면 겹침 9 → 24번)
+    const fresh=ringRenames(list);
+    for(const link of next.values()){const to=fresh.get(link.to);if(to)link.to=to}
+    for(const [from,to] of fresh)if(!next.has(from))next.set(from,{to,receivedAt:byId.get(from)!.receivedAt});
+    links=next;
+    return links.size?list.filter(t=>!links.has(`${t.line}:${t.trainNo}`)):[...list];
+  }
+  return {apply,renamed:(id:string):string|null=>links.get(id)?.to??null,clear(){links=new Map()}};
+}
+
 export interface LiveFeedDeps {
   map:MapLibre; stations:MapStation[]; liveState:HTMLElement; getSelected:()=>string; getSheetTrain:()=>string|null;
   hasPlans:()=>boolean; age:(v:unknown)=>number; destinationLeg:(t:LiveTrain)=>DestinationLeg; updateLiveNotice:(msg:string|null)=>void;
@@ -68,6 +111,7 @@ export interface LiveFeedDeps {
 }
 export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,destinationLeg,updateLiveNotice,onTrains,onClear,journeyLines=()=>null,onState}:LiveFeedDeps){
   let trains:LiveTrain[]=[],request=0,on=false,failures=0,key='',at=0,fetchedAt:string|null=null;
+  const rings=createRingRenames();
   const arrivals=createArrivalMemory(age);
   function liveLines():string[]{
     // 길찾기 중: 줌과 상관없이 탈 노선만(경로 전체를 보는 줌 11~12 에도 내 열차가 보이게 — 다른 열차는 어차피 숨긴다, journey.mjs trainShown)
@@ -107,7 +151,10 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
       // service); extrapolating it would park a ghost train somewhere down the line. 행선지 앞 기록은 더 일찍(staleLimit) · 도착한 열차는 바로(createArrivalMemory).
       // 도착 기억(arrivals.finished)은 모든 기록에 먼저 묻는다 — 한도로 걸러진 도착 기록도 기억해야 뒤따르는 출발 · 운행중을 뺀다
       const all=d.trains||[];arrivals.forgetOld();
-      trains=all.filter(t=>{const leg=destinationLeg(t);return !arrivals.finished(t,leg)&&age(t.receivedAt)<=staleLimit(t,leg)});const stale=all.length-trains.length;
+      trains=all.filter(t=>{const leg=destinationLeg(t);return !arrivals.finished(t,leg)&&age(t.receivedAt)<=staleLimit(t,leg)});
+      // 성수에서 번호가 바뀐 2호선 열차는 새 번호 하나만(ringRenames) — 옛 번호 → 새 번호는 renamed 로 남겨 타고 가기가 이어 탄다
+      trains=rings.apply(trains);
+      const stale=all.length-trains.length;
       // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
       fetchedAt=d.fetchedAt;failures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);
       const placed=onTrains(trains),unplaced=trains.length-placed,shown=d.lines||lines;
@@ -116,7 +163,7 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
     }catch{if(mine===request){key='';failures++;liveState.parentElement!.dataset.state='error';liveState.textContent='실시간 위치 연결 실패 · 잠시 후 재시도';onState?.();if(failures>=2||!hasPlans())updateLiveNotice('실시간 열차 정보에 연결하지 못했어요. 20초마다 다시 시도해요.')}}
   }
   // 노선 바꿀 때: 오는 응답은 버리고 기록을 비운다
-  function reset(){request++;trains=[];key=''}
+  function reset(){request++;trains=[];key='';rings.clear()}
   // Server caches ~90s and the upstream key has a daily quota: don't poll from background tabs.
   // The proxy refreshes upstream every 90 s and serves its cache in between, so polling it often is
   // free and picks up each upstream refresh within ~20 s.
@@ -127,5 +174,5 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true)});
     let moveTimer:ReturnType<typeof setTimeout>|number=0;map.on('moveend',()=>{clearTimeout(moveTimer);moveTimer=setTimeout(()=>refresh(),600)});
   }
-  return {refresh,reset,start,get trains(){return trains},get on(){return on},get fetchedAt(){return fetchedAt}};
+  return {refresh,reset,start,get trains(){return trains},renamed:rings.renamed,get on(){return on},get fetchedAt(){return fetchedAt}};
 }
