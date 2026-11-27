@@ -447,15 +447,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				const ratio = car / unit / bodyPx, separate = !icon && (c88 || ratio >= 1.5);
 				const unfold = c88 ? 1 : smooth(Math.max(0, Math.min(1, (ratio - 1.5) / .9))), gap = 1.4 * unit * unfold;
 				const start = P(tail), finish = P(tail + total);
-				const follow = K === "viaduct" ? unfold : 1;
-				const articulated = (d) => {
-					const q = P(d), t = (d - tail) / total;
-					q.x = (start.x + (finish.x - start.x) * t) * (1 - follow) + q.x * follow;
-					q.y = (start.y + (finish.y - start.y) * t) * (1 - follow) + q.y * follow;
-					q.h = (start.h + (finish.h - start.h) * t) * (1 - follow) + q.h * follow;
-					return q;
-				};
-				const bends = K !== "ground" || icon ? 1 : Math.max(1, Math.min(n, Math.floor(total / unit / (bodyPx * .8))));
+				const bends = K === "coaster" || icon ? 1 : Math.max(1, Math.min(n, Math.floor(total / unit / (bodyPx * .8))));
 				if (separate) {
 					const forward = mid.f[0] * camX + mid.f[1] * camY >= 0;
 					for (let k = 0; k < n; k++) {
@@ -468,7 +460,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 							}
 							continue;
 						}
-						const A = articulated(tail + j * car + (j ? gap / 2 : 0)), B = articulated(tail + (j + 1) * car - (j < n - 1 ? gap / 2 : 0));
+						const A = P(tail + j * car + (j ? gap / 2 : 0)), B = P(tail + (j + 1) * car - (j < n - 1 ? gap / 2 : 0));
 						if (K === "viaduct") this.h0 = (A.h + B.h) / 2;
 						const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy);
 						if (len < unit * .1) continue;
@@ -530,6 +522,7 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 					for (let k = 0; k < bends; k++) {
 						const j = forward ? k : bends - 1 - k, A = cut[j], [tx, ty, len] = dir[j];
 						if (len < unit * .1) continue;
+						if (K === "viaduct") this.h0 = (A.h + cut[j + 1].h) / 2;
 						const back = j === 0, front = j === bends - 1, cars = Math.round((j + 1) * n / bends) - Math.round(j * n / bends), S = len / unit, carPx = S / cars;
 						let sA = back ? 0 : slope(dir[j], dir[j - 1]), sB = front ? 0 : slope(dir[j], dir[j + 1]);
 						const squeeze = Wm * (Math.abs(sA) + Math.abs(sB)) / (S * .9);
