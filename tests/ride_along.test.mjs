@@ -240,6 +240,17 @@ test('곧 올 열차 고르기: 급행이 건너뛰는 역(구간 밖)이 예측
   assert.equal(arrivalFits(row(), leg, [911, 912, 913, 914, 915, 916, 917], nameOf), true);   // 구간 밖 역이 하나씩 끼고 내릴 역까지 닿는다
   assert.equal(arrivalFits(row(), leg, [910, 911, 912, 913, 914, 915], nameOf), true);     // 예측이 내릴 역 전에 끊겨도(9역 한도)
 });
+test('곧 올 열차 고르기: 급행 구간을 도는 완행은 구간 밖 역이 5개 넘게 이어져도 다시 구간 역으로 돌아오면 탄다(2026-11-27 점검 이슈 후보)', () => {
+  // 급행 정차역만 있는 구간(구로 → 부평 사이 띄엄띄엄) — 완행 예측 차례에는 사이 역이 길게 낀다
+  const leg = rideLeg({line: '1호선', direction: '하행', stations: [140, 150, 160]});
+  const names = {140: '구로', 150: '부천', 160: '부평'};
+  const nameOf = id => names[id];
+  const row = extra => ({line: '1호선', direction: '하행', destination: '인천', trainNo: '1', ...extra});
+  assert.equal(arrivalFits(row(), leg, [140, 141, 142, 143, 144, 145, 150, 151], nameOf), true);     // 사이 역 5개 → 구간 역 부천으로 돌아옴
+  assert.equal(arrivalFits(row(), leg, [141, 142, 143, 144, 145, 146, 150, 151, 152], nameOf), true); // 탈 역 앞에서부터 예측이 시작돼도
+  assert.equal(arrivalFits(row(), leg, [140, 141, 142, 143, 144, 145, 146, 147, 148], nameOf), false); // 돌아오지 않은 채 끊기면 지선으로 본다(원래대로)
+  assert.equal(arrivalFits(row(), leg, [150, 151, 152, 153, 154, 155, 160], nameOf), true);           // 내릴 역까지 닿음
+});
 
 test('걷는 길 벗어남: 20m 넘는 위치를 연달아 3번 받으면 다시 찾기 — 한 번 튄 위치는 0 으로 돌아간다', () => {
   assert.equal(WALK_OFF_M, 20); assert.equal(OFF_FIXES, 3);

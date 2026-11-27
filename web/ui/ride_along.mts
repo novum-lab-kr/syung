@@ -27,6 +27,8 @@ interface CameraMap {
 }
 export interface RideCardActionsLike { close():void; detour():void; follow():void; played():void; answer(value:RideAnswer):void; fix(act:RideFixAct):void; pick(id:string):void }
 export interface RideAlongDeps {
+  // trainRenamed: 2호선 성수에서 번호가 바뀌어 지도에서 뺀 옛 번호 → 새 번호(trains/live_feed ringRenames · 열차 id `노선:번호` — 없으면 null)
+  trainRenamed?:(id:string) => string | null;
   map:CameraMap; geolocate:GeolocateLike; planner:{ plans:readonly RidePlanLike[] }; trainPose:(plan:never) => { dist:number }; trainLngLat:(plan:never) => { lng:number; lat:number };
   arrivalRank:(row:never) => number; byId:ReadonlyMap<number, { lat:number; lon:number; name:string }>; animFrame:(() => void)[];
   drawRideCard:(host:HTMLElement, view:RideCardView | null, actions:RideCardActionsLike) => void;
@@ -84,7 +86,7 @@ const FOLLOW_ZOOM = 16, RIDE_ZOOM = 15, FOLLOW_EASE = 0.25;
 // 걷기 · 기다리기: 내 위치가 화면(카드 위 칸)의 가장자리 이 몫 안으로 들어왔을 때만 카메라를 옮긴다(위치마다 옮기면 1초에 0.6초씩 지도를 다시 그렸다 — 배터리, 2026-11-25 사용자 추천안 B)
 const EDGE_SHARE = 0.2;
 
-export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}, infoScreen = () => {}, busStops = () => null, lineColor = () => undefined}:RideAlongDeps) {
+export function createRideAlong({trainRenamed = () => null, map, geolocate, planner, trainPose, trainLngLat, arrivalRank, byId, animFrame, drawRideCard, look, walked, ended, detour, reroute, otherFollow, exitsOf, busStopAt, bus, devLog = () => null, alerts = null, trainLeaves, gpsLowPower = () => {}, quietLabels = () => {}, infoScreen = () => {}, busStops = () => null, lineColor = () => undefined}:RideAlongDeps) {
   const host = document.createElement('div');
   host.className = 'rg-host';
   document.body.append(host);
@@ -122,13 +124,14 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
   // 내림 판정(2026-11-26 — 중화에서 내렸는데 계속 열차를 따라감): 지금 타는 구간 · 열차마다 따로 센다(구간 · 열차가 바뀌면 처음부터)
   //  sawLeg: 탄 열차 예측에 이 구간 역이 보인 적 있다(rideOver) · offFixes: 내릴 역에서 열차와 떨어진 새 위치 수(offTrainFixes) · fewest: 보여 준 가장 적은 남은 정거장
   //  ringSeen: 탄 2호선 열차 예측이 성수에서 끝난 때 지도에 있던 같은 노선 열차(null = 아직 안 끝남 — ringEnded · 그 밖의 새 번호를 이어 탈 열차로 고르는 중)
-  let alight = {key: '', sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null as Set<string> | null};
+  //  ringDone: 성수에서 이어 탄 열차(한 구간에 한 번만 바꾼다)
+  let alight = {key: '', sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null as Set<string> | null, ringDone: false};
   // 지금 걷기를 시작한 때(위치 없이 시각으로 끝낼 때 — walkOverByTime · tick 이 그 걷기를 처음 본 때)
   let walkAt = {key: '', ms: 0};
   const walkSince = (nowMs:number) => { const key = ride ? `${ride.startedMs}:${ride.at}` : ''; if (walkAt.key !== key) walkAt = {key, ms: nowMs}; return walkAt.ms; };
   const alightOf = () => {
     const key = ride ? `${ride.startedMs}:${ride.at}:${ride.train ?? ''}` : '';
-    if (alight.key !== key) alight = {key, sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null};
+    if (alight.key !== key) alight = {key, sawLeg: false, offFixes: 0, fewest: Infinity, ringSeen: null, ringDone: false};
     return alight;
   };
   // 도착 자리(지도 속 도착 표시 · 도착 때 카메라)
@@ -457,9 +460,12 @@ export function createRideAlong({map, geolocate, planner, trainPose, trainLngLat
       // 2호선 성수에서 번호가 바뀐 열차를 이어 탄다(ringEnded) — 바꾸면 내림 셈(alight)은 새 열차로 처음부터
       const ringId = leg.line === '2호선' ? leg.stations.find(id => byId.get(id)?.name === RING_SWAP_STATION) : undefined;
       if (ringId !== undefined) {
-        if (!state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map(item => item.id));
-        const next = state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null;
-        if (next) { ride.train = next; plan = planOf(next); track = plan ? trackOf(plan) : null; state = alightOf(); }
+        // 지도가 옛 번호를 새 번호로 바꿔 뺐으면(live_feed ringRenames) 그 새 번호 — 옛 번호가 성수에 닿기 전에 빠져도 이어 탄다
+        const renamed = ride.train && !state.ringDone && leg.stations.indexOf(ringId) < leg.stations.length - 1 ? trainRenamed(ride.train) : null;
+        if (!renamed && !state.ringDone && !state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map(item => item.id));
+        const next = renamed ?? (state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null);
+        // 이어 탄 새 번호는 성수에 있는 동안 예측이 성수에서 끝나 보여(행선지 성수) 다시 바꾸지 않는다 — 안 그러면 그 뒤 열차로 한 번 더 옮겨 탔다(재생 시험 r01 3132 → 3134)
+        if (next) { ride.train = next; plan = planOf(next); track = plan ? trackOf(plan) : null; state = alightOf(); state.ringDone = true; }
       }
       const late = new Date(nowMs - BOARD_GIVE_UP_MS);   // 먼 내릴 역이 예측에 아직 안 보일 때는 도착 시각 + 3분까지 열차를 따른다
       if (track?.seqIds.some(id => leg.stations.includes(id))) state.sawLeg = true;

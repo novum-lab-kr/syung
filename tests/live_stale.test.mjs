@@ -6,7 +6,7 @@ import {setImmediate} from 'node:timers/promises';
 import {createRouter,key,normStatus,NEW_NAMES} from '../web/lib/routing.mts';
 import {catchup,catchupAt} from '../web/lib/train_catchup.mts';
 import {createTrainPlanner} from '../web/trains/plan.mts';
-import {ARRIVAL_MEMORY_SECONDS,ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,LONG_LAST_LEG_SECONDS,NEAR_END_SECONDS,STALE_SECONDS,createArrivalMemory,staleLimit} from '../web/trains/live_feed.mts';
+import {ARRIVAL_MEMORY_SECONDS,ARRIVED_SECONDS,LAST_LEG_MARGIN_SECONDS,LONG_LAST_LEG_SECONDS,NEAR_END_SECONDS,STALE_SECONDS,createArrivalMemory,createRingRenames,ringRenames,RING_RENAME_SECONDS,staleLimit} from '../web/trains/live_feed.mts';
 
 const html=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 const json=id=>JSON.parse(html.match(new RegExp(`<script[^>]*id="${id}"[^>]*>([\\s\\S]*?)</script>`))[1]);
@@ -146,4 +146,32 @@ test('도착 기억은 지금 규칙을 쓰는 곳(구파발 · 성수 · 구로
   assert.equal(seen(train('6호선','봉화산','도착','봉화산',{trainNo:'6083',receivedAt:'2026-11-27 10:00:00'})),false);
   now=ARRIVAL_MEMORY_SECONDS+1;memory.forgetOld();
   assert.equal(seen(train('6호선','봉화산','출발','봉화산',{trainNo:'6083',receivedAt:'2026-11-27 10:31:00'})),true);
+});
+
+test('2호선 성수 번호 바뀜: 성수에서 끝난 옛 번호는 성수를 떠나는 새 번호가 나오면 뺀다(녹화 11-25 3078 → 3132)',()=>{
+  assert.equal(RING_RENAME_SECONDS,300);
+  const ring=(trainNo,station,status,receivedAt,extra={})=>train('2호선',station,status,'성수',{trainNo,direction:'내선',receivedAt:`2026-11-25 ${receivedAt}`,...extra});
+  const old=ring('3078','성수종착','진입','08:54:37',{destination:'성수종착'}),fresh=ring('3132','성수','출발','08:56:24');
+  assert.deepEqual([...ringRenames([old,fresh])],[['2호선:3078','2호선:3132']]);
+  assert.deepEqual([...ringRenames([ring('2069','성수','도착','08:44:06'),ring('2133','성수','운행 중','08:44:55')])],[['2호선:2069','2호선:2133']]);
+  // 짝이 아니다: 옛 번호보다 먼저 떠난 열차 · 다른 방향 · 5분 넘게 뒤 · 성수지선 · 새 번호가 들어오는 중(진입 · 도착) · 다른 노선
+  assert.equal(ringRenames([old,ring('3130','성수','출발','08:54:20')]).size,0);
+  assert.equal(ringRenames([old,{...fresh,direction:'외선'}]).size,0);
+  assert.equal(ringRenames([old,ring('3132','성수','출발','08:59:38')]).size,0);
+  assert.equal(ringRenames([ring('1502','성수지선','진입','05:39:02',{destination:'성수지선'}),ring('3021','성수','출발','05:40:05')]).size,0);
+  assert.equal(ringRenames([old,ring('3132','성수','진입','08:56:24')]).size,0);
+  assert.equal(ringRenames([{...old,line:'7호선'},{...fresh,line:'7호선'}]).size,0);
+  // 새 번호 하나에 옛 번호 하나 — 승강장에 서 있던 것은 가장 늦게 닿은 열차
+  assert.deepEqual([...ringRenames([ring('2067','성수','운행 중','08:40:54'),ring('2069','성수','운행 중','08:44:06'),ring('2133','성수','출발','08:44:55')])],[['2호선:2069','2호선:2133']]);
+});
+test('2호선 성수 번호 바뀜: 새 번호가 성수를 떠나도 옛 번호의 같은 기록은 계속 빼고, 옛 번호에 새 기록이 오면 다시 보인다',()=>{
+  const ring=(trainNo,station,status,receivedAt)=>train('2호선',station,status,'성수',{trainNo,direction:'내선',receivedAt:`2026-11-25 ${receivedAt}`});
+  const rings=createRingRenames(),ids=list=>rings.apply(list).map(t=>t.trainNo);
+  const old=ring('3078','성수','도착','08:54:37');
+  assert.deepEqual(ids([old]),['3078']);
+  assert.deepEqual(ids([old,ring('3132','성수','출발','08:56:24')]),['3132']);
+  assert.equal(rings.renamed('2호선:3078'),'2호선:3132');
+  assert.deepEqual(ids([old,ring('3132','건대입구','도착','08:57:40')]),['3132']);   // 새 번호가 다음 역으로 가도
+  assert.deepEqual(ids([ring('3078','뚝섬','운행 중','08:58:00'),ring('3132','건대입구','출발','08:58:41')]),['3078','3132']);   // 옛 번호가 다시 달리면
+  assert.equal(rings.renamed('2호선:3078'),null);
 });
