@@ -91,8 +91,12 @@ export function createRingRenames(){
   let links=new Map<string,{to:string;receivedAt:string|null}>();
   function apply(list:readonly LiveTrain[]):LiveTrain[]{
     const byId=new Map(list.map(t=>[`${t.line}:${t.trainNo}`,t])),next=new Map<string,{to:string;receivedAt:string|null}>();
-    for(const [from,link] of links)if(byId.get(from)?.receivedAt===link.receivedAt&&byId.has(link.to))next.set(from,link);
-    for(const [from,to] of ringRenames(list))if(!next.has(from))next.set(from,{to,receivedAt:byId.get(from)!.receivedAt});
+    for(const [from,link] of links)if(byId.get(from)?.receivedAt===link.receivedAt&&byId.has(link.to))next.set(from,{...link});
+    // 이어 둔 A→B 의 B 가 새 짝 B→C 의 옛 번호가 되면 A 도 C 를 가리킨다(A · B 가 다 빠진 채 A 가 지도에 없는 B 를 가리켰다 — PR #186 리뷰).
+    //  B 를 후보에서 빼지 않는다: 운행중은 닿은 기록 · 떠나는 기록 둘 다라 먼저 생긴 잘못된 짝(2067 → 2069)을 B→C(2069 → 2133)가 바로잡는다(11-25 녹화 — 빼면 겹침 9 → 24번)
+    const fresh=ringRenames(list);
+    for(const link of next.values()){const to=fresh.get(link.to);if(to)link.to=to}
+    for(const [from,to] of fresh)if(!next.has(from))next.set(from,{to,receivedAt:byId.get(from)!.receivedAt});
     links=next;
     return links.size?list.filter(t=>!links.has(`${t.line}:${t.trainNo}`)):[...list];
   }

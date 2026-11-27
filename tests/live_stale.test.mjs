@@ -175,3 +175,14 @@ test('2호선 성수 번호 바뀜: 새 번호가 성수를 떠나도 옛 번호
   assert.deepEqual(ids([ring('3078','뚝섬','운행 중','08:58:00'),ring('3132','건대입구','출발','08:58:41')]),['3078','3132']);   // 옛 번호가 다시 달리면
   assert.equal(rings.renamed('2호선:3078'),null);
 });
+test('2호선 성수 번호 바뀜: 이어 둔 A→B 의 B 가 새 짝 B→C 가 되면 A 도 지도에 있는 C 를 가리킨다(A · B 가 다 빠진 채 A 가 B 를 가리켰다 — PR #186 리뷰)',()=>{
+  const ring=(trainNo,station,status,receivedAt)=>train('2호선',station,status,'성수',{trainNo,direction:'내선',receivedAt:`2026-11-25 ${receivedAt}`});
+  const rings=createRingRenames(),ids=list=>rings.apply(list).map(t=>t.trainNo);
+  const a=ring('3078','성수','도착','08:54:37');
+  assert.deepEqual(ids([a,ring('3132','성수','출발','08:56:24')]),['3132']);
+  const drawn=ids([a,ring('3132','성수','운행 중','08:57:10'),ring('3134','성수','출발','08:58:02')]);
+  assert.deepEqual(drawn,['3134']);
+  assert.equal(rings.renamed('2호선:3078'),'2호선:3134');   // A 를 타던 사람이 따라갈 번호가 지도에 있다
+  assert.equal(rings.renamed('2호선:3132'),'2호선:3134');
+  assert.ok(drawn.includes(rings.renamed('2호선:3078').split(':')[1]));
+});

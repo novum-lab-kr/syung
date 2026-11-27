@@ -461,10 +461,11 @@ export function createRideAlong({trainRenamed = () => null, map, geolocate, plan
       const ringId = leg.line === '2호선' ? leg.stations.find(id => byId.get(id)?.name === RING_SWAP_STATION) : undefined;
       if (ringId !== undefined) {
         // 지도가 옛 번호를 새 번호로 바꿔 뺐으면(live_feed ringRenames) 그 새 번호 — 옛 번호가 성수에 닿기 전에 빠져도 이어 탄다
-        const renamed = ride.train && !state.ringDone && leg.stations.indexOf(ringId) < leg.stations.length - 1 ? trainRenamed(ride.train) : null;
+        //  지도의 짝은 이어 탄 뒤에도 따른다: 이어 둔 짝이 B → C 로 옮겨지면(live_feed createRingRenames) 이미 B 로 이어 탄 사람도 C 로 넘어간다
+        const renamed = ride.train && leg.stations.indexOf(ringId) < leg.stations.length - 1 ? trainRenamed(ride.train) : null;
         if (!renamed && !state.ringDone && !state.ringSeen && ringEnded(track, leg.stations, ringId)) state.ringSeen = new Set(lineTracks(leg).map(item => item.id));
         const next = renamed ?? (state.ringSeen ? ringSuccessor(lineTracks(leg), leg.stations, ringId, state.ringSeen) : null);
-        // 이어 탄 새 번호는 성수에 있는 동안 예측이 성수에서 끝나 보여(행선지 성수) 다시 바꾸지 않는다 — 안 그러면 그 뒤 열차로 한 번 더 옮겨 탔다(재생 시험 r01 3132 → 3134)
+        // 이어 탄 새 번호는 성수에 있는 동안 예측이 성수에서 끝나 보여(행선지 성수) 성수에서 끝남(ringEnded)으로는 다시 바꾸지 않는다 — 안 그러면 그 뒤 열차로 한 번 더 옮겨 탔다(재생 시험 r01 3132 → 3134)
         if (next) { ride.train = next; plan = planOf(next); track = plan ? trackOf(plan) : null; state = alightOf(); state.ringDone = true; }
       }
       const late = new Date(nowMs - BOARD_GIVE_UP_MS);   // 먼 내릴 역이 예측에 아직 안 보일 때는 도착 시각 + 3분까지 열차를 따른다
