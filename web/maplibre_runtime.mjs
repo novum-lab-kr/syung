@@ -700,8 +700,14 @@ var gpsWatch = ownGpsWatch(geolocate, () => navigator.geolocation, GPS, {
 	maximumAge: 3e4
 });
 var labelFade = map._fadeDuration;
+var rideQuiet = false;
+var followQuiet = () => false;
+Object.defineProperty(map, "_fadeDuration", {
+	configurable: true,
+	get: () => rideQuiet || followQuiet() ? 0 : labelFade
+});
 function quietLabels(on) {
-	map._fadeDuration = on ? 0 : labelFade;
+	rideQuiet = on;
 }
 function rideInfoScreen(on) {
 	if (on === rideInfoOn) return;
@@ -1495,6 +1501,7 @@ var sheetUI = createBottomSheet({
 	laneOffsetPx,
 	animFrame,
 	FOLLOW_FPS,
+	trainFrameSoon,
 	fitRoute: (bottom) => fitRoute(bottom),
 	live: {
 		get frameMs() {
@@ -1527,6 +1534,7 @@ var sheetUI = createBottomSheet({
 	}
 });
 var { sheet, sheetBody, followBtn, openSheetView, closeSheet, sheetBusy, sheetPad, trainLngLat, follow, followBusStart, followSoon } = sheetUI;
+followQuiet = () => !!(sheetUI.following || sheetUI.followBus);
 var journeyMap = createJourneyMap({
 	map,
 	maplibregl,

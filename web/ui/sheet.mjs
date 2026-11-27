@@ -1,7 +1,7 @@
 import { createElement as k, render as K } from "../npm/preact/dist/preact.mjs";
 import { SheetFrame } from "../components/sheet_frame.mjs";
 // web/ui/sheet.mts
-function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, laneOffsetPx, animFrame, FOLLOW_FPS, fitRoute, live }) {
+function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, laneOffsetPx, animFrame, FOLLOW_FPS, trainFrameSoon, fitRoute, live }) {
 	const sheet = document.createElement("section");
 	sheet.className = "sheet";
 	sheet.hidden = true;
@@ -341,6 +341,27 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 	});
 	const FOLLOW_EASE = .25;
 	let followAt = "", followRaf = 0, followLast = 0, cam = null, camAt = 0;
+	const FOLLOW_STEP_PX = 1;
+	let camLast = null, padLast = -1, camMoved = false;
+	function followCamTo(at) {
+		const pad = sheetPad();
+		if (camLast && pad === padLast) {
+			const world = 512 * 2 ** map.getZoom(), from = maplibregl.MercatorCoordinate.fromLngLat(camLast), to = maplibregl.MercatorCoordinate.fromLngLat(at);
+			if (Math.hypot(to.x - from.x, to.y - from.y) * world < FOLLOW_STEP_PX) return;
+		}
+		camLast = at;
+		padLast = pad;
+		camMoved = true;
+		map.jumpTo({
+			center: at,
+			padding: {
+				top: 0,
+				bottom: pad,
+				left: 0,
+				right: 0
+			}
+		});
+	}
 	function followSoon() {
 		if (!followRaf) followRaf = requestAnimationFrame(followLoop);
 	}
@@ -365,6 +386,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		};
 		camAt = performance.now();
 		followAt = "";
+		camLast = null;
 		return true;
 	};
 	function followLoop(ts) {
@@ -378,8 +400,10 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 		}
 		followLast = ts;
 		if (live.rider.ride) planner.setFrame(ts);
+		camMoved = false;
 		for (const f of animFrame) f();
-		map.triggerRepaint();
+		if (camMoved || live.rider.ride || followBus || live.rideFollow) map.triggerRepaint();
+		else trainFrameSoon(0);
 		if (followBus) followSoon();
 	}
 	animFrame.push(() => {
@@ -398,18 +422,7 @@ function createBottomSheet({ map, maplibregl, planner, trackPoint, trainPose, la
 			};
 		}
 		camAt = now;
-		const k = `${cam.lng.toFixed(7)},${cam.lat.toFixed(7)}`;
-		if (k === followAt) return;
-		followAt = k;
-		map.jumpTo({
-			center: cam,
-			padding: {
-				top: 0,
-				bottom: sheetPad(),
-				left: 0,
-				right: 0
-			}
-		});
+		followCamTo(cam);
 	});
 	animFrame.push(() => {
 		if (!followBus || easing || handsOn()) return;
