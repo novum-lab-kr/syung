@@ -417,6 +417,20 @@ export function boardedPick(tracks:readonly { id:string; track:PlanTrack }[], st
   }
   return best?.id ?? null;
 }
+// 2호선은 성수에서 열차 번호가 바뀐다(같은 열차가 새 번호로 계속 돈다 — 2026-11-25 녹화: 성수에서 끝난 번호 246 가운데 173 이 5분 안에 새 번호로 성수를 떠남, 3078 → 3132).
+//  지도 예측은 행선지 「성수」 열차를 성수에 세워 두고 새 번호는 따로 그려, 성수 너머로 타고 가면 탄 열차를 놓쳐 시각으로만 내렸다(2026-11-27 재생 시험 시청 → 잠실)
+// ringEnded: 탄 열차 예측이 성수에서 끝났다(마지막 역이 성수 · 닿음) — 구간이 성수 너머로 갈 때만(성수에서 내리면 이어 탈 것이 없다)
+export const RING_SWAP_STATION = '성수';
+export function ringEnded(track:PlanTrack | null, stations:readonly number[], ringId:number):boolean {
+  const at = stations.indexOf(ringId);
+  return !!track && at >= 0 && at < stations.length - 1 && track.seqIds[track.seqIds.length - 1] === ringId && reached(track, ringId);
+}
+// 이어 탈 열차: 끝난 때 이미 지도에 있던 열차(seen — 앞차와, 앞차가 성수에서 바꾼 번호)가 아니고 성수 너머 구간을 가는 열차 가운데 성수에 가장 가까운 것(없으면 null)
+//  (끝난 때 성수 너머를 가던 열차만 빼면 성수에 서 있던 앞차의 새 번호를 골랐다 — 재생 시험 3078 끝 → 6130(3076 의 새 번호)을 붙듦)
+export function ringSuccessor(tracks:readonly { id:string; track:PlanTrack }[], stations:readonly number[], ringId:number, seen:ReadonlySet<string>):string | null {
+  const rest = stations.slice(Math.max(0, stations.indexOf(ringId)));
+  return boardedPick(tracks.filter(({id}) => !seen.has(id)), rest);
+}
 // 이번 역 줄 바로 뒤가 같은 구간의 역 줄인가(갈아타기 줄 · 다른 구간이면 달리는 표시를 하지 않는다)
 function nextIsStop(rows:readonly RideListRow[], at:number):boolean {
   const now = rows[at], next = rows[at + 1];
@@ -523,6 +537,16 @@ export function legOverByTime(legs:readonly RideLeg[], index:number, now:Date, p
   if (!next) return passed(planArrives);
   if (next.type === 'walk') return false;
   return passed(next.departs, next.wait / 60);
+}
+
+// 걷기를 시각으로 끝낼 때(위치를 못 쓸 때 — ui/ride_along 걷기): 지하철에서 내린 뒤의 마지막 걷기는 계획 도착 시각이 지났고 걷기를 시작한 뒤(walkSinceMs) 걷는 시간 + (내린 역 밖으로 나오는 시간)도 지났을 때
+//  (계획보다 늦은 열차를 타 늦게 내리면 계획 도착 시각이 이미 지나 지하에서 내리자마자 「슝 도착!」이 떴다 — 2026-11-27 재생 시험 시청 → 잠실 6분 늦게 내림)
+//  그 밖의 걷기(마지막이 아니거나 · 걷기만 · 버스에서 내린 뒤)는 legOverByTime 그대로
+export function walkOverByTime(legs:readonly RideLeg[], index:number, now:Date, planArrives:string, walkSinceMs:number):boolean {
+  if (!legOverByTime(legs, index, now, planArrives)) return false;
+  const leg = legs[index];
+  if (leg?.type !== 'walk' || legs[index + 1] || legs[index - 1]?.type !== 'ride' || !Number.isFinite(leg.seconds)) return true;
+  return now.getTime() - walkSinceMs >= (leg.seconds + STATION_ACCESS_S) * 1000;
 }
 
 // ---- 지하철 진행 판단(ui/ride_along 의 tick 이 부른다 — 시험으로 멈춤 · 잘못 고름을 막는다)
@@ -647,6 +671,9 @@ export function arrivalFits(row:ArrivalRowLike, leg:RideTrainLeg, trainSeq:reado
   }
   if (!row.destination) return true;
   const destination = bareName(row.destination);
+  // 2호선 순환열차: 곧 올 열차 줄은 행선지를 「성수」로 적지만 성수를 지나 계속 돈다(routing ring2 · live_stale 「계속 달리는 성수」) — 이름으로 빼지 않는다
+  //  (안 그러면 성수 너머로 가는 2호선 구간은 순환열차가 다 빠져 곧 올 열차 없이 탈 시각으로만 넘겼다 — 2026-11-27 재생 시험 시청→잠실)
+  if (row.line === '2호선' && destination === '성수') return true;
   return !leg.stations.slice(0, -1).some(id => { const name = nameOf(id); return !!name && bareName(name) === destination; });
 }
 
