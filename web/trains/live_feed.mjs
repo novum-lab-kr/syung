@@ -1,14 +1,20 @@
 import { serverUrl } from "../lib/server_url.mjs";
 var LONG_LAST_LEG_SECONDS = 1200;
 var KEEP_ARRIVED = /* @__PURE__ */ new Set(["3호선:구파발"]);
+var SLOW_ARRIVED = /* @__PURE__ */ new Set([
+	"2호선:성수",
+	"1호선:구로",
+	"1호선:동묘앞"
+]);
 var KEEP_DEPARTED = /* @__PURE__ */ new Set(["4호선:사당"]);
 var LONG_LAST_LEG = /* @__PURE__ */ new Set(["7호선:천왕", "7호선:강남구청"]);
+var normStatus = (t) => String(t.status || "").replace(/\s/g, "");
 function staleLimit(t, leg) {
 	if (t.departsAt) return 600;
-	const status = String(t.status || "").replace(/\s/g, ""), place = `${t.line}:${t.station}`;
+	const status = normStatus(t), place = `${t.line}:${t.station}`;
 	if (leg.atDestination) {
 		if (KEEP_ARRIVED.has(place)) return 600;
-		if (status === "도착") return 180;
+		if (status === "도착") return SLOW_ARRIVED.has(place) ? 180 : 0;
 		if (status === "진입" || status === "출발" && !KEEP_DEPARTED.has(place)) return 360;
 		return 600;
 	}
@@ -17,8 +23,42 @@ function staleLimit(t, leg) {
 	if (status === "도착" || status === "진입") return Math.min(600, leg.lastLegSeconds + 360);
 	return 600;
 }
+var ARRIVAL_MEMORY_SECONDS = 1800;
+var AFTER_ARRIVAL = /* @__PURE__ */ new Set([
+	"도착",
+	"출발",
+	"운행중"
+]);
+function createArrivalMemory(age) {
+	const arrived = /* @__PURE__ */ new Map();
+	function finished(t, leg) {
+		const id = `${t.line}:${t.trainNo}`, status = normStatus(t), last = arrived.get(id);
+		if (leg.atDestination && status === "도착" && t.receivedAt && staleLimit(t, leg) === 0) {
+			if (!last || last.station !== t.station || last.destination !== t.destination || t.receivedAt > last.receivedAt) arrived.set(id, {
+				station: t.station,
+				destination: t.destination,
+				receivedAt: t.receivedAt
+			});
+			return true;
+		}
+		if (!last) return false;
+		if (last.station !== t.station || last.destination !== t.destination) {
+			arrived.delete(id);
+			return false;
+		}
+		return AFTER_ARRIVAL.has(status) && !!t.receivedAt && t.receivedAt >= last.receivedAt;
+	}
+	function forgetOld() {
+		for (const [id, last] of arrived) if (age(last.receivedAt) > 1800) arrived.delete(id);
+	}
+	return {
+		finished,
+		forgetOld
+	};
+}
 function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, hasPlans, age, destinationLeg, updateLiveNotice, onTrains, onClear, journeyLines = () => null, onState }) {
 	let trains = [], request = 0, on = false, failures = 0, key = "", at = 0, fetchedAt = null;
+	const arrivals = createArrivalMemory(age);
 	function liveLines() {
 		const journey = journeyLines();
 		if (journey) {
@@ -64,7 +104,11 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 			if (mine !== request) return;
 			if (!r.ok || !d.ok) throw Error(d.error || r.status);
 			const all = d.trains || [];
-			trains = all.filter((t) => age(t.receivedAt) <= staleLimit(t, destinationLeg(t)));
+			arrivals.forgetOld();
+			trains = all.filter((t) => {
+				const leg = destinationLeg(t);
+				return !arrivals.finished(t, leg) && age(t.receivedAt) <= staleLimit(t, leg);
+			});
 			const stale = all.length - trains.length;
 			fetchedAt = d.fetchedAt;
 			failures = 0;
@@ -122,4 +166,4 @@ function createLiveFeed({ map, stations, liveState, getSelected, getSheetTrain, 
 		}
 	};
 }
-export { LONG_LAST_LEG_SECONDS, createLiveFeed, staleLimit };
+export { ARRIVAL_MEMORY_SECONDS, LONG_LAST_LEG_SECONDS, createArrivalMemory, createLiveFeed, staleLimit };
