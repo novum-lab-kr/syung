@@ -9,7 +9,10 @@ var retro_default = {
 			pixel: { enabled: true },
 			fov: 12
 		},
-		city: { pack: RETRO_DELTA }
+		city: {
+			zoomOutBasic: false,
+			pack: RETRO_DELTA
+		}
 	}
 };
 export { retro_default as default };

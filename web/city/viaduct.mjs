@@ -620,6 +620,9 @@ var CityViaduct = class {
 	routeOpacity(focus) {
 		return routeOpacityExpr(focus, this.pack);
 	}
+	deckFrom() {
+		return this.V.lod.deck[0];
+	}
 	deckFade() {
 		const [z0, z1] = this.V.lod.deck;
 		return [

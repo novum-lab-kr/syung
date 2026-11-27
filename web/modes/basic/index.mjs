@@ -26,6 +26,7 @@ var basic_default = {
 		city: {
 			enabled: false,
 			heritage: false,
+			zoomOutBasic: false,
 			groundTexture: false,
 			xray: false,
 			tone: "simcity",

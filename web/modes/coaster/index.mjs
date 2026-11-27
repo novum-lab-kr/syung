@@ -11,7 +11,8 @@ var coaster_default = {
 		city: {
 			xray: false,
 			tone: "coaster",
-			lampPool: null
+			lampPool: null,
+			zoomOutBasic: false
 		},
 		track: { kind: "coaster" },
 		trains: {

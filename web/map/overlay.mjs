@@ -272,6 +272,9 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				bodyPx: trainBodyPx(zoom),
 				journey: journeyMap.journeyRides()
 			})) trainFrameSoon(50);
+		}
+		if (S.city.enabled) {
+			const zoom = map.getZoom();
 			live.cityLandmarks?.render(gl, pd.mainMatrix, {
 				zoom,
 				dark: effectiveTheme() === "dark",

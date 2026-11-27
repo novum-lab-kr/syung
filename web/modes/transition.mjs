@@ -17,7 +17,7 @@ var CITY_FAMILY = Object.freeze([
 	...STARCRAFT,
 	...NATIONS
 ]);
-function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = "basic" }) {
+function createModeController({ registry, prepare, commit, onRequest = () => {}, onFail = () => {}, clock, root = "basic", view = (S) => S }) {
 	let current = root, desired = root, seq = 0, speed = 1, warp = 0, warpAt = 0, S = registry.settings(root);
 	function request(id, { speed: sp } = {}) {
 		if (!registry.has(id)) throw new Error(`${id}: 없는 모드`);
@@ -106,7 +106,7 @@ function createModeController({ registry, prepare, commit, onRequest = () => {},
 		get seq() {
 			return seq;
 		},
-		settings: (user) => user == null ? S : registry.settings(current, user)
+		settings: (user) => view(user == null ? S : registry.settings(current, user))
 	};
 }
 export { CITY_FAMILY, NATIONS, STARCRAFT, createModeController };

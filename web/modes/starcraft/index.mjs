@@ -6,6 +6,7 @@ var TERRAN = {
 	label: "테란",
 	settings: {
 		city: {
+			zoomOutBasic: false,
 			pack: TERRAN_DELTA,
 			life: { units: {
 				people: [
@@ -42,6 +43,7 @@ var ZERG = {
 	label: "저그",
 	settings: {
 		city: {
+			zoomOutBasic: false,
 			pack: ZERG_DELTA,
 			groundTexture: true,
 			life: { units: {
@@ -77,6 +79,7 @@ var PROTOSS = {
 	label: "프로토스",
 	settings: {
 		city: {
+			zoomOutBasic: false,
 			pack: PROTOSS_DELTA,
 			life: { units: {
 				people: [

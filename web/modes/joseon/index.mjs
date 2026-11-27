@@ -6,6 +6,7 @@ var joseon_default = {
 	label: "조선",
 	settings: {
 		city: {
+			zoomOutBasic: false,
 			pack: JOSEON_DELTA,
 			groundTexture: true,
 			life: {

@@ -16,6 +16,7 @@ var GREECE = {
 	from: "simcity",
 	label: "그리스",
 	settings: { city: {
+		zoomOutBasic: false,
 		heritage: false,
 		pack: withModels(GREECE_DELTA, "greece")
 	} }
@@ -25,6 +26,7 @@ var NETHERLANDS = {
 	from: "simcity",
 	label: "네덜란드",
 	settings: { city: {
+		zoomOutBasic: false,
 		heritage: false,
 		pack: withModels(NETHERLANDS_DELTA, "netherlands")
 	} }
@@ -34,6 +36,7 @@ var PARIS = {
 	from: "simcity",
 	label: "파리",
 	settings: { city: {
+		zoomOutBasic: false,
 		heritage: false,
 		pack: withModels(PARIS_DELTA, "paris")
 	} }
@@ -43,6 +46,7 @@ var EGYPT = {
 	from: "simcity",
 	label: "이집트",
 	settings: { city: {
+		zoomOutBasic: false,
 		heritage: false,
 		pack: withModels(EGYPT_DELTA, "egypt")
 	} }

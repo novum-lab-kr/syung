@@ -8,7 +8,8 @@ var simcity_default = {
 		city: {
 			enabled: true,
 			xray: true,
-			heritage: true
+			heritage: true,
+			zoomOutBasic: true
 		},
 		track: { kind: "viaduct" },
 		trains: { body: "slim" },

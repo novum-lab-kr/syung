@@ -56,6 +56,7 @@ import "./modes/merge.mjs";
 import { createModeRegistry } from "./modes/index.mjs";
 import { createUserPrefs } from "./user/prefs.mjs";
 import { CITY_FAMILY, NATIONS, STARCRAFT, createModeController } from "./modes/transition.mjs";
+import { zoomOutSettings } from "./modes/zoom_out.mjs";
 import "./modes/basic/palette.mjs";
 import basic_default from "./modes/basic/index.mjs";
 import simcity_default from "./modes/simcity/index.mjs";
@@ -839,9 +840,11 @@ function appStatus() {
 function appFollow() {
 	appBridge?.followChanged(sheetUI.following ?? sheetUI.followBus ?? null);
 }
+var zoomedOut = false;
 var modeCtl = createModeController({
 	registry: modes,
 	clock: () => clock(),
+	view: (S) => zoomedOut ? zoomOutSettings(S, modes.settings("basic")) : S,
 	prepare: (id) => prepareMode(id),
 	onRequest: (want, now) => {
 		showModeButtons(want);
@@ -2790,6 +2793,28 @@ function applySimcity(on, id = "simcity") {
 	wallsNow();
 	map.triggerRepaint();
 }
+function syncZoomOut() {
+	const want = map.getZoom() < cityViaduct.deckFrom();
+	if (want === zoomedOut) return;
+	const was = modeCtl.settings().track;
+	zoomedOut = want;
+	if (modeCtl.settings().track === was) return;
+	setRouteOpacity();
+	planner.rebuild();
+	lastPose.clear();
+	map.getSource("routes")?.setData({
+		type: "FeatureCollection",
+		features: buildLineFeatures()
+	});
+	if (map.getSource("stations")) {
+		map.getSource("stations").setData({
+			type: "FeatureCollection",
+			features: buildStationFeatures()
+		});
+		rebuildLabels();
+	}
+	map.triggerRepaint();
+}
 function offFamily(ids) {
 	if (ids.includes(modeCtl.current)) return modeCtl.request("basic");
 	if (ids.includes(modeCtl.desired)) modeCtl.cancel();
@@ -2860,6 +2885,8 @@ settingsMenu.on({ switches: {
 	toggleSaver: () => setSaver(!saverOn)
 } });
 {
+	map.on("zoom", syncZoomOut);
+	syncZoomOut();
 	map.on("zoom", appStatus);
 	appStatus();
 	const btn = $("settingsButton"), panel = $("settingsPanel");
