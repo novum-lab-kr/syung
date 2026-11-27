@@ -363,25 +363,16 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
         const ratio=car/unit/bodyPx,separate=!icon&&(c88||ratio>=1.5);   // on the coaster: always car by car, so the train bends over the hills
         const unfold=c88?1:smooth(Math.max(0,Math.min(1,(ratio-1.5)/.9))),gap=1.4*unit*unfold;
         const start=P(tail),finish=P(tail+total);
-        // 심시티: at the LOD boundary, car chords coincide with the compact icon's chord, then articulate.
-        // 기본 모드: 칸 끝은 늘 선로 위 점(P(d))에 둔다 — 곡선에서 곧은 막대로 모으지 않는다. 틈 · 지붕 이음만 unfold 로 자란다.
-        const follow=K==='viaduct'?unfold:1;
-        const articulated=(d:number)=>{
-          const q=P(d),t=(d-tail)/total;
-          q.x=(start.x+(finish.x-start.x)*t)*(1-follow)+q.x*follow;
-          q.y=(start.y+(finish.y-start.y)*t)*(1-follow)+q.y*follow;
-          q.h=(start.h+(finish.h-start.h)*t)*(1-follow)+q.h*follow;
-          return q;
-        };
-        // 기본 모드 낮은 줌: 칸이 짧으면 몇 칸을 한 마디(몸 폭 0.8배 이상)로 묶어 휘게 그린다
-        const bends=K!=='ground'||icon?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
+        // 칸 끝은 늘 선로 위 점(P(d))에 둔다 — 곡선에서 곧은 막대로 모으지 않는다(심시티 고가도 2026-11-27). 틈 · 지붕 이음만 unfold 로 자란다.
+        // 낮은 줌: 칸이 짧으면 몇 칸을 한 마디(몸 폭 0.8배 이상)로 묶어 휘게 그린다 — 기본 · 심시티 고가 같이(롤코는 늘 칸마다라 뺀다)
+        const bends=K==='coaster'||icon?1:Math.max(1,Math.min(n,Math.floor(total/unit/(bodyPx*.8))));
         if(separate){
           // Painter order follows camera ground direction; no hidden back wall can bleed through.
           const forward=mid.f[0]!*camX+mid.f[1]!*camY>=0;
           for(let k=0;k<n;k++){
             const j=forward?k:n-1-k;
             if(c88){const c=coasterCarFrame(P,tail,car,j,n,unit,bodyPx,lanePx,gap);if(c){this.fr=c.fr;(snap&&snap.j===j?this.c88ride:this.c88)?.car(c.fr,c.L,bodyPx,color,j===n-1,j===0,plan.id,j,plan.t.line,snap&&snap.j===j?snap.k:-1)}continue}   // coaster-train: route badge + stable riders on the 88열차 car; no beam or gangways (1인칭: 내 자리는 비워요)
-            const A=articulated(tail+j*car+(j?gap/2:0)),B=articulated(tail+(j+1)*car-(j<n-1?gap/2:0));if(K==='viaduct')this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
+            const A=P(tail+j*car+(j?gap/2:0)),B=P(tail+(j+1)*car-(j<n-1?gap/2:0));if(K==='viaduct')this.h0=(A.h+B.h)/2;   // city-life: 심시티 — each car at the deck's height under it (on a ramp between levels the train tilts car by car)
             const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy);if(len<unit*.1)continue;
             const gl2=Math.hypot(dx,dy)||1e-12,tx=dx/gl2,ty=dy/gl2,L=len/unit,off=((A.off+B.off)/2+lanePx)*unit;
             this.cx=A.x-ty*off;this.cy=A.y+tx*off;this.tx=tx;this.ty=ty;this.length=L;this.carPx=0;
@@ -405,7 +396,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
             if(front){this.roof(b,L,H,NOSE_Z,w);this.beam(L,w)}
           }
         }else if(bends>1){
-          // 기본 모드, 칸이 몸 폭 1.5배보다 짧을 때: 곧은 아이콘과 같은 모양 · 셰이더 칸 줄(carPx)을 마디마다 나눠 그려 선로를 따라 휜다.
+          // 기본 · 심시티 고가, 칸이 몸 폭 1.5배보다 짧을 때: 곧은 아이콘과 같은 모양 · 셰이더 칸 줄(carPx)을 마디마다 나눠 그려 선로를 따라 휜다.
           // 마디 끝은 그 점의 선로 법선으로 차선만큼 띄워, 이웃 마디와 같은 점에서 만난다. 틈 · 지붕 이음은 없다(한 몸).
           const w=bodyPx/2,nose=bodyPx*.48,low=H*.44,Wm=w+MARGIN,cut:TrackPt[]=[],dir:[number, number, number][]=[];
           for(let i=0;i<=bends;i++){const q=P(tail+Math.round(i*n/bends)*car),o=(q.off+lanePx)*unit;q.x+=q.r[0]!*o;q.y+=q.r[1]!*o;cut.push(q)}
@@ -416,6 +407,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
           const forward=mid.f[0]!*camX+mid.f[1]!*camY>=0;
           for(let k=0;k<bends;k++){
             const j=forward?k:bends-1-k,A=cut[j]!,[tx,ty,len]=dir[j]!;if(len<unit*.1)continue;
+            if(K==='viaduct')this.h0=(A.h+cut[j+1]!.h)/2;   // 심시티: 마디마다 그 아래 고가 높이(층 사이 경사에서는 마디째 기운다)
             const back=j===0,front=j===bends-1,cars=Math.round((j+1)*n/bends)-Math.round(j*n/bends),S=len/unit,carPx=S/cars;
             let sA=back?0:slope(dir[j]!,dir[j-1]!),sB=front?0:slope(dir[j]!,dir[j+1]!);
             const squeeze=Wm*(Math.abs(sA)+Math.abs(sB))/(S*.9);if(squeeze>1){sA/=squeeze;sB/=squeeze}   // 아주 짧은 마디: 안쪽 모서리가 엇갈리지 않게
