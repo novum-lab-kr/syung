@@ -91,6 +91,24 @@ test('planTrain: 완행은 배운 대피 대기(waits — 역 · 방향 · 출�
   assert.equal(standAt(rush,3),140,'출퇴근에는 다에서 대피');
 });
 
+test('planTrain: 출퇴근 밖(주말 종일)에는 배운 정차(stops · zone)에 dayZone 을 더하고, 대피(waits) 역 · 출퇴근은 그대로',async t=>{
+  // 수요일 13:00 KST(낮) · 08:00 KST(출퇴근) · 토요일 08:00 KST(주말은 종일 출퇴근 밖)
+  const day=Date.parse('2026-10-21T13:00:00+09:00'),rushAt=Date.parse('2026-10-21T08:00:00+09:00'),weekend=Date.parse('2026-10-24T08:00:00+09:00');let now=day;
+  t.mock.method(Date,'now',()=>now);
+  const {planner}=await setup(t,{lines:{'9호선':{zone:60,stops:{'3':70},waits:{'2:하행:day':200},dayZone:-3}},default:{pace:1,zone:62,approach:40}});
+  const train=record({station:'가'}),standAt=(p,id)=>p.phases.find(ph=>Number.isFinite(ph.dur)&&ph.k0===0&&ph.k1===0&&ph.from.id===id).dur;
+  // zone 60: 감속 20 · 정차 20. 다는 stops 70 → 정차 30, 낮에는 −3
+  assert.equal(standAt(planner.planTrain(train),3),27,'낮에는 역 정차에 dayZone');
+  assert.equal(standAt(planner.planTrain(train),2),160,'대피 역은 waits 그대로(dayZone 을 더하지 않는다)');
+  assert.equal(standAt(planner.planTrain({...train,direction:'상행'}),2),17,'waits 가 없는 방향은 노선 zone 에 dayZone');
+  const arrived=planner.planTrain(record({station:'다',status:'도착'}));
+  assert.equal(standAt(arrived,3),27,'도착 기록의 역도 같은 셈(감속은 그대로)');
+  now=rushAt;
+  assert.equal(standAt(planner.planTrain(train),3),30,'출퇴근에는 그대로');
+  now=weekend;
+  assert.equal(standAt(planner.planTrain(train),3),27,'주말은 아침에도 출퇴근 밖');
+});
+
 test('rebuild · clear · plans: 현재 배열 참조를 그대로 읽고 교체한다',async t=>{
   const {planner,setTrains}=await setup(t),initial=planner.plans;
   assert.equal(planner.plans,initial);

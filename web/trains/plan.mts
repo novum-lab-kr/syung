@@ -8,7 +8,7 @@ import type { LiveTrain, MapStation, Merc, Phase, TrackGeom, TrainPlan } from '.
 
 // 노선마다 배운 실시간 시간(live-timing.json · pipeline/build_live_timing.py): 이 파일이 읽는 칸
 interface LineTiming { pace:number; zone:number; approach:number; rushPace?:number; stand?:number;
-  stops?:Record<string,number>; waits?:Record<string,number>; runs?:Record<string,number> }
+  stops?:Record<string,number>; waits?:Record<string,number>; runs?:Record<string,number>; dayZone?:number }
 interface LiveTiming { lines:Record<string,Partial<LineTiming>>; default:LineTiming }
 export interface TrainPlannerDeps {
   stations:MapStation[]; stationByLine:Map<string,MapStation>; key:(v:unknown)=>string; normStatus:(v:unknown)=>string;
@@ -83,7 +83,10 @@ export function createTrainPlanner({stations,stationByLine,key,normStatus,route,
     // busy stations stand longer than the line (live-timing stops: 2호선 강남 83 s against 75): the difference goes on the standing
     // 완행은 급행을 보내려고 서는 역(대피)이 방향 · 출퇴근마다 따로 있다(live-timing waits — 9호선 가양 · 동작 · 샛강 · 사평 · 송파나루 약 200초).
     // 역 하나로 섞어 배운 70~90초만 서면 대피 중인 열차를 2~3분 먼저 떠나보내 세 역 앞까지 갔다(화면 재현 9호선, 2026-10-22)
-    const period=rushNow()?'rush':'day',zoneAt=(st:MapStation)=>(t.express?null:tm.waits?.[`${st.id}:${t.direction}:${period}`])??tm.stops?.[st.id]??tm.zone;
+    // 출퇴근 밖(주말은 종일)은 정차가 짧다(live-timing dayZone — 2호선 −3 s): waits 를 쓰지 않는 역에만 더한다(build_live_timing.py stand 와 같은 규칙).
+    // 하루 통틀어 배운 stops 는 출퇴근 쪽으로 기울어 한낮 열차가 늦게 떠났다(화면 재현 2호선 13시 출발 +11, 2026-11-25)
+    const period=rushNow()?'rush':'day',dayZone=period==='day'?tm.dayZone??0:0;
+    const zoneAt=(st:MapStation)=>(t.express?null:tm.waits?.[`${st.id}:${t.direction}:${period}`])??(tm.stops?.[st.id]??tm.zone)+dayZone;
     const more=(st:MapStation)=>zoneAt(st)-tm.zone,stand=(st:MapStation)=>Math.max(5,STAND+more(st));
     // 구간마다 배운 출발→도착 초(live-timing runs, 방향별): 출발은 달리기 시작 15 s 뒤, 도착은 서기 BRAKE s 전이라 달리는 시간은 그만큼 더 길다. 없으면 시간표 × pace
     const paced=(from:MapStation,to:MapStation)=>{const D=tm.runs?.[`${from.id}:${to.id}`];if(D!=null)return Math.max(10,D+15+BRAKE);const R=segmentSeconds(from,to,t.line);return Math.max(.5*R,tm.pace*(R+30)-STAND)};
