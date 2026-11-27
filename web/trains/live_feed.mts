@@ -10,21 +10,25 @@ import type { Map as MapLibre } from 'maplibre-gl';
 import type { LiveTrain, MapStation } from './types.mts';
 
 // 끝난 열차 빼기: 종착역 앞에 끊긴 기록을 10분 두면 약 3분 간격 노선에서 3대가 겹쳐 보인다.
-// 값은 샘플 30일(2026-10-03~11-01)로 쟀다 — 달리는데 사라지는 비율이 노선마다 2% 이하인 가장 짧은 여유, 재등장이 적은 도착 3분.
+// 값은 샘플 30일(2026-10-03~11-01)로 쟀다 — 달리는데 사라지는 비율이 노선마다 2% 이하인 가장 짧은 여유.
 // 행선지 역의 진입 · 출발, 직전 역의 도착 · 진입도 같은 잣대로 6일(2026-11-18~25 중)을 재서 6분 여유(노선마다 1.1% 이하) —
 // 이 기록이 10분 남아 종착역에 서 있던 것이 겹침의 가장 큰 몫이었다(11-25 하루 겹침 사건 6,503건 중 42%가 끝난 열차의 옛 기록).
 // 운행중 · 전역 출발 기록은 행선지 근처에서도 오래 비었다 다시 이어져(경의중앙선 운행중 26%) 10분 그대로.
+// 행선지 역 도착은 받는 즉시 뺀다(2026-11-27 사용자 결정 · 왕십리 6126 이 도착 뒤 136초 남았다) — 같은 6일 도착 30,712건 중
+// 같은 번호가 다른 역에 다시 나온 것은 아래 넷 말고는 곳마다 0.6% 이하였다.
 export const ARRIVED_SECONDS=180,LAST_LEG_MARGIN_SECONDS=240,LONG_LAST_LEG_SECONDS=1200,NEAR_END_SECONDS=360;
 // 예외(같은 30일 기록): 구파발은 도착 뒤 대부분 연신내로 다시 나오고(3호선 사라짐 683건 중 669건 · 진입 · 출발도 6일 기록에서 이어 감), 천왕 → 온수는 다음 기록까지 길게 빈다(90% 13.5분).
 // 사당행 4호선은 사당 출발 뒤에도 같은 번호로 이어 간다(6일 258건 중 254건 · 6분 한도면 15%를 잘못 뺀다).
-const KEEP_ARRIVED=new Set(['3호선:구파발']),KEEP_DEPARTED=new Set(['4호선:사당']),LONG_LAST_LEG=new Set(['7호선:천왕','7호선:강남구청']);
+// 종착처럼 보이는데 계속 달리는 곳(6일 도착 뒤 다른 역에 다시 나온 몫): 2호선 성수 23% · 1호선 구로 11% · 1호선 동묘앞 7%(+신설동 · 동대문으로 새 행선 56%) — 도착 3분 그대로.
+const KEEP_ARRIVED=new Set(['3호선:구파발']),SLOW_ARRIVED=new Set(['2호선:성수','1호선:구로','1호선:동묘앞']),KEEP_DEPARTED=new Set(['4호선:사당']),LONG_LAST_LEG=new Set(['7호선:천왕','7호선:강남구청']);
 export interface DestinationLeg { atDestination:boolean; lastLegSeconds:number|null }
+const normStatus=(t:LiveTrain):string=>String(t.status||'').replace(/\s/g,'');
 export function staleLimit(t:LiveTrain, leg:DestinationLeg):number{
   if(t.departsAt)return STALE_SECONDS;   // departsAt: 출발을 기다리는 열차는 지도가 그때까지 붙든다
-  const status=String(t.status||'').replace(/\s/g,''),place=`${t.line}:${t.station}`;
+  const status=normStatus(t),place=`${t.line}:${t.station}`;
   if(leg.atDestination){
     if(KEEP_ARRIVED.has(place))return STALE_SECONDS;
-    if(status==='도착')return ARRIVED_SECONDS;
+    if(status==='도착')return SLOW_ARRIVED.has(place)?ARRIVED_SECONDS:0;
     if(status==='진입'||(status==='출발'&&!KEEP_DEPARTED.has(place)))return NEAR_END_SECONDS;
     return STALE_SECONDS;
   }
@@ -32,6 +36,28 @@ export function staleLimit(t:LiveTrain, leg:DestinationLeg):number{
   if(status==='출발')return LONG_LAST_LEG.has(place)?LONG_LAST_LEG_SECONDS:Math.min(STALE_SECONDS,leg.lastLegSeconds+LAST_LEG_MARGIN_SECONDS);
   if(status==='도착'||status==='진입')return Math.min(STALE_SECONDS,leg.lastLegSeconds+NEAR_END_SECONDS);
   return STALE_SECONDS;
+}
+
+// 행선지 역 도착을 본 열차(번호)를 기억해, 그 역에서 뒤에 내는 도착 · 출발 · 운행중 기록도 뺀다 — 안 빼면 6일 도착의 약 20%가
+// 종착역 출발(6분) · 운행중(10분) 기록으로 다시 뜬다. 다른 역 · 다른 행선지 기록이 오면 잊는다(다시 달리는 열차). 30분 지나도 잊는다.
+export const ARRIVAL_MEMORY_SECONDS=1800;
+const AFTER_ARRIVAL=new Set(['도착','출발','운행중']);
+export function createArrivalMemory(age:(v:unknown)=>number){
+  const arrived=new Map<string,{station:string;destination:string;receivedAt:string}>();
+  // true: 끝난 열차의 기록이라 지도에서 뺀다(도착 기록 자체 포함)
+  function finished(t:LiveTrain,leg:DestinationLeg):boolean{
+    const id=`${t.line}:${t.trainNo}`,status=normStatus(t),last=arrived.get(id);
+    if(leg.atDestination&&status==='도착'&&t.receivedAt&&staleLimit(t,leg)===0){
+      if(!last||last.station!==t.station||last.destination!==t.destination||t.receivedAt>last.receivedAt)arrived.set(id,{station:t.station,destination:t.destination,receivedAt:t.receivedAt});
+      return true;
+    }
+    if(!last)return false;
+    if(last.station!==t.station||last.destination!==t.destination){arrived.delete(id);return false}
+    // 받은 시각 글자("YYYY-MM-DD HH:MM:SS")는 글자 순서가 곧 시간 순서
+    return AFTER_ARRIVAL.has(status)&&!!t.receivedAt&&t.receivedAt>=last.receivedAt;
+  }
+  function forgetOld(){for(const [id,last] of arrived)if(age(last.receivedAt)>ARRIVAL_MEMORY_SECONDS)arrived.delete(id)}
+  return {finished,forgetOld};
 }
 
 export interface LiveFeedDeps {
@@ -42,6 +68,7 @@ export interface LiveFeedDeps {
 }
 export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain,hasPlans,age,destinationLeg,updateLiveNotice,onTrains,onClear,journeyLines=()=>null,onState}:LiveFeedDeps){
   let trains:LiveTrain[]=[],request=0,on=false,failures=0,key='',at=0,fetchedAt:string|null=null;
+  const arrivals=createArrivalMemory(age);
   function liveLines():string[]{
     // 길찾기 중: 줌과 상관없이 탈 노선만(경로 전체를 보는 줌 11~12 에도 내 열차가 보이게 — 다른 열차는 어차피 숨긴다, journey.mjs trainShown)
     const journey=journeyLines();if(journey){on=true;return journey}
@@ -77,8 +104,10 @@ export function createLiveFeed({map,stations,liveState,getSelected,getSheetTrain
       if(mine!==request)return; // a newer view or selection superseded this response
       if(!r.ok||!d.ok)throw Error((d.error||r.status) as string);   // 수(HTTP 상태)도 Error 가 글자로 바꾼다
       // A record not refreshed for 10 minutes is a train the feed lost track of (or one that left
-      // service); extrapolating it would park a ghost train somewhere down the line. 행선지 앞 기록은 더 일찍(staleLimit).
-      const all=d.trains||[];trains=all.filter(t=>age(t.receivedAt)<=staleLimit(t,destinationLeg(t)));const stale=all.length-trains.length;
+      // service); extrapolating it would park a ghost train somewhere down the line. 행선지 앞 기록은 더 일찍(staleLimit) · 도착한 열차는 바로(createArrivalMemory).
+      // 도착 기억(arrivals.finished)은 모든 기록에 먼저 묻는다 — 한도로 걸러진 도착 기록도 기억해야 뒤따르는 출발 · 운행중을 뺀다
+      const all=d.trains||[];arrivals.forgetOld();
+      trains=all.filter(t=>{const leg=destinationLeg(t);return !arrivals.finished(t,leg)&&age(t.receivedAt)<=staleLimit(t,leg)});const stale=all.length-trains.length;
       // Fresh data: each train carries on from where it is drawn (replacePlans), never jumping back.
       fetchedAt=d.fetchedAt;failures=0;updateLiveNotice(d.quotaExhausted?'오늘 실시간 조회 한도를 다 썼어요. 내일 첫차 무렵부터 다시 보여요.':d.warnings&&d.warnings.length?'실시간 정보 일부가 지연되고 있어요. 이전 자료로 표시 중이에요.':null);
       const placed=onTrains(trains),unplaced=trains.length-placed,shown=d.lines||lines;
