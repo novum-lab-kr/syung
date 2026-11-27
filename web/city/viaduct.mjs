@@ -546,6 +546,7 @@ var CityViaduct = class {
 		this.levels = null;
 		this.levelsVersion = 0;
 		this.exitLayouts = /* @__PURE__ */ new Map();
+		this.stairMemo = /* @__PURE__ */ new Map();
 	}
 	get railM() {
 		return this.V.railHeightM;
@@ -1103,6 +1104,7 @@ var CityViaduct = class {
 		};
 		this.cache.set(k, a);
 		this.bytes += a.bytes;
+		if (k.startsWith("ex:")) this.stairMemo.clear();
 		return a;
 	}
 	del(k) {
@@ -1112,6 +1114,7 @@ var CityViaduct = class {
 		this.gl.deleteBuffer(a.b);
 		this.bytes -= a.bytes;
 		this.cache.delete(k);
+		if (k.startsWith("ex:")) this.stairMemo.clear();
 	}
 	lineRGB(line, theme) {
 		const k = line + theme;
@@ -1482,6 +1485,13 @@ var CityViaduct = class {
 		};
 	}
 	hasStair(id, lon, lat) {
+		const mk = id + "," + lon + "," + lat;
+		if (this.stairMemo.has(mk)) return this.stairMemo.get(mk);
+		const r = this.findStair(id, lon, lat);
+		this.stairMemo.set(mk, r);
+		return r;
+	}
+	findStair(id, lon, lat) {
 		let seen = false;
 		for (const [k, a] of this.cache) {
 			if (!k.startsWith("ex:") || !a.lay || k.split(":")[2] !== String(id)) continue;

@@ -167,7 +167,7 @@ void shade(){
 void main(){shade();outColor*=u_alpha;}`;
 var RIDE_RIPPLE_MS = 125;
 var NOSE_Z = .3;
-function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, TRAIN_ICON_RATIO, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
+function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, TRAIN_ICON_RATIO, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, trainMid, trainNear, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
 	class TrainLayer {
 		constructor() {
 			this.id = "webgl-trains";
@@ -384,8 +384,8 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 			}
 			for (const plan of drawTrainsToo ? planner.plans : []) {
 				const snap = live.riding(plan), pose = snap ? snap.pose : trainPose(plan);
-				if (!snap && !live.trainShown(plan, pose.dist)) continue;
-				const mid = trackPoint(plan, pose.dist), m = mercStop(plan.t.line, plan.seq[0]).meterInMercatorCoordinateUnits();
+				if (!snap && (!trainNear(plan, pose.dist) || !live.trainShown(plan, pose.dist))) continue;
+				const mid = trainMid(plan, pose.dist), m = mercStop(plan.t.line, plan.seq[0]).meterInMercatorCoordinateUnits();
 				this.h0 = K === "viaduct" ? mid.h : 0;
 				let shiftX = 0, shiftY = 0;
 				const shift = snap ? snap.shift : blendShift(plan, mid);

@@ -969,6 +969,7 @@ var CityLife = class {
 		this.exits = exits;
 		this.deck = deck;
 		this.cells = /* @__PURE__ */ new Map();
+		this.spotMemo = /* @__PURE__ */ new Map();
 		this.keepOut = null;
 		this.graph = new RoadGraph();
 		this.stats = {};
@@ -1598,13 +1599,11 @@ var CityLife = class {
 			[8, T.parkAreaPerTreeM2 * 3.2]
 		]) {
 			const sp = Math.sqrt(area), minSp = T.parkMinSpacingM, j = Math.max(0, Math.min(.45, (sp - minSp) / (2 * sp)));
-			for (let gx = Math.floor(bx0 / sp); gx <= Math.floor(bx1 / sp); gx++) {
-				for (let gy = Math.floor(by0 / sp); gy <= Math.floor(by1 / sp); gy++) {
-					const x = (gx + .5 + (hashi(gx, gy, 21) - .5) * 2 * j) * sp, y = (gy + .5 + (hashi(gx, gy, 22) - .5) * 2 * j) * sp;
-					if (!(maskAt(x, y) & bit) || !okTree(x, y, null, 2.5, 5) || !pathClear(x, y, 1.6)) continue;
-					treeAt(x, y, 1, T.parkHeightM[0], T.parkHeightM[1], T.parkCrownDiameterM[0], T.parkCrownDiameterM[1]);
-				}
-				if (++n % 40 === 0) yield;
+			for (let gx = Math.floor(bx0 / sp); gx <= Math.floor(bx1 / sp); gx++) for (let gy = Math.floor(by0 / sp); gy <= Math.floor(by1 / sp); gy++) {
+				if ((++n & 31) === 0 && performance.now() - (cell.s0 || 0) > 4) yield;
+				const x = (gx + .5 + (hashi(gx, gy, 21) - .5) * 2 * j) * sp, y = (gy + .5 + (hashi(gx, gy, 22) - .5) * 2 * j) * sp;
+				if (!(maskAt(x, y) & bit) || !okTree(x, y, null, 2.5, 5) || !pathClear(x, y, 1.6)) continue;
+				treeAt(x, y, 1, T.parkHeightM[0], T.parkHeightM[1], T.parkCrownDiameterM[0], T.parkCrownDiameterM[1]);
 			}
 		}
 		mark("park-trees");
@@ -1748,6 +1747,7 @@ var CityLife = class {
 		};
 		mark("gpu");
 		cell.state = "ready";
+		this.spotMemo.clear();
 	}
 	dropCell(cell) {
 		const gl = this.gl;
@@ -1759,6 +1759,7 @@ var CityLife = class {
 		]) if (cell[k]?.b) gl.deleteBuffer(cell[k].b);
 		this.graph.removeCell(cell.key);
 		this.cells.delete(cell.key);
+		this.spotMemo.clear();
 	}
 	ranges(cell, prop, box) {
 		const B = cell[prop];
@@ -1826,7 +1827,7 @@ var CityLife = class {
 			});
 		}
 		const due = [...this.cells.values()].filter((c) => c.state === "pending").filter((c) => !(c.retryAt > now));
-		if (due.length && now - this.lastQuery > 400) {
+		if (!moving && due.length && now - this.lastQuery > 400) {
 			this.lastQuery = now;
 			const by = this.gather();
 			for (const c of due) {
@@ -1839,6 +1840,7 @@ var CityLife = class {
 					c.counts = {};
 					c.walks = [];
 					c.bare = true;
+					this.spotMemo.clear();
 				} else {
 					c.tries++;
 					c.retryAt = now + Math.min(8e3, 400 * 2 ** Math.min(c.tries, 5));
@@ -1849,8 +1851,8 @@ var CityLife = class {
 			const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
 			this.building = [...this.cells.values()].filter((c) => c.state === "building").sort((a, b) => Math.hypot((a.box[0] + a.box[2]) / 2 - cx, (a.box[1] + a.box[3]) / 2 - cy) - Math.hypot((b.box[0] + b.box[2]) / 2 - cx, (b.box[1] + b.box[3]) / 2 - cy))[0] || null;
 		}
-		if (this.building) {
-			const deadline = t0 + (moving ? 4 : Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4))), c = this.building;
+		if (this.building && !moving) {
+			const deadline = t0 + Math.min(60, Math.max(12, (now - (this.lastFrame || now)) * .4)), c = this.building;
 			let r;
 			do {
 				const s0 = c.s0 = performance.now();
@@ -2432,6 +2434,13 @@ var CityLife = class {
 		return n;
 	}
 	exitSpot(lon, lat) {
+		const mk = lon + "," + lat;
+		if (this.spotMemo.has(mk)) return this.spotMemo.get(mk);
+		const r = this.findSpot(lon, lat);
+		this.spotMemo.set(mk, r);
+		return r;
+	}
+	findSpot(lon, lat) {
 		const [x, y] = toM(lon, lat);
 		for (const c of this.cells.values()) {
 			const b = c.box;

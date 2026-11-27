@@ -368,6 +368,7 @@ function along(line, from, to, k) {
 	};
 }
 var PLATFORM_HALF = 90;
+var rectsV = 0;
 function metresBetween(a, b) {
 	return Math.hypot((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 111320;
 }
@@ -437,6 +438,7 @@ var platformPx = (r, base) => {
 	return Math.max(base, Math.min(base * 2, r.widthM / mpp));
 };
 function buildStationFeatures() {
+	rectsV++;
 	const { platform, kind } = modeCtl.settings().track, ribbon = platform === "ribbon", ground = kind === "ground";
 	return stations.flatMap((s) => s.lines.map((x) => {
 		const line = x.name, { prev, next } = neighbours(line, s);
@@ -583,6 +585,7 @@ var shapesReady = fetch(serverUrl("./track_shapes.json"), { cache: "no-cache" })
 	smoothCache.clear();
 	basicRouteCache.clear();
 	stationRects.clear();
+	rectsV++;
 	edgeGeom.clear();
 	coasterMotion.clear();
 	coasterGeo.reset();
@@ -942,11 +945,36 @@ function loadModeKit() {
 		throw e;
 	});
 }
+var xrayPlat = null;
 function cityXrayTargets() {
 	const X = cityBuildings.P.xray;
 	if (!X || !X.on) return null;
 	const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()), m = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()).meterInMercatorCoordinateUnits();
-	const zoom = map.getZoom(), unit = 1 / (512 * 2 ** zoom), pad = (B.x - A.x) * .3, inV = (x, y) => x > A.x - pad && x < B.x + pad && y > B.y - pad && y < A.y + pad, out = [];
+	const zoom = map.getZoom(), unit = 1 / (512 * 2 ** zoom), pad = (B.x - A.x) * .3, inV = (x, y) => x > A.x - pad && x < B.x + pad && y > B.y - pad && y < A.y + pad;
+	cityViaduct.levelsOf();
+	const key = [
+		A.x,
+		A.y,
+		B.x,
+		B.y,
+		zoom,
+		m,
+		X,
+		rectsV,
+		stationRects.size,
+		cityViaduct.levelsVersion,
+		cityViaduct.V
+	];
+	if (!xrayPlat || xrayPlat.key.some((v, i) => v !== key[i])) xrayPlat = {
+		key,
+		out: xrayPlatforms(X, inV, m, unit)
+	};
+	const out = [...xrayPlat.out];
+	if (X.trains && trainsEnabled) xrayTrains(X, out, inV, m, unit, zoom);
+	return out;
+}
+function xrayPlatforms(X, inV, m, unit) {
+	const out = [];
 	for (const [k, r] of stationRects) {
 		const c = r.coords, i = k.lastIndexOf(":"), line = k.slice(0, i), id = +k.slice(i + 1);
 		const P = maplibregl.MercatorCoordinate.fromLngLat(c[0]), Q = maplibregl.MercatorCoordinate.fromLngLat(c[c.length - 1]), cx = (P.x + Q.x) / 2, cy = (P.y + Q.y) / 2;
@@ -992,28 +1020,28 @@ function cityXrayTargets() {
 			...box
 		});
 	}
-	if (X.trains && trainsEnabled) {
-		const bodyPx = trainBodyPx(zoom), lane = cityViaduct.train(zoom, bodyPx).lanePx;
-		for (const plan of planner.plans) {
-			const pose = trainPose(plan);
-			if (!journeyMap.trainShown(plan, pose.dist)) continue;
-			const q = trackPoint(plan, pose.dist);
-			if (!inV(q.x, q.y)) continue;
-			const half = (trainIcon() ? bodyPx * TRAIN_ICON_RATIO * unit : Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit)) / 2, a = trackPoint(plan, pose.dist - half), e = trackPoint(plan, pose.dist + half);
-			out.push({
-				id: "t" + plan.id,
-				ax: a.x,
-				ay: a.y,
-				bx: e.x,
-				by: e.y,
-				z0: q.h - X.trainBelowM * m,
-				z1: q.h + X.trainAboveM * m,
-				w: X.trainHalfWidthM * m + (Math.abs(q.off || 0) + lane + bodyPx) * unit,
-				m
-			});
-		}
-	}
 	return out;
+}
+function xrayTrains(X, out, inV, m, unit, zoom) {
+	const bodyPx = trainBodyPx(zoom), lane = cityViaduct.train(zoom, bodyPx).lanePx;
+	for (const plan of planner.plans) {
+		const pose = trainPose(plan);
+		if (!nearBox(plan, pose.dist, spacedBox) || !journeyMap.trainShown(plan, pose.dist)) continue;
+		const q = trainMid(plan, pose.dist);
+		if (!inV(q.x, q.y)) continue;
+		const half = (trainIcon() ? bodyPx * TRAIN_ICON_RATIO * unit : Math.max(plan.cars * plan.carMetres * m, TRAIN_MIN_PX * unit)) / 2, a = trackPoint(plan, pose.dist - half), e = trackPoint(plan, pose.dist + half);
+		out.push({
+			id: "t" + plan.id,
+			ax: a.x,
+			ay: a.y,
+			bx: e.x,
+			by: e.y,
+			z0: q.h - X.trainBelowM * m,
+			z1: q.h + X.trainAboveM * m,
+			w: X.trainHalfWidthM * m + (Math.abs(q.off || 0) + lane + bodyPx) * unit,
+			m
+		});
+	}
 }
 var prebuildOn = null;
 var prebuildWant = () => prebuildOn ??= /(^|[^o])prebuild/.test(location.hash) ? true : location.hash.includes("noprebuild") ? false : ((v) => v ? v === "on" : !PHONE)(prefs.get("prebuild"));
@@ -1148,6 +1176,7 @@ var coasterMotion = createCoasterMotion({
 });
 var { ridePace, toRide, fromRide } = coasterMotion;
 var TRAIN_GAP_M = 20;
+var SPACE_NEAR_M = 1e3;
 var spaced = /* @__PURE__ */ new Map();
 var spacedAt = -1e9;
 var spacedFor = null;
@@ -1160,18 +1189,53 @@ function trainPose(p) {
 	}
 	return spaced.get(p) || rawPose(p);
 }
+var midAt = /* @__PURE__ */ new Map();
+function trainMid(p, dist) {
+	const c = midAt.get(p);
+	if (c && c.d === dist) return c.q;
+	const q = trackPoint(p, dist);
+	midAt.set(p, {
+		d: dist,
+		q
+	});
+	return q;
+}
+function nearBox(p, dist, box) {
+	const { seq, cum } = p;
+	let i = 0;
+	while (i < seq.length - 2 && cum[i + 1] < dist) i++;
+	const a = mercStop(p.t.line, seq[i]), b = seq.length > 1 ? mercStop(p.t.line, seq[i + 1]) : a;
+	return !(Math.max(a.x, b.x) < box[0] || Math.min(a.x, b.x) > box[2] || Math.max(a.y, b.y) < box[1] || Math.min(a.y, b.y) > box[3]);
+}
+var spacedBox = [
+	-Infinity,
+	-Infinity,
+	Infinity,
+	Infinity
+];
+var trainNear = (p, dist) => nearBox(p, dist, spacedBox);
+function spaceBox() {
+	const b = map.getBounds(), A = maplibregl.MercatorCoordinate.fromLngLat(b.getSouthWest()), B = maplibregl.MercatorCoordinate.fromLngLat(b.getNorthEast()), pad = Math.max(B.x - A.x, A.y - B.y, SPACE_NEAR_M * A.meterInMercatorCoordinateUnits());
+	return [
+		A.x - pad,
+		B.y - pad,
+		B.x + pad,
+		A.y + pad
+	];
+}
 function spaceTrains() {
 	spaced.clear();
+	midAt.clear();
 	const groups = /* @__PURE__ */ new Map(), at = (e) => {
-		const q = trackPoint(e.p, e.pose.dist);
+		const q = trainMid(e.p, e.pose.dist);
 		e.x = q.x;
 		e.y = q.y;
 		e.f = q.f;
-	};
+	}, box = spacedBox = spaceBox();
 	for (const p of planner.plans) {
 		const pose = rawPose(p);
 		spaced.set(p, pose);
-		if (p.seq.length < 2) continue;
+		if (p.seq.length < 2 || !nearBox(p, pose.dist, box)) continue;
 		const m = mercStop(p.t.line, p.seq[0]).meterInMercatorCoordinateUnits(), k = `${p.t.line}|${p.t.direction}|${p.t.express ? 1 : 0}`, e = {
 			p,
 			pose,
@@ -1816,6 +1880,8 @@ var TrainLayer = trainLayerClass({
 	maplibregl,
 	trainPose,
 	trackPoint,
+	trainMid,
+	trainNear,
 	mercStop,
 	blendShift,
 	lastPose,
