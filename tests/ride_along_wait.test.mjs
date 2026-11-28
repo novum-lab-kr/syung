@@ -1,7 +1,7 @@
 // 타고 가기 기다리기 카드 — 승강장 도착 · 열차 도착 · 지하에서 위치가 끊겨 기다리기로(계획서 2026-11-06 「기다리기 카드」)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT_NEAR_M, LOST_FIX_MS, LOST_NEAR_M, RUN_S, STATION_ACCESS_S, arriveOutcome, arrivedEarly, legPace, lostUnderground, nearBoarding, nearestM, pickedArrived, waitText, walkLeftS } from '../web/lib/ride-along.mts';
+import { EXIT_NEAR_M, LOST_FIX_MS, LOST_NEAR_M, RUN_S, STATION_ACCESS_S, arriveOutcome, arrivedEarly, boardWalkS, lostUnderground, nearBoarding, nearestM, pickedArrived, waitText } from '../web/lib/ride-along.mts';
 
 const walkLeg = {type: 'walk', seconds: 300, metres: 240, label: '시청역 5번 출구까지', path: [[126.977, 37.566], [126.979, 37.566]]};
 const rideLeg = (extra = {}) => ({type: 'ride', line: '2호선', from: '시청', to: '강남', departs: '08:10', arrives: '08:40', direction: '외선', stops: 12, wait: 120, stations: [201, 202, 203], ...extra});
@@ -67,11 +67,11 @@ test('어느 출구든: 가장 가까운 출구 거리 · 출구 50m 안이면 �
 //  111 ÷ 2.09 + 90 = 143초 「걸어서 2분」, 4분 뒤 열차는 놓침으로 보였다
 test('역에 닿아 넘기면 남은 길 0 — 승강장 90초만(예전: 길에 비춘 남은 길까지 더해 「걸어서 2분」 · 열차 놓침)', () => {
   const exit11 = {type: 'walk', seconds: 269, metres: 374, label: '시청역 11번 출구까지', path: walkLeg.path}, plan = [exit11, rideLeg()];
-  const before = walkLeftS(plan, 0, 111, legPace(plan, 0));
+  const before = 111 / (374 / (269 - 90)) + STATION_ACCESS_S;   // 그때 셈: 남은 길 ÷ 평소 걸음(374m ÷ (269 − 90)초) + 승강장
   assert.equal(Math.round(before), 143, '고치기 전 값(남은 길 111m 를 그대로 둠)');
   // 기록의 「다음 열차 4분 뒤」는 그 앞 열차(143 × 0.8 = 114초 안쪽 — 기록에 초는 없어 100초로 둔다)를 못 탄다고 뺀 것
   assert.equal(waitText(plan, 1, before, [100, 240, 3960], 0).sub, '걸어서 2분 · 다음 열차 4분 뒤 · 그다음 66분 뒤', '기록 카드와 같은 글');
-  assert.equal(walkLeftS(plan, 0, 0, legPace(plan, 0)), STATION_ACCESS_S, '남은 길 0 이면 승강장 90초만');
+  assert.equal(boardWalkS(plan, 0, 0), STATION_ACCESS_S, '남은 길 0 이면 승강장 90초만');
   assert.equal(waitText(plan, 1, STATION_ACCESS_S, [100, 240, 3960], 0).sub, '걸어서 2분 · 열차 2분 뒤 · 다음 4분 뒤', '앞 열차도 탈 수 있다(90 × 0.8 = 72초 넘게 남음)');
 });
 

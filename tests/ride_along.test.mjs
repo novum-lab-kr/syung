@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, rideStops, OFF_M, catchable, characterOf, legOverByTime, legPace, measuredPace, metres, onPath, reached, leftStation, rideSteps, rideSub,
+  HURRY_SHARE, NEAR_M, arrivalFits, boardNow, pickedLeft, rideOver, rideStops, OFF_M, catchable, characterOf, legOverByTime, metres, onPath, reached, leftStation, rideSteps, rideSub,
   splitPath, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, doneSub,
   OFF_FIXES, REROUTE_GAP_MS, WALK_OFF_M, offFixes, shouldReroute, offTrainFixes, gotOff,
 } from '../web/lib/ride-along.mts';
@@ -74,12 +74,9 @@ test('걷기 · 타기 · 도착 카드 글', () => {
   assert.deepEqual(rideSteps(legs).map(step => step.kind), ['walk', 'wait', 'ride', 'walk', 'done']);
 });
 
-test('걷는 빠르기 · 남은 시간 · 갈아타기 시간', () => {
-  const legs = [walkLeg(), rideLeg()];
-  assert.equal(legPace(legs, 0), 240 / (300 - 90));
-  assert.equal(walkLeftS(legs, 0, 120, 1.2), 100 + 90);
-  assert.equal(measuredPace([{t: 0, at: 0}, {t: 5000, at: 2}]), null);
-  assert.equal(measuredPace([{t: 0, at: 0}, {t: 20000, at: 24}]), 1.2);
+test('남은 시간 · 갈아타기 시간', () => {
+  const legs = [walkLeg({path: undefined}), rideLeg()];
+  assert.equal(walkLeftS(legs, 0, 120), 150, '그린 길이 없으면 서버 metres 잣대 — 반 남음 = 300초의 반(출발 걷기라 승강장 시간 없음)');
   // 08:40 내림 · 다음 08:45 탐(기다림 2분) → 타는 곳 08:43 → 3분 + 1분 여유
   assert.equal(transferS(rideLeg(), rideLeg({departs: '08:45', wait: 120})), 240);
   assert.equal(transferS(rideLeg(), rideLeg({departs: '08:40', wait: 0})), 120);   // 최소 1분 + 1분
