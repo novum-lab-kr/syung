@@ -1082,12 +1082,18 @@ menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:(
   const slideMs=matchMedia('(prefers-reduced-motion: reduce)').matches?0:260;let closeTimer=0;
   const setOpen=(o:boolean)=>{
     clearTimeout(closeTimer);btn.setAttribute('aria-expanded',String(o));
-    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;panelWidth=panel.offsetWidth;panel.classList.add('open');void theme.openSky();$('settingsClose').focus({preventScroll:true});return}
+    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;measureCover();panel.classList.add('open');void theme.openSky();$('settingsClose').focus({preventScroll:true});return}
     theme.closeSky();trainFrameSoon(0);panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
   };
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
-  // 서랍 폭은 열 때 한 번 잰다(그릴 때마다 재면 레이아웃을 다시 셈). 버스 층이 hidden 으로 바로 닫아도 isOpen 이 거짓이라 null — 가려졌던 열차는 1초 안에 다시 움직인다
-  let panelWidth=0;drawerCover=()=>isOpen()?map.getContainer().clientWidth-panelWidth:null;
+  // 서랍이 덮은 곳의 왼쪽 끝은 열 때 · 화면 크기 · 서랍 class(hidden) 가 바뀔 때만 잰다(그릴 때마다 재면 레이아웃을 다시 셈).
+  // 지도 폭 − 서랍 폭(offsetWidth 는 미끄러지는 transform 과 상관없다). 경로 고르기(.with-map)는 휴대폰에서 아래 절반 시트라 오른쪽 서랍이 아니다 — 가린 열차를 따지지 않는다(null).
+  // 버스 층이 hidden 으로 바로 닫아도 isOpen 이 거짓이라 null — 가려졌던 열차는 1초 안에 다시 움직인다. 덮는 곳이 바뀌면 열차 프레임을 바로 부른다
+  let coverLeft:number|null=null;
+  const measureCover=()=>{const next=panel.hidden||panel.classList.contains('with-map')?null:map.getContainer().clientWidth-panel.offsetWidth;if(next!==coverLeft){coverLeft=next;trainFrameSoon(0)}};
+  drawerCover=()=>isOpen()?coverLeft:null;
+  new MutationObserver(measureCover).observe(panel,{attributes:true,attributeFilter:['class','hidden']});
+  addEventListener('resize',()=>{if(isOpen())measureCover()});
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
   $('settingsClose').onclick=close;
   // 지도 모드를 고르면 서랍을 닫아 바뀐 지도를 바로 보인다(2026-11-28 사용성 조사 #7). 스타크래프트 · 세계 여행을 켤 땐 그 아래 종족 · 나라 줄이 열리니 그 줄에서 고를 때 닫는다. 롤코 열차 속도는 모드가 아니라 닫지 않는다
