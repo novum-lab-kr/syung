@@ -5,6 +5,7 @@ export type LngLat = readonly [number, number];
 
 export const NEAR_M = 100;             // 역 · 정류장 이만큼 안이면 기다리기(2026-11-04 확정)
 export const NEAR_HOLD_MS = 5000;      // …에 이만큼 머물면(위치가 튀어 왔다 갔다 하지 않게)
+export const DEST_NEAR_M = 30;         // 마지막 걷기(다음 탈 것 없음)는 목적지 이만큼 안에 NEAR_HOLD_MS 머물면 「슝 도착!」(100m 앞에서 떴다 — 2026-11-28 사용자 결정 · 역 · 정류장 기준은 그대로)
 export const OFF_M = 60;               // 버스를 기다릴 때 내 위치가 버스 길에서 이만큼 안이면 버스 길 위로 친다
 export const WALK_OFF_M = 20;          // 걷는 길에서 이만큼 넘게 벗어난 위치를(2026-11-06 사용자 확정)
 export const OFF_FIXES = 3;            // …연달아 이만큼 받으면 지금 위치에서 길을 다시 찾는다(위치 한 번 튐 무시 — 아테나 추천 · 2026-11-06 계획서)

@@ -604,7 +604,7 @@ html[data-theme=dark] .js.node.start .js-dot{box-shadow:inset 0 0 0 2px #000}
 html[data-theme=dark] .rg-pen{background-position:0 100%;background-size:100% .62em;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 24' preserveAspectRatio='none'%3E%3Cfilter id='g' x='-5%25' y='-5%25' width='110%25' height='110%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09 .55' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.2 2.45'/%3E%3CfeComposite in='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Cg filter='url%28%23g%29' fill='none' stroke='%23ffd400' stroke-width='6.5' stroke-linecap='round' stroke-opacity='.34'%3E%3Cpath d='M5 8C50 5 96 9 140 7S205 5 233 8'/%3E%3Cpath d='M10 13C60 10 110 14 160 12S215 11 238 14'/%3E%3Cpath d='M2 18C48 16 100 20 150 17S208 16 229 19'/%3E%3Cpath stroke-width='3' d='M28 11C90 13 150 9 224 11'/%3E%3C/g%3E%3C/svg%3E")}
 .rg-talk small{display:block;margin-top:6px;font-size:var(--text-14);font-weight:var(--weight-bold);color:var(--secondary)}
 .rg-detour{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
-.rg-x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--control);color:var(--ink);cursor:pointer}
+.rg-x{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:6px solid transparent;background-clip:padding-box;border-radius:50%;background-color:var(--control);color:var(--ink);cursor:pointer}
 .rg-sprout{position:absolute;right:-6px;bottom:-110px;width:92px;height:92px;background:center/contain no-repeat;pointer-events:none}
 .rg-sprout.flip{transform:scaleX(-1)}
 .rg-follow{width:auto;margin:0;padding:0 var(--space-4)}
@@ -724,6 +724,8 @@ button.rg-train.stacked{padding:1px 0}   /* 한 줄에 여럿이 쌓이면 누�
 .jp .rg-go{width:100%;margin:var(--space-2) 0 0;height:46px}
 /* 「이 길로 출발」 · 「승차권 등록」은 한 줄로(2026-11-08 사용자 — 두 줄이던 것): 출발이 넓게 · 승차권은 옆 회색 단추. 승차권 단추가 없으면 출발이 한 줄 다 */
 .jp-go{display:flex;gap:var(--space-2);margin-top:var(--space-2)}
+/* 펼친 카드가 시트보다 길면 단추 줄이 몸통 아래로 밀려 안 보였다(2026-11-28 사용성 조사 #3) — 몸통(스크롤 칸) 아래에 붙인다. 카드 안쪽 여백만큼 넓혀 카드 바탕으로 덮는다 */
+.jp.on .jp-go{position:sticky;z-index:1;bottom:0;margin:var(--space-2) -12px -12px;padding:var(--space-2) var(--space-3) var(--space-3);border-radius:0 0 var(--radius-16) var(--radius-16);background:var(--control)}
 .jp-go .rg-go,.jp-go .jp-ticket{flex:1 1 0;width:auto;min-width:0;height:46px;margin:0}
 .jp-go .rg-go{flex-grow:1.6}
 /* 승차권은 펼친 카드 바탕(--control)과 같으면 글자만 떠 보여(2026-11-08 사용자) 글자색을 조금 섞은 연한 회색으로 채운다 — 다크도 같은 식 */
@@ -763,7 +765,7 @@ html[data-theme=dark] .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate .m
 .maplibregl-ctrl-geolocate-waiting .maplibregl-ctrl-icon{animation:me-wait var(--duration-1100) ease-in-out infinite}
 @keyframes me-wait{50%{opacity:.35}}
 .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-active-error,.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate-background-error{color:#d8452f}
-@media(pointer:coarse){.maplibregl-ctrl-geolocate{width:42px!important;height:42px!important}}
+@media(pointer:coarse){.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate{width:44px!important;height:44px!important}}   /* 누르는 곳 44px(2026-11-28 사용성 조사 #5 — 그룹 단추 34px 규칙이 더 구체적이라 42px 가 안 먹던 것) */
 @media(prefers-reduced-motion:reduce){.maplibregl-ctrl-geolocate-waiting .maplibregl-ctrl-icon{animation:none}}
 
 /* the preview's title box and legend, hidden here (the runtime hid them only once it had loaded,
@@ -1124,7 +1126,7 @@ html[data-app=map] .mode-busy{top:calc(12px + env(safe-area-inset-top,0px))}
 .ps-row:active{background:var(--control)}
 .ps-tile{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:var(--radius-12);background:var(--control);color:var(--secondary)}
 .ps-tile.station{background:var(--syung);color:var(--syung-ink);box-shadow:var(--shadow-edge-brand)}
-.ps-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ps-text{display:flex;flex-direction:column;gap:3px;min-width:0;word-break:keep-all;overflow-wrap:anywhere}   /* 긴 이름이 낱말 가운데(「C구 / 역」)서 끊기지 않게 · 띄어쓰기 없이 긴 것만 아무 데서나 */
 .ps-text b{font-size:var(--text-16);font-weight:var(--weight-bold)}
 .ps-text mark{background:var(--syung-soft);color:inherit;border-radius:4px;box-shadow:inset 0 -2px 0 var(--syung)}
 .ps-text small{font-size:var(--text-13);color:var(--secondary)}

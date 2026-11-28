@@ -150,7 +150,7 @@ export function signBounds(ctx:Ctx, {x, y, scale: s, size, rows}:StationSign):Sc
   return {left: x - box.boundsWidth / 2, right: x + box.boundsWidth / 2, top, bottom};
 }
 // 내 위치 캐릭터(avoid)와 겹친 이름표는 옆으로 비켜요: 덜 옮기는 쪽(왼쪽 · 오른쪽)으로 gap 만큼 띄워 x 만 바꿔요. 안 겹치면 그대로.
-export function dodgeSign(sign:StationSign, bounds:ScreenBox, avoid:ScreenBox, gap = 4):StationSign {
+export function dodgeSign<Sign extends StationSign>(sign:Sign, bounds:ScreenBox, avoid:ScreenBox, gap = 4):Sign {
   if (bounds.right <= avoid.left || bounds.left >= avoid.right || bounds.bottom <= avoid.top || bounds.top >= avoid.bottom) return sign;
   const toRight = avoid.right + gap - bounds.left, toLeft = bounds.right - (avoid.left - gap);
   return {...sign, x: sign.x + (toRight <= toLeft ? toRight : -toLeft)};

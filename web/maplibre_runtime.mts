@@ -348,6 +348,8 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)');
 const TRAIN_FPS=30,FOLLOW_FPS=30,SAVER_FPS=15,animFrame:(()=>void)[]=[];let trainTimer=0,trainAt=0,drawTrains=()=>{},myLocation:[number,number]|null=null,meHidden=false,rideInfoOn=false;   // meHidden: 버스를 타는 단계 동안 내 위치(캐릭터 · 점 · 파장)를 숨긴다(hideMe)
 // 절전(설정 창 버튼, 이 기기에 저장): 움직임을 SAVER_FPS 로 — 30 fps 를 부르는 곳은 그대로 두고 예약 간격만 늘린다(이름표 · 따라가기 · 버스도 이 값)
 // (타이머 뒤 requestAnimationFrame 이 화면 한 번을 더 기다려 60 Hz 화면의 '30'은 실제 약 20번이다 — 맥 측정 2026-10-26: 20 으로 두니 18번, 거의 그대로. 15 → 실제 약 13~15번)
+// 메뉴 서랍이 덮은 곳의 왼쪽 끝(지도 화면 x px — 열려 있지 않으면 null) · 서랍 코드가 채운다. 열차 층이 가려진 열차의 다음 프레임을 부르지 않는다(사용성 조사 #8)
+let drawerCover=():number|null=>null;
 let saverOn=false;const frameMs=()=>1000/(saverOn?SAVER_FPS:TRAIN_FPS);
 // 다시 그린 횟수(쌓임): 열차 층 프레임 · 이름표 · 이름표 조회 · 지도 프레임 — 발열 · 배터리 점검(2026-10-23 덕배)이 1초에 몇 번인지 잰다(__subwayWebGL.frames)
 const frameStats={trains:0,signs:0,signQueries:0,mapRenders:0};
@@ -364,7 +366,7 @@ function trainFrameSoon(ms:number){if(document.hidden||rideInfoOn)return;if(save
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)trainFrameSoon(0)});   // 다시 보이면 한 번 깨운다(숨긴 동안 멈춘 움직임이 이어 간다)
 let repaintTimer=0,repaintAt=0;   // coaster: keep map repaint scheduling outside the train timer's comment
 function repaintSoon(ms:number){const at=performance.now()+ms;if(repaintTimer&&repaintAt<=at)return;clearTimeout(repaintTimer);repaintAt=at;repaintTimer=setTimeout(()=>{repaintTimer=0;for(const f of animFrame)f();map.triggerRepaint()},ms)}
-const map:MapLibre=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:20,minZoom:7,zoomLevelsToOverscale:undefined,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false,canvasContextAttributes:{antialias:!location.hash.includes('noaa')}});   // 모서리 계단 현상: 지도 캔버스도 MSAA(기본 꺼짐 — 1인칭에서 건물 · 고가 모서리가 깨지고 움직이면 반짝였다, 2026-10-06 덕배). #noaa: 끄고 비교(끊김 원인 찾기)   // 줌 20까지: zoomLevelsToOverscale(기본 4)을 끈다 — 켜 두면 줌 상한 20에서 바탕 타일을 z16 조각으로 잘라 받아 z14 타일만 쓰는 건물 · 버스 도로가 비었다(2026-10-09)
+const map:MapLibre=new maplibregl.Map({container:'map',pixelRatio:Math.min(devicePixelRatio||1,PHONE?2:3),localIdeographFontFamily:'"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif',...HOME,pitch:35,bearing:0,maxZoom:20,minZoom:7,zoomLevelsToOverscale:undefined,style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#edf2f1'}}]},attributionControl:false,canvasContextAttributes:{antialias:!location.hash.includes('noaa')},locale:{'GeolocateControl.FindMyLocation':'내 위치 찾기','GeolocateControl.LocationNotAvailable':'내 위치를 쓸 수 없어요'}});   // 내 위치 단추 글(aria-label · title — 라이브러리 기본은 영어, 2026-11-28 사용성 조사 #5)   // 모서리 계단 현상: 지도 캔버스도 MSAA(기본 꺼짐 — 1인칭에서 건물 · 고가 모서리가 깨지고 움직이면 반짝였다, 2026-10-06 덕배). #noaa: 끄고 비교(끊김 원인 찾기)   // 줌 20까지: zoomLevelsToOverscale(기본 4)을 끈다 — 켜 두면 줌 상한 20에서 바탕 타일을 z16 조각으로 잘라 받아 z14 타일만 쓰는 건물 · 버스 도로가 비었다(2026-10-09)
 const BASE_PR=map.getPixelRatio(),BASE_FOV=map.getVerticalFieldOfView();   // 지도 캔버스 픽셀 비율 · 시야각(레트로일 때만 바꾼다 — syncPixels)
 let busLayer:ReturnType<typeof createBusLayer>|null=null;   // bus: owns its loading, viewport culling and animation lifecycle
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
@@ -739,7 +741,7 @@ const hexRGB3=(v:string)=>[parseInt(v.slice(1,3),16)/255,parseInt(v.slice(3,5),1
 // footprints (a ray through a building always crosses one); walls along tile edges lie inside
 // the building, so they hide nothing it would not.
 // 열차 그리기 · 건물 깊이(web/trains/draw.mjs): 바뀌는 값은 그때그때 읽게 getter 로 넘긴다
-const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),   // 타고 가는 열차는 늘 보인다(ui/ride_along)
+const trainLive:TrainLive={trainShown:(p,d)=>rideAlong.rideTrain(p)||journeyMap.trainShown(p,d),get coveredFrom(){return drawerCover()},   // 타고 가는 열차는 늘 보인다(ui/ride_along)
 get kitReady(){return kitReady},get RideTrack(){return RideTrack},get CoasterTrain(){return CoasterTrain as TrainLive['CoasterTrain']},get TurtleShips(){return TurtleShips as TrainLive['TurtleShips']},get UnitConvoy(){return UnitConvoy as TrainLive['UnitConvoy']},get SkyUnits(){return SkyUnits as unknown as TrainLive['SkyUnits']},unitLength:k=>UNIT_SHAPES[k]?.len??1,get myLocation(){return meHidden?null:(me.shown()||myLocation) as LngLat|null},get trainsEnabled(){return trainsEnabled},get subwayOff(){return journeyMap.subwayOff},get settings(){return modeCtl.settings()},get sunTrainShadow(){return sunTrainShadow},get following(){return sheetUI.following},get easing(){return sheetUI.easing},get rider(){return rider},get rideFollow(){return rideAlong.followingTrain},get ridingAlong(){return rideAlong.active},get riding(){return riding}};
 const TrainLayer=trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,trainMid,trainNear,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live:trainLive});
 const BuildingDepth=buildingDepthClass({cityOn,map,PHONE,maplibregl,live:trainLive});
@@ -777,12 +779,15 @@ function refreshLive(force=false){return feed.refresh(force)}
 map.on('load',()=>{
   registerTransitLayers({map,shapesReady,buildLineFeatures,buildStationFeatures,basicRouteCache,rebuildLabels,stationNames,STATION_WIDTH_STOPS,PHONE,signCollisionLayout:signCollisionLayout as TransitDeps['signCollisionLayout'],live:{get track(){return modeCtl.settings().track}}});   // 노선 · 승강장 · 역 이름표 자리(web/map/layers.mjs)
   // trains: their own canvas over the map (see TRAIN_FPS) — web/map/overlay.mjs
-  createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,signBounds,dodgeSign,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette:mapPalette as unknown as TrainOverlayDeps['mapPalette'],coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,StaticLayer,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE:CITY_STYLE as unknown as CityPack,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,
-    live:{get placeMarker(){return placeMarker},get me(){return me},get meHidden(){return meHidden},get frameStats(){return frameStats},get frameMs(){return frameMs()},get trainFrameDue(){return trainTimer?trainAt:Infinity},get LifeUnits(){return LifeUnits},get night(){return nightNow() as TrainOverlayDeps['live']['night']},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get PixelPalette(){return PixelPalette},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get brightStations(){return rideAlong.stationIds},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
+  const overlay=createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiveRatio,signRows,drawStationSigns,signBounds,dodgeSign,effectiveTheme,REDUCED,TRAIN_FPS,TrainLayer,BuildingDepth,cityOn,cityXrayTargets,mapPalette:mapPalette as unknown as TrainOverlayDeps['mapPalette'],coasterGeo,coasterTrack,geom,edgeOffset,coasterBodyPx,trainBodyPx,cityViaduct,StaticLayer,CORK_HEART,PHONE,trainFrameSoon,CityLife,CITY_STYLE:CITY_STYLE as unknown as CityPack,cityPack,$,sunPosition,NightLayer,journeyMap,exitPillars,RIDE_ZOOM,nearMatrix,COCKPIT_NEAR_M,AvatarRenderer,avatarScale,AVATAR_MINZOOM,
+    live:{get coveredFrom(){return drawerCover()},get placeMarker(){return placeMarker},get me(){return me},get meHidden(){return meHidden},get frameStats(){return frameStats},get frameMs(){return frameMs()},get trainFrameDue(){return trainTimer?trainAt:Infinity},get LifeUnits(){return LifeUnits},get night(){return nightNow() as TrainOverlayDeps['live']['night']},get bloomTune(){return nightLook.bloomTune},get NightBloom(){return NightBloom},get PixelPalette(){return PixelPalette},get CoasterRidePlacement(){return CoasterRidePlacement},get FestoonLayer(){return FestoonLayer},get RideLayer(){return RideLayer},get busLayer(){return busLayer},get cityBuildings(){return cityBuildings},get cityLandmarks(){return cityLandmarks},get settings(){return modeCtl.settings()},get kitReady(){return kitReady},get sampleRideTracks(){return sampleRideTracks},get selected(){return selected},get stationAlpha(){return stationAlpha},get brightStations(){return rideAlong.stationIds},get drawTrains(){return drawTrains},set drawTrains(v){drawTrains=v},get wallsNow(){return wallsNow},set wallsNow(v){wallsNow=v}}});
   registerLocationLayers({map,geolocate,dotMaxzoom:AVATAR_MINZOOM,live:{get myLocation(){return myLocation},set myLocation(v){myLocation=v}}});   // 내 위치 점
-  map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const pl=pickTrain(e.point);if(pl)openTrain(pl);else if(busLayer?.selectAt(e.point,{stops:!rideAlong.active})){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else if(!sheetBusy())closeSheet()});   // bus: 누른 버스는 따라간다 · 하는 중인 시트는 빈 곳을 눌러도 둔다   // bus: subway picking keeps priority
-  map.on('click','stations',e=>{if(rider.ride)return;const pl=pickTrain(e.point);if(pl){openTrain(pl);return}if(rideAlong.active)return;   // 타고 가기 중엔 역 정보창을 열지 않는다(열차는 위에서 그대로)
-  const p=e.features![0]!.properties,st=byId.get(+p.id);if(appBridge){if(st)appBridge.stationTap(st)}else showStationPopup(st,e.lngLat)});
+  // 역 이름표(캔버스 그림)를 눌렀으면 열차보다 역 — 그 아래를 지나는 열차가 먼저 골라지던 것(2026-11-28 사용성 조사 #2). 타고 가기 중엔 지금처럼 역 정보창을 열지 않는다
+  const signStation=(point:{x:number,y:number})=>{if(rideAlong.active)return null;const id=overlay.stationSignAt(point);return id==null?null:byId.get(+id)??null};
+  const tapStation=(st:MapStation|undefined,lngLat:Parameters<typeof showStationPopup>[1])=>{if(appBridge){if(st)appBridge.stationTap(st)}else showStationPopup(st,lngLat)};
+  map.on('click',e=>{if(rider.ride)return;if(map.queryRenderedFeatures(e.point,{layers:['stations','stations-casing']}).length)return;const sign=signStation(e.point);if(sign){tapStation(sign,e.lngLat);return}const pl=pickTrain(e.point);if(pl)openTrain(pl);else if(busLayer?.selectAt(e.point,{stops:!rideAlong.active})){if(busLayer.selection?.kind==='bus')followBusStart(busLayer.selection.id)}else if(!sheetBusy())closeSheet()});   // bus: 누른 버스는 따라간다 · 하는 중인 시트는 빈 곳을 눌러도 둔다   // bus: subway picking keeps priority
+  map.on('click','stations',e=>{if(rider.ride)return;const sign=signStation(e.point);if(sign){tapStation(sign,e.lngLat);return}const pl=pickTrain(e.point);if(pl){openTrain(pl);return}if(rideAlong.active)return;   // 타고 가기 중엔 역 정보창을 열지 않는다(열차는 위에서 그대로)
+  const p=e.features![0]!.properties;tapStation(byId.get(+p.id),e.lngLat)});
   map.on('mouseenter','stations',()=>map.getCanvas().style.cursor='pointer');
   map.on('mouseleave','stations',()=>map.getCanvas().style.cursor='');
   ready=true;
@@ -1077,12 +1082,22 @@ menu.on({switches:{togglePrebuild:()=>setPrebuild(!prebuildWant()),toggleSaver:(
   const slideMs=matchMedia('(prefers-reduced-motion: reduce)').matches?0:260;let closeTimer=0;
   const setOpen=(o:boolean)=>{
     clearTimeout(closeTimer);btn.setAttribute('aria-expanded',String(o));
-    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;void panel.offsetWidth;panel.classList.add('open');void theme.openSky();$('settingsClose').focus({preventScroll:true});return}
-    theme.closeSky();panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
+    if(o){showPage(null,false);panel.classList.remove('open');panel.hidden=false;panelWidth=panel.offsetWidth;panel.classList.add('open');void theme.openSky();$('settingsClose').focus({preventScroll:true});return}
+    theme.closeSky();trainFrameSoon(0);panel.classList.remove('open');closeTimer=setTimeout(()=>{if(!panel.classList.contains('open'))panel.hidden=true},slideMs);
   };
   const close=()=>{if(!isOpen())return;setOpen(false);btn.focus({preventScroll:true})};
+  // 서랍 폭은 열 때 한 번 잰다(그릴 때마다 재면 레이아웃을 다시 셈). 버스 층이 hidden 으로 바로 닫아도 isOpen 이 거짓이라 null — 가려졌던 열차는 1초 안에 다시 움직인다
+  let panelWidth=0;drawerCover=()=>isOpen()?map.getContainer().clientWidth-panelWidth:null;
   btn.onclick=e=>{e.stopPropagation();setOpen(!isOpen())};
   $('settingsClose').onclick=close;
+  // 지도 모드를 고르면 서랍을 닫아 바뀐 지도를 바로 보인다(2026-11-28 사용성 조사 #7). 스타크래프트 · 세계 여행을 켤 땐 그 아래 종족 · 나라 줄이 열리니 그 줄에서 고를 때 닫는다. 롤코 열차 속도는 모드가 아니라 닫지 않는다
+  // 잡는 단계(capture)에서 본다 — 단추의 onClick 이 눌림(aria-pressed)을 바꾸기 전 상태로 '켜는 중'을 가린다
+  const MODE_SWITCHES=['toggleSimcity','toggleJoseon','toggleStarcraft','toggleRetro','toggleNation','toggleCoaster'],OPENS_ROW=['toggleStarcraft','toggleNation'];
+  $('menuModes').addEventListener('click',e=>{
+    const pick=(e.target as Element).closest<HTMLButtonElement>('button');if(!pick||pick.disabled)return;
+    const turningOn=pick.getAttribute('aria-pressed')!=='true';
+    if(MODE_SWITCHES.includes(pick.id)?!(turningOn&&OPENS_ROW.includes(pick.id)):pick.dataset.race!=null||pick.dataset.nation!=null)close();
+  },true);
   // 지도와 함께 보는 쪽(.with-map — 승차권 경로 고르기)에서는 지도 · 서랍 · 지도 조작 단추(+ − · 내 위치) · 아래 시트 위에서 누르기 시작했으면 서랍을 닫지 않는다.
   // 끌다가 서랍 · 머리줄 위에서 손을 떼면 click 이 둘의 공통 조상(body)으로 와 '밖을 눌렀다'로 읽히기 때문(누르기를 시작한 곳으로 본다). 길찾기 같은 지도 위 단추는 지금처럼 닫는다
   let pressKeeps=false;
