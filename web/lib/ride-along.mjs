@@ -1,12 +1,15 @@
 var NEAR_HOLD_MS = 5e3;
 var REROUTE_GAP_MS = 1e4;
 var HURRY_SHARE = .8;
-var WALK_SPEED = 1.2;
-var SPEED_RANGE = [.5, 2.5];
 var M_PER_DEG = 111320;
 function metres(from, to) {
 	const across = (to[0] - from[0]) * Math.cos((from[1] + to[1]) / 2 * Math.PI / 180), up = to[1] - from[1];
 	return Math.hypot(across, up) * M_PER_DEG;
+}
+function pathLength(path) {
+	let total = 0;
+	for (let index = 1; index < path.length; index++) total += metres(path[index - 1], path[index]);
+	return total;
 }
 function onPath(point, path, within) {
 	if (path.length < 2) return {
@@ -100,6 +103,7 @@ function spliceWalk(plan, index, fresh, end, now) {
 	const station = "station" in end, transfer = !!previous && previous.type !== "walk";
 	legs[index] = {
 		...old,
+		again: true,
 		seconds: fresh.seconds,
 		metres: fresh.metres,
 		path: fresh.path,
@@ -157,21 +161,34 @@ var hm = (time) => {
 	const [hours = 0, minutes = 0] = String(time).split(":").map(Number);
 	return hours * 60 + minutes;
 };
-function legPace(legs, index) {
+function walkAccessS(legs, index) {
 	const leg = legs[index];
-	if (leg?.type !== "walk" || !leg.metres) return WALK_SPEED;
-	const access = (legs[index - 1]?.type === "ride" ? 90 : 0) + (legs[index + 1]?.type === "ride" ? 90 : 0);
-	const pace = leg.metres / Math.max(1, leg.seconds - access);
-	return pace >= SPEED_RANGE[0] && pace <= SPEED_RANGE[1] ? pace : WALK_SPEED;
+	if (leg?.type !== "walk" || leg.again) return 0;
+	const before = legs[index - 1]?.type, after = legs[index + 1]?.type;
+	const between = before === "ride" && after === "bus" || before === "bus" && after === "ride";
+	const viaOn = before === "ride" && !after && leg.direct === true;
+	return between || viaOn ? 90 : 0;
 }
-function measuredPace(track) {
-	const latest = track[track.length - 1];
-	if (!latest) return null;
-	const earlier = [...track].reverse().find((item) => latest.t - item.t >= 15e3);
-	if (!earlier || latest.at - earlier.at < 10) return null;
-	return Math.max(SPEED_RANGE[0], Math.min(SPEED_RANGE[1], (latest.at - earlier.at) / ((latest.t - earlier.t) / 1e3)));
+function walkLengthM(leg) {
+	if (leg?.type !== "walk") return 0;
+	return leg.path && leg.path.length >= 2 ? pathLength(leg.path) : leg.metres;
 }
-var walkLeftS = (legs, index, leftM, pace) => leftM / pace + (legs[index + 1]?.type === "ride" ? 90 : 0);
+function walkShare(leg, leftM) {
+	const total = walkLengthM(leg);
+	if (total > 0) return Math.max(0, Math.min(1, leftM / total));
+	return leftM > 0 ? 1 : 0;
+}
+function walkLeftS(legs, index, leftM) {
+	const leg = legs[index];
+	if (leg?.type !== "walk") return 0;
+	const access = walkAccessS(legs, index);
+	return Math.max(0, leg.seconds - access) * walkShare(leg, leftM) + access;
+}
+var walkLeftM = (legs, index, leftM) => {
+	const leg = legs[index];
+	return leg?.type === "walk" ? leg.metres * walkShare(leg, leftM) : 0;
+};
+var boardWalkS = (legs, index, leftM) => walkLeftS(legs, index, leftM) + (legs[index + 1]?.type === "ride" && !walkAccessS(legs, index) ? 90 : 0);
 function transferS(previous, next) {
 	const ready = hm(next.departs) * 60 - next.wait, arrived = hm(previous.arrives) * 60;
 	return Math.max(60, (ready - arrived + 86400) % 86400) + 60;
@@ -632,7 +649,7 @@ function walkOverByTime(legs, index, now, planArrives, walkSinceMs) {
 	if (!legOverByTime(legs, index, now, planArrives)) return false;
 	const leg = legs[index];
 	if (leg?.type !== "walk" || legs[index + 1] || legs[index - 1]?.type !== "ride" || !Number.isFinite(leg.seconds)) return true;
-	return now.getTime() - walkSinceMs >= (leg.seconds + 90) * 1e3;
+	return now.getTime() - walkSinceMs >= (leg.seconds + (walkAccessS(legs, index) ? 0 : 90)) * 1e3;
 }
 var BOARD_FALLBACK_MS = 45e3;
 var BOARD_GIVE_UP_MS = 18e4;
@@ -771,4 +788,4 @@ function alertsChanged(next, sent) {
 		return !was || was.text !== `${alert.title}\n${alert.body}` || Math.abs(was.at - alert.at) >= 1e4;
 	});
 }
-export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, RING_SWAP_STATION, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, gotOff, leftBehind, leftStation, legOverByTime, legPace, lostUnderground, measuredPace, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideShare, rideSteps, rideStops, rideSub, rideSwapAsk, rideTalk, rideTitle, rideTrainSpots, ringEnded, ringSuccessor, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkEnd, walkLeftS, walkOverByTime, walkQuery, walkSub, walkTitle };
+export { ALERT_MOVE_MS, BOARD_FALLBACK_MS, BOARD_GIVE_UP_MS, HURRY_SHARE, LOST_FIX_MS, NEAR_HOLD_MS, REROUTE_GAP_MS, RING_SWAP_STATION, WALK_AGAIN_MAX_S, alertsChanged, alightAlertText, alightPlanMs, arrivalFits, arriveOutcome, arrivedEarly, boardAlertText, boardNow, boardWalkS, boardedPick, catchable, characterOf, clockMs, doneParts, doneSub, dueAlerts, freshWalk, gotOff, leftBehind, leftStation, legOverByTime, lostUnderground, metres, nearBoarding, nearestM, offFixes, offTrainFixes, onPath, onPathFrom, pathLength, pickedArrived, pickedLeft, reached, rideAhead, rideAlerts, rideEndSpot, rideFixView, rideList, rideNextText, rideOver, rideShare, rideSteps, rideStops, rideSub, rideSwapAsk, rideTalk, rideTitle, rideTrainSpots, ringEnded, ringSuccessor, shouldReroute, spliceWalk, splitPath, stayedFixes, stopsLeft, stopsLeftByTime, talkKind, talkLine, transferS, waitText, waitTitle, walkAccessS, walkEnd, walkLeftM, walkLeftS, walkLengthM, walkOverByTime, walkQuery, walkShare, walkSub, walkTitle };
