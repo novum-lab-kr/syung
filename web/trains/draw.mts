@@ -225,6 +225,9 @@ void shade(){
 void main(){shade();outColor*=u_alpha;}`;
 // 타고 가기 중 파장(내 위치 — 열차 둘레 파장은 2026-11-26 뺐다)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
 const RIDE_RIPPLE_MS=125;
+// 서랍에 가린 열차는 다음 프레임을 1초 뒤로 미룬다 — 그사이 열차가 갈 수 있는 거리만큼 더 안쪽에 든 열차만 가렸다고 본다
+// (가장 빠른 GTX-A 180 km/h = 50 m/s × 타이머가 늦을 몫까지 1.5초)
+const COVER_RUN_M=75;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,trainMid,trainNear,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
   class TrainLayer{
@@ -344,7 +347,7 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
         const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit,icon?bodyPx*TRAIN_ICON_RATIO*unit:0)/2+lanePx*unit;
         if(!snap&&(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach))continue;
         // 메뉴 서랍에 통째로 가려진 열차(뒤 끝까지 서랍 안)는 그리기는 하되 다음 프레임은 서 있는 열차처럼 1초 뒤 — 서랍 밖 띠에 보이는 열차는 그대로 20번(2026-11-28 사용성 조사 #8 · A안)
-        const covered=live.coveredFrom!==null&&!snap&&map.project(new maplibregl.MercatorCoordinate(mid.x+shiftX,mid.y+shiftY).toLngLat()).x-reach/unit>live.coveredFrom;
+        const covered=live.coveredFrom!==null&&!snap&&map.project(new maplibregl.MercatorCoordinate(mid.x+shiftX,mid.y+shiftY).toLngLat()).x-(reach+COVER_RUN_M*m+Math.hypot(shiftX,shiftY))/unit>live.coveredFrom;   // 1초 안에 서랍 밖 띠로 나올 수 있는 열차(달리는 거리 + 남은 미끄러짐)는 가린 것으로 치지 않는다
         if(shift&&!covered)animating=true;
         if((pose.moving||snap&&trainPose(plan).moving)&&!covered)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
         const n=plan.cars,real=n*plan.carMetres*m,total=icon?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
