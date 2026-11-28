@@ -1,9 +1,9 @@
-// 타고 가기 걷기 시간을 서버 값에 맞추기(2026-11-28 사용자 「웹을 맞추기」 · lib/ride-along walkAccessS · walkLeftS · walkLeftM · boardWalkS)
+// 타고 가기 걷기 시간을 서버 값에 맞추기(2026-11-28 사용자 「웹을 맞추기」 · 잰 걸음은 「비율로」 · lib/ride-along walkAccessS · walkLeftS · walkLeftM · boardWalkS · measuredPace · walkPaceRatio)
 // 서버(server/services/journey_graph.py): 걷기 seconds · metres 는 OSRM 표, path 는 따로 다시 잰 선이라 길이가 다르다.
 // 땅 위 ↔ 승강장 90초(STATION_ACCESS)는 지하철 ↔ 버스 사이 걷기 · 경유지 역에서 목적지까지 걷기(direct)에만 들어 있다
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STATION_ACCESS_S, boardWalkS, pathLength, spliceWalk, walkAccessS, walkLeftM, walkLeftS, walkLengthM, walkOverByTime, walkSub } from '../web/lib/ride-along.mts';
+import { STATION_ACCESS_S, boardWalkS, pathLength, spliceWalk, measuredPace, walkAccessS, walkLeftM, walkLeftS, walkLengthM, walkOverByTime, walkPaceRatio, walkSub } from '../web/lib/ride-along.mts';
 
 const WEST = [126.9770, 37.5660], MID = [126.97813, 37.5660], EAST = [126.97926, 37.5660];   // 서→동 약 200m(가운데 약 100m)
 const ride = (extra = {}) => ({type: 'ride', line: '1호선', from: '서울역', to: '시청', departs: '08:10', arrives: '08:12', direction: '상행', stops: 1, wait: 120, stations: [150, 151], ...extra});
@@ -57,4 +57,36 @@ test('기다리기 카드 · 시각으로 끝내기: 서버가 안 넣은 승강
   const end = [ride({arrives: '08:00'}), {type: 'walk', seconds: 60, metres: 72, label: '시청역 2번 출구에서 목적지까지', path: [WEST, EAST]}];
   assert.equal(walkOverByTime(end, 1, at(149), '08:05', since), false, '도착 역 걷기는 60 + 90초');
   assert.equal(walkOverByTime(end, 1, at(150), '08:05', since), true);
+});
+
+// 그린 길 위 자리(m)를 초마다 적은 잰 걸음 기록 — speed m/s 로 sec 초 동안
+const walkTrack = (speed, sec) => Array.from({length: sec + 1}, (_, step) => ({t: step * 1000, at: speed * step}));
+
+test('잰 걸음 비율: 계획 빠르기로 걸으면 길찾기 카드와 같은 분 · 2배 빠르면 절반 · 15초 전엔 1', () => {
+  const legs = [toExit(), ride()], full = walkLengthM(legs[0]), planSpeed = full / 80;   // 그린 길 약 200m ÷ 80초
+  const atPlan = walkPaceRatio(legs, 0, measuredPace(walkTrack(planSpeed, 20)));
+  assert.ok(Math.abs(atPlan - 1) < 1e-9, '계획대로면 1 — 그린 길 · 서버 metres 의 차이가 지워진다');
+  const left = full - planSpeed * 20;
+  assert.ok(Math.abs(walkLeftS(legs, 0, left, atPlan) - 60) < 1e-9, '20초 걸어 60초 남음');
+  assert.equal(walkSub(walkLeftM(legs, 0, full), walkLeftS(legs, 0, full, atPlan)), '100m · 1분', '처음 분은 카드와 같다');
+  // 빠르기 비교는 걷는 200초짜리로(계획 약 1m/s — 서울역 예는 계획이 이미 2.5m/s 라 2배가 튐 상한에 잘린다)
+  const slowLegs = [toExit({seconds: 200}), ride()], slowPlan = full / 200;
+  const fast = walkPaceRatio(slowLegs, 0, measuredPace(walkTrack(slowPlan * 2, 20)));
+  assert.ok(Math.abs(fast - 0.5) < 1e-9, '2배 빠르면 0.5');
+  assert.ok(Math.abs(walkLeftS(slowLegs, 0, full / 2, fast) - 50) < 1e-9, '반 남음 100초의 절반');
+  const slow = walkPaceRatio(slowLegs, 0, measuredPace(walkTrack(slowPlan / 1.25, 20)));
+  assert.ok(Math.abs(slow - 1.25) < 1e-9, '천천히 걸으면 늘어난다');
+  assert.equal(measuredPace(walkTrack(planSpeed, 14)), null, '15초 전엔 잰 걸음 없음');
+  assert.equal(walkPaceRatio(legs, 0, measuredPace(walkTrack(planSpeed, 14))), 1, '그러면 비율 1');
+  assert.equal(measuredPace(walkTrack(0.3, 30)), null, '15초 넘게 10m 안쪽(멈춤)은 걸음으로 치지 않는다');
+  assert.equal(measuredPace(walkTrack(10, 20)), 2.5, '위치 튐은 2.5m/s 로 자른다');
+});
+
+test('잰 걸음 비율은 걷는 몫에만 — 서버가 넣은 90초에는 곱하지 않는다', () => {
+  const transfer = {type: 'walk', seconds: 90 + 120, metres: 144, label: '서울역에서 서울역 정류장으로', path: [WEST, MID, EAST]};
+  const legs = [ride(), transfer, bus], full = walkLengthM(transfer);
+  const ratio = walkPaceRatio(legs, 1, (full / 120) * 2);   // 계획(그린 길 ÷ 걷는 120초)의 2배
+  assert.ok(Math.abs(ratio - 0.5) < 1e-9);
+  assert.ok(Math.abs(walkLeftS(legs, 1, full, ratio) - (60 + 90)) < 1e-9, '걷는 120초의 절반 + 90초 그대로');
+  assert.equal(boardWalkS([toExit(), ride()], 0, 0, 0.5), STATION_ACCESS_S, '남은 길 0 이면 비율과 관계없이 승강장 90초만');
 });

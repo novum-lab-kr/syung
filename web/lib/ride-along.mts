@@ -16,6 +16,7 @@ export const HURRY_SHARE = 0.8;        // 평소 걷는 시간의 80% 안에 닿
 export const TRANSFER_SPARE_S = 60;    // 갈아타기 최소 시간은 방향 구분이 없어 1분 여유를 더한다
 export const BAD_FIX_M = 100;          // 정확도가 이보다 나쁜 위치는 버린다
 export const STATION_ACCESS_S = 90;    // 땅 위 ↔ 승강장(서버 STATION_ACCESS 와 같은 값)
+const SPEED_RANGE:readonly [number, number] = [0.5, 2.5];   // 잰 걸음 빠르기를 이 안으로(멈춤 · 위치 튐을 걸음으로 읽지 않게)
 
 // ---- 서버 구간(server/services/journey_graph.py — 이 파일이 읽는 칸만)
 // direct: 좌표까지 걷기(서버 walk_path) · again: 타고 가는 중 다시 찾은 걷기(spliceWalk — 서버 walk=1 은 승강장 시간을 넣지 않는다)
@@ -183,13 +184,30 @@ export function walkShare(leg:RideLeg | undefined, leftM:number):number {
   if (total > 0) return Math.max(0, Math.min(1, leftM / total));
   return leftM > 0 ? 1 : 0;
 }
-// 남은 걷기(초) — 걷기 카드: 서버 seconds 에서 승강장 시간을 뺀 몫 × 남은 몫 + 승강장 시간(길찾기 카드의 분과 같은 값에서 줄어든다 — 2026-11-28 사용자 「웹을 맞추기」).
-// 승강장 시간은 서버가 넣은 걷기에만(walkAccessS). 잰 걸음(그린 길 잣대)으로 나누지 않는다 — 그린 길 길이가 서버 metres 와 달라 분이 어긋났다(서울역 1번 출구 96m · 그린 길 139m)
-export function walkLeftS(legs:readonly RideLeg[], index:number, leftM:number):number {
+// 잰 걸음(m/s): 지난 위치들(시각 ms · 그린 길 위 자리 m) 중 15초 넘게 떨어진 첫 것과 비교 · 10m 안쪽 움직임은 걸음으로 치지 않는다(아직 모르면 null)
+export function measuredPace(track:readonly { t:number; at:number }[]):number | null {
+  const latest = track[track.length - 1];
+  if (!latest) return null;
+  const earlier = [...track].reverse().find(item => latest.t - item.t >= 15000);
+  if (!earlier || latest.at - earlier.at < 10) return null;
+  return Math.max(SPEED_RANGE[0], Math.min(SPEED_RANGE[1], (latest.at - earlier.at) / ((latest.t - earlier.t) / 1000)));
+}
+// 걸음 비율: 계획 빠르기(그린 길 전체 ÷ (서버 seconds − 승강장 시간)) ÷ 잰 걸음. 둘 다 그린 길 잣대라 서버 metres 와 길이가 달라도 지워진다
+//  — 계획대로 걸으면 1(길찾기 카드와 같은 분) · 2배 빠르면 0.5. 잰 걸음을 아직 모르면(15초 전 · 10m 안쪽) 1 (2026-11-28 사용자 「비율로 다시 넣기」)
+export function walkPaceRatio(legs:readonly RideLeg[], index:number, pace:number | null):number {
+  const leg = legs[index];
+  if (leg?.type !== 'walk' || !pace) return 1;
+  const total = walkLengthM(leg), planS = leg.seconds - walkAccessS(legs, index);
+  if (!(total > 0) || !(planS > 0)) return 1;
+  return total / planS / pace;
+}
+// 남은 걷기(초) — 걷기 카드: 서버 seconds 에서 승강장 시간을 뺀 몫 × 남은 몫 × 걸음 비율 + 승강장 시간(길찾기 카드의 분과 같은 값에서 줄어든다 — 2026-11-28 사용자 「웹을 맞추기」).
+// 승강장 시간은 서버가 넣은 걷기에만(walkAccessS) · 걸음 비율을 곱하지 않는다. 그린 길 ÷ 잰 걸음으로 바로 나누지 않는다 — 그린 길 길이가 서버 metres 와 달라 분이 어긋났다(서울역 1번 출구 96m · 그린 길 139m)
+export function walkLeftS(legs:readonly RideLeg[], index:number, leftM:number, ratio = 1):number {
   const leg = legs[index];
   if (leg?.type !== 'walk') return 0;
   const access = walkAccessS(legs, index);
-  return Math.max(0, leg.seconds - access) * walkShare(leg, leftM) + access;
+  return Math.max(0, leg.seconds - access) * walkShare(leg, leftM) * ratio + access;
 }
 // 남은 걷기 거리(m) — 걷기 카드: 서버 metres × 남은 몫(처음엔 길찾기 카드의 거리 그대로)
 export const walkLeftM = (legs:readonly RideLeg[], index:number, leftM:number):number => {
@@ -198,8 +216,8 @@ export const walkLeftM = (legs:readonly RideLeg[], index:number, leftM:number):n
 };
 // 타는 곳까지 남은 시간(초) — 기다리기 카드 · 탈 열차 고르기: 남은 걷기 + 서버가 넣지 않은 승강장 시간(지하철을 타러 가면).
 // 역에 닿아 넘기면 남은 길 0 · 승강장 90초만 그때부터(2026-11-07 사용자 결정 — tests/ride_along_wait)
-export const boardWalkS = (legs:readonly RideLeg[], index:number, leftM:number):number =>
-  walkLeftS(legs, index, leftM) + (legs[index + 1]?.type === 'ride' && !walkAccessS(legs, index) ? STATION_ACCESS_S : 0);
+export const boardWalkS = (legs:readonly RideLeg[], index:number, leftM:number, ratio = 1):number =>
+  walkLeftS(legs, index, leftM, ratio) + (legs[index + 1]?.type === 'ride' && !walkAccessS(legs, index) ? STATION_ACCESS_S : 0);
 // 같은 역 갈아타기 걷기(초): 다음 열차가 타는 곳에 닿는 시각(departs − wait) − 앞 열차가 내리는 시각 + 1분 여유
 export function transferS(previous:RideTrainLeg, next:RideTrainLeg):number {
   const ready = hm(next.departs) * 60 - next.wait, arrived = hm(previous.arrives) * 60;
