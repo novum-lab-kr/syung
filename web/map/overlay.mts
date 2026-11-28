@@ -44,7 +44,7 @@ interface NightNow { bloom:boolean; ground?:boolean; N:{ bloom:BloomTune & { ove
 type Life = LifeOptions['night'];
 // 늦게 생기는 값 · 바뀌는 값(본체가 getter 로 넘긴다). drawTrains · wallsNow 는 이 파일이 채운다(setter)
 interface OverlayLive {
-  placeMarker:readonly number[] | null; me:ReturnType<typeof createMyMotion>; meHidden:boolean; frameStats:FrameStats; frameMs:number; trainFrameDue:number; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
+  placeMarker:readonly number[] | null; me:ReturnType<typeof createMyMotion>; meHidden:boolean; frameStats:FrameStats; frameMs:number; trainFrameDue:number; coveredFrom:number | null; LifeUnits:typeof LifeUnits | undefined; night:NightNow & Life;
   bloomTune:BloomTune | null | undefined; NightBloom:typeof NightBloom | undefined; PixelPalette:typeof PixelPalette | undefined;
   CoasterRidePlacement:typeof CoasterRidePlacement; FestoonLayer:typeof FestoonLayer; RideLayer:typeof RideLayer; busLayer:ReturnType<typeof createBusLayer> | null;
   cityBuildings:CityBuildings | null; cityLandmarks:CityLandmarks | null; settings:OverlaySettings; kitReady:boolean; sampleRideTracks:typeof sampleRideTracks;
@@ -79,7 +79,7 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   // 역 이름표 캔버스: 열차 캔버스 바로 위(마커 · 팝업 아래)
   const sc=document.createElement('canvas');sc.className='station-signs';c.after(sc);sc.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
   const SIGN_PR=Math.min(globalThis.devicePixelRatio||1,PHONE?2:3);   // 이름표 캔버스는 제 해상도(지도 캔버스가 도트로 낮아져도 글자는 선명하게)
-  const sctx=sc.getContext('2d')!;let signFeatures:MapGeoJSONFeature[]=[],signAt=0,signMatrix:ArrayLike<number> | null=null,signTimer:ReturnType<typeof setTimeout> | 0=0,signShown=false,signQM:number[] | null=null,meShape:[number, number][] | null=null;   // signQM: 이름표 목록을 받은 때의 카메라 · meShape: 내 위치 캐릭터의 화면 윤곽(CSS px — 이름표에 구멍)
+  const sctx=sc.getContext('2d')!;let signFeatures:MapGeoJSONFeature[]=[],signAt=0,signMatrix:ArrayLike<number> | null=null,signTimer:ReturnType<typeof setTimeout> | 0=0,signShown=false,signQM:number[] | null=null,meShape:[number, number][] | null=null,drawnSigns:LabeledSign[]=[];   // signQM: 이름표 목록을 받은 때의 카메라 · meShape: 내 위치 캐릭터의 화면 윤곽(CSS px — 이름표에 구멍)
   // 그릴 이름표가 없으면 캔버스를 숨긴다: 다 지우고 아무것도 안 그리면 크롬이 직전 그림을 계속 띄웠다 — 크게 옮긴 뒤 전 자리의 역 이름이
   // 같은 화면 자리에 몇 초씩 남았다(2026-10-10 덕배, 잠실 → 여의도). 캔버스 픽셀은 비어 있었다
   const showSigns=(on:boolean)=>{if(on!==signShown){signShown=on;sc.style.visibility=on?'':'hidden'}};
@@ -91,22 +91,22 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
     // 카메라가 그대로면 1초에 한 번만(멈춘 화면에서 0.15초마다 조회하던 것 — 2026-10-23 발열 · 배터리), 움직이면 지금처럼 0.15초마다
     const moved=!signQM||signQM.length!==M.length||signQM.some((v,i)=>v!==M[i]);
     if(now-signAt>(moved?150:1000)){signAt=now;signQM=Array.from(M);live.frameStats.signQueries++;signFeatures=map.getLayer('station-labels')?map.queryRenderedFeatures({layers:['station-labels']}):[]}
-    if(!signFeatures.length){showSigns(false);return}
+    if(!signFeatures.length){drawnSigns=[];showSigns(false);return}
     const clip=(x:number,y:number):[number, number, number]=>[M[0]!*x+M[4]!*y+M[12]!,M[1]!*x+M[5]!*y+M[13]!,M[3]!*x+M[7]!*y+M[15]!];
-    const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set<string>(),items:StationSign[]=[];
+    const O=maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()),cw=clip(O.x,O.y)[2],z=map.getZoom(),size=signTextSize(z),seen=new Set<string>(),items:LabeledSign[]=[];
     const bright=live.stationAlpha<1?live.brightStations:null,lit=new Set<StationSign>();   // 흐리게 하지 않을 역(타고 가기 중 내 지하철 구간)의 이름표
     for(const f of signFeatures){
       const [lng,lat]=(f.geometry as Point).coordinates as XY,k=`${lng},${lat}`;if(seen.has(k))continue;seen.add(k);
       const q=maplibregl.MercatorCoordinate.fromLngLat([lng,lat]),[x,y,w]=clip(q.x,q.y);if(!(w>0))continue;
       const sx=(x/w*.5+.5)*W,sy=(.5-y/w*.5)*H;if(rider.ride&&!(sy>=0&&sy<=H))continue;   // 롤코 1인칭: 지나온 역 이름표가 화면 아래에서 탄 칸 위로 올라오지 않게
-      items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2)});   // phase: 팻말마다 다른 박자로 둥둥
+      items.push({x:sx,y:sy,scale:perspectiveRatio(cw,w),size,rows:signRows(f.properties),phase:(lng*977+lat*613)%(Math.PI*2),id:String(f.properties.id)});   // id: 누른 이름표의 역(stationSignAt)   // phase: 팻말마다 다른 박자로 둥둥
       if(bright?.has(String(f.properties.id)))lit.add(items.at(-1)!);
     }
     items.sort((a,b)=>a.y-b.y);   // 먼 것(화면 위)부터, 가까운 것을 그 위에(출구 기둥과 같은 순서)
     if(meShape&&meShape.length>2){   // 내 위치 캐릭터와 겹친 이름표만 캐릭터 옆으로 비킨다(다른 이름표 자리는 그대로)
       const xs=meShape.map(([x])=>x),ys=meShape.map(([,y])=>y),avoid={left:Math.min(...xs),right:Math.max(...xs),top:Math.min(...ys),bottom:Math.max(...ys)};
       for(let i=0;i<items.length;i++){const moved=dodgeSign(items[i]!,signBounds(sctx,items[i]!),avoid);if(lit.delete(items[i]!))lit.add(moved);items[i]=moved}}
-    showSigns(items.length>0);
+    drawnSigns=items;showSigns(items.length>0);
     const signOptions={dpr:SW/Math.max(1,W),dark:effectiveTheme()==='dark',now,still:REDUCED.matches};
     drawStationSigns(sctx,lit.size?items.filter(item=>!lit.has(item)):items,{...signOptions,alpha:live.stationAlpha});
     if(lit.size)drawStationSigns(sctx,items.filter(item=>lit.has(item)),{...signOptions,alpha:1});
@@ -115,7 +115,9 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
       for(const [x,y] of meShape)sctx.lineTo(x*k,y*k);
       sctx.closePath();sctx.fill();sctx.lineWidth=2*k;sctx.lineJoin='round';sctx.stroke();sctx.restore()}
     // 둥둥 타이머: 열차 층 프레임이 곧(40 ms 안) 그리면 그쪽이 이름표도 그리므로 건너뛴다 — 움직이는 동안 이름표를 1초 60번(열차 30 + 자기 30) 그리던 것. 숨긴 탭은 걸지 않는다
-    if(!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<Math.max(40,live.frameMs)))drawSigns(signMatrix)},live.frameMs);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
+    // 메뉴 서랍이 열려 있으면 서랍 밖 띠에 걸친 이름표가 있을 때만 둥둥(가려진 이름표만이면 멈춤 — 서랍을 닫으면 열차 층 프레임이 다시 그린다 · 사용성 조사 #8)
+    const cover=live.coveredFrom,bobVisible=cover===null||items.some(sign=>signBounds(sctx,sign).left<cover);
+    if(bobVisible&&!REDUCED.matches&&!signTimer&&!document.hidden)signTimer=setTimeout(()=>{signTimer=0;if(!map.isMoving()&&signMatrix&&!(live.trainFrameDue-performance.now()<Math.max(40,live.frameMs)))drawSigns(signMatrix)},live.frameMs);   // 둥둥: 팻말 캔버스만 다시(카메라가 움직이면 지도 프레임마다 drawTrains 가 그려요)
   };
   map.on('idle',()=>{signAt=0;if(signMatrix)drawSigns(signMatrix)});   // 멈춘 뒤 마지막 배치로
   const layer=new TrainLayer();layer.onAdd(map,gl);const walls=new BuildingDepth(gl);let lifeUnits:LifeUnits | null=null;
@@ -228,4 +230,13 @@ export function createTrainOverlay({map,maplibregl,signTextSize,rider,perspectiv
   // walls: again when new building tiles arrive or the view settles somewhere new
   let wallTimer=0;const wallsSoon=()=>{clearTimeout(wallTimer);wallTimer=setTimeout(()=>{if(map.isMoving())return;walls.rebuild();requestAnimationFrame(live.drawTrains)},250)};   // not while moving (tiles arriving mid-pan ran it, 50–350 ms a stall): moveend runs it   // city-life: the walkers' streets went with the walkers (city_life.mjs)
   live.wallsNow=()=>{walls.rebuild();requestAnimationFrame(live.drawTrains)};map.on('moveend',wallsSoon);map.on('sourcedata',e=>{if(e.sourceId==='ofm'&&e.isSourceLoaded)wallsSoon()});
+  // 누른 자리의 역 이름표(마지막에 그린 것 · 위에 그린 것부터) → 역 id. 이름표는 캔버스 그림이라 지도 층 눌림에 안 잡힌다 — 본체 click 이 열차보다 먼저 묻는다(2026-11-28 사용성 조사 #2)
+  const stationSignAt=(point:{ x:number; y:number }):string | null=>{
+    if(!signShown)return null;
+    for(let i=drawnSigns.length-1;i>=0;i--){const sign=drawnSigns[i]!,box=signBounds(sctx,sign);if(point.x>=box.left&&point.x<=box.right&&point.y>=box.top&&point.y<=box.bottom)return sign.id}
+    return null;
+  };
+  return {stationSignAt};
 }
+// 그린 이름표 + 그 역 id(dodgeSign 은 펼쳐 복사하니 id 가 따라간다)
+type LabeledSign = StationSign & { id:string };

@@ -7,7 +7,7 @@
 import { serverUrl } from '../lib/server_url.mts';
 import type { RideAlertSink } from './ride_alerts.mts';
 import {
-  BAD_FIX_M, BOARD_GIVE_UP_MS, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, RUN_S, STATION_ACCESS_S,
+  BAD_FIX_M, BOARD_GIVE_UP_MS, DEST_NEAR_M, HURRY_SHARE, NEAR_HOLD_MS, NEAR_M, OFF_M, RUN_S, STATION_ACCESS_S,
   arrivalFits, arrivedEarly, ringEnded, ringSuccessor, RING_SWAP_STATION, catchable, rideAlerts, rideList, arriveOutcome, boardNow, characterOf, leftBehind, lostUnderground, nearBoarding, nearestM, pickedArrived, doneParts, doneSub, rideEndSpot, leftStation, legOverByTime, walkOverByTime, legPace, measuredPace, metres, onPath, onPathFrom, pickedLeft, offFixes, rideOver, rideAhead, rideShare, rideSteps, rideStops, shouldReroute, rideSub, rideTalk, stayedFixes, rideTitle, reached, splitPath, stopsLeft, stopsLeftByTime,
   transferS, waitText, waitTitle, walkLeftS, walkSub, walkTitle, rideFixView, rideTrainSpots, boardedPick,
   type LngLat, type RideFixAct, type RideBusLeg, type RideCardView, type RideWhere, type RideLeg, type RideStep, type RideTrainLeg,
@@ -388,8 +388,9 @@ export function createRideAlong({trainRenamed = () => null, map, geolocate, plan
       walked(current.leg, splitPath(path, where.at));
       // 다음 탈 곳(역 · 정류장 · 목적지) 100m 안이나 탈 역 아무 출구 50m 안에 5초 머물면 닿은 것 — 남은 걷기는 지금 자리에서 가까운 출구 · 길 끝까지 곧은 거리(길을 따라 남은 것보다 길지 않게) + 승강장 시간을 그때부터
       //  (예전엔 남은 길을 0 으로 봐 100m 앞에서 30초만 지나면 들어오는 열차를 탄 것으로 보고 따라가기가 켜졌다 — 2026-11-26 사용자 결정 · 신설동 재현 3회)
+      //  마지막 걷기(다음 탈 것 없음)는 목적지 30m(DEST_NEAR_M) 안에서만 — 100m 앞에서 「슝 도착!」이 떴다(2026-11-28 사용자 결정)
       const goalM = metres(spot, path[path.length - 1]!), {stationM, exitM} = boardingAway(spot, next);
-      if (nearBoarding({goalM, stationM, exitM})) {
+      if (next ? nearBoarding({goalM, stationM, exitM}) : goalM <= DEST_NEAR_M) {
         ride.nearSince ||= nowMs;
         if (nowMs - ride.nearSince >= NEAR_HOLD_MS) { ride.leftM = Math.min(ride.leftM, goalM, exitM ?? Infinity); advance(); return; }
       }

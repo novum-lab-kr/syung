@@ -251,13 +251,14 @@ function sliceBetween(source, start, end) {
 const emptyTapSource = sliceBetween(runtimeSource, "map.on('click',e=>{if(rider.ride)return;", 'closeSheet()});');
 const appModeGetter = sliceBetween(runtimeSource, 'get appMode(){', '}');
 const sheetBusySource = sliceBetween(sheetSource, 'function sheetBusy()', '\n');
-function tapEmptyMap({app, hidden = true, following = null, followBus = null, selection = null, followView = false, journey = false}) {
+function tapEmptyMap({app, hidden = true, following = null, followBus = null, selection = null, followView = false, journey = false, sign = null, tapped = []}) {
   const closed = [];
   const context = vm.createContext({
     appBridge: app ? {} : null, sheet: {hidden}, following, followBus, sheetBody: {querySelector: () => (journey ? {} : null)},
     busLayer: {selection, followView: () => followView, selectAt: () => false},
     rider: {ride: null}, map: {on: (_name, handler) => { context.tap = handler; }, queryRenderedFeatures: () => []},
     pickTrain: () => null, closeSheet: () => closed.push('closed'), rideAlong: {active: false},   // 타고 가기 중이 아님(정류장 누르기 막기와 상관없는 시험)
+    signStation: () => sign, tapStation: station => tapped.push(station.name),   // sign: 누른 자리의 역 이름표(없으면 null)
   });
   vm.runInContext(`var live={${appModeGetter},get busLayer(){return busLayer}};${sheetBusySource}\n${emptyTapSource}`, context);
   context.tap({point: {x: 1, y: 1}});
@@ -285,6 +286,12 @@ test('일반 웹: 빈 곳 누르기는 그대로 — 시트가 숨어 있으면 
   assert.equal(tapEmptyMap({app: false, hidden: false, selection: {kind: 'bus', id: 'bus-1'}}), false);
   assert.equal(tapEmptyMap({app: false, hidden: false, journey: true}), false);
   assert.equal(tapEmptyMap({app: false, hidden: false}), true);
+});
+
+test('역 이름표를 누르면 그 역을 연다 — 아래 열차 · 버스 고르기와 빈 곳 닫기로 가지 않는다(사용성 조사 #2)', () => {
+  const tapped = [];
+  assert.equal(tapEmptyMap({app: false, sign: {id: 104, name: '서울'}, tapped}), false);
+  assert.deepEqual(tapped, ['서울']);
 });
 
 // 앱 지도 모드에서 켜자마자 위치를 묻지 않는다: 본체의 첫 방문 위치 구간을 글자로 잘라 돌린다

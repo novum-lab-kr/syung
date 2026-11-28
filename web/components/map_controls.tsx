@@ -17,6 +17,6 @@ export const MapControls = ({ locate = 'idle' }:{ locate?:LocateState }) =>
       <button class="maplibregl-ctrl-zoom-out" type="button" aria-label="Zoom out" title="Zoom out"><span class="maplibregl-ctrl-icon" aria-hidden="true"></span></button>
     </div>
     <div class="maplibregl-ctrl maplibregl-ctrl-group">
-      <button class={`maplibregl-ctrl-geolocate${LOCATE_CLASS[locate]}`} type="button" aria-label="Find my location" title="Find my location"><span class="maplibregl-ctrl-icon" aria-hidden="true"></span></button>
+      <button class={`maplibregl-ctrl-geolocate${LOCATE_CLASS[locate]}`} type="button" aria-label="내 위치 찾기" title="내 위치 찾기"><span class="maplibregl-ctrl-icon" aria-hidden="true"></span></button>
     </div>
   </div>;
