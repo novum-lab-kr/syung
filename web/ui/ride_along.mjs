@@ -458,11 +458,11 @@ function createRideAlong({ trainRenamed = () => null, map, geolocate, planner, t
 			if (ride.track.length > 90) ride.track.shift();
 			walked(current.leg, splitPath(path, where.at));
 			const goalM = metres(spot, path[path.length - 1]), { stationM, exitM } = boardingAway(spot, next);
-			if (nearBoarding({
+			if (next ? nearBoarding({
 				goalM,
 				stationM,
 				exitM
-			})) {
+			}) : goalM <= 30) {
 				ride.nearSince ||= nowMs;
 				if (nowMs - ride.nearSince >= 5e3) {
 					ride.leftM = Math.min(ride.leftM, goalM, exitM ?? Infinity);

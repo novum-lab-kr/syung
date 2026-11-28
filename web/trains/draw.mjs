@@ -166,6 +166,7 @@ void shade(){
 // u_alpha: a train behind a building shows through it like through the map's translucent buildings
 void main(){shade();outColor*=u_alpha;}`;
 var RIDE_RIPPLE_MS = 125;
+var COVER_RUN_M = 75;
 var NOSE_Z = .3;
 function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX, TRAIN_ICON_RATIO, cityViaduct, laneOffsetPx, maplibregl, trainPose, trackPoint, trainMid, trainNear, mercStop, blendShift, lastPose, toRide, hexRGB, colors, fromRide, coasterCarFrame, smooth, sunPosition, followSoon, trainFrameSoon, TRAIN_FPS, live }) {
 	class TrainLayer {
@@ -392,7 +393,6 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				if (shift) {
 					shiftX = shift[0];
 					shiftY = shift[1];
-					animating = true;
 				}
 				const previous = lastPose.get(plan.id);
 				if (previous) {
@@ -404,7 +404,9 @@ function trainLayerClass({ map, JOSEON_STYLE, planner, trainBodyPx, TRAIN_MIN_PX
 				});
 				const reach = pad + Math.max(plan.cars * plan.carMetres * m, MIN_PX * unit, icon ? bodyPx * TRAIN_ICON_RATIO * unit : 0) / 2 + lanePx * unit;
 				if (!snap && (mid.x < lo.x - reach || mid.x > hi.x + reach || mid.y > lo.y + reach || mid.y < hi.y - reach)) continue;
-				if (pose.moving || snap && trainPose(plan).moving) animating = true;
+				const covered = live.coveredFrom !== null && !snap && map.project(new maplibregl.MercatorCoordinate(mid.x + shiftX, mid.y + shiftY).toLngLat()).x - (reach + COVER_RUN_M * m + Math.hypot(shiftX, shiftY)) / unit > live.coveredFrom;
+				if (shift && !covered) animating = true;
+				if ((pose.moving || snap && trainPose(plan).moving) && !covered) animating = true;
 				else waiting = true;
 				const n = plan.cars, real = n * plan.carMetres * m, total = icon ? bodyPx * TRAIN_ICON_RATIO * unit : Math.max(real, MIN_PX * unit, c88 ? n * bodyPx * 1.6 * unit : 0), car = total / n, tail = (K === "coaster" ? toRide(plan, pose.dist) : pose.dist) - total / 2;
 				let color = this.rgb.get(plan.t.line);

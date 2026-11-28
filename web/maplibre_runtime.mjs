@@ -608,6 +608,7 @@ var drawTrains = () => {};
 var myLocation = null;
 var meHidden = false;
 var rideInfoOn = false;
+var drawerCover = () => null;
 var saverOn = false;
 var frameMs = () => 1e3 / (saverOn ? SAVER_FPS : TRAIN_FPS);
 var frameStats = {
@@ -675,7 +676,11 @@ var map = new maplibregl.Map({
 		}]
 	},
 	attributionControl: false,
-	canvasContextAttributes: { antialias: !location.hash.includes("noaa") }
+	canvasContextAttributes: { antialias: !location.hash.includes("noaa") },
+	locale: {
+		"GeolocateControl.FindMyLocation": "내 위치 찾기",
+		"GeolocateControl.LocationNotAvailable": "내 위치를 쓸 수 없어요"
+	}
 });
 var BASE_PR = map.getPixelRatio();
 var BASE_FOV = map.getVerticalFieldOfView();
@@ -1818,6 +1823,9 @@ var hexRGB3 = (v) => [
 ];
 var trainLive = {
 	trainShown: (p, d) => rideAlong.rideTrain(p) || journeyMap.trainShown(p, d),
+	get coveredFrom() {
+		return drawerCover();
+	},
 	get kitReady() {
 		return kitReady;
 	},
@@ -2063,7 +2071,7 @@ map.on("load", () => {
 			return modeCtl.settings().track;
 		} }
 	});
-	createTrainOverlay({
+	const overlay = createTrainOverlay({
 		map,
 		maplibregl,
 		signTextSize,
@@ -2107,6 +2115,9 @@ map.on("load", () => {
 		avatarScale,
 		AVATAR_MINZOOM: 15,
 		live: {
+			get coveredFrom() {
+				return drawerCover();
+			},
 			get placeMarker() {
 				return placeMarker;
 			},
@@ -2203,9 +2214,24 @@ map.on("load", () => {
 			}
 		}
 	});
+	const signStation = (point) => {
+		if (rideAlong.active) return null;
+		const id = overlay.stationSignAt(point);
+		return id == null ? null : byId.get(+id) ?? null;
+	};
+	const tapStation = (st, lngLat) => {
+		if (appBridge) {
+			if (st) appBridge.stationTap(st);
+		} else showStationPopup(st, lngLat);
+	};
 	map.on("click", (e) => {
 		if (rider.ride) return;
 		if (map.queryRenderedFeatures(e.point, { layers: ["stations", "stations-casing"] }).length) return;
+		const sign = signStation(e.point);
+		if (sign) {
+			tapStation(sign, e.lngLat);
+			return;
+		}
 		const pl = pickTrain(e.point);
 		if (pl) openTrain(pl);
 		else if (busLayer?.selectAt(e.point, { stops: !rideAlong.active })) {
@@ -2214,16 +2240,19 @@ map.on("load", () => {
 	});
 	map.on("click", "stations", (e) => {
 		if (rider.ride) return;
+		const sign = signStation(e.point);
+		if (sign) {
+			tapStation(sign, e.lngLat);
+			return;
+		}
 		const pl = pickTrain(e.point);
 		if (pl) {
 			openTrain(pl);
 			return;
 		}
 		if (rideAlong.active) return;
-		const p = e.features[0].properties, st = byId.get(+p.id);
-		if (appBridge) {
-			if (st) appBridge.stationTap(st);
-		} else showStationPopup(st, e.lngLat);
+		const p = e.features[0].properties;
+		tapStation(byId.get(+p.id), e.lngLat);
 	});
 	map.on("mouseenter", "stations", () => map.getCanvas().style.cursor = "pointer");
 	map.on("mouseleave", "stations", () => map.getCanvas().style.cursor = "");
@@ -3000,13 +3029,14 @@ settingsMenu.on({ switches: {
 			showPage(null, false);
 			panel.classList.remove("open");
 			panel.hidden = false;
-			panel.offsetWidth;
+			measureCover();
 			panel.classList.add("open");
 			theme.openSky();
 			$("settingsClose").focus({ preventScroll: true });
 			return;
 		}
 		theme.closeSky();
+		trainFrameSoon(0);
 		panel.classList.remove("open");
 		closeTimer = setTimeout(() => {
 			if (!panel.classList.contains("open")) panel.hidden = true;
@@ -3017,11 +3047,41 @@ settingsMenu.on({ switches: {
 		setOpen(false);
 		btn.focus({ preventScroll: true });
 	};
+	let coverLeft = null;
+	const measureCover = () => {
+		const next = panel.hidden || panel.classList.contains("with-map") ? null : map.getContainer().clientWidth - panel.offsetWidth;
+		if (next !== coverLeft) {
+			coverLeft = next;
+			trainFrameSoon(0);
+		}
+	};
+	drawerCover = () => isOpen() ? coverLeft : null;
+	new MutationObserver(measureCover).observe(panel, {
+		attributes: true,
+		attributeFilter: ["class", "hidden"]
+	});
+	addEventListener("resize", () => {
+		if (isOpen()) measureCover();
+	});
 	btn.onclick = (e) => {
 		e.stopPropagation();
 		setOpen(!isOpen());
 	};
 	$("settingsClose").onclick = close;
+	const MODE_SWITCHES = [
+		"toggleSimcity",
+		"toggleJoseon",
+		"toggleStarcraft",
+		"toggleRetro",
+		"toggleNation",
+		"toggleCoaster"
+	], OPENS_ROW = ["toggleStarcraft", "toggleNation"];
+	$("menuModes").addEventListener("click", (e) => {
+		const pick = e.target.closest("button");
+		if (!pick || pick.disabled) return;
+		const turningOn = pick.getAttribute("aria-pressed") !== "true";
+		if (MODE_SWITCHES.includes(pick.id) ? !(turningOn && OPENS_ROW.includes(pick.id)) : pick.dataset.race != null || pick.dataset.nation != null) close();
+	}, true);
 	let pressKeeps = false;
 	document.addEventListener("pointerdown", (e) => {
 		const at = e.target;

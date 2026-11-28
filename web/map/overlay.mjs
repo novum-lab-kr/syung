@@ -15,7 +15,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 	sc.style.cssText = "position:absolute;left:0;top:0;pointer-events:none";
 	const SIGN_PR = Math.min(globalThis.devicePixelRatio || 1, PHONE ? 2 : 3);
 	const sctx = sc.getContext("2d");
-	let signFeatures = [], signAt = 0, signMatrix = null, signTimer = 0, signShown = false, signQM = null, meShape = null;
+	let signFeatures = [], signAt = 0, signMatrix = null, signTimer = 0, signShown = false, signQM = null, meShape = null, drawnSigns = [];
 	const showSigns = (on) => {
 		if (on !== signShown) {
 			signShown = on;
@@ -43,6 +43,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			signFeatures = map.getLayer("station-labels") ? map.queryRenderedFeatures({ layers: ["station-labels"] }) : [];
 		}
 		if (!signFeatures.length) {
+			drawnSigns = [];
 			showSigns(false);
 			return;
 		}
@@ -67,7 +68,8 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				scale: perspectiveRatio(cw, w),
 				size,
 				rows: signRows(f.properties),
-				phase: (lng * 977 + lat * 613) % (Math.PI * 2)
+				phase: (lng * 977 + lat * 613) % (Math.PI * 2),
+				id: String(f.properties.id)
 			});
 			if (bright?.has(String(f.properties.id))) lit.add(items.at(-1));
 		}
@@ -85,6 +87,7 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 				items[i] = moved;
 			}
 		}
+		drawnSigns = items;
 		showSigns(items.length > 0);
 		const signOptions = {
 			dpr: SW / Math.max(1, W),
@@ -113,7 +116,8 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 			sctx.stroke();
 			sctx.restore();
 		}
-		if (!REDUCED.matches && !signTimer && !document.hidden) signTimer = setTimeout(() => {
+		const cover = live.coveredFrom;
+		if ((cover === null || items.some((sign) => signBounds(sctx, sign).left < cover)) && !REDUCED.matches && !signTimer && !document.hidden) signTimer = setTimeout(() => {
 			signTimer = 0;
 			if (!map.isMoving() && signMatrix && !(live.trainFrameDue - performance.now() < Math.max(40, live.frameMs))) drawSigns(signMatrix);
 		}, live.frameMs);
@@ -552,5 +556,14 @@ function createTrainOverlay({ map, maplibregl, signTextSize, rider, perspectiveR
 	map.on("sourcedata", (e) => {
 		if (e.sourceId === "ofm" && e.isSourceLoaded) wallsSoon();
 	});
+	const stationSignAt = (point) => {
+		if (!signShown) return null;
+		for (let i = drawnSigns.length - 1; i >= 0; i--) {
+			const sign = drawnSigns[i], box = signBounds(sctx, sign);
+			if (point.x >= box.left && point.x <= box.right && point.y >= box.top && point.y <= box.bottom) return sign.id;
+		}
+		return null;
+	};
+	return { stationSignAt };
 }
 export { createTrainOverlay };
