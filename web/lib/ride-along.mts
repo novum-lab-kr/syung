@@ -657,8 +657,9 @@ export const gotOff = (count:number):boolean => count >= OFF_FIXES;
 const bareName = (name:string):string => name.replace(/\(.*?\)/g, '').trim().replace(/역$/, '');
 
 // 곧 올 열차 줄이 이 구간에 맞나: 같은 노선 · 같은 방향이고 내릴 역까지 간다
-//  trainSeq: 그 열차의 지도 예측 차례(앞 9역까지만 — routing MAX). 내릴 역에 닿기 전에 길 밖 역이 BRANCH_SKIP 보다 많이 이어지면 다른 지선
+//  trainSeq: 그 열차의 지도 예측 차례(앞 9역까지만 — routing MAX). 구간 역으로 돌아오지 않은 채 길 밖 역이 BRANCH_SKIP 보다 많이 이어지면 다른 지선
 //   (구간 stations 는 정차역뿐이라 급행이 건너뛰는 역 — 9호선 노량진→여의도 사이 샛강 — 은 길 밖 역으로 끼지만 지선이 아니다 · 2026-11-04 운영 시험)
+//   길 밖 역이 길게 이어져도 다시 구간 역(내릴 역 포함)으로 돌아오면 지선이 아니다 — 급행 구간을 도는 완행(2026-11-28)
 //  행선지 이름이 내릴 역 앞 역(탈 역 포함)이면 그 전에 끝난다(지도에 없는 열차의 지선은 이름으로 못 거른다)
 export const BRANCH_SKIP = 4;   // 구간 밖 역이 이만큼까지 이어지면 급행 건너뛰기, 넘으면 다른 지선
 export interface ArrivalRowLike { line:string; direction:string; destination?:string | null; trainNo?:string | null }
@@ -667,8 +668,9 @@ export function arrivalFits(row:ArrivalRowLike, leg:RideTrainLeg, trainSeq:reado
   const toId = leg.stations[leg.stations.length - 1], onLeg = new Set(leg.stations);
   if (trainSeq && toId !== undefined) {
     const start = trainSeq.findIndex(id => onLeg.has(id) && id !== toId);
-    let offRun = 0;
-    if (start >= 0) for (const id of trainSeq.slice(start)) { if (id === toId) break; if (onLeg.has(id)) offRun = 0; else if (++offRun > BRANCH_SKIP) return false; }
+    let offRun = 0;   // 아직 구간 역으로 돌아오지 않은 길 밖 역 수 — 구간 역을 만나면 0
+    if (start >= 0) for (const id of trainSeq.slice(start)) { if (id === toId) { offRun = 0; break; } offRun = onLeg.has(id) ? 0 : offRun + 1; }
+    if (offRun > BRANCH_SKIP) return false;
   }
   if (!row.destination) return true;
   const destination = bareName(row.destination);
