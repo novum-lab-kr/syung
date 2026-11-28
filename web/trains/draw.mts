@@ -38,6 +38,7 @@ export interface TrainLive {
   rideFollow:boolean;   // 타고 가기가 탄 열차를 따라가는 중(시트 따라가기처럼 카메라 · 지도 · 열차를 같이 움직인다)
   ridingAlong:boolean;   // 타고 가기 중(걷기 · 기다리기 · 타기) — 파장만 남았으면 느리게 다시 그린다(RIDE_RIPPLE_MS)
   riding:(plan:TrainPlan)=>RideSnap | null; trainShown:(plan:TrainPlan, dist:number)=>boolean;
+  coveredFrom:number | null;   // 메뉴 서랍이 덮은 곳의 왼쪽 끝(지도 화면 x px · 열려 있지 않으면 null) — 그 오른쪽에 통째로 든 열차는 움직여도 다음 프레임을 부르지 않는다
 }
 type TrainPlanB = TrainPlan & { blend?:unknown };
 // 본체가 넘기는 것(이 파일이 쓰는 칸만)
@@ -224,6 +225,9 @@ void shade(){
 void main(){shade();outColor*=u_alpha;}`;
 // 타고 가기 중 파장(내 위치 — 열차 둘레 파장은 2026-11-26 뺐다)만 움직일 때의 다시 그리기 간격: 1초 8번(30번 그리면 걷는 내내 열차 층이 쉬지 않았다 — 배터리, 2026-11-25 사용자 추천안 F)
 const RIDE_RIPPLE_MS=125;
+// 서랍에 가린 열차는 다음 프레임을 1초 뒤로 미룬다 — 그사이 열차가 갈 수 있는 거리만큼 더 안쪽에 든 열차만 가렸다고 본다
+// (가장 빠른 GTX-A 180 km/h = 50 m/s × 타이머가 늦을 몫까지 1.5초)
+const COVER_RUN_M=75;
 const NOSE_Z=.3;   // the leading nose slopes down to (almost) the ground, so the headlights meet their beam
 export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_PX,TRAIN_ICON_RATIO,cityViaduct,laneOffsetPx,maplibregl,trainPose,trackPoint,trainMid,trainNear,mercStop,blendShift,lastPose,toRide,hexRGB,colors,fromRide,coasterCarFrame,smooth,sunPosition,followSoon,trainFrameSoon,TRAIN_FPS,live}:TrainLayerDeps){
   class TrainLayer{
@@ -336,13 +340,16 @@ export function trainLayerClass({map,JOSEON_STYLE,planner,trainBodyPx,TRAIN_MIN_
         this.h0=K==='viaduct'?mid.h:0;   // city-life: 심시티 — this train on the viaduct's deck (mid.h: the rail height there)
         // Fresh data: glide from where the old prediction had the train instead of teleporting.
         let shiftX=0,shiftY=0;
-        const shift=snap?snap.shift:blendShift(plan,mid);if(shift){shiftX=shift[0];shiftY=shift[1];animating=true}
+        const shift=snap?snap.shift:blendShift(plan,mid);if(shift){shiftX=shift[0];shiftY=shift[1]}
         const previous=lastPose.get(plan.id);
         if(previous){previous.x=mid.x+shiftX;previous.y=mid.y+shiftY}else lastPose.set(plan.id,{x:mid.x+shiftX,y:mid.y+shiftY});
         // off-screen test with the train's half length as margin: zoomed in, a train is longer than the screen
         const reach=pad+Math.max(plan.cars*plan.carMetres*m,MIN_PX*unit,icon?bodyPx*TRAIN_ICON_RATIO*unit:0)/2+lanePx*unit;
         if(!snap&&(mid.x<lo.x-reach||mid.x>hi.x+reach||mid.y>lo.y+reach||mid.y<hi.y-reach))continue;
-        if(pose.moving||snap&&trainPose(plan).moving)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
+        // 메뉴 서랍에 통째로 가려진 열차(뒤 끝까지 서랍 안)는 그리기는 하되 다음 프레임은 서 있는 열차처럼 1초 뒤 — 서랍 밖 띠에 보이는 열차는 그대로 20번(2026-11-28 사용성 조사 #8 · A안)
+        const covered=live.coveredFrom!==null&&!snap&&map.project(new maplibregl.MercatorCoordinate(mid.x+shiftX,mid.y+shiftY).toLngLat()).x-(reach+COVER_RUN_M*m+Math.hypot(shiftX,shiftY))/unit>live.coveredFrom;   // 1초 안에 서랍 밖 띠로 나올 수 있는 열차(달리는 거리 + 남은 미끄러짐)는 가린 것으로 치지 않는다
+        if(shift&&!covered)animating=true;
+        if((pose.moving||snap&&trainPose(plan).moving)&&!covered)animating=true;else waiting=true;   // only trains on screen keep the map redrawing (탄 열차: 멈춘 순간에 그려도 지금 떠났으면 카메라를 다시 놓아요)
         const n=plan.cars,real=n*plan.carMetres*m,total=icon?bodyPx*TRAIN_ICON_RATIO*unit:Math.max(real,MIN_PX*unit,c88?n*bodyPx*1.6*unit:0),car=total/n,tail=(K==='coaster'?toRide(plan,pose.dist):pose.dist)-total/2;   // on the coaster: car positions in ride distance
         let color=this.rgb.get(plan.t.line);if(!color){color=hexRGB(colors[plan.t.line]!);this.rgb.set(plan.t.line,color)}this.color=color;
         // 고른 열차 · 길찾기로 탈 열차 둘레 파장은 뺐다(2026-11-26 사용자 「파장빼줘」 · 「모두 빼기」) — 파장은 내 위치에만 남는다
